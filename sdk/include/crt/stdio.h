@@ -398,6 +398,20 @@ extern _CRTIMP int _commode;
   _ftelli64(
     _Inout_ FILE *_File);
 
+  /* POSIX fseeko/ftello - needed by libc++ fstream */
+  __CRT_INLINE int __cdecl fseeko(FILE *_File, _off_t _Offset, int _Origin) {
+    return fseek(_File, (long)_Offset, _Origin);
+  }
+  __CRT_INLINE int __cdecl fseeko64(FILE *_File, __int64 _Offset, int _Origin) {
+    return _fseeki64(_File, _Offset, _Origin);
+  }
+  __CRT_INLINE _off_t __cdecl ftello(FILE *_File) {
+    return (_off_t)ftell(_File);
+  }
+  __CRT_INLINE __int64 __cdecl ftello64(FILE *_File) {
+    return _ftelli64(_File);
+  }
+
   _Check_return_opt_
   _CRTIMP
   size_t

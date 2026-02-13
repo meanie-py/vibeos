@@ -387,6 +387,11 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/arm/rtlexcpt.c)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs_asm.S)
+    list(APPEND SOURCE
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c)
 endif()
 
 if(NOT _WINKD_)
@@ -408,9 +413,11 @@ if(NOT _WINKD_)
         endif()
     elseif(ARCH STREQUAL "arm")
         list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm/kdserial.c)
+    elseif(ARCH STREQUAL "arm64")
+        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
     endif()
 
-    if(KDBG)
+    if(KDBG AND NOT ARCH STREQUAL "arm64")
         list(APPEND SOURCE
             ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg.c
             ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb.c

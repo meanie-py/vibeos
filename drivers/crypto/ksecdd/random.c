@@ -79,6 +79,12 @@ KsecReadMachineSpecificCounters(
 #elif defined(_M_ARM)
     /* Read the Cycle Counter Register */
     MachineSpecificCounters->Ccr = _MoveFromCoprocessor(CP15_PMCCNTR);
+#elif defined(_M_ARM64)
+    /* Use the performance counter as entropy source */
+    {
+        LARGE_INTEGER pc = KeQueryPerformanceCounter(NULL);
+        MachineSpecificCounters->Tsc = pc.QuadPart;
+    }
 #else
     #error Implement me!
 #endif

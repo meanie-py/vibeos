@@ -1,15 +1,24 @@
+/*
+ * COPYRIGHT:         BSD - See COPYING.ARM in the top level directory
+ * PROJECT:           ReactOS CRT library
+ * PURPOSE:           Implementation of atan2
+ * PROGRAMMER:        ReactOS ARM64 Team
+ */
 
 /* INCLUDES ******************************************************************/
 
-/* We need one of these first! */
-/* #include <kxarm64.h> */
+#include <kxarm64.h>
 
 /* CODE **********************************************************************/
 
     TEXTAREA
 
     LEAF_ENTRY atan2
-    /* TODO: add an assert fail call, as this is unimplemented */
+
+    /* FIXME: Unimplemented - return 0.0 for now */
+    fmov d0, xzr
+    ret
+
     LEAF_END atan2
 
     END

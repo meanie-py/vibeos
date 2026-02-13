@@ -3,7 +3,8 @@ add_definitions(
     -DWIN32
     -DNDEBUG=
     -D_WINDOWS
-    -DPNG_BUILD_DLL)
+    -DPNG_BUILD_DLL
+    -DPNG_ARM_NEON_OPT=0)
 
 include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libpng

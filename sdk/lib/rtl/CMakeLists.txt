@@ -122,6 +122,14 @@ elseif(ARCH STREQUAL "arm")
         arm/except.c
         byteswap.c
         mem.c)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE
+        arm64/debug_asm.S
+        arm64/slist.S)
+    list(APPEND SOURCE
+        arm64/except.c
+        byteswap.c
+        mem.c)
 endif()
 
 add_asm_files(rtl_asm ${ASM_SOURCE})

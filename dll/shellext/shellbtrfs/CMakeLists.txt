@@ -40,6 +40,13 @@ add_library(shellbtrfs MODULE
 file(GLOB shellbtrfs_rc_deps *.ico)
 add_rc_deps(shellbtrfs.rc ${shellbtrfs_rc_deps})
 
+# On ARM64, libc++.a:string.cpp.obj defines swprintf (C99-style) which conflicts
+# with the msvcrt import thunk (swprintf=_swprintf). Redirect calls to _swprintf
+# directly to avoid the "swprintf was replaced" linker error.
+if(ARCH STREQUAL "arm64")
+    target_compile_definitions(shellbtrfs PRIVATE swprintf=_swprintf vswprintf=_vswprintf)
+endif()
+
 set_module_type(shellbtrfs win32dll UNICODE)
 target_link_libraries(shellbtrfs uuid cppstl)
 set_target_cpp_properties(shellbtrfs WITH_EXCEPTIONS)

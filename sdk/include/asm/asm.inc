@@ -252,11 +252,13 @@ ENDM
 
 #else /***********************************************************************/
 
-/* Force intel syntax */
+#ifndef _M_ARM64
+/* Force intel syntax (x86/x64 only) */
 .intel_syntax noprefix
 
 /* Put dwarf debug info in the .dwarf_debug section, which will be properly stripped */
 .cfi_sections .debug_frame
+#endif
 
 .altmacro
 
@@ -279,11 +281,18 @@ ENDM
 
 /* To avoid reverse syntax we provide a new macro .PROC, replacing PROC... */
 .macro .PROC name
+#ifdef _M_ARM64
+    /* ARM64 COFF doesn't support .func/.seh_proc */
+    .globl \name
+    .p2align 2
+    \name:
+#elif defined(_X86_)
     .func \name
     \name:
-#ifdef _X86_
     .cfi_startproc
 #else
+    .func \name
+    \name:
     .seh_proc \name
 #endif
 .endm
@@ -291,12 +300,15 @@ ENDM
 
 /* ... and .ENDP, replacing ENDP */
 .macro .ENDP
-#ifdef _X86_
+#ifdef _M_ARM64
+    /* ARM64 COFF doesn't support .endfunc/.seh_endproc */
+#elif defined(_X86_)
     .cfi_endproc
+    .endfunc
 #else
     .seh_endproc
-#endif
     .endfunc
+#endif
 .endm
 #define ENDFUNC .ENDP
 
@@ -458,6 +470,64 @@ ENDM
 #define CFI_REGISTER .cfi_register
 #define CFI_REL_OFFSET .cfi_rel_offset
 #define CFI_SAME_VALUE .cfi_same_value
+
+/* ARM64-specific macros */
+#ifdef _M_ARM64
+
+.macro TEXTAREA
+    .text
+    .p2align 2
+.endm
+
+.macro DATAAREA
+    .data
+.endm
+
+.macro RODATAAREA
+    .section .rdata,"dr"
+.endm
+
+/*
+ * LEAF_ENTRY - Start a leaf function (no stack frame, no calls to other functions)
+ */
+.macro LEAF_ENTRY Name
+    .globl \Name
+    .p2align 2
+\Name:
+.endm
+
+/*
+ * LEAF_END - End a leaf function
+ */
+.macro LEAF_END Name
+    /* No .size directive for COFF */
+.endm
+
+/*
+ * NESTED_ENTRY - Start a nested function (has stack frame, calls other functions)
+ */
+.macro NESTED_ENTRY Name
+    .globl \Name
+    .p2align 2
+\Name:
+.endm
+
+/*
+ * NESTED_END - End a nested function
+ */
+.macro NESTED_END Name
+    /* No .size directive for COFF */
+.endm
+
+/*
+ * ALTERNATE_ENTRY - Define an alternate entry point to a function
+ */
+.macro ALTERNATE_ENTRY Name
+    .globl \Name
+\Name:
+.endm
+
+#endif /* _M_ARM64 */
 
 #endif
 

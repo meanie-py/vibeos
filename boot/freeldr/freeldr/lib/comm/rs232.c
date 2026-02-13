@@ -19,7 +19,7 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _M_ARM
+#if !defined(_M_ARM) && !defined(_M_ARM64)
 
 /* INCLUDES *******************************************************************/
 
@@ -146,4 +146,4 @@ BOOLEAN Rs232PortInUse(PUCHAR Base)
 #endif
 }
 
-#endif /* not _M_ARM */
+#endif /* not _M_ARM and not _M_ARM64 */

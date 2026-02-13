@@ -45,6 +45,24 @@ ReleaseSRWLockShared(PSRWLOCK Lock)
     RtlReleaseSRWLockShared((PRTL_SRWLOCK)Lock);
 }
 
+/* Declared in ndk/rtlfuncs.h under WIN7+, but we need them here for Vista compat library */
+BOOLEAN NTAPI RtlTryAcquireSRWLockExclusive(PRTL_SRWLOCK SRWLock);
+BOOLEAN NTAPI RtlTryAcquireSRWLockShared(PRTL_SRWLOCK SRWLock);
+
+BOOLEAN
+WINAPI
+TryAcquireSRWLockExclusive(PSRWLOCK Lock)
+{
+    return RtlTryAcquireSRWLockExclusive((PRTL_SRWLOCK)Lock);
+}
+
+BOOLEAN
+WINAPI
+TryAcquireSRWLockShared(PSRWLOCK Lock)
+{
+    return RtlTryAcquireSRWLockShared((PRTL_SRWLOCK)Lock);
+}
+
 FORCEINLINE
 PLARGE_INTEGER
 GetNtTimeout(PLARGE_INTEGER Time, DWORD Timeout)

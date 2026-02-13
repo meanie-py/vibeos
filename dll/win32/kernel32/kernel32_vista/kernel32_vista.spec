@@ -12,6 +12,8 @@
 @ stdcall AcquireSRWLockShared(ptr)
 @ stdcall ReleaseSRWLockExclusive(ptr)
 @ stdcall ReleaseSRWLockShared(ptr)
+@ stdcall TryAcquireSRWLockExclusive(ptr)
+@ stdcall TryAcquireSRWLockShared(ptr)
 
 @ stdcall InitializeConditionVariable(ptr)
 @ stdcall SleepConditionVariableCS(ptr ptr long)

@@ -112,6 +112,18 @@ MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     j KiSystemService
     nop
 ENDM
+#elif defined(_M_ARM64)
+MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
+    mov x8, SyscallId
+    svc #0
+    ret
+ENDM
+MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
+    /* ARM64 kernel syscall stubs - TODO: implement properly */
+    mov x8, SyscallId
+    svc #0
+    ret
+ENDM
 #else
 #error unsupported architecture
 #endif
@@ -125,6 +137,32 @@ MACRO(START_PROC, Name, StackBytes)
     PUBLIC _&Name&@&StackBytes
     .PROC _&Name&@&StackBytes
 ENDM
+#elif defined(_M_ARM64)
+/* ARM64 uses GAS-style syntax with Clang */
+.macro MAKE_LABEL Name, StackBytes
+    .globl \Name
+    \Name:
+.endm
+.macro START_PROC Name, StackBytes
+    .globl \Name
+    .p2align 2
+    \Name:
+.endm
+.macro STUB_U Name, ArgCount
+    MAKE_LABEL Zw\Name, 0
+    START_PROC Nt\Name, 0
+    mov x8, #SyscallId
+    svc #0
+    ret
+    SyscallId = SyscallId + 1
+.endm
+.macro STUB_K Name, ArgCount
+    START_PROC Zw\Name, 0
+    mov x8, #SyscallId
+    svc #0
+    ret
+    SyscallId = SyscallId + 1
+.endm
 #else
 MACRO(MAKE_LABEL, Name, StackBytes)
     PUBLIC &Name
@@ -136,6 +174,7 @@ MACRO(START_PROC, Name, StackBytes)
 ENDM
 #endif
 
+#ifndef _M_ARM64
 MACRO(STUB_U, Name, ArgCount)
     MAKE_LABEL Zw&Name, %ArgCount * 4
     START_PROC Nt&Name, %ArgCount * 4
@@ -150,5 +189,6 @@ MACRO(STUB_K, Name, ArgCount)
     .ENDP
     SyscallId = SyscallId + 1
 ENDM
+#endif
 
 #endif

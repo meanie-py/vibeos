@@ -20,6 +20,12 @@ if(MSVC)
 else()
     list(APPEND SOURCE
         __cxa_pure_virtual.cpp)
+    # ARM64 with Clang needs C++ runtime stubs
+    if(ARCH STREQUAL "arm64")
+        list(APPEND SOURCE arm64/cpprt.cpp)
+        # Disable exceptions for this file to avoid circular dependencies
+        set_source_files_properties(arm64/cpprt.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
+    endif()
 endif()
 
 add_library(cpprt ${SOURCE} ${cpprt_asm})

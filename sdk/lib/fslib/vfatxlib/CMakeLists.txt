@@ -8,7 +8,7 @@ add_library(vfatxlib ${SOURCE})
 add_pch(vfatxlib vfatxlib.h SOURCE)
 target_link_libraries(vfatxlib chkstk)
 
-if(NOT MSVC)
+if(NOT MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_link_libraries(vfatxlib -lgcc)
 endif()
 

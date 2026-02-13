@@ -288,7 +288,11 @@ TrimWsList(PMMWSL WsList)
             RemoveFromWsList(WsList, Entry.u1.VirtualAddress);
 
             /* Dirtify the page, if needed */
+#ifdef _M_ARM64
+            if (!PointerPte->u.Hard.NotDirty)
+#else
             if (PointerPte->u.Hard.Dirty)
+#endif
                 Pfn->u3.e1.Modified = 1;
 
             /* Make this a transition PTE */

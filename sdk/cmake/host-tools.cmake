@@ -98,6 +98,11 @@ function(setup_host_tools)
         set(HOST_BUILD_TYPE Debug)
     endif()
 
+    # Pass BISON_EXECUTABLE to host-tools if set (needed on macOS where system bison is ancient)
+    if(BISON_EXECUTABLE)
+        list(APPEND CMAKE_HOST_TOOLS_EXTRA_ARGS -DBISON_EXECUTABLE=${BISON_EXECUTABLE})
+    endif()
+
     ExternalProject_Add(host-tools
         SOURCE_DIR ${REACTOS_SOURCE_DIR}
         PREFIX ${REACTOS_BINARY_DIR}/host-tools

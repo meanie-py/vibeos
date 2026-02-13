@@ -25,6 +25,15 @@
 #ifndef _STDINT_H
 #define _STDINT_H
 
+/* When building with libc++, define _LIBCPP_STDINT_H so that libc++'s
+   <cstdint> recognizes that its wrapper was included (even though this
+   is ReactOS's version, it provides the same types). */
+#ifdef _LIBCPP_VERSION
+#ifndef _LIBCPP_STDINT_H
+#define _LIBCPP_STDINT_H
+#endif
+#endif
+
 #include <vcruntime.h>
 
 #define __need_wint_t

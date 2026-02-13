@@ -65,7 +65,7 @@
 #define NDIS_BUFFER_TAG FOURCC('n','b','u','f')
 #define NDIS_PACKET_TAG FOURCC('n','p','k','t')
 
-#if defined(i386) || defined(_AMD64_) || defined(_ARM_)
+#if defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_)
 
 /* DWORD network to host byte order conversion for i386 */
 #define DN2H(dw) \
@@ -91,7 +91,7 @@
 	((((w) & 0xFF00) >> 8) | \
 	 (((w) & 0x00FF) << 8))
 
-#else /* defined(i386) || defined(_AMD64_) || defined(_ARM_) */
+#else /* defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_) */
 
 #error Unsupported architecture
 
@@ -111,7 +111,7 @@
 #define WH2N(w) \
     (w)
 
-#endif /* defined(i386) || defined(_AMD64_) || defined(_ARM_) */
+#endif /* defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_) */
 
 /* AF_INET and other things Arty likes to use ;) */
 #define AF_INET 2

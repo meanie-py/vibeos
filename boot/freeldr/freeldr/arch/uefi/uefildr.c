@@ -92,7 +92,7 @@ ExecuteLoaderCleanly(PVOID PreviousStack)
     UNREACHABLE;
 }
 
-#ifndef _M_ARM
+#if !defined(_M_ARM)
 DECLSPEC_NORETURN
 VOID __cdecl Reboot(VOID)
 {

@@ -340,12 +340,14 @@ _CRT_NONSTDC_DEPRECATE(_yn) _CRTIMP double __cdecl yn(_In_ int x, _In_ double y)
 
 #ifdef __cplusplus
 }
-#ifndef _CMATH_
+#if !defined(_CMATH_) && !defined(_LIBCPP_VERSION)
+/* When using libc++, these overloads conflict with libc++'s math.h
+   using declarations from std::__math. libc++ provides its own
+   float/double/long double overloads for all standard math functions. */
 extern "C++" {
 
 //inline long abs(_In_ long x) { return labs(x); }
 _Check_return_ inline double abs(_In_ double x)  throw() { return fabs(x); }
-
 _Check_return_ inline float abs(_In_ float x) throw() { return fabsf(x); }
 _Check_return_ inline float acos(_In_ float x) throw() { return acosf(x); }
 _Check_return_ inline float asin(_In_ float x) throw() { return asinf(x); }
@@ -398,7 +400,7 @@ _Check_return_ inline long double sqrt(_In_ long double x) throw() { return sqrt
 _Check_return_ inline long double tan(_In_ long double x) throw() { return tanl(x); }
 _Check_return_ inline long double tanh(_In_ long double x) throw() { return tanhl(x); }
 }
-#endif /* !_CMATH_ */
+#endif /* !_CMATH_ && !_LIBCPP_VERSION */
 #endif /* __cplusplus */
 
 #pragma pack(pop)

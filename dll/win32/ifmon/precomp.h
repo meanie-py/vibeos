@@ -12,6 +12,7 @@
 
 #define WIN32_NO_STATUS
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <windef.h>
 #include <winbase.h>

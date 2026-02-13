@@ -491,6 +491,26 @@ _InterlockedAdd64(
 
 #endif /* _M_AMD64 */
 
+#ifdef _M_ARM64
+
+/* Clang provides _InterlockedAdd64 as a builtin for ARM64 */
+#if defined(__clang__) && __has_builtin(_InterlockedAdd64)
+/* Declare the builtin so C code doesn't get implicit-function-declaration errors */
+LONG64 _InterlockedAdd64(_Interlocked_operand_ volatile LONG64 *Target, LONG64 Value);
+#else
+FORCEINLINE
+LONG64
+_InterlockedAdd64(
+    _Inout_ _Interlocked_operand_ volatile LONG64 *Target,
+    _In_ LONG64 Value)
+
+{
+    return _InterlockedExchangeAdd64(Target, Value) + Value;
+}
+#endif /* __clang__ && __has_builtin(_InterlockedAdd64) */
+
+#endif /* _M_ARM64 */
+
 #ifdef _M_IA64
 
 #undef _InterlockedBitTestAndSet

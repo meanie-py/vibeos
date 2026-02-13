@@ -73,7 +73,9 @@ else()
 endif()
 
 target_include_directories(libxml2
-    PRIVATE include/private
+    # NOTE: Do NOT add include/private here - it shadows system <string.h>
+    # and <io.h>. Private headers are accessed via #include "private/..."
+    # through the include/ parent directory.
     PUBLIC include;include/libxml
 )
 

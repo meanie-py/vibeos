@@ -737,6 +737,21 @@ typedef struct _ARM_LOADER_BLOCK
     ULONG SecondLevelIcacheSize;
     ULONG SecondLevelIcacheFillSize;
     ULONG PcrPage2;
+#elif defined(_M_ARM64)
+    /* ARM64-specific loader block fields */
+    ULONG64 AcpiTablePhysicalAddress;
+    ULONG AcpiTableSize;
+    ULONG MachineType;
+    ULONG64 KdCpuBuffer;
+    /* Cache information */
+    ULONG FirstLevelDcacheSize;
+    ULONG FirstLevelDcacheFillSize;
+    ULONG FirstLevelIcacheSize;
+    ULONG FirstLevelIcacheFillSize;
+    ULONG SecondLevelDcacheSize;
+    ULONG SecondLevelDcacheFillSize;
+    ULONG SecondLevelIcacheSize;
+    ULONG SecondLevelIcacheFillSize;
 #else
     ULONG PlaceHolder;
 #endif

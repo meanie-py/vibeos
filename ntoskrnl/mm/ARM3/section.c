@@ -1898,7 +1898,11 @@ MiFlushTbAndCapture(IN PMMVAD FoundVad,
     //
     // Windows updates the relevant PFN1 information, we currently don't.
     //
+#ifdef _M_ARM64
+    if (UpdateDirty && !PreviousPte.u.Hard.NotDirty)
+#else
     if (UpdateDirty && PreviousPte.u.Hard.Dirty)
+#endif
     {
         if (!Pfn1->u3.e1.Modified)
         {

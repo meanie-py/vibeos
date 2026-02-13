@@ -197,6 +197,9 @@ typedef struct __JUMP_BUFFER {
 #elif defined(_X86_)
 # define mingw_getsp() \
   ({ void* value; __asm__ __volatile__("movl %%esp, %[value]" : [value] "=r" (value)); value; })
+#elif defined(_M_ARM64) || defined(__aarch64__)
+# define mingw_getsp() \
+  ({ void* value; __asm__ __volatile__("mov %0, sp" : "=r" (value)); value; })
 #endif
 #define setjmp(BUF) _setjmp((BUF),mingw_getsp())
   int __MINGW_NOTHROW __cdecl _setjmp(jmp_buf _Buf,void *_Ctx);

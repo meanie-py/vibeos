@@ -3,8 +3,13 @@ add_definitions(
     -D_URLMON_
     -DENTRY_PREFIX=URLMON_
     -DPROXY_DELEGATION
-    -DWINE_REGISTER_DLL
-    -DPROXY_CLSID_IS={0x79EAC9F1,0xBAF9,0x11CE,{0x8C,0x82,0x00,0xAA,0x00,0x4B,0xA9,0x0B}})
+    -DWINE_REGISTER_DLL)
+
+# PROXY_CLSID_IS contains braces and commas which cannot be passed via -D
+# on all compilers/shells. Write it to a header and force-include it.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/proxy_clsid.h"
+    "#define PROXY_CLSID_IS {0x79EAC9F1,0xBAF9,0x11CE,{0x8C,0x82,0x00,0xAA,0x00,0x4B,0xA9,0x0B}}\n")
+add_compile_options(-include "${CMAKE_CURRENT_BINARY_DIR}/proxy_clsid.h")
 
 spec2def(urlmon.dll urlmon.spec ADD_IMPORTLIB)
 add_rpcproxy_files(urlmon_urlmon.idl)

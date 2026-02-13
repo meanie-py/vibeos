@@ -7,8 +7,9 @@
 
 #include <uefildr.h>
 
-#ifndef _M_ARM
+#if !defined(_M_ARM)
 /* TODO: Handle this with custom Disk / partition setup */
+/* For UEFI builds (including ARM64), always return 0 */
 UCHAR
 DriveMapGetBiosDriveNumber(PCSTR DeviceName)
 {
