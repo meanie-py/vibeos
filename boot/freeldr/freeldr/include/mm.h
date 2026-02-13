@@ -85,7 +85,10 @@ typedef struct _FREELDR_MEMORY_DESCRIPTOR
 #define MM_PAGE_SHIFT    12
 /* ARM64 has a 48-bit virtual address space with 4KB pages */
 #define MM_MAX_PAGE        0xFFFFFFFFF /* 36 bits for the PFN (256TB addressable) */
-#define MM_MAX_PAGE_LOADER 0x3FFFF /* freeldr only maps 1 GB on ARM64 */
+/* ARM64 UEFI identity-maps all of physical memory, so we can address more
+ * than x64's 1GB limit. QEMU virt places RAM at 0x40000000 (1GB+), so we
+ * need at least 2GB. Use 4GB to cover common ARM64 platforms. */
+#define MM_MAX_PAGE_LOADER 0x100000 /* 4 GB (0x100000 pages * 4KB) */
 
 #define MM_SIZE_TO_PAGES(a)  \
     ( ((a) >> MM_PAGE_SHIFT) + ((a) & MM_PAGE_MASK ? 1 : 0) )

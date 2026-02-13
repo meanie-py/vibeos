@@ -42,11 +42,8 @@
     ldr x0, [x0]
     mov sp, x0
 
-    /* Call UefiExitBootServices */
-    adrp x0, UefiExitBootServices
-    add x0, x0, :lo12:UefiExitBootServices
-    ldr x0, [x0]
-    blr x0
+    /* Call UefiExitBootServices (function, not pointer — don't dereference) */
+    bl UefiExitBootServices
 
     /* Restore old stack */
     mov sp, x19
@@ -81,14 +78,12 @@
     ldr x1, [x1]
     mov sp, x1
 
-    /* Push old stack pointer */
+    /* Push old stack pointer (also serves as first arg to ExecuteLoaderCleanly) */
     str x0, [sp, #-16]!
 
-    /* Call ExecuteLoaderCleanly */
-    adrp x0, ExecuteLoaderCleanly
-    add x0, x0, :lo12:ExecuteLoaderCleanly
-    ldr x0, [x0]
-    blr x0
+    /* Call ExecuteLoaderCleanly(x0 = PreviousStack)
+     * x0 still holds the old SP from above — function, not pointer */
+    bl ExecuteLoaderCleanly
 
     /* Restore stack (shouldn't reach here) */
     ldr x0, [sp], #16
