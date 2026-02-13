@@ -1072,12 +1072,7 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 
     /* Make sure interrupts are active now */
-#ifdef _M_ARM64
-    /* ARM64: Don't enable interrupts yet - VBAR_EL1 exception vectors
-     * are not set up, so any interrupt would crash silently. */
-#else
     _enable();
-#endif
 
     /* Clear the crypto exponent */
     SharedUserData->CryptoExponent = 0;

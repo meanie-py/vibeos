@@ -468,12 +468,12 @@ MiBuildPfnDatabaseFromPageTables(VOID)
     Pfn = MiGetPfnEntry(PageFrameIndex);
     if (MmIsAddressValid(Pfn))
     {
-        ASSERT(Pfn->u3.e1.PageLocation == ActiveAndValid);
         Pfn->u1.WsIndex = 0;
         Pfn->u2.ShareCount = 1;
         Pfn->PteAddress = NULL;
-        Pfn->u3.e1.CacheAttribute = MiNonCached;
         Pfn->u3.e2.ReferenceCount = 1;
+        Pfn->u3.e1.PageLocation = ActiveAndValid;
+        Pfn->u3.e1.CacheAttribute = MiNonCached;
         Pfn->u4.PteFrame = 0;
     }
 
@@ -523,6 +523,10 @@ MiBuildPfnDatabaseFromPageTables(VOID)
                         if (MmIsAddressValid(Pfn) &&
                             Pfn->u3.e1.PageLocation != ActiveAndValid)
                         {
+                            Pfn->u4.PteFrame = PFN_FROM_PDE(PointerPde);
+                            Pfn->PteAddress = PointerPte;
+                            Pfn->u2.ShareCount++;
+                            Pfn->u3.e2.ReferenceCount = 1;
                             Pfn->u3.e1.PageLocation = ActiveAndValid;
                             Pfn->u3.e1.CacheAttribute = MiCached;
                         }

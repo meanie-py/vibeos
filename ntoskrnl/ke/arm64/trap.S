@@ -1,0 +1,273 @@
+/*
+ * PROJECT:         ReactOS Kernel
+ * LICENSE:         GPL-2.0-or-later
+ * FILE:            ntoskrnl/ke/arm64/trap.S
+ * PURPOSE:         ARM64 Exception Vector Table and Trap Prolog/Epilog
+ */
+
+.text
+
+/* KTRAP_FRAME field offsets (from ndk/arm64/ketypes.h) */
+.equ TfExceptionActive,    0x00
+.equ TfPreviousMode,       0x03
+.equ TfPreviousIrql,       0x04
+.equ TfFaultAddress,       0x10
+.equ TfSpsr,               0xA0
+.equ TfEsr,                0xA4
+.equ TfSp,                 0xA8
+.equ TfX0,                 0xB0
+.equ TfX1,                 0xB8
+.equ TfX2,                 0xC0
+.equ TfX3,                 0xC8
+.equ TfX4,                 0xD0
+.equ TfX5,                 0xD8
+.equ TfX6,                 0xE0
+.equ TfX7,                 0xE8
+.equ TfX8,                 0xF0
+.equ TfX9,                 0xF8
+.equ TfX10,                0x100
+.equ TfX11,                0x108
+.equ TfX12,                0x110
+.equ TfX13,                0x118
+.equ TfX14,                0x120
+.equ TfX15,                0x128
+.equ TfX16,                0x130
+.equ TfX17,                0x138
+.equ TfX18,                0x140
+.equ TfLr,                 0x148
+.equ TfFp,                 0x150
+.equ TfPc,                 0x158
+.equ KTRAP_FRAME_LENGTH,   0x160
+
+/*
+ * TRAP_PROLOG - Save register state into a KTRAP_FRAME on the stack.
+ *
+ * On entry: running at EL1, using SP_EL1.
+ * On exit:  x0 = pointer to KTRAP_FRAME (== sp), all caller-saved regs saved.
+ */
+.macro TRAP_PROLOG
+    /* Allocate trap frame on stack */
+    sub sp, sp, #KTRAP_FRAME_LENGTH
+
+    /* Save X0-X18 (caller-saved + X18 platform register) */
+    stp x0,  x1,  [sp, #TfX0]
+    stp x2,  x3,  [sp, #TfX2]
+    stp x4,  x5,  [sp, #TfX4]
+    stp x6,  x7,  [sp, #TfX6]
+    stp x8,  x9,  [sp, #TfX8]
+    stp x10, x11, [sp, #TfX10]
+    stp x12, x13, [sp, #TfX12]
+    stp x14, x15, [sp, #TfX14]
+    stp x16, x17, [sp, #TfX16]
+    str x18,      [sp, #TfX18]
+
+    /* Save LR (X30) and FP (X29) */
+    str x30, [sp, #TfLr]
+    str x29, [sp, #TfFp]
+
+    /* Save ELR_EL1 (faulting PC) */
+    mrs x1, elr_el1
+    str x1, [sp, #TfPc]
+
+    /* Save SPSR_EL1 */
+    mrs x1, spsr_el1
+    str w1, [sp, #TfSpsr]
+
+    /* Save ESR_EL1 (exception syndrome) */
+    mrs x1, esr_el1
+    str w1, [sp, #TfEsr]
+
+    /* Save FAR_EL1 (fault address) */
+    mrs x1, far_el1
+    str x1, [sp, #TfFaultAddress]
+
+    /* Compute pre-exception SP (before our sub) and save it */
+    add x1, sp, #KTRAP_FRAME_LENGTH
+    str x1, [sp, #TfSp]
+
+    /* Mark frame as active kernel exception */
+    mov w1, #1
+    strb w1, [sp, #TfExceptionActive]
+
+    /* Set x0 = pointer to trap frame for C handler */
+    mov x0, sp
+.endm
+
+/*
+ * KiTrapReturn - Restore registers from KTRAP_FRAME at [sp] and eret.
+ * Internal helper, not exported.
+ */
+KiTrapReturn:
+    /* Restore ELR_EL1 */
+    ldr x1, [sp, #TfPc]
+    msr elr_el1, x1
+
+    /* Restore SPSR_EL1 */
+    ldr w1, [sp, #TfSpsr]
+    msr spsr_el1, x1
+
+    /* Restore FP and LR */
+    ldr x29, [sp, #TfFp]
+    ldr x30, [sp, #TfLr]
+
+    /* Restore X18 */
+    ldr x18, [sp, #TfX18]
+
+    /* Restore X16-X17 */
+    ldp x16, x17, [sp, #TfX16]
+
+    /* Restore X14-X15 */
+    ldp x14, x15, [sp, #TfX14]
+
+    /* Restore X12-X13 */
+    ldp x12, x13, [sp, #TfX12]
+
+    /* Restore X10-X11 */
+    ldp x10, x11, [sp, #TfX10]
+
+    /* Restore X8-X9 */
+    ldp x8,  x9,  [sp, #TfX8]
+
+    /* Restore X6-X7 */
+    ldp x6,  x7,  [sp, #TfX6]
+
+    /* Restore X4-X5 */
+    ldp x4,  x5,  [sp, #TfX4]
+
+    /* Restore X2-X3 */
+    ldp x2,  x3,  [sp, #TfX2]
+
+    /* Restore X0-X1 last */
+    ldp x0,  x1,  [sp, #TfX0]
+
+    /* Deallocate trap frame */
+    add sp, sp, #KTRAP_FRAME_LENGTH
+
+    /* Return from exception */
+    eret
+
+
+/* ===================================================================== */
+/* ARM64 Exception Vector Table                                          */
+/*                                                                       */
+/* 16 entries: 4 groups x 4 types, each 128 bytes (32 instructions max). */
+/* Base must be 2048-byte (0x800) aligned.                               */
+/* ===================================================================== */
+
+.balign 2048
+.globl KiArm64VectorTable
+KiArm64VectorTable:
+
+/* ---- Group 0: Current EL, SP_EL0 (not used, kernel uses SP_ELx) ---- */
+/* +0x000: Synchronous */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x080: IRQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x100: FIQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x180: SError */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* ---- Group 1: Current EL, SP_ELx (this is what the kernel uses) ---- */
+/* +0x200: Synchronous */
+.balign 128
+    b KiSynchronousExceptionEntry
+
+/* +0x280: IRQ */
+.balign 128
+    b KiIrqEntry
+
+/* +0x300: FIQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x380: SError */
+.balign 128
+    b KiSErrorEntry
+
+/* ---- Group 2: Lower EL, AArch64 (user mode, not used yet) ---- */
+/* +0x400: Synchronous */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x480: IRQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x500: FIQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x580: SError */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* ---- Group 3: Lower EL, AArch32 (not supported) ---- */
+/* +0x600: Synchronous */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x680: IRQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x700: FIQ */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+/* +0x780: SError */
+.balign 128
+    b KiUnexpectedExceptionEntry
+
+
+/* ===================================================================== */
+/* Handler Entries (outside vector table, no 128-byte limit)             */
+/* ===================================================================== */
+
+KiSynchronousExceptionEntry:
+    TRAP_PROLOG
+    bl KiSynchronousExceptionHandler
+    b KiTrapReturn
+
+KiIrqEntry:
+    TRAP_PROLOG
+    bl KiIrqHandler
+    b KiTrapReturn
+
+KiSErrorEntry:
+    TRAP_PROLOG
+    bl KiSErrorHandler
+    /* SError is fatal — hang */
+1:  wfe
+    b 1b
+
+KiUnexpectedExceptionEntry:
+    TRAP_PROLOG
+    bl KiUnexpectedHandler
+    /* Unexpected is fatal — hang */
+1:  wfe
+    b 1b
+
+
+/* ===================================================================== */
+/* KiExceptionExit — restore trap frame and return from exception        */
+/*                                                                       */
+/* DECLSPEC_NORETURN VOID KiExceptionExit(PKTRAP_FRAME TrapFrame,        */
+/*                                        PKEXCEPTION_FRAME ExFrame);    */
+/* x0 = TrapFrame pointer                                                */
+/* ===================================================================== */
+
+.globl KiExceptionExit
+KiExceptionExit:
+    /* Set SP to trap frame (we're doing a noreturn, so clobber SP) */
+    mov sp, x0
+    b KiTrapReturn
+
+/* EOF */

@@ -391,11 +391,13 @@ elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/boot.S
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/ctxswitch.S)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/ctxswitch.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.S)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c)
 endif()
 

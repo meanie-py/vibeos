@@ -197,6 +197,18 @@ KiSystemStartup(
     /* Write PCR pointer to TPIDR_EL1 for KeGetPcr() */
     __asm__ __volatile__("msr tpidr_el1, %0" :: "r"((ULONG64)Pcr));
 
+    /* Install ARM64 exception vector table (VBAR_EL1) */
+    {
+        extern ULONG64 KiArm64VectorTable[];
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] VBAR_EL1 installed\r\n";
+
+        __asm__ __volatile__("msr vbar_el1, %0" :: "r"((ULONG64)&KiArm64VectorTable));
+        __asm__ __volatile__("isb");
+
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
+
     /* Set the PRCB for this Processor */
     KiProcessorBlock[Cpu] = &Pcr->Prcb;
 

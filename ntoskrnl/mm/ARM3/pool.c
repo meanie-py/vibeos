@@ -663,6 +663,7 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
             MI_WRITE_VALID_PTE(PointerPte, TempPte);
 
             Pfn1 = MI_PFN_ELEMENT(PageFrameNumber);
+            Pfn1->u4.EntireFrame = 0;
             Pfn1->u3.e2.ReferenceCount = 1;
             Pfn1->u2.ShareCount = 1;
             Pfn1->PteAddress = PointerPte;
@@ -796,6 +797,15 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
 
+#ifdef _M_ARM64
+                /* ARM64: Clear allocation tracking bits. Pages from the
+                 * NonPagedPool free list may carry residual state from
+                 * MiBuildPfnDatabaseFromLoaderBlock processing. */
+                Pfn1->u3.e1.StartOfAllocation = 0;
+                Pfn1->u3.e1.EndOfAllocation = 0;
+                Pfn1->u4.VerifierAllocation = 0;
+#endif
+
                 //
                 // Now mark it as the beginning of an allocation
                 //
@@ -825,6 +835,9 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 // Mark this PFN as the last (might be the same as the first)
                 //
+#ifdef _M_ARM64
+                Pfn1->u3.e1.EndOfAllocation = 0;
+#endif
                 ASSERT(Pfn1->u3.e1.EndOfAllocation == 0);
                 Pfn1->u3.e1.EndOfAllocation = 1;
 

@@ -646,21 +646,17 @@ KiDispatchException(
     _In_ KPROCESSOR_MODE PreviousMode,
     _In_ BOOLEAN FirstChance)
 {
-    UNIMPLEMENTED;
-    KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
+    volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+    const char *msg = "[TRAP] KiDispatchException: code=";
+    while (*msg) { *uart = (ULONG)*msg++; }
+    KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
+                 ExceptionRecord->ExceptionCode,
+                 (ULONG_PTR)ExceptionRecord->ExceptionAddress,
+                 (ULONG_PTR)TrapFrame,
+                 PreviousMode);
 }
 
-/* Exception exit - declared in ARM64 ke.h */
-DECLSPEC_NORETURN
-VOID
-KiExceptionExit(
-    _In_ PKTRAP_FRAME TrapFrame,
-    _In_ PKEXCEPTION_FRAME ExceptionFrame)
-{
-    /* FIXME: Implement trap frame restore and return */
-    KeBugCheck(0);
-    while (TRUE);
-}
+/* KiExceptionExit is now implemented in trap.S */
 
 /* KiInitializeContextThread is now implemented in thrdini.c */
 
