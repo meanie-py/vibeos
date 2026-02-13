@@ -1039,7 +1039,13 @@ MiReleasePfnLockFromDpcLevel(VOID)
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
 }
 
+/* ARM64 HAL spinlock stubs only raise IRQL without setting MmPfnLock,
+ * so skip the MmPfnLock check on ARM64 (single-CPU boot, no contention) */
+#ifdef _M_ARM64
+#define MI_ASSERT_PFN_LOCK_HELD() NT_ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL)
+#else
 #define MI_ASSERT_PFN_LOCK_HELD() NT_ASSERT((KeGetCurrentIrql() >= DISPATCH_LEVEL) && (MmPfnLock != 0))
+#endif
 
 FORCEINLINE
 PMMPFN

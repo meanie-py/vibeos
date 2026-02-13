@@ -42,6 +42,12 @@
 #define MI_WORKING_SET_LIST                 (PMMPTE)(((ULONG_PTR)MI_VAD_BITMAP) + \
                                                   PAGE_SIZE)
 
+/* PFN database virtual address — room for PFN DB + nonpaged pool up to MI_NONPAGED_POOL_END */
+#define MI_PFN_DATABASE                         0xFFFFFA0000000000ULL
+
+/* Number of system PTEs (same as amd64) */
+#define MI_NUMBER_SYSTEM_PTES                   22000
+
 /* Memory sizes */
 #define MI_MIN_PAGES_FOR_NONPAGED_POOL_TUNING   ((255 * _1MB) >> PAGE_SHIFT)
 #define MI_MIN_PAGES_FOR_SYSPTE_TUNING          ((19 * _1MB) >> PAGE_SHIFT)
@@ -81,7 +87,8 @@
 #define ValidKernelPxe ValidKernelPde
 
 /* MMPTE related defines */
-#define MM_EMPTY_PTE_LIST  ((ULONG64)0xFFFFFFFFFFFFFFFFULL)
+/* Must fit in MMPTE_LIST.NextEntry (36-bit bitfield) — matches AMD64 */
+#define MM_EMPTY_PTE_LIST  ((ULONG64)0xFFFFFFFF)
 #define MM_EMPTY_LIST  ((ULONG_PTR)-1)
 
 /* Easy accessing PFN in PTE/PDE */
@@ -110,22 +117,44 @@
 #define MI_IS_WRITE_ACCESS(FaultCode) TRUE
 #define MI_IS_INSTRUCTION_FETCH(FaultCode) FALSE
 
-/* ARM64 page table structure: 4KB pages, 4 levels (PML4/PDP/PD/PT or PXE/PPE/PDE/PTE) */
-/* Convert an address to a corresponding PTE */
-#define MiAddressToPte(x) \
-    ((PMMPTE)(PTE_BASE + ((((ULONG_PTR)(x)) >> 12) << 3)))
+/* ARM64 page table structure: 4KB pages, 4 levels (PXE/PPE/PDE/PTE).
+ * AddressToP*e functions use masked offsets to stay within the self-map
+ * page ranges — same approach as AMD64. Without masking, kernel VAs
+ * (with upper bits all 1s) produce offsets that escape the self-map. */
 
-/* Convert an address to a corresponding PDE */
-#define MiAddressToPde(x) \
-    ((PMMPDE)(PDE_BASE + ((((ULONG_PTR)(x)) >> 21) << 3)))
+FORCEINLINE PMMPTE
+_MiAddressToPte(PVOID Address)
+{
+    ULONG64 Offset = (ULONG64)Address >> (12 - 3);
+    Offset &= 0xFFFFFFFFFULL << 3;
+    return (PMMPTE)(PTE_BASE + Offset);
+}
+#define MiAddressToPte(x) _MiAddressToPte((PVOID)(x))
 
-/* Convert an address to a corresponding PPE (L2) */
-#define MiAddressToPpe(x) \
-    ((PMMPTE)(PPE_BASE + ((((ULONG_PTR)(x)) >> 30) << 3)))
+FORCEINLINE PMMPDE
+_MiAddressToPde(PVOID Address)
+{
+    ULONG64 Offset = (ULONG64)Address >> (21 - 3);
+    Offset &= 0x7FFFFFFULL << 3;
+    return (PMMPDE)(PDE_BASE + Offset);
+}
+#define MiAddressToPde(x) _MiAddressToPde((PVOID)(x))
 
-/* Convert an address to a corresponding PXE (L1 / PML4) */
-#define MiAddressToPxe(x) \
-    ((PMMPTE)(PXE_BASE + ((((ULONG_PTR)(x)) >> 39) << 3)))
+FORCEINLINE PMMPTE
+MiAddressToPpe(PVOID Address)
+{
+    ULONG64 Offset = (ULONG64)Address >> (30 - 3);
+    Offset &= 0x3FFFFULL << 3;
+    return (PMMPTE)(PPE_BASE + Offset);
+}
+
+FORCEINLINE PMMPTE
+MiAddressToPxe(PVOID Address)
+{
+    ULONG64 Offset = (ULONG64)Address >> (39 - 3);
+    Offset &= 0x1FFULL << 3;
+    return (PMMPTE)(PXE_BASE + Offset);
+}
 
 /* Convert an address to a corresponding PTE offset/index */
 #define MiAddressToPteOffset(x) \
@@ -144,11 +173,28 @@
 #define MiAddressToPxeOffset(x) \
     ((((ULONG_PTR)(x)) >> 39) & 0x1FF)
 
-/* Convert a PTE/PDE into a corresponding address */
-#define MiPteToAddress(_Pte) ((PVOID)(((ULONG_PTR)(_Pte) - PTE_BASE) << 9))
-#define MiPdeToAddress(_Pde) ((PVOID)(((ULONG_PTR)(_Pde) - PDE_BASE) << 18))
-#define MiPpeToAddress(_Ppe) ((PVOID)(((ULONG_PTR)(_Ppe) - PPE_BASE) << 27))
-#define MiPxeToAddress(_Pxe) ((PVOID)(((ULONG_PTR)(_Pxe) - PXE_BASE) << 36))
+/* Convert a PTE/PDE/PPE/PXE into a corresponding address.
+ * Use signed math so kernel VAs (bit 47=1) are properly sign-extended
+ * to canonical form (bits 63:48 all 1s). Same approach as AMD64. */
+FORCEINLINE PVOID MiPteToAddress(PMMPTE PointerPte)
+{
+    return (PVOID)(((LONG64)PointerPte << 25) >> 16);
+}
+
+FORCEINLINE PVOID MiPdeToAddress(PMMPTE PointerPde)
+{
+    return (PVOID)(((LONG64)PointerPde << 34) >> 16);
+}
+
+FORCEINLINE PVOID MiPpeToAddress(PMMPTE PointerPpe)
+{
+    return (PVOID)(((LONG64)PointerPpe << 43) >> 16);
+}
+
+FORCEINLINE PVOID MiPxeToAddress(PMMPTE PointerPxe)
+{
+    return (PVOID)(((LONG64)PointerPxe << 52) >> 16);
+}
 
 /* Translate between P*Es */
 #define MiPdeToPte(_Pde)   ((PMMPTE)MiPteToAddress(_Pde))

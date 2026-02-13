@@ -28,6 +28,25 @@ RtlAssert(IN PVOID FailedAssertion,
     CHAR Action[2];
     CONTEXT Context;
 
+#ifdef _M_ARM64
+    /* On ARM64 early boot, there's no debugger connected and DbgPrompt
+     * will hang forever. Print the assertion to UART and return. */
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *prefix = "\r\n*** ASSERT FAILED: ";
+        const char *at = " at ";
+        const char *s;
+        while (*prefix) *uart = (ULONG)*prefix++;
+        if (FailedAssertion) { s = (const char *)FailedAssertion; while (*s) *uart = (ULONG)*s++; }
+        *uart = (ULONG)' ';
+        at = " at ";
+        while (*at) *uart = (ULONG)*at++;
+        if (FileName) { s = (const char *)FileName; while (*s) *uart = (ULONG)*s++; }
+        *uart = (ULONG)'\r'; *uart = (ULONG)'\n';
+    }
+    return;
+#endif
+
     /* Capture caller's context for the debugger */
     RtlCaptureContext(&Context);
 

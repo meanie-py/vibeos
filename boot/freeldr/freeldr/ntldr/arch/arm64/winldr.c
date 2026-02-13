@@ -47,7 +47,11 @@ DBG_DEFAULT_CHANNEL(WINDOWS);
 /* Standard page entry for kernel memory */
 #define ARM64_KERNEL_PAGE_FLAGS (ARM64_PTE_VALID | ARM64_PTE_PAGE | ARM64_PTE_AF | \
                                  ARM64_PTE_SH_INNER | ARM64_PTE_AP_RW | ARM64_PTE_ATTR_NORMAL)
-#define ARM64_KERNEL_TABLE_FLAGS (ARM64_PTE_VALID | ARM64_PTE_TABLE)
+/* Table descriptors (L0/L1/L2) include AF and SH_INNER even though ARM64 ignores
+ * bits[11:2] for table descriptors. The kernel's recursive self-map reinterprets
+ * table descriptors as L3 page descriptors where AF IS checked — without it, the
+ * hardware raises an access flag fault when walking the self-map. */
+#define ARM64_KERNEL_TABLE_FLAGS (ARM64_PTE_VALID | ARM64_PTE_TABLE | ARM64_PTE_AF | ARM64_PTE_SH_INNER)
 
 typedef ULONG64 ARM64_PTE;
 typedef ARM64_PTE *PARM64_PTE;
@@ -77,7 +81,20 @@ MempAllocatePageTables(VOID)
     /* Zero the PGD */
     RtlZeroMemory(Arm64Pgd, PAGE_SIZE);
 
-    TRACE(">>> ARM64 PGD allocated at %p\n", Arm64Pgd);
+    /* Self-mapping: PGD[0x1ED] points back to PGD itself.
+     * This creates the recursive page table mapping at PTE_BASE
+     * (0xFFFFF68000000000), mirroring the amd64 PXE self-map approach.
+     *
+     * IMPORTANT: Use PAGE flags (not just TABLE flags) because the self-map
+     * entry is used as a table descriptor at L0/L1/L2 (where extra bits are
+     * ignored) AND as a page descriptor at L3 (where AF must be set to
+     * avoid an Access Flag fault). */
+#define ARM64_PXE_SELFMAP_INDEX 0x1ED
+    Arm64Pgd[ARM64_PXE_SELFMAP_INDEX] =
+        ((ULONG64)Arm64Pgd & ~0xFFFULL) | ARM64_KERNEL_PAGE_FLAGS;
+
+    TRACE(">>> ARM64 PGD allocated at %p, self-map at index 0x%x\n",
+          Arm64Pgd, ARM64_PXE_SELFMAP_INDEX);
     return TRUE;
 }
 
@@ -136,11 +153,12 @@ MempMapSinglePage(ULONG64 VirtualAddress, ULONG64 PhysicalAddress)
 
     Index = ARM64_PTE_INDEX(VirtualAddress);
 
-    /* Check if already mapped */
+    /* Check if already mapped — allow overwriting (may happen with
+     * overlapping ranges or identity + kernel dual mapping) */
     if (Pte[Index] & ARM64_PTE_VALID)
     {
-        WARN("Page at %p already mapped\n", (PVOID)VirtualAddress);
-        return FALSE;
+        Pte[Index] = (PhysicalAddress & ~0xFFFULL) | ARM64_KERNEL_PAGE_FLAGS;
+        return TRUE;
     }
 
     /* Create the page entry */
@@ -210,12 +228,16 @@ MempSetupPaging(IN PFN_NUMBER StartPage,
         return FALSE;
     }
 
-    /* Kernel mapping (if requested) */
+    /* Kernel mapping: map the same physical pages at KSEG0_BASE offset */
     if (KernelMapping)
     {
-        /* On ARM64, kernel addresses are in the upper half (TTBR1) */
-        /* For now, we just do identity mapping */
-        /* TODO: Implement proper KSEG0 equivalent for ARM64 */
+        if (MempMapRangeOfPages(StartPage * PAGE_SIZE + KSEG0_BASE,
+                                StartPage * PAGE_SIZE,
+                                NumberOfPages) != NumberOfPages)
+        {
+            ERR("Failed to kernel-map pages\n");
+            return FALSE;
+        }
     }
 
     return TRUE;
@@ -232,24 +254,77 @@ VOID
 WinLdrSetProcessorContext(
     _In_ USHORT OperatingSystemVersion)
 {
-    TRACE("WinLdrSetProcessorContext for ARM64\n");
+    ULONG64 tcr, mair;
+    ULONG64 ttbr_val = (ULONG64)Arm64Pgd;
+
+    ERR(">>> WinLdrSetProcessorContext for ARM64\n");
+    ERR("  PGD at physical %p\n", Arm64Pgd);
 
     /* Mask all interrupts (IRQ, FIQ, SError, Debug) via DAIF */
     __asm__ __volatile__("msr daifset, #0xF");
 
-    /*
-     * For now, keep UEFI's identity-mapped page tables active.
-     * PaToVa/VaToPa are identity (PA == VA) on ARM64, so the kernel
-     * will run with the same mapping until it sets up its own.
-     *
-     * TODO: In a later milestone, set TTBR0_EL1 to our own page tables:
-     *   __asm__ volatile("msr ttbr0_el1, %0" :: "r"((ULONG64)Arm64Pgd));
-     *   __asm__ volatile("tlbi vmalle1" ::: "memory");
-     *   __asm__ volatile("dsb sy" ::: "memory");
-     *   __asm__ volatile("isb" ::: "memory");
-     */
+    /* Configure MAIR_EL1: memory attribute indirection register
+     * Attr0 = 0xFF (Normal WB-WA), Attr1 = 0x00 (Device-nGnRnE),
+     * Attr2 = 0x44 (Normal NC) */
+    mair = 0x00000000004400FFULL;
+    __asm__ __volatile__("msr mair_el1, %0" :: "r"(mair));
 
-    TRACE("Leave WinLdrSetProcessorContext\n");
+    /* Configure TCR_EL1: translation control register
+     * T0SZ=16, T1SZ=16 (48-bit VA), TG0=4KB, TG1=4KB,
+     * Inner/Outer WB-WA cacheable, Inner Shareable */
+    tcr = (16ULL << 0)  |  /* T0SZ = 16 */
+          (16ULL << 16) |  /* T1SZ = 16 */
+          (0ULL  << 14) |  /* TG0 = 4KB (0b00) */
+          (2ULL  << 30) |  /* TG1 = 4KB (0b10) */
+          (1ULL  << 8)  |  /* IRGN0 = WB-WA (0b01) */
+          (1ULL  << 10) |  /* ORGN0 = WB-WA (0b01) */
+          (3ULL  << 12) |  /* SH0 = Inner Shareable (0b11) */
+          (1ULL  << 24) |  /* IRGN1 = WB-WA (0b01) */
+          (1ULL  << 26) |  /* ORGN1 = WB-WA (0b01) */
+          (3ULL  << 28) |  /* SH1 = Inner Shareable (0b11) */
+          (2ULL  << 32);   /* IPS = 44-bit PA (0b010) */
+    __asm__ __volatile__("msr tcr_el1, %0" :: "r"(tcr));
+
+    /* Set TTBR0 and TTBR1 to our PGD (same table for both).
+     * TTBR0 handles lower-half VAs (identity mapping at 0x40000000+).
+     * TTBR1 handles upper-half VAs (kernel at KSEG0_BASE 0xFFFFF800+). */
+    __asm__ __volatile__("msr ttbr0_el1, %0" :: "r"(ttbr_val));
+    __asm__ __volatile__("msr ttbr1_el1, %0" :: "r"(ttbr_val));
+
+    /* Full TLB invalidation + barriers */
+    __asm__ __volatile__(
+        "isb\n\t"
+        "tlbi vmalle1\n\t"
+        "dsb sy\n\t"
+        "isb"
+        ::: "memory"
+    );
+
+    ERR("<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n",
+          Arm64Pgd, tcr, mair);
+}
+
+static
+BOOLEAN
+WinLdrMapSpecialPages(VOID)
+{
+    PARM64_PTE Pud, Pmd;
+
+    /* Map KI_USER_SHARED_DATA */
+    if (!MempMapSinglePage(KI_USER_SHARED_DATA, SharedUserDataPfn * PAGE_SIZE))
+    {
+        ERR("Could not map KI_USER_SHARED_DATA\n");
+        return FALSE;
+    }
+
+    /* Pre-create page table hierarchy for HAL VA space (4MB at top of address space).
+     * The HAL will fill in actual PTEs later, but the upper levels must exist. */
+    Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(MM_HAL_VA_START));
+    Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(MM_HAL_VA_START));
+    MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
+    MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
+
+    return TRUE;
 }
 
 VOID
@@ -257,7 +332,7 @@ WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PVOID SharedUserDataAddress = NULL;
 
-    TRACE("WinLdrSetupMachineDependent for ARM64\n");
+    ERR(">>> WinLdrSetupMachineDependent for ARM64\n");
 
     /* Set machine type - ARM64 doesn't use ISA/EISA, just set a placeholder */
     LoaderBlock->u.Arm.MachineType = 0;
@@ -272,6 +347,8 @@ WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
     SharedUserDataPfn = (ULONG_PTR)SharedUserDataAddress >> MM_PAGE_SHIFT;
     RtlZeroMemory(SharedUserDataAddress, MM_PAGE_SIZE);
 
+    ERR(">>> Allocating page tables...\n");
+
     /* Allocate page tables */
     if (MempAllocatePageTables() == FALSE)
     {
@@ -279,14 +356,33 @@ WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
         return;
     }
 
-    /* Map special pages */
-    /* TODO: Map KI_USER_SHARED_DATA and other special ARM64 pages */
+    ERR(">>> Mapping special pages...\n");
 
-    TRACE("Leave WinLdrSetupMachineDependent\n");
+    /* Map special pages (KI_USER_SHARED_DATA, HAL VA space) */
+    if (!WinLdrMapSpecialPages())
+    {
+        ERR("Failed to map special pages\n");
+        return;
+    }
+
+    ERR("<<< WinLdrSetupMachineDependent done\n");
 }
 
 VOID
 MempDump(VOID)
 {
-    /* Debug function to dump page table state */
+    ULONG i;
+
+    TRACE("ARM64 Page Table Dump: PGD at %p\n", Arm64Pgd);
+    if (!Arm64Pgd)
+        return;
+
+    for (i = 0; i < 512; i++)
+    {
+        if (Arm64Pgd[i] & ARM64_PTE_VALID)
+        {
+            TRACE("  PGD[0x%03x] = %016llx (PA=%016llx)\n",
+                  i, Arm64Pgd[i], Arm64Pgd[i] & ~0xFFFULL);
+        }
+    }
 }

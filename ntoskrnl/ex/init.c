@@ -941,9 +941,23 @@ ExpInitializeExecutive(IN ULONG Cpu,
     PCHAR RcEnd = NULL;
     CHAR VersionBuffer[65];
 
+    /* ARM64 UART diagnostic helper - direct PL011 write at 0x09000000 */
+#ifdef _M_ARM64
+#define _UART_TRACE(s) do { \
+    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
+    const char *_m = (s); \
+    while (*_m) { *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _UART_TRACE(s) ((void)0)
+#endif
+
+    _UART_TRACE("[EXP] ExpInitializeExecutive entered\r\n");
+
     /* Validate Loader */
     if (!ExpIsLoaderValid(LoaderBlock))
     {
+        _UART_TRACE("[EXP] !!! ExpIsLoaderValid FAILED\r\n");
         /* Invalid loader version */
         KeBugCheckEx(MISMATCHED_HAL,
                      3,
@@ -951,7 +965,6 @@ ExpInitializeExecutive(IN ULONG Cpu,
                      LoaderBlock->Extension->MajorVersion,
                      LoaderBlock->Extension->MinorVersion);
     }
-
     /* Initialize PRCB pool lookaside pointers */
     ExInitPoolLookasidePointers();
 
@@ -993,7 +1006,6 @@ ExpInitializeExecutive(IN ULONG Cpu,
 
     /* Set phase to 0 */
     ExpInitializationPhase = 0;
-
     /* Get boot command line */
     CommandLine = LoaderBlock->LoadOptions;
     if (CommandLine)
@@ -1060,7 +1072,12 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 
     /* Make sure interrupts are active now */
+#ifdef _M_ARM64
+    /* ARM64: Don't enable interrupts yet - VBAR_EL1 exception vectors
+     * are not set up, so any interrupt would crash silently. */
+#else
     _enable();
+#endif
 
     /* Clear the crypto exponent */
     SharedUserData->CryptoExponent = 0;
@@ -1108,6 +1125,7 @@ ExpInitializeExecutive(IN ULONG Cpu,
 
     /* Initialize the memory manager at phase 0 */
     if (!MmArmInitSystem(0, LoaderBlock)) KeBugCheck(PHASE0_INITIALIZATION_FAILED);
+    _UART_TRACE("[EXP] MmArmInitSystem(0) done\r\n");
 
     /* Load boot symbols */
     ExpLoadBootSymbols(LoaderBlock);
@@ -1311,15 +1329,19 @@ ExpInitializeExecutive(IN ULONG Cpu,
 #endif
 
     /* Create the Basic Object Manager Types to allow new Object Types */
+    _UART_TRACE("[EXP] ObInitSystem\r\n");
     if (!ObInitSystem()) KeBugCheck(OBJECT_INITIALIZATION_FAILED);
 
     /* Load basic Security for other Managers */
+    _UART_TRACE("[EXP] SeInitSystem\r\n");
     if (!SeInitSystem()) KeBugCheck(SECURITY_INITIALIZATION_FAILED);
 
     /* Initialize the Process Manager */
+    _UART_TRACE("[EXP] PsInitSystem\r\n");
     if (!PsInitSystem(LoaderBlock)) KeBugCheck(PROCESS_INITIALIZATION_FAILED);
 
     /* Initialize the PnP Manager */
+    _UART_TRACE("[EXP] PpInitSystem\r\n");
     if (!PpInitSystem()) KeBugCheck(PP0_INITIALIZATION_FAILED);
 
     /* Initialize the User-Mode Debugging Subsystem */

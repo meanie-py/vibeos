@@ -1286,22 +1286,34 @@ LoadAndBootWindowsCommon(
     /* Do the machine specific initialization */
     WinLdrSetupMachineDependent(LoaderBlock);
 
+#ifdef _M_ARM64
+    ERR(">>> WinLdrSetupMemoryLayout...\n");
+#endif
     /* Map pages and create memory descriptors */
     WinLdrSetupMemoryLayout(LoaderBlock);
 
+#ifdef _M_ARM64
+    ERR(">>> WinLdrSetProcessorContext...\n");
+#endif
     /* Set processor context */
     WinLdrSetProcessorContext(OperatingSystemVersion);
 
+#ifdef _M_ARM64
+    ERR(">>> Page tables active! Extension=%p KiSystemStartup=%p\n",
+        LoaderBlock->Extension, KiSystemStartup);
+    ERR(">>> Writing LoaderPagesSpanned...\n");
+#endif
     /* Save final value of LoaderPagesSpanned */
     LoaderBlock->Extension->LoaderPagesSpanned = MmGetLoaderPagesSpanned();
 
+#ifdef _M_ARM64
+    ERR(">>> Zeroing KI_USER_SHARED_DATA at %p...\n", (PVOID)KI_USER_SHARED_DATA);
+#endif
     /* Zero KI_USER_SHARED_DATA page */
-#ifdef UEFIBOOT
-    /* On ARM64 UEFI we keep identity mapping (PA==VA), so the kernel
-     * VA KI_USER_SHARED_DATA (0xFFFFF780...) is not yet accessible.
-     * The kernel will zero it once it sets up its own page tables. */
-#else
     RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, MM_PAGE_SIZE);
+
+#ifdef _M_ARM64
+    ERR(">>> Calling KiSystemStartup(%p)...\n", LoaderBlockVA);
 #endif
 
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);

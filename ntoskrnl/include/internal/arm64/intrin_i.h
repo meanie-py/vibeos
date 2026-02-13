@@ -30,8 +30,12 @@ KeArm64FlushTlb(VOID)
     //
     // TLBI VMALLE1 - Invalidate all TLB entries for EL1
     //
-    __dmb(_ARM64_BARRIER_ISH);
-    __isb(_ARM64_BARRIER_SY);
+    __asm__ __volatile__(
+        "tlbi vmalle1\n\t"
+        "dsb ish\n\t"
+        "isb"
+        ::: "memory"
+    );
 }
 
 FORCEINLINE
@@ -40,9 +44,15 @@ KeArm64InvalidateTlbEntry(IN PVOID Address)
 {
     //
     // TLBI VAE1, <Xt> - Invalidate TLB entry by VA, EL1
+    // The address must be shifted right by 12 (page-aligned VA >> 12)
     //
-    UNREFERENCED_PARAMETER(Address);
-    __dmb(_ARM64_BARRIER_ISH);
+    ULONG64 page = (ULONG64)Address >> 12;
+    __asm__ __volatile__(
+        "tlbi vae1, %0\n\t"
+        "dsb ish\n\t"
+        "isb"
+        :: "r"(page) : "memory"
+    );
 }
 
 FORCEINLINE
@@ -50,10 +60,14 @@ VOID
 KeArm64InvalidateAllCaches(VOID)
 {
     //
-    // Data cache clean and invalidate
+    // Data cache clean and invalidate (by set/way is complex,
+    // just do a DSB to ensure all prior stores are visible)
     //
-    __dmb(_ARM64_BARRIER_ISH);
-    __isb(_ARM64_BARRIER_SY);
+    __asm__ __volatile__(
+        "dsb ish\n\t"
+        "isb"
+        ::: "memory"
+    );
 }
 
 FORCEINLINE
@@ -63,7 +77,12 @@ KeArm64FlushIcache(VOID)
     //
     // IC IALLU - Invalidate all instruction caches to PoU
     //
-    __isb(_ARM64_BARRIER_SY);
+    __asm__ __volatile__(
+        "ic iallu\n\t"
+        "dsb ish\n\t"
+        "isb"
+        ::: "memory"
+    );
 }
 
 FORCEINLINE
@@ -81,22 +100,25 @@ FORCEINLINE
 ULONG64
 KeArm64GetTTBR0(VOID)
 {
-    /* Read TTBR0_EL1 - Translation Table Base Register 0 */
-    return 0;  /* Stub - needs system register access */
+    ULONG64 val;
+    __asm__ __volatile__("mrs %0, ttbr0_el1" : "=r"(val));
+    return val;
 }
 
 FORCEINLINE
 ULONG64
 KeArm64GetTTBR1(VOID)
 {
-    /* Read TTBR1_EL1 - Translation Table Base Register 1 */
-    return 0;  /* Stub - needs system register access */
+    ULONG64 val;
+    __asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(val));
+    return val;
 }
 
 FORCEINLINE
 ULONG64
 KeArm64GetSCTLR(VOID)
 {
-    /* Read SCTLR_EL1 - System Control Register */
-    return 0;  /* Stub - needs system register access */
+    ULONG64 val;
+    __asm__ __volatile__("mrs %0, sctlr_el1" : "=r"(val));
+    return val;
 }

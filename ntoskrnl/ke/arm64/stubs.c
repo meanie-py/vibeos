@@ -18,21 +18,143 @@
 /* Process count for performance data */
 ULONG ProcessCount = 0;
 
-/* PTE templates used by the memory manager */
-MMPTE DemandZeroPde = {{0}};
-MMPTE DemandZeroPte = {{0}};
-MMPTE PrototypePte = {{0}};
-MMPTE MmDecommittedPte = {{0}};
-MMPTE ValidKernelPde = {{0}};
-MMPTE ValidKernelPte = {{0}};
-MMPTE ValidKernelPdeLocal = {{0}};
-MMPTE ValidKernelPteLocal = {{0}};
+/* PTE templates are now defined in mm/ARM3/arm/init.c with correct ARM64 values */
 
-/* Protection to PTE mask mapping */
-ULONG_PTR MmProtectToPteMask[32] = {0};
+/*
+ * Protection to PTE mask mapping for ARM64.
+ *
+ * ARM64 4K page descriptors (L3) require:
+ *   Bit 0:  Valid (set separately by MI_MAKE_HARDWARE_PTE_KERNEL)
+ *   Bit 1:  NotLargePage = 1 (page descriptor, not block/reserved)
+ *   Bit 10: Accessed/AF = 1 (required; no HW AF management)
+ *
+ * ARM64 PTE bit layout (from HARDWARE_PTE in mmtypes.h):
+ *   [1:0]   Valid=1, NotLargePage=1
+ *   [3:2]   CacheType (MAIR index): 00=Device, 01=Normal-WB, 11=Normal-NC
+ *   [6]     Owner: 0=EL1-only(kernel), 1=EL0+EL1(user)
+ *   [7]     NotDirty (inverted dirty bit)
+ *   [9:8]   Shareability: 00=Non-shareable
+ *   [10]    Accessed/AF: must be 1
+ *   [47:12] PageFrameNumber
+ *   [54]    UserNoExecute (UXN)
+ *   [55]    Writable (software-managed)
+ *   [56]    CopyOnWrite (software-managed)
+ *
+ * Constants (from miarm.h ARM64 section):
+ *   PTE_NOT_LARGE_PAGE    = 0x0000000000000002
+ *   PTE_ACCESSED          = 0x0000000000000400
+ *   PTE_ENABLE_CACHE      = 0x0000000000000004 (CacheType=01)
+ *   PTE_DISABLE_CACHE     = 0x0000000000000000 (CacheType=00)
+ *   PTE_WRITECOMBINED     = 0x000000000000000C (CacheType=11)
+ *   PTE_READONLY          = 0x0040000000000000 (UXN=1)
+ *   PTE_EXECUTE           = 0x0000000000000000 (UXN=0)
+ *   PTE_READWRITE         = 0x00C0000000000000 (UXN=1, Writable=1)
+ *   PTE_WRITECOPY         = 0x0140000000000000 (UXN=1, CopyOnWrite=1)
+ *   PTE_EXECUTE_READWRITE = 0x0080000000000000 (UXN=0, Writable=1)
+ *   PTE_EXECUTE_WRITECOPY = 0x0100000000000000 (UXN=0, CopyOnWrite=1)
+ */
+#define _B  0x0000000000000402ULL  /* NotLargePage | Accessed */
+#define _C  0x0000000000000004ULL  /* Normal WB Cacheable */
+#define _NC 0x0000000000000000ULL  /* Device (non-cacheable) */
+#define _WC 0x000000000000000CULL  /* Normal Non-Cacheable (write-combining) */
+#define _RO 0x0040000000000000ULL  /* UXN=1 (no user exec, read-only) */
+#define _X  0x0000000000000000ULL  /* UXN=0 (executable) */
+#define _XR _X                     /* Execute+Read = same as Execute on ARM64 */
+#define _RW 0x00C0000000000000ULL  /* UXN=1, Writable=1 */
+#define _WC2 0x0140000000000000ULL /* UXN=1, CopyOnWrite=1 */
+#define _XW 0x0080000000000000ULL  /* UXN=0, Writable=1 */
+#define _XC 0x0100000000000000ULL  /* UXN=0, CopyOnWrite=1 */
+
+const
+ULONG_PTR
+MmProtectToPteMask[32] =
+{
+    /* Base MM_ protection flags (cached) */
+    0,
+    _B | _RO | _C,   /* MM_READONLY */
+    _B | _X  | _C,   /* MM_EXECUTE */
+    _B | _XR | _C,   /* MM_EXECUTE_READ */
+    _B | _RW | _C,   /* MM_READWRITE */
+    _B | _WC2| _C,   /* MM_WRITECOPY */
+    _B | _XW | _C,   /* MM_EXECUTE_READWRITE */
+    _B | _XC | _C,   /* MM_EXECUTE_WRITECOPY */
+    /* + MM_NOCACHE */
+    0,
+    _B | _RO | _NC,
+    _B | _X  | _NC,
+    _B | _XR | _NC,
+    _B | _RW | _NC,
+    _B | _WC2| _NC,
+    _B | _XW | _NC,
+    _B | _XC | _NC,
+    /* + MM_DECOMMIT (same as cached) */
+    0,
+    _B | _RO | _C,
+    _B | _X  | _C,
+    _B | _XR | _C,
+    _B | _RW | _C,
+    _B | _WC2| _C,
+    _B | _XW | _C,
+    _B | _XC | _C,
+    /* + MM_NOACCESS (write-combined) */
+    0,
+    _B | _RO | _WC,
+    _B | _X  | _WC,
+    _B | _XR | _WC,
+    _B | _RW | _WC,
+    _B | _WC2| _WC,
+    _B | _XW | _WC,
+    _B | _XC | _WC,
+};
+
+#undef _B
+#undef _C
+#undef _NC
+#undef _WC
+#undef _RO
+#undef _X
+#undef _XR
+#undef _RW
+#undef _WC2
+#undef _XW
+#undef _XC
 
 /* Protection value to Win32 protection mapping */
-ULONG MmProtectToValue[32] = {0};
+const ULONG MmProtectToValue[32] =
+{
+    PAGE_NOACCESS,
+    PAGE_READONLY,
+    PAGE_EXECUTE,
+    PAGE_EXECUTE_READ,
+    PAGE_READWRITE,
+    PAGE_WRITECOPY,
+    PAGE_EXECUTE_READWRITE,
+    PAGE_EXECUTE_WRITECOPY,
+    PAGE_NOACCESS,
+    PAGE_NOCACHE | PAGE_READONLY,
+    PAGE_NOCACHE | PAGE_EXECUTE,
+    PAGE_NOCACHE | PAGE_EXECUTE_READ,
+    PAGE_NOCACHE | PAGE_READWRITE,
+    PAGE_NOCACHE | PAGE_WRITECOPY,
+    PAGE_NOCACHE | PAGE_EXECUTE_READWRITE,
+    PAGE_NOCACHE | PAGE_EXECUTE_WRITECOPY,
+    PAGE_NOACCESS,
+    PAGE_READONLY,
+    PAGE_EXECUTE,
+    PAGE_EXECUTE_READ,
+    PAGE_READWRITE,
+    PAGE_WRITECOPY,
+    PAGE_EXECUTE_READWRITE,
+    PAGE_EXECUTE_WRITECOPY,
+    PAGE_NOACCESS,
+    PAGE_WRITECOMBINE | PAGE_READONLY,
+    PAGE_WRITECOMBINE | PAGE_EXECUTE,
+    PAGE_WRITECOMBINE | PAGE_EXECUTE_READ,
+    PAGE_WRITECOMBINE | PAGE_READWRITE,
+    PAGE_WRITECOMBINE | PAGE_WRITECOPY,
+    PAGE_WRITECOMBINE | PAGE_EXECUTE_READWRITE,
+    PAGE_WRITECOMBINE | PAGE_EXECUTE_WRITECOPY,
+};
 
 /* FUNCTIONS ******************************************************************/
 
@@ -572,8 +694,8 @@ KiSwapProcess(
     _In_ PKPROCESS NewProcess,
     _In_ PKPROCESS OldProcess)
 {
-    /* FIXME: Switch ARM64 page tables (TTBR0_EL1) */
-    UNIMPLEMENTED;
+    /* During early boot, all kernel threads share the same address space.
+     * No TTBR switch needed until user processes are created. */
 }
 
 /* TLB flush for current processor */
@@ -596,22 +718,7 @@ KeZeroPages(
     RtlZeroMemory(Address, Size);
 }
 
-/* MM session space layout */
-VOID
-NTAPI
-MiInitializeSessionSpaceLayout(VOID)
-{
-    /* FIXME: Setup ARM64 session space addresses */
-}
-
-/* MM machine-dependent init */
-VOID
-NTAPI
-MiInitMachineDependent(
-    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
-{
-    UNIMPLEMENTED;
-}
+/* MiInitializeSessionSpaceLayout and MiInitMachineDependent are now in mm/ARM3/arm/init.c */
 
 /* Callback return */
 NTSTATUS

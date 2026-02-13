@@ -169,6 +169,7 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 // State Flags
 //
 #define PTE_VALID               0x0000000000000001ULL
+#define PTE_NOT_LARGE_PAGE      0x0000000000000002ULL   /* Bit 1: Table (L0-L2) or Page (L3) descriptor */
 #define PTE_ACCESSED            0x0000000000000400ULL   /* Bit 10 */
 #define PTE_DIRTY               0x0000000000000080ULL   /* Bit 7 (NotDirty inverted) */
 
@@ -178,7 +179,7 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 #define PTE_ENABLE_CACHE        0x0000000000000004ULL   /* CacheType=01 (Normal WB) */
 #define PTE_DISABLE_CACHE       0x0000000000000000ULL   /* CacheType=00 (Device) */
 #define PTE_WRITECOMBINED_CACHE 0x000000000000000CULL   /* CacheType=11 (Normal NC) */
-#define PTE_PROTECT_MASK        0x01C0000000000C0DULL
+#define PTE_PROTECT_MASK        0x01C0000000000C0FULL  /* Includes bit 1 (NotLargePage) */
 #else
 #error Define these please!
 #endif
@@ -1008,6 +1009,10 @@ MI_WRITE_VALID_PTE(IN PMMPTE PointerPte,
            (TempPte.u.Hard.NoExecute == 0));
 #endif
     *PointerPte = TempPte;
+#ifdef _M_ARM64
+    /* ARM64: ensure PTE store is visible to hardware page table walker */
+    __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
+#endif
 }
 
 //

@@ -288,12 +288,13 @@ typedef struct _KPCR
     ULONG PcrAlign1[8];
 } KPCR, *PKPCR;
 
-/* ARM64 uses TPIDR_EL1 for PCR (only available after kernel sets it up) */
+/* ARM64 uses TPIDR_EL1 for PCR (only available after kernel sets it up).
+ * Both ntoskrnl and hal.dll run at EL1 and can read TPIDR_EL1. */
 FORCEINLINE
 PKPCR
 KeGetPcr(VOID)
 {
-#ifdef _NTOSKRNL_
+#if defined(_NTOSKRNL_) || defined(_NTHALDLL_)
     ULONG64 Pcr;
     __asm__ __volatile__("mrs %0, tpidr_el1" : "=r"(Pcr));
     return (PKPCR)Pcr;

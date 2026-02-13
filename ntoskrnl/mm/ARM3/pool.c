@@ -470,7 +470,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         // Lock the paged pool mutex
         //
         KeAcquireGuardedMutex(&MmPagedPoolMutex);
-
         //
         // Find some empty allocation space
         //
@@ -648,6 +647,36 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         //
         KeFlushEntireTb(TRUE, TRUE);
 
+#ifdef _M_ARM64
+        /* ARM64: No page fault handler yet (no VBAR_EL1), so we must
+         * eagerly commit physical pages instead of demand-zero PTEs. */
+        TempPte = ValidKernelPte;
+        PointerPte = MiAddressToPte(BaseVa);
+        StartPte = PointerPte + SizeInPages;
+        OldIrql = MiAcquirePfnLock();
+        do
+        {
+            MI_SET_USAGE(MI_USAGE_PAGED_POOL);
+            MI_SET_PROCESS2("Kernel");
+            PageFrameNumber = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+            TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
+            MI_WRITE_VALID_PTE(PointerPte, TempPte);
+
+            Pfn1 = MI_PFN_ELEMENT(PageFrameNumber);
+            Pfn1->u3.e2.ReferenceCount = 1;
+            Pfn1->u2.ShareCount = 1;
+            Pfn1->PteAddress = PointerPte;
+            Pfn1->u3.e1.PageLocation = ActiveAndValid;
+            Pfn1->u3.e1.CacheAttribute = MiCached;
+            Pfn1->u4.PteFrame = PFN_FROM_PTE(MiAddressToPte(PointerPte));
+        } while (++PointerPte < StartPte);
+        MiReleasePfnLock(OldIrql);
+
+        /* Zero the pages */
+        RtlZeroMemory(BaseVa, SizeInPages << PAGE_SHIFT);
+
+        return BaseVa;
+#else
         /* Setup a demand-zero writable PTE */
         MI_MAKE_SOFTWARE_PTE(&TempPte, MM_READWRITE);
 
@@ -668,6 +697,7 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         // Return the allocation address to the caller
         //
         return BaseVa;
+#endif
     }
 
     //

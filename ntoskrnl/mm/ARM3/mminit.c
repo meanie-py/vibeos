@@ -1064,8 +1064,13 @@ VOID
 NTAPI
 MiInitializePfnDatabase(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    /* Scan memory and start setting up PFN entries */
+    /* Scan memory and start setting up PFN entries.
+     * MiBuildPfnDatabaseFromPages does a linear PDE scan that only works on
+     * i386 (single-level PDE). ARM64 uses MiBuildPfnDatabaseFromPageTables
+     * (hierarchical PXE→PPE→PDE→PTE walk) instead, called separately. */
+#ifndef _M_ARM64
     MiBuildPfnDatabaseFromPages(LoaderBlock);
+#endif
 
     /* Add the zero page */
     MiBuildPfnDatabaseZeroPage();
@@ -2048,6 +2053,19 @@ MmArmInitSystem(IN ULONG Phase,
     MMPTE TempPte;
 #endif
 
+    /* ARM64 UART diagnostic helper */
+#ifdef _M_ARM64
+#define _MM_TRACE(s) do { \
+    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
+    const char *_m = (s); \
+    while (*_m) { *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _MM_TRACE(s) ((void)0)
+#endif
+
+    _MM_TRACE("[MM] MmArmInitSystem entered\r\n");
+
     /* Dump memory descriptors */
     if (MiDbgEnableMdDump) MiDbgDumpMemoryDescriptors();
 
@@ -2292,9 +2310,9 @@ MmArmInitSystem(IN ULONG Phase,
         MxPfnAllocation++;
 
         /* Initialize the platform-specific parts */
+        _MM_TRACE("[MM] MiInitMachineDependent\r\n");
         MiInitMachineDependent(LoaderBlock);
-
-#if DBG
+#if DBG && !defined(_M_ARM64)
         /* Prototype PTEs are assumed to be in paged pool, so check if the math works */
         PointerPte = (PMMPTE)MmPagedPoolStart;
         MI_MAKE_PROTOTYPE_PTE(&TempPte, PointerPte);
@@ -2401,7 +2419,6 @@ MmArmInitSystem(IN ULONG Phase,
         MiReloadBootLoadedDrivers(LoaderBlock);
 
         /* FIXME: Call out into Driver Verifier for initialization  */
-
         /* Check how many pages the system has */
         if (MmNumberOfPhysicalPages <= ((13 * _1MB) / PAGE_SIZE))
         {
@@ -2533,18 +2550,21 @@ MmArmInitSystem(IN ULONG Phase,
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
 
         /* Size up paged pool and build the shadow system page directory */
+        _MM_TRACE("[MM] MiBuildPagedPool\r\n");
         MiBuildPagedPool();
 
         /* Debugger physical memory support is now ready to be used */
         MmDebugPte = MiAddressToPte(MiDebugMapping);
 
         /* Initialize the loaded module list */
+        _MM_TRACE("[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(LoaderBlock);
     }
 
     //
     // Always return success for now
     //
+    _MM_TRACE("[MM] MmArmInitSystem returning TRUE\r\n");
     return TRUE;
 }
 
