@@ -481,17 +481,7 @@ KeContextToTrapFrame(
     UNIMPLEMENTED;
 }
 
-/* Thread context switch */
-BOOLEAN
-FASTCALL
-KiSwapContext(
-    _In_ KIRQL WaitIrql,
-    _In_ PKTHREAD CurrentThread)
-{
-    /* FIXME: Implement ARM64 context switch */
-    UNIMPLEMENTED;
-    return FALSE;
-}
+/* KiSwapContext is now implemented in ctxswitch.S */
 
 /* User-mode APC initialization */
 VOID
@@ -672,18 +662,7 @@ KiExceptionExit(
     while (TRUE);
 }
 
-/* Thread initialization */
-VOID
-NTAPI
-KiInitializeContextThread(
-    _In_ PKTHREAD Thread,
-    _In_ PKSYSTEM_ROUTINE SystemRoutine,
-    _In_opt_ PKSTART_ROUTINE StartRoutine,
-    _In_opt_ PVOID StartContext,
-    _In_ PCONTEXT ContextRecord)
-{
-    UNIMPLEMENTED;
-}
+/* KiInitializeContextThread is now implemented in thrdini.c */
 
 /* KiInitMachineDependent is in kiinit.c */
 

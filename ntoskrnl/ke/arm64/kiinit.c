@@ -17,7 +17,9 @@ extern UCHAR MainSSPT[];
 
 /* Forward declarations */
 DECLSPEC_NORETURN VOID NTAPI KiSystemStartupBootStack(VOID);
-VOID KiSwitchToBootStack(ULONG_PTR InitialStack);
+DECLSPEC_NORETURN VOID KiSwitchToBootStack(ULONG_PTR InitialStack);
+DECLSPEC_NORETURN VOID FASTCALL KiIdleLoop(VOID);
+VOID NTAPI KiInitializeHandBuiltThread(PKTHREAD Thread, PKPROCESS Process, PVOID Stack);
 
 CODE_SEG("INIT")
 VOID
@@ -169,6 +171,13 @@ KiSystemStartup(
     PKTHREAD InitialThread;
     PKIPCR Pcr;
 
+    /* Direct PL011 UART write to confirm kernel entry (bypasses KD) */
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] KiSystemStartup entered!\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
+
     /* Get the current CPU number */
     Cpu = KeNumberProcessors++;
 
@@ -208,15 +217,13 @@ KiSystemStartup(
         /* Initialize the module list (ntos, hal, kdcom) */
         KiInitModuleList(LoaderBlock);
 
-        /* Initialize debugging system */
-        KdInitSystem(0, KeLoaderBlock);
+        /* TODO: KdInitSystem hangs with kernel VA page tables active.
+         * Skip for now to continue debugging boot sequence. */
+        //KdInitSystem(0, KeLoaderBlock);
 
-        /* Check for break-in */
-        if (KdPollBreakIn()) DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
+        /* Check for break-in - skip since KD not initialized */
+        //if (KdPollBreakIn()) DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
     }
-
-    DPRINT1("ARM64 KiSystemStartup: Pcr=%p Prcb=%p Thread=%p\n",
-            Pcr, &Pcr->Prcb, InitialThread);
 
     /* Initialize the Processor with HAL */
     HalInitializeProcessor(Cpu, KeLoaderBlock);
@@ -231,7 +238,11 @@ KiSystemStartup(
     if (Cpu == 0)
         KiInitMachineDependent();
 
-    DPRINT1("ARM64 KiSystemStartup: Entering KiSystemStartupBootStack\n");
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] Switching to boot stack\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
 
     /* Switch to boot stack and continue initialization */
     KiSwitchToBootStack((ULONG_PTR)LoaderBlock->KernelStack);
@@ -249,7 +260,11 @@ KiSystemStartupBootStack(VOID)
     PKPROCESS Process = Thread->ApcState.Process;
     PVOID KernelStack = (PVOID)KeLoaderBlock->KernelStack;
 
-    DPRINT1("ARM64 KiSystemStartupBootStack: Prcb=%p Thread=%p\n", Prcb, Thread);
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] KiSystemStartupBootStack entered\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
 
     /* Set Node Data */
     Prcb->ParentNode = KeNodeBlock[0];
@@ -272,22 +287,45 @@ KiSystemStartupBootStack(VOID)
     /* Check if this is the boot cpu */
     if (Prcb->Number == 0)
     {
-        DPRINT1("ARM64: Calling KiInitializeKernel\n");
-
         /* Initialize the kernel */
         KiInitializeKernel(Process, Thread, KernelStack, Prcb, LoaderBlock);
     }
 
-    /* If we get here, KiInitializeKernel returned (unlikely in M2) */
-    DPRINT1("ARM64: KiInitializeKernel returned or wasn't called\n");
+    /* Raise to Dispatch */
+    KfRaiseIrql(DISPATCH_LEVEL);
 
-    /* Raise back to HIGH_LEVEL */
+    /* Set the Idle Priority to 0. This will cause the scheduler to notice
+     * the Phase1 initialization thread created by PsInitSystem. */
+    KeSetPriorityThread(Thread, 0);
+
+    /* If there's no thread scheduled, put this CPU in the Idle summary */
+    KiAcquirePrcbLock(Prcb);
+    if (!Prcb->NextThread) KiIdleSummary |= (ULONG_PTR)1 << Prcb->Number;
+    KiReleasePrcbLock(Prcb);
+
+    /* Raise back to HIGH_LEVEL and clear the loader PRCB */
     KfRaiseIrql(HIGH_LEVEL);
     LoaderBlock->Prcb = 0;
 
-    /* Won't reach here in this milestone */
-    KeBugCheck(0);
-    while (TRUE);
+    /* Set the priority of this thread to 0 */
+    Thread = KeGetCurrentThread();
+    Thread->Priority = 0;
+
+    /* Force interrupts enabled and lower IRQL back to DISPATCH_LEVEL */
+    _enable();
+    KeLowerIrql(DISPATCH_LEVEL);
+
+    /* Set the right wait IRQL */
+    Thread->WaitIrql = DISPATCH_LEVEL;
+
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] Entering KiIdleLoop\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
+
+    /* Jump into the idle loop (never returns) */
+    KiIdleLoop();
 }
 
 CODE_SEG("INIT")
@@ -364,13 +402,29 @@ KiInitializeKernel(
                         FALSE);
     InitProcess->QuantumReset = MAXCHAR;
 
-    DPRINT1("ARM64 KiInitializeKernel: Calling ExpInitializeExecutive\n");
+    /* Initialize the idle thread (the boot thread) properly */
+    KiInitializeHandBuiltThread(InitThread, InitProcess, IdleStack);
+
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] Calling ExpInitializeExecutive\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
 
     /* Initialize the Kernel Executive */
     ExpInitializeExecutive(0, LoaderBlock);
 
+    /* Update DPC Values in case they got updated by the executive */
+    Prcb->MaximumDpcQueueDepth = KiMaximumDpcQueueDepth;
+    Prcb->MinimumDpcRate = KiMinimumDpcRate;
+    Prcb->AdjustDpcThreshold = KiAdjustDpcThreshold;
+
     /* If we get here, Phase 0 init succeeded! */
-    DPRINT1("ARM64 KiInitializeKernel: ExpInitializeExecutive returned!\n");
+    {
+        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        const char *msg = "[KERNEL] ExpInitializeExecutive returned!\r\n";
+        while (*msg) { *uart = (ULONG)*msg++; }
+    }
 }
 
 /* EOF */

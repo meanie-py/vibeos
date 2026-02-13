@@ -245,12 +245,8 @@ KeArm64InitThreadWithContext(PKTHREAD Thread,
     KeArm64InitThreadWithContext(Thread,SystemRoutine,StartRoutine,StartContext,Context)
 
 #ifdef _NTOSKRNL_
-VOID
-KiThreadStartup(PKSYSTEM_ROUTINE SystemRoutine,
-                PKSTART_ROUTINE StartRoutine,
-                PVOID StartContext,
-                BOOLEAN UserThread,
-                KTRAP_FRAME TrapFrame);
+/* ARM64 KiThreadStartup takes no parameters - it reads KSTART_FRAME from the stack */
+VOID KiThreadStartup(VOID);
 #endif
 
 FORCEINLINE

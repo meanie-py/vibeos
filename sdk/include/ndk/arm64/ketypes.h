@@ -154,10 +154,49 @@ typedef struct _KTRAP_FRAME
     ULONG64 Pc;
 } KTRAP_FRAME, *PKTRAP_FRAME;
 
+/*
+ * ARM64 Exception Frame - callee-saved registers preserved during context switch.
+ * Saved/restored by KiSwapContext. No SIMD (d8-d15) for now.
+ */
 typedef struct _KEXCEPTION_FRAME
 {
-    ULONG dummy;
+    ULONG64 X19;
+    ULONG64 X20;
+    ULONG64 X21;
+    ULONG64 X22;
+    ULONG64 X23;
+    ULONG64 X24;
+    ULONG64 X25;
+    ULONG64 X26;
+    ULONG64 X27;
+    ULONG64 X28;
+    ULONG64 Fp;       /* X29 - frame pointer */
+    ULONG64 Return;   /* X30 - link register (return address) */
 } KEXCEPTION_FRAME, *PKEXCEPTION_FRAME;
+/* Size: 96 bytes (0x60), 16-byte aligned */
+
+/*
+ * ARM64 Context Switch Frame - minimal frame saved by KiSwapContextInternal.
+ * Sits at the top of the saved stack (lowest address = Thread->KernelStack).
+ */
+typedef struct _KSWITCH_FRAME
+{
+    ULONG64 ApcBypass;  /* WaitIrql / APC bypass flag */
+    ULONG64 Return;     /* Return address for KiSwapContextInternal */
+} KSWITCH_FRAME, *PKSWITCH_FRAME;
+/* Size: 16 bytes (0x10), 16-byte aligned */
+
+/*
+ * ARM64 Thread Start Frame - set up by KiInitializeContextThread.
+ * KiThreadStartup reads parameters from this frame.
+ */
+typedef struct _KSTART_FRAME
+{
+    ULONG64 P1Home;     /* StartRoutine */
+    ULONG64 P2Home;     /* StartContext */
+    ULONG64 P3Home;     /* SystemRoutine */
+    ULONG64 Return;     /* Return address (KiInvalidSystemThreadStartupExit) */
+} KSTART_FRAME, *PKSTART_FRAME;
 
 #ifndef NTOS_MODE_USER
 
