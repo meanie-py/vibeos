@@ -648,14 +648,18 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         KeFlushEntireTb(TRUE, TRUE);
 
 #ifdef _M_ARM64
-        /* ARM64: No page fault handler yet (no VBAR_EL1), so we must
-         * eagerly commit physical pages instead of demand-zero PTEs. */
+        /* ARM64: Eagerly commit physical pages for paged pool.
+         * Now that VBAR_EL1 is installed we could use demand-zero, but
+         * this path is still active for early allocations before the
+         * page fault handler is fully tested. */
         TempPte = ValidKernelPte;
         PointerPte = MiAddressToPte(BaseVa);
         StartPte = PointerPte + SizeInPages;
         OldIrql = MiAcquirePfnLock();
         do
         {
+            PMMPFN Pfn2;
+
             MI_SET_USAGE(MI_USAGE_PAGED_POOL);
             MI_SET_PROCESS2("Kernel");
             PageFrameNumber = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
@@ -670,6 +674,10 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
             Pfn1->u3.e1.PageLocation = ActiveAndValid;
             Pfn1->u3.e1.CacheAttribute = MiCached;
             Pfn1->u4.PteFrame = PFN_FROM_PTE(MiAddressToPte(PointerPte));
+
+            /* Increment the containing page table's share count */
+            Pfn2 = MI_PFN_ELEMENT(Pfn1->u4.PteFrame);
+            Pfn2->u2.ShareCount++;
         } while (++PointerPte < StartPte);
         MiReleasePfnLock(OldIrql);
 

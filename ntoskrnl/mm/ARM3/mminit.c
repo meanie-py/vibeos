@@ -12,6 +12,17 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 UART diagnostic helper */
+#ifdef _M_ARM64
+static void _arm3_trace(const char *s) {
+    volatile ULONG *u = (volatile ULONG *)0x09000000ULL;
+    while (*s) { *u = (ULONG)*s++; }
+}
+#define _A3_TRACE(s) _arm3_trace(s)
+#else
+#define _A3_TRACE(s) ((void)0)
+#endif
+
 #define MODULE_INVOLVED_IN_ARM3
 #include "miarm.h"
 #undef MmSystemRangeStart
@@ -1387,24 +1398,33 @@ MiInitializeMemoryEvents(VOID)
     MmHighMemoryThreshold = max(MmHighMemoryThreshold, MmLowMemoryThreshold);
 
     /* Create the memory events for all the thresholds */
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowMem\r\n");
     Status = MiCreateMemoryEvent(&LowString, &MiLowMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighMem\r\n");
     Status = MiCreateMemoryEvent(&HighString, &MiHighMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowPagedPool\r\n");
     Status = MiCreateMemoryEvent(&LowPagedPoolString, &MiLowPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighPagedPool\r\n");
     Status = MiCreateMemoryEvent(&HighPagedPoolString, &MiHighPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowNonPagedPool\r\n");
     Status = MiCreateMemoryEvent(&LowNonPagedPoolString, &MiLowNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighNonPagedPool\r\n");
     Status = MiCreateMemoryEvent(&HighNonPagedPoolString, &MiHighNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
 
     /* Now setup the pool events */
+    _A3_TRACE("[MM1] MiInitializePoolEvents\r\n");
     MiInitializePoolEvents();
 
     /* Set the initial event state */
+    _A3_TRACE("[MM1] MiNotifyMemoryEvents\r\n");
     MiNotifyMemoryEvents();
+    _A3_TRACE("[MM1] MiInitializeMemoryEvents done\r\n");
     return TRUE;
 }
 

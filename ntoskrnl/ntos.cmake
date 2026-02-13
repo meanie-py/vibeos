@@ -421,7 +421,7 @@ if(NOT _WINKD_)
     elseif(ARCH STREQUAL "arm")
         list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm/kdserial.c)
     elseif(ARCH STREQUAL "arm64")
-        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
+        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm64/kdserial.c)
     endif()
 
     if(KDBG AND NOT ARCH STREQUAL "arm64")

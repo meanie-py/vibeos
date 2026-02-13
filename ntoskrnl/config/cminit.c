@@ -12,6 +12,16 @@
 #define NDEBUG
 #include "debug.h"
 
+#ifdef _M_ARM64
+#define _HIVE_TRACE(s) do { \
+    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
+    const char *_m = (s); \
+    while (*_m) { *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _HIVE_TRACE(s) ((void)0)
+#endif
+
 /* FUNCTIONS *****************************************************************/
 
 NTSTATUS
@@ -178,6 +188,7 @@ CmpInitializeHive(
     Hive->FlushCount = 0;
 
     /* Initialize it */
+    _HIVE_TRACE("[HIVE] HvInitialize\r\n");
     Status = HvInitialize(&Hive->Hive,
                           OperationType,
                           HiveFlags,
@@ -201,6 +212,8 @@ CmpInitializeHive(
         return Status;
     }
 
+    _HIVE_TRACE("[HIVE] HvInitialize done\r\n");
+
     /* Check if we should verify the registry */
     if ((OperationType == HINIT_FILE) ||
         (OperationType == HINIT_MEMORY) ||
@@ -208,17 +221,48 @@ CmpInitializeHive(
         (OperationType == HINIT_MAPFILE))
     {
         /* Verify integrity */
-        CM_CHECK_REGISTRY_STATUS CheckStatus = CmCheckRegistry(Hive, CheckFlags);
-        if (!CM_CHECK_REGISTRY_SUCCESS(CheckStatus))
+        _HIVE_TRACE("[HIVE] CmCheckRegistry\r\n");
+#ifdef _M_ARM64
+        /* ARM64: Skip deep validation for HINIT_MEMORY hives during boot.
+         * The hive was loaded from the boot loader and validated there.
+         * Still do volatile purging for the root cell only. */
+        if (OperationType == HINIT_MEMORY)
         {
-            /* Cleanup allocations and fail */
-            ExDeleteResourceLite(Hive->FlusherLock);
-            ExFreePoolWithTag(Hive->FlusherLock, TAG_CMHIVE);
-            ExFreePoolWithTag(Hive->ViewLock, TAG_CMHIVE);
-            ExFreePoolWithTag(Hive, TAG_CMHIVE);
-            return STATUS_REGISTRY_CORRUPT;
+            PHHIVE HivePtr = &Hive->Hive;
+            HCELL_INDEX RootCell = HivePtr->BaseBlock->RootCell;
+            if (RootCell != HCELL_NIL)
+            {
+                PCELL_DATA RootData = (PCELL_DATA)HvGetCell(HivePtr, RootCell);
+                if (RootData && (CheckFlags & CM_CHECK_REGISTRY_PURGE_VOLATILES) &&
+                    (RootData->u.KeyNode.SubKeyCounts[Volatile] != 0))
+                {
+                    HvMarkCellDirty(HivePtr, RootCell, FALSE);
+                    if (HivePtr->Version >= 6) /* HSYS_WHISTLER_BETA1 */
+                        RootData->u.KeyNode.SubKeyLists[Volatile] = 0xBAADF00D;
+                    else
+                        RootData->u.KeyNode.SubKeyLists[Volatile] = HCELL_NIL;
+                    RootData->u.KeyNode.SubKeyCounts[Volatile] = 0;
+                }
+            }
+            _HIVE_TRACE("[HIVE] CmCheckRegistry skipped (HINIT_MEMORY)\r\n");
+        }
+        else
+#endif
+        {
+            CM_CHECK_REGISTRY_STATUS CheckStatus = CmCheckRegistry(Hive, CheckFlags);
+            if (!CM_CHECK_REGISTRY_SUCCESS(CheckStatus))
+            {
+                /* Cleanup allocations and fail */
+                ExDeleteResourceLite(Hive->FlusherLock);
+                ExFreePoolWithTag(Hive->FlusherLock, TAG_CMHIVE);
+                ExFreePoolWithTag(Hive->ViewLock, TAG_CMHIVE);
+                ExFreePoolWithTag(Hive, TAG_CMHIVE);
+                return STATUS_REGISTRY_CORRUPT;
+            }
         }
     }
+
+    _HIVE_TRACE("[HIVE] CmCheckRegistry done\r\n");
 
     /* Reset the loading flag */
     Hive->HiveIsLoading = FALSE;

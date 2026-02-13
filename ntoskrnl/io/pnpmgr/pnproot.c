@@ -13,6 +13,9 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 verbose PnP root traces removed — PnP enumeration confirmed working */
+#define _ROOT_TRACE(s) ((void)0)
+
 /* GLOBALS *******************************************************************/
 
 #define ENUM_NAME_ROOT L"Root"
@@ -665,9 +668,11 @@ EnumerateDevices(
     NTSTATUS Status = STATUS_UNSUCCESSFUL;
 
     DPRINT("EnumerateDevices(FDO %p)\n", DeviceObject);
+    _ROOT_TRACE("[ROOT] EnumerateDevices enter\r\n");
 
     DeviceExtension = &PnpRootDOExtension;
     KeAcquireGuardedMutex(&DeviceExtension->DeviceListLock);
+    _ROOT_TRACE("[ROOT] GuardedMutex acquired\r\n");
 
     /* Should hold most key names, but we reallocate below if it's too small */
     KeyInfoSize = FIELD_OFFSET(KEY_BASIC_INFORMATION, Name) + 64 * sizeof(WCHAR);
@@ -691,20 +696,25 @@ EnumerateDevices(
         goto cleanup;
     }
 
+    _ROOT_TRACE("[ROOT] Opening Root\\Enum key\r\n");
     Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &KeyName, KEY_ENUMERATE_SUB_KEYS);
     if (!NT_SUCCESS(Status))
     {
         DPRINT("IopOpenRegistryKeyEx(%wZ) failed with status 0x%08lx\n", &KeyName, Status);
+        _ROOT_TRACE("[ROOT] IopOpenRegistryKeyEx failed\r\n");
         goto cleanup;
     }
+    _ROOT_TRACE("[ROOT] Root\\Enum key opened\r\n");
 
     /* Devices are sub-sub-keys of 'KeyName'. KeyName is already opened as
      * KeyHandle. We'll first do a first enumeration to have first level keys,
      * and an inner one to have the real devices list.
      */
+    _ROOT_TRACE("[ROOT] Starting key enumeration\r\n");
     Index1 = 0;
     while (TRUE)
     {
+        _ROOT_TRACE("[ROOT] ZwEnumerateKey outer\r\n");
         Status = ZwEnumerateKey(
             KeyHandle,
             Index1,
@@ -714,6 +724,7 @@ EnumerateDevices(
             &ResultSize);
         if (Status == STATUS_NO_MORE_ENTRIES)
         {
+            _ROOT_TRACE("[ROOT] No more entries (outer)\r\n");
             Status = STATUS_SUCCESS;
             break;
         }
@@ -888,8 +899,10 @@ PnpRootQueryDeviceRelations(
     PLIST_ENTRY NextEntry;
 
     DPRINT("PnpRootQueryDeviceRelations(FDO %p, Irp %p)\n", DeviceObject, Irp);
+    _ROOT_TRACE("[ROOT] PnpRootQueryDeviceRelations\r\n");
 
     Status = EnumerateDevices(DeviceObject);
+    _ROOT_TRACE("[ROOT] EnumerateDevices returned\r\n");
     if (!NT_SUCCESS(Status))
     {
         DPRINT("EnumerateDevices() failed with status 0x%08lx\n", Status);
@@ -897,6 +910,7 @@ PnpRootQueryDeviceRelations(
     }
 
     DeviceExtension = &PnpRootDOExtension;
+    _ROOT_TRACE("[ROOT] Alloc relations\r\n");
 
     Size = FIELD_OFFSET(DEVICE_RELATIONS, Objects) + sizeof(PDEVICE_OBJECT) * DeviceExtension->DeviceListCount;
     if (OtherRelations)
@@ -920,7 +934,9 @@ PnpRootQueryDeviceRelations(
         RtlCopyMemory(Relations->Objects, OtherRelations->Objects, sizeof(PDEVICE_OBJECT) * OtherRelations->Count);
     }
 
+    _ROOT_TRACE("[ROOT] Acquire DeviceListLock\r\n");
     KeAcquireGuardedMutex(&DeviceExtension->DeviceListLock);
+    _ROOT_TRACE("[ROOT] DeviceListLock acquired\r\n");
 
     /* Start looping */
     for (NextEntry = DeviceExtension->DeviceListHead.Flink;
@@ -956,6 +972,7 @@ PnpRootQueryDeviceRelations(
         Relations->Objects[Relations->Count++] = Device->Pdo;
     }
     KeReleaseGuardedMutex(&DeviceExtension->DeviceListLock);
+    _ROOT_TRACE("[ROOT] DeviceList loop done\r\n");
 
     Irp->IoStatus.Information = (ULONG_PTR)Relations;
 
@@ -973,6 +990,7 @@ cleanup:
         }
     }
 
+    _ROOT_TRACE("[ROOT] PnpRootQueryDeviceRelations returning\r\n");
     return Status;
 }
 
@@ -1012,7 +1030,9 @@ PnpRootFdoPnpControl(
     if (Status != STATUS_PENDING)
     {
        Irp->IoStatus.Status = Status;
+       _ROOT_TRACE("[ROOT] IoCompleteRequest enter\r\n");
        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+       _ROOT_TRACE("[ROOT] IoCompleteRequest done\r\n");
     }
 
     return Status;

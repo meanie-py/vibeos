@@ -12,6 +12,16 @@
 #define NDEBUG
 #include <debug.h>
 
+#ifdef _M_ARM64
+#define _PNP_TRACE(s) do { \
+    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
+    const char *_m = (s); \
+    while (*_m) { *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _PNP_TRACE(s) ((void)0)
+#endif
+
 /* GLOBALS ********************************************************************/
 
 PUNICODE_STRING PiInitGroupOrderTable;
@@ -294,23 +304,28 @@ IopInitializePlugPlayServices(VOID)
     PDEVICE_OBJECT Pdo;
 
     /* Initialize locks and such */
+    _PNP_TRACE("[PNP] init locks\r\n");
     KeInitializeSpinLock(&IopDeviceTreeLock);
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
     KeInitializeEvent(&PiEnumerationFinished, NotificationEvent, TRUE);
 
     /* Get the default interface */
+    _PNP_TRACE("[PNP] IopDetermineDefaultInterfaceType\r\n");
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
     /* Initialize arbiters */
+    _PNP_TRACE("[PNP] IopInitializeArbiters\r\n");
     Status = IopInitializeArbiters();
     if (!NT_SUCCESS(Status)) return Status;
 
     /* Setup the group cache */
+    _PNP_TRACE("[PNP] PiInitCacheGroupInformation\r\n");
     Status = PiInitCacheGroupInformation();
     if (!NT_SUCCESS(Status)) return Status;
 
     /* Open the current control set */
+    _PNP_TRACE("[PNP] open CurrentControlSet\r\n");
     Status = IopOpenRegistryKeyEx(&KeyHandle,
                                   NULL,
                                   &KeyName,
@@ -397,6 +412,7 @@ IopInitializePlugPlayServices(VOID)
     }
 
     /* Create the root driver */
+    _PNP_TRACE("[PNP] IoCreateDriver PnpManager\r\n");
     Status = IoCreateDriver(&PnpManagerDriverName, PnpRootDriverEntry);
     if (!NT_SUCCESS(Status))
     {
@@ -405,6 +421,7 @@ IopInitializePlugPlayServices(VOID)
     }
 
     /* Create the root PDO */
+    _PNP_TRACE("[PNP] IoCreateDevice root PDO\r\n");
     Status = IoCreateDevice(IopRootDriverObject,
                             0,
                             NULL,
@@ -440,6 +457,7 @@ IopInitializePlugPlayServices(VOID)
     PiSetDevNodeState(IopRootDeviceNode, DeviceNodeStarted);
 
     /* Initialize PnP-Event notification support */
+    _PNP_TRACE("[PNP] IopInitPlugPlayEvents\r\n");
     Status = IopInitPlugPlayEvents();
     if (!NT_SUCCESS(Status)) return Status;
 
@@ -449,9 +467,12 @@ IopInitializePlugPlayServices(VOID)
     ExInitializeFastMutex(&PnpBusTypeGuidList->Lock);
 
     /* Initialize PnP root relations (this is a syncronous operation) */
+    _PNP_TRACE("[PNP] PiQueueDeviceAction(1)\r\n");
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, NULL, NULL);
+    _PNP_TRACE("[PNP] PiQueueDeviceAction(1) done\r\n");
 
     /* Launch the firmware mapper */
+    _PNP_TRACE("[PNP] IopUpdateRootKey\r\n");
     Status = IopUpdateRootKey();
     if (!NT_SUCCESS(Status)) return Status;
 
@@ -459,9 +480,12 @@ IopInitializePlugPlayServices(VOID)
     NtClose(KeyHandle);
 
     /* Initialize PnP root relations (this is a syncronous operation) */
+    _PNP_TRACE("[PNP] PiQueueDeviceAction(2)\r\n");
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, NULL, NULL);
+    _PNP_TRACE("[PNP] PiQueueDeviceAction(2) done\r\n");
 
     /* We made it */
+    _PNP_TRACE("[PNP] IopInitializePlugPlayServices done\r\n");
     return STATUS_SUCCESS;
 }
 

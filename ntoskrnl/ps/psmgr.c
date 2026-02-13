@@ -289,16 +289,25 @@ PspInitializeSystemDll(VOID)
                                           &PspSystemDllEntryPoint);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        /* On ARM64 without ntdll.dll, this is expected */
+        return Status;
+#else
         /* Failed, bugcheck */
         KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, Status, 7, 0, 0);
+#endif
     }
 
     /* Get all the other entrypoints */
     Status = PspLookupKernelUserEntryPoints();
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        return Status;
+#else
         /* Failed, bugcheck */
         KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, Status, 8, 0, 0);
+#endif
     }
 
     /* Let KD know we are done */

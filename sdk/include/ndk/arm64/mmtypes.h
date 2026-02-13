@@ -98,7 +98,7 @@ typedef struct _MMPTE_PROTOTYPE
     ULONG64 Prototype:1;
     ULONG64 DemandFillProto:1;
     ULONG64 RsvdZ1:4;
-    ULONG64 ProtoAddress:48;
+    LONG64 ProtoAddress:48;
 } MMPTE_PROTOTYPE;
 
 typedef struct _MMPTE_SUBSECTION
@@ -111,7 +111,7 @@ typedef struct _MMPTE_SUBSECTION
     ULONG64 Prototype:1;
     ULONG64 ColdPage:1;
     ULONG64 RsvdZ2:4;
-    ULONG64 SubsectionAddress:48;
+    LONG64 SubsectionAddress:48;
 } MMPTE_SUBSECTION;
 
 typedef struct _MMPTE_TIMESTAMP

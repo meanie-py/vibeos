@@ -259,17 +259,17 @@ MiPdeToPxe(PMMPDE PointerPde)
 
 //
 // Decodes a Prototype PTE into the underlying PTE
-// ARM64 uses a single 48-bit ProtoAddress field (same as AMD64)
+// Arithmetic right shift sign-extends the 48-bit address (same as AMD64)
 //
 #define MiProtoPteToPte(x)                  \
-    (PMMPTE)(LONG_PTR)((x)->u.Proto.ProtoAddress)
+    (PMMPTE)(((LONG64)(x)->u.Long) >> 16)
 
 //
 // Decodes a Subsection PTE into the Subsection pointer
-// ARM64 uses a single 48-bit SubsectionAddress field
+// Arithmetic right shift sign-extends the 48-bit address (same as AMD64)
 //
 #define MiSubsectionPteToSubsection(x)      \
-    (PMMPTE)(LONG_PTR)((x)->u.Subsect.SubsectionAddress)
+    (PMMPTE)(((LONG64)(x)->u.Long) >> 16)
 
 /* See PDR definition */
 #define MI_ZERO_PTE                         (PMMPTE)(MI_MAPPING_RANGE_END + \

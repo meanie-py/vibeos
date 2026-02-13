@@ -12,6 +12,16 @@
 #define NDEBUG
 #include "debug.h"
 
+#ifdef _M_ARM64
+#define _CFG_TRACE(s) do { \
+    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
+    const char *_m = (s); \
+    while (*_m) { *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _CFG_TRACE(s) ((void)0)
+#endif
+
 /* FUNCTIONS *****************************************************************/
 
 CODE_SEG("INIT")
@@ -349,6 +359,7 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                NULL);
 
     /* Create the device map key */
+    _CFG_TRACE("[CFG] NtCreateKey DeviceMap\r\n");
     Status = NtCreateKey(&KeyHandle,
                          KEY_READ | KEY_WRITE,
                          &ObjectAttributes,
@@ -359,6 +370,7 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     if (!NT_SUCCESS(Status))
         return Status;
     NtClose(KeyHandle);
+    _CFG_TRACE("[CFG] DeviceMap created\r\n");
 
     /* Nobody should've created this key yet! */
     ASSERT(Disposition == REG_CREATED_NEW_KEY);
@@ -396,7 +408,12 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    _CFG_TRACE("[CFG] Description created\r\n");
+
     /* Check if we got anything from NTLDR */
+    _CFG_TRACE("[CFG] ConfigurationRoot=");
+    if (LoaderBlock->ConfigurationRoot) _CFG_TRACE("non-null"); else _CFG_TRACE("NULL");
+    _CFG_TRACE("\r\n");
     if (LoaderBlock->ConfigurationRoot)
     {
         /* Setup the configuration tree */
@@ -411,8 +428,12 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         Status = STATUS_SUCCESS;
     }
 
+    _CFG_TRACE("[CFG] CmpSetupConfigurationTree done\r\n");
+
     /* Free the buffer, close our handle and return status */
     ExFreePoolWithTag(CmpConfigurationData, TAG_CM);
+    _CFG_TRACE("[CFG] NtClose Description\r\n");
     NtClose(KeyHandle);
+    _CFG_TRACE("[CFG] CmpInitializeHardwareConfiguration returning\r\n");
     return Status;
 }

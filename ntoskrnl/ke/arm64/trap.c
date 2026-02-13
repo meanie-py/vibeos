@@ -116,6 +116,86 @@ static void KiDumpTrapFrame(PKTRAP_FRAME Tf)
     TrapPuts("X18:  "); TrapPutHex64(Tf->X18); TrapPuts("\r\n");
 }
 
+/* SVC SYSTEM CALL DISPATCHER ************************************************/
+
+/*
+ * Function pointer type for dispatching system calls with up to 15 arguments.
+ * ARM64 passes args 1-8 in x0-x7, args 9+ on the stack.
+ * The callee ignores extra args, so passing more than needed is safe.
+ */
+typedef NTSTATUS (NTAPI *PSYSCALL_ROUTINE)(
+    ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
+    ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
+    ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
+    ULONG_PTR, ULONG_PTR, ULONG_PTR);
+
+static VOID
+KiSvcDispatch(
+    _Inout_ PKTRAP_FRAME TrapFrame)
+{
+    ULONG ServiceNumber = (ULONG)TrapFrame->X[8];
+    ULONG TableIndex = (ServiceNumber >> 12) & 1;
+    ULONG ServiceIndex = ServiceNumber & 0xFFF;
+    PKSERVICE_TABLE_DESCRIPTOR Table;
+    PSYSCALL_ROUTINE Routine;
+    NTSTATUS Result;
+    KPROCESSOR_MODE OldMode;
+    PKTHREAD Thread;
+    ULONG_PTR Args[15] = {0};
+    ULONG ArgCount, i;
+
+    /* Get current thread and its service table */
+    Thread = KeGetCurrentThread();
+    Table = (PKSERVICE_TABLE_DESCRIPTOR)Thread->ServiceTable;
+    if (!Table)
+        Table = KeServiceDescriptorTable;
+    Table = &Table[TableIndex];
+
+    /* Validate service number */
+    if (ServiceIndex >= Table->Limit)
+    {
+        TrapFrame->X[0] = (ULONG64)STATUS_INVALID_SYSTEM_SERVICE;
+        return;
+    }
+
+    /* Get the service routine */
+    Routine = (PSYSCALL_ROUTINE)Table->Base[ServiceIndex];
+    if (!Routine)
+    {
+        TrapFrame->X[0] = (ULONG64)STATUS_INVALID_SYSTEM_SERVICE;
+        return;
+    }
+
+    /* Copy register arguments (x0-x7 = first 8 args) */
+    for (i = 0; i < 8 && i < 15; i++)
+        Args[i] = TrapFrame->X[i];
+
+    /* Copy stack arguments if needed (args 9+) */
+    ArgCount = Table->Number[ServiceIndex] / sizeof(ULONG_PTR);
+    if (ArgCount > 8)
+    {
+        PULONG_PTR CallerStack = (PULONG_PTR)TrapFrame->Sp;
+        ULONG StackArgs = ArgCount - 8;
+        if (StackArgs > 7) StackArgs = 7; /* Limit to our buffer */
+        for (i = 0; i < StackArgs; i++)
+            Args[8 + i] = CallerStack[i];
+    }
+
+    /* Save and set PreviousMode to KernelMode for Zw* calls */
+    OldMode = Thread->PreviousMode;
+    Thread->PreviousMode = KernelMode;
+
+    /* Dispatch the system call */
+    Result = Routine(Args[0], Args[1], Args[2], Args[3],
+                     Args[4], Args[5], Args[6], Args[7],
+                     Args[8], Args[9], Args[10], Args[11],
+                     Args[12], Args[13], Args[14]);
+
+    /* Restore PreviousMode and store result */
+    Thread->PreviousMode = OldMode;
+    TrapFrame->X[0] = (ULONG64)Result;
+}
+
 /* EXCEPTION HANDLERS ********************************************************/
 
 VOID
@@ -188,21 +268,16 @@ KiSynchronousExceptionHandler(
 
         case 0x3C: /* BRK (software breakpoint) */
         {
-            USHORT BrkImm = (USHORT)(ISS & 0xFFFF);
-            TrapPuts("[BRK #");
-            TrapPutHex32(BrkImm);
-            TrapPuts("] PC=");
-            TrapPutHex64(TrapFrame->Pc);
-            TrapPuts("\r\n");
-
-            /* Skip past the BRK instruction (4 bytes) */
+            /* Skip past the BRK instruction (4 bytes) and return.
+             * Debug BRKs (0xF000=DebugService/DbgBreakPoint, 0xF001=RtlpBreakWithStatus)
+             * fire on every DPRINT/DbgPrint call — printing them floods the UART. */
             TrapFrame->Pc += 4;
             return;
         }
 
         case 0x15: /* SVC (system call) */
         {
-            /* Stub — no user-mode syscalls yet */
+            KiSvcDispatch(TrapFrame);
             return;
         }
 

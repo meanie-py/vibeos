@@ -25,6 +25,12 @@ static ULONG HalpCurrentTimeIncrement = 100000;
 static ULONG HalpNextTimeIncrement = 100000;
 static ULONG HalpNextIntervalCount = 0;
 
+/* Software interrupt state — used by IRQL management and HalRequestSoftwareInterrupt */
+static KIRQL HalpCurrentIrql = PASSIVE_LEVEL;
+static volatile ULONG HalpSoftwareInterruptPending = 0;
+static volatile LONG HalpSoftIntDeliveryInProgress = 0;
+static VOID HalpDispatchSoftwareInterrupts(KIRQL OldIrql, KIRQL NewIrql);
+
 /* FUNCTIONS ******************************************************************/
 
 /*
@@ -329,7 +335,14 @@ FASTCALL
 HalRequestSoftwareInterrupt(
     _In_ KIRQL Request)
 {
-    /* Nothing to do yet */
+    /* Record the pending software interrupt */
+    HalpSoftwareInterruptPending |= (1 << Request);
+
+    /* If we're already below the requested level, try to dispatch now */
+    if (HalpCurrentIrql < APC_LEVEL && Request == APC_LEVEL)
+    {
+        HalpDispatchSoftwareInterrupts(APC_LEVEL, HalpCurrentIrql);
+    }
 }
 
 VOID
@@ -563,8 +576,6 @@ KeStallExecutionProcessor(
 
 /* IRQL Management ************************************************************/
 
-static KIRQL HalpCurrentIrql = PASSIVE_LEVEL;
-
 KIRQL
 NTAPI
 KeGetCurrentIrql(VOID)
@@ -572,12 +583,57 @@ KeGetCurrentIrql(VOID)
     return HalpCurrentIrql;
 }
 
+/*
+ * HalpDispatchSoftwareInterrupts
+ *
+ * On ARM64, there is no hardware software-interrupt mechanism.
+ * We emulate it by checking for pending software interrupts
+ * whenever IRQL is lowered. This is critical for APC delivery.
+ */
+static
+VOID
+HalpDispatchSoftwareInterrupts(
+    _In_ KIRQL OldIrql,
+    _In_ KIRQL NewIrql)
+{
+    /* Prevent reentrancy */
+    if (_InterlockedCompareExchange(&HalpSoftIntDeliveryInProgress, 1, 0) != 0)
+        return;
+
+    /* Check for pending APC software interrupt */
+    if (NewIrql < APC_LEVEL && (HalpSoftwareInterruptPending & (1 << APC_LEVEL)))
+    {
+        PKTHREAD Thread = KeGetCurrentThread();
+        if (Thread != NULL &&
+            Thread->ApcState.KernelApcPending &&
+            !Thread->SpecialApcDisable)
+        {
+            /* Clear pending APC request */
+            HalpSoftwareInterruptPending &= ~(1 << APC_LEVEL);
+
+            /* Deliver kernel APCs at APC_LEVEL */
+            HalpCurrentIrql = APC_LEVEL;
+            KiDeliverApc(KernelMode, NULL, NULL);
+            HalpCurrentIrql = NewIrql;
+        }
+    }
+
+    HalpSoftIntDeliveryInProgress = 0;
+}
+
 VOID
 FASTCALL
 KfLowerIrql(
     _In_ KIRQL NewIrql)
 {
+    KIRQL OldIrql = HalpCurrentIrql;
     HalpCurrentIrql = NewIrql;
+
+    /* Check for pending software interrupts when lowering IRQL */
+    if (OldIrql > NewIrql && HalpSoftwareInterruptPending)
+    {
+        HalpDispatchSoftwareInterrupts(OldIrql, NewIrql);
+    }
 }
 
 KIRQL
@@ -618,7 +674,7 @@ KIRQL
 NTAPI
 KeRaiseIrqlToSynchLevel(VOID)
 {
-    return KfRaiseIrql(DISPATCH_LEVEL + 1);
+    return KfRaiseIrql(SYNCH_LEVEL);
 }
 
 BOOLEAN
@@ -643,13 +699,42 @@ HalEndSystemInterrupt(
 
 /* Spinlock Stubs *************************************************************/
 
+/*
+ * ARM64 uniprocessor spinlock stubs.
+ * On UP, spinlocks are implemented by raising IRQL only.
+ * However, in DBG builds, the kernel's KxReleaseSpinLock checks that the lock
+ * value matches (KeGetCurrentThread() | 1), and KeReleaseInStackQueuedSpinLock-
+ * FromDpcLevel reads LockHandle->LockQueue.Lock.  We must set these values
+ * during acquire to avoid DBG bugchecks and null pointer dereferences.
+ */
+
+FORCEINLINE
+VOID
+HalpAcquireSpinLockDbg(
+    _Inout_ PKSPIN_LOCK SpinLock)
+{
+#if DBG
+    *SpinLock = (KSPIN_LOCK)KeGetCurrentThread() | 1;
+#endif
+}
+
+FORCEINLINE
+VOID
+HalpReleaseSpinLockDbg(
+    _Inout_ PKSPIN_LOCK SpinLock)
+{
+#if DBG
+    *SpinLock = 0;
+#endif
+}
+
 KIRQL
 FASTCALL
 KfAcquireSpinLock(
     _Inout_ PKSPIN_LOCK SpinLock)
 {
     KIRQL OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
-    /* Simple non-SMP spinlock: just raise IRQL */
+    HalpAcquireSpinLockDbg(SpinLock);
     return OldIrql;
 }
 
@@ -659,6 +744,7 @@ KfReleaseSpinLock(
     _Inout_ PKSPIN_LOCK SpinLock,
     _In_ KIRQL NewIrql)
 {
+    HalpReleaseSpinLockDbg(SpinLock);
     KfLowerIrql(NewIrql);
 }
 
@@ -685,7 +771,9 @@ FASTCALL
 KeAcquireSpinLockRaiseToSynch(
     _Inout_ PKSPIN_LOCK SpinLock)
 {
-    return KfRaiseIrql(DISPATCH_LEVEL + 1);
+    KIRQL OldIrql = KfRaiseIrql(SYNCH_LEVEL);
+    HalpAcquireSpinLockDbg(SpinLock);
+    return OldIrql;
 }
 
 VOID
@@ -695,6 +783,8 @@ KeAcquireInStackQueuedSpinLock(
     _Out_ PKLOCK_QUEUE_HANDLE LockHandle)
 {
     LockHandle->OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+    LockHandle->LockQueue.Lock = SpinLock;
+    HalpAcquireSpinLockDbg(SpinLock);
 }
 
 VOID
@@ -703,7 +793,9 @@ KeAcquireInStackQueuedSpinLockRaiseToSynch(
     _Inout_ PKSPIN_LOCK SpinLock,
     _Out_ PKLOCK_QUEUE_HANDLE LockHandle)
 {
-    LockHandle->OldIrql = KfRaiseIrql(DISPATCH_LEVEL + 1);
+    LockHandle->OldIrql = KfRaiseIrql(SYNCH_LEVEL);
+    LockHandle->LockQueue.Lock = SpinLock;
+    HalpAcquireSpinLockDbg(SpinLock);
 }
 
 VOID
@@ -711,6 +803,7 @@ FASTCALL
 KeReleaseInStackQueuedSpinLock(
     _In_ PKLOCK_QUEUE_HANDLE LockHandle)
 {
+    HalpReleaseSpinLockDbg(LockHandle->LockQueue.Lock);
     KfLowerIrql(LockHandle->OldIrql);
 }
 
@@ -727,7 +820,7 @@ FASTCALL
 KeAcquireQueuedSpinLockRaiseToSynch(
     _In_ KSPIN_LOCK_QUEUE_NUMBER LockNumber)
 {
-    return KfRaiseIrql(DISPATCH_LEVEL + 1);
+    return KfRaiseIrql(SYNCH_LEVEL);
 }
 
 VOID
@@ -755,7 +848,7 @@ KeTryToAcquireQueuedSpinLockRaiseToSynch(
     _In_ KSPIN_LOCK_QUEUE_NUMBER LockNumber,
     _In_ PKIRQL OldIrql)
 {
-    *OldIrql = KfRaiseIrql(DISPATCH_LEVEL + 1);
+    *OldIrql = KfRaiseIrql(SYNCH_LEVEL);
     return TRUE;
 }
 

@@ -730,7 +730,7 @@
 @ fastcall -arch=i386 KiCheckForSListAddress(ptr)
 @ stdcall -arch=i386 KiCoprocessorError()
 ;@ cdecl -arch=x86_64 KiCpuId()
-@ stdcall -arch=i386,arm KiDeliverApc(long ptr ptr)
+@ stdcall -arch=i386,arm,arm64 KiDeliverApc(long ptr ptr)
 @ stdcall -arch=i386 KiDispatchInterrupt()
 @ extern -arch=i386,arm KiEnableTimerWatchdog
 @ stdcall -arch=i386,arm KiIpiServiceRoutine(ptr ptr)
