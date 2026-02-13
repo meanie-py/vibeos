@@ -397,10 +397,6 @@ WinLdrLoadBootDrivers(PLOADER_PARAMETER_BLOCK LoaderBlock,
         /* Get the next list entry as we may remove the current one on failure */
         NextBd = BootDriver->Link.Flink;
 
-        TRACE("BootDriver %wZ DTE %08X RegPath: %wZ\n",
-              &BootDriver->FilePath, BootDriver->LdrEntry,
-              &BootDriver->RegistryPath);
-
         // Paths are relative (FIXME: Are they always relative?)
 
         /* Load it */
@@ -425,7 +421,9 @@ WinLdrLoadBootDrivers(PLOADER_PARAMETER_BLOCK LoaderBlock,
         {
             /* Loading failed: cry loudly */
             ERR("Cannot load boot driver '%wZ'!\n", &BootDriver->FilePath);
+#ifndef UEFIBOOT
             UiMessageBox("Cannot load boot driver '%wZ'!", &BootDriver->FilePath);
+#endif
             ret = FALSE;
 
             /* Remove it from the list and try to continue */
@@ -1181,8 +1179,6 @@ LoadAndBootWindowsCommon(
     KERNEL_ENTRY_POINT KiSystemStartup;
     PCSTR SystemRoot;
 
-    TRACE("LoadAndBootWindowsCommon()\n");
-
     ASSERT(OperatingSystemVersion != 0);
 
 #ifdef _M_IX86
@@ -1228,7 +1224,6 @@ LoadAndBootWindowsCommon(
     /* Load boot drivers */
     UiSetProgressBarText("Loading boot drivers...");
     Success = WinLdrLoadBootDrivers(LoaderBlock, BootPath);
-    TRACE("Boot drivers loading %s\n", Success ? "successful" : "failed");
 
     UiSetProgressBarSubset(0, 100);
 
@@ -1273,9 +1268,16 @@ LoadAndBootWindowsCommon(
         }
 
         /* It is booting in debug mode, show the banner */
+#ifdef UEFIBOOT
+        /* On UEFI without video, TuiPrintf hangs (framebuffer).
+         * Use the debug channel instead. */
+        ERR("Debug mode: connect debugger on port %.*s\n",
+            DebugPortLength, DebugPort);
+#else
         TuiPrintf("You need to connect a debugger on port %.*s\n"
                   "For more information, visit https://reactos.org/wiki/Debugging.\n",
                   DebugPortLength, DebugPort);
+#endif
     }
 
     /* Debugging... */
@@ -1293,11 +1295,14 @@ LoadAndBootWindowsCommon(
     /* Save final value of LoaderPagesSpanned */
     LoaderBlock->Extension->LoaderPagesSpanned = MmGetLoaderPagesSpanned();
 
-    TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
-          KiSystemStartup, LoaderBlockVA);
-
     /* Zero KI_USER_SHARED_DATA page */
+#ifdef UEFIBOOT
+    /* On ARM64 UEFI we keep identity mapping (PA==VA), so the kernel
+     * VA KI_USER_SHARED_DATA (0xFFFFF780...) is not yet accessible.
+     * The kernel will zero it once it sets up its own page tables. */
+#else
     RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, MM_PAGE_SIZE);
+#endif
 
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);

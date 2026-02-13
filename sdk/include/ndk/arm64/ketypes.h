@@ -42,6 +42,7 @@ extern "C" {
 // PRCB Flags
 //
 #define PRCB_MAJOR_VERSION      1
+#define PRCB_MINOR_VERSION      1
 #define PRCB_BUILD_DEBUG        1
 #define PRCB_BUILD_UNIPROCESSOR 2
 
@@ -499,9 +500,8 @@ typedef struct _KIPCR
 FORCEINLINE
 struct _KPRCB *
 KeGetCurrentPrcb(VOID)
-{  
-    //UNIMPLEMENTED;
-    return 0;
+{
+    return KeGetPcr()->CurrentPrcb;
 }
 
 //

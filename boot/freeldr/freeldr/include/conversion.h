@@ -8,7 +8,26 @@
 
 #pragma once
 
-#ifndef _ZOOM2_
+#if defined(_ZOOM2_) || defined(_M_ARM64)
+/*
+ * Identity mapping: VA == PA.
+ * ARM64 runs with UEFI's identity-mapped page tables during boot,
+ * so no PA<->VA conversion is needed.
+ */
+FORCEINLINE
+PVOID
+VaToPa(PVOID Va)
+{
+    return Va;
+}
+
+FORCEINLINE
+PVOID
+PaToVa(PVOID Pa)
+{
+    return Pa;
+}
+#else
 /* Arch-specific addresses translation implementation */
 FORCEINLINE
 PVOID
@@ -22,19 +41,5 @@ PVOID
 PaToVa(PVOID Pa)
 {
     return (PVOID)((ULONG_PTR)Pa | KSEG0_BASE);
-}
-#else
-FORCEINLINE
-PVOID
-VaToPa(PVOID Va)
-{
-    return Va;
-}
-
-FORCEINLINE
-PVOID
-PaToVa(PVOID Pa)
-{
-    return Pa;
 }
 #endif

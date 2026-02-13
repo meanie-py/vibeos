@@ -234,20 +234,20 @@ WinLdrSetProcessorContext(
 {
     TRACE("WinLdrSetProcessorContext for ARM64\n");
 
-    /* Disable interrupts */
-    /* On ARM64, this is done by masking IRQ/FIQ in DAIF */
-    /* The actual implementation would use: __asm__ volatile("msr daifset, #3"); */
+    /* Mask all interrupts (IRQ, FIQ, SError, Debug) via DAIF */
+    __asm__ __volatile__("msr daifset, #0xF");
 
-    /* Set the page table base register (TTBR0) */
-    /* __asm__ volatile("msr ttbr0_el1, %0" :: "r"(Arm64Pgd)); */
-
-    /* Invalidate TLBs */
-    /* __asm__ volatile("tlbi vmalle1" ::: "memory"); */
-    /* __asm__ volatile("dsb sy" ::: "memory"); */
-    /* __asm__ volatile("isb" ::: "memory"); */
-
-    /* Note: The actual implementation requires assembly intrinsics
-     * that need to be added to the ARM64 headers */
+    /*
+     * For now, keep UEFI's identity-mapped page tables active.
+     * PaToVa/VaToPa are identity (PA == VA) on ARM64, so the kernel
+     * will run with the same mapping until it sets up its own.
+     *
+     * TODO: In a later milestone, set TTBR0_EL1 to our own page tables:
+     *   __asm__ volatile("msr ttbr0_el1, %0" :: "r"((ULONG64)Arm64Pgd));
+     *   __asm__ volatile("tlbi vmalle1" ::: "memory");
+     *   __asm__ volatile("dsb sy" ::: "memory");
+     *   __asm__ volatile("isb" ::: "memory");
+     */
 
     TRACE("Leave WinLdrSetProcessorContext\n");
 }

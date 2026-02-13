@@ -8,6 +8,9 @@
 
 #include <freeldr.h>
 
+#include <debug.h>
+DBG_DEFAULT_CHANNEL(UI);
+
 BOOLEAN NoUiInitialize(VOID)
 {
     return TRUE;
@@ -94,9 +97,15 @@ NoUiMessageBoxCritical(
      * and have encountered an error. Just use printf()
      * and return.
      */
+#ifdef UEFIBOOT
+    /* Use debug serial output, not framebuffer printf */
+    TRACE("NoUiMessageBox: %s\n", MessageText);
+    return;
+#else
     printf("%s\n", MessageText);
     printf("Press any key\n");
     MachConsGetCh();
+#endif
 }
 
 /* Loading Progress-Bar Functions ********************************************/

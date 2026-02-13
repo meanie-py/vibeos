@@ -102,6 +102,10 @@ TuiDrawText2(
     PUCHAR ScreenMemory = (PUCHAR)TextVideoBuffer;
     ULONG i, j;
 
+    /* Bail out if no video buffer (e.g. UEFI with no GOP) */
+    if (!ScreenMemory)
+        return;
+
     /* Don't display anything if we are out of the screen */
     if ((X >= UiScreenWidth) || (Y >= UiScreenHeight))
         return;
@@ -331,6 +335,10 @@ VOID TuiFillArea(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, CHAR FillChar
     PUCHAR ScreenMemory = (PUCHAR)TextVideoBuffer;
     ULONG  i, j;
 
+    /* Bail out if no video buffer (e.g. UEFI with no GOP) */
+    if (!ScreenMemory)
+        return;
+
     /* Clip the area to the screen */
     if ((Left >= UiScreenWidth) || (Top >= UiScreenHeight))
     {
@@ -360,10 +368,16 @@ VOID TuiDrawShadow(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom)
 {
     PUCHAR ScreenMemory = (PUCHAR)TextVideoBuffer;
     ULONG  i;
-    BOOLEAN RightShadow = (Right < (UiScreenWidth - 1));
-    BOOLEAN DoubleRightShadow = ((Right + 1) < (UiScreenWidth - 1));
-    BOOLEAN BottomShadow = (Bottom < (UiScreenHeight - 1));
-    BOOLEAN DoubleWidth = (UiScreenHeight < 34);
+    BOOLEAN RightShadow, DoubleRightShadow, BottomShadow, DoubleWidth;
+
+    /* Bail out if no video buffer (e.g. UEFI with no GOP) */
+    if (!ScreenMemory)
+        return;
+
+    RightShadow = (Right < (UiScreenWidth - 1));
+    DoubleRightShadow = ((Right + 1) < (UiScreenWidth - 1));
+    BottomShadow = (Bottom < (UiScreenHeight - 1));
+    DoubleWidth = (UiScreenHeight < 34);
 
     /* Cap the right and bottom borders */
     Right = min(Right, UiScreenWidth - 1);

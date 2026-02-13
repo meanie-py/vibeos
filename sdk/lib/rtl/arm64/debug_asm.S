@@ -8,40 +8,45 @@
 .text
 
 /* ULONG NTAPI DebugService(ULONG Service, PVOID Arg1, PVOID Arg2, PVOID Arg3, PVOID Arg4) */
+/*
+ * NOTE: brk instructions are disabled until ARM64 exception vectors (VBAR_EL1)
+ * are set up. Without a handler, brk causes an unrecoverable synchronous exception.
+ * Re-enable when KD transport and exception dispatch are implemented.
+ */
 .globl DebugService
 DebugService:
-    brk #0xF000
+    /* brk #0xF000 -- disabled: no exception handler yet */
     mov x0, #0
     ret
 
 /* VOID NTAPI DebugService2(PVOID Arg1, PVOID Arg2, ULONG Service) */
 .globl DebugService2
 DebugService2:
-    brk #0xF000
+    /* brk #0xF000 -- disabled: no exception handler yet */
     ret
 
 /* VOID DbgBreakPoint(VOID) */
 .globl DbgBreakPoint
 DbgBreakPoint:
-    brk #0xF000
+    /* brk #0xF000 -- disabled: no exception handler yet */
     ret
 
 /* VOID DbgUserBreakPoint(VOID) */
 .globl DbgUserBreakPoint
 DbgUserBreakPoint:
-    brk #0xF000
+    /* brk #0xF000 -- disabled: no exception handler yet */
     ret
 
 /* VOID DbgBreakPointWithStatus(ULONG Status) */
 .globl DbgBreakPointWithStatus
 DbgBreakPointWithStatus:
-    brk #0xF000
+    /* brk #0xF000 -- disabled: no exception handler yet */
     ret
 
 /* VOID RtlpBreakWithStatusInstruction(VOID) */
 .globl RtlpBreakWithStatusInstruction
 RtlpBreakWithStatusInstruction:
-    brk #0xF001
+    /* brk #0xF001 -- disabled: no exception handler yet */
     ret
 
 /* VOID RtlCaptureContext(PCONTEXT ContextRecord) */

@@ -987,7 +987,7 @@ PUCHAR FatGetFatSector(PFAT_VOLUME_INFO Volume, UINT32 FatSectorNumber)
     // cache miss
     if (Volume->FatCacheIndex[CacheIndex] != SectorNumAbsolute)
     {
-        UINT32 SectorsToRead = min(Volume->FatCacheSize - CacheIndex, min(Volume->SectorsPerFat - SectorNumAbsolute, 4));
+        UINT32 SectorsToRead = min(Volume->FatCacheSize - CacheIndex, min(Volume->SectorsPerFat - FatSectorNumber, 4));
         UINT8 i;
 
         if (!FatReadVolumeSectors(Volume, SectorNumAbsolute, SectorsToRead, &Volume->FatCache[CacheIndex * Volume->BytesPerSector]))
@@ -1265,7 +1265,8 @@ BOOLEAN FatReadFile(PFAT_FILE_INFO FatFileInfo, ULONG BytesToRead, ULONG* BytesR
     PFAT_VOLUME_INFO Volume = FatFileInfo->Volume;
     UINT32 NextClusterNumber, BytesPerCluster;
 
-    TRACE("FatReadFile() BytesToRead = %d Buffer = 0x%x\n", BytesToRead, Buffer);
+    TRACE("FatReadFile() BytesToRead=%u FileSize=%u FilePointer=%u CurrentCluster=0x%x\n",
+        BytesToRead, FatFileInfo->FileSize, FatFileInfo->FilePointer, FatFileInfo->CurrentCluster);
 
     if (BytesRead != NULL)
     {
@@ -1504,7 +1505,7 @@ ARC_STATUS FatOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     DeviceId = FsGetDeviceId(*FileId);
     FatVolume = FatVolumes[DeviceId];
 
-    TRACE("FatOpen() FileName = %s\n", Path);
+    TRACE("FatOpen() FileName = %s (DeviceId=%u)\n", Path, DeviceId);
 
     RtlZeroMemory(&TempFileInfo, sizeof(TempFileInfo));
     Status = FatLookupFile(FatVolume, Path, &TempFileInfo);

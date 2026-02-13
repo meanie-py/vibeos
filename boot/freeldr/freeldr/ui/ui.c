@@ -61,6 +61,34 @@ ULONG UiScreenHeight;   // Screen Height
  */
 UI_PROGRESS_BAR UiProgressBar = {{0}};
 
+static const UIVTBL SavedNoUiVtbl =
+{
+    NoUiInitialize,
+    NoUiUnInitialize,
+    NoUiDrawBackdrop,
+    NoUiFillArea,
+    NoUiDrawShadow,
+    NoUiDrawBox,
+    NoUiDrawText,
+    NoUiDrawText2,
+    NoUiDrawCenteredText,
+    NoUiDrawStatusText,
+    NoUiUpdateDateTime,
+    NoUiMessageBox,
+    NoUiMessageBoxCritical,
+    NoUiDrawProgressBarCenter,
+    NoUiDrawProgressBar,
+    NoUiSetProgressBarText,
+    NoUiTickProgressBar,
+    NoUiEditBox,
+    NoUiTextToColor,
+    NoUiTextToFillStyle,
+    NoUiFadeInBackdrop,
+    NoUiFadeOut,
+    NoUiDisplayMenu,
+    NoUiDrawMenu,
+};
+
 UIVTBL UiVtbl =
 {
     NoUiInitialize,
@@ -146,7 +174,14 @@ BOOLEAN UiInitialize(BOOLEAN ShowUi)
     if (!UiVtbl.Initialize())
     {
         MachVideoSetDisplayMode(NULL, FALSE);
+#ifdef UEFIBOOT
+        /* On UEFI without video (no GOP), fall back to NoUI
+         * so RunLoader can continue loading the OS headless */
+        TRACE("TUI init failed, falling back to NoUI\n");
+        UiVtbl = SavedNoUiVtbl;
+#else
         return FALSE;
+#endif
     }
 
     /* Load the user UI settings */
@@ -641,6 +676,9 @@ UiResetForSOS(VOID)
 #ifdef _M_ARM
     /* Re-initialize the UI */
     UiInitialize(TRUE);
+#elif defined(UEFIBOOT)
+    /* On UEFI without video (no GOP), keep current vtbl (NoUI).
+     * Switching to MiniTui would hang on framebuffer printf. */
 #else
     /* Reset the UI and switch to MiniTui */
     UiVtbl.UnInitialize();

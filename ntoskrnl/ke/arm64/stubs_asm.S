@@ -19,8 +19,4 @@ _disable:
     msr daifset, #0xF
     ret
 
-/* VOID NTAPI KiSystemStartup(PLOADER_PARAMETER_BLOCK LoaderBlock) */
-.globl KiSystemStartup
-KiSystemStartup:
-    /* Infinite loop for now */
-    b KiSystemStartup
+/* KiSystemStartup is now implemented in C (kiinit.c) */

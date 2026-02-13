@@ -563,13 +563,7 @@ KiInitializeContextThread(
     UNIMPLEMENTED;
 }
 
-/* Machine-dependent kernel init */
-VOID
-NTAPI
-KiInitMachineDependent(VOID)
-{
-    /* FIXME: Initialize ARM64-specific kernel features */
-}
+/* KiInitMachineDependent is in kiinit.c */
 
 /* Process address space switch */
 VOID
