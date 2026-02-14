@@ -426,6 +426,10 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
         KeBugCheckEx(SESSION1_INITIALIZATION_FAILED, Status, 0, 0, 0);
     }
 
+    ARM64_UART_TRACE("[SMSS] ZwAllocVM OK\r\n");
+    ARM64_UART_TRACE_HEX("[SMSS] ProcessParams=", (ULONG_PTR)ProcessParams);
+    ARM64_UART_TRACE_HEX("[SMSS] Size=", (ULONG_PTR)Size);
+
     /* Setup the basic header, and give the process the low 1MB to itself */
     ProcessParams->Length = (ULONG)Size;
     ProcessParams->MaximumLength = (ULONG)Size;
@@ -462,6 +466,27 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
     ProcessParams->CurrentDirectory.DosPath.Buffer = p;
     ProcessParams->CurrentDirectory.DosPath.MaximumLength = MAX_WIN32_PATH *
                                                             sizeof(WCHAR);
+
+    /* Debug: verify store to user page works */
+    {
+        volatile ULONG_PTR *test_addr = (volatile ULONG_PTR *)&ProcessParams->CurrentDirectory.DosPath.Buffer;
+        ARM64_UART_TRACE_HEX("[SMSS] &Buf=", (ULONG_PTR)test_addr);
+        ARM64_UART_TRACE_HEX("[SMSS] pre-store=", *test_addr);
+        *test_addr = (ULONG_PTR)p;
+        ARM64_UART_TRACE_HEX("[SMSS] post-store=", *test_addr);
+
+        /* Also test raw write at ProcessParams+0 (Length was written earlier) */
+        ARM64_UART_TRACE_HEX("[SMSS] Length=", (ULONG_PTR)ProcessParams->Length);
+        ARM64_UART_TRACE_HEX("[SMSS] MaxLen=", (ULONG_PTR)ProcessParams->MaximumLength);
+        ARM64_UART_TRACE_HEX("[SMSS] Flags=", (ULONG_PTR)ProcessParams->Flags);
+
+        /* Read word at offset 0x10 (ConsoleHandle - should be zero if page zeroed) */
+        ARM64_UART_TRACE_HEX("[SMSS] @+0x10=", *(volatile ULONG_PTR *)((PCHAR)ProcessParams + 0x10));
+        ARM64_UART_TRACE_HEX("[SMSS] @+0x20=", *(volatile ULONG_PTR *)((PCHAR)ProcessParams + 0x20));
+        ARM64_UART_TRACE_HEX("[SMSS] @+0x30=", *(volatile ULONG_PTR *)((PCHAR)ProcessParams + 0x30));
+    }
+    ARM64_UART_TRACE_HEX("[SMSS] NtSystemRoot.Buf=", (ULONG_PTR)NtSystemRoot.Buffer);
+    ARM64_UART_TRACE_HEX("[SMSS] NtSystemRoot.Len=", (ULONG_PTR)NtSystemRoot.Length);
 
     /* Copy the DOS path */
     RtlCopyUnicodeString(&ProcessParams->CurrentDirectory.DosPath,
@@ -555,6 +580,7 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
 
     /* Create SMSS process */
     SmssName = ProcessParams->ImagePathName;
+    ARM64_UART_TRACE("[SMSS] RtlCreateUserProcess...\r\n");
     Status = RtlCreateUserProcess(&SmssName,
                                   OBJ_CASE_INSENSITIVE,
                                   RtlDeNormalizeProcessParams(ProcessParams),
@@ -565,6 +591,8 @@ ExpLoadInitialProcess(IN PINIT_BUFFER InitBuffer,
                                   NULL,
                                   NULL,
                                   ProcessInformation);
+    ARM64_UART_TRACE("[SMSS] RtlCreateUserProcess done\r\n");
+    ARM64_UART_TRACE_HEX("[SMSS] Status=", (ULONG_PTR)Status);
     if (!NT_SUCCESS(Status))
     {
         /* Failed, display error */
@@ -941,23 +969,12 @@ ExpInitializeExecutive(IN ULONG Cpu,
     PCHAR RcEnd = NULL;
     CHAR VersionBuffer[65];
 
-    /* ARM64 UART diagnostic helper - direct PL011 write at 0x09000000 */
-#ifdef _M_ARM64
-#define _UART_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _UART_TRACE(s) ((void)0)
-#endif
-
-    _UART_TRACE("[EXP] ExpInitializeExecutive entered\r\n");
+    ARM64_UART_TRACE("[EXP] ExpInitializeExecutive entered\r\n");
 
     /* Validate Loader */
     if (!ExpIsLoaderValid(LoaderBlock))
     {
-        _UART_TRACE("[EXP] !!! ExpIsLoaderValid FAILED\r\n");
+        ARM64_UART_TRACE("[EXP] !!! ExpIsLoaderValid FAILED\r\n");
         /* Invalid loader version */
         KeBugCheckEx(MISMATCHED_HAL,
                      3,
@@ -1120,7 +1137,7 @@ ExpInitializeExecutive(IN ULONG Cpu,
 
     /* Initialize the memory manager at phase 0 */
     if (!MmArmInitSystem(0, LoaderBlock)) KeBugCheck(PHASE0_INITIALIZATION_FAILED);
-    _UART_TRACE("[EXP] MmArmInitSystem(0) done\r\n");
+    ARM64_UART_TRACE("[EXP] MmArmInitSystem(0) done\r\n");
 
     /* Load boot symbols */
     ExpLoadBootSymbols(LoaderBlock);
@@ -1324,19 +1341,19 @@ ExpInitializeExecutive(IN ULONG Cpu,
 #endif
 
     /* Create the Basic Object Manager Types to allow new Object Types */
-    _UART_TRACE("[EXP] ObInitSystem\r\n");
+    ARM64_UART_TRACE("[EXP] ObInitSystem\r\n");
     if (!ObInitSystem()) KeBugCheck(OBJECT_INITIALIZATION_FAILED);
 
     /* Load basic Security for other Managers */
-    _UART_TRACE("[EXP] SeInitSystem\r\n");
+    ARM64_UART_TRACE("[EXP] SeInitSystem\r\n");
     if (!SeInitSystem()) KeBugCheck(SECURITY_INITIALIZATION_FAILED);
 
     /* Initialize the Process Manager */
-    _UART_TRACE("[EXP] PsInitSystem\r\n");
+    ARM64_UART_TRACE("[EXP] PsInitSystem\r\n");
     if (!PsInitSystem(LoaderBlock)) KeBugCheck(PROCESS_INITIALIZATION_FAILED);
 
     /* Initialize the PnP Manager */
-    _UART_TRACE("[EXP] PpInitSystem\r\n");
+    ARM64_UART_TRACE("[EXP] PpInitSystem\r\n");
     if (!PpInitSystem()) KeBugCheck(PP0_INITIALIZATION_FAILED);
 
     /* Initialize the User-Mode Debugging Subsystem */
@@ -1387,6 +1404,9 @@ Phase1InitializationDiscard(IN PVOID Context)
     OBJECT_ATTRIBUTES ObjectAttributes;
     HANDLE KeyHandle, OptionHandle;
     PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NULL;
+#ifdef _M_ARM64
+    BOOLEAN IoInitSucceeded = FALSE;
+#endif
 
     /* Allocate the initialization buffer */
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool,
@@ -1401,13 +1421,13 @@ Phase1InitializationDiscard(IN PVOID Context)
     /* Set to phase 1 */
     ExpInitializationPhase = 1;
 
-    _UART_TRACE("[PHASE1] Phase1InitializationDiscard entered\r\n");
+    ARM64_UART_TRACE("[PHASE1] Phase1InitializationDiscard entered\r\n");
 
     /* Set us at maximum priority */
     KeSetPriorityThread(KeGetCurrentThread(), HIGH_PRIORITY);
 
     /* Do Phase 1 HAL Initialization */
-    _UART_TRACE("[PHASE1] HalInitSystem(1)\r\n");
+    ARM64_UART_TRACE("[PHASE1] HalInitSystem(1)\r\n");
     if (!HalInitSystem(1, LoaderBlock)) KeBugCheck(HAL1_INITIALIZATION_FAILED);
 
     /* Get the command line and upcase it */
@@ -1677,19 +1697,19 @@ Phase1InitializationDiscard(IN PVOID Context)
     InbvUpdateProgressBar(5);
 
     /* Call OB initialization again */
-    _UART_TRACE("[PHASE1] ObInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] ObInitSystem\r\n");
     if (!ObInitSystem()) KeBugCheck(OBJECT1_INITIALIZATION_FAILED);
 
     /* Initialize Basic System Objects and Worker Threads */
-    _UART_TRACE("[PHASE1] ExInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] ExInitSystem\r\n");
     if (!ExInitSystem()) KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, 0, 0, 1, 0);
 
     /* Initialize the later stages of the kernel */
-    _UART_TRACE("[PHASE1] KeInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] KeInitSystem\r\n");
     if (!KeInitSystem()) KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, 0, 0, 2, 0);
 
     /* Call KD Providers at Phase 1 */
-    _UART_TRACE("[PHASE1] KdInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] KdInitSystem\r\n");
     if (!KdInitSystem(ExpInitializationPhase, KeLoaderBlock))
     {
         /* Failed, bugcheck */
@@ -1697,14 +1717,14 @@ Phase1InitializationDiscard(IN PVOID Context)
     }
 
     /* Initialize the SRM in Phase 1 */
-    _UART_TRACE("[PHASE1] SeInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] SeInitSystem\r\n");
     if (!SeInitSystem()) KeBugCheck(SECURITY1_INITIALIZATION_FAILED);
 
     /* Update the progress bar */
     InbvUpdateProgressBar(10);
 
     /* Create SystemRoot Link */
-    _UART_TRACE("[PHASE1] ExpCreateSystemRootLink\r\n");
+    ARM64_UART_TRACE("[PHASE1] ExpCreateSystemRootLink\r\n");
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if (!NT_SUCCESS(Status))
     {
@@ -1713,23 +1733,23 @@ Phase1InitializationDiscard(IN PVOID Context)
     }
 
     /* Set up Region Maps, Sections and the Paging File */
-    _UART_TRACE("[PHASE1] MmInitSystem(1)\r\n");
+    ARM64_UART_TRACE("[PHASE1] MmInitSystem(1)\r\n");
     if (!MmInitSystem(1, LoaderBlock)) KeBugCheck(MEMORY1_INITIALIZATION_FAILED);
 
     /* Create NLS section */
-    _UART_TRACE("[PHASE1] ExpInitNls\r\n");
+    ARM64_UART_TRACE("[PHASE1] ExpInitNls\r\n");
     ExpInitNls(LoaderBlock);
 
     /* Initialize Cache Views */
-    _UART_TRACE("[PHASE1] CcInitializeCacheManager\r\n");
+    ARM64_UART_TRACE("[PHASE1] CcInitializeCacheManager\r\n");
     if (!CcInitializeCacheManager()) KeBugCheck(CACHE_INITIALIZATION_FAILED);
 
     /* Initialize the Registry */
-    _UART_TRACE("[PHASE1] CmInitSystem1\r\n");
+    ARM64_UART_TRACE("[PHASE1] CmInitSystem1\r\n");
     if (!CmInitSystem1()) KeBugCheck(CONFIG_INITIALIZATION_FAILED);
 
     /* Initialize Prefetcher */
-    _UART_TRACE("[PHASE1] CcPfInitializePrefetcher\r\n");
+    ARM64_UART_TRACE("[PHASE1] CcPfInitializePrefetcher\r\n");
     CcPfInitializePrefetcher();
 
     /* Update progress bar */
@@ -1758,7 +1778,7 @@ Phase1InitializationDiscard(IN PVOID Context)
     }
 
     /* Initialize the File System Runtime Library */
-    _UART_TRACE("[PHASE1] FsRtlInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] FsRtlInitSystem\r\n");
     if (!FsRtlInitSystem()) KeBugCheck(FILE_INITIALIZATION_FAILED);
 
     /* Initialize range lists */
@@ -1768,18 +1788,18 @@ Phase1InitializationDiscard(IN PVOID Context)
     HalReportResourceUsage();
 
     /* Call the debugger DLL */
-    _UART_TRACE("[PHASE1] KdDebuggerInitialize1\r\n");
+    ARM64_UART_TRACE("[PHASE1] KdDebuggerInitialize1\r\n");
     KdDebuggerInitialize1(LoaderBlock);
 
     /* Setup PnP Manager in phase 1 */
-    _UART_TRACE("[PHASE1] PpInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] PpInitSystem\r\n");
     if (!PpInitSystem()) KeBugCheck(PP1_INITIALIZATION_FAILED);
 
     /* Update progress bar */
     InbvUpdateProgressBar(20);
 
     /* Initialize LPC */
-    _UART_TRACE("[PHASE1] LpcInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] LpcInitSystem\r\n");
     if (!LpcInitSystem()) KeBugCheck(LPC_INITIALIZATION_FAILED);
 
     /* Make sure we have a command line */
@@ -1883,15 +1903,23 @@ Phase1InitializationDiscard(IN PVOID Context)
     InbvSetProgressBarSubset(25, 75);
 
     /* Initialize the I/O Subsystem */
-    _UART_TRACE("[PHASE1] IoInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] IoInitSystem\r\n");
+#ifdef _M_ARM64
+    IoInitSucceeded = IoInitSystem(LoaderBlock);
+    if (!IoInitSucceeded)
+    {
+        ARM64_UART_TRACE("[PHASE1] IoInitSystem failed (continuing on ARM64)\r\n");
+    }
+    else
+    {
+        ARM64_UART_TRACE("[PHASE1] IoInitSystem succeeded!\r\n");
+    }
+#else
     if (!IoInitSystem(LoaderBlock))
     {
-#ifdef _M_ARM64
-        _UART_TRACE("[PHASE1] IoInitSystem failed (continuing on ARM64)\r\n");
-#else
         KeBugCheck(IO1_INITIALIZATION_FAILED);
-#endif
     }
+#endif
 
     /* Set maximum update to 100% */
     InbvSetProgressBarSubset(0, 100);
@@ -2032,18 +2060,18 @@ Phase1InitializationDiscard(IN PVOID Context)
 #endif
 
     /* Initialize Power Subsystem in Phase 1*/
-    _UART_TRACE("[PHASE1] PoInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] PoInitSystem\r\n");
     if (!PoInitSystem(1)) KeBugCheck(INTERNAL_POWER_ERROR);
 
     /* Update progress bar */
     InbvUpdateProgressBar(90);
 
     /* Initialize the Process Manager at Phase 1 */
-    _UART_TRACE("[PHASE1] PsInitSystem\r\n");
+    ARM64_UART_TRACE("[PHASE1] PsInitSystem\r\n");
     if (!PsInitSystem(LoaderBlock))
     {
 #ifdef _M_ARM64
-        _UART_TRACE("[PHASE1] PsInitSystem failed (continuing on ARM64)\r\n");
+        ARM64_UART_TRACE("[PHASE1] PsInitSystem failed (continuing on ARM64)\r\n");
 #else
         KeBugCheck(PROCESS1_INITIALIZATION_FAILED);
 #endif
@@ -2055,11 +2083,11 @@ Phase1InitializationDiscard(IN PVOID Context)
     LoaderBlock = Context = NULL;
 
     /* Initialize the SRM in phase 1 */
-    _UART_TRACE("[PHASE1] SeRmInitPhase1\r\n");
+    ARM64_UART_TRACE("[PHASE1] SeRmInitPhase1\r\n");
     if (!SeRmInitPhase1())
     {
 #ifdef _M_ARM64
-        _UART_TRACE("[PHASE1] SeRmInitPhase1 failed (continuing on ARM64)\r\n");
+        ARM64_UART_TRACE("[PHASE1] SeRmInitPhase1 failed (continuing on ARM64)\r\n");
 #else
         KeBugCheck(PROCESS1_INITIALIZATION_FAILED);
 #endif
@@ -2075,18 +2103,20 @@ Phase1InitializationDiscard(IN PVOID Context)
     InbvEnableDisplayString(TRUE);
 
 #ifdef _M_ARM64
-    /* On ARM64 UEFI boot without a filesystem, we cannot launch smss.exe.
-     * Phase 1 initialization is complete — enter the zero page thread. */
-    _UART_TRACE("[PHASE1] *** ARM64 Phase 1 complete! No filesystem to launch SMSS. ***\r\n");
-    _UART_TRACE("[PHASE1] Entering MmZeroPageThread (idle)...\r\n");
-    /* Increase init phase and free the boot buffer */
-    ExpInitializationPhase++;
-    ExFreePoolWithTag(InitBuffer, TAG_INIT);
-    return;
+    if (!IoInitSucceeded)
+    {
+        /* I/O subsystem failed (no filesystem) — cannot launch smss.exe.
+         * Phase 1 initialization is complete — enter the zero page thread. */
+        ARM64_UART_TRACE("[PHASE1] *** ARM64 Phase 1 complete (no I/O). Entering idle. ***\r\n");
+        ExpInitializationPhase++;
+        ExFreePoolWithTag(InitBuffer, TAG_INIT);
+        return;
+    }
+    ARM64_UART_TRACE("[PHASE1] ARM64: I/O init succeeded, proceeding to SMSS launch.\r\n");
 #endif
 
     /* Launch initial process */
-    _UART_TRACE("[PHASE1] ExpLoadInitialProcess (SMSS)\r\n");
+    ARM64_UART_TRACE("[PHASE1] ExpLoadInitialProcess (SMSS)\r\n");
     ProcessInfo = &InitBuffer->ProcessInfo;
     ExpLoadInitialProcess(InitBuffer, &ProcessParameters, &Environment);
 

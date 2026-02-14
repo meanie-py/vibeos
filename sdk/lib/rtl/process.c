@@ -243,6 +243,11 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
     }
 
     /* Create Kernel Process Object */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwCreateProcess...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwCreateProcess(&ProcessInfo->ProcessHandle,
                              PROCESS_ALL_ACCESS,
                              &ObjectAttributes,
@@ -251,6 +256,11 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
                              hSection,
                              DebugPort,
                              ExceptionPort);
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwCreateProcess done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("Could not create Kernel Process Object\n");
@@ -259,6 +269,11 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
     }
 
     /* Get some information on the image */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwQuerySection...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwQuerySection(hSection,
                             SectionImageInformation,
                             &ProcessInfo->ImageInformation,
@@ -271,8 +286,18 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
         ZwClose(hSection);
         return Status;
     }
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwQuerySection done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Get some information about the process */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwQueryInfoProcess...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwQueryInformationProcess(ProcessInfo->ProcessHandle,
                                        ProcessBasicInformation,
                                        &ProcessBasicInfo,
@@ -285,6 +310,11 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
         ZwClose(hSection);
         return Status;
     }
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] ZwQueryInfoProcess done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Duplicate the standard handles */
     Status = STATUS_SUCCESS;
@@ -352,6 +382,11 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
         return Status;
 
     /* Create Process Environment */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] RtlpInitEnvironment...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = RtlpInitEnvironment(ProcessInfo->ProcessHandle,
                                  ProcessBasicInfo.PebBaseAddress,
                                  ProcessParameters);
@@ -362,8 +397,18 @@ RtlCreateUserProcess(IN PUNICODE_STRING ImageFileName,
         ZwClose(hSection);
         return Status;
     }
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] RtlpInitEnvironment done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Create the first Thread */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[SMSS] RtlCreateUserThread...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = RtlCreateUserThread(ProcessInfo->ProcessHandle,
                                  ThreadSecurityDescriptor,
                                  TRUE,

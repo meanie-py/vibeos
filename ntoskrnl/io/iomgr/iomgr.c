@@ -13,18 +13,19 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Direct UART trace for ARM64 boot debugging — bypasses PCH limitation */
+#ifdef _M_ARM64
+#undef ARM64_UART_TRACE
+#define ARM64_UART_TRACE(s) do { \
+    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    const char *_p = (s); \
+    while (*_p) *_uart = (ULONG)*_p++; \
+} while(0)
+#endif
+
 ULONG IopTraceLevel = 0;
 BOOLEAN PnpSystemInit = FALSE;
 
-#ifdef _M_ARM64
-#define _IO_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _IO_TRACE(s) ((void)0)
-#endif
 
 VOID
 NTAPI
@@ -491,7 +492,7 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     RtlInitEmptyAnsiString(&NtBootPath, Buffer, sizeof(Buffer));
 
     /* Initialize the lookaside lists */
-    _IO_TRACE("[IO] IopInitLookasideLists\r\n");
+    ARM64_UART_TRACE("[IO] IopInitLookasideLists\r\n");
     IopInitLookasideLists();
 
     /* Initialize all locks and lists */
@@ -537,7 +538,7 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     KeSetTimerEx(&IopTimer, ExpireTime, 1000, &IopTimerDpc);
 
     /* Create Object Types */
-    _IO_TRACE("[IO] IopCreateObjectTypes\r\n");
+    ARM64_UART_TRACE("[IO] IopCreateObjectTypes\r\n");
     if (!IopCreateObjectTypes())
     {
         DPRINT1("IopCreateObjectTypes failed!\n");
@@ -545,7 +546,7 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Create Object Directories */
-    _IO_TRACE("[IO] IopCreateRootDirectories\r\n");
+    ARM64_UART_TRACE("[IO] IopCreateRootDirectories\r\n");
     if (!IopCreateRootDirectories())
     {
         DPRINT1("IopCreateRootDirectories failed!\n");
@@ -553,7 +554,7 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Initialize PnP manager */
-    _IO_TRACE("[IO] IopInitializePlugPlayServices\r\n");
+    ARM64_UART_TRACE("[IO] IopInitializePlugPlayServices\r\n");
     IopInitializePlugPlayServices();
 
     /* Initialize SHIM engine */
@@ -563,12 +564,12 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     WmiInitialize();
 
     /* Initialize HAL Root Bus Driver */
-    _IO_TRACE("[IO] HalInitPnpDriver\r\n");
+    ARM64_UART_TRACE("[IO] HalInitPnpDriver\r\n");
     HalInitPnpDriver();
 
     /* Reenumerate what HAL has added (synchronously)
      * This function call should eventually become a 2nd stage of the PnP initialization */
-    _IO_TRACE("[IO] PiQueueDeviceAction\r\n");
+    ARM64_UART_TRACE("[IO] PiQueueDeviceAction\r\n");
     PiQueueDeviceAction(IopRootDeviceNode->PhysicalDeviceObject,
                         PiActionEnumRootDevices,
                         NULL,
@@ -578,25 +579,63 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     IopLoaderBlock = LoaderBlock;
 
     /* Load boot start drivers */
-    _IO_TRACE("[IO] IopInitializeBootDrivers\r\n");
+    ARM64_UART_TRACE("[IO] IopInitializeBootDrivers\r\n");
     IopInitializeBootDrivers();
 
     /* Call back drivers that asked for */
-    _IO_TRACE("[IO] IopReinitializeBootDrivers\r\n");
+    ARM64_UART_TRACE("[IO] IopReinitializeBootDrivers\r\n");
     IopReinitializeBootDrivers();
 
     /* Check if this was a ramdisk boot */
+    ARM64_UART_TRACE("[IO] Checking ArcBootDeviceName for ramdisk...\r\n");
     if (!_strnicmp(LoaderBlock->ArcBootDeviceName, "ramdisk(0)", 10))
     {
         /* Initialize the ramdisk driver */
+        ARM64_UART_TRACE("[IO] IopStartRamdisk\r\n");
         IopStartRamdisk(LoaderBlock);
+        ARM64_UART_TRACE("[IO] IopStartRamdisk done\r\n");
+
+#ifdef _M_ARM64
+        /* Test: try to open a file on the ramdisk to verify filesystem access */
+        {
+            OBJECT_ATTRIBUTES TestOa;
+            IO_STATUS_BLOCK TestIosb;
+            HANDLE TestHandle;
+            UNICODE_STRING TestPath;
+            NTSTATUS TestStatus;
+
+            ARM64_UART_TRACE("[IO] Testing ramdisk filesystem access...\r\n");
+            RtlInitUnicodeString(&TestPath, L"\\ArcName\\ramdisk(0)\\reactos\\system32\\ntdll.dll");
+            InitializeObjectAttributes(&TestOa, &TestPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+            ARM64_UART_TRACE("[IO] ZwOpenFile(ntdll.dll) start\r\n");
+            TestStatus = ZwOpenFile(&TestHandle, FILE_READ_ACCESS, &TestOa, &TestIosb, FILE_SHARE_READ, 0);
+            if (NT_SUCCESS(TestStatus))
+            {
+                ARM64_UART_TRACE("[IO] ZwOpenFile(ntdll.dll) SUCCESS!\r\n");
+                ZwClose(TestHandle);
+            }
+            else
+            {
+                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                char _buf[64];
+                const char *_p;
+                int _len = sprintf(_buf, "[IO] ZwOpenFile(ntdll.dll) failed: 0x%lx\r\n", (unsigned long)TestStatus);
+                _p = _buf;
+                while (*_p) { *_u = (ULONG)*_p++; }
+            }
+        }
+#endif
+    }
+    else
+    {
+        ARM64_UART_TRACE("[IO] Not a ramdisk boot\r\n");
     }
 
     /* No one should need loader block any longer */
     IopLoaderBlock = NULL;
 
     /* Create ARC names for boot devices */
-    _IO_TRACE("[IO] IopCreateArcNames\r\n");
+    ARM64_UART_TRACE("[IO] IopCreateArcNames\r\n");
     Status = IopCreateArcNames(LoaderBlock);
     if (!NT_SUCCESS(Status))
     {
@@ -605,17 +644,17 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Mark the system boot partition */
-    _IO_TRACE("[IO] IopMarkBootPartition\r\n");
+    ARM64_UART_TRACE("[IO] IopMarkBootPartition\r\n");
     if (!IopMarkBootPartition(LoaderBlock))
     {
-        _IO_TRACE("[IO] IopMarkBootPartition failed (continuing on ARM64)\r\n");
+        ARM64_UART_TRACE("[IO] IopMarkBootPartition failed (continuing on ARM64)\r\n");
 #ifndef _M_ARM64
         return FALSE;
 #endif
     }
     else
     {
-        _IO_TRACE("[IO] IopMarkBootPartition done\r\n");
+        ARM64_UART_TRACE("[IO] IopMarkBootPartition done\r\n");
     }
 
     /* The disk subsystem is initialized here and the SystemRoot is set too.
@@ -623,23 +662,28 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     PnPBootDriversInitialized = TRUE;
 
     /* Load system start drivers */
-    _IO_TRACE("[IO] IopInitializeSystemDrivers\r\n");
+    ARM64_UART_TRACE("[IO] IopInitializeSystemDrivers\r\n");
     IopInitializeSystemDrivers();
     PnpSystemInit = TRUE;
-    _IO_TRACE("[IO] IopInitializeSystemDrivers done\r\n");
+    ARM64_UART_TRACE("[IO] IopInitializeSystemDrivers done\r\n");
 
     /* Reinitialize drivers that requested it */
     IopReinitializeDrivers();
 
     /* Convert SystemRoot from ARC to NT path */
-    _IO_TRACE("[IO] IopReassignSystemRoot\r\n");
+    ARM64_UART_TRACE("[IO] IopReassignSystemRoot\r\n");
     Status = IopReassignSystemRoot(LoaderBlock, &NtBootPath);
     if (!NT_SUCCESS(Status))
     {
-        _IO_TRACE("[IO] IopReassignSystemRoot failed\r\n");
+#ifdef _M_ARM64
+        ARM64_UART_TRACE("[IO] IopReassignSystemRoot failed (continuing on ARM64)\r\n");
         return FALSE;
+#else
+        ARM64_UART_TRACE("[IO] IopReassignSystemRoot failed\r\n");
+        return FALSE;
+#endif
     }
-    _IO_TRACE("[IO] IopReassignSystemRoot done\r\n");
+    ARM64_UART_TRACE("[IO] IopReassignSystemRoot done\r\n");
 
     /* Set the ANSI_STRING for the root path */
     RootString.MaximumLength = NtSystemRoot.MaximumLength / sizeof(WCHAR);
@@ -657,12 +701,12 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Assign drive letters */
-    _IO_TRACE("[IO] IoAssignDriveLetters\r\n");
+    ARM64_UART_TRACE("[IO] IoAssignDriveLetters\r\n");
     IoAssignDriveLetters(LoaderBlock,
                          &NtBootPath,
                          (PUCHAR)RootString.Buffer,
                          &RootString);
-    _IO_TRACE("[IO] IoAssignDriveLetters done\r\n");
+    ARM64_UART_TRACE("[IO] IoAssignDriveLetters done\r\n");
 
     /* Update system root */
     Status = RtlAnsiStringToUnicodeString(&NtSystemRoot, &RootString, FALSE);
@@ -673,21 +717,23 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     }
 
     /* Load the System DLL and its entrypoints */
-#ifdef _M_ARM64
-    /* On ARM64 UEFI boot without a filesystem, ntdll.dll doesn't exist.
-     * Skip loading it to allow Phase 1 init to continue. */
-    _IO_TRACE("[IO] PsLocateSystemDll skipped (ARM64)\r\n");
-#else
+    ARM64_UART_TRACE("[IO] PsLocateSystemDll\r\n");
     Status = PsLocateSystemDll();
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        /* On ARM64, if ntdll.dll can't be loaded (no filesystem),
+         * continue without it — Phase 1 will enter idle instead of SMSS. */
+        ARM64_UART_TRACE("[IO] PsLocateSystemDll failed (continuing on ARM64)\r\n");
+        DPRINT1("PsLocateSystemDll failed: %lx (ARM64, continuing)\n", Status);
+#else
         DPRINT1("PsLocateSystemDll failed: %lx\n", Status);
         return FALSE;
-    }
 #endif
+    }
 
     /* Return success */
-    _IO_TRACE("[IO] IoInitSystem returning TRUE\r\n");
+    ARM64_UART_TRACE("[IO] IoInitSystem returning TRUE\r\n");
     return TRUE;
 }
 

@@ -669,8 +669,36 @@ KiSwapProcess(
     _In_ PKPROCESS NewProcess,
     _In_ PKPROCESS OldProcess)
 {
-    /* During early boot, all kernel threads share the same address space.
-     * No TTBR switch needed until user processes are created. */
+    ULONG64 NewPageTable = NewProcess->DirectoryTableBase[0];
+
+    /* Skip if same address space (common for kernel threads) */
+    if (NewPageTable == OldProcess->DirectoryTableBase[0])
+        return;
+
+    /*
+     * ARM64 split TTBR: TTBR0 handles user-space (VA bit 55=0),
+     * TTBR1 handles kernel-space (VA bit 55=1).
+     *
+     * We switch BOTH TTBRs to the new process's PML4 because:
+     *  - TTBR0: needed for user-space address resolution
+     *  - TTBR1: needed so the self-map (PXE[0x1ED], at kernel VA)
+     *    resolves through the current process's page tables
+     *
+     * The new PML4's upper half (kernel entries) is a copy of the
+     * kernel's entries, made at process creation time.
+     */
+
+    /* Drain pending memory operations */
+    __asm__ __volatile__("dsb ish" ::: "memory");
+
+    /* Switch both TTBRs to the new process's PML4 */
+    __asm__ __volatile__("msr ttbr0_el1, %0" :: "r"(NewPageTable) : "memory");
+    __asm__ __volatile__("msr ttbr1_el1, %0" :: "r"(NewPageTable) : "memory");
+
+    /* Invalidate all TLB entries and synchronize */
+    __asm__ __volatile__("tlbi vmalle1is" ::: "memory");
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb" ::: "memory");
 }
 
 /* TLB flush for current processor */
@@ -732,170 +760,7 @@ PspGetOrSetContextKernelRoutine(
     UNIMPLEMENTED;
 }
 
-/* Page table / virtual memory management stubs */
-BOOLEAN
-NTAPI
-MmIsPagePresent(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address)
-{
-    return FALSE;
-}
-
-BOOLEAN
-NTAPI
-MmIsDisabledPage(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address)
-{
-    return FALSE;
-}
-
-BOOLEAN
-NTAPI
-MmIsPageSwapEntry(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address)
-{
-    return FALSE;
-}
-
-PFN_NUMBER
-NTAPI
-MmGetPfnForProcess(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address)
-{
-    return 0;
-}
-
-ULONG
-NTAPI
-MmGetPageProtect(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address)
-{
-    return PAGE_NOACCESS;
-}
-
-VOID
-NTAPI
-MmSetPageProtect(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _In_ ULONG flProtect)
-{
-    UNIMPLEMENTED;
-}
-
-VOID
-NTAPI
-MmSetDirtyBit(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _In_ BOOLEAN Dirty)
-{
-    UNIMPLEMENTED;
-}
-
-NTSTATUS
-NTAPI
-MmCreateVirtualMapping(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _In_ ULONG flProtect,
-    _In_ PFN_NUMBER Page)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-NTSTATUS
-NTAPI
-MmCreatePhysicalMapping(
-    _Inout_opt_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _In_ ULONG flProtect,
-    _In_ PFN_NUMBER Page)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-_Success_(return)
-BOOLEAN
-MmDeleteVirtualMapping(
-    _Inout_opt_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _Out_opt_ BOOLEAN *WasDirty,
-    _Out_opt_ PPFN_NUMBER Page)
-{
-    if (WasDirty) *WasDirty = FALSE;
-    if (Page) *Page = 0;
-    UNIMPLEMENTED;
-    return FALSE;
-}
-
-_Success_(return)
-BOOLEAN
-MmDeletePhysicalMapping(
-    _Inout_opt_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _Out_opt_ BOOLEAN *WasDirty,
-    _Out_opt_ PPFN_NUMBER Page)
-{
-    if (WasDirty) *WasDirty = FALSE;
-    if (Page) *Page = 0;
-    UNIMPLEMENTED;
-    return FALSE;
-}
-
-VOID
-NTAPI
-MmGetPageFileMapping(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _Out_ SWAPENTRY *SwapEntry)
-{
-    *SwapEntry = 0;
-}
-
-NTSTATUS
-NTAPI
-MmCreatePageFileMapping(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _In_ SWAPENTRY SwapEntry)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-VOID
-NTAPI
-MmDeletePageFileMapping(
-    _In_ PEPROCESS Process,
-    _In_ PVOID Address,
-    _Out_ SWAPENTRY *SwapEntry)
-{
-    *SwapEntry = 0;
-}
-
-BOOLEAN
-MiArchCreateProcessAddressSpace(
-    _In_ PEPROCESS Process,
-    _In_ PULONG_PTR DirectoryTableBase)
-{
-    UNIMPLEMENTED;
-    return FALSE;
-}
-
-VOID
-NTAPI
-MmInitGlobalKernelPageDirectory(VOID)
-{
-    /* FIXME: Initialize ARM64 kernel page directory */
-}
+/* Page table / virtual memory management — moved to mm/arm64/page.c */
 
 /* KeSwitchKernelStack */
 PVOID

@@ -69,7 +69,7 @@ MmMapIoSpace(IN PHYSICAL_ADDRESS PhysicalAddress,
     // FIXME: This doesn't respect PAE, but we currently don't
     // define a PAE build flag since there is no such build.
     //
-#if !defined(_M_AMD64)
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
     ASSERT(PhysicalAddress.HighPart == 0);
 #endif
 
@@ -82,8 +82,13 @@ MmMapIoSpace(IN PHYSICAL_ADDRESS PhysicalAddress,
     //
     // Calculate page count
     //
+#if defined(_M_AMD64) || defined(_M_ARM64)
+    PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(PhysicalAddress.QuadPart,
+                                               NumberOfBytes);
+#else
     PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(PhysicalAddress.LowPart,
                                                NumberOfBytes);
+#endif
 
     //
     // Compute the PFN and check if it's a known I/O mapping
@@ -116,8 +121,13 @@ MmMapIoSpace(IN PHYSICAL_ADDRESS PhysicalAddress,
     //
     // Now compute the VA offset
     //
+#if defined(_M_AMD64) || defined(_M_ARM64)
+    BaseAddress = (PVOID)((ULONG_PTR)BaseAddress +
+                          BYTE_OFFSET(PhysicalAddress.QuadPart));
+#else
     BaseAddress = (PVOID)((ULONG_PTR)BaseAddress +
                           BYTE_OFFSET(PhysicalAddress.LowPart));
+#endif
 
     //
     // Get the template and configure caching

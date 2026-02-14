@@ -293,6 +293,19 @@ KeDelayExecutionThread(IN KPROCESSOR_MODE WaitMode,
     LARGE_INTEGER DueTime, NewDueTime, InterruptTime;
     ULONG Hand = 0;
 
+#ifdef _M_ARM64
+    /* ARM64 has no HAL timer interrupt yet — KeDelayExecutionThread would
+     * sleep forever because no clock tick fires to expire the timer.
+     * We yield to other ready threads so that spin-wait loops (like
+     * MiGrabDataSection's INCREATE wait) don't starve the creating thread. */
+    {
+        /* Yield to any other runnable thread via NtYieldExecution.
+         * This is equivalent to a zero-length delay with a context switch. */
+        NtYieldExecution();
+        return STATUS_SUCCESS;
+    }
+#endif
+
     if (Thread->WaitNext)
         ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
     else

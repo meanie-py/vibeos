@@ -1416,6 +1416,45 @@ KeBugCheckEx(IN ULONG BugCheckCode,
              IN ULONG_PTR BugCheckParameter3,
              IN ULONG_PTR BugCheckParameter4)
 {
+#ifdef _M_ARM64
+    /* UART trace for bugcheck on ARM64 */
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_s = "\r\n*** BUGCHECK: code=0x";
+        int _i;
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 28; _i >= 0; _i -= 4) {
+            int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P1=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter1 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P2=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter2 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P3=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter3 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P4=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter4 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = "\r\n";
+        while (*_s) *_u = (ULONG)*_s++;
+    }
+#endif
     /* Call the internal API */
     KeBugCheckWithTf(BugCheckCode,
                      BugCheckParameter1,
@@ -1433,6 +1472,20 @@ VOID
 NTAPI
 KeBugCheck(ULONG BugCheckCode)
 {
+#ifdef _M_ARM64
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_s = "\r\n*** BUGCHECK: code=0x";
+        int _i;
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 28; _i >= 0; _i -= 4) {
+            int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = "\r\n";
+        while (*_s) *_u = (ULONG)*_s++;
+    }
+#endif
     /* Call the internal API */
     KeBugCheckWithTf(BugCheckCode, 0, 0, 0, 0, NULL);
 }

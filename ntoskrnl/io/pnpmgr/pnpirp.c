@@ -10,15 +10,6 @@
 #define NDEBUG
 #include <debug.h>
 
-#ifdef _M_ARM64
-#define _IRP_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _IRP_TRACE(s) ((void)0)
-#endif
 
 NTSTATUS
 IopSynchronousCall(
@@ -74,14 +65,14 @@ IopSynchronousCall(
     *IrpStack = *IoStackLocation;
 
     /* Call the driver */
-    _IRP_TRACE("[IRP] IoCallDriver\r\n");
+    ARM64_UART_TRACE("[IRP] IoCallDriver\r\n");
     Status = IoCallDriver(TopDeviceObject, Irp);
-    _IRP_TRACE("[IRP] IoCallDriver returned\r\n");
+    ARM64_UART_TRACE("[IRP] IoCallDriver returned\r\n");
     /* Otherwise we may get stuck here or have IoStatusBlock not populated */
     ASSERT(!KeAreAllApcsDisabled());
     if (Status == STATUS_PENDING)
     {
-        _IRP_TRACE("[IRP] STATUS_PENDING, waiting\r\n");
+        ARM64_UART_TRACE("[IRP] STATUS_PENDING, waiting\r\n");
         /* Wait for it */
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock.Status;

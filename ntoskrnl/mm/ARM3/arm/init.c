@@ -46,12 +46,6 @@ PVOID MiSessionViewEnd;
 PVOID MiSystemPteSpaceStart;
 PVOID MiSystemPteSpaceEnd;
 
-/* ARM64 UART trace for early MM debugging */
-#define _MM_UART(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
 
 /* PRIVATE FUNCTIONS **********************************************************/
 
@@ -227,7 +221,8 @@ MiInitializePageTable(VOID)
      * The identity mapping (TTBR0 range) is still needed for:
      *  - PL011 UART at 0x09000000 (debug output)
      *  - Any remaining identity-mapped accesses during boot
-     * Once we have proper kernel MMIO mapping, we can zero these. */
+     * MmAccessFault handles stale bootloader mappings by invalidating
+     * them when demand-paging committed user pages (see MmNotPresentFault). */
 
     /* Flush the TLB */
     KeFlushCurrentTb();
@@ -299,7 +294,7 @@ static
 VOID
 MiBuildNonPagedPool(VOID)
 {
-    _MM_UART("[MM] MiBuildNonPagedPool\r\n");
+    ARM64_UART_TRACE("[MM] MiBuildNonPagedPool\r\n");
 
     /* Check if this is a machine with less than 256MB of RAM, and no overide */
     if ((MmNumberOfPhysicalPages <= MI_MIN_PAGES_FOR_NONPAGED_POOL_TUNING) &&
@@ -383,7 +378,7 @@ MiBuildSystemPteSpace(VOID)
     PMMPTE PointerPte;
     SIZE_T NonPagedSystemSize;
 
-    _MM_UART("[MM] MiBuildSystemPteSpace\r\n");
+    ARM64_UART_TRACE("[MM] MiBuildSystemPteSpace\r\n");
 
     /* Use the default number of system PTEs */
     MmNumberOfSystemPtes = MI_NUMBER_SYSTEM_PTES;
@@ -408,7 +403,7 @@ MiBuildSystemPteSpace(VOID)
     /* Set the counter to maximum */
     MiFirstReservedZeroingPte->u.Hard.PageFrameNumber = MI_ZERO_PTES;
 
-    _MM_UART("[MM] SysPTE space initialized\r\n");
+    ARM64_UART_TRACE("[MM] SysPTE space initialized\r\n");
 }
 
 static
@@ -543,7 +538,7 @@ VOID
 MiBuildPfnDatabase(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    _MM_UART("[MM] MiBuildPfnDatabase\r\n");
+    ARM64_UART_TRACE("[MM] MiBuildPfnDatabase\r\n");
 
     /* Map PXEs, PPEs and PDEs for PFN database */
     MiEnsurePageTableHierarchy(MmPfnDatabase,
@@ -580,7 +575,7 @@ MiInitMachineDependent(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     NTSTATUS Status;
     ULONG Flags;
 
-    _MM_UART("[MM] MiInitMachineDependent ARM64\r\n");
+    ARM64_UART_TRACE("[MM] MiInitMachineDependent ARM64\r\n");
 
     ASSERT(MxPfnAllocation != 0);
 
@@ -653,7 +648,7 @@ MiInitMachineDependent(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Initialize the balancer */
     MmInitializeBalancer((ULONG)MmAvailablePages, 0);
 
-    _MM_UART("[MM] MiInitMachineDependent done\r\n");
+    ARM64_UART_TRACE("[MM] MiInitMachineDependent done\r\n");
 
     /* Sanity checks */
     ASSERT(MmPfnDatabase);

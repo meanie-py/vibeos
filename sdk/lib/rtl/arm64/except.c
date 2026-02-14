@@ -32,6 +32,24 @@ RtlInitializeContext(
     IN PTHREAD_START_ROUTINE ThreadStartAddress,
     IN PINITIAL_TEB StackBase)
 {
+    /* Initialize everything to 0 */
+    RtlZeroMemory(ThreadContext, sizeof(*ThreadContext));
+
+    /* Set the entry point (PC) and stack pointer */
+    ThreadContext->Pc = (ULONG64)ThreadStartAddress;
+    ThreadContext->Sp = (ULONG64)StackBase;
+
+    /* ARM64 SP must be 16-byte aligned */
+    ThreadContext->Sp &= ~(ULONG64)15;
+
+    /* Set first argument (X0) to the start parameter */
+    ThreadContext->X0 = (ULONG64)ThreadStartParam;
+
+    /* CPSR for user mode: EL0t (M=0), all interrupts enabled (DAIF=0) */
+    ThreadContext->Cpsr = 0;
+
+    /* Set context flags */
+    ThreadContext->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 }
 
 PRUNTIME_FUNCTION

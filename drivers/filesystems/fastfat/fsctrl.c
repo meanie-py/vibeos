@@ -670,6 +670,14 @@ Return Value:
     PAGED_CODE();
     UNREFERENCED_PARAMETER( VolumeDeviceObject );
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_m = "[FASTFAT] FatFsdFileSystemControl entered\r\n";
+        while (*_m) { *_u = (ULONG)*_m++; }
+    }
+#endif
+
     DebugTrace(+1, Dbg,"FatFsdFileSystemControl\n", 0);
 
     //
@@ -931,6 +939,14 @@ Return Value:
 
     PAGED_CODE();
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_m = "[FASTFAT] FatMountVolume entered\r\n";
+        while (*_m) { *_u = (ULONG)*_m++; }
+    }
+#endif
+
     DebugTrace(+1, Dbg, "FatMountVolume\n", 0);
     DebugTrace( 0, Dbg, "TargetDeviceObject = %p\n", TargetDeviceObject);
     DebugTrace( 0, Dbg, "Vpb                = %p\n", Vpb);
@@ -1008,6 +1024,13 @@ Return Value:
     //  type.  We'll check this later to avoid some scurrilous volumes.
     //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_m = "[FASTFAT] IOCTL_DISK_GET_PARTITION_INFO_EX start\r\n";
+        while (*_m) { *_u = (ULONG)*_m++; }
+    }
+#endif
     StatusPartInfo = FatPerformDevIoCtrl( IrpContext,
                                           IOCTL_DISK_GET_PARTITION_INFO_EX,
                                           TargetDeviceObject,
@@ -1018,6 +1041,13 @@ Return Value:
                                           FALSE,
                                           TRUE,
                                           &Iosb );
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_m = "[FASTFAT] IOCTL partition info done\r\n";
+        while (*_m) { *_u = (ULONG)*_m++; }
+    }
+#endif
 
     //
     //  Make sure we can wait.
@@ -1030,6 +1060,14 @@ Return Value:
     //
 
     FatScanForDismountedVcb( IrpContext );
+
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_m = "[FASTFAT] Post-ScanForDismountedVcb\r\n";
+        while (*_m) { *_u = (ULONG)*_m++; }
+    }
+#endif
 
     //
     //  Initialize the Bcbs and our final state so that the termination
@@ -1057,6 +1095,14 @@ Return Value:
 
         (VOID)FatAcquireExclusiveGlobal( IrpContext );
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] AcquireExclusiveGlobal done\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
+
 #ifdef _MSC_VER
 #pragma prefast( pop )
 #endif
@@ -1077,6 +1123,14 @@ Return Value:
 
             try_return( Status );
         }
+
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] IoCreateDevice done\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
 
         //
         //  Our alignment requirement is the larger of the processor alignment requirement
@@ -1126,8 +1180,23 @@ Return Value:
 
         if (!NT_SUCCESS( Status )) {
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+            {
+                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                const char *_m = "[FASTFAT] IOCTL_DISK_GET_DRIVE_GEOMETRY FAILED\r\n";
+                while (*_m) { *_u = (ULONG)*_m++; }
+            }
+#endif
             try_return( Status );
         }
+
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] Geometry OK\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
 
 #ifdef _MSC_VER
 #pragma prefast( suppress: 28175, "this is a filesystem driver, touching SectorSize is fine" )
@@ -1167,11 +1236,25 @@ Return Value:
         //  Initialize the new vcb
         //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatInitializeVcb start\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         FatInitializeVcb( IrpContext,
                           &VolDo->Vcb,
                           TargetDeviceObject,
                           Vpb,
                           FsDeviceObject);
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatInitializeVcb done\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         //
         //  Get a reference to the Vcb hanging off the end of the device object
         //
@@ -1188,6 +1271,13 @@ Return Value:
         //  and even data media may not be universally readable on sector zero.
         //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatReadVolumeFile(boot sector) start\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         _SEH2_TRY {
 
             FatReadVolumeFile( IrpContext,
@@ -1203,12 +1293,27 @@ Return Value:
               NOTHING;
         } _SEH2_END;
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatReadVolumeFile done\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
+
         //
         //  Call a routine to check the boot sector to see if it is fat
         //
 
         if (BootBcb == NULL || !FatIsBootSectorFat( BootSector)) {
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+            {
+                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                const char *_m = "[FASTFAT] NOT a FAT volume!\r\n";
+                while (*_m) { *_u = (ULONG)*_m++; }
+            }
+#endif
             DebugTrace(0, Dbg, "Not a Fat Volume\n", 0);
 
             //
@@ -1217,6 +1322,13 @@ Return Value:
 
             try_return( Status = STATUS_UNRECOGNIZED_VOLUME );
         }
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatIsBootSectorFat OK\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
 
 #if (NTDDI_VERSION > NTDDI_WIN8)
         //
@@ -1259,6 +1371,13 @@ Return Value:
         //  Win9x does the same.
         //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatUnpackBios\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         FatUnpackBios( &Vcb->Bpb, &BootSector->PackedBpb );
 
         //
@@ -1354,7 +1473,21 @@ Return Value:
         //  Compute a number of fields for Vcb.AllocationSupport
         //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatSetupAllocationSupport start\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         FatSetupAllocationSupport( IrpContext, Vcb );
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatSetupAllocationSupport done\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
 
         //
         //  Sanity check the FsInfo information for FAT32 volumes.  Silently deal
@@ -1381,6 +1514,13 @@ Return Value:
         //  exception handling to do it for us, at which point everything will have vanished.
         //
 
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            const char *_m = "[FASTFAT] FatCreateRootDcb start\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
         _SEH2_TRY {
 
             FatCreateRootDcb( IrpContext, Vcb );

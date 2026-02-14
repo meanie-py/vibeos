@@ -156,6 +156,17 @@ MiAddressToPxe(PVOID Address)
     return (PMMPTE)(PXE_BASE + Offset);
 }
 
+/* Check if the PDE hierarchy for a given address is valid (all levels present).
+ * Same as AMD64 version but with 4 levels. */
+FORCEINLINE
+BOOLEAN
+MiIsPdeForAddressValid(PVOID Address)
+{
+    return ((MiAddressToPxe(Address)->u.Hard.Valid) &&
+            (MiAddressToPpe(Address)->u.Hard.Valid) &&
+            (MiAddressToPde(Address)->u.Hard.Valid));
+}
+
 /* Convert an address to a corresponding PTE offset/index */
 #define MiAddressToPteOffset(x) \
     ((((ULONG_PTR)(x)) >> 12) & 0x1FF)

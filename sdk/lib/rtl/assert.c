@@ -30,19 +30,30 @@ RtlAssert(IN PVOID FailedAssertion,
 
 #ifdef _M_ARM64
     /* On ARM64 early boot, there's no debugger connected and DbgPrompt
-     * will hang forever. Print the assertion to UART and return. */
+     * will hang forever. Print first 20 assertions to UART, then silently return.
+     * This prevents ~1500 PFN assertions from flooding UART and stalling boot. */
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
-        const char *prefix = "\r\n*** ASSERT FAILED: ";
-        const char *at = " at ";
-        const char *s;
-        while (*prefix) *uart = (ULONG)*prefix++;
-        if (FailedAssertion) { s = (const char *)FailedAssertion; while (*s) *uart = (ULONG)*s++; }
-        *uart = (ULONG)' ';
-        at = " at ";
-        while (*at) *uart = (ULONG)*at++;
-        if (FileName) { s = (const char *)FileName; while (*s) *uart = (ULONG)*s++; }
-        *uart = (ULONG)'\r'; *uart = (ULONG)'\n';
+        static volatile LONG AssertCount = 0;
+        LONG Count = InterlockedIncrement(&AssertCount);
+
+        if (Count <= 20)
+        {
+            volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+            const char *prefix = "\r\n*** ASSERT FAILED: ";
+            const char *at = " at ";
+            const char *s;
+            while (*prefix) *uart = (ULONG)*prefix++;
+            if (FailedAssertion) { s = (const char *)FailedAssertion; while (*s) *uart = (ULONG)*s++; }
+            while (*at) *uart = (ULONG)*at++;
+            if (FileName) { s = (const char *)FileName; while (*s) *uart = (ULONG)*s++; }
+            *uart = (ULONG)'\r'; *uart = (ULONG)'\n';
+
+            if (Count == 20)
+            {
+                const char *msg = "*** (further assertions suppressed)\r\n";
+                while (*msg) *uart = (ULONG)*msg++;
+            }
+        }
     }
     return;
 #endif

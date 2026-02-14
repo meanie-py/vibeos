@@ -398,7 +398,8 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c)
 endif()
 
 if(NOT _WINKD_)

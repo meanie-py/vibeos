@@ -14,6 +14,16 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Direct UART trace for ARM64 boot debugging — bypasses PCH limitation */
+#ifdef _M_ARM64
+#undef ARM64_UART_TRACE
+#define ARM64_UART_TRACE(s) do { \
+    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    const char *_p = (s); \
+    while (*_p) *_uart = (ULONG)*_p++; \
+} while(0)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 extern KEVENT PiEnumerationFinished;
@@ -39,6 +49,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     //
     // Scan memory descriptors
     //
+    ARM64_UART_TRACE("[RAMDISK] Scanning for XIPRom descriptor\r\n");
     MemoryDescriptor = NULL;
     ListHead = &LoaderBlock->MemoryDescriptorListHead;
     NextEntry = ListHead->Flink;
@@ -70,6 +81,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         //
         // Bugcheck -- no data
         //
+        ARM64_UART_TRACE("[RAMDISK] BUG: No XIPRom descriptor found!\r\n");
         KeBugCheckEx(RAMDISK_BOOT_INITIALIZATION_FAILED,
                      RD_NO_XIPROM_DESCRIPTOR,
                      STATUS_INVALID_PARAMETER,
@@ -158,6 +170,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     //
     // Open a handle to the driver
     //
+    ARM64_UART_TRACE("[RAMDISK] Opening \\Device\\Ramdisk\r\n");
     Status = ZwOpenFile(&DriverHandle,
                         GENERIC_ALL | SYNCHRONIZE,
                         &ObjectAttributes,
@@ -169,6 +182,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         //
         // Bugcheck -- no driver
         //
+        ARM64_UART_TRACE("[RAMDISK] BUG: Cannot open \\Device\\Ramdisk!\r\n");
         KeBugCheckEx(RAMDISK_BOOT_INITIALIZATION_FAILED,
                      RD_NO_RAMDISK_DRIVER,
                      IoStatusBlock.Status,
@@ -179,6 +193,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     //
     // Send create command
     //
+    ARM64_UART_TRACE("[RAMDISK] Sending FSCTL_CREATE_RAM_DISK\r\n");
     Status = ZwDeviceIoControlFile(DriverHandle,
                                    NULL,
                                    NULL,
@@ -232,6 +247,7 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     //
     // Create the symbolic link
     //
+    ARM64_UART_TRACE("[RAMDISK] Creating \\ArcName\\ramdisk(0) symlink\r\n");
     RtlInitUnicodeString(&DeviceString, SourceString);
     Status = IoCreateSymbolicLink(&SymbolicLinkName, &DeviceString);
     RtlFreeUnicodeString(&GuidString);
@@ -277,11 +293,13 @@ IopStartRamdisk(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     //
     // Wait for ramdisk relations being initialized
     //
-
+    ARM64_UART_TRACE("[RAMDISK] Waiting for PiEnumerationFinished\r\n");
     KeWaitForSingleObject(&PiEnumerationFinished, Executive, KernelMode, FALSE, NULL);
+    ARM64_UART_TRACE("[RAMDISK] PiEnumerationFinished signaled\r\n");
 
     //
     // We made it
     //
+    ARM64_UART_TRACE("[RAMDISK] IopStartRamdisk SUCCESS\r\n");
     return STATUS_SUCCESS;
 }

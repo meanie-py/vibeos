@@ -381,6 +381,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
             "ProcessHandle: %p Parent: %p\n", ProcessHandle, ParentProcess);
 
     /* Validate flags */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: enter\r\n");
     if (Flags & ~PROCESS_CREATE_FLAGS_LEGAL_MASK) return STATUS_INVALID_PARAMETER;
 
     /* Check for parent */
@@ -557,6 +558,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     if (Parent)
     {
         /* Create the address space for the child */
+        ARM64_UART_TRACE("[PS] PspCreateProcess: MmCreateProcessAddressSpace\r\n");
         if (!MmCreateProcessAddressSpace(MinWs,
                                          Process,
                                          DirectoryTableBase))
@@ -623,6 +625,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     Status = STATUS_SUCCESS;
 
     /* Check if this is a real user-mode process */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: MmInitProcAS\r\n");
     if (SectionHandle)
     {
         /* Initialize the address space */
@@ -690,7 +693,9 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
 #endif
 
     /* Check if we have a section object and map the system DLL */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspMapSystemDll\r\n");
     if (SectionObject) PspMapSystemDll(Process, NULL, FALSE);
+    ARM64_UART_TRACE("[PS] PspCreateProcess: CreateHandle\r\n");
 
     /* Create a handle for the Process */
     CidEntry.Object = Process;
@@ -884,6 +889,8 @@ Cleanup:
     /* Dereference the parent */
     if (Parent) ObDereferenceObject(Parent);
 
+    ARM64_UART_TRACE("[PS] PspCreateProcess: returning\r\n");
+    ARM64_UART_TRACE_HEX("[PS]   Status=", (ULONG_PTR)Status);
     /* Return status to caller */
     return Status;
 }

@@ -2073,18 +2073,8 @@ MmArmInitSystem(IN ULONG Phase,
     MMPTE TempPte;
 #endif
 
-    /* ARM64 UART diagnostic helper */
-#ifdef _M_ARM64
-#define _MM_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _MM_TRACE(s) ((void)0)
-#endif
 
-    _MM_TRACE("[MM] MmArmInitSystem entered\r\n");
+    ARM64_UART_TRACE("[MM] MmArmInitSystem entered\r\n");
 
     /* Dump memory descriptors */
     if (MiDbgEnableMdDump) MiDbgDumpMemoryDescriptors();
@@ -2330,7 +2320,7 @@ MmArmInitSystem(IN ULONG Phase,
         MxPfnAllocation++;
 
         /* Initialize the platform-specific parts */
-        _MM_TRACE("[MM] MiInitMachineDependent\r\n");
+        ARM64_UART_TRACE("[MM] MiInitMachineDependent\r\n");
         MiInitMachineDependent(LoaderBlock);
 #if DBG && !defined(_M_ARM64)
         /* Prototype PTEs are assumed to be in paged pool, so check if the math works */
@@ -2570,21 +2560,21 @@ MmArmInitSystem(IN ULONG Phase,
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
 
         /* Size up paged pool and build the shadow system page directory */
-        _MM_TRACE("[MM] MiBuildPagedPool\r\n");
+        ARM64_UART_TRACE("[MM] MiBuildPagedPool\r\n");
         MiBuildPagedPool();
 
         /* Debugger physical memory support is now ready to be used */
         MmDebugPte = MiAddressToPte(MiDebugMapping);
 
         /* Initialize the loaded module list */
-        _MM_TRACE("[MM] MiInitializeLoadedModuleList\r\n");
+        ARM64_UART_TRACE("[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(LoaderBlock);
     }
 
     //
     // Always return success for now
     //
-    _MM_TRACE("[MM] MmArmInitSystem returning TRUE\r\n");
+    ARM64_UART_TRACE("[MM] MmArmInitSystem returning TRUE\r\n");
     return TRUE;
 }
 

@@ -959,8 +959,10 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
     ASSERT(Process->Pcb.DirectoryTableBase[0] != 0);
     ASSERT(Process->PdeUpdateNeeded == FALSE);
 
+    ARM64_UART_TRACE("[MM] InitProcAS: KeAttachProcess\r\n");
     /* Attach to the process */
     KeAttachProcess(&Process->Pcb);
+    ARM64_UART_TRACE("[MM] InitProcAS: attached\r\n");
 
     /* The address space should now been in phase 1 or 0 */
     ASSERT(Process->AddressSpaceInitialized <= 1);
@@ -974,8 +976,10 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
     ASSERT(Process->VadRoot.NumberGenericTableElements == 0);
     Process->VadRoot.BalancedRoot.u1.Parent = &Process->VadRoot.BalancedRoot;
 
+    ARM64_UART_TRACE("[MM] InitProcAS: MiLockProcessWorkingSet\r\n");
     /* Lock our working set */
     MiLockProcessWorkingSet(Process, PsGetCurrentThread());
+    ARM64_UART_TRACE("[MM] InitProcAS: locked WS\r\n");
 
     /* Lock PFN database */
     OldIrql = MiAcquirePfnLock();

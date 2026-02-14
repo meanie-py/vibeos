@@ -12,16 +12,6 @@
 #define NDEBUG
 #include <debug.h>
 
-/* ARM64 UART diagnostic helper */
-#ifdef _M_ARM64
-#define _MM_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _MM_TRACE(s) ((void)0)
-#endif
 
 #define MODULE_INVOLVED_IN_ARM3
 #include "ARM3/miarm.h"
@@ -242,17 +232,17 @@ MmInitSystem(IN ULONG Phase,
     MmKernelAddressSpace = &PsIdleProcess->Vm;
 
     /* Intialize system memory areas */
-    _MM_TRACE("[MM1] MiInitSystemMemoryAreas\r\n");
+    ARM64_UART_TRACE("[MM1] MiInitSystemMemoryAreas\r\n");
     MiInitSystemMemoryAreas();
 
     /* Dump the address space */
     MiDbgDumpAddressSpace();
 
-    _MM_TRACE("[MM1] MmInitGlobalKernelPageDirectory\r\n");
+    ARM64_UART_TRACE("[MM1] MmInitGlobalKernelPageDirectory\r\n");
     MmInitGlobalKernelPageDirectory();
     MmInitializeMemoryConsumer(MC_USER, MmTrimUserMemory);
     MmInitializeRmapList();
-    _MM_TRACE("[MM1] MmInitSectionImplementation\r\n");
+    ARM64_UART_TRACE("[MM1] MmInitSectionImplementation\r\n");
     MmInitSectionImplementation();
     MmInitPagingFile();
 
@@ -270,7 +260,7 @@ MmInitSystem(IN ULONG Phase,
     //
     // Now get the PTE for shared data, and read the PFN that holds it
     //
-    _MM_TRACE("[MM1] SharedUserData PTE\r\n");
+    ARM64_UART_TRACE("[MM1] SharedUserData PTE\r\n");
     PointerPte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
     ASSERT(PointerPte->u.Hard.Valid == 1);
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
@@ -283,28 +273,28 @@ MmInitSystem(IN ULONG Phase,
     *MmSharedUserDataPte = TempPte;
 
     /* Initialize session working set support */
-    _MM_TRACE("[MM1] MiInitializeSessionWsSupport\r\n");
+    ARM64_UART_TRACE("[MM1] MiInitializeSessionWsSupport\r\n");
     MiInitializeSessionWsSupport();
 
     /* Setup session IDs */
     MiInitializeSessionIds();
 
     /* Setup the memory threshold events */
-    _MM_TRACE("[MM1] MiInitializeMemoryEvents\r\n");
+    ARM64_UART_TRACE("[MM1] MiInitializeMemoryEvents\r\n");
     if (!MiInitializeMemoryEvents()) return FALSE;
 
     /*
      * Unmap low memory
      */
-    _MM_TRACE("[MM1] MiInitBalancerThread\r\n");
+    ARM64_UART_TRACE("[MM1] MiInitBalancerThread\r\n");
     MiInitBalancerThread();
 
     /* Initialize the balance set manager */
-    _MM_TRACE("[MM1] MmInitBsmThread\r\n");
+    ARM64_UART_TRACE("[MM1] MmInitBsmThread\r\n");
     MmInitBsmThread();
 
     /* Loop the boot loaded images (under lock) */
-    _MM_TRACE("[MM1] MiWriteProtectSystemImage loop\r\n");
+    ARM64_UART_TRACE("[MM1] MiWriteProtectSystemImage loop\r\n");
     ExAcquireResourceExclusiveLite(&PsLoadedModuleResource, TRUE);
     for (ListEntry = PsLoadedModuleList.Flink;
          ListEntry != &PsLoadedModuleList;
@@ -318,7 +308,7 @@ MmInitSystem(IN ULONG Phase,
     }
     ExReleaseResourceLite(&PsLoadedModuleResource);
 
-    _MM_TRACE("[MM1] MmInitSystem(1) done\r\n");
+    ARM64_UART_TRACE("[MM1] MmInitSystem(1) done\r\n");
     return TRUE;
 }
 

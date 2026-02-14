@@ -12,6 +12,21 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 QEMU TCG workaround: barrier before indirect calls through function pointers.
+ * Without this, QEMU's JIT can hang on indirect calls from freshly-allocated memory. */
+#ifdef _M_ARM64
+#define GT_BARRIER() __asm__ __volatile__("dsb sy\nisb" ::: "memory")
+/* Minimal UART trace for debugging (PL011 at QEMU virt address) */
+#define GT_TRACE(s) do { \
+    volatile unsigned int *_u = (volatile unsigned int *)0x09000000ULL; \
+    const char *_p = (s); \
+    while (*_p) { *_u = (unsigned int)*_p++; } \
+} while(0)
+#else
+#define GT_BARRIER() ((void)0)
+#define GT_TRACE(s) ((void)0)
+#endif
+
 /* Internal header for table entries */
 typedef struct _TABLE_ENTRY_HEADER
 {
@@ -32,6 +47,7 @@ RtlpFindGenericTableNodeOrParent(IN PRTL_GENERIC_TABLE Table,
     RTL_GENERIC_COMPARE_RESULTS Result;
 
     /* Quick check to see if the table is empty */
+    GT_BARRIER();
     if (RtlIsGenericTableEmpty(Table))
     {
         return TableEmptyTree;
@@ -44,6 +60,7 @@ RtlpFindGenericTableNodeOrParent(IN PRTL_GENERIC_TABLE Table,
     while (TRUE)
     {
         /* Do the compare */
+        GT_BARRIER();
         Result = Table->CompareRoutine(Table,
                                        Buffer,
                                        &((PTABLE_ENTRY_HEADER)CurrentNode)->
@@ -129,15 +146,22 @@ RtlInsertElementGenericTable(IN PRTL_GENERIC_TABLE Table,
     TABLE_SEARCH_RESULT Result;
 
     /* Get the splay links and table search result immediately */
+    GT_TRACE("[GT] Find\r\n");
     Result = RtlpFindGenericTableNodeOrParent(Table, Buffer, &NodeOrParent);
+    GT_TRACE("[GT] Find done\r\n");
 
     /* Now call the routine to do the full insert */
-    return RtlInsertElementGenericTableFull(Table,
+    GT_TRACE("[GT] InsertFull\r\n");
+    {
+        PVOID ret = RtlInsertElementGenericTableFull(Table,
                                             Buffer,
                                             BufferSize,
                                             NewElement,
                                             NodeOrParent,
                                             Result);
+        GT_TRACE("[GT] InsertFull done\r\n");
+        return ret;
+    }
 }
 
 /*
@@ -159,12 +183,14 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
     {
         /* We're doing an allocation, sanity check */
         ASSERT(Table->NumberGenericTableElements != (MAXULONG - 1));
-
         /* Allocate a node */
+        GT_TRACE("[GT] Alloc\r\n");
+        GT_BARRIER();
         NewNode = Table->AllocateRoutine(Table,
                                          BufferSize +
                                          FIELD_OFFSET(TABLE_ENTRY_HEADER,
                                                       UserData));
+        GT_TRACE("[GT] Alloc done\r\n");
         if (!NewNode)
         {
             /* No memory or other allocation error, fail */
@@ -173,6 +199,7 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
         }
 
         /* Initialize the new inserted element */
+        GT_TRACE("[GT] Init splay\r\n");
         RtlInitializeSplayLinks(NewNode);
         InsertTailList(&Table->InsertOrderList,
                        &((PTABLE_ENTRY_HEADER)NewNode)->ListEntry);
@@ -183,6 +210,7 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
         /* Check where we should insert the entry */
         if (SearchResult == TableEmptyTree)
         {
+            GT_TRACE("[GT] Set root\r\n");
             /* This is the new root node */
             Table->TableRoot = NewNode;
         }
@@ -209,6 +237,7 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
     }
 
     /* Splay the tree */
+    GT_BARRIER();
     Table->TableRoot = RtlSplay(NewNode);
 
     /* Return status */

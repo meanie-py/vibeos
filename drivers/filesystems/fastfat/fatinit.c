@@ -101,6 +101,14 @@ Return Value:
 
     UNREFERENCED_PARAMETER( RegistryPath );
 
+#ifdef _M_ARM64
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_p = "[FASTFAT] DriverEntry called\r\n";
+        while (*_p) *_u = (ULONG)*_p++;
+    }
+#endif
+
     //
     // Create the device object for disks.  To avoid problems with filters who
     // know this name, we must keep it.
@@ -434,6 +442,13 @@ Return Value:
     //  And return to our caller
     //
 
+#ifdef _M_ARM64
+    {
+        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        const char *_p = "[FASTFAT] DriverEntry SUCCESS\r\n";
+        while (*_p) *_u = (ULONG)*_p++;
+    }
+#endif
     return( STATUS_SUCCESS );
 }
 

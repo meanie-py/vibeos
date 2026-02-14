@@ -12,15 +12,6 @@
 #define NDEBUG
 #include "debug.h"
 
-#ifdef _M_ARM64
-#define _HIVE_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _HIVE_TRACE(s) ((void)0)
-#endif
 
 /* FUNCTIONS *****************************************************************/
 
@@ -188,7 +179,7 @@ CmpInitializeHive(
     Hive->FlushCount = 0;
 
     /* Initialize it */
-    _HIVE_TRACE("[HIVE] HvInitialize\r\n");
+    ARM64_UART_TRACE("[HIVE] HvInitialize\r\n");
     Status = HvInitialize(&Hive->Hive,
                           OperationType,
                           HiveFlags,
@@ -212,7 +203,7 @@ CmpInitializeHive(
         return Status;
     }
 
-    _HIVE_TRACE("[HIVE] HvInitialize done\r\n");
+    ARM64_UART_TRACE("[HIVE] HvInitialize done\r\n");
 
     /* Check if we should verify the registry */
     if ((OperationType == HINIT_FILE) ||
@@ -221,7 +212,7 @@ CmpInitializeHive(
         (OperationType == HINIT_MAPFILE))
     {
         /* Verify integrity */
-        _HIVE_TRACE("[HIVE] CmCheckRegistry\r\n");
+        ARM64_UART_TRACE("[HIVE] CmCheckRegistry\r\n");
 #ifdef _M_ARM64
         /* ARM64: Skip deep validation for HINIT_MEMORY hives during boot.
          * The hive was loaded from the boot loader and validated there.
@@ -244,7 +235,7 @@ CmpInitializeHive(
                     RootData->u.KeyNode.SubKeyCounts[Volatile] = 0;
                 }
             }
-            _HIVE_TRACE("[HIVE] CmCheckRegistry skipped (HINIT_MEMORY)\r\n");
+            ARM64_UART_TRACE("[HIVE] CmCheckRegistry skipped (HINIT_MEMORY)\r\n");
         }
         else
 #endif
@@ -262,7 +253,7 @@ CmpInitializeHive(
         }
     }
 
-    _HIVE_TRACE("[HIVE] CmCheckRegistry done\r\n");
+    ARM64_UART_TRACE("[HIVE] CmCheckRegistry done\r\n");
 
     /* Reset the loading flag */
     Hive->HiveIsLoading = FALSE;

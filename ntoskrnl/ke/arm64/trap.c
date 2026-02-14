@@ -217,12 +217,6 @@ KiSynchronousExceptionHandler(
             if ((DFSC & 0x3C) == 0x04)
             {
                 NTSTATUS Status;
-                TrapPuts("[TRAP] Data Abort (translation fault): FAR=");
-                TrapPutHex64(TrapFrame->FaultAddress);
-                TrapPuts(IsWrite ? " WRITE" : " READ");
-                TrapPuts(" PC=");
-                TrapPutHex64(TrapFrame->Pc);
-                TrapPuts("\r\n");
 
                 Status = MmAccessFault(IsWrite ? 1 : 0,
                                        (PVOID)TrapFrame->FaultAddress,
@@ -230,11 +224,32 @@ KiSynchronousExceptionHandler(
                                        TrapFrame);
                 if (NT_SUCCESS(Status))
                 {
-                    TrapPuts("[TRAP] MmAccessFault resolved\r\n");
+                    /* Periodic page fault counter for debugging */
+                    {
+                        static volatile LONG PfCount = 0;
+                        LONG c = InterlockedIncrement(&PfCount);
+                        if ((c % 10) == 0)
+                        {
+                            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                            char _b[32];
+                            const char *_p;
+                            int _i = 0;
+                            _b[_i++] = '['; _b[_i++] = 'P'; _b[_i++] = 'F'; _b[_i++] = ']'; _b[_i++] = ' ';
+                            /* Print count as decimal */
+                            { LONG _v = c; char _d[10]; int _n = 0;
+                              do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
+                              while(_n > 0) _b[_i++] = _d[--_n]; }
+                            _b[_i++] = '\r'; _b[_i++] = '\n'; _b[_i++] = '\0';
+                            _p = _b;
+                            while (*_p) *_u = (ULONG)*_p++;
+                        }
+                    }
                     return; /* Resume execution */
                 }
 
-                TrapPuts("[TRAP] MmAccessFault FAILED: ");
+                TrapPuts("[TRAP] MmAccessFault FAILED: FAR=");
+                TrapPutHex64(TrapFrame->FaultAddress);
+                TrapPuts(" Status=");
                 TrapPutHex32((ULONG)Status);
                 TrapPuts("\r\n");
             }

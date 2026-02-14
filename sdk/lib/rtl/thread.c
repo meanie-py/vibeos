@@ -35,11 +35,21 @@ RtlpCreateUserStack(IN HANDLE ProcessHandle,
     SIZE_T MinimumStackCommit, GuardPageSize;
 
     /* Get some memory information */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[STK] ZwQuerySystemInfo...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwQuerySystemInformation(SystemBasicInformation,
                                       &SystemBasicInfo,
                                       sizeof(SYSTEM_BASIC_INFORMATION),
                                       NULL);
     if (!NT_SUCCESS(Status)) return Status;
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[STK] ZwQuerySystemInfo done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Use the Image Settings if we are dealing with the current Process */
     if (ProcessHandle == NtCurrentProcess())
@@ -82,6 +92,11 @@ RtlpCreateUserStack(IN HANDLE ProcessHandle,
 
     /* Reserve memory for the stack */
     Stack = 0;
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[STK] ZwAllocVM(RESERVE)...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwAllocateVirtualMemory(ProcessHandle,
                                      (PVOID*)&Stack,
                                      StackZeroBits,
@@ -89,6 +104,11 @@ RtlpCreateUserStack(IN HANDLE ProcessHandle,
                                      MEM_RESERVE,
                                      PAGE_READWRITE);
     if (!NT_SUCCESS(Status)) return Status;
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[STK] ZwAllocVM(RESERVE) done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Now set up some basic Initial TEB Parameters */
     InitialTeb->AllocatedStackBase = (PVOID)Stack;
@@ -112,6 +132,11 @@ RtlpCreateUserStack(IN HANDLE ProcessHandle,
     }
 
     /* Allocate memory for the stack */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[STK] ZwAllocVM(COMMIT)...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwAllocateVirtualMemory(ProcessHandle,
                                      (PVOID*)&Stack,
                                      0,
@@ -233,12 +258,22 @@ RtlCreateUserThread(IN HANDLE ProcessHandle,
     CONTEXT Context;
 
     /* First, we'll create the Stack */
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[THR] RtlpCreateUserStack...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = RtlpCreateUserStack(ProcessHandle,
                                  StackReserve,
                                  StackCommit,
                                  StackZeroBits,
                                  &InitialTeb);
     if (!NT_SUCCESS(Status)) return Status;
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[THR] RtlpCreateUserStack done\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
 
     /* Next, we'll set up the Initial Context */
     RtlInitializeContext(ProcessHandle,
@@ -253,6 +288,11 @@ RtlCreateUserThread(IN HANDLE ProcessHandle,
                                0,
                                NULL,
                                SecurityDescriptor);
+#if defined(_M_ARM64) && defined(_NTOSKRNL_)
+    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+      const char *_s = "[THR] ZwCreateThread...\r\n";
+      while (*_s) *_u = (ULONG)*_s++; }
+#endif
     Status = ZwCreateThread(&Handle,
                             THREAD_ALL_ACCESS,
                             &ObjectAttributes,

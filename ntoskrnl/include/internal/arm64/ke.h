@@ -164,18 +164,22 @@ FORCEINLINE
 VOID
 KeInvalidateTlbEntry(IN PVOID Address)
 {
-    /* Invalidate the TLB entry for this address */
-    /* ARM64: TLBI VAE1, <Xt> */
-    __dmb(_ARM64_BARRIER_ISH);
+    /* ARM64: TLBI VALE1IS, Xt — invalidate by VA, last level, EL1, inner shareable.
+     * The register holds VA >> 12 (the page-aligned virtual address shifted right). */
+    ULONG64 TlbiArg = (ULONG64)Address >> 12;
+    __asm__ __volatile__("tlbi vale1is, %0" : : "r"(TlbiArg) : "memory");
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb" ::: "memory");
 }
 
 FORCEINLINE
 VOID
 KeFlushProcessTb(VOID)
 {
-    /* Flush TLB - ARM64: TLBI VMALLE1 */
-    __dmb(_ARM64_BARRIER_ISH);
-    __isb(_ARM64_BARRIER_SY);
+    /* ARM64: TLBI VMALLE1IS — invalidate all EL1 TLB entries, inner shareable */
+    __asm__ __volatile__("tlbi vmalle1is" ::: "memory");
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb" ::: "memory");
 }
 
 FORCEINLINE
@@ -255,6 +259,41 @@ KiGetUserModeStackAddress(void)
 {
     return &PsGetCurrentThread()->Tcb.TrapFrame->Sp;
 }
+
+/*
+ * ARM64 UART debug trace macro — writes to PL011 at QEMU virt 0x09000000.
+ * Toggle with ARM64_UART_TRACE_ENABLE (define before including this header,
+ * or pass -DARM64_UART_TRACE_ENABLE via cmake).
+ * Each trace acts as a full memory barrier (device-memory MMIO stores).
+ */
+/* Uncomment to enable UART traces (also acts as memory barriers) */
+/* #define ARM64_UART_TRACE_ENABLE */
+#ifdef ARM64_UART_TRACE_ENABLE
+#define ARM64_UART_TRACE(s) do { \
+    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    const char *_str = (s); \
+    while (*_str) { *_uart = (ULONG)*_str++; } \
+} while(0)
+#define ARM64_UART_TRACE_HEX(prefix, val) do { \
+    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    const char *_str = (prefix); \
+    ULONG_PTR _v = (ULONG_PTR)(val); \
+    int _i; \
+    while (*_str) { *_uart = (ULONG)*_str++; } \
+    *_uart = '0'; *_uart = 'x'; \
+    for (_i = 60; _i >= 0; _i -= 4) { \
+        int _d = (_v >> _i) & 0xF; \
+        *_uart = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10); \
+    } \
+    *_uart = '\r'; *_uart = '\n'; \
+} while(0)
+#else
+#define ARM64_UART_TRACE(s) ((void)0)
+#define ARM64_UART_TRACE_HEX(prefix, val) ((void)0)
+#endif
+
+/* ARM64 full memory barrier — use where UART traces masked timing bugs */
+#define ARM64_BARRIER() __asm__ __volatile__("dsb sy\nisb" ::: "memory")
 
 #ifdef __cplusplus
 } // extern "C"

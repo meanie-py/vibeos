@@ -12,15 +12,6 @@
 #define NDEBUG
 #include <debug.h>
 
-#ifdef _M_ARM64
-#define _PS_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_m = (s); \
-    while (*_m) { *_u = (ULONG)*_m++; } \
-} while(0)
-#else
-#define _PS_TRACE(s) ((void)0)
-#endif
 
 extern ULONG ExpInitializationPhase;
 
@@ -341,7 +332,7 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     OBJECT_TYPE_INITIALIZER ObjectTypeInitializer;
     ULONG i;
 
-    _PS_TRACE("[PS] PspInitPhase0 enter\r\n");
+    ARM64_UART_TRACE("[PS] PspInitPhase0 enter\r\n");
 
     /* Get the system size */
     SystemSize = MmQuerySystemSize();
@@ -484,7 +475,7 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                NULL,
                                NULL);
 
-    _PS_TRACE("[PS] Creating initial system process\r\n");
+    ARM64_UART_TRACE("[PS] Creating initial system process\r\n");
 
     /* Create the Initial System Process */
     Status = PspCreateProcess(&PspInitialSystemProcessHandle,
@@ -506,7 +497,7 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                               (PVOID*)&PsInitialSystemProcess,
                               NULL);
 
-    _PS_TRACE("[PS] System process created\r\n");
+    ARM64_UART_TRACE("[PS] System process created\r\n");
 
     /* Copy the process names */
     strcpy(PsIdleProcess->ImageFileName, "Idle");
@@ -528,7 +519,7 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                   SeAuditProcessCreationInfo.ImageFileName,
                   sizeof(OBJECT_NAME_INFORMATION));
 
-    _PS_TRACE("[PS] Creating Phase1 thread\r\n");
+    ARM64_UART_TRACE("[PS] Creating Phase1 thread\r\n");
 
     /* Setup the system initialization thread */
     Status = PsCreateSystemThread(&SysThreadHandle,
@@ -549,7 +540,7 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                               NULL);
     ObCloseHandle(SysThreadHandle, KernelMode);
 
-    _PS_TRACE("[PS] PspInitPhase0 done\r\n");
+    ARM64_UART_TRACE("[PS] PspInitPhase0 done\r\n");
 
     /* Return success */
     return TRUE;

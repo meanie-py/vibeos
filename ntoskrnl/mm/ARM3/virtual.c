@@ -4780,6 +4780,59 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
             goto FailPathNoLock;
         }
 
+
+#ifdef _M_ARM64
+        /* ARM64: Clear stale bootloader identity-mapping PTEs for committed
+         * user-space allocations. FreeLDR leaves TTBR0 identity-mapping entries
+         * that prevent demand-page faults from firing. We must invalidate any
+         * PTEs that overlap the newly committed region so demand paging works. */
+        if ((AllocationType & MEM_COMMIT) &&
+            (StartingAddress < (ULONG_PTR)MmSystemRangeStart))
+        {
+            ULONG_PTR VA;
+            BOOLEAN NeedFlush = FALSE;
+
+            for (VA = StartingAddress; VA < StartingAddress + PRegionSize; VA += PAGE_SIZE)
+            {
+                PMMPTE PointerPxe = MiAddressToPxe((PVOID)VA);
+                PMMPTE PointerPpe, PointerPde, PointerPte;
+
+                if (!PointerPxe->u.Hard.Valid)
+                    continue;
+
+                PointerPpe = MiAddressToPpe((PVOID)VA);
+                if (!PointerPpe->u.Hard.Valid)
+                    continue;
+
+                PointerPde = MiAddressToPde((PVOID)VA);
+                if (!PointerPde->u.Hard.Valid)
+                    continue;
+
+                /* If PDE is a block (large page) descriptor, clear it */
+                if (!PointerPde->u.Hard.NotLargePage)
+                {
+                    PointerPde->u.Long = 0;
+                    NeedFlush = TRUE;
+                    /* Skip remaining pages in this 2MB block */
+                    VA = (VA | 0x1FFFFF);
+                    continue;
+                }
+
+                PointerPte = MiAddressToPte((PVOID)VA);
+                if (PointerPte->u.Hard.Valid)
+                {
+                    PointerPte->u.Long = 0;
+                    NeedFlush = TRUE;
+                }
+            }
+
+            if (NeedFlush)
+            {
+                __asm__ __volatile__("dsb ish\n\ttlbi vmalle1is\n\tdsb ish\n\tisb" ::: "memory");
+            }
+        }
+#endif
+
         //
         // Detach and dereference the target process if
         // it was different from the current process
@@ -4820,6 +4873,7 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     StartingAddress = (ULONG_PTR)PAGE_ALIGN(PBaseAddress);
     PRegionSize = EndingAddress - StartingAddress + 1;
 
+    ARM64_UART_TRACE("[VM] COMMIT: MmLockAddrSpace\r\n");
     //
     // Lock the address space and make sure the process isn't already dead
     //
@@ -5049,12 +5103,25 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     //
     // Lock the working set while we play with user pages and page tables
     //
+    ARM64_UART_TRACE("[VM] COMMIT: MiLockProcWS\r\n");
     MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
 
     //
     // Make the current page table valid, and then loop each page within it
     //
+    ARM64_UART_TRACE("[VM] COMMIT: MiMakePdeExistAndMakeValid\r\n");
     MiMakePdeExistAndMakeValid(PointerPde, Process, MM_NOIRQL);
+    ARM64_UART_TRACE("[VM] COMMIT: PDE valid, looping\r\n");
+#ifdef _M_ARM64
+    { static int _vm_loop_printed = 0;
+      if (!_vm_loop_printed) {
+        ARM64_UART_TRACE_HEX("[VM]   PointerPte=", (ULONG_PTR)PointerPte);
+        ARM64_UART_TRACE_HEX("[VM]   LastPte=", (ULONG_PTR)LastPte);
+        ARM64_UART_TRACE_HEX("[VM]   count=", (ULONG_PTR)(LastPte - PointerPte + 1));
+        _vm_loop_printed = 1;
+      }
+    }
+#endif
     while (PointerPte <= LastPte)
     {
         //
