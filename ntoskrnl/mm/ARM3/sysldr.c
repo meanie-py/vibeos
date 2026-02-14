@@ -16,6 +16,17 @@
 #define MODULE_INVOLVED_IN_ARM3
 #include <mm/ARM3/miarm.h>
 
+#ifdef _M_ARM64
+/* Declaration for direct file reading (declared in cache/section/newmm.h) */
+NTSTATUS NTAPI
+MiSimpleRead(PFILE_OBJECT FileObject,
+             PLARGE_INTEGER FileOffset,
+             PVOID Buffer,
+             ULONG Length,
+             BOOLEAN Paging,
+             PIO_STATUS_BLOCK ReadStatus);
+#endif
+
 /* GLOBALS ********************************************************************/
 
 LIST_ENTRY PsLoadedModuleList;
@@ -83,18 +94,20 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
 {
     PSECTION Section = *SectionPtr;
     NTSTATUS Status;
-    PEPROCESS Process;
-    PVOID Base = NULL;
-    SIZE_T ViewSize = 0;
-    KAPC_STATE ApcState;
-    LARGE_INTEGER SectionOffset = {{0, 0}};
-    BOOLEAN LoadSymbols = FALSE;
     PFN_COUNT PteCount;
     PMMPTE PointerPte, LastPte;
     PVOID DriverBase;
     MMPTE TempPte;
     KIRQL OldIrql;
     PFN_NUMBER PageFrameIndex;
+#ifndef _M_ARM64
+    PEPROCESS Process;
+    PVOID Base = NULL;
+    SIZE_T ViewSize = 0;
+    KAPC_STATE ApcState;
+    LARGE_INTEGER SectionOffset = {{0, 0}};
+    BOOLEAN LoadSymbols = FALSE;
+#endif
     PAGED_CODE();
 
     /* Detect session load */
@@ -108,13 +121,118 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
     /* Not session load, shouldn't have an entry */
     ASSERT(LdrEntry == NULL);
 
+    /* Reserve system PTEs needed */
+    PteCount = ROUND_TO_PAGES(((PMM_IMAGE_SECTION_OBJECT)Section->Segment)->ImageInformation.ImageFileSize) >> PAGE_SHIFT;
+    PointerPte = MiReserveSystemPtes(PteCount, SystemPteSpace);
+    if (!PointerPte)
+    {
+        DPRINT1("MiReserveSystemPtes failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* New driver base */
+    LastPte = PointerPte + PteCount;
+    DriverBase = MiPteToAddress(PointerPte);
+    *ImageBase = DriverBase;
+
+    /* Lock the PFN database */
+    OldIrql = MiAcquirePfnLock();
+
+    /* Loop the new driver PTEs */
+    TempPte = ValidKernelPte;
+    while (PointerPte < LastPte)
+    {
+        ASSERT(PointerPte->u.Hard.Valid == 0);
+        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
+#if MI_TRACE_PFNS
+        MI_SET_PROCESS_USTR(FileName);
+#endif
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPte, TempPte);
+        PointerPte++;
+    }
+
+    MiReleasePfnLock(OldIrql);
+
+#ifdef _M_ARM64
+    /*
+     * ARM64: Read PE segments directly from the file into kernel memory.
+     * This bypasses SEC_IMAGE user-space mapping which has two bugs on ARM64:
+     * 1) Relocated SEC_IMAGE mappings return corrupted page data
+     * 2) MmUnmapViewOfSection hangs for large SEC_IMAGE mappings
+     */
+    {
+        PMM_IMAGE_SECTION_OBJECT ImageSectionObject =
+            (PMM_IMAGE_SECTION_OBJECT)Section->Segment;
+        PFILE_OBJECT FileObject = ImageSectionObject->FileObject;
+        ULONG i;
+        IO_STATUS_BLOCK IoStatusBlock;
+        LARGE_INTEGER FileOffset;
+        SIZE_T ImageSize = (SIZE_T)PteCount << PAGE_SHIFT;
+
+        /* Zero the entire image area first (handles BSS and gaps) */
+        RtlZeroMemory(DriverBase, ImageSize);
+
+        /* Read each segment from the file */
+        for (i = 0; i < ImageSectionObject->NrSegments; i++)
+        {
+            PMM_SECTION_SEGMENT Seg = &ImageSectionObject->Segments[i];
+            ULONG_PTR DestVA = Seg->Image.VirtualAddress;
+            ULONGLONG SrcFileOffset = Seg->Image.FileOffset;
+            SIZE_T RawLen = (SIZE_T)Seg->RawLength.QuadPart;
+
+            /* Skip segments with no file data */
+            if (RawLen == 0 || SrcFileOffset == 0)
+            {
+                /* Segment 0 (PE header) may have FileOffset=0, still read it */
+                if (i != 0 || RawLen == 0) continue;
+            }
+
+            /* Clamp to image bounds */
+            if (DestVA + RawLen > ImageSize)
+                RawLen = ImageSize - DestVA;
+            if (DestVA >= ImageSize) continue;
+
+            /* Read in page-sized chunks to avoid MDL size limits */
+            {
+                SIZE_T BytesRemaining = RawLen;
+                SIZE_T DestOffset = DestVA;
+                ULONGLONG SrcOffset = SrcFileOffset;
+
+                while (BytesRemaining > 0)
+                {
+                    ULONG ChunkSize = (BytesRemaining > PAGE_SIZE) ? PAGE_SIZE : (ULONG)BytesRemaining;
+
+                    FileOffset.QuadPart = SrcOffset;
+                    Status = MiSimpleRead(FileObject,
+                                          &FileOffset,
+                                          (PVOID)((ULONG_PTR)DriverBase + DestOffset),
+                                          ChunkSize,
+                                          TRUE,
+                                          &IoStatusBlock);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        break;
+                    }
+
+                    BytesRemaining -= ChunkSize;
+                    DestOffset += ChunkSize;
+                    SrcOffset += ChunkSize;
+                }
+            }
+        }
+
+        Status = STATUS_SUCCESS;
+    }
+#else
     /* Attach to the system process */
     KeStackAttachProcess(&PsInitialSystemProcess->Pcb, &ApcState);
 
     /* Check if we need to load symbols */
     if (NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD)
     {
-        /* Yes we do */
         LoadSymbols = TRUE;
         NtGlobalFlag &= ~FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
     }
@@ -138,69 +256,15 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
     /* Check if we failed with distinguished status code */
     if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
     {
-        /* Change it to something more generic */
         Status = STATUS_INVALID_IMAGE_FORMAT;
     }
 
-    /* Now check if we failed */
     if (!NT_SUCCESS(Status))
     {
-        /* Detach and return */
         DPRINT1("MmMapViewOfSection failed with status 0x%x\n", Status);
         KeUnstackDetachProcess(&ApcState);
         return Status;
     }
-
-    /* Reserve system PTEs needed */
-    PteCount = ROUND_TO_PAGES(((PMM_IMAGE_SECTION_OBJECT)Section->Segment)->ImageInformation.ImageFileSize) >> PAGE_SHIFT;
-    PointerPte = MiReserveSystemPtes(PteCount, SystemPteSpace);
-    if (!PointerPte)
-    {
-        DPRINT1("MiReserveSystemPtes failed\n");
-        KeUnstackDetachProcess(&ApcState);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    /* New driver base */
-    LastPte = PointerPte + PteCount;
-    DriverBase = MiPteToAddress(PointerPte);
-
-    /* The driver is here */
-    *ImageBase = DriverBase;
-    DPRINT1("Loading: %wZ at %p with %lx pages\n", FileName, DriverBase, PteCount);
-
-    /* Lock the PFN database */
-    OldIrql = MiAcquirePfnLock();
-
-    /* Loop the new driver PTEs */
-    TempPte = ValidKernelPte;
-    while (PointerPte < LastPte)
-    {
-        /* Make sure the PTE is not valid for whatever reason */
-        ASSERT(PointerPte->u.Hard.Valid == 0);
-
-        /* Some debug stuff */
-        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
-#if MI_TRACE_PFNS
-        MI_SET_PROCESS_USTR(FileName);
-#endif
-
-        /* Grab a page */
-        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-
-        /* Initialize its PFN entry */
-        MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
-
-        /* Write the PTE */
-        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
-        MI_WRITE_VALID_PTE(PointerPte, TempPte);
-
-        /* Move on */
-        PointerPte++;
-    }
-
-    /* Release the PFN lock */
-    MiReleasePfnLock(OldIrql);
 
     /* Copy the image */
     RtlCopyMemory(DriverBase, Base, PteCount << PAGE_SHIFT);
@@ -211,6 +275,8 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
 
     /* Detach and return status */
     KeUnstackDetachProcess(&ApcState);
+#endif
+
     return Status;
 }
 
@@ -3208,6 +3274,14 @@ LoaderScan:
         }
 
         /* Validate it */
+#ifdef _M_ARM64
+        /*
+         * Skip MmCheckSystemImage on ARM64: it maps via SEC_IMAGE into user
+         * space which returns corrupted data for large images (>1MB), and
+         * ZwUnmapViewOfSection hangs for the resulting ~17MB mapping.
+         * The actual loading via MiLoadImageSection uses kernel-space mapping.
+         */
+#else
         Status = MmCheckSystemImage(FileHandle);
         if ((Status == STATUS_IMAGE_CHECKSUM_MISMATCH) ||
             (Status == STATUS_IMAGE_MP_UP_MISMATCH) ||
@@ -3216,6 +3290,7 @@ LoaderScan:
             /* Fail loading */
             goto Quickie;
         }
+#endif
 
         /* Check if this is a session-load */
         if (Flags)

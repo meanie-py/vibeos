@@ -528,7 +528,7 @@ MiSessionInitializeWorkingSetList(VOID)
 
         /* Add this into the list */
         Index = ((ULONG_PTR)WorkingSetList - (ULONG_PTR)MmSessionBase) >> 22;
-#ifndef _M_AMD64
+#if (_MI_PAGING_LEVELS < 3)
         MmSessionSpace->PageTables[Index] = TempPde;
 #endif
         /* Initialize the page directory page, and now zero the working set list itself */
@@ -785,7 +785,7 @@ MiSessionCreateInternal(OUT PULONG SessionId)
     MmSessionSpace->Color = Color;
     MmSessionSpace->NonPageablePages = MiSessionCreateCharge;
     MmSessionSpace->CommittedPages = MiSessionCreateCharge;
-#ifndef _M_AMD64
+#if (_MI_PAGING_LEVELS < 3)
     MmSessionSpace->PageTables = PageTables;
     MmSessionSpace->PageTables[PointerPde - MiAddressToPde(MmSessionBase)] = *PointerPde;
 #endif
@@ -829,12 +829,6 @@ MmSessionCreate(OUT PULONG SessionId)
     PEPROCESS Process = PsGetCurrentProcess();
     ULONG SessionLeaderExists;
     NTSTATUS Status;
-
-#ifdef _M_ARM64
-    /* ARM64: MM session space not yet implemented — return error gracefully
-     * instead of crashing in MiSessionInitializeWorkingSetList. */
-    return STATUS_NOT_IMPLEMENTED;
-#endif
 
     /* Fail if the process is already in a session */
     if (Process->Flags & PSF_PROCESS_IN_SESSION_BIT)

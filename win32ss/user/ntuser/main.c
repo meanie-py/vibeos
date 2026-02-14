@@ -1004,73 +1004,49 @@ DriverEntry(
     }
 
     hModuleWin = MmPageEntireDriver(DriverEntry);
-    DPRINT("Win32k hInstance 0x%p!\n", hModuleWin);
 
     DriverObject->DriverUnload = DriverUnload;
-
-    /* Register Object Manager Callbacks */
     CalloutData.ProcessCallout = Win32kProcessCallback;
     CalloutData.ThreadCallout = Win32kThreadCallback;
-    // CalloutData.GlobalAtomTableCallout = NULL;
     CalloutData.PowerEventCallout = IntHandlePowerEvent;
     CalloutData.PowerStateCallout = IntHandlePowerState;
-    // CalloutData.JobCallout = NULL;
     CalloutData.BatchFlushRoutine = NtGdiFlushUserBatch;
     CalloutData.DesktopOpenProcedure = IntDesktopObjectOpen;
     CalloutData.DesktopOkToCloseProcedure = IntDesktopOkToClose;
     CalloutData.DesktopCloseProcedure = IntDesktopObjectClose;
     CalloutData.DesktopDeleteProcedure = IntDesktopObjectDelete;
     CalloutData.WindowStationOkToCloseProcedure = IntWinStaOkToClose;
-    // CalloutData.WindowStationCloseProcedure = NULL;
     CalloutData.WindowStationDeleteProcedure = IntWinStaObjectDelete;
     CalloutData.WindowStationParseProcedure = IntWinStaObjectParse;
-    // CalloutData.WindowStationOpenProcedure = NULL;
-
-    /* Register our per-process and per-thread structures. */
     PsEstablishWin32Callouts(&CalloutData);
 
-    /* Register service hook callbacks */
 #if DBG && defined(KDBG)
     KdSystemDebugControl('CsoR', DbgPreServiceHook, ID_Win32PreServiceHook, 0, 0, 0, 0);
     KdSystemDebugControl('CsoR', DbgPostServiceHook, ID_Win32PostServiceHook, 0, 0, 0, 0);
 #endif
 
-    /* Create the global USER heap */
     GlobalUserHeap = UserCreateHeap(&GlobalUserHeapSection,
                                     &GlobalUserHeapBase,
-                                    1 * 1024 * 1024); /* FIXME: 1 MB for now... */
+                                    1 * 1024 * 1024);
     if (GlobalUserHeap == NULL)
     {
-        DPRINT1("Failed to initialize the global heap!\n");
         return STATUS_UNSUCCESSFUL;
     }
 
-    /* Init the global user lock */
     ExInitializeResourceLite(&UserLock);
-
-    /* Lock while we use the heap (UserHeapAlloc asserts on this) */
     UserEnterExclusive();
-
-    /* Allocate global server info structure */
     gpsi = UserHeapAlloc(sizeof(*gpsi));
     UserLeave();
     if (!gpsi)
     {
-        DPRINT1("Failed allocate server info structure!\n");
         return STATUS_UNSUCCESSFUL;
     }
-
     RtlZeroMemory(gpsi, sizeof(*gpsi));
-    DPRINT("Global Server Data -> %p\n", gpsi);
 
     NT_ROF(InitGdiHandleTable());
     NT_ROF(InitPaletteImpl());
-
-    /* Create stock objects, ie. precreated objects commonly
-       used by win32 applications */
     CreateStockObjects();
     CreateSysColorObjects();
-
     NT_ROF(InitBrushImpl());
     NT_ROF(InitPDEVImpl());
     NT_ROF(InitLDEVImpl());

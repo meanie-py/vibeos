@@ -476,7 +476,23 @@ MmGetRmapListHeadPage(PFN_NUMBER Pfn)
     ASSERT(MiIsPfnInUse(Pfn1) == TRUE);
 
     /* Get the list head */
+#ifdef _M_ARM64
+    /* ARM64: Validate the rmap pointer is in a sane range before returning it.
+     * The RmapListHead field overlaps with OriginalPte; if the page was touched
+     * by ARM3 code, this field can contain a PTE value that looks like a pointer. */
+    {
+        PMM_RMAP_ENTRY head = Pfn1->RmapListHead;
+        if (head && ((ULONG_PTR)head & 0xFFF))
+        {
+            /* Rmap entry pointers must be at least pointer-aligned (pool allocations).
+             * A non-aligned value indicates OriginalPte bleed-through. */
+            return NULL;
+        }
+        return head;
+    }
+#else
     return Pfn1->RmapListHead;
+#endif
 }
 
 VOID

@@ -1422,9 +1422,17 @@ KeBugCheckEx(IN ULONG BugCheckCode,
         volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         const char *_s = "\r\n*** BUGCHECK: code=0x";
         int _i;
+        ULONG_PTR _lr;
+        __asm__ __volatile__("mov %0, x30" : "=r" (_lr));
         while (*_s) *_u = (ULONG)*_s++;
         for (_i = 28; _i >= 0; _i -= 4) {
             int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " LR=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (_lr >> _i) & 0xF;
             *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
         }
         _s = " P1=0x";
@@ -1477,9 +1485,17 @@ KeBugCheck(ULONG BugCheckCode)
         volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         const char *_s = "\r\n*** BUGCHECK: code=0x";
         int _i;
+        ULONG_PTR _lr;
+        __asm__ __volatile__("mov %0, x30" : "=r" (_lr));
         while (*_s) *_u = (ULONG)*_s++;
         for (_i = 28; _i >= 0; _i -= 4) {
             int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " LR=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (_lr >> _i) & 0xF;
             *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
         }
         _s = "\r\n";

@@ -267,6 +267,9 @@ MiInitializePageTable(VOID)
     /* Setup PPEs for hyper space */
     MiMapPPEs((PVOID)HYPER_SPACE, (PVOID)HYPER_SPACE_END);
 
+    /* Setup PPEs for session space */
+    MiMapPPEs(MmSessionBase, (PCHAR)MiSessionSpaceEnd - 1);
+
     /* Setup PPEs for system space view */
     MiMapPPEs(MiSystemViewStart, (PCHAR)MiSystemViewStart + MmSystemViewSize);
 

@@ -15,6 +15,7 @@
 #define MODULE_INVOLVED_IN_ARM3
 #include <mm/ARM3/miarm.h>
 
+
 /* GLOBALS ********************************************************************/
 
 ACCESS_MASK MmMakeSectionAccess[8] =
@@ -924,11 +925,14 @@ MiSessionCommitPageTables(IN PVOID StartVa,
                           IN PVOID EndVa)
 {
     KIRQL OldIrql;
-    ULONG Color, Index;
+    ULONG Color;
     PMMPDE StartPde, EndPde;
     MMPDE TempPde = ValidKernelPdeLocal;
     PMMPFN Pfn1;
     PFN_NUMBER PageCount = 0, ActualPages = 0, PageFrameNumber;
+#if (_MI_PAGING_LEVELS < 3)
+    ULONG Index;
+#endif
 
     /* Windows sanity checks */
     ASSERT(StartVa >= (PVOID)MmSessionBase);
@@ -938,13 +942,45 @@ MiSessionCommitPageTables(IN PVOID StartVa,
     /* Get the start and end PDE, then loop each one */
     StartPde = MiAddressToPde(StartVa);
     EndPde = MiAddressToPde((PVOID)((ULONG_PTR)EndVa - 1));
+#if (_MI_PAGING_LEVELS >= 3)
+    /* On 4-level paging, check PDEs directly via self-map */
+    while (StartPde <= EndPde)
+    {
+        if (StartPde->u.Hard.Valid == 0) PageCount++;
+        StartPde++;
+    }
+
+    if (PageCount == 0) return STATUS_SUCCESS;
+
+    StartPde = MiAddressToPde(StartVa);
+    while (StartPde <= EndPde)
+    {
+        if (StartPde->u.Hard.Valid == 0)
+        {
+            ASSERT(MmAvailablePages >= 32);
+            OldIrql = MiAcquirePfnLock();
+            MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
+            MI_SET_PROCESS2(PsGetCurrentProcess()->ImageFileName);
+            Color = (++MmSessionSpace->Color) & MmSecondaryColorMask;
+            PageFrameNumber = MiRemoveZeroPage(Color);
+            TempPde.u.Hard.PageFrameNumber = PageFrameNumber;
+            MI_WRITE_VALID_PDE(StartPde, TempPde);
+            MiInitializePfnForOtherProcess(PageFrameNumber,
+                                           StartPde,
+                                           MmSessionSpace->SessionPageDirectoryIndex);
+            MiReleasePfnLock(OldIrql);
+            Pfn1 = MI_PFN_ELEMENT(PageFrameNumber);
+            ASSERT(Pfn1->u1.Event == NULL);
+            ActualPages++;
+        }
+        StartPde++;
+    }
+#else
     Index = ((ULONG_PTR)StartVa - (ULONG_PTR)MmSessionBase) >> 22;
     while (StartPde <= EndPde)
     {
-#ifndef _M_AMD64
         /* If we don't already have a page table for it, increment count */
         if (MmSessionSpace->PageTables[Index].u.Long == 0) PageCount++;
-#endif
         /* Move to the next one */
         StartPde++;
         Index++;
@@ -960,15 +996,6 @@ MiSessionCommitPageTables(IN PVOID StartVa,
     /* Loop each PDE while holding the working set lock */
 //  MiLockWorkingSet(PsGetCurrentThread(),
 //                   &MmSessionSpace->GlobalVirtualAddress->Vm);
-#ifdef _M_AMD64
-_WARN("MiSessionCommitPageTables halfplemented for amd64")
-    DBG_UNREFERENCED_LOCAL_VARIABLE(OldIrql);
-    DBG_UNREFERENCED_LOCAL_VARIABLE(Color);
-    DBG_UNREFERENCED_LOCAL_VARIABLE(TempPde);
-    DBG_UNREFERENCED_LOCAL_VARIABLE(Pfn1);
-    DBG_UNREFERENCED_LOCAL_VARIABLE(PageFrameNumber);
-    ASSERT(FALSE);
-#else
     while (StartPde <= EndPde)
     {
         /* Check if we already have a page table */
