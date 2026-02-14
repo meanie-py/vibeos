@@ -181,9 +181,12 @@ KiSvcDispatch(
             Args[8 + i] = CallerStack[i];
     }
 
-    /* Save and set PreviousMode to KernelMode for Zw* calls */
+    /* Set PreviousMode from SPSR: M[3:0]==0 is EL0t (user), else kernel */
     OldMode = Thread->PreviousMode;
-    Thread->PreviousMode = KernelMode;
+    if ((TrapFrame->Spsr & 0xF) == 0)
+        Thread->PreviousMode = UserMode;
+    else
+        Thread->PreviousMode = KernelMode;
 
     /* Dispatch the system call */
     Result = Routine(Args[0], Args[1], Args[2], Args[3],
@@ -212,6 +215,10 @@ KiSynchronousExceptionHandler(
         {
             ULONG DFSC = ISS & 0x3F;
             BOOLEAN IsWrite = (ISS >> 6) & 1;
+            KPROCESSOR_MODE FaultMode;
+
+            /* Determine fault mode from PreviousMode (set by TRAP_PROLOG_EL0 for EL0) */
+            FaultMode = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
 
             /* Translation fault (DFSC 0x04-0x07) — try MmAccessFault */
             if ((DFSC & 0x3C) == 0x04)
@@ -220,7 +227,7 @@ KiSynchronousExceptionHandler(
 
                 Status = MmAccessFault(IsWrite ? 1 : 0,
                                        (PVOID)TrapFrame->FaultAddress,
-                                       KernelMode,
+                                       FaultMode,
                                        TrapFrame);
                 if (NT_SUCCESS(Status))
                 {
@@ -267,10 +274,29 @@ KiSynchronousExceptionHandler(
         case 0x21: /* Instruction Abort (same EL) */
         case 0x20: /* Instruction Abort (lower EL) */
         {
+            ULONG IFSC = ISS & 0x3F;
+            KPROCESSOR_MODE FaultMode2;
+
+            FaultMode2 = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
+
+            /* Translation fault (IFSC 0x04-0x07) — try MmAccessFault */
+            if ((IFSC & 0x3C) == 0x04)
+            {
+                NTSTATUS Status2;
+                Status2 = MmAccessFault(0,
+                                        (PVOID)TrapFrame->FaultAddress,
+                                        FaultMode2,
+                                        TrapFrame);
+                if (NT_SUCCESS(Status2))
+                    return;
+            }
+
             TrapPuts("[TRAP] Instruction Abort: FAR=");
             TrapPutHex64(TrapFrame->FaultAddress);
             TrapPuts(" PC=");
             TrapPutHex64(TrapFrame->Pc);
+            TrapPuts(" Mode=");
+            TrapPutHex32(FaultMode2);
             TrapPuts("\r\n");
             KiDumpTrapFrame(TrapFrame);
             KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,

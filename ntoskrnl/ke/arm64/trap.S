@@ -94,8 +94,72 @@
 .endm
 
 /*
+ * TRAP_PROLOG_EL0 - Save register state from a Lower EL (EL0) exception.
+ *
+ * Identical to TRAP_PROLOG except:
+ *   - Saves SP_EL0 (user stack pointer) to TfSp instead of kernel SP
+ *   - Sets TfPreviousMode = UserMode (1)
+ *
+ * On entry: running at EL1, using SP_EL1.
+ * On exit:  x0 = pointer to KTRAP_FRAME (== sp), all caller-saved regs saved.
+ */
+.macro TRAP_PROLOG_EL0
+    /* Allocate trap frame on stack */
+    sub sp, sp, #KTRAP_FRAME_LENGTH
+
+    /* Save X0-X18 (caller-saved + X18 platform register) */
+    stp x0,  x1,  [sp, #TfX0]
+    stp x2,  x3,  [sp, #TfX2]
+    stp x4,  x5,  [sp, #TfX4]
+    stp x6,  x7,  [sp, #TfX6]
+    stp x8,  x9,  [sp, #TfX8]
+    stp x10, x11, [sp, #TfX10]
+    stp x12, x13, [sp, #TfX12]
+    stp x14, x15, [sp, #TfX14]
+    stp x16, x17, [sp, #TfX16]
+    str x18,      [sp, #TfX18]
+
+    /* Save LR (X30) and FP (X29) */
+    str x30, [sp, #TfLr]
+    str x29, [sp, #TfFp]
+
+    /* Save ELR_EL1 (faulting PC) */
+    mrs x1, elr_el1
+    str x1, [sp, #TfPc]
+
+    /* Save SPSR_EL1 */
+    mrs x1, spsr_el1
+    str w1, [sp, #TfSpsr]
+
+    /* Save ESR_EL1 (exception syndrome) */
+    mrs x1, esr_el1
+    str w1, [sp, #TfEsr]
+
+    /* Save FAR_EL1 (fault address) */
+    mrs x1, far_el1
+    str x1, [sp, #TfFaultAddress]
+
+    /* Save SP_EL0 (user stack pointer) */
+    mrs x1, sp_el0
+    str x1, [sp, #TfSp]
+
+    /* Mark frame as active kernel exception */
+    mov w1, #1
+    strb w1, [sp, #TfExceptionActive]
+
+    /* Set PreviousMode = UserMode (1) */
+    strb w1, [sp, #TfPreviousMode]
+
+    /* Set x0 = pointer to trap frame for C handler */
+    mov x0, sp
+.endm
+
+/*
  * KiTrapReturn - Restore registers from KTRAP_FRAME at [sp] and eret.
  * Internal helper, not exported.
+ *
+ * Handles both EL1 and EL0 returns: if SPSR M[3:0] == 0 (EL0t),
+ * restore SP_EL0 from TfSp before eret.
  */
 KiTrapReturn:
     /* Restore ELR_EL1 */
@@ -106,6 +170,15 @@ KiTrapReturn:
     ldr w1, [sp, #TfSpsr]
     msr spsr_el1, x1
 
+    /* Check if returning to EL0: M[3:0] == 0 means EL0t */
+    tst x1, #0xF
+    b.ne .Lkernel_ret
+
+    /* Returning to EL0: restore user stack pointer */
+    ldr x1, [sp, #TfSp]
+    msr sp_el0, x1
+
+.Lkernel_ret:
     /* Restore FP and LR */
     ldr x29, [sp, #TfFp]
     ldr x30, [sp, #TfLr]
@@ -192,14 +265,14 @@ KiArm64VectorTable:
 .balign 128
     b KiSErrorEntry
 
-/* ---- Group 2: Lower EL, AArch64 (user mode, not used yet) ---- */
+/* ---- Group 2: Lower EL, AArch64 (user mode exceptions) ---- */
 /* +0x400: Synchronous */
 .balign 128
-    b KiUnexpectedExceptionEntry
+    b KiEL0SynchronousEntry
 
 /* +0x480: IRQ */
 .balign 128
-    b KiUnexpectedExceptionEntry
+    b KiEL0IrqEntry
 
 /* +0x500: FIQ */
 .balign 128
@@ -207,7 +280,7 @@ KiArm64VectorTable:
 
 /* +0x580: SError */
 .balign 128
-    b KiUnexpectedExceptionEntry
+    b KiEL0SErrorEntry
 
 /* ---- Group 3: Lower EL, AArch32 (not supported) ---- */
 /* +0x600: Synchronous */
@@ -243,6 +316,23 @@ KiIrqEntry:
 
 KiSErrorEntry:
     TRAP_PROLOG
+    bl KiSErrorHandler
+    /* SError is fatal — hang */
+1:  wfe
+    b 1b
+
+KiEL0SynchronousEntry:
+    TRAP_PROLOG_EL0
+    bl KiSynchronousExceptionHandler
+    b KiTrapReturn
+
+KiEL0IrqEntry:
+    TRAP_PROLOG_EL0
+    bl KiIrqHandler
+    b KiTrapReturn
+
+KiEL0SErrorEntry:
+    TRAP_PROLOG_EL0
     bl KiSErrorHandler
     /* SError is fatal — hang */
 1:  wfe

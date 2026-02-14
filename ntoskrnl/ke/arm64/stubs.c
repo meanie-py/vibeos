@@ -467,6 +467,17 @@ KeAcquireSpinLockRaiseToDpc(
     return KfRaiseIrql(DISPATCH_LEVEL);
 }
 
+/* ARM64 CONTEXT flags (from winnt_old.h / ksarm64.template.h) */
+#ifndef CONTEXT_ARM64
+#define CONTEXT_ARM64           0x00400000L
+#endif
+#ifndef CONTEXT_CONTROL
+#define CONTEXT_CONTROL         (CONTEXT_ARM64 | 0x1L)
+#endif
+#ifndef CONTEXT_INTEGER
+#define CONTEXT_INTEGER         (CONTEXT_ARM64 | 0x2L)
+#endif
+
 /* Context/Trap frame conversion */
 VOID
 NTAPI
@@ -477,13 +488,51 @@ KeContextToTrapFrame(
     _In_ ULONG ContextFlags,
     _In_ KPROCESSOR_MODE PreviousMode)
 {
-    /* FIXME: Implement ARM64 context to trap frame conversion */
-    UNIMPLEMENTED;
+    /* Integer registers: X0-X18 (caller-saved) + Fp + Lr */
+    if ((ContextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+    {
+        ULONG i;
+        for (i = 0; i < 19; i++)
+            TrapFrame->X[i] = Context->X[i];
+        TrapFrame->Fp = Context->Fp;
+        TrapFrame->Lr = Context->Lr;
+
+        /* Callee-saved registers go in exception frame if provided */
+        if (ExceptionFrame)
+        {
+            ExceptionFrame->X19 = Context->X19;
+            ExceptionFrame->X20 = Context->X20;
+            ExceptionFrame->X21 = Context->X21;
+            ExceptionFrame->X22 = Context->X22;
+            ExceptionFrame->X23 = Context->X23;
+            ExceptionFrame->X24 = Context->X24;
+            ExceptionFrame->X25 = Context->X25;
+            ExceptionFrame->X26 = Context->X26;
+            ExceptionFrame->X27 = Context->X27;
+            ExceptionFrame->X28 = Context->X28;
+        }
+    }
+
+    /* Control registers: Sp, Pc, Cpsr -> SPSR */
+    if ((ContextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
+    {
+        TrapFrame->Sp = Context->Sp;
+        TrapFrame->Pc = Context->Pc;
+
+        /* Set SPSR with correct EL mode bits */
+        if (PreviousMode == UserMode)
+            TrapFrame->Spsr = Context->Cpsr & ~0xFU; /* Force EL0t (M[3:0]=0) */
+        else
+            TrapFrame->Spsr = (Context->Cpsr & ~0xFU) | 0x5; /* Force EL1h (M[3:0]=5) */
+    }
 }
 
 /* KiSwapContext is now implemented in ctxswitch.S */
 
-/* User-mode APC initialization */
+/* User-mode APC initialization
+ * TODO: Implement APC delivery to user mode (redirect to LdrInitializeThunk etc.)
+ * For now, this is a no-op — user threads start directly at the entry point
+ * without going through LdrInitializeThunk. */
 VOID
 NTAPI
 KiInitializeUserApc(
@@ -494,7 +543,7 @@ KiInitializeUserApc(
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
 {
-    UNIMPLEMENTED;
+    /* No-op: user APCs not supported yet */
 }
 
 /* Call user mode */

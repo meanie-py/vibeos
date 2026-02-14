@@ -69,6 +69,22 @@ KiThreadStartup:
 KiInvalidSystemThreadStartupExit:
     brk     #0x200
 
+/*
+ * KiUserThreadStartupExit
+ *
+ * After KiThreadStartup calls SystemRoutine (PspUserThreadStartup) and returns,
+ * it pops the KSTART_FRAME (32 bytes) and rets to this address.
+ * At this point SP points at the KTRAP_FRAME that was set up by
+ * KiInitializeContextThread with the user-mode context.
+ *
+ * We jump to KiExceptionExit which sets SP = x0 and does KiTrapReturn → eret,
+ * transitioning to EL0 (user mode) because SPSR M[3:0] == 0 (EL0t).
+ */
+.globl KiUserThreadStartupExit
+KiUserThreadStartupExit:
+    mov     x0, sp
+    b       KiExceptionExit
+
 
 /*
  * BOOLEAN FASTCALL

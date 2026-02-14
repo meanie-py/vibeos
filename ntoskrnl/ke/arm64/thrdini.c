@@ -16,6 +16,7 @@
 
 extern void KiThreadStartup(void);
 extern void KiInvalidSystemThreadStartupExit(void);
+extern void KiUserThreadStartupExit(void);
 
 /* TYPES **********************************************************************/
 
@@ -35,6 +36,26 @@ typedef struct _KKINIT_FRAME
     KSTART_FRAME StartFrame;
 } KKINIT_FRAME, *PKKINIT_FRAME;
 
+/*
+ * User thread initialization frame layout:
+ *   KSWITCH_FRAME   (ApcBypass + Return=KiThreadStartup)
+ *   KSTART_FRAME    (StartRoutine, StartContext, SystemRoutine, Return=KiUserThreadStartupExit)
+ *   KTRAP_FRAME     (user-mode context populated from CONTEXT via KeContextToTrapFrame)
+ *
+ * KTRAP_FRAME is last (highest address) so KeGetTrapFrame(Thread)
+ * = InitialStack - sizeof(KTRAP_FRAME) points to it correctly.
+ *
+ * When KiThreadStartup returns after SystemRoutine, it pops KSTART_FRAME,
+ * leaving SP at the KTRAP_FRAME, then rets to KiUserThreadStartupExit
+ * which does KiTrapReturn -> eret to EL0.
+ */
+typedef struct _KUINIT_FRAME
+{
+    KSWITCH_FRAME CtxSwitchFrame;   /* 16 bytes */
+    KSTART_FRAME StartFrame;        /* 32 bytes */
+    KTRAP_FRAME TrapFrame;          /* 0x160 bytes */
+} KUINIT_FRAME, *PKUINIT_FRAME;
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -46,22 +67,12 @@ KiInitializeContextThread(
     _In_opt_ PVOID StartContext,
     _In_ PCONTEXT ContextRecord)
 {
-    PKKINIT_FRAME InitFrame;
-    PKSTART_FRAME StartFrame;
-    PKSWITCH_FRAME CtxSwitchFrame;
     PVOID InitialStack;
-
-    if (ContextRecord)
-    {
-        /* User thread: not implemented yet */
-        UNIMPLEMENTED;
-        return;
-    }
 
     /*
      * Reserve space at the top of the stack. On amd64, this holds the
      * XSAVE area. On ARM64 we don't have XSAVE, but we still need to
-     * reserve space so the KKINIT_FRAME doesn't overlap with the caller's
+     * reserve space so the init frame doesn't overlap with the caller's
      * saved registers when initializing the currently-running idle thread.
      * Use 512 bytes (matching amd64's minimum FXSAVE area size).
      */
@@ -69,35 +80,98 @@ KiInitializeContextThread(
     InitialStack = (PVOID)((ULONG_PTR)InitialStack & ~(ULONG_PTR)15);
     Thread->InitialStack = InitialStack;
 
-    /* Kernel thread: set up the initial stack frame */
-    InitFrame = ((PKKINIT_FRAME)InitialStack) - 1;
-    StartFrame = &InitFrame->StartFrame;
-    CtxSwitchFrame = &InitFrame->CtxSwitchFrame;
+    if (ContextRecord)
+    {
+        /*
+         * User thread: set up KUINIT_FRAME on the kernel stack.
+         *
+         * Stack layout (low → high address):
+         *   KSWITCH_FRAME  (ApcBypass + Return=KiThreadStartup)
+         *   KSTART_FRAME   (StartRoutine, StartContext, SystemRoutine,
+         *                   Return=KiUserThreadStartupExit)
+         *   KTRAP_FRAME    (user-mode context → eret to EL0)
+         *
+         * KTRAP_FRAME is at the highest address so
+         * KeGetTrapFrame(Thread) = InitialStack - sizeof(KTRAP_FRAME)
+         * points to it correctly.
+         */
+        PKUINIT_FRAME UInitFrame;
+        PKTRAP_FRAME TrapFrame;
+        PKSTART_FRAME StartFrame;
+        PKSWITCH_FRAME CtxSwitchFrame;
 
-    /* Save back the new value of the kernel stack */
-    Thread->KernelStack = (PVOID)InitFrame;
+        UInitFrame = ((PKUINIT_FRAME)InitialStack) - 1;
+        TrapFrame = &UInitFrame->TrapFrame;
+        StartFrame = &UInitFrame->StartFrame;
+        CtxSwitchFrame = &UInitFrame->CtxSwitchFrame;
 
-    /* Kernel thread runs in kernel mode */
-    Thread->PreviousMode = KernelMode;
+        /* Save back the new value of the kernel stack */
+        Thread->KernelStack = (PVOID)UInitFrame;
 
-    /*
-     * Set up the context switch frame.
-     * Return = KiThreadStartup: when KiSwapContextInternal pops this
-     * frame and KiSwapContextResume returns, it goes to KiThreadStartup.
-     * ApcBypass = TRUE: skip APC delivery on the first switch.
-     */
-    CtxSwitchFrame->Return = (ULONG64)KiThreadStartup;
-    CtxSwitchFrame->ApcBypass = TRUE;
+        /* User thread runs in user mode */
+        Thread->PreviousMode = UserMode;
 
-    /*
-     * Set up the start frame with thread parameters.
-     * KiThreadStartup will read these from SP and call:
-     *   SystemRoutine(StartRoutine, StartContext)
-     */
-    StartFrame->P1Home = (ULONG64)StartRoutine;
-    StartFrame->P2Home = (ULONG64)StartContext;
-    StartFrame->P3Home = (ULONG64)SystemRoutine;
-    StartFrame->Return = (ULONG64)KiInvalidSystemThreadStartupExit;
+        /* Zero the trap frame, then populate from context */
+        RtlZeroMemory(TrapFrame, sizeof(KTRAP_FRAME));
+        KeContextToTrapFrame(ContextRecord,
+                             NULL,  /* No exception frame */
+                             TrapFrame,
+                             ContextRecord->ContextFlags,
+                             UserMode);
+
+        /* Force EL0t return (SPSR M[3:0] = 0) */
+        TrapFrame->Spsr = 0;
+        TrapFrame->PreviousMode = UserMode;
+
+        /* Set X18 = TEB so user-mode code has NtCurrentTeb() via x18 */
+        TrapFrame->X18 = (ULONG64)Thread->Teb;
+
+        /* Set up the context switch frame */
+        CtxSwitchFrame->Return = (ULONG64)KiThreadStartup;
+        CtxSwitchFrame->ApcBypass = TRUE;
+
+        /* Set up the start frame with thread parameters */
+        StartFrame->P1Home = (ULONG64)StartRoutine;
+        StartFrame->P2Home = (ULONG64)StartContext;
+        StartFrame->P3Home = (ULONG64)SystemRoutine;
+        StartFrame->Return = (ULONG64)KiUserThreadStartupExit;
+    }
+    else
+    {
+        /* Kernel thread: set up KKINIT_FRAME on the kernel stack */
+        PKKINIT_FRAME InitFrame;
+        PKSTART_FRAME StartFrame;
+        PKSWITCH_FRAME CtxSwitchFrame;
+
+        InitFrame = ((PKKINIT_FRAME)InitialStack) - 1;
+        StartFrame = &InitFrame->StartFrame;
+        CtxSwitchFrame = &InitFrame->CtxSwitchFrame;
+
+        /* Save back the new value of the kernel stack */
+        Thread->KernelStack = (PVOID)InitFrame;
+
+        /* Kernel thread runs in kernel mode */
+        Thread->PreviousMode = KernelMode;
+
+        /*
+         * Set up the context switch frame.
+         * Return = KiThreadStartup: when KiSwapContextInternal pops this
+         * frame and KiSwapContextResume returns, it goes to KiThreadStartup.
+         * ApcBypass = TRUE: skip APC delivery on the first switch.
+         */
+        CtxSwitchFrame->Return = (ULONG64)KiThreadStartup;
+        CtxSwitchFrame->ApcBypass = TRUE;
+
+        /*
+         * Set up the start frame with thread parameters.
+         * KiThreadStartup will read these from SP and call:
+         *   SystemRoutine(StartRoutine, StartContext)
+         */
+        StartFrame->P1Home = (ULONG64)StartRoutine;
+        StartFrame->P2Home = (ULONG64)StartContext;
+        StartFrame->P3Home = (ULONG64)SystemRoutine;
+        StartFrame->Return = (ULONG64)KiInvalidSystemThreadStartupExit;
+    }
 }
 
 BOOLEAN
