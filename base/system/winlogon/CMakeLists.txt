@@ -1,28 +1,35 @@
+if(ARCH STREQUAL "arm64")
+    # ARM64: Build minimal native-mode winlogon stub (no Win32k/CSRSS dependency)
+    add_executable(winlogon WIN32 winlogon_arm64.c)
+    set_module_type(winlogon nativecui)
+    add_importlibs(winlogon ntdll)
+    add_cd_file(TARGET winlogon DESTINATION reactos/system32 FOR all)
+else()
+    include_directories(
+        ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
+        ${CMAKE_CURRENT_BINARY_DIR})
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
-    ${CMAKE_CURRENT_BINARY_DIR})
+    add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 
-add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
+    list(APPEND SOURCE
+        environment.c
+        notify.c
+        rpcserver.c
+        sas.c
+        screensaver.c
+        security.c
+        setup.c
+        shutdown.c
+        winlogon.c
+        wlx.c
+        winlogon.h
+        ${CMAKE_CURRENT_BINARY_DIR}/winreg_s.c)
 
-list(APPEND SOURCE
-    environment.c
-    notify.c
-    rpcserver.c
-    sas.c
-    screensaver.c
-    security.c
-    setup.c
-    shutdown.c
-    winlogon.c
-    wlx.c
-    winlogon.h
-    ${CMAKE_CURRENT_BINARY_DIR}/winreg_s.c)
-
-add_rc_deps(winlogon.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winlogon.ico)
-add_executable(winlogon ${SOURCE} winlogon.rc)
-target_link_libraries(winlogon wine ${PSEH_LIB})
-set_module_type(winlogon win32gui)
-add_importlibs(winlogon user32 advapi32 userenv secur32 rpcrt4 mpr msvcrt kernel32 ntdll)
-add_pch(winlogon winlogon.h SOURCE)
-add_cd_file(TARGET winlogon DESTINATION reactos/system32 FOR all)
+    add_rc_deps(winlogon.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winlogon.ico)
+    add_executable(winlogon ${SOURCE} winlogon.rc)
+    target_link_libraries(winlogon wine ${PSEH_LIB})
+    set_module_type(winlogon win32gui)
+    add_importlibs(winlogon user32 advapi32 userenv secur32 rpcrt4 mpr msvcrt kernel32 ntdll)
+    add_pch(winlogon winlogon.h SOURCE)
+    add_cd_file(TARGET winlogon DESTINATION reactos/system32 FOR all)
+endif()

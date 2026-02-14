@@ -830,6 +830,12 @@ MmSessionCreate(OUT PULONG SessionId)
     ULONG SessionLeaderExists;
     NTSTATUS Status;
 
+#ifdef _M_ARM64
+    /* ARM64: MM session space not yet implemented — return error gracefully
+     * instead of crashing in MiSessionInitializeWorkingSetList. */
+    return STATUS_NOT_IMPLEMENTED;
+#endif
+
     /* Fail if the process is already in a session */
     if (Process->Flags & PSF_PROCESS_IN_SESSION_BIT)
     {

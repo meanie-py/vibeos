@@ -2558,6 +2558,15 @@ SmpInit(IN PUNICODE_STRING InitialCommand,
     {
         /* Autochk should've run now. Set the event and save the CSRSS handle */
         *ProcessHandle = SmpWindowsSubSysProcess;
+
+        /* If no Windows subsystem was started (e.g. ARM64 without Win32k/CSRSS),
+         * create a dummy unsignaled event so NtWaitForMultipleObjects doesn't
+         * fail with STATUS_INVALID_HANDLE on the CSRSS handle slot. */
+        if (!*ProcessHandle)
+        {
+            NtCreateEvent(ProcessHandle, EVENT_ALL_ACCESS, NULL, NotificationEvent, FALSE);
+        }
+
         NtSetEvent(EventHandle, NULL);
         NtClose(EventHandle);
     }

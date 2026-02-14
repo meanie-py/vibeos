@@ -196,8 +196,14 @@ MiMakeSystemAddressValid(IN PVOID PageTableVirtualAddress,
     ASSERT(KeAreAllApcsDisabled() == TRUE);
 
     /* Check if the page table is valid */
+#ifdef _M_ARM64
+    ARM64_UART_TRACE_HEX("[MSAV] ", (ULONG_PTR)PageTableVirtualAddress);
+#endif
     while (!MmIsAddressValid(PageTableVirtualAddress))
     {
+#ifdef _M_ARM64
+        ARM64_UART_TRACE_HEX("[MSAV-F] ", (ULONG_PTR)PageTableVirtualAddress);
+#endif
         /* Release the working set lock */
         MiUnlockProcessWorkingSetForFault(CurrentProcess,
                                           CurrentThread,

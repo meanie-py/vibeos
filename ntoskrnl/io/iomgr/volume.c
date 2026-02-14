@@ -480,7 +480,7 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
 
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
     {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         char _buf[128];
         const char *_p;
         sprintf(_buf, "[MOUNT] IopMountVolume DevType=0x%lx Vpb=%p\r\n",
@@ -514,7 +514,7 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
 
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
     {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         char _buf[128];
         const char *_p;
         PLIST_ENTRY _fl = &IopDiskFileSystemQueueHead;
@@ -654,7 +654,7 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
             Status = IoCallDriver(FileSystemDeviceObject, Irp);
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
             {
-                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
                 char _buf[64];
                 const char *_p;
                 sprintf(_buf, "[MOUNT] IoCallDriver returned 0x%lx\r\n", (unsigned long)Status);
@@ -674,7 +674,7 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
                 Status = IoStatusBlock.Status;
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
                 {
-                    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
                     char _buf[64];
                     const char *_p;
                     sprintf(_buf, "[MOUNT] Wait done, status=0x%lx\r\n", (unsigned long)Status);

@@ -112,10 +112,18 @@
 #define MI_MAKE_OWNER_PAGE(x)      ((x)->u.Hard.Owner = 1)
 #define MI_MAKE_WRITE_PAGE(x)      ((x)->u.Hard.Writable = 1)
 
-/* Macros to identify the page fault reason from the error code */
-#define MI_IS_NOT_PRESENT_FAULT(FaultCode) TRUE
-#define MI_IS_WRITE_ACCESS(FaultCode) TRUE
-#define MI_IS_INSTRUCTION_FETCH(FaultCode) FALSE
+/*
+ * Macros to identify the page fault reason from the error code.
+ * ARM64 encodes FaultCode identically to x86 for compatibility with
+ * the arch-independent MM code in ARM3/pagfault.c and mmfault.c:
+ *   Bit 0: 1 = page was present (permission fault), 0 = not present (translation fault)
+ *   Bit 1: 1 = write access, 0 = read access
+ *   Bit 4: 1 = instruction fetch
+ * See KiSynchronousExceptionHandler in trap.c for the encoding.
+ */
+#define MI_IS_NOT_PRESENT_FAULT(FaultCode) !BooleanFlagOn(FaultCode, 0x00000001)
+#define MI_IS_WRITE_ACCESS(FaultCode)       BooleanFlagOn(FaultCode, 0x00000002)
+#define MI_IS_INSTRUCTION_FETCH(FaultCode)  BooleanFlagOn(FaultCode, 0x00000010)
 
 /* ARM64 page table structure: 4KB pages, 4 levels (PXE/PPE/PDE/PTE).
  * AddressToP*e functions use masked offsets to stay within the self-map

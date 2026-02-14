@@ -28,15 +28,7 @@
 #define NDEBUG
 #include <debug.h>
 
-#ifdef _M_ARM64
-#define RD_TRACE(s) do { \
-    volatile ULONG *_u = (volatile ULONG *)0x09000000ULL; \
-    const char *_p = (s); \
-    while (*_p) *_u = (ULONG)*_p++; \
-} while(0)
-#else
 #define RD_TRACE(s) ((void)0)
-#endif
 
 #define DO_XIP   0x00020000
 

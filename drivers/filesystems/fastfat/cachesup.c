@@ -176,11 +176,6 @@ Arguments:
         FatRaiseStatus( IrpContext, STATUS_CANT_WAIT );
     }
 
-#ifdef _M_ARM64
-    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-      const char *_s = "[FAT] ReadVolumeFile: CcMapData done\r\n";
-      while (*_s) *_u = (ULONG)*_s++; }
-#endif
 
     DbgDoit( IrpContext->PinCount += 1 )
 
@@ -442,11 +437,6 @@ Arguments:
         FatRaiseStatus( IrpContext, STATUS_CANT_WAIT );
     }
 
-#ifdef _M_ARM64
-    { volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-      const char *_s = "[FAT] ReadDirectoryFile: CcMapData done\r\n";
-      while (*_s) *_u = (ULONG)*_s++; }
-#endif
 
     DbgDoit( IrpContext->PinCount += 1 )
 

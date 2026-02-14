@@ -2316,6 +2316,24 @@ MiInitializeLoadedModuleList(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
         /* Insert the entry into the list */
         InsertTailList(&PsLoadedModuleList, &NewEntry->InLoadOrderLinks);
+#ifdef _M_ARM64
+        /* Trace module base addresses for crash symbolication */
+        ARM64_UART_TRACE_HEX("[MOD] base=", (ULONG_PTR)NewEntry->DllBase);
+        ARM64_UART_TRACE_HEX("[MOD] size=", NewEntry->SizeOfImage);
+        /* Print base name (WCHAR) as ASCII */
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            if (_u) {
+                PWCHAR _n = NewEntry->BaseDllName.Buffer;
+                USHORT _l = NewEntry->BaseDllName.Length / sizeof(WCHAR);
+                const char *_p = "[MOD] name=";
+                while (*_p) *_u = (ULONG)*_p++;
+                for (USHORT _i = 0; _i < _l && _n[_i]; _i++)
+                    *_u = (ULONG)(char)_n[_i];
+                *_u = '\r'; *_u = '\n';
+            }
+        }
+#endif
         NextEntry = NextEntry->Flink;
     }
 

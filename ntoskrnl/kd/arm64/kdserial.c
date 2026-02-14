@@ -23,12 +23,20 @@
 #define PL011_FR_TXFF   0x20    /* Transmit FIFO full */
 #define PL011_FR_RXFE   0x10    /* Receive FIFO empty */
 
-/* QEMU virt PL011 base address */
-#define PL011_BASE  0x09000000ULL
+/* QEMU virt PL011 base address — use kernel VA from global */
+extern volatile PVOID Arm64UartKernelBase;
 
 /* GLOBALS ********************************************************************/
 
-static volatile ULONG *KdPl011Base = (volatile ULONG *)PL011_BASE;
+/* Initialized lazily from Arm64UartKernelBase on first use */
+static volatile ULONG *KdPl011Base;
+
+static inline volatile ULONG *KdGetPl011Base(void)
+{
+    if (!KdPl011Base)
+        KdPl011Base = (volatile ULONG *)Arm64UartKernelBase;
+    return KdPl011Base;
+}
 
 /* FUNCTIONS ******************************************************************/
 
@@ -46,7 +54,8 @@ KdPortInitializeEx(
     if (PortInformation == NULL)
         return FALSE;
 
-    PortInformation->Address = (PUCHAR)PL011_BASE;
+    KdPl011Base = (volatile ULONG *)Arm64UartKernelBase;
+    PortInformation->Address = (PUCHAR)Arm64UartKernelBase;
     if (PortInformation->BaudRate == 0)
         PortInformation->BaudRate = 115200;
 
@@ -59,11 +68,15 @@ KdPortGetByteEx(
     IN PCPPORT PortInformation,
     OUT PUCHAR ByteReceived)
 {
-    /* Check if receive FIFO is empty */
-    if (KdPl011Base[PL011_FR / 4] & PL011_FR_RXFE)
+    volatile ULONG *base = KdGetPl011Base();
+    if (!base)
         return FALSE;
 
-    *ByteReceived = (UCHAR)(KdPl011Base[PL011_DR / 4] & 0xFF);
+    /* Check if receive FIFO is empty */
+    if (base[PL011_FR / 4] & PL011_FR_RXFE)
+        return FALSE;
+
+    *ByteReceived = (UCHAR)(base[PL011_DR / 4] & 0xFF);
     return TRUE;
 }
 
@@ -73,11 +86,15 @@ KdPortPutByteEx(
     IN PCPPORT PortInformation,
     IN UCHAR ByteToSend)
 {
+    volatile ULONG *base = KdGetPl011Base();
+    if (!base)
+        return;
+
     /* Wait until transmit FIFO is not full */
-    while (KdPl011Base[PL011_FR / 4] & PL011_FR_TXFF)
+    while (base[PL011_FR / 4] & PL011_FR_TXFF)
         ;
 
-    KdPl011Base[PL011_DR / 4] = ByteToSend;
+    base[PL011_DR / 4] = ByteToSend;
 }
 
 /* EOF */

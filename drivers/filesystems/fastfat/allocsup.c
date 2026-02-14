@@ -1678,13 +1678,6 @@ Return Value:
         DebugTrace(-1, Dbg, "FatTruncateFileAllocation -> (VOID)\n", 0);
     } _SEH2_END;
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-    {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-        const char *_m = "[FEF] exit\r\n";
-        while (*_m) { *_u = (ULONG)*_m++; }
-    }
-#endif
 }
 
 
@@ -4813,13 +4806,6 @@ Return Value:
 
     PAGED_CODE();
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-    {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-        const char *_m = "[FEF] entry\r\n";
-        while (*_m) { *_u = (ULONG)*_m++; }
-    }
-#endif
 
     //
     //  Now assert correct usage.
@@ -4935,25 +4921,6 @@ Return Value:
 
     NT_ASSERT( StartIndex >= 2 );
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-    {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-        const char *_m = "[FEF] SI=";
-        char _d[10]; int _n = 0; ULONG _v;
-        while (*_m) { *_u = (ULONG)*_m++; }
-        _v = StartIndex; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-        while(_n > 0) *_u = (ULONG)_d[--_n];
-        _m = " EI=";
-        while (*_m) { *_u = (ULONG)*_m++; }
-        _v = EndIndex; _n = 0; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-        while(_n > 0) *_u = (ULONG)_d[--_n];
-        _m = " BS=";
-        while (*_m) { *_u = (ULONG)*_m++; }
-        _v = FatIndexBitSize; _n = 0; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-        while(_n > 0) *_u = (ULONG)_d[--_n];
-        *_u = '\r'; *_u = '\n';
-    }
-#endif
 
     _SEH2_TRY {
 
@@ -5009,34 +4976,12 @@ Return Value:
 #endif
 
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-            {
-                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-                const char *_m = "[FEF] initRead pg=";
-                char _d[10]; int _n = 0; ULONG _v;
-                while (*_m) { *_u = (ULONG)*_m++; }
-                _v = Page; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-                while(_n > 0) *_u = (ULONG)_d[--_n];
-                _m = " total=";
-                while (*_m) { *_u = (ULONG)*_m++; }
-                _v = FatPages; _n = 0; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-                while(_n > 0) *_u = (ULONG)_d[--_n];
-                *_u = '\r'; *_u = '\n';
-            }
-#endif
             FatReadVolumeFile( IrpContext,
                                Vcb,
                                Offset,
                                PAGE_SIZE,
                                &Bcb,
                                &pv);
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-            {
-                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-                const char *_m = "[FEF] initRead done\r\n";
-                while (*_m) { *_u = (ULONG)*_m++; }
-            }
-#endif
 
             if (FatIndexBitSize == 32) {
 
@@ -5065,26 +5010,8 @@ Return Value:
         StartIndexOfThisRun = StartIndex;
 
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-        {
-            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-            const char *_m = "[FEF] loop start\r\n";
-            while (*_m) { *_u = (ULONG)*_m++; }
-        }
-#endif
         for (FatIndex = StartIndex; FatIndex <= EndIndex; FatIndex++) {
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-            if ((FatIndex % 1024) == 0) {
-                volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-                const char *_m = "[FEF] i=";
-                char _d[10]; int _n = 0; ULONG _v;
-                while (*_m) { *_u = (ULONG)*_m++; }
-                _v = FatIndex; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-                while(_n > 0) *_u = (ULONG)_d[--_n];
-                *_u = '\r'; *_u = '\n';
-            }
-#endif
 
             if (FatIndexBitSize == 12) {
 
@@ -5166,30 +5093,12 @@ Return Value:
 #endif
 
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-                    {
-                        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-                        const char *_m = "[FEF] pgRead p=";
-                        char _d[10]; int _n = 0; ULONG _v;
-                        while (*_m) { *_u = (ULONG)*_m++; }
-                        _v = Page; do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-                        while(_n > 0) *_u = (ULONG)_d[--_n];
-                        *_u = '\r'; *_u = '\n';
-                    }
-#endif
                     FatReadVolumeFile( IrpContext,
                                        Vcb,
                                        Offset,
                                        PAGE_SIZE,
                                        &Bcb,
                                        &pv );
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-                    {
-                        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-                        const char *_m = "[FEF] pgRead done\r\n";
-                        while (*_m) { *_u = (ULONG)*_m++; }
-                    }
-#endif
 
                     FatBuffer = (PUSHORT)pv;
                 }
@@ -5286,13 +5195,6 @@ Return Value:
         }
 
 
-#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
-        {
-            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
-            const char *_m = "[FEF] loop done\r\n";
-            while (*_m) { *_u = (ULONG)*_m++; }
-        }
-#endif
 
         //
         //  If we finished the scan, then we know about all the possible bad clusters.

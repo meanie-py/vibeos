@@ -89,6 +89,9 @@
     mov w1, #1
     strb w1, [sp, #TfExceptionActive]
 
+    /* Set PreviousMode = KernelMode (0) */
+    strb wzr, [sp, #TfPreviousMode]
+
     /* Set x0 = pointer to trap frame for C handler */
     mov x0, sp
 .endm
@@ -356,8 +359,20 @@ KiUnexpectedExceptionEntry:
 
 .globl KiExceptionExit
 KiExceptionExit:
-    /* Set SP to trap frame (we're doing a noreturn, so clobber SP) */
-    mov sp, x0
-    b KiTrapReturn
+    /* x0 = TrapFrame, x1 = ExceptionFrame (may be NULL) */
+    cbz     x1, .Lno_exframe
+
+    /* Restore callee-saved regs from KEXCEPTION_FRAME */
+    ldp     x19, x20, [x1, #0]     /* ExX19=0x00, ExX20=0x08 */
+    ldp     x21, x22, [x1, #16]    /* ExX21=0x10, ExX22=0x18 */
+    ldp     x23, x24, [x1, #32]    /* ExX23=0x20, ExX24=0x28 */
+    ldp     x25, x26, [x1, #48]    /* ExX25=0x30, ExX26=0x38 */
+    ldp     x27, x28, [x1, #64]    /* ExX27=0x40, ExX28=0x48 */
+    /* Fp and Lr come from TrapFrame, not ExceptionFrame */
+
+.Lno_exframe:
+    /* Set SP to trap frame and return */
+    mov     sp, x0
+    b       KiTrapReturn
 
 /* EOF */

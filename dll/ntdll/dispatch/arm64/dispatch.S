@@ -28,6 +28,9 @@ LdrInitializeThunk:
  */
 .globl KiUserApcDispatcher
 KiUserApcDispatcher:
+    /* Save CONTEXT pointer for NormalRoutine (e.g., LdrInitializeThunk reads x9) */
+    mov x9, sp
+
     /* Call the APC routine: NormalRoutine(NormalContext, SysArg1, SysArg2) */
     blr x3
 

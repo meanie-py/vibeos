@@ -173,7 +173,7 @@ KiSystemStartup(
 
     /* Direct PL011 UART write to confirm kernel entry (bypasses KD) */
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] KiSystemStartup entered!\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }
@@ -200,7 +200,7 @@ KiSystemStartup(
     /* Install ARM64 exception vector table (VBAR_EL1) */
     {
         extern ULONG64 KiArm64VectorTable[];
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] VBAR_EL1 installed\r\n";
 
         __asm__ __volatile__("msr vbar_el1, %0" :: "r"((ULONG64)&KiArm64VectorTable));
@@ -251,7 +251,7 @@ KiSystemStartup(
         KiInitMachineDependent();
 
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] Switching to boot stack\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }
@@ -273,7 +273,7 @@ KiSystemStartupBootStack(VOID)
     PVOID KernelStack = (PVOID)KeLoaderBlock->KernelStack;
 
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] KiSystemStartupBootStack entered\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }
@@ -331,7 +331,7 @@ KiSystemStartupBootStack(VOID)
     Thread->WaitIrql = DISPATCH_LEVEL;
 
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] Entering KiIdleLoop\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }
@@ -418,7 +418,7 @@ KiInitializeKernel(
     KiInitializeHandBuiltThread(InitThread, InitProcess, IdleStack);
 
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] Calling ExpInitializeExecutive\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }
@@ -433,7 +433,7 @@ KiInitializeKernel(
 
     /* If we get here, Phase 0 init succeeded! */
     {
-        volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *msg = "[KERNEL] ExpInitializeExecutive returned!\r\n";
         while (*msg) { *uart = (ULONG)*msg++; }
     }

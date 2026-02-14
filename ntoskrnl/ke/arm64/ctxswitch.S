@@ -12,6 +12,7 @@
  */
 #define ThKernelStack   0x38    /* KTHREAD.KernelStack */
 #define ThSwapBusy      0x95    /* KTHREAD.SwapBusy */
+#define ThTeb           0xB0    /* KTHREAD.Teb */
 
 /*
  * PCR/PRCB offsets
@@ -83,6 +84,7 @@ KiInvalidSystemThreadStartupExit:
 .globl KiUserThreadStartupExit
 KiUserThreadStartupExit:
     mov     x0, sp
+    mov     x1, #0          /* No ExceptionFrame */
     b       KiExceptionExit
 
 
@@ -163,6 +165,9 @@ KiSwapContextInternal:
     /* Load new thread's kernel stack */
     ldr     x3, [x2, #ThKernelStack]
     mov     sp, x3
+
+    /* Set x18 = NewThread->Teb (platform register = TEB on Windows ARM64) */
+    ldr     x18, [x2, #ThTeb]
 
     /* Restore KSWITCH_FRAME from new thread's stack */
     ldp     x0, x30, [sp], #16     /* x0 = ApcBypass, x30 = return address */

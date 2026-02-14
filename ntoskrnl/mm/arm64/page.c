@@ -26,7 +26,8 @@
 
 /* UART TRACES ***************************************************************/
 
-#define PL011_BASE ((volatile ULONG *)0x09000000ULL)
+extern volatile PVOID Arm64UartKernelBase;
+#define PL011_BASE ((volatile ULONG *)Arm64UartKernelBase)
 
 static void PagePutChar(char c) { *PL011_BASE = (ULONG)c; }
 static void PagePuts(const char *s) { while (*s) PagePutChar(*s++); }
@@ -362,9 +363,11 @@ MmSetPageProtect(
     if ((ProtectionMask != MM_NOACCESS) && !FlagOn(ProtectionMask, MM_GUARDPAGE))
         TempPte.u.Hard.Valid = 1;
 
-    /* Keep dirty & accessed bits */
+    /* Keep accessed bit from old PTE.
+     * NotDirty (AP[2]) comes from the protection mask — it controls
+     * hardware read-only on ARM64 without FEAT_HAFDBS.  Preserving
+     * it from the old PTE would defeat read-only enforcement. */
     TempPte.u.Hard.Accessed = PointerPte->u.Hard.Accessed;
-    TempPte.u.Hard.NotDirty = PointerPte->u.Hard.NotDirty;
 
     OldPte.u.Long = InterlockedExchangePte(PointerPte, TempPte.u.Long);
 
@@ -859,14 +862,6 @@ MiArchCreateProcessAddressSpace(
     RtlCopyMemory(PageTablePointer + TableIndex,
                    MiAddressToPxe(0) + TableIndex,
                    PAGE_SIZE - TableIndex * sizeof(MMPTE));
-
-    /*
-     * HACK: Preserve identity-mapping PXE[0] for PL011 UART at 0x09000000.
-     * TTBR0 switches to this PML4 during KeAttachProcess, and the trap
-     * handler + debug traces need UART access. Remove once UART uses
-     * a kernel VA via MmMapIoSpace.
-     */
-    PageTablePointer[0] = MiAddressToPxe(0)[0];
 
     /* Sanity check: hyperspace end must be in the kernel half */
     ASSERT(MiAddressToPxeOffset(MmHyperSpaceEnd) >= TableIndex);

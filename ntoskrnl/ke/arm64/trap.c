@@ -28,8 +28,10 @@ _Static_assert(sizeof(KTRAP_FRAME)                              == 0x160, "KTRAP
 
 /* UART HELPERS **************************************************************/
 
-/* PL011 UART at QEMU virt address - identity mapped during boot */
-#define PL011_BASE ((volatile ULONG *)0x09000000ULL)
+/* PL011 UART — use kernel VA from global (identity-mapped during early boot,
+ * remapped to kernel VA in Phase 1 via MmMapIoSpace) */
+extern volatile PVOID Arm64UartKernelBase;
+#define PL011_BASE ((volatile ULONG *)Arm64UartKernelBase)
 
 static void TrapPutChar(char c)
 {
@@ -141,6 +143,7 @@ KiSvcDispatch(
     NTSTATUS Result;
     KPROCESSOR_MODE OldMode;
     PKTHREAD Thread;
+    PKTRAP_FRAME OldTrapFrame;
     ULONG_PTR Args[15] = {0};
     ULONG ArgCount, i;
 
@@ -188,15 +191,42 @@ KiSvcDispatch(
     else
         Thread->PreviousMode = KernelMode;
 
+    /*
+     * Link the trap frame to the thread. System calls like NtContinue,
+     * NtGetContextThread, etc. need Thread->TrapFrame to find the current
+     * user-mode context. Save and restore the old value for nested traps.
+     */
+    OldTrapFrame = Thread->TrapFrame;
+    TrapFrame->TrapFrame = (ULONG64)OldTrapFrame;
+    Thread->TrapFrame = TrapFrame;
+
+    /* Trace SVC calls */
+    TrapPuts("[SVC] #");
+    TrapPutHex32(ServiceNumber);
+    TrapPuts(" PC=");
+    TrapPutHex64(TrapFrame->Pc);
+    TrapPuts("\r\n");
+
     /* Dispatch the system call */
     Result = Routine(Args[0], Args[1], Args[2], Args[3],
                      Args[4], Args[5], Args[6], Args[7],
                      Args[8], Args[9], Args[10], Args[11],
                      Args[12], Args[13], Args[14]);
 
-    /* Restore PreviousMode and store result */
+    /* Restore TrapFrame link and PreviousMode */
+    Thread->TrapFrame = OldTrapFrame;
     Thread->PreviousMode = OldMode;
     TrapFrame->X[0] = (ULONG64)Result;
+
+    /* Trace failed user-mode SVCs to help diagnose SMSS init failures */
+    if (OldMode == UserMode && !NT_SUCCESS(Result))
+    {
+        TrapPuts("[SVC-FAIL] #");
+        TrapPutHex32(ServiceNumber);
+        TrapPuts(" => ");
+        TrapPutHex32((ULONG)Result);
+        TrapPuts("\r\n");
+    }
 }
 
 /* EXCEPTION HANDLERS ********************************************************/
@@ -216,16 +246,35 @@ KiSynchronousExceptionHandler(
             ULONG DFSC = ISS & 0x3F;
             BOOLEAN IsWrite = (ISS >> 6) & 1;
             KPROCESSOR_MODE FaultMode;
+            ULONG FaultCode;
 
             /* Determine fault mode from PreviousMode (set by TRAP_PROLOG_EL0 for EL0) */
             FaultMode = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
 
-            /* Translation fault (DFSC 0x04-0x07) — try MmAccessFault */
-            if ((DFSC & 0x3C) == 0x04)
+            /*
+             * Encode FaultCode in x86-compatible format for MmAccessFault:
+             *   Bit 0: 1 if page present (permission fault), 0 if not present
+             *   Bit 1: 1 if write access
+             */
+            FaultCode = 0;
+            if ((DFSC & 0x3C) == 0x0C)  /* Permission fault → page was present */
+                FaultCode |= 0x1;
+            if (IsWrite)
+                FaultCode |= 0x2;
+
+            /*
+             * Handle faults that MmAccessFault can resolve:
+             *   Translation fault (DFSC 0x04-0x07): page not mapped
+             *   Access flag fault (DFSC 0x08-0x0B): access bit not set
+             *   Permission fault  (DFSC 0x0C-0x0F): wrong permissions (COW, guard, etc.)
+             */
+            if ((DFSC & 0x3C) == 0x04 ||
+                (DFSC & 0x3C) == 0x08 ||
+                (DFSC & 0x3C) == 0x0C)
             {
                 NTSTATUS Status;
 
-                Status = MmAccessFault(IsWrite ? 1 : 0,
+                Status = MmAccessFault(FaultCode,
                                        (PVOID)TrapFrame->FaultAddress,
                                        FaultMode,
                                        TrapFrame);
@@ -237,7 +286,7 @@ KiSynchronousExceptionHandler(
                         LONG c = InterlockedIncrement(&PfCount);
                         if ((c % 10) == 0)
                         {
-                            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+                            volatile ULONG *_u = PL011_BASE;
                             char _b[32];
                             const char *_p;
                             int _i = 0;
@@ -254,21 +303,38 @@ KiSynchronousExceptionHandler(
                     return; /* Resume execution */
                 }
 
-                TrapPuts("[TRAP] MmAccessFault FAILED: FAR=");
-                TrapPutHex64(TrapFrame->FaultAddress);
-                TrapPuts(" Status=");
+                /* MmAccessFault failed — dispatch as access violation */
+                TrapPuts("[DA-FAIL] Status=");
                 TrapPutHex32((ULONG)Status);
+                TrapPuts(" FAR=");
+                TrapPutHex64(TrapFrame->FaultAddress);
+                TrapPuts(" PC=");
+                TrapPutHex64(TrapFrame->Pc);
+                TrapPuts(" Mode=");
+                TrapPutHex4(FaultMode);
                 TrapPuts("\r\n");
             }
 
-            /* Fall through to dump + bugcheck for unhandled data aborts */
-            KiDumpTrapFrame(TrapFrame);
-            KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                         TrapFrame->Esr,
-                         TrapFrame->FaultAddress,
-                         TrapFrame->Pc,
-                         0);
-            break;
+            /* Dispatch as access violation exception */
+            {
+                EXCEPTION_RECORD ExRec;
+                TrapPuts("[EXCEPT] AV dispatch Mode=");
+                TrapPutHex4(FaultMode);
+                TrapPuts(" PC=");
+                TrapPutHex64(TrapFrame->Pc);
+                TrapPuts(" FAR=");
+                TrapPutHex64(TrapFrame->FaultAddress);
+                TrapPuts("\r\n");
+                ExRec.ExceptionCode = STATUS_ACCESS_VIOLATION;
+                ExRec.ExceptionFlags = 0;
+                ExRec.ExceptionRecord = NULL;
+                ExRec.ExceptionAddress = (PVOID)TrapFrame->Pc;
+                ExRec.NumberParameters = 2;
+                ExRec.ExceptionInformation[0] = IsWrite ? EXCEPTION_WRITE_FAULT : EXCEPTION_READ_FAULT;
+                ExRec.ExceptionInformation[1] = TrapFrame->FaultAddress;
+                KiDispatchException(&ExRec, NULL, TrapFrame, FaultMode, TRUE);
+                return;
+            }
         }
 
         case 0x21: /* Instruction Abort (same EL) */
@@ -276,14 +342,26 @@ KiSynchronousExceptionHandler(
         {
             ULONG IFSC = ISS & 0x3F;
             KPROCESSOR_MODE FaultMode2;
+            ULONG FaultCode2;
 
             FaultMode2 = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
 
-            /* Translation fault (IFSC 0x04-0x07) — try MmAccessFault */
-            if ((IFSC & 0x3C) == 0x04)
+            /*
+             * Encode FaultCode for instruction fetch:
+             *   Bit 0: 1 if permission fault (page present), 0 if not present
+             *   Bit 4: 1 for instruction fetch
+             */
+            FaultCode2 = 0x10;  /* Instruction fetch */
+            if ((IFSC & 0x3C) == 0x0C)  /* Permission fault → page present */
+                FaultCode2 |= 0x1;
+
+            /* Translation/access flag/permission fault — try MmAccessFault */
+            if ((IFSC & 0x3C) == 0x04 ||
+                (IFSC & 0x3C) == 0x08 ||
+                (IFSC & 0x3C) == 0x0C)
             {
                 NTSTATUS Status2;
-                Status2 = MmAccessFault(0,
+                Status2 = MmAccessFault(FaultCode2,
                                         (PVOID)TrapFrame->FaultAddress,
                                         FaultMode2,
                                         TrapFrame);
@@ -291,20 +369,19 @@ KiSynchronousExceptionHandler(
                     return;
             }
 
-            TrapPuts("[TRAP] Instruction Abort: FAR=");
-            TrapPutHex64(TrapFrame->FaultAddress);
-            TrapPuts(" PC=");
-            TrapPutHex64(TrapFrame->Pc);
-            TrapPuts(" Mode=");
-            TrapPutHex32(FaultMode2);
-            TrapPuts("\r\n");
-            KiDumpTrapFrame(TrapFrame);
-            KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                         TrapFrame->Esr,
-                         TrapFrame->FaultAddress,
-                         TrapFrame->Pc,
-                         1);
-            break;
+            /* Dispatch as access violation */
+            {
+                EXCEPTION_RECORD ExRec;
+                ExRec.ExceptionCode = STATUS_ACCESS_VIOLATION;
+                ExRec.ExceptionFlags = 0;
+                ExRec.ExceptionRecord = NULL;
+                ExRec.ExceptionAddress = (PVOID)TrapFrame->Pc;
+                ExRec.NumberParameters = 2;
+                ExRec.ExceptionInformation[0] = EXCEPTION_EXECUTE_FAULT;
+                ExRec.ExceptionInformation[1] = TrapFrame->FaultAddress;
+                KiDispatchException(&ExRec, NULL, TrapFrame, FaultMode2, TRUE);
+                return;
+            }
         }
 
         case 0x3C: /* BRK (software breakpoint) */
@@ -324,25 +401,34 @@ KiSynchronousExceptionHandler(
 
         case 0x26: /* SP Alignment fault */
         {
-            TrapPuts("[TRAP] SP Alignment Fault\r\n");
-            KiDumpTrapFrame(TrapFrame);
-            KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                         TrapFrame->Esr,
-                         TrapFrame->Sp,
-                         TrapFrame->Pc,
-                         2);
-            break;
+            EXCEPTION_RECORD ExRec;
+            KPROCESSOR_MODE FaultMode4;
+
+            FaultMode4 = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
+
+            ExRec.ExceptionCode = STATUS_DATATYPE_MISALIGNMENT;
+            ExRec.ExceptionFlags = 0;
+            ExRec.ExceptionRecord = NULL;
+            ExRec.ExceptionAddress = (PVOID)TrapFrame->Pc;
+            ExRec.NumberParameters = 0;
+            KiDispatchException(&ExRec, NULL, TrapFrame, FaultMode4, TRUE);
+            return;
         }
 
         default:
         {
-            KiDumpTrapFrame(TrapFrame);
-            KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                         TrapFrame->Esr,
-                         TrapFrame->FaultAddress,
-                         TrapFrame->Pc,
-                         3);
-            break;
+            EXCEPTION_RECORD ExRec;
+            KPROCESSOR_MODE FaultMode3;
+
+            FaultMode3 = (TrapFrame->PreviousMode == UserMode) ? UserMode : KernelMode;
+
+            ExRec.ExceptionCode = STATUS_ILLEGAL_INSTRUCTION;
+            ExRec.ExceptionFlags = 0;
+            ExRec.ExceptionRecord = NULL;
+            ExRec.ExceptionAddress = (PVOID)TrapFrame->Pc;
+            ExRec.NumberParameters = 0;
+            KiDispatchException(&ExRec, NULL, TrapFrame, FaultMode3, TRUE);
+            return;
         }
     }
 }

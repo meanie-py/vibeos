@@ -1419,7 +1419,7 @@ KeBugCheckEx(IN ULONG BugCheckCode,
 #ifdef _M_ARM64
     /* UART trace for bugcheck on ARM64 */
     {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         const char *_s = "\r\n*** BUGCHECK: code=0x";
         int _i;
         while (*_s) *_u = (ULONG)*_s++;
@@ -1474,7 +1474,7 @@ KeBugCheck(ULONG BugCheckCode)
 {
 #ifdef _M_ARM64
     {
-        volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
         const char *_s = "\r\n*** BUGCHECK: code=0x";
         int _i;
         while (*_s) *_u = (ULONG)*_s++;

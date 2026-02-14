@@ -17,10 +17,12 @@
 
 /* Direct UART trace for ARM64 boot debugging — bypasses PCH limitation */
 #ifdef _M_ARM64
+extern volatile PVOID Arm64UartKernelBase;
 #undef ARM64_UART_TRACE
 #define ARM64_UART_TRACE(s) do { \
-    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase; \
     const char *_p = (s); \
+    if (!_uart) break; \
     while (*_p) *_uart = (ULONG)*_p++; \
 } while(0)
 #endif
@@ -838,7 +840,7 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
 #ifdef _M_ARM64
     /* Print driver name to UART for boot debugging */
     {
-        volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL;
+        volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase;
         const char *_p = "[DRV] Loading ";
         USHORT _i;
         while (*_p) *_uart = (ULONG)*_p++;
@@ -1276,7 +1278,7 @@ IopInitializeSystemDrivers(VOID)
     {
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
         {
-            volatile ULONG *_u = (volatile ULONG *)0x09000000ULL;
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
             const char *_m = "[SYSDRV] ZwLoadDriver: ";
             while (*_m) { *_u = (ULONG)*_m++; }
             /* Print the driver name (Unicode to ASCII) */

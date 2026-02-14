@@ -56,6 +56,12 @@ typedef struct _KUINIT_FRAME
     KTRAP_FRAME TrapFrame;          /* 0x160 bytes */
 } KUINIT_FRAME, *PKUINIT_FRAME;
 
+/* Verify offsets used in ctxswitch.S */
+_Static_assert(__builtin_offsetof(KTHREAD, KernelStack) == 0x38, "ThKernelStack");
+_Static_assert(__builtin_offsetof(KTHREAD, SwapBusy) == 0x95, "ThSwapBusy");
+_Static_assert(__builtin_offsetof(KTHREAD, Teb) == 0xB0,
+    "ThTeb mismatch with ctxswitch.S");
+
 /* FUNCTIONS ******************************************************************/
 
 VOID

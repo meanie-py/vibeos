@@ -18,6 +18,15 @@
 /* Process count for performance data */
 ULONG ProcessCount = 0;
 
+/*
+ * UART base address for ARM64 debug traces.
+ * Initialized to identity-mapped PL011 VA (0x09000000) which works during
+ * early boot when the system PML4 still has PXE[0] identity mapping.
+ * Remapped to a kernel VA via MmMapIoSpace during Phase 1 init so traces
+ * work from any process context (user process PML4s don't have PXE[0]).
+ */
+volatile PVOID Arm64UartKernelBase = (PVOID)0x09000000ULL;
+
 /* PTE templates are now defined in mm/ARM3/arm/init.c with correct ARM64 values */
 
 /*
@@ -46,24 +55,25 @@ ULONG ProcessCount = 0;
  *   PTE_ENABLE_CACHE      = 0x0000000000000004 (CacheType=01)
  *   PTE_DISABLE_CACHE     = 0x0000000000000000 (CacheType=00)
  *   PTE_WRITECOMBINED     = 0x000000000000000C (CacheType=11)
- *   PTE_READONLY          = 0x0040000000000000 (UXN=1)
- *   PTE_EXECUTE           = 0x0000000000000000 (UXN=0)
- *   PTE_READWRITE         = 0x00C0000000000000 (UXN=1, Writable=1)
- *   PTE_WRITECOPY         = 0x0140000000000000 (UXN=1, CopyOnWrite=1)
- *   PTE_EXECUTE_READWRITE = 0x0080000000000000 (UXN=0, Writable=1)
- *   PTE_EXECUTE_WRITECOPY = 0x0100000000000000 (UXN=0, CopyOnWrite=1)
+ *   PTE_READONLY          = 0x0040000000000080 (UXN=1, NotDirty=1 → hw RO)
+ *   PTE_EXECUTE           = 0x0000000000000080 (UXN=0, NotDirty=1 → hw RO)
+ *   PTE_READWRITE         = 0x00C0000000000000 (UXN=1, Writable=1, hw RW)
+ *   PTE_WRITECOPY         = 0x0140000000000080 (UXN=1, CopyOnWrite=1, NotDirty=1 → hw RO)
+ *   PTE_EXECUTE_READWRITE = 0x0080000000000000 (UXN=0, Writable=1, hw RW)
+ *   PTE_EXECUTE_WRITECOPY = 0x0100000000000080 (UXN=0, CopyOnWrite=1, NotDirty=1 → hw RO)
  */
 #define _B  0x0000000000000402ULL  /* NotLargePage | Accessed */
 #define _C  0x0000000000000004ULL  /* Normal WB Cacheable */
 #define _NC 0x0000000000000000ULL  /* Device (non-cacheable) */
 #define _WC 0x000000000000000CULL  /* Normal Non-Cacheable (write-combining) */
-#define _RO 0x0040000000000000ULL  /* UXN=1 (no user exec, read-only) */
-#define _X  0x0000000000000000ULL  /* UXN=0 (executable) */
+#define _ND 0x0000000000000080ULL  /* NotDirty=1 (AP[2]=1 = hardware read-only) */
+#define _RO (0x0040000000000000ULL | _ND) /* UXN=1, read-only (hw enforced) */
+#define _X  (0x0000000000000000ULL | _ND) /* UXN=0 (executable), read-only (hw enforced) */
 #define _XR _X                     /* Execute+Read = same as Execute on ARM64 */
-#define _RW 0x00C0000000000000ULL  /* UXN=1, Writable=1 */
-#define _WC2 0x0140000000000000ULL /* UXN=1, CopyOnWrite=1 */
-#define _XW 0x0080000000000000ULL  /* UXN=0, Writable=1 */
-#define _XC 0x0100000000000000ULL  /* UXN=0, CopyOnWrite=1 */
+#define _RW 0x00C0000000000000ULL  /* UXN=1, Writable=1 (hw writable: NotDirty=0) */
+#define _WC2 (0x0140000000000000ULL | _ND) /* UXN=1, CopyOnWrite=1, read-only (hw enforced) */
+#define _XW 0x0080000000000000ULL  /* UXN=0, Writable=1 (hw writable: NotDirty=0) */
+#define _XC (0x0100000000000000ULL | _ND) /* UXN=0, CopyOnWrite=1, read-only (hw enforced) */
 
 const
 ULONG_PTR
@@ -111,6 +121,7 @@ MmProtectToPteMask[32] =
 #undef _C
 #undef _NC
 #undef _WC
+#undef _ND
 #undef _RO
 #undef _X
 #undef _XR
@@ -307,13 +318,94 @@ NtVdmControl(
     return STATUS_NOT_IMPLEMENTED;
 }
 
-/* Hardware configuration stub */
+/* Hardware configuration — create CentralProcessor registry key for ARM64 */
 NTSTATUS
 NTAPI
 CmpInitializeMachineDependentConfiguration(
     _In_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    /* Nothing to configure yet */
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    UNICODE_STRING KeyName, ValueName;
+    HANDLE SystemHandle, CpuHandle, CpuKeyHandle;
+    ULONG Disposition;
+    CHAR Buffer[64];
+    WCHAR WideBuffer[64];
+    ULONG i;
+    ANSI_STRING AnsiString;
+    UNICODE_STRING UnicodeString;
+
+    /* Open the hardware description System key */
+    RtlInitUnicodeString(&KeyName,
+                         L"\\Registry\\Machine\\Hardware\\Description\\System");
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               NULL,
+                               NULL);
+    Status = NtOpenKey(&SystemHandle, KEY_READ | KEY_WRITE, &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    /* Create the CentralProcessor key */
+    RtlInitUnicodeString(&KeyName, L"CentralProcessor");
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               SystemHandle,
+                               NULL);
+    Status = NtCreateKey(&CpuHandle, KEY_READ | KEY_WRITE, &ObjectAttributes,
+                         0, NULL, 0, &Disposition);
+    if (!NT_SUCCESS(Status))
+    {
+        NtClose(SystemHandle);
+        return Status;
+    }
+
+    /* Create an entry for each processor */
+    for (i = 0; i < KeNumberProcessors; i++)
+    {
+        /* Create the "0", "1", etc. subkey */
+        swprintf(WideBuffer, L"%u", i);
+        RtlInitUnicodeString(&KeyName, WideBuffer);
+        InitializeObjectAttributes(&ObjectAttributes,
+                                   &KeyName,
+                                   OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                   CpuHandle,
+                                   NULL);
+        Status = NtCreateKey(&CpuKeyHandle, KEY_READ | KEY_WRITE,
+                             &ObjectAttributes, 0, NULL, 0, &Disposition);
+        if (!NT_SUCCESS(Status))
+            continue;
+
+        /* Set the Identifier value */
+        sprintf(Buffer, "ARM64 Family 8 Model 0 Stepping 0");
+        RtlInitAnsiString(&AnsiString, Buffer);
+        RtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, TRUE);
+        RtlInitUnicodeString(&ValueName, L"Identifier");
+        NtSetValueKey(CpuKeyHandle, &ValueName, 0, REG_SZ,
+                      UnicodeString.Buffer,
+                      UnicodeString.Length + sizeof(UNICODE_NULL));
+        RtlFreeUnicodeString(&UnicodeString);
+
+        /* Set the VendorIdentifier value */
+        RtlInitUnicodeString(&ValueName, L"VendorIdentifier");
+        NtSetValueKey(CpuKeyHandle, &ValueName, 0, REG_SZ,
+                      L"ARM", sizeof(L"ARM"));
+
+        /* Set the ~MHz value (read from CNTFRQ_EL0 as a rough estimate) */
+        {
+            ULONG Mhz = 100; /* Default estimate for QEMU virt */
+            RtlInitUnicodeString(&ValueName, L"~MHz");
+            NtSetValueKey(CpuKeyHandle, &ValueName, 0, REG_DWORD,
+                          &Mhz, sizeof(Mhz));
+        }
+
+        NtClose(CpuKeyHandle);
+    }
+
+    NtClose(CpuHandle);
+    NtClose(SystemHandle);
     return STATUS_SUCCESS;
 }
 
@@ -478,6 +570,53 @@ KeAcquireSpinLockRaiseToDpc(
 #define CONTEXT_INTEGER         (CONTEXT_ARM64 | 0x2L)
 #endif
 
+/* Trap frame to context conversion (inverse of KeContextToTrapFrame) */
+VOID
+NTAPI
+KeTrapFrameToContext(
+    _In_ PKTRAP_FRAME TrapFrame,
+    _In_opt_ PKEXCEPTION_FRAME ExceptionFrame,
+    _Inout_ PCONTEXT Context)
+{
+    ULONG ContextFlags = Context->ContextFlags;
+
+    /* Integer registers */
+    if ((ContextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+    {
+        ULONG i;
+        /* Caller-saved: X0-X18 from TrapFrame */
+        for (i = 0; i < 19; i++)
+            Context->X[i] = TrapFrame->X[i];
+
+        /* Callee-saved: X19-X28 from ExceptionFrame */
+        if (ExceptionFrame)
+        {
+            Context->X[19] = ExceptionFrame->X19;
+            Context->X[20] = ExceptionFrame->X20;
+            Context->X[21] = ExceptionFrame->X21;
+            Context->X[22] = ExceptionFrame->X22;
+            Context->X[23] = ExceptionFrame->X23;
+            Context->X[24] = ExceptionFrame->X24;
+            Context->X[25] = ExceptionFrame->X25;
+            Context->X[26] = ExceptionFrame->X26;
+            Context->X[27] = ExceptionFrame->X27;
+            Context->X[28] = ExceptionFrame->X28;
+        }
+
+        /* Frame pointer and link register */
+        Context->X[29] = TrapFrame->Fp;
+        Context->X[30] = TrapFrame->Lr;
+    }
+
+    /* Control registers: Sp, Pc, Cpsr */
+    if ((ContextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
+    {
+        Context->Sp = TrapFrame->Sp;
+        Context->Pc = TrapFrame->Pc;
+        Context->Cpsr = TrapFrame->Spsr;
+    }
+}
+
 /* Context/Trap frame conversion */
 VOID
 NTAPI
@@ -529,10 +668,7 @@ KeContextToTrapFrame(
 
 /* KiSwapContext is now implemented in ctxswitch.S */
 
-/* User-mode APC initialization
- * TODO: Implement APC delivery to user mode (redirect to LdrInitializeThunk etc.)
- * For now, this is a no-op — user threads start directly at the entry point
- * without going through LdrInitializeThunk. */
+/* User-mode APC initialization — redirects trap frame to KiUserApcDispatcher */
 VOID
 NTAPI
 KiInitializeUserApc(
@@ -543,7 +679,49 @@ KiInitializeUserApc(
     _In_ PVOID SystemArgument1,
     _In_ PVOID SystemArgument2)
 {
-    /* No-op: user APCs not supported yet */
+    CONTEXT Context = {0};
+    ULONG_PTR Stack;
+
+    /* Build user-mode context from trap frame */
+    Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    KeTrapFrameToContext(TrapFrame, ExceptionFrame, &Context);
+
+    /* Allocate CONTEXT on user stack, 16-byte aligned */
+    Stack = (Context.Sp & ~15ULL) - sizeof(CONTEXT);
+    Stack &= ~15ULL;
+
+    _SEH2_TRY
+    {
+        /* Probe and copy context to user stack */
+        ProbeForWrite((PVOID)Stack, sizeof(CONTEXT), 16);
+        RtlCopyMemory((PVOID)Stack, &Context, sizeof(CONTEXT));
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Failed to write to user stack — skip this APC */
+        return;
+    }
+    _SEH2_END;
+
+    /* Set up APC parameters in registers (ARM64 calling convention):
+     * KiUserApcDispatcher(NormalContext, SysArg1, SysArg2, NormalRoutine) */
+    TrapFrame->X[0] = (ULONG64)NormalContext;
+    TrapFrame->X[1] = (ULONG64)SystemArgument1;
+    TrapFrame->X[2] = (ULONG64)SystemArgument2;
+    TrapFrame->X[3] = (ULONG64)NormalRoutine;
+
+    /* SP = pointer to CONTEXT (for NtContinue after APC returns) */
+    TrapFrame->Sp = Stack;
+
+    /* PC = KiUserApcDispatcher in ntdll */
+    TrapFrame->Pc = (ULONG64)KeUserApcDispatcher;
+
+    /* Ensure EL0 return (clear M[3:0] to 0 = EL0t) */
+    TrapFrame->Spsr &= ~0xFU;
+
+    ARM64_UART_TRACE_HEX("[APC] PC=", TrapFrame->Pc);
+    ARM64_UART_TRACE_HEX("[APC] SP=", TrapFrame->Sp);
+    ARM64_UART_TRACE_HEX("[APC] NR=", (ULONG_PTR)NormalRoutine);
 }
 
 /* Call user mode */
@@ -685,6 +863,13 @@ KdbRegisterCliCallback(
 
 /* KdbSymPrintAddress moved to #ifdef KDBG section below */
 
+/* User-mode exception stack frame (pushed onto user stack) */
+typedef struct _KUSER_EXCEPTION_STACK_ARM64
+{
+    CONTEXT Context;
+    EXCEPTION_RECORD ExceptionRecord;
+} KUSER_EXCEPTION_STACK_ARM64, *PKUSER_EXCEPTION_STACK_ARM64;
+
 /* Exception dispatch */
 VOID
 NTAPI
@@ -695,14 +880,93 @@ KiDispatchException(
     _In_ KPROCESSOR_MODE PreviousMode,
     _In_ BOOLEAN FirstChance)
 {
-    volatile ULONG *uart = (volatile ULONG *)0x09000000ULL;
-    const char *msg = "[TRAP] KiDispatchException: code=";
-    while (*msg) { *uart = (ULONG)*msg++; }
-    KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                 ExceptionRecord->ExceptionCode,
-                 (ULONG_PTR)ExceptionRecord->ExceptionAddress,
-                 (ULONG_PTR)TrapFrame,
-                 PreviousMode);
+    CONTEXT Context = {0};
+
+    /* Build context from trap frame */
+    Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    KeTrapFrameToContext(TrapFrame, ExceptionFrame, &Context);
+
+    if (PreviousMode == KernelMode)
+    {
+        /* Kernel-mode exception: try kernel-mode dispatch, then bugcheck */
+        if (FirstChance)
+        {
+            if (RtlDispatchException(ExceptionRecord, &Context))
+                goto Handled;
+        }
+
+        KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
+                     ExceptionRecord->ExceptionCode,
+                     (ULONG_PTR)ExceptionRecord->ExceptionAddress,
+                     (ULONG_PTR)TrapFrame,
+                     0);
+    }
+    else
+    {
+        /* User-mode exception: dispatch to user-mode handler */
+        if (FirstChance)
+        {
+            ULONG_PTR UserRsp;
+            PKUSER_EXCEPTION_STACK_ARM64 UserStack;
+
+            /* Allocate exception stack on user stack, 16-byte aligned */
+            UserRsp = (Context.Sp - sizeof(KUSER_EXCEPTION_STACK_ARM64)) & ~15ULL;
+            UserStack = (PKUSER_EXCEPTION_STACK_ARM64)UserRsp;
+
+            _SEH2_TRY
+            {
+                ProbeForWrite(UserStack, sizeof(*UserStack), 16);
+                RtlZeroMemory(UserStack, sizeof(*UserStack));
+                UserStack->Context = Context;
+                UserStack->ExceptionRecord = *ExceptionRecord;
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                /* Can't write user stack — fatal */
+                KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
+                             ExceptionRecord->ExceptionCode,
+                             (ULONG_PTR)ExceptionRecord->ExceptionAddress,
+                             (ULONG_PTR)TrapFrame,
+                             0);
+            }
+            _SEH2_END;
+
+            /* Set up parameters for KiUserExceptionDispatcher(ExceptionRecord, Context)
+             * ARM64 calling convention: x0 = arg1, x1 = arg2 */
+            TrapFrame->X[0] = (ULONG64)&UserStack->ExceptionRecord;
+            TrapFrame->X[1] = (ULONG64)&UserStack->Context;
+
+            /* Set SP to the user exception stack */
+            TrapFrame->Sp = UserRsp;
+
+            /* Redirect to KiUserExceptionDispatcher in ntdll */
+            TrapFrame->Pc = (ULONG64)KeUserExceptionDispatcher;
+
+            /* Ensure EL0 return */
+            TrapFrame->Spsr &= ~0xFU;
+            return;
+        }
+
+        /* Second chance: kill the process */
+        DPRINT1("Kill %.16s, ExceptionCode: %lx, ExceptionAddress: %lx\n",
+                PsGetCurrentProcess()->ImageFileName,
+                ExceptionRecord->ExceptionCode,
+                ExceptionRecord->ExceptionAddress);
+
+        ZwTerminateProcess(NtCurrentProcess(), ExceptionRecord->ExceptionCode);
+        KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
+                     ExceptionRecord->ExceptionCode,
+                     (ULONG_PTR)ExceptionRecord->ExceptionAddress,
+                     (ULONG_PTR)TrapFrame,
+                     PreviousMode);
+    }
+
+    return;
+
+Handled:
+    /* Apply context changes back to trap frame */
+    KeContextToTrapFrame(&Context, ExceptionFrame, TrapFrame,
+                         Context.ContextFlags, PreviousMode);
 }
 
 /* KiExceptionExit is now implemented in trap.S */

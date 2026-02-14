@@ -15,7 +15,7 @@
 /* ARM64 UART diagnostic helper */
 #ifdef _M_ARM64
 static void _arm3_trace(const char *s) {
-    volatile ULONG *u = (volatile ULONG *)0x09000000ULL;
+    volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
     while (*s) { *u = (ULONG)*s++; }
 }
 #define _A3_TRACE(s) _arm3_trace(s)

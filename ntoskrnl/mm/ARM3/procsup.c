@@ -982,7 +982,9 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
     ARM64_UART_TRACE("[MM] InitProcAS: locked WS\r\n");
 
     /* Lock PFN database */
+    ARM64_UART_TRACE("[MM] InitProcAS: AcquirePfnLock\r\n");
     OldIrql = MiAcquirePfnLock();
+    ARM64_UART_TRACE("[MM] InitProcAS: PfnLock acquired\r\n");
 
     /* Setup the PFN for the PDE base of this process */
 #if (_MI_PAGING_LEVELS == 4)
@@ -992,11 +994,15 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
 #else
     PointerPte = MiAddressToPte(PDE_BASE);
 #endif
+    ARM64_UART_TRACE("[MM] InitProcAS: PFN_FROM_PTE(PXE_BASE)\r\n");
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
+    ARM64_UART_TRACE_HEX("[MM] InitProcAS: PML4 PFN=", PageFrameNumber);
     ASSERT(Process->Pcb.DirectoryTableBase[0] == PageFrameNumber * PAGE_SIZE);
+    ARM64_UART_TRACE("[MM] InitProcAS: MiInitializePfn(PML4)\r\n");
     MiInitializePfn(PageFrameNumber, PointerPte, TRUE);
 
     /* Do the same for hyperspace */
+    ARM64_UART_TRACE("[MM] InitProcAS: hyperspace PDE\r\n");
     PointerPde = MiAddressToPde(HYPER_SPACE);
     PageFrameNumber = PFN_FROM_PTE(PointerPde);
     MiInitializePfn(PageFrameNumber, (PMMPTE)PointerPde, TRUE);
@@ -1005,6 +1011,7 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
 #endif
 
 #if (_MI_PAGING_LEVELS >= 3)
+    ARM64_UART_TRACE("[MM] InitProcAS: hyperspace PPE\r\n");
     PointerPpe = MiAddressToPpe((PVOID)HYPER_SPACE);
     PageFrameNumber = PFN_FROM_PTE(PointerPpe);
     MiInitializePfn(PageFrameNumber, PointerPpe, TRUE);
@@ -1013,6 +1020,7 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
 #endif
 #endif
 #if (_MI_PAGING_LEVELS == 4)
+    ARM64_UART_TRACE("[MM] InitProcAS: hyperspace PXE\r\n");
     PointerPxe = MiAddressToPxe((PVOID)HYPER_SPACE);
     PageFrameNumber = PFN_FROM_PTE(PointerPxe);
     MiInitializePfn(PageFrameNumber, PointerPxe, TRUE);
@@ -1020,31 +1028,41 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
 #endif
 
     /* Do the same for the Working set list */
+    ARM64_UART_TRACE("[MM] InitProcAS: WS list PTE\r\n");
     PointerPte = MiAddressToPte(MmWorkingSetList);
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
     MiInitializePfn(PageFrameNumber, PointerPte, TRUE);
 
     /* All our pages are now active & valid. Release the lock. */
     MiReleasePfnLock(OldIrql);
+    ARM64_UART_TRACE("[MM] InitProcAS: PfnLock released\r\n");
 
     /* This should be in hyper space, but not in the mapping range */
     Process->Vm.VmWorkingSetList = MmWorkingSetList;
     ASSERT(((ULONG_PTR)MmWorkingSetList >= MI_MAPPING_RANGE_END) && ((ULONG_PTR)MmWorkingSetList <= HYPER_SPACE_END));
 
     /* Now initialize the working set list */
+    ARM64_UART_TRACE("[MM] InitProcAS: MiInitializeWorkingSetList\r\n");
     MiInitializeWorkingSetList(&Process->Vm);
+    ARM64_UART_TRACE("[MM] InitProcAS: WS init done\r\n");
 
     /* The rule is that the owner process is always in the FLINK of the PDE's PFN entry */
+    ARM64_UART_TRACE_HEX("[MM] InitProcAS: DTB[0]=", Process->Pcb.DirectoryTableBase[0]);
     Pfn = MiGetPfnEntry(Process->Pcb.DirectoryTableBase[0] >> PAGE_SHIFT);
+    ARM64_UART_TRACE_HEX("[MM] InitProcAS: Pfn=", (ULONG_PTR)Pfn);
     ASSERT(Pfn->u4.PteFrame == MiGetPfnEntryIndex(Pfn));
+    ARM64_UART_TRACE("[MM] InitProcAS: Pfn asserts OK\r\n");
     ASSERT(Pfn->u1.WsIndex == 0);
     Pfn->u1.Event = (PKEVENT)Process;
+    ARM64_UART_TRACE("[MM] InitProcAS: Pfn->u1.Event set\r\n");
 
     /* Sanity check */
     ASSERT(Process->PhysicalVadRoot == NULL);
+    ARM64_UART_TRACE("[MM] InitProcAS: unlocking WS\r\n");
 
     /* Release the process working set */
     MiUnlockProcessWorkingSet(Process, PsGetCurrentThread());
+    ARM64_UART_TRACE("[MM] InitProcAS: WS unlocked\r\n");
 
 #ifdef _M_AMD64
     /* On x64 we need a VAD for the shared user page */
@@ -1056,12 +1074,18 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
     }
 #endif
 
+    ARM64_UART_TRACE("[MM] InitProcAS: checking Section\r\n");
     /* Check if there's a Section Object */
     if (Section)
     {
+        ARM64_UART_TRACE("[MM] InitProcAS: have Section\r\n");
         /* Determine the image file name and save it to EPROCESS */
         PFILE_OBJECT FileObject = MmGetFileObjectForSection(Section);
+        ARM64_UART_TRACE_HEX("[MM] InitProcAS: FileObject=", (ULONG_PTR)FileObject);
+        ARM64_UART_TRACE("[MM] InitProcAS: reading FileName\r\n");
         FileName = FileObject->FileName;
+        ARM64_UART_TRACE_HEX("[MM] InitProcAS: FileName.Buf=", (ULONG_PTR)FileName.Buffer);
+        ARM64_UART_TRACE_HEX("[MM] InitProcAS: FileName.Len=", FileName.Length);
         Source = (PWCHAR)((PCHAR)FileName.Buffer + FileName.Length);
         if (FileName.Buffer)
         {
@@ -1102,6 +1126,7 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
             }
         }
 
+        ARM64_UART_TRACE("[MM] InitProcAS: MmMapViewOfSection\r\n");
         /* Map the section */
         Status = MmMapViewOfSection(Section,
                                     Process,

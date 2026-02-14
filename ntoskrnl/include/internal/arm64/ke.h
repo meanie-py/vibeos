@@ -261,24 +261,31 @@ KiGetUserModeStackAddress(void)
 }
 
 /*
- * ARM64 UART debug trace macro — writes to PL011 at QEMU virt 0x09000000.
+ * ARM64 UART debug trace — writes to PL011 UART via Arm64UartKernelBase.
+ * Initially identity-mapped at 0x09000000 (works during early boot in System
+ * process). Remapped to kernel VA via MmMapIoSpace in Phase 1 init so traces
+ * work from any process context.
+ *
  * Toggle with ARM64_UART_TRACE_ENABLE (define before including this header,
  * or pass -DARM64_UART_TRACE_ENABLE via cmake).
  * Each trace acts as a full memory barrier (device-memory MMIO stores).
  */
+extern volatile PVOID Arm64UartKernelBase;
 /* Uncomment to enable UART traces (also acts as memory barriers) */
 /* #define ARM64_UART_TRACE_ENABLE */
 #ifdef ARM64_UART_TRACE_ENABLE
 #define ARM64_UART_TRACE(s) do { \
-    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase; \
     const char *_str = (s); \
+    if (!_uart) break; \
     while (*_str) { *_uart = (ULONG)*_str++; } \
 } while(0)
 #define ARM64_UART_TRACE_HEX(prefix, val) do { \
-    volatile ULONG *_uart = (volatile ULONG *)0x09000000ULL; \
+    volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase; \
     const char *_str = (prefix); \
     ULONG_PTR _v = (ULONG_PTR)(val); \
     int _i; \
+    if (!_uart) break; \
     while (*_str) { *_uart = (ULONG)*_str++; } \
     *_uart = '0'; *_uart = 'x'; \
     for (_i = 60; _i >= 0; _i -= 4) { \
@@ -294,6 +301,16 @@ KiGetUserModeStackAddress(void)
 
 /* ARM64 full memory barrier — use where UART traces masked timing bugs */
 #define ARM64_BARRIER() __asm__ __volatile__("dsb sy\nisb" ::: "memory")
+
+/* ARM64 QEMU TCG barrier — performs a minimal MMIO write to force QEMU's JIT
+ * to break the translation block. Required around indirect function calls
+ * through pointers loaded from freshly-allocated memory, where QEMU TCG
+ * generates incorrect code without the TB break. */
+#define ARM64_MMIO_BARRIER() do { \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) *_u = '.'; \
+    __asm__ __volatile__("dsb sy\nisb" ::: "memory"); \
+} while(0)
 
 #ifdef __cplusplus
 } // extern "C"

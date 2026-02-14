@@ -1736,6 +1736,26 @@ Phase1InitializationDiscard(IN PVOID Context)
     ARM64_UART_TRACE("[PHASE1] MmInitSystem(1)\r\n");
     if (!MmInitSystem(1, LoaderBlock)) KeBugCheck(MEMORY1_INITIALIZATION_FAILED);
 
+#ifdef _M_ARM64
+    /* Remap PL011 UART from identity-mapped VA (0x09000000) to kernel VA.
+     * MmMapIoSpace is available now. This must happen before the first process
+     * switch (SMSS) since user process PML4s don't have PXE[0] identity mapping. */
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        PHYSICAL_ADDRESS UartPhys;
+        PVOID KernelVa;
+
+        UartPhys.QuadPart = 0x09000000;
+        KernelVa = MmMapIoSpace(UartPhys, PAGE_SIZE, MmNonCached);
+        if (KernelVa)
+        {
+            ARM64_UART_TRACE("[PHASE1] UART remapped to kernel VA\r\n");
+            Arm64UartKernelBase = KernelVa;
+            ARM64_UART_TRACE("[PHASE1] UART now using kernel VA\r\n");
+        }
+    }
+#endif
+
     /* Create NLS section */
     ARM64_UART_TRACE("[PHASE1] ExpInitNls\r\n");
     ExpInitNls(LoaderBlock);
