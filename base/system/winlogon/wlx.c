@@ -5,7 +5,7 @@
  * PURPOSE:         Logon
  * PROGRAMMERS:     Thomas Weidenmueller (w3seek@users.sourceforge.net)
  *                  Ge van Geldorp (gvg@reactos.com)
- *                  Hervé Poussineau (hpoussin@reactos.org)
+ *                  Hervï¿½ Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -953,6 +953,7 @@ BOOL
 CreateWindowStationAndDesktops(
     _Inout_ PWLSESSION Session)
 {
+#ifndef _M_ARM64
     SECURITY_ATTRIBUTES WinstaSecurity;
     SECURITY_ATTRIBUTES ApplicationDesktopSecurity;
     SECURITY_ATTRIBUTES WinlogonDesktopSecurity;
@@ -961,8 +962,15 @@ CreateWindowStationAndDesktops(
     PSECURITY_DESCRIPTOR WlApplicationDesktopSecurityDescriptor = NULL;
     PSECURITY_DESCRIPTOR WlWinlogonDesktopSecurityDescriptor = NULL;
     PSECURITY_DESCRIPTOR WlScreenSaverDesktopSecurityDescriptor = NULL;
+#endif
     BOOL ret = FALSE;
 
+#ifdef _M_ARM64
+    /*
+     * ARM64: Skip security descriptor creation (requires full SAM/LSA
+     * infrastructure). Pass NULL security to use defaults.
+     */
+#else
     if (!CreateWinstaSecurity(&WlWinstaSecurityDescriptor))
     {
         ERR("WL: Failed to create winsta security!\n");
@@ -1002,6 +1010,7 @@ CreateWindowStationAndDesktops(
     ScreenSaverDesktopSecurity.nLength = sizeof(SECURITY_ATTRIBUTES);
     ScreenSaverDesktopSecurity.lpSecurityDescriptor = WlScreenSaverDesktopSecurityDescriptor;
     ScreenSaverDesktopSecurity.bInheritHandle = TRUE;
+#endif
 
     /*
      * Create the interactive window station
@@ -1011,7 +1020,11 @@ CreateWindowStationAndDesktops(
         Session->InteractiveWindowStationName,
         0,
         MAXIMUM_ALLOWED,
+#ifdef _M_ARM64
+        NULL);
+#else
         &WinstaSecurity);
+#endif
     if (!Session->InteractiveWindowStation)
     {
         ERR("WL: Failed to create window station (%lu)\n", GetLastError());
@@ -1024,6 +1037,15 @@ CreateWindowStationAndDesktops(
         goto cleanup;
     }
 
+#ifdef _M_ARM64
+    /*
+     * ARM64: Skip desktop creation. Desktop objects require the desktop
+     * thread (created by UserCreateSystemThread) which we skip because
+     * it needs usersrv in csrss. The window station is sufficient for
+     * process management. Desktop handles remain NULL.
+     */
+    ERR("WL: ARM64: Skipping desktop creation (no desktop thread)\n");
+#else
     /*
      * Create the application desktop
      */
@@ -1081,6 +1103,7 @@ CreateWindowStationAndDesktops(
         ERR("WL: Cannot switch to Winlogon desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+#endif
 
     SetWindowStationUser(Session->InteractiveWindowStation,
                          &LuidNone, NULL, 0);
@@ -1112,6 +1135,7 @@ cleanup:
         }
     }
 
+#ifndef _M_ARM64
     /* Free security descriptors regardless of success or failure */
     if (WlWinstaSecurityDescriptor)
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlWinstaSecurityDescriptor);
@@ -1121,6 +1145,7 @@ cleanup:
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlWinlogonDesktopSecurityDescriptor);
     if (WlScreenSaverDesktopSecurityDescriptor)
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlScreenSaverDesktopSecurityDescriptor);
+#endif
 
     return ret;
 }

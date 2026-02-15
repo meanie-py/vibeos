@@ -144,6 +144,9 @@
 #include "precomp.h"
 #include <reactos/buildno.h>
 #include <reactos/version.h>
+#ifdef _M_ARM64
+#include <ndk/psfuncs.h>
+#endif
 
 typedef NTSTATUS (WINAPI *NtQueryInformationProcessProc)(HANDLE, PROCESSINFOCLASS,
                                                           PVOID, ULONG, PULONG);
@@ -2387,6 +2390,8 @@ int _tmain(int argc, const TCHAR *argv[])
     LPCTSTR pCmdLine;
     TCHAR startPath[MAX_PATH];
 
+    DbgPrint("[CMD] _tmain entered, argc=%d\n", argc);
+
     InitializeCriticalSection(&ChildProcessRunningLock);
     lpOriginalEnvironment = DuplicateEnvironment();
 
@@ -2414,16 +2419,20 @@ int _tmain(int argc, const TCHAR *argv[])
      * Perform general initialization, parse switches on command-line.
      * Initialize the exit code with the errorlevel as Initialize() can set it.
      */
+    DbgPrint("[CMD] Calling Initialize()\n");
     pCmdLine = Initialize();
     nExitCode = nErrorLevel;
+    DbgPrint("[CMD] Initialize() done, pCmdLine=%p nErrorLevel=%d\n", pCmdLine, nErrorLevel);
 
     if (pCmdLine && *pCmdLine)
     {
         TCHAR commandline[CMDLINE_LENGTH];
 
         /* Do the /C or /K command */
+        DbgPrint("[CMD] Executing /C command\n");
         GetCmdLineCommand(commandline, &pCmdLine[2], bAlwaysStrip);
         nExitCode = ParseCommandLine(commandline);
+        DbgPrint("[CMD] ParseCommandLine returned %d\n", nExitCode);
         if (fSingleCommand == 1)
         {
             // nErrorLevel = nExitCode;
@@ -2438,9 +2447,16 @@ int _tmain(int argc, const TCHAR *argv[])
     }
 
     /* Do the cleanup */
+    DbgPrint("[CMD] Cleanup starting\n");
     Cleanup();
     cmd_free(lpOriginalEnvironment);
 
+    DbgPrint("[CMD] Exiting with code %d\n", nExitCode);
+#ifdef _M_ARM64
+    /* ARM64: bypass ExitProcess DLL cleanup which crashes in RtlDestroyHeap
+     * due to stack page being unmapped during process teardown. Just terminate. */
+    NtTerminateProcess(NtCurrentProcess(), nExitCode);
+#endif
     cmd_exit(nExitCode);
     return nExitCode;
 }

@@ -5,7 +5,7 @@
  * PURPOSE:         Logon
  * PROGRAMMERS:     Thomas Weidenmueller (w3seek@users.sourceforge.net)
  *                  Filip Navara
- *                  Herv� Poussineau (hpoussin@reactos.org)
+ *                  Herv� Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -13,6 +13,7 @@
 #include "winlogon.h"
 
 #include <ndk/cmfuncs.h>
+#include <ndk/obfuncs.h>
 
 /* GLOBALS ******************************************************************/
 
@@ -465,13 +466,19 @@ WinMain(
     NTSTATUS Status;
 #endif
     ULONG HardErrorResponse;
+#ifndef _M_ARM64
     MSG Msg;
+#endif
 
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nShowCmd);
 
     hAppInstance = hInstance;
+
+#ifdef _M_ARM64
+    DbgPrint("[WINLOGON] ARM64: WinMain entered\n");
+#endif
 
     /* Make us critical */
     RtlSetProcessIsCritical(TRUE, NULL, FALSE);
@@ -482,14 +489,21 @@ WinMain(
 
     if (!RegisterLogonProcess(GetCurrentProcessId(), TRUE))
     {
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: RegisterLogonProcess failed (error %lu), continuing\n", GetLastError());
+#else
         ERR("WL: Could not register logon process\n");
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
+#endif
     }
 
     WLSession = (PWLSESSION)HeapAlloc(GetProcessHeap(), 0, sizeof(WLSESSION));
     if (!WLSession)
     {
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: HeapAlloc failed\n");
+#endif
         ERR("WL: Could not allocate memory for winlogon instance\n");
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
@@ -501,15 +515,45 @@ WinMain(
     /* Initialize the dialog tracking list */
     InitDialogListHead();
 
+#ifdef _M_ARM64
+    /*
+     * Create \Windows\WindowStations directory if it doesn't exist.
+     * Normally created by NtUserInitialize (via winsrv in csrss),
+     * but we skip winsrv on ARM64. CreateWindowStationW needs this
+     * directory to exist before it can call NtUserCreateWindowStation.
+     */
+    {
+        OBJECT_ATTRIBUTES DirOa;
+        UNICODE_STRING DirName;
+        HANDLE hWinStaDir;
+        NTSTATUS DirStatus;
+
+        RtlInitUnicodeString(&DirName, L"\\Windows\\WindowStations");
+        InitializeObjectAttributes(&DirOa, &DirName, OBJ_CASE_INSENSITIVE, NULL, NULL);
+        DirStatus = NtCreateDirectoryObject(&hWinStaDir, DIRECTORY_ALL_ACCESS, &DirOa);
+        DbgPrint("[WINLOGON] ARM64: NtCreateDirectoryObject(\\Windows\\WindowStations) = 0x%lx\n", DirStatus);
+        /* Keep hWinStaDir open — directory must persist */
+    }
+
+    DbgPrint("[WINLOGON] ARM64: calling CreateWindowStationAndDesktops\n");
+#endif
+
     if (!CreateWindowStationAndDesktops(WLSession))
     {
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: CreateWindowStationAndDesktops FAILED (error %lu), continuing without desktops\n", GetLastError());
+#else
         ERR("WL: Could not create window station and desktops\n");
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
+#endif
     }
 
     LockWorkstation(WLSession);
 
+#ifdef _M_ARM64
+    DbgPrint("[WINLOGON] ARM64: Skipping keyboard layouts, RPC, services, lsass, notifications, GINA\n");
+#else
     /* Load default keyboard layouts */
     if (!InitKeyboardLayouts())
     {
@@ -557,6 +601,7 @@ WinMain(
     }
 
     DisplayStatusMessage(WLSession, WLSession->WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
+#endif
 
 #if 0
     /* Connect to NetLogon service (lsass.exe) */
@@ -592,6 +637,62 @@ WinMain(
     }
 #endif
 
+#ifdef _M_ARM64
+    /* Tell kernel that CurrentControlSet is good */
+    NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
+
+    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning cmd.exe...\n");
+
+    /* Spawn cmd.exe /C exit 0 — test that cmd.exe can load and execute */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        DWORD ExitCode;
+        WCHAR CmdLine[] = L"cmd.exe /C exit 0";
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+
+        bResult = CreateProcessW(
+            L"cmd.exe",
+            CmdLine,
+            NULL,
+            NULL,
+            FALSE,
+            DETACHED_PROCESS,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] ARM64: cmd.exe created (PID %lu, TID %lu). Waiting 10s...\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            WaitForSingleObject(Pi.hProcess, 10000); /* 10 sec timeout */
+            ExitCode = 0xDEAD;
+            GetExitCodeProcess(Pi.hProcess, &ExitCode);
+            DbgPrint("[WINLOGON] ARM64: cmd.exe wait done, exit code = 0x%lx\n", ExitCode);
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(cmd.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    DbgPrint("[WINLOGON] ARM64: Sleeping.\n");
+
+    /* No SAS window, no GINA — just sleep forever */
+    {
+        LARGE_INTEGER Interval;
+        Interval.QuadPart = -(10000LL * 1000 * 60 * 60 * 24); /* 24 hours */
+        for (;;) NtDelayExecution(FALSE, &Interval);
+    }
+#else
     CallNotificationDlls(WLSession, StartupHandler);
 
     /* Create a hidden window to get SAS notifications */
@@ -632,6 +733,7 @@ WinMain(
     }
 
     CleanupNotifications();
+#endif
 
     /* We never go there */
     // TODO: Shutdown if we are in session 0, otherwise let the process terminate.

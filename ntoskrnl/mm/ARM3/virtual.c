@@ -4868,8 +4868,16 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         _SEH2_TRY
         {
+#ifdef _M_ARM64
+            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
+            if (MmIsAddressValid(URegionSize))
+                *URegionSize = PRegionSize;
+            if (MmIsAddressValid(UBaseAddress))
+                *UBaseAddress = (PVOID)StartingAddress;
+#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
+#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
@@ -5257,8 +5265,16 @@ FailPathNoLock:
         //
         _SEH2_TRY
         {
+#ifdef _M_ARM64
+            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
+            if (MmIsAddressValid(URegionSize))
+                *URegionSize = PRegionSize;
+            if (MmIsAddressValid(UBaseAddress))
+                *UBaseAddress = (PVOID)StartingAddress;
+#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
+#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
@@ -5685,8 +5701,16 @@ FinalPath:
         //
         _SEH2_TRY
         {
+#ifdef _M_ARM64
+            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
+            if (MmIsAddressValid(URegionSize))
+                *URegionSize = PRegionSize;
+            if (MmIsAddressValid(UBaseAddress))
+                *UBaseAddress = (PVOID)StartingAddress;
+#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
+#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {

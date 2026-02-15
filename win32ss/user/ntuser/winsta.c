@@ -555,6 +555,15 @@ IntCreateWindowStation(
 
         InitCursorImpl();
 
+#ifdef _M_ARM64
+        /*
+         * ARM64: Skip desktop thread and RIT creation.
+         * These require usersrv in csrss (not loaded) and video/input
+         * infrastructure. Without them, desktop functions won't work
+         * but the window station object is still valid.
+         */
+        ERR("ARM64: Skipping desktop thread and RIT creation\n");
+#else
         UserCreateSystemThread(ST_DESKTOP_THREAD);
         UserCreateSystemThread(ST_RIT);
 
@@ -566,6 +575,7 @@ IntCreateWindowStation(
                               FALSE,
                               NULL);
         UserEnterCo();
+#endif
     }
     else
     {
@@ -756,7 +766,6 @@ NtUserCreateWindowStation(
     KPROCESSOR_MODE OwnerMode = UserMode;
 
     TRACE("NtUserCreateWindowStation called\n");
-
     /* Capture the object attributes and the window station name */
     _SEH2_TRY
     {
@@ -831,12 +840,14 @@ NtUserCreateWindowStation(
     {
         TRACE("NtUserCreateWindowStation created window station '%wZ' with handle 0x%p\n",
               ObjectAttributes->ObjectName, hWinSta);
+        /* success */
     }
     else
     {
         ASSERT(hWinSta == NULL);
         ERR("NtUserCreateWindowStation failed to create window station '%wZ', Status 0x%08lx\n",
             ObjectAttributes->ObjectName, Status);
+        /* failed */
     }
 
     /* Try to restore the user's ObjectAttributes and release the window station name */

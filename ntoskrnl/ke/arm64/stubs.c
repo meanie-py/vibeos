@@ -895,6 +895,40 @@ KiDispatchException(
                 goto Handled;
         }
 
+        /*
+         * ARM64 DUMMY_PSEH workaround: _SEH2_EXCEPT handlers are dead code,
+         * so kernel code that accesses user-mode pointers inside _SEH2_TRY
+         * blocks will fault without being caught. Instead of bugchecking,
+         * skip the faulting instruction (advance PC by 4). This mimics what
+         * the _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER){} handler would do
+         * on architectures with working SEH.
+         *
+         * Condition: access violation where the faulting DATA address is in
+         * user space (< MmHighestUserAddress). Kernel→kernel faults still
+         * bugcheck as they indicate real bugs.
+         */
+        if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION &&
+            ExceptionRecord->NumberParameters >= 2)
+        {
+            ULONG_PTR FaultDataAddr = ExceptionRecord->ExceptionInformation[1];
+            if (FaultDataAddr < (ULONG_PTR)MmHighestUserAddress)
+            {
+                {
+                    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+                    if (_u) {
+                        const char *_s; int _i;
+                        _s = "[KSEH-SKIP] PC=0x"; while (*_s) *_u = (ULONG)*_s++;
+                        for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Pc >> _i) & 0xF];
+                        _s = " FAR=0x"; while (*_s) *_u = (ULONG)*_s++;
+                        for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(FaultDataAddr >> _i) & 0xF];
+                        *_u = '\r'; *_u = '\n';
+                    }
+                }
+                TrapFrame->Pc += 4;
+                return;
+            }
+        }
+
         /* Print detailed fault info before bugcheck */
         {
             volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
@@ -964,13 +998,35 @@ KiDispatchException(
             UserStack = (PKUSER_EXCEPTION_STACK_ARM64)UserRsp;
 
             /*
-             * Validate user stack before writing. On ARM64, DUMMY_PSEH can't
-             * catch faults from ProbeForWrite, so we must validate manually.
-             * Check both ends of the exception frame region.
+             * Validate and fault-in user stack before writing. Stack pages
+             * may be demand-paged (not yet physically present), so use
+             * MmAccessFault to bring them in rather than MmIsAddressValid
+             * which only checks current page table presence.
              */
             if (UserRsp >= (ULONG_PTR)MmHighestUserAddress ||
-                UserRsp < sizeof(KUSER_EXCEPTION_STACK_ARM64) ||
-                !MmIsAddressValid(UserStack) ||
+                UserRsp < sizeof(KUSER_EXCEPTION_STACK_ARM64))
+            {
+                volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+                if (_u) {
+                    const char *_s; int _i;
+                    _s = "[UEXC-STKBAD] SP=0x"; while (*_s) *_u = (ULONG)*_s++;
+                    for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(Context.Sp >> _i) & 0xF];
+                    *_u = '\r'; *_u = '\n';
+                }
+                goto SecondChance;
+            }
+
+            /* Fault in user stack pages (write fault, user mode).
+             * Stack pages may be demand-paged and not yet physically present.
+             * FaultCode 0x02 = not-present (bit0=0) + write (bit1=1).
+             * MmAccessFault brings them in; ignore errors (page may already be present). */
+            MmAccessFault(0x02, (PVOID)UserRsp, UserMode, TrapFrame);
+            MmAccessFault(0x02,
+                          (PVOID)((ULONG_PTR)UserStack + sizeof(*UserStack) - 1),
+                          UserMode,
+                          TrapFrame);
+
+            if (!MmIsAddressValid(UserStack) ||
                 !MmIsAddressValid((PUCHAR)UserStack + sizeof(*UserStack) - 1))
             {
                 volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;

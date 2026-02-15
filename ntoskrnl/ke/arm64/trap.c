@@ -188,6 +188,27 @@ KiSvcDispatch(
 
 DispatchCall:
 
+    /* Trace Win32k syscalls (table 1) — helps debug WinSta/Desktop creation */
+    if (TableIndex == 1)
+    {
+        TrapPuts("[W32K-SVC] #");
+        TrapPutHex32(ServiceNumber);
+        TrapPuts("\r\n");
+    }
+
+    /* Trace NtDelayExecution from user-mode (confirms sleep loop) */
+    if (ServiceNumber == 0x3D && (TrapFrame->Spsr & 0xF) == 0)
+    {
+        static volatile LONG DelayCount = 0;
+        LONG c = InterlockedIncrement(&DelayCount);
+        if (c <= 3)
+        {
+            TrapPuts("[SVC] NtDelayExecution (user-mode) #");
+            TrapPutHex32(c);
+            TrapPuts("\r\n");
+        }
+    }
+
     /* Get the service routine */
     Routine = (PSYSCALL_ROUTINE)Table->Base[ServiceIndex];
     if (!Routine)
@@ -238,7 +259,9 @@ DispatchCall:
     Thread->PreviousMode = OldMode;
     TrapFrame->X[0] = (ULONG64)Result;
 
-    /* Trace failed user-mode SVCs with first argument for marker identification */
+    /* SVC-FAIL trace disabled — too verbose for normal operation.
+     * Re-enable for debugging by uncommenting below. */
+#if 0
     if (OldMode == UserMode && !NT_SUCCESS(Result))
     {
         TrapPuts("[SVC-FAIL] #");
@@ -249,6 +272,7 @@ DispatchCall:
         TrapPutHex32((ULONG)Result);
         TrapPuts("\r\n");
     }
+#endif
 }
 
 /* EXCEPTION HANDLERS ********************************************************/
@@ -410,9 +434,27 @@ KiSynchronousExceptionHandler(
 
         case 0x3C: /* BRK (software breakpoint) */
         {
-            /* Skip past the BRK instruction (4 bytes) and return.
-             * Debug BRKs (0xF000=DebugService/DbgBreakPoint, 0xF001=RtlpBreakWithStatus)
-             * fire on every DPRINT/DbgPrint call — printing them floods the UART. */
+            ULONG BrkImm = ISS & 0xFFFF;
+
+            /* BRK #0xF000 = DebugService: x0=Command, x1=Arg1, x2=Arg2
+             * BREAKPOINT_PRINT (1): x1=buffer, x2=length → output to UART */
+            if (BrkImm == 0xF000 && TrapFrame->X[0] == 1)
+            {
+                char *Buf = (char *)(ULONG_PTR)TrapFrame->X[1];
+                ULONG Len = (ULONG)(ULONG_PTR)TrapFrame->X[2];
+                volatile ULONG *Uart = PL011_BASE;
+                ULONG i;
+
+                if (Len > 512) Len = 512; /* Sanity limit */
+                for (i = 0; i < Len; i++)
+                {
+                    if (!MmIsAddressValid(Buf + i)) break;
+                    if (Buf[i] == '\n') *Uart = (ULONG)'\r';
+                    *Uart = (ULONG)(unsigned char)Buf[i];
+                }
+            }
+
+            /* Skip past the BRK instruction (4 bytes) */
             TrapFrame->Pc += 4;
             return;
         }
