@@ -895,6 +895,35 @@ KiDispatchException(
                 goto Handled;
         }
 
+        /* Print detailed fault info before bugcheck */
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            if (_u) {
+                const char *_s; int _i;
+                _s = "[KEXC] Code=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionCode >> _i) & 0xF];
+                _s = " ExAddr=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[((ULONG64)(ULONG_PTR)ExceptionRecord->ExceptionAddress >> _i) & 0xF];
+                _s = " TF.Pc=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Pc >> _i) & 0xF];
+                _s = " TF.Lr=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Lr >> _i) & 0xF];
+                _s = " TF.Sp=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Sp >> _i) & 0xF];
+                _s = " Ctx.Pc=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(Context.Pc >> _i) & 0xF];
+                _s = " Ctx.Lr=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(Context.Lr >> _i) & 0xF];
+                if (ExceptionRecord->NumberParameters >= 2) {
+                    _s = " P0=0x"; while (*_s) *_u = (ULONG)*_s++;
+                    for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionInformation[0] >> _i) & 0xF];
+                    _s = " P1=0x"; while (*_s) *_u = (ULONG)*_s++;
+                    for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionInformation[1] >> _i) & 0xF];
+                }
+                *_u = '\r'; *_u = '\n';
+            }
+        }
+
         KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
                      ExceptionRecord->ExceptionCode,
                      (ULONG_PTR)ExceptionRecord->ExceptionAddress,

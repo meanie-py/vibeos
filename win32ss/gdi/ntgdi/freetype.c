@@ -2658,6 +2658,12 @@ IntGdiCleanupPrivateFontsForProcess(VOID)
     PFONT_ENTRY_COLL_MEM EntryCollection;
 
     DPRINT("IntGdiCleanupPrivateFontsForProcess()\n");
+
+    /* If font support was never initialized (e.g. winsrv not loaded,
+     * NtUserInitialize never called), there's nothing to clean up. */
+    if (g_FreeTypeLock == NULL)
+        return;
+
     do {
         Entry = NULL;
         EntryCollection = NULL;

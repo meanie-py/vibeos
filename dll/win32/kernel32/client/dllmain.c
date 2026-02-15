@@ -17,6 +17,10 @@
 /* GLOBALS *******************************************************************/
 
 PBASE_STATIC_SERVER_DATA BaseStaticServerData;
+#ifdef _M_ARM64
+static BASE_STATIC_SERVER_DATA BaseStaticServerDataFallback;
+BOOLEAN BaseCsrConnectionEstablished = FALSE;
+#endif
 BOOLEAN BaseRunningInServerProcess = FALSE;
 
 WCHAR BaseDefaultPathBuffer[6140];
@@ -144,9 +148,19 @@ DllMain(HANDLE hDll,
             if (!NT_SUCCESS(Status))
             {
                 DPRINT1("Failed to connect to CSR (Status %lx)\n", Status);
+#ifdef _M_ARM64
+                DPRINT1("ARM64: Continuing without CSRSS connection\n");
+#else
                 NtTerminateProcess(NtCurrentProcess(), Status);
                 return FALSE;
+#endif
             }
+#ifdef _M_ARM64
+            else
+            {
+                BaseCsrConnectionEstablished = TRUE;
+            }
+#endif
 
             /* Get the server data */
 #ifdef _M_ARM64
@@ -156,7 +170,16 @@ DllMain(HANDLE hDll,
             }
             if (!BaseStaticServerData)
             {
-                DPRINT1("ARM64: ReadOnlyStaticServerData not available, using defaults\n");
+                DPRINT1("ARM64: ReadOnlyStaticServerData not available, using fallback\n");
+                RtlZeroMemory(&BaseStaticServerDataFallback, sizeof(BaseStaticServerDataFallback));
+                NtQuerySystemInformation(SystemBasicInformation,
+                                         &BaseStaticServerDataFallback.SysInfo,
+                                         sizeof(SYSTEM_BASIC_INFORMATION),
+                                         NULL);
+                RtlInitUnicodeString(&BaseStaticServerDataFallback.WindowsDirectory, L"\\reactos");
+                RtlInitUnicodeString(&BaseStaticServerDataFallback.WindowsSystemDirectory, L"\\reactos\\system32");
+                BaseStaticServerDataFallback.TermsrvClientTimeZoneId = TIME_ZONE_ID_INVALID;
+                BaseStaticServerData = &BaseStaticServerDataFallback;
             }
 #else
             ASSERT(Peb->ReadOnlyStaticServerData);
@@ -179,21 +202,8 @@ DllMain(HANDLE hDll,
             kernel32_handle = hCurrentModule = hDll;
 
             /* Set the directories */
-#ifdef _M_ARM64
-            if (BaseStaticServerData)
-            {
-                BaseWindowsDirectory = BaseStaticServerData->WindowsDirectory;
-                BaseWindowsSystemDirectory = BaseStaticServerData->WindowsSystemDirectory;
-            }
-            else
-            {
-                RtlInitUnicodeString(&BaseWindowsDirectory, L"\\reactos");
-                RtlInitUnicodeString(&BaseWindowsSystemDirectory, L"\\reactos\\system32");
-            }
-#else
             BaseWindowsDirectory = BaseStaticServerData->WindowsDirectory;
             BaseWindowsSystemDirectory = BaseStaticServerData->WindowsSystemDirectory;
-#endif
 
             /* Construct the default path (using the static buffer) */
             Status = RtlStringCbPrintfW(BaseDefaultPathBuffer,

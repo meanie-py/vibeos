@@ -533,6 +533,7 @@ MmCreatePeb(IN PEPROCESS Process,
     //
     // Attach to Process
     //
+    ARM64_UART_TRACE("[MM] MmCreatePeb: KeAttachProcess\r\n");
     KeAttachProcess(&Process->Pcb);
 
     //
@@ -743,6 +744,7 @@ MmCreatePeb(IN PEPROCESS Process,
     //
     // Detach from the Process
     //
+    ARM64_UART_TRACE("[MM] MmCreatePeb: KeDetachProcess\r\n");
     KeDetachProcess();
     *BasePeb = Peb;
     return STATUS_SUCCESS;
@@ -762,6 +764,7 @@ MmCreateTeb(IN PEPROCESS Process,
     //
     // Attach to Target
     //
+    ARM64_UART_TRACE("[MM] MmCreateTeb: KeAttachProcess\r\n");
     KeAttachProcess(&Process->Pcb);
 
     //
@@ -848,6 +851,7 @@ MmCreateTeb(IN PEPROCESS Process,
     //
     // Return
     //
+    ARM64_UART_TRACE("[MM] MmCreateTeb: KeDetachProcess\r\n");
     KeDetachProcess();
     *BaseTeb = Teb;
     return Status;
@@ -1389,7 +1393,7 @@ MmDeleteProcessAddressSpace(IN PEPROCESS Process)
     KIRQL OldIrql;
     PFN_NUMBER PageFrameIndex;
 
-#ifndef _M_AMD64
+#if (_MI_PAGING_LEVELS < 3)
     OldIrql = MiAcquireExpansionLock();
     RemoveEntryList(&Process->MmProcessLinks);
     MiReleaseExpansionLock(OldIrql);

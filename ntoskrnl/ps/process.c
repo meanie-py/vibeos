@@ -583,6 +583,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     Process->Vm.MaximumWorkingSetSize = MaxWs;
 
     /* Now initialize the Kernel Process */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: KeInitializeProcess\r\n");
     KeInitializeProcess(&Process->Pcb,
                         PROCESS_PRIORITY_NORMAL,
                         Affinity,
@@ -591,8 +592,10 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
                                       SEM_NOALIGNMENTFAULTEXCEPT));
 
     /* Duplicate Parent Token */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspInitializeProcessSecurity\r\n");
     Status = PspInitializeProcessSecurity(Process, Parent);
     if (!NT_SUCCESS(Status)) goto CleanupWithRef;
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspInitializeProcessSecurity done\r\n");
 
     /* Set default priority class */
     Process->PriorityClass = PROCESS_PRIORITY_CLASS_NORMAL;
@@ -609,10 +612,12 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
         }
 
         /* Initialize object manager for the process */
+        ARM64_UART_TRACE("[PS] PspCreateProcess: ObInitProcess\r\n");
         Status = ObInitProcess(Flags & PROCESS_CREATE_FLAGS_INHERIT_HANDLES ?
                                Parent : NULL,
                                Process);
         if (!NT_SUCCESS(Status)) goto CleanupWithRef;
+        ARM64_UART_TRACE("[PS] PspCreateProcess: ObInitProcess done\r\n");
     }
     else
     {

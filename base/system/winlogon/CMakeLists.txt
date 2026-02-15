@@ -1,5 +1,5 @@
 if(ARCH STREQUAL "arm64")
-    # ARM64: Build minimal native-mode winlogon stub (no Win32k/CSRSS dependency)
+    # ARM64: Build native winlogon stub (tests CreateProcessW)
     add_executable(winlogon WIN32 winlogon_arm64.c)
     set_module_type(winlogon nativecui)
     add_importlibs(winlogon user32 gdi32 advapi32 kernel32 ntdll)

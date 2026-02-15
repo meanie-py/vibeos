@@ -15,8 +15,14 @@ FORCEINLINE struct _TEB * NtCurrentTeb(VOID)
     // return (struct _TEB *)KeGetPcr()->Used_Self;
     return (struct _TEB *)(ULONG_PTR)_MoveFromCoprocessor(CP15_TPIDRURW);
 #elif defined (_M_ARM64)
-    //UNIMPLEMENTED;
-    return 0;
+    /* ARM64 Windows ABI: x18 is the platform register holding the TEB pointer.
+     * Set by KiSwapContextInternal (kernel context switch) and
+     * KiInitializeContextThread (initial thread setup in trap frame). */
+    {
+        struct _TEB *_teb;
+        __asm__ __volatile__("mov %0, x18" : "=r"(_teb));
+        return _teb;
+    }
 // #elif defined(_M_PPC)
 //     return (struct _TEB *)_read_teb_dword(0x18);
 #else

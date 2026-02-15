@@ -245,6 +245,14 @@ CsrClientConnectToServer(
                                  NULL,
                                  &CsrSrvName,
                                  &hCsrSrv);
+        if (!NT_SUCCESS(Status))
+        {
+            /* csrsrv not loaded — we're a native process but not a CSR server.
+             * Fall through to the LPC client connection path. */
+            DPRINT1("Native process but csrsrv not loaded (0x%lx), using LPC\n", Status);
+            InsideCsrProcess = FALSE;
+            goto ClientConnect;
+        }
 
         /* Now get the Server to Server routine */
         RtlInitAnsiString(&CsrServerRoutineName, "CsrCallServerFromServer");
@@ -261,6 +269,7 @@ CsrClientConnectToServer(
         return STATUS_SUCCESS;
     }
 
+ClientConnect:
     /* Now check if connection info is given */
     if (ConnectionInfo)
     {

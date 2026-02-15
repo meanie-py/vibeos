@@ -135,6 +135,36 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
     DriverBase = MiPteToAddress(PointerPte);
     *ImageBase = DriverBase;
 
+#ifdef ARM64_UART_TRACE_ENABLE
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        if (_u)
+        {
+            const char *_s; ULONG_PTR _v; int _i;
+            _s = "[SYSMOD] base=0x"; while (*_s) *_u = (ULONG)*_s++;
+            _v = (ULONG_PTR)DriverBase;
+            for (_i = 60; _i >= 0; _i -= 4) {
+                ULONG _n = (_v >> _i) & 0xF;
+                *_u = _n < 10 ? '0' + _n : 'A' + _n - 10;
+            }
+            _s = " pages="; while (*_s) *_u = (ULONG)*_s++;
+            _v = (ULONG_PTR)PteCount;
+            for (_i = 12; _i >= 0; _i -= 4) {
+                ULONG _n = (_v >> _i) & 0xF;
+                *_u = _n < 10 ? '0' + _n : 'A' + _n - 10;
+            }
+            _s = " name="; while (*_s) *_u = (ULONG)*_s++;
+            if (FileName && FileName->Buffer) {
+                USHORT _j;
+                for (_j = 0; _j < FileName->Length / sizeof(WCHAR) && _j < 60; _j++)
+                    *_u = (ULONG)(FileName->Buffer[_j] & 0x7F);
+            }
+            *_u = '\n';
+        }
+    }
+#endif
+
     /* Lock the PFN database */
     OldIrql = MiAcquirePfnLock();
 

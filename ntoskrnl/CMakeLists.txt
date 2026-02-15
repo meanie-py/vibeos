@@ -35,11 +35,10 @@ if((CMAKE_C_COMPILER_ID STREQUAL "Clang") OR (CMAKE_C_COMPILER_ID STREQUAL "GNU"
     endif()
 endif()
 
-# UART traces for ARM64 boot debugging — disabled: too verbose for normal boot.
-# Uncomment to re-enable:
-# if(ARCH STREQUAL "arm64")
-#     add_definitions(-DARM64_UART_TRACE_ENABLE)
-# endif()
+# UART traces for ARM64 boot debugging
+if(ARCH STREQUAL "arm64")
+    add_definitions(-DARM64_UART_TRACE_ENABLE)
+endif()
 
 list(APPEND PCH_SKIP_SOURCE
     guid.c)

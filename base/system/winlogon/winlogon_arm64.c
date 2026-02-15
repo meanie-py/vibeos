@@ -1,11 +1,11 @@
 /*
  * PROJECT:     ReactOS ARM64 Port
  * FILE:        base/system/winlogon/winlogon_arm64.c
- * PURPOSE:     Minimal winlogon stub for ARM64 (no Win32k/CSRSS dependency)
+ * PURPOSE:     Minimal winlogon stub for ARM64 — tests CreateProcessW
  *
- * DESCRIPTION: This is a placeholder winlogon that SMSS launches as the
- *              initial command. It simply waits forever via NtDelayExecution.
- *              Replace with real winlogon once Win32k session support is available.
+ * DESCRIPTION: SMSS launches this as the initial command. It calls
+ *              CreateProcessW to spawn testchild.exe, waits for it,
+ *              then sleeps forever.
  */
 
 #define WIN32_NO_STATUS
@@ -15,6 +15,7 @@
 #define NTOS_MODE_USER
 #include <ndk/kefuncs.h>
 #include <ndk/exfuncs.h>
+#include <ndk/obfuncs.h>
 
 /*
  * Force DLL imports — the ntdll loader loads these when the process starts.
@@ -32,7 +33,15 @@ volatile void *_force_advapi32 = (void *)&RegCloseKey;
 
 void NtProcessStartup(PVOID Peb)
 {
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
     LARGE_INTEGER Interval;
+    BOOL ok;
+
+    /* Zero init */
+    for (int i = 0; i < sizeof(si); i++) ((char*)&si)[i] = 0;
+    for (int i = 0; i < sizeof(pi); i++) ((char*)&pi)[i] = 0;
+    si.cb = sizeof(si);
 
     /* Marker: 3 consecutive NtYieldExecution calls to confirm this binary runs.
      * NtYieldExecution = SVC 0x52. Three in a row is distinctive in the trace. */
@@ -40,7 +49,28 @@ void NtProcessStartup(PVOID Peb)
     NtYieldExecution();
     NtYieldExecution();
 
-    /* Sleep forever - SMSS waits on our process handle */
+    /* Spawn testchild.exe via full Win32 CreateProcessW path.
+     * kernel32 SearchPathW will find it in BaseWindowsSystemDirectory. */
+    ok = CreateProcessW(L"testchild.exe",
+                        NULL,
+                        NULL,
+                        NULL,
+                        FALSE,
+                        DETACHED_PROCESS,
+                        NULL,
+                        NULL,
+                        &si,
+                        &pi);
+
+    if (ok)
+    {
+        /* Wait for child to exit */
+        NtWaitForSingleObject(pi.hProcess, FALSE, NULL);
+        NtClose(pi.hProcess);
+        NtClose(pi.hThread);
+    }
+
+    /* Sleep forever — SMSS waits on our process handle */
     Interval.QuadPart = -(10000LL * 1000 * 60 * 60 * 24); /* 1 day */
 
     for (;;)
