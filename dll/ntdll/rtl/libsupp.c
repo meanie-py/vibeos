@@ -670,6 +670,13 @@ RtlPcToFileHeader(IN PVOID PcValue,
     PLDR_DATA_TABLE_ENTRY Module;
     PVOID ImageBase = NULL;
 
+    /* Loader may not be initialized yet (early process init) */
+    if (!NtCurrentPeb()->Ldr)
+    {
+        *BaseOfImage = NULL;
+        return NULL;
+    }
+
     RtlEnterCriticalSection (NtCurrentPeb()->LoaderLock);
     ModuleListHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
     Entry = ModuleListHead->Flink;

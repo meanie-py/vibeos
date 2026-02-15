@@ -42,4 +42,34 @@ KiUserApcDispatcher:
     /* Should not return; break if it does */
     brk #0xF000
 
+/*
+ * VOID KiUserExceptionDispatcher(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT Context)
+ *
+ * On entry from kernel: x0 = ExceptionRecord, x1 = Context, sp = user exception stack.
+ * Dispatches exception to user-mode handlers via RtlDispatchException.
+ */
+.globl KiUserExceptionDispatcher
+KiUserExceptionDispatcher:
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]    /* save ExcRec/Ctx across calls */
+    mov x19, x0                 /* x19 = ExceptionRecord */
+    mov x20, x1                 /* x20 = Context */
+
+    bl RtlDispatchException     /* RtlDispatchException(ExcRec, Ctx) */
+
+    cbz w0, .LRaiseException
+
+    mov x0, x20                 /* Context */
+    mov w1, #0                  /* TestAlert = FALSE */
+    bl NtContinue
+    brk #0xF003                 /* should not return */
+
+.LRaiseException:
+    mov x0, x19                 /* ExceptionRecord */
+    mov x1, x20                 /* Context */
+    mov w2, #0                  /* FirstChance = FALSE */
+    bl NtRaiseException
+    brk #0xF003                 /* should not return */
+
 /* EOF */

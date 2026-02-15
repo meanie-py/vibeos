@@ -904,6 +904,23 @@ KiDispatchException(
     else
     {
         /* User-mode exception: dispatch to user-mode handler */
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            if (_u) {
+                const char *_s;
+                int _i;
+                _s = "[UEXC] Code=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionCode >> _i) & 0xF];
+                _s = " PC=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Pc >> _i) & 0xF];
+                _s = " SP=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Sp >> _i) & 0xF];
+                _s = " 1st="; while (*_s) *_u = (ULONG)*_s++;
+                *_u = FirstChance ? '1' : '0';
+                *_u = '\r'; *_u = '\n';
+            }
+        }
+
         if (FirstChance)
         {
             ULONG_PTR UserRsp;
@@ -913,23 +930,30 @@ KiDispatchException(
             UserRsp = (Context.Sp - sizeof(KUSER_EXCEPTION_STACK_ARM64)) & ~15ULL;
             UserStack = (PKUSER_EXCEPTION_STACK_ARM64)UserRsp;
 
-            _SEH2_TRY
+            /*
+             * Validate user stack before writing. On ARM64, DUMMY_PSEH can't
+             * catch faults from ProbeForWrite, so we must validate manually.
+             * Check both ends of the exception frame region.
+             */
+            if (UserRsp >= (ULONG_PTR)MmHighestUserAddress ||
+                UserRsp < sizeof(KUSER_EXCEPTION_STACK_ARM64) ||
+                !MmIsAddressValid(UserStack) ||
+                !MmIsAddressValid((PUCHAR)UserStack + sizeof(*UserStack) - 1))
             {
-                ProbeForWrite(UserStack, sizeof(*UserStack), 16);
-                RtlZeroMemory(UserStack, sizeof(*UserStack));
-                UserStack->Context = Context;
-                UserStack->ExceptionRecord = *ExceptionRecord;
+                volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+                if (_u) {
+                    const char *_s; int _i;
+                    _s = "[UEXC-STKOVERFLOW] SP=0x"; while (*_s) *_u = (ULONG)*_s++;
+                    for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(Context.Sp >> _i) & 0xF];
+                    *_u = '\r'; *_u = '\n';
+                }
+                goto SecondChance;
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                /* Can't write user stack — fatal */
-                KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
-                             ExceptionRecord->ExceptionCode,
-                             (ULONG_PTR)ExceptionRecord->ExceptionAddress,
-                             (ULONG_PTR)TrapFrame,
-                             0);
-            }
-            _SEH2_END;
+
+            /* Pages are mapped — safe to write exception frame */
+            RtlZeroMemory(UserStack, sizeof(*UserStack));
+            UserStack->Context = Context;
+            UserStack->ExceptionRecord = *ExceptionRecord;
 
             /* Set up parameters for KiUserExceptionDispatcher(ExceptionRecord, Context)
              * ARM64 calling convention: x0 = arg1, x1 = arg2 */
@@ -947,11 +971,22 @@ KiDispatchException(
             return;
         }
 
+    SecondChance:
         /* Second chance: kill the process */
-        DPRINT1("Kill %.16s, ExceptionCode: %lx, ExceptionAddress: %lx\n",
-                PsGetCurrentProcess()->ImageFileName,
-                ExceptionRecord->ExceptionCode,
-                ExceptionRecord->ExceptionAddress);
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            if (_u) {
+                const char *_s; int _i;
+                _s = "[UEXC-KILL] Code=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionCode >> _i) & 0xF];
+                _s = " PC=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[((ULONG64)(ULONG_PTR)ExceptionRecord->ExceptionAddress >> _i) & 0xF];
+                _s = " Proc="; while (*_s) *_u = (ULONG)*_s++;
+                _s = (const char *)PsGetCurrentProcess()->ImageFileName;
+                for (_i = 0; _i < 16 && _s[_i]; _i++) *_u = (ULONG)_s[_i];
+                *_u = '\r'; *_u = '\n';
+            }
+        }
 
         ZwTerminateProcess(NtCurrentProcess(), ExceptionRecord->ExceptionCode);
         KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED,
