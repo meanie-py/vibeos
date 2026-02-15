@@ -91,7 +91,10 @@ GdiDllInitialize(
             // DisableThreadLibraryCalls(hDll);
 
             /* Initialize the kernel part of GDI first */
-            if (!NtGdiInit()) return FALSE;
+            if (!NtGdiInit())
+            {
+                return FALSE;
+            }
 
             /* Now initialize ourselves */
             GdiProcessSetup();

@@ -877,7 +877,6 @@ LdrpRunInitializeRoutines(IN PCONTEXT Context OPTIONAL)
             {
                 DPRINT1("LDR: DLL_PROCESS_ATTACH for dll \"%wZ\" (InitRoutine: %p) failed\n",
                     &LdrEntry->BaseDllName, EntryPoint);
-
                 Status = STATUS_DLL_INIT_FAILED;
                 goto Quickie;
             }

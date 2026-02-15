@@ -508,8 +508,9 @@ ConDllInitialize(IN ULONG Reason,
                         &ConnectInfo,
                         &InServerProcess))
     {
-        // DPRINT1("Failed to connect to the Console Server (Status %lx)\n", Status);
-        return FALSE;
+        DPRINT1("Console server not available, continuing without console support\n");
+        /* CONSRV may not be loaded (e.g., minimal boot without winsrv).
+         * Don't fail -- console APIs will be unavailable but the process can run. */
     }
 
     /* If we are not doing server-to-server init and if this is a console app... */

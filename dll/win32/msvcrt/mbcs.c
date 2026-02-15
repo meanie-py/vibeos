@@ -277,9 +277,16 @@ threadmbcinfo* create_mbcinfo(int cp, LCID lcid, threadmbcinfo *old_mbcinfo)
 
   if (!GetCPInfo(newcp, &cpi))
   {
-    WARN("Codepage %d not found\n", newcp);
-    free(mbcinfo);
-    return NULL;
+    if (newcp == 20127) {
+      /* ASCII (code page 20127): single-byte, no lead bytes, default char '?' */
+      memset(&cpi, 0, sizeof(cpi));
+      cpi.MaxCharSize = 1;
+      cpi.DefaultChar[0] = '?';
+    } else {
+      WARN("Codepage %d not found\n", newcp);
+      free(mbcinfo);
+      return NULL;
+    }
   }
 
   /* setup the _mbctype */

@@ -1169,6 +1169,37 @@ NtTerminateProcess(IN HANDLE ProcessHandle OPTIONAL,
     PSTRACE(PS_KILL_DEBUG,
             "ProcessHandle: %p ExitStatus: %d\n", ProcessHandle, ExitStatus);
 
+#ifdef _M_ARM64
+    /* ARM64 trace: log process termination */
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+        if (u && KeGetPreviousMode() == UserMode)
+        {
+            const char *m = "[PROC-TERM] PID=";
+            while (*m) *u = (ULONG)*m++;
+            {
+                ULONG pid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+                char buf[12]; int pos = 0;
+                if (pid == 0) buf[pos++] = '0';
+                else { char t[12]; int tp=0; while(pid){t[tp++]='0'+pid%10;pid/=10;} while(tp>0)buf[pos++]=t[--tp]; }
+                buf[pos] = 0;
+                for(int bi=0;bi<pos;bi++) *u = (ULONG)buf[bi];
+            }
+            m = " ExitStatus=0x";
+            while (*m) *u = (ULONG)*m++;
+            {
+                ULONG s = (ULONG)ExitStatus;
+                char hx[9]; int hi;
+                for(hi=7;hi>=0;hi--){hx[hi]="0123456789ABCDEF"[s&0xF];s>>=4;}
+                hx[8]=0;
+                for(hi=0;hi<8;hi++) *u = (ULONG)hx[hi];
+            }
+            *u = '\r'; *u = '\n';
+        }
+    }
+#endif
+
     /* Were we passed a process handle? */
     if (ProcessHandle)
     {

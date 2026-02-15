@@ -3191,6 +3191,32 @@ NtCreateSection(OUT PHANDLE SectionHandle,
     if ((!FileHandle) && (!MaximumSize->QuadPart))
         return STATUS_INVALID_PARAMETER_4;
 
+    /* ARM64 trace: log SEC_IMAGE section creation to identify loaded DLLs */
+#ifdef _M_ARM64
+    if ((AllocationAttributes & SEC_IMAGE) && FileHandle)
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+        if (u) {
+            const char *msg = "[SEC_IMAGE] ";
+            PFILE_OBJECT FileObject = NULL;
+            while (*msg) *u = (ULONG)*msg++;
+            if (NT_SUCCESS(ObReferenceObjectByHandle(FileHandle, 0,
+                IoFileObjectType, KernelMode, (PVOID*)&FileObject, NULL)))
+            {
+                if (FileObject->FileName.Buffer)
+                {
+                    USHORT i;
+                    for (i = 0; i < FileObject->FileName.Length / sizeof(WCHAR); i++)
+                        *u = (ULONG)(FileObject->FileName.Buffer[i] & 0xFF);
+                }
+                ObDereferenceObject(FileObject);
+            }
+            *u = '\r'; *u = '\n';
+        }
+    }
+#endif
+
     /* Create the section */
     Status = MmCreateSection(&SectionObject,
                              DesiredAccess,

@@ -527,7 +527,9 @@ DllMain(
             /* Finish initialization */
             TRACE("Checkpoint (call Init)\n");
             if (!Init(&ConnectInfo))
+            {
                 return FALSE;
+            }
 
             if (!gfServerProcess)
             {
@@ -542,7 +544,9 @@ DllMain(
                 }
 
                 if (!IMM_FN(ImmRegisterClient)(&gSharedInfo, hImm32))
+                {
                     return FALSE;
+                }
             }
             break;
         }

@@ -2,7 +2,7 @@ if(ARCH STREQUAL "arm64")
     # ARM64: Build minimal native-mode winlogon stub (no Win32k/CSRSS dependency)
     add_executable(winlogon WIN32 winlogon_arm64.c)
     set_module_type(winlogon nativecui)
-    add_importlibs(winlogon ntdll)
+    add_importlibs(winlogon user32 gdi32 advapi32 kernel32 ntdll)
     add_cd_file(TARGET winlogon DESTINATION reactos/system32 FOR all)
 else()
     include_directories(

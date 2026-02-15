@@ -241,6 +241,60 @@ NtSecureConnectPort(OUT PHANDLE PortHandle,
              ServerSid);
 #endif
 
+#ifdef _M_ARM64
+    /* ARM64 trace: log port connection attempts to UART */
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+        if (u)
+        {
+            UNICODE_STRING TmpName;
+            USHORT ii;
+            const char *m = "[LPC-CONN] PID=";
+            while (*m) *u = (ULONG)*m++;
+            /* Print PID as decimal */
+            {
+                ULONG pid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+                char buf[12]; int pos = 0;
+                if (pid == 0) buf[pos++] = '0';
+                else { char t[12]; int tp=0; while(pid){t[tp++]='0'+pid%10;pid/=10;} while(tp>0)buf[pos++]=t[--tp]; }
+                buf[pos] = 0;
+                for(int bi=0;bi<pos;bi++) *u = (ULONG)buf[bi];
+            }
+            m = " Port=";
+            while (*m) *u = (ULONG)*m++;
+            /* Capture port name from user mode safely */
+            TmpName.Length = 0;
+            TmpName.Buffer = NULL;
+            if (PreviousMode == UserMode)
+            {
+                _SEH2_TRY { TmpName = *(volatile UNICODE_STRING*)PortName; } _SEH2_EXCEPT(1) { } _SEH2_END;
+            }
+            else
+            {
+                TmpName = *PortName;
+            }
+            if (TmpName.Buffer && TmpName.Length > 0)
+            {
+                for (ii = 0; ii < TmpName.Length / sizeof(WCHAR) && ii < 120; ii++)
+                {
+                    WCHAR ch = 0;
+                    if (PreviousMode == UserMode)
+                    {
+                        _SEH2_TRY { ch = ((volatile WCHAR*)TmpName.Buffer)[ii]; } _SEH2_EXCEPT(1) { } _SEH2_END;
+                    }
+                    else
+                    {
+                        ch = TmpName.Buffer[ii];
+                    }
+                    *u = (ULONG)(ch & 0xFF);
+                }
+            }
+            *u = '\r'; *u = '\n';
+        }
+    }
+#endif
+
     /* Get the port */
     Status = ObReferenceObjectByName(PortName,
                                      0,
@@ -752,6 +806,28 @@ NtSecureConnectPort(OUT PHANDLE PortHandle,
     }
 
     ObDereferenceObject(Port);
+
+#ifdef _M_ARM64
+    /* ARM64 trace: log port connection result */
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+        if (u)
+        {
+            const char *m = "[LPC-CONN] result=0x";
+            while (*m) *u = (ULONG)*m++;
+            /* Print status as hex */
+            {
+                ULONG s = (ULONG)Status;
+                char hx[9]; int hi;
+                for(hi=7;hi>=0;hi--){hx[hi]="0123456789ABCDEF"[s&0xF];s>>=4;}
+                hx[8]=0;
+                for(hi=0;hi<8;hi++) *u = (ULONG)hx[hi];
+            }
+            *u = '\r'; *u = '\n';
+        }
+    }
+#endif
 
     /* Return status */
     return Status;

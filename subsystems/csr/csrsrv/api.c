@@ -336,7 +336,9 @@ NTAPI
 CsrApiRequestThread(IN PVOID Parameter)
 {
     PTEB Teb = NtCurrentTeb();
+#ifndef _M_ARM64
     LARGE_INTEGER TimeOut;
+#endif
     PCSR_THREAD CurrentThread, CsrThread;
     NTSTATUS Status;
     CSR_REPLY_CODE ReplyCode;
@@ -355,6 +357,11 @@ CsrApiRequestThread(IN PVOID Parameter)
     ReplyMsg = NULL;
     ReplyPort = CsrApiPort;
 
+#ifdef _M_ARM64
+    /* ARM64: Skip CsrConnectToUser loop — user32.dll is not loaded in csrss
+     * during early boot. Proceed immediately so the event is signaled and
+     * the main thread can continue to CsrSbApiPortInitialize + SmConnectToSm. */
+#else
     /* Connect to user32 */
     while (!CsrConnectToUser())
     {
@@ -365,6 +372,7 @@ CsrApiRequestThread(IN PVOID Parameter)
         Teb->Win32ClientInfo[0] = 0;
         NtDelayExecution(FALSE, &TimeOut);
     }
+#endif
 
     /* Get our thread */
     CurrentThread = Teb->CsrClientThread;
@@ -1053,15 +1061,22 @@ CsrConnectToUser(VOID)
     }
 
     /* Connect to user32 */
-    _SEH2_TRY
+    if (CsrClientThreadSetup)
     {
-        Connected = CsrClientThreadSetup();
+        _SEH2_TRY
+        {
+            Connected = CsrClientThreadSetup();
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Connected = FALSE;
+        }
+        _SEH2_END;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    else
     {
         Connected = FALSE;
     }
-    _SEH2_END;
 
     if (!Connected)
     {

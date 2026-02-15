@@ -131,6 +131,8 @@ typedef NTSTATUS (NTAPI *PSYSCALL_ROUTINE)(
     ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
     ULONG_PTR, ULONG_PTR, ULONG_PTR);
 
+extern NTSTATUS NTAPI PsConvertToGuiThread(VOID);
+
 static VOID
 KiSvcDispatch(
     _Inout_ PKTRAP_FRAME TrapFrame)
@@ -157,9 +159,34 @@ KiSvcDispatch(
     /* Validate service number */
     if (ServiceIndex >= Table->Limit)
     {
+        /* Check if this is a Win32k call on a non-GUI thread */
+        if (TableIndex == 1 &&
+            Thread->ServiceTable == KeServiceDescriptorTable)
+        {
+            TrapPuts("[SVC] GUI thread conversion for #");
+            TrapPutHex32(ServiceNumber);
+            TrapPuts("\r\n");
+
+            /* Convert to GUI thread (allocates W32Process/W32Thread,
+             * switches ServiceTable to KeServiceDescriptorTableShadow) */
+            Result = PsConvertToGuiThread();
+            if (NT_SUCCESS(Result))
+            {
+                /* Re-fetch from the now-valid Win32k SSDT */
+                Table = (PKSERVICE_TABLE_DESCRIPTOR)Thread->ServiceTable;
+                Table = &Table[TableIndex];
+                if (ServiceIndex < Table->Limit)
+                    goto DispatchCall;
+            }
+            TrapPuts("[SVC] GUI conversion failed: ");
+            TrapPutHex32((ULONG)Result);
+            TrapPuts("\r\n");
+        }
         TrapFrame->X[0] = (ULONG64)STATUS_INVALID_SYSTEM_SERVICE;
         return;
     }
+
+DispatchCall:
 
     /* Get the service routine */
     Routine = (PSYSCALL_ROUTINE)Table->Base[ServiceIndex];
@@ -200,13 +227,6 @@ KiSvcDispatch(
     TrapFrame->TrapFrame = (ULONG64)OldTrapFrame;
     Thread->TrapFrame = TrapFrame;
 
-    /* Trace SVC calls */
-    TrapPuts("[SVC] #");
-    TrapPutHex32(ServiceNumber);
-    TrapPuts(" PC=");
-    TrapPutHex64(TrapFrame->Pc);
-    TrapPuts("\r\n");
-
     /* Dispatch the system call */
     Result = Routine(Args[0], Args[1], Args[2], Args[3],
                      Args[4], Args[5], Args[6], Args[7],
@@ -218,12 +238,14 @@ KiSvcDispatch(
     Thread->PreviousMode = OldMode;
     TrapFrame->X[0] = (ULONG64)Result;
 
-    /* Trace failed user-mode SVCs to help diagnose SMSS init failures */
+    /* Trace failed user-mode SVCs with first argument for marker identification */
     if (OldMode == UserMode && !NT_SUCCESS(Result))
     {
         TrapPuts("[SVC-FAIL] #");
         TrapPutHex32(ServiceNumber);
-        TrapPuts(" => ");
+        TrapPuts("(");
+        TrapPutHex64(Args[0]);
+        TrapPuts(")=>");
         TrapPutHex32((ULONG)Result);
         TrapPuts("\r\n");
     }
@@ -366,7 +388,9 @@ KiSynchronousExceptionHandler(
                                         FaultMode2,
                                         TrapFrame);
                 if (NT_SUCCESS(Status2))
+                {
                     return;
+                }
             }
 
             /* Dispatch as access violation */

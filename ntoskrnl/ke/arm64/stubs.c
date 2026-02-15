@@ -915,6 +915,10 @@ KiDispatchException(
                 for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Pc >> _i) & 0xF];
                 _s = " SP=0x"; while (*_s) *_u = (ULONG)*_s++;
                 for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Sp >> _i) & 0xF];
+                _s = " LR=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Lr >> _i) & 0xF];
+                _s = " ESR=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Esr >> _i) & 0xF];
                 _s = " 1st="; while (*_s) *_u = (ULONG)*_s++;
                 *_u = FirstChance ? '1' : '0';
                 *_u = '\r'; *_u = '\n';

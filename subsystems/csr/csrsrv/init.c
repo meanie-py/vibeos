@@ -17,6 +17,10 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64: CsrUartPuts is a no-op — user-mode cannot access kernel UART MMIO.
+ * Tracing is done from the kernel side via LPC port creation/connection logs. */
+#define CsrUartPuts(s) ((void)0)
+
 /* DATA ***********************************************************************/
 
 // Debug Flag
@@ -1056,62 +1060,82 @@ CsrServerInitialization(IN ULONG ArgumentCount,
     }
 
     /* Parse the command line */
+    CsrUartPuts("[CSRSRV] CsrParseServerCommandLine...\r\n");
     Status = CsrParseServerCommandLine(ArgumentCount, Arguments);
     if (!NT_SUCCESS(Status))
     {
+        CsrUartPuts("[CSRSRV] CsrParseServerCommandLine FAILED\r\n");
         DPRINT1("CSRSRV:%s: CsrParseServerCommandLine failed (Status=0x%08lx)\n",
                 __FUNCTION__, Status);
         return Status;
     }
+    CsrUartPuts("[CSRSRV] CsrParseServerCommandLine OK\r\n");
 
     /* Finish to initialize the CSR Root Process */
     Status = CsrInitCsrRootProcess();
     if (!NT_SUCCESS(Status))
     {
+        CsrUartPuts("[CSRSRV] CsrInitCsrRootProcess FAILED\r\n");
         DPRINT1("CSRSRV:%s: CsrInitCsrRootProcess failed (Status=0x%08lx)\n",
                 __FUNCTION__, Status);
         return Status;
     }
+    CsrUartPuts("[CSRSRV] CsrInitCsrRootProcess OK\r\n");
 
     /* Now initialize our API Port */
     Status = CsrApiPortInitialize();
     if (!NT_SUCCESS(Status))
     {
+        CsrUartPuts("[CSRSRV] CsrApiPortInitialize FAILED\r\n");
         DPRINT1("CSRSRV:%s: CsrApiPortInitialize failed (Status=0x%08lx)\n",
                 __FUNCTION__, Status);
         return Status;
     }
+    CsrUartPuts("[CSRSRV] CsrApiPortInitialize OK\r\n");
 
 #ifdef __REACTOS__
+#ifndef _M_ARM64
     if (CsrSubSystemType != IMAGE_SUBSYSTEM_UNKNOWN)
     {
 #endif
+#endif
     /* Initialize the API Port for SM communication */
+    CsrUartPuts("[CSRSRV] CsrSbApiPortInitialize...\r\n");
     Status = CsrSbApiPortInitialize();
     if (!NT_SUCCESS(Status))
     {
+        CsrUartPuts("[CSRSRV] CsrSbApiPortInitialize FAILED\r\n");
         DPRINT1("CSRSRV:%s: CsrSbApiPortInitialize failed (Status=0x%08lx)\n",
                 __FUNCTION__, Status);
         return Status;
     }
+    CsrUartPuts("[CSRSRV] CsrSbApiPortInitialize OK\r\n");
 
     /* We're all set! Connect to SM! */
+    CsrUartPuts("[CSRSRV] SmConnectToSm...\r\n");
     Status = SmConnectToSm(&CsrSbApiPortName,
                            CsrSbApiPort,
 #ifdef __REACTOS__
+#ifdef _M_ARM64
+                           IMAGE_SUBSYSTEM_WINDOWS_GUI,
+#else
                            CsrSubSystemType,
+#endif
 #else
                            IMAGE_SUBSYSTEM_WINDOWS_GUI,
 #endif
                            &CsrSmApiPort);
     if (!NT_SUCCESS(Status))
     {
+        CsrUartPuts("[CSRSRV] SmConnectToSm FAILED\r\n");
         DPRINT1("CSRSRV:%s: SmConnectToSm failed (Status=0x%08lx)\n",
                 __FUNCTION__, Status);
         return Status;
     }
 #ifdef __REACTOS__
+#ifndef _M_ARM64
     }
+#endif
 #endif
 
     /* Have us handle Hard Errors */

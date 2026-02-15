@@ -149,9 +149,20 @@ DllMain(HANDLE hDll,
             }
 
             /* Get the server data */
+#ifdef _M_ARM64
+            if (Peb->ReadOnlyStaticServerData)
+            {
+                BaseStaticServerData = Peb->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX];
+            }
+            if (!BaseStaticServerData)
+            {
+                DPRINT1("ARM64: ReadOnlyStaticServerData not available, using defaults\n");
+            }
+#else
             ASSERT(Peb->ReadOnlyStaticServerData);
             BaseStaticServerData = Peb->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX];
             ASSERT(BaseStaticServerData);
+#endif
 
             /* Check if we are running a CSR Server */
             if (!BaseRunningInServerProcess)
@@ -168,8 +179,21 @@ DllMain(HANDLE hDll,
             kernel32_handle = hCurrentModule = hDll;
 
             /* Set the directories */
+#ifdef _M_ARM64
+            if (BaseStaticServerData)
+            {
+                BaseWindowsDirectory = BaseStaticServerData->WindowsDirectory;
+                BaseWindowsSystemDirectory = BaseStaticServerData->WindowsSystemDirectory;
+            }
+            else
+            {
+                RtlInitUnicodeString(&BaseWindowsDirectory, L"\\reactos");
+                RtlInitUnicodeString(&BaseWindowsSystemDirectory, L"\\reactos\\system32");
+            }
+#else
             BaseWindowsDirectory = BaseStaticServerData->WindowsDirectory;
             BaseWindowsSystemDirectory = BaseStaticServerData->WindowsSystemDirectory;
+#endif
 
             /* Construct the default path (using the static buffer) */
             Status = RtlStringCbPrintfW(BaseDefaultPathBuffer,
