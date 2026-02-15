@@ -117,8 +117,15 @@ DC_InitHack(PDC pdc)
         prgnDefault = IntSysCreateRectpRgn(0, 0, 0, 0);
     }
 
+#ifdef _M_ARM64
+    /* ARM64: Skip font realization — no fonts are loaded (no registry font path,
+     * IntLoadFontsInRegistry finds nothing). TextIntRealizeFont crashes on the
+     * second DC creation due to DUMMY_PSEH + freetype internal state. */
+    pdc->pdcattr->iCS_CP = 0;
+#else
     TextIntRealizeFont(pdc->pdcattr->hlfntNew,NULL);
     pdc->pdcattr->iCS_CP = ftGdiGetTextCharsetInfo(pdc,NULL,0);
+#endif
 
     /* This should never fail */
     ASSERT(pdc->dclevel.ppal);

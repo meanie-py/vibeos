@@ -143,6 +143,17 @@ UserInitialize(VOID)
 //     Initialize User Screen.
 // }
 
+#ifdef _M_ARM64
+    /* ARM64: Initialize desktop graphics (PDEV + screen DC) eagerly.
+     * On x86/amd64 this happens lazily via co_IntGraphicsCheck when the
+     * first GUI app creates a DC, but on ARM64 we need it before any
+     * NtGdiOpenDCW call because EngpGetPDEV requires gpmdev to be set. */
+    if (!co_IntInitializeDesktopGraphics())
+    {
+        ERR("co_IntInitializeDesktopGraphics failed\n");
+    }
+#endif
+
 // Set Global SERVERINFO Error flags.
 // Load Resources.
 
@@ -175,12 +186,11 @@ NtUserInitialize(
 {
     NTSTATUS Status;
 
-    TRACE("Enter NtUserInitialize(%lx, %p, %p)\n",
-          dwWinVersion, hPowerRequestEvent, hMediaRequestEvent);
-
     /* Check if we are already initialized */
     if (gpepCSRSS)
+    {
         return STATUS_UNSUCCESSFUL;
+    }
 
     /* Check Windows USER subsystem version */
     if (dwWinVersion != USER_VERSION)
@@ -207,7 +217,10 @@ NtUserInitialize(
 
     /* Initialize various GDI stuff (DirectX, fonts, language ID etc.) */
     if (!InitializeGreCSRSS())
+    {
+        UserLeave();
         return STATUS_UNSUCCESSFUL;
+    }
 
     /* Initialize USER */
     Status = UserInitialize();

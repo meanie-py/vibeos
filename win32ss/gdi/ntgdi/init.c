@@ -84,8 +84,13 @@ InitializeGreCSRSS(VOID)
     /* Initialize Legacy DirectX graphics driver */
     if (DxDdStartupDxGraphics(0, NULL, 0, NULL, NULL, gpepCSRSS) != STATUS_SUCCESS)
     {
+#ifdef _M_ARM64
+        /* dxg.sys is not available on ARM64 — continue without DirectX */
+        ERR("DirectX graphics unavailable on ARM64 (non-fatal)\n");
+#else
         ERR("Unable to initialize DirectX graphics\n");
         return FALSE;
+#endif
     }
 
     /* Get global language ID */

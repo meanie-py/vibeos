@@ -504,6 +504,14 @@ NtUserProcessConnect(
     /* Get Win32 process information */
     W32Process = PsGetProcessWin32Process(Process);
 
+    if (!W32Process)
+    {
+        ERR("NtUserProcessConnect: W32Process is NULL for process %p\n", Process);
+        UserLeave();
+        ObDereferenceObject(Process);
+        return STATUS_UNSUCCESSFUL;
+    }
+
     _SEH2_TRY
     {
         UINT i;

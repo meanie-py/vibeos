@@ -261,15 +261,22 @@ IntValidateWindowStationHandle(
 BOOL FASTCALL
 co_IntInitializeDesktopGraphics(VOID)
 {
+    LONG lRet;
+#ifndef _M_ARM64
     TEXTMETRICW tmw;
     UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
     PDESKTOP pdesk;
-    LONG lRet;
+#endif
+
+    /* If PDEV already created (e.g. ARM64 early init), skip re-creation */
+    if (gpmdev)
+    {
+        return TRUE;
+    }
 
     lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
     if (lRet != DISP_CHANGE_SUCCESSFUL && !gbBaseVideo)
     {
-        ERR("Failed to initialize graphics, switching to base video\n");
         gbBaseVideo = TRUE;
         EngpUpdateGraphicsDeviceList();
         lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
@@ -278,10 +285,28 @@ co_IntInitializeDesktopGraphics(VOID)
     }
     if (lRet != DISP_CHANGE_SUCCESSFUL)
     {
-        ERR("PDEVOBJ_lChangeDisplaySettings() failed.\n");
         return FALSE;
     }
 
+#ifdef _M_ARM64
+    /* ARM64: Skip ScreenDeviceContext, font measurement, and other GDI init
+     * that causes KSEH-SKIP cascades due to DUMMY_PSEH. Just set basic
+     * metrics from the PDEV's gdiinfo and return. The serial console
+     * doesn't need full GDI DC support. */
+    gpsi->aiSysMet[SM_CXSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulHorzRes;
+    gpsi->aiSysMet[SM_CYSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulVertRes;
+    gpsi->Planes        = 1;
+    gpsi->BitsPixel     = gpmdev->ppdevGlobal->gdiinfo.cBitsPixel;
+    gpsi->BitCount      = gpsi->Planes * gpsi->BitsPixel;
+    gpsi->dmLogPixels   = 96;
+    gpsi->PUSIFlags    &= ~PUSIF_PALETTEDISPLAY;
+    gpsi->cxSysFontChar = 8;
+    gpsi->cySysFontChar = 16;
+    gpsi->ptCursor.x    = gpsi->aiSysMet[SM_CXSCREEN] / 2;
+    gpsi->ptCursor.y    = gpsi->aiSysMet[SM_CYSCREEN] / 2;
+    MenuInit();
+    return TRUE;
+#else
     ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
     if (NULL == ScreenDeviceContext)
     {
@@ -331,7 +356,6 @@ co_IntInitializeDesktopGraphics(VOID)
 
     /* Attach monitor */
     UserAttachMonitor((HDEV)gpmdev->ppdevGlobal);
-
     /* Setup the cursor */
     co_IntLoadDefaultCursors();
 
@@ -363,6 +387,7 @@ co_IntInitializeDesktopGraphics(VOID)
     }
 
     return TRUE;
+#endif
 }
 
 VOID FASTCALL

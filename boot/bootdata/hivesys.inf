@@ -1583,7 +1583,7 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Kmode",0x000
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Optional",0x00010000,"Posix"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Posix",0x00020000,"%SystemRoot%\system32\psxss.exe"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Required",0x00010000,"Debug","Windows"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Windows",0x00020000,"%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,12288,512 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:ConServerDllInitialization,2 ProfileControl=Off MaxRequestThreads=16"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Windows",0x00020000,"%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,12288,512 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:ConServerDllInitialization,2 ServerDll=winsrv:UserServerDllInitialization,3 ProfileControl=Off MaxRequestThreads=16"
 
 ; This is an empty App Compat cache
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache","AppCompatCache", 0x00000001, \
@@ -1610,6 +1610,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Group",0x00000000,"Boot Bus Exte
 HKLM,"SYSTEM\CurrentControlSet\Services\pl011","ImagePath",0x00020000,"system32\drivers\pl011.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Type",0x00010001,0x00000001
+
+; ARM64 framebuffer video device driver — boot start so \Device\Video0 exists before csrss
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
 
 ; Audio Service
 HKLM,"SYSTEM\CurrentControlSet\Services\AudioSrv","DisplayName",0x00000000,%AUDIO_SERVICE%
