@@ -36,6 +36,7 @@ list(APPEND CONSRV_SOURCE
     consrv/frontends/gui/graphics.c
     consrv/frontends/gui/text.c
     consrv/frontends/tui/tuiterm.c
+    consrv/frontends/serial/serialterm.c
     # consrv/consrv.rc
     consrv/consrv.h)
 
@@ -55,6 +56,9 @@ endif()
 add_library(consrv ${CONSRV_SOURCE})
 target_link_libraries(consrv pseh)
 add_dependencies(consrv psdk)
+if(ARCH STREQUAL "arm64")
+    target_compile_definitions(consrv PRIVATE SERIALTERM_COMPILE)
+endif()
 add_pch(consrv consrv/consrv.h CONSRV_SOURCE)
 #add_object_library(consrv ${CONSRV_SOURCE})
 #list(APPEND CONSRV_IMPORT_LIBS)

@@ -641,15 +641,15 @@ WinMain(
     /* Tell kernel that CurrentControlSet is good */
     NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
 
-    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning cmd.exe...\n");
+    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning interactive cmd.exe...\n");
 
-    /* Spawn cmd.exe /C exit 0 — test that cmd.exe can load and execute */
+    /* Spawn interactive cmd.exe with console (CONSRV now available) */
     {
         STARTUPINFOW Si;
         PROCESS_INFORMATION Pi;
         BOOL bResult;
         DWORD ExitCode;
-        WCHAR CmdLine[] = L"cmd.exe /C exit 0";
+        WCHAR CmdLine[] = L"cmd.exe";
 
         ZeroMemory(&Si, sizeof(Si));
         Si.cb = sizeof(Si);
@@ -660,7 +660,7 @@ WinMain(
             NULL,
             NULL,
             FALSE,
-            DETACHED_PROCESS,
+            0,      /* No DETACHED_PROCESS — allow console allocation */
             NULL,
             NULL,
             &Si,
@@ -668,12 +668,12 @@ WinMain(
 
         if (bResult)
         {
-            DbgPrint("[WINLOGON] ARM64: cmd.exe created (PID %lu, TID %lu). Waiting 10s...\n",
+            DbgPrint("[WINLOGON] ARM64: cmd.exe created (PID %lu, TID %lu). Waiting...\n",
                      Pi.dwProcessId, Pi.dwThreadId);
-            WaitForSingleObject(Pi.hProcess, 10000); /* 10 sec timeout */
+            WaitForSingleObject(Pi.hProcess, INFINITE);
             ExitCode = 0xDEAD;
             GetExitCodeProcess(Pi.hProcess, &ExitCode);
-            DbgPrint("[WINLOGON] ARM64: cmd.exe wait done, exit code = 0x%lx\n", ExitCode);
+            DbgPrint("[WINLOGON] ARM64: cmd.exe exited, exit code = 0x%lx\n", ExitCode);
             CloseHandle(Pi.hThread);
             CloseHandle(Pi.hProcess);
         }
@@ -684,7 +684,7 @@ WinMain(
         }
     }
 
-    DbgPrint("[WINLOGON] ARM64: Sleeping.\n");
+    DbgPrint("[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n");
 
     /* No SAS window, no GINA — just sleep forever */
     {

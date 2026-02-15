@@ -63,8 +63,9 @@ PsConvertToGuiThread(VOID)
     {
 #ifdef _M_ARM64
         /* ARM64: KeSwitchKernelStack not yet implemented (needs asm to
-         * safely switch SP). Mark as LargeStack to skip the swap —
-         * the 12KB default stack is sufficient for Win32k callouts. */
+         * safely switch SP). MmCreateKernelStack always allocates large
+         * stacks on ARM64, so this path should not normally be reached.
+         * Mark as LargeStack just in case. */
         Thread->Tcb.LargeStack = TRUE;
 #else
         /* We don't create one */

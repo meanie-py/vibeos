@@ -285,16 +285,32 @@ MmCreateKernelStack(IN BOOLEAN GuiStack,
     ULONG i;
     PSLIST_ENTRY SListEntry;
 
+#ifdef _M_ARM64
+    /* ARM64: Always create large stacks because KeSwitchKernelStack is not
+     * implemented. Without this, GUI thread conversion leaves threads on
+     * the 12KB stack which overflows with deep win32k/user32/gdi32 calls. */
+    GuiStack = TRUE;
+#endif
+
     //
     // Calculate pages needed
     //
     if (GuiStack)
     {
+#ifdef _M_ARM64
+        //
+        // ARM64: Commit the full large stack upfront. Kernel stack growth
+        // via guard pages is not reliable on ARM64, so avoid partial commit.
+        //
+        StackPtes = BYTES_TO_PAGES(MmLargeStackSize);
+        StackPages = StackPtes;
+#else
         //
         // We'll allocate 64KB stack, but only commit 12K
         //
         StackPtes = BYTES_TO_PAGES(MmLargeStackSize);
         StackPages = BYTES_TO_PAGES(KERNEL_LARGE_STACK_COMMIT);
+#endif
     }
     else
     {
@@ -334,8 +350,10 @@ MmCreateKernelStack(IN BOOLEAN GuiStack,
     // Select the right PTE address where we actually start committing pages
     //
     PointerPte = StackPte;
+#ifndef _M_ARM64
     if (GuiStack) PointerPte += BYTES_TO_PAGES(MmLargeStackSize -
                                                KERNEL_LARGE_STACK_COMMIT);
+#endif
 
 
     /* Setup the temporary invalid PTE */
