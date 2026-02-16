@@ -29,6 +29,165 @@
 #define IOCTL_ARM64INPUT_INJECT_MOUSE \
     CTL_CODE(FILE_DEVICE_MOUSE, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+/* =========================================================================
+ * Virtio MMIO transport definitions (virtio spec v1.2, MMIO transport)
+ * ========================================================================= */
+
+/* MMIO register offsets */
+#define VIRTIO_MMIO_MAGIC           0x000  /* Must be 0x74726976 "virt" */
+#define VIRTIO_MMIO_VERSION         0x004  /* 1=legacy, 2=modern */
+#define VIRTIO_MMIO_DEVICE_ID       0x008  /* 0=empty, 18=input */
+#define VIRTIO_MMIO_VENDOR_ID       0x00C
+#define VIRTIO_MMIO_DEV_FEATURES    0x010
+#define VIRTIO_MMIO_DEV_FEATURES_SEL 0x014
+#define VIRTIO_MMIO_DRV_FEATURES    0x020
+#define VIRTIO_MMIO_DRV_FEATURES_SEL 0x024
+#define VIRTIO_MMIO_GUEST_PAGE_SIZE 0x028  /* Legacy v1 only */
+#define VIRTIO_MMIO_QUEUE_SEL       0x030
+#define VIRTIO_MMIO_QUEUE_NUM_MAX   0x034
+#define VIRTIO_MMIO_QUEUE_NUM       0x038
+#define VIRTIO_MMIO_QUEUE_PFN       0x040  /* Legacy v1 only */
+#define VIRTIO_MMIO_QUEUE_READY     0x044
+#define VIRTIO_MMIO_QUEUE_NOTIFY    0x050
+#define VIRTIO_MMIO_INTERRUPT_STATUS 0x060
+#define VIRTIO_MMIO_INTERRUPT_ACK   0x064
+#define VIRTIO_MMIO_STATUS          0x070
+#define VIRTIO_MMIO_QUEUE_DESC_LOW  0x080
+#define VIRTIO_MMIO_QUEUE_DESC_HIGH 0x084
+#define VIRTIO_MMIO_QUEUE_AVAIL_LOW 0x090
+#define VIRTIO_MMIO_QUEUE_AVAIL_HIGH 0x094
+#define VIRTIO_MMIO_QUEUE_USED_LOW  0x0A0
+#define VIRTIO_MMIO_QUEUE_USED_HIGH 0x0A4
+#define VIRTIO_MMIO_CONFIG          0x100
+
+/* Device status bits */
+#define VIRTIO_STATUS_ACK           0x01
+#define VIRTIO_STATUS_DRIVER        0x02
+#define VIRTIO_STATUS_DRIVER_OK     0x04
+#define VIRTIO_STATUS_FEATURES_OK   0x08
+
+/* Virtio input config select values */
+#define VIRTIO_INPUT_CFG_UNSET      0x00
+#define VIRTIO_INPUT_CFG_ID_NAME    0x01
+#define VIRTIO_INPUT_CFG_EV_BITS    0x11
+#define VIRTIO_INPUT_CFG_ABS_INFO   0x12
+
+/* Linux evdev event types */
+#define EV_SYN  0x00
+#define EV_KEY  0x01
+#define EV_REL  0x02
+#define EV_ABS  0x03
+
+/* Linux evdev absolute axes */
+#define ABS_X   0x00
+#define ABS_Y   0x01
+
+/* Linux evdev relative axes */
+#define REL_X       0x00
+#define REL_Y       0x01
+#define REL_WHEEL   0x08
+
+/* Linux evdev button codes (mouse buttons start at 0x110) */
+#define BTN_LEFT    0x110
+#define BTN_RIGHT   0x111
+#define BTN_MIDDLE  0x112
+
+/* Linux evdev key codes of interest */
+#define KEY_A       30
+
+/* Virtqueue descriptor flags */
+#define VIRTQ_DESC_F_WRITE  2
+
+/* Input event struct from device (8 bytes) */
+typedef struct _VIRTIO_INPUT_EVENT {
+    USHORT Type;
+    USHORT Code;
+    ULONG  Value;
+} VIRTIO_INPUT_EVENT;
+
+/* Split virtqueue structures */
+#pragma pack(push, 1)
+typedef struct _VIRTQ_DESC {
+    ULONGLONG Addr;
+    ULONG     Len;
+    USHORT    Flags;
+    USHORT    Next;
+} VIRTQ_DESC;
+
+typedef struct _VIRTQ_AVAIL {
+    USHORT Flags;
+    USHORT Idx;
+    USHORT Ring[];
+} VIRTQ_AVAIL;
+
+typedef struct _VIRTQ_USED_ELEM {
+    ULONG Id;
+    ULONG Len;
+} VIRTQ_USED_ELEM;
+
+typedef struct _VIRTQ_USED {
+    USHORT Flags;
+    USHORT Idx;
+    VIRTQ_USED_ELEM Ring[];
+} VIRTQ_USED;
+#pragma pack(pop)
+
+/* Per-device context */
+#define VIRTIO_QUEUE_SIZE   64
+#define MAX_VIRTIO_INPUTS   4
+
+typedef struct _VIRTIO_INPUT_DEV {
+    volatile UCHAR *Mmio;
+    ULONG MmioVersion;
+    BOOLEAN IsKeyboard;
+    BOOLEAN IsTablet;
+    ULONG AbsMaxX, AbsMaxY;
+
+    /* Queue memory */
+    PVOID QueueVa;
+    PHYSICAL_ADDRESS QueuePa;
+    ULONG QueueAllocSize;
+
+    /* Queue component pointers (into QueueVa) */
+    VIRTQ_DESC  *Desc;
+    VIRTQ_AVAIL *Avail;
+    VIRTQ_USED  *Used;
+    ULONG QueueSize;
+
+    /* Event buffers */
+    VIRTIO_INPUT_EVENT *Events;
+    PHYSICAL_ADDRESS EventsPa;
+
+    USHORT LastUsedIdx;
+
+    /* Accumulated mouse state between SYN_REPORT */
+    LONG AccumX, AccumY;
+    USHORT AccumButtons;
+    BOOLEAN HasMove, HasButton;
+    BOOLEAN AbsValid;
+} VIRTIO_INPUT_DEV;
+
+static VIRTIO_INPUT_DEV VirtioInputs[MAX_VIRTIO_INPUTS];
+static ULONG VirtioInputCount = 0;
+static HANDLE VirtioPollThreadHandle = NULL;
+static BOOLEAN VirtioPollRunning = FALSE;
+
+/* Forward declarations — these get set in DriverEntry */
+static PDEVICE_OBJECT g_KbdDevice = NULL;
+static PDEVICE_OBJECT g_MouDevice = NULL;
+
+/* MMIO register helpers */
+static __inline ULONG VirtioRead32(volatile UCHAR *Base, ULONG Offset) {
+    return *(volatile ULONG *)(Base + Offset);
+}
+static __inline void VirtioWrite32(volatile UCHAR *Base, ULONG Offset, ULONG Val) {
+    *(volatile ULONG *)(Base + Offset) = Val;
+}
+
+#define virtio_mb()  __asm__ volatile("dmb ish" ::: "memory")
+#define virtio_wmb() __asm__ volatile("dmb ishst" ::: "memory")
+#define virtio_rmb() __asm__ volatile("dmb ishld" ::: "memory")
+
 /* Ring buffer sizes */
 #define KBD_RING_SIZE 64
 #define MOU_RING_SIZE 32
@@ -549,6 +708,625 @@ InputDeviceControl(
     return Status;
 }
 
+/* =========================================================================
+ * Evdev key code to AT Scan Code Set 1 mapping
+ * For evdev codes 1-88, the value IS the AT scan code (identity mapping).
+ * Extended keys (>88) need a lookup table.
+ * ========================================================================= */
+
+typedef struct _EVDEV_EXT_MAP {
+    USHORT EvdevCode;
+    USHORT ScanCode;
+    USHORT Flags;       /* 0 or KEY_E0 */
+} EVDEV_EXT_MAP;
+
+static const EVDEV_EXT_MAP EvdevExtendedKeys[] = {
+    {  96, 0x1C, KEY_E0 },  /* KEY_KPENTER */
+    {  97, 0x1D, KEY_E0 },  /* KEY_RIGHTCTRL */
+    { 100, 0x35, KEY_E0 },  /* KEY_KPSLASH */
+    { 102, 0x47, KEY_E0 },  /* KEY_HOME */
+    { 103, 0x48, KEY_E0 },  /* KEY_UP */
+    { 104, 0x49, KEY_E0 },  /* KEY_PAGEUP */
+    { 105, 0x4B, KEY_E0 },  /* KEY_LEFT */
+    { 106, 0x4D, KEY_E0 },  /* KEY_RIGHT */
+    { 107, 0x4F, KEY_E0 },  /* KEY_END */
+    { 108, 0x50, KEY_E0 },  /* KEY_DOWN */
+    { 109, 0x51, KEY_E0 },  /* KEY_PAGEDOWN */
+    { 110, 0x52, KEY_E0 },  /* KEY_INSERT */
+    { 111, 0x53, KEY_E0 },  /* KEY_DELETE */
+    { 125, 0x5B, KEY_E0 },  /* KEY_LEFTMETA (Win) */
+    { 126, 0x5C, KEY_E0 },  /* KEY_RIGHTMETA */
+    { 127, 0x5D, KEY_E0 },  /* KEY_COMPOSE (Menu) */
+};
+
+#define EVDEV_EXT_COUNT (sizeof(EvdevExtendedKeys) / sizeof(EvdevExtendedKeys[0]))
+
+static BOOLEAN
+EvdevToScanCode(USHORT EvdevCode, USHORT *OutScanCode, USHORT *OutFlags)
+{
+    ULONG i;
+
+    /* Direct mapping for codes 1-88 */
+    if (EvdevCode >= 1 && EvdevCode <= 88)
+    {
+        *OutScanCode = EvdevCode;
+        *OutFlags = 0;
+        return TRUE;
+    }
+
+    /* Extended key lookup */
+    for (i = 0; i < EVDEV_EXT_COUNT; i++)
+    {
+        if (EvdevExtendedKeys[i].EvdevCode == EvdevCode)
+        {
+            *OutScanCode = EvdevExtendedKeys[i].ScanCode;
+            *OutFlags = EvdevExtendedKeys[i].Flags;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* =========================================================================
+ * Virtio queue setup
+ * ========================================================================= */
+
+static NTSTATUS
+VirtioSetupQueue(VIRTIO_INPUT_DEV *Dev, ULONG QueueIdx)
+{
+    ULONG MaxSize, QueueSize, DescSize, AvailSize, UsedSize, EventsSize;
+    ULONG AvailOff, UsedOff, EventsOff, TotalSize;
+    PHYSICAL_ADDRESS HighAddr;
+    ULONG i;
+
+    /* Select queue */
+    VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_SEL, QueueIdx);
+    virtio_mb();
+
+    MaxSize = VirtioRead32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NUM_MAX);
+    if (MaxSize == 0)
+        return STATUS_DEVICE_NOT_READY;
+
+    QueueSize = (MaxSize < VIRTIO_QUEUE_SIZE) ? MaxSize : VIRTIO_QUEUE_SIZE;
+    Dev->QueueSize = QueueSize;
+
+    /* Write queue size */
+    VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NUM, QueueSize);
+
+    /* Calculate allocation sizes */
+    DescSize = sizeof(VIRTQ_DESC) * QueueSize;
+    AvailSize = sizeof(USHORT) * 2 + sizeof(USHORT) * QueueSize + sizeof(USHORT);
+    UsedSize = sizeof(USHORT) * 2 + sizeof(VIRTQ_USED_ELEM) * QueueSize + sizeof(USHORT);
+    EventsSize = sizeof(VIRTIO_INPUT_EVENT) * QueueSize;
+
+    if (Dev->MmioVersion >= 2)
+    {
+        /* Modern: each component at independent page-aligned addresses */
+        AvailOff = (DescSize + 0xFFF) & ~0xFFF;
+        UsedOff = (AvailOff + AvailSize + 0xFFF) & ~0xFFF;
+    }
+    else
+    {
+        /* Legacy v1: spec-prescribed layout.
+         * Avail ring immediately after descriptors (2-byte aligned).
+         * Used ring at next page boundary after avail ring. */
+        AvailOff = DescSize;
+        UsedOff = (AvailOff + AvailSize + 0xFFF) & ~0xFFF;
+    }
+    EventsOff = (UsedOff + UsedSize + 0xFFF) & ~0xFFF;
+    TotalSize = EventsOff + EventsSize;
+
+    HighAddr.QuadPart = 0xFFFFFFFFLL;
+    Dev->QueueVa = MmAllocateContiguousMemory(TotalSize, HighAddr);
+    if (!Dev->QueueVa)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    Dev->QueuePa = MmGetPhysicalAddress(Dev->QueueVa);
+    Dev->QueueAllocSize = TotalSize;
+    RtlZeroMemory(Dev->QueueVa, TotalSize);
+
+    /* Set up pointers */
+    Dev->Desc = (VIRTQ_DESC *)Dev->QueueVa;
+    Dev->Avail = (VIRTQ_AVAIL *)((UCHAR *)Dev->QueueVa + AvailOff);
+    Dev->Used = (VIRTQ_USED *)((UCHAR *)Dev->QueueVa + UsedOff);
+    Dev->Events = (VIRTIO_INPUT_EVENT *)((UCHAR *)Dev->QueueVa + EventsOff);
+    Dev->EventsPa.QuadPart = Dev->QueuePa.QuadPart + EventsOff;
+
+    if (Dev->MmioVersion >= 2)
+    {
+        /* Modern: write physical addresses of each component */
+        PHYSICAL_ADDRESS DescPa = Dev->QueuePa;
+        PHYSICAL_ADDRESS AvailPa;
+        PHYSICAL_ADDRESS UsedPa;
+        AvailPa.QuadPart = Dev->QueuePa.QuadPart + AvailOff;
+        UsedPa.QuadPart = Dev->QueuePa.QuadPart + UsedOff;
+
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_DESC_LOW, (ULONG)DescPa.QuadPart);
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_DESC_HIGH, (ULONG)(DescPa.QuadPart >> 32));
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_AVAIL_LOW, (ULONG)AvailPa.QuadPart);
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, (ULONG)(AvailPa.QuadPart >> 32));
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_USED_LOW, (ULONG)UsedPa.QuadPart);
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_USED_HIGH, (ULONG)(UsedPa.QuadPart >> 32));
+        virtio_mb();
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_READY, 1);
+    }
+    else
+    {
+        /* Legacy v1: page-based addressing */
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_GUEST_PAGE_SIZE, 4096);
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_PFN,
+                      (ULONG)(Dev->QueuePa.QuadPart / 4096));
+    }
+
+    /* Pre-fill all descriptors: each points to Events[i], device-writable */
+    for (i = 0; i < QueueSize; i++)
+    {
+        Dev->Desc[i].Addr = Dev->EventsPa.QuadPart + i * sizeof(VIRTIO_INPUT_EVENT);
+        Dev->Desc[i].Len = sizeof(VIRTIO_INPUT_EVENT);
+        Dev->Desc[i].Flags = VIRTQ_DESC_F_WRITE;
+        Dev->Desc[i].Next = 0;
+
+        Dev->Avail->Ring[i] = (USHORT)i;
+    }
+    virtio_wmb();
+    Dev->Avail->Idx = (USHORT)QueueSize;
+    Dev->LastUsedIdx = 0;
+
+    /* Kick the queue */
+    virtio_mb();
+    VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, QueueIdx);
+
+    return STATUS_SUCCESS;
+}
+
+/* =========================================================================
+ * Virtio device discovery and initialization
+ * ========================================================================= */
+
+/* QEMU virt MMIO device base and stride */
+#define VIRTIO_MMIO_BASE    0x0A000000ULL
+#define VIRTIO_MMIO_STRIDE  0x200
+#define VIRTIO_MMIO_SLOTS   32
+#define VIRTIO_MMIO_SIZE    0x200
+
+/* Virtio device ID for input */
+#define VIRTIO_DEVICE_ID_INPUT  18
+
+static VOID
+VirtioQueryInputCaps(VIRTIO_INPUT_DEV *Dev)
+{
+    volatile UCHAR *cfg = Dev->Mmio + VIRTIO_MMIO_CONFIG;
+    UCHAR bitmap[128];
+    ULONG size, i;
+
+    Dev->IsKeyboard = FALSE;
+    Dev->IsTablet = FALSE;
+
+    /* Query EV_KEY support: select=0x11, subsel=EV_KEY(1) */
+    *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_EV_BITS; /* select */
+    virtio_mb();
+    *(volatile UCHAR *)(cfg + 1) = EV_KEY;                    /* subsel */
+    virtio_mb();
+    size = *(volatile UCHAR *)(cfg + 2);                       /* size */
+
+    if (size > 0 && size <= sizeof(bitmap))
+    {
+        for (i = 0; i < size; i++)
+            bitmap[i] = *(volatile UCHAR *)(cfg + 8 + i);
+
+        /* Check for KEY_A (code 30 → byte 3, bit 6) */
+        if (size > (KEY_A / 8) && (bitmap[KEY_A / 8] & (1 << (KEY_A % 8))))
+            Dev->IsKeyboard = TRUE;
+    }
+
+    /* Query EV_ABS support: select=0x11, subsel=EV_ABS(3) */
+    *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_EV_BITS;
+    virtio_mb();
+    *(volatile UCHAR *)(cfg + 1) = EV_ABS;
+    virtio_mb();
+    size = *(volatile UCHAR *)(cfg + 2);
+
+    if (size > 0)
+    {
+        for (i = 0; i < size && i < sizeof(bitmap); i++)
+            bitmap[i] = *(volatile UCHAR *)(cfg + 8 + i);
+
+        /* Check for ABS_X (code 0 → byte 0, bit 0) */
+        if (bitmap[0] & 1)
+            Dev->IsTablet = TRUE;
+    }
+
+    /* If tablet, query ABS_X and ABS_Y axis ranges */
+    if (Dev->IsTablet)
+    {
+        volatile ULONG *absinfo;
+
+        /* ABS_X info: select=0x12, subsel=ABS_X(0) */
+        *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_ABS_INFO;
+        virtio_mb();
+        *(volatile UCHAR *)(cfg + 1) = ABS_X;
+        virtio_mb();
+        size = *(volatile UCHAR *)(cfg + 2);
+        if (size >= 12)
+        {
+            absinfo = (volatile ULONG *)(cfg + 8);
+            /* absinfo layout: min(4), max(4), fuzz(4), flat(4) */
+            Dev->AbsMaxX = absinfo[1]; /* max */
+        }
+        else
+        {
+            Dev->AbsMaxX = 32767;
+        }
+
+        /* ABS_Y info */
+        *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_ABS_INFO;
+        *(volatile UCHAR *)(cfg + 1) = ABS_Y;
+        virtio_mb();
+        size = *(volatile UCHAR *)(cfg + 2);
+        if (size >= 12)
+        {
+            absinfo = (volatile ULONG *)(cfg + 8);
+            Dev->AbsMaxY = absinfo[1];
+        }
+        else
+        {
+            Dev->AbsMaxY = 32767;
+        }
+    }
+
+    /* Reset config select */
+    *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_UNSET;
+    *(volatile UCHAR *)(cfg + 1) = 0;
+    virtio_mb();
+}
+
+static VOID
+VirtioScanDevices(VOID)
+{
+    ULONG i;
+    PHYSICAL_ADDRESS PhysAddr;
+    volatile UCHAR *Mmio;
+    ULONG Magic, Version, DevId;
+    NTSTATUS Status;
+
+    VirtioInputCount = 0;
+
+    for (i = 0; i < VIRTIO_MMIO_SLOTS && VirtioInputCount < MAX_VIRTIO_INPUTS; i++)
+    {
+        PhysAddr.QuadPart = VIRTIO_MMIO_BASE + (ULONGLONG)i * VIRTIO_MMIO_STRIDE;
+        Mmio = (volatile UCHAR *)MmMapIoSpace(PhysAddr, VIRTIO_MMIO_SIZE, MmNonCached);
+        if (!Mmio)
+            continue;
+
+        Magic = VirtioRead32(Mmio, VIRTIO_MMIO_MAGIC);
+        if (Magic != 0x74726976)
+        {
+            MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+            continue;
+        }
+
+        Version = VirtioRead32(Mmio, VIRTIO_MMIO_VERSION);
+        DevId = VirtioRead32(Mmio, VIRTIO_MMIO_DEVICE_ID);
+
+        if (DevId != VIRTIO_DEVICE_ID_INPUT)
+        {
+            MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+            continue;
+        }
+
+        DbgPrint("[VIRTIO-INPUT] Found input device at slot %lu (version %lu)\n", i, Version);
+
+        /* Initialize device */
+        VIRTIO_INPUT_DEV *Dev = &VirtioInputs[VirtioInputCount];
+        RtlZeroMemory(Dev, sizeof(*Dev));
+        Dev->Mmio = Mmio;
+        Dev->MmioVersion = Version;
+
+        /* Reset device */
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, 0);
+        virtio_mb();
+
+        /* ACK */
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK);
+        virtio_mb();
+
+        /* DRIVER */
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+                      VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+        virtio_mb();
+
+        /* Negotiate features */
+        VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 0);
+        VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 0);
+        if (Version >= 2)
+        {
+            /* Must acknowledge VIRTIO_F_VERSION_1 (bit 32 = word 1 bit 0) */
+            VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 1);
+            VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 1);
+        }
+        virtio_mb();
+
+        /* FEATURES_OK (v2 only) */
+        if (Version >= 2)
+        {
+            VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+                          VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+                          VIRTIO_STATUS_FEATURES_OK);
+            virtio_mb();
+
+            ULONG StatusVal = VirtioRead32(Mmio, VIRTIO_MMIO_STATUS);
+            if (!(StatusVal & VIRTIO_STATUS_FEATURES_OK))
+            {
+                DbgPrint("[VIRTIO-INPUT] FEATURES_OK not set, skipping slot %lu\n", i);
+                MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+                continue;
+            }
+        }
+
+        /* Query device capabilities before setting up queues */
+        VirtioQueryInputCaps(Dev);
+
+        /* Setup eventq (queue 0) */
+        Status = VirtioSetupQueue(Dev, 0);
+        if (!NT_SUCCESS(Status))
+        {
+            DbgPrint("[VIRTIO-INPUT] Queue setup failed: 0x%08lx\n", Status);
+            MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+            continue;
+        }
+
+        /* DRIVER_OK */
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+                      VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+                      (Version >= 2 ? VIRTIO_STATUS_FEATURES_OK : 0) |
+                      VIRTIO_STATUS_DRIVER_OK);
+        virtio_mb();
+
+        DbgPrint("[VIRTIO-INPUT] Initialized %s%sat slot %lu (abs %lu x %lu)\n",
+                Dev->IsKeyboard ? "keyboard " : "",
+                Dev->IsTablet ? "tablet " : "",
+                i, Dev->AbsMaxX, Dev->AbsMaxY);
+
+        VirtioInputCount++;
+    }
+
+    DbgPrint("[VIRTIO-INPUT] Found %lu input device(s)\n", VirtioInputCount);
+}
+
+/* =========================================================================
+ * Virtio event processing
+ * ========================================================================= */
+
+static VOID
+VirtioProcessKeyEvent(USHORT EvdevCode, ULONG Value)
+{
+    PINPUT_DEVICE_EXT DevExt;
+    USHORT ScanCode, Flags;
+
+    if (!g_KbdDevice)
+        return;
+
+    if (!EvdevToScanCode(EvdevCode, &ScanCode, &Flags))
+        return;
+
+    DevExt = (PINPUT_DEVICE_EXT)g_KbdDevice->DeviceExtension;
+
+    /* Value: 0=release, 1=press, 2=repeat */
+    if (Value == 0)
+        Flags |= KEY_BREAK;
+    /* For press (1) and repeat (2), send KEY_MAKE (Flags unchanged) */
+
+    RingPush(DevExt, ScanCode, Flags);
+    TryCompleteIrp(DevExt);
+}
+
+static VOID
+VirtioProcessMouseButton(USHORT EvdevCode, ULONG Value, VIRTIO_INPUT_DEV *Dev)
+{
+    switch (EvdevCode)
+    {
+    case BTN_LEFT:
+        Dev->AccumButtons |= Value ?
+            MOUSE_LEFT_BUTTON_DOWN : MOUSE_LEFT_BUTTON_UP;
+        Dev->HasButton = TRUE;
+        break;
+    case BTN_RIGHT:
+        Dev->AccumButtons |= Value ?
+            MOUSE_RIGHT_BUTTON_DOWN : MOUSE_RIGHT_BUTTON_UP;
+        Dev->HasButton = TRUE;
+        break;
+    case BTN_MIDDLE:
+        Dev->AccumButtons |= Value ?
+            MOUSE_MIDDLE_BUTTON_DOWN : MOUSE_MIDDLE_BUTTON_UP;
+        Dev->HasButton = TRUE;
+        break;
+    }
+}
+
+static VOID
+VirtioFlushMouseState(VIRTIO_INPUT_DEV *Dev)
+{
+    PINPUT_DEVICE_EXT DevExt;
+    MOUSE_INPUT_DATA Data;
+
+    if (!g_MouDevice)
+        return;
+    if (!Dev->HasMove && !Dev->HasButton)
+        return;
+
+    DevExt = (PINPUT_DEVICE_EXT)g_MouDevice->DeviceExtension;
+
+    RtlZeroMemory(&Data, sizeof(Data));
+
+    if (Dev->IsTablet && Dev->AbsValid)
+    {
+        /* Absolute positioning: scale to 0-65535 */
+        Data.Flags = MOUSE_MOVE_ABSOLUTE;
+        if (Dev->AbsMaxX > 0)
+            Data.LastX = (LONG)((ULONGLONG)Dev->AccumX * 65535 / Dev->AbsMaxX);
+        else
+            Data.LastX = Dev->AccumX;
+        if (Dev->AbsMaxY > 0)
+            Data.LastY = (LONG)((ULONGLONG)Dev->AccumY * 65535 / Dev->AbsMaxY);
+        else
+            Data.LastY = Dev->AccumY;
+    }
+    else if (Dev->HasMove)
+    {
+        /* Relative movement */
+        Data.Flags = 0;
+        Data.LastX = Dev->AccumX;
+        Data.LastY = Dev->AccumY;
+    }
+
+    Data.ButtonFlags = Dev->AccumButtons;
+
+    MouRingPush(DevExt, &Data);
+    MouTryCompleteIrp(DevExt);
+
+    /* Reset accumulators — keep absolute position for next time */
+    if (!Dev->IsTablet)
+    {
+        Dev->AccumX = 0;
+        Dev->AccumY = 0;
+    }
+    Dev->AccumButtons = 0;
+    Dev->HasMove = FALSE;
+    Dev->HasButton = FALSE;
+}
+
+static BOOLEAN
+VirtioPollDevice(VIRTIO_INPUT_DEV *Dev)
+{
+    BOOLEAN FoundEvents = FALSE;
+    USHORT UsedIdx;
+    ULONG DescId;
+    VIRTIO_INPUT_EVENT *Evt;
+
+    virtio_rmb();
+    UsedIdx = Dev->Used->Idx;
+
+    while (Dev->LastUsedIdx != UsedIdx)
+    {
+        FoundEvents = TRUE;
+        DescId = Dev->Used->Ring[Dev->LastUsedIdx % Dev->QueueSize].Id;
+        Evt = &Dev->Events[DescId];
+
+        switch (Evt->Type)
+        {
+        case EV_KEY:
+            if (Evt->Code < BTN_LEFT)
+            {
+                /* Keyboard key */
+                VirtioProcessKeyEvent(Evt->Code, Evt->Value);
+            }
+            else
+            {
+                /* Mouse/tablet button */
+                VirtioProcessMouseButton(Evt->Code, Evt->Value, Dev);
+            }
+            break;
+
+        case EV_REL:
+            switch (Evt->Code)
+            {
+            case REL_X:
+                Dev->AccumX += (LONG)Evt->Value;
+                Dev->HasMove = TRUE;
+                break;
+            case REL_Y:
+                Dev->AccumY += (LONG)Evt->Value;
+                Dev->HasMove = TRUE;
+                break;
+            case REL_WHEEL:
+                /* TODO: scroll wheel support */
+                break;
+            }
+            break;
+
+        case EV_ABS:
+            switch (Evt->Code)
+            {
+            case ABS_X:
+                Dev->AccumX = (LONG)Evt->Value;
+                Dev->HasMove = TRUE;
+                Dev->AbsValid = TRUE;
+                break;
+            case ABS_Y:
+                Dev->AccumY = (LONG)Evt->Value;
+                Dev->HasMove = TRUE;
+                Dev->AbsValid = TRUE;
+                break;
+            }
+            break;
+
+        case EV_SYN:
+            VirtioFlushMouseState(Dev);
+            break;
+        }
+
+        /* Re-queue the descriptor back to available ring */
+        Dev->Desc[DescId].Len = sizeof(VIRTIO_INPUT_EVENT);
+        Dev->Desc[DescId].Flags = VIRTQ_DESC_F_WRITE;
+        virtio_wmb();
+        Dev->Avail->Ring[Dev->Avail->Idx % Dev->QueueSize] = (USHORT)DescId;
+        virtio_wmb();
+        Dev->Avail->Idx++;
+
+        Dev->LastUsedIdx++;
+    }
+
+    if (FoundEvents)
+    {
+        virtio_mb();
+        VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+    }
+
+    return FoundEvents;
+}
+
+/* =========================================================================
+ * Virtio polling thread
+ * ========================================================================= */
+
+static VOID NTAPI
+VirtioPollThread(PVOID Context)
+{
+    LARGE_INTEGER Delay;
+
+    UNREFERENCED_PARAMETER(Context);
+
+    Delay.QuadPart = -10000; /* 1ms relative */
+
+    while (VirtioPollRunning)
+    {
+        BOOLEAN found = FALSE;
+        ULONG i;
+
+        for (i = 0; i < VirtioInputCount; i++)
+        {
+            if (VirtioPollDevice(&VirtioInputs[i]))
+                found = TRUE;
+        }
+
+        /* Yield — KeDelayExecutionThread effectively yields on ARM64 */
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+
+        if (!found)
+        {
+            /* Extra yields when idle to reduce CPU waste */
+            ULONG j;
+            for (j = 0; j < 5; j++)
+                KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+        }
+    }
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+/* ========================================================================= */
+
 NTSTATUS NTAPI
 DriverEntry(
     PDRIVER_OBJECT DriverObject,
@@ -598,6 +1376,7 @@ DriverEntry(
 
     KbdDevice->Flags |= DO_BUFFERED_IO;
     KbdDevice->Flags &= ~DO_DEVICE_INITIALIZING;
+    g_KbdDevice = KbdDevice;
 
     DbgPrint("[ARM64INPUT] \\Device\\KeyboardClass0 created\n");
 
@@ -633,7 +1412,29 @@ DriverEntry(
     RtlInitUnicodeString(&DeviceName, L"\\Device\\PointerClass0");
     IoCreateSymbolicLink(&SymlinkName, &DeviceName);
 
+    g_MouDevice = MouDevice;
+
     DbgPrint("[ARM64INPUT] \\Device\\PointerClass0 created\n");
+
+    /* Scan for virtio-input MMIO devices */
+    VirtioScanDevices();
+    if (VirtioInputCount > 0)
+    {
+        VirtioPollRunning = TRUE;
+        Status = PsCreateSystemThread(&VirtioPollThreadHandle,
+                                      THREAD_ALL_ACCESS,
+                                      NULL, NULL, NULL,
+                                      VirtioPollThread, NULL);
+        if (NT_SUCCESS(Status))
+        {
+            DbgPrint("[ARM64INPUT] Virtio poll thread started\n");
+        }
+        else
+        {
+            DbgPrint("[ARM64INPUT] Failed to create poll thread: 0x%08lx\n", Status);
+            VirtioPollRunning = FALSE;
+        }
+    }
 
     return STATUS_SUCCESS;
 }
