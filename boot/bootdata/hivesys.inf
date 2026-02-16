@@ -1611,6 +1611,14 @@ HKLM,"SYSTEM\CurrentControlSet\Services\pl011","ImagePath",0x00020000,"system32\
 HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Type",0x00010001,0x00000001
 
+; ARM64 input stub driver — provides \Device\KeyboardClass0 and \Device\PointerClass0
+; for Win32k RIT. Must load before csrss/winsrv creates desktop thread.
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","ImagePath",0x00020000,"system32\drivers\arm64input.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Type",0x00010001,0x00000001
+
 ; ARM64 framebuffer video device driver — boot start so \Device\Video0 exists before csrss
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"

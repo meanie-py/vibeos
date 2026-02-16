@@ -54,6 +54,10 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_c.c)
 
+if(ARCH STREQUAL "arm64")
+    list(APPEND PCH_SKIP_SOURCE arm64_advapi32_stubs.c)
+endif()
+
 add_library(advapi32 MODULE
     ${SOURCE}
     ${PCH_SKIP_SOURCE}
@@ -65,7 +69,13 @@ target_link_libraries(advapi32 cryptlib wine ${PSEH_LIB})
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(advapi32 etwtrace)
 endif()
-add_delay_importlibs(advapi32 secur32)
+if(ARCH STREQUAL "arm64")
+    # ARM64: llvm-dlltool converts delay-imports to regular imports.
+    # secur32 → netapi32 → iphlpapi → dhcpcsvc chain overflows csrss stack.
+    # LSA logon functions not needed during boot. Stubs in arm64_advapi32_stubs.c.
+else()
+    add_delay_importlibs(advapi32 secur32)
+endif()
 add_importlibs(advapi32 advapi32_vista rpcrt4 kernel32 ntdll)
 add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET advapi32 DESTINATION reactos/system32 FOR all)

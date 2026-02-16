@@ -265,6 +265,7 @@ noparent:
 
    Dce->DCXFlags &= ~DCX_DCEDIRTY;
    GdiSelectVisRgn(Dce->hDC, RgnVisible);
+
    /* Tell GDI driver */
    if (Window)
        IntEngWindowChanged(Window, WOC_RGN_CLIENT);

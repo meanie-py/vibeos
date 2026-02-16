@@ -1047,7 +1047,6 @@ MiBuildPfnDatabaseSelf(VOID)
 {
     PMMPTE PointerPte, LastPte;
     PMMPFN Pfn1;
-
     /* Loop the PFN database page */
     PointerPte = MiAddressToPte(MiGetPfnEntry(MmLowestPhysicalPage));
     LastPte = MiAddressToPte(MiGetPfnEntry(MmHighestPhysicalPage));

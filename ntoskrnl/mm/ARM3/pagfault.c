@@ -1907,6 +1907,15 @@ SelfMapKernel:
                     return STATUS_NO_MEMORY;
                 }
                 MiInitializePfn(NewPage, UserPpe, TRUE);
+
+                /* Increment L1 page (PXE table) refcount — this PPE entry
+                 * occupies a slot in the PXE-pointed L1 page. MiDeletePde's
+                 * cascade calls MiDecrementPageTableReferences(PointerPde)
+                 * which decrements this same refcount. */
+                {
+                    PMMPFN L1Pfn = MiGetPfnEntry(PFN_FROM_PXE(UserPxe));
+                    L1Pfn->OriginalPte.u.Soft.UsedPageTableEntries++;
+                }
                 MiReleasePfnLock(PfnIrql);
 
                 MI_MAKE_HARDWARE_PTE(&NewPte, UserPpe,
@@ -1931,6 +1940,15 @@ SelfMapKernel:
                         return STATUS_NO_MEMORY;
                     }
                     MiInitializePfn(NewPage, UserPde, TRUE);
+
+                    /* Increment L2 page (PPE table) refcount — this PDE entry
+                     * occupies a slot in the PPE-pointed L2 page. MiDeletePde's
+                     * cascade calls MiDecrementPageTableReferences(MiPdeToPte(PDE))
+                     * which decrements this same refcount through the self-map. */
+                    {
+                        PMMPFN L2Pfn = MiGetPfnEntry(PFN_FROM_PPE(UserPpe));
+                        L2Pfn->OriginalPte.u.Soft.UsedPageTableEntries++;
+                    }
                     MiReleasePfnLock(PfnIrql);
 
                     MI_MAKE_HARDWARE_PTE(&NewPte, UserPde,
@@ -2287,8 +2305,15 @@ UserFault:
         MiCheckVirtualAddress(Address, &ProtectionCode, &Vad);
         if (ProtectionCode == MM_NOACCESS)
         {
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return STATUS_ACCESS_VIOLATION;
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0,
+             * pages committed individually). Create page table if a VAD exists;
+             * the PTE-level check handles uncommitted pages correctly. */
+            if (!MiLocateAddress(Address))
+            {
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return STATUS_ACCESS_VIOLATION;
+            }
+            ProtectionCode = MM_EXECUTE_READWRITE;
         }
 
         /* Resolve a demand zero fault */
@@ -2325,8 +2350,14 @@ UserFault:
 
         if (ProtectionCode == MM_NOACCESS)
         {
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return STATUS_ACCESS_VIOLATION;
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0).
+             * Create page table if a VAD exists. */
+            if (!MiLocateAddress(Address))
+            {
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return STATUS_ACCESS_VIOLATION;
+            }
+            ProtectionCode = MM_EXECUTE_READWRITE;
         }
 
         /* Resolve a demand zero fault */
@@ -2364,16 +2395,27 @@ UserFault:
 
         if (ProtectionCode == MM_NOACCESS)
         {
-#if (_MI_PAGING_LEVELS == 2)
-            /* Could be a page table for paged pool */
-            MiCheckPdeForPagedPool(Address);
+#if (_MI_PAGING_LEVELS >= 3)
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0).
+             * Create page table if a VAD exists. */
+            if (MiLocateAddress(Address))
+            {
+                ProtectionCode = MM_EXECUTE_READWRITE;
+            }
+            else
 #endif
-            /* Has the code above changed anything -- is this now a valid PTE? */
-            Status = (PointerPde->u.Hard.Valid == 1) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
+            {
+#if (_MI_PAGING_LEVELS == 2)
+                /* Could be a page table for paged pool */
+                MiCheckPdeForPagedPool(Address);
+#endif
+                /* Has the code above changed anything -- is this now a valid PTE? */
+                Status = (PointerPde->u.Hard.Valid == 1) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
 
-            /* Either this was a bogus VA or we've fixed up a paged pool PDE */
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return Status;
+                /* Either this was a bogus VA or we've fixed up a paged pool PDE */
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return Status;
+            }
         }
 
         /* Resolve a demand zero fault */

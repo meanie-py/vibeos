@@ -6,7 +6,7 @@
  *                  desktop creation, and framebuffer painting.
  *
  * Creates a window, receives WM_CREATE/WM_PAINT via user-mode callbacks,
- * and paints a colored rectangle to the framebuffer.
+ * and paints colored rectangles to the framebuffer.
  */
 
 #include <windows.h>
@@ -41,7 +41,7 @@ TestWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             {
                 GetClientRect(hWnd, &rc);
 
-                /* Paint a bright blue rectangle to verify framebuffer output */
+                /* Paint a bright blue rectangle as window background */
                 hBrush = CreateSolidBrush(RGB(0, 100, 255));
                 if (hBrush)
                 {
@@ -63,6 +63,23 @@ TestWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         DeleteObject(hBrush);
                     }
                 }
+
+                /* Draw text to verify font rendering in client area */
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, RGB(255, 255, 255));
+                {
+                    RECT textRect;
+                    textRect.left   = 20;
+                    textRect.top    = 20;
+                    textRect.right  = rc.right - 20;
+                    textRect.bottom = 60;
+                    DrawTextW(hdc, L"ReactOS ARM64 - Hello from client area!", -1,
+                              &textRect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                }
+
+                SetTextColor(hdc, RGB(255, 255, 0));
+                TextOutW(hdc, rc.right / 4 + 10, rc.bottom / 4 + 10,
+                         L"TextOut works!", 14);
 
                 EndPaint(hWnd, &ps);
             }

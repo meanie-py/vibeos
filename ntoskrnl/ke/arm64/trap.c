@@ -188,6 +188,20 @@ KiSvcDispatch(
 
 DispatchCall:
 
+    /* Flush GDI batch before Win32k syscalls (matches amd64 traphandler.c:197).
+     * User-mode GDI32 batches PatBlt/DeleteObj commands in TEB->GdiTebBatch.
+     * Without this flush, batched painting runs AFTER DeleteObject destroys
+     * brushes, causing all brush colors to resolve to WHITE. */
+    if (TableIndex == 1 && (TrapFrame->Spsr & 0xF) == 0)
+    {
+        PTEB Teb = KeGetCurrentThread()->Teb;
+        if (Teb && MmIsAddressValid(&Teb->GdiBatchCount) &&
+            Teb->GdiBatchCount != 0 && KeGdiFlushUserBatch)
+        {
+            KeGdiFlushUserBatch();
+        }
+    }
+
     /* Trace Win32k syscalls (table 1) — helps debug WinSta/Desktop creation */
     if (TableIndex == 1)
     {

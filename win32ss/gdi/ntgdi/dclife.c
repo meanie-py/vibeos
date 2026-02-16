@@ -118,10 +118,18 @@ DC_InitHack(PDC pdc)
     }
 
 #ifdef _M_ARM64
-    /* ARM64: Skip font realization — no fonts are loaded (no registry font path,
-     * IntLoadFontsInRegistry finds nothing). TextIntRealizeFont crashes on the
-     * second DC creation due to DUMMY_PSEH + freetype internal state. */
-    pdc->pdcattr->iCS_CP = 0;
+    /* ARM64: Try font realization. If no fonts are loaded (empty font list),
+     * TextIntRealizeFont returns STATUS_NOT_FOUND safely (pFontObj=NULL check
+     * in IntRealizeFont, fixed in M22). Only call ftGdiGetTextCharsetInfo
+     * if realization succeeded — it dereferences TextObj->Font which is NULL
+     * when no fonts are loaded. */
+    {
+        NTSTATUS fontStatus = TextIntRealizeFont(pdc->pdcattr->hlfntNew, NULL);
+        if (NT_SUCCESS(fontStatus))
+            pdc->pdcattr->iCS_CP = ftGdiGetTextCharsetInfo(pdc, NULL, 0);
+        else
+            pdc->pdcattr->iCS_CP = 0;
+    }
 #else
     TextIntRealizeFont(pdc->pdcattr->hlfntNew,NULL);
     pdc->pdcattr->iCS_CP = ftGdiGetTextCharsetInfo(pdc,NULL,0);

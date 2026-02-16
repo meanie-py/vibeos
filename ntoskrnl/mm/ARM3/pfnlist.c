@@ -1158,8 +1158,15 @@ MiDecrementShareCount(IN PMMPFN Pfn1,
 #ifdef _M_ARM64
         /* ARM64: PFN state tracking is incomplete — log and fixup instead of bugcheck.
          * TODO: Fix the root cause of PFN state corruption. */
-        DPRINT1("MiDecrementShareCount: PFN 0x%lx has bad PageLocation=%d (expected ActiveAndValid or Standby)\n",
-                PageFrameIndex, Pfn1->u3.e1.PageLocation);
+        {
+            static ULONG PfnBadCount = 0;
+            if (PfnBadCount < 5)
+            {
+                DPRINT1("[PFN] PageLoc=%d for PFN 0x%lx (expected Active/Standby) — fixing up\n",
+                        Pfn1->u3.e1.PageLocation, PageFrameIndex);
+            }
+            PfnBadCount++;
+        }
         Pfn1->u3.e1.PageLocation = ActiveAndValid;
 #else
         /* Otherwise we have PFN corruption */

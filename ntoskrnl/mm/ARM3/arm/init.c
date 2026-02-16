@@ -421,10 +421,12 @@ MiSetupPfnForPageTable(
     /* Get the pfn entry for this page */
     Pfn = MiGetPfnEntry(PageFrameIndex);
 
-    /* Check if it's valid memory */
+    /* Check if it's valid memory.
+     * ARM64: The PFN database is zeroed before this function is called, so page
+     * table pages start with PageLocation=0 (ZeroedPageList), not ActiveAndValid.
+     * Skip the ActiveAndValid check — we're the first to initialize these entries. */
     if ((PageFrameIndex <= MmHighestPhysicalPage) &&
-        (MmIsAddressValid(Pfn)) &&
-        (Pfn->u3.e1.PageLocation == ActiveAndValid))
+        (MmIsAddressValid(Pfn)))
     {
         /* Setup the PFN entry */
         Pfn->u1.WsIndex = 0;

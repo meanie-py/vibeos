@@ -196,14 +196,8 @@ MiMakeSystemAddressValid(IN PVOID PageTableVirtualAddress,
     ASSERT(KeAreAllApcsDisabled() == TRUE);
 
     /* Check if the page table is valid */
-#ifdef _M_ARM64
-    ARM64_UART_TRACE_HEX("[MSAV] ", (ULONG_PTR)PageTableVirtualAddress);
-#endif
     while (!MmIsAddressValid(PageTableVirtualAddress))
     {
-#ifdef _M_ARM64
-        ARM64_UART_TRACE_HEX("[MSAV-F] ", (ULONG_PTR)PageTableVirtualAddress);
-#endif
         /* Release the working set lock */
         MiUnlockProcessWorkingSetForFault(CurrentProcess,
                                           CurrentThread,
@@ -447,6 +441,15 @@ MiDeletePte(IN PMMPTE PointerPte,
     /* Get the PFN entry */
     PageFrameIndex = PFN_FROM_PTE(&TempPte);
     Pfn1 = MiGetPfnEntry(PageFrameIndex);
+#ifdef _M_ARM64
+    if (!Pfn1)
+    {
+        /* MiGetPfnEntry returned NULL — PFN bitmap doesn't cover this page.
+         * Just invalidate the PTE and skip PFN accounting. */
+        MI_ERASE_PTE(PointerPte);
+        return;
+    }
+#endif
 
     /* Check if this is a valid, prototype PTE */
     if (Pfn1->u3.e1.PrototypePte == 1)
@@ -4900,7 +4903,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     StartingAddress = (ULONG_PTR)PAGE_ALIGN(PBaseAddress);
     PRegionSize = EndingAddress - StartingAddress + 1;
 
-    ARM64_UART_TRACE("[VM] COMMIT: MmLockAddrSpace\r\n");
     //
     // Lock the address space and make sure the process isn't already dead
     //
@@ -5130,25 +5132,12 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     //
     // Lock the working set while we play with user pages and page tables
     //
-    ARM64_UART_TRACE("[VM] COMMIT: MiLockProcWS\r\n");
     MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
 
     //
     // Make the current page table valid, and then loop each page within it
     //
-    ARM64_UART_TRACE("[VM] COMMIT: MiMakePdeExistAndMakeValid\r\n");
     MiMakePdeExistAndMakeValid(PointerPde, Process, MM_NOIRQL);
-    ARM64_UART_TRACE("[VM] COMMIT: PDE valid, looping\r\n");
-#ifdef _M_ARM64
-    { static int _vm_loop_printed = 0;
-      if (!_vm_loop_printed) {
-        ARM64_UART_TRACE_HEX("[VM]   PointerPte=", (ULONG_PTR)PointerPte);
-        ARM64_UART_TRACE_HEX("[VM]   LastPte=", (ULONG_PTR)LastPte);
-        ARM64_UART_TRACE_HEX("[VM]   count=", (ULONG_PTR)(LastPte - PointerPte + 1));
-        _vm_loop_printed = 1;
-      }
-    }
-#endif
     while (PointerPte <= LastPte)
     {
         //

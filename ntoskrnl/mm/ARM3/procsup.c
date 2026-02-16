@@ -236,12 +236,25 @@ MmDeleteKernelStack(IN PVOID StackBase,
             /* Get the PTE's page */
             PageFrameNumber = PFN_FROM_PTE(PointerPte);
             Pfn1 = MiGetPfnEntry(PageFrameNumber);
+#ifdef _M_ARM64
+            if (!Pfn1)
+            {
+                /* MiGetPfnEntry returned NULL — PFN bitmap doesn't cover this page.
+                 * Just invalidate the PTE and skip PFN accounting. */
+                MI_WRITE_INVALID_PTE(PointerPte, MmDecommittedPte);
+                PointerPte--;
+                continue;
+            }
+#endif
 
             /* Now get the page of the page table mapping it */
             PageTableFrameNumber = Pfn1->u4.PteFrame;
             Pfn2 = MiGetPfnEntry(PageTableFrameNumber);
 
             /* Remove a shared reference, since the page is going away */
+#ifdef _M_ARM64
+            if (Pfn2)
+#endif
             MiDecrementShareCount(Pfn2, PageTableFrameNumber);
 
             /* Set the special pending delete marker */

@@ -319,6 +319,12 @@ co_IntInitializeDesktopGraphics(VOID)
     gpsi->ptCursor.x    = gpsi->aiSysMet[SM_CXSCREEN] / 2;
     gpsi->ptCursor.y    = gpsi->aiSysMet[SM_CYSCREEN] / 2;
 
+    /* Refresh metrics with actual screen resolution. InitMetrics was first
+     * called from SpiUpdatePerUserSystemParameters with gpmdev=NULL which
+     * defaulted to 640x480. Now that PDEV is live, recalculate all
+     * screen-size-dependent metrics (SM_CXMAXIMIZED, SM_CXFULLSCREEN, etc.) */
+    InitMetrics();
+
     MenuInit();
 
     /* Show the desktop if one already exists (it won't on first call from

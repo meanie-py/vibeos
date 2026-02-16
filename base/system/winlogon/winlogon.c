@@ -641,22 +641,42 @@ WinMain(
     /* Tell kernel that CurrentControlSet is good */
     NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
 
-    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning testgui.exe + cmd.exe...\n");
+    /* Create minimal HKCU registry keys needed by explorer.exe.
+     * Normally done by userinit/profile loading, which we skip on ARM64. */
+    {
+        HKEY hKey;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
+                            0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKey);
+            DbgPrint("[WINLOGON] ARM64: Created HKCU\\...\\Explorer key\n");
+        }
+        /* Shell Folders — explorer checks this for desktop/start menu paths */
+        if (RegCreateKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
+                            0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKey);
+        }
+    }
 
-    /* Spawn testgui.exe first (GUI test — creates window, exercises KeUserModeCallback) */
+    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning explorer.exe + cmd.exe...\n");
+
+    /* Spawn explorer.exe (shell — creates desktop, taskbar) */
     {
         STARTUPINFOW Si;
         PROCESS_INFORMATION Pi;
         BOOL bResult;
-        WCHAR GuiLine[] = L"testgui.exe";
+        WCHAR ExplorerLine[] = L"explorer.exe";
 
         ZeroMemory(&Si, sizeof(Si));
         Si.cb = sizeof(Si);
         Si.lpDesktop = L"WinSta0\\Default";
 
         bResult = CreateProcessW(
-            L"testgui.exe",
-            GuiLine,
+            L"explorer.exe",
+            ExplorerLine,
             NULL,
             NULL,
             FALSE,
@@ -668,15 +688,14 @@ WinMain(
 
         if (bResult)
         {
-            DbgPrint("[WINLOGON] ARM64: testgui.exe created (PID %lu, TID %lu)\n",
+            DbgPrint("[WINLOGON] ARM64: explorer.exe created (PID %lu, TID %lu)\n",
                      Pi.dwProcessId, Pi.dwThreadId);
-            /* Don't wait — let it run in background while cmd.exe is interactive */
             CloseHandle(Pi.hThread);
             CloseHandle(Pi.hProcess);
         }
         else
         {
-            DbgPrint("[WINLOGON] ARM64: CreateProcessW(testgui.exe) FAILED (error %lu)\n",
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(explorer.exe) FAILED (error %lu)\n",
                      GetLastError());
         }
     }
