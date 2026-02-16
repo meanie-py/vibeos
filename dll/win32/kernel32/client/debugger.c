@@ -692,6 +692,12 @@ VOID
 WINAPI
 OutputDebugStringA(IN LPCSTR _OutputString)
 {
+#ifdef _M_ARM64
+    /* ARM64 DUMMY_PSEH: _SEH2_EXCEPT is dead code, so RaiseException(DBG_PRINTEXCEPTION_C)
+     * goes unhandled and kills the process. Go straight to DbgPrint (works via BRK). */
+    DbgPrint("%s", _OutputString);
+    return;
+#endif
     _SEH2_TRY
     {
         ULONG_PTR a_nArgs[2];

@@ -240,11 +240,11 @@ struct thunkCode
     void
     Init(WNDPROC proc, void *pThis)
     {
-        /* ldr x16, #16 (PC-relative load of m_this, 16 bytes ahead) */
-        m_ldr_x16[0] = 0x58000090;  /* ldr x16, .+16 */
+        /* ldr x16, #24 (PC-relative load of m_this, 24 bytes ahead past NOPs+MOV+BR) */
+        m_ldr_x16[0] = 0x580000D0;  /* ldr x16, .+24 */
         m_ldr_x16[1] = 0xD503201F;  /* nop (padding) */
-        /* ldr x17, #16 (PC-relative load of m_proc, 16 bytes ahead) */
-        m_ldr_x17[0] = 0x58000091;  /* ldr x17, .+16 */
+        /* ldr x17, #24 (PC-relative load of m_proc, 24 bytes ahead past NOP+MOV+BR) */
+        m_ldr_x17[0] = 0x580000D1;  /* ldr x17, .+24 */
         m_ldr_x17[1] = 0xD503201F;  /* nop (padding) */
         m_mov_x0 = 0xAA1003E0;      /* mov x0, x16 */
         m_br_x17 = 0xD61F0220;      /* br x17 */

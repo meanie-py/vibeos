@@ -125,7 +125,10 @@ static void KiDumpTrapFrame(PKTRAP_FRAME Tf)
  * ARM64 passes args 1-8 in x0-x7, args 9+ on the stack.
  * The callee ignores extra args, so passing more than needed is safe.
  */
-typedef NTSTATUS (NTAPI *PSYSCALL_ROUTINE)(
+/* Return type must be ULONG_PTR (not NTSTATUS) because some Win32k syscalls
+ * (e.g. NtUserSetWindowLongPtr, NtUserGetWindowLongPtr) return 64-bit values.
+ * Using NTSTATUS (32-bit) truncates their return values. */
+typedef ULONG_PTR (NTAPI *PSYSCALL_ROUTINE)(
     ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
     ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
     ULONG_PTR, ULONG_PTR, ULONG_PTR, ULONG_PTR,
@@ -142,7 +145,8 @@ KiSvcDispatch(
     ULONG ServiceIndex = ServiceNumber & 0xFFF;
     PKSERVICE_TABLE_DESCRIPTOR Table;
     PSYSCALL_ROUTINE Routine;
-    NTSTATUS Result;
+    ULONG_PTR SvcResult;
+    NTSTATUS GuiConvertStatus;
     KPROCESSOR_MODE OldMode;
     PKTHREAD Thread;
     PKTRAP_FRAME OldTrapFrame;
@@ -169,8 +173,8 @@ KiSvcDispatch(
 
             /* Convert to GUI thread (allocates W32Process/W32Thread,
              * switches ServiceTable to KeServiceDescriptorTableShadow) */
-            Result = PsConvertToGuiThread();
-            if (NT_SUCCESS(Result))
+            GuiConvertStatus = PsConvertToGuiThread();
+            if (NT_SUCCESS(GuiConvertStatus))
             {
                 /* Re-fetch from the now-valid Win32k SSDT */
                 Table = (PKSERVICE_TABLE_DESCRIPTOR)Thread->ServiceTable;
@@ -179,7 +183,7 @@ KiSvcDispatch(
                     goto DispatchCall;
             }
             TrapPuts("[SVC] GUI conversion failed: ");
-            TrapPutHex32((ULONG)Result);
+            TrapPutHex32((ULONG)GuiConvertStatus);
             TrapPuts("\r\n");
         }
         TrapFrame->X[0] = (ULONG64)STATUS_INVALID_SYSTEM_SERVICE;
@@ -202,26 +206,7 @@ DispatchCall:
         }
     }
 
-    /* Trace Win32k syscalls (table 1) — helps debug WinSta/Desktop creation */
-    if (TableIndex == 1)
-    {
-        TrapPuts("[W32K-SVC] #");
-        TrapPutHex32(ServiceNumber);
-        TrapPuts("\r\n");
-    }
-
-    /* Trace NtDelayExecution from user-mode (confirms sleep loop) */
-    if (ServiceNumber == 0x3D && (TrapFrame->Spsr & 0xF) == 0)
-    {
-        static volatile LONG DelayCount = 0;
-        LONG c = InterlockedIncrement(&DelayCount);
-        if (c <= 3)
-        {
-            TrapPuts("[SVC] NtDelayExecution (user-mode) #");
-            TrapPutHex32(c);
-            TrapPuts("\r\n");
-        }
-    }
+    /* Win32k / NtDelayExecution traces removed — explorer.exe runs */
 
     /* Get the service routine */
     Routine = (PSYSCALL_ROUTINE)Table->Base[ServiceIndex];
@@ -263,27 +248,27 @@ DispatchCall:
     Thread->TrapFrame = TrapFrame;
 
     /* Dispatch the system call */
-    Result = Routine(Args[0], Args[1], Args[2], Args[3],
-                     Args[4], Args[5], Args[6], Args[7],
-                     Args[8], Args[9], Args[10], Args[11],
-                     Args[12], Args[13], Args[14]);
+    SvcResult = Routine(Args[0], Args[1], Args[2], Args[3],
+                        Args[4], Args[5], Args[6], Args[7],
+                        Args[8], Args[9], Args[10], Args[11],
+                        Args[12], Args[13], Args[14]);
 
     /* Restore TrapFrame link and PreviousMode */
     Thread->TrapFrame = OldTrapFrame;
     Thread->PreviousMode = OldMode;
-    TrapFrame->X[0] = (ULONG64)Result;
+    TrapFrame->X[0] = (ULONG64)SvcResult;
 
     /* SVC-FAIL trace disabled — too verbose for normal operation.
      * Re-enable for debugging by uncommenting below. */
 #if 0
-    if (OldMode == UserMode && !NT_SUCCESS(Result))
+    if (OldMode == UserMode && !NT_SUCCESS((NTSTATUS)SvcResult))
     {
         TrapPuts("[SVC-FAIL] #");
         TrapPutHex32(ServiceNumber);
         TrapPuts("(");
         TrapPutHex64(Args[0]);
         TrapPuts(")=>");
-        TrapPutHex32((ULONG)Result);
+        TrapPutHex32((ULONG)SvcResult);
         TrapPuts("\r\n");
     }
 #endif

@@ -272,6 +272,7 @@ _tWinMain(IN HINSTANCE hInstance,
     InitRSHELL();
 
     TRACE("Explorer starting... Command line: %S\n", lpCmdLine);
+    DbgPrint("[EXPLORER] hInstance=%p _tWinMain=%p\n", hInstance, _tWinMain);
 
 #if !WIN7_COMPAT_MODE
     bExplorerIsShell = (GetShellWindow() == NULL) && IsExplorerSystemShell();

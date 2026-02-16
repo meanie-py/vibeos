@@ -2000,6 +2000,7 @@ PWND FASTCALL IntCreateWindow(CREATESTRUCTW* Cs,
       }
     }
 
+
    // If not an Unicode caller, set Ansi creator bit.
    if (!bUnicodeWindow) pWnd->state |= WNDS_ANSICREATOR;
 

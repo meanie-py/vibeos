@@ -187,11 +187,30 @@ VOID
 KeSweepICache(IN PVOID BaseAddress,
               IN SIZE_T FlushSize)
 {
-    //
-    // ARM64: IC IALLU - Invalidate all instruction caches to PoU
-    //
-    UNREFERENCED_PARAMETER(BaseAddress);
-    UNREFERENCED_PARAMETER(FlushSize);
+    /*
+     * ARM64 has non-coherent I-cache and D-cache. After writing code to
+     * memory (stores go to D-cache), we must:
+     * 1. Clean D-cache to Point of Unification (DC CVAU)
+     * 2. DSB to ensure clean completes
+     * 3. Invalidate I-cache (IC IALLU for simplicity)
+     * 4. DSB to ensure invalidation completes
+     * 5. ISB to flush pipeline
+     *
+     * Without this, newly written code (e.g. ATL thunks, JIT) executes
+     * stale I-cache contents → STATUS_ILLEGAL_INSTRUCTION.
+     */
+    if (BaseAddress != NULL && FlushSize > 0)
+    {
+        /* Clean D-cache by VA to PoU for each cache line (64 bytes) */
+        ULONG_PTR Addr = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)63;
+        ULONG_PTR End = ((ULONG_PTR)BaseAddress + FlushSize + 63) & ~(ULONG_PTR)63;
+        for (; Addr < End; Addr += 64)
+            __asm__ volatile("dc cvau, %0" :: "r"(Addr));
+    }
+
+    __dsb(_ARM64_BARRIER_ISH);
+    __asm__ volatile("ic iallu");
+    __dsb(_ARM64_BARRIER_ISH);
     __isb(_ARM64_BARRIER_SY);
 }
 
