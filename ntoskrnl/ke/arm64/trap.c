@@ -167,9 +167,7 @@ KiSvcDispatch(
         if (TableIndex == 1 &&
             Thread->ServiceTable == KeServiceDescriptorTable)
         {
-            TrapPuts("[SVC] GUI thread conversion for #");
-            TrapPutHex32(ServiceNumber);
-            TrapPuts("\r\n");
+            /* GUI thread conversion trace — disabled for clean console */
 
             /* Convert to GUI thread (allocates W32Process/W32Thread,
              * switches ServiceTable to KeServiceDescriptorTableShadow) */
@@ -258,6 +256,25 @@ DispatchCall:
     Thread->PreviousMode = OldMode;
     TrapFrame->X[0] = (ULONG64)SvcResult;
 
+    /* ARM64: Voluntary preemption at syscall boundary.
+     * Without timer/software interrupts, a user-mode thread calling syscalls
+     * in a tight loop (e.g. WaitForSingleObject on a signaled object) can
+     * starve higher-priority threads indefinitely.  Check if a higher-priority
+     * thread is waiting in the ready queue and yield before returning. */
+    if ((TrapFrame->Spsr & 0xF) == 0)  /* User-mode syscall */
+    {
+        PKPRCB Prcb = KeGetCurrentPrcb();
+        if (Prcb->ReadySummary)
+        {
+            ULONG HighBit;
+            BitScanReverse(&HighBit, Prcb->ReadySummary);
+            if ((SCHAR)HighBit > Thread->Priority)
+            {
+                NtYieldExecution();
+            }
+        }
+    }
+
     /* SVC-FAIL trace disabled — too verbose for normal operation.
      * Re-enable for debugging by uncommenting below. */
 #if 0
@@ -325,51 +342,17 @@ KiSynchronousExceptionHandler(
                                        TrapFrame);
                 if (NT_SUCCESS(Status))
                 {
-                    /* Periodic page fault counter for debugging */
-                    {
-                        static volatile LONG PfCount = 0;
-                        LONG c = InterlockedIncrement(&PfCount);
-                        if ((c % 10) == 0)
-                        {
-                            volatile ULONG *_u = PL011_BASE;
-                            char _b[32];
-                            const char *_p;
-                            int _i = 0;
-                            _b[_i++] = '['; _b[_i++] = 'P'; _b[_i++] = 'F'; _b[_i++] = ']'; _b[_i++] = ' ';
-                            /* Print count as decimal */
-                            { LONG _v = c; char _d[10]; int _n = 0;
-                              do { _d[_n++] = '0' + (_v % 10); _v /= 10; } while(_v > 0);
-                              while(_n > 0) _b[_i++] = _d[--_n]; }
-                            _b[_i++] = '\r'; _b[_i++] = '\n'; _b[_i++] = '\0';
-                            _p = _b;
-                            while (*_p) *_u = (ULONG)*_p++;
-                        }
-                    }
+                    /* Page fault counter — disabled for clean console output */
                     return; /* Resume execution */
                 }
 
-                /* MmAccessFault failed — dispatch as access violation */
-                TrapPuts("[DA-FAIL] Status=");
-                TrapPutHex32((ULONG)Status);
-                TrapPuts(" FAR=");
-                TrapPutHex64(TrapFrame->FaultAddress);
-                TrapPuts(" PC=");
-                TrapPutHex64(TrapFrame->Pc);
-                TrapPuts(" Mode=");
-                TrapPutHex4(FaultMode);
-                TrapPuts("\r\n");
+                /* MmAccessFault failed — dispatch as access violation
+                 * (trace disabled for clean console output) */
             }
 
             /* Dispatch as access violation exception */
             {
                 EXCEPTION_RECORD ExRec;
-                TrapPuts("[EXCEPT] AV dispatch Mode=");
-                TrapPutHex4(FaultMode);
-                TrapPuts(" PC=");
-                TrapPutHex64(TrapFrame->Pc);
-                TrapPuts(" FAR=");
-                TrapPutHex64(TrapFrame->FaultAddress);
-                TrapPuts("\r\n");
                 ExRec.ExceptionCode = STATUS_ACCESS_VIOLATION;
                 ExRec.ExceptionFlags = 0;
                 ExRec.ExceptionRecord = NULL;
@@ -447,7 +430,13 @@ KiSynchronousExceptionHandler(
                 if (Len > 512) Len = 512; /* Sanity limit */
                 for (i = 0; i < Len; i++)
                 {
-                    if (!MmIsAddressValid(Buf + i)) break;
+                    if (!MmIsAddressValid(Buf + i))
+                    {
+                        /* Try to fault in the page (user-mode demand paging) */
+                        if ((ULONG_PTR)(Buf + i) < MmUserProbeAddress)
+                            MmAccessFault(FALSE, Buf + i, KernelMode, NULL);
+                        if (!MmIsAddressValid(Buf + i)) break;
+                    }
                     if (Buf[i] == '\n') *Uart = (ULONG)'\r';
                     *Uart = (ULONG)(unsigned char)Buf[i];
                 }

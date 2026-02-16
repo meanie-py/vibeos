@@ -441,6 +441,24 @@ KiSwapThread(IN PKTHREAD CurrentThread,
     NextThread = Prcb->NextThread;
     if (NextThread)
     {
+#ifdef _M_ARM64
+        /* ARM64: Without HalRequestSoftwareInterrupt, Prcb->NextThread set by
+         * KiDeferredReadyThread / KiExitDispatcher is never dispatched via
+         * preemption.  A higher-priority thread in the ready list (e.g. one
+         * queued by NtYieldExecution) can be starved.  Re-queue NextThread if
+         * a higher-priority thread is waiting. */
+        if (Prcb->ReadySummary)
+        {
+            ULONG HighBit;
+            BitScanReverse((PULONG)&HighBit, Prcb->ReadySummary);
+            if ((SCHAR)HighBit > NextThread->Priority)
+            {
+                NextThread->Preempted = FALSE;
+                KxQueueReadyThread(NextThread, Prcb);
+                NextThread = KiSelectReadyThread(0, Prcb);
+            }
+        }
+#endif
         /* Already got a thread, set it up */
         Prcb->NextThread = NULL;
         Prcb->CurrentThread = NextThread;
@@ -912,6 +930,23 @@ NtYieldExecution(VOID)
         KiAcquirePrcbLock(Prcb);
 
         /* Find a new thread to run if none was selected */
+#ifdef _M_ARM64
+        /* ARM64: Same preemption bypass fix as in KiSwapThread — ensure
+         * the ready list's highest-priority thread is not starved by a
+         * stale Prcb->NextThread. */
+        if (Prcb->NextThread && Prcb->ReadySummary)
+        {
+            ULONG HighBit;
+            BitScanReverse((PULONG)&HighBit, Prcb->ReadySummary);
+            if ((SCHAR)HighBit > Prcb->NextThread->Priority)
+            {
+                PKTHREAD Scheduled = Prcb->NextThread;
+                Scheduled->Preempted = FALSE;
+                KxQueueReadyThread(Scheduled, Prcb);
+                Prcb->NextThread = NULL;
+            }
+        }
+#endif
         if (!Prcb->NextThread) Prcb->NextThread = KiSelectReadyThread(1, Prcb);
 
         /* Make sure we still have a next thread to schedule */

@@ -230,26 +230,29 @@ struct thunkCode
 #pragma pack(push,4)
 struct thunkCode
 {
-    DWORD m_ldr_x16[2];   /* ldr x16, m_this */
-    DWORD m_ldr_x17[2];   /* ldr x17, m_proc */
-    DWORD m_mov_x0;       /* mov x0, x16 */
-    DWORD m_br_x17;       /* br x17 */
-    DWORD64 m_this;
-    DWORD64 m_proc;
+    DWORD m_insn[10];      /* 10 instructions, 40 bytes total */
 
     void
     Init(WNDPROC proc, void *pThis)
     {
-        /* ldr x16, #24 (PC-relative load of m_this, 24 bytes ahead past NOPs+MOV+BR) */
-        m_ldr_x16[0] = 0x580000D0;  /* ldr x16, .+24 */
-        m_ldr_x16[1] = 0xD503201F;  /* nop (padding) */
-        /* ldr x17, #24 (PC-relative load of m_proc, 24 bytes ahead past NOP+MOV+BR) */
-        m_ldr_x17[0] = 0x580000D1;  /* ldr x17, .+24 */
-        m_ldr_x17[1] = 0xD503201F;  /* nop (padding) */
-        m_mov_x0 = 0xAA1003E0;      /* mov x0, x16 */
-        m_br_x17 = 0xD61F0220;      /* br x17 */
-        m_this = (DWORD64)pThis;
-        m_proc = (DWORD64)proc;
+        DWORD64 thisVal = (DWORD64)pThis;
+        DWORD64 procVal = (DWORD64)proc;
+
+        /* Build pThis in x16 via movz/movk (avoids PC-relative LDR corruption) */
+        m_insn[0] = 0xD2800010 | (((DWORD)( thisVal        & 0xFFFF)) << 5); /* movz x16, #lo16 */
+        m_insn[1] = 0xF2A00010 | (((DWORD)((thisVal >> 16) & 0xFFFF)) << 5); /* movk x16, #hi16, lsl #16 */
+        m_insn[2] = 0xF2C00010 | (((DWORD)((thisVal >> 32) & 0xFFFF)) << 5); /* movk x16, #lo32, lsl #32 */
+        m_insn[3] = 0xF2E00010 | (((DWORD)((thisVal >> 48) & 0xFFFF)) << 5); /* movk x16, #hi32, lsl #48 */
+
+        /* Build proc in x17 via movz/movk */
+        m_insn[4] = 0xD2800011 | (((DWORD)( procVal        & 0xFFFF)) << 5); /* movz x17, #lo16 */
+        m_insn[5] = 0xF2A00011 | (((DWORD)((procVal >> 16) & 0xFFFF)) << 5); /* movk x17, #hi16, lsl #16 */
+        m_insn[6] = 0xF2C00011 | (((DWORD)((procVal >> 32) & 0xFFFF)) << 5); /* movk x17, #lo32, lsl #32 */
+        m_insn[7] = 0xF2E00011 | (((DWORD)((procVal >> 48) & 0xFFFF)) << 5); /* movk x17, #hi32, lsl #48 */
+
+        m_insn[8] = 0xAA1003E0;  /* mov x0, x16  (pThis as first arg) */
+        m_insn[9] = 0xD61F0220;  /* br  x17      (tail-call proc) */
+
         FlushInstructionCache(GetCurrentProcess(), this, sizeof(thunkCode));
     }
 };

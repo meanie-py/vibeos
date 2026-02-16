@@ -1823,7 +1823,9 @@ CallWindowProcA(WNDPROC lpPrevWndFunc,
     pWnd = ValidateHwnd(hWnd);
 
     if (!IsCallProcHandle(lpPrevWndFunc))
+    {
         return IntCallWindowProcA(TRUE, lpPrevWndFunc, pWnd, hWnd, Msg, wParam, lParam);
+    }
     else
     {
         CallProc = ValidateCallProc((HANDLE)lpPrevWndFunc);
@@ -1869,7 +1871,9 @@ CallWindowProcW(WNDPROC lpPrevWndFunc,
     pWnd = ValidateHwnd(hWnd);
 
     if (!IsCallProcHandle(lpPrevWndFunc))
+    {
         return IntCallWindowProcW(FALSE, lpPrevWndFunc, pWnd, hWnd, Msg, wParam, lParam);
+    }
     else
     {
         CallProc = ValidateCallProc((HANDLE)lpPrevWndFunc);

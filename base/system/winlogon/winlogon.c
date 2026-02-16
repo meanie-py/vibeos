@@ -552,7 +552,16 @@ WinMain(
     LockWorkstation(WLSession);
 
 #ifdef _M_ARM64
-    DbgPrint("[WINLOGON] ARM64: Skipping keyboard layouts, RPC, services, lsass, notifications, GINA\n");
+    /* Load keyboard layout on ARM64 (required for RIT→WM_KEYDOWN delivery) */
+    if (!InitKeyboardLayouts())
+    {
+        DbgPrint("[WINLOGON] ARM64: InitKeyboardLayouts failed (non-fatal)\n");
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] ARM64: Keyboard layout loaded\n");
+    }
+    DbgPrint("[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n");
 #else
     /* Load default keyboard layouts */
     if (!InitKeyboardLayouts())
@@ -661,7 +670,7 @@ WinMain(
         }
     }
 
-    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning explorer.exe + cmd.exe...\n");
+    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning explorer.exe + notepad.exe + cmd.exe...\n");
 
     /* Spawn explorer.exe (shell — creates desktop, taskbar) */
     {
@@ -696,6 +705,43 @@ WinMain(
         else
         {
             DbgPrint("[WINLOGON] ARM64: CreateProcessW(explorer.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        WCHAR NoteLine[] = L"notepad.exe";
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+        Si.lpDesktop = L"WinSta0\\Default";
+
+        bResult = CreateProcessW(
+            L"notepad.exe",
+            NoteLine,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] ARM64: notepad.exe created (PID %lu, TID %lu)\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(notepad.exe) FAILED (error %lu)\n",
                      GetLastError());
         }
     }
@@ -743,11 +789,18 @@ WinMain(
 
     DbgPrint("[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n");
 
-    /* No SAS window, no GINA — just sleep forever */
+    /* No SAS window, no GINA — just sleep forever.
+     * ARM64 has no timer interrupt, so NtDelayExecution is a no-op (just
+     * NtYieldExecution + return). A spin loop here at high priority starves
+     * lower-priority threads like cmd.exe. Instead, block on a never-signaled
+     * event to properly enter WAIT state and leave the CPU for other threads. */
     {
-        LARGE_INTEGER Interval;
-        Interval.QuadPart = -(10000LL * 1000 * 60 * 60 * 24); /* 24 hours */
-        for (;;) NtDelayExecution(FALSE, &Interval);
+        HANDLE hSleepEvent;
+        OBJECT_ATTRIBUTES oa;
+        InitializeObjectAttributes(&oa, NULL, 0, NULL, NULL);
+        NtCreateEvent(&hSleepEvent, EVENT_ALL_ACCESS, &oa, NotificationEvent, FALSE);
+        NtWaitForSingleObject(hSleepEvent, FALSE, NULL);
+        /* Never reaches here */
     }
 #else
     CallNotificationDlls(WLSession, StartupHandler);

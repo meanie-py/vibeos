@@ -2260,17 +2260,20 @@ co_WinPosSetWindowPos(
       }
       else
       {
-         //ERR("SetWindowPos Set FG Window!\n");
+         //TRACE("Activate hwnd=%p\n", WinPos.hwnd);
          if ( pti->MessageQueue->spwndActive != Window ||
               pti->MessageQueue != gpqForeground )
          {
-            //ERR("WPSWP : set active window\n");
             if (!(Window->state & WNDS_BEINGACTIVATED)) // Inside SAW?
             {
-               co_IntSetForegroundWindow(Window); // Fixes SW_HIDE issues. Wine win test_SetActiveWindow & test_SetForegroundWindow.
+               co_IntSetForegroundWindow(Window);
             }
          }
       }
+   }
+   else
+   {
+      TRACE("Activation skip hwnd=%p flags=0x%x\n", WinPos.hwnd, WinPos.flags);
    }
 
    if ( !PosChanged &&

@@ -84,9 +84,7 @@ MiEnsureKernelPdeValid(
     /* Create PPE if needed */
     if (!PointerPpe->u.Hard.Valid)
     {
-        PagePuts("[PAGE] Creating PPE for ");
-        PagePutHex64((ULONG64)Address);
-        PagePuts("\r\n");
+        /* PPE creation trace — disabled for clean console */
 
         OldIrql = MiAcquirePfnLock();
         PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
@@ -102,9 +100,7 @@ MiEnsureKernelPdeValid(
     /* Create PDE if needed */
     if (!PointerPde->u.Hard.Valid)
     {
-        PagePuts("[PAGE] Creating PDE for ");
-        PagePutHex64((ULONG64)Address);
-        PagePuts("\r\n");
+        /* PDE creation trace — disabled for clean console */
 
         OldIrql = MiAcquirePfnLock();
         PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
@@ -115,7 +111,7 @@ MiEnsureKernelPdeValid(
         MI_WRITE_VALID_PTE(PointerPde, TempPte);
         __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
         RtlZeroMemory(MiPteToAddress(PointerPde), PAGE_SIZE);
-        PagePuts("[PAGE] PDE created OK\r\n");
+        /* PDE created OK trace — disabled */
     }
 }
 
@@ -452,7 +448,7 @@ MmCreateVirtualMappingUnsafeEx(
          * the system PTE space, where PDEs may not exist yet. */
         if (!MiIsPdeForAddressValid(Address))
         {
-            PagePuts("[PAGE] PDE missing, creating on demand\r\n");
+            /* PDE on-demand trace — disabled */
             MiEnsureKernelPdeValid(Address);
         }
     }

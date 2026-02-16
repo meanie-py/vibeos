@@ -282,6 +282,23 @@ KiIdleLoop(VOID)
             /* Switch away from the idle thread */
             KiSwapContext(APC_LEVEL, OldThread);
         }
+        else if (Prcb->ReadySummary)
+        {
+            /* ARM64: No timer/software interrupts to preempt idle.
+             * Threads in the ready list would never be picked up because
+             * nothing sets Prcb->NextThread when HalRequestSoftwareInterrupt
+             * is a no-op.  Check the ready list directly. */
+            _enable();
+
+            OldThread = Prcb->CurrentThread;
+            NewThread = KiSelectReadyThread(0, Prcb);
+            if (NewThread)
+            {
+                Prcb->CurrentThread = NewThread;
+                NewThread->State = Running;
+                KiSwapContext(APC_LEVEL, OldThread);
+            }
+        }
         else
         {
             /* ARM64 Wait For Event - low power idle */

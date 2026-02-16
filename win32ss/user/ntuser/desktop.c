@@ -1339,14 +1339,13 @@ IntSetFocusMessageQueue(PUSER_MESSAGE_QUEUE NewQueue)
     PDESKTOP pdo = IntGetActiveDesktop();
     if (!pdo)
     {
-        TRACE("No active desktop\n");
+        ERR("IntSetFocusMessageQueue: no active desktop!\n");
         return;
     }
     if (NewQueue != NULL)
     {
         if (NewQueue->Desktop != NULL)
         {
-            TRACE("Message Queue already attached to another desktop!\n");
             return;
         }
         IntReferenceMessageQueue(NewQueue);

@@ -80,6 +80,21 @@ DriverEntry(
     }
     DbgPrint("[PL011] UART mapped at %p\n", g_UartBase);
 
+    /* Ensure UART is enabled for TX and RX */
+    {
+        volatile ULONG *cr = (volatile ULONG *)((PUCHAR)g_UartBase + UARTCR);
+        ULONG crVal = *cr;
+        DbgPrint("[PL011] UARTCR = 0x%08lx (UARTEN=%d TXE=%d RXE=%d)\n",
+                 crVal, (crVal & 1), (crVal >> 8) & 1, (crVal >> 9) & 1);
+        /* If RXE is not set, enable it */
+        if (!(crVal & (1 << 9)))
+        {
+            crVal |= (1 << 9) | (1 << 0); /* RXE + UARTEN */
+            *cr = crVal;
+            DbgPrint("[PL011] Enabled RXE: UARTCR = 0x%08lx\n", *cr);
+        }
+    }
+
     /* Create device object */
     RtlInitUnicodeString(&DeviceName, L"\\Device\\ArmSerial");
     Status = IoCreateDevice(DriverObject, 0, &DeviceName,
@@ -170,7 +185,6 @@ Pl011Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     PIO_STACK_LOCATION IrpSp;
     PUCHAR Buffer;
     ULONG MaxLength, BytesRead = 0;
-    LARGE_INTEGER Delay;
     ULONG Retries;
     UCHAR ch;
 
@@ -188,9 +202,12 @@ Pl011Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
         return STATUS_SUCCESS;
     }
 
-    /* Poll for input. Wait up to ~5 seconds if no data yet. */
-    Delay.QuadPart = -(10000LL * 10); /* 10 ms */
-    Retries = 500;
+    /* Poll for input with brief busy-wait.  ARM64 has no timer interrupts
+     * and no preemption, so KeStallExecutionProcessor blocks ALL other
+     * threads for the stall duration.  Keep the poll window short
+     * (20ms) to balance responsiveness with allowing other threads to run.
+     * The caller (serialterm) handles periodic retry via Sleep(50). */
+    Retries = 5;
 
     while (BytesRead < MaxLength)
     {
@@ -202,7 +219,7 @@ Pl011Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             if (Retries-- == 0)
                 break; /* Timeout with no data */
 
-            KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+            KeStallExecutionProcessor(1000); /* 1ms busy-wait */
             continue;
         }
 

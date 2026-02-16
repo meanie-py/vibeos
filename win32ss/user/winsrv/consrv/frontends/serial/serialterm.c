@@ -8,6 +8,7 @@
 #ifdef SERIALTERM_COMPILE
 
 #include <consrv.h>
+#include <ntddmou.h>
 
 #include "include/console.h"
 #include "include/settings.h"
@@ -15,10 +16,20 @@
 #define NDEBUG
 #include <debug.h>
 
+/* IOCTL to inject a byte into arm64input.sys keyboard driver */
+#define IOCTL_ARM64INPUT_INJECT_BYTE \
+    CTL_CODE(FILE_DEVICE_KEYBOARD, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+/* IOCTL to inject a mouse event into arm64input.sys */
+#define IOCTL_ARM64INPUT_INJECT_MOUSE \
+    CTL_CODE(FILE_DEVICE_MOUSE, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 /* Serial console private data */
 typedef struct _SERIAL_CONSOLE_DATA
 {
     HANDLE hSerialDevice;       /* Handle to \\.\COM1 */
+    HANDLE hKeyboardDevice;     /* Handle to \\.\KeyboardClass0 (for RIT injection) */
+    HANDLE hMouseDevice;        /* Handle to \\.\PointerClass0 (for mouse injection) */
     HANDLE hInputThread;        /* Input polling thread */
     volatile BOOLEAN Terminate; /* Signal thread to stop */
 
@@ -96,16 +107,157 @@ static FRONTEND_VTBL SerialVtbl =
  * Input polling thread: reads bytes from serial, converts to INPUT_RECORD,
  * and queues them via ConioProcessInputEvent.
  */
+/*
+ * Process a single byte as keyboard input: build INPUT_RECORD, send to
+ * console (ConioProcessInputEvent) and to Win32k RIT (arm64input IOCTL).
+ */
+static VOID
+SerialProcessKeyByte(PSERIAL_CONSOLE_DATA SerialData, UCHAR ch)
+{
+    PCONSRV_CONSOLE Console = SerialData->Console;
+    INPUT_RECORD er;
+
+    /* Build a KEY_EVENT INPUT_RECORD */
+    RtlZeroMemory(&er, sizeof(er));
+    er.EventType = KEY_EVENT;
+    er.Event.KeyEvent.bKeyDown = TRUE;
+    er.Event.KeyEvent.wRepeatCount = 1;
+    er.Event.KeyEvent.dwControlKeyState = 0;
+
+    /* Map special characters to virtual key codes */
+    if (ch == '\r')
+    {
+        er.Event.KeyEvent.wVirtualKeyCode = VK_RETURN;
+        er.Event.KeyEvent.wVirtualScanCode = 0x1C;
+        er.Event.KeyEvent.uChar.UnicodeChar = L'\r';
+    }
+    else if (ch == 0x08 || ch == 0x7F)
+    {
+        er.Event.KeyEvent.wVirtualKeyCode = VK_BACK;
+        er.Event.KeyEvent.wVirtualScanCode = 0x0E;
+        er.Event.KeyEvent.uChar.UnicodeChar = L'\b';
+    }
+    else if (ch == 0x03) /* Ctrl-C */
+    {
+        er.Event.KeyEvent.wVirtualKeyCode = 'C';
+        er.Event.KeyEvent.wVirtualScanCode = 0x2E;
+        er.Event.KeyEvent.uChar.UnicodeChar = 0x03;
+        er.Event.KeyEvent.dwControlKeyState = LEFT_CTRL_PRESSED;
+    }
+    else if (ch == '\t')
+    {
+        er.Event.KeyEvent.wVirtualKeyCode = VK_TAB;
+        er.Event.KeyEvent.wVirtualScanCode = 0x0F;
+        er.Event.KeyEvent.uChar.UnicodeChar = L'\t';
+    }
+    else
+    {
+        /* Regular character */
+        WCHAR wch;
+        MultiByteToWideChar(Console->InputCodePage, 0, (LPCSTR)&ch, 1, &wch, 1);
+        er.Event.KeyEvent.uChar.UnicodeChar = wch;
+        er.Event.KeyEvent.wVirtualKeyCode = VkKeyScanW(wch) & 0xFF;
+        er.Event.KeyEvent.wVirtualScanCode = 0;
+    }
+
+    /* Lock console and send key-down + key-up events */
+    if (ConDrvValidateConsoleUnsafe((PCONSOLE)Console, CONSOLE_RUNNING, TRUE))
+    {
+        ConioProcessInputEvent(Console, &er);
+        er.Event.KeyEvent.bKeyDown = FALSE;
+        ConioProcessInputEvent(Console, &er);
+        LeaveCriticalSection(&Console->Lock);
+    }
+
+    /* Also inject into KeyboardClass0 for the Win32k RIT */
+    if (SerialData->hKeyboardDevice &&
+        SerialData->hKeyboardDevice != INVALID_HANDLE_VALUE)
+    {
+        DWORD Ignored;
+        DeviceIoControl(SerialData->hKeyboardDevice,
+                        IOCTL_ARM64INPUT_INJECT_BYTE,
+                        &ch, 1,
+                        NULL, 0,
+                        &Ignored, NULL);
+    }
+}
+
+/*
+ * Process a mouse escape sequence: ESC [ M <action> <xl> <xh> <yl> <yh>
+ * Constructs MOUSE_INPUT_DATA and injects via IOCTL to PointerClass0.
+ *
+ * Action byte: 0=move, 1=left-down, 2=left-up, 3=right-down, 4=right-up
+ * X/Y: 16-bit little-endian, 0-65535 range (MOUSE_MOVE_ABSOLUTE)
+ */
+static VOID
+SerialProcessMouseEscape(PSERIAL_CONSOLE_DATA SerialData, UCHAR *buf)
+{
+    MOUSE_INPUT_DATA mid;
+    DWORD Ignored;
+    UCHAR action = buf[0];
+    USHORT x = (USHORT)buf[1] | ((USHORT)buf[2] << 8);
+    USHORT y = (USHORT)buf[3] | ((USHORT)buf[4] << 8);
+
+    if (!SerialData->hMouseDevice ||
+        SerialData->hMouseDevice == INVALID_HANDLE_VALUE)
+        return;
+
+    RtlZeroMemory(&mid, sizeof(mid));
+    mid.Flags = MOUSE_MOVE_ABSOLUTE;
+    mid.LastX = (LONG)x;
+    mid.LastY = (LONG)y;
+
+    switch (action)
+    {
+        case 0: /* Move only */
+            break;
+        case 1: /* Left button down */
+            mid.ButtonFlags = MOUSE_LEFT_BUTTON_DOWN;
+            break;
+        case 2: /* Left button up */
+            mid.ButtonFlags = MOUSE_LEFT_BUTTON_UP;
+            break;
+        case 3: /* Right button down */
+            mid.ButtonFlags = MOUSE_RIGHT_BUTTON_DOWN;
+            break;
+        case 4: /* Right button up */
+            mid.ButtonFlags = MOUSE_RIGHT_BUTTON_UP;
+            break;
+        default:
+            return;
+    }
+
+    DeviceIoControl(SerialData->hMouseDevice,
+                    IOCTL_ARM64INPUT_INJECT_MOUSE,
+                    &mid, sizeof(mid),
+                    NULL, 0,
+                    &Ignored, NULL);
+}
+
+/*
+ * Input polling thread: reads bytes from serial, converts to INPUT_RECORD,
+ * and queues them via ConioProcessInputEvent.
+ *
+ * Mouse escape sequence: ESC [ M <action> <xl> <xh> <yl> <yh> (8 bytes total)
+ */
 static DWORD NTAPI
 SerialInputThread(PVOID Param)
 {
     PSERIAL_CONSOLE_DATA SerialData = (PSERIAL_CONSOLE_DATA)Param;
-    PCONSRV_CONSOLE Console = SerialData->Console;
     UCHAR ch;
     DWORD BytesRead;
-    INPUT_RECORD er;
+    int esc_state = 0;
+    UCHAR esc_buf[5];
+    int esc_pos = 0;
 
     DPRINT1("[SERIAL] Input thread started\n");
+
+    /* Raise priority to TIME_CRITICAL (15) so this thread is always the first
+     * non-kernel thread rescheduled after a yield.  ARM64 has no timer
+     * interrupts, so scheduling is purely cooperative.  Without this boost,
+     * serialterm can starve behind equal-priority threads that run for long
+     * periods without yielding (e.g. DLL loading during boot). */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
     while (!SerialData->Terminate)
     {
@@ -113,70 +265,63 @@ SerialInputThread(PVOID Param)
         if (!ReadFile(SerialData->hSerialDevice, &ch, 1, &BytesRead, NULL) ||
             BytesRead == 0)
         {
-            /* No data or error; brief sleep and retry */
+            /* No data; yield and retry. */
             Sleep(50);
             continue;
         }
 
-        /* Build a KEY_EVENT INPUT_RECORD */
-        RtlZeroMemory(&er, sizeof(er));
-        er.EventType = KEY_EVENT;
-        er.Event.KeyEvent.bKeyDown = TRUE;
-        er.Event.KeyEvent.wRepeatCount = 1;
-        er.Event.KeyEvent.dwControlKeyState = 0;
+        /*
+         * Escape sequence state machine for mouse events:
+         * State 0: Normal input
+         * State 1: Got ESC (0x1B)
+         * State 2: Got ESC [
+         * State 3: Got ESC [ M, collecting 5 data bytes
+         */
+        switch (esc_state)
+        {
+        case 0:
+            if (ch == 0x1B)
+            {
+                esc_state = 1;
+                continue;
+            }
+            SerialProcessKeyByte(SerialData, ch);
+            continue;
 
-        /* Map special characters to virtual key codes */
-        if (ch == '\r')
-        {
-            er.Event.KeyEvent.wVirtualKeyCode = VK_RETURN;
-            er.Event.KeyEvent.wVirtualScanCode = 0x1C;
-            er.Event.KeyEvent.uChar.UnicodeChar = L'\r';
-        }
-        else if (ch == 0x08 || ch == 0x7F)
-        {
-            er.Event.KeyEvent.wVirtualKeyCode = VK_BACK;
-            er.Event.KeyEvent.wVirtualScanCode = 0x0E;
-            er.Event.KeyEvent.uChar.UnicodeChar = L'\b';
-        }
-        else if (ch == 0x03) /* Ctrl-C */
-        {
-            er.Event.KeyEvent.wVirtualKeyCode = 'C';
-            er.Event.KeyEvent.wVirtualScanCode = 0x2E;
-            er.Event.KeyEvent.uChar.UnicodeChar = 0x03;
-            er.Event.KeyEvent.dwControlKeyState = LEFT_CTRL_PRESSED;
-        }
-        else if (ch == 0x1B) /* Escape */
-        {
-            er.Event.KeyEvent.wVirtualKeyCode = VK_ESCAPE;
-            er.Event.KeyEvent.wVirtualScanCode = 0x01;
-            er.Event.KeyEvent.uChar.UnicodeChar = 0x1B;
-        }
-        else if (ch == '\t')
-        {
-            er.Event.KeyEvent.wVirtualKeyCode = VK_TAB;
-            er.Event.KeyEvent.wVirtualScanCode = 0x0F;
-            er.Event.KeyEvent.uChar.UnicodeChar = L'\t';
-        }
-        else
-        {
-            /* Regular character */
-            WCHAR wch;
-            MultiByteToWideChar(Console->InputCodePage, 0, (LPCSTR)&ch, 1, &wch, 1);
-            er.Event.KeyEvent.uChar.UnicodeChar = wch;
-            er.Event.KeyEvent.wVirtualKeyCode = VkKeyScanW(wch) & 0xFF;
-            er.Event.KeyEvent.wVirtualScanCode = 0;
-        }
+        case 1: /* Got ESC */
+            if (ch == '[')
+            {
+                esc_state = 2;
+                continue;
+            }
+            /* Not an escape sequence — emit ESC as keyboard, then this byte */
+            SerialProcessKeyByte(SerialData, 0x1B);
+            esc_state = 0;
+            SerialProcessKeyByte(SerialData, ch);
+            continue;
 
-        /* Lock console and send key-down event */
-        if (ConDrvValidateConsoleUnsafe((PCONSOLE)Console, CONSOLE_RUNNING, TRUE))
-        {
-            ConioProcessInputEvent(Console, &er);
+        case 2: /* Got ESC [ */
+            if (ch == 'M')
+            {
+                esc_state = 3;
+                esc_pos = 0;
+                continue;
+            }
+            /* Not a mouse sequence — emit ESC, [, then this byte */
+            SerialProcessKeyByte(SerialData, 0x1B);
+            SerialProcessKeyByte(SerialData, '[');
+            esc_state = 0;
+            SerialProcessKeyByte(SerialData, ch);
+            continue;
 
-            /* Send corresponding key-up event */
-            er.Event.KeyEvent.bKeyDown = FALSE;
-            ConioProcessInputEvent(Console, &er);
-
-            LeaveCriticalSection(&Console->Lock);
+        case 3: /* Collecting mouse data bytes */
+            esc_buf[esc_pos++] = ch;
+            if (esc_pos == 5)
+            {
+                SerialProcessMouseEscape(SerialData, esc_buf);
+                esc_state = 0;
+            }
+            continue;
         }
     }
 
@@ -224,6 +369,42 @@ SerialInitFrontEnd(IN OUT PFRONTEND This,
 
     DPRINT1("[SERIAL] COM1 opened successfully\n");
 
+    /* Open keyboard class device for RIT injection */
+    SerialData->hKeyboardDevice = CreateFileW(L"\\\\.\\KeyboardClass0",
+                                               GENERIC_WRITE,
+                                               FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                               NULL,
+                                               OPEN_EXISTING,
+                                               FILE_ATTRIBUTE_NORMAL,
+                                               NULL);
+    if (SerialData->hKeyboardDevice == INVALID_HANDLE_VALUE)
+    {
+        DPRINT1("[SERIAL] Failed to open KeyboardClass0, error %lu (RIT injection disabled)\n",
+                GetLastError());
+    }
+    else
+    {
+        DPRINT1("[SERIAL] KeyboardClass0 opened for RIT injection\n");
+    }
+
+    /* Open mouse class device for mouse injection */
+    SerialData->hMouseDevice = CreateFileW(L"\\\\.\\PointerClass0",
+                                            GENERIC_WRITE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                            NULL,
+                                            OPEN_EXISTING,
+                                            FILE_ATTRIBUTE_NORMAL,
+                                            NULL);
+    if (SerialData->hMouseDevice == INVALID_HANDLE_VALUE)
+    {
+        DPRINT1("[SERIAL] Failed to open PointerClass0, error %lu (mouse injection disabled)\n",
+                GetLastError());
+    }
+    else
+    {
+        DPRINT1("[SERIAL] PointerClass0 opened for mouse injection\n");
+    }
+
     /* Store context */
     This->Context = SerialData;
     This->Context2 = NULL;
@@ -261,6 +442,14 @@ SerialDeinitFrontEnd(IN OUT PFRONTEND This)
     /* Close the serial device to unblock ReadFile */
     if (SerialData->hSerialDevice && SerialData->hSerialDevice != INVALID_HANDLE_VALUE)
         CloseHandle(SerialData->hSerialDevice);
+
+    /* Close keyboard device */
+    if (SerialData->hKeyboardDevice && SerialData->hKeyboardDevice != INVALID_HANDLE_VALUE)
+        CloseHandle(SerialData->hKeyboardDevice);
+
+    /* Close mouse device */
+    if (SerialData->hMouseDevice && SerialData->hMouseDevice != INVALID_HANDLE_VALUE)
+        CloseHandle(SerialData->hMouseDevice);
 
     /* Wait briefly for thread to exit */
     if (SerialData->hInputThread)

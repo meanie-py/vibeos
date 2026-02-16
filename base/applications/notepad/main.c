@@ -629,6 +629,8 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE prev, LPTSTR cmdline, int sh
     }
     SetWindowPlacement(Globals.hMainWnd, &wp);
     UpdateWindow(Globals.hMainWnd);
+    SetForegroundWindow(Globals.hMainWnd);
+    SetFocus(Globals.hEdit);
 
     if (!HandleCommandLine(cmdline))
         return 0;

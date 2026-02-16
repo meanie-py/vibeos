@@ -893,15 +893,59 @@ KiDispatchException(
             ULONG_PTR FaultDataAddr = ExceptionRecord->ExceptionInformation[1];
             if (FaultDataAddr < (ULONG_PTR)MmHighestUserAddress)
             {
+                /*
+                 * Zero the destination register of the faulting load instruction.
+                 * Without this, the register retains its stale value, which can
+                 * corrupt data structures (e.g., pool headers) when the code
+                 * continues past the skipped instruction.  The caller's SEH handler
+                 * would normally set an error status and branch away; zeroing the
+                 * register makes subsequent NULL checks work as error detection.
+                 *
+                 * ARM64 LDR instructions encode the destination register in bits
+                 * [4:0] of the instruction word.  We handle LDR/LDRB/LDRH/LDRSW
+                 * and LDP variants.  For stores (STR) the fault is on the write
+                 * side so no register fixup is needed — just skip.
+                 */
                 {
-                    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
-                    if (_u) {
-                        const char *_s; int _i;
-                        _s = "[KSEH-SKIP] PC=0x"; while (*_s) *_u = (ULONG)*_s++;
-                        for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Pc >> _i) & 0xF];
-                        _s = " FAR=0x"; while (*_s) *_u = (ULONG)*_s++;
-                        for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(FaultDataAddr >> _i) & 0xF];
-                        *_u = '\r'; *_u = '\n';
+                    /* Read the faulting instruction */
+                    ULONG Instr = *(volatile ULONG *)(ULONG_PTR)TrapFrame->Pc;
+                    ULONG Rd = Instr & 0x1F;  /* Destination register is bits [4:0] */
+
+                    /*
+                     * Check if this is a load (not a store).  ARM64 load/store
+                     * encoding: bit 22 = 1 for loads, 0 for stores (for most
+                     * LDR/STR variants).  Also handle LDP (bit 22 = 1 for load).
+                     */
+                    if (Instr & (1 << 22))
+                    {
+                        /* It's a load instruction — zero the destination register */
+                        if (Rd < 29)
+                        {
+                            /* X0-X28 are in the TrapFrame->X[] array */
+                            TrapFrame->X[Rd] = 0;
+                        }
+                        else if (Rd == 29)
+                        {
+                            TrapFrame->Fp = 0;
+                        }
+                        else if (Rd == 30)
+                        {
+                            TrapFrame->Lr = 0;
+                        }
+                        /* Rd == 31 = XZR (zero register) — no fixup needed */
+
+                        /* For LDP, also zero the second register (bits [14:10]) */
+                        if ((Instr & 0x3B000000) == 0x29000000 ||  /* LDP (offset) */
+                            (Instr & 0x3B000000) == 0x28000000)    /* LDP (post/pre) */
+                        {
+                            ULONG Rt2 = (Instr >> 10) & 0x1F;
+                            if (Rt2 < 29)
+                                TrapFrame->X[Rt2] = 0;
+                            else if (Rt2 == 29)
+                                TrapFrame->Fp = 0;
+                            else if (Rt2 == 30)
+                                TrapFrame->Lr = 0;
+                        }
                     }
                 }
                 TrapFrame->Pc += 4;
@@ -1050,10 +1094,21 @@ KiDispatchException(
                 for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(ExceptionRecord->ExceptionCode >> _i) & 0xF];
                 _s = " PC=0x"; while (*_s) *_u = (ULONG)*_s++;
                 for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[((ULONG64)(ULONG_PTR)ExceptionRecord->ExceptionAddress >> _i) & 0xF];
+                _s = " LR=0x"; while (*_s) *_u = (ULONG)*_s++;
+                for (_i = 60; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(TrapFrame->Lr >> _i) & 0xF];
+                _s = " 1st="; while (*_s) *_u = (ULONG)*_s++;
+                *_u = FirstChance ? '1' : '0';
                 _s = " Proc="; while (*_s) *_u = (ULONG)*_s++;
                 _s = (const char *)PsGetCurrentProcess()->ImageFileName;
                 for (_i = 0; _i < 16 && _s[_i]; _i++) *_u = (ULONG)_s[_i];
                 *_u = '\r'; *_u = '\n';
+                /* Print instruction at faulting PC if page is readable */
+                if (MmIsAddressValid(ExceptionRecord->ExceptionAddress)) {
+                    ULONG instr = *(volatile ULONG *)ExceptionRecord->ExceptionAddress;
+                    _s = "  instr=0x"; while (*_s) *_u = (ULONG)*_s++;
+                    for (_i = 28; _i >= 0; _i -= 4) *_u = (ULONG)"0123456789ABCDEF"[(instr >> _i) & 0xF];
+                    *_u = '\r'; *_u = '\n';
+                }
             }
         }
 
