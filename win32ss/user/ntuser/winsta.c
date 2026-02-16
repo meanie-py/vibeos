@@ -262,10 +262,10 @@ BOOL FASTCALL
 co_IntInitializeDesktopGraphics(VOID)
 {
     LONG lRet;
-#ifndef _M_ARM64
-    TEXTMETRICW tmw;
     UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
     PDESKTOP pdesk;
+#ifndef _M_ARM64
+    TEXTMETRICW tmw;
 #endif
 
     /* If PDEV already created (e.g. ARM64 early init), skip re-creation */
@@ -289,10 +289,24 @@ co_IntInitializeDesktopGraphics(VOID)
     }
 
 #ifdef _M_ARM64
-    /* ARM64: Skip ScreenDeviceContext, font measurement, and other GDI init
-     * that causes KSEH-SKIP cascades due to DUMMY_PSEH. Just set basic
-     * metrics from the PDEV's gdiinfo and return. The serial console
-     * doesn't need full GDI DC support. */
+    /* ARM64: Create screen DC and primary surface. DC_InitHack (dclife.c)
+     * skips TextIntRealizeFont on ARM64, so IntGdiCreateDC is safe.
+     * Skip font measurement, monitor setup, cursors, icons. */
+    ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
+    if (NULL == ScreenDeviceContext)
+    {
+        IntDestroyPrimarySurface();
+        return FALSE;
+    }
+    GreSetDCOwner(ScreenDeviceContext, GDI_OBJ_HMGR_PUBLIC);
+
+    /* Cache PDEV surface reference + populate GdiHandleTable->DevCaps */
+    if (!IntCreatePrimarySurface())
+    {
+        return FALSE;
+    }
+
+    /* Set metrics from PDEV's gdiinfo (skip font measurement) */
     gpsi->aiSysMet[SM_CXSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulHorzRes;
     gpsi->aiSysMet[SM_CYSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulVertRes;
     gpsi->Planes        = 1;
@@ -304,7 +318,20 @@ co_IntInitializeDesktopGraphics(VOID)
     gpsi->cySysFontChar = 16;
     gpsi->ptCursor.x    = gpsi->aiSysMet[SM_CXSCREEN] / 2;
     gpsi->ptCursor.y    = gpsi->aiSysMet[SM_CYSCREEN] / 2;
+
     MenuInit();
+
+    /* Show the desktop if one already exists (it won't on first call from
+     * NtUserInitialize since desktops are created later by winlogon) */
+    pdesk = IntGetActiveDesktop();
+    if (pdesk)
+    {
+        co_IntShowDesktop(pdesk,
+                          gpsi->aiSysMet[SM_CXSCREEN],
+                          gpsi->aiSysMet[SM_CYSCREEN],
+                          TRUE);
+    }
+
     return TRUE;
 #else
     ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
@@ -580,15 +607,6 @@ IntCreateWindowStation(
 
         InitCursorImpl();
 
-#ifdef _M_ARM64
-        /*
-         * ARM64: Skip desktop thread and RIT creation.
-         * These require usersrv in csrss (not loaded) and video/input
-         * infrastructure. Without them, desktop functions won't work
-         * but the window station object is still valid.
-         */
-        ERR("ARM64: Skipping desktop thread and RIT creation\n");
-#else
         UserCreateSystemThread(ST_DESKTOP_THREAD);
         UserCreateSystemThread(ST_RIT);
 
@@ -600,7 +618,6 @@ IntCreateWindowStation(
                               FALSE,
                               NULL);
         UserEnterCo();
-#endif
     }
     else
     {

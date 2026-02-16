@@ -176,6 +176,36 @@ typedef struct _KEXCEPTION_FRAME
 /* Size: 96 bytes (0x60), 16-byte aligned */
 
 /*
+ * ARM64 Callout Frame — saved by KiCallUserMode (setjmp), restored by
+ * KiCallbackReturn (longjmp).  Lives on the kernel stack during a
+ * KeUserModeCallback round-trip.
+ */
+typedef struct _KCALLOUT_FRAME
+{
+    /* Callee-saved registers (saved/restored by assembly) */
+    ULONG64 X19;            // +0x00
+    ULONG64 X20;            // +0x08
+    ULONG64 X21;            // +0x10
+    ULONG64 X22;            // +0x18
+    ULONG64 X23;            // +0x20
+    ULONG64 X24;            // +0x28
+    ULONG64 X25;            // +0x30
+    ULONG64 X26;            // +0x38
+    ULONG64 X27;            // +0x40
+    ULONG64 X28;            // +0x48
+    ULONG64 Fp;             // +0x50  (X29)
+    ULONG64 Lr;             // +0x58  (X30 — return address to KeUserModeCallback)
+    /* Callback-specific state (saved/restored by C code) */
+    ULONG64 OutputBuffer;   // +0x60  (pointer to Result output pointer)
+    ULONG64 OutputLength;   // +0x68  (pointer to ResultLength output pointer)
+    ULONG64 TrapFrame;      // +0x70  (saved Thread->TrapFrame)
+    ULONG64 CallbackStack;  // +0x78  (saved Thread->CallbackStack)
+    ULONG64 InitialStack;   // +0x80  (saved Thread->InitialStack)
+    ULONG64 Reserved;       // +0x88  (padding for 16-byte SP alignment)
+} KCALLOUT_FRAME, *PKCALLOUT_FRAME;
+/* Size: 0x90 (144 bytes), 16-byte aligned */
+
+/*
  * ARM64 Context Switch Frame - minimal frame saved by KiSwapContextInternal.
  * Sits at the top of the saved stack (lowest address = Thread->KernelStack).
  */

@@ -6026,7 +6026,7 @@ IntRealizeFont(const LOGFONTW *pLogFont, _Inout_opt_ PTEXTOBJ TextObj)
            pLogFont->lfFaceName, pLogFont->lfCharSet,
            SubstitutedLogFont.lfFaceName, SubstitutedLogFont.lfCharSet);
 
-    FONTOBJ *pFontObj;
+    FONTOBJ *pFontObj = NULL;
     PFONT_LOOKUP_CACHE pLookUp = FontLookUp_LookUp(pLogFont);
     if (pLookUp)
     {

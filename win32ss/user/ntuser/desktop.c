@@ -2976,12 +2976,11 @@ NtUserSwitchDesktop(HDESK hdesk)
     BOOL Ret = FALSE;
 
     UserEnterExclusive();
-    TRACE("Enter NtUserSwitchDesktop(0x%p)\n", hdesk);
 
     Status = IntValidateDesktopHandle(hdesk, UserMode, 0, &pdesk);
     if (!NT_SUCCESS(Status))
     {
-        ERR("Validation of desktop handle 0x%p failed\n", hdesk);
+        ERR("Validation of desktop handle 0x%p failed (0x%lx)\n", hdesk, Status);
         goto Exit; // Return FALSE
     }
 
@@ -2995,7 +2994,6 @@ NtUserSwitchDesktop(HDESK hdesk)
     if (pdesk == gpdeskInputDesktop)
     {
         ObDereferenceObject(pdesk);
-        WARN("NtUserSwitchDesktop called for active desktop\n");
         Ret = TRUE;
         goto Exit;
     }
@@ -3045,8 +3043,6 @@ NtUserSwitchDesktop(HDESK hdesk)
 
     /* Show the new desktop window */
     co_IntShowDesktop(pdesk, UserGetSystemMetrics(SM_CXSCREEN), UserGetSystemMetrics(SM_CYSCREEN), bRedrawDesktop);
-
-    TRACE("SwitchDesktop gpdeskInputDesktop 0x%p\n", gpdeskInputDesktop);
     ObDereferenceObject(pdesk);
 
     Ret = TRUE;

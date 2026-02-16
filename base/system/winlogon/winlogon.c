@@ -641,9 +641,47 @@ WinMain(
     /* Tell kernel that CurrentControlSet is good */
     NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
 
-    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning interactive cmd.exe...\n");
+    DbgPrint("[WINLOGON] ARM64: Winlogon init complete. Spawning testgui.exe + cmd.exe...\n");
 
-    /* Spawn interactive cmd.exe with console (CONSRV now available) */
+    /* Spawn testgui.exe first (GUI test — creates window, exercises KeUserModeCallback) */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        WCHAR GuiLine[] = L"testgui.exe";
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+        Si.lpDesktop = L"WinSta0\\Default";
+
+        bResult = CreateProcessW(
+            L"testgui.exe",
+            GuiLine,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] ARM64: testgui.exe created (PID %lu, TID %lu)\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            /* Don't wait — let it run in background while cmd.exe is interactive */
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(testgui.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    /* Spawn interactive cmd.exe with console (CONSRV available) */
     {
         STARTUPINFOW Si;
         PROCESS_INFORMATION Pi;
@@ -660,7 +698,7 @@ WinMain(
             NULL,
             NULL,
             FALSE,
-            0,      /* No DETACHED_PROCESS — allow console allocation */
+            0,
             NULL,
             NULL,
             &Si,

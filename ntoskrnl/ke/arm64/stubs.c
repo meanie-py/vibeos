@@ -295,18 +295,7 @@ KeSynchronizeExecution(
     return Result;
 }
 
-NTSTATUS
-NTAPI
-KeUserModeCallback(
-    _In_ ULONG RoutineIndex,
-    _In_ PVOID InputBuffer,
-    _In_ ULONG InputLength,
-    _Out_ PVOID *OutputBuffer,
-    _Out_ PULONG OutputLength)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
+/* KeUserModeCallback is implemented in usercall.c */
 
 /* VDM is not supported on ARM64 */
 NTSTATUS
@@ -724,16 +713,7 @@ KiInitializeUserApc(
     ARM64_UART_TRACE_HEX("[APC] NR=", (ULONG_PTR)NormalRoutine);
 }
 
-/* Call user mode */
-NTSTATUS
-NTAPI
-KiCallUserMode(
-    _Out_ PVOID *OutputBuffer,
-    _Out_ PULONG OutputLength)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
+/* KiCallUserMode is implemented in usercall_asm.S */
 
 /* Processor state save/restore */
 VOID
@@ -1160,17 +1140,7 @@ KeZeroPages(
 
 /* MiInitializeSessionSpaceLayout and MiInitMachineDependent are now in mm/ARM3/arm/init.c */
 
-/* Callback return */
-NTSTATUS
-NTAPI
-NtCallbackReturn(
-    _In_ PVOID Result,
-    _In_ ULONG ResultLength,
-    _In_ NTSTATUS Status)
-{
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
-}
+/* NtCallbackReturn is implemented in usercall.c */
 
 /* LDT not supported on ARM64 */
 NTSTATUS

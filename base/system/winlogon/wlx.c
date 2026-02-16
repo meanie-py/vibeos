@@ -1039,12 +1039,55 @@ CreateWindowStationAndDesktops(
 
 #ifdef _M_ARM64
     /*
-     * ARM64: Skip desktop creation. Desktop objects require the desktop
-     * thread (created by UserCreateSystemThread) which we skip because
-     * it needs usersrv in csrss. The window station is sufficient for
-     * process management. Desktop handles remain NULL.
+     * ARM64: Create desktops with default security (no SAM/LSA).
+     * Desktop thread + RIT are now running (M21).
      */
-    ERR("WL: ARM64: Skipping desktop creation (no desktop thread)\n");
+    Session->ApplicationDesktop = CreateDesktopW(
+        L"Default",
+        NULL,
+        NULL,
+        0,
+        MAXIMUM_ALLOWED,
+        NULL);
+    if (!Session->ApplicationDesktop)
+    {
+        ERR("WL: ARM64: Failed to create Default desktop (%lu)\n", GetLastError());
+        goto cleanup;
+    }
+
+    /* Create Winlogon desktop */
+    Session->WinlogonDesktop = CreateDesktopW(
+        L"Winlogon",
+        NULL,
+        NULL,
+        0,
+        MAXIMUM_ALLOWED,
+        NULL);
+    if (!Session->WinlogonDesktop)
+    {
+        ERR("WL: ARM64: Failed to create Winlogon desktop (%lu), non-fatal\n", GetLastError());
+        /* Non-fatal: Default desktop is sufficient */
+    }
+
+    /* Skip Screen-Saver desktop on ARM64 */
+
+    /* Switch to Application desktop. SwitchDesktop triggers co_IntShowDesktop
+     * which sets WS_VISIBLE on the desktop window — required for
+     * VIS_ComputeVisibleRegion and WM_PAINT delivery to child windows.
+     * testgui.exe inherits this desktop from its creating thread.
+     * Note: SetThreadDesktop may fail if thread already has windows,
+     * but SwitchDesktop must still be called independently. */
+    if (Session->ApplicationDesktop)
+    {
+        if (!SetThreadDesktop(Session->ApplicationDesktop))
+        {
+            ERR("WL: ARM64: SetThreadDesktop(Application) failed (%lu)\n", GetLastError());
+        }
+        if (!SwitchDesktop(Session->ApplicationDesktop))
+        {
+            ERR("WL: ARM64: SwitchDesktop(Application) failed (%lu)\n", GetLastError());
+        }
+    }
 #else
     /*
      * Create the application desktop

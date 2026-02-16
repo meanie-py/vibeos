@@ -3003,6 +3003,15 @@ ExAllocatePoolWithQuotaTag(IN POOL_TYPE PoolType,
         PoolType &= ~POOL_QUOTA_FAIL_INSTEAD_OF_RAISE;
     }
 
+#ifdef _M_ARM64
+    //
+    // ARM64 DUMMY_PSEH: callers use _SEH2_TRY to catch the raised exception,
+    // but SEH handlers are dead code. Return NULL instead — callers that
+    // don't check NULL will get an AV caught by KSEH-SKIP.
+    //
+    Raise = FALSE;
+#endif
+
     //
     // Inject the pool quota mask
     //

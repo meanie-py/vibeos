@@ -607,15 +607,9 @@ InitThreadCallback(PETHREAD Thread)
      * Do not try to open a desktop or window station before the very first
      * (interactive) window station has been created by Winlogon.
      */
-#ifdef _M_ARM64
-    /* ARM64: Skip desktop assignment — no desktops are created on ARM64.
-     * IntResolveDesktop + IntSetThreadDesktop would crash due to DUMMY_PSEH. */
-    if (FALSE)
-#else
     if (!(ptiCurrent->TIF_flags & (TIF_SYSTEMTHREAD | TIF_CSRSSTHREAD)) &&
         ptiCurrent->ppi->hdeskStartup == NULL &&
         InputWindowStation != NULL)
-#endif
     {
         HWINSTA hWinSta = NULL;
         HDESK hDesk = NULL;
@@ -708,9 +702,8 @@ InitThreadCallback(PETHREAD Thread)
         if (!NT_SUCCESS(Status))
         {
 #ifdef _M_ARM64
-            /* KeUserModeCallback is not yet implemented on ARM64 —
-             * co_IntClientThreadSetup will always fail. Continue without
-             * the user-mode client thread setup. */
+            /* ARM64: KeUserModeCallback is implemented but some callbacks may
+             * still fail during early bringup. Keep non-fatal for now. */
             ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (ARM64 non-fatal)\n", Status);
 #else
             ERR_CH(UserThread, "ClientThreadSetup failed with Status 0x%08lx\n", Status);
