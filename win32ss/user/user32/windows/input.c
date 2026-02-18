@@ -663,8 +663,8 @@ GetLastInputInfo(PLASTINPUTINFO plii)
         return FALSE;
     }
 
-    plii->dwTime = gpsi->dwLastRITEventTickCount;
-    return TRUE;
+    plii->dwTime = gpsi ? gpsi->dwLastRITEventTickCount : 0;
+    return gpsi != NULL;
 }
 
 /*

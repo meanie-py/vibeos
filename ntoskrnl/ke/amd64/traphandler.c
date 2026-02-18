@@ -135,17 +135,18 @@ NtSyscallFailure(void)
 
 PVOID
 KiSystemCallHandler(
-    VOID)
+    _In_ PKTRAP_FRAME TrapFrame)
 {
-    PKTRAP_FRAME TrapFrame;
     PKSERVICE_TABLE_DESCRIPTOR DescriptorTable;
     PKTHREAD Thread;
     PULONG64 KernelParams, UserParams;
     ULONG ServiceNumber, TableIndex, Count;
     ULONG64 UserRsp;
 
-    /* Get a pointer to the trap frame */
-    TrapFrame = (PKTRAP_FRAME)((PULONG64)_AddressOfReturnAddress() + 1 + MAX_SYSCALL_PARAMS);
+    /* TrapFrame is passed from KiSystemCallEntry64 assembly.
+       The old _AddressOfReturnAddress() calculation is broken with clang
+       because clang's non-standard frame pointer layout makes
+       __builtin_frame_address(0) return a wrong address. */
 
     /* Increase system call count */
     __addgsdword(FIELD_OFFSET(KIPCR, Prcb.KeSystemCalls), 1);
@@ -166,7 +167,21 @@ KiSystemCallHandler(
     _enable();
 
     /* If the usermode rsp was not a usermode address, prepare an exception */
-    if (UserRsp > MmUserProbeAddress) UserRsp = MmUserProbeAddress;
+    if (UserRsp > MmUserProbeAddress
+#ifdef _USE_DUMMY_PSEH
+        /* DUMMY_PSEH: also reject NULL/low RSP since SEH won't catch faults */
+        || UserRsp < 0x10000
+#endif
+        )
+    {
+#ifdef _USE_DUMMY_PSEH
+        /* DUMMY_PSEH: _SEH2_EXCEPT won't catch the probe page fault, fail now */
+        TrapFrame->Rax = STATUS_ACCESS_VIOLATION;
+        return (PVOID)NtSyscallFailure;
+#else
+        UserRsp = MmUserProbeAddress;
+#endif
+    }
 
     /* Get the address of the usermode and kernelmode parameters */
     UserParams = (PULONG64)UserRsp + 1;
@@ -228,6 +243,21 @@ KiSystemCallHandler(
 
     /* Get stack bytes and calculate argument count */
     Count = DescriptorTable->Number[ServiceNumber] / 8;
+
+#ifdef _USE_DUMMY_PSEH
+    /* DUMMY_PSEH: validate user stack range before copying parameters.
+       Only check address range — do NOT use MmIsAddressValid, as demand-paged
+       user stack pages may not be resident yet and will be faulted in normally. */
+    if (Count > 4)
+    {
+        ULONG64 EndAddr = (ULONG64)&UserParams[Count - 1] + sizeof(ULONG64) - 1;
+        if (EndAddr > MmUserProbeAddress)
+        {
+            TrapFrame->Rax = STATUS_ACCESS_VIOLATION;
+            return (PVOID)NtSyscallFailure;
+        }
+    }
+#endif
 
     _SEH2_TRY
     {

@@ -269,7 +269,7 @@ CURSORICON_ConvertPngToBmpIcon(
 
 VOID LoadSystemCursors(VOID)
 {
-   if (!gpsi->hIconSmWindows)
+   if (!gpsi || !gpsi->hIconSmWindows)
    {
        ERR("Loading System Cursors\n");
        NtUserSetSystemCursor(LoadImageW( 0, IDC_ARROW,       IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE ), OCR_NORMAL);

@@ -40,10 +40,10 @@ add_library(shellbtrfs MODULE
 file(GLOB shellbtrfs_rc_deps *.ico)
 add_rc_deps(shellbtrfs.rc ${shellbtrfs_rc_deps})
 
-# On ARM64, libc++.a:string.cpp.obj defines swprintf (C99-style) which conflicts
+# With llvm-mingw, libc++.a:string.cpp.obj defines swprintf (C99-style) which conflicts
 # with the msvcrt import thunk (swprintf=_swprintf). Redirect calls to _swprintf
 # directly to avoid the "swprintf was replaced" linker error.
-if(ARCH STREQUAL "arm64")
+if(USE_LLVM_MINGW)
     target_compile_definitions(shellbtrfs PRIVATE swprintf=_swprintf vswprintf=_vswprintf)
 endif()
 

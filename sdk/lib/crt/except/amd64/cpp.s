@@ -6,14 +6,14 @@
 .align 4
 
 MACRO(START_VTABLE, shortname, cxxname)
-EXTERN shortname&_rtti:PROC
-EXTERN &shortname&_vector_dtor:PROC
-    .quad shortname&_rtti
-PUBLIC &shortname&_vtable
-&shortname&_vtable:
-PUBLIC &cxxname
-&cxxname:
-    .quad &shortname&_vector_dtor
+EXTERN \shortname\()_rtti:PROC
+EXTERN \shortname\()_vector_dtor:PROC
+    .quad \shortname\()_rtti
+PUBLIC \shortname\()_vtable
+\shortname\()_vtable:
+PUBLIC \cxxname
+\cxxname\():
+    .quad \shortname\()_vector_dtor
 ENDM
 
 MACRO(DEFINE_EXCEPTION_VTABLE, shortname, cxxname)

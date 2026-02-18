@@ -23,12 +23,19 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(NO_ROSSYM TRUE)
 elseif(NOT ARCH STREQUAL "i386")
     set(NO_ROSSYM TRUE)
+elseif(USE_LLVM_MINGW)
+    # rsym can't handle Clang-generated binaries (long mangled names, different debug info)
+    set(NO_ROSSYM TRUE)
 elseif(NOT DEFINED NO_ROSSYM)
     set(NO_ROSSYM FALSE)
 endif()
 
-# PSEH3 is x86-specific (uses regparm, inline asm). For ARM64, use dummy PSEH.
-if(ARCH STREQUAL "arm64")
+# PSEH3 has Clang paths (pseh3.h) but Clang's ESP-relative locals break PSEH3's
+# embedded filter invocation which only restores EBP. This causes kernel crashes
+# (fastfat.sys FAT_FILE_SYSTEM bugcheck). Use DUMMY_PSEH for all llvm-mingw builds.
+# User-mode exception swallowing in KiUserExceptionDispatcher compensates.
+# ARM64 uses dummy PSEH (no i386-style fs:[0] SEH chain).
+if(ARCH STREQUAL "arm64" OR USE_LLVM_MINGW)
     set(USE_PSEH3 0)
     set(USE_DUMMY_PSEH 1)
 else()
@@ -48,6 +55,11 @@ if(USE_DUMMY_PSEH)
     add_definitions(-D_USE_DUMMY_PSEH=1)
 endif()
 
+if(USE_NATIVE_SEH)
+    add_definitions(-D_USE_NATIVE_SEH=1)
+endif()
+
+
 if(STACK_PROTECTOR)
     add_compile_options(-fstack-protector-strong)
 endif()
@@ -62,29 +74,29 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
 endif()
 
 # Prevent GCC from searching any of the default directories.
-if(ARCH STREQUAL "arm64")
-    # ARM64 with llvm-mingw: use -nostdinc for all languages.
+if(USE_LLVM_MINGW)
+    # llvm-mingw: use -nostdinc for all languages.
     # sdk/include/crt is excluded from include_directories() in CMakeLists.txt
     # and re-added here with lower priority so libc++ wrappers are found first.
     add_compile_options(-nostdinc)
 
     # Discover libc++ and clang builtin include paths from the toolchain
-    get_filename_component(_arm64_compiler_dir ${CMAKE_CXX_COMPILER} DIRECTORY)
-    get_filename_component(_arm64_toolchain_root ${_arm64_compiler_dir} DIRECTORY)
-    get_filename_component(_arm64_compiler_name ${CMAKE_CXX_COMPILER} NAME)
-    string(REGEX REPLACE "-clang\\+\\+$" "" _arm64_triplet "${_arm64_compiler_name}")
-    set(_arm64_libcxx "${_arm64_toolchain_root}/${_arm64_triplet}/include/c++/v1")
+    get_filename_component(_llvm_mingw_compiler_dir ${CMAKE_CXX_COMPILER} DIRECTORY)
+    get_filename_component(_llvm_mingw_toolchain_root ${_llvm_mingw_compiler_dir} DIRECTORY)
+    get_filename_component(_llvm_mingw_compiler_name ${CMAKE_CXX_COMPILER} NAME)
+    string(REGEX REPLACE "-clang\\+\\+$" "" _llvm_mingw_triplet "${_llvm_mingw_compiler_name}")
+    set(_llvm_mingw_libcxx "${_llvm_mingw_toolchain_root}/${_llvm_mingw_triplet}/include/c++/v1")
     execute_process(
         COMMAND ${CMAKE_CXX_COMPILER} --version
-        OUTPUT_VARIABLE _arm64_clang_ver_out OUTPUT_STRIP_TRAILING_WHITESPACE)
-    string(REGEX MATCH "clang version ([0-9]+)" _arm64_match "${_arm64_clang_ver_out}")
-    set(_arm64_clang_inc "${_arm64_toolchain_root}/lib/clang/${CMAKE_MATCH_1}/include")
+        OUTPUT_VARIABLE _llvm_mingw_clang_ver_out OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "clang version ([0-9]+)" _llvm_mingw_match "${_llvm_mingw_clang_ver_out}")
+    set(_llvm_mingw_clang_inc "${_llvm_mingw_toolchain_root}/lib/clang/${CMAKE_MATCH_1}/include")
 
     # For C/ASM: add CRT and clang builtins as -isystem
     # (vcruntime stays in -I via include_directories)
     add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-isystem${REACTOS_SOURCE_DIR}/sdk/include/crt>")
-    if(EXISTS "${_arm64_clang_inc}")
-        add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-isystem${_arm64_clang_inc}>")
+    if(EXISTS "${_llvm_mingw_clang_inc}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-isystem${_llvm_mingw_clang_inc}>")
     endif()
     # For RC (resource compiler): add CRT path via CMAKE_RC_FLAGS since windres
     # uses -I directly and doesn't support -isystem/-idirafter.
@@ -93,11 +105,11 @@ if(ARCH STREQUAL "arm64")
     # For C++: add libc++ and clang builtins as -isystem, then CRT as -idirafter.
     # Search order: -I (ReactOS non-CRT) > -isystem (libc++ wrappers) > -idirafter (CRT)
     # This way libc++ wrapper headers are found first, and #include_next chains to CRT.
-    if(EXISTS "${_arm64_libcxx}")
-        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_arm64_libcxx}>")
+    if(EXISTS "${_llvm_mingw_libcxx}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_llvm_mingw_libcxx}>")
     endif()
-    if(EXISTS "${_arm64_clang_inc}")
-        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_arm64_clang_inc}>")
+    if(EXISTS "${_llvm_mingw_clang_inc}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_llvm_mingw_clang_inc}>")
     endif()
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-idirafter${REACTOS_SOURCE_DIR}/sdk/include/crt>")
 else()
@@ -417,7 +429,12 @@ function(set_entrypoint MODULE ENTRYPOINT)
         # lld interprets "0" as a symbol name, not an address
         # Use __ImageBase as a dummy entry point for modules that don't need one
         if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-            target_link_options(${MODULE} PRIVATE "-Wl,-e,__ImageBase")
+            if(ARCH STREQUAL "i386")
+                # i386 adds _ prefix: __ImageBase becomes ___ImageBase
+                target_link_options(${MODULE} PRIVATE "-Wl,-e,___ImageBase")
+            else()
+                target_link_options(${MODULE} PRIVATE "-Wl,-e,__ImageBase")
+            endif()
         else()
             target_link_options(${MODULE} PRIVATE "-Wl,-entry,0")
         endif()
@@ -483,6 +500,16 @@ function(set_module_type_toolchain MODULE TYPE)
 
         # Believe it or not, cmake doesn't do that
         set_property(TARGET ${MODULE} APPEND PROPERTY LINK_DEPENDS $<TARGET_PROPERTY:native-pefixup,IMPORTED_LOCATION>)
+    endif()
+
+    # Fix lld i386 forwarding string underscore bug.
+    # lld adds '_' prefix to DLL forwarding targets (e.g. ntdll.Xxx -> _ntdll.Xxx).
+    # This post-build step patches the PE export table to skip the underscore.
+    if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+        add_custom_command(TARGET ${MODULE} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py
+                $<TARGET_FILE:${MODULE}>)
     endif()
 endfunction()
 
@@ -637,10 +664,18 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
     get_defines(_defines)
     get_includes(_includes)
 
-    add_custom_command(
-        OUTPUT ${_object_file}
-        COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
-        DEPENDS ${_asm_file})
+    if(CMAKE_ASM16_GCC)
+        # Use i686 mingw GCC for 16-bit boot sector code (handles preprocessing + GNU as)
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM16_GCC} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
+            DEPENDS ${_asm_file})
+    else()
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
+            DEPENDS ${_asm_file})
+    endif()
 
     add_custom_command(
         OUTPUT ${_binary_file}
@@ -651,6 +686,28 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
     set_source_files_properties(${_object_file} ${_binary_file} PROPERTIES GENERATED TRUE)
 
     add_custom_target(${_target_name} ALL DEPENDS ${_binary_file})
+endfunction()
+
+# Compile an assembly file with i686 mingw GCC instead of Clang.
+# Used for 16-bit code that Clang's assembler can't handle (symbol arithmetic, .code16, etc.)
+# Returns the object file path in the parent scope variable _result_var.
+function(compile_asm_with_gcc _source_file _result_var)
+    if(NOT CMAKE_ASM16_GCC)
+        message(FATAL_ERROR "compile_asm_with_gcc: CMAKE_ASM16_GCC not set")
+    endif()
+    get_filename_component(_src_name ${_source_file} NAME_WE)
+    set(_object_file ${CMAKE_CURRENT_BINARY_DIR}/${_src_name}_gcc.obj)
+    get_filename_component(_source_file_full_path ${_source_file} ABSOLUTE)
+
+    get_defines(_defines)
+    get_includes(_includes)
+
+    add_custom_command(
+        OUTPUT ${_object_file}
+        COMMAND ${CMAKE_ASM16_GCC} -x assembler-with-cpp -o ${_object_file} ${_includes} ${_defines} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm -D__ASM__ -c ${_source_file_full_path}
+        DEPENDS ${_source_file_full_path})
+
+    set(${_result_var} ${_object_file} PARENT_SCOPE)
 endfunction()
 
 function(allow_warnings __module)
@@ -692,8 +749,8 @@ macro(add_asm_files _target)
 endmacro()
 
 function(add_linker_script _target _linker_script_file)
-    # LLD in MinGW PE mode (used for ARM64) does not support -T linker scripts
-    if(ARCH STREQUAL "arm64")
+    # LLD in MinGW PE mode does not support -T linker scripts
+    if(USE_LLVM_MINGW)
         return()
     endif()
     get_filename_component(_file_full_path ${_linker_script_file} ABSOLUTE)
@@ -709,8 +766,9 @@ add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:WIT
 # We disable exceptions, unless said so
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:WITH_CXX_EXCEPTIONS>>,-fexceptions,-fno-exceptions>>")
 
-# G++ shipped with ROSBE uses sjlj exceptions on i386. Tell Clang it is so
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND ARCH STREQUAL "i386")
+# G++ shipped with ROSBE uses sjlj exceptions on i386. Tell Clang it is so.
+# But when using llvm-mingw, use DWARF exceptions (matching libunwind).
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND ARCH STREQUAL "i386" AND NOT USE_LLVM_MINGW)
     add_compile_options("$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<BOOL:$<TARGET_PROPERTY:WITH_CXX_EXCEPTIONS>>>:-fsjlj-exceptions>")
 endif()
 
@@ -757,8 +815,22 @@ if(LIBGCC_LOCATION_FOUND)
     # libgcc needs kernel32 and winpthread (an appropriate CRT must be linked manually)
     target_link_libraries(libgcc INTERFACE libwinpthread libkernel32)
 else()
-    # For clang/llvm-mingw, libgcc is not needed (compiler-rt builtins are linked automatically)
+    # For clang/llvm-mingw, use compiler-rt builtins instead of libgcc
+    # (needed for i386 64-bit division: __divdi3, __udivdi3, __umoddi3)
     add_library(libgcc INTERFACE)
+    if(USE_LLVM_MINGW)
+        execute_process(
+            COMMAND ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -print-libgcc-file-name
+            OUTPUT_VARIABLE _clang_rt_builtins OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(EXISTS "${_clang_rt_builtins}")
+            add_library(libclang_rt_builtins STATIC IMPORTED)
+            set_target_properties(libclang_rt_builtins PROPERTIES IMPORTED_LOCATION "${_clang_rt_builtins}")
+            target_link_libraries(libgcc INTERFACE libclang_rt_builtins)
+            # Also add to global link flags so kernel-mode drivers get it too
+            add_link_options("${_clang_rt_builtins}")
+            message(STATUS "Using compiler-rt builtins: ${_clang_rt_builtins}")
+        endif()
+    endif()
     target_link_libraries(libgcc INTERFACE libwinpthread libkernel32)
     message(STATUS "libgcc not found (using clang runtime), using interface library")
 endif()

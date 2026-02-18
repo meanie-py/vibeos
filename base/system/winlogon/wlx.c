@@ -971,6 +971,7 @@ CreateWindowStationAndDesktops(
      * infrastructure). Pass NULL security to use defaults.
      */
 #else
+    DbgPrint("[WINLOGON] CreateWindowStationAndDesktops: creating winsta security\n");
     if (!CreateWinstaSecurity(&WlWinstaSecurityDescriptor))
     {
         ERR("WL: Failed to create winsta security!\n");
@@ -1015,6 +1016,7 @@ CreateWindowStationAndDesktops(
     /*
      * Create the interactive window station
      */
+    DbgPrint("[WINLOGON] CreateWindowStationAndDesktops: calling CreateWindowStationW(WinSta0)\n");
     Session->InteractiveWindowStationName = L"WinSta0";
     Session->InteractiveWindowStation = CreateWindowStationW(
         Session->InteractiveWindowStationName,
@@ -1030,12 +1032,15 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create window station (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] CreateWindowStationW succeeded: handle=%p\n", Session->InteractiveWindowStation);
 
+    DbgPrint("[WINLOGON] Calling SetProcessWindowStation\n");
     if (!SetProcessWindowStation(Session->InteractiveWindowStation))
     {
         ERR("WL: SetProcessWindowStation() failed (error %lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] SetProcessWindowStation OK\n");
 
 #ifdef _M_ARM64
     /*
@@ -1092,6 +1097,7 @@ CreateWindowStationAndDesktops(
     /*
      * Create the application desktop
      */
+    DbgPrint("[WINLOGON] Creating Default desktop\n");
     Session->ApplicationDesktop = CreateDesktopW(
         L"Default",
         NULL,
@@ -1104,10 +1110,12 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Default desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Default desktop created: %p\n", Session->ApplicationDesktop);
 
     /*
      * Create the winlogon desktop
      */
+    DbgPrint("[WINLOGON] Creating Winlogon desktop\n");
     Session->WinlogonDesktop = CreateDesktopW(
         L"Winlogon",
         NULL,
@@ -1120,10 +1128,12 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Winlogon desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Winlogon desktop created: %p\n", Session->WinlogonDesktop);
 
     /*
      * Create the screen saver desktop
      */
+    DbgPrint("[WINLOGON] Creating Screen-Saver desktop\n");
     Session->ScreenSaverDesktop = CreateDesktopW(
         L"Screen-Saver",
         NULL,
@@ -1136,16 +1146,19 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Screen-Saver desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Screen-Saver desktop created\n");
 
     /*
      * Switch to winlogon desktop
     */
+    DbgPrint("[WINLOGON] Switching to Winlogon desktop\n");
     if (!SetThreadDesktop(Session->WinlogonDesktop) ||
         !SwitchDesktop(Session->WinlogonDesktop))
     {
         ERR("WL: Cannot switch to Winlogon desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] SwitchDesktop OK\n");
 #endif
 
     SetWindowStationUser(Session->InteractiveWindowStation,

@@ -16,8 +16,9 @@
 .code64
 
 PUBLIC __chkstk
-PUBLIC ___chkstk_ms
 PUBLIC __alloca_probe
+/* Make ___chkstk_ms weak so compiler-rt's version takes precedence */
+.weak ___chkstk_ms
 
 __alloca_probe:
 ___chkstk_ms:

@@ -1505,11 +1505,14 @@ void __init_global_locale()
         return;
     global_locale = MSVCRT__create_locale(0, "C");
 
-    __lc_codepage = MSVCRT_locale->locinfo->lc_codepage;
-    MSVCRT___lc_collate_cp = MSVCRT_locale->locinfo->lc_collate_cp;
-    __mb_cur_max = MSVCRT_locale->locinfo->mb_cur_max;
-    for(i=LC_MIN; i<=LC_MAX; i++)
-        MSVCRT___lc_handle[i] = MSVCRT_locale->locinfo->lc_handle[i];
+    if (MSVCRT_locale && MSVCRT_locale->locinfo)
+    {
+        __lc_codepage = MSVCRT_locale->locinfo->lc_codepage;
+        MSVCRT___lc_collate_cp = MSVCRT_locale->locinfo->lc_collate_cp;
+        __mb_cur_max = MSVCRT_locale->locinfo->mb_cur_max;
+        for(i=LC_MIN; i<=LC_MAX; i++)
+            MSVCRT___lc_handle[i] = MSVCRT_locale->locinfo->lc_handle[i];
+    }
     _setmbcp(_MB_CP_ANSI);
     UNLOCK_LOCALE;
 }

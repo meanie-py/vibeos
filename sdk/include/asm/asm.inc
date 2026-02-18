@@ -286,6 +286,15 @@ ENDM
     .globl \name
     .p2align 2
     \name:
+#elif defined(__clang__)
+    /* Clang's integrated assembler doesn't support .func/.endfunc */
+    .globl \name
+    \name:
+#ifdef _X86_
+    .cfi_startproc
+#else
+    .seh_proc \name
+#endif
 #elif defined(_X86_)
     .func \name
     \name:
@@ -302,6 +311,13 @@ ENDM
 .macro .ENDP
 #ifdef _M_ARM64
     /* ARM64 COFF doesn't support .endfunc/.seh_endproc */
+#elif defined(__clang__)
+    /* Clang's integrated assembler doesn't support .func/.endfunc */
+#ifdef _X86_
+    .cfi_endproc
+#else
+    .seh_endproc
+#endif
 #elif defined(_X86_)
     .cfi_endproc
     .endfunc
@@ -316,6 +332,12 @@ ENDM
 .macro PUBLIC symbol
     .global \symbol
 .endm
+#ifdef __clang__
+/* Clang is case-sensitive — define lowercase alias */
+.macro public symbol
+    .global \symbol
+.endm
+#endif
 
 /* No special marking of global labels */
 .macro GLOBAL_LABEL label
@@ -331,9 +353,14 @@ ENDM
 .endm
 
 /* MASM compatible ALIGN */
+.macro ALIGN x
+    .align x
+.endm
+#ifdef __clang__
 .macro align x
     .align x
 .endm
+#endif
 
 /* MASM compatible REPEAT, additional ENDR */
 #define REPEAT .rept
@@ -362,16 +389,20 @@ ENDM
 .endm
 
 .macro retf
-    lret
+    .byte 0xCB
 .endm
 
 /* MASM compatible EXTERN */
-.macro EXTERN name
+.macro EXTERN name:vararg
 .endm
 
 /* MASM needs an END tag */
 .macro END
 .endm
+#ifdef __clang__
+.macro end
+.endm
+#endif
 
 .macro .MODEL model
 .endm
@@ -400,11 +431,12 @@ ENDM
 .endm
 
 .macro .pushframe param
-    /*
-     * FIXME. .seh_pushframe doesn't accept code argument.
-     * Patch sent.
-     */
-    .seh_pushframe \param
+    /* Clang requires @code prefix for .seh_pushframe */
+    .ifc \param, code
+    .seh_pushframe @code
+    .else
+    .seh_pushframe
+    .endif
 .endm
 
 .macro .pushreg reg
@@ -427,6 +459,46 @@ ENDM
     .seh_endprologue
 .endm
 
+#ifdef __clang__
+/* Uppercase aliases (Clang is case-sensitive for macro names) */
+.macro .ALLOCSTACK size
+    .seh_stackalloc \size
+.endm
+
+.macro .PUSHFRAME param
+    .ifc \param, code
+    .seh_pushframe @code
+    .else
+    .seh_pushframe
+    .endif
+.endm
+
+.macro .PUSHREG reg
+    .seh_pushreg \reg
+.endm
+
+.macro .SAVEREG reg, offset
+    .seh_savereg \reg, \offset
+.endm
+
+.macro .SAVEXMM128 reg, offset
+    .seh_savexmm \reg, \offset
+.endm
+
+.macro .SETFRAME reg, offset
+    .seh_setframe \reg, \offset
+.endm
+
+.macro .ENDPROLOG
+    .seh_endprologue
+.endm
+
+/* .seh_code switches back to .text after .seh_handlerdata */
+.macro .seh_code
+    .text
+.endm
+#endif /* __clang__ */
+
 .macro absolute address
     __absolute__address__ = \address
 .endm
@@ -440,7 +512,7 @@ ENDM
     jmp 4f
 1:  .ascii "Unimplemented %s (%s:%d)", CR, LF, NUL
 2:  .asciz "\func"
-3:  .asciz \file
+3:  .asciz "\file"
 4:
     sub rsp, 0x20
     lea rcx, 1b[rip]
@@ -458,6 +530,15 @@ ENDM
 #define endif .endif
 #define else .else
 #define elseif .elseif
+
+/* MASM logical/bitwise operators → GAS equivalents */
+#define AND &
+#define OR |
+#define NOT ~
+#define EQ ==
+#define NE !=
+#define LT <
+#define GT >
 
 /* CFI annotations */
 #define CFI_STARTPROC .cfi_startproc

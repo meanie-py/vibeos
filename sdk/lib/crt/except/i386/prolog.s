@@ -19,8 +19,8 @@ PUBLIC __EH_prolog
 __EH_prolog:
     push -1
     push eax
-    push fs:0
-    mov fs:0, esp
+    push dword ptr fs:[0]
+    mov dword ptr fs:[0], esp
     mov eax, [esp + 12]
     mov [esp + 12], ebp
     lea ebp, [esp + 12]

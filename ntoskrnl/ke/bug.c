@@ -1416,6 +1416,12 @@ KeBugCheckEx(IN ULONG BugCheckCode,
              IN ULONG_PTR BugCheckParameter3,
              IN ULONG_PTR BugCheckParameter4)
 {
+    DbgPrint("\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n",
+             BugCheckCode,
+             (PVOID)BugCheckParameter1,
+             (PVOID)BugCheckParameter2,
+             (PVOID)BugCheckParameter3,
+             (PVOID)BugCheckParameter4);
 #ifdef _M_ARM64
     /* UART trace for bugcheck on ARM64 */
     {
@@ -1480,6 +1486,7 @@ VOID
 NTAPI
 KeBugCheck(ULONG BugCheckCode)
 {
+    DbgPrint("\n*** BUGCHECK: 0x%08lX\n", BugCheckCode);
 #ifdef _M_ARM64
     {
         volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;

@@ -105,7 +105,7 @@ Return Value:
 {
     PFCB Fcb;
     NTSTATUS Status;
-    PIRP_CONTEXT IrpContext = NULL;
+    _SEH2_VOLATILE PIRP_CONTEXT IrpContext = NULL;
 
     BOOLEAN ModWriter = FALSE;
     BOOLEAN TopLevel = FALSE;

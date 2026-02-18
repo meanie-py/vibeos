@@ -151,7 +151,7 @@ CharPrevA(LPCSTR start, LPCSTR ptr)
     if (ptr > start)
     {
         --ptr;
-        if (gpsi->dwSRVIFlags & SRVINFO_DBCSENABLED)
+        if (gpsi && gpsi->dwSRVIFlags & SRVINFO_DBCSENABLED)
         {
             LPCSTR ch;
             BOOL dbl = FALSE;

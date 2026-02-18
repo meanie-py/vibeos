@@ -81,7 +81,12 @@ GetNotificationHandler(
     /* NUL-terminate */
     szFuncBuffer[dwSize / sizeof(CHAR) - 1] = ANSI_NULL;
 
-    return (PWLX_NOTIFY_HANDLER)GetProcAddress(hModule, szFuncBuffer);
+    {
+        PWLX_NOTIFY_HANDLER handler = (PWLX_NOTIFY_HANDLER)GetProcAddress(hModule, szFuncBuffer);
+        if (handler && (ULONG_PTR)handler < 0x10000)
+            TRACE("GetNotificationHandler: %s -> '%s' -> %p (SUSPICIOUS)\n", pNotification, szFuncBuffer, handler);
+        return handler;
+    }
 }
 
 /**
@@ -491,6 +496,15 @@ CallNotificationDll(
     pNotifyHandler = NotificationDll->Handler[Type];
     if (!pNotifyHandler)
         return;
+
+    /* Validate handler pointer — must be within the DLL's address range */
+    if ((ULONG_PTR)pNotifyHandler < (ULONG_PTR)NotificationDll->hModule ||
+        (ULONG_PTR)pNotifyHandler < 0x10000)
+    {
+        ERR("WL: Bad notification handler %p for type %d in %S (module %p), skipping\n",
+            pNotifyHandler, Type, NotificationDll->pszDllName, NotificationDll->hModule);
+        return;
+    }
 
     /* Capture the notification info structure, since
      * the notification handler might mess with it */

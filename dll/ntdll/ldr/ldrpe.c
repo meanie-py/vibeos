@@ -580,13 +580,13 @@ LdrpHandleOneOldFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
                                   &AlreadyLoaded);
     if (!NT_SUCCESS(Status))
     {
-#ifdef _M_ARM64
-        /* ARM64 early boot: tolerate missing DLLs. Many DLLs have large
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+        /* Early boot: tolerate missing DLLs. Many DLLs have large
          * transitive dependency trees (rpcrt4 -> wininet -> shell32 etc.)
          * that aren't needed at boot time. Skip the missing import and
          * leave its IAT thunks unresolved — DllMain code paths don't
          * call functions from these missing dependencies. */
-        DPRINT1("LDR: ARM64 skipping missing import %s for %wZ (status %x)\n",
+        DbgPrint("LDR: Skipping missing import %s for %wZ (status %x)\n",
                 ImportName, &LdrEntry->BaseDllName, Status);
         goto SkipEntry;
 #else
@@ -1178,6 +1178,17 @@ FailurePath:
             ForwarderName.Buffer = ImportName;
             ForwarderName.Length = (USHORT)(DotPosition - ImportName);
             ForwarderName.MaximumLength = ForwarderName.Length;
+
+            /* LLD/MinGW workaround: LLD prepends '_' to forward module names
+               on i386 (e.g. "_ntdll.RtlFoo" instead of "ntdll.RtlFoo").
+               DLL module names never start with '_', so strip it. */
+            if (ForwarderName.Length > 1 && ForwarderName.Buffer[0] == '_')
+            {
+                ForwarderName.Buffer++;
+                ForwarderName.Length--;
+                ForwarderName.MaximumLength--;
+            }
+
             Status = RtlAnsiStringToUnicodeString(&TempUString,
                                                   &ForwarderName,
                                                   TRUE);

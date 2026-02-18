@@ -76,7 +76,7 @@ CreateFreeLoaderReactOSEntries(
     /* ReactOS */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS");
     BootEntry->FriendlyName = L"\"ReactOS\"";
-    Options->OsLoadOptions  = L"/FASTDETECT";
+    Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS"));
 
     /* ReactOS_Debug */

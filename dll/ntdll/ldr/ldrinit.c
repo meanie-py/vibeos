@@ -850,16 +850,37 @@ LdrpRunInitializeRoutines(IN PCONTEXT Context OPTIONAL)
                     DPRINT1("%wZ - Calling entry point at %p for DLL_PROCESS_ATTACH\n",
                             &LdrEntry->BaseDllName, EntryPoint);
                 }
+                {
+                    CHAR dllNameA[64];
+                    ULONG i, len = LdrEntry->BaseDllName.Length / sizeof(WCHAR);
+                    if (len > 60) len = 60;
+                    for (i = 0; i < len; i++)
+                        dllNameA[i] = (CHAR)LdrEntry->BaseDllName.Buffer[i];
+                    dllNameA[len] = 0;
+                    DbgPrint("[LDR] DllMain(%s) ATTACH PID=%lu Base=%p\n", dllNameA,
+                             (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess,
+                             LdrEntry->DllBase);
+                }
                 DllStatus = LdrpCallInitRoutine(EntryPoint,
                                                 LdrEntry->DllBase,
                                                 DLL_PROCESS_ATTACH,
                                                 Context);
+                {
+                    CHAR dllNameA[64];
+                    ULONG i, len = LdrEntry->BaseDllName.Length / sizeof(WCHAR);
+                    if (len > 60) len = 60;
+                    for (i = 0; i < len; i++)
+                        dllNameA[i] = (CHAR)LdrEntry->BaseDllName.Buffer[i];
+                    dllNameA[len] = 0;
+                    DbgPrint("[LDR] DllMain(%s) ret=%d PID=%lu\n", dllNameA, DllStatus,
+                             (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
+                }
             }
             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
             {
                 DllStatus = FALSE;
-                DPRINT1("WARNING: Exception 0x%x during LdrpCallInitRoutine(DLL_PROCESS_ATTACH) for %wZ\n",
-                        _SEH2_GetExceptionCode(), &LdrEntry->BaseDllName);
+                DbgPrint("[LDR] EXCEPTION during DllMain PID=%lu\n",
+                        (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             }
             _SEH2_END;
 
@@ -875,8 +896,8 @@ LdrpRunInitializeRoutines(IN PCONTEXT Context OPTIONAL)
             /* Fail if DLL init failed */
             if (!DllStatus)
             {
-                DPRINT1("LDR: DLL_PROCESS_ATTACH for dll \"%wZ\" (InitRoutine: %p) failed\n",
-                    &LdrEntry->BaseDllName, EntryPoint);
+                DbgPrint("[LDR] FAILED PID=%lu\n",
+                    (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
                 Status = STATUS_DLL_INIT_FAILED;
                 goto Quickie;
             }
@@ -917,7 +938,6 @@ LdrpRunInitializeRoutines(IN PCONTEXT Context OPTIONAL)
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
-            /* Do nothing */
         }
         _SEH2_END;
 

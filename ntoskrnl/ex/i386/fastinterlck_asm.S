@@ -108,7 +108,7 @@ PUBLIC @ExInterlockedPushEntrySList@12
 @ExInterlockedPushEntrySList@12:
 
     /* So we can fall through below */
-    pop [esp]
+    pop dword ptr [esp]
 
 PUBLIC @InterlockedPushEntrySList@8
 @InterlockedPushEntrySList@8:

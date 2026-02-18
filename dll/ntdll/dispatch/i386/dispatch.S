@@ -132,7 +132,7 @@ _KiUserCallbackDispatcher@12:
     pop edx
 
     /* Get the callback table */
-    mov eax, [fs:TEB_PEB]
+    mov eax, dword ptr fs:[TEB_PEB]
     mov eax, [eax+PEB_KERNEL_CALLBACK_TABLE]
 
     /* Call the routine */
@@ -165,7 +165,7 @@ _KiRaiseUserExceptionDispatcher@0:
 
     /* Fill out the record */
     mov [esp+EXCEPTION_RECORD_EXCEPTION_ADDRESS], eax
-    mov eax, [fs:KPCR_TEB]
+    mov eax, dword ptr fs:[KPCR_TEB]
     mov eax, [eax+TEB_EXCEPTION_CODE]
     mov [esp+EXCEPTION_RECORD_EXCEPTION_CODE], eax
     mov dword ptr [esp+EXCEPTION_RECORD_EXCEPTION_FLAGS], 0
@@ -220,6 +220,31 @@ RaiseException:
     pop ebx
     pop ecx
 
+#ifdef _USE_DUMMY_PSEH
+    /* DUMMY_PSEH: SEH handlers are dead code, so no handler will ever catch
+     * exceptions. For continuable exceptions (e.g. RPC_S_SERVER_UNAVAILABLE),
+     * swallow the exception by resuming execution. This simulates the effect
+     * of _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) catching the exception and
+     * falling through after the TRY/EXCEPT block. */
+    test dword ptr [ebx+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
+    jnz _DummyPseh_RaiseSecondChance
+
+    /* Don't swallow NT error/warning statuses (hardware exceptions like
+     * ACCESS_VIOLATION 0xC0000005). These re-execute the faulting instruction
+     * on ZwContinue, causing an infinite loop. Only swallow "software"
+     * exceptions with codes below 0xC0000000 (e.g. RPC_S_SERVER_UNAVAILABLE
+     * 0x6BA, C++ exception 0xE06D7363). */
+    cmp dword ptr [ebx+EXCEPTION_RECORD_EXCEPTION_CODE], HEX(C0000000)
+    jae _DummyPseh_RaiseSecondChance
+
+    /* Continuable software exception — swallow it by resuming execution */
+    push 0
+    push ecx
+    call _ZwContinue@8
+    jmp Exit
+
+_DummyPseh_RaiseSecondChance:
+#endif
     /* Raise the exception */
     push 0
     push ecx

@@ -108,6 +108,7 @@ DllMain(HANDLE hDll,
     {
         case DLL_PROCESS_ATTACH:
         {
+            DbgPrint("[kernel32] DllMain PROCESS_ATTACH PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             /* Set no filter initially */
             GlobalTopLevelExceptionFilter = RtlEncodePointer(NULL);
 
@@ -147,7 +148,7 @@ DllMain(HANDLE hDll,
                                               &BaseRunningInServerProcess);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT1("Failed to connect to CSR (Status %lx)\n", Status);
+                DbgPrint("[kernel32] CsrClientConnectToServer FAILED Status=0x%lx PID=%lu\n", Status, (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
 #ifdef _M_ARM64
                 DPRINT1("ARM64: Continuing without CSRSS connection\n");
 #else
@@ -253,6 +254,7 @@ DllMain(HANDLE hDll,
 
             /* Insert more dll attach stuff here! */
             DllInitialized = TRUE;
+            DbgPrint("[kernel32] DllMain PROCESS_ATTACH done OK PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             break;
         }
 

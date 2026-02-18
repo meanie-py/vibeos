@@ -1425,6 +1425,7 @@
 @ cdecl -arch=!i386 sinf(float)
 @ cdecl sinh(double)
 @ cdecl -arch=!i386 sinhf(float)
+@ varargs snprintf(ptr long str) _snprintf
 @ varargs sprintf(ptr str)
 @ varargs sprintf_s(ptr long str)
 @ cdecl sqrt(double)

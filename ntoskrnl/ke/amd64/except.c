@@ -667,8 +667,22 @@ KiGeneralProtectionFaultHandler(
         return STATUS_ACCESS_VIOLATION;
     }
 
-    ASSERT(FALSE);
-    return STATUS_UNSUCCESSFUL;
+    /* Check for IN/OUT instructions (I/O port access) */
+    if (Instructions[0] == 0xE4 || Instructions[0] == 0xE5 ||  // IN  imm8
+        Instructions[0] == 0xE6 || Instructions[0] == 0xE7 ||  // OUT imm8
+        Instructions[0] == 0xEC || Instructions[0] == 0xED ||  // IN  DX
+        Instructions[0] == 0xEE || Instructions[0] == 0xEF)    // OUT DX
+    {
+        /* I/O port access fault */
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    /* Unrecognized kernel-mode GPF — log and dispatch as access violation */
+    DPRINT1("KiGeneralProtectionFaultHandler: Unhandled kernel GPF at RIP=%p "
+            "Instr: %02x %02x %02x %02x\n",
+            (PVOID)TrapFrame->Rip,
+            Instructions[0], Instructions[1], Instructions[2], Instructions[3]);
+    return STATUS_ACCESS_VIOLATION;
 }
 
 NTSTATUS

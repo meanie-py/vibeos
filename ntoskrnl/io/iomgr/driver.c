@@ -1257,7 +1257,11 @@ IopInitializeSystemDrivers(VOID)
     ARM64_UART_TRACE("[SYSDRV] PiPerformSyncDeviceAction done\r\n");
 
     /* HACK: No system drivers on the BootCD */
-    if (KeLoaderBlock->SetupLdrBlock) return;
+    if (KeLoaderBlock->SetupLdrBlock)
+    {
+        DPRINT1("IopInitializeSystemDrivers: SetupLdrBlock is set, skipping system drivers\n");
+        return;
+    }
 
 #ifdef _M_ARM64
     /* ARM64: Skip loading system-start drivers from the filesystem.
@@ -1271,11 +1275,14 @@ IopInitializeSystemDrivers(VOID)
     SavedList = DriverList = CmGetSystemDriverList();
     ASSERT(DriverList);
 
+    DPRINT1("IopInitializeSystemDrivers: loading system-start drivers\n");
+
     ARM64_UART_TRACE("[SYSDRV] Loading system drivers...\r\n");
 
     /* Loop it */
     while (*DriverList)
     {
+        DPRINT1("  SysDrv: %wZ\n", *DriverList);
 #if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
         {
             volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;

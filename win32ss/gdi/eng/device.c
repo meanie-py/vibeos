@@ -204,7 +204,7 @@ EngpUpdateGraphicsDeviceList(VOID)
         ERR("Could not read MaxObjectNumber, defaulting to 0.\n");
     }
 
-    TRACE("Found %lu devices\n", ulMaxObjectNumber + 1);
+    ERR("EngpUpdateGraphicsDeviceList: Found %lu devices\n", ulMaxObjectNumber + 1);
 
     /* Loop through all adapters, to detect new ones */
     for (iDevNum = 0; iDevNum <= ulMaxObjectNumber; iDevNum++)
@@ -228,13 +228,20 @@ EngpUpdateGraphicsDeviceList(VOID)
         Status = RegQueryValue(hkey, awcDeviceName, REG_SZ, awcBuffer, &cbValue);
         if (!NT_SUCCESS(Status))
         {
-            ERR("failed to query the registry path:0x%lx\n", Status);
+            ERR("EngpUpdateGraphicsDeviceList: failed to query %S: 0x%lx\n", awcDeviceName, Status);
             continue;
         }
 
+        ERR("EngpUpdateGraphicsDeviceList: dev %lu = %S -> %S\n", iDevNum, awcDeviceName, awcBuffer);
+
         /* Initialize the driver for this device */
         pGraphicsDevice = InitDisplayDriver(awcDeviceName, awcBuffer);
-        if (!pGraphicsDevice) continue;
+        if (!pGraphicsDevice)
+        {
+            ERR("EngpUpdateGraphicsDeviceList: InitDisplayDriver failed for %S\n", awcDeviceName);
+            continue;
+        }
+        ERR("EngpUpdateGraphicsDeviceList: registered device %S\n", pGraphicsDevice->szWinDeviceName);
     }
 
     /* Close the device map registry key */

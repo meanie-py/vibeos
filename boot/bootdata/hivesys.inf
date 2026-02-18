@@ -1563,6 +1563,10 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","PATHEXT",0x
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TEMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","windir",0x00020002,"%SystemRoot%"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\Administrator"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\All Users"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEDRIVE",0x00000002,"C:"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEPATH",0x00020002,"\Documents and Settings\Administrator"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIMENG_DEBUG_LEVEL",0x00000000,"4"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIM_DEBUG_LEVEL",0x00000000,"4"
 
@@ -1603,28 +1607,6 @@ HKLM,"SYSTEM\CurrentControlSet\Services\swenum","ErrorControl",0x00010001,0x0000
 HKLM,"SYSTEM\CurrentControlSet\Services\swenum","ImagePath",0x00020000,"system32\drivers\swenum.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\swenum","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\swenum","Type",0x00010001,0x00000001
-
-; PL011 UART driver (ARM64 QEMU virt) — boot start so it's available before csrss
-HKLM,"SYSTEM\CurrentControlSet\Services\pl011","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Group",0x00000000,"Boot Bus Extender"
-HKLM,"SYSTEM\CurrentControlSet\Services\pl011","ImagePath",0x00020000,"system32\drivers\pl011.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\pl011","Type",0x00010001,0x00000001
-
-; ARM64 input stub driver — provides \Device\KeyboardClass0 and \Device\PointerClass0
-; for Win32k RIT. Must load before csrss/winsrv creates desktop thread.
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Group",0x00000000,"Boot Bus Extender"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","ImagePath",0x00020000,"system32\drivers\arm64input.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64input","Type",0x00010001,0x00000001
-
-; ARM64 framebuffer video device driver — boot start so \Device\Video0 exists before csrss
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
-HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
 
 ; Audio Service
 HKLM,"SYSTEM\CurrentControlSet\Services\AudioSrv","DisplayName",0x00000000,%AUDIO_SERVICE%

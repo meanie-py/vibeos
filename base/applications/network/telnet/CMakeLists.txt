@@ -2,7 +2,7 @@
 # telnet uses fstream/locale from libc++ which instantiates codecvt<char,char,mbstate_t>.
 # ReactOS defines mbstate_t as int, but libc++ was compiled with UCRT where mbstate_t is
 # a struct (_Mbstatet), causing an unresolvable symbol mismatch.
-if(ARCH STREQUAL "arm64")
+if(USE_LLVM_MINGW)
     return()
 endif()
 

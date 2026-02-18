@@ -96,12 +96,14 @@ InitializeGreCSRSS(VOID)
     /* Get global language ID */
     gusLanguageID = UserGetLanguageID();
 
+    DbgPrint("InitializeGreCSRSS: calling InitFontSupport\n");
     /* Initialize FreeType library */
     if (!InitFontSupport())
     {
         ERR("Unable to initialize font support\n");
         return FALSE;
     }
+    DbgPrint("InitializeGreCSRSS: InitFontSupport done\n");
 
     return TRUE;
 }

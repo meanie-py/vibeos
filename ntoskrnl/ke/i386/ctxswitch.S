@@ -163,7 +163,7 @@ _Ki386LargePageIdentityLabel:
     mov cr0, eax
 
     /* Jump to the next instruction to clear the prefetch queue */
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Enable Page Size Extension in CR4 */
     mov ecx, cr4
@@ -196,7 +196,7 @@ _Ki386SetupAndExitToV86Mode@4:
     sub esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH + 16)
     mov ecx, esp
     call @KiEnterV86Mode@4
-    jmp $
+    .byte 0xEB, 0xFE /* jmp $ (infinite loop) */
 
 
 PUBLIC @Ki386BiosCallReturnAddress@4

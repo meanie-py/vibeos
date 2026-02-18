@@ -38,14 +38,25 @@ if(ARCH STREQUAL "i386")
     list(APPEND PCATLDR_BASE_ASM_SOURCE
         arch/i386/multiboot.S)
 
+    if(CMAKE_ASM16_GCC)
+        # drvmap.S has .code16 with symbol arithmetic that Clang can't handle
+        compile_asm_with_gcc(arch/i386/drvmap.S _drvmap_obj)
+        set(PCATLDR_GCC_ASM_OBJECTS ${_drvmap_obj})
+    else()
+        list(APPEND PCATLDR_COMMON_ASM_SOURCE arch/i386/drvmap.S)
+    endif()
     list(APPEND PCATLDR_COMMON_ASM_SOURCE
-        arch/i386/drvmap.S
         arch/i386/entry.S
         arch/i386/int386.S
         arch/i386/irqsup.S
         arch/i386/pnpbios.S
         # arch/i386/i386trap.S
         arch/i386/linux.S)
+
+    if(USE_LLVM_MINGW)
+        list(APPEND PCATLDR_COMMON_ASM_SOURCE
+            arch/amd64/bss_markers.S)
+    endif()
 
     list(APPEND PCATLDR_ARC_SOURCE
         # disk/scsiport.c
@@ -121,6 +132,11 @@ elseif(ARCH STREQUAL "amd64")
         arch/amd64/pnpbios.S
         arch/amd64/linux.S)
 
+    if(USE_LLVM_MINGW)
+        list(APPEND PCATLDR_COMMON_ASM_SOURCE
+            arch/amd64/bss_markers.S)
+    endif()
+
     list(APPEND PCATLDR_ARC_SOURCE
         lib/fs/pxe.c
         arch/i386/drivemap.c
@@ -152,8 +168,14 @@ endif()
 
 add_asm_files(freeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${PCATLDR_COMMON_ASM_SOURCE})
 
+# Mark GCC-compiled objects as generated so CMake tracks the dependency
+if(PCATLDR_GCC_ASM_OBJECTS)
+    set_source_files_properties(${PCATLDR_GCC_ASM_OBJECTS} PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)
+endif()
+
 add_library(freeldr_common
     ${freeldr_common_asm}
+    ${PCATLDR_GCC_ASM_OBJECTS}
     ${PCATLDR_ARC_SOURCE}
     ${FREELDR_BOOTLIB_SOURCE}
     ${PCATLDR_BOOTMGR_SOURCE}

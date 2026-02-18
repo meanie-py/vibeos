@@ -93,7 +93,7 @@ CaptureRest:
 
     /* Capture flags */
     pushfd
-    pop [ebx+CONTEXT_EFLAGS]
+    pop dword ptr [ebx+CONTEXT_EFLAGS]
 
     /* The return address should be in [ebp+4] */
     mov eax, [ebp+4]
@@ -172,10 +172,10 @@ _RtlpExecuteHandler2@20:
     push edx
 
     /* Push the exception list */
-    push [fs:TEB_EXCEPTION_LIST]
+    push dword ptr fs:[TEB_EXCEPTION_LIST]
 
     /* Link us to it */
-    mov [fs:TEB_EXCEPTION_LIST], esp
+    mov dword ptr fs:[TEB_EXCEPTION_LIST], esp
 
     /* Call the handler */
     push [ebp+20]
@@ -186,10 +186,10 @@ _RtlpExecuteHandler2@20:
     call ecx
 
     /* Unlink us */
-    mov esp, [fs:TEB_EXCEPTION_LIST]
+    mov esp, dword ptr fs:[TEB_EXCEPTION_LIST]
 
     /* Restore it */
-    pop [fs:TEB_EXCEPTION_LIST]
+    pop dword ptr fs:[TEB_EXCEPTION_LIST]
 
     /* Undo stack frame and return */
     mov esp, ebp
@@ -311,6 +311,25 @@ DebuggerActive1:
 
 RaiseException:
 
+#ifdef _USE_DUMMY_PSEH
+    /* DUMMY_PSEH: No SEH handlers exist, so second-chance dispatch will just
+     * kill the process via csrss. For continuable exceptions (e.g.
+     * RPC_S_SERVER_UNAVAILABLE 0x6BA), swallow the exception by returning
+     * from RtlRaiseException to our caller. The caller (typically kernel32's
+     * RaiseException) will run its epilogue and return to the original code,
+     * simulating what would happen if a _SEH2_EXCEPT handler caught and
+     * continued past the exception. */
+    mov eax, [ebp+8]
+    test dword ptr [eax+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
+    jnz DummyPseh_SecondChance1
+
+    /* Continuable — return from RtlRaiseException to caller */
+    mov esp, ebp
+    pop ebp
+    ret 4
+
+DummyPseh_SecondChance1:
+#endif
     /* Raise the exception */
     mov ecx, esp
     push 0

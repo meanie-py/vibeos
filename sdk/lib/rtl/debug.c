@@ -60,7 +60,9 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
     STRING DebugString;
     CHAR Buffer[512];
     SIZE_T Length, PrefixLength;
+#ifndef _USE_DUMMY_PSEH
     EXCEPTION_RECORD ExceptionRecord;
+#endif
 
     /* Check if we should print it or not */
     if ((ComponentId != MAXULONG) &&
@@ -119,8 +121,11 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
     DebugString.Buffer = Buffer;
 
     /* First, let the debugger know as well */
+#ifndef _USE_DUMMY_PSEH
     if (RtlpCheckForActiveDebugger())
     {
+        BOOLEAN Handled = TRUE;
+
         /* Fill out an exception record */
         ExceptionRecord.ExceptionCode = DBG_PRINTEXCEPTION_C;
         ExceptionRecord.ExceptionRecord = NULL;
@@ -129,13 +134,28 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
         ExceptionRecord.ExceptionInformation[0] = DebugString.Length + 1;
         ExceptionRecord.ExceptionInformation[1] = (ULONG_PTR)DebugString.Buffer;
 
-        /* Raise the exception */
-        RtlRaiseException(&ExceptionRecord);
+        /* Raise the exception. Wrap in SEH to handle the case where no
+         * debugger catches it (e.g., kernel debugger only, no user-mode
+         * debugger). Without this, the unhandled exception kills the process. */
+        _SEH2_TRY
+        {
+            RtlRaiseException(&ExceptionRecord);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* No debugger caught it; fall through to DebugPrint */
+            Handled = FALSE;
+        }
+        _SEH2_END;
 
-        /* In user-mode, clear the InDbgPrint Flag */
-        RtlpClearInDbgPrint();
-        return STATUS_SUCCESS;
+        if (Handled)
+        {
+            /* In user-mode, clear the InDbgPrint Flag */
+            RtlpClearInDbgPrint();
+            return STATUS_SUCCESS;
+        }
     }
+#endif /* !_USE_DUMMY_PSEH */
 
     /* Call the Debug Print routine */
     Status = DebugPrint(&DebugString, ComponentId, Level);

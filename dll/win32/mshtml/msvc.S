@@ -20,16 +20,16 @@ _FuncName SETS "_wrapper_func_":CC:"$n"
 
 MACRO(DEFINE_WRAPPER_FUNC, n, off, x)
 #ifdef _M_IX86
-PUBLIC _wrapper_func_&n&
-_wrapper_func_&n&:
+PUBLIC _wrapper_func_\n
+_wrapper_func_\n\():
     mov eax, [esp+4]
     mov eax, [eax+4]
     mov [esp+4], eax
     mov eax, [eax]
     jmp dword ptr [eax+off]
 #elif defined(_M_AMD64)
-PUBLIC wrapper_func_&n&
-wrapper_func_&n&:
+PUBLIC wrapper_func_\n
+wrapper_func_\n\():
     mov rcx, [rcx+4]
     mov rax, [rcx]
     jmp qword ptr [rax+off]

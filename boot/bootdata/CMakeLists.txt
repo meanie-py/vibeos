@@ -9,12 +9,18 @@ add_custom_target(converted_caroots_inf DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/caro
 utf16le_convert(${CMAKE_CURRENT_SOURCE_DIR}/caroots.inf ${CMAKE_CURRENT_BINARY_DIR}/caroots.inf)
 add_cd_file(TARGET converted_caroots_inf FILE ${CMAKE_CURRENT_BINARY_DIR}/caroots.inf DESTINATION reactos NO_CAB FOR bootcd regtest)
 
-add_registry_inf(
+set(_hivesys_infs
     hivecls.inf
     hivedef.inf
     hivesft.inf
     hivesys.inf
     hivebcd.inf)
+
+if(ARCH STREQUAL "arm64")
+    list(APPEND _hivesys_infs hivesys_arm64.inf)
+endif()
+
+add_registry_inf(${_hivesys_infs})
 
 
 # Regtest

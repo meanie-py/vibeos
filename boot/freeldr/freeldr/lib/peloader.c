@@ -303,6 +303,16 @@ PeLdrpBindImportName(
         /* Strip out the symbol name */
         *strrchr(ForwardDllName, '.') = ANSI_NULL;
 
+        /* Strip leading underscore from DLL name. LLD adds i386 symbol
+         * decoration to PE forwarder targets, turning "NTOSKRNL.func"
+         * into "_NTOSKRNL.func" in the export table. */
+        if (ForwardDllName[0] == '_')
+        {
+            ULONG i;
+            for (i = 0; ForwardDllName[i]; i++)
+                ForwardDllName[i] = ForwardDllName[i + 1];
+        }
+
         /* Check if the target image is already loaded */
         if (!PeLdrCheckForLoadedDll(ModuleListHead, ForwardDllName, &DataTableEntry))
         {

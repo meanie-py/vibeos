@@ -18,7 +18,7 @@ WINAPI
 DECLSPEC_HOTPATCH
 GetSysColor(int nIndex)
 {
-  if(nIndex >= 0 && nIndex < NUM_SYSCOLORS)
+  if(nIndex >= 0 && nIndex < NUM_SYSCOLORS && gpsi)
   {
     return gpsi->argbSystem[nIndex];
   }
@@ -35,7 +35,7 @@ WINAPI
 DECLSPEC_HOTPATCH
 GetSysColorBrush(int nIndex)
 {
-  if(nIndex >= 0 && nIndex < NUM_SYSCOLORS)
+  if(nIndex >= 0 && nIndex < NUM_SYSCOLORS && gpsi)
   {
     return gpsi->ahbrSystem[nIndex];
   }
@@ -219,7 +219,7 @@ DefWndControlColor(HDC hDC, UINT ctlType)
        * look different from the window background.
        */
       if ( bk == GetSysColor(COLOR_WINDOW))
-          return gpsi->hbrGray;
+          return gpsi ? gpsi->hbrGray : NULL;
 
       UnrealizeObject( hb );
       return hb;
@@ -263,7 +263,7 @@ UserPaintCaption(PWND pwnd, INT Flags)
      * This is solved by sending a themes specific message to notify the themes
      * engine that the caption needs to be redrawn 
      */
-    if(gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
+    if(gpsi && gpsi->dwSRVIFlags & SRVINFO_APIHOOK)
     {
         /* 
          * This will cause uxtheme to either paint the themed caption or call
@@ -292,6 +292,7 @@ DefWndGetIcon(PWND pWnd, WPARAM wParam, LPARAM lParam)
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
+    if (!gpsi) return 0;
     switch(wParam)
     {
         case ICON_BIG:

@@ -14,12 +14,12 @@
 #include <internal/i386/asmmacro.S>
 
 MACRO(GENERATE_IDT_STUB, Vector)
-idt _KiUnexpectedInterrupt&Vector, INT_32_DPL0
+idt _KiUnexpectedInterrupt\Vector, INT_32_DPL0
 ENDM
 
 MACRO(GENERATE_INT_HANDLER, Vector)
-//.func KiUnexpectedInterrupt&Vector
-_KiUnexpectedInterrupt&Vector:
+//.func KiUnexpectedInterrupt\Vector
+_KiUnexpectedInterrupt\Vector:
     /* This is a push instruction with 8bit operand. Since the instruction
        sign extends the value to 32 bits, we need to offset it */
     push (Vector - 128)
@@ -132,7 +132,7 @@ _KiInterruptTemplate2ndDispatch:
     mov edx, 0
 PUBLIC _KiInterruptTemplateObject
 _KiInterruptTemplateObject:
-    mov eax, offset @KiInterruptTemplateHandler@8
+    lea eax, [@KiInterruptTemplateHandler@8]
     jmp eax
 PUBLIC _KiInterruptTemplateDispatch
 _KiInterruptTemplateDispatch:

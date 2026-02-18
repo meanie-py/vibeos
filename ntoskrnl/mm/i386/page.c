@@ -114,6 +114,68 @@ NTAPI
 MiFillSystemPageDirectory(IN PVOID Base,
                           IN SIZE_T NumberOfBytes);
 
+#if (_MI_PAGING_LEVELS >= 3)
+/*
+ * Ensure the page table hierarchy (PPE, PDE) exists for a kernel-space
+ * address on 3+ level paging systems.  PXE is assumed valid (created during
+ * boot for the entire upper half).  Called from MmCreateVirtualMappingUnsafeEx
+ * before writing a PTE for kernel mappings.
+ */
+static
+VOID
+MiEnsureKernelPdeValid(
+    _In_ PVOID Address)
+{
+#if (_MI_PAGING_LEVELS == 4)
+    PMMPTE PointerPxe = MiAddressToPxe(Address);
+#endif
+    PMMPTE PointerPpe = MiAddressToPpe(Address);
+    PMMPDE PointerPde = MiAddressToPde(Address);
+    PFN_NUMBER PageFrameIndex;
+    MMPTE TempPte;
+    KIRQL OldIrql;
+
+    ASSERT(Address >= MmSystemRangeStart);
+
+#if (_MI_PAGING_LEVELS == 4)
+    /* PXE must be valid (created during boot for all kernel space) */
+    if (!PointerPxe->u.Hard.Valid)
+    {
+        DPRINT1("MiEnsureKernelPdeValid: PXE invalid for %p\n", Address);
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+#endif
+
+    /* Create PPE if needed */
+    if (!PointerPpe->u.Hard.Valid)
+    {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.u.Long = ValidKernelPde.u.Long;
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPpe, TempPte);
+        KeMemoryBarrierWithoutFence();
+        RtlZeroMemory(MiPteToAddress(PointerPpe), PAGE_SIZE);
+    }
+
+    /* Create PDE if needed */
+    if (!PointerPde->u.Hard.Valid)
+    {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.u.Long = ValidKernelPde.u.Long;
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPde, TempPte);
+        KeMemoryBarrierWithoutFence();
+        RtlZeroMemory(MiPteToAddress(PointerPde), PAGE_SIZE);
+    }
+}
+#endif /* _MI_PAGING_LEVELS >= 3 */
+
 static
 BOOLEAN
 MiIsPageTablePresent(PVOID Address)
@@ -664,6 +726,9 @@ MmCreateVirtualMappingUnsafeEx(
 #if _MI_PAGING_LEVELS == 2
         if (!MiSynchronizeSystemPde(MiAddressToPde(Address)))
             MiFillSystemPageDirectory(Address, PAGE_SIZE);
+#elif _MI_PAGING_LEVELS >= 3
+        if (!MiIsPdeForAddressValid(Address))
+            MiEnsureKernelPdeValid(Address);
 #endif
     }
     else

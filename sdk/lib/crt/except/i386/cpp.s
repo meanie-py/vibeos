@@ -9,14 +9,14 @@ EXTERN _cxx_frame_handler:PROC
 
 #undef _MSVCRT_
 MACRO(START_VTABLE, shortname, cxxname)
-EXTERN _&shortname&_rtti:PROC
-EXTERN ___thiscall_&shortname&_vector_dtor:PROC
-    .long _&shortname&_rtti
-PUBLIC _&shortname&_vtable
-_&shortname&_vtable:
-PUBLIC &cxxname
-&cxxname:
-    .long ___thiscall_&shortname&_vector_dtor
+EXTERN _\shortname\()_rtti:PROC
+EXTERN ___thiscall_\shortname\()_vector_dtor:PROC
+    .long _\shortname\()_rtti
+PUBLIC _\shortname\()_vtable
+_\shortname\()_vtable:
+PUBLIC \cxxname
+\cxxname\():
+    .long ___thiscall_\shortname\()_vector_dtor
 ENDM
 
 MACRO(DEFINE_EXCEPTION_VTABLE, shortname, cxxname)

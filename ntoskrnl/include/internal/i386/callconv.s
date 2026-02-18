@@ -73,10 +73,10 @@
 // @remark None.
 //
 .macro stdCallCall Func:req,N:req
-	.ifdef __imp_&Func&@&N
-    	call dword ptr [__imp_&Func&@&N]
+	.ifdef __imp_\Func\()@\N
+    	call dword ptr [__imp_\Func\()@\N]
 	.else
-    	call Func&@&N
+    	call \Func\()@\N
 	.endif
 .endm
 

@@ -64,7 +64,7 @@ MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
     ret StackBytes
 ENDM
 MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
-    StackBytes = 4 * &ArgCount
+    StackBytes = 4 * \ArgCount
     FPO 0, 0, 0, 0, 0, FRAME_FPO
     mov eax, SyscallId
     lea edx, [esp + 4]
@@ -83,8 +83,8 @@ MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
 ENDM
 MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     .ENDPROLOG
-    EXTERN Nt&Name:PROC
-    lea rax, Nt&Name[rip]
+    EXTERN Nt\Name:PROC
+    lea rax, Nt\Name\()[rip]
     mov r10, ArgCount * 8
     jmp KiZwSystemService
 ENDM
@@ -130,12 +130,12 @@ ENDM
 
 #ifdef _M_IX86
 MACRO(MAKE_LABEL, Name, StackBytes)
-    PUBLIC _&Name&@&StackBytes
-    _&Name&@&StackBytes:
+    PUBLIC _\Name\()@\StackBytes
+    _\Name\()@\StackBytes\():
 ENDM
 MACRO(START_PROC, Name, StackBytes)
-    PUBLIC _&Name&@&StackBytes
-    .PROC _&Name&@&StackBytes
+    PUBLIC _\Name\()@\StackBytes
+    .PROC _\Name\()@\StackBytes
 ENDM
 #elif defined(_M_ARM64)
 /* ARM64 uses GAS-style syntax with Clang */
@@ -165,26 +165,26 @@ ENDM
 .endm
 #else
 MACRO(MAKE_LABEL, Name, StackBytes)
-    PUBLIC &Name
-    &Name:
+    PUBLIC \Name
+    \Name\():
 ENDM
 MACRO(START_PROC, Name, StackBytes)
-    PUBLIC &Name
-    .PROC &Name
+    PUBLIC \Name
+    .PROC \Name
 ENDM
 #endif
 
 #ifndef _M_ARM64
 MACRO(STUB_U, Name, ArgCount)
-    MAKE_LABEL Zw&Name, %ArgCount * 4
-    START_PROC Nt&Name, %ArgCount * 4
+    MAKE_LABEL Zw\Name, %ArgCount * 4
+    START_PROC Nt\Name, %ArgCount * 4
     STUBCODE_U Name, SyscallId, %ArgCount
     .ENDP
     SyscallId = SyscallId + 1
 ENDM
 
 MACRO(STUB_K, Name, ArgCount)
-    START_PROC Zw&Name, %ArgCount * 4
+    START_PROC Zw\Name, %ArgCount * 4
     STUBCODE_K Name, SyscallId, %ArgCount
     .ENDP
     SyscallId = SyscallId + 1

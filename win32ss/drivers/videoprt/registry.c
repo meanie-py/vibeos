@@ -313,8 +313,9 @@ IntSetupDeviceSettingsKey(
                                      &DevInstRegKey);
     if (Status != STATUS_SUCCESS)
     {
-        ERR_(VIDEOPRT, "Failed to open device software key, status 0x%lx\n", Status);
-        return Status;
+        /* Non-fatal: driver class key may not exist on LiveCD or first boot */
+        WARN_(VIDEOPRT, "No device software key (0x%lx), skipping settings setup\n", Status);
+        return STATUS_SUCCESS;
     }
 
     /* Open the 'Settings' sub-key */
@@ -439,7 +440,14 @@ IntCreateNewRegistryPath(
                                      &DevInstRegKey);
     if (Status != STATUS_SUCCESS)
     {
-        ERR_(VIDEOPRT, "IoOpenDeviceRegistryKey failed, status 0x%lx\n", Status);
+        /* PDO exists but PnP hasn't created the hardware key yet.
+         * Fall back to the legacy registry path. */
+        WARN_(VIDEOPRT, "IoOpenDeviceRegistryKey failed (0x%lx), using legacy path\n", Status);
+        Status = IntDuplicateUnicodeString(RTL_DUPLICATE_UNICODE_STRING_NULL_TERMINATE,
+                                           &DeviceExtension->RegistryPath,
+                                           &DeviceExtension->NewRegistryPath);
+        if (!NT_SUCCESS(Status))
+            ERR_(VIDEOPRT, "IntDuplicateUnicodeString() failed, status 0x%lx\n", Status);
         return Status;
     }
 

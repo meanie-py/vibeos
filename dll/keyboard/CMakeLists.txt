@@ -103,7 +103,7 @@ foreach(_keyboard_layout ${_keyboard_layouts})
     if(MSVC)
         # Merge the .text and .rdata section into the .data section
         target_link_options(${_keyboard_layout} PRIVATE "/ignore:4254;/SECTION:.data,ER;/MERGE:.text=.data;/MERGE:.rdata=.data;/MERGE:.bss=.data;/MERGE:.edata=.data")
-    elseif(ARCH STREQUAL "arm64")
+    elseif(USE_LLVM_MINGW)
         # LLD in MinGW PE mode does not support -T linker scripts; use /MERGE directives instead
         # Use SHELL: prefix to prevent CMake from splitting on commas in /SECTION:.data,ER
         target_link_options(${_keyboard_layout} PRIVATE

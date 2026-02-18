@@ -71,6 +71,15 @@ RtlpFindGenericTableNodeOrParent(IN PRTL_GENERIC_TABLE Table,
     /* Set the current node */
     CurrentNode = Table->TableRoot;
 
+    /* Guard against corrupt root pointer (e.g. uninitialized table).
+     * With DUMMY_PSEH, callers cannot rely on SEH to catch the fault. */
+    if ((ULONG_PTR)CurrentNode < PAGE_SIZE)
+    {
+        DPRINT1("RtlpFindGenericTableNodeOrParent: corrupt TableRoot %p\n", CurrentNode);
+        Table->TableRoot = NULL;
+        return TableEmptyTree;
+    }
+
     /* Start compare loop */
     while (TRUE)
     {

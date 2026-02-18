@@ -31,6 +31,14 @@ DllMain(
     {
     case DLL_PROCESS_ATTACH :
         DisableThreadLibraryCalls(hDll);
+        /*
+         * Initialize critical sections early so they are ready before
+         * user32's Init() calls NtUserProcessConnect which can trigger
+         * GDI operations. GdiDllInitialize/GdiProcessSetup runs later
+         * and will skip re-initialization via the gbInitialized guard.
+         */
+        RtlInitializeCriticalSection(&semLocal);
+        InitializeCriticalSection(&gcsClientObjLinks);
         break;
 
     default:

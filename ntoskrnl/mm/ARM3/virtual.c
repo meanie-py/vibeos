@@ -4615,6 +4615,11 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
     }
     _SEH2_END;
 
+    DPRINT("NtAllocateVirtualMemory ENTRY: PrevMode=%d PBaseAddr=%p PRegionSize=%Ix "
+           "AllocType=%x Protect=%x UBaseAddr=%p URegionSize=%p\n",
+           PreviousMode, PBaseAddress, PRegionSize, AllocationType, Protect,
+           UBaseAddress, URegionSize);
+
     /* Make sure the allocation isn't past the VAD area */
     if (PBaseAddress > MM_HIGHEST_VAD_ADDRESS)
     {
@@ -4871,16 +4876,8 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
         //
         _SEH2_TRY
         {
-#ifdef _M_ARM64
-            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
-            if (MmIsAddressValid(URegionSize))
-                *URegionSize = PRegionSize;
-            if (MmIsAddressValid(UBaseAddress))
-                *UBaseAddress = (PVOID)StartingAddress;
-#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
-#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
@@ -4889,7 +4886,6 @@ NtAllocateVirtualMemory(IN HANDLE ProcessHandle,
             //
         }
         _SEH2_END;
-        DPRINT("Reserved %x bytes at %p.\n", PRegionSize, StartingAddress);
         return STATUS_SUCCESS;
     }
 
@@ -5254,16 +5250,8 @@ FailPathNoLock:
         //
         _SEH2_TRY
         {
-#ifdef _M_ARM64
-            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
-            if (MmIsAddressValid(URegionSize))
-                *URegionSize = PRegionSize;
-            if (MmIsAddressValid(UBaseAddress))
-                *UBaseAddress = (PVOID)StartingAddress;
-#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
-#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {
@@ -5690,16 +5678,8 @@ FinalPath:
         //
         _SEH2_TRY
         {
-#ifdef _M_ARM64
-            /* DUMMY_PSEH: validate before writing to avoid unhandled fault */
-            if (MmIsAddressValid(URegionSize))
-                *URegionSize = PRegionSize;
-            if (MmIsAddressValid(UBaseAddress))
-                *UBaseAddress = (PVOID)StartingAddress;
-#else
             *URegionSize = PRegionSize;
             *UBaseAddress = (PVOID)StartingAddress;
-#endif
         }
         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
         {

@@ -178,6 +178,13 @@ ScmLogEvent(DWORD dwEventId,
 {
     HANDLE hLog;
 
+    /* Skip event logging during initialization — the event log service
+     * isn't running yet, and RegisterEventSourceW uses RPC which throws
+     * an exception on failure. With DUMMY_PSEH (clang/llvm-mingw), the
+     * RPC SEH handler is dead code, so the exception crashes the process. */
+    if (ScmInitialize)
+        return;
+
     hLog = RegisterEventSourceW(NULL,
                                 L"Service Control Manager");
     if (hLog == NULL)
@@ -256,14 +263,15 @@ wWinMain(HINSTANCE hInstance,
     BOOL bCanDeleteNamedPipeCriticalSection = FALSE;
     DWORD dwError;
 
-    DPRINT("SERVICES: Service Control Manager\n");
+    DbgPrint("[SERVICES] wWinMain entered PID=%lu\n", GetCurrentProcessId());
 
     dwError = CheckForLiveCD();
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("SERVICES: Failed to check for LiveCD (Error %lu)\n", dwError);
+        DbgPrint("[SERVICES] CheckForLiveCD failed: %lu\n", dwError);
         goto done;
     }
+    DbgPrint("[SERVICES] CheckForLiveCD OK\n");
 
     /* Make us critical */
     RtlSetProcessIsCritical(TRUE, NULL, TRUE);
@@ -275,27 +283,26 @@ wWinMain(HINSTANCE hInstance,
     hScmStartEvent = CreateEventW(NULL, TRUE, FALSE, SCM_START_EVENT);
     if (hScmStartEvent == NULL)
     {
-        DPRINT1("SERVICES: Failed to create the start event\n");
+        DbgPrint("[SERVICES] CreateEvent(SCM_START) failed: %lu\n", GetLastError());
         goto done;
     }
-    DPRINT("SERVICES: Created start event with handle %p\n", hScmStartEvent);
 
     /* Create the auto-start complete event */
     hScmAutoStartCompleteEvent = CreateEventW(NULL, TRUE, FALSE, SCM_AUTOSTARTCOMPLETE_EVENT);
     if (hScmAutoStartCompleteEvent == NULL)
     {
-        DPRINT1("SERVICES: Failed to create the auto-start complete event\n");
+        DbgPrint("[SERVICES] CreateEvent(AUTO_START) failed: %lu\n", GetLastError());
         goto done;
     }
-    DPRINT("SERVICES: created auto-start complete event with handle %p\n", hScmAutoStartCompleteEvent);
 
     /* Create the shutdown event */
     hScmShutdownEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (hScmShutdownEvent == NULL)
     {
-        DPRINT1("SERVICES: Failed to create the shutdown event\n");
+        DbgPrint("[SERVICES] CreateEvent(shutdown) failed: %lu\n", GetLastError());
         goto done;
     }
+    DbgPrint("[SERVICES] Events created OK\n");
 
     /* Initialize our communication named pipe's critical section */
     ScmInitNamedPipeCriticalSection();
@@ -304,6 +311,7 @@ wWinMain(HINSTANCE hInstance,
 //    ScmInitThreadManager();
 
     ScmInitializeSecurity();
+    DbgPrint("[SERVICES] Security initialized\n");
 
     /* FIXME: more initialization */
 
@@ -311,17 +319,19 @@ wWinMain(HINSTANCE hInstance,
     dwError = ScmCreateLastKnownGoodControlSet();
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("SERVICES: Failed to create the 'Last Known Good' control set (Error %lu)\n", dwError);
+        DbgPrint("[SERVICES] CreateLastKnownGood failed: %lu\n", dwError);
         goto done;
     }
+    DbgPrint("[SERVICES] LastKnownGood OK\n");
 
     /* Create the services database */
     dwError = ScmCreateServiceDatabase();
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("SERVICES: Failed to create SCM database (Error %lu)\n", dwError);
+        DbgPrint("[SERVICES] CreateServiceDatabase failed: %lu\n", dwError);
         goto done;
     }
+    DbgPrint("[SERVICES] ServiceDatabase OK\n");
 
     /* Update the services database */
     ScmGetBootAndSystemDriverState();
@@ -329,9 +339,10 @@ wWinMain(HINSTANCE hInstance,
     /* Register the Service Control Manager process with the ReactOS Subsystem */
     if (!RegisterServicesProcess(GetCurrentProcessId()))
     {
-        DPRINT1("SERVICES: Could not register SCM process\n");
+        DbgPrint("[SERVICES] RegisterServicesProcess failed\n");
         goto done;
     }
+    DbgPrint("[SERVICES] RegisterServicesProcess OK\n");
 
     /*
      * Acquire the user service start lock until
@@ -340,7 +351,7 @@ wWinMain(HINSTANCE hInstance,
     dwError = ScmAcquireServiceStartLock(TRUE, &Lock);
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("SERVICES: Failed to acquire service start lock (Error %lu)\n", dwError);
+        DbgPrint("[SERVICES] AcquireServiceStartLock failed: %lu\n", dwError);
         goto done;
     }
 
@@ -350,7 +361,7 @@ wWinMain(HINSTANCE hInstance,
     /* Signal start event */
     SetEvent(hScmStartEvent);
 
-    DPRINT("SERVICES: Initialized\n");
+    DbgPrint("[SERVICES] Initialized, starting auto-start services\n");
 
     /* Register event handler (used for system shutdown) */
     SetConsoleCtrlHandler(ShutdownHandlerRoutine, TRUE);
@@ -375,12 +386,13 @@ wWinMain(HINSTANCE hInstance,
     /* Initialization finished */
     ScmInitialize = FALSE;
 
-    DPRINT("SERVICES: Running\n");
+    DbgPrint("[SERVICES] Running, waiting for shutdown\n");
 
     /* Wait until the shutdown event gets signaled */
     WaitForSingleObject(hScmShutdownEvent, INFINITE);
 
 done:
+    DbgPrint("[SERVICES] Exiting (reached done label)\n");
     ScmShutdownSecurity();
 
     /* Delete our communication named pipe's critical section */
@@ -402,7 +414,7 @@ done:
     if (hScmStartEvent != NULL)
         CloseHandle(hScmStartEvent);
 
-    DPRINT("SERVICES: Finished\n");
+    DbgPrint("[SERVICES] Finished, calling ExitThread(0)\n");
 
     ExitThread(0);
     return 0;

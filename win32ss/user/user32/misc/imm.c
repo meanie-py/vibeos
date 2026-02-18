@@ -1163,7 +1163,7 @@ BOOL WINAPI UpdatePerUserImmEnabling(VOID)
     BOOL ret;
 
     ret = NtUserCallNoParam(NOPARAM_ROUTINE_UPDATEPERUSERIMMENABLING);
-    if (!ret || !(gpsi->dwSRVIFlags & SRVINFO_IMM32))
+    if (!ret || !gpsi || !(gpsi->dwSRVIFlags & SRVINFO_IMM32))
         return FALSE;
 
     imm32 = GetModuleHandleW(L"imm32.dll");

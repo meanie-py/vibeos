@@ -89,6 +89,12 @@ void CDECL _lock( int locknum )
   /* If the lock doesn't exist yet, create it */
   if( lock_table[ locknum ].bInit == FALSE )
   {
+    /* Ensure _LOCKTAB_LOCK itself is initialized (may not be if DllMain
+     * was never called, e.g. DLL mapped but not initialized). Without
+     * this, _lock(_LOCKTAB_LOCK) recurses infinitely. */
+    if( lock_table[ _LOCKTAB_LOCK ].bInit == FALSE )
+      msvcrt_initialize_mlock( _LOCKTAB_LOCK );
+
     /* Lock while we're changing the lock table */
     _lock( _LOCKTAB_LOCK );
 

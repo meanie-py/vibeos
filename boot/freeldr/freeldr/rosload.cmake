@@ -35,8 +35,13 @@ if(ARCH STREQUAL "i386")
         ntldr/arch/i386/winldr.c
         ntldr/headless.c)
 
+    if(CMAKE_ASM16_GCC)
+        compile_asm_with_gcc(arch/i386/drvmap.S _rosload_drvmap_obj)
+        set(ROSLOAD_GCC_OBJECTS ${_rosload_drvmap_obj})
+    else()
+        list(APPEND ROSLOAD_ASM_SOURCE arch/i386/drvmap.S)
+    endif()
     list(APPEND ROSLOAD_ASM_SOURCE
-        arch/i386/drvmap.S
         arch/i386/linux.S)
 
 elseif(ARCH STREQUAL "amd64")
@@ -63,9 +68,14 @@ endif()
 
 add_asm_files(rosload_asm ${ROSLOAD_ASM_SOURCE})
 
+if(ROSLOAD_GCC_OBJECTS)
+    set_source_files_properties(${ROSLOAD_GCC_OBJECTS} PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)
+endif()
+
 add_executable(rosload
     ${ROSLOAD_SOURCE}
     ${rosload_asm}
+    ${ROSLOAD_GCC_OBJECTS}
     ${CMAKE_CURRENT_BINARY_DIR}/rosload.def
 )
 

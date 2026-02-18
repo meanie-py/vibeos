@@ -270,3 +270,11 @@ ScsiPortWriteRegisterUlong(
 {
     WRITE_REGISTER_ULONG(Register, Value);
 }
+
+VOID
+NTAPI
+ScsiPortStallExecution(
+    IN ULONG Delay)
+{
+    KeStallExecutionProcessor(Delay);
+}

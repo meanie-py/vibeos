@@ -267,7 +267,11 @@ _SEH3$_AutoCleanup(
         /* a proper value at the end */ \
         for (; ; (void)({_SEH3$_NESTED_FUNC_RETURN(0); 0;}))
 
-#define _SEH3$_FILTER(_Filter, _FilterExpression) (&&_SEH3$_l_FilterOrFinally)
+/* For constant filter expressions (EXCEPTION_EXECUTE_HANDLER etc.), store the
+   constant directly in the scope table — avoids the embedded filter which has
+   issues with Clang's constant-propagation of locals across returns_twice. */
+#define _SEH3$_FILTER(_Filter, _FilterExpression) \
+    (__builtin_constant_p(_FilterExpression) ? (void*)(unsigned long)(unsigned char)(unsigned long)(_FilterExpression) : (&&_SEH3$_l_FilterOrFinally))
 #define _SEH3$_FINALLY(_Finally) (&&_SEH3$_l_FilterOrFinally)
 
 #define _SEH3$_DECLARE_EXCEPT_INTRINSICS()

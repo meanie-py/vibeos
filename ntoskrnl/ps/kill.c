@@ -1169,6 +1169,12 @@ NtTerminateProcess(IN HANDLE ProcessHandle OPTIONAL,
     PSTRACE(PS_KILL_DEBUG,
             "ProcessHandle: %p ExitStatus: %d\n", ProcessHandle, ExitStatus);
 
+    /* Enhanced diagnostic: log caller PID */
+    DbgPrint("[PROC-TERM] CallerPID=%lu ExitStatus=0x%lX Handle=%p\n",
+             (ULONG)(ULONG_PTR)PsGetCurrentProcessId(),
+             (ULONG)ExitStatus,
+             ProcessHandle);
+
 #ifdef _M_ARM64
     /* ARM64 trace: log process termination */
     {
@@ -1221,6 +1227,12 @@ NtTerminateProcess(IN HANDLE ProcessHandle OPTIONAL,
                                        (PVOID*)&Process,
                                        NULL);
     if (!NT_SUCCESS(Status)) return(Status);
+
+    /* Enhanced diagnostic: log target process info */
+    DbgPrint("[PROC-TERM] TargetPID=%lu Image=%s Critical=%d\n",
+             (ULONG)(ULONG_PTR)PsGetProcessId(Process),
+             Process->ImageFileName,
+             Process->BreakOnTermination);
 
     /* Check if this is a Critical Process, and Bugcheck */
     if (Process->BreakOnTermination)

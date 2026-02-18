@@ -35,4 +35,12 @@
 #error "Unknown processor"
 #endif
 
+/* Provide no-op ARM64 UART trace macros for non-ARM64 architectures */
+#ifndef ARM64_UART_TRACE
+#define ARM64_UART_TRACE(s) do { } while(0)
+#endif
+#ifndef ARM64_UART_TRACE_HEX
+#define ARM64_UART_TRACE_HEX(prefix, val) do { } while(0)
+#endif
+
 /* EOF */

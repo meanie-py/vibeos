@@ -21,12 +21,21 @@
 
 extern char __ImageBase;
 #ifdef __GNUC__
-  #if defined(_M_AMD64) || defined(_M_ARM64)
-    /* .text/.data/.rdata, and .bss */
-    #define FREELDR_SECTION_COUNT 2
+  #ifdef __clang__
+    /* Clang/LLD doesn't use linker scripts; natural section layout:
+     * .text, .rdata, .buildid, .data, .pdata (amd64), .reloc */
+    #if defined(_M_AMD64)
+      #define FREELDR_SECTION_COUNT 6  /* + .pdata */
+    #else
+      #define FREELDR_SECTION_COUNT 5  /* .text, .rdata, .buildid, .data, .reloc */
+    #endif
   #else
-    /* .text/.data/.rdata, .edata and .bss */
-    #define FREELDR_SECTION_COUNT 3
+    /* GCC + GNU ld linker script merges .text/.data/.rdata into one section */
+    #if defined(_M_AMD64) || defined(_M_ARM64)
+      #define FREELDR_SECTION_COUNT 2
+    #else
+      #define FREELDR_SECTION_COUNT 3
+    #endif
   #endif
 #else
 #if defined(_M_AMD64) || defined(_M_ARM64)

@@ -550,8 +550,8 @@ _main(IN INT argc,
                 ProcessInfo.ExitStatus = Status;
                 Status = STATUS_SUCCESS;
             }
-            DPRINT1("SMSS: Initial command '%wZ' terminated when it wasn't supposed to.\n",
-                    &InitialCommand);
+            DPRINT1("SMSS: Initial command '%wZ' terminated when it wasn't supposed to. ExitStatus=0x%lx\n",
+                    &InitialCommand, ProcessInfo.ExitStatus);
         }
 
         /* Check if NtQueryInformationProcess was successful */

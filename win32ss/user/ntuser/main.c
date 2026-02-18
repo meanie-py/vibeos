@@ -696,21 +696,49 @@ InitThreadCallback(PETHREAD Thread)
     /* Last things to do only if we are not a SYSTEM or CSRSS thread */
     if (!(ptiCurrent->TIF_flags & (TIF_SYSTEMTHREAD | TIF_CSRSSTHREAD)))
     {
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+        /* Check if PEB->KernelCallbackTable is set up (by user32 DllMain).
+         * If not, skip co_IntClientThreadSetup — KeUserModeCallback would
+         * crash in user-mode trying to call through a NULL table.
+         * This happens when a non-user32 DLL (e.g., comctl32) triggers GUI
+         * thread conversion from its DllMain before user32 DllMain runs.
+         * The thread will be set up later when user32 DllMain calls
+         * ClientThreadSetupHelper. */
+        {
+            PPEB Peb = Process->Peb;
+            DbgPrint("[W32K] ClientThreadSetup guard: PID=%lu Peb=%p Valid=%d KCT=%p\n",
+                     (ULONG)(ULONG_PTR)PsGetCurrentProcessId(),
+                     Peb,
+                     Peb ? MmIsAddressValid(Peb) : 0,
+                     (Peb && MmIsAddressValid(Peb)) ? Peb->KernelCallbackTable : NULL);
+        }
+        if (!Process->Peb || !MmIsAddressValid(Process->Peb) ||
+            !Process->Peb->KernelCallbackTable)
+        {
+            DbgPrint("[W32K] Skipping co_IntClientThreadSetup PID=%lu\n",
+                     (ULONG)(ULONG_PTR)PsGetCurrentProcessId());
+            goto skip_client_thread_setup;
+        }
+        DbgPrint("[W32K] Proceeding with co_IntClientThreadSetup PID=%lu\n",
+                 (ULONG)(ULONG_PTR)PsGetCurrentProcessId());
+#endif
         /* Callback to User32 Client Thread Setup */
         TRACE_CH(UserThread, "Call co_IntClientThreadSetup...\n");
         Status = co_IntClientThreadSetup();
         if (!NT_SUCCESS(Status))
         {
-#ifdef _M_ARM64
-            /* ARM64: KeUserModeCallback is implemented but some callbacks may
-             * still fail during early bringup. Keep non-fatal for now. */
-            ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (ARM64 non-fatal)\n", Status);
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+            ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (non-fatal)\n", Status);
 #else
             ERR_CH(UserThread, "ClientThreadSetup failed with Status 0x%08lx\n", Status);
             goto error;
 #endif
         }
         TRACE_CH(UserThread, "co_IntClientThreadSetup succeeded!\n");
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+skip_client_thread_setup:
+        ;
+#endif
     }
     else
     {

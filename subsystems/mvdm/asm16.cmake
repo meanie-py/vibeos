@@ -43,10 +43,18 @@ function(add_asm16_bin _target _binary_file _base_address)
     ##
     ## All this part is the same as CreateBootSectorTarget
     ##
-    add_custom_command(
-        OUTPUT ${_object_file}
-        COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} -D__ASM__ -c ${_concatenated_asm_file}
-        DEPENDS ${_concatenated_asm_file})
+    if(CMAKE_ASM16_GCC)
+        # Use i686 mingw GCC for 16-bit code (handles preprocessing + GNU as)
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM16_GCC} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} -D__ASM__ -c ${_concatenated_asm_file}
+            DEPENDS ${_concatenated_asm_file})
+    else()
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} -D__ASM__ -c ${_concatenated_asm_file}
+            DEPENDS ${_concatenated_asm_file})
+    endif()
 
     add_custom_command(
         OUTPUT ${_binary_file}

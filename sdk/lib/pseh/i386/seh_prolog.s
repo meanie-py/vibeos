@@ -74,10 +74,10 @@ __SEH_prolog:
     mov eax, [esp + OLDFRAME_StackBytes]
 
     /* Push address of __except_handler3 on the stack */
-    push offset __except_handler3
+    push __except_handler3
 
     /* Push the old exception record on the stack */
-    push dword ptr fs:0
+    push dword ptr fs:[0]
 
     /* Adjust stack allocation, add size of the stack frame minus 2 pushes */
     add eax, SEH_FRAME_Size + SAFE_AREA_Size - OLDFRAME_Size - 8
@@ -115,7 +115,7 @@ __SEH_prolog:
     mov [esp + SAFE_AREA_Ebx], ebx
 
     /* Enqueue the new record */
-    mov fs:[0], eax
+    mov dword ptr fs:[0], eax
 
     /* Return to the caller */
     ret
@@ -126,7 +126,7 @@ __SEH_epilog:
 
     /* Restore the previous exception registration record */
     mov ecx, [ebp - SEH_FRAME_OriginalEbp + SEH_FRAME_PreviousRecord]
-    mov fs:[0], ecx
+    mov dword ptr fs:[0], ecx
 
     /* Restore saved registers */
     mov edi, [esp + 4 + SAFE_AREA_Edi]

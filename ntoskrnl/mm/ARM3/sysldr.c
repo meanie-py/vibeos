@@ -953,6 +953,13 @@ MiSnapThunk(IN PVOID DllBase,
 
             /* Build the forwarder name */
             DllName.Buffer = (PCHAR)Address->u1.Function;
+
+            /* lld (llvm linker) prepends '_' to forwarded export DLL names
+             * on i386 (e.g. "_HAL.WRITE_PORT_UCHAR" instead of
+             * "HAL.WRITE_PORT_UCHAR"). Strip it so module lookup succeeds. */
+            if (DllName.Buffer[0] == '_' && strchr(DllName.Buffer + 1, '.'))
+                DllName.Buffer++;
+
             DllName.Length = (USHORT)(strchr(DllName.Buffer, '.') -
                                       DllName.Buffer) +
                                       sizeof(ANSI_NULL);

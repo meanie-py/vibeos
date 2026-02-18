@@ -7,8 +7,12 @@ list(APPEND HAL_SMP_SOURCE
     smp/smp.c)
 
 if(ARCH STREQUAL "i386")
-    list(APPEND HAL_SMP_ASM_SOURCE
-        smp/i386/apentry.S)
+    if(CMAKE_ASM16_GCC)
+        compile_asm_with_gcc(smp/i386/apentry.S _apentry_obj)
+        set(HAL_SMP_GCC_OBJECTS ${_apentry_obj})
+    else()
+        list(APPEND HAL_SMP_ASM_SOURCE smp/i386/apentry.S)
+    endif()
     list(APPEND HAL_SMP_SOURCE
         smp/i386/spinup.c)
 elseif(ARCH STREQUAL "amd64")

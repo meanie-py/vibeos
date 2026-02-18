@@ -123,7 +123,7 @@ IntNotifyWinEvent(
   ne.idObject = idObject;
   ne.idChild  = idChild;
   ne.flags    = flags;
-  if (gpsi->dwInstalledEventHooks & GetMaskFromEvent(event))
+  if (gpsi && gpsi->dwInstalledEventHooks & GetMaskFromEvent(event))
   NtUserxNotifyWinEvent(hwnd, &ne);
 }
 
@@ -332,7 +332,7 @@ NotifyWinEvent(
 // "Servers call NotifyWinEvent to announce the event to the system after the
 // event has occurred; they must never notify the system of an event before
 // the event has occurred." msdn on NotifyWinEvent.
-  if (gpsi->dwInstalledEventHooks & GetMaskFromEvent(event)) // Check to see.
+  if (gpsi && gpsi->dwInstalledEventHooks & GetMaskFromEvent(event)) // Check to see.
       NtUserNotifyWinEvent(event, hwnd, idObject, idChild);
 }
 
@@ -391,7 +391,7 @@ IsWinEventHookInstalled(
 {
   if ((PTHREADINFO)NtCurrentTeb()->Win32ThreadInfo)
   {
-     return (gpsi->dwInstalledEventHooks & GetMaskFromEvent(event)) != 0;
+     return gpsi ? (gpsi->dwInstalledEventHooks & GetMaskFromEvent(event)) != 0 : FALSE;
   }
   return FALSE;
 }
