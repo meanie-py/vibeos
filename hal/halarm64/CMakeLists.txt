@@ -16,6 +16,7 @@ list(APPEND SOURCES
 add_library(hal MODULE ${SOURCES})
 
 set_module_type(hal kerneldll ENTRYPOINT HalInitSystem 8)
+set_target_properties(hal PROPERTIES C_STANDARD 23)
 add_importlibs(hal ntoskrnl)
 add_dependencies(hal psdk)
 add_cd_file(TARGET hal DESTINATION reactos/system32 FOR all)

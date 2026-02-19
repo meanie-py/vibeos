@@ -63,6 +63,7 @@ add_library(ntdll MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/ntdll.def)
 
 set_module_type(ntdll win32dll ENTRYPOINT 0)
+set_target_properties(ntdll PROPERTIES C_STANDARD 23)
 #############################################
 ## HACK FOR MSVC COMPILATION WITH win32dll ##
 set_subsystem(ntdll console)

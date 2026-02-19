@@ -50,6 +50,7 @@ add_executable(ntoskrnl
     ntoskrnl.rc
     ${CMAKE_CURRENT_BINARY_DIR}/ntoskrnl.def)
 set_module_type(ntoskrnl kernel)
+set_target_properties(ntoskrnl PROPERTIES C_STANDARD 23)
 
 source_group(TREE ${REACTOS_SOURCE_DIR}/ntoskrnl PREFIX "Source Files" FILES ${NTOSKRNL_SOURCE})
 
