@@ -1,0 +1,373 @@
+//! Cross-platform Interlocked SList Functions — Rust implementation.
+//!
+//! Replaces architecture-specific assembly:
+//! - `arm64/slist.S` (132 lines, LDXP/STXP)
+//! - `amd64/slist.S` (450 lines, CMPXCHG16B, Header8+Header16)
+//! - `i386/interlck.S` (154 lines, CMPXCHG8B)
+//!
+//! Architecture:
+//! - `header.rs`: Pure bit-field pack/unpack (cfg per pointer width)
+//! - `algorithm.rs`: Pure state transitions (Kani-verifiable, no unsafe)
+//! - `atomics.rs`: Unified load/try_store/cancel (cfg per target_arch)
+//! - `lib.rs`: FFI entry points (cfg per arch for calling convention + fault labels)
+
+#![cfg_attr(not(any(test, kani)), no_std)]
+#![allow(unexpected_cfgs)]
+#![allow(non_snake_case)]
+
+pub mod algorithm;
+pub mod header;
+
+// Inline asm + FFI entry points — excluded from test/kani builds which use std
+#[cfg(not(any(test, kani)))]
+mod atomics;
+
+// ============================================================================
+// ARM64 FFI
+// ============================================================================
+
+#[cfg(all(not(any(test, kani)), target_arch = "aarch64"))]
+mod ffi {
+    use super::{algorithm, atomics, header};
+    use core::ptr;
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPopEntrySList(list_head: *mut u8) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+
+            let head_ptr = header::region_to_ptr(region);
+            if head_ptr == 0 {
+                unsafe { atomics::cancel() };
+                return ptr::null_mut();
+            }
+
+            let next_of_head = unsafe { ptr::read(head_ptr as *const u64) };
+
+            let result = match algorithm::pop_transition(alignment, region, next_of_head) {
+                Some(r) => r,
+                None => {
+                    unsafe { atomics::cancel() };
+                    return ptr::null_mut();
+                }
+            };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.popped as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPushEntrySList(
+        list_head: *mut u8,
+        list_entry: *mut u8,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+            let result = algorithm::push_transition(alignment, region, list_entry as u64);
+
+            // Write old head pointer into entry->Next
+            unsafe { ptr::write(list_entry as *mut u64, result.old_head) };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedFlushSList(list_head: *mut u8) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+
+            let result = match algorithm::flush_transition(alignment, region) {
+                Some(r) => r,
+                None => {
+                    unsafe { atomics::cancel() };
+                    return ptr::null_mut();
+                }
+            };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    // Exp* aliases: zero-overhead branch trampolines for ntoskrnl internal use.
+    core::arch::global_asm!(
+        ".globl ExpInterlockedPopEntrySList",
+        "ExpInterlockedPopEntrySList:",
+        "  b RtlInterlockedPopEntrySList",
+        "",
+        ".globl ExpInterlockedPushEntrySList",
+        "ExpInterlockedPushEntrySList:",
+        "  b RtlInterlockedPushEntrySList",
+        "",
+        ".globl ExpInterlockedFlushSList",
+        "ExpInterlockedFlushSList:",
+        "  b RtlInterlockedFlushSList",
+    );
+}
+
+// ============================================================================
+// AMD64 FFI
+// ============================================================================
+
+#[cfg(all(not(any(test, kani)), target_arch = "x86_64"))]
+mod ffi {
+    use super::{algorithm, atomics, header};
+    use core::ptr;
+
+    // Always use Header16 — RtlpUse16ByteSLists defaults to TRUE on all modern CPUs.
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPopEntrySList(list_head: *mut u8) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+
+            let head_ptr = header::region_to_ptr(region);
+            if head_ptr == 0 {
+                return ptr::null_mut();
+            }
+
+            // Read next pointer — this can page fault if another thread freed the entry.
+            // The kernel's KiCheckForSListFault handles this on amd64 via the fault labels.
+            let next_of_head = unsafe { ptr::read(head_ptr as *const u64) };
+
+            let result = match algorithm::pop_transition(alignment, region, next_of_head) {
+                Some(r) => r,
+                None => return ptr::null_mut(),
+            };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.popped as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPushEntrySList(
+        list_head: *mut u8,
+        list_entry: *mut u8,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+            let result = algorithm::push_transition(alignment, region, list_entry as u64);
+
+            // Write old head pointer into entry->Next
+            unsafe { ptr::write(list_entry as *mut u64, result.old_head) };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedFlushSList(list_head: *mut u8) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+
+            let result = match algorithm::flush_transition(alignment, region) {
+                Some(r) => r,
+                None => return ptr::null_mut(),
+            };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    // Exp* aliases + fault label symbols for amd64.
+    // ntdll.spec exports ExpInterlockedPopEntrySList{Resume,Fault,End} and 16-byte variants.
+    // ntoskrnl.spec forwards Exp* to Rtl* via the spec file, not via asm aliases.
+    // The fault labels are exported from ntdll for compatibility but no kernel trap
+    // handler references them on amd64 (KiCheckForSListFault is i386-only).
+    core::arch::global_asm!(
+        // Exp* trampolines
+        ".globl ExpInterlockedPopEntrySList",
+        "ExpInterlockedPopEntrySList:",
+        "  jmp RtlInterlockedPopEntrySList",
+        "",
+        ".globl ExpInterlockedPushEntrySList",
+        "ExpInterlockedPushEntrySList:",
+        "  jmp RtlInterlockedPushEntrySList",
+        "",
+        ".globl ExpInterlockedFlushSList",
+        "ExpInterlockedFlushSList:",
+        "  jmp RtlInterlockedFlushSList",
+        "",
+        // Fault labels — empty symbols for ntdll.spec exports.
+        // Header8 variants (not used, we always use Header16)
+        ".globl ExpInterlockedPopEntrySListResume",
+        "ExpInterlockedPopEntrySListResume:",
+        ".globl ExpInterlockedPopEntrySListFault",
+        "ExpInterlockedPopEntrySListFault:",
+        ".globl ExpInterlockedPopEntrySListEnd",
+        "ExpInterlockedPopEntrySListEnd:",
+        // Header16 variants
+        ".globl ExpInterlockedPopEntrySListResume16",
+        "ExpInterlockedPopEntrySListResume16:",
+        ".globl ExpInterlockedPopEntrySListFault16",
+        "ExpInterlockedPopEntrySListFault16:",
+        ".globl ExpInterlockedPopEntrySListEnd16",
+        "ExpInterlockedPopEntrySListEnd16:",
+    );
+}
+
+// ============================================================================
+// i386 FFI
+// ============================================================================
+
+#[cfg(all(not(any(test, kani)), target_arch = "x86"))]
+mod ffi {
+    use super::{algorithm, atomics, header};
+    use core::ptr;
+
+    // Pop MUST be in global_asm! because KiCheckForSListFault (traphdlr.c:1221)
+    // checks if the page fault EIP matches ExpInterlockedPopEntrySListFault and
+    // validates the exact instruction bytes: 0x8B 0x18 = `mov ebx, [eax]`.
+    //
+    // Layout matches sdk/lib/rtl/i386/interlck.S exactly:
+    //   push ebx; push ebp; mov ebp,[esp+12]
+    //   Resume: mov eax,[ebp]; mov edx,[ebp+4]; or eax,eax; jz empty
+    //   lea ecx,[edx-1]
+    //   Fault: mov ebx,[eax]          <-- 0x8B 0x18
+    //   End:   lock cmpxchg8b [ebp]; jnz Resume
+    //   empty: pop ebp; pop ebx; ret 4
+    core::arch::global_asm!(
+        // RTL Pop (stdcall, 1 arg)
+        ".globl _ExpInterlockedPopEntrySListResume@0",
+        ".globl _ExpInterlockedPopEntrySListFault@0",
+        ".globl _ExpInterlockedPopEntrySListEnd@0",
+        ".globl _RtlInterlockedPopEntrySList@4",
+        "_RtlInterlockedPopEntrySList@4:",
+        "  push ebx",
+        "  push ebp",
+        "  mov ebp, [esp + 12]",
+        "_ExpInterlockedPopEntrySListResume@0:",
+        "  mov eax, [ebp]",
+        "  mov edx, [ebp + 4]",
+        "  or eax, eax",
+        "  jz 2f",
+        "  lea ecx, [edx - 1]",
+        "_ExpInterlockedPopEntrySListFault@0:",
+        "  mov ebx, [eax]",
+        "_ExpInterlockedPopEntrySListEnd@0:",
+        "  lock cmpxchg8b qword ptr [ebp]",
+        "  jnz _ExpInterlockedPopEntrySListResume@0",
+        "2:",
+        "  pop ebp",
+        "  pop ebx",
+        "  ret 4",
+    );
+
+    // Push — Rust implementation with stdcall calling convention.
+    // i386 NTAPI = __stdcall. The compiler decorates as _Name@N on i686-pc-windows-gnu.
+    #[no_mangle]
+    pub unsafe extern "stdcall" fn RtlInterlockedPushEntrySList(
+        list_head: *mut u8,
+        list_entry: *mut u8,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, _region) = unsafe { atomics::load(list_head) };
+            let result = algorithm::push_transition(alignment, 0, list_entry as u64);
+
+            // Write old head pointer into entry->Next (32-bit pointer)
+            unsafe { ptr::write(list_entry as *mut u32, result.old_head as u32) };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, 0),
+                    (result.new_alignment, 0),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    // Flush — Rust implementation with stdcall calling convention.
+    // On i386, flush preserves the sequence counter (only zeros Next + Depth).
+    // This matches the original asm: `mov ecx, edx; xor cx, cx` (keeps Sequence in high 16 bits).
+    #[no_mangle]
+    pub unsafe extern "stdcall" fn RtlInterlockedFlushSList(list_head: *mut u8) -> *mut u8 {
+        loop {
+            let (alignment, _region) = unsafe { atomics::load(list_head) };
+
+            let old = header::unpack(alignment, 0);
+            let old_head = header::region_to_ptr(old.next_entry);
+
+            if old_head == 0 {
+                return ptr::null_mut();
+            }
+
+            // Preserve sequence, zero depth and next
+            let new_alignment = alignment & 0xFFFF_0000_0000_0000;
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, 0),
+                    (new_alignment, 0),
+                )
+            } {
+                return old_head as *mut u8;
+            }
+        }
+    }
+
+    // Exp* aliases for i386: Pop aliases are defined inline in the global_asm above
+    // (the Resume/Fault/End labels). For Push and Flush, the kernel uses
+    // fastinterlck_asm.S (separate @Ex* symbols), so no Exp aliases needed in RTL.
+}
+
+// ============================================================================
+// Panic handler (no_std)
+// ============================================================================
+
+#[cfg(not(any(test, kani)))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}

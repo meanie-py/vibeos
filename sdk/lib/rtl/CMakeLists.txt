@@ -34,7 +34,7 @@ list(APPEND SOURCE
     assert.c
     atom.c
     avltable.c
-    bitmap.c
+    # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
     bootdata.c
     compress.c
     crc32.c
@@ -95,7 +95,7 @@ if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE
         i386/debug_asm.S
         i386/except_asm.s
-        i386/interlck.S
+        # i386/interlck.S — replaced by Rust SList (sdk/lib/rust/slist/)
         i386/rtlmem.s
         i386/rtlswap.S
         i386/res_asm.s)
@@ -106,7 +106,7 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE
         amd64/debug_asm.S
         amd64/except_asm.S
-        amd64/slist.S
+        # amd64/slist.S — replaced by Rust SList (sdk/lib/rust/slist/)
         amd64/unwind-asm.s)
     list(APPEND SOURCE
         bitmap64.c
@@ -124,8 +124,8 @@ elseif(ARCH STREQUAL "arm")
         mem.c)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
-        arm64/debug_asm.S
-        arm64/slist.S)
+        arm64/debug_asm.S)
+    # arm64/slist.S replaced by Rust implementation (sdk/lib/rust/slist/)
     list(APPEND SOURCE
         arm64/except.c
         byteswap.c
@@ -137,6 +137,63 @@ add_library(rtl ${SOURCE} ${rtl_asm})
 target_link_libraries(rtl PRIVATE pseh)
 add_pch(rtl rtl.h SOURCE)
 add_dependencies(rtl psdk asm)
+
+# Rust integration — map ARCH to Rust target triple (GNU/LLVM targets, not MSVC)
+set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
+if(ARCH STREQUAL "i386")
+    set(RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+
+# Rust Bitmap library (all architectures)
+set(RUST_BITMAP_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_bitmap.a")
+add_custom_command(
+    OUTPUT ${RUST_BITMAP_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        cargo build --release --target ${RUST_TARGET}
+            -p reactos-bitmap
+            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_bitmap.a
+        ${RUST_BITMAP_LIB}
+    DEPENDS ${RUST_WORKSPACE_DIR}/bitmap/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/bitmap/src/ops.rs
+            ${RUST_WORKSPACE_DIR}/bitmap/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMENT "Building Rust Bitmap library (${RUST_TARGET})"
+)
+add_custom_target(rust_bitmap DEPENDS ${RUST_BITMAP_LIB})
+add_dependencies(rtl rust_bitmap)
+target_link_libraries(rtl PRIVATE ${RUST_BITMAP_LIB})
+
+# Rust SList library (all architectures)
+set(RUST_SLIST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_slist.a")
+add_custom_command(
+    OUTPUT ${RUST_SLIST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        cargo build --release --target ${RUST_TARGET}
+            -p reactos-slist
+            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_slist.a
+        ${RUST_SLIST_LIB}
+    DEPENDS ${RUST_WORKSPACE_DIR}/slist/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/slist/src/algorithm.rs
+            ${RUST_WORKSPACE_DIR}/slist/src/atomics.rs
+            ${RUST_WORKSPACE_DIR}/slist/src/header.rs
+            ${RUST_WORKSPACE_DIR}/slist/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMENT "Building Rust SList library (${RUST_TARGET})"
+)
+add_custom_target(rust_slist DEPENDS ${RUST_SLIST_LIB})
+add_dependencies(rtl rust_slist)
+target_link_libraries(rtl PRIVATE ${RUST_SLIST_LIB})
 
 list(APPEND SOURCE_VISTA
     condvar.c

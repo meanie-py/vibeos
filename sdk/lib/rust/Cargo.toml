@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "bitmap",
+    "slist",
+    "slist-loom",
+]
+resolver = "2"
+
+[profile.release]
+panic = "abort"
+opt-level = 2
+lto = "fat"
+codegen-units = 1
