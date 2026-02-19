@@ -461,8 +461,13 @@ RtlGetFirstRange(IN PRTL_RANGE_LIST RangeList,
         return STATUS_NO_MORE_ENTRIES;
     }
 
-    Iterator->Current = RangeList->ListHead.Flink;
-    *Range = &((PRTL_RANGE_ENTRY)Iterator->Current)->Range;
+    /* Store pointer to Range (not Entry) — matches Windows behavior where
+       Iterator.Current == the returned Range pointer */
+    {
+        PRTL_RANGE_ENTRY RangeEntry = CONTAINING_RECORD(RangeList->ListHead.Flink, RTL_RANGE_ENTRY, Entry);
+        Iterator->Current = &RangeEntry->Range;
+        *Range = &RangeEntry->Range;
+    }
 
     return STATUS_SUCCESS;
 }
@@ -493,6 +498,7 @@ RtlGetNextRange(IN OUT PRTL_RANGE_LIST_ITERATOR Iterator,
                 IN BOOLEAN MoveForwards)
 {
     PRTL_RANGE_LIST RangeList;
+    PRTL_RANGE_ENTRY CurEntry;
     PLIST_ENTRY Next;
 
     RangeList = CONTAINING_RECORD(Iterator->RangeListHead, RTL_RANGE_LIST, ListHead);
@@ -505,13 +511,16 @@ RtlGetNextRange(IN OUT PRTL_RANGE_LIST_ITERATOR Iterator,
         return STATUS_NO_MORE_ENTRIES;
     }
 
+    /* Iterator->Current points to an RTL_RANGE; get back to the containing entry */
+    CurEntry = CONTAINING_RECORD(Iterator->Current, RTL_RANGE_ENTRY, Range);
+
     if (MoveForwards)
     {
-        Next = ((PRTL_RANGE_ENTRY)Iterator->Current)->Entry.Flink;
+        Next = CurEntry->Entry.Flink;
     }
     else
     {
-        Next = ((PRTL_RANGE_ENTRY)Iterator->Current)->Entry.Blink;
+        Next = CurEntry->Entry.Blink;
     }
 
     if (Next == Iterator->RangeListHead)
@@ -521,8 +530,11 @@ RtlGetNextRange(IN OUT PRTL_RANGE_LIST_ITERATOR Iterator,
         return STATUS_NO_MORE_ENTRIES;
     }
 
-    Iterator->Current = Next;
-    *Range = &((PRTL_RANGE_ENTRY)Next)->Range;
+    {
+        PRTL_RANGE_ENTRY NextEntry = CONTAINING_RECORD(Next, RTL_RANGE_ENTRY, Entry);
+        Iterator->Current = &NextEntry->Range;
+        *Range = &NextEntry->Range;
+    }
 
     return STATUS_SUCCESS;
 }
@@ -693,10 +705,23 @@ RtlIsRangeAvailable(IN PRTL_RANGE_LIST RangeList,
     {
         Current = CONTAINING_RECORD (Entry, RTL_RANGE_ENTRY, Entry);
 
-        if (!((Current->Range.Start >= End && Current->Range.End > End) ||
-              (Current->Range.Start <= Start && Current->Range.End < Start &&
-               (!(Flags & RTL_RANGE_SHARED) ||
-                !(Current->Range.Flags & RTL_RANGE_SHARED)))))
+        /* No overlap if: existing range is entirely after query OR entirely before query.
+         * Ranges are inclusive on both ends. Use strict comparisons. */
+        if (Current->Range.Start > End || Current->Range.End < Start)
+        {
+            /* No overlap — this range doesn't conflict */
+        }
+        else if (AttributeAvailableMask != 0 &&
+                 (Current->Range.Attributes & AttributeAvailableMask))
+        {
+            /* Range attributes match the availability mask — treat as available */
+        }
+        else if (Flags & RTL_RANGE_SHARED &&
+                 Current->Range.Flags & RTL_RANGE_SHARED)
+        {
+            /* Both are shared — no conflict */
+        }
+        else
         {
             if (Callback != NULL)
             {

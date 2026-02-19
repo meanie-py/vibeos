@@ -10,6 +10,7 @@ modules/[Aa][Hh][Kk]_[Tt]ests
 .cache
 .cproject
 .DS_Store
+tests/host/build/
 .project
 .settings
 .vscode
