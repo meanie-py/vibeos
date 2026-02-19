@@ -49,6 +49,7 @@ OBJS = \
 	$(BUILD_DIR)/fsrtl_dbcsname.o \
 	$(BUILD_DIR)/fsrtl_name.o \
 	$(BUILD_DIR)/fsrtl_data.o \
+	$(BUILD_DIR)/ke_stub.o \
 	$(BUILD_DIR)/nls_stub.o \
 	$(BUILD_DIR)/seh_host.o \
 	$(BUILD_DIR)/test_RtlSplayTree.o \
@@ -71,6 +72,12 @@ OBJS = \
 	$(BUILD_DIR)/test_KeDeviceQueue.o \
 	$(BUILD_DIR)/test_KeIrql.o \
 	$(BUILD_DIR)/test_GuardedMemory.o \
+	$(BUILD_DIR)/test_KeApc.o \
+	$(BUILD_DIR)/test_RtlIsValidOemCharacter.o \
+	$(BUILD_DIR)/test_ExSequencedList.o \
+	$(BUILD_DIR)/test_KeTimer.o \
+	$(BUILD_DIR)/test_KeMutex.o \
+	$(BUILD_DIR)/test_KeEvent.o \
 	$(BUILD_DIR)/test_runner.o
 
 .PHONY: all test clean
@@ -120,6 +127,9 @@ $(BUILD_DIR)/fsrtl_name.o: $(FSRTL_SRC)/name.c | $(BUILD_DIR)
 # --- Host support ---
 
 $(BUILD_DIR)/fsrtl_data.o: fsrtl_data.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CURDIR)/include -c -o $@ $<
+
+$(BUILD_DIR)/ke_stub.o: ke_stub.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CURDIR)/include -c -o $@ $<
 
 $(BUILD_DIR)/nls_stub.o: nls_stub.c | $(BUILD_DIR)
@@ -196,6 +206,26 @@ $(BUILD_DIR)/test_KeIrql.o: $(TEST_SRC)/ntos_ke/KeIrql.c | $(BUILD_DIR)
 # -O0: prevent compiler from optimizing away NULL dereference and guard page access
 $(BUILD_DIR)/test_GuardedMemory.o: $(TEST_SRC)/example/GuardedMemory.c | $(BUILD_DIR)
 	$(CC) $(TEST_CFLAGS) -O0 -c -o $@ $<
+
+$(BUILD_DIR)/test_KeApc.o: $(TEST_SRC)/ntos_ke/KeApc.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/test_RtlIsValidOemCharacter.o: $(TEST_SRC)/rtl/RtlIsValidOemCharacter.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/test_ExSequencedList.o: $(TEST_SRC)/ntos_ex/ExSequencedList.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/test_KeTimer.o: $(TEST_SRC)/ntos_ke/KeTimer.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/test_KeMutex.o: $(TEST_SRC)/ntos_ke/KeMutex.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -c -o $@ $<
+
+# -O0: prevent inlining of stubs so unused concurrent test functions don't cause issues
+# -Wno-unused-function: static concurrent/scheduling test functions from KeEvent.c are unused
+$(BUILD_DIR)/test_KeEvent.o: test_KeEvent_host.c | $(BUILD_DIR)
+	$(CC) $(TEST_CFLAGS) -O0 -Wno-unused-function -c -o $@ $<
 
 $(BUILD_DIR)/test_runner.o: test_runner.c | $(BUILD_DIR)
 	$(CC) $(TEST_CFLAGS) -c -o $@ $<

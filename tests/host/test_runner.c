@@ -36,6 +36,12 @@ extern VOID Test_ExInterlocked(VOID);
 extern VOID Test_KeDeviceQueue(VOID);
 extern VOID Test_KeIrql(VOID);
 extern VOID Test_GuardedMemory(VOID);
+extern VOID Test_KeApc(VOID);
+extern VOID Test_RtlIsValidOemCharacter(VOID);
+extern VOID Test_ExSequencedList(VOID);
+extern VOID Test_KeTimer(VOID);
+extern VOID Test_KeMutex(VOID);
+extern VOID Test_KeEvent(VOID);
 
 /* FsRtl global initializers */
 extern VOID NTAPI FsRtlInitializeLargeMcbs(VOID);
@@ -67,6 +73,12 @@ static const TEST_ENTRY TestList[] = {
     { "KeDeviceQueue",   Test_KeDeviceQueue },
     { "KeIrql",          Test_KeIrql },
     { "GuardedMemory",   Test_GuardedMemory },
+    { "KeApc",           Test_KeApc },
+    { "RtlIsValidOemCharacter", Test_RtlIsValidOemCharacter },
+    { "ExSequencedList", Test_ExSequencedList },
+    { "KeTimer",         Test_KeTimer },
+    { "KeMutex",         Test_KeMutex },
+    { "KeEvent",         Test_KeEvent },
 };
 
 #define NUM_TESTS (sizeof(TestList) / sizeof(TestList[0]))
@@ -100,6 +112,9 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "ReactOS Host-Side Test Runner\n");
     fprintf(stderr, "=============================\n\n");
+
+    /* Initialize host thread state (MutantListHead etc.) */
+    _host_init_thread();
 
     /* Initialize FsRtl subsystems */
     FsRtlInitializeLargeMcbs();

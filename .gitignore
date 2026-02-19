@@ -15,3 +15,8 @@ tests/host/build/
 .settings
 .vscode
 sdk/tools/winesync/winesync.cfg
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/

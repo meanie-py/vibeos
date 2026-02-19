@@ -128,6 +128,89 @@ PSINGLE_LIST_ENTRY ExInterlockedPopEntryList(
     return PopEntryList(ListHead);
 }
 
+/* ====================================================================
+ * KTHREAD — fake thread for APC/guarded region testing
+ * ==================================================================== */
+
+KTHREAD _host_current_thread = { 0, 0 };
+
+void _host_init_thread(void) {
+    InitializeListHead(&_host_current_thread.MutantListHead);
+    _host_current_thread.WaitNext = FALSE;
+    _host_current_thread.WaitIrql = PASSIVE_LEVEL;
+    _host_current_thread.Win32Thread = NULL;
+}
+
+BOOLEAN NTAPI KeAreApcsDisabled(VOID) {
+    return (_host_current_thread.KernelApcDisable != 0) ||
+           (_host_current_thread.SpecialApcDisable != 0);
+}
+
+void NTAPI KeEnterCriticalRegion(VOID) {
+    _host_current_thread.KernelApcDisable--;
+}
+
+void NTAPI KeLeaveCriticalRegion(VOID) {
+    _host_current_thread.KernelApcDisable++;
+}
+
+BOOLEAN NTAPI KeAreAllApcsDisabled(VOID) {
+    return (_host_current_thread.SpecialApcDisable != 0) ||
+           (KeGetCurrentIrql() >= APC_LEVEL);
+}
+
+void NTAPI KeEnterGuardedRegion(VOID) {
+    _host_current_thread.SpecialApcDisable--;
+}
+
+void NTAPI KeLeaveGuardedRegion(VOID) {
+    _host_current_thread.SpecialApcDisable++;
+}
+
+/* ====================================================================
+ * KmtGetSystemRoutineAddress — wide string function lookup table
+ * ==================================================================== */
+
+PVOID KmtGetSystemRoutineAddress(PCWSTR Name) {
+    /* Compare 16-bit wide strings (WCHAR with -fshort-wchar) */
+    static const WCHAR n1[] = L"KeAreAllApcsDisabled";
+    static const WCHAR n2[] = L"KeEnterGuardedRegion";
+    static const WCHAR n3[] = L"KeLeaveGuardedRegion";
+
+    if (wcscmp(Name, n1) == 0) return (PVOID)KeAreAllApcsDisabled;
+    if (wcscmp(Name, n2) == 0) return (PVOID)KeEnterGuardedRegion;
+    if (wcscmp(Name, n3) == 0) return (PVOID)KeLeaveGuardedRegion;
+    return NULL;
+}
+
+/* ====================================================================
+ * RtlUpcaseUnicodeChar / RtlIsValidOemCharacter — simplified for host
+ *
+ * Real implementation uses NLS tables. Our simplified version:
+ * - RtlUpcaseUnicodeChar: a-z → A-Z, everything else unchanged
+ * - RtlIsValidOemCharacter: ASCII ≤ 0x7F → valid, else invalid
+ *   Also sets *Char to the upcased value.
+ * ==================================================================== */
+
+WCHAR NTAPI RtlUpcaseUnicodeChar(WCHAR Source) {
+    if (Source >= L'a' && Source <= L'z')
+        return Source - L'a' + L'A';
+    return Source;
+}
+
+BOOLEAN NTAPI RtlIsValidOemCharacter(PWCHAR Char) {
+    /* Access via volatile to ensure NULL dereference triggers SIGSEGV for SEH */
+    volatile PWCHAR vChar = Char;
+    WCHAR c = *vChar;
+    WCHAR upcased = RtlUpcaseUnicodeChar(c);
+    *vChar = upcased;
+    /* '?' (0x3F) is the OEM default/substitution character — always invalid */
+    if (upcased == L'?')
+        return FALSE;
+    /* ASCII range (0x00-0x7F) maps to valid OEM characters */
+    return (upcased <= 0x7F) ? TRUE : FALSE;
+}
+
 /*
  * RtlFindCharInUnicodeString — NOT inline so that NULL pointer dereferences
  * actually trigger SIGSEGV (caught by our SEH signal handler). If inlined,

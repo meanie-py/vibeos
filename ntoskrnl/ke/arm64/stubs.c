@@ -398,25 +398,9 @@ CmpInitializeMachineDependentConfiguration(
     return STATUS_SUCCESS;
 }
 
-/* Interlocked SList operations - simple stubs for UP */
-NTKERNELAPI
-PSLIST_ENTRY
-ExpInterlockedPopEntrySList(
-    _Inout_ PSLIST_HEADER SListHead)
-{
-    /* FIXME: Proper atomic implementation needed for SMP */
-    return NULL;
-}
-
-NTKERNELAPI
-PSLIST_ENTRY
-ExpInterlockedPushEntrySList(
-    _Inout_ PSLIST_HEADER SListHead,
-    _Inout_ PSLIST_ENTRY SListEntry)
-{
-    /* FIXME: Proper atomic implementation needed for SMP */
-    return NULL;
-}
+/* SList operations: ExpInterlockedPush/Pop/FlushSList are exported from
+ * ntoskrnl.spec as aliases for RtlInterlockedPush/Pop/FlushSList (slist.S).
+ * No C stubs needed — the linker resolves via the .spec forwarding. */
 
 /* Kernel debugger transport stub - matches KdSendPacket signature */
 VOID

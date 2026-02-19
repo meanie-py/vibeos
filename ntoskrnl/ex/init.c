@@ -2135,6 +2135,17 @@ Phase1InitializationDiscard(IN PVOID Context)
     ARM64_UART_TRACE("[PHASE1] ARM64: I/O init succeeded, proceeding to SMSS launch.\r\n");
 #endif
 
+#ifdef REACTOS_TEST_KERNEL
+    if (CommandLine && strstr(CommandLine, "TESTKERNEL"))
+    {
+        extern VOID NTAPI NtTestKernelDispatchLoop(VOID);
+        NtTestKernelDispatchLoop();
+        ExpInitializationPhase++;
+        ExFreePoolWithTag(InitBuffer, TAG_INIT);
+        return;
+    }
+#endif
+
     /* Launch initial process */
     ARM64_UART_TRACE("[PHASE1] ExpLoadInitialProcess (SMSS)\r\n");
     ProcessInfo = &InitBuffer->ProcessInfo;

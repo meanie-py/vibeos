@@ -8,12 +8,21 @@
 .text
 
 /*
+ * Exp* aliases for ntoskrnl internal use (matches amd64/slist.S pattern).
+ * The .spec file also exports these for external consumers.
+ */
+.globl ExpInterlockedPopEntrySList
+.globl ExpInterlockedPushEntrySList
+.globl ExpInterlockedFlushSList
+
+/*
  * PSLIST_ENTRY RtlInterlockedPopEntrySList(PSLIST_HEADER ListHead)
  *
  * x0 = pointer to SLIST_HEADER (16 bytes, 16-byte aligned)
  * Returns: pointer to popped entry, or NULL if empty
  */
 .globl RtlInterlockedPopEntrySList
+ExpInterlockedPopEntrySList:
 RtlInterlockedPopEntrySList:
     mov x4, x0              /* Save ListHead pointer */
 1:
@@ -60,6 +69,7 @@ RtlInterlockedPopEntrySList:
  * Returns: previous first entry
  */
 .globl RtlInterlockedPushEntrySList
+ExpInterlockedPushEntrySList:
 RtlInterlockedPushEntrySList:
     mov x4, x0              /* Save ListHead */
     mov x5, x1              /* Save ListEntry */
@@ -95,6 +105,7 @@ RtlInterlockedPushEntrySList:
  * Returns: pointer to old first entry, or NULL if empty
  */
 .globl RtlInterlockedFlushSList
+ExpInterlockedFlushSList:
 RtlInterlockedFlushSList:
     mov x4, x0
 1:

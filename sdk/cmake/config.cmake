@@ -115,3 +115,6 @@ set(USE_DUMMY_PSEH FALSE CACHE BOOL
 
 set(DLL_EXPORT_VERSION "0x502" CACHE STRING
 "The NT version the user mode DLLs target.")
+
+set(REACTOS_TEST_KERNEL FALSE CACHE BOOL
+"Whether to compile the in-kernel test runner (test builds only).")

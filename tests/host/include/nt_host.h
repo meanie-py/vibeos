@@ -66,6 +66,11 @@
 #define _Function_class_(c)
 #define _Analysis_assume_(x)
 #define _Must_inspect_result_
+#define _IRQL_requires_min_(x)
+#define _IRQL_requires_max_(x)
+#define _Acquires_lock_(x)
+#define _Releases_lock_(x)
+#define _Global_critical_region_
 
 /* ====================================================================
  * Basic scalar types
@@ -91,6 +96,11 @@ typedef union _LARGE_INTEGER {
     struct { ULONG LowPart; LONG HighPart; };
     LONGLONG QuadPart;
 } LARGE_INTEGER, *PLARGE_INTEGER;
+
+typedef union _ULARGE_INTEGER {
+    struct { ULONG LowPart; ULONG HighPart; };
+    ULONGLONG QuadPart;
+} ULARGE_INTEGER, *PULARGE_INTEGER;
 typedef uintptr_t ULONG_PTR, *PULONG_PTR, SIZE_T, *PSIZE_T;
 typedef intptr_t  LONG_PTR, SSIZE_T;
 typedef LONG     CLONG;
@@ -168,6 +178,13 @@ typedef unsigned int UINT;
 #define UNICODE_NULL ((WCHAR)0)
 
 #define UNIMPLEMENTED do { fprintf(stderr, "UNIMPLEMENTED: %s:%d\n", __FILE__, __LINE__); abort(); } while(0)
+
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef max
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
 
 /* C_ASSERT — compile-time assertion */
 #define C_ASSERT(e) _Static_assert(e, #e)
@@ -837,6 +854,7 @@ typedef struct _TUNNEL {
  * ==================================================================== */
 
 #define OBJ_CASE_INSENSITIVE 0x00000040
+#define OBJ_KERNEL_HANDLE    0x00000200
 #define KEY_READ 0x20019
 
 typedef struct _OBJECT_ATTRIBUTES {
@@ -1015,10 +1033,191 @@ extern KIRQL KeRaiseIrqlToSynchLevel(void);
 extern BOOLEAN KmtIsMultiProcessorBuild;
 
 /* ====================================================================
- * CSHORT — used in dispatcher object headers
+ * Dispatcher object types — common to events, timers, mutants
  * ==================================================================== */
 
 typedef short CSHORT, *PCSHORT;
+typedef LONG KPRIORITY;
+
+typedef struct _DISPATCHER_HEADER {
+    union {
+        struct {
+            UCHAR Type;
+            union { UCHAR Abandoned; UCHAR Absolute; };
+            union { UCHAR Size; UCHAR Hand; };
+            union { UCHAR Inserted; UCHAR DpcActive; };
+        };
+        volatile LONG Lock;
+    };
+    LONG SignalState;
+    LIST_ENTRY WaitListHead;
+} DISPATCHER_HEADER;
+
+/* Wait block — used in dispatcher wait lists */
+typedef struct _KWAIT_BLOCK {
+    LIST_ENTRY WaitListEntry;
+    struct _KTHREAD *Thread;
+    PVOID Object;
+    struct _KWAIT_BLOCK *NextWaitBlock;
+    USHORT WaitKey;
+    UCHAR WaitType;
+    volatile UCHAR BlockState;
+} KWAIT_BLOCK, *PKWAIT_BLOCK;
+
+/* ====================================================================
+ * KTHREAD — thread structure for APC, mutex, event, and timer testing
+ * ==================================================================== */
+
+typedef struct _KTHREAD {
+    SHORT KernelApcDisable;
+    SHORT SpecialApcDisable;
+    LIST_ENTRY MutantListHead;
+    BOOLEAN WaitNext;
+    KIRQL WaitIrql;
+    PVOID Win32Thread;
+    KWAIT_BLOCK WaitBlock[4];
+} KTHREAD, *PKTHREAD;
+
+extern KTHREAD _host_current_thread;
+#define KeGetCurrentThread() ((PKTHREAD)&_host_current_thread)
+extern void _host_init_thread(void);
+
+/* APC functions */
+extern BOOLEAN NTAPI KeAreApcsDisabled(VOID);
+extern void NTAPI KeEnterCriticalRegion(VOID);
+extern void NTAPI KeLeaveCriticalRegion(VOID);
+
+/* Guarded region functions */
+extern BOOLEAN NTAPI KeAreAllApcsDisabled(VOID);
+extern void NTAPI KeEnterGuardedRegion(VOID);
+extern void NTAPI KeLeaveGuardedRegion(VOID);
+
+/* KmtGetSystemRoutineAddress — dynamic function lookup on host */
+extern PVOID KmtGetSystemRoutineAddress(PCWSTR Name);
+
+/* RtlUpcaseUnicodeChar / RtlIsValidOemCharacter */
+extern WCHAR NTAPI RtlUpcaseUnicodeChar(WCHAR Source);
+extern BOOLEAN NTAPI RtlIsValidOemCharacter(PWCHAR Char);
+
+/* ====================================================================
+ * KEVENT — kernel event object
+ * ==================================================================== */
+
+typedef enum _EVENT_TYPE {
+    NotificationEvent = 0,
+    SynchronizationEvent = 1
+} EVENT_TYPE;
+
+typedef struct _KEVENT {
+    DISPATCHER_HEADER Header;
+} KEVENT, *PKEVENT, *PRKEVENT;
+
+extern VOID NTAPI KeInitializeEvent(PKEVENT Event, EVENT_TYPE Type, BOOLEAN State);
+extern LONG NTAPI KeSetEvent(PKEVENT Event, KPRIORITY Increment, BOOLEAN Wait);
+extern LONG NTAPI KeResetEvent(PKEVENT Event);
+extern VOID NTAPI KeClearEvent(PKEVENT Event);
+extern LONG NTAPI KePulseEvent(PKEVENT Event, KPRIORITY Increment, BOOLEAN Wait);
+extern LONG NTAPI KeReadStateEvent(PKEVENT Event);
+
+/* ====================================================================
+ * KTIMER — kernel timer object
+ * ==================================================================== */
+
+typedef enum _TIMER_TYPE {
+    NotificationTimer = 0,
+    SynchronizationTimer = 1
+} TIMER_TYPE;
+
+#define TimerNotificationObject     8
+#define TimerSynchronizationObject  9
+
+struct _KDPC;
+
+typedef struct _KTIMER {
+    DISPATCHER_HEADER Header;
+    ULARGE_INTEGER DueTime;
+    LIST_ENTRY TimerListEntry;
+    struct _KDPC *Dpc;
+    ULONG Processor;
+    ULONG Period;
+} KTIMER, *PKTIMER;
+
+extern VOID NTAPI KeInitializeTimerEx(PKTIMER Timer, TIMER_TYPE Type);
+extern LONG NTAPI KeReadStateTimer(PKTIMER Timer);
+
+/* ====================================================================
+ * KMUTANT / KMUTEX — kernel mutex/mutant objects
+ * ==================================================================== */
+
+#define MutantObject 2
+
+typedef struct _KMUTANT {
+    DISPATCHER_HEADER Header;
+    LIST_ENTRY MutantListEntry;
+    struct _KTHREAD *OwnerThread;
+    BOOLEAN Abandoned;
+    UCHAR ApcDisable;
+} KMUTANT, *PKMUTANT, *PRKMUTANT;
+
+typedef KMUTANT KMUTEX, *PKMUTEX, *PRKMUTEX;
+
+extern VOID NTAPI KeInitializeMutant(PKMUTANT Mutant, BOOLEAN InitialOwner);
+extern LONG NTAPI KeReleaseMutant(PKMUTANT Mutant, KPRIORITY Increment,
+                                   BOOLEAN Abandoned, BOOLEAN Wait);
+extern VOID NTAPI KeInitializeMutex(PKMUTEX Mutex, ULONG Level);
+extern LONG NTAPI KeReleaseMutex(PKMUTEX Mutex, BOOLEAN Wait);
+
+/* ====================================================================
+ * KeWaitForSingleObject — uncontended fast path for mutant/mutex
+ * ==================================================================== */
+
+typedef enum _KWAIT_REASON { Executive = 0 } KWAIT_REASON;
+#define KernelMode 0
+#define UserMode   1
+#define STATUS_MUTANT_LIMIT_EXCEEDED ((NTSTATUS)0xC0000191)
+#define STATUS_MUTANT_NOT_OWNED      ((NTSTATUS)0xC0000046)
+
+extern NTSTATUS NTAPI KeWaitForSingleObject(
+    PVOID Object, KWAIT_REASON WaitReason, LONG WaitMode,
+    BOOLEAN Alertable, PLARGE_INTEGER Timeout);
+
+/* ====================================================================
+ * SLIST_HEADER — sequenced singly-linked list (host LP64 layout)
+ * ==================================================================== */
+
+typedef SINGLE_LIST_ENTRY SLIST_ENTRY, *PSLIST_ENTRY;
+
+typedef union _SLIST_HEADER {
+    struct {
+        SINGLE_LIST_ENTRY Next;
+        USHORT Depth;
+        USHORT Sequence;
+    };
+} SLIST_HEADER, *PSLIST_HEADER;
+
+static inline void InitializeSListHead(PSLIST_HEADER ListHead) {
+    memset(ListHead, 0, sizeof(SLIST_HEADER));
+}
+#define ExInitializeSListHead InitializeSListHead
+
+static inline USHORT ExQueryDepthSList(PSLIST_HEADER ListHead) {
+    return ListHead->Depth;
+}
+
+extern PSLIST_ENTRY ExInterlockedPushEntrySList(
+    PSLIST_HEADER ListHead, PSLIST_ENTRY ListEntry, PKSPIN_LOCK Lock);
+extern PSLIST_ENTRY ExInterlockedPopEntrySList(
+    PSLIST_HEADER ListHead, PKSPIN_LOCK Lock);
+extern PSLIST_ENTRY ExInterlockedFlushSList(PSLIST_HEADER ListHead);
+
+/* _WIN32_WINNT version constants */
+#define _WIN32_WINNT_NT4    0x0400
+#define _WIN32_WINNT_WIN2K  0x0500
+#define _WIN32_WINNT_WINXP  0x0501
+#define _WIN32_WINNT_WS03   0x0502
+#define _WIN32_WINNT_VISTA  0x0600
+#define _WIN32_WINNT_WIN7   0x0601
+#define _WIN32_WINNT_WIN8   0x0602
 
 /* ====================================================================
  * KDEVICE_QUEUE — device queue for sorted IRP processing
@@ -1279,7 +1478,7 @@ static inline NTSTATUS ExUuidCreate(UUID *Uuid) {
 
 #define KmtIsCheckedBuild FALSE
 static inline BOOLEAN KmtAreInterruptsEnabled(void) { return TRUE; }
-static inline void KmtSetIrql(KIRQL NewIrql) { (void)NewIrql; }
+static inline void KmtSetIrql(KIRQL NewIrql) { KeLowerIrql(NewIrql); }
 
 /* SharedUserData stub for GetNTVersion() macro */
 typedef struct _KUSER_SHARED_DATA {
