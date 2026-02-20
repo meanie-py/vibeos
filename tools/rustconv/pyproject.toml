@@ -1,0 +1,18 @@
+[project]
+name = "rustconv"
+version = "0.1.0"
+description = "C-to-Rust translation pipeline for ReactOS ntoskrnl"
+requires-python = ">=3.10"
+dependencies = [
+    "tree-sitter>=0.24",
+    "tree-sitter-c>=0.24",
+]
+
+[tool.setuptools.packages.find]
+include = ["rustconv*"]
+
+[tool.setuptools.package-data]
+rustconv = ["../templates/*", "../data/*"]
+
+[project.scripts]
+rustconv = "rustconv.__main__:main"

@@ -141,3 +141,19 @@ pub unsafe fn InterlockedExchangeAddSizeT(addend: *mut isize, value: isize) -> i
     let atomic = &*(addend as *const AtomicIsize);
     atomic.fetch_add(value, Ordering::SeqCst)
 }
+
+/// InterlockedIncrementSizeT — atomic increment on isize (LONG_PTR), returns NEW value.
+#[inline]
+pub unsafe fn InterlockedIncrementSizeT(Addend: *mut isize) -> isize {
+    use core::sync::atomic::{AtomicIsize, Ordering};
+    let atomic = &*(Addend as *const AtomicIsize);
+    atomic.fetch_add(1, Ordering::SeqCst).wrapping_add(1)
+}
+
+/// InterlockedDecrementSizeT — atomic decrement on isize (LONG_PTR), returns NEW value.
+#[inline]
+pub unsafe fn InterlockedDecrementSizeT(Addend: *mut isize) -> isize {
+    use core::sync::atomic::{AtomicIsize, Ordering};
+    let atomic = &*(Addend as *const AtomicIsize);
+    atomic.fetch_sub(1, Ordering::SeqCst).wrapping_sub(1)
+}

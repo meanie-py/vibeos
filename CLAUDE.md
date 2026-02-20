@@ -280,6 +280,75 @@ The script runs bindgen against `ntoskrnl.h` + `miarm.h` for all 3 targets (`aar
 2. Add to workspace `members` in `sdk/lib/rust/Cargo.toml`
 3. Wire up `add_custom_command` + `target_link_libraries` in `sdk/lib/rtl/CMakeLists.txt`
 
+## rustconv — C-to-Rust Translation Pipeline
+
+API-driven pipeline that translates ntoskrnl C files to Rust using LLM (Sonnet batch API). Located at `tools/rustconv/`.
+
+### Pipeline
+
+```
+C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys catalog
+→ [prompt_builder] system prompt + C + imports + exports → [batch_runner] LLM API
+→ [postprocess] safe mechanical fixes → [assembler] write crate → [checker] cargo check ×3
+```
+
+### CLI
+
+```bash
+cd reactos
+source .venv/bin/activate
+
+python -m rustconv scan ntoskrnl/ex/uuid.c         # Parse, print analysis
+python -m rustconv resolve ntoskrnl/ex/uuid.c       # Resolve deps → import manifest
+python -m rustconv prompt ntoskrnl/ex/uuid.c         # Generate prompt to stdout
+python -m rustconv estimate ntoskrnl/ob/             # Token count + cost estimate
+python -m rustconv submit ntoskrnl/ex/uuid.c -o out.rs   # Single-file API call
+python -m rustconv submit ntoskrnl/ex/uuid.c --assemble  # Translate + write to crate
+python -m rustconv batch ntoskrnl/ob/ -m sonnet      # Batch entire subsystem
+python -m rustconv check                              # cargo check ×3 targets
+```
+
+Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, or full model ID.
+
+### Key Files
+
+```
+tools/rustconv/
+├── rustconv/
+│   ├── scanner.py         # tree-sitter C parser (functions, globals, SEH, arch ifdefs)
+│   ├── catalog.py         # Index ntkrnl-sys symbols (~9,700 per arch)
+│   ├── resolver.py        # Match identifiers → imports + gap warnings
+│   ├── spec_parser.py     # Parse ntoskrnl.spec (1,592 exports)
+│   ├── prompt_builder.py  # Assemble system + per-file prompts
+│   ├── batch_runner.py    # Anthropic + Gemini API client
+│   ├── postprocess.py     # Safe mechanical fixes (type names, imports, enums)
+│   ├── assembler.py       # Write to ntoskrnl-rust/src/{subsys}/{file}.rs
+│   ├── checker.py         # cargo check ×3 targets → structured errors
+│   └── config.py          # Paths, model config, token budgets
+├── templates/
+│   └── system_prompt.md   # Translation rules (~5K tokens, prompt-cached)
+└── data/
+    └── gap_functions.toml # FORCEINLINE/macro functions not in bindgen
+```
+
+### Post-Processor Safety
+
+`postprocess.py` only does context-free transforms that are always correct:
+- Type name underscore-prefixing (`OBJECT_HEADER` → `_OBJECT_HEADER`)
+- Import fixes (`ddk::*` warning, pool type dedup)
+- Enum variant name prefixing (`ObCreateHandle` → `_OB_OPEN_REASON_ObCreateHandle`)
+
+Union field access (`__bindgen_anon_N`) is NOT done by the post-processor — it's context-dependent and handled by the system prompt teaching the LLM to generate correct accessors directly.
+
+### Cost (Sonnet Batch API)
+
+| Scope | Est. Cost |
+|-------|-----------|
+| Single file | ~$0.03 |
+| Subsystem (11 files) | ~$0.30 |
+| Full ntoskrnl (393 files) | ~$8.70 |
+| 5 iterations | ~$43.50 |
+
 ## ARM64 Specifics
 
 ### Memory Layout

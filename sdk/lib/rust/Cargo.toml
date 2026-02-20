@@ -14,6 +14,7 @@ members = [
     "luid",
     "mem",
     "ntkrnl-sys",
+    "ntoskrnl-rust",
     "pool",
     "prefix",
     "random",

@@ -1,0 +1,93 @@
+# Gap functions: C macros/FORCEINLINE not available in ntkrnl-sys bindgen output.
+# These need special handling in translation prompts.
+
+[memory]
+# Expand to core::ptr::* operations
+RtlCopyMemory = "core::ptr::copy_nonoverlapping"
+RtlMoveMemory = "core::ptr::copy"
+RtlZeroMemory = "core::ptr::write_bytes(..., 0, ...)"
+RtlFillMemory = "core::ptr::write_bytes"
+RtlCompareMemory = "extern fn"  # actually an extern, but sometimes missing
+
+[macros]
+# These are C macros that expand inline
+InitializeObjectAttributes = "struct init"
+NT_SUCCESS = "status >= 0"
+NT_ERROR = "status < 0"
+NT_WARNING = "(status as u32) >> 30 == 3"
+NT_INFORMATION = "(status as u32) >> 30 == 1"
+PAGED_CODE = "omit"
+DPRINT = "omit"
+DPRINT1 = "omit"
+ASSERT = "debug_assert! or omit"
+ASSERTMSG = "debug_assert! or omit"
+NDEBUG = "omit"
+UNIMPLEMENTED = "omit"
+
+[seh]
+# SEH macros — dead code under DUMMY_PSEH
+_SEH2_TRY = "execute body directly"
+_SEH2_EXCEPT = "omit handler"
+_SEH2_END = "omit"
+_SEH2_YIELD = "omit wrapper"
+_SEH2_GetExceptionCode = "unused"
+_SEH2_GetExceptionInformation = "unused"
+EXCEPTION_EXECUTE_HANDLER = "constant 1"
+
+[list_ops]
+# LIST_ENTRY macros — expand inline or use extern
+InitializeListHead = "(*head).Flink = head; (*head).Blink = head;"
+InsertTailList = "extern or inline"
+InsertHeadList = "extern or inline"
+RemoveEntryList = "extern or inline"
+RemoveHeadList = "extern or inline"
+RemoveTailList = "extern or inline"
+IsListEmpty = "(*head).Flink == head"
+CONTAINING_RECORD = "pointer arithmetic"
+OBJECT_TO_OBJECT_HEADER = "CONTAINING_RECORD pattern"
+
+[interlocked]
+# Interlocked operations — mix of externs and intrinsics
+InterlockedIncrement = "extern or atomic"
+InterlockedDecrement = "extern or atomic"
+InterlockedExchange = "extern or atomic"
+InterlockedCompareExchange = "extern or atomic"
+InterlockedExchangeAdd = "extern or atomic"
+InterlockedExchangeAdd64 = "extern"
+InterlockedCompareExchangePointer = "extern or atomic"
+
+[string]
+# String initialization
+RtlInitUnicodeString = "extern fn"
+RtlInitAnsiString = "extern fn"
+
+[sync]
+# Synchronization — these ARE externs, but sometimes missing from bindgen
+ExInitializeFastMutex = "extern fn"
+ExAcquireFastMutex = "extern fn"
+ExReleaseFastMutex = "extern fn"
+
+[security]
+SeCaptureSubjectContext = "extern fn"
+SeReleaseSubjectContext = "extern fn"
+SeQuerySubjectContextToken = "macro → field access"
+SeQueryAuthenticationIdToken = "extern fn"
+
+[mode]
+ExGetPreviousMode = "extern fn"
+KeGetPreviousMode = "extern fn"
+
+[probe]
+ProbeForWrite = "extern fn"
+ProbeForRead = "extern fn"
+
+[time]
+KeQuerySystemTime = "extern fn"
+KeQueryPerformanceCounter = "extern fn"
+
+[status]
+RtlRaiseStatus = "extern fn"
+
+[luid]
+RtlEqualLuid = "macro → field comparison"
+SYSTEM_LUID = "LUID { LowPart: 0x3e7, HighPart: 0 }"
