@@ -1,10 +1,32 @@
 [workspace]
 members = [
+    "access",
+    "avltable",
     "bitmap",
+    "byteswap",
+    "compress",
+    "crc32",
+    "encode",
+    "generictable",
+    "handle",
+    "interlck",
+    "largeint",
+    "luid",
+    "mem",
+    "ntkrnl-sys",
+    "pool",
+    "prefix",
+    "random",
     "slist",
     "slist-loom",
+    "splaytree",
+    "time",
+    "utf8",
 ]
 resolver = "2"
+
+[profile.dev]
+panic = "abort"
 
 [profile.release]
 panic = "abort"

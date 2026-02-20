@@ -95,6 +95,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "ntkrnl-sys"
+version = "0.1.0"
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -116,11 +120,86 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
 
 [[package]]
+name = "reactos-access"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-avltable"
+version = "0.1.0"
+
+[[package]]
 name = "reactos-bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "reactos-byteswap"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-compress"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-crc32"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-encode"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-generictable"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-handle"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-interlck"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-largeint"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-luid"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-mem"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-pool"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "reactos-prefix"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-random"
+version = "0.1.0"
+
+[[package]]
 name = "reactos-slist"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-splaytree"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-time"
+version = "0.1.0"
+
+[[package]]
+name = "reactos-utf8"
 version = "0.1.0"
 
 [[package]]

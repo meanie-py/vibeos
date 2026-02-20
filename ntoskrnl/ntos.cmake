@@ -212,7 +212,8 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/expool.c
+    # Replaced by Rust pool crate (sdk/lib/rust/pool)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/expool.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/hypermap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/iosup.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/kdbg.c
@@ -224,7 +225,8 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/ncache.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pagfault.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pfnlist.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pool.c
+    # Replaced by Rust pool crate (sdk/lib/rust/pool)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pool.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/procsup.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/section.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/session.c
