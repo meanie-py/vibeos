@@ -12,6 +12,31 @@
 #define NDEBUG
 #include <debug.h>
 
+/* DEBUG: UART trace for crash diagnosis */
+#ifdef _M_ARM64
+#define _TOK_TRACE(msg) do { \
+    extern volatile PVOID Arm64UartKernelBase; \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) { const char *_m = (msg); while (*_m) *_u = (ULONG)*_m++; } \
+} while(0)
+#define _TOK_HEX(prefix, val) do { \
+    extern volatile PVOID Arm64UartKernelBase; \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) { \
+        const char *_m = (prefix); while (*_m) *_u = (ULONG)*_m++; \
+        ULONG_PTR _v = (ULONG_PTR)(val); \
+        const char _hex[] = "0123456789ABCDEF"; \
+        *_u = (ULONG)'0'; *_u = (ULONG)'x'; \
+        for (int _i = 60; _i >= 0; _i -= 4) *_u = (ULONG)_hex[(_v >> _i) & 0xF]; \
+        *_u = (ULONG)'\n'; \
+    } \
+} while(0)
+#else
+#define _TOK_TRACE(msg) ((void)0)
+#define _TOK_HEX(prefix, val) ((void)0)
+#endif
+
+
 /* DEFINES ********************************************************************/
 
 #define SE_TOKEN_DYNAMIC_SLIM 500
@@ -195,6 +220,8 @@ SepCreateToken(
         TokenPagedCharges = SE_TOKEN_DYNAMIC_SLIM + TotalSize;
     }
 
+    _TOK_TRACE("[TOK] before ObCreateObject\n");
+    _TOK_HEX("[TOK] SeTokenObjectType=", SeTokenObjectType);
     Status = ObCreateObject(PreviousMode,
                             SeTokenObjectType,
                             ObjectAttributes,
@@ -204,6 +231,7 @@ SepCreateToken(
                             TokenPagedCharges,
                             0,
                             (PVOID*)&AccessToken);
+    _TOK_TRACE("[TOK] after ObCreateObject\n");
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("ObCreateObject() failed (Status 0x%lx)\n", Status);

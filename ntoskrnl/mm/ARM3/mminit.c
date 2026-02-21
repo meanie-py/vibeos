@@ -2568,11 +2568,27 @@ MmArmInitSystem(IN ULONG Phase,
         /* Initialize the loaded module list */
         ARM64_UART_TRACE("[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(LoaderBlock);
+#ifdef _M_ARM64
+        {
+            extern volatile PVOID Arm64UartKernelBase;
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            const char *_s = "[MM] MiInitializeLoadedModuleList returned\r\n";
+            if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+        }
+#endif
     }
 
     //
     // Always return success for now
     //
+#ifdef _M_ARM64
+        {
+            extern volatile PVOID Arm64UartKernelBase;
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            const char *_s = "[MM] MmArmInitSystem about to return\r\n";
+            if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+        }
+#endif
     ARM64_UART_TRACE("[MM] MmArmInitSystem returning TRUE\r\n");
     return TRUE;
 }

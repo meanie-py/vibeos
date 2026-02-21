@@ -58,6 +58,13 @@ pub fn NT_SUCCESS(status: NTSTATUS) -> bool {
     status >= 0
 }
 
+/// PCHAR — pointer to 8-bit character.
+pub type PCHAR = *mut CHAR;
+/// PWCHAR — pointer to wide character.
+pub type PWCHAR = *mut WCHAR;
+/// PCWSTR — const pointer to wide string.
+pub type PCWSTR = *const WCHAR;
+
 pub const TRUE: BOOLEAN = 1;
 pub const FALSE: BOOLEAN = 0;
 

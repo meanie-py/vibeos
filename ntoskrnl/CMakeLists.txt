@@ -43,8 +43,8 @@ endif()
 list(APPEND PCH_SKIP_SOURCE
     guid.c)
 
-# list(APPEND PCH_SKIP_SOURCE
-#     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c)
+list(APPEND PCH_SKIP_SOURCE
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")

@@ -31,6 +31,7 @@ pub const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
 pub const OBJ_OPENIF: ULONG = 0x00000080;
 pub const OBJ_KERNEL_HANDLE: ULONG = 0x00000200;
 pub const OBJ_FORCE_ACCESS_CHECK: ULONG = 0x00000400;
+pub const OBJ_OPENLINK: ULONG = 0x00000100;
 pub const OBJ_KERNEL_EXCLUSIVE: ULONG = 0x00010000;
 
 // Internal handle entry attribute bits (from ob.h)
@@ -115,3 +116,109 @@ pub const TAG_OB_TEMP_STORAGE: ULONG = u32::from_le_bytes(*b"ObSt");
 
 pub const KernelMode: i8 = 0;
 pub const UserMode: i8 = 1;
+
+// ============================================================================
+// Additional NTSTATUS codes (from ntstatus.h)
+// ============================================================================
+
+pub const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = 0xC0000034_u32 as i32;
+pub const STATUS_OBJECT_NAME_INVALID: NTSTATUS = 0xC0000033_u32 as i32;
+pub const STATUS_OBJECT_PATH_NOT_FOUND: NTSTATUS = 0xC000003A_u32 as i32;
+pub const STATUS_OBJECT_PATH_INVALID: NTSTATUS = 0xC0000039_u32 as i32;
+pub const STATUS_OBJECT_PATH_SYNTAX_BAD: NTSTATUS = 0xC000003B_u32 as i32;
+pub const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = 0xC0000004_u32 as i32;
+pub const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023_u32 as i32;
+pub const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005_u32 as i32;
+pub const STATUS_PRIVILEGE_NOT_HELD: NTSTATUS = 0xC0000061_u32 as i32;
+pub const STATUS_REPARSE: NTSTATUS = 0x00000104;
+pub const STATUS_REPARSE_OBJECT: NTSTATUS = 0x00000118;
+pub const STATUS_NO_MORE_ENTRIES: NTSTATUS = 0x8000001A_u32 as i32;
+pub const STATUS_INVALID_INFO_CLASS: NTSTATUS = 0xC0000003_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_1: NTSTATUS = 0xC00000EF_u32 as i32;
+pub const STATUS_BAD_IMPERSONATION_LEVEL: NTSTATUS = 0xC00000A5_u32 as i32;
+
+// ============================================================================
+// Additional OBJ_* flags (from obtypes.h)
+// ============================================================================
+
+pub const OBJ_VALID_KERNEL_ATTRIBUTES: ULONG = OBJ_VALID_ATTRIBUTES | OBJ_KERNEL_EXCLUSIVE;
+
+pub const OBJ_VALID_ATTRIBUTES: ULONG = 0x000007F2;
+
+// ============================================================================
+// OB pool tags (from ob.h)
+// ============================================================================
+
+pub const OB_NAME_TAG: ULONG = u32::from_le_bytes(*b"ObNm");
+pub const OB_DIR_TAG: ULONG = u32::from_le_bytes(*b"ObDi");
+pub const TAG_SD: ULONG = u32::from_le_bytes(*b"ObSd");
+pub const TAG_SEC_QUERY: ULONG = u32::from_le_bytes(*b"ObSq");
+pub const TAG_DACL: ULONG = u32::from_le_bytes(*b"SeAc");
+pub const OB_LINK_TAG: ULONG = u32::from_le_bytes(*b"ObSy");
+pub const TAG_OB_WAIT: ULONG = u32::from_le_bytes(*b"ObWt");
+
+// ============================================================================
+// OB internal constants (from ob.h)
+// ============================================================================
+
+pub const OBP_NAME_LOOKASIDE_MAX_SIZE: ULONG = 248;
+pub const OBP_CREATE_INFO_LOOKASIDE_MAX_SIZE: ULONG = 0; // placeholder
+pub const OBJ_NAME_PATH_SEPARATOR: WCHAR = b'\\' as WCHAR;
+
+// ============================================================================
+// Access mask constants (from winnt.h)
+// ============================================================================
+
+pub const DELETE: ULONG = 0x00010000;
+pub const READ_CONTROL: ULONG = 0x00020000;
+pub const WRITE_DAC: ULONG = 0x00040000;
+pub const WRITE_OWNER: ULONG = 0x00080000;
+pub const SYNCHRONIZE: ULONG = 0x00100000;
+pub const STANDARD_RIGHTS_REQUIRED: ULONG = DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER;
+pub const STANDARD_RIGHTS_READ: ULONG = READ_CONTROL;
+pub const STANDARD_RIGHTS_WRITE: ULONG = READ_CONTROL;
+pub const STANDARD_RIGHTS_EXECUTE: ULONG = READ_CONTROL;
+pub const STANDARD_RIGHTS_ALL: ULONG = DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER | SYNCHRONIZE;
+pub const SPECIFIC_RIGHTS_ALL: ULONG = 0x0000FFFF;
+
+// ============================================================================
+// Directory access rights (from obtypes.h)
+// ============================================================================
+
+pub const DIRECTORY_QUERY: ULONG = 0x0001;
+pub const DIRECTORY_TRAVERSE: ULONG = 0x0002;
+pub const DIRECTORY_CREATE_OBJECT: ULONG = 0x0004;
+pub const DIRECTORY_CREATE_SUBDIRECTORY: ULONG = 0x0008;
+pub const DIRECTORY_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | 0x000F;
+
+// ============================================================================
+// Symbolic link access rights (from obtypes.h)
+// ============================================================================
+
+pub const SYMBOLIC_LINK_QUERY: ULONG = 0x0001;
+pub const SYMBOLIC_LINK_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | 0x0001;
+
+// ============================================================================
+// Security constants (from setypes.h)
+// ============================================================================
+
+pub const ACL_REVISION: ULONG = 2;
+pub const ACL_REVISION_DS: ULONG = 4;
+pub const SECURITY_DESCRIPTOR_REVISION: ULONG = 1;
+pub const SE_DACL_PRESENT: u16 = 0x0004;
+pub const SE_SELF_RELATIVE: u16 = 0x8000;
+pub const ACCESS_ALLOWED_ACE_TYPE: UCHAR = 0;
+
+// Security information (from winnt.h)
+pub const OWNER_SECURITY_INFORMATION: ULONG = 0x00000001;
+pub const GROUP_SECURITY_INFORMATION: ULONG = 0x00000002;
+pub const DACL_SECURITY_INFORMATION: ULONG = 0x00000004;
+pub const SACL_SECURITY_INFORMATION: ULONG = 0x00000008;
+pub const LABEL_SECURITY_INFORMATION: ULONG = 0x00000010;
+
+// ============================================================================
+// Lookaside list constants
+// ============================================================================
+
+pub const LookasideCreateInfoList: ULONG = 3;
+pub const LookasideNameBufferList: ULONG = 4;

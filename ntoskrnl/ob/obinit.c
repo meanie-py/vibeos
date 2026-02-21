@@ -215,10 +215,26 @@ ObInitSystem(VOID)
     PSECURITY_DESCRIPTOR KernelObjectsSD = NULL;
     NTSTATUS Status;
 
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] ObInitSystem enter\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     /* Check if this is actually Phase 1 initialization */
     if (ObpInitializationPhase != 0) goto ObPostPhase0;
 
     /* Initialize the OBJECT_CREATE_INFORMATION List */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before CreateInfo lookaside\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ExInitializeSystemLookasideList(&ObpCreateInfoLookasideList,
                                     NonPagedPool,
                                     sizeof(OBJECT_CREATE_INFORMATION),
@@ -227,6 +243,14 @@ ObInitSystem(VOID)
                                     &ExSystemLookasideListHead);
 
     /* Set the captured UNICODE_STRING Object Name List */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before NameBuffer lookaside\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ExInitializeSystemLookasideList(&ObpNameBufferLookasideList,
                                     PagedPool,
                                     248,
@@ -241,10 +265,34 @@ ObInitSystem(VOID)
     Prcb->PPLookasideList[LookasideNameBufferList].P = &ObpNameBufferLookasideList;
 
     /* Initialize the security descriptor cache */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before ObpInitSdCache\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObpInitSdCache();
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after ObpInitSdCache\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Initialize the Default Event */
     KeInitializeEvent(&ObpDefaultObject, NotificationEvent, TRUE);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after KeInitializeEvent\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Initialize the Dos Device Map mutex */
     KeInitializeGuardedMutex(&ObpDeviceMapLock);
@@ -258,9 +306,25 @@ ObInitSystem(VOID)
 
     /* Initialize default Quota block */
     PsInitializeQuotaSystem();
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after PsInitializeQuotaSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Create kernel handle table */
     PsGetCurrentProcess()->ObjectTable = ExCreateHandleTable(NULL);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after ExCreateHandleTable\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObpKernelHandleTable = PsGetCurrentProcess()->ObjectTable;
 
     /* Create the Type Type */
@@ -275,7 +339,23 @@ ObInitSystem(VOID)
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(OBJECT_TYPE);
     ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK;
     ObjectTypeInitializer.DeleteProcedure = ObpDeleteObjectType;
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before create Type type\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &ObpTypeObjectType);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after create Type type\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Create the Directory Type */
     RtlInitUnicodeString(&Name, L"Directory");
@@ -286,7 +366,23 @@ ObInitSystem(VOID)
     ObjectTypeInitializer.GenericMapping = ObpDirectoryMapping;
     ObjectTypeInitializer.DeleteProcedure = NULL;
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(OBJECT_DIRECTORY);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before create Directory type\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &ObpDirectoryObjectType);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] after create Directory type\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObpDirectoryObjectType->TypeInfo.ValidAccessMask &= ~SYNCHRONIZE;
 
     /* Create 'symbolic link' object type */
@@ -296,6 +392,14 @@ ObInitSystem(VOID)
     ObjectTypeInitializer.ValidAccessMask = SYMBOLIC_LINK_ALL_ACCESS;
     ObjectTypeInitializer.ParseProcedure = ObpParseSymbolicLink;
     ObjectTypeInitializer.DeleteProcedure = ObpDeleteSymbolicLink;
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[OB] before create SymLink type\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &ObpSymbolicLinkObjectType);
     ObpSymbolicLinkObjectType->TypeInfo.ValidAccessMask &= ~SYNCHRONIZE;
 

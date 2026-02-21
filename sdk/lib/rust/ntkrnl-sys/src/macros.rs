@@ -203,3 +203,46 @@ extern "system" {
     pub static mut KdDebuggerEnabled: BOOLEAN;
 }
 // Note: PsInitialSystemProcess is in mm.rs, DbgBreakPoint is in ke.rs
+
+// ============================================================================
+// OB subsystem extern globals
+// ============================================================================
+
+extern "C" {
+    // Object types
+    pub static mut ObpDirectoryObjectType: ddk::POBJECT_TYPE;
+    pub static mut ObpTypeDirectoryObject: ddk::POBJECT_DIRECTORY;
+
+    // Root directory and device maps
+    pub static mut ObpRootDirectoryObject: ddk::POBJECT_DIRECTORY;
+    pub static mut ObSystemDeviceMap: ddk::PDEVICE_MAP;
+    pub static mut ObpDeviceMapLock: ddk::_KGUARDED_MUTEX;
+    pub static mut ObpLUIDDeviceMapsEnabled: ULONG;
+
+    // Handle table
+    pub static mut ObpKernelHandleTable: ddk::PHANDLE_TABLE;
+
+    // Lookaside lists
+    pub static mut ObpNameBufferLookasideList: ddk::_GENERAL_LOOKASIDE;
+    pub static mut ObpCreateInfoLookasideList: ddk::_GENERAL_LOOKASIDE;
+    pub static mut ExSystemLookasideListHead: crate::base::LIST_ENTRY;
+
+    // Reaper
+    pub static mut ObpReaperList: *mut core::ffi::c_void;
+    pub static mut ObpReaperWorkItem: ddk::WORK_QUEUE_ITEM;
+
+    // Short name for DosDevices
+    pub static mut ObpDosDevicesShortName: ddk::_UNICODE_STRING;
+    pub static mut ObpDosDevicesShortNamePrefix: ddk::_UNICODE_STRING;
+    pub static mut ObpDosDevicesShortNameRoot: ddk::_UNICODE_STRING;
+
+    // Security SIDs
+    pub static mut SeWorldSid: ddk::PSID;
+    pub static mut SeLocalSystemSid: ddk::PSID;
+    pub static mut SeAliasAdminsSid: ddk::PSID;
+    pub static mut SeRestrictedSid: ddk::PSID;
+
+    // Security privileges
+    pub static mut SeTcbPrivilege: ddk::LUID;
+    pub static mut SeCreatePermanentPrivilege: ddk::LUID;
+}

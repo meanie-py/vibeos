@@ -9,6 +9,9 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
+use super::oblife::{ObpCaptureObjectCreateInformation, ObpFreeObjectNameBuffer};
+use super::obname::ObpLookupObjectName;
+
 use ntkrnl_sys::ddk::{
     _HANDLE_TABLE_ENTRY, _OBJECT_HEADER, _OBJECT_TYPE, _EPROCESS, _ETHREAD,
     _OBJECT_HEADER_HANDLE_INFO, _OBJECT_HEADER_QUOTA_INFO, _OBJECT_HEADER_NAME_INFO,
@@ -39,16 +42,13 @@ use ntkrnl_sys::ddk::{
     ObpAcquireObjectLock,
     ObpCalloutEnd,
     ObpCalloutStart,
-    ObpCaptureObjectCreateInformation,
     ObpCreateSymbolicLinkName,
     ObpDeleteNameCheck,
     ObpDereferenceNameInfo,
     ObpEnterObjectTypeMutex,
     ObpFreeObjectCreateInformation,
-    ObpFreeObjectNameBuffer,
     ObpInitializeLookupContext,
     ObpLeaveObjectTypeMutex,
-    ObpLookupObjectName,
     ObpReferenceNameInfo,
     ObpReleaseLookupContext,
     ObpReleaseObjectCreateInformation,

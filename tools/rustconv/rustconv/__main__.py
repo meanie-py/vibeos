@@ -97,6 +97,7 @@ def cmd_submit(args):
     from .prompt_builder import build_file_prompt, load_system_prompt, build_full_prompt
     from .batch_runner import submit_single
     from .assembler import assemble_file
+    from .postprocess import postprocess
 
     path = resolve_c_path(args.file)
     catalog = build_catalog(arch=args.arch)
@@ -129,13 +130,18 @@ def cmd_submit(args):
     subsystem = path.parent.name
 
     if args.output:
-        Path(args.output).write_text(result.rust_code)
+        # Post-process before writing
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
-        out_path = assemble_file(result, subsystem, scan.raw_source)
+        out_path = assemble_file(result, subsystem, scan.raw_source,
+                                 exports=res.exports, scan=scan)
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
-        print(result.rust_code)
+        # Post-process before printing
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        print(code)
 
 
 def cmd_batch(args):
@@ -145,7 +151,7 @@ def cmd_batch(args):
     from .resolver import resolve
     from .prompt_builder import build_file_prompt, load_system_prompt, build_full_prompt
     from .batch_runner import submit_batch
-    from .assembler import assemble_file, generate_mod_rs, generate_lib_rs, generate_cargo_toml
+    from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
 
     dir_path = Path(args.directory)
     if not dir_path.is_absolute():
@@ -155,6 +161,9 @@ def cmd_batch(args):
         sys.exit(1)
 
     c_files = sorted(dir_path.glob("*.c"))
+    if args.exclude:
+        exclude_stems = set(args.exclude)
+        c_files = [f for f in c_files if f.stem not in exclude_stems]
     if not c_files:
         print(f"No .c files found in {dir_path}", file=sys.stderr)
         sys.exit(1)
@@ -172,10 +181,12 @@ def cmd_batch(args):
     # Build prompts
     prompts = {}
     scans = {}
+    resolves = {}
     for cf in c_files:
         scan = scan_file(cf)
         scans[cf.name] = scan
         res = resolve(scan, catalog, spec)
+        resolves[cf.name] = res
         if use_claude:
             prompts[cf.name] = build_file_prompt(scan, res)
         else:
@@ -190,13 +201,14 @@ def cmd_batch(args):
     for filename, result in results.items():
         if result.success:
             c_source = scans[filename].raw_source
-            assemble_file(result, subsystem, c_source)
+            res = resolves[filename]
+            assemble_file(result, subsystem, c_source,
+                          exports=res.exports, scan=scans[filename])
             module_names.append(Path(filename).stem)
 
     if module_names:
         generate_mod_rs(subsystem, module_names)
         generate_lib_rs([subsystem])
-        generate_cargo_toml()
         print(f"\nAssembled {len(module_names)} modules into ntoskrnl-rust/src/{subsystem}/", file=sys.stderr)
 
     # Report failures
@@ -211,6 +223,32 @@ def cmd_check(args):
     from .checker import check_all_targets, print_check_report
     results = check_all_targets()
     print_check_report(results)
+
+
+def cmd_shims(args):
+    from .shim_generator import generate_shims, check_shims
+
+    subsystem = args.subsystem
+
+    if args.check:
+        matches, desc = check_shims(subsystem)
+        if matches:
+            print(f"OK: {subsystem}_rust_shims.c matches manifest", file=sys.stderr)
+        else:
+            print(f"MISMATCH: {desc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        output = generate_shims(subsystem)
+        if args.output:
+            Path(args.output).write_text(output)
+            print(f"Written to {args.output}", file=sys.stderr)
+        elif args.write:
+            from .config import NTOSKRNL_DIR
+            out_path = NTOSKRNL_DIR / subsystem / f"{subsystem}_rust_shims.c"
+            out_path.write_text(output)
+            print(f"Written to {out_path}", file=sys.stderr)
+        else:
+            print(output)
 
 
 def cmd_estimate(args):
@@ -299,9 +337,20 @@ def main():
     p = sub.add_parser("batch", help="Batch-submit entire subsystem directory")
     p.add_argument("directory", help="Subsystem directory (relative to ntoskrnl/ or absolute)")
     p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument("--exclude", nargs="*", default=[],
+                   help="File stems to skip (e.g., obhandle ob_rust_shims)")
 
     # check
     sub.add_parser("check", help="Run cargo check on all 3 targets")
+
+    # shims
+    p = sub.add_parser("shims", help="Generate C shim file from TOML manifest")
+    p.add_argument("subsystem", help="Subsystem name (e.g., ob, ex)")
+    p.add_argument("-o", "--output", help="Write output to file")
+    p.add_argument("--write", action="store_true",
+                   help="Write directly to ntoskrnl/{subsys}/{subsys}_rust_shims.c")
+    p.add_argument("--check", action="store_true",
+                   help="Check if generated file matches existing")
 
     # estimate
     p = sub.add_parser("estimate", help="Estimate token count and cost")
@@ -316,6 +365,7 @@ def main():
         "submit": cmd_submit,
         "batch": cmd_batch,
         "check": cmd_check,
+        "shims": cmd_shims,
         "estimate": cmd_estimate,
     }
 

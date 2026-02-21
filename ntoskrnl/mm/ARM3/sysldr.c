@@ -2034,6 +2034,32 @@ MiBuildImportsForBootDrivers(VOID)
     ULONG Modules = 0, i, j = 0;
     PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor;
 
+#ifdef _M_ARM64
+    extern volatile PVOID Arm64UartKernelBase;
+#define _DBG_TRACE(s) do { \
+        volatile ULONG *__u = (volatile ULONG *)Arm64UartKernelBase; \
+        const char *__p = (s); \
+        if (__u) { while (*__p) *__u = (ULONG)*__p++; } \
+    } while(0)
+#define _DBG_HEX(prefix, val) do { \
+        volatile ULONG *__u = (volatile ULONG *)Arm64UartKernelBase; \
+        const char *__p = (prefix); int __i; ULONG_PTR __v = (ULONG_PTR)(val); \
+        if (__u) { \
+            while (*__p) *__u = (ULONG)*__p++; \
+            *__u = (ULONG)'0'; *__u = (ULONG)'x'; \
+            for (__i = 60; __i >= 0; __i -= 4) { \
+                int __d = (__v >> __i) & 0xF; \
+                *__u = (ULONG)(__d < 10 ? '0' + __d : 'A' + __d - 10); \
+            } \
+            *__u = (ULONG)'\r'; *__u = (ULONG)'\n'; \
+        } \
+    } while(0)
+#else
+#define _DBG_TRACE(s) ((void)0)
+#define _DBG_HEX(prefix, val) ((void)0)
+#endif
+
+    _DBG_TRACE("[IMPORT] MiBuildImportsForBootDrivers enter\r\n");
     /* Initialize variables */
     KernelEntry = HalEntry = LastEntry = NULL;
 
@@ -2087,12 +2113,14 @@ MiBuildImportsForBootDrivers(VOID)
         Modules++;
     }
 
+    _DBG_HEX("[IMPORT] modules=", Modules);
     /* We must have at least found the kernel and HAL */
     if (!(HalEntry) || (!KernelEntry)) return STATUS_NOT_FOUND;
 
     /* Allocate the list */
     EntryArray = ExAllocatePoolWithTag(PagedPool, Modules * sizeof(PVOID), TAG_LDR_IMPORTS);
     if (!EntryArray) return STATUS_INSUFFICIENT_RESOURCES;
+    _DBG_HEX("[IMPORT] EntryArray=", (ULONG_PTR)EntryArray);
 
     /* Loop the loaded module list again */
     NextEntry = PsLoadedModuleList.Flink;
@@ -2111,6 +2139,7 @@ MiBuildImportsForBootDrivers(VOID)
         if (!ImageThunk)
 #else
         /* Get its imports */
+        _DBG_HEX("[IMPORT] DllBase=", (ULONG_PTR)LdrEntry->DllBase);
         ImportDescriptor = RtlImageDirectoryEntryToData(LdrEntry->DllBase,
                                                         TRUE,
                                                         IMAGE_DIRECTORY_ENTRY_IMPORT,
@@ -2120,6 +2149,7 @@ MiBuildImportsForBootDrivers(VOID)
         {
             /* None present */
             LdrEntry->LoadedImports = MM_SYSLDR_NO_IMPORTS;
+            _DBG_TRACE("[IMPORT] no imports\r\n");
             NextEntry = NextEntry->Flink;
             continue;
         }
@@ -2133,6 +2163,7 @@ MiBuildImportsForBootDrivers(VOID)
         for (i = 0, DllBase = 0, DllEnd = 0; i < ImportSize; i++, ImageThunk++)
 #else
         DllBase = DllEnd = i = 0;
+        _DBG_TRACE("[IMPORT] processing imports\r\n");
         while ((ImportDescriptor->Name) &&
                (ImportDescriptor->OriginalFirstThunk))
         {
@@ -2270,16 +2301,21 @@ MiBuildImportsForBootDrivers(VOID)
     }
 
     /* Free the initial array */
+    _DBG_TRACE("[IMPORT] loop done, freeing array\r\n");
     ExFreePoolWithTag(EntryArray, TAG_LDR_IMPORTS);
+    _DBG_TRACE("[IMPORT] ExFreePoolWithTag done\r\n");
 
     /* FIXME: Might not need to keep the HAL/Kernel imports around */
 
     /* Kernel and HAL are loaded at boot */
     KernelEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
     HalEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+    _DBG_TRACE("[IMPORT] MiBuildImportsForBootDrivers returning\r\n");
 
     /* All worked well */
     return STATUS_SUCCESS;
+#undef _DBG_TRACE
+#undef _DBG_HEX
 }
 
 CODE_SEG("INIT")
@@ -2442,6 +2478,14 @@ MiInitializeLoadedModuleList(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Build the import lists for the boot drivers */
     MiBuildImportsForBootDrivers();
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[IMPORT] MiBuildImports returned\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* We're done */
     return TRUE;

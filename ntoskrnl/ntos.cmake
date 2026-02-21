@@ -247,18 +247,19 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/rmap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obhandle.c
-    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obinit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblife.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblink.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obname.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obref.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsdcach.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsecure.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obwait.c
+    # OB subsystem -- replaced by Rust (ntoskrnl-rust/src/ob/)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obhandle.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obinit.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblife.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblink.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obname.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obref.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsdcach.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsecure.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obwait.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/events.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/poshtdwn.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/povolume.c

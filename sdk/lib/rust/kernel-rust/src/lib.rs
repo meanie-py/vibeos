@@ -6,8 +6,8 @@
 
 // Re-export pool so its #[no_mangle] symbols are linked in.
 extern crate reactos_pool;
-// ntoskrnl-rust (ob/obhandle) temporarily disabled for debugging
-// extern crate ntoskrnl_rust;
+// Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.
+extern crate ntoskrnl_rust;
 
 #[cfg(not(test))]
 #[panic_handler]

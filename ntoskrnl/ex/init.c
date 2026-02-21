@@ -1138,9 +1138,25 @@ ExpInitializeExecutive(IN ULONG Cpu,
     /* Initialize the memory manager at phase 0 */
     if (!MmArmInitSystem(0, LoaderBlock)) KeBugCheck(PHASE0_INITIALIZATION_FAILED);
     ARM64_UART_TRACE("[EXP] MmArmInitSystem(0) done\r\n");
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after MmArmInitSystem(0)\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Load boot symbols */
     ExpLoadBootSymbols(LoaderBlock);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after ExpLoadBootSymbols\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Check if we should break after symbol load */
     if (KdBreakAfterSymbolLoad)
@@ -1151,6 +1167,14 @@ ExpInitializeExecutive(IN ULONG Cpu,
     {
         /* Setup headless terminal settings */
         HeadlessInit(LoaderBlock);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after HeadlessInit\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     }
 
     /* Set system ranges */
@@ -1164,16 +1188,48 @@ ExpInitializeExecutive(IN ULONG Cpu,
 
     /* Make a copy of the NLS Tables */
     ExpInitNls(LoaderBlock);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after ExpInitNls\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Get the kernel's load entry */
     NtosEntry = CONTAINING_RECORD(LoaderBlock->LoadOrderListHead.Flink,
                                   LDR_DATA_TABLE_ENTRY,
                                   InLoadOrderLinks);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] got NtosEntry\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] before CSD check\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     /* Check if this is a service pack */
     if (CmNtCSDVersion & 0xFFFF)
     {
         /* Get the service pack string */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] calling RtlFindMessage\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
         Status = RtlFindMessage(NtosEntry->DllBase,
                                 RT_MESSAGETABLE,
                                 MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
@@ -1221,6 +1277,14 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
     else
     {
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] beta path\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
         /* Then this is a beta */
         Status = RtlStringCbCopyExA(Buffer,
                                     sizeof(Buffer),
@@ -1278,6 +1342,14 @@ ExpInitializeExecutive(IN ULONG Cpu,
 
     /* Now setup the final string */
     RtlInitAnsiString(&CSDString, Buffer);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] before CmCSDVersionString\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     Status = RtlAnsiStringToUnicodeString(&CmCSDVersionString,
                                           &CSDString,
                                           TRUE);
@@ -1319,7 +1391,23 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 
     /* Initialize the Handle Table */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] before ExpInitializeHandleTables\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     ExpInitializeHandleTables();
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after ExpInitializeHandleTables\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
 #if DBG
     /* On checked builds, allocate the system call count table */
@@ -1327,6 +1415,14 @@ ExpInitializeExecutive(IN ULONG Cpu,
         ExAllocatePoolWithTag(NonPagedPool,
                               KiServiceLimit * sizeof(ULONG),
                               'llaC');
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after DBG pool alloc\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Use it for the shadow table too */
     KeServiceDescriptorTableShadow[0].Count = KeServiceDescriptorTable[0].Count;
@@ -1337,15 +1433,47 @@ ExpInitializeExecutive(IN ULONG Cpu,
         /* Zero the call counts to 0 */
         RtlZeroMemory(KeServiceDescriptorTable[0].Count,
                       KiServiceLimit * sizeof(ULONG));
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after DBG RtlZeroMemory\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     }
 #endif
 
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] before ObInitSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     /* Create the Basic Object Manager Types to allow new Object Types */
     ARM64_UART_TRACE("[EXP] ObInitSystem\r\n");
     if (!ObInitSystem()) KeBugCheck(OBJECT_INITIALIZATION_FAILED);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after ObInitSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Load basic Security for other Managers */
     ARM64_UART_TRACE("[EXP] SeInitSystem\r\n");
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] before SeInitSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     if (!SeInitSystem()) KeBugCheck(SECURITY_INITIALIZATION_FAILED);
 
     /* Initialize the Process Manager */
@@ -1471,8 +1599,24 @@ Phase1InitializationDiscard(IN PVOID Context)
     NtosEntry = CONTAINING_RECORD(LoaderBlock->LoadOrderListHead.Flink,
                                   LDR_DATA_TABLE_ENTRY,
                                   InLoadOrderLinks);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] got NtosEntry\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Find the banner message */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] calling RtlFindMessage\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     MsgStatus = RtlFindMessage(NtosEntry->DllBase,
                                RT_MESSAGETABLE,
                                MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
@@ -1662,6 +1806,14 @@ Phase1InitializationDiscard(IN PVOID Context)
     }
 
     /* Get the information string from our resource file */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] calling RtlFindMessage\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
     MsgStatus = RtlFindMessage(NtosEntry->DllBase,
                                RT_MESSAGETABLE,
                                MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
@@ -1759,6 +1911,14 @@ Phase1InitializationDiscard(IN PVOID Context)
     /* Create NLS section */
     ARM64_UART_TRACE("[PHASE1] ExpInitNls\r\n");
     ExpInitNls(LoaderBlock);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after ExpInitNls\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Initialize Cache Views */
     ARM64_UART_TRACE("[PHASE1] CcInitializeCacheManager\r\n");
@@ -1871,6 +2031,14 @@ Phase1InitializationDiscard(IN PVOID Context)
             }
 
             /* Find the message to print out */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] calling RtlFindMessage\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
             Status = RtlFindMessage(NtosEntry->DllBase,
                                     RT_MESSAGETABLE,
                                     MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
@@ -1891,6 +2059,14 @@ Phase1InitializationDiscard(IN PVOID Context)
         if (strstr(CommandLine, "BOOTLOG"))
         {
             /* Find the message to print out */
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] calling RtlFindMessage\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
             Status = RtlFindMessage(NtosEntry->DllBase,
                                     RT_MESSAGETABLE,
                                     MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
