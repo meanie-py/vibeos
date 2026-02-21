@@ -181,19 +181,11 @@ fn user_data_offset() -> u32 {
 // ARM64 QEMU TCG workaround
 // ============================================================================
 
-#[cfg(target_arch = "aarch64")]
-extern "C" {
-    #[link_name = "Arm64UartKernelBase"]
-    static mut ARM64_UART_KERNEL_BASE: *mut c_void;
-}
-
 #[cfg(all(not(test), target_arch = "aarch64"))]
 #[inline]
 unsafe fn gt_barrier() {
-    let u = ARM64_UART_KERNEL_BASE as *mut u32;
-    if !u.is_null() {
-        core::ptr::write_volatile(u, b' ' as u32);
-    }
+    // Memory barrier only — UART trace removed (Arm64UartKernelBase is
+    // kernel-only and not available when linked into user-mode DLLs like ntdll).
     core::arch::asm!("dsb sy", "isb", options(nostack, preserves_flags));
 }
 

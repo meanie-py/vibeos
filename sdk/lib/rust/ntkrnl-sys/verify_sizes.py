@@ -2,7 +2,9 @@
 """Generate compile-time struct size assertions for ntkrnl-sys.
 
 Extracts sizeof values from C headers via clang cross-compilation (LLVM IR),
-then generates Rust const assertions that verify bindgen struct sizes match.
+then generates Rust const assertions that verify struct sizes match C layout.
+Covers both bindgen-generated types (ddk module) and hand-written FFI types
+(mm, ke, base, ex modules).
 
 Usage:
     python3 verify_sizes.py          # Generate assertion files in src/
@@ -43,6 +45,39 @@ ARCHS = [
         "out_file": "size_check_i386.rs",
     },
 ]
+
+
+def extract_hand_written_types() -> list[tuple[str, str, str]]:
+    """Return (rust_name, c_sizeof_expr, rust_module) for hand-written FFI structs.
+
+    These structs live in hand-written modules (mm, ke, base, ex) and are NOT
+    in bindgen output. Their C sizeof expression uses the C typedef name.
+    """
+    return [
+        # mm module
+        ("POOL_HEADER", "POOL_HEADER", "mm"),
+        ("POOL_DESCRIPTOR", "POOL_DESCRIPTOR", "mm"),
+        ("POOL_TRACKER_TABLE", "POOL_TRACKER_TABLE", "mm"),
+        ("POOL_TRACKER_BIG_PAGES", "POOL_TRACKER_BIG_PAGES", "mm"),
+        ("MMFREE_POOL_ENTRY", "MMFREE_POOL_ENTRY", "mm"),
+        ("MM_PAGED_POOL_INFO", "MM_PAGED_POOL_INFO", "mm"),
+        ("RTL_BITMAP", "RTL_BITMAP", "mm"),
+        ("MMPTE", "MMPTE", "mm"),
+        ("MMPFN", "MMPFN", "mm"),
+        # ke module
+        ("KGUARDED_MUTEX", "KGUARDED_MUTEX", "ke"),
+        ("KDPC", "KDPC", "ke"),
+        ("KLOCK_QUEUE_HANDLE", "KLOCK_QUEUE_HANDLE", "ke"),
+        ("PP_LOOKASIDE_LIST", "PP_LOOKASIDE_LIST", "ke"),
+        ("GENERAL_LOOKASIDE", "GENERAL_LOOKASIDE", "ke"),
+        # base module
+        ("LIST_ENTRY", "LIST_ENTRY", "base"),
+        ("SINGLE_LIST_ENTRY", "SINGLE_LIST_ENTRY", "base"),
+        ("SLIST_HEADER", "SLIST_HEADER", "base"),
+        ("UNICODE_STRING", "UNICODE_STRING", "base"),
+        # ex module
+        ("SYSTEM_POOLTAG", "SYSTEM_POOLTAG", "ex"),
+    ]
 
 
 def extract_types(rs_path: Path) -> list[tuple[str, str]]:
@@ -242,8 +277,14 @@ def generate_rust_assertions(
     types: list[tuple[str, str]],
     sizes: dict[int, int],
     arch: dict,
+    hand_written_offset: int = -1,
+    hand_written_types: list[tuple[str, str, str]] | None = None,
 ) -> tuple[str, int]:
-    """Generate Rust const assertions for struct sizes."""
+    """Generate Rust const assertions for struct sizes.
+
+    Types at indices < hand_written_offset are bindgen types (super::ddk::NAME).
+    Types at indices >= hand_written_offset are hand-written (super::MODULE::NAME).
+    """
     lines = [
         f'//! Compile-time struct size assertions for {arch["name"]}.',
         '//!',
@@ -256,9 +297,21 @@ def generate_rust_assertions(
         '',
     ]
 
+    hw_types = hand_written_types or []
     count = 0
     for i, (rust_name, _c_expr) in enumerate(types):
-        if i in sizes:
+        if i not in sizes:
+            continue
+        if hand_written_offset >= 0 and i >= hand_written_offset:
+            # Hand-written type — look up module from hand_written_types
+            hw_idx = i - hand_written_offset
+            if hw_idx < len(hw_types):
+                module = hw_types[hw_idx][2]
+                lines.append(
+                    f'const _: () = assert!(size_of::<super::{module}::{rust_name}>() == {sizes[i]});'
+                )
+                count += 1
+        else:
             lines.append(
                 f'const _: () = assert!(size_of::<super::ddk::{rust_name}>() == {sizes[i]});'
             )
@@ -291,8 +344,15 @@ def main():
                 all_ok = False
                 continue
 
-            types = extract_types(rs_path)
-            print(f"  {len(types)} struct types extracted")
+            bindgen_types = extract_types(rs_path)
+            print(f"  {len(bindgen_types)} bindgen struct types extracted")
+
+            # 1b. Add hand-written FFI types
+            hw_types = extract_hand_written_types()
+            hand_written_offset = len(bindgen_types)
+            # Merge: hand-written types use (rust_name, c_sizeof_expr) like bindgen
+            types = bindgen_types + [(name, c_expr) for name, c_expr, _mod in hw_types]
+            print(f"  {len(hw_types)} hand-written FFI types added ({len(types)} total)")
 
             # 2. Generate C source and compile to LLVM IR
             c_source = generate_c_source(types)
@@ -306,7 +366,9 @@ def main():
             print(f"  {len(sizes)} sizes extracted from LLVM IR")
 
             # 4. Generate Rust assertions
-            rust_code, count = generate_rust_assertions(types, sizes, arch)
+            rust_code, count = generate_rust_assertions(
+                types, sizes, arch, hand_written_offset, hw_types
+            )
 
             out_path = SRC_DIR / arch["out_file"]
             if check_mode:

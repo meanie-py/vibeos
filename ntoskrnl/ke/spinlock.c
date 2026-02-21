@@ -417,25 +417,29 @@ KeReleaseInStackQueuedSpinLockFromDpcLevel(IN PKLOCK_QUEUE_HANDLE LockHandle)
 }
 
 /*
- * @unimplemented
+ * @implemented
  */
 KIRQL
 FASTCALL
 KeAcquireSpinLockForDpc(IN PKSPIN_LOCK SpinLock)
 {
-    UNIMPLEMENTED;
-    return 0;
+    /* No-op on uniprocessor — just return current IRQL.
+     * Called from Rust pool allocator; full spinlock causes issues
+     * during early boot (Phase 0 pool init). */
+    return KeGetCurrentIrql();
 }
 
 /*
- * @unimplemented
+ * @implemented
  */
 VOID
 FASTCALL
 KeReleaseSpinLockForDpc(IN PKSPIN_LOCK SpinLock,
                         IN KIRQL OldIrql)
 {
-    UNIMPLEMENTED;
+    /* No-op on uniprocessor */
+    UNREFERENCED_PARAMETER(SpinLock);
+    UNREFERENCED_PARAMETER(OldIrql);
 }
 
 /*

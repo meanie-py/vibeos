@@ -263,19 +263,18 @@ pub type PMMFREE_POOL_ENTRY = *mut MMFREE_POOL_ENTRY;
 // MM_PAGED_POOL_INFO
 // ============================================================================
 
-/// Opaque type for paged pool bitmap tracking.
-/// Fields accessed: PagedPoolAllocationMap, EndOfPagedPoolBitmap,
-/// NextPdeForPagedPoolExpansion, FirstPteForPagedPool, LastPteForPagedPool,
-/// AllocatedPagedPool, PagedPoolHint.
+/// Paged pool bitmap tracking — must match C struct _MM_PAGED_POOL_INFO
+/// (ntoskrnl/include/internal/mm.h).
 #[repr(C)]
 pub struct MM_PAGED_POOL_INFO {
     pub PagedPoolAllocationMap: *mut RTL_BITMAP,
     pub EndOfPagedPoolBitmap: *mut RTL_BITMAP,
-    pub NextPdeForPagedPoolExpansion: PVOID,   // PMMPDE
     pub FirstPteForPagedPool: PVOID,           // PMMPTE
     pub LastPteForPagedPool: PVOID,            // PMMPTE
-    pub AllocatedPagedPool: PFN_COUNT,
+    pub NextPdeForPagedPoolExpansion: PVOID,   // PMMPDE
     pub PagedPoolHint: ULONG,
+    pub PagedPoolCommit: SIZE_T,
+    pub AllocatedPagedPool: SIZE_T,
 }
 
 // ============================================================================
@@ -379,17 +378,17 @@ pub fn PFN_FROM_PTE(pte: PMMPTE) -> PFN_NUMBER {
 /// We define it as an opaque byte array. Access goes through helper
 /// functions or via extern C wrappers.
 ///
-/// Size: i386=24, amd64=48, arm64=48 (approximate — verified by C_ASSERT)
+/// Size: i386=36, amd64=72, arm64=72 (verified by bindgen size_check)
 #[cfg(target_pointer_width = "64")]
 #[repr(C, align(8))]
 pub struct MMPFN {
-    pub _opaque: [u8; 48],
+    pub _opaque: [u8; 72],
 }
 
 #[cfg(target_pointer_width = "32")]
 #[repr(C, align(4))]
 pub struct MMPFN {
-    pub _opaque: [u8; 24],
+    pub _opaque: [u8; 36],
 }
 
 pub type PMMPFN = *mut MMPFN;
@@ -417,41 +416,93 @@ pub const PTE_BASE: usize = 0xFFFFF68000000000;
 pub const PDE_BASE: usize = 0xFFFFF6FB40000000;
 
 /// Convert virtual address to PTE pointer (MiAddressToPte).
+///
+/// Matches the C inline function in ntoskrnl/include/internal/{arm64,amd64}/mm.h:
+///   Offset = (ULONG64)Address >> (12 - 3);
+///   Offset &= 0xFFFFFFFFFULL << 3;
+///   return (PMMPTE)(PTE_BASE + Offset);
+///
+/// The mask is critical: without it, kernel VAs (upper bits all 1s) produce
+/// offsets that overflow the PTE self-mapping range into user space.
 #[inline]
 pub fn MiAddressToPte(va: PVOID) -> PMMPTE {
-    let addr = va as usize;
-    ((addr >> PAGE_SHIFT) * core::mem::size_of::<MMPTE>() + PTE_BASE) as PMMPTE
+    #[cfg(target_arch = "x86")]
+    {
+        // i386: 2-level paging, 4-byte PTEs, no mask needed (20-bit PFN fits)
+        let addr = va as u32;
+        (PTE_BASE as u32 + ((addr >> 12) << 2)) as PMMPTE
+    }
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        // amd64/arm64: 4-level paging, 8-byte PTEs, mask to 39 bits
+        let addr = va as u64;
+        let offset = (addr >> (12 - 3)) & (0xFFFFFFFFFu64 << 3);
+        (PTE_BASE as u64 + offset) as PMMPTE
+    }
 }
 
 /// Convert virtual address to PDE pointer (MiAddressToPde).
+///
+/// Matches the C inline function:
+///   Offset = (ULONG64)Address >> (21 - 3);
+///   Offset &= 0x7FFFFFFULL << 3;   (arm64/amd64)
 #[inline]
 pub fn MiAddressToPde(va: PVOID) -> PMMPDE {
     #[cfg(target_arch = "x86")]
     {
-        let addr = va as usize;
-        ((addr >> 22) * core::mem::size_of::<MMPTE>() + PDE_BASE) as PMMPDE
+        // i386: single page directory, 4-byte entries
+        let addr = va as u32;
+        (PDE_BASE as u32 + ((addr >> 22) << 2)) as PMMPDE
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        let addr = va as usize;
-        ((addr >> 21) * core::mem::size_of::<MMPTE>() + PDE_BASE) as PMMPDE
+        let addr = va as u64;
+        let offset = (addr >> (21 - 3)) & (0x7FFFFFFu64 << 3);
+        (PDE_BASE as u64 + offset) as PMMPDE
     }
 }
 
 /// Convert PTE pointer to virtual address (MiPteToAddress).
+///
+/// Uses signed arithmetic to sign-extend kernel VAs (bit 47=1 → bits 63:48 all 1s).
+/// Matches C: `(PVOID)(((LONG64)PointerPte << 25) >> 16)`
 #[inline]
 pub fn MiPteToAddress(pte: PMMPTE) -> PVOID {
-    let pte_addr = pte as usize;
-    (((pte_addr - PTE_BASE) / core::mem::size_of::<MMPTE>()) << PAGE_SHIFT) as PVOID
+    #[cfg(target_arch = "x86")]
+    {
+        let pte_addr = pte as u32;
+        (((pte_addr - PTE_BASE as u32) / 4) << PAGE_SHIFT) as PVOID
+    }
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        // Signed shift left discards PTE_BASE bits, signed shift right sign-extends
+        (((pte as i64) << 25) >> 16) as PVOID
+    }
+}
+
+/// Convert PDE pointer to virtual address (MiPdeToAddress).
+#[inline]
+pub fn MiPdeToAddress(pde: PMMPDE) -> PVOID {
+    #[cfg(target_arch = "x86")]
+    {
+        let pde_addr = pde as u32;
+        (((pde_addr - PDE_BASE as u32) / 4) << 22) as PVOID
+    }
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        (((pde as i64) << 34) >> 16) as PVOID
+    }
 }
 
 /// Convert PDE pointer to PTE pointer (MiPdeToPte).
+/// C: `#define MiPdeToPte(_Pde) ((PMMPTE)MiPteToAddress(_Pde))`
 #[inline]
 pub fn MiPdeToPte(pde: PMMPDE) -> PMMPTE {
-    MiAddressToPte(pde as PVOID)
+    MiPteToAddress(pde as PMMPTE) as PMMPTE
 }
 
 /// Convert PTE pointer to PDE pointer (MiPteToPde).
+/// C: `#define MiPteToPde(_Pte) ((PMMPDE)MiAddressToPde(_Pte))`
 #[inline]
 pub fn MiPteToPde(pte: PMMPTE) -> PMMPDE {
     MiAddressToPde(pte as PVOID)
@@ -951,12 +1002,12 @@ pub const PDE_PER_PAGE: usize = 1024;
 pub const PDE_PER_PAGE: usize = 512;
 
 // ============================================================================
-// Compile-time size assertions
+// Compile-time semantic assertions (size-vs-C assertions in size_check_*.rs)
 // ============================================================================
 
 const _: () = {
-    // POOL_HEADER must be exactly POOL_BLOCK_SIZE
+    // POOL_HEADER must be exactly POOL_BLOCK_SIZE (pool allocator invariant)
     assert!(core::mem::size_of::<POOL_HEADER>() == POOL_BLOCK_SIZE);
-    // POOL_BLOCK_SIZE must equal LIST_ENTRY size
+    // POOL_BLOCK_SIZE must equal LIST_ENTRY size (free list overlay invariant)
     assert!(POOL_BLOCK_SIZE == core::mem::size_of::<LIST_ENTRY>());
 };

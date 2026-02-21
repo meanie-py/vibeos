@@ -253,6 +253,14 @@ MmAccessFault(IN ULONG FaultCode,
     {
         if (Address > MM_HIGHEST_USER_ADDRESS)
         {
+            /* At elevated IRQL, skip the VAD lookup — cannot acquire WS lock */
+            if (KeGetCurrentIrql() > APC_LEVEL)
+            {
+                DPRINT("mmfault: kernel VA %p at IRQL %d, assuming ARM3\n",
+                       Address, KeGetCurrentIrql());
+                IsArm3Fault = TRUE;
+                goto SkipVadLookup;
+            }
             /* Check if this is an ARM3 memory area */
             MiLockWorkingSetShared(PsGetCurrentThread(), &MmSystemCacheWs);
             Vad = MiLocateVad(&MiRosKernelVadRoot, Address);
@@ -279,6 +287,7 @@ MmAccessFault(IN ULONG FaultCode,
         }
     }
 
+SkipVadLookup:
     /* Is this an ARM3 VAD, or is there no address space yet? */
     if (IsArm3Fault ||
         ((Vad == NULL) &&

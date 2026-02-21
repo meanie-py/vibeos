@@ -213,8 +213,7 @@ CmpInitializeHive(
     {
         /* Verify integrity */
         ARM64_UART_TRACE("[HIVE] CmCheckRegistry\r\n");
-#ifdef _M_ARM64
-        /* ARM64: Skip deep validation for HINIT_MEMORY hives during boot.
+        /* Skip deep validation for HINIT_MEMORY hives during boot.
          * The hive was loaded from the boot loader and validated there.
          * Still do volatile purging for the root cell only. */
         if (OperationType == HINIT_MEMORY)
@@ -238,7 +237,6 @@ CmpInitializeHive(
             ARM64_UART_TRACE("[HIVE] CmCheckRegistry skipped (HINIT_MEMORY)\r\n");
         }
         else
-#endif
         {
             CM_CHECK_REGISTRY_STATUS CheckStatus = CmCheckRegistry(Hive, CheckFlags);
             if (!CM_CHECK_REGISTRY_SUCCESS(CheckStatus))

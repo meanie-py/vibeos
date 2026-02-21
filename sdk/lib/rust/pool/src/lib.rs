@@ -4,7 +4,7 @@
 //! - Executive pool: ExAllocatePoolWithTag, ExFreePoolWithTag, tag tracking
 //! - Page-level pool: MiAllocatePoolPages, MiFreePoolPages, pool init
 //!
-//! Compiled as a `staticlib` and linked directly into ntoskrnl.
+//! Compiled as an rlib and linked into ntoskrnl via the kernel-rust umbrella crate.
 
 #![no_std]
 #![allow(
@@ -14,13 +14,8 @@
     clippy::missing_safety_doc
 )]
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
 pub mod expool;
 pub mod globals;
 pub mod pool;
 pub mod types;
+

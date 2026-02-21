@@ -457,6 +457,23 @@ static REGISTRY_PATH: &[u16] = &[
 ];
 ```
 
+## Common Translation Pitfalls
+
+### Coalescing Loop Variables
+When code merges/coalesces ranges (e.g., free pool pages coalescing with adjacent free entries), the loop that processes the merged result must use the **total merged count** variable, not the original input count. Watch for patterns like:
+```c
+FreePages += Entry->Size;     // accumulate total
+/* ... later loop ... */
+for (i = 0; i < FreePages; i++)  // must use FreePages, NOT NumberOfPages
+```
+A common bug is using `NumberOfPages` (the original input) instead of `FreePages` (the accumulated total after coalescing).
+
+### Spinlock API Selection
+`KeAcquireSpinLockForDpc` / `KeReleaseSpinLockForDpc` are for DPC context only — they skip IRQL transitions. For general pool locking and other non-DPC paths, use `KeAcquireSpinLock` / `KeReleaseSpinLock`. Match the original C code's API choice exactly — substituting the wrong variant causes incorrect IRQL handling.
+
+### Kernel Virtual Address Arithmetic
+PTE/PDE calculations like `(addr >> 12) * 8 + PTE_BASE` overflow for kernel virtual addresses on 64-bit (e.g., 0xFFFFF68000000000 >> 12 = 0xFFFFF68000000, × 8 overflows u64). Use bit masking instead: `(addr >> 9) & (0xFFFFFFFFF << 3) + PTE_BASE`. Always verify pointer arithmetic against the C original for both 32-bit and 64-bit address ranges.
+
 ## Style Rules
 
 1. Keep original C variable names (PascalCase for params/locals is fine)

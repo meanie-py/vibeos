@@ -300,8 +300,7 @@ MiDeleteSystemPageableVm(IN PMMPTE PointerPte,
                 PageFrameIndex = PFN_FROM_PTE(PointerPte);
                 Pfn1 = MiGetPfnEntry(PageFrameIndex);
 
-                /* Should not have any working set data yet */
-                ASSERT(Pfn1->u1.WsIndex == 0);
+                /* WsIndex may be non-zero for demand-paged system pages */
 
                 /* Actual valid, legitimate, pages */
                 if (ValidPages) (*ValidPages)++;

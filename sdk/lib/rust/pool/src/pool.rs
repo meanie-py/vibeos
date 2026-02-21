@@ -901,14 +901,13 @@ pub unsafe extern "system" fn MiFreePoolPages(starting_va: PVOID) -> ULONG {
         }
     }
 
-    // Mark all pages as free (set owner and signature)
+    // Mark all pages in the merged free range (including coalesced next-range pages)
+    // with Owner and Signature. Must use free_pages (total merged size), not just
+    // number_of_pages, so that coalesced next-range pages get their Owner updated.
     let mut next_entry = starting_va as PMMFREE_POOL_ENTRY;
-    let _last_entry =
+    let last_entry =
         (next_entry as usize + ((free_pages as usize) << PAGE_SHIFT)) as PMMFREE_POOL_ENTRY;
-    // Only mark the pages that were freed (starting_va onwards), not the entire merged range
-    let free_last = (starting_va as usize + ((number_of_pages as usize) << PAGE_SHIFT))
-        as PMMFREE_POOL_ENTRY;
-    while next_entry < free_last {
+    while next_entry < last_entry {
         (*next_entry).Owner = free_entry;
         (*next_entry).Signature = MM_FREE_POOL_SIGNATURE;
         next_entry = (next_entry as usize + PAGE_SIZE) as PMMFREE_POOL_ENTRY;

@@ -290,22 +290,13 @@ pub const LockQueueNonPagedPoolLock: ULONG = 6;
 pub const LockQueueMmNonPagedPoolLock: ULONG = 15;
 
 // ============================================================================
-// Compile-time size assertions
+// Compile-time alignment assertions (size assertions in size_check_*.rs)
 // ============================================================================
 
 const _: () = {
-    assert!(core::mem::size_of::<LIST_ENTRY>() == core::mem::size_of::<usize>() * 2);
-    assert!(core::mem::size_of::<SINGLE_LIST_ENTRY>() == core::mem::size_of::<usize>());
-
     #[cfg(target_pointer_width = "64")]
-    {
-        assert!(core::mem::size_of::<SLIST_HEADER>() == 16);
-        assert!(core::mem::align_of::<SLIST_HEADER>() == 16);
-    }
+    assert!(core::mem::align_of::<SLIST_HEADER>() == 16);
 
     #[cfg(target_pointer_width = "32")]
-    {
-        assert!(core::mem::size_of::<SLIST_HEADER>() == 8);
-        assert!(core::mem::align_of::<SLIST_HEADER>() == 8);
-    }
+    assert!(core::mem::align_of::<SLIST_HEADER>() == 8);
 };

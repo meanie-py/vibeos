@@ -79,12 +79,12 @@ class Arm64Config(ArchConfig):
 class I386Config(ArchConfig):
     arch: str = "i386"
     qemu_bin: str = "qemu-system-i386"
-    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-cpu", "pentium3"])
+    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
     # bootcd.ini defaults to Setup_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
     boot_marker: str = ""
     boot_timeout: float = 180.0
-    min_boot_bytes: int = 5000
+    min_boot_bytes: int = 500
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-i386" / "bootcd.iso"
@@ -102,7 +102,7 @@ class I386Config(ArchConfig):
 class Amd64Config(ArchConfig):
     arch: str = "amd64"
     qemu_bin: str = "qemu-system-x86_64"
-    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-cpu", "qemu64"])
+    machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
     # livecd.ini defaults to LiveCD_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
     # Must use a marker — desktop produces continuous debug output (never goes idle)

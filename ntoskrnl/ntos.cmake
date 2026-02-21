@@ -212,7 +212,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c
-    # Replaced by Rust pool crate (sdk/lib/rust/pool)
+    # Replaced by Rust pool crate (sdk/lib/rust/pool) on all architectures
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/expool.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/hypermap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/iosup.c
@@ -225,7 +225,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/ncache.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pagfault.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pfnlist.c
-    # Replaced by Rust pool crate (sdk/lib/rust/pool)
+    # Replaced by Rust pool crate (sdk/lib/rust/pool) on all architectures
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pool.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/procsup.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/section.c
@@ -250,6 +250,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obhandle.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obinit.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblife.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/oblink.c

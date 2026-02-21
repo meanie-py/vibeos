@@ -757,7 +757,8 @@ pub unsafe extern "system" fn ExpAddTagForBigPages(
 ) -> BOOLEAN {
     let partial_hash = exp_compute_partial_hash_for_address(va);
 
-    let old_irql = KeAcquireSpinLockForDpc(&raw mut ExpLargePoolTableLock);
+    let mut old_irql: KIRQL = 0;
+    KeAcquireSpinLock(&raw mut ExpLargePoolTableLock, &mut old_irql);
 
     let hash_mask = PoolBigPageTableHash;
     let mut hash = (partial_hash as usize) & hash_mask;
@@ -775,7 +776,7 @@ pub unsafe extern "system" fn ExpAddTagForBigPages(
             }
 
             ExpPoolBigEntriesInUse += 1;
-            KeReleaseSpinLockForDpc(&raw mut ExpLargePoolTableLock, old_irql);
+            KeReleaseSpinLock(&raw mut ExpLargePoolTableLock, old_irql);
             return TRUE;
         }
 
@@ -786,7 +787,7 @@ pub unsafe extern "system" fn ExpAddTagForBigPages(
     }
 
     ExpBigTableExpansionFailed += 1;
-    KeReleaseSpinLockForDpc(&raw mut ExpLargePoolTableLock, old_irql);
+    KeReleaseSpinLock(&raw mut ExpLargePoolTableLock, old_irql);
     FALSE
 }
 
@@ -802,7 +803,8 @@ pub unsafe extern "system" fn ExpFindAndRemoveTagBigPages(
 ) -> ULONG {
     let partial_hash = exp_compute_partial_hash_for_address(va);
 
-    let old_irql = KeAcquireSpinLockForDpc(&raw mut ExpLargePoolTableLock);
+    let mut old_irql: KIRQL = 0;
+    KeAcquireSpinLock(&raw mut ExpLargePoolTableLock, &mut old_irql);
 
     let hash_mask = PoolBigPageTableHash;
     let mut hash = (partial_hash as usize) & hash_mask;
@@ -816,7 +818,7 @@ pub unsafe extern "system" fn ExpFindAndRemoveTagBigPages(
             (*entry).Va = POOL_BIG_TABLE_ENTRY_FREE as PVOID;
             (*entry).NumberOfPages = 0;
             ExpPoolBigEntriesInUse -= 1;
-            KeReleaseSpinLockForDpc(&raw mut ExpLargePoolTableLock, old_irql);
+            KeReleaseSpinLock(&raw mut ExpLargePoolTableLock, old_irql);
             return key;
         }
 
@@ -826,7 +828,7 @@ pub unsafe extern "system" fn ExpFindAndRemoveTagBigPages(
         }
     }
 
-    KeReleaseSpinLockForDpc(&raw mut ExpLargePoolTableLock, old_irql);
+    KeReleaseSpinLock(&raw mut ExpLargePoolTableLock, old_irql);
     0
 }
 

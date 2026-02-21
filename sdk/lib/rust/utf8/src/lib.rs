@@ -38,7 +38,7 @@ mod ffi {
     /// - `uni_src`: input UTF-16 buffer
     /// - `uni_bytes`: size of input in bytes (not characters)
     #[no_mangle]
-    pub unsafe extern "C" fn RtlUnicodeToUTF8N(
+    pub unsafe extern "system" fn RtlUnicodeToUTF8N(
         utf8_dest: *mut u8,
         utf8_bytes_max: u32,
         utf8_bytes_written: *mut u32,
@@ -80,7 +80,7 @@ mod ffi {
     /// - `utf8_src`: input UTF-8 buffer
     /// - `utf8_bytes`: size of input in bytes
     #[no_mangle]
-    pub unsafe extern "C" fn RtlUTF8ToUnicodeN(
+    pub unsafe extern "system" fn RtlUTF8ToUnicodeN(
         uni_dest: *mut u16,
         uni_bytes_max: u32,
         uni_bytes_written: *mut u32,

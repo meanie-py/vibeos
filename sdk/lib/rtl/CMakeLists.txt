@@ -146,10 +146,14 @@ set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
 if(ARCH STREQUAL "i386")
     set(RUST_TARGET "i686-pc-windows-gnu")
+    # i386: disable SSE — CR4.OSFXSR not set until Phase 1 but pool init runs in Phase 0
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
 elseif(ARCH STREQUAL "amd64")
     set(RUST_TARGET "x86_64-pc-windows-gnu")
+    set(RUST_EXTRA_ENV "")
 elseif(ARCH STREQUAL "arm64")
     set(RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(RUST_EXTRA_ENV "")
 endif()
 
 # Rust AVL Table library (all architectures)
@@ -157,7 +161,7 @@ set(RUST_AVLTABLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_avltable.a")
 add_custom_command(
     OUTPUT ${RUST_AVLTABLE_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-avltable
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -180,7 +184,7 @@ set(RUST_BITMAP_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_bitmap.a")
 add_custom_command(
     OUTPUT ${RUST_BITMAP_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-bitmap
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -202,7 +206,7 @@ set(RUST_SLIST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_slist.a")
 add_custom_command(
     OUTPUT ${RUST_SLIST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-slist
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -226,7 +230,7 @@ set(RUST_COMPRESS_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_compress.a")
 add_custom_command(
     OUTPUT ${RUST_COMPRESS_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-compress
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -248,7 +252,7 @@ set(RUST_CRC32_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_crc32.a")
 add_custom_command(
     OUTPUT ${RUST_CRC32_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-crc32
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -269,7 +273,7 @@ set(RUST_RANDOM_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_random.a")
 add_custom_command(
     OUTPUT ${RUST_RANDOM_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-random
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -290,7 +294,7 @@ set(RUST_ENCODE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_encode.a")
 add_custom_command(
     OUTPUT ${RUST_ENCODE_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-encode
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -314,7 +318,7 @@ set(RUST_LARGEINT_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_largeint.a")
 add_custom_command(
     OUTPUT ${RUST_LARGEINT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-largeint
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -335,7 +339,7 @@ set(RUST_ACCESS_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_access.a")
 add_custom_command(
     OUTPUT ${RUST_ACCESS_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-access
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -356,7 +360,7 @@ set(RUST_BYTESWAP_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_byteswap.a")
 add_custom_command(
     OUTPUT ${RUST_BYTESWAP_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-byteswap
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -377,7 +381,7 @@ set(RUST_INTERLCK_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_interlck.a")
 add_custom_command(
     OUTPUT ${RUST_INTERLCK_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-interlck
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -398,7 +402,7 @@ set(RUST_LUID_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_luid.a")
 add_custom_command(
     OUTPUT ${RUST_LUID_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-luid
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -419,7 +423,7 @@ set(RUST_PREFIX_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_prefix.a")
 add_custom_command(
     OUTPUT ${RUST_PREFIX_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-prefix
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -440,7 +444,7 @@ set(RUST_MEM_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_mem.a")
 add_custom_command(
     OUTPUT ${RUST_MEM_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-mem
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -461,7 +465,7 @@ set(RUST_HANDLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_handle.a")
 add_custom_command(
     OUTPUT ${RUST_HANDLE_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-handle
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -482,7 +486,7 @@ set(RUST_TIME_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_time.a")
 add_custom_command(
     OUTPUT ${RUST_TIME_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-time
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -503,7 +507,7 @@ set(RUST_SPLAYTREE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_splaytree.a")
 add_custom_command(
     OUTPUT ${RUST_SPLAYTREE_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-splaytree
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -524,7 +528,7 @@ set(RUST_GENERICTABLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_generictable.a
 add_custom_command(
     OUTPUT ${RUST_GENERICTABLE_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-generictable
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
@@ -558,7 +562,7 @@ set(RUST_UTF8_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_utf8.a")
 add_custom_command(
     OUTPUT ${RUST_UTF8_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR}
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p reactos-utf8
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml

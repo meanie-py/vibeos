@@ -114,7 +114,8 @@ unsafe fn ObDereferenceProcessHandleTable(process: PEPROCESS) {
     ExReleaseRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect));
 }
 
-unsafe fn ObGetProcessHandleCount(process: PEPROCESS) -> ULONG {
+#[no_mangle]
+pub unsafe extern "system" fn ObGetProcessHandleCount(process: PEPROCESS) -> ULONG {
     let handle_table = ObReferenceProcessHandleTable(process);
 
     if !handle_table.is_null() {
@@ -220,11 +221,13 @@ unsafe extern "C" fn ObpEnumFindHandleProcedure(
 ) -> BOOLEAN { _ObpEnumFindHandleProcedure(handle_entry, _handle, context) }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ObpSetHandleAttributes(
+#[no_mangle]
+pub unsafe extern "stdcall" fn ObpSetHandleAttributes(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, context: u32,
 ) -> BOOLEAN { _ObpSetHandleAttributes(handle_entry, context as ULONG_PTR) }
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ObpSetHandleAttributes(
+#[no_mangle]
+pub unsafe extern "C" fn ObpSetHandleAttributes(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, context: u64,
 ) -> BOOLEAN { _ObpSetHandleAttributes(handle_entry, context as ULONG_PTR) }
 

@@ -53,17 +53,17 @@ mod ffi {
     use super::*;
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindMostSignificantBit(value: u64) -> i8 {
+    pub unsafe extern "system" fn RtlFindMostSignificantBit(value: u64) -> i8 {
         ops::find_most_significant_bit(value)
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindLeastSignificantBit(value: u64) -> i8 {
+    pub unsafe extern "system" fn RtlFindLeastSignificantBit(value: u64) -> i8 {
         ops::find_least_significant_bit(value)
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlInitializeBitMap(
+    pub unsafe extern "system" fn RtlInitializeBitMap(
         header: *mut RtlBitmap,
         buffer: *mut u32,
         size: u32,
@@ -74,49 +74,49 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlClearAllBits(header: *mut RtlBitmap) {
+    pub unsafe extern "system" fn RtlClearAllBits(header: *mut RtlBitmap) {
         let (buf, size) = unsafe { bitmap_slice_mut(header) };
         ops::clear_all(buf, size);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlSetAllBits(header: *mut RtlBitmap) {
+    pub unsafe extern "system" fn RtlSetAllBits(header: *mut RtlBitmap) {
         let (buf, size) = unsafe { bitmap_slice_mut(header) };
         ops::set_all(buf, size);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlClearBit(header: *mut RtlBitmap, bit: u32) {
+    pub unsafe extern "system" fn RtlClearBit(header: *mut RtlBitmap, bit: u32) {
         let (buf, _) = unsafe { bitmap_slice_mut(header) };
         ops::clear_bit(buf, bit);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlSetBit(header: *mut RtlBitmap, bit: u32) {
+    pub unsafe extern "system" fn RtlSetBit(header: *mut RtlBitmap, bit: u32) {
         let (buf, _) = unsafe { bitmap_slice_mut(header) };
         ops::set_bit(buf, bit);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlTestBit(header: *const RtlBitmap, bit: u32) -> u8 {
+    pub unsafe extern "system" fn RtlTestBit(header: *const RtlBitmap, bit: u32) -> u8 {
         let (buf, _) = unsafe { bitmap_slice(header) };
         ops::test_bit(buf, bit) as u8
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlClearBits(header: *mut RtlBitmap, start: u32, count: u32) {
+    pub unsafe extern "system" fn RtlClearBits(header: *mut RtlBitmap, start: u32, count: u32) {
         let (buf, _) = unsafe { bitmap_slice_mut(header) };
         ops::clear_bits(buf, start, count);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlSetBits(header: *mut RtlBitmap, start: u32, count: u32) {
+    pub unsafe extern "system" fn RtlSetBits(header: *mut RtlBitmap, start: u32, count: u32) {
         let (buf, _) = unsafe { bitmap_slice_mut(header) };
         ops::set_bits(buf, start, count);
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlAreBitsClear(
+    pub unsafe extern "system" fn RtlAreBitsClear(
         header: *const RtlBitmap,
         start: u32,
         length: u32,
@@ -126,7 +126,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlAreBitsSet(
+    pub unsafe extern "system" fn RtlAreBitsSet(
         header: *const RtlBitmap,
         start: u32,
         length: u32,
@@ -136,19 +136,19 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlNumberOfSetBits(header: *const RtlBitmap) -> u32 {
+    pub unsafe extern "system" fn RtlNumberOfSetBits(header: *const RtlBitmap) -> u32 {
         let (buf, size) = unsafe { bitmap_slice(header) };
         ops::number_of_set_bits(buf, size)
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlNumberOfClearBits(header: *const RtlBitmap) -> u32 {
+    pub unsafe extern "system" fn RtlNumberOfClearBits(header: *const RtlBitmap) -> u32 {
         let (buf, size) = unsafe { bitmap_slice(header) };
         ops::number_of_clear_bits(buf, size)
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindClearBits(
+    pub unsafe extern "system" fn RtlFindClearBits(
         header: *const RtlBitmap,
         number_to_find: u32,
         hint: u32,
@@ -161,7 +161,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindSetBits(
+    pub unsafe extern "system" fn RtlFindSetBits(
         header: *const RtlBitmap,
         number_to_find: u32,
         hint: u32,
@@ -174,7 +174,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindClearBitsAndSet(
+    pub unsafe extern "system" fn RtlFindClearBitsAndSet(
         header: *mut RtlBitmap,
         number_to_find: u32,
         hint: u32,
@@ -184,7 +184,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindSetBitsAndClear(
+    pub unsafe extern "system" fn RtlFindSetBitsAndClear(
         header: *mut RtlBitmap,
         number_to_find: u32,
         hint: u32,
@@ -194,7 +194,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindNextForwardRunClear(
+    pub unsafe extern "system" fn RtlFindNextForwardRunClear(
         header: *const RtlBitmap,
         from: u32,
         starting_index: *mut u32,
@@ -206,7 +206,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindNextForwardRunSet(
+    pub unsafe extern "system" fn RtlFindNextForwardRunSet(
         header: *const RtlBitmap,
         from: u32,
         starting_index: *mut u32,
@@ -218,7 +218,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindFirstRunClear(
+    pub unsafe extern "system" fn RtlFindFirstRunClear(
         header: *const RtlBitmap,
         starting_index: *mut u32,
     ) -> u32 {
@@ -229,7 +229,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindLastBackwardRunClear(
+    pub unsafe extern "system" fn RtlFindLastBackwardRunClear(
         header: *const RtlBitmap,
         from: u32,
         starting_index: *mut u32,
@@ -241,7 +241,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindClearRuns(
+    pub unsafe extern "system" fn RtlFindClearRuns(
         header: *const RtlBitmap,
         run_array: *mut RtlBitmapRun,
         array_size: u32,
@@ -264,7 +264,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindLongestRunClear(
+    pub unsafe extern "system" fn RtlFindLongestRunClear(
         header: *const RtlBitmap,
         starting_index: *mut u32,
     ) -> u32 {
@@ -275,7 +275,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlFindLongestRunSet(
+    pub unsafe extern "system" fn RtlFindLongestRunSet(
         header: *const RtlBitmap,
         starting_index: *mut u32,
     ) -> u32 {

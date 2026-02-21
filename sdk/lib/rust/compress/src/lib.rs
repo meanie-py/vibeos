@@ -41,7 +41,7 @@ mod ffi {
     use super::*;
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlCompressBuffer(
+    pub unsafe extern "system" fn RtlCompressBuffer(
         format_and_engine: u16,
         uncompressed_buffer: *const u8,
         uncompressed_buffer_size: u32,
@@ -76,7 +76,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlDecompressBuffer(
+    pub unsafe extern "system" fn RtlDecompressBuffer(
         compression_format: u16,
         uncompressed_buffer: *mut u8,
         uncompressed_buffer_size: u32,
@@ -99,7 +99,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlDecompressFragment(
+    pub unsafe extern "system" fn RtlDecompressFragment(
         format: u16,
         uncompressed: *mut u8,
         uncompressed_size: u32,
@@ -135,7 +135,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlGetCompressionWorkSpaceSize(
+    pub unsafe extern "system" fn RtlGetCompressionWorkSpaceSize(
         format_and_engine: u16,
         compress_buffer_workspace_size: *mut u32,
         compress_fragment_workspace_size: *mut u32,
@@ -164,7 +164,7 @@ mod ffi {
 
     // Unimplemented stubs matching the C code
     #[no_mangle]
-    pub unsafe extern "C" fn RtlCompressChunks(
+    pub unsafe extern "system" fn RtlCompressChunks(
         _uncompressed_buffer: *const u8,
         _uncompressed_buffer_size: u32,
         _compressed_buffer: *mut u8,
@@ -177,7 +177,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlDecompressChunks(
+    pub unsafe extern "system" fn RtlDecompressChunks(
         _uncompressed_buffer: *mut u8,
         _uncompressed_buffer_size: u32,
         _compressed_buffer: *const u8,
@@ -190,7 +190,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlDescribeChunk(
+    pub unsafe extern "system" fn RtlDescribeChunk(
         _compression_format: u16,
         _compressed_buffer: *mut *mut u8,
         _end_of_compressed_buffer_plus1: *const u8,
@@ -201,7 +201,7 @@ mod ffi {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn RtlReserveChunk(
+    pub unsafe extern "system" fn RtlReserveChunk(
         _compression_format: u16,
         _compressed_buffer: *mut *mut u8,
         _end_of_compressed_buffer_plus1: *const u8,
