@@ -210,3 +210,36 @@ ULONG NTAPI SeLengthSid(PSID Sid)
 {
     return _tramp_SeLengthSid(Sid);
 }
+
+/*
+ * SepInitTokensShim — C helper to work around LLVM i386 LTO bug.
+ *
+ * During fat LTO on i386, LLVM incorrectly inserts unreachable/ud2 after the
+ * ExInitializeFastReference call that sets up the system process token. This
+ * drops all subsequent code (anonymous logon token creation, return TRUE).
+ * The bug does not affect amd64 or arm64.
+ *
+ * By performing the token initialization in C code (which is not part of the
+ * Rust LTO link), we prevent LLVM from applying the misoptimization.
+ */
+BOOLEAN
+SepInitTokensShim(VOID)
+{
+    PTOKEN tok;
+
+    /* Initialize process token fast reference to NULL */
+    ExInitializeFastReference(&PsGetCurrentProcess()->Token, NULL);
+
+    /* Create the system process token */
+    tok = SepCreateSystemProcessToken();
+    ObInitializeFastReference(&PsGetCurrentProcess()->Token, tok);
+
+    /* Create anonymous logon tokens */
+    SeAnonymousLogonToken = SepCreateSystemAnonymousLogonToken();
+    if (!SeAnonymousLogonToken) return FALSE;
+
+    SeAnonymousLogonTokenNoEveryone = SepCreateSystemAnonymousLogonTokenNoEveryone();
+    if (!SeAnonymousLogonTokenNoEveryone) return FALSE;
+
+    return TRUE;
+}

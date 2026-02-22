@@ -43,6 +43,12 @@ extern "system" {
     pub fn RtlClearAllBits(BitMapHeader: PRTL_BITMAP);
 }
 
+// Re-export LIST_ENTRY inline functions from base so files importing rtl::* get them.
+pub use crate::base::{
+    InitializeListHead, IsListEmpty, InsertHeadList, InsertTailList,
+    RemoveEntryList, RemoveHeadList, RemoveTailList,
+};
+
 /// RtlCopyMemory — macro in C (`#define RtlCopyMemory memcpy`).
 /// Inline implementation using core::ptr::copy_nonoverlapping.
 #[inline]
@@ -55,3 +61,4 @@ pub unsafe fn RtlCopyMemory(destination: PVOID, source: PCVOID, length: SIZE_T) 
 pub unsafe fn InitializeSListHead(header: *mut crate::base::SLIST_HEADER) {
     core::ptr::write_bytes(header as *mut u8, 0, core::mem::size_of::<crate::base::SLIST_HEADER>());
 }
+

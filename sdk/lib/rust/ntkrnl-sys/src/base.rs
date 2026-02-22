@@ -113,19 +113,13 @@ pub const MEM_RELEASE: ULONG = 0x8000;
 pub const PAGE_READWRITE: ULONG = 0x04;
 
 // ============================================================================
-// LIST_ENTRY — doubly-linked list node
+// LIST_ENTRY — doubly-linked list node (unified with ddk::_LIST_ENTRY)
 // ============================================================================
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct LIST_ENTRY {
-    pub Flink: *mut LIST_ENTRY,
-    pub Blink: *mut LIST_ENTRY,
-}
-
+pub use crate::ddk::_LIST_ENTRY as LIST_ENTRY;
 pub type PLIST_ENTRY = *mut LIST_ENTRY;
 
-impl LIST_ENTRY {
+impl crate::ddk::_LIST_ENTRY {
     pub const fn new() -> Self {
         Self {
             Flink: core::ptr::null_mut(),
@@ -136,7 +130,7 @@ impl LIST_ENTRY {
 
 /// Initialize a list head to point to itself.
 #[inline]
-pub unsafe fn InitializeListHead(head: PLIST_ENTRY) {
+pub unsafe fn InitializeListHead(head: *mut LIST_ENTRY) {
     (*head).Flink = head;
     (*head).Blink = head;
 }
@@ -149,7 +143,7 @@ pub unsafe fn IsListEmpty(head: *const LIST_ENTRY) -> bool {
 
 /// Insert entry at the head of the list.
 #[inline]
-pub unsafe fn InsertHeadList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
+pub unsafe fn InsertHeadList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
     let flink = (*head).Flink;
     (*entry).Flink = flink;
     (*entry).Blink = head;
@@ -159,7 +153,7 @@ pub unsafe fn InsertHeadList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
 
 /// Insert entry at the tail of the list.
 #[inline]
-pub unsafe fn InsertTailList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
+pub unsafe fn InsertTailList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
     let blink = (*head).Blink;
     (*entry).Flink = head;
     (*entry).Blink = blink;
@@ -169,12 +163,32 @@ pub unsafe fn InsertTailList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
 
 /// Remove entry from its list.
 #[inline]
-pub unsafe fn RemoveEntryList(entry: PLIST_ENTRY) -> bool {
+pub unsafe fn RemoveEntryList(entry: *mut LIST_ENTRY) -> bool {
     let flink = (*entry).Flink;
     let blink = (*entry).Blink;
     (*blink).Flink = flink;
     (*flink).Blink = blink;
     flink == blink
+}
+
+/// Remove and return the entry at the head of a list.
+#[inline]
+pub unsafe fn RemoveHeadList(list_head: *mut LIST_ENTRY) -> *mut LIST_ENTRY {
+    let entry = (*list_head).Flink;
+    let flink = (*entry).Flink;
+    (*list_head).Flink = flink;
+    (*flink).Blink = list_head;
+    entry
+}
+
+/// Remove and return the entry at the tail of a list.
+#[inline]
+pub unsafe fn RemoveTailList(list_head: *mut LIST_ENTRY) -> *mut LIST_ENTRY {
+    let entry = (*list_head).Blink;
+    let blink = (*entry).Blink;
+    (*list_head).Blink = blink;
+    (*blink).Flink = list_head;
+    entry
 }
 
 /// CONTAINING_RECORD — get struct pointer from field pointer.

@@ -1475,10 +1475,26 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 #endif
     if (!SeInitSystem()) KeBugCheck(SECURITY_INITIALIZATION_FAILED);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after SeInitSystem, before PsInitSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Initialize the Process Manager */
     ARM64_UART_TRACE("[EXP] PsInitSystem\r\n");
     if (!PsInitSystem(LoaderBlock)) KeBugCheck(PROCESS_INITIALIZATION_FAILED);
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[EXP] after PsInitSystem\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* Initialize the PnP Manager */
     ARM64_UART_TRACE("[EXP] PpInitSystem\r\n");

@@ -94,8 +94,8 @@ extern "system" {
     static SePublicDefaultSd: PSECURITY_DESCRIPTOR;
 }
 
-const CT_ACTIVE_IMPERSONATION_INFO_BIT: ULONG = 1;
-const MAX_FAST_REFS: usize = 0xF;
+const CT_ACTIVE_IMPERSONATION_INFO_BIT: ULONG = 0x8;
+const MAX_FAST_REFS: usize = 7;
 const TAG_SE: ULONG = u32::from_le_bytes([b'S', b'e', b' ', b' ']);
 const SECURITY_DESCRIPTOR_REVISION: ULONG = 1;
 const ACL_REVISION: ULONG = 2;
@@ -263,33 +263,21 @@ unsafe fn SepInitializationPhase0() -> BOOLEAN {
     );
     _se_trace(b"[SE] after clear impersonation\n");
 
-    _se_trace(b"[SE] before ObInitFastRef(NULL)\n");
-    ObInitializeFastReference(
-        core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Token),
-        core::ptr::null_mut(),
-    );
-    _se_trace(b"[SE] after ObInitFastRef(NULL)\n");
-    {
-        let _tok = SepCreateSystemProcessToken();
-        _se_trace(b"[SE] after SepCreateSystemProcessToken\n");
-        ObInitializeFastReference(
-            core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Token),
-            _tok as PVOID,
-        );
+    // WORKAROUND: Token initialization is in a C helper (SepInitTokensShim in
+    // se_rust_shims.c) to work around an LLVM i386 fat LTO bug. During LTO,
+    // LLVM inlines SepInitializationPhase0 into SeInitSystem and incorrectly
+    // inserts unreachable/ud2 after the ExInitializeFastReference call that
+    // sets up the process token. This drops all subsequent code (anonymous
+    // logon token creation, return TRUE). The bug only affects i386, not
+    // amd64 or arm64. By performing the token init in C (outside Rust LTO),
+    // we prevent the misoptimization.
+    extern "C" {
+        fn SepInitTokensShim() -> BOOLEAN;
     }
-    _se_trace(b"[SE] after boot token\n");
-
-    SeAnonymousLogonToken = SepCreateSystemAnonymousLogonToken();
-    if SeAnonymousLogonToken.is_null() {
+    if SepInitTokensShim() == 0 {
         return 0u8;
     }
-    _se_trace(b"[SE] after anon token\n");
-
-    SeAnonymousLogonTokenNoEveryone = SepCreateSystemAnonymousLogonTokenNoEveryone();
-    if SeAnonymousLogonTokenNoEveryone.is_null() {
-        return 0u8;
-    }
-    _se_trace(b"[SE] after anon token no everyone\n");
+    _se_trace(b"[SE] after token init\n");
 
     1u8
 }

@@ -45,6 +45,7 @@ list(APPEND PCH_SKIP_SOURCE
 
 list(APPEND PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
@@ -103,6 +104,20 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenadj.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokencls.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenlif.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/apphelp.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/debug.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/job.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/kill.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/process.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psmgr.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psnotify.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/query.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/quota.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/security.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/state.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/thread.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/win32.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs

@@ -1280,7 +1280,7 @@ pub unsafe extern "system" fn SepCreateSystemProcessToken() -> PTOKEN {
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
     let mut token: PTOKEN = core::ptr::null_mut();
-    let status = SepCreateToken(
+    let _status = SepCreateToken(
         &mut token as *mut PTOKEN as *mut HANDLE,
         0i8,
         0,
@@ -1329,7 +1329,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonToken() -> PTOKEN {
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
     let mut token: PTOKEN = core::ptr::null_mut();
-    let status = SepCreateToken(
+    let _status = SepCreateToken(
         &mut token as *mut PTOKEN as *mut HANDLE,
         0i8,
         0,
@@ -1371,7 +1371,7 @@ pub unsafe extern "system" fn SepCreateSystemAnonymousLogonTokenNoEveryone() -> 
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
     let mut token: PTOKEN = core::ptr::null_mut();
-    let status = SepCreateToken(
+    let _status = SepCreateToken(
         &mut token as *mut PTOKEN as *mut HANDLE,
         0i8,
         0,

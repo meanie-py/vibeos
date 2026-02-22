@@ -429,7 +429,8 @@ BOOLEAN ExConvertPushLockSharedToExclusive(PEX_PUSH_LOCK PushLock)
 
 /* --- ke FORCEINLINE functions --- */
 
-PKPRCB NTAPI KeGetCurrentPrcb(void)
+/* __cdecl (no NTAPI) — matches bindgen extern "C" declaration */
+PKPRCB KeGetCurrentPrcb(void)
 {
     return _fi_KeGetCurrentPrcb();
 }

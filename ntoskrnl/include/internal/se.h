@@ -339,10 +339,12 @@ SepCreateSystemProcessToken(VOID);
 
 CODE_SEG("INIT")
 PTOKEN
+NTAPI
 SepCreateSystemAnonymousLogonToken(VOID);
 
 CODE_SEG("INIT")
 PTOKEN
+NTAPI
 SepCreateSystemAnonymousLogonTokenNoEveryone(VOID);
 
 NTSTATUS

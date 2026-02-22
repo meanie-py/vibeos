@@ -264,19 +264,21 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/poshtdwn.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/povolume.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/po/power.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/apphelp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/debug.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/kill.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/process.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/psmgr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/psnotify.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/query.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/quota.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/security.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/state.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/thread.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/win32.c
+    # ps/ — replaced by Rust (ntoskrnl-rust/src/ps/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/apphelp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/debug.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/kill.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/process.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/psmgr.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/psnotify.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/query.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/quota.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/security.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/state.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/thread.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/win32.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/libsupp.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/misc.c
     # se/ — replaced by Rust (ntoskrnl-rust/src/se/)

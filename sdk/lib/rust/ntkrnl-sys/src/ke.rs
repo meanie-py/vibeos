@@ -160,6 +160,11 @@ pub const ProcessObject: UCHAR = 3;
 // Extern declarations — Ke functions
 // ============================================================================
 
+// FORCEINLINE functions — use extern "C" (cdecl) to match bindgen declaration
+extern "C" {
+    pub fn KeGetCurrentPrcb() -> PKPRCB;
+}
+
 extern "system" {
     pub fn KeBugCheckEx(
         BugCheckCode: ULONG,
@@ -172,8 +177,6 @@ extern "system" {
     // KeGetCurrentIrql — inline on amd64 (reads CR8), extern on arm64/i386
     #[cfg(not(target_arch = "x86_64"))]
     pub fn KeGetCurrentIrql() -> KIRQL;
-
-    pub fn KeGetCurrentPrcb() -> PKPRCB;
 
     // KeAcquireSpinLock/KeReleaseSpinLock — inline wrappers below (C macros)
     // KeAcquireSpinLockForDpc/KeReleaseSpinLockForDpc — fastcall, see below

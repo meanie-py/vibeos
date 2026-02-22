@@ -16,7 +16,13 @@ use core::ffi::c_void;
 /// C: `CONTAINING_RECORD(o, OBJECT_HEADER, Body)`
 #[inline]
 pub unsafe fn OBJECT_TO_OBJECT_HEADER(o: PVOID) -> ddk::POBJECT_HEADER {
-    (o as usize - core::mem::offset_of!(ddk::_OBJECT_HEADER, Body)) as ddk::POBJECT_HEADER
+    // Use wrapping_sub instead of sub to avoid generating `getelementptr inbounds`
+    // with a negative offset. LLVM treats `inbounds` GEP with negative offsets as UB
+    // if it can't prove the result stays within the allocation, which causes it to
+    // insert `unreachable` and eliminate subsequent code (ud2 crash on i386).
+    // wrapping_sub generates a plain GEP without `inbounds`, preventing this.
+    (o as *mut u8).wrapping_sub(core::mem::offset_of!(ddk::_OBJECT_HEADER, Body))
+        as ddk::POBJECT_HEADER
 }
 
 /// OBJECT_HEADER_TO_NAME_INFO(h) — get name info from header, or null.

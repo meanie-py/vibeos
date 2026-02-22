@@ -499,3 +499,149 @@ pub const THREAD_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x
 // ============================================================================
 
 pub const AUDIT_ALLOW_NO_PRIVILEGE: ULONG = 0x1;
+
+// ============================================================================
+// Process access rights (from pstypes.h / winnt.h)
+// ============================================================================
+
+pub const PROCESS_TERMINATE: ULONG = 0x0001;
+pub const PROCESS_CREATE_THREAD: ULONG = 0x0002;
+pub const PROCESS_SET_SESSIONID: ULONG = 0x0004;
+pub const PROCESS_VM_OPERATION: ULONG = 0x0008;
+pub const PROCESS_VM_READ: ULONG = 0x0010;
+pub const PROCESS_VM_WRITE: ULONG = 0x0020;
+// PROCESS_DUP_HANDLE = 0x0040 already defined above
+pub const PROCESS_CREATE_PROCESS: ULONG = 0x0080;
+pub const PROCESS_SET_QUOTA: ULONG = 0x0100;
+pub const PROCESS_SET_INFORMATION: ULONG = 0x0200;
+pub const PROCESS_QUERY_INFORMATION: ULONG = 0x0400;
+pub const PROCESS_SUSPEND_RESUME: ULONG = 0x0800;
+pub const PROCESS_QUERY_LIMITED_INFORMATION: ULONG = 0x1000;
+pub const PROCESS_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF;
+
+// ============================================================================
+// Thread access rights (from winnt.h) — additional
+// ============================================================================
+
+pub const THREAD_SUSPEND_RESUME: ULONG = 0x0002;
+pub const THREAD_GET_CONTEXT: ULONG = 0x0008;
+pub const THREAD_SET_CONTEXT: ULONG = 0x0010;
+pub const THREAD_QUERY_INFORMATION: ULONG = 0x0040;
+pub const THREAD_SET_THREAD_TOKEN: ULONG = 0x0080;
+pub const THREAD_IMPERSONATE: ULONG = 0x0100;
+pub const THREAD_DIRECT_IMPERSONATION: ULONG = 0x0200;
+
+// ============================================================================
+// Job object access rights (from winnt.h)
+// ============================================================================
+
+pub const JOB_OBJECT_ASSIGN_PROCESS: ULONG = 0x0001;
+pub const JOB_OBJECT_SET_ATTRIBUTES: ULONG = 0x0002;
+pub const JOB_OBJECT_QUERY: ULONG = 0x0004;
+pub const JOB_OBJECT_TERMINATE: ULONG = 0x0008;
+pub const JOB_OBJECT_SET_SECURITY_ATTRIBUTES: ULONG = 0x0010;
+pub const JOB_OBJECT_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x001F;
+
+// ============================================================================
+// Port access rights (from winnt.h)
+// ============================================================================
+
+pub const PORT_CONNECT: ULONG = 0x0001;
+pub const PORT_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x0001;
+
+// ============================================================================
+// Debug object access rights (from winnt.h)
+// ============================================================================
+
+pub const DEBUG_OBJECT_ADD_REMOVE_PROCESS: ULONG = 0x0004;
+
+// ============================================================================
+// Additional NTSTATUS codes — PS subsystem (from ntstatus.h)
+// ============================================================================
+
+pub const STATUS_PENDING: NTSTATUS = 0x00000103;
+pub const STATUS_ALERTED: NTSTATUS = 0x00000101;
+pub const STATUS_NOTHING_TO_TERMINATE: NTSTATUS = 0xC0000187_u32 as i32;
+pub const STATUS_THREAD_IS_TERMINATING: NTSTATUS = 0xC000004B_u32 as i32;
+pub const STATUS_CANT_TERMINATE_SELF: NTSTATUS = 0xC00000DB_u32 as i32;
+pub const STATUS_SYSTEM_SHUTDOWN: NTSTATUS = 0xC00002FE_u32 as i32;
+pub const STATUS_PROCESS_IN_JOB: NTSTATUS = 0x00000124;
+pub const STATUS_PROCESS_NOT_IN_JOB: NTSTATUS = 0x00000123;
+pub const STATUS_PORT_ALREADY_SET: NTSTATUS = 0xC0000048_u32 as i32;
+pub const STATUS_INVALID_CID: NTSTATUS = 0xC000000B_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_MIX: NTSTATUS = 0xC0000030_u32 as i32;
+pub const STATUS_PROCEDURE_NOT_FOUND: NTSTATUS = 0xC000007A_u32 as i32;
+pub const STATUS_PAGEFILE_QUOTA_EXCEEDED: NTSTATUS = 0xC000012C_u32 as i32;
+
+// ============================================================================
+// Process priority (from pstypes.h / winbase.h)
+// ============================================================================
+
+pub const PROCESS_PRIORITY_NORMAL: ULONG = 8;
+pub const PROCESS_PRIORITY_CLASS_ABOVE_NORMAL: ULONG = 6;
+pub const PROCESS_PRIORITY_CLASS_BELOW_NORMAL: ULONG = 5;
+pub const PROCESS_PRIORITY_CLASS_HIGH: ULONG = 13;
+pub const PROCESS_PRIORITY_CLASS_IDLE: ULONG = 4;
+pub const PROCESS_PRIORITY_CLASS_REALTIME: ULONG = 24;
+
+// ============================================================================
+// Thread base priority (from winnt.h)
+// ============================================================================
+
+pub const THREAD_BASE_PRIORITY_LOWRT: i32 = 15;
+pub const THREAD_BASE_PRIORITY_MAX: i32 = 2;
+pub const THREAD_BASE_PRIORITY_MIN: i32 = -2;
+pub const THREAD_BASE_PRIORITY_IDLE: i32 = -15;
+
+// ============================================================================
+// Memory priority / Scheduler priority (from ntoskrnl internal)
+// ============================================================================
+
+pub const HIGH_PRIORITY: ULONG = 31;
+pub const LOW_PRIORITY: ULONG = 0;
+pub const LOW_REALTIME_PRIORITY: ULONG = 16;
+pub const MEMORY_PRIORITY_BACKGROUND: ULONG = 0;
+pub const MEMORY_PRIORITY_FOREGROUND: ULONG = 2;
+
+// ============================================================================
+// Quota limits (from winnt.h)
+// ============================================================================
+
+pub const QUOTA_LIMITS_HARDWS_MIN_ENABLE: ULONG = 0x00000001;
+pub const QUOTA_LIMITS_HARDWS_MIN_DISABLE: ULONG = 0x00000002;
+pub const QUOTA_LIMITS_HARDWS_MAX_ENABLE: ULONG = 0x00000004;
+pub const QUOTA_LIMITS_HARDWS_MAX_DISABLE: ULONG = 0x00000008;
+
+// ============================================================================
+// PS internal flags and constants (from ps.h / pstypes.h)
+// ============================================================================
+
+pub const PSF_BREAK_ON_TERMINATION_BIT: ULONG = 0x2000;
+pub const PSF_NO_DEBUG_INHERIT_BIT: ULONG = 0x2;
+pub const PSF_VDM_ALLOWED_BIT: ULONG = 0x1000000;
+pub const CT_BREAK_ON_TERMINATION_BIT: ULONG = 0x40;
+pub const CT_HIDE_FROM_DEBUGGER_BIT: ULONG = 0x4;
+
+pub const PROCESS_LUID_DOSDEVICES_ONLY: ULONG = 0x00000001;
+
+pub const SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0004;
+
+pub const SYSTEM_THREAD_EXCEPTION_NOT_HANDLED: ULONG = 0x7E;
+pub const QUOTA_UNDERFLOW: ULONG = 0x21;
+
+pub const ICIF_PROBE_READ: ULONG = 0x0010;
+
+// ============================================================================
+// PS pool tags (from ps.h)
+// ============================================================================
+
+pub const TAG_SHIM: ULONG = u32::from_le_bytes(*b"Shim");
+
+// ============================================================================
+// Processor constants (from ntdef.h / ke.h)
+// ============================================================================
+
+#[cfg(target_arch = "x86")]
+pub const MAXIMUM_PROCESSORS: ULONG = 32;
+#[cfg(not(target_arch = "x86"))]
+pub const MAXIMUM_PROCESSORS: ULONG = 64;
