@@ -12,6 +12,14 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+pub mod dbgk;
+pub mod inbv;
+pub mod lpc;
 pub mod ob;
+pub mod po;
 pub mod ps;
+pub mod rtl;
 pub mod se;
+pub mod vdm;
+pub mod vf;
+pub mod wmi;

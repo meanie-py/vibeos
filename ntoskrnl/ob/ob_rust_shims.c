@@ -445,9 +445,9 @@ ULONGLONG NTAPI KeQueryInterruptTime(void)
 
 /* --- rtl FORCEINLINE functions --- */
 
-void RtlInitEmptyUnicodeString(PUNICODE_STRING UnicodeString,
-                               PWCHAR Buffer,
-                               USHORT BufferSize)
+void NTAPI RtlInitEmptyUnicodeString(PUNICODE_STRING UnicodeString,
+                                     PWCHAR Buffer,
+                                     USHORT BufferSize)
 {
     _fi_RtlInitEmptyUnicodeString(UnicodeString, Buffer, BufferSize);
 }

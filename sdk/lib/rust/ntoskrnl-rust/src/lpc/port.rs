@@ -1,0 +1,367 @@
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ke::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ob::*;
+
+use ntkrnl_sys::ddk::{
+    _CLIENT_ID,
+    ExInitializePagedLookasideList,
+    _GENERIC_MAPPING,
+    HANDLE, KPROCESSOR_MODE,
+    _LPCP_NONPAGED_PORT_QUEUE, LPCP_NONPAGED_PORT_QUEUE,
+    _LPCP_PORT_OBJECT, LPCP_PORT_OBJECT,
+    LpcpClosePort,
+    LpcpDeletePort,
+    LpcpGetPortFromThread,
+    _OBJECT_TYPE_INITIALIZER, OBJECT_TYPE_INITIALIZER,
+    ObCreateObjectType,
+    _PAGED_LOOKASIDE_LIST, PAGED_LOOKASIDE_LIST,
+    PETHREAD, _ETHREAD,
+    PLPCP_PORT_OBJECT,
+    POBJECT_TYPE,
+    _PORT_MESSAGE, PORT_MESSAGE,
+    PPORT_MESSAGE,
+    RtlInitUnicodeString,
+    _SECURITY_CLIENT_CONTEXT, SECURITY_CLIENT_CONTEXT,
+    ObReferenceObjectByHandle,
+    PsLookupProcessThreadByCid,
+    ObReferenceObjectSafe,
+    SeImpersonateClientEx,
+    SeCreateClientSecurity,
+    PORT_INFORMATION_CLASS,
+    PULONG, PEPROCESS,
+    ACCESS_MASK,
+    _SECURITY_QUALITY_OF_SERVICE,
+    PsGetCurrentThread,
+    _UNICODE_STRING,
+    _EVENT_TYPE_NotificationEvent,
+};
+
+extern "system" {
+    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+    fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
+    fn SeDeleteClientSecurity(ClientContext: *mut _SECURITY_CLIENT_CONTEXT);
+}
+
+const PORT_CONNECT: ULONG = 0x0001;
+const PORT_ALL_ACCESS: ULONG = 0x001F0001;
+
+const LPCP_MAX_MESSAGE_SIZE: ULONG = 0x148;
+const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;
+const LPCP_COMMUNICATION_PORT: ULONG = 0x00000003;
+const LPCP_SECURITY_DYNAMIC: ULONG = 0x80000000;
+const LPCP_THREAD_FLAG_NO_IMPERSONATION: usize = 0x00000001;
+
+#[no_mangle]
+pub static mut LpcPortObjectType: POBJECT_TYPE = core::ptr::null_mut();
+
+#[no_mangle]
+pub static mut LpcWaitablePortObjectType: POBJECT_TYPE = core::ptr::null_mut();
+
+#[no_mangle]
+pub static mut LpcpMaxMessageSize: ULONG = 0;
+
+#[no_mangle]
+pub static mut LpcpMessagesLookaside: PAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+
+#[no_mangle]
+pub static mut LpcpLock: KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
+
+#[no_mangle]
+pub static mut LpcpTraceLevel: ULONG = 0;
+
+#[no_mangle]
+pub static mut LpcpNextMessageId: ULONG = 1;
+
+#[no_mangle]
+pub static mut LpcpNextCallbackId: ULONG = 1;
+
+#[no_mangle]
+pub static mut LpcpPortMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
+    GenericRead: READ_CONTROL | PORT_CONNECT,
+    GenericWrite: DELETE | PORT_CONNECT,
+    GenericExecute: 0,
+    GenericAll: PORT_ALL_ACCESS,
+};
+
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn LpcInitSystem() -> BOOLEAN {
+    let mut object_type_initializer: OBJECT_TYPE_INITIALIZER = core::mem::zeroed();
+    let mut name: _UNICODE_STRING = core::mem::zeroed();
+
+    KeInitializeGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+
+    RtlZeroMemory(
+        core::ptr::addr_of_mut!(object_type_initializer) as PVOID,
+        core::mem::size_of::<OBJECT_TYPE_INITIALIZER>(),
+    );
+    RtlInitUnicodeString(
+        core::ptr::addr_of_mut!(name),
+        b"P\0o\0r\0t\0\0\0".as_ptr() as *mut u16,
+    );
+    object_type_initializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
+    object_type_initializer.DefaultNonPagedPoolCharge =
+        core::mem::size_of::<LPCP_NONPAGED_PORT_QUEUE>() as ULONG;
+    object_type_initializer.DefaultPagedPoolCharge = core::mem::offset_of!(_LPCP_PORT_OBJECT, WaitEvent) as ULONG;
+    object_type_initializer.GenericMapping = LpcpPortMapping;
+    object_type_initializer.PoolType = PagedPool;
+    object_type_initializer.UseDefaultObject = 1u8;
+    object_type_initializer.CloseProcedure = Some(LpcpClosePort);
+    object_type_initializer.DeleteProcedure = Some(LpcpDeletePort);
+    object_type_initializer.ValidAccessMask = PORT_ALL_ACCESS;
+    object_type_initializer.InvalidAttributes = OBJ_VALID_ATTRIBUTES & !OBJ_CASE_INSENSITIVE;
+    ObCreateObjectType(
+        core::ptr::addr_of_mut!(name),
+        core::ptr::addr_of_mut!(object_type_initializer),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(LpcPortObjectType),
+    );
+
+    RtlInitUnicodeString(
+        core::ptr::addr_of_mut!(name),
+        b"W\0a\0i\0t\0a\0b\0l\0e\0P\0o\0r\0t\0\0\0".as_ptr() as *mut u16,
+    );
+    object_type_initializer.PoolType = NonPagedPool;
+    object_type_initializer.DefaultNonPagedPoolCharge += core::mem::size_of::<LPCP_PORT_OBJECT>() as ULONG;
+    object_type_initializer.DefaultPagedPoolCharge = 0;
+    object_type_initializer.UseDefaultObject = 0u8;
+    ObCreateObjectType(
+        core::ptr::addr_of_mut!(name),
+        core::ptr::addr_of_mut!(object_type_initializer),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(LpcWaitablePortObjectType),
+    );
+
+    LpcpMaxMessageSize = LPCP_MAX_MESSAGE_SIZE;
+    ExInitializePagedLookasideList(
+        core::ptr::addr_of_mut!(LpcpMessagesLookaside),
+        None,
+        None,
+        0,
+        LpcpMaxMessageSize as ntkrnl_sys::ddk::SIZE_T,
+        0x4C63704D,
+        32u16,
+    );
+
+    1u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn LpcpValidateClientPort(
+    ClientThread: PETHREAD,
+    Port: PLPCP_PORT_OBJECT,
+) -> BOOLEAN {
+    let ThreadPort = LpcpGetPortFromThread(ClientThread);
+    if ThreadPort.is_null() {
+        return 0u8;
+    }
+
+    if (Port == ThreadPort)
+        || (Port == (*ThreadPort).ConnectionPort)
+        || (Port == (*ThreadPort).ConnectedPort)
+    {
+        return 1u8;
+    }
+
+    if (((*Port).Flags & LPCP_PORT_TYPE_MASK) == LPCP_COMMUNICATION_PORT)
+        && ((*Port).ConnectionPort == ThreadPort)
+    {
+        return 1u8;
+    }
+
+    0u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtImpersonateClientOfPort(
+    PortHandle: HANDLE,
+    ClientMessage: PPORT_MESSAGE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
+    let mut ClientId: _CLIENT_ID;
+    let mut MessageId: ULONG;
+    let mut Port: PLPCP_PORT_OBJECT = core::ptr::null_mut();
+    let mut ConnectedPort: PLPCP_PORT_OBJECT = core::ptr::null_mut();
+    let mut ClientThread: PETHREAD = core::ptr::null_mut();
+    let mut ClientContext: SECURITY_CLIENT_CONTEXT = core::mem::zeroed();
+
+    if PreviousMode != 0i8 {
+        ProbeForRead(
+            ClientMessage as PVOID,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<PVOID>() as ULONG,
+        );
+        ClientId = (*(ClientMessage as *const PORT_MESSAGE)).__bindgen_anon_1.ClientId;
+        MessageId = (*(ClientMessage as *const PORT_MESSAGE)).MessageId;
+    } else {
+        ClientId = (*ClientMessage).__bindgen_anon_1.ClientId;
+        MessageId = (*ClientMessage).MessageId;
+    }
+
+    Status = ObReferenceObjectByHandle(
+        PortHandle,
+        PORT_ALL_ACCESS,
+        LpcPortObjectType,
+        PreviousMode,
+        core::ptr::addr_of_mut!(Port) as *mut PVOID,
+        core::ptr::null_mut(),
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    if ((*Port).Flags & LPCP_PORT_TYPE_MASK) != LPCP_COMMUNICATION_PORT {
+        Status = STATUS_INVALID_PORT_HANDLE;
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    Status = PsLookupProcessThreadByCid(
+        core::ptr::addr_of_mut!(ClientId),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(ClientThread),
+    );
+    if Status < 0 {
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    KeAcquireGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+
+    ConnectedPort = (*Port).ConnectedPort;
+    if ConnectedPort.is_null() || ObReferenceObjectSafe(ConnectedPort as PVOID) == 0u8 {
+        ConnectedPort = core::ptr::null_mut();
+        Status = STATUS_PORT_DISCONNECTED;
+        KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    if ((*ClientThread).__bindgen_anon_5.LpcReplyMessage as usize & LPCP_THREAD_FLAG_NO_IMPERSONATION) != 0 {
+        Status = STATUS_ACCESS_DENIED;
+        KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    if ((*ClientThread).LpcReplyMessageId != MessageId) || (MessageId == 0) {
+        Status = STATUS_REPLY_MESSAGE_MISMATCH;
+        KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    if LpcpValidateClientPort(ClientThread, Port) == 0u8 {
+        Status = STATUS_REPLY_MESSAGE_MISMATCH;
+        KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
+
+    if ((*ConnectedPort).Flags & LPCP_SECURITY_DYNAMIC) == 0 {
+        Status = SeImpersonateClientEx(
+            core::ptr::addr_of_mut!((*ConnectedPort).StaticSecurity),
+            core::ptr::null_mut(),
+        );
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    Status = SeCreateClientSecurity(
+        ClientThread,
+        core::ptr::addr_of_mut!((*ConnectedPort).SecurityQos),
+        0u8,
+        core::ptr::addr_of_mut!(ClientContext),
+    );
+    if Status < 0 {
+        ObDereferenceObject(Port as PVOID);
+        if !ConnectedPort.is_null() {
+            ObDereferenceObject(ConnectedPort as PVOID);
+        }
+        if !ClientThread.is_null() {
+            ObDereferenceObject(ClientThread as PVOID);
+        }
+        return Status;
+    }
+
+    Status = SeImpersonateClientEx(
+        core::ptr::addr_of_mut!(ClientContext),
+        core::ptr::null_mut(),
+    );
+
+    SeDeleteClientSecurity(core::ptr::addr_of_mut!(ClientContext));
+
+    ObDereferenceObject(Port as PVOID);
+    if !ConnectedPort.is_null() {
+        ObDereferenceObject(ConnectedPort as PVOID);
+    }
+    if !ClientThread.is_null() {
+        ObDereferenceObject(ClientThread as PVOID);
+    }
+
+    Status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtQueryPortInformationProcess() -> NTSTATUS {
+    STATUS_UNSUCCESSFUL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtQueryInformationPort(
+    PortHandle: HANDLE,
+    PortInformationClass: PORT_INFORMATION_CLASS,
+    PortInformation: PVOID,
+    PortInformationLength: ULONG,
+    ReturnLength: PULONG,
+) -> NTSTATUS {
+    STATUS_NOT_IMPLEMENTED
+}

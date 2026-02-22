@@ -46,7 +46,8 @@ list(APPEND PCH_SKIP_SOURCE
 list(APPEND PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/tier1_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
@@ -118,6 +119,40 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/state.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/thread.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/win32.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/close.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/complete.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/connect.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/create.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/listen.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/port.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/reply.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/send.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/dbgkobj.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/dbgk/dbgkutil.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/events.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/poshtdwn.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/povolume.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/po/power.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/bootanim.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/inbv.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/inbv/inbvport.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/guidobj.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/smbios.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/wmi.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/wmi/wmidrv.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/vdmexec.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vdm/vdmmain.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vf/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/vf/driver.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/libsupp.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/misc.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs

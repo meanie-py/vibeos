@@ -67,8 +67,9 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmvalche.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmwraprs.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/ntapi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkutil.c
+    # dbgk/ — replaced by Rust (ntoskrnl-rust/src/dbgk/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkutil.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/atom.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/callback.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/dbgctrl.c
@@ -121,9 +122,10 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/fstubex.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/halstub.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/translate.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/bootanim.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbv.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbvport.c
+    # inbv/ — replaced by Rust (ntoskrnl-rust/src/inbv/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/bootanim.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbv.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbvport.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
@@ -201,14 +203,15 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
+    # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c
@@ -260,10 +263,11 @@ list(APPEND SOURCE
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsecure.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obwait.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/po/events.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/po/poshtdwn.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/po/povolume.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/po/power.c
+    # po/ — replaced by Rust (ntoskrnl-rust/src/po/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/po/events.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/po/poshtdwn.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/po/povolume.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/po/power.c
     # ps/ — replaced by Rust (ntoskrnl-rust/src/ps/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/apphelp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/debug.c
@@ -279,8 +283,9 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/thread.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/win32.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/libsupp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/misc.c
+    # rtl/ (kernel) — replaced by Rust (ntoskrnl-rust/src/rtl/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/libsupp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/misc.c
     # se/ — replaced by Rust (ntoskrnl-rust/src/se/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/access.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/accesschk.c
@@ -300,11 +305,14 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/vf/driver.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/guidobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/smbios.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmidrv.c)
+    # vf/ — replaced by Rust (ntoskrnl-rust/src/vf/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/vf/driver.c
+    # wmi/ — replaced by Rust (ntoskrnl-rust/src/wmi/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/guidobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/smbios.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmi.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmidrv.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/tier1_rust_shims.c)
 
 if(DBG)
     #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)  # replaced by Rust
@@ -377,8 +385,10 @@ if(ARCH STREQUAL "i386")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psldt.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmmain.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmexec.c)
+        # vdm/ — replaced by Rust (ntoskrnl-rust/src/vdm/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmmain.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmexec.c
+    )
 elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/boot.S
