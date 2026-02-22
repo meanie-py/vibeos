@@ -7,6 +7,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
     _EPROCESS, _KMUTANT, _KSEMAPHORE,
@@ -46,11 +47,6 @@ extern "C" {
     static ExSemaphoreObjectType: POBJECT_TYPE;
 }
 
-// Gap functions not in bindgen (FORCEINLINE/variadic in C)
-extern "system" {
-    fn ProbeForRead(Address: *const u8, Length: usize, Alignment: ULONG);
-}
-
 /// DbgPrint is variadic in C — declare with fixed arg count for each call site.
 /// We use a wrapper that takes a format string only (no extra args).
 unsafe fn DbgPrintStr(_fmt: PCHAR) {
@@ -71,10 +67,6 @@ unsafe fn DbgPrintFmtPtr(_fmt: PCHAR, _arg1: HANDLE) {
 #[inline]
 unsafe fn IsPointerOffset(ptr: PVOID) -> ULONG {
     if (ptr as LONG_PTR) >= 0 { 1 } else { 0 }
-}
-
-unsafe fn ProbeForReadLargeInteger(ptr: PLARGE_INTEGER) -> LARGE_INTEGER {
-    core::ptr::read_volatile(ptr)
 }
 
 #[no_mangle]
@@ -112,9 +104,13 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
 
     if PreviousMode != 0 {
         if !TimeOut.is_null() {
-            SafeTimeOut = ProbeForReadLargeInteger(TimeOut);
+            SafeTimeOut = match probe_read_user::<LARGE_INTEGER>(TimeOut, PreviousMode) {
+                Ok(v) => v, Err(s) => return s,
+            };
         }
-        ProbeForRead(HandleArray as *const u8, (ObjectCount as usize) * core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>() as ULONG);
+        if let Err(s) = probe_user_buffer(HandleArray as *const _, (ObjectCount as usize) * core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
     }
 
     core::ptr::copy_nonoverlapping(
@@ -299,7 +295,9 @@ pub unsafe extern "system" fn NtWaitForSingleObject(
 
     PreviousMode = ExGetPreviousMode();
     if !TimeOut.is_null() && (PreviousMode != 0) {
-        SafeTimeOut = ProbeForReadLargeInteger(TimeOut);
+        SafeTimeOut = match probe_read_user::<LARGE_INTEGER>(TimeOut, PreviousMode) {
+            Ok(v) => v, Err(s) => return s,
+        };
     }
 
     let TimeOut = if !TimeOut.is_null() && (PreviousMode != 0) {
@@ -359,7 +357,9 @@ pub unsafe extern "system" fn NtSignalAndWaitForSingleObject(
 
     PreviousMode = ExGetPreviousMode();
     if !TimeOut.is_null() && (PreviousMode != 0) {
-        SafeTimeOut = ProbeForReadLargeInteger(TimeOut);
+        SafeTimeOut = match probe_read_user::<LARGE_INTEGER>(TimeOut, PreviousMode) {
+            Ok(v) => v, Err(s) => return s,
+        };
     }
 
     let TimeOut = if !TimeOut.is_null() && (PreviousMode != 0) {
@@ -436,7 +436,6 @@ pub unsafe extern "system" fn NtSignalAndWaitForSingleObject(
     ObDereferenceObject(WaitObj);
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

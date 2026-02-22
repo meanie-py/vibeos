@@ -6,6 +6,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
     _OBJECT_HEADER, _OBJECT_TYPE, _OBJECT_HEADER_HANDLE_INFO, _OBJECT_HEADER_NAME_INFO,
@@ -60,24 +61,7 @@ extern "C" {
     static mut PsThreadType: POBJECT_TYPE;
 }
 
-extern "system" {
-    fn ProbeForRead(Address: *const u8, Length: usize, Alignment: usize);
-    fn ProbeForWrite(Address: *mut u8, Length: usize, Alignment: usize);
-}
-
 // DEBUG: UART trace for crash diagnosis
-
-#[inline]
-
-
-unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
-}
-
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    core::ptr::read_volatile(ptr)
-}
 
 #[no_mangle]
 pub static mut ObpTypeObjectType: POBJECT_TYPE = core::ptr::null_mut();
@@ -340,12 +324,18 @@ pub unsafe extern "system" fn ObpCaptureObjectName(
     RtlInitEmptyUnicodeString(CapturedName as PUNICODE_STRING, core::ptr::null_mut(), 0);
 
     if AccessMode != 0 {
-        LocalName = ProbeForReadUnicodeString(ObjectName);
-        ProbeForRead(
-            LocalName.Buffer as *const u8,
+        if let Err(s) = probe_user_buffer(ObjectName as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), AccessMode) {
+            return s;
+        }
+        LocalName = core::ptr::read_volatile(ObjectName);
+        if let Err(s) = probe_user_buffer(
+            LocalName.Buffer as *const u8 as _,
             LocalName.Length as usize,
             core::mem::size_of::<u16>(),
-        );
+            AccessMode,
+        ) {
+            return s;
+        }
     } else {
         LocalName = *ObjectName;
     }
@@ -398,11 +388,14 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
 
     if !ObjectAttributes.is_null() {
         if AccessMode != 0 {
-            ProbeForRead(
-                ObjectAttributes as *const u8,
+            if let Err(s) = probe_user_buffer(
+                ObjectAttributes as *const u8 as _,
                 core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
                 core::mem::size_of::<ULONG>(),
-            );
+                AccessMode,
+            ) {
+                return s;
+            }
         }
 
         if (*ObjectAttributes).Length != core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG
@@ -448,11 +441,14 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
 
         if !SecurityQos.is_null() {
             if AccessMode != 0 {
-                ProbeForRead(
-                    SecurityQos as *const u8,
+                if let Err(s) = probe_user_buffer(
+                    SecurityQos as *const u8 as _,
                     core::mem::size_of::<_SECURITY_QUALITY_OF_SERVICE>(),
                     core::mem::size_of::<ULONG>(),
-                );
+                    AccessMode,
+                ) {
+                    return s;
+                }
             }
 
             (*ObjectCreateInfo).SecurityQualityOfService = *(SecurityQos as *const _SECURITY_QUALITY_OF_SERVICE);
@@ -1088,9 +1084,13 @@ pub unsafe extern "system" fn NtQueryObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0 {
-        ProbeForWrite(ObjectInformation as *mut u8, Length as usize, core::mem::size_of::<UCHAR>());
+        if let Err(s) = probe_user_buffer(ObjectInformation as _, Length as usize, core::mem::size_of::<UCHAR>(), PreviousMode) {
+            return s;
+        }
         if !ResultLength.is_null() {
-            ProbeForWriteUlong(ResultLength);
+            if let Err(s) = probe_write_ulong(ResultLength, PreviousMode) {
+                return s;
+            }
         }
     }
 
@@ -1245,11 +1245,14 @@ pub unsafe extern "system" fn NtSetInformationObject(
             Context.PreviousMode = ExGetPreviousMode();
 
             if Context.PreviousMode != 0 {
-                ProbeForRead(
-                    ObjectInformation as *const u8,
+                if let Err(s) = probe_user_buffer(
+                    ObjectInformation as _,
                     core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>(),
                     core::mem::size_of::<BOOLEAN>(),
-                );
+                    Context.PreviousMode,
+                ) {
+                    return s;
+                }
                 Context.Information = *(ObjectInformation as POBJECT_HANDLE_ATTRIBUTE_INFORMATION);
             } else {
                 Context.Information = *(ObjectInformation as POBJECT_HANDLE_ATTRIBUTE_INFORMATION);
@@ -1332,7 +1335,6 @@ pub unsafe extern "system" fn NtSetInformationObject(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

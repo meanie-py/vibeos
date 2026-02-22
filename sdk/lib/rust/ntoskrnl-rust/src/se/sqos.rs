@@ -2,10 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-
-extern "system" {
-    fn ProbeForRead(address: PVOID, length: ULONG, alignment: ULONG);
-}
+use ntkrnl_sys::probe::*;
 
 #[no_mangle]
 pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
@@ -23,18 +20,24 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
         if AccessMode != 0i8 {
             let mut safe_qos: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
 
-            ProbeForRead(
-                ObjectAttributes as PVOID,
-                core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(s) = probe_user_buffer(
+                ObjectAttributes as *const core::ffi::c_void,
+                core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+                core::mem::size_of::<ULONG>(),
+                AccessMode,
+            ) {
+                return s;
+            }
             if (*ObjectAttributes).Length == core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG {
                 if !(*ObjectAttributes).SecurityQualityOfService.is_null() {
-                    ProbeForRead(
-                        (*ObjectAttributes).SecurityQualityOfService as PVOID,
-                        core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as ULONG,
-                        core::mem::size_of::<ULONG>() as ULONG,
-                    );
+                    if let Err(s) = probe_user_buffer(
+                        (*ObjectAttributes).SecurityQualityOfService as *const core::ffi::c_void,
+                        core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
+                        core::mem::size_of::<ULONG>(),
+                        AccessMode,
+                    ) {
+                        return s;
+                    }
 
                     if (*((*ObjectAttributes).SecurityQualityOfService as PSECURITY_QUALITY_OF_SERVICE)).Length
                         == core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as ULONG
@@ -135,7 +138,6 @@ pub unsafe extern "system" fn SepReleaseSecurityQualityOfService(
         ExFreePoolWithTag(CapturedSecurityQualityOfService as PVOID, TAG_QOS);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

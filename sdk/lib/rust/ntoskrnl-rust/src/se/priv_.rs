@@ -3,11 +3,10 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::probe::*;
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
-    fn ProbeForWrite(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn RtlEqualLuid(luid1: *const LUID, luid2: *const LUID) -> BOOLEAN;
     fn SepAcquireTokenLockShared(token: PTOKEN);
     fn SepReleaseTokenLock(token: PTOKEN);
@@ -298,7 +297,9 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
     *length = (buffer_size + 3) & !3;
 
     if previous_mode != 0i8 {
-        ProbeForRead(src as PVOID, buffer_size as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
+            return s;
+        }
     }
 
     if !allocated_mem.is_null() {
@@ -513,13 +514,16 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
     previous_mode = KeGetPreviousMode();
 
     if previous_mode != 0i8 {
-        ProbeForWrite(
-            required_privileges as PVOID,
+        if let Err(s) = probe_user_buffer(
+            required_privileges as _,
             (core::mem::size_of::<PRIVILEGE_SET>()
                 - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
-                + core::mem::size_of::<LUID_AND_ATTRIBUTES>()) as SIZE_T,
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+                + core::mem::size_of::<LUID_AND_ATTRIBUTES>()),
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            return s;
+        }
 
         privilege_count = (*required_privileges).PrivilegeCount;
         privilege_control = (*required_privileges).Control;
@@ -533,20 +537,25 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
             return STATUS_INVALID_PARAMETER;
         }
 
-        ProbeForWrite(
-            required_privileges as PVOID,
+        if let Err(s) = probe_user_buffer(
+            required_privileges as _,
             (core::mem::size_of::<PRIVILEGE_SET>()
                 - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
-                + (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>()))
-                as SIZE_T,
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+                + (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>())),
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            return s;
+        }
 
-        ProbeForWrite(
-            result as PVOID,
-            core::mem::size_of::<BOOLEAN>() as SIZE_T,
+        if let Err(s) = probe_user_buffer(
+            result as _,
+            core::mem::size_of::<BOOLEAN>(),
             1,
-        );
+            previous_mode,
+        ) {
+            return s;
+        }
     } else {
         privilege_count = (*required_privileges).PrivilegeCount;
         privilege_control = (*required_privileges).Control;
@@ -607,7 +616,6 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
 
     status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

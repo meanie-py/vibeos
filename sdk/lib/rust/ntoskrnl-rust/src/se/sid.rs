@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::probe::*;
 
 unsafe fn RtlEqualMemory(dst: PVOID, src: PVOID, len: usize) -> BOOLEAN {
     if RtlCompareMemory(dst, src, len as SIZE_T) == len as SIZE_T { 1 } else { 0 }
@@ -301,10 +302,6 @@ pub unsafe extern "system" fn SepInitSecurityIDs() -> BOOLEAN {
     1u8
 }
 
-extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn SepCaptureSid(
     InputSid: PSID,
@@ -318,9 +315,13 @@ pub unsafe extern "system" fn SepCaptureSid(
     let Sid = InputSid as PISID;
 
     if AccessMode != 0i8 {
-        ProbeForRead(Sid as PVOID, core::mem::offset_of!(SID, SubAuthority) as ULONG, core::mem::size_of::<UCHAR>() as u32);
+        if let Err(s) = probe_user_buffer(Sid as _, core::mem::offset_of!(SID, SubAuthority), core::mem::size_of::<UCHAR>(), AccessMode) {
+            return s;
+        }
         SidSize = RtlLengthRequiredSid((*Sid).SubAuthorityCount as ULONG);
-        ProbeForRead(Sid as PVOID, SidSize, core::mem::size_of::<UCHAR>() as u32);
+        if let Err(s) = probe_user_buffer(Sid as _, SidSize as usize, core::mem::size_of::<UCHAR>(), AccessMode) {
+            return s;
+        }
 
         NewSid = ExAllocatePoolWithTag(PoolType, SidSize as SIZE_T, TAG_SID) as PISID;
         if NewSid.is_null() {
@@ -495,7 +496,9 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
     RequiredLength = ((ArraySize + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
 
     if PreviousMode != 0i8 {
-        ProbeForRead(SrcSidAndAttributes as PVOID, ArraySize, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(SrcSidAndAttributes as _, ArraySize as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
 
         TempArrayValidate = AttributeCount * core::mem::size_of::<SID_VALIDATE>() as ULONG;
         TempLengthValidate = ((TempArrayValidate + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
@@ -505,13 +508,17 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
         i = 0;
         while i < AttributeCount {
             Sid = (*SrcSidAndAttributes.offset(i as isize)).Sid as PISID;
-            ProbeForRead(Sid as PVOID, core::mem::size_of::<SID>() as ULONG, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(Sid as _, core::mem::size_of::<SID>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
 
             (*ValidateArray.offset(i as isize)).SubAuthorityCount = (*Sid).SubAuthorityCount;
             (*ValidateArray.offset(i as isize)).ProbeSid = Sid;
 
             SidLength = RtlLengthRequiredSid((*ValidateArray.offset(i as isize)).SubAuthorityCount as ULONG);
-            ProbeForRead((*ValidateArray.offset(i as isize)).ProbeSid as PVOID, SidLength, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer((*ValidateArray.offset(i as isize)).ProbeSid as _, SidLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
 
             RequiredLength += ((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
             i += 1;
@@ -623,7 +630,6 @@ pub unsafe extern "system" fn SeReleaseSidAndAttributesArray(
         ExFreePoolWithTag(CapturedSidAndAttributes as PVOID, TAG_SID_AND_ATTRIBUTES);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -5,6 +5,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
     _OBJECT_DIRECTORY, _OBJECT_DIRECTORY_ENTRY, _OBJECT_DIRECTORY_INFORMATION,
@@ -22,10 +23,6 @@ use ntkrnl_sys::ddk::{
 
 /// STATUS_MORE_ENTRIES — not in ntkrnl_sys::constants, define locally.
 const STATUS_MORE_ENTRIES: NTSTATUS = 0x00000105;
-
-extern "system" {
-    pub fn ProbeForWrite(Address: *mut u8, Length: usize, Alignment: usize);
-}
 
 #[no_mangle]
 pub static mut ObpDirectoryObjectType: POBJECT_TYPE = core::ptr::null_mut();
@@ -270,7 +267,9 @@ pub unsafe extern "system" fn NtOpenDirectoryObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        ProbeForWrite(DirectoryHandle as *mut u8, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>());
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
     }
 
     Status = ObOpenObjectByName(
@@ -320,13 +319,19 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     ObpInitializeLookupContext(core::ptr::addr_of_mut!(LookupContext));
 
     if PreviousMode != 0 {
-        ProbeForWrite(Buffer as *mut u8, BufferLength as usize, core::mem::size_of::<WCHAR>());
-        ProbeForWrite(Context as *mut u8, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>());
+        if let Err(s) = probe_user_buffer(Buffer, BufferLength as usize, core::mem::size_of::<WCHAR>(), PreviousMode) {
+            return s;
+        }
+        if let Err(s) = probe_user_buffer(Context as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
         if RestartScan == 0 {
             SkipEntries = *Context;
         }
         if !ReturnLength.is_null() {
-            ProbeForWrite(ReturnLength as *mut u8, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>());
+            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
         }
     } else if RestartScan == 0 {
         SkipEntries = *Context;
@@ -502,7 +507,9 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        ProbeForWrite(DirectoryHandle as *mut u8, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>());
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
     }
 
     Status = ObCreateObject(
@@ -537,7 +544,6 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -8,6 +8,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::probe::*;
 
 use super::oblife::{ObpCaptureObjectCreateInformation, ObpFreeObjectNameBuffer};
 use super::obname::ObpLookupObjectName;
@@ -2309,7 +2310,9 @@ pub unsafe extern "system" fn NtDuplicateObject(
     let mut status: NTSTATUS;
 
     if !target_handle.is_null() && previous_mode != 0i8 {
-        ProbeForWriteHandle(target_handle);
+        if let Err(s) = probe_write_handle(target_handle as _, previous_mode) {
+            return s;
+        }
         *target_handle = core::ptr::null_mut();
     }
 
@@ -2370,7 +2373,6 @@ pub unsafe extern "system" fn NtDuplicateObject(
 pub unsafe extern "system" fn ObIsKernelHandle(handle: HANDLE) -> BOOLEAN {
     (ObpIsKernelHandle(handle, 0i8) != 0) as u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

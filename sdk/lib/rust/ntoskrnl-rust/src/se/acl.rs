@@ -2,6 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
+use ntkrnl_sys::probe::*;
 
 extern "system" {
     pub static mut SeWorldSid: PSID;
@@ -11,8 +12,6 @@ extern "system" {
     pub static mut SeAnonymousLogonSid: PSID;
     pub static mut SeCreatorOwnerSid: PSID;
     pub static mut SeCreatorGroupSid: PSID;
-
-    fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
 }
 
 const TAG_ACL: u32 = u32::from_le_bytes(*b"cAeS");
@@ -233,9 +232,13 @@ pub unsafe extern "system" fn SepCaptureAcl(
     }
 
     if AccessMode != 0i8 {
-        ProbeForRead(InputAcl as PVOID, core::mem::size_of::<ACL>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(InputAcl as _, core::mem::size_of::<ACL>(), core::mem::size_of::<ULONG>(), AccessMode) {
+            return s;
+        }
         let acl_size_temp = (*InputAcl).AclSize;
-        ProbeForRead(InputAcl as PVOID, acl_size_temp as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(InputAcl as _, acl_size_temp as usize, core::mem::size_of::<ULONG>(), AccessMode) {
+            return s;
+        }
         acl_size = acl_size_temp as ULONG;
 
         if acl_size < core::mem::size_of::<ACL>() as ULONG {
@@ -525,7 +528,6 @@ pub unsafe extern "system" fn SepSelectAcl(
     }
     acl
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

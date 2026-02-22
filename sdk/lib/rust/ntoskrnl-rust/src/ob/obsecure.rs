@@ -5,6 +5,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::macros::*;
+use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -47,19 +48,6 @@ const FILE_WRITE_DATA: ULONG = 0x0002;
 // Missing NTSTATUS codes
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
 const STATUS_INVALID_SECURITY_DESCR: NTSTATUS = 0xC00000E7_u32 as i32;
-
-// Extern declarations for ProbeForRead/ProbeForWrite (exported by ntoskrnl)
-extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
-}
-
-/// ProbeForWriteUlong — FORCEINLINE, not exported. Implemented as volatile probe.
-#[inline]
-unsafe fn ProbeForWriteUlong(ptr: PULONG) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn ObAssignObjectSecurityDescriptor(
@@ -601,8 +589,12 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        ProbeForWrite(SecurityDescriptor as PVOID, Length, core::mem::size_of::<ULONG>() as ULONG);
-        ProbeForWriteUlong(ResultLength);
+        if let Err(s) = probe_user_buffer(SecurityDescriptor as _, Length as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
+        if let Err(s) = probe_write_ulong(ResultLength, PreviousMode) {
+            return s;
+        }
     }
 
     let mut DesiredAccess: ACCESS_MASK = 0;
@@ -738,7 +730,6 @@ pub unsafe extern "system" fn ObQueryObjectAuditingByHandle(
     KeLeaveCriticalRegion();
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

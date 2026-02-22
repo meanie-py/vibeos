@@ -251,6 +251,71 @@ def cmd_shims(args):
             print(output)
 
 
+def cmd_probe_migrate(args):
+    from .probe_migrate import (
+        scan_rust_file, find_rust_files, run_probe_migration,
+        load_probe_system_prompt, build_probe_file_prompt,
+    )
+    from .config import OUTPUT_CRATE
+
+    # Resolve paths
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = OUTPUT_CRATE / "src" / args.path
+
+    if target.is_file():
+        rust_files = [target]
+    elif target.is_dir():
+        # Find all .rs files with probe calls in this directory
+        rust_files = []
+        for rs_file in sorted(target.glob("*.rs")):
+            if rs_file.name == "mod.rs":
+                continue
+            scan = scan_rust_file(rs_file)
+            if scan.probe_call_count > 0:
+                rust_files.append(rs_file)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    if not rust_files:
+        print("No files with probe calls found.", file=sys.stderr)
+        sys.exit(0)
+
+    print(f"Found {len(rust_files)} files with probe calls:", file=sys.stderr)
+    for f in rust_files:
+        scan = scan_rust_file(f)
+        print(f"  {f.name}: {scan.probe_call_count} probe calls", file=sys.stderr)
+
+    if args.scan_only:
+        return
+
+    model = resolve_model(args.model)
+
+    if args.prompt:
+        # Just print the prompt for the first file
+        system_prompt = load_probe_system_prompt()
+        scan = scan_rust_file(rust_files[0])
+        file_prompt = build_probe_file_prompt(scan)
+        print(system_prompt + "\n\n---\n\n" + file_prompt)
+        return
+
+    print(f"\nSubmitting to {model}...", file=sys.stderr)
+    results = run_probe_migration(
+        rust_files,
+        model=model,
+        dry_run=args.dry_run,
+    )
+
+    # Summary
+    ok = sum(1 for v in results.values() if v)
+    fail = sum(1 for v in results.values() if not v)
+    print(f"\nDone: {ok} succeeded, {fail} failed", file=sys.stderr)
+
+    if not args.dry_run and ok > 0:
+        print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
+
+
 def cmd_estimate(args):
     from .scanner import scan_file
     from .catalog import build_catalog
@@ -356,6 +421,14 @@ def main():
     p = sub.add_parser("estimate", help="Estimate token count and cost")
     p.add_argument("path", help="File or directory to estimate")
 
+    # probe-migrate
+    p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
+    p.add_argument("path", help="Rust file or directory (relative to ntoskrnl-rust/src/ or absolute)")
+    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument("--dry-run", action="store_true", help="Don't write, just show what would change")
+    p.add_argument("--scan-only", action="store_true", help="Only scan for probe calls, don't migrate")
+    p.add_argument("--prompt", action="store_true", help="Print the prompt for the first file and exit")
+
     args = parser.parse_args()
 
     commands = {
@@ -367,6 +440,7 @@ def main():
         "check": cmd_check,
         "shims": cmd_shims,
         "estimate": cmd_estimate,
+        "probe-migrate": cmd_probe_migrate,
     }
 
     commands[args.command](args)

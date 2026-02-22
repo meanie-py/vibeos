@@ -36,11 +36,13 @@ pub mod ke;
 pub mod macros;
 pub mod mm;
 pub mod ob;
+pub mod probe;
 pub mod ps;
 pub mod rtl;
 
 // Re-export commonly used types at crate root
 pub use base::*;
+pub use probe::*;
 
 // ============================================================================
 // Auto-generated DDK bindings (full kernel API surface)

@@ -5,10 +5,9 @@ use ntkrnl_sys::mm::{PagedPool, NonPagedPool};
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::probe::*;
 
 extern "system" {
-    fn ProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: u32);
-    fn ProbeForWrite(Address: *mut core::ffi::c_void, Length: usize, Alignment: u32);
     fn ReleaseCapturedUnicodeString(Name: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn ProbeAndCaptureUnicodeString(
         Dest: *mut _UNICODE_STRING,
@@ -364,22 +363,45 @@ unsafe fn SepAccessCheckAndAuditAlarm(
         safe_access_status_list = &mut access_status;
     }
 
-    ProbeForWrite(
-        access_status_list as PVOID,
+    if let Err(s) = probe_user_buffer(
+        access_status_list as *const core::ffi::c_void,
         (result_list_length as usize) * core::mem::size_of::<NTSTATUS>(),
-        core::mem::size_of::<NTSTATUS>() as ULONG,
-    );
-    ProbeForWrite(
-        granted_access_list as PVOID,
-        (result_list_length as usize) * core::mem::size_of::<ACCESS_MASK>(),
-        core::mem::size_of::<ACCESS_MASK>() as ULONG,
-    );
+        core::mem::size_of::<NTSTATUS>(),
+        UserMode,
+    ) {
+        if allocated_result_lists != 0 {
+            ExFreePoolWithTag(safe_granted_access_list as PVOID, TAG_SEPA);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        return s;
+    }
 
-    ProbeForRead(
-        generic_mapping as PVOID,
+    if let Err(s) = probe_user_buffer(
+        granted_access_list as *const core::ffi::c_void,
+        (result_list_length as usize) * core::mem::size_of::<ACCESS_MASK>(),
+        core::mem::size_of::<ACCESS_MASK>(),
+        UserMode,
+    ) {
+        if allocated_result_lists != 0 {
+            ExFreePoolWithTag(safe_granted_access_list as PVOID, TAG_SEPA);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        return s;
+    }
+
+    if let Err(s) = probe_user_buffer(
+        generic_mapping as *const core::ffi::c_void,
         core::mem::size_of::<_GENERIC_MAPPING>(),
-        core::mem::size_of::<ULONG>() as ULONG,
-    );
+        core::mem::size_of::<ULONG>(),
+        UserMode,
+    ) {
+        if allocated_result_lists != 0 {
+            ExFreePoolWithTag(safe_granted_access_list as PVOID, TAG_SEPA);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        return s;
+    }
+
     local_generic_mapping = *generic_mapping;
 
     if !client_token_handle.is_null() {
@@ -951,11 +973,19 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     }
 
     if !privilege_set.is_null() {
-        ProbeForRead(
-            privilege_set as PVOID,
+        if let Err(s) = probe_user_buffer(
+            privilege_set as *const core::ffi::c_void,
             core::mem::size_of::<PRIVILEGE_SET>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+            core::mem::size_of::<ULONG>(),
+            UserMode,
+        ) {
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            ObDereferenceObject(client_token as PVOID);
+            return s;
+        }
 
         privilege_count = (*privilege_set).PrivilegeCount;
         if privilege_count > SEP_PRIVILEGE_SET_MAX_COUNT {
@@ -971,11 +1001,19 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         privilege_set_size = core::mem::size_of::<PRIVILEGE_SET>() as ULONG
             + (privilege_count.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
-        ProbeForRead(
-            privilege_set as PVOID,
+        if let Err(s) = probe_user_buffer(
+            privilege_set as *const core::ffi::c_void,
             privilege_set_size as usize,
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+            core::mem::size_of::<ULONG>(),
+            UserMode,
+        ) {
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            ObDereferenceObject(client_token as PVOID);
+            return s;
+        }
 
         captured_privilege_set = ExAllocatePoolWithTag(
             PagedPool,
@@ -1000,19 +1038,41 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     }
 
     if !handle_id.is_null() {
-        ProbeForRead(
+        if let Err(s) = probe_user_buffer(
             handle_id,
             core::mem::size_of::<PVOID>(),
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
+            core::mem::size_of::<PVOID>(),
+            UserMode,
+        ) {
+            if !captured_privilege_set.is_null() {
+                ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
+            }
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            ObDereferenceObject(client_token as PVOID);
+            return s;
+        }
         captured_handle_id = *(handle_id as *const PVOID);
     }
 
-    ProbeForWrite(
-        generate_on_close as PVOID,
+    if let Err(s) = probe_user_buffer(
+        generate_on_close as *const core::ffi::c_void,
         core::mem::size_of::<BOOLEAN>(),
-        core::mem::size_of::<BOOLEAN>() as ULONG,
-    );
+        core::mem::size_of::<BOOLEAN>(),
+        UserMode,
+    ) {
+        if !captured_privilege_set.is_null() {
+            ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
+        }
+        if !captured_security_descriptor.is_null() {
+            SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        ObDereferenceObject(client_token as PVOID);
+        return s;
+    }
 
     status = ProbeAndCaptureUnicodeString(
         &mut captured_subsystem_name,
@@ -1193,11 +1253,22 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
         }
     }
 
-    ProbeForRead(
-        privileges as PVOID,
+    if let Err(s) = probe_user_buffer(
+        privileges as *const core::ffi::c_void,
         core::mem::size_of::<PRIVILEGE_SET>(),
-        core::mem::size_of::<ULONG>() as ULONG,
-    );
+        core::mem::size_of::<ULONG>(),
+        previous_mode,
+    ) {
+        if !captured_service_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_service_name, previous_mode);
+        }
+        if !captured_subsystem_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        ObDereferenceObject(client_token as PVOID);
+        return s;
+    }
 
     privilege_count = (*privileges).PrivilegeCount;
     if privilege_count > SEP_PRIVILEGE_SET_MAX_COUNT {
@@ -1216,11 +1287,22 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
     privileges_size = core::mem::size_of::<PRIVILEGE_SET>() as ULONG
         + (privilege_count.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
-    ProbeForRead(
-        privileges as PVOID,
+    if let Err(s) = probe_user_buffer(
+        privileges as *const core::ffi::c_void,
         privileges_size as usize,
-        core::mem::size_of::<ULONG>() as ULONG,
-    );
+        core::mem::size_of::<ULONG>(),
+        previous_mode,
+    ) {
+        if !captured_service_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_service_name, previous_mode);
+        }
+        if !captured_subsystem_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        ObDereferenceObject(client_token as PVOID);
+        return s;
+    }
 
     captured_privileges = ExAllocatePoolWithTag(
         PagedPool,
@@ -1449,7 +1531,6 @@ pub unsafe extern "system" fn NtAccessCheckByTypeResultListAndAuditAlarmByHandle
         1u8,
     )
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

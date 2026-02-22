@@ -6,10 +6,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
-
-extern "system" {
-    fn ProbeForWrite(Address: *mut core::ffi::c_void, Length: usize, Alignment: u32);
-}
+use ntkrnl_sys::probe::*;
 
 #[cfg(target_arch = "aarch64")]
 extern "C" {
@@ -1519,7 +1516,9 @@ pub unsafe extern "system" fn NtOpenThreadTokenEx(
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
-        ProbeForWrite(token_handle as PVOID, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_handle as _, core::mem::size_of::<HANDLE>() as usize, core::mem::align_of::<HANDLE>() as usize, previous_mode) {
+            return s;
+        }
     }
 
     let handle_attributes = ObpValidateAttributes(handle_attributes, previous_mode);
@@ -1618,7 +1617,9 @@ pub unsafe extern "system" fn NtCompareTokens(
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
-        ProbeForWrite(equal as PVOID, 1, 1);
+        if let Err(s) = probe_user_buffer(equal as _, 1, 1, previous_mode) {
+            return s;
+        }
     }
 
     let mut first_token: PTOKEN = core::ptr::null_mut();
@@ -1689,7 +1690,6 @@ pub unsafe extern "system" fn NtImpersonateAnonymousToken(
     ObDereferenceObject(thread as PVOID);
     status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

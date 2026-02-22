@@ -5,11 +5,7 @@ use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
-
-extern "system" {
-    fn ProbeForRead(Address: *const core::ffi::c_void, Length: SIZE_T, Alignment: ULONG);
-    fn ProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG);
-}
+use ntkrnl_sys::probe::*;
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -217,18 +213,26 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
     PreviousMode = KeGetPreviousMode();
     if PreviousMode != 0 {
         if DisableAllPrivileges == 0 {
-            ProbeForRead(NewState as PVOID, core::mem::size_of::<TOKEN_PRIVILEGES>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(NewState as _, core::mem::size_of::<TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
 
             CapturedCount = (*NewState).PrivilegeCount;
             NewStateSize = core::mem::size_of::<TOKEN_PRIVILEGES>() as ULONG + 
                           (CapturedCount.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
-            ProbeForRead(NewState as PVOID, NewStateSize as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(NewState as _, NewStateSize as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
         }
 
         if !PreviousState.is_null() {
-            ProbeForWrite(PreviousState as PVOID, BufferLength as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
-            ProbeForWrite(ReturnLength as PVOID, core::mem::size_of::<ULONG>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
+            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
         }
     } else {
         if DisableAllPrivileges == 0 {
@@ -359,18 +363,26 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
 
     if PreviousMode != 0 {
         if ResetToDefault == 0 {
-            ProbeForRead(NewState as PVOID, core::mem::size_of::<TOKEN_GROUPS>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(NewState as _, core::mem::size_of::<TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
 
             CapturedCount = (*NewState).GroupCount;
             NewStateSize = core::mem::size_of::<TOKEN_GROUPS>() as ULONG + 
                           (CapturedCount.saturating_sub(1)) * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
-            ProbeForRead(NewState as PVOID, NewStateSize as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(NewState as _, NewStateSize as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
         }
 
         if !PreviousState.is_null() {
-            ProbeForWrite(PreviousState as PVOID, BufferLength as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
-            ProbeForWrite(ReturnLength as PVOID, core::mem::size_of::<ULONG>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
+            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+                return s;
+            }
         }
     } else {
         if ResetToDefault == 0 {
@@ -472,7 +484,6 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

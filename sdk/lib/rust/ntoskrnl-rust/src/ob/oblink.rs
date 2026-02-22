@@ -6,6 +6,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::probe::*;
 
 use ntkrnl_sys::ddk::{
     _OBJECT_SYMBOLIC_LINK, _EPROCESS, _UNICODE_STRING,
@@ -64,11 +65,6 @@ extern "C" {
     fn DbgPrint(Format: PCHAR, ...) -> ULONG;
 }
 
-extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: usize);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
-}
-
 // KeQuerySystemTime: real function on i386, macro on amd64/arm64.
 // On amd64/arm64 it reads SharedSystemTime. We declare it extern on i386
 // and provide a stub on other architectures that calls KeQueryInterruptTime.
@@ -90,18 +86,7 @@ unsafe fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
 // ============================================================================
 
 #[inline]
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    core::ptr::read_volatile(ptr)
-}
-
-#[inline]
 unsafe fn ProbeForWriteUnicodeString(ptr: *mut _UNICODE_STRING) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
-}
-
-#[inline]
-unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -595,14 +580,23 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        CapturedLinkTarget = ProbeForReadUnicodeString(LinkTarget as *const _UNICODE_STRING);
-        ProbeForRead(
-            CapturedLinkTarget.Buffer as PVOID,
+        if let Err(s) = probe_user_buffer(LinkTarget as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
+        CapturedLinkTarget = core::ptr::read_volatile(LinkTarget);
+        
+        if let Err(s) = probe_user_buffer(
+            CapturedLinkTarget.Buffer as _,
             CapturedLinkTarget.MaximumLength as usize,
             core::mem::size_of::<WCHAR>(),
-        );
+            PreviousMode,
+        ) {
+            return s;
+        }
 
-        ProbeForWriteHandle(LinkHandle);
+        if let Err(s) = probe_write_handle(LinkHandle as _, PreviousMode) {
+            return s;
+        }
     } else {
         CapturedLinkTarget = *LinkTarget;
     }
@@ -687,7 +681,9 @@ pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
     let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
-        ProbeForWriteHandle(LinkHandle);
+        if let Err(s) = probe_write_handle(LinkHandle as _, PreviousMode) {
+            return s;
+        }
     }
 
     Status = ObOpenObjectByName(
@@ -722,14 +718,19 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
         ProbeForWriteUnicodeString(LinkTarget as *mut _UNICODE_STRING);
 
         SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
-        ProbeForWrite(
-            SafeLinkTarget.Buffer as PVOID,
+        if let Err(s) = probe_user_buffer(
+            SafeLinkTarget.Buffer as _,
             SafeLinkTarget.MaximumLength as usize,
             core::mem::size_of::<WCHAR>(),
-        );
+            PreviousMode,
+        ) {
+            return s;
+        }
 
         if ResultLength != core::ptr::null_mut() {
-            ProbeForWriteUlong(ResultLength);
+            if let Err(s) = probe_write_ulong(ResultLength, PreviousMode) {
+                return s;
+            }
         }
     } else {
         SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
@@ -776,7 +777,6 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

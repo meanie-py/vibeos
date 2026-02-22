@@ -2,10 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NOT_IMPLEMENTED, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
-
-extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-}
+use ntkrnl_sys::probe::*;
 
 const ACCESS_OBJECT_GUID: u16 = 0;
 const ACCESS_MAX_LEVEL: u16 = 4;
@@ -24,7 +21,9 @@ unsafe fn SepValidateObjectTypeList(
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForRead(ObjectTypeList as PVOID, Size, core::mem::size_of::<ULONG>() as ULONG);
+    if let Err(s) = probe_user_buffer(ObjectTypeList as _, Size as usize, core::mem::size_of::<ULONG>(), 1i8) {
+        return s;
+    }
 
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         Level = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).Level;
@@ -47,7 +46,9 @@ unsafe fn SepValidateObjectTypeList(
         }
 
         let ObjectTypeGuid = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).ObjectType;
-        ProbeForRead(ObjectTypeGuid as PVOID, core::mem::size_of::<GUID>() as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(ObjectTypeGuid as _, core::mem::size_of::<GUID>(), core::mem::size_of::<ULONG>(), 1i8) {
+            return s;
+        }
 
         PrevLevel = Level;
     }
@@ -163,7 +164,6 @@ pub unsafe extern "system" fn SeReleaseObjectTypeList(
         ExFreePoolWithTag(CapturedObjectTypeList as PVOID, TAG_SEPA);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

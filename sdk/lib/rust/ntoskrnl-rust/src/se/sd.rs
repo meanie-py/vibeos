@@ -2,6 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
+use ntkrnl_sys::probe::*;
 
 #[no_mangle]
 pub static mut SePublicDefaultSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
@@ -58,9 +59,6 @@ extern "system" {
     ) -> NTSTATUS;
     fn SeLockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
     fn SeUnlockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
-    fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
-    fn ProbeForReadUchar(Address: *const UCHAR) -> UCHAR;
-    fn ProbeForReadUshort(Address: *const USHORT) -> USHORT;
 }
 
 #[no_mangle]
@@ -275,44 +273,54 @@ unsafe fn DetermineSIDSize(
     Sid: PISID,
     OutSAC: *mut ULONG,
     ProcessorMode: KPROCESSOR_MODE,
-) -> ULONG {
+) -> Result<ULONG, NTSTATUS> {
     let Size: ULONG;
 
     if Sid.is_null() {
         *OutSAC = 0;
-        return 0;
+        return Ok(0);
     }
 
     if ProcessorMode != 0 {
-        *OutSAC = ProbeForReadUchar(core::ptr::addr_of!((*Sid).SubAuthorityCount)) as ULONG;
+        let sac = match probe_read_user::<UCHAR>(core::ptr::addr_of!((*Sid).SubAuthorityCount), ProcessorMode) {
+            Ok(v) => v, Err(s) => return Err(s),
+        };
+        *OutSAC = sac as ULONG;
         Size = RtlLengthRequiredSid(*OutSAC);
-        ProbeForRead(Sid as PVOID, Size, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(Sid as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode) {
+            return Err(s);
+        }
     } else {
         *OutSAC = (*Sid).SubAuthorityCount as ULONG;
         Size = RtlLengthRequiredSid(*OutSAC);
     }
 
-    Size
+    Ok(Size)
 }
 
 unsafe fn DetermineACLSize(
     Acl: PACL,
     ProcessorMode: KPROCESSOR_MODE,
-) -> ULONG {
+) -> Result<ULONG, NTSTATUS> {
     let Size: ULONG;
 
     if Acl.is_null() {
-        return 0;
+        return Ok(0);
     }
 
     if ProcessorMode == 0 {
-        return (*Acl).AclSize as ULONG;
+        return Ok((*Acl).AclSize as ULONG);
     }
 
-    Size = ProbeForReadUshort(core::ptr::addr_of!((*Acl).AclSize)) as ULONG;
-    ProbeForRead(Acl as PVOID, Size, core::mem::size_of::<ULONG>() as ULONG);
+    let acl_size = match probe_read_user::<USHORT>(core::ptr::addr_of!((*Acl).AclSize), ProcessorMode) {
+        Ok(v) => v, Err(s) => return Err(s),
+    };
+    Size = acl_size as ULONG;
+    if let Err(s) = probe_user_buffer(Acl as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode) {
+        return Err(s);
+    }
 
-    Size
+    Ok(Size)
 }
 
 #[no_mangle]
@@ -350,11 +358,14 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     }
 
     if CurrentMode != 0 {
-        ProbeForRead(
-            OriginalDescriptor as PVOID,
-            core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG,
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+        if let Err(s) = probe_user_buffer(
+            OriginalDescriptor as _,
+            core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>(),
+            core::mem::size_of::<ULONG>(),
+            CurrentMode,
+        ) {
+            return s;
+        }
     }
 
     if (*OriginalDescriptor).Revision != SECURITY_DESCRIPTOR_REVISION1 as u8 {
@@ -368,7 +379,14 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             core::mem::size_of::<_SECURITY_DESCRIPTOR>() as ULONG
         };
 
-        ProbeForRead(OriginalDescriptor as PVOID, DescriptorSize, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(
+            OriginalDescriptor as _,
+            DescriptorSize as usize,
+            core::mem::size_of::<ULONG>(),
+            CurrentMode,
+        ) {
+            return s;
+        }
     }
 
     DescriptorCopy.Revision = (*OriginalDescriptor).Revision;
@@ -380,18 +398,26 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     DescriptorCopy.Dacl = SepGetDaclFromDescriptor(OriginalDescriptor);
     DescriptorSize = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
 
-    OwnerSize = DetermineSIDSize(DescriptorCopy.Owner as PISID, &mut OwnerSAC, CurrentMode);
+    OwnerSize = match DetermineSIDSize(DescriptorCopy.Owner as PISID, &mut OwnerSAC, CurrentMode) {
+        Ok(v) => v, Err(s) => return s,
+    };
     DescriptorSize += ((OwnerSize + 3) & !3);
-    GroupSize = DetermineSIDSize(DescriptorCopy.Group as PISID, &mut GroupSAC, CurrentMode);
+    GroupSize = match DetermineSIDSize(DescriptorCopy.Group as PISID, &mut GroupSAC, CurrentMode) {
+        Ok(v) => v, Err(s) => return s,
+    };
     DescriptorSize += ((GroupSize + 3) & !3);
 
     if DescriptorCopy.Control & SE_SACL_PRESENT != 0 {
-        SaclSize = DetermineACLSize(DescriptorCopy.Sacl, CurrentMode);
+        SaclSize = match DetermineACLSize(DescriptorCopy.Sacl, CurrentMode) {
+            Ok(v) => v, Err(s) => return s,
+        };
         DescriptorSize += ((SaclSize + 3) & !3);
     }
 
     if DescriptorCopy.Control & SE_DACL_PRESENT != 0 {
-        DaclSize = DetermineACLSize(DescriptorCopy.Dacl, CurrentMode);
+        DaclSize = match DetermineACLSize(DescriptorCopy.Dacl, CurrentMode) {
+            Ok(v) => v, Err(s) => return s,
+        };
         DescriptorSize += ((DaclSize + 3) & !3);
     }
 
@@ -1170,7 +1196,6 @@ pub unsafe extern "system" fn SeComputeQuotaInformationSize(
 
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

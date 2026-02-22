@@ -6,16 +6,12 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::probe::*;
 
 const TOKEN_TYPE_TokenImpersonation: TOKEN_TYPE = _TOKEN_TYPE_TokenImpersonation;
 const TOKEN_TYPE_TokenPrimary: TOKEN_TYPE = _TOKEN_TYPE_TokenPrimary;
 const SECURITY_IMPERSONATION_LEVEL_SecurityImpersonation: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_LEVEL_SecurityImpersonation;
 const SECURITY_IMPERSONATION_LEVEL_SecurityAnonymous: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_LEVEL_SecurityAnonymous;
-
-extern "system" {
-    fn ProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: u32);
-    fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
-}
 
 extern "system" {
     static mut SeTokenObjectType: PVOID;
@@ -107,7 +103,6 @@ extern "system" {
         CaptureIfKernel: BOOLEAN,
     );
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
-    fn ProbeForWriteHandle(Address: PHANDLE);
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn SepAcquireTokenLockShared(Token: PTOKEN);
     fn SepReleaseTokenLock(Token: PTOKEN);
@@ -1129,48 +1124,46 @@ pub unsafe extern "system" fn NtCreateToken(
     previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0 {
-        ProbeForWriteHandle(token_handle);
+        if let Err(s) = probe_write_handle(token_handle as _, previous_mode) { return s; }
 
         if !object_attributes.is_null() {
-            ProbeForRead(
-                object_attributes as PVOID,
-                core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(s) = probe_user_buffer(object_attributes as _, core::mem::size_of::<_OBJECT_ATTRIBUTES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
             local_security_qos = *((*object_attributes).SecurityQualityOfService as *const _SECURITY_QUALITY_OF_SERVICE);
         }
 
-        ProbeForRead(authentication_id as PVOID, core::mem::size_of::<LUID>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(authentication_id as _, core::mem::size_of::<LUID>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
         local_authentication_id = *authentication_id;
 
-        local_expiration_time = ProbeForReadLargeInteger(expiration_time);
+        local_expiration_time = match probe_read_user::<LARGE_INTEGER>(expiration_time, previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
 
-        ProbeForRead(token_user as PVOID, core::mem::size_of::<_TOKEN_USER>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_user as _, core::mem::size_of::<_TOKEN_USER>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
-        ProbeForRead(token_groups as PVOID, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_groups as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
         group_count = (*token_groups).GroupCount;
 
-        ProbeForRead(token_privileges as PVOID, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_privileges as _, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
         privilege_count = (*token_privileges).PrivilegeCount;
 
         if !token_owner.is_null() {
-            ProbeForRead(token_owner as PVOID, core::mem::size_of::<_TOKEN_OWNER>(), core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(token_owner as _, core::mem::size_of::<_TOKEN_OWNER>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
             owner_sid = (*token_owner).Owner;
         } else {
             owner_sid = core::ptr::null_mut();
         }
 
-        ProbeForRead(token_primary_group as PVOID, core::mem::size_of::<_TOKEN_PRIMARY_GROUP>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_primary_group as _, core::mem::size_of::<_TOKEN_PRIMARY_GROUP>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
         primary_group_sid = (*token_primary_group).PrimaryGroup;
 
         if !token_default_dacl.is_null() {
-            ProbeForRead(token_default_dacl as PVOID, core::mem::size_of::<_TOKEN_DEFAULT_DACL>(), core::mem::size_of::<ULONG>() as ULONG);
+            if let Err(s) = probe_user_buffer(token_default_dacl as _, core::mem::size_of::<_TOKEN_DEFAULT_DACL>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
             default_dacl = (*token_default_dacl).DefaultDacl;
         } else {
             default_dacl = core::ptr::null_mut();
         }
 
-        ProbeForRead(token_source as PVOID, core::mem::size_of::<_TOKEN_SOURCE>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(token_source as _, core::mem::size_of::<_TOKEN_SOURCE>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
         local_token_source = *token_source;
     } else {
         if !object_attributes.is_null() {
@@ -1372,7 +1365,7 @@ pub unsafe extern "system" fn NtDuplicateToken(
     previous_mode = KeGetPreviousMode();
 
     if previous_mode != 0 {
-        ProbeForWriteHandle(new_token_handle);
+        if let Err(s) = probe_write_handle(new_token_handle as _, previous_mode) { return s; }
     }
 
     status = SepCaptureSecurityQualityOfService(
@@ -1485,33 +1478,33 @@ pub unsafe extern "system" fn NtFilterToken(
     previous_mode = ExGetPreviousMode();
 
     if !sids_to_disable.is_null() {
-        ProbeForRead(sids_to_disable as PVOID, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(sids_to_disable as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
         captured_sids_count = (*sids_to_disable).GroupCount;
         probe_size = (core::mem::offset_of!(_TOKEN_GROUPS, Groups) + captured_sids_count as usize * core::mem::size_of::<_SID_AND_ATTRIBUTES>()) as ULONG;
 
-        ProbeForRead(sids_to_disable as PVOID, probe_size as usize, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(sids_to_disable as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
     }
 
     if !privileges_to_delete.is_null() {
-        ProbeForRead(privileges_to_delete as PVOID, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(privileges_to_delete as _, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
         captured_privileges_count = (*privileges_to_delete).PrivilegeCount;
         probe_size = (core::mem::offset_of!(_TOKEN_PRIVILEGES, Privileges) + captured_privileges_count as usize * core::mem::size_of::<_LUID_AND_ATTRIBUTES>()) as ULONG;
 
-        ProbeForRead(privileges_to_delete as PVOID, probe_size as usize, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(privileges_to_delete as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
     }
 
     if !restricted_sids.is_null() {
-        ProbeForRead(restricted_sids as PVOID, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(restricted_sids as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
         captured_restricted_sids_count = (*restricted_sids).GroupCount;
         probe_size = (core::mem::offset_of!(_TOKEN_GROUPS, Groups) + captured_restricted_sids_count as usize * core::mem::size_of::<_SID_AND_ATTRIBUTES>()) as ULONG;
 
-        ProbeForRead(restricted_sids as PVOID, probe_size as usize, core::mem::size_of::<ULONG>() as ULONG);
+        if let Err(s) = probe_user_buffer(restricted_sids as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
     }
 
-    ProbeForWriteHandle(new_token_handle);
+    if let Err(s) = probe_write_handle(new_token_handle as _, previous_mode) { return s; }
 
     status = ObReferenceObjectByHandle(
         existing_token_handle,
@@ -1678,7 +1671,6 @@ pub unsafe extern "system" fn NtFilterToken(
 
     status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

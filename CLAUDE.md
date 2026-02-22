@@ -340,6 +340,44 @@ tools/rustconv/
 
 Union field access (`__bindgen_anon_N`) is NOT done by the post-processor — it's context-dependent and handled by the system prompt teaching the LLM to generate correct accessors directly.
 
+### Probe Migration Stage (`probe-migrate`)
+
+Second pipeline stage that migrates bare `ProbeForRead`/`ProbeForWrite` calls in already-translated Rust code to use the Rust-native probe API (`ntkrnl-sys/src/probe.rs`). Operates file-by-file with preprocess→LLM→postprocess pattern.
+
+```bash
+python -m rustconv probe-migrate se/sqos.rs           # Single file
+python -m rustconv probe-migrate se/ -m haiku          # Batch subsystem
+python -m rustconv probe-migrate se/sqos.rs --scan-only  # Show probe sites
+python -m rustconv probe-migrate se/sqos.rs --dry-run    # Preview without writing
+```
+
+Key files:
+- `rustconv/probe_migrate.py` — scanner, preprocessor, postprocessor, runner
+- `templates/probe_migrate_prompt.md` — 10 migration rules for LLM
+- `sdk/lib/rust/ntkrnl-sys/src/probe.rs` — Rust-native probe API
+
+The probe API returns `Result<T, NTSTATUS>` instead of raising exceptions:
+```rust
+probe_read_user::<T>(ptr, mode) -> Result<T, NTSTATUS>
+probe_write_user::<T>(ptr, value, mode) -> Result<(), NTSTATUS>
+probe_user_buffer(buf, len, align, mode) -> Result<(), NTSTATUS>
+probe_capture_unicode_string_header(ptr, mode) -> Result<UNICODE_STRING, NTSTATUS>
+```
+
+**Status:** SE (12 files, 62 probe sites) and OB (6 files, 35 probe sites) fully migrated. All 3 arches build + smoke tests pass.
+
+### Multi-Stage Pipeline Architecture
+
+The translation pipeline has multiple stages, each refining the previous output:
+
+```
+Stage 1: C → Rust        (rustconv submit/batch)   — bulk transliteration
+Stage 2: Probe migration (rustconv probe-migrate)  — ProbeForRead/Write → Result<T>
+Stage 3: SEH idiomation  (planned)                  — full SEH → Result/RAII/match
+```
+
+Stage 3 will operate **function-by-function** (not file-by-file) using paired C+Rust function context, a dependency graph (SQLite cache), and Rust-native API surface for RAII guards, safe user-mode copies, and Result patterns. The LLM sees the original C (with SEH blocks visible) alongside the current Rust translation, plus callees and type context.
+
 ### Cost (Sonnet Batch API)
 
 | Scope | Est. Cost |
