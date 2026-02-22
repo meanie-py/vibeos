@@ -343,6 +343,184 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
+def cmd_translate(args):
+    """Function-by-function translation pipeline."""
+    from .scanner import scan_file
+    from .catalog import build_catalog
+    from .spec_parser import parse_spec
+    from .resolver import resolve as file_resolve
+    from .callgraph import extract_call_graph, topological_sort, print_call_graph
+    from .function_resolver import resolve_function
+    from .function_prompt import build_function_prompt, load_function_system_prompt
+    from .stitcher import stitch_file
+    from .batch_runner import submit_single, TranslationResult
+    from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
+    from .postprocess import postprocess
+    from .prompt_builder import estimate_tokens
+
+    # Resolve target: single file or directory
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = NTOSKRNL_DIR / args.path
+
+    if target.is_file():
+        c_files = [target]
+    elif target.is_dir():
+        c_files = sorted(target.glob("*.c"))
+        if args.exclude:
+            exclude_stems = set(args.exclude)
+            c_files = [f for f in c_files if f.stem not in exclude_stems]
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    if not c_files:
+        print(f"No .c files found in {target}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Building catalog...", file=sys.stderr)
+    catalog = build_catalog(arch=args.arch)
+    spec = parse_spec()
+    catalog_fn_names = set(catalog.functions.keys())
+
+    model = resolve_model(args.model)
+    use_claude = model.startswith("claude-")
+    system_prompt = load_function_system_prompt() if use_claude else ""
+
+    total_files = len(c_files)
+    for file_idx, c_file in enumerate(c_files, 1):
+        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
+        print(f"{'='*60}", file=sys.stderr)
+
+        scan = scan_file(c_file)
+        file_res = file_resolve(scan, catalog, spec)
+        subsystem = c_file.parent.name
+
+        # Extract call graph and topologically sort
+        deps = extract_call_graph(scan, spec_exports=file_res.exports)
+        sorted_deps = topological_sort(deps)
+
+        # Filter to single function if requested
+        if args.fn:
+            sorted_deps = [d for d in sorted_deps if d.name == args.fn]
+            if not sorted_deps:
+                print(f"  Error: function '{args.fn}' not found in {c_file.name}", file=sys.stderr)
+                func_names = [d.name for d in deps]
+                print(f"  Available: {', '.join(func_names)}", file=sys.stderr)
+                continue
+
+        print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
+
+        if args.dry_run:
+            # Just show the plan
+            print(f"\n  Translation order:", file=sys.stderr)
+            all_deps = extract_call_graph(scan, spec_exports=file_res.exports)
+            local_names = {d.name for d in all_deps}
+            for i, dep in enumerate(sorted_deps, 1):
+                exported = " [EXPORTED]" if dep.is_exported else ""
+                static = " [static]" if dep.is_static else ""
+                local_callees = dep.callees & local_names
+                callee_info = f" → calls: {', '.join(sorted(local_callees))}" if local_callees else ""
+                seh = f" (SEH×{dep.seh_count})" if dep.seh_count else ""
+                print(f"    {i}. {dep.name}{exported}{static}{seh}{callee_info}", file=sys.stderr)
+
+            # Show estimated tokens for first function
+            if sorted_deps:
+                func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
+                prompt = build_function_prompt(
+                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports
+                )
+                if not use_claude:
+                    prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
+                tokens = estimate_tokens(prompt)
+                print(f"\n  First function prompt: ~{tokens:,} tokens", file=sys.stderr)
+
+            if args.prompt:
+                # Print full prompt for first function
+                func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
+                prompt = build_function_prompt(
+                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports
+                )
+                full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
+                print(full)
+
+            continue
+
+        # Translate function by function
+        all_deps_for_context = extract_call_graph(scan, spec_exports=file_res.exports)
+        translated: dict[str, str] = {}
+        total_in = 0
+        total_out = 0
+
+        for func_idx, dep in enumerate(sorted_deps, 1):
+            print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
+
+            # Per-function resolve
+            func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
+
+            # Build prompt
+            user_prompt = build_function_prompt(
+                dep, func_res, translated, all_deps_for_context,
+                scan, catalog_fn_names, file_res.exports,
+            )
+
+            if use_claude:
+                result = submit_single(user_prompt, model=model, system_prompt=system_prompt)
+            else:
+                full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
+                result = submit_single(full_prompt, model=model)
+
+            if result.success:
+                translated[dep.name] = result.rust_code
+                total_in += result.input_tokens
+                total_out += result.output_tokens
+                print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
+            else:
+                print(f"FAIL: {result.error}", file=sys.stderr)
+
+        if not translated:
+            print(f"  No functions translated for {c_file.name}", file=sys.stderr)
+            continue
+
+        print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
+        print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
+
+        # Stitch functions into a single file
+        stitched = stitch_file(translated, sorted_deps, scan, file_res)
+
+        # Post-process
+        code = postprocess(stitched, exports=file_res.exports, globals=scan.globals)
+
+        if args.output and total_files == 1:
+            Path(args.output).write_text(code)
+            print(f"  Written to {args.output}", file=sys.stderr)
+        else:
+            # Assemble into crate
+            fake_result = TranslationResult(
+                source_file=c_file.name,
+                rust_code=code,
+                model=model,
+                input_tokens=total_in,
+                output_tokens=total_out,
+                success=True,
+            )
+            out_path = assemble_file(fake_result, subsystem, scan.raw_source,
+                                     exports=file_res.exports, scan=scan)
+            print(f"  Assembled to {out_path}", file=sys.stderr)
+
+    # Generate mod.rs and lib.rs for batch runs
+    if total_files > 1 and not args.dry_run:
+        subsystem = c_files[0].parent.name
+        module_names = [f.stem for f in c_files]
+        generate_mod_rs(subsystem, module_names)
+        generate_lib_rs([subsystem])
+        print(f"\nUpdated mod.rs and lib.rs for {subsystem}/", file=sys.stderr)
+
+    if not args.dry_run:
+        print(f"\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
+
+
 def cmd_estimate(args):
     from .scanner import scan_file
     from .catalog import build_catalog
@@ -393,6 +571,62 @@ def cmd_estimate(args):
     for name, in_price, out_price in costs:
         cost = total_input * in_price / 1_000_000 + total_output * out_price / 1_000_000
         print(f"  {name}: ${cost:.2f}")
+
+
+def cmd_postprocess(args):
+    """Run postprocessor on existing .rs files."""
+    from .postprocess import postprocess
+    from .config import OUTPUT_CRATE
+    NTOSKRNL_RUST_SRC = OUTPUT_CRATE / "src"
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        # Try as relative to ntoskrnl-rust/src/
+        candidate = NTOSKRNL_RUST_SRC / args.path
+        if candidate.exists():
+            target = candidate
+        elif not target.exists():
+            print(f"Error: not found: {args.path}", file=sys.stderr)
+            sys.exit(1)
+
+    if target.is_file():
+        rs_files = [target]
+    elif target.is_dir():
+        rs_files = sorted(target.glob("*.rs"))
+        # Exclude mod.rs
+        rs_files = [f for f in rs_files if f.name != "mod.rs"]
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    if not rs_files:
+        print(f"No .rs files found in {target}", file=sys.stderr)
+        sys.exit(1)
+
+    total_changed = 0
+    for rs_file in rs_files:
+        original = rs_file.read_text()
+        processed = postprocess(original)
+
+        if processed == original:
+            print(f"  {rs_file.name}: unchanged", file=sys.stderr)
+            continue
+
+        total_changed += 1
+        # Count what changed
+        orig_lines = set(original.splitlines())
+        proc_lines = set(processed.splitlines())
+        removed = len(orig_lines - proc_lines)
+        added = len(proc_lines - orig_lines)
+
+        if args.dry_run:
+            print(f"  {rs_file.name}: would change (~{removed} removed, ~{added} added)", file=sys.stderr)
+        else:
+            rs_file.write_text(processed)
+            print(f"  {rs_file.name}: updated (~{removed} removed, ~{added} added)", file=sys.stderr)
+
+    verb = "would change" if args.dry_run else "changed"
+    print(f"\n{total_changed}/{len(rs_files)} files {verb}", file=sys.stderr)
 
 
 def main():
@@ -454,6 +688,17 @@ def main():
     p.add_argument("-v", "--verbose", action="store_true", help="Show per-function details")
     p.add_argument("--json", action="store_true", help="Output JSON")
 
+    # translate (function-by-function)
+    p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
+    p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
+    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument("-o", "--output", help="Write Rust output to file (single file only)")
+    p.add_argument("--fn", dest="fn", help="Translate only this function")
+    p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
+    p.add_argument("--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)")
+    p.add_argument("--exclude", nargs="*", default=[],
+                   help="File stems to skip (batch mode)")
+
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
     p.add_argument("path", help="Rust file or directory (relative to ntoskrnl-rust/src/ or absolute)")
@@ -461,6 +706,11 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="Don't write, just show what would change")
     p.add_argument("--scan-only", action="store_true", help="Only scan for probe calls, don't migrate")
     p.add_argument("--prompt", action="store_true", help="Print the prompt for the first file and exit")
+
+    # pp (postprocess existing .rs files)
+    p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
+    p.add_argument("path", help="Rust file or directory (subsystem under ntoskrnl-rust/src/)")
+    p.add_argument("--dry-run", action="store_true", help="Show changes without writing")
 
     args = parser.parse_args()
 
@@ -473,8 +723,10 @@ def main():
         "check": cmd_check,
         "shims": cmd_shims,
         "estimate": cmd_estimate,
+        "translate": cmd_translate,
         "seh-classify": cmd_seh_classify,
         "probe-migrate": cmd_probe_migrate,
+        "pp": cmd_postprocess,
     }
 
     commands[args.command](args)

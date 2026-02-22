@@ -659,3 +659,440 @@ pub const TAG_SHIM: ULONG = u32::from_le_bytes(*b"Shim");
 pub const MAXIMUM_PROCESSORS: ULONG = 32;
 #[cfg(not(target_arch = "x86"))]
 pub const MAXIMUM_PROCESSORS: ULONG = 64;
+
+// ============================================================================
+// Additional NTSTATUS codes — Tier 2 subsystems (CC, FSRTL, KD64)
+// ============================================================================
+
+pub const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011_u32 as i32;
+pub const STATUS_MEDIA_WRITE_PROTECTED: NTSTATUS = 0xC00000A2_u32 as i32;
+pub const STATUS_FILE_LOCK_CONFLICT: NTSTATUS = 0xC0000054_u32 as i32;
+pub const STATUS_RANGE_NOT_LOCKED: NTSTATUS = 0xC000007E_u32 as i32;
+pub const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010_u32 as i32;
+pub const STATUS_CRC_ERROR: NTSTATUS = 0xC000003F_u32 as i32;
+pub const STATUS_DEVICE_DATA_ERROR: NTSTATUS = 0xC000009C_u32 as i32;
+pub const STATUS_DATATYPE_MISALIGNMENT: NTSTATUS = 0x80000002_u32 as i32;
+pub const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
+pub const STATUS_ILLEGAL_INSTRUCTION: NTSTATUS = 0xC000001D_u32 as i32;
+pub const STATUS_INSTRUCTION_MISALIGNMENT: NTSTATUS = 0xC00000AA_u32 as i32;
+pub const STATUS_DELETE_PENDING: NTSTATUS = 0xC0000056_u32 as i32;
+pub const STATUS_NOTIFY_ENUM_DIR: NTSTATUS = 0x0000010C;
+pub const STATUS_NOTIFY_CLEANUP: NTSTATUS = 0x0000010B;
+pub const STATUS_INVALID_OPLOCK_PROTOCOL: NTSTATUS = 0xC00000E3_u32 as i32;
+pub const STATUS_OPLOCK_NOT_GRANTED: NTSTATUS = 0xC00000E2_u32 as i32;
+pub const STATUS_OPLOCK_BREAK_IN_PROGRESS: NTSTATUS = 0x00000108;
+pub const STATUS_BREAKPOINT: NTSTATUS = 0x80000003_u32 as i32;
+pub const STATUS_SINGLE_STEP: NTSTATUS = 0x80000004_u32 as i32;
+pub const STATUS_DEBUGGER_INACTIVE: NTSTATUS = 0xC0000354_u32 as i32;
+pub const STATUS_ASSERTION_FAILURE: NTSTATUS = 0xC0000420_u32 as i32;
+pub const STATUS_DEVICE_NOT_CONNECTED: NTSTATUS = 0xC000009D_u32 as i32;
+pub const STATUS_LOCK_NOT_GRANTED: NTSTATUS = 0xC0000055_u32 as i32;
+pub const STATUS_NO_SUCH_FILE: NTSTATUS = 0xC000000F_u32 as i32;
+pub const STATUS_TIMEOUT: NTSTATUS = 0x00000102;
+pub const STATUS_MORE_ENTRIES: NTSTATUS = 0x00000105;
+pub const STATUS_SHARING_VIOLATION: NTSTATUS = 0xC0000043_u32 as i32;
+pub const STATUS_UNABLE_TO_DELETE_SECTION: NTSTATUS = 0xC000001B_u32 as i32;
+pub const STATUS_SECTION_NOT_EXTENDED: NTSTATUS = 0xC0000087_u32 as i32;
+pub const STATUS_MAPPED_FILE_SIZE_ZERO: NTSTATUS = 0xC000011E_u32 as i32;
+pub const STATUS_CANNOT_DELETE: NTSTATUS = 0xC0000121_u32 as i32;
+pub const STATUS_USER_MAPPED_FILE: NTSTATUS = 0xC0000243_u32 as i32;
+pub const STATUS_KEY_DELETED: NTSTATUS = 0xC000017C_u32 as i32;
+pub const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003C_u32 as i32;
+pub const STATUS_IMAGE_ALREADY_LOADED: NTSTATUS = 0xC000010E_u32 as i32;
+pub const STATUS_LOGON_FAILURE: NTSTATUS = 0xC000006D_u32 as i32;
+
+// ============================================================================
+// File access / sharing / disposition constants (from winnt.h / iotypes.h)
+// ============================================================================
+
+pub const FILE_READ_DATA: ULONG = 0x00000001;
+pub const FILE_WRITE_DATA: ULONG = 0x00000002;
+pub const FILE_APPEND_DATA: ULONG = 0x00000004;
+pub const FILE_READ_EA: ULONG = 0x00000008;
+pub const FILE_WRITE_EA: ULONG = 0x00000010;
+pub const FILE_EXECUTE: ULONG = 0x00000020;
+pub const FILE_READ_ATTRIBUTES: ULONG = 0x00000080;
+pub const FILE_WRITE_ATTRIBUTES: ULONG = 0x00000100;
+pub const FILE_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x1FF;
+pub const FILE_ATTRIBUTE_NORMAL: ULONG = 0x00000080;
+pub const FILE_SHARE_READ: ULONG = 0x00000001;
+pub const FILE_SHARE_WRITE: ULONG = 0x00000002;
+pub const FILE_SHARE_DELETE: ULONG = 0x00000004;
+pub const FILE_OPEN: ULONG = 0x00000001;
+
+// File create options (from iotypes.h / ntdef.h)
+pub const FILE_COMPLETE_IF_OPLOCKED: ULONG = 0x00000100;
+pub const FILE_RESERVE_OPFILTER: ULONG = 0x00100000;
+
+// Oplock break info values (from iotypes.h)
+pub const FILE_OPLOCK_BROKEN_TO_LEVEL_2: ULONG = 0x00000007;
+pub const FILE_OPLOCK_BROKEN_TO_NONE: ULONG = 0x00000008;
+
+// ============================================================================
+// I/O constants (from wdm.h / iotypes.h)
+// ============================================================================
+
+pub const IO_NO_INCREMENT: i8 = 0;
+pub const IO_DISK_INCREMENT: i8 = 1;
+pub const SL_FAIL_IMMEDIATELY: UCHAR = 0x01;
+pub const SL_EXCLUSIVE_LOCK: UCHAR = 0x02;
+pub const INVALID_HANDLE_VALUE: isize = -1;
+pub const MAXULONG: ULONG = 0xFFFFFFFF;
+
+// ============================================================================
+// IRP major function codes (from iotypes.h)
+// ============================================================================
+
+pub const IRP_MJ_CREATE: UCHAR = 0x00;
+pub const IRP_MJ_CLOSE: UCHAR = 0x02;
+pub const IRP_MJ_READ: UCHAR = 0x03;
+pub const IRP_MJ_WRITE: UCHAR = 0x04;
+pub const IRP_MJ_QUERY_INFORMATION: UCHAR = 0x05;
+pub const IRP_MJ_SET_INFORMATION: UCHAR = 0x06;
+pub const IRP_MJ_FLUSH_BUFFERS: UCHAR = 0x09;
+pub const IRP_MJ_FILE_SYSTEM_CONTROL: UCHAR = 0x0D;
+pub const IRP_MJ_LOCK_CONTROL: UCHAR = 0x11;
+pub const IRP_MJ_CLEANUP: UCHAR = 0x12;
+pub const IRP_MJ_MAXIMUM_FUNCTION: UCHAR = 0x1B;
+
+// ============================================================================
+// IRQL constants (from wdm.h)
+// ============================================================================
+
+pub const HIGH_LEVEL: UCHAR = 31;
+
+// ============================================================================
+// Pool allocation flags (from ntoskrnl)
+// ============================================================================
+
+pub const POOL_COLD_ALLOCATION: ULONG = 256;
+
+// ============================================================================
+// Pool tags — Tier 2 subsystems (from tag.h)
+// ============================================================================
+
+// NOTE: C multi-char literal 'orSF' = 0x6F725346 (GCC big-endian convention).
+// In Rust: u32::from_le_bytes stores bytes at ascending addresses, so the
+// LE byte representation of 0x6F725346 is [0x46, 0x53, 0x72, 0x6F] = "FSro".
+pub const TAG_OPLOCK: ULONG = u32::from_le_bytes(*b"FSro");  // 'orSF' = 0x6F725346
+pub const TAG_UNC: ULONG = u32::from_le_bytes(*b"FSun");     // 'nuSF' = 0x6E755346
+pub const TAG_TABLE: ULONG = u32::from_le_bytes(*b"LTAB");   // 'BATL' = 0x4241544C
+pub const TAG_RANGE: ULONG = u32::from_le_bytes(*b"FSRA");   // 'ARSF' = 0x41525346
+pub const TAG_FLOCK: ULONG = u32::from_le_bytes(*b"FLCK");   // 'KCLF' = 0x4B434C46
+
+// Cache Manager pool tags (from tag.h)
+pub const TAG_CC: ULONG = u32::from_le_bytes(*b"Cc  ");              // '  cC' = 0x20206343
+pub const TAG_VACB: ULONG = u32::from_le_bytes(*b"CcVa");            // 'aVcC' = 0x61566343
+pub const TAG_SHARED_CACHE_MAP: ULONG = u32::from_le_bytes(*b"CcSc"); // 'cScC' = 0x63536343
+pub const TAG_PRIVATE_CACHE_MAP: ULONG = u32::from_le_bytes(*b"CcPc"); // 'cPcC' = 0x63506343
+pub const TAG_BCB: ULONG = u32::from_le_bytes(*b"CcBc");             // 'cBcC' = 0x63426343
+
+// Kernel Debugger pool tags (from tag.h)
+pub const TAG_KDBS: ULONG = u32::from_le_bytes(*b"KDBS");  // 'SBDK' = 0x5342444B
+pub const TAG_KDBG: ULONG = u32::from_le_bytes(*b"KDBG");  // 'GBDK' = 0x4742444B
+
+// ============================================================================
+// FSCTL constants (from iotypes.h / devioctl.h)
+// ============================================================================
+
+pub const FSCTL_MUP_REGISTER_PROVIDER: ULONG = 0x00390014;
+
+// Oplock-related FSCTLs — computed via CTL_CODE(FILE_DEVICE_FILE_SYSTEM, N, METHOD_BUFFERED, FILE_ANY_ACCESS)
+pub const FSCTL_REQUEST_OPLOCK_LEVEL_1: ULONG = 0x00090000;
+pub const FSCTL_REQUEST_OPLOCK_LEVEL_2: ULONG = 0x00090004;
+pub const FSCTL_REQUEST_BATCH_OPLOCK: ULONG = 0x00090008;
+pub const FSCTL_OPLOCK_BREAK_ACKNOWLEDGE: ULONG = 0x0009000C;
+pub const FSCTL_OPBATCH_ACK_CLOSE_PENDING: ULONG = 0x00090010;
+pub const FSCTL_OPLOCK_BREAK_NOTIFY: ULONG = 0x00090014;
+pub const FSCTL_OPLOCK_BREAK_ACK_NO_2: ULONG = 0x00090050;
+pub const FSCTL_REQUEST_FILTER_OPLOCK: ULONG = 0x0009005C;
+
+// ============================================================================
+// ANSI_DOS wildcard characters (from fsrtl.h)
+// ============================================================================
+
+pub const ANSI_DOS_STAR: UCHAR = b'<';
+pub const ANSI_DOS_QM: UCHAR = b'>';
+pub const ANSI_DOS_DOT: UCHAR = b'"';
+
+// ============================================================================
+// FSRTL internal constants (from fsrtl.h)
+// ============================================================================
+
+pub const FSRTL_MAX_RESOURCES: ULONG = 16;
+
+// FSRTL notification flags (from fsrtl.h)
+pub const WATCH_TREE: ULONG = 0x01;
+pub const NOTIFY_IMMEDIATELY: ULONG = 0x02;
+pub const CLEANUP_IN_PROCESS: ULONG = 0x04;
+pub const NOTIFY_LATER: ULONG = 0x08;
+pub const WATCH_ROOT: ULONG = 0x10;
+pub const DELETE_IN_PROCESS: ULONG = 0x20;
+
+// ============================================================================
+// Oplock internal flags (from ntoskrnl/fsrtl/oplock.c)
+// ============================================================================
+
+pub const NO_OPLOCK: ULONG = 0x1;
+pub const LEVEL_1_OPLOCK: ULONG = 0x2;
+pub const BATCH_OPLOCK: ULONG = 0x4;
+pub const FILTER_OPLOCK: ULONG = 0x8;
+pub const LEVEL_2_OPLOCK: ULONG = 0x10;
+pub const EXCLUSIVE_LOCK: ULONG = 0x40;
+pub const PENDING_LOCK: ULONG = 0x80;
+pub const BROKEN_TO_LEVEL_2: ULONG = 0x100;
+pub const BROKEN_TO_NONE: ULONG = 0x200;
+pub const BROKEN_TO_NONE_FROM_LEVEL_2: ULONG = 0x400;
+pub const BROKEN_TO_CLOSE_PENDING: ULONG = 0x800;
+pub const BROKEN_ANY: ULONG = BROKEN_TO_LEVEL_2 | BROKEN_TO_NONE | BROKEN_TO_NONE_FROM_LEVEL_2 | BROKEN_TO_CLOSE_PENDING;
+
+// ============================================================================
+// Tunnel flags (from ntoskrnl/fsrtl/tunnel.c)
+// ============================================================================
+
+pub const TUNNEL_FLAG_KEY_SHORT_NAME: ULONG = 0x1;
+pub const TUNNEL_FLAG_POOL: ULONG = 0x2;
+
+// ============================================================================
+// Object name constants (from obtypes.h)
+// ============================================================================
+
+pub const MAXIMUM_FILENAME_LENGTH: ULONG = 256;
+
+// ============================================================================
+// Bugcheck codes — Tier 2 (from bugcodes.mc)
+// ============================================================================
+
+pub const CACHE_MANAGER: ULONG = 0x00000034;
+
+// ============================================================================
+// Cache Manager internal constants (from cc.h)
+// ============================================================================
+
+pub const CC_API_DEBUG: ULONG = 0x01;
+pub const READAHEAD_DISABLED: ULONG = 0x1;
+pub const WRITEBEHIND_DISABLED: ULONG = 0x2;
+pub const SHARED_CACHE_MAP_IN_CREATION: ULONG = 0x4;
+pub const SHARED_CACHE_MAP_IN_LAZYWRITE: ULONG = 0x8;
+pub const NODE_TYPE_DEFERRED_WRITE: u16 = 0x02FC;
+pub const NODE_TYPE_PRIVATE_MAP: u16 = 0x02FE;
+pub const NODE_TYPE_SHARED_MAP: u16 = 0x02FF;
+
+// VACB constants (from cctypes.h)
+pub const VACB_MAPPING_GRANULARITY: ULONG = 0x40000; // 256 KB
+
+// Private cache map flags (from ndk/cctypes.h)
+pub const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: ULONG = 1 << 16; // 0x10000
+
+// Deferred write retry constant (from ntoskrnl/cc/copy.c — enum value)
+pub const RetryForceCheckPerFile: ULONG = 254;
+
+// ============================================================================
+// Memory Manager constants for CC (from mm.h)
+// ============================================================================
+
+// MI_USAGE_CACHE is enum value 18 (0-indexed from MI_USAGE_NOT_SET=0)
+pub const MI_USAGE_CACHE: ULONG = 18;
+pub const MC_SYSTEM: ULONG = 1;
+
+// ============================================================================
+// KD64 constants (from ntoskrnl/include/internal/kd64.h)
+// ============================================================================
+
+pub const KD_BREAKPOINT_MAX: ULONG = 32;
+#[cfg(target_arch = "aarch64")]
+pub const KD_BREAKPOINT_SIZE: ULONG = 4; // sizeof(ULONG) on ARM64
+#[cfg(not(target_arch = "aarch64"))]
+pub const KD_BREAKPOINT_SIZE: ULONG = 1; // sizeof(UCHAR) on x86/amd64
+pub const KD_BREAKPOINT_ACTIVE: ULONG = 0x01;
+pub const KD_BREAKPOINT_PENDING: ULONG = 0x02;
+pub const KD_BREAKPOINT_SUSPENDED: ULONG = 0x04;
+pub const KD_BREAKPOINT_EXPIRED: ULONG = 0x08;
+
+#[cfg(debug_assertions)]
+pub const KD_DEFAULT_LOG_BUFFER_SIZE: ULONG = 0x8000;
+#[cfg(not(debug_assertions))]
+pub const KD_DEFAULT_LOG_BUFFER_SIZE: ULONG = 0x1000;
+
+pub const KDP_MSG_BUFFER_SIZE: ULONG = 0x1000;
+
+// DPFLTR_ENDOFTABLE_ID = 155 (enum value after DPFLTR_FSLIB_ID = 154)
+pub const DPFLTR_ENDOFTABLE_ID: ULONG = 155;
+pub const MAX_KD_COMPONENT_TABLE_ENTRIES: ULONG = DPFLTR_ENDOFTABLE_ID + 1;
+
+// ============================================================================
+// MMDBG flags (from mm.h)
+// ============================================================================
+
+pub const MMDBG_COPY_WRITE: ULONG = 0x00000001;
+pub const MMDBG_COPY_PHYSICAL: ULONG = 0x00000002;
+pub const MMDBG_COPY_UNSAFE: ULONG = 0x00000004;
+pub const MMDBG_COPY_CACHED: ULONG = 0x00000008;
+pub const MMDBG_COPY_UNCACHED: ULONG = 0x00000010;
+pub const MMDBG_COPY_WRITE_COMBINED: ULONG = 0x00000020;
+pub const MMDBG_COPY_MAX_SIZE: ULONG = 0x8;
+
+// ============================================================================
+// KD Packet protocol constants (from windbgkd.h)
+// ============================================================================
+
+// Packet sizes
+pub const PACKET_MAX_SIZE: ULONG = 4000;
+pub const DBGKD_MAXSTREAM: ULONG = 16;
+
+// Magic packet IDs
+pub const INITIAL_PACKET_ID: ULONG = 0x80800000;
+pub const SYNC_PACKET_ID: ULONG = 0x00000800;
+
+// Magic packet bytes
+pub const BREAKIN_PACKET: ULONG = 0x62626262;
+pub const BREAKIN_PACKET_BYTE: u8 = 0x62;
+pub const PACKET_LEADER: ULONG = 0x30303030;
+pub const PACKET_LEADER_BYTE: u8 = 0x30;
+pub const CONTROL_PACKET_LEADER: ULONG = 0x69696969;
+pub const CONTROL_PACKET_LEADER_BYTE: u8 = 0x69;
+pub const PACKET_TRAILING_BYTE: u8 = 0xAA;
+
+// Packet types
+pub const PACKET_TYPE_UNUSED: ULONG = 0;
+pub const PACKET_TYPE_KD_STATE_CHANGE32: ULONG = 1;
+pub const PACKET_TYPE_KD_STATE_MANIPULATE: ULONG = 2;
+pub const PACKET_TYPE_KD_DEBUG_IO: ULONG = 3;
+pub const PACKET_TYPE_KD_ACKNOWLEDGE: ULONG = 4;
+pub const PACKET_TYPE_KD_RESEND: ULONG = 5;
+pub const PACKET_TYPE_KD_RESET: ULONG = 6;
+pub const PACKET_TYPE_KD_STATE_CHANGE64: ULONG = 7;
+pub const PACKET_TYPE_KD_POLL_BREAKIN: ULONG = 8;
+pub const PACKET_TYPE_KD_TRACE_IO: ULONG = 9;
+pub const PACKET_TYPE_KD_CONTROL_REQUEST: ULONG = 10;
+pub const PACKET_TYPE_KD_FILE_IO: ULONG = 11;
+pub const PACKET_TYPE_MAX: ULONG = 12;
+
+// Wait state change types
+pub const DbgKdMinimumStateChange: ULONG = 0x00003030;
+pub const DbgKdExceptionStateChange: ULONG = 0x00003030;
+pub const DbgKdLoadSymbolsStateChange: ULONG = 0x00003031;
+pub const DbgKdCommandStringStateChange: ULONG = 0x00003032;
+pub const DbgKdMaximumStateChange: ULONG = 0x00003033;
+
+// Manipulate types
+pub const DbgKdMinimumManipulate: ULONG = 0x00003130;
+pub const DbgKdReadVirtualMemoryApi: ULONG = 0x00003130;
+pub const DbgKdWriteVirtualMemoryApi: ULONG = 0x00003131;
+pub const DbgKdGetContextApi: ULONG = 0x00003132;
+pub const DbgKdSetContextApi: ULONG = 0x00003133;
+pub const DbgKdWriteBreakPointApi: ULONG = 0x00003134;
+pub const DbgKdRestoreBreakPointApi: ULONG = 0x00003135;
+pub const DbgKdContinueApi: ULONG = 0x00003136;
+pub const DbgKdReadControlSpaceApi: ULONG = 0x00003137;
+pub const DbgKdWriteControlSpaceApi: ULONG = 0x00003138;
+pub const DbgKdReadIoSpaceApi: ULONG = 0x00003139;
+pub const DbgKdWriteIoSpaceApi: ULONG = 0x0000313A;
+pub const DbgKdRebootApi: ULONG = 0x0000313B;
+pub const DbgKdContinueApi2: ULONG = 0x0000313C;
+pub const DbgKdReadPhysicalMemoryApi: ULONG = 0x0000313D;
+pub const DbgKdWritePhysicalMemoryApi: ULONG = 0x0000313E;
+pub const DbgKdQuerySpecialCallsApi: ULONG = 0x0000313F;
+pub const DbgKdSetSpecialCallApi: ULONG = 0x00003140;
+pub const DbgKdClearSpecialCallsApi: ULONG = 0x00003141;
+pub const DbgKdSetInternalBreakPointApi: ULONG = 0x00003142;
+pub const DbgKdGetInternalBreakPointApi: ULONG = 0x00003143;
+pub const DbgKdReadIoSpaceExtendedApi: ULONG = 0x00003144;
+pub const DbgKdWriteIoSpaceExtendedApi: ULONG = 0x00003145;
+pub const DbgKdGetVersionApi: ULONG = 0x00003146;
+pub const DbgKdWriteBreakPointExApi: ULONG = 0x00003147;
+pub const DbgKdRestoreBreakPointExApi: ULONG = 0x00003148;
+pub const DbgKdCauseBugCheckApi: ULONG = 0x00003149;
+pub const DbgKdSwitchProcessor: ULONG = 0x00003150;
+pub const DbgKdPageInApi: ULONG = 0x00003151;
+pub const DbgKdReadMachineSpecificRegister: ULONG = 0x00003152;
+pub const DbgKdWriteMachineSpecificRegister: ULONG = 0x00003153;
+pub const DbgKdSearchMemoryApi: ULONG = 0x00003156;
+pub const DbgKdGetBusDataApi: ULONG = 0x00003157;
+pub const DbgKdSetBusDataApi: ULONG = 0x00003158;
+pub const DbgKdCheckLowMemoryApi: ULONG = 0x00003159;
+pub const DbgKdClearAllInternalBreakpointsApi: ULONG = 0x0000315A;
+pub const DbgKdFillMemoryApi: ULONG = 0x0000315B;
+pub const DbgKdQueryMemoryApi: ULONG = 0x0000315C;
+pub const DbgKdSwitchPartition: ULONG = 0x0000315D;
+pub const DbgKdWriteCustomBreakpointApi: ULONG = 0x0000315E;
+pub const DbgKdGetContextExApi: ULONG = 0x0000315F;
+pub const DbgKdSetContextExApi: ULONG = 0x00003160;
+pub const DbgKdMaximumManipulate: ULONG = 0x00003161;
+
+// Debug I/O types
+pub const DbgKdPrintStringApi: ULONG = 0x00003230;
+pub const DbgKdGetStringApi: ULONG = 0x00003231;
+
+// Trace I/O types
+pub const DbgKdPrintTraceApi: ULONG = 0x00003330;
+
+// File I/O types
+pub const DbgKdCreateFileApi: ULONG = 0x00003430;
+pub const DbgKdReadFileApi: ULONG = 0x00003431;
+pub const DbgKdWriteFileApi: ULONG = 0x00003432;
+pub const DbgKdCloseFileApi: ULONG = 0x00003433;
+
+// Control report flags
+pub const REPORT_INCLUDES_SEGS: ULONG = 0x0001;
+pub const REPORT_STANDARD_CS: ULONG = 0x0002;
+
+// Protocol versions
+pub const DBGKD_64BIT_PROTOCOL_VERSION1: ULONG = 5;
+pub const DBGKD_64BIT_PROTOCOL_VERSION2: ULONG = 6;
+
+// DBGKD version flags (from wdbgexts.h)
+pub const DBGKD_VERS_FLAG_MP: u16 = 0x0001;
+pub const DBGKD_VERS_FLAG_DATA: u16 = 0x0002;
+pub const DBGKD_VERS_FLAG_PTR64: u16 = 0x0004;
+pub const DBGKD_VERS_FLAG_NOMM: u16 = 0x0008;
+pub const DBGKD_VERS_FLAG_HSS: u16 = 0x0010;
+pub const DBGKD_VERS_FLAG_PARTITIONS: u16 = 0x0020;
+
+// DBGKD major types (from wdbgexts.h — enum, DBGKD_MAJOR_NT = 0)
+pub const DBGKD_MAJOR_NT: ULONG = 0;
+
+// Query memory address spaces (from windbgkd.h)
+pub const DBGKD_QUERY_MEMORY_VIRTUAL: ULONG = 0;
+pub const DBGKD_QUERY_MEMORY_PROCESS: ULONG = 0;
+pub const DBGKD_QUERY_MEMORY_SESSION: ULONG = 1;
+pub const DBGKD_QUERY_MEMORY_KERNEL: ULONG = 2;
+
+// Query memory flags
+pub const DBGKD_QUERY_MEMORY_READ: ULONG = 0x01;
+pub const DBGKD_QUERY_MEMORY_WRITE: ULONG = 0x02;
+pub const DBGKD_QUERY_MEMORY_EXECUTE: ULONG = 0x04;
+pub const DBGKD_QUERY_MEMORY_FIXED: ULONG = 0x08;
+
+// Internal breakpoint flags
+pub const DBGKD_INTERNAL_BP_FLAG_COUNTONLY: ULONG = 0x01;
+pub const DBGKD_INTERNAL_BP_FLAG_INVALID: ULONG = 0x02;
+pub const DBGKD_INTERNAL_BP_FLAG_SUSPENDED: ULONG = 0x04;
+pub const DBGKD_INTERNAL_BP_FLAG_DYING: ULONG = 0x08;
+
+// Fill memory flags
+pub const DBGKD_FILL_MEMORY_VIRTUAL: ULONG = 0x01;
+pub const DBGKD_FILL_MEMORY_PHYSICAL: ULONG = 0x02;
+
+// Physical memory caching flags
+pub const DBGKD_CACHING_DEFAULT: ULONG = 0;
+pub const DBGKD_CACHING_CACHED: ULONG = 1;
+pub const DBGKD_CACHING_UNCACHED: ULONG = 2;
+pub const DBGKD_CACHING_WRITE_COMBINED: ULONG = 3;
+
+// Partition switch flags
+pub const DBGKD_PARTITION_DEFAULT: ULONG = 0x00;
+pub const DBGKD_PARTITION_ALTERNATE: ULONG = 0x01;
+
+// ============================================================================
+// Exception constants (from rtltypes.h)
+// ============================================================================
+
+pub const EXCEPTION_MAXIMUM_PARAMETERS: ULONG = 15;
+
+// ============================================================================
+// Section / Memory constants (from mmtypes.h / winnt.h)
+// ============================================================================
+
+// PAGE_READWRITE = 0x04 — defined in base.rs (re-exported at crate root)
+pub const SEC_COMMIT: ULONG = 0x08000000;

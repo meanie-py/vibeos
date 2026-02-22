@@ -12,8 +12,12 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+// TODO: CC/FSRTL/KD64 translations in progress — re-enable as errors are fixed
+// pub mod cc;
 pub mod dbgk;
+// pub mod fsrtl;
 pub mod inbv;
+// pub mod kd64;
 pub mod lpc;
 pub mod ob;
 pub mod po;
