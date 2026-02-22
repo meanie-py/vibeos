@@ -61,6 +61,7 @@ class SerialClient:
 
         Returns all output read (including text after the marker on the same line).
         Raises TimeoutError if marker not seen within timeout.
+        Auto-continues past kdb debugger prompts (assertion failures, breakpoints).
         """
         assert self._conn is not None
         buf = ""
@@ -84,6 +85,10 @@ class SerialClient:
                 if not chunk:
                     raise ConnectionError("Serial socket closed")
                 buf += chunk.decode("latin-1")
+
+                # Auto-continue past kdb debugger prompts
+                if "kdb:>" in buf[-(len(chunk.decode("latin-1")) + 10):]:
+                    self._conn.sendall(b"cont\n")
 
                 if marker in buf:
                     return buf

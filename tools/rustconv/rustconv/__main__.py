@@ -251,6 +251,27 @@ def cmd_shims(args):
             print(output)
 
 
+def cmd_seh_classify(args):
+    from .seh_classifier import classify_file, classify_directory, print_classification, to_json
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = NTOSKRNL_DIR / args.path
+
+    if target.is_file():
+        infos = classify_file(target)
+    elif target.is_dir():
+        infos = classify_directory(target)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.json:
+        print(to_json(infos))
+    else:
+        print_classification(infos, verbose=args.verbose)
+
+
 def cmd_probe_migrate(args):
     from .probe_migrate import (
         scan_rust_file, find_rust_files, run_probe_migration,
@@ -266,26 +287,32 @@ def cmd_probe_migrate(args):
     if target.is_file():
         rust_files = [target]
     elif target.is_dir():
-        # Find all .rs files with probe calls in this directory
+        # Find all .rs files with probe calls or SEH-affected code
         rust_files = []
         for rs_file in sorted(target.glob("*.rs")):
             if rs_file.name == "mod.rs":
                 continue
             scan = scan_rust_file(rs_file)
-            if scan.probe_call_count > 0:
+            if scan.probe_call_count > 0 or scan.seh_context:
                 rust_files.append(rs_file)
     else:
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
     if not rust_files:
-        print("No files with probe calls found.", file=sys.stderr)
+        print("No files needing migration found.", file=sys.stderr)
         sys.exit(0)
 
-    print(f"Found {len(rust_files)} files with probe calls:", file=sys.stderr)
+    print(f"Found {len(rust_files)} files needing migration:", file=sys.stderr)
     for f in rust_files:
         scan = scan_rust_file(f)
-        print(f"  {f.name}: {scan.probe_call_count} probe calls", file=sys.stderr)
+        parts = []
+        if scan.probe_call_count > 0:
+            parts.append(f"{scan.probe_call_count} probes")
+        if scan.seh_context:
+            seh_fns = scan.seh_context.count("Function: ")
+            parts.append(f"{seh_fns} SEH fns")
+        print(f"  {f.name}: {', '.join(parts)}", file=sys.stderr)
 
     if args.scan_only:
         return
@@ -421,6 +448,12 @@ def main():
     p = sub.add_parser("estimate", help="Estimate token count and cost")
     p.add_argument("path", help="File or directory to estimate")
 
+    # seh-classify
+    p = sub.add_parser("seh-classify", help="Classify SEH blocks in C files by pattern")
+    p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
+    p.add_argument("-v", "--verbose", action="store_true", help="Show per-function details")
+    p.add_argument("--json", action="store_true", help="Output JSON")
+
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
     p.add_argument("path", help="Rust file or directory (relative to ntoskrnl-rust/src/ or absolute)")
@@ -440,6 +473,7 @@ def main():
         "check": cmd_check,
         "shims": cmd_shims,
         "estimate": cmd_estimate,
+        "seh-classify": cmd_seh_classify,
         "probe-migrate": cmd_probe_migrate,
     }
 

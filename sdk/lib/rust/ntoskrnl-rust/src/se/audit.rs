@@ -649,7 +649,10 @@ unsafe fn SepAccessCheckAndAuditAlarm(
             *access_status_list.offset(i as isize) = *safe_access_status_list.offset(i as isize);
             *granted_access_list.offset(i as isize) = *safe_granted_access_list.offset(i as isize);
         }
-        *generate_on_close = local_generate_on_close;
+        // Write-back to user-mode pointer
+        if let Err(s) = probe_write_user(generate_on_close, local_generate_on_close, UserMode) {
+            status = s;
+        }
     }
 
     if !captured_object_type_list.is_null() {
@@ -934,6 +937,8 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         return status;
     }
 
+    let _obj_guard = ObjRefGuard::new(client_token as PVOID);
+
     SeCaptureSubjectContext(&mut subject_context);
 
     if ((*client_token).TokenType == TokenImpersonation)
@@ -941,21 +946,18 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     {
         status = STATUS_BAD_IMPERSONATION_LEVEL;
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
     if SeCheckAuditPrivilege(&mut subject_context, UserMode) == 0 {
         status = STATUS_PRIVILEGE_NOT_HELD;
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
     if security_descriptor.is_null() {
         status = STATUS_SUCCESS;
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -968,7 +970,6 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     );
     if status < 0 {
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -983,7 +984,6 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
                 SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return s;
         }
 
@@ -994,7 +994,6 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
                 SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return status;
         }
 
@@ -1011,7 +1010,6 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
                 SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return s;
         }
 
@@ -1026,17 +1024,145 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
                 SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return status;
         }
 
-        core::ptr::copy_nonoverlapping(
-            privilege_set as *const u8,
-            captured_privilege_set as *mut u8,
+        let _pool_guard = PoolAllocGuard::new(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
+
+        if let Err(s) = safe_copy_from_user(
+            captured_privilege_set as PVOID,
+            privilege_set as *const core::ffi::c_void,
             privilege_set_size as usize,
+            core::mem::align_of::<ULONG>(),
+            UserMode,
+        ) {
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return s;
+        }
+
+        if !handle_id.is_null() {
+            if let Err(s) = probe_user_buffer(
+                handle_id,
+                core::mem::size_of::<PVOID>(),
+                core::mem::size_of::<PVOID>(),
+                UserMode,
+            ) {
+                if !captured_security_descriptor.is_null() {
+                    SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+                }
+                SeReleaseSubjectContext(&mut subject_context);
+                return s;
+            }
+            captured_handle_id = *(handle_id as *const PVOID);
+        }
+
+        if let Err(s) = probe_user_buffer(
+            generate_on_close as *const core::ffi::c_void,
+            core::mem::size_of::<BOOLEAN>(),
+            core::mem::size_of::<BOOLEAN>(),
+            UserMode,
+        ) {
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return s;
+        }
+
+        status = ProbeAndCaptureUnicodeString(
+            &mut captured_subsystem_name,
+            UserMode,
+            subsystem_name,
         );
+        if status < 0 {
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return status;
+        }
+
+        status = ProbeAndCaptureUnicodeString(
+            &mut captured_object_type_name,
+            UserMode,
+            object_type_name,
+        );
+        if status < 0 {
+            if !captured_subsystem_name.Buffer.is_null() {
+                ReleaseCapturedUnicodeString(&mut captured_subsystem_name, UserMode);
+            }
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return status;
+        }
+
+        status = ProbeAndCaptureUnicodeString(
+            &mut captured_object_name,
+            UserMode,
+            object_name,
+        );
+        if status < 0 {
+            if !captured_object_type_name.Buffer.is_null() {
+                ReleaseCapturedUnicodeString(&mut captured_object_type_name, UserMode);
+            }
+            if !captured_subsystem_name.Buffer.is_null() {
+                ReleaseCapturedUnicodeString(&mut captured_subsystem_name, UserMode);
+            }
+            if !captured_security_descriptor.is_null() {
+                SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return status;
+        }
+
+        SepOpenObjectAuditAlarm(
+            &mut subject_context,
+            &mut captured_subsystem_name,
+            captured_handle_id,
+            &mut captured_object_type_name,
+            &mut captured_object_name,
+            captured_security_descriptor,
+            client_token,
+            desired_access,
+            granted_access,
+            captured_privilege_set,
+            object_creation,
+            access_granted,
+            &mut local_generate_on_close,
+        );
+
+        status = STATUS_SUCCESS;
+
+        // Write-back to user-mode pointer
+        if let Err(s) = probe_write_user(generate_on_close, local_generate_on_close, UserMode) {
+            status = s;
+        }
+
+        if !captured_object_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_object_name, UserMode);
+        }
+        if !captured_object_type_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_object_type_name, UserMode);
+        }
+        if !captured_subsystem_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_subsystem_name, UserMode);
+        }
+        if !captured_security_descriptor.is_null() {
+            SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+        }
+
+        _pool_guard.disarm();
+        SeReleaseSubjectContext(&mut subject_context);
+
+        return status;
     }
 
+    // privilege_set is null path
     if !handle_id.is_null() {
         if let Err(s) = probe_user_buffer(
             handle_id,
@@ -1044,14 +1170,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
             core::mem::size_of::<PVOID>(),
             UserMode,
         ) {
-            if !captured_privilege_set.is_null() {
-                ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-            }
             if !captured_security_descriptor.is_null() {
                 SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return s;
         }
         captured_handle_id = *(handle_id as *const PVOID);
@@ -1063,14 +1185,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         core::mem::size_of::<BOOLEAN>(),
         UserMode,
     ) {
-        if !captured_privilege_set.is_null() {
-            ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-        }
         if !captured_security_descriptor.is_null() {
             SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return s;
     }
 
@@ -1080,14 +1198,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         subsystem_name,
     );
     if status < 0 {
-        if !captured_privilege_set.is_null() {
-            ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-        }
         if !captured_security_descriptor.is_null() {
             SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -1100,14 +1214,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         if !captured_subsystem_name.Buffer.is_null() {
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, UserMode);
         }
-        if !captured_privilege_set.is_null() {
-            ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-        }
         if !captured_security_descriptor.is_null() {
             SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -1123,14 +1233,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
         if !captured_subsystem_name.Buffer.is_null() {
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, UserMode);
         }
-        if !captured_privilege_set.is_null() {
-            ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-        }
         if !captured_security_descriptor.is_null() {
             SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -1152,7 +1258,10 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
 
     status = STATUS_SUCCESS;
 
-    *generate_on_close = local_generate_on_close;
+    // Write-back to user-mode pointer
+    if let Err(s) = probe_write_user(generate_on_close, local_generate_on_close, UserMode) {
+        status = s;
+    }
 
     if !captured_object_name.Buffer.is_null() {
         ReleaseCapturedUnicodeString(&mut captured_object_name, UserMode);
@@ -1166,12 +1275,8 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     if !captured_security_descriptor.is_null() {
         SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
     }
-    if !captured_privilege_set.is_null() {
-        ExFreePoolWithTag(captured_privilege_set as PVOID, TAG_PRIVILEGE_SET);
-    }
 
     SeReleaseSubjectContext(&mut subject_context);
-    ObDereferenceObject(client_token as PVOID);
 
     status
 }
@@ -1208,10 +1313,11 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
         return status;
     }
 
+    let _obj_guard = ObjRefGuard::new(client_token as PVOID);
+
     if ((*client_token).TokenType == TokenImpersonation)
         && ((*client_token).ImpersonationLevel < SecurityIdentification)
     {
-        ObDereferenceObject(client_token as PVOID);
         return STATUS_BAD_IMPERSONATION_LEVEL;
     }
 
@@ -1220,7 +1326,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
     if SeCheckAuditPrivilege(&mut subject_context, previous_mode) == 0 {
         status = STATUS_PRIVILEGE_NOT_HELD;
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -1232,7 +1337,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
         );
         if status < 0 {
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return status;
         }
     }
@@ -1248,7 +1352,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
                 ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
             }
             SeReleaseSubjectContext(&mut subject_context);
-            ObDereferenceObject(client_token as PVOID);
             return status;
         }
     }
@@ -1266,7 +1369,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return s;
     }
 
@@ -1280,7 +1382,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
@@ -1300,7 +1401,6 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return s;
     }
 
@@ -1318,15 +1418,27 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
             ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
         }
         SeReleaseSubjectContext(&mut subject_context);
-        ObDereferenceObject(client_token as PVOID);
         return status;
     }
 
-    core::ptr::copy_nonoverlapping(
-        privileges as *const u8,
-        captured_privileges as *mut u8,
+    let _pool_guard = PoolAllocGuard::new(captured_privileges as PVOID, TAG_PRIVILEGE_SET);
+
+    if let Err(s) = safe_copy_from_user(
+        captured_privileges as PVOID,
+        privileges as *const core::ffi::c_void,
         privileges_size as usize,
-    );
+        core::mem::align_of::<ULONG>(),
+        previous_mode,
+    ) {
+        if !captured_service_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_service_name, previous_mode);
+        }
+        if !captured_subsystem_name.Buffer.is_null() {
+            ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
+        }
+        SeReleaseSubjectContext(&mut subject_context);
+        return s;
+    }
 
     SepAdtPrivilegedServiceAuditAlarm(
         &mut subject_context,
@@ -1354,12 +1466,9 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
     if !captured_service_name.Buffer.is_null() {
         ReleaseCapturedUnicodeString(&mut captured_service_name, previous_mode);
     }
-    if !captured_privileges.is_null() {
-        ExFreePoolWithTag(captured_privileges as PVOID, TAG_PRIVILEGE_SET);
-    }
 
+    _pool_guard.disarm();
     SeReleaseSubjectContext(&mut subject_context);
-    ObDereferenceObject(client_token as PVOID);
 
     status
 }

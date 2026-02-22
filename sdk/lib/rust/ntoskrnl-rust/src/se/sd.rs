@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::probe::*;
+use core::mem::align_of;
 
 #[no_mangle]
 pub static mut SePublicDefaultSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
@@ -282,14 +283,10 @@ unsafe fn DetermineSIDSize(
     }
 
     if ProcessorMode != 0 {
-        let sac = match probe_read_user::<UCHAR>(core::ptr::addr_of!((*Sid).SubAuthorityCount), ProcessorMode) {
-            Ok(v) => v, Err(s) => return Err(s),
-        };
+        let sac = probe_read_user::<UCHAR>(core::ptr::addr_of!((*Sid).SubAuthorityCount), ProcessorMode)?;
         *OutSAC = sac as ULONG;
         Size = RtlLengthRequiredSid(*OutSAC);
-        if let Err(s) = probe_user_buffer(Sid as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode) {
-            return Err(s);
-        }
+        probe_user_buffer(Sid as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode)?;
     } else {
         *OutSAC = (*Sid).SubAuthorityCount as ULONG;
         Size = RtlLengthRequiredSid(*OutSAC);
@@ -312,13 +309,9 @@ unsafe fn DetermineACLSize(
         return Ok((*Acl).AclSize as ULONG);
     }
 
-    let acl_size = match probe_read_user::<USHORT>(core::ptr::addr_of!((*Acl).AclSize), ProcessorMode) {
-        Ok(v) => v, Err(s) => return Err(s),
-    };
+    let acl_size = probe_read_user::<USHORT>(core::ptr::addr_of!((*Acl).AclSize), ProcessorMode)?;
     Size = acl_size as ULONG;
-    if let Err(s) = probe_user_buffer(Acl as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode) {
-        return Err(s);
-    }
+    probe_user_buffer(Acl as _, Size as usize, core::mem::size_of::<ULONG>(), ProcessorMode)?;
 
     Ok(Size)
 }
@@ -426,6 +419,8 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    let _guard = PoolAllocGuard::new(NewDescriptor as PVOID, TAG_SD);
+
     core::ptr::write_bytes(NewDescriptor as *mut u8, 0, DescriptorSize as usize);
     (*NewDescriptor).Revision = DescriptorCopy.Revision;
     (*NewDescriptor).Sbz1 = DescriptorCopy.Sbz1;
@@ -435,7 +430,6 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
 
     if !DescriptorCopy.Owner.is_null() {
         if RtlValidSid(DescriptorCopy.Owner) == 0 {
-            ExFreePoolWithTag(NewDescriptor as PVOID, TAG_SD);
             return STATUS_INVALID_SID;
         }
         (*NewDescriptor).Owner = Offset;
@@ -449,7 +443,6 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
 
     if !DescriptorCopy.Group.is_null() {
         if RtlValidSid(DescriptorCopy.Group) == 0 {
-            ExFreePoolWithTag(NewDescriptor as PVOID, TAG_SD);
             return STATUS_INVALID_SID;
         }
         (*NewDescriptor).Group = Offset;
@@ -463,7 +456,6 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
 
     if !DescriptorCopy.Sacl.is_null() {
         if RtlValidAcl(DescriptorCopy.Sacl) == 0 {
-            ExFreePoolWithTag(NewDescriptor as PVOID, TAG_SD);
             return STATUS_INVALID_ACL;
         }
         (*NewDescriptor).Sacl = Offset;
@@ -477,7 +469,6 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
 
     if !DescriptorCopy.Dacl.is_null() {
         if RtlValidAcl(DescriptorCopy.Dacl) == 0 {
-            ExFreePoolWithTag(NewDescriptor as PVOID, TAG_SD);
             return STATUS_INVALID_ACL;
         }
         (*NewDescriptor).Dacl = Offset;
@@ -490,6 +481,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     }
 
     *CapturedSecurityDescriptor = NewDescriptor as PSECURITY_DESCRIPTOR;
+    _guard.disarm();
     STATUS_SUCCESS
 }
 

@@ -20,6 +20,7 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
         if AccessMode != 0i8 {
             let mut safe_qos: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
 
+            // ProbeForRead ObjectAttributes
             if let Err(s) = probe_user_buffer(
                 ObjectAttributes as *const core::ffi::c_void,
                 core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
@@ -30,6 +31,7 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
             }
             if (*ObjectAttributes).Length == core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG {
                 if !(*ObjectAttributes).SecurityQualityOfService.is_null() {
+                    // ProbeForRead SecurityQualityOfService
                     if let Err(s) = probe_user_buffer(
                         (*ObjectAttributes).SecurityQualityOfService as *const core::ffi::c_void,
                         core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
@@ -42,16 +44,23 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                     if (*((*ObjectAttributes).SecurityQualityOfService as PSECURITY_QUALITY_OF_SERVICE)).Length
                         == core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as ULONG
                     {
-                        core::ptr::copy_nonoverlapping(
-                            (*ObjectAttributes).SecurityQualityOfService as *const u8,
-                            core::ptr::addr_of_mut!(safe_qos) as *mut u8,
+                        // RtlCopyMemory inside _SEH2_TRY: safe_copy_from_user
+                        if let Err(s) = safe_copy_from_user(
+                            core::ptr::addr_of_mut!(safe_qos) as *mut core::ffi::c_void,
+                            (*ObjectAttributes).SecurityQualityOfService as *const core::ffi::c_void,
                             core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
-                        );
+                            core::mem::align_of::<ULONG>(),
+                            AccessMode,
+                        ) {
+                            return s;
+                        }
+                        // Present and CapturedSecurityQualityOfService are kernel-mode output pointers — direct write
                         *Present = 1u8;
                     } else {
                         status = STATUS_INVALID_PARAMETER;
                     }
                 } else {
+                    // Kernel-mode output pointers — direct write, no probe
                     *CapturedSecurityQualityOfService = core::ptr::null_mut();
                     *Present = 0u8;
                 }

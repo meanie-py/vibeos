@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from tests.qemu.vm import QemuVM
+import subprocess
+from pathlib import Path
+
+from tests.qemu.vm import QemuVM, PROJECT_DIR
 
 
 def test_boot_and_serial(vm: QemuVM) -> None:
@@ -37,3 +40,37 @@ def test_snapshot_restore(vm: QemuVM) -> None:
 
     status = vm.qmp.execute("query-status")
     assert status["return"]["running"] is True
+
+
+def test_screenshot(vm: QemuVM, arch: str) -> None:
+    """Capture a screenshot of the desktop at steady state.
+
+    Saves as qemu/<arch>_smoke.png for visual inspection.
+    """
+    ppm_path = vm.work_dir / "screen.ppm"
+    vm.screendump(ppm_path)
+    assert ppm_path.exists(), "screendump did not create file"
+    assert ppm_path.stat().st_size > 1000, "screendump file too small"
+
+    # Convert PPM to PNG and save to qemu/ directory
+    png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
+    try:
+        subprocess.run(
+            ["convert", str(ppm_path), str(png_path)],
+            check=True, capture_output=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        # ImageMagick not available — try pnmtopng or just keep PPM
+        try:
+            subprocess.run(
+                ["pnmtopng", str(ppm_path)],
+                check=True, capture_output=True, timeout=10,
+                stdout=open(png_path, "wb"),
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # No converter — copy PPM as-is
+            png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
+            import shutil
+            shutil.copy2(ppm_path, png_path)
+
+    print(f"\n[screenshot] Saved to {png_path}")

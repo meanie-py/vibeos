@@ -313,12 +313,15 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
         if (*dest).is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-    }
-
-    core::ptr::copy_nonoverlapping(src as *const u8, *dest as *mut u8, buffer_size as usize);
-
-    if status < 0 && allocated_mem.is_null() {
-        ExFreePoolWithTag(*dest as PVOID, TAG_LUID);
+        
+        let _guard = PoolAllocGuard::new(*dest as PVOID, TAG_LUID);
+        
+        // Copy from user-mode buffer to kernel-mode allocation
+        if let Err(s) = safe_copy_from_user(*dest as PVOID, src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
+            return s;
+        }
+        
+        _guard.disarm();
     }
 
     status
@@ -604,17 +607,25 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
 
     ObDereferenceObject(token as PVOID);
 
-    core::ptr::copy_nonoverlapping(
-        privileges as *const u8,
-        core::ptr::addr_of_mut!((*required_privileges).Privilege[0]) as *mut u8,
-        (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>()) as usize,
-    );
-    *result = check_result;
-    status = STATUS_SUCCESS;
+    if let Err(s) = safe_copy_to_user(
+        core::ptr::addr_of_mut!((*required_privileges).Privilege[0]) as *mut _,
+        privileges as _,
+        (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>()),
+        core::mem::size_of::<ULONG>(),
+        previous_mode,
+    ) {
+        SeReleaseLuidAndAttributesArray(privileges, previous_mode, 1u8);
+        return s;
+    }
+
+    if let Err(s) = probe_write_user(result, check_result, previous_mode) {
+        SeReleaseLuidAndAttributesArray(privileges, previous_mode, 1u8);
+        return s;
+    }
 
     SeReleaseLuidAndAttributesArray(privileges, previous_mode, 1u8);
 
-    status
+    STATUS_SUCCESS
 }
 
 // ============================================================================

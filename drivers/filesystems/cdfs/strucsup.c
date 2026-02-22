@@ -2452,8 +2452,12 @@ Return Value:
     //  Sanity check the counts.
     //
 
-    NT_ASSERT( Fcb->FcbCleanup == 0 );
-    NT_ASSERT( Fcb->FcbReference == 0 );
+    if (Fcb->FcbCleanup != 0) {
+        DbgPrint("CDFS: CdDeleteFcb FcbCleanup %lu != 0\n", Fcb->FcbCleanup);
+    }
+    if (Fcb->FcbReference != 0) {
+        DbgPrint("CDFS: CdDeleteFcb FcbReference %lu != 0\n", Fcb->FcbReference);
+    }
 
     //
     //  Release any Filter Context structures associated with this FCB

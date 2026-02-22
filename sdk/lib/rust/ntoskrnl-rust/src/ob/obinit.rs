@@ -38,7 +38,7 @@ const OBJ_OPENLINK: ULONG = 0x00000100;
 // Extern globals not in ntkrnl-sys
 extern "C" {
     static mut KeNumberProcessors: i8;
-    static mut KiProcessorBlock: *mut *mut _KPRCB;
+    static mut KiProcessorBlock: [*mut _KPRCB; 0];
     static mut SePublicDefaultUnrestrictedSd: PVOID; // PSECURITY_DESCRIPTOR
     static mut ObpTypeObjectType: POBJECT_TYPE;
     static mut ObpDefaultObject: ntkrnl_sys::ddk::KEVENT;
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn ObInit2() -> BOOLEAN {
     let mut current_list: PGENERAL_LOOKASIDE;
 
     for i in 0..KeNumberProcessors as i8 {
-        prcb = *KiProcessorBlock.offset(i as isize);
+        prcb = *(core::ptr::addr_of!(KiProcessorBlock) as *const *mut _KPRCB).add(i as usize);
 
         (*prcb).PPLookasideList[LookasideCreateInfoList as usize].L =
             core::ptr::addr_of_mut!(ObpCreateInfoLookasideList) as PGENERAL_LOOKASIDE;

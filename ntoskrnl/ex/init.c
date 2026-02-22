@@ -2269,6 +2269,7 @@ Phase1InitializationDiscard(IN PVOID Context)
 #ifdef _M_ARM64
         ARM64_UART_TRACE("[PHASE1] PsInitSystem failed (continuing on ARM64)\r\n");
 #else
+        DPRINT1("PsInitSystem(Phase1) failed!\n");
         KeBugCheck(PROCESS1_INITIALIZATION_FAILED);
 #endif
     }
@@ -2285,6 +2286,7 @@ Phase1InitializationDiscard(IN PVOID Context)
 #ifdef _M_ARM64
         ARM64_UART_TRACE("[PHASE1] SeRmInitPhase1 failed (continuing on ARM64)\r\n");
 #else
+        DPRINT1("SeRmInitPhase1 failed!\n");
         KeBugCheck(PROCESS1_INITIALIZATION_FAILED);
 #endif
     }

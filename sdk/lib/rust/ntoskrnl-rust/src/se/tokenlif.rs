@@ -1327,7 +1327,9 @@ pub unsafe extern "system" fn NtCreateToken(
         0,
     );
     if status >= 0 {
-        *token_handle = h_token;
+        if let Err(s) = probe_write_user(token_handle, h_token, previous_mode) {
+            status = s;
+        }
     }
 
     SeReleaseSidAndAttributesArray(captured_user, previous_mode, 0);
@@ -1369,8 +1371,7 @@ pub unsafe extern "system" fn NtDuplicateToken(
     }
 
     status = SepCaptureSecurityQualityOfService(
-        object_attributes,
-        previous_mode,
+        object_attributes, previous_mode,
         PagedPool,
         0,
         &mut captured_security_quality_of_service,
@@ -1442,7 +1443,9 @@ pub unsafe extern "system" fn NtDuplicateToken(
             &mut h_token,
         );
         if status >= 0 {
-            *new_token_handle = h_token;
+            if let Err(s) = probe_write_user(new_token_handle, h_token, previous_mode) {
+                status = s;
+            }
         }
     }
 
@@ -1507,8 +1510,7 @@ pub unsafe extern "system" fn NtFilterToken(
     if let Err(s) = probe_write_handle(new_token_handle as _, previous_mode) { return s; }
 
     status = ObReferenceObjectByHandle(
-        existing_token_handle,
-        TOKEN_DUPLICATE,
+        existing_token_handle, TOKEN_DUPLICATE,
         SeTokenObjectType as *mut _OBJECT_TYPE,
         previous_mode,
         &mut token as *mut PTOKEN as *mut PVOID,
@@ -1653,7 +1655,9 @@ pub unsafe extern "system" fn NtFilterToken(
         return status;
     }
 
-    *new_token_handle = filtered_token_handle;
+    if let Err(s) = probe_write_user(new_token_handle, filtered_token_handle, previous_mode) {
+        status = s;
+    }
 
     ObDereferenceObject(token as PVOID);
 

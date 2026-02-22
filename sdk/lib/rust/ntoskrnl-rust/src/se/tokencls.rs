@@ -5,6 +5,7 @@ use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::probe::*;
 
 #[inline]
 unsafe fn RtlInterlockedSetBits(Flags: *mut ULONG, Flag: ULONG) -> ULONG {
@@ -308,7 +309,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
             } else {
                 status = RtlCopySidAndAttributesArray(
                     1,
-                    core::ptr::addr_of_mut!((*token).UserAndGroups) as *mut SID_AND_ATTRIBUTES,
+                    (*token).UserAndGroups as *mut SID_AND_ATTRIBUTES,
                     required_length - core::mem::size_of::<TOKEN_USER>() as ULONG,
                     core::ptr::addr_of_mut!((*tu).User),
                     (tu as *mut u8).offset(core::mem::size_of::<TOKEN_USER>() as isize) as PSID,
@@ -577,7 +578,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 if TokenInformationLength >= required_length {
                     status = RtlCopySidAndAttributesArray(
                         1,
-                        core::ptr::addr_of_mut!((*token).UserAndGroups) as *mut SID_AND_ATTRIBUTES,
+                        (*token).UserAndGroups as *mut SID_AND_ATTRIBUTES,
                         required_length - core::mem::size_of::<TOKEN_USER>() as ULONG,
                         core::ptr::addr_of_mut!((*tu).User),
                         (tu as *mut u8).offset(core::mem::size_of::<TOKEN_USER>() as isize) as PSID,
@@ -588,7 +589,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             2 => {
@@ -620,7 +624,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             3 => {
@@ -640,7 +647,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             4 => {
@@ -659,7 +669,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             5 => {
@@ -674,7 +687,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             6 => {
@@ -701,7 +717,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             7 => {
@@ -710,12 +729,17 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_SOURCE>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    *ts = (*token).TokenSource;
+                    if let Err(s) = probe_write_user(ts, (*token).TokenSource, previous_mode) {
+                        return s;
+                    }
                 } else {
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             8 => {
@@ -724,12 +748,17 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_TYPE>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    *tt = (*token).TokenType;
+                    if let Err(s) = probe_write_user(tt, (*token).TokenType, previous_mode) {
+                        return s;
+                    }
                 } else {
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             9 => {
@@ -741,12 +770,17 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     required_length = core::mem::size_of::<SECURITY_IMPERSONATION_LEVEL>() as ULONG;
 
                     if TokenInformationLength >= required_length {
-                        *sil = (*token).ImpersonationLevel;
+                        if let Err(s) = probe_write_user(sil, (*token).ImpersonationLevel, previous_mode) {
+                            return s;
+                        }
                     } else {
                         status = STATUS_BUFFER_TOO_SMALL;
                     }
 
-                    *ReturnLength = required_length;
+                    // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                    if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                        status = s;
+                    }
                 }
             }
 
@@ -774,7 +808,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             17 => {
@@ -783,12 +820,17 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_ORIGIN>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    (*to).OriginatingLogonSession = (*token).AuthenticationId;
+                    if let Err(s) = probe_write_user(to, TOKEN_ORIGIN { OriginatingLogonSession: (*token).AuthenticationId }, previous_mode) {
+                        return s;
+                    }
                 } else {
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             13 => {
@@ -860,7 +902,10 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             11 => {
@@ -892,22 +937,36 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     status = STATUS_BUFFER_TOO_SMALL;
                 }
 
-                *ReturnLength = required_length;
+                // ReturnLength is written unconditionally (even on STATUS_BUFFER_TOO_SMALL)
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             15 => {
+                required_length = core::mem::size_of::<ULONG>() as ULONG;
                 let is_token_sandbox_inert = SeTokenIsInert(token);
-                *(TokenInformation as PULONG) = is_token_sandbox_inert;
-                *ReturnLength = core::mem::size_of::<ULONG>() as ULONG;
+                if let Err(s) = probe_write_user(TokenInformation as PULONG, is_token_sandbox_inert, previous_mode) {
+                    status = s;
+                }
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
+                }
             }
 
             12 => {
                 let mut session_id: ULONG = 0;
+                required_length = core::mem::size_of::<ULONG>() as ULONG;
 
                 status = SeQuerySessionIdToken(token, core::ptr::addr_of_mut!(session_id));
                 if status >= 0 {
-                    *(TokenInformation as PULONG) = session_id;
-                    *ReturnLength = required_length;
+                    if let Err(s) = probe_write_user(TokenInformation as PULONG, session_id, previous_mode) {
+                        status = s;
+                    }
+                }
+                // ReturnLength unconditional
+                if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
+                    status = s;
                 }
             }
 
@@ -967,7 +1026,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 4 => {
                     if TokenInformationLength >= core::mem::size_of::<TOKEN_OWNER>() as ULONG {
                         let to = TokenInformation as PTOKEN_OWNER;
-                        let input_sid = (*to).Owner;
+                        let input_sid = match probe_read_user::<PSID>(core::ptr::addr_of!((*to).Owner) as _, previous_mode) {
+                            Ok(v) => v,
+                            Err(s) => return s,
+                        };
                         let mut captured_sid: PSID = core::ptr::null_mut();
 
                         status = SepCaptureSid(
@@ -1006,7 +1068,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 5 => {
                     if TokenInformationLength >= core::mem::size_of::<TOKEN_PRIMARY_GROUP>() as ULONG {
                         let tpg = TokenInformation as PTOKEN_PRIMARY_GROUP;
-                        let input_sid = (*tpg).PrimaryGroup;
+                        let input_sid = match probe_read_user::<PSID>(core::ptr::addr_of!((*tpg).PrimaryGroup) as _, previous_mode) {
+                            Ok(v) => v,
+                            Err(s) => return s,
+                        };
                         let mut captured_sid: PSID = core::ptr::null_mut();
 
                         status = SepCaptureSid(
@@ -1083,7 +1148,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 6 => {
                     if TokenInformationLength >= core::mem::size_of::<TOKEN_DEFAULT_DACL>() as ULONG {
                         let tdd = TokenInformation as PTOKEN_DEFAULT_DACL;
-                        let input_acl = (*tdd).DefaultDacl;
+                        let input_acl = match probe_read_user::<PACL>(core::ptr::addr_of!((*tdd).DefaultDacl) as _, previous_mode) {
+                            Ok(v) => v,
+                            Err(s) => return s,
+                        };
 
                         if !input_acl.is_null() {
                             let mut captured_acl: PACL = core::ptr::null_mut();
@@ -1156,7 +1224,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 }
 
                 12 => {
-                    let session_id = *(TokenInformation as PULONG);
+                    let session_id = match probe_read_user::<ULONG>(TokenInformation as _, previous_mode) {
+                        Ok(v) => v,
+                        Err(s) => return s,
+                    };
 
                     if SeSinglePrivilegeCheck(SeTcbPrivilege, previous_mode) == 0 {
                         status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1172,7 +1243,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 }
 
                 14 => {
-                    let session_reference = *(TokenInformation as PULONG);
+                    let session_reference = match probe_read_user::<ULONG>(TokenInformation as _, previous_mode) {
+                        Ok(v) => v,
+                        Err(s) => return s,
+                    };
 
                     if SeSinglePrivilegeCheck(SeTcbPrivilege, previous_mode) == 0 {
                         status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1237,7 +1311,10 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 }
 
                 17 => {
-                    let token_origin = *(TokenInformation as PTOKEN_ORIGIN);
+                    let token_origin = match probe_read_user::<TOKEN_ORIGIN>(TokenInformation as _, previous_mode) {
+                        Ok(v) => v,
+                        Err(s) => return s,
+                    };
 
                     if SeSinglePrivilegeCheck(SeTcbPrivilege, previous_mode) == 0 {
                         status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1267,7 +1344,6 @@ pub unsafe extern "system" fn NtSetInformationToken(
 
     status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

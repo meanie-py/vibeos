@@ -106,7 +106,7 @@ class Amd64Config(ArchConfig):
     memory: str = "512M"
     # livecd.ini defaults to LiveCD_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
     # Must use a marker — desktop produces continuous debug output (never goes idle)
-    boot_marker: str = "Font loading complete"
+    boot_marker: str = "SwitchDesktop OK"
     boot_timeout: float = 180.0
     min_boot_bytes: int = 10000
 
@@ -310,6 +310,19 @@ class QemuVM:
     def serial_output(self, timeout: float = 1.0) -> str:
         """Read available serial output since last read."""
         return self.serial.read_available(timeout=timeout)
+
+    def screendump(self, path: str | Path) -> Path:
+        """Save a screenshot of the VM display via QMP screendump.
+
+        Returns the path to the saved PPM file.
+        """
+        path = Path(path)
+        result = self.qmp.execute("screendump", filename=str(path))
+        # Give QEMU a moment to write the file
+        time.sleep(0.5)
+        if not path.exists():
+            raise RuntimeError(f"screendump failed: {result}")
+        return path
 
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""

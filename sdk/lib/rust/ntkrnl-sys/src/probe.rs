@@ -240,3 +240,146 @@ pub unsafe fn probe_write_size_t(
     let val = core::ptr::read_volatile(ptr);
     probe_write_user::<ULONG_PTR>(ptr, val, previous_mode)
 }
+
+// ============================================================================
+// Safe copy to/from user-mode
+// ============================================================================
+
+/// Validate a user-mode source buffer, then copy `length` bytes to a kernel buffer.
+///
+/// Replaces the pattern:
+/// ```c
+/// _SEH2_TRY {
+///     ProbeForRead(UserBuffer, Length, Alignment);
+///     RtlCopyMemory(KernelBuffer, UserBuffer, Length);
+/// } _SEH2_EXCEPT(...) { Status = _SEH2_GetExceptionCode(); }
+/// ```
+///
+/// For KernelMode callers, skips validation and copies directly.
+#[inline]
+pub unsafe fn safe_copy_from_user(
+    kernel_dst: *mut core::ffi::c_void,
+    user_src: *const core::ffi::c_void,
+    length: usize,
+    alignment: usize,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<(), NTSTATUS> {
+    if length == 0 {
+        return Ok(());
+    }
+    probe_user_buffer(user_src, length, alignment, previous_mode)?;
+    core::ptr::copy_nonoverlapping(user_src as *const u8, kernel_dst as *mut u8, length);
+    Ok(())
+}
+
+/// Validate a user-mode destination buffer, then copy `length` bytes from a kernel buffer.
+///
+/// Replaces the pattern:
+/// ```c
+/// _SEH2_TRY {
+///     ProbeForWrite(UserBuffer, Length, Alignment);
+///     RtlCopyMemory(UserBuffer, KernelBuffer, Length);
+/// } _SEH2_EXCEPT(...) { Status = _SEH2_GetExceptionCode(); }
+/// ```
+///
+/// For KernelMode callers, skips validation and copies directly.
+#[inline]
+pub unsafe fn safe_copy_to_user(
+    user_dst: *mut core::ffi::c_void,
+    kernel_src: *const core::ffi::c_void,
+    length: usize,
+    alignment: usize,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<(), NTSTATUS> {
+    if length == 0 {
+        return Ok(());
+    }
+    probe_user_buffer(user_dst, length, alignment, previous_mode)?;
+    core::ptr::copy_nonoverlapping(kernel_src as *const u8, user_dst as *mut u8, length);
+    Ok(())
+}
+
+// ============================================================================
+// RAII guards for SEH cleanup patterns
+// ============================================================================
+//
+// These replace _SEH2_EXCEPT handlers that call Free/Dereference/Release.
+// The guard's Drop impl runs on any exit path (normal return, ? early return).
+//
+// Classifier data: 27 ObDereferenceObject, 20 ExFreePool*, 14 IopCleanup,
+// 2 IoFreeIrp, 1 KeReleaseMutex across 52 CLEANUP handlers kernel-wide.
+
+extern "system" {
+    fn ObfDereferenceObject(Object: PVOID) -> ULONG;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+}
+
+/// RAII guard that calls `ObDereferenceObject` on drop.
+///
+/// Replaces the pattern:
+/// ```c
+/// _SEH2_EXCEPT(...) { ObDereferenceObject(Object); ... }
+/// ```
+///
+/// Use `core::mem::forget(guard)` to prevent the dereference (e.g., on success
+/// when ownership is transferred to caller).
+pub struct ObjRefGuard {
+    object: PVOID,
+}
+
+impl ObjRefGuard {
+    /// Create a guard that will dereference `object` when dropped.
+    #[inline]
+    pub unsafe fn new(object: PVOID) -> Self {
+        Self { object }
+    }
+
+    /// Consume the guard without calling ObDereferenceObject.
+    /// Use when ownership is successfully transferred.
+    #[inline]
+    pub fn disarm(self) {
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for ObjRefGuard {
+    fn drop(&mut self) {
+        if !self.object.is_null() {
+            unsafe { ObfDereferenceObject(self.object); }
+        }
+    }
+}
+
+/// RAII guard that calls `ExFreePoolWithTag` on drop.
+///
+/// Replaces the pattern:
+/// ```c
+/// _SEH2_EXCEPT(...) { ExFreePoolWithTag(Buffer, Tag); ... }
+/// ```
+pub struct PoolAllocGuard {
+    ptr: PVOID,
+    tag: ULONG,
+}
+
+impl PoolAllocGuard {
+    /// Create a guard that will free `ptr` with `tag` when dropped.
+    #[inline]
+    pub unsafe fn new(ptr: PVOID, tag: ULONG) -> Self {
+        Self { ptr, tag }
+    }
+
+    /// Consume the guard without freeing the pool allocation.
+    /// Use when ownership is successfully transferred.
+    #[inline]
+    pub fn disarm(self) {
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for PoolAllocGuard {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { ExFreePoolWithTag(self.ptr, self.tag); }
+        }
+    }
+}

@@ -474,6 +474,39 @@ A common bug is using `NumberOfPages` (the original input) instead of `FreePages
 ### Kernel Virtual Address Arithmetic
 PTE/PDE calculations like `(addr >> 12) * 8 + PTE_BASE` overflow for kernel virtual addresses on 64-bit (e.g., 0xFFFFF68000000000 >> 12 = 0xFFFFF68000000, × 8 overflows u64). Use bit masking instead: `(addr >> 9) & (0xFFFFFFFFF << 3) + PTE_BASE`. Always verify pointer arithmetic against the C original for both 32-bit and 64-bit address ranges.
 
+### addr_of_mut! vs Pointer Value
+`core::ptr::addr_of_mut!((*ptr).field)` gives the **address of** the field within the struct. This is correct for:
+- Embedded struct fields (LIST_ENTRY, LUID, EX_FAST_REF) — taking their address for atomic ops or FFI
+- Scalar fields — passing `*mut LONG` to InterlockedIncrement
+
+This is **WRONG** when the field is already a pointer type and you need the pointer's **value**:
+```rust
+// C: Token->UserAndGroups (gets the pointer VALUE stored in the field)
+// WRONG: addr_of_mut gives **SID_AND_ATTRIBUTES (address of the pointer field)
+core::ptr::addr_of_mut!((*token).UserAndGroups) as *mut SID_AND_ATTRIBUTES
+// RIGHT: dereference to get the pointer value
+(*token).UserAndGroups as *mut SID_AND_ATTRIBUTES
+```
+
+Rule of thumb: if the C code is `ptr->field` (reading the value), use `(*ptr).field`. Only use `addr_of_mut!` when the C code is `&ptr->field` (taking the address).
+
+### Zero-Sized Extern Array Indexing
+C extern arrays like `KPRCB *KiProcessorBlock[]` become `static mut KiProcessorBlock: [*mut _KPRCB; 0]` in Rust (zero-sized). Direct indexing panics. Use pointer arithmetic:
+```rust
+// WRONG: panics on zero-sized array
+let prcb = KiProcessorBlock[i];
+// RIGHT: pointer arithmetic from array base
+let prcb = *(core::ptr::addr_of!(KiProcessorBlock) as *const *mut _KPRCB).add(i);
+```
+
+### Backward goto → Loop Duplication
+When C uses `goto label` to jump backward (e.g., `goto ParseFromRoot`), translate as:
+1. Run the target code **before** the loop (initial entry path)
+2. Duplicate the target code **inside** the loop body, gated on the reparse/retry condition
+3. Replace `goto` with `continue` or loop control flow
+
+Comment both locations to explain the goto transformation.
+
 ## Style Rules
 
 1. Keep original C variable names (PascalCase for params/locals is fine)

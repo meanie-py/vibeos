@@ -224,7 +224,7 @@ pub unsafe extern "system" fn SepCaptureAcl(
     CapturedAcl: *mut PACL,
 ) -> NTSTATUS {
     let new_acl: PACL;
-    let acl_size: ULONG;
+    let mut acl_size: ULONG;
 
     if (AccessMode == 0i8) && CaptureIfKernel == 0u8 {
         *CapturedAcl = InputAcl;
@@ -232,14 +232,16 @@ pub unsafe extern "system" fn SepCaptureAcl(
     }
 
     if AccessMode != 0i8 {
+        // First probe: read the ACL header to get AclSize
         if let Err(s) = probe_user_buffer(InputAcl as _, core::mem::size_of::<ACL>(), core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
         }
-        let acl_size_temp = (*InputAcl).AclSize;
-        if let Err(s) = probe_user_buffer(InputAcl as _, acl_size_temp as usize, core::mem::size_of::<ULONG>(), AccessMode) {
+        acl_size = (*InputAcl).AclSize as ULONG;
+        
+        // Second probe: validate the full ACL size
+        if let Err(s) = probe_user_buffer(InputAcl as _, acl_size as usize, core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
         }
-        acl_size = acl_size_temp as ULONG;
 
         if acl_size < core::mem::size_of::<ACL>() as ULONG {
             return STATUS_INVALID_ACL;
@@ -250,7 +252,14 @@ pub unsafe extern "system" fn SepCaptureAcl(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        core::ptr::copy_nonoverlapping(InputAcl as *const u8, new_acl as *mut u8, acl_size as usize);
+        let _guard = PoolAllocGuard::new(new_acl as PVOID, TAG_ACL);
+        
+        // Copy from user-mode to kernel buffer
+        if let Err(s) = safe_copy_from_user(new_acl as PVOID, InputAcl as _, acl_size as usize, core::mem::size_of::<ULONG>(), AccessMode) {
+            return s;
+        }
+
+        _guard.disarm();  // Success — keep the allocation
     } else {
         acl_size = (*InputAcl).AclSize as ULONG;
 

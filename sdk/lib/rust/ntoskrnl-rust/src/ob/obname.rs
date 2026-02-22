@@ -404,6 +404,9 @@ pub unsafe extern "system" fn ObpLookupObjectName(
     let mut device_map: PDEVICE_MAP = core::ptr::null_mut();
     let mut local_name: ntkrnl_sys::ddk::UNICODE_STRING;
 
+    #[allow(non_snake_case)]
+    let mut RootHandle = RootHandle;
+
     ObpInitializeLookupContext(LookupContext);
     *FoundObject = core::ptr::null_mut();
     status = STATUS_SUCCESS;
@@ -488,7 +491,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                 {
                     ObDereferenceObject(root_directory as PVOID);
                     root_directory = ObpRootDirectoryObject;
-                    // RootHandle = NULL equivalent handled by not using it
+                    RootHandle = core::ptr::null_mut();
                     local_name = *ObjectName;
                     break;
                 } else {
@@ -561,7 +564,60 @@ pub unsafe extern "system" fn ObpLookupObjectName(
             }
         } else {
             local_name = *ObjectName;
+        }
+    }
 
+    // ParseFromRoot: check for \?? device-map prefix shortcut.
+    // In C, `goto ParseFromRoot` jumps here from both the root-handle reparse path
+    // and the main parse loop's symlink reparse path. In Rust, this code runs on
+    // every entry (initial or reparse) before the main parse while-loop.
+    if !device_map.is_null() {
+        ObfDereferenceDeviceMap(device_map);
+        device_map = core::ptr::null_mut();
+    }
+
+    if ((*ObjectName).Buffer as usize) & 7 == 0 {
+        if (*ObjectName).Length >= ObpDosDevicesShortName.Length &&
+           *((*ObjectName).Buffer as *const u64) == *(core::ptr::addr_of!(ObpDosDevicesShortNamePrefix) as *const u64)
+        {
+            device_map = ObpReferenceDeviceMap();
+            if !device_map.is_null() && !(*device_map).DosDevicesDirectory.is_null() {
+                local_name.Length -= ObpDosDevicesShortName.Length;
+                local_name.MaximumLength -= ObpDosDevicesShortName.Length;
+                local_name.Buffer = local_name.Buffer.add((ObpDosDevicesShortName.Length / 2) as usize);
+                directory = (*device_map).DosDevicesDirectory;
+            }
+        } else if (*ObjectName).Length == ObpDosDevicesShortName.Length - 2 &&
+                  *((*ObjectName).Buffer as *const u32) == (*(core::ptr::addr_of!(ObpDosDevicesShortNameRoot) as *const u64) & 0xFFFFFFFF) as u32 &&
+                  *((*ObjectName).Buffer.add(2)) == ((*(core::ptr::addr_of!(ObpDosDevicesShortNameRoot) as *const u64) >> 32) & 0xFFFF) as u16
+        {
+            device_map = ObpReferenceDeviceMap();
+            if !device_map.is_null() && !(*device_map).DosDevicesDirectory.is_null() {
+                status = ObReferenceObjectByPointer(
+                    (*device_map).DosDevicesDirectory as PVOID,
+                    0,
+                    ObjectType,
+                    AccessMode,
+                );
+                if status >= 0 {
+                    *FoundObject = (*device_map).DosDevicesDirectory as PVOID;
+                }
+                ObfDereferenceDeviceMap(device_map);
+                return status;
+            }
+        }
+    }
+
+    if sym_link == 0 {
+        reparse = 1;
+        max_reparse = 30;
+    }
+
+    while reparse != 0 && max_reparse != 0 {
+        // ParseFromRoot equivalent: re-check \?? device-map prefix on symlink reparse.
+        // In C, `goto ParseFromRoot` jumps back to re-run this check. In Rust, we do it
+        // at the top of the while loop body, gated on sym_link != 0.
+        if sym_link != 0 {
             if !device_map.is_null() {
                 ObfDereferenceDeviceMap(device_map);
                 device_map = core::ptr::null_mut();
@@ -599,14 +655,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                 }
             }
         }
-    }
 
-    if sym_link == 0 {
-        reparse = 1;
-        max_reparse = 30;
-    }
-
-    while reparse != 0 && max_reparse != 0 {
         remaining_name = local_name;
         reparse = 0;
 

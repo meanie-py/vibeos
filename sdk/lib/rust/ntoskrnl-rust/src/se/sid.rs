@@ -328,8 +328,13 @@ pub unsafe extern "system" fn SepCaptureSid(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        core::ptr::copy_nonoverlapping(Sid as *const u8, NewSid as *mut u8, SidSize as usize);
+        let _guard = PoolAllocGuard::new(NewSid as PVOID, TAG_SID);
+        if let Err(s) = safe_copy_from_user(NewSid as PVOID, Sid as _, SidSize as usize, core::mem::size_of::<UCHAR>(), AccessMode) {
+            return s;
+        }
+        // CapturedSid is always a kernel-mode pointer (caller's output param) — direct write, no probe
         *CapturedSid = NewSid as PSID;
+        _guard.disarm();
     } else if CaptureIfKernel == 0u8 {
         *CapturedSid = InputSid;
     } else {
@@ -505,6 +510,8 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
 
         ValidateArray = ExAllocatePoolWithTag(PoolType | POOL_RAISE_IF_ALLOCATION_FAILURE, TempLengthValidate as SIZE_T, TAG_SID_VALIDATE) as *mut SID_VALIDATE;
 
+        let _validate_guard = PoolAllocGuard::new(ValidateArray as PVOID, TAG_SID_VALIDATE);
+
         i = 0;
         while i < AttributeCount {
             Sid = (*SrcSidAndAttributes.offset(i as isize)).Sid as PISID;
@@ -523,37 +530,30 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
             RequiredLength += ((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
             i += 1;
         }
-    } else {
-        i = 0;
-        while i < AttributeCount {
-            Sid = (*SrcSidAndAttributes.offset(i as isize)).Sid as PISID;
-            SidLength = RtlLengthRequiredSid((*Sid).SubAuthorityCount as ULONG);
 
-            RequiredLength += ((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
-            i += 1;
-        }
-    }
+        Status = STATUS_SUCCESS;
+        *ResultLength = RequiredLength;
 
-    Status = STATUS_SUCCESS;
-    *ResultLength = RequiredLength;
-
-    if AllocatedMem.is_null() {
-        SidAndAttributes = ExAllocatePoolWithTag(PoolType, RequiredLength as SIZE_T, TAG_SID_AND_ATTRIBUTES) as PSID_AND_ATTRIBUTES;
-        if SidAndAttributes.is_null() {
-            Status = STATUS_INSUFFICIENT_RESOURCES;
+        if AllocatedMem.is_null() {
+            SidAndAttributes = ExAllocatePoolWithTag(PoolType, RequiredLength as SIZE_T, TAG_SID_AND_ATTRIBUTES) as PSID_AND_ATTRIBUTES;
+            if SidAndAttributes.is_null() {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                SidAndAttributes = core::ptr::null_mut();
+            }
+        } else if AllocatedLength >= RequiredLength {
+            SidAndAttributes = AllocatedMem as PSID_AND_ATTRIBUTES;
+        } else {
+            Status = STATUS_BUFFER_TOO_SMALL;
             SidAndAttributes = core::ptr::null_mut();
         }
-    } else if AllocatedLength >= RequiredLength {
-        SidAndAttributes = AllocatedMem as PSID_AND_ATTRIBUTES;
-    } else {
-        Status = STATUS_BUFFER_TOO_SMALL;
-        SidAndAttributes = core::ptr::null_mut();
-    }
 
-    if !SidAndAttributes.is_null() {
-        *CapturedSidAndAttributes = SidAndAttributes;
+        if !SidAndAttributes.is_null() {
+            let _sid_guard = PoolAllocGuard::new(
+                if SidAndAttributes != AllocatedMem as PSID_AND_ATTRIBUTES { SidAndAttributes as PVOID } else { core::ptr::null_mut() },
+                TAG_SID_AND_ATTRIBUTES,
+            );
+            *CapturedSidAndAttributes = SidAndAttributes;
 
-        if PreviousMode != 0i8 {
             CurrentDest = SidAndAttributes as *mut UCHAR;
             CurrentDest = CurrentDest.offset((((ArraySize + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);
 
@@ -563,7 +563,9 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
 
                 (*SidAndAttributes.offset(i as isize)).Attributes = (*SrcSidAndAttributes.offset(i as isize)).Attributes;
                 (*SidAndAttributes.offset(i as isize)).Sid = CurrentDest as PSID;
-                core::ptr::copy_nonoverlapping((*ValidateArray.offset(i as isize)).ProbeSid as *const u8, CurrentDest, SidLength as usize);
+                if let Err(s) = safe_copy_from_user(CurrentDest as PVOID, (*ValidateArray.offset(i as isize)).ProbeSid as _, SidLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+                    return s;
+                }
 
                 Sid = (*SidAndAttributes.offset(i as isize)).Sid as PISID;
 
@@ -585,7 +587,46 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
                 CurrentDest = CurrentDest.offset((((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);
                 i += 1;
             }
+
+            if NT_SUCCESS(Status) {
+                _sid_guard.disarm();
+            }
+        }
+
+        _validate_guard.disarm();
+    } else {
+        i = 0;
+        while i < AttributeCount {
+            Sid = (*SrcSidAndAttributes.offset(i as isize)).Sid as PISID;
+            SidLength = RtlLengthRequiredSid((*Sid).SubAuthorityCount as ULONG);
+
+            RequiredLength += ((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG;
+            i += 1;
+        }
+
+        Status = STATUS_SUCCESS;
+        *ResultLength = RequiredLength;
+
+        if AllocatedMem.is_null() {
+            SidAndAttributes = ExAllocatePoolWithTag(PoolType, RequiredLength as SIZE_T, TAG_SID_AND_ATTRIBUTES) as PSID_AND_ATTRIBUTES;
+            if SidAndAttributes.is_null() {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                SidAndAttributes = core::ptr::null_mut();
+            }
+        } else if AllocatedLength >= RequiredLength {
+            SidAndAttributes = AllocatedMem as PSID_AND_ATTRIBUTES;
         } else {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            SidAndAttributes = core::ptr::null_mut();
+        }
+
+        if !SidAndAttributes.is_null() {
+            let _sid_guard = PoolAllocGuard::new(
+                if SidAndAttributes != AllocatedMem as PSID_AND_ATTRIBUTES { SidAndAttributes as PVOID } else { core::ptr::null_mut() },
+                TAG_SID_AND_ATTRIBUTES,
+            );
+            *CapturedSidAndAttributes = SidAndAttributes;
+
             CurrentDest = SidAndAttributes as *mut UCHAR;
             CurrentDest = CurrentDest.offset((((ArraySize + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);
 
@@ -601,18 +642,11 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
                 CurrentDest = CurrentDest.offset((((SidLength + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);
                 i += 1;
             }
-        }
-    }
 
-    if Status < 0 {
-        if !SidAndAttributes.is_null() && SidAndAttributes != AllocatedMem as PSID_AND_ATTRIBUTES {
-            ExFreePoolWithTag(SidAndAttributes as PVOID, TAG_SID_AND_ATTRIBUTES);
+            if NT_SUCCESS(Status) {
+                _sid_guard.disarm();
+            }
         }
-        *CapturedSidAndAttributes = core::ptr::null_mut();
-    }
-
-    if PreviousMode != 0i8 && !ValidateArray.is_null() {
-        ExFreePoolWithTag(ValidateArray as PVOID, TAG_SID_VALIDATE);
     }
 
     Status

@@ -110,7 +110,6 @@ pub unsafe extern "system" fn SeCaptureObjectTypeList(
     PreviousMode: KPROCESSOR_MODE,
     CapturedObjectTypeList: *mut POBJECT_TYPE_LIST_INTERNAL,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
     let Size: SIZE_T;
     let mut ObjectTypeGuid: PGUID;
     let InternalTypeList: POBJECT_TYPE_LIST_INTERNAL;
@@ -128,9 +127,9 @@ pub unsafe extern "system" fn SeCaptureObjectTypeList(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = SepValidateObjectTypeList(ObjectTypeList, ObjectTypeListLength);
-    if Status < 0 {
-        return Status;
+    let status = SepValidateObjectTypeList(ObjectTypeList, ObjectTypeListLength);
+    if status < 0 {
+        return status;
     }
 
     Size = (ObjectTypeListLength as SIZE_T) * (core::mem::size_of::<OBJECT_TYPE_LIST_INTERNAL>() as SIZE_T);
@@ -138,6 +137,8 @@ pub unsafe extern "system" fn SeCaptureObjectTypeList(
     if InternalTypeList.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    let _guard = PoolAllocGuard::new(InternalTypeList as PVOID, TAG_SEPA);
 
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         ObjectTypeGuid = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).ObjectType;
@@ -150,7 +151,10 @@ pub unsafe extern "system" fn SeCaptureObjectTypeList(
         (*InternalTypeList.offset(ObjectTypeIndex as isize)).ObjectAccessRights.DeniedAccessRights = 0;
     }
 
+    // CapturedObjectTypeList is always a kernel-mode output pointer — direct write, no probe
     *CapturedObjectTypeList = InternalTypeList;
+
+    _guard.disarm();
 
     STATUS_SUCCESS
 }

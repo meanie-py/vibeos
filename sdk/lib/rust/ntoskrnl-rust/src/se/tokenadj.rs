@@ -230,7 +230,7 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
             if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
                 return s;
             }
-            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+            if let Err(s) = probe_write_user(ReturnLength, 0u32, PreviousMode) {
                 return s;
             }
         }
@@ -274,6 +274,8 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         return Status;
     }
 
+    let _token_guard = ObjRefGuard::new(Token as PVOID);
+
     SepAcquireTokenLockExclusive(Token);
 
     Status = SepAdjustPrivileges(
@@ -291,11 +293,20 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         RequiredLength = core::mem::size_of::<TOKEN_PRIVILEGES>() as ULONG + 
                         (ChangeCount.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
-        *ReturnLength = RequiredLength;
+        if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
+            Status = s;
+            ChangesMade = 1u8;
+            SepReleaseTokenLock(Token);
+            _token_guard.disarm();
+            if !CapturedPrivileges.is_null() {
+                SeReleaseLuidAndAttributesArray(CapturedPrivileges, PreviousMode, 1u8);
+            }
+            return Status;
+        }
 
         if BufferLength < RequiredLength {
             Status = STATUS_BUFFER_TOO_SMALL;
-            // goto Cleanup
+            ChangesMade = 1u8;
         } else {
             Status = SepAdjustPrivileges(
                 Token,
@@ -326,7 +337,7 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
     }
 
     SepReleaseTokenLock(Token);
-    ObDereferenceObject(Token as PVOID);
+    _token_guard.disarm();
 
     if !CapturedPrivileges.is_null() {
         SeReleaseLuidAndAttributesArray(CapturedPrivileges, PreviousMode, 1u8);
@@ -380,7 +391,7 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
             if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
                 return s;
             }
-            if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+            if let Err(s) = probe_write_user(ReturnLength, 0u32, PreviousMode) {
                 return s;
             }
         }
@@ -424,6 +435,8 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         return Status;
     }
 
+    let _token_guard = ObjRefGuard::new(Token as PVOID);
+
     SepAcquireTokenLockExclusive(Token);
 
     Status = SepAdjustGroups(
@@ -441,11 +454,20 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         RequiredLength = core::mem::size_of::<TOKEN_GROUPS>() as ULONG + 
                         (ChangeCount.saturating_sub(1)) * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
-        *ReturnLength = RequiredLength;
+        if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
+            Status = s;
+            ChangesMade = 1u8;
+            SepReleaseTokenLock(Token);
+            _token_guard.disarm();
+            if !CapturedGroups.is_null() {
+                SeReleaseSidAndAttributesArray(CapturedGroups, PreviousMode, 1u8);
+            }
+            return Status;
+        }
 
         if BufferLength < RequiredLength {
             Status = STATUS_BUFFER_TOO_SMALL;
-            // goto Quit
+            ChangesMade = 1u8;
         } else {
             Status = SepAdjustGroups(
                 Token,
@@ -476,7 +498,7 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
     }
 
     SepReleaseTokenLock(Token);
-    ObDereferenceObject(Token as PVOID);
+    _token_guard.disarm();
 
     if !CapturedGroups.is_null() {
         SeReleaseSidAndAttributesArray(CapturedGroups, PreviousMode, 1u8);

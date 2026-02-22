@@ -913,20 +913,34 @@ unsafe fn SepAccessCheck(
         return STATUS_SUCCESS;
     }
 
-    if let Err(s) = probe_user_buffer(GenericMapping as *const core::ffi::c_void, core::mem::size_of::<_GENERIC_MAPPING>(), core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
-    if let Err(s) = probe_user_buffer(PrivilegeSetLength as *const core::ffi::c_void, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
-    if let Err(s) = probe_user_buffer(PrivilegeSet as *const core::ffi::c_void, *PrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
+    if let Err(s) = probe_user_buffer(GenericMapping as *const core::ffi::c_void, core::mem::size_of::<_GENERIC_MAPPING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+        return s;
+    }
+    if let Err(s) = probe_user_buffer(PrivilegeSetLength as *const core::ffi::c_void, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+        return s;
+    }
+    if let Err(s) = probe_user_buffer(PrivilegeSet as *const core::ffi::c_void, *PrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+        return s;
+    }
 
     if UseResultList != 0 {
         if ObjectTypeListLength == 0 {
             return STATUS_INVALID_PARAMETER;
         }
 
-        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
-        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
+        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
+        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
     } else {
-        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>(), core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
-        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>(), core::mem::size_of::<ULONG>(), PreviousMode) { return s; }
+        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
+        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+            return s;
+        }
     }
 
     CapturedPrivilegeSetLength = *PrivilegeSetLength;

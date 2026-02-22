@@ -404,9 +404,9 @@ unsafe fn SepImpersonateAnonymousToken(
     let mut include_everyone_value_data: ULONG = 0;
 
     let status = SepRegQueryHelper(
-        b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Lsa\0"
+        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0L\0s\0a\0\0\0"
             .as_ptr() as *mut u16,
-        b"EveryoneIncludesAnonymous\0".as_ptr() as *mut u16,
+        b"E\0v\0e\0r\0y\0o\0n\0e\0I\0n\0c\0l\0u\0d\0e\0s\0A\0n\0o\0n\0y\0m\0o\0u\0s\0\0\0".as_ptr() as *mut u16,
         REG_DWORD,
         core::mem::size_of::<ULONG>() as ULONG,
         &mut include_everyone_value_data,
@@ -1516,7 +1516,7 @@ pub unsafe extern "system" fn NtOpenThreadTokenEx(
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
-        if let Err(s) = probe_user_buffer(token_handle as _, core::mem::size_of::<HANDLE>() as usize, core::mem::align_of::<HANDLE>() as usize, previous_mode) {
+        if let Err(s) = probe_write_handle(token_handle as _, previous_mode) {
             return s;
         }
     }
@@ -1593,7 +1593,9 @@ pub unsafe extern "system" fn NtOpenThreadTokenEx(
         return status;
     }
 
-    *token_handle = h_token;
+    if let Err(s) = probe_write_user(token_handle, h_token, previous_mode) {
+        return s;
+    }
 
     status
 }
@@ -1617,15 +1619,14 @@ pub unsafe extern "system" fn NtCompareTokens(
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
-        if let Err(s) = probe_user_buffer(equal as _, 1, 1, previous_mode) {
+        if let Err(s) = probe_write_boolean(equal as _, previous_mode) {
             return s;
         }
     }
 
     let mut first_token: PTOKEN = core::ptr::null_mut();
     let mut status = ObReferenceObjectByHandle(
-        first_token_handle,
-        TOKEN_QUERY,
+        first_token_handle, TOKEN_QUERY,
         SeTokenObjectType as *mut _OBJECT_TYPE,
         previous_mode,
         &mut first_token as *mut PTOKEN as *mut PVOID,
@@ -1660,7 +1661,9 @@ pub unsafe extern "system" fn NtCompareTokens(
     ObDereferenceObject(first_token as PVOID);
 
     if status >= 0 {
-        *equal = is_equal;
+        if let Err(s) = probe_write_user(equal, is_equal, previous_mode) {
+            return s;
+        }
     }
 
     status

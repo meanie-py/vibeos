@@ -412,3 +412,8 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 ## Target Hardware
 
 Primary target is **Raspberry Pi** (ARM64). Development/debugging uses **QEMU** `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
+
+## Notes
+Don't ask the user to run commands or install things after they have told you to debug something, just debug it.
+
+Use the API keys in ../.env when necessary. Use AI and the process we've developed in rustconv to automate the process of doing translations in bulk. If you have to work on multiple files and there are signficant (50+) number of edits, and it would be good learnings to incorporate into future refactors, then we should automate it. When we already have the AI output of the c->rust or rust->rust translation and you are just integrating it, then go ahead and do it manually.
