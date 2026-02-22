@@ -44,7 +44,8 @@ list(APPEND PCH_SKIP_SOURCE
     guid.c)
 
 list(APPEND PCH_SKIP_SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
@@ -83,6 +84,25 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/obhandle.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/access.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/accesschk.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/acl.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/audit.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/client.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/debug.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/objtype.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/priv_.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sd.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/semgr.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sid.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/sqos.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/srm.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/subject.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/token.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenadj.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokencls.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/se/tokenlif.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs
@@ -93,6 +113,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/ob.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/rtl.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/interlocked.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/constants.rs
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust kernel code (${RUST_TARGET})"
 )

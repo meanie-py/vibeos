@@ -279,23 +279,25 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/win32.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/libsupp.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/misc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/access.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/accesschk.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/acl.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/audit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/client.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/objtype.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/priv.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/sd.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/semgr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/sid.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/sqos.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/srm.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/subject.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/token.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenadj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
+    # se/ — replaced by Rust (ntoskrnl-rust/src/se/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/access.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/accesschk.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/acl.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/audit.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/client.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/objtype.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/priv.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/sd.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/semgr.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/sid.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/sqos.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/srm.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/subject.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/token.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenadj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/vf/driver.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/guidobj.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/smbios.c
@@ -303,7 +305,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmidrv.c)
 
 if(DBG)
-    list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)
+    #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)  # replaced by Rust
 endif()
 
 if(REACTOS_TEST_KERNEL)

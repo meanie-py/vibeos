@@ -1,0 +1,53 @@
+# Shim manifest for se subsystem
+# Used by `python -m rustconv shims se` to generate se_rust_shims.c
+
+[forceinline]
+# se.h FORCEINLINE security descriptor helpers
+SepGetGroupFromDescriptor = "PSID (PSECURITY_DESCRIPTOR _Descriptor)"
+SepGetOwnerFromDescriptor = "PSID (PSECURITY_DESCRIPTOR _Descriptor)"
+SepGetDaclFromDescriptor = "PACL (PSECURITY_DESCRIPTOR _Descriptor)"
+SepGetSaclFromDescriptor = "PACL (PSECURITY_DESCRIPTOR _Descriptor)"
+
+# psfuncs.h FORCEINLINE
+PsGetCurrentThread = "PETHREAD NTAPI (void)"
+
+# ndk ketypes.h FORCEINLINE
+KeGetCurrentPrcb = "PKPRCB NTAPI (void)"
+
+# ex.h FORCEINLINE push lock functions
+ExAcquirePushLockExclusive = "void (PEX_PUSH_LOCK PushLock)"
+ExAcquirePushLockShared = "void (PEX_PUSH_LOCK PushLock)"
+ExReleasePushLock = "void (PEX_PUSH_LOCK PushLock)"
+ExReleasePushLockExclusive = "void (PEX_PUSH_LOCK PushLock)"
+
+# sdk/rtlfuncs.h FORCEINLINE
+RtlInitEmptyUnicodeString = "void (PUNICODE_STRING UnicodeString, PWCHAR Buffer, USHORT BufferSize)"
+
+# probe.h inline helpers (used by tokencls.c)
+DefaultQueryInfoBufferCheck = "NTSTATUS (ULONG Class, PVOID ClassList, ULONG ClassListEntries, ULONG Flags, PVOID Buffer, ULONG BufferLength, PULONG ReturnLength, PULONG_PTR ReturnLengthPtr, KPROCESSOR_MODE PreviousMode)"
+DefaultSetInfoBufferCheck = "NTSTATUS (ULONG Class, PVOID ClassList, ULONG ClassListEntries, PVOID Buffer, ULONG BufferLength, KPROCESSOR_MODE PreviousMode)"
+
+[macro]
+# ke_x.h macros
+KeEnterCriticalRegion = "void (void)"
+KeLeaveCriticalRegion = "void (void)"
+
+# se.h token lock macros — these expand to KeEnterCriticalRegion + ExAcquireResource
+# We provide them as real C functions that call the macros
+SepAcquireTokenLockExclusive = "void (PVOID Token)"
+SepAcquireTokenLockShared = "void (PVOID Token)"
+SepReleaseTokenLock = "void (PVOID Token)"
+
+# sefuncs.h macro
+SeQuerySubjectContextToken = "PACCESS_TOKEN (PSECURITY_SUBJECT_CONTEXT SubjectContext)"
+
+# ex.h push lock (macro → _ExInitializePushLock FORCEINLINE)
+ExInitializePushLock = "VOID NTAPI (PEX_PUSH_LOCK PushLock)"
+
+# ex.h rundown protection macros
+ExAcquireRundownProtection = "BOOLEAN (PEX_RUNDOWN_REF RunRef)"
+ExReleaseRundownProtection = "void (PEX_RUNDOWN_REF RunRef)"
+
+[macro_arch]
+# KeQueryInterruptTime: macro on ARM64 and amd64, real function on i386
+KeQueryInterruptTime = { sig = "ULONGLONG NTAPI (void)", arches = ["_M_ARM64", "_M_AMD64"] }

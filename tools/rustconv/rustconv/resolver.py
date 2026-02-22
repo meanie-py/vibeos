@@ -66,10 +66,31 @@ GAP_FUNCTIONS = {
     # Security
     "SeCaptureSubjectContext", "SeReleaseSubjectContext",
     "SeQuerySubjectContextToken", "SeQueryAuthenticationIdToken",
+    # Security descriptor helpers (FORCEINLINE in se.h)
+    "SepGetOwnerFromDescriptor", "SepGetGroupFromDescriptor",
+    "SepGetDaclFromDescriptor", "SepGetSaclFromDescriptor",
+    # Token lock macros (se.h)
+    "SepAcquireTokenLockExclusive", "SepAcquireTokenLockShared",
+    "SepReleaseTokenLock",
+    # Probe helpers (FORCEINLINE in probe.h)
+    "DefaultQueryInfoBufferCheck", "DefaultSetInfoBufferCheck",
     # Luid
-    "RtlEqualLuid", "SYSTEM_LUID",
+    "RtlEqualLuid", "SYSTEM_LUID", "ANONYMOUS_LOGON_LUID",
     # Status raising
     "RtlRaiseStatus",
+    # Resource lock (FORCEINLINE/macro in ex.h)
+    "ExAcquireResourceExclusiveLite", "ExAcquireResourceSharedLite",
+    "ExReleaseResourceLite", "ExInitializeResourceLite",
+    "ExDeleteResourceLite",
+    # Push lock (FORCEINLINE in ex.h)
+    "ExAcquirePushLockExclusive", "ExAcquirePushLockShared",
+    "ExReleasePushLock", "ExReleasePushLockExclusive",
+    "ExInitializePushLock",
+    # Misc inline/macro
+    "PsGetCurrentThread", "PsGetCurrentProcess",
+    "KeGetCurrentPrcb", "KeGetCurrentIrql",
+    "RtlInitEmptyUnicodeString",
+    "ObDereferenceObject", "ObReferenceObject",
 }
 
 
