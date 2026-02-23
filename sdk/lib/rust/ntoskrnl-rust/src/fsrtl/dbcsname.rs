@@ -27,19 +27,19 @@ unsafe fn FsRtlIsLeadDbcsCharacter(c: u8) -> bool {
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterLegalFat(c: u8, wild_ok: bool) -> bool {
-    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
     (flags & FSRTL_FAT_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
 }
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterWild(c: u8) -> bool {
-    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
     flags & FSRTL_WILD_CHARACTER != 0
 }
 
 #[inline(always)]
 unsafe fn FsRtlIsAnsiCharacterLegalHpfs(c: u8, wild_ok: bool) -> bool {
-    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    let flags = *super::fsrtlpc::LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr().add(c as usize);
     (flags & FSRTL_HPFS_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
 }
 

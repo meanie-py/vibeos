@@ -158,8 +158,20 @@ static LEGAL_ANSI_CHARACTER_ARRAY: [u8; 128] = [
     FSRTL_OLE_LEGAL | FSRTL_FAT_LEGAL | FSRTL_HPFS_LEGAL | FSRTL_NTFS_LEGAL, // 0x7f
 ];
 
+// The C declaration is: `const UCHAR * const FsRtlLegalAnsiCharacterArray = LegalAnsiCharacterArray;`
+// Exported as a pointer (8 bytes on amd64) that points to the 128-byte array.
+// Drivers import it as `extern const UCHAR * const *FsRtlLegalAnsiCharacterArray`
+// and double-dereference: `(*FsRtlLegalAnsiCharacterArray)[ch]`.
+pub(crate) static LEGAL_ANSI_CHARACTER_ARRAY_DATA: [u8; 128] = LEGAL_ANSI_CHARACTER_ARRAY;
+
+// Safety: this is a read-only pointer to a static array, safe to share across threads.
+#[repr(transparent)]
+struct SyncPtr(*const u8);
+unsafe impl Sync for SyncPtr {}
+unsafe impl Send for SyncPtr {}
+
 #[no_mangle]
-pub static FsRtlLegalAnsiCharacterArray: [u8; 128] = LEGAL_ANSI_CHARACTER_ARRAY;
+pub static FsRtlLegalAnsiCharacterArray: SyncPtr = SyncPtr(LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr());
 
 const FSRTL_MAX_RESOURCES: usize = 16;
 const IFS_POOL_TAG: ULONG = 0x73664946;

@@ -74,6 +74,55 @@ KdpReport(IN PKTRAP_FRAME TrapFrame,
      * (including debug service), single step and assertion failure exceptions.
      */
     ExceptionCode = ExceptionRecord->ExceptionCode;
+#ifdef _USE_DUMMY_PSEH
+    /*
+     * With DUMMY_PSEH, SEH handlers are dead code, so assertion failures
+     * (NT_ASSERT → __int2c) cannot be caught.  Skip past the trap
+     * instruction and continue instead of entering the debugger.
+     *
+     * Clang's __int2c() builtin emits INT3 + INT 2C (0xCC 0xCD 0x2C).
+     * We see STATUS_BREAKPOINT for the INT3 and STATUS_ASSERTION_FAILURE
+     * for the INT 2C, so we must handle both.  To avoid suppressing
+     * legitimate breakpoints, we only skip the INT3 when it is
+     * immediately followed by INT 2C (the __int2c signature).
+     */
+    if (ExceptionCode == STATUS_ASSERTION_FAILURE &&
+        SecondChanceException == FALSE)
+    {
+#if defined(_M_AMD64)
+        ContextRecord->Rip += 2; /* CD 2C (2 bytes) */
+#elif defined(_M_IX86)
+        ContextRecord->Eip += 2;
+#elif defined(_M_ARM64)
+        ContextRecord->Pc += 4; /* BRK #0xF001 (4 bytes) */
+#endif
+        return TRUE;
+    }
+    if (ExceptionCode == STATUS_BREAKPOINT &&
+        SecondChanceException == FALSE)
+    {
+#if defined(_M_AMD64)
+        {
+            PUCHAR Ip = (PUCHAR)ContextRecord->Rip;
+            /* Skip INT3 only when it precedes INT 2C (__int2c pattern) */
+            if (Ip[0] == 0xCC && Ip[1] == 0xCD && Ip[2] == 0x2C)
+            {
+                ContextRecord->Rip += 1;
+                return TRUE;
+            }
+        }
+#elif defined(_M_IX86)
+        {
+            PUCHAR Ip = (PUCHAR)ContextRecord->Eip;
+            if (Ip[0] == 0xCC && Ip[1] == 0xCD && Ip[2] == 0x2C)
+            {
+                ContextRecord->Eip += 1;
+                return TRUE;
+            }
+        }
+#endif
+    }
+#endif
     if ((ExceptionCode == STATUS_BREAKPOINT) ||
         (ExceptionCode == STATUS_SINGLE_STEP) ||
         (ExceptionCode == STATUS_ASSERTION_FAILURE))

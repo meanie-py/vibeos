@@ -28,10 +28,10 @@ RtlAssert(IN PVOID FailedAssertion,
     CHAR Action[2];
     CONTEXT Context;
 
-#ifdef _M_ARM64
-    /* On ARM64 early boot, there's no debugger connected and DbgPrompt
-     * will hang forever. Print first 20 assertions via DbgPrint, then
-     * silently return. */
+#ifdef _USE_DUMMY_PSEH
+    /* With DUMMY_PSEH, there's no reliable exception handling and DbgPrompt
+     * will hang forever waiting for debugger input.  Print the assertion
+     * and return so boot can continue. */
     {
         static volatile LONG AssertCount = 0;
         LONG Count = InterlockedIncrement(&AssertCount);
