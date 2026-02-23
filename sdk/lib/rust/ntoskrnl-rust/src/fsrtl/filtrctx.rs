@@ -1,28 +1,54 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExInitializeFastMutex, ExReleaseFastMutex, FSRTL_PER_FILEOBJECT_CONTEXT, FSRTL_PER_STREAM_CONTEXT, IoChangeFileObjectFilterContext, IoGetFileObjectFilterContext, LOGICAL, MmIsFileObjectAPagingFile, PFILE_OBJECT, PFSRTL_ADVANCED_FCB_HEADER, PFSRTL_PER_FILEOBJECT_CONTEXT, PFSRTL_PER_STREAM_CONTEXT};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{
+    ExAcquireFastMutex, ExInitializeFastMutex, ExReleaseFastMutex, FSRTL_PER_FILEOBJECT_CONTEXT,
+    FSRTL_PER_STREAM_CONTEXT, IoChangeFileObjectFilterContext, IoGetFileObjectFilterContext,
+    LOGICAL, MmIsFileObjectAPagingFile, PFILE_OBJECT, PFSRTL_ADVANCED_FCB_HEADER,
+    PFSRTL_PER_FILEOBJECT_CONTEXT, PFSRTL_PER_STREAM_CONTEXT, _FAST_MUTEX, _LIST_ENTRY,
+};
+use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::mm::NonPagedPool;
+
+type FAST_MUTEX = _FAST_MUTEX;
+type LIST_ENTRY = _LIST_ENTRY;
+
+#[repr(C)]
+struct FILE_OBJECT_FILTER_CONTEXTS {
+    FilterContextsMutex: FAST_MUTEX,
+    FilterContexts: LIST_ENTRY,
+}
+
+type PFILE_OBJECT_FILTER_CONTEXTS = *mut FILE_OBJECT_FILTER_CONTEXTS;
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlPTeardownPerFileObjectContexts(FileObject: PFILE_OBJECT) {
-    let mut FOContext: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
+    let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
 
-    FOContext = IoGetFileObjectFilterContext(FileObject);
-    if FOContext.is_null() {
+    if FileObject.is_null() {
         return;
     }
 
-    IoChangeFileObjectFilterContext(FileObject, FOContext, 0u8);
-    
-    ExFreePoolWithTag(FOContext as _, 0x58434F46u32);
+    fo_context = IoGetFileObjectFilterContext(FileObject) as PFILE_OBJECT_FILTER_CONTEXTS;
+    if fo_context.is_null() {
+        return;
+    }
+
+    let status = IoChangeFileObjectFilterContext(FileObject, fo_context as PVOID, 0u8);
+    if status != STATUS_SUCCESS {
+        return;
+    }
+
+    if !IsListEmpty(core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY) {
+        return;
+    }
+
+    ExFreePoolWithTag(fo_context as PVOID, u32::from_be_bytes(*b"FOCX"));
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsPagingFile(FileObject: PFILE_OBJECT) -> LOGICAL {
-    MmIsFileObjectAPagingFile(FileObject)
+    MmIsFileObjectAPagingFile(FileObject) as LOGICAL
 }
 
 #[no_mangle]
@@ -31,46 +57,48 @@ pub unsafe extern "system" fn FsRtlLookupPerFileObjectContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_FILEOBJECT_CONTEXT {
-    let mut NextEntry: PLIST_ENTRY;
-    let mut FOContext: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
-    let mut TmpPerFOContext: PFSRTL_PER_FILEOBJECT_CONTEXT;
-    let mut PerFOContext: PFSRTL_PER_FILEOBJECT_CONTEXT = core::ptr::null_mut();
+    let mut next_entry: PLIST_ENTRY;
+    let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
+    let mut tmp_per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT;
+    let mut per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT = core::ptr::null_mut();
 
     if FileObject.is_null() {
         return core::ptr::null_mut();
     }
 
-    FOContext = IoGetFileObjectFilterContext(FileObject);
-    if FOContext.is_null() {
+    fo_context = IoGetFileObjectFilterContext(FileObject) as PFILE_OBJECT_FILTER_CONTEXTS;
+    if fo_context.is_null() {
         return core::ptr::null_mut();
     }
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FOContext).FilterContexts)) == 0 {
-        NextEntry = (*FOContext).FilterContexts.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*FOContext).FilterContexts) {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY) {
+        next_entry = (*fo_context).FilterContexts.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY {
             if OwnerId.is_null() && InstanceId.is_null() {
-                PerFOContext = NextEntry as PFSRTL_PER_FILEOBJECT_CONTEXT;
+                per_fo_context = next_entry as PFSRTL_PER_FILEOBJECT_CONTEXT;
                 break;
             } else {
-                TmpPerFOContext = (NextEntry as *mut u8).offset(
-                    -(core::mem::offset_of!(FSRTL_PER_FILEOBJECT_CONTEXT, Links) as isize)
-                ) as PFSRTL_PER_FILEOBJECT_CONTEXT;
-                
-                if (!InstanceId.is_null() && (*TmpPerFOContext).InstanceId == InstanceId && (*TmpPerFOContext).OwnerId == OwnerId) ||
-                   (!OwnerId.is_null() && (*TmpPerFOContext).OwnerId == OwnerId) {
-                    PerFOContext = TmpPerFOContext;
+                tmp_per_fo_context = (next_entry as usize
+                    - core::mem::offset_of!(FSRTL_PER_FILEOBJECT_CONTEXT, Links))
+                    as PFSRTL_PER_FILEOBJECT_CONTEXT;
+                if (!InstanceId.is_null()
+                    && (*tmp_per_fo_context).InstanceId == InstanceId
+                    && (*tmp_per_fo_context).OwnerId == OwnerId)
+                    || (!OwnerId.is_null() && (*tmp_per_fo_context).OwnerId == OwnerId)
+                {
+                    per_fo_context = tmp_per_fo_context;
                     break;
                 }
             }
-            NextEntry = (*NextEntry).Flink;
+            next_entry = (*next_entry).Flink;
         }
     }
 
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
 
-    PerFOContext
+    per_fo_context
 }
 
 #[no_mangle]
@@ -79,36 +107,42 @@ pub unsafe extern "system" fn FsRtlLookupPerStreamContextInternal(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_STREAM_CONTEXT {
-    let mut NextEntry: PLIST_ENTRY;
-    let mut TmpPerStreamContext: PFSRTL_PER_STREAM_CONTEXT;
-    let mut PerStreamContext: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
+    let mut next_entry: PLIST_ENTRY;
+    let mut tmp_per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
+    let mut per_stream_context: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
+
+    if AdvFcbHeader.is_null() {
+        return core::ptr::null_mut();
+    }
 
     ExAcquireFastMutex((*AdvFcbHeader).FastMutex);
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts)) == 0 {
-        NextEntry = (*AdvFcbHeader).FilterContexts.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY) {
+        next_entry = (*AdvFcbHeader).FilterContexts.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY {
             if OwnerId.is_null() && InstanceId.is_null() {
-                PerStreamContext = NextEntry as PFSRTL_PER_STREAM_CONTEXT;
+                per_stream_context = next_entry as PFSRTL_PER_STREAM_CONTEXT;
                 break;
             } else {
-                TmpPerStreamContext = (NextEntry as *mut u8).offset(
-                    -(core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links) as isize)
-                ) as PFSRTL_PER_STREAM_CONTEXT;
-                
-                if (!InstanceId.is_null() && (*TmpPerStreamContext).InstanceId == InstanceId && (*TmpPerStreamContext).OwnerId == OwnerId) ||
-                   (!OwnerId.is_null() && (*TmpPerStreamContext).OwnerId == OwnerId) {
-                    PerStreamContext = TmpPerStreamContext;
+                tmp_per_stream_context = (next_entry as usize
+                    - core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links))
+                    as PFSRTL_PER_STREAM_CONTEXT;
+                if (!InstanceId.is_null()
+                    && (*tmp_per_stream_context).InstanceId == InstanceId
+                    && (*tmp_per_stream_context).OwnerId == OwnerId)
+                    || (!OwnerId.is_null() && (*tmp_per_stream_context).OwnerId == OwnerId)
+                {
+                    per_stream_context = tmp_per_stream_context;
                     break;
                 }
             }
-            NextEntry = (*NextEntry).Flink;
+            next_entry = (*next_entry).Flink;
         }
     }
 
     ExReleaseFastMutex((*AdvFcbHeader).FastMutex);
 
-    PerStreamContext
+    per_stream_context
 }
 
 #[no_mangle]
@@ -116,48 +150,48 @@ pub unsafe extern "system" fn FsRtlInsertPerFileObjectContext(
     FileObject: PFILE_OBJECT,
     Ptr: PFSRTL_PER_FILEOBJECT_CONTEXT,
 ) -> NTSTATUS {
-    let mut FOContext: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
+    let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
+    let status: NTSTATUS;
 
     if FileObject.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
 
-    if ((*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION) == 0 {
+    if ((*FileObject).Flags & 0x00000020) == 0 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
-    FOContext = IoGetFileObjectFilterContext(FileObject);
-    if FOContext.is_null() {
-        FOContext = ExAllocatePoolWithTag(
+    fo_context = IoGetFileObjectFilterContext(FileObject) as PFILE_OBJECT_FILTER_CONTEXTS;
+    if fo_context.is_null() {
+        fo_context = ExAllocatePoolWithTag(
             NonPagedPool,
             core::mem::size_of::<FILE_OBJECT_FILTER_CONTEXTS>() as SIZE_T,
-            0x58434F46,
+            u32::from_be_bytes(*b"FOCX"),
         ) as PFILE_OBJECT_FILTER_CONTEXTS;
-        if FOContext.is_null() {
+        if fo_context.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        ExInitializeFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
-        InitializeListHead(core::ptr::addr_of_mut!((*FOContext).FilterContexts));
+        ExInitializeFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
+        InitializeListHead(core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY);
 
-        Status = IoChangeFileObjectFilterContext(FileObject, FOContext as PVOID, 1u8);
-        if NT_SUCCESS(Status) == 0 {
-            ExFreePoolWithTag(FOContext as PVOID, 0x58434F46);
+        status = IoChangeFileObjectFilterContext(FileObject, fo_context as PVOID, 1u8);
+        if status < 0 {
+            ExFreePoolWithTag(fo_context as PVOID, u32::from_be_bytes(*b"FOCX"));
 
-            FOContext = IoGetFileObjectFilterContext(FileObject);
-            if FOContext.is_null() {
+            fo_context = IoGetFileObjectFilterContext(FileObject) as PFILE_OBJECT_FILTER_CONTEXTS;
+            if fo_context.is_null() {
                 return STATUS_UNSUCCESSFUL;
             }
         }
     }
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
     InsertHeadList(
-        core::ptr::addr_of_mut!((*FOContext).FilterContexts),
-        core::ptr::addr_of_mut!((*Ptr).Links),
+        core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*Ptr).Links) as PLIST_ENTRY,
     );
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
 
     STATUS_SUCCESS
 }
@@ -167,14 +201,14 @@ pub unsafe extern "system" fn FsRtlInsertPerStreamContext(
     AdvFcbHeader: PFSRTL_ADVANCED_FCB_HEADER,
     PerStreamContext: PFSRTL_PER_STREAM_CONTEXT,
 ) -> NTSTATUS {
-    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & 0x40) == 0 {
-        return 0xC00000E0u32 as NTSTATUS;
+    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & 0x00000040) == 0 {
+        return STATUS_INVALID_DEVICE_REQUEST;
     }
 
     ExAcquireFastMutex((*AdvFcbHeader).FastMutex);
     InsertHeadList(
-        core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts),
-        core::ptr::addr_of_mut!((*PerStreamContext).Links),
+        core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*PerStreamContext).Links) as PLIST_ENTRY,
     );
     ExReleaseFastMutex((*AdvFcbHeader).FastMutex);
     STATUS_SUCCESS
@@ -186,47 +220,52 @@ pub unsafe extern "system" fn FsRtlRemovePerFileObjectContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_FILEOBJECT_CONTEXT {
-    let mut NextEntry: PLIST_ENTRY;
-    let mut FOContext: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
-    let mut TmpPerFOContext: PFSRTL_PER_FILEOBJECT_CONTEXT;
-    let mut PerFOContext: PFSRTL_PER_FILEOBJECT_CONTEXT = core::ptr::null_mut();
+    let mut next_entry: PLIST_ENTRY;
+    let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
+    let mut tmp_per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT;
+    let mut per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT = core::ptr::null_mut();
 
     if FileObject.is_null() {
         return core::ptr::null_mut();
     }
 
-    FOContext = IoGetFileObjectFilterContext(FileObject);
-    if FOContext.is_null() {
+    fo_context = IoGetFileObjectFilterContext(FileObject) as PFILE_OBJECT_FILTER_CONTEXTS;
+    if fo_context.is_null() {
         return core::ptr::null_mut();
     }
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*FOContext).FilterContexts)) == 0 {
-        NextEntry = (*FOContext).FilterContexts.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*FOContext).FilterContexts) {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY) {
+        next_entry = (*fo_context).FilterContexts.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*fo_context).FilterContexts) as PLIST_ENTRY {
             if OwnerId.is_null() && InstanceId.is_null() {
-                PerFOContext = NextEntry as PFSRTL_PER_FILEOBJECT_CONTEXT;
+                per_fo_context = next_entry as PFSRTL_PER_FILEOBJECT_CONTEXT;
                 break;
             } else {
-                TmpPerFOContext = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(FSRTL_PER_FILEOBJECT_CONTEXT, Links) as isize)) as PFSRTL_PER_FILEOBJECT_CONTEXT;
-                if (!InstanceId.is_null() && (*TmpPerFOContext).InstanceId == InstanceId && (*TmpPerFOContext).OwnerId == OwnerId) ||
-                   (!OwnerId.is_null() && (*TmpPerFOContext).OwnerId == OwnerId) {
-                    PerFOContext = TmpPerFOContext;
+                tmp_per_fo_context = (next_entry as usize
+                    - core::mem::offset_of!(FSRTL_PER_FILEOBJECT_CONTEXT, Links))
+                    as PFSRTL_PER_FILEOBJECT_CONTEXT;
+                if (!InstanceId.is_null()
+                    && (*tmp_per_fo_context).InstanceId == InstanceId
+                    && (*tmp_per_fo_context).OwnerId == OwnerId)
+                    || (!OwnerId.is_null() && (*tmp_per_fo_context).OwnerId == OwnerId)
+                {
+                    per_fo_context = tmp_per_fo_context;
                     break;
                 }
             }
-            NextEntry = (*NextEntry).Flink;
+            next_entry = (*next_entry).Flink;
         }
 
-        if !PerFOContext.is_null() {
-            RemoveEntryList(core::ptr::addr_of_mut!((*PerFOContext).Links));
+        if !per_fo_context.is_null() {
+            RemoveEntryList(core::ptr::addr_of_mut!((*per_fo_context).Links) as PLIST_ENTRY);
         }
     }
 
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*FOContext).FilterContextsMutex));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*fo_context).FilterContextsMutex));
 
-    PerFOContext
+    per_fo_context
 }
 
 #[no_mangle]
@@ -235,69 +274,76 @@ pub unsafe extern "system" fn FsRtlRemovePerStreamContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_STREAM_CONTEXT {
-    let mut NextEntry: PLIST_ENTRY;
-    let mut TmpPerStreamContext: PFSRTL_PER_STREAM_CONTEXT;
-    let mut PerStreamContext: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
+    let mut next_entry: PLIST_ENTRY;
+    let mut tmp_per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
+    let mut per_stream_context: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
 
     if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & 0x00000040) == 0 {
         return core::ptr::null_mut();
     }
 
     ExAcquireFastMutex((*AdvFcbHeader).FastMutex);
-    
-    if IsListEmpty(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts)) == 0 {
-        NextEntry = (*AdvFcbHeader).FilterContexts.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) {
+    if !IsListEmpty(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY) {
+        next_entry = (*AdvFcbHeader).FilterContexts.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY {
             if OwnerId.is_null() && InstanceId.is_null() {
-                PerStreamContext = NextEntry as PFSRTL_PER_STREAM_CONTEXT;
+                per_stream_context = next_entry as PFSRTL_PER_STREAM_CONTEXT;
                 break;
             } else {
-                TmpPerStreamContext = (NextEntry as *mut u8).offset(
-                    -(core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links) as isize)
-                ) as PFSRTL_PER_STREAM_CONTEXT;
-                
-                if (!InstanceId.is_null() && (*TmpPerStreamContext).InstanceId == InstanceId && (*TmpPerStreamContext).OwnerId == OwnerId) ||
-                   (!OwnerId.is_null() && (*TmpPerStreamContext).OwnerId == OwnerId) {
-                    PerStreamContext = TmpPerStreamContext;
+                tmp_per_stream_context = (next_entry as usize
+                    - core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links))
+                    as PFSRTL_PER_STREAM_CONTEXT;
+                if (!InstanceId.is_null()
+                    && (*tmp_per_stream_context).InstanceId == InstanceId
+                    && (*tmp_per_stream_context).OwnerId == OwnerId)
+                    || (!OwnerId.is_null() && (*tmp_per_stream_context).OwnerId == OwnerId)
+                {
+                    per_stream_context = tmp_per_stream_context;
                     break;
                 }
             }
-            NextEntry = (*NextEntry).Flink;
+            next_entry = (*next_entry).Flink;
         }
 
-        if !PerStreamContext.is_null() {
-            RemoveEntryList(core::ptr::addr_of_mut!((*PerStreamContext).Links));
+        if !per_stream_context.is_null() {
+            RemoveEntryList(core::ptr::addr_of_mut!((*per_stream_context).Links) as PLIST_ENTRY);
         }
     }
-    
     ExReleaseFastMutex((*AdvFcbHeader).FastMutex);
 
-    PerStreamContext
+    per_stream_context
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlTeardownPerStreamContexts(AdvFcbHeader: PFSRTL_ADVANCED_FCB_HEADER) {
-    let mut IsMutexLocked: u8 = 0u8;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut PerStreamContext: PFSRTL_PER_STREAM_CONTEXT;
+pub unsafe extern "system" fn FsRtlTeardownPerStreamContexts(
+    AdvFcbHeader: PFSRTL_ADVANCED_FCB_HEADER,
+) {
+    let mut next_entry: PLIST_ENTRY;
+    let mut is_mutex_locked: BOOLEAN = 0u8;
+    let per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
 
     ExAcquireFastMutex((*AdvFcbHeader).FastMutex);
-    IsMutexLocked = 1u8;
+    is_mutex_locked = 1u8;
 
-    while IsListEmpty(&mut (*AdvFcbHeader).FilterContexts) == 0u8 {
-        NextEntry = RemoveHeadList(&mut (*AdvFcbHeader).FilterContexts);
-        PerStreamContext = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links) as isize)) as PFSRTL_PER_STREAM_CONTEXT;
+    while !IsListEmpty(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY) {
+        next_entry =
+            RemoveHeadList(core::ptr::addr_of_mut!((*AdvFcbHeader).FilterContexts) as PLIST_ENTRY);
+        let per_stream_context = (next_entry as usize
+            - core::mem::offset_of!(FSRTL_PER_STREAM_CONTEXT, Links))
+            as PFSRTL_PER_STREAM_CONTEXT;
 
         ExReleaseFastMutex((*AdvFcbHeader).FastMutex);
-        IsMutexLocked = 0u8;
+        is_mutex_locked = 0u8;
 
-        ((*PerStreamContext).FreeCallback.unwrap())(PerStreamContext);
+        if let Some(callback) = (*per_stream_context).FreeCallback {
+            callback(per_stream_context as PVOID);
+        }
 
         ExAcquireFastMutex((*AdvFcbHeader).FastMutex);
-        IsMutexLocked = 1u8;
+        is_mutex_locked = 1u8;
     }
 
-    if IsMutexLocked != 0u8 {
+    if is_mutex_locked != 0 {
         ExReleaseFastMutex((*AdvFcbHeader).FastMutex);
     }
 }

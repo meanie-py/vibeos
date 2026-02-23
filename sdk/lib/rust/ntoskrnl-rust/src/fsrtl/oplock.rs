@@ -1,808 +1,806 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::ke::*;
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ob::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, ExAcquireFastMutex, ExAcquireFastMutexUnsafe, ExInitializeFastMutex, ExReleaseFastMutex, ExReleaseFastMutexUnsafe, FAST_MUTEX, IRP, IoAcquireCancelSpinLock, IoGetCurrentIrpStackLocation, IoIsOperationSynchronous, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, IofCompleteRequest, KEVENT, KeInitializeEvent, KeWaitForSingleObject, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, POPLOCK, POPLOCK_FS_PREPOST_IRP, POPLOCK_WAIT_COMPLETE_ROUTINE};
-use core::ffi::c_void;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ddk::{
+    ACCESS_MASK,
+    ExAcquireFastMutex,
+    ExAcquireFastMutexUnsafe,
+    ExInitializeFastMutex,
+    ExReleaseFastMutex,
+    ExReleaseFastMutexUnsafe,
+    FAST_MUTEX,
+    IRP,
+    IoAcquireCancelSpinLock,
+    IoGetCurrentIrpStackLocation,
+    IoIsOperationSynchronous,
+    IoMarkIrpPending,
+    IoReleaseCancelSpinLock,
+    IoSetCancelRoutine,
+    IofCompleteRequest,
+    KEVENT,
+    KeInitializeEvent,
+    KeWaitForSingleObject,
+    PDEVICE_OBJECT,
+    PIO_STACK_LOCATION,
+    PIRP,
+    PKEVENT,
+    POPLOCK,
+    POPLOCK_FS_PREPOST_IRP,
+    POPLOCK_WAIT_COMPLETE_ROUTINE,
+    _ETHREAD,
+    PFILE_OBJECT,
+};
+use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::ke::KeSetEvent;
+use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
+use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
+use ntkrnl_sys::rtl::RtlZeroMemory;
 
 extern "system" {
-    fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8);
-    fn BooleanFlagOn(Flags: ULONG, Mask: ULONG) -> BOOLEAN;
+    fn KeGetCurrentThread() -> ntkrnl_sys::ddk::PKTHREAD;
 }
 
-unsafe fn FsRtlNotifyCompletion(Context: PVOID, Irp: PIRP) {
+extern "system" {
+    fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i32);
+}
+
+const NO_OPLOCK: ULONG = 0x1;
+const LEVEL_1_OPLOCK: ULONG = 0x2;
+const BATCH_OPLOCK: ULONG = 0x4;
+const FILTER_OPLOCK: ULONG = 0x8;
+const LEVEL_2_OPLOCK: ULONG = 0x10;
+
+const EXCLUSIVE_LOCK: ULONG = 0x40;
+const PENDING_LOCK: ULONG = 0x80;
+
+const BROKEN_TO_LEVEL_2: ULONG = 0x100;
+const BROKEN_TO_NONE: ULONG = 0x200;
+const BROKEN_TO_NONE_FROM_LEVEL_2: ULONG = 0x400;
+const BROKEN_TO_CLOSE_PENDING: ULONG = 0x800;
+const BROKEN_ANY: ULONG = BROKEN_TO_LEVEL_2 | BROKEN_TO_NONE | BROKEN_TO_NONE_FROM_LEVEL_2 | BROKEN_TO_CLOSE_PENDING;
+
+const TAG_OPLOCK: ULONG = 0x4B4C504F;
+const IO_DISK_INCREMENT: i32 = 1;
+const IO_NO_INCREMENT: i32 = 0;
+
+#[repr(C)]
+struct INTERNAL_OPLOCK {
+    ExclusiveIrp: PIRP,
+    FileObject: PFILE_OBJECT,
+    SharedListHead: LIST_ENTRY,
+    WaitListHead: LIST_ENTRY,
+    Flags: ULONG,
+    IntLock: *mut FAST_MUTEX,
+}
+
+type PINTERNAL_OPLOCK = *mut INTERNAL_OPLOCK;
+
+#[repr(C)]
+struct WAIT_CONTEXT {
+    WaitListEntry: LIST_ENTRY,
+    Irp: PIRP,
+    CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
+    CompletionContext: PVOID,
+    Reserved: ULONG,
+    SavedInformation: ULONG_PTR,
+}
+
+type PWAIT_CONTEXT = *mut WAIT_CONTEXT;
+
+unsafe extern "system" fn FsRtlNotifyCompletion(Context: PVOID, Irp: PIRP) {
     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlCompletionRoutinePriv(
-    Context: PVOID,
-    Irp: PIRP,
-) {
-    let WaitEvent: PKEVENT = Context as PKEVENT;
-    KeSetEvent(WaitEvent, 0i8, 0u8);
+unsafe extern "system" fn FsRtlCompletionRoutinePriv(Context: PVOID, Irp: PIRP) {
+    let wait_event = Context as PKEVENT;
+    KeSetEvent(wait_event as PVOID, IO_NO_INCREMENT, 0u8);
 }
 
-pub unsafe fn FsRtlRemoveAndCompleteWaitIrp(WaitCtx: PWAIT_CONTEXT) {
-    let mut Irp: PIRP;
+unsafe fn FsRtlRemoveAndCompleteWaitIrp(wait_ctx: PWAIT_CONTEXT) {
+    RemoveEntryList(core::ptr::addr_of_mut!((*wait_ctx).WaitListEntry) as PLIST_ENTRY);
+    let irp = (*wait_ctx).Irp;
 
-    RemoveEntryList(core::ptr::addr_of_mut!((*WaitCtx).WaitListEntry));
-    Irp = (*WaitCtx).Irp;
+    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+    IoSetCancelRoutine(irp, None);
+    IoReleaseCancelSpinLock((*irp).CancelIrql);
 
-    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-    IoSetCancelRoutine(Irp, None);
-    IoReleaseCancelSpinLock((*Irp).CancelIrql);
+    (*irp).IoStatus.Information = (*wait_ctx).SavedInformation as _;
+    (*irp).IoStatus.__bindgen_anon_1.Status = if (*irp).Cancel != 0 {
+        STATUS_CANCELLED
+    } else {
+        STATUS_SUCCESS
+    };
 
-    (*Irp).IoStatus.__bindgen_anon_1.Information = (*WaitCtx).SavedInformation;
-    (*Irp).IoStatus.__bindgen_anon_1.Status = if (*Irp).Cancel != 0 { STATUS_CANCELLED } else { STATUS_SUCCESS };
+    ((*wait_ctx).CompletionRoutine.unwrap())((*wait_ctx).CompletionContext, irp);
 
-    ((*WaitCtx).CompletionRoutine.unwrap())((*WaitCtx).CompletionContext, Irp);
-
-    ExFreePoolWithTag(WaitCtx as *mut core::ffi::c_void, TAG_OPLOCK);
+    ExFreePoolWithTag(wait_ctx as PVOID, TAG_OPLOCK);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlCancelWaitIrp(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) {
-    let Oplock: PINTERNAL_OPLOCK;
-    let mut NextEntry: PLIST_ENTRY;
-    let WaitCtx: PWAIT_CONTEXT;
-
-    Oplock = (*Irp).IoStatus.__bindgen_anon_1.Information as PINTERNAL_OPLOCK;
+unsafe extern "system" fn FsRtlCancelWaitIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) {
+    let oplock = (*Irp).IoStatus.Information as PINTERNAL_OPLOCK;
 
     IoSetCancelRoutine(Irp, None);
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
-    ExAcquireFastMutex((*Oplock).IntLock);
-    NextEntry = (*(*Oplock).WaitListHead).Flink;
-    while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-        let WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(_WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
+    ExAcquireFastMutex((*oplock).IntLock);
+    let mut next_entry = (*oplock).WaitListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+        let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
 
-        if (*(*WaitCtx).Irp).Cancel != 0 {
-            FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
+        if (*(*wait_ctx).Irp).Cancel != 0 {
+            FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
         }
 
-        NextEntry = (*NextEntry).Flink;
+        next_entry = (*next_entry).Flink;
     }
-    ExReleaseFastMutex((*Oplock).IntLock);
+    ExReleaseFastMutex((*oplock).IntLock);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlWaitOnIrp(
-    Oplock: PINTERNAL_OPLOCK,
-    Irp: PIRP,
-    CompletionContext: PVOID,
-    CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
-    PostIrpRoutine: POPLOCK_FS_PREPOST_IRP,
-    WaitEvent: PKEVENT,
+unsafe fn FsRtlWaitOnIrp(
+    oplock: PINTERNAL_OPLOCK,
+    irp: PIRP,
+    completion_context: PVOID,
+    completion_routine: POPLOCK_WAIT_COMPLETE_ROUTINE,
+    post_irp_routine: POPLOCK_FS_PREPOST_IRP,
+    wait_event: PKEVENT,
 ) {
-    let mut Locked: BOOLEAN;
-    let WaitCtx: PWAIT_CONTEXT;
+    let mut locked = true;
 
-    Locked = 1u8;
-
-    WaitCtx = ExAllocatePoolWithTag(
+    let wait_ctx = ExAllocatePoolWithTag(
         PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
         core::mem::size_of::<WAIT_CONTEXT>(),
         TAG_OPLOCK,
     ) as PWAIT_CONTEXT;
-    (*WaitCtx).Irp = Irp;
-    (*WaitCtx).SavedInformation = (*Irp).IoStatus.__bindgen_anon_1.Information;
+    (*wait_ctx).Irp = irp;
+    (*wait_ctx).SavedInformation = (*irp).IoStatus.Information as usize;
 
-    if CompletionRoutine.is_some() {
-        (*WaitCtx).CompletionRoutine = CompletionRoutine;
-        (*WaitCtx).CompletionContext = CompletionContext;
+    if completion_routine.is_some() {
+        (*wait_ctx).CompletionRoutine = completion_routine;
+        (*wait_ctx).CompletionContext = completion_context;
     } else {
-        (*WaitCtx).CompletionRoutine = Some(FsRtlCompletionRoutinePriv);
-        (*WaitCtx).CompletionContext = WaitEvent as PVOID;
-        KeInitializeEvent(WaitEvent, _EVENT_TYPE_NotificationEvent, 0u8);
+        (*wait_ctx).CompletionRoutine = Some(abi_cast!(FsRtlCompletionRoutinePriv));
+        (*wait_ctx).CompletionContext = wait_event as PVOID;
+        KeInitializeEvent(wait_event, 0, 0u8);
     }
 
-    if PostIrpRoutine.is_some() {
-        PostIrpRoutine.unwrap()(CompletionContext, Irp);
+    if let Some(post_routine) = post_irp_routine {
+        post_routine(completion_context, irp);
     }
 
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
 
     InsertHeadList(
-        core::ptr::addr_of_mut!((*Oplock).WaitListHead),
-        core::ptr::addr_of_mut!((*WaitCtx).WaitListEntry),
+        core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*wait_ctx).WaitListEntry) as PLIST_ENTRY,
     );
 
-    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-    (*Irp).IoStatus.__bindgen_anon_1.Information = Oplock as ULONG_PTR;
+    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+    (*irp).IoStatus.Information = oplock as _;
 
-    if (*Irp).Cancel != 0 {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
-        Locked = 0u8;
+    if (*irp).Cancel != 0 {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
+        locked = false;
 
-        if CompletionRoutine.is_some() {
-            IoMarkIrpPending(Irp);
+        if completion_routine.is_some() {
+            IoMarkIrpPending(irp);
         }
-        FsRtlCancelWaitIrp(core::ptr::null_mut(), Irp);
+        FsRtlCancelWaitIrp(core::ptr::null_mut(), irp);
     } else {
-        IoSetCancelRoutine(Irp, Some(FsRtlCancelWaitIrp));
-        IoReleaseCancelSpinLock((*Irp).CancelIrql);
-        if CompletionRoutine.is_some() {
-            IoMarkIrpPending(Irp);
+        IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelWaitIrp)));
+        IoReleaseCancelSpinLock((*irp).CancelIrql);
+        if completion_routine.is_some() {
+            IoMarkIrpPending(irp);
         } else {
-            ExReleaseFastMutexUnsafe((*Oplock).IntLock);
-            Locked = 0u8;
+            ExReleaseFastMutexUnsafe((*oplock).IntLock);
+            locked = false;
             KeWaitForSingleObject(
-                WaitEvent as PVOID,
-                _KWAIT_REASON_Executive,
-                0i32,
+                wait_event as PVOID,
+                0,
+                0i8,
                 0u8,
                 core::ptr::null_mut(),
             );
         }
     }
 
-    if Locked != 0 {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if locked {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlOplockBreakNotify(
-    Oplock: PINTERNAL_OPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
+unsafe fn FsRtlOplockBreakNotify(
+    oplock: PINTERNAL_OPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
 ) -> NTSTATUS {
-
-    const IO_DISK_INCREMENT: i8 = 1;
-    const BROKEN_TO_LEVEL_2: ULONG = 0x00000008;
-    const PENDING_LOCK: ULONG = 0x00000004;
-    const NO_OPLOCK: ULONG = 0x00000000;
-
-    if Oplock.is_null() {
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+    if oplock.is_null() {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
         return STATUS_SUCCESS;
     }
 
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
-    if BooleanFlagOn((*Oplock).Flags, BROKEN_TO_LEVEL_2) == 0 {
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
+    if ((*oplock).Flags & BROKEN_TO_LEVEL_2) == 0 {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
     }
 
-    if BooleanFlagOn((*Oplock).Flags, PENDING_LOCK) != 0 {
-        (*Oplock).FileObject = core::ptr::null_mut();
-        (*Oplock).Flags = NO_OPLOCK;
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if ((*oplock).Flags & PENDING_LOCK) != 0 {
+        (*oplock).FileObject = core::ptr::null_mut();
+        (*oplock).Flags = NO_OPLOCK;
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
     }
 
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-    FsRtlWaitOnIrp(Oplock, Irp, core::ptr::null_mut(), FsRtlNotifyCompletion, core::ptr::null_mut(), core::ptr::null_mut());
+    (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    FsRtlWaitOnIrp(
+        oplock,
+        irp,
+        core::ptr::null_mut(),
+        Some(abi_cast!(FsRtlNotifyCompletion)),
+        None,
+        core::ptr::null_mut(),
+    );
     STATUS_SUCCESS
 }
 
-unsafe fn FsRtlRemoveAndCompleteIrp(Irp: PIRP) {
-    let Stack: PIO_STACK_LOCATION;
+unsafe fn FsRtlRemoveAndCompleteIrp(irp: PIRP) {
+    let stack = IoGetCurrentIrpStackLocation(irp);
 
-    Stack = IoGetCurrentIrpStackLocation(Irp);
+    ObDereferenceObject((*stack).FileObject as PVOID);
 
-    ObDereferenceObject((*Stack).FileObject as *mut core::ffi::c_void);
+    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+    IoSetCancelRoutine(irp, None);
+    IoReleaseCancelSpinLock((*irp).CancelIrql);
 
-    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-    IoSetCancelRoutine(Irp, None);
-    IoReleaseCancelSpinLock((*Irp).CancelIrql);
+    RemoveEntryList(core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY);
 
-    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry));
+    (*irp).IoStatus.Information = 3;
+    (*irp).IoStatus.__bindgen_anon_1.Status = if (*irp).Cancel != 0 {
+        STATUS_CANCELLED
+    } else {
+        STATUS_SUCCESS
+    };
 
-    (*Irp).IoStatus.__bindgen_anon_1.Information = 4;
-    (*Irp).IoStatus.__bindgen_anon_2.__bindgen_anon_1.Status = if (*Irp).Cancel != 0 { 0xC0000120u32 as i32 } else { STATUS_SUCCESS };
-
-    IoCompleteRequest(Irp, 1);
+    IoCompleteRequest(irp, IO_DISK_INCREMENT);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlCancelOplockIIIrp(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) {
-    let Oplock: PINTERNAL_OPLOCK;
-    let mut NextEntry: PLIST_ENTRY;
-    let ListIrp: PIRP;
-    let mut Removed: u8;
-
-    Oplock = (*Irp).IoStatus.__bindgen_anon_1.Information as PINTERNAL_OPLOCK;
+unsafe extern "system" fn FsRtlCancelOplockIIIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) {
+    let oplock = (*Irp).IoStatus.Information as PINTERNAL_OPLOCK;
 
     IoSetCancelRoutine(Irp, None);
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
-    Removed = 0u8;
-    ExAcquireFastMutex((*Oplock).IntLock);
-    
-    NextEntry = (*Oplock).SharedListHead.Flink;
-    while NextEntry != core::ptr::addr_of_mut!((*Oplock).SharedListHead) {
-        let ListIrp = (NextEntry as *mut u8).offset(
-            -(core::mem::offset_of!(IRP, Tail) as isize
-              + core::mem::offset_of!(_IO_STATUS_BLOCK, __bindgen_anon_2) as isize
-              + core::mem::offset_of!(_IRP__bindgen_ty_1, ListEntry) as isize)
-        ) as PIRP;
+    let mut removed = false;
+    ExAcquireFastMutex((*oplock).IntLock);
+    let mut next_entry = (*oplock).SharedListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY {
+        let list_irp = ((next_entry as usize) - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
 
-        if (*ListIrp).Cancel != 0 {
-            FsRtlRemoveAndCompleteIrp(ListIrp);
-            Removed = 1u8;
+        if (*list_irp).Cancel != 0 {
+            FsRtlRemoveAndCompleteIrp(list_irp);
+            removed = true;
         }
 
-        NextEntry = (*NextEntry).Flink;
+        next_entry = (*next_entry).Flink;
     }
 
-    if Removed != 0 && IsListEmpty(core::ptr::addr_of_mut!((*Oplock).SharedListHead)) != 0 {
-        (*Oplock).Flags = NO_OPLOCK;
+    if removed && IsListEmpty(core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY) {
+        (*oplock).Flags = NO_OPLOCK;
     }
-    
-    ExReleaseFastMutex((*Oplock).IntLock);
+    ExReleaseFastMutex((*oplock).IntLock);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlAcknowledgeOplockBreak(
-    Oplock: PINTERNAL_OPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
-    SwitchToLevel2: u8,
+unsafe fn FsRtlAcknowledgeOplockBreak(
+    oplock: PINTERNAL_OPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
+    switch_to_level2: BOOLEAN,
 ) -> NTSTATUS {
-    let mut NextEntry: PLIST_ENTRY;
-    let WaitCtx: PWAIT_CONTEXT;
-    let mut Deref: u8;
-    let mut Locked: u8;
-
-    if Oplock.is_null() {
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+    if oplock.is_null() {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
         return STATUS_INVALID_OPLOCK_PROTOCOL;
     }
 
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
-    Locked = 1u8;
-
-    if (*Oplock).FileObject != (*Stack).FileObject {
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
+    let mut locked = true;
+    if (*oplock).FileObject != (*stack).FileObject {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_INVALID_OPLOCK_PROTOCOL;
     }
 
-    Deref = 1u8;
+    let mut deref = true;
 
-    if SwitchToLevel2 != 0 && BooleanFlagOn((*Oplock).Flags, BROKEN_TO_LEVEL_2) != 0 {
-        IoMarkIrpPending(Irp);
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    if switch_to_level2 != 0 && ((*oplock).Flags & BROKEN_TO_LEVEL_2) != 0 {
+        IoMarkIrpPending(irp);
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         InsertTailList(
-            core::ptr::addr_of_mut!((*Oplock).SharedListHead),
-            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry),
+            core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY,
+            core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY,
         );
 
-        Deref = 0u8;
-        (*Oplock).Flags = LEVEL_2_OPLOCK;
-        (*Irp).IoStatus.__bindgen_anon_1.Information = Oplock as usize;
+        deref = false;
+        (*oplock).Flags = LEVEL_2_OPLOCK;
+        (*irp).IoStatus.Information = oplock as _;
 
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-        if (*Irp).Cancel != 0 {
-            ExReleaseFastMutexUnsafe((*Oplock).IntLock);
-            Locked = 0u8;
-            FsRtlCancelOplockIIIrp(core::ptr::null_mut(), Irp);
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+        if (*irp).Cancel != 0 {
+            ExReleaseFastMutexUnsafe((*oplock).IntLock);
+            locked = false;
+            FsRtlCancelOplockIIIrp(core::ptr::null_mut(), irp);
         } else {
-            IoSetCancelRoutine(Irp, Some(FsRtlCancelOplockIIIrp));
-            IoReleaseCancelSpinLock((*Irp).CancelIrql);
+            IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelOplockIIIrp)));
+            IoReleaseCancelSpinLock((*irp).CancelIrql);
         }
-    } else if BooleanFlagOn((*Oplock).Flags, BROKEN_TO_NONE | BROKEN_TO_LEVEL_2) != 0 {
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IofCompleteRequest(Irp, IO_DISK_INCREMENT);
-        (*Oplock).Flags = NO_OPLOCK;
-    } else if BooleanFlagOn((*Oplock).Flags, BROKEN_TO_NONE_FROM_LEVEL_2) != 0 {
-        (*Irp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IofCompleteRequest(Irp, IO_DISK_INCREMENT);
-        (*Oplock).Flags = NO_OPLOCK;
+    } else if ((*oplock).Flags & (BROKEN_TO_NONE | BROKEN_TO_LEVEL_2)) != 0 {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IofCompleteRequest(irp, IO_DISK_INCREMENT as i8);
+        (*oplock).Flags = NO_OPLOCK;
+    } else if ((*oplock).Flags & BROKEN_TO_NONE_FROM_LEVEL_2) != 0 {
+        (*irp).IoStatus.Information = 3;
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IofCompleteRequest(irp, IO_DISK_INCREMENT as i8);
+        (*oplock).Flags = NO_OPLOCK;
     }
 
-    NextEntry = (*Oplock).WaitListHead.Flink;
-    while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-        WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(_WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-        FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-        NextEntry = (*NextEntry).Flink;
+    let mut next_entry = (*oplock).WaitListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+        let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+        FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+        next_entry = (*next_entry).Flink;
     }
 
-    if Deref != 0 {
-        ObDereferenceObject((*Oplock).FileObject as *mut core::ffi::c_void);
+    if deref {
+        ObDereferenceObject((*oplock).FileObject as PVOID);
     }
-    (*Oplock).FileObject = core::ptr::null_mut();
+    (*oplock).FileObject = core::ptr::null_mut();
 
-    if Locked != 0 {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if locked {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
     }
 
     STATUS_SUCCESS
 }
 
-pub unsafe fn FsRtlOpBatchBreakClosePending(
-    Oplock: PINTERNAL_OPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
+unsafe fn FsRtlOpBatchBreakClosePending(
+    oplock: PINTERNAL_OPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut WaitCtx: PWAIT_CONTEXT;
-
-    if Oplock.is_null() {
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+    if oplock.is_null() {
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
         return STATUS_INVALID_OPLOCK_PROTOCOL;
     }
 
-    Status = STATUS_SUCCESS;
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
+    let mut status = STATUS_SUCCESS;
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
 
-    if (*Oplock).FileObject == (*Stack).FileObject
-        && BooleanFlagOn(
-            (*Oplock).Flags,
-            BROKEN_TO_LEVEL_2 | BROKEN_TO_NONE | BROKEN_TO_NONE_FROM_LEVEL_2,
-        ) != 0
+    if (*oplock).FileObject == (*stack).FileObject
+        && ((*oplock).Flags & (BROKEN_TO_LEVEL_2 | BROKEN_TO_NONE | BROKEN_TO_NONE_FROM_LEVEL_2)) != 0
     {
-        if BooleanFlagOn((*Oplock).Flags, PENDING_LOCK | LEVEL_1_OPLOCK) != 0 {
-            if ((*Oplock).Flags & LEVEL_1_OPLOCK) != 0 {
-                ObDereferenceObject((*Oplock).FileObject as *mut core::ffi::c_void);
+        if ((*oplock).Flags & (PENDING_LOCK | LEVEL_1_OPLOCK)) != 0 {
+            if ((*oplock).Flags & LEVEL_1_OPLOCK) != 0 {
+                ObDereferenceObject((*oplock).FileObject as PVOID);
             }
 
-            (*Oplock).Flags = NO_OPLOCK;
-            (*Oplock).FileObject = core::ptr::null_mut();
+            (*oplock).Flags = NO_OPLOCK;
+            (*oplock).FileObject = core::ptr::null_mut();
 
-            NextEntry = (*Oplock).WaitListHead.Flink;
-            while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-                WaitCtx = (NextEntry as *mut u8).offset(
-                    -(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)
-                ) as PWAIT_CONTEXT;
-                FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-                NextEntry = (*NextEntry).Flink;
+            let mut next_entry = (*oplock).WaitListHead.Flink;
+            while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+                let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+                FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+                next_entry = (*next_entry).Flink;
             }
         } else {
-            ClearFlag(core::ptr::addr_of_mut!((*Oplock).Flags), BROKEN_ANY);
-            SetFlag(core::ptr::addr_of_mut!((*Oplock).Flags), BROKEN_TO_CLOSE_PENDING);
+            (*oplock).Flags &= !BROKEN_ANY;
+            (*oplock).Flags |= BROKEN_TO_CLOSE_PENDING;
         }
     } else {
-        Status = STATUS_INVALID_OPLOCK_PROTOCOL;
+        status = STATUS_INVALID_OPLOCK_PROTOCOL;
     }
 
-    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-    ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    (*irp).IoStatus.__bindgen_anon_1.Status = status;
+    IoCompleteRequest(irp, IO_DISK_INCREMENT);
+    ExReleaseFastMutexUnsafe((*oplock).IntLock);
 
-    Status
+    status
 }
 
 unsafe fn FsRtlAllocateOplock() -> PINTERNAL_OPLOCK {
-    let mut Oplock: PINTERNAL_OPLOCK = core::ptr::null_mut();
+    let mut oplock: PINTERNAL_OPLOCK = core::ptr::null_mut();
 
-    Oplock = ExAllocatePoolWithTag(
-        PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE | POOL_COLD_ALLOCATION,
-        core::mem::size_of::<INTERNAL_OPLOCK>() as u64,
-        TAG_OPLOCK
+    oplock = ExAllocatePoolWithTag(
+        PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE | 0x00000100,
+        core::mem::size_of::<INTERNAL_OPLOCK>(),
+        TAG_OPLOCK,
     ) as PINTERNAL_OPLOCK;
-    core::ptr::write_bytes(Oplock, 0, 1);
-    (*Oplock).IntLock = ExAllocatePoolWithTag(
+    core::ptr::write_bytes(oplock as *mut u8, 0, core::mem::size_of::<INTERNAL_OPLOCK>());
+    (*oplock).IntLock = ExAllocatePoolWithTag(
         NonPagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<FAST_MUTEX>() as u64,
-        TAG_OPLOCK
+        core::mem::size_of::<FAST_MUTEX>(),
+        TAG_OPLOCK,
     ) as *mut FAST_MUTEX;
-    ExInitializeFastMutex((*Oplock).IntLock);
-    InitializeListHead(core::ptr::addr_of_mut!((*Oplock).SharedListHead));
-    InitializeListHead(core::ptr::addr_of_mut!((*Oplock).WaitListHead));
-    (*Oplock).Flags = NO_OPLOCK;
+    ExInitializeFastMutex((*oplock).IntLock);
+    InitializeListHead(core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY);
+    InitializeListHead(core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY);
+    (*oplock).Flags = NO_OPLOCK;
 
-    Oplock
+    oplock
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlCancelExclusiveIrp(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) {
-    let IntOplock: PINTERNAL_OPLOCK;
-    let mut NextEntry: PLIST_ENTRY;
-    let WaitCtx: PWAIT_CONTEXT;
-
-    IntOplock = (*Irp).IoStatus.__bindgen_anon_1.Information as PINTERNAL_OPLOCK;
+unsafe extern "system" fn FsRtlCancelExclusiveIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) {
+    let int_oplock = (*Irp).IoStatus.Information as PINTERNAL_OPLOCK;
 
     IoSetCancelRoutine(Irp, None);
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
-    ExAcquireFastMutex((*IntOplock).IntLock);
-    
-    if (*IntOplock).ExclusiveIrp != core::ptr::null_mut() && (*(*IntOplock).ExclusiveIrp).Cancel != 0 {
-        (*(*IntOplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
-        IoCompleteRequest((*IntOplock).ExclusiveIrp, IO_DISK_INCREMENT);
-        (*IntOplock).ExclusiveIrp = core::ptr::null_mut();
+    ExAcquireFastMutex((*int_oplock).IntLock);
+    if !(*int_oplock).ExclusiveIrp.is_null() && (*(*int_oplock).ExclusiveIrp).Cancel != 0 {
+        (*(*int_oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
+        IoCompleteRequest((*int_oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+        (*int_oplock).ExclusiveIrp = core::ptr::null_mut();
 
-        ObDereferenceObject((*IntOplock).FileObject as *mut core::ffi::c_void);
-        (*IntOplock).FileObject = core::ptr::null_mut();
-        (*IntOplock).Flags = NO_OPLOCK;
+        ObDereferenceObject((*int_oplock).FileObject as PVOID);
+        (*int_oplock).FileObject = core::ptr::null_mut();
+        (*int_oplock).Flags = NO_OPLOCK;
 
-        NextEntry = (*IntOplock).WaitListHead.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*IntOplock).WaitListHead) {
-            let WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-            FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-            NextEntry = (*NextEntry).Flink;
+        let mut next_entry = (*int_oplock).WaitListHead.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*int_oplock).WaitListHead) as PLIST_ENTRY {
+            let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+            FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+            next_entry = (*next_entry).Flink;
         }
     }
 
-    ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
+    ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
 }
 
 unsafe fn FsRtlRequestExclusiveOplock(
-    Oplock: POPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
-    Flags: u32,
-) -> i32 {
-    let mut IntOplock: PINTERNAL_OPLOCK;
-    let ListIrp: PIRP;
-    let mut Locked: u8;
-    let mut Status: i32;
+    oplock: POPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
+    flags: ULONG,
+) -> NTSTATUS {
+    let mut int_oplock = *oplock as PINTERNAL_OPLOCK;
+    let mut locked = false;
+    let mut status = STATUS_SUCCESS;
 
-    IntOplock = *Oplock;
-    Locked = 0u8;
-    Status = STATUS_SUCCESS;
-
-    if IntOplock.is_null() {
-        *Oplock = FsRtlAllocateOplock();
-        IntOplock = *Oplock;
+    if int_oplock.is_null() {
+        *oplock = FsRtlAllocateOplock() as PVOID;
+        int_oplock = *oplock as PINTERNAL_OPLOCK;
     }
 
-    ExAcquireFastMutexUnsafe((*IntOplock).IntLock);
-    Locked = 1u8;
+    ExAcquireFastMutexUnsafe((*int_oplock).IntLock);
+    locked = true;
 
-    if Flags == (EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK) {
-        (*IntOplock).ExclusiveIrp = Irp;
-        (*IntOplock).FileObject = (*Stack).FileObject;
-        (*IntOplock).Flags = EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK;
+    if flags == (EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK) {
+        (*int_oplock).ExclusiveIrp = irp;
+        (*int_oplock).FileObject = (*stack).FileObject;
+        (*int_oplock).Flags = EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK;
     } else {
-        if BooleanFlagOn((*IntOplock).Flags, LEVEL_2_OPLOCK | PENDING_LOCK | NO_OPLOCK) != 0 {
-            if (*IntOplock).Flags == LEVEL_2_OPLOCK {
-                ListIrp = ((*IntOplock).SharedListHead.Flink as *const u8).offset(
-                    -(core::mem::offset_of!(IRP, Tail) as isize)
-                    -(core::mem::offset_of!(_IRP_TAIL, Overlay) as isize)
-                    -(core::mem::offset_of!(_IRP_TAIL_OVERLAY, __bindgen_anon_2) as isize)
-                    -(core::mem::offset_of!(_IRP_TAIL_OVERLAY__bindgen_ty_2, __bindgen_anon_1) as isize)
-                    -(core::mem::offset_of!(_IRP_TAIL_OVERLAY__bindgen_ty_2__bindgen_ty_1, ListEntry) as isize)
-                ) as PIRP;
-                FsRtlRemoveAndCompleteIrp(ListIrp);
+        if ((*int_oplock).Flags & (LEVEL_2_OPLOCK | PENDING_LOCK | NO_OPLOCK)) != 0 {
+            if (*int_oplock).Flags == LEVEL_2_OPLOCK {
+                let list_irp = (((*int_oplock).SharedListHead.Flink as usize)
+                    - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
+                    as PIRP;
+                FsRtlRemoveAndCompleteIrp(list_irp);
             }
 
-            (*IntOplock).ExclusiveIrp = Irp;
-            (*IntOplock).FileObject = (*Stack).FileObject;
-            (*IntOplock).Flags = Flags;
+            (*int_oplock).ExclusiveIrp = irp;
+            (*int_oplock).FileObject = (*stack).FileObject;
+            (*int_oplock).Flags = flags;
 
-            IoMarkIrpPending(Irp);
-            ObReferenceObject((*Stack).FileObject as *mut core::ffi::c_void);
-            (*Irp).IoStatus.__bindgen_anon_1.Information = IntOplock as usize;
+            IoMarkIrpPending(irp);
+            ObReferenceObject((*stack).FileObject as PVOID);
+            (*irp).IoStatus.Information = int_oplock as _;
 
-            IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-            if (*Irp).Cancel != 0 {
-                ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
-                Locked = 0u8;
-                FsRtlCancelExclusiveIrp(core::ptr::null_mut(), Irp);
-                Status = 0xC0000120u32 as i32;
+            IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+            if (*irp).Cancel != 0 {
+                ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
+                locked = false;
+                FsRtlCancelExclusiveIrp(core::ptr::null_mut(), irp);
+                status = STATUS_CANCELLED;
             } else {
-                IoSetCancelRoutine(Irp, Some(FsRtlCancelExclusiveIrp));
-                IoReleaseCancelSpinLock((*Irp).CancelIrql);
+                IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelExclusiveIrp)));
+                IoReleaseCancelSpinLock((*irp).CancelIrql);
             }
         } else {
-            if !Irp.is_null() {
-                (*Irp).IoStatus.__bindgen_anon_2.__bindgen_anon_1.Status = 0xC00000C3u32 as i32;
-                IoCompleteRequest(Irp, 1i8);
-                Status = 0xC00000C3u32 as i32;
+            if !irp.is_null() {
+                (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
+                IoCompleteRequest(irp, IO_DISK_INCREMENT);
+                status = STATUS_OPLOCK_NOT_GRANTED;
             }
         }
     }
 
-    if Locked != 0 {
-        ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
+    if locked {
+        ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
     }
 
-    Status
+    status
 }
 
-unsafe fn FsRtlRequestOplockII(
-    Oplock: POPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
-) -> NTSTATUS {
-    let mut Locked: u8;
-    let mut Status: NTSTATUS;
-    let mut IntOplock: PINTERNAL_OPLOCK;
+unsafe fn FsRtlRequestOplockII(oplock: POPLOCK, stack: PIO_STACK_LOCATION, irp: PIRP) -> NTSTATUS {
+    let mut int_oplock = *oplock as PINTERNAL_OPLOCK;
+    let mut locked = false;
+    let mut status = STATUS_SUCCESS;
 
-    IntOplock = *Oplock;
-    Locked = 0u8;
-    Status = STATUS_SUCCESS;
-
-    if IntOplock.is_null() {
-        *Oplock = FsRtlAllocateOplock();
-        IntOplock = *Oplock;
+    if int_oplock.is_null() {
+        *oplock = FsRtlAllocateOplock() as PVOID;
+        int_oplock = *oplock as PINTERNAL_OPLOCK;
     }
 
-    ExAcquireFastMutexUnsafe((*IntOplock).IntLock);
-    Locked = 1u8;
+    ExAcquireFastMutexUnsafe((*int_oplock).IntLock);
+    locked = true;
 
-    if BooleanFlagOn((*IntOplock).Flags, (LEVEL_2_OPLOCK | NO_OPLOCK)) != 0 {
-        IoMarkIrpPending(Irp);
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    if ((*int_oplock).Flags & (LEVEL_2_OPLOCK | NO_OPLOCK)) != 0 {
+        IoMarkIrpPending(irp);
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
 
         InsertTailList(
-            core::ptr::addr_of_mut!((*IntOplock).SharedListHead),
-            core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry),
+            core::ptr::addr_of_mut!((*int_oplock).SharedListHead) as PLIST_ENTRY,
+            core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY,
         );
 
-        (*Irp).IoStatus.__bindgen_anon_1.Information = IntOplock as ULONG_PTR;
+        (*irp).IoStatus.Information = int_oplock as _;
 
-        (*IntOplock).Flags = LEVEL_2_OPLOCK;
+        (*int_oplock).Flags = LEVEL_2_OPLOCK;
 
-        ObReferenceObject((*Stack).FileObject as *mut core::ffi::c_void);
+        ObReferenceObject((*stack).FileObject as PVOID);
 
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-        if (*Irp).Cancel != 0 {
-            ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
-            Locked = 0u8;
-            FsRtlCancelOplockIIIrp(core::ptr::null_mut(), Irp);
-            Status = STATUS_CANCELLED;
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+        if (*irp).Cancel != 0 {
+            ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
+            locked = false;
+            FsRtlCancelOplockIIIrp(core::ptr::null_mut(), irp);
+            status = STATUS_CANCELLED;
         } else {
-            IoSetCancelRoutine(Irp, Some(FsRtlCancelOplockIIIrp));
-            IoReleaseCancelSpinLock((*Irp).CancelIrql);
+            IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelOplockIIIrp)));
+            IoReleaseCancelSpinLock((*irp).CancelIrql);
         }
     } else {
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-        Status = STATUS_OPLOCK_NOT_GRANTED;
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
+        status = STATUS_OPLOCK_NOT_GRANTED;
     }
 
-    if Locked != 0 {
-        ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
+    if locked {
+        ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
     }
 
-    Status
+    status
 }
 
-unsafe fn FsRtlOplockCleanup(Oplock: PINTERNAL_OPLOCK, Stack: PIO_STACK_LOCATION) {
-    let mut ListStack: PIO_STACK_LOCATION;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut ListIrp: PIRP;
-    let mut WaitCtx: PWAIT_CONTEXT;
+unsafe fn FsRtlOplockCleanup(oplock: PINTERNAL_OPLOCK, stack: PIO_STACK_LOCATION) {
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
+    if (*oplock).Flags != NO_OPLOCK {
+        if (*oplock).Flags == LEVEL_2_OPLOCK {
+            let mut next_entry = (*oplock).SharedListHead.Flink;
+            while next_entry != core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY {
+                let list_irp = ((next_entry as usize)
+                    - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
+                    as PIRP;
+                let list_stack = IoGetCurrentIrpStackLocation(list_irp);
 
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
-    if (*Oplock).Flags != NO_OPLOCK {
-        if (*Oplock).Flags == LEVEL_2_OPLOCK {
-            NextEntry = (*Oplock).SharedListHead.Flink;
-            while NextEntry != core::ptr::addr_of_mut!((*Oplock).SharedListHead) {
-                ListIrp = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize + core::mem::offset_of!(_IO_TAIL_OVERLAY, __bindgen_anon_2) as isize + core::mem::offset_of!(_IO_TAIL_OVERLAY__bindgen_ty_2, __bindgen_anon_1) as isize + core::mem::offset_of!(_IO_TAIL_OVERLAY__bindgen_ty_2__bindgen_ty_1, ListEntry) as isize)) as PIRP;
-                ListStack = IoGetCurrentIrpStackLocation(ListIrp);
-
-                if (*Stack).FileObject == (*ListStack).FileObject {
-                    FsRtlRemoveAndCompleteIrp(ListIrp);
+                if (*stack).FileObject == (*list_stack).FileObject {
+                    FsRtlRemoveAndCompleteIrp(list_irp);
                 }
-                
-                NextEntry = (*NextEntry).Flink;
+
+                next_entry = (*next_entry).Flink;
             }
 
-            if IsListEmpty(core::ptr::addr_of_mut!((*Oplock).SharedListHead)) != 0 {
-                (*Oplock).Flags = NO_OPLOCK;
+            if IsListEmpty(core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY) {
+                (*oplock).Flags = NO_OPLOCK;
             }
         } else {
-            if (*Oplock).FileObject == (*Stack).FileObject {
-                if BooleanFlagOn((*Oplock).Flags, BROKEN_ANY | PENDING_LOCK) == 0 {
-                    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*Oplock).ExclusiveIrp).CancelIrql));
-                    IoSetCancelRoutine((*Oplock).ExclusiveIrp, None);
-                    IoReleaseCancelSpinLock((*(*Oplock).ExclusiveIrp).CancelIrql);
+            if (*oplock).FileObject == (*stack).FileObject {
+                if ((*oplock).Flags & (BROKEN_ANY | PENDING_LOCK)) == 0 {
+                    IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*oplock).ExclusiveIrp).CancelIrql));
+                    IoSetCancelRoutine((*oplock).ExclusiveIrp, None);
+                    IoReleaseCancelSpinLock((*(*oplock).ExclusiveIrp).CancelIrql);
 
-                    (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-                    (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_2.__bindgen_anon_1.Status = STATUS_SUCCESS;
+                    (*(*oplock).ExclusiveIrp).IoStatus.Information = 3;
+                    (*(*oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
 
-                    IoCompleteRequest((*Oplock).ExclusiveIrp, IO_DISK_INCREMENT);
-                    (*Oplock).ExclusiveIrp = core::ptr::null_mut();
+                    IoCompleteRequest((*oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+                    (*oplock).ExclusiveIrp = core::ptr::null_mut();
                 }
 
-                if BooleanFlagOn((*Oplock).Flags, PENDING_LOCK) == 0 {
-                    ObDereferenceObject((*Oplock).FileObject as *mut core::ffi::c_void);
+                if ((*oplock).Flags & PENDING_LOCK) == 0 {
+                    ObDereferenceObject((*oplock).FileObject as PVOID);
                 }
 
-                (*Oplock).FileObject = core::ptr::null_mut();
-                (*Oplock).Flags = NO_OPLOCK;
+                (*oplock).FileObject = core::ptr::null_mut();
+                (*oplock).Flags = NO_OPLOCK;
 
-                NextEntry = (*Oplock).WaitListHead.Flink;
-                while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-                    WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-                    FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-                    NextEntry = (*NextEntry).Flink;
+                let mut next_entry = (*oplock).WaitListHead.Flink;
+                while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+                    let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+                    FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+                    next_entry = (*next_entry).Flink;
                 }
             }
         }
     }
-    ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    ExReleaseFastMutexUnsafe((*oplock).IntLock);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlOplockBreakToNone(
-    Oplock: PINTERNAL_OPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
-    Context: PVOID,
-    CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
-    PostIrpRoutine: POPLOCK_FS_PREPOST_IRP,
+unsafe fn FsRtlOplockBreakToNone(
+    oplock: PINTERNAL_OPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
+    context: PVOID,
+    completion_routine: POPLOCK_WAIT_COMPLETE_ROUTINE,
+    post_irp_routine: POPLOCK_FS_PREPOST_IRP,
 ) -> NTSTATUS {
-    let mut NextEntry: PLIST_ENTRY;
-    let WaitCtx: PWAIT_CONTEXT;
-    let ListIrp: PIRP;
-    let mut WaitEvent: KEVENT;
+    let mut wait_event: KEVENT = core::mem::zeroed();
 
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
 
-    if (*Oplock).Flags == NO_OPLOCK {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if (*oplock).Flags == NO_OPLOCK {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
     }
 
-    if BooleanFlagOn((*Oplock).Flags, BROKEN_ANY | PENDING_LOCK | LEVEL_2_OPLOCK) == 0 {
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*Oplock).ExclusiveIrp).CancelIrql));
-        IoSetCancelRoutine((*Oplock).ExclusiveIrp, None);
-        IoReleaseCancelSpinLock((*(*Oplock).ExclusiveIrp).CancelIrql);
+    if ((*oplock).Flags & (BROKEN_ANY | PENDING_LOCK | LEVEL_2_OPLOCK)) == 0 {
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*oplock).ExclusiveIrp).CancelIrql));
+        IoSetCancelRoutine((*oplock).ExclusiveIrp, None);
+        IoReleaseCancelSpinLock((*(*oplock).ExclusiveIrp).CancelIrql);
 
-        if (*(*Oplock).ExclusiveIrp).Cancel != 0 {
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_2.__bindgen_anon_1.Status = STATUS_CANCELLED;
-            IoCompleteRequest((*Oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+        if (*(*oplock).ExclusiveIrp).Cancel != 0 {
+            (*(*oplock).ExclusiveIrp).IoStatus.Information = 3;
+            (*(*oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
+            IoCompleteRequest((*oplock).ExclusiveIrp, IO_DISK_INCREMENT);
 
-            (*Oplock).Flags = NO_OPLOCK;
-            (*Oplock).ExclusiveIrp = core::ptr::null_mut();
+            (*oplock).Flags = NO_OPLOCK;
+            (*oplock).ExclusiveIrp = core::ptr::null_mut();
 
-            ObDereferenceObject((*Oplock).FileObject as *mut core::ffi::c_void);
-            (*Oplock).FileObject = core::ptr::null_mut();
+            ObDereferenceObject((*oplock).FileObject as PVOID);
+            (*oplock).FileObject = core::ptr::null_mut();
 
-            NextEntry = (*Oplock).WaitListHead.Flink;
-            while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-                WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-                FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-                NextEntry = (*NextEntry).Flink;
+            let mut next_entry = (*oplock).WaitListHead.Flink;
+            while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+                let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+                FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+                next_entry = (*next_entry).Flink;
             }
 
-            ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+            ExReleaseFastMutexUnsafe((*oplock).IntLock);
 
             return STATUS_SUCCESS;
         }
 
-        (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-        (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_2.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest((*Oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+        (*(*oplock).ExclusiveIrp).IoStatus.Information = 3;
+        (*(*oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest((*oplock).ExclusiveIrp, IO_DISK_INCREMENT);
 
-        (*Oplock).ExclusiveIrp = core::ptr::null_mut();
-        SetFlag((*Oplock).Flags, BROKEN_TO_NONE);
-    } else if (*Oplock).Flags == LEVEL_2_OPLOCK {
-        NextEntry = (*Oplock).SharedListHead.Flink;
-        while NextEntry != core::ptr::addr_of_mut!((*Oplock).SharedListHead) {
-            ListIrp = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry) as isize)) as PIRP;
-            FsRtlRemoveAndCompleteIrp(ListIrp);
-            NextEntry = (*NextEntry).Flink;
+        (*oplock).ExclusiveIrp = core::ptr::null_mut();
+        (*oplock).Flags |= BROKEN_TO_NONE;
+    } else if (*oplock).Flags == LEVEL_2_OPLOCK {
+        let mut next_entry = (*oplock).SharedListHead.Flink;
+        while next_entry != core::ptr::addr_of_mut!((*oplock).SharedListHead) as PLIST_ENTRY {
+            let list_irp = ((next_entry as usize)
+                - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
+                as PIRP;
+            FsRtlRemoveAndCompleteIrp(list_irp);
+            next_entry = (*next_entry).Flink;
         }
 
-        (*Oplock).Flags = NO_OPLOCK;
+        (*oplock).Flags = NO_OPLOCK;
 
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
-    } else if ((*Oplock).Flags & BROKEN_TO_LEVEL_2) != 0 {
-        ClearFlag((*Oplock).Flags, BROKEN_TO_LEVEL_2);
-        SetFlag((*Oplock).Flags, BROKEN_TO_NONE_FROM_LEVEL_2);
-    } else if BooleanFlagOn((*Oplock).Flags, PENDING_LOCK) != 0 {
-        (*Oplock).Flags = NO_OPLOCK;
-        (*Oplock).FileObject = core::ptr::null_mut();
+    } else if ((*oplock).Flags & BROKEN_TO_LEVEL_2) != 0 {
+        (*oplock).Flags &= !BROKEN_TO_LEVEL_2;
+        (*oplock).Flags |= BROKEN_TO_NONE_FROM_LEVEL_2;
+    } else if ((*oplock).Flags & PENDING_LOCK) != 0 {
+        (*oplock).Flags = NO_OPLOCK;
+        (*oplock).FileObject = core::ptr::null_mut();
 
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
-        return STATUS_SUCCESS;
-    }
-
-    if (*Oplock).FileObject == (*Stack).FileObject {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
     }
 
-    if (*Stack).MajorFunction != IRP_MJ_CREATE || BooleanFlagOn((*Stack).Parameters.Create.Options, FILE_COMPLETE_IF_OPLOCKED) == 0 {
-        FsRtlWaitOnIrp(Oplock, Irp, Context, CompletionRoutine, PostIrpRoutine, core::ptr::addr_of_mut!(WaitEvent));
+    if (*oplock).FileObject == (*stack).FileObject {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
+        return STATUS_SUCCESS;
+    }
 
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if (*stack).MajorFunction != 0x00 || ((*stack).Parameters.Create.Options & 0x00000400) == 0 {
+        FsRtlWaitOnIrp(oplock, irp, context, completion_routine, post_irp_routine, &mut wait_event);
+
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
 
         return STATUS_SUCCESS;
     } else {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_OPLOCK_BREAK_IN_PROGRESS;
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlOplockBreakToII(
-    Oplock: PINTERNAL_OPLOCK,
-    Stack: PIO_STACK_LOCATION,
-    Irp: PIRP,
-    Context: PVOID,
-    CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
-    PostIrpRoutine: POPLOCK_FS_PREPOST_IRP,
+unsafe fn FsRtlOplockBreakToII(
+    oplock: PINTERNAL_OPLOCK,
+    stack: PIO_STACK_LOCATION,
+    irp: PIRP,
+    context: PVOID,
+    completion_routine: POPLOCK_WAIT_COMPLETE_ROUTINE,
+    post_irp_routine: POPLOCK_FS_PREPOST_IRP,
 ) -> NTSTATUS {
-    let mut NextEntry: PLIST_ENTRY;
-    let mut WaitCtx: PWAIT_CONTEXT;
-    let mut WaitEvent: KEVENT = core::mem::zeroed();
+    let mut wait_event: KEVENT = core::mem::zeroed();
 
-    ExAcquireFastMutexUnsafe((*Oplock).IntLock);
+    ExAcquireFastMutexUnsafe((*oplock).IntLock);
 
-    if BooleanFlagOn((*Oplock).Flags, EXCLUSIVE_LOCK) == 0 || (*Oplock).FileObject == (*Stack).FileObject {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+    if ((*oplock).Flags & EXCLUSIVE_LOCK) == 0
+        || (*oplock).FileObject == (*stack).FileObject
+    {
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_SUCCESS;
     }
 
-    if BooleanFlagOn((*Oplock).Flags, BROKEN_ANY | PENDING_LOCK) != 0 {
-        if BooleanFlagOn((*Oplock).Flags, PENDING_LOCK) != 0 {
-            (*Oplock).Flags = NO_OPLOCK;
-            (*Oplock).FileObject = core::ptr::null_mut();
+    if ((*oplock).Flags & (BROKEN_ANY | PENDING_LOCK)) != 0 {
+        if ((*oplock).Flags & PENDING_LOCK) != 0 {
+            (*oplock).Flags = NO_OPLOCK;
+            (*oplock).FileObject = core::ptr::null_mut();
 
-            ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+            ExReleaseFastMutexUnsafe((*oplock).IntLock);
             return STATUS_SUCCESS;
         }
     } else {
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*Oplock).ExclusiveIrp).CancelIrql));
-        IoSetCancelRoutine((*Oplock).ExclusiveIrp, None);
-        IoReleaseCancelSpinLock((*(*Oplock).ExclusiveIrp).CancelIrql);
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*(*oplock).ExclusiveIrp).CancelIrql));
+        IoSetCancelRoutine((*oplock).ExclusiveIrp, None);
+        IoReleaseCancelSpinLock((*(*oplock).ExclusiveIrp).CancelIrql);
 
-        if (*(*Oplock).ExclusiveIrp).Cancel != 0 {
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
-            IoCompleteRequest((*Oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+        if (*(*oplock).ExclusiveIrp).Cancel != 0 {
+            (*(*oplock).ExclusiveIrp).IoStatus.Information = 3;
+            (*(*oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
+            IoCompleteRequest((*oplock).ExclusiveIrp, IO_DISK_INCREMENT);
 
-            (*Oplock).Flags = NO_OPLOCK;
-            (*Oplock).ExclusiveIrp = core::ptr::null_mut();
-            ObDereferenceObject((*Oplock).FileObject as PVOID);
-            (*Oplock).FileObject = core::ptr::null_mut();
+            (*oplock).Flags = NO_OPLOCK;
+            (*oplock).ExclusiveIrp = core::ptr::null_mut();
+            ObDereferenceObject((*oplock).FileObject as PVOID);
+            (*oplock).FileObject = core::ptr::null_mut();
 
-            NextEntry = (*Oplock).WaitListHead.Flink;
-            while NextEntry != core::ptr::addr_of_mut!((*Oplock).WaitListHead) {
-                WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-                FsRtlRemoveAndCompleteWaitIrp(WaitCtx);
-                NextEntry = (*NextEntry).Flink;
+            let mut next_entry = (*oplock).WaitListHead.Flink;
+            while next_entry != core::ptr::addr_of_mut!((*oplock).WaitListHead) as PLIST_ENTRY {
+                let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+                FsRtlRemoveAndCompleteWaitIrp(wait_ctx);
+                next_entry = (*next_entry).Flink;
             }
 
-            ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+            ExReleaseFastMutexUnsafe((*oplock).IntLock);
 
             return STATUS_SUCCESS;
         }
 
-        (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        if BooleanFlagOn((*Oplock).Flags, BATCH_OPLOCK | LEVEL_1_OPLOCK) != 0 {
-            SetFlag((*Oplock).Flags, BROKEN_TO_LEVEL_2);
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_LEVEL_2;
+        (*(*oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        if ((*oplock).Flags & (BATCH_OPLOCK | LEVEL_1_OPLOCK)) != 0 {
+            (*oplock).Flags |= BROKEN_TO_LEVEL_2;
+            (*(*oplock).ExclusiveIrp).IoStatus.Information = 2;
         } else {
-            SetFlag((*Oplock).Flags, BROKEN_TO_NONE);
-            (*(*Oplock).ExclusiveIrp).IoStatus.__bindgen_anon_1.Information = FILE_OPLOCK_BROKEN_TO_NONE;
+            (*oplock).Flags |= BROKEN_TO_NONE;
+            (*(*oplock).ExclusiveIrp).IoStatus.Information = 3;
         }
-        IoCompleteRequest((*Oplock).ExclusiveIrp, IO_DISK_INCREMENT);
-        (*Oplock).ExclusiveIrp = core::ptr::null_mut();
+        IoCompleteRequest((*oplock).ExclusiveIrp, IO_DISK_INCREMENT);
+        (*oplock).ExclusiveIrp = core::ptr::null_mut();
     }
 
-    if (*Stack).MajorFunction != IRP_MJ_CREATE || BooleanFlagOn((*Stack).Parameters.Create.Options, FILE_COMPLETE_IF_OPLOCKED) == 0 {
-        FsRtlWaitOnIrp(Oplock, Irp, Context, CompletionRoutine, PostIrpRoutine, core::ptr::addr_of_mut!(WaitEvent));
+    if (*stack).MajorFunction != 0x00 || ((*stack).Parameters.Create.Options & 0x00000400) == 0 {
+        FsRtlWaitOnIrp(oplock, irp, context, completion_routine, post_irp_routine, &mut wait_event);
 
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
 
         return STATUS_SUCCESS;
     } else {
-        ExReleaseFastMutexUnsafe((*Oplock).IntLock);
+        ExReleaseFastMutexUnsafe((*oplock).IntLock);
         return STATUS_OPLOCK_BREAK_IN_PROGRESS;
     }
 }
@@ -815,126 +813,142 @@ pub unsafe extern "system" fn FsRtlCheckOplock(
     CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
     PostIrpRoutine: POPLOCK_FS_PREPOST_IRP,
 ) -> NTSTATUS {
-    let IntOplock: PINTERNAL_OPLOCK;
-    let Stack: PIO_STACK_LOCATION;
-    let DesiredAccess: ACCESS_MASK;
-    let FileInfo: FILE_INFORMATION_CLASS;
-    let CreateDisposition: ULONG;
+    let int_oplock = *Oplock as PINTERNAL_OPLOCK;
 
-    IntOplock = *Oplock;
-
-    if IntOplock.is_null() {
+    if int_oplock.is_null() {
         return STATUS_SUCCESS;
     }
 
-    if ((*Irp).Flags & IRP_PAGING_IO) != 0 {
+    if ((*Irp).Flags & 0x00000001) != 0 {
         return STATUS_SUCCESS;
     }
 
-    if (*IntOplock).Flags == NO_OPLOCK {
+    if (*int_oplock).Flags == NO_OPLOCK {
         return STATUS_SUCCESS;
     }
 
-    Stack = IoGetCurrentIrpStackLocation(Irp);
+    let stack = IoGetCurrentIrpStackLocation(Irp);
 
-    if (*Stack).MajorFunction == IRP_MJ_CLEANUP as u8 {
-        FsRtlOplockCleanup(IntOplock, Stack);
+    if (*stack).MajorFunction == 0x12 {
+        FsRtlOplockCleanup(int_oplock, stack);
         return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_LOCK_CONTROL as u8 {
-        if BooleanFlagOn((*IntOplock).Flags, FILTER_OPLOCK) != 0 {
+    } else if (*stack).MajorFunction == 0x11 {
+        if ((*int_oplock).Flags & FILTER_OPLOCK) != 0 {
             return STATUS_SUCCESS;
         }
 
-        if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        if (*int_oplock).Flags == LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
+        {
+            return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
         }
 
         return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL as u8 {
-        if (*Stack).Parameters.FileSystemControl.FsControlCode != FSCTL_SET_ZERO_DATA {
+    } else if (*stack).MajorFunction == 0x0D {
+        if (*stack).Parameters.FileSystemControl.FsControlCode != 0x00098098 {
             return STATUS_SUCCESS;
         }
 
-        if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        if (*int_oplock).Flags == LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
+        {
+            return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
         }
 
         return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_WRITE as u8 {
-        if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+    } else if (*stack).MajorFunction == 0x04 {
+        if (*int_oplock).Flags == LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
+        {
+            return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
         }
 
         return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_READ as u8 {
-        if BooleanFlagOn((*IntOplock).Flags, FILTER_OPLOCK) != 0 {
+    } else if (*stack).MajorFunction == 0x03 {
+        if ((*int_oplock).Flags & FILTER_OPLOCK) != 0 {
             return STATUS_SUCCESS;
         }
 
-        if (*IntOplock).Flags != LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToII(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        if (*int_oplock).Flags != LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
+        {
+            return FsRtlOplockBreakToII(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
         }
 
         return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_CREATE as u8 {
-        DesiredAccess = (*(*Stack).Parameters.Create.SecurityContext).DesiredAccess;
+    } else if (*stack).MajorFunction == 0x00 {
+        let desired_access = (*(*stack).Parameters.Create.SecurityContext).DesiredAccess;
 
-        if ((DesiredAccess & !(SYNCHRONIZE | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_DATA)) == 0 && ((*Stack).Parameters.Create.Options & FILE_RESERVE_OPFILTER) == 0)
-            || (BooleanFlagOn((*IntOplock).Flags, FILTER_OPLOCK) != 0 && (DesiredAccess & !(SYNCHRONIZE | READ_CONTROL | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_READ_EA | FILE_WRITE_DATA)) == 0 && BooleanFlagOn((*Stack).Parameters.Create.ShareAccess, FILE_SHARE_READ) != 0)
+        if ((desired_access & !(0x00100000 | 0x00000100 | 0x00000080 | 0x00000001)) == 0
+            && ((*stack).Parameters.Create.Options & 0x10000000) == 0)
+            || (((*int_oplock).Flags & FILTER_OPLOCK) != 0
+                && (desired_access & !(0x00100000 | 0x00020000 | 0x00000100 | 0x00000080 | 0x00000020 | 0x00000008 | 0x00000002)) == 0
+                && ((*stack).Parameters.Create.ShareAccess & 0x00000001) != 0)
         {
             return STATUS_SUCCESS;
         }
 
-        CreateDisposition = ((*Stack).Parameters.Create.Options >> 24) & 0x000000FF;
-        if CreateDisposition == 0 || CreateDisposition == FILE_OVERWRITE ||
-            CreateDisposition == FILE_OVERWRITE_IF ||
-            BooleanFlagOn((*Stack).Parameters.Create.Options, FILE_RESERVE_OPFILTER) != 0
+        let create_disposition = ((*stack).Parameters.Create.Options >> 24) & 0xFF;
+        if create_disposition == 0
+            || create_disposition == 4
+            || create_disposition == 5
+            || ((*stack).Parameters.Create.Options & 0x10000000) != 0
         {
-            if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-                return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+            if (*int_oplock).Flags == LEVEL_2_OPLOCK
+                || (*int_oplock).FileObject != (*stack).FileObject
+            {
+                return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
             }
 
             return STATUS_SUCCESS;
         }
 
-        if (*IntOplock).Flags != LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToII(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
-        }
-
-        return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_FLUSH_BUFFERS as u8 {
-        if (*IntOplock).Flags != LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-            return FsRtlOplockBreakToII(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
-        }
-
-        return STATUS_SUCCESS;
-    } else if (*Stack).MajorFunction == IRP_MJ_SET_INFORMATION as u8 {
-        FileInfo = (*Stack).Parameters.SetFile.FileInformationClass;
-        if FileInfo == FileRenameInformation || FileInfo == FileLinkInformation ||
-            FileInfo == FileShortNameInformation
+        if (*int_oplock).Flags != LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
         {
-            if BooleanFlagOn((*IntOplock).Flags, FILTER_OPLOCK | BATCH_OPLOCK) == 0 {
+            return FsRtlOplockBreakToII(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        }
+
+        return STATUS_SUCCESS;
+    } else if (*stack).MajorFunction == 0x09 {
+        if (*int_oplock).Flags != LEVEL_2_OPLOCK
+            || (*int_oplock).FileObject != (*stack).FileObject
+        {
+            return FsRtlOplockBreakToII(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        }
+
+        return STATUS_SUCCESS;
+    } else if (*stack).MajorFunction == 0x06 {
+        let file_info = (*stack).Parameters.SetFile.FileInformationClass;
+        if file_info == 10 || file_info == 11 || file_info == 64 {
+            if ((*int_oplock).Flags & (FILTER_OPLOCK | BATCH_OPLOCK)) == 0 {
                 return STATUS_SUCCESS;
             } else {
-                if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-                    return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+                if (*int_oplock).Flags == LEVEL_2_OPLOCK
+                    || (*int_oplock).FileObject != (*stack).FileObject
+                {
+                    return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
                 }
 
                 return STATUS_SUCCESS;
             }
-        } else if FileInfo == FileAllocationInformation {
-            if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-                return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+        } else if file_info == 19 {
+            if (*int_oplock).Flags == LEVEL_2_OPLOCK
+                || (*int_oplock).FileObject != (*stack).FileObject
+            {
+                return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
             }
 
             return STATUS_SUCCESS;
-        } else if FileInfo == FileEndOfFileInformation {
-            if (*Stack).Parameters.SetFile.AdvanceOnly != 0 {
+        } else if file_info == 20 {
+            if (*stack).Parameters.SetFile.__bindgen_anon_1.__bindgen_anon_1.AdvanceOnly != 0 {
                 return STATUS_SUCCESS;
             }
 
-            if (*IntOplock).Flags == LEVEL_2_OPLOCK || (*IntOplock).FileObject != (*Stack).FileObject {
-                return FsRtlOplockBreakToNone(IntOplock, Stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
+            if (*int_oplock).Flags == LEVEL_2_OPLOCK
+                || (*int_oplock).FileObject != (*stack).FileObject
+            {
+                return FsRtlOplockBreakToNone(int_oplock, stack, Irp, Context, CompletionRoutine, PostIrpRoutine);
             }
 
             return STATUS_SUCCESS;
@@ -945,10 +959,10 @@ pub unsafe extern "system" fn FsRtlCheckOplock(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlCurrentBatchOplock(Oplock: POPLOCK) -> u8 {
-    let IntOplock: PINTERNAL_OPLOCK = *Oplock;
+pub unsafe extern "system" fn FsRtlCurrentBatchOplock(Oplock: POPLOCK) -> BOOLEAN {
+    let int_oplock = *Oplock as PINTERNAL_OPLOCK;
 
-    if !IntOplock.is_null() && BooleanFlagOn((*IntOplock).Flags, FILTER_OPLOCK | BATCH_OPLOCK) != 0 {
+    if !int_oplock.is_null() && ((*int_oplock).Flags & (FILTER_OPLOCK | BATCH_OPLOCK)) != 0 {
         return 1u8;
     }
 
@@ -956,9 +970,7 @@ pub unsafe extern "system" fn FsRtlCurrentBatchOplock(Oplock: POPLOCK) -> u8 {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlInitializeOplock(Oplock: POPLOCK) {
-    // DPRINT removed
-}
+pub unsafe extern "system" fn FsRtlInitializeOplock(Oplock: POPLOCK) {}
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlOplockFsctrl(
@@ -966,106 +978,75 @@ pub unsafe extern "system" fn FsRtlOplockFsctrl(
     Irp: PIRP,
     OpenCount: ULONG,
 ) -> NTSTATUS {
+    let int_oplock = *Oplock as PINTERNAL_OPLOCK;
+    let stack = IoGetCurrentIrpStackLocation(Irp);
 
-    const IO_DISK_INCREMENT: i8 = 1;
-    const IRP_MJ_CREATE: UCHAR = 0x00;
-    const FSCTL_OPLOCK_BREAK_NOTIFY: ULONG = 0x00090004;
-    const FSCTL_OPLOCK_BREAK_ACK_NO_2: ULONG = 0x00090008;
-    const FSCTL_OPBATCH_ACK_CLOSE_PENDING: ULONG = 0x00090010;
-    const FSCTL_REQUEST_OPLOCK_LEVEL_1: ULONG = 0x00090000;
-    const FSCTL_REQUEST_OPLOCK_LEVEL_2: ULONG = 0x00090014;
-    const FSCTL_OPLOCK_BREAK_ACKNOWLEDGE: ULONG = 0x0009000C;
-    const FSCTL_REQUEST_BATCH_OPLOCK: ULONG = 0x00090018;
-    const FSCTL_REQUEST_FILTER_OPLOCK: ULONG = 0x0009001C;
-    const IRP_SYNCHRONOUS_PAGING_IO: ULONG = 0x00000040;
-    const FO_CLEANUP_COMPLETE: ULONG = 0x00001000;
-    const STATUS_OPLOCK_NOT_GRANTED: NTSTATUS = 0xC00000E6u32 as i32;
-    const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as i32;
-    const EXCLUSIVE_LOCK: u32 = 0x00000001;
-    const LEVEL_1_OPLOCK: u32 = 0x00000010;
-    const BATCH_OPLOCK: u32 = 0x00000020;
-    const FILTER_OPLOCK: u32 = 0x00000040;
-    const PENDING_LOCK: u32 = 0x00000004;
-    const FILE_READ_ATTRIBUTES: ULONG = 0x0080;
-    const FILE_READ_DATA: ULONG = 0x0001;
-    const FILE_SHARE_VALID_FLAGS: ULONG = 0x00000007;
-
-    let Stack: PIO_STACK_LOCATION;
-    let IntOplock: PINTERNAL_OPLOCK;
-
-    IntOplock = *Oplock;
-    Stack = IoGetCurrentIrpStackLocation(Irp);
-
-    if (*Stack).MajorFunction != IRP_MJ_CREATE {
-        match (*Stack).Parameters.FileSystemControl.FsControlCode {
-            FSCTL_OPLOCK_BREAK_NOTIFY => {
-                return FsRtlOplockBreakNotify(IntOplock, Stack, Irp);
+    if (*stack).MajorFunction != 0x00 {
+        match (*stack).Parameters.FileSystemControl.FsControlCode {
+            0x00090098 => {
+                return FsRtlOplockBreakNotify(int_oplock, stack, Irp);
             }
-
-            FSCTL_OPLOCK_BREAK_ACK_NO_2 => {
-                return FsRtlAcknowledgeOplockBreak(IntOplock, Stack, Irp, 0u8);
+            0x00090084 => {
+                return FsRtlAcknowledgeOplockBreak(int_oplock, stack, Irp, 0u8);
             }
-
-            FSCTL_OPBATCH_ACK_CLOSE_PENDING => {
-                return FsRtlOpBatchBreakClosePending(IntOplock, Stack, Irp);
+            0x00090090 => {
+                return FsRtlOpBatchBreakClosePending(int_oplock, stack, Irp);
             }
-
-            FSCTL_REQUEST_OPLOCK_LEVEL_1 => {
-                if OpenCount == 1 && IoIsOperationSynchronous(Irp) == 0 &&
-                    BooleanFlagOn((*Irp).Flags, IRP_SYNCHRONOUS_PAGING_IO) == 0 &&
-                    BooleanFlagOn((*(*Stack).FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
+            0x00090000 => {
+                if OpenCount == 1
+                    && IoIsOperationSynchronous(Irp) == 0
+                    && ((*Irp).Flags & 0x00000040) == 0
+                    && ((*(*stack).FileObject).Flags & 0x00004000) == 0
                 {
-                    return FsRtlRequestExclusiveOplock(Oplock, Stack, Irp, EXCLUSIVE_LOCK | LEVEL_1_OPLOCK);
+                    return FsRtlRequestExclusiveOplock(Oplock, stack, Irp, EXCLUSIVE_LOCK | LEVEL_1_OPLOCK);
                 } else {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
                     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
                     return STATUS_OPLOCK_NOT_GRANTED;
                 }
             }
-
-            FSCTL_REQUEST_OPLOCK_LEVEL_2 => {
-                if OpenCount == 0 && IoIsOperationSynchronous(Irp) == 0 &&
-                    BooleanFlagOn((*Irp).Flags, IRP_SYNCHRONOUS_PAGING_IO) == 0 &&
-                    BooleanFlagOn((*(*Stack).FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
+            0x00090008 => {
+                if OpenCount == 0
+                    && IoIsOperationSynchronous(Irp) == 0
+                    && ((*Irp).Flags & 0x00000040) == 0
+                    && ((*(*stack).FileObject).Flags & 0x00004000) == 0
                 {
-                    return FsRtlRequestOplockII(Oplock, Stack, Irp);
+                    return FsRtlRequestOplockII(Oplock, stack, Irp);
                 } else {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
                     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
                     return STATUS_OPLOCK_NOT_GRANTED;
                 }
             }
-
-            FSCTL_OPLOCK_BREAK_ACKNOWLEDGE => {
-                return FsRtlAcknowledgeOplockBreak(IntOplock, Stack, Irp, 1u8);
+            0x00090094 => {
+                return FsRtlAcknowledgeOplockBreak(int_oplock, stack, Irp, 1u8);
             }
-
-            FSCTL_REQUEST_BATCH_OPLOCK => {
-                if OpenCount == 1 && IoIsOperationSynchronous(Irp) == 0 &&
-                    BooleanFlagOn((*Irp).Flags, IRP_SYNCHRONOUS_PAGING_IO) == 0 &&
-                    BooleanFlagOn((*(*Stack).FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
+            0x00090004 => {
+                if OpenCount == 1
+                    && IoIsOperationSynchronous(Irp) == 0
+                    && ((*Irp).Flags & 0x00000040) == 0
+                    && ((*(*stack).FileObject).Flags & 0x00004000) == 0
                 {
-                    return FsRtlRequestExclusiveOplock(Oplock, Stack, Irp, EXCLUSIVE_LOCK | BATCH_OPLOCK);
+                    return FsRtlRequestExclusiveOplock(Oplock, stack, Irp, EXCLUSIVE_LOCK | BATCH_OPLOCK);
                 } else {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
                     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
                     return STATUS_OPLOCK_NOT_GRANTED;
                 }
             }
-
-            FSCTL_REQUEST_FILTER_OPLOCK => {
-                if OpenCount == 1 && IoIsOperationSynchronous(Irp) == 0 &&
-                    BooleanFlagOn((*Irp).Flags, IRP_SYNCHRONOUS_PAGING_IO) == 0 &&
-                    BooleanFlagOn((*(*Stack).FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
+            0x0009008C => {
+                if OpenCount == 1
+                    && IoIsOperationSynchronous(Irp) == 0
+                    && ((*Irp).Flags & 0x00000040) == 0
+                    && ((*(*stack).FileObject).Flags & 0x00004000) == 0
                 {
-                    return FsRtlRequestExclusiveOplock(Oplock, Stack, Irp, EXCLUSIVE_LOCK | FILTER_OPLOCK);
+                    return FsRtlRequestExclusiveOplock(Oplock, stack, Irp, EXCLUSIVE_LOCK | FILTER_OPLOCK);
                 } else {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_OPLOCK_NOT_GRANTED;
                     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
                     return STATUS_OPLOCK_NOT_GRANTED;
                 }
             }
-
             _ => {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
                 IoCompleteRequest(Irp, IO_DISK_INCREMENT);
@@ -1074,107 +1055,99 @@ pub unsafe extern "system" fn FsRtlOplockFsctrl(
         }
     }
 
-    if OpenCount == 1 &&
-        ((*(*Stack).Parameters.Create.SecurityContext).DesiredAccess & !(FILE_READ_ATTRIBUTES | FILE_READ_DATA)) == 0 &&
-        ((*Stack).Parameters.Create.ShareAccess & FILE_SHARE_VALID_FLAGS) == FILE_SHARE_VALID_FLAGS
+    if OpenCount == 1
+        && ((*(*stack).Parameters.Create.SecurityContext).DesiredAccess & !(0x00000080 | 0x00000001)) == 0
+        && ((*stack).Parameters.Create.ShareAccess & 0x00000007) == 0x00000007
     {
-        return FsRtlRequestExclusiveOplock(Oplock, Stack, core::ptr::null_mut(), EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK);
+        return FsRtlRequestExclusiveOplock(Oplock, stack, core::ptr::null_mut(), EXCLUSIVE_LOCK | PENDING_LOCK | FILTER_OPLOCK);
     }
 
-    return STATUS_OPLOCK_NOT_GRANTED;
+    STATUS_OPLOCK_NOT_GRANTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlOplockIsFastIoPossible(Oplock: POPLOCK) -> BOOLEAN {
-    let IntOplock: PINTERNAL_OPLOCK;
+    let int_oplock = *Oplock as PINTERNAL_OPLOCK;
 
-    IntOplock = *Oplock;
-
-    if !IntOplock.is_null() &&
-        BooleanFlagOn((*IntOplock).Flags, (BROKEN_ANY | LEVEL_2_OPLOCK)) != 0
-    {
+    if !int_oplock.is_null() && ((*int_oplock).Flags & (BROKEN_ANY | LEVEL_2_OPLOCK)) != 0 {
         return 0u8;
     }
 
-    return 1u8;
+    1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlUninitializeOplock(Oplock: POPLOCK) {
-    let IntOplock: PINTERNAL_OPLOCK;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut WaitCtx: PWAIT_CONTEXT;
-    let mut Irp: PIRP;
-    let mut Stack: PIO_STACK_LOCATION;
+    let int_oplock = *Oplock as PINTERNAL_OPLOCK;
 
-    IntOplock = *Oplock;
-
-    if IntOplock.is_null() {
+    if int_oplock.is_null() {
         return;
     }
 
     *Oplock = core::ptr::null_mut();
 
-    ExAcquireFastMutexUnsafe((*IntOplock).IntLock);
+    ExAcquireFastMutexUnsafe((*int_oplock).IntLock);
 
-    NextEntry = (*IntOplock).WaitListHead.Flink;
-    while NextEntry != core::ptr::addr_of_mut!((*IntOplock).WaitListHead) {
-        WaitCtx = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry) as isize)) as PWAIT_CONTEXT;
-        Irp = (*WaitCtx).Irp;
+    let mut next_entry = (*int_oplock).WaitListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!((*int_oplock).WaitListHead) as PLIST_ENTRY {
+        let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
+        let irp = (*wait_ctx).Irp;
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*WaitCtx).WaitListEntry));
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-        IoSetCancelRoutine(Irp, None);
-        IoReleaseCancelSpinLock((*Irp).CancelIrql);
+        RemoveEntryList(core::ptr::addr_of_mut!((*wait_ctx).WaitListEntry) as PLIST_ENTRY);
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+        IoSetCancelRoutine(irp, None);
+        IoReleaseCancelSpinLock((*irp).CancelIrql);
 
-        (*Irp).IoStatus.Information = 0;
-        ((*WaitCtx).CompletionRoutine.unwrap())((*WaitCtx).CompletionContext, (*WaitCtx).Irp);
+        (*irp).IoStatus.Information = 0;
+        ((*wait_ctx).CompletionRoutine.unwrap())((*wait_ctx).CompletionContext, (*wait_ctx).Irp);
 
-        ExFreePoolWithTag(WaitCtx as *mut core::ffi::c_void, TAG_OPLOCK);
+        ExFreePoolWithTag(wait_ctx as PVOID, TAG_OPLOCK);
 
-        NextEntry = (*NextEntry).Flink;
+        next_entry = (*next_entry).Flink;
     }
 
-    NextEntry = (*IntOplock).SharedListHead.Flink;
-    while NextEntry != core::ptr::addr_of_mut!((*IntOplock).SharedListHead) {
-        Irp = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.ListEntry) as isize)) as PIRP;
+    next_entry = (*int_oplock).SharedListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!((*int_oplock).SharedListHead) as PLIST_ENTRY {
+        let irp = ((next_entry as usize)
+            - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
+            as PIRP;
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry));
+        RemoveEntryList(core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY);
 
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-        IoSetCancelRoutine(Irp, None);
-        IoReleaseCancelSpinLock((*Irp).CancelIrql);
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+        IoSetCancelRoutine(irp, None);
+        IoReleaseCancelSpinLock((*irp).CancelIrql);
 
-        Stack = IoGetCurrentIrpStackLocation(Irp);
-        ObDereferenceObject((*Stack).FileObject as *mut core::ffi::c_void);
+        let stack = IoGetCurrentIrpStackLocation(irp);
+        ObDereferenceObject((*stack).FileObject as PVOID);
 
-        (*Irp).IoStatus.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+        (*irp).IoStatus.Information = 3;
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
 
-        NextEntry = (*NextEntry).Flink;
+        next_entry = (*next_entry).Flink;
     }
 
-    Irp = (*IntOplock).ExclusiveIrp;
-    if !Irp.is_null() {
-        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*Irp).CancelIrql));
-        IoSetCancelRoutine(Irp, None);
-        IoReleaseCancelSpinLock((*Irp).CancelIrql);
+    let irp = (*int_oplock).ExclusiveIrp;
+    if !irp.is_null() {
+        IoAcquireCancelSpinLock(core::ptr::addr_of_mut!((*irp).CancelIrql));
+        IoSetCancelRoutine(irp, None);
+        IoReleaseCancelSpinLock((*irp).CancelIrql);
 
-        (*Irp).IoStatus.Information = FILE_OPLOCK_BROKEN_TO_NONE;
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-        (*IntOplock).ExclusiveIrp = core::ptr::null_mut();
+        (*irp).IoStatus.Information = 3;
+        (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        IoCompleteRequest(irp, IO_DISK_INCREMENT);
+        (*int_oplock).ExclusiveIrp = core::ptr::null_mut();
 
-        if !(*IntOplock).FileObject.is_null() {
-            ObDereferenceObject((*IntOplock).FileObject as *mut core::ffi::c_void);
+        if !(*int_oplock).FileObject.is_null() {
+            ObDereferenceObject((*int_oplock).FileObject as PVOID);
         }
     }
 
-    ExReleaseFastMutexUnsafe((*IntOplock).IntLock);
+    ExReleaseFastMutexUnsafe((*int_oplock).IntLock);
 
-    ExFreePoolWithTag((*IntOplock).IntLock as *mut core::ffi::c_void, TAG_OPLOCK);
-    ExFreePoolWithTag(IntOplock as *mut core::ffi::c_void, TAG_OPLOCK);
+    ExFreePoolWithTag((*int_oplock).IntLock as PVOID, TAG_OPLOCK);
+    ExFreePoolWithTag(int_oplock as PVOID, TAG_OPLOCK);
 }
 
 // ============================================================================

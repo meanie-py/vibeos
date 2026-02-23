@@ -413,18 +413,18 @@ def fix_bindgen_anon_field_access(code: str) -> str:
 
         # LARGE_INTEGER / ULARGE_INTEGER: .LowPart and .HighPart
         # Match: (word-char or ')') + .LowPart/.HighPart, NOT already preceded
-        # by __bindgen_anon_1
+        # by __bindgen_anon_1.  Use negative lookbehind on __bindgen_anon_1.
         line = re.sub(
-            r'(?<=[)\w])\.(?!__bindgen_anon_1\.)(LowPart|HighPart)(?![A-Za-z0-9_])',
+            r'(?<!__bindgen_anon_1)(?<=[)\w])\.(LowPart|HighPart)(?![A-Za-z0-9_])',
             r'.__bindgen_anon_1.\1',
             line,
         )
 
         # IO_STATUS_BLOCK: .Status
         # Match: .Status that is NOT .StatusBlock, .StatusPointer, etc.
-        # and NOT already wrapped in __bindgen_anon_1
+        # and NOT already inside __bindgen_anon_1.Status
         line = re.sub(
-            r'(?<=[)\w])\.(?!__bindgen_anon_1\.)Status(?![A-Za-z0-9_])',
+            r'(?<!__bindgen_anon_1)(?<=[)\w])\.Status(?![A-Za-z0-9_])',
             '.__bindgen_anon_1.Status',
             line,
         )

@@ -403,6 +403,18 @@ void NTAPI KeLowerIrql(KIRQL NewIrql)
 }
 #endif
 
+/* --- KeGetCurrentThread: FORCEINLINE on amd64 ---
+ * On amd64 it reads from KPCR->CurrentThread.
+ * On i386 and ARM64 it's exported as a real function.
+ * Rust kd64 subsystem needs it on amd64. */
+#ifdef _M_AMD64
+PKTHREAD NTAPI KeGetCurrentThread(void)
+{
+    return KeGetCurrentPrcb()->CurrentThread;
+}
+#endif
+
+
 /* --- Stubs for sdk/lib/rtl symbols that only exist in user-mode ---
  * sdk/lib/rtl/critical.c references LdrpShutdownInProgress/ThreadId
  * (from ntdll loader). In kernel mode, we provide dummy definitions. */

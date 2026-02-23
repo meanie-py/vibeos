@@ -1,16 +1,15 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::mm::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithQuotaTag};
-use core::ffi::c_void;
+use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExRaiseStatus};
+use ntkrnl_sys::mm::*;
+
+const IFS_POOL_TAG: ULONG = 0x74725346; // 'FSrt'
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN {
-    if NT_SUCCESS(NtStatus) || 
-       NtStatus == STATUS_CRC_ERROR || 
-       NtStatus == STATUS_DEVICE_DATA_ERROR {
+    if NtStatus >= 0 || NtStatus == STATUS_CRC_ERROR || NtStatus == STATUS_DEVICE_DATA_ERROR {
         0u8
     } else {
         1u8
@@ -19,10 +18,10 @@ pub unsafe extern "system" fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> B
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOOLEAN {
-    if (STATUS_DATATYPE_MISALIGNMENT == NtStatus) ||
-       (STATUS_ACCESS_VIOLATION == NtStatus) ||
-       (STATUS_ILLEGAL_INSTRUCTION == NtStatus) ||
-       (STATUS_INSTRUCTION_MISALIGNMENT == NtStatus) {
+    if NtStatus == STATUS_DATATYPE_MISALIGNMENT ||
+       NtStatus == STATUS_ACCESS_VIOLATION ||
+       NtStatus == STATUS_ILLEGAL_INSTRUCTION ||
+       NtStatus == STATUS_INSTRUCTION_MISALIGNMENT {
         0u8
     } else {
         1u8
@@ -32,9 +31,9 @@ pub unsafe extern "system" fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOO
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNormalizeNtstatus(
     NtStatusToNormalize: NTSTATUS,
-    NormalizedNtStatus: NTSTATUS
+    NormalizedNtStatus: NTSTATUS,
 ) -> NTSTATUS {
-    if 1u8 == FsRtlIsNtstatusExpected(NtStatusToNormalize) {
+    if FsRtlIsNtstatusExpected(NtStatusToNormalize) == 1u8 {
         NtStatusToNormalize
     } else {
         NormalizedNtStatus
@@ -44,9 +43,9 @@ pub unsafe extern "system" fn FsRtlNormalizeNtstatus(
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAllocatePool(
     PoolType: POOL_TYPE,
-    NumberOfBytes: u32,
-) -> *mut core::ffi::c_void {
-    let Address = ExAllocatePoolWithTag(PoolType, NumberOfBytes, IFS_POOL_TAG);
+    NumberOfBytes: ULONG,
+) -> PVOID {
+    let Address = ExAllocatePoolWithTag(PoolType, NumberOfBytes as usize, IFS_POOL_TAG);
 
     if Address.is_null() {
         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -58,26 +57,24 @@ pub unsafe extern "system" fn FsRtlAllocatePool(
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAllocatePoolWithQuota(
     PoolType: POOL_TYPE,
-    NumberOfBytes: u32,
-) -> *mut core::ffi::c_void {
-    let Address = ExAllocatePoolWithQuotaTag(
-        PoolType,
-        NumberOfBytes as usize,
-        IFS_POOL_TAG,
-    );
+    NumberOfBytes: ULONG,
+) -> PVOID {
+    let Address = ExAllocatePoolWithQuotaTag(PoolType, NumberOfBytes as _, IFS_POOL_TAG);
+
     if Address.is_null() {
         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
     }
+
     Address
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAllocatePoolWithQuotaTag(
     PoolType: POOL_TYPE,
-    NumberOfBytes: u32,
-    Tag: u32,
-) -> *mut core::ffi::c_void {
-    let Address = ExAllocatePoolWithQuotaTag(PoolType, NumberOfBytes, Tag);
+    NumberOfBytes: ULONG,
+    Tag: ULONG,
+) -> PVOID {
+    let Address = ExAllocatePoolWithQuotaTag(PoolType, NumberOfBytes as _, Tag);
 
     if Address.is_null() {
         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
@@ -89,10 +86,10 @@ pub unsafe extern "system" fn FsRtlAllocatePoolWithQuotaTag(
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAllocatePoolWithTag(
     PoolType: POOL_TYPE,
-    NumberOfBytes: u32,
-    Tag: u32,
-) -> *mut core::ffi::c_void {
-    let Address = ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
+    NumberOfBytes: ULONG,
+    Tag: ULONG,
+) -> PVOID {
+    let Address = ExAllocatePoolWithTag(PoolType, NumberOfBytes as usize, Tag);
 
     if Address.is_null() {
         ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);

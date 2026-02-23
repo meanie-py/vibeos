@@ -1,27 +1,109 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
+use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLONG, _IO_STATUS_BLOCK, IRP, IoCsqInitializeEx, IoCsqInsertIrpEx, IoCsqRemoveNextIrp, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoMarkIrpPending, KeInitializeSpinLock, LARGE_INTEGER, PAGED_LOOKASIDE_LIST, PCOMPLETE_LOCK_IRP_ROUTINE, PFILE_LOCK, PFILE_LOCK_INFO, PFILE_OBJECT, PIO_CSQ, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKIRQL, PLARGE_INTEGER, PNTSTATUS, PRTL_GENERIC_TABLE, PUNLOCK_ROUTINE, RtlDeleteElementGenericTable, RtlEnumerateGenericTable, RtlGetElementGenericTable, RtlInitializeGenericTable, RtlInsertElementGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements, ULARGE_INTEGER};
-use core::ffi::c_void;
+use ntkrnl_sys::ob::*;
+use ntkrnl_sys::ex::*;
+
+use ntkrnl_sys::ddk::{
+    _LARGE_INTEGER, _ULARGE_INTEGER, _IRP, _FILE_LOCK, _FILE_LOCK_INFO,
+    _FILE_OBJECT, _EPROCESS, _IO_STACK_LOCATION, _LIST_ENTRY, _IO_CSQ,
+    _RTL_GENERIC_TABLE, _FILE_SHARED_LOCK_ENTRY, _FILE_EXCLUSIVE_LOCK_ENTRY,
+    _PAGED_LOOKASIDE_LIST,
+    _IRP__bindgen_ty_3, _IRP__bindgen_ty_3__bindgen_ty_1,
+    _IRP__bindgen_ty_3__bindgen_ty_1__bindgen_ty_2,
+    _IRP__bindgen_ty_3__bindgen_ty_1__bindgen_ty_2__bindgen_ty_1,
+    PFILE_LOCK, PFILE_LOCK_INFO, PFILE_OBJECT, PIRP, PIO_STATUS_BLOCK, PLARGE_INTEGER,
+    PEPROCESS, PCOMPLETE_LOCK_IRP_ROUTINE, PUNLOCK_ROUTINE, PIO_STACK_LOCATION,
+    PRTL_GENERIC_TABLE, PIO_CSQ, PKIRQL, LARGE_INTEGER, ULARGE_INTEGER, _IO_STATUS_BLOCK,
+    CLONG, PNTSTATUS, RTL_GENERIC_COMPARE_RESULTS,
+    IoCsqInitializeEx, IoCsqInsertIrpEx, IoCsqRemoveNextIrp, IoGetCurrentIrpStackLocation,
+    IoGetRequestorProcess, IoMarkIrpPending, KeInitializeSpinLock,
+    RtlInitializeGenericTable, RtlInsertElementGenericTable, RtlLookupElementGenericTable,
+    RtlDeleteElementGenericTable, RtlEnumerateGenericTable, RtlGetElementGenericTable,
+    RtlNumberGenericTableElements,
+    IofCompleteRequest,
+};
+
+#[inline(always)]
+unsafe fn FsRtlCompleteRequest(Irp: ntkrnl_sys::ddk::PIRP, Status: NTSTATUS) {
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    IofCompleteRequest(Irp, 1); // IO_DISK_INCREMENT
+}
 
 extern "system" {
-    fn FsRtlCompleteRequest(Irp: PIRP, Status: NTSTATUS);
-    fn ExAllocateFromPagedLookasideList( Lookaside: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
-    fn ExFreeToPagedLookasideList(Lookaside: *mut core::ffi::c_void, Entry: *mut core::ffi::c_void);
+    fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
 
-unsafe fn LockAllocate(Table: PRTL_GENERIC_TABLE, Bytes: CLONG) -> *mut core::ffi::c_void {
-    let Result: *mut core::ffi::c_void;
-    Result = ExAllocatePoolWithTag(NonPagedPool, Bytes as usize, TAG_TABLE);
-    Result
+extern "system" {
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 
-unsafe fn LockFree(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) {
+const TAG_TABLE: ULONG = 0x656C6261; // 'able'
+const TAG_FLOCK: ULONG = 0x6B636F6C; // 'lock'
+const TAG_RANGE: ULONG = 0x65676E61; // 'ange'
+
+const _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan: RTL_GENERIC_COMPARE_RESULTS = 0;
+const _RTL_GENERIC_COMPARE_RESULTS_GenericEqual: RTL_GENERIC_COMPARE_RESULTS = 1;
+const _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan: RTL_GENERIC_COMPARE_RESULTS = 2;
+
+const IRP_MJ_LOCK_CONTROL: u8 = 0x11;
+const IRP_MN_LOCK: u8 = 0x01;
+const IRP_MN_UNLOCK_SINGLE: u8 = 0x02;
+const IRP_MN_UNLOCK_ALL: u8 = 0x03;
+const IRP_MN_UNLOCK_ALL_BY_KEY: u8 = 0x04;
+
+const SL_FAIL_IMMEDIATELY: u8 = 0x01;
+const SL_EXCLUSIVE_LOCK: u8 = 0x02;
+
+#[no_mangle]
+pub static mut FsRtlFileLockLookasideList: _PAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+union COMBINED_LOCK_ELEMENT {
+    _dummy: [u8; core::mem::size_of::<_FILE_EXCLUSIVE_LOCK_ENTRY>()],
+    Exclusive: _FILE_EXCLUSIVE_LOCK_ENTRY,
+}
+
+type PCOMBINED_LOCK_ELEMENT = *mut COMBINED_LOCK_ELEMENT;
+
+#[repr(C)]
+struct LOCK_INFORMATION {
+    RangeTable: _RTL_GENERIC_TABLE,
+    Csq: _IO_CSQ,
+    CsqLock: KSPIN_LOCK,
+    CsqList: _LIST_ENTRY,
+    BelongsTo: PFILE_LOCK,
+    SharedLocks: _LIST_ENTRY,
+    Generation: ULONG,
+}
+
+type PLOCK_INFORMATION = *mut LOCK_INFORMATION;
+
+#[repr(C)]
+struct LOCK_SHARED_RANGE {
+    Entry: _LIST_ENTRY,
+    Start: LARGE_INTEGER,
+    End: LARGE_INTEGER,
+    Key: ULONG,
+    ProcessId: PVOID,
+}
+
+type PLOCK_SHARED_RANGE = *mut LOCK_SHARED_RANGE;
+
+unsafe extern "system" fn LockAllocate(Table: PRTL_GENERIC_TABLE, Bytes: CLONG) -> PVOID {
+    let result = ExAllocatePoolWithTag(NonPagedPool, Bytes as usize, TAG_TABLE);
+    result
+}
+
+unsafe extern "system" fn LockFree(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) {
     ExFreePoolWithTag(Buffer, TAG_TABLE);
 }
 
@@ -30,140 +112,123 @@ unsafe extern "system" fn LockCompare(
     PtrA: PVOID,
     PtrB: PVOID,
 ) -> RTL_GENERIC_COMPARE_RESULTS {
-    let A: PCOMBINED_LOCK_ELEMENT = PtrA as PCOMBINED_LOCK_ELEMENT;
-    let B: PCOMBINED_LOCK_ELEMENT = PtrB as PCOMBINED_LOCK_ELEMENT;
-    let Result: RTL_GENERIC_COMPARE_RESULTS;
+    let A = PtrA as PCOMBINED_LOCK_ELEMENT;
+    let B = PtrB as PCOMBINED_LOCK_ELEMENT;
 
-    if (((*A).Exclusive.FileLock.StartingByte.QuadPart <
-         (*B).Exclusive.FileLock.EndingByte.QuadPart) &&
-        ((*A).Exclusive.FileLock.StartingByte.QuadPart >=
-         (*B).Exclusive.FileLock.StartingByte.QuadPart)) ||
-       (((*B).Exclusive.FileLock.StartingByte.QuadPart <
-         (*A).Exclusive.FileLock.EndingByte.QuadPart) &&
-        ((*B).Exclusive.FileLock.StartingByte.QuadPart >=
-         (*A).Exclusive.FileLock.StartingByte.QuadPart))
+    if (((*A).Exclusive.FileLock.StartingByte.QuadPart < (*B).Exclusive.FileLock.EndingByte.QuadPart)
+        && ((*A).Exclusive.FileLock.StartingByte.QuadPart >= (*B).Exclusive.FileLock.StartingByte.QuadPart))
+        || (((*B).Exclusive.FileLock.StartingByte.QuadPart < (*A).Exclusive.FileLock.EndingByte.QuadPart)
+            && ((*B).Exclusive.FileLock.StartingByte.QuadPart >= (*A).Exclusive.FileLock.StartingByte.QuadPart))
     {
-        return GenericEqual;
+        return _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
     }
 
-    Result = if (*A).Exclusive.FileLock.StartingByte.QuadPart <
-                (*B).Exclusive.FileLock.StartingByte.QuadPart
-    {
-        GenericLessThan
-    } else if (*A).Exclusive.FileLock.StartingByte.QuadPart >
-              (*B).Exclusive.FileLock.StartingByte.QuadPart
-    {
-        GenericGreaterThan
+    if (*A).Exclusive.FileLock.StartingByte.QuadPart < (*B).Exclusive.FileLock.StartingByte.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan
+    } else if (*A).Exclusive.FileLock.StartingByte.QuadPart > (*B).Exclusive.FileLock.StartingByte.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan
     } else {
-        GenericEqual
-    };
-
-    Result
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
+    }
 }
 
-unsafe fn LockInsertIrpEx(
-    Csq: PIO_CSQ,
-    Irp: PIRP,
-    InsertContext: PVOID,
-) -> NTSTATUS {
-    let LockInfo = (Csq as *mut u8).offset(-(core::mem::offset_of!(_LOCK_INFORMATION, Csq) as isize)) as PLOCK_INFORMATION;
+unsafe extern "system" fn LockInsertIrpEx(Csq: PIO_CSQ, Irp: PIRP, InsertContext: PVOID) -> NTSTATUS {
+    let lock_info_offset = core::mem::offset_of!(LOCK_INFORMATION, Csq);
+    let LockInfo = CONTAINING_RECORD(Csq as PVOID, core::mem::size_of::<LOCK_INFORMATION>(), lock_info_offset) as PLOCK_INFORMATION;
     InsertTailList(
-        core::ptr::addr_of_mut!((*LockInfo).CsqList),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry),
+        core::ptr::addr_of_mut!((*LockInfo).CsqList) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY,
     );
     STATUS_SUCCESS
 }
 
-unsafe fn LockRemoveIrp(Csq: PIO_CSQ, Irp: PIRP) {
-    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.ListEntry));
+unsafe extern "system" fn LockRemoveIrp(Csq: PIO_CSQ, Irp: PIRP) {
+    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY);
 }
 
 unsafe extern "system" fn LockPeekNextIrp(Csq: PIO_CSQ, Irp: PIRP, PeekContext: PVOID) -> PIRP {
     let mut LockElement: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
-    let WhereUnlock: PCOMBINED_LOCK_ELEMENT = PeekContext as PCOMBINED_LOCK_ELEMENT;
-    let LockInfo: PLOCK_INFORMATION = (Csq as *mut u8).offset(-(core::mem::offset_of!(LOCK_INFORMATION, Csq) as isize)) as PLOCK_INFORMATION;
+    let WhereUnlock = PeekContext as PCOMBINED_LOCK_ELEMENT;
+    let lock_info_offset = core::mem::offset_of!(LOCK_INFORMATION, Csq);
+    let LockInfo = CONTAINING_RECORD(Csq as PVOID, core::mem::size_of::<LOCK_INFORMATION>(), lock_info_offset) as PLOCK_INFORMATION;
+
     let mut Following: PLIST_ENTRY;
-    
     if Irp.is_null() {
         Following = (*LockInfo).CsqList.Flink;
     } else {
-        Following = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry.Flink;
+        Following = (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry.Flink;
     }
-    
-    loop {
-        if Following == core::ptr::addr_of_mut!((*LockInfo).CsqList) {
-            break;
-        }
-        
-        let IoStack: PIO_STACK_LOCATION;
-        let Matching: BOOLEAN;
-        let CurrentIrp: PIRP = (Following as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry) as isize)) as PIRP;
-        
-        IoStack = IoGetCurrentIrpStackLocation(CurrentIrp);
-        (*LockElement.Exclusive.FileLock).StartingByte = (*IoStack).Parameters.LockControl.ByteOffset;
-        (*LockElement.Exclusive.FileLock).EndingByte.QuadPart = 
-            (*LockElement.Exclusive.FileLock).StartingByte.QuadPart + 
-            (*(*IoStack).Parameters.LockControl.Length).QuadPart;
-        
-        if !WhereUnlock.is_null() {
-            Matching = if LockCompare(
+
+    while Following != core::ptr::addr_of_mut!((*LockInfo).CsqList) as PLIST_ENTRY {
+        let entry_offset = core::mem::offset_of!(_IRP, Tail) + core::mem::offset_of!(_IRP__bindgen_ty_3, Overlay)
+            + core::mem::offset_of!(_IRP__bindgen_ty_3__bindgen_ty_1, __bindgen_anon_2)
+            + core::mem::offset_of!(_IRP__bindgen_ty_3__bindgen_ty_1__bindgen_ty_2, ListEntry);
+        let current_irp = CONTAINING_RECORD(Following as PVOID, core::mem::size_of::<_IRP>(), entry_offset) as PIRP;
+        let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(current_irp);
+        LockElement.Exclusive.FileLock.StartingByte = (*IoStack).Parameters.LockControl.ByteOffset;
+        LockElement.Exclusive.FileLock.EndingByte.QuadPart = LockElement.Exclusive.FileLock.StartingByte.QuadPart
+            + (*(*IoStack).Parameters.LockControl.Length).QuadPart;
+
+        let Matching = if !WhereUnlock.is_null() {
+            LockCompare(
                 core::ptr::addr_of_mut!((*LockInfo).RangeTable),
-                core::ptr::addr_of_mut!(LockElement) as PVOID,
-                WhereUnlock as PVOID
-            ) != GenericEqual { 1u8 } else { 0u8 };
+                &mut LockElement as *mut _ as PVOID,
+                WhereUnlock as PVOID,
+            ) != _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
         } else {
-            Matching = 0u8;
+            false
+        };
+
+        if !Matching {
+            return current_irp;
         }
-        
-        if Matching == 0u8 {
-            return CurrentIrp;
-        }
-        
+
         Following = (*Following).Flink;
     }
-    
     core::ptr::null_mut()
 }
 
-unsafe fn LockAcquireQueueLock(Csq: PIO_CSQ, Irql: PKIRQL) {
-    let LockInfo = (Csq as *mut u8).offset(-(core::mem::offset_of!(_LOCK_INFORMATION, Csq) as isize)) as *mut _LOCK_INFORMATION;
+unsafe extern "system" fn LockAcquireQueueLock(Csq: PIO_CSQ, Irql: PKIRQL) {
+    let lock_info_offset = core::mem::offset_of!(LOCK_INFORMATION, Csq);
+    let LockInfo = CONTAINING_RECORD(Csq as PVOID, core::mem::size_of::<LOCK_INFORMATION>(), lock_info_offset) as PLOCK_INFORMATION;
     KeAcquireSpinLock(core::ptr::addr_of_mut!((*LockInfo).CsqLock), Irql);
 }
 
-unsafe fn LockReleaseQueueLock(Csq: PIO_CSQ, Irql: KIRQL) {
-    let LockInfo = (Csq as *mut u8).offset(-(core::mem::offset_of!(_LOCK_INFORMATION, Csq) as isize)) as *mut _LOCK_INFORMATION;
+unsafe extern "system" fn LockReleaseQueueLock(Csq: PIO_CSQ, Irql: KIRQL) {
+    let lock_info_offset = core::mem::offset_of!(LOCK_INFORMATION, Csq);
+    let LockInfo = CONTAINING_RECORD(Csq as PVOID, core::mem::size_of::<LOCK_INFORMATION>(), lock_info_offset) as PLOCK_INFORMATION;
     KeReleaseSpinLock(core::ptr::addr_of_mut!((*LockInfo).CsqLock), Irql);
 }
 
-unsafe fn LockCompleteCanceledIrp(Csq: PIO_CSQ, Irp: PIRP) {
+unsafe extern "system" fn LockCompleteCanceledIrp(Csq: PIO_CSQ, Irp: PIRP) {
     let mut Status: NTSTATUS = 0;
-    let LockInfo = (Csq as *mut u8).offset(-(core::mem::offset_of!(_LOCK_INFORMATION, Csq) as isize)) as PLOCK_INFORMATION;
+    let lock_info_offset = core::mem::offset_of!(LOCK_INFORMATION, Csq);
+    let LockInfo = CONTAINING_RECORD(Csq as PVOID, core::mem::size_of::<LOCK_INFORMATION>(), lock_info_offset) as PLOCK_INFORMATION;
     FsRtlCompleteLockIrpReal(
         (*(*LockInfo).BelongsTo).CompleteLockIrpRoutine,
         core::ptr::null_mut(),
         Irp,
         STATUS_CANCELLED,
-        &mut Status,
+        &mut Status as PNTSTATUS,
         core::ptr::null_mut(),
     );
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlCompleteLockIrpReal(
+unsafe fn FsRtlCompleteLockIrpReal(
     CompleteRoutine: PCOMPLETE_LOCK_IRP_ROUTINE,
-    Context: *mut core::ffi::c_void,
+    Context: PVOID,
     Irp: PIRP,
     Status: NTSTATUS,
     NewStatus: PNTSTATUS,
     FileObject: PFILE_OBJECT,
 ) {
     (*Irp).IoStatus.Information = 0;
-    if !CompleteRoutine.is_null() {
+    if let Some(routine) = CompleteRoutine {
         if !FileObject.is_null() {
             (*FileObject).LastLock = core::ptr::null_mut();
         }
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
-        *NewStatus = CompleteRoutine(Context, Irp);
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+        *NewStatus = routine(Context, Irp);
     } else {
         FsRtlCompleteRequest(Irp, Status);
         *NewStatus = Status;
@@ -175,33 +240,23 @@ pub unsafe extern "system" fn FsRtlGetNextFileLock(
     FileLock: PFILE_LOCK,
     Restart: BOOLEAN,
 ) -> PFILE_LOCK_INFO {
-    let Entry: PCOMBINED_LOCK_ELEMENT;
     if (*FileLock).LockInformation.is_null() {
         return core::ptr::null_mut();
     }
-    Entry = RtlEnumerateGenericTable((*FileLock).LockInformation, Restart) as PCOMBINED_LOCK_ELEMENT;
+    let Entry = RtlEnumerateGenericTable((*FileLock).LockInformation as PRTL_GENERIC_TABLE, Restart) as PCOMBINED_LOCK_ELEMENT;
     if Entry.is_null() {
-        return core::ptr::null_mut();
+        core::ptr::null_mut()
     } else {
-        return core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock);
+        core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock) as PFILE_LOCK_INFO
     }
 }
 
-unsafe fn FsRtlpExpandLockElement(
-    ToExpand: PCOMBINED_LOCK_ELEMENT,
-    Conflict: PCOMBINED_LOCK_ELEMENT,
-) {
-    if (*ToExpand).Exclusive.FileLock.StartingByte.QuadPart()
-        > (*Conflict).Exclusive.FileLock.StartingByte.QuadPart()
-    {
-        (*ToExpand).Exclusive.FileLock.StartingByte =
-            (*Conflict).Exclusive.FileLock.StartingByte;
+unsafe fn FsRtlpExpandLockElement(ToExpand: PCOMBINED_LOCK_ELEMENT, Conflict: PCOMBINED_LOCK_ELEMENT) {
+    if (*ToExpand).Exclusive.FileLock.StartingByte.QuadPart > (*Conflict).Exclusive.FileLock.StartingByte.QuadPart {
+        (*ToExpand).Exclusive.FileLock.StartingByte = (*Conflict).Exclusive.FileLock.StartingByte;
     }
-    if (*ToExpand).Exclusive.FileLock.EndingByte.QuadPart()
-        < (*Conflict).Exclusive.FileLock.EndingByte.QuadPart()
-    {
-        (*ToExpand).Exclusive.FileLock.EndingByte =
-            (*Conflict).Exclusive.FileLock.EndingByte;
+    if (*ToExpand).Exclusive.FileLock.EndingByte.QuadPart < (*Conflict).Exclusive.FileLock.EndingByte.QuadPart {
+        (*ToExpand).Exclusive.FileLock.EndingByte = (*Conflict).Exclusive.FileLock.EndingByte;
     }
 }
 
@@ -210,43 +265,32 @@ unsafe fn FsRtlpRebuildSharedLockRange(
     LockInfo: PLOCK_INFORMATION,
     Conflict: PCOMBINED_LOCK_ELEMENT,
 ) -> PCOMBINED_LOCK_ELEMENT {
-    let mut InsertedNew: BOOLEAN = 0u8;
-    let mut NewElement: COMBINED_LOCK_ELEMENT = *Conflict;
+    let mut InsertedNew = 0u8;
+    let mut NewElement = *Conflict;
     let mut Entry: PCOMBINED_LOCK_ELEMENT;
-    
+
     loop {
         Entry = RtlLookupElementGenericTable(
-            (*FileLock).LockInformation,
-            core::ptr::addr_of_mut!(NewElement) as *mut core::ffi::c_void,
+            (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
+            &mut NewElement as *mut _ as PVOID,
         ) as PCOMBINED_LOCK_ELEMENT;
-        
         if Entry.is_null() {
             break;
         }
-        
-        FsRtlpExpandLockElement(
-            core::ptr::addr_of_mut!(NewElement),
-            Entry,
-        );
-        
+        FsRtlpExpandLockElement(&mut NewElement, Entry);
         let RemovedOld = RtlDeleteElementGenericTable(
             core::ptr::addr_of_mut!((*LockInfo).RangeTable),
-            Entry as *mut core::ffi::c_void,
+            Entry as PVOID,
         );
-        
-        debug_assert!(RemovedOld != 0);
     }
-    
-    let Conflict = RtlInsertElementGenericTable(
+
+    let result = RtlInsertElementGenericTable(
         core::ptr::addr_of_mut!((*LockInfo).RangeTable),
-        core::ptr::addr_of_mut!(NewElement) as *mut core::ffi::c_void,
-        core::mem::size_of::<COMBINED_LOCK_ELEMENT>() as u32,
-        core::ptr::addr_of_mut!(InsertedNew),
+        &mut NewElement as *mut _ as PVOID,
+        core::mem::size_of::<COMBINED_LOCK_ELEMENT>() as ULONG,
+        &mut InsertedNew as *mut u8,
     ) as PCOMBINED_LOCK_ELEMENT;
-    
-    debug_assert!(InsertedNew != 0);
-    
-    Conflict
+    result
 }
 
 #[no_mangle]
@@ -264,27 +308,27 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
     Context: PVOID,
     AlreadySynchronized: BOOLEAN,
 ) -> BOOLEAN {
-    let mut Status: NTSTATUS;
+    let mut Status: NTSTATUS = 0;
     let mut ToInsert: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let mut Conflict: PCOMBINED_LOCK_ELEMENT;
     let mut LockInfo: PLOCK_INFORMATION;
     let mut NewSharedRange: PLOCK_SHARED_RANGE;
-    let mut InsertedNew: BOOLEAN = 0u8;
+    let mut InsertedNew: u8 = 0;
     let mut UnsignedStart: ULARGE_INTEGER = core::mem::zeroed();
     let mut UnsignedEnd: ULARGE_INTEGER = core::mem::zeroed();
 
-    UnsignedStart.QuadPart = (*FileOffset).QuadPart;
-    UnsignedEnd.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
+    UnsignedStart.QuadPart = (*FileOffset).QuadPart as u64;
+    UnsignedEnd.QuadPart = ((*FileOffset).QuadPart + (*Length).QuadPart) as u64;
 
     if UnsignedEnd.QuadPart < UnsignedStart.QuadPart {
-        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
         if !Irp.is_null() {
             FsRtlCompleteLockIrpReal(
                 (*FileLock).CompleteLockIrpRoutine,
                 Context,
                 Irp,
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                core::ptr::addr_of_mut!(Status),
+                (*IoStatus).__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
                 FileObject,
             );
         }
@@ -292,76 +336,72 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
     }
 
     if (*FileLock).LockInformation.is_null() {
-        LockInfo = ExAllocatePoolWithTag(
-            NonPagedPool,
-            core::mem::size_of::<LOCK_INFORMATION>() as u64,
-            TAG_FLOCK,
-        ) as PLOCK_INFORMATION;
+        LockInfo = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<LOCK_INFORMATION>(), TAG_FLOCK) as PLOCK_INFORMATION;
         if LockInfo.is_null() {
-            (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+            (*IoStatus).__bindgen_anon_1.Status = STATUS_NO_MEMORY;
             return 0u8;
         }
-        (*FileLock).LockInformation = LockInfo;
+        (*FileLock).LockInformation = LockInfo as PVOID;
 
         (*LockInfo).BelongsTo = FileLock;
-        InitializeListHead(core::ptr::addr_of_mut!((*LockInfo).SharedLocks));
+        InitializeListHead(core::ptr::addr_of_mut!((*LockInfo).SharedLocks) as PLIST_ENTRY);
 
         RtlInitializeGenericTable(
             core::ptr::addr_of_mut!((*LockInfo).RangeTable),
-            Some(LockCompare),
-            Some(LockAllocate),
-            Some(LockFree),
+            Some(abi_cast!(LockCompare)),
+            Some(abi_cast!(LockAllocate)),
+            Some(abi_cast!(LockFree)),
             core::ptr::null_mut(),
         );
 
-        KeInitializeSpinLock(core::ptr::addr_of_mut!((*LockInfo).CsqLock));
-        InitializeListHead(core::ptr::addr_of_mut!((*LockInfo).CsqList));
+        KeInitializeSpinLock(core::ptr::addr_of_mut!((*LockInfo).CsqLock) as *mut _);
+        InitializeListHead(core::ptr::addr_of_mut!((*LockInfo).CsqList) as PLIST_ENTRY);
 
         IoCsqInitializeEx(
             core::ptr::addr_of_mut!((*LockInfo).Csq),
-            Some(LockInsertIrpEx),
-            Some(LockRemoveIrp),
-            Some(LockPeekNextIrp),
-            Some(LockAcquireQueueLock),
-            Some(LockReleaseQueueLock),
-            Some(LockCompleteCanceledIrp),
+            Some(abi_cast!(LockInsertIrpEx)),
+            Some(abi_cast!(LockRemoveIrp)),
+            Some(abi_cast!(LockPeekNextIrp)),
+            Some(abi_cast!(LockAcquireQueueLock)),
+            Some(abi_cast!(LockReleaseQueueLock)),
+            Some(abi_cast!(LockCompleteCanceledIrp)),
         );
     }
 
-    LockInfo = (*FileLock).LockInformation;
+    LockInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
     ToInsert.Exclusive.FileLock.FileObject = FileObject;
     ToInsert.Exclusive.FileLock.StartingByte = *FileOffset;
     ToInsert.Exclusive.FileLock.EndingByte.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
-    ToInsert.Exclusive.FileLock.ProcessId = Process;
+    ToInsert.Exclusive.FileLock.ProcessId = Process as PVOID;
     ToInsert.Exclusive.FileLock.Key = Key;
     ToInsert.Exclusive.FileLock.ExclusiveLock = ExclusiveLock;
 
     Conflict = RtlInsertElementGenericTable(
-        (*FileLock).LockInformation,
-        core::ptr::addr_of_mut!(ToInsert) as *mut core::ffi::c_void,
+        (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
+        &mut ToInsert as *mut _ as PVOID,
         core::mem::size_of::<COMBINED_LOCK_ELEMENT>() as ULONG,
-        core::ptr::addr_of_mut!(InsertedNew),
+        &mut InsertedNew as *mut u8,
     ) as PCOMBINED_LOCK_ELEMENT;
 
-    if !Conflict.is_null() && InsertedNew == 0u8 {
-        if (*Conflict).Exclusive.FileLock.ExclusiveLock != 0u8 || ExclusiveLock != 0u8 {
-            if FailImmediately != 0u8 {
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_FILE_LOCK_CONFLICT;
+    if !Conflict.is_null() && InsertedNew == 0 {
+        if (*Conflict).Exclusive.FileLock.ExclusiveLock != 0 || ExclusiveLock != 0 {
+            if FailImmediately != 0 {
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_FILE_LOCK_CONFLICT;
                 if !Irp.is_null() {
                     FsRtlCompleteLockIrpReal(
                         (*FileLock).CompleteLockIrpRoutine,
                         Context,
                         Irp,
-                        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                        core::ptr::addr_of_mut!(Status),
+                        (*IoStatus).__bindgen_anon_1.Status,
+                        &mut Status as PNTSTATUS,
                         FileObject,
                     );
                 }
                 return 0u8;
             } else {
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_PENDING;
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_PENDING;
                 if !Irp.is_null() {
-                    (*Irp).IoStatus.Information = (*LockInfo).Generation as usize;
+                    (*Irp).IoStatus.Information = (*LockInfo).Generation as _;
                     IoMarkIrpPending(Irp);
                     IoCsqInsertIrpEx(
                         core::ptr::addr_of_mut!((*LockInfo).Csq),
@@ -373,26 +413,32 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
             }
             return 0u8;
         } else {
-            let mut i: ULONG;
-            for i in 0..RtlNumberGenericTableElements(core::ptr::addr_of_mut!((*LockInfo).RangeTable)) {
+            let num_elements = RtlNumberGenericTableElements(core::ptr::addr_of_mut!((*LockInfo).RangeTable)) as ULONG;
+            for i in 0..num_elements {
                 Conflict = RtlGetElementGenericTable(core::ptr::addr_of_mut!((*LockInfo).RangeTable), i) as PCOMBINED_LOCK_ELEMENT;
 
-                if !Conflict.is_null() && (LockCompare(core::ptr::addr_of_mut!((*LockInfo).RangeTable), Conflict as PVOID, core::ptr::addr_of_mut!(ToInsert) as PVOID) == _RTL_GENERIC_COMPARE_RESULTS_GenericEqual) {
-                    if (*Conflict).Exclusive.FileLock.ExclusiveLock != 0u8 {
-                        if FailImmediately != 0u8 {
-                            (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_FILE_LOCK_CONFLICT;
+                if !Conflict.is_null()
+                    && LockCompare(
+                        core::ptr::addr_of_mut!((*LockInfo).RangeTable),
+                        Conflict as PVOID,
+                        &mut ToInsert as *mut _ as PVOID,
+                    ) == _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
+                {
+                    if (*Conflict).Exclusive.FileLock.ExclusiveLock != 0 {
+                        if FailImmediately != 0 {
+                            (*IoStatus).__bindgen_anon_1.Status = STATUS_FILE_LOCK_CONFLICT;
                             if !Irp.is_null() {
                                 FsRtlCompleteLockIrpReal(
                                     (*FileLock).CompleteLockIrpRoutine,
                                     Context,
                                     Irp,
-                                    (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                                    core::ptr::addr_of_mut!(Status),
+                                    (*IoStatus).__bindgen_anon_1.Status,
+                                    &mut Status as PNTSTATUS,
                                     FileObject,
                                 );
                             }
                         } else {
-                            (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_PENDING;
+                            (*IoStatus).__bindgen_anon_1.Status = STATUS_PENDING;
                             if !Irp.is_null() {
                                 IoMarkIrpPending(Irp);
                                 IoCsqInsertIrpEx(
@@ -408,35 +454,31 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
                 }
             }
 
-            Conflict = FsRtlpRebuildSharedLockRange(FileLock, LockInfo, core::ptr::addr_of_mut!(ToInsert));
+            Conflict = FsRtlpRebuildSharedLockRange(FileLock, LockInfo, &mut ToInsert);
             if Conflict.is_null() {
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_NO_MEMORY;
                 if !Irp.is_null() {
                     FsRtlCompleteLockIrpReal(
                         (*FileLock).CompleteLockIrpRoutine,
                         Context,
                         Irp,
-                        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                        core::ptr::addr_of_mut!(Status),
+                        (*IoStatus).__bindgen_anon_1.Status,
+                        &mut Status as PNTSTATUS,
                         FileObject,
                     );
                 }
             }
 
-            NewSharedRange = ExAllocatePoolWithTag(
-                NonPagedPool,
-                core::mem::size_of::<LOCK_SHARED_RANGE>() as u64,
-                TAG_RANGE,
-            ) as PLOCK_SHARED_RANGE;
+            NewSharedRange = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<LOCK_SHARED_RANGE>(), TAG_RANGE) as PLOCK_SHARED_RANGE;
             if NewSharedRange.is_null() {
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_NO_MEMORY;
                 if !Irp.is_null() {
                     FsRtlCompleteLockIrpReal(
                         (*FileLock).CompleteLockIrpRoutine,
                         Context,
                         Irp,
-                        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                        core::ptr::addr_of_mut!(Status),
+                        (*IoStatus).__bindgen_anon_1.Status,
+                        &mut Status as PNTSTATUS,
                         FileObject,
                     );
                 }
@@ -447,52 +489,48 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
             (*NewSharedRange).Key = Key;
             (*NewSharedRange).ProcessId = ToInsert.Exclusive.FileLock.ProcessId;
             InsertTailList(
-                core::ptr::addr_of_mut!((*LockInfo).SharedLocks),
-                core::ptr::addr_of_mut!((*NewSharedRange).Entry),
+                core::ptr::addr_of_mut!((*LockInfo).SharedLocks) as PLIST_ENTRY,
+                core::ptr::addr_of_mut!((*NewSharedRange).Entry) as PLIST_ENTRY,
             );
 
-            (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
             if !Irp.is_null() {
                 FsRtlCompleteLockIrpReal(
                     (*FileLock).CompleteLockIrpRoutine,
                     Context,
                     Irp,
-                    (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                    core::ptr::addr_of_mut!(Status),
+                    (*IoStatus).__bindgen_anon_1.Status,
+                    &mut Status as PNTSTATUS,
                     FileObject,
                 );
             }
             return 1u8;
         }
     } else if Conflict.is_null() {
-        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_NO_MEMORY;
         if !Irp.is_null() {
             FsRtlCompleteLockIrpReal(
                 (*FileLock).CompleteLockIrpRoutine,
                 Context,
                 Irp,
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                core::ptr::addr_of_mut!(Status),
+                (*IoStatus).__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
                 FileObject,
             );
         }
         return 0u8;
     } else {
-        if ExclusiveLock == 0u8 {
-            NewSharedRange = ExAllocatePoolWithTag(
-                NonPagedPool,
-                core::mem::size_of::<LOCK_SHARED_RANGE>() as u64,
-                TAG_RANGE,
-            ) as PLOCK_SHARED_RANGE;
+        if ExclusiveLock == 0 {
+            NewSharedRange = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<LOCK_SHARED_RANGE>(), TAG_RANGE) as PLOCK_SHARED_RANGE;
             if NewSharedRange.is_null() {
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_NO_MEMORY;
                 if !Irp.is_null() {
                     FsRtlCompleteLockIrpReal(
                         (*FileLock).CompleteLockIrpRoutine,
                         Context,
                         Irp,
-                        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                        core::ptr::addr_of_mut!(Status),
+                        (*IoStatus).__bindgen_anon_1.Status,
+                        &mut Status as PNTSTATUS,
                         FileObject,
                     );
                 }
@@ -501,26 +539,25 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
             (*NewSharedRange).Start = *FileOffset;
             (*NewSharedRange).End.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
             (*NewSharedRange).Key = Key;
-            (*NewSharedRange).ProcessId = Process;
+            (*NewSharedRange).ProcessId = Process as PVOID;
             InsertTailList(
-                core::ptr::addr_of_mut!((*LockInfo).SharedLocks),
-                core::ptr::addr_of_mut!((*NewSharedRange).Entry),
+                core::ptr::addr_of_mut!((*LockInfo).SharedLocks) as PLIST_ENTRY,
+                core::ptr::addr_of_mut!((*NewSharedRange).Entry) as PLIST_ENTRY,
             );
         }
 
-        (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
 
         if !Irp.is_null() {
             FsRtlCompleteLockIrpReal(
                 (*FileLock).CompleteLockIrpRoutine,
                 Context,
                 Irp,
-                (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status,
-                core::ptr::addr_of_mut!(Status),
+                (*IoStatus).__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
                 FileObject,
             );
-
-            (*IoStatus).__bindgen_anon_1.__bindgen_anon_1.Status = Status;
+            (*IoStatus).__bindgen_anon_1.Status = Status;
         }
     }
 
@@ -528,73 +565,59 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlCheckLockForReadAccess(
-    FileLock: PFILE_LOCK,
-    Irp: PIRP,
-) -> BOOLEAN {
+pub unsafe extern "system" fn FsRtlCheckLockForReadAccess(FileLock: PFILE_LOCK, Irp: PIRP) -> BOOLEAN {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
-    
+    let Found: PCOMBINED_LOCK_ELEMENT;
+
     if (*FileLock).LockInformation.is_null() {
         return 1u8;
     }
-    
     ToFind.Exclusive.FileLock.StartingByte = (*IoStack).Parameters.Read.ByteOffset;
     ToFind.Exclusive.FileLock.EndingByte.QuadPart =
-        ToFind.Exclusive.FileLock.StartingByte.QuadPart +
-        (*IoStack).Parameters.Read.Length as i64;
-    
-    let Found: PCOMBINED_LOCK_ELEMENT = RtlLookupElementGenericTable(
-        (*FileLock).LockInformation,
-        &ToFind as *const _ as *mut core::ffi::c_void,
+        ToFind.Exclusive.FileLock.StartingByte.QuadPart + (*IoStack).Parameters.Read.Length as i64;
+    Found = RtlLookupElementGenericTable(
+        (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
+        &mut ToFind as *mut _ as PVOID,
     ) as PCOMBINED_LOCK_ELEMENT;
-    
     if Found.is_null() {
         return 1u8;
     }
-    
-    let Result: BOOLEAN = if (*Found).Exclusive.FileLock.ExclusiveLock == 0 ||
-        (*IoStack).Parameters.Read.Key == (*Found).Exclusive.FileLock.Key {
+    let result = if (*Found).Exclusive.FileLock.ExclusiveLock == 0
+        || (*IoStack).Parameters.Read.Key == (*Found).Exclusive.FileLock.Key
+    {
         1u8
     } else {
         0u8
     };
-    
-    Result
+    result
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlCheckLockForWriteAccess(
-    FileLock: PFILE_LOCK,
-    Irp: PIRP,
-) -> BOOLEAN {
-    let Result: BOOLEAN;
+pub unsafe extern "system" fn FsRtlCheckLockForWriteAccess(FileLock: PFILE_LOCK, Irp: PIRP) -> BOOLEAN {
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
-    let Process: PEPROCESS = (*(*Irp).Tail.Overlay.__bindgen_anon_2.Thread).ThreadsProcess;
+    let Process = (*(*Irp).Tail.Overlay.Thread).Tcb.Process as PEPROCESS;
 
     if (*FileLock).LockInformation.is_null() {
         return 1u8;
     }
-
     ToFind.Exclusive.FileLock.StartingByte = (*IoStack).Parameters.Write.ByteOffset;
-    (*ToFind.Exclusive.FileLock.EndingByte.QuadPart_mut()) =
-        *ToFind.Exclusive.FileLock.StartingByte.QuadPart() +
-        (*IoStack).Parameters.Write.Length as i64;
-
+    ToFind.Exclusive.FileLock.EndingByte.QuadPart =
+        ToFind.Exclusive.FileLock.StartingByte.QuadPart + (*IoStack).Parameters.Write.Length as i64;
     Found = RtlLookupElementGenericTable(
-        (*FileLock).LockInformation,
-        &ToFind as *const _ as *mut _,
+        (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
+        &mut ToFind as *mut _ as PVOID,
     ) as PCOMBINED_LOCK_ELEMENT;
-
     if Found.is_null() {
         return 1u8;
     }
-
-    Result = if Process == (*Found).Exclusive.FileLock.ProcessId { 1u8 } else { 0u8 };
-
-    Result
+    if Process as PVOID == (*Found).Exclusive.FileLock.ProcessId {
+        1u8
+    } else {
+        0u8
+    }
 }
 
 #[no_mangle]
@@ -602,33 +625,27 @@ pub unsafe extern "system" fn FsRtlFastCheckLockForRead(
     FileLock: PFILE_LOCK,
     FileOffset: PLARGE_INTEGER,
     Length: PLARGE_INTEGER,
-    Key: u32,
+    Key: ULONG,
     FileObject: PFILE_OBJECT,
-    Process: *mut core::ffi::c_void,
-) -> u8 {
-    let EProcess: PEPROCESS = Process as PEPROCESS;
+    Process: PVOID,
+) -> BOOLEAN {
+    let EProcess = Process as PEPROCESS;
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
 
-    (*ToFind.Exclusive.FileLock).StartingByte = *FileOffset;
-    (*ToFind.Exclusive.FileLock).EndingByte.QuadPart =
-        (*FileOffset).QuadPart + (*Length).QuadPart;
-
+    ToFind.Exclusive.FileLock.StartingByte = *FileOffset;
+    ToFind.Exclusive.FileLock.EndingByte.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
     if (*FileLock).LockInformation.is_null() {
         return 1u8;
     }
-
     Found = RtlLookupElementGenericTable(
-        (*FileLock).LockInformation,
-        &mut ToFind as *mut _ as *mut core::ffi::c_void,
+        (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
+        &mut ToFind as *mut _ as PVOID,
     ) as PCOMBINED_LOCK_ELEMENT;
-
-    if Found.is_null() || (*(*Found).Exclusive.FileLock).ExclusiveLock == 0 {
+    if Found.is_null() || (*Found).Exclusive.FileLock.ExclusiveLock == 0 {
         return 1u8;
     }
-
-    if (*(*Found).Exclusive.FileLock).Key == Key &&
-        (*(*Found).Exclusive.FileLock).ProcessId == EProcess as *mut core::ffi::c_void {
+    if (*Found).Exclusive.FileLock.Key == Key && (*Found).Exclusive.FileLock.ProcessId == EProcess as PVOID {
         1u8
     } else {
         0u8
@@ -644,30 +661,27 @@ pub unsafe extern "system" fn FsRtlFastCheckLockForWrite(
     FileObject: PFILE_OBJECT,
     Process: PVOID,
 ) -> BOOLEAN {
-    let EProcess: PEPROCESS = Process as PEPROCESS;
+    let EProcess = Process as PEPROCESS;
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
-    
+    let Found: PCOMBINED_LOCK_ELEMENT;
+
     ToFind.Exclusive.FileLock.StartingByte = *FileOffset;
-    ToFind.Exclusive.FileLock.EndingByte.QuadPart =
-        (*FileOffset).QuadPart + (*Length).QuadPart;
-    
+    ToFind.Exclusive.FileLock.EndingByte.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
     if (*FileLock).LockInformation.is_null() {
         return 1u8;
     }
-    
-    let Found: PCOMBINED_LOCK_ELEMENT = RtlLookupElementGenericTable(
-        (*FileLock).LockInformation,
+    Found = RtlLookupElementGenericTable(
+        (*FileLock).LockInformation as PRTL_GENERIC_TABLE,
         &mut ToFind as *mut _ as PVOID,
     ) as PCOMBINED_LOCK_ELEMENT;
-    
     if Found.is_null() {
         return 1u8;
     }
-    
-    let Result = (*Found).Exclusive.FileLock.Key == Key &&
-        (*Found).Exclusive.FileLock.ProcessId == EProcess;
-    
-    if Result { 1u8 } else { 0u8 }
+    if (*Found).Exclusive.FileLock.Key == Key && (*Found).Exclusive.FileLock.ProcessId == EProcess as PVOID {
+        1u8
+    } else {
+        0u8
+    }
 }
 
 #[no_mangle]
@@ -681,86 +695,61 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
     Context: PVOID,
     AlreadySynchronized: BOOLEAN,
 ) -> NTSTATUS {
-    let mut FoundShared: BOOLEAN = 0u8;
+    let mut FoundShared = 0u8;
     let mut SharedEntry: PLIST_ENTRY;
     let mut SharedRange: PLOCK_SHARED_RANGE = core::ptr::null_mut();
     let mut Find: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
-    let Entry: PCOMBINED_LOCK_ELEMENT;
+    let mut Entry: PCOMBINED_LOCK_ELEMENT;
     let mut NextMatchingLockIrp: PIRP;
-    let InternalInfo: PLOCK_INFORMATION = (*FileLock).LockInformation;
+    let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
 
     Find.Exclusive.FileLock.StartingByte = *FileOffset;
-    Find.Exclusive.FileLock.EndingByte.QuadPart =
-        (*FileOffset).QuadPart + (*Length).QuadPart;
-
+    Find.Exclusive.FileLock.EndingByte.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
     if InternalInfo.is_null() {
         return STATUS_RANGE_NOT_LOCKED;
     }
-
-    let Entry = RtlLookupElementGenericTable(
-        core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-        core::ptr::addr_of_mut!(Find) as *mut core::ffi::c_void,
-    ) as PCOMBINED_LOCK_ELEMENT;
-
+    Entry = RtlLookupElementGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), &mut Find as *mut _ as PVOID) as PCOMBINED_LOCK_ELEMENT;
     if Entry.is_null() {
         return STATUS_RANGE_NOT_LOCKED;
     }
 
     if (*Entry).Exclusive.FileLock.ExclusiveLock != 0 {
-        if (*Entry).Exclusive.FileLock.Key != Key ||
-            (*Entry).Exclusive.FileLock.ProcessId != Process ||
-            (*Entry).Exclusive.FileLock.StartingByte.QuadPart != (*FileOffset).QuadPart ||
-            (*Entry).Exclusive.FileLock.EndingByte.QuadPart !=
-                (*FileOffset).QuadPart + (*Length).QuadPart
+        if (*Entry).Exclusive.FileLock.Key != Key
+            || (*Entry).Exclusive.FileLock.ProcessId != Process as PVOID
+            || (*Entry).Exclusive.FileLock.StartingByte.QuadPart != (*FileOffset).QuadPart
+            || (*Entry).Exclusive.FileLock.EndingByte.QuadPart != (*FileOffset).QuadPart + (*Length).QuadPart
         {
             return STATUS_RANGE_NOT_LOCKED;
         }
-
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(Find) as *mut core::ffi::c_void,
-            Entry as *const core::ffi::c_void,
-            core::mem::size_of::<COMBINED_LOCK_ELEMENT>(),
-        );
-
-        RtlDeleteElementGenericTable(
-            core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-            Entry as *mut core::ffi::c_void,
-        );
+        core::ptr::copy_nonoverlapping(Entry as *const u8, &mut Find as *mut _ as *mut u8, core::mem::size_of::<COMBINED_LOCK_ELEMENT>());
+        RtlDeleteElementGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), Entry as PVOID);
     } else {
         SharedEntry = (*InternalInfo).SharedLocks.Flink;
-        while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) {
-            SharedRange = (SharedEntry as *mut u8).offset(
-                -(core::mem::offset_of!(LOCK_SHARED_RANGE, Entry) as isize)
-            ) as PLOCK_SHARED_RANGE;
-
-            if (*SharedRange).Start.QuadPart == (*FileOffset).QuadPart &&
-                (*SharedRange).End.QuadPart == (*FileOffset).QuadPart + (*Length).QuadPart &&
-                (*SharedRange).Key == Key &&
-                (*SharedRange).ProcessId == Process
+        while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) as PLIST_ENTRY {
+            let range_offset = core::mem::offset_of!(LOCK_SHARED_RANGE, Entry);
+            SharedRange = CONTAINING_RECORD(SharedEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
+            if (*SharedRange).Start.QuadPart == (*FileOffset).QuadPart
+                && (*SharedRange).End.QuadPart == (*FileOffset).QuadPart + (*Length).QuadPart
+                && (*SharedRange).Key == Key
+                && (*SharedRange).ProcessId == Process as PVOID
             {
                 FoundShared = 1u8;
                 break;
             }
             SharedEntry = (*SharedEntry).Flink;
         }
-
         if FoundShared != 0 {
-            RemoveEntryList(core::ptr::addr_of_mut!((*SharedRange).Entry));
+            RemoveEntryList(core::ptr::addr_of_mut!((*SharedRange).Entry) as PLIST_ENTRY);
             ExFreePoolWithTag(SharedRange as PVOID, TAG_RANGE);
 
             Find = *Entry;
-            RtlDeleteElementGenericTable(
-                core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-                core::ptr::addr_of_mut!(Find) as *mut core::ffi::c_void,
-            );
+            RtlDeleteElementGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), &mut Find as *mut _ as PVOID);
 
             SharedEntry = (*InternalInfo).SharedLocks.Flink;
-            while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) {
+            while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) as PLIST_ENTRY {
                 let mut LockElement: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
-                SharedRange = (SharedEntry as *mut u8).offset(
-                    -(core::mem::offset_of!(LOCK_SHARED_RANGE, Entry) as isize)
-                ) as PLOCK_SHARED_RANGE;
-
+                let range_offset = core::mem::offset_of!(LOCK_SHARED_RANGE, Entry);
+                SharedRange = CONTAINING_RECORD(SharedEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
                 LockElement.Exclusive.FileLock.FileObject = FileObject;
                 LockElement.Exclusive.FileLock.StartingByte = (*SharedRange).Start;
                 LockElement.Exclusive.FileLock.EndingByte = (*SharedRange).End;
@@ -768,21 +757,11 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
                 LockElement.Exclusive.FileLock.Key = (*SharedRange).Key;
                 LockElement.Exclusive.FileLock.ExclusiveLock = 0u8;
 
-                if LockCompare(
-                    core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-                    core::ptr::addr_of_mut!(Find) as PVOID,
-                    core::ptr::addr_of_mut!(LockElement) as PVOID,
-                ) != _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
-                {
+                if LockCompare(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), &mut Find as *mut _ as PVOID, &mut LockElement as *mut _ as PVOID) != _RTL_GENERIC_COMPARE_RESULTS_GenericEqual {
                     SharedEntry = (*SharedEntry).Flink;
                     continue;
                 }
-
-                FsRtlpRebuildSharedLockRange(
-                    FileLock,
-                    InternalInfo,
-                    core::ptr::addr_of_mut!(LockElement),
-                );
+                FsRtlpRebuildSharedLockRange(FileLock, InternalInfo, &mut LockElement);
                 SharedEntry = (*SharedEntry).Flink;
             }
         } else {
@@ -790,19 +769,13 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
         }
     }
 
-    (*InternalInfo).Generation += 1;
-
+    (*InternalInfo).Generation = (*InternalInfo).Generation.wrapping_add(1);
     loop {
-        NextMatchingLockIrp = IoCsqRemoveNextIrp(
-            core::ptr::addr_of_mut!((*InternalInfo).Csq),
-            core::ptr::addr_of_mut!(Find) as PVOID,
-        );
-
+        NextMatchingLockIrp = IoCsqRemoveNextIrp(core::ptr::addr_of_mut!((*InternalInfo).Csq), &mut Find as *mut _ as PVOID);
         if NextMatchingLockIrp.is_null() {
             break;
         }
-
-        if (*NextMatchingLockIrp).IoStatus.Information == (*InternalInfo).Generation as usize {
+        if (*NextMatchingLockIrp).IoStatus.Information == (*InternalInfo).Generation as _ {
             IoCsqInsertIrpEx(
                 core::ptr::addr_of_mut!((*InternalInfo).Csq),
                 NextMatchingLockIrp,
@@ -811,14 +784,8 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
             );
             break;
         }
-
-        let Status = FsRtlProcessFileLock(
-            (*InternalInfo).BelongsTo,
-            NextMatchingLockIrp,
-            core::ptr::null_mut(),
-        );
-
-        if !NT_SUCCESS(Status) {
+        let Status = FsRtlProcessFileLock((*InternalInfo).BelongsTo, NextMatchingLockIrp, core::ptr::null_mut());
+        if Status < 0 {
             return Status;
         }
     }
@@ -833,67 +800,50 @@ pub unsafe extern "system" fn FsRtlFastUnlockAll(
     Process: PEPROCESS,
     Context: PVOID,
 ) -> NTSTATUS {
-    let InternalInfo: PLOCK_INFORMATION = (*FileLock).LockInformation;
-    
+    let mut ListEntry: PLIST_ENTRY;
+    let mut Entry: PCOMBINED_LOCK_ELEMENT;
+    let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
+
     if (*FileLock).LockInformation.is_null() {
         return STATUS_RANGE_NOT_LOCKED;
     }
-    
-    let mut ListEntry: PLIST_ENTRY = (*InternalInfo).SharedLocks.Flink;
-    while ListEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) {
-        let Range: PLOCK_SHARED_RANGE = (ListEntry as *mut u8).offset(
-            -(core::mem::offset_of!(_LOCK_SHARED_RANGE, Entry) as isize)
-        ) as PLOCK_SHARED_RANGE;
-        
+    ListEntry = (*InternalInfo).SharedLocks.Flink;
+    while ListEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) as PLIST_ENTRY {
         let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        *Length.QuadPart_mut() = *(*Range).End.QuadPart() - *(*Range).Start.QuadPart();
-        
+        let range_offset = core::mem::offset_of!(LOCK_SHARED_RANGE, Entry);
+        let Range = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
+        Length.QuadPart = (*Range).End.QuadPart - (*Range).Start.QuadPart;
         ListEntry = (*ListEntry).Flink;
-        
-        if (*Range).ProcessId != Process {
+        if (*Range).ProcessId != Process as PVOID {
             continue;
         }
-        
         FsRtlFastUnlockSingle(
             FileLock,
             FileObject,
             core::ptr::addr_of_mut!((*Range).Start),
-            core::ptr::addr_of_mut!(Length),
-            (*Range).ProcessId,
+            &mut Length as PLARGE_INTEGER,
+            (*Range).ProcessId as PEPROCESS,
             (*Range).Key,
             Context,
             1u8,
         );
     }
-    
-    let mut Entry: PCOMBINED_LOCK_ELEMENT = RtlEnumerateGenericTable(
-        core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-        1u8,
-    ) as PCOMBINED_LOCK_ELEMENT;
-    
+    Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 1u8) as PCOMBINED_LOCK_ELEMENT;
     while !Entry.is_null() {
         let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        *Length.QuadPart_mut() =
-            *(*Entry).Exclusive.FileLock.EndingByte.QuadPart() -
-            *(*Entry).Exclusive.FileLock.StartingByte.QuadPart();
-        
+        Length.QuadPart = (*Entry).Exclusive.FileLock.EndingByte.QuadPart - (*Entry).Exclusive.FileLock.StartingByte.QuadPart;
         FsRtlFastUnlockSingle(
             FileLock,
             (*Entry).Exclusive.FileLock.FileObject,
             core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock.StartingByte),
-            core::ptr::addr_of_mut!(Length),
-            (*Entry).Exclusive.FileLock.ProcessId,
+            &mut Length as PLARGE_INTEGER,
+            (*Entry).Exclusive.FileLock.ProcessId as PEPROCESS,
             (*Entry).Exclusive.FileLock.Key,
             Context,
             1u8,
         );
-        
-        Entry = RtlEnumerateGenericTable(
-            core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-            0u8,
-        ) as PCOMBINED_LOCK_ELEMENT;
+        Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 0u8) as PCOMBINED_LOCK_ELEMENT;
     }
-    
     STATUS_SUCCESS
 }
 
@@ -905,61 +855,51 @@ pub unsafe extern "system" fn FsRtlFastUnlockAllByKey(
     Key: ULONG,
     Context: PVOID,
 ) -> NTSTATUS {
-    let InternalInfo: PLOCK_INFORMATION = (*FileLock).LockInformation;
+    let mut ListEntry: PLIST_ENTRY;
+    let mut Entry: PCOMBINED_LOCK_ELEMENT;
+    let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
 
     if (*FileLock).LockInformation.is_null() {
         return STATUS_RANGE_NOT_LOCKED;
     }
-
-    let mut ListEntry: PLIST_ENTRY = (*InternalInfo).SharedLocks.Flink;
-    while ListEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) {
-        let Range: PLOCK_SHARED_RANGE = (ListEntry as *mut u8).offset(
-            -(core::mem::offset_of!(_LOCK_SHARED_RANGE, Entry) as isize)
-        ) as PLOCK_SHARED_RANGE;
+    ListEntry = (*InternalInfo).SharedLocks.Flink;
+    while ListEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) as PLIST_ENTRY {
+        let range_offset = core::mem::offset_of!(LOCK_SHARED_RANGE, Entry);
+        let Range = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
         let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        *Length.QuadPart_mut() = *(*Range).End.QuadPart() - *(*Range).Start.QuadPart();
+        Length.QuadPart = (*Range).End.QuadPart - (*Range).Start.QuadPart;
         ListEntry = (*ListEntry).Flink;
-        if (*Range).ProcessId != Process || (*Range).Key != Key {
+        if (*Range).ProcessId != Process as PVOID || (*Range).Key != Key {
             continue;
         }
         FsRtlFastUnlockSingle(
             FileLock,
             FileObject,
             core::ptr::addr_of_mut!((*Range).Start),
-            core::ptr::addr_of_mut!(Length),
-            (*Range).ProcessId,
+            &mut Length as PLARGE_INTEGER,
+            (*Range).ProcessId as PEPROCESS,
             (*Range).Key,
             Context,
             1u8,
         );
     }
-
-    let mut Entry: PCOMBINED_LOCK_ELEMENT = RtlEnumerateGenericTable(
-        core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-        1u8,
-    ) as PCOMBINED_LOCK_ELEMENT;
+    Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 1u8) as PCOMBINED_LOCK_ELEMENT;
     while !Entry.is_null() {
         let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        *Length.QuadPart_mut() = *(*Entry).Exclusive.FileLock.EndingByte.QuadPart()
-            - *(*Entry).Exclusive.FileLock.StartingByte.QuadPart();
-        if (*Entry).Exclusive.FileLock.Key == Key
-            && (*Entry).Exclusive.FileLock.ProcessId == Process
-        {
+        Length.QuadPart = (*Entry).Exclusive.FileLock.EndingByte.QuadPart - (*Entry).Exclusive.FileLock.StartingByte.QuadPart;
+        if (*Entry).Exclusive.FileLock.Key == Key && (*Entry).Exclusive.FileLock.ProcessId == Process as PVOID {
             FsRtlFastUnlockSingle(
                 FileLock,
                 (*Entry).Exclusive.FileLock.FileObject,
                 core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock.StartingByte),
-                core::ptr::addr_of_mut!(Length),
-                (*Entry).Exclusive.FileLock.ProcessId,
+                &mut Length as PLARGE_INTEGER,
+                (*Entry).Exclusive.FileLock.ProcessId as PEPROCESS,
                 (*Entry).Exclusive.FileLock.Key,
                 Context,
                 1u8,
             );
         }
-        Entry = RtlEnumerateGenericTable(
-            core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-            0u8,
-        ) as PCOMBINED_LOCK_ELEMENT;
+        Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 0u8) as PCOMBINED_LOCK_ELEMENT;
     }
 
     STATUS_SUCCESS
@@ -971,17 +911,14 @@ pub unsafe extern "system" fn FsRtlProcessFileLock(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    let IoStackLocation: PIO_STACK_LOCATION;
-    let mut Status: NTSTATUS;
+    let IoStackLocation: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-
-    IoStackLocation = IoGetCurrentIrpStackLocation(Irp);
 
     IoStatusBlock.Information = 0;
 
-    match (*IoStackLocation).MinorFunction as u32 {
+    match (*IoStackLocation).MinorFunction {
         IRP_MN_LOCK => {
-            let Result: BOOLEAN = FsRtlPrivateLock(
+            let Result = FsRtlPrivateLock(
                 FileLock,
                 (*IoStackLocation).FileObject,
                 core::ptr::addr_of_mut!((*IoStackLocation).Parameters.LockControl.ByteOffset),
@@ -990,16 +927,15 @@ pub unsafe extern "system" fn FsRtlProcessFileLock(
                 (*IoStackLocation).Parameters.LockControl.Key,
                 if (*IoStackLocation).Flags & SL_FAIL_IMMEDIATELY != 0 { 1u8 } else { 0u8 },
                 if (*IoStackLocation).Flags & SL_EXCLUSIVE_LOCK != 0 { 1u8 } else { 0u8 },
-                core::ptr::addr_of_mut!(IoStatusBlock),
+                &mut IoStatusBlock as PIO_STATUS_BLOCK,
                 Irp,
                 Context,
                 0u8,
             );
-            return IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status;
+            IoStatusBlock.__bindgen_anon_1.Status
         }
-
         IRP_MN_UNLOCK_SINGLE => {
-            IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
+            IoStatusBlock.__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
                 FileLock,
                 (*IoStackLocation).FileObject,
                 core::ptr::addr_of_mut!((*IoStackLocation).Parameters.LockControl.ByteOffset),
@@ -1009,43 +945,54 @@ pub unsafe extern "system" fn FsRtlProcessFileLock(
                 Context,
                 0u8,
             );
-        }
-
-        IRP_MN_UNLOCK_ALL => {
-            IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status = FsRtlFastUnlockAll(
-                FileLock,
-                (*IoStackLocation).FileObject,
-                IoGetRequestorProcess(Irp),
+            let mut Status: NTSTATUS = 0;
+            FsRtlCompleteLockIrpReal(
+                (*FileLock).CompleteLockIrpRoutine,
                 Context,
+                Irp,
+                IoStatusBlock.__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
+                core::ptr::null_mut(),
             );
+            IoStatusBlock.__bindgen_anon_1.Status
         }
-
+        IRP_MN_UNLOCK_ALL => {
+            IoStatusBlock.__bindgen_anon_1.Status = FsRtlFastUnlockAll(FileLock, (*IoStackLocation).FileObject, IoGetRequestorProcess(Irp), Context);
+            let mut Status: NTSTATUS = 0;
+            FsRtlCompleteLockIrpReal(
+                (*FileLock).CompleteLockIrpRoutine,
+                Context,
+                Irp,
+                IoStatusBlock.__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
+                core::ptr::null_mut(),
+            );
+            IoStatusBlock.__bindgen_anon_1.Status
+        }
         IRP_MN_UNLOCK_ALL_BY_KEY => {
-            IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
+            IoStatusBlock.__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
                 FileLock,
                 (*IoStackLocation).FileObject,
                 IoGetRequestorProcess(Irp),
                 (*IoStackLocation).Parameters.LockControl.Key,
                 Context,
             );
+            let mut Status: NTSTATUS = 0;
+            FsRtlCompleteLockIrpReal(
+                (*FileLock).CompleteLockIrpRoutine,
+                Context,
+                Irp,
+                IoStatusBlock.__bindgen_anon_1.Status,
+                &mut Status as PNTSTATUS,
+                core::ptr::null_mut(),
+            );
+            IoStatusBlock.__bindgen_anon_1.Status
         }
-
         _ => {
             FsRtlCompleteRequest(Irp, STATUS_INVALID_DEVICE_REQUEST);
-            IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
-            return STATUS_INVALID_DEVICE_REQUEST;
+            STATUS_INVALID_DEVICE_REQUEST
         }
     }
-
-    FsRtlCompleteLockIrpReal(
-        (*FileLock).CompleteLockIrpRoutine,
-        Context,
-        Irp,
-        IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status,
-        core::ptr::addr_of_mut!(Status),
-        core::ptr::null_mut(),
-    );
-    return IoStatusBlock.__bindgen_anon_1.__bindgen_anon_1.Status;
 }
 
 #[no_mangle]
@@ -1054,7 +1001,7 @@ pub unsafe extern "system" fn FsRtlInitializeFileLock(
     CompleteLockIrpRoutine: PCOMPLETE_LOCK_IRP_ROUTINE,
     UnlockRoutine: PUNLOCK_ROUTINE,
 ) {
-    RtlZeroMemory(FileLock as *mut core::ffi::c_void, core::mem::size_of::<_FILE_LOCK>());
+    core::ptr::write_bytes(FileLock as *mut u8, 0, core::mem::size_of::<_FILE_LOCK>());
     (*FileLock).FastIoIsQuestionable = 0u8;
     (*FileLock).CompleteLockIrpRoutine = CompleteLockIrpRoutine;
     (*FileLock).UnlockRoutine = UnlockRoutine;
@@ -1065,46 +1012,33 @@ pub unsafe extern "system" fn FsRtlInitializeFileLock(
 pub unsafe extern "system" fn FsRtlUninitializeFileLock(FileLock: PFILE_LOCK) {
     if !(*FileLock).LockInformation.is_null() {
         let mut Irp: PIRP;
-        let InternalInfo: PLOCK_INFORMATION = (*FileLock).LockInformation;
+        let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
         let mut Entry: PCOMBINED_LOCK_ELEMENT;
         let mut SharedEntry: PLIST_ENTRY;
         let mut SharedRange: PLOCK_SHARED_RANGE;
 
         SharedEntry = (*InternalInfo).SharedLocks.Flink;
-        while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) {
-            SharedRange = (SharedEntry as *mut u8).offset(
-                -(core::mem::offset_of!(_LOCK_SHARED_RANGE, Entry) as isize)
-            ) as PLOCK_SHARED_RANGE;
+        while SharedEntry != core::ptr::addr_of_mut!((*InternalInfo).SharedLocks) as PLIST_ENTRY {
+            let range_offset = core::mem::offset_of!(LOCK_SHARED_RANGE, Entry);
+            SharedRange = CONTAINING_RECORD(SharedEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
             SharedEntry = (*SharedEntry).Flink;
-            RemoveEntryList(core::ptr::addr_of_mut!((*SharedRange).Entry));
+            RemoveEntryList(core::ptr::addr_of_mut!((*SharedRange).Entry) as PLIST_ENTRY);
             ExFreePoolWithTag(SharedRange as PVOID, TAG_RANGE);
         }
-
         loop {
-            Entry = RtlGetElementGenericTable(
-                core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-                0
-            ) as PCOMBINED_LOCK_ELEMENT;
+            Entry = RtlGetElementGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 0) as PCOMBINED_LOCK_ELEMENT;
             if Entry.is_null() {
                 break;
             }
-            RtlDeleteElementGenericTable(
-                core::ptr::addr_of_mut!((*InternalInfo).RangeTable),
-                Entry as PVOID
-            );
+            RtlDeleteElementGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), Entry as PVOID);
         }
-
         loop {
-            Irp = IoCsqRemoveNextIrp(
-                core::ptr::addr_of_mut!((*InternalInfo).Csq),
-                core::ptr::null_mut()
-            );
+            Irp = IoCsqRemoveNextIrp(core::ptr::addr_of_mut!((*InternalInfo).Csq), core::ptr::null_mut());
             if Irp.is_null() {
                 break;
             }
-            let Status: NTSTATUS = FsRtlProcessFileLock(FileLock, Irp, core::ptr::null_mut());
+            let Status = FsRtlProcessFileLock(FileLock, Irp, core::ptr::null_mut());
         }
-
         ExFreePoolWithTag(InternalInfo as PVOID, TAG_FLOCK);
         (*FileLock).LockInformation = core::ptr::null_mut();
     }
@@ -1115,26 +1049,17 @@ pub unsafe extern "system" fn FsRtlAllocateFileLock(
     CompleteLockIrpRoutine: PCOMPLETE_LOCK_IRP_ROUTINE,
     UnlockRoutine: PUNLOCK_ROUTINE,
 ) -> PFILE_LOCK {
-
-    let FileLock: PFILE_LOCK = ExAllocateFromPagedLookasideList(
-        core::ptr::addr_of_mut!(FsRtlFileLockLookasideList) as *mut core::ffi::c_void
-    ) as PFILE_LOCK;
-
+    let FileLock = ExAllocateFromPagedLookasideList(core::ptr::addr_of_mut!(FsRtlFileLockLookasideList)) as PFILE_LOCK;
     if !FileLock.is_null() {
         FsRtlInitializeFileLock(FileLock, CompleteLockIrpRoutine, UnlockRoutine);
     }
-
-    return FileLock;
+    FileLock
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
-    
     FsRtlUninitializeFileLock(FileLock);
-    ExFreeToPagedLookasideList(
-        core::ptr::addr_of_mut!(FsRtlFileLockLookasideList) as *mut core::ffi::c_void,
-        FileLock as *mut core::ffi::c_void
-    );
+    ExFreeToPagedLookasideList(core::ptr::addr_of_mut!(FsRtlFileLockLookasideList), FileLock as PVOID);
 }
 
 // ============================================================================
@@ -1157,7 +1082,7 @@ pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
 //
 // /* GLOBALS *******************************************************************/
 //
-// PAGED_LOOKASIDE_LIST FsRtlFileLockLookasideList;
+// _PAGED_LOOKASIDE_LIST FsRtlFileLockLookasideList;
 //
 // /* Note: this aligns the two types of lock entry structs so we can access the
 //    FILE_LOCK_INFO part in common.  Add elements after Shared if new stuff is needed.
@@ -1238,14 +1163,14 @@ pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
 //           A->Exclusive.FileLock.EndingByte.QuadPart) &&
 //          (B->Exclusive.FileLock.StartingByte.QuadPart >=
 //           A->Exclusive.FileLock.StartingByte.QuadPart)))
-//         return GenericEqual;
+//         return _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //     /* Otherwise, key on the starting byte */
 //     Result =
 //         (A->Exclusive.FileLock.StartingByte.QuadPart <
-//          B->Exclusive.FileLock.StartingByte.QuadPart) ? GenericLessThan :
+//          B->Exclusive.FileLock.StartingByte.QuadPart) ? _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan :
 //         (A->Exclusive.FileLock.StartingByte.QuadPart >
-//          B->Exclusive.FileLock.StartingByte.QuadPart) ? GenericGreaterThan :
-//         GenericEqual;
+//          B->Exclusive.FileLock.StartingByte.QuadPart) ? _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan :
+//         _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 // #if 0
 //     DPRINT("Compare(%x:%x) %x-%x to %x-%x => %d\n",
 //            A,B,
@@ -1311,7 +1236,7 @@ pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
 //         if (WhereUnlock)
 //         {
 //             Matching = LockCompare
-//                 (&LockInfo->RangeTable, &LockElement, WhereUnlock) != GenericEqual;
+//                 (&LockInfo->RangeTable, &LockElement, WhereUnlock) != _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //         }
 //         /* Else get any completable IRP */
 //         else
@@ -1621,7 +1546,7 @@ pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
 //                 Conflict = RtlGetElementGenericTable(&LockInfo->RangeTable, i);
 //
 //                 /* The first argument will be inserted as a shared range */
-//                 if (Conflict && (LockCompare(&LockInfo->RangeTable, Conflict, &ToInsert) == GenericEqual))
+//                 if (Conflict && (LockCompare(&LockInfo->RangeTable, Conflict, &ToInsert) == _RTL_GENERIC_COMPARE_RESULTS_GenericEqual))
 //                 {
 //                     if (Conflict->Exclusive.FileLock.ExclusiveLock)
 //                     {
@@ -2089,7 +2014,7 @@ pub unsafe extern "system" fn FsRtlFreeFileLock(FileLock: PFILE_LOCK) {
 //                 LockElement.Exclusive.FileLock.Key = SharedRange->Key;
 //                 LockElement.Exclusive.FileLock.ExclusiveLock = FALSE;
 //
-//                 if (LockCompare(&InternalInfo->RangeTable, &Find, &LockElement) != GenericEqual)
+//                 if (LockCompare(&InternalInfo->RangeTable, &Find, &LockElement) != _RTL_GENERIC_COMPARE_RESULTS_GenericEqual)
 //                 {
 //                     DPRINT("Skipping range %08x%08x:%08x%08x\n",
 //                            LockElement.Exclusive.FileLock.StartingByte.HighPart,

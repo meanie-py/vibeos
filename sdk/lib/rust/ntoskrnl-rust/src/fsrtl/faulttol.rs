@@ -1,28 +1,27 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, KEVENT, KeInitializeEvent, KeWaitForSingleObject, PDEVICE_OBJECT, PIRP};
-use core::ffi::c_void;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ke::*;
+use ntkrnl_sys::ddk::{
+    PDEVICE_OBJECT, PIRP, _IO_STATUS_BLOCK, KEVENT,
+    IoBuildDeviceIoControlRequest, IofCallDriver, KeInitializeEvent, KeWaitForSingleObject,
+};
 
-extern "system" {
-    fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
-}
+const FT_BALANCED_READ_MODE: ULONG = 0x00074000;
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlBalanceReads(TargetDevice: PDEVICE_OBJECT) -> NTSTATUS {
-    let mut Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Status: NTSTATUS;
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(Event),
-        1,
+        1u32,
         0u8,
     );
 
-    Irp = IoBuildDeviceIoControlRequest(
-        0x80000000u32,
+    let Irp = IoBuildDeviceIoControlRequest(
+        FT_BALANCED_READ_MODE,
         TargetDevice,
         core::ptr::null_mut(),
         0,
@@ -32,17 +31,18 @@ pub unsafe extern "system" fn FsRtlBalanceReads(TargetDevice: PDEVICE_OBJECT) ->
         core::ptr::addr_of_mut!(Event),
         core::ptr::addr_of_mut!(IoStatusBlock),
     );
+
     if Irp.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = IoCallDriver(TargetDevice, Irp);
+    let mut Status = IofCallDriver(TargetDevice, Irp);
 
-    if Status == 0x00000103u32 {
+    if Status == STATUS_PENDING {
         Status = KeWaitForSingleObject(
-            core::ptr::addr_of_mut!(Event) as *mut core::ffi::c_void,
-            0,
-            0,
+            core::ptr::addr_of_mut!(Event) as PVOID,
+            0u32,
+            0i8,
             0u8,
             core::ptr::null_mut(),
         );
@@ -55,10 +55,10 @@ pub unsafe extern "system" fn FsRtlBalanceReads(TargetDevice: PDEVICE_OBJECT) ->
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlSyncVolumes(
-    Unknown0: u32,
-    Unknown1: u32,
-    Unknown2: u32,
-) -> i32 {
+    _Unknown0: ULONG,
+    _Unknown1: ULONG,
+    _Unknown2: ULONG,
+) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn FsRtlSyncVolumes(
 //     if (!Irp) return STATUS_INSUFFICIENT_RESOURCES;
 //
 //     /* Send it */
-//     Status = IoCallDriver(TargetDevice, Irp);
+//     Status = IofCallDriver(TargetDevice, Irp);
 //
 //     /* Wait if needed */
 //     if (Status == STATUS_PENDING)

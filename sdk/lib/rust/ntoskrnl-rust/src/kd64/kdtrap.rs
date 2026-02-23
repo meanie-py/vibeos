@@ -1,29 +1,90 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::globals::FLG_STOP_ON_EXCEPTION;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CONTEXT, KPROCESSOR_MODE, KiRestoreProcessorControlState, KiSaveProcessorControlState, PCONTEXT, PEXCEPTION_RECORD, PKD_SYMBOLS_INFO, PKEXCEPTION_FRAME, PKTRAP_FRAME, PSTRING};
-use core::ffi::c_void;
 
-extern "C" {
-    fn KdpMoveMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
-    fn KdpGetParameterThree(ContextRecord: PCONTEXT) -> ULONG_PTR;
-    fn KdpGetParameterFour(ContextRecord: PCONTEXT) -> ULONG_PTR;
-    fn KdpPrompt( Prompt: PCHAR, PromptLength: USHORT, Response: PCHAR, MaximumResponseLength: USHORT, PreviousMode: KPROCESSOR_MODE, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, ) -> USHORT;
-    fn KeGetContextPc(ContextRecord: PCONTEXT) -> ULONG_PTR;
-    fn KeSetContextPc(ContextRecord: PCONTEXT, ProgramCounter: ULONG_PTR);
-    fn KeSetContextReturnRegister(ContextRecord: PCONTEXT, ReturnValue: ULONG_PTR);
+use ntkrnl_sys::ddk::{
+    _KPRCB, CONTEXT, KPROCESSOR_MODE, KiRestoreProcessorControlState, KiSaveProcessorControlState,
+    PCONTEXT, PEXCEPTION_RECORD, PKD_SYMBOLS_INFO, PKEXCEPTION_FRAME, PKTRAP_FRAME, PSTRING,
+};
+
+use super::kdapi::KdpMoveMemory;
+
+// Breakpoint sub-ID constants from kdtypes.h
+const BREAKPOINT_BREAK: ULONG = 0;
+const BREAKPOINT_PRINT: ULONG = 1;
+const BREAKPOINT_PROMPT: ULONG = 2;
+const BREAKPOINT_LOAD_SYMBOLS: ULONG = 3;
+const BREAKPOINT_UNLOAD_SYMBOLS: ULONG = 4;
+const BREAKPOINT_COMMAND_STRING: ULONG = 5;
+
+#[cfg(target_arch = "x86")]
+#[inline]
+unsafe fn KdpGetParameterThree(context: PCONTEXT) -> u32 {
+    (*context).Ebx
 }
 
-const STATUS_BREAKPOINT: NTSTATUS = 0x80000003u32 as i32;
-const BREAKPOINT_BREAK: ULONG_PTR = 0;
-const BREAKPOINT_PRINT: ULONG_PTR = 1;
-const BREAKPOINT_PROMPT: ULONG_PTR = 2;
-const BREAKPOINT_LOAD_SYMBOLS: ULONG_PTR = 3;
-const BREAKPOINT_UNLOAD_SYMBOLS: ULONG_PTR = 4;
-const BREAKPOINT_COMMAND_STRING: ULONG_PTR = 5;
-const KD_BREAKPOINT_SIZE: ULONG_PTR = core::mem::size_of::<u8>() as ULONG_PTR;
+#[cfg(target_arch = "x86")]
+#[inline]
+unsafe fn KdpGetParameterFour(context: PCONTEXT) -> u32 {
+    (*context).Edi
+}
 
+#[cfg(target_arch = "x86_64")]
+#[inline]
+unsafe fn KdpGetParameterThree(context: PCONTEXT) -> u64 {
+    (*context).R8
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+unsafe fn KdpGetParameterFour(context: PCONTEXT) -> u64 {
+    (*context).R9
+}
+
+#[cfg(target_arch = "arm")]
+#[inline]
+unsafe fn KdpGetParameterThree(context: PCONTEXT) -> u32 {
+    (*context).R3
+}
+
+#[cfg(target_arch = "arm")]
+#[inline]
+unsafe fn KdpGetParameterFour(context: PCONTEXT) -> u32 {
+    (*context).R4
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn KdpGetParameterThree(context: PCONTEXT) -> u64 {
+    (*context).__bindgen_anon_1.__bindgen_anon_1.X2
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn KdpGetParameterFour(context: PCONTEXT) -> u64 {
+    (*context).__bindgen_anon_1.__bindgen_anon_1.X3
+}
+
+extern "system" {
+    static NtGlobalFlag: ULONG;
+    static mut KdpControlCPressed: BOOLEAN;
+    static KdPitchDebugger: BOOLEAN;
+    static KdAutoEnableOnEvent: BOOLEAN;
+    static KdPreviouslyEnabled: BOOLEAN;
+    static KdDebuggerEnabled: BOOLEAN;
+    fn KdEnterDebugger(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
+    fn KdExitDebugger(Enable: BOOLEAN);
+    fn KdpReportExceptionStateChange( ExceptionRecord: PEXCEPTION_RECORD, ContextRecord: PCONTEXT, SecondChanceException: BOOLEAN, ) -> BOOLEAN;
+    fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
+    fn KeSetContextPc(Context: PCONTEXT, ProgramCounter: ULONG_PTR);
+    fn KeSetContextReturnRegister(Context: PCONTEXT, ReturnValue: ULONG_PTR);
+    fn KdpPrint( ComponentId: ULONG, Level: ULONG, String: PCHAR, Length: USHORT, PreviousMode: KPROCESSOR_MODE, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, Handled: *mut BOOLEAN, ) -> NTSTATUS;
+    fn KdpPrompt( PromptString: PCHAR, PromptLength: USHORT, ResponseString: PCHAR, ResponseLength: USHORT, PreviousMode: KPROCESSOR_MODE, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, ) -> USHORT;
+    fn KdpSymbol( SymbolPath: PSTRING, SymbolInfo: PKD_SYMBOLS_INFO, Unload: BOOLEAN, PreviousMode: KPROCESSOR_MODE, ContextRecord: PCONTEXT, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, );
+    fn KdpCommandString( CommandString: PSTRING, ResponseString: PSTRING, PreviousMode: KPROCESSOR_MODE, ContextRecord: PCONTEXT, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, );
+    fn KdEnableDebugger() -> NTSTATUS;
+}
 #[no_mangle]
 pub unsafe extern "system" fn KdpReport(
     TrapFrame: PKTRAP_FRAME,
@@ -31,59 +92,54 @@ pub unsafe extern "system" fn KdpReport(
     ExceptionRecord: PEXCEPTION_RECORD,
     ContextRecord: PCONTEXT,
     PreviousMode: KPROCESSOR_MODE,
-    SecondChanceException: u8
-) -> u8 {
-    let Enable: u8;
-    let Handled: u8;
-    let Prcb: PKPRCB;
-    let ExceptionCode: NTSTATUS;
+    SecondChanceException: BOOLEAN,
+) -> BOOLEAN {
+    let mut enable: BOOLEAN;
+    let handled: BOOLEAN;
+    let prcb: *mut _KPRCB;
+    let exception_code: NTSTATUS;
 
-    ExceptionCode = (*ExceptionRecord).ExceptionCode;
-    if (ExceptionCode == STATUS_BREAKPOINT) ||
-        (ExceptionCode == STATUS_SINGLE_STEP) ||
-        (ExceptionCode == STATUS_ASSERTION_FAILURE)
+    exception_code = (*ExceptionRecord).ExceptionCode;
+    if (exception_code == STATUS_BREAKPOINT)
+        || (exception_code == STATUS_SINGLE_STEP)
+        || (exception_code == STATUS_ASSERTION_FAILURE)
     {
-    }
-    else if (NtGlobalFlag & FLG_STOP_ON_EXCEPTION) != 0
-    {
-        if (SecondChanceException == 0u8) &&
-            ((ExceptionCode == STATUS_PORT_DISCONNECTED) ||
-             (NT_SUCCESS(ExceptionCode)))
+    } else if (NtGlobalFlag & FLG_STOP_ON_EXCEPTION) != 0 {
+        if (SecondChanceException == 0)
+            && ((exception_code == STATUS_PORT_DISCONNECTED) || (exception_code >= 0))
         {
-            return 0u8;
+            return 0;
         }
-    }
-    else if SecondChanceException == 0u8
-    {
-        return 0u8;
+    } else if SecondChanceException == 0 {
+        return 0;
     }
 
-    Enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
+    enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
 
-    Prcb = KeGetCurrentPrcb();
-    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    prcb = KeGetCurrentPrcb() as *mut _KPRCB;
+    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
     KdpMoveMemory(
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *mut core::ffi::c_void,
-        ContextRecord as *const core::ffi::c_void,
-        core::mem::size_of::<CONTEXT>()
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
+        ContextRecord as PVOID,
+        core::mem::size_of::<CONTEXT>(),
     );
 
-    Handled = KdpReportExceptionStateChange(
+    handled = KdpReportExceptionStateChange(
         ExceptionRecord,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame),
-        SecondChanceException
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame),
+        SecondChanceException,
     );
 
     KdpMoveMemory(
-        ContextRecord as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *const core::ffi::c_void,
-        core::mem::size_of::<CONTEXT>()
+        ContextRecord as PVOID,
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
+        core::mem::size_of::<CONTEXT>(),
     );
-    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
 
-    KdExitDebugger(Enable);
-    KdpControlCPressed = 0u8;
-    return Handled;
+    KdExitDebugger(enable);
+    KdpControlCPressed = 0;
+    handled
 }
 
 #[no_mangle]
@@ -93,23 +149,23 @@ pub unsafe extern "system" fn KdpTrap(
     ExceptionRecord: PEXCEPTION_RECORD,
     ContextRecord: PCONTEXT,
     PreviousMode: KPROCESSOR_MODE,
-    SecondChanceException: u8,
-) -> u8 {
-    let mut Unload: u8;
-    let ProgramCounter: ULONG_PTR;
-    let mut Handled: u8;
-    let ReturnStatus: NTSTATUS;
-    let ReturnLength: USHORT;
+    SecondChanceException: BOOLEAN,
+) -> BOOLEAN {
+    let mut unload: BOOLEAN;
+    let mut program_counter: ULONG_PTR;
+    let mut handled: BOOLEAN = 0;
+    let mut return_status: NTSTATUS;
+    let mut return_length: USHORT;
 
-    if ((*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT) &&
-        ((*ExceptionRecord).ExceptionInformation[0] != BREAKPOINT_BREAK)
+    if ((*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT)
+        && ((*ExceptionRecord).ExceptionInformation[0] as ULONG != BREAKPOINT_BREAK)
     {
-        ProgramCounter = KeGetContextPc(ContextRecord);
+        program_counter = KeGetContextPc(ContextRecord);
 
-        Unload = 0;
-        match (*ExceptionRecord).ExceptionInformation[0] {
+        unload = 0;
+        match (*ExceptionRecord).ExceptionInformation[0] as ULONG {
             BREAKPOINT_PRINT => {
-                ReturnStatus = KdpPrint(
+                return_status = KdpPrint(
                     KdpGetParameterThree(ContextRecord) as ULONG,
                     KdpGetParameterFour(ContextRecord) as ULONG,
                     (*ExceptionRecord).ExceptionInformation[1] as PCHAR,
@@ -117,14 +173,14 @@ pub unsafe extern "system" fn KdpTrap(
                     PreviousMode,
                     TrapFrame,
                     ExceptionFrame,
-                    &mut Handled,
+                    &mut handled,
                 );
 
-                KeSetContextReturnRegister(ContextRecord, ReturnStatus as ULONG_PTR);
+                KeSetContextReturnRegister(ContextRecord, return_status as ULONG_PTR);
             }
 
             BREAKPOINT_PROMPT => {
-                ReturnLength = KdpPrompt(
+                return_length = KdpPrompt(
                     (*ExceptionRecord).ExceptionInformation[1] as PCHAR,
                     (*ExceptionRecord).ExceptionInformation[2] as USHORT,
                     KdpGetParameterThree(ContextRecord) as PCHAR,
@@ -133,37 +189,37 @@ pub unsafe extern "system" fn KdpTrap(
                     TrapFrame,
                     ExceptionFrame,
                 );
-                Handled = 1;
+                handled = 1;
 
-                KeSetContextReturnRegister(ContextRecord, ReturnLength as ULONG_PTR);
+                KeSetContextReturnRegister(ContextRecord, return_length as ULONG_PTR);
             }
 
             BREAKPOINT_UNLOAD_SYMBOLS => {
-                Unload = 1;
+                unload = 1;
 
                 KdpSymbol(
                     (*ExceptionRecord).ExceptionInformation[1] as PSTRING,
                     (*ExceptionRecord).ExceptionInformation[2] as PKD_SYMBOLS_INFO,
-                    Unload,
+                    unload,
                     PreviousMode,
                     ContextRecord,
                     TrapFrame,
                     ExceptionFrame,
                 );
-                Handled = 1;
+                handled = 1;
             }
 
             BREAKPOINT_LOAD_SYMBOLS => {
                 KdpSymbol(
                     (*ExceptionRecord).ExceptionInformation[1] as PSTRING,
                     (*ExceptionRecord).ExceptionInformation[2] as PKD_SYMBOLS_INFO,
-                    Unload,
+                    unload,
                     PreviousMode,
                     ContextRecord,
                     TrapFrame,
                     ExceptionFrame,
                 );
-                Handled = 1;
+                handled = 1;
             }
 
             BREAKPOINT_COMMAND_STRING => {
@@ -175,21 +231,19 @@ pub unsafe extern "system" fn KdpTrap(
                     TrapFrame,
                     ExceptionFrame,
                 );
-                Handled = 1;
+                handled = 1;
             }
 
             _ => {
-                Handled = 0;
+                handled = 0;
             }
         }
 
-        if ProgramCounter == KeGetContextPc(ContextRecord) {
-            KeSetContextPc(ContextRecord, ProgramCounter + KD_BREAKPOINT_SIZE);
+        if program_counter == KeGetContextPc(ContextRecord) {
+            KeSetContextPc(ContextRecord, program_counter + KD_BREAKPOINT_SIZE as ULONG_PTR);
         }
-    }
-    else
-    {
-        Handled = KdpReport(
+    } else {
+        handled = KdpReport(
             TrapFrame,
             ExceptionFrame,
             ExceptionRecord,
@@ -199,7 +253,7 @@ pub unsafe extern "system" fn KdpTrap(
         );
     }
 
-    Handled
+    handled
 }
 
 #[no_mangle]
@@ -211,27 +265,27 @@ pub unsafe extern "system" fn KdpStub(
     PreviousMode: KPROCESSOR_MODE,
     SecondChanceException: BOOLEAN,
 ) -> BOOLEAN {
-    let ExceptionCommand: ULONG_PTR;
+    let exception_command: ULONG;
 
-    ExceptionCommand = (*ExceptionRecord).ExceptionInformation[0];
+    exception_command = (*ExceptionRecord).ExceptionInformation[0] as ULONG;
     if ((*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT)
         && ((*ExceptionRecord).NumberParameters > 0)
-        && ((ExceptionCommand == BREAKPOINT_LOAD_SYMBOLS)
-            || (ExceptionCommand == BREAKPOINT_UNLOAD_SYMBOLS)
-            || (ExceptionCommand == BREAKPOINT_COMMAND_STRING)
-            || (ExceptionCommand == BREAKPOINT_PRINT))
+        && ((exception_command == BREAKPOINT_LOAD_SYMBOLS)
+            || (exception_command == BREAKPOINT_UNLOAD_SYMBOLS)
+            || (exception_command == BREAKPOINT_COMMAND_STRING)
+            || (exception_command == BREAKPOINT_PRINT))
     {
         KeSetContextPc(
             ContextRecord,
             KeGetContextPc(ContextRecord) + KD_BREAKPOINT_SIZE as ULONG_PTR,
         );
-        return 1u8;
+        return 1;
     } else if KdPitchDebugger != 0 {
-        return 0u8;
+        return 0;
     } else if (KdAutoEnableOnEvent != 0)
         && (KdPreviouslyEnabled != 0)
         && (KdDebuggerEnabled == 0)
-        && (NT_SUCCESS(KdEnableDebugger()))
+        && (KdEnableDebugger() >= 0)
         && (KdDebuggerEnabled != 0)
     {
         return KdpTrap(
@@ -243,7 +297,7 @@ pub unsafe extern "system" fn KdpStub(
             SecondChanceException,
         );
     } else {
-        return 0u8;
+        return 0;
     }
 }
 
@@ -252,14 +306,14 @@ pub unsafe extern "system" fn KdIsThisAKdTrap(
     ExceptionRecord: PEXCEPTION_RECORD,
     Context: PCONTEXT,
     PreviousMode: KPROCESSOR_MODE,
-) -> u8 {
-    if ((*ExceptionRecord).ExceptionCode == 0x80000003u32)
+) -> BOOLEAN {
+    if ((*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT)
         && ((*ExceptionRecord).NumberParameters > 0)
-        && ((*ExceptionRecord).ExceptionInformation[0] != 0)
+        && ((*ExceptionRecord).ExceptionInformation[0] as ULONG != BREAKPOINT_BREAK)
     {
-        1u8
+        return 1;
     } else {
-        0u8
+        return 0;
     }
 }
 

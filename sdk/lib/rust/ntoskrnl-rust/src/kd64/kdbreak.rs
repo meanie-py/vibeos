@@ -1,138 +1,215 @@
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::ddk::PKTHREAD;
 
-use core::ffi::c_void;
-
+// External declarations from other KD modules
 extern "C" {
-    fn KdpDprintf(format: *const u8, ...);
+    static mut KdpBreakpointTable: [BREAKPOINT_ENTRY; KD_BREAKPOINT_MAX];
+    static mut KdpBreakpointInstruction: KD_BREAKPOINT_TYPE;
+    static mut KdpOweBreakpoint: BOOLEAN;
+    static mut BreakpointsSuspended: BOOLEAN;
+    fn KdpDprintf(Format: PCHAR, ...);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpAddBreakpoint(Address: *mut core::ffi::c_void) -> u32 {
-    let mut Content: KD_BREAKPOINT_TYPE = core::mem::zeroed();
-    let mut i: u32;
-    let mut Status: i32;
+extern "system" {
+    fn KdpCopyMemoryChunks( Address: ULONG_PTR, Buffer: PVOID, Size: ULONG, Unknown: ULONG, Flags: ULONG, ActualSize: *mut ULONG, ) -> NTSTATUS;
+    fn KdEnterDebugger(TrapFrame: PVOID, ExceptionFrame: PVOID) -> BOOLEAN;
+    fn KdExitDebugger(Enable: BOOLEAN);
+    fn KeGetCurrentThread() -> PKTHREAD;
+}
 
-    for i in 0..KD_BREAKPOINT_MAX {
+// Constants
+const KD_BREAKPOINT_MAX: usize = 32;
+const KD_BREAKPOINT_SIZE: ULONG = 1;
+const KD_BREAKPOINT_ACTIVE: ULONG = 0x01;
+const KD_BREAKPOINT_PENDING: ULONG = 0x02;
+const KD_BREAKPOINT_SUSPENDED: ULONG = 0x04;
+const KD_BREAKPOINT_EXPIRED: ULONG = 0x08;
+const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
+const MMDBG_COPY_WRITE: ULONG = 0x00000002;
+
+type KD_BREAKPOINT_TYPE = UCHAR;
+
+// Breakpoint table entry structure
+#[repr(C)]
+struct BREAKPOINT_ENTRY {
+    Address: PVOID,
+    Content: KD_BREAKPOINT_TYPE,
+    Flags: ULONG,
+    DirectoryTableBase: ULONG_PTR,
+}
+
+// Architecture-specific highest user breakpoint address
+#[cfg(target_pointer_width = "64")]
+const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x000007FFFFFFFFFF as PVOID;
+
+#[cfg(target_pointer_width = "32")]
+const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x7FFFFFFF as PVOID;
+
+#[no_mangle]
+pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {
+    let mut content: KD_BREAKPOINT_TYPE = 0;
+    let mut i: ULONG;
+    let mut status: NTSTATUS;
+
+    // Check whether we are not setting a breakpoint twice
+    i = 0;
+    while i < KD_BREAKPOINT_MAX as ULONG {
+        // Check if the breakpoint is valid
         if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_ACTIVE) != 0 &&
-            KdpBreakpointTable[i as usize].Address == Address {
+           KdpBreakpointTable[i as usize].Address == Address
+        {
+            // Were we not able to remove it earlier?
             if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_EXPIRED) != 0 {
+                // Just re-use it!
                 KdpBreakpointTable[i as usize].Flags &= !KD_BREAKPOINT_EXPIRED;
                 return i + 1;
             } else {
+                // Fail
                 return 0;
             }
         }
+        i += 1;
     }
 
+    // Find a free entry
     i = 0;
-    while i < KD_BREAKPOINT_MAX {
+    while i < KD_BREAKPOINT_MAX as ULONG {
         if KdpBreakpointTable[i as usize].Flags == 0 {
             break;
         }
         i += 1;
     }
 
-    if i == KD_BREAKPOINT_MAX {
+    // Fail if no free entry was found
+    if i == KD_BREAKPOINT_MAX as ULONG {
         return 0;
     }
 
+    // Save the breakpoint
     KdpBreakpointTable[i as usize].Address = Address;
 
-    if (Address as usize) < KD_HIGHEST_USER_BREAKPOINT_ADDRESS {
-        KdpBreakpointTable[i as usize].DirectoryTableBase = 
-            (*(*(*KeGetCurrentThread()).ApcState.Process).DirectoryTableBase.as_ptr().offset(0));
+    // If we are setting the breakpoint in user space, save the active process context
+    if Address < KD_HIGHEST_USER_BREAKPOINT_ADDRESS {
+        KdpBreakpointTable[i as usize].DirectoryTableBase =
+            (*(*KeGetCurrentThread()).__bindgen_anon_1.ApcState.Process).DirectoryTableBase[0] as ULONG_PTR;
     }
 
-    Status = KdpCopyMemoryChunks(
-        Address as u64,
-        &mut Content as *mut _ as *mut core::ffi::c_void,
+    // Try to save the old instruction
+    status = KdpCopyMemoryChunks(
+        Address as ULONG_PTR,
+        core::ptr::addr_of_mut!(content) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,
         MMDBG_COPY_UNSAFE,
         core::ptr::null_mut(),
     );
-
-    if NT_SUCCESS(Status) {
-        KdpBreakpointTable[i as usize].Content = Content;
+    
+    if status >= 0 {
+        // Memory accessible, set the breakpoint
+        KdpBreakpointTable[i as usize].Content = content;
         KdpBreakpointTable[i as usize].Flags = KD_BREAKPOINT_ACTIVE;
 
-        Status = KdpCopyMemoryChunks(
-            Address as u64,
-            &KdpBreakpointInstruction as *const _ as *mut core::ffi::c_void,
+        // Write the breakpoint
+        status = KdpCopyMemoryChunks(
+            Address as ULONG_PTR,
+            core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
             KD_BREAKPOINT_SIZE,
             0,
             MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
             core::ptr::null_mut(),
         );
-
-        if !NT_SUCCESS(Status) {
-            KdpDprintf(b"Unable to write breakpoint to address 0x%p\n\0".as_ptr(), Address);
+        
+        if status < 0 {
+            // This should never happen
+            // KdpDprintf(b"Unable to write breakpoint to address 0x%p\n\0".as_ptr() as PCHAR, Address);
         }
     } else {
-        KdpDprintf(b"Failed to set breakpoint at address 0x%p, adding deferred breakpoint.\n\0".as_ptr(), Address);
+        // Memory is inaccessible now, setting breakpoint is deferred
+        // KdpDprintf(
+            // b"Failed to set breakpoint at address 0x%p, adding deferred breakpoint.\n\0".as_ptr() as PCHAR,
+            // Address,
+        // );
         KdpBreakpointTable[i as usize].Flags = KD_BREAKPOINT_ACTIVE | KD_BREAKPOINT_PENDING;
-        KdpOweBreakpoint = 1u8;
+        KdpOweBreakpoint = 1;
     }
 
+    // Return the breakpoint handle
     i + 1
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdSetOwedBreakpoints() {
-    let mut Enable: u8;
-    let mut Content: KD_BREAKPOINT_TYPE;
-    let mut i: u32;
-    let mut Status: i32;
+    let enable: BOOLEAN;
+    let mut content: KD_BREAKPOINT_TYPE = 0;
+    let mut i: ULONG;
+    let mut status: NTSTATUS;
 
+    // If we don't owe any breakpoints, just return
     if KdpOweBreakpoint == 0 {
         return;
     }
 
-    Enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
+    // Enter the debugger
+    enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
 
-    KdpOweBreakpoint = 0u8;
+    // Suppose we succeed in setting all the breakpoints.
+    // If we fail to do so, the flag will be set again.
+    KdpOweBreakpoint = 0;
 
+    // Loop through current breakpoints and try to set or delete the pending ones
     i = 0;
-    while i < KD_BREAKPOINT_MAX {
+    while i < KD_BREAKPOINT_MAX as ULONG {
         if (KdpBreakpointTable[i as usize].Flags & (KD_BREAKPOINT_PENDING | KD_BREAKPOINT_EXPIRED)) != 0 {
-            if (KdpBreakpointTable[i as usize].Address as usize) < KD_HIGHEST_USER_BREAKPOINT_ADDRESS &&
-                KdpBreakpointTable[i as usize].DirectoryTableBase != (*(*KeGetCurrentThread()).ApcState.Process).DirectoryTableBase[0] {
-                KdpOweBreakpoint = 1u8;
+            // Set the breakpoint only if it is in kernel space, or if it is
+            // in user space and the active process context matches.
+            if KdpBreakpointTable[i as usize].Address < KD_HIGHEST_USER_BREAKPOINT_ADDRESS &&
+               KdpBreakpointTable[i as usize].DirectoryTableBase != 
+               (*(*KeGetCurrentThread()).__bindgen_anon_1.ApcState.Process).DirectoryTableBase[0] as ULONG_PTR
+            {
+                KdpOweBreakpoint = 1;
                 i += 1;
                 continue;
             }
 
-            Status = KdpCopyMemoryChunks(
-                KdpBreakpointTable[i as usize].Address as u64,
-                core::ptr::addr_of_mut!(Content) as *mut core::ffi::c_void,
+            // Try to save the old instruction
+            status = KdpCopyMemoryChunks(
+                KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                core::ptr::addr_of_mut!(content) as PVOID,
                 KD_BREAKPOINT_SIZE,
                 0,
                 MMDBG_COPY_UNSAFE,
                 core::ptr::null_mut(),
             );
-            if !NT_SUCCESS(Status) {
-                KdpOweBreakpoint = 1u8;
+            
+            if status < 0 {
+                // Memory is still inaccessible, breakpoint setting will be deferred again
+                KdpOweBreakpoint = 1;
                 i += 1;
                 continue;
             }
 
+            // Check if we need to write the breakpoint
             if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_PENDING) != 0 {
-                KdpBreakpointTable[i as usize].Content = Content;
+                // Memory accessible, set the breakpoint
+                KdpBreakpointTable[i as usize].Content = content;
 
-                Status = KdpCopyMemoryChunks(
-                    KdpBreakpointTable[i as usize].Address as u64,
-                    core::ptr::addr_of_mut!(KdpBreakpointInstruction) as *mut core::ffi::c_void,
+                // Write the breakpoint
+                status = KdpCopyMemoryChunks(
+                    KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                    core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
                     KD_BREAKPOINT_SIZE,
                     0,
                     MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
                     core::ptr::null_mut(),
                 );
-                if !NT_SUCCESS(Status) {
-                    KdpDprintf(
-                        b"Unable to write deferred breakpoint to address 0x%p\n\0".as_ptr() as *const i8,
-                        KdpBreakpointTable[i as usize].Address,
-                    );
-                    KdpOweBreakpoint = 1u8;
+                
+                if status < 0 {
+                    // This should never happen
+                    // KdpDprintf(
+                        // b"Unable to write deferred breakpoint to address 0x%p\n\0".as_ptr() as PCHAR,
+                        // KdpBreakpointTable[i as usize].Address,
+                    // );
+                    KdpOweBreakpoint = 1;
                 } else {
                     KdpBreakpointTable[i as usize].Flags = KD_BREAKPOINT_ACTIVE;
                 }
@@ -141,25 +218,31 @@ pub unsafe extern "system" fn KdSetOwedBreakpoints() {
                 continue;
             }
 
+            // Check if we need to restore the original instruction
             if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_EXPIRED) != 0 {
-                Status = KdpCopyMemoryChunks(
-                    KdpBreakpointTable[i as usize].Address as u64,
-                    core::ptr::addr_of_mut!(KdpBreakpointTable[i as usize].Content) as *mut core::ffi::c_void,
+                // Write it back
+                status = KdpCopyMemoryChunks(
+                    KdpBreakpointTable[i as usize].Address as ULONG_PTR,
+                    core::ptr::addr_of_mut!(KdpBreakpointTable[i as usize].Content) as PVOID,
                     KD_BREAKPOINT_SIZE,
                     0,
                     MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
                     core::ptr::null_mut(),
                 );
-                if !NT_SUCCESS(Status) {
-                    KdpDprintf(
-                        b"Unable to delete deferred breakpoint at address 0x%p\n\0".as_ptr() as *const i8,
-                        KdpBreakpointTable[i as usize].Address,
-                    );
-                    KdpOweBreakpoint = 1u8;
+                
+                if status < 0 {
+                    // This should never happen
+                    // KdpDprintf(
+                        // b"Unable to delete deferred breakpoint at address 0x%p\n\0".as_ptr() as PCHAR,
+                        // KdpBreakpointTable[i as usize].Address,
+                    // );
+                    KdpOweBreakpoint = 1;
                 } else {
+                    // Check if the breakpoint is suspended
                     if (KdpBreakpointTable[i as usize].Flags & KD_BREAKPOINT_SUSPENDED) != 0 {
                         KdpBreakpointTable[i as usize].Flags = KD_BREAKPOINT_SUSPENDED | KD_BREAKPOINT_ACTIVE;
                     } else {
+                        // Invalidate it
                         KdpBreakpointTable[i as usize].Flags = 0;
                     }
                 }
@@ -171,160 +254,195 @@ pub unsafe extern "system" fn KdSetOwedBreakpoints() {
         i += 1;
     }
 
-    KdExitDebugger(Enable);
+    // Exit the debugger
+    KdExitDebugger(enable);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpLowWriteContent(BpIndex: u32) -> u8 {
-    let Status: i32;
+pub unsafe extern "system" fn KdpLowWriteContent(BpIndex: ULONG) -> BOOLEAN {
+    let status: NTSTATUS;
 
-    if ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_PENDING) != 0 {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags &= !KD_BREAKPOINT_PENDING;
-        return 1u8;
+    // Make sure that the breakpoint is actually active
+    if (KdpBreakpointTable[BpIndex as usize].Flags & KD_BREAKPOINT_PENDING) != 0 {
+        // So we have a valid breakpoint, but it hasn't been used yet...
+        KdpBreakpointTable[BpIndex as usize].Flags &= !KD_BREAKPOINT_PENDING;
+        return 1;
     }
 
-    if (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Content == KdpBreakpointInstruction {
-        return 1u8;
+    // Is the original instruction a breakpoint anyway?
+    if KdpBreakpointTable[BpIndex as usize].Content == KdpBreakpointInstruction {
+        // Then leave it that way...
+        return 1;
     }
 
-    Status = KdpCopyMemoryChunks(
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Address as u64,
-        core::ptr::addr_of_mut!((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Content) as *mut core::ffi::c_void,
+    // We have an active breakpoint with an instruction to bring back. Do it.
+    status = KdpCopyMemoryChunks(
+        KdpBreakpointTable[BpIndex as usize].Address as ULONG_PTR,
+        core::ptr::addr_of_mut!(KdpBreakpointTable[BpIndex as usize].Content) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,
         MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags |= KD_BREAKPOINT_EXPIRED;
-        KdpOweBreakpoint = 1u8;
-        return 0u8;
+    
+    if status < 0 {
+        // Memory is inaccessible now, restoring original instruction is deferred
+        KdpBreakpointTable[BpIndex as usize].Flags |= KD_BREAKPOINT_EXPIRED;
+        KdpOweBreakpoint = 1;
+        return 0;
     }
 
-    return 1u8;
+    // Everything went fine, return
+    1
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpLowRestoreBreakpoint(BpIndex: u32) -> u8 {
-    let Status: i32;
+pub unsafe extern "system" fn KdpLowRestoreBreakpoint(BpIndex: ULONG) -> BOOLEAN {
+    let status: NTSTATUS;
 
-    if ((*KdpBreakpointTable.as_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_EXPIRED) != 0 {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags &= !KD_BREAKPOINT_EXPIRED;
-        return 1u8;
+    // Were we not able to remove it earlier?
+    if (KdpBreakpointTable[BpIndex as usize].Flags & KD_BREAKPOINT_EXPIRED) != 0 {
+        // Just re-use it!
+        KdpBreakpointTable[BpIndex as usize].Flags &= !KD_BREAKPOINT_EXPIRED;
+        return 1;
     }
 
-    if (*KdpBreakpointTable.as_ptr().add(BpIndex as usize)).Content == KdpBreakpointInstruction {
-        return 1u8;
+    // Are we merely writing a breakpoint on top of another breakpoint?
+    if KdpBreakpointTable[BpIndex as usize].Content == KdpBreakpointInstruction {
+        // Nothing to do
+        return 1;
     }
 
-    Status = KdpCopyMemoryChunks(
-        (*KdpBreakpointTable.as_ptr().add(BpIndex as usize)).Address as u64,
-        core::ptr::addr_of_mut!(KdpBreakpointInstruction) as *mut core::ffi::c_void,
+    // Ok, we actually have to overwrite the instruction now
+    status = KdpCopyMemoryChunks(
+        KdpBreakpointTable[BpIndex as usize].Address as ULONG_PTR,
+        core::ptr::addr_of_mut!(KdpBreakpointInstruction) as PVOID,
         KD_BREAKPOINT_SIZE,
         0,
         MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
         core::ptr::null_mut(),
     );
-    if !NT_SUCCESS(Status) {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags |= KD_BREAKPOINT_PENDING;
-        KdpOweBreakpoint = 1u8;
-        return 0u8;
+    
+    if status < 0 {
+        // Memory is inaccessible now, restoring breakpoint is deferred
+        KdpBreakpointTable[BpIndex as usize].Flags |= KD_BREAKPOINT_PENDING;
+        KdpOweBreakpoint = 1;
+        return 0;
     }
 
-    (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags &= !KD_BREAKPOINT_PENDING;
-    return 1u8;
+    // Clear any possible previous pending flag and return success
+    KdpBreakpointTable[BpIndex as usize].Flags &= !KD_BREAKPOINT_PENDING;
+    1
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpDeleteBreakpoint(BpEntry: u32) -> u8 {
-    let BpIndex = BpEntry.wrapping_sub(1);
+pub unsafe extern "system" fn KdpDeleteBreakpoint(BpEntry: ULONG) -> BOOLEAN {
+    let bp_index = BpEntry - 1;
 
-    if BpEntry == 0 || BpEntry > KD_BREAKPOINT_MAX {
-        return 0u8;
+    // Check for invalid breakpoint entry
+    if BpEntry == 0 || BpEntry > KD_BREAKPOINT_MAX as ULONG {
+        return 0;
     }
 
-    if (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags == 0 {
-        return 0u8;
+    // If the specified breakpoint table entry is not valid, then return FALSE.
+    if KdpBreakpointTable[bp_index as usize].Flags == 0 {
+        return 0;
     }
 
-    if ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_SUSPENDED) != 0 {
-        if ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_EXPIRED) == 0 {
-            (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags = 0;
-            return 1u8;
+    // Check if the breakpoint is suspended
+    if (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_SUSPENDED) != 0 {
+        // Check if breakpoint is not being deleted
+        if (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_EXPIRED) == 0 {
+            // Invalidate it and return success
+            KdpBreakpointTable[bp_index as usize].Flags = 0;
+            return 1;
         }
     }
 
-    if KdpLowWriteContent(BpIndex) != 0 {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags = 0;
+    // Restore original data, then invalidate it and return success
+    if KdpLowWriteContent(bp_index) != 0 {
+        KdpBreakpointTable[bp_index as usize].Flags = 0;
     }
-    return 1u8;
+    1
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpDeleteBreakpointRange(
-    Base: PVOID,
-    Limit: PVOID,
-) -> BOOLEAN {
-    let mut BpIndex: ULONG;
-    let mut DeletedBreakpoints: BOOLEAN;
+pub unsafe extern "system" fn KdpDeleteBreakpointRange(Base: PVOID, Limit: PVOID) -> BOOLEAN {
+    let mut bp_index: ULONG;
+    let mut deleted_breakpoints: BOOLEAN;
 
-    DeletedBreakpoints = 0u8;
+    // Assume no breakpoints will be deleted
+    deleted_breakpoints = 0;
 
-    BpIndex = 0;
-    while BpIndex < KD_BREAKPOINT_MAX {
-        if ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_ACTIVE) != 0
-            && ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Address >= Base as usize)
-            && ((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Address <= Limit as usize)
+    // Loop the breakpoint table
+    bp_index = 0;
+    while bp_index < KD_BREAKPOINT_MAX as ULONG {
+        // Make sure that the breakpoint is active and matches the range.
+        if (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_ACTIVE) != 0 &&
+           KdpBreakpointTable[bp_index as usize].Address >= Base &&
+           KdpBreakpointTable[bp_index as usize].Address <= Limit
         {
-            if KdpDeleteBreakpoint(BpIndex.wrapping_add(1)) != 0 {
-                DeletedBreakpoints = 1u8;
+            // Delete it, and remember if we succeeded at least once
+            if KdpDeleteBreakpoint(bp_index + 1) != 0 {
+                deleted_breakpoints = 1;
             }
         }
-        BpIndex = BpIndex.wrapping_add(1);
+        bp_index += 1;
     }
 
-    DeletedBreakpoints
+    // Return whether we deleted anything
+    deleted_breakpoints
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpRestoreAllBreakpoints() {
-    let mut BpIndex: u32;
+    let mut bp_index: ULONG;
 
-    BreakpointsSuspended = 0u8;
+    // No more suspended Breakpoints
+    BreakpointsSuspended = 0;
 
-    BpIndex = 0;
-    while BpIndex < KD_BREAKPOINT_MAX {
-        if ((*KdpBreakpointTable.as_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_ACTIVE) != 0 &&
-           ((*KdpBreakpointTable.as_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_SUSPENDED) != 0
+    // Loop the breakpoints
+    bp_index = 0;
+    while bp_index < KD_BREAKPOINT_MAX as ULONG {
+        // Check if they are valid, suspended breakpoints
+        if (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_ACTIVE) != 0 &&
+           (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_SUSPENDED) != 0
         {
-            (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags &= !KD_BREAKPOINT_SUSPENDED;
-            KdpLowRestoreBreakpoint(BpIndex);
+            // Unsuspend them
+            KdpBreakpointTable[bp_index as usize].Flags &= !KD_BREAKPOINT_SUSPENDED;
+            KdpLowRestoreBreakpoint(bp_index);
         }
-        BpIndex += 1;
+        bp_index += 1;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpSuspendBreakPoint(BpEntry: u32) {
-    let BpIndex: u32 = BpEntry - 1;
+pub unsafe extern "system" fn KdpSuspendBreakPoint(BpEntry: ULONG) {
+    let bp_index = BpEntry - 1;
 
-    if (((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_ACTIVE) != 0) &&
-       (((*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags & KD_BREAKPOINT_SUSPENDED) == 0) {
-        (*KdpBreakpointTable.as_mut_ptr().add(BpIndex as usize)).Flags |= KD_BREAKPOINT_SUSPENDED;
-        KdpLowWriteContent(BpIndex);
+    // Check if this is a valid, unsuspended breakpoint
+    if (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_ACTIVE) != 0 &&
+       (KdpBreakpointTable[bp_index as usize].Flags & KD_BREAKPOINT_SUSPENDED) == 0
+    {
+        // Suspend it
+        KdpBreakpointTable[bp_index as usize].Flags |= KD_BREAKPOINT_SUSPENDED;
+        KdpLowWriteContent(bp_index);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSuspendAllBreakPoints() {
-    let mut BpEntry: u32;
+    let mut bp_entry: ULONG;
 
-    BreakpointsSuspended = 1u8;
+    // Breakpoints are suspended
+    BreakpointsSuspended = 1;
 
-    BpEntry = 1;
-    while BpEntry <= KD_BREAKPOINT_MAX {
-        KdpSuspendBreakPoint(BpEntry);
-        BpEntry += 1;
+    // Loop every breakpoint
+    bp_entry = 1;
+    while bp_entry <= KD_BREAKPOINT_MAX as ULONG {
+        // Suspend it
+        KdpSuspendBreakPoint(bp_entry);
+        bp_entry += 1;
     }
 }
 

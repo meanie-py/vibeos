@@ -1,23 +1,88 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExAllocatePool, ExFreePool, ExInitializeFastMutex, ExInitializePagedLookasideList, ExReleaseFastMutex, LARGE_INTEGER, LIST_ENTRY, LPWSTR, MmIsThisAnNtAsSystem, _OBJECT_ATTRIBUTES, PAGED_LOOKASIDE_LIST, PKEY_VALUE_FULL_INFORMATION, PRTL_SPLAY_LINKS, PTUNNEL, PUNICODE_STRING, RtlCompareUnicodeString, RtlCopyUnicodeString, RtlDelete, RtlDeleteNoSplay, RtlRealSuccessor, ZwClose, ZwOpenKey, ZwQueryValueKey, _RTL_SPLAY_LINKS};
-use core::ffi::c_void;
+use ntkrnl_sys::CONTAINING_RECORD;
+
+use ntkrnl_sys::ddk::{
+    _RTL_SPLAY_LINKS,
+    PRTL_SPLAY_LINKS,
+    PTUNNEL,
+    PUNICODE_STRING,
+    LARGE_INTEGER,
+    PKEY_VALUE_FULL_INFORMATION,
+    LPWSTR,
+    ExAcquireFastMutex,
+    ExReleaseFastMutex,
+    ExInitializeFastMutex,
+    ExAllocatePool,
+    ExFreePool,
+    ExInitializePagedLookasideList,
+    RtlCompareUnicodeString,
+    RtlCopyUnicodeString,
+    RtlDelete,
+    RtlDeleteNoSplay,
+    RtlRealSuccessor,
+    ZwOpenKey,
+    ZwQueryValueKey,
+    ZwClose,
+    MmIsThisAnNtAsSystem,
+    _PAGED_LOOKASIDE_LIST,
+    _UNICODE_STRING, HANDLE, _OBJECT_ATTRIBUTES,
+};
+
+extern "system" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
+    fn RtlMoveMemory(destination: PVOID, source: PVOID, length: usize);
+    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+    fn ExAllocateFromPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST, entry: PVOID);
+    fn RtlInitializeSplayLinks(links: PRTL_SPLAY_LINKS);
+    fn RtlInsertAsLeftChild(parent: PRTL_SPLAY_LINKS, child: PRTL_SPLAY_LINKS);
+    fn RtlInsertAsRightChild(parent: PRTL_SPLAY_LINKS, child: PRTL_SPLAY_LINKS);
+    fn RtlParent(links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
+    fn RtlIsLeftChild(links: PRTL_SPLAY_LINKS) -> BOOLEAN;
+}
+
+#[repr(C)]
+struct TUNNEL_NODE_ENTRY {
+    SplayInfo: _RTL_SPLAY_LINKS,
+    TimerQueueEntry: LIST_ENTRY,
+    Time: LARGE_INTEGER,
+    DirectoryKey: ULONGLONG,
+    Flags: ULONG,
+    LongName: _UNICODE_STRING,
+    ShortName: _UNICODE_STRING,
+    Data: PVOID,
+    DataLength: ULONG,
+}
+
+type PTUNNEL_NODE_ENTRY = *mut TUNNEL_NODE_ENTRY;
+
+static mut TunnelMaxEntries: ULONG = 256;
+static mut TunnelMaxAge: ULONG = 15;
+static mut TunnelLookasideList: _PAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+
+const DEFAULT_EXTRA_SIZE: ULONG = 72;
+const DEFAULT_ENTRY_SIZE: ULONG = core::mem::size_of::<TUNNEL_NODE_ENTRY>() as ULONG + DEFAULT_EXTRA_SIZE;
+
+const TUNNEL_FLAG_POOL: ULONG = 0x2;
+const TUNNEL_FLAG_KEY_SHORT_NAME: ULONG = 0x1;
 
 unsafe fn FsRtlFreeTunnelNode(
     CurEntry: PTUNNEL_NODE_ENTRY,
     PoolList: PLIST_ENTRY,
 ) {
     if !PoolList.is_null() {
-        InsertHeadList(PoolList, core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry));
+        InsertHeadList(PoolList, core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry) as PLIST_ENTRY);
         return;
     }
 
-    if ((*CurEntry).Flags & TUNNEL_FLAG_POOL) != 0 {
-        ExFreePool(CurEntry as *mut core::ffi::c_void);
+    if (*CurEntry).Flags & TUNNEL_FLAG_POOL != 0 {
+        ExFreePool(CurEntry as PVOID);
     } else {
-        ExFreeToPagedLookasideList(core::ptr::addr_of_mut!(TunnelLookasideList), CurEntry as *mut core::ffi::c_void);
+        ExFreeToPagedLookasideList(core::ptr::addr_of_mut!(TunnelLookasideList), CurEntry as PVOID);
     }
 }
 
@@ -28,17 +93,17 @@ unsafe fn FsRtlRemoveNodeFromTunnel(
     Rebalance: PBOOLEAN,
 ) {
     if !Rebalance.is_null() && *Rebalance != 0 {
-        (*Cache).Cache = RtlDelete(core::ptr::addr_of_mut!((*CurEntry).SplayInfo));
+        (*Cache).Cache = RtlDelete(core::ptr::addr_of_mut!((*CurEntry).SplayInfo) as PRTL_SPLAY_LINKS);
         *Rebalance = 0u8;
     } else {
-        RtlDeleteNoSplay(core::ptr::addr_of_mut!((*CurEntry).SplayInfo), core::ptr::addr_of_mut!((*Cache).Cache));
+        RtlDeleteNoSplay(core::ptr::addr_of_mut!((*CurEntry).SplayInfo) as PRTL_SPLAY_LINKS, core::ptr::addr_of_mut!((*Cache).Cache));
     }
 
-    RemoveEntryList(core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry));
+    RemoveEntryList(core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry) as PLIST_ENTRY);
 
     FsRtlFreeTunnelNode(CurEntry, PoolList);
 
-    (*Cache).NumEntries = (*Cache).NumEntries.wrapping_sub(1);
+    (*Cache).NumEntries -= 1;
 }
 
 unsafe fn FsRtlPruneTunnelCache(
@@ -52,107 +117,109 @@ unsafe fn FsRtlPruneTunnelCache(
     let mut OldTime: LARGE_INTEGER = core::mem::zeroed();
     let mut Rebalance: BOOLEAN = 1u8;
 
-    KeQuerySystemTime(core::ptr::addr_of_mut!(CurTime));
+    KeQuerySystemTime(&mut CurTime);
 
-    OldTime.QuadPart = CurTime.QuadPart - TunnelMaxAge;
+    OldTime.QuadPart = CurTime.QuadPart - TunnelMaxAge as i64;
 
     Entry = (*Cache).TimerQueue.Flink;
 
-    while Entry != core::ptr::addr_of_mut!((*Cache).TimerQueue) {
-        CurEntry = (Entry as *mut u8).offset(-(core::mem::offset_of!(_TUNNEL_NODE_ENTRY, TimerQueueEntry) as isize)) as PTUNNEL_NODE_ENTRY;
+    while Entry != core::ptr::addr_of_mut!((*Cache).TimerQueue) as PLIST_ENTRY {
+        CurEntry = CONTAINING_RECORD!(Entry, TUNNEL_NODE_ENTRY, TimerQueueEntry) as PTUNNEL_NODE_ENTRY;
 
         NextEntry = (*Entry).Flink;
 
-        if (*CurEntry).Time.QuadPart < OldTime.QuadPart ||
-            (*CurEntry).Time.QuadPart > CurTime.QuadPart
-        {
-            FsRtlRemoveNodeFromTunnel(Cache, CurEntry, PoolList, core::ptr::addr_of_mut!(Rebalance));
+        if (*CurEntry).Time.QuadPart < OldTime.QuadPart || (*CurEntry).Time.QuadPart > CurTime.QuadPart {
+            FsRtlRemoveNodeFromTunnel(Cache, CurEntry, PoolList, &mut Rebalance);
         }
 
         Entry = NextEntry;
     }
 
-    while (*Cache).NumEntries > TunnelMaxEntries {
-        CurEntry = ((*Cache).TimerQueue.Flink as *mut u8).offset(-(core::mem::offset_of!(_TUNNEL_NODE_ENTRY, TimerQueueEntry) as isize)) as PTUNNEL_NODE_ENTRY;
-        FsRtlRemoveNodeFromTunnel(Cache, CurEntry, PoolList, core::ptr::addr_of_mut!(Rebalance));
+    while (*Cache).NumEntries as ULONG > TunnelMaxEntries {
+        CurEntry = CONTAINING_RECORD!((*Cache).TimerQueue.Flink, TUNNEL_NODE_ENTRY, TimerQueueEntry) as PTUNNEL_NODE_ENTRY;
+        FsRtlRemoveNodeFromTunnel(Cache, CurEntry, PoolList, &mut Rebalance);
     }
 }
 
+// CODE_SEG("INIT")
 unsafe fn FsRtlGetTunnelParameterValue(
     ParameterName: PUNICODE_STRING,
-    Value: *mut u32,
+    Value: *mut ULONG,
 ) {
-    let mut Root = _UNICODE_STRING {
-        Length: 130,
-        MaximumLength: 132,
-        Buffer: b"R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0F\0i\0l\0e\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as *mut u16,
+    let mut Root: _UNICODE_STRING = _UNICODE_STRING {
+        Length: 128,
+        MaximumLength: 128,
+        Buffer: b"Registry\\Machine\\System\\CurrentControlSet\\Control\\FileSystem\0".as_ptr() as LPWSTR,
     };
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut hKey: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut Status: i32;
-    let mut Length: u32 = 0;
-    let Info: PKEY_VALUE_FULL_INFORMATION;
+    let mut hKey: HANDLE = core::ptr::null_mut();
+    let mut Status: NTSTATUS;
+    let mut Length: ULONG = 0;
+    let mut Info: PKEY_VALUE_FULL_INFORMATION;
 
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-    ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.Attributes = 0x00000040;
-    ObjectAttributes.ObjectName = &mut Root;
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+    InitializeObjectAttributes(
+        &mut ObjectAttributes,
+        &mut Root,
+        OBJ_CASE_INSENSITIVE,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
 
-    Status = ZwOpenKey(&mut hKey, 0x20019, &mut ObjectAttributes);
+    Status = ZwOpenKey(&mut hKey, KEY_READ, &mut ObjectAttributes);
 
-    if !NT_SUCCESS(Status) {
+    if Status < 0 {
         return;
     }
 
-    Status = ZwQueryValueKey(hKey, ParameterName, 1, core::ptr::null_mut(), 0, &mut Length);
+    Status = ZwQueryValueKey(hKey, ParameterName, 2, core::ptr::null_mut(), 0, &mut Length);
 
-    if Status != 0x80000005u32 as i32 {
+    if Status != STATUS_BUFFER_TOO_SMALL {
         ZwClose(hKey);
         return;
     }
 
-    Info = ExAllocatePool(PagedPool, Length as u64) as PKEY_VALUE_FULL_INFORMATION;
+    Info = ExAllocatePool(PagedPool, Length as _) as PKEY_VALUE_FULL_INFORMATION;
 
     if Info.is_null() {
         ZwClose(hKey);
         return;
     }
 
-    Status = ZwQueryValueKey(hKey, ParameterName, 1, core::ptr::null_mut(), 0, &mut Length);
+    Status = ZwQueryValueKey(hKey, ParameterName, 2, Info as PVOID, Length, &mut Length);
 
-    if NT_SUCCESS(Status) {
+    if Status >= 0 {
         if (*Info).DataLength != 0 {
-            *Value = (Info as usize + (*Info).DataOffset as usize) as u32;
+            *Value = *((Info as ULONG_PTR + (*Info).DataOffset as ULONG_PTR) as *const ULONG);
         }
     }
 
-    ExFreePool(Info as *mut core::ffi::c_void);
+    ExFreePool(Info as PVOID);
 
     ZwClose(hKey);
 }
 
-unsafe fn FsRtlInitializeTunnels() {
-    let mut TunnelEntries: u32;
-    let mut MaximumTunnelEntryAgeInSeconds = _UNICODE_STRING {
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlInitializeTunnels() {
+    let mut TunnelEntries: ULONG;
+    let mut MaximumTunnelEntryAgeInSeconds: _UNICODE_STRING = _UNICODE_STRING {
         Length: 60,
-        MaximumLength: 62,
-        Buffer: b"M\0a\0x\0i\0m\0u\0m\0T\0u\0n\0n\0e\0l\0E\0n\0t\0r\0y\0A\0g\0e\0I\0n\0S\0e\0c\0o\0n\0d\0s\0\0\0".as_ptr() as *mut u16,
+        MaximumLength: 60,
+        Buffer: b"MaximumTunnelEntryAgeInSeconds\0".as_ptr() as LPWSTR,
     };
-    let mut MaximumTunnelEntries = _UNICODE_STRING {
-        Length: 40,
+    let mut MaximumTunnelEntries: _UNICODE_STRING = _UNICODE_STRING {
+        Length: 42,
         MaximumLength: 42,
-        Buffer: b"M\0a\0x\0i\0m\0u\0m\0T\0u\0n\0n\0e\0l\0E\0n\0t\0r\0i\0e\0s\0\0\0".as_ptr() as *mut u16,
+        Buffer: b"MaximumTunnelEntries\0".as_ptr() as LPWSTR,
     };
 
     if MmIsThisAnNtAsSystem() != 0 {
         TunnelMaxEntries = 1024;
     }
 
-    FsRtlGetTunnelParameterValue(core::ptr::addr_of_mut!(MaximumTunnelEntries), core::ptr::addr_of_mut!(TunnelMaxEntries));
+    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntries, &mut TunnelMaxEntries);
 
-    FsRtlGetTunnelParameterValue(core::ptr::addr_of_mut!(MaximumTunnelEntryAgeInSeconds), core::ptr::addr_of_mut!(TunnelMaxAge));
+    FsRtlGetTunnelParameterValue(&mut MaximumTunnelEntryAgeInSeconds, &mut TunnelMaxAge);
 
     if TunnelMaxAge == 0 {
         TunnelMaxEntries = 0;
@@ -176,11 +243,11 @@ unsafe fn FsRtlInitializeTunnels() {
 
     ExInitializePagedLookasideList(
         core::ptr::addr_of_mut!(TunnelLookasideList),
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        None,
+        None,
         0,
-        DEFAULT_ENTRY_SIZE,
-        0x4C6E7554u32,
+        DEFAULT_ENTRY_SIZE as _,
+        0x4C6E7554,
         TunnelEntries as u16,
     );
 }
@@ -198,7 +265,7 @@ unsafe fn FsRtlCompareNodeAndKey(
     } else if DirectoryKey < (*CurEntry).DirectoryKey {
         Ret = -1;
     } else {
-        if ((*CurEntry).Flags & TUNNEL_FLAG_KEY_SHORT_NAME) != 0 {
+        if (*CurEntry).Flags & TUNNEL_FLAG_KEY_SHORT_NAME != 0 {
             String = core::ptr::addr_of_mut!((*CurEntry).ShortName);
         } else {
             String = core::ptr::addr_of_mut!((*CurEntry).LongName);
@@ -210,15 +277,13 @@ unsafe fn FsRtlCompareNodeAndKey(
     Ret
 }
 
-unsafe fn FsRtlEmptyFreePoolList(
-    PoolList: PLIST_ENTRY,
-) {
+unsafe fn FsRtlEmptyFreePoolList(PoolList: PLIST_ENTRY) {
     let mut CurEntry: PLIST_ENTRY;
     let mut CurNode: PTUNNEL_NODE_ENTRY;
 
-    while IsListEmpty(PoolList) == 0 {
+    while !IsListEmpty(PoolList) {
         CurEntry = RemoveHeadList(PoolList);
-        CurNode = (CurEntry as *mut u8).offset(-(core::mem::offset_of!(_TUNNEL_NODE_ENTRY, TimerQueueEntry) as isize)) as PTUNNEL_NODE_ENTRY;
+        CurNode = CONTAINING_RECORD!(CurEntry, TUNNEL_NODE_ENTRY, TimerQueueEntry) as PTUNNEL_NODE_ENTRY;
         FsRtlFreeTunnelNode(CurNode, core::ptr::null_mut());
     }
 }
@@ -246,9 +311,9 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
         return;
     }
 
-    InitializeListHead(core::ptr::addr_of_mut!(PoolList));
+    InitializeListHead(&mut PoolList);
 
-    Length = core::mem::size_of::<_TUNNEL_NODE_ENTRY>() as ULONG;
+    Length = core::mem::size_of::<TUNNEL_NODE_ENTRY>() as ULONG;
 
     Length += DataLength;
 
@@ -265,7 +330,7 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
     }
 
     if NodeEntry.is_null() {
-        NodeEntry = ExAllocatePool((PagedPool as ULONG) | POOL_COLD_ALLOCATION, Length as usize) as PTUNNEL_NODE_ENTRY;
+        NodeEntry = ExAllocatePool(PagedPool | 0x100, Length as _) as PTUNNEL_NODE_ENTRY;
         if NodeEntry.is_null() {
             return;
         }
@@ -275,7 +340,7 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
 
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    CurEntry = (*Cache).Cache;
+    CurEntry = (*Cache).Cache as PRTL_SPLAY_LINKS;
 
     KeyString = if KeyByShortName != 0 { ShortName } else { LongName };
 
@@ -297,45 +362,45 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
         }
     }
 
-    RtlInitializeSplayLinks(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo));
+    RtlInitializeSplayLinks(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS);
 
     if !CurEntry.is_null() {
         if !(*CurEntry).LeftChild.is_null() {
-            RtlInsertAsLeftChild(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo), (*CurEntry).LeftChild);
+            RtlInsertAsLeftChild(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS, (*CurEntry).LeftChild);
         }
 
         if !(*CurEntry).RightChild.is_null() {
-            RtlInsertAsRightChild(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo), (*CurEntry).RightChild);
+            RtlInsertAsRightChild(core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS, (*CurEntry).RightChild);
         }
 
         if (*CurEntry).Parent == CurEntry {
-            (*Cache).Cache = core::ptr::addr_of_mut!((*NodeEntry).SplayInfo);
+            (*Cache).Cache = NodeEntry as *mut _RTL_SPLAY_LINKS;
         } else {
             if RtlIsLeftChild(CurEntry) != 0 {
-                RtlInsertAsLeftChild(RtlParent(CurEntry), core::ptr::addr_of_mut!((*NodeEntry).SplayInfo));
+                RtlInsertAsLeftChild(RtlParent(CurEntry), core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS);
             } else {
-                RtlInsertAsRightChild(RtlParent(CurEntry), core::ptr::addr_of_mut!((*NodeEntry).SplayInfo));
+                RtlInsertAsRightChild(RtlParent(CurEntry), core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS);
             }
         }
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*(CurEntry as PTUNNEL_NODE_ENTRY)).TimerQueueEntry));
+        RemoveEntryList(core::ptr::addr_of_mut!((*(CurEntry as PTUNNEL_NODE_ENTRY)).TimerQueueEntry) as PLIST_ENTRY);
 
-        FsRtlFreeTunnelNode(CurEntry as PTUNNEL_NODE_ENTRY, core::ptr::addr_of_mut!(PoolList));
+        FsRtlFreeTunnelNode(CurEntry as PTUNNEL_NODE_ENTRY, &mut PoolList);
 
         (*Cache).NumEntries -= 1;
     } else {
         if LastEntry.is_null() {
-            (*Cache).Cache = core::ptr::addr_of_mut!((*NodeEntry).SplayInfo);
+            (*Cache).Cache = NodeEntry as *mut _RTL_SPLAY_LINKS;
         } else {
             if Result > 0 {
-                RtlInsertAsLeftChild(LastEntry, core::ptr::addr_of_mut!((*NodeEntry).SplayInfo));
+                RtlInsertAsLeftChild(LastEntry, core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS);
             } else {
-                RtlInsertAsRightChild(LastEntry, core::ptr::addr_of_mut!((*NodeEntry).SplayInfo));
+                RtlInsertAsRightChild(LastEntry, core::ptr::addr_of_mut!((*NodeEntry).SplayInfo) as PRTL_SPLAY_LINKS);
             }
         }
     }
 
-    KeQuerySystemTime(core::ptr::addr_of_mut!((*NodeEntry).Time));
+    KeQuerySystemTime(&mut (*NodeEntry).Time);
 
     (*NodeEntry).DirectoryKey = DirectoryKey;
     (*NodeEntry).Flags = if AllocatedFromPool != 0 { TUNNEL_FLAG_POOL } else { 0x0 };
@@ -344,13 +409,9 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
     if !ShortName.is_null() {
         (*NodeEntry).ShortName.Length = (*ShortName).Length;
         (*NodeEntry).ShortName.MaximumLength = (*ShortName).Length;
-        (*NodeEntry).ShortName.Buffer = (NodeEntry as usize + core::mem::size_of::<_TUNNEL_NODE_ENTRY>()) as LPWSTR;
+        (*NodeEntry).ShortName.Buffer = ((NodeEntry as ULONG_PTR) + core::mem::size_of::<TUNNEL_NODE_ENTRY>()) as LPWSTR;
 
-        core::ptr::copy_nonoverlapping(
-            (*ShortName).Buffer as *const u8,
-            (*NodeEntry).ShortName.Buffer as *mut u8,
-            (*ShortName).Length as usize,
-        );
+        RtlMoveMemory((*NodeEntry).ShortName.Buffer as PVOID, (*ShortName).Buffer as PVOID, (*ShortName).Length as usize);
     } else {
         (*NodeEntry).ShortName.Length = 0;
         (*NodeEntry).ShortName.MaximumLength = 0;
@@ -360,13 +421,9 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
     if !LongName.is_null() {
         (*NodeEntry).LongName.Length = (*LongName).Length;
         (*NodeEntry).LongName.MaximumLength = (*LongName).Length;
-        (*NodeEntry).LongName.Buffer = (NodeEntry as usize + core::mem::size_of::<_TUNNEL_NODE_ENTRY>() + (*NodeEntry).ShortName.Length as usize) as LPWSTR;
+        (*NodeEntry).LongName.Buffer = ((NodeEntry as ULONG_PTR) + core::mem::size_of::<TUNNEL_NODE_ENTRY>() + (*NodeEntry).ShortName.Length as usize) as LPWSTR;
 
-        core::ptr::copy_nonoverlapping(
-            (*LongName).Buffer as *const u8,
-            (*NodeEntry).LongName.Buffer as *mut u8,
-            (*LongName).Length as usize,
-        );
+        RtlMoveMemory((*NodeEntry).LongName.Buffer as PVOID, (*LongName).Buffer as PVOID, (*LongName).Length as usize);
     } else {
         (*NodeEntry).LongName.Length = 0;
         (*NodeEntry).LongName.MaximumLength = 0;
@@ -374,30 +431,26 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
     }
 
     (*NodeEntry).DataLength = DataLength;
-    (*NodeEntry).Data = (NodeEntry as usize + core::mem::size_of::<_TUNNEL_NODE_ENTRY>() + (*NodeEntry).ShortName.Length as usize + (*NodeEntry).LongName.Length as usize) as PVOID;
-    core::ptr::copy_nonoverlapping(
-        Data as *const u8,
-        (*NodeEntry).Data as *mut u8,
-        DataLength as usize,
-    );
+    (*NodeEntry).Data = ((NodeEntry as ULONG_PTR) + core::mem::size_of::<TUNNEL_NODE_ENTRY>() + (*NodeEntry).ShortName.Length as usize + (*NodeEntry).LongName.Length as usize) as PVOID;
+    RtlMoveMemory((*NodeEntry).Data, Data, DataLength as usize);
 
     (*Cache).NumEntries += 1;
 
-    InsertTailList(core::ptr::addr_of_mut!((*Cache).TimerQueue), core::ptr::addr_of_mut!((*NodeEntry).TimerQueueEntry));
+    InsertTailList(core::ptr::addr_of_mut!((*Cache).TimerQueue) as PLIST_ENTRY, core::ptr::addr_of_mut!((*NodeEntry).TimerQueueEntry) as PLIST_ENTRY);
 
-    FsRtlPruneTunnelCache(Cache, core::ptr::addr_of_mut!(PoolList));
+    FsRtlPruneTunnelCache(Cache, &mut PoolList);
 
     ExReleaseFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    FsRtlEmptyFreePoolList(core::ptr::addr_of_mut!(PoolList));
+    FsRtlEmptyFreePoolList(&mut PoolList);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlDeleteKeyFromTunnelCache(
     Cache: PTUNNEL,
-    DirectoryKey: u64,
+    DirectoryKey: ULONGLONG,
 ) {
-    let mut Rebalance: u8 = 1u8;
+    let mut Rebalance: BOOLEAN = 1u8;
     let mut PoolList: LIST_ENTRY = core::mem::zeroed();
     let mut CurNode: PTUNNEL_NODE_ENTRY;
     let mut CurEntry: PRTL_SPLAY_LINKS;
@@ -408,13 +461,13 @@ pub unsafe extern "system" fn FsRtlDeleteKeyFromTunnelCache(
         return;
     }
 
-    InitializeListHead(core::ptr::addr_of_mut!(PoolList));
+    InitializeListHead(&mut PoolList);
 
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    CurEntry = (*Cache).Cache;
+    CurEntry = (*Cache).Cache as PRTL_SPLAY_LINKS;
     while !CurEntry.is_null() {
-        CurNode = (CurEntry as *mut u8).offset(-(core::mem::offset_of!(_TUNNEL_NODE_ENTRY, SplayInfo) as isize)) as PTUNNEL_NODE_ENTRY;
+        CurNode = CONTAINING_RECORD!(CurEntry, TUNNEL_NODE_ENTRY, SplayInfo) as PTUNNEL_NODE_ENTRY;
 
         if (*CurNode).DirectoryKey > DirectoryKey {
             CurEntry = (*CurEntry).LeftChild;
@@ -422,6 +475,7 @@ pub unsafe extern "system" fn FsRtlDeleteKeyFromTunnelCache(
             if !LastEntry.is_null() {
                 break;
             }
+
             CurEntry = (*CurEntry).RightChild;
         } else {
             LastEntry = CurEntry;
@@ -435,14 +489,14 @@ pub unsafe extern "system" fn FsRtlDeleteKeyFromTunnelCache(
     }
 
     loop {
-        CurNode = (LastEntry as *mut u8).offset(-(core::mem::offset_of!(_TUNNEL_NODE_ENTRY, SplayInfo) as isize)) as PTUNNEL_NODE_ENTRY;
+        CurNode = CONTAINING_RECORD!(LastEntry, TUNNEL_NODE_ENTRY, SplayInfo) as PTUNNEL_NODE_ENTRY;
 
         Successors = RtlRealSuccessor(LastEntry);
         if (*CurNode).DirectoryKey != DirectoryKey {
             break;
         }
 
-        FsRtlRemoveNodeFromTunnel(Cache, CurNode, core::ptr::addr_of_mut!(PoolList), core::ptr::addr_of_mut!(Rebalance));
+        FsRtlRemoveNodeFromTunnel(Cache, CurNode, &mut PoolList, &mut Rebalance);
         LastEntry = Successors;
 
         if LastEntry.is_null() {
@@ -452,7 +506,7 @@ pub unsafe extern "system" fn FsRtlDeleteKeyFromTunnelCache(
 
     ExReleaseFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    FsRtlEmptyFreePoolList(core::ptr::addr_of_mut!(PoolList));
+    FsRtlEmptyFreePoolList(&mut PoolList);
 }
 
 #[no_mangle]
@@ -467,12 +521,12 @@ pub unsafe extern "system" fn FsRtlDeleteTunnelCache(Cache: PTUNNEL) {
 
     Entry = (*Cache).TimerQueue.Flink;
 
-    while Entry != core::ptr::addr_of_mut!((*Cache).TimerQueue) {
-        CurEntry = (Entry as *mut u8).offset(-(core::mem::offset_of!(TUNNEL_NODE_ENTRY, TimerQueueEntry) as isize)) as PTUNNEL_NODE_ENTRY;
+    while Entry != core::ptr::addr_of_mut!((*Cache).TimerQueue) as PLIST_ENTRY {
+        CurEntry = CONTAINING_RECORD!(Entry, TUNNEL_NODE_ENTRY, TimerQueueEntry) as PTUNNEL_NODE_ENTRY;
 
         NextEntry = (*Entry).Flink;
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry));
+        RemoveEntryList(core::ptr::addr_of_mut!((*CurEntry).TimerQueueEntry) as PLIST_ENTRY);
 
         FsRtlFreeTunnelNode(CurEntry, core::ptr::null_mut());
 
@@ -491,23 +545,23 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
     Name: PUNICODE_STRING,
     ShortName: PUNICODE_STRING,
     LongName: PUNICODE_STRING,
-    DataLength: PULONG,
+    DataLength: *mut ULONG,
     Data: PVOID,
 ) -> BOOLEAN {
     let mut Ret: BOOLEAN = 0u8;
     let mut CurEntry: PTUNNEL_NODE_ENTRY;
     let mut PoolList: LIST_ENTRY = core::mem::zeroed();
-    let Result: LONG;
+    let mut Result: LONG;
 
     if TunnelMaxEntries == 0 {
         return 0u8;
     }
 
-    InitializeListHead(core::ptr::addr_of_mut!(PoolList));
+    InitializeListHead(&mut PoolList);
 
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    FsRtlPruneTunnelCache(Cache, core::ptr::addr_of_mut!(PoolList));
+    FsRtlPruneTunnelCache(Cache, &mut PoolList);
 
     CurEntry = (*Cache).Cache as PTUNNEL_NODE_ENTRY;
 
@@ -529,25 +583,17 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
         RtlCopyUnicodeString(ShortName, core::ptr::addr_of_mut!((*CurEntry).ShortName));
 
         if (*LongName).MaximumLength < (*CurEntry).LongName.Length {
-            (*LongName).Buffer = ExAllocatePool(PagedPool, (*CurEntry).LongName.Length as ULONG_PTR) as *mut WCHAR;
+            (*LongName).Buffer = ExAllocatePool(PagedPool, (*CurEntry).LongName.Length as _) as LPWSTR;
             if !(*LongName).Buffer.is_null() {
                 (*LongName).Length = (*CurEntry).LongName.Length;
                 (*LongName).MaximumLength = (*CurEntry).LongName.MaximumLength;
-                core::ptr::copy_nonoverlapping(
-                    (*CurEntry).LongName.Buffer,
-                    (*LongName).Buffer,
-                    (*CurEntry).LongName.Length as usize / core::mem::size_of::<WCHAR>(),
-                );
+                RtlMoveMemory((*LongName).Buffer as PVOID, (*CurEntry).LongName.Buffer as PVOID, (*CurEntry).LongName.Length as usize);
             }
         } else {
             RtlCopyUnicodeString(LongName, core::ptr::addr_of_mut!((*CurEntry).LongName));
         }
 
-        core::ptr::copy_nonoverlapping(
-            (*CurEntry).Data.as_ptr(),
-            Data as *mut u8,
-            (*CurEntry).DataLength as usize,
-        );
+        RtlMoveMemory(Data, (*CurEntry).Data, (*CurEntry).DataLength as usize);
 
         *DataLength = (*CurEntry).DataLength;
 
@@ -556,7 +602,7 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
 
     ExReleaseFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 
-    FsRtlEmptyFreePoolList(core::ptr::addr_of_mut!(PoolList));
+    FsRtlEmptyFreePoolList(&mut PoolList);
 
     Ret
 }
@@ -564,8 +610,11 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlInitializeTunnelCache(Cache: PTUNNEL) {
     ExInitializeFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
+
     (*Cache).Cache = core::ptr::null_mut();
+
     InitializeListHead(core::ptr::addr_of_mut!((*Cache).TimerQueue));
+
     (*Cache).NumEntries = 0;
 }
 
@@ -602,7 +651,7 @@ pub unsafe extern "system" fn FsRtlInitializeTunnelCache(Cache: PTUNNEL) {
 //
 // ULONG TunnelMaxEntries = 256;
 // ULONG TunnelMaxAge = 15;
-// PAGED_LOOKASIDE_LIST TunnelLookasideList;
+// _PAGED_LOOKASIDE_LIST TunnelLookasideList;
 //
 // #define DEFAULT_EXTRA_SIZE (72)
 // #define DEFAULT_ENTRY_SIZE (sizeof(TUNNEL_NODE_ENTRY) + DEFAULT_EXTRA_SIZE)

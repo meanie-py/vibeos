@@ -1,28 +1,86 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
+use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcCanIWrite, CcCopyRead, CcCopyWrite, CcFastCopyRead, CcFastCopyWrite, CcMdlRead, CcMdlReadComplete2, CcMdlWriteComplete2, CcPrepareMdlWrite, CcZeroData, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedWaitForExclusive, ExConvertExclusiveToSharedLite, ExIsResourceAcquiredSharedLite, FILE_STANDARD_INFORMATION, FS_FILTER_CALLBACK_DATA, _IO_STATUS_BLOCK, IoAllocateIrp, IoGetBaseFileSystemDeviceObject, IoGetRelatedDeviceObject, IoSetThreadHardErrorMode, KEVENT, KeInitializeEvent, KeIsExecutingDpc, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_OBJECT, PERESOURCE, PEXTENDED_DRIVER_EXTENSION, PFAST_IO_DISPATCH, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACKS, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PMDL, PSHARED_CACHE_MAP, PsGetCurrentThread};
-use core::ffi::c_void;
 
-extern "C" {
-    fn FlagOn(flags: u32, mask: u32) -> u32;
-}
+use ntkrnl_sys::ddk::{
+    _ETHREAD, PERESOURCE, PFILE_OBJECT, PDEVICE_OBJECT, PFAST_IO_DISPATCH,
+    PFSRTL_COMMON_FCB_HEADER, PLARGE_INTEGER, PIO_STATUS_BLOCK, PMDL,
+    PSHARED_CACHE_MAP, PDRIVER_OBJECT, PFS_FILTER_CALLBACKS,
+    PEXTENDED_DRIVER_EXTENSION, FILE_STANDARD_INFORMATION, _IO_STATUS_BLOCK,
+    KEVENT, PIRP, PIO_STACK_LOCATION, FS_FILTER_CALLBACK_DATA, CcCanIWrite,
+    CcFastCopyRead, CcCopyRead, CcFastCopyWrite, CcCopyWrite, CcZeroData,
+    CcMdlRead, CcMdlReadComplete2, CcPrepareMdlWrite, CcMdlWriteComplete2,
+    ExAcquireResourceSharedLite, ExAcquireResourceExclusiveLite, ExReleaseResourceLite,
+    ExAcquireSharedWaitForExclusive, ExConvertExclusiveToSharedLite, ExIsResourceAcquiredSharedLite,
+    IoGetRelatedDeviceObject, IoGetBaseFileSystemDeviceObject, IoAllocateIrp,
+    IoSetThreadHardErrorMode, KeInitializeEvent, KeWaitForSingleObject, KeIsExecutingDpc,
+    PsGetCurrentThread,
+    ACCESS_MASK, KPROCESSOR_MODE,
+};
 extern "system" {
-    fn CcCopyWriteWontFlush(FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: u32) -> u8;
+    static mut CcFastReadResourceMiss: ULONG;
+    static mut CcFastReadNotPossible: ULONG;
+    static mut CcFastReadWait: ULONG;
+    static mut CcFastReadNoWait: ULONG;
+    static mut CcFastMdlReadWait: ULONG;
+    static mut CcFastMdlReadNotPossible: ULONG;
+}
+
+
+const FSRTL_FAST_IO_TOP_LEVEL_IRP: ULONG_PTR = 0x04;
+
+extern "system" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
-    fn FsRtlIsNtstatusExpected(Status: i32) -> u8;
-    fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
-    fn ExAcquireResourceShared(Resource: *mut core::ffi::c_void, Wait: u8) -> u8;
-    fn ExReleaseResourceLite(Resource: *mut core::ffi::c_void);
-    static mut CcFastMdlReadWait: u32;
-    static mut CcFastMdlReadNotPossible: u32;
-    fn ADDRESS_AND_SIZE_TO_SPAN_PAGES(FileOffset: PLARGE_INTEGER, Length: u32) -> u32;
-    static mut CcFastReadWait: u32;
-    static mut CcFastReadNotPossible: u32;
+    fn FsRtlIsNtstatusExpected(Status: NTSTATUS) -> BOOLEAN;
+    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+
+#[inline(always)]
+fn CcCopyWriteWontFlush(_fo: PFILE_OBJECT, _foff: PLARGE_INTEGER, len: ULONG) -> BOOLEAN {
+    if len <= 0x10000 { 1u8 } else { 0u8 }
+}
+
+const FastIoIsNotPossible: u8 = 0;
+const FastIoIsQuestionable: u8 = 1;
+const NotificationEvent: u32 = 0;
+const Executive: u32 = 0;
+const KernelMode: KPROCESSOR_MODE = 0i8;
+const IRP_MJ_QUERY_INFORMATION: u8 = 0x05;
+const IRP_SYNCHRONOUS_PAGING_IO: ULONG = 0x00000040;
+const IRP_PAGING_IO: ULONG = 0x00000002;
+const FileStandardInformation: u32 = 5;
+const FO_FILE_FAST_IO_READ: ULONG = 0x00000008;
+const FO_WRITE_THROUGH: ULONG = 0x00000002;
+const FO_FILE_MODIFIED: ULONG = 0x00000001;
+const FO_FILE_SIZE_CHANGED: ULONG = 0x00000004;
+const SyncTypeOther: u32 = 0;
+const SyncTypeCreateSection: u32 = 1;
+const FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: UCHAR = 0;
+const FSRTL_FLAG_ACQUIRE_MAIN_RSRC_EX: u8 = 0x01;
+const FSRTL_FLAG_ACQUIRE_MAIN_RSRC_SH: u8 = 0x02;
+
+const MAXLONGLONG: i64 = 0x7fffffffffffffff;
+const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32;
+const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as i32;
+const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: NTSTATUS = 0x00000367;
+const STATUS_FILE_LOCKED_WITH_ONLY_READERS: NTSTATUS = 0x0000012A;
+const STATUS_FILE_LOCKED_WITH_WRITERS: NTSTATUS = 0x0000012B;
+
+macro_rules! ADDRESS_AND_SIZE_TO_SPAN_PAGES {
+    ($offset:expr, $size:expr) => {
+        ((($offset as usize & 0xfff) + $size as usize + 0xfff) >> 12)
+    };
+}
+
+macro_rules! FlagOn {
+    ($flags:expr, $mask:expr) => {
+        (($flags) & ($mask)) != 0
+    };
 }
 
 #[no_mangle]
@@ -49,29 +107,28 @@ pub unsafe extern "system" fn FsRtlIncrementCcFastReadNoWait() {
 pub unsafe extern "system" fn FsRtlCopyRead(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    Wait: u8,
-    LockKey: u32,
-    Buffer: *mut core::ffi::c_void,
+    Length: ULONG,
+    Wait: BOOLEAN,
+    LockKey: ULONG,
+    Buffer: PVOID,
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-
+) -> BOOLEAN {
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
-    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+    let mut Offset = LARGE_INTEGER { QuadPart: 0 };
     let FastIoDispatch: PFAST_IO_DISPATCH;
     let Device: PDEVICE_OBJECT;
-    let mut Result: u8 = 1u8;
-    let PageCount: u32 = ADDRESS_AND_SIZE_TO_SPAN_PAGES(FileOffset, Length);
+    let mut Result: BOOLEAN = 1u8;
+    let PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES!((*FileOffset).QuadPart, Length);
 
     if Length == 0 {
-        (*IoStatus).Anonymous.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*IoStatus).Information = 0;
         return 1u8;
     }
 
-    if Length as u64 > 0x7FFFFFFFFFFFFFFFu64 - (*FileOffset).QuadPart as u64 {
-        (*IoStatus).Anonymous.__bindgen_anon_1.Status = 0xC000000Du32 as i32;
+    if Length as i64 > MAXLONGLONG - (*FileOffset).QuadPart {
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
         (*IoStatus).Information = 0;
         return 0u8;
     }
@@ -92,883 +149,315 @@ pub unsafe extern "system" fn FsRtlCopyRead(
         }
     }
 
-    if (*FileObject).PrivateCacheMap.is_null() || (*FcbHeader).IsFastIoPossible == 2i32 {
+    if (*FileObject).PrivateCacheMap.is_null() || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible {
         Result = 0u8;
-        'Cleanup: loop {
-            ExReleaseResourceLite((*FcbHeader).Resource);
-            FsRtlExitFileSystem();
-
-            if Result == 0u8 {
-                CcFastReadNotPossible += 1;
-            }
-
-            return Result;
-        }
-    }
-
-    if (*FcbHeader).IsFastIoPossible == 1i32 {
+        // goto Cleanup
+    } else if (*FcbHeader).IsFastIoPossible == FastIoIsQuestionable {
         Device = IoGetRelatedDeviceObject(FileObject);
         FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
 
-        if ((*FastIoDispatch).FastIoCheckIfPossible.unwrap())(
-            FileObject,
-            FileOffset,
-            Length,
-            1u8,
-            LockKey,
-            1u8,
-            IoStatus,
-            Device,
-        ) == 0
-        {
+        if FastIoDispatch.is_null() || (*FastIoDispatch).FastIoCheckIfPossible.is_none() {
             Result = 0u8;
-            'Cleanup: loop {
-                ExReleaseResourceLite((*FcbHeader).Resource);
-                FsRtlExitFileSystem();
-
-                if Result == 0u8 {
-                    CcFastReadNotPossible += 1;
-                }
-
-                return Result;
+        } else if let Some(check_fn) = (*FastIoDispatch).FastIoCheckIfPossible {
+            if check_fn(FileObject, FileOffset, Length, 1u8, LockKey, 1u8, IoStatus, Device) == 0 {
+                Result = 0u8;
             }
         }
     }
 
-    if Offset.QuadPart > (*FcbHeader).FileSize.QuadPart {
+    if Result != 0 && Offset.QuadPart > (*FcbHeader).FileSize.QuadPart {
         if (*FileOffset).QuadPart >= (*FcbHeader).FileSize.QuadPart {
-            (*IoStatus).Anonymous.__bindgen_anon_1.Status = 0xC0000011u32 as i32;
+            (*IoStatus).__bindgen_anon_1.Status = STATUS_END_OF_FILE;
             (*IoStatus).Information = 0;
-            'Cleanup: loop {
-                ExReleaseResourceLite((*FcbHeader).Resource);
-                FsRtlExitFileSystem();
+        } else {
+            let Length = ((*FcbHeader).FileSize.QuadPart - (*FileOffset).QuadPart) as ULONG;
+            (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-                if Result == 0u8 {
-                    CcFastReadNotPossible += 1;
-                }
-
-                return Result;
+            if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
+                CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+            } else {
+                Result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
             }
+
+            if Result != 0 {
+                (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
+            }
+
+            (*PsGetCurrentThread()).TopLevelIrp = 0;
         }
+    } else if Result != 0 {
+        (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-        let Length = ((*FcbHeader).FileSize.QuadPart - (*FileOffset).QuadPart) as u32;
-    }
-
-    (*PsGetCurrentThread()).TopLevelIrp = 0x00000001 as *mut core::ffi::c_void;
-
-    {
-        if Wait != 0 && (Offset.u().__bindgen_anon_1.HighPart == 0 && (*FcbHeader).FileSize.u().__bindgen_anon_1.HighPart == 0) {
-            CcFastCopyRead(
-                FileObject,
-                (*FileOffset).u().__bindgen_anon_1.LowPart,
-                Length,
-                PageCount,
-                Buffer,
-                IoStatus,
-            );
-
-            (*FileObject).Flags |= 0x00000004u32;
-
-            if (*IoStatus).Anonymous.__bindgen_anon_1.Status != 0xC0000011u32 as i32 {}
+        if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
+            CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
+            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
         } else {
             Result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
-
-            (*FileObject).Flags |= 0x00000004u32;
-
-            if Result != 0u8 {}
+            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
         }
 
-        if Result != 0u8 {
+        if Result != 0 {
             (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
         }
-    }
 
-    (*PsGetCurrentThread()).TopLevelIrp = core::ptr::null_mut();
+        (*PsGetCurrentThread()).TopLevelIrp = 0;
+    }
 
     ExReleaseResourceLite((*FcbHeader).Resource);
     FsRtlExitFileSystem();
 
-    if Result == 0u8 {
+    if Result == 0 {
         CcFastReadNotPossible += 1;
     }
 
-    return Result;
+    Result
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCopyWrite(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    Wait: u8,
-    LockKey: u32,
-    Buffer: *mut core::ffi::c_void,
+    Length: ULONG,
+    Wait: BOOLEAN,
+    LockKey: ULONG,
+    Buffer: PVOID,
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-
-    let mut Result: u8 = 1;
-    let mut FastIoDispatch: PFAST_IO_DISPATCH;
-    let mut Device: PDEVICE_OBJECT;
+) -> BOOLEAN {
+    let mut Result: BOOLEAN = 1u8;
+    let FastIoDispatch: PFAST_IO_DISPATCH;
+    let Device: PDEVICE_OBJECT;
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
-    let mut SharedCacheMap: PSHARED_CACHE_MAP;
+    let SharedCacheMap: PSHARED_CACHE_MAP;
 
-    let FileOffsetAppend: u8 = if (*FileOffset).__bindgen_anon_1.HighPart == -1i32 && (*FileOffset).__bindgen_anon_1.LowPart == 0xffffffff { 1 } else { 0 };
+    let FileOffsetAppend = (*FileOffset).u.HighPart == -1i32 && (*FileOffset).u.LowPart == 0xffffffff;
 
-    let mut ResourceAcquiredShared: u8 = 0;
-    let mut b_4GB: u8 = 0;
-    let mut FileSizeModified: u8 = 0;
-    let mut OldFileSize: LARGE_INTEGER = core::mem::zeroed();
-    let mut OldValidDataLength: LARGE_INTEGER = core::mem::zeroed();
-    let mut NewSize: LARGE_INTEGER = core::mem::zeroed();
-    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+    let mut ResourceAcquiredShared: BOOLEAN = 0u8;
+    let mut b_4GB: BOOLEAN;
+    let mut FileSizeModified: BOOLEAN = 0u8;
+    let mut OldFileSize = LARGE_INTEGER { QuadPart: 0 };
+    let mut OldValidDataLength = LARGE_INTEGER { QuadPart: 0 };
+    let mut NewSize = LARGE_INTEGER { QuadPart: 0 };
+    let mut Offset = LARGE_INTEGER { QuadPart: 0 };
 
-    NewSize.QuadPart = 0;
     Offset.QuadPart = (*FileOffset).QuadPart + Length as i64;
     FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
 
-    if CcCanIWrite(FileObject, Length, Wait, 0) == 0 ||
-       CcCopyWriteWontFlush(FileObject, FileOffset, Length) == 0 ||
-       ((*FileObject).Flags & 0x00000010) != 0 {
-        return 0;
+    if CcCanIWrite(FileObject, Length, Wait, 0u8) == 0
+        || CcCopyWriteWontFlush(FileObject, FileOffset, Length) == 0
+        || ((*FileObject).Flags & FO_WRITE_THROUGH) != 0
+    {
+        return 0u8;
     }
 
     (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-    (*IoStatus).Information = Length as usize;
+    (*IoStatus).Information = Length as _;
 
     if Length == 0 {
-        return 1;
-    }
-
-    FsRtlEnterFileSystem();
-
-    'main_logic: {
-        if Wait != 0 && (*FcbHeader).AllocationSize.__bindgen_anon_1.HighPart == 0 {
-            if FileOffsetAppend == 0 && Offset.__bindgen_anon_1.LowPart <= (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart {
-                ExAcquireResourceSharedLite((*FcbHeader).Resource, 1);
-                ResourceAcquiredShared = 1;
-            } else {
-                ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1);
-            }
-
-            if FileOffsetAppend != 0 {
-                Offset.__bindgen_anon_1.LowPart = (*FcbHeader).FileSize.__bindgen_anon_1.LowPart;
-                NewSize.__bindgen_anon_1.LowPart = (*FcbHeader).FileSize.__bindgen_anon_1.LowPart + Length;
-                b_4GB = if NewSize.__bindgen_anon_1.LowPart < (*FcbHeader).FileSize.__bindgen_anon_1.LowPart { 1 } else { 0 };
-            } else {
-                Offset.__bindgen_anon_1.LowPart = (*FileOffset).__bindgen_anon_1.LowPart;
-                NewSize.__bindgen_anon_1.LowPart = (*FileOffset).__bindgen_anon_1.LowPart + Length;
-                b_4GB = if NewSize.__bindgen_anon_1.LowPart < (*FileOffset).__bindgen_anon_1.LowPart || (*FileOffset).__bindgen_anon_1.HighPart != 0 { 1 } else { 0 };
-            }
-
-            if (*FileObject).PrivateCacheMap != core::ptr::null_mut() &&
-               (*FcbHeader).IsFastIoPossible != 2 &&
-               (*FcbHeader).AllocationSize.__bindgen_anon_1.LowPart >= NewSize.__bindgen_anon_1.LowPart &&
-               Offset.__bindgen_anon_1.LowPart < (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart + 0x2000 &&
-               b_4GB == 0 {
-                if ResourceAcquiredShared != 0 && NewSize.__bindgen_anon_1.LowPart > (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart + 0x2000 {
-                    ExReleaseResourceLite((*FcbHeader).Resource);
-                    ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1);
-                    if FileOffsetAppend != 0 {
-                        Offset.__bindgen_anon_1.LowPart = (*FcbHeader).FileSize.__bindgen_anon_1.LowPart;
-                        NewSize.__bindgen_anon_1.LowPart = (*FcbHeader).FileSize.__bindgen_anon_1.LowPart + Length;
-                        b_4GB = if NewSize.__bindgen_anon_1.LowPart < Offset.__bindgen_anon_1.LowPart { 1 } else { 0 };
-                    }
-
-                    if (*FileObject).PrivateCacheMap != core::ptr::null_mut() &&
-                       (*FcbHeader).IsFastIoPossible != 2 &&
-                       (*FcbHeader).AllocationSize.__bindgen_anon_1.LowPart >= NewSize.__bindgen_anon_1.LowPart &&
-                       (*FcbHeader).AllocationSize.__bindgen_anon_1.HighPart == 0 &&
-                       b_4GB == 0 {
-                    } else {
-                        break 'main_logic;
-                    }
-                }
-            } else {
-                break 'main_logic;
-            }
-
-            if (*FcbHeader).IsFastIoPossible == 1 {
-                let mut FastIoCheckIfPossibleStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-
-                Device = IoGetRelatedDeviceObject(FileObject);
-                FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
-
-                if ((*FastIoDispatch).FastIoCheckIfPossible).unwrap()(
-                    FileObject,
-                    if FileOffsetAppend != 0 { core::ptr::addr_of_mut!((*FcbHeader).FileSize) } else { FileOffset },
-                    Length,
-                    1,
-                    LockKey,
-                    0,
-                    core::ptr::addr_of_mut!(FastIoCheckIfPossibleStatus),
-                    Device,
-                ) == 0 {
-                    break 'main_logic;
-                }
-            }
-
-            if NewSize.__bindgen_anon_1.LowPart > (*FcbHeader).FileSize.__bindgen_anon_1.LowPart {
-                FileSizeModified = 1;
-                OldFileSize.__bindgen_anon_1.LowPart = (*FcbHeader).FileSize.__bindgen_anon_1.LowPart;
-                OldValidDataLength.__bindgen_anon_1.LowPart = (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart;
-                (*FcbHeader).FileSize.__bindgen_anon_1.LowPart = NewSize.__bindgen_anon_1.LowPart;
-            }
-
-            (*PsGetCurrentThread()).TopLevelIrp = 0x00000002 as *mut core::ffi::c_void;
-
-            {
-                if Offset.__bindgen_anon_1.LowPart > (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart {
-                    let mut OffsetVar: LARGE_INTEGER = core::mem::zeroed();
-                    OffsetVar.__bindgen_anon_1.LowPart = Offset.__bindgen_anon_1.LowPart;
-                    OffsetVar.__bindgen_anon_1.HighPart = 0;
-                    CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength), core::ptr::addr_of_mut!(OffsetVar), 1);
-                }
-
-                CcFastCopyWrite(FileObject, Offset.__bindgen_anon_1.LowPart, Length, Buffer);
-            }
-
-            (*PsGetCurrentThread()).TopLevelIrp = core::ptr::null_mut();
-
-            if Result != 0 {
-                if NewSize.__bindgen_anon_1.LowPart > (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart {
-                    (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart = NewSize.__bindgen_anon_1.LowPart;
-                }
-
-                (*FileObject).Flags |= 0x00000004;
-
-                if FileSizeModified != 0 {
-                    SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
-                    (*SharedCacheMap).FileSize.__bindgen_anon_1.LowPart = NewSize.__bindgen_anon_1.LowPart;
-                    (*FileObject).Flags |= 0x00000008;
-                }
-
-                (*FileObject).CurrentByteOffset.QuadPart = NewSize.__bindgen_anon_1.LowPart as i64;
-            } else {
-                if FileSizeModified != 0 {
-                    if (*FcbHeader).PagingIoResource != core::ptr::null_mut() {
-                        ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1);
-                        (*FcbHeader).FileSize.__bindgen_anon_1.LowPart = OldFileSize.__bindgen_anon_1.LowPart;
-                        (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart = OldValidDataLength.__bindgen_anon_1.LowPart;
-                        ExReleaseResourceLite((*FcbHeader).PagingIoResource);
-                    } else {
-                        (*FcbHeader).FileSize.__bindgen_anon_1.LowPart = OldFileSize.__bindgen_anon_1.LowPart;
-                        (*FcbHeader).ValidDataLength.__bindgen_anon_1.LowPart = OldValidDataLength.__bindgen_anon_1.LowPart;
-                    }
-                }
-            }
-
-            ExReleaseResourceLite((*FcbHeader).Resource);
-            FsRtlExitFileSystem();
-            return Result;
-        } else {
-            let mut OldFileSize: LARGE_INTEGER = core::mem::zeroed();
-
-            if FileOffsetAppend == 0 && (*FileOffset).QuadPart + Length as i64 <= (*FcbHeader).ValidDataLength.QuadPart {
-                if ExAcquireResourceSharedLite((*FcbHeader).Resource, Wait) == 0 {
-                    FsRtlExitFileSystem();
-                    return 0;
-                }
-                ResourceAcquiredShared = 1;
-            } else {
-                if ExAcquireResourceExclusiveLite((*FcbHeader).Resource, Wait) == 0 {
-                    FsRtlExitFileSystem();
-                    return 0;
-                }
-            }
-
-            if FileOffsetAppend != 0 {
-                Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
-                NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
-            } else {
-                Offset.QuadPart = (*FileOffset).QuadPart;
-                NewSize.QuadPart += (*FileOffset).QuadPart + Length as i64;
-            }
-
-            if (*FileObject).PrivateCacheMap != core::ptr::null_mut() &&
-               (*FcbHeader).IsFastIoPossible != 2 &&
-               (*FcbHeader).ValidDataLength.QuadPart + 0x2000 > Offset.QuadPart &&
-               Length as i64 <= 0x7fffffffffffffff - Offset.QuadPart &&
-               (*FcbHeader).AllocationSize.QuadPart >= NewSize.QuadPart {
-                if ResourceAcquiredShared != 0 && NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-                    ExReleaseResourceLite((*FcbHeader).Resource);
-                    if ExAcquireResourceExclusiveLite((*FcbHeader).Resource, Wait) == 0 {
-                        FsRtlExitFileSystem();
-                        return 0;
-                    }
-
-                    if FileOffsetAppend != 0 {
-                        Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
-                        NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
-                    }
-
-                    if (*FileObject).PrivateCacheMap != core::ptr::null_mut() &&
-                       (*FcbHeader).IsFastIoPossible != 2 &&
-                       (*FcbHeader).AllocationSize.QuadPart > NewSize.QuadPart {
-                    } else {
-                        break 'main_logic;
-                    }
-                }
-
-                if (*FcbHeader).IsFastIoPossible == 1 {
-                    let mut FastIoCheckIfPossibleStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-
-                    Device = IoGetRelatedDeviceObject(FileObject);
-                    FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
-
-                    if ((*FastIoDispatch).FastIoCheckIfPossible).unwrap()(
-                        FileObject,
-                        if FileOffsetAppend != 0 { core::ptr::addr_of_mut!((*FcbHeader).FileSize) } else { FileOffset },
-                        Length,
-                        Wait,
-                        LockKey,
-                        0,
-                        core::ptr::addr_of_mut!(FastIoCheckIfPossibleStatus),
-                        Device,
-                    ) == 0 {
-                        break 'main_logic;
-                    }
-                }
-
-                if NewSize.QuadPart > (*FcbHeader).FileSize.QuadPart {
-                    FileSizeModified = 1;
-                    OldFileSize.QuadPart = (*FcbHeader).FileSize.QuadPart;
-                    OldValidDataLength.QuadPart = (*FcbHeader).ValidDataLength.QuadPart;
-
-                    if NewSize.__bindgen_anon_1.HighPart != (*FcbHeader).FileSize.__bindgen_anon_1.HighPart && (*FcbHeader).PagingIoResource != core::ptr::null_mut() {
-                        ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1);
-                        (*FcbHeader).FileSize.QuadPart = NewSize.QuadPart;
-                        ExReleaseResourceLite((*FcbHeader).PagingIoResource);
-                    } else {
-                        (*FcbHeader).FileSize.QuadPart = NewSize.QuadPart;
-                    }
-                }
-
-                (*PsGetCurrentThread()).TopLevelIrp = 0x00000002 as *mut core::ffi::c_void;
-
-                {
-                    let mut CallCc: u8 = 1;
-
-                    if Offset.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-                        if CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength), core::ptr::addr_of_mut!(Offset), Wait) == 0 {
-                            Result = 0;
-                            CallCc = 0;
-                        }
-                    }
-
-                    if CallCc != 0 {
-                        Result = CcCopyWrite(FileObject, core::ptr::addr_of_mut!(Offset), Length, Wait, Buffer);
-                    }
-                }
-
-                (*PsGetCurrentThread()).TopLevelIrp = 0x00000002 as *mut core::ffi::c_void;
-
-                if Result != 0 {
-                    if NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-                        if NewSize.__bindgen_anon_1.HighPart != (*FcbHeader).ValidDataLength.__bindgen_anon_1.HighPart && (*FcbHeader).PagingIoResource != core::ptr::null_mut() {
-                            ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1);
-                            (*FcbHeader).ValidDataLength.QuadPart = NewSize.QuadPart;
-                            ExReleaseResourceLite((*FcbHeader).PagingIoResource);
-                        } else {
-                            (*FcbHeader).ValidDataLength.QuadPart = NewSize.QuadPart;
-                        }
-                    }
-
-                    (*FileObject).Flags |= 0x00000004;
-
-                    if FileSizeModified != 0 {
-                        SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
-                        (*SharedCacheMap).FileSize.QuadPart = NewSize.QuadPart;
-                        (*FileObject).Flags |= 0x00000008;
-                    }
-
-                    (*FileObject).CurrentByteOffset.QuadPart = NewSize.QuadPart;
-                } else {
-                    if FileSizeModified != 0 {
-                        if (*FcbHeader).PagingIoResource != core::ptr::null_mut() {
-                            ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1);
-                            (*FcbHeader).FileSize.QuadPart = OldFileSize.QuadPart;
-                            (*FcbHeader).ValidDataLength.QuadPart = OldValidDataLength.QuadPart;
-                            ExReleaseResourceLite((*FcbHeader).PagingIoResource);
-                        } else {
-                            (*FcbHeader).FileSize.QuadPart = OldFileSize.QuadPart;
-                            (*FcbHeader).ValidDataLength.QuadPart = OldValidDataLength.QuadPart;
-                        }
-                    }
-                }
-
-                ExReleaseResourceLite((*FcbHeader).Resource);
-                FsRtlExitFileSystem();
-                return Result;
-            } else {
-                break 'main_logic;
-            }
-        }
-    }
-
-    ExReleaseResourceLite((*FcbHeader).Resource);
-    FsRtlExitFileSystem();
-    return 0;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlGetFileSize(
-    FileObject: PFILE_OBJECT,
-    FileSize: PLARGE_INTEGER,
-) -> NTSTATUS {
-    let mut Info: FILE_STANDARD_INFORMATION = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-    let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let DeviceObject: PDEVICE_OBJECT;
-    let FastDispatch: PFAST_IO_DISPATCH;
-    let mut Event: KEVENT = core::mem::zeroed();
-    let IoStackLocation: PIO_STACK_LOCATION;
-    let Irp: PIRP;
-    let OldHardError: BOOLEAN;
-
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
-
-    if FastDispatch.is_null() ||
-        (*FastDispatch).FastIoQueryStandardInfo.is_none() ||
-        (*FastDispatch).FastIoQueryStandardInfo.unwrap()(
-            FileObject,
-            1u8,
-            &mut Info,
-            &mut IoStatus,
-            DeviceObject,
-        ) == 0u8
-    {
-        KeInitializeEvent(&mut Event, 0, 0u8);
-
-        Irp = IoAllocateIrp((*DeviceObject).StackSize as i8, 0u8);
-
-        if Irp.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        OldHardError = IoSetThreadHardErrorMode(0u8);
-
-        (*Irp).UserIosb = &mut IoStatus;
-        (*Irp).UserEvent = &mut Event;
-        (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.Thread = PsGetCurrentThread();
-        (*Irp).Flags = 0x00000002 | 0x00000001;
-        (*Irp).RequestorMode = 0i8;
-        (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-        (*Irp).AssociatedIrp.SystemBuffer = &mut Info as *mut _ as *mut core::ffi::c_void;
-
-        IoStackLocation = (*Irp).Tail.Overlay.CurrentStackLocation;
-        let IoStackLocation = IoStackLocation.offset(-1);
-        (*IoStackLocation).MajorFunction = 0x05;
-        (*IoStackLocation).FileObject = FileObject;
-        (*IoStackLocation).DeviceObject = DeviceObject;
-        (*IoStackLocation).Parameters.QueryFile.Length = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as u32;
-        (*IoStackLocation).Parameters.QueryFile.FileInformationClass = 5;
-
-        Status = IoCallDriver(DeviceObject, Irp);
-
-        if Status == 0x00000103 {
-            KeWaitForSingleObject(&mut Event as *mut _ as *mut core::ffi::c_void, 0, 0i8, 0u8, core::ptr::null_mut());
-        }
-
-        if !NT_SUCCESS(Status) {
-            IoStatus.Anonymous.__bindgen_anon_1.Status = Status;
-        }
-
-        IoSetThreadHardErrorMode(OldHardError);
-    }
-
-    if NT_SUCCESS(IoStatus.Anonymous.__bindgen_anon_1.Status) {
-        if Info.Directory != 0 {
-            IoStatus.Anonymous.__bindgen_anon_1.Status = 0xC00000BA;
-        } else {
-            (*FileSize).QuadPart = Info.EndOfFile.QuadPart;
-        }
-    }
-
-    return IoStatus.Anonymous.__bindgen_anon_1.Status;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlRead(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    LockKey: u32,
-    MdlChain: *mut PMDL,
-    IoStatus: PIO_STATUS_BLOCK,
-) -> u8 {
-    let DeviceObject: PDEVICE_OBJECT;
-    let BaseDeviceObject: PDEVICE_OBJECT;
-    let mut FastDispatch: PFAST_IO_DISPATCH;
-
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null() && (*FastDispatch).MdlRead.is_some() {
-        return ((*FastDispatch).MdlRead.unwrap())(
-            FileObject,
-            FileOffset,
-            Length,
-            LockKey,
-            MdlChain,
-            IoStatus,
-            DeviceObject,
-        );
-    }
-
-    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
-    FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null() && (*FastDispatch).MdlRead.is_some() && BaseDeviceObject != DeviceObject {
-        return 0u8;
-    }
-
-    return FsRtlMdlReadDev(
-        FileObject,
-        FileOffset,
-        Length,
-        LockKey,
-        MdlChain,
-        IoStatus,
-        DeviceObject,
-    );
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlReadComplete(
-    FileObject: PFILE_OBJECT,
-    MdlChain: PMDL,
-) -> u8 {
-    let DeviceObject: PDEVICE_OBJECT;
-    let BaseDeviceObject: PDEVICE_OBJECT;
-    let mut FastDispatch: PFAST_IO_DISPATCH;
-
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null() && (*FastDispatch).MdlReadComplete.is_some() {
-        return (*FastDispatch).MdlReadComplete.unwrap()(FileObject, MdlChain, DeviceObject);
-    }
-
-    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
-    FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
-
-    if (BaseDeviceObject != DeviceObject)
-        && !FastDispatch.is_null()
-        && (*FastDispatch).MdlReadComplete.is_some()
-    {
-        return 0u8;
-    }
-
-    return FsRtlMdlReadCompleteDev(FileObject, MdlChain, DeviceObject);
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlReadCompleteDev(
-    FileObject: PFILE_OBJECT,
-    MemoryDescriptorList: PMDL,
-    DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-    CcMdlReadComplete2(FileObject, MemoryDescriptorList);
-    1u8
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlReadDev(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    LockKey: u32,
-    MdlChain: *mut PMDL,
-    IoStatus: PIO_STATUS_BLOCK,
-    DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-    let mut FcbHeader: PFSRTL_COMMON_FCB_HEADER;
-    let mut Result: u8 = 1u8;
-    let mut Offset: LARGE_INTEGER;
-    let mut FastIoDispatch: PFAST_IO_DISPATCH;
-    let mut Device: PDEVICE_OBJECT;
-
-    if Length == 0 {
-        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = 0;
         return 1u8;
     }
 
-    Offset = LARGE_INTEGER {
-        QuadPart: (*FileOffset).QuadPart + Length as i64,
-    };
-    FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
-
     FsRtlEnterFileSystem();
-    CcFastMdlReadWait += 1;
 
-    ExAcquireResourceShared((*FcbHeader).Resource, 1u8);
+    if Wait != 0 && (*FcbHeader).AllocationSize.u.HighPart == 0 {
+        if !FileOffsetAppend && Offset.s.LowPart <= (*FcbHeader).ValidDataLength.u.LowPart {
+            ExAcquireResourceSharedLite((*FcbHeader).Resource, 1u8);
+            ResourceAcquiredShared = 1u8;
+        } else {
+            ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
+        }
 
-    if (*FileObject).PrivateCacheMap.is_null()
-        || (*FcbHeader).IsFastIoPossible == 2
-    {
-        CcFastMdlReadNotPossible += 1;
-        Result = 0u8;
-        FsRtlExitFileSystem();
-        ExReleaseResourceLite((*FcbHeader).Resource);
-        return Result;
-    }
+        if FileOffsetAppend {
+            Offset.s.LowPart = (*FcbHeader).FileSize.u.LowPart;
+            NewSize.s.LowPart = (*FcbHeader).FileSize.u.LowPart + Length;
+            b_4GB = (NewSize.s.LowPart < (*FcbHeader).FileSize.u.LowPart) as BOOLEAN;
+        } else {
+            Offset.s.LowPart = (*FileOffset).u.LowPart;
+            NewSize.s.LowPart = (*FileOffset).u.LowPart + Length;
+            b_4GB = (NewSize.s.LowPart < (*FileOffset).u.LowPart || (*FileOffset).u.HighPart != 0) as BOOLEAN;
+        }
 
-    if (*FcbHeader).IsFastIoPossible == 1 {
-        Device = IoGetRelatedDeviceObject(FileObject);
-        FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
-
-        if ((*FastIoDispatch).FastIoCheckIfPossible.unwrap())(
-            FileObject,
-            FileOffset,
-            Length,
-            1u8,
-            LockKey,
-            1u8,
-            IoStatus,
-            Device,
-        ) == 0
+        if (*FileObject).PrivateCacheMap.is_null()
+            || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible
+            || (*FcbHeader).AllocationSize.u.LowPart < NewSize.s.LowPart
+            || Offset.s.LowPart >= (*FcbHeader).ValidDataLength.u.LowPart + 0x2000
+            || b_4GB != 0
         {
-            CcFastMdlReadNotPossible += 1;
-            Result = 0u8;
-            FsRtlExitFileSystem();
             ExReleaseResourceLite((*FcbHeader).Resource);
-            return Result;
-        }
-    }
-
-    if Offset.QuadPart > (*FcbHeader).FileSize.QuadPart {
-        if (*FileOffset).QuadPart >= (*FcbHeader).FileSize.QuadPart {
-            (*IoStatus).__bindgen_anon_1.Status = 0xC0000011u32;
-            (*IoStatus).Information = 0;
             FsRtlExitFileSystem();
-            ExReleaseResourceLite((*FcbHeader).Resource);
-            return Result;
+            return 0u8;
         }
 
-        Length = ((*FcbHeader).FileSize.QuadPart - (*FileOffset).QuadPart) as u32;
-    }
-
-    (*PsGetCurrentThread()).TopLevelIrp = 0xFFFFFFFFFFFFFFFDu64 as *mut core::ffi::c_void;
-
-    CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
-    (*FileObject).Flags |= 0x00000010;
-
-    (*PsGetCurrentThread()).TopLevelIrp = core::ptr::null_mut();
-
-    FsRtlExitFileSystem();
-    ExReleaseResourceLite((*FcbHeader).Resource);
-
-    Result
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlWriteComplete(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    MdlChain: PMDL,
-) -> u8 {
-    let mut DeviceObject: PDEVICE_OBJECT;
-    let mut BaseDeviceObject: PDEVICE_OBJECT;
-    let mut FastDispatch: PFAST_IO_DISPATCH;
-
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null() && (*FastDispatch).MdlWriteComplete.is_some() {
-        return ((*FastDispatch).MdlWriteComplete.unwrap())(
-            FileObject,
-            FileOffset,
-            MdlChain,
-            DeviceObject,
-        );
-    }
-
-    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
-    FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null()
-        && (*FastDispatch).MdlWriteComplete.is_some()
-        && BaseDeviceObject != DeviceObject
-    {
-        return 0u8;
-    }
-
-    return FsRtlMdlWriteCompleteDev(FileObject, FileOffset, MdlChain, DeviceObject);
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlMdlWriteCompleteDev(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    MdlChain: PMDL,
-    DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-    if (*FileObject).Flags & 0x00000002 != 0 {
-        return 0u8;
-    }
-
-    CcMdlWriteComplete2(FileObject, FileOffset, MdlChain);
-    return 1u8;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlPrepareMdlWrite(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    LockKey: u32,
-    MdlChain: *mut PMDL,
-    IoStatus: PIO_STATUS_BLOCK,
-) -> u8 {
-    let mut DeviceObject: PDEVICE_OBJECT;
-    let mut BaseDeviceObject: PDEVICE_OBJECT;
-    let mut FastDispatch: PFAST_IO_DISPATCH;
-
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null() && !(*FastDispatch).PrepareMdlWrite.is_null() {
-        return ((*FastDispatch).PrepareMdlWrite.unwrap())(
-            FileObject,
-            FileOffset,
-            Length,
-            LockKey,
-            MdlChain,
-            IoStatus,
-            DeviceObject,
-        );
-    }
-
-    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
-    FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
-
-    if !FastDispatch.is_null()
-        && !(*FastDispatch).PrepareMdlWrite.is_null()
-        && BaseDeviceObject != DeviceObject
-    {
-        return 0u8;
-    }
-
-    return FsRtlPrepareMdlWriteDev(
-        FileObject,
-        FileOffset,
-        Length,
-        LockKey,
-        MdlChain,
-        IoStatus,
-        DeviceObject,
-    );
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    LockKey: u32,
-    MdlChain: *mut PMDL,
-    IoStatus: PIO_STATUS_BLOCK,
-    DeviceObject: PDEVICE_OBJECT,
-) -> u8 {
-    let mut Result: u8 = 1u8;
-    let mut FastIoDispatch: PFAST_IO_DISPATCH;
-    let mut Device: PDEVICE_OBJECT;
-    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
-    let mut SharedCacheMap: PSHARED_CACHE_MAP;
-
-    let mut OldFileSize: LARGE_INTEGER = core::mem::zeroed();
-    let mut OldValidDataLength: LARGE_INTEGER = core::mem::zeroed();
-    let mut NewSize: LARGE_INTEGER = core::mem::zeroed();
-    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
-
-    let FileOffsetAppend: u8 = if (*FileOffset).__bindgen_anon_1.HighPart == -1i32 && (*FileOffset).__bindgen_anon_1.LowPart == 0xffffffff {
-        1u8
-    } else {
-        0u8
-    };
-
-    let mut FileSizeModified: u8 = 0u8;
-    let mut ResourceAcquiredShared: u8 = 0u8;
-
-    OldFileSize.QuadPart = 0;
-    OldValidDataLength.QuadPart = 0;
-
-    Offset.QuadPart = (*FileOffset).QuadPart + Length as i64;
-
-    if CcCanIWrite(FileObject, Length, 1u8, 0u8) == 0 ||
-       ((*FileObject).Flags & 0x00000010) != 0 {
-        return 0u8;
-    }
-
-    (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-
-    if Length == 0 {
-        return 1u8;
-    }
-
-    FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
-    FsRtlEnterFileSystem();
-
-    if FileOffsetAppend == 0u8 &&
-       (*FileOffset).QuadPart + Length as i64 <= (*FcbHeader).ValidDataLength.QuadPart {
-        ExAcquireResourceSharedLite((*FcbHeader).Resource, 1u8);
-        ResourceAcquiredShared = 1u8;
-    } else {
-        ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
-    }
-
-    if FileOffsetAppend != 0u8 {
-        Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
-        NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
-    } else {
-        Offset.QuadPart = (*FileOffset).QuadPart;
-        NewSize.QuadPart = (*FileOffset).QuadPart + Length as i64;
-    }
-
-    if !(*FileObject).PrivateCacheMap.is_null() &&
-       (*FcbHeader).IsFastIoPossible != 0 &&
-       Length as i64 <= 0x7fffffffffffffffi64 - (*FileOffset).QuadPart &&
-       NewSize.QuadPart <= (*FcbHeader).AllocationSize.QuadPart {
-        
-        if ResourceAcquiredShared != 0u8 &&
-           NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+        if ResourceAcquiredShared != 0 && NewSize.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart + 0x2000 {
             ExReleaseResourceLite((*FcbHeader).Resource);
             ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
-
-            if FileOffsetAppend != 0u8 {
-                Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
-                NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
+            if FileOffsetAppend {
+                Offset.s.LowPart = (*FcbHeader).FileSize.u.LowPart;
+                NewSize.s.LowPart = (*FcbHeader).FileSize.u.LowPart + Length;
+                b_4GB = (NewSize.s.LowPart < Offset.s.LowPart) as BOOLEAN;
             }
 
-            if (*FileObject).PrivateCacheMap.is_null() ||
-               (*FcbHeader).IsFastIoPossible == 2 ||
-               (*FcbHeader).AllocationSize.QuadPart <= NewSize.QuadPart {
+            if (*FileObject).PrivateCacheMap.is_null()
+                || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible
+                || (*FcbHeader).AllocationSize.u.LowPart < NewSize.s.LowPart
+                || (*FcbHeader).AllocationSize.u.HighPart != 0
+                || b_4GB != 0
+            {
                 ExReleaseResourceLite((*FcbHeader).Resource);
                 FsRtlExitFileSystem();
                 return 0u8;
             }
         }
 
-        if (*FcbHeader).IsFastIoPossible == 1 {
+        if (*FcbHeader).IsFastIoPossible == FastIoIsQuestionable {
             Device = IoGetRelatedDeviceObject(FileObject);
             FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
 
-            if ((*FastIoDispatch).FastIoCheckIfPossible.unwrap())(
-                FileObject,
-                FileOffset,
-                Length,
-                1u8,
-                LockKey,
-                0u8,
-                IoStatus,
-                Device
-            ) == 0 {
+            if FastIoDispatch.is_null() || (*FastIoDispatch).FastIoCheckIfPossible.is_none() {
                 ExReleaseResourceLite((*FcbHeader).Resource);
                 FsRtlExitFileSystem();
                 return 0u8;
+            }
+
+            let check_offset = if FileOffsetAppend {
+                core::ptr::addr_of_mut!((*FcbHeader).FileSize)
+            } else {
+                FileOffset
+            };
+
+            if let Some(check_fn) = (*FastIoDispatch).FastIoCheckIfPossible {
+                let mut temp_status = _IO_STATUS_BLOCK {
+                    __bindgen_anon_1: core::mem::zeroed(),
+                    Information: 0,
+                };
+                if check_fn(FileObject, check_offset, Length, 1u8, LockKey, 0u8, &mut temp_status, Device) == 0 {
+                    ExReleaseResourceLite((*FcbHeader).Resource);
+                    FsRtlExitFileSystem();
+                    return 0u8;
+                }
+            }
+        }
+
+        if NewSize.s.LowPart > (*FcbHeader).FileSize.u.LowPart {
+            FileSizeModified = 1u8;
+            OldFileSize.s.LowPart = (*FcbHeader).FileSize.u.LowPart;
+            OldValidDataLength.s.LowPart = (*FcbHeader).ValidDataLength.u.LowPart;
+            (*FcbHeader).FileSize.u.LowPart = NewSize.s.LowPart;
+        }
+
+        (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
+
+        if Offset.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
+            let mut OffsetVar = LARGE_INTEGER { QuadPart: 0 };
+            OffsetVar.s.LowPart = Offset.s.LowPart;
+            OffsetVar.s.HighPart = 0;
+            CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, &mut OffsetVar as *mut LARGE_INTEGER as PLARGE_INTEGER, 1u8);
+        }
+
+        CcFastCopyWrite(FileObject, Offset.s.LowPart, Length, Buffer);
+
+        (*PsGetCurrentThread()).TopLevelIrp = 0;
+
+        if NewSize.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
+            (*FcbHeader).ValidDataLength.u.LowPart = NewSize.s.LowPart;
+        }
+
+        (*FileObject).Flags |= FO_FILE_MODIFIED;
+
+        if FileSizeModified != 0 {
+            SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
+            (*SharedCacheMap).FileSize.u.LowPart = NewSize.s.LowPart;
+            (*FileObject).Flags |= FO_FILE_SIZE_CHANGED;
+        }
+
+        (*FileObject).CurrentByteOffset.QuadPart = NewSize.s.LowPart as i64;
+
+        ExReleaseResourceLite((*FcbHeader).Resource);
+        FsRtlExitFileSystem();
+        return Result;
+    } else {
+        if !FileOffsetAppend && (*FileOffset).QuadPart + Length as i64 <= (*FcbHeader).ValidDataLength.QuadPart {
+            if ExAcquireResourceSharedLite((*FcbHeader).Resource, Wait) == 0 {
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+            ResourceAcquiredShared = 1u8;
+        } else {
+            if ExAcquireResourceExclusiveLite((*FcbHeader).Resource, Wait) == 0 {
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+        }
+
+        if FileOffsetAppend {
+            Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
+            NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
+        } else {
+            Offset.QuadPart = (*FileOffset).QuadPart;
+            NewSize.QuadPart = (*FileOffset).QuadPart + Length as i64;
+        }
+
+        if (*FileObject).PrivateCacheMap.is_null()
+            || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible
+            || (*FcbHeader).ValidDataLength.QuadPart + 0x2000 <= Offset.QuadPart
+            || Length as i64 > MAXLONGLONG - Offset.QuadPart
+            || (*FcbHeader).AllocationSize.QuadPart < NewSize.QuadPart
+        {
+            ExReleaseResourceLite((*FcbHeader).Resource);
+            FsRtlExitFileSystem();
+            return 0u8;
+        }
+
+        if ResourceAcquiredShared != 0 && NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+            ExReleaseResourceLite((*FcbHeader).Resource);
+            if ExAcquireResourceExclusiveLite((*FcbHeader).Resource, Wait) == 0 {
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+
+            if FileOffsetAppend {
+                Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
+                NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
+            }
+
+            if (*FileObject).PrivateCacheMap.is_null()
+                || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible
+                || (*FcbHeader).AllocationSize.QuadPart <= NewSize.QuadPart
+            {
+                ExReleaseResourceLite((*FcbHeader).Resource);
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+        }
+
+        if (*FcbHeader).IsFastIoPossible == FastIoIsQuestionable {
+            Device = IoGetRelatedDeviceObject(FileObject);
+            FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
+
+            if FastIoDispatch.is_null() || (*FastIoDispatch).FastIoCheckIfPossible.is_none() {
+                ExReleaseResourceLite((*FcbHeader).Resource);
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+
+            let check_offset = if FileOffsetAppend {
+                core::ptr::addr_of_mut!((*FcbHeader).FileSize)
+            } else {
+                FileOffset
+            };
+
+            if let Some(check_fn) = (*FastIoDispatch).FastIoCheckIfPossible {
+                let mut temp_status = _IO_STATUS_BLOCK {
+                    __bindgen_anon_1: core::mem::zeroed(),
+                    Information: 0,
+                };
+                if check_fn(FileObject, check_offset, Length, Wait, LockKey, 0u8, &mut temp_status, Device) == 0 {
+                    ExReleaseResourceLite((*FcbHeader).Resource);
+                    FsRtlExitFileSystem();
+                    return 0u8;
+                }
             }
         }
 
@@ -977,8 +466,7 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
             OldFileSize.QuadPart = (*FcbHeader).FileSize.QuadPart;
             OldValidDataLength.QuadPart = (*FcbHeader).ValidDataLength.QuadPart;
 
-            if NewSize.__bindgen_anon_1.HighPart != (*FcbHeader).FileSize.__bindgen_anon_1.HighPart &&
-               !(*FcbHeader).PagingIoResource.is_null() {
+            if NewSize.s.HighPart != (*FcbHeader).FileSize.u.HighPart && !(*FcbHeader).PagingIoResource.is_null() {
                 ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
                 (*FcbHeader).FileSize.QuadPart = NewSize.QuadPart;
                 ExReleaseResourceLite((*FcbHeader).PagingIoResource);
@@ -987,40 +475,26 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
             }
         }
 
-        (*PsGetCurrentThread()).TopLevelIrp = 0x00000001 as *mut core::ffi::c_void;
+        (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
+
+        let mut CallCc = 1u8;
 
         if Offset.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-            Result = CcZeroData(
-                FileObject,
-                core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength),
-                core::ptr::addr_of_mut!(Offset),
-                1u8
-            );
-            if Result != 0 {
-                CcPrepareMdlWrite(
-                    FileObject,
-                    core::ptr::addr_of_mut!(Offset),
-                    Length,
-                    MdlChain,
-                    IoStatus
-                );
+            if CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength), &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Wait) == 0 {
+                Result = 0u8;
+                CallCc = 0u8;
             }
-        } else {
-            CcPrepareMdlWrite(
-                FileObject,
-                core::ptr::addr_of_mut!(Offset),
-                Length,
-                MdlChain,
-                IoStatus
-            );
         }
 
-        (*PsGetCurrentThread()).TopLevelIrp = core::ptr::null_mut();
+        if CallCc != 0 {
+            Result = CcCopyWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, Wait, Buffer);
+        }
+
+        (*PsGetCurrentThread()).TopLevelIrp = 0;
 
         if Result != 0 {
             if NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-                if NewSize.__bindgen_anon_1.HighPart != (*FcbHeader).ValidDataLength.__bindgen_anon_1.HighPart &&
-                   !(*FcbHeader).PagingIoResource.is_null() {
+                if NewSize.s.HighPart != (*FcbHeader).ValidDataLength.u.HighPart && !(*FcbHeader).PagingIoResource.is_null() {
                     ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
                     (*FcbHeader).ValidDataLength.QuadPart = NewSize.QuadPart;
                     ExReleaseResourceLite((*FcbHeader).PagingIoResource);
@@ -1029,15 +503,17 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
                 }
             }
 
-            (*FileObject).Flags |= 0x00000002;
+            (*FileObject).Flags |= FO_FILE_MODIFIED;
 
-            if FileSizeModified != 0u8 {
+            if FileSizeModified != 0 {
                 SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
                 (*SharedCacheMap).FileSize.QuadPart = NewSize.QuadPart;
-                (*FileObject).Flags |= 0x00000004;
+                (*FileObject).Flags |= FO_FILE_SIZE_CHANGED;
             }
+
+            (*FileObject).CurrentByteOffset.QuadPart = NewSize.QuadPart;
         } else {
-            if FileSizeModified != 0u8 {
+            if FileSizeModified != 0 {
                 if !(*FcbHeader).PagingIoResource.is_null() {
                     ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
                     (*FcbHeader).FileSize.QuadPart = OldFileSize.QuadPart;
@@ -1053,24 +529,497 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
         ExReleaseResourceLite((*FcbHeader).Resource);
         FsRtlExitFileSystem();
         return Result;
-    } else {
-        ExReleaseResourceLite((*FcbHeader).Resource);
-        FsRtlExitFileSystem();
-        return 0u8;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlAcquireFileExclusiveCommon(
+pub unsafe extern "system" fn FsRtlGetFileSize(
     FileObject: PFILE_OBJECT,
-    SyncType: FS_FILTER_SECTION_SYNC_TYPE,
+    FileSize: PLARGE_INTEGER,
+) -> NTSTATUS {
+    let mut Info: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut IoStatus = _IO_STATUS_BLOCK {
+        __bindgen_anon_1: core::mem::zeroed(),
+        Information: 0,
+    };
+    let DeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+    let mut Event: KEVENT = core::mem::zeroed();
+    let IoStackLocation: PIO_STACK_LOCATION;
+    let Irp: PIRP;
+    let OldHardError: BOOLEAN;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+
+    if FastDispatch.is_null()
+        || (*FastDispatch).FastIoQueryStandardInfo.is_none()
+        || {
+            if let Some(query_fn) = (*FastDispatch).FastIoQueryStandardInfo {
+                query_fn(FileObject, 1u8, &mut Info, &mut IoStatus, DeviceObject) == 0
+            } else {
+                true
+            }
+        }
+    {
+        KeInitializeEvent(&mut Event, NotificationEvent, 0u8);
+
+        Irp = IoAllocateIrp((*DeviceObject).StackSize as i8, 0u8);
+
+        if Irp.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        OldHardError = IoSetThreadHardErrorMode(0u8);
+
+        (*Irp).UserIosb = &mut IoStatus;
+        (*Irp).UserEvent = &mut Event;
+        (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as *mut _ETHREAD;
+        (*Irp).Flags = IRP_SYNCHRONOUS_PAGING_IO | IRP_PAGING_IO;
+        (*Irp).RequestorMode = 0i8;
+        (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
+        (*Irp).AssociatedIrp.SystemBuffer = &mut Info as *mut _ as PVOID;
+
+        IoStackLocation = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
+        let IoStackLocation = IoStackLocation.offset(-1);
+        (*IoStackLocation).MajorFunction = IRP_MJ_QUERY_INFORMATION;
+        (*IoStackLocation).FileObject = FileObject;
+        (*IoStackLocation).DeviceObject = DeviceObject;
+        (*IoStackLocation).Parameters.QueryFile.Length = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as ULONG;
+        (*IoStackLocation).Parameters.QueryFile.FileInformationClass = FileStandardInformation;
+
+        Status = IofCallDriver(DeviceObject, Irp);
+
+        if Status == STATUS_PENDING {
+            KeWaitForSingleObject(
+                &mut Event as *mut _ as PVOID,
+                Executive,
+                0i8,
+                0u8,
+                core::ptr::null_mut(),
+            );
+        }
+
+        if Status < 0 {
+            IoStatus.__bindgen_anon_1.Status = Status;
+        }
+
+        IoSetThreadHardErrorMode(OldHardError);
+    }
+
+    if IoStatus.__bindgen_anon_1.Status >= 0 {
+        if Info.Directory != 0 {
+            IoStatus.__bindgen_anon_1.Status = STATUS_FILE_IS_A_DIRECTORY;
+        } else {
+            (*FileSize).QuadPart = Info.EndOfFile.QuadPart;
+        }
+    }
+
+    IoStatus.__bindgen_anon_1.Status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlRead(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: ULONG,
+    LockKey: ULONG,
+    MdlChain: *mut PMDL,
+    IoStatus: PIO_STATUS_BLOCK,
+) -> BOOLEAN {
+    let DeviceObject: PDEVICE_OBJECT;
+    let BaseDeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).MdlRead.is_some() {
+        if let Some(mdl_read_fn) = (*FastDispatch).MdlRead {
+            return mdl_read_fn(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject);
+        }
+    }
+
+    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
+    let FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).MdlRead.is_some() && BaseDeviceObject != DeviceObject {
+        return 0u8;
+    }
+
+    FsRtlMdlReadDev(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlReadComplete(
+    FileObject: PFILE_OBJECT,
+    MdlChain: PMDL,
+) -> BOOLEAN {
+    let DeviceObject: PDEVICE_OBJECT;
+    let BaseDeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).MdlReadComplete.is_some() {
+        if let Some(complete_fn) = (*FastDispatch).MdlReadComplete {
+            return complete_fn(FileObject, MdlChain, DeviceObject);
+        }
+    }
+
+    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
+    let FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
+
+    if BaseDeviceObject != DeviceObject && !FastDispatch.is_null() && (*FastDispatch).MdlReadComplete.is_some() {
+        return 0u8;
+    }
+
+    FsRtlMdlReadCompleteDev(FileObject, MdlChain, DeviceObject)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlReadCompleteDev(
+    FileObject: PFILE_OBJECT,
+    MemoryDescriptorList: PMDL,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    CcMdlReadComplete2(FileObject, MemoryDescriptorList);
+    1u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlReadDev(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: ULONG,
+    LockKey: ULONG,
+    MdlChain: *mut PMDL,
+    IoStatus: PIO_STATUS_BLOCK,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
+    let mut Result: BOOLEAN = 1u8;
+    let mut Offset = LARGE_INTEGER { QuadPart: 0 };
+    let FastIoDispatch: PFAST_IO_DISPATCH;
+    let Device: PDEVICE_OBJECT;
+
+    if Length == 0 {
+        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*IoStatus).Information = 0;
+        return 1u8;
+    }
+
+    Offset.QuadPart = (*FileOffset).QuadPart + Length as i64;
+    FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
+
+    FsRtlEnterFileSystem();
+    CcFastMdlReadWait += 1;
+
+    ExAcquireResourceSharedLite((*FcbHeader).Resource, 1u8);
+
+    if (*FileObject).PrivateCacheMap.is_null() || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible {
+        CcFastMdlReadNotPossible += 1;
+        Result = 0u8;
+    } else if (*FcbHeader).IsFastIoPossible == FastIoIsQuestionable {
+        Device = IoGetRelatedDeviceObject(FileObject);
+        FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
+
+        if FastIoDispatch.is_null() || (*FastIoDispatch).FastIoCheckIfPossible.is_none() { CcFastMdlReadNotPossible += 1;
+            Result = 0u8;
+        } else if let Some(check_fn) = (*FastIoDispatch).FastIoCheckIfPossible {
+            if check_fn(FileObject, FileOffset, Length, 1u8, LockKey, 1u8, IoStatus, Device) == 0 { CcFastMdlReadNotPossible += 1;
+                Result = 0u8;
+            }
+        }
+    }
+
+    if Result != 0 {
+        if Offset.QuadPart > (*FcbHeader).FileSize.QuadPart {
+            if (*FileOffset).QuadPart >= (*FcbHeader).FileSize.QuadPart {
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_END_OF_FILE;
+                (*IoStatus).Information = 0;
+            } else {
+                let Length = ((*FcbHeader).FileSize.QuadPart - (*FileOffset).QuadPart) as ULONG;
+
+                (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
+
+                CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+
+                (*PsGetCurrentThread()).TopLevelIrp = 0;
+            }
+        } else {
+            (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
+
+            CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
+            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+
+            (*PsGetCurrentThread()).TopLevelIrp = 0;
+        }
+    }
+
+    ExReleaseResourceLite((*FcbHeader).Resource);
+    FsRtlExitFileSystem();
+
+    Result
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlWriteComplete(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    MdlChain: PMDL,
+) -> BOOLEAN {
+    let DeviceObject: PDEVICE_OBJECT;
+    let BaseDeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).MdlWriteComplete.is_some() {
+        if let Some(complete_fn) = (*FastDispatch).MdlWriteComplete {
+            return complete_fn(FileObject, FileOffset, MdlChain, DeviceObject);
+        }
+    }
+
+    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
+    let FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).MdlWriteComplete.is_some() && BaseDeviceObject != DeviceObject {
+        return 0u8;
+    }
+
+    FsRtlMdlWriteCompleteDev(FileObject, FileOffset, MdlChain, DeviceObject)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlMdlWriteCompleteDev(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    MdlChain: PMDL,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    if ((*FileObject).Flags & FO_WRITE_THROUGH) != 0 {
+        return 0u8;
+    }
+
+    CcMdlWriteComplete2(FileObject, FileOffset, MdlChain);
+    1u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlPrepareMdlWrite(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: ULONG,
+    LockKey: ULONG,
+    MdlChain: *mut PMDL,
+    IoStatus: PIO_STATUS_BLOCK,
+) -> BOOLEAN {
+    let DeviceObject: PDEVICE_OBJECT;
+    let BaseDeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).PrepareMdlWrite.is_some() {
+        if let Some(prepare_fn) = (*FastDispatch).PrepareMdlWrite {
+            return prepare_fn(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject);
+        }
+    }
+
+    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
+    let FastDispatch = (*(*BaseDeviceObject).DriverObject).FastIoDispatch;
+
+    if !FastDispatch.is_null() && (*FastDispatch).PrepareMdlWrite.is_some() && BaseDeviceObject != DeviceObject {
+        return 0u8;
+    }
+
+    FsRtlPrepareMdlWriteDev(FileObject, FileOffset, Length, LockKey, MdlChain, IoStatus, DeviceObject)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: ULONG,
+    LockKey: ULONG,
+    MdlChain: *mut PMDL,
+    IoStatus: PIO_STATUS_BLOCK,
+    DeviceObject: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    let mut Result: BOOLEAN = 1u8;
+    let FastIoDispatch: PFAST_IO_DISPATCH;
+    let Device: PDEVICE_OBJECT;
+    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
+    let SharedCacheMap: PSHARED_CACHE_MAP;
+
+    let mut OldFileSize = LARGE_INTEGER { QuadPart: 0 };
+    let mut OldValidDataLength = LARGE_INTEGER { QuadPart: 0 };
+    let mut NewSize = LARGE_INTEGER { QuadPart: 0 };
+    let mut Offset = LARGE_INTEGER { QuadPart: 0 };
+
+    let FileOffsetAppend = (*FileOffset).u.HighPart == -1i32 && (*FileOffset).u.LowPart == 0xffffffff;
+
+    let mut FileSizeModified: BOOLEAN = 0u8;
+    let mut ResourceAcquiredShared: BOOLEAN = 0u8;
+
+    Offset.QuadPart = (*FileOffset).QuadPart + Length as i64;
+
+    if CcCanIWrite(FileObject, Length, 1u8, 0u8) == 0 || ((*FileObject).Flags & FO_WRITE_THROUGH) != 0 {
+        return 0u8;
+    }
+
+    (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
+
+    if Length == 0 {
+        return 1u8;
+    }
+
+    FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
+    FsRtlEnterFileSystem();
+
+    if !FileOffsetAppend && (*FileOffset).QuadPart + Length as i64 <= (*FcbHeader).ValidDataLength.QuadPart {
+        ExAcquireResourceSharedLite((*FcbHeader).Resource, 1u8);
+        ResourceAcquiredShared = 1u8;
+    } else {
+        ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
+    }
+
+    if FileOffsetAppend {
+        Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
+        NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
+    } else {
+        Offset.QuadPart = (*FileOffset).QuadPart;
+        NewSize.QuadPart = (*FileOffset).QuadPart + Length as i64;
+    }
+
+    if (*FileObject).PrivateCacheMap.is_null()
+        || (*FcbHeader).IsFastIoPossible == 0
+        || Length as i64 > MAXLONGLONG - (*FileOffset).QuadPart
+        || NewSize.QuadPart > (*FcbHeader).AllocationSize.QuadPart
+    {
+        ExReleaseResourceLite((*FcbHeader).Resource);
+        FsRtlExitFileSystem();
+        return 0u8;
+    }
+
+    if ResourceAcquiredShared != 0 && NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+        ExReleaseResourceLite((*FcbHeader).Resource);
+        ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
+
+        if FileOffsetAppend {
+            Offset.QuadPart = (*FcbHeader).FileSize.QuadPart;
+            NewSize.QuadPart = (*FcbHeader).FileSize.QuadPart + Length as i64;
+        }
+
+        if (*FileObject).PrivateCacheMap.is_null()
+            || (*FcbHeader).IsFastIoPossible == FastIoIsNotPossible
+            || (*FcbHeader).AllocationSize.QuadPart <= NewSize.QuadPart
+        {
+            ExReleaseResourceLite((*FcbHeader).Resource);
+            FsRtlExitFileSystem();
+            return 0u8;
+        }
+    }
+
+    if (*FcbHeader).IsFastIoPossible == FastIoIsQuestionable {
+        Device = IoGetRelatedDeviceObject(FileObject);
+        FastIoDispatch = (*(*Device).DriverObject).FastIoDispatch;
+
+        if FastIoDispatch.is_null() || (*FastIoDispatch).FastIoCheckIfPossible.is_none() {
+            ExReleaseResourceLite((*FcbHeader).Resource);
+            FsRtlExitFileSystem();
+            return 0u8;
+        }
+
+        if let Some(check_fn) = (*FastIoDispatch).FastIoCheckIfPossible {
+            if check_fn(FileObject, FileOffset, Length, 1u8, LockKey, 0u8, IoStatus, Device) == 0 {
+                ExReleaseResourceLite((*FcbHeader).Resource);
+                FsRtlExitFileSystem();
+                return 0u8;
+            }
+        }
+    }
+
+    if NewSize.QuadPart > (*FcbHeader).FileSize.QuadPart {
+        FileSizeModified = 1u8;
+        OldFileSize.QuadPart = (*FcbHeader).FileSize.QuadPart;
+        OldValidDataLength.QuadPart = (*FcbHeader).ValidDataLength.QuadPart;
+
+        if NewSize.s.HighPart != (*FcbHeader).FileSize.u.HighPart && !(*FcbHeader).PagingIoResource.is_null() {
+            ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
+            (*FcbHeader).FileSize.QuadPart = NewSize.QuadPart;
+            ExReleaseResourceLite((*FcbHeader).PagingIoResource);
+        } else {
+            (*FcbHeader).FileSize.QuadPart = NewSize.QuadPart;
+        }
+    }
+
+    (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
+
+    if Offset.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+        Result = CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, 1u8);
+        if Result != 0 {
+            CcPrepareMdlWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, MdlChain, IoStatus);
+        }
+    } else {
+        CcPrepareMdlWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, MdlChain, IoStatus);
+    }
+
+    (*PsGetCurrentThread()).TopLevelIrp = 0;
+
+    if Result != 0 {
+        if NewSize.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+            if NewSize.s.HighPart != (*FcbHeader).ValidDataLength.u.HighPart && !(*FcbHeader).PagingIoResource.is_null() {
+                ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
+                (*FcbHeader).ValidDataLength.QuadPart = NewSize.QuadPart;
+                ExReleaseResourceLite((*FcbHeader).PagingIoResource);
+            } else {
+                (*FcbHeader).ValidDataLength.QuadPart = NewSize.QuadPart;
+            }
+        }
+
+        (*FileObject).Flags |= FO_FILE_MODIFIED;
+
+        if FileSizeModified != 0 {
+            SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
+            (*SharedCacheMap).FileSize.QuadPart = NewSize.QuadPart;
+            (*FileObject).Flags |= FO_FILE_SIZE_CHANGED;
+        }
+    } else {
+        if FileSizeModified != 0 {
+            if !(*FcbHeader).PagingIoResource.is_null() {
+                ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
+                (*FcbHeader).FileSize.QuadPart = OldFileSize.QuadPart;
+                (*FcbHeader).ValidDataLength.QuadPart = OldValidDataLength.QuadPart;
+                ExReleaseResourceLite((*FcbHeader).PagingIoResource);
+            } else {
+                (*FcbHeader).FileSize.QuadPart = OldFileSize.QuadPart;
+                (*FcbHeader).ValidDataLength.QuadPart = OldValidDataLength.QuadPart;
+            }
+        }
+    }
+
+    ExReleaseResourceLite((*FcbHeader).Resource);
+    FsRtlExitFileSystem();
+    Result
+}
+
+unsafe fn FsRtlAcquireFileExclusiveCommon(
+    FileObject: PFILE_OBJECT,
+    SyncType: u32,
     Reserved: ULONG,
 ) -> NTSTATUS {
-    let mut FcbHeader: PFSRTL_COMMON_FCB_HEADER;
-    let mut DeviceObject: PDEVICE_OBJECT;
-    let mut FastDispatch: PFAST_IO_DISPATCH;
-    let mut DriverExtension: PEXTENDED_DRIVER_EXTENSION;
-    let mut FilterCallbacks: PFS_FILTER_CALLBACKS;
+    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
+    let DeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
+    let DriverExtension: PEXTENDED_DRIVER_EXTENSION;
+    let FilterCallbacks: PFS_FILTER_CALLBACKS;
 
     FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
@@ -1088,43 +1037,41 @@ pub unsafe extern "system" fn FsRtlAcquireFileExclusiveCommon(
 
         CbData.SizeOfFsFilterCallbackData = core::mem::size_of::<FS_FILTER_CALLBACK_DATA>() as ULONG;
         CbData.Operation = FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION;
+        CbData.Reserved = 0;
         CbData.DeviceObject = DeviceObject;
         CbData.FileObject = FileObject;
-        (*CbData.Parameters.AcquireForSectionSynchronization.__bindgen_anon_1.as_mut()).PageProtection = Reserved;
         CbData.Parameters.AcquireForSectionSynchronization.SyncType = SyncType;
+        CbData.Parameters.AcquireForSectionSynchronization.PageProtection = Reserved;
 
-        Status = ((*FilterCallbacks).PreAcquireForSectionSynchronization.unwrap())(
-            core::ptr::addr_of_mut!(CbData),
-            core::ptr::addr_of_mut!(CompletionContext),
-        );
-        if !NT_SUCCESS(Status) {
-            FsRtlExitFileSystem();
-            return Status;
-        }
+        if let Some(pre_fn) = (*FilterCallbacks).PreAcquireForSectionSynchronization {
+            Status = pre_fn(&mut CbData, &mut CompletionContext);
+            if Status < 0 {
+                FsRtlExitFileSystem();
+                return Status;
+            }
 
-        if (*FilterCallbacks).PostAcquireForSectionSynchronization.is_some() {
-            ((*FilterCallbacks).PostAcquireForSectionSynchronization.unwrap())(
-                core::ptr::addr_of_mut!(CbData),
-                Status,
-                CompletionContext,
-            );
-        }
+            if let Some(post_fn) = (*FilterCallbacks).PostAcquireForSectionSynchronization {
+                post_fn(&mut CbData, Status, CompletionContext);
+            }
 
-        if Status == STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY ||
-            Status == STATUS_FILE_LOCKED_WITH_ONLY_READERS ||
-            Status == STATUS_FILE_LOCKED_WITH_WRITERS
-        {
-            return Status;
+            if Status == STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY
+                || Status == STATUS_FILE_LOCKED_WITH_ONLY_READERS
+                || Status == STATUS_FILE_LOCKED_WITH_WRITERS
+            {
+                return Status;
+            }
         }
     }
 
     FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
 
     if !FastDispatch.is_null() && (*FastDispatch).AcquireFileForNtCreateSection.is_some() {
-        ((*FastDispatch).AcquireFileForNtCreateSection.unwrap())(FileObject);
+        if let Some(acquire_fn) = (*FastDispatch).AcquireFileForNtCreateSection {
+            acquire_fn(FileObject);
+        }
     } else {
         if !FcbHeader.is_null() && !(*FcbHeader).Resource.is_null() {
-            ExAcquireResourceExclusiveLite((*FcbHeader).Resource, TRUE);
+            ExAcquireResourceExclusiveLite((*FcbHeader).Resource, 1u8);
         }
     }
 
@@ -1133,7 +1080,7 @@ pub unsafe extern "system" fn FsRtlAcquireFileExclusiveCommon(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAcquireFileExclusive(FileObject: PFILE_OBJECT) {
-    FsRtlAcquireFileExclusiveCommon(FileObject, _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeOther, 0);
+    FsRtlAcquireFileExclusiveCommon(FileObject, SyncTypeOther, 0);
 }
 
 #[no_mangle]
@@ -1146,13 +1093,18 @@ pub unsafe extern "system" fn FsRtlAcquireToCreateMappedSection(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlReleaseFile(FileObject: PFILE_OBJECT) {
+    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
+    let DeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
 
-    let FcbHeader: PFSRTL_COMMON_FCB_HEADER = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
-    let DeviceObject: PDEVICE_OBJECT = IoGetRelatedDeviceObject(FileObject);
-    let FastDispatch: PFAST_IO_DISPATCH = (*(*DeviceObject).DriverObject).FastIoDispatch;
+    FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
 
     if !FastDispatch.is_null() && (*FastDispatch).ReleaseFileForNtCreateSection.is_some() {
-        ((*FastDispatch).ReleaseFileForNtCreateSection.unwrap())(FileObject);
+        if let Some(release_fn) = (*FastDispatch).ReleaseFileForNtCreateSection {
+            release_fn(FileObject);
+        }
     } else {
         if !FcbHeader.is_null() && !(*FcbHeader).Resource.is_null() {
             ExReleaseResourceLite((*FcbHeader).Resource);
@@ -1168,7 +1120,7 @@ pub unsafe extern "system" fn FsRtlAcquireFileForCcFlushEx(FileObject: PFILE_OBJ
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
@@ -1178,15 +1130,17 @@ pub unsafe extern "system" fn FsRtlAcquireFileForCcFlushEx(FileObject: PFILE_OBJ
     FsRtlEnterFileSystem();
 
     if !FastDispatch.is_null() && (*FastDispatch).AcquireForCcFlush.is_some() {
-        Status = (*FastDispatch).AcquireForCcFlush.unwrap()(FileObject, BaseDeviceObject);
+        if let Some(acquire_fn) = (*FastDispatch).AcquireForCcFlush {
+            Status = acquire_fn(FileObject, BaseDeviceObject);
 
-        if NT_SUCCESS(Status) {
-            return Status;
-        }
+            if Status >= 0 {
+                return Status;
+            }
 
-        if Status == STATUS_CANT_WAIT {
-            FsRtlExitFileSystem();
-            return Status;
+            if Status == STATUS_CANT_WAIT {
+                FsRtlExitFileSystem();
+                return Status;
+            }
         }
     }
 
@@ -1223,13 +1177,13 @@ pub unsafe extern "system" fn FsRtlReleaseFileForCcFlush(FileObject: PFILE_OBJEC
     BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
     FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
 
-    if !FastDispatch.is_null() &&
-        (*FastDispatch).ReleaseForCcFlush.is_some()
-    {
-        Status = (*FastDispatch).ReleaseForCcFlush.unwrap()(FileObject, BaseDeviceObject);
+    if !FastDispatch.is_null() && (*FastDispatch).ReleaseForCcFlush.is_some() {
+        if let Some(release_fn) = (*FastDispatch).ReleaseForCcFlush {
+            Status = release_fn(FileObject, BaseDeviceObject);
+        }
     }
 
-    if NT_SUCCESS(Status) == 0 {
+    if Status < 0 {
         if !(*FcbHeader).PagingIoResource.is_null() {
             ExReleaseResourceLite((*FcbHeader).PagingIoResource);
         }
@@ -1244,15 +1198,14 @@ pub unsafe extern "system" fn FsRtlReleaseFileForCcFlush(FileObject: PFILE_OBJEC
 unsafe fn FsRtlpGetResourceForModWrite(
     FcbHeader: PFSRTL_COMMON_FCB_HEADER,
     EndingOffset: PLARGE_INTEGER,
-    ResourceToAcquire: *mut PERESOURCE
+    ResourceToAcquire: *mut PERESOURCE,
 ) -> BOOLEAN {
-
-    if FlagOn((*FcbHeader).Flags, FSRTL_FLAG_ACQUIRE_MAIN_RSRC_EX) != 0 {
+    if FlagOn!((*FcbHeader).Flags, FSRTL_FLAG_ACQUIRE_MAIN_RSRC_EX) {
         *ResourceToAcquire = (*FcbHeader).Resource;
         return 1u8;
     }
 
-    if FlagOn((*FcbHeader).Flags, FSRTL_FLAG_ACQUIRE_MAIN_RSRC_SH) != 0 {
+    if FlagOn!((*FcbHeader).Flags, FSRTL_FLAG_ACQUIRE_MAIN_RSRC_SH) {
         *ResourceToAcquire = (*FcbHeader).Resource;
     } else {
         *ResourceToAcquire = (*FcbHeader).PagingIoResource;
@@ -1269,16 +1222,16 @@ unsafe fn FsRtlpGetResourceForModWrite(
 pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
     FileObject: PFILE_OBJECT,
     EndingOffset: PLARGE_INTEGER,
-    ResourceToRelease: *mut PERESOURCE
-) -> i32 {
-    let mut FcbHeader: PFSRTL_COMMON_FCB_HEADER;
+    ResourceToRelease: *mut PERESOURCE,
+) -> NTSTATUS {
+    let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
     let mut ResourceToAcquire: PERESOURCE = core::ptr::null_mut();
-    let mut Exclusive: u8;
-    let Result: u8;
-    let mut Status: i32 = STATUS_SUCCESS;
+    let mut Exclusive: BOOLEAN;
+    let mut Result: BOOLEAN;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     FcbHeader = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
@@ -1286,22 +1239,19 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
     FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
 
     if !FastDispatch.is_null() && (*FastDispatch).AcquireForModWrite.is_some() {
-        Status = (*FastDispatch).AcquireForModWrite.unwrap()(
-            FileObject,
-            EndingOffset,
-            ResourceToRelease,
-            BaseDeviceObject
-        );
+        if let Some(acquire_fn) = (*FastDispatch).AcquireForModWrite {
+            Status = acquire_fn(FileObject, EndingOffset, ResourceToRelease, BaseDeviceObject);
 
-        if Status == STATUS_SUCCESS || Status == 0xC0000223u32 as i32 {
-            return Status;
+            if Status == STATUS_SUCCESS || Status == STATUS_CANT_WAIT {
+                return Status;
+            }
         }
     }
 
-    Exclusive = FsRtlpGetResourceForModWrite(FcbHeader, EndingOffset, core::ptr::addr_of_mut!(ResourceToAcquire));
+    Exclusive = FsRtlpGetResourceForModWrite(FcbHeader, EndingOffset, &mut ResourceToAcquire);
 
     loop {
-        let OldExclusive: u8;
+        let OldExclusive: BOOLEAN;
         let OldResourceToAcquire: PERESOURCE;
 
         if ResourceToAcquire.is_null() {
@@ -1315,18 +1265,18 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
         }
 
         if Result == 0 {
-            return 0xC0000223u32 as i32;
+            return STATUS_CANT_WAIT;
         }
 
         OldExclusive = Exclusive;
         OldResourceToAcquire = ResourceToAcquire;
-        Exclusive = FsRtlpGetResourceForModWrite(FcbHeader, EndingOffset, core::ptr::addr_of_mut!(ResourceToAcquire));
+        Exclusive = FsRtlpGetResourceForModWrite(FcbHeader, EndingOffset, &mut ResourceToAcquire);
 
-        if (OldExclusive == Exclusive) && (OldResourceToAcquire == ResourceToAcquire) {
+        if OldExclusive == Exclusive && OldResourceToAcquire == ResourceToAcquire {
             break;
         }
 
-        if (OldResourceToAcquire == ResourceToAcquire) && Exclusive == 0 {
+        if OldResourceToAcquire == ResourceToAcquire && Exclusive == 0 {
             ExConvertExclusiveToSharedLite(ResourceToAcquire);
             break;
         }
@@ -1335,7 +1285,7 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
     }
 
     *ResourceToRelease = ResourceToAcquire;
-    return STATUS_SUCCESS;
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -1343,21 +1293,22 @@ pub unsafe extern "system" fn FsRtlReleaseFileForModWrite(
     FileObject: PFILE_OBJECT,
     ResourceToRelease: PERESOURCE,
 ) {
+    let DeviceObject: PDEVICE_OBJECT;
+    let BaseDeviceObject: PDEVICE_OBJECT;
+    let FastDispatch: PFAST_IO_DISPATCH;
     let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
 
-    let DeviceObject: PDEVICE_OBJECT = IoGetRelatedDeviceObject(FileObject);
-    let BaseDeviceObject: PDEVICE_OBJECT = IoGetBaseFileSystemDeviceObject(FileObject);
-    let FastDispatch: PFAST_IO_DISPATCH = (*(*DeviceObject).DriverObject).FastIoDispatch;
+    DeviceObject = IoGetRelatedDeviceObject(FileObject);
+    BaseDeviceObject = IoGetBaseFileSystemDeviceObject(FileObject);
+    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
 
     if !FastDispatch.is_null() && (*FastDispatch).ReleaseForModWrite.is_some() {
-        Status = (*FastDispatch).ReleaseForModWrite.unwrap()(
-            FileObject,
-            ResourceToRelease,
-            BaseDeviceObject,
-        );
+        if let Some(release_fn) = (*FastDispatch).ReleaseForModWrite {
+            Status = release_fn(FileObject, ResourceToRelease, BaseDeviceObject);
+        }
     }
 
-    if !NT_SUCCESS(Status) {
+    if Status < 0 {
         ExReleaseResourceLite(ResourceToRelease);
     }
 }
@@ -1377,8 +1328,9 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
     NewCallbacks = ExAllocatePoolWithTag(
         NonPagedPool,
         (*Callbacks).SizeOfFsFilterCallbacks as usize,
-        u32::from_le_bytes(*b"FSmg"),
+        u32::from_ne_bytes(*b"gmSF"),
     ) as PFS_FILTER_CALLBACKS;
+
     if NewCallbacks.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -1422,9 +1374,9 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //  */
 // VOID
 // NTAPI
-// FsRtlIncrementCcFastReadResourceMiss(VOID)
+// FsRtlIncrement,(VOID)
 // {
-//     CcFastReadResourceMiss++;
+//,++;
 // }
 //
 // /*
@@ -1432,9 +1384,9 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //  */
 // VOID
 // NTAPI
-// FsRtlIncrementCcFastReadNotPossible(VOID)
+// FsRtlIncrement,(VOID)
 // {
-//     CcFastReadNotPossible++;
+//,++;
 // }
 //
 // /*
@@ -1442,9 +1394,9 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //  */
 // VOID
 // NTAPI
-// FsRtlIncrementCcFastReadWait(VOID)
+// FsRtlIncrement,(VOID)
 // {
-//     CcFastReadWait++;
+//,++;
 // }
 //
 // /*
@@ -1452,9 +1404,9 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //  */
 // VOID
 // NTAPI
-// FsRtlIncrementCcFastReadNoWait(VOID)
+// FsRtlIncrement,(VOID)
 // {
-//     CcFastReadNoWait++;
+//,++;
 // }
 //
 // /*
@@ -1507,7 +1459,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //     {
 //         /* Use a Resource Acquire */
 //         FsRtlEnterFileSystem();
-//         CcFastReadWait++;
+//,++;
 //         ExAcquireResourceSharedLite(FcbHeader->Resource, TRUE);
 //     }
 //     else
@@ -1519,7 +1471,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //         if (!ExAcquireResourceSharedLite(FcbHeader->Resource, FALSE))
 //         {
 //             FsRtlExitFileSystem();
-//             FsRtlIncrementCcFastReadResourceMiss();
+//             FsRtlIncrement,();
 //             return FALSE;
 //         }
 //     }
@@ -1650,7 +1602,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //
 //     if (Result == FALSE)
 //     {
-//         CcFastReadNotPossible += 1;
+//,+= 1;
 //     }
 //
 //     return Result;
@@ -1705,7 +1657,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //      * Check with Cc if we can write and check if the IO > 64kB (WDK macro).
 //      */
 //     if ((CcCanIWrite(FileObject, Length, Wait, FALSE) == FALSE) ||
-//         (CcCopyWriteWontFlush(FileObject, FileOffset, Length) == FALSE) ||
+//         (,(FileObject, FileOffset, Length) == FALSE) ||
 //         ((FileObject->Flags & FO_WRITE_THROUGH)))
 //     {
 //         return FALSE;
@@ -2280,7 +2232,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //             FileStandardInformation;
 //
 //         /* Send the IRP to the related device object */
-//         Status = IoCallDriver(DeviceObject, Irp);
+//         Status = IofCallDriver(DeviceObject, Irp);
 //
 //         /* Standard DDK IRP result processing */
 //         if (Status == STATUS_PENDING)
@@ -2456,7 +2408,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //
 //     /* Enter the FS */
 //     FsRtlEnterFileSystem();
-//     CcFastMdlReadWait++;
+//,++;
 //
 //     /* Lock the FCB */
 //     ExAcquireResourceShared(FcbHeader->Resource, TRUE);
@@ -2466,7 +2418,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //         (FcbHeader->IsFastIoPossible == FastIoIsNotPossible))
 //     {
 //         /* It's not, so fail */
-//         CcFastMdlReadNotPossible += 1;
+//,+= 1;
 //         Result = FALSE;
 //         goto Cleanup;
 //     }
@@ -2494,7 +2446,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
 //                                                    Device))
 //         {
 //             /* It's not, fail */
-//             CcFastMdlReadNotPossible += 1;
+//,+= 1;
 //             Result = FALSE;
 //             goto Cleanup;
 //         }

@@ -1,79 +1,99 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{GUID, IoGetRelatedTargetDevice, IoReportTargetDeviceChange, IoReportTargetDeviceChangeAsynchronous, LPGUID, PDEVICE_OBJECT, PFILE_OBJECT, TARGET_DEVICE_CUSTOM_NOTIFICATION};
-use core::ffi::c_void;
+
+use ntkrnl_sys::ddk::{
+    GUID, LPGUID, PDEVICE_OBJECT, PFILE_OBJECT, TARGET_DEVICE_CUSTOM_NOTIFICATION,
+    IoGetRelatedTargetDevice, IoReportTargetDeviceChange,
+    IoReportTargetDeviceChangeAsynchronous,
+};
+
+const FSRTL_VOLUME_DISMOUNT: ULONG = 1;
+const FSRTL_VOLUME_DISMOUNT_FAILED: ULONG = 2;
+const FSRTL_VOLUME_LOCK: ULONG = 3;
+const FSRTL_VOLUME_LOCK_FAILED: ULONG = 4;
+const FSRTL_VOLUME_MOUNT: ULONG = 5;
+const FSRTL_VOLUME_UNLOCK: ULONG = 6;
+
+extern "system" {
+    static GUID_IO_VOLUME_DISMOUNT: GUID;
+    static GUID_IO_VOLUME_DISMOUNT_FAILED: GUID;
+    static GUID_IO_VOLUME_LOCK: GUID;
+    static GUID_IO_VOLUME_LOCK_FAILED: GUID;
+    static GUID_IO_VOLUME_MOUNT: GUID;
+    static GUID_IO_VOLUME_UNLOCK: GUID;
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNotifyVolumeEvent(
     FileObject: PFILE_OBJECT,
     EventCode: ULONG,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut Guid: LPGUID = core::ptr::null_mut();
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut Notification: TARGET_DEVICE_CUSTOM_NOTIFICATION = core::mem::zeroed();
+    let mut status: NTSTATUS;
+    let mut guid: LPGUID = core::ptr::null_mut();
+    let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut notification: TARGET_DEVICE_CUSTOM_NOTIFICATION = core::mem::zeroed();
 
-    Status = IoGetRelatedTargetDevice(FileObject, &mut DeviceObject);
-    if NT_SUCCESS(Status) == 0 {
-        return Status;
+    status = IoGetRelatedTargetDevice(FileObject, &mut device_object);
+    if status < 0 {
+        return status;
     }
 
-    Status = STATUS_INVALID_PARAMETER;
+    status = STATUS_INVALID_PARAMETER;
 
-    Notification.Version = 1;
-    Notification.Size = core::mem::size_of::<TARGET_DEVICE_CUSTOM_NOTIFICATION>() as USHORT;
-    Notification.FileObject = core::ptr::null_mut();
-    Notification.NameBufferOffset = -1i32;
+    notification.Version = 1;
+    notification.Size = core::mem::size_of::<TARGET_DEVICE_CUSTOM_NOTIFICATION>() as USHORT;
+    notification.FileObject = core::ptr::null_mut();
+    notification.NameBufferOffset = -1;
 
     match EventCode {
         FSRTL_VOLUME_DISMOUNT => {
-            Guid = &GUID_IO_VOLUME_DISMOUNT as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_DISMOUNT as *const GUID as LPGUID;
         }
         FSRTL_VOLUME_DISMOUNT_FAILED => {
-            Guid = &GUID_IO_VOLUME_DISMOUNT_FAILED as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_DISMOUNT_FAILED as *const GUID as LPGUID;
         }
         FSRTL_VOLUME_LOCK => {
-            Guid = &GUID_IO_VOLUME_LOCK as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_LOCK as *const GUID as LPGUID;
         }
         FSRTL_VOLUME_LOCK_FAILED => {
-            Guid = &GUID_IO_VOLUME_LOCK_FAILED as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_LOCK_FAILED as *const GUID as LPGUID;
         }
         FSRTL_VOLUME_MOUNT => {
-            Guid = &GUID_IO_VOLUME_MOUNT as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_MOUNT as *const GUID as LPGUID;
         }
         FSRTL_VOLUME_UNLOCK => {
-            Guid = &GUID_IO_VOLUME_UNLOCK as *const GUID as LPGUID;
+            guid = &GUID_IO_VOLUME_UNLOCK as *const GUID as LPGUID;
         }
         _ => {}
     }
 
-    if !Guid.is_null() {
+    if !guid.is_null() {
         core::ptr::copy_nonoverlapping(
-            Guid as *const u8,
-            &mut Notification.Event as *mut GUID as *mut u8,
+            guid as *const u8,
+            core::ptr::addr_of_mut!(notification.Event) as *mut u8,
             core::mem::size_of::<GUID>(),
         );
 
         if EventCode == FSRTL_VOLUME_MOUNT {
             IoReportTargetDeviceChangeAsynchronous(
-                DeviceObject,
-                &mut Notification,
-                core::ptr::null_mut(),
+                device_object,
+                &mut notification as *mut _ as PVOID,
+                None,
                 core::ptr::null_mut(),
             );
         } else {
-            IoReportTargetDeviceChange(DeviceObject, &mut Notification);
+            IoReportTargetDeviceChange(device_object, &mut notification as *mut _ as PVOID);
         }
 
-        Status = STATUS_SUCCESS;
+        status = STATUS_SUCCESS;
     }
 
-    ObDereferenceObject(DeviceObject as *mut core::ffi::c_void);
+    ObDereferenceObject(device_object as PVOID);
 
-    Status
+    status
 }
 
 // ============================================================================

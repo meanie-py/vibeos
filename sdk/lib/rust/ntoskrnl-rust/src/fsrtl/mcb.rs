@@ -2,8 +2,26 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{LBN, PLBN, PMCB, PVBN, VBN};
-use core::ffi::c_void;
+
+use ntkrnl_sys::ddk::{
+    LBN,
+    PLBN,
+    PMCB,
+    PVBN,
+    VBN,
+};
+
+extern "system" {
+    fn FsRtlAddLargeMcbEntry( Mcb: PVOID, Vbn: i64, Lbn: i64, SectorCount: i64, ) -> BOOLEAN;
+    fn FsRtlGetNextLargeMcbEntry( Mcb: PVOID, RunIndex: ULONG, Vbn: *mut i64, Lbn: *mut i64, SectorCount: *mut i64, ) -> BOOLEAN;
+    fn FsRtlInitializeLargeMcb( Mcb: PVOID, PoolType: POOL_TYPE, );
+    fn FsRtlLookupLastLargeMcbEntry( Mcb: PVOID, Vbn: *mut i64, Lbn: *mut i64, ) -> BOOLEAN;
+    fn FsRtlLookupLargeMcbEntry( Mcb: PVOID, Vbn: i64, Lbn: *mut i64, SectorCount: *mut i64, StartingLbn: *mut i64, CountFromStartingLbn: *mut i64, Index: *mut ULONG, ) -> BOOLEAN;
+    fn FsRtlNumberOfRunsInLargeMcb( Mcb: PVOID, ) -> ULONG;
+    fn FsRtlRemoveLargeMcbEntry( Mcb: PVOID, Vbn: i64, SectorCount: i64, );
+    fn FsRtlTruncateLargeMcb( Mcb: PVOID, Vbn: i64, );
+    fn FsRtlUninitializeLargeMcb( Mcb: PVOID, );
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAddMcbEntry(
@@ -13,10 +31,10 @@ pub unsafe extern "system" fn FsRtlAddMcbEntry(
     SectorCount: ULONG,
 ) -> BOOLEAN {
     FsRtlAddLargeMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
-        Vbn as LONGLONG,
-        Lbn as LONGLONG,
-        SectorCount as LONGLONG,
+        Mcb as PVOID,
+        Vbn as i64,
+        Lbn as i64,
+        SectorCount as i64,
     )
 }
 
@@ -26,26 +44,25 @@ pub unsafe extern "system" fn FsRtlGetNextMcbEntry(
     RunIndex: ULONG,
     Vbn: PVBN,
     Lbn: PLBN,
-    SectorCount: PULONG,
+    SectorCount: *mut ULONG,
 ) -> BOOLEAN {
-    let mut Return: BOOLEAN = 0u8;
-    let mut llVbn: LONGLONG = 0;
-    let mut llLbn: LONGLONG = 0;
-    let mut llSectorCount: LONGLONG = 0;
+    let mut ll_vbn: i64 = 0;
+    let mut ll_lbn: i64 = 0;
+    let mut ll_sector_count: i64 = 0;
 
-    Return = FsRtlGetNextLargeMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
+    let return_value = FsRtlGetNextLargeMcbEntry(
+        Mcb as PVOID,
         RunIndex,
-        &mut llVbn,
-        &mut llLbn,
-        &mut llSectorCount,
+        &mut ll_vbn,
+        &mut ll_lbn,
+        &mut ll_sector_count,
     );
 
-    *Vbn = llVbn as ULONG;
-    *Lbn = llLbn as ULONG;
-    *SectorCount = llSectorCount as ULONG;
+    *Vbn = ll_vbn as ULONG;
+    *Lbn = ll_lbn as ULONG;
+    *SectorCount = ll_sector_count as ULONG;
 
-    return Return;
+    return_value
 }
 
 #[no_mangle]
@@ -54,7 +71,7 @@ pub unsafe extern "system" fn FsRtlInitializeMcb(
     PoolType: POOL_TYPE,
 ) {
     FsRtlInitializeLargeMcb(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
+        Mcb as PVOID,
         PoolType,
     );
 }
@@ -65,20 +82,19 @@ pub unsafe extern "system" fn FsRtlLookupLastMcbEntry(
     Vbn: PVBN,
     Lbn: PLBN,
 ) -> BOOLEAN {
-    let mut Return: BOOLEAN = 0u8;
-    let mut llVbn: i64 = 0;
-    let mut llLbn: i64 = 0;
+    let mut ll_vbn: i64 = 0;
+    let mut ll_lbn: i64 = 0;
 
-    Return = FsRtlLookupLastLargeMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
-        &mut llVbn,
-        &mut llLbn,
+    let return_value = FsRtlLookupLastLargeMcbEntry(
+        Mcb as PVOID,
+        &mut ll_vbn,
+        &mut ll_lbn,
     );
 
-    *Vbn = llVbn as u32;
-    *Lbn = llLbn as u32;
+    *Vbn = ll_vbn as ULONG;
+    *Lbn = ll_lbn as ULONG;
 
-    return Return;
+    return_value
 }
 
 #[no_mangle]
@@ -86,47 +102,45 @@ pub unsafe extern "system" fn FsRtlLookupMcbEntry(
     Mcb: PMCB,
     Vbn: VBN,
     Lbn: PLBN,
-    SectorCount: PULONG,
-    Index: PULONG,
+    SectorCount: *mut ULONG,
+    Index: *mut ULONG,
 ) -> BOOLEAN {
-    let mut Return: BOOLEAN = 0u8;
-    let mut llLbn: LONGLONG = 0;
-    let mut llSectorCount: LONGLONG = 0;
+    let mut ll_lbn: i64 = 0;
+    let mut ll_sector_count: i64 = 0;
 
-    Return = FsRtlLookupLargeMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
-        Vbn as LONGLONG,
-        &mut llLbn,
-        &mut llSectorCount,
+    let return_value = FsRtlLookupLargeMcbEntry(
+        Mcb as PVOID,
+        Vbn as i64,
+        &mut ll_lbn,
+        &mut ll_sector_count,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         Index,
     );
 
-    *Lbn = llLbn as ULONG;
+    *Lbn = ll_lbn as ULONG;
     if !SectorCount.is_null() {
-        *SectorCount = llSectorCount as ULONG;
+        *SectorCount = ll_sector_count as ULONG;
     }
 
-    return Return;
+    return_value
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlNumberOfRunsInMcb(Mcb: PMCB) -> ULONG {
-    FsRtlNumberOfRunsInLargeMcb(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly)
-    )
+pub unsafe extern "system" fn FsRtlNumberOfRunsInMcb(
+    Mcb: PMCB,
+) -> ULONG {
+    FsRtlNumberOfRunsInLargeMcb(Mcb as PVOID)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlRemoveMcbEntry(
     Mcb: PMCB,
     Vbn: VBN,
-    SectorCount: u32,
-)
-{
+    SectorCount: ULONG,
+) {
     FsRtlRemoveLargeMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
+        Mcb as PVOID,
         Vbn as i64,
         SectorCount as i64,
     );
@@ -138,14 +152,16 @@ pub unsafe extern "system" fn FsRtlTruncateMcb(
     Vbn: VBN,
 ) {
     FsRtlTruncateLargeMcb(
-        core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly),
+        Mcb as PVOID,
         Vbn as i64,
     );
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlUninitializeMcb(Mcb: PMCB) {
-    FsRtlUninitializeLargeMcb(core::ptr::addr_of_mut!((*Mcb).DummyFieldThatSizesThisStructureCorrectly));
+pub unsafe extern "system" fn FsRtlUninitializeMcb(
+    Mcb: PMCB,
+) {
+    FsRtlUninitializeLargeMcb(Mcb as PVOID);
 }
 
 // ============================================================================

@@ -1,44 +1,129 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ob::*;
+use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcInitView, CcPostWorkQueue, CcScanDpc, CcWorkerThread, ExInitializeFastMutex, ExInitializeNPagedLookasideList, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExSetResourceOwnerPointer, INTERNAL_BCB, KeInitializeDpc, KeInitializeTimer, LARGE_INTEGER, MmQuerySystemSize, PFILE_OBJECT, PFSN_PREFETCHER_GLOBALS, PFSRTL_COMMON_FCB_HEADER, PINTERNAL_BCB, PLARGE_INTEGER, PPRIVATE_CACHE_MAP, PROS_SHARED_CACHE_MAP, PSECTION_OBJECT_POINTERS, PWORK_QUEUE_ENTRY, PWORK_QUEUE_ITEM, WORK_QUEUE_ENTRY, WORK_QUEUE_ITEM};
-use core::ffi::c_void;
+use ntkrnl_sys::ob::*;
+use ntkrnl_sys::ex::*;
+
+use ntkrnl_sys::ddk::{
+    _PFSN_PREFETCHER_GLOBALS, PPRIVATE_CACHE_MAP, PROS_SHARED_CACHE_MAP,
+    PFILE_OBJECT, PSECTION_OBJECT_POINTERS, PWORK_QUEUE_ITEM,
+    PWORK_QUEUE_ENTRY, LARGE_INTEGER, PLARGE_INTEGER, INTERNAL_BCB,
+    PINTERNAL_BCB, PFSRTL_COMMON_FCB_HEADER, MM_SYSTEMSIZE,
+    LAZY_WRITER, WORK_QUEUE_ITEM, WORK_QUEUE_ENTRY,
+    _NPAGED_LOOKASIDE_LIST,
+    CcInitView, CcWorkerThread, CcScanDpc, CcPostWorkQueue,
+    ExInitializeFastMutex,
+    ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite,
+    ExSetResourceOwnerPointer, MmQuerySystemSize, KeInitializeDpc,
+    KeInitializeTimer,
+};
+
+#[no_mangle]
+pub static mut CcPfGlobals: _PFSN_PREFETCHER_GLOBALS = unsafe { core::mem::zeroed() };
 
 extern "C" {
-    fn CCTRACE(level: u32, fmt: *const i8, ...);
-    fn SetFlag(flags: *mut u32, flag: u32);
-    fn ClearFlag(flags: *mut u32, flag: u32);
-    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
+    static mut CcIdleWorkerThreadList: LIST_ENTRY;
+    static mut CcExpressWorkQueue: LIST_ENTRY;
+    static mut CcRegularWorkQueue: LIST_ENTRY;
+    static mut CcPostTickWorkQueue: LIST_ENTRY;
+    static mut CcNumberWorkerThreads: ULONG;
+    static mut CcDirtyPageThreshold: ULONG;
+    static mut LazyWriter: LAZY_WRITER;
+    static mut CcTwilightLookasideList: _NPAGED_LOOKASIDE_LIST;
+    static mut ExCriticalWorkerThreads: ULONG;
+    fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCHAR, ...) -> NTSTATUS;
+    fn CcBugCheck(a: ULONG, b: ULONG, c: ULONG);
+    fn ExInitializeWorkItem(Item: PWORK_QUEUE_ITEM, Routine: PVOID, Context: PVOID);
 }
-extern "C" {
-    fn DbgPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...);
-    fn CcBugCheck(a: u32, b: u32, c: u32);
-    fn ExInitializeWorkItem(Item: PWORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(*mut core::ffi::c_void)>, Context: *mut core::ffi::c_void);
+
+extern "system" {
+    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExInitializeNPagedLookasideList(
+        Lookaside: *mut _NPAGED_LOOKASIDE_LIST,
+        Allocate: Option<unsafe extern "system" fn(ULONG, SIZE_T, ULONG) -> PVOID>,
+        Free: Option<unsafe extern "system" fn(PVOID)>,
+        Flags: ULONG,
+        Size: SIZE_T,
+        Tag: ULONG,
+        Depth: USHORT,
+    );
+}
+
+const DPFLTR_PREFETCHER_ID: ULONG = 0x5E;
+const DPFLTR_TRACE_LEVEL: ULONG = 0x1;
+
+const READAHEAD_DISABLED: ULONG = 0x0001;
+const WRITEBEHIND_DISABLED: ULONG = 0x0002;
+const FO_SEQUENTIAL_ONLY: ULONG = 0x00000004;
+const FSRTL_FLAG_LIMIT_MODIFIED_PAGES: ULONG = 0x0020;
+const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: ULONG = 0x0001;
+
+const MmSmallSystem: MM_SYSTEMSIZE = 0;
+const MmMediumSystem: MM_SYSTEMSIZE = 1;
+const MmLargeSystem: MM_SYSTEMSIZE = 2;
+
+const ReadAhead: u8 = 1;
+
+#[no_mangle]
+pub static mut CcPfEnablePrefetcher: BOOLEAN = 0;
+#[no_mangle]
+pub static mut CcCapturedSystemSize: MM_SYSTEMSIZE = 0;
+
+static mut BugCheckFileId: ULONG = 0x4 << 16;
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: ULONG, Bit: ULONG) -> bool {
+    (Flags & Bit) != 0
+}
+
+#[inline(always)]
+unsafe fn SetFlag(Flags: *mut ULONG, Bit: ULONG) {
+    *Flags |= Bit;
+}
+
+#[inline(always)]
+unsafe fn ClearFlag(Flags: *mut ULONG, Bit: ULONG) {
+    *Flags &= !Bit;
+}
+
+#[inline(always)]
+unsafe fn ROUND_UP(value: ULONG, alignment: ULONG) -> ULONG {
+    ((value + alignment - 1) / alignment) * alignment
+}
+
+/// InterlockedOr — atomic OR on i32
+#[inline]
+unsafe fn InterlockedOr(target: *mut i32, value: i32) -> i32 {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let atomic = &*(target as *const AtomicI32);
+    atomic.fetch_or(value, Ordering::SeqCst)
+}
+
+/// InterlockedAnd — atomic AND on i32
+#[inline]
+unsafe fn InterlockedAnd(target: *mut i32, value: i32) -> i32 {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let atomic = &*(target as *const AtomicI32);
+    atomic.fetch_and(value, Ordering::SeqCst)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcPfInitializePrefetcher() {
-
     DbgPrintEx(
-        96,
-        3,
-        b"CCPF: InitializePrefetecher()\n\0".as_ptr() as *const i8,
+        DPFLTR_PREFETCHER_ID,
+        DPFLTR_TRACE_LEVEL,
+        b"CCPF: InitializePrefetecher()\n\0".as_ptr() as PCHAR,
     );
 
-    InitializeListHead(&mut CcPfGlobals.ActiveTraces);
-    InitializeListHead(&mut CcPfGlobals.CompletedTraces);
-    ExInitializeFastMutex(&mut CcPfGlobals.CompletedTracesLock);
+    InitializeListHead(core::ptr::addr_of_mut!(CcPfGlobals.ActiveTraces));
+    InitializeListHead(core::ptr::addr_of_mut!(CcPfGlobals.CompletedTraces));
+    ExInitializeFastMutex(core::ptr::addr_of_mut!(CcPfGlobals.CompletedTracesLock));
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcInitializeCacheManager() -> u8 {
-    let mut Thread: u32;
-
+pub unsafe extern "C" fn CcInitializeCacheManager() -> BOOLEAN {
     CcInitView();
 
     InitializeListHead(core::ptr::addr_of_mut!(CcIdleWorkerThreadList));
@@ -48,42 +133,51 @@ pub unsafe extern "system" fn CcInitializeCacheManager() -> u8 {
 
     CcCapturedSystemSize = MmQuerySystemSize();
     match CcCapturedSystemSize {
-        0 => {
+        x if x == MmSmallSystem => {
             CcNumberWorkerThreads = ExCriticalWorkerThreads - 1;
-            CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8;
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 8) as ULONG;
         }
-        1 => {
+        x if x == MmMediumSystem => {
             CcNumberWorkerThreads = ExCriticalWorkerThreads - 1;
-            CcDirtyPageThreshold = MmNumberOfPhysicalPages / 4;
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 4) as ULONG;
         }
-        2 => {
+        x if x == MmLargeSystem => {
             CcNumberWorkerThreads = ExCriticalWorkerThreads - 2;
-            CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8 + MmNumberOfPhysicalPages / 4;
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 8 + MmNumberOfPhysicalPages / 4) as ULONG;
         }
         _ => {
             CcNumberWorkerThreads = 1;
-            CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8;
+            CcDirtyPageThreshold = (MmNumberOfPhysicalPages / 8) as ULONG;
         }
     }
 
-    Thread = 0;
-    while Thread < CcNumberWorkerThreads {
-        let Item: PWORK_QUEUE_ITEM;
-
-        Item = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<WORK_QUEUE_ITEM>() as u32, 0x71576343) as PWORK_QUEUE_ITEM;
-        if Item == core::ptr::null_mut() {
+    for _thread in 0..CcNumberWorkerThreads {
+        let item = ExAllocatePoolWithTag(
+            NonPagedPool,
+            core::mem::size_of::<WORK_QUEUE_ITEM>() as SIZE_T,
+            u32::from_be_bytes(*b"CcWq"),
+        ) as PWORK_QUEUE_ITEM;
+        if item.is_null() {
             CcBugCheck(0, 0, 0);
         }
 
-        ExInitializeWorkItem(Item, Some(CcWorkerThread), Item as *mut core::ffi::c_void);
-        InsertTailList(core::ptr::addr_of_mut!(CcIdleWorkerThreadList), core::ptr::addr_of_mut!((*Item).List));
-
-        Thread += 1;
+        ExInitializeWorkItem(item, CcWorkerThread as PVOID, item as PVOID);
+        InsertTailList(
+            core::ptr::addr_of_mut!(CcIdleWorkerThreadList) as PLIST_ENTRY,
+            core::ptr::addr_of_mut!((*item).List) as PLIST_ENTRY,
+        );
     }
 
-    core::ptr::write_bytes(core::ptr::addr_of_mut!(LazyWriter), 0, 1);
+    RtlZeroMemory(
+        core::ptr::addr_of_mut!(LazyWriter) as PVOID,
+        core::mem::size_of::<LAZY_WRITER>() as SIZE_T,
+    );
     InitializeListHead(core::ptr::addr_of_mut!(LazyWriter.WorkQueue));
-    KeInitializeDpc(core::ptr::addr_of_mut!(LazyWriter.ScanDpc), Some(CcScanDpc), core::ptr::null_mut());
+    KeInitializeDpc(
+        core::ptr::addr_of_mut!(LazyWriter.ScanDpc),
+        Some(CcScanDpc),
+        core::ptr::null_mut(),
+    );
     KeInitializeTimer(core::ptr::addr_of_mut!(LazyWriter.ScanTimer));
 
     ExInitializeNPagedLookasideList(
@@ -91,9 +185,9 @@ pub unsafe extern "system" fn CcInitializeCacheManager() -> u8 {
         None,
         None,
         0,
-        core::mem::size_of::<WORK_QUEUE_ENTRY>() as u32,
-        0x4B576343,
-        0
+        core::mem::size_of::<WORK_QUEUE_ENTRY>(),
+        u32::from_be_bytes(*b"CcWK"),
+        0,
     );
 
     1u8
@@ -101,7 +195,6 @@ pub unsafe extern "system" fn CcInitializeCacheManager() -> u8 {
 
 #[no_mangle]
 pub unsafe extern "system" fn CcShutdownSystem() {
-    /* NOTHING TO DO */
 }
 
 #[no_mangle]
@@ -109,572 +202,185 @@ pub unsafe extern "system" fn CcGetFlushedValidData(
     SectionObjectPointer: PSECTION_OBJECT_POINTERS,
     BcbListHeld: BOOLEAN,
 ) -> LARGE_INTEGER {
-    let mut i: LARGE_INTEGER = core::mem::zeroed();
-    
+    let mut i = core::mem::zeroed::<LARGE_INTEGER>();
     i.QuadPart = 0;
     i
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRemapBcb(
-    Bcb: PVOID
-) -> PVOID
-{
-    unimplemented!();
-    
-    0 as PVOID
+pub unsafe extern "system" fn CcRemapBcb(Bcb: PVOID) -> PVOID {
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcScheduleReadAhead(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
-    Length: u32,
+    Length: ULONG,
 ) {
-    let mut OldIrql: KIRQL = 0;
-    let mut NewOffset: LARGE_INTEGER = core::mem::zeroed();
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP;
-    let PrivateCacheMap: PPRIVATE_CACHE_MAP;
-    let mut Length = Length;
+    let mut old_irql: KIRQL = 0;
+    let mut new_offset = core::mem::zeroed::<LARGE_INTEGER>();
 
-    SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
-    PrivateCacheMap = (*FileObject).PrivateCacheMap;
+    let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
+    let private_cache_map = (*FileObject).PrivateCacheMap as PPRIVATE_CACHE_MAP;
 
-    if SharedCacheMap.is_null() || PrivateCacheMap.is_null() ||
-        BooleanFlagOn((*SharedCacheMap).Flags, READAHEAD_DISABLED) != 0
+    if shared_cache_map.is_null()
+        || private_cache_map.is_null()
+        || BooleanFlagOn((*shared_cache_map).Flags, READAHEAD_DISABLED)
     {
         return;
     }
 
-    Length = ROUND_UP(Length, (*PrivateCacheMap).ReadAheadMask + 1);
-    *(*NewOffset.QuadPart_mut()) = *(*FileOffset).QuadPart() + Length as i64;
+    let length = ROUND_UP(Length, (*private_cache_map).ReadAheadMask + 1);
+    new_offset.QuadPart = (*FileOffset).QuadPart + length as i64;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), core::ptr::addr_of_mut!(OldIrql));
-    
-    if BooleanFlagOn((*FileObject).Flags, FO_SEQUENTIAL_ONLY) != 0 {
-        if *(*NewOffset.QuadPart()) < *(*(*PrivateCacheMap).ReadAheadOffset[1]).QuadPart() {
-            KeReleaseSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), OldIrql);
-            return;
-        }
+    KeAcquireSpinLock(
+        core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+        &mut old_irql,
+    );
 
-        *(*(*PrivateCacheMap).ReadAheadOffset[1]).QuadPart_mut() = *(*NewOffset.QuadPart());
-        (*PrivateCacheMap).ReadAheadLength[1] = Length;
-    } else {
-        if *(*(*PrivateCacheMap).FileOffset2).QuadPart() >= *(*(*PrivateCacheMap).FileOffset1).QuadPart() &&
-            *(*FileOffset).QuadPart() >= *(*(*PrivateCacheMap).FileOffset2).QuadPart()
+    if BooleanFlagOn((*FileObject).Flags, FO_SEQUENTIAL_ONLY) {
+        if new_offset.QuadPart
+            < (*private_cache_map).ReadAheadOffset[1].QuadPart
         {
-            *(*(*PrivateCacheMap).ReadAheadOffset[1]).QuadPart_mut() = *(*NewOffset.QuadPart());
-            (*PrivateCacheMap).ReadAheadLength[1] = Length;
+            KeReleaseSpinLock(
+                core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+                old_irql,
+            );
+            return;
+        }
+
+        (*private_cache_map).ReadAheadOffset[1].QuadPart =
+            new_offset.QuadPart;
+        (*private_cache_map).ReadAheadLength[1] = length;
+    } else {
+        if (*private_cache_map).FileOffset2.QuadPart
+            >= (*private_cache_map).FileOffset1.QuadPart
+            && (*FileOffset).QuadPart
+                >= (*private_cache_map).FileOffset2.QuadPart
+        {
+            (*private_cache_map).ReadAheadOffset[1].QuadPart =
+                new_offset.QuadPart;
+            (*private_cache_map).ReadAheadLength[1] = length;
         } else {
-            KeReleaseSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), OldIrql);
-            UNIMPLEMENTED_ONCE();
+            KeReleaseSpinLock(
+                core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+                old_irql,
+            );
             return;
         }
     }
 
-    if (*PrivateCacheMap).Flags.ReadAheadActive() == 0 {
-        let WorkItem: PWORK_QUEUE_ENTRY;
+    if (*private_cache_map).__bindgen_anon_1.Flags.ReadAheadActive() == 0 {
+        InterlockedOr(
+            core::ptr::addr_of_mut!((*private_cache_map).__bindgen_anon_1.UlongFlags) as *mut i32,
+            PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32,
+        );
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+            old_irql,
+        );
 
-        InterlockedOr((core::ptr::addr_of_mut!((*PrivateCacheMap).UlongFlags)) as *mut i32, PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32);
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), OldIrql);
+        let work_item = ExAllocateFromNPagedLookasideList(
+            core::ptr::addr_of_mut!(CcTwilightLookasideList),
+        ) as PWORK_QUEUE_ENTRY;
+        if !work_item.is_null() {
+            ObReferenceObject(FileObject as PVOID);
 
-        WorkItem = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(CcTwilightLookasideList));
-        if !WorkItem.is_null() {
-            ObReferenceObject(FileObject as *mut core::ffi::c_void);
+            (*work_item).Function = ReadAhead;
+            (*work_item).Parameters.Read.FileObject = FileObject as *mut _;
 
-            (*WorkItem).Function = ReadAhead;
-            (*WorkItem).Parameters.Read.FileObject = FileObject;
-
-            CcPostWorkQueue(WorkItem, core::ptr::addr_of_mut!(CcExpressWorkQueue));
-
+            CcPostWorkQueue(work_item, core::ptr::addr_of_mut!(CcExpressWorkQueue));
             return;
         }
 
-        KeAcquireSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), core::ptr::addr_of_mut!(OldIrql));
-        InterlockedAnd((core::ptr::addr_of_mut!((*PrivateCacheMap).UlongFlags)) as *mut i32, !PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32);
+        KeAcquireSpinLock(
+            core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+            &mut old_irql,
+        );
+        InterlockedAnd(
+            core::ptr::addr_of_mut!((*private_cache_map).__bindgen_anon_1.UlongFlags) as *mut i32,
+            !(PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32),
+        );
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*PrivateCacheMap).ReadAheadSpinLock), OldIrql);
+    KeReleaseSpinLock(
+        core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
+        old_irql,
+    );
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
     FileObject: PFILE_OBJECT,
-    DisableReadAhead: u8,
-    DisableWriteBehind: u8,
+    DisableReadAhead: BOOLEAN,
+    DisableWriteBehind: BOOLEAN,
 ) {
-    let mut OldIrql: KIRQL;
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP;
+    let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
-    const CC_API_DEBUG: u32 = 0;
-    const READAHEAD_DISABLED: u32 = 0x1;
-    const WRITEBEHIND_DISABLED: u32 = 0x2;
-    const 17i32: u32 = 0;
-
-    CCTRACE(
-        CC_API_DEBUG,
-        b"FileObject=%p DisableReadAhead=%d DisableWriteBehind=%d\n\0".as_ptr() as *const i8,
-        FileObject,
-        DisableReadAhead,
-        DisableWriteBehind,
-    );
-
-    SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
-
-    OldIrql = KeAcquireQueuedSpinLock(17i32);
+    let old_irql = KeAcquireQueuedSpinLock(17u32);
 
     if DisableReadAhead != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*SharedCacheMap).Flags), READAHEAD_DISABLED);
+        SetFlag(
+            core::ptr::addr_of_mut!((*shared_cache_map).Flags),
+            READAHEAD_DISABLED,
+        );
     } else {
-        ClearFlag(core::ptr::addr_of_mut!((*SharedCacheMap).Flags), READAHEAD_DISABLED);
+        ClearFlag(
+            core::ptr::addr_of_mut!((*shared_cache_map).Flags),
+            READAHEAD_DISABLED,
+        );
     }
 
     if DisableWriteBehind != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*SharedCacheMap).Flags), WRITEBEHIND_DISABLED);
+        SetFlag(
+            core::ptr::addr_of_mut!((*shared_cache_map).Flags),
+            WRITEBEHIND_DISABLED,
+        );
     } else {
-        ClearFlag(core::ptr::addr_of_mut!((*SharedCacheMap).Flags), WRITEBEHIND_DISABLED);
+        ClearFlag(
+            core::ptr::addr_of_mut!((*shared_cache_map).Flags),
+            WRITEBEHIND_DISABLED,
+        );
     }
 
-    KeReleaseQueuedSpinLock(17i32, OldIrql);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcSetBcbOwnerPointer(
-    Bcb: PVOID,
-    Owner: PVOID,
-) {
-    let iBcb = (Bcb as *mut u8).offset(-(core::mem::offset_of!(INTERNAL_BCB, PFCB) as isize)) as PINTERNAL_BCB;
+pub unsafe extern "system" fn CcSetBcbOwnerPointer(Bcb: PVOID, Owner: PVOID) {
+    let i_bcb = (Bcb as usize - core::mem::offset_of!(INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
 
-    CCTRACE(CC_API_DEBUG, b"Bcb=%p Owner=%p\n\0".as_ptr() as PCHAR, Bcb, Owner);
-
-    if ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*iBcb).Lock)) == 0 && 
-       ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!((*iBcb).Lock)) == 0 {
-        // DPRINT removed
+    if ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*i_bcb).Lock)) == 0
+        && ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!((*i_bcb).Lock)) == 0
+    {
         return;
     }
 
-    ExSetResourceOwnerPointer(core::ptr::addr_of_mut!((*iBcb).Lock), Owner);
+    ExSetResourceOwnerPointer(core::ptr::addr_of_mut!((*i_bcb).Lock), Owner);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcSetDirtyPageThreshold(
     FileObject: PFILE_OBJECT,
-    DirtyPageThreshold: u32,
+    DirtyPageThreshold: ULONG,
 ) {
-
-    const CC_API_DEBUG: u32 = 0x00000001;
-    const FSRTL_FLAG_LIMIT_MODIFIED_PAGES: u32 = 0x00000010;
-
-    CCTRACE(
-        CC_API_DEBUG,
-        b"FileObject=%p DirtyPageThreshold=%lu\n\0".as_ptr() as *const i8,
-        FileObject,
-        DirtyPageThreshold,
-    );
-
-    let SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
-    if !SharedCacheMap.is_null() {
-        (*SharedCacheMap).DirtyPageThreshold = DirtyPageThreshold;
+    let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
+    if !shared_cache_map.is_null() {
+        (*shared_cache_map).DirtyPageThreshold = DirtyPageThreshold;
     }
 
-    let Fcb: PFSRTL_COMMON_FCB_HEADER = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
-    if BooleanFlagOn((*Fcb).Flags, FSRTL_FLAG_LIMIT_MODIFIED_PAGES) == 0 {
-        SetFlag(core::ptr::addr_of_mut!((*Fcb).Flags), FSRTL_FLAG_LIMIT_MODIFIED_PAGES);
+    let fcb = (*FileObject).FsContext as PFSRTL_COMMON_FCB_HEADER;
+    if ((*fcb).Flags as ULONG & FSRTL_FLAG_LIMIT_MODIFIED_PAGES) == 0 {
+        (*fcb).Flags |= FSRTL_FLAG_LIMIT_MODIFIED_PAGES as UCHAR;
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcSetReadAheadGranularity(
     FileObject: PFILE_OBJECT,
-    Granularity: u32,
+    Granularity: ULONG,
 ) {
-
-    CCTRACE(
-        0x00000001u32,
-        b"FileObject=%p Granularity=%lu\n\0".as_ptr() as *const i8,
-        FileObject,
-        Granularity,
-    );
-
-    let PrivateMap: PPRIVATE_CACHE_MAP = (*FileObject).PrivateCacheMap;
-    (*PrivateMap).ReadAheadMask = Granularity.wrapping_sub(1);
+    let private_map = (*FileObject).PrivateCacheMap as PPRIVATE_CACHE_MAP;
+    (*private_map).ReadAheadMask = Granularity - 1;
 }
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * COPYRIGHT:       See COPYING in the top level directory
-//  * PROJECT:         ReactOS kernel
-//  * FILE:            ntoskrnl/cc/cacheman.c
-//  * PURPOSE:         Cache manager
-//  *
-//  * PROGRAMMERS:     David Welch (welch@cwcom.net)
-//  *                  Pierre Schweitzer (pierre@reactos.org)
-//  */
-//
-// /* INCLUDES *****************************************************************/
-//
-// #include <ntoskrnl.h>
-// #define NDEBUG
-// #include <debug.h>
-//
-// BOOLEAN CcPfEnablePrefetcher;
-// PFSN_PREFETCHER_GLOBALS CcPfGlobals;
-// MM_SYSTEMSIZE CcCapturedSystemSize;
-//
-// static ULONG BugCheckFileId = 0x4 << 16;
-//
-// /* FUNCTIONS *****************************************************************/
-//
-// CODE_SEG("INIT")
-// VOID
-// NTAPI
-// CcPfInitializePrefetcher(VOID)
-// {
-//     /* Notify debugger */
-//     DbgPrintEx(DPFLTR_PREFETCHER_ID,
-//                DPFLTR_TRACE_LEVEL,
-//                "CCPF: InitializePrefetecher()\n");
-//
-//     /* Setup the Prefetcher Data */
-//     InitializeListHead(&CcPfGlobals.ActiveTraces);
-//     InitializeListHead(&CcPfGlobals.CompletedTraces);
-//     ExInitializeFastMutex(&CcPfGlobals.CompletedTracesLock);
-//
-//     /* FIXME: Setup the rest of the prefetecher */
-// }
-//
-// CODE_SEG("INIT")
-// BOOLEAN
-// CcInitializeCacheManager(VOID)
-// {
-//     ULONG Thread;
-//
-//     CcInitView();
-//
-//     /* Initialize lazy-writer lists */
-//     InitializeListHead(&CcIdleWorkerThreadList);
-//     InitializeListHead(&CcExpressWorkQueue);
-//     InitializeListHead(&CcRegularWorkQueue);
-//     InitializeListHead(&CcPostTickWorkQueue);
-//
-//     /* Define lazy writer threshold and the amount of workers,
-//       * depending on the system type
-//       */
-//     CcCapturedSystemSize = MmQuerySystemSize();
-//     switch (CcCapturedSystemSize)
-//     {
-//         case MmSmallSystem:
-//             CcNumberWorkerThreads = ExCriticalWorkerThreads - 1;
-//             CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8;
-//             break;
-//
-//         case MmMediumSystem:
-//             CcNumberWorkerThreads = ExCriticalWorkerThreads - 1;
-//             CcDirtyPageThreshold = MmNumberOfPhysicalPages / 4;
-//             break;
-//
-//         case MmLargeSystem:
-//             CcNumberWorkerThreads = ExCriticalWorkerThreads - 2;
-//             CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8 + MmNumberOfPhysicalPages / 4;
-//             break;
-//
-//         default:
-//             CcNumberWorkerThreads = 1;
-//             CcDirtyPageThreshold = MmNumberOfPhysicalPages / 8;
-//             break;
-//     }
-//
-//     /* Allocate a work item for all our threads */
-//     for (Thread = 0; Thread < CcNumberWorkerThreads; ++Thread)
-//     {
-//         PWORK_QUEUE_ITEM Item;
-//
-//         Item = ExAllocatePoolWithTag(NonPagedPool, sizeof(WORK_QUEUE_ITEM), 'qWcC');
-//         if (Item == NULL)
-//         {
-//             CcBugCheck(0, 0, 0);
-//         }
-//
-//         /* By default, it's obviously idle */
-//         ExInitializeWorkItem(Item, CcWorkerThread, Item);
-//         InsertTailList(&CcIdleWorkerThreadList, &Item->List);
-//     }
-//
-//     /* Initialize our lazy writer */
-//     RtlZeroMemory(&LazyWriter, sizeof(LazyWriter));
-//     InitializeListHead(&LazyWriter.WorkQueue);
-//     /* Delay activation of the lazy writer */
-//     KeInitializeDpc(&LazyWriter.ScanDpc, CcScanDpc, NULL);
-//     KeInitializeTimer(&LazyWriter.ScanTimer);
-//
-//     /* Lookaside list for our work items */
-//     ExInitializeNPagedLookasideList(&CcTwilightLookasideList, NULL, NULL, 0, sizeof(WORK_QUEUE_ENTRY), 'KWcC', 0);
-//
-//     return TRUE;
-// }
-//
-// VOID
-// NTAPI
-// CcShutdownSystem(VOID)
-// {
-//     /* NOTHING TO DO */
-// }
-//
-// /*
-//  * @unimplemented
-//  */
-// LARGE_INTEGER
-// NTAPI
-// CcGetFlushedValidData (
-//     IN PSECTION_OBJECT_POINTERS SectionObjectPointer,
-//     IN BOOLEAN BcbListHeld
-//     )
-// {
-// 	LARGE_INTEGER i;
-//
-// 	UNIMPLEMENTED;
-//
-// 	i.QuadPart = 0;
-// 	return i;
-// }
-//
-// /*
-//  * @unimplemented
-//  */
-// PVOID
-// NTAPI
-// CcRemapBcb (
-//     IN PVOID Bcb
-//     )
-// {
-// 	UNIMPLEMENTED;
-//
-//     return 0;
-// }
-//
-// /*
-//  * @unimplemented
-//  */
-// VOID
-// NTAPI
-// CcScheduleReadAhead (
-// 	IN	PFILE_OBJECT		FileObject,
-// 	IN	PLARGE_INTEGER		FileOffset,
-// 	IN	ULONG			Length
-// 	)
-// {
-//     KIRQL OldIrql;
-//     LARGE_INTEGER NewOffset;
-//     PROS_SHARED_CACHE_MAP SharedCacheMap;
-//     PPRIVATE_CACHE_MAP PrivateCacheMap;
-//
-//     SharedCacheMap = FileObject->SectionObjectPointer->SharedCacheMap;
-//     PrivateCacheMap = FileObject->PrivateCacheMap;
-//
-//     /* If file isn't cached, or if read ahead is disabled, this is no op */
-//     if (SharedCacheMap == NULL || PrivateCacheMap == NULL ||
-//         BooleanFlagOn(SharedCacheMap->Flags, READAHEAD_DISABLED))
-//     {
-//         return;
-//     }
-//
-//     /* Round read length with read ahead mask */
-//     Length = ROUND_UP(Length, PrivateCacheMap->ReadAheadMask + 1);
-//     /* Compute the offset we'll reach */
-//     NewOffset.QuadPart = FileOffset->QuadPart + Length;
-//
-//     /* Lock read ahead spin lock */
-//     KeAcquireSpinLock(&PrivateCacheMap->ReadAheadSpinLock, &OldIrql);
-//     /* Easy case: the file is sequentially read */
-//     if (BooleanFlagOn(FileObject->Flags, FO_SEQUENTIAL_ONLY))
-//     {
-//         /* If we went backward, this is no go! */
-//         if (NewOffset.QuadPart < PrivateCacheMap->ReadAheadOffset[1].QuadPart)
-//         {
-//             KeReleaseSpinLock(&PrivateCacheMap->ReadAheadSpinLock, OldIrql);
-//             return;
-//         }
-//
-//         /* FIXME: hackish, but will do the job for now */
-//         PrivateCacheMap->ReadAheadOffset[1].QuadPart = NewOffset.QuadPart;
-//         PrivateCacheMap->ReadAheadLength[1] = Length;
-//     }
-//     /* Other cases: try to find some logic in that mess... */
-//     else
-//     {
-//         /* Let's check if we always read the same way (like going down in the file)
-//          * and pretend it's enough for now
-//          */
-//         if (PrivateCacheMap->FileOffset2.QuadPart >= PrivateCacheMap->FileOffset1.QuadPart &&
-//             FileOffset->QuadPart >= PrivateCacheMap->FileOffset2.QuadPart)
-//         {
-//             /* FIXME: hackish, but will do the job for now */
-//             PrivateCacheMap->ReadAheadOffset[1].QuadPart = NewOffset.QuadPart;
-//             PrivateCacheMap->ReadAheadLength[1] = Length;
-//         }
-//         else
-//         {
-//             /* FIXME: handle the other cases */
-//             KeReleaseSpinLock(&PrivateCacheMap->ReadAheadSpinLock, OldIrql);
-//             UNIMPLEMENTED_ONCE;
-//             return;
-//         }
-//     }
-//
-//     /* If read ahead isn't active yet */
-//     if (!PrivateCacheMap->Flags.ReadAheadActive)
-//     {
-//         PWORK_QUEUE_ENTRY WorkItem;
-//
-//         /* It's active now!
-//          * Be careful with the mask, you don't want to mess with node code
-//          */
-//         InterlockedOr((volatile long *)&PrivateCacheMap->UlongFlags, PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE);
-//         KeReleaseSpinLock(&PrivateCacheMap->ReadAheadSpinLock, OldIrql);
-//
-//         /* Get a work item */
-//         WorkItem = ExAllocateFromNPagedLookasideList(&CcTwilightLookasideList);
-//         if (WorkItem != NULL)
-//         {
-//             /* Reference our FO so that it doesn't go in between */
-//             ObReferenceObject(FileObject);
-//
-//             /* We want to do read ahead! */
-//             WorkItem->Function = ReadAhead;
-//             WorkItem->Parameters.Read.FileObject = FileObject;
-//
-//             /* Queue in the read ahead dedicated queue */
-//             CcPostWorkQueue(WorkItem, &CcExpressWorkQueue);
-//
-//             return;
-//         }
-//
-//         /* Fail path: lock again, and revert read ahead active */
-//         KeAcquireSpinLock(&PrivateCacheMap->ReadAheadSpinLock, &OldIrql);
-//         InterlockedAnd((volatile long *)&PrivateCacheMap->UlongFlags, ~PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE);
-//     }
-//
-//     /* Done (fail) */
-//     KeReleaseSpinLock(&PrivateCacheMap->ReadAheadSpinLock, OldIrql);
-// }
-//
-// /*
-//  * @implemented
-//  */
-// VOID
-// NTAPI
-// CcSetAdditionalCacheAttributes (
-// 	IN	PFILE_OBJECT	FileObject,
-// 	IN	BOOLEAN		DisableReadAhead,
-// 	IN	BOOLEAN		DisableWriteBehind
-// 	)
-// {
-//     KIRQL OldIrql;
-//     PROS_SHARED_CACHE_MAP SharedCacheMap;
-//
-//     CCTRACE(CC_API_DEBUG, "FileObject=%p DisableReadAhead=%d DisableWriteBehind=%d\n",
-//         FileObject, DisableReadAhead, DisableWriteBehind);
-//
-//     SharedCacheMap = FileObject->SectionObjectPointer->SharedCacheMap;
-//
-//     OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
-//
-//     if (DisableReadAhead)
-//     {
-//         SetFlag(SharedCacheMap->Flags, READAHEAD_DISABLED);
-//     }
-//     else
-//     {
-//         ClearFlag(SharedCacheMap->Flags, READAHEAD_DISABLED);
-//     }
-//
-//     if (DisableWriteBehind)
-//     {
-//         /* FIXME: also set flag 0x200 */
-//         SetFlag(SharedCacheMap->Flags, WRITEBEHIND_DISABLED);
-//     }
-//     else
-//     {
-//         ClearFlag(SharedCacheMap->Flags, WRITEBEHIND_DISABLED);
-//     }
-//     KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
-// }
-//
-// /*
-//  * @unimplemented
-//  */
-// VOID
-// NTAPI
-// CcSetBcbOwnerPointer (
-// 	IN	PVOID	Bcb,
-// 	IN	PVOID	Owner
-// 	)
-// {
-//     PINTERNAL_BCB iBcb = CONTAINING_RECORD(Bcb, INTERNAL_BCB, PFCB);
-//
-//     CCTRACE(CC_API_DEBUG, "Bcb=%p Owner=%p\n",
-//         Bcb, Owner);
-//
-//     if (!ExIsResourceAcquiredExclusiveLite(&iBcb->Lock) && !ExIsResourceAcquiredSharedLite(&iBcb->Lock))
-//     {
-//         DPRINT1("Current thread doesn't own resource!\n");
-//         return;
-//     }
-//
-//     ExSetResourceOwnerPointer(&iBcb->Lock, Owner);
-// }
-//
-// /*
-//  * @implemented
-//  */
-// VOID
-// NTAPI
-// CcSetDirtyPageThreshold (
-// 	IN	PFILE_OBJECT	FileObject,
-// 	IN	ULONG		DirtyPageThreshold
-// 	)
-// {
-//     PFSRTL_COMMON_FCB_HEADER Fcb;
-//     PROS_SHARED_CACHE_MAP SharedCacheMap;
-//
-//     CCTRACE(CC_API_DEBUG, "FileObject=%p DirtyPageThreshold=%lu\n",
-//         FileObject, DirtyPageThreshold);
-//
-//     SharedCacheMap = FileObject->SectionObjectPointer->SharedCacheMap;
-//     if (SharedCacheMap != NULL)
-//     {
-//         SharedCacheMap->DirtyPageThreshold = DirtyPageThreshold;
-//     }
-//
-//     Fcb = FileObject->FsContext;
-//     if (!BooleanFlagOn(Fcb->Flags, FSRTL_FLAG_LIMIT_MODIFIED_PAGES))
-//     {
-//         SetFlag(Fcb->Flags, FSRTL_FLAG_LIMIT_MODIFIED_PAGES);
-//     }
-// }
-//
-// /*
-//  * @implemented
-//  */
-// VOID
-// NTAPI
-// CcSetReadAheadGranularity (
-// 	IN	PFILE_OBJECT	FileObject,
-// 	IN	ULONG		Granularity
-// 	)
-// {
-//     PPRIVATE_CACHE_MAP PrivateMap;
-//
-//     CCTRACE(CC_API_DEBUG, "FileObject=%p Granularity=%lu\n",
-//         FileObject, Granularity);
-//
-//     PrivateMap = FileObject->PrivateCacheMap;
-//     PrivateMap->ReadAheadMask = Granularity - 1;
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

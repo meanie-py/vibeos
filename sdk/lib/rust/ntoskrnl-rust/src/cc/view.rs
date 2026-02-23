@@ -1,614 +1,743 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ob::*;
+use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcInitCacheZeroPage, CcRosEnsureVacbResident, CcRosFlushVacb, CcRosFreeOneUnusedVacb, CcRosMarkDirtyVacb, CcRosUnmarkDirtyVacb, CcScheduleLazyWriteScan, ExInitializeNPagedLookasideList, INTERNAL_BCB, _IO_STATUS_BLOCK, IoGetTopLevelIrp, KEVENT, KeAcquireSpinLockAtDpcLevel, KeBugCheck, KeEnterCriticalRegion, KeInitializeEvent, KeInitializeSpinLock, KeLeaveCriticalRegion, KeReleaseSpinLockFromDpcLevel, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, MmCreateSection, MmFlushSegment, MmGetPhysicalAddress, MmIsDataSectionResident, MmMakeDataSectionResident, MmMapViewInSystemSpaceEx, MmPageOutPhysicalAddress, MmUnmapViewInSystemSpace, NPAGED_LOOKASIDE_LIST, ObReferenceObjectByPointer, PCACHE_MANAGER_CALLBACKS, PCC_FILE_SIZES, PCSTR, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PIO_STATUS_BLOCK, PIRP, PKEVENT, PKIRQL, PLARGE_INTEGER, PPRIVATE_CACHE_MAP, PRIVATE_CACHE_MAP, PROS_SHARED_CACHE_MAP, PROS_VACB, PSECTION_OBJECT_POINTERS, PUNICODE_STRING, ROS_SHARED_CACHE_MAP, ROS_VACB};
-use core::ffi::c_void;
+use ntkrnl_sys::ob::*;
+use ntkrnl_sys::ex::*;
 
-extern "C" {
-    fn CcRosVacbIncRefCount(current: PROS_VACB);
-    fn IsPointInRange(start: i64, size: i64, point: i64) -> i32;
-    fn KdbpPrint(Format: *const u8, ...);
-    fn ExFreeToNPagedLookasideList(Lookaside: *mut core::ffi::c_void, Entry: *mut core::ffi::c_void);
-    static mut SharedCacheMapLookasideList: core::ffi::c_void;
-    fn DbgPrint(format: *const i8, ...) -> i32;
-    fn ExAllocateFromNPagedLookasideList(Lookaside: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    static mut CcCleanSharedCacheMapList: _LIST_ENTRY;
-    static mut 17i32: i32;
-}
-extern "C" {
-    fn CcRosVacbDecRefCount(Vacb: PROS_VACB) -> ULONG;
-    fn CcRosVacbGetRefCount(Vacb: PROS_VACB) -> ULONG;
-    fn NT_VERIFY(Condition: BOOLEAN) -> BOOLEAN;
-    static mut VacbLookasideList: core::ffi::c_void;
-    fn ROUND_DOWN(Value: i64, Alignment: u32) -> i64;
-    fn ARM64_BARRIER();
-    fn ARM64_UART_TRACE(Format: *const u8);
-    static mut VacbLruListHead: _LIST_ENTRY;
-    fn BooleanFlagOn(F: u32, On: u32) -> u8;
+use ntkrnl_sys::ddk::{
+    _CC_FILE_SIZES, _CACHE_MANAGER_CALLBACKS, _KEVENT, _IO_STATUS_BLOCK,
+    _LARGE_INTEGER, _LIST_ENTRY, _NPAGED_LOOKASIDE_LIST, _INTERNAL_BCB,
+    _PRIVATE_CACHE_MAP,
+    PFILE_OBJECT, PSECTION_OBJECT_POINTERS, PCC_FILE_SIZES, PCACHE_MANAGER_CALLBACKS,
+    PKEVENT, PIO_STATUS_BLOCK, PLARGE_INTEGER, PPRIVATE_CACHE_MAP,
+    IoGetTopLevelIrp,
+    KeWaitForSingleObject, KeInitializeEvent, KeSetEvent, KeEnterCriticalRegion, KeLeaveCriticalRegion,
+    MmCreateSection, MmFlushSegment, MmIsDataSectionResident,
+    MmMakeDataSectionResident, MmUnmapViewInSystemSpace,
+    ObReferenceObjectByPointer,
+    KeBugCheck, MMPFNLIST,
+};
+
+extern "system" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+    fn RtlFillMemory(destination: PVOID, length: SIZE_T, fill: UCHAR);
+    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST, entry: PVOID);
+    fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
+    fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut KSPIN_LOCK);
+    fn ExInitializeNPagedLookasideList(
+        Lookaside: *mut _NPAGED_LOOKASIDE_LIST,
+        Allocate: Option<unsafe extern "system" fn(ULONG, SIZE_T, ULONG) -> PVOID>,
+        Free: Option<unsafe extern "system" fn(PVOID)>,
+        Flags: ULONG,
+        Size: SIZE_T,
+        Tag: ULONG,
+        Depth: USHORT,
+    );
+    fn MmMapViewInSystemSpaceEx(
+        Section: PVOID,
+        MappedBase: *mut PVOID,
+        ViewSize: *mut SIZE_T,
+        SectionOffset: PLARGE_INTEGER,
+        Flags: usize,
+    ) -> NTSTATUS;
 }
 
-static mut CcTotalDirtyPages: u32 = 0;
-static mut CcDirtyPageThreshold: u32 = 0;
-static mut MmThrottleTop: u32 = 0;
-static mut MmThrottleBottom: u32 = 0;
+type INT = i32;
+
+#[inline(always)]
+unsafe fn KeInitializeSpinLock(lock: *mut KSPIN_LOCK) {
+    *lock = 0;
+}
 
 #[repr(C)]
-struct _MM_PAGE_LIST {
-    Total: u32,
+struct ROS_VACB {
+    BaseAddress: PVOID,
+    Dirty: BOOLEAN,
+    PageOut: BOOLEAN,
+    MappedCount: ULONG,
+    CacheMapVacbListEntry: _LIST_ENTRY,
+    DirtyVacbListEntry: _LIST_ENTRY,
+    VacbLruListEntry: _LIST_ENTRY,
+    FileOffset: _LARGE_INTEGER,
+    ReferenceCount: ULONG,
+    SharedCacheMap: *mut ROS_SHARED_CACHE_MAP,
 }
 
-static mut MmModifiedPageListHead: _MM_PAGE_LIST = _MM_PAGE_LIST { Total: 0 };
+type PROS_VACB = *mut ROS_VACB;
+
+#[repr(C)]
+struct ROS_SHARED_CACHE_MAP {
+    NodeTypeCode: USHORT,
+    NodeByteSize: USHORT,
+    OpenCount: ULONG,
+    FileSize: _LARGE_INTEGER,
+    BcbList: _LIST_ENTRY,
+    SectionSize: _LARGE_INTEGER,
+    ValidDataLength: _LARGE_INTEGER,
+    FileObject: PFILE_OBJECT,
+    DirtyPages: ULONG,
+    SharedCacheMapLinks: _LIST_ENTRY,
+    Flags: ULONG,
+    Section: PVOID,
+    CreateEvent: PKEVENT,
+    Callbacks: PCACHE_MANAGER_CALLBACKS,
+    LazyWriteContext: PVOID,
+    PrivateList: _LIST_ENTRY,
+    DirtyPageThreshold: ULONG,
+    BcbSpinLock: KSPIN_LOCK,
+    PrivateCacheMap: _PRIVATE_CACHE_MAP,
+    // ROS-specific fields below
+    CacheMapVacbListHead: _LIST_ENTRY,
+    PinAccess: BOOLEAN,
+    CacheMapLock: KSPIN_LOCK,
+    FlushCacheLock: KGUARDED_MUTEX,
+    Trace: BOOLEAN,
+}
+
+type PROS_SHARED_CACHE_MAP = *mut ROS_SHARED_CACHE_MAP;
+
+// Compile-time size assertions to match C layout
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<ROS_SHARED_CACHE_MAP>() == 352);
+#[cfg(target_pointer_width = "64")]
+const _VACB_SIZE: () = assert!(core::mem::size_of::<ROS_VACB>() == 88);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<ROS_SHARED_CACHE_MAP>() == 240);
+#[cfg(target_pointer_width = "32")]
+const _VACB_SIZE: () = assert!(core::mem::size_of::<ROS_VACB>() == 56);
+
+const VACB_MAPPING_GRANULARITY: ULONG = 262144;
+const NODE_TYPE_SHARED_MAP: USHORT = 0x2DD;
+const NODE_TYPE_PRIVATE_MAP: USHORT = 0x2EE;
+const SHARED_CACHE_MAP_IN_CREATION: ULONG = 0x01;
+const SHARED_CACHE_MAP_IN_LAZYWRITE: ULONG = 0x02;
+const WRITEBEHIND_DISABLED: ULONG = 0x04;
+const TAG_BCB: ULONG = u32::from_le_bytes(*b"BCB ");
+const TAG_SHARED_CACHE_MAP: ULONG = u32::from_le_bytes(*b"SCM ");
+const TAG_VACB: ULONG = u32::from_le_bytes(*b"VACB");
+const TAG_PRIVATE_CACHE_MAP: ULONG = u32::from_le_bytes(*b"PCM ");
+const FSRTL_CACHE_TOP_LEVEL_IRP: usize = 0x1;
+const LockQueueMasterLock: i32 = 17;
+const SEC_RESERVE: ULONG = 0x4000000;
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbIncRefCount_(vacb: PROS_VACB, file: PCSTR, line: i32) -> u32 {
-    let Refs = InterlockedIncrement(&mut (*vacb).ReferenceCount as *mut _ as *mut i32);
+pub static mut DirtyVacbListHead: _LIST_ENTRY = unsafe { core::mem::zeroed() };
+static mut VacbLruListHead: _LIST_ENTRY = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut iBcbLookasideList: _NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+static mut SharedCacheMapLookasideList: _NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+static mut VacbLookasideList: _NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+
+#[no_mangle]
+pub static mut CcDirtyPageThreshold: ULONG = 0;
+#[no_mangle]
+pub static mut CcTotalDirtyPages: ULONG = 0;
+#[no_mangle]
+pub static mut CcDeferredWrites: _LIST_ENTRY = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut CcDeferredWriteSpinLock: KSPIN_LOCK = unsafe { core::mem::zeroed() };
+static mut CcCleanSharedCacheMapList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
+
+struct LazyWriterStruct {
+    ScanActive: BOOLEAN,
+}
+
+static mut LazyWriter: LazyWriterStruct = LazyWriterStruct { ScanActive: 0 };
+
+extern "system" {
+    fn CcScheduleLazyWriteScan(wait: BOOLEAN);
+    fn FsRtlAcquireFileForCcFlushEx(file_object: PFILE_OBJECT) -> NTSTATUS;
+    fn FsRtlReleaseFileForCcFlush(file_object: PFILE_OBJECT);
+    fn ARM64_UART_TRACE(msg: *const u8);
+    static mut MmThrottleTop: ULONG;
+    static mut MmThrottleBottom: ULONG;
+    static mut MmModifiedPageListHead: MMPFNLIST;
+}
+
+unsafe fn IsPointInRange(start: LONGLONG, length: ULONG, point: LONGLONG) -> BOOLEAN {
+    if point >= start && point < start + length as LONGLONG {
+        1u8
+    } else {
+        0u8
+    }
+}
+
+unsafe fn BooleanFlagOn(flags: ULONG, flag: ULONG) -> BOOLEAN {
+    if (flags & flag) != 0 { 1u8 } else { 0u8 }
+}
+
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbIncRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+    let refs = InterlockedIncrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG;
     if (*(*vacb).SharedCacheMap).Trace != 0 {
-        DbgPrint(
-            b"(%s:%i) VACB %p ++RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as PCSTR,
-            file,
-            line,
-            vacb,
-            Refs,
-            (*vacb).Dirty,
-            (*vacb).PageOut,
-        );
+        // DbgPrint(
+            // b"(%s:%i) VACB %p ++RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as *const i8,
+            // file, line, vacb, refs, (*vacb).Dirty as u32, (*vacb).PageOut
+        // );
     }
-
-    Refs as u32
+    refs
 }
 
+#[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbDecRefCount_(vacb: PROS_VACB, file: PCSTR, line: i32) -> u32 {
-    let VacbDirty: u8 = (*vacb).Dirty;
-    let VacbTrace: u8 = (*(*vacb).SharedCacheMap).Trace;
-    let VacbPageOut: u32 = (*vacb).PageOut;
+pub unsafe extern "system" fn CcRosVacbDecRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+    let vacb_dirty = (*vacb).Dirty;
+    let vacb_trace = (*(*vacb).SharedCacheMap).Trace;
+    let vacb_page_out = (*vacb).PageOut;
 
-    let Refs: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut i32) as u32;
+    let refs = InterlockedDecrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG;
     
-    if VacbTrace != 0 {
-        DbgPrint(b"(%s:%i) VACB %p --RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as *const i8,
-                 file, line, vacb, Refs, VacbDirty, VacbPageOut);
+    if refs == 0 && vacb_dirty != 0 {
+        DbgBreakPoint();
+    }
+    
+    if vacb_trace != 0 {
+        // DbgPrint(
+            // b"(%s:%i) VACB %p --RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as *const i8,
+            // file, line, vacb, refs, vacb_dirty as u32, vacb_page_out
+        // );
     }
 
-    if Refs == 0 {
+    if refs == 0 {
         CcRosInternalFreeVacb(vacb);
     }
 
-    Refs
+    refs
+}
+
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbGetRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+    let refs = InterlockedCompareExchange(
+        core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG,
+        0,
+        0
+    ) as ULONG;
+    
+    if (*(*vacb).SharedCacheMap).Trace != 0 {
+        // DbgPrint(
+            // b"(%s:%i) VACB %p ==RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as *const i8,
+            // file, line, vacb, refs, (*vacb).Dirty as u32, (*vacb).PageOut
+        // );
+    }
+
+    refs
+}
+
+#[cfg(not(debug_assertions))]
+unsafe fn CcRosVacbIncRefCount(vacb: PROS_VACB) -> ULONG {
+    InterlockedIncrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG
+}
+
+#[cfg(not(debug_assertions))]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
+    let refs = InterlockedDecrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG;
+    if refs == 0 {
+        CcRosInternalFreeVacb(vacb);
+    }
+    refs
+}
+
+#[cfg(not(debug_assertions))]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
+    InterlockedCompareExchange(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG, 0, 0) as ULONG
+}
+
+#[cfg(debug_assertions)]
+unsafe fn CcRosVacbIncRefCount(vacb: PROS_VACB) -> ULONG {
+    CcRosVacbIncRefCount_(vacb, b"inline\0".as_ptr() as *const i8, 0)
+}
+
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
+    CcRosVacbDecRefCount_(vacb, b"inline\0".as_ptr() as *const i8, 0)
+}
+
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub unsafe extern "system" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
+    CcRosVacbGetRefCount_(vacb, b"inline\0".as_ptr() as *const i8, 0)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CcRosVacbGetRefCount_(
-    vacb: PROS_VACB,
-    file: PCSTR,
-    line: i32,
-) -> u32 {
-    let Refs: u32;
-    
-    let mut current = 0i32;
-    Refs = core::arch::x86_64::_InterlockedCompareExchange(
-        core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut i32,
-        0,
-        0,
-    ) as u32;
-    
-    if (*(*vacb).SharedCacheMap).Trace != 0 {
-        DbgPrint(
-            b"(%s:%i) VACB %p ==RefCount=%lu, Dirty %u, PageOut %lu\n\0".as_ptr() as *const u8,
-            file,
-            line,
-            vacb,
-            Refs,
-            (*vacb).Dirty,
-            (*vacb).PageOut,
-        );
-    }
-    
-    Refs
-}
-
-unsafe fn CcRosTraceCacheMap(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    Trace: u8,
+pub unsafe extern "system" fn CcRosTraceCacheMap(
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    trace: BOOLEAN
 ) {
     #[cfg(debug_assertions)]
     {
-        if SharedCacheMap.is_null() {
+        if shared_cache_map.is_null() {
             return;
         }
 
-        (*SharedCacheMap).Trace = Trace;
+        (*shared_cache_map).Trace = trace;
 
-        if Trace != 0 {
-            let oldirql = KeAcquireQueuedSpinLock(0i32);
-            KeAcquireSpinLockAtDpcLevel(&mut (*SharedCacheMap).CacheMapLock);
+        if trace != 0 {
+            let oldirql = KeAcquireQueuedSpinLock(17u32);
+            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
-            let mut current_entry = (*SharedCacheMap).CacheMapVacbListHead.Flink;
-            while current_entry != core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead) {
-                let current = (current_entry as *mut u8).offset(-(core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+            let mut current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
+            while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
+                let current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
                 current_entry = (*current_entry).Flink;
             }
 
-            KeReleaseSpinLockFromDpcLevel(&mut (*SharedCacheMap).CacheMapLock);
-            KeReleaseQueuedSpinLock(0i32, oldirql);
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, oldirql);
         }
-    }
-
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = SharedCacheMap;
-        let _ = Trace;
     }
 }
 
-unsafe fn CcRosFlushVacb(Vacb: PROS_VACB, Iosb: PIO_STATUS_BLOCK) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut HaveLock: u8 = 0u8;
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP = (*Vacb).SharedCacheMap;
+#[no_mangle]
+pub unsafe extern "system" fn CcRosFlushVacb(
+    vacb: PROS_VACB,
+    iosb: PIO_STATUS_BLOCK
+) -> NTSTATUS {
+    let mut status: NTSTATUS;
+    let mut have_lock = 0u8;
+    let shared_cache_map = (*vacb).SharedCacheMap;
 
-    CcRosUnmarkDirtyVacb(Vacb, 1u8);
+    CcRosUnmarkDirtyVacb(vacb, 1u8);
 
-    if IoGetTopLevelIrp() != 0xFFFFFFFF as PIRP {
-        Status = FsRtlAcquireFileForCcFlushEx((*SharedCacheMap).FileObject);
-        if NT_SUCCESS(Status) == 0 {
-            return Status;
+    if IoGetTopLevelIrp() as usize != FSRTL_CACHE_TOP_LEVEL_IRP {
+        status = FsRtlAcquireFileForCcFlushEx((*(*vacb).SharedCacheMap).FileObject);
+        if status < 0 {
+            if status < 0 {
+                CcRosMarkDirtyVacb(vacb);
+            } else {
+                if (*shared_cache_map).ValidDataLength.QuadPart < ((*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64) {
+                    (*shared_cache_map).ValidDataLength.QuadPart = (*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64;
+                }
+            }
+            return status;
         }
-        HaveLock = 1u8;
-    } else {
-        Status = 0i32;
+        have_lock = 1u8;
     }
 
-    Status = MmFlushSegment(
-        (*(*SharedCacheMap).FileObject).SectionObjectPointer,
-        core::ptr::addr_of_mut!((*Vacb).FileOffset),
-        0x1000u32,
-        Iosb,
+    status = MmFlushSegment(
+        (*(*shared_cache_map).FileObject).SectionObjectPointer,
+        core::ptr::addr_of_mut!((*vacb).FileOffset),
+        VACB_MAPPING_GRANULARITY,
+        iosb
     );
 
-    if HaveLock != 0 {
-        FsRtlReleaseFileForCcFlush((*SharedCacheMap).FileObject);
+    if have_lock != 0 {
+        FsRtlReleaseFileForCcFlush((*(*vacb).SharedCacheMap).FileObject);
     }
 
-    if NT_SUCCESS(Status) == 0 {
-        CcRosMarkDirtyVacb(Vacb);
+    if status < 0 {
+        CcRosMarkDirtyVacb(vacb);
     } else {
-        if (*SharedCacheMap).ValidDataLength.QuadPart
-            < ((*Vacb).FileOffset.QuadPart + 0x1000i64)
-        {
-            (*SharedCacheMap).ValidDataLength.QuadPart =
-                (*Vacb).FileOffset.QuadPart + 0x1000i64;
+        if (*shared_cache_map).ValidDataLength.QuadPart < ((*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64) {
+            (*shared_cache_map).ValidDataLength.QuadPart = (*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64;
         }
     }
 
-    Status
+    status
 }
 
 unsafe fn CcRosDeleteFileCache(
-    FileObject: PFILE_OBJECT,
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    OldIrql: PKIRQL,
-) -> i32 {
-    let mut current_entry: PLIST_ENTRY;
-    let mut Vacb: PROS_VACB;
-    let mut RefCount: u32;
-    let mut Iosb: _IO_STATUS_BLOCK;
-    let mut Status: i32;
+    file_object: PFILE_OBJECT,
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    old_irql: *mut KIRQL
+) -> NTSTATUS {
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    
+    let mut current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
+    while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
+        let vacb = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
 
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-    current_entry = (*SharedCacheMap).CacheMapVacbListHead.Flink;
-    while current_entry != core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead) {
-        Vacb = (current_entry as *mut u8).offset(-(core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+        RemoveEntryList(core::ptr::addr_of_mut!((*vacb).VacbLruListEntry));
+        InitializeListHead(core::ptr::addr_of_mut!((*vacb).VacbLruListEntry));
 
-        RemoveEntryList(core::ptr::addr_of_mut!((*Vacb).VacbLruListEntry));
-        InitializeListHead(core::ptr::addr_of_mut!((*Vacb).VacbLruListEntry));
-
-        if (*Vacb).Dirty != 0 {
-            CcRosUnmarkDirtyVacb(Vacb, 0u8);
-            (*Vacb).Dirty = 1u8;
+        if (*vacb).Dirty != 0 {
+            CcRosUnmarkDirtyVacb(vacb, 0u8);
+            (*vacb).Dirty = 1u8;
         }
 
         current_entry = (*current_entry).Flink;
     }
 
-    (*(*FileObject).SectionObjectPointer).SharedCacheMap = core::ptr::null_mut();
-    RemoveEntryList(core::ptr::addr_of_mut!((*SharedCacheMap).SharedCacheMapLinks));
+    (*file_object).SectionObjectPointer = core::ptr::null_mut();
+    RemoveEntryList(core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks));
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-    KeReleaseQueuedSpinLock(0i32, *OldIrql);
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    KeReleaseQueuedSpinLock(17u32, *old_irql);
 
-    while !IsListEmpty(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead)) {
-        Vacb = (RemoveHeadList(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead)) as *mut u8)
-            .offset(-(core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+    while !IsListEmpty(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) {
+        let vacb = (RemoveHeadList(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+        
+        InitializeListHead(core::ptr::addr_of_mut!((*vacb).CacheMapVacbListEntry));
 
-        InitializeListHead(core::ptr::addr_of_mut!((*Vacb).CacheMapVacbListEntry));
-
-        if (*Vacb).Dirty != 0 {
-            Status = MmFlushSegment(
-                (*FileObject).SectionObjectPointer,
-                core::ptr::addr_of_mut!((*Vacb).FileOffset),
-                0x1000u32,
-                core::ptr::addr_of_mut!(Iosb),
+        if (*vacb).Dirty != 0 {
+            let mut iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+            let status = MmFlushSegment(
+                (*file_object).SectionObjectPointer,
+                core::ptr::addr_of_mut!((*vacb).FileOffset),
+                VACB_MAPPING_GRANULARITY,
+                &mut iosb
             );
-            if NT_SUCCESS(Status) == 0 {
-            }
-            (*Vacb).Dirty = 0u8;
+            (*vacb).Dirty = 0u8;
         }
 
-        RefCount = CcRosVacbDecRefCount(Vacb);
+        let ref_count = CcRosVacbDecRefCount(vacb);
     }
 
-    if !(*SharedCacheMap).Section.is_null() {
-        ObDereferenceObject((*SharedCacheMap).Section as *mut core::ffi::c_void);
+    if !(*shared_cache_map).Section.is_null() {
+        ObDereferenceObject((*shared_cache_map).Section);
     }
-    ObDereferenceObject((*SharedCacheMap).FileObject as *mut core::ffi::c_void);
+    ObDereferenceObject((*shared_cache_map).FileObject as PVOID);
 
     ExFreeToNPagedLookasideList(
-        core::ptr::addr_of_mut!(SharedCacheMapLookasideList) as *mut core::ffi::c_void,
-        SharedCacheMap as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(SharedCacheMapLookasideList),
+        shared_cache_map as PVOID
     );
 
-    *OldIrql = KeAcquireQueuedSpinLock(0i32);
+    *old_irql = KeAcquireQueuedSpinLock(17u32);
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRosFlushDirtyPages(
-    Target: u32,
-    Count: *mut u32,
-    Wait: u8,
-    CalledFromLazy: u8,
-) -> i32 {
-    let mut current_entry: PLIST_ENTRY;
-    let mut Status: i32;
-    let mut OldIrql: KIRQL;
-    let FlushAll: u8 = if Target == u32::MAX { 1u8 } else { 0u8 };
+    target: ULONG,
+    count: *mut ULONG,
+    wait: BOOLEAN,
+    called_from_lazy: BOOLEAN
+) -> NTSTATUS {
+    let mut status: NTSTATUS;
+    let mut old_irql: KIRQL;
+    let flush_all = (target == MAXULONG) as BOOLEAN;
+    let mut local_target = target;
 
-    *Count = 0;
+    *count = 0;
 
     KeEnterCriticalRegion();
-    OldIrql = KeAcquireQueuedSpinLock(Locked);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    current_entry = (*core::ptr::addr_of_mut!(DirtyVacbListHead)).Flink;
-    if current_entry == core::ptr::addr_of_mut!(DirtyVacbListHead) {
-    }
-
-    let mut Target = Target;
-    while (current_entry != core::ptr::addr_of_mut!(DirtyVacbListHead) && Target > 0) || FlushAll != 0 {
-        let mut SharedCacheMap: PROS_SHARED_CACHE_MAP;
-        let mut current: PROS_VACB;
-        let mut Locked: u8;
-
+    let mut current_entry = DirtyVacbListHead.Flink;
+    
+    while ((current_entry != core::ptr::addr_of_mut!(DirtyVacbListHead)) && (local_target > 0)) || flush_all != 0 {
         if current_entry == core::ptr::addr_of_mut!(DirtyVacbListHead) {
-            if IsListEmpty(core::ptr::addr_of_mut!(DirtyVacbListHead)) != 0 {
+            if IsListEmpty(core::ptr::addr_of_mut!(DirtyVacbListHead)) {
                 break;
             }
-            current_entry = (*core::ptr::addr_of_mut!(DirtyVacbListHead)).Flink;
+            current_entry = DirtyVacbListHead.Flink;
         }
 
-        current = (current_entry as *mut u8).offset(-(core::mem::offset_of!(_ROS_VACB, DirtyVacbListEntry) as isize)) as PROS_VACB;
+        let current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, DirtyVacbListEntry) as isize)) as PROS_VACB;
         current_entry = (*current_entry).Flink;
 
         CcRosVacbIncRefCount(current);
 
-        SharedCacheMap = (*current).SharedCacheMap;
+        let shared_cache_map = (*current).SharedCacheMap;
 
-        if CalledFromLazy != 0 && BooleanFlagOn((*(*SharedCacheMap).FileObject).Flags, 0x00001000) != 0 {
+        if called_from_lazy != 0 && BooleanFlagOn((*(*shared_cache_map).FileObject).Flags, 0x10000) != 0 {
             CcRosVacbDecRefCount(current);
             continue;
         }
 
-        if CalledFromLazy != 0 && BooleanFlagOn((*SharedCacheMap).Flags, 0x00000004) != 0 {
+        if called_from_lazy != 0 && BooleanFlagOn((*shared_cache_map).Flags, WRITEBEHIND_DISABLED) != 0 {
             CcRosVacbDecRefCount(current);
             continue;
         }
 
-        if ((*SharedCacheMap).Flags & 0x00000008) != 0 {
+        if (*shared_cache_map).Flags & SHARED_CACHE_MAP_IN_LAZYWRITE != 0 {
             CcRosVacbDecRefCount(current);
             continue;
         }
 
-        (*SharedCacheMap).Flags |= 0x00000008;
+        (*shared_cache_map).Flags |= SHARED_CACHE_MAP_IN_LAZYWRITE;
+        (*shared_cache_map).OpenCount += 1;
 
-        (*SharedCacheMap).OpenCount += 1;
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
-        KeReleaseQueuedSpinLock(Locked, OldIrql);
-
-        Locked = ((*(*SharedCacheMap).Callbacks).AcquireForLazyWrite)((*SharedCacheMap).LazyWriteContext, Wait);
-        if Locked == 0 {
+        let locked = ((*(*shared_cache_map).Callbacks).AcquireForLazyWrite.unwrap())(
+            (*shared_cache_map).LazyWriteContext,
+            wait
+        );
+        
+        if locked == 0 {
             CcRosVacbDecRefCount(current);
-            OldIrql = KeAcquireQueuedSpinLock(Locked);
-            (*SharedCacheMap).Flags &= !0x00000008u32;
+            old_irql = KeAcquireQueuedSpinLock(17u32);
+            (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_LAZYWRITE;
 
-            (*SharedCacheMap).OpenCount -= 1;
-            if (*SharedCacheMap).OpenCount == 0 {
-                CcRosDeleteFileCache((*SharedCacheMap).FileObject, SharedCacheMap, core::ptr::addr_of_mut!(OldIrql));
+            (*shared_cache_map).OpenCount -= 1;
+            if (*shared_cache_map).OpenCount == 0 {
+                CcRosDeleteFileCache((*shared_cache_map).FileObject, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
             }
 
             continue;
         }
 
-        let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-        Status = CcRosFlushVacb(current, core::ptr::addr_of_mut!(Iosb));
+        let mut iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+        status = CcRosFlushVacb(current, &mut iosb);
 
-        ((*(*SharedCacheMap).Callbacks).ReleaseFromLazyWrite)((*SharedCacheMap).LazyWriteContext);
+        ((*(*shared_cache_map).Callbacks).ReleaseFromLazyWrite.unwrap())((*shared_cache_map).LazyWriteContext);
 
         CcRosVacbDecRefCount(current);
-        OldIrql = KeAcquireQueuedSpinLock(Locked);
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
-        (*SharedCacheMap).Flags &= !0x00000008u32;
+        (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_LAZYWRITE;
 
-        (*SharedCacheMap).OpenCount -= 1;
-        if (*SharedCacheMap).OpenCount == 0 {
-            CcRosDeleteFileCache((*SharedCacheMap).FileObject, SharedCacheMap, core::ptr::addr_of_mut!(OldIrql));
+        (*shared_cache_map).OpenCount -= 1;
+        if (*shared_cache_map).OpenCount == 0 {
+            CcRosDeleteFileCache((*shared_cache_map).FileObject, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
         }
 
-        if NT_SUCCESS(Status) != 0 || Status == 0x00000100i32 || Status == 0xC00000E9i32 {
-            let PagesFreed: u32 = (Iosb.Information / PAGE_SIZE as usize) as u32;
-            *Count += PagesFreed;
+        if status >= 0 || status == 0xC0000011u32 as i32 || status == 0xC00000A2u32 as i32 {
+            let pages_freed = (iosb.Information as ULONG) / (PAGE_SIZE as ULONG);
+            *count += pages_freed;
 
-            if Wait == 0 {
-                if Target < PagesFreed {
-                    Target = 0;
+            if wait == 0 {
+                if local_target < pages_freed as ULONG {
+                    local_target = 0;
                 } else {
-                    Target -= PagesFreed;
+                    local_target -= pages_freed as ULONG;
                 }
             }
         }
 
-        current_entry = (*core::ptr::addr_of_mut!(DirtyVacbListHead)).Flink;
+        current_entry = DirtyVacbListHead.Flink;
     }
 
-    KeReleaseQueuedSpinLock(Locked, OldIrql);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
     KeLeaveCriticalRegion();
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosTrimCache(Target: u32, NrFreed: *mut u32) {
+pub unsafe extern "C" fn CcRosTrimCache(
+    target: ULONG,
+    nr_freed: *mut ULONG
+) {
     let mut current_entry: PLIST_ENTRY;
     let mut current: PROS_VACB;
-    let mut PagesFreed: u32;
-    let mut oldIrql: KIRQL;
-    let mut FreeList: LIST_ENTRY = core::mem::zeroed();
-    let mut FlushedPages: u8 = 0u8;
-    let mut Target = Target;
+    let mut pages_freed: ULONG = 0;
+    let mut old_irql: KIRQL;
+    let mut free_list: _LIST_ENTRY = core::mem::zeroed();
+    let mut flushed_pages = 0u8;
+    let mut local_target = target;
 
-    InitializeListHead(&mut FreeList);
+    InitializeListHead(core::ptr::addr_of_mut!(free_list));
 
-    *NrFreed = 0;
+    *nr_freed = 0;
 
-    'retry: loop {
-        oldIrql = KeAcquireQueuedSpinLock(0); // LockQueueMasterLock = 0
+    loop {
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
-        current_entry = (*(&VacbLruListHead as *const LIST_ENTRY as *mut LIST_ENTRY)).Flink;
-        while current_entry != &VacbLruListHead as *const LIST_ENTRY as *mut LIST_ENTRY {
-            let mut Refs: u32;
+        current_entry = VacbLruListHead.Flink;
+        while current_entry != core::ptr::addr_of_mut!(VacbLruListHead) {
+            current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, VacbLruListEntry) as isize)) as PROS_VACB;
 
-            current = (current_entry as *mut u8).offset(
-                (core::mem::offset_of!(_ROS_VACB, VacbLruListEntry)) as isize,
-            ) as *mut _ROS_VACB as PROS_VACB;
-
-            KeAcquireSpinLockAtDpcLevel(
-                &mut (*current).SharedCacheMap as *mut _ as *mut _,
-            );
+            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*(*current).SharedCacheMap).CacheMapLock) as *mut _);
 
             CcRosVacbIncRefCount(current);
 
-            if core::ptr::read_volatile(&(*current).MappedCount as *const u32) > 0
-                && (*current).Dirty == 0u8
-            {
+            if InterlockedCompareExchange(core::ptr::addr_of_mut!((*current).MappedCount) as *mut LONG, 0, 0) > 0 
+                && (*current).Dirty == 0 {
             }
 
             current_entry = (*current_entry).Flink;
 
-            Refs = CcRosVacbDecRefCount(current);
+            let refs = CcRosVacbDecRefCount(current);
 
-            if Refs < 2 {
-                RemoveEntryList(&mut (*current).CacheMapVacbListEntry as *mut LIST_ENTRY);
-                RemoveEntryList(&mut (*current).VacbLruListEntry as *mut LIST_ENTRY);
-                InitializeListHead(&mut (*current).VacbLruListEntry);
+            if refs < 2 {
+                RemoveEntryList(core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
+                RemoveEntryList(core::ptr::addr_of_mut!((*current).VacbLruListEntry));
+                InitializeListHead(core::ptr::addr_of_mut!((*current).VacbLruListEntry));
                 InsertHeadList(
-                    &mut FreeList as *mut LIST_ENTRY,
-                    &mut (*current).CacheMapVacbListEntry as *mut LIST_ENTRY,
+                    core::ptr::addr_of_mut!(free_list),
+                    core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry)
                 );
 
-                PagesFreed = if (0x1000 / PAGE_SIZE) < Target {
-                    0x1000 / PAGE_SIZE
-                } else {
-                    Target
-                };
-                Target -= PagesFreed;
-                *NrFreed += PagesFreed;
+                pages_freed = core::cmp::min(VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG, local_target);
+                local_target -= pages_freed;
+                *nr_freed += pages_freed;
             }
 
-            KeReleaseSpinLockFromDpcLevel(
-                &mut (*current).SharedCacheMap as *mut _ as *mut _,
-            );
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*(*current).SharedCacheMap).CacheMapLock) as *mut _);
         }
 
-        KeReleaseQueuedSpinLock(0, oldIrql); // LockQueueMasterLock = 0
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
-        if (Target > 0) && (FlushedPages == 0u8) {
-            CcRosFlushDirtyPages(Target, &mut PagesFreed, 0u8, 0u8);
-            FlushedPages = 1u8;
+        if local_target > 0 && flushed_pages == 0 {
+            CcRosFlushDirtyPages(local_target, core::ptr::addr_of_mut!(pages_freed), 0u8, 0u8);
+            flushed_pages = 1u8;
 
-            if PagesFreed < Target {
-                Target = PagesFreed;
+            if pages_freed < local_target {
+                local_target = pages_freed;
             }
 
-            if PagesFreed != 0 {
-                break 'retry;
+            if pages_freed != 0 {
+                continue;
             }
         }
 
         break;
     }
 
-    while !IsListEmpty(&FreeList) {
-        let mut Refs: u32;
-
-        current_entry = RemoveHeadList(&mut FreeList as *mut LIST_ENTRY);
-        current = (current_entry as *mut u8).offset(
-            (core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry)) as isize,
-        ) as *mut _ROS_VACB as PROS_VACB;
-        InitializeListHead(&mut (*current).CacheMapVacbListEntry);
-        Refs = CcRosVacbDecRefCount(current);
+    while !IsListEmpty(core::ptr::addr_of_mut!(free_list)) {
+        current_entry = RemoveHeadList(core::ptr::addr_of_mut!(free_list));
+        current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+        InitializeListHead(core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
+        let refs = CcRosVacbDecRefCount(current);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRosReleaseVacb(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    Vacb: PROS_VACB,
-    Dirty: BOOLEAN,
-    Mapped: BOOLEAN,
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    vacb: PROS_VACB,
+    dirty: BOOLEAN,
+    mapped: BOOLEAN
 ) -> NTSTATUS {
-    let Refs: ULONG;
-
-    if Dirty != 0 && (*Vacb).Dirty == 0 {
-        CcRosMarkDirtyVacb(Vacb);
+    if dirty != 0 && (*vacb).Dirty == 0 {
+        CcRosMarkDirtyVacb(vacb);
     }
 
-    if Mapped != 0 {
-        if InterlockedIncrement(core::ptr::addr_of_mut!((*Vacb).MappedCount) as *mut i32) == 1 {
-            CcRosVacbIncRefCount(Vacb);
+    if mapped != 0 {
+        if InterlockedIncrement(core::ptr::addr_of_mut!((*vacb).MappedCount) as *mut LONG) == 1 {
+            CcRosVacbIncRefCount(vacb);
         }
     }
 
-    Refs = CcRosVacbDecRefCount(Vacb);
+    let refs = CcRosVacbDecRefCount(vacb);
 
     STATUS_SUCCESS
 }
 
-unsafe fn CcRosLookupVacb(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    FileOffset: i64,
+#[no_mangle]
+pub unsafe extern "system" fn CcRosLookupVacb(
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    file_offset: LONGLONG
 ) -> PROS_VACB {
     let mut current_entry: PLIST_ENTRY;
     let mut current: PROS_VACB;
-    let mut oldIrql: KIRQL;
+    let old_irql: KIRQL;
 
-    oldIrql = KeAcquireQueuedSpinLock(0u32);
-    KeAcquireSpinLockAtDpcLevel(&(*SharedCacheMap).CacheMapLock);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
-    current_entry = (*SharedCacheMap).CacheMapVacbListHead.Flink;
-    loop {
-        if current_entry == core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead) {
-            break;
-        }
-
-        current = (current_entry as usize - core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry)) as PROS_VACB;
-
+    current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
+    while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
+        current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+        
         if IsPointInRange(
             (*current).FileOffset.QuadPart,
-            0x4000i64,
-            FileOffset,
-        ) != 0
-        {
+            VACB_MAPPING_GRANULARITY,
+            file_offset
+        ) != 0 {
             CcRosVacbIncRefCount(current);
-            KeReleaseSpinLockFromDpcLevel(&(*SharedCacheMap).CacheMapLock);
-            KeReleaseQueuedSpinLock(0u32, oldIrql);
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return current;
         }
-        if (*current).FileOffset.QuadPart > FileOffset {
+        
+        if (*current).FileOffset.QuadPart > file_offset {
             break;
         }
+        
         current_entry = (*current_entry).Flink;
     }
 
-    KeReleaseSpinLockFromDpcLevel(&(*SharedCacheMap).CacheMapLock);
-    KeReleaseQueuedSpinLock(0u32, oldIrql);
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     core::ptr::null_mut()
 }
 
-unsafe fn CcRosMarkDirtyVacb(Vacb: PROS_VACB) {
-    let mut oldIrql: KIRQL;
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP;
+#[no_mangle]
+pub unsafe extern "system" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
+    let old_irql: KIRQL;
+    let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    SharedCacheMap = (*Vacb).SharedCacheMap;
+    shared_cache_map = (*vacb).SharedCacheMap;
 
-    oldIrql = KeAcquireQueuedSpinLock(0); // LockQueueMasterLock = 0
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
+    old_irql = KeAcquireQueuedSpinLock(17u32);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     InsertTailList(
         core::ptr::addr_of_mut!(DirtyVacbListHead),
-        core::ptr::addr_of_mut!((*Vacb).DirtyVacbListEntry),
+        core::ptr::addr_of_mut!((*vacb).DirtyVacbListEntry)
     );
-    CcTotalDirtyPages += 16 / PAGE_SIZE; // VACB_MAPPING_GRANULARITY = 16 * PAGE_SIZE = 0x4000, so 16 / PAGE_SIZE = 1 on x86
-    (*SharedCacheMap).DirtyPages += 16 / PAGE_SIZE;
-    CcRosVacbIncRefCount(Vacb);
+    CcTotalDirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
+    (*shared_cache_map).DirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
+    CcRosVacbIncRefCount(vacb);
 
-    RemoveEntryList(core::ptr::addr_of_mut!((*Vacb).VacbLruListEntry));
+    RemoveEntryList(core::ptr::addr_of_mut!((*vacb).VacbLruListEntry));
     InsertTailList(
         core::ptr::addr_of_mut!(VacbLruListHead),
-        core::ptr::addr_of_mut!((*Vacb).VacbLruListEntry),
+        core::ptr::addr_of_mut!((*vacb).VacbLruListEntry)
     );
 
-    (*Vacb).Dirty = 1u8;
+    (*vacb).Dirty = 1u8;
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     if LazyWriter.ScanActive == 0 {
         CcScheduleLazyWriteScan(0u8);
     }
-    KeReleaseQueuedSpinLock(0, oldIrql); // LockQueueMasterLock = 0
+    
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 }
 
-unsafe fn CcRosUnmarkDirtyVacb(Vacb: PROS_VACB, LockViews: u8) {
-    let mut oldIrql: KIRQL;
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP;
+#[no_mangle]
+pub unsafe extern "system" fn CcRosUnmarkDirtyVacb(
+    vacb: PROS_VACB,
+    lock_views: BOOLEAN
+) {
+    let mut old_irql: KIRQL = 0;
+    let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    SharedCacheMap = (*Vacb).SharedCacheMap;
+    shared_cache_map = (*vacb).SharedCacheMap;
 
-    if LockViews != 0 {
-        oldIrql = KeAcquireQueuedSpinLock(17i32);
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
+    if lock_views != 0 {
+        old_irql = KeAcquireQueuedSpinLock(17u32);
+        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
     }
 
-    (*Vacb).Dirty = 0u8;
+    (*vacb).Dirty = 0u8;
 
-    RemoveEntryList(core::ptr::addr_of_mut!((*Vacb).DirtyVacbListEntry));
-    InitializeListHead(core::ptr::addr_of_mut!((*Vacb).DirtyVacbListEntry));
+    RemoveEntryList(core::ptr::addr_of_mut!((*vacb).DirtyVacbListEntry));
+    InitializeListHead(core::ptr::addr_of_mut!((*vacb).DirtyVacbListEntry));
 
-    CcTotalDirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE;
-    (*(*Vacb).SharedCacheMap).DirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE;
+    CcTotalDirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
+    (*shared_cache_map).DirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
 
-    CcRosVacbDecRefCount(Vacb);
+    CcRosVacbDecRefCount(vacb);
 
-    if LockViews != 0 {
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-        KeReleaseQueuedSpinLock(17i32, oldIrql);
+    if lock_views != 0 {
+        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+        KeReleaseQueuedSpinLock(17u32, old_irql);
     }
 }
 
-unsafe fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
-    let mut oldIrql: KIRQL = 0;
+#[no_mangle]
+pub unsafe extern "system" fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
+    let old_irql: KIRQL;
     let mut current_entry: PLIST_ENTRY;
     let mut to_free: PROS_VACB = core::ptr::null_mut();
 
-    oldIrql = KeAcquireQueuedSpinLock(0); // LockQueueMasterLock
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    current_entry = (*VacbLruListHead.Flink);
-    while (current_entry != core::ptr::addr_of_mut!(VacbLruListHead)) && (to_free == core::ptr::null_mut()) {
-        let Refs: ULONG;
-        let current: PROS_VACB;
+    current_entry = VacbLruListHead.Flink;
+    while (current_entry != core::ptr::addr_of_mut!(VacbLruListHead)) && to_free.is_null() {
+        let current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, VacbLruListEntry) as isize)) as PROS_VACB;
 
-        let current_ptr = (current_entry as *mut u8).offset(-(core::mem::offset_of!(ROS_VACB, VacbLruListEntry) as isize)) as PROS_VACB;
-        current = current_ptr;
+        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*(*current).SharedCacheMap).CacheMapLock) as *mut _);
 
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*current).SharedCacheMap.CacheMapLock));
-
-        Refs = CcRosVacbGetRefCount(current);
-        if Refs < 2 {
+        let refs = CcRosVacbGetRefCount(current);
+        if refs < 2 {
             RemoveEntryList(core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
             InitializeListHead(core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
             RemoveEntryList(core::ptr::addr_of_mut!((*current).VacbLruListEntry));
@@ -617,47 +746,50 @@ unsafe fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
             to_free = current;
         }
 
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*current).SharedCacheMap.CacheMapLock));
+        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*(*current).SharedCacheMap).CacheMapLock) as *mut _);
 
         current_entry = (*current_entry).Flink;
     }
 
-    KeReleaseQueuedSpinLock(0, oldIrql); // LockQueueMasterLock
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
-    if to_free == core::ptr::null_mut() {
+    if to_free.is_null() {
         return 0u8;
     }
 
-    NT_VERIFY((CcRosVacbDecRefCount(to_free) == 0) as BOOLEAN);
+    CcRosVacbDecRefCount(to_free);
 
-    return 1u8;
+    1u8
 }
 
 unsafe fn CcRosCreateVacb(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    FileOffset: i64,
-    Vacb: *mut PROS_VACB,
-) -> i32 {
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    file_offset: LONGLONG,
+    vacb: *mut PROS_VACB
+) -> NTSTATUS {
     let mut current: PROS_VACB;
     let mut previous: PROS_VACB;
     let mut current_entry: PLIST_ENTRY;
-    let mut Status: i32;
-    let mut oldIrql: KIRQL;
-    let mut Refs: u32;
-    let mut ViewSize: usize = 0x10000;
+    let mut status: NTSTATUS;
+    let mut old_irql: KIRQL;
+    let mut view_size: SIZE_T = VACB_MAPPING_GRANULARITY as SIZE_T;
 
-    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc\r\n".as_ptr());
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc\r\n\0".as_ptr());
+    
     current = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(VacbLookasideList)) as PROS_VACB;
-    if current == core::ptr::null_mut() {
+    if current.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc done\r\n".as_ptr());
-
+    
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc done\r\n\0".as_ptr());
+    
     (*current).BaseAddress = core::ptr::null_mut();
     (*current).Dirty = 0u8;
-    (*current).PageOut = 0u8;
-    (*current).FileOffset.QuadPart = ROUND_DOWN(FileOffset, 0x10000);
-    (*current).SharedCacheMap = SharedCacheMap;
+    (*current).PageOut = 0;
+    (*current).FileOffset.QuadPart = (file_offset / VACB_MAPPING_GRANULARITY as i64) * VACB_MAPPING_GRANULARITY as i64;
+    (*current).SharedCacheMap = shared_cache_map;
     (*current).MappedCount = 0;
     (*current).ReferenceCount = 0;
     InitializeListHead(core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
@@ -667,109 +799,136 @@ unsafe fn CcRosCreateVacb(
     CcRosVacbIncRefCount(current);
 
     loop {
-        ARM64_UART_TRACE(b"[CC] CreateVacb: MmMapViewInSystemSpaceEx\r\n".as_ptr());
-        Status = MmMapViewInSystemSpaceEx(
-            (*SharedCacheMap).Section,
+        #[cfg(target_arch = "aarch64")]
+        ARM64_UART_TRACE(b"[CC] CreateVacb: MmMapViewInSystemSpaceEx\r\n\0".as_ptr());
+        
+        status = MmMapViewInSystemSpaceEx(
+            (*shared_cache_map).Section,
             core::ptr::addr_of_mut!((*current).BaseAddress),
-            core::ptr::addr_of_mut!(ViewSize),
+            core::ptr::addr_of_mut!(view_size),
             core::ptr::addr_of_mut!((*current).FileOffset),
-            0,
+            0
         );
-        if NT_SUCCESS(Status) != 0 {
+        
+        if status >= 0 {
             #[cfg(target_arch = "aarch64")]
-            ARM64_BARRIER();
-            ARM64_UART_TRACE(b"[CC] CreateVacb: MapView done\r\n".as_ptr());
+            {
+                core::arch::asm!("dsb sy", "isb", options(nostack));
+                ARM64_UART_TRACE(b"[CC] CreateVacb: MapView done\r\n\0".as_ptr());
+            }
             break;
         }
 
         if CcRosFreeOneUnusedVacb() == 0 {
-            ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(VacbLookasideList), current as *mut core::ffi::c_void);
-            return Status;
+            ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(VacbLookasideList), current as PVOID);
+            return status;
         }
     }
 
-    oldIrql = KeAcquireQueuedSpinLock(0);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    *Vacb = current;
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-    current_entry = (*SharedCacheMap).CacheMapVacbListHead.Flink;
+    *vacb = current;
+    
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
     previous = core::ptr::null_mut();
-
-    while current_entry != core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead) {
-        current = (current_entry as usize - core::mem::offset_of!(_ROS_VACB, CacheMapVacbListEntry)) as PROS_VACB;
-
-        if IsPointInRange((*current).FileOffset.QuadPart, 0x10000, FileOffset) != 0 {
+    
+    while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
+        current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+        
+        if IsPointInRange(
+            (*current).FileOffset.QuadPart,
+            VACB_MAPPING_GRANULARITY,
+            file_offset
+        ) != 0 {
             CcRosVacbIncRefCount(current);
-            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-            KeReleaseQueuedSpinLock(0, oldIrql);
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, old_irql);
 
-            Refs = CcRosVacbDecRefCount(*Vacb);
+            let refs = CcRosVacbDecRefCount(*vacb);
 
-            *Vacb = current;
+            *vacb = current;
             return STATUS_SUCCESS;
         }
-
-        if (*current).FileOffset.QuadPart < FileOffset {
+        
+        if (*current).FileOffset.QuadPart < file_offset {
             previous = current;
         }
-
-        if (*current).FileOffset.QuadPart > FileOffset {
+        
+        if (*current).FileOffset.QuadPart > file_offset {
             break;
         }
-
+        
         current_entry = (*current_entry).Flink;
     }
-
-    current = *Vacb;
-    if previous != core::ptr::null_mut() {
-        InsertHeadList(core::ptr::addr_of_mut!((*previous).CacheMapVacbListEntry), core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
+    
+    current = *vacb;
+    if !previous.is_null() {
+        InsertHeadList(
+            core::ptr::addr_of_mut!((*previous).CacheMapVacbListEntry),
+            core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry)
+        );
     } else {
-        InsertHeadList(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead), core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry));
+        InsertHeadList(
+            core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead),
+            core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry)
+        );
     }
-
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-    InsertTailList(core::ptr::addr_of_mut!(VacbLruListHead), core::ptr::addr_of_mut!((*current).VacbLruListEntry));
+    
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    InsertTailList(
+        core::ptr::addr_of_mut!(VacbLruListHead),
+        core::ptr::addr_of_mut!((*current).VacbLruListEntry)
+    );
 
     CcRosVacbIncRefCount(current);
 
-    KeReleaseQueuedSpinLock(0, oldIrql);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
-    Status
+    status
 }
 
-unsafe fn CcRosEnsureVacbResident(
-    Vacb: PROS_VACB,
-    Wait: u8,
-    NoRead: u8,
-    Offset: u32,
-    Length: u32,
-) -> u8 {
-    let SharedCacheMap = (*Vacb).SharedCacheMap;
+#[no_mangle]
+pub unsafe extern "system" fn CcRosEnsureVacbResident(
+    vacb: PROS_VACB,
+    wait: BOOLEAN,
+    no_read: BOOLEAN,
+    offset: ULONG,
+    length: ULONG
+) -> BOOLEAN {
+    let shared_cache_map = (*vacb).SharedCacheMap;
 
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE(b"[CC] EnsureResident: MmIsDataSectionResident\r\n\0".as_ptr());
+    
     if MmIsDataSectionResident(
-        (*(*SharedCacheMap).FileObject).SectionObjectPointer,
-        (*Vacb).FileOffset.QuadPart + Offset as i64,
-        Length,
-    ) == 0
-    {
-        if Wait == 0 {
+        (*(*shared_cache_map).FileObject).SectionObjectPointer,
+        (*vacb).FileOffset.QuadPart + offset as i64,
+        length
+    ) == 0 {
+        #[cfg(target_arch = "aarch64")]
+        ARM64_UART_TRACE(b"[CC] EnsureResident: pages NOT resident\r\n\0".as_ptr());
+        
+        if wait == 0 {
             return 0u8;
         }
 
-        if NoRead == 0 {
+        if no_read == 0 {
             #[cfg(target_arch = "aarch64")]
             {
-                ARM64_BARRIER();
+                core::arch::asm!("dsb sy", "isb", options(nostack));
+                ARM64_UART_TRACE(b"[CC] EnsureResident: MmMakeDataSectionResident\r\n\0".as_ptr());
             }
-
-            let Status = MmMakeDataSectionResident(
-                (*(*SharedCacheMap).FileObject).SectionObjectPointer,
-                (*Vacb).FileOffset.QuadPart + Offset as i64,
-                Length,
-                core::ptr::addr_of_mut!((*SharedCacheMap).ValidDataLength),
+            
+            let status = MmMakeDataSectionResident(
+                (*(*shared_cache_map).FileObject).SectionObjectPointer,
+                (*vacb).FileOffset.QuadPart + offset as i64,
+                length,
+                core::ptr::addr_of_mut!((*shared_cache_map).ValidDataLength)
             );
-            if NT_SUCCESS(Status) == 0 {
-                ExRaiseStatus(Status);
+            
+            if status < 0 {
+                ExRaiseStatus(status);
             }
         }
     }
@@ -779,362 +938,361 @@ unsafe fn CcRosEnsureVacbResident(
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRosGetVacb(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    FileOffset: i64,
-    Vacb: *mut PROS_VACB,
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    file_offset: LONGLONG,
+    vacb: *mut PROS_VACB
 ) -> NTSTATUS {
     let mut current: PROS_VACB;
-    let Status: NTSTATUS;
-    let Refs: ULONG;
-    let mut OldIrql: KIRQL;
+    let status: NTSTATUS;
+    let mut old_irql: KIRQL;
 
-    current = CcRosLookupVacb(SharedCacheMap, FileOffset);
-    if current == core::ptr::null_mut() {
-        Status = CcRosCreateVacb(SharedCacheMap, FileOffset, &mut current);
-        if !NT_SUCCESS(Status) {
-            return Status;
+    current = CcRosLookupVacb(shared_cache_map, file_offset);
+    if current.is_null() {
+        let status = CcRosCreateVacb(shared_cache_map, file_offset, core::ptr::addr_of_mut!(current));
+        if status < 0 {
+            return status;
         }
     }
 
-    Refs = CcRosVacbGetRefCount(current);
+    let refs = CcRosVacbGetRefCount(current);
 
-    OldIrql = KeAcquireQueuedSpinLock(0u32);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    RemoveEntryList(&mut (*current).VacbLruListEntry);
-    InsertTailList(&mut VacbLruListHead, &mut (*current).VacbLruListEntry);
+    RemoveEntryList(core::ptr::addr_of_mut!((*current).VacbLruListEntry));
+    InsertTailList(
+        core::ptr::addr_of_mut!(VacbLruListHead),
+        core::ptr::addr_of_mut!((*current).VacbLruListEntry)
+    );
 
-    KeReleaseQueuedSpinLock(0u32, OldIrql);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
-    *Vacb = current;
+    *vacb = current;
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRosRequestVacb(
-    SharedCacheMap: PROS_SHARED_CACHE_MAP,
-    FileOffset: i64,
-    Vacb: *mut PROS_VACB,
+    shared_cache_map: PROS_SHARED_CACHE_MAP,
+    file_offset: LONGLONG,
+    vacb: *mut PROS_VACB
 ) -> NTSTATUS {
-    if FileOffset % VACB_MAPPING_GRANULARITY as i64 != 0 {
-        KeBugCheck(CACHE_MANAGER);
+    if file_offset % VACB_MAPPING_GRANULARITY as i64 != 0 {
+        KeBugCheck(0x34);
     }
 
-    CcRosGetVacb(SharedCacheMap, FileOffset, Vacb)
+    CcRosGetVacb(shared_cache_map, file_offset, vacb)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosInternalFreeVacb(Vacb: PROS_VACB) -> NTSTATUS {
-    let Status: NTSTATUS;
+pub unsafe extern "system" fn CcRosInternalFreeVacb(vacb: PROS_VACB) -> NTSTATUS {
+    let status: NTSTATUS;
 
-    if (*Vacb).ReferenceCount != 0 {
-        if !(*(*Vacb).SharedCacheMap).FileObject.is_null() 
-            && (*(*(*Vacb).SharedCacheMap).FileObject).FileName.Length != 0
-        {
-        }
-    }
+    status = MmUnmapViewInSystemSpace((*vacb).BaseAddress);
 
-    Status = MmUnmapViewInSystemSpace((*Vacb).BaseAddress);
-    if !NT_SUCCESS(Status) {
-    }
-
-    core::ptr::write_bytes(Vacb as *mut u8, 0xfdu8, core::mem::size_of_val(&*Vacb));
-    ExFreeToNPagedLookasideList(&VacbLookasideList, Vacb as *mut core::ffi::c_void);
+    RtlFillMemory(vacb as PVOID, core::mem::size_of::<ROS_VACB>(), 0xfd);
+    ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(VacbLookasideList), vacb as PVOID);
+    
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcFlushCache(
-    SectionObjectPointers: PSECTION_OBJECT_POINTERS,
-    FileOffset: PLARGE_INTEGER,
-    Length: ULONG,
-    IoStatus: PIO_STATUS_BLOCK,
+    section_object_pointers: PSECTION_OBJECT_POINTERS,
+    file_offset: PLARGE_INTEGER,
+    length: ULONG,
+    io_status: PIO_STATUS_BLOCK
 ) {
-    let mut SharedCacheMap: PROS_SHARED_CACHE_MAP;
-    let mut FlushStart: LONGLONG;
-    let mut FlushEnd: LONGLONG;
-    let mut Status: NTSTATUS;
+    let shared_cache_map: PROS_SHARED_CACHE_MAP;
+    let mut flush_start: LONGLONG;
+    let mut flush_end: LONGLONG;
+    let mut status: NTSTATUS;
 
-    if SectionObjectPointers.is_null() {
-        Status = STATUS_INVALID_PARAMETER;
-        goto_quit(IoStatus, Status);
-        return;
-    }
-
-    if (*SectionObjectPointers).SharedCacheMap.is_null() {
-        MmFlushSegment(SectionObjectPointers, FileOffset, Length, IoStatus);
-        return;
-    }
-
-    SharedCacheMap = (*SectionObjectPointers).SharedCacheMap;
-    
-    if !FileOffset.is_null() {
-        FlushStart = (*FileOffset).QuadPart;
-        Status = RtlLongLongAdd(FlushStart, Length as LONGLONG, core::ptr::addr_of_mut!(FlushEnd));
-        if NT_SUCCESS(Status) == 0 {
-            goto_quit(IoStatus, Status);
-            return;
+    if section_object_pointers.is_null() {
+        status = STATUS_INVALID_PARAMETER;
+        if !io_status.is_null() {
+            (*io_status).__bindgen_anon_1.Status = status;
         }
+        return;
+    }
+
+    if (*section_object_pointers).SharedCacheMap.is_null() {
+        MmFlushSegment(section_object_pointers, file_offset, length, io_status);
+        return;
+    }
+
+    shared_cache_map = (*section_object_pointers).SharedCacheMap as PROS_SHARED_CACHE_MAP;
+    
+    if !file_offset.is_null() {
+        flush_start = (*file_offset).QuadPart;
+        flush_end = flush_start + length as i64;
     } else {
-        FlushStart = 0;
-        FlushEnd = (*SharedCacheMap).FileSize.QuadPart;
+        flush_start = 0;
+        flush_end = (*shared_cache_map).FileSize.QuadPart;
     }
 
-    Status = STATUS_SUCCESS;
-    if !IoStatus.is_null() {
-        (*IoStatus).Information = 0;
+    status = STATUS_SUCCESS;
+    if !io_status.is_null() {
+        (*io_status).Information = 0;
     }
 
-    KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*SharedCacheMap).FlushCacheLock));
+    KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*shared_cache_map).FlushCacheLock));
 
-    while FlushStart < FlushEnd {
-        let mut DirtyVacb: BOOLEAN = 0u8;
-        let vacb: PROS_VACB = CcRosLookupVacb(SharedCacheMap, FlushStart);
+    while flush_start < flush_end {
+        let mut dirty_vacb = 0u8;
+        let vacb = CcRosLookupVacb(shared_cache_map, flush_start);
 
         if !vacb.is_null() {
             if (*vacb).Dirty != 0 {
-                let mut VacbIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-                Status = CcRosFlushVacb(vacb, core::ptr::addr_of_mut!(VacbIosb));
-                if NT_SUCCESS(Status) == 0 {
-                    CcRosReleaseVacb(SharedCacheMap, vacb, 0u8, 0u8);
+                let mut vacb_iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+                status = CcRosFlushVacb(vacb, &mut vacb_iosb);
+                if status < 0 {
+                    CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
                     break;
                 }
-                DirtyVacb = 1u8;
+                dirty_vacb = 1u8;
 
-                if !IoStatus.is_null() {
-                    (*IoStatus).Information += VacbIosb.Information;
+                if !io_status.is_null() {
+                    (*io_status).Information += vacb_iosb.Information;
                 }
             }
 
-            CcRosReleaseVacb(SharedCacheMap, vacb, 0u8, 0u8);
+            CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
         }
 
-        if DirtyVacb == 0 {
-            let mut MmIosb: _IO_STATUS_BLOCK;
-            let mut MmOffset: LARGE_INTEGER;
+        if dirty_vacb == 0 {
+            let mut mm_iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+            let mut mm_offset: _LARGE_INTEGER = core::mem::zeroed();
 
-            MmOffset.QuadPart = FlushStart;
+            mm_offset.QuadPart = flush_start;
 
-            if FlushEnd - (FlushEnd % VACB_MAPPING_GRANULARITY as LONGLONG) <= FlushStart {
-                Status = MmFlushSegment(
-                    SectionObjectPointers,
-                    core::ptr::addr_of_mut!(MmOffset),
-                    (FlushEnd - FlushStart) as ULONG,
-                    core::ptr::addr_of_mut!(MmIosb),
+            if flush_end - (flush_end / VACB_MAPPING_GRANULARITY as i64 * VACB_MAPPING_GRANULARITY as i64) <= flush_start {
+                status = MmFlushSegment(
+                    section_object_pointers,
+                    &mut mm_offset,
+                    (flush_end - flush_start) as ULONG,
+                    &mut mm_iosb
                 );
             } else {
-                let MmLength: ULONG = (VACB_MAPPING_GRANULARITY as LONGLONG - (FlushStart % VACB_MAPPING_GRANULARITY as LONGLONG)) as ULONG;
-                Status = MmFlushSegment(
-                    SectionObjectPointers,
-                    core::ptr::addr_of_mut!(MmOffset),
-                    MmLength,
-                    core::ptr::addr_of_mut!(MmIosb),
+                let mm_length = VACB_MAPPING_GRANULARITY - (flush_start % VACB_MAPPING_GRANULARITY as i64) as ULONG;
+                status = MmFlushSegment(
+                    section_object_pointers,
+                    &mut mm_offset,
+                    mm_length,
+                    &mut mm_iosb
                 );
             }
 
-            if NT_SUCCESS(Status) == 0 {
+            if status < 0 {
                 break;
             }
 
-            if !IoStatus.is_null() {
-                (*IoStatus).Information += MmIosb.Information;
+            if !io_status.is_null() {
+                (*io_status).Information += mm_iosb.Information;
             }
 
-            if (*SharedCacheMap).ValidDataLength.QuadPart < FlushEnd {
-                (*SharedCacheMap).ValidDataLength.QuadPart = FlushEnd;
+            if (*shared_cache_map).ValidDataLength.QuadPart < flush_end {
+                (*shared_cache_map).ValidDataLength.QuadPart = flush_end;
             }
         }
 
-        if NT_SUCCESS(RtlLongLongAdd(
-            FlushStart,
-            VACB_MAPPING_GRANULARITY as LONGLONG,
-            core::ptr::addr_of_mut!(FlushStart),
-        )) == 0
-        {
-            break;
-        }
-
-        FlushStart -= FlushStart % VACB_MAPPING_GRANULARITY as LONGLONG;
+        flush_start += VACB_MAPPING_GRANULARITY as i64;
+        flush_start -= flush_start % VACB_MAPPING_GRANULARITY as i64;
     }
 
-    KeReleaseGuardedMutex(core::ptr::addr_of_mut!((*SharedCacheMap).FlushCacheLock));
+    KeReleaseGuardedMutex(core::ptr::addr_of_mut!((*shared_cache_map).FlushCacheLock));
 
-    goto_quit(IoStatus, Status);
-}
-
-unsafe fn goto_quit(IoStatus: PIO_STATUS_BLOCK, Status: NTSTATUS) {
-    if !IoStatus.is_null() {
-        (*IoStatus).__bindgen_anon_1.Status = Status;
+    if !io_status.is_null() {
+        (*io_status).__bindgen_anon_1.Status = status;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosReleaseFileCache(FileObject: PFILE_OBJECT) -> i32 {
-    let mut OldIrql: KIRQL;
-    let mut PrivateMap: PPRIVATE_CACHE_MAP;
-    let mut SharedCacheMap: PROS_SHARED_CACHE_MAP;
+pub unsafe extern "system" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTSTATUS {
+    let mut old_irql: KIRQL;
+    let mut private_map: PPRIVATE_CACHE_MAP;
+    let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    OldIrql = KeAcquireQueuedSpinLock(17i32);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    if !(*(*(*FileObject).SectionObjectPointer).SharedCacheMap).is_null() {
-        SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
+    if !(*(*file_object).SectionObjectPointer).SharedCacheMap.is_null() {
+        shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
-        PrivateMap = (*FileObject).PrivateCacheMap;
-        (*FileObject).PrivateCacheMap = core::ptr::null_mut();
+        private_map = (*file_object).PrivateCacheMap as PPRIVATE_CACHE_MAP;
+        (*file_object).PrivateCacheMap = core::ptr::null_mut();
 
-        if !PrivateMap.is_null() {
-            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
-            RemoveEntryList(core::ptr::addr_of_mut!((*PrivateMap).PrivateLinks));
-            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapLock));
+        if !private_map.is_null() {
+            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            RemoveEntryList(core::ptr::addr_of_mut!((*private_map).PrivateLinks));
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
-            if PrivateMap != core::ptr::addr_of_mut!((*SharedCacheMap).PrivateCacheMap) {
-                ExFreePoolWithTag(PrivateMap as *mut core::ffi::c_void, TAG_PRIVATE_CACHE_MAP);
+            if private_map != core::ptr::addr_of_mut!((*shared_cache_map).PrivateCacheMap) {
+                ExFreePoolWithTag(private_map as PVOID, TAG_PRIVATE_CACHE_MAP);
             } else {
-                (*PrivateMap).NodeTypeCode = 0;
+                (*private_map).__bindgen_anon_1.NodeTypeCode = 0;
             }
 
-            (*SharedCacheMap).OpenCount -= 1;
-            if (*SharedCacheMap).OpenCount == 0 {
-                CcRosDeleteFileCache(FileObject, SharedCacheMap, core::ptr::addr_of_mut!(OldIrql));
+            (*shared_cache_map).OpenCount -= 1;
+            if (*shared_cache_map).OpenCount == 0 {
+                CcRosDeleteFileCache(file_object, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
             }
         }
     }
-    KeReleaseQueuedSpinLock(17i32, OldIrql);
+    
+    KeReleaseQueuedSpinLock(17u32, old_irql);
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRosInitializeFileCache(
-    FileObject: PFILE_OBJECT,
-    FileSizes: PCC_FILE_SIZES,
-    PinAccess: u8,
-    CallBacks: PCACHE_MANAGER_CALLBACKS,
-    LazyWriterContext: *mut core::ffi::c_void,
-) -> i32 {
-    let mut OldIrql: KIRQL;
-    let mut Allocated: u8;
-    let mut SharedCacheMap: PROS_SHARED_CACHE_MAP;
+    file_object: PFILE_OBJECT,
+    file_sizes: PCC_FILE_SIZES,
+    pin_access: BOOLEAN,
+    call_backs: PCACHE_MANAGER_CALLBACKS,
+    lazy_writer_context: PVOID
+) -> NTSTATUS {
+    let mut old_irql: KIRQL;
+    let mut allocated: BOOLEAN;
+    let mut shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    OldIrql = KeAcquireQueuedSpinLock(17i32);
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    Allocated = 0u8;
-    SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
-    if SharedCacheMap.is_null() {
-        SharedCacheMap = ExAllocateFromNPagedLookasideList(&SharedCacheMapLookasideList) as PROS_SHARED_CACHE_MAP;
-        if SharedCacheMap.is_null() {
-            KeReleaseQueuedSpinLock(17i32, OldIrql);
+    allocated = 0u8;
+    shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
+    
+    if shared_cache_map.is_null() {
+        shared_cache_map = ExAllocateFromNPagedLookasideList(
+            core::ptr::addr_of_mut!(SharedCacheMapLookasideList)
+        ) as PROS_SHARED_CACHE_MAP;
+        
+        if shared_cache_map.is_null() {
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        RtlZeroMemory(SharedCacheMap as *mut core::ffi::c_void, core::mem::size_of::<_ROS_SHARED_CACHE_MAP>());
-        (*SharedCacheMap).NodeTypeCode = NODE_TYPE_SHARED_MAP;
-        (*SharedCacheMap).NodeByteSize = core::mem::size_of::<_ROS_SHARED_CACHE_MAP>();
-        (*SharedCacheMap).FileObject = FileObject;
-        (*SharedCacheMap).Callbacks = CallBacks;
-        (*SharedCacheMap).LazyWriteContext = LazyWriterContext;
-        (*SharedCacheMap).SectionSize = (*FileSizes).AllocationSize;
-        (*SharedCacheMap).FileSize = (*FileSizes).FileSize;
-        (*SharedCacheMap).ValidDataLength = (*FileSizes).ValidDataLength;
-        (*SharedCacheMap).PinAccess = PinAccess;
-        (*SharedCacheMap).DirtyPageThreshold = 0;
-        (*SharedCacheMap).DirtyPages = 0;
-        InitializeListHead(&mut (*SharedCacheMap).PrivateList);
-        KeInitializeSpinLock(&mut (*SharedCacheMap).CacheMapLock);
-        InitializeListHead(&mut (*SharedCacheMap).CacheMapVacbListHead);
-        InitializeListHead(&mut (*SharedCacheMap).BcbList);
-        KeInitializeGuardedMutex(&mut (*SharedCacheMap).FlushCacheLock);
+        
+        RtlZeroMemory(shared_cache_map as PVOID, core::mem::size_of::<ROS_SHARED_CACHE_MAP>());
+        (*shared_cache_map).NodeTypeCode = NODE_TYPE_SHARED_MAP;
+        (*shared_cache_map).NodeByteSize = core::mem::size_of::<ROS_SHARED_CACHE_MAP>() as USHORT;
+        (*shared_cache_map).FileObject = file_object;
+        (*shared_cache_map).Callbacks = call_backs;
+        (*shared_cache_map).LazyWriteContext = lazy_writer_context;
+        (*shared_cache_map).SectionSize = (*file_sizes).AllocationSize;
+        (*shared_cache_map).FileSize = (*file_sizes).FileSize;
+        (*shared_cache_map).ValidDataLength = (*file_sizes).ValidDataLength;
+        (*shared_cache_map).PinAccess = pin_access;
+        (*shared_cache_map).DirtyPageThreshold = 0;
+        (*shared_cache_map).DirtyPages = 0;
+        InitializeListHead(core::ptr::addr_of_mut!((*shared_cache_map).PrivateList));
+        KeInitializeSpinLock(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock));
+        InitializeListHead(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead));
+        InitializeListHead(core::ptr::addr_of_mut!((*shared_cache_map).BcbList));
+        KeInitializeGuardedMutex(core::ptr::addr_of_mut!((*shared_cache_map).FlushCacheLock));
 
-        (*SharedCacheMap).Flags = SHARED_CACHE_MAP_IN_CREATION;
+        (*shared_cache_map).Flags = SHARED_CACHE_MAP_IN_CREATION;
 
-        ObReferenceObjectByPointer(FileObject, FILE_ALL_ACCESS, core::ptr::null_mut(), 0i32);
+        ObReferenceObjectByPointer(
+            file_object as PVOID,
+            0x1F01FF,
+            core::ptr::null_mut(),
+            0i8
+        );
 
-        Allocated = 1u8;
-        (*(*FileObject).SectionObjectPointer).SharedCacheMap = SharedCacheMap;
-    } else if ((*SharedCacheMap).Flags & SHARED_CACHE_MAP_IN_CREATION) != 0 {
-        let mut Waiter: KEVENT;
-        let mut PreviousWaiter: PKEVENT = (*SharedCacheMap).CreateEvent;
+        allocated = 1u8;
+        (*(*file_object).SectionObjectPointer).SharedCacheMap = shared_cache_map as PVOID;
+    } else if (*shared_cache_map).Flags & SHARED_CACHE_MAP_IN_CREATION != 0 {
+        let previous_waiter = (*shared_cache_map).CreateEvent;
+        let mut waiter: _KEVENT = core::mem::zeroed();
 
-        KeInitializeEvent(&mut Waiter, _EVENT_TYPE_NotificationEvent, 0u8);
-        (*SharedCacheMap).CreateEvent = &mut Waiter;
+        KeInitializeEvent(&mut waiter, 0, 0u8);
+        (*shared_cache_map).CreateEvent = &mut waiter;
 
-        KeReleaseQueuedSpinLock(17i32, OldIrql);
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
-        KeWaitForSingleObject(&mut Waiter, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
+        KeWaitForSingleObject(&mut waiter as *mut _ as PVOID, 0, 0i8, 0u8, core::ptr::null_mut());
 
-        if !PreviousWaiter.is_null() {
-            KeSetEvent(PreviousWaiter, IO_NO_INCREMENT, 0u8);
+        if !previous_waiter.is_null() {
+            KeSetEvent(previous_waiter, 0, 0u8);
         }
 
-        OldIrql = KeAcquireQueuedSpinLock(17i32);
+        old_irql = KeAcquireQueuedSpinLock(17u32);
     }
 
-    if (*FileObject).PrivateCacheMap.is_null() {
-        let mut PrivateMap: PPRIVATE_CACHE_MAP;
+    if (*file_object).PrivateCacheMap.is_null() {
+        let private_map: PPRIVATE_CACHE_MAP;
 
-        if (*SharedCacheMap).PrivateCacheMap.NodeTypeCode != 0 {
-            PrivateMap = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<PRIVATE_CACHE_MAP>(), TAG_PRIVATE_CACHE_MAP) as PPRIVATE_CACHE_MAP;
+        if (*shared_cache_map).PrivateCacheMap.__bindgen_anon_1.NodeTypeCode != 0 {
+            private_map = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<_PRIVATE_CACHE_MAP>(), TAG_PRIVATE_CACHE_MAP) as PPRIVATE_CACHE_MAP;
         } else {
-            PrivateMap = &mut (*SharedCacheMap).PrivateCacheMap;
+            private_map = core::ptr::addr_of_mut!((*shared_cache_map).PrivateCacheMap);
         }
 
-        if PrivateMap.is_null() {
-            if Allocated != 0 {
-                RemoveEntryList(&mut (*SharedCacheMap).SharedCacheMapLinks);
-
-                (*(*FileObject).SectionObjectPointer).SharedCacheMap = core::ptr::null_mut();
-                ObDereferenceObject(FileObject as *mut core::ffi::c_void);
-                ExFreeToNPagedLookasideList(&SharedCacheMapLookasideList, SharedCacheMap as *mut core::ffi::c_void);
+        if private_map.is_null() {
+            if allocated != 0 {
+                RemoveEntryList(core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks));
+                (*(*file_object).SectionObjectPointer).SharedCacheMap = core::ptr::null_mut();
+                ObDereferenceObject(file_object as PVOID);
+                ExFreeToNPagedLookasideList(
+                    core::ptr::addr_of_mut!(SharedCacheMapLookasideList),
+                    shared_cache_map as PVOID
+                );
             }
 
-            KeReleaseQueuedSpinLock(17i32, OldIrql);
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlZeroMemory(PrivateMap as *mut core::ffi::c_void, core::mem::size_of::<PRIVATE_CACHE_MAP>());
-        (*PrivateMap).NodeTypeCode = NODE_TYPE_PRIVATE_MAP;
-        (*PrivateMap).ReadAheadMask = PAGE_SIZE - 1;
-        (*PrivateMap).FileObject = FileObject;
-        KeInitializeSpinLock(&mut (*PrivateMap).ReadAheadSpinLock);
+        RtlZeroMemory(private_map as PVOID, core::mem::size_of::<_PRIVATE_CACHE_MAP>());
+        (*private_map).__bindgen_anon_1.NodeTypeCode = NODE_TYPE_PRIVATE_MAP as i16;
+        (*private_map).ReadAheadMask = PAGE_SIZE as ULONG - 1;
+        (*private_map).FileObject = file_object;
+        (*private_map).ReadAheadSpinLock = 0;
 
-        KeAcquireSpinLockAtDpcLevel(&mut (*SharedCacheMap).CacheMapLock);
-        InsertTailList(&mut (*SharedCacheMap).PrivateList, &mut (*PrivateMap).PrivateLinks);
-        KeReleaseSpinLockFromDpcLevel(&mut (*SharedCacheMap).CacheMapLock);
+        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+        InsertTailList(
+            core::ptr::addr_of_mut!((*shared_cache_map).PrivateList),
+            core::ptr::addr_of_mut!((*private_map).PrivateLinks)
+        );
+        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
-        (*FileObject).PrivateCacheMap = PrivateMap;
-        (*SharedCacheMap).OpenCount += 1;
+        (*file_object).PrivateCacheMap = private_map as PVOID;
+        (*shared_cache_map).OpenCount += 1;
     }
 
-    KeReleaseQueuedSpinLock(17i32, OldIrql);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
-    if Allocated != 0 {
-        let mut Status: i32;
+    if allocated != 0 {
+        let mut status: NTSTATUS;
 
-        Status = MmCreateSection(
-            &mut (*SharedCacheMap).Section,
-            SECTION_ALL_ACCESS,
+        status = MmCreateSection(
+            core::ptr::addr_of_mut!((*shared_cache_map).Section),
+            0x1F001F,
             core::ptr::null_mut(),
-            &mut (*SharedCacheMap).SectionSize,
+            core::ptr::addr_of_mut!((*shared_cache_map).SectionSize),
             PAGE_READWRITE,
             SEC_RESERVE,
             core::ptr::null_mut(),
-            FileObject,
+            file_object
         );
 
-        if !NT_SUCCESS(Status) {
-            CcRosReleaseFileCache(FileObject);
-            return Status;
+        if status < 0 {
+            CcRosReleaseFileCache(file_object);
+            return status;
         }
 
-        OldIrql = KeAcquireQueuedSpinLock(17i32);
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
-        InsertTailList(&mut CcCleanSharedCacheMapList, &mut (*SharedCacheMap).SharedCacheMapLinks);
-        (*SharedCacheMap).Flags &= !SHARED_CACHE_MAP_IN_CREATION;
+        InsertTailList(
+            core::ptr::addr_of_mut!(CcCleanSharedCacheMapList),
+            core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks)
+        );
+        (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_CREATION;
 
-        if !(*SharedCacheMap).CreateEvent.is_null() {
-            KeSetEvent((*SharedCacheMap).CreateEvent, IO_NO_INCREMENT, 0u8);
-            (*SharedCacheMap).CreateEvent = core::ptr::null_mut();
+        if !(*shared_cache_map).CreateEvent.is_null() {
+            KeSetEvent((*shared_cache_map).CreateEvent, 0, 0u8);
+            (*shared_cache_map).CreateEvent = core::ptr::null_mut();
         }
 
-        KeReleaseQueuedSpinLock(17i32, OldIrql);
+        KeReleaseQueuedSpinLock(17u32, old_irql);
     }
 
     STATUS_SUCCESS
@@ -1142,150 +1300,65 @@ pub unsafe extern "system" fn CcRosInitializeFileCache(
 
 #[no_mangle]
 pub unsafe extern "system" fn CcGetFileObjectFromSectionPtrs(
-    SectionObjectPointers: PSECTION_OBJECT_POINTERS,
+    section_object_pointers: PSECTION_OBJECT_POINTERS
 ) -> PFILE_OBJECT {
-    let SharedCacheMap: PROS_SHARED_CACHE_MAP;
+    let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    CCTRACE(CC_API_DEBUG, b"SectionObjectPointers=%p\n\0".as_ptr() as PCHAR, SectionObjectPointers as *const core::ffi::c_void);
-
-    if !SectionObjectPointers.is_null() && !(*SectionObjectPointers).SharedCacheMap.is_null() {
-        SharedCacheMap = (*SectionObjectPointers).SharedCacheMap;
-        return (*SharedCacheMap).FileObject;
+    if !section_object_pointers.is_null() && !(*section_object_pointers).SharedCacheMap.is_null() {
+        shared_cache_map = (*section_object_pointers).SharedCacheMap as PROS_SHARED_CACHE_MAP;
+        return (*shared_cache_map).FileObject;
     }
+    
     core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcInitView() {
-    InitializeListHead(&mut DirtyVacbListHead);
-    InitializeListHead(&mut VacbLruListHead);
-    InitializeListHead(&mut CcDeferredWrites);
-    InitializeListHead(&mut CcCleanSharedCacheMapList);
-    KeInitializeSpinLock(&mut CcDeferredWriteSpinLock);
+    InitializeListHead(core::ptr::addr_of_mut!(DirtyVacbListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(VacbLruListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(CcDeferredWrites));
+    InitializeListHead(core::ptr::addr_of_mut!(CcCleanSharedCacheMapList));
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(CcDeferredWriteSpinLock));
+    
     ExInitializeNPagedLookasideList(
-        &mut iBcbLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(iBcbLookasideList),
+        None,
+        None,
         0,
-        core::mem::size_of::<INTERNAL_BCB>(),
+        core::mem::size_of::<_INTERNAL_BCB>(),
         TAG_BCB,
-        20,
+        20
     );
+
     ExInitializeNPagedLookasideList(
-        &mut SharedCacheMapLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(SharedCacheMapLookasideList),
+        None,
+        None,
         0,
         core::mem::size_of::<ROS_SHARED_CACHE_MAP>(),
         TAG_SHARED_CACHE_MAP,
-        20,
+        20
     );
+
     ExInitializeNPagedLookasideList(
-        &mut VacbLookasideList,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(VacbLookasideList),
+        None,
+        None,
         0,
         core::mem::size_of::<ROS_VACB>(),
         TAG_VACB,
-        20,
+        20
     );
+
     CcInitCacheZeroPage();
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn ExpKdbgExtFileCache(Argc: ntkrnl_sys::base::ULONG, Argv: *mut ntkrnl_sys::base::PCHAR) -> ntkrnl_sys::base::BOOLEAN {
-    let mut ListEntry: ntkrnl_sys::base::PLIST_ENTRY;
-    let NoName: ntkrnl_sys::base::_UNICODE_STRING = ntkrnl_sys::base::_UNICODE_STRING {
-        Length: 32u16,
-        MaximumLength: 34u16,
-        Buffer: b"No name for File\0".as_ptr() as ntkrnl_sys::base::PWSTR,
-    };
-
-    KdbpPrint(b"  Usage Summary (in kb)\n\0".as_ptr() as ntkrnl_sys::base::PCHAR);
-    KdbpPrint(b"Shared\t\tMapped\tDirty\tName\n\0".as_ptr() as ntkrnl_sys::base::PCHAR);
-
-    ListEntry = CcCleanSharedCacheMapList.Flink;
-    while ListEntry != core::ptr::addr_of_mut!(CcCleanSharedCacheMapList) {
-        let mut Vacbs: ntkrnl_sys::base::PLIST_ENTRY;
-        let mut Mapped: ntkrnl_sys::base::ULONG = 0;
-        let mut Dirty: ntkrnl_sys::base::ULONG = 0;
-        let SharedCacheMap: ntkrnl_sys::ddk::PROS_SHARED_CACHE_MAP;
-        let FileName: ntkrnl_sys::base::PUNICODE_STRING;
-        let mut Extra: ntkrnl_sys::base::PWSTR = b"\0".as_ptr() as ntkrnl_sys::base::PWSTR;
-
-        SharedCacheMap = (ListEntry as ntkrnl_sys::base::PUCHAR).offset(-(core::mem::offset_of!(ntkrnl_sys::ddk::ROS_SHARED_CACHE_MAP, SharedCacheMapLinks) as isize)) as ntkrnl_sys::ddk::PROS_SHARED_CACHE_MAP;
-
-        Dirty = ((*SharedCacheMap).DirtyPages * ntkrnl_sys::base::PAGE_SIZE) / 1024;
-
-        Vacbs = (*SharedCacheMap).CacheMapVacbListHead.Flink;
-        while Vacbs != core::ptr::addr_of_mut!((*SharedCacheMap).CacheMapVacbListHead) {
-            Mapped += 65536 / 1024;
-            Vacbs = (*Vacbs).Flink;
-        }
-
-        if !(*SharedCacheMap).FileObject.is_null() && (*(*SharedCacheMap).FileObject).FileName.Length != 0 {
-            FileName = core::ptr::addr_of_mut!((*(*SharedCacheMap).FileObject).FileName);
-        } else if !(*SharedCacheMap).FileObject.is_null() && !(*(*SharedCacheMap).FileObject).FsContext.is_null() &&
-                  (*((*(*SharedCacheMap).FileObject).FsContext as ntkrnl_sys::ddk::PFSRTL_COMMON_FCB_HEADER)).NodeTypeCode == 0x0502 &&
-                  (*((*(*SharedCacheMap).FileObject).FsContext as ntkrnl_sys::ddk::PFSRTL_COMMON_FCB_HEADER)).NodeByteSize == 0x1F8 &&
-                  (*((((*(*SharedCacheMap).FileObject).FsContext as ntkrnl_sys::base::PUCHAR).add(0x100)) as ntkrnl_sys::base::PUNICODE_STRING)).Length != 0 {
-            FileName = (((*(*SharedCacheMap).FileObject).FsContext as ntkrnl_sys::base::PUCHAR).add(0x100)) as ntkrnl_sys::base::PUNICODE_STRING;
-            Extra = b" (FastFAT)\0".as_ptr() as ntkrnl_sys::base::PWSTR;
-        } else {
-            FileName = core::ptr::addr_of_mut!(NoName) as ntkrnl_sys::base::PUNICODE_STRING;
-        }
-
-        KdbpPrint(b"%p\t%d\t%d\t%wZ%S\n\0".as_ptr() as ntkrnl_sys::base::PCHAR, SharedCacheMap, Mapped, Dirty, FileName, Extra);
-
-        ListEntry = (*ListEntry).Flink;
-    }
-
-    1u8
+extern "C" {
+    fn CcInitCacheZeroPage();
+    fn DbgPrint(format: *const i8, ...) -> ULONG;
+    fn DbgBreakPoint();
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8) -> u8 {
-    KdbpPrint(
-        b"CcTotalDirtyPages:\t%lu (%lu Kb)\n\0".as_ptr(),
-        CcTotalDirtyPages,
-        (CcTotalDirtyPages.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-    KdbpPrint(
-        b"CcDirtyPageThreshold:\t%lu (%lu Kb)\n\0".as_ptr(),
-        CcDirtyPageThreshold,
-        (CcDirtyPageThreshold.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-    KdbpPrint(
-        b"MmAvailablePages:\t%lu (%lu Kb)\n\0".as_ptr(),
-        MmAvailablePages,
-        (MmAvailablePages.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-    KdbpPrint(
-        b"MmThrottleTop:\t\t%lu (%lu Kb)\n\0".as_ptr(),
-        MmThrottleTop,
-        (MmThrottleTop.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-    KdbpPrint(
-        b"MmThrottleBottom:\t%lu (%lu Kb)\n\0".as_ptr(),
-        MmThrottleBottom,
-        (MmThrottleBottom.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-    KdbpPrint(
-        b"MmModifiedPageListHead.Total:\t%lu (%lu Kb)\n\0".as_ptr(),
-        MmModifiedPageListHead.Total,
-        (MmModifiedPageListHead.Total.wrapping_mul(PAGE_SIZE as u32)).wrapping_div(1024),
-    );
-
-    if CcTotalDirtyPages >= CcDirtyPageThreshold {
-        KdbpPrint(b"CcTotalDirtyPages above the threshold, writes should be throttled\n\0".as_ptr());
-    } else if CcTotalDirtyPages.wrapping_add(64) >= CcDirtyPageThreshold {
-        KdbpPrint(b"CcTotalDirtyPages within 64 (max charge) pages of the threshold, writes may be throttled\n\0".as_ptr());
-    } else {
-        KdbpPrint(b"CcTotalDirtyPages below the threshold, writes should not be throttled\n\0".as_ptr());
-    }
-
-    1u8
-}
 
 // ============================================================================
 // ORIGINAL C SOURCE
@@ -1551,7 +1624,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //         /* Flush to disk, if needed */
 //         if (Vacb->Dirty)
 //         {
-//             _IO_STATUS_BLOCK Iosb;
+//             IO_STATUS_BLOCK Iosb;
 //             NTSTATUS Status;
 //
 //             Status = MmFlushSegment(FileObject->SectionObjectPointer, &Vacb->FileOffset, VACB_MAPPING_GRANULARITY, &Iosb);
@@ -1691,7 +1764,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //             continue;
 //         }
 //
-//         _IO_STATUS_BLOCK Iosb;
+//         IO_STATUS_BLOCK Iosb;
 //         Status = CcRosFlushVacb(current, &Iosb);
 //
 //         SharedCacheMap->Callbacks->ReleaseFromLazyWrite(SharedCacheMap->LazyWriteContext);
@@ -1804,7 +1877,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //             KeReleaseQueuedSpinLock(LockQueueMasterLock, oldIrql);
 //
 //             /* Page out the VACB */
-//             for (i = 0; i < VACB_MAPPING_GRANULARITY / PAGE_SIZE; i++)
+//             for (i = 0; i < VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG; i++)
 //             {
 //                 Page = (PFN_NUMBER)(MmGetPhysicalAddress((PUCHAR)current->BaseAddress + (i * PAGE_SIZE)).QuadPart >> PAGE_SHIFT);
 //
@@ -1836,7 +1909,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //             InsertHeadList(&FreeList, &current->CacheMapVacbListEntry);
 //
 //             /* Calculate how many pages we freed for Mm */
-//             PagesFreed = min(VACB_MAPPING_GRANULARITY / PAGE_SIZE, Target);
+//             PagesFreed = min(VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG, Target);
 //             Target -= PagesFreed;
 //             (*NrFreed) += PagesFreed;
 //         }
@@ -1972,8 +2045,8 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //
 //     InsertTailList(&DirtyVacbListHead, &Vacb->DirtyVacbListEntry);
 //     /* FIXME: There is no reason to account for the whole VACB. */
-//     CcTotalDirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE;
-//     Vacb->SharedCacheMap->DirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE;
+//     CcTotalDirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
+//     Vacb->SharedCacheMap->DirtyPages += VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
 //     CcRosVacbIncRefCount(Vacb);
 //
 //     /* Move to the tail of the LRU list */
@@ -2015,8 +2088,8 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //     RemoveEntryList(&Vacb->DirtyVacbListEntry);
 //     InitializeListHead(&Vacb->DirtyVacbListEntry);
 //
-//     CcTotalDirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE;
-//     Vacb->SharedCacheMap->DirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE;
+//     CcTotalDirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
+//     Vacb->SharedCacheMap->DirtyPages -= VACB_MAPPING_GRANULARITY / PAGE_SIZE as ULONG;
 //
 //     CcRosVacbDecRefCount(Vacb);
 //
@@ -2470,7 +2543,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //         {
 //             if (vacb->Dirty)
 //             {
-//                 _IO_STATUS_BLOCK VacbIosb = { 0 };
+//                 IO_STATUS_BLOCK VacbIosb = { 0 };
 //                 Status = CcRosFlushVacb(vacb, &VacbIosb);
 //                 if (!NT_SUCCESS(Status))
 //                 {
@@ -2488,7 +2561,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 //
 //         if (!DirtyVacb)
 //         {
-//             _IO_STATUS_BLOCK MmIosb;
+//             IO_STATUS_BLOCK MmIosb;
 //             LARGE_INTEGER MmOffset;
 //
 //             MmOffset.QuadPart = FlushStart;
@@ -2825,7 +2898,7 @@ pub unsafe extern "system" fn ExpKdbgExtDefWrites(Argc: u32, Argv: *mut *mut u8)
 // ExpKdbgExtFileCache(ULONG Argc, PCHAR Argv[])
 // {
 //     PLIST_ENTRY ListEntry;
-//     _UNICODE_STRING NoName = RTL_CONSTANT_STRING(L"No name for File");
+//     UNICODE_STRING NoName = RTL_CONSTANT_STRING(L"No name for File");
 //
 //     KdbpPrint("  Usage Summary (in kb)\n");
 //     KdbpPrint("Shared\t\tMapped\tDirty\tName\n");

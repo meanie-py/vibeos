@@ -1,72 +1,121 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{CLONG, ExInitializeNPagedLookasideList, ExInitializePagedLookasideList, NPAGED_LOOKASIDE_LIST, PAGED_LOOKASIDE_LIST, PBASE_MCB, PLARGE_MCB, PLONGLONG, PRTL_GENERIC_TABLE, RtlDeleteElementGenericTable, RtlEnumerateGenericTable, RtlGetElementGenericTable, RtlInitializeGenericTable, RtlInsertElementGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements};
-use core::ffi::c_void;
+use ntkrnl_sys::ex::*;
+
+use ntkrnl_sys::ddk::{
+    CLONG, PBASE_MCB, PLARGE_MCB, PLONGLONG, PRTL_GENERIC_TABLE,
+    NPAGED_LOOKASIDE_LIST, _PAGED_LOOKASIDE_LIST,
+    RtlDeleteElementGenericTable, RtlEnumerateGenericTable,
+    RtlGetElementGenericTable, RtlInitializeGenericTable,
+    RtlInsertElementGenericTable, RtlLookupElementGenericTable,
+    RtlNumberGenericTableElements,
+    ExInitializeNPagedLookasideList, ExInitializePagedLookasideList,
+    RTL_GENERIC_COMPARE_RESULTS, RTL_GENERIC_TABLE,
+    _RTL_GENERIC_COMPARE_RESULTS_GenericEqual,
+    _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan,
+    _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan,
+};
 
 extern "system" {
-    fn ExAllocateFromPagedLookasideList(Lookaside: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn ExAllocateFromNPagedLookasideList(Lookaside: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn ExFreeToNPagedLookasideList(Lookaside: *mut core::ffi::c_void, Entry: *mut core::ffi::c_void);
+    fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
 
-unsafe fn McbMappingAllocate(Table: PRTL_GENERIC_TABLE, Bytes: CLONG) -> *mut core::ffi::c_void {
-    let Mcb: PBASE_MCB = (*Table).TableContext as PBASE_MCB;
-    let Result = ExAllocatePoolWithTag((*Mcb).PoolType, Bytes as usize, 0x4C4D4342u32);
-    Result
+extern "system" {
+    fn ExAllocateFromNPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_NPAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToNPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_NPAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
 
-unsafe fn McbMappingFree(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) {
-    ExFreePoolWithTag(Buffer, u32::from_le_bytes(*b"LMCB"));
+static mut FsRtlFirstMappingLookasideList: _PAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+static mut FsRtlFastMutexLookasideList: NPAGED_LOOKASIDE_LIST = unsafe { core::mem::zeroed() };
+
+#[repr(C)]
+struct LARGE_MCB_MAPPING_ENTRY {
+    RunStartVbn: LARGE_INTEGER,
+    RunEndVbn: LARGE_INTEGER,
+    StartingLbn: LARGE_INTEGER,
+}
+
+type PLARGE_MCB_MAPPING_ENTRY = *mut LARGE_MCB_MAPPING_ENTRY;
+
+#[repr(C)]
+struct LARGE_MCB_MAPPING {
+    Table: RTL_GENERIC_TABLE,
+}
+
+type PLARGE_MCB_MAPPING = *mut LARGE_MCB_MAPPING;
+
+#[repr(C)]
+struct BASE_MCB_INTERNAL {
+    MaximumPairCount: ULONG,
+    PairCount: ULONG,
+    PoolType: USHORT,
+    Flags: USHORT,
+    Mapping: PLARGE_MCB_MAPPING,
+}
+
+type PBASE_MCB_INTERNAL = *mut BASE_MCB_INTERNAL;
+
+const MAXIMUM_PAIR_COUNT: ULONG = 0xFFFFFFFF;
+const IFS_POOL_TAG: ULONG = 0x53464920;
+
+unsafe extern "system" fn McbMappingAllocate(Table: PRTL_GENERIC_TABLE, Bytes: CLONG) -> PVOID {
+    let mcb = (*Table).TableContext as PBASE_MCB;
+    let result = ExAllocatePoolWithTag((*mcb).PoolType as u32, Bytes as usize, 0x4C4D4342);
+    result
+}
+
+unsafe extern "system" fn McbMappingFree(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) {
+    ExFreePoolWithTag(Buffer, 0x4C4D4342);
 }
 
 unsafe extern "system" fn McbMappingCompare(
-    Table: PRTL_GENERIC_TABLE,
+    _Table: PRTL_GENERIC_TABLE,
     PtrA: PVOID,
     PtrB: PVOID,
 ) -> RTL_GENERIC_COMPARE_RESULTS {
-    let A: PLARGE_MCB_MAPPING_ENTRY = PtrA as PLARGE_MCB_MAPPING_ENTRY;
-    let B: PLARGE_MCB_MAPPING_ENTRY = PtrB as PLARGE_MCB_MAPPING_ENTRY;
-    let Res: RTL_GENERIC_COMPARE_RESULTS;
+    let a = PtrA as PLARGE_MCB_MAPPING_ENTRY;
+    let b = PtrB as PLARGE_MCB_MAPPING_ENTRY;
 
-    if (*A).RunStartVbn.QuadPart == (*B).RunStartVbn.QuadPart && (*A).RunEndVbn.QuadPart == (*B).RunEndVbn.QuadPart {
-        Res = GenericEqual;
-    } else if (*A).RunEndVbn.QuadPart <= (*B).RunStartVbn.QuadPart {
-        Res = GenericLessThan;
-    } else if (*A).RunEndVbn.QuadPart >= (*B).RunStartVbn.QuadPart {
-        Res = GenericGreaterThan;
+    if (*a).RunStartVbn.QuadPart == (*b).RunStartVbn.QuadPart
+        && (*a).RunEndVbn.QuadPart == (*b).RunEndVbn.QuadPart
+    {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
+    } else if (*a).RunEndVbn.QuadPart <= (*b).RunStartVbn.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan
+    } else if (*a).RunEndVbn.QuadPart >= (*b).RunStartVbn.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan
     } else {
-        Res = GenericEqual;
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
     }
-
-    Res
 }
 
-unsafe fn McbMappingIntersectCompare(
-    Table: PRTL_GENERIC_TABLE,
+unsafe extern "system" fn McbMappingIntersectCompare(
+    _Table: PRTL_GENERIC_TABLE,
     PtrA: PVOID,
     PtrB: PVOID,
 ) -> RTL_GENERIC_COMPARE_RESULTS {
-    let A: PLARGE_MCB_MAPPING_ENTRY = PtrA as PLARGE_MCB_MAPPING_ENTRY;
-    let B: PLARGE_MCB_MAPPING_ENTRY = PtrB as PLARGE_MCB_MAPPING_ENTRY;
-    let Res: RTL_GENERIC_COMPARE_RESULTS;
+    let a = PtrA as PLARGE_MCB_MAPPING_ENTRY;
+    let b = PtrB as PLARGE_MCB_MAPPING_ENTRY;
 
-    if (*A).RunStartVbn.QuadPart <= (*B).RunStartVbn.QuadPart && (*A).RunEndVbn.QuadPart > (*B).RunStartVbn.QuadPart {
-        Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
-    } else if (*A).RunStartVbn.QuadPart >= (*B).RunStartVbn.QuadPart && (*B).RunEndVbn.QuadPart > (*A).RunStartVbn.QuadPart {
-        Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
-    } else if (*A).RunStartVbn.QuadPart < (*B).RunStartVbn.QuadPart {
-        Res = _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan;
-    } else if (*A).RunStartVbn.QuadPart > (*B).RunStartVbn.QuadPart {
-        Res = _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan;
+    if (*a).RunStartVbn.QuadPart <= (*b).RunStartVbn.QuadPart
+        && (*a).RunEndVbn.QuadPart > (*b).RunStartVbn.QuadPart
+    {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
+    } else if (*a).RunStartVbn.QuadPart >= (*b).RunStartVbn.QuadPart
+        && (*b).RunEndVbn.QuadPart > (*a).RunStartVbn.QuadPart
+    {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
+    } else if (*a).RunStartVbn.QuadPart < (*b).RunStartVbn.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan
+    } else if (*a).RunStartVbn.QuadPart > (*b).RunStartVbn.QuadPart {
+        _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan
     } else {
-        Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
+        _RTL_GENERIC_COMPARE_RESULTS_GenericEqual
     }
-
-    Res
 }
 
 #[no_mangle]
@@ -76,103 +125,92 @@ pub unsafe extern "system" fn FsRtlAddBaseMcbEntry(
     Lbn: LONGLONG,
     SectorCount: LONGLONG,
 ) -> BOOLEAN {
-    let mut Result: BOOLEAN = 1u8;
-    let IntResult: BOOLEAN;
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-    let mut Node: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
-    let mut NeedleRun: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
-    let LowerRun: PLARGE_MCB_MAPPING_ENTRY;
-    let HigherRun: PLARGE_MCB_MAPPING_ENTRY;
-    let mut NewElement: BOOLEAN = 0u8;
-    let mut IntLbn: LONGLONG = 0;
-    let mut IntSectorCount: LONGLONG = 0;
+    let mut result = 1u8;
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    let mut node: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
+    let mut needle_run: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
+    let mut new_element: BOOLEAN = 0;
+    let mut int_lbn: LONGLONG = 0;
+    let mut int_sector_count: LONGLONG = 0;
 
     if Vbn < 0 {
-        Result = 0u8;
-        return Result;
+        result = 0;
+        return result;
     }
 
     if SectorCount <= 0 {
-        Result = 0u8;
-        return Result;
+        result = 0;
+        return result;
     }
 
-    IntResult = FsRtlLookupBaseMcbEntry(
+    let int_result = FsRtlLookupBaseMcbEntry(
         OpaqueMcb,
         Vbn,
-        core::ptr::addr_of_mut!(IntLbn),
-        core::ptr::addr_of_mut!(IntSectorCount),
+        &mut int_lbn,
+        &mut int_sector_count,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
-    if IntResult != 0 {
-        if IntLbn != -1 && IntLbn != Lbn {
-            Result = 0u8;
-            return Result;
+    if int_result != 0 {
+        if int_lbn != -1 && int_lbn != Lbn {
+            result = 0;
+            return result;
         }
 
-        if (IntLbn != -1) && (IntSectorCount >= SectorCount) {
-            return Result;
+        if (int_lbn != -1) && (int_sector_count >= SectorCount) {
+            return result;
         }
     }
 
     FsRtlRemoveBaseMcbEntry(OpaqueMcb, Vbn, SectorCount);
 
-    (*Node.RunStartVbn.QuadPart_mut()) = Vbn;
-    (*Node.RunEndVbn.QuadPart_mut()) = Vbn + SectorCount;
-    (*Node.StartingLbn.QuadPart_mut()) = Lbn;
+    node.RunStartVbn.QuadPart = Vbn;
+    node.RunEndVbn.QuadPart = Vbn + SectorCount;
+    node.StartingLbn.QuadPart = Lbn;
 
-    (*NeedleRun.RunStartVbn.QuadPart_mut()) = *Node.RunStartVbn.QuadPart() - 1;
-    (*NeedleRun.RunEndVbn.QuadPart_mut()) = *NeedleRun.RunStartVbn.QuadPart() + 1;
-    (*NeedleRun.StartingLbn.QuadPart_mut()) = !0u64 as LONGLONG;
-    (*Mcb).Mapping.as_mut().unwrap().Table.CompareRoutine = Some(McbMappingIntersectCompare);
-    LowerRun = RtlLookupElementGenericTable(
-        core::ptr::addr_of_mut!((*Mcb).Mapping.as_mut().unwrap().Table),
-        core::ptr::addr_of!(NeedleRun) as *const core::ffi::c_void,
-    ) as PLARGE_MCB_MAPPING_ENTRY;
-    if !LowerRun.is_null()
-        && (*LowerRun.StartingLbn.QuadPart()
-            + (*LowerRun.RunEndVbn.QuadPart() - *LowerRun.RunStartVbn.QuadPart())
-            == *Node.StartingLbn.QuadPart())
+    needle_run.RunStartVbn.QuadPart = node.RunStartVbn.QuadPart - 1;
+    needle_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart + 1;
+    needle_run.StartingLbn.QuadPart = !0u64 as i64;
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+    let lower_run =
+        RtlLookupElementGenericTable(&mut (*(*mcb).Mapping).Table, &needle_run as *const _ as PVOID)
+            as PLARGE_MCB_MAPPING_ENTRY;
+    if !lower_run.is_null()
+        && ((*lower_run).StartingLbn.QuadPart
+            + ((*lower_run).RunEndVbn.QuadPart - (*lower_run).RunStartVbn.QuadPart)
+            == node.StartingLbn.QuadPart)
     {
-        (*Node.RunStartVbn.QuadPart_mut()) = *LowerRun.RunStartVbn.QuadPart();
-        (*Node.StartingLbn.QuadPart_mut()) = *LowerRun.StartingLbn.QuadPart();
-        (*Mcb).Mapping.as_mut().unwrap().Table.CompareRoutine = Some(McbMappingCompare);
-        RtlDeleteElementGenericTable(
-            core::ptr::addr_of_mut!((*Mcb).Mapping.as_mut().unwrap().Table),
-            LowerRun as *mut core::ffi::c_void,
-        );
-        (*Mcb).PairCount = (*Mcb).PairCount - 1;
+        node.RunStartVbn.QuadPart = (*lower_run).RunStartVbn.QuadPart;
+        node.StartingLbn.QuadPart = (*lower_run).StartingLbn.QuadPart;
+        (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+        RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, lower_run as PVOID);
+        (*mcb).PairCount -= 1;
     }
 
-    (*NeedleRun.RunStartVbn.QuadPart_mut()) = *Node.RunEndVbn.QuadPart();
-    (*NeedleRun.RunEndVbn.QuadPart_mut()) = *NeedleRun.RunStartVbn.QuadPart() + 1;
-    (*Mcb).Mapping.as_mut().unwrap().Table.CompareRoutine = Some(McbMappingIntersectCompare);
-    HigherRun = RtlLookupElementGenericTable(
-        core::ptr::addr_of_mut!((*Mcb).Mapping.as_mut().unwrap().Table),
-        core::ptr::addr_of!(NeedleRun) as *const core::ffi::c_void,
-    ) as PLARGE_MCB_MAPPING_ENTRY;
-    if !HigherRun.is_null() && (*Node.StartingLbn.QuadPart() <= *HigherRun.StartingLbn.QuadPart()) {
-        (*Node.RunEndVbn.QuadPart_mut()) = *HigherRun.RunEndVbn.QuadPart();
-        (*Mcb).Mapping.as_mut().unwrap().Table.CompareRoutine = Some(McbMappingCompare);
-        RtlDeleteElementGenericTable(
-            core::ptr::addr_of_mut!((*Mcb).Mapping.as_mut().unwrap().Table),
-            HigherRun as *mut core::ffi::c_void,
-        );
-        (*Mcb).PairCount = (*Mcb).PairCount - 1;
+    needle_run.RunStartVbn.QuadPart = node.RunEndVbn.QuadPart;
+    needle_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart + 1;
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+    let higher_run =
+        RtlLookupElementGenericTable(&mut (*(*mcb).Mapping).Table, &needle_run as *const _ as PVOID)
+            as PLARGE_MCB_MAPPING_ENTRY;
+    if !higher_run.is_null() && (node.StartingLbn.QuadPart <= (*higher_run).StartingLbn.QuadPart) {
+        node.RunEndVbn.QuadPart = (*higher_run).RunEndVbn.QuadPart;
+        (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+        RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, higher_run as PVOID);
+        (*mcb).PairCount -= 1;
     }
-    (*Mcb).Mapping.as_mut().unwrap().Table.CompareRoutine = Some(McbMappingCompare);
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
 
     RtlInsertElementGenericTable(
-        core::ptr::addr_of_mut!((*Mcb).Mapping.as_mut().unwrap().Table),
-        core::ptr::addr_of!(Node) as *mut core::ffi::c_void,
+        &mut (*(*mcb).Mapping).Table,
+        &node as *const _ as PVOID,
         core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as ULONG,
-        core::ptr::addr_of_mut!(NewElement),
+        &mut new_element,
     );
-    (*Mcb).PairCount = (*Mcb).PairCount + 1;
+    (*mcb).PairCount += 1;
 
-    Result
+    result
 }
 
 #[no_mangle]
@@ -182,18 +220,10 @@ pub unsafe extern "system" fn FsRtlAddLargeMcbEntry(
     Lbn: LONGLONG,
     SectorCount: LONGLONG,
 ) -> BOOLEAN {
-    let Result: BOOLEAN;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    Result = FsRtlAddBaseMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb),
-        Vbn,
-        Lbn,
-        SectorCount,
-    );
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    Result
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result = FsRtlAddBaseMcbEntry(&mut (*Mcb).BaseMcb, Vbn, Lbn, SectorCount);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 #[no_mangle]
@@ -204,55 +234,45 @@ pub unsafe extern "system" fn FsRtlGetNextBaseMcbEntry(
     Lbn: PLONGLONG,
     SectorCount: PLONGLONG,
 ) -> BOOLEAN {
-    let mut Result: BOOLEAN = 0u8;
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-    let mut Run: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
-    let mut CurrentIndex: ULONG = 0;
-    let mut LastVbn: ULONGLONG = 0;
-    let mut LastSectorCount: ULONGLONG = 0;
+    let mut result = 0u8;
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    let mut current_index: ULONG = 0;
+    let mut last_vbn: ULONGLONG = 0;
+    let mut last_sector_count: ULONGLONG = 0;
 
-    'quit: {
-        Run = RtlEnumerateGenericTable(
-            core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-            1u8,
-        ) as PLARGE_MCB_MAPPING_ENTRY;
-        while !Run.is_null() {
-            if (*Run).RunStartVbn.QuadPart as ULONGLONG
-                > (LastVbn + LastSectorCount)
-            {
-                if RunIndex == CurrentIndex {
-                    *Vbn = (LastVbn + LastSectorCount) as LONGLONG;
-                    *Lbn = -1i64;
-                    *SectorCount = (*Run).RunStartVbn.QuadPart - *Vbn;
+    let mut run =
+        RtlEnumerateGenericTable(&mut (*(*mcb).Mapping).Table, 1u8) as PLARGE_MCB_MAPPING_ENTRY;
+    while !run.is_null() {
+        if (*run).RunStartVbn.QuadPart as u64 > (last_vbn + last_sector_count) {
+            if RunIndex == current_index {
+                *Vbn = (last_vbn + last_sector_count) as i64;
+                *Lbn = -1;
+                *SectorCount = (*run).RunStartVbn.QuadPart - *Vbn;
 
-                    Result = 1u8;
-                    break 'quit;
-                }
-
-                CurrentIndex += 1;
+                result = 1;
+                return result;
             }
 
-            if RunIndex == CurrentIndex {
-                *Vbn = (*Run).RunStartVbn.QuadPart;
-                *Lbn = (*Run).StartingLbn.QuadPart;
-                *SectorCount = (*Run).RunEndVbn.QuadPart - (*Run).RunStartVbn.QuadPart;
-
-                Result = 1u8;
-                break 'quit;
-            }
-
-            CurrentIndex += 1;
-            LastVbn = (*Run).RunStartVbn.QuadPart as ULONGLONG;
-            LastSectorCount = ((*Run).RunEndVbn.QuadPart - (*Run).RunStartVbn.QuadPart) as ULONGLONG;
-
-            Run = RtlEnumerateGenericTable(
-                core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-                0u8,
-            ) as PLARGE_MCB_MAPPING_ENTRY;
+            current_index += 1;
         }
+
+        if RunIndex == current_index {
+            *Vbn = (*run).RunStartVbn.QuadPart;
+            *Lbn = (*run).StartingLbn.QuadPart;
+            *SectorCount = (*run).RunEndVbn.QuadPart - (*run).RunStartVbn.QuadPart;
+
+            result = 1;
+            return result;
+        }
+
+        current_index += 1;
+        last_vbn = (*run).RunStartVbn.QuadPart as u64;
+        last_sector_count = ((*run).RunEndVbn.QuadPart - (*run).RunStartVbn.QuadPart) as u64;
+
+        run = RtlEnumerateGenericTable(&mut (*(*mcb).Mapping).Table, 0u8) as PLARGE_MCB_MAPPING_ENTRY;
     }
 
-    Result
+    result
 }
 
 #[no_mangle]
@@ -263,69 +283,49 @@ pub unsafe extern "system" fn FsRtlGetNextLargeMcbEntry(
     Lbn: PLONGLONG,
     SectorCount: PLONGLONG,
 ) -> BOOLEAN {
-    let Result: BOOLEAN;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    Result = FsRtlGetNextBaseMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb),
-        RunIndex,
-        Vbn,
-        Lbn,
-        SectorCount,
-    );
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    Result
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result = FsRtlGetNextBaseMcbEntry(&mut (*Mcb).BaseMcb, RunIndex, Vbn, Lbn, SectorCount);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlInitializeBaseMcb(
-    OpaqueMcb: PBASE_MCB,
-    PoolType: POOL_TYPE,
-) {
-
-    let Mcb = OpaqueMcb as *mut BASE_MCB_INTERNAL;
+pub unsafe extern "system" fn FsRtlInitializeBaseMcb(OpaqueMcb: PBASE_MCB, PoolType: POOL_TYPE) {
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
 
     if PoolType == PagedPool {
-        (*Mcb).Mapping = ExAllocateFromPagedLookasideList(
-            core::ptr::addr_of_mut!(FsRtlFirstMappingLookasideList) as *mut core::ffi::c_void
-        ) as *mut LARGE_MCB_MAPPING;
+        (*mcb).Mapping = ExAllocateFromPagedLookasideList(
+            core::ptr::addr_of_mut!(FsRtlFirstMappingLookasideList),
+        ) as PLARGE_MCB_MAPPING;
     } else {
-        (*Mcb).Mapping = ExAllocatePoolWithTag(
+        (*mcb).Mapping = ExAllocatePoolWithTag(
             PoolType | POOL_RAISE_IF_ALLOCATION_FAILURE,
             core::mem::size_of::<LARGE_MCB_MAPPING>(),
-            0x43425346u32,
-        ) as *mut LARGE_MCB_MAPPING;
+            0x46534243,
+        ) as PLARGE_MCB_MAPPING;
     }
 
-    (*Mcb).PoolType = PoolType;
-    (*Mcb).PairCount = 0;
-    (*Mcb).MaximumPairCount = MAXIMUM_PAIR_COUNT;
+    (*mcb).PoolType = PoolType as USHORT;
+    (*mcb).PairCount = 0;
+    (*mcb).MaximumPairCount = MAXIMUM_PAIR_COUNT;
     RtlInitializeGenericTable(
-        core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-        Some(McbMappingCompare),
-        Some(McbMappingAllocate),
-        Some(McbMappingFree),
-        Mcb as *mut core::ffi::c_void,
+        &mut (*(*mcb).Mapping).Table,
+        Some(abi_cast!(McbMappingCompare)),
+        Some(abi_cast!(McbMappingAllocate)),
+        Some(abi_cast!(McbMappingFree)),
+        mcb as PVOID,
     );
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlInitializeLargeMcb(
-    Mcb: PLARGE_MCB,
-    PoolType: POOL_TYPE,
-) {
-
+pub unsafe extern "system" fn FsRtlInitializeLargeMcb(Mcb: PLARGE_MCB, PoolType: POOL_TYPE) {
     (*Mcb).GuardedMutex = ExAllocateFromNPagedLookasideList(
-        core::ptr::addr_of_mut!(FsRtlFastMutexLookasideList) as *mut core::ffi::c_void
-    ) as *mut core::ffi::c_void;
+        core::ptr::addr_of_mut!(FsRtlFastMutexLookasideList),
+    ) as ntkrnl_sys::ddk::PKGUARDED_MUTEX;
 
-    KeInitializeGuardedMutex((*Mcb).GuardedMutex);
+    KeInitializeGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
 
-    FsRtlInitializeBaseMcb(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb) as *mut core::ffi::c_void,
-        PoolType,
-    );
+    FsRtlInitializeBaseMcb(&mut (*Mcb).BaseMcb, PoolType);
 }
 
 #[no_mangle]
@@ -335,7 +335,7 @@ pub unsafe extern "system" fn FsRtlInitializeLargeMcbs() {
         None,
         None,
         POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<LARGE_MCB_MAPPING>() as u32,
+        core::mem::size_of::<LARGE_MCB_MAPPING>() as _,
         IFS_POOL_TAG,
         0,
     );
@@ -345,7 +345,7 @@ pub unsafe extern "system" fn FsRtlInitializeLargeMcbs() {
         None,
         None,
         POOL_RAISE_IF_ALLOCATION_FAILURE,
-        core::mem::size_of::<KGUARDED_MUTEX>() as u32,
+        core::mem::size_of::<KGUARDED_MUTEX>() as _,
         IFS_POOL_TAG,
         0,
     );
@@ -359,55 +359,49 @@ pub unsafe extern "system" fn FsRtlLookupBaseMcbEntry(
     SectorCountFromLbn: PLONGLONG,
     StartingLbn: PLONGLONG,
     SectorCountFromStartingLbn: PLONGLONG,
-    Index: PULONG,
+    Index: *mut ULONG,
 ) -> BOOLEAN {
-    let mut Result: BOOLEAN = 0u8;
+    let mut result = 0u8;
     let mut i: ULONG = 0;
-    let mut LastVbn: LONGLONG = 0;
-    let mut LastLbn: LONGLONG = 0;
-    let mut Count: LONGLONG = 0;
+    let mut last_vbn: LONGLONG = 0;
+    let mut last_lbn: LONGLONG = 0;
+    let mut count: LONGLONG = 0;
 
-    'quit: loop {
-        i = 0;
-        while FsRtlGetNextBaseMcbEntry(
-            OpaqueMcb,
-            i,
-            core::ptr::addr_of_mut!(LastVbn),
-            core::ptr::addr_of_mut!(LastLbn),
-            core::ptr::addr_of_mut!(Count),
-        ) != 0
-        {
-            if Vbn < LastVbn + Count {
-                if !Lbn.is_null() {
-                    if LastLbn == -1 {
-                        *Lbn = -1;
-                    } else {
-                        *Lbn = LastLbn + (Vbn - LastVbn);
-                    }
-                }
-
-                if !SectorCountFromLbn.is_null() {
-                    *SectorCountFromLbn = LastVbn + Count - Vbn;
-                }
-                if !StartingLbn.is_null() {
-                    *StartingLbn = LastLbn;
-                }
-                if !SectorCountFromStartingLbn.is_null() {
-                    *SectorCountFromStartingLbn = LastVbn + Count - LastVbn;
-                }
-                if !Index.is_null() {
-                    *Index = i;
-                }
-
-                Result = 1u8;
-                break 'quit;
-            }
-            i += 1;
+    loop {
+        if FsRtlGetNextBaseMcbEntry(OpaqueMcb, i, &mut last_vbn, &mut last_lbn, &mut count) == 0 {
+            break;
         }
-        break;
+
+        if Vbn < last_vbn + count {
+            if !Lbn.is_null() {
+                if last_lbn == -1 {
+                    *Lbn = -1;
+                } else {
+                    *Lbn = last_lbn + (Vbn - last_vbn);
+                }
+            }
+
+            if !SectorCountFromLbn.is_null() {
+                *SectorCountFromLbn = last_vbn + count - Vbn;
+            }
+            if !StartingLbn.is_null() {
+                *StartingLbn = last_lbn;
+            }
+            if !SectorCountFromStartingLbn.is_null() {
+                *SectorCountFromStartingLbn = last_vbn + count - last_vbn;
+            }
+            if !Index.is_null() {
+                *Index = i;
+            }
+
+            result = 1;
+            return result;
+        }
+
+        i += 1;
     }
 
-    Result
+    result
 }
 
 #[no_mangle]
@@ -418,13 +412,11 @@ pub unsafe extern "system" fn FsRtlLookupLargeMcbEntry(
     SectorCountFromLbn: PLONGLONG,
     StartingLbn: PLONGLONG,
     SectorCountFromStartingLbn: PLONGLONG,
-    Index: PULONG,
+    Index: *mut ULONG,
 ) -> BOOLEAN {
-    let Result: BOOLEAN;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    Result = FsRtlLookupBaseMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb),
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result = FsRtlLookupBaseMcbEntry(
+        &mut (*Mcb).BaseMcb,
         Vbn,
         Lbn,
         SectorCountFromLbn,
@@ -432,60 +424,50 @@ pub unsafe extern "system" fn FsRtlLookupLargeMcbEntry(
         SectorCountFromStartingLbn,
         Index,
     );
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    return Result;
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 unsafe fn FsRtlLookupLastLargeMcbEntryAndIndex_internal(
     Mcb: PBASE_MCB_INTERNAL,
     Vbn: PLONGLONG,
     Lbn: PLONGLONG,
-    Index: PULONG,
+    Index: *mut ULONG,
 ) -> BOOLEAN {
-    let mut RunIndex: ULONG = 0;
-    let mut RunFound: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
-    let mut LastVbn: LONGLONG = 0;
+    let mut run_index: ULONG = 0;
+    let mut run_found: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
+    let mut last_vbn: LONGLONG = 0;
 
-    let mut Run = RtlEnumerateGenericTable(
-        core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-        1u8,
-    ) as PLARGE_MCB_MAPPING_ENTRY;
-    while !Run.is_null() {
-        if (*Run).RunStartVbn.QuadPart > LastVbn {
-            RunIndex += 1;
+    let mut run =
+        RtlEnumerateGenericTable(&mut (*(*Mcb).Mapping).Table, 1u8) as PLARGE_MCB_MAPPING_ENTRY;
+    while !run.is_null() {
+        if (*run).RunStartVbn.QuadPart > last_vbn {
+            run_index += 1;
         }
-        LastVbn = (*Run).RunEndVbn.QuadPart;
-        RunIndex += 1;
-        RunFound = Run;
+        last_vbn = (*run).RunEndVbn.QuadPart;
+        run_index += 1;
+        run_found = run;
 
-        Run = RtlEnumerateGenericTable(
-            core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-            0u8,
-        ) as PLARGE_MCB_MAPPING_ENTRY;
+        run = RtlEnumerateGenericTable(&mut (*(*Mcb).Mapping).Table, 0u8) as PLARGE_MCB_MAPPING_ENTRY;
     }
 
-    if RunFound.is_null() {
-        return 0u8;
+    if run_found.is_null() {
+        return 0;
     }
 
     if !Vbn.is_null() {
-        *Vbn = (*RunFound).RunEndVbn.QuadPart - 1;
+        *Vbn = (*run_found).RunEndVbn.QuadPart - 1;
     }
     if !Lbn.is_null() {
-        if true {
-            *Lbn = (*RunFound).StartingLbn.QuadPart
-                + ((*RunFound).RunEndVbn.QuadPart - (*RunFound).RunStartVbn.QuadPart)
-                - 1;
-        } else {
-            *Lbn = !0u64 as LONGLONG;
-        }
+        *Lbn = (*run_found).StartingLbn.QuadPart
+            + ((*run_found).RunEndVbn.QuadPart - (*run_found).RunStartVbn.QuadPart)
+            - 1;
     }
     if !Index.is_null() {
-        *Index = RunIndex - 1;
+        *Index = run_index - 1;
     }
 
-    1u8
+    1
 }
 
 #[no_mangle]
@@ -495,11 +477,8 @@ pub unsafe extern "system" fn FsRtlLookupLastBaseMcbEntryAndIndex(
     LargeLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-
-    let Result = FsRtlLookupLastLargeMcbEntryAndIndex_internal(Mcb, LargeVbn, LargeLbn, Index);
-
-    Result
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    FsRtlLookupLastLargeMcbEntryAndIndex_internal(mcb, LargeVbn, LargeLbn, Index)
 }
 
 #[no_mangle]
@@ -509,18 +488,11 @@ pub unsafe extern "system" fn FsRtlLookupLastLargeMcbEntryAndIndex(
     LargeLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
-    let Result: BOOLEAN;
-
-    KeAcquireGuardedMutex((*OpaqueMcb).GuardedMutex);
-    Result = FsRtlLookupLastBaseMcbEntryAndIndex(
-        core::ptr::addr_of_mut!((*OpaqueMcb).BaseMcb),
-        LargeVbn,
-        LargeLbn,
-        Index,
-    );
-    KeReleaseGuardedMutex((*OpaqueMcb).GuardedMutex);
-
-    Result
+    KeAcquireGuardedMutex((*OpaqueMcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result =
+        FsRtlLookupLastBaseMcbEntryAndIndex(&mut (*OpaqueMcb).BaseMcb, LargeVbn, LargeLbn, Index);
+    KeReleaseGuardedMutex((*OpaqueMcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 #[no_mangle]
@@ -529,11 +501,8 @@ pub unsafe extern "system" fn FsRtlLookupLastBaseMcbEntry(
     Vbn: PLONGLONG,
     Lbn: PLONGLONG,
 ) -> BOOLEAN {
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-
-    let Result = FsRtlLookupLastLargeMcbEntryAndIndex_internal(Mcb, Vbn, Lbn, core::ptr::null_mut());
-
-    Result
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    FsRtlLookupLastLargeMcbEntryAndIndex_internal(mcb, Vbn, Lbn, core::ptr::null_mut())
 }
 
 #[no_mangle]
@@ -542,303 +511,259 @@ pub unsafe extern "system" fn FsRtlLookupLastLargeMcbEntry(
     Vbn: PLONGLONG,
     Lbn: PLONGLONG,
 ) -> BOOLEAN {
-    let Result: BOOLEAN;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    Result = FsRtlLookupLastBaseMcbEntry(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb),
-        Vbn,
-        Lbn,
-    );
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    Result
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result = FsRtlLookupLastBaseMcbEntry(&mut (*Mcb).BaseMcb, Vbn, Lbn);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNumberOfRunsInBaseMcb(OpaqueMcb: PBASE_MCB) -> ULONG {
-    let mut NumberOfRuns: ULONG = 0;
-    let mut Vbn: LONGLONG = 0;
-    let mut Lbn: LONGLONG = 0;
-    let mut Count: LONGLONG = 0;
+    let mut number_of_runs: ULONG = 0;
+    let mut vbn: LONGLONG = 0;
+    let mut lbn: LONGLONG = 0;
+    let mut count: LONGLONG = 0;
     let mut i: i32 = 0;
 
     loop {
-        if FsRtlGetNextBaseMcbEntry(
-            OpaqueMcb,
-            i as ULONG,
-            &mut Vbn,
-            &mut Lbn,
-            &mut Count,
-        ) == 0u8
-        {
+        if FsRtlGetNextBaseMcbEntry(OpaqueMcb, i as ULONG, &mut vbn, &mut lbn, &mut count) == 0 {
             break;
         }
-        NumberOfRuns += 1;
+        number_of_runs += 1;
         i += 1;
     }
 
-    NumberOfRuns
+    number_of_runs
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNumberOfRunsInLargeMcb(Mcb: PLARGE_MCB) -> ULONG {
-    let mut NumberOfRuns: ULONG;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    NumberOfRuns = FsRtlNumberOfRunsInBaseMcb(core::ptr::addr_of_mut!((*Mcb).BaseMcb));
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    return NumberOfRuns;
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let number_of_runs = FsRtlNumberOfRunsInBaseMcb(&mut (*Mcb).BaseMcb);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    number_of_runs
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
     OpaqueMcb: PBASE_MCB,
-    Vbn: i64,
-    SectorCount: i64,
-) -> u8 {
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-    let mut NeedleRun: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
-    let mut HaystackRun: PLARGE_MCB_MAPPING_ENTRY;
-    let mut Result: u8 = 1u8;
+    Vbn: LONGLONG,
+    SectorCount: LONGLONG,
+) -> BOOLEAN {
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    let mut needle_run: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
+    let mut result = 1u8;
 
     if Vbn < 0 || SectorCount <= 0 {
-        Result = 0u8;
-        return Result;
+        result = 0;
+        return result;
     }
 
     if Vbn + SectorCount <= Vbn {
-        Result = 0u8;
-        return Result;
+        result = 0;
+        return result;
     }
 
-    NeedleRun.RunStartVbn.QuadPart = Vbn;
-    NeedleRun.RunEndVbn.QuadPart = Vbn + SectorCount;
-    NeedleRun.StartingLbn.QuadPart = -1;
+    needle_run.RunStartVbn.QuadPart = Vbn;
+    needle_run.RunEndVbn.QuadPart = Vbn + SectorCount;
+    needle_run.StartingLbn.QuadPart = -1;
 
-    (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
     loop {
-        HaystackRun = RtlLookupElementGenericTable(
-            core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-            core::ptr::addr_of!(NeedleRun) as *mut core::ffi::c_void,
+        let haystack_run = RtlLookupElementGenericTable(
+            &mut (*(*mcb).Mapping).Table,
+            &needle_run as *const _ as PVOID,
         ) as PLARGE_MCB_MAPPING_ENTRY;
-        
-        if HaystackRun.is_null() {
+        if haystack_run.is_null() {
             break;
         }
 
-        if (*HaystackRun).RunStartVbn.QuadPart < NeedleRun.RunStartVbn.QuadPart {
-            let HaystackRunEnd = (*HaystackRun).RunEndVbn.QuadPart;
+        if (*haystack_run).RunStartVbn.QuadPart < needle_run.RunStartVbn.QuadPart {
+            let haystack_run_end = (*haystack_run).RunEndVbn.QuadPart;
 
-            (*HaystackRun).RunEndVbn.QuadPart = NeedleRun.RunStartVbn.QuadPart;
+            (*haystack_run).RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart;
 
-            if HaystackRunEnd > NeedleRun.RunEndVbn.QuadPart {
-                let mut TailRun: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
-                let mut NewElement: u8 = 0;
+            if haystack_run_end > needle_run.RunEndVbn.QuadPart {
+                let mut tail_run: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
+                let mut new_element: BOOLEAN = 0;
 
-                TailRun.RunStartVbn.QuadPart = NeedleRun.RunEndVbn.QuadPart;
-                TailRun.RunEndVbn.QuadPart = HaystackRunEnd;
-                TailRun.StartingLbn.QuadPart = (*HaystackRun).StartingLbn.QuadPart
-                    + (NeedleRun.RunEndVbn.QuadPart - (*HaystackRun).RunStartVbn.QuadPart);
+                tail_run.RunStartVbn.QuadPart = needle_run.RunEndVbn.QuadPart;
+                tail_run.RunEndVbn.QuadPart = haystack_run_end;
+                tail_run.StartingLbn.QuadPart = (*haystack_run).StartingLbn.QuadPart
+                    + (needle_run.RunEndVbn.QuadPart - (*haystack_run).RunStartVbn.QuadPart);
 
-                (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
 
                 RtlInsertElementGenericTable(
-                    core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-                    core::ptr::addr_of!(TailRun) as *mut core::ffi::c_void,
-                    core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as u32,
-                    core::ptr::addr_of_mut!(NewElement),
+                    &mut (*(*mcb).Mapping).Table,
+                    &tail_run as *const _ as PVOID,
+                    core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as ULONG,
+                    &mut new_element,
                 );
-                (*Mcb).PairCount += 1;
+                (*mcb).PairCount += 1;
 
-                (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
             }
-        } else if (*HaystackRun).RunEndVbn.QuadPart > NeedleRun.RunEndVbn.QuadPart {
-            let HaystackRunStart = (*HaystackRun).RunStartVbn.QuadPart;
-            let HaystackStartingLbn = (*HaystackRun).StartingLbn.QuadPart;
+        } else if (*haystack_run).RunEndVbn.QuadPart > needle_run.RunEndVbn.QuadPart {
+            let haystack_run_start = (*haystack_run).RunStartVbn.QuadPart;
+            let haystack_starting_lbn = (*haystack_run).StartingLbn.QuadPart;
 
-            (*HaystackRun).RunStartVbn.QuadPart = NeedleRun.RunEndVbn.QuadPart;
-            (*HaystackRun).StartingLbn.QuadPart +=
-                NeedleRun.RunEndVbn.QuadPart - HaystackRunStart;
+            (*haystack_run).RunStartVbn.QuadPart = needle_run.RunEndVbn.QuadPart;
+            (*haystack_run).StartingLbn.QuadPart +=
+                needle_run.RunEndVbn.QuadPart - haystack_run_start;
 
-            if HaystackRunStart < NeedleRun.RunStartVbn.QuadPart {
-                let mut HeadRun: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
-                let mut NewElement: u8 = 0;
+            if haystack_run_start < needle_run.RunStartVbn.QuadPart {
+                let mut head_run: LARGE_MCB_MAPPING_ENTRY = core::mem::zeroed();
+                let mut new_element: BOOLEAN = 0;
 
-                HeadRun.RunStartVbn.QuadPart = HaystackRunStart;
-                HeadRun.RunEndVbn.QuadPart = NeedleRun.RunStartVbn.QuadPart;
-                HeadRun.StartingLbn.QuadPart = HaystackStartingLbn;
+                head_run.RunStartVbn.QuadPart = haystack_run_start;
+                head_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart;
+                head_run.StartingLbn.QuadPart = haystack_starting_lbn;
 
-                (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
 
                 RtlInsertElementGenericTable(
-                    core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-                    core::ptr::addr_of!(HeadRun) as *mut core::ffi::c_void,
-                    core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as u32,
-                    core::ptr::addr_of_mut!(NewElement),
+                    &mut (*(*mcb).Mapping).Table,
+                    &head_run as *const _ as PVOID,
+                    core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as ULONG,
+                    &mut new_element,
                 );
-                (*Mcb).PairCount += 1;
+                (*mcb).PairCount += 1;
 
-                (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
             }
         } else {
-            (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
-            RtlDeleteElementGenericTable(
-                core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-                HaystackRun as *mut core::ffi::c_void,
-            );
-            (*Mcb).PairCount -= 1;
-            (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
+            (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+            RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, haystack_run as PVOID);
+            (*mcb).PairCount -= 1;
+            (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
         }
     }
-    (*(*Mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
 
-    Result
+    result
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlRemoveLargeMcbEntry(
     Mcb: PLARGE_MCB,
-    Vbn: i64,
-    SectorCount: i64,
+    Vbn: LONGLONG,
+    SectorCount: LONGLONG,
 ) {
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    FsRtlRemoveBaseMcbEntry(core::ptr::addr_of_mut!((*Mcb).BaseMcb), Vbn, SectorCount);
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    FsRtlRemoveBaseMcbEntry(&mut (*Mcb).BaseMcb, Vbn, SectorCount);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlResetBaseMcb(OpaqueMcb: PBASE_MCB) {
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-    let mut Element: PLARGE_MCB_MAPPING_ENTRY;
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
 
-    while RtlNumberGenericTableElements(&mut (*(*Mcb).Mapping).Table) != 0 {
-        Element = RtlGetElementGenericTable(&mut (*(*Mcb).Mapping).Table, 0) as PLARGE_MCB_MAPPING_ENTRY;
-        if Element.is_null() {
+    while RtlNumberGenericTableElements(&mut (*(*mcb).Mapping).Table) != 0 {
+        let element = RtlGetElementGenericTable(&mut (*(*mcb).Mapping).Table, 0)
+            as PLARGE_MCB_MAPPING_ENTRY;
+        if element.is_null() {
             break;
         }
-        RtlDeleteElementGenericTable(&mut (*(*Mcb).Mapping).Table, Element as *mut core::ffi::c_void);
+        RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, element as PVOID);
     }
 
-    (*Mcb).PairCount = 0;
-    (*Mcb).MaximumPairCount = 0;
+    (*mcb).PairCount = 0;
+    (*mcb).MaximumPairCount = 0;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlResetLargeMcb(Mcb: PLARGE_MCB, SelfSynchronized: u8) {
+pub unsafe extern "system" fn FsRtlResetLargeMcb(Mcb: PLARGE_MCB, SelfSynchronized: BOOLEAN) {
     if SelfSynchronized == 0 {
-        KeAcquireGuardedMutex((*Mcb).GuardedMutex);
+        KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
     }
 
-    FsRtlResetBaseMcb(core::ptr::addr_of_mut!((*Mcb).BaseMcb) as PBASE_MCB);
+    FsRtlResetBaseMcb(&mut (*Mcb).BaseMcb);
 
     if SelfSynchronized == 0 {
-        KeReleaseGuardedMutex((*Mcb).GuardedMutex);
+        KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlSplitBaseMcb(
     OpaqueMcb: PBASE_MCB,
-    Vbn: i64,
-    Amount: i64,
-) -> u8 {
-    let Mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
-    let mut Run: PLARGE_MCB_MAPPING_ENTRY;
-    let mut InsertLowerRun: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
-    let mut ExistingRun: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
-    let mut NewElement: u8 = 0;
+    Vbn: LONGLONG,
+    Amount: LONGLONG,
+) -> BOOLEAN {
+    let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
+    let mut insert_lower_run: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
+    let mut existing_run: PLARGE_MCB_MAPPING_ENTRY = core::ptr::null_mut();
+    let mut new_element: BOOLEAN = 0;
 
-    Run = RtlEnumerateGenericTable(
-        core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-        1u8,
-    ) as PLARGE_MCB_MAPPING_ENTRY;
-
-    while !Run.is_null() {
-        if Vbn >= (*Run).RunEndVbn.QuadPart {
-            Run = RtlEnumerateGenericTable(
-                core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-                0u8,
-            ) as PLARGE_MCB_MAPPING_ENTRY;
+    let mut run =
+        RtlEnumerateGenericTable(&mut (*(*mcb).Mapping).Table, 1u8) as PLARGE_MCB_MAPPING_ENTRY;
+    while !run.is_null() {
+        if Vbn >= (*run).RunEndVbn.QuadPart {
+            run = RtlEnumerateGenericTable(&mut (*(*mcb).Mapping).Table, 0u8)
+                as PLARGE_MCB_MAPPING_ENTRY;
             continue;
         }
 
-        if Vbn < (*Run).RunEndVbn.QuadPart {
-            (*Run).RunStartVbn.QuadPart = Vbn;
-            InsertLowerRun = core::ptr::null_mut();
+        if Vbn < (*run).RunEndVbn.QuadPart {
+            (*run).RunStartVbn.QuadPart = Vbn;
+            insert_lower_run = core::ptr::null_mut();
         }
 
-        (*Run).RunStartVbn.QuadPart += Amount;
-        (*Run).RunEndVbn.QuadPart += Amount;
+        (*run).RunStartVbn.QuadPart += Amount;
+        (*run).RunEndVbn.QuadPart += Amount;
 
-        Run = RtlEnumerateGenericTable(
-            core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-            0u8,
-        ) as PLARGE_MCB_MAPPING_ENTRY;
+        run = RtlEnumerateGenericTable(&mut (*(*mcb).Mapping).Table, 0u8) as PLARGE_MCB_MAPPING_ENTRY;
     }
 
-    if !InsertLowerRun.is_null() {
-        ExistingRun = RtlInsertElementGenericTable(
-            core::ptr::addr_of_mut!((*(*Mcb).Mapping).Table),
-            InsertLowerRun as *mut core::ffi::c_void,
-            core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as u32,
-            core::ptr::addr_of_mut!(NewElement),
+    if !insert_lower_run.is_null() {
+        existing_run = RtlInsertElementGenericTable(
+            &mut (*(*mcb).Mapping).Table,
+            insert_lower_run as PVOID,
+            core::mem::size_of::<LARGE_MCB_MAPPING_ENTRY>() as ULONG,
+            &mut new_element,
         ) as PLARGE_MCB_MAPPING_ENTRY;
-        (*Mcb).PairCount += 1;
+        (*mcb).PairCount += 1;
     }
 
-    1u8
+    1
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlSplitLargeMcb(
     Mcb: PLARGE_MCB,
-    Vbn: i64,
-    Amount: i64,
-) -> u8 {
-    let Result: u8;
-
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    Result = FsRtlSplitBaseMcb(
-        core::ptr::addr_of_mut!((*Mcb).BaseMcb),
-        Vbn,
-        Amount,
-    );
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
-
-    Result
+    Vbn: LONGLONG,
+    Amount: LONGLONG,
+) -> BOOLEAN {
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    let result = FsRtlSplitBaseMcb(&mut (*Mcb).BaseMcb, Vbn, Amount);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    result
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlTruncateBaseMcb(
-    OpaqueMcb: PBASE_MCB,
-    Vbn: i64,
-) {
+pub unsafe extern "system" fn FsRtlTruncateBaseMcb(OpaqueMcb: PBASE_MCB, Vbn: LONGLONG) {
     FsRtlRemoveBaseMcbEntry(OpaqueMcb, Vbn, 0x7FFFFFFF - Vbn + 1);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlTruncateLargeMcb(
-    Mcb: PLARGE_MCB,
-    Vbn: i64,
-) {
-    KeAcquireGuardedMutex((*Mcb).GuardedMutex);
-    FsRtlTruncateBaseMcb(core::ptr::addr_of_mut!((*Mcb).BaseMcb), Vbn);
-    KeReleaseGuardedMutex((*Mcb).GuardedMutex);
+pub unsafe extern "system" fn FsRtlTruncateLargeMcb(Mcb: PLARGE_MCB, Vbn: LONGLONG) {
+    KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
+    FsRtlTruncateBaseMcb(&mut (*Mcb).BaseMcb, Vbn);
+    KeReleaseGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlUninitializeBaseMcb(Mcb: PBASE_MCB) {
     FsRtlResetBaseMcb(Mcb);
 
-    if (*Mcb).PoolType == PagedPool as u32 {
+    if ((*Mcb).PoolType as u32 == PagedPool) {
         ExFreeToPagedLookasideList(
             core::ptr::addr_of_mut!(FsRtlFirstMappingLookasideList),
-            (*Mcb).Mapping as *mut core::ffi::c_void,
+            (*Mcb).Mapping as PVOID,
         );
     } else {
-        ExFreePoolWithTag((*Mcb).Mapping as *mut core::ffi::c_void, 0x46534243);
+        ExFreePoolWithTag((*Mcb).Mapping as PVOID, 0x46534243);
     }
 }
 
@@ -847,9 +772,9 @@ pub unsafe extern "system" fn FsRtlUninitializeLargeMcb(Mcb: PLARGE_MCB) {
     if !(*Mcb).GuardedMutex.is_null() {
         ExFreeToNPagedLookasideList(
             core::ptr::addr_of_mut!(FsRtlFastMutexLookasideList),
-            (*Mcb).GuardedMutex as *mut core::ffi::c_void,
+            (*Mcb).GuardedMutex as PVOID,
         );
-        FsRtlUninitializeBaseMcb(core::ptr::addr_of_mut!((*Mcb).BaseMcb));
+        FsRtlUninitializeBaseMcb(&mut (*Mcb).BaseMcb);
     }
 }
 
@@ -878,7 +803,7 @@ pub unsafe extern "system" fn FsRtlUninitializeLargeMcb(Mcb: PLARGE_MCB) {
 //
 // /* GLOBALS *******************************************************************/
 //
-// PAGED_LOOKASIDE_LIST FsRtlFirstMappingLookasideList;
+// _PAGED_LOOKASIDE_LIST FsRtlFirstMappingLookasideList;
 // NPAGED_LOOKASIDE_LIST FsRtlFastMutexLookasideList;
 //
 // /* We use only real 'mapping' runs; we do not store 'holes' to our GTree. */
@@ -939,15 +864,15 @@ pub unsafe extern "system" fn FsRtlUninitializeLargeMcb(Mcb: PLARGE_MCB) {
 //     ASSERT(B);
 //
 //     if (A->RunStartVbn.QuadPart == B->RunStartVbn.QuadPart && A->RunEndVbn.QuadPart == B->RunEndVbn.QuadPart)
-//         Res = GenericEqual;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //     else if (A->RunEndVbn.QuadPart <= B->RunStartVbn.QuadPart)
-//         Res = GenericLessThan;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan;
 //     else if (A->RunEndVbn.QuadPart >= B->RunStartVbn.QuadPart)
-//         Res = GenericGreaterThan;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan;
 //     else
 //     {
 //         ASSERT(FALSE);
-//         Res = GenericEqual;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //     }
 //
 //     return Res;
@@ -959,15 +884,15 @@ pub unsafe extern "system" fn FsRtlUninitializeLargeMcb(Mcb: PLARGE_MCB) {
 //     RTL_GENERIC_COMPARE_RESULTS Res;
 //
 //     if (A->RunStartVbn.QuadPart <= B->RunStartVbn.QuadPart && A->RunEndVbn.QuadPart > B->RunStartVbn.QuadPart)
-//         Res = GenericEqual;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //     else if (A->RunStartVbn.QuadPart >= B->RunStartVbn.QuadPart && B->RunEndVbn.QuadPart > A->RunStartVbn.QuadPart)
-//         Res = GenericEqual;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //     else if (A->RunStartVbn.QuadPart < B->RunStartVbn.QuadPart)
-//         Res = GenericLessThan;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan;
 //     else if (A->RunStartVbn.QuadPart > B->RunStartVbn.QuadPart)
-//         Res = GenericGreaterThan;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan;
 //     else
-//         Res = GenericEqual;
+//         Res = _RTL_GENERIC_COMPARE_RESULTS_GenericEqual;
 //
 //     return Res;
 // }

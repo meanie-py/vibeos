@@ -12,12 +12,25 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
-// TODO: CC/FSRTL/KD64 translations in progress — re-enable as errors are fixed
-// pub mod cc;
+/// Cast an `extern "system"` function to the target callback ABI.
+///
+/// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64
+/// they use `extern "C"`. Both are semantically identical to `extern "system"`
+/// on their respective platforms, but Rust's type system treats them as distinct.
+/// This macro performs the transmute via usize, which is safe because the ABIs
+/// generate identical machine code.
+#[allow(unused_macros)]
+macro_rules! abi_cast {
+    ($func:expr) => {
+        unsafe { core::mem::transmute($func as usize) }
+    };
+}
+
+pub mod cc;
 pub mod dbgk;
-// pub mod fsrtl;
+pub mod fsrtl;
 pub mod inbv;
-// pub mod kd64;
+// pub mod kd64; // Disabled: Rust KD64 causes recursive exception flood on amd64
 pub mod lpc;
 pub mod ob;
 pub mod po;

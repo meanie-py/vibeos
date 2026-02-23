@@ -1,50 +1,45 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{IoFreeMdl, IoGetRelatedDeviceObject, MmUnlockPages, PDEVICE_OBJECT, PFAST_IO_DISPATCH, PFILE_OBJECT, PIO_STATUS_BLOCK, PLARGE_INTEGER, PMDL};
-use core::ffi::c_void;
-
-extern "C" {
-    fn CCTRACE(level: u32, format: *const i8, ...);
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn CcMdlRead(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    Length: u32,
-    MdlChain: *mut PMDL,
-    IoStatus: PIO_STATUS_BLOCK
-) {
-    
-    CCTRACE(
-        0x00000001u32,
-        b"FileObject=%p FileOffset=%I64d Length=%lu\n\0".as_ptr() as *const i8,
-        FileObject,
-        (*FileOffset).QuadPart,
-        Length
-    );
-    
-    unimplemented!();
-}
+use ntkrnl_sys::ddk::{
+    IoFreeMdl, IoGetRelatedDeviceObject, MmUnlockPages,
+    PDEVICE_OBJECT, PFAST_IO_DISPATCH, PFILE_OBJECT, PIO_STATUS_BLOCK,
+    PLARGE_INTEGER, PMDL,
+};
 
 #[no_mangle]
 pub unsafe extern "system" fn CcMdlReadComplete2(
     FileObject: PFILE_OBJECT,
     MemoryDescriptorList: PMDL,
 ) {
-    let mut Mdl: PMDL;
-    let mut MemoryDescriptorList = MemoryDescriptorList;
-
-    loop {
-        Mdl = MemoryDescriptorList;
-        if Mdl.is_null() {
-            break;
-        }
-        MemoryDescriptorList = (*Mdl).Next;
-        MmUnlockPages(Mdl);
-        IoFreeMdl(Mdl);
+    let mut mdl = MemoryDescriptorList;
+    
+    while !mdl.is_null() {
+        let next = (*mdl).Next;
+        MmUnlockPages(mdl);
+        IoFreeMdl(mdl);
+        mdl = next;
     }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CcMdlWriteComplete2(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    MdlChain: PMDL,
+) {
+    // UNIMPLEMENTED in original C source
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CcMdlRead(
+    FileObject: PFILE_OBJECT,
+    FileOffset: PLARGE_INTEGER,
+    Length: ULONG,
+    MdlChain: *mut PMDL,
+    IoStatus: PIO_STATUS_BLOCK,
+) {
+    unimplemented!();
 }
 
 #[no_mangle]
@@ -52,17 +47,17 @@ pub unsafe extern "system" fn CcMdlReadComplete(
     FileObject: PFILE_OBJECT,
     MdlChain: PMDL,
 ) {
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-    let FastDispatch: PFAST_IO_DISPATCH;
+    let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
+    let fast_dispatch: PFAST_IO_DISPATCH;
 
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+    device_object = IoGetRelatedDeviceObject(FileObject);
+    fast_dispatch = (*(*device_object).DriverObject).FastIoDispatch;
 
-    if !FastDispatch.is_null() && !(*FastDispatch).MdlReadComplete.is_null() {
-        if ((*FastDispatch).MdlReadComplete.unwrap())(
+    if !fast_dispatch.is_null() && (*fast_dispatch).MdlReadComplete.is_some() {
+        if ((*fast_dispatch).MdlReadComplete.unwrap())(
             FileObject,
             MdlChain,
-            DeviceObject,
+            device_object,
         ) != 0
         {
             return;
@@ -78,18 +73,18 @@ pub unsafe extern "system" fn CcMdlWriteComplete(
     FileOffset: PLARGE_INTEGER,
     MdlChain: PMDL,
 ) {
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-    let FastDispatch: PFAST_IO_DISPATCH;
+    let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
+    let fast_dispatch: PFAST_IO_DISPATCH;
 
-    DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    FastDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
+    device_object = IoGetRelatedDeviceObject(FileObject);
+    fast_dispatch = (*(*device_object).DriverObject).FastIoDispatch;
 
-    if !FastDispatch.is_null() && (*FastDispatch).MdlWriteComplete.is_some() {
-        if ((*FastDispatch).MdlWriteComplete.unwrap())(
+    if !fast_dispatch.is_null() && (*fast_dispatch).MdlWriteComplete.is_some() {
+        if ((*fast_dispatch).MdlWriteComplete.unwrap())(
             FileObject,
             FileOffset,
             MdlChain,
-            DeviceObject,
+            device_object,
         ) != 0
         {
             return;
@@ -100,41 +95,24 @@ pub unsafe extern "system" fn CcMdlWriteComplete(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcMdlWriteComplete2(
-    FileObject: PFILE_OBJECT,
-    FileOffset: PLARGE_INTEGER,
-    MdlChain: PMDL,
-) {
-    unimplemented!()
-}
-
-#[no_mangle]
 pub unsafe extern "system" fn CcMdlWriteAbort(
     FileObject: PFILE_OBJECT,
     MdlChain: PMDL,
 ) {
-    unimplemented!("CcMdlWriteAbort");
+    unimplemented!();
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcPrepareMdlWrite(
     FileObject: PFILE_OBJECT,
     FileOffset: PLARGE_INTEGER,
-    Length: u32,
+    Length: ULONG,
     MdlChain: *mut PMDL,
     IoStatus: PIO_STATUS_BLOCK,
 ) {
-    
-    CCTRACE(
-        0x00000001,
-        b"FileObject=%p FileOffset=%I64d Length=%lu\n\0".as_ptr() as *const i8,
-        FileObject,
-        (*FileOffset).QuadPart,
-        Length,
-    );
-    
     unimplemented!();
 }
+
 
 // ============================================================================
 // ORIGINAL C SOURCE

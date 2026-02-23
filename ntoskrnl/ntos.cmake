@@ -11,7 +11,9 @@ include_directories(
 add_definitions(
     -D_NTOSKRNL_
     -D_NTSYSTEM_
-    -DNTDDI_VERSION=0x05020400)
+    -DNTDDI_VERSION=0x05020400
+    -DKD64_USE_C
+    )
 
 if(NOT DEFINED NEWCC)
     set(NEWCC FALSE)
@@ -32,14 +34,15 @@ if(NEWCC)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/data.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/reqtools.c)
 else()
-    list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/cacheman.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/copy.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/fs.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/lazywrite.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/mdl.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/pin.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/view.c)
+    # CC subsystem: replaced by Rust (ntoskrnl-rust/src/cc/)
+    #list(APPEND SOURCE
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/cacheman.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/copy.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/fs.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/lazywrite.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/mdl.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/pin.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/view.c)
 endif()
 
 list(APPEND SOURCE
@@ -101,23 +104,24 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/work.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/xipdisp.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zone.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/dbcsname.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fastio.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/faulttol.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filelock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filter.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filtrctx.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fsfilter.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fsrtlpc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/largemcb.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/mcb.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/name.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/notify.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/oplock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/pnp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/stackovf.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/tunnel.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/unc.c
+    # FSRTL subsystem: replaced by Rust (ntoskrnl-rust/src/fsrtl/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/dbcsname.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fastio.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/faulttol.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filelock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filter.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/filtrctx.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fsfilter.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fsrtlpc.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/largemcb.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/mcb.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/name.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/notify.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/oplock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/pnp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/stackovf.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/tunnel.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/unc.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/disksup.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/fstubex.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/halstub.c
@@ -170,6 +174,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnproot.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/debug.c
+    # KD64 subsystem: using C (Rust KD64 causes recursive exception flood on amd64)
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdapi.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdbreak.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kddata.c
@@ -177,6 +182,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdlock.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdprint.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdtrap.c
+    # Note: kd64_rust_shims.c is in PCH_SKIP_SOURCE (CMakeLists.txt), provides CC/FSRTL shims
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/apc.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/balmgr.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/bug.c

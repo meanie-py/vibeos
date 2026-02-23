@@ -1,91 +1,132 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::macros::*;
+use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
+use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoCreateSymbolicLink, IoDeleteSymbolicLink, KEY_VALUE_PARTIAL_INFORMATION, KSEMAPHORE, KeReleaseSemaphore, KeWaitForSingleObject, MUP_PROVIDER_REGISTRATION_INFO, NtFsControlFile, NtWaitForSingleObject, _OBJECT_ATTRIBUTES, PCUNICODE_STRING, PHANDLE, PMUP_PROVIDER_REGISTRATION_INFO, PUNICODE_STRING, RtlInitUnicodeString, ZwClose, ZwCreateFile, ZwLoadDriver, ZwOpenKey, ZwQueryValueKey};
-use core::ffi::c_void;
 
-pub unsafe fn FsRtlpIsDfsEnabled() -> u8 {
-    let mut Key: HANDLE = core::ptr::null_mut();
-    let mut Length: ULONG = 0;
-    let Status: NTSTATUS;
-    let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut KeyQueryOutput: KeyQueryOutputStruct = core::mem::zeroed();
+use ntkrnl_sys::ddk::{
+    _IO_STATUS_BLOCK, KEY_VALUE_PARTIAL_INFORMATION, KSEMAPHORE,
+    _OBJECT_ATTRIBUTES, PCUNICODE_STRING, PHANDLE, PMUP_PROVIDER_REGISTRATION_INFO,
+    PUNICODE_STRING, MUP_PROVIDER_REGISTRATION_INFO,
+    IoCreateSymbolicLink, IoDeleteSymbolicLink, KeReleaseSemaphore, KeWaitForSingleObject,
+    NtFsControlFile, NtWaitForSingleObject, RtlInitUnicodeString,
+    ZwClose, ZwCreateFile, ZwLoadDriver, ZwOpenKey, ZwQueryValueKey,
+    _UNICODE_STRING, HANDLE,
+};
 
-    KeyName.Buffer = b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0"
-        .as_ptr()
-        .cast::<u16>() as *mut u16;
-    KeyName.Length = (core::mem::size_of_val(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0") - core::mem::size_of::<u16>()) as u16;
-    KeyName.MaximumLength = core::mem::size_of_val(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0") as u16;
+// Redefine as HANDLE (*mut c_void) rather than isize
+const INVALID_HANDLE_VALUE_PTR: HANDLE = -1isize as HANDLE;
 
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.ObjectName = &mut KeyName;
-    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE;
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+extern "system" {
+    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+}
 
-    Status = ZwOpenKey(&mut Key, KEY_READ, &mut ObjectAttributes);
-    if !NT_SUCCESS(Status) {
-        return 1u8;
-    }
+#[no_mangle]
+pub static mut FsRtlpUncSemaphore: KSEMAPHORE = unsafe { core::mem::zeroed() };
 
-    KeyName.Buffer = b"DisableDfs\0".as_ptr().cast::<u16>() as *mut u16;
-    KeyName.Length = (core::mem::size_of_val(b"DisableDfs\0") - core::mem::size_of::<u16>()) as u16;
-    KeyName.MaximumLength = core::mem::size_of_val(b"DisableDfs\0") as u16;
+static mut FsRtlpRedirs: ULONG = 0;
 
-    let QueryStatus = ZwQueryValueKey(
-        Key,
-        &mut KeyName,
-        KeyValuePartialInformation,
-        &mut KeyQueryOutput as *mut _ as PVOID,
-        core::mem::size_of::<KeyQueryOutputStruct>() as ULONG,
-        &mut Length,
+static mut FsRtlpDRD: DRDData = DRDData {
+    MupHandle: INVALID_HANDLE_VALUE_PTR,
+    NullHandle: INVALID_HANDLE_VALUE_PTR,
+    RedirectorDeviceName: _UNICODE_STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    },
+    MailslotsSupported: 0,
+};
+
+#[repr(C)]
+struct DRDData {
+    MupHandle: HANDLE,
+    NullHandle: HANDLE,
+    RedirectorDeviceName: _UNICODE_STRING,
+    MailslotsSupported: BOOLEAN,
+}
+
+unsafe fn FsRtlpIsDfsEnabled() -> BOOLEAN {
+    let mut key: HANDLE = core::ptr::null_mut();
+    let mut length: ULONG = 0;
+    let mut status: NTSTATUS;
+    let mut key_name: _UNICODE_STRING = core::mem::zeroed();
+    let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut key_query_output: KeyQueryBuffer = core::mem::zeroed();
+
+    key_name.Buffer = b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0"
+        .as_ptr() as *mut u16;
+    key_name.Length = (core::mem::size_of_val(
+        b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0",
+    ) - core::mem::size_of::<u16>()) as u16;
+    key_name.MaximumLength = core::mem::size_of_val(
+        b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0",
+    ) as u16;
+
+    InitializeObjectAttributes(
+        &mut object_attributes,
+        &mut key_name,
+        OBJ_CASE_INSENSITIVE,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
     );
-    ZwClose(Key);
-    if !NT_SUCCESS(QueryStatus) || KeyQueryOutput.KeyInfo.Type != REG_DWORD {
-        return 1u8;
+    status = ZwOpenKey(&mut key, KEY_READ, &mut object_attributes);
+    if status < 0 {
+        return 1;
     }
 
-    if *(KeyQueryOutput.KeyInfo.Data.as_ptr() as *const ULONG) != 1 {
-        1u8
+    key_name.Buffer = b"DisableDfs\0".as_ptr() as *mut u16;
+    key_name.Length =
+        (core::mem::size_of_val(b"DisableDfs\0") - core::mem::size_of::<u16>()) as u16;
+    key_name.MaximumLength = core::mem::size_of_val(b"DisableDfs\0") as u16;
+
+    status = ZwQueryValueKey(
+        key,
+        &mut key_name,
+        1,
+        &mut key_query_output as *mut KeyQueryBuffer as PVOID,
+        core::mem::size_of::<KeyQueryBuffer>() as ULONG,
+        &mut length,
+    );
+    ZwClose(key);
+    if status < 0 || key_query_output.KeyInfo.Type != 4 {
+        return 1;
+    }
+
+    if *(key_query_output.KeyInfo.Data.as_ptr() as *const ULONG) != 1 {
+        1
     } else {
-        0u8
+        0
     }
 }
 
 #[repr(C)]
-struct KeyQueryOutputStruct {
+struct KeyQueryBuffer {
     KeyInfo: KEY_VALUE_PARTIAL_INFORMATION,
     KeyValue: ULONG,
 }
 
-unsafe fn FsRtlpOpenDev(
-    DeviceHandle: PHANDLE,
-    DeviceName: PCWSTR,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut StrDeviceName: _UNICODE_STRING = core::mem::zeroed();
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+unsafe fn FsRtlpOpenDev(device_handle: PHANDLE, device_name: PCWSTR) -> NTSTATUS {
+    let mut status: NTSTATUS;
+    let mut str_device_name: _UNICODE_STRING = core::mem::zeroed();
+    let mut io_status_block: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut StrDeviceName, DeviceName);
-    
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-    ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.Attributes = 0;
-    ObjectAttributes.ObjectName = &mut StrDeviceName;
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
-
-    Status = ZwCreateFile(
-        DeviceHandle,
+    RtlInitUnicodeString(&mut str_device_name, device_name);
+    InitializeObjectAttributes(
+        &mut object_attributes,
+        &mut str_device_name,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    status = ZwCreateFile(
+        device_handle,
         GENERIC_WRITE,
-        &mut ObjectAttributes,
-        &mut IoStatusBlock,
+        &mut object_attributes,
+        &mut io_status_block,
         core::ptr::null_mut(),
         FILE_ATTRIBUTE_NORMAL,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -94,107 +135,105 @@ unsafe fn FsRtlpOpenDev(
         core::ptr::null_mut(),
         0,
     );
-    
-    if NT_SUCCESS(Status) {
-        Status = IoStatusBlock.__bindgen_anon_1.Status;
+    if status >= 0 {
+        status = io_status_block.__bindgen_anon_1.Status;
     }
 
-    if !NT_SUCCESS(Status) {
-        *DeviceHandle = INVALID_HANDLE_VALUE;
+    if status < 0 {
+        *device_handle = INVALID_HANDLE_VALUE_PTR;
     }
 
-    Status
+    status
 }
 
-unsafe fn FsRtlpSetSymbolicLink(DeviceName: PCUNICODE_STRING) {
-    let mut UncDevice: _UNICODE_STRING = core::mem::zeroed();
-    
-    RtlInitUnicodeString(
-        &mut UncDevice,
-        b"\\DosDevices\\UNC\0".as_ptr() as *const u16
-    );
-    IoDeleteSymbolicLink(&mut UncDevice);
-    if !DeviceName.is_null() {
-        let Status = IoCreateSymbolicLink(&mut UncDevice, DeviceName as PUNICODE_STRING);
+unsafe fn FsRtlpSetSymbolicLink(device_name: PCUNICODE_STRING) {
+    let mut status: NTSTATUS;
+    let mut unc_device: _UNICODE_STRING = core::mem::zeroed();
+
+    RtlInitUnicodeString(&mut unc_device, b"\\DosDevices\\UNC\0".as_ptr() as PCWSTR);
+    IoDeleteSymbolicLink(&mut unc_device);
+    if !device_name.is_null() {
+        status = IoCreateSymbolicLink(&mut unc_device, device_name as PUNICODE_STRING);
     }
 }
 
 unsafe fn FsRtlpRegisterProviderWithMUP(
-    MupHandle: HANDLE,
-    RedirectorDeviceName: PCUNICODE_STRING,
-    MailslotsSupported: BOOLEAN,
+    mup_handle: HANDLE,
+    redirector_device_name: PCUNICODE_STRING,
+    mailslots_supported: BOOLEAN,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let BufferSize: ULONG;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let RegistrationInfo: PMUP_PROVIDER_REGISTRATION_INFO;
+    let mut status: NTSTATUS;
+    let buffer_size: ULONG;
+    let mut io_status_block: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let registration_info: PMUP_PROVIDER_REGISTRATION_INFO;
 
-    BufferSize = (*RedirectorDeviceName).Length as ULONG + core::mem::size_of::<MUP_PROVIDER_REGISTRATION_INFO>() as ULONG;
-    RegistrationInfo = ExAllocatePoolWithTag(NonPagedPool, BufferSize as SIZE_T, TAG_UNC) as PMUP_PROVIDER_REGISTRATION_INFO;
-    if RegistrationInfo.is_null() {
+    buffer_size =
+        (*redirector_device_name).Length as ULONG + core::mem::size_of::<MUP_PROVIDER_REGISTRATION_INFO>() as ULONG;
+    registration_info = ExAllocatePoolWithTag(NonPagedPool, buffer_size as usize, TAG_UNC) as PMUP_PROVIDER_REGISTRATION_INFO;
+    if registration_info.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    (*RegistrationInfo).RedirectorDeviceNameOffset = core::mem::size_of::<MUP_PROVIDER_REGISTRATION_INFO>() as ULONG;
-    (*RegistrationInfo).RedirectorDeviceNameLength = (*RedirectorDeviceName).Length;
-    (*RegistrationInfo).MailslotsSupported = MailslotsSupported;
+    (*registration_info).RedirectorDeviceNameOffset = core::mem::size_of::<MUP_PROVIDER_REGISTRATION_INFO>() as ULONG;
+    (*registration_info).RedirectorDeviceNameLength = (*redirector_device_name).Length as ULONG;
+    (*registration_info).MailslotsSupported = mailslots_supported;
     core::ptr::copy_nonoverlapping(
-        (*RedirectorDeviceName).Buffer,
-        ((RegistrationInfo as ULONG_PTR) + (*RegistrationInfo).RedirectorDeviceNameOffset as ULONG_PTR) as PWSTR,
-        (*RedirectorDeviceName).Length as usize / core::mem::size_of::<WCHAR>(),
+        (*redirector_device_name).Buffer as *const u8,
+        ((registration_info as usize) + (*registration_info).RedirectorDeviceNameOffset as usize) as *mut u8,
+        (*redirector_device_name).Length as usize,
     );
 
-    Status = NtFsControlFile(
-        MupHandle,
+    status = NtFsControlFile(
+        mup_handle,
         core::ptr::null_mut(),
         None,
         core::ptr::null_mut(),
-        &mut IoStatusBlock,
-        FSCTL_MUP_REGISTER_PROVIDER,
-        RegistrationInfo as PVOID,
-        BufferSize,
+        &mut io_status_block,
+        0x00140044,
+        registration_info as PVOID,
+        buffer_size,
         core::ptr::null_mut(),
         0,
     );
-    if Status == STATUS_PENDING {
-        Status = NtWaitForSingleObject(MupHandle, 1u8, core::ptr::null_mut());
+    if status == STATUS_PENDING {
+        status = NtWaitForSingleObject(mup_handle, 1, core::ptr::null_mut());
     }
 
-    if NT_SUCCESS(Status) {
-        Status = IoStatusBlock.__bindgen_anon_1.Status;
+    if status >= 0 {
+        status = io_status_block.__bindgen_anon_1.Status;
     }
 
-    ExFreePoolWithTag(RegistrationInfo as PVOID, TAG_UNC);
+    ExFreePoolWithTag(registration_info as PVOID, TAG_UNC);
 
-    Status
+    status
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlDeregisterUncProvider(Handle: HANDLE) {
-    if Handle == INVALID_HANDLE_VALUE || Handle.is_null() {
+    if Handle == INVALID_HANDLE_VALUE_PTR || Handle.is_null() {
         return;
     }
 
     KeWaitForSingleObject(
-        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-        _MODE_Executive,
-        0i32 as i8,
-        0u8,
-        core::ptr::null_mut()
+        &mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
+        0,
+        0,
+        0,
+        core::ptr::null_mut(),
     );
 
-    if Handle == FsRtlpDRD.NullHandle as HANDLE {
+    if Handle == FsRtlpDRD.NullHandle {
         if !FsRtlpDRD.RedirectorDeviceName.Buffer.is_null() {
             ExFreePoolWithTag(FsRtlpDRD.RedirectorDeviceName.Buffer as PVOID, TAG_UNC);
             FsRtlpDRD.RedirectorDeviceName.Buffer = core::ptr::null_mut();
         }
 
-        if FsRtlpDRD.MupHandle != INVALID_HANDLE_VALUE {
+        if FsRtlpDRD.MupHandle != INVALID_HANDLE_VALUE_PTR {
             ZwClose(FsRtlpDRD.MupHandle);
-            FsRtlpDRD.MupHandle = INVALID_HANDLE_VALUE;
+            FsRtlpDRD.MupHandle = INVALID_HANDLE_VALUE_PTR;
         }
 
-        FsRtlpDRD.NullHandle = INVALID_HANDLE_VALUE;
+        FsRtlpDRD.NullHandle = INVALID_HANDLE_VALUE_PTR;
     }
 
     FsRtlpRedirs -= 1;
@@ -203,7 +242,7 @@ pub unsafe extern "system" fn FsRtlDeregisterUncProvider(Handle: HANDLE) {
         FsRtlpSetSymbolicLink(core::ptr::null());
     }
 
-    KeReleaseSemaphore(&mut FsRtlpUncSemaphore, IO_NO_INCREMENT, 1, 0u8);
+    KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
 }
 
 #[no_mangle]
@@ -212,205 +251,183 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
     RedirectorDeviceName: PCUNICODE_STRING,
     MailslotsSupported: BOOLEAN,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut DeviceHandle: HANDLE;
-    let mut MupString: _UNICODE_STRING = core::mem::zeroed();
+    let mut status: NTSTATUS;
+    let mut device_handle: HANDLE = core::ptr::null_mut();
+    let mut mup_string: _UNICODE_STRING = core::mem::zeroed();
 
     KeWaitForSingleObject(
-        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-        _MODE_Executive,
-        0i32 as i8,
-        0u8,
+        &mut FsRtlpUncSemaphore as *mut KSEMAPHORE as PVOID,
+        0,
+        0,
+        0,
         core::ptr::null_mut(),
     );
 
     if FsRtlpRedirs == 0 {
         if FsRtlpIsDfsEnabled() != 0 {
-            RtlZeroMemory(
-                &mut FsRtlpDRD as *mut _ as PVOID,
-                core::mem::size_of_val(&FsRtlpDRD) as SIZE_T,
-            );
+            core::ptr::write_bytes(&mut FsRtlpDRD as *mut DRDData as *mut u8, 0, core::mem::size_of::<DRDData>());
             FsRtlpRedirs = 1;
         }
     }
 
     if FsRtlpRedirs == 0 {
-        Status = FsRtlpOpenDev(&mut DeviceHandle, b"\\Device\\Null\0".as_ptr() as PCWSTR);
-        if NT_SUCCESS(Status) == 0 {
-            'Cleanup: loop {
-                if NT_SUCCESS(Status) != 0 {
-                    FsRtlpRedirs += 1;
-                    *Handle = DeviceHandle;
-                } else {
-                    if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-                        ZwClose(DeviceHandle);
-                    }
-                    *Handle = INVALID_HANDLE_VALUE;
+        status = FsRtlpOpenDev(&mut device_handle, b"\\Device\\Null\0".as_ptr() as PCWSTR);
+        if status < 0 {
+            'cleanup: {
+                break 'cleanup;
+            }
+            if status >= 0 {
+                FsRtlpRedirs += 1;
+                *Handle = device_handle;
+            } else {
+                if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+                    ZwClose(device_handle);
                 }
 
-                KeReleaseSemaphore(
-                    &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-                    0i32,
-                    1i32,
-                    0u8,
-                );
-                return Status;
+                *Handle = INVALID_HANDLE_VALUE_PTR;
             }
+
+            KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+            return status;
         }
 
         FsRtlpDRD.RedirectorDeviceName.Buffer = ExAllocatePoolWithTag(
             NonPagedPool,
-            (*RedirectorDeviceName).MaximumLength as SIZE_T,
+            (*RedirectorDeviceName).MaximumLength as usize,
             TAG_UNC,
         ) as *mut u16;
         if FsRtlpDRD.RedirectorDeviceName.Buffer.is_null() {
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            'Cleanup: loop {
-                if NT_SUCCESS(Status) != 0 {
-                    FsRtlpRedirs += 1;
-                    *Handle = DeviceHandle;
-                } else {
-                    if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-                        ZwClose(DeviceHandle);
-                    }
-                    *Handle = INVALID_HANDLE_VALUE;
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            'cleanup2: {
+                break 'cleanup2;
+            }
+            if status >= 0 {
+                FsRtlpRedirs += 1;
+                *Handle = device_handle;
+            } else {
+                if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+                    ZwClose(device_handle);
                 }
 
-                KeReleaseSemaphore(
-                    &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-                    0i32,
-                    1i32,
-                    0u8,
-                );
-                return Status;
+                *Handle = INVALID_HANDLE_VALUE_PTR;
             }
+
+            KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+            return status;
         }
 
         FsRtlpDRD.RedirectorDeviceName.Length = (*RedirectorDeviceName).Length;
         FsRtlpDRD.RedirectorDeviceName.MaximumLength = (*RedirectorDeviceName).MaximumLength;
-        RtlCopyMemory(
-            FsRtlpDRD.RedirectorDeviceName.Buffer as PVOID,
-            (*RedirectorDeviceName).Buffer as PVOID,
-            (*RedirectorDeviceName).MaximumLength as SIZE_T,
+        core::ptr::copy_nonoverlapping(
+            (*RedirectorDeviceName).Buffer as *const u8,
+            FsRtlpDRD.RedirectorDeviceName.Buffer as *mut u8,
+            (*RedirectorDeviceName).MaximumLength as usize,
         );
 
-        FsRtlpDRD.MupHandle = INVALID_HANDLE_VALUE;
+        FsRtlpDRD.MupHandle = INVALID_HANDLE_VALUE_PTR;
         FsRtlpDRD.MailslotsSupported = MailslotsSupported;
-        FsRtlpDRD.NullHandle = DeviceHandle;
+        FsRtlpDRD.NullHandle = device_handle;
 
         FsRtlpSetSymbolicLink(RedirectorDeviceName);
     } else {
-        Status = FsRtlpOpenDev(&mut DeviceHandle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
-        if NT_SUCCESS(Status) == 0 {
+        status = FsRtlpOpenDev(&mut device_handle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
+        if status < 0 {
             RtlInitUnicodeString(
-                &mut MupString,
-                b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0".as_ptr() as *const u16,
+                &mut mup_string,
+                b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0".as_ptr() as PCWSTR,
             );
-            ZwLoadDriver(&mut MupString);
-            Status = FsRtlpOpenDev(&mut DeviceHandle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
-            if NT_SUCCESS(Status) == 0 {
-                'Cleanup: loop {
-                    if NT_SUCCESS(Status) != 0 {
-                        FsRtlpRedirs += 1;
-                        *Handle = DeviceHandle;
-                    } else {
-                        if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-                            ZwClose(DeviceHandle);
-                        }
-                        *Handle = INVALID_HANDLE_VALUE;
+            ZwLoadDriver(&mut mup_string);
+            status = FsRtlpOpenDev(&mut device_handle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
+            if status < 0 {
+                'cleanup3: {
+                    break 'cleanup3;
+                }
+                if status >= 0 {
+                    FsRtlpRedirs += 1;
+                    *Handle = device_handle;
+                } else {
+                    if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+                        ZwClose(device_handle);
                     }
 
-                    KeReleaseSemaphore(
-                        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-                        0i32,
-                        1i32,
-                        0u8,
-                    );
-                    return Status;
+                    *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
+
+                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                return status;
             }
         }
 
         if !FsRtlpDRD.RedirectorDeviceName.Buffer.is_null() {
-            Status = FsRtlpRegisterProviderWithMUP(
-                DeviceHandle,
+            status = FsRtlpRegisterProviderWithMUP(
+                device_handle,
                 &FsRtlpDRD.RedirectorDeviceName,
                 FsRtlpDRD.MailslotsSupported,
             );
-            if NT_SUCCESS(Status) == 0 {
-                'Cleanup: loop {
-                    if NT_SUCCESS(Status) != 0 {
-                        FsRtlpRedirs += 1;
-                        *Handle = DeviceHandle;
-                    } else {
-                        if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-                            ZwClose(DeviceHandle);
-                        }
-                        *Handle = INVALID_HANDLE_VALUE;
+            if status < 0 {
+                'cleanup4: {
+                    break 'cleanup4;
+                }
+                if status >= 0 {
+                    FsRtlpRedirs += 1;
+                    *Handle = device_handle;
+                } else {
+                    if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+                        ZwClose(device_handle);
                     }
 
-                    KeReleaseSemaphore(
-                        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-                        0i32,
-                        1i32,
-                        0u8,
-                    );
-                    return Status;
+                    *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
+
+                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                return status;
             }
 
-            FsRtlpDRD.MupHandle = DeviceHandle;
+            FsRtlpDRD.MupHandle = device_handle;
 
             ExFreePoolWithTag(FsRtlpDRD.RedirectorDeviceName.Buffer as PVOID, TAG_UNC);
             FsRtlpDRD.RedirectorDeviceName.Buffer = core::ptr::null_mut();
 
-            Status = FsRtlpOpenDev(&mut DeviceHandle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
-            if NT_SUCCESS(Status) == 0 {
-                'Cleanup: loop {
-                    if NT_SUCCESS(Status) != 0 {
-                        FsRtlpRedirs += 1;
-                        *Handle = DeviceHandle;
-                    } else {
-                        if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-                            ZwClose(DeviceHandle);
-                        }
-                        *Handle = INVALID_HANDLE_VALUE;
+            status = FsRtlpOpenDev(&mut device_handle, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
+            if status < 0 {
+                'cleanup5: {
+                    break 'cleanup5;
+                }
+                if status >= 0 {
+                    FsRtlpRedirs += 1;
+                    *Handle = device_handle;
+                } else {
+                    if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+                        ZwClose(device_handle);
                     }
 
-                    KeReleaseSemaphore(
-                        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-                        0i32,
-                        1i32,
-                        0u8,
-                    );
-                    return Status;
+                    *Handle = INVALID_HANDLE_VALUE_PTR;
                 }
+
+                KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+                return status;
             }
         }
 
-        RtlInitUnicodeString(&mut MupString, b"\\Device\\Mup\0".as_ptr() as *const u16);
-        FsRtlpSetSymbolicLink(&MupString);
+        RtlInitUnicodeString(&mut mup_string, b"\\Device\\Mup\0".as_ptr() as PCWSTR);
+        FsRtlpSetSymbolicLink(&mup_string);
 
-        Status = FsRtlpRegisterProviderWithMUP(DeviceHandle, RedirectorDeviceName, MailslotsSupported);
+        status = FsRtlpRegisterProviderWithMUP(device_handle, RedirectorDeviceName, MailslotsSupported);
     }
 
-    if NT_SUCCESS(Status) != 0 {
+    if status >= 0 {
         FsRtlpRedirs += 1;
-        *Handle = DeviceHandle;
+        *Handle = device_handle;
     } else {
-        if DeviceHandle != INVALID_HANDLE_VALUE && DeviceHandle != 0 as HANDLE {
-            ZwClose(DeviceHandle);
+        if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
+            ZwClose(device_handle);
         }
-        *Handle = INVALID_HANDLE_VALUE;
+
+        *Handle = INVALID_HANDLE_VALUE_PTR;
     }
 
-    KeReleaseSemaphore(
-        &mut FsRtlpUncSemaphore as *mut _ as PVOID,
-        0i32,
-        1i32,
-        0u8,
-    );
-    Status
+    KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
+    status
 }
 
 // ============================================================================

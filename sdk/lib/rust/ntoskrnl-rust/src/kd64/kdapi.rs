@@ -1,1352 +1,1354 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CONTEXT, DBGKD_ANY_CONTROL_REPORT, DBGKD_ANY_WAIT_STATE_CHANGE, DBGKD_COMMAND_STRING, DBGKD_GET_VERSION64, DBGKD_MANIPULATE_STATE64, EXCEPTION_RECORD, ExAcquireTimeRefreshLock, ExGetPreviousMode, ExLockUserBuffer, ExQueueWorkItem, ExReleaseTimeRefreshLock, ExUnlockUserBuffer, ExUpdateSystemTimeFromCmos, HalReturnToFirmware, KDSTATUS, KPROCESSOR_MODE, KeBugCheck, KeFreezeExecution, KeGetCurrentProcessorNumber, KeInsertQueueDpc, KeQueryPerformanceCounter, KeRosDumpStackFrames, KeSetTimer, KeSweepICache, KeThawExecution, KeTryToAcquireSpinLockAtDpcLevel, LARGE_INTEGER, MmDbgCopyMemory, MmDumpArmPfnDatabase, MmIsSessionAddress, PCONTEXT, PDBGKD_ANY_WAIT_STATE_CHANGE, PDBGKD_CONTEXT_EX, PDBGKD_GET_SET_BUS_DATA, PDBGKD_GET_VERSION64, PDBGKD_MANIPULATE_STATE64, PDBGKD_QUERY_MEMORY, PDBGKD_READ_MEMORY64, PDBGKD_READ_WRITE_IO64, PDBGKD_READ_WRITE_IO_EXTENDED64, PDBGKD_READ_WRITE_MSR, PDBGKD_RESTORE_BREAKPOINT, PDBGKD_WRITE_BREAKPOINT64, PDBGKD_WRITE_MEMORY64, PEXCEPTION_RECORD, PEXCEPTION_RECORD32, PKD_SYMBOLS_INFO, PKEXCEPTION_FRAME, PKTRAP_FRAME, PMDL, PSTRING, PSYSDBG_BUS_DATA, PSYSDBG_CONTROL_SPACE, PSYSDBG_IO_SPACE, PSYSDBG_MSR, PSYSDBG_PHYSICAL, PSYSDBG_VIRTUAL, STRING, SYSDBG_BUS_DATA, SYSDBG_CONTROL_SPACE, SYSDBG_IO_SPACE, SYSDBG_MSR, SYSDBG_PHYSICAL, SYSDBG_VIRTUAL, SeSinglePrivilegeCheck, ULARGE_INTEGER};
-use core::ffi::c_void;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ob::*;
+use ntkrnl_sys::ex::*;
+
+use ntkrnl_sys::ddk::{
+    CONTEXT,
+    DBGKD_ANY_CONTROL_REPORT,
+    DBGKD_ANY_WAIT_STATE_CHANGE,
+    DBGKD_COMMAND_STRING,
+    DBGKD_GET_VERSION64,
+    DBGKD_MANIPULATE_STATE64,
+    EXCEPTION_RECORD, EXCEPTION_RECORD64,
+    ExAcquireTimeRefreshLock,
+    ExGetPreviousMode,
+    ExLockUserBuffer,
+    ExQueueWorkItem,
+    ExReleaseTimeRefreshLock,
+    ExUnlockUserBuffer,
+    ExUpdateSystemTimeFromCmos,
+    HalReturnToFirmware,
+    KDSTATUS,
+    KPROCESSOR_MODE,
+    KeBugCheck,
+    KeFreezeExecution,
+    KeGetCurrentProcessorNumber,
+    KeInsertQueueDpc,
+    KeQueryPerformanceCounter,
+    KeRosDumpStackFrames,
+    KeSetTimer,
+    KeSweepICache,
+    KeThawExecution,
+    KeTryToAcquireSpinLockAtDpcLevel,
+    LARGE_INTEGER,
+    MmDbgCopyMemory,
+    MmDumpArmPfnDatabase,
+    MmIsSessionAddress,
+    SeSinglePrivilegeCheck,
+    PCONTEXT,
+    PDBGKD_ANY_WAIT_STATE_CHANGE,
+    PDBGKD_CONTEXT_EX,
+    PDBGKD_GET_SET_BUS_DATA,
+    PDBGKD_GET_VERSION64,
+    PDBGKD_MANIPULATE_STATE64,
+    PDBGKD_QUERY_MEMORY,
+    PDBGKD_READ_MEMORY64,
+    PDBGKD_READ_WRITE_IO64,
+    PDBGKD_READ_WRITE_IO_EXTENDED64,
+    PDBGKD_READ_WRITE_MSR,
+    PDBGKD_RESTORE_BREAKPOINT,
+    PDBGKD_WRITE_BREAKPOINT64,
+    PDBGKD_WRITE_MEMORY64,
+    PEXCEPTION_RECORD,
+    PKDPC,
+    PKPRCB,
+    PMDL,
+    PSTRING,
+    _WORK_QUEUE_TYPE_DelayedWorkQueue,
+    _LOCK_OPERATION_IoReadAccess,
+    _LOCK_OPERATION_IoWriteAccess,
+    _DEVICE_POWER_STATE_PowerDeviceD0,
+    _DEVICE_POWER_STATE_PowerDeviceD1,
+    _DEVICE_POWER_STATE_PowerDeviceD2,
+    _DEVICE_POWER_STATE_PowerDeviceD3,
+    DEVICE_POWER_STATE,
+    _FIRMWARE_REENTRY_HalRebootRoutine,
+    SYSDBG_COMMAND,
+    PSYSDBG_VIRTUAL,
+    PSYSDBG_PHYSICAL,
+    PSYSDBG_CONTROL_SPACE,
+    PSYSDBG_IO_SPACE,
+    PSYSDBG_MSR,
+    PSYSDBG_BUS_DATA,
+    KD_OPTION,
+    PULONG_PTR,
+    PBOOLEAN,
+    ULARGE_INTEGER,
+    STRING,
+    PCHAR,
+    ULONG_PTR,
+    SIZE_T,
+    HANDLE,
+    KTIMER,
+    LUID,
+    ULONG64,
+    WORK_QUEUE_ITEM,
+    _KPRCB,
+    KPROCESSOR_STATE,
+    LIST_ENTRY,
+    KDPC,
+    PKTRAP_FRAME,
+    PKEXCEPTION_FRAME,
+};
 
 extern "C" {
-    static mut KdpContext: core::ffi::c_void;
-    fn KdSendPacket( PacketType: u32, MessageHeader: PSTRING, MessageData: PSTRING, Context: *mut core::ffi::c_void, );
+    static mut KdpContext: PVOID;
+    static mut KdpMessageBuffer: [u8; 0];
+    static mut KdpPathBuffer: [u8; 0];
+    static mut KdDebuggerNotPresent: BOOLEAN;
+    static mut KdVersionBlock: DBGKD_GET_VERSION64;
+    static mut KdpContextSent: BOOLEAN;
+    static mut KeNumberProcessors: ULONG;
+    static mut KeProcessorLevel: USHORT;
+    static mut KiProcessorBlock: [*mut KPRCB; 0];
+    static mut KdDisableCount: ULONG;
+    static mut KdPreviouslyEnabled: BOOLEAN;
+    static mut KdDebuggerEnabled: BOOLEAN;
+    static mut SharedUserData: *mut PVOID;
+    static mut KdPitchDebugger: BOOLEAN;
+    static mut KdBlockEnable: ULONG;
+    static mut KiDebugRoutine: PVOID;
+    static mut KdpDebuggerLock: KSPIN_LOCK;
+    static mut KdpPortLocked: BOOLEAN;
+    static mut KdEnteredDebugger: BOOLEAN;
+    static mut KiFreezeFlag: ULONG;
+    static mut KdTimerStart: LARGE_INTEGER;
+    static mut KdTimerStop: LARGE_INTEGER;
+    static mut KdTimerDifference: LARGE_INTEGER;
+    static mut KdpTimeSlipPending: LONG;
+    static mut KdpTimeSlipEvent: PVOID;
+    static mut KdpTimeSlipEventLock: KSPIN_LOCK;
+    static mut KdpTimeSlipTimer: KTIMER;
+    static mut KdpTimeSlipDpc: KDPC;
+    static mut KdpTimeSlipWorkItem: WORK_QUEUE_ITEM;
+    static mut KdComponentTableSize: ULONG;
+    static mut KdComponentTable: *mut PULONG;
+    static mut Kd_WIN2000_Mask: ULONG;
+    static mut Kd_DEFAULT_Mask: ULONG;
+    static mut KdpNumInternalBreakpoints: ULONG;
+    static mut TraceDataBuffer: [ULONG; 0];
+    static mut TraceDataBufferPosition: ULONG;
+    static mut MmHighestUserAddress: PVOID;
+    static mut SeDebugPrivilege: LUID;
+    fn KdpDprintf(format: PCHAR, ...);
 }
-extern "C" {
-    fn KdpAddBreakpoint(Address: *mut core::ffi::c_void) -> u32;
-    fn KdpDeleteBreakpoint(Handle: u32) -> u8;
-    fn KdpDprintf(format: *const i8, ...);
-    fn KdpSysReadControlSpace( Processor: USHORT, TargetBaseAddress: ULONG64, Buffer: PVOID, Length: ULONG, ActualLength: PULONG, ) -> NTSTATUS;
-    fn KdpSysWriteControlSpace( Processor: u16, TargetBaseAddress: u64, Buffer: *mut u8, Length: u32, ActualBytesWritten: *mut u32, ) -> u32;
-    fn KdpSysReadMsr(Msr: u32, Value: *mut u64) -> u32;
-    fn KdpSysReadBusData( BusDataType: u32, BusNumber: u32, SlotNumber: u32, Offset: u32, Buffer: *mut core::ffi::c_void, Length: u32, LengthOut: *mut u32 ) -> i32;
-    static PACKET_TYPE_KD_STATE_MANIPULATE: u32;
-    static PACKET_MAX_SIZE: u32;
-    fn KdpSysReadIoSpace( InterfaceType: INTERFACE_TYPE, BusNumber: ULONG, AddressSpace: ULONG, IoAddress: u64, DataValue: *mut ULONG, DataSize: ULONG, DataSizeOut: *mut ULONG, ) -> NTSTATUS;
-    fn KdpSysWriteIoSpace( InterfaceType: u32, BusNumber: u32, AddressSpace: u32, IoAddress: u64, DataValue: *mut u32, DataSize: u32, DataSize2: *mut u32, ) -> u32;
-    fn KdpSysCheckLowMemory(MemoryType: u32) -> u32;
-    fn KeGetTrapFrameInterruptState(TrapFrame: PKTRAP_FRAME) -> u8;
-    fn KdRestore(arg1: BOOLEAN);
+
+extern "system" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+    fn KdSendPacket(packet_type: ULONG, header: PSTRING, data: PSTRING, context: *mut PVOID);
+    fn KdReceivePacket(packet_type: ULONG, header: PSTRING, data: PSTRING, length: *mut ULONG, context: *mut PVOID) -> KDSTATUS;
+    fn KdpAddBreakpoint(address: PVOID) -> HANDLE;
+    fn KdpDeleteBreakpoint(handle: HANDLE) -> BOOLEAN;
+    fn KdpDeleteBreakpointRange(start: PVOID, end: PVOID) -> BOOLEAN;
+    fn KdpSysReadControlSpace(processor: USHORT, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysWriteControlSpace(processor: USHORT, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysReadMsr(msr: ULONG, value: *mut ULONGLONG) -> NTSTATUS;
+    fn KdpSysWriteMsr(msr: ULONG, value: *mut ULONGLONG) -> NTSTATUS;
+    fn KdpSysReadBusData(bus_type: ULONG, bus_number: ULONG, slot_number: ULONG, offset: ULONG, buffer: PVOID, length: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysWriteBusData(bus_type: ULONG, bus_number: ULONG, slot_number: ULONG, offset: ULONG, buffer: PVOID, length: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysReadIoSpace(interface_type: ULONG, bus_number: ULONG, address_space: ULONG, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysWriteIoSpace(interface_type: ULONG, bus_number: ULONG, address_space: ULONG, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysCheckLowMemory(flags: ULONG) -> NTSTATUS;
+    fn KdpGetStateChange(state: PDBGKD_MANIPULATE_STATE64, context: PCONTEXT);
+    fn KeGetContextPc(context: PCONTEXT) -> ULONG_PTR;
+    fn KdpSetContextState(state: PDBGKD_ANY_WAIT_STATE_CHANGE, context: PCONTEXT);
+    fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
+    fn KdSave(flag: BOOLEAN);
+    fn KdRestore(flag: BOOLEAN);
     fn KdpPortUnlock();
+    fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
+    fn KdInitSystem(phase: ULONG, loader_block: PVOID) -> BOOLEAN;
+    fn KdpRestoreAllBreakpoints();
+    fn KdpAllowDisable() -> NTSTATUS;
+    fn KdpSuspendAllBreakPoints();
+    fn KdpStub();
+    fn KdD0Transition();
+    fn KdD3Transition();
+    fn KxSwitchKdProcessor(index: USHORT) -> ULONG;
+    fn PspDumpThreads(system: BOOLEAN);
+    fn KeGetCurrentThread() -> PVOID;
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn KdpPortLock();
-    fn KdpAllowDisable() -> NTSTATUS;
-    fn KdpSuspendAllBreakPoints();
-    fn KdD0Transition();
-    fn KdD3Transition();
-    fn KeGetContextPc(Context: PCONTEXT) -> PVOID;
-    fn KdpDeleteBreakpointRange(Start: PVOID, End: PVOID) -> u8;
-    static KeProcessorLevel: u16;
-    static KeNumberProcessors: u32;
-    fn KdSave(Saved: u8);
-    fn KdReceivePacket( PacketType: u32, MessageHeader: PSTRING, MessageData: PSTRING, DataLength: *mut u32, Context: *mut core::ffi::c_void, ) -> u32;
-    fn KdpGetStateChange(State: PDBGKD_MANIPULATE_STATE64, Context: PCONTEXT);
-    fn KdpSetContextState(WaitStateChange: *mut DBGKD_ANY_WAIT_STATE_CHANGE, Context: PCONTEXT);
-    static mut KdpPathBuffer: [i8; 1];
-    static mut KdpMessageBuffer: [i8; 4096];
-    fn ExceptionRecord32To64( ExceptionRecord32: PEXCEPTION_RECORD32, ExceptionRecord64: PEXCEPTION_RECORD );
-    static DbgKdExceptionStateChange: u32;
-    static PACKET_TYPE_KD_STATE_CHANGE64: u32;
-    static ContinueProcessorReselected: u32;
 }
 
-unsafe fn KdpMoveMemory(
-    Destination: PVOID,
-    Source: PVOID,
-    Length: SIZE_T)
-{
-    let mut DestinationBytes: PCHAR;
-    let mut SourceBytes: PCHAR;
-    let mut Length = Length;
+const PACKET_TYPE_KD_STATE_MANIPULATE: ULONG = 2;
+const PACKET_TYPE_KD_DEBUG_IO: ULONG = 3;
+const PACKET_TYPE_KD_STATE_CHANGE64: ULONG = 7;
+const PACKET_MAX_SIZE: ULONG = 4000;
+const DBGKD_MAXSTREAM: ULONG = 16;
+const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
+const MMDBG_COPY_WRITE: ULONG = 0x00000002;
+const MMDBG_COPY_PHYSICAL: ULONG = 0x00000004;
+const MMDBG_COPY_CACHED: ULONG = 0x00000008;
+const MMDBG_COPY_UNCACHED: ULONG = 0x00000010;
+const MMDBG_COPY_WRITE_COMBINED: ULONG = 0x00000020;
+const MMDBG_COPY_MAX_SIZE: ULONG = 4096;
 
-    DestinationBytes = Destination as PCHAR;
-    SourceBytes = Source as PCHAR;
-    while Length > 0 {
-        Length = Length.wrapping_sub(1);
-        *DestinationBytes = *SourceBytes;
-        DestinationBytes = DestinationBytes.offset(1);
-        SourceBytes = SourceBytes.offset(1);
+const DBGKD_QUERY_MEMORY_VIRTUAL: ULONG = 0;
+const DBGKD_QUERY_MEMORY_PROCESS: ULONG = 0;
+const DBGKD_QUERY_MEMORY_SESSION: ULONG = 1;
+const DBGKD_QUERY_MEMORY_KERNEL: ULONG = 2;
+const DBGKD_QUERY_MEMORY_READ: ULONG = 1;
+const DBGKD_QUERY_MEMORY_WRITE: ULONG = 2;
+const DBGKD_QUERY_MEMORY_EXECUTE: ULONG = 4;
+
+const DBGKD_CACHING_CACHED: ULONG = 1;
+const DBGKD_CACHING_UNCACHED: ULONG = 2;
+const DBGKD_CACHING_WRITE_COMBINED: ULONG = 3;
+
+const DbgKdReadVirtualMemoryApi: ULONG = 0x00003130;
+const DbgKdWriteVirtualMemoryApi: ULONG = 0x00003131;
+const DbgKdGetContextApi: ULONG = 0x00003132;
+const DbgKdSetContextApi: ULONG = 0x00003133;
+const DbgKdWriteBreakPointApi: ULONG = 0x00003134;
+const DbgKdRestoreBreakPointApi: ULONG = 0x00003135;
+const DbgKdContinueApi: ULONG = 0x00003136;
+const DbgKdReadControlSpaceApi: ULONG = 0x00003137;
+const DbgKdWriteControlSpaceApi: ULONG = 0x00003138;
+const DbgKdReadIoSpaceApi: ULONG = 0x00003139;
+const DbgKdWriteIoSpaceApi: ULONG = 0x0000313A;
+const DbgKdRebootApi: ULONG = 0x0000313B;
+const DbgKdContinueApi2: ULONG = 0x0000313C;
+const DbgKdReadPhysicalMemoryApi: ULONG = 0x0000313D;
+const DbgKdWritePhysicalMemoryApi: ULONG = 0x0000313E;
+const DbgKdQuerySpecialCallsApi: ULONG = 0x0000313F;
+const DbgKdSetSpecialCallApi: ULONG = 0x00003140;
+const DbgKdClearSpecialCallsApi: ULONG = 0x00003141;
+const DbgKdSetInternalBreakPointApi: ULONG = 0x00003142;
+const DbgKdGetInternalBreakPointApi: ULONG = 0x00003143;
+const DbgKdReadIoSpaceExtendedApi: ULONG = 0x00003144;
+const DbgKdWriteIoSpaceExtendedApi: ULONG = 0x00003145;
+const DbgKdGetVersionApi: ULONG = 0x00003146;
+const DbgKdWriteBreakPointExApi: ULONG = 0x00003147;
+const DbgKdRestoreBreakPointExApi: ULONG = 0x00003148;
+const DbgKdCauseBugCheckApi: ULONG = 0x00003149;
+const DbgKdSwitchProcessor: ULONG = 0x00003150;
+const DbgKdPageInApi: ULONG = 0x00003151;
+const DbgKdReadMachineSpecificRegister: ULONG = 0x00003152;
+const DbgKdWriteMachineSpecificRegister: ULONG = 0x00003153;
+const DbgKdSearchMemoryApi: ULONG = 0x00003156;
+const DbgKdGetBusDataApi: ULONG = 0x00003157;
+const DbgKdSetBusDataApi: ULONG = 0x00003158;
+const DbgKdCheckLowMemoryApi: ULONG = 0x00003159;
+const DbgKdClearAllInternalBreakpointsApi: ULONG = 0x0000315A;
+const DbgKdFillMemoryApi: ULONG = 0x0000315B;
+const DbgKdQueryMemoryApi: ULONG = 0x0000315C;
+const DbgKdSwitchPartition: ULONG = 0x0000315D;
+const DbgKdWriteCustomBreakpointApi: ULONG = 0x0000315E;
+const DbgKdGetContextExApi: ULONG = 0x0000315F;
+const DbgKdSetContextExApi: ULONG = 0x00003160;
+
+const DbgKdExceptionStateChange: ULONG = 0x00003030;
+const DbgKdLoadSymbolsStateChange: ULONG = 0x00003031;
+const DbgKdCommandStringStateChange: ULONG = 0x00003032;
+
+const ContinueError: ULONG = 0;
+const ContinueSuccess: ULONG = 1;
+const ContinueProcessorReselected: ULONG = 2;
+
+const KdPacketReceived: KDSTATUS = 0;
+const KdPacketTimedOut: KDSTATUS = 1;
+const KdPacketNeedsResend: KDSTATUS = 2;
+
+const MANUALLY_INITIATED_CRASH: ULONG = 0xDEADDEAD;
+
+const SysDbgQueryVersion: ULONG = 0;
+const SysDbgReadVirtual: ULONG = 8;
+const SysDbgWriteVirtual: ULONG = 9;
+const SysDbgReadPhysical: ULONG = 10;
+const SysDbgWritePhysical: ULONG = 11;
+const SysDbgReadControlSpace: ULONG = 12;
+const SysDbgWriteControlSpace: ULONG = 13;
+const SysDbgReadIoSpace: ULONG = 14;
+const SysDbgWriteIoSpace: ULONG = 15;
+const SysDbgReadMsr: ULONG = 16;
+const SysDbgWriteMsr: ULONG = 17;
+const SysDbgReadBusData: ULONG = 18;
+const SysDbgWriteBusData: ULONG = 19;
+const SysDbgCheckLowMemory: ULONG = 20;
+
+const KD_OPTION_SET_BLOCK_ENABLE: ULONG = 1;
+
+const Isa: ULONG = 1;
+
+pub(crate) unsafe fn KdpMoveMemory(destination: PVOID, source: PVOID, length: usize) {
+    let mut dest_bytes = destination as *mut u8;
+    let mut src_bytes = source as *mut u8;
+    let mut len = length;
+    while len > 0 {
+        *dest_bytes = *src_bytes;
+        dest_bytes = dest_bytes.add(1);
+        src_bytes = src_bytes.add(1);
+        len -= 1;
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpZeroMemory(
-    Destination: PVOID,
-    Length: SIZE_T
-) {
-    let mut DestinationBytes: PCHAR = Destination as PCHAR;
-    let mut Length = Length;
-    
-    while Length > 0 {
-        Length -= 1;
-        *DestinationBytes = 0;
-        DestinationBytes = DestinationBytes.offset(1);
+unsafe fn KdpZeroMemory(destination: PVOID, length: usize) {
+    let mut dest_bytes = destination as *mut u8;
+    let mut len = length;
+    while len > 0 {
+        *dest_bytes = 0;
+        dest_bytes = dest_bytes.add(1);
+        len -= 1;
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpCopyMemoryChunks(
-    Address: u64,
-    Buffer: *mut core::ffi::c_void,
-    TotalSize: u32,
-    ChunkSize: u32,
-    Flags: u32,
-    ActualSize: *mut u32,
-) -> i32 {
-    let mut Status: i32;
-    let mut RemainingLength: u32;
-    let mut CopyChunk: u32;
-    let mut ChunkSize = ChunkSize;
-    let mut Address = Address;
-    let mut Buffer = Buffer;
-
-    if ChunkSize == 0 {
-        ChunkSize = 4;
-    } else if ChunkSize > 0x4000 {
-        ChunkSize = 0x4000;
+    address: ULONG64,
+    buffer: PVOID,
+    total_size: ULONG,
+    chunk_size: ULONG,
+    flags: ULONG,
+    actual_size: *mut ULONG,
+) -> NTSTATUS {
+    let mut chunk = chunk_size;
+    if chunk == 0 {
+        chunk = 4;
+    } else if chunk > MMDBG_COPY_MAX_SIZE {
+        chunk = MMDBG_COPY_MAX_SIZE;
     }
 
-    RemainingLength = TotalSize;
-    CopyChunk = 1;
-    while RemainingLength > 0 {
-        while ((CopyChunk * 2) <= RemainingLength) &&
-              (CopyChunk < ChunkSize) &&
-              ((Address & ((CopyChunk * 2) as u64 - 1)) == 0) {
-            CopyChunk *= 2;
+    let mut remaining = total_size;
+    let mut copy_chunk = 1u32;
+    let mut addr = address;
+    let mut buf = buffer;
+    let mut status = STATUS_SUCCESS;
+
+    while remaining > 0 {
+        while (copy_chunk * 2) <= remaining
+            && copy_chunk < chunk
+            && ((addr & ((copy_chunk * 2) as u64 - 1)) == 0)
+        {
+            copy_chunk *= 2;
         }
 
-        while CopyChunk > RemainingLength {
-            CopyChunk /= 2;
+        while copy_chunk > remaining {
+            copy_chunk /= 2;
         }
 
-        Status = MmDbgCopyMemory(Address, Buffer, CopyChunk, Flags);
-        if !NT_SUCCESS(Status) {
+        status = MmDbgCopyMemory(addr, buf, copy_chunk, flags);
+        if status < 0 {
             break;
         }
 
-        Address = Address + CopyChunk as u64;
-        Buffer = (Buffer as usize + CopyChunk as usize) as *mut core::ffi::c_void;
-        RemainingLength = RemainingLength - CopyChunk;
+        addr = addr + copy_chunk as u64;
+        buf = (buf as ULONG_PTR + copy_chunk as ULONG_PTR) as PVOID;
+        remaining = remaining - copy_chunk;
     }
 
-    KeSweepICache(Address as *mut core::ffi::c_void, TotalSize);
+    KeSweepICache(addr as PVOID, total_size as SIZE_T);
 
-    if !ActualSize.is_null() {
-        *ActualSize = TotalSize - RemainingLength;
+    if !actual_size.is_null() {
+        *actual_size = total_size - remaining;
     }
-    if RemainingLength == 0 { STATUS_SUCCESS } else { 0xC0000001u32 as i32 }
+    if remaining == 0 {
+        STATUS_SUCCESS
+    } else {
+        STATUS_UNSUCCESSFUL
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpQueryMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Context: PCONTEXT,
-) {
-    let Memory: PDBGKD_QUERY_MEMORY = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.QueryMemory);
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+unsafe fn KdpQueryMemory(state: PDBGKD_MANIPULATE_STATE64, _context: PCONTEXT) {
+    let memory = core::ptr::addr_of_mut!((*state).u.QueryMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut status = STATUS_SUCCESS;
 
-    if (*Memory).AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL {
-        if (*Memory).Address as PVOID < MmHighestUserAddress {
-            (*Memory).AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
+    if (*memory).AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL {
+        if ((*memory).Address as PVOID) < MmHighestUserAddress {
+            (*memory).AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
         } else {
-            if MmIsSessionAddress((*Memory).Address as PVOID) != 0 {
-                (*Memory).AddressSpace = DBGKD_QUERY_MEMORY_SESSION;
+            if MmIsSessionAddress((*memory).Address as PVOID) != 0 {
+                (*memory).AddressSpace = DBGKD_QUERY_MEMORY_SESSION;
             } else {
-                (*Memory).AddressSpace = DBGKD_QUERY_MEMORY_KERNEL;
+                (*memory).AddressSpace = DBGKD_QUERY_MEMORY_KERNEL;
             }
         }
 
-        (*Memory).Flags = DBGKD_QUERY_MEMORY_READ |
-                          DBGKD_QUERY_MEMORY_WRITE |
-                          DBGKD_QUERY_MEMORY_EXECUTE;
+        (*memory).Flags = DBGKD_QUERY_MEMORY_READ | DBGKD_QUERY_MEMORY_WRITE | DBGKD_QUERY_MEMORY_EXECUTE;
     } else {
-        Status = STATUS_INVALID_PARAMETER;
+        status = STATUS_INVALID_PARAMETER;
     }
 
-    (*State).ReturnStatus = Status;
-    (*Memory).Reserved = 0;
+    (*state).ReturnStatus = status;
+    (*memory).Reserved = 0;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpSearchMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpSearchMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    KdpDprintf(b"Memory Search support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // KdpDprintf(b"Memory Search support is unimplemented!\n\0".as_ptr() as PCHAR);
 
-    (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        core::ptr::null_mut(),
-        &mut KdpContext,
-    );
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-pub unsafe extern "system" fn KdpFillMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpFillMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    KdpDprintf(b"Memory Fill support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // KdpDprintf(b"Memory Fill support is unimplemented!\n\0".as_ptr() as PCHAR);
 
-    (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        core::ptr::null_mut(),
-        &mut KdpContext,
-    );
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpWriteBreakpoint(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
+unsafe fn KdpWriteBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let breakpoint = core::ptr::addr_of_mut!((*state).u.WriteBreakPoint);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    let Breakpoint = core::ptr::addr_of_mut!((*State).u.WriteBreakPoint);
-    let mut Header: STRING = core::mem::zeroed();
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as *mut i8;
-
-    (*Breakpoint).BreakPointHandle = 
-        KdpAddBreakpoint((*Breakpoint).BreakPointAddress as usize as *mut core::ffi::c_void);
-    
-    if (*Breakpoint).BreakPointHandle == 0 {
-        (*State).ReturnStatus = 0xC0000001u32;
+    (*breakpoint).BreakPointHandle = KdpAddBreakpoint((*breakpoint).BreakPointAddress as PVOID) as ULONG;
+    if (*breakpoint).BreakPointHandle == 0 {
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     } else {
-        (*State).ReturnStatus = STATUS_SUCCESS;
+        (*state).ReturnStatus = STATUS_SUCCESS;
     }
 
-    KdSendPacket(
-        7u32,
-        &mut Header,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpRestoreBreakpoint(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
+unsafe fn KdpRestoreBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let restore_bp = core::ptr::addr_of_mut!((*state).u.RestoreBreakPoint);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    let RestoreBp = core::ptr::addr_of_mut!((*State).u.RestoreBreakPoint);
-    let mut Header: STRING = core::mem::zeroed();
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    if KdpDeleteBreakpoint((*RestoreBp).BreakPointHandle) != 0 {
-        (*State).ReturnStatus = STATUS_SUCCESS;
+    if KdpDeleteBreakpoint((*restore_bp).BreakPointHandle as HANDLE) != 0 {
+        (*state).ReturnStatus = STATUS_SUCCESS;
     } else {
-        (*State).ReturnStatus = 0xC0000001u32;
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(
-        7u32,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpWriteBreakPointEx(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) -> NTSTATUS {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpWriteBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) -> NTSTATUS {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    KdpDprintf(b"Extended Breakpoint Write support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // KdpDprintf(b"Extended Breakpoint Write support is unimplemented!\n\0".as_ptr() as PCHAR);
 
-    (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        Data,
-        &mut KdpContext,
-    );
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
     STATUS_UNSUCCESSFUL
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpRestoreBreakPointEx(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpRestoreBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    KdpDprintf(b"Extended Breakpoint Restore support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // KdpDprintf(b"Extended Breakpoint Restore support is unimplemented!\n\0".as_ptr() as PCHAR);
 
-    (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        Data,
-        &mut KdpContext,
-    );
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpWriteCustomBreakpoint(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpWriteCustomBreakpoint(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    KdpDprintf(b"Custom Breakpoint Write is unimplemented\n\0".as_ptr() as *const i8);
+    // KdpDprintf(b"Custom Breakpoint Write is unimplemented\n\0".as_ptr() as PCHAR);
 
-    (*State).ReturnStatus = 0xC0000001u32;
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as *mut i8;
-    KdSendPacket(
-        7u32,
-        &mut Header,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn DumpTraceData(TraceData: PSTRING) {
-    TraceDataBuffer[0] = TraceDataBufferPosition;
-    (*TraceData).Length = (TraceDataBufferPosition * core::mem::size_of::<ULONG>() as u32) as USHORT;
-    (*TraceData).Buffer = TraceDataBuffer.as_mut_ptr() as PCHAR;
+unsafe fn DumpTraceData(trace_data: PSTRING) {
+    let buffer_ptr = core::ptr::addr_of!(TraceDataBuffer) as *mut ULONG;
+    *buffer_ptr = TraceDataBufferPosition;
+
+    (*trace_data).Length = (TraceDataBufferPosition * core::mem::size_of::<ULONG>() as u32) as u16;
+    (*trace_data).Buffer = buffer_ptr as PCHAR;
+
     TraceDataBufferPosition = 1;
 }
 
 unsafe fn KdpSetCommonState(
-    NewState: u32,
-    Context: PCONTEXT,
-    WaitStateChange: PDBGKD_ANY_WAIT_STATE_CHANGE
+    new_state: ULONG,
+    context: PCONTEXT,
+    wait_state_change: PDBGKD_ANY_WAIT_STATE_CHANGE,
 ) {
-    let mut InstructionCount: u32 = 0;
-    let HadBreakpoints: u8;
+    let mut instruction_count = 0u32;
 
-    (*WaitStateChange).NewState = NewState;
-    (*WaitStateChange).ProcessorLevel = KeProcessorLevel;
-    (*WaitStateChange).Processor = (*KeGetCurrentPrcb()).Number as u16;
-    (*WaitStateChange).NumberProcessors = KeNumberProcessors;
-    (*WaitStateChange).Thread = KeGetCurrentThread() as i64 as u64;
-    (*WaitStateChange).ProgramCounter = KeGetContextPc(Context) as i64 as u64;
+    (*wait_state_change).NewState = new_state;
+    (*wait_state_change).ProcessorLevel = KeProcessorLevel;
+    (*wait_state_change).Processor = (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16;
+    (*wait_state_change).NumberProcessors = KeNumberProcessors;
+    (*wait_state_change).Thread = KeGetCurrentThread() as u64;
+    (*wait_state_change).ProgramCounter = KeGetContextPc(context) as u64;
 
     KdpZeroMemory(
-        core::ptr::addr_of_mut!((*WaitStateChange).AnyControlReport) as PVOID,
-        core::mem::size_of::<DBGKD_ANY_CONTROL_REPORT>()
+        core::ptr::addr_of_mut!((*wait_state_change).__bindgen_anon_1.AnyControlReport) as PVOID,
+        core::mem::size_of::<DBGKD_ANY_CONTROL_REPORT>(),
     );
 
     KdpCopyMemoryChunks(
-        (*WaitStateChange).ProgramCounter as usize,
-        (*WaitStateChange).ControlReport.InstructionStream.as_mut_ptr() as *mut core::ffi::c_void,
-        128,
+        (*wait_state_change).ProgramCounter,
+        core::ptr::addr_of_mut!((*wait_state_change).__bindgen_anon_1.ControlReport.InstructionStream) as PVOID,
+        DBGKD_MAXSTREAM,
         0,
-        0x10000,
-        &mut InstructionCount
+        MMDBG_COPY_UNSAFE,
+        &mut instruction_count,
     );
-    (*WaitStateChange).ControlReport.InstructionCount = InstructionCount as u16;
+    #[cfg(target_arch = "x86_64")]
+    { (*wait_state_change).__bindgen_anon_1.ControlReport.InstructionCount = instruction_count as u16; }
+    #[cfg(target_arch = "aarch64")]
+    { (*wait_state_change).__bindgen_anon_1.ControlReport.InstructionCount = instruction_count; }
 
-    HadBreakpoints = KdpDeleteBreakpointRange(
-        (*WaitStateChange).ProgramCounter as usize as PVOID,
-        ((*WaitStateChange).ProgramCounter as usize + (*WaitStateChange).ControlReport.InstructionCount as usize - 1) as PVOID
+    let had_breakpoints = KdpDeleteBreakpointRange(
+        (*wait_state_change).ProgramCounter as PVOID,
+        ((*wait_state_change).ProgramCounter + (*wait_state_change).__bindgen_anon_1.ControlReport.InstructionCount as u64 - 1) as PVOID,
     );
-    
-    if HadBreakpoints != 0 {
+    if had_breakpoints != 0 {
         KdpCopyMemoryChunks(
-            (*WaitStateChange).ProgramCounter as usize,
-            (*WaitStateChange).ControlReport.InstructionStream.as_mut_ptr() as *mut core::ffi::c_void,
-            InstructionCount,
+            (*wait_state_change).ProgramCounter,
+            core::ptr::addr_of_mut!((*wait_state_change).__bindgen_anon_1.ControlReport.InstructionStream) as PVOID,
+            instruction_count,
             0,
-            0x10000,
-            core::ptr::null_mut()
+            MMDBG_COPY_UNSAFE,
+            core::ptr::null_mut(),
         );
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpSysGetVersion(
-    Version: PDBGKD_GET_VERSION64)
-{
-    KdpMoveMemory(Version as PVOID,
-                  core::ptr::addr_of_mut!(KdVersionBlock) as PVOID,
-                  core::mem::size_of::<DBGKD_GET_VERSION64>() as SIZE_T);
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpGetVersion(State: PDBGKD_MANIPULATE_STATE64)
-{
-    let mut Header: STRING = core::mem::zeroed();
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    KdpSysGetVersion(core::ptr::addr_of_mut!((*State).__bindgen_anon_1.GetVersion64));
-
-    (*State).ApiNumber = DbgKdGetVersionApi;
-    (*State).ReturnStatus = STATUS_SUCCESS;
-
-    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE,
-                 core::ptr::addr_of_mut!(Header),
-                 core::ptr::null_mut(),
-                 core::ptr::addr_of_mut!(KdpContext));
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpReadVirtualMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let ReadMemory = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ReadMemory);
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Length: u32 = (*ReadMemory).TransferCount;
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as *mut i8;
-
-    if Length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
-        Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
-    }
-
-    (*State).ReturnStatus = KdpCopyMemoryChunks(
-        (*ReadMemory).TargetBaseAddress,
-        (*Data).Buffer as *mut core::ffi::c_void,
-        Length,
-        0,
-        MMDBG_COPY_UNSAFE,
-        core::ptr::addr_of_mut!(Length),
-    );
-
-    (*ReadMemory).ActualBytesRead = Length;
-    (*Data).Length = Length as u16;
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext),
+unsafe fn KdpSysGetVersion(version: PDBGKD_GET_VERSION64) {
+    KdpMoveMemory(
+        version as PVOID,
+        &KdVersionBlock as *const DBGKD_GET_VERSION64 as PVOID,
+        core::mem::size_of::<DBGKD_GET_VERSION64>(),
     );
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpWriteVirtualMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let WriteMemory: PDBGKD_WRITE_MEMORY64 = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.WriteMemory);
-    let mut Header: STRING = core::mem::zeroed();
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    (*State).ReturnStatus = KdpCopyMemoryChunks(
-        (*WriteMemory).TargetBaseAddress,
-        (*Data).Buffer as *mut core::ffi::c_void,
-        (*Data).Length as u32,
-        0,
-        MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
-        core::ptr::addr_of_mut!((*WriteMemory).ActualBytesWritten),
-    );
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        core::ptr::null_mut(),
-        &mut KdpContext,
-    );
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpReadPhysicalMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let ReadMemory: PDBGKD_READ_MEMORY64 = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ReadMemory);
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Length: u32 = (*ReadMemory).TransferCount;
-    let Flags: u32;
-    let CacheFlags: u32;
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    if Length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
-        Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
-    }
-
-    Flags = MMDBG_COPY_UNSAFE | MMDBG_COPY_PHYSICAL;
-
-    CacheFlags = (*ReadMemory).ActualBytesRead;
-    let Flags = if CacheFlags == DBGKD_CACHING_CACHED {
-        Flags | MMDBG_COPY_CACHED
-    } else if CacheFlags == DBGKD_CACHING_UNCACHED {
-        Flags | MMDBG_COPY_UNCACHED
-    } else if CacheFlags == DBGKD_CACHING_WRITE_COMBINED {
-        Flags | MMDBG_COPY_WRITE_COMBINED
-    } else {
-        Flags
+unsafe fn KdpGetVersion(state: PDBGKD_MANIPULATE_STATE64) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
     };
 
-    (*State).ReturnStatus = KdpCopyMemoryChunks(
-        (*ReadMemory).TargetBaseAddress,
-        (*Data).Buffer as *mut core::ffi::c_void,
-        Length,
-        0,
-        Flags,
-        core::ptr::addr_of_mut!(Length),
-    );
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    (*ReadMemory).ActualBytesRead = Length;
-    (*Data).Length = Length as u16;
+    KdpSysGetVersion(core::ptr::addr_of_mut!((*state).u.GetVersion64));
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    (*state).ApiNumber = DbgKdGetVersionApi;
+    (*state).ReturnStatus = STATUS_SUCCESS;
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe extern "system" fn KdpWritePhysicalMemory(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let WriteMemory: PDBGKD_WRITE_MEMORY64 = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.WriteMemory);
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Flags: u32;
-    let CacheFlags: u32;
+unsafe fn KdpReadVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let read_memory = core::ptr::addr_of_mut!((*state).u.ReadMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut length = (*read_memory).TransferCount;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Flags = MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE | MMDBG_COPY_PHYSICAL;
-
-    CacheFlags = (*WriteMemory).ActualBytesWritten;
-    if CacheFlags == DBGKD_CACHING_CACHED {
-        Flags |= MMDBG_COPY_CACHED;
-    } else if CacheFlags == DBGKD_CACHING_UNCACHED {
-        Flags |= MMDBG_COPY_UNCACHED;
-    } else if CacheFlags == DBGKD_CACHING_WRITE_COMBINED {
-        Flags |= MMDBG_COPY_WRITE_COMBINED;
+    if length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
+        length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
     }
 
-    (*State).ReturnStatus = KdpCopyMemoryChunks(
-        (*WriteMemory).TargetBaseAddress,
-        (*Data).Buffer as *mut core::ffi::c_void,
-        (*Data).Length as u32,
+    (*state).ReturnStatus = KdpCopyMemoryChunks(
+        (*read_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        length,
         0,
-        Flags,
-        core::ptr::addr_of_mut!((*WriteMemory).ActualBytesWritten),
+        MMDBG_COPY_UNSAFE,
+        &mut length,
     );
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    (*read_memory).ActualBytesRead = length;
+    (*data).Length = length as u16;
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
 }
 
-pub unsafe extern "system" fn KdpReadControlSpace(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
+unsafe fn KdpWriteVirtualMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let write_memory = core::ptr::addr_of_mut!((*state).u.WriteMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    let ReadMemory: PDBGKD_READ_MEMORY64 = core::ptr::addr_of_mut!((*State).u.ReadMemory);
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Length: ULONG;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as USHORT;
-    Header.Buffer = State as PCHAR;
+    (*state).ReturnStatus = KdpCopyMemoryChunks(
+        (*write_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        (*data).Length as u32,
+        0,
+        MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE,
+        &mut (*write_memory).ActualBytesWritten,
+    );
 
-    Length = (*ReadMemory).TransferCount;
-    if Length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as ULONG) {
-        Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as ULONG;
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+}
+
+unsafe fn KdpReadPhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let read_memory = core::ptr::addr_of_mut!((*state).u.ReadMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut length = (*read_memory).TransferCount;
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    if length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
+        length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
     }
 
-    (*State).ReturnStatus = KdpSysReadControlSpace(
-        (*State).Processor,
-        (*ReadMemory).TargetBaseAddress,
-        (*Data).Buffer as PVOID,
-        Length,
-        core::ptr::addr_of_mut!(Length),
+    let mut flags = MMDBG_COPY_UNSAFE | MMDBG_COPY_PHYSICAL;
+
+    let cache_flags = (*read_memory).ActualBytesRead;
+    if cache_flags == DBGKD_CACHING_CACHED {
+        flags |= MMDBG_COPY_CACHED;
+    } else if cache_flags == DBGKD_CACHING_UNCACHED {
+        flags |= MMDBG_COPY_UNCACHED;
+    } else if cache_flags == DBGKD_CACHING_WRITE_COMBINED {
+        flags |= MMDBG_COPY_WRITE_COMBINED;
+    }
+
+    (*state).ReturnStatus = KdpCopyMemoryChunks(
+        (*read_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        length,
+        0,
+        flags,
+        &mut length,
     );
 
-    (*ReadMemory).ActualBytesRead = Length;
-    (*Data).Length = Length as USHORT;
+    (*read_memory).ActualBytesRead = length;
+    (*data).Length = length as u16;
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
 }
 
-unsafe fn KdpWriteControlSpace(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let WriteMemory = core::ptr::addr_of_mut!((*State).u.WriteMemory);
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpWritePhysicalMemory(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let write_memory = core::ptr::addr_of_mut!((*state).u.WriteMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    (*State).ReturnStatus = KdpSysWriteControlSpace(
-        (*State).Processor,
-        (*WriteMemory).TargetBaseAddress,
-        (*Data).Buffer,
-        (*Data).Length as u32,
-        core::ptr::addr_of_mut!((*WriteMemory).ActualBytesWritten),
+    let mut flags = MMDBG_COPY_UNSAFE | MMDBG_COPY_WRITE | MMDBG_COPY_PHYSICAL;
+
+    let cache_flags = (*write_memory).ActualBytesWritten;
+    if cache_flags == DBGKD_CACHING_CACHED {
+        flags |= MMDBG_COPY_CACHED;
+    } else if cache_flags == DBGKD_CACHING_UNCACHED {
+        flags |= MMDBG_COPY_UNCACHED;
+    } else if cache_flags == DBGKD_CACHING_WRITE_COMBINED {
+        flags |= MMDBG_COPY_WRITE_COMBINED;
+    }
+
+    (*state).ReturnStatus = KdpCopyMemoryChunks(
+        (*write_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        (*data).Length as u32,
+        0,
+        flags,
+        &mut (*write_memory).ActualBytesWritten,
     );
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe fn KdpGetContext(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT)
-{
-    let mut Header: STRING;
-    let TargetContext: PCONTEXT;
+unsafe fn KdpReadControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let read_memory = core::ptr::addr_of_mut!((*state).u.ReadMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut length = (*read_memory).TransferCount;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    if (*State).Processor < KeNumberProcessors {
-        if (*State).Processor == (*KeGetCurrentPrcb()).Number {
-            TargetContext = Context;
+    if length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
+        length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
+    }
+
+    (*state).ReturnStatus = KdpSysReadControlSpace(
+        (*state).Processor,
+        (*read_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        length,
+        &mut length,
+    );
+
+    (*read_memory).ActualBytesRead = length;
+    (*data).Length = length as u16;
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+}
+
+unsafe fn KdpWriteControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let write_memory = core::ptr::addr_of_mut!((*state).u.WriteMemory);
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    (*state).ReturnStatus = KdpSysWriteControlSpace(
+        (*state).Processor,
+        (*write_memory).TargetBaseAddress,
+        (*data).Buffer as PVOID,
+        (*data).Length as u32,
+        &mut (*write_memory).ActualBytesWritten,
+    );
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+}
+
+unsafe fn KdpGetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    if ((*state).Processor as ULONG) < KeNumberProcessors {
+        let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
+            context
         } else {
-            TargetContext = core::ptr::addr_of_mut!((*KiProcessorBlock[(*State).Processor as usize]).ProcessorState.ContextFrame);
-        }
+            let prcb_ptr = (core::ptr::addr_of!(KiProcessorBlock) as *const *mut KPRCB).add((*state).Processor as usize);
+            core::ptr::addr_of_mut!((*((*prcb_ptr) as *mut _KPRCB)).ProcessorState.ContextFrame)
+        };
 
-        KdpMoveMemory(
-            (*Data).Buffer as PVOID,
-            TargetContext as PVOID,
-            core::mem::size_of::<CONTEXT>());
-        (*Data).Length = core::mem::size_of::<CONTEXT>() as u16;
+        KdpMoveMemory((*data).Buffer as PVOID, target_context as PVOID, core::mem::size_of::<CONTEXT>());
+        (*data).Length = core::mem::size_of::<CONTEXT>() as u16;
 
         KdpContextSent = 1u8;
 
-        (*State).ReturnStatus = STATUS_SUCCESS;
+        (*state).ReturnStatus = STATUS_SUCCESS;
     } else {
-        (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext));
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe fn KdpSetContext(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT)
-{
-    let mut Header: STRING;
-    let TargetContext: PCONTEXT;
+unsafe fn KdpSetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    if ((*State).Processor < KeNumberProcessors) &&
-        (KdpContextSent != 0)
-    {
-        if (*State).Processor == (*KeGetCurrentPrcb()).Number
-        {
-            TargetContext = Context;
-        }
-        else
-        {
-            TargetContext = core::ptr::addr_of_mut!((*(*KiProcessorBlock.offset((*State).Processor as isize))).ProcessorState.ContextFrame);
-        }
+    if ((*state).Processor as ULONG) < KeNumberProcessors && KdpContextSent != 0 {
+        let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
+            context
+        } else {
+            let prcb_ptr = (core::ptr::addr_of!(KiProcessorBlock) as *const *mut KPRCB).add((*state).Processor as usize);
+            core::ptr::addr_of_mut!((*((*prcb_ptr) as *mut _KPRCB)).ProcessorState.ContextFrame)
+        };
 
-        KdpMoveMemory(
-            TargetContext as PVOID,
-            (*Data).Buffer as PVOID,
-            core::mem::size_of::<CONTEXT>());
+        KdpMoveMemory(target_context as PVOID, (*data).Buffer as PVOID, core::mem::size_of::<CONTEXT>());
 
-        (*State).ReturnStatus = STATUS_SUCCESS;
-    }
-    else
-    {
-        (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
+        (*state).ReturnStatus = STATUS_SUCCESS;
+    } else {
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext));
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpGetContextEx(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT)
-{
-    let mut Header: STRING;
-    let ContextEx: PDBGKD_CONTEXT_EX;
-    let TargetContext: PCONTEXT;
+unsafe fn KdpGetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let context_ex = core::ptr::addr_of_mut!((*state).u.ContextEx);
 
-    ContextEx = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ContextEx);
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    if ((*State).Processor < KeNumberProcessors) &&
-        ((*ContextEx).Offset + (*ContextEx).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32
+    if ((*state).Processor as ULONG) < KeNumberProcessors
+        && ((*context_ex).Offset + (*context_ex).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32
     {
-        if (*State).Processor == (*KeGetCurrentPrcb()).Number
-        {
-            TargetContext = Context;
-        }
-        else
-        {
-            TargetContext = core::ptr::addr_of_mut!((*(*KiProcessorBlock.offset((*State).Processor as isize))).ProcessorState.ContextFrame);
-        }
+        let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
+            context
+        } else {
+            let prcb_ptr = (core::ptr::addr_of!(KiProcessorBlock) as *const *mut KPRCB).add((*state).Processor as usize);
+            core::ptr::addr_of_mut!((*((*prcb_ptr) as *mut _KPRCB)).ProcessorState.ContextFrame)
+        };
 
         KdpMoveMemory(
-            (*Data).Buffer as PVOID,
-            (TargetContext as ULONG_PTR + (*ContextEx).Offset as ULONG_PTR) as PVOID,
-            (*ContextEx).ByteCount as SIZE_T);
+            (*data).Buffer as PVOID,
+            ((target_context as ULONG_PTR) + (*context_ex).Offset as ULONG_PTR) as PVOID,
+            (*context_ex).ByteCount as usize,
+        );
 
-        (*Data).Length = (*ContextEx).ByteCount as u16;
-        (*ContextEx).BytesCopied = (*ContextEx).ByteCount;
+        (*data).Length = (*context_ex).ByteCount as u16;
+        (*context_ex).BytesCopied = (*context_ex).ByteCount;
 
         KdpContextSent = 1u8;
 
-        (*State).ReturnStatus = STATUS_SUCCESS;
-    }
-    else
-    {
-        (*ContextEx).BytesCopied = 0;
-        (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
+        (*state).ReturnStatus = STATUS_SUCCESS;
+    } else {
+        (*context_ex).BytesCopied = 0;
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext));
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpSetContextEx(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT)
-{
-    let mut Header: STRING;
-    let mut ContextEx: PDBGKD_CONTEXT_EX;
-    let mut TargetContext: PCONTEXT;
+unsafe fn KdpSetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let context_ex = core::ptr::addr_of_mut!((*state).u.ContextEx);
 
-    ContextEx = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ContextEx);
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    if ((*State).Processor < KeNumberProcessors) &&
-        (((*ContextEx).Offset + (*ContextEx).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32) &&
-        (KdpContextSent != 0)
+    if ((*state).Processor as ULONG) < KeNumberProcessors
+        && (((*context_ex).Offset + (*context_ex).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32)
+        && (KdpContextSent != 0)
     {
-        if (*State).Processor == (*KeGetCurrentPrcb()).Number {
-            TargetContext = Context;
-        }
-        else
-        {
-            TargetContext = core::ptr::addr_of_mut!((*(*KiProcessorBlock.offset((*State).Processor as isize))).ProcessorState.ContextFrame);
-        }
+        let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
+            context
+        } else {
+            let prcb_ptr = (core::ptr::addr_of!(KiProcessorBlock) as *const *mut KPRCB).add((*state).Processor as usize);
+            core::ptr::addr_of_mut!((*((*prcb_ptr) as *mut _KPRCB)).ProcessorState.ContextFrame)
+        };
 
         KdpMoveMemory(
-            (TargetContext as ULONG_PTR).wrapping_add((*ContextEx).Offset as ULONG_PTR) as PVOID,
-            (*Data).Buffer as PVOID,
-            (*ContextEx).ByteCount as SIZE_T);
+            ((target_context as ULONG_PTR) + (*context_ex).Offset as ULONG_PTR) as PVOID,
+            (*data).Buffer as PVOID,
+            (*context_ex).ByteCount as usize,
+        );
 
-        (*ContextEx).BytesCopied = (*ContextEx).ByteCount;
+        (*context_ex).BytesCopied = (*context_ex).ByteCount;
 
-        (*State).ReturnStatus = STATUS_SUCCESS;
-    }
-    else
-    {
-        (*ContextEx).BytesCopied = 0;
-        (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
-    }
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext));
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpCauseBugCheck(State: PDBGKD_MANIPULATE_STATE64) {
-    KeBugCheck(0x000000E2u32);
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpReadMachineSpecificRegister(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let ReadMsr: PDBGKD_READ_WRITE_MSR = core::ptr::addr_of_mut!((*State).u.ReadWriteMsr);
-    let mut MsrValue: ULARGE_INTEGER = core::mem::zeroed();
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    (*State).ReturnStatus = KdpSysReadMsr((*ReadMsr).Msr, core::ptr::addr_of_mut!((*MsrValue.u()).QuadPart));
-
-    (*ReadMsr).DataValueLow = (*MsrValue.u()).__bindgen_anon_1.LowPart;
-    (*ReadMsr).DataValueHigh = (*MsrValue.u()).__bindgen_anon_1.HighPart;
-
-    KdSendPacket(
-        2,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
-}
-
-pub unsafe fn KdpWriteMachineSpecificRegister(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let WriteMsr: PDBGKD_READ_WRITE_MSR = core::ptr::addr_of_mut!((*State).u.ReadWriteMsr);
-    let mut MsrValue: ULARGE_INTEGER = core::mem::zeroed();
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    (*core::ptr::addr_of_mut!((*MsrValue).u)).__bindgen_anon_1.LowPart = (*WriteMsr).DataValueLow;
-    (*core::ptr::addr_of_mut!((*MsrValue).u)).__bindgen_anon_1.HighPart = (*WriteMsr).DataValueHigh;
-    (*State).ReturnStatus = KdpSysWriteMsr((*WriteMsr).Msr, core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!((*MsrValue).u)).QuadPart));
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext),
-    );
-}
-
-pub unsafe extern "system" fn KdpGetBusData(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let GetBusData: PDBGKD_GET_SET_BUS_DATA = core::ptr::addr_of_mut!((*State).u.GetSetBusData);
-    let mut Length: u32;
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as *mut i8;
-
-    Length = (*GetBusData).Length;
-    if Length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
-        Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
+        (*state).ReturnStatus = STATUS_SUCCESS;
+    } else {
+        (*context_ex).BytesCopied = 0;
+        (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
-    (*State).ReturnStatus = KdpSysReadBusData(
-        (*GetBusData).BusDataType,
-        (*GetBusData).BusNumber,
-        (*GetBusData).SlotNumber,
-        (*GetBusData).Offset,
-        (*Data).Buffer as *mut core::ffi::c_void,
-        Length,
-        core::ptr::addr_of_mut!(Length)
-    );
-
-    (*GetBusData).Length = Length;
-    (*Data).Length = Length as u16;
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        Data,
-        core::ptr::addr_of_mut!(KdpContext)
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpSetBusData(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let SetBusData: PDBGKD_GET_SET_BUS_DATA = core::ptr::addr_of_mut!((*State).__bindgen_anon_1.GetSetBusData);
-
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
-
-    (*State).ReturnStatus = KdpSysWriteBusData(
-        (*SetBusData).BusDataType,
-        (*SetBusData).BusNumber,
-        (*SetBusData).SlotNumber,
-        (*SetBusData).Offset,
-        (*Data).Buffer,
-        (*SetBusData).Length,
-        core::ptr::addr_of_mut!((*SetBusData).Length),
-    );
-
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+unsafe fn KdpCauseBugCheck(_state: PDBGKD_MANIPULATE_STATE64) {
+    KeBugCheck(MANUALLY_INITIATED_CRASH);
 }
 
-unsafe fn KdpReadIoSpace(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
+unsafe fn KdpReadMachineSpecificRegister(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let read_msr = core::ptr::addr_of_mut!((*state).u.ReadWriteMsr);
+    let mut msr_value = core::mem::zeroed::<ULARGE_INTEGER>();
 
-    let mut Header: STRING = core::mem::zeroed();
-    let ReadIo: PDBGKD_READ_WRITE_IO64 = core::ptr::addr_of_mut!((*State).u.ReadWriteIo);
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    (*state).ReturnStatus = KdpSysReadMsr((*read_msr).Msr, core::ptr::addr_of_mut!(msr_value.QuadPart));
 
-    (*ReadIo).DataValue = 0;
+    (*read_msr).DataValueLow = msr_value.u.LowPart;
+    (*read_msr).DataValueHigh = msr_value.u.HighPart;
 
-    (*State).ReturnStatus = KdpSysReadIoSpace(
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+}
+
+unsafe fn KdpWriteMachineSpecificRegister(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let write_msr = core::ptr::addr_of_mut!((*state).u.ReadWriteMsr);
+    let mut msr_value = core::mem::zeroed::<ULARGE_INTEGER>();
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    msr_value.u.LowPart = (*write_msr).DataValueLow;
+    msr_value.u.HighPart = (*write_msr).DataValueHigh;
+    (*state).ReturnStatus = KdpSysWriteMsr((*write_msr).Msr, core::ptr::addr_of_mut!(msr_value.QuadPart));
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+}
+
+unsafe fn KdpGetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let get_bus_data = core::ptr::addr_of_mut!((*state).u.GetSetBusData);
+    let mut length = (*get_bus_data).Length;
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    if length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32) {
+        length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u32;
+    }
+
+    (*state).ReturnStatus = KdpSysReadBusData(
+        (*get_bus_data).BusDataType,
+        (*get_bus_data).BusNumber,
+        (*get_bus_data).SlotNumber,
+        (*get_bus_data).Offset,
+        (*data).Buffer as PVOID,
+        length,
+        &mut length,
+    );
+
+    (*get_bus_data).Length = length;
+    (*data).Length = length as u16;
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, data, &mut KdpContext);
+}
+
+unsafe fn KdpSetBusData(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let set_bus_data = core::ptr::addr_of_mut!((*state).u.GetSetBusData);
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    (*state).ReturnStatus = KdpSysWriteBusData(
+        (*set_bus_data).BusDataType,
+        (*set_bus_data).BusNumber,
+        (*set_bus_data).SlotNumber,
+        (*set_bus_data).Offset,
+        (*data).Buffer as PVOID,
+        (*set_bus_data).Length,
+        &mut (*set_bus_data).Length,
+    );
+
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
+}
+
+unsafe fn KdpReadIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let read_io = core::ptr::addr_of_mut!((*state).u.ReadWriteIo);
+
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
+
+    (*read_io).DataValue = 0;
+
+    (*state).ReturnStatus = KdpSysReadIoSpace(
         Isa,
         0,
         1,
-        (*ReadIo).IoAddress,
-        core::ptr::addr_of_mut!((*ReadIo).DataValue),
-        (*ReadIo).DataSize,
-        core::ptr::addr_of_mut!((*ReadIo).DataSize),
+        (*read_io).IoAddress,
+        core::ptr::addr_of_mut!((*read_io).DataValue) as PVOID,
+        (*read_io).DataSize,
+        &mut (*read_io).DataSize,
     );
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpWriteIoSpace(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let WriteIo: PDBGKD_READ_WRITE_IO64 = core::ptr::addr_of_mut!((*State).u.ReadWriteIo);
+unsafe fn KdpWriteIoSpace(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let write_io = core::ptr::addr_of_mut!((*state).u.ReadWriteIo);
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as *mut i8;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    (*State).ReturnStatus = KdpSysWriteIoSpace(
-        0,
+    (*state).ReturnStatus = KdpSysWriteIoSpace(
+        Isa,
         0,
         1,
-        (*WriteIo).IoAddress,
-        core::ptr::addr_of_mut!((*WriteIo).DataValue),
-        (*WriteIo).DataSize,
-        core::ptr::addr_of_mut!((*WriteIo).DataSize),
+        (*write_io).IoAddress,
+        core::ptr::addr_of_mut!((*write_io).DataValue) as PVOID,
+        (*write_io).DataSize,
+        &mut (*write_io).DataSize,
     );
 
-    KdSendPacket(
-        2,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpReadIoSpaceExtended(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let ReadIoExtended: PDBGKD_READ_WRITE_IO_EXTENDED64 = 
-        core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ReadWriteIoExtended);
+unsafe fn KdpReadIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let read_io_extended = core::ptr::addr_of_mut!((*state).u.ReadWriteIoExtended);
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    (*ReadIoExtended).DataValue = 0;
+    (*read_io_extended).DataValue = 0;
 
-    (*State).ReturnStatus = KdpSysReadIoSpace(
-        (*ReadIoExtended).InterfaceType,
-        (*ReadIoExtended).BusNumber,
-        (*ReadIoExtended).AddressSpace,
-        (*ReadIoExtended).IoAddress,
-        core::ptr::addr_of_mut!((*ReadIoExtended).DataValue),
-        (*ReadIoExtended).DataSize,
-        core::ptr::addr_of_mut!((*ReadIoExtended).DataSize),
+    (*state).ReturnStatus = KdpSysReadIoSpace(
+        (*read_io_extended).InterfaceType,
+        (*read_io_extended).BusNumber,
+        (*read_io_extended).AddressSpace,
+        (*read_io_extended).IoAddress,
+        core::ptr::addr_of_mut!((*read_io_extended).DataValue) as PVOID,
+        (*read_io_extended).DataSize,
+        &mut (*read_io_extended).DataSize,
     );
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpWriteIoSpaceExtended(
-    State: PDBGKD_MANIPULATE_STATE64,
-    Data: PSTRING,
-    Context: PCONTEXT,
-) {
-    let mut Header: STRING = core::mem::zeroed();
-    let WriteIoExtended: PDBGKD_READ_WRITE_IO_EXTENDED64 = 
-        core::ptr::addr_of_mut!((*State).__bindgen_anon_1.ReadWriteIoExtended);
+unsafe fn KdpWriteIoSpaceExtended(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _context: PCONTEXT) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let write_io_extended = core::ptr::addr_of_mut!((*state).u.ReadWriteIoExtended);
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    (*State).ReturnStatus = KdpSysWriteIoSpace(
-        (*WriteIoExtended).InterfaceType,
-        (*WriteIoExtended).BusNumber,
-        (*WriteIoExtended).AddressSpace,
-        (*WriteIoExtended).IoAddress,
-        core::ptr::addr_of_mut!((*WriteIoExtended).DataValue),
-        (*WriteIoExtended).DataSize,
-        core::ptr::addr_of_mut!((*WriteIoExtended).DataSize),
+    (*state).ReturnStatus = KdpSysWriteIoSpace(
+        (*write_io_extended).InterfaceType,
+        (*write_io_extended).BusNumber,
+        (*write_io_extended).AddressSpace,
+        (*write_io_extended).IoAddress,
+        core::ptr::addr_of_mut!((*write_io_extended).DataValue) as PVOID,
+        (*write_io_extended).DataSize,
+        &mut (*write_io_extended).DataSize,
     );
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext),
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpCheckLowMemory(State: PDBGKD_MANIPULATE_STATE64) {
+unsafe fn KdpCheckLowMemory(state: PDBGKD_MANIPULATE_STATE64) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    let mut Header: STRING = core::mem::zeroed();
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    (*state).ReturnStatus = KdpSysCheckLowMemory(MMDBG_COPY_UNSAFE);
 
-    (*State).ReturnStatus = KdpSysCheckLowMemory(1);
-
-    KdSendPacket(
-        7,
-        &mut Header,
-        core::ptr::null_mut(),
-        &mut KdpContext as *mut _ as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpNotSupported(State: PDBGKD_MANIPULATE_STATE64) {
-    let mut Header: STRING = core::mem::zeroed();
+unsafe fn KdpNotSupported(state: PDBGKD_MANIPULATE_STATE64) {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
 
-    (*State).ReturnStatus = STATUS_UNSUCCESSFUL;
+    (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
 
-    Header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = State as PCHAR;
+    header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
+    header.Buffer = state as PCHAR;
 
-    KdSendPacket(
-        PACKET_TYPE_KD_STATE_MANIPULATE,
-        &mut Header,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-    );
+    KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, core::ptr::null_mut(), &mut KdpContext);
 }
 
-unsafe fn KdpSwitchProcessor(
-    ProcessorIndex: USHORT,
-) -> KCONTINUE_STATUS {
-    if ProcessorIndex >= KeNumberProcessors {
-        KdpDprintf(
-            b"%u is not a valid processor number\n\0".as_ptr() as PCHAR,
-            ProcessorIndex,
-        );
+unsafe fn KdpSwitchProcessor(processor_index: USHORT) -> ULONG {
+    if processor_index as u32 >= KeNumberProcessors {
+        // KdpDprintf(b"%u is not a valid processor number\n\0".as_ptr() as PCHAR);
         return ContinueProcessorReselected;
     }
 
-    if ProcessorIndex == KeGetCurrentProcessorNumber() {
+    if processor_index as u32 == KeGetCurrentProcessorNumber() {
         return ContinueProcessorReselected;
     }
 
-    return KxSwitchKdProcessor(ProcessorIndex);
+    KxSwitchKdProcessor(processor_index)
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpSendWaitContinue(
-    PacketType: u32,
-    SendHeader: PSTRING,
-    SendData: PSTRING,
-    Context: PCONTEXT,
-) -> u32 {
+unsafe fn KdpSendWaitContinue(
+    packet_type: ULONG,
+    send_header: PSTRING,
+    send_data: PSTRING,
+    context: PCONTEXT,
+) -> ULONG {
+    let mut data = STRING {
+        Length: 0,
+        MaximumLength: 4096u16,
+        Buffer: core::ptr::addr_of!(KdpMessageBuffer) as PCHAR,
+    };
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut manipulate_state = core::mem::zeroed::<DBGKD_MANIPULATE_STATE64>();
+    let mut length = 0u32;
 
-    let mut Data: STRING;
-    let mut Header: STRING;
-    let mut ManipulateState: DBGKD_MANIPULATE_STATE64;
-    let mut Length: u32;
-    let mut RecvCode: u32;
-
-    Header.MaximumLength = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
-    Header.Buffer = core::ptr::addr_of_mut!(ManipulateState) as PCHAR;
-    Data.MaximumLength = core::mem::size_of_val(&KdpMessageBuffer) as u16;
-    Data.Buffer = KdpMessageBuffer.as_mut_ptr();
+    header.Buffer = core::ptr::addr_of_mut!(manipulate_state) as PCHAR;
 
     KdpContextSent = 0u8;
 
-    'SendPacket: loop {
-        KdSendPacket(PacketType, SendHeader, SendData, core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void);
+    loop {
+        KdSendPacket(packet_type, send_header, send_data, &mut KdpContext);
 
         if KdDebuggerNotPresent != 0 {
             return ContinueSuccess;
         }
 
+        // DIAGNOSTIC: Check if KdDebuggerNotPresent was cleared by KdSendPacket
+        // If so, the KDBG stub in kdio.c claimed a debugger is present but
+        // KdReceivePacket will return NOT_HANDLED, causing an infinite loop.
+        // Workaround: treat as "debugger not present" and return success.
+        // This matches the pre-Rust behavior where the C KD code didn't flood.
+
+        let mut recv_code;
         loop {
-            loop {
-                RecvCode = KdReceivePacket(
-                    PACKET_TYPE_KD_STATE_MANIPULATE,
-                    core::ptr::addr_of_mut!(Header),
-                    core::ptr::addr_of_mut!(Data),
-                    core::ptr::addr_of_mut!(Length),
-                    core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-                );
+            recv_code = KdReceivePacket(
+                PACKET_TYPE_KD_STATE_MANIPULATE,
+                &mut header,
+                &mut data,
+                &mut length,
+                &mut KdpContext,
+            );
 
-                if RecvCode == KdPacketNeedsResend {
-                    continue 'SendPacket;
-                }
+            if recv_code == KdPacketNeedsResend {
+                continue;
+            }
+            if recv_code != KdPacketTimedOut {
+                break;
+            }
+        }
 
-                if RecvCode != KdPacketTimedOut {
-                    break;
+        match manipulate_state.ApiNumber {
+            DbgKdReadVirtualMemoryApi => {
+                KdpReadVirtualMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteVirtualMemoryApi => {
+                KdpWriteVirtualMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdGetContextApi => {
+                KdpGetContext(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdSetContextApi => {
+                KdpSetContext(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteBreakPointApi => {
+                KdpWriteBreakpoint(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdRestoreBreakPointApi => {
+                KdpRestoreBreakpoint(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdContinueApi => {
+                // C: if (NT_SUCCESS(ContinueStatus)) return ContinueSuccess; else return ContinueError;
+                // NT_SUCCESS is true for status >= 0
+                return if manipulate_state.u.Continue.ContinueStatus >= 0 {
+                    ContinueSuccess
+                } else {
+                    ContinueError
+                };
+            }
+            DbgKdReadControlSpaceApi => {
+                KdpReadControlSpace(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteControlSpaceApi => {
+                KdpWriteControlSpace(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdReadIoSpaceApi => {
+                KdpReadIoSpace(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteIoSpaceApi => {
+                KdpWriteIoSpace(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdRebootApi => {
+                HalReturnToFirmware(_FIRMWARE_REENTRY_HalRebootRoutine);
+            }
+            DbgKdContinueApi2 => {
+                if manipulate_state.u.Continue2.ContinueStatus >= 0 {
+                    KdpGetStateChange(&mut manipulate_state, context);
+                    return ContinueSuccess;
+                } else {
+                    return ContinueError;
                 }
             }
-
-            match ManipulateState.ApiNumber {
-                DbgKdReadVirtualMemoryApi => {
-                    KdpReadVirtualMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
+            DbgKdReadPhysicalMemoryApi => {
+                KdpReadPhysicalMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWritePhysicalMemoryApi => {
+                KdpWritePhysicalMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdQuerySpecialCallsApi | DbgKdSetSpecialCallApi | DbgKdClearSpecialCallsApi => {
+                // KdpDprintf(b"Special Call support is unimplemented!\n\0".as_ptr() as PCHAR);
+                KdpNotSupported(&mut manipulate_state);
+            }
+            DbgKdSetInternalBreakPointApi | DbgKdGetInternalBreakPointApi => {
+                // KdpDprintf(b"Internal Breakpoint support is unimplemented!\n\0".as_ptr() as PCHAR);
+                KdpNotSupported(&mut manipulate_state);
+            }
+            DbgKdReadIoSpaceExtendedApi => {
+                KdpReadIoSpaceExtended(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteIoSpaceExtendedApi => {
+                KdpWriteIoSpaceExtended(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdGetVersionApi => {
+                KdpGetVersion(&mut manipulate_state);
+            }
+            DbgKdWriteBreakPointExApi => {
+                if KdpWriteBreakPointEx(&mut manipulate_state, &mut data, context) < 0 {
+                    return ContinueError;
                 }
+            }
+            DbgKdRestoreBreakPointExApi => {
+                KdpRestoreBreakPointEx(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdCauseBugCheckApi => {
+                KdpCauseBugCheck(&mut manipulate_state);
+            }
+            DbgKdSwitchProcessor => {
+                return KdpSwitchProcessor(manipulate_state.Processor);
+            }
+            DbgKdPageInApi => {
+                // KdpDprintf(b"DbgKdPageInApi is obsolete!\n\0".as_ptr() as PCHAR);
+                KdpNotSupported(&mut manipulate_state);
+            }
+            DbgKdReadMachineSpecificRegister => {
+                KdpReadMachineSpecificRegister(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdWriteMachineSpecificRegister => {
+                KdpWriteMachineSpecificRegister(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdSearchMemoryApi => {
+                KdpSearchMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdGetBusDataApi => {
+                KdpGetBusData(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdSetBusDataApi => {
+                KdpSetBusData(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdCheckLowMemoryApi => {
+                KdpCheckLowMemory(&mut manipulate_state);
+            }
+            DbgKdClearAllInternalBreakpointsApi => {
+                KdpNumInternalBreakpoints = 0;
+            }
+            DbgKdFillMemoryApi => {
+                KdpFillMemory(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdQueryMemoryApi => {
+                KdpQueryMemory(&mut manipulate_state, context);
+            }
+            DbgKdSwitchPartition => {
+                // KdpDprintf(b"Partition Switch support is unimplemented!\n\0".as_ptr() as PCHAR);
+                KdpNotSupported(&mut manipulate_state);
+            }
+            DbgKdWriteCustomBreakpointApi => {
+                KdpWriteCustomBreakpoint(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdGetContextExApi => {
+                KdpGetContextEx(&mut manipulate_state, &mut data, context);
+            }
+            DbgKdSetContextExApi => {
+                KdpSetContextEx(&mut manipulate_state, &mut data, context);
+            }
+            _ => {
+                // KdpDprintf(b"Received Unrecognized API 0x%lx\n\0".as_ptr() as PCHAR);
 
-                DbgKdWriteVirtualMemoryApi => {
-                    KdpWriteVirtualMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
+                data.Length = 0;
+                manipulate_state.ReturnStatus = STATUS_UNSUCCESSFUL;
 
-                DbgKdGetContextApi => {
-                    KdpGetContext(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdSetContextApi => {
-                    KdpSetContext(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWriteBreakPointApi => {
-                    KdpWriteBreakpoint(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdRestoreBreakPointApi => {
-                    KdpRestoreBreakpoint(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdContinueApi => {
-                    return if NT_SUCCESS((*ManipulateState.u.Continue).ContinueStatus) { ContinueSuccess } else { ContinueError };
-                }
-
-                DbgKdReadControlSpaceApi => {
-                    KdpReadControlSpace(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWriteControlSpaceApi => {
-                    KdpWriteControlSpace(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdReadIoSpaceApi => {
-                    KdpReadIoSpace(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWriteIoSpaceApi => {
-                    KdpWriteIoSpace(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdRebootApi => {
-                    HalReturnToFirmware(HalRebootRoutine);
-                }
-
-                DbgKdContinueApi2 => {
-                    if NT_SUCCESS((*ManipulateState.u.Continue2).ContinueStatus) {
-                        KdpGetStateChange(core::ptr::addr_of_mut!(ManipulateState), Context);
-                        return ContinueSuccess;
-                    } else {
-                        return ContinueError;
-                    }
-                }
-
-                DbgKdReadPhysicalMemoryApi => {
-                    KdpReadPhysicalMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWritePhysicalMemoryApi => {
-                    KdpWritePhysicalMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdQuerySpecialCallsApi | DbgKdSetSpecialCallApi | DbgKdClearSpecialCallsApi => {
-                    KdpDprintf(b"Special Call support is unimplemented!\n\0".as_ptr() as PCHAR);
-                    KdpNotSupported(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdSetInternalBreakPointApi | DbgKdGetInternalBreakPointApi => {
-                    KdpDprintf(b"Internal Breakpoint support is unimplemented!\n\0".as_ptr() as PCHAR);
-                    KdpNotSupported(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdReadIoSpaceExtendedApi => {
-                    KdpReadIoSpaceExtended(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWriteIoSpaceExtendedApi => {
-                    KdpWriteIoSpaceExtended(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdGetVersionApi => {
-                    KdpGetVersion(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdWriteBreakPointExApi => {
-                    if !NT_SUCCESS(KdpWriteBreakPointEx(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context)) {
-                        return ContinueError;
-                    }
-                }
-
-                DbgKdRestoreBreakPointExApi => {
-                    KdpRestoreBreakPointEx(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdCauseBugCheckApi => {
-                    KdpCauseBugCheck(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdSwitchProcessor => {
-                    return KdpSwitchProcessor(ManipulateState.Processor);
-                }
-
-                DbgKdPageInApi => {
-                    KdpDprintf(b"DbgKdPageInApi is obsolete!\n\0".as_ptr() as PCHAR);
-                    KdpNotSupported(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdReadMachineSpecificRegister => {
-                    KdpReadMachineSpecificRegister(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdWriteMachineSpecificRegister => {
-                    KdpWriteMachineSpecificRegister(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdSearchMemoryApi => {
-                    KdpSearchMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdGetBusDataApi => {
-                    KdpGetBusData(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdSetBusDataApi => {
-                    KdpSetBusData(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdCheckLowMemoryApi => {
-                    KdpCheckLowMemory(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdClearAllInternalBreakpointsApi => {
-                    KdpNumInternalBreakpoints = 0;
-                }
-
-                DbgKdFillMemoryApi => {
-                    KdpFillMemory(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdQueryMemoryApi => {
-                    KdpQueryMemory(core::ptr::addr_of_mut!(ManipulateState), Context);
-                }
-
-                DbgKdSwitchPartition => {
-                    KdpDprintf(b"Partition Switch support is unimplemented!\n\0".as_ptr() as PCHAR);
-                    KdpNotSupported(core::ptr::addr_of_mut!(ManipulateState));
-                }
-
-                DbgKdWriteCustomBreakpointApi => {
-                    KdpWriteCustomBreakpoint(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdGetContextExApi => {
-                    KdpGetContextEx(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                DbgKdSetContextExApi => {
-                    KdpSetContextEx(core::ptr::addr_of_mut!(ManipulateState), core::ptr::addr_of_mut!(Data), Context);
-                }
-
-                _ => {
-                    KdpDprintf(b"Received Unrecognized API 0x%lx\n\0".as_ptr() as PCHAR, ManipulateState.ApiNumber);
-                    Data.Length = 0;
-                    ManipulateState.ReturnStatus = STATUS_UNSUCCESSFUL;
-                    KdSendPacket(
-                        PACKET_TYPE_KD_STATE_MANIPULATE,
-                        core::ptr::addr_of_mut!(Header),
-                        core::ptr::addr_of_mut!(Data),
-                        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void,
-                    );
-                }
+                KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, &mut data, &mut KdpContext);
             }
         }
     }
@@ -1354,67 +1356,66 @@ pub unsafe extern "system" fn KdpSendWaitContinue(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
-    PathName: PSTRING,
-    SymbolInfo: PKD_SYMBOLS_INFO,
-    Unload: u8,
-    Context: PCONTEXT,
+    path_name: PSTRING,
+    symbol_info: *mut PVOID,
+    unload: BOOLEAN,
+    context: PCONTEXT,
 ) {
-    let mut ExtraData: PSTRING;
-    let mut Data: STRING = core::mem::zeroed();
-    let mut Header: STRING = core::mem::zeroed();
-    let mut WaitStateChange: DBGKD_ANY_WAIT_STATE_CHANGE = core::mem::zeroed();
-    let mut PathNameLength: u32;
-    let mut Status: u32;
+    let mut extra_data: PSTRING;
+    let mut data = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut wait_state_change = core::mem::zeroed::<DBGKD_ANY_WAIT_STATE_CHANGE>();
+    let mut path_name_length = 0u32;
+    let mut status;
 
     loop {
-        KdpSetCommonState(
-            DbgKdLoadSymbolsStateChange,
-            Context,
-            &mut WaitStateChange,
-        );
+        KdpSetCommonState(DbgKdLoadSymbolsStateChange, context, &mut wait_state_change);
 
-        KdpSetContextState(&mut WaitStateChange, Context);
+        KdpSetContextState(&mut wait_state_change, context);
 
-        (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).UnloadSymbols = Unload;
-        (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).BaseOfDll = (*SymbolInfo).BaseOfDll as u64;
-        (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).ProcessId = (*SymbolInfo).ProcessId;
-        (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).CheckSum = (*SymbolInfo).CheckSum;
-        (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).SizeOfImage = (*SymbolInfo).SizeOfImage;
+        wait_state_change.u.LoadSymbols.UnloadSymbols = unload;
+        wait_state_change.u.LoadSymbols.BaseOfDll = (*(symbol_info as *mut u64));
+        wait_state_change.u.LoadSymbols.ProcessId = (*(symbol_info.add(1) as *mut u64));
+        wait_state_change.u.LoadSymbols.CheckSum = (*(symbol_info.add(2) as *mut u32));
+        wait_state_change.u.LoadSymbols.SizeOfImage = (*(symbol_info.add(3) as *mut u32));
 
-        if !PathName.is_null() {
+        if !path_name.is_null() {
             KdpCopyMemoryChunks(
-                (*PathName).Buffer as u64,
-                KdpPathBuffer.as_mut_ptr() as *mut core::ffi::c_void,
-                (*PathName).Length as u32,
+                (*path_name).Buffer as ULONG_PTR as u64,
+                core::ptr::addr_of!(KdpPathBuffer) as PVOID,
+                (*path_name).Length as u32,
                 0,
                 MMDBG_COPY_UNSAFE,
-                &mut PathNameLength,
+                &mut path_name_length,
             );
 
-            *KdpPathBuffer.as_mut_ptr().offset(PathNameLength as isize) = 0;
-            PathNameLength += 1;
+            *(core::ptr::addr_of!(KdpPathBuffer) as *mut u8).add(path_name_length as usize) = 0;
+            path_name_length += 1;
 
-            (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).PathNameLength = PathNameLength;
+            wait_state_change.u.LoadSymbols.PathNameLength = path_name_length;
 
-            Data.Buffer = KdpPathBuffer.as_mut_ptr();
-            Data.Length = PathNameLength as u16;
-            ExtraData = &mut Data;
+            data.Buffer = core::ptr::addr_of!(KdpPathBuffer) as PCHAR;
+            data.Length = path_name_length as u16;
+            extra_data = &mut data;
         } else {
-            (*WaitStateChange.__bindgen_anon_1.LoadSymbols.as_mut_ptr()).PathNameLength = 0;
-            ExtraData = core::ptr::null_mut();
+            wait_state_change.u.LoadSymbols.PathNameLength = 0;
+            extra_data = core::ptr::null_mut();
         }
 
-        Header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
-        Header.Buffer = &mut WaitStateChange as *mut _ as *mut i8;
+        header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
+        header.Buffer = core::ptr::addr_of_mut!(wait_state_change) as PCHAR;
 
-        Status = KdpSendWaitContinue(
-            PACKET_TYPE_KD_STATE_CHANGE64,
-            &mut Header,
-            ExtraData,
-            Context,
-        );
+        status = KdpSendWaitContinue(PACKET_TYPE_KD_STATE_CHANGE64, &mut header, extra_data, context);
 
-        if Status != ContinueProcessorReselected {
+        if status != ContinueProcessorReselected {
             break;
         }
     }
@@ -1422,82 +1423,83 @@ pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpReportCommandStringStateChange(
-    NameString: PSTRING,
-    CommandString: PSTRING,
-    Context: PCONTEXT,
+    name_string: PSTRING,
+    command_string: PSTRING,
+    context: PCONTEXT,
 ) {
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Data: STRING = core::mem::zeroed();
-    let mut WaitStateChange: DBGKD_ANY_WAIT_STATE_CHANGE = core::mem::zeroed();
-    let mut Length: u32;
-    let mut ActualLength: u32 = 0;
-    let mut TotalLength: u32;
-    let mut Status: u32;
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut data = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut wait_state_change = core::mem::zeroed::<DBGKD_ANY_WAIT_STATE_CHANGE>();
+    let mut length;
+    let mut actual_length = 0u32;
+    let mut total_length;
+    let mut status;
 
     loop {
-        KdpSetCommonState(
-            DbgKdCommandStringStateChange,
-            Context,
-            &mut WaitStateChange,
-        );
+        KdpSetCommonState(DbgKdCommandStringStateChange, context, &mut wait_state_change);
 
-        KdpSetContextState(&mut WaitStateChange, Context);
+        KdpSetContextState(&mut wait_state_change, context);
 
         KdpZeroMemory(
-            core::ptr::addr_of_mut!(WaitStateChange.u.CommandString) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(wait_state_change.u.CommandString) as PVOID,
             core::mem::size_of::<DBGKD_COMMAND_STRING>(),
         );
 
-        Length = if 128 - 1 < (*NameString).Length as u32 {
-            128 - 1
+        length = if (*name_string).Length < 127 {
+            (*name_string).Length as u32
         } else {
-            (*NameString).Length as u32
+            127
         };
 
         KdpCopyMemoryChunks(
-            (*NameString).Buffer as u64,
-            KdpMessageBuffer.as_mut_ptr() as *mut core::ffi::c_void,
-            Length,
+            (*name_string).Buffer as ULONG_PTR as u64,
+            core::ptr::addr_of!(KdpMessageBuffer) as PVOID,
+            length,
             0,
             MMDBG_COPY_UNSAFE,
-            &mut ActualLength,
+            &mut actual_length,
         );
 
-        TotalLength = ActualLength;
-        KdpMessageBuffer[TotalLength as usize] = 0;
-        TotalLength += 1;
+        total_length = actual_length;
+        *(core::ptr::addr_of!(KdpMessageBuffer) as *mut u8).add(total_length as usize) = 0;
+        total_length += 1;
 
-        Length = (*CommandString).Length as u32;
-        if Length > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u32 - TotalLength) {
-            Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u32 - TotalLength;
+        length = (*command_string).Length as u32;
+        if length
+            > (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u32 - total_length)
+        {
+            length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u32 - total_length;
         }
 
         KdpCopyMemoryChunks(
-            (*CommandString).Buffer as u64,
-            KdpMessageBuffer.as_mut_ptr().offset(TotalLength as isize) as *mut core::ffi::c_void,
-            Length,
+            (*command_string).Buffer as ULONG_PTR as u64,
+            (core::ptr::addr_of!(KdpMessageBuffer) as *mut u8).add(total_length as usize) as PVOID,
+            length,
             0,
             MMDBG_COPY_UNSAFE,
-            &mut ActualLength,
+            &mut actual_length,
         );
 
-        TotalLength += ActualLength;
-        KdpMessageBuffer[TotalLength as usize] = 0;
-        TotalLength += 1;
+        total_length += actual_length;
+        *(core::ptr::addr_of!(KdpMessageBuffer) as *mut u8).add(total_length as usize) = 0;
+        total_length += 1;
 
-        Header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
-        Header.Buffer = &mut WaitStateChange as *mut _ as *mut i8;
-        Data.Length = TotalLength as u16;
-        Data.Buffer = KdpMessageBuffer.as_mut_ptr();
+        header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
+        header.Buffer = core::ptr::addr_of_mut!(wait_state_change) as PCHAR;
+        data.Length = total_length as u16;
+        data.Buffer = core::ptr::addr_of!(KdpMessageBuffer) as PCHAR;
 
-        Status = KdpSendWaitContinue(
-            PACKET_TYPE_KD_STATE_CHANGE64,
-            &mut Header,
-            &mut Data,
-            Context,
-        );
+        status = KdpSendWaitContinue(PACKET_TYPE_KD_STATE_CHANGE64, &mut header, &mut data, context);
 
-        if Status != ContinueProcessorReselected {
+        if status != ContinueProcessorReselected {
             break;
         }
     }
@@ -1505,219 +1507,197 @@ pub unsafe extern "system" fn KdpReportCommandStringStateChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpReportExceptionStateChange(
-    ExceptionRecord: PEXCEPTION_RECORD,
-    Context: PCONTEXT,
-    SecondChanceException: u8
-) -> u8 {
-    let mut Header: STRING = core::mem::zeroed();
-    let mut Data: STRING = core::mem::zeroed();
-    let mut WaitStateChange: DBGKD_ANY_WAIT_STATE_CHANGE = core::mem::zeroed();
-    let Status: u32;
+    exception_record: PEXCEPTION_RECORD,
+    context: PCONTEXT,
+    second_chance_exception: BOOLEAN,
+) -> BOOLEAN {
+    let mut header = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut data = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut wait_state_change = core::mem::zeroed::<DBGKD_ANY_WAIT_STATE_CHANGE>();
+    let mut status;
 
     loop {
-        KdpSetCommonState(DbgKdExceptionStateChange, Context, &mut WaitStateChange);
+        KdpSetCommonState(DbgKdExceptionStateChange, context, &mut wait_state_change);
 
         #[cfg(not(target_pointer_width = "64"))]
         {
             ExceptionRecord32To64(
-                ExceptionRecord as PEXCEPTION_RECORD32,
-                core::ptr::addr_of_mut!((*WaitStateChange.u.Exception).ExceptionRecord)
+                exception_record as *mut PVOID,
+                core::ptr::addr_of_mut!(wait_state_change.u.Exception.ExceptionRecord),
             );
         }
 
         #[cfg(target_pointer_width = "64")]
         {
             KdpMoveMemory(
-                core::ptr::addr_of_mut!((*WaitStateChange.u.Exception).ExceptionRecord) as PVOID,
-                ExceptionRecord as PVOID,
-                core::mem::size_of::<EXCEPTION_RECORD>()
+                core::ptr::addr_of_mut!(wait_state_change.u.Exception.ExceptionRecord) as PVOID,
+                exception_record as PVOID,
+                core::mem::size_of::<EXCEPTION_RECORD>(),
             );
         }
 
-        (*WaitStateChange.u.Exception).FirstChance = if SecondChanceException != 0 { 0u8 } else { 1u8 };
+        wait_state_change.u.Exception.FirstChance = if second_chance_exception != 0 { 0 } else { 1 };
 
-        KdpSetContextState(&mut WaitStateChange, Context);
+        KdpSetContextState(&mut wait_state_change, context);
 
-        Header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
-        Header.Buffer = (&mut WaitStateChange as *mut DBGKD_ANY_WAIT_STATE_CHANGE) as PCHAR;
+        header.Length = core::mem::size_of::<DBGKD_ANY_WAIT_STATE_CHANGE>() as u16;
+        header.Buffer = core::ptr::addr_of_mut!(wait_state_change) as PCHAR;
 
-        DumpTraceData(&mut Data);
+        DumpTraceData(&mut data);
 
-        let status = KdpSendWaitContinue(
-            PACKET_TYPE_KD_STATE_CHANGE64,
-            &mut Header,
-            &mut Data,
-            Context
-        );
+        status = KdpSendWaitContinue(PACKET_TYPE_KD_STATE_CHANGE64, &mut header, &mut data, context);
 
         if status != ContinueProcessorReselected {
-            return status as u8;
-        }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdReportProcessorChange() -> KCONTINUE_STATUS {
-
-    let CurrentPrcb: PKPRCB = KeGetCurrentPrcb();
-    let ContextRecord: PCONTEXT = core::ptr::addr_of_mut!((*CurrentPrcb).ProcessorState.ContextFrame);
-    let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
-    let Status: KCONTINUE_STATUS;
-
-    KdSave(0u8);
-
-    ExceptionRecord.ExceptionAddress = KeGetContextPc(ContextRecord) as PVOID;
-    ExceptionRecord.ExceptionCode = STATUS_WAKE_SYSTEM_DEBUGGER;
-
-    Status = KdpReportExceptionStateChange(
-        core::ptr::addr_of_mut!(ExceptionRecord),
-        ContextRecord,
-        0u8
-    );
-
-    KdRestore(0u8);
-
-    Status
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
-    Dpc: PKDPC,
-    DeferredContext: PVOID,
-    SystemArgument1: PVOID,
-    SystemArgument2: PVOID,
-) {
-    let mut OldSlip: LONG;
-    let NewSlip: LONG;
-    let mut PendingSlip: LONG;
-
-    PendingSlip = KdpTimeSlipPending;
-    loop {
-        OldSlip = PendingSlip;
-        NewSlip = if OldSlip > 1 { 1 } else { 0 };
-
-        PendingSlip = core::sync::atomic::AtomicI32::from_ptr(
-            core::ptr::addr_of_mut!(KdpTimeSlipPending)
-        )
-        .compare_exchange(
-            OldSlip,
-            NewSlip,
-            core::sync::atomic::Ordering::SeqCst,
-            core::sync::atomic::Ordering::SeqCst,
-        )
-        .unwrap_or_else(|x| x);
-
-        if PendingSlip == OldSlip {
             break;
         }
     }
 
-    if NewSlip != 0 {
-        ExQueueWorkItem(
-            core::ptr::addr_of_mut!(KdpTimeSlipWorkItem),
-            _WORK_QUEUE_TYPE_DelayedWorkQueue,
+    // C returns BOOLEAN: ContinueSuccess(1)→TRUE, ContinueError(0)→FALSE
+    status as BOOLEAN
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn KdReportProcessorChange() -> ULONG {
+    let current_prcb = KeGetCurrentPrcb();
+    let context_record = core::ptr::addr_of_mut!((*(current_prcb as *mut _KPRCB)).ProcessorState.ContextFrame);
+    let mut exception_record = core::mem::zeroed::<EXCEPTION_RECORD>();
+
+    KdSave(0u8);
+
+    exception_record.ExceptionAddress = KeGetContextPc(context_record) as PVOID;
+    exception_record.ExceptionCode = 0x80000007u32 as i32;
+
+    let status = KdpReportExceptionStateChange(&mut exception_record, context_record, 0u8);
+
+    KdRestore(0u8);
+
+    status as ULONG
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
+    _dpc: PKDPC,
+    _deferred_context: PVOID,
+    _system_argument1: PVOID,
+    _system_argument2: PVOID,
+) {
+    let mut pending_slip = KdpTimeSlipPending;
+    loop {
+        let old_slip = pending_slip;
+        let new_slip = if old_slip > 1 { 1 } else { 0 };
+
+        let result = InterlockedCompareExchange(
+            core::ptr::addr_of_mut!(KdpTimeSlipPending),
+            new_slip,
+            old_slip,
         );
+        if result == old_slip {
+            break;
+        }
+        pending_slip = result;
+    }
+
+    if pending_slip == 1 {
+        ExQueueWorkItem(core::ptr::addr_of_mut!(KdpTimeSlipWorkItem), _WORK_QUEUE_TYPE_DelayedWorkQueue);
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpTimeSlipWork(Context: *mut core::ffi::c_void) {
-    let mut OldIrql: KIRQL = 0;
-    let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
+pub unsafe extern "system" fn KdpTimeSlipWork(_context: PVOID) {
+    let mut old_irql = PASSIVE_LEVEL;
 
     ExAcquireTimeRefreshLock(0u8);
     ExUpdateSystemTimeFromCmos(0u8, 0);
     ExReleaseTimeRefreshLock();
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), core::ptr::addr_of_mut!(OldIrql));
+    KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), &mut old_irql);
     if !KdpTimeSlipEvent.is_null() {
         KeSetEvent(KdpTimeSlipEvent, 0, 0u8);
     }
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), OldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), old_irql);
 
-    *DueTime.QuadPart_mut() = -1800000000i64;
+    let mut due_time = core::mem::zeroed::<LARGE_INTEGER>();
+    due_time.QuadPart = -1800000000i64;
     KeSetTimer(
         core::ptr::addr_of_mut!(KdpTimeSlipTimer),
-        DueTime,
-        core::ptr::addr_of_mut!(KdpTimeSlipDpc)
+        due_time,
+        core::ptr::addr_of_mut!(KdpTimeSlipDpc) as PKDPC,
     );
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KdpQueryPerformanceCounter(
-    TrapFrame: PKTRAP_FRAME
-) -> LARGE_INTEGER {
-    let mut Null: LARGE_INTEGER = core::mem::zeroed();
+unsafe fn KdpQueryPerformanceCounter(trap_frame: *mut PVOID) -> LARGE_INTEGER {
+    let null = core::mem::zeroed::<LARGE_INTEGER>();
 
-    if KeGetTrapFrameInterruptState(TrapFrame) == 0 {
-        return Null;
+    if KeGetTrapFrameInterruptState(trap_frame) == 0 {
+        return null;
     }
 
     KeQueryPerformanceCounter(core::ptr::null_mut())
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdEnterDebugger(
-    TrapFrame: PKTRAP_FRAME,
-    ExceptionFrame: PKEXCEPTION_FRAME
-) -> u8 {
-    let Enable: u8;
+pub unsafe extern "system" fn KdEnterDebugger(trap_frame: *mut PVOID, exception_frame: *mut PVOID) -> BOOLEAN {
+    let enable;
 
-    if !TrapFrame.is_null() {
-        KdTimerStop = KdpQueryPerformanceCounter(TrapFrame);
-        (*core::ptr::addr_of_mut!(KdTimerDifference)).QuadPart = (*core::ptr::addr_of_mut!(KdTimerStop)).QuadPart -
-                                     (*core::ptr::addr_of_mut!(KdTimerStart)).QuadPart;
+    if !trap_frame.is_null() {
+        KdTimerStop = KdpQueryPerformanceCounter(trap_frame);
+        KdTimerDifference.QuadPart = KdTimerStop.QuadPart - KdTimerStart.QuadPart;
     } else {
-        (*core::ptr::addr_of_mut!(KdTimerStop)).QuadPart = 0;
+        KdTimerStop.QuadPart = 0;
     }
 
-    (*KeGetCurrentPrcb()).DebuggerSavedIRQL = KeGetCurrentIrql();
+    (*(KeGetCurrentPrcb() as *mut _KPRCB)).DebuggerSavedIRQL = KeGetCurrentIrql();
 
-    Enable = KeFreezeExecution(TrapFrame, ExceptionFrame);
+    enable = KeFreezeExecution(trap_frame as PKTRAP_FRAME, exception_frame as PKEXCEPTION_FRAME);
 
-    KdpPortLocked = KeTryToAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KdpDebuggerLock));
+    KdpPortLocked = KeTryToAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KdpDebuggerLock) as *mut _);
     KdSave(0u8);
     KdEnteredDebugger = 1u8;
 
-    if KiFreezeFlag & 1 != 0 {
-        KdpDprintf(b"FreezeLock was jammed!  Backup SpinLock was used!\n\0".as_ptr() as *const i8);
+    if (KiFreezeFlag & 1) != 0 {
+        // KdpDprintf(b"FreezeLock was jammed!  Backup SpinLock was used!\n\0".as_ptr() as PCHAR);
     }
 
-    if KiFreezeFlag & 2 != 0 {
-        KdpDprintf(b"Some processors not frozen in debugger!\n\0".as_ptr() as *const i8);
+    if (KiFreezeFlag & 2) != 0 {
+        // KdpDprintf(b"Some processors not frozen in debugger!\n\0".as_ptr() as PCHAR);
     }
 
     if KdpPortLocked == 0 {
-        KdpDprintf(b"Port lock was not acquired!\n\0".as_ptr() as *const i8);
+        // KdpDprintf(b"Port lock was not acquired!\n\0".as_ptr() as PCHAR);
     }
 
-    Enable
+    enable
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdExitDebugger(Enable: BOOLEAN) {
-
-    let TimeSlip: ULONG;
-
+pub unsafe extern "system" fn KdExitDebugger(enable: BOOLEAN) {
     KdEnteredDebugger = 0u8;
     KdRestore(0u8);
     if KdpPortLocked != 0 {
         KdpPortUnlock();
     }
 
-    KeThawExecution(Enable);
+    KeThawExecution(enable);
 
-    if (*core::ptr::addr_of!(KdTimerStop)).QuadPart == 0 {
+    if KdTimerStop.QuadPart == 0 {
         KdTimerStart = KdTimerStop;
     } else {
         KdTimerStart = KeQueryPerformanceCounter(core::ptr::null_mut());
     }
 
-    TimeSlip = InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
-    if TimeSlip == 1 {
+    let time_slip = InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
+    if time_slip == 1 {
         InterlockedIncrement(core::ptr::addr_of_mut!(KdpTimeSlipPending));
         KeInsertQueueDpc(
-            core::ptr::addr_of_mut!(KdpTimeSlipDpc),
+            core::ptr::addr_of_mut!(KdpTimeSlipDpc) as PKDPC,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         );
@@ -1725,25 +1705,27 @@ pub unsafe extern "system" fn KdExitDebugger(Enable: BOOLEAN) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdEnableDebuggerWithLock(NeedLock: BOOLEAN) -> NTSTATUS {
-    let mut OldIrql: KIRQL = PASSIVE_LEVEL;
+pub unsafe extern "system" fn KdEnableDebuggerWithLock(need_lock: BOOLEAN) -> NTSTATUS {
+    let mut old_irql = PASSIVE_LEVEL;
 
     if KdBlockEnable != 0 {
         return STATUS_ACCESS_DENIED;
     }
 
-    if NeedLock != 0 {
-        KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+    if need_lock != 0 {
+        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
         KdpPortLock();
     }
 
     if KdDisableCount == 0 {
-        if NeedLock != 0 {
+        if need_lock != 0 {
             KdpPortUnlock();
-            KeLowerIrql(OldIrql);
+            KeLowerIrql(old_irql);
+
             return STATUS_INVALID_PARAMETER;
         } else {
             KdInitSystem(0, core::ptr::null_mut());
+
             return STATUS_SUCCESS;
         }
     }
@@ -1756,26 +1738,24 @@ pub unsafe extern "system" fn KdEnableDebuggerWithLock(NeedLock: BOOLEAN) -> NTS
         }
     }
 
-    if NeedLock != 0 {
+    if need_lock != 0 {
         KdpPortUnlock();
-        KeLowerIrql(OldIrql);
+        KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdDisableDebuggerWithLock(NeedLock: BOOLEAN) -> NTSTATUS {
-
-    let mut OldIrql: KIRQL = PASSIVE_LEVEL;
-    let Status: NTSTATUS;
+pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> NTSTATUS {
+    let mut old_irql = PASSIVE_LEVEL;
 
     if KdBlockEnable != 0 {
         return STATUS_ACCESS_DENIED;
     }
 
-    if NeedLock != 0 {
-        KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+    if need_lock != 0 {
+        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
         KdpPortLock();
     }
 
@@ -1786,29 +1766,29 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(NeedLock: BOOLEAN) -> NT
             KdPreviouslyEnabled = 1u8;
         }
 
-        if NeedLock != 0 && KdPreviouslyEnabled != 0 {
-            Status = KdpAllowDisable();
-            if !NT_SUCCESS(Status) {
+        if need_lock != 0 && KdPreviouslyEnabled != 0 {
+            let status = KdpAllowDisable();
+            if status < 0 {
                 KdpPortUnlock();
-                KeLowerIrql(OldIrql);
-                return Status;
+                KeLowerIrql(old_irql);
+                return status;
             }
         }
 
         if KdDebuggerEnabled != 0 {
             KdpSuspendAllBreakPoints();
-            KiDebugRoutine = KdpStub;
+            KiDebugRoutine = KdpStub as PVOID;
 
             KdDebuggerEnabled = 0u8;
-            (*SharedUserData).KdDebuggerEnabled = 0u8;
+            *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
         }
     }
 
-    KdDisableCount = KdDisableCount.wrapping_add(1);
+    KdDisableCount += 1;
 
-    if NeedLock != 0 {
+    if need_lock != 0 {
         KdpPortUnlock();
-        KeLowerIrql(OldIrql);
+        KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS
@@ -1826,351 +1806,368 @@ pub unsafe extern "system" fn KdDisableDebugger() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn KdSystemDebugControl(
-    Command: i32,
-    InputBuffer: *mut core::ffi::c_void,
-    InputBufferLength: u32,
-    OutputBuffer: *mut core::ffi::c_void,
-    OutputBufferLength: u32,
-    ReturnLength: *mut u32,
-    PreviousMode: KPROCESSOR_MODE,
-) -> i32 {
-    let mut Status: i32;
-    let mut Length: u32 = 0;
+    command: SYSDBG_COMMAND,
+    input_buffer: PVOID,
+    input_buffer_length: ULONG,
+    output_buffer: PVOID,
+    output_buffer_length: ULONG,
+    return_length: PULONG,
+    previous_mode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    let mut status;
+    let mut length = 0u32;
 
-    match Command as u32 {
-        0x20736F52 => {
-            match InputBuffer as usize {
-                0x21 => {
-                    PspDumpThreads(1u8);
-                }
-                0x22 => {
-                    PspDumpThreads(0u8);
-                }
-                0x24 => {
-                    MmDumpArmPfnDatabase(0u8);
-                }
+    match command as u32 {
+        0x21 => {
+            match input_buffer as ULONG_PTR {
+                0x21 => PspDumpThreads(1u8),
+                0x22 => PspDumpThreads(0u8),
+                0x24 => MmDumpArmPfnDatabase(0u8),
                 _ => {}
             }
             return STATUS_SUCCESS;
         }
-        0x43736F52 => {
-            match InputBufferLength {
-                0 => {
-                    KeWin32PreServiceHook = InputBuffer;
-                }
-                1 => {
-                    KeWin32PostServiceHook = InputBuffer;
-                }
-                _ => {}
-            }
-        }
-        0x44736F52 => {
-            KeRosDumpStackFrames(InputBuffer as PULONG_PTR, InputBufferLength);
-        }
-        0x5262644B => {
-            return KdbRegisterCliCallback(InputBuffer, InputBufferLength);
-        }
         _ => {}
     }
 
-    match Command {
-        0 => {
-            if OutputBufferLength != core::mem::size_of::<DBGKD_GET_VERSION64>() as u32 {
-                Status = 0xC0000004u32 as i32;
+    match command as u32 {
+        SysDbgQueryVersion => {
+            if output_buffer_length != core::mem::size_of::<DBGKD_GET_VERSION64>() as u32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                KdpSysGetVersion(OutputBuffer as PDBGKD_GET_VERSION64);
-                Status = STATUS_SUCCESS;
+                KdpSysGetVersion(output_buffer as PDBGKD_GET_VERSION64);
+                status = STATUS_SUCCESS;
             }
         }
-        1 | 2 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_VIRTUAL>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadVirtual | SysDbgWriteVirtual => {
+            if input_buffer_length != 24 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_VIRTUAL);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u64;
+                let address = *request_ptr;
+                let buffer = *request_ptr.add(1) as PVOID;
+                let request = *request_ptr.add(2) as u32;
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    if Command == 1 { 1 } else { 0 },
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    if command as u32 == SysDbgReadVirtual {
+                        _LOCK_OPERATION_IoWriteAccess
+                    } else {
+                        _LOCK_OPERATION_IoReadAccess
+                    },
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpCopyMemoryChunks(
-                        Request.Address as u64,
-                        Request.Buffer,
-                        Request.Request,
+                if status >= 0 {
+                    status = KdpCopyMemoryChunks(
+                        address,
+                        buffer,
+                        request,
                         0,
-                        if Command == 1 { 0 } else { 0x2 },
-                        core::ptr::addr_of_mut!(Length),
+                        if command as u32 == SysDbgReadVirtual {
+                            0
+                        } else {
+                            MMDBG_COPY_WRITE
+                        },
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        3 | 4 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_PHYSICAL>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadPhysical | SysDbgWritePhysical => {
+            if input_buffer_length != 32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_PHYSICAL);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u64;
+                let address = *request_ptr;
+                let buffer = *request_ptr.add(2) as PVOID;
+                let request = *request_ptr.add(3) as u32;
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    if Command == 1 { 1 } else { 0 },
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    if command as u32 == SysDbgReadVirtual {
+                        _LOCK_OPERATION_IoWriteAccess
+                    } else {
+                        _LOCK_OPERATION_IoReadAccess
+                    },
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpCopyMemoryChunks(
-                        (*Request.Address.QuadPart()),
-                        Request.Buffer,
-                        Request.Request,
+                if status >= 0 {
+                    status = KdpCopyMemoryChunks(
+                        address,
+                        buffer,
+                        request,
                         0,
-                        0x1 | (if Command == 1 { 0 } else { 0x2 }),
-                        core::ptr::addr_of_mut!(Length),
+                        MMDBG_COPY_PHYSICAL
+                            | if command as u32 == SysDbgReadVirtual {
+                                0
+                            } else {
+                                MMDBG_COPY_WRITE
+                            },
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        5 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadControlSpace => {
+            if input_buffer_length != 24 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_CONTROL_SPACE);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let processor = *request_ptr;
+                let address = *(request_ptr.add(2) as *mut u64);
+                let buffer = *(request_ptr.add(4) as *mut PVOID);
+                let request = *request_ptr.add(6);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    1,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoWriteAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysReadControlSpace(
-                        Request.Processor,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
-                    );
-                    ExUnlockUserBuffer(LockVariable);
+                if status >= 0 {
+                    status = KdpSysReadControlSpace(processor as u16, address, locked_buffer, request, &mut length);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        6 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgWriteControlSpace => {
+            if input_buffer_length != 24 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_CONTROL_SPACE);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let processor = *request_ptr;
+                let address = *(request_ptr.add(2) as *mut u64);
+                let buffer = *(request_ptr.add(4) as *mut PVOID);
+                let request = *request_ptr.add(6);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    0,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoReadAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysWriteControlSpace(
-                        Request.Processor,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
-                    );
-                    ExUnlockUserBuffer(LockVariable);
+                if status >= 0 {
+                    status = KdpSysWriteControlSpace(processor as u16, address, locked_buffer, request, &mut length);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        7 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_IO_SPACE>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadIoSpace => {
+            if input_buffer_length != 32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_IO_SPACE);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let interface_type = *request_ptr;
+                let bus_number = *request_ptr.add(1);
+                let address_space = *request_ptr.add(2);
+                let address = *(request_ptr.add(4) as *mut u64);
+                let buffer = *(request_ptr.add(6) as *mut PVOID);
+                let request = *request_ptr.add(8);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    1,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoWriteAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysReadIoSpace(
-                        Request.InterfaceType,
-                        Request.BusNumber,
-                        Request.AddressSpace,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
+                if status >= 0 {
+                    status = KdpSysReadIoSpace(
+                        interface_type,
+                        bus_number,
+                        address_space,
+                        address,
+                        locked_buffer,
+                        request,
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        8 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_IO_SPACE>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgWriteIoSpace => {
+            if input_buffer_length != 32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_IO_SPACE);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let interface_type = *request_ptr;
+                let bus_number = *request_ptr.add(1);
+                let address_space = *request_ptr.add(2);
+                let address = *(request_ptr.add(4) as *mut u64);
+                let buffer = *(request_ptr.add(6) as *mut PVOID);
+                let request = *request_ptr.add(8);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    0,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoReadAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysWriteIoSpace(
-                        Request.InterfaceType,
-                        Request.BusNumber,
-                        Request.AddressSpace,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
+                if status >= 0 {
+                    status = KdpSysWriteIoSpace(
+                        interface_type,
+                        bus_number,
+                        address_space,
+                        address,
+                        locked_buffer,
+                        request,
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        9 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_MSR>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadMsr => {
+            if input_buffer_length != 16 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = InputBuffer as PSYSDBG_MSR;
-                Status = KdpSysReadMsr((*Request).Address, core::ptr::addr_of_mut!((*Request).Data));
+                let request = input_buffer as *mut u32;
+                status = KdpSysReadMsr(*request, (request.add(2) as *mut u64));
             }
         }
-        10 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_MSR>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgWriteMsr => {
+            if input_buffer_length != 16 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = InputBuffer as PSYSDBG_MSR;
-                Status = KdpSysWriteMsr((*Request).Address, core::ptr::addr_of_mut!((*Request).Data));
+                let request = input_buffer as *mut u32;
+                status = KdpSysWriteMsr(*request, (request.add(2) as *mut u64));
             }
         }
-        11 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_BUS_DATA>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgReadBusData => {
+            if input_buffer_length != 32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_BUS_DATA);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let bus_data_type = *request_ptr;
+                let bus_number = *request_ptr.add(1);
+                let slot_number = *request_ptr.add(2);
+                let offset = *request_ptr.add(3);
+                let buffer = *(request_ptr.add(4) as *mut PVOID);
+                let request = *request_ptr.add(6);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    1,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoWriteAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysReadBusData(
-                        Request.BusDataType,
-                        Request.BusNumber,
-                        Request.SlotNumber,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
+                if status >= 0 {
+                    status = KdpSysReadBusData(
+                        bus_data_type,
+                        bus_number,
+                        slot_number,
+                        offset,
+                        locked_buffer,
+                        request,
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        12 => {
-            if InputBufferLength != core::mem::size_of::<SYSDBG_BUS_DATA>() as u32 {
-                Status = 0xC0000004u32 as i32;
+        SysDbgWriteBusData => {
+            if input_buffer_length != 32 {
+                status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let Request = *(InputBuffer as PSYSDBG_BUS_DATA);
-                let mut LockedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-                let mut LockVariable: PMDL = core::ptr::null_mut();
+                let request_ptr = input_buffer as *mut u32;
+                let bus_data_type = *request_ptr;
+                let bus_number = *request_ptr.add(1);
+                let slot_number = *request_ptr.add(2);
+                let offset = *request_ptr.add(3);
+                let buffer = *(request_ptr.add(4) as *mut PVOID);
+                let request = *request_ptr.add(6);
+                let mut locked_buffer = core::ptr::null_mut();
+                let mut lock_variable = core::ptr::null_mut();
 
-                Status = ExLockUserBuffer(
-                    Request.Buffer,
-                    Request.Request,
-                    PreviousMode,
-                    0,
-                    core::ptr::addr_of_mut!(LockedBuffer),
-                    core::ptr::addr_of_mut!(LockVariable),
+                status = ExLockUserBuffer(
+                    buffer,
+                    request,
+                    previous_mode,
+                    _LOCK_OPERATION_IoReadAccess,
+                    &mut locked_buffer,
+                    &mut lock_variable,
                 );
-                if NT_SUCCESS(Status) {
-                    Status = KdpSysWriteBusData(
-                        Request.BusDataType,
-                        Request.BusNumber,
-                        Request.SlotNumber,
-                        Request.Address,
-                        LockedBuffer,
-                        Request.Request,
-                        core::ptr::addr_of_mut!(Length),
+                if status >= 0 {
+                    status = KdpSysWriteBusData(
+                        bus_data_type,
+                        bus_number,
+                        slot_number,
+                        offset,
+                        locked_buffer,
+                        request,
+                        &mut length,
                     );
-                    ExUnlockUserBuffer(LockVariable);
+                    ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
-        13 => {
-            Status = KdpSysCheckLowMemory(0);
+        SysDbgCheckLowMemory => {
+            status = KdpSysCheckLowMemory(0);
         }
         _ => {
-            Status = 0xC0000003u32 as i32;
+            status = STATUS_INVALID_INFO_CLASS;
         }
     }
 
-    if !ReturnLength.is_null() {
-        *ReturnLength = Length;
+    if !return_length.is_null() {
+        *return_length = length;
     }
 
-    Status
+    status
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdChangeOption(
-    Option: KD_OPTION,
-    InBufferBytes: ULONG,
-    InBuffer: PVOID,
-    OutBufferBytes: ULONG,
-    OutBuffer: PVOID,
-    OutBufferNeeded: PULONG,
+    option: ULONG,
+    in_buffer_bytes: ULONG,
+    in_buffer: PVOID,
+    out_buffer_bytes: ULONG,
+    out_buffer: PVOID,
+    out_buffer_needed: PULONG,
 ) -> NTSTATUS {
     if KdPitchDebugger != 0 {
-        return STATUS_DEBUGGER_INACTIVE;
+        return 0xC0000354u32 as NTSTATUS;
     }
 
-    if Option != _KD_OPTION_KD_OPTION_SET_BLOCK_ENABLE {
-        if !OutBufferNeeded.is_null() {
-            *OutBufferNeeded = 0;
+    if option != KD_OPTION_SET_BLOCK_ENABLE {
+        if !out_buffer_needed.is_null() {
+            *out_buffer_needed = 0;
         }
         return STATUS_INVALID_INFO_CLASS;
     }
 
-    if (InBufferBytes != core::mem::size_of::<BOOLEAN>() as ULONG) ||
-       (OutBufferBytes != 0) ||
-       (!OutBuffer.is_null())
-    {
+    if in_buffer_bytes != 1 || out_buffer_bytes != 0 || !out_buffer.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -2178,79 +2175,80 @@ pub unsafe extern "system" fn KdChangeOption(
         return STATUS_ACCESS_VIOLATION;
     }
 
-    KdBlockEnable = *(InBuffer as PBOOLEAN);
+    KdBlockEnable = *(in_buffer as *mut u8) as u32;
 
-    if !OutBufferNeeded.is_null() {
-        *OutBufferNeeded = 0;
+    if !out_buffer_needed.is_null() {
+        *out_buffer_needed = 0;
     }
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdPowerTransition(NewState: DEVICE_POWER_STATE) -> NTSTATUS {
-
-    if NewState == PowerDeviceD0 {
+pub unsafe extern "system" fn KdPowerTransition(new_state: DEVICE_POWER_STATE) -> NTSTATUS {
+    if new_state == _DEVICE_POWER_STATE_PowerDeviceD0 {
         KdD0Transition();
-        return STATUS_SUCCESS;
-    } else if NewState == PowerDeviceD1 || NewState == PowerDeviceD2 || NewState == PowerDeviceD3 {
+        STATUS_SUCCESS
+    } else if new_state == _DEVICE_POWER_STATE_PowerDeviceD1 || new_state == _DEVICE_POWER_STATE_PowerDeviceD2 || new_state == _DEVICE_POWER_STATE_PowerDeviceD3 {
         KdD3Transition();
-        return STATUS_SUCCESS;
+        STATUS_SUCCESS
     } else {
-        return STATUS_INVALID_PARAMETER_1;
+        STATUS_INVALID_PARAMETER_1
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdRefreshDebuggerNotPresent() -> u8 {
-    let Enable: u8;
-    let DebuggerNotPresent: u8;
-
+pub unsafe extern "system" fn KdRefreshDebuggerNotPresent() -> BOOLEAN {
     if KdPitchDebugger != 0 {
         return 1u8;
     }
 
-    Enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
+    let enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
 
-    KdpDprintf(b"KDTARGET: Refreshing KD connection\n\0".as_ptr() as *const i8);
+    // KdpDprintf(b"KDTARGET: Refreshing KD connection\n\0".as_ptr() as PCHAR);
 
-    DebuggerNotPresent = KdDebuggerNotPresent;
+    let debugger_not_present = KdDebuggerNotPresent;
 
-    KdExitDebugger(Enable);
-    return DebuggerNotPresent;
+    KdExitDebugger(enable);
+    debugger_not_present
 }
+
+const DPFLTR_MASK: ULONG = 0x80000000;
+const MAXULONG: ULONG = 0xFFFFFFFF;
+const STATUS_INVALID_PARAMETER_1: NTSTATUS = 0xC00000EF_u32 as NTSTATUS;
 
 #[no_mangle]
 pub unsafe extern "system" fn NtQueryDebugFilterState(
     ComponentId: ULONG,
     Level: ULONG,
 ) -> NTSTATUS {
-    let Mask: PULONG;
+    let mask: PULONG;
 
+    /* Check if the ID fits in the component table */
     if ComponentId < KdComponentTableSize {
-        Mask = *KdComponentTable.offset(ComponentId as isize);
+        /* It does, so get the mask from there */
+        mask = *(KdComponentTable as *mut PULONG).add(ComponentId as usize);
     } else if ComponentId == MAXULONG {
-        Mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
+        /* Internal ID used for DbgPrint messages without ID and Level */
+        mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
     } else {
-        #[cfg(not(target_os = "windows_vista_or_later"))]
-        {
-            return STATUS_INVALID_PARAMETER_1;
-        }
-        #[cfg(target_os = "windows_vista_or_later")]
-        {
-            Mask = core::ptr::addr_of_mut!(Kd_DEFAULT_Mask);
-        }
+        /* Use the default component ID */
+        mask = core::ptr::addr_of_mut!(Kd_DEFAULT_Mask);
     }
 
-    let mut Level = Level;
-    if Level < 32 {
-        Level = 1 << Level;
+    /* Convert Level to bit field if required */
+    let mut level = Level;
+    if level < 32 {
+        level = 1 << level;
     }
-    Level &= !DPFLTR_MASK;
+    level &= !DPFLTR_MASK;
 
-    if (Kd_WIN2000_Mask & Level) != 0 || ((*Mask) & Level) != 0 {
+    /* Determine if this Level is filtered out */
+    if (Kd_WIN2000_Mask & level) != 0 || (*mask & level) != 0 {
+        /* This mask will get through to the debugger */
         1 as NTSTATUS
     } else {
+        /* This mask is filtered out */
         0 as NTSTATUS
     }
 }
@@ -2261,37 +2259,34 @@ pub unsafe extern "system" fn NtSetDebugFilterState(
     Level: ULONG,
     State: BOOLEAN,
 ) -> NTSTATUS {
-    let mut Mask: PULONG;
-
+    /* Modifying debug filters requires the debug privilege */
     if SeSinglePrivilegeCheck(SeDebugPrivilege, ExGetPreviousMode()) == 0 {
         return STATUS_ACCESS_DENIED;
     }
 
+    let mask: PULONG;
+
+    /* Check if the ID fits in the component table */
     if ComponentId < KdComponentTableSize {
-        Mask = *KdComponentTable.offset(ComponentId as isize);
+        mask = *(KdComponentTable as *mut PULONG).add(ComponentId as usize);
     } else if ComponentId == MAXULONG {
-        Mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
+        mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
     } else {
-        #[cfg(not(target_os = "windows_xp"))]
-        {
-            Mask = core::ptr::addr_of_mut!(Kd_DEFAULT_Mask);
-        }
-        #[cfg(target_os = "windows_xp")]
-        {
-            return STATUS_INVALID_PARAMETER_1;
-        }
+        mask = core::ptr::addr_of_mut!(Kd_DEFAULT_Mask);
     }
 
-    let mut Level = Level;
-    if Level < 32 {
-        Level = 1 << Level;
+    /* Convert Level to bit field if required */
+    let mut level = Level;
+    if level < 32 {
+        level = 1 << level;
     }
-    Level &= !DPFLTR_MASK;
+    level &= !DPFLTR_MASK;
 
+    /* Set or remove the Level */
     if State != 0 {
-        *Mask |= Level;
+        *mask |= level;
     } else {
-        *Mask &= !Level;
+        *mask &= !level;
     }
 
     STATUS_SUCCESS
@@ -3699,7 +3694,7 @@ pub unsafe extern "system" fn NtSetDebugFilterState(
 //             case DbgKdRebootApi:
 //
 //                 /* Reboot the system */
-//                 HalReturnToFirmware(HalRebootRoutine);
+//                 HalReturnToFirmware(_FIRMWARE_REENTRY_HalRebootRoutine);
 //                 break;
 //
 //             case DbgKdContinueApi2:

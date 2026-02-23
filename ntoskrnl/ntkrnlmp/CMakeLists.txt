@@ -22,6 +22,7 @@ endif()
 
 list(APPEND NTKRNLMP_PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/guid.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kd64_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c

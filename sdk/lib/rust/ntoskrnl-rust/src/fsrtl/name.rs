@@ -1,48 +1,51 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{PCUNICODE_STRING, PCWCH, PUNICODE_STRING, RtlFreeUnicodeString, RtlUpcaseUnicodeString};
-use core::ffi::c_void;
 
-extern "system" {
-    fn RtlEqualMemory( Source1: *const core::ffi::c_void, Source2: *const core::ffi::c_void, Length: usize, ) -> u8;
-    fn FsRtlIsUnicodeCharacterWild(Character: u16) -> u8;
+use ntkrnl_sys::ddk::{
+    PCUNICODE_STRING, PCWCH, PUNICODE_STRING,
+    RtlFreeUnicodeString, RtlUpcaseUnicodeString,
+    _UNICODE_STRING,
+};
+
+#[inline(always)]
+unsafe fn RtlEqualMemory(a: PVOID, b: PVOID, len: usize) -> bool {
+    ntkrnl_sys::ddk::RtlCompareMemory(a, b, len as _) == len as _
 }
 
-pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
+const DOS_STAR: u16 = b'<' as u16;
+const DOS_QM: u16 = b'>' as u16;
+const DOS_DOT: u16 = b'"' as u16;
+
+unsafe fn FsRtlIsUnicodeCharacterWild(c: u16) -> BOOLEAN {
+    if c == b'*' as u16 || c == b'?' as u16 || c == DOS_STAR || c == DOS_QM || c == DOS_DOT {
+        1u8
+    } else {
+        0u8
+    }
+}
+
+unsafe fn FsRtlIsNameInExpressionPrivate(
     Expression: PUNICODE_STRING,
     Name: PUNICODE_STRING,
-    IgnoreCase: u8,
-    UpcaseTable: *mut u16,
-) -> u8 {
-
-    const DOS_STAR: u16 = b'<' as u16;
-    const DOS_DOT: u16 = b'>' as u16;
-    const DOS_QM: u16 = b'"' as u16;
-    const UNICODE_NULL: u16 = 0;
-
-    let mut Offset: u16;
-    let mut Position: u16;
-    let mut BackTrackingPosition: u16;
-    let mut OldBackTrackingPosition: u16;
-    let mut BackTrackingBuffer: [u16; 16] = [0; 16];
-    let mut OldBackTrackingBuffer: [u16; 16] = [0; 16];
-    let mut BackTrackingSwap: *mut u16;
-    let mut BackTracking: *mut u16 = BackTrackingBuffer.as_mut_ptr();
-    let mut OldBackTracking: *mut u16 = OldBackTrackingBuffer.as_mut_ptr();
-    let mut BackTrackingBufferSize: u32 = 16;
-    let mut AllocatedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut IntExpression: _UNICODE_STRING;
-    let mut ExpressionPosition: u16;
-    let mut NamePosition: u16 = 0;
-    let mut MatchingChars: u16 = 1;
-    let mut EndOfName: u8 = 0u8;
-    let mut Result: u8;
-    let mut DontSkipDot: u8;
-    let mut CompareChar: u16;
+    IgnoreCase: BOOLEAN,
+    UpcaseTable: PCWCH,
+) -> BOOLEAN {
+    let mut BackTrackingBuffer: [USHORT; 16] = [0; 16];
+    let mut OldBackTrackingBuffer: [USHORT; 16] = [0; 16];
+    let mut BackTracking: *mut USHORT = BackTrackingBuffer.as_mut_ptr();
+    let mut OldBackTracking: *mut USHORT = OldBackTrackingBuffer.as_mut_ptr();
+    let mut BackTrackingBufferSize: ULONG = 16;
+    let mut AllocatedBuffer: PVOID = core::ptr::null_mut();
+    let mut NamePosition: USHORT = 0;
+    let mut MatchingChars: USHORT = 1;
+    let mut EndOfName: BOOLEAN = 0u8;
+    let mut Result: BOOLEAN;
+    let mut BackTrackingPosition: USHORT;
+    let mut OldBackTrackingPosition: USHORT;
 
     if (*Name).Length == 0 || (*Expression).Length == 0 {
         if (*Name).Length == 0 && (*Expression).Length == 0 {
@@ -52,36 +55,36 @@ pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
         }
     }
 
-    if (*Expression).Length == core::mem::size_of::<u16>() as u16 {
-        if *(*Expression).Buffer.offset(0) == b'*' as u16 {
+    if (*Expression).Length == core::mem::size_of::<WCHAR>() as USHORT {
+        if (*(*Expression).Buffer.offset(0)) == b'*' as u16 {
             return 1u8;
         }
     }
 
-    if *(*Expression).Buffer.offset(0) == b'*' as u16 {
-        IntExpression = *Expression;
+    if (*(*Expression).Buffer.offset(0)) == b'*' as u16 {
+        let mut IntExpression = *Expression;
         IntExpression.Buffer = IntExpression.Buffer.offset(1);
-        IntExpression.Length -= core::mem::size_of::<u16>() as u16;
+        IntExpression.Length -= core::mem::size_of::<WCHAR>() as USHORT;
 
-        if FsRtlDoesNameContainWildCards(core::ptr::addr_of_mut!(IntExpression)) == 0 {
-            if (*Name).Length < ((*Expression).Length - core::mem::size_of::<u16>() as u16) {
+        if FsRtlDoesNameContainWildCards(&mut IntExpression) == 0 {
+            if (*Name).Length < ((*Expression).Length - core::mem::size_of::<WCHAR>() as USHORT) {
                 return 0u8;
             }
 
-            NamePosition = ((*Name).Length - IntExpression.Length) / core::mem::size_of::<u16>() as u16;
+            NamePosition = ((*Name).Length - IntExpression.Length) / core::mem::size_of::<WCHAR>() as USHORT;
 
             if IgnoreCase == 0 {
                 return RtlEqualMemory(
-                    IntExpression.Buffer as *const core::ffi::c_void,
-                    (*Name).Buffer.offset(NamePosition as isize) as *const core::ffi::c_void,
+                    IntExpression.Buffer as PVOID,
+                    (*Name).Buffer.offset(NamePosition as isize) as PVOID,
                     IntExpression.Length as usize,
-                );
+                ) as BOOLEAN;
             } else {
-                ExpressionPosition = 0;
-                while ExpressionPosition < (IntExpression.Length / core::mem::size_of::<u16>() as u16) {
-                    if *UpcaseTable.offset(*(*Name).Buffer.offset((NamePosition + ExpressionPosition) as isize) as isize)
-                        != *IntExpression.Buffer.offset(ExpressionPosition as isize)
-                    {
+                let mut ExpressionPosition: USHORT = 0;
+                while ExpressionPosition < (IntExpression.Length / core::mem::size_of::<WCHAR>() as USHORT) {
+                    let name_char = *(*Name).Buffer.offset((NamePosition + ExpressionPosition) as isize);
+                    let expr_char = *IntExpression.Buffer.offset(ExpressionPosition as isize);
+                    if *UpcaseTable.offset(name_char as isize) != expr_char {
                         return 0u8;
                     }
                     ExpressionPosition += 1;
@@ -91,11 +94,12 @@ pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
         }
     }
 
-    loop {
+    NamePosition = 0;
+    while EndOfName == 0 {
         OldBackTrackingPosition = 0;
         BackTrackingPosition = 0;
 
-        if NamePosition >= (*Name).Length / core::mem::size_of::<u16>() as u16 {
+        if NamePosition >= (*Name).Length / core::mem::size_of::<WCHAR>() as USHORT {
             EndOfName = 1u8;
             if MatchingChars != 0 && *OldBackTracking.offset((MatchingChars - 1) as isize) == (*Expression).Length * 2 {
                 break;
@@ -103,10 +107,10 @@ pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
         }
 
         while MatchingChars > OldBackTrackingPosition {
-            ExpressionPosition = (*OldBackTracking.offset(OldBackTrackingPosition as isize) + 1) / 2;
+            let mut ExpressionPosition: USHORT = (*OldBackTracking.offset(OldBackTrackingPosition as isize) + 1) / 2;
             OldBackTrackingPosition += 1;
 
-            Offset = 0;
+            let mut Offset: USHORT = 0;
             while ExpressionPosition < (*Expression).Length {
                 ExpressionPosition += Offset;
 
@@ -116,62 +120,64 @@ pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
                     break;
                 }
 
-                if BackTrackingPosition > BackTrackingBufferSize as u16 - 3 {
-                    BackTrackingBufferSize = (*Expression).Length / core::mem::size_of::<u16>() as u16 as u32 * 2 + 1;
+                if BackTrackingPosition > BackTrackingBufferSize as USHORT - 3 {
+                    BackTrackingBufferSize = ((*Expression).Length / core::mem::size_of::<WCHAR>() as USHORT) as ULONG * 2 + 1;
 
                     AllocatedBuffer = ExAllocatePoolWithTag(
                         PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
-                        (2 * BackTrackingBufferSize * core::mem::size_of::<u16>() as u32) as usize,
-                        u32::from_be_bytes(*b"nrSF"),
+                        (2 * BackTrackingBufferSize * core::mem::size_of::<USHORT>() as ULONG) as usize,
+                        u32::from_le_bytes([b'n', b'r', b'S', b'F']),
                     );
                     if AllocatedBuffer.is_null() {
                         Result = 0u8;
-                        break 'Exit;
+                        break;
                     }
 
                     core::ptr::copy_nonoverlapping(
                         BackTracking as *const u8,
                         AllocatedBuffer as *mut u8,
-                        16 * core::mem::size_of::<u16>(),
+                        16 * core::mem::size_of::<USHORT>(),
                     );
 
-                    BackTracking = AllocatedBuffer as *mut u16;
+                    BackTracking = AllocatedBuffer as *mut USHORT;
 
                     core::ptr::copy_nonoverlapping(
                         OldBackTracking as *const u8,
-                        (BackTracking as *mut u8).offset((BackTrackingBufferSize * core::mem::size_of::<u16>() as u32) as isize),
-                        16 * core::mem::size_of::<u16>(),
+                        (BackTracking as usize + BackTrackingBufferSize as usize * core::mem::size_of::<USHORT>()) as *mut u8,
+                        16 * core::mem::size_of::<USHORT>(),
                     );
 
                     OldBackTracking = BackTracking.offset(BackTrackingBufferSize as isize);
                 }
 
-                CompareChar = if NamePosition >= (*Name).Length / core::mem::size_of::<u16>() as u16 {
-                    UNICODE_NULL
+                let CompareChar: WCHAR = if NamePosition >= (*Name).Length / core::mem::size_of::<WCHAR>() as USHORT {
+                    0u16
                 } else if IgnoreCase != 0 {
                     *UpcaseTable.offset(*(*Name).Buffer.offset(NamePosition as isize) as isize)
                 } else {
                     *(*Name).Buffer.offset(NamePosition as isize)
                 };
 
-                if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == CompareChar && EndOfName == 0 {
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<u16>() as u16) * 2;
+                let expr_char = *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<WCHAR>() as USHORT) as isize);
+
+                if expr_char == CompareChar && EndOfName == 0 {
+                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<WCHAR>() as USHORT) * 2;
                     BackTrackingPosition += 1;
-                } else if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == b'?' as u16 && EndOfName == 0 {
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<u16>() as u16) * 2;
+                } else if expr_char == b'?' as u16 && EndOfName == 0 {
+                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<WCHAR>() as USHORT) * 2;
                     BackTrackingPosition += 1;
-                } else if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == b'*' as u16 {
+                } else if expr_char == b'*' as u16 {
                     *BackTracking.offset(BackTrackingPosition as isize) = ExpressionPosition * 2;
                     BackTrackingPosition += 1;
                     *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition * 2) + 3;
                     BackTrackingPosition += 1;
-                    Offset = core::mem::size_of::<u16>() as u16;
+                    Offset = core::mem::size_of::<WCHAR>() as USHORT;
                     continue;
-                } else if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == DOS_STAR {
-                    DontSkipDot = 1u8;
+                } else if expr_char == DOS_STAR {
+                    let mut DontSkipDot: BOOLEAN = 1u8;
                     if EndOfName == 0 && *(*Name).Buffer.offset(NamePosition as isize) == b'.' as u16 {
-                        Position = NamePosition + 1;
-                        while Position < (*Name).Length / core::mem::size_of::<u16>() as u16 {
+                        let mut Position: USHORT = NamePosition + 1;
+                        while Position < (*Name).Length / core::mem::size_of::<WCHAR>() as USHORT {
                             if *(*Name).Buffer.offset(Position as isize) == b'.' as u16 {
                                 DontSkipDot = 0u8;
                                 break;
@@ -187,130 +193,128 @@ pub unsafe extern "system" fn FsRtlIsNameInExpressionPrivate(
 
                     *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition * 2) + 3;
                     BackTrackingPosition += 1;
-                    Offset = core::mem::size_of::<u16>() as u16;
+                    Offset = core::mem::size_of::<WCHAR>() as USHORT;
                     continue;
-                } else if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == DOS_DOT {
-                    if EndOfName == 0 {
-                        if *(*Name).Buffer.offset(NamePosition as isize) == b'.' as u16 {
-                            *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<u16>() as u16) * 2;
-                            BackTrackingPosition += 1;
-                        }
+                } else if expr_char == DOS_DOT {
+                    if EndOfName != 0 {
+                        Offset = core::mem::size_of::<WCHAR>() as USHORT;
+                        continue;
                     }
-                } else if *(*Expression).Buffer.offset((ExpressionPosition / core::mem::size_of::<u16>() as u16) as isize) == DOS_QM {
-                    if EndOfName == 0 && *(*Name).Buffer.offset(NamePosition as isize) != b'.' as u16 {
-                        *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<u16>() as u16) * 2;
+
+                    if *(*Name).Buffer.offset(NamePosition as isize) == b'.' as u16 {
+                        *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<WCHAR>() as USHORT) * 2;
                         BackTrackingPosition += 1;
                     }
-                } else {
+                } else if expr_char == DOS_QM {
+                    if EndOfName != 0 || *(*Name).Buffer.offset(NamePosition as isize) == b'.' as u16 {
+                        Offset = core::mem::size_of::<WCHAR>() as USHORT;
+                        continue;
+                    }
+
+                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + core::mem::size_of::<WCHAR>() as USHORT) * 2;
+                    BackTrackingPosition += 1;
                 }
 
                 break;
             }
 
-            Position = 0;
+            let mut Position: USHORT = 0;
             while MatchingChars > OldBackTrackingPosition && Position < BackTrackingPosition {
-                while MatchingChars > OldBackTrackingPosition
-                    && *BackTracking.offset(Position as isize) > *OldBackTracking.offset(OldBackTrackingPosition as isize)
-                {
+                while MatchingChars > OldBackTrackingPosition &&
+                      *BackTracking.offset(Position as isize) > *OldBackTracking.offset(OldBackTrackingPosition as isize) {
                     OldBackTrackingPosition += 1;
                 }
                 Position += 1;
             }
         }
 
-        BackTrackingSwap = BackTracking;
+        let BackTrackingSwap = BackTracking;
         BackTracking = OldBackTracking;
         OldBackTracking = BackTrackingSwap;
 
         MatchingChars = BackTrackingPosition;
         NamePosition += 1;
-
-        if EndOfName != 0 {
-            break;
-        }
     }
 
-    Result = if MatchingChars > 0 && *OldBackTracking.offset((MatchingChars - 1) as isize) == ((*Expression).Length * 2) { 1u8 } else { 0u8 };
+    Result = if MatchingChars > 0 && *OldBackTracking.offset((MatchingChars - 1) as isize) == ((*Expression).Length * 2) {
+        1u8
+    } else {
+        0u8
+    };
 
-'Exit: loop {
     if !AllocatedBuffer.is_null() {
-        ExFreePoolWithTag(AllocatedBuffer, u32::from_be_bytes(*b"nrSF"));
+        ExFreePoolWithTag(AllocatedBuffer, u32::from_le_bytes([b'n', b'r', b'S', b'F']));
     }
 
-    return Result;
-}
+    Result
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAreNamesEqual(
     Name1: PCUNICODE_STRING,
     Name2: PCUNICODE_STRING,
-    IgnoreCase: u8,
+    IgnoreCase: BOOLEAN,
     UpcaseTable: PCWCH,
-) -> u8 {
+) -> BOOLEAN {
     let mut UpcaseName1: _UNICODE_STRING = core::mem::zeroed();
     let mut UpcaseName2: _UNICODE_STRING = core::mem::zeroed();
-    let mut StringsAreEqual: u8;
-    let mut MemoryAllocated: u8 = 0u8;
-    let mut i: u16;
-    let mut Status: i32;
-    let mut Name1 = Name1;
-    let mut Name2 = Name2;
-    let mut IgnoreCase = IgnoreCase;
+    let mut StringsAreEqual: BOOLEAN;
+    let mut MemoryAllocated: BOOLEAN = 0u8;
+    let mut Name1Ptr = Name1;
+    let mut Name2Ptr = Name2;
 
     if (*Name1).Length != (*Name2).Length {
         return 0u8;
     }
 
-    if (IgnoreCase != 0) && UpcaseTable.is_null() {
-        Status = RtlUpcaseUnicodeString(
-            core::ptr::addr_of_mut!(UpcaseName1),
-            Name1,
+    if IgnoreCase != 0 && UpcaseTable.is_null() {
+        let mut Status = RtlUpcaseUnicodeString(
+            &mut UpcaseName1 as *mut _UNICODE_STRING,
+            Name1 as *const _UNICODE_STRING as *mut _UNICODE_STRING,
             1u8,
         );
-        if !NT_SUCCESS(Status) {
+        if Status < 0 {
             RtlRaiseStatus(Status);
         }
 
         Status = RtlUpcaseUnicodeString(
-            core::ptr::addr_of_mut!(UpcaseName2),
-            Name2,
+            &mut UpcaseName2 as *mut _UNICODE_STRING,
+            Name2 as *const _UNICODE_STRING as *mut _UNICODE_STRING,
             1u8,
         );
-        if !NT_SUCCESS(Status) {
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!(UpcaseName1));
+        if Status < 0 {
+            RtlFreeUnicodeString(&mut UpcaseName1 as *mut _UNICODE_STRING);
             RtlRaiseStatus(Status);
         }
 
-        Name1 = core::ptr::addr_of!(UpcaseName1);
-        Name2 = core::ptr::addr_of!(UpcaseName2);
+        Name1Ptr = &UpcaseName1 as *const _UNICODE_STRING;
+        Name2Ptr = &UpcaseName2 as *const _UNICODE_STRING;
 
-        IgnoreCase = 0u8;
         MemoryAllocated = 1u8;
     }
 
-    if IgnoreCase == 0 {
+    if IgnoreCase == 0 || MemoryAllocated != 0 {
         StringsAreEqual = RtlEqualMemory(
-            (*Name1).Buffer as *const core::ffi::c_void,
-            (*Name2).Buffer as *const core::ffi::c_void,
-            (*Name1).Length as usize,
-        );
+            (*Name1Ptr).Buffer as PVOID,
+            (*Name2Ptr).Buffer as PVOID,
+            (*Name1Ptr).Length as usize,
+        ) as BOOLEAN;
 
         if MemoryAllocated != 0 {
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!(UpcaseName1));
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!(UpcaseName2));
+            RtlFreeUnicodeString(&mut UpcaseName1 as *mut _UNICODE_STRING);
+            RtlFreeUnicodeString(&mut UpcaseName2 as *mut _UNICODE_STRING);
         }
 
         return StringsAreEqual;
     } else {
-        i = 0;
-        while (i as usize) < ((*Name1).Length as usize) / core::mem::size_of::<u16>() {
-            if *UpcaseTable.offset(*(*Name1).Buffer.offset(i as isize) as isize)
-                != *UpcaseTable.offset(*(*Name2).Buffer.offset(i as isize) as isize)
-            {
+        let mut i: USHORT = 0;
+        while i < (*Name1Ptr).Length / core::mem::size_of::<WCHAR>() as USHORT {
+            let char1 = *(*Name1Ptr).Buffer.offset(i as isize);
+            let char2 = *(*Name2Ptr).Buffer.offset(i as isize);
+            if *UpcaseTable.offset(char1 as isize) != *UpcaseTable.offset(char2 as isize) {
                 return 0u8;
             }
-            i = i.wrapping_add(1);
+            i += 1;
         }
 
         return 1u8;
@@ -323,27 +327,20 @@ pub unsafe extern "system" fn FsRtlDissectName(
     FirstPart: PUNICODE_STRING,
     RemainingPart: PUNICODE_STRING,
 ) {
-    let mut FirstPosition: u16;
-    let mut i: u16;
-    let mut SkipFirstSlash: u16 = 0;
+    let mut FirstPosition: USHORT;
+    let mut SkipFirstSlash: USHORT = 0;
 
-    RtlZeroMemory(
-        FirstPart as *mut core::ffi::c_void,
-        core::mem::size_of::<_UNICODE_STRING>(),
-    );
-    RtlZeroMemory(
-        RemainingPart as *mut core::ffi::c_void,
-        core::mem::size_of::<_UNICODE_STRING>(),
-    );
+    core::ptr::write_bytes(FirstPart as *mut u8, 0, core::mem::size_of::<_UNICODE_STRING>());
+    core::ptr::write_bytes(RemainingPart as *mut u8, 0, core::mem::size_of::<_UNICODE_STRING>());
 
     if Name.Length == 0 {
         return;
     }
 
-    FirstPosition = Name.Length / core::mem::size_of::<u16>() as u16;
-    i = 0;
-    while i < Name.Length / core::mem::size_of::<u16>() as u16 {
-        if *Name.Buffer.offset(i as isize) == 0x005C {
+    FirstPosition = Name.Length / core::mem::size_of::<WCHAR>() as USHORT;
+    let mut i: USHORT = 0;
+    while i < Name.Length / core::mem::size_of::<WCHAR>() as USHORT {
+        if *Name.Buffer.offset(i as isize) == b'\\' as u16 {
             if i == 0 {
                 SkipFirstSlash = 1;
             } else {
@@ -355,25 +352,21 @@ pub unsafe extern "system" fn FsRtlDissectName(
     }
 
     (*FirstPart).Buffer = Name.Buffer.offset(SkipFirstSlash as isize);
-    (*FirstPart).Length = (FirstPosition - SkipFirstSlash) * core::mem::size_of::<u16>() as u16;
+    (*FirstPart).Length = (FirstPosition - SkipFirstSlash) * core::mem::size_of::<WCHAR>() as USHORT;
     (*FirstPart).MaximumLength = (*FirstPart).Length;
 
-    if FirstPosition < Name.Length / core::mem::size_of::<u16>() as u16 {
+    if FirstPosition < (Name.Length / core::mem::size_of::<WCHAR>() as USHORT) {
         (*RemainingPart).Buffer = Name.Buffer.offset((FirstPosition + 1) as isize);
-        (*RemainingPart).Length =
-            Name.Length - (FirstPosition + 1) * core::mem::size_of::<u16>() as u16;
+        (*RemainingPart).Length = Name.Length - (FirstPosition + 1) * core::mem::size_of::<WCHAR>() as USHORT;
         (*RemainingPart).MaximumLength = (*RemainingPart).Length;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlDoesNameContainWildCards(Name: PUNICODE_STRING) -> u8 {
-
-    let mut Ptr: *mut u16;
-
+pub unsafe extern "system" fn FsRtlDoesNameContainWildCards(Name: PUNICODE_STRING) -> BOOLEAN {
     if (*Name).Length != 0 {
-        Ptr = (*Name).Buffer.offset(((*Name).Length / core::mem::size_of::<u16>() as u16) as isize - 1);
-        while Ptr >= (*Name).Buffer && *Ptr != 0x005C {
+        let mut Ptr = (*Name).Buffer.offset(((*Name).Length / core::mem::size_of::<WCHAR>() as USHORT - 1) as isize);
+        while Ptr >= (*Name).Buffer && *Ptr != b'\\' as u16 {
             if FsRtlIsUnicodeCharacterWild(*Ptr) != 0 {
                 return 1u8;
             }
@@ -388,32 +381,34 @@ pub unsafe extern "system" fn FsRtlDoesNameContainWildCards(Name: PUNICODE_STRIN
 pub unsafe extern "system" fn FsRtlIsNameInExpression(
     Expression: PUNICODE_STRING,
     Name: PUNICODE_STRING,
-    IgnoreCase: u8,
-    UpcaseTable: *mut u16,
-) -> u8 {
-    let mut Result: u8;
-    let Status: i32;
+    IgnoreCase: BOOLEAN,
+    UpcaseTable: PCWCH,
+) -> BOOLEAN {
+    let mut Result: BOOLEAN;
     let mut IntName: _UNICODE_STRING = core::mem::zeroed();
-    let mut NamePtr: PUNICODE_STRING;
+    let mut NamePtr = Name;
 
     if IgnoreCase != 0 && UpcaseTable.is_null() {
-        Status = RtlUpcaseUnicodeString(
-            core::ptr::addr_of_mut!(IntName),
+        let Status = RtlUpcaseUnicodeString(
+            &mut IntName as *mut _UNICODE_STRING,
             Name,
             1u8,
         );
-        if !NT_SUCCESS(Status) {
+        if Status < 0 {
             ExRaiseStatus(Status);
         }
-        NamePtr = core::ptr::addr_of_mut!(IntName);
-        Result = FsRtlIsNameInExpressionPrivate(Expression, NamePtr, 0u8, UpcaseTable);
-    } else {
-        IntName.Buffer = core::ptr::null_mut();
-        Result = FsRtlIsNameInExpressionPrivate(Expression, Name, IgnoreCase, UpcaseTable);
+        NamePtr = &mut IntName as *mut _UNICODE_STRING;
     }
 
+    Result = FsRtlIsNameInExpressionPrivate(
+        Expression,
+        NamePtr,
+        if UpcaseTable.is_null() { 0u8 } else { IgnoreCase },
+        UpcaseTable,
+    );
+
     if !IntName.Buffer.is_null() {
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!(IntName));
+        RtlFreeUnicodeString(&mut IntName as *mut _UNICODE_STRING);
     }
 
     Result

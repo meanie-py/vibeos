@@ -1,23 +1,29 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, KeBugCheck, PFILE_OBJECT, PHANDLE, PLARGE_INTEGER, POBJECT_ATTRIBUTES};
-use core::ffi::c_void;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ddk::{
+    ACCESS_MASK,
+    KeBugCheck,
+    PFILE_OBJECT,
+    PHANDLE,
+    PLARGE_INTEGER,
+    POBJECT_ATTRIBUTES,
+};
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCreateSectionForDataScan(
     SectionHandle: PHANDLE,
-    SectionObject: *mut *mut core::ffi::c_void,
+    SectionObject: *mut PVOID,
     SectionFileSize: PLARGE_INTEGER,
     FileObject: PFILE_OBJECT,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
     MaximumSize: PLARGE_INTEGER,
-    SectionPageProtection: u32,
-    AllocationAttributes: u32,
-    Flags: u32,
-) -> i32 {
-    KeBugCheck(0x00000034);
+    SectionPageProtection: ULONG,
+    AllocationAttributes: ULONG,
+    Flags: ULONG,
+) -> NTSTATUS {
+    KeBugCheck(0x00000007);
     STATUS_NOT_IMPLEMENTED
 }
 

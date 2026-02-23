@@ -1,66 +1,99 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CONTEXT, DBGKD_DEBUG_IO, KDSTATUS, KPROCESSOR_MODE, KeTestSpinLock, KeTryToAcquireSpinLockAtDpcLevel, KiReleaseSpinLock, KiRestoreProcessorControlState, KiSaveProcessorControlState, NtQueryDebugFilterState, PCONTEXT, PCSTR, PKD_SYMBOLS_INFO, PKEXCEPTION_FRAME, PKTRAP_FRAME, PSTRING, STRING, va_list};
-use core::ffi::c_void;
 
-extern "C" {
-    fn KdpMoveMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
-    fn _vsnprintf( buffer: *mut i8, count: usize, format: PCSTR, argptr: va_list ) -> i32;
-    fn va_start(ap: *mut va_list, param: *const core::ffi::c_void);
-    fn va_end(ap: *mut va_list);
-}
+use ntkrnl_sys::ddk::{
+    _KPRCB,
+    CONTEXT,
+    DBGKD_DEBUG_IO,
+    KD_CONTEXT,
+    KDSTATUS,
+    KPROCESSOR_MODE,
+    KeTestSpinLock,
+    KeTryToAcquireSpinLockAtDpcLevel,
+    KiReleaseSpinLock,
+    KiRestoreProcessorControlState,
+    KiSaveProcessorControlState,
+    PCONTEXT,
+    PCSTR,
+    PKD_SYMBOLS_INFO,
+    PKEXCEPTION_FRAME,
+    PKTRAP_FRAME,
+    PSTRING,
+    STRING,
+};
+
 extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
+    fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
+    static mut KdPrintCircularBuffer: PCHAR;
+    static mut KdPrintBufferSize: ULONG;
+    static mut KdPrintWritePointer: PCHAR;
+    static mut KdPrintRolloverCount: ULONG;
+    static mut KdpPrintSpinLock: KSPIN_LOCK;
+    static mut KdpMessageBuffer: [i8; 4096];
+    static mut KdpContext: KD_CONTEXT;
+    static mut KeProcessorLevel: USHORT;
+    static mut KdDebuggerNotPresent: BOOLEAN;
+    fn KdSendPacket( PacketType: ULONG, MessageHeader: PSTRING, MessageData: PSTRING, Context: *mut KD_CONTEXT, );
+    fn KdpPollBreakInWithPortLock() -> BOOLEAN;
+    fn KdReceivePacket( PacketType: ULONG, MessageHeader: PSTRING, MessageData: PSTRING, DataLength: *mut ULONG, Context: *mut KD_CONTEXT, ) -> KDSTATUS;
+    fn KdEnterDebugger(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
+    fn KdExitDebugger(Enable: BOOLEAN);
+    fn KdpReportCommandStringStateChange( NameString: PSTRING, CommandString: PSTRING, ContextRecord: PCONTEXT, );
+    fn KdpReportLoadSymbolsStateChange( DllPath: PSTRING, SymbolInfo: PKD_SYMBOLS_INFO, Unload: BOOLEAN, ContextRecord: PCONTEXT, );
+    fn NtQueryDebugFilterState(ComponentId: ULONG, Level: ULONG) -> NTSTATUS;
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
-    fn KdSendPacket( PacketType: ULONG, MessageHeader: PSTRING, MessageData: PSTRING, Context: *mut core::ffi::c_void );
-    static mut KdpMessageBuffer: [CHAR; 4096];
-    static mut KeProcessorLevel: ULONG;
-    static mut KdpContext: core::ffi::c_void;
 }
 
-pub unsafe extern "system" fn KdpAcquireLock(
-    SpinLock: PKSPIN_LOCK
-) -> KIRQL
-{
+const KD_PRINT_MAX_BYTES: usize = 512;
+const PACKET_MAX_SIZE: usize = 4000;
+const PACKET_TYPE_KD_DEBUG_IO: ULONG = 3;
+const DbgKdPrintStringApi: u32 = 0x00003230;
+const DbgKdGetStringApi: u32 = 0x00003231;
+const KdPacketNeedsResend: KDSTATUS = 2;
+const KdPacketReceived: KDSTATUS = 0;
+const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005u32 as NTSTATUS;
+const STATUS_DEVICE_NOT_CONNECTED: NTSTATUS = 0xC000009Du32 as NTSTATUS;
+const STATUS_BREAKPOINT: NTSTATUS = 0x80000003u32 as NTSTATUS;
 
-    let mut OldIrql: KIRQL = 0;
+#[no_mangle]
+pub unsafe extern "system" fn KdpMoveMemory(dst: PVOID, src: PVOID, len: usize) {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
+}
 
-    loop {
-        while KeTestSpinLock(SpinLock) == 0 {}
-
-        KeRaiseIrql(2, &mut OldIrql);
-
-        if KeTryToAcquireSpinLockAtDpcLevel(SpinLock) != 0 {
-            break;
-        }
-
-        KeLowerIrql(OldIrql);
-    }
-
-    OldIrql
+fn min(a: usize, b: usize) -> usize {
+    if a < b { a } else { b }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpReleaseLock(
-    SpinLock: PKSPIN_LOCK,
-    OldIrql: KIRQL,
-) {
+pub unsafe extern "system" fn KdpAcquireLock(SpinLock: PKSPIN_LOCK) -> KIRQL {
+    let mut old_irql: KIRQL = 0;
 
-    KiReleaseSpinLock(SpinLock);
+    loop {
+        while KeTestSpinLock(SpinLock as *mut _) == 0 {}
+
+        KeRaiseIrql(HIGH_LEVEL, &mut old_irql as *mut KIRQL);
+
+        if KeTryToAcquireSpinLockAtDpcLevel(SpinLock as *mut _) != 0 {
+            break;
+        }
+
+        KeLowerIrql(old_irql);
+    }
+
+    old_irql
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn KdpReleaseLock(SpinLock: PKSPIN_LOCK, OldIrql: KIRQL) {
+    KiReleaseSpinLock(SpinLock as *mut _);
     KeLowerIrql(OldIrql);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdLogDbgPrint(
-    String: PSTRING
-) {
-
-    let Length: usize;
-    let mut Remaining: usize;
-    let OldIrql: KIRQL;
-
+pub unsafe extern "system" fn KdLogDbgPrint(String: PSTRING) {
     if (*String).Buffer.is_null() || (*String).Length == 0 {
         return;
     }
@@ -69,22 +102,26 @@ pub unsafe extern "system" fn KdLogDbgPrint(
         return;
     }
 
-    OldIrql = KdpAcquireLock(&mut KdpPrintSpinLock);
+    let old_irql = KdpAcquireLock(&mut KdpPrintSpinLock as PKSPIN_LOCK);
 
-    Length = core::cmp::min((*String).Length as usize, KdPrintBufferSize);
-    Remaining = (KdPrintCircularBuffer as usize + KdPrintBufferSize) - KdPrintWritePointer as usize;
+    let mut length = min((*String).Length as usize, KdPrintBufferSize as usize);
+    let remaining = (KdPrintCircularBuffer as usize + KdPrintBufferSize as usize - KdPrintWritePointer as usize) as usize;
 
-    if Length < Remaining {
-        KdpMoveMemory(KdPrintWritePointer as *mut core::ffi::c_void, (*String).Buffer as *const core::ffi::c_void, Length);
-        KdPrintWritePointer = (KdPrintWritePointer as usize + Length) as *mut u8;
+    if length < remaining {
+        KdpMoveMemory(KdPrintWritePointer as PVOID, (*String).Buffer as PVOID, length);
+        KdPrintWritePointer = (KdPrintWritePointer as usize + length) as PCHAR;
     } else {
-        KdpMoveMemory(KdPrintWritePointer as *mut core::ffi::c_void, (*String).Buffer as *const core::ffi::c_void, Remaining);
-        let mut Length = Length - Remaining;
-        if Length > 0 {
-            KdpMoveMemory(KdPrintCircularBuffer as *mut core::ffi::c_void, ((*String).Buffer as usize + Remaining) as *const core::ffi::c_void, Length);
+        KdpMoveMemory(KdPrintWritePointer as PVOID, (*String).Buffer as PVOID, remaining);
+        length -= remaining;
+        if length > 0 {
+            KdpMoveMemory(
+                KdPrintCircularBuffer as PVOID,
+                ((*String).Buffer as usize + remaining) as PVOID,
+                length,
+            );
         }
 
-        KdPrintWritePointer = (KdPrintCircularBuffer as usize + Length) as *mut u8;
+        KdPrintWritePointer = (KdPrintCircularBuffer as usize + length) as PCHAR;
 
         KdPrintRolloverCount = KdPrintRolloverCount.wrapping_add(1);
         if KdPrintRolloverCount == 0 {
@@ -92,50 +129,42 @@ pub unsafe extern "system" fn KdLogDbgPrint(
         }
     }
 
-    KdpReleaseLock(&mut KdpPrintSpinLock, OldIrql);
+    KdpReleaseLock(&mut KdpPrintSpinLock as PKSPIN_LOCK, old_irql);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdpPrintString(
-    Output: PSTRING
-) -> BOOLEAN
-{
-    let mut Data: STRING = core::mem::zeroed();
-    let mut Header: STRING = core::mem::zeroed();
-    let mut DebugIo: DBGKD_DEBUG_IO = core::mem::zeroed();
-    let mut Length: USHORT;
-
-    const PACKET_MAX_SIZE: USHORT = 4000;
-    const PACKET_TYPE_KD_DEBUG_IO: ULONG = 2;
-    const DbgKdPrintStringApi: ULONG = 0x00003230;
+pub unsafe extern "system" fn KdpPrintString(Output: PSTRING) -> BOOLEAN {
+    let mut data: STRING = core::mem::zeroed();
+    let mut header: STRING = core::mem::zeroed();
+    let mut debug_io: DBGKD_DEBUG_IO = core::mem::zeroed();
+    let mut length: USHORT;
 
     KdpMoveMemory(
-        KdpMessageBuffer.as_mut_ptr() as *mut core::ffi::c_void,
-        (*Output).Buffer as *const core::ffi::c_void,
-        (*Output).Length as ULONG
+        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        (*Output).Buffer as PVOID,
+        (*Output).Length as usize,
     );
 
-    Length = (*Output).Length;
-    if (core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT + Length) > PACKET_MAX_SIZE
-    {
-        Length = PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
+    length = (*Output).Length;
+    if (core::mem::size_of::<DBGKD_DEBUG_IO>() + length as usize) > PACKET_MAX_SIZE {
+        length = (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_DEBUG_IO>()) as USHORT;
     }
 
-    DebugIo.ApiNumber = DbgKdPrintStringApi;
-    DebugIo.ProcessorLevel = KeProcessorLevel as USHORT;
-    DebugIo.Processor = (*KeGetCurrentPrcb()).Number;
-    DebugIo.u.PrintString.LengthOfString = Length;
-    Header.Length = core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
-    Header.Buffer = core::ptr::addr_of_mut!(DebugIo) as PCHAR;
+    debug_io.ApiNumber = DbgKdPrintStringApi;
+    debug_io.ProcessorLevel = KeProcessorLevel;
+    debug_io.Processor = (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as USHORT;
+    debug_io.u.PrintString.LengthOfString = length as ULONG;
+    header.Length = core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
+    header.Buffer = &mut debug_io as *mut DBGKD_DEBUG_IO as PCHAR;
 
-    Data.Length = Length;
-    Data.Buffer = KdpMessageBuffer.as_mut_ptr();
+    data.Length = length;
+    data.Buffer = KdpMessageBuffer.as_mut_ptr();
 
     KdSendPacket(
         PACKET_TYPE_KD_DEBUG_IO,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::addr_of_mut!(Data),
-        core::ptr::addr_of_mut!(KdpContext) as *mut core::ffi::c_void
+        &mut header as PSTRING,
+        &mut data as PSTRING,
+        &mut KdpContext as *mut KD_CONTEXT,
     );
 
     KdpPollBreakInWithPortLock()
@@ -144,72 +173,72 @@ pub unsafe extern "system" fn KdpPrintString(
 #[no_mangle]
 pub unsafe extern "system" fn KdpPromptString(
     PromptString: PSTRING,
-    ResponseString: PSTRING
-) -> u8 {
-    let mut Data: STRING = core::mem::zeroed();
-    let mut Header: STRING = core::mem::zeroed();
-    let mut DebugIo: DBGKD_DEBUG_IO = core::mem::zeroed();
-    let mut Length: u32;
-    let mut Status: KDSTATUS;
+    ResponseString: PSTRING,
+) -> BOOLEAN {
+    let mut data: STRING = core::mem::zeroed();
+    let mut header: STRING = core::mem::zeroed();
+    let mut debug_io: DBGKD_DEBUG_IO = core::mem::zeroed();
+    let mut length: ULONG;
+    let mut status: KDSTATUS;
 
     KdpMoveMemory(
-        KdpMessageBuffer.as_mut_ptr() as *mut core::ffi::c_void,
-        (*PromptString).Buffer as *const core::ffi::c_void,
-        (*PromptString).Length as usize
+        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        (*PromptString).Buffer as PVOID,
+        (*PromptString).Length as usize,
     );
 
-    Length = (*PromptString).Length as u32;
-    if (core::mem::size_of::<DBGKD_DEBUG_IO>() + Length as usize) > PACKET_MAX_SIZE as usize {
-        Length = (PACKET_MAX_SIZE as usize - core::mem::size_of::<DBGKD_DEBUG_IO>()) as u32;
+    length = (*PromptString).Length as ULONG;
+    if (core::mem::size_of::<DBGKD_DEBUG_IO>() + length as usize) > PACKET_MAX_SIZE {
+        length = (PACKET_MAX_SIZE - core::mem::size_of::<DBGKD_DEBUG_IO>()) as ULONG;
     }
 
-    DebugIo.ApiNumber = DbgKdGetStringApi;
-    DebugIo.ProcessorLevel = KeProcessorLevel as u16;
-    DebugIo.Processor = (*KeGetCurrentPrcb()).Number;
-    DebugIo.u.GetString.LengthOfPromptString = Length;
-    DebugIo.u.GetString.LengthOfStringRead = (*ResponseString).MaximumLength as u32;
-    Header.Length = core::mem::size_of::<DBGKD_DEBUG_IO>() as u16;
-    Header.Buffer = core::ptr::addr_of_mut!(DebugIo) as *mut i8;
+    debug_io.ApiNumber = DbgKdGetStringApi;
+    debug_io.ProcessorLevel = KeProcessorLevel;
+    debug_io.Processor = (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as USHORT;
+    debug_io.u.GetString.LengthOfPromptString = length;
+    debug_io.u.GetString.LengthOfStringRead = (*ResponseString).MaximumLength as ULONG;
+    header.Length = core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
+    header.Buffer = &mut debug_io as *mut DBGKD_DEBUG_IO as PCHAR;
 
-    Data.Length = Length as u16;
-    Data.Buffer = KdpMessageBuffer.as_mut_ptr() as *mut i8;
+    data.Length = length as USHORT;
+    data.Buffer = KdpMessageBuffer.as_mut_ptr();
 
     KdSendPacket(
         PACKET_TYPE_KD_DEBUG_IO,
-        core::ptr::addr_of_mut!(Header),
-        core::ptr::addr_of_mut!(Data),
-        core::ptr::addr_of_mut!(KdpContext)
+        &mut header as PSTRING,
+        &mut data as PSTRING,
+        &mut KdpContext as *mut KD_CONTEXT,
     );
 
-    Header.MaximumLength = core::mem::size_of::<DBGKD_DEBUG_IO>() as u16;
-    Data.MaximumLength = core::mem::size_of_val(&KdpMessageBuffer) as u16;
+    header.MaximumLength = core::mem::size_of::<DBGKD_DEBUG_IO>() as USHORT;
+    data.MaximumLength = KdpMessageBuffer.len() as USHORT;
 
     loop {
-        Status = KdReceivePacket(
+        status = KdReceivePacket(
             PACKET_TYPE_KD_DEBUG_IO,
-            core::ptr::addr_of_mut!(Header),
-            core::ptr::addr_of_mut!(Data),
-            core::ptr::addr_of_mut!(Length),
-            core::ptr::addr_of_mut!(KdpContext)
+            &mut header as PSTRING,
+            &mut data as PSTRING,
+            &mut length as *mut ULONG,
+            &mut KdpContext as *mut KD_CONTEXT,
         );
 
-        if Status == KdPacketNeedsResend {
+        if status == KdPacketNeedsResend {
             return 1u8;
         }
 
-        if Status == KdPacketReceived {
+        if status == KdPacketReceived {
             break;
         }
     }
 
-    Length = min(Length, (*ResponseString).MaximumLength as u32);
+    length = min(length as usize, (*ResponseString).MaximumLength as usize) as ULONG;
 
     KdpMoveMemory(
-        (*ResponseString).Buffer as *mut core::ffi::c_void,
-        KdpMessageBuffer.as_ptr() as *const core::ffi::c_void,
-        Length as usize
+        (*ResponseString).Buffer as PVOID,
+        KdpMessageBuffer.as_mut_ptr() as PVOID,
+        length as usize,
     );
-    (*ResponseString).Length = Length as u16;
+    (*ResponseString).Length = length as USHORT;
 
     0u8
 }
@@ -223,60 +252,59 @@ pub unsafe extern "system" fn KdpCommandString(
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: PKEXCEPTION_FRAME,
 ) {
+    let prcb = KeGetCurrentPrcb() as *mut _KPRCB;
 
-    let Prcb: PKPRCB = KeGetCurrentPrcb();
-
-    if (PreviousMode != 0i32) || (KdDebuggerNotPresent != 0) {
+    if PreviousMode != 0 || KdDebuggerNotPresent != 0 {
         return;
     }
 
-    let Enable: u8 = KdEnterDebugger(TrapFrame, ExceptionFrame);
+    let enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
 
-    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
     KdpMoveMemory(
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *mut core::ffi::c_void,
-        ContextRecord as *const core::ffi::c_void,
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
+        ContextRecord as PVOID,
         core::mem::size_of::<CONTEXT>(),
     );
 
     KdpReportCommandStringStateChange(
         NameString,
         CommandString,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame),
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame),
     );
 
     KdpMoveMemory(
-        ContextRecord as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *const core::ffi::c_void,
+        ContextRecord as PVOID,
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
         core::mem::size_of::<CONTEXT>(),
     );
-    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
 
-    KdExitDebugger(Enable);
+    KdExitDebugger(enable);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSymbol(
     DllPath: PSTRING,
     SymbolInfo: PKD_SYMBOLS_INFO,
-    Unload: u8,
+    Unload: BOOLEAN,
     PreviousMode: KPROCESSOR_MODE,
     ContextRecord: PCONTEXT,
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: PKEXCEPTION_FRAME,
 ) {
-    let Prcb: PKPRCB = KeGetCurrentPrcb();
+    let prcb = KeGetCurrentPrcb() as *mut _KPRCB;
 
-    if (PreviousMode != 0i32) || (KdDebuggerNotPresent != 0) {
+    if PreviousMode != 0 || KdDebuggerNotPresent != 0 {
         return;
     }
 
-    let Enable: u8 = KdEnterDebugger(TrapFrame, ExceptionFrame);
+    let enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
 
-    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    KiSaveProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
     KdpMoveMemory(
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *mut core::ffi::c_void,
-        ContextRecord as *const core::ffi::c_void,
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
+        ContextRecord as PVOID,
         core::mem::size_of::<CONTEXT>(),
     );
 
@@ -284,17 +312,103 @@ pub unsafe extern "system" fn KdpSymbol(
         DllPath,
         SymbolInfo,
         Unload,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame),
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame),
     );
 
     KdpMoveMemory(
-        ContextRecord as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*Prcb).ProcessorState.ContextFrame) as *const core::ffi::c_void,
+        ContextRecord as PVOID,
+        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
         core::mem::size_of::<CONTEXT>(),
     );
-    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
+    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
 
-    KdExitDebugger(Enable);
+    KdExitDebugger(enable);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn KdpPrompt(
+    PromptString: PCHAR,
+    PromptLength: USHORT,
+    ResponseString: PCHAR,
+    MaximumResponseLength: USHORT,
+    PreviousMode: KPROCESSOR_MODE,
+    TrapFrame: PKTRAP_FRAME,
+    ExceptionFrame: PKEXCEPTION_FRAME,
+) -> USHORT {
+    let mut prompt_buffer: STRING = core::mem::zeroed();
+    let mut response_buffer: STRING = core::mem::zeroed();
+    let mut resend: BOOLEAN;
+    let safe_response_string: PCHAR;
+    let mut captured_prompt: [i8; KD_PRINT_MAX_BYTES] = [0; KD_PRINT_MAX_BYTES];
+    let mut safe_response_buffer: [i8; KD_PRINT_MAX_BYTES] = [0; KD_PRINT_MAX_BYTES];
+
+    let prompt_length = min(PromptLength as usize, captured_prompt.len()) as USHORT;
+    let maximum_response_length = min(MaximumResponseLength as usize, safe_response_buffer.len()) as USHORT;
+
+    if PreviousMode != 0 {
+        ProbeForRead(PromptString as PVOID, prompt_length as ULONG, 1);
+        KdpMoveMemory(
+            captured_prompt.as_mut_ptr() as PVOID,
+            PromptString as PVOID,
+            prompt_length as usize,
+        );
+        let prompt_string_local = captured_prompt.as_mut_ptr();
+
+        ProbeForWrite(ResponseString as PVOID, maximum_response_length as ULONG, 1);
+        safe_response_string = safe_response_buffer.as_mut_ptr();
+
+        prompt_buffer.Buffer = prompt_string_local;
+        prompt_buffer.Length = prompt_length;
+        prompt_buffer.MaximumLength = prompt_length;
+        response_buffer.Buffer = safe_response_string;
+        response_buffer.Length = 0;
+        response_buffer.MaximumLength = maximum_response_length;
+
+        KdLogDbgPrint(&mut prompt_buffer as PSTRING);
+
+        let enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
+
+        loop {
+            resend = KdpPromptString(&mut prompt_buffer as PSTRING, &mut response_buffer as PSTRING);
+            if resend == 0 {
+                break;
+            }
+        }
+
+        KdExitDebugger(enable);
+
+        KdpMoveMemory(
+            ResponseString as PVOID,
+            response_buffer.Buffer as PVOID,
+            response_buffer.Length as usize,
+        );
+
+        response_buffer.Length
+    } else {
+        safe_response_string = ResponseString;
+
+        prompt_buffer.Buffer = PromptString;
+        prompt_buffer.Length = prompt_length;
+        prompt_buffer.MaximumLength = prompt_length;
+        response_buffer.Buffer = safe_response_string;
+        response_buffer.Length = 0;
+        response_buffer.MaximumLength = maximum_response_length;
+
+        KdLogDbgPrint(&mut prompt_buffer as PSTRING);
+
+        let enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
+
+        loop {
+            resend = KdpPromptString(&mut prompt_buffer as PSTRING, &mut response_buffer as PSTRING);
+            if resend == 0 {
+                break;
+            }
+        }
+
+        KdExitDebugger(enable);
+
+        response_buffer.Length
+    }
 }
 
 unsafe fn KdpPrintFromUser(
@@ -307,19 +421,20 @@ unsafe fn KdpPrintFromUser(
     ExceptionFrame: PKEXCEPTION_FRAME,
     Handled: PBOOLEAN,
 ) -> NTSTATUS {
-    let mut CapturedString: [CHAR; 512] = [0; 512];
+    let mut captured_string: [i8; KD_PRINT_MAX_BYTES] = [0; KD_PRINT_MAX_BYTES];
 
-    ProbeForRead(String as *const core::ffi::c_void, Length as usize, 1);
+    ProbeForRead(String as PVOID, Length as ULONG, 1);
     KdpMoveMemory(
-        CapturedString.as_mut_ptr() as *mut core::ffi::c_void,
-        String as *const core::ffi::c_void,
+        captured_string.as_mut_ptr() as PVOID,
+        String as PVOID,
         Length as usize,
     );
+    let string_local = captured_string.as_mut_ptr();
 
     KdpPrint(
         ComponentId,
         Level,
-        CapturedString.as_mut_ptr(),
+        string_local,
         Length,
         0,
         TrapFrame,
@@ -337,89 +452,61 @@ pub unsafe extern "system" fn KdpPrint(
     PreviousMode: KPROCESSOR_MODE,
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: PKEXCEPTION_FRAME,
-    Handled: PBOOLEAN
-) -> NTSTATUS
-{
-    let Status: NTSTATUS;
-    let Enable: BOOLEAN;
-    let mut OutputString: STRING = core::mem::zeroed();
+    Handled: PBOOLEAN,
+) -> NTSTATUS {
+    let mut status: NTSTATUS;
+    let mut output_string: STRING = core::mem::zeroed();
 
-    if NtQueryDebugFilterState(ComponentId, Level) == 0 as NTSTATUS
-    {
+    if NtQueryDebugFilterState(ComponentId, Level) == 0 {
         *Handled = 1u8;
         return STATUS_SUCCESS;
     }
 
     *Handled = 0u8;
 
-    let Length = if Length < KD_PRINT_MAX_BYTES { Length } else { KD_PRINT_MAX_BYTES };
+    let length = min(Length as usize, KD_PRINT_MAX_BYTES) as USHORT;
 
-    if PreviousMode != 0i32
-    {
-        return KdpPrintFromUser(ComponentId,
-                                Level,
-                                String,
-                                Length,
-                                PreviousMode,
-                                TrapFrame,
-                                ExceptionFrame,
-                                Handled);
+    if PreviousMode != 0 {
+        return KdpPrintFromUser(
+            ComponentId,
+            Level,
+            String,
+            length,
+            PreviousMode,
+            TrapFrame,
+            ExceptionFrame,
+            Handled,
+        );
     }
 
-    OutputString.Buffer = String;
-    OutputString.Length = Length;
-    OutputString.MaximumLength = Length;
+    output_string.Buffer = String;
+    output_string.Length = length;
+    output_string.MaximumLength = length;
 
-    KdLogDbgPrint(core::ptr::addr_of_mut!(OutputString));
+    KdLogDbgPrint(&mut output_string as PSTRING);
 
-    if KdDebuggerNotPresent != 0
-    {
+    if KdDebuggerNotPresent != 0 {
         *Handled = 1u8;
         return STATUS_DEVICE_NOT_CONNECTED;
     }
 
-    Enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
+    let enable = KdEnterDebugger(TrapFrame, ExceptionFrame);
 
-    if KdpPrintString(core::ptr::addr_of_mut!(OutputString)) != 0
-    {
-        Status = STATUS_BREAKPOINT;
-    }
-    else
-    {
-        Status = STATUS_SUCCESS;
+    if KdpPrintString(&mut output_string as PSTRING) != 0 {
+        status = STATUS_BREAKPOINT;
+    } else {
+        status = STATUS_SUCCESS;
     }
 
-    KdExitDebugger(Enable);
+    KdExitDebugger(enable);
     *Handled = 1u8;
-    Status
+    status
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn KdpDprintf(
-    Format: PCSTR,
-    ...
-) {
-
-    let mut String: STRING = core::mem::zeroed();
-    let mut Length: u16;
-    let mut ap: va_list = core::mem::zeroed();
-    let mut Buffer: [i8; 512] = [0; 512];
-
-    va_start(core::ptr::addr_of_mut!(ap), Format as *const core::ffi::c_void);
-    Length = _vsnprintf(
-        Buffer.as_mut_ptr(),
-        core::mem::size_of_val(&Buffer),
-        Format,
-        ap
-    ) as u16;
-    va_end(core::ptr::addr_of_mut!(ap));
-
-    String.Buffer = Buffer.as_mut_ptr();
-    String.Length = Length;
-    String.MaximumLength = Length;
-
-    KdpPrintString(core::ptr::addr_of_mut!(String));
-}
+// NOTE: KdpDprintf is a C-variadic function that cannot be implemented in stable Rust.
+// It must remain in C (kdprint.c) or be provided by a C shim file.
+// The Rust kd64 files declare it as: extern "C" { fn KdpDprintf(Format: PCHAR, ...); }
+// which is valid in stable Rust for calling C variadic functions.
 
 // ============================================================================
 // ORIGINAL C SOURCE

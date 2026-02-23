@@ -1,112 +1,212 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{DBGKD_DEBUG_DATA_HEADER64, KeGetPcr, KeInitializeDpc, KeInitializeTimer, KeQueryPerformanceCounter, LDR_DATA_TABLE_ENTRY, MEMORY_ALLOCATION_DESCRIPTOR, MiIsMemoryTypeInvisible, PDBGKD_DEBUG_DATA_HEADER64, PLDR_DATA_TABLE_ENTRY, PLOADER_PARAMETER_BLOCK, PMEMORY_ALLOCATION_DESCRIPTOR, PSTR, PsGetCurrentProcessId, RtlInitString, STRING};
-use core::ffi::c_void;
 
-extern "system" {
-    fn ALIGN_UP_BY(value: usize, alignment: usize) -> usize;
+use ntkrnl_sys::ddk::{
+    _DBGKD_DEBUG_DATA_HEADER64,
+    _KDDEBUGGER_DATA64,
+    _KDPC,
+    _KD_CONTEXT,
+    _KTIMER,
+    _KUSER_SHARED_DATA,
+    _WORK_QUEUE_ITEM,
+    DBGKD_DEBUG_DATA_HEADER64,
+    DBGKD_GET_VERSION64,
+    KDDEBUGGER_DATA64,
+    KD_CONTEXT,
+    PDBGKD_DEBUG_DATA_HEADER64,
+    PLDR_DATA_TABLE_ENTRY,
+    PLOADER_PARAMETER_BLOCK,
+    PMEMORY_ALLOCATION_DESCRIPTOR,
+    PSTR,
+    ULONG64,
+    KeInitializeDpc,
+    KeInitializeTimer,
+    KeQueryPerformanceCounter,
+    MiIsMemoryTypeInvisible,
+    PsGetCurrentProcessId,
+    RtlInitString,
+    STRING,
+    KPCR, PKPCR,
+};
+
+#[cfg(not(target_arch = "x86"))]
+use ntkrnl_sys::ddk::KeGetPcr;
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn KeGetPcr() -> PKPCR {
+    let pcr: PKPCR;
+    core::arch::asm!("mov {}, dword ptr fs:[0x1C]", out(reg) pcr, options(nostack, preserves_flags));
+    pcr
 }
 
-unsafe fn KdpGetMemorySizeInMBs(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK
-) -> usize {
-    let mut ListEntry: PLIST_ENTRY;
-    let mut Descriptor: PMEMORY_ALLOCATION_DESCRIPTOR;
-    let mut NumberOfPhysicalPages: usize = 0;
+extern "C" {
+    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
+    static mut KeNumberProcessors: ULONG;
+    static mut KdDebuggerEnabled: BOOLEAN;
+    static mut KiDebugRoutine: Option<unsafe extern "system" fn()>;
+    static mut KdBreakAfterSymbolLoad: BOOLEAN;
+    static mut KdpDebuggerDataListHead: LIST_ENTRY;
+    static mut KdpDataSpinLock: ULONG_PTR; // KSPIN_LOCK
+    static mut KdDebuggerDataBlock: KDDEBUGGER_DATA64;
+    static mut KdVersionBlock: DBGKD_GET_VERSION64;
+    static mut PsLoadedModuleList: LIST_ENTRY;
+    static mut NtBuildNumber: ULONG;
+    static mut PsNtosImageBase: ULONG_PTR;
+    static mut KdPitchDebugger: BOOLEAN;
+    static mut KdPerformanceCounterRate: LARGE_INTEGER;
+    static mut KdpContext: KD_CONTEXT;
+    static mut KdpOweBreakpoint: BOOLEAN;
+    static mut KdpBreakpointTable: [u8; 32 * 32]; // KD_BREAKPOINT_ENTRY array
+    static mut KdpTimeSlipDpc: _KDPC;
+    static mut KdpTimeSlipTimer: _KTIMER;
+    static mut KdpTimeSlipWorkItem: _WORK_QUEUE_ITEM;
+    static mut KdpDebuggerStructuresInitialized: BOOLEAN;
+    static mut KdTimerStart: LARGE_INTEGER;
+    static mut SharedUserData: *mut _KUSER_SHARED_DATA;
+    static mut KdBlockEnable: BOOLEAN;
+    static mut KdAutoEnableOnEvent: BOOLEAN;
+    static mut KdIgnoreUmExceptions: BOOLEAN;
+    static mut KdDebuggerNotPresent: BOOLEAN;
+    static mut KeUserCallbackDispatcher: ULONG_PTR;
+    fn _strupr(s: PSTR) -> PSTR;
+    fn strstr(s1: PSTR, s2: PSTR) -> PSTR;
+    fn strncmp(s1: PSTR, s2: PSTR, n: usize) -> i32;
+    fn KdpDprintf(fmt: PSTR, ...);
+}
 
-    if LoaderBlock.is_null() {
-        NumberOfPhysicalPages = MmNumberOfPhysicalPages;
+extern "system" {
+    fn KdpStub();
+    fn KdpTrap();
+    fn KdDebuggerInitialize0(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
+    fn KdDisableDebuggerWithLock(BlockEnable: BOOLEAN);
+    fn KdPollBreakIn() -> BOOLEAN;
+    fn DbgLoadImageSymbols(ImageName: *mut STRING, Base: PVOID, ProcessId: ULONG_PTR);
+}
+
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
+    fn KdpTimeSlipWork(Context: PVOID);
+}
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
+    fn KdpTimeSlipWork(Context: PVOID);
+}
+
+const KDBG_TAG: ULONG = 0x4742444B;
+const KD_BREAKPOINT_MAX: usize = 32;
+
+const DBGKD_MAJOR_NT: u16 = 6;
+const DBGKD_VERS_FLAG_MP: u16 = 0x0001;
+
+const DbgKdMinimumStateChange: ULONG = 0x00003030;
+const DbgKdMaximumStateChange: ULONG = 0x00003033;
+const DbgKdMinimumManipulate: ULONG = 0x00003130;
+const DbgKdMaximumManipulate: ULONG = 0x00003161;
+
+const LoaderBad: u32 = 2;
+
+unsafe fn KdpGetMemorySizeInMBs(loader_block: PLOADER_PARAMETER_BLOCK) -> SIZE_T {
+    let mut number_of_physical_pages: SIZE_T = 0;
+
+    if loader_block.is_null() {
+        number_of_physical_pages = MmNumberOfPhysicalPages;
     } else {
-        ListEntry = (*LoaderBlock).MemoryDescriptorListHead.Flink;
-        while ListEntry != core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead) {
-            Descriptor = (ListEntry as *mut u8).offset(
-                -(core::mem::offset_of!(MEMORY_ALLOCATION_DESCRIPTOR, ListEntry) as isize)
-            ) as PMEMORY_ALLOCATION_DESCRIPTOR;
+        let mut list_entry = (*loader_block).MemoryDescriptorListHead.Flink;
+        while list_entry != core::ptr::addr_of_mut!((*loader_block).MemoryDescriptorListHead) as PLIST_ENTRY {
+            let descriptor = (list_entry as *mut u8)
+                .sub(core::mem::offset_of!(ntkrnl_sys::ddk::_MEMORY_ALLOCATION_DESCRIPTOR, ListEntry))
+                as PMEMORY_ALLOCATION_DESCRIPTOR;
 
-            if MiIsMemoryTypeInvisible((*Descriptor).MemoryType) == 0 {
-                if (*Descriptor).MemoryType != 2 {
-                    NumberOfPhysicalPages += (*Descriptor).PageCount as usize;
+            if MiIsMemoryTypeInvisible((*descriptor).MemoryType) == 0 {
+                if (*descriptor).MemoryType != LoaderBad {
+                    number_of_physical_pages += (*descriptor).PageCount as SIZE_T;
                 }
             }
 
-            ListEntry = (*ListEntry).Flink;
+            list_entry = (*list_entry).Flink;
         }
     }
 
-    ALIGN_UP_BY(NumberOfPhysicalPages * PAGE_SIZE as usize, 1024 * 1024) / (1024 * 1024)
+    let total_bytes = number_of_physical_pages * PAGE_SIZE;
+    let aligned_bytes = (total_bytes + 1024 * 1024 - 1) / (1024 * 1024) * (1024 * 1024);
+    aligned_bytes / (1024 * 1024)
 }
 
 unsafe fn KdpPrintBanner() {
-    let MemSizeMBs: usize = KdpGetMemorySizeInMBs(KeLoaderBlock);
+    let mem_size_mbs = KdpGetMemorySizeInMBs(KeLoaderBlock);
 
-    // DPRINT removed
-    // DPRINT removed
-    // DPRINT removed
+    // KdpDprintf(b"-----------------------------------------------------\n\0".as_ptr() as PSTR);
+    // KdpDprintf(b"ReactOS (Build)\n\0".as_ptr() as PSTR);
+    // KdpDprintf(b"%u System Processor [%u MB Memory]\n\0".as_ptr() as PSTR, KeNumberProcessors, mem_size_mbs);
 
     if !KeLoaderBlock.is_null() {
-        // DPRINT removed
-        // DPRINT removed
+        // KdpDprintf(b"Command Line: %s\n\0".as_ptr() as PSTR, (*KeLoaderBlock).LoadOptions);
+        // KdpDprintf(
+            // b"ARC Paths: %s %s %s %s\n\0".as_ptr() as PSTR,
+            // (*KeLoaderBlock).ArcBootDeviceName,
+            // (*KeLoaderBlock).NtHalPathName,
+            // (*KeLoaderBlock).ArcHalDeviceName,
+            // (*KeLoaderBlock).NtBootPathName
+        // );
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdUpdateDataBlock() {
-    KdDebuggerDataBlock.KeUserCallbackDispatcher = KeUserCallbackDispatcher as ULONG_PTR;
+    KdDebuggerDataBlock.KeUserCallbackDispatcher = KeUserCallbackDispatcher as ULONG64;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdRegisterDebuggerDataBlock(
-    Tag: u32,
-    DataHeader: PDBGKD_DEBUG_DATA_HEADER64,
-    Size: u32,
-) -> u8 {
-    let mut OldIrql: KIRQL = 0;
-    let mut NextEntry: PLIST_ENTRY;
-    let mut CurrentHeader: PDBGKD_DEBUG_DATA_HEADER64;
+    tag: ULONG,
+    data_header: PDBGKD_DEBUG_DATA_HEADER64,
+    size: ULONG,
+) -> BOOLEAN {
+    let mut old_irql: KIRQL = 0;
 
-    KeAcquireSpinLock(&mut KdpDataSpinLock, &mut OldIrql);
+    KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), core::ptr::addr_of_mut!(old_irql));
 
-    NextEntry = KdpDebuggerDataListHead.Flink;
-    while NextEntry != &mut KdpDebuggerDataListHead as *mut _ {
-        CurrentHeader = (NextEntry as *mut u8).offset(
-            -(core::mem::offset_of!(DBGKD_DEBUG_DATA_HEADER64, List) as isize)
-        ) as PDBGKD_DEBUG_DATA_HEADER64;
+    let mut next_entry = KdpDebuggerDataListHead.Flink;
+    while next_entry != core::ptr::addr_of_mut!(KdpDebuggerDataListHead) as PLIST_ENTRY {
+        let current_header = (next_entry as *mut u8)
+            .sub(core::mem::offset_of!(_DBGKD_DEBUG_DATA_HEADER64, List))
+            as PDBGKD_DEBUG_DATA_HEADER64;
 
-        NextEntry = (*NextEntry).Flink;
+        next_entry = (*next_entry).Flink;
 
-        if (CurrentHeader == DataHeader) || ((*CurrentHeader).OwnerTag == Tag) {
-            KeReleaseSpinLock(&mut KdpDataSpinLock, OldIrql);
+        if current_header == data_header || (*current_header).OwnerTag == tag {
+            KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
             return 0u8;
         }
     }
 
-    (*DataHeader).OwnerTag = Tag;
-    (*DataHeader).Size = Size;
+    (*data_header).OwnerTag = tag;
+    (*data_header).Size = size;
 
     InsertTailList(
-        &mut KdpDebuggerDataListHead,
-        core::ptr::addr_of_mut!((*DataHeader).List) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!(KdpDebuggerDataListHead) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*data_header).List) as PLIST_ENTRY
     );
-    KeReleaseSpinLock(&mut KdpDataSpinLock, OldIrql);
-    return 1u8;
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
+    1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdInitSystem(
-    BootPhase: u32,
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
-) -> u8 {
-    let mut EnableKd: u8;
-    let mut DisableKdAfterInit: u8 = 0u8;
-    let mut BlockEnable: u8 = 0u8;
-    let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
-    let mut i: u32;
+    boot_phase: ULONG,
+    loader_block: PLOADER_PARAMETER_BLOCK,
+) -> BOOLEAN {
+    let mut enable_kd: BOOLEAN;
+    let mut disable_kd_after_init = 0u8;
+    let mut block_enable = 0u8;
 
-    if BootPhase != 0 {
-        KeQueryPerformanceCounter(&mut KdPerformanceCounterRate);
+    if boot_phase != 0 {
+        KeQueryPerformanceCounter(core::ptr::addr_of_mut!(KdPerformanceCounterRate) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER);
         return 1u8;
     }
 
@@ -114,147 +214,143 @@ pub unsafe extern "system" fn KdInitSystem(
         return 1u8;
     }
 
-    KiDebugRoutine = KdpStub as *mut core::ffi::c_void;
-
+    KiDebugRoutine = Some(KdpStub as unsafe extern "system" fn());
     KdBreakAfterSymbolLoad = 0u8;
 
-    if (*core::ptr::addr_of_mut!(KdpDebuggerDataListHead)).Flink.is_null() {
-        InitializeListHead(&mut KdpDebuggerDataListHead);
+    if (*core::ptr::addr_of!(KdpDebuggerDataListHead)).Flink.is_null() {
+        InitializeListHead(core::ptr::addr_of_mut!(KdpDebuggerDataListHead));
 
+        super::kddata::KdpInitDebuggerDataBlock();
         KdRegisterDebuggerDataBlock(
             KDBG_TAG,
-            &mut KdDebuggerDataBlock.Header,
-            core::mem::size_of::<_KDDEBUGGER_DATA64>() as u32,
+            core::ptr::addr_of_mut!(KdDebuggerDataBlock) as PDBGKD_DEBUG_DATA_HEADER64,
+            core::mem::size_of_val(&KdDebuggerDataBlock) as ULONG
         );
 
-        KdVersionBlock.MajorVersion = ((DBGKD_MAJOR_NT << 8) | (NtBuildNumber >> 28)) as u16;
-        KdVersionBlock.MinorVersion = (NtBuildNumber & 0xFFFF) as u16;
+        KdVersionBlock.MajorVersion = ((DBGKD_MAJOR_NT as u32) << 8 | (NtBuildNumber >> 28)) as USHORT;
+        KdVersionBlock.MinorVersion = (NtBuildNumber & 0xFFFF) as USHORT;
 
-        #[cfg(feature = "CONFIG_SMP")]
+        #[cfg(feature = "smp")]
         {
             KdVersionBlock.Flags |= DBGKD_VERS_FLAG_MP;
         }
 
-        KdVersionBlock.PsLoadedModuleList = &mut PsLoadedModuleList as *mut _ as u64;
-        KdVersionBlock.DebuggerDataList = &mut KdpDebuggerDataListHead as *mut _ as u64;
+        KdVersionBlock.PsLoadedModuleList = core::ptr::addr_of_mut!(PsLoadedModuleList) as ULONG64;
+        KdVersionBlock.DebuggerDataList = core::ptr::addr_of_mut!(KdpDebuggerDataListHead) as ULONG64;
 
-        KdVersionBlock.MaxStateChange = DbgKdMaximumStateChange - DbgKdMinimumStateChange;
-        KdVersionBlock.MaxManipulate = DbgKdMaximumManipulate - DbgKdMinimumManipulate;
+        KdVersionBlock.MaxStateChange = (DbgKdMaximumStateChange - DbgKdMinimumStateChange) as UCHAR;
+        KdVersionBlock.MaxManipulate = (DbgKdMaximumManipulate - DbgKdMinimumManipulate) as UCHAR;
         KdVersionBlock.Unused[0] = 0;
 
-        (*KeGetPcr()).KdVersionBlock = &mut KdVersionBlock;
+        (*KeGetPcr()).KdVersionBlock = core::ptr::addr_of_mut!(KdVersionBlock) as PVOID;
     }
 
-    if !LoaderBlock.is_null() {
-        let CommandLine: PSTR;
-        let mut DebugLine: PSTR;
-
-        LdrEntry = (((*LoaderBlock).LoadOrderListHead.Flink as *mut u8)
-            .offset(-(core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks) as isize)))
+    if !loader_block.is_null() {
+        let ldr_entry = ((*loader_block).LoadOrderListHead.Flink as *mut u8)
+            .sub(core::mem::offset_of!(ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
             as PLDR_DATA_TABLE_ENTRY;
 
-        PsNtosImageBase = (*LdrEntry).DllBase as usize;
-        KdVersionBlock.KernBase = (*LdrEntry).DllBase as u64;
+        PsNtosImageBase = (*ldr_entry).DllBase as ULONG_PTR;
+        KdVersionBlock.KernBase = (*ldr_entry).DllBase as ULONG64;
 
-        CommandLine = (*LoaderBlock).LoadOptions;
-        if !CommandLine.is_null() {
-            _strupr(CommandLine);
+        let command_line = (*loader_block).LoadOptions;
+        if !command_line.is_null() {
+            _strupr(command_line);
+            enable_kd = 0u8;
 
-            EnableKd = 0u8;
-
-            if !strstr(CommandLine, b"CRASHDEBUG\0".as_ptr() as PSTR).is_null() {
+            if !strstr(command_line, b"CRASHDEBUG\0".as_ptr() as PSTR).is_null() {
                 KdPitchDebugger = 0u8;
-            } else if !strstr(CommandLine, b"NODEBUG\0".as_ptr() as PSTR).is_null() {
+            } else if !strstr(command_line, b"NODEBUG\0".as_ptr() as PSTR).is_null() {
                 KdPitchDebugger = 1u8;
             } else {
-                DebugLine = strstr(CommandLine, b"DEBUG\0".as_ptr() as PSTR);
-                if !DebugLine.is_null() {
-                    EnableKd = 1u8;
+                let debug_line = strstr(command_line, b"DEBUG\0".as_ptr() as PSTR);
+                if !debug_line.is_null() {
+                    enable_kd = 1u8;
 
-                    if *DebugLine.offset(5) == b'=' as i8 {
-                        let mut DebugOptionStart: PSTR;
-                        let mut DebugOptionEnd: PSTR;
-                        DebugOptionStart = DebugLine.offset(6);
-                        DebugOptionEnd = DebugOptionStart;
+                    if *debug_line.add(5) == b'=' as i8 {
+                        let mut debug_option_start = debug_line.add(6);
+                        let mut debug_option_end = debug_option_start;
 
                         loop {
-                            let DebugOptionLength: usize;
-
-                            while *DebugOptionEnd != 0 {
-                                if (*DebugOptionEnd == b',' as i8)
-                                    || (*DebugOptionEnd == b' ' as i8)
-                                    || (*DebugOptionEnd == b'\t' as i8)
+                            while *debug_option_end != 0 {
+                                if *debug_option_end == b',' as i8
+                                    || *debug_option_end == b' ' as i8
+                                    || *debug_option_end == b'\t' as i8
                                 {
                                     break;
                                 } else {
-                                    DebugOptionEnd = DebugOptionEnd.offset(1);
+                                    debug_option_end = debug_option_end.add(1);
                                 }
                             }
 
-                            DebugOptionLength = DebugOptionEnd.offset_from(DebugOptionStart) as usize;
+                            let debug_option_length = debug_option_end.offset_from(debug_option_start) as usize;
 
-                            if DebugOptionLength == 0 {
+                            if debug_option_length == 0 {
                                 break;
                             }
 
-                            if (DebugOptionLength == 10)
-                                && (strncmp(DebugOptionStart, b"AUTOENABLE\0".as_ptr() as PSTR, 10) == 0)
+                            if debug_option_length == 10
+                                && strncmp(debug_option_start, b"AUTOENABLE\0".as_ptr() as PSTR, 10) == 0
                             {
-                                DisableKdAfterInit = 1u8;
-                                BlockEnable = 0u8;
+                                disable_kd_after_init = 1u8;
+                                block_enable = 0u8;
                                 KdAutoEnableOnEvent = 1u8;
-                            } else if (DebugOptionLength == 7)
-                                && (strncmp(DebugOptionStart, b"DISABLE\0".as_ptr() as PSTR, 7) == 0)
+                            } else if debug_option_length == 7
+                                && strncmp(debug_option_start, b"DISABLE\0".as_ptr() as PSTR, 7) == 0
                             {
-                                DisableKdAfterInit = 1u8;
-                                BlockEnable = 1u8;
+                                disable_kd_after_init = 1u8;
+                                block_enable = 1u8;
                                 KdAutoEnableOnEvent = 0u8;
-                            } else if (DebugOptionLength == 6)
-                                && (strncmp(DebugOptionStart, b"NOUMEX\0".as_ptr() as PSTR, 6) == 0)
+                            } else if debug_option_length == 6
+                                && strncmp(debug_option_start, b"NOUMEX\0".as_ptr() as PSTR, 6) == 0
                             {
                                 KdIgnoreUmExceptions = 1u8;
                             }
 
-                            if *DebugOptionEnd != b',' as i8 {
+                            if *debug_option_end != b',' as i8 {
                                 break;
                             }
 
-                            DebugOptionEnd = DebugOptionEnd.offset(1);
-                            DebugOptionStart = DebugOptionEnd;
+                            debug_option_end = debug_option_end.add(1);
+                            debug_option_start = debug_option_end;
                         }
                     }
                 }
             }
         } else {
             KdPitchDebugger = 1u8;
-            EnableKd = 0u8;
+            enable_kd = 0u8;
         }
     } else {
-        KdVersionBlock.KernBase = PsNtosImageBase as u64;
-
-        EnableKd = 1u8;
+        KdVersionBlock.KernBase = PsNtosImageBase as ULONG64;
+        enable_kd = 1u8;
     }
 
-    KdDebuggerDataBlock.KernBase = KdVersionBlock.KernBase as usize;
+    KdDebuggerDataBlock.KernBase = KdVersionBlock.KernBase;
 
-    if (EnableKd != 0) && (NT_SUCCESS(KdDebuggerInitialize0(LoaderBlock))) {
-        KiDebugRoutine = KdpTrap as *mut core::ffi::c_void;
+    if enable_kd != 0 && KdDebuggerInitialize0(loader_block) >= 0 {
+        KiDebugRoutine = Some(KdpTrap as unsafe extern "system" fn());
 
         if KdpDebuggerStructuresInitialized == 0 {
             KdpContext.KdpDefaultRetries = 20;
 
             KdpOweBreakpoint = 0u8;
-            i = 0;
-            while i < KD_BREAKPOINT_MAX {
-                KdpBreakpointTable[i as usize].Flags = 0;
-                KdpBreakpointTable[i as usize].DirectoryTableBase = 0;
-                KdpBreakpointTable[i as usize].Address = core::ptr::null_mut();
-                i += 1;
-            }
+            // Zero the entire breakpoint table (32 entries * entry size)
+            core::ptr::write_bytes(
+                core::ptr::addr_of_mut!(KdpBreakpointTable) as *mut u8,
+                0,
+                core::mem::size_of_val(&KdpBreakpointTable),
+            );
 
-            KeInitializeDpc(&mut KdpTimeSlipDpc, KdpTimeSlipDpcRoutine, core::ptr::null_mut());
-            KeInitializeTimer(&mut KdpTimeSlipTimer);
-            ExInitializeWorkItem(&mut KdpTimeSlipWorkItem, KdpTimeSlipWork, core::ptr::null_mut());
+            KeInitializeDpc(
+                core::ptr::addr_of_mut!(KdpTimeSlipDpc) as *mut ntkrnl_sys::ddk::_KDPC,
+                Some(KdpTimeSlipDpcRoutine),
+                core::ptr::null_mut()
+            );
+            KeInitializeTimer(core::ptr::addr_of_mut!(KdpTimeSlipTimer) as *mut ntkrnl_sys::ddk::_KTIMER);
+            // ExInitializeWorkItem(&KdpTimeSlipWorkItem, KdpTimeSlipWork, NULL)
+            KdpTimeSlipWorkItem.WorkerRoutine = Some(KdpTimeSlipWork);
+            KdpTimeSlipWorkItem.Parameter = core::ptr::null_mut();
 
             KdpDebuggerStructuresInitialized = 1u8;
         }
@@ -268,50 +364,41 @@ pub unsafe extern "system" fn KdInitSystem(
 
         KdpPrintBanner();
 
-        if DisableKdAfterInit != 0 {
+        if disable_kd_after_init != 0 {
             KdDisableDebuggerWithLock(0u8);
-
-            KdBlockEnable = BlockEnable;
+            KdBlockEnable = block_enable;
             return 1u8;
         }
 
-        if !LoaderBlock.is_null() {
-            let mut NextEntry: PLIST_ENTRY;
-            let mut j: u32;
-            let mut Length: u32;
-            let mut Name: *mut u16;
-            let mut ImageName: STRING;
-            let mut NameBuffer: [i8; 256] = [0; 256];
+        if !loader_block.is_null() {
+            let mut next_entry = (*loader_block).LoadOrderListHead.Flink;
+            let mut i = 0usize;
 
-            NextEntry = (*LoaderBlock).LoadOrderListHead.Flink;
-            i = 0;
-            while NextEntry != &mut (*LoaderBlock).LoadOrderListHead as *mut _ && (i < 2) {
-                LdrEntry = ((NextEntry as *mut u8)
-                    .offset(-(core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks) as isize)))
+            while next_entry != core::ptr::addr_of_mut!((*loader_block).LoadOrderListHead) as PLIST_ENTRY && i < 2 {
+                let ldr_entry = (next_entry as *mut u8)
+                    .sub(core::mem::offset_of!(ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
                     as PLDR_DATA_TABLE_ENTRY;
 
-                Name = (*LdrEntry).FullDllName.Buffer;
-                Length = (*LdrEntry).FullDllName.Length / core::mem::size_of::<u16>() as u16;
-                j = 0;
-                loop {
-                    NameBuffer[j as usize] = *Name as i8;
+                let name_ptr = (*ldr_entry).FullDllName.Buffer;
+                let length = ((*ldr_entry).FullDllName.Length / 2) as usize;
+                let mut name_buffer: [i8; 256] = [0; 256];
+                let mut j = 0usize;
+
+                while j < length {
+                    name_buffer[j] = *name_ptr.add(j) as i8;
                     j += 1;
-                    Name = Name.offset(1);
-                    if j >= Length as u32 {
-                        break;
-                    }
                 }
+                name_buffer[j] = 0;
 
-                NameBuffer[j as usize] = 0;
-
-                RtlInitString(&mut ImageName, NameBuffer.as_ptr() as PSTR);
+                let mut image_name: STRING = core::mem::zeroed();
+                RtlInitString(core::ptr::addr_of_mut!(image_name), name_buffer.as_ptr() as PSTR);
                 DbgLoadImageSymbols(
-                    &mut ImageName,
-                    (*LdrEntry).DllBase,
-                    PsGetCurrentProcessId() as usize,
+                    core::ptr::addr_of_mut!(image_name),
+                    (*ldr_entry).DllBase,
+                    PsGetCurrentProcessId() as ULONG_PTR
                 );
 
-                NextEntry = (*NextEntry).Flink;
+                next_entry = (*next_entry).Flink;
                 i += 1;
             }
 
@@ -321,7 +408,7 @@ pub unsafe extern "system" fn KdInitSystem(
         KdDebuggerNotPresent = 1u8;
     }
 
-    return 1u8;
+    1u8
 }
 
 // ============================================================================

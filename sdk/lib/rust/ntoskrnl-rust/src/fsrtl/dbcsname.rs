@@ -1,18 +1,51 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, PANSI_STRING};
-use core::ffi::c_void;
+
+use ntkrnl_sys::ddk::{
+    ANSI_STRING, PANSI_STRING,
+};
+
+use core::ptr;
+
+const FSRTL_FAT_LEGAL: u8 = 0x02;
+const FSRTL_HPFS_LEGAL: u8 = 0x04;
+const FSRTL_WILD_CHARACTER: u8 = 0x10;
 
 extern "system" {
-    fn FsRtlIsLeadDbcsCharacter(Character: u8) -> u8;
-    fn FsRtlIsAnsiCharacterWild(Character: u8) -> u8;
-    fn FsRtlIsAnsiCharacterLegalHpfs(Character: u8, WildCardsPermissible: u8) -> u8;
-    fn RtlEqualMemory(Source1: *const core::ffi::c_void, Source2: *const core::ffi::c_void, Length: usize) -> u8;
-    fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: u8) -> u8;
+    static NlsMbOemCodePageTag: BOOLEAN;
+    static NlsOemLeadByteInfo: *const USHORT;
+}
+
+#[inline(always)]
+unsafe fn FsRtlIsLeadDbcsCharacter(c: u8) -> bool {
+    NlsMbOemCodePageTag != 0 && *NlsOemLeadByteInfo.add(c as usize) != 0
+}
+
+#[inline(always)]
+unsafe fn FsRtlIsAnsiCharacterLegalFat(c: u8, wild_ok: bool) -> bool {
+    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    (flags & FSRTL_FAT_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
+}
+
+#[inline(always)]
+unsafe fn FsRtlIsAnsiCharacterWild(c: u8) -> bool {
+    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    flags & FSRTL_WILD_CHARACTER != 0
+}
+
+#[inline(always)]
+unsafe fn FsRtlIsAnsiCharacterLegalHpfs(c: u8, wild_ok: bool) -> bool {
+    let flags = *super::fsrtlpc::FsRtlLegalAnsiCharacterArray.as_ptr().add(c as usize);
+    (flags & FSRTL_HPFS_LEGAL != 0) || (wild_ok && (flags & FSRTL_WILD_CHARACTER != 0))
+}
+
+#[inline(always)]
+unsafe fn RtlEqualMemory(a: PVOID, b: PVOID, len: usize) -> bool {
+    ntkrnl_sys::ddk::RtlCompareMemory(a, b, len as _) == len as _
 }
 
 #[no_mangle]
@@ -21,53 +54,52 @@ pub unsafe extern "system" fn FsRtlDissectDbcs(
     FirstPart: PANSI_STRING,
     RemainingPart: PANSI_STRING,
 ) {
-    let mut FirstPosition: u16;
-    let mut i: u16;
-    let mut SkipFirstSlash: u16 = 0;
+    let mut first_position: USHORT;
+    let mut i: USHORT;
+    let mut skip_first_slash: USHORT = 0;
 
-    RtlZeroMemory(FirstPart as *mut core::ffi::c_void, core::mem::size_of::<ANSI_STRING>());
-    RtlZeroMemory(RemainingPart as *mut core::ffi::c_void, core::mem::size_of::<ANSI_STRING>());
+    core::ptr::write_bytes(FirstPart as *mut u8, 0, core::mem::size_of::<ANSI_STRING>());
+    core::ptr::write_bytes(RemainingPart as *mut u8, 0, core::mem::size_of::<ANSI_STRING>());
 
     if Name.Length == 0 {
         return;
     }
 
-    FirstPosition = Name.Length;
+    first_position = Name.Length;
     i = 0;
     while i < Name.Length {
-        if FsRtlIsLeadDbcsCharacter(*Name.Buffer.offset(i as isize)) != 0 {
+        if FsRtlIsLeadDbcsCharacter(*Name.Buffer.add(i as usize) as u8) {
             i += 1;
-        } else if *Name.Buffer.offset(i as isize) == b'\\' {
+        } else if *Name.Buffer.add(i as usize) as u8 == b'\\' {
             if i == 0 {
-                SkipFirstSlash = 1;
+                skip_first_slash = 1;
             } else {
-                FirstPosition = i;
+                first_position = i;
                 break;
             }
         }
         i += 1;
     }
 
-    (*FirstPart).Buffer = Name.Buffer.offset(SkipFirstSlash as isize);
-    (*FirstPart).Length = FirstPosition - SkipFirstSlash;
+    (*FirstPart).Buffer = Name.Buffer.add(skip_first_slash as usize);
+    (*FirstPart).Length = first_position - skip_first_slash;
     (*FirstPart).MaximumLength = (*FirstPart).Length;
 
-    if FirstPosition < Name.Length {
-        (*RemainingPart).Buffer = Name.Buffer.offset((FirstPosition + 1) as isize);
-        (*RemainingPart).Length = Name.Length - (FirstPosition + 1);
+    if first_position < Name.Length {
+        (*RemainingPart).Buffer = Name.Buffer.add((first_position + 1) as usize);
+        (*RemainingPart).Length = Name.Length - (first_position + 1);
         (*RemainingPart).MaximumLength = (*RemainingPart).Length;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FsRtlDoesDbcsContainWildCards(Name: PANSI_STRING) -> u8 {
-
-    let mut i: u16 = 0;
+pub unsafe extern "system" fn FsRtlDoesDbcsContainWildCards(Name: PANSI_STRING) -> BOOLEAN {
+    let mut i: USHORT = 0;
 
     while i < (*Name).Length {
-        if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.offset(i as isize)) != 0 {
+        if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.add(i as usize) as u8) {
             i += 1;
-        } else if FsRtlIsAnsiCharacterWild(*(*Name).Buffer.offset(i as isize)) != 0 {
+        } else if FsRtlIsAnsiCharacterWild(*(*Name).Buffer.add(i as usize) as u8) {
             return 1u8;
         }
         i += 1;
@@ -79,20 +111,27 @@ pub unsafe extern "system" fn FsRtlDoesDbcsContainWildCards(Name: PANSI_STRING) 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
     Expression: PANSI_STRING,
-    Name: PANSI_STRING
-) -> u8 {
-
-    let mut BackTrackingBuffer: [u16; 16] = [0; 16];
-    let mut OldBackTrackingBuffer: [u16; 16] = [0; 16];
-    let mut BackTracking: *mut u16 = BackTrackingBuffer.as_mut_ptr();
-    let mut OldBackTracking: *mut u16 = OldBackTrackingBuffer.as_mut_ptr();
-    let mut BackTrackingBufferSize: u32 = 16;
-    let mut AllocatedBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut NamePosition: u16 = 0;
-    let mut MatchingChars: u16 = 1;
-    let mut NameChar: u16 = 0;
-    let mut EndOfName: u8 = 0;
-    let Result: u8;
+    Name: PANSI_STRING,
+) -> BOOLEAN {
+    let mut offset: USHORT;
+    let mut position: USHORT;
+    let mut backtracking_position: USHORT;
+    let mut old_backtracking_position: USHORT;
+    let mut backtracking_buffer: [USHORT; 16] = [0; 16];
+    let mut old_backtracking_buffer: [USHORT; 16] = [0; 16];
+    let mut backtracking_swap: *mut USHORT;
+    let mut backtracking: *mut USHORT = backtracking_buffer.as_mut_ptr();
+    let mut old_backtracking: *mut USHORT = old_backtracking_buffer.as_mut_ptr();
+    let mut backtracking_buffer_size: ULONG = 16;
+    let mut allocated_buffer: PVOID = core::ptr::null_mut();
+    let mut expression_position: USHORT;
+    let mut name_position: USHORT = 0;
+    let mut matching_chars: USHORT = 1;
+    let mut name_char: USHORT = 0;
+    let mut expression_char: USHORT;
+    let mut end_of_name: BOOLEAN = 0u8;
+    let mut result: BOOLEAN;
+    let mut dont_skip_dot: BOOLEAN;
 
     if (*Name).Length == 0 || (*Expression).Length == 0 {
         if (*Name).Length == 0 && (*Expression).Length == 0 {
@@ -102,222 +141,238 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
         }
     }
 
-    if (*Expression).Length == core::mem::size_of::<u8>() as u16 {
-        if *(*Expression).Buffer.offset(0) == b'*' {
+    if (*Expression).Length == core::mem::size_of::<i8>() as USHORT {
+        if *(*Expression).Buffer == b'*' as i8 {
             return 1u8;
         }
     }
 
-    if *(*Expression).Buffer.offset(0) == b'*' {
-        let mut IntExpression: ANSI_STRING = *Expression;
-        IntExpression.Buffer = IntExpression.Buffer.offset(1);
-        IntExpression.Length -= core::mem::size_of::<u8>() as u16;
+    if *(*Expression).Buffer == b'*' as i8 {
+        let mut int_expression = *Expression;
 
-        if FsRtlDoesDbcsContainWildCards(core::ptr::addr_of_mut!(IntExpression)) == 0 {
-            if (*Name).Length < ((*Expression).Length - core::mem::size_of::<u8>() as u16) {
+        int_expression.Buffer = int_expression.Buffer.add(1);
+        int_expression.Length -= core::mem::size_of::<i8>() as USHORT;
+
+        if FsRtlDoesDbcsContainWildCards(&mut int_expression) == 0 {
+            if (*Name).Length < ((*Expression).Length - core::mem::size_of::<i8>() as USHORT) {
                 return 0u8;
             }
 
-            NamePosition = ((*Name).Length - IntExpression.Length) / core::mem::size_of::<u8>() as u16;
+            name_position = ((*Name).Length - int_expression.Length) / core::mem::size_of::<i8>() as USHORT;
 
             if NlsMbOemCodePageTag != 0 {
-                MatchingChars = 0;
+                matching_chars = 0;
 
-                while MatchingChars < NamePosition {
-                    MatchingChars += if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.offset(MatchingChars as isize)) != 0 { 2 } else { 1 };
+                while matching_chars < name_position {
+                    matching_chars += if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.add(matching_chars as usize) as u8) {
+                        2
+                    } else {
+                        1
+                    };
                 }
 
-                if MatchingChars > NamePosition {
+                if matching_chars > name_position {
                     return 0u8;
                 }
             }
 
             return RtlEqualMemory(
-                IntExpression.Buffer as *const core::ffi::c_void,
-                (*Name).Buffer.offset(NamePosition as isize) as *const core::ffi::c_void,
-                IntExpression.Length as usize
-            );
+                int_expression.Buffer as PVOID,
+                (*Name).Buffer.add(name_position as usize) as PVOID,
+                int_expression.Length as usize,
+            ) as BOOLEAN;
         }
     }
 
-    'name_loop: loop {
-        let mut OldBackTrackingPosition: u16 = 0;
-        let mut BackTrackingPosition: u16 = 0;
+    'outer: loop {
+        old_backtracking_position = 0;
+        backtracking_position = 0;
 
-        if NamePosition >= (*Name).Length {
-            EndOfName = 1;
-            if MatchingChars != 0 && *OldBackTracking.offset((MatchingChars - 1) as isize) == (*Expression).Length * 2 {
-                break 'name_loop;
+        if name_position >= (*Name).Length {
+            end_of_name = 1u8;
+            if matching_chars != 0 && *old_backtracking.add((matching_chars - 1) as usize) == (*Expression).Length * 2 {
+                break;
             }
         } else {
-            if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.offset(NamePosition as isize)) != 0 {
-                NameChar = *(*Name).Buffer.offset(NamePosition as isize) as u16 +
-                           (0x100u16 * (*(*Name).Buffer.offset((NamePosition + 1) as isize) as u16));
-                NamePosition += core::mem::size_of::<u16>() as u16;
+            if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.add(name_position as usize) as u8) {
+                name_char = (*(*Name).Buffer.add(name_position as usize) as u8 as USHORT) +
+                    (0x100 * (*(*Name).Buffer.add((name_position + 1) as u8 as usize) as USHORT));
+                name_position += core::mem::size_of::<USHORT>() as USHORT;
             } else {
-                NameChar = *(*Name).Buffer.offset(NamePosition as isize) as u16;
-                NamePosition += core::mem::size_of::<u8>() as u16;
+                name_char = *(*Name).Buffer.add(name_position as usize) as u8 as USHORT;
+                name_position += core::mem::size_of::<u8>() as USHORT;
             }
         }
 
-        while MatchingChars > OldBackTrackingPosition {
-            let mut ExpressionPosition: u16 = (*OldBackTracking.offset(OldBackTrackingPosition as isize) + 1) / 2;
-            OldBackTrackingPosition += 1;
+        while matching_chars > old_backtracking_position {
+            expression_position = (*old_backtracking.add(old_backtracking_position as usize) + 1) / 2;
+            old_backtracking_position += 1;
 
-            let mut Offset: u16 = 0;
-            'expression_loop: loop {
-                ExpressionPosition += Offset;
+            offset = 0;
+            while expression_position < (*Expression).Length {
+                expression_position += offset;
 
-                if ExpressionPosition == (*Expression).Length {
-                    *BackTracking.offset(BackTrackingPosition as isize) = (*Expression).Length * 2;
-                    BackTrackingPosition += 1;
-                    break 'expression_loop;
+                if expression_position == (*Expression).Length {
+                    *backtracking.add(backtracking_position as usize) = (*Expression).Length * 2;
+                    backtracking_position += 1;
+                    break;
                 }
 
-                if BackTrackingPosition > BackTrackingBufferSize as u16 - 3 {
-                    BackTrackingBufferSize = (*Expression).Length as u32 * 2 + 1;
+                if backtracking_position > backtracking_buffer_size as USHORT - 3 {
+                    backtracking_buffer_size = ((*Expression).Length as ULONG) * 2 + 1;
 
-                    AllocatedBuffer = ExAllocatePoolWithTag(
+                    allocated_buffer = ExAllocatePoolWithTag(
                         PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
-                        2 * BackTrackingBufferSize as usize * core::mem::size_of::<u16>(),
-                        0x6e725346u32
+                        2 * backtracking_buffer_size as usize * core::mem::size_of::<USHORT>(),
+                        u32::from_ne_bytes(*b"nrSF"),
                     );
-                    if AllocatedBuffer.is_null() {
-                        Result = 0u8;
-                        break 'name_loop;
+                    if allocated_buffer.is_null() {
+                        result = 0u8;
+                        break 'outer;
                     }
 
                     core::ptr::copy_nonoverlapping(
-                        BackTracking,
-                        AllocatedBuffer as *mut u16,
-                        16
+                        backtracking as *const u8,
+                        allocated_buffer as *mut u8,
+                        16 as usize * core::mem::size_of::<USHORT>(),
                     );
 
-                    BackTracking = AllocatedBuffer as *mut u16;
+                    backtracking = allocated_buffer as *mut USHORT;
 
                     core::ptr::copy_nonoverlapping(
-                        OldBackTracking,
-                        (BackTracking as *mut u16).offset(BackTrackingBufferSize as isize),
-                        16
+                        old_backtracking as *const u8,
+                        (backtracking as *mut u8).add((backtracking_buffer_size as usize * core::mem::size_of::<USHORT>()) as usize),
+                        16 as usize * core::mem::size_of::<USHORT>(),
                     );
 
-                    OldBackTracking = (BackTracking as *mut u16).offset(BackTrackingBufferSize as isize);
+                    old_backtracking = backtracking.add(backtracking_buffer_size as usize);
                 }
 
-                let ExpressionChar: u16;
-                if FsRtlIsLeadDbcsCharacter(*(*Expression).Buffer.offset(ExpressionPosition as isize)) != 0 {
-                    ExpressionChar = *(*Expression).Buffer.offset(ExpressionPosition as isize) as u16 +
-                                    (0x100u16 * (*(*Expression).Buffer.offset((ExpressionPosition + 1) as isize) as u16));
-                    Offset = core::mem::size_of::<u16>() as u16;
+                if FsRtlIsLeadDbcsCharacter(*(*Expression).Buffer.add(expression_position as usize) as u8) {
+                    expression_char = (*(*Expression).Buffer.add(expression_position as usize) as u8 as USHORT) +
+                        (0x100 * (*(*Expression).Buffer.add((expression_position + 1) as u8 as usize) as USHORT));
+                    offset = core::mem::size_of::<USHORT>() as USHORT;
                 } else {
-                    ExpressionChar = *(*Expression).Buffer.offset(ExpressionPosition as isize) as u16;
-                    Offset = core::mem::size_of::<u8>() as u16;
+                    expression_char = *(*Expression).Buffer.add(expression_position as usize) as u8 as USHORT;
+                    offset = core::mem::size_of::<u8>() as USHORT;
                 }
 
-                if ExpressionChar == NameChar && EndOfName == 0 {
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + Offset) * 2;
-                    BackTrackingPosition += 1;
-                } else if ExpressionChar == b'?' as u16 && EndOfName == 0 {
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + Offset) * 2;
-                    BackTrackingPosition += 1;
-                } else if ExpressionChar == b'*' as u16 {
-                    *BackTracking.offset(BackTrackingPosition as isize) = ExpressionPosition * 2;
-                    BackTrackingPosition += 1;
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition * 2) + 1;
-                    BackTrackingPosition += 1;
-                    continue 'expression_loop;
-                } else if ExpressionChar == 0x3Cu16 {
-                    let mut DontSkipDot: u8 = 1;
-                    if EndOfName == 0 && NameChar == b'.' as u16 {
-                        let mut Position: u16 = NamePosition;
-                        while Position < (*Name).Length {
-                            if FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.offset(Position as isize)) == 0 {
-                                if *(*Name).Buffer.offset(Position as isize) == b'.' {
-                                    DontSkipDot = 0;
+                if expression_char == name_char && end_of_name == 0 {
+                    *backtracking.add(backtracking_position as usize) = (expression_position + offset) * 2;
+                    backtracking_position += 1;
+                } else if expression_char == b'?' as USHORT && end_of_name == 0 {
+                    *backtracking.add(backtracking_position as usize) = (expression_position + offset) * 2;
+                    backtracking_position += 1;
+                } else if expression_char == b'*' as USHORT {
+                    *backtracking.add(backtracking_position as usize) = expression_position * 2;
+                    backtracking_position += 1;
+                    *backtracking.add(backtracking_position as usize) = (expression_position * 2) + 1;
+                    backtracking_position += 1;
+                    continue;
+                } else if expression_char == ANSI_DOS_STAR as USHORT {
+                    dont_skip_dot = 1u8;
+                    if end_of_name == 0 && name_char == b'.' as USHORT {
+                        position = name_position;
+                        while position < (*Name).Length {
+                            if !FsRtlIsLeadDbcsCharacter(*(*Name).Buffer.add(position as usize) as u8) {
+                                if *(*Name).Buffer.add(position as usize) as u8 == b'.' {
+                                    dont_skip_dot = 0u8;
                                     break;
                                 }
-                                Position += core::mem::size_of::<u8>() as u16;
+
+                                position += core::mem::size_of::<u8>() as USHORT;
                             } else {
-                                Position += core::mem::size_of::<u16>() as u16;
+                                position += core::mem::size_of::<USHORT>() as USHORT;
                             }
                         }
                     }
 
-                    if EndOfName != 0 || NameChar != b'.' as u16 || DontSkipDot == 0 {
-                        *BackTracking.offset(BackTrackingPosition as isize) = ExpressionPosition * 2;
-                        BackTrackingPosition += 1;
+                    if end_of_name != 0 || name_char != b'.' as USHORT || dont_skip_dot == 0 {
+                        *backtracking.add(backtracking_position as usize) = expression_position * 2;
+                        backtracking_position += 1;
                     }
 
-                    *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition * 2) + 1;
-                    BackTrackingPosition += 1;
-                    continue 'expression_loop;
-                } else if ExpressionChar == 0x3Eu16 {
-                    if EndOfName == 0 {
-                        if NameChar == b'.' as u16 {
-                            *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + Offset) * 2;
-                            BackTrackingPosition += 1;
-                        }
+                    *backtracking.add(backtracking_position as usize) = (expression_position * 2) + 1;
+                    backtracking_position += 1;
+                    continue;
+                } else if expression_char == ANSI_DOS_DOT as USHORT {
+                    if end_of_name != 0 {
+                        continue;
                     }
-                } else if ExpressionChar == 0x3Fu16 {
-                    if EndOfName == 0 && NameChar != b'.' as u16 {
-                        *BackTracking.offset(BackTrackingPosition as isize) = (ExpressionPosition + Offset) * 2;
-                        BackTrackingPosition += 1;
+
+                    if name_char == b'.' as USHORT {
+                        *backtracking.add(backtracking_position as usize) = (expression_position + offset) * 2;
+                        backtracking_position += 1;
                     }
+                } else if expression_char == ANSI_DOS_QM as USHORT {
+                    if end_of_name != 0 || name_char == b'.' as USHORT {
+                        continue;
+                    }
+
+                    *backtracking.add(backtracking_position as usize) = (expression_position + offset) * 2;
+                    backtracking_position += 1;
                 }
 
-                break 'expression_loop;
+                break;
             }
 
-            let mut Position: u16 = 0;
-            while MatchingChars > OldBackTrackingPosition && Position < BackTrackingPosition {
-                while MatchingChars > OldBackTrackingPosition &&
-                      *BackTracking.offset(Position as isize) > *OldBackTracking.offset(OldBackTrackingPosition as isize) {
-                    OldBackTrackingPosition += 1;
+            position = 0;
+            while matching_chars > old_backtracking_position && position < backtracking_position {
+                while matching_chars > old_backtracking_position &&
+                    *backtracking.add(position as usize) > *old_backtracking.add(old_backtracking_position as usize)
+                {
+                    old_backtracking_position += 1;
                 }
-                Position += 1;
+                position += 1;
             }
         }
 
-        let BackTrackingSwap = BackTracking;
-        BackTracking = OldBackTracking;
-        OldBackTracking = BackTrackingSwap;
+        backtracking_swap = backtracking;
+        backtracking = old_backtracking;
+        old_backtracking = backtracking_swap;
 
-        MatchingChars = BackTrackingPosition;
+        if end_of_name != 0 {
+            break;
+        }
 
-        if EndOfName != 0 {
-            break 'name_loop;
+        matching_chars = backtracking_position;
+    }
+
+    result = if matching_chars != 0 && *old_backtracking.add((matching_chars - 1) as usize) == (*Expression).Length * 2 {
+        1u8
+    } else {
+        0u8
+    };
+
+    'Exit: {
+        if !allocated_buffer.is_null() {
+            ExFreePoolWithTag(allocated_buffer, u32::from_ne_bytes(*b"nrSF"));
         }
     }
 
-    Result = if MatchingChars != 0 && *OldBackTracking.offset((MatchingChars - 1) as isize) == (*Expression).Length * 2 { 1u8 } else { 0u8 };
-
-    if !AllocatedBuffer.is_null() {
-        ExFreePoolWithTag(AllocatedBuffer, 0x6e725346u32);
-    }
-
-    Result
+    result
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
-    mut DbcsName: ANSI_STRING,
-    WildCardsPermissible: u8,
-    PathNamePermissible: u8,
-    LeadingBackslashPermissible: u8,
-) -> u8 {
+    DbcsName: ANSI_STRING,
+    WildCardsPermissible: BOOLEAN,
+    PathNamePermissible: BOOLEAN,
+    LeadingBackslashPermissible: BOOLEAN,
+) -> BOOLEAN {
+    let mut first_part: ANSI_STRING = core::mem::zeroed();
+    let mut remaining_part: ANSI_STRING = core::mem::zeroed();
+    let mut last_dot: BOOLEAN;
+    let mut i: USHORT;
+    let mut dbcs_name = DbcsName;
 
-    let mut FirstPart: ANSI_STRING = core::mem::zeroed();
-    let mut RemainingPart: ANSI_STRING;
-    let mut LastDot: u8;
-    let mut i: u16;
-
-    if DbcsName.Length == 0 {
+    if dbcs_name.Length == 0 {
         return 0u8;
     }
 
-    if WildCardsPermissible != 0 && (DbcsName.Length == 1 || DbcsName.Length == 2) && *DbcsName.Buffer.offset(0) == b'.' {
-        if DbcsName.Length == 2 {
-            if *DbcsName.Buffer.offset(1) == b'.' {
+    if WildCardsPermissible != 0 && (dbcs_name.Length == 1 || dbcs_name.Length == 2) && *dbcs_name.Buffer == b'.' as i8 {
+        if dbcs_name.Length == 2 {
+            if *dbcs_name.Buffer.add(1) as u8 == b'.' {
                 return 1u8;
             }
         } else {
@@ -325,27 +380,27 @@ pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
         }
     }
 
-    if LeadingBackslashPermissible == 0 && *DbcsName.Buffer.offset(0) == b'\\' {
+    if LeadingBackslashPermissible == 0 && *dbcs_name.Buffer == b'\\' as i8 {
         return 0u8;
-    } else if LeadingBackslashPermissible != 0 && *DbcsName.Buffer.offset(0) == b'\\' {
-        DbcsName.Buffer = DbcsName.Buffer.offset(1);
-        DbcsName.Length = DbcsName.Length - 1;
-        DbcsName.MaximumLength = DbcsName.MaximumLength - 1;
+    } else if LeadingBackslashPermissible != 0 && *dbcs_name.Buffer == b'\\' as i8 {
+        dbcs_name.Buffer = dbcs_name.Buffer.add(1);
+        dbcs_name.Length = dbcs_name.Length - 1;
+        dbcs_name.MaximumLength = dbcs_name.MaximumLength - 1;
     }
 
     if PathNamePermissible != 0 {
-        RemainingPart.Buffer = DbcsName.Buffer;
-        RemainingPart.Length = DbcsName.Length;
-        RemainingPart.MaximumLength = DbcsName.MaximumLength;
+        remaining_part.Buffer = dbcs_name.Buffer;
+        remaining_part.Length = dbcs_name.Length;
+        remaining_part.MaximumLength = dbcs_name.MaximumLength;
 
-        while RemainingPart.Length > 0 {
-            if *RemainingPart.Buffer.offset(0) == b'\\' {
+        while remaining_part.Length > 0 {
+            if *remaining_part.Buffer == b'\\' as i8 {
                 return 0u8;
             }
 
-            FsRtlDissectDbcs(RemainingPart, &mut FirstPart, &mut RemainingPart);
+            FsRtlDissectDbcs(remaining_part, &mut first_part, &mut remaining_part);
 
-            if FsRtlIsFatDbcsLegal(FirstPart, WildCardsPermissible, 0u8, 0u8) == 0 {
+            if FsRtlIsFatDbcsLegal(first_part, WildCardsPermissible, 0u8, 0u8) == 0 {
                 return 0u8;
             }
         }
@@ -353,12 +408,12 @@ pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
         return 1u8;
     }
 
-    if WildCardsPermissible != 0 && FsRtlDoesDbcsContainWildCards(&DbcsName) != 0 {
+    if WildCardsPermissible != 0 && FsRtlDoesDbcsContainWildCards(&mut dbcs_name) != 0 {
         i = 0;
-        while i < DbcsName.Length {
-            if FsRtlIsLeadDbcsCharacter(*DbcsName.Buffer.offset(i as isize)) != 0 {
+        while i < dbcs_name.Length {
+            if FsRtlIsLeadDbcsCharacter(*dbcs_name.Buffer.add(i as usize) as u8) {
                 i += 1;
-            } else if FsRtlIsAnsiCharacterLegalFat(*DbcsName.Buffer.offset(i as isize), 1u8) == 0 {
+            } else if !FsRtlIsAnsiCharacterLegalFat(*dbcs_name.Buffer.add(i as usize) as u8, true) {
                 return 0u8;
             }
             i += 1;
@@ -367,51 +422,51 @@ pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
         return 1u8;
     }
 
-    if DbcsName.Length > 12 {
+    if dbcs_name.Length > 12 {
         return 0u8;
     }
 
-    LastDot = 0u8;
+    last_dot = 0u8;
 
     i = 0;
-    while i < DbcsName.Length {
-        if FsRtlIsLeadDbcsCharacter(*DbcsName.Buffer.offset(i as isize)) != 0 {
-            if LastDot == 0 && i >= 7 {
+    while i < dbcs_name.Length {
+        if FsRtlIsLeadDbcsCharacter(*dbcs_name.Buffer.add(i as usize) as u8) {
+            if last_dot == 0 && i >= 7 {
                 return 0u8;
             }
 
-            if i == DbcsName.Length - 1 {
+            if i == (dbcs_name.Length - 1) {
                 return 0u8;
             }
 
             i += 1;
             i += 1;
             continue;
-        } else if FsRtlIsAnsiCharacterLegalFat(*DbcsName.Buffer.offset(i as isize), WildCardsPermissible) == 0 {
+        } else if !FsRtlIsAnsiCharacterLegalFat(*dbcs_name.Buffer.add(i as usize) as u8, WildCardsPermissible != 0) {
             return 0u8;
-        } else if *DbcsName.Buffer.offset(i as isize) == b'.' {
-            if LastDot != 0 {
+        } else if *dbcs_name.Buffer.add(i as usize) as u8 == b'.' {
+            if last_dot != 0 {
                 return 0u8;
             }
 
-            LastDot = 1u8;
+            last_dot = 1u8;
 
-            if i == DbcsName.Length - 1 || i == 0 {
+            if i == (dbcs_name.Length - 1) || i == 0 {
                 return 0u8;
             }
 
-            if (DbcsName.Length - 1) - i > 3 {
+            if (dbcs_name.Length - 1) - i > 3 {
                 return 0u8;
             }
 
-            if i > 0 && *DbcsName.Buffer.offset((i - 1) as isize) == b' ' {
+            if i > 0 && *dbcs_name.Buffer.add((i - 1) as u8 as usize) == b' ' as i8 {
                 return 0u8;
             }
-        } else if *DbcsName.Buffer.offset(i as isize) == b' ' && i == DbcsName.Length - 1 {
+        } else if *dbcs_name.Buffer.add(i as usize) as u8 == b' ' && i == (dbcs_name.Length - 1) {
             return 0u8;
         }
 
-        if LastDot == 0 && i >= 8 {
+        if last_dot == 0 && i >= 8 {
             return 0u8;
         }
 
@@ -423,22 +478,23 @@ pub unsafe extern "system" fn FsRtlIsFatDbcsLegal(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsHpfsDbcsLegal(
-    mut DbcsName: ANSI_STRING,
-    WildCardsPermissible: u8,
-    PathNamePermissible: u8,
-    LeadingBackslashPermissible: u8,
-) -> u8 {
-    let mut FirstPart: ANSI_STRING = core::mem::zeroed();
-    let mut RemainingPart: ANSI_STRING = core::mem::zeroed();
-    let mut i: u16;
+    DbcsName: ANSI_STRING,
+    WildCardsPermissible: BOOLEAN,
+    PathNamePermissible: BOOLEAN,
+    LeadingBackslashPermissible: BOOLEAN,
+) -> BOOLEAN {
+    let mut first_part: ANSI_STRING = core::mem::zeroed();
+    let mut remaining_part: ANSI_STRING = core::mem::zeroed();
+    let mut i: USHORT;
+    let mut dbcs_name = DbcsName;
 
-    if DbcsName.Length == 0 {
+    if dbcs_name.Length == 0 {
         return 0u8;
     }
 
-    if WildCardsPermissible != 0 && (DbcsName.Length == 1 || DbcsName.Length == 2) && *DbcsName.Buffer == b'.' {
-        if DbcsName.Length == 2 {
-            if *DbcsName.Buffer.offset(1) == b'.' {
+    if WildCardsPermissible != 0 && (dbcs_name.Length == 1 || dbcs_name.Length == 2) && *dbcs_name.Buffer == b'.' as i8 {
+        if dbcs_name.Length == 2 {
+            if *dbcs_name.Buffer.add(1) as u8 == b'.' {
                 return 1u8;
             }
         } else {
@@ -446,27 +502,27 @@ pub unsafe extern "system" fn FsRtlIsHpfsDbcsLegal(
         }
     }
 
-    if LeadingBackslashPermissible == 0 && *DbcsName.Buffer == b'\\' {
+    if LeadingBackslashPermissible == 0 && *dbcs_name.Buffer == b'\\' as i8 {
         return 0u8;
-    } else if LeadingBackslashPermissible != 0 && *DbcsName.Buffer == b'\\' {
-        DbcsName.Buffer = DbcsName.Buffer.offset(1);
-        DbcsName.Length = DbcsName.Length - 1;
-        DbcsName.MaximumLength = DbcsName.MaximumLength - 1;
+    } else if LeadingBackslashPermissible != 0 && *dbcs_name.Buffer == b'\\' as i8 {
+        dbcs_name.Buffer = dbcs_name.Buffer.add(1);
+        dbcs_name.Length = dbcs_name.Length - 1;
+        dbcs_name.MaximumLength = dbcs_name.MaximumLength - 1;
     }
 
     if PathNamePermissible != 0 {
-        RemainingPart.Buffer = DbcsName.Buffer;
-        RemainingPart.Length = DbcsName.Length;
-        RemainingPart.MaximumLength = DbcsName.MaximumLength;
+        remaining_part.Buffer = dbcs_name.Buffer;
+        remaining_part.Length = dbcs_name.Length;
+        remaining_part.MaximumLength = dbcs_name.MaximumLength;
 
-        while RemainingPart.Length > 0 {
-            if *RemainingPart.Buffer == b'\\' {
+        while remaining_part.Length > 0 {
+            if *remaining_part.Buffer == b'\\' as i8 {
                 return 0u8;
             }
 
-            FsRtlDissectDbcs(RemainingPart, &mut FirstPart, &mut RemainingPart);
+            FsRtlDissectDbcs(remaining_part, &mut first_part, &mut remaining_part);
 
-            if FsRtlIsHpfsDbcsLegal(FirstPart, WildCardsPermissible, 0u8, 0u8) == 0 {
+            if FsRtlIsHpfsDbcsLegal(first_part, WildCardsPermissible, 0u8, 0u8) == 0 {
                 return 0u8;
             }
         }
@@ -474,20 +530,20 @@ pub unsafe extern "system" fn FsRtlIsHpfsDbcsLegal(
         return 1u8;
     }
 
-    if DbcsName.Length > 255 {
+    if dbcs_name.Length > 255 {
         return 0u8;
     }
 
     i = 0;
-    while i < DbcsName.Length {
-        if FsRtlIsLeadDbcsCharacter(*DbcsName.Buffer.offset(i as isize)) != 0 {
-            if i == (DbcsName.Length - 1) {
+    while i < dbcs_name.Length {
+        if FsRtlIsLeadDbcsCharacter(*dbcs_name.Buffer.add(i as usize) as u8) {
+            if i == (dbcs_name.Length - 1) {
                 return 0u8;
             }
             i += 1;
-        } else if FsRtlIsAnsiCharacterLegalHpfs(*DbcsName.Buffer.offset(i as isize), WildCardsPermissible) == 0 {
+        } else if !FsRtlIsAnsiCharacterLegalHpfs(*dbcs_name.Buffer.add(i as usize) as u8, WildCardsPermissible != 0) {
             return 0u8;
-        } else if (*DbcsName.Buffer.offset(i as isize) == b' ' || *DbcsName.Buffer.offset(i as isize) == b'.') && i == (DbcsName.Length - 1) {
+        } else if (*dbcs_name.Buffer.add(i as usize) as u8 == b' ' || *dbcs_name.Buffer.add(i as usize) as u8 == b'.') && i == (dbcs_name.Length - 1) {
             return 0u8;
         }
         i += 1;
@@ -1072,7 +1128,7 @@ pub unsafe extern "system" fn FsRtlIsHpfsDbcsLegal(
 //             continue;
 //         }
 //         /* Then check for bad characters */
-//         else if (!FsRtlIsAnsiCharacterLegalFat(DbcsName.Buffer[i], WildCardsPermissible))
+//         else if (!FsRtlIsAnsiCharacterLegalFat(DbcsName.Buffer[i], WildCardsPermissible \!= 0))
 //         {
 //             return FALSE;
 //         }
@@ -1215,7 +1271,7 @@ pub unsafe extern "system" fn FsRtlIsHpfsDbcsLegal(
 //             i++;
 //         }
 //         /* Then check for bad characters */
-//         else if (!FsRtlIsAnsiCharacterLegalHpfs(DbcsName.Buffer[i], WildCardsPermissible))
+//         else if (!FsRtlIsAnsiCharacterLegalHpfs(DbcsName.Buffer[i], WildCardsPermissible \!= 0))
 //         {
 //             return FALSE;
 //         }

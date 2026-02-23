@@ -1,12 +1,32 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{KeDisableInterrupts, KeRestoreInterrupts, KeTryToAcquireSpinLockAtDpcLevel, KiAcquireSpinLock, KiReleaseSpinLock};
-use core::ffi::c_void;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ke::*;
+use ntkrnl_sys::ddk::{
+    KeTryToAcquireSpinLockAtDpcLevel,
+};
 
 extern "system" {
-    fn KdReceivePacket( PacketType: ULONG, MessageHeader: PSTRING, MessageData: PSTRING, DataLength: PULONG, KdContext: *mut _KD_CONTEXT, ) -> KD_RECV_CODE;
+    static mut KdpDebuggerLock: KSPIN_LOCK;
+    static mut KdDebuggerEnabled: BOOLEAN;
+    static mut KdpContext: KD_CONTEXT;
+    static mut KdpControlCPressed: BOOLEAN;
+    fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
+    fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
+    fn KdReceivePacket( packet_type: ULONG, message_header: PVOID, message_data: PVOID, data_length: *mut ULONG, context: PVOID, ) -> ULONG;
+    fn KeDisableInterrupts() -> BOOLEAN;
+    fn KeRestoreInterrupts(enable: BOOLEAN);
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
 }
+
+#[repr(C)]
+struct KD_CONTEXT {
+    KdpControlCPending: BOOLEAN,
+}
+
+const PACKET_TYPE_KD_POLL_BREAKIN: ULONG = 8;
+const KdPacketReceived: ULONG = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpPortLock() {
@@ -20,14 +40,13 @@ pub unsafe extern "system" fn KdpPortUnlock() {
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpPollBreakInWithPortLock() -> BOOLEAN {
-    let mut DoBreak: BOOLEAN = 0u8;
+    let mut do_break: BOOLEAN = 0u8;
 
     if KdDebuggerEnabled != 0 {
         if KdpContext.KdpControlCPending != 0 {
-            DoBreak = 1u8;
+            do_break = 1u8;
             KdpContext.KdpControlCPending = 0u8;
         } else {
-
             if KdReceivePacket(
                 PACKET_TYPE_KD_POLL_BREAKIN,
                 core::ptr::null_mut(),
@@ -36,30 +55,29 @@ pub unsafe extern "system" fn KdpPollBreakInWithPortLock() -> BOOLEAN {
                 core::ptr::null_mut(),
             ) == KdPacketReceived
             {
-                DoBreak = 1u8;
+                do_break = 1u8;
             }
         }
     }
 
-    DoBreak
+    do_break
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KdPollBreakIn() -> u8 {
-    let mut DoBreak: u8 = 0u8;
-    let Enable: u8;
+pub unsafe extern "system" fn KdPollBreakIn() -> BOOLEAN {
+    let mut do_break: BOOLEAN = 0u8;
 
     if KdDebuggerEnabled != 0 {
-        Enable = KeDisableInterrupts();
+        let enable = KeDisableInterrupts();
 
         if KdpContext.KdpControlCPending != 0 {
             KdpControlCPressed = 1u8;
-            DoBreak = 1u8;
+            do_break = 1u8;
             KdpContext.KdpControlCPending = 0u8;
         } else {
-            let mut OldIrql: KIRQL = 0;
-            KeRaiseIrql(0x1Fu8, core::ptr::addr_of_mut!(OldIrql));
-            if KeTryToAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KdpDebuggerLock)) != 0 {
+            let mut old_irql: KIRQL = 0;
+            KeRaiseIrql(HIGH_LEVEL, core::ptr::addr_of_mut!(old_irql));
+            if KeTryToAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KdpDebuggerLock) as *mut _) != 0 {
                 if KdReceivePacket(
                     PACKET_TYPE_KD_POLL_BREAKIN,
                     core::ptr::null_mut(),
@@ -68,19 +86,19 @@ pub unsafe extern "system" fn KdPollBreakIn() -> u8 {
                     core::ptr::null_mut(),
                 ) == KdPacketReceived
                 {
-                    DoBreak = 1u8;
+                    do_break = 1u8;
                     KdpControlCPressed = 1u8;
                 }
 
                 KdpPortUnlock();
             }
-            KeLowerIrql(OldIrql);
+            KeLowerIrql(old_irql);
         }
 
-        KeRestoreInterrupts(Enable);
+        KeRestoreInterrupts(enable);
     }
 
-    DoBreak
+    do_break
 }
 
 // ============================================================================

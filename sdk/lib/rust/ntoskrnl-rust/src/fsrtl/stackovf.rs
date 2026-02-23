@@ -1,150 +1,177 @@
 use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
+use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoSetTopLevelIrp, KEVENT, KQUEUE, KeInitializeEvent, KeInitializeQueue, KeInsertQueue, KeRemoveQueue, KeSetPriorityThread, KeWaitForSingleObject, _OBJECT_ATTRIBUTES, PFSRTL_STACK_OVERFLOW_ROUTINE, PIRP, PKEVENT, PWORK_QUEUE_ITEM, PsCreateSystemThread, PsGetCurrentThread, WORK_QUEUE_ITEM, ZwClose};
-use core::ffi::c_void;
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlStackOverflowRead(Context: PVOID) {
-    let WorkItem: PSTACK_OVERFLOW_WORK_ITEM = Context as PSTACK_OVERFLOW_WORK_ITEM;
+use ntkrnl_sys::ddk::{
+    IoSetTopLevelIrp, KEVENT, KQUEUE, KeInitializeEvent, KeInitializeQueue,
+    KeInsertQueue, KeRemoveQueue, KeSetPriorityThread, KeWaitForSingleObject,
+    _OBJECT_ATTRIBUTES, PFSRTL_STACK_OVERFLOW_ROUTINE, PIRP, PKEVENT,
+    PWORK_QUEUE_ITEM, PsCreateSystemThread, PsGetCurrentThread,
+    WORK_QUEUE_ITEM, ZwClose, _WORK_QUEUE_ITEM, PKTHREAD, KPRIORITY,
+    HANDLE,
+};
+
+extern "system" {
+    fn ExInitializeWorkItem( Item: PWORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID, );
+}
+
+const FSRTLP_MAX_QUEUES: usize = 2;
+const FSRTL_FSP_TOP_LEVEL_IRP: ULONG_PTR = 0x80000000usize;
+const LOW_REALTIME_PRIORITY: i32 = 16;
+
+#[repr(C)]
+struct STACK_OVERFLOW_WORK_ITEM {
+    WorkItem: WORK_QUEUE_ITEM,
+    Routine: PFSRTL_STACK_OVERFLOW_ROUTINE,
+    Context: PVOID,
+    Event: PKEVENT,
+}
+
+type PSTACK_OVERFLOW_WORK_ITEM = *mut STACK_OVERFLOW_WORK_ITEM;
+
+static mut StackOverflowFallbackSerialEvent: KEVENT = unsafe { core::mem::zeroed() };
+static mut StackOverflowFallback: STACK_OVERFLOW_WORK_ITEM = unsafe { core::mem::zeroed() };
+static mut FsRtlWorkerQueues: [KQUEUE; FSRTLP_MAX_QUEUES] = unsafe { core::mem::zeroed() };
+
+unsafe extern "system" fn FsRtlStackOverflowRead(Context: PVOID) {
+    let work_item = Context as PSTACK_OVERFLOW_WORK_ITEM;
 
     IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP as PIRP);
-    ((*WorkItem).Routine)((*WorkItem).Context, (*WorkItem).Event);
+    ((*work_item).Routine.unwrap())((*work_item).Context, (*work_item).Event);
 
-    if WorkItem == core::ptr::addr_of_mut!(StackOverflowFallback) {
-        KeSetEvent(core::ptr::addr_of_mut!(StackOverflowFallbackSerialEvent), 0, 0u8);
+    if work_item == core::ptr::addr_of_mut!(StackOverflowFallback) {
+        KeSetEvent(
+            core::ptr::addr_of_mut!(StackOverflowFallbackSerialEvent) as PVOID,
+            0,
+            0u8,
+        );
     } else {
-        ExFreePoolWithTag(WorkItem as PVOID, 0x73725346u32);
+        ExFreePoolWithTag(work_item as PVOID, u32::from_le_bytes(*b"FsSr"));
     }
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlpPostStackOverflow(
+unsafe fn FsRtlpPostStackOverflow(
     Context: PVOID,
     Event: PKEVENT,
     StackOverflowRoutine: PFSRTL_STACK_OVERFLOW_ROUTINE,
     IsPaging: BOOLEAN,
 ) {
-    let mut WorkItem: PSTACK_OVERFLOW_WORK_ITEM;
-
-    WorkItem = ExAllocatePoolWithTag(
+    let mut work_item = ExAllocatePoolWithTag(
         NonPagedPool,
-        core::mem::size_of::<STACK_OVERFLOW_WORK_ITEM>(),
-        u32::from_ne_bytes(*b"srSF"),
+        core::mem::size_of::<STACK_OVERFLOW_WORK_ITEM>() as SIZE_T,
+        u32::from_le_bytes(*b"FsSr"),
     ) as PSTACK_OVERFLOW_WORK_ITEM;
 
-    if WorkItem.is_null() {
-        if IsPaging == 0 {
+    if work_item.is_null() {
+        if IsPaging == 0u8 {
             RtlRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
         }
 
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!(StackOverflowFallbackSerialEvent) as PVOID,
-            0,
-            0,
-            0,
+            0u32,
+            0i8,
+            0u8,
             core::ptr::null_mut(),
         );
-        WorkItem = core::ptr::addr_of_mut!(StackOverflowFallback);
+        work_item = core::ptr::addr_of_mut!(StackOverflowFallback);
     }
 
-    (*WorkItem).Context = Context;
-    (*WorkItem).Event = Event;
-    (*WorkItem).Routine = StackOverflowRoutine;
+    (*work_item).Context = Context;
+    (*work_item).Event = Event;
+    (*work_item).Routine = StackOverflowRoutine;
     ExInitializeWorkItem(
-        core::ptr::addr_of_mut!((*WorkItem).WorkItem),
+        core::ptr::addr_of_mut!((*work_item).WorkItem),
         Some(FsRtlStackOverflowRead),
-        WorkItem as PVOID,
+        work_item as PVOID,
     );
 
+    let queue_index = if IsPaging != 0u8 { 1 } else { 0 };
     KeInsertQueue(
-        core::ptr::addr_of_mut!(FsRtlWorkerQueues[IsPaging as usize]),
-        core::ptr::addr_of_mut!((*WorkItem).WorkItem.List),
+        core::ptr::addr_of_mut!(FsRtlWorkerQueues[queue_index]),
+        core::ptr::addr_of_mut!((*work_item).WorkItem.List),
     );
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FsRtlWorkerThread(StartContext: PVOID) {
-    let mut Irql: KIRQL;
-    let mut Entry: PLIST_ENTRY;
-    let mut WorkItem: PWORK_QUEUE_ITEM;
-    let QueueId = StartContext as ULONG_PTR;
+unsafe extern "C" fn FsRtlWorkerThread(StartContext: PVOID) {
+    let queue_id = StartContext as ULONG_PTR;
 
     KeSetPriorityThread(
-        core::ptr::addr_of_mut!((*PsGetCurrentThread()).Tcb),
-        LOW_REALTIME_PRIORITY + QueueId as i8,
+        core::ptr::addr_of_mut!((*PsGetCurrentThread()).Tcb) as PKTHREAD,
+        (LOW_REALTIME_PRIORITY + queue_id as i32) as KPRIORITY,
     );
 
     loop {
-        Entry = KeRemoveQueue(
-            FsRtlWorkerQueues.as_mut_ptr().add(QueueId as usize),
-            0i32 as i8,
+        let entry = KeRemoveQueue(
+            core::ptr::addr_of_mut!(FsRtlWorkerQueues[queue_id as usize]),
+            0i8,
             core::ptr::null_mut(),
         );
-        WorkItem = (Entry as *mut u8).offset(-(core::mem::offset_of!(WORK_QUEUE_ITEM, List) as isize)) as PWORK_QUEUE_ITEM;
+        let work_item = ((entry as usize)
+            - core::mem::offset_of!(_WORK_QUEUE_ITEM, List))
+            as PWORK_QUEUE_ITEM;
 
-        ((*WorkItem).WorkerRoutine.unwrap())((*WorkItem).Parameter);
+        ((*work_item).WorkerRoutine.unwrap())((*work_item).Parameter);
 
-        Irql = KeGetCurrentIrql();
-        if Irql != PASSIVE_LEVEL {
+        let irql = KeGetCurrentIrql();
+        if irql != PASSIVE_LEVEL {
             KeBugCheckEx(
-                IRQL_NOT_LESS_OR_EQUAL,
-                (*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR,
-                Irql as ULONG_PTR,
-                (*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR,
-                WorkItem as ULONG_PTR,
+                0x0A,
+                (*work_item).WorkerRoutine.unwrap() as ULONG_PTR,
+                irql as ULONG_PTR,
+                (*work_item).WorkerRoutine.unwrap() as ULONG_PTR,
+                work_item as ULONG_PTR,
             );
         }
     }
 }
 
+// CODE_SEG("INIT")
+#[no_mangle]
 pub unsafe extern "system" fn FsRtlInitializeWorkerThread() -> NTSTATUS {
-    let mut i: ULONG_PTR;
-    let mut Status: NTSTATUS;
-    let mut ThreadHandle: HANDLE;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
+    let mut status = STATUS_SUCCESS;
 
-    i = 0;
-    while i < FSRTLP_MAX_QUEUES {
-        ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-        ObjectAttributes.RootDirectory = core::ptr::null_mut();
-        ObjectAttributes.Attributes = 0;
-        ObjectAttributes.ObjectName = core::ptr::null_mut();
-        ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-        ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+    for i in 0..FSRTLP_MAX_QUEUES {
+        let mut object_attributes = _OBJECT_ATTRIBUTES {
+            Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
+            RootDirectory: core::ptr::null_mut(),
+            ObjectName: core::ptr::null_mut(),
+            Attributes: 0,
+            SecurityDescriptor: core::ptr::null_mut(),
+            SecurityQualityOfService: core::ptr::null_mut(),
+        };
 
-        KeInitializeQueue(core::ptr::addr_of_mut!(FsRtlWorkerQueues[i as usize]), 0);
-        Status = PsCreateSystemThread(
-            core::ptr::addr_of_mut!(ThreadHandle),
-            THREAD_ALL_ACCESS,
-            core::ptr::addr_of_mut!(ObjectAttributes),
+        KeInitializeQueue(core::ptr::addr_of_mut!(FsRtlWorkerQueues[i]), 0);
+        let mut thread_handle: HANDLE = core::ptr::null_mut();
+        status = PsCreateSystemThread(
+            core::ptr::addr_of_mut!(thread_handle),
+            0x1FFFFF,
+            core::ptr::addr_of_mut!(object_attributes),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            Some(FsRtlWorkerThread),
-            i as PVOID
+            Some(abi_cast!(FsRtlWorkerThread)),
+            i as PVOID,
         );
-        if NT_SUCCESS(Status) == 0 {
-            return Status;
+        if status < 0 {
+            return status;
         }
 
-        ZwClose(ThreadHandle);
-
-        i += 1;
+        ZwClose(thread_handle);
     }
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(StackOverflowFallbackSerialEvent),
-        _EVENT_TYPE_SynchronizationEvent,
-        1u8
+        1u32,
+        1u8,
     );
 
-    Status
+    status
 }
 
 #[no_mangle]
