@@ -73,37 +73,39 @@ list(APPEND SOURCE
     # dbgk/ — replaced by Rust (ntoskrnl-rust/src/dbgk/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkobj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkutil.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/atom.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/callback.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/dbgctrl.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/efi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/event.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/evtpair.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/exintrin.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/fmutex.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/handle.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/harderr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/hdlsterm.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/init.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/interlocked.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/keyedevt.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/locale.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/lookas.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/mutant.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/profile.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/pushlock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/resource.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/rundown.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/sem.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/shutdown.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/sysinfo.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/time.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/timer.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/uuid.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/win32k.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/work.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/xipdisp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zone.c
+    # ex/ — replaced by Rust (ntoskrnl-rust/src/ex/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/atom.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/callback.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/dbgctrl.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/efi.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/event.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/evtpair.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/exintrin.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/fmutex.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/handle.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/harderr.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/hdlsterm.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/init.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/interlocked.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/keyedevt.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/locale.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/lookas.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/mutant.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/profile.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/pushlock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/resource.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/rundown.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/sem.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/shutdown.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/sysinfo.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/time.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/timer.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/uuid.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/win32k.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/work.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/xipdisp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zone.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/ex_rust_shims.c
     # FSRTL subsystem: replaced by Rust (ntoskrnl-rust/src/fsrtl/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/dbcsname.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fastio.c

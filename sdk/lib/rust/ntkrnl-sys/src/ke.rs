@@ -320,6 +320,72 @@ extern "C" {
 }
 
 // ============================================================================
+// KeAcquireSpinLockAtDpcLevel / KeReleaseSpinLockFromDpcLevel
+// On amd64/arm64: regular extern "system".
+// On i386: fastcall KefAcquireSpinLockAtDpcLevel / KefReleaseSpinLockFromDpcLevel.
+// ============================================================================
+
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KefAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK);
+    fn KefReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK);
+}
+
+#[cfg(not(target_arch = "x86"))]
+extern "system" {
+    fn KeAcquireSpinLockAtDpcLevel_impl(SpinLock: PKSPIN_LOCK);
+    fn KeReleaseSpinLockFromDpcLevel_impl(SpinLock: PKSPIN_LOCK);
+}
+
+/// KeAcquireSpinLockAtDpcLevel — portable wrapper.
+#[inline]
+pub unsafe fn KeAcquireSpinLockAtDpcLevel(spin_lock: PKSPIN_LOCK) {
+    #[cfg(not(target_arch = "x86"))]
+    {
+        extern "system" {
+            #[link_name = "KeAcquireSpinLockAtDpcLevel"]
+            fn KeAcquireSpinLockAtDpcLevel_impl(SpinLock: PKSPIN_LOCK);
+        }
+        KeAcquireSpinLockAtDpcLevel_impl(spin_lock);
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        KefAcquireSpinLockAtDpcLevel(spin_lock);
+    }
+}
+
+/// KeReleaseSpinLockFromDpcLevel — portable wrapper.
+#[inline]
+pub unsafe fn KeReleaseSpinLockFromDpcLevel(spin_lock: PKSPIN_LOCK) {
+    #[cfg(not(target_arch = "x86"))]
+    {
+        extern "system" {
+            #[link_name = "KeReleaseSpinLockFromDpcLevel"]
+            fn KeReleaseSpinLockFromDpcLevel_impl(SpinLock: PKSPIN_LOCK);
+        }
+        KeReleaseSpinLockFromDpcLevel_impl(spin_lock);
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        KefReleaseSpinLockFromDpcLevel(spin_lock);
+    }
+}
+
+// ============================================================================
+// KDEFERRED_ROUTINE — type alias for DPC callback (Option<fn>)
+// On amd64/arm64 bindgen generates both KDEFERRED_ROUTINE and PKDEFERRED_ROUTINE.
+// On i386 bindgen only generates PKDEFERRED_ROUTINE (as Option<fn>).
+// Provide a unified type here.
+// ============================================================================
+
+pub type KDEFERRED_ROUTINE = Option<unsafe extern "system" fn(
+    Dpc: PKDPC,
+    DeferredContext: PVOID,
+    SystemArgument1: PVOID,
+    SystemArgument2: PVOID,
+)>;
+
+// ============================================================================
 // KPRCB field accessors
 // ============================================================================
 

@@ -363,58 +363,183 @@ let system_luid = LUID { LowPart: 0x3e7, HighPart: 0 };
 (*a).LowPart == (*b).LowPart && (*a).HighPart == (*b).HighPart
 ```
 
-## Structured Exception Handling (DUMMY_PSEH)
+## Structured Exception Handling (SEH → Rust Probe API)
 
-This codebase uses DUMMY_PSEH where `_SEH2_EXCEPT` handlers are **dead code** (never execute). Translate SEH as follows:
+This codebase uses DUMMY_PSEH where `_SEH2_EXCEPT` handlers are dead code. Instead of executing probe/write operations directly (which would crash on bad pointers), use the **Rust probe API** from `ntkrnl_sys` which validates pointers and returns `Result<T, NTSTATUS>`.
 
-**Pattern 1: Probe-only try (handler returns exception code)**
+**Required import:**
+```rust
+use ntkrnl_sys::probe::*;
+```
+
+### Pattern A: Probe-then-bail (validate user pointer, bail on failure)
 ```c
-_SEH2_TRY {
-    ProbeForWrite(ptr, size, align);
+if (PreviousMode != KernelMode) {
+    _SEH2_TRY { ProbeForWriteHandle(EventHandle); }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { _SEH2_YIELD(return _SEH2_GetExceptionCode()); }
+    _SEH2_END;
 }
-_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-    _SEH2_YIELD(return _SEH2_GetExceptionCode());
+```
+→ Use `probe_user_buffer` to validate without writing:
+```rust
+if PreviousMode != KernelMode {
+    probe_user_buffer(
+        EventHandle as *const core::ffi::c_void,
+        core::mem::size_of::<HANDLE>(),
+        core::mem::align_of::<HANDLE>(),
+        PreviousMode,
+    )?;
 }
+```
+
+Or for simple scalar probes:
+```rust
+if PreviousMode != KernelMode {
+    probe_user_buffer(
+        PreviousState as *const core::ffi::c_void,
+        core::mem::size_of::<LONG>(),
+        core::mem::align_of::<LONG>(),
+        PreviousMode,
+    )?;
+}
+```
+
+### Pattern B: Write-back result (write computed value to user pointer)
+```c
+_SEH2_TRY { *EventHandle = hEvent; }
+_SEH2_EXCEPT(ExSystemExceptionFilter()) { Status = _SEH2_GetExceptionCode(); }
 _SEH2_END;
 ```
-→ Execute the probe directly (no exception handling):
+→ Use `write_user` (validates + writes, propagates error):
 ```rust
-ProbeForWrite(ptr, size as ULONG, align as ULONG);
+write_user(EventHandle, hEvent as HANDLE, PreviousMode)?;
 ```
 
-**Pattern 2: Write-back try (handler catches faults)**
+When the EXCEPT handler is `(void)0` (silently swallow — common in timer.c):
 ```c
-_SEH2_TRY {
-    *UserPtr = Value;
-}
-_SEH2_EXCEPT(...) {
-    Status = _SEH2_GetExceptionCode();
-}
+_SEH2_TRY { *TimerHandle = hTimer; }
+_SEH2_EXCEPT(ExSystemExceptionFilter()) { (void)0; }
 _SEH2_END;
 ```
-→ Execute the body directly:
+→ Use `write_user_nofail` (ignore failure):
 ```rust
-*user_ptr = value;
+write_user_nofail(TimerHandle, hTimer as HANDLE, PreviousMode);
 ```
 
-**Pattern 3: Complex try with cleanup**
+### Pattern C: Read user input (capture value from user pointer)
 ```c
 _SEH2_TRY {
-    /* operations */
-    Status = STATUS_SUCCESS;
+    TimerDueTime = ProbeForReadLargeInteger(DueTime);
 }
-_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-    Status = _SEH2_GetExceptionCode();
-}
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { _SEH2_YIELD(return _SEH2_GetExceptionCode()); }
 _SEH2_END;
 ```
-→ Execute operations directly:
+→ Use `probe_read_user` (validates + reads):
 ```rust
-// operations
-status = STATUS_SUCCESS;
+let TimerDueTime = probe_read_user::<LARGE_INTEGER>(DueTime, PreviousMode)?;
 ```
 
-**Key principle**: With DUMMY_PSEH, the EXCEPT block never runs. Execute the TRY body directly and omit the handler entirely.
+### Pattern D: Complex body (multi-field write-back)
+```c
+_SEH2_TRY {
+    BasicInfo->EventType = Event->Header.Type;
+    BasicInfo->EventState = KeReadStateEvent(Event);
+    if (ReturnLength) *ReturnLength = sizeof(EVENT_BASIC_INFORMATION);
+}
+_SEH2_EXCEPT(ExSystemExceptionFilter()) { Status = _SEH2_GetExceptionCode(); }
+_SEH2_END;
+```
+→ Decompose into sequential `write_user` calls:
+```rust
+write_user(
+    core::ptr::addr_of_mut!((*BasicInfo).EventType),
+    (*Event).Header.Type as _,
+    PreviousMode,
+)?;
+write_user(
+    core::ptr::addr_of_mut!((*BasicInfo).EventState),
+    KeReadStateEvent(Event) as _,
+    PreviousMode,
+)?;
+if !ReturnLength.is_null() {
+    write_user(
+        ReturnLength,
+        core::mem::size_of::<_EVENT_BASIC_INFORMATION>() as ULONG,
+        PreviousMode,
+    )?;
+}
+```
+
+### Pattern E: Kernel APIs that raise (KeReleaseMutant, MmProbeAndLockPages)
+```c
+_SEH2_TRY { KeReleaseMutant(Mutant, ...); *PreviousCount = Prev; }
+_SEH2_EXCEPT(...) { Status = _SEH2_GetExceptionCode(); }
+_SEH2_END;
+```
+→ Call directly — these are already unprotected with DUMMY_PSEH:
+```rust
+KeReleaseMutant(Mutant, MUTANT_INCREMENT, 0u8, 0u8);
+if !PreviousCount.is_null() {
+    write_user(PreviousCount, Prev, PreviousMode)?;
+}
+```
+
+### API Reference
+
+```rust
+// Validate pointer range + alignment (no read/write)
+probe_user_buffer(buf: *const c_void, len: usize, align: usize, mode: KPROCESSOR_MODE) -> Result<(), NTSTATUS>
+
+// Validate + read a T from user pointer
+probe_read_user::<T>(ptr: *const T, mode: KPROCESSOR_MODE) -> Result<T, NTSTATUS>
+
+// Validate + write a T to user pointer (returns error on failure)
+write_user::<T>(ptr: *mut T, value: T, mode: KPROCESSOR_MODE) -> Result<(), NTSTATUS>
+
+// Validate + write a T to user pointer (silently ignores failure)
+write_user_nofail::<T>(ptr: *mut T, value: T, mode: KPROCESSOR_MODE)
+
+// Validate + capture UNICODE_STRING header
+probe_capture_unicode_string_header(ptr: *const UNICODE_STRING, mode: KPROCESSOR_MODE) -> Result<UNICODE_STRING, NTSTATUS>
+
+// Copy from user with validation
+safe_copy_from_user(kernel_dst: *mut c_void, user_src: *const c_void, len: usize, align: usize, mode: KPROCESSOR_MODE) -> Result<(), NTSTATUS>
+
+// Copy to user with validation
+safe_copy_to_user(user_dst: *mut c_void, kernel_src: *const c_void, len: usize, align: usize, mode: KPROCESSOR_MODE) -> Result<(), NTSTATUS>
+```
+
+All `Result`-returning functions propagate with `?` in functions returning `NTSTATUS`:
+```rust
+// The ? operator converts Err(NTSTATUS) to early return of that NTSTATUS
+pub unsafe extern "system" fn NtCreateEvent(...) -> NTSTATUS {
+    // ... probe calls with ? ...
+    // On success, return STATUS_SUCCESS explicitly at the end
+}
+```
+
+**IMPORTANT**: Functions returning NTSTATUS must use a wrapper to make `?` work:
+```rust
+// Wrap the function body to convert Result to NTSTATUS return:
+fn inner() -> Result<NTSTATUS, NTSTATUS> {
+    probe_user_buffer(...)?;
+    // ...
+    Ok(STATUS_SUCCESS)
+}
+match inner() {
+    Ok(s) => s,
+    Err(s) => s,
+}
+```
+Or use a labeled block pattern:
+```rust
+let Status = 'seh: {
+    if let Err(e) = probe_user_buffer(...) { break 'seh e; }
+    if let Err(e) = write_user(...) { break 'seh e; }
+    STATUS_SUCCESS
+};
+```
+Choose whichever pattern produces cleaner code for the function at hand. The inner-function pattern is best for functions with many SEH blocks; the labeled-block is best for isolated blocks.
 
 ## Architecture Conditionals
 

@@ -44,6 +44,7 @@ list(APPEND PCH_SKIP_SOURCE
     guid.c)
 
 list(APPEND PCH_SKIP_SOURCE
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/ex_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kd64_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
@@ -167,6 +168,38 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm64/page.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/init.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/atom.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/callback.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/dbgctrl.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/efi.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/event.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/evtpair.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/exintrin.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/fmutex.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/handle.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/harderr.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/hdlsterm.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/init.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/interlocked.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/keyedevt.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/locale.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/lookas.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/mutant.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/profile.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/pushlock.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/resource.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/rundown.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sem.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/shutdown.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sysinfo.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/time.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/timer.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/uuid.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/win32k.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/work.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/xipdisp.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/zone.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs

@@ -38,6 +38,7 @@ macro_rules! abi_cast {
 pub mod ARM3;
 pub mod cc;
 pub mod dbgk;
+pub mod ex;
 pub mod fsrtl;
 pub mod inbv;
 // pub mod kd64; // Disabled: Rust KD64 causes recursive exception flood on amd64

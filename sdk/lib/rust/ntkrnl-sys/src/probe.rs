@@ -183,6 +183,49 @@ pub unsafe fn probe_capture_unicode_string_header(
 }
 
 // ============================================================================
+// Write-back helpers for SEH Pattern B (write computed result to user pointer)
+// ============================================================================
+
+/// Validate alignment + address range, then volatile-write a value of type `T`.
+///
+/// This is an alias for `probe_write_user` — the name makes the intent clearer
+/// in syscall implementations where a computed result is written back to the caller.
+///
+/// Replaces Pattern B:
+/// ```c
+/// _SEH2_TRY { *OutputPtr = ComputedValue; }
+/// _SEH2_EXCEPT(ExSystemExceptionFilter()) { Status = _SEH2_GetExceptionCode(); }
+/// ```
+///
+/// Usage: `write_user(output_ptr, computed_value, previous_mode)?;`
+#[inline]
+pub unsafe fn write_user<T: Copy>(
+    ptr: *mut T,
+    value: T,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<(), NTSTATUS> {
+    probe_write_user(ptr, value, previous_mode)
+}
+
+/// Write a value to a user-mode pointer, ignoring any validation failure.
+///
+/// Replaces the pattern where the EXCEPT handler is `(void)0` (silently swallow):
+/// ```c
+/// _SEH2_TRY { *OutputPtr = ComputedValue; }
+/// _SEH2_EXCEPT(ExSystemExceptionFilter()) { (void)0; }
+/// ```
+///
+/// Used in timer.c where write-back failure is non-fatal.
+#[inline]
+pub unsafe fn write_user_nofail<T: Copy>(
+    ptr: *mut T,
+    value: T,
+    previous_mode: KPROCESSOR_MODE,
+) {
+    let _ = probe_write_user(ptr, value, previous_mode);
+}
+
+// ============================================================================
 // Convenience wrappers matching C probe.h macros
 // ============================================================================
 
