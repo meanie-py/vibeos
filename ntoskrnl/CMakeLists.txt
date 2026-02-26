@@ -154,6 +154,19 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/libsupp.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/rtl/misc.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ARM3/kdbg.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ARM3/wslist.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/page.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/procsup.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/i386/init.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/init.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/amd64/procsup.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm64/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm64/page.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/arm/init.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/base.rs

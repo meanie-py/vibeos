@@ -62,7 +62,7 @@ const POOL_COLD_ALLOCATION: ULONG = 0x100;
 #[cfg(target_arch = "x86")]
 const KERNEL_STACK_SIZE: ULONG = 0x3000;
 #[cfg(target_arch = "x86_64")]
-const KERNEL_STACK_SIZE: ULONG = 0x6000;
+const KERNEL_STACK_SIZE: ULONG = 0xC000;
 #[cfg(target_arch = "aarch64")]
 const KERNEL_STACK_SIZE: ULONG = 0x3000;
 

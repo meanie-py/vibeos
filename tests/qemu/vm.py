@@ -112,6 +112,7 @@ class Amd64Config(ArchConfig):
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
+        scratch = work_dir / "scratch.qcow2"
         return [
             *self.machine_args,
             "-m", self.memory,

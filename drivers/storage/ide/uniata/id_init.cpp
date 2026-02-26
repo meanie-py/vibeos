@@ -2822,7 +2822,7 @@ VOID
 UniataInitIoRes(
     IN PHW_CHANNEL chan,
     IN ULONG idx,
-    IN ULONG addr,
+    IN ULONGIO_PTR addr,
     IN BOOLEAN MemIo,
     IN BOOLEAN Proc
     )
@@ -2838,7 +2838,7 @@ UniataInitIoRes(
 VOID
 UniataInitIoResEx(
     IN PIORES IoRes,
-    IN ULONG addr,
+    IN ULONGIO_PTR addr,
     IN BOOLEAN MemIo,
     IN BOOLEAN Proc
     )

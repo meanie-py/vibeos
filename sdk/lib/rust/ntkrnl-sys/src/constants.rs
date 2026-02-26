@@ -920,17 +920,7 @@ pub const KDP_MSG_BUFFER_SIZE: ULONG = 0x1000;
 pub const DPFLTR_ENDOFTABLE_ID: ULONG = 155;
 pub const MAX_KD_COMPONENT_TABLE_ENTRIES: ULONG = DPFLTR_ENDOFTABLE_ID + 1;
 
-// ============================================================================
-// MMDBG flags (from mm.h)
-// ============================================================================
-
-pub const MMDBG_COPY_WRITE: ULONG = 0x00000001;
-pub const MMDBG_COPY_PHYSICAL: ULONG = 0x00000002;
-pub const MMDBG_COPY_UNSAFE: ULONG = 0x00000004;
-pub const MMDBG_COPY_CACHED: ULONG = 0x00000008;
-pub const MMDBG_COPY_UNCACHED: ULONG = 0x00000010;
-pub const MMDBG_COPY_WRITE_COMBINED: ULONG = 0x00000020;
-pub const MMDBG_COPY_MAX_SIZE: ULONG = 0x8;
+// MMDBG flags: defined in mm.rs (not here, to avoid ambiguity)
 
 // ============================================================================
 // KD Packet protocol constants (from windbgkd.h)
@@ -1096,3 +1086,41 @@ pub const EXCEPTION_MAXIMUM_PARAMETERS: ULONG = 15;
 
 // PAGE_READWRITE = 0x04 — defined in base.rs (re-exported at crate root)
 pub const SEC_COMMIT: ULONG = 0x08000000;
+pub const SEC_BASED: ULONG = 0x00200000;
+pub const SEC_IMAGE: ULONG = 0x01000000;
+pub const SEC_LARGE_PAGES: ULONG = 0x80000000;
+pub const SEC_NOCACHE: ULONG = 0x10000000;
+pub const SEC_NO_CHANGE: ULONG = 0x00400000;
+pub const SEC_RESERVE: ULONG = 0x04000000;
+pub const SEC_WRITECOMBINE: ULONG = 0x40000000;
+pub const SEC_FILE: ULONG = 0x00800000;
+pub const SEC_PROTECTED_IMAGE: ULONG = 0x02000000;
+
+// Memory allocation type flags (from mmtypes.h)
+pub const MEM_FREE: ULONG = 0x00010000;
+pub const MEM_PRIVATE: ULONG = 0x00020000;
+pub const MEM_MAPPED: ULONG = 0x00040000;
+pub const MEM_IMAGE: ULONG = 0x01000000;
+
+// Additional NTSTATUS codes — MM subsystem
+pub const STATUS_INVALID_ADDRESS: NTSTATUS = 0xC0000141_u32 as i32;
+pub const STATUS_INVALID_FILE_FOR_SECTION: NTSTATUS = 0xC0000020_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_5: NTSTATUS = 0xC00000F3_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_6: NTSTATUS = 0xC00000F4_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_9: NTSTATUS = 0xC00000F7_u32 as i32;
+pub const STATUS_INVALID_VIEW_SIZE: NTSTATUS = 0xC000001F_u32 as i32;
+pub const STATUS_NOT_MAPPED_VIEW: NTSTATUS = 0xC0000019_u32 as i32;
+pub const STATUS_SECTION_NOT_IMAGE: NTSTATUS = 0xC0000049_u32 as i32;
+pub const STATUS_SECTION_TOO_BIG: NTSTATUS = 0xC0000040_u32 as i32;
+pub const STATUS_SECTION_PROTECTION: NTSTATUS = 0xC000004E_u32 as i32;
+pub const STATUS_UNABLE_TO_FREE_VM: NTSTATUS = 0xC000001A_u32 as i32;
+pub const STATUS_FREE_VM_NOT_AT_BASE: NTSTATUS = 0xC000009F_u32 as i32;
+pub const STATUS_MEMORY_NOT_ALLOCATED: NTSTATUS = 0xC00000A0_u32 as i32;
+pub const STATUS_INCOMPATIBLE_FILE_MAP: NTSTATUS = 0xC0000047_u32 as i32;
+pub const STATUS_IMAGE_NOT_AT_BASE: NTSTATUS = 0x40000003_u32 as i32;
+
+// Bugcheck codes — MM subsystem
+pub const DRIVER_UNMAPPING_INVALID_VIEW: ULONG = 0xD7;
+
+// MAXULONG_PTR
+pub const MAXULONG_PTR: ULONG_PTR = !0usize;

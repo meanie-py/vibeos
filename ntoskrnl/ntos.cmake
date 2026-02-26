@@ -218,44 +218,47 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c
-    # Replaced by Rust pool crate (sdk/lib/rust/pool) on all architectures
-    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/expool.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/hypermap.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/iosup.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/kdbg.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/largepag.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mdlsup.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mmdbg.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mminit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mmsup.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/ncache.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pagfault.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pfnlist.c
-    # Replaced by Rust pool crate (sdk/lib/rust/pool) on all architectures
-    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pool.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/procsup.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/section.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/session.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/special.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/sysldr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/syspte.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/vadnode.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/wslist.cpp
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/zeropage.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/balance.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/freelist.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/marea.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mmfault.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mminit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/pagefile.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/region.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/rmap.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c
+    # ARM3/ — replaced by Rust (ntoskrnl-rust/src/ARM3/)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/dynamic.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/expool.c (Rust pool crate)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/hypermap.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/iosup.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/kdbg.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/largepag.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mdlsup.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mmdbg.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mminit.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/mmsup.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/ncache.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pagfault.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pfnlist.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/pool.c (Rust pool crate)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/procsup.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/section.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/session.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/special.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/sysldr.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/syspte.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/vadnode.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/wslist.cpp (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/zeropage.c (Rust)
+    # mm/ — replaced by Rust (ntoskrnl-rust/src/mm/)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/balance.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/freelist.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/marea.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mmfault.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mminit.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/pagefile.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/region.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/rmap.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section.c (Rust)
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c (Rust)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section_pe.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_sysldr_shims.c
     # OB subsystem -- replaced by Rust (ntoskrnl-rust/src/ob/)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
@@ -386,9 +389,9 @@ if(ARCH STREQUAL "i386")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/traphdlr.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/usercall.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/v86vdm.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/procsup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust)
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/procsup.c (Rust)
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c (Rust)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psldt.c
         # vdm/ — replaced by Rust (ntoskrnl-rust/src/vdm/)
@@ -404,7 +407,7 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/zeropage.S)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust - shared in i386/page.rs)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/cpu.c
@@ -417,8 +420,8 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/krnlinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/spinlock.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/procsup.c
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c (Rust)
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/procsup.c (Rust)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
@@ -458,8 +461,9 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c)
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
+        # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
+        )
 endif()
 
 if(NOT _WINKD_)

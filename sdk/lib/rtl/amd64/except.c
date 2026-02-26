@@ -46,7 +46,13 @@ RtlDispatchException(
 {
     BOOLEAN Handled;
 
-    /* Perform vectored exception handling for user mode */
+    /*
+     * Perform vectored exception handling for user mode.
+     * In kernel mode (ntoskrnl), skip VEH — the VEH lock uses
+     * NtCurrentTeb() which is not valid in kernel context and causes
+     * a recursive page fault → stack overflow → double fault.
+     */
+#ifndef _NTOSKRNL_
     if (RtlCallVectoredExceptionHandlers(ExceptionRecord, ContextRecord))
     {
         /* Exception handled, now call vectored continue handlers */
@@ -55,6 +61,7 @@ RtlDispatchException(
         /* Continue execution */
         return TRUE;
     }
+#endif
 
     /* Call the internal unwind routine */
     Handled = RtlpUnwindInternal(NULL, // TargetFrame
@@ -65,8 +72,10 @@ RtlDispatchException(
                                  NULL, // HistoryTable
                                  UNW_FLAG_EHANDLER);
 
+#ifndef _NTOSKRNL_
     /* In user mode, call any registered vectored continue handlers */
     RtlCallVectoredContinueHandlers(ExceptionRecord, ContextRecord);
+#endif
 
     return Handled;
 }

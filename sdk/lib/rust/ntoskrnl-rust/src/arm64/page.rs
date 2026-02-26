@@ -1,0 +1,809 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::ke::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::rtl::*;
+
+use ntkrnl_sys::ddk::{
+    _EPROCESS,
+    _MMPFN,
+    PEPROCESS,
+    PMMPFN as DDK_PMMPFN,
+    PPFN_NUMBER,
+    PULONG_PTR,
+    SWAPENTRY,
+    KPROCESSOR_MODE,
+    KeBugCheck,
+    KeBugCheckEx,
+    KeInvalidateTlbEntry,
+    MiDecrementPageTableReferences,
+    MiDeletePde,
+    MiIncrementPageTableReferences,
+    MiIsPdeForAddressValid,
+    MiLockProcessWorkingSetShared,
+    MiLockProcessWorkingSetUnsafe,
+    MiMakePdeExistAndMakeValid,
+    MiMakeProtectionMask,
+    MiRemoveZeroPageSafe,
+    MiUnlockProcessWorkingSetShared,
+    MiUnlockProcessWorkingSetUnsafe,
+    MmIsPageInUse,
+    PsGetCurrentThread,
+};
+
+use crate::ARM3::helpers::*;
+
+extern "C" {
+    static mut Arm64UartKernelBase: PVOID;
+}
+
+unsafe fn PagePutChar(c: u8) {
+    let pl011_base = Arm64UartKernelBase as *mut ULONG;
+    *pl011_base = c as ULONG;
+}
+
+unsafe fn PagePuts(s: &[u8]) {
+    for &c in s {
+        if c == 0 { break; }
+        PagePutChar(c);
+    }
+}
+
+unsafe fn PagePutHex64(val: u64) {
+    PagePuts(b"0x");
+    for i in (0..16).rev() {
+        let nibble = ((val >> (i * 4)) & 0xF) as usize;
+        PagePutChar(b"0123456789ABCDEF"[nibble]);
+    }
+}
+
+#[cfg(feature = "arm64_uart_trace")]
+macro_rules! PAGE_TRACE {
+    ($s:expr) => { unsafe { PagePuts($s) } };
+}
+#[cfg(feature = "arm64_uart_trace")]
+macro_rules! PAGE_TRACE_HEX {
+    ($v:expr) => { unsafe { PagePutHex64($v) } };
+}
+#[cfg(not(feature = "arm64_uart_trace"))]
+macro_rules! PAGE_TRACE {
+    ($s:expr) => { () };
+}
+#[cfg(not(feature = "arm64_uart_trace"))]
+macro_rules! PAGE_TRACE_HEX {
+    ($v:expr) => { () };
+}
+
+/// Helper: cast hand-written MMPTE pointer to DDK _MMPTE pointer for DDK function calls.
+#[inline(always)]
+unsafe fn as_ddk_pde(p: *mut MMPTE) -> *mut ntkrnl_sys::ddk::_MMPTE {
+    p as *mut ntkrnl_sys::ddk::_MMPTE
+}
+
+// PXE_SELFMAP: the self-referencing PXE entry address
+// On ARM64 the PXE self-map entry is at the very last PXE slot (same as PXE_BASE + 0xFF8)
+// PXE_BASE is 0xFFFFF6FB7DBED000 and the self-map is at PXE_BASE + 255*8 = PXE_BASE + 0x7F8
+// but actually PXE_SELFMAP = PXE_BASE + PXE_SELFMAP_IDX * 8.  Matching the C code:
+//   #define PXE_SELFMAP (PXE_BASE + MiAddressToPxeOffset(PXE_BASE) * sizeof(MMPTE))
+// MiAddressToPxeOffset(PXE_BASE) = (PXE_BASE >> 39) & 0x1FF = 0x1ED
+// So PXE_SELFMAP = PXE_BASE + 0x1ED * 8 = PXE_BASE + 0xF68
+const PXE_SELFMAP: usize = PXE_BASE + ((PXE_BASE >> 39) & 0x1FF) * 8;
+
+/// MiAddressToPxeOffset — (VA >> 39) & 0x1FF
+#[inline]
+fn MiAddressToPxeOffset(va: PVOID) -> ULONG {
+    (((va as ULONG_PTR) >> 39) & 0x1FF) as ULONG
+}
+
+/// MiAddressToPteOffset — (VA >> 12) & 0x1FF
+#[inline]
+fn MiAddressToPteOffset(va: PVOID) -> ULONG {
+    (((va as ULONG_PTR) >> 12) & 0x1FF) as ULONG
+}
+
+unsafe fn MiEnsureKernelPdeValid(Address: PVOID) {
+    let PointerPxe = MiAddressToPxe(Address);
+    let PointerPpe = MiAddressToPpe(Address);
+    let PointerPde = MiAddressToPde(Address);
+    let mut PageFrameIndex: PFN_NUMBER;
+    let mut TempPte = MMPTE { Long: 0 };
+    let mut OldIrql: KIRQL;
+
+    if !(*PointerPxe).valid() {
+        PagePuts(b"[PAGE] BUG: PXE invalid, cannot create\r\n");
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    if !(*PointerPpe).valid() {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.Long = ValidKernelPde.Long;
+        TempPte.set_page_frame_number(PageFrameIndex);
+        MI_WRITE_VALID_PTE(PointerPpe, TempPte);
+        core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
+        core::ptr::write_bytes(MiPteToAddress(PointerPpe) as *mut u8, 0, PAGE_SIZE);
+    }
+
+    if !(*PointerPde).valid() {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.Long = ValidKernelPde.Long;
+        TempPte.set_page_frame_number(PageFrameIndex);
+        MI_WRITE_VALID_PTE(PointerPde, TempPte);
+        core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
+        core::ptr::write_bytes(MiPteToAddress(PointerPde) as *mut u8, 0, PAGE_SIZE);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmIsPagePresent(
+    Process: PEPROCESS,
+    Address: PVOID,
+) -> BOOLEAN {
+    if Address >= MmSystemRangeStart {
+        if MiIsPdeForAddressValid(Address) == 0 {
+            return 0u8;
+        }
+        return (*MiAddressToPte(Address)).valid() as BOOLEAN;
+    }
+
+    MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+    if !(*MiAddressToPxe(Address)).valid()
+        || !(*MiAddressToPpe(Address)).valid()
+        || !(*MiAddressToPde(Address)).valid()
+    {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+        return 0u8;
+    }
+
+    let Ret = (*MiAddressToPte(Address)).valid() as BOOLEAN;
+    MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+    Ret
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmIsDisabledPage(
+    Process: PEPROCESS,
+    Address: PVOID,
+) -> BOOLEAN {
+    let PointerPte: PMMPTE;
+    let Ret: BOOLEAN;
+
+    if Address >= MmSystemRangeStart {
+        if MiIsPdeForAddressValid(Address) == 0 {
+            return 0u8;
+        }
+    } else {
+        MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+        if !(*MiAddressToPxe(Address)).valid()
+            || !(*MiAddressToPpe(Address)).valid()
+            || !(*MiAddressToPde(Address)).valid()
+        {
+            MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+            return 0u8;
+        }
+    }
+
+    PointerPte = MiAddressToPte(Address);
+
+    Ret = (!(*PointerPte).valid()
+        && ((*PointerPte).Long & 0x800) == 0
+        && (*PointerPte).page_frame_number() != 0) as BOOLEAN;
+
+    if Address < MmSystemRangeStart {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+    }
+
+    Ret
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmIsPageSwapEntry(
+    Process: PEPROCESS,
+    Address: PVOID,
+) -> BOOLEAN {
+    let PointerPte: PMMPTE;
+    let Ret: BOOLEAN;
+
+    if Address >= MmSystemRangeStart {
+        return 0u8;
+    }
+
+    MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+    if !(*MiAddressToPxe(Address)).valid()
+        || !(*MiAddressToPpe(Address)).valid()
+        || !(*MiAddressToPde(Address)).valid()
+    {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+        return 0u8;
+    }
+
+    PointerPte = MiAddressToPte(Address);
+    Ret = (!(*PointerPte).valid() && ((*PointerPte).Long & 0x800) != 0) as BOOLEAN;
+
+    MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+    Ret
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmGetPfnForProcess(
+    Process: PEPROCESS,
+    Address: PVOID,
+) -> PFN_NUMBER {
+    let PointerPte: PMMPTE;
+    let Page: PFN_NUMBER;
+
+    MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+    if !(*MiAddressToPxe(Address)).valid()
+        || !(*MiAddressToPpe(Address)).valid()
+        || !(*MiAddressToPde(Address)).valid()
+    {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+        return 0;
+    }
+
+    PointerPte = MiAddressToPte(Address);
+    Page = if (*PointerPte).valid() {
+        PFN_FROM_PTE(PointerPte)
+    } else {
+        0
+    };
+
+    MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+    Page
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmGetPageProtect(
+    Process: PEPROCESS,
+    Address: PVOID,
+) -> ULONG {
+    let PointerPte: PMMPTE;
+    let mut Protect: ULONG;
+
+    if Address >= MmSystemRangeStart {
+        if MiIsPdeForAddressValid(Address) == 0 {
+            return PAGE_NOACCESS;
+        }
+    } else {
+        MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+        if !(*MiAddressToPxe(Address)).valid()
+            || !(*MiAddressToPpe(Address)).valid()
+            || !(*MiAddressToPde(Address)).valid()
+        {
+            MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+            return PAGE_NOACCESS;
+        }
+    }
+
+    PointerPte = MiAddressToPte(Address);
+    let pte = &*PointerPte;
+
+    if !pte.valid() {
+        Protect = PAGE_NOACCESS;
+    } else {
+        // ARM64 hardware PTE bits:
+        // CopyOnWrite = bit 56, Writable = NOT bit 54 (AP[2]==0 means writable)
+        // UserNoExecute = bit 54
+        // CacheType = bits [3:2]
+        // We use the raw Long field for these ARM64-specific bits.
+        let copy_on_write = (pte.Long >> 56) & 1;
+        let writable = (pte.Long >> 55) & 1; // bit 55 = Writable in ARM64 _HARDWARE_PTE
+        let user_no_execute = (pte.Long >> 54) & 1;
+        let cache_type = (pte.Long >> 2) & 0x3;
+
+        if copy_on_write != 0 {
+            Protect = PAGE_WRITECOPY;
+        } else if writable != 0 {
+            Protect = PAGE_READWRITE;
+        } else {
+            Protect = PAGE_READONLY;
+        }
+
+        let mut final_protect = Protect;
+        if user_no_execute == 0 {
+            final_protect <<= 4;
+        }
+
+        if cache_type == 0 {
+            final_protect |= PAGE_NOCACHE;
+        }
+
+        Protect = final_protect;
+    }
+
+    if Address < MmSystemRangeStart {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+    }
+
+    Protect
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmSetPageProtect(
+    Process: PEPROCESS,
+    Address: PVOID,
+    flProtect: ULONG,
+) {
+    let ProtectionMask: ULONG;
+    let PointerPte: PMMPTE;
+    let mut TempPte = MMPTE { Long: 0 };
+    let mut OldPte = MMPTE { Long: 0 };
+
+    ProtectionMask = MiMakeProtectionMask(flProtect);
+
+    MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    PointerPte = MiAddressToPte(Address);
+
+    TempPte.Long = 0;
+    TempPte.set_page_frame_number((*PointerPte).page_frame_number());
+    TempPte.Long |= MmProtectToPteMask[ProtectionMask as usize];
+    // Owner bit (bit 6 on ARM64 = user accessible)
+    TempPte.Long |= 1 << 6;
+
+    if (ProtectionMask != MM_NOACCESS) && ((ProtectionMask & MM_GUARDPAGE) == 0) {
+        TempPte.set_valid(true);
+    }
+
+    // Copy Accessed bit from old PTE
+    TempPte.Long |= (*PointerPte).Long & PTE_ACCESSED;
+
+    OldPte.Long = InterlockedExchangePte(PointerPte, TempPte.Long);
+
+    if OldPte.Long != TempPte.Long {
+        KeInvalidateTlbEntry(Address);
+    }
+
+    MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmSetDirtyBit(
+    Process: PEPROCESS,
+    Address: PVOID,
+    Dirty: BOOLEAN,
+) {
+    let PointerPte: PMMPTE;
+
+    MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    PointerPte = MiAddressToPte(Address);
+
+    // ARM64: NotDirty is bit 7 (DBM bit inverted sense)
+    if Dirty != 0 {
+        (*PointerPte).Long &= !(1u64 << 7) as ULONG_PTR; // NotDirty = 0
+    } else {
+        (*PointerPte).Long |= (1u64 << 7) as ULONG_PTR;  // NotDirty = 1
+    }
+
+    if Dirty == 0 {
+        KeInvalidateTlbEntry(Address);
+    }
+
+    MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+}
+
+unsafe fn MmCreateVirtualMappingUnsafeEx(
+    Process: PEPROCESS,
+    Address: PVOID,
+    flProtect: ULONG,
+    Page: PFN_NUMBER,
+    IsPhysical: BOOLEAN,
+) -> NTSTATUS {
+    let ProtectionMask: ULONG;
+    let PointerPte: PMMPTE;
+    let mut TempPte = MMPTE { Long: 0 };
+    let Pte: ULONG_PTR;
+
+    PAGE_TRACE!(b"[PAGE] CreateVMap addr=");
+    PAGE_TRACE_HEX!(Address as u64);
+    PAGE_TRACE!(b" pfn=");
+    PAGE_TRACE_HEX!(Page as u64);
+    PAGE_TRACE!(b"\r\n");
+
+    ProtectionMask = MiMakeProtectionMask(flProtect);
+    PAGE_TRACE!(b"[PAGE] ProtMask=");
+    PAGE_TRACE_HEX!(ProtectionMask as u64);
+    PAGE_TRACE!(b"\r\n");
+
+    if Process.is_null() {
+        if Address < MmSystemRangeStart {
+            PagePuts(b"[PAGE] BUG: kernel addr < MmSystemRangeStart\r\n");
+            KeBugCheck(MEMORY_MANAGEMENT);
+        }
+
+        if MiIsPdeForAddressValid(Address) == 0 {
+            MiEnsureKernelPdeValid(Address);
+        }
+    } else {
+        if Address >= MmSystemRangeStart || (Address as usize + PAGE_SIZE) >= MmSystemRangeStart as usize {
+            KeBugCheck(MEMORY_MANAGEMENT);
+        }
+
+        MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+        MiMakePdeExistAndMakeValid(as_ddk_pde(MiAddressToPde(Address)), Process, MM_NOIRQL);
+    }
+
+    PointerPte = MiAddressToPte(Address);
+
+    MI_MAKE_HARDWARE_PTE(&mut TempPte, PointerPte, ProtectionMask as ULONG_PTR, Page);
+
+    Pte = InterlockedExchangePte(PointerPte, TempPte.Long);
+
+    if Pte != 0 {
+        PagePuts(b"[PAGE] BUG: old PTE was non-zero!\r\n");
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
+
+    if IsPhysical == 0 {
+        let Pfn1: PMMPFN;
+        let OldIrql: KIRQL;
+
+        OldIrql = MiAcquirePfnLock();
+        Pfn1 = MiGetPfnEntry(TempPte.page_frame_number());
+        (*Pfn1).set_share_count((*Pfn1).share_count() + 1);
+        (*Pfn1).set_page_location(ActiveAndValid);
+        MiReleasePfnLock(OldIrql);
+    }
+
+    if Address < MmSystemRangeStart {
+        MiIncrementPageTableReferences(Address);
+        MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+    }
+
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmCreateVirtualMappingUnsafe(
+    Process: PEPROCESS,
+    Address: PVOID,
+    flProtect: ULONG,
+    Page: PFN_NUMBER,
+) -> NTSTATUS {
+    MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 0u8)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmCreateVirtualMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    flProtect: ULONG,
+    Page: PFN_NUMBER,
+) -> NTSTATUS {
+    if MmIsPageInUse(Page as _) == 0 {
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    MmCreateVirtualMappingUnsafe(Process, Address, flProtect, Page)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmCreatePhysicalMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    flProtect: ULONG,
+    Page: PFN_NUMBER,
+) -> NTSTATUS {
+    MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 1u8)
+}
+
+unsafe fn MmDeleteVirtualMappingEx(
+    Process: PEPROCESS,
+    Address: PVOID,
+    WasDirty: *mut BOOLEAN,
+    Page: PPFN_NUMBER,
+    IsPhysical: BOOLEAN,
+) -> BOOLEAN {
+    let PointerPte: PMMPTE;
+    let mut OldPte = MMPTE { Long: 0 };
+    let ValidPde: BOOLEAN;
+
+    if Process.is_null() {
+        if Address < MmSystemRangeStart {
+            KeBugCheck(MEMORY_MANAGEMENT);
+        }
+        ValidPde = MiIsPdeForAddressValid(Address);
+    } else {
+        if Address >= MmSystemRangeStart || (Address as usize + PAGE_SIZE) >= MmSystemRangeStart as usize {
+            KeBugCheck(MEMORY_MANAGEMENT);
+        }
+
+        MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+        ValidPde = ((*MiAddressToPxe(Address)).valid()
+            && (*MiAddressToPpe(Address)).valid()
+            && (*MiAddressToPde(Address)).valid()) as BOOLEAN;
+
+        if ValidPde != 0 {
+            MiMakePdeExistAndMakeValid(as_ddk_pde(MiAddressToPde(Address)), Process, MM_NOIRQL);
+        }
+    }
+
+    if ValidPde != 0 {
+        PointerPte = MiAddressToPte(Address);
+        OldPte.Long = InterlockedExchangePte(PointerPte, 0);
+
+        KeInvalidateTlbEntry(Address);
+
+        if OldPte.Long != 0 {
+            if !WasDirty.is_null() {
+                *WasDirty = if OldPte.valid() {
+                    // ARM64: NotDirty bit is bit 7 — dirty when NotDirty==0
+                    ((OldPte.Long >> 7) & 1 == 0) as BOOLEAN
+                } else {
+                    0u8
+                };
+            }
+            if !Page.is_null() {
+                *Page = OldPte.page_frame_number() as _;
+            }
+        }
+    }
+
+    if !Process.is_null() {
+        if OldPte.Long != 0 {
+            if MiDecrementPageTableReferences(Address) == 0 {
+                let OldIrql = MiAcquirePfnLock();
+                MiDeletePde(as_ddk_pde(MiAddressToPde(Address)), Process);
+                MiReleasePfnLock(OldIrql);
+            }
+        }
+
+        if IsPhysical == 0 && OldPte.valid() {
+            let Pfn1: PMMPFN;
+            let OldIrql: KIRQL;
+
+            OldIrql = MiAcquirePfnLock();
+            Pfn1 = MiGetPfnEntry(OldPte.page_frame_number());
+            let sc = (*Pfn1).share_count();
+            (*Pfn1).set_share_count(sc - 1);
+            if sc - 1 == 0 {
+                (*Pfn1).set_page_location(TransitionPage);
+            }
+            MiReleasePfnLock(OldIrql);
+        }
+
+        MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+    }
+
+    if !WasDirty.is_null() && OldPte.Long == 0 {
+        *WasDirty = 0u8;
+    }
+    if !Page.is_null() && OldPte.Long == 0 {
+        *Page = 0;
+    }
+
+    (OldPte.Long != 0) as BOOLEAN
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmDeleteVirtualMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    WasDirty: *mut BOOLEAN,
+    Page: PPFN_NUMBER,
+) -> BOOLEAN {
+    MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, 0u8)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmDeletePhysicalMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    WasDirty: *mut BOOLEAN,
+    Page: PPFN_NUMBER,
+) -> BOOLEAN {
+    MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, 1u8)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmGetPageFileMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    SwapEntry: *mut SWAPENTRY,
+) {
+    let PointerPte: PMMPTE;
+
+    if Address >= MmSystemRangeStart {
+        *SwapEntry = 0;
+        return;
+    }
+
+    MiLockProcessWorkingSetShared(Process, PsGetCurrentThread());
+
+    if !(*MiAddressToPxe(Address)).valid()
+        || !(*MiAddressToPpe(Address)).valid()
+        || !(*MiAddressToPde(Address)).valid()
+    {
+        MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+        *SwapEntry = 0;
+        return;
+    }
+
+    PointerPte = MiAddressToPte(Address);
+    if !(*PointerPte).valid() && ((*PointerPte).Long & 0x800) != 0 {
+        *SwapEntry = ((*PointerPte).Long >> 1) as SWAPENTRY;
+    } else {
+        *SwapEntry = 0;
+    }
+
+    MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmCreatePageFileMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    SwapEntry: SWAPENTRY,
+) -> NTSTATUS {
+    let PointerPte: PMMPTE;
+    let Pte: ULONG_PTR;
+
+    if (SwapEntry as ULONG_PTR) & (1usize << (core::mem::size_of::<SWAPENTRY>() * 8 - 1)) != 0 {
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+
+    MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    MiMakePdeExistAndMakeValid(as_ddk_pde(MiAddressToPde(Address)), Process, MM_NOIRQL);
+
+    PointerPte = MiAddressToPte(Address);
+    Pte = InterlockedExchangePte(PointerPte, (SwapEntry as ULONG_PTR) << 1);
+    if Pte != 0 {
+        KeBugCheckEx(MEMORY_MANAGEMENT, SwapEntry as _, Process as _, Address as _, 0);
+    }
+
+    MiIncrementPageTableReferences(Address);
+    MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmDeletePageFileMapping(
+    Process: PEPROCESS,
+    Address: PVOID,
+    SwapEntry: *mut SWAPENTRY,
+) {
+    let PointerPte: PMMPTE;
+    let mut OldPte = MMPTE { Long: 0 };
+
+    MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    MiMakePdeExistAndMakeValid(as_ddk_pde(MiAddressToPde(Address)), Process, MM_NOIRQL);
+
+    PointerPte = MiAddressToPte(Address);
+    OldPte.Long = InterlockedExchangePte(PointerPte, 0);
+
+    if (OldPte.Long & 0x800) == 0 || OldPte.valid() {
+        KeBugCheckEx(MEMORY_MANAGEMENT, OldPte.Long as _, Process as _, Address as _, 0);
+    }
+
+    if MiDecrementPageTableReferences(Address) == 0 {
+        let OldIrql = MiAcquirePfnLock();
+        MiDeletePde(as_ddk_pde(MiPteToPde(PointerPte)), Process);
+        MiReleasePfnLock(OldIrql);
+    }
+
+    MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
+
+    *SwapEntry = (OldPte.Long >> 1) as SWAPENTRY;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
+    Process: PEPROCESS,
+    DirectoryTableBase: PULONG_PTR,
+) -> BOOLEAN {
+    let mut OldIrql: KIRQL;
+    let TableBasePfn: PFN_NUMBER;
+    let HyperPfn: PFN_NUMBER;
+    let mut HyperPdPfn: PFN_NUMBER;
+    let mut HyperPtPfn: PFN_NUMBER;
+    let SystemPte: PMMPTE;
+    let mut TempPte = MMPTE { Long: 0 };
+    let mut PdePte = MMPTE { Long: 0 };
+    let mut TableIndex: ULONG;
+    let PageTablePointer: PMMPTE;
+    let mut PageColor: ULONG;
+
+    PagePuts(b"[MM] MiArchCreateProcessAddressSpace\r\n");
+
+    TableBasePfn = (*DirectoryTableBase.add(0) >> PAGE_SHIFT) as PFN_NUMBER;
+    HyperPfn = (*DirectoryTableBase.add(1) >> PAGE_SHIFT) as PFN_NUMBER;
+
+    OldIrql = MiAcquirePfnLock();
+    PageColor = MI_GET_NEXT_PROCESS_COLOR(Process as PVOID);
+    HyperPdPfn = MiRemoveZeroPageSafe(PageColor) as PFN_NUMBER;
+    if HyperPdPfn == 0 {
+        HyperPdPfn = MiRemoveAnyPage(PageColor);
+        MiReleasePfnLock(OldIrql);
+        MiZeroPhysicalPage(HyperPdPfn);
+        OldIrql = MiAcquirePfnLock();
+    }
+    PageColor = MI_GET_NEXT_PROCESS_COLOR(Process as PVOID);
+    HyperPtPfn = MiRemoveZeroPageSafe(PageColor) as PFN_NUMBER;
+    if HyperPtPfn == 0 {
+        HyperPtPfn = MiRemoveAnyPage(PageColor);
+        MiReleasePfnLock(OldIrql);
+        MiZeroPhysicalPage(HyperPtPfn);
+    } else {
+        MiReleasePfnLock(OldIrql);
+    }
+
+    SystemPte = MiReserveSystemPtes(1, SystemPteSpace);
+    if SystemPte.is_null() {
+        return 0u8;
+    }
+
+    PageTablePointer = MiPteToAddress(SystemPte) as PMMPTE;
+
+    MI_MAKE_HARDWARE_PTE_KERNEL(&mut PdePte, SystemPte, MM_READWRITE, TableBasePfn);
+    MI_WRITE_VALID_PTE(SystemPte, PdePte);
+
+    TableIndex = PXE_PER_PAGE as ULONG / 2;
+    core::ptr::write_bytes(PageTablePointer as *mut u8, 0, (TableIndex as usize) * core::mem::size_of::<MMPTE>());
+    core::ptr::copy_nonoverlapping(
+        (MiAddressToPxe(core::ptr::null_mut()) as *const MMPTE).add(TableIndex as usize) as *const u8,
+        PageTablePointer.add(TableIndex as usize) as *mut u8,
+        PAGE_SIZE - (TableIndex as usize) * core::mem::size_of::<MMPTE>(),
+    );
+
+    TempPte = ValidKernelPte;
+
+    TableIndex = MiAddressToPxeOffset(PXE_SELFMAP as PVOID);
+    TempPte.set_page_frame_number(TableBasePfn);
+    (*PageTablePointer.add(TableIndex as usize)) = TempPte;
+
+    TableIndex = MiAddressToPxeOffset(HYPER_SPACE as PVOID);
+    TempPte.set_page_frame_number(HyperPfn);
+    (*PageTablePointer.add(TableIndex as usize)) = TempPte;
+
+    PdePte.set_page_frame_number(HyperPfn);
+    *SystemPte = PdePte;
+    KeInvalidateTlbEntry(PageTablePointer as PVOID);
+
+    TempPte.set_page_frame_number(HyperPdPfn);
+    (*PageTablePointer.add(0)) = TempPte;
+
+    PdePte.set_page_frame_number(HyperPdPfn);
+    *SystemPte = PdePte;
+    KeInvalidateTlbEntry(PageTablePointer as PVOID);
+
+    TempPte.set_page_frame_number(HyperPtPfn);
+    (*PageTablePointer.add(0)) = TempPte;
+
+    PdePte.set_page_frame_number(HyperPtPfn);
+    *SystemPte = PdePte;
+    KeInvalidateTlbEntry(PageTablePointer as PVOID);
+
+    TempPte.set_page_frame_number((*(Process as *const _EPROCESS)).WorkingSetPage as PFN_NUMBER);
+    TableIndex = MiAddressToPteOffset(MmWorkingSetList as PVOID);
+    (*PageTablePointer.add(TableIndex as usize)) = TempPte;
+
+    MiReleaseSystemPtes(SystemPte, 1, SystemPteSpace);
+
+    PagePuts(b"[MM] MiArchCreateProcessAddressSpace done\r\n");
+
+    1u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmInitGlobalKernelPageDirectory() {
+}

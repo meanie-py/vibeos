@@ -78,10 +78,12 @@ use ntkrnl_sys::ddk::{
     HalProcessorIdle,
     CcRosFlushDirtyPages,
     CmSetLazyFlushState,
+    _LOADER_PARAMETER_BLOCK,
+    _LOADER_PARAMETER_EXTENSION,
 };
 
 extern "system" {
-    static mut KeLoaderBlock: *mut LOADER_PARAMETER_BLOCK;
+    static mut KeLoaderBlock: *mut _LOADER_PARAMETER_BLOCK;
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PowerStateCallback: PCALLBACK_OBJECT;
     static SeShutdownPrivilege: LUID;
@@ -178,16 +180,6 @@ extern "system" {
     fn IoCallDriver(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS;
 }
 
-#[repr(C)]
-struct LOADER_PARAMETER_BLOCK {
-    LoadOptions: PCHAR,
-    Extension: *mut LOADER_PARAMETER_EXTENSION,
-}
-
-#[repr(C)]
-struct LOADER_PARAMETER_EXTENSION {
-    AcpiTable: PVOID,
-}
 
 #[repr(C)]
 #[derive(Copy, Clone)]

@@ -16,6 +16,10 @@ use ntkrnl_sys::rtl::*;
 use crate::globals::*;
 use crate::pool as pool_pages;
 
+extern "C" {
+    fn DbgPrint(format: *const i8, ...) -> i32;
+}
+
 // ============================================================================
 // Pool block access helpers (macros from C)
 // ============================================================================
@@ -170,6 +174,20 @@ unsafe fn exp_check_pool_header(entry: PPOOL_HEADER) {
     }
 
     if (*entry).BlockSize() == 0 {
+        #[cfg(target_arch = "x86_64")]
+        {
+            let pte = MiAddressToPte(entry as PVOID);
+            let pfn_idx = (*pte).page_frame_number();
+            let pfn_entry = MI_PFN_ELEMENT(pfn_idx as PFN_NUMBER);
+            DbgPrint(b"POOL_HEADER_IS_ZERO at %p PFN=0x%x loc=%d ref=%d share=%d\n\0".as_ptr() as *const i8,
+                     entry, pfn_idx as u32,
+                     (*pfn_entry).page_location() as u32,
+                     (*pfn_entry).reference_count() as u32,
+                     (*pfn_entry).share_count() as u32);
+            let page_base = PAGE_ALIGN(entry as usize) as *const u64;
+            DbgPrint(b"Page dump: %016llx %016llx %016llx %016llx\n\0".as_ptr() as *const i8,
+                     *page_base, *page_base.add(1), *page_base.add(2), *page_base.add(3));
+        }
         KeBugCheckEx(
             BAD_POOL_HEADER,
             POOL_HEADER_IS_ZERO as ULONG_PTR,

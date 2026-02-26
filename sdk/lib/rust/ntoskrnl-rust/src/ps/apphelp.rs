@@ -31,10 +31,15 @@ static mut AppCompatKeyAttributes: _OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES {
     SecurityQualityOfService: core::ptr::null_mut(),
 };
 
+// L"AppCompatCache" — UTF-16LE
+static APPCOMPAT_CACHE_BUF: [u16; 15] = [
+    0x41, 0x70, 0x70, 0x43, 0x6F, 0x6D, 0x70, 0x61,  // AppCompa
+    0x74, 0x43, 0x61, 0x63, 0x68, 0x65, 0x00,          // tCache\0
+];
 static mut AppCompatCacheValue: _UNICODE_STRING = _UNICODE_STRING {
-    Length: 28,
-    MaximumLength: 30,
-    Buffer: b"AppCompatCache\0".as_ptr() as *mut u16,
+    Length: 28,        // 14 chars * 2
+    MaximumLength: 30, // 15 u16s * 2
+    Buffer: APPCOMPAT_CACHE_BUF.as_ptr() as *mut u16,
 };
 
 const MAX_SHIM_ENTRIES: ULONG = 0x200;

@@ -950,6 +950,7 @@ ExBurnMemory(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     }
 }
 
+
 CODE_SEG("INIT")
 VOID
 NTAPI
@@ -1569,6 +1570,7 @@ Phase1InitializationDiscard(IN PVOID Context)
 
     /* Set us at maximum priority */
     KeSetPriorityThread(KeGetCurrentThread(), HIGH_PRIORITY);
+
 
     /* Do Phase 1 HAL Initialization */
     ARM64_UART_TRACE("[PHASE1] HalInitSystem(1)\r\n");

@@ -178,9 +178,16 @@ pub unsafe extern "system" fn DbgkCreateThread(Thread: PETHREAD, StartAddress: P
             image_info.ImageSize = (*nt_header).OptionalHeader.SizeOfImage as _;
         }
 
+        // L"\\SystemRoot\\System32\\ntdll.dll" — UTF-16LE
+        static NTDLL_PATH: [u16; 31] = [
+            0x5C, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6D, 0x52, // \SystemR
+            0x6F, 0x6F, 0x74, 0x5C, 0x53, 0x79, 0x73, 0x74, // oot\Syst
+            0x65, 0x6D, 0x33, 0x32, 0x5C, 0x6E, 0x74, 0x64, // em32\ntd
+            0x6C, 0x6C, 0x2E, 0x64, 0x6C, 0x6C, 0x00,        // ll.dll\0
+        ];
         RtlInitUnicodeString(
             &mut ntdll_name,
-            b"\\SystemRoot\\System32\\ntdll.dll\0".as_ptr() as *mut u16,
+            NTDLL_PATH.as_ptr() as *mut u16,
         );
         PspRunLoadImageNotifyRoutines(
             &mut ntdll_name,
@@ -235,7 +242,11 @@ pub unsafe extern "system" fn DbgkCreateThread(Thread: PETHREAD, StartAddress: P
 
         teb = (*(Thread as *mut _ETHREAD)).Tcb.Teb;
         if !teb.is_null() {
-            let src = b"ntdll.dll\0".as_ptr() as *const u16;
+            // L"ntdll.dll" — UTF-16LE (10 u16s including null)
+            static NTDLL_NAME: [u16; 10] = [
+                0x6E, 0x74, 0x64, 0x6C, 0x6C, 0x2E, 0x64, 0x6C, 0x6C, 0x00,
+            ];
+            let src = NTDLL_NAME.as_ptr();
             let dst = (*teb).StaticUnicodeBuffer.as_mut_ptr();
             let max_len = core::mem::size_of_val(&(*teb).StaticUnicodeBuffer) / core::mem::size_of::<u16>();
             let src_len = 10;

@@ -146,10 +146,21 @@ unsafe fn FsRtlGetTunnelParameterValue(
     ParameterName: PUNICODE_STRING,
     Value: *mut ULONG,
 ) {
+    // L"Registry\\Machine\\System\\CurrentControlSet\\Control\\FileSystem" — UTF-16LE
+    static FS_REG_PATH: [u16; 60] = [
+        0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x79, // Registry
+        0x5C, 0x4D, 0x61, 0x63, 0x68, 0x69, 0x6E, 0x65, // \Machine
+        0x5C, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6D, 0x5C, // \System\backslash
+        0x43, 0x75, 0x72, 0x72, 0x65, 0x6E, 0x74, 0x43, // CurrentC
+        0x6F, 0x6E, 0x74, 0x72, 0x6F, 0x6C, 0x53, 0x65, // ontrolSe
+        0x74, 0x5C, 0x43, 0x6F, 0x6E, 0x74, 0x72, 0x6F, // t\Contro
+        0x6C, 0x5C, 0x46, 0x69, 0x6C, 0x65, 0x53, 0x79, // l\FileSy
+        0x73, 0x74, 0x65, 0x6D,                            // stem
+    ];
     let mut Root: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 128,
-        MaximumLength: 128,
-        Buffer: b"Registry\\Machine\\System\\CurrentControlSet\\Control\\FileSystem\0".as_ptr() as LPWSTR,
+        Length: 118,        // 59 chars * 2
+        MaximumLength: 120, // 60 u16s * 2
+        Buffer: FS_REG_PATH.as_ptr() as LPWSTR,
     };
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut hKey: HANDLE = core::ptr::null_mut();
@@ -202,15 +213,28 @@ unsafe fn FsRtlGetTunnelParameterValue(
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlInitializeTunnels() {
     let mut TunnelEntries: ULONG;
+    // L"MaximumTunnelEntryAgeInSeconds" — UTF-16LE
+    static MAX_AGE_NAME: [u16; 30] = [
+        0x4D, 0x61, 0x78, 0x69, 0x6D, 0x75, 0x6D, 0x54, // MaximumT
+        0x75, 0x6E, 0x6E, 0x65, 0x6C, 0x45, 0x6E, 0x74, // unnelEnt
+        0x72, 0x79, 0x41, 0x67, 0x65, 0x49, 0x6E, 0x53, // ryAgeInS
+        0x65, 0x63, 0x6F, 0x6E, 0x64, 0x73,              // econds
+    ];
     let mut MaximumTunnelEntryAgeInSeconds: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 60,
-        MaximumLength: 60,
-        Buffer: b"MaximumTunnelEntryAgeInSeconds\0".as_ptr() as LPWSTR,
+        Length: 58,        // 29 chars * 2
+        MaximumLength: 60, // 30 u16s * 2
+        Buffer: MAX_AGE_NAME.as_ptr() as LPWSTR,
     };
+    // L"MaximumTunnelEntries" — UTF-16LE
+    static MAX_ENTRIES_NAME: [u16; 21] = [
+        0x4D, 0x61, 0x78, 0x69, 0x6D, 0x75, 0x6D, 0x54, // MaximumT
+        0x75, 0x6E, 0x6E, 0x65, 0x6C, 0x45, 0x6E, 0x74, // unnelEnt
+        0x72, 0x69, 0x65, 0x73, 0x00,                      // ries\0
+    ];
     let mut MaximumTunnelEntries: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 42,
-        MaximumLength: 42,
-        Buffer: b"MaximumTunnelEntries\0".as_ptr() as LPWSTR,
+        Length: 40,        // 20 chars * 2
+        MaximumLength: 42, // 21 u16s * 2
+        Buffer: MAX_ENTRIES_NAME.as_ptr() as LPWSTR,
     };
 
     if MmIsThisAnNtAsSystem() != 0 {

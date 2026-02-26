@@ -24,6 +24,7 @@ void KiInterruptDispatch(void);
 
 /* FUNCTIONS ****************************************************************/
 
+
 VOID
 NTAPI
 KeInitializeInterrupt(

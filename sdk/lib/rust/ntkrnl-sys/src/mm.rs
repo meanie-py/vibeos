@@ -362,6 +362,126 @@ impl MMPTE {
             self.Long = (self.Long & !0xFFFFF000) | ((pfn & 0xFFFFF) << 12);
         }
     }
+
+    // ========================================================================
+    // MMPTE_LIST accessors (system PTE free list management)
+    // ========================================================================
+
+    /// OneEntry — bit 1 on amd64/i386, bit 6 on ARM64
+    #[inline]
+    pub fn list_one_entry(&self) -> ULONG_PTR {
+        #[cfg(target_arch = "aarch64")]
+        { (self.Long >> 6) & 1 }
+        #[cfg(not(target_arch = "aarch64"))]
+        { (self.Long >> 1) & 1 }
+    }
+
+    #[inline]
+    pub fn set_list_one_entry(&mut self, val: ULONG_PTR) {
+        #[cfg(target_arch = "aarch64")]
+        { self.Long = (self.Long & !(1 << 6)) | ((val & 1) << 6); }
+        #[cfg(not(target_arch = "aarch64"))]
+        { self.Long = (self.Long & !(1 << 1)) | ((val & 1) << 1); }
+    }
+
+    /// NextEntry — bits [31:12] on i386, bits [63:32] on amd64, bits [63:28] on ARM64
+    #[inline]
+    pub fn list_next_entry(&self) -> ULONG_PTR {
+        #[cfg(target_arch = "aarch64")]
+        { (self.Long >> 28) as ULONG_PTR }
+        #[cfg(target_arch = "x86_64")]
+        { (self.Long >> 32) as ULONG_PTR }
+        #[cfg(target_arch = "x86")]
+        { (self.Long >> 12) & 0xFFFFF }
+    }
+
+    #[inline]
+    pub fn set_list_next_entry(&mut self, val: ULONG_PTR) {
+        #[cfg(target_arch = "aarch64")]
+        {
+            self.Long = (self.Long & 0xFFFFFFF) | ((val as ULONG_PTR) << 28);
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.Long = (self.Long & 0xFFFFFFFF) | ((val as ULONG_PTR) << 32);
+        }
+        #[cfg(target_arch = "x86")]
+        {
+            self.Long = (self.Long & !0xFFFFF000) | ((val & 0xFFFFF) << 12);
+        }
+    }
+
+    // ========================================================================
+    // MMPTE_SOFTWARE accessors (soft/invalid PTE fields)
+    // ========================================================================
+
+    /// Protection — bits [9:5] on all architectures
+    #[inline]
+    pub fn soft_protection(&self) -> ULONG {
+        ((self.Long >> 5) & 0x1F) as ULONG
+    }
+
+    #[inline]
+    pub fn set_soft_protection(&mut self, val: ULONG) {
+        self.Long = (self.Long & !(0x1F << 5)) | (((val as ULONG_PTR) & 0x1F) << 5);
+    }
+
+    /// PageFileHigh — bits [31:12] on i386, bits [63:32] on 64-bit
+    #[inline]
+    pub fn soft_page_file_high(&self) -> ULONG_PTR {
+        #[cfg(target_pointer_width = "64")]
+        { (self.Long >> 32) as ULONG_PTR }
+        #[cfg(target_pointer_width = "32")]
+        { (self.Long >> 12) & 0xFFFFF }
+    }
+
+    #[inline]
+    pub fn set_soft_page_file_high(&mut self, val: ULONG_PTR) {
+        #[cfg(target_pointer_width = "64")]
+        {
+            self.Long = (self.Long & 0xFFFFFFFF) | ((val as ULONG_PTR) << 32);
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            self.Long = (self.Long & !0xFFFFF000) | ((val & 0xFFFFF) << 12);
+        }
+    }
+
+    /// Transition bit — bit 11
+    #[inline]
+    pub fn transition(&self) -> bool {
+        (self.Long & (1 << 11)) != 0
+    }
+
+    #[inline]
+    pub fn set_transition(&mut self, val: bool) {
+        if val {
+            self.Long |= 1 << 11;
+        } else {
+            self.Long &= !(1 << 11);
+        }
+    }
+
+    /// Write bit — bit 1 in hardware PTE
+    #[inline]
+    pub fn write(&self) -> bool {
+        (self.Long & (1 << 1)) != 0
+    }
+
+    #[inline]
+    pub fn set_write(&mut self, val: bool) {
+        if val {
+            self.Long |= 1 << 1;
+        } else {
+            self.Long &= !(1 << 1);
+        }
+    }
+
+    /// Owner bit — bit 2
+    #[inline]
+    pub fn owner(&self) -> bool {
+        (self.Long & (1 << 2)) != 0
+    }
 }
 
 /// Extract PFN from a PTE.
@@ -641,9 +761,7 @@ pub fn MI_SET_USAGE(_usage: ULONG) {}
 #[inline]
 pub fn MI_SET_PROCESS2(_name: &str) {}
 
-/// Usage constants
-pub const MI_USAGE_PAGED_POOL: ULONG = 8;
-pub const MI_USAGE_NONPAGED_POOL: ULONG = 9;
+// MI_USAGE_PAGED_POOL / MI_USAGE_NONPAGED_POOL — see MI_PFN_USAGES enum below
 
 // PTE write helpers
 #[inline]
@@ -866,6 +984,36 @@ impl MMPFN {
     }
 }
 
+// ============================================================================
+// MMPFN OriginalPte accessors
+// ============================================================================
+
+// OriginalPte offset: 64-bit = 32 (u1:8 + PteAddress:8 + u2:8 + u3:4 + UsedPageTableEntries:4)
+//                     32-bit = 16 (u1:4 + PteAddress:4 + u2:4 + u3:4)
+#[cfg(target_pointer_width = "64")]
+mod pfn_offsets_orig_pte {
+    pub const ORIGINAL_PTE: usize = 32;
+}
+#[cfg(target_pointer_width = "32")]
+mod pfn_offsets_orig_pte {
+    pub const ORIGINAL_PTE: usize = 16;
+}
+
+impl MMPFN {
+    /// OriginalPte — MMPTE stored in the PFN entry (between u3 and u4)
+    #[inline]
+    pub unsafe fn original_pte(&self) -> MMPTE {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+        *(p as *const MMPTE)
+    }
+
+    #[inline]
+    pub unsafe fn set_original_pte(&mut self, val: MMPTE) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+        *(p as *mut MMPTE) = val;
+    }
+}
+
 /// MiGetPfnEntry — returns PMMPFN from PFN number.
 #[inline]
 pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
@@ -1000,6 +1148,1207 @@ pub const MM_EMPTY_PTE_LIST: ULONG_PTR = 0xFFFFFFFF;
 pub const PDE_PER_PAGE: usize = 1024;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub const PDE_PER_PAGE: usize = 512;
+
+// ============================================================================
+// PPE_PER_PAGE, PXE_PER_PAGE (64-bit only)
+// ============================================================================
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const PPE_PER_PAGE: usize = 512;
+#[cfg(target_arch = "x86")]
+pub const PPE_PER_PAGE: usize = 1;
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const PXE_PER_PAGE: usize = 512;
+
+// ============================================================================
+// _MI_PAGING_LEVELS
+// ============================================================================
+
+#[cfg(target_arch = "x86")]
+pub const _MI_PAGING_LEVELS: usize = 2;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const _MI_PAGING_LEVELS: usize = 4;
+
+// ============================================================================
+// PPE_BASE, PXE_BASE (64-bit only, for 4-level paging)
+// ============================================================================
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const PPE_BASE: usize = 0xFFFFF6FB7DA00000;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const PXE_BASE: usize = 0xFFFFF6FB7DBED000;
+
+// PTE_TOP — end of PTE self-map range
+#[cfg(target_arch = "x86")]
+pub const PTE_TOP: usize = PTE_BASE + (((1u64 << 32) / PAGE_SIZE as u64) as usize * 4) - 1;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const PTE_TOP: usize = 0xFFFFF6FFFFFFFFFF;
+
+// ============================================================================
+// PPE/PXE address translation (64-bit only)
+// ============================================================================
+
+/// MiAddressToPpe — PPE pointer from VA (4-level paging only)
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiAddressToPpe(va: PVOID) -> PMMPTE {
+    let addr = va as u64;
+    let offset = (addr >> (30 - 3)) & (0x3FFFFu64 << 3);
+    (PPE_BASE as u64 + offset) as PMMPTE
+}
+
+/// MiAddressToPxe — PXE pointer from VA (4-level paging only)
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiAddressToPxe(va: PVOID) -> PMMPTE {
+    let addr = va as u64;
+    let offset = (addr >> (39 - 3)) & (0x1FFu64 << 3);
+    (PXE_BASE as u64 + offset) as PMMPTE
+}
+
+/// MiPpeToAddress — VA from PPE pointer (signed shift for sign extension)
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPpeToAddress(ppe: PMMPTE) -> PVOID {
+    (((ppe as i64) << 43) >> 16) as PVOID
+}
+
+/// MiPxeToAddress — VA from PXE pointer (signed shift for sign extension)
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPxeToAddress(pxe: PMMPTE) -> PVOID {
+    (((pxe as i64) << 52) >> 16) as PVOID
+}
+
+/// MiPpeToPte — PPE to its lowest PTE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPpeToPte(ppe: PMMPTE) -> PMMPTE {
+    MiPdeToAddress(ppe) as PMMPTE
+}
+
+/// MiPxeToPte — PXE to its lowest PTE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPxeToPte(pxe: PMMPTE) -> PMMPTE {
+    MiPpeToAddress(pxe) as PMMPTE
+}
+
+/// MiPteToPpe — PTE to its corresponding PPE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPteToPpe(pte: PMMPTE) -> PMMPTE {
+    MiAddressToPde(pte as PVOID)
+}
+
+/// MiPteToPxe — PTE to its corresponding PXE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPteToPxe(pte: PMMPTE) -> PMMPTE {
+    MiAddressToPpe(pte as PVOID)
+}
+
+/// MiPdeToPpe — PDE to its corresponding PPE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPdeToPpe(pde: PMMPDE) -> PMMPTE {
+    MiAddressToPte(pde as PVOID)
+}
+
+/// MiPdeToPxe — PDE to its corresponding PXE
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiPdeToPxe(pde: PMMPDE) -> PMMPTE {
+    MiAddressToPde(pde as PVOID)
+}
+
+// P*E boundary checks
+#[inline]
+pub fn MiIsPteOnPdeBoundary(pte: PMMPTE) -> bool {
+    ((pte as usize) & (PAGE_SIZE - 1)) == 0
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiIsPteOnPpeBoundary(pte: PMMPTE) -> bool {
+    ((pte as usize) & (PDE_PER_PAGE * PAGE_SIZE - 1)) == 0
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[inline]
+pub fn MiIsPteOnPxeBoundary(pte: PMMPTE) -> bool {
+    ((pte as usize) & (PPE_PER_PAGE * PDE_PER_PAGE * PAGE_SIZE - 1)) == 0
+}
+
+// ============================================================================
+// MI_SET_PFN_DELETED / MI_IS_PFN_DELETED
+// ============================================================================
+
+/// Mark PFN as deleted by OR-ing bit 0 into PteAddress.
+#[inline]
+pub unsafe fn MI_SET_PFN_DELETED(pfn: PMMPFN) {
+    let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);
+    let addr = *(p as *mut usize);
+    *(p as *mut usize) = addr | 1;
+}
+
+/// Check if PFN is marked deleted (bit 0 of PteAddress).
+#[inline]
+pub unsafe fn MI_IS_PFN_DELETED(pfn: PMMPFN) -> bool {
+    let p = (pfn as *const u8).add(pfn_offsets::PTE_ADDRESS);
+    let addr = *(p as *const usize);
+    (addr & 1) != 0
+}
+
+// ============================================================================
+// MM_WAIT_ENTRY
+// ============================================================================
+
+#[cfg(target_arch = "x86")]
+pub const MM_WAIT_ENTRY: ULONG_PTR = 0x7ffffc00;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const MM_WAIT_ENTRY: ULONG_PTR = 0x7FFFFFFFFFFFFC00;
+
+// ============================================================================
+// MI_PTE_LOOKUP_NEEDED
+// ============================================================================
+
+#[cfg(target_pointer_width = "64")]
+pub const MI_PTE_LOOKUP_NEEDED: ULONG_PTR = 0xFFFFFFFF;
+#[cfg(target_pointer_width = "32")]
+pub const MI_PTE_LOOKUP_NEEDED: ULONG_PTR = 0xFFFFF;
+
+// ============================================================================
+// Memory consumer IDs (from mm.h)
+// ============================================================================
+
+pub const MC_USER: ULONG = 0;
+pub const MC_SYSTEM: ULONG = 1;
+pub const MC_MAXIMUM: ULONG = 2;
+
+// ============================================================================
+// Page location values (MMLISTS enum)
+// ============================================================================
+
+pub const ZeroedPageList: u16 = 0;
+pub const FreePageList: u16 = 1;
+pub const StandbyPageList: u16 = 2;
+pub const ModifiedPageList: u16 = 3;
+pub const ModifiedNoWritePageList: u16 = 4;
+pub const BadPageList: u16 = 5;
+// ActiveAndValid = 6 already defined above
+pub const TransitionPage: u16 = 7;
+
+// ============================================================================
+// MMPFNLIST — PFN list head structure
+// ============================================================================
+
+pub type MMLISTS = ULONG;
+
+#[repr(C)]
+pub struct MMPFNLIST {
+    pub Total: PFN_NUMBER,
+    pub ListName: MMLISTS,
+    pub Flink: PFN_NUMBER,
+    pub Blink: PFN_NUMBER,
+}
+
+pub type PMMPFNLIST = *mut MMPFNLIST;
+
+// ============================================================================
+// MM_MEMORY_CONSUMER — page consumer balancing
+// ============================================================================
+
+/// Trim callback function type.
+/// The C declaration uses no calling convention (cdecl on i386):
+///   NTSTATUS (*Trim)(ULONG Target, ULONG Priority, PULONG NrFreed)
+pub type PBALANCE_TRIM_ROUTINE = Option<
+    unsafe extern "C" fn(Target: ULONG, Priority: ULONG, NrFreed: *mut ULONG) -> NTSTATUS,
+>;
+
+#[repr(C)]
+pub struct MM_MEMORY_CONSUMER {
+    pub PagesUsed: ULONG,
+    pub PagesTarget: ULONG,
+    pub Trim: PBALANCE_TRIM_ROUTINE,
+}
+
+pub type PMM_MEMORY_CONSUMER = *mut MM_MEMORY_CONSUMER;
+
+// ============================================================================
+// MM_REGION — memory region descriptor
+// ============================================================================
+
+#[repr(C)]
+pub struct MM_REGION {
+    pub Type: ULONG,
+    pub Protect: ULONG,
+    pub Length: SIZE_T,
+    pub RegionListEntry: LIST_ENTRY,
+}
+
+pub type PMM_REGION = *mut MM_REGION;
+
+// ============================================================================
+// PHYSICAL_MEMORY_RUN / PHYSICAL_MEMORY_DESCRIPTOR
+// ============================================================================
+
+#[repr(C)]
+pub struct PHYSICAL_MEMORY_RUN {
+    pub BasePage: PFN_NUMBER,
+    pub PageCount: PFN_NUMBER,
+}
+
+#[repr(C)]
+pub struct PHYSICAL_MEMORY_DESCRIPTOR {
+    pub NumberOfRuns: ULONG,
+    pub NumberOfPages: PFN_NUMBER,
+    pub Run: [PHYSICAL_MEMORY_RUN; 1],
+}
+
+pub type PPHYSICAL_MEMORY_DESCRIPTOR = *mut PHYSICAL_MEMORY_DESCRIPTOR;
+
+// ============================================================================
+// MMCOLOR_TABLES — page coloring
+// ============================================================================
+
+#[repr(C)]
+pub struct MMCOLOR_TABLES {
+    pub Flink: PFN_NUMBER,
+    pub Blink: PVOID,
+    pub Count: PFN_NUMBER,
+}
+
+pub type PMMCOLOR_TABLES = *mut MMCOLOR_TABLES;
+
+// ============================================================================
+// MM protection constants (from miarm.h)
+// ============================================================================
+
+pub const MM_ZERO_ACCESS: ULONG = 0;
+pub const MM_READONLY: ULONG = 1;
+pub const MM_EXECUTE: ULONG = 2;
+pub const MM_EXECUTE_READ: ULONG = 3;
+// MM_READWRITE = 4 already defined above
+pub const MM_WRITECOPY: ULONG = 5;
+pub const MM_EXECUTE_READWRITE: ULONG = 6;
+pub const MM_EXECUTE_WRITECOPY: ULONG = 7;
+pub const MM_PROTECT_ACCESS: ULONG = 7;
+
+pub const MM_NOCACHE: ULONG = 0x08;
+pub const MM_GUARDPAGE: ULONG = 0x10;
+pub const MM_WRITECOMBINE: ULONG = 0x18;
+pub const MM_PROTECT_SPECIAL: ULONG = 0x18;
+
+pub const MM_DECOMMIT: ULONG = MM_ZERO_ACCESS | MM_GUARDPAGE;
+pub const MM_NOACCESS: ULONG = MM_ZERO_ACCESS | MM_WRITECOMBINE;
+pub const MM_OUTSWAPPED_KSTACK: ULONG = MM_EXECUTE_WRITECOPY | MM_WRITECOMBINE;
+pub const MM_INVALID_PROTECTION: ULONG = 0xFFFFFFFF;
+
+// ============================================================================
+// Memory area types (from mm.h)
+// ============================================================================
+
+pub const MEMORY_AREA_SECTION_VIEW: ULONG = 1;
+pub const MEMORY_AREA_OWNED_BY_ARM3: ULONG = 15;
+pub const MEMORY_AREA_STATIC: ULONG = 0x80000000;
+
+// ============================================================================
+// Misc MM constants
+// ============================================================================
+
+pub const STATUS_MM_RESTART_OPERATION: NTSTATUS = 0xD0000001u32 as NTSTATUS;
+pub const MM_NOIRQL: KIRQL = 0xFF;
+pub const MM_VIRTMEM_GRANULARITY: usize = 64 * 1024;
+pub const MAX_PAGING_FILES: usize = 16;
+
+pub const LIST_HEAD_SENTINEL: ULONG_PTR = ULONG_PTR::MAX;
+
+/// COLORED_LIST_HEAD — sentinel for colored page lists
+#[cfg(target_pointer_width = "64")]
+pub const COLORED_LIST_HEAD: PFN_NUMBER = (1usize << 57) - 1;
+#[cfg(target_pointer_width = "32")]
+pub const COLORED_LIST_HEAD: PFN_NUMBER = (1usize << 25) - 1;
+
+// Special LoadedImports values (from miarm.h)
+pub const MM_SYSLDR_NO_IMPORTS: PVOID = (-2isize) as PVOID;
+pub const MM_SYSLDR_BOOT_LOADED: PVOID = (-1isize) as PVOID;
+pub const MM_SYSLDR_SINGLE_ENTRY: ULONG_PTR = 0x1;
+
+// MI_INITIAL_SESSION_IDS
+pub const MI_INITIAL_SESSION_IDS: ULONG = 64;
+
+// MmDbgCopyMemory flags
+pub const MMDBG_COPY_WRITE: ULONG = 0x01;
+pub const MMDBG_COPY_PHYSICAL: ULONG = 0x02;
+pub const MMDBG_COPY_UNSAFE: ULONG = 0x04;
+pub const MMDBG_COPY_CACHED: ULONG = 0x08;
+pub const MMDBG_COPY_UNCACHED: ULONG = 0x10;
+pub const MMDBG_COPY_WRITE_COMBINED: ULONG = 0x20;
+pub const MMDBG_COPY_MAX_SIZE: usize = 0x8;
+
+// MiCheckSecuredVad constants
+pub const MM_READ_WRITE_ALLOWED: ULONG = 11;
+pub const MM_READ_ONLY_ALLOWED: ULONG = 10;
+pub const MM_NO_ACCESS_ALLOWED: ULONG = 1;
+pub const MM_DELETE_CHECK: ULONG = 85;
+
+// Session data page limits
+pub const MI_SESSION_DATA_PAGES_MAXIMUM: usize = MM_VIRTMEM_GRANULARITY / PAGE_SIZE;
+pub const MI_SESSION_TAG_PAGES_MAXIMUM: usize = MM_VIRTMEM_GRANULARITY / PAGE_SIZE;
+
+// System view bucket
+pub const MI_SYSTEM_VIEW_BUCKET_SIZE: usize = 64 * 1024;
+
+// ============================================================================
+// PTE flags (arch-specific, from miarm.h)
+// ============================================================================
+
+#[cfg(target_arch = "x86")]
+pub const PTE_VALID: ULONG_PTR = 0x1;
+#[cfg(target_arch = "x86")]
+pub const PTE_ACCESSED: ULONG_PTR = 0x20;
+#[cfg(target_arch = "x86")]
+pub const PTE_DIRTY: ULONG_PTR = 0x40;
+
+#[cfg(target_arch = "x86_64")]
+pub const PTE_VALID: ULONG_PTR = 0x1;
+#[cfg(target_arch = "x86_64")]
+pub const PTE_ACCESSED: ULONG_PTR = 0x20;
+#[cfg(target_arch = "x86_64")]
+pub const PTE_DIRTY: ULONG_PTR = 0x40;
+
+#[cfg(target_arch = "aarch64")]
+pub const PTE_VALID: ULONG_PTR = 0x1;
+#[cfg(target_arch = "aarch64")]
+pub const PTE_ACCESSED: ULONG_PTR = 0x400;
+#[cfg(target_arch = "aarch64")]
+pub const PTE_DIRTY: ULONG_PTR = 0x80;
+
+// ============================================================================
+// MI_PFN_USAGES enum
+// ============================================================================
+
+pub const MI_USAGE_NOT_SET: ULONG = 0;
+pub const MI_USAGE_PAGED_POOL: ULONG = 1;
+pub const MI_USAGE_NONPAGED_POOL: ULONG = 2;
+pub const MI_USAGE_NONPAGED_POOL_EXPANSION: ULONG = 3;
+pub const MI_USAGE_KERNEL_STACK: ULONG = 4;
+pub const MI_USAGE_KERNEL_STACK_EXPANSION: ULONG = 5;
+pub const MI_USAGE_SYSTEM_PTE: ULONG = 6;
+pub const MI_USAGE_VAD: ULONG = 7;
+pub const MI_USAGE_PEB_TEB: ULONG = 8;
+pub const MI_USAGE_SECTION: ULONG = 9;
+pub const MI_USAGE_PAGE_TABLE: ULONG = 10;
+pub const MI_USAGE_PAGE_DIRECTORY: ULONG = 11;
+pub const MI_USAGE_LEGACY_PAGE_DIRECTORY: ULONG = 12;
+pub const MI_USAGE_DRIVER_PAGE: ULONG = 13;
+pub const MI_USAGE_CONTINOUS_ALLOCATION: ULONG = 14;
+pub const MI_USAGE_MDL: ULONG = 15;
+pub const MI_USAGE_DEMAND_ZERO: ULONG = 16;
+pub const MI_USAGE_ZERO_LOOP: ULONG = 17;
+pub const MI_USAGE_CACHE: ULONG = 18;
+pub const MI_USAGE_PFN_DATABASE: ULONG = 19;
+pub const MI_USAGE_BOOT_DRIVER: ULONG = 20;
+pub const MI_USAGE_INIT_MEMORY: ULONG = 21;
+pub const MI_USAGE_PAGE_FILE: ULONG = 22;
+pub const MI_USAGE_COW: ULONG = 23;
+pub const MI_USAGE_WSLE: ULONG = 24;
+pub const MI_USAGE_FREE_PAGE: ULONG = 25;
+
+// ============================================================================
+// Additional extern globals needed by MM subsystem
+// ============================================================================
+
+extern "C" {
+    // PFN lists
+    pub static mut MmZeroedPageListHead: MMPFNLIST;
+    pub static mut MmFreePageListHead: MMPFNLIST;
+    pub static mut MmStandbyPageListHead: MMPFNLIST;
+    pub static mut MmModifiedPageListHead: MMPFNLIST;
+    pub static mut MmModifiedNoWritePageListHead: MMPFNLIST;
+
+    // Physical memory descriptor
+    pub static mut MmPhysicalMemoryBlock: PPHYSICAL_MEMORY_DESCRIPTOR;
+
+    // Memory consumers
+    pub static mut MiMemoryConsumers: [MM_MEMORY_CONSUMER; MC_MAXIMUM as usize];
+
+    // Session space boundaries
+    pub static mut MmSessionBase: PVOID;
+    pub static mut MiSessionSpaceEnd: PVOID;
+    pub static mut MiSessionBasePte: PMMPTE;
+    pub static mut MiSessionLastPte: PMMPTE;
+    pub static mut MiSessionImageStart: PVOID;
+    pub static mut MiSessionImageEnd: PVOID;
+
+    // Working set limits
+    pub static mut MmMinimumWorkingSetSize: SIZE_T;
+    pub static mut MmMaximumWorkingSetSize: SIZE_T;
+
+    // Expansion lock
+    pub static mut MmExpansionLock: KSPIN_LOCK;
+    pub static mut MiExpansionLockOwner: PVOID; // PETHREAD
+
+    // Commit tracking
+    pub static mut MmTotalCommitLimit: SIZE_T;
+    pub static mut MmTotalCommittedPages: SIZE_T;
+    pub static mut MmSharedCommit: SIZE_T;
+    pub static mut MmDriverCommit: SIZE_T;
+    pub static mut MmProcessCommit: SIZE_T;
+    pub static mut MmPagedPoolCommit: SIZE_T;
+    pub static mut MmPeakCommitment: SIZE_T;
+    pub static mut MmtotalCommitLimitMaximum: SIZE_T;
+
+    // Paging
+    pub static mut MmNumberOfPagingFiles: ULONG;
+
+    // Debug mapping
+    pub static mut MiDebugMapping: PVOID;
+    pub static mut MmDebugPte: PMMPTE;
+
+    // Verifier
+    pub static mut MmVerifierData: [u8; 256]; // opaque, MM_DRIVER_VERIFIER_DATA
+    pub static mut KernelVerifier: PVOID;
+    pub static mut MmTriageActionTaken: PVOID;
+    pub static mut MmUnloadedDrivers: PVOID;
+    pub static mut MmLastUnloadedDrivers: PVOID;
+
+    // Misc
+    pub static mut MmDisablePagingExecutive: UCHAR;
+    pub static mut MmLowestPhysicalPage: PFN_NUMBER;
+    pub static mut MmThrottleTop: ULONG;
+    pub static mut MmThrottleBottom: ULONG;
+    // MmTotalNonPagedPoolQuota/MmTotalPagedPoolQuota — owned by reactos-pool globals
+    pub static mut MmLoadedUserImageList: LIST_ENTRY;
+    pub static mut MmSystemLoadLock: [u8; 64]; // opaque KMUTANT
+
+    // Highest user PTE (used by HW PTE creation)
+    pub static mut MiHighestUserPte: PMMPTE;
+
+    // Protection to PTE mask table
+    pub static MmProtectToPteMask: [ULONG_PTR; 32];
+    pub static MmProtectToValue: [ULONG; 32];
+}
+
+// ============================================================================
+// Additional extern MM functions
+// ============================================================================
+
+extern "system" {
+    /// Insert page into a specific PFN list
+    pub fn MiInsertPageInList(ListHead: PMMPFNLIST, PageFrameIndex: PFN_NUMBER);
+
+    /// Unlink a page from free or zeroed list
+    pub fn MiUnlinkFreeOrZeroedPage(Pfn: PMMPFN);
+
+    /// Map pages in zero space (for zero page thread)
+    pub fn MiMapPagesInZeroSpace(Pfn1: PMMPFN, NumberOfPages: PFN_NUMBER) -> PVOID;
+
+    /// Unmap pages from zero space
+    pub fn MiUnmapPagesInZeroSpace(VirtualAddress: PVOID, NumberOfPages: PFN_NUMBER);
+
+    /// Zero a physical page
+    pub fn MiZeroPhysicalPage(PageFrameIndex: PFN_NUMBER);
+
+    /// Remove a zeroed page
+    pub fn MiRemoveZeroPage(Color: ULONG) -> PFN_NUMBER;
+
+    /// Find/free initialization code
+    pub fn MiFindInitializationCode(StartVa: *mut PVOID, EndVa: *mut PVOID);
+    pub fn MiFreeInitializationCode(StartVa: PVOID, EndVa: PVOID);
+
+}
+
+extern "system" {
+    /// Lookup data table entry by address.
+    /// Defined as NTAPI in miarm.h/sysldr.c — stdcall on i386.
+    pub fn MiLookupDataTableEntry(Address: PVOID) -> PVOID; // PLDR_DATA_TABLE_ENTRY
+}
+
+// ============================================================================
+// Session range check helpers
+// ============================================================================
+
+/// MI_IS_SESSION_ADDRESS — check if VA is in session space
+#[inline]
+pub unsafe fn MI_IS_SESSION_ADDRESS(va: PVOID) -> bool {
+    let addr = va as ULONG_PTR;
+    addr >= MmSessionBase as ULONG_PTR && addr < MiSessionSpaceEnd as ULONG_PTR
+}
+
+/// MI_IS_SESSION_PTE — check if PTE is in session PTE range
+#[inline]
+pub unsafe fn MI_IS_SESSION_PTE(pte: PMMPTE) -> bool {
+    pte >= MiSessionBasePte && pte < MiSessionLastPte
+}
+
+/// MI_IS_PAGE_TABLE_ADDRESS — check if address is in page table self-map
+#[inline]
+pub fn MI_IS_PAGE_TABLE_ADDRESS(va: PVOID) -> bool {
+    let addr = va as ULONG_PTR;
+    addr >= PTE_BASE && addr <= PTE_TOP
+}
+
+// ============================================================================
+// Additional MM constants needed by translated MM files
+// ============================================================================
+
+// Bugcheck codes (from bugcodes.mc)
+pub const MEMORY_MANAGEMENT: ULONG = 0x1A;
+pub const NO_PAGES_AVAILABLE: ULONG = 0x4D;
+pub const PFN_LIST_CORRUPT: ULONG = 0x4E;
+
+// NTSTATUS codes
+pub const STATUS_WAIT_0: NTSTATUS = 0x00000000;
+pub const STATUS_WAIT_1: NTSTATUS = 0x00000001;
+pub const STATUS_WORKING_SET_LIMIT_RANGE: NTSTATUS = 0x40000002u32 as NTSTATUS;
+pub const STATUS_BAD_WORKING_SET_LIMIT: NTSTATUS = 0xC000004Cu32 as NTSTATUS;
+
+// Pool tags
+pub const TAG_MDL: ULONG = u32::from_le_bytes(*b" ldM");
+pub const TAG_MM: ULONG = u32::from_le_bytes(*b"  mM");
+
+// MDL flags
+pub const MDL_PAGES_LOCKED: ULONG = 0x0002;
+
+// MM constants
+pub const MM_DATAFILE_SEGMENT: ULONG = 0x2;
+pub const MI_ZERO_PTES: ULONG = 32;
+
+// MI_DEBUG_MAPPING — architecture-dependent debug mapping address
+#[cfg(target_arch = "x86")]
+pub const MI_DEBUG_MAPPING: ULONG_PTR = 0xFFBFF000;
+#[cfg(target_arch = "x86_64")]
+pub const MI_DEBUG_MAPPING: ULONG_PTR = 0xFFFFF89FFFFFF000;
+#[cfg(target_arch = "aarch64")]
+pub const MI_DEBUG_MAPPING: ULONG_PTR = 0xFFFFFB0000000000;
+
+// ULONG64 type alias (Windows type, maps to u64)
+pub type ULONG64 = u64;
+
+// HANDLE type alias
+pub type HANDLE = PVOID;
+
+// SSIZE_T type alias (signed size)
+pub type SSIZE_T = isize;
+
+// MI_PFN_CACHE_ATTRIBUTE enum values
+pub type MI_PFN_CACHE_ATTRIBUTE = u32;
+pub const MiNonCached: MI_PFN_CACHE_ATTRIBUTE = 0;
+// MiCached already defined above as u16 (0x1) — this is the u32 version for the enum
+pub const MiCached_u32: MI_PFN_CACHE_ATTRIBUTE = 1;
+pub const MiWriteCombined: MI_PFN_CACHE_ATTRIBUTE = 2;
+pub const MiNotMapped: MI_PFN_CACHE_ATTRIBUTE = 3;
+
+// MEMORY_CACHING_TYPE enum values
+pub type MEMORY_CACHING_TYPE = u32;
+pub const MmNonCached: MEMORY_CACHING_TYPE = 0;
+pub const MmCached_val: MEMORY_CACHING_TYPE = 1;
+pub const MmWriteCombined: MEMORY_CACHING_TYPE = 2;
+pub const MmHardwareCoherentCached: MEMORY_CACHING_TYPE = 3;
+pub const MmNonCachedUnordered: MEMORY_CACHING_TYPE = 4;
+pub const MmUSWCCached: MEMORY_CACHING_TYPE = 5;
+pub const MmMaximumCacheType: MEMORY_CACHING_TYPE = 6;
+
+// MM_SYSTEMSIZE enum values
+pub type MM_SYSTEMSIZE = u32;
+pub const MmSmallSystem: MM_SYSTEMSIZE = 0;
+pub const MmMediumSystem: MM_SYSTEMSIZE = 1;
+pub const MmLargeSystem: MM_SYSTEMSIZE = 2;
+
+// LIST_HEAD sentinel for PFN lists
+pub const LIST_HEAD: PFN_NUMBER = PFN_NUMBER::MAX;
+
+// ============================================================================
+// Additional MMPFN field accessors (u1.Flink, u1.SwapEntry, NextLRU, PreviousLRU, RmapListHead)
+// ============================================================================
+
+#[cfg(target_pointer_width = "64")]
+mod pfn_offsets_extra {
+    pub const U1: usize = 0;           // u1 union (Flink/SwapEntry/WsIndex) at offset 0
+    pub const NEXT_LRU: usize = 48;    // NextLRU at offset after u4
+    pub const PREVIOUS_LRU: usize = 56; // PreviousLRU
+    pub const RMAP_LIST_HEAD: usize = 64; // RmapListHead
+}
+
+#[cfg(target_pointer_width = "32")]
+mod pfn_offsets_extra {
+    pub const U1: usize = 0;
+    pub const NEXT_LRU: usize = 24;
+    pub const PREVIOUS_LRU: usize = 28;
+    pub const RMAP_LIST_HEAD: usize = 32;
+}
+
+impl MMPFN {
+    /// u1.Flink — PFN of next entry in PFN list (overlaps with SwapEntry/WsIndex)
+    #[inline]
+    pub unsafe fn flink(&self) -> PFN_NUMBER {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_extra::U1);
+        *(p as *const PFN_NUMBER)
+    }
+
+    #[inline]
+    pub unsafe fn set_flink(&mut self, val: PFN_NUMBER) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::U1);
+        *(p as *mut PFN_NUMBER) = val;
+    }
+
+    /// u1.SwapEntry — swap entry (overlaps with Flink/WsIndex)
+    #[inline]
+    pub unsafe fn swap_entry(&self) -> ULONG_PTR {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_extra::U1);
+        *(p as *const ULONG_PTR)
+    }
+
+    #[inline]
+    pub unsafe fn set_swap_entry(&mut self, val: ULONG_PTR) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::U1);
+        *(p as *mut ULONG_PTR) = val;
+    }
+
+    /// u4.AweAllocation bit — just past VerifierAllocation
+    #[inline]
+    pub unsafe fn awe_allocation(&self) -> bool {
+        (self.entire_frame() & (1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 2))) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_awe_allocation(&mut self, val: bool) {
+        let bit = 1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 2);
+        let cur = self.entire_frame();
+        if val {
+            self.set_entire_frame(cur | bit);
+        } else {
+            self.set_entire_frame(cur & !bit);
+        }
+    }
+
+    /// u4.MustBeCached bit
+    #[inline]
+    pub unsafe fn must_be_cached(&self) -> bool {
+        (self.entire_frame() & (1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 3))) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_must_be_cached(&mut self, val: bool) {
+        let bit = 1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 3);
+        let cur = self.entire_frame();
+        if val {
+            self.set_entire_frame(cur | bit);
+        } else {
+            self.set_entire_frame(cur & !bit);
+        }
+    }
+
+    /// NextLRU — ReactOS-specific field (PMMPFN pointer)
+    #[inline]
+    pub unsafe fn next_lru(&self) -> PMMPFN {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_extra::NEXT_LRU);
+        *(p as *const PMMPFN)
+    }
+
+    #[inline]
+    pub unsafe fn set_next_lru(&mut self, val: PMMPFN) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::NEXT_LRU);
+        *(p as *mut PMMPFN) = val;
+    }
+
+    /// PreviousLRU — ReactOS-specific field (PMMPFN pointer)
+    #[inline]
+    pub unsafe fn previous_lru(&self) -> PMMPFN {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+        *(p as *const PMMPFN)
+    }
+
+    #[inline]
+    pub unsafe fn set_previous_lru(&mut self, val: PMMPFN) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+        *(p as *mut PMMPFN) = val;
+    }
+
+    /// u2.Blink — PFN of previous entry in PFN list (overlaps with ShareCount)
+    #[inline]
+    pub unsafe fn blink(&self) -> PFN_NUMBER {
+        self.share_count() as PFN_NUMBER
+    }
+
+    /// RmapListHead — ReactOS-specific field (pointer)
+    #[inline]
+    pub unsafe fn rmap_list_head(&self) -> PVOID {
+        let p = (self as *const _ as *const u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+        *(p as *const PVOID)
+    }
+
+    #[inline]
+    pub unsafe fn set_rmap_list_head(&mut self, val: PVOID) {
+        let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+        *(p as *mut PVOID) = val;
+    }
+
+    /// u3.e1.Modified bit (bit 0 of MMPFNENTRY)
+    #[inline]
+    pub unsafe fn modified(&self) -> bool {
+        (self.mmpfnentry() & 1) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_modified(&mut self, val: bool) {
+        let mut e = self.mmpfnentry();
+        if val { e |= 1; } else { e &= !1; }
+        self.set_mmpfnentry(e);
+    }
+
+    /// u3.e1.RemovalRequested bit (bit 5)
+    #[inline]
+    pub unsafe fn removal_requested(&self) -> bool {
+        (self.mmpfnentry() & (1 << 5)) != 0
+    }
+
+    /// u3.e1.ParityError bit (bit 6)
+    #[inline]
+    pub unsafe fn parity_error(&self) -> bool {
+        (self.mmpfnentry() & (1 << 6)) != 0
+    }
+
+    /// u3.e2.ReferenceCount — same as reference_count(), alias for C naming
+    #[inline]
+    pub unsafe fn e2_reference_count(&self) -> USHORT {
+        self.reference_count()
+    }
+
+    #[inline]
+    pub unsafe fn set_e2_reference_count(&mut self, val: USHORT) {
+        self.set_reference_count(val);
+    }
+
+    /// Cache attribute accessor (read)
+    #[inline]
+    pub unsafe fn cache_attribute(&self) -> u16 {
+        (self.mmpfnentry() >> MMPFNENTRY_CACHE_ATTRIBUTE_SHIFT) & 0x3
+    }
+
+    /// u3.e1.PrototypePte — bit 3 of MMPFNENTRY
+    #[inline]
+    pub unsafe fn prototype_pte(&self) -> bool {
+        (self.mmpfnentry() & (1 << 3)) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_prototype_pte(&mut self, val: bool) {
+        let mut e = self.mmpfnentry();
+        if val { e |= 1 << 3; } else { e &= !(1 << 3); }
+        self.set_mmpfnentry(e);
+    }
+}
+
+// ============================================================================
+// Additional extern globals needed by MM translated files
+// ============================================================================
+
+extern "C" {
+    // MmPagingFile array
+    pub static mut MmPagingFile: [PVOID; MAX_PAGING_FILES]; // PMMPAGING_FILE[]
+
+    // Product type and system size
+    pub static mut MmProductType: ULONG;
+    pub static mut MmSystemSize: MM_SYSTEMSIZE;
+
+    // System lock pages count
+    pub static mut MmSystemLockPagesCount: SIZE_T;
+
+    // Boot image size
+    pub static mut MmBootImageSize: SIZE_T;
+
+    // Cache attributes table
+    pub static mut MiPlatformCacheAttributes: [[MI_PFN_CACHE_ATTRIBUTE; 6]; 2]; // [2][MmMaximumCacheType]
+}
+
+// ============================================================================
+// Helper inline functions needed by MM translated files
+// ============================================================================
+
+/// ADDRESS_AND_SIZE_TO_SPAN_PAGES — calculate number of pages spanned by an address+size
+#[inline]
+pub fn ADDRESS_AND_SIZE_TO_SPAN_PAGES(va: PVOID, size: SIZE_T) -> PFN_NUMBER {
+    let va_addr = va as ULONG_PTR;
+    ((va_addr & (PAGE_SIZE - 1)) + size + (PAGE_SIZE - 1)) / PAGE_SIZE
+}
+
+/// MI_PAGE_DISABLE_CACHE — set cache-disable bit on a PTE
+#[inline]
+pub fn MI_PAGE_DISABLE_CACHE(pte: &mut MMPTE) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        pte.Long |= 1 << 4; // PCD bit
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // ARM64: set to device memory (non-cacheable) via MAIR index
+        pte.Long = (pte.Long & !0x1C) | (0x00 << 2); // AttrIndx = 0 (device)
+    }
+}
+
+/// MI_PAGE_WRITE_THROUGH — set write-through bit on a PTE
+#[inline]
+pub fn MI_PAGE_WRITE_THROUGH(pte: &mut MMPTE) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        pte.Long |= 1 << 3; // PWT bit
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // ARM64: write-through via MAIR
+        let _ = pte; // architecture-specific handling
+    }
+}
+
+/// MI_PAGE_WRITE_COMBINED — set write-combined caching on a PTE
+#[inline]
+pub fn MI_PAGE_WRITE_COMBINED(pte: &mut MMPTE) {
+    // On x86/x86_64: PCD + PWT
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        pte.Long |= (1 << 4) | (1 << 3); // PCD + PWT
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let _ = pte;
+    }
+}
+
+/// KeGetCurrentThread — returns pointer to current ETHREAD
+#[inline]
+pub unsafe fn KeGetCurrentThread() -> PVOID {
+    extern "system" {
+        fn PsGetCurrentThread() -> PVOID;
+    }
+    PsGetCurrentThread()
+}
+
+/// MmLockSectionSegment / MmUnlockSectionSegment — ReactOS internal MM functions
+extern "system" {
+    pub fn MmLockSectionSegment(Segment: PVOID);
+    pub fn MmUnlockSectionSegment(Segment: PVOID);
+    pub fn MmGetPageEntrySectionSegment(Segment: PVOID, Offset: *const u64) -> ULONG_PTR;
+}
+
+/// IS_SWAP_FROM_SSE — check if section segment entry indicates swap
+#[inline]
+pub fn IS_SWAP_FROM_SSE(entry: ULONG_PTR) -> bool {
+    (entry & 0x00000001) != 0
+}
+
+/// IS_DIRTY_SSE — check if section segment entry is dirty
+#[inline]
+pub fn IS_DIRTY_SSE(entry: ULONG_PTR) -> bool {
+    (entry & 0x00000008) != 0
+}
+
+/// CONTAINING_RECORD macro equivalent
+/// Calculates the base address of a struct from a pointer to one of its fields.
+#[inline]
+pub unsafe fn containing_record<Container, Field>(
+    ptr: *const Field,
+    offset: usize,
+) -> *mut Container {
+    (ptr as *mut u8).sub(offset) as *mut Container
+}
+
+// MMPTE PTE_ACCESSED bit check helper
+impl MMPTE {
+    /// Check the Accessed bit
+    #[inline]
+    pub fn accessed(&self) -> bool {
+        (self.Long & PTE_ACCESSED) != 0
+    }
+}
+
+// ============================================================================
+// MM Tier 2 — additional constants, globals, and helpers
+// ============================================================================
+
+// Bugcheck codes
+pub const SPECIAL_POOL_DETECTED_MEMORY_CORRUPTION: ULONG = 0xC1;
+
+// NTSTATUS codes
+pub const STATUS_CONFLICTING_ADDRESSES: NTSTATUS = 0xC0000018u32 as NTSTATUS;
+pub const STATUS_INVALID_PAGE_PROTECTION: NTSTATUS = 0xC0000045u32 as NTSTATUS;
+pub const STATUS_TOO_MANY_PAGING_FILES: NTSTATUS = 0xC0000097u32 as NTSTATUS;
+
+// Page protection constants (from winnt.h)
+pub const PAGE_NOACCESS: ULONG = 0x01;
+pub const PAGE_READONLY: ULONG = 0x02;
+pub const PAGE_WRITECOPY: ULONG = 0x08;
+pub const PAGE_EXECUTE: ULONG = 0x10;
+pub const PAGE_EXECUTE_READ: ULONG = 0x20;
+pub const PAGE_EXECUTE_READWRITE: ULONG = 0x40;
+pub const PAGE_EXECUTE_WRITECOPY: ULONG = 0x80;
+pub const PAGE_GUARD: ULONG = 0x100;
+pub const PAGE_NOCACHE: ULONG = 0x200;
+pub const PAGE_WRITECOMBINE: ULONG = 0x400;
+
+// Memory allocation flags
+pub const MEM_TOP_DOWN: ULONG_PTR = 0x100000;
+
+// Pool tags
+pub const TAG_RMAP: ULONG = u32::from_le_bytes(*b"pMrM"); // MrMp - rmap tag
+
+// Type alias for system PTE pool type
+pub type MMSYSTEM_PTE_POOL_TYPE = ULONG;
+
+// Address space constants — architecture-dependent
+#[cfg(target_arch = "x86")]
+pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "x86")]
+pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x7FFEFFFF;
+#[cfg(target_arch = "x86")]
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x7FFEFFFF;
+#[cfg(target_arch = "x86")]
+pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "x86")]
+pub const MI_SYSTEM_PTE_BASE: ULONG_PTR = 0xC0200000;
+#[cfg(target_arch = "x86")]
+pub const MM_SHARED_USER_DATA_VA: ULONG_PTR = 0x7FFE0000;
+#[cfg(target_arch = "x86")]
+pub const KI_USER_SHARED_DATA: ULONG_PTR = 0xFFDF0000;
+#[cfg(target_arch = "x86")]
+pub const KSEG0_BASE: ULONG_PTR = 0x80000000;
+#[cfg(target_arch = "x86")]
+pub const HYPER_SPACE: ULONG_PTR = 0xC0400000;
+#[cfg(target_arch = "x86")]
+pub const HYPER_SPACE_END: ULONG_PTR = 0xC07FFFFF;
+
+#[cfg(target_arch = "x86_64")]
+pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "x86_64")]
+pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
+#[cfg(target_arch = "x86_64")]
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
+#[cfg(target_arch = "x86_64")]
+pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "x86_64")]
+// On amd64: MiAddressToPte(KSEG0_BASE) = ((0xFFFFF80000000000 >> 9) & 0x7FFFFFFFF8) + PTE_BASE
+// = 0xFFFFF6FC00000000  (NOT PTE_BASE — that's for i386/arm64 where MI_SYSTEM_PTE_BASE = MiAddressToPte(NULL))
+pub const MI_SYSTEM_PTE_BASE: ULONG_PTR = 0xFFFFF6FC00000000;
+#[cfg(target_arch = "x86_64")]
+pub const MM_SHARED_USER_DATA_VA: ULONG_PTR = 0x7FFE0000;
+#[cfg(target_arch = "x86_64")]
+pub const KI_USER_SHARED_DATA: ULONG_PTR = 0xFFFFF78000000000;
+#[cfg(target_arch = "x86_64")]
+pub const KSEG0_BASE: ULONG_PTR = 0xFFFFF80000000000;
+#[cfg(target_arch = "x86_64")]
+pub const HYPER_SPACE: ULONG_PTR = 0xFFFFF70000000000;
+#[cfg(target_arch = "x86_64")]
+pub const HYPER_SPACE_END: ULONG_PTR = 0xFFFFF77FFFFFFFFF;
+
+#[cfg(target_arch = "aarch64")]
+pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "aarch64")]
+pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
+#[cfg(target_arch = "aarch64")]
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
+#[cfg(target_arch = "aarch64")]
+pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
+#[cfg(target_arch = "aarch64")]
+pub const MI_SYSTEM_PTE_BASE: ULONG_PTR = PTE_BASE;
+#[cfg(target_arch = "aarch64")]
+pub const MM_SHARED_USER_DATA_VA: ULONG_PTR = 0x7FFE0000;
+#[cfg(target_arch = "aarch64")]
+pub const KI_USER_SHARED_DATA: ULONG_PTR = 0xFFFFF78000000000;
+#[cfg(target_arch = "aarch64")]
+pub const KSEG0_BASE: ULONG_PTR = 0xFFFFF80000000000;
+#[cfg(target_arch = "aarch64")]
+pub const HYPER_SPACE: ULONG_PTR = 0xFFFFF70000000000;
+#[cfg(target_arch = "aarch64")]
+pub const HYPER_SPACE_END: ULONG_PTR = 0xFFFFF77FFFFFFFFF;
+
+// LockQueueSystemSpaceLock — KSPIN_LOCK_QUEUE_NUMBER enum value
+pub const LockQueueSystemSpaceLock: ULONG = 4;
+
+// MM_SEGMENT_INDELETE
+pub const MM_SEGMENT_INDELETE: ULONG_PTR = 0x1;
+
+// Event type
+pub const _EVENT_TYPE_SynchronizationEvent: ULONG = 1;
+
+extern "C" {
+    // System range start
+    pub static mut MmSystemRangeStart: PVOID;
+
+    // System PTE count
+    pub static mut MmNumberOfSystemPtes: ULONG;
+
+    // Special pool tag
+    pub static mut MmSpecialPoolTag: ULONG;
+
+    // System cache working set (MMSUPPORT struct, NOT a pointer)
+    pub static mut MmSystemCacheWs: crate::ddk::_MMSUPPORT;
+
+    // Non-paged system start
+    pub static mut MmNonPagedSystemStart: PVOID;
+
+    // Paged pool in bytes
+    pub static mut MmSizeOfPagedPoolInBytes: SIZE_T;
+
+    // System view
+    pub static mut MiSystemViewStart: PVOID;
+    pub static mut MmSystemViewSize: SIZE_T;
+
+    // PFN allocation
+    pub static mut MxPfnAllocation: PFN_NUMBER;
+
+    // Idle process
+    pub static mut PsIdleProcess: PVOID; // PEPROCESS
+
+    // Loaded modules resource
+    pub static mut PsLoadedModuleResource: PVOID; // PERESOURCE
+
+    // Paging file object type
+    pub static mut IoFileObjectType: PVOID; // POBJECT_TYPE
+
+}
+
+// Paged pool info (MM_PAGED_POOL_INFO global)
+extern "C" {
+    pub static mut MmPagedPoolInfo: MM_PAGED_POOL_INFO;
+}
+
+/// ALIGN_UP_BY — align a value up to the nearest multiple of alignment
+#[inline]
+pub fn ALIGN_UP_BY(addr: ULONG_PTR, align: ULONG_PTR) -> ULONG_PTR {
+    (addr + align - 1) & !(align - 1)
+}
+
+/// ALIGN_DOWN_BY — align a value down to the nearest multiple of alignment
+#[inline]
+pub fn ALIGN_DOWN_BY(addr: ULONG_PTR, align: ULONG_PTR) -> ULONG_PTR {
+    addr & !(align - 1)
+}
+
+/// ROUND_UP — round up to multiple
+#[inline]
+pub fn ROUND_UP(val: ULONG_PTR, align: ULONG_PTR) -> ULONG_PTR {
+    ALIGN_UP_BY(val, align)
+}
+
+/// ROUND_DOWN — round down to multiple
+#[inline]
+pub fn ROUND_DOWN(val: ULONG_PTR, align: ULONG_PTR) -> ULONG_PTR {
+    ALIGN_DOWN_BY(val, align)
+}
+
+/// PAGE_ROUND_DOWN — round address down to page boundary
+#[inline]
+pub fn PAGE_ROUND_DOWN(addr: ULONG_PTR) -> ULONG_PTR {
+    addr & !(PAGE_SIZE - 1)
+}
+
+// PAGE_ALIGN is in base.rs — returns usize. Use `PAGE_ALIGN(x) as PVOID` if you need PVOID.
+
+/// InterlockedIncrementUL — atomic increment on ULONG
+#[inline]
+pub unsafe fn InterlockedIncrementUL(addend: *mut ULONG) -> ULONG {
+    let atomic = &*(addend as *const core::sync::atomic::AtomicU32);
+    atomic.fetch_add(1, core::sync::atomic::Ordering::SeqCst).wrapping_add(1)
+}
+
+/// InterlockedDecrementUL — atomic decrement on ULONG
+#[inline]
+pub unsafe fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG {
+    let atomic = &*(addend as *const core::sync::atomic::AtomicU32);
+    atomic.fetch_sub(1, core::sync::atomic::Ordering::SeqCst).wrapping_sub(1)
+}
+
+/// InterlockedExchangeAddUL — atomic add on ULONG, returns old value
+#[inline]
+pub unsafe fn InterlockedExchangeAddUL(addend: *mut ULONG, value: ULONG) -> ULONG {
+    let atomic = &*(addend as *const core::sync::atomic::AtomicU32);
+    atomic.fetch_add(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// UpdateTotalCommittedPages — atomically add to MmTotalCommittedPages
+#[inline]
+pub unsafe fn UpdateTotalCommittedPages(delta: isize) {
+    if delta >= 0 {
+        MmTotalCommittedPages = MmTotalCommittedPages.wrapping_add(delta as SIZE_T);
+    } else {
+        MmTotalCommittedPages = MmTotalCommittedPages.wrapping_sub((-delta) as SIZE_T);
+    }
+}
+
+/// MI_IS_NOT_PRESENT_FAULT — check if fault is a not-present fault
+#[inline]
+pub fn MI_IS_NOT_PRESENT_FAULT(fault_code: ULONG_PTR) -> bool {
+    (fault_code & 1) == 0
+}
+
+/// MI_IS_INSTRUCTION_FETCH — check if fault is an instruction fetch
+/// MI_IS_INSTRUCTION_FETCH — check if page fault was due to instruction fetch (NX/XN violation)
+/// C: `#define MI_IS_INSTRUCTION_FETCH(FaultCode) BooleanFlagOn(FaultCode, 0x00000010)`
+#[inline]
+pub fn MI_IS_INSTRUCTION_FETCH(fault_code: ULONG_PTR) -> bool {
+    (fault_code & 0x10) != 0
+}
+
+/// MM_IS_WAIT_PTE — check if a PTE is a wait entry
+#[inline]
+pub fn MM_IS_WAIT_PTE(pte_long: ULONG_PTR) -> bool {
+    pte_long == MM_WAIT_ENTRY
+}
+
+/// MI_MAKE_HARDWARE_PTE_KERNEL — create a valid kernel PTE
+#[inline]
+pub unsafe fn MI_MAKE_HARDWARE_PTE_KERNEL(
+    pte: &mut MMPTE,
+    _pointer_pte: PMMPTE,
+    protection: ULONG,
+    pfn: PFN_NUMBER,
+) {
+    *pte = ValidKernelPte;
+    pte.Long &= !(0x1F << 5); // Clear protection bits
+    pte.Long |= MmProtectToPteMask[protection as usize];
+    pte.set_page_frame_number(pfn);
+}
+
+/// MI_IS_ROSMM_VAD — check if a VAD is a ReactOS MM VAD (memory area)
+/// C: `#define MI_IS_ROSMM_VAD(Vad) (((Vad)->u.VadFlags.Spare & 2) != 0)`
+#[inline]
+pub unsafe fn MI_IS_ROSMM_VAD(vad: PVOID) -> bool {
+    let vad = vad as *const crate::ddk::_MMVAD;
+    ((*vad).u.VadFlags.Spare() & 2) != 0
+}
+
+/// RMAP_IS_SEGMENT — check if rmap entry is a segment reference
+#[inline]
+pub fn RMAP_IS_SEGMENT(addr: PVOID) -> bool {
+    (addr as ULONG_PTR & 1) != 0
+}
+
+/// RMAP_SEGMENT_MASK
+pub const RMAP_SEGMENT_MASK: ULONG_PTR = !1usize;
+
+/// PFN_FROM_SSE — extract PFN from section segment entry
+#[inline]
+pub fn PFN_FROM_SSE(entry: ULONG_PTR) -> PFN_NUMBER {
+    entry >> PAGE_SHIFT
+}
+
+/// MA_GetStartingAddress — get the starting address of a memory area
+/// This is a ReactOS-internal function
+#[inline]
+pub unsafe fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR {
+    // Memory area structure: offset 0 is MMVAD_NODE, starting address at specific offset
+    // For now, use extern declaration
+    extern "C" {
+        fn MmLocateMemoryAreaByAddress(
+            AddressSpace: PVOID,
+            Address: PVOID,
+        ) -> PVOID;
+    }
+    0 // stub
+}
 
 // ============================================================================
 // Compile-time semantic assertions (size-vs-C assertions in size_check_*.rs)

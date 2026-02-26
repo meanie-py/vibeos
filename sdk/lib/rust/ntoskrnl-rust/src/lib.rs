@@ -12,6 +12,14 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
+/// ASSERT macro — maps to debug_assert! in debug builds, no-op in release.
+#[allow(unused_macros)]
+macro_rules! ASSERT {
+    ($e:expr) => {
+        debug_assert!($e)
+    };
+}
+
 /// Cast an `extern "system"` function to the target callback ABI.
 ///
 /// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64
@@ -26,12 +34,15 @@ macro_rules! abi_cast {
     };
 }
 
+#[path = "ARM3/mod.rs"]
+pub mod ARM3;
 pub mod cc;
 pub mod dbgk;
 pub mod fsrtl;
 pub mod inbv;
 // pub mod kd64; // Disabled: Rust KD64 causes recursive exception flood on amd64
 pub mod lpc;
+pub mod mm;
 pub mod ob;
 pub mod po;
 pub mod ps;
@@ -40,3 +51,13 @@ pub mod se;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;
+
+// Arch-specific MM modules (Tier 4)
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod i386;
+#[cfg(target_arch = "x86_64")]
+pub mod amd64;
+#[cfg(target_arch = "aarch64")]
+pub mod arm64;
+#[cfg(target_arch = "aarch64")]
+pub mod arm;

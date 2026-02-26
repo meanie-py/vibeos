@@ -443,6 +443,14 @@ IopMarkBootPartition(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         RtlFreeUnicodeString(&DeviceName);
         return FALSE;
 #else
+        /* MININT/WinPE boots may lack a real boot device (e.g. LiveCD when the
+         * ATAPI driver cannot probe the CD-ROM).  Return FALSE to let the
+         * caller decide whether to continue. */
+        if (InitIsWinPEMode)
+        {
+            RtlFreeUnicodeString(&DeviceName);
+            return FALSE;
+        }
         /* Fail */
         KeBugCheckEx(INACCESSIBLE_BOOT_DEVICE,
                      (ULONG_PTR)&DeviceName,
@@ -642,16 +650,23 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("IopCreateArcNames failed: %lx\n", Status);
-        return FALSE;
+#if !defined(_M_ARM64)
+        /* MININT/WinPE boots may lack a real boot disk (e.g. LiveCD when the
+         * ATAPI driver cannot probe the CD-ROM device).  Allow boot to continue
+         * so that ramdisk or other drivers can still provide the volume. */
+        if (!InitIsWinPEMode)
+            return FALSE;
+#endif
     }
 
     /* Mark the system boot partition */
     ARM64_UART_TRACE("[IO] IopMarkBootPartition\r\n");
     if (!IopMarkBootPartition(LoaderBlock))
     {
-        ARM64_UART_TRACE("[IO] IopMarkBootPartition failed (continuing on ARM64)\r\n");
-#ifndef _M_ARM64
-        return FALSE;
+        ARM64_UART_TRACE("[IO] IopMarkBootPartition failed (continuing on ARM64/MININT)\r\n");
+#if !defined(_M_ARM64)
+        if (!InitIsWinPEMode)
+            return FALSE;
 #endif
     }
     else

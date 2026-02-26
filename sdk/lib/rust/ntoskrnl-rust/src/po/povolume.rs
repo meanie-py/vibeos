@@ -275,10 +275,14 @@ pub unsafe extern "system" fn PopFlushVolumeWorkerInner(Context: PVOID) {
 pub unsafe extern "system" fn PopFlushVolumes(ShuttingDown: BOOLEAN) {
     let mut flush_context: POP_FLUSH_VOLUME = core::mem::zeroed();
     let flush_policy: ULONG;
+    // L"\\Registry" — UTF-16LE
+    static REGISTRY_NAME: [u16; 10] = [
+        0x5C, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x72, 0x79, 0x00,
+    ];
     let mut registry_name = _UNICODE_STRING {
-        Length: 18,
-        MaximumLength: 20,
-        Buffer: b"\\Registry\0".as_ptr() as *mut u16,
+        Length: 18,        // 9 chars * 2
+        MaximumLength: 20, // 10 u16s * 2
+        Buffer: REGISTRY_NAME.as_ptr() as *mut u16,
     };
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut registry_handle: HANDLE = core::ptr::null_mut();

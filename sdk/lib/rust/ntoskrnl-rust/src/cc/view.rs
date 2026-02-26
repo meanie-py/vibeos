@@ -926,7 +926,7 @@ pub unsafe extern "system" fn CcRosEnsureVacbResident(
                 length,
                 core::ptr::addr_of_mut!((*shared_cache_map).ValidDataLength)
             );
-            
+
             if status < 0 {
                 ExRaiseStatus(status);
             }

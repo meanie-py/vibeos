@@ -86,9 +86,12 @@ class SerialClient:
                     raise ConnectionError("Serial socket closed")
                 buf += chunk.decode("latin-1")
 
-                # Auto-continue past kdb debugger prompts
-                if "kdb:>" in buf[-(len(chunk.decode("latin-1")) + 10):]:
+                # Auto-continue past kdb debugger prompts and backtrace pagination
+                tail = buf[-(len(chunk.decode("latin-1")) + 80):]
+                if "kdb:>" in tail:
                     self._conn.sendall(b"cont\n")
+                elif "any other key to continue ---" in tail:
+                    self._conn.sendall(b" ")
 
                 if marker in buf:
                     return buf

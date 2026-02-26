@@ -18,6 +18,9 @@ extern "C" {
 }
 
 const ERROR_NOT_ENOUGH_MEMORY: ULONG = 8;
+#[cfg(target_arch = "x86_64")]
+const KERNEL_STACK_SIZE: ULONG_PTR = 0xC000;
+#[cfg(not(target_arch = "x86_64"))]
 const KERNEL_STACK_SIZE: ULONG_PTR = 0x6000;
 const STATUS_ALREADY_WIN32: NTSTATUS = 0x4000001E_u32 as i32;
 

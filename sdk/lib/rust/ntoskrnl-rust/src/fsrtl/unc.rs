@@ -77,10 +77,13 @@ unsafe fn FsRtlpIsDfsEnabled() -> BOOLEAN {
         return 1;
     }
 
-    key_name.Buffer = b"DisableDfs\0".as_ptr() as *mut u16;
-    key_name.Length =
-        (core::mem::size_of_val(b"DisableDfs\0") - core::mem::size_of::<u16>()) as u16;
-    key_name.MaximumLength = core::mem::size_of_val(b"DisableDfs\0") as u16;
+    // L"DisableDfs" — UTF-16LE
+    static DISABLE_DFS_NAME: [u16; 11] = [
+        0x44, 0x69, 0x73, 0x61, 0x62, 0x6C, 0x65, 0x44, 0x66, 0x73, 0x00,
+    ];
+    key_name.Buffer = DISABLE_DFS_NAME.as_ptr() as *mut u16;
+    key_name.Length = 20;        // 10 chars * 2
+    key_name.MaximumLength = 22; // 11 u16s * 2
 
     status = ZwQueryValueKey(
         key,

@@ -110,11 +110,18 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 //
 // Access Flags
 //
+/*
+ * NOTE: On amd64, NX (bit 63) is available but ReactOS does not yet
+ * differentiate NonPagedPool from NonPagedPoolNx. Many subsystems
+ * allocate executable code in NonPagedPool (e.g., KINTERRUPT DispatchCode
+ * in IoConnectInterrupt). Until NonPagedPoolNx support is added, we must
+ * keep READWRITE pages executable so that interrupt dispatch code works.
+ */
 #define PTE_READONLY            0x8000000000000000ULL
 #define PTE_EXECUTE             0x0000000000000000ULL
 #define PTE_EXECUTE_READ        PTE_EXECUTE /* EXECUTE implies READ on x64 */
-#define PTE_READWRITE           0x8000000000000002ULL
-#define PTE_WRITECOPY           0x8000000000000200ULL
+#define PTE_READWRITE           0x0000000000000002ULL
+#define PTE_WRITECOPY           0x0000000000000200ULL
 #define PTE_EXECUTE_READWRITE   0x0000000000000002ULL
 #define PTE_EXECUTE_WRITECOPY   0x0000000000000200ULL
 #define PTE_PROTOTYPE           0x0000000000000400ULL
