@@ -34,14 +34,13 @@ macro_rules! abi_cast {
     };
 }
 
-#[path = "ARM3/mod.rs"]
 pub mod ARM3;
 pub mod cc;
 pub mod dbgk;
 pub mod ex;
 pub mod fsrtl;
 pub mod inbv;
-// pub mod kd64; // Disabled: Rust KD64 causes recursive exception flood on amd64
+pub mod ke;
 pub mod lpc;
 pub mod mm;
 pub mod ob;
@@ -53,12 +52,12 @@ pub mod vdm;
 pub mod vf;
 pub mod wmi;
 
-// Arch-specific MM modules (Tier 4)
+// Arch-specific MM modules
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
 #[cfg(target_arch = "x86_64")]
 pub mod amd64;
 #[cfg(target_arch = "aarch64")]
 pub mod arm64;
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 pub mod arm;

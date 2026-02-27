@@ -184,12 +184,12 @@ VOID KiReleaseDispatcherLock(IN KIRQL OldIrql)
     _saved_KiReleaseDispatcherLock(OldIrql);
 }
 
-VOID KiAcquireThreadLock(IN PKTHREAD Thread)
+VOID NTAPI KiAcquireThreadLock(IN PKTHREAD Thread)
 {
     _saved_KiAcquireThreadLock(Thread);
 }
 
-VOID KiReleaseThreadLock(IN PKTHREAD Thread)
+VOID NTAPI KiReleaseThreadLock(IN PKTHREAD Thread)
 {
     _saved_KiReleaseThreadLock(Thread);
 }

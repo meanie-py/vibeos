@@ -196,7 +196,7 @@ def cmd_batch(args):
     results = submit_batch(prompts, model=model, system_prompt=system_prompt)
 
     # Assemble results
-    subsystem = dir_path.name
+    subsystem = args.subsystem if args.subsystem else dir_path.name
     module_names = []
     for filename, result in results.items():
         if result.success:
@@ -208,7 +208,9 @@ def cmd_batch(args):
 
     if module_names:
         generate_mod_rs(subsystem, module_names)
-        generate_lib_rs([subsystem])
+        # Only update lib.rs for top-level subsystems (not nested like ke/i386)
+        if '/' not in subsystem:
+            generate_lib_rs([subsystem])
         print(f"\nAssembled {len(module_names)} modules into ntoskrnl-rust/src/{subsystem}/", file=sys.stderr)
 
     # Report failures
@@ -665,6 +667,8 @@ def main():
     p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
     p.add_argument("--exclude", nargs="*", default=[],
                    help="File stems to skip (e.g., obhandle ob_rust_shims)")
+    p.add_argument("-s", "--subsystem", default=None,
+                   help="Override subsystem name (e.g., ke/i386 for nested arch dirs)")
 
     # check
     sub.add_parser("check", help="Run cargo check on all 3 targets")

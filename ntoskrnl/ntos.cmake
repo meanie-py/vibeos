@@ -185,32 +185,34 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdprint.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdtrap.c
     # Note: kd64_rust_shims.c is in PCH_SKIP_SOURCE (CMakeLists.txt), provides CC/FSRTL shims
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/apc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/balmgr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/bug.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/clock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/config.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/devqueue.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/dpc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/eventobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/except.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/freeze.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/gate.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/gmutex.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ipi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/krnlinit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/mutex.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/processor.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/procobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/profobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/queue.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/semphobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/spinlock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+    # Note: ke_rust_shims.c is in PCH_SKIP_SOURCE (CMakeLists.txt), provides KE FORCEINLINE shims
+    # ke/ — replaced by Rust (ntoskrnl-rust/src/ke/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/apc.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/balmgr.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/bug.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/clock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/config.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/devqueue.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/dpc.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/eventobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/except.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/freeze.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/gate.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/gmutex.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ipi.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/krnlinit.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/mutex.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/processor.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/procobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/profobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/queue.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/semphobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/spinlock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
     # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
@@ -377,20 +379,21 @@ if(ARCH STREQUAL "i386")
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/abios.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/cpu.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/context.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/exp.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/freeze.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/irqobj.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/kiinit.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/ldt.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/mtrr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/patpge.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/traphdlr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/v86vdm.c
+        # ke/i386/ — replaced by Rust (ntoskrnl-rust/src/ke/i386/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/abios.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/cpu.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/context.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/exp.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/freeze.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/irqobj.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/kiinit.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/ldt.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/mtrr.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/patpge.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/thrdini.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/traphdlr.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/usercall.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/v86vdm.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/procsup.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c (Rust)
@@ -411,24 +414,26 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust - shared in i386/page.rs)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/cpu.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/except.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/freeze.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/interrupt.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/ipi.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/irql.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/kiinit.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/krnlinit.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/spinlock.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
+        # ke/amd64/ — replaced by Rust (ntoskrnl-rust/src/ke/amd64/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/cpu.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/except.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/freeze.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/interrupt.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/ipi.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/irql.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/kiinit.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/krnlinit.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/spinlock.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/procsup.c (Rust)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
+        )
 elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
@@ -458,11 +463,12 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall_asm.S)
     list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
+        # ke/arm64/ — replaced by Rust (ntoskrnl-rust/src/ke/arm64/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
         )

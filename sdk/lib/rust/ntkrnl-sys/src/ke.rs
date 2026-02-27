@@ -65,37 +65,20 @@ pub struct KDPC {
 pub type PKDPC = *mut KDPC;
 
 // ============================================================================
-// KLOCK_QUEUE_HANDLE — queued spinlock handle
+// KLOCK_QUEUE_HANDLE — re-export full definition from ddk (bindgen)
 // ============================================================================
 
-/// Used by KeAcquireInStackQueuedSpinLock.
-/// Layout: LockQueue(KSPIN_LOCK_QUEUE) + OldIrql.
-/// KSPIN_LOCK_QUEUE: Next(ptr) + Lock(ptr) = 2*ptr
-/// Total: 2*ptr + 4 (KIRQL rounded up to alignment)
-#[cfg(target_pointer_width = "64")]
-#[repr(C, align(8))]
-pub struct KLOCK_QUEUE_HANDLE {
-    pub _opaque: [u8; 24],
-}
-
-#[cfg(target_pointer_width = "32")]
-#[repr(C, align(4))]
-pub struct KLOCK_QUEUE_HANDLE {
-    pub _opaque: [u8; 12],
-}
+// Re-export the full struct from ddk so all consumers can access fields.
+pub use super::ddk::_KLOCK_QUEUE_HANDLE as KLOCK_QUEUE_HANDLE;
 
 pub type PKLOCK_QUEUE_HANDLE = *mut KLOCK_QUEUE_HANDLE;
 
 // ============================================================================
-// KPRCB — Processor Control Block (opaque pointer only)
+// KPRCB — re-export full definition from ddk (bindgen)
 // ============================================================================
 
-/// KPRCB is extremely large and architecture-dependent.
-/// We only use it as a pointer; fields are accessed through helper functions.
-#[repr(C)]
-pub struct KPRCB {
-    _opaque: [u8; 0],
-}
+// Re-export the full struct from ddk so KE subsystem code can access fields.
+pub use super::ddk::_KPRCB as KPRCB;
 
 pub type PKPRCB = *mut KPRCB;
 
