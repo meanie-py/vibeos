@@ -41,10 +41,12 @@ extern "system" {
     pub static mut KeMaximumIncrement: ULONG;
     pub static mut KeMinimumIncrement: ULONG;
     pub static mut SeSystemtimePrivilege: LUID;
-    pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
     pub fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     pub fn PoNotifySystemTimeSet();
     pub fn ExGetPreviousMode() -> KPROCESSOR_MODE;
+}
+extern "C" {
+    pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
 #[repr(C)]

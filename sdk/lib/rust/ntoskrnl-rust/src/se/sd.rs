@@ -29,11 +29,6 @@ extern "system" {
     static SeUnrestrictedDacl: PACL;
     static SeSystemAnonymousLogonDacl: PACL;
     static SeWorldSid: PSID;
-
-    fn SepGetOwnerFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
-    fn SepGetGroupFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
-    fn SepGetDaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
-    fn SepGetSaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
     fn SepSelectAcl(
         ExplicitAcl: PACL,
         ExplicitPresent: BOOLEAN,
@@ -60,6 +55,13 @@ extern "system" {
     ) -> NTSTATUS;
     fn SeLockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
     fn SeUnlockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
+}
+extern "C" {
+
+    fn SepGetOwnerFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
+    fn SepGetGroupFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
+    fn SepGetDaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
+    fn SepGetSaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
 }
 
 #[no_mangle]

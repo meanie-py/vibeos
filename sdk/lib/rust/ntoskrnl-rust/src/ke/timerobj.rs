@@ -18,8 +18,10 @@ use ntkrnl_sys::ddk::{
     KiRemoveEntryTimer, KiExitDispatcher,
 };
 
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
+}
+extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
     fn KxInsertTimer(Timer: PKTIMER, Hand: ULONG);
     fn KxUnwaitThread(object: PVOID, increment: KPRIORITY);

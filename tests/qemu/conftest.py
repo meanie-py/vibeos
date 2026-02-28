@@ -41,7 +41,12 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[QemuVM]:
     vm.start()
     boot_output = vm.wait_for_boot()
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
-    vm.save_snapshot("ready")
+    try:
+        vm.save_snapshot("ready")
+    except RuntimeError:
+        # i386 has no scratch disk (FreeLDR crashes on unpartitioned disks)
+        # so savevm/loadvm are unavailable — tests run without snapshots
+        print("[pytest] savevm unavailable — tests will run without snapshots")
 
     yield vm
     vm.stop()
@@ -50,5 +55,8 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[QemuVM]:
 @pytest.fixture(autouse=True)
 def restore_vm(vm: QemuVM) -> Iterator[None]:
     """Restore to 'ready' snapshot before each test."""
-    vm.restore_snapshot("ready")
+    try:
+        vm.restore_snapshot("ready")
+    except RuntimeError:
+        pass  # No snapshot support (e.g. i386)
     yield

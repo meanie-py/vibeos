@@ -2019,12 +2019,39 @@ pub fn MI_PAGE_WRITE_COMBINED(pte: &mut MMPTE) {
 }
 
 /// KeGetCurrentThread — returns pointer to current ETHREAD
-#[inline]
+///
+/// On i386, reads fs:0x124 directly (KPCR.PrcbData.CurrentThread).
+/// On amd64, reads gs:0x188 directly (KPCR.CurrentPrcb→CurrentThread).
+/// On arm64, calls KeGetCurrentPrcb()→CurrentThread.
+/// This avoids the PsGetCurrentThread → KeGetCurrentThread → KeGetCurrentPrcb
+/// function call chain which is expensive in trap handlers.
+#[inline(always)]
 pub unsafe fn KeGetCurrentThread() -> PVOID {
-    extern "system" {
-        fn PsGetCurrentThread() -> PVOID;
+    #[cfg(target_arch = "x86")]
+    {
+        let result: PVOID;
+        core::arch::asm!(
+            "mov {}, fs:[0x124]",
+            out(reg) result,
+            options(nostack, preserves_flags, readonly),
+        );
+        result
     }
-    PsGetCurrentThread()
+    #[cfg(target_arch = "x86_64")]
+    {
+        let result: PVOID;
+        core::arch::asm!(
+            "mov {}, gs:[0x188]",
+            out(reg) result,
+            options(nostack, preserves_flags, readonly),
+        );
+        result
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        use crate::ke::KeGetCurrentPrcb;
+        (*KeGetCurrentPrcb()).CurrentThread as PVOID
+    }
 }
 
 /// MmLockSectionSegment / MmUnlockSectionSegment — ReactOS internal MM functions

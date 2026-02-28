@@ -14,7 +14,7 @@ use ntkrnl_sys::ddk::{
     KeInitializeDpc, KeInitializeEvent, KeInitializeProcess,
     KeInitializeSpinLock, KeSetPriorityThread, KeSetTargetProcessorDpc,
     KiAcquirePrcbLock, KiIdleLoop, KiInitSpinLocks,
-    KiReleasePrcbLock, KiSaveProcessorControlState, KiSystemStartup,
+    KiReleasePrcbLock, KiSaveProcessorControlState,
     KiTimerExpiration,
 };
 
@@ -170,6 +170,94 @@ unsafe fn KiInitModuleList(
 
         entry = (*entry).Flink;
     }
+}
+
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn KiSystemStartup(
+    LoaderBlock: PLOADER_PARAMETER_BLOCK,
+) -> ! {
+    // Direct PL011 UART write to confirm kernel entry (bypasses KD)
+    {
+        let uart = Arm64UartKernelBase as *mut ULONG;
+        let msg = b"[KERNEL] KiSystemStartup entered!\r\n";
+        for &b in msg {
+            core::ptr::write_volatile(uart, b as ULONG);
+        }
+    }
+
+    // Get the current CPU number
+    let Cpu = KeNumberProcessors;
+    KeNumberProcessors += 1;
+
+    // LoaderBlock initialization for Cpu 0
+    if Cpu == 0 {
+        KeLoaderBlock = LoaderBlock;
+        KiInitializeP0BootStructures(LoaderBlock);
+    }
+
+    // Get Pcr from loader block — CONTAINING_RECORD(LoaderBlock->Prcb, KIPCR, Prcb)
+    let Pcr = ((*LoaderBlock).Prcb as *mut u8)
+        .offset(-(core::mem::offset_of!(_KIPCR, Prcb) as isize))
+        as PKIPCR;
+
+    // Write PCR pointer to TPIDR_EL1 for KeGetPcr()
+    core::arch::asm!("msr tpidr_el1, {}", in(reg) Pcr as u64);
+
+    // Install ARM64 exception vector table (VBAR_EL1)
+    {
+        let vbar = KiArm64VectorTable.as_ptr() as u64;
+        core::arch::asm!("msr vbar_el1, {}", "isb", in(reg) vbar);
+
+        let uart = Arm64UartKernelBase as *mut ULONG;
+        let msg = b"[KERNEL] VBAR_EL1 installed\r\n";
+        for &b in msg {
+            core::ptr::write_volatile(uart, b as ULONG);
+        }
+    }
+
+    // Set the PRCB for this Processor
+    *KiProcessorBlock.as_mut_ptr().add(Cpu as usize) = core::ptr::addr_of_mut!((*Pcr).Prcb);
+
+    // Save the initial thread
+    let InitialThread = (*LoaderBlock).Thread as PKTHREAD;
+
+    // Set us as the current process
+    (*InitialThread).__bindgen_anon_1.ApcState.Process = (*LoaderBlock).Process as _;
+
+    // Initial setup for the boot CPU
+    if Cpu == 0 {
+        KeProcessorArchitecture = 12; // ARM64
+        KeProcessorLevel = 8;         // ARMv8
+        KeProcessorRevision = 0;
+
+        KiInitModuleList(LoaderBlock);
+    }
+
+    // Initialize the Processor with HAL
+    HalInitializeProcessor(Cpu as ULONG, KeLoaderBlock);
+
+    // Set processor as active
+    KeActiveProcessors |= 1usize << Cpu;
+
+    // Raise to HIGH_LEVEL
+    KfRaiseIrql(HIGH_LEVEL);
+
+    // Machine specific kernel initialization
+    if Cpu == 0 {
+        KiInitMachineDependent();
+    }
+
+    {
+        let uart = Arm64UartKernelBase as *mut ULONG;
+        let msg = b"[KERNEL] Switching to boot stack\r\n";
+        for &b in msg {
+            core::ptr::write_volatile(uart, b as ULONG);
+        }
+    }
+
+    // Switch to boot stack and continue initialization
+    KiSwitchToBootStack((*LoaderBlock).KernelStack as ULONG_PTR);
 }
 
 // CODE_SEG("INIT")
@@ -335,10 +423,11 @@ pub unsafe extern "system" fn KiInitializeKernel(
 #[allow(dead_code)]
 extern "system" {
     static mut KiProcessListHead: LIST_ENTRY;
-    static MAXULONG_PTR: ULONG_PTR;
-    static MAXCHAR: i8;
-    static HIGH_LEVEL: KIRQL;
 }
+
+// C macro constants — NOT extern variables
+const HIGH_LEVEL: KIRQL = 31;
+const MAXCHAR: i8 = 0x7f;
 
 #[repr(C)]
 struct _KDPC {

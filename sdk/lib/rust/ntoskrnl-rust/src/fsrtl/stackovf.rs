@@ -15,7 +15,7 @@ use ntkrnl_sys::ddk::{
     HANDLE,
 };
 
-extern "system" {
+extern "C" {
     fn ExInitializeWorkItem( Item: PWORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID, );
 }
 

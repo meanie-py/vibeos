@@ -355,6 +355,8 @@ pub unsafe extern "system" fn ExInitializePoolDescriptor(
 /// Initialize pool tracking tables and descriptors.
 #[no_mangle]
 pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: ULONG) {
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'P', options(nomem, nostack, preserves_flags));
     if pool_type == NonPagedPool {
         // Compute track table size
         let mut table_size = if PoolTrackTableSize < MmSizeOfNonPagedPoolInBytes >> 8 {
@@ -382,6 +384,8 @@ pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: UL
         }
 
         // Allocate tracker table
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Q', options(nomem, nostack, preserves_flags));
         loop {
             if (PoolTrackTableSize + 1)
                 > (usize::MAX / core::mem::size_of::<POOL_TRACKER_TABLE>())
@@ -418,6 +422,8 @@ pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: UL
             PoolTrackTableSize * core::mem::size_of::<POOL_TRACKER_TABLE>(),
         );
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'R', options(nomem, nostack, preserves_flags));
         ExpSeedHotTags();
 
         // Allocate big page tracker table

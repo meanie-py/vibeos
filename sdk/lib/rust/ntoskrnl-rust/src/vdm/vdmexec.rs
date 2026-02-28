@@ -10,6 +10,8 @@ extern "system" {
     static KeI386EFlagsOrMaskV86: ULONG;
     static KeI386VirtualIntExtensions: ULONG;
     fn Ki386AdjustEsp0(TrapFrame: PKTRAP_FRAME);
+}
+extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

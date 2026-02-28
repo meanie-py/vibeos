@@ -14,19 +14,30 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     static mut KiProcessorBlock: [*mut _KPRCB; 0];
     static mut KiTimerTableListHead: [u8; 0];
     static mut KeNumberProcessors: ULONG;
     static mut KeTickCount: LARGE_INTEGER;
     static mut KiIdleSummary: ULONG_PTR;
+    fn KiInsertTreeTimer(Timer: PKTIMER, Interval: LARGE_INTEGER) -> BOOLEAN;
+    fn KiSwapContext(WaitIrql: KIRQL, Thread: PKTHREAD);
+    fn KiProcessDeferredReadyList(Prcb: PKPRCB);
+    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
+    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
+    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
+    fn _enable();
+    fn _disable();
+}
+extern "C" {
+    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
+}
+extern "C" {
     fn KiAcquireDispatcherLock() -> KIRQL;
     fn KiReleaseDispatcherLock(OldIrql: KIRQL);
     fn KiAcquireTimerLock(Index: ULONG) -> PKSPIN_LOCK_QUEUE;
     fn KiReleaseTimerLock(LockQueue: PKSPIN_LOCK_QUEUE);
     fn KiRemoveEntryTimer(Timer: PKTIMER);
-    fn KiInsertTreeTimer(Timer: PKTIMER, Interval: LARGE_INTEGER) -> BOOLEAN;
     fn KxUnwaitThread(Object: PVOID, Increment: LONG);
     fn KxUnwaitThreadForEvent(Event: PKEVENT, Increment: LONG);
     fn KiAcquirePrcbLock(Prcb: PKPRCB);
@@ -37,13 +48,6 @@ extern "system" {
     fn KiSelectReadyThread(Priority: LONG, Prcb: PKPRCB) -> PKTHREAD;
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
-    fn KiSwapContext(WaitIrql: KIRQL, Thread: PKTHREAD);
-    fn KiProcessDeferredReadyList(Prcb: PKPRCB);
-    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
-    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
-    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
-    fn _enable();
-    fn _disable();
 }
 
 const TIMER_TABLE_SIZE: ULONG = 256;
@@ -106,7 +110,7 @@ unsafe fn KiCheckTimerTable(CurrentTime: ULARGE_INTEGER) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiTimerExpiration(
+pub unsafe extern "system" fn KiTimerExpiration(
     Dpc: PKDPC,
     DeferredContext: PVOID,
     SystemArgument1: PVOID,

@@ -32,6 +32,7 @@ pub mod base;
 pub mod constants;
 pub mod ex;
 pub mod globals;
+pub mod inline;
 pub mod interlocked;
 pub mod ke;
 pub mod macros;
@@ -97,3 +98,6 @@ mod size_check_amd64;
 
 #[cfg(target_arch = "x86")]
 mod size_check_i386;
+
+// Inline function field offset verification (all arches)
+mod offset_check_inline;

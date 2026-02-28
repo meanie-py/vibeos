@@ -24,8 +24,6 @@ use ntkrnl_sys::ddk::{
 extern "system" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
     fn RtlFillMemory(destination: PVOID, length: SIZE_T, fill: UCHAR);
-    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
-    fn ExFreeToNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST, entry: PVOID);
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn ExInitializeNPagedLookasideList(
@@ -44,6 +42,10 @@ extern "system" {
         SectionOffset: PLARGE_INTEGER,
         Flags: usize,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST, entry: PVOID);
 }
 
 type INT = i32;
@@ -149,13 +151,15 @@ struct LazyWriterStruct {
 static mut LazyWriter: LazyWriterStruct = LazyWriterStruct { ScanActive: 0 };
 
 extern "system" {
-    fn CcScheduleLazyWriteScan(wait: BOOLEAN);
     fn FsRtlAcquireFileForCcFlushEx(file_object: PFILE_OBJECT) -> NTSTATUS;
     fn FsRtlReleaseFileForCcFlush(file_object: PFILE_OBJECT);
     fn ARM64_UART_TRACE(msg: *const u8);
     static mut MmThrottleTop: ULONG;
     static mut MmThrottleBottom: ULONG;
     static mut MmModifiedPageListHead: MMPFNLIST;
+}
+extern "C" {
+    fn CcScheduleLazyWriteScan(wait: BOOLEAN);
 }
 
 unsafe fn IsPointInRange(start: LONGLONG, length: ULONG, point: LONGLONG) -> BOOLEAN {
@@ -407,7 +411,7 @@ unsafe fn CcRosDeleteFileCache(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosFlushDirtyPages(
+pub unsafe extern "C" fn CcRosFlushDirtyPages(
     target: ULONG,
     count: *mut ULONG,
     wait: BOOLEAN,
@@ -937,7 +941,7 @@ pub unsafe extern "system" fn CcRosEnsureVacbResident(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosGetVacb(
+pub unsafe extern "C" fn CcRosGetVacb(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     file_offset: LONGLONG,
     vacb: *mut PROS_VACB

@@ -14,10 +14,14 @@ extern "system" {
     fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
     fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
     fn KdReceivePacket( packet_type: ULONG, message_header: PVOID, message_data: PVOID, data_length: *mut ULONG, context: PVOID, ) -> ULONG;
-    fn KeDisableInterrupts() -> BOOLEAN;
-    fn KeRestoreInterrupts(enable: BOOLEAN);
+}
+extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
+}
+extern "C" {
+    fn KeDisableInterrupts() -> BOOLEAN;
+    fn KeRestoreInterrupts(enable: BOOLEAN);
 }
 
 #[repr(C)]

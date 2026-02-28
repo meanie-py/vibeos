@@ -60,8 +60,6 @@ extern "system" {
         ParseContext: PVOID,
         Object: *mut PVOID,
     ) -> NTSTATUS;
-    fn ObReferenceObject(Object: PVOID);
-    fn PsGetCurrentProcess() -> PEPROCESS;
     fn PsReferencePrimaryToken(Process: PEPROCESS) -> PTOKEN;
     fn PsDereferencePrimaryToken(Token: PTOKEN);
     fn SeCreateClientSecurity(
@@ -84,10 +82,8 @@ extern "system" {
         CapturedSid: *mut PSID,
     ) -> NTSTATUS;
     fn SepReleaseSid(Sid: PSID, AccessMode: KPROCESSOR_MODE, CaptureIfKernel: BOOLEAN);
-    fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-    fn ProbeForWriteUlong(Address: *mut ULONG);
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
     fn MmMapViewOfSection(
         Section: PVOID,
@@ -101,14 +97,8 @@ extern "system" {
         AllocationType: ULONG,
         Win32Protect: ULONG,
     ) -> NTSTATUS;
-    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn LpcpInitializePortQueue(Port: PLPCP_PORT_OBJECT) -> NTSTATUS;
-    fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
     fn KeSetEvent(Event: PVOID, Increment: LONG, Wait: BOOLEAN) -> LONG;
-    fn LpcpCompleteWait(Semaphore: PVOID);
-    fn KeEnterCriticalRegion();
-    fn KeLeaveCriticalRegion();
-    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
     fn KeReadStateSemaphore(Semaphore: PVOID) -> LONG;
     fn KeWaitForSingleObject(
         Object: PVOID,
@@ -117,6 +107,18 @@ extern "system" {
         Alertable: BOOLEAN,
         Timeout: *mut LARGE_INTEGER,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn ObReferenceObject(Object: PVOID);
+    fn PsGetCurrentProcess() -> PEPROCESS;
+    fn ProbeForWriteHandle(Address: PHANDLE);
+    fn ProbeForWriteUlong(Address: *mut ULONG);
+    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
+    fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
+    fn LpcpCompleteWait(Semaphore: PVOID);
+    fn KeEnterCriticalRegion();
+    fn KeLeaveCriticalRegion();
+    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
 }
 
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;

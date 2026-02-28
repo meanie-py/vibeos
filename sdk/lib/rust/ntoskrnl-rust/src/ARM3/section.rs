@@ -336,7 +336,6 @@ struct _MEMORY_SECTION_NAME {
 }
 
 extern "system" {
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
     pub fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn MmSetPageEntrySectionSegment(
         Segment: PVOID, Offset: *const u64, Entry: ULONG_PTR,
@@ -375,6 +374,9 @@ extern "system" {
     );
     fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR;
     fn MA_GetEndingAddress(marea: PVOID) -> ULONG_PTR;
+}
+extern "C" {
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
 }
 
 #[no_mangle]
@@ -930,7 +932,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MiMapViewInSystemSpace(
+pub unsafe extern "system" fn MiMapViewInSystemSpace(
     section: PVOID,
     session: *mut MMSESSION,
     mapped_base: *mut PVOID,

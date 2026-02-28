@@ -169,46 +169,9 @@ LONGLONG NTAPI InterlockedExchangeAdd64(volatile LONGLONG *Addend, LONGLONG Valu
 }
 
 /* ========================================================================
- * KE dispatcher/thread lock functions (ke_x.h FORCEINLINE)
- *
- * Bindgen declares these as extern "C" (cdecl) — no NTAPI.
+ * KE dispatcher/thread lock functions moved to ke/ke_rust_shims.c
+ * (canonical location). Do not duplicate here.
  * ======================================================================== */
-
-KIRQL KiAcquireDispatcherLock(VOID)
-{
-    return _saved_KiAcquireDispatcherLock();
-}
-
-VOID KiReleaseDispatcherLock(IN KIRQL OldIrql)
-{
-    _saved_KiReleaseDispatcherLock(OldIrql);
-}
-
-VOID NTAPI KiAcquireThreadLock(IN PKTHREAD Thread)
-{
-    _saved_KiAcquireThreadLock(Thread);
-}
-
-VOID NTAPI KiReleaseThreadLock(IN PKTHREAD Thread)
-{
-    _saved_KiReleaseThreadLock(Thread);
-}
-
-/* ========================================================================
- * Spinlock acquire/release (spinlock.h FORCEINLINE)
- *
- * Bindgen declares these as extern "C" (cdecl) — no NTAPI.
- * ======================================================================== */
-
-VOID KxAcquireSpinLock(IN PKSPIN_LOCK SpinLock)
-{
-    _saved_KxAcquireSpinLock(SpinLock);
-}
-
-VOID KxReleaseSpinLock(IN PKSPIN_LOCK SpinLock)
-{
-    _saved_KxReleaseSpinLock(SpinLock);
-}
 
 /* ========================================================================
  * PopEntryList (rtlfuncs.h FORCEINLINE)

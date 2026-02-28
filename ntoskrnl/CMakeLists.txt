@@ -44,13 +44,9 @@ list(APPEND PCH_SKIP_SOURCE
     guid.c)
 
 list(APPEND PCH_SKIP_SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/ex_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kd64_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/tier1_rust_shims.c)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
@@ -86,6 +82,14 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/pool/src/globals.rs
             ${RUST_WORKSPACE_DIR}/pool/src/types.rs
             ${RUST_WORKSPACE_DIR}/pool/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/shim_exports.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mod.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/se.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/common.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ke.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mm.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ex.rs
+            ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/ob.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ob/obhandle.rs

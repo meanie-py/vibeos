@@ -15,7 +15,7 @@ use ntkrnl_sys::ddk::{
 // KeGetPcr: FORCEINLINE on i386 (fs:[0x1c]), extern on amd64/arm64
 // Need a shim for i386 — provide via ke_rust_shims.c
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "C" {
     fn KeGetPcr() -> *mut ntkrnl_sys::ddk::_KPCR;
 }
 #[cfg(not(target_arch = "x86"))]
@@ -24,8 +24,10 @@ use ntkrnl_sys::ddk::KeGetPcr;
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForRead(address: PVOID, length: usize, alignment: ULONG);
-    fn KiGetLinkedTrapFrame(TrapFrame: PKTRAP_FRAME) -> PKTRAP_FRAME;
     fn KiDispatchException(ExceptionRecord: PEXCEPTION_RECORD, ExceptionFrame: PKEXCEPTION_FRAME, TrapFrame: PKTRAP_FRAME, PreviousMode: KPROCESSOR_MODE, SearchFrames: BOOLEAN);
+}
+extern "C" {
+    fn KiGetLinkedTrapFrame(TrapFrame: PKTRAP_FRAME) -> PKTRAP_FRAME;
 }
 
 const EXCEPTION_MAXIMUM_PARAMETERS: ULONG = 15;

@@ -115,12 +115,18 @@ const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x00000020;
 const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 512;
 
 extern "system" {
+    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
+    fn DbgkpSuspendProcess() -> BOOLEAN;
+    fn DbgkpResumeProcess();
+    fn DbgkpSectionToFileHandle(section: PVOID) -> HANDLE;
+    static mut PsThreadType: POBJECT_TYPE;
+}
+extern "C" {
     fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID) -> PVOID;
     fn ProbeForWriteHandle(ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(ptr: *const LARGE_INTEGER);
     fn ProbeForWriteUlong(ptr: *mut ULONG);
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn DefaultSetInfoBufferCheck(
         OperationClass: ULONG,
         ClassList: *const _INFORMATION_CLASS_INFO,
@@ -132,14 +138,10 @@ extern "system" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
-    fn DbgkpSuspendProcess() -> BOOLEAN;
-    fn DbgkpResumeProcess();
-    fn DbgkpSectionToFileHandle(section: PVOID) -> HANDLE;
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn PsGetCurrentThread() -> PETHREAD;
     fn NtCurrentProcess() -> HANDLE;
-    static mut PsThreadType: POBJECT_TYPE;
 }
 
 #[no_mangle]

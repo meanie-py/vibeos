@@ -21,23 +21,27 @@ extern "system" {
     static mut SeDebugPrivilege: LUID;
 
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn ExGetPreviousMode() -> KPROCESSOR_MODE;
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
-
-    fn PspSetCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
     // PspRunCreateThreadNotifyRoutines: imported via ddk::* (bindgen extern "C")
     fn PspTerminateThreadByPointer(Thread: PETHREAD, ExitStatus: NTSTATUS, DirectTerminate: BOOLEAN);
     fn PsLookupProcessThreadByCid(Cid: PCLIENT_ID, Process: *mut PEPROCESS, Thread: *mut PETHREAD) -> NTSTATUS;
     fn PsReferencePrimaryToken(Process: PEPROCESS) -> PACCESS_TOKEN;
-    fn ObpValidateAttributes(Attributes: ULONG, PreviousMode: KPROCESSOR_MODE) -> ULONG;
+
+    static mut PspSystemDllEntryPoint: PVOID;
+    static mut PspSystemDllBase: PVOID;
+}
+extern "C" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
+
+    fn PspSetCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
     fn KeGetExceptionFrame(Thread: *mut _KTHREAD) -> PKEXCEPTION_FRAME;
     fn KeGetTrapFrame(Thread: *mut _KTHREAD) -> PKTRAP_FRAME;
     fn KeLowerIrql(NewIrql: KIRQL);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-
-    static mut PspSystemDllEntryPoint: PVOID;
-    static mut PspSystemDllBase: PVOID;
+}
+extern "C" {
+    fn ObpValidateAttributes(Attributes: ULONG, PreviousMode: KPROCESSOR_MODE) -> ULONG;
 }
 
 // FORCEINLINE functions provided by ps_rust_shims.c as __cdecl

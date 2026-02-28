@@ -16,10 +16,12 @@ extern "system" {
 extern "system" {
     static mut PspBootAccessToken: PTOKEN;
     fn SeAssignPrimaryToken(Process: PEPROCESS, Token: PTOKEN);
+    fn ExGetPreviousMode() -> KPROCESSOR_MODE;
+}
+extern "C" {
     // PspLock/Unlock functions: imported via ddk::* (bindgen extern "C")
     fn PspClearCrossThreadFlag(Thread: PETHREAD, Flag: ULONG) -> LONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
-    fn ExGetPreviousMode() -> KPROCESSOR_MODE;
 }
 
 const TAG_PS_IMPERSONATION: ULONG = 0x70496D49;

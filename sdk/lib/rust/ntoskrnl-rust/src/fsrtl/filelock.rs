@@ -36,12 +36,12 @@ unsafe fn FsRtlCompleteRequest(Irp: ntkrnl_sys::ddk::PIRP, Status: NTSTATUS) {
     IofCompleteRequest(Irp, 1); // IO_DISK_INCREMENT
 }
 
-extern "system" {
+extern "C" {
     fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 

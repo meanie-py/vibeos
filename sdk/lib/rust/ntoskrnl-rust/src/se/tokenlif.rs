@@ -18,21 +18,7 @@ extern "system" {
     static mut SeAliasAdminsSid: PSID;
     static mut SeCreateTokenPrivilege: LUID;
     static mut KiInitialProcess: _EPROCESS;
-    
-    fn SepCreateTokenLock(Token: PTOKEN) -> NTSTATUS;
-    fn SepRmReferenceLogonSession(AuthenticationId: PLUID) -> NTSTATUS;
     fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) -> NTSTATUS;
-    fn SepUpdatePrivilegeFlagsToken(Token: PTOKEN);
-    fn SepFindPrimaryGroupAndDefaultOwner(
-        Token: PTOKEN,
-        PrimaryGroup: PSID,
-        Owner: PSID,
-        PrimaryGroupIndex: *mut ULONG,
-        DefaultOwnerIndex: *mut ULONG,
-    ) -> NTSTATUS;
-    fn SepUpdateSinglePrivilegeFlagToken(Token: PTOKEN, Index: ULONG);
-    fn SepRemovePrivilegeToken(Token: PTOKEN, Index: ULONG);
-    fn SepRemoveUserGroupToken(Token: PTOKEN, Index: ULONG);
     fn SeCaptureSidAndAttributesArray(
         SrcSidAndAttributes: PSID_AND_ATTRIBUTES,
         Count: ULONG,
@@ -104,8 +90,26 @@ extern "system" {
     );
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
+extern "C" {
     fn SepAcquireTokenLockShared(Token: PTOKEN);
     fn SepReleaseTokenLock(Token: PTOKEN);
+}
+extern "C" {
+    
+    fn SepCreateTokenLock(Token: PTOKEN) -> NTSTATUS;
+    fn SepRmReferenceLogonSession(AuthenticationId: PLUID) -> NTSTATUS;
+    fn SepUpdatePrivilegeFlagsToken(Token: PTOKEN);
+    fn SepFindPrimaryGroupAndDefaultOwner(
+        Token: PTOKEN,
+        PrimaryGroup: PSID,
+        Owner: PSID,
+        PrimaryGroupIndex: *mut ULONG,
+        DefaultOwnerIndex: *mut ULONG,
+    ) -> NTSTATUS;
+    fn SepUpdateSinglePrivilegeFlagToken(Token: PTOKEN, Index: ULONG);
+    fn SepRemovePrivilegeToken(Token: PTOKEN, Index: ULONG);
+    fn SepRemoveUserGroupToken(Token: PTOKEN, Index: ULONG);
 }
 
 const SE_TOKEN_DYNAMIC_SLIM: ULONG = 500;

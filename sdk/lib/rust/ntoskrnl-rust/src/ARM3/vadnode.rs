@@ -28,7 +28,6 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
     static mut MiRosKernelVadRoot: MM_AVL_TABLE;
     static mut MmSectionBasedRoot: MM_AVL_TABLE;
     static mut MmSectionBasedMutex: KGUARDED_MUTEX;
@@ -42,6 +41,9 @@ extern "system" {
     fn RtlIsRightChildAvl(Node: PMMADDRESS_NODE) -> BOOLEAN;
     fn RtlIsLeftChildAvl(Node: PMMADDRESS_NODE) -> BOOLEAN;
     fn MI_WS_OWNER(Process: PEPROCESS) -> BOOLEAN;
+}
+extern "C" {
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 
 

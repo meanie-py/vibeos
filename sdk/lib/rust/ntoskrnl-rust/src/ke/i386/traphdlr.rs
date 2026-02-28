@@ -38,13 +38,13 @@ extern "system" {
     fn KiCheckForApcDelivery(TrapFrame: PKTRAP_FRAME);
     fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
     fn KiGetThreadNpxArea(Thread: PKTHREAD) -> PFX_SAVE_AREA;
-    fn KeGetTrapFrame(Thread: PKTHREAD) -> PKTRAP_FRAME;
     fn KiFillTrapFrameDebug(TrapFrame: PKTRAP_FRAME);
     fn KiHandleDebugRegistersOnTrapEntry(TrapFrame: PKTRAP_FRAME);
     fn KiHandleDebugRegistersOnTrapExit(TrapFrame: PKTRAP_FRAME);
     fn KiExitTrapDebugChecks(TrapFrame: PKTRAP_FRAME, SkipPreviousMode: BOOLEAN);
     fn KiExitSystemCallDebugChecks(Id: ULONG, TrapFrame: PKTRAP_FRAME);
     fn KiConvertToGuiThread() -> NTSTATUS;
+    #[link_name = "KeGdiFlushUserBatch_call"]
     fn KeGdiFlushUserBatch();
     fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
     fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
@@ -53,11 +53,16 @@ extern "system" {
     // Intrinsics (provided as stdcall asm stubs in ke_rust_shims.c)
     fn _disable();
     fn _enable();
+    fn __readeflags() -> ULONG;
+    fn __writeeflags(val: ULONG);
+}
+extern "C" {
+    fn KeGetTrapFrame(Thread: PKTHREAD) -> PKTRAP_FRAME;
+}
+extern "C" {
     fn __readcr0() -> ULONG;
     fn __writecr0(val: ULONG);
     fn __readcr2() -> ULONG_PTR;
-    fn __readeflags() -> ULONG;
-    fn __writeeflags(val: ULONG);
 }
 // Assembly labels from trap.s — cdecl decoration
 extern "C" {
@@ -83,8 +88,10 @@ extern "fastcall" {
     fn KiDispatchException0Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
     fn KiDispatchException1Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, Param1: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
     fn KiDispatchException2Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, Param1: ULONG, Param2: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
-    fn KiSystemCallTrampoline(Handler: PVOID, Arguments: PVOID, StackBytes: ULONG) -> NTSTATUS;
     fn Ke386LoadFpuState(SaveArea: PFX_SAVE_AREA);
+}
+extern "system" {
+    fn KiSystemCallTrampoline(Handler: PVOID, Arguments: PVOID, StackBytes: ULONG) -> NTSTATUS;
 }
 
 static KiTrapPrefixTable: [UCHAR; 11] = [

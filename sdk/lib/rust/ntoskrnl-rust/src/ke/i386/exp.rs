@@ -63,7 +63,6 @@ extern "system" {
     static mut KdIgnoreUmExceptions: BOOLEAN;
     static mut KeUserExceptionDispatcher: PVOID;
     static mut KeRaiseUserExceptionDispatcher: PVOID;
-    fn KeGetPcr() -> *mut KPCR;
     fn Ke386SanitizeFlags(Flags: ULONG, Mode: KPROCESSOR_MODE) -> ULONG;
     fn Ke386SanitizeSeg(Seg: ULONG, Mode: KPROCESSOR_MODE) -> ULONG;
     fn KiFlushNPXState(SaveArea: *mut FLOATING_SAVE_AREA);
@@ -75,6 +74,9 @@ extern "system" {
     fn _disable();
     fn ExpInterlockedPopEntrySListFault();
     fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
+}
+extern "C" {
+    fn KeGetPcr() -> *mut KPCR;
 }
 
 #[repr(C)]

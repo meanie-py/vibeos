@@ -34,10 +34,14 @@ extern "system" {
 const FSRTL_FAST_IO_TOP_LEVEL_IRP: ULONG_PTR = 0x04;
 
 extern "system" {
+    fn FsRtlIsNtstatusExpected(Status: NTSTATUS) -> BOOLEAN;
+}
+extern "fastcall" {
+    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+extern "C" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
-    fn FsRtlIsNtstatusExpected(Status: NTSTATUS) -> BOOLEAN;
-    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 #[inline(always)]

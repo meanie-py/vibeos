@@ -26,7 +26,7 @@ use ntkrnl_sys::ddk::{
 
 pub const MAX_FAST_REFS: LONG = 7;
 
-extern "system" {
+extern "C" {
     static mut PsThreadType: POBJECT_TYPE;
     fn PsGetCurrentThread() -> *mut _ETHREAD;
 }

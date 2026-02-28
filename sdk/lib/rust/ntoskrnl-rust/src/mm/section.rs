@@ -138,7 +138,6 @@ extern "system" {
     fn FsRtlReleaseFileForModWrite(FileObject: PFILE_OBJECT, Resource: PERESOURCE);
     fn FsRtlAcquireToCreateMappedSection(FileObject: PFILE_OBJECT, SectionPageProtection: ULONG) -> NTSTATUS;
     fn ObDereferenceObject(Object: PVOID);
-    fn ObReferenceObject(Object: PVOID);
     fn MmFreePageTablesSectionSegment(
         Segment: PMM_SECTION_SEGMENT, FreePage: Option<unsafe extern "C" fn(PMM_SECTION_SEGMENT, *mut LARGE_INTEGER)>,
     );
@@ -148,11 +147,14 @@ extern "system" {
     fn MmBuildMdlFromPages(Mdl: *mut MDL, Pages: *const PFN_NUMBER);
     fn MmUnmapLockedPages(MappedSystemVa: PVOID, Mdl: *mut MDL);
     fn MmReleasePageMemoryConsumer(Type: ULONG, Page: ULONG_PTR);
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
     fn MmGetSavedSwapEntryPage(Page: ULONG_PTR) -> ULONG_PTR;
     fn MmSetSavedSwapEntryPage(Page: ULONG_PTR, SwapEntry: ULONG_PTR);
     fn MmFreeSwapPage(SwapEntry: ULONG_PTR);
+}
+extern "C" {
+    fn ObReferenceObject(Object: PVOID);
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
 }
 
 // Inline implementations for intrinsics/safe-math (no C symbols available)
@@ -408,13 +410,13 @@ fn WRITE_SSE(sse: ULONG_PTR) -> ULONG_PTR {
     sse | 0x4
 }
 
-#[inline]
-unsafe fn MA_GetStartingAddress(ma: PMEMORY_AREA) -> ULONG_PTR {
+#[no_mangle]
+pub unsafe extern "C" fn MA_GetStartingAddress(ma: PMEMORY_AREA) -> ULONG_PTR {
     ((*ma).VadNode.StartingVpn as ULONG_PTR) << PAGE_SHIFT
 }
 
-#[inline]
-unsafe fn MA_GetEndingAddress(ma: PMEMORY_AREA) -> ULONG_PTR {
+#[no_mangle]
+pub unsafe extern "C" fn MA_GetEndingAddress(ma: PMEMORY_AREA) -> ULONG_PTR {
     (((*ma).VadNode.EndingVpn as ULONG_PTR) + 1) << PAGE_SHIFT
 }
 
@@ -1090,7 +1092,7 @@ pub unsafe extern "system" fn MmMapViewInSystemSpaceEx(
     SectionOffset: PLARGE_INTEGER,
     _Flags: ULONG_PTR,
 ) -> NTSTATUS {
-    extern "system" {
+    extern "C" {
     fn MmGetKernelAddressSpace() -> *mut core::ffi::c_void;
     fn MmLockAddressSpace(AddressSpace: *mut core::ffi::c_void);
     fn MmUnlockAddressSpace(AddressSpace: *mut core::ffi::c_void);
@@ -1781,7 +1783,7 @@ extern "C" {
     fn MmGetAddressSpaceOwner(AddressSpace: PVOID) -> PEPROCESS;
 }
 
-extern "system" {
+extern "C" {
     fn InterlockedIncrementUL(Addend: *mut ULONG) -> ULONG;
 }
 

@@ -76,14 +76,16 @@ extern "system" {
     fn KdEnterDebugger(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
     fn KdExitDebugger(Enable: BOOLEAN);
     fn KdpReportExceptionStateChange( ExceptionRecord: PEXCEPTION_RECORD, ContextRecord: PCONTEXT, SecondChanceException: BOOLEAN, ) -> BOOLEAN;
-    fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
-    fn KeSetContextPc(Context: PCONTEXT, ProgramCounter: ULONG_PTR);
-    fn KeSetContextReturnRegister(Context: PCONTEXT, ReturnValue: ULONG_PTR);
     fn KdpPrint( ComponentId: ULONG, Level: ULONG, String: PCHAR, Length: USHORT, PreviousMode: KPROCESSOR_MODE, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, Handled: *mut BOOLEAN, ) -> NTSTATUS;
     fn KdpPrompt( PromptString: PCHAR, PromptLength: USHORT, ResponseString: PCHAR, ResponseLength: USHORT, PreviousMode: KPROCESSOR_MODE, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, ) -> USHORT;
     fn KdpSymbol( SymbolPath: PSTRING, SymbolInfo: PKD_SYMBOLS_INFO, Unload: BOOLEAN, PreviousMode: KPROCESSOR_MODE, ContextRecord: PCONTEXT, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, );
     fn KdpCommandString( CommandString: PSTRING, ResponseString: PSTRING, PreviousMode: KPROCESSOR_MODE, ContextRecord: PCONTEXT, TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME, );
     fn KdEnableDebugger() -> NTSTATUS;
+}
+extern "C" {
+    fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
+    fn KeSetContextPc(Context: PCONTEXT, ProgramCounter: ULONG_PTR);
+    fn KeSetContextReturnRegister(Context: PCONTEXT, ReturnValue: ULONG_PTR);
 }
 #[no_mangle]
 pub unsafe extern "system" fn KdpReport(

@@ -352,8 +352,15 @@ pub unsafe fn safe_copy_to_user(
 // Classifier data: 27 ObDereferenceObject, 20 ExFreePool*, 14 IopCleanup,
 // 2 IoFreeIrp, 1 KeReleaseMutex across 52 CLEANUP handlers kernel-wide.
 
-extern "system" {
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
     fn ObfDereferenceObject(Object: PVOID) -> ULONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ObfDereferenceObject(Object: PVOID) -> ULONG;
+}
+extern "system" {
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
 }
 

@@ -1,7 +1,7 @@
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 
-extern "system" {
+extern "C" {
     fn SepAcquireTokenLockShared(Token: PTOKEN);
     fn SepReleaseTokenLock(Token: PTOKEN);
 }

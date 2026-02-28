@@ -69,7 +69,7 @@ extern "C" {
 // On amd64/arm64 it reads SharedSystemTime. We declare it extern on i386
 // and provide a stub on other architectures that calls KeQueryInterruptTime.
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 

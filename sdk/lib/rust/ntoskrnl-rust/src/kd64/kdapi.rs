@@ -158,13 +158,10 @@ extern "system" {
     fn KdpSysWriteIoSpace(interface_type: ULONG, bus_number: ULONG, address_space: ULONG, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
     fn KdpSysCheckLowMemory(flags: ULONG) -> NTSTATUS;
     fn KdpGetStateChange(state: PDBGKD_MANIPULATE_STATE64, context: PCONTEXT);
-    fn KeGetContextPc(context: PCONTEXT) -> ULONG_PTR;
     fn KdpSetContextState(state: PDBGKD_ANY_WAIT_STATE_CHANGE, context: PCONTEXT);
-    fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
     fn KdSave(flag: BOOLEAN);
     fn KdRestore(flag: BOOLEAN);
     fn KdpPortUnlock();
-    fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
     fn KdInitSystem(phase: ULONG, loader_block: PVOID) -> BOOLEAN;
     fn KdpRestoreAllBreakpoints();
     fn KdpAllowDisable() -> NTSTATUS;
@@ -173,11 +170,18 @@ extern "system" {
     fn KdD0Transition();
     fn KdD3Transition();
     fn KxSwitchKdProcessor(index: USHORT) -> ULONG;
-    fn PspDumpThreads(system: BOOLEAN);
     fn KeGetCurrentThread() -> PVOID;
+    fn KdpPortLock();
+}
+extern "C" {
+    fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
+    fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
+    fn PspDumpThreads(system: BOOLEAN);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
-    fn KdpPortLock();
+}
+extern "C" {
+    fn KeGetContextPc(context: PCONTEXT) -> ULONG_PTR;
 }
 
 const PACKET_TYPE_KD_STATE_MANIPULATE: ULONG = 2;

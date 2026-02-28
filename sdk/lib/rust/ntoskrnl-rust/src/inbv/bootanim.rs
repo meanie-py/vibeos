@@ -44,7 +44,7 @@ use ntkrnl_sys::ddk::{
 const MM_READONLY: ULONG_PTR = 1;
 const MM_READWRITE: ULONG_PTR = 4;
 
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 

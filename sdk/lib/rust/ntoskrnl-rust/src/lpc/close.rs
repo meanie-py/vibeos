@@ -17,7 +17,7 @@ use ntkrnl_sys::ddk::{
     _SECURITY_CLIENT_CONTEXT,
 };
 
-extern "system" {
+extern "C" {
     static mut LpcpLock: KGUARDED_MUTEX;
     static mut LpcpMessagesLookaside: ntkrnl_sys::ddk::PAGED_LOOKASIDE_LIST;
     fn PsGetCurrentProcess() -> PEPROCESS;

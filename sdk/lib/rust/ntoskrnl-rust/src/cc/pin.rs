@@ -13,7 +13,7 @@ use ntkrnl_sys::ddk::{
     MmMakeSegmentDirty, PsGetCurrentThread,
 };
 
-extern "system" {
+extern "C" {
     static mut iBcbLookasideList: _NPAGED_LOOKASIDE_LIST;
     fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST, entry: PVOID);

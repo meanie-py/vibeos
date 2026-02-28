@@ -14,7 +14,7 @@ use ntkrnl_sys::ddk::{ACCESS_ALLOWED_ACE, ACL, ExInitializePushLock, KEVENT, KeF
 use ntkrnl_sys::ddk::MiMapPfnDatabase;
 use super::helpers::*;
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID /* *mut _UNICODE_STRING */, a: ULONG, r: HANDLE, s: *mut _SECURITY_DESCRIPTOR, );
 }
 
@@ -1472,6 +1472,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
     #[cfg(target_arch = "aarch64")]
     _A3_TRACE!(b"[MM] MmArmInitSystem entered\r\n");
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'[', options(nomem, nostack, preserves_flags));
 
     if MiDbgEnableMdDump != 0 {
         MiDbgDumpMemoryDescriptors();
@@ -1491,6 +1493,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MiScanMemoryDescriptors(loader_block);
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiScanMemoryDescriptors done\r\n");
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b']', options(nomem, nostack, preserves_flags));
 
         KeInitializeEvent(
             core::ptr::addr_of_mut!(MiTempEvent),
@@ -1525,7 +1529,11 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MmBootImageSize = (MmBootImageSize + PDE_MAPPED_VA - 1) & !(PDE_MAPPED_VA - 1);
 
         MiInitializeSessionSpaceLayout();
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'\\', options(nomem, nostack, preserves_flags));
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'(', options(nomem, nostack, preserves_flags));
         MmHighSectionBase =
             ((MmHighestUserAddress as ULONG_PTR) - 0x800000) as PVOID;
 
@@ -1536,12 +1544,16 @@ pub unsafe extern "system" fn MmArmInitSystem(
             MmStandbyPageListByPriority[i as usize].Blink = MM_EMPTY_LIST;
         }
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b')', options(nomem, nostack, preserves_flags));
         InitializeListHead(core::ptr::addr_of_mut!(MmLoadedUserImageList) as PLIST_ENTRY);
 
         InitializeListHead(core::ptr::addr_of_mut!(MmWorkingSetExpansionHead) as PLIST_ENTRY);
 
         MmCriticalSectionTimeout.QuadPart = (MmCritsectTimeoutSeconds as i64) * (-10000000i64);
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'q', options(nomem, nostack, preserves_flags));
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmPagedPoolMutex) as *mut KGUARDED_MUTEX);
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmSectionCommitMutex) as *mut KGUARDED_MUTEX);
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmSectionBasedMutex) as *mut KGUARDED_MUTEX);
@@ -1557,6 +1569,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
             0,
         );
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'r', options(nomem, nostack, preserves_flags));
         InitializeSListHead(core::ptr::addr_of_mut!(MmDeadStackSListHead) as *mut SLIST_HEADER);
 
         page_count = (MmNumberOfPhysicalPages) as usize;
@@ -1591,6 +1605,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
             MmHeapDeCommitFreeBlockThreshold = PAGE_SIZE;
         }
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b's', options(nomem, nostack, preserves_flags));
         ExInitializePushLock(core::ptr::addr_of_mut!(MmSystemCacheWs.WorkingSetMutex) as *mut _);
 
         MmTotalCommitLimit = (2 * _1GB) >> PAGE_SHIFT;
@@ -1628,6 +1644,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
             }
         }
 
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'_', options(nomem, nostack, preserves_flags));
         MiComputeColorInformation();
 
         MxPfnAllocation = (MmHighestPhysicalPage + 1) * core::mem::size_of::<_MMPFN>();
@@ -1638,7 +1656,11 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitMachineDependent\r\n");
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'|', options(nomem, nostack, preserves_flags));
         MiInitMachineDependent(loader_block);
+        #[cfg(target_arch = "x86")]
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'>', options(nomem, nostack, preserves_flags));
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] post-MiInitMachineDependent\r\n");

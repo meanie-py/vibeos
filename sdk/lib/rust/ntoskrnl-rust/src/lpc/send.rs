@@ -20,15 +20,12 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForRead(address: PVOID, length: usize, alignment: ULONG);
     fn ProbeForWrite(address: PVOID, length: usize, alignment: ULONG);
-    fn KeEnterCriticalRegion();
-    fn KeLeaveCriticalRegion();
 
     static mut LpcPortObjectType: PVOID;
     static mut LpcpLock: KGUARDED_MUTEX;
     static mut LpcpNextMessageId: ULONG;
 
     fn LpcpGetMessageType(msg: PPORT_MESSAGE) -> ULONG;
-    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn LpcpMoveMessage(
         dest: PPORT_MESSAGE,
         src: PPORT_MESSAGE,
@@ -36,8 +33,6 @@ extern "system" {
         msg_type: ULONG,
         cid: PVOID,
     );
-    fn LpcpCompleteWait(semaphore: PVOID);
-    fn LpcpReplyWait(semaphore: PVOID, mode: KPROCESSOR_MODE);
     fn LpcpSaveDataInfoMessage(Port: PLPCP_PORT_OBJECT, Message: PLPCP_MESSAGE, LockFlags: ULONG);
     fn ObReferenceObjectByHandle(
         handle: HANDLE,
@@ -47,6 +42,13 @@ extern "system" {
         object: *mut PVOID,
         info: PVOID,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn KeEnterCriticalRegion();
+    fn KeLeaveCriticalRegion();
+    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
+    fn LpcpCompleteWait(semaphore: PVOID);
+    fn LpcpReplyWait(semaphore: PVOID, mode: KPROCESSOR_MODE);
 }
 
 const LPCP_LOCK_HELD: ULONG = 1;

@@ -7,7 +7,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::probe::*;
 
-extern "system" {
+extern "C" {
     fn ReleaseCapturedUnicodeString(Name: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn ProbeAndCaptureUnicodeString(
         Dest: *mut _UNICODE_STRING,

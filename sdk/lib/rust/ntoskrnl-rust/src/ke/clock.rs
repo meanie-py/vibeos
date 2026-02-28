@@ -30,7 +30,7 @@ pub static mut KeMinimumIncrement: ULONG = 0;
 #[no_mangle]
 pub static mut KeTimeIncrement: ULONG = 0;
 
-extern "system" {
+extern "C" {
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
     static mut ExCmosClockIsSane: BOOLEAN;
     static mut KiTimerTableListHead: [KTIMER_TABLE_ENTRY; 256];

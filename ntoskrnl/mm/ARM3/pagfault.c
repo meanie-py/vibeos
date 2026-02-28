@@ -1840,8 +1840,12 @@ MmArmAccessFault(IN ULONG FaultCode,
             ARM64_UART_TRACE_HEX("[SMAP] ", (ULONG_PTR)Address);
             if ((ULONG_PTR)Address >= PXE_BASE && (ULONG_PTR)Address <= PXE_TOP)
             {
-                /* PXE range is the PML4 page itself — shouldn't fault */
-                goto SelfMapKernel;
+                /* PXE range is the PML4 page itself — this should never fault
+                 * because the PML4 is always mapped via the self-map self-reference.
+                 * If we get here, something is seriously wrong. */
+                KeBugCheckEx(PAGE_FAULT_IN_NONPAGED_AREA,
+                             (ULONG_PTR)Address, FaultCode,
+                             (ULONG_PTR)TrapInformation, 0xAA64);
             }
             else if ((ULONG_PTR)Address >= PPE_BASE)
             {
@@ -1856,14 +1860,9 @@ MmArmAccessFault(IN ULONG FaultCode,
                 UnderlyingVa = MiPteToAddress((PMMPTE)Address);
             }
 
-            if (UnderlyingVa >= MmSystemRangeStart)
-            {
-SelfMapKernel:
-                /* Kernel page table fault — use existing handler */
-                goto UserFault;
-            }
-
-            /* HACK: Directly allocate missing page table page(s) for user VA.
+            /* Directly allocate missing page table page(s) for the underlying VA.
+             * This handles BOTH user and kernel VAs without the working set lock,
+             * which may already be held by the caller (e.g., during MiBuildPfnDatabase).
              * This is a simplified version of what UserFault does for PXE/PPE
              * allocation, but without requiring the working set lock (which may
              * already be held by the caller). PFN entries are minimally

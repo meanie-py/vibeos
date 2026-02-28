@@ -29,7 +29,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread,
 };
 
-extern "system" {
+extern "C" {
     static mut CcTotalDirtyPages: ULONG;
     static mut MmThrottleTop: ULONG;
     static mut CcDeferredWrites: LIST_ENTRY;

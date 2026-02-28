@@ -364,6 +364,15 @@ KdInitSystem(
     KdDebuggerDataBlock.KernBase = (ULONG_PTR)KdVersionBlock.KernBase;
 
     /* Initialize the debugger if requested */
+#ifdef _M_IX86
+    /*
+     * On i386 with Rust KE, skip full KD initialization.
+     * KdSendPacket (kdcom.dll) triple-faults when no debugger is connected,
+     * which kills every DPRINT1 call throughout the kernel.
+     * KDBG still works for crash analysis (KiDebugRoutine = KdpStub).
+     */
+    EnableKd = FALSE;
+#endif
     if (EnableKd && (NT_SUCCESS(KdDebuggerInitialize0(LoaderBlock))))
     {
         /* Now set our real KD routine */
@@ -452,11 +461,21 @@ KdInitSystem(
                 /* Null-terminate */
                 NameBuffer[j] = ANSI_NULL;
 
+                /*
+                 * Skip DbgLoadImageSymbols on i386 with Rust KE handlers.
+                 * The int 0x2d trap path through the Rust KiDebugServiceHandler
+                 * causes a KVM hardware error (register corruption) on i386.
+                 * Root cause is unknown — the disassembly looks correct but the
+                 * CPU state gets corrupted when executing the trap handler.
+                 * KDBG symbol loading from disk still works (kdb_symbols.c).
+                 */
+#ifndef _M_IX86
                 /* Load the symbols */
                 RtlInitString(&ImageName, NameBuffer);
                 DbgLoadImageSymbols(&ImageName,
                                     LdrEntry->DllBase,
                                     (ULONG_PTR)PsGetCurrentProcessId());
+#endif
             }
 
             /* Check for incoming break-in and break on symbol load

@@ -13,26 +13,28 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
-    fn KiSendEOI();
     fn KiRetireDpcListInDpcStack(Prcb: PKPRCB, DpcStack: PVOID);
     fn KiQuantumEnd();
-    fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
     fn KiSwapContext(WaitIrql: KIRQL, OldThread: PKTHREAD);
-    fn KiAcquirePrcbLock(Prcb: PKPRCB);
     fn KiProcessorFreezeHandler(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
     fn KiHandleNmi();
-    fn NtCurrentTeb() -> PVOID;
     fn KeGdiFlushUserBatch();
     fn KiConvertToGuiThread() -> NTSTATUS;
-    fn __readmsr(msr: ULONG) -> ULONG64;
-    fn __swapgs();
     fn _enable();
     fn _disable();
     fn __addgsdword(offset: ULONG, value: ULONG);
     fn __debugbreak();
     static mut KeServiceDescriptorTable: *mut core::ffi::c_void;
     static MmUserProbeAddress: ULONG64;
+}
+extern "C" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+    fn KiSendEOI();
+    fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
+    fn KiAcquirePrcbLock(Prcb: PKPRCB);
+    fn NtCurrentTeb() -> PVOID;
+    fn __readmsr(msr: ULONG) -> ULONG64;
+    fn __swapgs();
 }
 
 const MSR_GS_BASE: ULONG = 0xC0000101;

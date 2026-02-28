@@ -51,6 +51,7 @@ pub mod se;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;
+pub mod shim_exports;
 
 // Arch-specific MM modules
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

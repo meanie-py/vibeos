@@ -54,7 +54,7 @@ extern "C" {
     fn MM_ANY_WS_LOCK_HELD(thread: PETHREAD) -> BOOLEAN;
 }
 
-extern "system" {
+extern "C" {
     fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG;
     fn InterlockedIncrementUL(addend: *mut ULONG) -> ULONG;
 }

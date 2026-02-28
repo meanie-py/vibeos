@@ -61,7 +61,6 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn RtlMoveMemory(Destination: PVOID, Source: PVOID, Length: usize);
@@ -127,29 +126,34 @@ extern "system" {
     static mut ObpObjectSecurityMode: ULONG;
     static mut SharedUserData: *mut _KUSER_SHARED_DATA;
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
-    fn ProbeAndCaptureUnicodeString( CapturedString: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE, String: *const _UNICODE_STRING, ) -> NTSTATUS;
-    fn ReleaseCapturedUnicodeString(CapturedString: *const _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn HalGetEnvironmentVariable(Name: PCHAR, ValueLength: ULONG, Value: PCHAR) -> ARC_STATUS;
     fn RtlUnicodeStringToAnsiString(DestinationString: *mut ANSI_STRING, SourceString: *const _UNICODE_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
     fn RtlFreeAnsiString(AnsiString: *mut ANSI_STRING);
     fn RtlInitAnsiString(DestinationString: *mut ANSI_STRING, SourceString: PCHAR);
-    fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: PCHAR, BufferSize: USHORT);
     fn RtlAnsiStringToUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const ANSI_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
-    fn RtlInitEmptyUnicodeString(UnicodeString: *mut _UNICODE_STRING, Buffer: PWSTR, MaximumLength: USHORT);
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: PWSTR);
     fn SeLocateProcessImageName(Process: PEPROCESS, ImageName: *mut *mut _UNICODE_STRING) -> NTSTATUS;
     fn ObGetProcessHandleCount(Process: PEPROCESS) -> ULONG;
     fn PsGetNextProcess(Process: PEPROCESS) -> PEPROCESS;
-    fn ObpGetHandleObject(Entry: PHANDLE_TABLE_ENTRY) -> POBJECT_HEADER;
     fn ExQueryPoolUsage( PagedPoolPages: *mut ULONG, NonPagedPoolPages: *mut ULONG, PagedPoolAllocs: *mut ULONG, PagedPoolFrees: *mut ULONG, PagedPoolLookasideHits: *mut ULONG, NonPagedPoolAllocs: *mut ULONG, NonPagedPoolFrees: *mut ULONG, NonPagedPoolLookasideHits: *mut ULONG, );
-    fn KeGetContextSwitches(Prcb: PKPRCB) -> ULONG;
     fn UInt32x32To64(a: ULONG, b: ULONG) -> ULONGLONG;
     fn RtlImageDirectoryEntryToData(Base: PVOID, MappedAsImage: BOOLEAN, DirectoryEntry: USHORT, Size: *mut ULONG) -> PVOID;
     fn RtlImageNtHeader(Base: PVOID) -> *mut IMAGE_NT_HEADERS;
     fn PsChangeQuantumTable(Increase: BOOLEAN, Value: ULONG);
     fn MmSessionCreate(SessionId: *mut ULONG) -> NTSTATUS;
     fn MmSessionDelete(SessionId: ULONG) -> NTSTATUS;
+}
+extern "C" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
+    fn ProbeAndCaptureUnicodeString( CapturedString: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE, String: *const _UNICODE_STRING, ) -> NTSTATUS;
+    fn ReleaseCapturedUnicodeString(CapturedString: *const _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
+    fn ObpGetHandleObject(Entry: PHANDLE_TABLE_ENTRY) -> POBJECT_HEADER;
+    fn KeGetContextSwitches(Prcb: PKPRCB) -> ULONG;
     fn MmGetSystemAddressForMdlSafe(Mdl: PMDL, Priority: ULONG) -> PVOID;
+}
+extern "C" {
+    fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: PCHAR, BufferSize: USHORT);
+    fn RtlInitEmptyUnicodeString(UnicodeString: *mut _UNICODE_STRING, Buffer: PWSTR, MaximumLength: USHORT);
 }
 
 const MAX_ENVVAL_SIZE: ULONG = 1024;

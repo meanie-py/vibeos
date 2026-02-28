@@ -60,19 +60,21 @@ extern "C" {
 }
 
 extern "system" {
-    fn PsGetCurrentThread() -> PETHREAD;
     fn DbgPrompt(prompt: PCHAR, response: PCHAR, length: ULONG) -> ULONG;
     fn KeBugCheck(code: ULONG);
-    fn KeLowerIrql(irql: KIRQL);
     fn ExFreePool(ptr: PVOID);
+    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+    fn DbgBreakPoint();
+}
+extern "C" {
+    fn PsGetCurrentThread() -> PETHREAD;
+    fn KeLowerIrql(irql: KIRQL);
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
-    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 
     fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG);
     fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG);
-    fn DbgBreakPoint();
 }
 
 // PspW32ProcessCallout and PspW32ThreadCallout are function pointer VARIABLES

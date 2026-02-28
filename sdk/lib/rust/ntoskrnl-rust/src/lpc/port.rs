@@ -42,6 +42,8 @@ use ntkrnl_sys::ddk::{
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
+}
+extern "C" {
     fn SeDeleteClientSecurity(ClientContext: *mut _SECURITY_CLIENT_CONTEXT);
 }
 

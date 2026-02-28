@@ -147,7 +147,7 @@ set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
 if(ARCH STREQUAL "i386")
     set(RUST_TARGET "i686-pc-windows-gnu")
     # i386: disable SSE — CR4.OSFXSR not set until Phase 1 but pool init runs in Phase 0
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
 elseif(ARCH STREQUAL "amd64")
     set(RUST_TARGET "x86_64-pc-windows-gnu")
     set(RUST_EXTRA_ENV "")

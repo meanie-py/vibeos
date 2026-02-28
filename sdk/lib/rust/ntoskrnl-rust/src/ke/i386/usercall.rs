@@ -45,7 +45,7 @@ const KERNEL_STACK_SIZE: ULONG = 12288;
 const OriginalApcEnvironment: u8 = 0;
 
 #[no_mangle]
-pub unsafe extern "C" fn KiInitializeUserApc(
+pub unsafe extern "system" fn KiInitializeUserApc(
     ExceptionFrame: PKEXCEPTION_FRAME,
     TrapFrame: PKTRAP_FRAME,
     NormalRoutine: PKNORMAL_ROUTINE,

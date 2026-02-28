@@ -17,11 +17,13 @@ const MUTANT_QUERY_STATE: ACCESS_MASK = 0x0001;
 const MUTANT_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | MUTANT_QUERY_STATE;
 
 extern "system" {
-    fn DefaultQueryInfoBufferCheck( info_class: ULONG, info_class_info: *const INFORMATION_CLASS_INFO, info_class_count: ULONG, flags: ULONG, info_buffer: PVOID, info_length: ULONG, return_length: *mut ULONG, previous_mode_ptr: PVOID, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
     fn ObCreateObject( access_mode: KPROCESSOR_MODE, object_type: POBJECT_TYPE, object_attributes: POBJECT_ATTRIBUTES, owner_mode: KPROCESSOR_MODE, reserved: PVOID, size: ULONG, page_charge: ULONG, non_paged_charge: ULONG, object: *mut PVOID, ) -> NTSTATUS;
     fn KeInitializeMutant(mutant: PKMUTANT, initial_owner: BOOLEAN);
     fn ObInsertObject( object: PVOID, access_state: PVOID, desired_access: ACCESS_MASK, additional_references: ULONG, referenced_object: *mut PVOID, handle: PHANDLE, ) -> NTSTATUS;
     fn ObOpenObjectByName( object_attributes: POBJECT_ATTRIBUTES, object_type: POBJECT_TYPE, access_mode: KPROCESSOR_MODE, access_state: PVOID, desired_access: ACCESS_MASK, parse_context: PVOID, handle: PHANDLE, ) -> NTSTATUS;
+}
+extern "C" {
+    fn DefaultQueryInfoBufferCheck( info_class: ULONG, info_class_info: *const INFORMATION_CLASS_INFO, info_class_count: ULONG, flags: ULONG, info_buffer: PVOID, info_length: ULONG, return_length: *mut ULONG, previous_mode_ptr: PVOID, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
 }
 
 #[no_mangle]

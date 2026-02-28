@@ -40,7 +40,7 @@ use ntkrnl_sys::ddk::{
     _KPCR,
 };
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, ty: PVOID, field_offset: usize) -> PVOID;
 }
 
@@ -113,9 +113,20 @@ pub unsafe extern "C" fn KiIdleSchedule(Prcb: PKPRCB) -> PKTHREAD {
     core::ptr::null_mut()
 }
 
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KiProcessDeferredReadyList(Prcb: PKPRCB) {
+    KiProcessDeferredReadyListInner(Prcb)
+}
+
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiProcessDeferredReadyList(Prcb: PKPRCB) {
+    KiProcessDeferredReadyListInner(Prcb)
+}
+
+#[inline(always)]
+unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
     let mut ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
     let mut Thread: PKTHREAD;
 

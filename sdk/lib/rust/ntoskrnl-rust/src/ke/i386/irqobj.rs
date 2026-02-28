@@ -24,9 +24,11 @@ use ntkrnl_sys::ddk::{
 
 extern "system" {
     static mut KeNumberProcessors: UCHAR;
+    fn HalVectorToIDTEntry(Vector: ULONG) -> UCHAR;
+}
+extern "system" {
     fn KeQueryInterruptHandler(Vector: ULONG) -> PVOID;
     fn KeRegisterInterruptHandler(Vector: ULONG, Handler: PVOID);
-    fn HalVectorToIDTEntry(Vector: ULONG) -> UCHAR;
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     fn KfLowerIrql(NewIrql: KIRQL);
 }

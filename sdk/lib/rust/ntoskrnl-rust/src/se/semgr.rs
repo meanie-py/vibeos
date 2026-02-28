@@ -9,13 +9,6 @@ use ntkrnl_sys::mm::{PagedPool, NonPagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 
 extern "system" {
-    fn InitializeObjectAttributes(
-        p: *mut _OBJECT_ATTRIBUTES,
-        n: *mut _UNICODE_STRING,
-        a: ULONG,
-        r: HANDLE,
-        s: PSECURITY_DESCRIPTOR,
-    );
     fn ZwCreateDirectoryObject(
         DirectoryHandle: *mut HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -29,9 +22,7 @@ extern "system" {
         InitialState: BOOLEAN,
     ) -> NTSTATUS;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
-    fn ExInitializeResource(Resource: *mut ERESOURCE);
     fn SepInitializeTokenImplementation();
-    fn PspClearCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
 
     static mut ExpInitializationPhase: ULONG;
     static mut SepSubjectContextLock: ERESOURCE;
@@ -92,6 +83,17 @@ extern "system" {
     static mut SeNetworkServiceSid: PSID;
 
     static SePublicDefaultSd: PSECURITY_DESCRIPTOR;
+}
+extern "C" {
+    fn InitializeObjectAttributes(
+        p: *mut _OBJECT_ATTRIBUTES,
+        n: *mut _UNICODE_STRING,
+        a: ULONG,
+        r: HANDLE,
+        s: PSECURITY_DESCRIPTOR,
+    );
+    fn ExInitializeResource(Resource: *mut ERESOURCE);
+    fn PspClearCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
 }
 
 const CT_ACTIVE_IMPERSONATION_INFO_BIT: ULONG = 0x8;

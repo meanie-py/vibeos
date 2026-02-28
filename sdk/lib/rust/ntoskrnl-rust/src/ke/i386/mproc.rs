@@ -53,12 +53,14 @@ extern "system" {
     static mut KeBootprocSpecified: ULONG;
     static mut KeLoaderBlock: PVOID;
     fn KiInitializePcr( ProcessorNumber: ULONG, Pcr: *mut _KIPCR, Idt: *mut _KIDTENTRY, Gdt: *mut _KGDTENTRY, Tss: *mut _KTSS, Thread: PKTHREAD, DpcStack: PVOID, );
+    fn __readeflags() -> ULONG_PTR;
+}
+extern "C" {
     fn __sgdt(Descriptor: *mut u16);
     fn __sidt(Descriptor: *mut u16);
     fn __readcr0() -> ULONG_PTR;
     fn __readcr3() -> ULONG_PTR;
     fn __readcr4() -> ULONG_PTR;
-    fn __readeflags() -> ULONG_PTR;
     fn YieldProcessor();
     fn KiGetGdtEntry(Gdt: *mut _KGDTENTRY, Selector: USHORT) -> *mut _KGDTENTRY;
     fn KiSetGdtDescriptorBase(Entry: *mut _KGDTENTRY, Base: ULONG_PTR);

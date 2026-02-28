@@ -20,6 +20,11 @@ use ntkrnl_sys::ddk::{
 
 extern "system" {
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
+}
+extern "C" {
+    fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> _LARGE_INTEGER;
+}
+extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
     fn KxSingleThreadWait(
         Object: PVOID,
@@ -58,7 +63,6 @@ extern "system" {
     fn KiSatisfyMutantWait(Mutant: PKMUTANT, Thread: PKTHREAD);
     fn KiSatisfyNonMutantWait(Object: PKMUTANT);
     fn KiAcquirePrcbLock(Prcb: *mut _KPRCB);
-    fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> _LARGE_INTEGER;
 }
 
 const TIMER_WAIT_BLOCK: usize = 3;

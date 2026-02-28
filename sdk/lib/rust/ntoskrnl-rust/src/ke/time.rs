@@ -29,9 +29,11 @@ extern "C" {
     static mut KiIdealDpcRate: ULONG;
     static mut KiMaximumDpcQueueDepth: LONG;
     static mut KiDPCTimeout: ULONG;
+    fn DbgPrint(format: *const i8, ...) -> ULONG;
+}
+extern "system" {
     fn KdPollBreakIn() -> BOOLEAN;
     fn DbgBreakPointWithStatus(Status: ULONG);
-    fn DbgPrint(format: *const i8, ...) -> ULONG;
 }
 
 const TIMER_TABLE_SIZE: usize = 256;

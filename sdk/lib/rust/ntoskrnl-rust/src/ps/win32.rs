@@ -6,6 +6,8 @@ use ntkrnl_sys::constants::*;
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
+extern "C" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 

@@ -21,7 +21,7 @@ use ntkrnl_sys::ddk::{
 
 use ntkrnl_sys::ddk::PEPROCESS;
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
         n: PUNICODE_STRING,

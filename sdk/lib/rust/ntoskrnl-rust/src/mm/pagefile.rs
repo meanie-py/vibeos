@@ -63,7 +63,6 @@ extern "C" {
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn ObfDereferenceObject(Object: PVOID) -> LONG;
-    fn MmInitializeMdl(Mdl: *mut ntkrnl_sys::ddk::_MDL, BaseAddress: PVOID, Length: ULONG);
     fn IoQueryVolumeInformation(
         FileObject: ntkrnl_sys::ddk::PFILE_OBJECT,
         FsInformationClass: ULONG,
@@ -72,6 +71,9 @@ extern "system" {
         ReturnedLength: *mut ULONG,
     ) -> NTSTATUS;
     fn IoInitializeCrashDump(FileHandle: HANDLE) -> BOOLEAN;
+}
+extern "C" {
+    fn MmInitializeMdl(Mdl: *mut ntkrnl_sys::ddk::_MDL, BaseAddress: PVOID, Length: ULONG);
 }
 
 #[inline]

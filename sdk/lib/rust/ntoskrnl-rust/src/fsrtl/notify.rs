@@ -64,10 +64,12 @@ const SL_PENDING_RETURNED: u8 = 0x01;
 const WatchTree: u16 = 0x0001;
 
 extern "system" {
-    fn MmGetSystemAddressForMdl(mdl: PVOID) -> PVOID;
     fn IoCompleteRequest(irp: PIRP, priority_boost: i8);
     fn RtlOemStringToCountedUnicodeSize(string: PSTRING) -> u32;
     fn RtlEqualMemory(source1: PVOID, source2: PVOID, length: usize) -> BOOLEAN;
+}
+extern "C" {
+    fn MmGetSystemAddressForMdl(mdl: PVOID) -> PVOID;
 }
 
 unsafe fn FsRtlNotifyAcquireFastMutex(real_notify_sync: PREAL_NOTIFY_SYNC) {

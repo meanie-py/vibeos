@@ -14,7 +14,7 @@ use ntkrnl_sys::ddk::{
     KiWaitTest, KiUnlinkThread, KiReadyThread, KiComputeNewPriority,
 };
 
-extern "system" {
+extern "C" {
     fn KxUnwaitThread(Object: PVOID, Increment: KPRIORITY);
     fn KxUnwaitThreadForEvent(Event: PKEVENT, Increment: KPRIORITY);
 }

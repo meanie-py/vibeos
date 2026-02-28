@@ -10,9 +10,11 @@ use ntkrnl_sys::probe::*;
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn RtlEqualLuid(luid1: *const LUID, luid2: *const LUID) -> BOOLEAN;
+    static mut SeTokenObjectType: PVOID;
+}
+extern "C" {
     fn SepAcquireTokenLockExclusive(token: PTOKEN);
     fn SepReleaseTokenLock(token: PTOKEN);
-    static mut SeTokenObjectType: PVOID;
 }
 
 unsafe fn SepAdjustPrivileges(

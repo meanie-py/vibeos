@@ -652,7 +652,7 @@ unsafe fn MiLocateKernelSections(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LOADER_PARAMETER_BLOCK) -> BOOLEAN {
-    extern "C" {
+    extern "system" {
         fn RtlImageNtHeader(base: PVOID) -> PVOID;
     }
 

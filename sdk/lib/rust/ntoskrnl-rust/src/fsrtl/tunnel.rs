@@ -33,8 +33,10 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
     fn RtlMoveMemory(destination: PVOID, source: PVOID, length: usize);
+}
+extern "C" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn ExAllocateFromPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST, entry: PVOID);

@@ -7,6 +7,10 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 
 extern "system" {
+    fn RtlEqualLuid(l1: PLUID, l2: PLUID) -> BOOLEAN;
+    static mut PsInitialSystemProcess: PVOID;
+}
+extern "C" {
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
         n: *mut _UNICODE_STRING,
@@ -14,8 +18,6 @@ extern "system" {
         r: HANDLE,
         s: PVOID,
     );
-    fn RtlEqualLuid(l1: PLUID, l2: PLUID) -> BOOLEAN;
-    static mut PsInitialSystemProcess: PVOID;
 }
 
 #[inline]

@@ -6,7 +6,6 @@ use ntkrnl_sys::ddk::{
     PPRIVATE_CACHE_MAP, PROS_SHARED_CACHE_MAP, PROS_VACB,
     PRIVATE_CACHE_MAP, ROS_VACB, INTERNAL_BCB,
     KeSetEvent, MmExtendSection, MmPurgeSegment,
-    CcRosInitializeFileCache, CcRosReleaseFileCache, CcRosUnmarkDirtyVacb,
 };
 use ntkrnl_sys::ex::ExRaiseStatus;
 use ntkrnl_sys::ke::{KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock, KeAcquireSpinLock, KeReleaseSpinLock};
@@ -18,6 +17,9 @@ extern "system" {
     fn CcRosVacbDecRefCount(Vacb: PROS_VACB) -> ULONG;
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut usize);
     fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut usize);
+    fn CcRosInitializeFileCache(FileObject: PFILE_OBJECT, FileSizes: PCC_FILE_SIZES, PinAccess: BOOLEAN, CallBacks: PCACHE_MANAGER_CALLBACKS, LazyWriterContext: PVOID) -> NTSTATUS;
+    fn CcRosReleaseFileCache(FileObject: PFILE_OBJECT) -> NTSTATUS;
+    fn CcRosUnmarkDirtyVacb(Vacb: PROS_VACB, LockViews: BOOLEAN);
 }
 
 const VACB_MAPPING_GRANULARITY: i64 = 262144;

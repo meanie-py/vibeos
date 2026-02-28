@@ -20,12 +20,14 @@ use ntkrnl_sys::ddk::{
 const STATUS_RETRY: NTSTATUS = 0xC000022Du32 as NTSTATUS;
 
 extern "system" {
-    fn InterlockedExchangeAdd64(Addend: *mut i64, Value: i64) -> i64;
     fn RtlEqualLuid(L1: *const LUID, L2: *const LUID) -> BOOLEAN;
-    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
-    fn SeQuerySubjectContextToken(SubjectContext: *mut SECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
     fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: usize);
+}
+extern "C" {
+    fn InterlockedExchangeAdd64(Addend: *mut i64, Value: i64) -> i64;
+    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
+    fn SeQuerySubjectContextToken(SubjectContext: *mut SECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
 }
 
 const SEED_BUFFER_SIZE: usize = 6;

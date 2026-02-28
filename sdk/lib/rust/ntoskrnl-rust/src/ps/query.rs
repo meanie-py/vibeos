@@ -108,6 +108,12 @@ const PS_THREAD_INFO_CLASS_COUNT: ULONG = _THREADINFOCLASS_MaxThreadInfoClass;
 
 // Functions not in bindgen (FORCEINLINE/macros in C)
 extern "system" {
+    fn PspSetPrimaryToken(process: PEPROCESS, token_handle: HANDLE, previous_mode: *const KPROCESSOR_MODE) -> NTSTATUS;
+    fn PspSetQuotaLimits(process: PEPROCESS, unused: ULONG, buffer: PVOID, length: ULONG, mode: KPROCESSOR_MODE) -> NTSTATUS;
+    fn PspQueryDescriptorThread(thread: PETHREAD, info: PVOID, length: ULONG, return_length: PULONG) -> NTSTATUS;
+    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+extern "C" {
     fn DefaultQueryInfoBufferCheck(
         info_class: ULONG,
         info_class_table: *const INFORMATION_CLASS_INFO,
@@ -133,13 +139,9 @@ extern "system" {
     fn PspClearProcessFlag(process: *mut _EPROCESS, flag: ULONG);
     fn PspSetCrossThreadFlag(thread: *mut _ETHREAD, flag: ULONG);
     fn PspClearCrossThreadFlag(thread: *mut _ETHREAD, flag: ULONG);
-    fn PspSetPrimaryToken(process: PEPROCESS, token_handle: HANDLE, previous_mode: *const KPROCESSOR_MODE) -> NTSTATUS;
-    fn PspSetQuotaLimits(process: PEPROCESS, unused: ULONG, buffer: PVOID, length: ULONG, mode: KPROCESSOR_MODE) -> NTSTATUS;
-    fn PspQueryDescriptorThread(thread: PETHREAD, info: PVOID, length: ULONG, return_length: PULONG) -> NTSTATUS;
     fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);
     fn KeLowerIrql(new_irql: KIRQL);
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
-    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 
 extern "C" {

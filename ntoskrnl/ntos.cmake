@@ -105,7 +105,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/work.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/xipdisp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zone.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/ex_rust_shims.c
+    # ex_rust_shims.c — replaced by Rust (ntkrnl-sys/src/inline/ex.rs + shim_exports.rs)
     # FSRTL subsystem: replaced by Rust (ntoskrnl-rust/src/fsrtl/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/dbcsname.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/fastio.c
@@ -184,8 +184,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdlock.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdprint.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdtrap.c
-    # Note: kd64_rust_shims.c is in PCH_SKIP_SOURCE (CMakeLists.txt), provides CC/FSRTL shims
-    # Note: ke_rust_shims.c is in PCH_SKIP_SOURCE (CMakeLists.txt), provides KE FORCEINLINE shims
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
     # ke/ — replaced by Rust (ntoskrnl-rust/src/ke/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/apc.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/balmgr.c
@@ -275,7 +274,7 @@ list(APPEND SOURCE
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsdcach.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsecure.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obwait.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/ob_rust_shims.c
+    # ob_rust_shims.c — replaced by Rust (ntkrnl-sys/src/inline/ob.rs + shim_exports.rs)
     # po/ — replaced by Rust (ntoskrnl-rust/src/po/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/po/events.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/po/poshtdwn.c
@@ -295,7 +294,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/state.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/thread.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/win32.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/ps_rust_shims.c
+    # ps_rust_shims.c — replaced by Rust (ntkrnl-sys/src/inline/ps.rs + shim_exports.rs)
     # rtl/ (kernel) — replaced by Rust (ntoskrnl-rust/src/rtl/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/libsupp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/misc.c
@@ -317,7 +316,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenadj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/se/se_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
     # vf/ — replaced by Rust (ntoskrnl-rust/src/vf/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/vf/driver.c
     # wmi/ — replaced by Rust (ntoskrnl-rust/src/wmi/)
@@ -325,7 +324,8 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/smbios.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmi.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmidrv.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/tier1_rust_shims.c)
+    # tier1_rust_shims.c — replaced by Rust (ntkrnl-sys/src/inline/tier1.rs + shim_exports.rs)
+    )
 
 if(DBG)
     #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)  # replaced by Rust
@@ -467,7 +467,7 @@ elseif(ARCH STREQUAL "arm64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
-        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c    # Keep in C (Rust version breaks boot)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)

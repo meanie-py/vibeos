@@ -39,7 +39,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExInitializeNPagedLookasideList(
         Lookaside: *mut _NPAGED_LOOKASIDE_LIST,
         Allocate: Option<unsafe extern "system" fn(ULONG, SIZE_T, ULONG) -> PVOID>,
@@ -49,6 +48,9 @@ extern "system" {
         Tag: ULONG,
         Depth: USHORT,
     );
+}
+extern "C" {
+    fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
 }
 
 const DPFLTR_PREFETCHER_ID: ULONG = 0x5E;

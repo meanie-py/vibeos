@@ -5,7 +5,7 @@ use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 
-extern "system" {
+extern "C" {
     fn SepAcquireTokenLockShared(token: PTOKEN);
     fn SepReleaseTokenLock(token: PTOKEN);
     static mut SeTokenObjectType: PVOID;

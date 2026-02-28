@@ -52,19 +52,21 @@ extern "C" {
 }
 
 extern "system" {
-    fn ExAllocateFromNPagedLookasideList(Lookaside: *mut NPAGED_LOOKASIDE_LIST) -> PVOID;
-    fn ExFreeToNPagedLookasideList(Lookaside: *mut NPAGED_LOOKASIDE_LIST, Entry: PVOID);
-    fn MmSetDirtyPage(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID);
     fn MmLockSectionSegment(Segment: PMM_SECTION_SEGMENT);
     fn MmUnlockSectionSegment(Segment: PMM_SECTION_SEGMENT);
     fn MmGetPageEntrySectionSegment(Segment: PMM_SECTION_SEGMENT, Offset: *mut LARGE_INTEGER) -> ULONG_PTR;
     fn MA_GetStartingAddress(MemoryArea: PMEMORY_AREA) -> ULONG_PTR;
+    fn ObDereferenceObject(Object: PVOID);
+}
+extern "C" {
+    fn ExAllocateFromNPagedLookasideList(Lookaside: *mut NPAGED_LOOKASIDE_LIST) -> PVOID;
+    fn ExFreeToNPagedLookasideList(Lookaside: *mut NPAGED_LOOKASIDE_LIST, Entry: PVOID);
+    fn MmSetDirtyPage(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID);
     fn RMAP_IS_SEGMENT(Address: PVOID) -> bool;
     fn PFN_FROM_SSE(Entry: ULONG_PTR) -> PFN_NUMBER;
     fn MM_IS_WAIT_PTE(Entry: ULONG_PTR) -> bool;
     fn PAGE_ROUND_DOWN(addr: PVOID) -> ULONG_PTR;
     fn InterlockedExchangeAddUL(addend: *mut ULONG, value: ULONG) -> ULONG;
-    fn ObDereferenceObject(Object: PVOID);
 }
 
 static MM_WAIT_ENTRY: ULONG_PTR = 0xFFFFFFFE;

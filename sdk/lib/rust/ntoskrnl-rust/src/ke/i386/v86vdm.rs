@@ -26,7 +26,6 @@ extern "system" {
     fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME);
     fn KiGetThreadNpxArea(Thread: PETHREAD) -> PVOID;
     fn KiSetTebBase(Pcr: PKPCR, Teb: PVOID);
-    fn KeGetTrapFrame(Thread: PETHREAD) -> PKTRAP_FRAME;
     fn Ki386BiosCallReturnAddress();
     fn KiFillTrapFrameDebug(TrapFrame: PKTRAP_FRAME);
     fn Ki386SetupAndExitToV86Mode(VdmTeb: PTEB);
@@ -37,6 +36,9 @@ extern "system" {
     fn _disable();
     fn __readeflags() -> ULONG;
     fn _AddressOfReturnAddress() -> *const PVOID;
+}
+extern "C" {
+    fn KeGetTrapFrame(Thread: PETHREAD) -> PKTRAP_FRAME;
 }
 
 const EFLAGS_USER_SANITIZE: ULONG = 0x003E0DD7;

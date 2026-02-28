@@ -212,7 +212,7 @@ void NTAPI ProbeForWritePointer(PVOID *Address)
 }
 
 /* --- IoGetDevObjExtension: macro in io.h --- */
-PEXTENDED_DEVOBJ_EXTENSION IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject)
+PEXTENDED_DEVOBJ_EXTENSION NTAPI IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject)
 {
     return _tramp_IoGetDevObjExtension(DeviceObject);
 }
@@ -319,17 +319,17 @@ PLPCP_DATA_INFO LpcpGetDataInfoFromMessage(PPORT_MESSAGE Message)
 }
 
 /* --- HAL dispatch table macros --- */
-void HalHaltSystem(void)
+VOID NTAPI HalHaltSystem(VOID)
 {
     _tramp_HalHaltSystem();
 }
 
-void HalSetWakeEnable(BOOLEAN NewState)
+VOID NTAPI HalSetWakeEnable(BOOLEAN NewState)
 {
     _tramp_HalSetWakeEnable(NewState);
 }
 
-void HalEndOfBoot(void)
+VOID NTAPI HalEndOfBoot(VOID)
 {
     _tramp_HalEndOfBoot();
 }

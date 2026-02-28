@@ -18,16 +18,18 @@ extern "system" {
     ) -> NTSTATUS;
     fn KeStackAttachProcess(Process: PVOID, ApcState: *mut _KAPC_STATE);
     fn KeUnstackDetachProcess(ApcState: *mut _KAPC_STATE);
+    fn ObDereferenceObject(Object: PVOID);
+    static mut SeIncreaseQuotaPrivilege: LUID;
+}
+extern "C" {
     fn KeEnterGuardedRegion();
     fn KeLeaveGuardedRegion();
-    fn ObDereferenceObject(Object: PVOID);
     fn InterlockedCompareExchangePointer(
         Destination: *mut PVOID,
         Exchange: PVOID,
         Comparand: PVOID,
     ) -> PVOID;
     fn InterlockedDecrementUL(Addend: *mut ULONG) -> ULONG;
-    static mut SeIncreaseQuotaPrivilege: LUID;
 }
 
 const QUOTA_LIMITS_HARDWS_MIN_ENABLE: ULONG = 0x00000001;

@@ -18,6 +18,12 @@
 pub mod algorithm;
 pub mod header;
 
+// At opt-level >= 1, the compiler emits .eh_frame data that references this symbol.
+// Since we use panic=abort, unwinding never occurs, but we still need the symbol.
+#[cfg(not(any(test, kani)))]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
+
 // Inline asm + FFI entry points — excluded from test/kani builds which use std
 #[cfg(not(any(test, kani)))]
 mod atomics;

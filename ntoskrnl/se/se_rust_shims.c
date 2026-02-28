@@ -131,22 +131,22 @@ PACCESS_TOKEN NTAPI SeQuerySubjectContextToken(PSECURITY_SUBJECT_CONTEXT Subject
     return _tramp_SeQuerySubjectContextToken(SubjectContext);
 }
 
-PSID NTAPI SepGetGroupFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
+PSID SepGetGroupFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
 {
     return _fi_SepGetGroupFromDescriptor(_Descriptor);
 }
 
-PSID NTAPI SepGetOwnerFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
+PSID SepGetOwnerFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
 {
     return _fi_SepGetOwnerFromDescriptor(_Descriptor);
 }
 
-PACL NTAPI SepGetDaclFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
+PACL SepGetDaclFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
 {
     return _fi_SepGetDaclFromDescriptor(_Descriptor);
 }
 
-PACL NTAPI SepGetSaclFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
+PACL SepGetSaclFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
 {
     return _fi_SepGetSaclFromDescriptor(_Descriptor);
 }
@@ -206,7 +206,7 @@ void NTAPI PspClearCrossThreadFlag(PETHREAD Thread, ULONG Flag)
     _tramp_PspClearCrossThreadFlag(Thread, Flag);
 }
 
-ULONG NTAPI SeLengthSid(PSID Sid)
+ULONG SeLengthSid(PSID Sid)
 {
     return _tramp_SeLengthSid(Sid);
 }

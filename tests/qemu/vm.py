@@ -81,13 +81,14 @@ class I386Config(ArchConfig):
     qemu_bin: str = "qemu-system-i386"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    # bootcd.ini defaults to Setup_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
-    boot_marker: str = ""
+    # livecd.ini defaults to LiveCD_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
+    # Must use a marker — desktop produces continuous debug output (never goes idle)
+    boot_marker: str = "SwitchDesktop OK"
     boot_timeout: float = 180.0
-    min_boot_bytes: int = 500
+    min_boot_bytes: int = 10000
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = PROJECT_DIR / "build-i386" / "bootcd.iso"
+        iso = PROJECT_DIR / "build-i386" / "livecd.iso"
         return [
             *self.machine_args,
             "-m", self.memory,
@@ -241,10 +242,14 @@ class QemuVM:
             # Serial: QEMU connects to OUR server socket (server=off)
             "-chardev", f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
             "-serial", "chardev:ser0",
-            # Scratch disk for snapshots
-            "-drive", f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
-            "-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
-                else "virtio-blk-pci,drive=scratch",
+            # Scratch disk for snapshots (skip on i386 — FreeLDR crashes on
+            # unpartitioned disks during BIOS disk enumeration)
+            *(
+                ["-drive", f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
+                 "-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
+                     else "virtio-blk-pci,drive=scratch"]
+                if self.config.arch != "i386" else []
+            ),
             # No monitor (we use QMP)
             "-monitor", "none",
             # Architecture-specific args

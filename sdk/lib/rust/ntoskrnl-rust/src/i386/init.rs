@@ -293,7 +293,9 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 ) -> NTSTATUS {
     // Initialize template PTEs that have zero static initializers in Rust
     // (in C these are compile-time initialized, but Rust requires runtime init)
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'0', options(nomem, nostack, preserves_flags));
     init_globals();
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'1', options(nomem, nostack, preserves_flags));
 
     let mut page_frame_index: PFN_NUMBER;
     let mut start_pde: PMMPTE;
@@ -320,6 +322,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         ((end_pde as usize) - (start_pde as usize)) as SIZE_T,
     );
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'2', options(nomem, nostack, preserves_flags));
     MiComputeNonPagedPoolVa(MiNumberOfFreePages as ULONG);
 
     MmNonPagedPoolStart = ((MmNonPagedPoolEnd as ULONG_PTR)
@@ -350,6 +353,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         // Paged pool is too big!
     }
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'3', options(nomem, nostack, preserves_flags));
     MmPfnDatabase = 0xB0000000 as PMMPFN;
     debug_assert!(((MmPfnDatabase as ULONG_PTR) & (PDE_MAPPED_VA - 1)) == 0);
 
@@ -411,18 +415,24 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         MiAddressToPte(MmNonPagedSystemStart) < MiAddressToPte(MmNonPagedPoolExpansionStart)
     );
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'4', options(nomem, nostack, preserves_flags));
     MiInitializeNonPagedPool();
     MiInitializeNonPagedPoolThresholds();
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'5', options(nomem, nostack, preserves_flags));
     MiMapPfnDatabase(loader_block);
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'6', options(nomem, nostack, preserves_flags));
     MiInitializeColorTables();
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'7', options(nomem, nostack, preserves_flags));
     MiInitializePfnDatabase(loader_block);
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'8', options(nomem, nostack, preserves_flags));
     MmInitializeBalancer(MmAvailablePages as ULONG, 0);
 
     *MxFreeDescriptor = MxOldFreeDescriptor;
 
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'9', options(nomem, nostack, preserves_flags));
     InitializePool(NonPagedPool, 0);
 
     pointer_pte = MiAddressToPte(MmNonPagedSystemStart);

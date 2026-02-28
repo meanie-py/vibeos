@@ -43,6 +43,8 @@ extern "system" {
     fn KdpReportCommandStringStateChange( NameString: PSTRING, CommandString: PSTRING, ContextRecord: PCONTEXT, );
     fn KdpReportLoadSymbolsStateChange( DllPath: PSTRING, SymbolInfo: PKD_SYMBOLS_INFO, Unload: BOOLEAN, ContextRecord: PCONTEXT, );
     fn NtQueryDebugFilterState(ComponentId: ULONG, Level: ULONG) -> NTSTATUS;
+}
+extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }

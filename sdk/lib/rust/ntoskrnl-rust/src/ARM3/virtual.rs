@@ -107,7 +107,6 @@ const HighPagePriority: u32 = 2;
 const IoReadAccess: u32 = 0;
 
 extern "system" {
-    fn MmInitializeMdl(Mdl: PMDL, BaseVa: PVOID, Length: SIZE_T);
     fn ObDereferenceObject(Object: PVOID);
     fn MmMdlPagesAreZero(Mdl: PMDL) -> BOOLEAN;
     fn MiFlushTbAndCapture(
@@ -115,6 +114,9 @@ extern "system" {
         Pfn1: PMMPFN, CaptureDirtyBit: BOOLEAN,
     );
     static SeLockMemoryPrivilege: ntkrnl_sys::ddk::_LUID;
+}
+extern "C" {
+    fn MmInitializeMdl(Mdl: PMDL, BaseVa: PVOID, Length: SIZE_T);
 }
 
 #[repr(C)]
@@ -169,7 +171,7 @@ extern "C" {
 
 // ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.
 // Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.
-extern "system" {
+extern "C" {
     fn ProbeForWritePointer(Address: *mut PVOID);
     fn ProbeForWriteUlong(Address: *mut ULONG);
 }

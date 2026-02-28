@@ -85,23 +85,27 @@ extern "system" {
     #[cfg(target_arch = "aarch64")] static Arm64UartKernelBase: PVOID;
     fn RtlWalkFrameChain(Callers: *mut PVOID, Count: ULONG, Flags: ULONG) -> ULONG;
     fn RtlCaptureStackBackTrace(FramesToSkip: ULONG, FramesToCapture: ULONG, BackTrace: *mut PVOID, BackTraceHash: PULONG) -> USHORT;
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
     fn RtlCaptureContext(ContextRecord: *mut CONTEXT);
     fn KdInitSystem(BootPhase: ULONG, LoaderBlock: PVOID);
     fn DbgUnLoadImageSymbols(FileName: PANSI_STRING, BaseOfDll: PVOID, ProcessId: ULONG_PTR);
 }
 extern "C" {
-    fn RtlImageNtHeader(Base: PVOID) -> PIMAGE_NT_HEADERS;
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
     fn DbgPrint(Format: *const i8, ...) -> ULONG;
+}
+extern "system" {
+    fn RtlImageNtHeader(Base: PVOID) -> PIMAGE_NT_HEADERS;
     fn DbgBreakPointWithStatus(Status: ULONG);
     fn HalHaltSystem();
     fn HeadlessDispatch(Command: ULONG, InputBuffer: PVOID, InputBufferSize: SIZE_T, OutputBuffer: PVOID, OutputBufferSize: PSIZE_T);
     fn KeGetTrapFramePc(TrapFrame: PKTRAP_FRAME) -> ULONG_PTR;
+    #[cfg(target_arch = "x86")] fn KxFreezeExecution();
+    #[cfg(target_arch = "x86_64")] fn KxFreezeExecution();
+}
+extern "C" {
     fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: SIZE_T, pszFormat: *const i8, ...) -> NTSTATUS;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn strlen(s: *const i8) -> SIZE_T;
-    #[cfg(target_arch = "x86")] fn KxFreezeExecution();
-    #[cfg(target_arch = "x86_64")] fn KxFreezeExecution();
 }
 
 const TAG_KNMI: ULONG = 0x494D4E4B;

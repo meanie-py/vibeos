@@ -17,8 +17,10 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn DefaultQueryInfoBufferCheck( info_class: u32, info_class_info: *const INFORMATION_CLASS_INFO, info_class_info_count: ULONG, flags: ULONG, info_buffer: PVOID, info_buffer_length: ULONG, return_length: *mut ULONG, handle_count: *mut ULONG, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
     fn KeInitializeEvent(Event: PKEVENT, Type: EVENT_TYPE, State: BOOLEAN);
+}
+extern "C" {
+    fn DefaultQueryInfoBufferCheck( info_class: u32, info_class_info: *const INFORMATION_CLASS_INFO, info_class_info_count: ULONG, flags: ULONG, info_buffer: PVOID, info_buffer_length: ULONG, return_length: *mut ULONG, handle_count: *mut ULONG, previous_mode: KPROCESSOR_MODE, ) -> NTSTATUS;
 }
 
 #[no_mangle]

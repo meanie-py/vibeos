@@ -10,7 +10,7 @@ const SecurityAnonymous: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_
 const SecurityIdentification: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_LEVEL_SecurityIdentification;
 const SecurityDelegation: SECURITY_IMPERSONATION_LEVEL = _SECURITY_IMPERSONATION_LEVEL_SecurityDelegation;
 
-extern "system" {
+extern "C" {
     fn SeQuerySubjectContextToken(SubjectContext: PSECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
 }
 

@@ -39,7 +39,7 @@ volatile PVOID Arm64UartKernelBase = (PVOID)0x09000000ULL;
  *
  * ARM64 PTE bit layout (from HARDWARE_PTE in mmtypes.h):
  *   [1:0]   Valid=1, NotLargePage=1
- *   [3:2]   CacheType (MAIR index): 00=Device, 01=Normal-WB, 11=Normal-NC
+ *   [3:2]   CacheType (AttrIndx, MAIR=0x4400FF): 00=Normal-WB, 01=Device, 10=Normal-NC
  *   [6]     Owner: 0=EL1-only(kernel), 1=EL0+EL1(user)
  *   [7]     NotDirty (inverted dirty bit)
  *   [9:8]   Shareability: 00=Non-shareable
@@ -52,9 +52,9 @@ volatile PVOID Arm64UartKernelBase = (PVOID)0x09000000ULL;
  * Constants (from miarm.h ARM64 section):
  *   PTE_NOT_LARGE_PAGE    = 0x0000000000000002
  *   PTE_ACCESSED          = 0x0000000000000400
- *   PTE_ENABLE_CACHE      = 0x0000000000000004 (CacheType=01)
- *   PTE_DISABLE_CACHE     = 0x0000000000000000 (CacheType=00)
- *   PTE_WRITECOMBINED     = 0x000000000000000C (CacheType=11)
+ *   PTE_ENABLE_CACHE      = 0x0000000000000000 (AttrIndx=0 → Normal WB)
+ *   PTE_DISABLE_CACHE     = 0x0000000000000004 (AttrIndx=1 → Device)
+ *   PTE_WRITECOMBINED     = 0x0000000000000008 (AttrIndx=2 → Normal NC)
  *   PTE_READONLY          = 0x0040000000000080 (UXN=1, NotDirty=1 → hw RO)
  *   PTE_EXECUTE           = 0x0000000000000080 (UXN=0, NotDirty=1 → hw RO)
  *   PTE_READWRITE         = 0x00C0000000000000 (UXN=1, Writable=1, hw RW)

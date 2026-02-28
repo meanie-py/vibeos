@@ -24,7 +24,7 @@ use ntkrnl_sys::ddk::{
     POBJECT_TYPE, PHANDLE,
 };
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD( address: PVOID, type_size: usize, field_offset: usize, ) -> PVOID;
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     static SePublicDefaultSd: PVOID;

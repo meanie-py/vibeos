@@ -30,13 +30,15 @@ extern "system" {
     static mut CcIdleDelay: LARGE_INTEGER;
     static mut LazyWriter: LAZY_WRITER;
     fn MiZeroPhysicalPage(PageFrameIndex: PFN_NUMBER);
-    fn MmGetMdlPfnArray(Mdl: PMDL) -> PPFN_NUMBER;
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn ExInterlockedInsertHeadList(ListHead: PLIST_ENTRY, ListEntry: PLIST_ENTRY, Lock: *mut KSPIN_LOCK) -> PLIST_ENTRY;
     fn ExInterlockedInsertTailList(ListHead: PLIST_ENTRY, ListEntry: PLIST_ENTRY, Lock: *mut KSPIN_LOCK) -> PLIST_ENTRY;
     fn ExInterlockedRemoveHeadList(ListHead: PLIST_ENTRY, Lock: *mut KSPIN_LOCK) -> PLIST_ENTRY;
     fn MmRequestPageMemoryConsumer(Consumer: ULONG, CanWait: UCHAR, AllocatedPage: *mut PFN_NUMBER) -> NTSTATUS;
+}
+extern "C" {
+    fn MmGetMdlPfnArray(Mdl: PMDL) -> PPFN_NUMBER;
 }
 
 extern "C" {
@@ -157,7 +159,7 @@ pub unsafe extern "system" fn CcPostDeferredWrites() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
+pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
     let mut locked = 0u8;
 

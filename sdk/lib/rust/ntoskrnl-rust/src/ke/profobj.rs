@@ -30,7 +30,7 @@ extern "system" {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-extern "system" {
+extern "C" {
     fn KeGetTrapFramePc(TrapFrame: PKTRAP_FRAME) -> ULONG_PTR;
 }
 

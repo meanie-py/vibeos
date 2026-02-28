@@ -60,7 +60,6 @@ extern "system" {
         Length: ULONG,
         ResultLength: *mut ULONG,
     ) -> NTSTATUS;
-    fn KeGetPcr() -> *mut _KPCR;
     fn ZwOpenSection(
         SectionHandle: *mut HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -81,6 +80,10 @@ extern "system" {
     fn ZwUnmapViewOfSection(ProcessHandle: HANDLE, BaseAddress: PVOID) -> NTSTATUS;
     
     static mut KiProcessorBlock: [*mut _KPRCB; 0];
+
+}
+extern "C" {
+    fn KeGetPcr() -> *mut _KPCR;
 }
 
 #[repr(C)]

@@ -49,14 +49,16 @@ extern "system" {
     fn BootAnimTickProgressBar(TotalProgress: ULONG);
     fn HeadlessDispatch(Command: ULONG, InputBuffer: PVOID, InputBufferSize: usize, OutputBuffer: PVOID, OutputBufferSize: PVOID) -> BOOLEAN;
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
+
+    static mut KiBugCheckData: [ULONG_PTR; 5];
+    static SeTcbPrivilege: LUID;
+}
+extern "C" {
     fn ProbeAndCaptureUnicodeString(CapturedString: PUNICODE_STRING, PreviousMode: KPROCESSOR_MODE, DisplayString: PUNICODE_STRING) -> NTSTATUS;
     fn ReleaseCapturedUnicodeString(CapturedString: PUNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn RtlUnicodeStringToOemSize(UnicodeString: PUNICODE_STRING) -> ULONG;
-
-    static mut KiBugCheckData: [ULONG_PTR; 5];
-    static SeTcbPrivilege: LUID;
 }
 
 extern "C" {

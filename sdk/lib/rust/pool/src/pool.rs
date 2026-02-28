@@ -526,6 +526,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
     }
 
     // ===== Nonpaged pool path =====
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'a', options(nomem, nostack, preserves_flags));
 
     // Try S-LIST for single-page allocations
     if size_in_pages == 1 && ExQueryDepthSList(&raw mut MiNonPagedPoolSListHead) != 0 {
@@ -541,7 +543,11 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
     let last_head =
         (&raw mut MmNonPagedPoolFreeListHead as *mut LIST_ENTRY).add(MI_MAX_FREE_PAGE_LISTS) as PLIST_ENTRY;
 
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'b', options(nomem, nostack, preserves_flags));
     let old_irql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'c', options(nomem, nostack, preserves_flags));
 
     while next_head < last_head {
         let mut next_entry = (*next_head).Flink;

@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from tests.qemu.vm import QemuVM, PROJECT_DIR
 
 
@@ -29,12 +31,15 @@ def test_qmp_status(vm: QemuVM) -> None:
     assert status["return"]["running"] is True
 
 
-def test_snapshot_restore(vm: QemuVM) -> None:
+def test_snapshot_restore(vm: QemuVM, arch: str) -> None:
     """Verify snapshot save/restore cycle works.
 
     The autouse restore_vm fixture already restored to 'ready'.
     Save a second snapshot, restore it, and verify VM is still alive.
+    Skipped on i386 — no scratch disk for savevm (FreeLDR limitation).
     """
+    if arch == "i386":
+        pytest.skip("i386 has no scratch disk for savevm")
     vm.save_snapshot("test_snap")
     vm.restore_snapshot("test_snap")
 

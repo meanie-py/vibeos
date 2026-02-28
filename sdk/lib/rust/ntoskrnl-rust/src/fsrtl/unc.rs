@@ -20,7 +20,7 @@ use ntkrnl_sys::ddk::{
 // Redefine as HANDLE (*mut c_void) rather than isize
 const INVALID_HANDLE_VALUE_PTR: HANDLE = -1isize as HANDLE;
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 

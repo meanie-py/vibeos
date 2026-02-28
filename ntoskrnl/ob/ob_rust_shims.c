@@ -345,8 +345,8 @@ ULONG ObpSelectObjectLockSlot(POBJECT_HEADER ObjectHeader)
     return _fi_ObpSelectObjectLockSlot(ObjectHeader);
 }
 
-ULONG NTAPI ObpValidateAttributes(ULONG Attributes,
-                                   KPROCESSOR_MODE PreviousMode)
+ULONG ObpValidateAttributes(ULONG Attributes,
+                            KPROCESSOR_MODE PreviousMode)
 {
     return _fi_ObpValidateAttributes(Attributes, PreviousMode);
 }

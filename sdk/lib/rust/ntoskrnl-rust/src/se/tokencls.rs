@@ -15,6 +15,40 @@ unsafe fn RtlInterlockedSetBits(Flags: *mut ULONG, Flag: ULONG) -> ULONG {
 }
 
 extern "system" {
+    fn SeQuerySessionIdToken(token: PTOKEN, session_id: PULONG) -> NTSTATUS;
+    fn SepCaptureSid(
+        input_sid: PSID,
+        previous_mode: KPROCESSOR_MODE,
+        pool_type: ULONG,
+        capture_if_kernel: BOOLEAN,
+        captured_sid: *mut PSID,
+    ) -> NTSTATUS;
+    fn SepReleaseSid(
+        captured_sid: PSID,
+        previous_mode: KPROCESSOR_MODE,
+        capture_if_kernel: BOOLEAN,
+    );
+    fn SepCaptureAcl(
+        input_acl: PACL,
+        previous_mode: KPROCESSOR_MODE,
+        pool_type: ULONG,
+        capture_if_kernel: BOOLEAN,
+        captured_acl: *mut PACL,
+    ) -> NTSTATUS;
+    fn SepReleaseAcl(
+        captured_acl: PACL,
+        previous_mode: KPROCESSOR_MODE,
+        capture_if_kernel: BOOLEAN,
+    );
+    fn SeTokenIsRestricted(token: PTOKEN) -> BOOLEAN;
+    fn SeTokenIsInert(token: PTOKEN) -> ULONG;
+    fn SeSinglePrivilegeCheck(privilege_value: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
+    fn SepRmRemoveLogonSessionFromToken(token: PTOKEN);
+    
+    static mut SeTokenObjectType: *mut _OBJECT_TYPE;
+    static mut SeTcbPrivilege: LUID;
+}
+extern "C" {
     fn DefaultQueryInfoBufferCheck(
         info_class: ULONG,
         info_class_table: *const INFORMATION_CLASS_INFO,
@@ -39,24 +73,13 @@ extern "system" {
     fn SepAcquireTokenLockShared(token: PTOKEN);
     fn SepAcquireTokenLockExclusive(token: PTOKEN);
     fn SepReleaseTokenLock(token: PTOKEN);
+}
+extern "C" {
     fn SepComputeAvailableDynamicSpace(
         dynamic_charged: ULONG,
         primary_group: PSID,
         default_dacl: PACL,
     ) -> ULONG;
-    fn SeQuerySessionIdToken(token: PTOKEN, session_id: PULONG) -> NTSTATUS;
-    fn SepCaptureSid(
-        input_sid: PSID,
-        previous_mode: KPROCESSOR_MODE,
-        pool_type: ULONG,
-        capture_if_kernel: BOOLEAN,
-        captured_sid: *mut PSID,
-    ) -> NTSTATUS;
-    fn SepReleaseSid(
-        captured_sid: PSID,
-        previous_mode: KPROCESSOR_MODE,
-        capture_if_kernel: BOOLEAN,
-    );
     fn SepFindPrimaryGroupAndDefaultOwner(
         token: PTOKEN,
         primary_group: PSID,
@@ -65,26 +88,7 @@ extern "system" {
         default_owner_index: PULONG,
     ) -> NTSTATUS;
     fn SepRebuildDynamicPartOfToken(token: PTOKEN, new_dynamic_length: ULONG) -> NTSTATUS;
-    fn SepCaptureAcl(
-        input_acl: PACL,
-        previous_mode: KPROCESSOR_MODE,
-        pool_type: ULONG,
-        capture_if_kernel: BOOLEAN,
-        captured_acl: *mut PACL,
-    ) -> NTSTATUS;
-    fn SepReleaseAcl(
-        captured_acl: PACL,
-        previous_mode: KPROCESSOR_MODE,
-        capture_if_kernel: BOOLEAN,
-    );
-    fn SeTokenIsRestricted(token: PTOKEN) -> BOOLEAN;
-    fn SeTokenIsInert(token: PTOKEN) -> ULONG;
-    fn SeSinglePrivilegeCheck(privilege_value: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
-    fn SepRmRemoveLogonSessionFromToken(token: PTOKEN);
     fn SepRmDereferenceLogonSession(logon_id: *const LUID);
-    
-    static mut SeTokenObjectType: *mut _OBJECT_TYPE;
-    static mut SeTcbPrivilege: LUID;
 }
 
 const TAG_SE: ULONG = 0x53206553;

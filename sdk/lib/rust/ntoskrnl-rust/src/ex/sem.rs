@@ -35,11 +35,13 @@ const ICIF_PROBE_READ_WRITE: ULONG = 0x0003;
 const SEMAPHORE_INCREMENT: LONG = 1;
 
 extern "system" {
-    fn DefaultQueryInfoBufferCheck( info_class: ULONG, class_info: *const INFORMATION_CLASS_INFO, class_count: ULONG, flags: ULONG, buffer: PVOID, buffer_length: ULONG, return_length: *mut ULONG, required_length: *mut ULONG, mode: KPROCESSOR_MODE, ) -> NTSTATUS;
     fn KeInitializeSemaphore( Semaphore: PKSEMAPHORE, Count: LONG, Limit: LONG, );
     fn ObCreateObject( ObjectAttributesAccessMode: KPROCESSOR_MODE, Type: POBJECT_TYPE, ObjectAttributes: POBJECT_ATTRIBUTES, AccessMode: KPROCESSOR_MODE, Reserved: PVOID, ObjectSize: ULONG, PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Object: *mut PVOID, ) -> NTSTATUS;
     fn ObInsertObject( Object: PVOID, PassedAccessState: PVOID, DesiredAccess: ACCESS_MASK, AdditionalReferences: ULONG, ReferencedObject: *mut PVOID, Handle: PHANDLE, ) -> NTSTATUS;
     fn ObOpenObjectByName( ObjectAttributes: POBJECT_ATTRIBUTES, ObjectType: POBJECT_TYPE, AccessMode: KPROCESSOR_MODE, PassedAccessState: PVOID, DesiredAccess: ACCESS_MASK, ParseContext: PVOID, Handle: PHANDLE, ) -> NTSTATUS;
+}
+extern "C" {
+    fn DefaultQueryInfoBufferCheck( info_class: ULONG, class_info: *const INFORMATION_CLASS_INFO, class_count: ULONG, flags: ULONG, buffer: PVOID, buffer_length: ULONG, return_length: *mut ULONG, required_length: *mut ULONG, mode: KPROCESSOR_MODE, ) -> NTSTATUS;
 }
 
 #[no_mangle]

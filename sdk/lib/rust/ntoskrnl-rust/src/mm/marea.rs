@@ -43,7 +43,7 @@ use ntkrnl_sys::ddk::{
     SWAPENTRY,
 };
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 

@@ -232,7 +232,7 @@ VOID NTAPI FsRtlExitFileSystem(VOID)
 VOID NTAPI FsRtlEnterFileSystem(VOID)
 { _tramp_FsRtlEnterFileSystem(); }
 
-VOID NTAPI CcBugCheck(ULONG A, ULONG B, ULONG C)
+VOID CcBugCheck(ULONG A, ULONG B, ULONG C)
 { _tramp_CcBugCheck(A, B, C); }
 
 PPFN_NUMBER NTAPI MmGetMdlPfnArray(PMDL Mdl)

@@ -861,7 +861,6 @@ extern "system" {
     pub fn MiReleaseProcessReferenceToSessionDataPage(SessionGlobal: PVOID);
     pub fn PsChargeProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T) -> NTSTATUS;
     pub fn PsReturnProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T);
-    pub fn PsGetCurrentThread() -> PVOID;
     pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     pub fn RtlImageNtHeader(Base: PVOID) -> PVOID;
     pub fn RtlImageDirectoryEntryToData(
@@ -875,6 +874,9 @@ extern "system" {
     pub fn SeInitializeProcessAuditName(
         FileObject: PVOID, bInit: BOOLEAN, AuditInfo: *mut PVOID,
     ) -> NTSTATUS;
+}
+extern "C" {
+    pub fn PsGetCurrentThread() -> PVOID;
 }
 
 // ============================================================================

@@ -27,12 +27,14 @@ extern "system" {
     fn KiCallUserMode(OutputBuffer: *mut PVOID, OutputLength: *mut ULONG) -> NTSTATUS;
     fn KiExceptionExit(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> !;
     fn KiCallbackReturn(CalloutFrame: PVOID, Status: NTSTATUS) -> !;
-    fn KiGetUserModeStackAddress() -> *mut ULONG_PTR;
     fn MmAccessFault(FaultCode: ULONG, Address: PVOID, Mode: KPROCESSOR_MODE, TrapInformation: PVOID) -> NTSTATUS;
     fn MmGrowKernelStack(StackPointer: PVOID) -> NTSTATUS;
     fn MmIsAddressValid(Address: PVOID) -> BOOLEAN;
     static KeUserCallbackDispatcher: PVOID;
     fn KeGdiFlushUserBatch();
+}
+extern "C" {
+    fn KiGetUserModeStackAddress() -> *mut ULONG_PTR;
 }
 
 const KERNEL_STACK_SIZE: ULONG_PTR = 0x3000;

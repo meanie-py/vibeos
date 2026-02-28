@@ -65,17 +65,19 @@ static ExTimerInfoClass: [INFORMATION_CLASS_INFO; 1] = [
 ];
 
 extern "system" {
-    fn ProbeForWriteBoolean(Address: PBOOLEAN);
-    fn ProbeForWriteHandle(Address: PHANDLE);
-    fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> LARGE_INTEGER;
     fn KeInitializeDpc(Dpc: *mut _KDPC, DeferredRoutine: KDEFERRED_ROUTINE, DeferredContext: PVOID);
     fn KeInitializeTimerEx(Timer: *mut _KTIMER, Type: u32);
     fn ObCreateObject( ProbeMode: KPROCESSOR_MODE, ObjectType: POBJECT_TYPE, ObjectAttributes: POBJECT_ATTRIBUTES, AccessMode: KPROCESSOR_MODE, Reserved: PVOID, ObjectSize: ULONG, PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Object: *mut PVOID, ) -> NTSTATUS;
     fn ObInsertObject( Object: PVOID, AccessState: PVOID, DesiredAccess: ACCESS_MASK, AdditionalReferences: ULONG, ReferencedObject: *mut PVOID, Handle: PHANDLE, ) -> NTSTATUS;
     fn ObOpenObjectByName( ObjectAttributes: POBJECT_ATTRIBUTES, ObjectType: POBJECT_TYPE, AccessMode: KPROCESSOR_MODE, AccessState: PVOID, DesiredAccess: ACCESS_MASK, ParseContext: PVOID, Handle: PHANDLE, ) -> NTSTATUS;
-    fn DefaultQueryInfoBufferCheck( Class: u32, InfoClassArray: *const INFORMATION_CLASS_INFO, InfoClassArrayEntries: ULONG, Flags: ULONG, Buffer: PVOID, Length: ULONG, ReturnLength: *mut ULONG, ReturnLengthPtr: *mut ULONG, PreviousMode: KPROCESSOR_MODE, ) -> NTSTATUS;
     fn KeInitializeApc( Apc: *mut _KAPC, Thread: *mut _KTHREAD, Environment: u8, KernelRoutine: unsafe extern "C" fn( *mut _KAPC, *mut PKNORMAL_ROUTINE, *mut PVOID, *mut PVOID, *mut PVOID, ), RundownRoutine: PVOID, NormalRoutine: PKNORMAL_ROUTINE, Mode: KPROCESSOR_MODE, Context: PVOID, );
     fn KeSetTimerEx( Timer: *mut _KTIMER, DueTime: LARGE_INTEGER, Period: LONG, Dpc: *mut _KDPC, ) -> BOOLEAN;
+}
+extern "C" {
+    fn ProbeForWriteBoolean(Address: PBOOLEAN);
+    fn ProbeForWriteHandle(Address: PHANDLE);
+    fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> LARGE_INTEGER;
+    fn DefaultQueryInfoBufferCheck( Class: u32, InfoClassArray: *const INFORMATION_CLASS_INFO, InfoClassArrayEntries: ULONG, Flags: ULONG, Buffer: PVOID, Length: ULONG, ReturnLength: *mut ULONG, ReturnLengthPtr: *mut ULONG, PreviousMode: KPROCESSOR_MODE, ) -> NTSTATUS;
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
 }
 

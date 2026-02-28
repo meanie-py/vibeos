@@ -117,6 +117,11 @@
 #undef RMAP_IS_SEGMENT
 #undef PAGE_ROUND_DOWN
 #undef InterlockedExchangeAddUL
+#undef MmSetDirtyPage
+#undef PFN_FROM_SSE
+#undef MM_IS_WAIT_PTE
+#undef IS_SWAP_FROM_SSE
+#undef SWAPENTRY_FROM_SSE
 #undef MmLockSectionSegment
 #undef MmUnlockSectionSegment
 #undef MmGetPageEntrySectionSegment
@@ -473,6 +478,36 @@ NTAPI
 PAGE_ROUND_DOWN(IN PVOID Address)
 {
     return (((ULONG_PTR)(Address)) & ~((ULONG_PTR)(PAGE_SIZE - 1)));
+}
+
+/*
+ * PFN_FROM_SSE — macro in mm.h (undeffed in Phase 3)
+ */
+PFN_NUMBER
+NTAPI
+PFN_FROM_SSE(IN ULONG_PTR Entry)
+{
+    return (PFN_NUMBER)(Entry >> PAGE_SHIFT);
+}
+
+/*
+ * MM_IS_WAIT_PTE — macro in mm.h (undeffed in Phase 3)
+ */
+BOOLEAN
+NTAPI
+MM_IS_WAIT_PTE(IN ULONG_PTR Entry)
+{
+    return ((Entry & 0x1) && ((Entry >> 1) == MM_WAIT_ENTRY));
+}
+
+/*
+ * MmSetDirtyPage — macro in mm.h: MmSetDirtyBit(P, A, TRUE)
+ */
+VOID
+NTAPI
+MmSetDirtyPage(IN PEPROCESS Process, IN PVOID Address)
+{
+    MmSetDirtyBit(Process, Address, TRUE);
 }
 
 /*

@@ -22,7 +22,7 @@ extern "system" {
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
 }
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
         n: PUNICODE_STRING,

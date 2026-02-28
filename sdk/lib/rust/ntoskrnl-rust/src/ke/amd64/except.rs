@@ -62,9 +62,11 @@ extern "system" {
     fn KiDpcInterrupt();
     fn KiIpiInterrupt();
     fn KdIsThisAKdTrap( ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT, Mode: KPROCESSOR_MODE, ) -> BOOLEAN;
-    fn __lidt(descriptor: *const u16);
     fn _enable();
     fn _disable();
+}
+extern "C" {
+    fn __lidt(descriptor: *const u16);
 }
 
 const KGDT64_R0_CODE: u16 = 0x10;

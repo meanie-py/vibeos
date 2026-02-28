@@ -2,7 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 
-extern "system" {
+extern "C" {
     fn SeQuerySubjectContextToken(subject_context: *const _SECURITY_SUBJECT_CONTEXT) -> PTOKEN;
 }
 

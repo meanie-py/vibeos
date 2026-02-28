@@ -367,6 +367,14 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
 
     Vendor = KiGetCpuVendor();
 
+    // Debug trace: vendor value
+    #[cfg(target_arch = "x86")]
+    {
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'[', options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") (b'0' + Vendor as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b']', options(nomem, nostack, preserves_flags));
+    }
+
     if Vendor == 0 {
         return FeatureBits;
     }
@@ -515,6 +523,22 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
 
     CpuFeatures = CpuInfo.__bindgen_anon_1.Edx;
 
+    // Debug trace: output CpuFeatures EDX hex nibbles
+    #[cfg(target_arch = "x86")]
+    {
+        let hex = |v: u8| -> u8 { if v < 10 { b'0' + v } else { b'a' + v - 10 } };
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'{', options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 28) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 24) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 20) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 16) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 12) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 8) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 4) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex((CpuFeatures & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'}', options(nomem, nostack, preserves_flags));
+    }
+
     if CpuFeatures & X86_FEATURE_VME != 0 {
         FeatureBits |= KF_V86_VIS | KF_CR4;
     }
@@ -587,6 +611,23 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
                 }
             }
         }
+    }
+
+    // Debug trace: output FeatureBits low 32 bits
+    #[cfg(target_arch = "x86")]
+    {
+        let hex = |v: u8| -> u8 { if v < 10 { b'0' + v } else { b'a' + v - 10 } };
+        let fb = FeatureBits as u32;
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'<', options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 28) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 24) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 20) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 16) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 12) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 8) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 4) & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex((fb & 0xF) as u8), options(nomem, nostack, preserves_flags));
+        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'>', options(nomem, nostack, preserves_flags));
     }
 
     FeatureBits
@@ -1301,7 +1342,8 @@ pub unsafe extern "system" fn KeInvalidateAllCaches() -> BOOLEAN {
     1
 }
 
-unsafe fn KiSaveProcessorState(
+#[no_mangle]
+pub unsafe extern "system" fn KiSaveProcessorState(
     TrapFrame: PKTRAP_FRAME,
     _ExceptionFrame: PKEXCEPTION_FRAME,
 ) {

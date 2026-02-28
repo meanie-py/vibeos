@@ -25,9 +25,6 @@ use ntkrnl_sys::ddk::{
 extern "system" {
     fn KiSetProcessorType();
     fn KiGetFeatureBits() -> u64;
-    fn KiGetGdtEntry(GdtBase: PKGDTENTRY64, Selector: u16) -> PKGDTENTRY64;
-    fn KiGetGdtDescriptorBase(Entry: PKGDTENTRY64) -> PKTSS64;
-    fn KiInitGdtEntry(Entry: PKGDTENTRY64, Base: u64, Limit: u32, Type: u8, Dpl: u8);
     fn KiInitializeXStateConfiguration(Cpu: u8);
     fn KiSwitchToBootStack(InitialStack: u64);
     fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u32;
@@ -53,6 +50,11 @@ extern "system" {
     static mut KiInitialThread: _ETHREAD;
     static mut KiInitialProcess: _EPROCESS;
     static mut KeXStateLength: usize;
+}
+extern "C" {
+    fn KiGetGdtEntry(GdtBase: PKGDTENTRY64, Selector: u16) -> PKGDTENTRY64;
+    fn KiGetGdtDescriptorBase(Entry: PKGDTENTRY64) -> PKTSS64;
+    fn KiInitGdtEntry(Entry: PKGDTENTRY64, Base: u64, Limit: u32, Type: u8, Dpl: u8);
 }
 
 type PKGDTENTRY64 = *mut u8;
@@ -775,10 +777,7 @@ pub unsafe extern "C" fn __chkstk() {
 pub unsafe extern "system" fn KeSetCurrentIrql(irql: u8) {
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KfRaiseIrql(irql: u8) {
-}
-
+// KfRaiseIrql — provided by shim_exports.rs (correct cdecl + return value)
 
 // ============================================================================
 // ORIGINAL C SOURCE

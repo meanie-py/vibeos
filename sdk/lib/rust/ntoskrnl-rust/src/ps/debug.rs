@@ -7,10 +7,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 
 extern "system" {
-    fn PsGetCurrentThread() -> PETHREAD;
     fn KeInitializeEvent(event: PVOID, event_type: ULONG, state: BOOLEAN);
-    fn KeEnterGuardedRegion();
-    fn KeLeaveGuardedRegion();
     fn PspGetOrSetContextKernelRoutine(
         apc: PVOID,
         normal_routine: *mut PVOID,
@@ -25,6 +22,11 @@ extern "system" {
         alertable: BOOLEAN,
         timeout: PVOID,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn PsGetCurrentThread() -> PETHREAD;
+    fn KeEnterGuardedRegion();
+    fn KeLeaveGuardedRegion();
 }
 
 extern "C" {

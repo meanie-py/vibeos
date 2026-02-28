@@ -157,8 +157,10 @@ macro_rules! UNREFERENCED_PARAMETER {
 /// we need to shadow/redeclare to avoid name clashes with the ddk imports.
 extern "system" {
     fn KiFindIdealProcessor_impl(Affinity: KAFFINITY, Processor: u8) -> u8;
-    fn KxUnwaitThread_impl(Header: *mut ntkrnl_sys::ddk::_DISPATCHER_HEADER, Increment: KPRIORITY);
     fn BitScanReverseAffinity_impl(Index: *mut u32, Mask: KAFFINITY);
+}
+extern "C" {
+    fn KxUnwaitThread_impl(Header: *mut ntkrnl_sys::ddk::_DISPATCHER_HEADER, Increment: KPRIORITY);
 }
 
 /// Local BitScanReverse implementation (not available in ntkrnl-sys/ddk)

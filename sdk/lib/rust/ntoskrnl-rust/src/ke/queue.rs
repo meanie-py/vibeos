@@ -15,7 +15,7 @@ use ntkrnl_sys::ddk::{
     PLARGE_INTEGER, PWORK_QUEUE_ITEM,
 };
 
-extern "system" {
+extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
     fn KxQueueThreadWait(
         Queue: PVOID,
@@ -65,7 +65,7 @@ pub unsafe extern "C" fn KiActivateWaiterQueue(Queue: PKQUEUE) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiInsertQueue(
+pub unsafe extern "system" fn KiInsertQueue(
     Queue: PKQUEUE,
     Entry: PLIST_ENTRY,
     Head: BOOLEAN,

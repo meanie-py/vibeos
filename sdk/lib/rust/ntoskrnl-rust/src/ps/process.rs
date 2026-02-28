@@ -86,18 +86,22 @@ extern "system" {
     static LpcPortObjectType: POBJECT_TYPE;
 
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
-    fn ObpValidateAttributes(attrs: ULONG, mode: KPROCESSOR_MODE) -> ULONG;
     fn PspInheritQuota(process: PEPROCESS, parent: PEPROCESS);
     fn PspInitializeProcessSecurity(process: PEPROCESS, parent: PEPROCESS) -> NTSTATUS;
     fn ObInitProcess(parent: PEPROCESS, process: PEPROCESS) -> NTSTATUS;
     fn PspMapSystemDll(process: PEPROCESS, base: *mut PVOID, load: BOOLEAN) -> NTSTATUS;
     fn ARM64_UART_TRACE(msg: *const i8);
     fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
+}
+extern "C" {
+    fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
     fn PspPrioritySeparationFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumTypeFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumLengthFromMask(mask: ULONG) -> ULONG;
     fn PsGetCurrentThread() -> PETHREAD;
+}
+extern "C" {
+    fn ObpValidateAttributes(attrs: ULONG, mode: KPROCESSOR_MODE) -> ULONG;
 }
 
 // FORCEINLINE functions provided by ps_rust_shims.c as __cdecl

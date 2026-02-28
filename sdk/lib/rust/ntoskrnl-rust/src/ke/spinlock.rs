@@ -11,6 +11,13 @@ use ntkrnl_sys::ddk::{
     PKSPIN_LOCK_QUEUE,
 };
 
+// FASTCALL on i386 (matching Windows API / bindgen), "system" on others
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KeAcquireInStackQueuedSpinLock(SpinLock: PKSPIN_LOCK, LockHandle: PKLOCK_QUEUE_HANDLE);
+    fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE);
+}
+#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn KeAcquireInStackQueuedSpinLock(SpinLock: PKSPIN_LOCK, LockHandle: PKLOCK_QUEUE_HANDLE);
     fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE);
@@ -19,7 +26,20 @@ extern "system" {
 const LQ_WAIT: usize = 1;
 const LQ_OWN: usize = 2;
 
-unsafe fn KeAcquireQueuedSpinLockAtDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KeAcquireQueuedSpinLockAtDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+    KeAcquireQueuedSpinLockAtDpcLevelInner(LockHandle)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn KeAcquireQueuedSpinLockAtDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+    KeAcquireQueuedSpinLockAtDpcLevelInner(LockHandle)
+}
+
+#[inline(always)]
+unsafe fn KeAcquireQueuedSpinLockAtDpcLevelInner(LockHandle: PKSPIN_LOCK_QUEUE) {
     #[cfg(any(debug_assertions, feature = "smp"))]
     {
         if KeGetCurrentIrql() < DISPATCH_LEVEL {
@@ -36,7 +56,20 @@ unsafe fn KeAcquireQueuedSpinLockAtDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
     KxAcquireSpinLock((*LockHandle).Lock as *mut _);
 }
 
-unsafe fn KeReleaseQueuedSpinLockFromDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KeReleaseQueuedSpinLockFromDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+    KeReleaseQueuedSpinLockFromDpcLevelInner(LockHandle)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn KeReleaseQueuedSpinLockFromDpcLevel(LockHandle: PKSPIN_LOCK_QUEUE) {
+    KeReleaseQueuedSpinLockFromDpcLevelInner(LockHandle)
+}
+
+#[inline(always)]
+unsafe fn KeReleaseQueuedSpinLockFromDpcLevelInner(LockHandle: PKSPIN_LOCK_QUEUE) {
     #[cfg(any(debug_assertions, feature = "smp"))]
     {
         if KeGetCurrentIrql() < DISPATCH_LEVEL {

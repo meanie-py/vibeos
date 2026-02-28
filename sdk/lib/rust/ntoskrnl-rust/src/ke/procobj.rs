@@ -122,7 +122,7 @@ unsafe fn kthread_get_kernel_apc_disable(t: *const _KTHREAD) -> i16 {
     { (*t).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable }
 }
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_offset: usize, field_offset: usize) -> PVOID;
 }
 
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn KeSetProcess(
     Increment: KPRIORITY,
     InWait: BOOLEAN,
 ) -> ULONG {
-    extern "system" {
+    extern "C" {
     fn KxUnwaitThread(header: PVOID, increment: KPRIORITY);
 }
 

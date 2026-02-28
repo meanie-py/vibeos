@@ -17,8 +17,10 @@ extern "system" {
     static mut FsRtlFileLockLookasideList: _PAGED_LOOKASIDE_LIST;
     fn FsRtlInitializeTunnels();
     fn FsRtlInitializeLargeMcbs();
-    fn ExInitializeResource(Resource: PERESOURCE) -> NTSTATUS;
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+}
+extern "C" {
+    fn ExInitializeResource(Resource: PERESOURCE) -> NTSTATUS;
 }
 
 const FSRTL_OLE_LEGAL: u8 = 0x01;

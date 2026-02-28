@@ -16,7 +16,7 @@ use ntkrnl_sys::ddk::{
     ExGetPreviousMode, NtCurrentTeb,
 };
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
         n: *mut _UNICODE_STRING,
@@ -54,7 +54,7 @@ const DbgKmUnloadDllApi: ULONG = 5;
 
 const LPC_DEBUG_EVENT: i16 = 9;
 
-extern "system" {
+extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
 }
 

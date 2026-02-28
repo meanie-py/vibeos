@@ -56,7 +56,6 @@ extern "system" {
         size: ULONG,
         data: *mut ULONG,
     ) -> NTSTATUS;
-    fn SepGetOwnerFromDescriptor(sd: PSECURITY_DESCRIPTOR) -> PSID;
     fn SepSidInToken(token: PTOKEN, sid: PSID) -> BOOLEAN;
     fn SepSidInTokenEx(
         token: PTOKEN,
@@ -101,8 +100,6 @@ extern "system" {
         system_token: BOOLEAN,
     ) -> NTSTATUS;
     fn SepRmRemoveLogonSessionFromToken(token: PTOKEN) -> NTSTATUS;
-    fn SepRmDereferenceLogonSession(auth_id: *const LUID);
-    fn SeLengthSid(sid: PSID) -> ULONG;
     fn PsDisableImpersonation(
         thread: PETHREAD,
         state: *mut SE_IMPERSONATION_STATE,
@@ -151,11 +148,18 @@ extern "system" {
     static SeManageVolumePrivilege: LUID;
     static SeImpersonatePrivilege: LUID;
     static SeCreateGlobalPrivilege: LUID;
+    fn RtlEqualLuid(a: *const LUID, b: *const LUID) -> BOOLEAN;
+}
+extern "C" {
     fn SepAcquireTokenLockExclusive(token: PTOKEN);
     fn SepAcquireTokenLockShared(token: PTOKEN);
     fn SepReleaseTokenLock(token: PTOKEN);
+}
+extern "C" {
+    fn SepGetOwnerFromDescriptor(sd: PSECURITY_DESCRIPTOR) -> PSID;
+    fn SepRmDereferenceLogonSession(auth_id: *const LUID);
+    fn SeLengthSid(sid: PSID) -> ULONG;
     fn ObpValidateAttributes(attrs: ULONG, mode: KPROCESSOR_MODE) -> ULONG;
-    fn RtlEqualLuid(a: *const LUID, b: *const LUID) -> BOOLEAN;
 }
 
 const SYSTEM_LUID: LUID = _LUID {

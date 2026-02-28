@@ -49,6 +49,8 @@ extern "system" {
     fn ExInitializeResourceLite(resource: PVOID) -> NTSTATUS;
     fn ExDeleteResourceLite(resource: PVOID) -> NTSTATUS;
     fn KeInitializeEvent(event: PVOID, event_type: u32, state: BOOLEAN);
+}
+extern "C" {
     fn KeEnterGuardedRegionThread(thread: PKTHREAD);
     fn KeLeaveGuardedRegionThread(thread: PKTHREAD);
 }

@@ -92,7 +92,6 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn ProbeForWrite(address: PVOID, length: SIZE_T, alignment: ULONG);
-    fn ProbeForWriteUlong(address: *mut ULONG);
     fn SeSinglePrivilegeCheck(privilege: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
     fn ZwOpenFile(
         file_handle: *mut HANDLE,
@@ -131,6 +130,9 @@ extern "system" {
     static GUID_DEVICE_SYS_BUTTON: GUID;
     static GUID_DEVICE_LID: GUID;
     static GUID_DEVICE_BATTERY: GUID;
+}
+extern "C" {
+    fn ProbeForWriteUlong(address: *mut ULONG);
 }
 
 #[cfg(target_arch = "x86")]

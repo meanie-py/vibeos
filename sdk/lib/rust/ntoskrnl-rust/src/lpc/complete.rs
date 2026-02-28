@@ -18,7 +18,6 @@ extern "system" {
     static mut LpcPortObjectType: PVOID;
 
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForWriteHandle(address: *mut HANDLE);
     fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn ProbeForWrite(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn ObCreateObject(
@@ -61,6 +60,9 @@ extern "system" {
         allocation_type: ULONG,
         page_protection: ULONG,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn ProbeForWriteHandle(address: *mut HANDLE);
     fn LpcpCompleteWait(semaphore: PVOID);
     fn PsGetCurrentProcess() -> PEPROCESS;
 }

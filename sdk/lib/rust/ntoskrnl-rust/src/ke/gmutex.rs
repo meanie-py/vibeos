@@ -1,81 +1,82 @@
-use super::ke_defs::*;
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
+use ntkrnl_sys::inline::ke as ke_inline;
 
 // GuardedMutex functions are FASTCALL on i386, extern "C" on other architectures.
+// These are the exported wrappers (ntoskrnl.spec) that call the inline implementations.
+// The C originals in gmutex.c do: #undef KeInitializeGuardedMutex, then call
+// the _KeInitializeGuardedMutex FORCEINLINE from ke_x.h.
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeInitializeGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeInitializeGuardedMutex(GuardedMutex);
+    ke_inline::_KeInitializeGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeInitializeGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeInitializeGuardedMutex(GuardedMutex);
+    ke_inline::_KeInitializeGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeAcquireGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeAcquireGuardedMutex(GuardedMutex);
+    ke_inline::_KeAcquireGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeAcquireGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeAcquireGuardedMutex(GuardedMutex);
+    ke_inline::_KeAcquireGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeReleaseGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeReleaseGuardedMutex(GuardedMutex);
+    ke_inline::_KeReleaseGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeReleaseGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ke::KeReleaseGuardedMutex(GuardedMutex);
+    ke_inline::_KeReleaseGuardedMutex(GuardedMutex as _);
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeAcquireGuardedMutexUnsafe(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ddk::KeAcquireGuardedMutexUnsafe(GuardedMutex as _);
+    ke_inline::_KeAcquireGuardedMutexUnsafe(GuardedMutex as _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeAcquireGuardedMutexUnsafe(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ddk::KeAcquireGuardedMutexUnsafe(GuardedMutex as _);
+    ke_inline::_KeAcquireGuardedMutexUnsafe(GuardedMutex as _);
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeReleaseGuardedMutexUnsafe(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ddk::KeReleaseGuardedMutexUnsafe(GuardedMutex as _);
+    ke_inline::_KeReleaseGuardedMutexUnsafe(GuardedMutex as _);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeReleaseGuardedMutexUnsafe(GuardedMutex: PKGUARDED_MUTEX) {
-    ntkrnl_sys::ddk::KeReleaseGuardedMutexUnsafe(GuardedMutex as _);
+    ke_inline::_KeReleaseGuardedMutexUnsafe(GuardedMutex as _);
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KeTryToAcquireGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) -> BOOLEAN {
-    ntkrnl_sys::ddk::KeTryToAcquireGuardedMutex(GuardedMutex as _)
+    ke_inline::_KeTryToAcquireGuardedMutex(GuardedMutex as _)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeTryToAcquireGuardedMutex(GuardedMutex: PKGUARDED_MUTEX) -> BOOLEAN {
-    ntkrnl_sys::ddk::KeTryToAcquireGuardedMutex(GuardedMutex as _)
+    ke_inline::_KeTryToAcquireGuardedMutex(GuardedMutex as _)
 }
 
 #[no_mangle]

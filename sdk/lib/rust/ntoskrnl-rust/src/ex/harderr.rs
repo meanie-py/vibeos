@@ -27,6 +27,8 @@ extern "system" {
     static SeTcbPrivilege: _LUID;
     static SeShutdownPrivilege: _LUID;
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: *mut ntkrnl_sys::ddk::_LARGE_INTEGER);
 }
 

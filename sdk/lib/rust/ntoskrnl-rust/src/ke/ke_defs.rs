@@ -6,11 +6,15 @@
 // Extern "system" functions used across ke/ files
 // ============================================================================
 extern "system" {
+    pub fn KeRaiseIrqlToSynchLevel() -> u8;
+
+    // Misc kernel functions
+    pub fn ExFreePool(P: *mut core::ffi::c_void);
+}
+extern "C" {
     // IRQL management (provided by ke_rust_shims.c or HAL)
     pub fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8);
     pub fn KeLowerIrql(NewIrql: u8);
-    pub fn KeRaiseIrqlToSynchLevel() -> u8;
-    pub fn KfRaiseIrql(NewIrql: u8) -> u8;
     pub fn KeQuerySystemTime(CurrentTime: *mut i64);
 
     // Critical/Guarded regions (provided by ke_rust_shims.c)
@@ -18,6 +22,9 @@ extern "system" {
     pub fn KeLeaveCriticalRegion();
     pub fn KeEnterGuardedRegion();
     pub fn KeLeaveGuardedRegion();
+}
+extern "C" {
+    pub fn KfRaiseIrql(NewIrql: u8) -> u8;
 
     // Dispatcher lock functions (provided by ex_rust_shims.c or ke_rust_shims.c)
     pub fn KiAcquireDispatcherLock() -> u8;
@@ -40,9 +47,6 @@ extern "system" {
 
     // Timer/Wait helpers (provided by ke_rust_shims.c)
     pub fn KiSignalTimer(Timer: *mut ntkrnl_sys::ddk::_KTIMER);
-
-    // Misc kernel functions
-    pub fn ExFreePool(P: *mut core::ffi::c_void);
     pub fn YieldProcessor();
 }
 // KiWaitTest, KiUnwaitThread, KiUnlinkThread are FASTCALL on i386, extern "C" on others
@@ -63,20 +67,27 @@ extern "C" {
 }
 extern "system" {
     pub fn KdReportProcessorChange() -> u32;
-    pub fn KxQueueReadyThread(Thread: *mut ntkrnl_sys::ddk::_KTHREAD, Prcb: *mut ntkrnl_sys::ddk::_KPRCB);
 
     // Ke intrinsics provided by ke_rust_shims.c
     pub fn _rdmsr(Register: u32) -> u64;
     pub fn _wrmsr(Register: u32, Value: u64);
+}
+extern "C" {
 
     // KeGetCurrentThread — FORCEINLINE on amd64, provided by PsGetCurrentThread shim
     pub fn PsGetCurrentThread() -> *mut ntkrnl_sys::ddk::_KTHREAD;
+}
+extern "C" {
+    pub fn KxQueueReadyThread(Thread: *mut ntkrnl_sys::ddk::_KTHREAD, Prcb: *mut ntkrnl_sys::ddk::_KPRCB);
 }
 
 // Arch-specific extern declarations
 #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 extern "system" {
     pub fn __cpuidex(CPUInfo: *mut i32, Function: i32, SubLeaf: i32);
+}
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+extern "C" {
     pub fn __writemsr(Register: u32, Value: u64);
 }
 
@@ -86,18 +97,19 @@ extern "system" {
     pub fn InterlockedAnd64(Destination: *mut i64, Value: i64) -> i64;
     pub fn _xsetbv(Register: u32, Value: u64);
     pub fn _rdtsc() -> u64;
+}
+#[cfg(target_arch = "x86_64")]
+extern "C" {
     pub fn __writecr3(Value: u64);
 }
 
 #[cfg(target_arch = "x86")]
 extern "system" {
-    pub fn KeGetPcr() -> *mut ntkrnl_sys::ddk::_KIPCR;
     pub fn ExAllocatePool(PoolType: u32, NumberOfBytes: u32) -> *mut core::ffi::c_void;
     pub fn KeIpiGenericCall(
         BroadcastFunction: Option<unsafe extern "system" fn(usize) -> usize>,
         Context: usize,
     ) -> usize;
-    pub fn KeInvalidateTlbEntry(Address: *mut core::ffi::c_void);
     pub fn KeTrapFrameToContext(
         TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
         ExceptionFrame: *mut core::ffi::c_void,
@@ -116,6 +128,11 @@ extern "system" {
         Tss: *mut *mut core::ffi::c_void,
         Pcr: *mut *mut core::ffi::c_void,
     );
+}
+#[cfg(target_arch = "x86")]
+extern "C" {
+    pub fn KeGetPcr() -> *mut ntkrnl_sys::ddk::_KIPCR;
+    pub fn KeInvalidateTlbEntry(Address: *mut core::ffi::c_void);
 }
 
 // ============================================================================
@@ -239,28 +256,34 @@ pub const STATUS_NO_YIELD_PERFORMED: i32 = 0x4000_0024u32 as i32;
 pub const KMODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_001E;
 pub const KERNEL_MODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_001E;
 
-// KF_ feature flags
-pub const KF_CR4: u32 = 0x0000_0100;
-pub const KF_CMPXCHG8B: u32 = 0x0000_0002;
-pub const KF_GLOBAL_PAGE: u32 = 0x0000_0004;
-pub const KF_LARGE_PAGE: u32 = 0x0000_0008;
-pub const KF_MTRR: u32 = 0x0000_0010;
-pub const KF_PAT: u32 = 0x0000_0020;
-pub const KF_FXSR: u32 = 0x0000_0040;
-pub const KF_MMX: u32 = 0x0000_0080;
-pub const KF_XMMI: u32 = 0x0000_0200;
-pub const KF_XMMI64: u32 = 0x0000_0400;
-pub const KF_3DNOW: u32 = 0x0000_0800;
-pub const KF_AMDK6MTRR: u32 = 0x0000_1000;
-pub const KF_RDTSC: u32 = 0x0002_0000;
-pub const KF_NX_ENABLED: u32 = 0x0004_0000;
-pub const KF_NX_DISABLED: u32 = 0x0008_0000;
-pub const KF_SSE3: u32 = 0x0080_0000;
-pub const KF_SSSE3: u32 = 0x0100_0000;
-pub const KF_SSE4_1: u32 = 0x0200_0000;
-pub const KF_SSE4_2: u32 = 0x0400_0000;
-pub const KF_XSTATE: u32 = 0x0800_0000;
-pub const KF_RDRAND: u32 = 0x1000_0000;
+// KF_ feature flags — from ndk/i386/ketypes.h (same on amd64)
+pub const KF_V86_VIS: u32 = 0x0000_0001;
+pub const KF_RDTSC: u32 = 0x0000_0002;
+pub const KF_CR4: u32 = 0x0000_0004;
+pub const KF_CMOV: u32 = 0x0000_0008;
+pub const KF_GLOBAL_PAGE: u32 = 0x0000_0010;
+pub const KF_LARGE_PAGE: u32 = 0x0000_0020;
+pub const KF_MTRR: u32 = 0x0000_0040;
+pub const KF_CMPXCHG8B: u32 = 0x0000_0080;
+pub const KF_MMX: u32 = 0x0000_0100;
+pub const KF_WORKING_PTE: u32 = 0x0000_0200;
+pub const KF_PAT: u32 = 0x0000_0400;
+pub const KF_FXSR: u32 = 0x0000_0800;
+pub const KF_FAST_SYSCALL: u32 = 0x0000_1000;
+pub const KF_XMMI: u32 = 0x0000_2000;
+pub const KF_3DNOW: u32 = 0x0000_4000;
+pub const KF_AMDK6MTRR: u32 = 0x0000_8000;
+pub const KF_XMMI64: u32 = 0x0001_0000;
+pub const KF_DTS: u32 = 0x0002_0000;
+pub const KF_SSE3: u32 = 0x0008_0000;
+pub const KF_SSSE3: u32 = 0x0020_0000;
+pub const KF_SSE4_1: u32 = 0x0040_0000;
+pub const KF_SSE4_2: u32 = 0x0080_0000;
+pub const KF_XSTATE: u32 = 0x0100_0000;
+pub const KF_RDRAND: u32 = 0x0200_0000;
+pub const KF_NX_BIT: u32 = 0x2000_0000;
+pub const KF_NX_DISABLED: u32 = 0x4000_0000;
+pub const KF_NX_ENABLED: u32 = 0x8000_0000;
 
 // XSTATE constants
 pub const XSTATE_LEGACY_FLOATING_POINT: u32 = 0;

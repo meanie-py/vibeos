@@ -19,8 +19,6 @@ extern "system" {
     fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn KeInitializeSemaphore(Semaphore: PVOID, Count: LONG, Limit: LONG);
     fn PsGetCurrentProcessId() -> HANDLE;
-    fn PsGetCurrentProcess() -> PEPROCESS;
-    fn RtlInitEmptyUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *mut WCHAR, MaximumLength: USHORT);
     fn ObCloseHandle(Handle: HANDLE, AccessMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn ObCreateObject(
         ProbeMode: KPROCESSOR_MODE,
@@ -44,6 +42,12 @@ extern "system" {
     fn KeInitializeEvent(Event: PVOID, Type: ULONG, State: BOOLEAN);
     static LpcPortObjectType: PVOID;
     static LpcpMaxMessageSize: ULONG;
+}
+extern "C" {
+    fn PsGetCurrentProcess() -> PEPROCESS;
+}
+extern "C" {
+    fn RtlInitEmptyUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *mut WCHAR, MaximumLength: USHORT);
 }
 
 const MAXLONG: LONG = 0x7fffffff;

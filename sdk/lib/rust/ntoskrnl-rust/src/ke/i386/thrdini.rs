@@ -67,18 +67,22 @@ struct FXSAVE_FORMAT {
 extern "system" {
     static mut KeI386FxsrPresent: BOOLEAN;
     fn KiThreadStartup();
-    fn YieldProcessor();
     fn _enable();
     fn _disable();
+    fn Ke386SetLocalDescriptorTable(selector: u16);
+    fn Ke386SetGs(selector: u16);
+    fn KiSetTebBase(pcr: PKPCR, teb: PVOID);
+    fn KiGetThreadNpxArea(thread: PKTHREAD) -> *mut _FX_SAVE_AREA;
+}
+extern "C" {
+    fn KeGetTrapFrame(thread: PKTHREAD) -> PKTRAP_FRAME;
+}
+extern "C" {
+    fn YieldProcessor();
     fn __readcr0() -> ULONG_PTR;
     fn __writecr0(value: ULONG_PTR);
     fn __readcr3() -> ULONG_PTR;
     fn __writecr3(value: ULONG_PTR);
-    fn Ke386SetLocalDescriptorTable(selector: u16);
-    fn Ke386SetGs(selector: u16);
-    fn KiSetTebBase(pcr: PKPCR, teb: PVOID);
-    fn KeGetTrapFrame(thread: PKTHREAD) -> PKTRAP_FRAME;
-    fn KiGetThreadNpxArea(thread: PKTHREAD) -> *mut _FX_SAVE_AREA;
     fn KxQueueReadyThread(thread: PKTHREAD, prcb: PKPRCB);
 }
 extern "fastcall" {

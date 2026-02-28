@@ -31,9 +31,6 @@ extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
     static mut LpcPortObjectType: PVOID;
     static mut LpcpLock: KGUARDED_MUTEX;
-    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
-    fn LpcpCompleteWait(Semaphore: PVOID);
-    fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn LpcpGetMessageType(Message: PPORT_MESSAGE) -> ULONG;
     fn MmCopyVirtualMemory(
         SourceProcess: PVOID,
@@ -44,6 +41,11 @@ extern "system" {
         PreviousMode: KPROCESSOR_MODE,
         ReturnSize: *mut usize,
     ) -> NTSTATUS;
+}
+extern "C" {
+    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
+    fn LpcpCompleteWait(Semaphore: PVOID);
+    fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn ProbeForWritePointer(Address: *mut PVOID);
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER);
     fn PsGetCurrentProcess() -> PEPROCESS;

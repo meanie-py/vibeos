@@ -14,7 +14,7 @@ use ntkrnl_sys::ddk::{
     _UNICODE_STRING, _OBJECT_ATTRIBUTES, _EPROCESS, _KSERVICE_TABLE_DESCRIPTOR, _KUSER_SHARED_DATA,
     PLOADER_PARAMETER_BLOCK, LOADER_PARAMETER_EXTENSION,
     _MEMORY_ALLOCATION_DESCRIPTOR, PMEMORY_ALLOCATION_DESCRIPTOR,
-    NLS_DATA_BLOCK, NLSTABLEINFO, RTL_USER_PROCESS_PARAMETERS,
+    NLS_DATA_BLOCK, NLSTABLEINFO, RTL_USER_PROCESS_PARAMETERS, _CM_SYSTEM_CONTROL_VECTOR,
     RTL_USER_PROCESS_INFORMATION, LDR_DATA_TABLE_ENTRY, MESSAGE_RESOURCE_ENTRY,
     ANSI_STRING, KEY_VALUE_PARTIAL_INFORMATION, TIME_FIELDS,
     FAST_MUTEX, PFAST_MUTEX, ERESOURCE, PERESOURCE,
@@ -75,7 +75,6 @@ extern "system" {
     fn PoNotifySystemTimeSet();
     fn XIPInit(LoaderBlock: PLOADER_PARAMETER_BLOCK);
     fn DbgBreakPointWithStatus(Status: ULONG);
-    fn RtlStringCbCopyA(pszDest: *mut i8, cbDest: usize, pszSrc: *const i8) -> NTSTATUS;
     fn MmInitSystem(Phase: ULONG, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN;
 
     static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
@@ -93,6 +92,10 @@ extern "system" {
     static mut ExpEnvironmentLock: FAST_MUTEX;
     static mut ExpFirmwareTableProviderListHead: LIST_ENTRY;
     static mut ExpFirmwareTableResource: ERESOURCE;
+    static mut CmControlVector: _CM_SYSTEM_CONTROL_VECTOR;
+}
+extern "C" {
+    fn RtlStringCbCopyA(pszDest: *mut i8, cbDest: usize, pszSrc: *const i8) -> NTSTATUS;
 }
 
 // Variadic C functions — must use extern "C" (not "system")
@@ -198,7 +201,7 @@ pub static mut ExCmosClockIsSane: BOOLEAN = 1;
 #[no_mangle]
 pub static mut ExpRealTimeIsUniversal: BOOLEAN = 0;
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
@@ -819,6 +822,9 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     let mut RcEnd: *mut i8 = core::ptr::null_mut();
     let mut VersionBuffer: [u8; 65] = [0; 65];
 
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'X', options(nomem, nostack, preserves_flags));
+
     if ExpIsLoaderValid(LoaderBlock) == 0 {
         KeBugCheckEx(
             0x5D,
@@ -867,14 +873,26 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     );
     RtlResetRtlTranslations(&mut ExpNlsTableInfo);
 
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Y', options(nomem, nostack, preserves_flags));
+
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
         KeBugCheck(0x61);
     }
+
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Z', options(nomem, nostack, preserves_flags));
+
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'~', options(nomem, nostack, preserves_flags));
 
     #[cfg(target_arch = "x86_64")]
     core::arch::asm!("sti");
     #[cfg(target_arch = "x86")]
     core::arch::asm!("sti");
+
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'+', options(nomem, nostack, preserves_flags));
 
     (*SharedUserData).CryptoExponent = 0;
 
@@ -909,8 +927,14 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         KeBugCheck(0x64);
     }
 
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'%', options(nomem, nostack, preserves_flags));
     KiInitializeBugCheck();
-    CmGetSystemControlValues((*LoaderBlock).RegistryBase, core::ptr::null_mut());
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'^', options(nomem, nostack, preserves_flags));
+    CmGetSystemControlValues((*LoaderBlock).RegistryBase, &mut CmControlVector);
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'&', options(nomem, nostack, preserves_flags));
 
     CmNtSpBuildNumber = 0;
     if ((CmNtCSDVersion & 0xFFFF0000) == 0) && (CmNtCSDReleaseType == 1) {
@@ -922,6 +946,9 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     if ExInitSystem() == 0 {
         KeBugCheck(0x31);
     }
+
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'!', options(nomem, nostack, preserves_flags));
 
     if MmArmInitSystem(0, LoaderBlock) == 0 {
         KeBugCheck(0x31);
