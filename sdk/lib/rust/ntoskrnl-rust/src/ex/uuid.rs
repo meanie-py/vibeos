@@ -26,8 +26,10 @@ extern "system" {
 }
 extern "C" {
     fn InterlockedExchangeAdd64(Addend: *mut i64, Value: i64) -> i64;
-    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
     fn SeQuerySubjectContextToken(SubjectContext: *mut SECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
 const SEED_BUFFER_SIZE: usize = 6;

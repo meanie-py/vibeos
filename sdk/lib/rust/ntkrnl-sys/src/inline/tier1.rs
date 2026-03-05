@@ -404,9 +404,16 @@ pub unsafe fn NtCurrentProcess() -> ddk::HANDLE {
 
 /// PsGetCurrentProcess — returns current EPROCESS.
 /// C: `#define PsGetCurrentProcess IoGetCurrentProcess`
+/// C body: `return (PEPROCESS)PsGetCurrentThread()->Tcb.ApcState.Process;`
+///
+/// Implemented directly instead of calling ddk::IoGetCurrentProcess() to avoid
+/// infinite recursion: shim export IoGetCurrentProcess → this inline →
+/// ddk::IoGetCurrentProcess → shim export → cycle. LLVM detects the cycle,
+/// infers noreturn, and replaces the body with ud2.
 #[inline]
 pub unsafe fn PsGetCurrentProcess() -> ddk::PEPROCESS {
-    ddk::IoGetCurrentProcess()
+    let thread = super::common::PsGetCurrentThread() as ddk::PKTHREAD;
+    (*thread).__bindgen_anon_1.ApcState.Process as ddk::PEPROCESS
 }
 
 // ============================================================================

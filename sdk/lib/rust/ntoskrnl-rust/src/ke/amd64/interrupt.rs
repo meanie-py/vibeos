@@ -25,7 +25,6 @@ extern "system" {
     static KiUnexpectedRange: [KI_INTERRUPT_DISPATCH_ENTRY; 256];
     static KiUnexpectedRangeEnd: [KI_INTERRUPT_DISPATCH_ENTRY; 0];
     fn KiInterruptDispatch();
-    static KeNumberProcessors: UCHAR;
 }
 extern "C" {
     fn KeQueryInterruptHandler(Vector: ULONG) -> PVOID;

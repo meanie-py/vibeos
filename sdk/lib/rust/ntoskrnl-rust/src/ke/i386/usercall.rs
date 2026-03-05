@@ -29,8 +29,15 @@ extern "system" {
     fn Ke386SanitizeFlags(Flags: ULONG, Mode: KPROCESSOR_MODE) -> ULONG;
     fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
     fn KiDispatchException( ExceptionRecord: PEXCEPTION_RECORD, ExceptionFrame: PKEXCEPTION_FRAME, TrapFrame: PKTRAP_FRAME, PreviousMode: KPROCESSOR_MODE, FirstChance: BOOLEAN, );
-    fn KiServiceExit(TrapFrame: PKTRAP_FRAME, Reserved: ULONG);
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiServiceExit(TrapFrame: PKTRAP_FRAME, Reserved: ULONG);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiServiceExit(TrapFrame: PKTRAP_FRAME, Reserved: ULONG);
 }
 
 const EFLAGS_V86_MASK: ULONG = 0x00020000;
@@ -426,7 +433,6 @@ pub unsafe extern "system" fn NtCallbackReturn(
 
     KiCallbackReturn(core::ptr::addr_of_mut!((*CalloutFrame).Edi) as PVOID, CallbackStatus);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

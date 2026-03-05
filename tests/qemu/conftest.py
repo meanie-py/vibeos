@@ -39,7 +39,19 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[QemuVM]:
 
     vm = QemuVM(config, work_dir)
     vm.start()
-    boot_output = vm.wait_for_boot()
+    try:
+        boot_output = vm.wait_for_boot()
+    except (TimeoutError, ConnectionError, RuntimeError) as e:
+        # Boot failed — include debugcon triage in the failure message
+        debugcon = vm.debugcon_report() or "no debugcon output"
+        serial = vm._boot_output or vm.serial.read_available(timeout=0.5)
+        serial_len = len(serial) if isinstance(serial, str) else 0
+        vm.stop()
+        pytest.fail(
+            f"Boot failed: {e}\n"
+            f"Serial output: {serial_len} bytes\n"
+            f"\n{debugcon}"
+        )
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
     try:
         vm.save_snapshot("ready")
@@ -57,6 +69,6 @@ def restore_vm(vm: QemuVM) -> Iterator[None]:
     """Restore to 'ready' snapshot before each test."""
     try:
         vm.restore_snapshot("ready")
-    except RuntimeError:
-        pass  # No snapshot support (e.g. i386)
+    except (RuntimeError, BrokenPipeError, ConnectionError, OSError):
+        pass  # No snapshot support (e.g. i386) or VM already dead (e.g. amd64 crash)
     yield

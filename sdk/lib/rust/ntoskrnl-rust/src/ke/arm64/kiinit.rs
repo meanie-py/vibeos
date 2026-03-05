@@ -9,7 +9,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     _KIPCR, _KPCR, _KPRCB, _KPROCESS, _KTHREAD, _LDR_DATA_TABLE_ENTRY,
     PKIPCR, PKPCR, PKPRCB, PKPROCESS, PKTHREAD, PLDR_DATA_TABLE_ENTRY,
-    PLOADER_PARAMETER_BLOCK,
+    PLOADER_PARAMETER_BLOCK, KAFFINITY, PULONG_PTR,
     ExInitializeFastMutex, ExpInitializeExecutive, HalInitializeProcessor,
     KeInitializeDpc, KeInitializeEvent, KeInitializeProcess,
     KeInitializeSpinLock, KeSetPriorityThread, KeSetTargetProcessorDpc,
@@ -18,42 +18,30 @@ use ntkrnl_sys::ddk::{
     KiTimerExpiration,
 };
 
+// Rust-defined globals — import to avoid extern split under LTO=false
+use crate::ke::krnlinit::{
+    KiInitialThread, KiInitialProcess, KeLoaderBlock, KiProcessorBlock,
+    KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
+    KeFeatureBits, KiServiceLimit,
+};
+use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
+use crate::ke::thrdschd::KiIdleSummary;
+use crate::ke::bug::{KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead, BugCheckCallbackLock};
+use crate::ke::dpc::{KiTimerExpireDpc, KiGenericCallDpcMutex, KiMaximumDpcQueueDepth, KiMinimumDpcRate, KiAdjustDpcThreshold};
+use crate::ke::profobj::{KiProfileLock, KiProfileListHead, KiProfileSourceListHead};
+use crate::ke::timerobj::KiTimerTableListHead;
+use crate::ke::procobj::{
+    KiSwapEvent, KiProcessInSwapListHead, KiProcessOutSwapListHead, KiStackInSwapListHead,
+    KeServiceDescriptorTable, KeServiceDescriptorTableShadow,
+};
+use crate::ke::krnlinit::KeNodeBlock;
+use crate::ARM3::sysldr::PsLoadedModuleList;
+use super::stubs::Arm64UartKernelBase;
+
 extern "system" {
     static mut MainSSDT: [ULONG_PTR; 0];
     static mut MainSSPT: [UCHAR; 0];
-    static mut KiInitialThread: _KTHREAD;
-    static mut KiInitialProcess: _KPROCESS;
-    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
-    static mut KeNumberProcessors: CCHAR;
-    static mut KiProcessorBlock: [PKPRCB; 0];
-    static mut KeProcessorArchitecture: USHORT;
-    static mut KeProcessorLevel: USHORT;
-    static mut KeProcessorRevision: USHORT;
-    static mut KeActiveProcessors: ULONG_PTR;
     static mut KfRaiseIrql: unsafe extern "system" fn(KIRQL) -> KIRQL;
-    static mut PsLoadedModuleList: LIST_ENTRY;
-    static mut KeNodeBlock: [*mut core::ffi::c_void; 0];
-    static mut KiIdleSummary: ULONG_PTR;
-    static mut KeBugcheckCallbackListHead: LIST_ENTRY;
-    static mut KeBugcheckReasonCallbackListHead: LIST_ENTRY;
-    static mut BugCheckCallbackLock: KSPIN_LOCK;
-    static mut KiTimerExpireDpc: _KDPC;
-    static mut KiProfileLock: KSPIN_LOCK;
-    static mut KiProfileListHead: LIST_ENTRY;
-    static mut KiProfileSourceListHead: LIST_ENTRY;
-    static mut KiTimerTableListHead: [_KTIMER_TABLE_ENTRY; 512];
-    static mut KiSwapEvent: _KEVENT;
-    static mut KiProcessInSwapListHead: LIST_ENTRY;
-    static mut KiProcessOutSwapListHead: LIST_ENTRY;
-    static mut KiStackInSwapListHead: LIST_ENTRY;
-    static mut KiGenericCallDpcMutex: _FAST_MUTEX;
-    static mut KeServiceDescriptorTable: [_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KeServiceDescriptorTableShadow: [_KSERVICE_TABLE_DESCRIPTOR; 4];
-    static mut KiServiceLimit: ULONG;
-    static mut KiMaximumDpcQueueDepth: ULONG;
-    static mut KiMinimumDpcRate: ULONG;
-    static mut KiAdjustDpcThreshold: ULONG;
-    static mut Arm64UartKernelBase: ULONG_PTR;
     static KiArm64VectorTable: [u64; 0];
     fn KiSwitchToBootStack(InitialStack: ULONG_PTR) -> !;
     fn KiInitializeHandBuiltThread(Thread: PKTHREAD, Process: PKPROCESS, Stack: PVOID);
@@ -141,7 +129,7 @@ unsafe fn KiInitializeP0BootStructures(
     KiInitializePcr(
         core::ptr::addr_of_mut!(KiInitialPcr),
         0,
-        core::ptr::addr_of_mut!(KiInitialThread),
+        core::ptr::addr_of_mut!(KiInitialThread) as PKTHREAD,
     );
 }
 
@@ -238,7 +226,7 @@ pub unsafe extern "system" fn KiSystemStartup(
     HalInitializeProcessor(Cpu as ULONG, KeLoaderBlock);
 
     // Set processor as active
-    KeActiveProcessors |= 1usize << Cpu;
+    KeActiveProcessors |= (1 as KAFFINITY) << Cpu;
 
     // Raise to HIGH_LEVEL
     KfRaiseIrql(HIGH_LEVEL);
@@ -300,7 +288,7 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
 
     KiAcquirePrcbLock(Prcb);
     if (*Prcb).NextThread.is_null() {
-        KiIdleSummary |= 1usize << (*Prcb).Number;
+        KiIdleSummary |= (1 as KAFFINITY) << (*Prcb).Number;
     }
     KiReleasePrcbLock(Prcb);
 
@@ -356,8 +344,8 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     for i in 0..TIMER_TABLE_SIZE {
         InitializeListHead(core::ptr::addr_of_mut!(KiTimerTableListHead[i].Entry));
-        KiTimerTableListHead[i].Time.s.HighPart = 0xFFFFFFFFu32 as i32;
-        KiTimerTableListHead[i].Time.s.LowPart = 0;
+        KiTimerTableListHead[i].Time.u.HighPart = 0xFFFFFFFFu32;
+        KiTimerTableListHead[i].Time.u.LowPart = 0;
     }
 
     KeInitializeEvent(
@@ -371,7 +359,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     ExInitializeFastMutex(core::ptr::addr_of_mut!(KiGenericCallDpcMutex) as *mut ntkrnl_sys::ddk::_FAST_MUTEX);
 
-    KeServiceDescriptorTable[0].Base = core::ptr::addr_of!(MainSSDT) as *mut isize;
+    KeServiceDescriptorTable[0].Base = core::ptr::addr_of!(MainSSDT) as PULONG_PTR;
     KeServiceDescriptorTable[0].Count = core::ptr::null_mut();
     KeServiceDescriptorTable[0].Limit = KiServiceLimit;
     KeServiceDescriptorTable[1].Limit = 0;
@@ -420,10 +408,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     }
 }
 
-#[allow(dead_code)]
-extern "system" {
-    static mut KiProcessListHead: LIST_ENTRY;
-}
+use crate::ke::procobj::KiProcessListHead;
 
 // C macro constants — NOT extern variables
 const HIGH_LEVEL: KIRQL = 31;

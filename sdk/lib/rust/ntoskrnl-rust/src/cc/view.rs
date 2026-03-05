@@ -22,7 +22,6 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "system" {
-    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
     fn RtlFillMemory(destination: PVOID, length: SIZE_T, fill: UCHAR);
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut KSPIN_LOCK);
@@ -153,7 +152,6 @@ static mut LazyWriter: LazyWriterStruct = LazyWriterStruct { ScanActive: 0 };
 extern "system" {
     fn FsRtlAcquireFileForCcFlushEx(file_object: PFILE_OBJECT) -> NTSTATUS;
     fn FsRtlReleaseFileForCcFlush(file_object: PFILE_OBJECT);
-    fn ARM64_UART_TRACE(msg: *const u8);
     static mut MmThrottleTop: ULONG;
     static mut MmThrottleBottom: ULONG;
     static mut MmModifiedPageListHead: MMPFNLIST;
@@ -176,7 +174,7 @@ unsafe fn BooleanFlagOn(flags: ULONG, flag: ULONG) -> BOOLEAN {
 
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbIncRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbIncRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
     let refs = InterlockedIncrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG;
     if (*(*vacb).SharedCacheMap).Trace != 0 {
         // DbgPrint(
@@ -189,7 +187,7 @@ pub unsafe extern "system" fn CcRosVacbIncRefCount_(vacb: PROS_VACB, file: *cons
 
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbDecRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbDecRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
     let vacb_dirty = (*vacb).Dirty;
     let vacb_trace = (*(*vacb).SharedCacheMap).Trace;
     let vacb_page_out = (*vacb).PageOut;
@@ -216,7 +214,7 @@ pub unsafe extern "system" fn CcRosVacbDecRefCount_(vacb: PROS_VACB, file: *cons
 
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbGetRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbGetRefCount_(vacb: PROS_VACB, file: *const i8, line: INT) -> ULONG {
     let refs = InterlockedCompareExchange(
         core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG,
         0,
@@ -240,7 +238,7 @@ unsafe fn CcRosVacbIncRefCount(vacb: PROS_VACB) -> ULONG {
 
 #[cfg(not(debug_assertions))]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
     let refs = InterlockedDecrement(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG) as ULONG;
     if refs == 0 {
         CcRosInternalFreeVacb(vacb);
@@ -250,7 +248,7 @@ pub unsafe extern "system" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
 
 #[cfg(not(debug_assertions))]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
     InterlockedCompareExchange(core::ptr::addr_of_mut!((*vacb).ReferenceCount) as *mut LONG, 0, 0) as ULONG
 }
 
@@ -261,18 +259,18 @@ unsafe fn CcRosVacbIncRefCount(vacb: PROS_VACB) -> ULONG {
 
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbDecRefCount(vacb: PROS_VACB) -> ULONG {
     CcRosVacbDecRefCount_(vacb, b"inline\0".as_ptr() as *const i8, 0)
 }
 
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub unsafe extern "system" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
+pub unsafe extern "C" fn CcRosVacbGetRefCount(vacb: PROS_VACB) -> ULONG {
     CcRosVacbGetRefCount_(vacb, b"inline\0".as_ptr() as *const i8, 0)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosTraceCacheMap(
+pub unsafe extern "C" fn CcRosTraceCacheMap(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     trace: BOOLEAN
 ) {
@@ -301,7 +299,7 @@ pub unsafe extern "system" fn CcRosTraceCacheMap(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosFlushVacb(
+pub unsafe extern "C" fn CcRosFlushVacb(
     vacb: PROS_VACB,
     iosb: PIO_STATUS_BLOCK
 ) -> NTSTATUS {
@@ -599,7 +597,7 @@ pub unsafe extern "C" fn CcRosTrimCache(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosReleaseVacb(
+pub unsafe extern "C" fn CcRosReleaseVacb(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     vacb: PROS_VACB,
     dirty: BOOLEAN,
@@ -621,7 +619,7 @@ pub unsafe extern "system" fn CcRosReleaseVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosLookupVacb(
+pub unsafe extern "C" fn CcRosLookupVacb(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     file_offset: LONGLONG
 ) -> PROS_VACB {
@@ -661,7 +659,7 @@ pub unsafe extern "system" fn CcRosLookupVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
+pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
     let old_irql: KIRQL;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
@@ -696,7 +694,7 @@ pub unsafe extern "system" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosUnmarkDirtyVacb(
+pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
     vacb: PROS_VACB,
     lock_views: BOOLEAN
 ) {
@@ -727,7 +725,7 @@ pub unsafe extern "system" fn CcRosUnmarkDirtyVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
+pub unsafe extern "C" fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
     let old_irql: KIRQL;
     let mut current_entry: PLIST_ENTRY;
     let mut to_free: PROS_VACB = core::ptr::null_mut();
@@ -893,7 +891,7 @@ unsafe fn CcRosCreateVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosEnsureVacbResident(
+pub unsafe extern "C" fn CcRosEnsureVacbResident(
     vacb: PROS_VACB,
     wait: BOOLEAN,
     no_read: BOOLEAN,
@@ -976,7 +974,7 @@ pub unsafe extern "C" fn CcRosGetVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosRequestVacb(
+pub unsafe extern "C" fn CcRosRequestVacb(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     file_offset: LONGLONG,
     vacb: *mut PROS_VACB
@@ -989,7 +987,7 @@ pub unsafe extern "system" fn CcRosRequestVacb(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosInternalFreeVacb(vacb: PROS_VACB) -> NTSTATUS {
+pub unsafe extern "C" fn CcRosInternalFreeVacb(vacb: PROS_VACB) -> NTSTATUS {
     let status: NTSTATUS;
 
     status = MmUnmapViewInSystemSpace((*vacb).BaseAddress);
@@ -1112,7 +1110,7 @@ pub unsafe extern "system" fn CcFlushCache(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTSTATUS {
+pub unsafe extern "C" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTSTATUS {
     let mut old_irql: KIRQL;
     let mut private_map: PPRIVATE_CACHE_MAP;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
@@ -1148,7 +1146,7 @@ pub unsafe extern "system" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcRosInitializeFileCache(
+pub unsafe extern "C" fn CcRosInitializeFileCache(
     file_object: PFILE_OBJECT,
     file_sizes: PCC_FILE_SIZES,
     pin_access: BOOLEAN,
@@ -1358,11 +1356,23 @@ pub unsafe extern "system" fn CcInitView() {
 }
 
 extern "C" {
-    fn CcInitCacheZeroPage();
     fn DbgPrint(format: *const i8, ...) -> ULONG;
     fn DbgBreakPoint();
 }
-
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+extern "C" {
+    fn ARM64_UART_TRACE(msg: *const u8);
+}
+extern "system" {
+    fn CcInitCacheZeroPage();
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

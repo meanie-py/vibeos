@@ -293,9 +293,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 ) -> NTSTATUS {
     // Initialize template PTEs that have zero static initializers in Rust
     // (in C these are compile-time initialized, but Rust requires runtime init)
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'0', options(nomem, nostack, preserves_flags));
     init_globals();
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'1', options(nomem, nostack, preserves_flags));
 
     let mut page_frame_index: PFN_NUMBER;
     let mut start_pde: PMMPTE;
@@ -322,7 +320,6 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         ((end_pde as usize) - (start_pde as usize)) as SIZE_T,
     );
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'2', options(nomem, nostack, preserves_flags));
     MiComputeNonPagedPoolVa(MiNumberOfFreePages as ULONG);
 
     MmNonPagedPoolStart = ((MmNonPagedPoolEnd as ULONG_PTR)
@@ -353,7 +350,6 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         // Paged pool is too big!
     }
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'3', options(nomem, nostack, preserves_flags));
     MmPfnDatabase = 0xB0000000 as PMMPFN;
     debug_assert!(((MmPfnDatabase as ULONG_PTR) & (PDE_MAPPED_VA - 1)) == 0);
 
@@ -367,8 +363,29 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
     MmMaximumNonPagedPoolInPages = MmMaximumNonPagedPoolInBytes >> PAGE_SHIFT;
 
+    // Trace 'A' = about to enter first PDE loop (NonPagedSystem)
+
     start_pde = MiAddressToPde(MmNonPagedSystemStart);
     end_pde = MiAddressToPde(((MmNonPagedPoolEnd as ULONG_PTR) - 1) as PVOID);
+
+    // Dump start_pde, end_pde
+    {
+        let sp = start_pde as u32;
+        let ep = end_pde as u32;
+        for &byte in &sp.to_le_bytes() {
+            let nibbles = [byte >> 4, byte & 0xf];
+            for n in nibbles {
+                let c = if n < 10 { b'0' + n } else { b'a' + n - 10 };
+            }
+        }
+        for &byte in &ep.to_le_bytes() {
+            let nibbles = [byte >> 4, byte & 0xf];
+            for n in nibbles {
+                let c = if n < 10 { b'0' + n } else { b'a' + n - 10 };
+            }
+        }
+    }
+
     while start_pde <= end_pde {
         temp_pde.Long = ValidKernelPde.Long;
         temp_pde.set_page_frame_number(MxGetNextPage(1));
@@ -379,6 +396,8 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
         start_pde = (start_pde as usize + core::mem::size_of::<MMPTE>()) as PMMPTE;
     }
+
+    // Trace 'B' = first PDE loop done, entering second PDE loop (PfnDatabase)
 
     start_pde = MiAddressToPde(MmPfnDatabase as PVOID);
     end_pde = MiAddressToPde(
@@ -394,6 +413,8 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
         start_pde = (start_pde as usize + core::mem::size_of::<MMPTE>()) as PMMPTE;
     }
+
+    // Trace 'C' = second PDE loop done, entering PTE mapping loop
 
     MmSubsectionBase = MmNonPagedPoolStart as ULONG_PTR;
 
@@ -415,24 +436,19 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         MiAddressToPte(MmNonPagedSystemStart) < MiAddressToPte(MmNonPagedPoolExpansionStart)
     );
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'4', options(nomem, nostack, preserves_flags));
+    // Trace 'D' = PTE mapping done
     MiInitializeNonPagedPool();
     MiInitializeNonPagedPoolThresholds();
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'5', options(nomem, nostack, preserves_flags));
     MiMapPfnDatabase(loader_block);
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'6', options(nomem, nostack, preserves_flags));
     MiInitializeColorTables();
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'7', options(nomem, nostack, preserves_flags));
     MiInitializePfnDatabase(loader_block);
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'8', options(nomem, nostack, preserves_flags));
     MmInitializeBalancer(MmAvailablePages as ULONG, 0);
 
     *MxFreeDescriptor = MxOldFreeDescriptor;
 
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'9', options(nomem, nostack, preserves_flags));
     InitializePool(NonPagedPool, 0);
 
     pointer_pte = MiAddressToPte(MmNonPagedSystemStart);
@@ -443,9 +459,11 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
     MiInitializeSystemPtes(pointer_pte, MmNumberOfSystemPtes, SystemPteSpace);
 
+    // DBG: before MiAddressToPde(HYPER_SPACE)
     start_pde = MiAddressToPde(HYPER_SPACE as PVOID);
-
+    // DBG: after MiAddressToPde, before MiAcquirePfnLock
     old_irql = MiAcquirePfnLock();
+    // DBG: after MiAcquirePfnLock
 
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
     crate::ARM3::helpers::MI_SET_PROCESS2(b"Kernel\0".as_ptr() as PVOID);
@@ -462,6 +480,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
     pointer_pte = MiAddressToPte(HYPER_SPACE as PVOID);
     RtlZeroMemory(pointer_pte as PVOID, PAGE_SIZE);
+    // DBG: K+4 after RtlZeroMemory(hyperspace)
 
     MmFirstReservedMappingPte = MiAddressToPte(MI_MAPPING_RANGE_START as PVOID);
     MmLastReservedMappingPte = MiAddressToPte(MI_MAPPING_RANGE_END as PVOID);
@@ -469,9 +488,11 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     (*MmFirstReservedMappingPte).set_page_frame_number(MI_HYPERSPACE_PTES as PFN_NUMBER);
 
     MmWorkingSetList = MI_WORKING_SET_LIST as PVOID;
+    // DBG: K+5 before MiReserveSystemPtes
 
     MiFirstReservedZeroingPte =
         MiReserveSystemPtes(MI_ZERO_PTES as ULONG + 1, SystemPteSpace);
+    // DBG: K+6 after MiReserveSystemPtes
     RtlZeroMemory(
         MiFirstReservedZeroingPte as PVOID,
         (MI_ZERO_PTES as usize + 1) * core::mem::size_of::<MMPTE>(),
@@ -541,7 +562,6 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

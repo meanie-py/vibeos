@@ -29,10 +29,11 @@ use ntkrnl_sys::ddk::{
 extern "system" {
     fn MmWorkingSetManager();
     static mut MmWorkingSetManagerEvent: ntkrnl_sys::ddk::_KEVENT;
-    static mut KeNumberProcessors: ULONG;
-    static mut KeTickCount: LARGE_INTEGER;
-    static mut KiProcessorBlock: [PKPRCB; 0];
 }
+use super::processor::KeNumberProcessors;
+use super::krnlinit::KiProcessorBlock;
+// Use actual definition from clock.rs, not extern (lto=false splits them)
+use super::clock::KeTickCount;
 
 const THREAD_BOOST_PRIORITY: ULONG = 23;
 const LOW_REALTIME_PRIORITY: ULONG = 16;
@@ -46,7 +47,7 @@ fn PRIORITY_MASK(priority: ULONG) -> ULONG {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiScanReadyQueues(
+pub unsafe extern "system" fn KiScanReadyQueues(
     Dpc: *mut ntkrnl_sys::ddk::_KDPC,
     DeferredContext: PVOID,
     SystemArgument1: PVOID,
@@ -58,7 +59,7 @@ pub unsafe extern "C" fn KiScanReadyQueues(
     let mut Number = 16u32;
     let Prcb = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(ScanIndex as usize);
     let mut Index = (*Prcb).QueueIndex;
-    let WaitLimit = (*core::ptr::addr_of!(KeTickCount)).s.LowPart - 300;
+    let WaitLimit = (*core::ptr::addr_of!(KeTickCount)).LowPart - 300;
     let mut Summary: ULONG;
     let mut OldIrql: KIRQL;
     let mut ListHead: PLIST_ENTRY;
@@ -136,7 +137,7 @@ pub unsafe extern "C" fn KiScanReadyQueues(
     }
 
     ScanIndex += 1;
-    if ScanIndex == KeNumberProcessors {
+    if ScanIndex == KeNumberProcessors as ULONG {
         ScanIndex = 0;
     }
 

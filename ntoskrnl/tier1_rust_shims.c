@@ -193,56 +193,56 @@ static __inline void _tramp_KeLowerIrql(KIRQL NewIrql)
 /* --- CONTAINING_RECORD: C macro → extern function for Rust ---
  * Rust code calls CONTAINING_RECORD(address, type_size_or_null, field_offset_or_null).
  * The implementation subtracts field_offset from address (type_size is unused). */
-PVOID NTAPI CONTAINING_RECORD(PVOID Address, SIZE_T TypeSize, SIZE_T FieldOffset)
+PVOID CONTAINING_RECORD(PVOID Address, SIZE_T TypeSize, SIZE_T FieldOffset)
 {
     (void)TypeSize;
     return (PCHAR)Address - FieldOffset;
 }
 
 /* --- ProbeForWriteUlong: probe.h macro --- */
-void NTAPI ProbeForWriteUlong(PULONG Address)
+void ProbeForWriteUlong(PULONG Address)
 {
     _tramp_ProbeForWriteUlong(Address);
 }
 
 /* --- ProbeForWritePointer: probe.h macro --- */
-void NTAPI ProbeForWritePointer(PVOID *Address)
+void ProbeForWritePointer(PVOID *Address)
 {
     _tramp_ProbeForWritePointer(Address);
 }
 
 /* --- IoGetDevObjExtension: macro in io.h --- */
-PEXTENDED_DEVOBJ_EXTENSION NTAPI IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject)
+PEXTENDED_DEVOBJ_EXTENSION IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject)
 {
     return _tramp_IoGetDevObjExtension(DeviceObject);
 }
 
 /* --- SeDeleteClientSecurity: macro in sefuncs.h --- */
-void NTAPI SeDeleteClientSecurity(PSECURITY_CLIENT_CONTEXT ClientContext)
+void SeDeleteClientSecurity(PSECURITY_CLIENT_CONTEXT ClientContext)
 {
     _tramp_SeDeleteClientSecurity(ClientContext);
 }
 
 /* --- ObReferenceObject: macro wrapping ObfReferenceObject --- */
-LONG_PTR NTAPI ObReferenceObject(PVOID Object)
+LONG_PTR ObReferenceObject(PVOID Object)
 {
     return _tramp_ObReferenceObject(Object);
 }
 
 /* --- NtCurrentProcess: macro ((HANDLE)(LONG_PTR)-1) --- */
-HANDLE NTAPI NtCurrentProcess(void)
+HANDLE NtCurrentProcess(void)
 {
     return _tramp_NtCurrentProcess();
 }
 
 /* --- PsGetCurrentProcess: macro wrapping IoGetCurrentProcess --- */
-PEPROCESS NTAPI PsGetCurrentProcess(void)
+PEPROCESS PsGetCurrentProcess(void)
 {
     return _tramp_PsGetCurrentProcess();
 }
 
 /* --- RtlUnicodeStringToOemSize: macro wrapping RtlxUnicodeStringToOemSize --- */
-ULONG NTAPI RtlUnicodeStringToOemSize(PCUNICODE_STRING UnicodeString)
+ULONG RtlUnicodeStringToOemSize(PCUNICODE_STRING UnicodeString)
 {
     return _tramp_RtlUnicodeStringToOemSize(UnicodeString);
 }
@@ -254,13 +254,13 @@ void RtlInitEmptyAnsiString(PANSI_STRING AnsiString, PCHAR Buffer, USHORT Maximu
 }
 
 /* --- InsertTailList: FORCEINLINE in wdm.h --- */
-void NTAPI InsertTailList(PLIST_ENTRY ListHead, PLIST_ENTRY Entry)
+void InsertTailList(PLIST_ENTRY ListHead, PLIST_ENTRY Entry)
 {
     _orig_InsertTailList(ListHead, Entry);
 }
 
 /* --- ExFreeToPagedLookasideList: FORCEINLINE in exfuncs.h --- */
-void NTAPI ExFreeToPagedLookasideList(PPAGED_LOOKASIDE_LIST Lookaside, PVOID Entry)
+void ExFreeToPagedLookasideList(PPAGED_LOOKASIDE_LIST Lookaside, PVOID Entry)
 {
     _orig_ExFreeToPagedLookasideList(Lookaside, Entry);
 }
@@ -268,28 +268,28 @@ void NTAPI ExFreeToPagedLookasideList(PPAGED_LOOKASIDE_LIST Lookaside, PVOID Ent
 /* --- LPC wait macros from lpc_x.h ---
  * C macros are block statements that set a local Status variable.
  * Rust declares these as functions. */
-NTSTATUS NTAPI LpcpReceiveWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
+NTSTATUS LpcpReceiveWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
 {
     return _tramp_LpcpReceiveWait(Semaphore, WaitMode);
 }
 
-void NTAPI LpcpReplyWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
+void LpcpReplyWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
 {
     _tramp_LpcpReplyWait(Semaphore, WaitMode);
 }
 
-void NTAPI LpcpConnectWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
+void LpcpConnectWait(PVOID Semaphore, KPROCESSOR_MODE WaitMode)
 {
     _tramp_LpcpConnectWait(Semaphore, WaitMode);
 }
 
-void NTAPI LpcpCompleteWait(PVOID Semaphore)
+void LpcpCompleteWait(PVOID Semaphore)
 {
     _tramp_LpcpCompleteWait(Semaphore);
 }
 
 /* --- LPC FORCEINLINE functions from lpc_x.h --- */
-PLPCP_MESSAGE NTAPI LpcpAllocateFromPortZone(void)
+PLPCP_MESSAGE LpcpAllocateFromPortZone(void)
 {
     return _orig_LpcpAllocateFromPortZone();
 }
@@ -319,17 +319,17 @@ PLPCP_DATA_INFO LpcpGetDataInfoFromMessage(PPORT_MESSAGE Message)
 }
 
 /* --- HAL dispatch table macros --- */
-VOID NTAPI HalHaltSystem(VOID)
+VOID HalHaltSystem(VOID)
 {
     _tramp_HalHaltSystem();
 }
 
-VOID NTAPI HalSetWakeEnable(BOOLEAN NewState)
+VOID HalSetWakeEnable(BOOLEAN NewState)
 {
     _tramp_HalSetWakeEnable(NewState);
 }
 
-VOID NTAPI HalEndOfBoot(VOID)
+VOID HalEndOfBoot(VOID)
 {
     _tramp_HalEndOfBoot();
 }
@@ -382,7 +382,7 @@ void IoSetCompletionRoutine(
  * On i386 it's exported from HAL as a real function.
  * On ARM64 it's a real function in ke/arm/irql.c. */
 #ifdef _M_AMD64
-KIRQL NTAPI KeRaiseIrqlToDpcLevel(void)
+KIRQL KeRaiseIrqlToDpcLevel(void)
 {
     return KfRaiseIrql(DISPATCH_LEVEL);
 }
@@ -392,12 +392,12 @@ KIRQL NTAPI KeRaiseIrqlToDpcLevel(void)
  * On i386, KeRaiseIrql is a macro wrapping KfRaiseIrql (FASTCALL).
  * Rust declares these as extern "C" (cdecl). Provide cdecl wrappers. */
 #ifdef _M_IX86
-void NTAPI KeRaiseIrql(KIRQL NewIrql, PKIRQL OldIrql)
+void KeRaiseIrql(KIRQL NewIrql, PKIRQL OldIrql)
 {
     _tramp_KeRaiseIrql(NewIrql, OldIrql);
 }
 
-void NTAPI KeLowerIrql(KIRQL NewIrql)
+void KeLowerIrql(KIRQL NewIrql)
 {
     _tramp_KeLowerIrql(NewIrql);
 }
@@ -408,7 +408,7 @@ void NTAPI KeLowerIrql(KIRQL NewIrql)
  * On i386 and ARM64 it's exported as a real function.
  * Rust kd64 subsystem needs it on amd64. */
 #ifdef _M_AMD64
-PKTHREAD NTAPI KeGetCurrentThread(void)
+PKTHREAD KeGetCurrentThread(void)
 {
     return KeGetCurrentPrcb()->CurrentThread;
 }
@@ -425,7 +425,7 @@ HANDLE LdrpShutdownThreadId = NULL;
  * sdk/lib/rtl/amd64/dynfntbl.c references these. They are defined in
  * sdk/lib/rtl/srw.c (rtl_vista library), but ntoskrnl doesn't link
  * rtl_vista. Provide stubs using spin locks for kernel mode. */
-VOID NTAPI RtlAcquireSRWLockExclusive(PRTL_SRWLOCK SRWLock)
+VOID RtlAcquireSRWLockExclusive(PRTL_SRWLOCK SRWLock)
 {
     /* Simple spin-lock implementation for kernel mode */
     while (_InterlockedCompareExchange((volatile LONG*)&SRWLock->Ptr, 1, 0) != 0)
@@ -434,18 +434,18 @@ VOID NTAPI RtlAcquireSRWLockExclusive(PRTL_SRWLOCK SRWLock)
     }
 }
 
-VOID NTAPI RtlReleaseSRWLockExclusive(PRTL_SRWLOCK SRWLock)
+VOID RtlReleaseSRWLockExclusive(PRTL_SRWLOCK SRWLock)
 {
     _InterlockedExchange((volatile LONG*)&SRWLock->Ptr, 0);
 }
 
-VOID NTAPI RtlAcquireSRWLockShared(PRTL_SRWLOCK SRWLock)
+VOID RtlAcquireSRWLockShared(PRTL_SRWLOCK SRWLock)
 {
     /* Shared == exclusive for this simple stub */
     RtlAcquireSRWLockExclusive(SRWLock);
 }
 
-VOID NTAPI RtlReleaseSRWLockShared(PRTL_SRWLOCK SRWLock)
+VOID RtlReleaseSRWLockShared(PRTL_SRWLOCK SRWLock)
 {
     RtlReleaseSRWLockExclusive(SRWLock);
 }

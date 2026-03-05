@@ -13,10 +13,12 @@ use ntkrnl_sys::rtl::*;
 
 extern "system" {
     static mut DirtyVacbListHead: LIST_ENTRY;
-    fn CcRosVacbGetRefCount(Vacb: PROS_VACB) -> ULONG;
-    fn CcRosVacbDecRefCount(Vacb: PROS_VACB) -> ULONG;
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut usize);
     fn KeReleaseSpinLockFromDpcLevel(SpinLock: *mut usize);
+}
+extern "C" {
+    fn CcRosVacbGetRefCount(Vacb: PROS_VACB) -> ULONG;
+    fn CcRosVacbDecRefCount(Vacb: PROS_VACB) -> ULONG;
     fn CcRosInitializeFileCache(FileObject: PFILE_OBJECT, FileSizes: PCC_FILE_SIZES, PinAccess: BOOLEAN, CallBacks: PCACHE_MANAGER_CALLBACKS, LazyWriterContext: PVOID) -> NTSTATUS;
     fn CcRosReleaseFileCache(FileObject: PFILE_OBJECT) -> NTSTATUS;
     fn CcRosUnmarkDirtyVacb(Vacb: PROS_VACB, LockViews: BOOLEAN);

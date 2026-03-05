@@ -9,6 +9,8 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use crate::ke::processor::KeNumberProcessors;
+use crate::ke::krnlinit::KiProcessorBlock;
 
 use ntkrnl_sys::ddk::{
     CONTEXT,
@@ -106,9 +108,7 @@ extern "C" {
     static mut KdDebuggerNotPresent: BOOLEAN;
     static mut KdVersionBlock: DBGKD_GET_VERSION64;
     static mut KdpContextSent: BOOLEAN;
-    static mut KeNumberProcessors: ULONG;
     static mut KeProcessorLevel: USHORT;
-    static mut KiProcessorBlock: [*mut KPRCB; 0];
     static mut KdDisableCount: ULONG;
     static mut KdPreviouslyEnabled: BOOLEAN;
     static mut KdDebuggerEnabled: BOOLEAN;
@@ -142,7 +142,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
     fn KdSendPacket(packet_type: ULONG, header: PSTRING, data: PSTRING, context: *mut PVOID);
     fn KdReceivePacket(packet_type: ULONG, header: PSTRING, data: PSTRING, length: *mut ULONG, context: *mut PVOID) -> KDSTATUS;
     fn KdpAddBreakpoint(address: PVOID) -> HANDLE;
@@ -176,12 +175,22 @@ extern "system" {
 extern "C" {
     fn ExceptionRecord32To64(ex32: *mut PVOID, ex64: *mut EXCEPTION_RECORD64);
     fn KeGetTrapFrameInterruptState(trap_frame: *mut PVOID) -> BOOLEAN;
-    fn PspDumpThreads(system: BOOLEAN);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }
 extern "C" {
     fn KeGetContextPc(context: PCONTEXT) -> ULONG_PTR;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+extern "system" {
+    fn PspDumpThreads(system: BOOLEAN);
 }
 
 const PACKET_TYPE_KD_STATE_MANIPULATE: ULONG = 2;
@@ -533,7 +542,7 @@ unsafe fn KdpSetCommonState(
     (*wait_state_change).NewState = new_state;
     (*wait_state_change).ProcessorLevel = KeProcessorLevel;
     (*wait_state_change).Processor = (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16;
-    (*wait_state_change).NumberProcessors = KeNumberProcessors;
+    (*wait_state_change).NumberProcessors = KeNumberProcessors as ULONG;
     (*wait_state_change).Thread = KeGetCurrentThread() as u64;
     (*wait_state_change).ProgramCounter = KeGetContextPc(context) as u64;
 
@@ -789,7 +798,7 @@ unsafe fn KdpGetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    if ((*state).Processor as ULONG) < KeNumberProcessors {
+    if ((*state).Processor as ULONG) < KeNumberProcessors as ULONG {
         let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
             context
         } else {
@@ -820,7 +829,7 @@ unsafe fn KdpSetContext(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, context
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    if ((*state).Processor as ULONG) < KeNumberProcessors && KdpContextSent != 0 {
+    if ((*state).Processor as ULONG) < KeNumberProcessors as ULONG && KdpContextSent != 0 {
         let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
             context
         } else {
@@ -849,7 +858,7 @@ unsafe fn KdpGetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, conte
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    if ((*state).Processor as ULONG) < KeNumberProcessors
+    if ((*state).Processor as ULONG) < KeNumberProcessors as ULONG
         && ((*context_ex).Offset + (*context_ex).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32
     {
         let target_context = if (*state).Processor == (*(KeGetCurrentPrcb() as *mut _KPRCB)).Number as u16 {
@@ -890,7 +899,7 @@ unsafe fn KdpSetContextEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, conte
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    if ((*state).Processor as ULONG) < KeNumberProcessors
+    if ((*state).Processor as ULONG) < KeNumberProcessors as ULONG
         && (((*context_ex).Offset + (*context_ex).ByteCount) <= core::mem::size_of::<CONTEXT>() as u32)
         && (KdpContextSent != 0)
     {
@@ -1148,7 +1157,7 @@ unsafe fn KdpNotSupported(state: PDBGKD_MANIPULATE_STATE64) {
 }
 
 unsafe fn KdpSwitchProcessor(processor_index: USHORT) -> ULONG {
-    if processor_index as u32 >= KeNumberProcessors {
+    if processor_index as u32 >= KeNumberProcessors as u32 {
         // KdpDprintf(b"%u is not a valid processor number\n\0".as_ptr() as PCHAR);
         return ContinueProcessorReselected;
     }

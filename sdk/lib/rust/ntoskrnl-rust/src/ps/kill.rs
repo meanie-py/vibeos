@@ -7,11 +7,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
-
-extern "system" {
-    fn ARM64_UART_TRACE(msg: PCSTR);
-    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
-}
+use crate::ke::clock::KeMaximumIncrement;
 
 // Bugcheck codes
 const CRITICAL_PROCESS_DIED: ULONG = 0xEF;
@@ -54,7 +50,6 @@ extern "C" {
     static LpcPortObjectType: POBJECT_TYPE;
     static KdDebuggerEnabled: BOOLEAN;
     static KdDebuggerNotPresent: BOOLEAN;
-    static KeMaximumIncrement: ULONG;
 
     fn DbgPrint(fmt: PCHAR, ...) -> ULONG;
 }
@@ -71,7 +66,6 @@ extern "C" {
     fn KeLowerIrql(irql: KIRQL);
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
-    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 
     fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG);
     fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG);
@@ -96,6 +90,15 @@ unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
+}
+extern "C" {
+    fn ARM64_UART_TRACE(msg: PCSTR);
+}
+extern "C" {
+    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
+}
+extern "system" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
 // ============================================================================
@@ -1192,7 +1195,6 @@ pub unsafe extern "system" fn NtRegisterThreadTerminatePort(port_handle: HANDLE)
     ObDereferenceObject(termination_lpc_port);
     STATUS_INSUFFICIENT_RESOURCES
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

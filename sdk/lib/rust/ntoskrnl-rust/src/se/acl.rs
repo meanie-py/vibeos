@@ -338,7 +338,7 @@ unsafe fn SepShouldPropagateAce(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepPropagateAcl(
+pub unsafe extern "C" fn SepPropagateAcl(
     AclDest: PACL,
     AclLength: *mut ULONG,
     AclSource: PACL,
@@ -471,7 +471,7 @@ pub unsafe extern "system" fn SepPropagateAcl(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepSelectAcl(
+pub unsafe extern "C" fn SepSelectAcl(
     ExplicitAcl: PACL,
     ExplicitPresent: BOOLEAN,
     ExplicitDefaulted: BOOLEAN,

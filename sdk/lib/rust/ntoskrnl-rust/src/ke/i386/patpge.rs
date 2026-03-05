@@ -14,11 +14,11 @@ const PTE_BITS: usize = 10;
 
 #[repr(C)]
 pub struct LARGE_IDENTITY_MAP {
-    pub StartAddress: ULONG_PTR,
-    pub Cr3: ULONG,
     pub TopLevelDirectory: PHARDWARE_PTE,
+    pub Cr3: ULONG,
+    pub StartAddress: ULONG_PTR,
     pub PagesCount: ULONG,
-    pub PagesList: [PVOID; 256],
+    pub PagesList: [PVOID; 30],
 }
 
 // CODE_SEG("INIT")

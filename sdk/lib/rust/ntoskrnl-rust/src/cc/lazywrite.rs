@@ -74,7 +74,7 @@ pub static mut CcNoDelay: LARGE_INTEGER = unsafe { core::mem::transmute(0i64) };
 pub static mut CcNumberWorkerThreads: ULONG = 0;
 
 #[no_mangle]
-pub unsafe extern "system" fn CcPostWorkQueue(
+pub unsafe extern "C" fn CcPostWorkQueue(
     WorkItem: PWORK_QUEUE_ENTRY,
     WorkQueue: PLIST_ENTRY,
 ) {
@@ -188,7 +188,7 @@ unsafe fn CcLazyWriteScan() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcScheduleLazyWriteScan(NoDelay: BOOLEAN) {
+pub unsafe extern "C" fn CcScheduleLazyWriteScan(NoDelay: BOOLEAN) {
     if NoDelay != 0 {
         LazyWriter.ScanActive = 1u8;
         KeSetTimer(

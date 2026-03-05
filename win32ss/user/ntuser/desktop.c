@@ -2974,6 +2974,12 @@ NtUserSwitchDesktop(HDESK hdesk)
     BOOL bRedrawDesktop;
     BOOL Ret = FALSE;
 
+#ifdef _M_IX86
+    /* Debugcon trace: write '#' to port 0xE9 so we can see in debugcon
+     * whether NtUserSwitchDesktop is ever called */
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
+
     UserEnterExclusive();
 
     Status = IntValidateDesktopHandle(hdesk, UserMode, 0, &pdesk);
@@ -3044,6 +3050,8 @@ NtUserSwitchDesktop(HDESK hdesk)
     co_IntShowDesktop(pdesk, UserGetSystemMetrics(SM_CXSCREEN), UserGetSystemMetrics(SM_CYSCREEN), bRedrawDesktop);
     ObDereferenceObject(pdesk);
 
+    TRACE("SwitchDesktop OK (0x%p)\n", pdesk);
+    DbgPrint("[KERNEL] SwitchDesktop OK\n");
     Ret = TRUE;
 
 Exit:

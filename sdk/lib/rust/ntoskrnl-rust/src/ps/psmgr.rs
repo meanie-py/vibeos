@@ -5,6 +5,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use crate::ke::krnlinit::KeFeatureBits;
 
 extern "system" {
     static mut ExpInitializationPhase: ULONG;
@@ -49,7 +50,6 @@ extern "system" {
     static mut KeRaiseUserExceptionDispatcher: PVOID;
     static mut SharedUserData: *mut _KUSER_SHARED_DATA;
     static mut PsNtosImageBase: ULONG_PTR;
-    static mut KeFeatureBits: ULONG;
     static mut MmSectionObjectType: *mut _OBJECT_TYPE;
 
     fn KdUpdateDataBlock();
@@ -208,7 +208,7 @@ unsafe fn PspLookupKernelUserEntryPoints() -> NTSTATUS {
 
     #[cfg(target_arch = "x86")]
     {
-        if (KeFeatureBits & KF_FAST_SYSCALL) != 0 {
+        if (KeFeatureBits & KF_FAST_SYSCALL as u64) != 0 {
             (*SharedUserData).SystemCall = PsNtosImageBase >> (PAGE_SHIFT + 1);
             status = PspLookupSystemDllEntryPoint(
                 b"KiFastSystemCall\0".as_ptr() as PCSTR,
@@ -589,6 +589,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
         core::mem::transmute(Phase1Initialization as usize),
         loader_block as PVOID,
     );
+
     if status < 0 {
         return 0u8;
     }
@@ -650,7 +651,6 @@ pub unsafe extern "system" fn PsGetVersion(
 
     if (NtBuildNumber >> 28) == 0xC { 1u8 } else { 0u8 }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

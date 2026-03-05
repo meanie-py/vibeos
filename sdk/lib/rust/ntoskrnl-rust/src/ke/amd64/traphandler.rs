@@ -12,11 +12,11 @@ use ntkrnl_sys::ddk::{
     PULONG64, PKPRCB, KIPCR,
 };
 
+use crate::ke::procobj::KeServiceDescriptorTable;
 extern "system" {
     fn KiRetireDpcListInDpcStack(Prcb: PKPRCB, DpcStack: PVOID);
     fn KiQuantumEnd();
     fn KiSwapContext(WaitIrql: KIRQL, OldThread: PKTHREAD);
-    fn KiProcessorFreezeHandler(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
     fn KiHandleNmi();
     fn KeGdiFlushUserBatch();
     fn KiConvertToGuiThread() -> NTSTATUS;
@@ -24,7 +24,6 @@ extern "system" {
     fn _disable();
     fn __addgsdword(offset: ULONG, value: ULONG);
     fn __debugbreak();
-    static mut KeServiceDescriptorTable: *mut core::ffi::c_void;
     static MmUserProbeAddress: ULONG64;
 }
 extern "C" {
@@ -35,6 +34,9 @@ extern "C" {
     fn NtCurrentTeb() -> PVOID;
     fn __readmsr(msr: ULONG) -> ULONG64;
     fn __swapgs();
+}
+extern "C" {
+    fn KiProcessorFreezeHandler(TrapFrame: PKTRAP_FRAME, ExceptionFrame: PKEXCEPTION_FRAME) -> BOOLEAN;
 }
 
 const MSR_GS_BASE: ULONG = 0xC0000101;
@@ -189,7 +191,7 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
 
     if ServiceNumber >= (*DescriptorTable).Limit {
         if (TableIndex == WIN32K_SERVICE_INDEX) &&
-           ((*Thread).ServiceTable == KeServiceDescriptorTable)
+           ((*Thread).ServiceTable == core::ptr::addr_of_mut!(KeServiceDescriptorTable) as PVOID)
         {
             return KiConvertToGuiThread as PVOID;
         }
@@ -239,7 +241,6 @@ pub unsafe extern "system" fn KiSystemService(
 ) {
     __debugbreak();
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -10,8 +10,6 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 
 extern "system" {
-    fn ARM64_UART_TRACE(msg: PCSTR);
-    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
 
     static mut CcPfEnablePrefetcher: BOOLEAN;
     static mut MmReadClusterSize: ULONG;
@@ -22,7 +20,6 @@ extern "system" {
 
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ExGetPreviousMode() -> KPROCESSOR_MODE;
-    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
     // PspRunCreateThreadNotifyRoutines: imported via ddk::* (bindgen extern "C")
     fn PspTerminateThreadByPointer(Thread: PETHREAD, ExitStatus: NTSTATUS, DirectTerminate: BOOLEAN);
     fn PsLookupProcessThreadByCid(Cid: PCLIENT_ID, Process: *mut PEPROCESS, Thread: *mut PETHREAD) -> NTSTATUS;
@@ -32,7 +29,6 @@ extern "system" {
     static mut PspSystemDllBase: PVOID;
 }
 extern "C" {
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flag: ULONG);
     fn KeGetExceptionFrame(Thread: *mut _KTHREAD) -> PKEXCEPTION_FRAME;
@@ -48,6 +44,23 @@ extern "C" {
 extern "C" {
     fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
     fn KeGetContextReturnRegister(Context: PCONTEXT) -> ULONG_PTR;
+}
+extern "C" {
+    fn ARM64_UART_TRACE(msg: PCSTR);
+}
+extern "C" {
+    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
 type PACCESS_TOKEN = PVOID;
@@ -295,6 +308,7 @@ unsafe fn PspCreateThread(
             );
         }
     } else {
+
         (*(Thread as *mut _ETHREAD)).__bindgen_anon_6.StartAddress = core::mem::transmute(StartRoutine);
         PspSetCrossThreadFlag(Thread, CT_SYSTEM_THREAD_BIT);
 

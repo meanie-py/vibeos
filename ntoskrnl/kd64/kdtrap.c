@@ -338,6 +338,31 @@ KdpStub(IN PKTRAP_FRAME TrapFrame,
          (ExceptionCommand == BREAKPOINT_COMMAND_STRING) ||
          (ExceptionCommand == BREAKPOINT_PRINT)))
     {
+#ifdef _M_IX86
+        /* On i386, KD is disabled. Write BREAKPOINT_PRINT strings directly
+         * to COM1. This handles user-mode DbgPrint (kernel-mode is handled
+         * by the direct COM1 path in DebugPrint).
+         * Clear DLAB first in case a serial driver reconfigured the UART. */
+        if (ExceptionCommand == BREAKPOINT_PRINT)
+        {
+            PCHAR Buffer = (PCHAR)ExceptionRecord->ExceptionInformation[1];
+            USHORT Length = (USHORT)ExceptionRecord->ExceptionInformation[2];
+            USHORT i;
+            UCHAR lcr = READ_PORT_UCHAR((PUCHAR)0x3FB);
+            if (lcr & 0x80)
+                WRITE_PORT_UCHAR((PUCHAR)0x3FB, lcr & 0x7F);
+            for (i = 0; i < Length; i++)
+            {
+                WRITE_PORT_UCHAR((PUCHAR)0x3F8, (UCHAR)Buffer[i]);
+            }
+        }
+        /* Debugcon diagnostic: '$' = KdpStub received BREAKPOINT_PRINT.
+         * This fires for ALL DbgPrint calls (kernel and user-mode). */
+        if (ExceptionCommand == BREAKPOINT_PRINT)
+        {
+            __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'$'), "Nd"((unsigned short)0xE9));
+        }
+#endif
         /* This we can handle: simply bump the Program Counter */
         KeSetContextPc(ContextRecord,
                        KeGetContextPc(ContextRecord) + KD_BREAKPOINT_SIZE);

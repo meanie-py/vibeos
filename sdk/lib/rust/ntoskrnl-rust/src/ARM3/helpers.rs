@@ -20,6 +20,7 @@
 
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
+pub use crate::ke::processor::KeActiveProcessors;
 use ntkrnl_sys::ke::*;
 
 // ============================================================================
@@ -420,7 +421,6 @@ extern "C" {
     pub static mut NtMajorVersion: ULONG;
     pub static mut NtMinorVersion: ULONG;
     pub static mut CmNtCSDVersion: ULONG;
-    pub static mut KeActiveProcessors: ULONG_PTR;
     pub static mut PsDefaultSystemLocaleId: ULONG;
     pub static mut PsDefaultThreadLocaleId: ULONG;
     // MmSecondaryColorMask moved to ntkrnl-sys/mm.rs
@@ -857,7 +857,6 @@ extern "C" {
 extern "system" {
     pub fn MiDecrementReferenceCount(Pfn: PMMPFN, PageFrameIndex: PFN_NUMBER);
     pub fn MiInitializePfn(PageFrameIndex: PFN_NUMBER, PointerPte: PMMPTE, Modified: BOOLEAN);
-    pub fn MiInsertStandbyListAtFront(PageFrameIndex: PFN_NUMBER);
     pub fn MiReleaseProcessReferenceToSessionDataPage(SessionGlobal: PVOID);
     pub fn PsChargeProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T) -> NTSTATUS;
     pub fn PsReturnProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T);
@@ -1147,6 +1146,14 @@ extern "C" {
 // InitializePool — extern function
 extern "system" {
     pub fn InitializePool(PoolType: ULONG, Threshold: ULONG);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn MiInsertStandbyListAtFront(PageFrameIndex: PFN_NUMBER);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn MiInsertStandbyListAtFront(PageFrameIndex: PFN_NUMBER);
 }
 
 // ============================================================================

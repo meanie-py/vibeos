@@ -65,6 +65,20 @@ RUST_TARGETS = {
     "i386": "i686-pc-windows-gnu",
 }
 
+# Toolchain and build paths
+LLVM_MINGW = REACTOS_ROOT.parent / "llvm-mingw-20250114-ucrt-ubuntu-20.04-x86_64"
+BUILD_DIRS = {
+    "i386": REACTOS_ROOT.parent / "build-i386",
+    "amd64": REACTOS_ROOT.parent / "build-amd64",
+    "arm64": REACTOS_ROOT.parent / "build-arm64",
+}
+CLANG_TARGETS = {
+    "i386": "i686-w64-mingw32",
+    "amd64": "x86_64-w64-mingw32",
+    "arm64": "aarch64-w64-mingw32",
+}
+NTOS_CMAKE = NTOSKRNL_DIR / "ntos.cmake"
+
 # C arch macros → Rust cfg
 C_ARCH_MACROS = {
     "_M_ARM64": 'target_arch = "aarch64"',

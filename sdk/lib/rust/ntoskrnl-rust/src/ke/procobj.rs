@@ -191,11 +191,7 @@ pub unsafe extern "system" fn KeInitializeProcess(
 
     #[cfg(feature = "CONFIG_SMP")]
     {
-        extern "system" {
-    static mut KeNumberNodes: ULONG;
-    static mut KeProcessNodeSeed: UCHAR;
-    static mut KeNodeBlock: [PKNODE; 256];
-}
+        use super::krnlinit::{KeNumberNodes, KeProcessNodeSeed, KeNodeBlock};
         use ntkrnl_sys::ddk::{PKNODE, KeFindNextRightSetAffinity};
     }
 
@@ -314,10 +310,6 @@ pub unsafe extern "system" fn KeSetAffinityProcess(
     Process: PKPROCESS,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
-    extern "system" {
-    static KeActiveProcessors: KAFFINITY;
-}
-
     let mut ProcessLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
 
     KiAcquireProcessLockRaiseToSynch(Process, core::ptr::addr_of_mut!(ProcessLock));
@@ -513,10 +505,8 @@ pub unsafe extern "system" fn KeQueryValuesProcess(
     Values: *mut PROCESS_VALUES,
 ) {
     use ntkrnl_sys::ddk::_EPROCESS;
-
-    extern "system" {
-    static KeMaximumIncrement: ULONG;
-}
+    // Use actual definition from clock.rs, not extern (lto=false splits them)
+    use crate::ke::clock::KeMaximumIncrement;
 
     let mut ProcessLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
 

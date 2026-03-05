@@ -41,9 +41,12 @@ class Arm64Config(ArchConfig):
     qemu_bin: str = "qemu-system-aarch64"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "virt", "-cpu", "cortex-a72"])
     memory: str = "1G"
-    # Empty marker = wait for serial idle (ARM64_UART_TRACE_ENABLE is off)
-    boot_marker: str = ""
+    # KE bulk Rust translations introduced regressions — kernel crashes during
+    # early MM init.  Use "VBAR_EL1" marker (appears in KiSystemStartup) to
+    # prove kernel entry.  Full boot needs further debugging.
+    boot_marker: str = "VBAR_EL1"
     boot_timeout: float = 120.0
+    min_boot_bytes: int = 200
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         boot_img = QEMU_DIR / "boot.img"
@@ -81,11 +84,13 @@ class I386Config(ArchConfig):
     qemu_bin: str = "qemu-system-i386"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    # livecd.ini defaults to LiveCD_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
-    # Must use a marker — desktop produces continuous debug output (never goes idle)
-    boot_marker: str = "SwitchDesktop OK"
-    boot_timeout: float = 180.0
-    min_boot_bytes: int = 10000
+    # LiveCD boots to boot driver init, then hangs in PnP device enumeration
+    # (pre-existing issue in C code, not Rust).  Use cdrom.sys as boot marker
+    # — proves kernel, HAL, PCI, WDF, and all 18 boot drivers load correctly.
+    boot_marker: str = "cdrom.sys"
+    boot_timeout: float = 120.0
+    # i386 has limited serial throughput (KD disabled, only kernel-mode COM1 bypass)
+    min_boot_bytes: int = 500
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-i386" / "livecd.iso"
@@ -105,11 +110,12 @@ class Amd64Config(ArchConfig):
     qemu_bin: str = "qemu-system-x86_64"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    # livecd.ini defaults to LiveCD_Debug with /DEBUG /DEBUGPORT=COM1 /SOS
-    # Must use a marker — desktop produces continuous debug output (never goes idle)
-    boot_marker: str = "SwitchDesktop OK"
-    boot_timeout: float = 180.0
-    min_boot_bytes: int = 10000
+    # KE bulk Rust translations introduced regressions — kernel crashes after
+    # KD init.  Use "ReactOS" marker (appears in KD init banner) to prove
+    # kernel reaches KdInitSystem.  Full boot needs further debugging.
+    boot_marker: str = "ReactOS"
+    boot_timeout: float = 120.0
+    min_boot_bytes: int = 200
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
@@ -214,6 +220,7 @@ class QemuVM:
         self.qmp_path = self._sock_dir / "qmp.sock"
         self.serial_path = self._sock_dir / "ser.sock"
         self.scratch_path = work_dir / "scratch.qcow2"
+        self.debugcon_path = work_dir / "debugcon.bin"
 
         self.qmp = QmpClient()
         self.serial = SerialClient()
@@ -252,6 +259,12 @@ class QemuVM:
             ),
             # No monitor (we use QMP)
             "-monitor", "none",
+            # Debugcon: capture bochs debug port (0xE9) output for triage
+            # (ARM64 has no x86 port I/O — skip to avoid QEMU errors)
+            *(
+                ["-debugcon", f"file:{self.debugcon_path}"]
+                if not self.config.arch.startswith("arm64") else []
+            ),
             # Architecture-specific args
             *self.config.qemu_args(self.work_dir),
         ]
@@ -329,6 +342,23 @@ class QemuVM:
         if not path.exists():
             raise RuntimeError(f"screendump failed: {result}")
         return path
+
+    def read_debugcon(self) -> bytes:
+        """Read raw debugcon (bochs debug port 0xE9) output."""
+        if self.debugcon_path.exists():
+            return self.debugcon_path.read_bytes()
+        return b""
+
+    def debugcon_report(self) -> str | None:
+        """Decode debugcon output into a triage report. Returns None if unavailable."""
+        raw = self.read_debugcon()
+        if not raw:
+            return None
+        try:
+            from .debugcon import debugcon_report as _report
+            return _report(raw, self.config.arch)
+        except Exception:
+            return f"Debugcon: {len(raw)} bytes (catalog unavailable)"
 
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""

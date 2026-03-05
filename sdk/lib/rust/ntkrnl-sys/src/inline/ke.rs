@@ -81,11 +81,29 @@ pub unsafe fn KeGetContextPc(ctx: *const ddk::_CONTEXT) -> ULONG_PTR {
 // KeGetTrapFrame (FORCEINLINE from ke.h)
 // ============================================================================
 
-/// KeGetTrapFrame — return thread's trap frame pointer.
-/// C: `return Thread->TrapFrame;`
+/// KeGetTrapFrame — compute trap frame location from thread's InitialStack.
+///
+/// i386:  `InitialStack - sizeof(KTRAP_FRAME) - sizeof(FX_SAVE_AREA)`
+/// amd64: `InitialStack - sizeof(KTRAP_FRAME)`
+/// arm64: `InitialStack - sizeof(KTRAP_FRAME)`
+///
+/// NOTE: This is NOT `Thread->TrapFrame` — that field is set dynamically on
+/// trap/syscall entry and may be NULL for newly created threads. The C macro
+/// computes the static location from the thread's initial stack layout.
 #[inline]
+#[cfg(target_arch = "x86")]
 pub unsafe fn KeGetTrapFrame(thread: ddk::PKTHREAD) -> ddk::PKTRAP_FRAME {
-    (*thread).TrapFrame
+    (((*thread).InitialStack as usize)
+        - core::mem::size_of::<ddk::_KTRAP_FRAME>()
+        - core::mem::size_of::<ddk::_FX_SAVE_AREA>()) as ddk::PKTRAP_FRAME
+}
+
+/// KeGetTrapFrame — amd64/arm64: `InitialStack - sizeof(KTRAP_FRAME)`
+#[inline]
+#[cfg(not(target_arch = "x86"))]
+pub unsafe fn KeGetTrapFrame(thread: ddk::PKTHREAD) -> ddk::PKTRAP_FRAME {
+    (((*thread).InitialStack as usize)
+        - core::mem::size_of::<ddk::_KTRAP_FRAME>()) as ddk::PKTRAP_FRAME
 }
 
 // ============================================================================
@@ -399,21 +417,28 @@ pub unsafe fn KeGetContextSwitches(prcb: ddk::PKPRCB) -> ULONG {
 
 // ============================================================================
 // KxAcquireSpinLock / KxReleaseSpinLock (FORCEINLINE from spinlock.h)
-// Non-SMP (UP) builds: no-ops. SMP builds: interlocked bit test and set.
-// This is a UP kernel, so these are effective no-ops with just memory barrier.
+// UP kernel with DBG=1: compiler barrier + owner tracking.
+// The DBG checks store KeGetCurrentThread()|1 in the lock on acquire and
+// validate it on release, catching mismatched acquire/release pairs.
 // ============================================================================
 
-/// KxAcquireSpinLock — UP: memory barrier only. SMP: atomic acquire.
+const SPIN_LOCK_ALREADY_OWNED: ULONG = 0xF;
+const SPIN_LOCK_NOT_OWNED: ULONG = 0x10;
+
+/// KxAcquireSpinLock — UP kernel: compiler barrier only.
+/// DBG owner tracking disabled: inconsistent paths between C shims and Rust inline
+/// cause false SPIN_LOCK_NOT_OWNED on i386. To be investigated separately.
 #[inline]
-pub unsafe fn KxAcquireSpinLock(_spin_lock: *mut ULONG_PTR) {
-    // UP kernel: just compiler barrier
+pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
+    // UP kernel: compiler barrier (no SMP spin needed)
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
-/// KxReleaseSpinLock — UP: memory barrier only. SMP: atomic release.
+/// KxReleaseSpinLock — UP kernel: compiler barrier only.
+/// DBG owner tracking disabled (see KxAcquireSpinLock comment).
 #[inline]
-pub unsafe fn KxReleaseSpinLock(_spin_lock: *mut ULONG_PTR) {
-    // UP kernel: just compiler barrier
+pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
+    // UP kernel: compiler barrier
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 

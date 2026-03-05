@@ -60,6 +60,29 @@ use ntkrnl_sys::ddk::{
     _UNICODE_STRING,
 };
 
+// Rust-defined globals — import to avoid extern split under LTO=false
+use crate::ke::processor::{KeActiveProcessors, KeNumberProcessors};
+use crate::ke::krnlinit::{
+    KiProcessorBlock, KeFeatureBits, KeNodeBlock, KeNumberNodes,
+    KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
+};
+use crate::ke::clock::{KeMaximumIncrement, KeBootTime};
+use crate::ke::time::KeTimeAdjustment;
+use crate::ke::dpc::{KiMaximumDpcQueueDepth, KiMinimumDpcRate, KiAdjustDpcThreshold, KiIdealDpcRate};
+use crate::ARM3::sysldr::{PsLoadedModuleList, MmLoadedUserImageList, PsLoadedModuleResource};
+use crate::mm::pagefile::{MiFreeSwapPages, MiUsedSwapPages};
+use crate::cc::pin::{CcMapDataNoWait, CcMapDataWait, CcPinMappedDataCount, CcPinReadNoWait, CcPinReadWait};
+use crate::cc::lazywrite::{CcLazyWriteIos, CcLazyWritePages};
+use crate::cc::copy::{CcDataFlushes, CcDataPages};
+use crate::ex::init::NtGlobalFlag;
+use crate::ex::lookas::{
+    ExPoolLookasideListHead, ExSystemLookasideListHead,
+    ExpNonPagedLookasideListHead, ExpNonPagedLookasideListLock,
+    ExpPagedLookasideListHead, ExpPagedLookasideListLock,
+};
+use crate::ob::obinit::ObpObjectSecurityMode;
+use crate::se::priv_::{SeSystemEnvironmentPrivilege, SeLoadDriverPrivilege, SeDebugPrivilege, SeTcbPrivilege, SeSystemtimePrivilege};
+
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
@@ -71,59 +94,16 @@ extern "system" {
     fn _SEH2_YIELD(expr: NTSTATUS) -> !;
     static mut HandleTableListHead: LIST_ENTRY;
     static mut HandleTableListLock: EX_PUSH_LOCK;
-    static mut PsLoadedModuleList: LIST_ENTRY;
-    static mut MmLoadedUserImageList: LIST_ENTRY;
-    static mut PsLoadedModuleResource: ERESOURCE;
-    static mut KeActiveProcessors: KAFFINITY;
-    static mut KeNumberProcessors: ULONG;
-    static mut KeProcessorArchitecture: USHORT;
-    static mut KeProcessorLevel: USHORT;
-    static mut KeProcessorRevision: USHORT;
-    static mut KeFeatureBits: ULONGLONG;
-    static mut KeMaximumIncrement: ULONG;
     static mut IoReadTransferCount: LARGE_INTEGER;
     static mut IoWriteTransferCount: LARGE_INTEGER;
     static mut IoOtherTransferCount: LARGE_INTEGER;
     static mut IoReadOperationCount: ULONG;
     static mut IoWriteOperationCount: ULONG;
     static mut IoOtherOperationCount: ULONG;
-    static mut MiFreeSwapPages: ULONG;
-    static mut MiUsedSwapPages: ULONG;
-    static mut KeBootTime: LARGE_INTEGER;
     static mut ExpTimeZoneBias: LARGE_INTEGER;
     static mut ExpTimeZoneId: ULONG;
-    static mut CcMapDataNoWait: ULONG;
-    static mut CcMapDataWait: ULONG;
-    static mut CcPinMappedDataCount: ULONG;
-    static mut CcPinReadNoWait: ULONG;
-    static mut CcPinReadWait: ULONG;
-    static mut CcLazyWriteIos: ULONG;
-    static mut CcLazyWritePages: ULONG;
-    static mut CcDataFlushes: ULONG;
-    static mut CcDataPages: ULONG;
-    static mut KiProcessorBlock: [*mut _KPRCB; 0];
-    static mut NtGlobalFlag: ULONG;
-    static mut KiMaximumDpcQueueDepth: ULONG;
-    static mut KiMinimumDpcRate: ULONG;
-    static mut KiAdjustDpcThreshold: ULONG;
-    static mut KiIdealDpcRate: ULONG;
     static mut KiTimeAdjustmentEnabled: BOOLEAN;
-    static mut KeTimeAdjustment: ULONG;
-    static mut SeSystemEnvironmentPrivilege: LUID;
-    static mut SeLoadDriverPrivilege: LUID;
-    static mut SeDebugPrivilege: LUID;
-    static mut SeTcbPrivilege: LUID;
-    static mut SeSystemtimePrivilege: LUID;
-    static mut KeNumberNodes: ULONG;
-    static mut KeNodeBlock: [*mut _KNODE; 0];
     static mut ExpTimeZoneInfo: RTL_TIME_ZONE_INFORMATION;
-    static mut ExPoolLookasideListHead: LIST_ENTRY;
-    static mut ExSystemLookasideListHead: LIST_ENTRY;
-    static mut ExpNonPagedLookasideListHead: LIST_ENTRY;
-    static mut ExpNonPagedLookasideListLock: KSPIN_LOCK;
-    static mut ExpPagedLookasideListHead: LIST_ENTRY;
-    static mut ExpPagedLookasideListLock: KSPIN_LOCK;
-    static mut ObpObjectSecurityMode: ULONG;
     static mut SharedUserData: *mut _KUSER_SHARED_DATA;
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     fn HalGetEnvironmentVariable(Name: PCHAR, ValueLength: ULONG, Value: PCHAR) -> ARC_STATUS;
@@ -144,7 +124,6 @@ extern "system" {
     fn MmSessionDelete(SessionId: ULONG) -> NTSTATUS;
 }
 extern "C" {
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn ProbeAndCaptureUnicodeString( CapturedString: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE, String: *const _UNICODE_STRING, ) -> NTSTATUS;
     fn ReleaseCapturedUnicodeString(CapturedString: *const _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn ObpGetHandleObject(Entry: PHANDLE_TABLE_ENTRY) -> POBJECT_HEADER;
@@ -154,6 +133,9 @@ extern "C" {
 extern "C" {
     fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: PCHAR, BufferSize: USHORT);
     fn RtlInitEmptyUnicodeString(UnicodeString: *mut _UNICODE_STRING, Buffer: PWSTR, MaximumLength: USHORT);
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
 const MAX_ENVVAL_SIZE: ULONG = 1024;

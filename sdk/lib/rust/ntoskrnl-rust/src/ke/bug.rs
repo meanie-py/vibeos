@@ -73,8 +73,8 @@ pub static mut KeRosVideoBiosDate: _UNICODE_STRING = unsafe { core::mem::zeroed(
 #[no_mangle]
 pub static mut KeRosVideoBiosVersion: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
+use super::krnlinit::KeLoaderBlock;
 extern "system" {
-    static mut KeLoaderBlock: PVOID;
     static mut PsLoadedModuleList: LIST_ENTRY;
     static mut MmHighestUserAddress: PVOID;
     static KdDebuggerEnabled: BOOLEAN;
@@ -184,7 +184,7 @@ const DRIVER_USED_EXCESSIVE_PTES: ULONG = 0x000000D8;
 const MANUALLY_INITIATED_CRASH: ULONG = 0x000000E2;
 
 #[no_mangle]
-pub unsafe extern "C" fn KiPcToFileHeader(
+pub unsafe extern "system" fn KiPcToFileHeader(
     Pc: PVOID,
     LdrEntry: *mut PLDR_DATA_TABLE_ENTRY,
     DriversOnly: BOOLEAN,
@@ -424,7 +424,9 @@ unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -
 
     i = 0;
     while i < (*KiBugCodeMessages).NumberOfBlocks {
-        let block = &(*KiBugCodeMessages).Blocks[i as usize];
+        // Blocks is a C flexible array member ([_MESSAGE_RESOURCE_BLOCK; 1] in bindgen).
+        // Use pointer arithmetic to avoid Rust bounds check on the [1]-length array.
+        let block = &*((*KiBugCodeMessages).Blocks.as_ptr().add(i as usize));
         if (BugCheckCode >= block.LowId) && (BugCheckCode <= block.HighId) {
             MessageEntry = ((KiBugCodeMessages as ULONG_PTR) + block.OffsetToEntries as ULONG_PTR) as PMESSAGE_RESOURCE_ENTRY;
             IdOffset = BugCheckCode - block.LowId;
@@ -715,6 +717,151 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     BugCheckParameter4: ULONG_PTR,
     TrapFrame: PKTRAP_FRAME,
 ) -> ! {
+    // Output bugcheck info via debugcon port 0xe9
+    #[cfg(target_arch = "x86")]
+    {
+        // Helper: output a hex u32 via debugcon
+        macro_rules! dbg_hex {
+            ($val:expr) => {{
+                let v = $val as u32;
+                let mut ii = 8u32;
+                while ii > 0 {
+                    ii -= 1;
+                    let nibble = ((v >> (ii * 4)) & 0xF) as u8;
+                    let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+                    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") ch);
+                }
+            }};
+        }
+        macro_rules! dbg_hex_u8 {
+            ($val:expr) => {{
+                let v = $val as u8;
+                let hi = (v >> 4) & 0xF;
+                let lo = v & 0xF;
+                let ch_hi = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+                let ch_lo = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") ch_hi);
+                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") ch_lo);
+            }};
+        }
+        macro_rules! dbg_str {
+            ($s:expr) => {{
+                let bytes: &[u8] = $s;
+                let mut ii = 0usize;
+                while ii < bytes.len() {
+                    let b = bytes[ii];
+                    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
+                    ii += 1;
+                }
+            }};
+        }
+        // Output our own address so we can compute load delta
+        dbg_str!(b"KBCT=");
+        dbg_hex!(KeBugCheckWithTf as *const () as u32);
+        dbg_str!(b"\n");
+        // BUG:code P1=addr P2=irql P3=rw P4=eip
+        dbg_str!(b"BUG:");
+        dbg_hex!(BugCheckCode);
+        dbg_str!(b" P1=");
+        dbg_hex!(BugCheckParameter1);
+        dbg_str!(b" P2=");
+        dbg_hex!(BugCheckParameter2);
+        dbg_str!(b" P3=");
+        dbg_hex!(BugCheckParameter3);
+        dbg_str!(b" P4=");
+        dbg_hex!(BugCheckParameter4);
+        dbg_str!(b"\n");
+
+        // Dump trap frame if available
+        if !TrapFrame.is_null() {
+            let tf = &*TrapFrame;
+            dbg_str!(b"TF: EIP=");
+            dbg_hex!(tf.Eip);
+            dbg_str!(b" EBP=");
+            dbg_hex!(tf.Ebp);
+            dbg_str!(b" EAX=");
+            dbg_hex!(tf.Eax);
+            dbg_str!(b" ECX=");
+            dbg_hex!(tf.Ecx);
+            dbg_str!(b" EDX=");
+            dbg_hex!(tf.Edx);
+            dbg_str!(b" EBX=");
+            dbg_hex!(tf.Ebx);
+            dbg_str!(b" ESI=");
+            dbg_hex!(tf.Esi);
+            dbg_str!(b" EDI=");
+            dbg_hex!(tf.Edi);
+            dbg_str!(b"\n");
+
+            // For ring-0 faults, real ESP = address of HardwareEsp field
+            // (CPU doesn't push ESP for same-ring traps)
+            let real_esp = &tf.HardwareEsp as *const u32;
+            dbg_str!(b"RESP=");
+            dbg_hex!(real_esp as u32);
+            // Dump 32 dwords from real stack at fault time
+            dbg_str!(b" STK:");
+            let mut si = 0u32;
+            while si < 32 {
+                dbg_str!(b" ");
+                let val = core::ptr::read_volatile(real_esp.add(si as usize));
+                dbg_hex!(val);
+                si += 1;
+            }
+            dbg_str!(b"\n");
+
+            // Dump 16 bytes at faulting EIP to see what code is there
+            let eip_ptr = tf.Eip as *const u8;
+            if (eip_ptr as u32) >= 0x80000000 {
+                dbg_str!(b"CODE@EIP:");
+                let mut si = 0u32;
+                while si < 16 {
+                    dbg_str!(b" ");
+                    let val = core::ptr::read_volatile(eip_ptr.add(si as usize));
+                    dbg_hex_u8!(val);
+                    si += 1;
+                }
+                dbg_str!(b"\n");
+            }
+
+            // Dump EBP chain (4 levels)
+            let mut cur_ebp = tf.Ebp as *const u32;
+            let mut level = 0u32;
+            while level < 4 && (cur_ebp as u32) >= 0x80000000 && (cur_ebp as u32) < 0xFFF00000 {
+                dbg_str!(b"EBP@");
+                dbg_hex!(cur_ebp as u32);
+                dbg_str!(b":");
+                let mut si = 0u32;
+                while si < 4 {
+                    dbg_str!(b" ");
+                    let val = core::ptr::read_volatile(cur_ebp.add(si as usize));
+                    dbg_hex!(val);
+                    si += 1;
+                }
+                dbg_str!(b"\n");
+                cur_ebp = core::ptr::read_volatile(cur_ebp) as *const u32;
+                level += 1;
+            }
+        }
+
+
+        // Dump module list with base+size
+        let head = &PsLoadedModuleList as *const LIST_ENTRY as *mut LIST_ENTRY;
+        let mut entry = (*head).Flink;
+        let mut mod_count = 0u32;
+        dbg_str!(b"MODS:");
+        while entry != head && mod_count < 8 {
+            let ldr = entry as PLDR_DATA_TABLE_ENTRY;
+            let base = (*ldr).DllBase as u32;
+            let size = (*ldr).SizeOfImage;
+            dbg_str!(b" ");
+            dbg_hex!(base);
+            dbg_str!(b"+");
+            dbg_hex!(size);
+            entry = (*entry).Flink;
+            mod_count += 1;
+        }
+        dbg_str!(b"\n");
+    }
     let Prcb = KeGetCurrentPrcb();
     let mut Context: CONTEXT = core::mem::zeroed();
     let mut MessageId: ULONG;
@@ -1147,6 +1294,58 @@ pub unsafe extern "system" fn KeBugCheckEx(
     BugCheckParameter3: ULONG_PTR,
     BugCheckParameter4: ULONG_PTR,
 ) -> ! {
+    // Debugcon trace: output marker 'B' then bugcheck code as 8 hex chars
+    #[cfg(target_arch = "x86")]
+    {
+        // Output bugcheck code as 8 hex digits
+        let mut shift: i32 = 28;
+        while shift >= 0 {
+            let d = ((BugCheckCode >> shift) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift -= 4;
+        }
+        // Output BugCheckParameter1 as 8 hex digits
+        let mut shift2: i32 = 28;
+        while shift2 >= 0 {
+            let d = ((BugCheckParameter1 as u32 >> shift2) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift2 -= 4;
+        }
+        // Also dump the return address to identify caller
+        // Use core::intrinsics-free approach: read [ebp+4] for return address
+        let retaddr: u32;
+        core::arch::asm!(
+            "mov {0}, [ebp+4]",
+            out(reg) retaddr,
+            options(nostack, preserves_flags)
+        );
+        let mut shift3: i32 = 28;
+        while shift3 >= 0 {
+            let d = ((retaddr >> shift3) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift3 -= 4;
+        }
+        // Also dump param2 (exception address for 0x1E bugchecks)
+        let mut shift4: i32 = 28;
+        while shift4 >= 0 {
+            let d = ((BugCheckParameter2 as u32 >> shift4) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift4 -= 4;
+        }
+        // Also dump param3 and param4 (for ACCESS_VIOLATION: read/write flag and target address)
+        let mut shift5: i32 = 28;
+        while shift5 >= 0 {
+            let d = ((BugCheckParameter3 as u32 >> shift5) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift5 -= 4;
+        }
+        let mut shift6: i32 = 28;
+        while shift6 >= 0 {
+            let d = ((BugCheckParameter4 as u32 >> shift6) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift6 -= 4;
+        }
+    }
     DbgPrint(
         b"\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n\0".as_ptr() as *const i8,
         BugCheckCode,
@@ -1246,6 +1445,22 @@ pub unsafe extern "system" fn KeBugCheckEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
+    // Debugcon: dump return address so we can identify the caller
+    #[cfg(target_arch = "x86")]
+    {
+        let retaddr: u32;
+        core::arch::asm!(
+            "mov {}, [ebp+4]",
+            out(reg) retaddr,
+            options(nomem, nostack, preserves_flags)
+        );
+        let mut shift: i32 = 28;
+        while shift >= 0 {
+            let d = ((retaddr >> shift) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            shift -= 4;
+        }
+    }
     DbgPrint(b"\n*** BUGCHECK: 0x%08lX\n\0".as_ptr() as *const i8, BugCheckCode);
     #[cfg(target_arch = "aarch64")]
     {
@@ -1301,7 +1516,6 @@ pub unsafe extern "system" fn KeEnterKernelDebugger() {
 
     KiBugCheckDebugBreak(DBG_STATUS_FATAL);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

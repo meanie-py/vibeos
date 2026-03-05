@@ -18,11 +18,10 @@ use ntkrnl_sys::ddk::{
     PKIPI_CONTEXT, PKTHREAD,
 };
 
+use crate::ke::krnlinit::{KeLoaderBlock, KeFeatureBits};
+use crate::ke::processor::KeActiveProcessors;
 extern "system" {
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
-    static mut KeLoaderBlock: *mut core::ffi::c_void;
-    static mut KeFeatureBits: ULONG64;
-    static mut KeActiveProcessors: KAFFINITY;
     fn KiCpuId(CpuInfo: *mut _CPU_INFO, Function: ULONG);
     fn Ke386FnInit();
     fn Ke386FxSave(Area: *mut FX_SAVE_AREA);
@@ -370,9 +369,6 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
     // Debug trace: vendor value
     #[cfg(target_arch = "x86")]
     {
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'[', options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") (b'0' + Vendor as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b']', options(nomem, nostack, preserves_flags));
     }
 
     if Vendor == 0 {
@@ -527,16 +523,6 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
     #[cfg(target_arch = "x86")]
     {
         let hex = |v: u8| -> u8 { if v < 10 { b'0' + v } else { b'a' + v - 10 } };
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'{', options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 28) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 24) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 20) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 16) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 12) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 8) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((CpuFeatures >> 4) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex((CpuFeatures & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'}', options(nomem, nostack, preserves_flags));
     }
 
     if CpuFeatures & X86_FEATURE_VME != 0 {
@@ -618,16 +604,6 @@ pub unsafe extern "system" fn KiGetFeatureBits() -> ULONG64 {
     {
         let hex = |v: u8| -> u8 { if v < 10 { b'0' + v } else { b'a' + v - 10 } };
         let fb = FeatureBits as u32;
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'<', options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 28) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 24) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 20) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 16) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 12) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 8) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex(((fb >> 4) & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") hex((fb & 0xF) as u8), options(nomem, nostack, preserves_flags));
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'>', options(nomem, nostack, preserves_flags));
     }
 
     FeatureBits
@@ -1707,9 +1683,13 @@ pub unsafe extern "system" fn KeFlushEntireTb(
     _Invalid: BOOLEAN,
     _AllProcessors: BOOLEAN,
 ) {
+    // DBG: KeFlushEntireTb entry
+
     let OldIrql: KIRQL;
 
     OldIrql = KeRaiseIrqlToSynchLevel();
+
+    // DBG: after KeRaiseIrqlToSynchLevel
 
     #[cfg(feature = "CONFIG_SMP")]
     {
@@ -1730,6 +1710,8 @@ pub unsafe extern "system" fn KeFlushEntireTb(
 
     KeFlushCurrentTb();
 
+    // DBG: after KeFlushCurrentTb
+
     #[cfg(feature = "CONFIG_SMP")]
     {
         let Prcb = KeGetCurrentPrcb();
@@ -1740,7 +1722,12 @@ pub unsafe extern "system" fn KeFlushEntireTb(
     }
 
     InterlockedExchangeAdd(core::ptr::addr_of_mut!(KiTbFlushTimeStamp), 1);
+
+    // DBG: after InterlockedExchangeAdd
+
     KeLowerIrql(OldIrql);
+
+    // DBG: KeFlushEntireTb done
 }
 
 #[no_mangle]
@@ -1753,7 +1740,6 @@ pub unsafe extern "C" fn KeSaveStateForHibernate(State: PKPROCESSOR_STATE) {
     RtlCaptureContext(&mut (*State).ContextFrame);
     KiSaveProcessorControlState(State);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

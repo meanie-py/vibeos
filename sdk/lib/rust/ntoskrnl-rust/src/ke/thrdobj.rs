@@ -71,14 +71,13 @@ use ntkrnl_sys::ddk::{
     MmDeleteKernelStack,
 };
 
+// Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::krnlinit::{KiProcessorBlock, KeNodeBlock};
+use crate::ke::processor::KeNumberProcessors;
 extern "system" {
     static mut ExWorkerQueue: [_EX_WORK_QUEUE; 7];
     static mut PspReaperListHead: LIST_ENTRY;
     static mut PspReaperWorkItem: ntkrnl_sys::ddk::_WORK_QUEUE_ITEM;
-    #[link_name = "KeNumberProcessors"]
-    static mut KeNumberProcessors_local: UCHAR;
-    static mut KeNodeBlock: [PKNODE; 1];
-    static mut KiProcessorBlock: [PKPRCB; 0];
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -107,7 +106,7 @@ const ThreadObject: u8 = 6;
 const Initialized: u8 = 0;
 const Terminated: u8 = 4;
 const Waiting: u8 = 5;
-const Standby: u8 = 1;
+const Standby: u8 = 3;
 const ProcessInMemory_: u8 = 0;
 
 const Suspended_val: u32 = 5;
@@ -856,7 +855,8 @@ unsafe fn KeInitializeThread_impl(
     Teb: PVOID,
     KernelStack: PVOID,
 ) {
-    if KeInitThread_impl(Thread, KernelStack, SystemRoutine, StartRoutine, StartContext, Context, Teb, Process) >= 0 {
+    let status = KeInitThread_impl(Thread, KernelStack, SystemRoutine, StartRoutine, StartContext, Context, Teb, Process);
+    if status >= 0 {
         KeStartThread_impl(Thread);
     }
 }
@@ -964,7 +964,7 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
 
     OldIdealProcessor = *kt_UserIdealProcessor(Thread);
 
-    if (Processor as ULONG) < KeNumberProcessors_local as ULONG {
+    if (Processor as ULONG) < KeNumberProcessors as ULONG {
         if (*Thread).Affinity & AFFINITY_MASK!(Processor) != 0 {
             (*Thread).IdealProcessor = Processor;
 
@@ -1125,7 +1125,11 @@ pub unsafe extern "system" fn KeSetPriorityThread(
     ASSERT!(Priority <= HIGH_PRIORITY && Priority >= LOW_PRIORITY);
     ASSERT!(KeIsExecutingDpc() == 0);
 
+    // DBG: KeSetPriorityThread entry
+
     OldIrql = KiAcquireDispatcherLock();
+
+    // DBG: after KiAcquireDispatcherLock
 
     KiAcquireThreadLock(Thread);
 
@@ -1140,12 +1144,20 @@ pub unsafe extern "system" fn KeSetPriorityThread(
             AdjustedPriority = 1;
         }
 
+        // DBG: before KiSetPriorityThread
+
         KiSetPriorityThread(Thread, AdjustedPriority);
+
+        // DBG: after KiSetPriorityThread
     }
 
     KiReleaseThreadLock(Thread);
 
+    // DBG: before KiReleaseDispatcherLock
+
     KiReleaseDispatcherLock(OldIrql);
+
+    // DBG: after KiReleaseDispatcherLock
 
     OldPriority
 }
@@ -1226,7 +1238,6 @@ pub unsafe extern "system" fn KeTerminateThread(Increment: KPRIORITY) {
     KiReleaseDispatcherLockFromSynchLevel();
     KiSwapThread(Thread, KeGetCurrentPrcb());
 }
-
 
 // ============================================================================
 // Wrapper #[no_mangle] exports that delegate to _impl functions

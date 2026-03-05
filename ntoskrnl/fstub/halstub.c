@@ -232,6 +232,21 @@ xHalTranslateBusAddress(IN INTERFACE_TYPE InterfaceType,
                         IN OUT PULONG AddressSpace,
                         OUT PPHYSICAL_ADDRESS TranslatedAddress)
 {
+#ifdef _M_IX86
+    {
+        /* Dump return address to debugcon via GAS inline asm */
+        ULONG_PTR retaddr = (ULONG_PTR)__builtin_return_address(0);
+        int i;
+        __asm__ __volatile__("outb %%al, $0xe9" :: "a"((UCHAR)'S'));
+        for (i = 28; i >= 0; i -= 4)
+        {
+            UCHAR d = (UCHAR)((retaddr >> i) & 0xF);
+            UCHAR ch = d < 10 ? '0' + d : 'a' + d - 10;
+            __asm__ __volatile__("outb %%al, $0xe9" :: "a"(ch));
+        }
+        __asm__ __volatile__("outb %%al, $0xe9" :: "a"((UCHAR)'!'));
+    }
+#endif
     KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0, 0, 0, 0);
 
     return FALSE;

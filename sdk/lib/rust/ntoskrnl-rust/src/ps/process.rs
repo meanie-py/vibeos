@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::probe::{probe_write_user, probe_user_buffer};
+use crate::ke::processor::KeActiveProcessors;
 
 // Status codes not in ddk
 const STATUS_SUCCESS: NTSTATUS = 0;
@@ -80,7 +81,6 @@ extern "system" {
     static mut PspJobSchedulingClasses: [UCHAR; 10];
     static mut ProcessCount: ULONG;
     static mut SeDebugPrivilege: LUID;
-    static mut KeActiveProcessors: KAFFINITY;
     static DbgkDebugObjectType: POBJECT_TYPE;
     static MmSectionObjectType: POBJECT_TYPE;
     static LpcPortObjectType: POBJECT_TYPE;
@@ -90,11 +90,8 @@ extern "system" {
     fn PspInitializeProcessSecurity(process: PEPROCESS, parent: PEPROCESS) -> NTSTATUS;
     fn ObInitProcess(parent: PEPROCESS, process: PEPROCESS) -> NTSTATUS;
     fn PspMapSystemDll(process: PEPROCESS, base: *mut PVOID, load: BOOLEAN) -> NTSTATUS;
-    fn ARM64_UART_TRACE(msg: *const i8);
-    fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
 }
 extern "C" {
-    fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
     fn PspPrioritySeparationFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumTypeFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumLengthFromMask(mask: ULONG) -> ULONG;
@@ -108,6 +105,15 @@ extern "C" {
 extern "C" {
     fn Ki386PerfEnd();
     fn PspRunCreateProcessNotifyRoutines(Process: PEPROCESS, Create: BOOLEAN);
+}
+extern "C" {
+    fn ARM64_UART_TRACE(msg: *const i8);
+}
+extern "C" {
+    fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
+}
+extern "system" {
+    fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
 }
 
 const PSP_VARIABLE_QUANTUMS: ULONG = 0;

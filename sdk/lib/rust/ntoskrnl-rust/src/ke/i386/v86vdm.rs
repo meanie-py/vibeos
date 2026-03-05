@@ -29,7 +29,6 @@ extern "system" {
     fn Ki386BiosCallReturnAddress();
     fn KiFillTrapFrameDebug(TrapFrame: PKTRAP_FRAME);
     fn Ki386SetupAndExitToV86Mode(VdmTeb: PTEB);
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
     fn KiComputeIopmOffset(MapNumber: ULONG) -> USHORT;
     static mut VdmState: PULONG;
     fn _enable();
@@ -39,6 +38,14 @@ extern "system" {
 }
 extern "C" {
     fn KeGetTrapFrame(Thread: PETHREAD) -> PKTRAP_FRAME;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
 }
 
 const EFLAGS_USER_SANITIZE: ULONG = 0x003E0DD7;
@@ -576,7 +583,7 @@ unsafe extern "C" fn KiVdmOpcodePrefix(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
+pub unsafe extern "fastcall" fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
     0u8
 }
 
@@ -624,7 +631,6 @@ pub unsafe extern "system" fn Ke386QueryIoAccessMap(
 ) -> BOOLEAN {
     0u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

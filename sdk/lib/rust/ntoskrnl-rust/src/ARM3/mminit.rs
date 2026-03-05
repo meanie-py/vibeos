@@ -1148,8 +1148,11 @@ unsafe fn MiAddHalIoMappings() {
     pointer_pde = MiAddressToPde(base_address);
     last_pde = MiAddressToPde(MM_HAL_VA_END as PVOID);
 
+    // DBG: MiAddHalIoMappings entry
+
     while pointer_pde <= last_pde {
         if ((*pointer_pde).valid() as usize) == 1 && MI_IS_PAGE_LARGE(pointer_pde) == 0 {
+            // DBG: valid PDE, scanning PTEs
             pointer_pte = MiAddressToPte(base_address);
             for j in 0..PTE_PER_PAGE {
                 if ((*pointer_pte).valid() as usize) == 1 {
@@ -1161,12 +1164,14 @@ unsafe fn MiAddHalIoMappings() {
                 base_address = (base_address as ULONG_PTR + PAGE_SIZE) as PVOID;
                 pointer_pte = pointer_pte.add(1);
             }
+            // DBG: done scanning PTEs
         } else {
             base_address = (base_address as ULONG_PTR + PDE_MAPPED_VA) as PVOID;
         }
 
         pointer_pde = pointer_pde.add(1);
     }
+    // DBG: MiAddHalIoMappings done
 }
 
 #[no_mangle]
@@ -1291,6 +1296,8 @@ pub unsafe extern "system" fn MmInitializeMemoryLimits(
 }
 
 unsafe fn MiBuildPagedPool() {
+    // DBG: MiBuildPagedPool entry
+
     let mut pointer_pte: PMMPTE;
     let mut pointer_pde: PMMPTE;
     let mut temp_pde = ValidKernelPde;
@@ -1314,6 +1321,8 @@ unsafe fn MiBuildPagedPool() {
         temp_pte.set_page_frame_number((MmSystemPageDirectory[0]) as PFN_NUMBER);
         MI_WRITE_VALID_PTE(pointer_pte, temp_pte);
     }
+
+    // DBG: after 32-bit page directory setup
 
     #[cfg(target_arch = "x86")]
     {
@@ -1343,6 +1352,8 @@ unsafe fn MiBuildPagedPool() {
     MmPagedPoolEnd =
         ((MmPagedPoolStart as ULONG_PTR + MmSizeOfPagedPoolInBytes) - 1) as PVOID;
 
+    // DBG: before MiAcquirePfnLock in MiBuildPagedPool
+
     old_irql = MiAcquirePfnLock();
 
     #[cfg(target_pointer_width = "64")]
@@ -1366,21 +1377,33 @@ unsafe fn MiBuildPagedPool() {
     }
 
     pointer_pde = MiAddressToPde(MmPagedPoolStart);
+
+    // DBG: before RtlZeroMemory in MiBuildPagedPool
+
     RtlZeroMemory(
         pointer_pde as PVOID,
         MiAddressToPde(MmPagedPoolEnd) as usize - pointer_pde as usize
             + core::mem::size_of::<_MMPTE>(),
     );
 
+    // DBG: after RtlZeroMemory, before PFN setup
+
     pointer_pte = MiAddressToPte(MmPagedPoolStart);
     MmPagedPoolInfo.FirstPteForPagedPool = pointer_pte as *mut c_void;
     MmPagedPoolInfo.LastPteForPagedPool = MiAddressToPte(MmPagedPoolEnd) as *mut c_void;
 
+    // DBG: before MiRemoveZeroPage
+
     MI_SET_USAGE(MI_USAGE_PAGED_POOL);
     super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
     page_frame_index = MiRemoveZeroPage(0);
+
+    // DBG: after MiRemoveZeroPage
+
     temp_pde.set_page_frame_number((page_frame_index) as PFN_NUMBER);
     MI_WRITE_VALID_PDE(pointer_pde, temp_pde);
+
+    // DBG: after MI_WRITE_VALID_PDE
 
     #[cfg(target_pointer_width = "64")]
     {
@@ -1392,14 +1415,24 @@ unsafe fn MiBuildPagedPool() {
     }
     #[cfg(not(target_pointer_width = "64"))]
     {
+        // C code: MmSystemPageDirectory[(PointerPde - (PMMPDE)PDE_BASE) / PDE_PER_PAGE]
+        // C pointer subtraction gives element count, not byte count.
+        // In Rust we must divide byte offset by sizeof(MMPTE) first.
+        let pde_index = (pointer_pde as usize - PDE_BASE)
+            / core::mem::size_of::<_MMPTE>()
+            / PDE_PER_PAGE;
         MiInitializePfnForOtherProcess(
             page_frame_index,
             pointer_pde as PMMPTE,
-            MmSystemPageDirectory[(pointer_pde as usize - PDE_BASE) / PDE_PER_PAGE],
+            MmSystemPageDirectory[pde_index],
         );
     }
 
+    // DBG: after MiInitializePfnForOtherProcess
+
     MiReleasePfnLock(old_irql);
+
+    // DBG: after PfnLock release, before bitmap alloc
 
     MmPagedPoolInfo.NextPdeForPagedPoolExpansion = pointer_pde.add(1) as *mut c_void;
 
@@ -1428,9 +1461,15 @@ unsafe fn MiBuildPagedPool() {
 
     RtlClearAllBits(MmPagedPoolInfo.EndOfPagedPoolBitmap);
 
+    // DBG: before InitializePool(PagedPool)
+
     InitializePool(PagedPool, 0);
 
+    // DBG: after InitializePool, before MiInitializeSpecialPool
+
     MiInitializeSpecialPool();
+
+    // DBG: after MiInitializeSpecialPool
 
     MiLowPagedPoolThreshold = (30 * _1MB) >> PAGE_SHIFT;
     if MiLowPagedPoolThreshold > size / 5 {
@@ -1442,7 +1481,11 @@ unsafe fn MiBuildPagedPool() {
         MiHighPagedPoolThreshold = (size * 2) / 5;
     }
 
+    // DBG: before MiInitializeSystemSpaceMap
+
     MiInitializeSystemSpaceMap(core::ptr::null_mut());
+
+    // DBG: MiBuildPagedPool exit
 }
 
 unsafe fn MiDbgDumpMemoryDescriptors() {
@@ -1472,8 +1515,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
     #[cfg(target_arch = "aarch64")]
     _A3_TRACE!(b"[MM] MmArmInitSystem entered\r\n");
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'[', options(nomem, nostack, preserves_flags));
 
     if MiDbgEnableMdDump != 0 {
         MiDbgDumpMemoryDescriptors();
@@ -1493,8 +1534,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MiScanMemoryDescriptors(loader_block);
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiScanMemoryDescriptors done\r\n");
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b']', options(nomem, nostack, preserves_flags));
 
         KeInitializeEvent(
             core::ptr::addr_of_mut!(MiTempEvent),
@@ -1529,11 +1568,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MmBootImageSize = (MmBootImageSize + PDE_MAPPED_VA - 1) & !(PDE_MAPPED_VA - 1);
 
         MiInitializeSessionSpaceLayout();
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'\\', options(nomem, nostack, preserves_flags));
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'(', options(nomem, nostack, preserves_flags));
         MmHighSectionBase =
             ((MmHighestUserAddress as ULONG_PTR) - 0x800000) as PVOID;
 
@@ -1544,16 +1579,12 @@ pub unsafe extern "system" fn MmArmInitSystem(
             MmStandbyPageListByPriority[i as usize].Blink = MM_EMPTY_LIST;
         }
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b')', options(nomem, nostack, preserves_flags));
         InitializeListHead(core::ptr::addr_of_mut!(MmLoadedUserImageList) as PLIST_ENTRY);
 
         InitializeListHead(core::ptr::addr_of_mut!(MmWorkingSetExpansionHead) as PLIST_ENTRY);
 
         MmCriticalSectionTimeout.QuadPart = (MmCritsectTimeoutSeconds as i64) * (-10000000i64);
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'q', options(nomem, nostack, preserves_flags));
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmPagedPoolMutex) as *mut KGUARDED_MUTEX);
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmSectionCommitMutex) as *mut KGUARDED_MUTEX);
         KeInitializeGuardedMutex(core::ptr::addr_of_mut!(MmSectionBasedMutex) as *mut KGUARDED_MUTEX);
@@ -1569,8 +1600,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
             0,
         );
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'r', options(nomem, nostack, preserves_flags));
         InitializeSListHead(core::ptr::addr_of_mut!(MmDeadStackSListHead) as *mut SLIST_HEADER);
 
         page_count = (MmNumberOfPhysicalPages) as usize;
@@ -1605,8 +1634,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
             MmHeapDeCommitFreeBlockThreshold = PAGE_SIZE;
         }
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b's', options(nomem, nostack, preserves_flags));
         ExInitializePushLock(core::ptr::addr_of_mut!(MmSystemCacheWs.WorkingSetMutex) as *mut _);
 
         MmTotalCommitLimit = (2 * _1GB) >> PAGE_SHIFT;
@@ -1644,8 +1671,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
             }
         }
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'_', options(nomem, nostack, preserves_flags));
         MiComputeColorInformation();
 
         MxPfnAllocation = (MmHighestPhysicalPage + 1) * core::mem::size_of::<_MMPFN>();
@@ -1656,15 +1681,12 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitMachineDependent\r\n");
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'|', options(nomem, nostack, preserves_flags));
         MiInitMachineDependent(loader_block);
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'>', options(nomem, nostack, preserves_flags));
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] post-MiInitMachineDependent\r\n");
 
+        // DBG: before MmInitializeMemoryLimits
         MmPhysicalMemoryBlock = MmInitializeMemoryLimits(
             loader_block,
             include_type.as_mut_ptr(),
@@ -1673,6 +1695,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] post-MmInitializeMemoryLimits\r\n");
 
+        // DBG: before ExAllocatePoolWithTag (bitmap)
         bitmap = ExAllocatePoolWithTag(
             NonPagedPool,
             (((MmHighestPhysicalPage + 1) + 31) / 32) * 4,
@@ -1688,6 +1711,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
             );
         }
 
+        // DBG: before RtlInitializeBitMap
         RtlInitializeBitMap(
             core::ptr::addr_of_mut!(MiPfnBitMap) as *mut RTL_BITMAP,
             bitmap as *mut ULONG,
@@ -1695,6 +1719,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
         );
         RtlClearAllBits(core::ptr::addr_of_mut!(MiPfnBitMap) as *mut RTL_BITMAP);
 
+        // DBG: before memory runs loop
         for i in 0..(*MmPhysicalMemoryBlock).NumberOfRuns {
             run = (*MmPhysicalMemoryBlock).Run.as_mut_ptr().add(i as usize) as *mut _PHYSICAL_MEMORY_RUN;
 
@@ -1710,17 +1735,29 @@ pub unsafe extern "system" fn MmArmInitSystem(
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] post-bitmap\r\n");
 
+        // DBG: before MiSyncCachedRanges
         MiSyncCachedRanges();
 
+        // DBG: before MiAddHalIoMappings
         MiAddHalIoMappings();
+
+        // DBG: after MiAddHalIoMappings
 
         MmResidentAvailablePages = (MmAvailablePages - 32) as isize;
 
+        // DBG: after MmResidentAvailablePages assignment
+
         MiInitializeLargePageSupport();
+
+        // DBG: after MiInitializeLargePageSupport
 
         MiInitializeDriverLargePageList();
 
+        // DBG: after MiInitializeDriverLargePageList
+
         MiReloadBootLoadedDrivers(loader_block);
+
+        // DBG: after MiReloadBootLoadedDrivers
 
         if MmNumberOfPhysicalPages <= (((13 * _1MB) / PAGE_SIZE)) as PFN_NUMBER {
             MmSystemSize = MmSmallSystem;
@@ -1753,6 +1790,8 @@ pub unsafe extern "system" fn MmArmInitSystem(
             MmSystemCacheWsMinimum += 500;
         }
 
+        // DBG: before SharedUserData writes
+
         (*SharedUserData).NumberOfPhysicalPages = MmNumberOfPhysicalPages as ULONG;
         (*SharedUserData).LargePageMinimum = 0;
 
@@ -1779,7 +1818,11 @@ pub unsafe extern "system" fn MmArmInitSystem(
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] post-product\r\n");
 
+        // DBG: before MiAdjustWorkingSetManagerParameters
+
         MiAdjustWorkingSetManagerParameters(if MmProductType != 0 { 0 } else { 1 });
+
+        // DBG: after MiAdjustWorkingSetManagerParameters
 
         MmResidentAvailablePages -= (MiExpansionPoolPagesInitialCharge) as isize;
         MmResidentAvailablePages -= (MmSystemCacheWsMinimum) as isize;
@@ -1809,18 +1852,29 @@ pub unsafe extern "system" fn MmArmInitSystem(
         }
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
 
+        // DBG: before MiBuildPagedPool
+
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiBuildPagedPool\r\n");
         MiBuildPagedPool();
 
+        // DBG: after MiBuildPagedPool
+
         MmDebugPte = MiAddressToPte(MiDebugMapping as PVOID);
+
+        // DBG: before MiInitializeLoadedModuleList
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(loader_block);
+
+        // DBG: after MiInitializeLoadedModuleList
+
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitializeLoadedModuleList returned\r\n");
     }
+
+    // DBG: MmArmInitSystem returning
 
     #[cfg(target_arch = "aarch64")]
     _A3_TRACE!(b"[MM] MmArmInitSystem about to return\r\n");
@@ -1828,7 +1882,6 @@ pub unsafe extern "system" fn MmArmInitSystem(
     _A3_TRACE!(b"[MM] MmArmInitSystem returning TRUE\r\n");
     1
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

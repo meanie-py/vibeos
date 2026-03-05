@@ -90,18 +90,12 @@ HalInitSystem(
     /* Check the boot phase */
     if (BootPhase == 0)
     {
-#ifdef _M_IX86
-        __asm__ __volatile__("outb %%al, $0xe9" :: "a"('m'));  /* m = HAL Phase0 entry */
-#endif
         /* Save bus type */
         HalpBusType = LoaderBlock->u.I386.MachineType & 0xFF;
 
         /* Get command-line parameters */
         HalpGetParameters(LoaderBlock);
 
-#ifdef _M_IX86
-        __asm__ __volatile__("outb %%al, $0xe9" :: "a"('n'));  /* n = after HalpGetParameters */
-#endif
         /* Check for PRCB version mismatch */
         if (Prcb->MajorVersion != PRCB_MAJOR_VERSION)
         {
@@ -116,9 +110,6 @@ HalInitSystem(
             KeBugCheckEx(MISMATCHED_HAL, 2, Prcb->BuildType, HalpBuildType, 0);
         }
 
-#ifdef _M_IX86
-        __asm__ __volatile__("outb %%al, $0xe9" :: "a"('o'));  /* o = passed version checks */
-#endif
         /* Initialize ACPI */
         Status = HalpSetupAcpiPhase0(LoaderBlock);
         if (!NT_SUCCESS(Status))

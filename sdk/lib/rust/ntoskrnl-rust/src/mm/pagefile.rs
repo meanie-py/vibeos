@@ -62,7 +62,6 @@ extern "C" {
 
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-    fn ObfDereferenceObject(Object: PVOID) -> LONG;
     fn IoQueryVolumeInformation(
         FileObject: ntkrnl_sys::ddk::PFILE_OBJECT,
         FsInformationClass: ULONG,
@@ -74,6 +73,14 @@ extern "system" {
 }
 extern "C" {
     fn MmInitializeMdl(Mdl: *mut ntkrnl_sys::ddk::_MDL, BaseAddress: PVOID, Length: ULONG);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ObfDereferenceObject(Object: PVOID) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ObfDereferenceObject(Object: PVOID) -> LONG;
 }
 
 #[inline]
@@ -753,7 +760,6 @@ pub unsafe extern "system" fn NtCreatePagingFile(
 
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

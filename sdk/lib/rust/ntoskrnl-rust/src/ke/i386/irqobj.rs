@@ -22,15 +22,9 @@ use ntkrnl_sys::ddk::{
     KiReleaseDispatcherLock,
 };
 
+use crate::ke::processor::KeNumberProcessors;
 extern "system" {
-    static mut KeNumberProcessors: UCHAR;
     fn HalVectorToIDTEntry(Vector: ULONG) -> UCHAR;
-}
-extern "system" {
-    fn KeQueryInterruptHandler(Vector: ULONG) -> PVOID;
-    fn KeRegisterInterruptHandler(Vector: ULONG, Handler: PVOID);
-    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
-    fn KfLowerIrql(NewIrql: KIRQL);
 }
 extern "C" {
     fn KxAcquireSpinLock(SpinLock: PKSPIN_LOCK);
@@ -46,12 +40,20 @@ extern "system" {
 extern "fastcall" {
     fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
+extern "system" {
+    fn KeQueryInterruptHandler(Vector: ULONG) -> PVOID;
+    fn KeRegisterInterruptHandler(Vector: ULONG, Handler: PVOID);
+}
+extern "fastcall" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+    fn KfLowerIrql(NewIrql: KIRQL);
+}
 
 static mut KiISRTimeout: ULONG = 55;
 static mut KiISROverflow: USHORT = 30000;
 
 const PRIMARY_VECTOR_BASE: ULONG = 0x30;
-const DISPATCH_LENGTH: usize = 4;
+const DISPATCH_LENGTH: usize = 106;
 const HIGH_LEVEL: KIRQL = 31;
 const MAXULONG: ULONG = 0xFFFFFFFF;
 
@@ -381,6 +383,7 @@ pub unsafe extern "fastcall" fn KiInterruptTemplateHandler(
 
     let dispatcher: PKI_INTERRUPT_DISPATCH =
         core::mem::transmute((*Interrupt).DispatchAddress);
+
     dispatcher(TrapFrame, Interrupt);
 }
 
@@ -439,7 +442,7 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     }
 
     Patch = ((Patch as ULONG_PTR)
-        + ((KiInterruptTemplateObject as ULONG_PTR) - (KiInterruptTemplate as ULONG_PTR))
+        + ((core::ptr::addr_of!(KiInterruptTemplateObject) as ULONG_PTR) - (KiInterruptTemplate as ULONG_PTR))
         - 4) as *mut ULONG;
 
     *Patch = Interrupt as ULONG;
@@ -463,7 +466,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
     Irql = (*Interrupt).Irql;
 
     if Irql > HIGH_LEVEL
-        || Number >= KeNumberProcessors
+        || Number >= KeNumberProcessors as u8
         || (*Interrupt).SynchronizeIrql < Irql
         || (*Interrupt).FloatingSave != 0
     {
@@ -598,7 +601,6 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
 
     Success
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -27,11 +27,15 @@ use ntkrnl_sys::ddk::{
 extern "C" {
     static mut MiRosKernelVadRoot: MM_AVL_TABLE;
     static mut MmSystemCacheWs: ntkrnl_sys::ddk::_MMSUPPORT;
-    fn Mmi386MakeKernelPageTableGlobal(Address: PVOID) -> BOOLEAN;
-    fn MmRebalanceMemoryConsumersAndWait();
     // FORCEINLINE shims — must be extern "C" (cdecl) to match C shim calling convention on i386.
     fn MmLockAddressSpace(AddressSpace: PMMSUPPORT);
     fn MmUnlockAddressSpace(AddressSpace: PMMSUPPORT);
+}
+extern "system" {
+    fn Mmi386MakeKernelPageTableGlobal(Address: PVOID) -> BOOLEAN;
+}
+extern "system" {
+    fn MmRebalanceMemoryConsumersAndWait();
 }
 
 unsafe fn MmpAccessFault(
@@ -166,10 +170,14 @@ pub unsafe extern "system" fn MmAccessFault(
     let mut Status: NTSTATUS;
     let mut IsArm3Fault = 0u8;
 
+    // (DBG trace removed)
+
     if (Address as ULONG_PTR) >= MmSystemRangeStart as ULONG_PTR {
         #[cfg(target_arch = "x86")]
         {
+            // DBG: before Mmi386MakeKernelPageTableGlobal
             if Mmi386MakeKernelPageTableGlobal(Address) != 0 {
+                // DBG: PDE propagated successfully
                 return STATUS_SUCCESS;
             }
         }
@@ -177,7 +185,10 @@ pub unsafe extern "system" fn MmAccessFault(
 
     if (PAGE_ALIGN(Address as ULONG_PTR) as PVOID == MM_SHARED_USER_DATA_VA as PVOID) ||
         MI_IS_PAGE_TABLE_ADDRESS(Address) {
-        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
+        // DBG: before MmArmAccessFault (page table / shared user data path)
+        let _r = MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
+        // DBG: after MmArmAccessFault (page table / shared user data path)
+        return _r;
     }
 
     if !MmGetKernelAddressSpace().is_null() {
@@ -221,7 +232,10 @@ pub unsafe extern "system" fn MmAccessFault(
             && (Address as ULONG_PTR) < MmPagedPoolEnd as ULONG_PTR)
         || MmGetKernelAddressSpace().is_null()
     {
-        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
+        // DBG: before MmArmAccessFault (ARM3 / paged pool path)
+        let _r = MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
+        // DBG: after MmArmAccessFault (ARM3 / paged pool path)
+        return _r;
     }
 
     loop {
@@ -249,7 +263,6 @@ pub unsafe extern "system" fn MmAccessFault(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

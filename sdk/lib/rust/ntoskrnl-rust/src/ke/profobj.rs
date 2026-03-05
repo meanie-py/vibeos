@@ -30,7 +30,7 @@ extern "system" {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-extern "C" {
+extern "system" {
     fn KeGetTrapFramePc(TrapFrame: PKTRAP_FRAME) -> ULONG_PTR;
 }
 
@@ -327,7 +327,6 @@ pub unsafe extern "system" fn KeProfileInterruptWithSource(
 pub unsafe extern "system" fn KeSetProfileIrql(ProfileIrql: KIRQL) {
     KiProfileIrql = ProfileIrql;
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

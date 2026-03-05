@@ -34,18 +34,26 @@ extern "C" {
         r: HANDLE,
         s: PVOID,
     );
-    fn HalHaltSystem();
     fn HalEndOfBoot();
     fn HalSetWakeEnable(enable: BOOLEAN);
-    fn ApphelpCacheShutdown();
-    fn DisplayShutdownBitmap();
-    fn DisplayShutdownText();
     static mut PsIdleProcess: PEPROCESS;
     static mut PopAction: PopActionStruct;
 }
 
 extern "system" {
     fn DbgUnLoadImageSymbols(name: PVOID, base: PVOID, process_id: usize);
+}
+extern "system" {
+    fn HalHaltSystem();
+}
+extern "system" {
+    fn ApphelpCacheShutdown();
+}
+extern "system" {
+    fn DisplayShutdownBitmap();
+}
+extern "system" {
+    fn DisplayShutdownText();
 }
 
 #[repr(C)]
@@ -368,7 +376,6 @@ pub unsafe extern "system" fn PoRequestShutdownEvent(Event: *mut PVOID) -> NTSTA
     }
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

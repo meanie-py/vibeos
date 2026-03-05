@@ -398,7 +398,6 @@ KfRaiseIrql(IN KIRQL NewIrql)
     return CurrentIrql;
 }
 
-
 /*
  * @implemented
  */

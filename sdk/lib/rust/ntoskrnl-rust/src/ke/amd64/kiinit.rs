@@ -22,9 +22,17 @@ use ntkrnl_sys::ddk::{
     PLONG64,
 };
 
+// Rust-defined globals — import to avoid extern split under LTO=false
+use crate::ke::krnlinit::{
+    KeLoaderBlock, KiProcessorBlock, KeFeatureBits, KiInitialThread, KiInitialProcess,
+    KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
+};
+use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
+use crate::ARM3::sysldr::PsLoadedModuleList;
+use super::cpu::{KeI386CpuType, KeI386CpuStep};
+use super::stubs::KeXStateLength;
+
 extern "system" {
-    fn KiSetProcessorType();
-    fn KiGetFeatureBits() -> u64;
     fn KiInitializeXStateConfiguration(Cpu: u8);
     fn KiSwitchToBootStack(InitialStack: u64);
     fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u32;
@@ -34,27 +42,19 @@ extern "system" {
     fn KiInitializeSegments();
     fn KiSystemCallEntry64();
     fn KiSystemCallEntry32();
-    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
-    static mut KeNumberProcessors: u8;
-    static mut KiProcessorBlock: [PKPRCB; 0];
-    static mut KeFeatureBits: u64;
     static mut KdDebuggerEnabled: BOOLEAN;
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
-    static mut KeActiveProcessors: u64;
-    static mut PsLoadedModuleList: LIST_ENTRY;
-    static mut KeI386CpuType: u32;
-    static mut KeI386CpuStep: u32;
-    static mut KeProcessorArchitecture: u16;
-    static mut KeProcessorLevel: u16;
-    static mut KeProcessorRevision: u16;
-    static mut KiInitialThread: _ETHREAD;
-    static mut KiInitialProcess: _EPROCESS;
-    static mut KeXStateLength: usize;
 }
 extern "C" {
     fn KiGetGdtEntry(GdtBase: PKGDTENTRY64, Selector: u16) -> PKGDTENTRY64;
     fn KiGetGdtDescriptorBase(Entry: PKGDTENTRY64) -> PKTSS64;
     fn KiInitGdtEntry(Entry: PKGDTENTRY64, Base: u64, Limit: u32, Type: u8, Dpl: u8);
+}
+extern "C" {
+    fn KiSetProcessorType();
+}
+extern "C" {
+    fn KiGetFeatureBits() -> u64;
 }
 
 type PKGDTENTRY64 = *mut u8;
@@ -111,41 +111,48 @@ struct KPROCESS {
     _unused: u8,
 }
 
+// From sdk/include/ndk/amd64/ketypes.h — canonical amd64 KF_ values
+const KF_SMEP: u64 = 0x00000001;
+const KF_RDTSC: u64 = 0x00000002;
+const KF_CR4: u64 = 0x00000004;
+const KF_CMOV: u64 = 0x00000008;
+const KF_GLOBAL_PAGE: u64 = 0x00000010;
+const KF_LARGE_PAGE: u64 = 0x00000020;
+const KF_MTRR: u64 = 0x00000040;
+const KF_CMPXCHG8B: u64 = 0x00000080;
+const KF_MMX: u64 = 0x00000100;
+const KF_DTS: u64 = 0x00000200;
+const KF_PAT: u64 = 0x00000400;
+const KF_FXSR: u64 = 0x00000800;
+const KF_FAST_SYSCALL: u64 = 0x00001000;
+const KF_XMMI: u64 = 0x00002000;
+const KF_3DNOW: u64 = 0x00004000;
+const KF_XMMI64: u64 = 0x00010000;
+const KF_BRANCH: u64 = 0x00020000;
+const KF_SSE3: u64 = 0x00080000;
+const KF_CMPXCHG16B: u64 = 0x00100000;
+const KF_XSTATE: u64 = 0x00800000;
+const KF_GENUINE_INTEL: u64 = 0x01000000;
+const KF_SLAT: u64 = 0x04000000;
+const KF_VIRT_FIRMWARE_ENABLED: u64 = 0x08000000;
+const KF_RDWRFSGSBASE: u64 = 0x10000000;
+const KF_NX_BIT: u64 = 0x20000000;
+const KF_NX_DISABLED: u64 = 0x40000000;
+const KF_NX_ENABLED: u64 = 0x80000000;
+const KF_RDRAND: u64 = 0x0000000100000000;
+const KF_SMAP: u64 = 0x0000000200000000;
+const KF_RDTSCP: u64 = 0x0000000400000000;
+const KF_XSAVES: u64 = 0x0000004000000000;
+const KF_SSSE3: u64 = 0x0000800000000000;
+const KF_SSE4_1: u64 = 0x0001000000000000;
+const KF_SSE4_2: u64 = 0x0002000000000000;
+const KF_AVX: u64 = 0x1000000000000000;
+const KF_AVX2: u64 = 0x2000000000000000;
+const KF_AVX512F: u64 = 0x4000000000000000;
+
 const REQUIRED_FEATURE_BITS: u64 = KF_RDTSC | KF_CR4 | KF_CMPXCHG8B | KF_XMMI | KF_XMMI64 |
                                     KF_LARGE_PAGE | KF_FAST_SYSCALL | KF_GLOBAL_PAGE |
                                     KF_CMOV | KF_PAT | KF_MMX | KF_FXSR | KF_NX_BIT | KF_MTRR;
-
-const KF_RDTSC: u64 = 0x0001;
-const KF_CR4: u64 = 0x0002;
-const KF_CMPXCHG8B: u64 = 0x0004;
-const KF_XMMI: u64 = 0x0008;
-const KF_XMMI64: u64 = 0x0010;
-const KF_LARGE_PAGE: u64 = 0x0020;
-const KF_FAST_SYSCALL: u64 = 0x0040;
-const KF_GLOBAL_PAGE: u64 = 0x0080;
-const KF_CMOV: u64 = 0x0100;
-const KF_PAT: u64 = 0x0200;
-const KF_MMX: u64 = 0x0400;
-const KF_FXSR: u64 = 0x0800;
-const KF_NX_BIT: u64 = 0x1000;
-const KF_MTRR: u64 = 0x2000;
-const KF_NX_ENABLED: u64 = 0x4000;
-const KF_NX_DISABLED: u64 = 0x8000;
-const KF_XSTATE: u64 = 0x10000;
-const KF_3DNOW: u64 = 0x20000;
-const KF_SSE3: u64 = 0x40000;
-const KF_CMPXCHG16B: u64 = 0x80000;
-const KF_SLAT: u64 = 0x100000;
-const KF_VIRT_FIRMWARE_ENABLED: u64 = 0x200000;
-const KF_RDWRFSGSBASE: u64 = 0x400000;
-const KF_RDRAND: u64 = 0x800000;
-const KF_RDTSCP: u64 = 0x1000000;
-const KF_SSSE3: u64 = 0x2000000;
-const KF_SSE4_1: u64 = 0x4000000;
-const KF_SSE4_2: u64 = 0x8000000;
-const KF_AVX: u64 = 0x10000000;
-const KF_AVX2: u64 = 0x20000000;
-const KF_AVX512F: u64 = 0x40000000;
 
 const KERNEL_STACK_SIZE: usize = 0x6000;
 const PCR_MAJOR_VERSION: u32 = 1;

@@ -13,7 +13,6 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, ANSI_STRING, ERESOURCE, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExInitializeResourceLite, ExReleaseResourceLite, FILE_STANDARD_INFORMATION, HANDLE, IMAGE_INFO, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, KMUTANT, KPROCESSOR_MODE, KeAcquireSpinLockRaiseToSynch, KeEnterCriticalRegion, KeFlushCurrentTb, KeFlushQueuedDpcs, KeInitializeSpinLock, KeLeaveCriticalRegion, KeQueryPerformanceCounter, KeReleaseMutant, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, LOAD_IMPORTS, LOGICAL, LdrRelocateImageWithBias, LdrVerifyMappedImageMatchesChecksum, OB_OPEN_REASON, PEPROCESS, PETHREAD, PHANDLE_TABLE, PHANDLE_TABLE_ENTRY, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, POBJECT_HEADER, POBJECT_TYPE, PSECTION, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IO_STATUS_BLOCK, _KAPC_STATE, _LDR_DATA_TABLE_ENTRY, _MM_IMAGE_SECTION_OBJECT, _MMPTE, _OBJECT_HEADER, _OBJECT_TYPE, _UNICODE_STRING};
 use super::helpers::*;
 
-
 #[no_mangle]
 pub static mut PsLoadedModuleList: LIST_ENTRY = unsafe { core::mem::zeroed() };
 #[no_mangle]
@@ -625,14 +624,14 @@ pub unsafe extern "system" fn MmUnloadSystemImage(image_handle: PVOID) -> NTSTAT
 // Rust stub removed to avoid symbol conflict.
 
 #[no_mangle]
-pub unsafe extern "C" fn MiFreeInitializationCode(init_start: PVOID, init_end: PVOID) {
+pub unsafe extern "system" fn MiFreeInitializationCode(init_start: PVOID, init_end: PVOID) {
     let pointer_pte = MiAddressToPte(init_start);
     let pages_freed = (MiAddressToPte(init_end) as usize - pointer_pte as usize) / core::mem::size_of::<MMPTE>();
     MiDeleteSystemPageableVm(pointer_pte, pages_freed as PFN_NUMBER, 0, core::ptr::null_mut());
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MiFindInitializationCode(_start_va: *mut PVOID, _end_va: *mut PVOID) {
+pub unsafe extern "system" fn MiFindInitializationCode(_start_va: *mut PVOID, _end_va: *mut PVOID) {
 }
 
 #[no_mangle]
@@ -640,7 +639,7 @@ pub unsafe extern "system" fn MmFreeDriverInitialization(_ldr_entry: *mut LDR_DA
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MiReloadBootLoadedDrivers(_loader_block: *mut LOADER_PARAMETER_BLOCK) {
+pub unsafe extern "system" fn MiReloadBootLoadedDrivers(_loader_block: *mut LOADER_PARAMETER_BLOCK) {
 }
 
 unsafe fn MiBuildImportsForBootDrivers() -> NTSTATUS {
@@ -656,10 +655,14 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
         fn RtlImageNtHeader(base: PVOID) -> PVOID;
     }
 
+    // DBG: MiInitializeLoadedModuleList entry
+
     /* Setup the loaded module list and locks */
     ExInitializeResourceLite(core::ptr::addr_of_mut!(PsLoadedModuleResource));
     KeInitializeSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock) as *mut _);
     InitializeListHead(core::ptr::addr_of_mut!(PsLoadedModuleList));
+
+    // DBG: after list init, before loader block walk
 
     /* Get loop variables and the kernel entry */
     let list_head = core::ptr::addr_of_mut!((*loader_block).LoadOrderListHead);
@@ -669,8 +672,12 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
     ) as *mut LDR_DATA_TABLE_ENTRY;
     PsNtosImageBase = (*ldr_entry).DllBase as ULONG_PTR;
 
+    // DBG: before MiLocateKernelSections
+
     /* Locate resource section, pool code, and system pte code */
     MiLocateKernelSections(ldr_entry);
+
+    // DBG: before loop
 
     /* Loop the loader block */
     while next_entry != list_head {
@@ -678,33 +685,50 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
             core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)
         ) as *mut LDR_DATA_TABLE_ENTRY;
 
+        // DBG: loop iteration
+
         /* FIXME: ROS HACK. Make sure this is a driver */
         if RtlImageNtHeader((*ldr_entry).DllBase).is_null() {
             next_entry = (*next_entry).Flink;
             continue;
         }
 
+        // DBG: after RtlImageNtHeader check passed
+
         /* Calculate the size we'll need and allocate a copy */
         let entry_size = core::mem::size_of::<LDR_DATA_TABLE_ENTRY>()
             + (*ldr_entry).BaseDllName.MaximumLength as usize
             + core::mem::size_of::<u16>(); /* UNICODE_NULL */
+
+        // DBG: before NonPagedPool alloc
+
         let new_entry = ExAllocatePoolWithTag(
             NonPagedPool, entry_size, TAG_MODULE_OBJECT
         ) as *mut LDR_DATA_TABLE_ENTRY;
+
+        // DBG: after NonPagedPool alloc
+
         if new_entry.is_null() {
             return 0;
         }
 
         /* Copy the entry over */
+        // DBG: before copy
+
         core::ptr::copy_nonoverlapping(
             ldr_entry as *const u8,
             new_entry as *mut u8,
             core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
         );
 
+        // DBG: after copy, before PagedPool alloc
+
         /* Allocate the full DLL name buffer */
         let full_name_size = (*ldr_entry).FullDllName.MaximumLength as usize
             + core::mem::size_of::<u16>(); /* UNICODE_NULL */
+
+        // DBG: before PagedPool alloc (size computed)
+
         let full_name_buf = ExAllocatePoolWithTag(
             PagedPool, full_name_size, TAG_LDR_WSTR
         ) as *mut u16;
@@ -713,6 +737,8 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
             return 0;
         }
         (*new_entry).FullDllName.Buffer = full_name_buf;
+
+        // DBG: after PagedPool alloc
 
         /* Set the base name buffer (immediately after the struct) */
         (*new_entry).BaseDllName.Buffer = new_entry.add(1) as *mut u16;
@@ -733,6 +759,8 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
         let base_name_chars = (*new_entry).BaseDllName.Length as usize / 2;
         *(*new_entry).BaseDllName.Buffer.add(base_name_chars) = 0u16;
 
+        // DBG: after name copies, before InsertTailList
+
         /* Insert the entry into the list */
         InsertTailList(
             core::ptr::addr_of_mut!(PsLoadedModuleList),
@@ -742,8 +770,12 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
         next_entry = (*next_entry).Flink;
     }
 
+    // DBG: before MiBuildImportsForBootDrivers
+
     /* Build the import lists for the boot drivers */
     MiBuildImportsForBootDrivers();
+
+    // DBG: MiInitializeLoadedModuleList exit
 
     1
 }
@@ -774,7 +806,7 @@ unsafe fn MiSetSystemCodeProtection(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MiWriteProtectSystemImage(_image_base: PVOID) {
+pub unsafe extern "system" fn MiWriteProtectSystemImage(_image_base: PVOID) {
 }
 
 unsafe fn MiSetPagingOfDriver(_pointer_pte: PMMPTE, _last_pte: PMMPTE) {
@@ -945,7 +977,6 @@ const TAG_LDR_WSTR: ULONG = 0x7473724c;
 const TAG_LDR_IMPORTS: ULONG = 0x706d4c4d;
 const TAG_MODULE_OBJECT: ULONG = 0x6f4d4d4d;
 const SEC_IMAGE: ULONG = 0x1000000;
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

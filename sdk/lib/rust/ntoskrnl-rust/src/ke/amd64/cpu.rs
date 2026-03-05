@@ -7,7 +7,7 @@ use ntkrnl_sys::interlocked::*;
 
 use ntkrnl_sys::ddk::{
     _KPROCESSOR_STATE, PKPROCESSOR_STATE, PKEXCEPTION_FRAME, PKTRAP_FRAME,
-    PKFLOATING_SAVE, PKIPCR,
+    PKFLOATING_SAVE, PKIPCR, _KPRCB,
     KeContextToTrapFrame, KeTrapFrameToContext,
     RtlCaptureContext,
 };
@@ -39,9 +39,9 @@ pub static mut KiSMTProcessorsPresent: BOOLEAN = 0u8;
 
 static mut KiTbFlushTimeStamp: LONG = 0;
 
-static CmpIntelID: &[u8] = b"GenuineIntel";
-static CmpAmdID: &[u8] = b"AuthenticAMD";
-static CmpCentaurID: &[u8] = b"CentaurHauls";
+static CmpIntelID: &[u8] = b"GenuineIntel\0";
+static CmpAmdID: &[u8] = b"AuthenticAMD\0";
+static CmpCentaurID: &[u8] = b"CentaurHauls\0";
 
 #[repr(C)]
 union CPU_SIGNATURE {
@@ -75,49 +75,50 @@ const CPU_AMD: ULONG = 2;
 const CPU_VIA: ULONG = 3;
 const CPU_UNKNOWN: ULONG = 0;
 
-const KF_CR4: u64 = 0x00000001;
-const KF_LARGE_PAGE: u64 = 0x00000002;
-const KF_RDTSC: u64 = 0x00000004;
-const KF_CMPXCHG8B: u64 = 0x00000008;
-const KF_FAST_SYSCALL: u64 = 0x00000010;
-const KF_MTRR: u64 = 0x00000020;
-const KF_GLOBAL_PAGE: u64 = 0x00000040;
-const KF_CMOV: u64 = 0x00000080;
-const KF_PAT: u64 = 0x00000100;
+// From sdk/include/ndk/amd64/ketypes.h — canonical amd64 KF_ values
+const KF_SMEP: u64 = 0x00000001;
+const KF_RDTSC: u64 = 0x00000002;
+const KF_CR4: u64 = 0x00000004;
+const KF_CMOV: u64 = 0x00000008;
+const KF_GLOBAL_PAGE: u64 = 0x00000010;
+const KF_LARGE_PAGE: u64 = 0x00000020;
+const KF_MTRR: u64 = 0x00000040;
+const KF_CMPXCHG8B: u64 = 0x00000080;
+const KF_MMX: u64 = 0x00000100;
 const KF_DTS: u64 = 0x00000200;
-const KF_MMX: u64 = 0x00000400;
+const KF_PAT: u64 = 0x00000400;
 const KF_FXSR: u64 = 0x00000800;
-const KF_XMMI: u64 = 0x00001000;
-const KF_XMMI64: u64 = 0x00002000;
-const KF_SSE3: u64 = 0x00004000;
-const KF_SSSE3: u64 = 0x00008000;
-const KF_CMPXCHG16B: u64 = 0x00010000;
-const KF_SSE4_1: u64 = 0x00020000;
-const KF_SSE4_2: u64 = 0x00040000;
-const KF_XSTATE: u64 = 0x00080000;
-const KF_RDRAND: u64 = 0x00100000;
-const KF_AVX: u64 = 0x00200000;
-const KF_ACNT2: u64 = 0x00400000;
-const KF_SMEP: u64 = 0x00800000;
-const KF_RDWRFSGSBASE: u64 = 0x01000000;
-const KF_SMAP: u64 = 0x02000000;
-const KF_AVX2: u64 = 0x04000000;
-const KF_AVX512F: u64 = 0x08000000;
-const KF_XSAVEOPT: u64 = 0x10000000;
-const KF_XSAVES: u64 = 0x20000000;
-const KF_3DNOW: u64 = 0x40000000;
-const KF_BRANCH: u64 = 0x80000000;
+const KF_FAST_SYSCALL: u64 = 0x00001000;
+const KF_XMMI: u64 = 0x00002000;
+const KF_3DNOW: u64 = 0x00004000;
+const KF_XSAVEOPT: u64 = 0x00008000;
+const KF_XMMI64: u64 = 0x00010000;
+const KF_BRANCH: u64 = 0x00020000;
 const KF_00040000: u64 = 0x00040000;
-const KF_AUTHENTICAMD: u64 = 0x0000000100000000;
-const KF_GENUINE_INTEL: u64 = 0x0000000200000000;
-const KF_SLAT: u64 = 0x0000000400000000;
-const KF_VIRT_FIRMWARE_ENABLED: u64 = 0x0000000800000000;
-const KF_NX_BIT: u64 = 0x0000001000000000;
-const KF_NX_DISABLED: u64 = 0x0000002000000000;
-const KF_NX_ENABLED: u64 = 0x0000004000000000;
-const KF_RDTSCP: u64 = 0x0000008000000000;
-const KF_HUGEPAGE: u64 = 0x0000010000000000;
+const KF_SSE3: u64 = 0x00080000;
+const KF_CMPXCHG16B: u64 = 0x00100000;
+const KF_AUTHENTICAMD: u64 = 0x00200000;
+const KF_ACNT2: u64 = 0x00400000;
+const KF_XSTATE: u64 = 0x00800000;
+const KF_GENUINE_INTEL: u64 = 0x01000000;
+const KF_SLAT: u64 = 0x04000000;
+const KF_VIRT_FIRMWARE_ENABLED: u64 = 0x08000000;
+const KF_RDWRFSGSBASE: u64 = 0x10000000;
+const KF_NX_BIT: u64 = 0x20000000;
+const KF_NX_DISABLED: u64 = 0x40000000;
+const KF_NX_ENABLED: u64 = 0x80000000;
+const KF_RDRAND: u64 = 0x0000000100000000;
+const KF_SMAP: u64 = 0x0000000200000000;
+const KF_RDTSCP: u64 = 0x0000000400000000;
+const KF_HUGEPAGE: u64 = 0x0000002000000000;
+const KF_XSAVES: u64 = 0x0000004000000000;
 const KF_FPU_LEAKAGE: u64 = 0x0000020000000000;
+const KF_SSSE3: u64 = 0x0000800000000000;
+const KF_SSE4_1: u64 = 0x0001000000000000;
+const KF_SSE4_2: u64 = 0x0002000000000000;
+const KF_AVX: u64 = 0x1000000000000000;
+const KF_AVX2: u64 = 0x2000000000000000;
+const KF_AVX512F: u64 = 0x4000000000000000;
 const KF_CAT: u64 = 0x0000100000000000;
 const KF_CET_SS: u64 = 0x0000400000000000;
 
@@ -175,21 +176,13 @@ extern "C" {
     fn __wbinvd();
 }
 
-#[repr(C)]
-struct PRCB_STUB {
-    VendorString: [u8; 13],
-    CpuVendor: ULONG,
-    CpuID: BOOLEAN,
-    CpuType: UCHAR,
-    CpuStep: USHORT,
-    InitialApicId: UCHAR,
-    LogicalProcessorsPerPhysicalProcessor: UCHAR,
-    FeatureBits: ULONG,
-    FeatureBitsHigh: ULONG,
-}
+// Use bindgen _KPRCB directly — PRCB fields (VendorString, CpuVendor,
+// FeatureBits etc.) are at non-adjacent offsets in the real struct.
 
 unsafe fn KeGetPcr() -> PVOID {
-    core::ptr::null_mut()
+    let result: u64;
+    core::arch::asm!("mov {}, gs:[0x18]", out(reg) result, options(nostack, nomem, preserves_flags));
+    result as PVOID
 }
 
 unsafe fn KiCpuId(CpuInfo: *mut CPU_INFO, function: u32) {
@@ -197,7 +190,7 @@ unsafe fn KiCpuId(CpuInfo: *mut CPU_INFO, function: u32) {
 }
 
 unsafe fn KiGetCpuVendor() -> ULONG {
-    let Prcb = KeGetCurrentPrcb() as *mut PRCB_STUB;
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
     let mut CpuInfo: CPU_INFO = core::mem::zeroed();
 
     KiCpuId(&mut CpuInfo, 0);
@@ -208,16 +201,16 @@ unsafe fn KiGetCpuVendor() -> ULONG {
     (*Prcb).VendorString[12] = 0;
 
     if strcmp((*Prcb).VendorString.as_ptr() as *const i8, CmpIntelID.as_ptr() as *const i8) == 0 {
-        (*Prcb).CpuVendor = CPU_INTEL;
+        (*Prcb).CpuVendor = CPU_INTEL as UCHAR;
     } else if strcmp((*Prcb).VendorString.as_ptr() as *const i8, CmpAmdID.as_ptr() as *const i8) == 0 {
-        (*Prcb).CpuVendor = CPU_AMD;
+        (*Prcb).CpuVendor = CPU_AMD as UCHAR;
     } else if strcmp((*Prcb).VendorString.as_ptr() as *const i8, CmpCentaurID.as_ptr() as *const i8) == 0 {
-        (*Prcb).CpuVendor = CPU_VIA;
+        (*Prcb).CpuVendor = CPU_VIA as UCHAR;
     } else {
-        (*Prcb).CpuVendor = CPU_UNKNOWN;
+        (*Prcb).CpuVendor = CPU_UNKNOWN as UCHAR;
     }
 
-    (*Prcb).CpuVendor
+    (*Prcb).CpuVendor as ULONG
 }
 
 #[no_mangle]
@@ -253,22 +246,22 @@ pub unsafe extern "C" fn KiSetProcessorType() {
         Type += core::cmp::min(ExtFamily, 0xF0);
     }
 
-    let Prcb = KeGetCurrentPrcb() as *mut PRCB_STUB;
-    (*Prcb).CpuID = 1u8;
-    (*Prcb).CpuType = Type as UCHAR;
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
+    (*Prcb).CpuID = 1i8;
+    (*Prcb).CpuType = Type as CHAR;
     (*Prcb).CpuStep = Stepping as USHORT;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn KiGetFeatureBits() -> ULONG64 {
-    let Prcb = KeGetCurrentPrcb() as *mut PRCB_STUB;
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
     let Vendor: ULONG;
     let mut FeatureBits: ULONG64 = 0;
     let mut signature: [i32; 4] = [0; 4];
     let mut VersionInfo: [i32; 4] = [0; 4];
     let mut extendedFunction: [i32; 4] = [0; 4];
 
-    Vendor = (*Prcb).CpuVendor;
+    Vendor = (*Prcb).CpuVendor as ULONG;
 
     if Vendor == CPU_UNKNOWN {
         return FeatureBits;

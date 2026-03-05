@@ -442,7 +442,7 @@ unsafe fn SepRmDeleteLogonSession(LogonLuid: PLUID) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepRmReferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
+pub unsafe extern "C" fn SepRmReferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     KeAcquireGuardedMutex(&mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
@@ -624,7 +624,7 @@ unsafe fn SepCleanupLUIDDeviceMapDirectory(LogonLuid: PLUID) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
+pub unsafe extern "C" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
     KeAcquireGuardedMutex(&mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;

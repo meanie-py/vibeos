@@ -32,9 +32,9 @@ use ntkrnl_sys::ddk::{
     _XSAVE_AREA,
 };
 
+use crate::ke::krnlinit::KeFeatureBits;
+use super::stubs::KeXStateLength;
 extern "C" {
-    static mut KeXStateLength: ULONG;
-    static mut KeFeatureBits: u64;
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
     fn KiInvalidSystemThreadStartupExit();
     fn KiUserThreadStartupExit();

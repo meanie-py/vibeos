@@ -12,8 +12,12 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ddk::{ExInitializePushLock, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, KeZeroPages, LCID, MiAcquireExpansionLock, MiDecrementShareCount, MiInitializePfnAndMakePteValid, MiInitializePfnForOtherProcess, MiInitializeSystemSpaceMap, MiReleaseExpansionLock, MiRemoveZeroPageSafe, MmIsAddressValid, PEPROCESS, PETHREAD, PKAPC_STATE, PMMSESSION, PMMWSL, PMMWSLE, PMM_SESSION_SPACE, _EPROCESS, _KGUARDED_MUTEX, _KPROCESS, _MMPFN, _MMPTE, _MMWSL, _MMWSLE, _MM_SESSION_SPACE};
 use super::helpers::*;
 
-
-extern "system" {
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 
@@ -826,7 +830,6 @@ pub unsafe extern "system" fn MmGetSessionById(session_id: ULONG) -> PVOID {
 
     process as PVOID
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

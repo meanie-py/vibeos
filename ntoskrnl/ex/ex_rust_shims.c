@@ -128,26 +128,26 @@ static __inline PVOID _saved_MmGetSystemAddressForMdlSafe(PMDL Mdl, ULONG Priori
  * ======================================================================== */
 
 /* --- KeGetContextSwitches --- */
-ULONG NTAPI KeGetContextSwitches(PKPRCB Prcb)
+ULONG KeGetContextSwitches(PKPRCB Prcb)
 {
     return _saved_KeGetContextSwitches(Prcb);
 }
 
 /* --- MmGetSystemAddressForMdlSafe --- */
-PVOID NTAPI MmGetSystemAddressForMdlSafe(PMDL Mdl, ULONG Priority)
+PVOID MmGetSystemAddressForMdlSafe(PMDL Mdl, ULONG Priority)
 {
     return _saved_MmGetSystemAddressForMdlSafe(Mdl, Priority);
 }
 
 /* --- ObpGetHandleObject: macro in internal/ob.h ---
  * #define ObpGetHandleObject(x) ((POBJECT_HEADER)((ULONG_PTR)(x)->Object & ~OBJ_HANDLE_ATTRIBUTES)) */
-POBJECT_HEADER NTAPI ObpGetHandleObject(PHANDLE_TABLE_ENTRY Entry)
+POBJECT_HEADER ObpGetHandleObject(PHANDLE_TABLE_ENTRY Entry)
 {
     return (POBJECT_HEADER)((ULONG_PTR)Entry->Object & ~OBJ_HANDLE_ATTRIBUTES);
 }
 
 /* --- ProbeForWriteBoolean: probe.h macro wrapping ProbeForWriteGenericType --- */
-void NTAPI ProbeForWriteBoolean(PBOOLEAN Address)
+void ProbeForWriteBoolean(PBOOLEAN Address)
 {
     volatile BOOLEAN *Vol = (volatile BOOLEAN *)Address;
     BOOLEAN Temp = *Vol;
@@ -155,7 +155,7 @@ void NTAPI ProbeForWriteBoolean(PBOOLEAN Address)
 }
 
 /* --- ProbeForWriteLangId: probe.h macro wrapping ProbeForWriteGenericType --- */
-void NTAPI ProbeForWriteLangId(LANGID *Address)
+void ProbeForWriteLangId(LANGID *Address)
 {
     volatile LANGID *Vol = (volatile LANGID *)Address;
     LANGID Temp = *Vol;

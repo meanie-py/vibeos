@@ -2,6 +2,8 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
+use crate::ke::krnlinit::KeLoaderBlock;
+use crate::ke::processor::KeNumberProcessors;
 
 use ntkrnl_sys::ddk::{
     _DBGKD_DEBUG_DATA_HEADER64,
@@ -43,8 +45,6 @@ unsafe fn KeGetPcr() -> PKPCR {
 }
 
 extern "C" {
-    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
-    static mut KeNumberProcessors: ULONG;
     static mut KdDebuggerEnabled: BOOLEAN;
     static mut KiDebugRoutine: Option<unsafe extern "system" fn()>;
     static mut KdBreakAfterSymbolLoad: BOOLEAN;
@@ -87,13 +87,15 @@ extern "system" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
-    fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
-    fn KdpTimeSlipWork(Context: PVOID);
-}
 #[cfg(target_arch = "x86")]
 extern "stdcall" {
     fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
+    fn KdpTimeSlipWork(Context: PVOID);
+}
+extern "system" {
+    fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
+}
+extern "system" {
     fn KdpTimeSlipWork(Context: PVOID);
 }
 

@@ -34,18 +34,16 @@ const TIME_ZONE_ID_STANDARD: ULONG = 1;
 const TIME_ZONE_ID_DAYLIGHT: ULONG = 2;
 const STATUS_TIMER_RESOLUTION_NOT_SET: NTSTATUS = 0xC0000245u32 as NTSTATUS;
 
+// Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::clock::{KeBootTime, KeTimeIncrement, KeMaximumIncrement, KeMinimumIncrement};
 extern "system" {
     pub static mut SharedUserData: *mut KUSER_SHARED_DATA;
-    pub static mut KeBootTime: LARGE_INTEGER;
-    pub static mut KeTimeIncrement: ULONG;
-    pub static mut KeMaximumIncrement: ULONG;
-    pub static mut KeMinimumIncrement: ULONG;
     pub static mut SeSystemtimePrivilege: LUID;
     pub fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     pub fn PoNotifySystemTimeSet();
     pub fn ExGetPreviousMode() -> KPROCESSOR_MODE;
 }
-extern "C" {
+extern "system" {
     pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
@@ -69,11 +67,14 @@ pub struct KSYSTEM_TIME {
 
 const TICKSPERMINUTE: i64 = 600000000;
 
-static mut ExpTimeZoneInfo: RTL_TIME_ZONE_INFORMATION = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut ExpTimeZoneInfo: RTL_TIME_ZONE_INFORMATION = unsafe { core::mem::zeroed() };
 static mut ExpLastTimeZoneBias: ULONG = 0xFFFFFFFF;
-static mut ExpTimeZoneBias: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut ExpTimeZoneBias: LARGE_INTEGER = unsafe { core::mem::zeroed() };
 static mut ExpAltTimeZoneBias: ULONG = 0;
-static mut ExpTimeZoneId: ULONG = 0;
+#[no_mangle]
+pub static mut ExpTimeZoneId: ULONG = 0;
 static mut ExpTickCountMultiplier: ULONG = 0;
 #[no_mangle]
 static mut ExpTimeRefreshLock: ERESOURCE = unsafe { core::mem::zeroed() };
@@ -260,7 +261,7 @@ pub unsafe extern "system" fn ExRefreshTimeZoneInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ExpSetTimeZoneInformation(
+pub unsafe extern "C" fn ExpSetTimeZoneInformation(
     TimeZoneInformation: PRTL_TIME_ZONE_INFORMATION,
 ) -> NTSTATUS {
     let mut LocalTime: LARGE_INTEGER = core::mem::zeroed();

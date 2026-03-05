@@ -18,7 +18,7 @@ extern "fastcall" {
     fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE);
 }
 #[cfg(not(target_arch = "x86"))]
-extern "system" {
+extern "C" {
     fn KeAcquireInStackQueuedSpinLock(SpinLock: PKSPIN_LOCK, LockHandle: PKLOCK_QUEUE_HANDLE);
     fn KeReleaseInStackQueuedSpinLock(LockHandle: PKLOCK_QUEUE_HANDLE);
 }
@@ -500,7 +500,6 @@ pub unsafe extern "system" fn Kii386SpinOnSpinLock(SpinLock: PKSPIN_LOCK, Flags:
         YieldProcessor();
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

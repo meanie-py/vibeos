@@ -12,10 +12,10 @@ use ntkrnl_sys::ddk::{
     HalRequestSoftwareInterrupt, KeGetCurrentProcessorNumber,
 };
 
+// Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
 extern "C" {
     static mut KiReverseStallIpiLock: KSPIN_LOCK;
-    static KeNumberProcessors: ULONG;
-    static KeActiveProcessors: KAFFINITY;
 }
 
 #[cfg(not(target_arch = "x86_64"))]

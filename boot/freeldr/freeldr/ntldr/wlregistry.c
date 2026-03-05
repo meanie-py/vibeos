@@ -16,8 +16,9 @@
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WINDOWS);
 
-// The only global var here, used to mark mem pages as NLS in WinLdrSetupMemoryLayout()
+// Used to re-mark NLS pages after heap cleanup in WinLdrSetupMemoryLayout()
 ULONG TotalNLSSize = 0;
+PVOID NlsDataBase = NULL;
 
 static BOOLEAN
 WinLdrGetNLSNames(
@@ -417,7 +418,7 @@ WinLdrLoadNLSData(
     ULONG AnsiFileSize, OemFileSize, LangFileSize;
     ULONG TotalSize;
     ULONG BytesRead;
-    PVOID NlsDataBase, NlsVirtual;
+    PVOID NlsVirtual;
     BOOLEAN AnsiEqualsOem = FALSE;
     CHAR FileName[MAX_PATH];
 

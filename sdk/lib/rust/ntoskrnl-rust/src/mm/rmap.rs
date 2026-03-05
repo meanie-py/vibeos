@@ -55,7 +55,6 @@ extern "system" {
     fn MmLockSectionSegment(Segment: PMM_SECTION_SEGMENT);
     fn MmUnlockSectionSegment(Segment: PMM_SECTION_SEGMENT);
     fn MmGetPageEntrySectionSegment(Segment: PMM_SECTION_SEGMENT, Offset: *mut LARGE_INTEGER) -> ULONG_PTR;
-    fn MA_GetStartingAddress(MemoryArea: PMEMORY_AREA) -> ULONG_PTR;
     fn ObDereferenceObject(Object: PVOID);
 }
 extern "C" {
@@ -67,6 +66,9 @@ extern "C" {
     fn MM_IS_WAIT_PTE(Entry: ULONG_PTR) -> bool;
     fn PAGE_ROUND_DOWN(addr: PVOID) -> ULONG_PTR;
     fn InterlockedExchangeAddUL(addend: *mut ULONG, value: ULONG) -> ULONG;
+}
+extern "C" {
+    fn MA_GetStartingAddress(MemoryArea: PMEMORY_AREA) -> ULONG_PTR;
 }
 
 static MM_WAIT_ENTRY: ULONG_PTR = 0xFFFFFFFE;
@@ -547,7 +549,6 @@ pub unsafe extern "system" fn MmDeleteSectionAssociation(Page: PFN_NUMBER) {
     }
     MiReleasePfnLock(OldIrql);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

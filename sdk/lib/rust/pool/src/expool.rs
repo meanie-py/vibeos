@@ -355,8 +355,6 @@ pub unsafe extern "system" fn ExInitializePoolDescriptor(
 /// Initialize pool tracking tables and descriptors.
 #[no_mangle]
 pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: ULONG) {
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'P', options(nomem, nostack, preserves_flags));
     if pool_type == NonPagedPool {
         // Compute track table size
         let mut table_size = if PoolTrackTableSize < MmSizeOfNonPagedPoolInBytes >> 8 {
@@ -384,8 +382,6 @@ pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: UL
         }
 
         // Allocate tracker table
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Q', options(nomem, nostack, preserves_flags));
         loop {
             if (PoolTrackTableSize + 1)
                 > (usize::MAX / core::mem::size_of::<POOL_TRACKER_TABLE>())
@@ -422,8 +418,6 @@ pub unsafe extern "system" fn InitializePool(pool_type: POOL_TYPE, threshold: UL
             PoolTrackTableSize * core::mem::size_of::<POOL_TRACKER_TABLE>(),
         );
 
-        #[cfg(target_arch = "x86")]
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'R', options(nomem, nostack, preserves_flags));
         ExpSeedHotTags();
 
         // Allocate big page tracker table
@@ -1257,8 +1251,39 @@ pub unsafe extern "system" fn ExAllocatePoolWithTag(
         return null_mut();
     }
 
+    // DBG: about to write pool header — dump address
+    #[cfg(target_arch = "x86")]
+    {
+        // Dump entry address as hex
+        let addr = entry as u32;
+        let mut shift = 28i32;
+        while shift >= 0 {
+            let nibble = ((addr >> shift) & 0xF) as u8;
+            let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+            shift -= 4;
+        }
+
+        // Dump IDT entry for vector 14 (#PF) — read from SIDT
+        let mut idt_desc: [u8; 6] = [0; 6];
+        core::arch::asm!("sidt [{}]", in(reg) idt_desc.as_mut_ptr(), options(nostack, preserves_flags));
+        let idt_limit = u16::from_le_bytes([idt_desc[0], idt_desc[1]]);
+        let idt_base = u32::from_le_bytes([idt_desc[2], idt_desc[3], idt_desc[4], idt_desc[5]]);
+        // IDT entry 14 is at idt_base + 14*8
+        let idt_entry_ptr = (idt_base + 14 * 8) as *const u8;
+        // Read 8 bytes of the IDT entry
+        for byte_idx in 0..8u32 {
+            let b = *idt_entry_ptr.add(byte_idx as usize);
+            let hi = (b >> 4) & 0xF;
+            let lo = b & 0xF;
+            let ch_hi = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+            let ch_lo = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+        }
+    }
+
     // Set up the allocation entry
     (*entry).Ulong1 = 0;
+
+    // DBG: after first write
     (*entry).set_BlockSize(i);
     (*entry).set_PoolType(original_type as u16 + 1);
 

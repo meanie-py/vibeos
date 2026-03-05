@@ -728,7 +728,7 @@ extern "C" {
     #[cfg(target_arch = "x86")]
     pub static mut MmSystemPagePtes: *mut MMPTE;
     #[cfg(target_arch = "x86")]
-    pub static mut MmSystemPageDirectory: *mut PFN_NUMBER;
+    pub static mut MmSystemPageDirectory: [PFN_NUMBER; PPE_PER_PAGE];
 
     // System color for page allocation
     pub static mut MmSystemPageColor: ULONG;
@@ -1138,6 +1138,11 @@ pub const PTE_MAPPING_EMPTY: ULONG_PTR = 0x102;
 pub const PTE_MAPPING_RESERVED: ULONG_PTR = 0x103;
 
 /// MM_EMPTY_PTE_LIST — sentinel for PTE free list.
+/// i386: 20-bit NextEntry field → 0xFFFFF
+/// amd64/arm64: 32-bit NextEntry field → 0xFFFFFFFF
+#[cfg(target_arch = "x86")]
+pub const MM_EMPTY_PTE_LIST: ULONG_PTR = 0xFFFFF;
+#[cfg(not(target_arch = "x86"))]
 pub const MM_EMPTY_PTE_LIST: ULONG_PTR = 0xFFFFFFFF;
 
 // ============================================================================

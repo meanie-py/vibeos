@@ -32,7 +32,6 @@ extern "system" {
     static mut PsThreadType: PVOID;
     static mut ExpDebuggerWork: ULONG;
     static mut ExpDebuggerWorkItem: WORK_QUEUE_ITEM;
-    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 
 // ExpDebuggerWorker is a C function; calling convention differs by arch.
@@ -43,6 +42,14 @@ extern "stdcall" {
 #[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn ExpDebuggerWorker(Context: PVOID);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 
 const EX_HYPERCRITICAL_WORK_THREADS: ULONG = 1;

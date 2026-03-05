@@ -111,22 +111,22 @@ static __inline void _tramp_InitializeObjectAttributes(POBJECT_ATTRIBUTES p, PUN
 /* === Phase 5: Real (non-static, non-inline) functions === */
 /* All use NTAPI (__stdcall on i386) to match Rust extern "system" declarations */
 
-void NTAPI SepAcquireTokenLockExclusive(PVOID Token)
+void SepAcquireTokenLockExclusive(PVOID Token)
 {
     _tramp_SepAcquireTokenLockExclusive(Token);
 }
 
-void NTAPI SepAcquireTokenLockShared(PVOID Token)
+void SepAcquireTokenLockShared(PVOID Token)
 {
     _tramp_SepAcquireTokenLockShared(Token);
 }
 
-void NTAPI SepReleaseTokenLock(PVOID Token)
+void SepReleaseTokenLock(PVOID Token)
 {
     _tramp_SepReleaseTokenLock(Token);
 }
 
-PACCESS_TOKEN NTAPI SeQuerySubjectContextToken(PSECURITY_SUBJECT_CONTEXT SubjectContext)
+PACCESS_TOKEN SeQuerySubjectContextToken(PSECURITY_SUBJECT_CONTEXT SubjectContext)
 {
     return _tramp_SeQuerySubjectContextToken(SubjectContext);
 }
@@ -151,57 +151,57 @@ PACL SepGetSaclFromDescriptor(PSECURITY_DESCRIPTOR _Descriptor)
     return _fi_SepGetSaclFromDescriptor(_Descriptor);
 }
 
-NTSTATUS NTAPI DefaultQueryInfoBufferCheck(ULONG Class, PVOID ClassList, ULONG ClassListEntries, ULONG Flags, PVOID Buffer, ULONG BufferLength, PULONG ReturnLength, PULONG_PTR ReturnLengthPtr, KPROCESSOR_MODE PreviousMode)
+NTSTATUS DefaultQueryInfoBufferCheck(ULONG Class, PVOID ClassList, ULONG ClassListEntries, ULONG Flags, PVOID Buffer, ULONG BufferLength, PULONG ReturnLength, PULONG_PTR ReturnLengthPtr, KPROCESSOR_MODE PreviousMode)
 {
     return _fi_DefaultQueryInfoBufferCheck(Class, ClassList, ClassListEntries, Flags, Buffer, BufferLength, ReturnLength, ReturnLengthPtr, PreviousMode);
 }
 
-NTSTATUS NTAPI DefaultSetInfoBufferCheck(ULONG Class, PVOID ClassList, ULONG ClassListEntries, PVOID Buffer, ULONG BufferLength, KPROCESSOR_MODE PreviousMode)
+NTSTATUS DefaultSetInfoBufferCheck(ULONG Class, PVOID ClassList, ULONG ClassListEntries, PVOID Buffer, ULONG BufferLength, KPROCESSOR_MODE PreviousMode)
 {
     return _fi_DefaultSetInfoBufferCheck(Class, ClassList, ClassListEntries, Buffer, BufferLength, PreviousMode);
 }
 
-LARGE_INTEGER NTAPI ProbeForReadLargeInteger(PLARGE_INTEGER Address)
+LARGE_INTEGER ProbeForReadLargeInteger(PLARGE_INTEGER Address)
 {
     return _tramp_ProbeForReadLargeInteger(Address);
 }
 
-UCHAR NTAPI ProbeForReadUchar(PUCHAR Address)
+UCHAR ProbeForReadUchar(PUCHAR Address)
 {
     return _tramp_ProbeForReadUchar(Address);
 }
 
-USHORT NTAPI ProbeForReadUshort(PUSHORT Address)
+USHORT ProbeForReadUshort(PUSHORT Address)
 {
     return _tramp_ProbeForReadUshort(Address);
 }
 
-void NTAPI ProbeForWriteHandle(PHANDLE Address)
+void ProbeForWriteHandle(PHANDLE Address)
 {
     _tramp_ProbeForWriteHandle(Address);
 }
 
-NTSTATUS NTAPI ProbeAndCaptureUnicodeString(PUNICODE_STRING Dest, KPROCESSOR_MODE Mode, PUNICODE_STRING Src)
+NTSTATUS ProbeAndCaptureUnicodeString(PUNICODE_STRING Dest, KPROCESSOR_MODE Mode, PUNICODE_STRING Src)
 {
     return _fi_ProbeAndCaptureUnicodeString(Dest, Mode, Src);
 }
 
-void NTAPI ReleaseCapturedUnicodeString(PUNICODE_STRING Name, KPROCESSOR_MODE Mode)
+void ReleaseCapturedUnicodeString(PUNICODE_STRING Name, KPROCESSOR_MODE Mode)
 {
     _fi_ReleaseCapturedUnicodeString(Name, Mode);
 }
 
-void NTAPI InitializeObjectAttributes(POBJECT_ATTRIBUTES p, PUNICODE_STRING n, ULONG a, HANDLE r, PVOID s)
+void InitializeObjectAttributes(POBJECT_ATTRIBUTES p, PUNICODE_STRING n, ULONG a, HANDLE r, PVOID s)
 {
     _tramp_InitializeObjectAttributes(p, n, a, r, s);
 }
 
-void NTAPI ExInitializeResource(PERESOURCE Resource)
+void ExInitializeResource(PERESOURCE Resource)
 {
     _tramp_ExInitializeResource(Resource);
 }
 
-void NTAPI PspClearCrossThreadFlag(PETHREAD Thread, ULONG Flag)
+void PspClearCrossThreadFlag(PETHREAD Thread, ULONG Flag)
 {
     _tramp_PspClearCrossThreadFlag(Thread, Flag);
 }

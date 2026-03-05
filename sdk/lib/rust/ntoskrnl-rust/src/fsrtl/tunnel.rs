@@ -36,7 +36,6 @@ extern "system" {
     fn RtlMoveMemory(destination: PVOID, source: PVOID, length: usize);
 }
 extern "C" {
-    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn ExAllocateFromPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST, entry: PVOID);
@@ -45,6 +44,9 @@ extern "C" {
     fn RtlInsertAsRightChild(parent: PRTL_SPLAY_LINKS, child: PRTL_SPLAY_LINKS);
     fn RtlParent(links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
     fn RtlIsLeftChild(links: PRTL_SPLAY_LINKS) -> BOOLEAN;
+}
+extern "system" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
 #[repr(C)]

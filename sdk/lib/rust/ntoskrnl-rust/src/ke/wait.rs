@@ -18,9 +18,6 @@ use ntkrnl_sys::ddk::{
     NtYieldExecution,
 };
 
-extern "system" {
-    fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
-}
 extern "C" {
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> _LARGE_INTEGER;
 }
@@ -63,6 +60,14 @@ extern "C" {
     fn KiSatisfyMutantWait(Mutant: PKMUTANT, Thread: PKTHREAD);
     fn KiSatisfyNonMutantWait(Object: PKMUTANT);
     fn KiAcquirePrcbLock(Prcb: *mut _KPRCB);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
 }
 
 const TIMER_WAIT_BLOCK: usize = 3;
@@ -290,9 +295,15 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
     let mut NextThread: PKTHREAD;
     let mut PendingApc: BOOLEAN;
 
+    // DBG: KiExitDispatcher entry
+
     KiCheckDeferredReadyList(Prcb);
 
+    // DBG: after KiCheckDeferredReadyList
+
     if OldIrql >= DISPATCH_LEVEL {
+        // DBG: fast path (OldIrql >= DISPATCH_LEVEL)
+
         if !(*Prcb).NextThread.is_null() && (*Prcb).DpcRoutineActive == 0 {
             HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
         }
@@ -301,10 +312,15 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
         return;
     }
 
+    // DBG: slow path (will context switch)
+
     if (*Prcb).NextThread.is_null() {
+        // DBG: no NextThread, just lower IRQL
         KeLowerIrql(OldIrql);
         return;
     }
+
+    // DBG: about to context switch!
 
     KiAcquirePrcbLock(Prcb);
 
@@ -342,13 +358,20 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
 
     *kt_WaitIrql(Thread) = OldIrql;
 
+    // DBG: about to KiSwapContext
+
     PendingApc = KiSwapContext(OldIrql, Thread);
+
+    // DBG: returned from KiSwapContext
+
     if PendingApc != 0 {
         KeLowerIrql(APC_LEVEL);
         KiDeliverApc(0i8, core::ptr::null_mut(), core::ptr::null_mut());
     }
 
     KeLowerIrql(OldIrql);
+
+    // DBG: KiExitDispatcher done
 }
 
 #[no_mangle]
@@ -530,6 +553,7 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
     Alertable: BOOLEAN,
     mut Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+
     let Thread: PKTHREAD = PsGetCurrentThread();
     let mut CurrentObject: PKMUTANT = Object as PKMUTANT;
     let mut WaitBlock: PKWAIT_BLOCK = (kt_WaitBlock(Thread).as_mut_ptr()).add(0);
@@ -545,7 +569,8 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
 
     if (*Thread).WaitNext == 0 {
         loop {
-            *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
+            let _raise_result = KeRaiseIrqlToSynchLevel();
+            *kt_WaitIrql(Thread) = _raise_result;
             KxSingleThreadWait(Object, Timeout, WaitMode, WaitReason, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
             KiAcquireDispatcherLockAtSynchLevel();
 
@@ -1110,7 +1135,6 @@ pub unsafe extern "system" fn NtDelayExecution(
     let Status = KeDelayExecutionThread(PreviousMode, Alertable, DelayInterval);
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -29,6 +29,17 @@ extern "system" {
     static SeUnrestrictedDacl: PACL;
     static SeSystemAnonymousLogonDacl: PACL;
     static SeWorldSid: PSID;
+    fn SeLockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
+    fn SeUnlockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
+}
+extern "C" {
+
+    fn SepGetOwnerFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
+    fn SepGetGroupFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
+    fn SepGetDaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
+    fn SepGetSaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
+}
+extern "C" {
     fn SepSelectAcl(
         ExplicitAcl: PACL,
         ExplicitPresent: BOOLEAN,
@@ -43,6 +54,8 @@ extern "system" {
         IsDirectoryObject: BOOLEAN,
         GenericMapping: PGENERIC_MAPPING,
     ) -> PACL;
+}
+extern "C" {
     fn SepPropagateAcl(
         AclDest: PACL,
         AclLength: *mut ULONG,
@@ -53,15 +66,6 @@ extern "system" {
         IsDirectoryObject: BOOLEAN,
         GenericMapping: PGENERIC_MAPPING,
     ) -> NTSTATUS;
-    fn SeLockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
-    fn SeUnlockSubjectContext(SubjectContext: PSECURITY_SUBJECT_CONTEXT);
-}
-extern "C" {
-
-    fn SepGetOwnerFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
-    fn SepGetGroupFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PSID;
-    fn SepGetDaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
-    fn SepGetSaclFromDescriptor(SecurityDescriptor: PISECURITY_DESCRIPTOR) -> PACL;
 }
 
 #[no_mangle]

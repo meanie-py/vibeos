@@ -68,7 +68,7 @@ unsafe fn SepIsEqualObjectTypeGuid(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepGetObjectTypeGuidFromAce(
+pub unsafe extern "C" fn SepGetObjectTypeGuidFromAce(
     Ace: PACE,
     IsAceDenied: BOOLEAN,
 ) -> PGUID {
@@ -84,7 +84,7 @@ pub unsafe extern "system" fn SepGetObjectTypeGuidFromAce(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepObjectTypeGuidInList(
+pub unsafe extern "C" fn SepObjectTypeGuidInList(
     ObjectTypeList: POBJECT_TYPE_LIST_INTERNAL,
     ObjectTypeListLength: ULONG,
     ObjectTypeGuid: PGUID,
@@ -104,7 +104,7 @@ pub unsafe extern "system" fn SepObjectTypeGuidInList(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SeCaptureObjectTypeList(
+pub unsafe extern "C" fn SeCaptureObjectTypeList(
     ObjectTypeList: POBJECT_TYPE_LIST,
     ObjectTypeListLength: ULONG,
     PreviousMode: KPROCESSOR_MODE,
@@ -160,7 +160,7 @@ pub unsafe extern "system" fn SeCaptureObjectTypeList(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SeReleaseObjectTypeList(
+pub unsafe extern "C" fn SeReleaseObjectTypeList(
     CapturedObjectTypeList: POBJECT_TYPE_LIST_INTERNAL,
     PreviousMode: KPROCESSOR_MODE,
 ) {

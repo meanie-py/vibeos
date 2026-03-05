@@ -367,9 +367,9 @@ KdInitSystem(
 #ifdef _M_IX86
     /*
      * On i386 with Rust KE, skip full KD initialization.
-     * KdSendPacket (kdcom.dll) triple-faults when no debugger is connected,
-     * which kills every DPRINT1 call throughout the kernel.
-     * KDBG still works for crash analysis (KiDebugRoutine = KdpStub).
+     * The INT 0x2D → KdpTrap → KdSendPacket path crashes early in boot
+     * (only 148 bytes debugcon output vs 67K with KD disabled).
+     * Instead, KdpStub provides direct COM1 output for BREAKPOINT_PRINT.
      */
     EnableKd = FALSE;
 #endif

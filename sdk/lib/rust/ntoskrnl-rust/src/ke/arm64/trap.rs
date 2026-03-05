@@ -21,10 +21,10 @@ use ntkrnl_sys::ddk::{
 
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
-    static mut KeServiceDescriptorTable: [_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KeGdiFlushUserBatch: Option<unsafe extern "system" fn()>;
     static mut MmUserProbeAddress: ULONG_PTR;
 }
+use crate::ps::win32::KeGdiFlushUserBatch;
+use crate::ke::procobj::KeServiceDescriptorTable;
 
 unsafe fn TrapPutChar(c: u8) {
     let pl011_base = Arm64UartKernelBase as *mut ULONG;

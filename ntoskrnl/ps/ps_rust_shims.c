@@ -311,32 +311,32 @@ PKUSER_SHARED_DATA SharedUserData = (PKUSER_SHARED_DATA)KI_USER_SHARED_DATA;
 
 /* --- Macro trampolines --- */
 
-void NTAPI PspSetCrossThreadFlag(PETHREAD Thread, ULONG Flag)
+void PspSetCrossThreadFlag(PETHREAD Thread, ULONG Flag)
 {
     _tramp_PspSetCrossThreadFlag(Thread, Flag);
 }
 
-void NTAPI PspSetProcessFlag(PEPROCESS Process, ULONG Flag)
+void PspSetProcessFlag(PEPROCESS Process, ULONG Flag)
 {
     _tramp_PspSetProcessFlag(Process, Flag);
 }
 
-void NTAPI PspClearProcessFlag(PEPROCESS Process, ULONG Flag)
+void PspClearProcessFlag(PEPROCESS Process, ULONG Flag)
 {
     _tramp_PspClearProcessFlag(Process, Flag);
 }
 
-ULONG NTAPI PspPrioritySeparationFromMask(ULONG Mask)
+ULONG PspPrioritySeparationFromMask(ULONG Mask)
 {
     return _tramp_PspPrioritySeparationFromMask(Mask);
 }
 
-ULONG NTAPI PspQuantumTypeFromMask(ULONG Mask)
+ULONG PspQuantumTypeFromMask(ULONG Mask)
 {
     return _tramp_PspQuantumTypeFromMask(Mask);
 }
 
-ULONG NTAPI PspQuantumLengthFromMask(ULONG Mask)
+ULONG PspQuantumLengthFromMask(ULONG Mask)
 {
     return _tramp_PspQuantumLengthFromMask(Mask);
 }
@@ -352,7 +352,7 @@ ULONG_PTR KeGetContextReturnRegister(PCONTEXT Context)
     return _tramp_KeGetContextReturnRegister(Context);
 }
 
-ULONG NTAPI InterlockedDecrementUL(PULONG Addend)
+ULONG InterlockedDecrementUL(PULONG Addend)
 {
     return _tramp_InterlockedDecrementUL(Addend);
 }
@@ -360,7 +360,7 @@ ULONG NTAPI InterlockedDecrementUL(PULONG Addend)
 /* KeQuerySystemTime is a real function on i386 (ex/time.c) but a macro
    on amd64/arm64, so only provide the shim where it's a macro. */
 #ifndef _M_IX86
-VOID NTAPI KeQuerySystemTime(PLARGE_INTEGER CurrentTime)
+VOID KeQuerySystemTime(PLARGE_INTEGER CurrentTime)
 {
     _tramp_KeQuerySystemTime(CurrentTime);
 }
@@ -375,48 +375,48 @@ VOID FASTCALL ExInitializeRundownProtection(PEX_RUNDOWN_REF RunRef)
 /* IRQL functions — only needed on amd64 where they are FORCEINLINE.
    On i386/arm64, HAL provides the real symbols. */
 #ifdef _M_AMD64
-KIRQL NTAPI KeGetCurrentIrql(VOID)
+KIRQL KeGetCurrentIrql(VOID)
 {
     return _fi_KeGetCurrentIrql();
 }
 
-VOID NTAPI KeLowerIrql(KIRQL NewIrql)
+VOID KeLowerIrql(KIRQL NewIrql)
 {
     _fi_KeLowerIrql(NewIrql);
 }
 
-VOID NTAPI KeRaiseIrql(KIRQL NewIrql, PKIRQL OldIrql)
+VOID KeRaiseIrql(KIRQL NewIrql, PKIRQL OldIrql)
 {
     _tramp_KeRaiseIrql(NewIrql, OldIrql);
 }
 #endif
 
-VOID NTAPI KeEnterGuardedRegion(void)
+VOID KeEnterGuardedRegion(void)
 {
     _tramp_KeEnterGuardedRegion();
 }
 
-VOID NTAPI KeLeaveGuardedRegion(void)
+VOID KeLeaveGuardedRegion(void)
 {
     _tramp_KeLeaveGuardedRegion();
 }
 
-VOID NTAPI KeEnterGuardedRegionThread(PKTHREAD Thread)
+VOID KeEnterGuardedRegionThread(PKTHREAD Thread)
 {
     _tramp_KeEnterGuardedRegionThread(Thread);
 }
 
-VOID NTAPI KeLeaveGuardedRegionThread(PKTHREAD Thread)
+VOID KeLeaveGuardedRegionThread(PKTHREAD Thread)
 {
     _tramp_KeLeaveGuardedRegionThread(Thread);
 }
 
-DECLSPEC_NORETURN VOID NTAPI ExRaiseStatus(NTSTATUS Status)
+DECLSPEC_NORETURN VOID ExRaiseStatus(NTSTATUS Status)
 {
     _tramp_ExRaiseStatus(Status);
 }
 
-PVOID NTAPI InterlockedCompareExchangePointer(
+PVOID InterlockedCompareExchangePointer(
     PVOID volatile *Destination, PVOID Exchange, PVOID Comparand)
 {
     return _tramp_InterlockedCompareExchangePointer(Destination, Exchange, Comparand);
@@ -424,18 +424,18 @@ PVOID NTAPI InterlockedCompareExchangePointer(
 
 /* Only needed on i386 — amd64/arm64 have it in ex/exintrin.c or as intrinsic */
 #ifdef _M_IX86
-LONG NTAPI InterlockedCompareExchange(PLONG Destination, LONG Exchange, LONG Comparand)
+LONG InterlockedCompareExchange(PLONG Destination, LONG Exchange, LONG Comparand)
 {
     return _tramp_InterlockedCompareExchange(Destination, Exchange, Comparand);
 }
 #endif
 
-PKTRAP_FRAME NTAPI KeGetTrapFrame(PKTHREAD Thread)
+PKTRAP_FRAME __cdecl KeGetTrapFrame(PKTHREAD Thread)
 {
     return _tramp_KeGetTrapFrame(Thread);
 }
 
-PKEXCEPTION_FRAME NTAPI KeGetExceptionFrame(PKTHREAD Thread)
+PKEXCEPTION_FRAME KeGetExceptionFrame(PKTHREAD Thread)
 {
     return _tramp_KeGetExceptionFrame(Thread);
 }
@@ -534,7 +534,7 @@ VOID ExInitializeFastMutex(PFAST_MUTEX FastMutex)
 /* --- Debug / perf stubs --- */
 
 /* NTAPI — called from C code (kdapi.c), not from Rust */
-VOID NTAPI PspDumpThreads(BOOLEAN IncludeSystem)
+VOID PspDumpThreads(BOOLEAN IncludeSystem)
 {
     UNREFERENCED_PARAMETER(IncludeSystem);
 }

@@ -31,7 +31,6 @@ extern "system" {
     fn MmGrowKernelStack(StackPointer: PVOID) -> NTSTATUS;
     fn MmIsAddressValid(Address: PVOID) -> BOOLEAN;
     static KeUserCallbackDispatcher: PVOID;
-    fn KeGdiFlushUserBatch();
 }
 extern "C" {
     fn KiGetUserModeStackAddress() -> *mut ULONG_PTR;
@@ -131,7 +130,9 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
     if GdiBatchCount != 0 {
         *UserStackPointer -= 256;
-        KeGdiFlushUserBatch();
+        if let Some(flush) = crate::ps::win32::KeGdiFlushUserBatch {
+            flush();
+        }
     }
 
     *UserStackPointer = OldStack;

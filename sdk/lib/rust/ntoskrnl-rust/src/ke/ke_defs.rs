@@ -15,13 +15,10 @@ extern "C" {
     // IRQL management (provided by ke_rust_shims.c or HAL)
     pub fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8);
     pub fn KeLowerIrql(NewIrql: u8);
-    pub fn KeQuerySystemTime(CurrentTime: *mut i64);
 
     // Critical/Guarded regions (provided by ke_rust_shims.c)
     pub fn KeEnterCriticalRegion();
     pub fn KeLeaveCriticalRegion();
-    pub fn KeEnterGuardedRegion();
-    pub fn KeLeaveGuardedRegion();
 }
 extern "C" {
     pub fn KfRaiseIrql(NewIrql: u8) -> u8;
@@ -46,7 +43,6 @@ extern "C" {
     pub fn InterlockedBitTestAndReset(Base: *mut i32, Bit: i32) -> u8;
 
     // Timer/Wait helpers (provided by ke_rust_shims.c)
-    pub fn KiSignalTimer(Timer: *mut ntkrnl_sys::ddk::_KTIMER);
     pub fn YieldProcessor();
 }
 // KiWaitTest, KiUnwaitThread, KiUnlinkThread are FASTCALL on i386, extern "C" on others
@@ -72,9 +68,9 @@ extern "system" {
     pub fn _rdmsr(Register: u32) -> u64;
     pub fn _wrmsr(Register: u32, Value: u64);
 }
-extern "C" {
-
+extern "system" {
     // KeGetCurrentThread — FORCEINLINE on amd64, provided by PsGetCurrentThread shim
+    // Must be "system" (stdcall on i386) to match the shim export's calling convention.
     pub fn PsGetCurrentThread() -> *mut ntkrnl_sys::ddk::_KTHREAD;
 }
 extern "C" {
@@ -118,16 +114,7 @@ extern "system" {
     pub fn RtlCaptureContext(ContextRecord: *mut ntkrnl_sys::ddk::_CONTEXT);
     pub fn Ke386SetLocalDescriptorTable(Selector: u16);
     pub fn Ke386SetGs(Selector: u16);
-    pub fn KiIpiSignalPacketDone(SignalDone: *mut core::ffi::c_void);
-    pub fn KiRecordDr7(Dr7: *mut u32, DrMask: *mut u32) -> u8;
-    pub fn KiUpdateDr7(Dr7: u32) -> u32;
     pub fn KiComputeIopmOffset(SetMember: u32) -> u16;
-    pub fn KiGetMachineBootPointers(
-        Gdt: *mut *mut core::ffi::c_void,
-        Idt: *mut *mut core::ffi::c_void,
-        Tss: *mut *mut core::ffi::c_void,
-        Pcr: *mut *mut core::ffi::c_void,
-    );
 }
 #[cfg(target_arch = "x86")]
 extern "C" {
@@ -136,41 +123,88 @@ extern "C" {
 }
 
 // ============================================================================
-// Extern "C" globals used across ke/ files
+// Re-exported globals from defining modules (NOT extern — avoids lto=false splits)
 // ============================================================================
+// Timer-related globals (from dpc.rs and timerobj.rs)
+pub use super::dpc::{KiTimerExpireDpc, KiMaximumDpcQueueDepth, KiMinimumDpcRate,
+    KiAdjustDpcThreshold, KeThreadDpcEnable, KiGenericCallDpcMutex};
+pub use super::timerobj::KiTimerTableListHead;
+
+// Profile globals (from profobj.rs)
+pub use super::profobj::{KiProfileLock, KiProfileListHead, KiProfileSourceListHead};
+
+// Swap/process globals (from procobj.rs)
+pub use super::procobj::{KiSwapEvent, KiProcessInSwapListHead, KiProcessOutSwapListHead,
+    KiStackInSwapListHead, KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
+
+// Processor globals (from processor.rs)
+pub use super::processor::KeActiveProcessors;
+
+// C-defined symbols (assembly/linker) — these must stay as extern
 extern "C" {
-    // Timer-related globals
-    pub static mut KiTimerExpireDpc: ntkrnl_sys::ddk::_KDPC;
-    pub static mut KiTimerTableListHead: [ntkrnl_sys::ddk::_KTIMER_TABLE_ENTRY; 256];
-    pub static mut KiProfileLock: usize;
-    pub static mut KiProfileListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    pub static mut KiProfileSourceListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-
-    // Swap-related globals
-    pub static mut KiSwapEvent: ntkrnl_sys::ddk::_KEVENT;
-    pub static mut KiProcessInSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    pub static mut KiProcessOutSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    pub static mut KiStackInSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-
-    // Bugcheck globals — now defined in bug.rs with #[no_mangle]
-
-    // SSDT globals
-    pub static mut KeServiceDescriptorTable: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
-    pub static mut KeServiceDescriptorTableShadow: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
     // MainSSDT is `ULONG_PTR MainSSDT[]` — use first-element trick for extern incomplete array
     pub static mut MainSSDT: ntkrnl_sys::base::ULONG_PTR;
     // MainSSPT is `UCHAR MainSSPT[]`
     pub static mut MainSSPT: u8;
-
-    // DPC tuning globals
-    pub static mut KiMaximumDpcQueueDepth: i32;
-    pub static mut KiMinimumDpcRate: u32;
-    pub static mut KiAdjustDpcThreshold: u32;
-    pub static mut KeThreadDpcEnable: u32;
-
-    // Misc globals
-    pub static mut KiGenericCallDpcMutex: ntkrnl_sys::ddk::_FAST_MUTEX;
-    pub static mut KeActiveProcessors: usize;
+}
+extern "system" {
+    pub fn KeQuerySystemTime(CurrentTime: *mut i64);
+}
+extern "system" {
+    pub fn KeEnterGuardedRegion();
+}
+extern "system" {
+    pub fn KeLeaveGuardedRegion();
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KiSignalTimer(Timer: *mut ntkrnl_sys::ddk::_KTIMER);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn KiSignalTimer(Timer: *mut ntkrnl_sys::ddk::_KTIMER);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KiIpiSignalPacketDone(SignalDone: *mut core::ffi::c_void);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn KiIpiSignalPacketDone(SignalDone: *mut core::ffi::c_void);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KiRecordDr7(Dr7: *mut u32, DrMask: *mut u32) -> u8;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn KiRecordDr7(Dr7: *mut u32, DrMask: *mut u32) -> u8;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KiUpdateDr7(Dr7: u32) -> u32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn KiUpdateDr7(Dr7: u32) -> u32;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KiGetMachineBootPointers(
+        Gdt: *mut *mut core::ffi::c_void,
+        Idt: *mut *mut core::ffi::c_void,
+        Tss: *mut *mut core::ffi::c_void,
+        Pcr: *mut *mut core::ffi::c_void,
+    );
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn KiGetMachineBootPointers(
+        Gdt: *mut *mut core::ffi::c_void,
+        Idt: *mut *mut core::ffi::c_void,
+        Tss: *mut *mut core::ffi::c_void,
+        Pcr: *mut *mut core::ffi::c_void,
+    );
 }
 
 // ============================================================================

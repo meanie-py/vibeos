@@ -84,6 +84,14 @@ pub mod ddk {
 
     #[cfg(target_arch = "x86")]
     pub use super::bindgen_i386::*;
+
+    // i386 fat-LTO ud2 workaround: The C shims for KeEnterCriticalRegion and
+    // KeLeaveCriticalRegion are eliminated by LTO (replaced with ud2) because
+    // C code uses the ke_x.h macros instead. Override with inline Rust versions.
+    #[cfg(target_arch = "x86")]
+    pub use super::inline::ke::KeEnterCriticalRegion;
+    #[cfg(target_arch = "x86")]
+    pub use super::inline::ke::KeLeaveCriticalRegion;
 }
 
 // ============================================================================

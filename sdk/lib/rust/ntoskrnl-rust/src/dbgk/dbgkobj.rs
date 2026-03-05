@@ -137,11 +137,13 @@ extern "C" {
     ) -> NTSTATUS;
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn PsGetCurrentThread() -> PETHREAD;
     fn NtCurrentProcess() -> HANDLE;
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
 #[no_mangle]
@@ -1025,10 +1027,10 @@ pub unsafe extern "system" fn DbgkpOpenHandles(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DbgkpDeleteObject(debug_object: PVOID) {}
+pub unsafe extern "system" fn DbgkpDeleteObject(debug_object: PVOID) {}
 
 #[no_mangle]
-pub unsafe extern "C" fn DbgkpCloseObject(
+pub unsafe extern "system" fn DbgkpCloseObject(
     _owner_process: PEPROCESS,
     object_body: PVOID,
     _granted_access: ACCESS_MASK,
@@ -1909,7 +1911,6 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
 
     status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

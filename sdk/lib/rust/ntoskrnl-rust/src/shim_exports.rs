@@ -934,16 +934,17 @@ pub unsafe extern "C" fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
 // ============================================================================
 
 // --- KE critical region (NTAPI = stdcall on i386) ---
+// Must be extern "system" to match calling convention of ntkrnl-sys extern declarations.
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn KeEnterCriticalRegion() {
+pub unsafe extern "system" fn KeEnterCriticalRegion() {
     ntkrnl_sys::inline::ke::KeEnterCriticalRegion()
 }
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn KeLeaveCriticalRegion() {
+pub unsafe extern "system" fn KeLeaveCriticalRegion() {
     ntkrnl_sys::inline::ke::KeLeaveCriticalRegion()
 }
 
@@ -964,11 +965,13 @@ pub unsafe extern "C" fn KeQueryInterruptTime() -> ULONGLONG {
     ntkrnl_sys::inline::ke::KeQueryInterruptTime()
 }
 
-// --- PS PsGetCurrentThread (NTAPI) ---
+// --- PS PsGetCurrentThread (NTAPI = stdcall on i386) ---
+// Must be extern "system" to match calling convention of ntkrnl-sys extern declarations.
+// Mismatch (cdecl def vs stdcall call) within the same LLVM CGU is UB → noreturn cascade.
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn PsGetCurrentThread() -> PETHREAD {
+pub unsafe extern "system" fn PsGetCurrentThread() -> PETHREAD {
     ntkrnl_sys::inline::common::PsGetCurrentThread()
 }
 
@@ -2209,11 +2212,10 @@ pub unsafe extern "C" fn KiAcquireProcessLockRaiseToSynch(
     ntkrnl_sys::inline::mm::KiAcquireProcessLockRaiseToSynch(process, handle)
 }
 
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn KiReleaseProcessLock(handle: PKLOCK_QUEUE_HANDLE) {
-    ntkrnl_sys::inline::mm::KiReleaseProcessLock(handle)
-}
+// KiReleaseProcessLock Rust shim REMOVED — the C shim in mm_rust_shims.c
+// provides this symbol. Having both caused a duplicate symbol where the linker
+// could pick the Rust version, whose tail-call codegen was broken on i386
+// (crashed during early boot in KeStartThread → KeReleaseInStackQueuedSpinLock).
 
 // --- Probe helpers (cdecl) ---
 
@@ -2991,17 +2993,18 @@ pub static mut StopChecking: ntkrnl_sys::base::BOOLEAN = 0;
 core::arch::global_asm!(
     ".intel_syntax noprefix",
 
-    // KeEnterCriticalRegion: cdecl = _KeEnterCriticalRegion, stdcall = _KeEnterCriticalRegion@0
-    ".globl _KeEnterCriticalRegion@0",
-    ".set _KeEnterCriticalRegion@0, _KeEnterCriticalRegion",
+    // KeEnterCriticalRegion: now extern "system" = stdcall = _KeEnterCriticalRegion@0 (primary)
+    ".globl _KeEnterCriticalRegion",
+    ".set _KeEnterCriticalRegion, _KeEnterCriticalRegion@0",
 
-    // KeLeaveCriticalRegion: cdecl = _KeLeaveCriticalRegion, stdcall = _KeLeaveCriticalRegion@0
-    ".globl _KeLeaveCriticalRegion@0",
-    ".set _KeLeaveCriticalRegion@0, _KeLeaveCriticalRegion",
+    // KeLeaveCriticalRegion: now extern "system" = stdcall = _KeLeaveCriticalRegion@0 (primary)
+    ".globl _KeLeaveCriticalRegion",
+    ".set _KeLeaveCriticalRegion, _KeLeaveCriticalRegion@0",
 
-    // PsGetCurrentThread: cdecl = _PsGetCurrentThread, stdcall = _PsGetCurrentThread@0
-    ".globl _PsGetCurrentThread@0",
-    ".set _PsGetCurrentThread@0, _PsGetCurrentThread",
+    // PsGetCurrentThread: now extern "system" = stdcall = _PsGetCurrentThread@0 (primary)
+    // Alias cdecl name for any C code that uses cdecl calling convention
+    ".globl _PsGetCurrentThread",
+    ".set _PsGetCurrentThread, _PsGetCurrentThread@0",
 
     // KeEnterGuardedRegion: stdcall = _KeEnterGuardedRegion@0 (definition), cdecl = _KeEnterGuardedRegion (alias)
     ".globl _KeEnterGuardedRegion",
@@ -3010,6 +3013,11 @@ core::arch::global_asm!(
     // KeLeaveGuardedRegion: stdcall = _KeLeaveGuardedRegion@0 (definition), cdecl = _KeLeaveGuardedRegion (alias)
     ".globl _KeLeaveGuardedRegion",
     ".set _KeLeaveGuardedRegion, _KeLeaveGuardedRegion@0",
+
+    // IoGetCurrentProcess: now extern "system" = stdcall = _IoGetCurrentProcess@0 (primary)
+    // Alias cdecl name for any C code that uses cdecl calling convention
+    ".globl _IoGetCurrentProcess",
+    ".set _IoGetCurrentProcess, _IoGetCurrentProcess@0",
 );
 
 // ============================================================================
@@ -3129,11 +3137,13 @@ pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLock(
 
 // ============================================================================
 // IoGetCurrentProcess — macro in C (#define IoGetCurrentProcess PsGetCurrentProcess)
+// Must be extern "system" (NTAPI = stdcall on i386) to match calling convention
+// of ntkrnl-sys extern declarations. Cdecl/stdcall mismatch in same LLVM CGU = UB.
 // ============================================================================
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn IoGetCurrentProcess() -> PEPROCESS {
+pub unsafe extern "system" fn IoGetCurrentProcess() -> PEPROCESS {
     ntkrnl_sys::inline::tier1::PsGetCurrentProcess()
 }
 

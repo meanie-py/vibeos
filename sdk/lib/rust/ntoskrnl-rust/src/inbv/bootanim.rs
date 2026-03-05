@@ -45,15 +45,11 @@ const MM_READONLY: ULONG_PTR = 1;
 const MM_READWRITE: ULONG_PTR = 4;
 
 extern "C" {
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
-}
-
-extern "C" {
     static mut InbvBootDriverInstalled: BOOLEAN;
     static mut SharedUserData: *mut u8;
-    static mut KeBootTime: LARGE_INTEGER;
     static mut ExpInTextModeSetup: BOOLEAN;
 }
+use crate::ke::clock::KeBootTime;
 
 const INBV_DISPLAY_STATE_OWNED: u32 = 0;
 
@@ -114,6 +110,9 @@ extern "system" {
     fn VidBitBlt(Buffer: PUCHAR, X: ULONG, Y: ULONG);
     fn VidBufferToScreenBlt(Buffer: PUCHAR, X: ULONG, Y: ULONG, Width: ULONG, Height: ULONG, Delta: ULONG);
     fn VidScreenToBufferBlt(Buffer: PUCHAR, X: ULONG, Y: ULONG, Width: ULONG, Height: ULONG, Delta: ULONG);
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
 const StorageServer: ULONG = 0;
@@ -701,7 +700,6 @@ pub unsafe extern "system" fn DisplayShutdownText() {
     InbvDisplayString(b"                       \0".as_ptr() as PCSTR);
     InbvDisplayString(b"The system may be powered off now.\r\n\0".as_ptr() as PCSTR);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

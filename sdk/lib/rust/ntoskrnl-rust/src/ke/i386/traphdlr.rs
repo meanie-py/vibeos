@@ -47,7 +47,6 @@ extern "system" {
     #[link_name = "KeGdiFlushUserBatch_call"]
     fn KeGdiFlushUserBatch();
     fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
-    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
     fn VdmDispatchPageFault(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
     fn KdSetOwedBreakpoints();
     // Intrinsics (provided as stdcall asm stubs in ke_rust_shims.c)
@@ -84,7 +83,6 @@ extern "fastcall" {
 extern "fastcall" {
     fn KiEnterTrap(TrapFrame: PKTRAP_FRAME);
     fn KiEnterV86Trap(TrapFrame: PKTRAP_FRAME);
-    fn KiDispatchExceptionFromTrapFrame( ExceptionCode: NTSTATUS, ExceptionFlags: ULONG, ExceptionAddress: ULONG, NumParams: ULONG, Param1: ULONG, Param2: ULONG, Param3: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
     fn KiDispatchException0Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
     fn KiDispatchException1Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, Param1: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
     fn KiDispatchException2Args( ExceptionCode: NTSTATUS, ExceptionAddress: ULONG, Param1: ULONG, Param2: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
@@ -92,6 +90,17 @@ extern "fastcall" {
 }
 extern "system" {
     fn KiSystemCallTrampoline(Handler: PVOID, Arguments: PVOID, StackBytes: ULONG) -> NTSTATUS;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
+}
+extern "system" {
+    fn KiDispatchExceptionFromTrapFrame( ExceptionCode: NTSTATUS, ExceptionFlags: ULONG, ExceptionAddress: ULONG, NumParams: ULONG, Param1: ULONG, Param2: ULONG, Param3: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
 }
 
 static KiTrapPrefixTable: [UCHAR; 11] = [
@@ -534,6 +543,7 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
 
 #[no_mangle]
 pub unsafe extern "C" fn KiTrap08Handler() {
+    // DBG: DOUBLE FAULT!
     _disable();
     let tss = (*KeGetPcr()).TSS;
     let thread = (*((KeGetPcr() as PKIPCR))).PrcbData.CurrentThread;
@@ -591,6 +601,7 @@ pub unsafe extern "fastcall" fn KiTrap0CHandler(TrapFrame: PKTRAP_FRAME) -> ! {
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! {
+    // DBG: #GP
     if KiV86Trap(TrapFrame) != 0 {
         KiEnterV86Trap(TrapFrame);
         if (*(PsGetCurrentProcess() as *mut _EPROCESS)).VdmObjects.is_null() {
@@ -689,12 +700,17 @@ pub unsafe extern "fastcall" fn KiTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! {
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiCheckForSListFault(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
-    if (*TrapFrame).Eip == ExpInterlockedPopEntrySListFault as u32
-        || (*TrapFrame).Eip == KeUserPopEntrySListFault as u32
-    {
+    // Guard: skip KeUserPopEntrySListFault comparison when it's NULL (uninitialized).
+    // Before PsInitializeSystemDlls sets it, KeUserPopEntrySListFault is 0, and any
+    // EIP=0 fault (null function pointer call) would spuriously match the SList check.
+    let is_kernel_slist_fault = (*TrapFrame).Eip == ExpInterlockedPopEntrySListFault as u32;
+    let is_user_slist_fault = !KeUserPopEntrySListFault.is_null()
+        && (*TrapFrame).Eip == KeUserPopEntrySListFault as u32;
+
+    if is_kernel_slist_fault || is_user_slist_fault {
         let slist_header: ULARGE_INTEGER;
         let resume_address: PVOID;
-        if (*TrapFrame).Eip == KeUserPopEntrySListFault as u32 {
+        if is_user_slist_fault {
             slist_header = *((*TrapFrame).Ebp as PULARGE_INTEGER);
             resume_address = KeUserPopEntrySListResume;
         } else {
@@ -747,6 +763,7 @@ pub unsafe extern "fastcall" fn KiTrap0EHandler(TrapFrame: PKTRAP_FRAME) -> ! {
         KdSetOwedBreakpoints();
         KiEoiHelper(TrapFrame);
     }
+    // DBG: MmAccessFault FAILED — emit unique byte 0x01
     if KiVdmTrap(TrapFrame) != 0 {
         if VdmDispatchPageFault(TrapFrame) != 0 {
             KiEoiHelper(TrapFrame);
@@ -980,7 +997,6 @@ pub unsafe extern "fastcall" fn KiCheckForSListAddress(_TrapFrame: PKTRAP_FRAME)
 pub unsafe extern "system" fn Kei386EoiHelper() {
     KeBugCheck(MISMATCHED_HAL);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

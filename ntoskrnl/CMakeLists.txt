@@ -197,7 +197,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/rundown.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sem.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/shutdown.rs
-            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sysinfo.rs
+            # ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/sysinfo.rs  # kept in C
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/time.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/timer.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ex/uuid.rs

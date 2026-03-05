@@ -7,6 +7,8 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::macros::NtCurrentProcess;
+use crate::ke::clock::KeMaximumIncrement;
+use crate::ke::processor::KeActiveProcessors;
 
 // PROCESSINFOCLASS / THREADINFOCLASS type aliases
 type PROCESSINFOCLASS = _PROCESSINFOCLASS;
@@ -95,8 +97,6 @@ extern "C" {
     static SeTcbPrivilege: LUID;
     static SeIncreaseBasePriorityPrivilege: LUID;
     static SeAssignPrimaryTokenPrivilege: LUID;
-    static mut KeMaximumIncrement: ULONG;
-    static mut KeActiveProcessors: KAFFINITY;
     static mut PspDefaultQuotaBlock: _EPROCESS_QUOTA_BLOCK;
     static PsProcessInfoClass: INFORMATION_CLASS_INFO;
     static PsThreadInfoClass: INFORMATION_CLASS_INFO;
@@ -111,7 +111,6 @@ extern "system" {
     fn PspSetPrimaryToken(process: PEPROCESS, token_handle: HANDLE, previous_mode: *const KPROCESSOR_MODE) -> NTSTATUS;
     fn PspSetQuotaLimits(process: PEPROCESS, unused: ULONG, buffer: PVOID, length: ULONG, mode: KPROCESSOR_MODE) -> NTSTATUS;
     fn PspQueryDescriptorThread(thread: PETHREAD, info: PVOID, length: ULONG, return_length: PULONG) -> NTSTATUS;
-    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 extern "C" {
     fn DefaultQueryInfoBufferCheck(
@@ -141,11 +140,21 @@ extern "C" {
     fn PspClearCrossThreadFlag(thread: *mut _ETHREAD, flag: ULONG);
     fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);
     fn KeLowerIrql(new_irql: KIRQL);
-    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
 extern "C" {
     fn DbgPrint(format: PCHAR, ...) -> ULONG;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+extern "system" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
 // ============================================================================

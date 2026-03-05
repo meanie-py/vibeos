@@ -24,7 +24,6 @@ extern "C" {
         r: HANDLE,
         s: PVOID,
     );
-    fn KeQuerySystemTime(current_time: PVOID);
 
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
@@ -56,6 +55,9 @@ const LPC_DEBUG_EVENT: i16 = 9;
 
 extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
+}
+extern "system" {
+    fn KeQuerySystemTime(current_time: PVOID);
 }
 
 #[no_mangle]
@@ -425,7 +427,6 @@ pub unsafe extern "system" fn DbgkUnMapViewOfSection(BaseAddress: PVOID) {
 
     DbgkpSendApiMessage(&mut api_message, 1u8);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

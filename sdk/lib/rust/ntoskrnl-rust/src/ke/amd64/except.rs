@@ -1,6 +1,6 @@
 use crate::ke::ke_defs::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::STATUS_ACCESS_VIOLATION;
+use ntkrnl_sys::constants::{STATUS_ACCESS_VIOLATION, STATUS_BREAKPOINT};
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::macros::NtCurrentProcess;
 use ntkrnl_sys::rtl::*;
@@ -432,6 +432,23 @@ pub unsafe extern "system" fn KiDispatchException(
             return;
         }
         
+        // DUMMY_PSEH: SEH handlers are dead code, so kernel-mode exceptions
+        // that would normally be caught by __try/__except go unhandled.
+        // For STATUS_BREAKPOINT (INT 3 from DbgBreakPoint/RtlAssert): skip
+        // the breakpoint and continue.  Rip was decremented above; restore
+        // it past the INT 3 byte so execution continues after the assert.
+        if (*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT {
+            Context.Rip += 1;
+            KeContextToTrapFrame(
+                core::ptr::addr_of_mut!(Context),
+                ExceptionFrame,
+                TrapFrame,
+                Context.ContextFlags,
+                PreviousMode,
+            );
+            return;
+        }
+
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
             (*ExceptionRecord).ExceptionCode as ULONG_PTR,

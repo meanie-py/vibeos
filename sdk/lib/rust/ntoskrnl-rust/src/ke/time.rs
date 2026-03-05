@@ -8,29 +8,26 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::interlocked::*;
 
 use ntkrnl_sys::ddk::{
-    _KTRAP_FRAME, _KTHREAD, _KUSER_SHARED_DATA,
+    _KTRAP_FRAME, _KTHREAD, _KUSER_SHARED_DATA, _KTIMER_TABLE_ENTRY,
     PKTRAP_FRAME, PKTHREAD, PKPRCB,
     KSYSTEM_TIME, ULARGE_INTEGER,
     HalRequestSoftwareInterrupt,
 };
 
-static mut KiTickOffset: LONG = 0;
 #[no_mangle]
 pub static mut KeTimeAdjustment: ULONG = 0;
-static mut KiTimeAdjustmentEnabled: BOOLEAN = 0u8;
+#[no_mangle]
+pub static mut KiTimeAdjustmentEnabled: BOOLEAN = 0u8;
 
 extern "C" {
     static SharedUserData: *mut u8;
-    static mut KeTickCount: KSYSTEM_TIME;
-    static mut KeMaximumIncrement: ULONG;
-    static KiTimerTableListHead: *mut u8;
     static KdDebuggerEnabled: BOOLEAN;
-    static mut KiAdjustDpcThreshold: ULONG;
-    static mut KiIdealDpcRate: ULONG;
-    static mut KiMaximumDpcQueueDepth: LONG;
-    static mut KiDPCTimeout: ULONG;
     fn DbgPrint(format: *const i8, ...) -> ULONG;
 }
+// Use actual definitions from sibling modules, not extern declarations (lto=false splits them)
+// KiTimerTableListHead, KiAdjustDpcThreshold, KiMaximumDpcQueueDepth come via ke_defs re-exports
+use super::clock::{KiTickOffset, KeTickCount, KeMaximumIncrement};
+use super::dpc::{KiIdealDpcRate, KiDPCTimeout};
 extern "system" {
     fn KdPollBreakIn() -> BOOLEAN;
     fn DbgBreakPointWithStatus(Status: ULONG);
@@ -40,11 +37,6 @@ const TIMER_TABLE_SIZE: usize = 256;
 const CLOCK_QUANTUM_DECREMENT: i8 = 3;
 const DBG_STATUS_CONTROL_C: ULONG = 1;
 const EFLAGS_V86_MASK: ULONG = 0x00020000;
-
-#[repr(C)]
-struct TIMER_ENTRY {
-    Time: LARGE_INTEGER,
-}
 
 #[cfg(target_arch = "x86")]
 extern "C" {
@@ -61,13 +53,16 @@ unsafe fn KiWriteSystemTime(SystemTime: *mut KSYSTEM_TIME, NewTime: ULARGE_INTEG
     #[cfg(target_pointer_width = "64")]
     {
         *(SystemTime as *mut u64) = NewTime.QuadPart;
+        (*SystemTime).High2Time = NewTime.__bindgen_anon_1.HighPart as i32;
     }
     #[cfg(target_pointer_width = "32")]
     {
+        // Write order must be: High1Time, LowPart, High2Time (matching C code)
+        // This allows readers to detect torn reads by comparing High1Time == High2Time
         (*SystemTime).High1Time = NewTime.__bindgen_anon_1.HighPart as i32;
         (*SystemTime).LowPart = NewTime.__bindgen_anon_1.LowPart;
+        (*SystemTime).High2Time = NewTime.__bindgen_anon_1.HighPart as i32;
     }
-    (*SystemTime).High2Time = NewTime.__bindgen_anon_1.HighPart as i32;
 }
 
 #[inline(always)]
@@ -77,9 +72,8 @@ unsafe fn KiCheckForTimerExpiration(
     InterruptTime: ULARGE_INTEGER,
 ) {
     let Hand = (*(core::ptr::addr_of!(KeTickCount) as *const KSYSTEM_TIME)).LowPart & ((TIMER_TABLE_SIZE - 1) as u32);
-    let timer_entry = (KiTimerTableListHead as *const TIMER_ENTRY).add(Hand as usize);
-    
-    if (*timer_entry).Time.QuadPart <= InterruptTime.QuadPart as i64 {
+
+    if KiTimerTableListHead[Hand as usize].Time.QuadPart <= InterruptTime.QuadPart {
         if (*Prcb).TimerRequest == 0 {
             (*Prcb).TimerRequest = TrapFrame as usize as _;
             (*Prcb).TimerHand = Hand as _;
@@ -128,6 +122,7 @@ unsafe fn KeUpdateSystemTimeImpl(
     }
 
     let shared_interrupt_time = (SharedUserData as usize + core::mem::offset_of!(_KUSER_SHARED_DATA, InterruptTime)) as *mut u64;
+
     InterruptTime.QuadPart = *shared_interrupt_time;
     InterruptTime.QuadPart += Increment as u64;
     KiWriteSystemTime(
@@ -253,7 +248,6 @@ pub unsafe extern "system" fn KeUpdateRunTime(
         HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

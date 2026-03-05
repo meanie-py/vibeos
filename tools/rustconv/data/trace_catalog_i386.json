@@ -1,0 +1,613 @@
+{
+  "version": 1,
+  "arch": "i386",
+  "trace_points": [
+    {
+      "char": "@",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 991,
+      "description": "trace '@' in KiSystemStartup"
+    },
+    {
+      "char": "a",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1039,
+      "description": "trace 'a' in KiSystemStartup"
+    },
+    {
+      "char": "b",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1046,
+      "description": "trace 'b' in KiSystemStartup"
+    },
+    {
+      "char": "c",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1049,
+      "description": "trace 'c' in KiSystemStartup"
+    },
+    {
+      "char": "d",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1068,
+      "description": "trace 'd' in KiSystemStartup"
+    },
+    {
+      "char": "e",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1070,
+      "description": "trace 'e' in KiSystemStartup"
+    },
+    {
+      "char": "1",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1074,
+      "description": "trace '1' in KiSystemStartup"
+    },
+    {
+      "char": "2",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1104,
+      "description": "trace '2' in KiSystemStartup"
+    },
+    {
+      "char": "3",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1118,
+      "description": "trace '3' in KiSystemStartup"
+    },
+    {
+      "char": "4",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1123,
+      "description": "trace '4' in KiSystemStartup"
+    },
+    {
+      "char": "A",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 549,
+      "description": "trace 'A' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 556,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "B",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 563,
+      "description": "trace 'B' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 566,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "C",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 570,
+      "description": "trace 'C' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 574,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "D",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 578,
+      "description": "trace 'D' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "[",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 373,
+      "description": "trace '[' in KiGetFeatureBits"
+    },
+    {
+      "char": "]",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 375,
+      "description": "trace ']' in KiGetFeatureBits"
+    },
+    {
+      "char": "{",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 530,
+      "description": "trace '{' in KiGetFeatureBits"
+    },
+    {
+      "char": "}",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 539,
+      "description": "trace '}' in KiGetFeatureBits"
+    },
+    {
+      "char": "<",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 621,
+      "description": "trace '<' in KiGetFeatureBits"
+    },
+    {
+      "char": ">",
+      "function": "KiGetFeatureBits",
+      "file": "ke/i386/cpu.rs",
+      "line": 630,
+      "description": "trace '>' in KiGetFeatureBits"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 582,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 587,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "E",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 591,
+      "description": "trace 'E' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 595,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "F",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 599,
+      "description": "trace 'F' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "G",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 605,
+      "description": "trace 'G' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "!",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 607,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "H",
+      "function": "KiVerifyCpuFeatures",
+      "file": "ke/i386/kiinit.rs",
+      "line": 611,
+      "description": "trace 'H' in KiVerifyCpuFeatures"
+    },
+    {
+      "char": "5",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1126,
+      "description": "trace '5' in KiSystemStartup"
+    },
+    {
+      "char": "6",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1129,
+      "description": "trace '6' in KiSystemStartup"
+    },
+    {
+      "char": "f",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1134,
+      "description": "trace 'f' in KiSystemStartup"
+    },
+    {
+      "char": "g",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1136,
+      "description": "trace 'g' in KiSystemStartup"
+    },
+    {
+      "char": "h",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1138,
+      "description": "trace 'h' in KiSystemStartup"
+    },
+    {
+      "char": "i",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1147,
+      "description": "trace 'i' in KiSystemStartup"
+    },
+    {
+      "char": "j",
+      "function": "KiSystemStartup",
+      "file": "ke/i386/kiinit.rs",
+      "line": 1150,
+      "description": "trace 'j' in KiSystemStartup"
+    },
+    {
+      "char": "D",
+      "function": "KiSystemStartupBootStack",
+      "file": "ke/i386/kiinit.rs",
+      "line": 954,
+      "description": "trace 'D' in KiSystemStartupBootStack"
+    },
+    {
+      "char": "W",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 631,
+      "description": "trace 'W' in KiInitializeKernel"
+    },
+    {
+      "char": "X",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 636,
+      "description": "trace 'X' in KiInitializeKernel"
+    },
+    {
+      "char": "Y",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 678,
+      "description": "trace 'Y' in KiInitializeKernel"
+    },
+    {
+      "char": "Z",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 683,
+      "description": "trace 'Z' in KiInitializeKernel"
+    },
+    {
+      "char": "!",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 695,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "#",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 700,
+      "description": "trace '#' in KiInitializeKernel"
+    },
+    {
+      "char": "a",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 706,
+      "description": "trace 'a' in KiInitializeKernel"
+    },
+    {
+      "char": "b",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 730,
+      "description": "trace 'b' in KiInitializeKernel"
+    },
+    {
+      "char": "c",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 735,
+      "description": "trace 'c' in KiInitializeKernel"
+    },
+    {
+      "char": "d",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 741,
+      "description": "trace 'd' in KiInitializeKernel"
+    },
+    {
+      "char": "e",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 746,
+      "description": "trace 'e' in KiInitializeKernel"
+    },
+    {
+      "char": "f",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 763,
+      "description": "trace 'f' in KiInitializeKernel"
+    },
+    {
+      "char": "g",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 776,
+      "description": "trace 'g' in KiInitializeKernel"
+    },
+    {
+      "char": "E",
+      "function": "KiInitializeKernel",
+      "file": "ke/i386/kiinit.rs",
+      "line": 860,
+      "description": "trace 'E' in KiInitializeKernel"
+    },
+    {
+      "char": "X",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 826,
+      "description": "trace 'X' in ExpInitializeExecutive"
+    },
+    {
+      "char": "Y",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 877,
+      "description": "trace 'Y' in ExpInitializeExecutive"
+    },
+    {
+      "char": "Z",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 884,
+      "description": "trace 'Z' in ExpInitializeExecutive"
+    },
+    {
+      "char": "~",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 887,
+      "description": "trace '~' in ExpInitializeExecutive"
+    },
+    {
+      "char": "+",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 895,
+      "description": "trace '+' in ExpInitializeExecutive"
+    },
+    {
+      "char": "%",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 931,
+      "description": "trace '%' in ExpInitializeExecutive"
+    },
+    {
+      "char": "^",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 934,
+      "description": "trace '^' in ExpInitializeExecutive"
+    },
+    {
+      "char": "&",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 937,
+      "description": "trace '&' in ExpInitializeExecutive"
+    },
+    {
+      "char": "!",
+      "function": "ExpInitializeExecutive",
+      "file": "ex/init.rs",
+      "line": 951,
+      "description": "error/bugcheck"
+    },
+    {
+      "char": "[",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1476,
+      "description": "trace '[' in MmArmInitSystem"
+    },
+    {
+      "char": "]",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1497,
+      "description": "trace ']' in MmArmInitSystem"
+    },
+    {
+      "char": "\\",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1533,
+      "description": "trace '\\' in MmArmInitSystem"
+    },
+    {
+      "char": "(",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1536,
+      "description": "trace '(' in MmArmInitSystem"
+    },
+    {
+      "char": ")",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1548,
+      "description": "trace ')' in MmArmInitSystem"
+    },
+    {
+      "char": "q",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1556,
+      "description": "trace 'q' in MmArmInitSystem"
+    },
+    {
+      "char": "r",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1573,
+      "description": "trace 'r' in MmArmInitSystem"
+    },
+    {
+      "char": "s",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1609,
+      "description": "trace 's' in MmArmInitSystem"
+    },
+    {
+      "char": "_",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1648,
+      "description": "trace '_' in MmArmInitSystem"
+    },
+    {
+      "char": "|",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1660,
+      "description": "trace '|' in MmArmInitSystem"
+    },
+    {
+      "char": ">",
+      "function": "MmArmInitSystem",
+      "file": "ARM3/mminit.rs",
+      "line": 1663,
+      "description": "trace '>' in MmArmInitSystem"
+    },
+    {
+      "char": "0",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 296,
+      "description": "trace '0' in MiInitMachineDependent"
+    },
+    {
+      "char": "1",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 298,
+      "description": "trace '1' in MiInitMachineDependent"
+    },
+    {
+      "char": "2",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 325,
+      "description": "trace '2' in MiInitMachineDependent"
+    },
+    {
+      "char": "3",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 356,
+      "description": "trace '3' in MiInitMachineDependent"
+    },
+    {
+      "char": "4",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 418,
+      "description": "trace '4' in MiInitMachineDependent"
+    },
+    {
+      "char": "5",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 422,
+      "description": "trace '5' in MiInitMachineDependent"
+    },
+    {
+      "char": "6",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 425,
+      "description": "trace '6' in MiInitMachineDependent"
+    },
+    {
+      "char": "7",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 428,
+      "description": "trace '7' in MiInitMachineDependent"
+    },
+    {
+      "char": "8",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 430,
+      "description": "trace '8' in MiInitMachineDependent"
+    },
+    {
+      "char": "9",
+      "function": "MiInitMachineDependent",
+      "file": "i386/init.rs",
+      "line": 435,
+      "description": "trace '9' in MiInitMachineDependent"
+    }
+  ],
+  "hex_dump_delimiters": [
+    {
+      "open": "[",
+      "close": "]",
+      "function": "KiGetFeatureBits",
+      "description": "CPU vendor"
+    },
+    {
+      "open": "{",
+      "close": "}",
+      "function": "KiGetFeatureBits",
+      "description": "CpuFeatures"
+    },
+    {
+      "open": "<",
+      "close": ">",
+      "function": "KiGetFeatureBits",
+      "description": "FeatureBits"
+    },
+    {
+      "open": "(",
+      "close": ")",
+      "function": "MmArmInitSystem",
+      "description": "MmHighSectionBase setup"
+    }
+  ]
+}

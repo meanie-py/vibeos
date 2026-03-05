@@ -58,19 +58,38 @@ pub static mut SetSystemStateCallback: PCALLBACK_OBJECT = core::ptr::null_mut();
 #[no_mangle]
 pub static mut PowerStateCallback: PCALLBACK_OBJECT = core::ptr::null_mut();
 
+// Wide string literals for callback names (UTF-16LE)
+static CALLBACK_NAME_SET_SYSTEM_TIME: [u16; 24] = [
+    b'\\' as u16, b'C' as u16, b'a' as u16, b'l' as u16, b'l' as u16, b'b' as u16, b'a' as u16,
+    b'c' as u16, b'k' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b't' as u16, b'S' as u16,
+    b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'T' as u16, b'i' as u16,
+    b'm' as u16, b'e' as u16, 0u16,
+]; // L"\\Callback\\SetSystemTime"
+static CALLBACK_NAME_SET_SYSTEM_STATE: [u16; 25] = [
+    b'\\' as u16, b'C' as u16, b'a' as u16, b'l' as u16, b'l' as u16, b'b' as u16, b'a' as u16,
+    b'c' as u16, b'k' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b't' as u16, b'S' as u16,
+    b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'S' as u16, b't' as u16,
+    b'a' as u16, b't' as u16, b'e' as u16, 0u16,
+]; // L"\\Callback\\SetSystemState"
+static CALLBACK_NAME_POWER_STATE: [u16; 21] = [
+    b'\\' as u16, b'C' as u16, b'a' as u16, b'l' as u16, b'l' as u16, b'b' as u16, b'a' as u16,
+    b'c' as u16, b'k' as u16, b'\\' as u16, b'P' as u16, b'o' as u16, b'w' as u16, b'e' as u16,
+    b'r' as u16, b'S' as u16, b't' as u16, b'a' as u16, b't' as u16, b'e' as u16, 0u16,
+]; // L"\\Callback\\PowerState"
+
 static mut ExpInitializeCallback: [SYSTEM_CALLBACKS; 4] = unsafe {
     [
         SYSTEM_CALLBACKS {
             CallbackObject: core::ptr::addr_of_mut!(SetSystemTimeCallback),
-            Name: b"\\Callback\\SetSystemTime\0".as_ptr() as *const u16,
+            Name: CALLBACK_NAME_SET_SYSTEM_TIME.as_ptr(),
         },
         SYSTEM_CALLBACKS {
             CallbackObject: core::ptr::addr_of_mut!(SetSystemStateCallback),
-            Name: b"\\Callback\\SetSystemState\0".as_ptr() as *const u16,
+            Name: CALLBACK_NAME_SET_SYSTEM_STATE.as_ptr(),
         },
         SYSTEM_CALLBACKS {
             CallbackObject: core::ptr::addr_of_mut!(PowerStateCallback),
-            Name: b"\\Callback\\PowerState\0".as_ptr() as *const u16,
+            Name: CALLBACK_NAME_POWER_STATE.as_ptr(),
         },
         SYSTEM_CALLBACKS {
             CallbackObject: core::ptr::null_mut(),

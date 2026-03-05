@@ -16,43 +16,27 @@ use ntkrnl_sys::ddk::{
     _KTIMER_TABLE_ENTRY, _KNODE,
 };
 
+// Most globals now come via ke_defs re-exports (KiTimerExpireDpc, KiProfileLock, etc.)
+// Only declare symbols NOT already in ke_defs or from C-only sources
+use crate::ke::clock::KeMaximumIncrement;
+use crate::ke::timerobj::{KiTimeIncrementReciprocal, KiTimeIncrementShiftCount};
+use crate::ke::procobj::KiProcessListHead;
+use crate::ke::krnlinit::{KiServiceLimit, KeFeatureBits};
+use crate::ke::thrdschd::KiIdleSummary;
+use crate::ke::bug::{KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead, BugCheckCallbackLock};
+use crate::ke::krnlinit::{KeLoaderBlock, KeNodeBlock};
 extern "C" {
     static mut MainSSDT: [usize; 0];
     static mut MainSSPT: [u8; 0];
     static mut RtlpUse16ByteSLists: BOOLEAN;
-    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
-    static mut KeNodeBlock: [*mut ntkrnl_sys::ddk::_KNODE; 0];
-    static mut KeFeatureBits: u64;
-    static mut KeBugcheckCallbackListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KeBugcheckReasonCallbackListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut BugCheckCallbackLock: KSPIN_LOCK;
-    static mut KiTimerExpireDpc: _KDPC;
-    static mut KiProfileLock: KSPIN_LOCK;
-    static mut KiProfileListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KiProfileSourceListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KiTimerTableListHead: [_KTIMER_TABLE_ENTRY; 0];
-    static mut KiSwapEvent: _KEVENT;
-    static mut KiProcessInSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KiProcessOutSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KiStackInSwapListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KiGenericCallDpcMutex: _FAST_MUTEX;
-    static mut KeServiceDescriptorTable: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KeServiceDescriptorTableShadow: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KiServiceLimit: ULONG;
-    static mut KiProcessListHead: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut KeMaximumIncrement: ULONG;
-    static mut KiTimeIncrementReciprocal: DdkLargeInteger;
-    static mut KiTimeIncrementShiftCount: UCHAR;
-    static mut KiMaximumDpcQueueDepth: ULONG;
-    static mut KiMinimumDpcRate: ULONG;
-    static mut KiAdjustDpcThreshold: ULONG;
-    static mut KiIdleSummary: u64;
     fn KiCpuId(CpuInfo: *mut CPU_INFO, function: ULONG);
     fn __rdtsc() -> u64;
-    fn PoInitializePrcb(Prcb: PKPRCB);
     fn KiGetCacheInformation();
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     fn _enable();
+}
+extern "system" {
+    fn PoInitializePrcb(Prcb: PKPRCB);
 }
 
 const KF_RDTSC: ULONG = 0x00000002;
@@ -308,7 +292,6 @@ pub unsafe extern "system" fn KiInitializeKernel(
     }
     (*Prcb).DpcStack = DpcStack;
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

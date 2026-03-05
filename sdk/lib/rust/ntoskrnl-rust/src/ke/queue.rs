@@ -29,16 +29,26 @@ extern "C" {
     fn KxInsertTimer(Timer: PKTIMER, Hand: ULONG);
 }
 
-extern "C" {
-    static mut KeNumberProcessors: ULONG;
-}
+use super::processor::KeNumberProcessors;
 
 const TIMER_WAIT_BLOCK: usize = 3;
 const IO_NO_INCREMENT: i32 = 0;
 const QueueObject: u8 = 4;
 
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KiActivateWaiterQueue(Queue: PKQUEUE) {
+    KiActivateWaiterQueueImpl(Queue)
+}
+
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiActivateWaiterQueue(Queue: PKQUEUE) {
+    KiActivateWaiterQueueImpl(Queue)
+}
+
+#[inline(always)]
+unsafe fn KiActivateWaiterQueueImpl(Queue: PKQUEUE) {
     let mut QueueEntry: PLIST_ENTRY;
     let mut WaitEntry: PLIST_ENTRY;
     let mut WaitBlock: PKWAIT_BLOCK;
@@ -129,7 +139,7 @@ pub unsafe extern "system" fn KeInitializeQueue(
     InitializeListHead(core::ptr::addr_of_mut!((*Queue).ThreadListHead) as PLIST_ENTRY);
 
     (*Queue).CurrentCount = 0;
-    (*Queue).MaximumCount = if Count == 0 { KeNumberProcessors } else { Count };
+    (*Queue).MaximumCount = if Count == 0 { KeNumberProcessors as ULONG } else { Count };
 }
 
 #[no_mangle]

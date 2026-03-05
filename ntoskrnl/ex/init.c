@@ -993,7 +993,7 @@ ExpInitializeExecutive(IN ULONG Cpu,
         if (!HalInitSystem(ExpInitializationPhase, LoaderBlock))
         {
             /* Initialization failed */
-            KeBugCheck(HAL_INITIALIZATION_FAILED);
+            KeBugCheckEx(HAL_INITIALIZATION_FAILED, 1, 0, 0, 0);
         }
 
         /* We're done */
@@ -1086,7 +1086,7 @@ ExpInitializeExecutive(IN ULONG Cpu,
     if (!HalInitSystem(ExpInitializationPhase, LoaderBlock))
     {
         /* HAL failed to initialize, bugcheck */
-        KeBugCheck(HAL_INITIALIZATION_FAILED);
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 2, 0, 0, 0);
     }
 
     /* Make sure interrupts are active now */

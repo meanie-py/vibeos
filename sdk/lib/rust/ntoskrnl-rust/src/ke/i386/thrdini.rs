@@ -101,7 +101,8 @@ extern "fastcall" {
 }
 
 const KTRAP_FRAME_LENGTH: usize = core::mem::size_of::<_KTRAP_FRAME>();
-const NPX_FRAME_LENGTH: usize = 16;
+// NPX_FRAME_LENGTH == sizeof(FX_SAVE_AREA) per C_ASSERT in ke.h
+const NPX_FRAME_LENGTH: usize = core::mem::size_of::<_FX_SAVE_AREA>();
 const RPL_MASK: u32 = 3;
 const EXCEPTION_CHAIN_END: PVOID = (-1isize) as PVOID;
 const USER_MODE: i8 = 1;
@@ -246,10 +247,12 @@ pub unsafe extern "system" fn KiInitializeContextThread(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KiIdleLoop() -> ! {
+pub unsafe extern "C" fn KiIdleLoop() -> ! {
     let Prcb = KeGetCurrentPrcb();
     let mut OldThread: PKTHREAD;
     let mut NewThread: PKTHREAD;
+
+    // DBG: KiIdleLoop entered
 
     loop {
         _enable();
@@ -266,6 +269,8 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
         }
 
         if !(*Prcb).NextThread.is_null() {
+            // DBG: KiIdleLoop dispatching thread
+
             _enable();
 
             OldThread = (*Prcb).CurrentThread;
@@ -279,7 +284,11 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
             #[cfg(feature = "smp")]
             KfRaiseIrql(0x0Cu8);
 
+            // DBG: about to KiSwapContext
+
             KiSwapContext(APC_LEVEL, OldThread);
+
+            // DBG: returned from KiSwapContext
 
             #[cfg(feature = "smp")]
             KeLowerIrql(DISPATCH_LEVEL);
@@ -295,6 +304,8 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
     OldThread: PKTHREAD,
     SwitchFrame: *mut KSWITCHFRAME,
 ) -> BOOLEAN {
+    // DBG: KiSwapContextExit entered
+
     let Pcr = KeGetPcr() as PKIPCR;
     let OldProcess: PKPROCESS;
     let NewProcess: PKPROCESS;
@@ -323,6 +334,8 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
         __writecr3((*NewProcess).DirectoryTableBase[0] as ULONG_PTR);
     }
 
+    // DBG: after process/CR3 check
+
     Ke386SetGs(0);
 
     KiSetTebBase(
@@ -330,12 +343,45 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
         core::ptr::addr_of_mut!((*(*NewThread).Teb).NtTib) as PVOID,
     );
 
+    // DBG: after KiSetTebBase
+
     (*(*Pcr).TSS).Esp0 = (*NewThread).InitialStack as ULONG;
-    if ((*KeGetTrapFrame(NewThread)).EFlags & EFLAGS_V86_MASK) == 0 {
+
+    // DBG: after TSS Esp0 = InitialStack
+
+    // DBG: 0x92 = about to call KeGetTrapFrame
+    let trap_frame = KeGetTrapFrame(NewThread);
+    // DBG: 0x93 = KeGetTrapFrame returned, dump trap_frame ptr as hex
+    // Dump trap_frame pointer value as hex to debugcon
+    {
+        let val = trap_frame as u32;
+        let hex_chars: [u8; 16] = *b"0123456789abcdef";
+        for i in (0..8).rev() {
+            let nibble = ((val >> (i * 4)) & 0xF) as usize;
+        }
+    }
+    // DBG: 0x94 = trap_frame hex dumped, about to read EFlags
+    // Also dump InitialStack for reference
+    {
+        let val = (*NewThread).InitialStack as u32;
+        let hex_chars: [u8; 16] = *b"0123456789abcdef";
+        for i in (0..8).rev() {
+            let nibble = ((val >> (i * 4)) & 0xF) as usize;
+        }
+    }
+    // DBG: 0x95 = InitialStack dumped, about to read EFlags
+    let eflags = (*trap_frame).EFlags;
+    // DBG: 0x96 = EFlags read OK
+    if (eflags & EFLAGS_V86_MASK) == 0 {
         (*(*Pcr).TSS).Esp0 -= (KTRAP_FRAME_LENGTH - 0x50) as ULONG;
     }
+
+    // DBG: after V86 check
+
     (*(*Pcr).TSS).Esp0 -= NPX_FRAME_LENGTH as ULONG;
     (*(*Pcr).TSS).IoMapBase = (*NewProcess).IopmOffset;
+
+    // DBG: after TSS setup
 
     (*NewThread).ContextSwitches += 1;
 
@@ -350,6 +396,8 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
             0,
         );
     }
+
+    // DBG: KiSwapContextExit returning
 
     if (*NewThread).__bindgen_anon_1.ApcState.KernelApcPending != 0 {
         if (*NewThread).__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable == 0 {
@@ -376,6 +424,8 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
     let Cr0: ULONG_PTR;
     let NewCr0: ULONG_PTR;
 
+    // DBG: KiSwapContextEntry entered
+
     (*SwitchFrame).ApcBypassDisable = (OldThreadAndApcFlag & 3) as BOOLEAN;
     (*SwitchFrame).ExceptionList = (*Pcr).__bindgen_anon_1.NtTib.ExceptionList as PVOID;
 
@@ -390,6 +440,8 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
 
     (*NewThread).SwapBusy = 0u8;
 
+    // DBG: before _disable in KiSwapContextEntry
+
     _disable();
 
     Cr0 = __readcr0();
@@ -399,6 +451,8 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
     if Cr0 != NewCr0 {
         __writecr0(NewCr0);
     }
+
+    // DBG: before KiSwitchThreads
 
     _enable();
     KiSwitchThreads(OldThread, (*NewThread).KernelStack as PKTHREAD);
@@ -449,7 +503,6 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
         KiSwapContext(APC_LEVEL, OldThread);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

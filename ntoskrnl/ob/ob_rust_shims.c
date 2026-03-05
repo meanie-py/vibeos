@@ -224,7 +224,7 @@ void ExRundownCompleted(PEX_RUNDOWN_REF RunRef)
 
 /* --- psfuncs.h --- */
 
-PETHREAD NTAPI PsGetCurrentThread(void)
+PETHREAD PsGetCurrentThread(void)
 {
     return _fi_PsGetCurrentThread();
 }
@@ -397,7 +397,7 @@ EX_FAST_REF ExCompareSwapFastReference(PEX_FAST_REF FastRef,
 
 /* --- ex.h push lock functions --- */
 
-VOID NTAPI ExInitializePushLock(PEX_PUSH_LOCK PushLock)
+VOID ExInitializePushLock(PEX_PUSH_LOCK PushLock)
 {
     _tramp_ExInitializePushLock(PushLock);
 }
@@ -437,7 +437,7 @@ PKPRCB KeGetCurrentPrcb(void)
 
 /* KeQueryInterruptTime: macro on ARM64 and amd64, real function on i386 */
 #if defined(_M_ARM64) || defined(_M_AMD64)
-ULONGLONG NTAPI KeQueryInterruptTime(void)
+ULONGLONG KeQueryInterruptTime(void)
 {
     return _tramp_KeQueryInterruptTime();
 }

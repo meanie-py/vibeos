@@ -79,9 +79,9 @@ extern "system" {
     ) -> NTSTATUS;
     fn ZwUnmapViewOfSection(ProcessHandle: HANDLE, BaseAddress: PVOID) -> NTSTATUS;
     
-    static mut KiProcessorBlock: [*mut _KPRCB; 0];
-
 }
+#[allow(unused_imports)]
+use crate::ke::krnlinit::KiProcessorBlock;
 extern "C" {
     fn KeGetPcr() -> *mut _KPCR;
 }

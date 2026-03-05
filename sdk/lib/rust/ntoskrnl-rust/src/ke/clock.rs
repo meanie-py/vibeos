@@ -33,20 +33,20 @@ pub static mut KeTimeIncrement: ULONG = 0;
 extern "C" {
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
     static mut ExCmosClockIsSane: BOOLEAN;
-    static mut KiTimerTableListHead: [KTIMER_TABLE_ENTRY; 256];
-    static mut KeTimeAdjustment: ULONG;
     fn YieldProcessor();
 }
+// Use actual definitions from sibling modules, not extern declarations (lto=false splits them)
+use super::timerobj::KiTimerTableListHead;
+use super::time::KeTimeAdjustment;
 
 #[no_mangle]
-pub static mut KiTickOffset: ULONG = 0;
+pub static mut KiTickOffset: LONG = 0;
 
 #[repr(C)]
 struct KUSER_SHARED_DATA {
-    _padding1: [u8; 0x14],
-    SystemTime: KSYSTEM_TIME,
-    _padding2: [u8; 0xC],
-    InterruptTime: KSYSTEM_TIME,
+    _padding1: [u8; 0x8],          // TickCountLowDeprecated + TickCountMultiplier
+    InterruptTime: KSYSTEM_TIME,   // offset 0x08
+    SystemTime: KSYSTEM_TIME,      // offset 0x14
 }
 
 #[repr(C)]
@@ -219,7 +219,7 @@ pub unsafe extern "system" fn KeSetTimeIncrement(MaxIncrement: ULONG, MinIncreme
     };
     KeTimeAdjustment = MaxIncrement;
     KeTimeIncrement = MaxIncrement;
-    KiTickOffset = MaxIncrement;
+    KiTickOffset = MaxIncrement as LONG;
 }
 
 

@@ -102,9 +102,9 @@ struct CpuidComponentBits {
     aligned: u32,
 }
 
+use crate::ke::krnlinit::KeFeatureBits;
+use super::stubs::KeXStateLength;
 extern "system" {
-    static mut KeFeatureBits: u32;
-    static mut KeXStateLength: ULONG;
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
 }
 
@@ -280,7 +280,7 @@ unsafe fn ValidateXStateConfig(XState: PXSTATE_CONFIGURATION) {
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn KiInitializeXStateConfiguration(ProcessorNumber: ULONG) {
-    if (KeFeatureBits & KF_XSTATE) == 0 {
+    if (KeFeatureBits & KF_XSTATE as u64) == 0 {
         return;
     }
 
@@ -288,11 +288,11 @@ pub unsafe extern "system" fn KiInitializeXStateConfiguration(ProcessorNumber: U
         KiGetXStateConfiguration(core::ptr::addr_of_mut!((*SharedUserData).xstate));
 
         if (*SharedUserData).xstate.AllFeatureSize == 0 {
-            KeFeatureBits &= !KF_XSTATE;
+            KeFeatureBits &= !(KF_XSTATE as u64);
             return;
         }
 
-        KeXStateLength = (*SharedUserData).xstate.AllFeatureSize;
+        KeXStateLength = (*SharedUserData).xstate.AllFeatureSize as usize;
     } else {
         let mut XState: XSTATE_CONFIGURATION = core::mem::zeroed();
         KiGetXStateConfiguration(&mut XState as PXSTATE_CONFIGURATION);

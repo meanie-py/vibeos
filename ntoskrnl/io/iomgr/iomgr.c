@@ -590,10 +590,20 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Load boot start drivers */
     ARM64_UART_TRACE("[IO] IopInitializeBootDrivers\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'0'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     IopInitializeBootDrivers();
 
     /* Call back drivers that asked for */
     ARM64_UART_TRACE("[IO] IopReinitializeBootDrivers\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'1'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     IopReinitializeBootDrivers();
 
     /* Check if this was a ramdisk boot */
@@ -644,6 +654,11 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* No one should need loader block any longer */
     IopLoaderBlock = NULL;
 
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'2'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     /* Create ARC names for boot devices */
     ARM64_UART_TRACE("[IO] IopCreateArcNames\r\n");
     Status = IopCreateArcNames(LoaderBlock);
@@ -680,9 +695,19 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Load system start drivers */
     ARM64_UART_TRACE("[IO] IopInitializeSystemDrivers\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'3'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     IopInitializeSystemDrivers();
     PnpSystemInit = TRUE;
     ARM64_UART_TRACE("[IO] IopInitializeSystemDrivers done\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'4'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
 
     /* Reinitialize drivers that requested it */
     IopReinitializeDrivers();
@@ -735,6 +760,11 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Load the System DLL and its entrypoints */
     ARM64_UART_TRACE("[IO] PsLocateSystemDll\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'5'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     Status = PsLocateSystemDll();
     if (!NT_SUCCESS(Status))
     {
@@ -751,6 +781,11 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Return success */
     ARM64_UART_TRACE("[IO] IoInitSystem returning TRUE\r\n");
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'6'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
     return TRUE;
 }
 

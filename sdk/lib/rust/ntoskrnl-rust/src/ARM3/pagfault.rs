@@ -12,12 +12,16 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ddk::{KEVENT, KPROCESSOR_MODE, KeAreAllApcsDisabled, KeInitializeEvent, KeIsAttachedProcess, KeWaitForSingleObject, KeZeroPages, KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock, MiDeletePte, MiDereferencePfnAndDropLockCount, MiDetermineUserGlobalPteMask, MiDropLockCount, MiIncrementPageTableReferences, MiInitializePfn, MiIsUserPde, MiIsUserPte, MiLocateAddress, MiLockProcessWorkingSet, MiLockWorkingSet, MiReadPageFile, MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount, MiRemoveZeroPageSafe, MiUnlinkPageFromList, MiUnlockProcessWorkingSet, MiUnlockWorkingSet, PEPROCESS, PETHREAD, PKEVENT, PKPROCESS, PKTRAP_FRAME, PMMSUPPORT, PMMVAD, PTEB, PsGetCurrentThread, ZwAllocateVirtualMemory, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IMAGE_NT_HEADERS, _KEVENT, _KLOCK_QUEUE_HANDLE, _KPRCB, _KTRAP_FRAME, _MMPFN, _MMPTE, _OBJECT_HEADER, _MM_SESSION_SPACE};
 use super::helpers::*;
 
-
-extern "C" {
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-}
 extern "system" {
     fn MmRebalanceMemoryConsumersAndWait();
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 
 const HYDRA_PROCESS: PEPROCESS = 1 as PEPROCESS;
@@ -1637,6 +1641,33 @@ pub unsafe extern "system" fn MmArmAccessFault(
             }
 
             if TempPte.soft_protection() == MM_ZERO_ACCESS as ULONG {
+                // Debugcon trace: dump EIP from trap frame to identify faulting instruction
+                #[cfg(target_arch = "x86")]
+                {
+                    if !TrapInformation.is_null() {
+                        let eip = *((TrapInformation as *const u8).add(104) as *const u32);
+                        let mut s: i32 = 28;
+                        while s >= 0 {
+                            let d = ((eip >> s) & 0xF) as u8;
+                            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+                            s -= 4;
+                        }
+                        // Also dump the faulting address
+                        let mut s2: i32 = 28;
+                        while s2 >= 0 {
+                            let d = ((Address as u32 >> s2) & 0xF) as u8;
+                            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+                            s2 -= 4;
+                        }
+                        // Also dump TempPte.Long for diagnosis
+                        let mut s3: i32 = 28;
+                        while s3 >= 0 {
+                            let d = ((TempPte.Long as u32 >> s3) & 0xF) as u8;
+                            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+                            s3 -= 4;
+                        }
+                    }
+                }
                 KeBugCheckEx(
                     PAGE_FAULT_IN_NONPAGED_AREA,
                     Address as ULONG_PTR,
@@ -2195,7 +2226,6 @@ pub unsafe extern "system" fn MmSetExecuteOptions(ExecuteOptions: ULONG) -> NTST
     KiReleaseProcessLock(&mut ProcessLock as *mut _ as *mut _KLOCK_QUEUE_HANDLE);
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

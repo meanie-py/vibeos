@@ -104,7 +104,7 @@ pub unsafe extern "system" fn CcInitCacheZeroPage() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CcPostDeferredWrites() {
+pub unsafe extern "C" fn CcPostDeferredWrites() {
     let mut to_insert_back: LIST_ENTRY = core::mem::zeroed();
     InitializeListHead(core::ptr::addr_of_mut!(to_insert_back));
 

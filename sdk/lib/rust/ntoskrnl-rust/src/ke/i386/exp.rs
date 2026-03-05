@@ -68,7 +68,6 @@ extern "system" {
     fn KiFlushNPXState(SaveArea: *mut FLOATING_SAVE_AREA);
     fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> KPROCESSOR_MODE;
     fn KdIsThisAKdTrap( ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT, PreviousMode: KPROCESSOR_MODE, ) -> BOOLEAN;
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
     fn __readeflags() -> ULONG;
     fn __writeeflags(Value: ULONG);
     fn _disable();
@@ -77,6 +76,14 @@ extern "system" {
 }
 extern "C" {
     fn KeGetPcr() -> *mut KPCR;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 
 #[repr(C)]
@@ -179,7 +186,7 @@ const DR7_LEGAL: ULONG = 0x0000FFFF;
 
 const EFLAGS_V86_MASK: ULONG = 0x00020000;
 const EFLAGS_IOPL: ULONG = 0x00003000;
-const FRAME_EDITED: ULONG = 0x00000001;
+const FRAME_EDITED: ULONG = 0x0000FFF8;
 const RPL_MASK: ULONG = 0x00000003;
 
 const KGDT_R0_CODE: ULONG = 0x00000008;
@@ -226,7 +233,7 @@ pub unsafe extern "system" fn KeInitExceptions() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KiUpdateDr7(Dr7: ULONG) -> ULONG {
+pub unsafe extern "fastcall" fn KiUpdateDr7(Dr7: ULONG) -> ULONG {
     let debug_mask = (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive as ULONG;
 
     if (debug_mask & DR_MASK(8)) != 0 {
@@ -239,7 +246,7 @@ pub unsafe extern "system" fn KiUpdateDr7(Dr7: ULONG) -> ULONG {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULONG) -> BOOLEAN {
+pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULONG) -> BOOLEAN {
     let mask = if DrMask.is_null() {
         (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive as ULONG
     } else {
@@ -816,6 +823,23 @@ pub unsafe extern "system" fn KiDispatchException(
             return;
         }
 
+        // DUMMY_PSEH: SEH handlers are dead code, so kernel-mode exceptions
+        // that would normally be caught by __try/__except go unhandled.
+        // For STATUS_BREAKPOINT (INT 3 from DbgBreakPoint/RtlAssert): skip
+        // the breakpoint and continue.  EIP was decremented above; restore
+        // it past the INT 3 byte so execution continues after the assert.
+        if (*ExceptionRecord).ExceptionCode as u32 == 0x80000003 {
+            context.Eip = context.Eip.wrapping_add(1);
+            KeContextToTrapFrame(
+                core::ptr::addr_of_mut!(context),
+                ExceptionFrame,
+                TrapFrame,
+                context.ContextFlags,
+                PreviousMode,
+            );
+            return;
+        }
+
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
             (*ExceptionRecord).ExceptionCode as ULONG_PTR,
@@ -1020,7 +1044,6 @@ pub unsafe extern "system" fn KeRaiseUserException(ExceptionCode: NTSTATUS) -> N
 
     old_eip as NTSTATUS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

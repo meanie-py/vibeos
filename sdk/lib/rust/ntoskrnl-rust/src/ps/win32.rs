@@ -11,13 +11,7 @@ extern "C" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 
-extern "C" {
-    // These are C arrays (KSERVICE_TABLE_DESCRIPTOR[SSDT_MAX_ENTRIES]).
-    // We declare as single elements; use addr_of! to get the address
-    // (matching C's array-to-pointer decay).
-    static mut KeServiceDescriptorTable: _KSERVICE_TABLE_DESCRIPTOR;
-    static mut KeServiceDescriptorTableShadow: _KSERVICE_TABLE_DESCRIPTOR;
-}
+use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
 
 const ERROR_NOT_ENOUGH_MEMORY: ULONG = 8;
 #[cfg(target_arch = "x86_64")]
@@ -33,7 +27,7 @@ static mut PspW32ProcessCallout: PKWIN32_PROCESS_CALLOUT = None;
 #[no_mangle]
 static mut PspW32ThreadCallout: PKWIN32_THREAD_CALLOUT = None;
 #[no_mangle]
-static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE = None;
+pub static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE = None;
 
 extern "C" {
     static mut ExpWindowStationObjectParse: PKWIN32_SESSION_CALLOUT;

@@ -14,9 +14,7 @@ use ntkrnl_sys::ddk::{
     KeInitializeEvent, KeWaitForSingleObject,
 };
 
-extern "system" {
-    static mut KeNumberProcessors: i8;
-}
+use crate::ke::processor::KeNumberProcessors;
 
 const IO_NO_INCREMENT: LONG = 0;
 

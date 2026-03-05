@@ -35,6 +35,14 @@ unsafe fn mi_protect_free_non_paged_pool(virtual_address: PVOID, page_count: ULO
         pointer_pte = pointer_pte.add(1);
     }
 
+    // i386: inline TLB flush
+    #[cfg(target_arch = "x86")]
+    {
+        let cr3: u32;
+        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+        core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+    }
+    #[cfg(not(target_arch = "x86"))]
     KeFlushEntireTb(TRUE, TRUE);
 }
 
@@ -336,6 +344,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
 
     // ===== Paged pool path =====
     if (pool_type & BASE_POOL_TYPE_MASK) == PagedPool {
+        // DBG: MiAllocatePoolPages PagedPool entry
+
         // Try S-LIST for single-page allocations
         if size_in_pages == 1 && ExQueryDepthSList(&raw mut MiPagedPoolSListHead) != 0 {
             let base_va = InterlockedPopEntrySList(&raw mut MiPagedPoolSListHead) as PVOID;
@@ -344,8 +354,12 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
             }
         }
 
+        // DBG: before KeAcquireGuardedMutex
+
         // Lock paged pool
         KeAcquireGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);
+
+        // DBG: after KeAcquireGuardedMutex
 
         // Find clear bits in the allocation bitmap
         let mut i = RtlFindClearBitsAndSet(
@@ -353,6 +367,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
             size_in_pages,
             MmPagedPoolInfo.PagedPoolHint,
         );
+
+        // DBG: after RtlFindClearBitsAndSet
 
         if i == 0xFFFFFFFF {
             // Need to expand paged pool
@@ -417,7 +433,7 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                     MiInitializePfnForOtherProcess(
                         page_frame_number,
                         pointer_pde as PMMPTE,
-                        *MmSystemPageDirectory.add(pde_index / PDE_PER_PAGE),
+                        MmSystemPageDirectory[pde_index / PDE_PER_PAGE],
                     );
                 }
 
@@ -466,12 +482,26 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
         let end_alloc = i + size_in_pages - 1;
         RtlSetBit(MmPagedPoolInfo.EndOfPagedPoolBitmap, end_alloc);
 
+        // DBG: before KeReleaseGuardedMutex
+
         KeReleaseGuardedMutex(&raw mut MmPagedPoolMutex as PKGUARDED_MUTEX);
+
+        // DBG: after KeReleaseGuardedMutex
 
         // Calculate VA
         let base_va = (MmPagedPoolStart as usize + ((i as usize) << PAGE_SHIFT)) as PVOID;
 
+        // i386: inline TLB flush (KeFlushEntireTb has a separate crash bug — investigate later)
+        #[cfg(target_arch = "x86")]
+        {
+            let cr3: u32;
+            core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+            core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+        }
+        #[cfg(not(target_arch = "x86"))]
         KeFlushEntireTb(TRUE, TRUE);
+
+        // DBG: after TLB flush
 
         #[cfg(target_arch = "aarch64")]
         {
@@ -521,13 +551,13 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                 pointer_pte = pointer_pte.add(1);
             }
 
+            // DBG: PagedPool MiAllocatePoolPages returning
+
             return base_va;
         }
     }
 
     // ===== Nonpaged pool path =====
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'a', options(nomem, nostack, preserves_flags));
 
     // Try S-LIST for single-page allocations
     if size_in_pages == 1 && ExQueryDepthSList(&raw mut MiNonPagedPoolSListHead) != 0 {
@@ -543,11 +573,7 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
     let last_head =
         (&raw mut MmNonPagedPoolFreeListHead as *mut LIST_ENTRY).add(MI_MAX_FREE_PAGE_LISTS) as PLIST_ENTRY;
 
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'b', options(nomem, nostack, preserves_flags));
     let old_irql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'c', options(nomem, nostack, preserves_flags));
 
     while next_head < last_head {
         let mut next_entry = (*next_head).Flink;

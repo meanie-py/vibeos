@@ -31,12 +31,12 @@ const KEY_READ: u32 = 0x00020019;
 const KEY_WRITE: u32 = 0x00020006;
 
 extern "C" {
-    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForWriteLangId(Address: *mut LANGID);
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
-
-
+extern "system" {
+    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
 
 #[inline]
 fn LANGIDFROMLCID(lcid: LCID) -> LANGID {
@@ -132,7 +132,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
 
     swprintf(
         LocaleIdBuffer.as_mut_ptr(),
-        b"%08lx\0".as_ptr() as *const u16,
+        b"%\00\08\0l\0x\0\0\0".as_ptr() as *const u16,
         LocaleId as ULONG,
     );
 
@@ -231,9 +231,9 @@ unsafe fn ExpGetCurrentUserUILanguage(
     let ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
     static mut KeyName: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 44,
-        MaximumLength: 46,
-        Buffer: b"Control Panel\\Desktop\0".as_ptr() as *mut u16,
+        Length: 42,
+        MaximumLength: 44,
+        Buffer: b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as *mut u16,
     };
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut ValueString: _UNICODE_STRING;
@@ -300,9 +300,9 @@ unsafe fn ExpSetCurrentUserUILanguage(
 ) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
     static mut KeyName: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 44,
-        MaximumLength: 46,
-        Buffer: b"Control Panel\\Desktop\0".as_ptr() as *mut u16,
+        Length: 42,
+        MaximumLength: 44,
+        Buffer: b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as *mut u16,
     };
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut ValueBuffer: [u16; 8] = [0; 8];
@@ -337,7 +337,7 @@ unsafe fn ExpSetCurrentUserUILanguage(
         if Status >= 0 {
             ValueLength = swprintf(
                 ValueBuffer.as_mut_ptr(),
-                b"%04lX\0".as_ptr() as *const u16,
+                b"%\00\04\0l\0X\0\0\0".as_ptr() as *const u16,
                 LanguageId as ULONG,
             ) as ULONG;
 
@@ -427,16 +427,16 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
 
         RtlInitUnicodeString(
             &mut KeyName,
-            b"Control Panel\\International\0".as_ptr() as *const u16,
+            b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0I\0n\0t\0e\0r\0n\0a\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as *const u16,
         );
-        RtlInitUnicodeString(&mut ValueName, b"Locale\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut ValueName, b"L\0o\0c\0a\0l\0e\0\0\0".as_ptr() as *const u16);
     } else {
         RtlInitUnicodeString(
             &mut KeyName,
-            b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Nls\\Language\0"
+            b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0l\0s\0\\\0L\0a\0n\0g\0u\0a\0g\0e\0\0\0"
                 .as_ptr() as *const u16,
         );
-        RtlInitUnicodeString(&mut ValueName, b"Default\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut ValueName, b"D\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16);
     }
 
     ObjectAttributes = _OBJECT_ATTRIBUTES {
@@ -499,13 +499,13 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
                 if UserProfile != 0 {
                     ValueLength = swprintf(
                         ValueBuffer.as_mut_ptr(),
-                        b"%08lx\0".as_ptr() as *const u16,
+                        b"%\00\08\0l\0x\0\0\0".as_ptr() as *const u16,
                         LocalDefaultLocaleId as ULONG,
                     ) as ULONG;
                 } else {
                     ValueLength = swprintf(
                         ValueBuffer.as_mut_ptr(),
-                        b"%04lx\0".as_ptr() as *const u16,
+                        b"%\00\04\0l\0x\0\0\0".as_ptr() as *const u16,
                         (LocalDefaultLocaleId as ULONG) & 0xFFFF,
                     ) as ULONG;
                 }
@@ -572,7 +572,7 @@ pub unsafe extern "system" fn NtQueryDefaultUILanguage(LanguageId: *mut LANGID) 
     let mut SafeLanguageId: LANGID = 0;
 
     let Status = ExpGetCurrentUserUILanguage(
-        b"MultiUILanguageId\0".as_ptr() as *const u16,
+        b"M\0u\0l\0t\0i\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0I\0d\0\0\0".as_ptr() as *const u16,
         &mut SafeLanguageId,
     );
 
@@ -610,13 +610,13 @@ pub unsafe extern "system" fn NtSetDefaultUILanguage(LanguageId: LANGID) -> NTST
 
     if LanguageId != 0 {
         Status = ExpSetCurrentUserUILanguage(
-            b"MUILanguagePending\0".as_ptr() as *const u16,
+            b"M\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0P\0e\0n\0d\0i\0n\0g\0\0\0".as_ptr() as *const u16,
             LanguageId,
         );
     } else {
         let mut LocalLanguageId: LANGID = 0;
         let mut TempStatus = ExpGetCurrentUserUILanguage(
-            b"MUILanguagePending\0".as_ptr() as *const u16,
+            b"M\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0P\0e\0n\0d\0i\0n\0g\0\0\0".as_ptr() as *const u16,
             &mut LocalLanguageId,
         );
         if TempStatus < 0 {
@@ -624,7 +624,7 @@ pub unsafe extern "system" fn NtSetDefaultUILanguage(LanguageId: LANGID) -> NTST
         }
 
         TempStatus = ExpSetCurrentUserUILanguage(
-            b"MultiUILanguageId\0".as_ptr() as *const u16,
+            b"M\0u\0l\0t\0i\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0I\0d\0\0\0".as_ptr() as *const u16,
             LocalLanguageId,
         );
         Status = TempStatus;

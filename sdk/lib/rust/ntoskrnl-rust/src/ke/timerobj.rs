@@ -19,13 +19,13 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
-}
-extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
     fn KxInsertTimer(Timer: PKTIMER, Hand: ULONG);
     fn KxUnwaitThread(object: PVOID, increment: KPRIORITY);
     fn KxUnwaitThreadForEvent(event: PKEVENT, increment: KPRIORITY);
+}
+extern "system" {
+    fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
 // KiInsertTimerTable is defined locally for all architectures below
@@ -45,8 +45,26 @@ pub static mut KiTimeIncrementShiftCount: UCHAR = 0;
 #[no_mangle]
 pub static mut KiEnableTimerWatchdog: BOOLEAN = 0u8;
 
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "system" fn KiInsertTreeTimer(
+pub unsafe extern "fastcall" fn KiInsertTreeTimer(
+    Timer: PKTIMER,
+    Interval: LARGE_INTEGER,
+) -> BOOLEAN {
+    KiInsertTreeTimerImpl(Timer, Interval)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn KiInsertTreeTimer(
+    Timer: PKTIMER,
+    Interval: LARGE_INTEGER,
+) -> BOOLEAN {
+    KiInsertTreeTimerImpl(Timer, Interval)
+}
+
+#[inline(always)]
+unsafe fn KiInsertTreeTimerImpl(
     Timer: PKTIMER,
     Interval: LARGE_INTEGER,
 ) -> BOOLEAN {
@@ -119,7 +137,12 @@ unsafe fn KiInsertTimerTableImpl(
     InsertHeadList(NextEntry, core::ptr::addr_of_mut!((*Timer).TimerListEntry) as PLIST_ENTRY);
 
     if NextEntry == ListHead {
-        super::ke_defs::KiTimerTableListHead[Hand as usize].Time.QuadPart = DueTime;
+        // Use local definition, not ke_defs extern, to ensure same memory as time.rs check
+        KiTimerTableListHead[Hand as usize].Time.QuadPart = DueTime;
+        #[cfg(target_arch = "x86")]
+        {
+            // #V# + Hand byte = timer table Time field updated
+        }
 
         InterruptTime = KeQueryInterruptTime();
         if DueTime <= InterruptTime {
@@ -130,8 +153,20 @@ unsafe fn KiInsertTimerTableImpl(
     Expired
 }
 
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "system" fn KiSignalTimer(Timer: PKTIMER) -> BOOLEAN {
+pub unsafe extern "fastcall" fn KiSignalTimer(Timer: PKTIMER) -> BOOLEAN {
+    KiSignalTimerImpl(Timer)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn KiSignalTimer(Timer: PKTIMER) -> BOOLEAN {
+    KiSignalTimerImpl(Timer)
+}
+
+#[inline(always)]
+unsafe fn KiSignalTimerImpl(Timer: PKTIMER) -> BOOLEAN {
     let mut RequestInterrupt: BOOLEAN = 0u8;
     let Dpc: PKDPC = (*Timer).Dpc;
     let Period: ULONG = (*Timer).Period;
@@ -284,6 +319,11 @@ pub unsafe extern "system" fn KeSetTimerEx(
 
     (*Timer).Dpc = Dpc;
     (*Timer).Period = Period as ULONG;
+    // Trace: #K# = KeSetTimerEx, then Dpc null/non-null flag, Period byte
+    #[cfg(target_arch = "x86")]
+    {
+        let dpc_flag = if Dpc.is_null() { b'0' } else { b'1' };
+    }
     if KiComputeDueTime(Timer, DueTime, &mut Hand) == 0 {
         RequestInterrupt = KiSignalTimer(Timer);
 
@@ -301,7 +341,6 @@ pub unsafe extern "system" fn KeSetTimerEx(
 
     Inserted
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

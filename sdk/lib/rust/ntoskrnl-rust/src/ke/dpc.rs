@@ -5,32 +5,31 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::interlocked::*;
 
 use ntkrnl_sys::ddk::{
-    _KDPC, _KTIMER, _KPRCB, _KPROCESS,
+    _KDPC, _KTIMER, _KPRCB, _KPROCESS, _KTIMER_TABLE_ENTRY,
     PKDPC, PKTIMER, PKPRCB, PKEVENT, PKTHREAD,
     PKDPC_DATA, PKSPIN_LOCK_QUEUE, PLARGE_INTEGER,
     KOBJECTS, KDPC_IMPORTANCE, ULARGE_INTEGER, FAST_MUTEX, KDPC,
+    KAFFINITY,
     HalRequestSoftwareInterrupt, KeDisableInterrupts, KeRestoreInterrupts,
     KeSetSystemAffinityThread, KeRevertToUserAffinityThread,
 };
 
+// Use actual definitions, not extern declarations (lto=false splits them)
+use super::krnlinit::KiProcessorBlock;
+use super::processor::KeNumberProcessors;
+use super::thrdschd::KiIdleSummary;
+use super::clock::KeTickCount;
 extern "system" {
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-    static mut KiProcessorBlock: [*mut _KPRCB; 0];
-    static mut KiTimerTableListHead: [u8; 0];
-    static mut KeNumberProcessors: ULONG;
-    static mut KeTickCount: LARGE_INTEGER;
-    static mut KiIdleSummary: ULONG_PTR;
-    fn KiInsertTreeTimer(Timer: PKTIMER, Interval: LARGE_INTEGER) -> BOOLEAN;
-    fn KiSwapContext(WaitIrql: KIRQL, Thread: PKTHREAD);
-    fn KiProcessDeferredReadyList(Prcb: PKPRCB);
-    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
-    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
-    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
     fn _enable();
     fn _disable();
 }
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiSwapContext(WaitIrql: KIRQL, Thread: PKTHREAD);
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
+    fn KiSwapContext(WaitIrql: KIRQL, Thread: PKTHREAD);
 }
 extern "C" {
     fn KiAcquireDispatcherLock() -> KIRQL;
@@ -49,6 +48,54 @@ extern "C" {
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
 }
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiInsertTreeTimer(Timer: PKTIMER, Interval: LARGE_INTEGER) -> BOOLEAN;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiInsertTreeTimer(Timer: PKTIMER, Interval: LARGE_INTEGER) -> BOOLEAN;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiProcessDeferredReadyList(Prcb: PKPRCB);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiProcessDeferredReadyList(Prcb: PKPRCB);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
+}
+extern "C" {
+    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
+}
+extern "system" {
+    fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
+}
+
+use super::timerobj::KiTimerTableListHead;
 
 const TIMER_TABLE_SIZE: ULONG = 256;
 const MAX_TIMER_DPCS: usize = 16;
@@ -68,7 +115,7 @@ const MediumImportance: KDPC_IMPORTANCE = 1;
 const LowImportance: KDPC_IMPORTANCE = 0;
 
 const WrQuantumEnd: u8 = 28;
-const Standby: u8 = 1;
+const Standby: u8 = 3;
 const Running: u8 = 2;
 
 /// DPC routine type — matches bindgen's PKDEFERRED_ROUTINE (Option<fn>) per-arch.
@@ -116,6 +163,10 @@ pub unsafe extern "system" fn KiTimerExpiration(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    // Trace: 'X' on every KiTimerExpiration call
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("out 0xe9, al", in("al") b'X', options(nomem, nostack, preserves_flags));
+
     let mut SystemTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut InterruptTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
@@ -138,7 +189,9 @@ pub unsafe extern "system" fn KiTimerExpiration(
     _disable();
 
     KeQuerySystemTime(&mut SystemTime as *mut ULARGE_INTEGER as PLARGE_INTEGER);
+
     InterruptTime.QuadPart = KeQueryInterruptTime();
+
     Limit = (core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER).cast::<LONG>().read();
 
     _enable();
@@ -160,17 +213,37 @@ pub unsafe extern "system" fn KiTimerExpiration(
     loop {
         Index = (Index + 1) & ((TIMER_TABLE_SIZE - 1) as LONG);
 
-        ListHead = (core::ptr::addr_of!(KiTimerTableListHead) as *mut u8)
-            .add(Index as usize * core::mem::size_of::<LIST_ENTRY>()) as PLIST_ENTRY;
+        ListHead = core::ptr::addr_of_mut!(KiTimerTableListHead[Index as usize].Entry) as PLIST_ENTRY;
 
+        // 3-byte marker: #L# = checking bucket, then emit Index byte and empty flag
+        #[cfg(target_arch = "x86")]
+        {
+            let empty_flag = if ListHead == (*ListHead).Flink { b'E' } else { b'F' };
+        }
         while ListHead != (*ListHead).Flink {
+
             LockQueue = KiAcquireTimerLock(Index as ULONG);
             NextEntry = (*ListHead).Flink;
 
             Timers -= 1;
             Timer = ((NextEntry as usize) - core::mem::offset_of!(_KTIMER, TimerListEntry)) as PKTIMER;
 
-            if (NextEntry != ListHead) && ((*Timer).DueTime.QuadPart <= InterruptTime.QuadPart) {
+            // Extra trace: C0 before comparison, C1 if NextEntry!=ListHead, C2 before DueTime read
+
+            let next_ne_head = NextEntry != ListHead;
+
+            #[cfg(target_arch = "x86")]
+            if next_ne_head {
+            }
+
+            let timer_expired = if next_ne_head {
+                (*Timer).DueTime.QuadPart <= InterruptTime.QuadPart
+            } else {
+                false
+            };
+
+            if timer_expired {
+
                 ActiveTimers -= 1;
                 KiRemoveEntryTimer(Timer);
 
@@ -180,6 +253,11 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                 TimerDpc = (*Timer).Dpc;
                 Period = (*Timer).Period;
+                // Trace: #P# = reading Dpc from expired timer, then null flag and period byte
+                #[cfg(target_arch = "x86")]
+                {
+                    let dpc_flag = if TimerDpc.is_null() { b'0' } else { b'1' };
+                }
 
                 if !IsListEmpty(&(*Timer).Header.WaitListHead as *const LIST_ENTRY as PLIST_ENTRY) {
                     if (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.Type == TimerNotificationObject as u8 {
@@ -195,6 +273,10 @@ pub unsafe extern "system" fn KiTimerExpiration(
                 }
 
                 if !TimerDpc.is_null() {
+                    // 3-byte marker: #Q# = DPC queued for expired timer
+                    #[cfg(target_arch = "x86")]
+                    {
+                    }
                     DpcEntry[DpcCalls as usize].Dpc = TimerDpc;
                     DpcEntry[DpcCalls as usize].Routine = (*TimerDpc).DeferredRoutine;
                     DpcEntry[DpcCalls as usize].Context = (*TimerDpc).DeferredContext;
@@ -222,12 +304,10 @@ pub unsafe extern "system" fn KiTimerExpiration(
                     KiAcquireDispatcherLock();
                 }
             } else {
+
                 if NextEntry != ListHead {
                     _disable();
-                    let time_ptr = (core::ptr::addr_of!(KiTimerTableListHead) as *mut u8)
-                        .add(Index as usize * core::mem::size_of::<LIST_ENTRY>())
-                        .add(core::mem::size_of::<LIST_ENTRY>()) as *mut i64;
-                    *time_ptr = (*Timer).DueTime.QuadPart as i64;
+                    KiTimerTableListHead[Index as usize].Time.QuadPart = (*Timer).DueTime.QuadPart;
                     _enable();
                 }
 
@@ -268,6 +348,7 @@ pub unsafe extern "system" fn KiTimerExpiration(
     }
 
     if DpcCalls != 0 {
+
         KiReleaseDispatcherLock(DISPATCH_LEVEL);
 
         i = 0;
@@ -288,6 +369,7 @@ pub unsafe extern "system" fn KiTimerExpiration(
     } else {
         KiReleaseDispatcherLock(OldIrql);
     }
+
 }
 
 #[cfg(target_arch = "x86")]
@@ -375,7 +457,7 @@ unsafe fn KiTimerListExpire_body(ExpiredListHead: PLIST_ENTRY, OldIrql: KIRQL) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiQuantumEnd() {
+pub unsafe extern "system" fn KiQuantumEnd() {
     let Prcb: PKPRCB = KeGetCurrentPrcb();
     let mut NextThread: PKTHREAD;
     let Thread: PKTHREAD = (*Prcb).CurrentThread;
@@ -472,6 +554,10 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
         (*Prcb).DpcRoutineActive = 1;
 
         if (*Prcb).TimerRequest != 0 {
+            // 3-byte marker: #S# = TimerRequest found
+            #[cfg(target_arch = "x86")]
+            {
+            }
             TimerHand = (*Prcb).TimerHand as ULONG_PTR;
             (*Prcb).TimerRequest = 0;
 
@@ -614,7 +700,7 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
                 if Prcb != CurrentPrcb {
                     if (((*Dpc).Importance == HighImportance as u8) ||
                         ((*DpcData).DpcQueueDepth >= (*Prcb).MaximumDpcQueueDepth as _)) &&
-                       ((((1usize << Cpu) & KiIdleSummary) == 0) || ((*Prcb).Sleeping != 0))
+                       (((((1 as KAFFINITY) << Cpu) & KiIdleSummary) == 0) || ((*Prcb).Sleeping != 0))
                     {
                         (*Prcb).DpcInterruptRequested = 1;
                         DpcInserted = 1;
@@ -717,7 +803,7 @@ pub unsafe extern "system" fn KeSetTargetProcessorDpc(Dpc: PKDPC, Number: i8) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeGenericCallDpc(Routine: PKDEFERRED_ROUTINE, Context: PVOID) {
-    let mut Barrier: ULONG = KeNumberProcessors;
+    let mut Barrier: ULONG = KeNumberProcessors as ULONG;
     let mut OldIrql: KIRQL = 0;
     let mut ReverseBarrier: DEFERRED_REVERSE_BARRIER = DEFERRED_REVERSE_BARRIER {
         Barrier,
@@ -743,7 +829,6 @@ pub unsafe extern "system" fn KeSignalCallDpcDone(SystemArgument1: PVOID) {
 pub unsafe extern "system" fn KeSignalCallDpcSynchronize(SystemArgument2: PVOID) -> BOOLEAN {
     1u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

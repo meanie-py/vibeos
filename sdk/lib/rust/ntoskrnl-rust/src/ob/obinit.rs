@@ -35,10 +35,10 @@ const THREAD_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF
 const OBJECT_TYPE_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | 0x1;
 const OBJ_OPENLINK: ULONG = 0x00000100;
 
-// Extern globals not in ntkrnl-sys
+// Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::processor::KeNumberProcessors;
+use crate::ke::krnlinit::KiProcessorBlock;
 extern "C" {
-    static mut KeNumberProcessors: i8;
-    static mut KiProcessorBlock: [*mut _KPRCB; 0];
     static mut SePublicDefaultUnrestrictedSd: PVOID; // PSECURITY_DESCRIPTOR
     static mut ObpTypeObjectType: POBJECT_TYPE;
     static mut ObpDefaultObject: ntkrnl_sys::ddk::KEVENT;
@@ -48,7 +48,6 @@ extern "C" {
 extern "system" {
     fn PsInitializeQuotaSystem();
 }
-
 
 /// ExInitializeWorkItem — C macro, inline implementation.
 #[inline]
@@ -379,6 +378,8 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         return 1u8;
     }
 
+    // DBG: ObInitSystem Phase 0 - before ExInitializeSystemLookasideList (NonPaged)
+
     ExInitializeSystemLookasideList(
         core::ptr::addr_of_mut!(ObpCreateInfoLookasideList) as PGENERAL_LOOKASIDE,
         NonPagedPool,
@@ -387,6 +388,8 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         32,
         core::ptr::addr_of_mut!(ExSystemLookasideListHead) as *mut ntkrnl_sys::ddk::_LIST_ENTRY,
     );
+
+    // DBG: before ExInitializeSystemLookasideList (Paged)
 
     ExInitializeSystemLookasideList(
         core::ptr::addr_of_mut!(ObpNameBufferLookasideList) as PGENERAL_LOOKASIDE,
@@ -397,6 +400,8 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         core::ptr::addr_of_mut!(ExSystemLookasideListHead) as *mut ntkrnl_sys::ddk::_LIST_ENTRY,
     );
 
+    // DBG: before PPLookasideList setup
+
     (*prcb).PPLookasideList[LookasideCreateInfoList as usize].L =
         core::ptr::addr_of_mut!(ObpCreateInfoLookasideList) as PGENERAL_LOOKASIDE;
     (*prcb).PPLookasideList[LookasideCreateInfoList as usize].P =
@@ -406,7 +411,11 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
     (*prcb).PPLookasideList[LookasideNameBufferList as usize].P =
         core::ptr::addr_of_mut!(ObpNameBufferLookasideList) as PGENERAL_LOOKASIDE;
 
+    // DBG: before ObpInitSdCache
+
     ObpInitSdCache();
+
+    // DBG: before KeInitializeEvent
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(ObpDefaultObject) as ntkrnl_sys::ddk::PRKEVENT,
@@ -425,10 +434,16 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         core::ptr::null_mut(),
     );
 
+    // DBG: before PsInitializeQuotaSystem
+
     PsInitializeQuotaSystem();
+
+    // DBG: before ExCreateHandleTable
 
     (*(PsGetCurrentProcess() as *mut _EPROCESS)).ObjectTable = ExCreateHandleTable(core::ptr::null_mut());
     ObpKernelHandleTable = (*(PsGetCurrentProcess() as *mut _EPROCESS)).ObjectTable;
+
+    // DBG: before ObCreateObjectType("Type")
 
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!(object_type_initializer) as *mut u8,
@@ -455,6 +470,8 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         core::ptr::addr_of_mut!(ObpTypeObjectType) as *mut POBJECT_TYPE,
     );
 
+    // DBG: before ObCreateObjectType("Directory") - PagedPool
+
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
         b"D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as *const u16,
@@ -472,6 +489,9 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(ObpDirectoryObjectType) as *mut POBJECT_TYPE,
     );
+
+    // DBG: before ObCreateObjectType("SymbolicLink")
+
     (*(ObpDirectoryObjectType as POBJECT_TYPE)).TypeInfo.ValidAccessMask &= !SYNCHRONIZE;
 
     RtlInitUnicodeString(
@@ -489,12 +509,14 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(ObpSymbolicLinkObjectType) as *mut POBJECT_TYPE,
     );
+
+    // DBG: ObInitSystem Phase 0 COMPLETE
+
     (*(ObpSymbolicLinkObjectType as POBJECT_TYPE)).TypeInfo.ValidAccessMask &= !SYNCHRONIZE;
 
     ObpInitializationPhase += 1;
     1u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -22,14 +22,18 @@ extern "system" {
     static mut SeIncreaseQuotaPrivilege: LUID;
 }
 extern "C" {
-    fn KeEnterGuardedRegion();
-    fn KeLeaveGuardedRegion();
     fn InterlockedCompareExchangePointer(
         Destination: *mut PVOID,
         Exchange: PVOID,
         Comparand: PVOID,
     ) -> PVOID;
     fn InterlockedDecrementUL(Addend: *mut ULONG) -> ULONG;
+}
+extern "system" {
+    fn KeEnterGuardedRegion();
+}
+extern "system" {
+    fn KeLeaveGuardedRegion();
 }
 
 const QUOTA_LIMITS_HARDWS_MIN_ENABLE: ULONG = 0x00000001;

@@ -82,8 +82,8 @@ use ntkrnl_sys::ddk::{
     _LOADER_PARAMETER_EXTENSION,
 };
 
+use crate::ke::krnlinit::KeLoaderBlock;
 extern "system" {
-    static mut KeLoaderBlock: *mut _LOADER_PARAMETER_BLOCK;
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PowerStateCallback: PCALLBACK_OBJECT;
     static SeShutdownPrivilege: LUID;
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn PopCleanupPowerState(PowerState: *mut POWER_STATE)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PopSendQuerySystemPowerState(
+pub unsafe extern "C" fn PopSendQuerySystemPowerState(
     DeviceObject: PDEVICE_OBJECT,
     SystemState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
@@ -393,7 +393,7 @@ pub unsafe extern "system" fn PopSendQuerySystemPowerState(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PopSendSetSystemPowerState(
+pub unsafe extern "C" fn PopSendSetSystemPowerState(
     DeviceObject: PDEVICE_OBJECT,
     SystemState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
@@ -656,13 +656,8 @@ pub unsafe extern "system" fn PoInitSystem(BootPhase: ULONG) -> BOOLEAN {
     1
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "fastcall" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
+pub unsafe extern "system" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
 }
 
 #[cfg(target_arch = "x86")]

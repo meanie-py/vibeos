@@ -232,13 +232,15 @@ extern "system" {
     fn _MmSetPageEntrySectionSegment( Segment: PMM_SECTION_SEGMENT, Offset: PLARGE_INTEGER, Entry: ULONG_PTR, file: *const i8, line: i32 ) -> NTSTATUS;
     fn MmCreateArm3Section( SectionObject: *mut PVOID, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES, InputMaximumSize: PLARGE_INTEGER, SectionPageProtection: ULONG, AllocationAttributes: ULONG, FileHandle: HANDLE, FileObject: PFILE_OBJECT ) -> NTSTATUS;
     fn MmMapViewOfArm3Section( SectionObject: PVOID, Process: PEPROCESS, BaseAddress: *mut PVOID, ZeroBits: ULONG_PTR, CommitSize: SIZE_T, SectionOffset: PLARGE_INTEGER, ViewSize: PSIZE_T, InheritDisposition: SECTION_INHERIT, AllocationType: ULONG, Protect: ULONG ) -> NTSTATUS;
-    fn MiMapViewInSystemSpace( Section: PVOID, Session: PVOID, MappedBase: *mut PVOID, ViewSize: PSIZE_T, SectionOffset: PLARGE_INTEGER ) -> NTSTATUS;
     static mut MmSession: MMSESSION;
     static mut MmSectionBasedRoot: RTL_AVL_TABLE;
     static mut MmSubsectionBase: ULONG_PTR;
     static mut MmHighestPhysicalPage: PFN_NUMBER;
     static mut IoFileObjectType: POBJECT_TYPE;
     static mut MmMakeFileAccess: [ACCESS_MASK; 8];
+}
+extern "C" {
+    fn MiMapViewInSystemSpace( Section: PVOID, Session: PVOID, MappedBase: *mut PVOID, ViewSize: PSIZE_T, SectionOffset: PLARGE_INTEGER ) -> NTSTATUS;
 }
 
 const _64K: usize = 64 * 1024;
@@ -1277,8 +1279,6 @@ pub unsafe extern "system" fn MmCreateSection(
     Status
 }
 
-
-
 #[no_mangle]
 pub unsafe extern "system" fn MmArePagesResident(
     Process: *mut _EPROCESS,
@@ -1814,7 +1814,7 @@ extern "system" {
 }
 
 // MmDeleteVirtualMapping is cdecl (no NTAPI qualifier) in page.c
-extern "C" {
+extern "system" {
     fn MmDeleteVirtualMapping(Process: PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut PFN_NUMBER) -> BOOLEAN;
 }
 
@@ -2674,7 +2674,7 @@ unsafe fn ExeFmtpCreateImageSection(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn MmCreateImageSection(
+pub unsafe extern "C" fn MmCreateImageSection(
     SectionObject: *mut PSECTION,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,

@@ -1,4 +1,5 @@
 use super::ke_defs::*;
+use super::timerobj::KiTimerTableListHead; // Shadow ke_defs extern — must use the actual #[no_mangle] definition
 use super::bug::{KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead, BugCheckCallbackLock};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -311,9 +312,12 @@ pub unsafe extern "system" fn KeInitSystem() -> BOOLEAN {
     }
 
     KiInitMachineDependent();
+    // DBG: ~L~ after KiInitMachineDependent returns
+    #[cfg(target_arch = "x86")]
+    {
+    }
     1u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

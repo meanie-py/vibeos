@@ -47,11 +47,9 @@ struct AP_SETUP_STACK {
     KxLoaderBlock: PVOID,
 }
 
+use crate::ke::krnlinit::KeLoaderBlock;
+use crate::ke::processor::{KeMaximumProcessors, KeNumprocSpecified, KeBootprocSpecified};
 extern "system" {
-    static mut KeMaximumProcessors: ULONG;
-    static mut KeNumprocSpecified: ULONG;
-    static mut KeBootprocSpecified: ULONG;
-    static mut KeLoaderBlock: PVOID;
     fn KiInitializePcr( ProcessorNumber: ULONG, Pcr: *mut _KIPCR, Idt: *mut _KIDTENTRY, Gdt: *mut _KGDTENTRY, Tss: *mut _KTSS, Thread: PKTHREAD, DpcStack: PVOID, );
     fn __readeflags() -> ULONG_PTR;
 }
@@ -210,7 +208,7 @@ pub unsafe extern "system" fn KeStartAllProcessors() {
         (*ProcessorState).ContextFrame.Esp = ((*ProcessorState).ContextFrame.Esp as usize 
             - core::mem::size_of::<AP_SETUP_STACK>()) as ULONG;
         let ApStack = (*ProcessorState).ContextFrame.Esp as *mut AP_SETUP_STACK;
-        (*ApStack).KxLoaderBlock = KeLoaderBlock;
+        (*ApStack).KxLoaderBlock = KeLoaderBlock as PVOID;
         (*ApStack).ReturnAddr = core::ptr::null_mut();
 
         *(KeLoaderBlock as *mut ULONG_PTR).offset(0) = KernelStack as ULONG_PTR;

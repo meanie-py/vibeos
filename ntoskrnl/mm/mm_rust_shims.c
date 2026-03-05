@@ -707,7 +707,20 @@ BOOLEAN MiConvertSharedWorkingSetLockToExclusive(PETHREAD Thread, PMMSUPPORT Vm)
  * KiAcquireProcessLockRaiseToSynch / KiReleaseProcessLock —
  * FORCEINLINE in ke_x.h (covered by PCH, can't rename).
  * Manually inline the implementation.
+ *
+ * On i386, KeReleaseInStackQueuedSpinLock is declared DECLSPEC_IMPORT (HAL import)
+ * in the SDK headers, so the compiler generates an indirect call through the IAT.
+ * However, the Rust shim_exports.rs provides its own local UP implementation of
+ * KeAcquireInStackQueuedSpinLock* / KeReleaseInStackQueuedSpinLock with fastcall
+ * convention.  The Rust acquire does NOT store (KeGetCurrentThread()|1) into the
+ * spinlock, but the HAL's release checks for that value and bugchecks on mismatch.
+ * To avoid the acquire/release mismatch, re-declare without __declspec(dllimport)
+ * so the linker resolves to the Rust-provided version (matching acquire semantics).
  */
+#ifdef _X86_
+VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
+#endif
+
 void KiAcquireProcessLockRaiseToSynch(IN PKPROCESS Process,
                                        IN PKLOCK_QUEUE_HANDLE Handle)
 {

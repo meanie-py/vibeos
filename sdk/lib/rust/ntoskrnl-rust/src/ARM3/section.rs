@@ -372,11 +372,15 @@ extern "system" {
     fn FsRtlReleaseFileForModWrite(
         FileObject: PFILE_OBJECT, ResourceToRelease: PVOID,
     );
-    fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR;
-    fn MA_GetEndingAddress(marea: PVOID) -> ULONG_PTR;
 }
 extern "C" {
     fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+}
+extern "C" {
+    fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR;
+}
+extern "C" {
+    fn MA_GetEndingAddress(marea: PVOID) -> ULONG_PTR;
 }
 
 #[no_mangle]
@@ -638,7 +642,12 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
             let page_frame_index = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
             temp_pde.set_page_frame_number(page_frame_index as ULONG_PTR);
             #[cfg(any(target_arch = "x86", target_arch = "arm"))]
-            let parent_page = *MmSystemPageDirectory.add(((pointer_pde as ULONG_PTR - MiAddressToPde(core::ptr::null_mut()) as ULONG_PTR) / ntkrnl_sys::mm::PDE_PER_PAGE as ULONG_PTR) as usize);
+            // C: MmSystemPageDirectory[(PointerPde - MiAddressToPde(NULL)) / PDE_PER_PAGE]
+            // C pointer subtraction gives element count
+            let parent_page = MmSystemPageDirectory[
+                pointer_pde.offset_from(MiAddressToPde(core::ptr::null_mut())) as usize
+                / ntkrnl_sys::mm::PDE_PER_PAGE
+            ];
             #[cfg(not(any(target_arch = "x86", target_arch = "arm")))]
             let parent_page = (*MiPdeToPpe(pointer_pde)).page_frame_number() as PFN_NUMBER;
             MiInitializePfnForOtherProcess(
@@ -932,7 +941,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn MiMapViewInSystemSpace(
+pub unsafe extern "C" fn MiMapViewInSystemSpace(
     section: PVOID,
     session: *mut MMSESSION,
     mapped_base: *mut PVOID,
@@ -2150,7 +2159,6 @@ pub unsafe extern "system" fn NtExtendSection(
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

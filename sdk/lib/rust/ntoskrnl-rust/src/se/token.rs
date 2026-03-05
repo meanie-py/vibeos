@@ -244,7 +244,7 @@ static mut SepTokenMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
 };
 
 #[no_mangle]
-pub unsafe extern "system" fn SepCreateTokenLock(token: PTOKEN) -> NTSTATUS {
+pub unsafe extern "C" fn SepCreateTokenLock(token: PTOKEN) -> NTSTATUS {
     (*token).TokenLock = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<ERESOURCE>() as SIZE_T,
@@ -470,7 +470,7 @@ unsafe fn SepImpersonateAnonymousToken(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepUpdateSinglePrivilegeFlagToken(token: PTOKEN, index: ULONG) {
+pub unsafe extern "C" fn SepUpdateSinglePrivilegeFlagToken(token: PTOKEN, index: ULONG) {
     let token_flag: ULONG;
 
     if (*(*token).Privileges.offset(index as isize)).Luid.HighPart != 0 {
@@ -533,14 +533,14 @@ pub unsafe extern "system" fn SepTokenIsOwner(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepUpdatePrivilegeFlagsToken(token: PTOKEN) {
+pub unsafe extern "C" fn SepUpdatePrivilegeFlagsToken(token: PTOKEN) {
     for i in 0..(*token).PrivilegeCount {
         SepUpdateSinglePrivilegeFlagToken(token, i);
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepRemovePrivilegeToken(token: PTOKEN, index: ULONG) {
+pub unsafe extern "C" fn SepRemovePrivilegeToken(token: PTOKEN, index: ULONG) {
     let move_count = (*token).PrivilegeCount - index - 1;
     if move_count != 0 {
         core::ptr::copy(
@@ -553,7 +553,7 @@ pub unsafe extern "system" fn SepRemovePrivilegeToken(token: PTOKEN, index: ULON
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepRemoveUserGroupToken(token: PTOKEN, index: ULONG) {
+pub unsafe extern "C" fn SepRemoveUserGroupToken(token: PTOKEN, index: ULONG) {
     let move_count = (*token).UserAndGroupCount - index - 1;
     if move_count != 0 {
         core::ptr::copy(
@@ -566,7 +566,7 @@ pub unsafe extern "system" fn SepRemoveUserGroupToken(token: PTOKEN, index: ULON
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepComputeAvailableDynamicSpace(
+pub unsafe extern "C" fn SepComputeAvailableDynamicSpace(
     dynamic_charged: ULONG,
     primary_group: PSID,
     default_dacl: PACL,
@@ -579,7 +579,7 @@ pub unsafe extern "system" fn SepComputeAvailableDynamicSpace(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepRebuildDynamicPartOfToken(
+pub unsafe extern "C" fn SepRebuildDynamicPartOfToken(
     access_token: PTOKEN,
     new_dynamic_part_size: ULONG,
 ) -> NTSTATUS {
@@ -704,7 +704,7 @@ pub unsafe extern "system" fn SeDeassignPrimaryToken(process: PEPROCESS) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlLengthSidAndAttributes(count: ULONG, src: PSID_AND_ATTRIBUTES) -> ULONG {
+pub unsafe extern "C" fn RtlLengthSidAndAttributes(count: ULONG, src: PSID_AND_ATTRIBUTES) -> ULONG {
     let mut u_length = count * core::mem::size_of::<_SID_AND_ATTRIBUTES>() as ULONG;
     for i in 0..count {
         u_length += RtlLengthSid((*src.offset(i as isize)).Sid);
@@ -713,7 +713,7 @@ pub unsafe extern "system" fn RtlLengthSidAndAttributes(count: ULONG, src: PSID_
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SepFindPrimaryGroupAndDefaultOwner(
+pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
     token: PTOKEN,
     primary_group: PSID,
     default_owner: PSID,

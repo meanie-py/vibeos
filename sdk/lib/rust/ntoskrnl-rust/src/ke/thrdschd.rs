@@ -79,11 +79,13 @@ pub static mut KiIdleSummary: KAFFINITY = 0;
 #[no_mangle]
 pub static mut KiIdleSummary_SMT: KAFFINITY = 0;
 
-static mut KeActiveProcessors: KAFFINITY = 0;
-static mut KeNumberProcessors: ULONG = 0;
-static mut KiProcessorBlock: [*mut _KPRCB; 0] = [];
-static mut KeTickCount: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-static mut PsPrioritySeparation: UCHAR = 0;
+extern "C" {
+    static mut PsPrioritySeparation: ULONG;
+}
+use super::processor::KeActiveProcessors;
+use super::krnlinit::KiProcessorBlock;
+// Use actual definition from clock.rs, not extern (lto=false splits them)
+use super::clock::KeTickCount;
 
 const MEMORY_PRIORITY_FOREGROUND: ULONG = 1;
 const LOW_REALTIME_PRIORITY: KPRIORITY = 16;
@@ -96,9 +98,9 @@ const AdjustUnwait: UCHAR = 2;
 
 const DeferredReady: UCHAR = 7;
 const Ready: UCHAR = 1;
-const Standby: UCHAR = 2;
-const Running: UCHAR = 4;
-const Transition: UCHAR = 5;
+const Standby: UCHAR = 3;
+const Running: UCHAR = 2;
+const Transition: UCHAR = 6;
 
 const ProcessInMemory: UCHAR = 0;
 
@@ -327,6 +329,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
     Prcb = *(core::ptr::addr_of!(KiProcessorBlock) as *const *mut _KPRCB)
         .add(Processor as usize);
+
     KiAcquirePrcbLock(Prcb);
 
     #[cfg(not(feature = "CONFIG_SMP"))]
@@ -337,6 +340,16 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
             (*Prcb).NextThread = Thread;
             KiReleasePrcbLock(Prcb);
             return;
+        }
+    }
+
+    // DBG: dump Prcb pointer value as hex
+    #[cfg(target_arch = "x86")]
+    {
+        let prcb_val = Prcb as u32;
+        for shift in (0..8).rev() {
+            let nibble = ((prcb_val >> (shift * 4)) & 0xF) as u8;
+            let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
         }
     }
 
@@ -372,7 +385,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     }
 
     *kt_State(Thread) = Ready;
-    *kt_WaitTime(Thread) = KeTickCount.s.LowPart as ULONG;
+    *kt_WaitTime(Thread) = KeTickCount.LowPart as ULONG;
 
     if Preempted != 0 {
         InsertHeadList(
@@ -499,6 +512,7 @@ unsafe fn KiSwapThreadImpl(
 
 #[no_mangle]
 pub unsafe extern "system" fn KiReadyThread(Thread: PKTHREAD) {
+
     let Process: PKPROCESS = (*Thread).__bindgen_anon_1.ApcState.Process;
 
     if (*Process).State != ProcessInMemory {
@@ -571,7 +585,17 @@ unsafe fn KiSetPriorityThreadImpl(
     let OldPriority: KPRIORITY;
     let NewThread: PKTHREAD;
 
+    // DBG: KiSetPriorityThreadImpl entry
+
     if (*Thread).Priority as KPRIORITY != Priority {
+        // DBG: priority differs, entering loop
+
+        // DBG: emit thread state
+        #[cfg(target_arch = "x86")]
+        {
+            let state = *kt_State(Thread);
+        }
+
         loop {
             if *kt_State(Thread) == Ready {
                 if (*Thread).ProcessReadyQueue == 0 {
@@ -622,23 +646,39 @@ unsafe fn KiSetPriorityThreadImpl(
                     continue;
                 }
             } else if *kt_State(Thread) == Running {
+                // DBG: Running branch
+
                 Processor = *kt_NextProcessor(Thread) as ULONG;
                 Prcb = *(core::ptr::addr_of!(KiProcessorBlock) as *const *mut _KPRCB)
                     .add(Processor as usize);
+
+                // DBG: got Prcb
+
                 KiAcquirePrcbLock(Prcb);
+
+                // DBG: after PrcbLock
 
                 if Thread == (*Prcb).CurrentThread {
                     let old_pri = (*Thread).Priority as KPRIORITY;
                     (*Thread).Priority = Priority as SCHAR;
 
+                    // DBG: before KiSelectReadyThread check
+
                     if (Priority < old_pri) && ((*Prcb).NextThread.is_null()) {
+                        // DBG: calling KiSelectReadyThread
+
                         let new_th = KiSelectReadyThread(Priority + 1, Prcb);
+
+                        // DBG: after KiSelectReadyThread
+
                         if !new_th.is_null() {
                             *kt_State(new_th) = Standby;
                             (*Prcb).NextThread = new_th;
                             RequestInterrupt = 1u8;
                         }
                     }
+
+                    // DBG: before KiReleasePrcbLock
 
                     KiReleasePrcbLock(Prcb);
                     if RequestInterrupt != 0 {
@@ -817,7 +857,6 @@ pub unsafe extern "system" fn NtYieldExecution() -> NTSTATUS {
     KeLowerIrql(OldIrql);
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

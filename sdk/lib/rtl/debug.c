@@ -18,18 +18,56 @@
 
 /* PRIVATE FUNCTIONS ********************************************************/
 
+#if defined(_M_IX86) && defined(_NTOSKRNL_)
+/*
+ * On i386 with Rust KE, KD is disabled (triple-faults during KdSendPacket).
+ * Bypass the INT 0x2D → KdpStub path entirely and write directly to COM1.
+ * This avoids the full trap/exception dispatch overhead and provides
+ * reliable serial debug output at full 115200 baud throughput.
+ */
+static __inline UCHAR _DbgPortRead(USHORT Port)
+{
+    UCHAR Value;
+    __asm__ __volatile__("inb %w1, %0" : "=a"(Value) : "Nd"(Port));
+    return Value;
+}
+
+static __inline VOID _DbgPortWrite(USHORT Port, UCHAR Value)
+{
+    __asm__ __volatile__("outb %b0, %w1" : : "a"(Value), "Nd"(Port));
+}
+#endif
+
 ULONG
 NTAPI
 DebugPrint(IN PSTRING DebugString,
            IN ULONG ComponentId,
            IN ULONG Level)
 {
+#if defined(_M_IX86) && defined(_NTOSKRNL_)
+    /* Direct COM1 output — bypasses INT 0x2D entirely.
+     * Clear DLAB first: if a serial driver configured the baud rate,
+     * DLAB (bit 7 of LCR at 0x3FB) might be set, which remaps 0x3F8
+     * from THR to Divisor Latch Low. */
+    {
+        USHORT i;
+        UCHAR lcr = _DbgPortRead(0x3FB);
+        if (lcr & 0x80)
+            _DbgPortWrite(0x3FB, lcr & 0x7F);
+        for (i = 0; i < DebugString->Length; i++)
+        {
+            _DbgPortWrite(0x3F8, (UCHAR)DebugString->Buffer[i]);
+        }
+        return STATUS_SUCCESS;
+    }
+#else
     /* Call the Debug Service */
     return DebugService(BREAKPOINT_PRINT,
                         DebugString->Buffer,
                         UlongToPtr(DebugString->Length),
                         UlongToPtr(ComponentId),
                         UlongToPtr(Level));
+#endif
 }
 
 ULONG

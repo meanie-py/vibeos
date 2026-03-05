@@ -1,6 +1,8 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
+use crate::ke::clock::KeTimeIncrement;
+use crate::ke::krnlinit::{KiProcessorBlock, KeLoaderBlock};
 
 use ntkrnl_sys::ddk::{
     _CONTEXT, _EPROCESS, _ETHREAD, _KAPC_STATE, _KPRCB,
@@ -16,16 +18,6 @@ use ntkrnl_sys::ddk::{
 };
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
-    fn KdpStub(
-        TrapFrame: PKTRAP_FRAME,
-        ExceptionFrame: PKEXCEPTION_FRAME,
-        ExceptionRecord: PEXCEPTION_RECORD,
-        ContextRecord: PCONTEXT,
-        PreviousMode: KPROCESSOR_MODE,
-        SecondChanceException: BOOLEAN,
-    ) -> BOOLEAN;
-}
 #[cfg(target_arch = "x86")]
 extern "stdcall" {
     fn KdpStub(
@@ -46,7 +38,6 @@ extern "system" {
     static mut ExpSystemResourcesList: LIST_ENTRY;
     static mut ExpPagedPoolDescriptor: PVOID;
     static mut ExpNumberOfPagedPools: ULONG;
-    static mut KeTimeIncrement: ULONG;
     static mut KeBugcheckCallbackListHead: LIST_ENTRY;
     static mut KiBugCheckData: [ULONG_PTR; 5];
     static mut IopErrorLogListHead: LIST_ENTRY;
@@ -91,7 +82,6 @@ extern "system" {
     static mut MmUserProbeAddress: PVOID;
     static mut MmLoadedUserImageList: LIST_ENTRY;
     static mut NtBuildLab: PVOID;
-    static mut KiProcessorBlock: [PVOID; 0];
     static mut MmUnloadedDrivers: PVOID;
     static mut MmLastUnloadedDrivers: PVOID;
     static mut MmTriageActionTaken: ULONG;
@@ -105,13 +95,22 @@ extern "system" {
     static mut MmPhysicalMemoryBlock: PVOID;
     static mut MmSessionBase: PVOID;
     static mut MmSessionSize: SIZE_T;
-    static mut KeLoaderBlock: PVOID;
     static mut IopNumTriageDumpDataBlocks: ULONG;
     static mut IopTriageDumpDataBlocks: PVOID;
 }
 
 extern "system" {
     fn KiCallUserMode(OutputBuffer: *mut PVOID, OutputLength: PULONG) -> NTSTATUS;
+}
+extern "system" {
+    fn KdpStub(
+        TrapFrame: PKTRAP_FRAME,
+        ExceptionFrame: PKEXCEPTION_FRAME,
+        ExceptionRecord: PEXCEPTION_RECORD,
+        ContextRecord: PCONTEXT,
+        PreviousMode: KPROCESSOR_MODE,
+        SecondChanceException: BOOLEAN,
+    ) -> BOOLEAN;
 }
 
 const KD_BREAKPOINT_MAX: usize = 32;

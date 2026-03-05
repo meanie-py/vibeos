@@ -46,8 +46,6 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
-    fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
     fn UpdateTotalCommittedPages(delta: LONG);
     static mut MmAvailablePages: PFN_NUMBER;
     fn CcRosTrimCache(target: ULONG, nr_freed: *mut ULONG);
@@ -57,6 +55,22 @@ extern "C" {
 extern "C" {
     fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG;
     fn InterlockedIncrementUL(addend: *mut ULONG) -> ULONG;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
 
 #[repr(C)]

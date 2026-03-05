@@ -11,8 +11,6 @@ extern "system" {
     static mut KdDebuggerEnabled: BOOLEAN;
     static mut KdpContext: KD_CONTEXT;
     static mut KdpControlCPressed: BOOLEAN;
-    fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
-    fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
     fn KdReceivePacket( packet_type: ULONG, message_header: PVOID, message_data: PVOID, data_length: *mut ULONG, context: PVOID, ) -> ULONG;
 }
 extern "C" {
@@ -22,6 +20,22 @@ extern "C" {
 extern "C" {
     fn KeDisableInterrupts() -> BOOLEAN;
     fn KeRestoreInterrupts(enable: BOOLEAN);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
 }
 
 #[repr(C)]

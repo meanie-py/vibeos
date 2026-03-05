@@ -43,10 +43,10 @@ const KEY_WRITE: ACCESS_MASK = STANDARD_RIGHTS_WRITE | KEY_SET_VALUE | KEY_CREAT
 extern "C" {
     static mut KfRaiseIrql: unsafe extern "system" fn(KIRQL) -> KIRQL;
     static mut MmHighestUserAddress: PVOID;
-    static mut KeNumberProcessors: i8;
     static KeUserApcDispatcher: PVOID;
     static KeUserExceptionDispatcher: PVOID;
 }
+use crate::ke::processor::KeNumberProcessors;
 
 #[no_mangle]
 pub static mut ProcessCount: ULONG = 0;

@@ -575,6 +575,40 @@ def cmd_estimate(args):
         print(f"  {name}: ${cost:.2f}")
 
 
+def cmd_objdiff(args):
+    """Compare C vs Rust object files for symbol/ABI differences."""
+    from .objdiff import run_objdiff
+
+    run_objdiff(
+        arch=args.arch,
+        target=args.target if args.target else None,
+        verbose=args.verbose,
+        critical_only=args.critical_only,
+        json_output=args.json,
+        baseline=args.baseline,
+        deep=args.deep,
+    )
+
+
+def cmd_extern_audit(args):
+    """Audit extern declarations vs #[no_mangle] definitions."""
+    if args.fix or args.dry_run:
+        from .extern_audit import run_extern_fix
+        run_extern_fix(dry_run=args.dry_run)
+    else:
+        from .extern_audit import run_extern_audit
+        run_extern_audit(json_output=args.json)
+
+
+def cmd_trace_catalog(args):
+    """Generate debugcon trace catalog from Rust source."""
+    from .trace_catalog import generate_catalog, print_catalog
+
+    print_catalog(args.arch)
+    out = generate_catalog(args.arch)
+    print(f"\nWritten to {out}")
+
+
 def cmd_postprocess(args):
     """Run postprocessor on existing .rs files."""
     from .postprocess import postprocess
@@ -711,10 +745,32 @@ def main():
     p.add_argument("--scan-only", action="store_true", help="Only scan for probe calls, don't migrate")
     p.add_argument("--prompt", action="store_true", help="Print the prompt for the first file and exit")
 
+    # objdiff
+    p = sub.add_parser("objdiff", help="Compare C vs Rust object files for ABI differences")
+    p.add_argument("target", nargs="?", default=None,
+                   help="Subsystem (ex/) or file (ex/atom) to compare (default: all)")
+    p.add_argument("--json", action="store_true", help="JSON output for CI")
+    p.add_argument("-v", "--verbose", action="store_true", help="Per-function details")
+    p.add_argument("--critical-only", action="store_true", help="Only show critical issues")
+    p.add_argument("--baseline", default=None, metavar="COMMIT",
+                   help="Git commit to extract C files from (compare Rust vs historical C)")
+    p.add_argument("--deep", action="store_true",
+                   help="Analyze function prologues (stack frame size, callee-saved regs)")
+
+    # extern-audit
+    p = sub.add_parser("extern-audit", help="Audit extern declarations vs definitions for convention mismatches")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    p.add_argument("--fix", action="store_true", help="Fix critical mismatches automatically")
+    p.add_argument("--dry-run", action="store_true", help="Show what --fix would change without writing")
+
     # pp (postprocess existing .rs files)
     p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
     p.add_argument("path", help="Rust file or directory (subsystem under ntoskrnl-rust/src/)")
     p.add_argument("--dry-run", action="store_true", help="Show changes without writing")
+
+    # trace-catalog
+    p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
+    p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
     args = parser.parse_args()
 
@@ -730,7 +786,10 @@ def main():
         "translate": cmd_translate,
         "seh-classify": cmd_seh_classify,
         "probe-migrate": cmd_probe_migrate,
+        "objdiff": cmd_objdiff,
+        "extern-audit": cmd_extern_audit,
         "pp": cmd_postprocess,
+        "trace-catalog": cmd_trace_catalog,
     }
 
     commands[args.command](args)

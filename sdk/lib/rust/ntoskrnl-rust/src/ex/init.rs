@@ -9,6 +9,12 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 
+// Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::krnlinit::{KeLoaderBlock, KiServiceLimit};
+use crate::ke::clock::KeMaximumIncrement;
+use crate::ke::processor::KeNumberProcessors;
+use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
+
 // Types only available in bindgen (not in hand-written modules)
 use ntkrnl_sys::ddk::{
     _UNICODE_STRING, _OBJECT_ATTRIBUTES, _EPROCESS, _KSERVICE_TABLE_DESCRIPTOR, _KUSER_SHARED_DATA,
@@ -77,15 +83,9 @@ extern "system" {
     fn DbgBreakPointWithStatus(Status: ULONG);
     fn MmInitSystem(Phase: ULONG, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN;
 
-    static mut KeLoaderBlock: PLOADER_PARAMETER_BLOCK;
-    static mut KeMaximumIncrement: ULONG;
-    static mut KeNumberProcessors: ULONG;
     static SePublicDefaultUnrestrictedSd: PVOID;
     static MmSectionObjectType: PVOID;
     static mut CmNtGlobalFlag: ULONG;
-    static mut KeServiceDescriptorTable: [_KSERVICE_TABLE_DESCRIPTOR; 4];
-    static mut KeServiceDescriptorTableShadow: [_KSERVICE_TABLE_DESCRIPTOR; 4];
-    static mut KiServiceLimit: ULONG;
     static mut SharedUserData: *mut _KUSER_SHARED_DATA;
     static mut ExpLastTimeZoneBias: ULONG;
     static mut ExpTimeRefreshLock: ERESOURCE;
@@ -96,6 +96,8 @@ extern "system" {
 }
 extern "C" {
     fn RtlStringCbCopyA(pszDest: *mut i8, cbDest: usize, pszSrc: *const i8) -> NTSTATUS;
+    fn _strupr(s: *mut i8) -> *mut i8;
+    fn strstr(haystack: *const i8, needle: *const i8) -> *const i8;
 }
 
 // Variadic C functions — must use extern "C" (not "system")
@@ -215,7 +217,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     let mut TargetString: ANSI_STRING = core::mem::zeroed();
     let mut TargetName: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut LinkName, b"\\ArcName\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut LinkName, b"\\\0A\0r\0c\0N\0a\0m\0e\0\0\0".as_ptr() as *mut u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut LinkName,
@@ -235,7 +237,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
 
     NtClose(LinkHandle);
 
-    RtlInitUnicodeString(&mut LinkName, b"\\Device\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut LinkName, b"\\\0D\0e\0v\0i\0c\0e\0\0\0".as_ptr() as *mut u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut LinkName,
@@ -335,13 +337,25 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         while NextEntry != ListHead {
             MdBlock = ((NextEntry as usize) - core::mem::offset_of!(_MEMORY_ALLOCATION_DESCRIPTOR, ListEntry)) as PMEMORY_ALLOCATION_DESCRIPTOR;
 
-            if (*MdBlock).MemoryType == 7 {
+            if (*MdBlock).MemoryType == 21 { // LoaderNlsData
                 ExpNlsTableSize += (*MdBlock).PageCount as usize * PAGE_SIZE;
                 NlsTableSizes[NlsTablesEncountered as usize] = (*MdBlock).PageCount as usize * PAGE_SIZE;
                 NlsTablesEncountered += 1;
             }
 
             NextEntry = (*MdBlock).ListEntry.Flink;
+        }
+
+        // DBG: Phase 0 NLS data layout
+        #[cfg(target_arch = "x86")]
+        {
+            dbg_hex(b'0', NlsTablesEncountered as u32);   // count
+            dbg_hex(b'1', ExpNlsTableSize as u32);         // total size
+            dbg_hex(b'2', NlsTableSizes[0] as u32);       // block 0
+            dbg_hex(b'3', NlsTableSizes[1] as u32);       // block 1
+            dbg_hex(b'4', NlsTableSizes[2] as u32);       // block 2
+            dbg_hex(b'5', ExpOemCodePageDataOffset as u32);// oem offset
+            dbg_hex(b'6', ExpUnicodeCaseTableDataOffset as u32);// unicode offset
         }
 
         ExpNlsTableBase = ExAllocatePoolWithTag(NonPagedPool, ExpNlsTableSize, 0x696C7452);
@@ -424,13 +438,62 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         KeBugCheckEx(0x5C, Status as ULONG_PTR, 3, 0, 0);
     }
 
+    // DBG: dump SectionBase, sizes, and PTEs for page 0 and page 17 (0x11000)
+    #[cfg(target_arch = "x86")]
+    unsafe fn dbg_hex(marker: u8, val: u32) {
+        let mut s: i32 = 28;
+        while s >= 0 {
+            let d = ((val >> s) & 0xF) as u8;
+            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            s -= 4;
+        }
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
+        // S=SectionBase, N=NlsTableSize, O=OemCodePageDataOffset
+        dbg_hex(b'S', SectionBase as u32);
+        dbg_hex(b'N', ExpNlsTableSize as u32);
+        dbg_hex(b'O', ExpOemCodePageDataOffset as u32);
+        // Page 0 PTE before copy
+        let pte0 = core::ptr::read_volatile(MiAddressToPte(SectionBase) as *const u32);
+        dbg_hex(b'A', pte0);
+        // Page 17 (offset 0x11000) PTE before copy
+        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
+        let pte17 = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
+        dbg_hex(b'B', pte17);
+    }
+
     core::ptr::copy_nonoverlapping(
         ExpNlsTableBase as *const u8,
         SectionBase as *mut u8,
         ExpNlsTableSize,
     );
 
+    // DBG: dump PTEs after copy (before ExFreePoolWithTag)
+    #[cfg(target_arch = "x86")]
+    {
+        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
+        // page 0 PTE after copy
+        let pte0 = core::ptr::read_volatile(MiAddressToPte(SectionBase) as *const u32);
+        dbg_hex(b'a', pte0);
+        // OEM page PTE after copy
+        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
+        let pte17 = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
+        dbg_hex(b'b', pte17);
+    }
+
     ExFreePoolWithTag(ExpNlsTableBase, 0x696C7452);
+
+    // DBG: dump OEM page PTE after free (before RtlInitNlsTables)
+    #[cfg(target_arch = "x86")]
+    {
+        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
+        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
+        let pte_f = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
+        dbg_hex(b'c', pte_f);
+    }
+
     ExpNlsTableBase = SectionBase;
 
     RtlInitNlsTables(
@@ -497,7 +560,7 @@ unsafe fn ExpLoadInitialProcess(
         PAGE_READWRITE,
     );
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"INIT: Unable to allocate Process Parameters.\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0a\0l\0l\0o\0c\0a\0t\0e\0 \0P\0r\0o\0c\0e\0s\0s\0 \0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0.\0\0\0".as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x62, Status as ULONG_PTR, 0, 0, 0);
     }
@@ -516,7 +579,7 @@ unsafe fn ExpLoadInitialProcess(
         PAGE_READWRITE,
     );
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"INIT: Unable to allocate Process Environment.\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0a\0l\0l\0o\0c\0a\0t\0e\0 \0P\0r\0o\0c\0e\0s\0s\0 \0E\0n\0v\0i\0r\0o\0n\0m\0e\0n\0t\0.\0\0\0".as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x63, Status as ULONG_PTR, 0, 0, 0);
     }
@@ -537,7 +600,7 @@ unsafe fn ExpLoadInitialProcess(
     (*ProcessParams).DllPath.MaximumLength = (520 * 2) as USHORT;
 
     RtlCopyUnicodeString(&mut (*ProcessParams).DllPath, &(*ProcessParams).CurrentDirectory.DosPath);
-    RtlAppendUnicodeToString(&mut (*ProcessParams).DllPath, b"\\System32\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut (*ProcessParams).DllPath, b"\\\0S\0y\0s\0t\0e\0m\03\02\0\0\0".as_ptr() as *mut u16);
 
     p = ((*ProcessParams).DllPath.Buffer as usize + (*ProcessParams).DllPath.MaximumLength as usize) as *mut u16;
     (*ProcessParams).ImagePathName.Buffer = p;
@@ -578,18 +641,18 @@ unsafe fn ExpLoadInitialProcess(
         Size as USHORT,
     );
 
-    RtlAppendUnicodeToString(&mut Environment, b"Path=\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, b"P\0a\0t\0h\0=\0\0\0".as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &(*ProcessParams).DllPath);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     SystemDriveString = NtSystemRoot;
     SystemDriveString.Length = 4;
 
-    RtlAppendUnicodeToString(&mut Environment, b"SystemDrive=\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, b"S\0y\0s\0t\0e\0m\0D\0r\0i\0v\0e\0=\0\0\0".as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &SystemDriveString);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
-    RtlAppendUnicodeToString(&mut Environment, b"SystemRoot=\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, b"S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0=\0\0\0".as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &NtSystemRoot);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
@@ -607,14 +670,14 @@ unsafe fn ExpLoadInitialProcess(
         ProcessInformation,
     );
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"INIT: Unable to create Session Manager.\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0c\0r\0e\0a\0t\0e\0 \0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0.\0\0\0".as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x64, Status as ULONG_PTR, 0, 0, 0);
     }
 
     Status = ZwResumeThread((*ProcessInformation).ThreadHandle, core::ptr::null_mut());
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"INIT: Unable to resume Session Manager.\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0r\0e\0s\0u\0m\0e\0 \0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0.\0\0\0".as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x65, Status as ULONG_PTR, 0, 0, 0);
     }
@@ -786,7 +849,7 @@ pub unsafe extern "system" fn ExBurnMemory(
     while ListEntry != core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead) {
         MemDescriptor = ((ListEntry as usize) - core::mem::offset_of!(_MEMORY_ALLOCATION_DESCRIPTOR, ListEntry)) as PMEMORY_ALLOCATION_DESCRIPTOR;
 
-        if (*MemDescriptor).MemoryType == 3 || (*MemDescriptor).MemoryType == 5 {
+        if (*MemDescriptor).MemoryType == 2 || (*MemDescriptor).MemoryType == 5 { // LoaderFree || LoaderFirmwareTemporary
             if (*MemDescriptor).PageCount as ULONG_PTR > PagesToDestroy {
                 (*MemDescriptor).PageCount -= PagesToDestroy as ntkrnl_sys::ddk::PFN_NUMBER;
                 break;
@@ -821,9 +884,6 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     let mut Remaining: usize = 0;
     let mut RcEnd: *mut i8 = core::ptr::null_mut();
     let mut VersionBuffer: [u8; 65] = [0; 65];
-
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'X', options(nomem, nostack, preserves_flags));
 
     if ExpIsLoaderValid(LoaderBlock) == 0 {
         KeBugCheckEx(
@@ -873,26 +933,14 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     );
     RtlResetRtlTranslations(&mut ExpNlsTableInfo);
 
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Y', options(nomem, nostack, preserves_flags));
-
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
         KeBugCheck(0x61);
     }
-
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'Z', options(nomem, nostack, preserves_flags));
-
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'~', options(nomem, nostack, preserves_flags));
 
     #[cfg(target_arch = "x86_64")]
     core::arch::asm!("sti");
     #[cfg(target_arch = "x86")]
     core::arch::asm!("sti");
-
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'+', options(nomem, nostack, preserves_flags));
 
     (*SharedUserData).CryptoExponent = 0;
 
@@ -927,14 +975,8 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         KeBugCheck(0x64);
     }
 
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'%', options(nomem, nostack, preserves_flags));
     KiInitializeBugCheck();
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'^', options(nomem, nostack, preserves_flags));
     CmGetSystemControlValues((*LoaderBlock).RegistryBase, &mut CmControlVector);
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'&', options(nomem, nostack, preserves_flags));
 
     CmNtSpBuildNumber = 0;
     if ((CmNtCSDVersion & 0xFFFF0000) == 0) && (CmNtCSDReleaseType == 1) {
@@ -946,9 +988,6 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     if ExInitSystem() == 0 {
         KeBugCheck(0x31);
     }
-
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'!', options(nomem, nostack, preserves_flags));
 
     if MmArmInitSystem(0, LoaderBlock) == 0 {
         KeBugCheck(0x31);
@@ -1028,6 +1067,11 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     RtlCreateUnicodeStringFromAsciiz(&mut CmVersionString, VersionBuffer.as_ptr() as *mut i8);
 
+    // Initialize Power Subsystem in Phase 0
+    if PoInitSystem(0) == 0 {
+        KeBugCheck(0xA0); // INTERNAL_POWER_ERROR
+    }
+
     ExpInitializeHandleTables();
 
     #[cfg(debug_assertions)]
@@ -1042,17 +1086,25 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         }
     }
 
+    // DBG: before ObInitSystem
+
     if ObInitSystem() == 0 {
         KeBugCheck(0x5E);
     }
+
+    // DBG: after ObInitSystem, before SeInitSystem
 
     if SeInitSystem() == 0 {
         KeBugCheck(0x66);
     }
 
+    // DBG: after SeInitSystem, before PsInitSystem
+
     if PsInitSystem(LoaderBlock) == 0 {
         KeBugCheck(0x6B);
     }
+
+    // DBG: after PsInitSystem, before PpInitSystem
 
     if PpInitSystem() == 0 {
         KeBugCheck(0xA6);
@@ -1083,6 +1135,8 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     *(((KI_USER_SHARED_DATA as usize) + PAGE_SIZE - 4) as *mut ULONG) = 0x8eac705;
+
+    // DBG: ExpInitializeExecutive Phase 0 COMPLETE
 }
 
 #[no_mangle]
@@ -1115,24 +1169,42 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     let mut OptionHandle: HANDLE = core::ptr::null_mut();
     let mut ProcessParameters: *mut RTL_USER_PROCESS_PARAMETERS = core::ptr::null_mut();
 
+    // DBG: Phase1InitializationDiscard ENTRY
+
+    // DBG: before ExAllocatePoolWithTag
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<INIT_BUFFER>(), 0x74696E49) as *mut INIT_BUFFER;
     if InitBuffer.is_null() {
         KeBugCheckEx(0x5C, 0xC0000017, 8, 0, 0);
     }
+    // DBG: after ExAllocatePoolWithTag
 
     ExpInitializationPhase = 1;
 
+    // DBG: before KeSetPriorityThread(31)
     KeSetPriorityThread(KeGetCurrentThread() as ntkrnl_sys::ddk::PKTHREAD, 31);
+    // DBG: after KeSetPriorityThread(31)
 
+    // DBG: before HalInitSystem(1)
     if HalInitSystem(1, LoaderBlock) == 0 {
         KeBugCheck(0x62);
     }
+    // DBG: after HalInitSystem(1)
 
-    CommandLine = (*LoaderBlock).LoadOptions;
-    NoGuiBoot = 0;
-    SosEnabled = 0;
+    // Get the command line and upcase it
+    CommandLine = if !(*LoaderBlock).LoadOptions.is_null() {
+        _strupr((*LoaderBlock).LoadOptions)
+    } else {
+        core::ptr::null_mut()
+    };
 
-    InbvEnableBootDriver(1);
+    // Check if GUI Boot is enabled
+    NoGuiBoot = if !CommandLine.is_null() && !strstr(CommandLine, b"NOGUIBOOT\0".as_ptr() as *const i8).is_null() { 1 } else { 0 };
+
+    // Get the SOS setting
+    SosEnabled = if !CommandLine.is_null() && !strstr(CommandLine, b"SOS\0".as_ptr() as *const i8).is_null() { 1 } else { 0 };
+
+    // Setup the boot video driver
+    InbvEnableBootDriver(if NoGuiBoot == 0 { 1 } else { 0 });
     InbvDriverInitialize(LoaderBlock, 5);
 
     if NoGuiBoot == 0 {
@@ -1142,39 +1214,72 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         InbvEnableDisplayString(0);
     }
 
+    // Check if this is LiveCD (WinPE) mode
+    if !CommandLine.is_null() && !strstr(CommandLine, b"MININT\0".as_ptr() as *const i8).is_null() {
+        InitIsWinPEMode = 1; // TRUE
+        if !strstr(CommandLine, b"INRAM\0".as_ptr() as *const i8).is_null() {
+            InitWinPEModeType |= 0x80u8;
+        } else {
+            InitWinPEModeType |= 0x01u8;
+        }
+    }
+
     NtosEntry = ((*LoaderBlock).LoadOrderListHead.Flink as usize - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as *mut LDR_DATA_TABLE_ENTRY;
 
     InbvUpdateProgressBar(5);
 
+    // Use ~N~ 3-byte signatures for unambiguous milestone tracking
+    #[cfg(target_arch = "x86")]
+    {
+    }
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
     }
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     if ExInitSystem() == 0 {
         KeBugCheckEx(0x5C, 0, 0, 1, 0);
     }
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     if KeInitSystem() == 0 {
         KeBugCheckEx(0x5C, 0, 0, 2, 0);
     }
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     if KdInitSystem(ExpInitializationPhase, KeLoaderBlock) == 0 {
         KeBugCheckEx(0x5C, 0, 0, 3, 0);
     }
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     if SeInitSystem() == 0 {
         KeBugCheck(0x67);
     }
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     InbvUpdateProgressBar(10);
-
+    #[cfg(target_arch = "x86")]
+    {
+    }
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if Status < 0 {
         KeBugCheckEx(0x34, Status as ULONG_PTR, 0, 0, 0);
     }
+    #[cfg(target_arch = "x86")]
+    {
+    }
 
     if MmInitSystem(1, LoaderBlock) == 0 {
         KeBugCheck(0x6C);
+    }
+    // DBG: after MmInitSystem(1)
+    #[cfg(target_arch = "x86")]
+    {
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -1236,11 +1341,21 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvSetProgressBarSubset(25, 75);
 
+    // DBG: before IoInitSystem
+    #[cfg(target_arch = "x86")]
+    {
+    }
+
     if IoInitSystem(LoaderBlock) == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(0x6E);
         }
+    }
+
+    // DBG: after IoInitSystem
+    #[cfg(target_arch = "x86")]
+    {
     }
 
     InbvSetProgressBarSubset(0, 100);
@@ -1291,6 +1406,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         return;
     }
 
+    // DBG: before ExpLoadInitialProcess (SMSS creation)
+    #[cfg(target_arch = "x86")]
+    {
+    }
+
     ProcessInfo = core::ptr::addr_of_mut!((*InitBuffer).ProcessInfo);
     ExpLoadInitialProcess(InitBuffer, &mut ProcessParameters, &mut Environment);
 
@@ -1332,6 +1452,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn Phase1Initialization(Context: PVOID) {
+    // DBG: Phase1Initialization thread started
     Phase1InitializationDiscard(Context);
     MmZeroPageThread();
 }

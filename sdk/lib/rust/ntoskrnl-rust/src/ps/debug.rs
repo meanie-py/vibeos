@@ -25,12 +25,16 @@ extern "system" {
 }
 extern "C" {
     fn PsGetCurrentThread() -> PETHREAD;
-    fn KeEnterGuardedRegion();
-    fn KeLeaveGuardedRegion();
 }
 
 extern "C" {
     static PsThreadType: POBJECT_TYPE;
+}
+extern "system" {
+    fn KeEnterGuardedRegion();
+}
+extern "system" {
+    fn KeLeaveGuardedRegion();
 }
 
 const NotificationEvent: ULONG = 0;

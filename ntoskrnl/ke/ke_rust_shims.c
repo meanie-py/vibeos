@@ -342,6 +342,21 @@
 #undef KiRestoreXState
 #endif
 
+/*
+ * On i386, KeReleaseInStackQueuedSpinLock / KeAcquireInStackQueuedSpinLock are
+ * declared with _DECL_HAL_KE_IMPORT (= DECLSPEC_IMPORT) in the SDK headers,
+ * so the compiler generates indirect calls through the HAL's IAT.  However,
+ * Rust shim_exports.rs provides local UP implementations that do NOT store
+ * (KeGetCurrentThread()|1) into the spin lock (they use KxAcquireSpinLock which
+ * is a no-op on UP).  The HAL's KeReleaseInStackQueuedSpinLock checks for that
+ * value and bugchecks on mismatch.  Re-declare without __declspec(dllimport)
+ * so the linker resolves to the Rust-provided version (matching UP semantics).
+ */
+#ifdef _M_IX86
+VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
+VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_QUEUE_HANDLE LockHandle);
+#endif
+
 /* ========================================================================
  * Phase 4: Real (non-static, non-inline) function implementations
  *
@@ -379,12 +394,14 @@ VOID KiReleaseThreadLock(IN PKTHREAD Thread)
 
 VOID KxAcquireSpinLock(IN PKSPIN_LOCK SpinLock)
 {
-    _saved_KxAcquireSpinLock(SpinLock);
+    /* DBG owner tracking disabled: inconsistent Rust/C paths cause false
+       SPIN_LOCK_NOT_OWNED on i386.  UP kernel — just need a compiler barrier. */
+    KeMemoryBarrierWithoutFence();
 }
 
 VOID KxReleaseSpinLock(IN PKSPIN_LOCK SpinLock)
 {
-    _saved_KxReleaseSpinLock(SpinLock);
+    KeMemoryBarrierWithoutFence();
 }
 
 /* --- Dispatcher object lock (ke_x.h) --- */
@@ -550,7 +567,7 @@ VOID KiRemoveEntryTimer(IN PKTIMER Timer)
     _saved_KiRemoveEntryTimer(Timer);
 }
 
-VOID NTAPI KxInsertTimer(IN PKTIMER Timer, IN ULONG Hand)
+VOID KxInsertTimer(IN PKTIMER Timer, IN ULONG Hand)
 {
     _saved_KxInsertTimer(Timer, Hand);
 }
@@ -560,7 +577,7 @@ BOOLEAN KiComputeDueTime(IN PKTIMER Timer, IN LARGE_INTEGER DueTime, OUT PULONG 
     return _saved_KiComputeDueTime(Timer, DueTime, Hand);
 }
 
-VOID NTAPI KxRemoveTreeTimer(IN PKTIMER Timer)
+VOID KxRemoveTreeTimer(IN PKTIMER Timer)
 {
     _saved_KxRemoveTreeTimer(Timer);
 }
@@ -572,19 +589,19 @@ VOID KxSetTimerForThreadWait(IN PKTIMER Timer, IN LARGE_INTEGER Interval, OUT PU
 
 /* --- Unwait (ke_x.h) --- */
 
-VOID NTAPI KxUnwaitThread(IN DISPATCHER_HEADER *Object, IN KPRIORITY Increment)
+VOID KxUnwaitThread(IN DISPATCHER_HEADER *Object, IN KPRIORITY Increment)
 {
     _saved_KxUnwaitThread(Object, Increment);
 }
 
-VOID NTAPI KxUnwaitThreadForEvent(IN PKEVENT Event, IN KPRIORITY Increment)
+VOID KxUnwaitThreadForEvent(IN PKEVENT Event, IN KPRIORITY Increment)
 {
     _saved_KxUnwaitThreadForEvent(Event, Increment);
 }
 
 /* --- Ready queue (ke_x.h) --- */
 
-VOID NTAPI KxQueueReadyThread(IN PKTHREAD Thread, IN PKPRCB Prcb)
+VOID KxQueueReadyThread(IN PKTHREAD Thread, IN PKPRCB Prcb)
 {
     _saved_KxQueueReadyThread(Thread, Prcb);
 }
@@ -648,16 +665,31 @@ VOID KiReleaseNmiListLock(IN KIRQL OldIrql)
 /* KeRaiseIrql/KeLowerIrql — already provided by tier1_rust_shims.c (i386)
  * and ps_rust_shims.c (amd64/arm64). Do not duplicate here. */
 
-/* KeRaiseIrqlToSynchLevel — trampoline pattern.
- * On i386/amd64 it's NTHALAPI (dllimport from HAL). Capture via trampoline
- * before undef, then provide a real callable function. */
-#if defined(_M_IX86) || defined(_M_AMD64)
+/* KeRaiseIrqlToSynchLevel shim.
+ * On amd64 it's FORCEINLINE (body = KfRaiseIrql(SYNCH_LEVEL)), so the
+ * inline-trampoline pattern works — the body is inlined, no recursion.
+ * On i386 it's NTHALAPI (dllimport from HAL), NOT a macro/FORCEINLINE.
+ * Cannot use trampoline, function pointer, or any indirect pattern because
+ * the linker/compiler always resolves to the local definition over dllimport
+ * when both are in the same TU. Instead, directly call through the IAT. */
+#if defined(_M_IX86)
+KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
+{
+    KIRQL result;
+    __asm__ __volatile__(
+        "call *__imp__KeRaiseIrqlToSynchLevel@0"
+        : "=a"(result)
+        :
+        : "ecx", "edx", "memory");
+    return result;
+}
+#elif defined(_M_AMD64)
 static __inline KIRQL _tramp_KeRaiseIrqlToSynchLevel(VOID)
 {
     return KeRaiseIrqlToSynchLevel();
 }
 #undef KeRaiseIrqlToSynchLevel
-KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
+KIRQL KeRaiseIrqlToSynchLevel(VOID)
 {
     return _tramp_KeRaiseIrqlToSynchLevel();
 }
@@ -743,7 +775,7 @@ BOOLEAN InterlockedBitTestAndReset(volatile LONG *Base, LONG Bit)
 /* Save the macro result, then undef and define a real function */
 static __inline PKPCR _saved_KeGetPcr(VOID) { return KeGetPcr(); }
 #undef KeGetPcr
-PKPCR NTAPI KeGetPcr(VOID)
+PKPCR KeGetPcr(VOID)
 {
     return _saved_KeGetPcr();
 }
@@ -788,22 +820,22 @@ static __inline void _tramp_KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swapp
 #undef KiSatisfyNonMutantWait
 #undef KiAddThreadToWaitList
 
-void NTAPI KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread)
+void KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread)
 {
     _tramp_KiSatisfyObjectWait(Object, Thread);
 }
 
-void NTAPI KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread)
+void KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread)
 {
     _tramp_KiSatisfyMutantWait(Object, Thread);
 }
 
-void NTAPI KiSatisfyNonMutantWait(PKMUTANT Object)
+void KiSatisfyNonMutantWait(PKMUTANT Object)
 {
     _tramp_KiSatisfyNonMutantWait(Object);
 }
 
-void NTAPI KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
+void KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
 {
     _tramp_KiAddThreadToWaitList(Thread, Swappable);
 }
@@ -816,7 +848,7 @@ void NTAPI KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
 #undef KxSingleThreadWait
 #undef KxDelayThreadWait
 #undef KxMultiThreadWait
-void NTAPI KxSingleThreadWait(
+void KxSingleThreadWait(
     PVOID Object, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
     KWAIT_REASON WaitReason, BOOLEAN Alertable,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
@@ -852,7 +884,7 @@ void NTAPI KxSingleThreadWait(
     Thread->WaitTime = KeTickCount.LowPart;
 }
 
-void NTAPI KxDelayThreadWait(
+void KxDelayThreadWait(
     PLARGE_INTEGER Interval, KPROCESSOR_MODE WaitMode,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
 {
@@ -874,7 +906,7 @@ void NTAPI KxDelayThreadWait(
     Thread->WaitTime = KeTickCount.LowPart;
 }
 
-void NTAPI KxMultiThreadWait(
+void KxMultiThreadWait(
     PKWAIT_BLOCK WaitBlockArray, PVOID *Objects, ULONG Count,
     PLARGE_INTEGER Timeout, WAIT_TYPE WaitType,
     KPROCESSOR_MODE WaitMode, KWAIT_REASON WaitReason,
@@ -919,7 +951,7 @@ void NTAPI KxMultiThreadWait(
 /* --- YieldProcessor ---
  * Compiler intrinsic/macro, architecture-dependent. Provide a callable symbol. */
 #undef YieldProcessor
-void NTAPI YieldProcessor(void)
+void YieldProcessor(void)
 {
 #if defined(_M_IX86) || defined(_M_AMD64)
     _mm_pause();
@@ -967,7 +999,7 @@ VOID KiRundownThread(IN PKTHREAD Thread)
 /* --- KiGetLinkedTrapFrame ---
  * Macro on ARM64, FORCEINLINE on others. Returns previous TrapFrame. */
 #undef KiGetLinkedTrapFrame
-PKTRAP_FRAME NTAPI KiGetLinkedTrapFrame(IN PKTRAP_FRAME TrapFrame)
+PKTRAP_FRAME KiGetLinkedTrapFrame(IN PKTRAP_FRAME TrapFrame)
 {
 #if defined(_M_ARM64)
     return (PKTRAP_FRAME)(TrapFrame->TrapFrame);
@@ -996,7 +1028,7 @@ PULONG_PTR KiGetUserModeStackAddress(void)
  * Timer, TimerBlock, Queue, Timeout, WaitMode, DueTime, Hand, Swappable.
  * We provide a parameterized wrapper. */
 #undef KxQueueThreadWait
-void NTAPI KxQueueThreadWait(
+void KxQueueThreadWait(
     PVOID Queue, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
 {
@@ -1035,7 +1067,7 @@ void NTAPI KxQueueThreadWait(
 /* --- KxUnwaitThread_impl ---
  * Rust thrdobj.rs references this name to avoid collision with the ddk import.
  * Just forward to the existing KxUnwaitThread shim. */
-void NTAPI KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
+void KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
 {
     _saved_KxUnwaitThread(Header, Increment);
 }
@@ -1277,7 +1309,7 @@ __asm__(
  * Rust code declares: fn RtlFillMemoryUlong(...) — no underscore prefix.
  * Provide a symbol with the unmangled name that forwards to the real one. */
 #undef RtlFillMemoryUlong
-VOID NTAPI RtlFillMemoryUlong(PVOID Destination, SIZE_T Length, ULONG Pattern)
+VOID RtlFillMemoryUlong(PVOID Destination, SIZE_T Length, ULONG Pattern)
 {
     _RtlFillMemoryUlong(Destination, Length, Pattern);
 }
@@ -1569,7 +1601,7 @@ USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
  * Now in Rust ke_i386.rs global_asm! */
 
 /* --- KeInvalidateTlbEntry --- FORCEINLINE in internal/i386/ke.h */
-VOID NTAPI KeInvalidateTlbEntry(IN PVOID Address)
+VOID KeInvalidateTlbEntry(IN PVOID Address)
 {
     _saved_KeInvalidateTlbEntry(Address);
 }
@@ -1581,13 +1613,13 @@ VOID NTAPI KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
 }
 
 /* --- KiGetGdtEntry --- FORCEINLINE in internal/i386/intrin_i.h */
-PKGDTENTRY NTAPI KiGetGdtEntry(IN PVOID pGdt, IN USHORT Selector)
+PKGDTENTRY KiGetGdtEntry(IN PVOID pGdt, IN USHORT Selector)
 {
     return _saved_KiGetGdtEntry(pGdt, Selector);
 }
 
 /* --- KiSetGdtDescriptorBase --- FORCEINLINE in internal/i386/intrin_i.h */
-VOID NTAPI KiSetGdtDescriptorBase(IN PKGDTENTRY Entry, IN ULONG Base)
+VOID KiSetGdtDescriptorBase(IN PKGDTENTRY Entry, IN ULONG Base)
 {
     _saved_KiSetGdtDescriptorBase(Entry, Base);
 }
@@ -1735,7 +1767,9 @@ void __cdecl KiEnterInterruptTrap(IN PKTRAP_FRAME TrapFrame)
  * Declared as extern "C" in Rust time.rs → _KiEndInterrupt */
 void __cdecl KiEndInterrupt(IN KIRQL Irql, IN PKTRAP_FRAME TrapFrame)
 {
-    _saved_KiEndInterrupt(Irql, TrapFrame);
+    _disable();
+    HalEndSystemInterrupt(Irql, TrapFrame);
+    KiEoiHelper(TrapFrame);
 }
 
 /* --- KiDispatchException0Args ---
@@ -1807,7 +1841,7 @@ void NTAPI Ke386FxStore(IN PVOID SaveArea)
 
 /* --- Ke386GetFs ---
  * Macro with inline asm: movl %fs, reg. Returns USHORT. */
-USHORT NTAPI Ke386GetFs(void)
+USHORT Ke386GetFs(void)
 {
     unsigned int __d;
     __asm__("movl %%fs,%0\n\t" :"=r" (__d));

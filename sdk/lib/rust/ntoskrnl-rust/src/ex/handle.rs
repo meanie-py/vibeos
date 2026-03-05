@@ -398,6 +398,8 @@ unsafe fn ExpAllocateHandleTable(
     let mut i: ULONG;
     let Status: NTSTATUS;
 
+    // DBG: before ExAllocatePoolWithTag for HANDLE_TABLE
+
     HandleTable = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<HANDLE_TABLE>(),
@@ -407,6 +409,8 @@ unsafe fn ExpAllocateHandleTable(
         return core::ptr::null_mut();
     }
 
+    // DBG: after ExAllocatePoolWithTag returned non-null
+
     if !Process.is_null() {
         Status = PsChargeProcessPagedPoolQuota(Process, core::mem::size_of::<HANDLE_TABLE>() as _);
         if Status < 0 {
@@ -415,7 +419,13 @@ unsafe fn ExpAllocateHandleTable(
         }
     }
 
+    // DBG: before write_bytes (zeroing HANDLE_TABLE — triggers demand-zero page fault)
+
     core::ptr::write_bytes(HandleTable as *mut u8, 0, core::mem::size_of::<HANDLE_TABLE>());
+
+    // DBG: after write_bytes completed
+
+    // DBG: before ExpAllocateTablePagedPoolNoZero
 
     HandleTableTable = ExpAllocateTablePagedPoolNoZero(Process, PAGE_SIZE) as PHANDLE_TABLE_ENTRY;
     if HandleTableTable.is_null() {
@@ -428,11 +438,15 @@ unsafe fn ExpAllocateHandleTable(
         return core::ptr::null_mut();
     }
 
+    // DBG: after ExpAllocateTablePagedPoolNoZero returned non-null
+
     (*HandleTable).TableCode = HandleTableTable as usize as _;
 
     HandleEntry = &mut (*HandleTableTable.add(0));
     hte_set_nextfree(HandleEntry, -2);
     hte_set_value(HandleEntry, 0);
+
+    // DBG: before handle entry setup loop
 
     if NewTable != 0 {
         HandleEntry = HandleEntry.add(1);
@@ -451,6 +465,8 @@ unsafe fn ExpAllocateHandleTable(
         (*HandleTable).FirstFree = INDEX_TO_HANDLE_VALUE(1);
     }
 
+    // DBG: after handle entry loop, before metadata setup
+
     (*HandleTable).NextHandleNeedingPool = INDEX_TO_HANDLE_VALUE(LOW_LEVEL_ENTRIES);
 
     (*HandleTable).QuotaProcess = Process;
@@ -464,6 +480,9 @@ unsafe fn ExpAllocateHandleTable(
     }
 
     ExInitializePushLockLocal(core::ptr::addr_of_mut!((*HandleTable).HandleContentionEvent));
+
+    // DBG: ExpAllocateHandleTable returning
+
     HandleTable
 }
 
@@ -790,16 +809,27 @@ pub unsafe extern "system" fn ExCreateHandleTable(Process: PEPROCESS) -> PHANDLE
         return core::ptr::null_mut();
     }
 
+    // DBG: ExCreateHandleTable after ExpAllocateHandleTable
+
     KeEnterCriticalRegion();
+
+    // DBG: after KeEnterCriticalRegion
+
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!(HandleTableListLock));
+
+    // DBG: after ExAcquirePushLockExclusive
 
     InsertTailList(
         core::ptr::addr_of_mut!(HandleTableListHead) as PLIST_ENTRY,
         core::ptr::addr_of_mut!((*HandleTable).HandleTableList) as PLIST_ENTRY,
     );
 
+    // DBG: after InsertTailList
+
     ExReleasePushLockExclusive(core::ptr::addr_of_mut!(HandleTableListLock));
     KeLeaveCriticalRegion();
+
+    // DBG: ExCreateHandleTable returning
 
     HandleTable
 }
@@ -853,7 +883,8 @@ unsafe fn ExpBlockOnLockedHandleEntry(
     }
 }
 
-unsafe fn ExpLockHandleTableEntry(
+#[no_mangle]
+pub unsafe extern "system" fn ExpLockHandleTableEntry(
     HandleTable: PHANDLE_TABLE,
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) -> BOOLEAN {
