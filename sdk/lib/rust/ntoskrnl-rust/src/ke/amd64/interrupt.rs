@@ -32,14 +32,17 @@ extern "C" {
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 struct KI_INTERRUPT_DISPATCH_ENTRY {
-    _Op_push: PVOID,
+    _Op_nop: UCHAR,
+    _Op_push: UCHAR,
+    _Vector: UCHAR,
+    _Op_jmp: UCHAR,
+    RelativeAddress: ULONG,
 }
 
 const PRIMARY_VECTOR_BASE: ULONG = 0x30;
 const MAXIMUM_IDTVECTOR: ULONG = 0xFF;
-const HIGH_LEVEL: KIRQL = 15;
 
 const InterruptObject: USHORT = 0x16;
 

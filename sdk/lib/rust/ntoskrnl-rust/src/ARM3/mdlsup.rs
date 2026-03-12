@@ -611,20 +611,36 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
     let mut PointerPte: PMMPTE;
 
     if BaseAddress as ULONG_PTR > MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
+        // Guard against use-after-free: if ByteCount looks like freed pool fill
+        // (> 16MB or contains 0xFCFCFCFC pattern), skip to avoid cascade corruption
+        let byte_count = (*Mdl).ByteCount;
+        if byte_count > 0x01000000 {
+            return;
+        }
+
         Base = ((*Mdl).StartVa as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID;
-        PageCount = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, (*Mdl).ByteCount as usize)) as u32;
+        PageCount = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, byte_count as usize)) as u32;
 
         PointerPte = MiAddressToPte(BaseAddress);
 
-        if ((*Mdl).MdlFlags & 0x00000080) != 0 {
+        if ((*Mdl).MdlFlags as u32 & 0x0200) != 0 { // MDL_FREE_EXTRA_PTES
             MdlPages = MmGetMdlPfnArray(Mdl);
             ExtraPageCount = *(MdlPages.add(PageCount as usize)) as PFN_COUNT;
+            // Guard: ExtraPageCount from corrupt PFN array entry (use-after-free / out-of-bounds)
+            if ExtraPageCount > 0x10000 {
+                return;
+            }
             PageCount += ExtraPageCount;
             PointerPte = PointerPte.sub(ExtraPageCount as usize);
             BaseAddress = (BaseAddress as ULONG_PTR - ((ExtraPageCount as ULONG_PTR) << PAGE_SHIFT)) as PVOID;
         }
 
-        (*Mdl).MdlFlags &= (!(MDL_MAPPED_TO_SYSTEM_VA | 0x00000010 | 0x00000080)) as i16;
+        // Final guard: if total PageCount is unreasonable after adjustments, bail out
+        if PageCount > 0x10000 {
+            return;
+        }
+
+        (*Mdl).MdlFlags &= (!(MDL_MAPPED_TO_SYSTEM_VA | 0x0020 | 0x0200)) as i16; // MDL_PARTIAL_HAS_BEEN_MAPPED | MDL_FREE_EXTRA_PTES
 
         MiReleaseSystemPtes(PointerPte, PageCount, SystemPteSpace);
     } else {
@@ -873,6 +889,12 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
     let mut OldIrql: KIRQL;
     let mut Pfn1: PMMPFN;
 
+    // Guard against use-after-free: freed pool fill makes ByteCount = 0xFCFCFCFC
+    let byte_count = (*Mdl).ByteCount;
+    if byte_count > 0x01000000 {
+        return;
+    }
+
     Process = (*Mdl).Process as *mut _EPROCESS;
     Flags = ((*Mdl).MdlFlags) as u32;
 
@@ -1063,7 +1085,7 @@ pub unsafe extern "system" fn MmUnmapReservedMapping(
 
     PointerPte = PointerPte.add(2);
 
-    if ((*Mdl).MdlFlags & 0x00000080) != 0 {
+    if ((*Mdl).MdlFlags as u32 & 0x0200) != 0 { // MDL_FREE_EXTRA_PTES
         MdlPages = MmGetMdlPfnArray(Mdl);
         ExtraPageCount = *(MdlPages.add(PageCount as usize)) as PFN_COUNT;
         PageCount += ExtraPageCount;
@@ -1075,7 +1097,7 @@ pub unsafe extern "system" fn MmUnmapReservedMapping(
 
     KeFlushEntireTb(1, 1);
 
-    (*Mdl).MdlFlags &= (!(MDL_MAPPED_TO_SYSTEM_VA | 0x00000010 | 0x00000080)) as i16;
+    (*Mdl).MdlFlags &= (!(MDL_MAPPED_TO_SYSTEM_VA | 0x0020 | 0x0200)) as i16; // MDL_PARTIAL_HAS_BEEN_MAPPED | MDL_FREE_EXTRA_PTES
 }
 
 #[no_mangle]

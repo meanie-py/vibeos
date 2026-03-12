@@ -206,6 +206,11 @@ extern BOOLEAN NlsMbCodePageTag;
 #define NLS_MB_CODE_PAGE_TAG NlsMbCodePageTag
 extern BOOLEAN NlsMbOemCodePageTag;
 #define NLS_MB_OEM_CODE_PAGE_TAG NlsMbOemCodePageTag
+#elif defined(__clang__)
+extern __declspec(dllimport) BOOLEAN NlsMbCodePageTag;
+#define NLS_MB_CODE_PAGE_TAG NlsMbCodePageTag
+extern __declspec(dllimport) BOOLEAN NlsMbOemCodePageTag;
+#define NLS_MB_OEM_CODE_PAGE_TAG NlsMbOemCodePageTag
 #else
 __CREATE_NTOS_DATA_IMPORT_ALIAS(NlsMbCodePageTag)
 extern BOOLEAN *NlsMbCodePageTag;

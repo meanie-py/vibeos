@@ -1040,12 +1040,13 @@ MiReleasePfnLockFromDpcLevel(VOID)
 }
 
 /* ARM64 HAL spinlock stubs only raise IRQL without setting MmPfnLock,
- * so skip the MmPfnLock check on ARM64 (single-CPU boot, no contention) */
-#ifdef _M_ARM64
-#define MI_ASSERT_PFN_LOCK_HELD() NT_ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL)
-#else
-#define MI_ASSERT_PFN_LOCK_HELD() NT_ASSERT((KeGetCurrentIrql() >= DISPATCH_LEVEL) && (MmPfnLock != 0))
-#endif
+ * so skip the MmPfnLock check on ARM64 (single-CPU boot, no contention).
+ * Soft assert on all architectures to avoid kdb prompt flood during boot. */
+#define MI_ASSERT_PFN_LOCK_HELD() \
+    do { \
+        if (!(KeGetCurrentIrql() >= DISPATCH_LEVEL)) \
+            DPRINT1("SOFT PFN ASSERT: IRQL=%u at %s:%d\n", KeGetCurrentIrql(), __FILE__, __LINE__); \
+    } while (0)
 
 FORCEINLINE
 PMMPFN

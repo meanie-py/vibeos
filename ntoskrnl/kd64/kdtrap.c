@@ -74,10 +74,10 @@ KdpReport(IN PKTRAP_FRAME TrapFrame,
      * (including debug service), single step and assertion failure exceptions.
      */
     ExceptionCode = ExceptionRecord->ExceptionCode;
-#ifdef _USE_DUMMY_PSEH
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
     /*
-     * With DUMMY_PSEH, SEH handlers are dead code, so assertion failures
-     * (NT_ASSERT → __int2c) cannot be caught.  Skip past the trap
+     * With DUMMY_PSEH/PSEH_CLANG, assertion failures (NT_ASSERT → __int2c)
+     * outside of _SEH2_TRY blocks cannot be caught.  Skip past the trap
      * instruction and continue instead of entering the debugger.
      *
      * Clang's __int2c() builtin emits INT3 + INT 2C (0xCC 0xCD 0x2C).
@@ -355,12 +355,6 @@ KdpStub(IN PKTRAP_FRAME TrapFrame,
             {
                 WRITE_PORT_UCHAR((PUCHAR)0x3F8, (UCHAR)Buffer[i]);
             }
-        }
-        /* Debugcon diagnostic: '$' = KdpStub received BREAKPOINT_PRINT.
-         * This fires for ALL DbgPrint calls (kernel and user-mode). */
-        if (ExceptionCommand == BREAKPOINT_PRINT)
-        {
-            __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'$'), "Nd"((unsigned short)0xE9));
         }
 #endif
         /* This we can handle: simply bump the Program Counter */

@@ -28,10 +28,9 @@ RtlAssert(IN PVOID FailedAssertion,
     CHAR Action[2];
     CONTEXT Context;
 
-#ifdef _USE_DUMMY_PSEH
-    /* With DUMMY_PSEH, there's no reliable exception handling and DbgPrompt
-     * will hang forever waiting for debugger input.  Print the assertion
-     * and return so boot can continue. */
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* With DUMMY/CLANG PSEH, DbgPrompt will hang forever waiting for debugger
+     * input.  Print the assertion and return so boot can continue. */
     {
         static volatile LONG AssertCount = 0;
         LONG Count = InterlockedIncrement(&AssertCount);

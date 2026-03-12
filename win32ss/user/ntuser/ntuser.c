@@ -143,16 +143,18 @@ UserInitialize(VOID)
 //     Initialize User Screen.
 // }
 
-#ifdef _M_ARM64
-    /* ARM64: Initialize desktop graphics (PDEV + screen DC) eagerly.
-     * On x86/amd64 this happens lazily via co_IntGraphicsCheck when the
-     * first GUI app creates a DC, but on ARM64 we need it before any
-     * NtGdiOpenDCW call because EngpGetPDEV requires gpmdev to be set. */
-    if (!co_IntInitializeDesktopGraphics())
+    /* Create the PDEV eagerly so that NtGdiOpenDCW calls from DLL init
+     * (e.g., comctl32 DllMain) can find a display device. The full desktop
+     * graphics init (cursors, icons, menus) is deferred to co_AddGuiApp
+     * when the first GUI process creates a DC after the winstation exists. */
     {
-        ERR("co_IntInitializeDesktopGraphics failed\n");
+        PMDEVOBJ pmdev = NULL;
+        LONG lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &pmdev, TRUE);
+        if (lRet == DISP_CHANGE_SUCCESSFUL)
+        {
+            gpmdev = pmdev;
+        }
     }
-#endif
 
 // Set Global SERVERINFO Error flags.
 // Load Resources.

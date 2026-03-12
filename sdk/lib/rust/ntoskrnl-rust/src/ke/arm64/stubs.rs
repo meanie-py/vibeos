@@ -41,7 +41,7 @@ type PKSTRING = *mut _STRING;
 const KEY_WRITE: ACCESS_MASK = STANDARD_RIGHTS_WRITE | KEY_SET_VALUE | KEY_CREATE_SUB_KEY;
 
 extern "C" {
-    static mut KfRaiseIrql: unsafe extern "system" fn(KIRQL) -> KIRQL;
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     static mut MmHighestUserAddress: PVOID;
     static KeUserApcDispatcher: PVOID;
     static KeUserExceptionDispatcher: PVOID;

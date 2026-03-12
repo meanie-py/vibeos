@@ -50,7 +50,18 @@ extern "C" {
 const PORT_CONNECT: ULONG = 0x0001;
 const PORT_ALL_ACCESS: ULONG = 0x001F0001;
 
-const LPCP_MAX_MESSAGE_SIZE: ULONG = 0x148;
+// N_ROUND_UP(PORT_MAXIMUM_MESSAGE_LENGTH + sizeof(LPCP_MESSAGE) + sizeof(LPCP_CONNECTION_MESSAGE), 16)
+#[cfg(target_pointer_width = "32")]
+const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 256;
+#[cfg(target_pointer_width = "64")]
+const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 512;
+
+const LPCP_MAX_MESSAGE_SIZE: ULONG = {
+    let raw = PORT_MAXIMUM_MESSAGE_LENGTH
+        + core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_MESSAGE>()
+        + core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_CONNECTION_MESSAGE>();
+    ((raw + 15) & !15) as ULONG
+};
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;
 const LPCP_COMMUNICATION_PORT: ULONG = 0x00000003;
 const LPCP_SECURITY_DYNAMIC: ULONG = 0x80000000;

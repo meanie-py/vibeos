@@ -220,12 +220,11 @@ RaiseException:
     pop ebx
     pop ecx
 
-#ifdef _USE_DUMMY_PSEH
-    /* DUMMY_PSEH: SEH handlers are dead code, so no handler will ever catch
-     * exceptions. For continuable exceptions (e.g. RPC_S_SERVER_UNAVAILABLE),
-     * swallow the exception by resuming execution. This simulates the effect
-     * of _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) catching the exception and
-     * falling through after the TRY/EXCEPT block. */
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Safety net: For continuable software exceptions (e.g. RPC_S_SERVER_UNAVAILABLE)
+     * that escape all SEH handlers, swallow the exception by resuming execution.
+     * With PSEH_CLANG, real handlers catch most exceptions; this only fires
+     * for exceptions in code without _SEH2_TRY blocks. */
     test dword ptr [ebx+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
     jnz _DummyPseh_RaiseSecondChance
 

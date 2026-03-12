@@ -23,9 +23,11 @@ extern "C" {
 
 #[repr(C)]
 struct KSWITCH_FRAME {
-    Return: u64,
+    // Layout must match ctxswitch.S: `stp x0, x30, [sp, #-16]!`
+    // x0 (ApcBypass) at [sp+0], x30 (Return) at [sp+8]
     ApcBypass: BOOLEAN,
     _padding: [u8; 7],
+    Return: u64,
 }
 
 #[repr(C)]

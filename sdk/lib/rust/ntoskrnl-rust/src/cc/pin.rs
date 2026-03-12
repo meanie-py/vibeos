@@ -264,7 +264,7 @@ unsafe fn CcpPinData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, r_offset, &mut vacb);
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
             return 0u8;
         }
 
@@ -338,14 +338,18 @@ pub unsafe extern "system" fn CcMapData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, (*file_offset).QuadPart, &mut vacb);
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
+            *p_bcb = core::ptr::null_mut();
+            *p_buffer = core::ptr::null_mut();
+            return 0u8;
         }
 
         i_bcb = CcpGetAppropriateBcb(shared_cache_map, vacb, file_offset, length, 0, 0u8) as PINTERNAL_BCB;
         if i_bcb.is_null() {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
             *p_bcb = core::ptr::null_mut();
-            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+            *p_buffer = core::ptr::null_mut();
+            return 0u8;
         }
     } else {
         (*i_bcb).RefCount += 1;

@@ -270,9 +270,14 @@ typedef struct {
 } HAL_DISPATCH, *PHAL_DISPATCH;
 
 #if !defined(_NTSYSTEM_) && (defined(_NTDRIVER_) || defined(_NTDDK_) || defined(_NTIFS_) || defined(_NTHAL_))
+#ifdef __clang__
+extern __declspec(dllimport) HAL_DISPATCH HalDispatchTable;
+#define HALDISPATCH     (&HalDispatchTable)
+#else
 __CREATE_NTOS_DATA_IMPORT_ALIAS(HalDispatchTable)
 extern  PHAL_DISPATCH   HalDispatchTable;
 #define HALDISPATCH     HalDispatchTable
+#endif
 #else
 extern  HAL_DISPATCH    HalDispatchTable;
 #define HALDISPATCH     (&HalDispatchTable)

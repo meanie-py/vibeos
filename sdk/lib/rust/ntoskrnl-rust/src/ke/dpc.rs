@@ -97,7 +97,7 @@ extern "system" {
 
 use super::timerobj::KiTimerTableListHead;
 
-const TIMER_TABLE_SIZE: ULONG = 256;
+const TIMER_TABLE_SIZE: ULONG = 512;
 const MAX_TIMER_DPCS: usize = 16;
 const IO_NO_INCREMENT: LONG = 0;
 const MAX_QUANTUM: LONG = 120;
@@ -163,10 +163,6 @@ pub unsafe extern "system" fn KiTimerExpiration(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
-    // Trace: 'X' on every KiTimerExpiration call
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!("out 0xe9, al", in("al") b'X', options(nomem, nostack, preserves_flags));
-
     let mut SystemTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut InterruptTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
@@ -215,11 +211,6 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
         ListHead = core::ptr::addr_of_mut!(KiTimerTableListHead[Index as usize].Entry) as PLIST_ENTRY;
 
-        // 3-byte marker: #L# = checking bucket, then emit Index byte and empty flag
-        #[cfg(target_arch = "x86")]
-        {
-            let empty_flag = if ListHead == (*ListHead).Flink { b'E' } else { b'F' };
-        }
         while ListHead != (*ListHead).Flink {
 
             LockQueue = KiAcquireTimerLock(Index as ULONG);
@@ -228,13 +219,7 @@ pub unsafe extern "system" fn KiTimerExpiration(
             Timers -= 1;
             Timer = ((NextEntry as usize) - core::mem::offset_of!(_KTIMER, TimerListEntry)) as PKTIMER;
 
-            // Extra trace: C0 before comparison, C1 if NextEntry!=ListHead, C2 before DueTime read
-
             let next_ne_head = NextEntry != ListHead;
-
-            #[cfg(target_arch = "x86")]
-            if next_ne_head {
-            }
 
             let timer_expired = if next_ne_head {
                 (*Timer).DueTime.QuadPart <= InterruptTime.QuadPart
@@ -243,7 +228,6 @@ pub unsafe extern "system" fn KiTimerExpiration(
             };
 
             if timer_expired {
-
                 ActiveTimers -= 1;
                 KiRemoveEntryTimer(Timer);
 
@@ -253,11 +237,6 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                 TimerDpc = (*Timer).Dpc;
                 Period = (*Timer).Period;
-                // Trace: #P# = reading Dpc from expired timer, then null flag and period byte
-                #[cfg(target_arch = "x86")]
-                {
-                    let dpc_flag = if TimerDpc.is_null() { b'0' } else { b'1' };
-                }
 
                 if !IsListEmpty(&(*Timer).Header.WaitListHead as *const LIST_ENTRY as PLIST_ENTRY) {
                     if (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.Type == TimerNotificationObject as u8 {
@@ -273,10 +252,6 @@ pub unsafe extern "system" fn KiTimerExpiration(
                 }
 
                 if !TimerDpc.is_null() {
-                    // 3-byte marker: #Q# = DPC queued for expired timer
-                    #[cfg(target_arch = "x86")]
-                    {
-                    }
                     DpcEntry[DpcCalls as usize].Dpc = TimerDpc;
                     DpcEntry[DpcCalls as usize].Routine = (*TimerDpc).DeferredRoutine;
                     DpcEntry[DpcCalls as usize].Context = (*TimerDpc).DeferredContext;
@@ -554,10 +529,6 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
         (*Prcb).DpcRoutineActive = 1;
 
         if (*Prcb).TimerRequest != 0 {
-            // 3-byte marker: #S# = TimerRequest found
-            #[cfg(target_arch = "x86")]
-            {
-            }
             TimerHand = (*Prcb).TimerHand as ULONG_PTR;
             (*Prcb).TimerRequest = 0;
 

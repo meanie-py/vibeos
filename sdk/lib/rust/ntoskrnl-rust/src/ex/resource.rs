@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread, _KWAIT_REASON_WrResource,
 };
 
+
 const TAG_RESOURCE_EVENT: u32 = u32::from_be_bytes(*b"EvtR");
 const TAG_RESOURCE_SEMAPHORE: u32 = u32::from_be_bytes(*b"SemR");
 const TAG_RESOURCE_TABLE: u32 = u32::from_be_bytes(*b"TblR");

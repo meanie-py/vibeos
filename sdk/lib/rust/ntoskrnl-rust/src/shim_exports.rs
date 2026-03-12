@@ -1847,98 +1847,10 @@ pub unsafe extern "C" fn MiIsPdeForAddressValid(address: PVOID) -> BOOLEAN {
     ntkrnl_sys::inline::mm::MiIsPdeForAddressValid(address)
 }
 
-// --- Working set locks (cdecl) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockProcessWorkingSet(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiLockProcessWorkingSet(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockProcessWorkingSet(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSet(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockProcessWorkingSetShared(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetShared(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockProcessWorkingSetShared(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetShared(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockProcessWorkingSetUnsafe(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetUnsafe(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockProcessWorkingSetUnsafe(process: PEPROCESS, thread: PETHREAD) {
-    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetUnsafe(process, thread)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockWorkingSet(thread: PETHREAD, ws: PMMSUPPORT) {
-    ntkrnl_sys::inline::mm::MiLockWorkingSet(thread, ws)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockWorkingSet(thread: PETHREAD, ws: PMMSUPPORT) {
-    ntkrnl_sys::inline::mm::MiUnlockWorkingSet(thread, ws)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockWorkingSetShared(thread: PETHREAD, ws: PMMSUPPORT) {
-    ntkrnl_sys::inline::mm::MiLockWorkingSetShared(thread, ws)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockWorkingSetShared(thread: PETHREAD, ws: PMMSUPPORT) {
-    ntkrnl_sys::inline::mm::MiUnlockWorkingSetShared(thread, ws)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiLockProcessWorkingSetForFault(
-    process: PEPROCESS,
-    thread: PETHREAD,
-    safe: BOOLEAN,
-    shared: BOOLEAN,
-) {
-    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetForFault(process, thread, safe, shared)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiUnlockProcessWorkingSetForFault(
-    process: PEPROCESS,
-    thread: PETHREAD,
-    safe: *mut BOOLEAN,
-    shared: *mut BOOLEAN,
-) {
-    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetForFault(process, thread, safe, shared)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn MiConvertSharedWorkingSetLockToExclusive(
-    thread: PETHREAD,
-    vm: PMMSUPPORT,
-) -> BOOLEAN {
-    ntkrnl_sys::inline::mm::MiConvertSharedWorkingSetLockToExclusive(thread, vm)
-}
+// --- Working set locks ---
+// REMOVED: These duplicate the C shims in mm_rust_shims.c.
+// Having both caused potential symbol resolution ambiguity.
+// All WS lock calls now go exclusively through C shims (which have tracing).
 
 // --- Expansion lock (cdecl) ---
 
@@ -3053,7 +2965,7 @@ pub unsafe extern "fastcall" fn KeAcquireQueuedSpinLockRaiseToSynch(
     LockNumber: ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE_NUMBER,
 ) -> KIRQL {
     let mut old_irql: KIRQL = 0;
-    ntkrnl_sys::inline::tier1::KeRaiseIrql(12, &mut old_irql); // SYNCH_LEVEL
+    ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::inline::ke::SYNCH_LEVEL, &mut old_irql);
     let prcb = ntkrnl_sys::inline::ke::KeGetCurrentPrcb();
     ntkrnl_sys::inline::ke::KxAcquireSpinLock(
         (*prcb).LockQueue[LockNumber as usize].Lock as *mut _,
@@ -3097,7 +3009,7 @@ pub unsafe extern "fastcall" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
 ) {
     (*LockHandle).LockQueue.Next = core::ptr::null_mut();
     (*LockHandle).LockQueue.Lock = SpinLock as *mut u32;
-    ntkrnl_sys::inline::tier1::KeRaiseIrql(12, &mut (*LockHandle).OldIrql); // SYNCH_LEVEL
+    ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::inline::ke::SYNCH_LEVEL, &mut (*LockHandle).OldIrql);
     ntkrnl_sys::inline::ke::KxAcquireSpinLock((*LockHandle).LockQueue.Lock as *mut _);
 }
 
@@ -3118,7 +3030,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
     LockNumber: ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE_NUMBER,
     OldIrql: *mut KIRQL,
 ) -> BOOLEAN {
-    ntkrnl_sys::inline::tier1::KeRaiseIrql(12, OldIrql); // SYNCH_LEVEL
+    ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::inline::ke::SYNCH_LEVEL, OldIrql);
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     1u8
 }

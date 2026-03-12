@@ -18,12 +18,16 @@
 
 /* PRIVATE FUNCTIONS ********************************************************/
 
-#if defined(_M_IX86) && defined(_NTOSKRNL_)
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
 /*
- * On i386 with Rust KE, KD is disabled (triple-faults during KdSendPacket).
+ * On i386/amd64 with Rust KE, KD is disabled (triple-faults during KdSendPacket).
  * Bypass the INT 0x2D → KdpStub path entirely and write directly to COM1.
  * This avoids the full trap/exception dispatch overhead and provides
  * reliable serial debug output at full 115200 baud throughput.
+ *
+ * NOTE: _NTOSKRNL_ is defined by both ntoskrnl and ntdll. The !_NTDLLBUILD_
+ * check ensures this kernel-only code isn't compiled into ntdll.dll, where
+ * the privileged IN/OUT instructions would cause STATUS_PRIVILEGED_INSTRUCTION.
  */
 static __inline UCHAR _DbgPortRead(USHORT Port)
 {
@@ -44,11 +48,12 @@ DebugPrint(IN PSTRING DebugString,
            IN ULONG ComponentId,
            IN ULONG Level)
 {
-#if defined(_M_IX86) && defined(_NTOSKRNL_)
-    /* Direct COM1 output — bypasses INT 0x2D entirely.
-     * Clear DLAB first: if a serial driver configured the baud rate,
-     * DLAB (bit 7 of LCR at 0x3FB) might be set, which remaps 0x3F8
-     * from THR to Divisor Latch Low. */
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
+    /* Direct COM1 output — bypasses INT 0x2D entirely. */
+    /* Diagnostic: marker before SEH */
+    __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'<'), "Nd"((unsigned short)0xE9));
+
+    _SEH2_TRY
     {
         USHORT i;
         UCHAR lcr = _DbgPortRead(0x3FB);
@@ -56,18 +61,27 @@ DebugPrint(IN PSTRING DebugString,
             _DbgPortWrite(0x3FB, lcr & 0x7F);
         for (i = 0; i < DebugString->Length; i++)
         {
+            /* Wait for THRE (Transmit Holding Register Empty) before each byte.
+             * Without this, the 16-byte UART FIFO overflows and bytes are lost. */
+            while (!(_DbgPortRead(0x3FD) & 0x20))
+                ;
             _DbgPortWrite(0x3F8, (UCHAR)DebugString->Buffer[i]);
         }
-        return STATUS_SUCCESS;
+        __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'>'), "Nd"((unsigned short)0xE9));
+        _SEH2_YIELD(return STATUS_SUCCESS);
     }
-#else
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        /* Direct COM port access failed (user mode) — fall through */
+    }
+    _SEH2_END;
+#endif
     /* Call the Debug Service */
     return DebugService(BREAKPOINT_PRINT,
                         DebugString->Buffer,
                         UlongToPtr(DebugString->Length),
                         UlongToPtr(ComponentId),
                         UlongToPtr(Level));
-#endif
 }
 
 ULONG
@@ -197,6 +211,11 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
 
     /* Call the Debug Print routine */
     Status = DebugPrint(&DebugString, ComponentId, Level);
+
+    /* Diagnostic: write a marker to debugcon after DebugPrint returns */
+#if defined(_M_IX86) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
+    { __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'!'), "Nd"((unsigned short)0xE9)); }
+#endif
 
     /* Check if this was with Control-C */
     if (HandleBreakpoint)

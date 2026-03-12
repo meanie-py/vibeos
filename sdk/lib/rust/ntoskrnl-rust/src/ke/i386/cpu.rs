@@ -60,9 +60,9 @@ extern "system" {
 
 #[repr(C)]
 struct FX_SAVE_AREA {
-    Cr0NpxState: ULONG,
+    U: [UCHAR; 512],       // Union of FNSAVE_FORMAT/FXSAVE_FORMAT
     NpxSavedCpu: ULONG,
-    Data: [UCHAR; 512],
+    Cr0NpxState: ULONG,
 }
 
 #[repr(C)]

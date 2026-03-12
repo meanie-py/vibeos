@@ -212,12 +212,12 @@ extern "C" {
 // ============================================================================
 
 // Timer table size
-pub const TIMER_TABLE_SIZE: usize = 256;
+pub const TIMER_TABLE_SIZE: usize = 512;
 pub const LOCK_QUEUE_TIMER_TABLE_LOCKS: usize = 16;
 
 // SSDT constants
 pub const NUMBER_OF_SYSCALLS: u32 = 0x1000;
-pub const SSDT_MAX_ENTRIES: u32 = 0x1000;
+pub const SSDT_MAX_ENTRIES: u32 = 2;
 
 // Priority
 pub const MAXIMUM_PRIORITY: u32 = 32;
@@ -235,14 +235,8 @@ pub const IPI_FROZEN_STATE_THAW: u32 = 3;
 pub const IPI_FROZEN_STATE_OWNER: u32 = 4;
 
 // IRQ levels
-// HIGH_LEVEL is in ntkrnl_sys::constants (value 31 on all arches in constants.rs but 15 on amd64/arm64 in reality)
-pub const SYNCH_LEVEL: u8 = 12;
-#[cfg(target_arch = "x86")]
-pub const IPI_LEVEL: u8 = 29;
-#[cfg(target_arch = "x86_64")]
-pub const IPI_LEVEL: u8 = 14;
-#[cfg(target_arch = "aarch64")]
-pub const IPI_LEVEL: u8 = 14;
+// HIGH_LEVEL and IPI_LEVEL are in ntkrnl_sys::constants (cfg-gated per arch)
+pub const SYNCH_LEVEL: u8 = 2; // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL
 
 // Bugcheck codes
 pub const IRQL_NOT_GREATER_OR_EQUAL: u32 = 0x0000_0009;

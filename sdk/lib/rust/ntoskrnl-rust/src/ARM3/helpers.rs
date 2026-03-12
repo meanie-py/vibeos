@@ -649,7 +649,10 @@ pub unsafe fn MI_IS_ROS_PFN(pfn: PMMPFN) -> bool {
 }
 
 #[inline]
-pub fn MI_IS_MEMORY_AREA_VAD(_vad: PVOID) -> bool { false }
+pub unsafe fn MI_IS_MEMORY_AREA_VAD(vad: PVOID) -> bool {
+    let vad = vad as *const ntkrnl_sys::ddk::_MMVAD;
+    ((*vad).u.VadFlags.Spare() & 1) != 0
+}
 
 // ============================================================================
 // MI_GET_NEXT_PROCESS_COLOR
@@ -1350,11 +1353,9 @@ pub fn mmpte_soft_page_file_low(pte: &MMPTE) -> ULONG {
 /// MMPDE is just MMPTE (same layout, different semantic meaning)
 pub type MMPDE = MMPTE;
 
-/// PEB, TEB — opaque types (the translated code only uses pointers to them)
-#[repr(C)]
-pub struct PEB { _opaque: [u8; 0] }
-#[repr(C)]
-pub struct TEB { _opaque: [u8; 0] }
+/// PEB, TEB — re-export bindgen types (size_of::<PEB/TEB> must be correct for MmCreatePeb/Teb)
+pub use ntkrnl_sys::ddk::PEB;
+pub use ntkrnl_sys::ddk::TEB;
 
 /// _UNICODE_STRING — simplified for translated code
 #[repr(C)]

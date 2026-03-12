@@ -36,6 +36,10 @@ PUBLIC KiSwitchToBootStack
     sub rsp, HEX(308) // FIXME
     .ENDPROLOG
 
+    // Debugcon trace: verify stack switch worked before jumping to Rust
+    mov al, HEX(58) // 'X'
+    out HEX(E9), al
+
     jmp KiSystemStartupBootStack
 
 .ENDP

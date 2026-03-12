@@ -175,7 +175,19 @@ ULONG_PTR NTAPI KeGetContextPc(PCONTEXT Context)
 
 #ifdef _M_AMD64
 PKPCR NTAPI KeGetPcr(VOID)
-{ return _fi_KeGetPcr(); }
+{
+    PKPCR Pcr = _fi_KeGetPcr();
+    if (!Pcr)
+    {
+        /* Self_ is NULL — GS base or KPCR is corrupt */
+        ULONG64 GsBase;
+        GsBase = __readmsr(0xC0000101); /* MSR_GS_BASE */
+        DbgPrint("*** KeGetPcr: Self=NULL GsBase=%p caller=%p\n",
+                 (PVOID)GsBase, _ReturnAddress());
+        __debugbreak();
+    }
+    return Pcr;
+}
 #endif
 
 ULONG KeGetCurrentProcessorNumber(VOID)

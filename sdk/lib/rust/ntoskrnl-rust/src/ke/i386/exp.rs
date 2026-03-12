@@ -823,11 +823,8 @@ pub unsafe extern "system" fn KiDispatchException(
             return;
         }
 
-        // DUMMY_PSEH: SEH handlers are dead code, so kernel-mode exceptions
-        // that would normally be caught by __try/__except go unhandled.
         // For STATUS_BREAKPOINT (INT 3 from DbgBreakPoint/RtlAssert): skip
-        // the breakpoint and continue.  EIP was decremented above; restore
-        // it past the INT 3 byte so execution continues after the assert.
+        // the breakpoint and continue.
         if (*ExceptionRecord).ExceptionCode as u32 == 0x80000003 {
             context.Eip = context.Eip.wrapping_add(1);
             KeContextToTrapFrame(
@@ -849,7 +846,6 @@ pub unsafe extern "system" fn KiDispatchException(
         );
     } else {
         if (*ExceptionRecord).ExceptionCode as u32 != 0x80000003 {
-            // User exception diagnostic printing omitted
         }
 
         if FirstChance != 0 {
@@ -902,7 +898,7 @@ pub unsafe extern "system" fn KiDispatchException(
                     );
 
                     let except_size = (core::mem::size_of::<EXCEPTION_RECORD>()
-                        - (30 - (*ExceptionRecord).NumberParameters as usize) * core::mem::size_of::<ULONG>()
+                        - (15 - (*ExceptionRecord).NumberParameters as usize) * core::mem::size_of::<ULONG>()
                         + 3)
                         & !3;
                     let new_stack = stack.wrapping_sub(except_size as u32);

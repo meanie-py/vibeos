@@ -582,11 +582,11 @@ unsafe fn KeStartThread_impl(Thread: PKTHREAD) {
     KiReleaseProcessLock(core::ptr::addr_of_mut!(LockHandle));
 }
 
-unsafe fn KiSuspendRundown(Apc: PKAPC) {
+unsafe extern "system" fn KiSuspendRundown(Apc: PKAPC) {
     UNREFERENCED_PARAMETER!(Apc);
 }
 
-unsafe fn KiSuspendNop(
+unsafe extern "system" fn KiSuspendNop(
     Apc: PKAPC,
     NormalRoutine: *mut *mut core::ffi::c_void,
     NormalContext: *mut PVOID,
@@ -600,7 +600,7 @@ unsafe fn KiSuspendNop(
     UNREFERENCED_PARAMETER!(SystemArgument2);
 }
 
-unsafe fn KiSuspendThread(
+unsafe extern "system" fn KiSuspendThread(
     NormalContext: PVOID,
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,

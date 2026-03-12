@@ -212,15 +212,15 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
-    # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
+    # lpc/ — temporarily restored C (Rust version has NtAcceptConnectPort bug)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
     # ARM3/ — replaced by Rust (ntoskrnl-rust/src/ARM3/)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c (Rust)
@@ -245,7 +245,7 @@ list(APPEND SOURCE
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/sysldr.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/syspte.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/vadnode.c (Rust)
-    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c (Rust)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/wslist.cpp (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/zeropage.c (Rust)
     # mm/ — replaced by Rust (ntoskrnl-rust/src/mm/)

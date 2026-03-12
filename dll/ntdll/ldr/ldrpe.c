@@ -580,7 +580,7 @@ LdrpHandleOneOldFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
                                   &AlreadyLoaded);
     if (!NT_SUCCESS(Status))
     {
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
         /* Early boot: tolerate missing DLLs. Many DLLs have large
          * transitive dependency trees (rpcrt4 -> wininet -> shell32 etc.)
          * that aren't needed at boot time. Skip the missing import and

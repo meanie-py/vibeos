@@ -41,7 +41,7 @@ use super::stubs::Arm64UartKernelBase;
 extern "system" {
     static mut MainSSDT: [ULONG_PTR; 0];
     static mut MainSSPT: [UCHAR; 0];
-    static mut KfRaiseIrql: unsafe extern "system" fn(KIRQL) -> KIRQL;
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     static KiArm64VectorTable: [u64; 0];
     fn KiSwitchToBootStack(InitialStack: ULONG_PTR) -> !;
     fn KiInitializeHandBuiltThread(Thread: PKTHREAD, Process: PKPROCESS, Stack: PVOID);
@@ -121,6 +121,10 @@ unsafe fn KiInitializePcr(
 unsafe fn KiInitializeP0BootStructures(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    // C: PVOID KiP0BootStack = &KiP0BootStackData[KERNEL_STACK_SIZE];
+    // Stack grows down — KiP0BootStack points to the TOP (end) of the array.
+    KiP0BootStack = (core::ptr::addr_of_mut!(KiP0BootStackData) as *mut u8)
+        .add(KERNEL_STACK_SIZE) as PVOID;
     (*LoaderBlock).KernelStack = KiP0BootStack as u64;
     (*LoaderBlock).Thread = core::ptr::addr_of_mut!(KiInitialThread) as u64;
     (*LoaderBlock).Process = core::ptr::addr_of_mut!(KiInitialProcess) as u64;
@@ -213,6 +217,12 @@ pub unsafe extern "system" fn KiSystemStartup(
     // Set us as the current process
     (*InitialThread).__bindgen_anon_1.ApcState.Process = (*LoaderBlock).Process as _;
 
+    {
+        let uart = Arm64UartKernelBase as *mut ULONG;
+        let msg = b"[KERNEL] pre-HAL\r\n";
+        for &b in msg { core::ptr::write_volatile(uart, b as ULONG); }
+    }
+
     // Initial setup for the boot CPU
     if Cpu == 0 {
         KeProcessorArchitecture = 12; // ARM64
@@ -236,14 +246,6 @@ pub unsafe extern "system" fn KiSystemStartup(
         KiInitMachineDependent();
     }
 
-    {
-        let uart = Arm64UartKernelBase as *mut ULONG;
-        let msg = b"[KERNEL] Switching to boot stack\r\n";
-        for &b in msg {
-            core::ptr::write_volatile(uart, b as ULONG);
-        }
-    }
-
     // Switch to boot stack and continue initialization
     KiSwitchToBootStack((*LoaderBlock).KernelStack as ULONG_PTR);
 }
@@ -256,14 +258,6 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     let Thread = (*KeLoaderBlock).Thread as PKTHREAD;
     let Process = (*Thread).__bindgen_anon_1.ApcState.Process as PKPROCESS;
     let KernelStack = (*KeLoaderBlock).KernelStack as PVOID;
-
-    {
-        let uart = Arm64UartKernelBase as *mut ULONG;
-        let msg = b"[KERNEL] KiSystemStartupBootStack entered\r\n";
-        for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
-        }
-    }
 
     (*Prcb).ParentNode = *(core::ptr::addr_of!(KeNodeBlock) as *const *mut core::ffi::c_void).add(0) as *mut ntkrnl_sys::ddk::_KNODE;
     (*((*Prcb).ParentNode as *mut _KNODE)).ProcessorMask |= (*Prcb).SetMember;
@@ -309,6 +303,16 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
         for &ch in msg.iter() {
             core::ptr::write_volatile(uart, ch as ULONG);
         }
+        // Dump KiIdleLoop function address for symbolication
+        let fn_addr = KiIdleLoop as *const () as u64;
+        let msg2 = b"[KERNEL] KiIdleLoop@0x";
+        for &ch in msg2.iter() { core::ptr::write_volatile(uart, ch as ULONG); }
+        for i in (0..16).rev() {
+            let nibble = ((fn_addr >> (i * 4)) & 0xF) as u8;
+            let c = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
+            core::ptr::write_volatile(uart, c as ULONG);
+        }
+        for &ch in b"\r\n" { core::ptr::write_volatile(uart, ch as ULONG); }
     }
 
     KiIdleLoop();
@@ -411,7 +415,6 @@ pub unsafe extern "system" fn KiInitializeKernel(
 use crate::ke::procobj::KiProcessListHead;
 
 // C macro constants — NOT extern variables
-const HIGH_LEVEL: KIRQL = 31;
 const MAXCHAR: i8 = 0x7f;
 
 #[repr(C)]

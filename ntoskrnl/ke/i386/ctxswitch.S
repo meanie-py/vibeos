@@ -217,6 +217,14 @@ PUBLIC @Ke386LoadFpuState@4
     test byte ptr [_KeI386FxsrPresent], 1
     jz _FrRestore
 
+    /* Sanitize MXCSR to prevent #GP from reserved bits */
+    mov eax, [ecx+28]      /* MXCSR_MASK */
+    test eax, eax
+    jnz _FxHasMask
+    mov eax, HEX(0FFBF)    /* Default mask if MXCSR_MASK is 0 */
+_FxHasMask:
+    and [ecx+24], eax      /* MXCSR &= mask */
+
     /* Restore all the FPU, MMX, XMM and MXCSR registers */
     fxrstor [ecx]
     ret

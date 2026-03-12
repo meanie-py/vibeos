@@ -419,7 +419,7 @@ pub unsafe extern "system" fn CcCopyRead(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, current_offset, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
             return 0;
         }
 
@@ -466,7 +466,8 @@ pub unsafe extern "system" fn CcCopyWrite(
     let mut write_end = 0i64;
     let status = RtlLongLongAdd((*file_offset).QuadPart, length as LONGLONG, core::ptr::addr_of_mut!(write_end));
     if status < 0 {
-        ExRaiseStatus(status);
+        // DUMMY_PSEH: return FALSE instead of raising
+        return 0;
     }
 
     let mut current_offset = (*file_offset).QuadPart;
@@ -479,7 +480,7 @@ pub unsafe extern "system" fn CcCopyWrite(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, current_offset, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: return FALSE instead of raising
             return 0;
         }
 
@@ -507,7 +508,8 @@ pub unsafe extern "system" fn CcCopyWrite(
         CcRosReleaseVacb(shared_cache_map, vacb, 1u8, 0u8);
 
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: return FALSE instead of raising
+            return 0;
         }
     }
 
@@ -618,7 +620,8 @@ pub unsafe extern "system" fn CcZeroData(
             core::ptr::null_mut(),
         );
         if mdl.is_null() {
-            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+            // DUMMY_PSEH: return FALSE instead of raising
+            return 0;
         }
 
         let pfn_array = MmGetMdlPfnArray(mdl);
@@ -654,7 +657,8 @@ pub unsafe extern "system" fn CcZeroData(
             }
             if status < 0 {
                 IoFreeMdl(mdl);
-                ExRaiseStatus(status);
+                // DUMMY_PSEH: return FALSE instead of raising
+                return 0;
             }
             write_offset.QuadPart += current_length as LONGLONG;
             length -= current_length as LONGLONG;
@@ -677,7 +681,7 @@ pub unsafe extern "system" fn CcZeroData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, write_offset.QuadPart, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: return FALSE instead of raising
             return 0;
         }
 
@@ -705,7 +709,8 @@ pub unsafe extern "system" fn CcZeroData(
         CcRosReleaseVacb(shared_cache_map, vacb, 1u8, 0u8);
 
         if status < 0 {
-            ExRaiseStatus(status);
+            // DUMMY_PSEH: return FALSE instead of raising
+            return 0;
         }
     }
 

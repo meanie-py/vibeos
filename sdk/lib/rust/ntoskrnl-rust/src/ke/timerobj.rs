@@ -30,7 +30,7 @@ extern "system" {
 
 // KiInsertTimerTable is defined locally for all architectures below
 
-const TIMER_TABLE_SIZE: usize = 256;
+const TIMER_TABLE_SIZE: usize = 512;
 const TimerNotificationObject: u8 = 8;
 const NotificationTimer: u32 = 0;
 const SynchronizationTimer: u32 = 1;
@@ -117,6 +117,9 @@ unsafe fn KiInsertTimerTableImpl(
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut CurrentTimer: PKTIMER;
+    // Mask Hand to valid range — C code has no bounds check, so callers may
+    // pass garbage from uninitialized or corrupt timer state.
+    let Hand = Hand & (TIMER_TABLE_SIZE as ULONG - 1);
 
     if (*Timer).Period == 0 {
         (*Timer).Header.SignalState = 0;

@@ -105,18 +105,25 @@ struct KIDT_INIT {
     ServiceRoutine: PVOID,
 }
 
-#[repr(C)]
+/// AMD64 IDT gate descriptor — must be exactly 16 bytes to match hardware layout.
+/// The C original packs IstIndex/Type/Dpl/Present into a single USHORT bitfield.
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
 struct KIDTENTRY64 {
-    OffsetLow: USHORT,
-    Selector: USHORT,
-    IstIndex: UCHAR,
-    Type: UCHAR,
-    Dpl: UCHAR,
-    Present: UCHAR,
-    OffsetMiddle: USHORT,
-    OffsetHigh: ULONG,
-    Reserved1: ULONG,
-    Reserved0: UCHAR,
+    OffsetLow: USHORT,      // offset 0
+    Selector: USHORT,       // offset 2
+    Bits: USHORT,           // offset 4: IstIndex[2:0] Reserved0[7:3] Type[12:8] Dpl[14:13] Present[15]
+    OffsetMiddle: USHORT,   // offset 6
+    OffsetHigh: ULONG,      // offset 8
+    Reserved1: ULONG,       // offset 12
+}
+// Total: 16 bytes — matches hardware IDT entry size
+
+impl KIDTENTRY64 {
+    fn set_ist_index(&mut self, val: u8)  { self.Bits = (self.Bits & !0x0007) | ((val as u16) & 0x07); }
+    fn set_type(&mut self, val: u8)       { self.Bits = (self.Bits & !0x1F00) | (((val as u16) & 0x1F) << 8); }
+    fn set_dpl(&mut self, val: u8)        { self.Bits = (self.Bits & !0x6000) | (((val as u16) & 0x03) << 13); }
+    fn set_present(&mut self, val: u8)    { self.Bits = (self.Bits & !0x8000) | (((val as u16) & 0x01) << 15); }
 }
 
 #[repr(C)]
@@ -126,10 +133,15 @@ struct KDESCRIPTOR {
     Base: *mut KIDTENTRY64,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 struct KI_INTERRUPT_DISPATCH_ENTRY {
+    _Op_nop: UCHAR,
     _Op_push: UCHAR,
+    _Vector: UCHAR,
+    _Op_jmp: UCHAR,
+    RelativeAddress: ULONG,
 }
+const _: () = assert!(core::mem::size_of::<KI_INTERRUPT_DISPATCH_ENTRY>() == 8);
 
 #[repr(C)]
 struct MACHINE_FRAME {
@@ -196,23 +208,27 @@ pub unsafe extern "system" fn KeInitExceptions() {
     
     for i in 0..256 {
         let offset: u64;
-        
+        let dpl: u8;
+        let ist: u8;
+
         if KiInterruptInitTable[j].InterruptId as usize == i {
             offset = KiInterruptInitTable[j].ServiceRoutine as u64;
-            KiIdt[i].Dpl = KiInterruptInitTable[j].Dpl;
-            KiIdt[i].IstIndex = KiInterruptInitTable[j].IstIndex;
+            dpl = KiInterruptInitTable[j].Dpl;
+            ist = KiInterruptInitTable[j].IstIndex;
             j += 1;
         } else {
             offset = core::ptr::addr_of!(KiUnexpectedRange[i]._Op_push) as u64;
-            KiIdt[i].Dpl = 0;
-            KiIdt[i].IstIndex = 0;
+            dpl = 0;
+            ist = 0;
         }
-        
+
         KiIdt[i].OffsetLow = (offset & 0xffff) as USHORT;
         KiIdt[i].Selector = KGDT64_R0_CODE;
-        KiIdt[i].Type = 0x0e;
-        KiIdt[i].Reserved0 = 0;
-        KiIdt[i].Present = 1;
+        // Pack bitfield: IstIndex[2:0] | Type[12:8]=0xE (interrupt gate) | Dpl[14:13] | Present[15]=1
+        KiIdt[i].Bits = ((ist as u16) & 0x07)
+            | (0x0Eu16 << 8)
+            | (((dpl as u16) & 0x03) << 13)
+            | (1u16 << 15);
         KiIdt[i].OffsetMiddle = ((offset >> 16) & 0xffff) as USHORT;
         KiIdt[i].OffsetHigh = (offset >> 32) as ULONG;
         KiIdt[i].Reserved1 = 0;

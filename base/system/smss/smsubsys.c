@@ -278,12 +278,14 @@ SmpLoadSubSystem(IN PUNICODE_STRING FileName,
     else
     {
         /* This must be CSRSS itself, so just launch it and that's it */
+        DPRINT1("SMSS: SmpLoadSubSystem - calling SmpExecuteImage for '%wZ'\n", FileName);
         Status = SmpExecuteImage(FileName,
                                  Directory,
                                  CommandLine,
                                  MuSessionId,
                                  Flags | SMP_DEFERRED_FLAG,
                                  &ProcessInformation);
+        DPRINT1("SMSS: SmpLoadSubSystem - SmpExecuteImage returned 0x%lx\n", Status);
         if (!NT_SUCCESS(Status))
         {
             /* Handle failures */
@@ -393,6 +395,7 @@ SmpLoadSubSystem(IN PUNICODE_STRING FileName,
     }
 
     /* Okay, everything looks good to go, initialize this subsystem now! */
+    DPRINT1("SMSS: SmpLoadSubSystem - resuming thread and waiting for subsystem connect (session %lu)\n", MuSessionId);
     Status = NtResumeThread(ProcessInformation.ThreadHandle, NULL);
     if (!NT_SUCCESS(Status))
     {
@@ -598,6 +601,8 @@ SmpLoadSubSystemsForMuSession(IN PULONG MuSessionId,
     {
         /* Get each entry and check if it's the internal debug or not */
         RegEntry = CONTAINING_RECORD(NextEntry, SMP_REGISTRY_VALUE, Entry);
+        DPRINT1("SMSS: Loading subsystem '%wZ' => command='%wZ'\n",
+                &RegEntry->Name, &RegEntry->Value);
         if (_wcsicmp(RegEntry->Name.Buffer, L"Debug") == 0)
         {
             /* Load the internal debug system */

@@ -33,7 +33,7 @@ extern "system" {
     fn DbgBreakPointWithStatus(Status: ULONG);
 }
 
-const TIMER_TABLE_SIZE: usize = 256;
+const TIMER_TABLE_SIZE: usize = 512;
 const CLOCK_QUANTUM_DECREMENT: i8 = 3;
 const DBG_STATUS_CONTROL_C: ULONG = 1;
 const EFLAGS_V86_MASK: ULONG = 0x00020000;

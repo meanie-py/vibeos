@@ -47816,7 +47816,7 @@ pub struct _KPRCB {
     pub GroupIndex: UCHAR,
     pub PrcbPad01: [UCHAR; 2usize],
     pub __bindgen_padding_0: [u64; 5usize],
-    pub LockQueue: [KSPIN_LOCK_QUEUE; 17usize],
+    pub LockQueue: [KSPIN_LOCK_QUEUE; 33usize],
     pub ProcessorVendorString: [UCHAR; 2usize],
     pub PrcbPad02: [UCHAR; 2usize],
     pub FeatureBits: ULONG,

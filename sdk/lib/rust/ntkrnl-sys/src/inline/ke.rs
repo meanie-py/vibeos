@@ -1212,7 +1212,7 @@ pub unsafe fn KiComputeTimerTableIndex(due_time: u64) -> ULONG {
 /// KiRemoveEntryTimer — remove timer from its timer table entry.
 #[inline]
 pub unsafe fn KiRemoveEntryTimer(timer: ddk::PKTIMER) {
-    let hand = dh_get_hand(&(*timer).Header) as usize;
+    let hand = (dh_get_hand(&(*timer).Header) as usize) & (TIMER_TABLE_SIZE as usize - 1);
     if crate::base::RemoveEntryList(core::ptr::addr_of_mut!((*timer).TimerListEntry)) {
         let table_entry = &mut KiTimerTableListHead[hand];
         if table_entry.Entry.Flink
@@ -1280,7 +1280,7 @@ pub unsafe fn KiComputeDueTime(
 /// KxRemoveTreeTimer — remove timer from timer table with lock (ke_x.h).
 #[inline]
 pub unsafe fn KxRemoveTreeTimer(timer: ddk::PKTIMER) {
-    let hand = dh_get_hand(&(*timer).Header) as u32;
+    let hand = dh_get_hand(&(*timer).Header) as u32 & (TIMER_TABLE_SIZE - 1);
     let lock_queue = KiAcquireTimerLock(hand);
     dh_set_inserted(&mut (*timer).Header,0);
     if crate::base::RemoveEntryList(core::ptr::addr_of_mut!((*timer).TimerListEntry)) {

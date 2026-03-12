@@ -30,12 +30,22 @@ elseif(NOT DEFINED NO_ROSSYM)
     set(NO_ROSSYM FALSE)
 endif()
 
-# PSEH3 has Clang paths (pseh3.h) but Clang's ESP-relative locals break PSEH3's
-# embedded filter invocation which only restores EBP. This causes kernel crashes
-# (fastfat.sys FAT_FILE_SYSTEM bugcheck). Use DUMMY_PSEH for all llvm-mingw builds.
-# User-mode exception swallowing in KiUserExceptionDispatcher compensates.
-# ARM64 uses dummy PSEH (no i386-style fs:[0] SEH chain).
-if(ARCH STREQUAL "arm64" OR USE_LLVM_MINGW)
+# PSEH configuration for llvm-mingw:
+# - i386: Setjmp-based PSEH (USE_PSEH_CLANG). Always catches via longjmp, then
+#   evaluates the filter in the original function context where ESP is correct.
+#   Avoids PSEH3's embedded filter issue (Clang ESP-relative locals + different
+#   stack in handler context = corruption).
+# - ARM64/amd64: DUMMY_PSEH (no i386-style fs:[0] SEH chain; separate workarounds).
+if(ARCH STREQUAL "arm64")
+    set(USE_PSEH3 0)
+    set(USE_DUMMY_PSEH 1)
+elseif(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+    set(USE_PSEH3 0)
+    set(USE_DUMMY_PSEH 1)
+    # TODO: Enable USE_PSEH_CLANG once setjmp-based PSEH is debugged
+    # set(USE_DUMMY_PSEH 0)
+    # set(USE_PSEH_CLANG 1)
+elseif(USE_LLVM_MINGW)
     set(USE_PSEH3 0)
     set(USE_DUMMY_PSEH 1)
 else()
@@ -53,6 +63,10 @@ endif()
 
 if(USE_DUMMY_PSEH)
     add_definitions(-D_USE_DUMMY_PSEH=1)
+endif()
+
+if(USE_PSEH_CLANG)
+    add_definitions(-D_USE_PSEH_CLANG=1)
 endif()
 
 if(USE_NATIVE_SEH)

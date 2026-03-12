@@ -181,10 +181,10 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     (*CtxSwitchFrame).Return = KiThreadStartup as u64;
     (*CtxSwitchFrame).ApcBypass = 1u8;
 
-    (*StartFrame).P1Home = StartRoutine.unwrap() as u64;
+    (*StartFrame).P1Home = StartRoutine.map(|f| f as u64).unwrap_or(0);
     (*StartFrame).P2Home = StartContext as u64;
     (*StartFrame).P3Home = 0;
-    (*StartFrame).P4Home = SystemRoutine.unwrap() as u64;
+    (*StartFrame).P4Home = SystemRoutine.map(|f| f as u64).unwrap_or(0);
     (*StartFrame).Reserved = 0;
 }
 

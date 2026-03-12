@@ -4720,6 +4720,8 @@ MmCreateSection (OUT PVOID  * Section,
     BOOLEAN FileLock = FALSE;
     BOOLEAN HaveFileObject = FALSE;
 
+    DbgPrint("MmCreateSection: ENTER alloc=0x%lx fh=%p fo=%p\n", AllocationAttributes, FileHandle, FileObject);
+
     // FIXME: Implement support for large pages
     if (AllocationAttributes & SEC_LARGE_PAGES)
     {
@@ -4774,12 +4776,14 @@ MmCreateSection (OUT PVOID  * Section,
         else
         {
             /* Reference the file handle to get the object */
+            DbgPrint("MmCreateSection: ObReferenceObjectByHandle(fh=%p)\n", FileHandle);
             Status = ObReferenceObjectByHandle(FileHandle,
                                                MmMakeFileAccess[Protection],
                                                IoFileObjectType,
                                                ExGetPreviousMode(),
                                                (PVOID*)&FileObject,
                                                NULL);
+            DbgPrint("MmCreateSection: ObRefByHandle returned 0x%lx fo=%p\n", Status, FileObject);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT1("Failed to get a handle to the FO: %lx\n", Status);
@@ -4787,6 +4791,7 @@ MmCreateSection (OUT PVOID  * Section,
             }
 
             /* Lock the file */
+            DbgPrint("MmCreateSection: FsRtlAcquireToCreateMappedSection\n");
             Status = FsRtlAcquireToCreateMappedSection(FileObject, SectionPageProtection);
             if (!NT_SUCCESS(Status))
             {
@@ -4794,6 +4799,7 @@ MmCreateSection (OUT PVOID  * Section,
                 return Status;
             }
 
+            DbgPrint("MmCreateSection: FsRtlAcquire returned 0x%lx\n", Status);
             FileLock = TRUE;
 
             /* Deny access if there are writes on the file */
@@ -4842,6 +4848,7 @@ MmCreateSection (OUT PVOID  * Section,
 #ifndef NEWCC
     if (!(AllocationAttributes & SEC_IMAGE))
     {
+        DbgPrint("MmCreateSection: calling MmCreateDataFileSection\n");
         Status =  MmCreateDataFileSection(SectionObject,
                                           DesiredAccess,
                                           ObjectAttributes,

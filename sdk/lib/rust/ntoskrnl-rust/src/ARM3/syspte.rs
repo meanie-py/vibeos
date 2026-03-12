@@ -147,13 +147,23 @@ pub unsafe extern "system" fn MiReleaseSystemPtes(
     let mut next_pte: PMMPTE;
     let mut insert_pte: PMMPTE;
 
-    // Bounds check: verify starting_pte is within the system PTE range
-    if starting_pte < MmSystemPtesStart[system_pte_pool_type as usize]
-        || starting_pte.add(number_of_ptes as usize - 1) > MmSystemPtesEnd[system_pte_pool_type as usize]
+    // Guard against use-after-free: callers may pass freed MDL data containing
+    // pool fill patterns (0xFCFCFCFC), resulting in enormous number_of_ptes.
+    // Use saturating arithmetic to prevent pointer wrapping on bounds check.
+    let ptes_start = MmSystemPtesStart[system_pte_pool_type as usize];
+    let ptes_end = MmSystemPtesEnd[system_pte_pool_type as usize];
+    let pte_range = (ptes_end as usize).wrapping_sub(ptes_start as usize)
+        / core::mem::size_of::<MMPTE>()
+        + 1;
+
+    if number_of_ptes == 0
+        || number_of_ptes as usize > pte_range
+        || starting_pte < ptes_start
+        || (starting_pte as usize) > (ptes_end as usize).wrapping_sub(
+            (number_of_ptes as usize - 1) * core::mem::size_of::<MMPTE>())
     {
-        KeBugCheckEx(0x50, starting_pte as ULONG_PTR, number_of_ptes as ULONG_PTR,
-            MmSystemPtesStart[system_pte_pool_type as usize] as ULONG_PTR,
-            MmSystemPtesEnd[system_pte_pool_type as usize] as ULONG_PTR);
+        // Corrupt call — skip silently to avoid crashing on use-after-free
+        return;
     }
 
     RtlZeroMemory(

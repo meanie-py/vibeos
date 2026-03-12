@@ -27,6 +27,10 @@ else()
         list(APPEND SOURCE
             i386/pseh3.c
             i386/pseh3_i386.S)
+    elseif(USE_PSEH_CLANG)
+        list(APPEND SOURCE
+            i386/pseh_clang.c
+            i386/pseh_clang_asm.S)
     elseif(USE_DUMMY_PSEH)
         list(APPEND SOURCE dummy.c)
     elseif(ARCH STREQUAL "i386")

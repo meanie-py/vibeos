@@ -1824,6 +1824,9 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     /* Set a NULL SEH Filter */
     RtlSetUnhandledExceptionFilter(NULL);
 
+    /* Debug: trace process initialization entry */
+    DPRINT1("LdrpInitializeProcess: ENTER (ImageBase=%p)\n", Peb->ImageBaseAddress);
+
     /* Get the image path */
     ImagePath = Peb->ProcessParameters->ImagePathName.Buffer;
 
@@ -2050,6 +2053,7 @@ LdrpInitializeProcess(IN PCONTEXT Context,
         DPRINT1("Failed to create process heap\n");
         return STATUS_NO_MEMORY;
     }
+    DPRINT1("LdrpInitializeProcess: heap created OK\n");
 
     Status = RtlpInitializeLocaleTable();
     if (!NT_SUCCESS(Status))
@@ -2102,6 +2106,7 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     RtlAppendUnicodeStringToString(&FullPath, &NtSystemRoot);
     RtlAppendUnicodeToString(&FullPath, L"\\System32\\");
 
+    DPRINT1("LdrpInitializeProcess: opening KnownDlls\n");
     /* Open the Known DLLs directory */
     RtlInitUnicodeString(&KnownDllString, L"\\KnownDlls");
     InitializeObjectAttributes(&ObjectAttributes,
@@ -2204,6 +2209,7 @@ LdrpInitializeProcess(IN PCONTEXT Context,
         }
     }
 
+    DPRINT1("LdrpInitializeProcess: setting up loader data\n");
     /* Setup Loader Data */
     Peb->Ldr = &PebLdr;
     InitializeListHead(&PebLdr.InLoadOrderModuleList);
@@ -2298,9 +2304,11 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     InsertHeadList(&Peb->Ldr->InInitializationOrderModuleList,
                    &LdrpNtDllDataTableEntry->InInitializationOrderLinks);
 
+    DPRINT1("LdrpInitializeProcess: init actctx\n");
     /* Initialize Wine's active context implementation for the current process */
     RtlpInitializeActCtx(&OldShimData);
 
+    DPRINT1("LdrpInitializeProcess: setting curdir\n");
     /* Set the current directory */
     Status = RtlSetCurrentDirectory_U(&CurrentDirectory);
     if (!NT_SUCCESS(Status))
@@ -2318,12 +2326,14 @@ LdrpInitializeProcess(IN PCONTEXT Context,
         if (FreeCurDir) RtlFreeUnicodeString(&CurrentDirectory);
     }
 
+    DPRINT1("LdrpInitializeProcess: curdir done, status=0x%lx\n", Status);
     /* Check if we should look for a .local file */
     if (ProcessParameters && !(ProcessParameters->Flags & RTL_USER_PROCESS_PARAMETERS_LOCAL_DLL_PATH))
     {
         LdrpInitializeDotLocalSupport(ProcessParameters);
     }
 
+    DPRINT1("LdrpInitializeProcess: dotlocal done\n");
     /* Check if the Application Verifier was enabled */
     if (Peb->NtGlobalFlag & FLG_APPLICATION_VERIFIER)
     {
@@ -2385,7 +2395,9 @@ LdrpInitializeProcess(IN PCONTEXT Context,
     }
 
     /* Walk the IAT and load all the DLLs */
+    DPRINT1("LdrpInitializeProcess: Walking imports for '%wZ'\n", &ImagePathName);
     ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
+    DPRINT1("LdrpInitializeProcess: Import walk done, status=0x%lx\n", ImportStatus);
 
     /* Check if relocation is needed */
     if (Peb->ImageBaseAddress != (PVOID)NtHeader->OptionalHeader.ImageBase)

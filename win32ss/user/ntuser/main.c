@@ -696,7 +696,7 @@ InitThreadCallback(PETHREAD Thread)
     /* Last things to do only if we are not a SYSTEM or CSRSS thread */
     if (!(ptiCurrent->TIF_flags & (TIF_SYSTEMTHREAD | TIF_CSRSSTHREAD)))
     {
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
         /* Check if PEB->KernelCallbackTable is set up (by user32 DllMain).
          * If not, skip co_IntClientThreadSetup — KeUserModeCallback would
          * crash in user-mode trying to call through a NULL table.
@@ -704,30 +704,18 @@ InitThreadCallback(PETHREAD Thread)
          * thread conversion from its DllMain before user32 DllMain runs.
          * The thread will be set up later when user32 DllMain calls
          * ClientThreadSetupHelper. */
-        {
-            PPEB Peb = Process->Peb;
-            DbgPrint("[W32K] ClientThreadSetup guard: PID=%lu Peb=%p Valid=%d KCT=%p\n",
-                     (ULONG)(ULONG_PTR)PsGetCurrentProcessId(),
-                     Peb,
-                     Peb ? MmIsAddressValid(Peb) : 0,
-                     (Peb && MmIsAddressValid(Peb)) ? Peb->KernelCallbackTable : NULL);
-        }
         if (!Process->Peb || !MmIsAddressValid(Process->Peb) ||
             !Process->Peb->KernelCallbackTable)
         {
-            DbgPrint("[W32K] Skipping co_IntClientThreadSetup PID=%lu\n",
-                     (ULONG)(ULONG_PTR)PsGetCurrentProcessId());
             goto skip_client_thread_setup;
         }
-        DbgPrint("[W32K] Proceeding with co_IntClientThreadSetup PID=%lu\n",
-                 (ULONG)(ULONG_PTR)PsGetCurrentProcessId());
 #endif
         /* Callback to User32 Client Thread Setup */
         TRACE_CH(UserThread, "Call co_IntClientThreadSetup...\n");
         Status = co_IntClientThreadSetup();
         if (!NT_SUCCESS(Status))
         {
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
             ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (non-fatal)\n", Status);
 #else
             ERR_CH(UserThread, "ClientThreadSetup failed with Status 0x%08lx\n", Status);
@@ -735,7 +723,7 @@ InitThreadCallback(PETHREAD Thread)
 #endif
         }
         TRACE_CH(UserThread, "co_IntClientThreadSetup succeeded!\n");
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
 skip_client_thread_setup:
         ;
 #endif
@@ -1064,6 +1052,7 @@ DriverEntry(
                                     1 * 1024 * 1024);
     if (GlobalUserHeap == NULL)
     {
+        DPRINT1("Failed to create the global user heap!\n");
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -1073,6 +1062,7 @@ DriverEntry(
     UserLeave();
     if (!gpsi)
     {
+        DPRINT1("Failed to allocate gpsi!\n");
         return STATUS_UNSUCCESSFUL;
     }
     RtlZeroMemory(gpsi, sizeof(*gpsi));
@@ -1094,7 +1084,6 @@ DriverEntry(
     NT_ROF(MsqInitializeImpl());
     NT_ROF(InitTimerImpl());
     NT_ROF(InitDCEImpl());
-
     return STATUS_SUCCESS;
 }
 

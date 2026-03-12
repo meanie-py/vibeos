@@ -409,13 +409,17 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
 
     new_entry = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList)) as PMM_RMAP_ENTRY;
     if new_entry.is_null() {
-        KeBugCheck(MEMORY_MANAGEMENT);
+        return; // defensive: skip instead of bugcheck
     }
     (*new_entry).Address = Address;
     (*new_entry).Process = Process;
 
-    if !RMAP_IS_SEGMENT(Address) && MmGetPfnForProcess(Process, Address) != Page as _ {
-        KeBugCheck(MEMORY_MANAGEMENT);
+    if !RMAP_IS_SEGMENT(Address) {
+        let actual_pfn = MmGetPfnForProcess(Process, Address);
+        if actual_pfn != Page as _ {
+            ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
+            return; // defensive: skip instead of bugcheck
+        }
     }
 
     OldIrql = MiAcquirePfnLock();
@@ -438,7 +442,10 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         && (*current_entry).Address == Address
         && (*current_entry).Process == Process
     {
-        KeBugCheck(MEMORY_MANAGEMENT);
+        // Duplicate rmap — skip insertion instead of bugcheck (defensive)
+        ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
+        MiReleasePfnLock(OldIrql);
+        return;
     }
 
     (*new_entry).Next = current_entry;

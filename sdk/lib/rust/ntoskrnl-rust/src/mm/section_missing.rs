@@ -1488,6 +1488,22 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         let Segment = (*Section).Segment as *mut MM_SECTION_SEGMENT;
         let ViewOffset = if SectionOffset.is_null() { 0 } else { (*SectionOffset).QuadPart };
 
+        // Handle ViewSize == 0: expand to section size minus offset
+        if *ViewSize == 0 {
+            let calculated_size = (*Section).SizeOfSection.QuadPart as u64 - ViewOffset as u64;
+            if calculated_size > usize::MAX as u64 {
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(&mut ApcState);
+                }
+                return STATUS_INVALID_VIEW_SIZE;
+            }
+            *ViewSize = calculated_size as SIZE_T;
+        }
+
+        // Page-round the view size
+        *ViewSize = ((*ViewSize + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
+
         MmLockSectionSegment(Segment);
         Status = MmMapViewOfSegment(AddressSpace, 0u8, Segment, BaseAddress, *ViewSize, Protect, ViewOffset, AllocationType);
         MmUnlockSectionSegment(Segment);

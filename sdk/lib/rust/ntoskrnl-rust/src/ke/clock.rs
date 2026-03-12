@@ -54,8 +54,7 @@ struct KTIMER_TABLE_ENTRY {
     Entry: LIST_ENTRY,
 }
 
-const TIMER_TABLE_SIZE: usize = 256;
-const HIGH_LEVEL: KIRQL = 2;
+const TIMER_TABLE_SIZE: usize = 512;
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetSystemTime(

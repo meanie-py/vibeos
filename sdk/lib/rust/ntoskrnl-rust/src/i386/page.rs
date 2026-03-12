@@ -354,11 +354,13 @@ unsafe fn MmDeleteVirtualMappingEx(
             let OldIrql: KIRQL;
 
             OldIrql = MiAcquirePfnLock();
-            Pfn1 = MmPfnDatabase.add(OldPte.page_frame_number());
-            let sc = (*Pfn1).share_count();
-            (*Pfn1).set_share_count(sc.wrapping_sub(1));
-            if (*Pfn1).share_count() == 0 {
-                (*Pfn1).set_page_location(TransitionPage);
+            Pfn1 = MiGetPfnEntry(OldPte.page_frame_number());
+            if !Pfn1.is_null() {
+                let sc = (*Pfn1).share_count();
+                (*Pfn1).set_share_count(sc.wrapping_sub(1));
+                if (*Pfn1).share_count() == 0 {
+                    (*Pfn1).set_page_location(TransitionPage);
+                }
             }
             MiReleasePfnLock(OldIrql);
         }

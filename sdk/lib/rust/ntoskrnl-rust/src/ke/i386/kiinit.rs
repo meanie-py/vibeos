@@ -279,11 +279,6 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
     let mut CurrentSample: PKI_SAMPLE_MAP = Samples.as_mut_ptr();
     let mut IdentityMap: LARGE_IDENTITY_MAP = core::mem::zeroed();
 
-    // DBG: ~A~ entry
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
     if (KeFeatureBits & KF_LARGE_PAGE as u64) != 0 {
         if Ki386CreateIdentityMap(
             core::ptr::addr_of_mut!(IdentityMap) as PVOID,
@@ -300,22 +295,12 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
         Ki386FreeIdentityMap(core::ptr::addr_of_mut!(IdentityMap) as PVOID);
     }
 
-    // DBG: ~B~ after large page
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
     if (KeFeatureBits & KF_GLOBAL_PAGE as u64) != 0 {
         CpuCount = KeNumberProcessors as ULONG;
         KeIpiGenericCall(
             Some(Ki386EnableGlobalPage),
             core::ptr::addr_of_mut!(CpuCount) as u32,
         );
-    }
-
-    // DBG: ~C~ after global page
-    #[cfg(target_arch = "x86")]
-    {
     }
 
     if (KeFeatureBits & ((KF_PAT | KF_MTRR) as u64)) != 0 {
@@ -332,11 +317,6 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
 
     if (KeFeatureBits & KF_PAT as u64) != 0 {
         KiInitializePAT();
-    }
-
-    // DBG: ~D~ after PAT/MTRR query + PAT init
-    #[cfg(target_arch = "x86")]
-    {
     }
 
     if (KeFeatureBits & KF_CR4 as u64) != 0 {
@@ -365,22 +345,7 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
         }
     }
 
-    // DBG: ~E~ after FXSR/XMMI
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
     KiRestoreFastSyscallReturnState();
-
-    // DBG: ~F~ after KiRestoreFastSyscallReturnState
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
-    // DBG: ~G~ before per-CPU loop
-    #[cfg(target_arch = "x86")]
-    {
-    }
 
     i = KeActiveProcessors as ULONG;
     Affinity = 1;
@@ -493,30 +458,12 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
         Affinity <<= 1;
     }
 
-    // DBG: ~H~ after per-CPU loop
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
-    // DBG: ~I~ before KeRevertToUserAffinityThread
-    #[cfg(target_arch = "x86")]
-    {
-    }
     KeRevertToUserAffinityThread();
-
-    // DBG: ~J~ before KiSetCR0Bits
-    #[cfg(target_arch = "x86")]
-    {
-    }
 
     if KiTimeLimitIsrMicroseconds != 0 {}
 
     KiSetCR0Bits();
 
-    // DBG: ~K~ after KiSetCR0Bits (last in KiInitMachineDependent)
-    #[cfg(target_arch = "x86")]
-    {
-    }
 }
 
 // CODE_SEG("INIT")
@@ -575,74 +522,56 @@ pub unsafe extern "system" fn KiInitializePcr(
 
 // CODE_SEG("INIT")
 unsafe fn KiVerifyCpuFeatures(Prcb: PKPRCB) {
-    #[inline(always)]
-    unsafe fn dbg(ch: u8) {
-    }
     let mut CpuInfo: CPU_INFO = core::mem::zeroed();
 
-    dbg(b'A');
     let EFlags = __readeflags();
     let NewEFlags = EFlags ^ EFLAGS_ID;
     __writeeflags(NewEFlags);
     let NewEFlags = __readeflags();
 
     if NewEFlags == EFlags {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x1, 0, 0, 0);
     } else {
         let EFlags = EFlags | EFLAGS_ID;
         __writeeflags(EFlags);
     }
 
-    dbg(b'B');
     KiCpuId(core::ptr::addr_of_mut!(CpuInfo), 0);
     if CpuInfo.__bindgen_anon_1.Eax == 0 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x1, 0, 0, 0);
     }
 
-    dbg(b'C');
     KiSetProcessorType();
 
     if (*Prcb).CpuType == 3 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x386, 0, 0, 0);
     }
 
-    dbg(b'D');
     let FeatureBits = KiGetFeatureBits();
 
     if (FeatureBits & KF_RDTSC as u64) == 0 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x2, 0x00000010, 0, 0);
     }
 
     if (FeatureBits & KF_CMPXCHG8B as u64) == 0 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x2, 0x00000100, 0, 0);
     }
 
-    dbg(b'E');
     KiCpuId(core::ptr::addr_of_mut!(CpuInfo), 1);
 
     if (CpuInfo.__bindgen_anon_1.Edx & 0x00000001) == 0 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x2, 0x00000001, 0, 0);
     }
 
-    dbg(b'F');
     let mut Cr0 = __readcr0();
     Cr0 &= !(CR0_EM | CR0_MP);
     Cr0 |= CR0_NE;
     __writecr0(Cr0);
 
-    dbg(b'G');
     if KiIsNpxErrataPresent() != 0 {
-        dbg(b'!');
         KeBugCheckEx(UNSUPPORTED_PROCESSOR, 0x2, 0x00000001, 0, 0);
     }
 
-    dbg(b'H');
     (*Prcb).FeatureBits = FeatureBits as ULONG;
     (*Prcb).FeatureBitsHigh = (FeatureBits >> 32) as ULONG;
 }
@@ -661,11 +590,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     let DpcStack: PVOID;
     let mut DummyIrql: KIRQL = 0;
 
-    // Debug trace: narrow down crash inside KiInitializeKernel
-
     PoInitializePrcb(Prcb);
-
-    // Debug trace: past PoInitializePrcb
 
     if Number == 0 {
         KeFeatureBits =
@@ -706,11 +631,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
         KeFeatureBits |= KF_NX_DISABLED as u64;
     }
 
-    // Debug trace: before KiSaveProcessorControlState
-
     KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
-
-    // Debug trace: past KiSaveProcessorControlState
 
     #[cfg(debug_assertions)]
     {
@@ -721,16 +642,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     KiGetCacheInformation();
 
-    // Debug trace: before KiInitSpinLocks
-
     KiInitSpinLocks(Prcb, Number);
-
-    // Debug trace: past KiInitSpinLocks
 
     (*Prcb).ParentNode = KeNodeBlock[0] as *mut _;
     (*(*Prcb).ParentNode).ProcessorMask |= (*Prcb).SetMember;
-
-    // Debug trace: past ParentNode setup
 
     if Number == 0 {
         KeI386CpuType = (*Prcb).CpuType as ULONG;
@@ -753,20 +668,12 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
         (*Prcb).MultiThreadSetMaster = Prcb;
 
-        // Debug trace: before KeLowerIrql(APC_LEVEL)
-
         KeLowerIrql(APC_LEVEL as u8);
-
-        // Debug trace: past KeLowerIrql(APC_LEVEL)
 
         KeInitializeSpinLock(core::ptr::addr_of_mut!(KiFreezeExecutionLock) as *mut _);
         KeInitializeSpinLock(core::ptr::addr_of_mut!(Ki486CompatibilityLock) as *mut _);
 
-        // Debug trace: before KiInitSystem
-
         KiInitSystem();
-
-        // Debug trace: past KiInitSystem
 
         InitializeListHead(core::ptr::addr_of_mut!(KiProcessListHead));
         PageDirectory[0] = 0;
@@ -782,8 +689,6 @@ pub unsafe extern "system" fn KiInitializeKernel(
     } else {
     }
 
-    // Debug trace: before KeInitializeThread
-
     KeInitializeThread(
         InitProcess,
         InitThread,
@@ -794,8 +699,6 @@ pub unsafe extern "system" fn KiInitializeKernel(
         core::ptr::null_mut(),
         IdleStack,
     );
-    // Debug trace: past KeInitializeThread
-
     (*InitThread).__bindgen_anon_1.__bindgen_anon_1.NextProcessor = Number as UCHAR;
     (*InitThread).Priority = HIGH_PRIORITY;
     (*InitThread).State = 2u8;
@@ -877,27 +780,17 @@ pub unsafe extern "system" fn KiInitializeKernel(
     (*Prcb).NextThread = core::ptr::null_mut();
     (*Prcb).IdleThread = InitThread;
 
-    // Debug trace: 'E' = before ExpInitializeExecutive
-
     ExpInitializeExecutive(Number as ULONG, LoaderBlock);
 
-    // DBG: after ExpInitializeExecutive
-
     if Number == 0 {
-        // DBG: in Number==0 block
-
         KiTimeIncrementReciprocal = KiComputeReciprocal(
             KeMaximumIncrement as LONG,
             core::ptr::addr_of_mut!(KiTimeIncrementShiftCount),
         );
 
-        // DBG: after KiComputeReciprocal
-
         (*Prcb).MaximumDpcQueueDepth = KiMaximumDpcQueueDepth;
         (*Prcb).MinimumDpcRate = KiMinimumDpcRate;
         (*Prcb).AdjustDpcThreshold = KiAdjustDpcThreshold;
-
-        // DBG: before MmCreateKernelStack
 
         DpcStack = MmCreateKernelStack(0u8, 0);
         if DpcStack.is_null() {
@@ -905,25 +798,16 @@ pub unsafe extern "system" fn KiInitializeKernel(
         }
         (*Prcb).DpcStack = DpcStack;
 
-        // DBG: after MmCreateKernelStack
-
         Ki386IopmSaveArea = ExAllocatePoolWithTag(PagedPool, IOPM_SIZE as usize, TAG_KERNEL);
         if Ki386IopmSaveArea.is_null() {
             KeBugCheckEx(NO_PAGES_AVAILABLE, 2, IOPM_SIZE as ULONG_PTR, 0, 0);
         }
 
-        // DBG: after ExAllocatePoolWithTag
     }
-
-    // DBG: before KeRaiseIrql
 
     KeRaiseIrql(DISPATCH_LEVEL as u8, core::ptr::addr_of_mut!(DummyIrql));
 
-    // DBG: before KeSetPriorityThread
-
     KeSetPriorityThread(InitThread, 0);
-
-    // DBG: after KeSetPriorityThread
 
     KiAcquirePrcbLock(Prcb);
     if (*Prcb).NextThread.is_null() {
@@ -931,15 +815,9 @@ pub unsafe extern "system" fn KiInitializeKernel(
     }
     KiReleasePrcbLock(Prcb);
 
-    // DBG: after PrcbLock
-
     KeRaiseIrql(HIGH_LEVEL as u8, core::ptr::addr_of_mut!(DummyIrql));
 
-    // DBG: after KeRaiseIrql HIGH_LEVEL
-
     (*LoaderBlock).Prcb = 0;
-
-    // DBG: KiInitializeKernel about to return
 }
 
 // CODE_SEG("INIT")
@@ -995,8 +873,6 @@ pub unsafe extern "fastcall" fn KiGetMachineBootPointers(
 pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     let Thread: PKTHREAD;
 
-    // Debug trace: 'D' = entered KiSystemStartupBootStack
-
     KiInitializeKernel(
         core::ptr::addr_of_mut!(KiInitialProcess.Pcb),
         (*KeLoaderBlock).Thread as PKTHREAD,
@@ -1006,8 +882,6 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
         KeLoaderBlock,
     );
 
-    // DBG: KiInitializeKernel returned, about to enter KiIdleLoop
-
     Thread = KeGetCurrentThread() as PKTHREAD;
     (*Thread).Priority = 0;
 
@@ -1015,8 +889,6 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     KeLowerIrql(DISPATCH_LEVEL as u8);
 
     (*Thread).WaitIrql = DISPATCH_LEVEL as u8;
-
-    // DBG: about to call KiIdleLoop
 
     KiIdleLoop();
 }
@@ -1089,7 +961,6 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         core::ptr::addr_of_mut!(Pcr),
         core::ptr::addr_of_mut!(Tss),
     );
-
     Ki386InitializeTss(Tss, Idt, Gdt);
 
     RtlZeroMemory(Pcr as PVOID, PAGE_SIZE);
@@ -1111,57 +982,8 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     KeInitExceptions();
 
-    // DBG: dump _KiIdt[14] AFTER swap (source for copy), KiIdtDescriptor.Base, and Idt address
-    {
-        // Helper closure to dump a u32 as hex via debugcon
-        let dump_hex = |val: u32| {
-            let mut shift: i32 = 28;
-            while shift >= 0 {
-                let nibble = ((val >> shift) & 0xF) as u8;
-                let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
-                shift -= 4;
-            }
-        };
-        // Dump KiIdtDescriptor.Base address
-        dump_hex(KiIdtDescriptor.Base);
-        // Dump Idt (CPU IDT base) address
-        dump_hex(Idt as u32);
-        // Dump source _KiIdt[14] (8 bytes) after swap
-        let src_ptr = (KiIdtDescriptor.Base as *const u8).add(14 * 8);
-        for i in 0..8u32 {
-            let b = *src_ptr.add(i as usize);
-            let hi = (b >> 4) & 0xF;
-            let lo = b & 0xF;
-            let ch_hi = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-            let ch_lo = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-        }
-    }
-
     Ke386SetDs(KGDT_R3_DATA | RPL_MASK);
     Ke386SetEs(KGDT_R3_DATA | RPL_MASK);
-
-    // DBG: dump KiIdtDescriptor.Limit and destination Idt[14] BEFORE copy
-    {
-        let dump_u16_hex = |val: u16| {
-            let mut shift: i32 = 12;
-            while shift >= 0 {
-                let nibble = ((val >> shift) & 0xF) as u8;
-                let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
-                shift -= 4;
-            }
-        };
-        // Dump Limit
-        dump_u16_hex(KiIdtDescriptor.Limit);
-        // Dump destination Idt[14] BEFORE copy
-        let dst_ptr_before = (Idt as *const u8).add(14 * 8);
-        for i in 0..8u32 {
-            let b = *dst_ptr_before.add(i as usize);
-            let hi = (b >> 4) & 0xF;
-            let lo = b & 0xF;
-            let ch_hi = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-            let ch_lo = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-        }
-    }
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!(NmiEntry) as PVOID,
@@ -1190,27 +1012,6 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         core::ptr::addr_of!(DoubleFaultEntry) as *const core::ffi::c_void,
         core::mem::size_of::<_KIDTENTRY>(),
     );
-
-    // DBG: dump destination Idt[14] (8 bytes) after copy + NMI/DF restore
-    {
-        let dump_hex = |val: u32| {
-            let mut shift: i32 = 28;
-            while shift >= 0 {
-                let nibble = ((val >> shift) & 0xF) as u8;
-                let ch = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
-                shift -= 4;
-            }
-        };
-        let dst_ptr = (Idt as *const u8).add(14 * 8);
-        for i in 0..8u32 {
-            let b = *dst_ptr.add(i as usize);
-            let hi = (b >> 4) & 0xF;
-            let lo = b & 0xF;
-            let ch_hi = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-            let ch_lo = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-        }
-        let _ = dump_hex;
-    }
 
     loop {
         while (core::ptr::read_volatile(core::ptr::addr_of!(KiFreezeExecutionLock)) as usize) != 0 {}

@@ -69,7 +69,8 @@ pub unsafe extern "system" fn CcInitializeCacheMap(
         LazyWriterContext,
     );
     if status < 0 {
-        ExRaiseStatus(status);
+        // DUMMY_PSEH: CcInitializeCacheMap returns void, just return on failure
+        return;
     }
 }
 

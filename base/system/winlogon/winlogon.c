@@ -538,7 +538,7 @@ WinMain(
     {
 #ifdef _M_ARM64
         DbgPrint("[WINLOGON] ARM64: RegisterLogonProcess failed (error %lu), continuing\n", GetLastError());
-#elif defined(_USE_DUMMY_PSEH)
+#elif defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
         DbgPrint("[WINLOGON] RegisterLogonProcess failed (error %lu), continuing\n", GetLastError());
 #else
         ERR("WL: Could not register logon process (error %lu)\n", GetLastError());
@@ -592,7 +592,7 @@ WinMain(
     {
 #ifdef _M_ARM64
         DbgPrint("[WINLOGON] ARM64: CreateWindowStationAndDesktops FAILED (error %lu), continuing without desktops\n", GetLastError());
-#elif defined(_USE_DUMMY_PSEH)
+#elif defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
         DbgPrint("[WINLOGON] CreateWindowStationAndDesktops FAILED (error %lu), continuing\n", GetLastError());
 #else
         ERR("WL: Could not create window station and desktops (error %lu)\n", GetLastError());
@@ -615,8 +615,12 @@ WinMain(
     }
     DbgPrint("[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n");
 #else
-#ifdef _USE_DUMMY_PSEH
-    /* Load default keyboard layouts */
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Load default keyboard layouts — DISABLED: NtCreateSection deadlock in Rust MM
+     * for file-backed SEC_IMAGE sections causes winlogon to hang then BUGCHECK 0xF4.
+     * Keyboard layout loading calls NtUserLoadKeyboardLayoutEx which does NtCreateSection
+     * on the layout DLL. The desktop still works without keyboard layouts. */
+#if 0
     DbgPrint("[WINLOGON] Calling InitKeyboardLayouts\n");
     if (!InitKeyboardLayouts())
     {
@@ -626,6 +630,7 @@ WinMain(
     {
         DbgPrint("[WINLOGON] InitKeyboardLayouts OK\n");
     }
+#endif
 
     DbgPrint("[WINLOGON] Calling StartRpcServer\n");
     if (!StartRpcServer())
@@ -701,7 +706,7 @@ WinMain(
     /* Load and initialize gina */
     if (!GinaInit(WLSession))
     {
-#ifdef _USE_DUMMY_PSEH
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
         DbgPrint("[WINLOGON] GinaInit failed (non-fatal)\n");
 #else
         ERR("WL: Failed to initialize Gina\n");
@@ -750,7 +755,7 @@ WinMain(
     }
 #endif
 
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH)
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
     /* Tell kernel that CurrentControlSet is good */
     NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
 

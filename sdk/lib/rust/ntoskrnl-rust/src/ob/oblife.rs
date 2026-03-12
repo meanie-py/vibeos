@@ -557,6 +557,8 @@ unsafe fn ObpAllocateObject(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+
+
     if QuotaSize != 0 {
         let QuotaInfo = Header as POBJECT_HEADER_QUOTA_INFO;
         (*QuotaInfo).PagedPoolCharge = (*ObjectCreateInfo).PagedPoolCharge;

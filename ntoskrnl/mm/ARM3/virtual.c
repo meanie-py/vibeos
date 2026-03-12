@@ -400,6 +400,12 @@ MiDeletePte(IN PMMPTE PointerPte,
             PageFrameIndex = PFN_FROM_PTE(&TempPte);
             Pfn1 = MiGetPfnEntry(PageFrameIndex);
 
+            if (!Pfn1)
+            {
+                MI_ERASE_PTE(PointerPte);
+                return;
+            }
+
             DPRINT("Pte %p is transitional!\n", PointerPte);
 
             /* Make sure the saved PTE address is valid */
@@ -440,7 +446,6 @@ MiDeletePte(IN PMMPTE PointerPte,
     /* Get the PFN entry */
     PageFrameIndex = PFN_FROM_PTE(&TempPte);
     Pfn1 = MiGetPfnEntry(PageFrameIndex);
-#ifdef _M_ARM64
     if (!Pfn1)
     {
         /* MiGetPfnEntry returned NULL — PFN bitmap doesn't cover this page.
@@ -448,7 +453,6 @@ MiDeletePte(IN PMMPTE PointerPte,
         MI_ERASE_PTE(PointerPte);
         return;
     }
-#endif
 
     /* Check if this is a valid, prototype PTE */
     if (Pfn1->u3.e1.PrototypePte == 1)

@@ -54,16 +54,10 @@ static mut KiISROverflow: USHORT = 30000;
 
 const PRIMARY_VECTOR_BASE: ULONG = 0x30;
 const DISPATCH_LENGTH: usize = 106;
-const HIGH_LEVEL: KIRQL = 31;
 const MAXULONG: ULONG = 0xFFFFFFFF;
 
-#[cfg(target_arch = "x86")]
-const IPI_LEVEL: KIRQL = 29;
-#[cfg(not(target_arch = "x86"))]
-const IPI_LEVEL: KIRQL = 14;
-
 #[cfg(not(feature = "CONFIG_SMP"))]
-const SYNCH_LEVEL: KIRQL = 12;
+const SYNCH_LEVEL: KIRQL = 2; // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL
 #[cfg(feature = "CONFIG_SMP")]
 const SYNCH_LEVEL: KIRQL = 28;
 

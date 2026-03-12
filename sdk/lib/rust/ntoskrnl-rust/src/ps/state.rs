@@ -18,7 +18,7 @@ const TAG_PS_APC: ULONG = u32::from_le_bytes(*b"cApP");
 const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017_u32 as i32;
 const POOL_QUOTA_FAIL_INSTEAD_OF_RAISE: u32 = 0x00000008;
 
-unsafe extern "C" fn PspQueueApcSpecialApc(
+unsafe extern "system" fn PspQueueApcSpecialApc(
     apc: PKAPC,
     _normal_routine: *mut PKNORMAL_ROUTINE,
     _normal_context: *mut PVOID,

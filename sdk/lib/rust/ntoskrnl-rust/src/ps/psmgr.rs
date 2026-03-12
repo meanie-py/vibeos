@@ -132,7 +132,10 @@ const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
 
 const JOB_OBJECT_ALL_ACCESS: ACCESS_MASK = 0x001F001F;
 
+#[cfg(target_pointer_width = "32")]
 const MAX_FAST_REFS: usize = 7;
+#[cfg(target_pointer_width = "64")]
+const MAX_FAST_REFS: usize = 15;
 
 unsafe fn PspLookupSystemDllEntryPoint(
     name: PCSTR,
@@ -507,6 +510,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
 
     PspCidTable = ExCreateHandleTable(core::ptr::null_mut());
     if PspCidTable.is_null() {
+        ARM64_UART_TRACE(b"[PS] FAIL: PspCidTable null\r\n\0".as_ptr() as PCSTR);
         return 0u8;
     }
 
@@ -539,6 +543,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
         0u8,
     );
     if status < 0 {
+        ARM64_UART_TRACE_HEX(b"[PS] FAIL: PspCreateProcess status=\0".as_ptr() as PCSTR, status as ULONG_PTR);
         return 0u8;
     }
 
@@ -569,6 +574,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
             TAG_SEPA,
         ) as *mut OBJECT_NAME_INFORMATION;
     if (*(PsInitialSystemProcess as *mut _EPROCESS)).SeAuditProcessCreationInfo.ImageFileName.is_null() {
+        ARM64_UART_TRACE(b"[PS] FAIL: SeAuditProcessCreationInfo null\r\n\0".as_ptr() as PCSTR);
         return 0u8;
     }
 
@@ -591,6 +597,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     );
 
     if status < 0 {
+        ARM64_UART_TRACE_HEX(b"[PS] FAIL: PsCreateSystemThread status=\0".as_ptr() as PCSTR, status as ULONG_PTR);
         return 0u8;
     }
 

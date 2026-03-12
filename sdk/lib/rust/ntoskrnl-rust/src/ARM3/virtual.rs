@@ -60,7 +60,7 @@ use ntkrnl_sys::ddk::{
     PHYSICAL_ADDRESS,
     ObReferenceObjectByHandle,
     _MEMORY_CACHING_TYPE_MmCached,
-    PMMVAD, PMMSUPPORT, PMMADDRESS_NODE,
+    PMMVAD, PMMSUPPORT, PMMADDRESS_NODE, PSUBSECTION,
     _OBJECT_HANDLE_INFORMATION,
     PMDL,
     PsGetCurrentThread,
@@ -457,8 +457,17 @@ pub unsafe extern "system" fn MiDeletePte(
             PageFrameIndex = PFN_FROM_PTE(core::ptr::addr_of!(TempPte) as PMMPTE);
             Pfn1 = MiGetPfnEntry(PageFrameIndex);
 
+            if Pfn1.is_null() {
+                MI_ERASE_PTE(PointerPte);
+                return;
+            }
+
             MI_ERASE_PTE(PointerPte);
-            MiDecrementShareCount(MiGetPfnEntry((*Pfn1).pte_frame()) as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+
+            let pte_frame_pfn = MiGetPfnEntry((*Pfn1).pte_frame());
+            if !pte_frame_pfn.is_null() {
+                MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+            }
 
             MI_SET_PFN_DELETED(Pfn1);
 
@@ -474,12 +483,9 @@ pub unsafe extern "system" fn MiDeletePte(
     PageFrameIndex = PFN_FROM_PTE(core::ptr::addr_of!(TempPte) as PMMPTE);
     Pfn1 = MiGetPfnEntry(PageFrameIndex);
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        if Pfn1.is_null() {
-            MI_ERASE_PTE(PointerPte);
-            return;
-        }
+    if Pfn1.is_null() {
+        MI_ERASE_PTE(PointerPte);
+        return;
     }
 
     if (*Pfn1).prototype_pte() {
@@ -511,10 +517,13 @@ pub unsafe extern "system" fn MiDeletePte(
         }
 
         PointerPde = MiPteToPde(PointerPte);
-        MiDecrementShareCount(
-            MiGetPfnEntry((*PointerPde).page_frame_number()) as ntkrnl_sys::ddk::PMMPFN,
-            (*PointerPde).page_frame_number() as ntkrnl_sys::ddk::PFN_NUMBER,
-        );
+        let pde_pfn = MiGetPfnEntry((*PointerPde).page_frame_number());
+        if !pde_pfn.is_null() {
+            MiDecrementShareCount(
+                pde_pfn as ntkrnl_sys::ddk::PMMPFN,
+                (*PointerPde).page_frame_number() as ntkrnl_sys::ddk::PFN_NUMBER,
+            );
+        }
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
 
         if (PointerPte <= MiHighestUserPte) && (ProtoPteArg != (*Pfn1).pte_address()) {
@@ -554,7 +563,10 @@ pub unsafe extern "system" fn MiDeletePte(
         }
 
         MI_ERASE_PTE(PointerPte);
-        MiDecrementShareCount(MiGetPfnEntry((*Pfn1).pte_frame()) as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+        let pte_frame_pfn = MiGetPfnEntry((*Pfn1).pte_frame());
+        if !pte_frame_pfn.is_null() {
+            MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+        }
         MI_SET_PFN_DELETED(Pfn1);
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
     }
@@ -580,7 +592,7 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
     let CurrentProcess: PEPROCESS;
     let mut OldIrql: KIRQL;
     let mut AddressGap = 0u8;
-    let mut _Subsection: PVOID;
+    let mut _Subsection: PSUBSECTION;
 
     CurrentProcess = PsGetCurrentProcess() as *mut _EPROCESS;
 
@@ -633,9 +645,9 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
 
         if (AddressGap != 0) && !LastPrototypePte.is_null() {
             ProtoPtr = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, Va >> PAGE_SHIFT);
-            _Subsection = MiLocateSubsection(Vad, (Va >> PAGE_SHIFT) as ntkrnl_sys::ddk::ULONG_PTR) as PVOID;
+            _Subsection = MiLocateSubsection(Vad, (Va >> PAGE_SHIFT) as ntkrnl_sys::ddk::ULONG_PTR);
             if !_Subsection.is_null() {
-                LastPrototypePte = core::ptr::null_mut();
+                LastPrototypePte = ((*_Subsection).SubsectionBase as PMMPTE).add((*_Subsection).PtesInSubsection as usize);
             } else {
                 ProtoPtr = core::ptr::null_mut();
             }
@@ -650,9 +662,9 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
                 if MI_IS_MAPPED_PTE(core::ptr::addr_of!(TempPte)) {
                     if (!LastPrototypePte.is_null()) && (ProtoPtr > LastPrototypePte) {
                         ProtoPtr = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, Va >> PAGE_SHIFT);
-                        _Subsection = MiLocateSubsection(Vad, (Va >> PAGE_SHIFT) as ntkrnl_sys::ddk::ULONG_PTR) as PVOID;
+                        _Subsection = MiLocateSubsection(Vad, (Va >> PAGE_SHIFT) as ntkrnl_sys::ddk::ULONG_PTR);
                         if !_Subsection.is_null() {
-                            LastPrototypePte = core::ptr::null_mut();
+                            LastPrototypePte = ((*_Subsection).SubsectionBase as PMMPTE).add((*_Subsection).PtesInSubsection as usize);
                         } else {
                             ProtoPtr = core::ptr::null_mut();
                         }

@@ -1015,9 +1015,18 @@ impl MMPFN {
 }
 
 /// MiGetPfnEntry — returns PMMPFN from PFN number.
+/// Matches C version in mm.h: checks MmHighestPhysicalPage and MiPfnBitMap.
 #[inline]
 pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
+    extern "C" {
+        static mut MiPfnBitMap: RTL_BITMAP;
+    }
     if pfn > MmHighestPhysicalPage {
+        return core::ptr::null_mut();
+    }
+    if !MiPfnBitMap.Buffer.is_null()
+        && crate::rtl::RtlTestBit(core::ptr::addr_of_mut!(MiPfnBitMap), pfn as ULONG) == 0
+    {
         return core::ptr::null_mut();
     }
     MmPfnDatabase.add(pfn)

@@ -725,6 +725,14 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
     let pointer_pte_pte: PMMPTE;
     let mut temp_pte: MMPTE;
 
+    // Guard against NULL Pfn1 — can happen when MiGetPfnEntry returns NULL
+    // (PFN out of range or not in MiPfnBitMap) and the caller doesn't check.
+    // Use read_volatile to prevent LLVM from optimizing away the check
+    // (it would otherwise deduce non-null from the later dereferences).
+    if unsafe { core::ptr::read_volatile(&Pfn1) }.is_null() {
+        return;
+    }
+
     #[cfg(target_arch = "aarch64")]
     {
         if ((*Pfn1).page_location() != ActiveAndValid)
@@ -782,6 +790,9 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
 
 #[no_mangle]
 pub unsafe extern "system" fn MiDecrementReferenceCount(Pfn1: PMMPFN, PageFrameIndex: PFN_NUMBER) {
+    if unsafe { core::ptr::read_volatile(&Pfn1) }.is_null() {
+        return;
+    }
     if MI_IS_ROS_PFN(Pfn1) {
         MmDereferencePage((PageFrameIndex) as _);
         return;

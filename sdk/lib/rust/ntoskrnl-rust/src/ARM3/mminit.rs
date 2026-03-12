@@ -1824,6 +1824,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
         // DBG: after MiAdjustWorkingSetManagerParameters
 
+        // Dump values before adjustment
         MmResidentAvailablePages -= (MiExpansionPoolPagesInitialCharge) as isize;
         MmResidentAvailablePages -= (MmSystemCacheWsMinimum) as isize;
         MmResidentAvailableAtInit = MmResidentAvailablePages;
@@ -1852,29 +1853,24 @@ pub unsafe extern "system" fn MmArmInitSystem(
         }
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
 
-        // DBG: before MiBuildPagedPool
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiBuildPagedPool\r\n");
         MiBuildPagedPool();
 
-        // DBG: after MiBuildPagedPool
 
         MmDebugPte = MiAddressToPte(MiDebugMapping as PVOID);
 
-        // DBG: before MiInitializeLoadedModuleList
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(loader_block);
 
-        // DBG: after MiInitializeLoadedModuleList
 
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiInitializeLoadedModuleList returned\r\n");
     }
 
-    // DBG: MmArmInitSystem returning
 
     #[cfg(target_arch = "aarch64")]
     _A3_TRACE!(b"[MM] MmArmInitSystem about to return\r\n");

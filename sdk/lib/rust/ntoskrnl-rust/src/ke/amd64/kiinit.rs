@@ -61,7 +61,7 @@ type PKGDTENTRY64 = *mut u8;
 type PKIDTENTRY64 = *mut u8;
 type PKTSS64 = *mut KTSS64;
 
-#[repr(C)]
+#[repr(C, packed(4))]
 struct KTSS64 {
     Reserved0: u32,
     Rsp0: u64,
@@ -72,6 +72,7 @@ struct KTSS64 {
     Reserved2: u16,
     IoMapBase: u16,
 }
+const _: () = assert!(core::mem::size_of::<KTSS64>() == 0x68);
 
 #[repr(C)]
 struct KDESCRIPTOR {
@@ -236,7 +237,6 @@ const PF_AVX2_INSTRUCTIONS_AVAILABLE: usize = 40;
 const PF_AVX512F_INSTRUCTIONS_AVAILABLE: usize = 41;
 
 const DBG_STATUS_CONTROL_C: u32 = 1;
-const HIGH_LEVEL: u8 = 15;
 
 /// Inline-asm wrapper for the x86 `wrmsr` instruction.
 #[inline(always)]
@@ -349,10 +349,10 @@ unsafe fn KiInitializePcr(
     {
         (*Pcr).Prcb.BuildType |= PRCB_BUILD_UNIPROCESSOR as u8;
     }
-    #[cfg(debug_assertions)]
-    {
-        (*Pcr).Prcb.BuildType |= PRCB_BUILD_DEBUG as u8;
-    }
+    // C kernel uses `#if DBG` which is always TRUE in our Debug build.
+    // Rust `#[cfg(debug_assertions)]` is NOT set in --release mode.
+    // Must match HAL's HalpBuildType or we get MISMATCHED_HAL bugcheck.
+    (*Pcr).Prcb.BuildType |= PRCB_BUILD_DEBUG as u8;
 
     (*Pcr).Prcb.Number = ProcessorNumber as u8;
     (*Pcr).Prcb.SetMember = 1u64 << ProcessorNumber;
@@ -513,6 +513,16 @@ pub unsafe extern "system" fn KiInitializeProcessorBootStructures(
 
 // CODE_SEG("INIT")
 unsafe fn KiInitializeP0BootStructures(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+    // Initialize boot stack pointers — in C these are initialized at declaration
+    // time (PVOID KiP0BootStack = &KiP0BootStackData[KERNEL_STACK_SIZE]), but Rust
+    // can't take the address of a static in a const initializer.
+    KiP0BootStack = core::ptr::addr_of_mut!(KiP0BootStackData) as *mut u8
+        as *mut core::ffi::c_void;
+    KiP0BootStack = (KiP0BootStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+    KiP0DoubleFaultStack = core::ptr::addr_of_mut!(KiP0DoubleFaultStackData) as *mut u8
+        as *mut core::ffi::c_void;
+    KiP0DoubleFaultStack = (KiP0DoubleFaultStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+
     let mut GdtDescriptor = KDESCRIPTOR {
         Pad: [0u16; 3],
         Limit: 0,

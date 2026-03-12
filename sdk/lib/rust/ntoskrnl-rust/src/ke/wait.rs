@@ -802,6 +802,9 @@ pub unsafe extern "system" fn KeWaitForMultipleObjects(
         loop {
             *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
             KxMultiThreadWait(WaitBlockArray, Object, Count, Timeout, WaitType, WaitMode, WaitReason, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+            // KxMultiThreadWait is a C macro that sets WaitBlock to the last entry;
+            // the shim function can't modify our local, so set it here.
+            WaitBlock = WaitBlockArray.add(Count as usize - 1);
             KiAcquireDispatcherLockAtSynchLevel();
 
             (*Thread).Preempted = 0u8;
@@ -956,6 +959,7 @@ pub unsafe extern "system" fn KeWaitForMultipleObjects(
 
     (*Thread).WaitNext = 0u8;
     KxMultiThreadWait(WaitBlockArray, Object, Count, Timeout, WaitType, WaitMode, WaitReason, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+    WaitBlock = WaitBlockArray.add(Count as usize - 1);
 
     loop {
         (*Thread).Preempted = 0u8;
@@ -1104,6 +1108,7 @@ pub unsafe extern "system" fn KeWaitForMultipleObjects(
 
         *kt_WaitIrql(Thread) = KeRaiseIrqlToSynchLevel();
         KxMultiThreadWait(WaitBlockArray, Object, Count, Timeout, WaitType, WaitMode, WaitReason, Alertable, &mut Swappable, &mut DueTime as *mut _ as PLARGE_INTEGER, &mut Hand);
+        WaitBlock = WaitBlockArray.add(Count as usize - 1);
         KiAcquireDispatcherLockAtSynchLevel();
     }
 

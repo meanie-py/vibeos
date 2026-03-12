@@ -214,7 +214,7 @@ pub unsafe extern "system" fn KiInitSpinLocks(Prcb: PKPRCB, Number: i8) {
     (*Prcb).QueueIndex = 1;
     (*Prcb).ReadySummary = 0;
     (*Prcb).DeferredReadyListHead.Next = core::ptr::null_mut();
-    
+
     for i in 0..MAXIMUM_PRIORITY as usize {
         InitializeListHead(core::ptr::addr_of_mut!((*Prcb).DispatcherReadyListHead[i]));
     }

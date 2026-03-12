@@ -124,15 +124,8 @@ HalpClockInterruptHandler(IN PKTRAP_FRAME TrapFrame)
     ULONG LastIncrement;
     KIRQL Irql;
 
-    static ULONG hal_clock_count = 0;
-
     /* Enter trap */
     KiEnterInterruptTrap(TrapFrame);
-
-    /* Debugcon heartbeat: 'H' every 100th HAL clock interrupt */
-    hal_clock_count++;
-    if ((hal_clock_count % 100) == 0)
-        __outbyte(0xe9, 'H');
 
     /* Start the interrupt */
     if (HalBeginSystemInterrupt(CLOCK2_LEVEL, PRIMARY_VECTOR_BASE + PIC_TIMER_IRQ, &Irql))

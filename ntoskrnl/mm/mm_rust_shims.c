@@ -215,17 +215,59 @@ MI_UPDATE_VALID_PTE(
  * Working set locks
  * Bindgen says extern "C" (FORCEINLINE with no calling convention) — no NTAPI.
  */
+/* Lightweight caller tracking — just a pointer store, no serial I/O overhead.
+ * When MiLockProcessWorkingSetShared fires with OwnsExcl==1, we print these. */
+volatile PVOID MmDbgLastExclLocker = NULL;   /* last MiLockProcessWorkingSetUnsafe caller */
+volatile PVOID MmDbgLastExclUnlocker = NULL; /* last MiUnlockProcessWorkingSetUnsafe caller */
+/* Called from MmAccessFault entry when OwnsExcl is set — print faulting address + EIP */
+void MmDebugWsFaultCheck(PVOID Address, PVOID TrapInfo)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+    if (Thread->OwnsProcessWorkingSetExclusive) {
+        ULONG_PTR Eip = 0;
+#ifdef _M_IX86
+        if (TrapInfo) {
+            /* KTRAP_FRAME.Eip is at offset 0x68 on i386 */
+            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x68);
+        }
+#elif defined(_M_AMD64)
+        if (TrapInfo) {
+            /* KTRAP_FRAME.Rip is at offset 0x168 on amd64 */
+            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x168);
+        }
+#endif
+        DPRINT1("[WS-FAULT] MmAccessFault with OwnsExcl=1! FaultAddr=%p, EIP=%p\n"
+                "  LastExclLocker=%p, LastExclUnlocker=%p\n",
+                Address, (PVOID)Eip,
+                MmDbgLastExclLocker, MmDbgLastExclUnlocker);
+    }
+}
+volatile PVOID MmDbgLastSafeLocker = NULL;   /* last MiLockProcessWorkingSet caller */
+volatile PVOID MmDbgLastSafeUnlocker = NULL; /* last MiUnlockProcessWorkingSet caller */
+
 void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiLockProcessWorkingSet(Process, Thread); }
+{
+    MmDbgLastSafeLocker = __builtin_return_address(0);
+    _orig_MiLockProcessWorkingSet(Process, Thread);
+}
 
 void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiUnlockProcessWorkingSet(Process, Thread); }
+{
+    MmDbgLastSafeUnlocker = __builtin_return_address(0);
+    _orig_MiUnlockProcessWorkingSet(Process, Thread);
+}
 
 void MiLockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiLockProcessWorkingSetUnsafe(Process, Thread); }
+{
+    MmDbgLastExclLocker = __builtin_return_address(0);
+    _orig_MiLockProcessWorkingSetUnsafe(Process, Thread);
+}
 
 void MiUnlockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiUnlockProcessWorkingSetUnsafe(Process, Thread); }
+{
+    MmDbgLastExclUnlocker = __builtin_return_address(0);
+    _orig_MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+}
 
 void MiLockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 { _orig_MiLockWorkingSet(Thread, WorkingSet); }
@@ -234,10 +276,24 @@ void MiUnlockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 { _orig_MiUnlockWorkingSet(Thread, WorkingSet); }
 
 void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiLockProcessWorkingSetShared(Process, Thread); }
+{
+    if (Thread->OwnsProcessWorkingSetExclusive) {
+        DPRINT1("[WS-BUG] MiLockProcessWorkingSetShared: OwnsExcl=%u, Flags=0x%x, caller=%p\n"
+                "  LastExclLocker=%p, LastExclUnlocker=%p\n"
+                "  LastSafeLocker=%p, LastSafeUnlocker=%p\n",
+                Thread->OwnsProcessWorkingSetExclusive,
+                Thread->SameThreadApcFlags,
+                __builtin_return_address(0),
+                MmDbgLastExclLocker, MmDbgLastExclUnlocker,
+                MmDbgLastSafeLocker, MmDbgLastSafeUnlocker);
+    }
+    _orig_MiLockProcessWorkingSetShared(Process, Thread);
+}
 
 void MiUnlockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
-{ _orig_MiUnlockProcessWorkingSetShared(Process, Thread); }
+{
+    _orig_MiUnlockProcessWorkingSetShared(Process, Thread);
+}
 
 void MiLockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 { _orig_MiLockWorkingSetShared(Thread, WorkingSet); }
@@ -438,7 +494,8 @@ PMMSUPPORT MmGetKernelAddressSpace(VOID)
  */
 void MmLockAddressSpace(IN PMMSUPPORT AddressSpace)
 {
-    KeAcquireGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
+    PKGUARDED_MUTEX Mtx = &CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock;
+    KeAcquireGuardedMutex(Mtx);
 }
 
 /*
@@ -647,6 +704,16 @@ RtlpInsertAvlTreeNode(
     IN PMMADDRESS_NODE Parent,
     IN TABLE_SEARCH_RESULT SearchResult)
 {
+    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks */
+    if (SearchResult == TableFoundNode)
+    {
+        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate insertion! NewNode=%p Parent=%p "
+                "VPN=[%lx-%lx] ParentVPN=[%lx-%lx]\n",
+                NewNode, Parent,
+                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn,
+                (ULONG)Parent->StartingVpn, (ULONG)Parent->EndingVpn);
+        return;
+    }
     MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult);
 }
 
@@ -838,4 +905,433 @@ BOOLEAN RustShimKdbpGetHexNumber(PCHAR Arg, ULONG_PTR *Number)
 {
     return KdbpGetHexNumber(Arg, Number);
 }
+
+/* =====================================================================
+ * MmFixupImageSectionSegments — called from Rust ExeFmtpCreateImageSection
+ * to sort, bounds-check, page-align, trim, and initialize image section
+ * segments. This entire block was missing from the Rust translation of
+ * section.c, causing uninitialized FAST_MUTEX in segment locks.
+ * ===================================================================== */
+
+#include <reactos/exeformat.h>
+#include <cache/section/newmm.h>
+
+static
+int
+__cdecl
+MmspCompareSegments_Shim(const void * x, const void * y)
+{
+    const MM_SECTION_SEGMENT *Segment1 = (const MM_SECTION_SEGMENT *)x;
+    const MM_SECTION_SEGMENT *Segment2 = (const MM_SECTION_SEGMENT *)y;
+
+    if (Segment1->Image.VirtualAddress > Segment2->Image.VirtualAddress)
+        return 1;
+    else if (Segment1->Image.VirtualAddress < Segment2->Image.VirtualAddress)
+        return -1;
+    else
+        return 0;
+}
+
+static
+VOID
+NTAPI
+MmspSortSegments_Shim(IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+                       IN ULONG Flags)
+{
+    if (!(Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_SORTED))
+    {
+        qsort(ImageSectionObject->Segments,
+              ImageSectionObject->NrSegments,
+              sizeof(ImageSectionObject->Segments[0]),
+              MmspCompareSegments_Shim);
+    }
+}
+
+static
+BOOLEAN
+NTAPI
+MmspCheckSegmentBounds_Shim(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags)
+{
+    ULONG i;
+
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_NO_OVERLAP)
+        return TRUE;
+
+    ASSERT(ImageSectionObject->NrSegments >= 1);
+
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        if (ImageSectionObject->Segments[i].Length.QuadPart == 0)
+            return FALSE;
+
+        if (i > 0)
+        {
+            if ((ImageSectionObject->Segments[i - 1].Image.VirtualAddress +
+                    ImageSectionObject->Segments[i - 1].Length.QuadPart) !=
+                    ImageSectionObject->Segments[i].Image.VirtualAddress)
+            {
+                return FALSE;
+            }
+        }
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+NTAPI
+MmspPageAlignSegments_Shim(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags)
+{
+    ULONG i;
+    ULONG LastSegment;
+    PMM_SECTION_SEGMENT EffectiveSegment;
+
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_PAGE_ALIGNED)
+        return TRUE;
+
+    LastSegment = 0;
+    EffectiveSegment = &ImageSectionObject->Segments[LastSegment];
+
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        if (i == 0)
+        {
+            ULONG_PTR VirtualAddress;
+            ULONG_PTR VirtualOffset;
+
+            VirtualAddress = EffectiveSegment->Image.VirtualAddress;
+            EffectiveSegment->Image.VirtualAddress = (ULONG_PTR)PAGE_ROUND_DOWN((PVOID)VirtualAddress);
+            EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(VirtualAddress + EffectiveSegment->Length.QuadPart) -
+                                                EffectiveSegment->Image.VirtualAddress;
+
+            VirtualOffset = VirtualAddress - EffectiveSegment->Image.VirtualAddress;
+
+            if (EffectiveSegment->Image.FileOffset < VirtualOffset)
+                return FALSE;
+
+            EffectiveSegment->Image.FileOffset -= VirtualOffset;
+            EffectiveSegment->RawLength.QuadPart += VirtualOffset;
+        }
+        else
+        {
+            PMM_SECTION_SEGMENT Segment = &ImageSectionObject->Segments[i];
+            ULONG_PTR EndOfEffectiveSegment;
+
+            EndOfEffectiveSegment = (ULONG_PTR)(EffectiveSegment->Image.VirtualAddress + EffectiveSegment->Length.QuadPart);
+            ASSERT((EndOfEffectiveSegment % PAGE_SIZE) == 0);
+
+            if (EndOfEffectiveSegment == Segment->Image.VirtualAddress)
+            {
+                LastSegment++;
+                ASSERT(LastSegment <= i);
+                ASSERT(LastSegment < ImageSectionObject->NrSegments);
+
+                EffectiveSegment = &ImageSectionObject->Segments[LastSegment];
+
+                if (LastSegment != i)
+                    *EffectiveSegment = *Segment;
+
+                ASSERT((EffectiveSegment->Image.VirtualAddress % PAGE_SIZE) == 0);
+                EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(EffectiveSegment->Length.QuadPart);
+            }
+            else if (EndOfEffectiveSegment > Segment->Image.VirtualAddress)
+            {
+                static const ULONG FlagsToProtection[16] =
+                {
+                    PAGE_NOACCESS,
+                    PAGE_READONLY,
+                    PAGE_READWRITE,
+                    PAGE_READWRITE,
+                    PAGE_EXECUTE_READ,
+                    PAGE_EXECUTE_READ,
+                    PAGE_EXECUTE_READWRITE,
+                    PAGE_EXECUTE_READWRITE,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY
+                };
+
+                unsigned ProtectionFlags;
+
+                if (Segment->Image.FileOffset != (EffectiveSegment->Image.FileOffset +
+                                                  EffectiveSegment->RawLength.QuadPart))
+                {
+                    return FALSE;
+                }
+
+                EffectiveSegment->RawLength.QuadPart += Segment->RawLength.QuadPart;
+
+                ASSERT(PAGE_ROUND_UP(Segment->Image.VirtualAddress + Segment->Length.QuadPart) >= EndOfEffectiveSegment);
+
+                EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(Segment->Image.VirtualAddress + Segment->Length.QuadPart) -
+                                                    EffectiveSegment->Image.VirtualAddress;
+
+                EffectiveSegment->Protection |= Segment->Protection;
+
+                ProtectionFlags = 0;
+
+                if (EffectiveSegment->Protection & PAGE_IS_READABLE)
+                    ProtectionFlags |= 1 << 0;
+
+                if (EffectiveSegment->Protection & PAGE_IS_WRITABLE)
+                    ProtectionFlags |= 1 << 1;
+
+                if (EffectiveSegment->Protection & PAGE_IS_EXECUTABLE)
+                    ProtectionFlags |= 1 << 2;
+
+                if (EffectiveSegment->Protection & PAGE_IS_WRITECOPY)
+                    ProtectionFlags |= 1 << 3;
+
+                ASSERT(ProtectionFlags < 16);
+                EffectiveSegment->Protection = FlagsToProtection[ProtectionFlags];
+
+                if (!(Segment->Protection & PAGE_IS_WRITECOPY) &&
+                        EffectiveSegment->Protection & PAGE_IS_WRITECOPY)
+                {
+                    return FALSE;
+                }
+            }
+            else
+            {
+                KeBugCheck(MEMORY_MANAGEMENT);
+            }
+        }
+    }
+    ImageSectionObject->NrSegments = LastSegment + 1;
+
+    return TRUE;
+}
+
+NTSTATUS
+NTAPI
+MmFixupImageSectionSegments(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags,
+    IN PFILE_OBJECT FileObject)
+{
+    ULONG i;
+    ULONG OldNrSegments;
+
+    /* Sort them by virtual address */
+    MmspSortSegments_Shim(ImageSectionObject, Flags);
+
+    /* Ensure they don't overlap in memory */
+    if (!MmspCheckSegmentBounds_Shim(ImageSectionObject, Flags))
+        return STATUS_INVALID_IMAGE_FORMAT;
+
+    /* Ensure they are aligned */
+    OldNrSegments = ImageSectionObject->NrSegments;
+
+    if (!MmspPageAlignSegments_Shim(ImageSectionObject, Flags))
+        return STATUS_INVALID_IMAGE_FORMAT;
+
+    /* Trim them if the alignment phase merged some of them */
+    if (ImageSectionObject->NrSegments < OldNrSegments)
+    {
+        PMM_SECTION_SEGMENT Segments;
+        SIZE_T SizeOfSegments;
+
+        SizeOfSegments = sizeof(MM_SECTION_SEGMENT) * ImageSectionObject->NrSegments;
+
+        Segments = ExAllocatePoolWithTag(PagedPool,
+                                         SizeOfSegments,
+                                         TAG_MM_SECTION_SEGMENT);
+
+        if (Segments == NULL)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        RtlCopyMemory(Segments, ImageSectionObject->Segments, SizeOfSegments);
+        ExFreePool(ImageSectionObject->Segments);
+        ImageSectionObject->Segments = Segments;
+    }
+
+    DPRINT("MmFixupImageSectionSegments: Flags=0x%x, OldNrSegments=%u, NrSegments=%u\n",
+           Flags, OldNrSegments, ImageSectionObject->NrSegments);
+
+    /* And finish their initialization */
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        DPRINT("  Segment[%u]: VA=0x%lx Len=0x%llx RawLen=0x%llx FileOff=0x%llx Prot=0x%x\n",
+               i,
+               (ULONG)ImageSectionObject->Segments[i].Image.VirtualAddress,
+               ImageSectionObject->Segments[i].Length.QuadPart,
+               ImageSectionObject->Segments[i].RawLength.QuadPart,
+               (ULONGLONG)ImageSectionObject->Segments[i].Image.FileOffset,
+               ImageSectionObject->Segments[i].Protection);
+        ExInitializeFastMutex(&ImageSectionObject->Segments[i].Lock);
+        ImageSectionObject->Segments[i].ReferenceCount = &ImageSectionObject->RefCount;
+        ImageSectionObject->Segments[i].Flags = &ImageSectionObject->SegFlags;
+        MiInitializeSectionPageTable(&ImageSectionObject->Segments[i]);
+        ImageSectionObject->Segments[i].FileObject = FileObject;
+    }
+
+    ASSERT(ImageSectionObject->RefCount > 0);
+
+    ImageSectionObject->FileObject = FileObject;
+
+    return STATUS_SUCCESS;
+}
+
+/* Debug trace helper callable from Rust (stdcall on i386) */
+VOID NTAPI MmDebugTrace(ULONG Code, ULONG_PTR Param1, ULONG_PTR Param2)
+{
+    DPRINT1("MmDebugTrace: code=%lu p1=0x%lx p2=0x%lx IRQL=%u\n",
+            Code, Param1, Param2, (ULONG)KeGetCurrentIrql());
+
+    /* When code==100, Param1 is FileObject — dump resource state */
+    if (Code == 100 && Param1 != 0)
+    {
+        PFILE_OBJECT fo = (PFILE_OBJECT)Param1;
+        PFSRTL_COMMON_FCB_HEADER fcb = (PFSRTL_COMMON_FCB_HEADER)(fo->FsContext);
+        if (fcb && fcb->Resource) {
+            PERESOURCE res = fcb->Resource;
+            DPRINT1("  FileObj=%p FsContext=%p Resource=%p ActiveEntries=%d "
+                    "NumberOfExclusiveWaiters=%u NumberOfSharedWaiters=%u "
+                    "OwnerEntry.OwnerThread=%p Flag=0x%x\n",
+                    fo, fcb, res, res->ActiveEntries,
+                    res->NumberOfExclusiveWaiters, res->NumberOfSharedWaiters,
+                    (PVOID)res->OwnerEntry.OwnerThread, res->Flag);
+        } else {
+            DPRINT1("  FileObj=%p FsContext=%p Resource=%p (NULL resource)\n",
+                    fo, fcb, fcb ? fcb->Resource : NULL);
+        }
+    }
+}
+
+/* Removed: Temporary C NtCreateSection — Rust version re-enabled */
+#if 0
+NTSTATUS
+NTAPI
+NtCreateSection_removed(OUT PHANDLE SectionHandle,
+                IN ACCESS_MASK DesiredAccess,
+                IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
+                IN PLARGE_INTEGER MaximumSize OPTIONAL,
+                IN ULONG SectionPageProtection OPTIONAL,
+                IN ULONG AllocationAttributes,
+                IN HANDLE FileHandle OPTIONAL)
+{
+    LARGE_INTEGER SafeMaximumSize;
+    PVOID SectionObject;
+    HANDLE Handle;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    NTSTATUS Status;
+    PAGED_CODE();
+
+    DbgPrint("C-NtCreateSection: ENTER SH=%p DA=0x%lx OA=%p FH=%p Alloc=0x%lx\n",
+             SectionHandle, DesiredAccess, ObjectAttributes, FileHandle, AllocationAttributes);
+
+    /* Check for non-existing flags */
+    if ((AllocationAttributes & ~(SEC_COMMIT | SEC_RESERVE | SEC_BASED |
+                                  SEC_LARGE_PAGES | SEC_IMAGE | SEC_NOCACHE |
+                                  SEC_NO_CHANGE)))
+    {
+        if (!(AllocationAttributes & 1))
+        {
+            return STATUS_INVALID_PARAMETER_6;
+        }
+    }
+
+    /* Check for no allocation type */
+    if (!(AllocationAttributes & (SEC_COMMIT | SEC_RESERVE | SEC_IMAGE)))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Check for image allocation with invalid attributes */
+    if ((AllocationAttributes & SEC_IMAGE) &&
+        (AllocationAttributes & (SEC_COMMIT | SEC_RESERVE | SEC_LARGE_PAGES |
+                                 SEC_NOCACHE | SEC_NO_CHANGE)))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Check for allocation type is both commit and reserve */
+    if ((AllocationAttributes & SEC_COMMIT) && (AllocationAttributes & SEC_RESERVE))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Now check for valid protection */
+    if ((SectionPageProtection & PAGE_NOCACHE) ||
+        (SectionPageProtection & PAGE_WRITECOMBINE) ||
+        (SectionPageProtection & PAGE_GUARD) ||
+        (SectionPageProtection & PAGE_NOACCESS))
+    {
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Use a maximum size of zero, if none was specified */
+    SafeMaximumSize.QuadPart = 0;
+
+    /* Check for user-mode caller */
+    if (PreviousMode != KernelMode)
+    {
+        /* Enter SEH */
+        _SEH2_TRY
+        {
+            /* Safely check user-mode parameters */
+            if (MaximumSize) SafeMaximumSize = ProbeForReadLargeInteger(MaximumSize);
+            MaximumSize = &SafeMaximumSize;
+            ProbeForWriteHandle(SectionHandle);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Return the exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    else if (!MaximumSize) MaximumSize = &SafeMaximumSize;
+
+    /* Check that MaximumSize is valid if backed by paging file */
+    if ((!FileHandle) && (!MaximumSize->QuadPart))
+        return STATUS_INVALID_PARAMETER_4;
+
+    /* Create the section */
+    DbgPrint("C-NtCreateSection: calling MmCreateSection FH=%p\n", FileHandle);
+    Status = MmCreateSection(&SectionObject,
+                             DesiredAccess,
+                             ObjectAttributes,
+                             MaximumSize,
+                             SectionPageProtection,
+                             AllocationAttributes,
+                             FileHandle,
+                             NULL);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    /* Now insert the object */
+    Status = ObInsertObject(SectionObject,
+                            NULL,
+                            DesiredAccess,
+                            0,
+                            NULL,
+                            &Handle);
+    if (NT_SUCCESS(Status))
+    {
+        /* Enter SEH */
+        _SEH2_TRY
+        {
+            /* Return the handle safely */
+            *SectionHandle = Handle;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Nothing here */
+        }
+        _SEH2_END;
+    }
+
+    return Status;
+}
+#endif
 

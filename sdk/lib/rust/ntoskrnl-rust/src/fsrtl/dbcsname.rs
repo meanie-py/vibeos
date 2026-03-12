@@ -11,9 +11,9 @@ use ntkrnl_sys::ddk::{
 
 use core::ptr;
 
-const FSRTL_FAT_LEGAL: u8 = 0x02;
-const FSRTL_HPFS_LEGAL: u8 = 0x04;
-const FSRTL_WILD_CHARACTER: u8 = 0x10;
+const FSRTL_FAT_LEGAL: u8 = 0x01;
+const FSRTL_HPFS_LEGAL: u8 = 0x02;
+const FSRTL_WILD_CHARACTER: u8 = 0x08;
 
 extern "system" {
     static NlsMbOemCodePageTag: BOOLEAN;

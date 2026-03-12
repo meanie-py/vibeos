@@ -472,6 +472,7 @@ IopInitializeDriverModule(
     Status = IopGetDriverNames(ServiceHandle, &DriverName, &ServiceName);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializeDriverModule: IopGetDriverNames failed 0x%x\n", Status);
         MmUnloadSystemImage(ModuleObject);
         return Status;
     }
@@ -935,20 +936,10 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
      * Initialize the driver
      */
     NTSTATUS driverEntryStatus;
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'D'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
     Status = IopInitializeDriverModule(LdrEntry,
                                        serviceHandle,
                                        &DriverObject,
                                        &driverEntryStatus);
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'E'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
 
     if (!NT_SUCCESS(Status))
     {
@@ -966,11 +957,6 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
     // Legacy drivers may add devices inside DriverEntry.
     // We're lazy and always assume that they are doing so
     BOOLEAN deviceAdded = !!(DriverObject->Flags & DRVO_LEGACY_DRIVER);
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'F'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
 
     HANDLE enumServiceHandle;
     UNICODE_STRING enumName = RTL_CONSTANT_STRING(L"Enum");
@@ -1054,11 +1040,6 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
         ZwClose(enumServiceHandle);
     }
 Cleanup:
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'G'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
     /* Remove extra reference from IopInitializeDriverModule */
     ObDereferenceObject(DriverObject);
 
@@ -1221,11 +1202,6 @@ IopInitializeBootDrivers(VOID)
     }
 
     /* Loop each group index */
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'a'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
     for (i = 0; i < IopGroupIndex; i++)
     {
         /* Loop each group table */
@@ -1241,53 +1217,24 @@ IopInitializeBootDrivers(VOID)
             /* Get the driver loader entry */
             LdrEntry = DriverInfo->DataTableEntry->LdrEntry;
 
-#ifdef _M_IX86
-            /* Emit driver init counter as hex digit via debugcon */
+            /* Log boot driver init to serial (DbgPrint) */
             {
                 static ULONG _drv_count = 0;
-                UCHAR _ch = (_drv_count < 10) ? ('0' + (UCHAR)_drv_count) : ('A' + (UCHAR)(_drv_count - 10));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'('), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"(_ch), "Nd"((unsigned short)0xE9));
                 DbgPrint("[BOOT] Init driver %lu: %wZ\n", _drv_count, &LdrEntry->BaseDllName);
                 _drv_count++;
             }
-#endif
 
             /* Initialize it */
             if (IopInitializeBuiltinDriver(LdrEntry))
             {
-#ifdef _M_IX86
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'+'), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
                 // it does not make sense to enumerate the tree if there are no new devices added
                 PiQueueDeviceAction(IopRootDeviceNode->PhysicalDeviceObject,
                                     PiActionEnumRootDevices,
                                     NULL,
                                     NULL);
-#ifdef _M_IX86
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'='), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
             }
-#ifdef _M_IX86
-            else
-            {
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'-'), "Nd"((unsigned short)0xE9));
-                __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-            }
-#endif
         }
     }
-
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'b'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
 
     /* HAL Root Bus is being initialized before loading the boot drivers so this may cause issues
      * when some devices are not being initialized with their drivers. This flag is used to delay
@@ -1298,11 +1245,11 @@ IopInitializeBootDrivers(VOID)
 
     DbgPrint("BOOT DRIVERS LOADED\n");
 
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'c'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
+    /* Diagnostic: write to debugcon port (0xE9) directly to bypass DbgPrint */
+    {
+        const char *_msg = "[DEBUGCON] PiQueueDeviceAction start\n";
+        while (*_msg) { __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)*_msg), "Nd"((unsigned short)0xE9)); _msg++; }
+    }
     PiQueueDeviceAction(IopRootDeviceNode->PhysicalDeviceObject,
                         PiActionEnumDeviceTree,
                         NULL,
@@ -1363,7 +1310,10 @@ IopInitializeSystemDrivers(VOID)
 #endif
 
         /* Load the driver */
-        ZwLoadDriver(*DriverList);
+        {
+            NTSTATUS _st = ZwLoadDriver(*DriverList);
+            DPRINT1("  SysDrv: %wZ => 0x%x\n", *DriverList, _st);
+        }
 
         /* Free the entry */
         RtlFreeUnicodeString(*DriverList);

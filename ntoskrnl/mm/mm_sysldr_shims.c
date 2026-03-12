@@ -218,10 +218,7 @@ MiLoadImageSection_shim(_Inout_ PSECTION *SectionPtr,
         return Status;
     }
 
-    /* Copy the image */
-    DPRINT1("MiLoadImageSection: DriverBase=%p, size=0x%lx, end=%p\n",
-            DriverBase, (ULONG_PTR)(PteCount << PAGE_SHIFT),
-            (PVOID)((ULONG_PTR)DriverBase + (PteCount << PAGE_SHIFT)));
+    /* Copy image from section view to kernel address */
     RtlCopyMemory(DriverBase, Base, PteCount << PAGE_SHIFT);
 
     /* Now unmap the view */
@@ -843,8 +840,6 @@ MmLoadSystemImage(IN PUNICODE_STRING FileName,
 
     PAGED_CODE();
 
-    DPRINT1("MmLoadSystemImage: %wZ (Flags=%lu)\n", FileName, Flags);
-
     /* Detect session-load */
     if (Flags)
     {
@@ -964,7 +959,6 @@ LoaderScan:
         }
         NextEntry = NextEntry->Flink;
     }
-
     /* Check if we found the image */
     if (NextEntry != &PsLoadedModuleList)
     {
@@ -982,8 +976,7 @@ LoaderScan:
         }
         else
         {
-            DPRINT1("Unsupported Session-Load!\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+                Status = STATUS_NOT_IMPLEMENTED;
         }
 
         goto Quickie;
@@ -1010,17 +1003,16 @@ LoaderScan:
                             0);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("ZwOpenFile failed for '%wZ' with status 0x%x\n",
-                    FileName, Status);
+            DPRINT1("MmLoadSystemImage: ZwOpenFile(%wZ) failed: 0x%x\n", FileName, Status);
             goto Quickie;
         }
-
         /* Validate it */
         Status = MmCheckSystemImage(FileHandle);
         if ((Status == STATUS_IMAGE_CHECKSUM_MISMATCH) ||
             (Status == STATUS_IMAGE_MP_UP_MISMATCH) ||
             (Status == STATUS_INVALID_IMAGE_PROTECT))
         {
+            DPRINT1("MmLoadSystemImage: MmCheckSystemImage(%wZ) failed: 0x%x\n", FileName, Status);
             goto Quickie;
         }
 
@@ -1049,10 +1041,9 @@ LoaderScan:
                                  FileHandle);
         if (!NT_SUCCESS(Status))
         {
-            DPRINT1("ZwCreateSection failed with status 0x%x\n", Status);
+            DPRINT1("MmLoadSystemImage: ZwCreateSection(%wZ) failed: 0x%x\n", FileName, Status);
             goto Quickie;
         }
-
         Status = ObReferenceObjectByHandle(SectionHandle,
                                            SECTION_MAP_EXECUTE,
                                            MmSectionObjectType,
@@ -1060,11 +1051,14 @@ LoaderScan:
                                            (PVOID*)&Section,
                                            NULL);
         ZwClose(SectionHandle);
-        if (!NT_SUCCESS(Status)) goto Quickie;
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("MmLoadSystemImage: ObReferenceObjectByHandle(%wZ) failed: 0x%x\n", FileName, Status);
+            goto Quickie;
+        }
 
         if (Flags)
         {
-            DPRINT1("Unsupported Session-Load!\n");
             goto Quickie;
         }
 

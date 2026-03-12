@@ -217,7 +217,10 @@ pub unsafe extern "system" fn KeUserModeCallback(
         if let Err(e) = write_user((stack_base + 4) as *mut ULONG, RoutineIndex, 1i8) {
             break 'seh e;
         }
-        if let Err(e) = write_user((stack_base + 8) as *mut ULONG, (NewStack + 24) as ULONG, 1i8) {
+        /* Argument pointer: stack_base + 24 == NewStack (original, un-decremented).
+         * C code: NewStack -= 24; then *(NewStack+8) = (NewStack+24).
+         * Here stack_base = NewStack-24, so the argument area is at stack_base+24 = NewStack. */
+        if let Err(e) = write_user((stack_base + 8) as *mut ULONG, NewStack as ULONG, 1i8) {
             break 'seh e;
         }
         if let Err(e) = write_user((stack_base + 12) as *mut ULONG, ArgumentLength, 1i8) {

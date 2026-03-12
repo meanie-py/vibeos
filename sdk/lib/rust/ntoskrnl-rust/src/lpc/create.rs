@@ -55,7 +55,7 @@ const LPCP_UNCONNECTED_PORT: ULONG = 0x00000002;
 const LPCP_CONNECTION_PORT: ULONG = 0x00000001;
 const LPCP_WAITABLE_PORT: ULONG = 0x20000000;
 const PORT_ALL_ACCESS: ACCESS_MASK = 0x001F0001;
-const FIELD_OFFSET_LPCP_MESSAGE_REQUEST: ULONG = 24;
+const FIELD_OFFSET_LPCP_MESSAGE_REQUEST: ULONG = core::mem::offset_of!(ntkrnl_sys::ddk::_LPCP_MESSAGE, Request) as ULONG;
 const PORT_MESSAGE_SIZE: usize = core::mem::size_of::<ntkrnl_sys::ddk::PORT_MESSAGE>();
 
 #[no_mangle]

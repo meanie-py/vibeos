@@ -2022,6 +2022,8 @@ pub unsafe extern "system" fn ObInsertObject(
     object_create_info = (*object_header).__bindgen_anon_2.ObjectCreateInfo;
     object_name_info = ObpReferenceNameInfo(object_header);
     object_type = (*object_header).Type;
+
+
     object_name = core::ptr::null_mut();
 
     if !object_name_info.is_null() && !(*object_name_info).Name.Buffer.is_null() {

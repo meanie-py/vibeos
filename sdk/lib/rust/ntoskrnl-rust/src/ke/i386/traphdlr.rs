@@ -112,7 +112,7 @@ static KiTrapIoTable: [UCHAR; 12] = [
 ];
 
 #[no_mangle]
-pub static mut KiFastCallExitHandler: Option<unsafe extern "system" fn(PKTRAP_FRAME) -> !> = None;
+pub static mut KiFastCallExitHandler: Option<unsafe extern "fastcall" fn(PKTRAP_FRAME) -> !> = None;
 
 const EFLAGS_V86_MASK: ULONG = 0x20000;
 const EFLAGS_TF: ULONG = 0x100;
@@ -146,17 +146,16 @@ const KGDT_R3_DATA: USHORT = 0x23;
 const I386_TSS: UCHAR = 0x9;
 const I386_ACTIVE_TSS: UCHAR = 0xB;
 const EXCEPTION_CHAIN_END: PVOID = core::ptr::null_mut::<core::ffi::c_void>().wrapping_sub(1);
-const HIGH_LEVEL: KIRQL = 31;
-const EXCEPTION_NMI: ULONG = 0x80000002;
-const EXCEPTION_GP_FAULT: ULONG = 0xC0000094;
-const EXCEPTION_BOUND_CHECK: ULONG = 0xC000008C;
-const EXCEPTION_DOUBLE_FAULT: ULONG = 0xC0000092;
-const EXCEPTION_NPX_OVERRUN: ULONG = 0xC0000093;
-const EXCEPTION_INVALID_TSS: ULONG = 0xC0000095;
-const EXCEPTION_SEGMENT_NOT_PRESENT: ULONG = 0xC0000096;
-const EXCEPTION_STACK_FAULT: ULONG = 0xC0000097;
-const EXCEPTION_RESERVED_TRAP: ULONG = 0xC000009F;
-const EXCEPTION_ALIGNMENT_CHECK: ULONG = 0xC0000098;
+const EXCEPTION_NMI: ULONG = 2;
+const EXCEPTION_BOUND_CHECK: ULONG = 5;
+const EXCEPTION_DOUBLE_FAULT: ULONG = 8;
+const EXCEPTION_NPX_OVERRUN: ULONG = 9;
+const EXCEPTION_INVALID_TSS: ULONG = 0x0A;
+const EXCEPTION_SEGMENT_NOT_PRESENT: ULONG = 0x0B;
+const EXCEPTION_STACK_FAULT: ULONG = 0x0C;
+const EXCEPTION_GP_FAULT: ULONG = 0x0D;
+const EXCEPTION_RESERVED_TRAP: ULONG = 0x0F;
+const EXCEPTION_ALIGNMENT_CHECK: ULONG = 0x11;
 const EXCEPTION_NONCONTINUABLE: ULONG = 0x1;
 const BREAKPOINT_BREAK: ULONG = 0;
 const MUTANT_INCREMENT: LONG = 1;
@@ -543,7 +542,6 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
 
 #[no_mangle]
 pub unsafe extern "C" fn KiTrap08Handler() {
-    // DBG: DOUBLE FAULT!
     _disable();
     let tss = (*KeGetPcr()).TSS;
     let thread = (*((KeGetPcr() as PKIPCR))).PrcbData.CurrentThread;
@@ -601,7 +599,6 @@ pub unsafe extern "fastcall" fn KiTrap0CHandler(TrapFrame: PKTRAP_FRAME) -> ! {
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! {
-    // DBG: #GP
     if KiV86Trap(TrapFrame) != 0 {
         KiEnterV86Trap(TrapFrame);
         if (*(PsGetCurrentProcess() as *mut _EPROCESS)).VdmObjects.is_null() {
@@ -735,11 +732,12 @@ pub unsafe extern "fastcall" fn KiTrap0EHandler(TrapFrame: PKTRAP_FRAME) -> ! {
         if (KeGetTrapFrame(thread) as usize).wrapping_sub(TrapFrame as usize)
             <= core::mem::offset_of!(_KTRAP_FRAME, EFlags)
         {
-            KeBugCheck(TRAP_CAUSE_UNKNOWN);
         }
     }
     let cr2 = __readcr2();
+
     _enable();
+
     if ((*TrapFrame).EFlags & EFLAGS_INTERRUPT_MASK) == 0 {
         KeBugCheckWithTf(
             IRQL_NOT_LESS_OR_EQUAL,
@@ -753,17 +751,18 @@ pub unsafe extern "fastcall" fn KiTrap0EHandler(TrapFrame: PKTRAP_FRAME) -> ! {
     if KiCheckForSListFault(TrapFrame) != 0 {
         KiEoiHelper(TrapFrame);
     }
+
     let status = MmAccessFault(
         (*TrapFrame).ErrCode as ULONG,
         cr2 as PVOID,
         KiUserTrap(TrapFrame) as i8,
         TrapFrame as PVOID,
     );
+
     if status >= 0 {
         KdSetOwedBreakpoints();
         KiEoiHelper(TrapFrame);
     }
-    // DBG: MmAccessFault FAILED — emit unique byte 0x01
     if KiVdmTrap(TrapFrame) != 0 {
         if VdmDispatchPageFault(TrapFrame) != 0 {
             KiEoiHelper(TrapFrame);
@@ -927,7 +926,7 @@ pub unsafe extern "fastcall" fn KiDebugServiceHandler(TrapFrame: PKTRAP_FRAME) -
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiSystemServiceHandler(
-    TrapFrame: PKTRAP_FRAME,
+    mut TrapFrame: PKTRAP_FRAME,
     Arguments: PVOID,
 ) -> ! {
     let thread = KeGetCurrentThread();
@@ -958,7 +957,9 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
             KiServiceExit(TrapFrame, status);
         }
         let status = KiConvertToGuiThread();
-        let trap_frame_vol = (*(thread as *mut _ETHREAD)).Tcb.TrapFrame;
+        /* Reload TrapFrame from thread — KiConvertToGuiThread may allocate
+         * a new kernel stack, making the old TrapFrame pointer stale. */
+        TrapFrame = (*(thread as *mut _ETHREAD)).Tcb.TrapFrame;
         descriptor_table =
             (((*(thread as *mut _ETHREAD)).Tcb.ServiceTable as usize) + offset as usize) as PKSERVICE_TABLE_DESCRIPTOR;
         if status < 0 {

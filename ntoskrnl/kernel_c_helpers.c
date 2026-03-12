@@ -170,6 +170,7 @@ BOOLEAN ExpKdbgExtDefWrites(ULONG Argc, PCHAR Argv[])
  * Previously in ex_rust_shims.c.
  */
 #if DBG && defined(KDBG)
+#include <kdbg/kdb.h>
 #include <ctype.h>
 
 /* strtoulptr — pointer-width strtoul */
@@ -584,7 +585,16 @@ RtlpInsertAvlTreeNode(
     IN PMMADDRESS_NODE NewNode,
     IN PMMADDRESS_NODE Parent,
     IN TABLE_SEARCH_RESULT SearchResult)
-{ MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult); }
+{
+    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks */
+    if (SearchResult == TableFoundNode)
+    {
+        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate VPN=[%lx-%lx]\n",
+                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn);
+        return;
+    }
+    MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult);
+}
 
 void
 NTAPI

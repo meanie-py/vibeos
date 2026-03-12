@@ -27,6 +27,7 @@ class SerialClient:
     def __init__(self) -> None:
         self._server: socket.socket | None = None
         self._conn: socket.socket | None = None
+        self.partial_output: str = ""  # Last partial buffer on timeout
 
     def listen(self, path: str) -> None:
         """Create Unix socket server. Call BEFORE starting QEMU."""
@@ -70,6 +71,7 @@ class SerialClient:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                self.partial_output = buf
                 raise TimeoutError(
                     f"Timed out waiting for marker {marker!r} after {timeout}s "
                     f"({len(buf)} bytes captured). "

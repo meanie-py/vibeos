@@ -124,6 +124,11 @@ extern BOOLEAN KdDebuggerEnabled;
 #define KD_DEBUGGER_ENABLED KdDebuggerEnabled
 extern BOOLEAN KdDebuggerNotPresent;
 #define KD_DEBUGGER_NOT_PRESENT KdDebuggerNotPresent
+#elif defined(__clang__)
+extern __declspec(dllimport) BOOLEAN KdDebuggerEnabled;
+#define KD_DEBUGGER_ENABLED KdDebuggerEnabled
+extern __declspec(dllimport) BOOLEAN KdDebuggerNotPresent;
+#define KD_DEBUGGER_NOT_PRESENT KdDebuggerNotPresent
 #else
 __CREATE_NTOS_DATA_IMPORT_ALIAS(KdDebuggerEnabled)
 extern BOOLEAN *KdDebuggerEnabled;

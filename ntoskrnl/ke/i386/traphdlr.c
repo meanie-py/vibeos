@@ -835,6 +835,9 @@ KiTrap08Handler(VOID)
     PKPROCESS Process;
     PKGDTENTRY TssGdt;
 
+    /* Diagnostic: double fault marker */
+    __outbyte(0xE9, '8');
+
     /* For sanity's sake, make sure interrupts are disabled */
     _disable();
 
@@ -943,6 +946,9 @@ KiTrap0DHandler(IN PKTRAP_FRAME TrapFrame)
     PUCHAR Instructions;
     UCHAR Instruction = 0;
     KIRQL OldIrql;
+
+    /* Diagnostic: GPF marker */
+    __outbyte(0xE9, 'G');
 
     /* Check for V86 GPF */
     if (__builtin_expect(KiV86Trap(TrapFrame), 1))
@@ -1323,6 +1329,9 @@ KiTrap0EHandler(IN PKTRAP_FRAME TrapFrame)
     PKTHREAD Thread;
     ULONG_PTR Cr2;
     NTSTATUS Status;
+
+    /* Diagnostic: page fault marker + CR2 */
+    __outbyte(0xE9, 'E');
 
     /* Save trap frame */
     KiEnterTrap(TrapFrame);

@@ -756,10 +756,24 @@ pub const IRP_MJ_CLEANUP: UCHAR = 0x12;
 pub const IRP_MJ_MAXIMUM_FUNCTION: UCHAR = 0x1B;
 
 // ============================================================================
-// IRQL constants (from wdm.h)
+// IRQL constants (from wdm.h / ke.h — architecture-dependent)
 // ============================================================================
 
+// i386: IRQLs 0-31, APIC-based with PIC emulation
+// amd64/arm64: IRQLs 0-15, CR8/ICC-based
+#[cfg(target_arch = "x86")]
 pub const HIGH_LEVEL: UCHAR = 31;
+#[cfg(target_arch = "x86")]
+pub const IPI_LEVEL: UCHAR = 29;
+
+#[cfg(not(target_arch = "x86"))]
+pub const HIGH_LEVEL: UCHAR = 15;
+#[cfg(not(target_arch = "x86"))]
+pub const PROFILE_LEVEL: UCHAR = 15;
+#[cfg(not(target_arch = "x86"))]
+pub const CLOCK_LEVEL: UCHAR = 13;
+#[cfg(not(target_arch = "x86"))]
+pub const IPI_LEVEL: UCHAR = 14;
 
 // ============================================================================
 // Pool allocation flags (from ntoskrnl)

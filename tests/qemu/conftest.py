@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from .vm import QemuVM, get_arch_config
+from .vm import QemuVM, get_arch_config, PROJECT_DIR
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -42,23 +42,36 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[QemuVM]:
     try:
         boot_output = vm.wait_for_boot()
     except (TimeoutError, ConnectionError, RuntimeError) as e:
-        # Boot failed — include debugcon triage in the failure message
+        # Boot failed — capture screenshot + debugcon for diagnosis
+        screenshot_msg = ""
+        try:
+            ppm = work_dir / "fail_screen.ppm"
+            vm.screendump(ppm)
+            png = PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
+            import subprocess as _sp
+            try:
+                _sp.run(["convert", str(ppm), str(png)],
+                        check=True, capture_output=True, timeout=10)
+            except (FileNotFoundError, _sp.CalledProcessError):
+                import shutil as _sh
+                png = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
+                _sh.copy2(ppm, png)
+            screenshot_msg = f"Screenshot: {png}"
+        except Exception:
+            screenshot_msg = "Screenshot: failed to capture"
+
         debugcon = vm.debugcon_report() or "no debugcon output"
-        serial = vm._boot_output or vm.serial.read_available(timeout=0.5)
-        serial_len = len(serial) if isinstance(serial, str) else 0
+        serial_len = len(vm._boot_output)
         vm.stop()
         pytest.fail(
             f"Boot failed: {e}\n"
             f"Serial output: {serial_len} bytes\n"
+            f"{screenshot_msg}\n"
             f"\n{debugcon}"
         )
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
-    try:
-        vm.save_snapshot("ready")
-    except RuntimeError:
-        # i386 has no scratch disk (FreeLDR crashes on unpartitioned disks)
-        # so savevm/loadvm are unavailable — tests run without snapshots
-        print("[pytest] savevm unavailable — tests will run without snapshots")
+
+    vm.save_snapshot("ready")
 
     yield vm
     vm.stop()
@@ -70,5 +83,5 @@ def restore_vm(vm: QemuVM) -> Iterator[None]:
     try:
         vm.restore_snapshot("ready")
     except (RuntimeError, BrokenPipeError, ConnectionError, OSError):
-        pass  # No snapshot support (e.g. i386) or VM already dead (e.g. amd64 crash)
+        pass
     yield

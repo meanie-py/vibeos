@@ -538,6 +538,11 @@ SmpConfigureSubSystems(IN PWSTR ValueName,
     PSMP_REGISTRY_VALUE RegEntry;
     PWCHAR SubsystemName;
 
+    /* Debug: log what we receive from registry */
+    DPRINT1("SmpConfigureSubSystems: ValueName='%S' ValueType=%lu ValueLength=%lu ValueData='%S'\n",
+            ValueName, ValueType, ValueLength,
+            (ValueType == REG_SZ || ValueType == REG_EXPAND_SZ) ? (PWCHAR)ValueData : L"(non-string)");
+
     /* Is this a required or optional subsystem? */
     if ((_wcsicmp(ValueName, L"Required") != 0) &&
         (_wcsicmp(ValueName, L"Optional") != 0))

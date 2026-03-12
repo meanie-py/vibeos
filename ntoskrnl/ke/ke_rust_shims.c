@@ -372,6 +372,11 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
 
 KIRQL KiAcquireDispatcherLock(VOID)
 {
+    KIRQL cur = KeGetCurrentIrql();
+    if (cur > DISPATCH_LEVEL) {
+        DPRINT1("KiAcquireDispatcherLock at IRQL %d! caller=%p\n",
+                cur, _ReturnAddress());
+    }
     return _saved_KiAcquireDispatcherLock();
 }
 
@@ -591,12 +596,60 @@ VOID KxSetTimerForThreadWait(IN PKTIMER Timer, IN LARGE_INTEGER Interval, OUT PU
 
 VOID KxUnwaitThread(IN DISPATCHER_HEADER *Object, IN KPRIORITY Increment)
 {
-    _saved_KxUnwaitThread(Object, Increment);
+    PLIST_ENTRY WaitEntry, WaitList;
+    PKWAIT_BLOCK WaitBlock;
+    PKTHREAD WaitThread;
+    ULONG WaitKey;
+
+    WaitList = &Object->WaitListHead;
+    WaitEntry = WaitList->Flink;
+    do
+    {
+        WaitBlock = CONTAINING_RECORD(WaitEntry, KWAIT_BLOCK, WaitListEntry);
+        WaitThread = WaitBlock->Thread;
+        if (!WaitThread)
+        {
+            /* Corrupt WaitBlock — remove it from the list and skip */
+            RemoveEntryList(WaitEntry);
+            WaitEntry = WaitList->Flink;
+            continue;
+        }
+        if (WaitBlock->WaitType == WaitAny)
+            WaitKey = WaitBlock->WaitKey;
+        else
+            WaitKey = STATUS_KERNEL_APC;
+        KiUnwaitThread(WaitThread, WaitKey, Increment);
+        WaitEntry = WaitList->Flink;
+    } while (WaitEntry != WaitList);
 }
 
 VOID KxUnwaitThreadForEvent(IN PKEVENT Event, IN KPRIORITY Increment)
 {
-    _saved_KxUnwaitThreadForEvent(Event, Increment);
+    PLIST_ENTRY WaitEntry, WaitList;
+    PKWAIT_BLOCK WaitBlock;
+    PKTHREAD WaitThread;
+
+    WaitList = &Event->Header.WaitListHead;
+    WaitEntry = WaitList->Flink;
+    do
+    {
+        WaitBlock = CONTAINING_RECORD(WaitEntry, KWAIT_BLOCK, WaitListEntry);
+        WaitThread = WaitBlock->Thread;
+        if (!WaitThread)
+        {
+            RemoveEntryList(WaitEntry);
+            WaitEntry = WaitList->Flink;
+            continue;
+        }
+        if (WaitBlock->WaitType == WaitAny)
+        {
+            Event->Header.SignalState = 0;
+            KiUnwaitThread(WaitThread, WaitBlock->WaitKey, Increment);
+            break;
+        }
+        KiUnwaitThread(WaitThread, STATUS_KERNEL_APC, Increment);
+        WaitEntry = WaitList->Flink;
+    } while (WaitEntry != WaitList);
 }
 
 /* --- Ready queue (ke_x.h) --- */
@@ -684,14 +737,24 @@ KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
     return result;
 }
 #elif defined(_M_AMD64)
-static __inline KIRQL _tramp_KeRaiseIrqlToSynchLevel(VOID)
-{
-    return KeRaiseIrqlToSynchLevel();
-}
+/* On amd64, KeRaiseIrqlToSynchLevel is FORCEINLINE (reads/writes CR8).
+ * The trampoline pattern doesn't work because the compiler may not inline the
+ * FORCEINLINE body, creating infinite recursion optimized to jmp $ (eb fe).
+ * Directly implement using CR8 intrinsics instead.
+ * Without CONFIG_SMP, SYNCH_LEVEL = DISPATCH_LEVEL = 2. */
 #undef KeRaiseIrqlToSynchLevel
 KIRQL KeRaiseIrqlToSynchLevel(VOID)
 {
-    return _tramp_KeRaiseIrqlToSynchLevel();
+    unsigned long long cr8;
+    __asm__ __volatile__("mov %%cr8, %0" : "=r"(cr8));
+#ifdef CONFIG_SMP
+    { unsigned long long new_irql = 12; /* SYNCH_LEVEL = IPI_LEVEL - 2 */
+    __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql)); }
+#else
+    { unsigned long long new_irql = DISPATCH_LEVEL;
+    __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql)); }
+#endif
+    return (KIRQL)cr8;
 }
 #endif
 
@@ -1069,7 +1132,7 @@ void KxQueueThreadWait(
  * Just forward to the existing KxUnwaitThread shim. */
 void KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
 {
-    _saved_KxUnwaitThread(Header, Increment);
+    KxUnwaitThread(Header, Increment);
 }
 
 #endif /* Macro trampolines + statement macros + utilities — now in Rust */
@@ -1833,9 +1896,14 @@ void NTAPI Ke386FxSave(IN PVOID SaveArea)
 }
 
 /* --- Ke386FxStore ---
- * FORCEINLINE with inline asm: fxrstor (misnamed "Store" = restore). */
+ * FORCEINLINE with inline asm: fxrstor (misnamed "Store" = restore).
+ * Sanitize MXCSR before FXRSTOR to prevent #GP from reserved bits. */
 void NTAPI Ke386FxStore(IN PVOID SaveArea)
 {
+    ULONG *mxcsr = (ULONG *)((UCHAR *)SaveArea + 24);
+    ULONG *mxcsr_mask = (ULONG *)((UCHAR *)SaveArea + 28);
+    ULONG mask = *mxcsr_mask ? *mxcsr_mask : 0xFFBF;
+    *mxcsr &= mask;
     __asm__ __volatile__("fxrstor (%0)" : : "r"(SaveArea) : "memory");
 }
 

@@ -40,7 +40,10 @@ const QuerySecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_COD
 const SetSecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CODE_SetSecurityDescriptor;
 
 // EX_FAST_REF max fast refs (from exfuncs.h)
+#[cfg(target_pointer_width = "32")]
 const MAX_FAST_REFS: ULONG = 7;
+#[cfg(target_pointer_width = "64")]
+const MAX_FAST_REFS: ULONG = 15;
 
 // FILE_WRITE_DATA (from winnt.h — used in SeFastTraverseCheck)
 const FILE_WRITE_DATA: ULONG = 0x0002;

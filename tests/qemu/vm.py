@@ -28,7 +28,12 @@ class ArchConfig:
     memory: str
     boot_marker: str
     boot_timeout: float = 120.0
-    min_boot_bytes: int = 10000
+    min_boot_bytes: int = 1000
+    qmp_timeout: float = 10.0
+    # How long to wait after boot_marker for the desktop to come up.
+    # The boot marker proves the kernel booted; this extra time lets
+    # user-mode processes (SMSS, csrss, winlogon, explorer) finish.
+    desktop_settle_seconds: float = 0.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -39,14 +44,16 @@ class ArchConfig:
 class Arm64Config(ArchConfig):
     arch: str = "arm64"
     qemu_bin: str = "qemu-system-aarch64"
-    machine_args: list[str] = field(default_factory=lambda: ["-M", "virt", "-cpu", "cortex-a72"])
+    machine_args: list[str] = field(default_factory=lambda: [
+        "-M", "virt", "-cpu", "cortex-a72",
+        "-accel", "tcg,thread=multi",
+    ])
     memory: str = "1G"
-    # KE bulk Rust translations introduced regressions — kernel crashes during
-    # early MM init.  Use "VBAR_EL1" marker (appears in KiSystemStartup) to
-    # prove kernel entry.  Full boot needs further debugging.
-    boot_marker: str = "VBAR_EL1"
-    boot_timeout: float = 120.0
-    min_boot_bytes: int = 200
+    boot_marker: str = ""  # idle detection
+    boot_timeout: float = 300.0
+    min_boot_bytes: int = 5000
+    qmp_timeout: float = 10.0
+    desktop_settle_seconds: float = 30.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         boot_img = QEMU_DIR / "boot.img"
@@ -54,8 +61,6 @@ class Arm64Config(ArchConfig):
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"
 
-        # Copy efivars to temp dir first (avoids file lock from running QEMU),
-        # then convert to qcow2 (required for savevm/loadvm snapshots)
         shutil.copy2(QEMU_DIR / "efivars.fd", efivars_raw)
         subprocess.run(
             ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
@@ -69,11 +74,8 @@ class Arm64Config(ArchConfig):
             "-m", self.memory,
             "-drive", f"if=pflash,format=raw,file={uefi_fw},readonly=on",
             "-drive", f"if=pflash,format=qcow2,file={efivars}",
-            # file-posix.locking=off: allow coexistence with other QEMU instances
             "-drive", f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
             "-device", "ramfb",
-            # -display none instead of -nographic: the latter hijacks serial0
-            # to stdio, stealing PL011 output from our chardev socket
             "-display", "none",
         ]
 
@@ -84,13 +86,10 @@ class I386Config(ArchConfig):
     qemu_bin: str = "qemu-system-i386"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    # LiveCD boots to boot driver init, then hangs in PnP device enumeration
-    # (pre-existing issue in C code, not Rust).  Use cdrom.sys as boot marker
-    # — proves kernel, HAL, PCI, WDF, and all 18 boot drivers load correctly.
-    boot_marker: str = "cdrom.sys"
-    boot_timeout: float = 120.0
-    # i386 has limited serial throughput (KD disabled, only kernel-mode COM1 bypass)
+    boot_marker: str = "explorer.exe created"
+    boot_timeout: float = 360.0
     min_boot_bytes: int = 500
+    desktop_settle_seconds: float = 5.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-i386" / "livecd.iso"
@@ -110,16 +109,13 @@ class Amd64Config(ArchConfig):
     qemu_bin: str = "qemu-system-x86_64"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    # KE bulk Rust translations introduced regressions — kernel crashes after
-    # KD init.  Use "ReactOS" marker (appears in KD init banner) to prove
-    # kernel reaches KdInitSystem.  Full boot needs further debugging.
-    boot_marker: str = "ReactOS"
-    boot_timeout: float = 120.0
-    min_boot_bytes: int = 200
+    boot_marker: str = "explorer.exe created"
+    boot_timeout: float = 180.0
+    min_boot_bytes: int = 1000
+    desktop_settle_seconds: float = 5.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
-        scratch = work_dir / "scratch.qcow2"
         return [
             *self.machine_args,
             "-m", self.memory,
@@ -132,14 +128,11 @@ class Amd64Config(ArchConfig):
 
 @dataclass
 class Arm64TestKernelConfig(Arm64Config):
-    """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options.
-
-    Copies boot.img to the work directory and patches the Options line
-    so the kernel enters the serial test dispatch loop instead of launching SMSS.
-    """
+    """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options."""
     arch: str = "arm64-test"
     boot_marker: str = "TESTKERNEL READY"
     boot_timeout: float = 180.0
+    desktop_settle_seconds: float = 0.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         boot_img_src = QEMU_DIR / "boot.img"
@@ -148,10 +141,8 @@ class Arm64TestKernelConfig(Arm64Config):
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"
 
-        # Copy boot.img so we can patch it without modifying the original
         shutil.copy2(boot_img_src, boot_img)
 
-        # Extract freeldr.ini, append /TESTKERNEL, write back
         ini_path = work_dir / "freeldr.ini"
         subprocess.run(
             ["mcopy", "-o", "-i", str(boot_img), "::/freeldr.ini", str(ini_path)],
@@ -169,7 +160,6 @@ class Arm64TestKernelConfig(Arm64Config):
             check=True, capture_output=True,
         )
 
-        # Convert efivars to qcow2
         shutil.copy2(QEMU_DIR / "efivars.fd", efivars_raw)
         subprocess.run(
             ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
@@ -212,8 +202,6 @@ class QemuVM:
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Unix sockets have a 104-byte sun_path limit on macOS.
-        # Use a short /tmp directory for socket files.
         self._sock_dir = Path(tempfile.mkdtemp(prefix="ros-"))
         atexit.register(lambda d=self._sock_dir: shutil.rmtree(d, ignore_errors=True))
 
@@ -228,51 +216,38 @@ class QemuVM:
         self._boot_output: str = ""
 
     def start(self) -> None:
-        """Start QEMU process, connect QMP + serial, wait for boot."""
-        # Create scratch qcow2 for savevm/loadvm support
+        """Start QEMU process, connect QMP + serial."""
         subprocess.run(
             ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
-            check=True,
-            capture_output=True,
+            check=True, capture_output=True,
         )
 
-        # Start serial server socket BEFORE launching QEMU.
-        # QEMU will connect to us as a client, guaranteeing we capture
-        # every byte from the very start of boot.
         self.serial.listen(str(self.serial_path))
 
-        # Build QEMU command
         cmd = [
             self.config.qemu_bin,
-            # QMP control socket (QEMU is server)
             "-qmp", f"unix:{self.qmp_path},server,nowait",
-            # Serial: QEMU connects to OUR server socket (server=off)
             "-chardev", f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
             "-serial", "chardev:ser0",
-            # Scratch disk for snapshots (skip on i386 — FreeLDR crashes on
-            # unpartitioned disks during BIOS disk enumeration)
+            # Scratch disk for snapshots (writable qcow2 backend for savevm).
+            # i386: if=none without a device — FreeLDR crashes on unpartitioned
+            # BIOS-visible disks; QEMU savevm only needs a block backend.
+            "-drive", f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
             *(
-                ["-drive", f"file={self.scratch_path},format=qcow2,if=none,id=scratch",
-                 "-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
+                ["-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
                      else "virtio-blk-pci,drive=scratch"]
                 if self.config.arch != "i386" else []
             ),
-            # No monitor (we use QMP)
             "-monitor", "none",
-            # Debugcon: capture bochs debug port (0xE9) output for triage
-            # (ARM64 has no x86 port I/O — skip to avoid QEMU errors)
             *(
                 ["-debugcon", f"file:{self.debugcon_path}"]
                 if not self.config.arch.startswith("arm64") else []
             ),
-            # Architecture-specific args
             *self.config.qemu_args(self.work_dir),
         ]
 
-        # Log command for debugging
         print(f"[QemuVM] {' '.join(cmd)}")
 
-        # Start QEMU process
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -280,33 +255,53 @@ class QemuVM:
             preexec_fn=os.setpgrp,
         )
 
-        # Accept QEMU's connection to our serial socket
         self.serial.accept(timeout=15.0)
 
-        # Connect QMP for VM control
         self._wait_for_socket(self.qmp_path, timeout=10.0)
         self._connect_with_retry(
-            lambda: self.qmp.connect(str(self.qmp_path)),
+            lambda: self.qmp.connect(str(self.qmp_path), timeout=self.config.qmp_timeout),
             "QMP",
         )
 
     def wait_for_boot(self) -> str:
         """Wait for boot to complete. Returns all boot output.
 
-        Uses boot_marker if set, otherwise waits for serial output to go idle
-        (no new data for several seconds after receiving substantial output).
+        Uses boot_marker if set, otherwise waits for serial output to go idle.
+        After detection, waits desktop_settle_seconds for user-mode to finish.
         """
-        if self.config.boot_marker:
-            self._boot_output = self.serial.read_until(
-                self.config.boot_marker,
-                timeout=self.config.boot_timeout,
-            )
-        else:
-            self._boot_output = self.serial.read_until_idle(
-                idle_seconds=5.0,
-                timeout=self.config.boot_timeout,
-                min_bytes=self.config.min_boot_bytes,
-            )
+        try:
+            if self.config.boot_marker:
+                self._boot_output = self.serial.read_until(
+                    self.config.boot_marker,
+                    timeout=self.config.boot_timeout,
+                )
+            else:
+                self._boot_output = self.serial.read_until_idle(
+                    idle_seconds=5.0,
+                    timeout=self.config.boot_timeout,
+                    min_bytes=self.config.min_boot_bytes,
+                )
+        except TimeoutError:
+            # Save whatever serial output was captured before the timeout
+            self._boot_output = self.serial.partial_output
+            raise
+
+        # Wait for desktop to come up (user-mode processes need time after
+        # the kernel finishes loading boot drivers).
+        settle = self.config.desktop_settle_seconds
+        if settle > 0:
+            print(f"[QemuVM] Waiting {settle:.0f}s for desktop to settle...")
+            # Keep draining serial during settle (some arches produce late output)
+            try:
+                extra = self.serial.read_until_idle(
+                    idle_seconds=settle,
+                    timeout=settle + 10,
+                    min_bytes=0,
+                )
+                self._boot_output += extra
+            except TimeoutError:
+                pass  # Settle time elapsed — that's fine
+
         return self._boot_output
 
     def save_snapshot(self, name: str = "ready") -> None:
@@ -314,7 +309,6 @@ class QemuVM:
         result = self.qmp.hmp(f"savevm {name}")
         if "Error" in result:
             raise RuntimeError(f"savevm failed: {result}")
-        # savevm can take a moment — wait for completion by querying status
         time.sleep(0.5)
 
     def restore_snapshot(self, name: str = "ready") -> None:
@@ -322,7 +316,6 @@ class QemuVM:
         result = self.qmp.hmp(f"loadvm {name}")
         if "Error" in result:
             raise RuntimeError(f"loadvm failed: {result}")
-        # After loadvm, serial socket may have buffered stale data — drain it
         time.sleep(0.5)
         self.serial.read_available(timeout=0.2)
 
@@ -331,13 +324,9 @@ class QemuVM:
         return self.serial.read_available(timeout=timeout)
 
     def screendump(self, path: str | Path) -> Path:
-        """Save a screenshot of the VM display via QMP screendump.
-
-        Returns the path to the saved PPM file.
-        """
+        """Save a screenshot via QMP screendump."""
         path = Path(path)
         result = self.qmp.execute("screendump", filename=str(path))
-        # Give QEMU a moment to write the file
         time.sleep(0.5)
         if not path.exists():
             raise RuntimeError(f"screendump failed: {result}")
@@ -350,7 +339,7 @@ class QemuVM:
         return b""
 
     def debugcon_report(self) -> str | None:
-        """Decode debugcon output into a triage report. Returns None if unavailable."""
+        """Decode debugcon output into a triage report."""
         raw = self.read_debugcon()
         if not raw:
             return None
@@ -362,13 +351,11 @@ class QemuVM:
 
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""
-        # Close clients first
         self.serial.close()
         self.qmp.close()
 
         if self._proc is not None:
             try:
-                # Try graceful quit via signal
                 os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
                 self._proc.wait(timeout=5)
             except (ProcessLookupError, subprocess.TimeoutExpired):
@@ -379,7 +366,6 @@ class QemuVM:
                     pass
             self._proc = None
 
-        # Clean up socket directory
         shutil.rmtree(self._sock_dir, ignore_errors=True)
 
     def _connect_with_retry(self, connect_fn, name: str, timeout: float = 10.0) -> None:
@@ -403,7 +389,6 @@ class QemuVM:
         while not path.exists():
             if time.monotonic() > deadline:
                 self._raise_start_error(f"Socket {path} did not appear within {timeout}s")
-            # Check if QEMU process died
             if self._proc and self._proc.poll() is not None:
                 self._raise_start_error(f"QEMU exited with code {self._proc.returncode}")
             time.sleep(0.1)

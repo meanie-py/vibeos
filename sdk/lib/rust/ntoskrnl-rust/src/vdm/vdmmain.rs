@@ -103,8 +103,9 @@ const SECTION_ALL_ACCESS: ACCESS_MASK = 0xF001F;
 const ViewUnmap: ULONG = 1;
 const KeyValueBasicInformation: ULONG = 0;
 const VdmStartExecution: ULONG = 0;
-const VdmInitExecution: ULONG = 1;
-const VdmInitialize: ULONG = 2;
+const VdmQueueInterrupt: ULONG = 1;
+const VdmDelayInterrupt: ULONG = 2;
+const VdmInitialize: ULONG = 3;
 
 extern "system" {
     fn VdmpStartExecution() -> NTSTATUS;

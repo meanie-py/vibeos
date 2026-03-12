@@ -325,6 +325,21 @@ Return Value:
     FileObject = CallbackData->FileObject;
 
     //
+    //  Guard against NULL FsContext — can happen when exception handling
+    //  in cdfs leaves FCB partially initialized (PSEH_CLANG catch path).
+    //
+
+    if (!FileObject || !FileObject->FsContext ||
+        !((PFCB) FileObject->FsContext)->FcbNonpaged) {
+
+        DbgPrint("CdFilterCallbackAcquireForCreateSection: NULL guard hit! FileObject=%p FsContext=%p FcbNonpaged=%p\n",
+                 FileObject,
+                 FileObject ? FileObject->FsContext : NULL,
+                 (FileObject && FileObject->FsContext) ? (PVOID)((PFCB) FileObject->FsContext)->FcbNonpaged : NULL);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    //
     //  Get the Fcb resource exclusively.
     //
 

@@ -106,19 +106,37 @@ KsecGatherEntropyData(
     NTSTATUS Status;
 
     /* Query some generic values */
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '0');
+#endif
     EntropyData->CurrentProcessId = PsGetCurrentProcessId();
     EntropyData->CurrentThreadId = PsGetCurrentThreadId();
     KeQueryTickCount(&EntropyData->TickCount);
     KeQuerySystemTime(&EntropyData->SystemTime);
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '1');
+#endif
     EntropyData->PerformanceCounter = KeQueryPerformanceCounter(
                                             &EntropyData->PerformanceFrequency);
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '2');
+#endif
 
     /* Check if we have a TEB/PEB for the process environment */
     Teb = PsGetCurrentThread()->Tcb.Teb;
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '3');
+#endif
     if (Teb != NULL)
     {
         Peb = Teb->ProcessEnvironmentBlock;
 
+        /* Skip environment hashing — with DUMMY_PSEH, faulting on
+         * invalid PEB/ProcessParameters/Environment pointers is fatal.
+         * During early boot (ksecdd.sys DriverEntry), the calling thread
+         * may be a System process thread with a kernel-mode TEB but no
+         * valid user-mode PEB layout. */
+#if 0
         /* Initialize the MD4 context */
         MD4Init(&Md4Context);
         _SEH2_TRY
@@ -144,11 +162,18 @@ KsecGatherEntropyData(
         /* Finalize and copy the MD4 hash */
         MD4Final(&Md4Context);
         RtlCopyMemory(&EntropyData->EnvironmentHash, Md4Context.digest, 16);
+#endif
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '4');
+#endif
     /* Read some machine specific hardware counters */
     KsecReadMachineSpecificCounters(&EntropyData->MachineSpecificCounters);
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '5');
+#endif
     /* Query processor performance information */
     Status = ZwQuerySystemInformation(SystemProcessorPerformanceInformation,
                                       &EntropyData->SystemProcessorPerformanceInformation,
@@ -156,9 +181,15 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '6');
+#endif
     /* Query system performance information */
     Status = ZwQuerySystemInformation(SystemPerformanceInformation,
                                       &EntropyData->SystemPerformanceInformation,
@@ -166,9 +197,15 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '7');
+#endif
     /* Query exception information */
     Status = ZwQuerySystemInformation(SystemExceptionInformation,
                                       &EntropyData->SystemExceptionInformation,
@@ -176,9 +213,15 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '8');
+#endif
     /* Query lookaside information */
     Status = ZwQuerySystemInformation(SystemLookasideInformation,
                                       &EntropyData->SystemLookasideInformation,
@@ -186,9 +229,15 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, '9');
+#endif
     /* Query interrupt information */
     Status = ZwQuerySystemInformation(SystemInterruptInformation,
                                       &EntropyData->SystemInterruptInformation,
@@ -196,9 +245,15 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, 'A');
+#endif
     /* Query process information */
     Status = ZwQuerySystemInformation(SystemProcessInformation,
                                       &EntropyData->SystemProcessInformation,
@@ -206,8 +261,14 @@ KsecGatherEntropyData(
                                       &ReturnLength);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_IX86
+        __outbyte(0xE9, 'e'); __outbyte(0xE9, 'X');
+#endif
         return Status;
     }
 
+#ifdef _M_IX86
+    __outbyte(0xE9, 'e'); __outbyte(0xE9, 'B');
+#endif
     return STATUS_SUCCESS;
 }

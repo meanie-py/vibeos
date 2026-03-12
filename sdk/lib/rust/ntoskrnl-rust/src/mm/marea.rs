@@ -34,17 +34,23 @@ use ntkrnl_sys::ddk::{
     MiUnlockProcessWorkingSet,
     MiUnlockProcessWorkingSetUnsafe,
     MiUnlockWorkingSet,
-    MmDeletePageFileMapping,
-    MmDeletePhysicalMapping,
-    MmDeleteVirtualMapping,
     MmGetAddressSpaceOwner,
-    MmIsPageSwapEntry,
     PsGetCurrentThread,
     SWAPENTRY,
 };
 
 extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
+}
+
+// Local extern declarations with correct calling convention (NTAPI = extern "system").
+// These MUST NOT come from ntkrnl_sys::ddk because bindgen declares some as extern "C",
+// producing wrong i386 symbol names (_Foo instead of _Foo@N).
+extern "system" {
+    fn MmIsPageSwapEntry(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID) -> BOOLEAN;
+    fn MmDeletePageFileMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, SwapEntry: *mut SWAPENTRY);
+    fn MmDeletePhysicalMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
+    fn MmDeleteVirtualMapping(Process: ntkrnl_sys::ddk::PEPROCESS, Address: PVOID, WasDirty: *mut BOOLEAN, Page: *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
 }
 
 const MI_STATIC_MEMORY_AREAS: usize = 32;
@@ -93,7 +99,8 @@ pub unsafe extern "system" fn MmLocateMemoryAreaByRegion(
     }
     
     let Vad = Node as PMMVAD_LONG;
-    if ((*Vad).u.VadFlags.MemCommit() & 0x20) == 0 {
+    // MI_IS_MEMORY_AREA_VAD: Spare & 1
+    if ((*Vad).u.VadFlags.Spare() & 1) == 0 {
         return core::ptr::null_mut();
     } else {
         Node as PMEMORY_AREA
@@ -215,31 +222,65 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
         let EndAddress = ((((*MemoryArea).VadNode.EndingVpn as ULONG_PTR) + 1) << PAGE_SHIFT) as PVOID;
         let mut Address = (((*MemoryArea).VadNode.StartingVpn as ULONG_PTR) << PAGE_SHIFT) as ULONG_PTR;
         
+        // Use volatile reads of function pointers (via usize) to prevent the
+        // optimizer from performing interprocedural analysis that eliminates
+        // conditional branches. Without this, rustc/LLVM at opt-level>=1 analyzes
+        // MmIsPageSwapEntry's body, proves certain branches are dead, and eliminates
+        // MmDeletePhysicalMapping/MmDeleteVirtualMapping calls despite their page
+        // table modification side effects (atomic PTE exchanges, TLB invalidation).
+        type IsSwapFn = unsafe extern "system" fn(PEPROCESS, PVOID) -> BOOLEAN;
+        type PageFileFn = unsafe extern "system" fn(PEPROCESS, PVOID, *mut SWAPENTRY);
+        type PhysFn = unsafe extern "system" fn(PEPROCESS, PVOID, *mut BOOLEAN, *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
+        type VirtFn = unsafe extern "system" fn(PEPROCESS, PVOID, *mut BOOLEAN, *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
+        // Cast fn items → usize, volatile-read to make opaque, transmute back.
+        // The usize intermediate avoids calling convention type mismatches between
+        // bindgen's extern "stdcall"/"C" and our extern "system" type aliases.
+        let is_swap_fn: IsSwapFn = {
+            let mut p = MmIsPageSwapEntry as usize;
+            p = core::ptr::read_volatile(&p);
+            core::mem::transmute(p)
+        };
+        let pagefile_fn: PageFileFn = {
+            let mut p = MmDeletePageFileMapping as usize;
+            p = core::ptr::read_volatile(&p);
+            core::mem::transmute(p)
+        };
+        let phys_fn: PhysFn = {
+            let mut p = MmDeletePhysicalMapping as usize;
+            p = core::ptr::read_volatile(&p);
+            core::mem::transmute(p)
+        };
+        let virt_fn: VirtFn = {
+            let mut p = MmDeleteVirtualMapping as usize;
+            p = core::ptr::read_volatile(&p);
+            core::mem::transmute(p)
+        };
+
         while Address < EndAddress as ULONG_PTR {
             let mut Dirty: BOOLEAN = 0;
             let mut SwapEntry: SWAPENTRY = 0;
             let mut Page: ntkrnl_sys::ddk::PFN_NUMBER = 0;
             let DoFree: BOOLEAN;
-            
-            if MmIsPageSwapEntry(Process, Address as PVOID) != 0 {
-                MmDeletePageFileMapping(Process, Address as PVOID, core::ptr::addr_of_mut!(SwapEntry));
+
+            if is_swap_fn(Process, Address as PVOID) != 0 {
+                pagefile_fn(Process, Address as PVOID, core::ptr::addr_of_mut!(SwapEntry));
                 DoFree = 1;
             } else if _KWAIT_REASON_FreePage.is_none() {
-                DoFree = MmDeletePhysicalMapping(
+                DoFree = phys_fn(
                     Process,
                     Address as PVOID,
                     core::ptr::addr_of_mut!(Dirty),
                     core::ptr::addr_of_mut!(Page),
                 );
             } else {
-                DoFree = MmDeleteVirtualMapping(
+                DoFree = virt_fn(
                     Process,
                     Address as PVOID,
                     core::ptr::addr_of_mut!(Dirty),
                     core::ptr::addr_of_mut!(Page),
                 );
             };
-            
+
             if DoFree != 0 && _KWAIT_REASON_FreePage.is_some() {
                 (_KWAIT_REASON_FreePage.unwrap())(
                     FreePageContext,
@@ -250,7 +291,7 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
                     Dirty,
                 );
             }
-            
+
             Address += PAGE_SIZE;
         }
         
@@ -313,10 +354,14 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
     (*MemoryArea).Flags = AllocationFlags;
     (*MemoryArea).Magic = u32::from_be_bytes(*b"erAM");
     (*MemoryArea).DeleteInProgress = 0;
-    (*MemoryArea).VadNode.u.VadFlags.set_MemCommit(0x20);
-    
+    // MI_SET_MEMORY_AREA_VAD: Spare |= 1
+    let spare = (*MemoryArea).VadNode.u.VadFlags.Spare();
+    (*MemoryArea).VadNode.u.VadFlags.set_Spare(spare | 1);
+
     if (*MemoryArea).Type != MEMORY_AREA_OWNED_BY_ARM3 {
-        (*MemoryArea).VadNode.u.VadFlags.set_VadType(1);
+        // MI_SET_ROSMM_VAD: Spare |= 2
+        let spare = (*MemoryArea).VadNode.u.VadFlags.Spare();
+        (*MemoryArea).VadNode.u.VadFlags.set_Spare(spare | 2);
     }
     
     if (*BaseAddress).is_null() {

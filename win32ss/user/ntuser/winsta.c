@@ -268,24 +268,26 @@ co_IntInitializeDesktopGraphics(VOID)
     TEXTMETRICW tmw;
 #endif
 
-    /* If PDEV already created (e.g. ARM64 early init), skip re-creation */
+    /* If PDEV already created (e.g. early init from UserInitialize), skip re-creation */
     if (gpmdev)
     {
-        return TRUE;
+        /* PDEV already exists — just need to do ScreenDC + UI init below */
     }
-
-    lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
-    if (lRet != DISP_CHANGE_SUCCESSFUL && !gbBaseVideo)
+    else
     {
-        gbBaseVideo = TRUE;
-        EngpUpdateGraphicsDeviceList();
         lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
-        gbBaseVideo = FALSE;
-        EngpUpdateGraphicsDeviceList();
-    }
-    if (lRet != DISP_CHANGE_SUCCESSFUL)
-    {
-        return FALSE;
+        if (lRet != DISP_CHANGE_SUCCESSFUL && !gbBaseVideo)
+        {
+            gbBaseVideo = TRUE;
+            EngpUpdateGraphicsDeviceList();
+            lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
+            gbBaseVideo = FALSE;
+            EngpUpdateGraphicsDeviceList();
+        }
+        if (lRet != DISP_CHANGE_SUCCESSFUL)
+        {
+            return FALSE;
+        }
     }
 
 #ifdef _M_ARM64
@@ -389,6 +391,17 @@ co_IntInitializeDesktopGraphics(VOID)
 
     /* Attach monitor */
     UserAttachMonitor((HDEV)gpmdev->ppdevGlobal);
+
+    /* HACK: Brief yield to let concurrent DLL loading I/O complete.
+     * Without this, a timing-dependent deadlock in the cache manager
+     * Rust code can freeze the system when the first user-mode callback
+     * races with concurrent NtCreateSection calls from other processes. */
+    {
+        LARGE_INTEGER Delay;
+        Delay.QuadPart = -500000; /* 50ms */
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+    }
+
     /* Setup the cursor */
     co_IntLoadDefaultCursors();
 
@@ -398,10 +411,13 @@ co_IntInitializeDesktopGraphics(VOID)
     /* Setup Menu */
     MenuInit();
 
-    /* Show the desktop */
+    /* Show the desktop if one already exists (it won't on first call from
+     * NtUserInitialize since desktops are created later by winlogon) */
     pdesk = IntGetActiveDesktop();
-    ASSERT(pdesk);
-    co_IntShowDesktop(pdesk, gpsi->aiSysMet[SM_CXSCREEN], gpsi->aiSysMet[SM_CYSCREEN], TRUE);
+    if (pdesk)
+    {
+        co_IntShowDesktop(pdesk, gpsi->aiSysMet[SM_CXSCREEN], gpsi->aiSysMet[SM_CYSCREEN], TRUE);
+    }
 
     /* HACK: display wallpaper on all secondary displays */
     {

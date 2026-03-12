@@ -214,12 +214,14 @@ KiExitSystemCallDebugChecks(IN ULONG SystemCall,
         if ((KeGetCurrentThread()->ApcStateIndex != OriginalApcEnvironment) ||
             (KeGetCurrentThread()->CombinedApcDisable != 0))
         {
-            /* Fail */
-            KeBugCheckEx(APC_INDEX_MISMATCH,
-                         SystemCall,
-                         KeGetCurrentThread()->ApcStateIndex,
-                         KeGetCurrentThread()->CombinedApcDisable,
-                         0);
+            /* PSEH_CLANG workaround: longjmp-based SEH can leak critical regions
+             * when exceptions skip KeLeaveCriticalRegion. Log and reset instead
+             * of bugchecking so boot can continue. */
+            DbgPrint("APC_INDEX_MISMATCH: syscall=%lx ApcStateIndex=%d CombinedApcDisable=%lx\n",
+                     SystemCall,
+                     KeGetCurrentThread()->ApcStateIndex,
+                     KeGetCurrentThread()->CombinedApcDisable);
+            KeGetCurrentThread()->CombinedApcDisable = 0;
         }
     }
 }

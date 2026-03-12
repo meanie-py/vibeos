@@ -350,7 +350,7 @@ typedef struct _KPRCB
     UCHAR Group;
     UCHAR GroupIndex;
     UCHAR PrcbPad01[2];
-    KSPIN_LOCK_QUEUE DECLSPEC_ALIGN(128) LockQueue[17];
+    KSPIN_LOCK_QUEUE DECLSPEC_ALIGN(128) LockQueue[LockQueueMaximumLock];
     UCHAR ProcessorVendorString[2];
     UCHAR PrcbPad02[0x2];
     ULONG FeatureBits;

@@ -37,6 +37,12 @@ extern "system" {
 extern "system" {
     fn MmRebalanceMemoryConsumersAndWait();
 }
+extern "system" {
+    fn MmDebugTrace(Code: ULONG, Param1: ULONG_PTR, Param2: ULONG_PTR);
+}
+extern "C" {
+    fn MmDebugWsFaultCheck(Address: PVOID, TrapInfo: PVOID);
+}
 
 unsafe fn MmpAccessFault(
     Mode: KPROCESSOR_MODE,
@@ -47,6 +53,7 @@ unsafe fn MmpAccessFault(
     let AddressSpace: PMMSUPPORT;
     let mut MemoryArea: *mut MEMORY_AREA;
     let mut Status: NTSTATUS;
+    let mut already_locked = false;
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
         return STATUS_UNSUCCESSFUL;
@@ -63,16 +70,25 @@ unsafe fn MmpAccessFault(
         AddressSpace = MmGetKernelAddressSpace();
     } else {
         AddressSpace = core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).Vm);
+        // Detect recursive lock: if AddressCreationLock is already held by this
+        // thread (e.g. page fault during MiUnmapViewOfSection), skip lock/unlock.
+        if FromMdl == 0 {
+            let process = PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS;
+            let owner = (*process).AddressCreationLock.Owner;
+            if !owner.is_null() && owner as usize == PsGetCurrentThread() as usize {
+                already_locked = true;
+            }
+        }
     }
 
-    if FromMdl == 0 {
+    if FromMdl == 0 && !already_locked {
         MmLockAddressSpace(AddressSpace);
     }
 
     loop {
         MemoryArea = MmLocateMemoryAreaByAddress(AddressSpace, Address as PVOID);
         if MemoryArea.is_null() || (*MemoryArea).DeleteInProgress != 0 {
-            if FromMdl == 0 {
+            if FromMdl == 0 && !already_locked {
                 MmUnlockAddressSpace(AddressSpace);
             }
             return STATUS_ACCESS_VIOLATION;
@@ -84,7 +100,7 @@ unsafe fn MmpAccessFault(
                     AddressSpace,
                     MemoryArea,
                     Address as PVOID,
-                    if FromMdl == 0 { 1 } else { 0 },
+                    if FromMdl == 0 || already_locked { 1 } else { 0 },
                 )
             }
             _ => STATUS_ACCESS_VIOLATION,
@@ -95,7 +111,7 @@ unsafe fn MmpAccessFault(
         }
     }
 
-    if FromMdl == 0 {
+    if FromMdl == 0 && !already_locked {
         MmUnlockAddressSpace(AddressSpace);
     }
     Status
@@ -109,6 +125,7 @@ unsafe fn MmNotPresentFault(
     let AddressSpace: PMMSUPPORT;
     let mut MemoryArea: *mut MEMORY_AREA;
     let mut Status: NTSTATUS;
+    let mut already_locked = false;
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
         return STATUS_UNSUCCESSFUL;
@@ -121,16 +138,25 @@ unsafe fn MmNotPresentFault(
         AddressSpace = MmGetKernelAddressSpace();
     } else {
         AddressSpace = core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).Vm);
+        // Detect recursive lock: if AddressCreationLock is already held by this
+        // thread (e.g. page fault during MiUnmapViewOfSection), skip lock/unlock.
+        if FromMdl == 0 {
+            let process = PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS;
+            let owner = (*process).AddressCreationLock.Owner;
+            if !owner.is_null() && owner as usize == PsGetCurrentThread() as usize {
+                already_locked = true;
+            }
+        }
     }
 
-    if FromMdl == 0 {
+    if FromMdl == 0 && !already_locked {
         MmLockAddressSpace(AddressSpace);
     }
 
     loop {
         MemoryArea = MmLocateMemoryAreaByAddress(AddressSpace, Address as PVOID);
         if MemoryArea.is_null() || (*MemoryArea).DeleteInProgress != 0 {
-            if FromMdl == 0 {
+            if FromMdl == 0 && !already_locked {
                 MmUnlockAddressSpace(AddressSpace);
             }
             return STATUS_ACCESS_VIOLATION;
@@ -142,7 +168,7 @@ unsafe fn MmNotPresentFault(
                     AddressSpace,
                     MemoryArea,
                     Address as PVOID,
-                    if FromMdl == 0 { 1 } else { 0 },
+                    if FromMdl == 0 || already_locked { 1 } else { 0 },
                 )
             }
             _ => STATUS_ACCESS_VIOLATION,
@@ -153,7 +179,7 @@ unsafe fn MmNotPresentFault(
         }
     }
 
-    if FromMdl == 0 {
+    if FromMdl == 0 && !already_locked {
         MmUnlockAddressSpace(AddressSpace);
     }
     Status
@@ -170,7 +196,8 @@ pub unsafe extern "system" fn MmAccessFault(
     let mut Status: NTSTATUS;
     let mut IsArm3Fault = 0u8;
 
-    // (DBG trace removed)
+    // Lightweight WS lock diagnostic: log faulting address + EIP when WS excl lock is held
+    MmDebugWsFaultCheck(Address, TrapInformation);
 
     if (Address as ULONG_PTR) >= MmSystemRangeStart as ULONG_PTR {
         #[cfg(target_arch = "x86")]
@@ -232,10 +259,14 @@ pub unsafe extern "system" fn MmAccessFault(
             && (Address as ULONG_PTR) < MmPagedPoolEnd as ULONG_PTR)
         || MmGetKernelAddressSpace().is_null()
     {
-        // DBG: before MmArmAccessFault (ARM3 / paged pool path)
-        let _r = MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
-        // DBG: after MmArmAccessFault (ARM3 / paged pool path)
-        return _r;
+        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
+    }
+
+    // Kernel addresses with no VAD that aren't in a ROS MM range must go to ARM3.
+    // Without this, nonpaged pool faults fall through to the ROS MM path which
+    // returns ACCESS_VIOLATION because there's no MEMORY_AREA for nonpaged pool.
+    if Vad.is_null() && (Address as ULONG_PTR) > MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
+        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
     }
 
     loop {

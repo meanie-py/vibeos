@@ -311,14 +311,9 @@ DebuggerActive1:
 
 RaiseException:
 
-#ifdef _USE_DUMMY_PSEH
-    /* DUMMY_PSEH: No SEH handlers exist, so second-chance dispatch will just
-     * kill the process via csrss. For continuable exceptions (e.g.
-     * RPC_S_SERVER_UNAVAILABLE 0x6BA), swallow the exception by returning
-     * from RtlRaiseException to our caller. The caller (typically kernel32's
-     * RaiseException) will run its epilogue and return to the original code,
-     * simulating what would happen if a _SEH2_EXCEPT handler caught and
-     * continued past the exception. */
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Safety net: For continuable software exceptions that escape all handlers,
+     * return from RtlRaiseException to caller instead of killing the process. */
     mov eax, [ebp+8]
     test dword ptr [eax+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
     jnz DummyPseh_SecondChance1

@@ -49,6 +49,8 @@ _main(int argc,
     UNREFERENCED_PARAMETER(envp);
     UNREFERENCED_PARAMETER(DebugFlag);
 
+    DPRINT1("CSRSS: _main() entered, argc=%d\n", argc);
+
     /* Set the base priority */
     NtSetInformationProcess(NtCurrentProcess(),
                             ProcessBasePriority,
@@ -75,7 +77,9 @@ _main(int argc,
 #endif
 
     /* Initialize CSR through CSRSRV */
+    DPRINT1("CSRSS: Calling CsrServerInitialization\n");
     Status = CsrServerInitialization(argc, argv);
+    DPRINT1("CSRSS: CsrServerInitialization returned 0x%lx\n", Status);
     if (!NT_SUCCESS(Status))
     {
         /* Kill us */

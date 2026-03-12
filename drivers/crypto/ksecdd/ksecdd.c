@@ -29,6 +29,12 @@ DriverEntry(
     UNICODE_STRING DeviceName = RTL_CONSTANT_STRING(L"\\Device\\KsecDD");
     NTSTATUS Status;
 
+    /* Debugcon traces for i386 boot debugging */
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'K'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'0'), "Nd"((unsigned short)0xE9));
+#endif
+
     /* Create the KsecDD device */
     Status = IoCreateDevice(DriverObject,
                             0,
@@ -37,6 +43,10 @@ DriverEntry(
                             0x100u,
                             FALSE,
                             &KsecDeviceObject);
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'K'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'1'), "Nd"((unsigned short)0xE9));
+#endif
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("Failed to create KsecDD device: 0x%lx\n", Status);
@@ -52,8 +62,18 @@ DriverEntry(
     DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = KsecDdDispatch;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = KsecDdDispatch;
 
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'K'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'2'), "Nd"((unsigned short)0xE9));
+#endif
+
     /* Initialize */
     KsecInitializeEncryptionSupport();
+
+#ifdef _M_IX86
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'K'), "Nd"((unsigned short)0xE9));
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'3'), "Nd"((unsigned short)0xE9));
+#endif
 
     return STATUS_SUCCESS;
 }

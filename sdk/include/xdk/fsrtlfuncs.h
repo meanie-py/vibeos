@@ -1599,6 +1599,12 @@ FsRtlNotifyStreamFileObject(
 #ifdef _NTSYSTEM_
 extern const UCHAR * const FsRtlLegalAnsiCharacterArray;
 #define LEGAL_ANSI_CHARACTER_ARRAY FsRtlLegalAnsiCharacterArray
+#elif defined(__clang__)
+/* Clang's redefine_extname generates .refptr. indirection wrappers that add
+   an extra dereference level, breaking the pointer-to-pointer pattern.
+   Use __declspec(dllimport) instead, which generates direct __imp__ access. */
+extern __declspec(dllimport) const UCHAR * const FsRtlLegalAnsiCharacterArray;
+#define LEGAL_ANSI_CHARACTER_ARRAY FsRtlLegalAnsiCharacterArray
 #else
 __CREATE_NTOS_DATA_IMPORT_ALIAS(FsRtlLegalAnsiCharacterArray)
 extern const UCHAR * const *FsRtlLegalAnsiCharacterArray;

@@ -697,13 +697,15 @@ pub unsafe fn MiReleaseExpansionLock(old_irql: KIRQL) {
 // ============================================================================
 
 /// RMAP_IS_SEGMENT — check if address has segment flag bits set.
+/// C macro: #define RMAP_SEGMENT_MASK (~((ULONG_PTR)0xff))
+/// Check: ((ULONG_PTR)(x) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK
 #[inline]
 pub unsafe fn RMAP_IS_SEGMENT(address: PVOID) -> BOOLEAN {
-    // RMAP_SEGMENT_MASK = 0xFF on i386, 0xFFF on 64-bit
+    // RMAP_SEGMENT_MASK = ~0xFF on i386, ~0xFFF on 64-bit (bitwise NOT)
     #[cfg(target_pointer_width = "32")]
-    const RMAP_SEGMENT_MASK: usize = 0xFF;
+    const RMAP_SEGMENT_MASK: usize = !0xFF;
     #[cfg(target_pointer_width = "64")]
-    const RMAP_SEGMENT_MASK: usize = 0xFFF;
+    const RMAP_SEGMENT_MASK: usize = !0xFFF;
 
     if ((address as usize) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK {
         1

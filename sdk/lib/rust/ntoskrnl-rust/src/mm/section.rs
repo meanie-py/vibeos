@@ -103,7 +103,7 @@ use ntkrnl_sys::ddk::{
     PLARGE_INTEGER,
     PMEMORY_AREA,
     PMM_IMAGE_SECTION_OBJECT,
-    PMM_REGION,
+    PMM_REGION, _MM_REGION,
     PMM_SECTION_SEGMENT,
     POBJECT_ATTRIBUTES,
     POBJECT_TYPE,
@@ -232,6 +232,7 @@ extern "system" {
     fn _MmSetPageEntrySectionSegment( Segment: PMM_SECTION_SEGMENT, Offset: PLARGE_INTEGER, Entry: ULONG_PTR, file: *const i8, line: i32 ) -> NTSTATUS;
     fn MmCreateArm3Section( SectionObject: *mut PVOID, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES, InputMaximumSize: PLARGE_INTEGER, SectionPageProtection: ULONG, AllocationAttributes: ULONG, FileHandle: HANDLE, FileObject: PFILE_OBJECT ) -> NTSTATUS;
     fn MmMapViewOfArm3Section( SectionObject: PVOID, Process: PEPROCESS, BaseAddress: *mut PVOID, ZeroBits: ULONG_PTR, CommitSize: SIZE_T, SectionOffset: PLARGE_INTEGER, ViewSize: PSIZE_T, InheritDisposition: SECTION_INHERIT, AllocationType: ULONG, Protect: ULONG ) -> NTSTATUS;
+    fn MmFixupImageSectionSegments( ImageSectionObject: PMM_IMAGE_SECTION_OBJECT, Flags: ULONG, FileObject: PFILE_OBJECT ) -> NTSTATUS;
     static mut MmSession: MMSESSION;
     static mut MmSectionBasedRoot: RTL_AVL_TABLE;
     static mut MmSubsectionBase: ULONG_PTR;
@@ -463,7 +464,10 @@ unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> P
 }
 
 unsafe fn ImageSectionObjectFromSegment(Segment: PMM_SECTION_SEGMENT) -> PMM_IMAGE_SECTION_OBJECT {
-    (Segment as *const u8).offset(
+    // C: CONTAINING_RECORD(Segment->ReferenceCount, MM_IMAGE_SECTION_OBJECT, RefCount)
+    // Segment->ReferenceCount is a PLONG64 pointing INTO the parent ImageSectionObject's
+    // RefCount field. We offset backwards from that pointer to get the parent struct.
+    ((*Segment).ReferenceCount as *const u8).offset(
         -(core::mem::offset_of!(MM_IMAGE_SECTION_OBJECT, RefCount) as isize)
     ) as PMM_IMAGE_SECTION_OBJECT
 }
@@ -656,10 +660,12 @@ unsafe fn MmMakeSegmentResident(
     fn MmUnmapLockedPages(MappedSystemVa: PVOID, Mdl: *mut MDL);
 }
 
-    let mut RangeStart = Offset - (Offset % _64K as i64);
+    // Use 16K readahead chunks instead of 64K (workaround for IoPageRead hang with >=32K reads on i386 CDFS)
+    const READAHEAD_CHUNK: usize = 16 * 1024;
+    let mut RangeStart = Offset - (Offset % READAHEAD_CHUNK as i64);
     let mut RangeEnd = Offset + Length as i64;
-    if RangeEnd % _64K as i64 != 0 {
-        RangeEnd += _64K as i64 - (RangeEnd % _64K as i64);
+    if RangeEnd % READAHEAD_CHUNK as i64 != 0 {
+        RangeEnd += READAHEAD_CHUNK as i64 - (RangeEnd % READAHEAD_CHUNK as i64);
     }
     if (*Segment).SegFlags & MM_DATAFILE_SEGMENT == 0 {
         if RangeEnd > (*Segment).RawLength.QuadPart {
@@ -669,7 +675,7 @@ unsafe fn MmMakeSegmentResident(
 
     while RangeStart < RangeEnd {
         let mut ToReadPageBits: ULONG = 0;
-        let ChunkEnd = core::cmp::min(RangeStart + _64K as i64, RangeEnd);
+        let ChunkEnd = core::cmp::min(RangeStart + READAHEAD_CHUNK as i64, RangeEnd);
         MmLockSectionSegment(Segment as PVOID);
 
         let mut ChunkOffset = RangeStart;
@@ -707,7 +713,7 @@ unsafe fn MmMakeSegmentResident(
         MmUnlockSectionSegment(Segment as PVOID);
 
         if ToReadPageBits == 0 {
-            RangeStart += _64K as i64;
+            RangeStart += READAHEAD_CHUNK as i64;
             continue;
         }
 
@@ -761,7 +767,7 @@ unsafe fn MmMakeSegmentResident(
                     return Status;
                 }
             }
-            (*Mdl).MdlFlags |= 0x05;
+            (*Mdl).MdlFlags |= 0x0002 | 0x0040; // MDL_PAGES_LOCKED | MDL_IO_PAGE_READ
             let mut FileOffset = LARGE_INTEGER { QuadPart: (*Segment).Image.FileOffset as i64 + ChunkOffset };
             let mut Event: KEVENT = core::mem::zeroed();
             KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0, 0u8);
@@ -811,7 +817,7 @@ unsafe fn MmMakeSegmentResident(
             ToReadPageBits >>= BitSet;
             ChunkOffset += (BitSet as usize * PAGE_SIZE) as i64;
         }
-        RangeStart += _64K as i64;
+        RangeStart += READAHEAD_CHUNK as i64;
     }
     STATUS_SUCCESS
 }
@@ -1100,7 +1106,7 @@ pub unsafe extern "system" fn MmMapViewInSystemSpaceEx(
     fn MmUnlockAddressSpace(AddressSpace: *mut core::ffi::c_void);
 }
     let Section = SectionObject as PSECTION;
-    if MiIsRosSectionObject(SectionObject as PSECTION) == 0 {
+    if MiIsRosSectionObject(Section) == 0 {
         return MiMapViewInSystemSpace(
             SectionObject,
             core::ptr::addr_of_mut!(MmSession) as *mut core::ffi::c_void,
@@ -2506,6 +2512,7 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
             }
 
             MmUnlockSectionSegment(Segment as PVOID);
+            break;
         }
     }
     (*Section).SizeOfSection = MaximumSize;
@@ -2668,6 +2675,14 @@ unsafe fn ExeFmtpCreateImageSection(
         } else {
             (*ImageSectionObject).BasedAddress = 0x00400000 as PVOID;
         }
+    }
+
+    // Sort, bounds-check, page-align, trim, and initialize segment locks/refcounts/flags/pagetable/FileObject.
+    // This block was missing from the original Rust translation — without it, image section segments
+    // have uninitialized FAST_MUTEX locks, causing BUGCHECK in MmLockSectionSegment.
+    let FixupStatus = MmFixupImageSectionSegments(ImageSectionObject, Flags, FileObject);
+    if !NT_SUCCESS(FixupStatus) {
+        return FixupStatus;
     }
 
     Status
@@ -2965,7 +2980,8 @@ unsafe fn MmUnmapViewOfSegment(
     RegionListHead = core::ptr::addr_of_mut!((*MemoryArea).SectionData.RegionListHead);
     while !IsListEmpty_inline(RegionListHead) {
         CurrentEntry = RemoveHeadList_inline(RegionListHead);
-        let CurrentRegion = CurrentEntry as PMEMORY_AREA;
+        let CurrentRegion = (CurrentEntry as *mut u8)
+            .sub(core::mem::offset_of!(_MM_REGION, RegionListEntry)) as PMM_REGION;
         ExFreePoolWithTag(CurrentRegion as PVOID, TAG_MM_REGION);
     }
 
@@ -3233,6 +3249,34 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             let aligned = (MM_HIGHEST_VAD_ADDRESS as ULONG_PTR - ImageSize) & !(MM_VIRTMEM_GRANULARITY as ULONG_PTR - 1);
             ImageBase = aligned;
             NotAtBase = 1u8;
+        } else if ImageBase != ImageBase & !(MM_VIRTMEM_GRANULARITY as ULONG_PTR - 1) {
+            ImageBase = ImageBase & !(MM_VIRTMEM_GRANULARITY as ULONG_PTR - 1);
+            NotAtBase = 1u8;
+        }
+
+        // Check there is enough space to map the section at that point.
+        if MmIsAddressRangeFree(AddressSpace, ImageBase as PVOID, PAGE_ROUND_UP(ImageSize)) == 0 {
+            // Fail if the user requested a fixed base address.
+            if !(*BaseAddress).is_null() {
+                Status = STATUS_CONFLICTING_ADDRESSES;
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return Status;
+            }
+            // Otherwise find a gap to map the image.
+            let Gap = MmFindGap(AddressSpace, PAGE_ROUND_UP(ImageSize), MM_VIRTMEM_GRANULARITY, 0u8);
+            if Gap.is_null() {
+                Status = STATUS_CONFLICTING_ADDRESSES;
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return Status;
+            }
+            ImageBase = Gap as ULONG_PTR;
+            NotAtBase = 1u8;
         }
 
         for i in 0..NrSegments {
@@ -3251,7 +3295,21 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             );
             MmUnlockSectionSegment(SectionSegments.add(i as usize) as PVOID);
             if Status < 0 {
-                break;
+                // Roll back already-mapped segments
+                let mut j = i;
+                while j > 0 {
+                    j -= 1;
+                    let RollbackAddr =
+                        (ImageBase + (*SectionSegments.add(j as usize)).Image.VirtualAddress as ULONG_PTR) as PVOID;
+                    MmLockSectionSegment(SectionSegments.add(j as usize) as PVOID);
+                    MmUnmapViewOfSegment(AddressSpace, RollbackAddr);
+                    MmUnlockSectionSegment(SectionSegments.add(j as usize) as PVOID);
+                }
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return Status;
             }
         }
 
@@ -3261,11 +3319,47 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         InterlockedIncrementUL(core::ptr::addr_of_mut!((*ImageSectionObject).MapCount) as *mut ULONG);
     } else {
         let Segment = (*Section).Segment as PMM_SECTION_SEGMENT;
-        let ViewOffset = if SectionOffset.is_null() {
+        let mut ViewOffset: i64 = if SectionOffset.is_null() {
             0
         } else {
             (*SectionOffset).QuadPart
         };
+
+        // Check if the offset and size would cause an overflow
+        if (ViewOffset as u64).wrapping_add(*ViewSize as u64) < ViewOffset as u64 {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_INVALID_VIEW_SIZE;
+        }
+
+        // Check if the offset and size are bigger than the section itself
+        if (ViewOffset as u64).wrapping_add(*ViewSize as u64) > (*Section).SizeOfSection.QuadPart as u64 {
+            if (*Section).u.Flags.PhysicalMemory() == 0 || ExGetPreviousMode() != 0i8 {
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return STATUS_INVALID_VIEW_SIZE;
+            }
+        }
+
+        // Handle ViewSize == 0: expand to section size minus offset
+        if *ViewSize == 0 {
+            let calculated_size = (*Section).SizeOfSection.QuadPart as u64 - ViewOffset as u64;
+            if calculated_size > usize::MAX as u64 {
+                MmUnlockAddressSpace(AddressSpace);
+                if IsAttached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                return STATUS_INVALID_VIEW_SIZE;
+            }
+            *ViewSize = calculated_size as SIZE_T;
+        }
+
+        // Page-round the view size
+        *ViewSize = PAGE_ROUND_UP(*ViewSize);
 
         MmLockSectionSegment(Segment as PVOID);
         Status = MmMapViewOfSegment(

@@ -40,11 +40,6 @@ IopTimerDispatch(IN PKDPC Dpc,
     ULONG i;
 
     /* Check if any Timers are actually enabled as of now */
-#ifdef _M_IX86
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'T'), "Nd"((unsigned short)0xE9));
-    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
-#endif
     if (IopTimerCount)
     {
         /* Lock the Timers */

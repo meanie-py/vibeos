@@ -698,7 +698,7 @@ const _: () = assert!(size_of::<super::ddk::_KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT>
 const _: () = assert!(size_of::<super::ddk::_KGATE>() == 24);
 const _: () = assert!(size_of::<super::ddk::_KGUARDED_MUTEX>() == 56);
 const _: () = assert!(size_of::<super::ddk::_KINTERRUPT>() == 520);
-const _: () = assert!(size_of::<super::ddk::_KIPCR>() == 8960);
+const _: () = assert!(size_of::<super::ddk::_KIPCR>() == 9216);
 const _: () = assert!(size_of::<super::ddk::_KIPI_COUNTS>() == 56);
 const _: () = assert!(size_of::<super::ddk::_KI_SAMPLE_MAP>() == 64);
 const _: () = assert!(size_of::<super::ddk::_KLOCK_QUEUE_HANDLE>() == 24);
@@ -710,7 +710,7 @@ const _: () = assert!(size_of::<super::ddk::_KNOWN_ACE>() == 12);
 const _: () = assert!(size_of::<super::ddk::_KNOWN_COMPOUND_ACE>() == 16);
 const _: () = assert!(size_of::<super::ddk::_KNOWN_OBJECT_ACE>() == 16);
 const _: () = assert!(size_of::<super::ddk::_KPCR>() == 352);
-const _: () = assert!(size_of::<super::ddk::_KPRCB>() == 5504);
+const _: () = assert!(size_of::<super::ddk::_KPRCB>() == 5760);
 const _: () = assert!(size_of::<super::ddk::_KPROCESS>() == 176);
 const _: () = assert!(size_of::<super::ddk::_KPROCESSOR_STATE>() == 1704);
 const _: () = assert!(size_of::<super::ddk::_KPROFILE>() == 88);

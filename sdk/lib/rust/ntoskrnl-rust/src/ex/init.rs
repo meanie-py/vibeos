@@ -177,7 +177,27 @@ pub static mut SosEnabled: BOOLEAN = 0;
 #[no_mangle]
 pub static mut NtSystemRoot: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
-static mut NtInitialUserProcessBuffer: [u16; 128] = [0u16; 128];
+// L"\\SystemRoot\\System32\\smss.exe"
+static mut NtInitialUserProcessBuffer: [u16; 128] = {
+    let mut buf = [0u16; 128];
+    // \SystemRoot
+    buf[0] = b'\\' as u16;
+    buf[1] = b'S' as u16; buf[2] = b'y' as u16; buf[3] = b's' as u16;
+    buf[4] = b't' as u16; buf[5] = b'e' as u16; buf[6] = b'm' as u16;
+    buf[7] = b'R' as u16; buf[8] = b'o' as u16; buf[9] = b'o' as u16; buf[10] = b't' as u16;
+    // \System32
+    buf[11] = b'\\' as u16;
+    buf[12] = b'S' as u16; buf[13] = b'y' as u16; buf[14] = b's' as u16;
+    buf[15] = b't' as u16; buf[16] = b'e' as u16; buf[17] = b'm' as u16;
+    buf[18] = b'3' as u16; buf[19] = b'2' as u16;
+    // \smss.exe
+    buf[20] = b'\\' as u16;
+    buf[21] = b's' as u16; buf[22] = b'm' as u16; buf[23] = b's' as u16;
+    buf[24] = b's' as u16; buf[25] = b'.' as u16; buf[26] = b'e' as u16;
+    buf[27] = b'x' as u16; buf[28] = b'e' as u16;
+    // buf[29..] = 0 (null terminator + padding already zero)
+    buf
+};
 #[no_mangle]
 pub static mut NtInitialUserProcessBufferLength: ULONG = (core::mem::size_of::<[u16; 128]>() - core::mem::size_of::<u16>()) as ULONG;
 #[no_mangle]
@@ -346,18 +366,6 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
             NextEntry = (*MdBlock).ListEntry.Flink;
         }
 
-        // DBG: Phase 0 NLS data layout
-        #[cfg(target_arch = "x86")]
-        {
-            dbg_hex(b'0', NlsTablesEncountered as u32);   // count
-            dbg_hex(b'1', ExpNlsTableSize as u32);         // total size
-            dbg_hex(b'2', NlsTableSizes[0] as u32);       // block 0
-            dbg_hex(b'3', NlsTableSizes[1] as u32);       // block 1
-            dbg_hex(b'4', NlsTableSizes[2] as u32);       // block 2
-            dbg_hex(b'5', ExpOemCodePageDataOffset as u32);// oem offset
-            dbg_hex(b'6', ExpUnicodeCaseTableDataOffset as u32);// unicode offset
-        }
-
         ExpNlsTableBase = ExAllocatePoolWithTag(NonPagedPool, ExpNlsTableSize, 0x696C7452);
         if ExpNlsTableBase.is_null() {
             KeBugCheck(0x31);
@@ -438,61 +446,13 @@ unsafe fn ExpInitNls(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
         KeBugCheckEx(0x5C, Status as ULONG_PTR, 3, 0, 0);
     }
 
-    // DBG: dump SectionBase, sizes, and PTEs for page 0 and page 17 (0x11000)
-    #[cfg(target_arch = "x86")]
-    unsafe fn dbg_hex(marker: u8, val: u32) {
-        let mut s: i32 = 28;
-        while s >= 0 {
-            let d = ((val >> s) & 0xF) as u8;
-            let ch = if d < 10 { b'0' + d } else { b'a' + d - 10 };
-            s -= 4;
-        }
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
-        // S=SectionBase, N=NlsTableSize, O=OemCodePageDataOffset
-        dbg_hex(b'S', SectionBase as u32);
-        dbg_hex(b'N', ExpNlsTableSize as u32);
-        dbg_hex(b'O', ExpOemCodePageDataOffset as u32);
-        // Page 0 PTE before copy
-        let pte0 = core::ptr::read_volatile(MiAddressToPte(SectionBase) as *const u32);
-        dbg_hex(b'A', pte0);
-        // Page 17 (offset 0x11000) PTE before copy
-        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
-        let pte17 = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
-        dbg_hex(b'B', pte17);
-    }
-
     core::ptr::copy_nonoverlapping(
         ExpNlsTableBase as *const u8,
         SectionBase as *mut u8,
         ExpNlsTableSize,
     );
 
-    // DBG: dump PTEs after copy (before ExFreePoolWithTag)
-    #[cfg(target_arch = "x86")]
-    {
-        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
-        // page 0 PTE after copy
-        let pte0 = core::ptr::read_volatile(MiAddressToPte(SectionBase) as *const u32);
-        dbg_hex(b'a', pte0);
-        // OEM page PTE after copy
-        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
-        let pte17 = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
-        dbg_hex(b'b', pte17);
-    }
-
     ExFreePoolWithTag(ExpNlsTableBase, 0x696C7452);
-
-    // DBG: dump OEM page PTE after free (before RtlInitNlsTables)
-    #[cfg(target_arch = "x86")]
-    {
-        use ntkrnl_sys::mm::{MiAddressToPte, MiAddressToPde};
-        let fault_page = (SectionBase as u32 + ExpOemCodePageDataOffset as u32) as *mut core::ffi::c_void;
-        let pte_f = core::ptr::read_volatile(MiAddressToPte(fault_page) as *const u32);
-        dbg_hex(b'c', pte_f);
-    }
 
     ExpNlsTableBase = SectionBase;
 
@@ -885,6 +845,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     let mut RcEnd: *mut i8 = core::ptr::null_mut();
     let mut VersionBuffer: [u8; 65] = [0; 65];
 
+
     if ExpIsLoaderValid(LoaderBlock) == 0 {
         KeBugCheckEx(
             0x5D,
@@ -933,9 +894,11 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     );
     RtlResetRtlTranslations(&mut ExpNlsTableInfo);
 
+
     if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
         KeBugCheck(0x61);
     }
+
 
     #[cfg(target_arch = "x86_64")]
     core::arch::asm!("sti");
@@ -985,13 +948,16 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
     NtGlobalFlag |= CmNtGlobalFlag;
 
+
     if ExInitSystem() == 0 {
         KeBugCheck(0x31);
     }
 
+
     if MmArmInitSystem(0, LoaderBlock) == 0 {
         KeBugCheck(0x31);
     }
+
 
     ExpLoadBootSymbols(LoaderBlock);
 
@@ -1086,25 +1052,17 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         }
     }
 
-    // DBG: before ObInitSystem
-
     if ObInitSystem() == 0 {
         KeBugCheck(0x5E);
     }
-
-    // DBG: after ObInitSystem, before SeInitSystem
 
     if SeInitSystem() == 0 {
         KeBugCheck(0x66);
     }
 
-    // DBG: after SeInitSystem, before PsInitSystem
-
     if PsInitSystem(LoaderBlock) == 0 {
         KeBugCheck(0x6B);
     }
-
-    // DBG: after PsInitSystem, before PpInitSystem
 
     if PpInitSystem() == 0 {
         KeBugCheck(0xA6);
@@ -1169,26 +1127,18 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     let mut OptionHandle: HANDLE = core::ptr::null_mut();
     let mut ProcessParameters: *mut RTL_USER_PROCESS_PARAMETERS = core::ptr::null_mut();
 
-    // DBG: Phase1InitializationDiscard ENTRY
-
-    // DBG: before ExAllocatePoolWithTag
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<INIT_BUFFER>(), 0x74696E49) as *mut INIT_BUFFER;
     if InitBuffer.is_null() {
         KeBugCheckEx(0x5C, 0xC0000017, 8, 0, 0);
     }
-    // DBG: after ExAllocatePoolWithTag
 
     ExpInitializationPhase = 1;
 
-    // DBG: before KeSetPriorityThread(31)
     KeSetPriorityThread(KeGetCurrentThread() as ntkrnl_sys::ddk::PKTHREAD, 31);
-    // DBG: after KeSetPriorityThread(31)
 
-    // DBG: before HalInitSystem(1)
     if HalInitSystem(1, LoaderBlock) == 0 {
         KeBugCheck(0x62);
     }
-    // DBG: after HalInitSystem(1)
 
     // Get the command line and upcase it
     CommandLine = if !(*LoaderBlock).LoadOptions.is_null() {
@@ -1228,21 +1178,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvUpdateProgressBar(5);
 
-    // Use ~N~ 3-byte signatures for unambiguous milestone tracking
-    #[cfg(target_arch = "x86")]
-    {
-    }
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
     }
-    #[cfg(target_arch = "x86")]
-    {
-    }
     if ExInitSystem() == 0 {
         KeBugCheckEx(0x5C, 0, 0, 1, 0);
-    }
-    #[cfg(target_arch = "x86")]
-    {
     }
     if KeInitSystem() == 0 {
         KeBugCheckEx(0x5C, 0, 0, 2, 0);
@@ -1341,21 +1281,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvSetProgressBarSubset(25, 75);
 
-    // DBG: before IoInitSystem
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
     if IoInitSystem(LoaderBlock) == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(0x6E);
         }
-    }
-
-    // DBG: after IoInitSystem
-    #[cfg(target_arch = "x86")]
-    {
     }
 
     InbvSetProgressBarSubset(0, 100);
@@ -1406,16 +1336,13 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         return;
     }
 
-    // DBG: before ExpLoadInitialProcess (SMSS creation)
-    #[cfg(target_arch = "x86")]
-    {
-    }
-
     ProcessInfo = core::ptr::addr_of_mut!((*InitBuffer).ProcessInfo);
     ExpLoadInitialProcess(InitBuffer, &mut ProcessParameters, &mut Environment);
 
     Timeout.QuadPart = -50000000i64;
+
     Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
+
     if Status == STATUS_SUCCESS {
         KeBugCheck(0x6A);
     }
@@ -1452,7 +1379,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn Phase1Initialization(Context: PVOID) {
-    // DBG: Phase1Initialization thread started
     Phase1InitializationDiscard(Context);
     MmZeroPageThread();
 }

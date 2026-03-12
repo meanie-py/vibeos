@@ -72,7 +72,7 @@ const ThreadObject: UCHAR = 6;
 #[no_mangle]
 pub static mut PsThreadType: POBJECT_TYPE = core::ptr::null_mut();
 
-unsafe extern "C" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID) {
+unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID) {
     let mut Thread: PETHREAD;
     let mut Teb: PTEB;
     let mut DeadThread: BOOLEAN = 0u8;
@@ -143,7 +143,7 @@ unsafe fn PspUnhandledExceptionInSystemThread(ExceptionPointers: *mut EXCEPTION_
     )
 }
 
-unsafe extern "C" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID) {
+unsafe extern "system" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID) {
     let Thread: PETHREAD;
 
     KeLowerIrql(PASSIVE_LEVEL);

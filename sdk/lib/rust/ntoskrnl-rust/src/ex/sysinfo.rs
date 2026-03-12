@@ -32,6 +32,8 @@ use ntkrnl_sys::ddk::{
     _HANDLE_TABLE,
     HANDLE,
     HalSetEnvironmentVariable,
+    _IMAGE_NT_HEADERS,
+    PIMAGE_NT_HEADERS,
     IoAllocateMdl,
     IoGetConfigurationInformation,
     IoWMIOpenBlock,
@@ -56,8 +58,11 @@ use ntkrnl_sys::ddk::{
     PETHREAD,
     POBJECT_HEADER,
     PHANDLE_TABLE_ENTRY,
+    RtlEqualUnicodeString,
+    RtlImageNtHeader,
     RTL_TIME_ZONE_INFORMATION,
     _UNICODE_STRING,
+    ZwSetSystemInformation,
 };
 
 // Rust-defined globals — import to avoid extern split under LTO=false
@@ -118,7 +123,6 @@ extern "system" {
     fn ExQueryPoolUsage( PagedPoolPages: *mut ULONG, NonPagedPoolPages: *mut ULONG, PagedPoolAllocs: *mut ULONG, PagedPoolFrees: *mut ULONG, PagedPoolLookasideHits: *mut ULONG, NonPagedPoolAllocs: *mut ULONG, NonPagedPoolFrees: *mut ULONG, NonPagedPoolLookasideHits: *mut ULONG, );
     fn UInt32x32To64(a: ULONG, b: ULONG) -> ULONGLONG;
     fn RtlImageDirectoryEntryToData(Base: PVOID, MappedAsImage: BOOLEAN, DirectoryEntry: USHORT, Size: *mut ULONG) -> PVOID;
-    fn RtlImageNtHeader(Base: PVOID) -> *mut IMAGE_NT_HEADERS;
     fn PsChangeQuantumTable(Increase: BOOLEAN, Value: ULONG);
     fn MmSessionCreate(SessionId: *mut ULONG) -> NTSTATUS;
     fn MmSessionDelete(SessionId: ULONG) -> NTSTATUS;
@@ -190,13 +194,11 @@ type PSYSTEM_NUMA_INFORMATION = PVOID;
 type PSYSTEM_LOGICAL_PROCESSOR_INFORMATION = PVOID;
 type PSYSTEM_FIRMWARE_TABLE_INFORMATION = PVOID;
 type PSYSTEM_HANDLE_INFORMATION_EX = PVOID;
-type PIMAGE_NT_HEADERS = PVOID;
 type PDRIVER_INITIALIZE = unsafe extern "system" fn(*mut DRIVER_OBJECT, PVOID) -> NTSTATUS;
 type _KPRCB = core::ffi::c_void;
 type _KNODE = core::ffi::c_void;
 type _KUSER_SHARED_DATA = core::ffi::c_void;
 type KSPIN_LOCK = ULONG_PTR;
-type IMAGE_NT_HEADERS = core::ffi::c_void;
 
 unsafe fn ExpConvertLdrModuleToRtlModule(
     ModuleCount: ULONG,
@@ -286,7 +288,165 @@ pub unsafe extern "system" fn NtSetSystemInformation(
     SystemInformation: PVOID,
     SystemInformationLength: ULONG,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    let PreviousMode = KeGetPreviousMode();
+
+    // Class 38 - SystemExtendServiceTableInformation (loads win32k.sys)
+    const SystemExtendServiceTableInformation: ULONG = 38;
+    // Class 47 - SystemSessionCreate
+    const SystemSessionCreate: ULONG = 47;
+    // Class 48 - SystemSessionDetach
+    const SystemSessionDetach: ULONG = 48;
+
+    match SystemInformationClass {
+        SystemExtendServiceTableInformation => {
+            if SystemInformationLength != core::mem::size_of::<_UNICODE_STRING>() as ULONG {
+                return STATUS_INFO_LENGTH_MISMATCH;
+            }
+
+            if PreviousMode != KernelMode {
+                // User-mode caller — check privilege then re-issue from kernel mode
+                if SeSinglePrivilegeCheck(
+                    SeLoadDriverPrivilege,
+                    PreviousMode,
+                ) == 0 {
+                    return STATUS_PRIVILEGE_NOT_HELD;
+                }
+
+                // Build the hardcoded win32k.sys path
+                static WIN32K_NAME_BUF: [u16; 30] = {
+                    // L"\\SystemRoot\\System32\\win32k.sys"
+                    let mut buf = [0u16; 30];
+                    let s: &[u8] = b"\\SystemRoot\\System32\\win32k.sys";
+                    let mut i = 0;
+                    while i < 30 {
+                        buf[i] = s[i] as u16;
+                        i += 1;
+                    }
+                    buf
+                };
+                let Win32kName = _UNICODE_STRING {
+                    Length: 60,    // 30 chars * 2
+                    MaximumLength: 60,
+                    Buffer: WIN32K_NAME_BUF.as_ptr() as *mut u16,
+                };
+
+                // Probe and validate the user buffer
+                let mut ImageName: _UNICODE_STRING = core::mem::zeroed();
+                ProbeForRead(
+                    SystemInformation,
+                    core::mem::size_of::<_UNICODE_STRING>(),
+                    1,
+                );
+                core::ptr::copy_nonoverlapping(
+                    SystemInformation as *const _UNICODE_STRING,
+                    &mut ImageName,
+                    1,
+                );
+                ProbeForRead(
+                    ImageName.Buffer as PVOID,
+                    ImageName.Length as usize,
+                    core::mem::size_of::<u16>() as ULONG,
+                );
+
+                // Only win32k.sys is allowed
+                if RtlEqualUnicodeString(
+                    &ImageName as *const _UNICODE_STRING,
+                    &Win32kName as *const _UNICODE_STRING,
+                    0, // CaseInSensitive = FALSE
+                ) == 0 {
+                    return STATUS_PRIVILEGE_NOT_HELD;
+                }
+
+                // Re-issue from kernel mode via Zw*
+                return ZwSetSystemInformation(
+                    SystemExtendServiceTableInformation,
+                    &Win32kName as *const _UNICODE_STRING as PVOID,
+                    core::mem::size_of::<_UNICODE_STRING>() as ULONG,
+                );
+            }
+
+            // Kernel-mode path: load the image
+            let mut ModuleObject: PVOID = core::ptr::null_mut();
+            let mut ImageBase: PVOID = core::ptr::null_mut();
+            let Status = MmLoadSystemImage(
+                SystemInformation as *mut _UNICODE_STRING,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                0,
+                &mut ModuleObject as *mut PVOID,
+                &mut ImageBase as *mut PVOID,
+            );
+            if !NT_SUCCESS(Status) {
+                return Status;
+            }
+
+            // Get NT headers for entry point
+            let NtHeader = RtlImageNtHeader(ImageBase);
+            if NtHeader.is_null() {
+                MmUnloadSystemImage(ModuleObject);
+                return 0xC000007B_u32 as NTSTATUS; // STATUS_INVALID_IMAGE_FORMAT
+            }
+
+            // Get the entry point
+            let EntryPoint = (*NtHeader).OptionalHeader.AddressOfEntryPoint as ULONG_PTR
+                + ImageBase as ULONG_PTR;
+            let DriverInit: PDRIVER_INITIALIZE =
+                core::mem::transmute(EntryPoint);
+
+            // Create a dummy DRIVER_OBJECT and call the entry point
+            let mut Win32k: DRIVER_OBJECT = core::mem::zeroed();
+            Win32k.DriverStart = ImageBase;
+
+            let Status = DriverInit(&mut Win32k, core::ptr::null_mut());
+
+            if !NT_SUCCESS(Status) {
+                MmUnloadSystemImage(ModuleObject);
+            }
+            Status
+        }
+
+        SystemSessionCreate => {
+            if SystemInformationLength != core::mem::size_of::<ULONG>() as ULONG {
+                return STATUS_INFO_LENGTH_MISMATCH;
+            }
+
+            if PreviousMode != KernelMode {
+                if SeSinglePrivilegeCheck(
+                    SeLoadDriverPrivilege,
+                    PreviousMode,
+                ) == 0 {
+                    return STATUS_PRIVILEGE_NOT_HELD;
+                }
+            }
+
+            let mut SessionId: ULONG = 0;
+            let Status = MmSessionCreate(&mut SessionId);
+            if NT_SUCCESS(Status) {
+                *(SystemInformation as *mut ULONG) = SessionId;
+            }
+            Status
+        }
+
+        SystemSessionDetach => {
+            if SystemInformationLength != core::mem::size_of::<ULONG>() as ULONG {
+                return STATUS_INFO_LENGTH_MISMATCH;
+            }
+
+            if PreviousMode != KernelMode {
+                if SeSinglePrivilegeCheck(
+                    SeLoadDriverPrivilege,
+                    PreviousMode,
+                ) == 0 {
+                    return STATUS_PRIVILEGE_NOT_HELD;
+                }
+            }
+
+            let SessionId = *(SystemInformation as *const ULONG);
+            MmSessionDelete(SessionId)
+        }
+
+        _ => STATUS_INVALID_INFO_CLASS,
+    }
 }
 
 #[no_mangle]

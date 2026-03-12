@@ -1378,7 +1378,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     UnderlyingVa = MiPteToAddress(Address as PMMPTE);
                 }
 
-                if !_goto_user_fault && UnderlyingVa < MmSystemRangeStart {
+                if !_goto_user_fault {
 
                 UserPxe = MiAddressToPxe(UnderlyingVa);
                 if ((*UserPxe).valid() as usize) == 0 {
@@ -1544,9 +1544,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             // Elided bitfield checks (always false with & 0)
         } else {
             CurrentProcess = HYDRA_PROCESS;
-            // WorkingSet = core::ptr::addr_of_mut!((*(*MmSessionSpace).GlobalVirtualAddress).Vm); // elided (MmSessionSpace typed as PVOID)
-
-            // Elided bitfield checks (always false with & 0)
+            WorkingSet = core::ptr::addr_of_mut!((*(*(MmSessionSpace as *mut _MM_SESSION_SPACE)).GlobalVirtualAddress).Vm) as PMMSUPPORT;
         }
 'RetryKernel: loop {
         KeRaiseIrql(APC_LEVEL, &mut LockIrql);

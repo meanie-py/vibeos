@@ -138,11 +138,29 @@ extern "C" {
     pub static mut IoFileObjectType: PVOID;
 }
 
+extern "system" {
+    fn MmMapViewOfSection(
+        section: PSECTION,
+        process: PEPROCESS,
+        base_address: *mut PVOID,
+        zero_bits: ULONG_PTR,
+        commit_size: SIZE_T,
+        section_offset: *mut _LARGE_INTEGER,
+        view_size: PSIZE_T,
+        inherit_disposition: SECTION_INHERIT,
+        allocation_type: ULONG,
+        protect: ULONG,
+    ) -> NTSTATUS;
+}
+
 // ============================================================================
 // Constants not in ntkrnl-sys
 // ============================================================================
 
 const MEM_DOS_LIM: ULONG = 0x40000000;
+const MEM_LARGE_PAGES: ULONG = 0x20000000;
+const STATUS_MAPPED_ALIGNMENT: NTSTATUS = 0xC0000220_u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER_8: NTSTATUS = 0xC00000F6_u32 as NTSTATUS;
 const MM_SEGMENT_INCREATE: ULONG_PTR = 1;
 const MM_PHYSICALMEMORY_SEGMENT: ULONG_PTR = 2;
 const TAG_MM_SECTION_SEGMENT: ULONG = u32::from_le_bytes(*b"MmSs");
@@ -827,7 +845,7 @@ unsafe fn MiUnmapViewOfSection(
         }
     }
     MiLockProcessWorkingSetUnsafe(process, current_thread);
-    MiRemoveNode(&mut (*(vad as *mut _MMVAD_LONG)).u3.List as *mut _ as *mut _, &mut (*(process as *mut _EPROCESS)).VadRoot);
+    MiRemoveNode(vad as PMMADDRESS_NODE, &mut (*(process as *mut _EPROCESS)).VadRoot);
     PsReturnProcessNonPagedPoolQuota(process as PVOID, core::mem::size_of::<_MMVAD_LONG>());
     MiRemoveMappedView(process, vad);
     (*(process as *mut _EPROCESS)).VirtualSize -= region_size as ntkrnl_sys::ddk::SIZE_T;
@@ -1934,10 +1952,13 @@ pub unsafe extern "system" fn MmMapViewInSessionSpace(
     mapped_base: *mut PVOID,
     view_size: PSIZE_T,
 ) -> NTSTATUS {
-    if MiIsRosSectionObject(section as *mut _SECTION) != 0 {
-        return MmMapViewInSystemSpace(section, mapped_base, view_size);
+    let is_ros = MiIsRosSectionObject(section as *mut _SECTION);
+    if is_ros != 0 {
+        let status = MmMapViewInSystemSpace(section, mapped_base, view_size);
+        return status;
     }
-    if (*(PsGetCurrentProcess() as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.ProcessInSession() == 0 {
+    let in_session = (*(PsGetCurrentProcess() as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.ProcessInSession();
+    if in_session == 0 {
         return STATUS_NOT_MAPPED_VIEW;
     }
     let mut section_offset: _LARGE_INTEGER = core::mem::zeroed();
@@ -2123,7 +2144,192 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     allocation_type: ULONG,
     protect: ULONG,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    extern "C" {
+        fn ProbeForWritePointer(Address: *mut PVOID);
+        fn ProbeForWriteSize_t(Address: *mut SIZE_T);
+        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
+        static mut MmHighestPhysicalPage: PFN_NUMBER;
+    }
+
+    let previous_mode = ExGetPreviousMode();
+
+    // Valid allocation types
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    const VALID_ALLOC_TYPE: ULONG = 0x100000 | MEM_LARGE_PAGES | MEM_DOS_LIM | SEC_NO_CHANGE | MEM_RESERVE;
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    const VALID_ALLOC_TYPE: ULONG = 0x100000 | MEM_LARGE_PAGES | SEC_NO_CHANGE | MEM_RESERVE;
+
+    // Check for invalid inherit disposition
+    if (inherit_disposition > ViewUnmap) || (inherit_disposition < ViewShare) {
+        return STATUS_INVALID_PARAMETER_8;
+    }
+
+    // Allow only valid allocation types
+    if (allocation_type & !VALID_ALLOC_TYPE) != 0 {
+        return STATUS_INVALID_PARAMETER_9;
+    }
+
+    // Convert the protection mask, and validate it
+    let protection_mask = MiMakeProtectionMask(protect);
+    if protection_mask == MM_INVALID_PROTECTION {
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    // Now convert the protection mask into desired section access mask
+    let desired_access = MmMakeSectionAccess[(protection_mask & 0x7) as usize];
+
+    // Assume no section offset
+    let mut safe_section_offset = _LARGE_INTEGER { QuadPart: 0 };
+
+    // Check for unsafe parameters
+    if previous_mode != 0i8 {
+        // Probe the parameters
+        ProbeForWritePointer(base_address);
+        ProbeForWriteSize_t(view_size);
+    }
+
+    // Check if a section offset was given
+    if !section_offset.is_null() {
+        // Check for unsafe parameters and capture section offset
+        if previous_mode != 0i8 {
+            ProbeForWrite(
+                section_offset as PVOID,
+                core::mem::size_of::<_LARGE_INTEGER>(),
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
+        }
+        safe_section_offset = *section_offset;
+    }
+
+    // Capture the other parameters
+    let safe_base_address = *base_address;
+    let safe_view_size = *view_size;
+
+    // Check for kernel-mode address
+    if safe_base_address > MM_HIGHEST_VAD_ADDRESS as PVOID {
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    // Check for range entering kernel-mode
+    if (MM_HIGHEST_VAD_ADDRESS as ULONG_PTR).wrapping_sub(safe_base_address as ULONG_PTR) < safe_view_size {
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    // Check for invalid zero bits
+    if zero_bits != 0 {
+        if zero_bits > MI_MAX_ZERO_BITS() {
+            return STATUS_INVALID_PARAMETER_4;
+        }
+
+        if ((safe_base_address as ULONG_PTR) << zero_bits) >> zero_bits != safe_base_address as ULONG_PTR {
+            return STATUS_INVALID_PARAMETER_4;
+        }
+
+        if (((safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)) << zero_bits) >> zero_bits
+            != (safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)
+        {
+            return STATUS_INVALID_PARAMETER_4;
+        }
+    }
+
+    // Reference the process
+    let mut process: PEPROCESS = core::ptr::null_mut();
+    let mut status = ObReferenceObjectByHandle(
+        process_handle,
+        PROCESS_VM_OPERATION,
+        PsProcessType as ntkrnl_sys::ddk::POBJECT_TYPE,
+        previous_mode,
+        &mut process as *mut PEPROCESS as *mut *mut c_void,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Reference the section
+    let mut section: PSECTION = core::ptr::null_mut();
+    status = ObReferenceObjectByHandle(
+        section_handle,
+        desired_access,
+        MmSectionObjectType as ntkrnl_sys::ddk::POBJECT_TYPE,
+        previous_mode,
+        &mut section as *mut PSECTION as *mut *mut c_void,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        ObDereferenceObject(process as *mut c_void);
+        return status;
+    }
+
+    if (*section).u.Flags.PhysicalMemory() != 0 {
+        if previous_mode == 1i8
+            && safe_section_offset.QuadPart as u64 + safe_view_size as u64
+                > (MmHighestPhysicalPage as u64) << PAGE_SHIFT
+        {
+            ObDereferenceObject(section as *mut c_void);
+            ObDereferenceObject(process as *mut c_void);
+            return STATUS_INVALID_PARAMETER_6;
+        }
+    } else if (allocation_type & MEM_DOS_LIM) == 0 {
+        // Check for non-allocation-granularity-aligned BaseAddress
+        if safe_base_address as ULONG_PTR != ALIGN_DOWN_BY(safe_base_address as ULONG_PTR, MM_VIRTMEM_GRANULARITY as ULONG_PTR) {
+            ObDereferenceObject(section as *mut c_void);
+            ObDereferenceObject(process as *mut c_void);
+            return STATUS_MAPPED_ALIGNMENT;
+        }
+
+        // Do the same for the section offset
+        if safe_section_offset.__bindgen_anon_1.LowPart != ALIGN_DOWN_BY(safe_section_offset.__bindgen_anon_1.LowPart as ULONG_PTR, MM_VIRTMEM_GRANULARITY as ULONG_PTR) as u32 {
+            ObDereferenceObject(section as *mut c_void);
+            ObDereferenceObject(process as *mut c_void);
+            return STATUS_MAPPED_ALIGNMENT;
+        }
+    }
+
+    // Now do the actual mapping
+    let mut safe_base_address = safe_base_address;
+    let mut safe_view_size = safe_view_size;
+    status = MmMapViewOfSection(
+        section,
+        process,
+        &mut safe_base_address,
+        zero_bits,
+        commit_size,
+        &mut safe_section_offset,
+        &mut safe_view_size,
+        inherit_disposition,
+        allocation_type,
+        protect,
+    );
+
+    // Return data only on success
+    if status >= 0 {
+        // Check if this is an image for the current process
+        if (*section).u.Flags.Image() != 0
+            && process == PsGetCurrentProcess() as PEPROCESS
+            && status != STATUS_IMAGE_NOT_AT_BASE
+        {
+            // Notify the debugger
+            DbgkMapViewOfSection(
+                section as PVOID,
+                safe_base_address,
+                safe_section_offset.__bindgen_anon_1.LowPart,
+                safe_view_size as _,
+            );
+        }
+
+        // Return parameters to user
+        *base_address = safe_base_address;
+        *view_size = safe_view_size;
+        if !section_offset.is_null() {
+            *section_offset = safe_section_offset;
+        }
+    }
+
+    // Dereference all objects and return status
+    ObDereferenceObject(section as *mut c_void);
+    ObDereferenceObject(process as *mut c_void);
+    status
 }
 
 #[no_mangle]

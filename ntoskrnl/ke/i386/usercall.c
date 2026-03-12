@@ -143,7 +143,7 @@ KeUserModeCallback(IN ULONG RoutineIndex,
     ASSERT(KeGetCurrentThread()->ApcState.KernelApcInProgress == FALSE);
     ASSERT(KeGetPreviousMode() == UserMode);
 
-#ifdef _USE_DUMMY_PSEH
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
     /* Guard: if PEB->KernelCallbackTable is not set up (user32 DllMain hasn't
      * run yet), user-mode dispatch will crash with an access violation.
      * Return STATUS_CALLBACK_POP_STACK so the caller knows the callback failed. */

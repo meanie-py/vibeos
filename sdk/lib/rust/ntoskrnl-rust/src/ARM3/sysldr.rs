@@ -655,14 +655,10 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
         fn RtlImageNtHeader(base: PVOID) -> PVOID;
     }
 
-    // DBG: MiInitializeLoadedModuleList entry
-
     /* Setup the loaded module list and locks */
     ExInitializeResourceLite(core::ptr::addr_of_mut!(PsLoadedModuleResource));
     KeInitializeSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock) as *mut _);
     InitializeListHead(core::ptr::addr_of_mut!(PsLoadedModuleList));
-
-    // DBG: after list init, before loader block walk
 
     /* Get loop variables and the kernel entry */
     let list_head = core::ptr::addr_of_mut!((*loader_block).LoadOrderListHead);
@@ -672,20 +668,14 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
     ) as *mut LDR_DATA_TABLE_ENTRY;
     PsNtosImageBase = (*ldr_entry).DllBase as ULONG_PTR;
 
-    // DBG: before MiLocateKernelSections
-
     /* Locate resource section, pool code, and system pte code */
     MiLocateKernelSections(ldr_entry);
-
-    // DBG: before loop
 
     /* Loop the loader block */
     while next_entry != list_head {
         let ldr_entry = (next_entry as *mut u8).sub(
             core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)
         ) as *mut LDR_DATA_TABLE_ENTRY;
-
-        // DBG: loop iteration
 
         /* FIXME: ROS HACK. Make sure this is a driver */
         if RtlImageNtHeader((*ldr_entry).DllBase).is_null() {
@@ -770,12 +760,8 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
         next_entry = (*next_entry).Flink;
     }
 
-    // DBG: before MiBuildImportsForBootDrivers
-
     /* Build the import lists for the boot drivers */
     MiBuildImportsForBootDrivers();
-
-    // DBG: MiInitializeLoadedModuleList exit
 
     1
 }
@@ -909,10 +895,12 @@ pub unsafe extern "system" fn MmGetSystemRoutineAddress(system_routine_name: *mu
     };
 
     let mut modules = 0usize;
+    let mut found = 0u8;
+    let mut total_modules = 0usize;
     let mut next_entry = (*core::ptr::addr_of_mut!(PsLoadedModuleList)).Flink;
     while next_entry != core::ptr::addr_of_mut!(PsLoadedModuleList) {
         let ldr_entry = next_entry as *mut LDR_DATA_TABLE_ENTRY;
-        let mut found = 0u8;
+        total_modules += 1;
 
         if RtlEqualUnicodeString(core::ptr::addr_of!(kernel_name), core::ptr::addr_of_mut!((*ldr_entry).BaseDllName), 1) != 0 {
             found = 1u8;
@@ -924,6 +912,12 @@ pub unsafe extern "system" fn MmGetSystemRoutineAddress(system_routine_name: *mu
 
         if found != 0 {
             proc_address = RtlFindExportedRoutineByName((*ldr_entry).DllBase, ansi_routine_name.Buffer);
+            // i386 LLD exports stdcall functions with decoration (_Name@N).
+            // If undecorated lookup failed, try linear scan stripping decoration.
+            #[cfg(target_arch = "x86")]
+            if proc_address.is_null() {
+                proc_address = find_export_stripping_decoration((*ldr_entry).DllBase, ansi_routine_name.Buffer);
+            }
             if !proc_address.is_null() || modules == 2 {
                 break;
             }
@@ -935,8 +929,72 @@ pub unsafe extern "system" fn MmGetSystemRoutineAddress(system_routine_name: *mu
     ExReleaseResourceLite(core::ptr::addr_of_mut!(PsLoadedModuleResource));
     KeLeaveCriticalRegion();
 
+    if proc_address.is_null() {
+        DbgPrint(b"MmGetSystemRoutineAddress: '%s' NOT FOUND (checked %lu modules, matched %lu)\n\0".as_ptr() as *const i8, ansi_routine_name.Buffer, total_modules as u32, modules as u32);
+    }
+
     RtlFreeAnsiString(core::ptr::addr_of_mut!(ansi_routine_name));
     proc_address
+}
+
+/// i386 LLD exports stdcall functions with `_Name@N` decoration in the PE
+/// export table. This helper does a linear scan of exports, stripping the
+/// leading `_` and trailing `@N` before comparing with the undecorated name.
+#[cfg(target_arch = "x86")]
+unsafe fn find_export_stripping_decoration(image_base: PVOID, name: *const i8) -> PVOID {
+    use core::ffi::CStr;
+    let target = CStr::from_ptr(name).to_bytes();
+    if target.is_empty() {
+        return core::ptr::null_mut();
+    }
+
+    let mut export_size: ULONG = 0;
+    let export_dir = RtlImageDirectoryEntryToData(
+        image_base, 1, IMAGE_DIRECTORY_ENTRY_EXPORT,
+        core::ptr::addr_of_mut!(export_size),
+    ) as PIMAGE_EXPORT_DIRECTORY;
+    if export_dir.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let base = image_base as usize;
+    let num_names = (*export_dir).NumberOfNames;
+    let name_table = (base + (*export_dir).AddressOfNames as usize) as *const ULONG;
+    let ordinal_table = (base + (*export_dir).AddressOfNameOrdinals as usize) as *const u16;
+    let func_table = (base + (*export_dir).AddressOfFunctions as usize) as *const ULONG;
+
+    for i in 0..num_names {
+        let export_name_ptr = (base + *name_table.add(i as usize) as usize) as *const u8;
+        let export_name = CStr::from_ptr(export_name_ptr as *const i8).to_bytes();
+
+        // Check for _Name@N pattern: starts with _, ends with @digits
+        if export_name.len() > 1 && export_name[0] == b'_' {
+            let stripped = &export_name[1..]; // remove leading _
+            // Find trailing @N
+            if let Some(at_pos) = stripped.iter().rposition(|&b| b == b'@') {
+                let base_name = &stripped[..at_pos];
+                if base_name == target {
+                    let ordinal = *ordinal_table.add(i as usize);
+                    if (ordinal as ULONG) < (*export_dir).NumberOfFunctions {
+                        let rva = *func_table.add(ordinal as usize);
+                        let func_addr = base + rva as usize;
+                        // Check it's not a forwarder (inside export directory)
+                        let dir_start = export_dir as usize;
+                        let dir_end = dir_start + export_size as usize;
+                        if func_addr >= dir_start && func_addr < dir_end {
+                            continue; // forwarder, skip
+                        }
+                        return func_addr as PVOID;
+                    }
+                }
+            }
+        }
+    }
+    core::ptr::null_mut()
+}
+
+extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
 }
 
 extern "system" {

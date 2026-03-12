@@ -114,9 +114,10 @@ const _VACB_SIZE: () = assert!(core::mem::size_of::<ROS_VACB>() == 56);
 const VACB_MAPPING_GRANULARITY: ULONG = 262144;
 const NODE_TYPE_SHARED_MAP: USHORT = 0x2DD;
 const NODE_TYPE_PRIVATE_MAP: USHORT = 0x2EE;
-const SHARED_CACHE_MAP_IN_CREATION: ULONG = 0x01;
-const SHARED_CACHE_MAP_IN_LAZYWRITE: ULONG = 0x02;
-const WRITEBEHIND_DISABLED: ULONG = 0x04;
+const READAHEAD_DISABLED: ULONG = 0x01;
+const WRITEBEHIND_DISABLED: ULONG = 0x02;
+const SHARED_CACHE_MAP_IN_CREATION: ULONG = 0x04;
+const SHARED_CACHE_MAP_IN_LAZYWRITE: ULONG = 0x08;
 const TAG_BCB: ULONG = u32::from_le_bytes(*b"BCB ");
 const TAG_SHARED_CACHE_MAP: ULONG = u32::from_le_bytes(*b"SCM ");
 const TAG_VACB: ULONG = u32::from_le_bytes(*b"VACB");
@@ -368,7 +369,7 @@ unsafe fn CcRosDeleteFileCache(
         current_entry = (*current_entry).Flink;
     }
 
-    (*file_object).SectionObjectPointer = core::ptr::null_mut();
+    (*(*file_object).SectionObjectPointer).SharedCacheMap = core::ptr::null_mut();
     RemoveEntryList(core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks));
 
     KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
@@ -916,12 +917,6 @@ pub unsafe extern "C" fn CcRosEnsureVacbResident(
         }
 
         if no_read == 0 {
-            #[cfg(target_arch = "aarch64")]
-            {
-                core::arch::asm!("dsb sy", "isb", options(nostack));
-                ARM64_UART_TRACE(b"[CC] EnsureResident: MmMakeDataSectionResident\r\n\0".as_ptr());
-            }
-            
             let status = MmMakeDataSectionResident(
                 (*(*shared_cache_map).FileObject).SectionObjectPointer,
                 (*vacb).FileOffset.QuadPart + offset as i64,
@@ -930,7 +925,8 @@ pub unsafe extern "C" fn CcRosEnsureVacbResident(
             );
 
             if status < 0 {
-                ExRaiseStatus(status);
+                // DUMMY_PSEH: return FALSE instead of raising
+                return 0u8;
             }
         }
     }

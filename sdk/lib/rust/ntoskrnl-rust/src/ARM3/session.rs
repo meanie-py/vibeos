@@ -310,7 +310,7 @@ unsafe fn MiDereferenceSession() {
     let flags_ptr = core::ptr::addr_of_mut!((*(process as *mut _EPROCESS)).__bindgen_anon_2.Flags);
     loop {
         let old = *flags_ptr;
-        let new = old & !(0x00000004u32);
+        let new = old & !(0x00010000u32);
         if InterlockedCompareExchange(flags_ptr as *mut LONG, new as LONG, old as LONG) as u32 == old {
             break;
         }
@@ -322,7 +322,7 @@ pub unsafe extern "system" fn MiSessionRemoveProcess() {
     let current_process = PsGetCurrentProcess() as *mut _EPROCESS;
     let mut old_irql: KIRQL;
 
-    if ((*current_process).__bindgen_anon_2.Flags & 0x00000004) == 0
+    if ((*current_process).__bindgen_anon_2.Flags & 0x00010000) == 0
         || (*current_process).Vm.Flags.SessionLeader() != 0
     {
         return;
@@ -342,7 +342,7 @@ pub unsafe extern "system" fn MiSessionAddProcess(new_process: PEPROCESS) {
     let session_global: PMM_SESSION_SPACE;
     let mut old_irql: KIRQL;
 
-    if ((*(PsGetCurrentProcess() as *mut _EPROCESS)).__bindgen_anon_2.Flags & 0x00000004) == 0 {
+    if ((*(PsGetCurrentProcess() as *mut _EPROCESS)).__bindgen_anon_2.Flags & 0x00010000) == 0 {
         return;
     }
 
@@ -365,7 +365,7 @@ pub unsafe extern "system" fn MiSessionAddProcess(new_process: PEPROCESS) {
     MiReleaseExpansionLock(old_irql);
 
     let flags_ptr = core::ptr::addr_of_mut!((*(new_process as *mut _EPROCESS)).__bindgen_anon_2.Flags);
-    *flags_ptr |= 0x00000004u32;
+    *flags_ptr |= 0x00010000u32;
 }
 
 unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
@@ -476,7 +476,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
 }
 
 unsafe fn MiSessionCreateInternal(session_id: *mut ULONG) -> NTSTATUS {
-    let process = PsGetCurrentProcess() as *mut _EPROCESS;
+let process = PsGetCurrentProcess() as *mut _EPROCESS;
     let mut new_flags: ULONG;
     let mut flags: ULONG;
     let mut i: ULONG;
@@ -613,7 +613,7 @@ unsafe fn MiSessionCreateInternal(session_id: *mut ULONG) -> NTSTATUS {
 
     MiReleasePfnLock(old_irql);
 
-    // (*MmSessionSpace).GlobalVirtualAddress = session_global; // elided (MmSessionSpace typed as PVOID)
+    (*MmSessionSpace).GlobalVirtualAddress = session_global;
     (*MmSessionSpace).ReferenceCount = 1;
     (*MmSessionSpace).ResidentProcessCount = 1;
     (*MmSessionSpace).u.LongFlags = 0;
@@ -631,7 +631,7 @@ unsafe fn MiSessionCreateInternal(session_id: *mut ULONG) -> NTSTATUS {
             .add((pointer_pde as usize - MiAddressToPde(MmSessionBase as PVOID) as usize)
                 / core::mem::size_of::<MMPTE>())) = core::mem::transmute(*pointer_pde);
     }
-    // InitializeListHead(core::ptr::addr_of_mut!((*MmSessionSpace).ImageList) as PLIST_ENTRY); // elided (MmSessionSpace typed as PVOID)
+    InitializeListHead(core::ptr::addr_of_mut!((*MmSessionSpace).ImageList) as PLIST_ENTRY);
 
     status = STATUS_SUCCESS;
 
@@ -656,7 +656,7 @@ pub unsafe extern "system" fn MmSessionCreate(session_id: *mut ULONG) -> NTSTATU
     let session_leader_exists: LONG;
     let mut status: NTSTATUS;
 
-    if ((*process).__bindgen_anon_2.Flags & 0x00000004) != 0 {
+    if ((*process).__bindgen_anon_2.Flags & 0x00010000) != 0 {
         return STATUS_ALREADY_COMMITTED;
     }
 
@@ -689,7 +689,7 @@ pub unsafe extern "system" fn MmSessionCreate(session_id: *mut ULONG) -> NTSTATU
     KeLeaveCriticalRegion();
 
     (*MmSessionSpace).u.Flags._bitfield_1.set(1, 1, 1);
-    (*(process as *mut _EPROCESS)).__bindgen_anon_2.Flags |= 0x00000004u32;
+    (*(process as *mut _EPROCESS)).__bindgen_anon_2.Flags |= 0x00010000u32;
     status
 }
 
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn MmSessionCreate(session_id: *mut ULONG) -> NTSTATU
 pub unsafe extern "system" fn MmSessionDelete(session_id: ULONG) -> NTSTATUS {
     let process = PsGetCurrentProcess() as *mut _EPROCESS;
 
-    if ((*process).__bindgen_anon_2.Flags & 0x00000004) == 0 {
+    if ((*process).__bindgen_anon_2.Flags & 0x00010000) == 0 {
         return STATUS_UNABLE_TO_FREE_VM;
     }
 

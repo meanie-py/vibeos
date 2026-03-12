@@ -99,7 +99,7 @@ unsafe fn FsRtlpPostStackOverflow(
     );
 }
 
-unsafe extern "C" fn FsRtlWorkerThread(StartContext: PVOID) {
+unsafe extern "system" fn FsRtlWorkerThread(StartContext: PVOID) {
     let queue_id = StartContext as ULONG_PTR;
 
     KeSetPriorityThread(

@@ -1,5 +1,6 @@
 use crate::ke::ke_defs::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 
@@ -42,7 +43,6 @@ extern "system" {
 const KF_RDTSC: ULONG = 0x00000002;
 const KF_CMPXCHG16B: ULONG = 0x00002000;
 const HIGH_PRIORITY: i32 = 31;
-const HIGH_LEVEL: KIRQL = 15;
 const Running: i32 = 2;
 const MAXCHAR: i8 = 127;
 const TIMER_TABLE_SIZE: usize = 512;
