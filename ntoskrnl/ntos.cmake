@@ -132,29 +132,30 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/bootanim.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbv.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbvport.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
+    # IO Tier 0: adapter, controller, ioevent, iomdl, iotimer, iowork, remlock, symlink → Rust
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/remlock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/remlock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
@@ -215,7 +216,7 @@ list(APPEND SOURCE
     # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
@@ -471,6 +472,7 @@ elseif(ARCH STREQUAL "arm64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Rust driver.rs causes Phase0 crash on ARM64
         )
 endif()
 

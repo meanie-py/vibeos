@@ -17,9 +17,17 @@ use ntkrnl_sys::ddk::{
     POBJECT_ATTRIBUTES, PUNICODE_STRING,
 };
 
+extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+
+#[inline(always)]
+unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8) {
+    IofCompleteRequest(Irp, PriorityBoost);
+}
+
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8);
     fn WmipOpenGuidObjectByName(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         DesiredAccess: ACCESS_MASK,

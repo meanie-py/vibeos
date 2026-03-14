@@ -51,6 +51,7 @@ pub mod se;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;
+pub mod iomgr;
 pub mod shim_exports;
 
 // Arch-specific MM modules

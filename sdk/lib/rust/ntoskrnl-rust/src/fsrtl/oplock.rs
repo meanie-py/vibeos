@@ -40,8 +40,9 @@ extern "system" {
     fn KeGetCurrentThread() -> ntkrnl_sys::ddk::PKTHREAD;
 }
 
-extern "system" {
-    fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i32);
+#[inline(always)]
+unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i32) {
+    IofCompleteRequest(Irp, PriorityBoost as i8);
 }
 
 const NO_OPLOCK: ULONG = 0x1;

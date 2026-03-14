@@ -144,6 +144,15 @@ const SECURITY_DYNAMIC_TRACKING: u8 = 1;
 
 const TokenUser: ULONG = 1;
 
+/// Check if port has LPCP_NAME_DELETED flag set.
+/// Extracted to separate function to work around LLVM i386 codegen bug
+/// that misoptimizes this check when inlined into NtSecureConnectPort.
+#[inline(never)]
+unsafe fn lpcp_check_name_deleted(port: PLPCP_PORT_OBJECT) -> bool {
+    let flags = core::ptr::read_volatile(&(*port).Flags as *const ULONG);
+    (flags & 0x40000000u32) != 0
+}
+
 const LPC_CONNECTION_REQUEST: i16 = 10;
 
 const TAG_SE: ULONG = u32::from_le_bytes(*b"  eS");
@@ -519,7 +528,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
     KeAcquireGuardedMutex(&mut LpcpLock);
 
-    if ((*port).Flags & LPCP_NAME_DELETED) != 0 {
+    if lpcp_check_name_deleted(port) {
         status = STATUS_OBJECT_NAME_NOT_FOUND;
     } else {
         (*message).RepliedToThread = core::ptr::null_mut();
@@ -552,7 +561,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     KeReleaseGuardedMutex(&mut LpcpLock);
 
     if status >= 0 {
-        if ((*port).Flags & LPCP_WAITABLE_PORT) != 0 {
+        if (core::ptr::read_volatile(&(*port).Flags as *const ULONG) & LPCP_WAITABLE_PORT) != 0 {
             KeSetEvent(
                 core::ptr::addr_of_mut!((*port).WaitEvent) as PVOID,
                 1,
@@ -656,7 +665,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
             KeAcquireGuardedMutex(&mut LpcpLock);
 
-            if (*client_port).ConnectionPort.is_null() || ((*port).Flags & LPCP_NAME_DELETED) != 0
+            if (*client_port).ConnectionPort.is_null() || lpcp_check_name_deleted(port)
             {
                 status = STATUS_OBJECT_NAME_NOT_FOUND;
             } else {

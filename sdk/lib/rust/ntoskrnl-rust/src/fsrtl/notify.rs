@@ -63,8 +63,16 @@ const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;
 const SL_PENDING_RETURNED: u8 = 0x01;
 const WatchTree: u16 = 0x0001;
 
+extern "fastcall" {
+    fn IofCompleteRequest(irp: PIRP, priority_boost: i8);
+}
+
+#[inline(always)]
+unsafe fn IoCompleteRequest(irp: PIRP, priority_boost: i8) {
+    IofCompleteRequest(irp, priority_boost);
+}
+
 extern "system" {
-    fn IoCompleteRequest(irp: PIRP, priority_boost: i8);
     fn RtlOemStringToCountedUnicodeSize(string: PSTRING) -> u32;
     fn RtlEqualMemory(source1: PVOID, source2: PVOID, length: usize) -> BOOLEAN;
 }
