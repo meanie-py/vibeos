@@ -134,15 +134,16 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbvport.c
     # IO Tier 0: adapter, controller, ioevent, iomdl, iotimer, iowork, remlock, symlink → Rust
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
+    # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust translation has stubbed-out IopReassignSystemRoot/IopVerifyDiskSignature
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
@@ -151,12 +152,12 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # ARM64 only — see below
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/remlock.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c
@@ -473,6 +474,7 @@ elseif(ARCH STREQUAL "arm64")
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Rust driver.rs causes Phase0 crash on ARM64
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # Rust ramdisk.rs has struct layout bugs — use C for ARM64 boot
         )
 endif()
 
