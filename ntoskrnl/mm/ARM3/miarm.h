@@ -729,28 +729,28 @@ FORCEINLINE
 BOOLEAN
 MiIsUserPxe(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 7) == 0x1FFFFEDF6FB7DA0ULL;
+    return ((ULONG_PTR)Address >> 11) == 0x1FFFFEDF6FB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPpe(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 16) == 0xFFFFF6FB7DA0ULL;
+    return ((ULONG_PTR)Address >> 20) == 0xFFFFF6FB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPde(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 25) == 0x7FFFFB7DA0ULL;
+    return ((ULONG_PTR)Address >> 29) == 0x7FFFFB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPte(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 34) == 0x3FFFFDA0ULL;
+    return ((ULONG_PTR)Address >> 38) == 0x3FFFFDAULL;
 }
 #else
 FORCEINLINE

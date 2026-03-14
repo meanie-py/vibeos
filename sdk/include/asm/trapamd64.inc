@@ -147,7 +147,10 @@ MACRO(EnterTrap, Flags)
     mov es, ax
     swapgs
 
-    /* Load kernel MXCSR */
+    /* Load kernel MXCSR — sanitize reserved bits to prevent #GP */
+    mov eax, gs:[PcMxCsr]
+    and eax, HEX(0000FFFF)
+    mov gs:[PcMxCsr], eax
     ldmxcsr gs:[PcMxCsr]
 
     ASSERT_IRQL_PASSIVE

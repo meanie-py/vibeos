@@ -41,7 +41,7 @@ pub mod ex;
 pub mod fsrtl;
 pub mod inbv;
 pub mod ke;
-// pub mod lpc; // temporarily disabled — using C LPC to debug NtAcceptConnectPort bug
+pub mod lpc;
 pub mod mm;
 pub mod ob;
 pub mod po;

@@ -23,6 +23,10 @@ PWINSTATION_OBJECT InputWindowStation = NULL;
 /* Winlogon SAS window */
 HWND hwndSAS = NULL;
 
+/* Whether cursor/icon loading has been completed (may be deferred if the
+ * first GUI process didn't have user32's KernelCallbackTable ready) */
+BOOL gbDesktopCursorsAndIconsLoaded = FALSE;
+
 /* Full path to WindowStations directory */
 UNICODE_STRING gustrWindowStationsDir;
 
@@ -258,6 +262,33 @@ IntValidateWindowStationHandle(
     return Status;
 }
 
+/*
+ * Try to load system cursors and icons if not yet loaded.
+ * Called from co_AddGuiApp for each new GUI process until loading succeeds.
+ * Requires the calling process to have user32's KernelCallbackTable set up.
+ */
+VOID FASTCALL
+co_IntDeferredCursorsAndIcons(VOID)
+{
+    PEPROCESS Process;
+
+    if (gbDesktopCursorsAndIconsLoaded)
+        return;
+
+    /* Don't attempt user-mode callbacks on the desktop thread —
+     * callback functions assert PsGetCurrentThreadWin32Thread() != gptiDesktopThread */
+    if (PsGetCurrentThreadWin32Thread() == gptiDesktopThread)
+        return;
+
+    Process = PsGetCurrentProcess();
+    if (!Process || !Process->Peb || !Process->Peb->KernelCallbackTable)
+        return;
+
+    co_IntLoadDefaultCursors();
+    co_IntSetWndIcons();
+    gbDesktopCursorsAndIconsLoaded = TRUE;
+}
+
 BOOL FASTCALL
 co_IntInitializeDesktopGraphics(VOID)
 {
@@ -402,11 +433,19 @@ co_IntInitializeDesktopGraphics(VOID)
         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
     }
 
-    /* Setup the cursor */
+    /* Setup the cursor and icons.
+     * On DUMMY_PSEH builds (amd64), the KeUserModeCallbacks for icon/cursor
+     * loading can crash in user-mode code (LoadImageW → RtlVirtualUnwind AV),
+     * corrupting the calling process state and ultimately killing winlogon.
+     * Skip on amd64/ARM64 — system will work with NULL cursors/icons.
+     * On i386 (PSEH_CLANG), callbacks work because exceptions are caught. */
+#if !defined(_USE_DUMMY_PSEH)
     co_IntLoadDefaultCursors();
-
-    /* Setup the icons */
     co_IntSetWndIcons();
+    gbDesktopCursorsAndIconsLoaded = TRUE;
+#else
+    /* DUMMY_PSEH: skip cursor/icon loading — KeUserModeCallbacks can crash */
+#endif
 
     /* Setup Menu */
     MenuInit();

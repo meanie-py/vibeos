@@ -248,12 +248,11 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     ExInitializeFastMutex(core::ptr::addr_of_mut!(KiGenericCallDpcMutex));
 
-    let sdtable = core::ptr::addr_of_mut!(KeServiceDescriptorTable) as *mut usize;
-    sdtable.write(core::ptr::addr_of_mut!(MainSSDT) as usize);
-    sdtable.offset(1).write(0);
-    sdtable.offset(2).write(KiServiceLimit as usize);
-    sdtable.offset(3).write(0);
-    sdtable.offset(4).write(core::ptr::addr_of_mut!(MainSSPT) as usize);
+    KeServiceDescriptorTable[0].Base = core::ptr::addr_of_mut!(MainSSDT) as *mut _;
+    KeServiceDescriptorTable[0].Count = core::ptr::null_mut();
+    KeServiceDescriptorTable[0].Limit = KiServiceLimit;
+    KeServiceDescriptorTable[1].Limit = 0;
+    KeServiceDescriptorTable[0].Number = core::ptr::addr_of_mut!(MainSSPT) as *mut _;
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!(KeServiceDescriptorTableShadow) as PVOID,

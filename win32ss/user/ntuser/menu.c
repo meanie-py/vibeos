@@ -389,7 +389,11 @@ MenuInit(VOID)
     GreSetObjectOwner(ghMenuFont, GDI_OBJ_HMGR_PUBLIC);
     GreSetObjectOwner(ghMenuFontBold, GDI_OBJ_HMGR_PUBLIC);
 
+#if !defined(_USE_DUMMY_PSEH)
     co_IntSetupOBM();
+#else
+    DbgPrint("MenuInit: skipping co_IntSetupOBM (DUMMY_PSEH)\n");
+#endif
   }
 
   return TRUE;

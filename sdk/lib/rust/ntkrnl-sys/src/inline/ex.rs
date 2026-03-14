@@ -19,10 +19,11 @@ const EX_PUSH_LOCK_SHARE_INC: usize = 0x10;
 // Fast reference constants
 // ============================================================================
 
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), NOT the Windows NT
+// value of 15 for 64-bit. The SD cache stores pointers at 8-byte-aligned
+// offsets (SECURITY_DESCRIPTOR_HEADER.SecurityDescriptor is at offset 24),
+// which requires MAX_FAST_REFS <= 7 to preserve pointer alignment.
 pub const MAX_FAST_REFS: usize = 7;
-#[cfg(target_pointer_width = "64")]
-pub const MAX_FAST_REFS: usize = 15;
 
 // ============================================================================
 // ExInitializeWorkItem (macro from wdm.h)

@@ -462,7 +462,6 @@ IntsDisabled:
     jmp PageFaultReturn
 
 PageFaultError:
-
     /* Set parameter 1 to write/execute flag.
        See https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-exception_record */
     mov r9d, [rbp + KTRAP_FRAME_ErrorCode]
@@ -842,6 +841,12 @@ PUBLIC KiSystemCallEntry64
 
     /* Save MCXSR and set kernel value */
     stmxcsr [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_MxCsr]
+    /* Sanitize kernel MXCSR — something corrupts Prcb.MxCsr (offset 0 of
+       KPRCB) with values that have reserved bits set, causing #GP.
+       Load the value, clear reserved bits 16-31, write back, then ldmxcsr. */
+    mov eax, gs:[PcMxCsr]
+    and eax, HEX(0000FFFF)
+    mov gs:[PcMxCsr], eax
     ldmxcsr gs:[PcMxCsr]
 
     /* Get the current thread and the trap frame */

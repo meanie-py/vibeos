@@ -185,6 +185,7 @@ unsafe fn MmNotPresentFault(
     Status
 }
 
+
 #[no_mangle]
 pub unsafe extern "system" fn MmAccessFault(
     FaultCode: ULONG,
@@ -202,9 +203,7 @@ pub unsafe extern "system" fn MmAccessFault(
     if (Address as ULONG_PTR) >= MmSystemRangeStart as ULONG_PTR {
         #[cfg(target_arch = "x86")]
         {
-            // DBG: before Mmi386MakeKernelPageTableGlobal
             if Mmi386MakeKernelPageTableGlobal(Address) != 0 {
-                // DBG: PDE propagated successfully
                 return STATUS_SUCCESS;
             }
         }
@@ -212,10 +211,7 @@ pub unsafe extern "system" fn MmAccessFault(
 
     if (PAGE_ALIGN(Address as ULONG_PTR) as PVOID == MM_SHARED_USER_DATA_VA as PVOID) ||
         MI_IS_PAGE_TABLE_ADDRESS(Address) {
-        // DBG: before MmArmAccessFault (page table / shared user data path)
-        let _r = MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
-        // DBG: after MmArmAccessFault (page table / shared user data path)
-        return _r;
+        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
     }
 
     if !MmGetKernelAddressSpace().is_null() {
@@ -225,6 +221,7 @@ pub unsafe extern "system" fn MmAccessFault(
             } else {
                 MiLockWorkingSetShared(PsGetCurrentThread() as ntkrnl_sys::ddk::PETHREAD, core::ptr::addr_of_mut!(MmSystemCacheWs) as ntkrnl_sys::ddk::PMMSUPPORT);
                 Vad = MiLocateVad(core::ptr::addr_of_mut!(MiRosKernelVadRoot), Address);
+
 
                 if !Vad.is_null() && !MI_IS_ROSMM_VAD(Vad as PVOID) {
                     IsArm3Fault = 1;
@@ -259,13 +256,6 @@ pub unsafe extern "system" fn MmAccessFault(
             && (Address as ULONG_PTR) < MmPagedPoolEnd as ULONG_PTR)
         || MmGetKernelAddressSpace().is_null()
     {
-        return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
-    }
-
-    // Kernel addresses with no VAD that aren't in a ROS MM range must go to ARM3.
-    // Without this, nonpaged pool faults fall through to the ROS MM path which
-    // returns ACCESS_VIOLATION because there's no MEMORY_AREA for nonpaged pool.
-    if Vad.is_null() && (Address as ULONG_PTR) > MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
         return MmArmAccessFault(FaultCode, Address, Mode, TrapInformation);
     }
 

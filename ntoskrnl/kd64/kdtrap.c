@@ -338,10 +338,10 @@ KdpStub(IN PKTRAP_FRAME TrapFrame,
          (ExceptionCommand == BREAKPOINT_COMMAND_STRING) ||
          (ExceptionCommand == BREAKPOINT_PRINT)))
     {
-#ifdef _M_IX86
-        /* On i386, KD is disabled. Write BREAKPOINT_PRINT strings directly
-         * to COM1. This handles user-mode DbgPrint (kernel-mode is handled
-         * by the direct COM1 path in DebugPrint).
+#if defined(_M_IX86) || defined(_M_AMD64)
+        /* KD is disabled on i386/amd64 with Rust KE. Write BREAKPOINT_PRINT
+         * strings directly to COM1. This handles user-mode DbgPrint
+         * (kernel-mode is handled by the direct COM1 path in DebugPrint).
          * Clear DLAB first in case a serial driver reconfigured the UART. */
         if (ExceptionCommand == BREAKPOINT_PRINT)
         {

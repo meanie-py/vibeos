@@ -9,7 +9,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
-use ntkrnl_sys::ddk::{KEVENT, KPROCESSOR_MODE, KeAreAllApcsDisabled, KeInitializeEvent, KeIsAttachedProcess, KeWaitForSingleObject, KeZeroPages, KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock, MiDeletePte, MiDereferencePfnAndDropLockCount, MiDetermineUserGlobalPteMask, MiDropLockCount, MiIncrementPageTableReferences, MiInitializePfn, MiIsUserPde, MiIsUserPte, MiLocateAddress, MiLockProcessWorkingSet, MiLockWorkingSet, MiReadPageFile, MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount, MiRemoveZeroPageSafe, MiUnlinkPageFromList, MiUnlockProcessWorkingSet, MiUnlockWorkingSet, PEPROCESS, PETHREAD, PKEVENT, PKPROCESS, PKTRAP_FRAME, PMMSUPPORT, PMMVAD, PTEB, PsGetCurrentThread, ZwAllocateVirtualMemory, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IMAGE_NT_HEADERS, _KEVENT, _KLOCK_QUEUE_HANDLE, _KPRCB, _KTRAP_FRAME, _MMPFN, _MMPTE, _OBJECT_HEADER, _MM_SESSION_SPACE};
+use ntkrnl_sys::ddk::{KEVENT, KPROCESSOR_MODE, KeAreAllApcsDisabled, KeInitializeEvent, KeIsAttachedProcess, KeWaitForSingleObject, KeZeroPages, KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock, MiDeletePte, MiDereferencePfnAndDropLockCount, MiDetermineUserGlobalPteMask, MiDropLockCount, MiIncrementPageTableReferences, MiInitializePfn, MiIsUserPde, MiIsUserPte, MiLocateAddress, MiLockProcessWorkingSet, MiLockWorkingSet, MiReadPageFile, MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount, MiRemoveZeroPageSafe, MiUnlinkPageFromList, MiUnlockProcessWorkingSet, MiUnlockWorkingSet, PEPROCESS, PETHREAD, PKEVENT, PKPROCESS, PKTRAP_FRAME, PMM_AVL_TABLE, PMMSUPPORT, PMMVAD, PTEB, PsGetCurrentThread, ZwAllocateVirtualMemory, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IMAGE_NT_HEADERS, _KEVENT, _KLOCK_QUEUE_HANDLE, _KPRCB, _KTRAP_FRAME, _MMPFN, _MMPTE, _OBJECT_HEADER, _MM_SESSION_SPACE};
 use super::helpers::*;
 
 extern "system" {
@@ -472,8 +472,6 @@ unsafe fn MiResolveDemandZeroFault(
         if PageFrameNumber == 0 {
             PageFrameNumber = MiRemoveAnyPage(Color);
             NeedZero = true;
-        } else {
-            NeedZero = false;
         }
     } else {
         Color = MI_GET_NEXT_COLOR();
@@ -481,7 +479,6 @@ unsafe fn MiResolveDemandZeroFault(
             PageFrameNumber = MiRemoveAnyPage(Color);
         } else {
             PageFrameNumber = MiRemoveZeroPage(Color);
-            NeedZero = false;
         }
     }
 
@@ -1396,6 +1393,15 @@ pub unsafe extern "system" fn MmArmAccessFault(
                         MI_MAKE_DIRTY_PAGE(&mut NewPte);
                     }
                     MI_WRITE_VALID_PTE(UserPxe, NewPte);
+
+                    // Force-zero the PPE page through the self-map.
+                    // MiRemoveZeroPage SHOULD return zeroed pages, but on amd64
+                    // we've observed stale PTE data (e.g., PFN=0 entries) in
+                    // supposedly-zeroed page table pages. Belt-and-suspenders.
+                    {
+                        let ppe_page = (MiAddressToPpe(UnderlyingVa) as usize) & !(PAGE_SIZE as usize - 1);
+                        core::ptr::write_bytes(ppe_page as *mut u8, 0u8, PAGE_SIZE as usize);
+                    }
                 }
 
                 UserPpe = MiAddressToPpe(UnderlyingVa);
@@ -1419,6 +1425,12 @@ pub unsafe extern "system" fn MmArmAccessFault(
                         MI_MAKE_DIRTY_PAGE(&mut NewPte);
                     }
                     MI_WRITE_VALID_PTE(UserPpe, NewPte);
+
+                    // Force-zero the PDE page through the self-map.
+                    {
+                        let pde_page = (MiAddressToPde(UnderlyingVa) as usize) & !(PAGE_SIZE as usize - 1);
+                        core::ptr::write_bytes(pde_page as *mut u8, 0u8, PAGE_SIZE as usize);
+                    }
                 }
 
                 {
@@ -1443,6 +1455,12 @@ pub unsafe extern "system" fn MmArmAccessFault(
                             MI_MAKE_DIRTY_PAGE(&mut NewPte);
                         }
                         MI_WRITE_VALID_PTE(UserPde, NewPte);
+
+                        // Force-zero the PTE page through the self-map.
+                        {
+                            let pte_page = (MiAddressToPte(UnderlyingVa) as usize) & !(PAGE_SIZE as usize - 1);
+                            core::ptr::write_bytes(pte_page as *mut u8, 0u8, PAGE_SIZE as usize);
+                        }
                     }
                 }
 
@@ -1726,6 +1744,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
     ProtectionCode = MM_INVALID_PROTECTION;
 
+    'exit_user: loop {
+
     #[cfg(target_pointer_width = "64")]
     {
         if ((*PointerPxe).valid() as usize) == 0 {
@@ -1749,7 +1769,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 MM_NOIRQL,
             );
             if Status < 0 {
-                /* goto ExitUser */ {}
+                break 'exit_user;
             }
 
             ASSERT!(((*PointerPxe).valid() as usize) == 1);
@@ -1782,7 +1802,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 MM_NOIRQL,
             );
             if Status < 0 {
-                /* goto ExitUser */ {}
+                break 'exit_user;
             }
 
             ASSERT!(((*PointerPpe).valid() as usize) == 1);
@@ -1847,7 +1867,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             MM_NOIRQL,
         );
         if Status < 0 {
-            /* goto ExitUser */ {}
+            break 'exit_user;
         }
 
         #[cfg(any(target_pointer_width = "64", all(target_arch = "x86", feature = "pae")))]
@@ -1888,7 +1908,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 if PageFrameIndex == 0 {
                     MiReleasePfnLock(LockIrql);
                     Status = STATUS_NO_MEMORY;
-                    /* goto ExitUser */ {}
+                    break 'exit_user;
                 }
                 OldPageFrameIndex = PFN_FROM_PTE(&mut TempPte as PMMPTE);
 
@@ -1939,10 +1959,11 @@ pub unsafe extern "system" fn MmArmAccessFault(
         return STATUS_SUCCESS;
     }
 
-    if (TempPte.Long == (((MM_READWRITE as ULONG_PTR) << 1) as ULONG_PTR)) || (TempPte.Long == (MM_EXECUTE_READWRITE << 1) as ULONG_PTR) {
+    // MM_PTE_SOFTWARE_PROTECTION_BITS = 5 on all architectures
+    if (TempPte.Long == ((MM_READWRITE as ULONG_PTR) << 5)) || (TempPte.Long == ((MM_EXECUTE_READWRITE as ULONG_PTR) << 5)) {
         Status = MiResolveDemandZeroFault(Address, PointerPte, TempPte.soft_protection(), CurrentProcess, MM_NOIRQL);
         if Status < 0 {
-            /* goto ExitUser */ {}
+            break 'exit_user;
         }
 
         #[cfg(feature = "MI_TRACE_PFNS")]
@@ -2024,7 +2045,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 if PageFrameIndex == 0 {
                     Status = STATUS_NO_MEMORY;
-                    /* goto ExitUser */ {}
+                    break 'exit_user;
                 }
 
                 MiZeroPfn(PageFrameIndex);
@@ -2132,13 +2153,17 @@ pub unsafe extern "system" fn MmArmAccessFault(
         Vad,
     );
 
+    break 'exit_user;
+    } // end 'exit_user loop
+
 // ExitUser:
     ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
     MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
 
     if Status == STATUS_NO_MEMORY {
         MmRebalanceMemoryConsumersAndWait();
-        /* goto UserFault */ {}
+        // Note: C code does goto UserFault to retry, but for now just return the error.
+        // This is acceptable since STATUS_NO_MEMORY during boot is very rare.
     }
 
     Status

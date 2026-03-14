@@ -373,7 +373,8 @@ pub unsafe extern "system" fn CcMapData(
         *p_buffer = core::ptr::null_mut();
     } else {
         *p_bcb = core::ptr::addr_of_mut!((*i_bcb).PFCB) as PVOID;
-        *p_buffer = ((*(*i_bcb).Vacb).BaseAddress as usize + vacb_offset as usize) as PVOID;
+        let base_addr = (*(*i_bcb).Vacb).BaseAddress;
+        *p_buffer = (base_addr as usize + vacb_offset as usize) as PVOID;
     }
 
     result

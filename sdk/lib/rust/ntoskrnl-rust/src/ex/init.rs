@@ -510,39 +510,25 @@ unsafe fn ExpLoadInitialProcess(
     let ProcessInformation = core::ptr::addr_of_mut!((*InitBuffer).ProcessInfo);
     let mut ProcessParams: *mut RTL_USER_PROCESS_PARAMETERS = core::ptr::null_mut();
 
-    Size = (core::mem::size_of::<RTL_USER_PROCESS_PARAMETERS>() + (520 * 6 * 2)) as ntkrnl_sys::ddk::ULONG_PTR;
-    Status = ZwAllocateVirtualMemory(
-        NtCurrentProcess(),
-        &mut ProcessParams as *mut _ as *mut PVOID,
-        0,
-        &mut Size,
-        MEM_RESERVE | MEM_COMMIT,
-        PAGE_READWRITE,
-    );
-    if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0a\0l\0l\0o\0c\0a\0t\0e\0 \0P\0r\0o\0c\0e\0s\0s\0 \0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0.\0\0\0".as_ptr() as *mut u16);
-        ZwDisplayString(&mut DebugString);
-        KeBugCheckEx(0x62, Status as ULONG_PTR, 0, 0, 0);
+    // Use kernel pool instead of ZwAllocateVirtualMemory to avoid ROSMM/ARM3
+    // conflicts on amd64 where user-mode VAs in the System process overlap
+    // with section views mapped by ROSMM during driver loading.
+    // The caller's ZwFreeVirtualMemory calls will fail silently (pool != VM);
+    // the pool allocation is freed via ExFreePoolWithTag below.
+    let params_size = core::mem::size_of::<RTL_USER_PROCESS_PARAMETERS>() + (520 * 6 * 2);
+    let env_size = PAGE_SIZE;
+    Size = (params_size + env_size) as ntkrnl_sys::ddk::ULONG_PTR;
+    ProcessParams = ExAllocatePoolWithTag(PagedPool, Size as usize, 0x50707345) as *mut RTL_USER_PROCESS_PARAMETERS; // 'EspP'
+    if ProcessParams.is_null() {
+        KeBugCheckEx(0x62, 0xC0000017u32 as ULONG_PTR, 0, 0, 0);
     }
+    core::ptr::write_bytes(ProcessParams as *mut u8, 0, Size as usize);
 
-    (*ProcessParams).Length = Size as ULONG;
-    (*ProcessParams).MaximumLength = Size as ULONG;
+    (*ProcessParams).Length = params_size as ULONG;
+    (*ProcessParams).MaximumLength = params_size as ULONG;
     (*ProcessParams).Flags = 0x00000001 | 0x00000008;
 
-    Size = PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR;
-    Status = ZwAllocateVirtualMemory(
-        NtCurrentProcess(),
-        &mut EnvironmentPtr,
-        0,
-        &mut Size,
-        MEM_RESERVE | MEM_COMMIT,
-        PAGE_READWRITE,
-    );
-    if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0a\0l\0l\0o\0c\0a\0t\0e\0 \0P\0r\0o\0c\0e\0s\0s\0 \0E\0n\0v\0i\0r\0o\0n\0m\0e\0n\0t\0.\0\0\0".as_ptr() as *mut u16);
-        ZwDisplayString(&mut DebugString);
-        KeBugCheckEx(0x63, Status as ULONG_PTR, 0, 0, 0);
-    }
+    EnvironmentPtr = (ProcessParams as usize + params_size) as PVOID;
 
     (*ProcessParams).Environment = EnvironmentPtr as *mut u16;
 
@@ -598,7 +584,7 @@ unsafe fn ExpLoadInitialProcess(
     RtlInitEmptyUnicodeString(
         &mut Environment,
         (*ProcessParams).Environment as *mut u16,
-        Size as USHORT,
+        env_size as USHORT,
     );
 
     RtlAppendUnicodeToString(&mut Environment, b"P\0a\0t\0h\0=\0\0\0".as_ptr() as *mut u16);
@@ -1340,41 +1326,26 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     ExpLoadInitialProcess(InitBuffer, &mut ProcessParameters, &mut Environment);
 
     Timeout.QuadPart = -50000000i64;
-
-    Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
-
-    if Status == STATUS_SUCCESS {
-        KeBugCheck(0x6A);
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
+        if Status == STATUS_SUCCESS {
+            KeBugCheck(0x6A);
+        }
     }
 
     ZwClose((*ProcessInfo).ThreadHandle);
     ZwClose((*ProcessInfo).ProcessHandle);
 
-    Size = 0;
-    {
-        let mut size64: ntkrnl_sys::ddk::ULONG_PTR = Size as ntkrnl_sys::ddk::ULONG_PTR;
-        ZwFreeVirtualMemory(
-            NtCurrentProcess(),
-            &mut Environment as *mut _ as *mut PVOID,
-            &mut size64,
-            MEM_RELEASE,
-        );
-    }
-
-    Size = 0;
-    {
-        let mut size64: ntkrnl_sys::ddk::ULONG_PTR = Size as ntkrnl_sys::ddk::ULONG_PTR;
-        ZwFreeVirtualMemory(
-            NtCurrentProcess(),
-            &mut ProcessParameters as *mut _ as *mut PVOID,
-            &mut size64,
-            MEM_RELEASE,
-        );
-    }
+    // ProcessParameters was allocated from kernel pool (ExAllocatePoolWithTag)
+    // in ExpLoadInitialProcess, not ZwAllocateVirtualMemory. Environment points
+    // inside the same allocation, so no separate free is needed.
+    ExFreePoolWithTag(ProcessParameters as PVOID, 0x50707345); // 'EspP'
 
     ExpInitializationPhase += 1;
 
     ExFreePoolWithTag(InitBuffer as PVOID, 0x74696E49);
+
 }
 
 #[no_mangle]

@@ -652,7 +652,7 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
 pub unsafe extern "system" fn MmProbeAndLockPages(
     Mdl: PMDL,
     AccessMode: KPROCESSOR_MODE,
-    Operation: LOCK_OPERATION,
+    mut Operation: LOCK_OPERATION,
 ) {
     let mut MdlPages: PPFN_NUMBER;
     let mut Address: PVOID;
@@ -742,7 +742,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
     if Base as ULONG_PTR > MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
         (*Mdl).Process = core::ptr::null_mut();
-        let mut Operation = IoReadAccess;
+        Operation = IoReadAccess;
         UsePfnLock = 1;
         OldIrql = MiAcquirePfnLock();
     } else {

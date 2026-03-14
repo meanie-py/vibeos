@@ -212,15 +212,15 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
-    # lpc/ — temporarily restored C (Rust version has NtAcceptConnectPort bug)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
+    # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/send.c
     # ARM3/ — replaced by Rust (ntoskrnl-rust/src/ARM3/)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/contmem.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/drvmgmt.c (Rust)
@@ -431,7 +431,7 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
-        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
         )
 elseif(ARCH STREQUAL "arm")

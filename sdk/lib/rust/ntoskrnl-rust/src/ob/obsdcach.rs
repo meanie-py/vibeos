@@ -18,10 +18,8 @@ static mut ObsSecurityDescriptorCache: [OB_SD_CACHE_LIST; SD_CACHE_ENTRIES] =
     unsafe { core::mem::zeroed() };
 
 const TAG_OB_SD_CACHE: ULONG = u32::from_le_bytes(*b"cSbO");
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching the C #define.
 pub const MAX_FAST_REFS: ULONG = 7;
-#[cfg(target_pointer_width = "64")]
-pub const MAX_FAST_REFS: ULONG = 15;
 
 unsafe fn ObpSdAcquireLock(CacheEntry: POB_SD_CACHE_LIST) {
     KeEnterCriticalRegion();

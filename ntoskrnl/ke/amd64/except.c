@@ -682,6 +682,26 @@ KiGeneralProtectionFaultHandler(
             "Instr: %02x %02x %02x %02x\n",
             (PVOID)TrapFrame->Rip,
             Instructions[0], Instructions[1], Instructions[2], Instructions[3]);
+    /* DBG: also write to debugcon (port 0xE9) for QEMU tracing */
+    {
+        static const char hex[] = "0123456789ABCDEF";
+        char buf[80];
+        ULONG_PTR rip = TrapFrame->Rip;
+        int i;
+        char *p = buf;
+        *p++ = '['; *p++ = 'G'; *p++ = 'P'; *p++ = 'F'; *p++ = ']';
+        for (i = 60; i >= 0; i -= 4)
+            *p++ = hex[(rip >> i) & 0xF];
+        *p++ = ' ';
+        for (i = 0; i < 4; i++) {
+            *p++ = hex[(Instructions[i] >> 4) & 0xF];
+            *p++ = hex[Instructions[i] & 0xF];
+            *p++ = ' ';
+        }
+        *p++ = '\n';
+        for (char *c = buf; c < p; c++)
+            __outbyte(0xE9, *c);
+    }
     return STATUS_ACCESS_VIOLATION;
 }
 

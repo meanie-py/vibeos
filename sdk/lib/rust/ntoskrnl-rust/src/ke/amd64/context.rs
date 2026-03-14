@@ -8,9 +8,9 @@ use ntkrnl_sys::ddk::{
 const MODE_MASK: u16 = 1;
 const KGDT64_R0_CODE: u16 = 0x10;
 const KGDT64_R0_DATA: u16 = 0x18;
-const KGDT64_R3_CODE: u16 = 0x20;
-const KGDT64_R3_CMCODE: u16 = 0x30;
+const KGDT64_R3_CMCODE: u16 = 0x20;
 const KGDT64_R3_DATA: u16 = 0x28;
+const KGDT64_R3_CODE: u16 = 0x30;
 const KGDT64_R3_CMTEB: u16 = 0x50;
 const RPL_MASK: u16 = 3;
 

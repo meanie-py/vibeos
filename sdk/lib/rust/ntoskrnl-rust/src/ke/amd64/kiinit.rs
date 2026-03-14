@@ -724,7 +724,7 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
         KeInitExceptions();
 
-        KdInitSystem(0, KeLoaderBlock);
+        let kd_ret = KdInitSystem(0, KeLoaderBlock);
 
         if KdPollBreakIn() != 0 {
             DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);

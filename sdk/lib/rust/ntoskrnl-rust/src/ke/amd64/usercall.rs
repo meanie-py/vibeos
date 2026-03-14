@@ -32,20 +32,34 @@ struct UAPC_FRAME {
 #[repr(C)]
 struct MACHINE_FRAME {
     Rip: u64,
+    SegCs: u16,
+    Fill1: [u16; 3],
+    EFlags: u32,
+    Fill2: u32,
     Rsp: u64,
+    SegSs: u16,
+    Fill3: [u16; 3],
 }
 
+#[cfg(target_arch = "x86")]
 #[repr(C)]
 struct UCALLOUT_FRAME {
-    #[cfg(target_arch = "x86")]
     Reserved: ULONG,
     ApiNumber: ULONG,
-    #[cfg(target_arch = "x86")]
     Buffer: ULONG_PTR,
-    #[cfg(not(target_arch = "x86"))]
+    Length: ULONG,
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[repr(C)]
+struct UCALLOUT_FRAME {
+    P1Home: u64,
+    P2Home: u64,
+    P3Home: u64,
+    P4Home: u64,
     Buffer: PVOID,
     Length: ULONG,
-    #[cfg(not(target_arch = "x86"))]
+    ApiNumber: ULONG,
     MachineFrame: MACHINE_FRAME,
 }
 
@@ -54,7 +68,7 @@ type PUCALLOUT_FRAME = *mut UCALLOUT_FRAME;
 const CONTEXT_FULL: ULONG = 0x10007;
 const CONTEXT_DEBUG_REGISTERS: ULONG = 0x10;
 const MODE_MASK: u16 = 1;
-const KGDT64_R3_CODE: u16 = 0x0020;
+const KGDT64_R3_CODE: u16 = 0x0030;
 const KGDT64_R3_CMTEB: u16 = 0x0050;
 const KGDT64_R3_DATA: u16 = 0x0028;
 const RPL_MASK: u16 = 3;
@@ -109,7 +123,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     }
 
     (*TrapFrame).Rsp = Context as u64;
-    (*TrapFrame).Rip = &KeUserApcDispatcher as *const u64 as u64;
+    (*TrapFrame).Rip = KeUserApcDispatcher;
 
     (*TrapFrame).SegCs = KGDT64_R3_CODE | RPL_MASK;
     (*TrapFrame).SegFs = KGDT64_R3_CMTEB | RPL_MASK;
@@ -122,7 +136,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTSTATUS {
+pub unsafe extern "system" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTSTATUS {
     KiUserModeCalloutImpl(CalloutFrame)
 }
 
@@ -168,7 +182,7 @@ unsafe fn KiUserModeCalloutImpl(CalloutFrame: PKCALLOUT_FRAME) -> NTSTATUS {
 
     (*(*Pcr).__bindgen_anon_1.__bindgen_anon_1.TssBase).Rsp0 = InitialStack as u64;
     (*Pcr).Prcb.RspBase = InitialStack as u64;
-    CallbackTrapFrame.Rip = &KeUserCallbackDispatcher as *const u64 as u64;
+    CallbackTrapFrame.Rip = KeUserCallbackDispatcher;
 
     core::arch::asm!("sti");
 
@@ -221,6 +235,20 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
     debug_assert!((*PsGetCurrentThread()).__bindgen_anon_1.ApcState.KernelApcInProgress == 0);
     debug_assert!(KeGetPreviousMode() == 1i8);
+
+    // DUMMY_PSEH: Check KernelCallbackTable before dispatching to user mode.
+    // If user32.dll hasn't loaded yet, PEB->KernelCallbackTable is NULL and
+    // KiUserCallbackDispatcher will ACCESS_VIOLATION trying to call through it.
+    // This happens when win32k triggers a callback before user32 DllMain runs.
+    {
+        let teb = (*PsGetCurrentThread()).Teb;
+        if !teb.is_null() {
+            let peb = (*teb).ProcessEnvironmentBlock;
+            if peb.is_null() || (*peb).KernelCallbackTable.is_null() {
+                return 0xC0000001u32 as NTSTATUS; // STATUS_UNSUCCESSFUL
+            }
+        }
+    }
 
     UserStackPointer = KiGetUserModeStackAddress();
     OldStack = *UserStackPointer as ULONG_PTR;

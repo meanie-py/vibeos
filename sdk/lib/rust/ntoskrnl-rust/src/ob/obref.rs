@@ -24,10 +24,8 @@ use ntkrnl_sys::ddk::{
     PGENERIC_MAPPING,
 };
 
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 pub const MAX_FAST_REFS: LONG = 7;
-#[cfg(target_pointer_width = "64")]
-pub const MAX_FAST_REFS: LONG = 15;
 
 extern "C" {
     static mut PsThreadType: POBJECT_TYPE;

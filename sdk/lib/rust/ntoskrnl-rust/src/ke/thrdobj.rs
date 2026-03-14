@@ -84,7 +84,6 @@ extern "system" {
 extern "system" {
     static mut MmLargeStackSize: ULONG;
 }
-
 const KERNEL_STACK_SIZE: usize = 12288;
 const MAXIMUM_SUSPEND_COUNT: i8 = 127;
 const THREAD_WAIT_OBJECTS: usize = 3;

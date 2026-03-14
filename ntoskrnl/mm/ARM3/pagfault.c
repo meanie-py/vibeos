@@ -1890,6 +1890,12 @@ MmArmAccessFault(IN ULONG FaultCode,
                                      MM_EXECUTE_READWRITE, NewPage);
                 if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
                 MI_WRITE_VALID_PTE(UserPxe, NewPte);
+
+                /* Force-zero the PPE page through the self-map.
+                 * MiRemoveZeroPage SHOULD return zeroed pages, but on amd64
+                 * we've observed stale PTE data in supposedly-zeroed page
+                 * table pages. Belt-and-suspenders. */
+                RtlZeroMemory((PVOID)MiPxeToAddress(UserPxe), PAGE_SIZE);
             }
 
             /* Now PXE is valid — PPE self-map walk succeeds */
@@ -1921,6 +1927,9 @@ MmArmAccessFault(IN ULONG FaultCode,
                                      MM_EXECUTE_READWRITE, NewPage);
                 if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
                 MI_WRITE_VALID_PTE(UserPpe, NewPte);
+
+                /* Force-zero the PDE page through the self-map */
+                RtlZeroMemory((PVOID)MiPpeToAddress(UserPpe), PAGE_SIZE);
             }
 
             /* Now PXE and PPE are valid — PDE self-map walk succeeds.
@@ -1954,6 +1963,9 @@ MmArmAccessFault(IN ULONG FaultCode,
                                          MM_EXECUTE_READWRITE, NewPage);
                     if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
                     MI_WRITE_VALID_PTE(UserPde, NewPte);
+
+                    /* Force-zero the PTE page through the self-map */
+                    RtlZeroMemory((PVOID)MiPdeToAddress(UserPde), PAGE_SIZE);
                 }
             }
 

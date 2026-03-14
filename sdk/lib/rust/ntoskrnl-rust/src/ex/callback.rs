@@ -33,10 +33,8 @@ extern "C" {
 const TAG_CALLBACK_ROUTINE_BLOCK: ULONG = 0x6B636243; // 'cbCk'
 const TAG_CALLBACK_REGISTRATION: ULONG = 0x72636243; // 'cbCr'
 
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: ULONG = 7;
-#[cfg(target_pointer_width = "64")]
-const MAX_FAST_REFS: ULONG = 15;
 
 const CALLBACK_MODIFY_STATE: ACCESS_MASK = 0x0001;
 const CALLBACK_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | CALLBACK_MODIFY_STATE;

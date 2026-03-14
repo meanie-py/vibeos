@@ -247,14 +247,9 @@ unsafe fn MiIsPageTablePresent(Address: PVOID) -> BOOLEAN {
 #[inline]
 unsafe fn mmpfn_used_page_table_entries_from_pte(pte: &MMPTE) -> ULONG {
     // When PDE is not valid and not transition, UsedPageTableEntries is
-    // stored in OriginalPte.Soft.UsedPageTableEntries equivalent in the PDE itself.
-    // For the non-valid, non-transition case in MiIsPageTablePresent,
-    // the C code reads Pfn->OriginalPte.u.Soft.UsedPageTableEntries.
-    // But when the page table itself isn't present, we read from the
-    // PDE's soft bits. The C uses u.Soft.UsedPageTableEntries which is
-    // actually the PageFileHigh field that happens to overlap.
-    // Map to soft_page_file_high (upper bits).
-    pte.soft_page_file_high() as ULONG
+    // stored in the PDE's soft UsedPageTableEntries bitfield (bits 12-21),
+    // matching _MMPTE_SOFTWARE::UsedPageTableEntries in mmtypes.h.
+    ((pte.Long as u64 >> 12) & 0x3FF) as ULONG
 }
 
 #[no_mangle]

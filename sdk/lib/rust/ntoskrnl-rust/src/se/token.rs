@@ -510,6 +510,16 @@ pub unsafe extern "system" fn SepTokenIsOwner(
     let token = _token as PTOKEN;
     let sid = SepGetOwnerFromDescriptor(security_descriptor);
 
+    // Guard: C code has ASSERT(Sid != NULL) which is no-op in release.
+    // With DUMMY_PSEH, a bad SID pointer causes unhandled page fault.
+    if sid.is_null() {
+        return 0;
+    }
+    // Check if SID pointer is accessible — avoids page fault with DUMMY_PSEH
+    if MmIsAddressValid(sid as PVOID) == 0 {
+        return 0;
+    }
+
     if token_locked == 0 {
         SepAcquireTokenLockShared(token);
     }

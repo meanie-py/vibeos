@@ -39,11 +39,8 @@ const AssignSecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CO
 const QuerySecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CODE_QuerySecurityDescriptor;
 const SetSecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CODE_SetSecurityDescriptor;
 
-// EX_FAST_REF max fast refs (from exfuncs.h)
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: ULONG = 7;
-#[cfg(target_pointer_width = "64")]
-const MAX_FAST_REFS: ULONG = 15;
 
 // FILE_WRITE_DATA (from winnt.h — used in SeFastTraverseCheck)
 const FILE_WRITE_DATA: ULONG = 0x0002;
@@ -205,7 +202,7 @@ pub unsafe extern "system" fn ObCheckCreateObjectAccess(
         &mut SecurityDescriptor,
         &mut SdAllocated,
     );
-    
+
     if Status < 0 {
         *AccessStatus = Status;
         return 0;
@@ -226,7 +223,7 @@ pub unsafe extern "system" fn ObCheckCreateObjectAccess(
             &mut GrantedAccess,
             AccessStatus,
         );
-        
+
         if !Privileges.is_null() {
             let Status = SeAppendPrivileges(AccessState, Privileges);
             SeFreePrivileges(Privileges);

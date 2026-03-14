@@ -18,16 +18,14 @@
 
 /* PRIVATE FUNCTIONS ********************************************************/
 
-#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(__NTDLL__)
 /*
- * On i386/amd64 with Rust KE, KD is disabled (triple-faults during KdSendPacket).
- * Bypass the INT 0x2D → KdpStub path entirely and write directly to COM1.
- * This avoids the full trap/exception dispatch overhead and provides
- * reliable serial debug output at full 115200 baud throughput.
+ * Direct COM1 serial output for kernel-mode DbgPrint. Bypasses INT 0x2D
+ * entirely. On amd64 with Rust KE the int 0x2D → KdpTrap path fails to
+ * produce serial output, so we write directly to the COM1 UART.
  *
- * NOTE: _NTOSKRNL_ is defined by both ntoskrnl and ntdll. The !_NTDLLBUILD_
- * check ensures this kernel-only code isn't compiled into ntdll.dll, where
- * the privileged IN/OUT instructions would cause STATUS_PRIVILEGED_INSTRUCTION.
+ * The SEH_TRY/EXCEPT wrapper is dead code with DUMMY_PSEH, but in kernel
+ * mode the IN/OUT instructions are always safe (ring 0).
  */
 static __inline UCHAR _DbgPortRead(USHORT Port)
 {
@@ -42,39 +40,39 @@ static __inline VOID _DbgPortWrite(USHORT Port, UCHAR Value)
 }
 #endif
 
+__attribute__((noinline))
 ULONG
 NTAPI
 DebugPrint(IN PSTRING DebugString,
            IN ULONG ComponentId,
            IN ULONG Level)
 {
-#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
-    /* Direct COM1 output — bypasses INT 0x2D entirely. */
-    /* Diagnostic: marker before SEH */
-    __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'<'), "Nd"((unsigned short)0xE9));
-
-    _SEH2_TRY
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(__NTDLL__)
+    /* Direct COM1 output — bypasses INT 0x2D entirely.
+     * Only safe in kernel mode (ring 0). The RTL library is shared between
+     * ntoskrnl and ntdll, so check CS RPL at runtime to avoid #GP in user mode. */
     {
-        USHORT i;
-        UCHAR lcr = _DbgPortRead(0x3FB);
-        if (lcr & 0x80)
-            _DbgPortWrite(0x3FB, lcr & 0x7F);
-        for (i = 0; i < DebugString->Length; i++)
+        USHORT cs;
+#ifdef _M_IX86
+        __asm__ __volatile__("movw %%cs, %0" : "=r"(cs));
+#else
+        __asm__ __volatile__("movw %%cs, %0" : "=r"(cs));
+#endif
+        if ((cs & 3) == 0)
         {
-            /* Wait for THRE (Transmit Holding Register Empty) before each byte.
-             * Without this, the 16-byte UART FIFO overflows and bytes are lost. */
-            while (!(_DbgPortRead(0x3FD) & 0x20))
-                ;
-            _DbgPortWrite(0x3F8, (UCHAR)DebugString->Buffer[i]);
+            USHORT i;
+            UCHAR lcr = _DbgPortRead(0x3FB);
+            if (lcr & 0x80)
+                _DbgPortWrite(0x3FB, lcr & 0x7F);
+            for (i = 0; i < DebugString->Length; i++)
+            {
+                while (!(_DbgPortRead(0x3FD) & 0x20))
+                    ;
+                _DbgPortWrite(0x3F8, (UCHAR)DebugString->Buffer[i]);
+            }
+            return STATUS_SUCCESS;
         }
-        __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'>'), "Nd"((unsigned short)0xE9));
-        _SEH2_YIELD(return STATUS_SUCCESS);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        /* Direct COM port access failed (user mode) — fall through */
-    }
-    _SEH2_END;
 #endif
     /* Call the Debug Service */
     return DebugService(BREAKPOINT_PRINT,
@@ -211,11 +209,6 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
 
     /* Call the Debug Print routine */
     Status = DebugPrint(&DebugString, ComponentId, Level);
-
-    /* Diagnostic: write a marker to debugcon after DebugPrint returns */
-#if defined(_M_IX86) && defined(_NTOSKRNL_) && !defined(_NTDLLBUILD_)
-    { __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)'!'), "Nd"((unsigned short)0xE9)); }
-#endif
 
     /* Check if this was with Control-C */
     if (HandleBreakpoint)

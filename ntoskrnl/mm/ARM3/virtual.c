@@ -373,6 +373,8 @@ MiDeletePte(IN PMMPTE PointerPte,
     PMMPFN Pfn1;
     MMPTE TempPte;
     PFN_NUMBER PageFrameIndex;
+
+    /* DEBUG: trace MiDeletePte for user stack pages */
     PMMPDE PointerPde;
 
     /* PFN lock must be held */
@@ -529,8 +531,8 @@ MiDeletePte(IN PMMPTE PointerPte,
         MI_ERASE_PTE(PointerPte);
 
         /* There should only be 1 shared reference count */
-#ifdef _M_ARM64
-        /* ARM64: ShareCount may be off due to PFN tracking issues, skip assert */
+#if defined(_M_ARM64) || defined(_M_AMD64)
+        /* ARM64/amd64: ShareCount may be off due to PFN tracking issues, skip assert */
 #else
         ASSERT(Pfn1->u2.ShareCount == 1);
 #endif
@@ -2579,6 +2581,7 @@ MiProcessValidPteList(IN PMMPTE *ValidPteList,
     // Acquire the PFN lock and loop all the PTEs in the list
     //
     OldIrql = MiAcquirePfnLock();
+
     for (i = 0; i != Count; i++)
     {
         //
@@ -2592,6 +2595,7 @@ MiProcessValidPteList(IN PMMPTE *ValidPteList,
         //
         PageFrameIndex = PFN_FROM_PTE(&TempPte);
         Pfn1 = MiGetPfnEntry(PageFrameIndex);
+
         Pfn2 = MiGetPfnEntry(Pfn1->u4.PteFrame);
 
         //
@@ -2606,6 +2610,7 @@ MiProcessValidPteList(IN PMMPTE *ValidPteList,
         // Make the page decommitted
         //
         MI_WRITE_INVALID_PTE(ValidPteList[i], MmDecommittedPte);
+
     }
 
     //

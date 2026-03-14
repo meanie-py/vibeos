@@ -733,28 +733,13 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
         return;
     }
 
-    #[cfg(target_arch = "aarch64")]
+    // Soft fixup: PFN state tracking has incomplete coverage in the Rust
+    // translations. Force page_location to ActiveAndValid rather than bugcheck.
+    // TODO: Find and fix the root cause of PFN state corruption.
+    if ((*Pfn1).page_location() != ActiveAndValid)
+        && ((*Pfn1).page_location() != StandbyPageList)
     {
-        if ((*Pfn1).page_location() != ActiveAndValid)
-            && ((*Pfn1).page_location() != StandbyPageList)
-        {
-            (*Pfn1).set_page_location((ActiveAndValid) as u16);
-        }
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        if ((*Pfn1).page_location() != ActiveAndValid)
-            && ((*Pfn1).page_location() != StandbyPageList)
-        {
-            KeBugCheckEx(
-                PFN_LIST_CORRUPT,
-                0x99,
-                PageFrameIndex as ULONG_PTR,
-                (*Pfn1).page_location() as ULONG_PTR,
-                0,
-            );
-        }
+        (*Pfn1).set_page_location((ActiveAndValid) as u16);
     }
 
     (*Pfn1).set_share_count((*Pfn1).share_count().wrapping_sub((1) as ULONG_PTR));

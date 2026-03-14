@@ -16,7 +16,6 @@ EXTERN NtContinue:PROC
 EXTERN LdrpInit:PROC
 EXTERN ZwCallbackReturn:PROC
 EXTERN RtlRaiseStatus:PROC
-
 .data
 
 Wow64PrepareForException:
@@ -118,8 +117,21 @@ AlignmentOk:
     mov rax, gs:[TePeb]
     mov r9, [rax + PeKernelCallbackTable]
 
+    /* Guard: check callback table pointer */
+    test r9, r9
+    jz CallbackInvalid
+
+    /* Load the callback function pointer */
+    mov rax, [r9 + r8 * 8]
+
+    /* Guard: check for NULL or -1 (uninitialized) entries */
+    test rax, rax
+    jz CallbackInvalid
+    cmp rax, -1
+    je CallbackInvalid
+
     /* Call the routine */
-    call qword ptr [r9 + r8 * 8]
+    call rax
 
     /* Return from callback */
     xor ecx, ecx
@@ -134,6 +146,14 @@ AlignmentOk:
 StatusRaise:
     mov ecx, esi
     call RtlRaiseStatus
+    jmp StatusRaise
+
+CallbackInvalid:
+    /* Return STATUS_NOT_IMPLEMENTED to the kernel */
+    xor ecx, ecx
+    xor edx, edx
+    mov r8d, HEX(C0000002)
+    call ZwCallbackReturn
     jmp StatusRaise
 
 .ENDP
@@ -249,7 +269,14 @@ RaiseException:
     cmp dword ptr [rax + ErExceptionCode], HEX(C0000000)
     jae _DummyPseh_RaiseSecondChance
 
-    /* Continuable software exception - swallow it by resuming execution */
+    /* Continuable software exception - swallow it by resuming execution.
+     * For STATUS_BREAKPOINT (0x80000003): KiDispatchException decremented
+     * Rip by 1 to point at the int3 byte. We must skip it (+1) to avoid
+     * re-executing the breakpoint in an infinite loop. */
+    cmp dword ptr [rax + ErExceptionCode], HEX(80000003)
+    jne _DummyPseh_NoBreakpointAdjust
+    inc qword ptr [rsp + CxRip]
+_DummyPseh_NoBreakpointAdjust:
     lea rcx, [rsp] /* ContextRecord */
     mov dl, 0 /* TestAlert */
     call ZwContinue

@@ -97,10 +97,8 @@ extern "C" {
 }
 
 const CT_ACTIVE_IMPERSONATION_INFO_BIT: ULONG = 0x8;
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: usize = 7;
-#[cfg(target_pointer_width = "64")]
-const MAX_FAST_REFS: usize = 15;
 const TAG_SE: ULONG = u32::from_le_bytes([b'S', b'e', b' ', b' ']);
 const SECURITY_DESCRIPTOR_REVISION: ULONG = 1;
 const ACL_REVISION: ULONG = 2;

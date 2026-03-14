@@ -218,6 +218,48 @@ MiLoadImageSection_shim(_Inout_ PSECTION *SectionPtr,
         return Status;
     }
 
+    /* Clear stale PTEs in the section view range before reading.
+     * On amd64, FreeLDR's identity-mapped page table pages can be reused
+     * for user-space page tables with stale Valid PTEs (e.g., PFN=0).
+     * Additionally, MmUnmapViewOfSection doesn't always clear PTEs from
+     * previous section views. These stale PTEs prevent page faults from
+     * firing, so the section data never gets demand-paged in. Zeroing them
+     * forces proper fault resolution from the section. */
+#ifdef _M_AMD64
+    {
+        PMMPTE StartPte = MiAddressToPte(Base);
+        PMMPTE EndPte = MiAddressToPte((PVOID)((ULONG_PTR)Base + (PteCount << PAGE_SHIFT) - 1));
+        PMMPTE Pte;
+        ULONG Cleared = 0;
+        for (Pte = StartPte; Pte <= EndPte; Pte++)
+        {
+            if (Pte->u.Long != 0)
+            {
+                Pte->u.Long = 0;
+                __invlpg(MiPteToAddress(Pte));
+                Cleared++;
+            }
+        }
+        if (Cleared > 0)
+        {
+            /* Fix up UsedPageTableEntries to match the cleared count.
+             * The fault handler incremented this counter when it populated
+             * PTEs during previous section loads, but MmUnmapViewOfSection
+             * didn't decrement it when unmapping. Correct it now. */
+            PMMPDE Pde = MiAddressToPde(Base);
+            if (Pde->u.Hard.Valid)
+            {
+                PMMPFN PtPagePfn = MiGetPfnEntry(Pde->u.Hard.PageFrameNumber);
+                USHORT OldCount = PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries;
+                if (OldCount >= Cleared)
+                    PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries = (USHORT)(OldCount - Cleared);
+                else
+                    PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries = 0;
+            }
+        }
+    }
+#endif
+
     /* Copy image from section view to kernel address */
     RtlCopyMemory(DriverBase, Base, PteCount << PAGE_SHIFT);
 
@@ -994,6 +1036,7 @@ LoaderScan:
                                    OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
                                    NULL,
                                    NULL);
+
 
         Status = ZwOpenFile(&FileHandle,
                             FILE_EXECUTE,

@@ -187,6 +187,15 @@ unsafe fn PspCatchCriticalBreak(
     }
 
     if handled == 0 {
+        // Debug: print process name before bugcheck
+        #[cfg(target_arch = "x86_64")]
+        {
+            DbgPrint(
+                b"[CRIT-TERM] Process=%p ImageName=%s\n\0".as_ptr() as PCHAR,
+                process_or_thread,
+                image_name,
+            );
+        }
         KeBugCheckEx(
             CRITICAL_OBJECT_TERMINATION,
             (*(process_or_thread as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type as ULONG_PTR,
@@ -202,6 +211,15 @@ unsafe fn PspTerminateProcess(process: PEPROCESS, exit_status: NTSTATUS) -> NTST
     let mut status = STATUS_NOTHING_TO_TERMINATE;
 
     if (*(process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination() != 0 {
+        #[cfg(target_arch = "x86_64")]
+        {
+            DbgPrint(
+                b"[CRIT-TERM] PspTerminateProcess: process=%p image=%s exit_status=0x%lx\n\0".as_ptr() as PCHAR,
+                process as PVOID,
+                (*(process as *mut _EPROCESS)).ImageFileName.as_ptr() as PCHAR,
+                exit_status as ULONG_PTR,
+            );
+        }
         PspCatchCriticalBreak(
             b"Terminating critical process 0x%p (%s)\n\0".as_ptr() as PCHAR,
             process as PVOID,
@@ -425,6 +443,18 @@ pub unsafe extern "system" fn PspDeleteThread(object_body: PVOID) {
 
 unsafe fn PspExitThread(exit_status: NTSTATUS) {
     ARM64_UART_TRACE(b"[PS] PspExitThread entered\r\n\0".as_ptr() as PCSTR);
+    #[cfg(target_arch = "x86_64")]
+    {
+        let _proc = ntkrnl_sys::ps::PsGetCurrentProcess();
+        let _img = (*((_proc) as *mut _EPROCESS)).ImageFileName.as_ptr();
+        let _crit = (*(_proc as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination();
+        DbgPrint(
+            b"[EXIT-THR] image=%s exit_status=0x%lx crit=%d\n\0".as_ptr() as PCHAR,
+            _img as PCHAR,
+            exit_status as ULONG_PTR,
+            _crit as u32,
+        );
+    }
     let mut termination_msg: CLIENT_DIED_MSG = core::mem::zeroed();
     let mut status: NTSTATUS;
     let teb: *mut u8;
@@ -657,13 +687,10 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
     teb = (*(thread as *mut _ETHREAD)).Tcb.Teb as *mut u8;
     if !teb.is_null() {
         if (*(thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.DeadThread() == 0 {
-            let teb_struct = teb as *mut u8;
-            let free_stack_offset = 0x1728usize;
-            let free_stack_ptr = teb_struct.add(free_stack_offset) as *mut u32;
-            if *free_stack_ptr != 0 {
+            let teb_ptr = teb as *mut _TEB;
+            if (*teb_ptr).FreeStackOnTermination != 0 {
                 dummy = 0;
-                let dealloc_offset = 0x1478usize;
-                deallocation_stack = *(teb_struct.add(dealloc_offset) as *mut PVOID);
+                deallocation_stack = (*teb_ptr).DeallocationStack;
 
                 ZwFreeVirtualMemory(
                     NtCurrentProcess() as HANDLE,
@@ -673,8 +700,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
                 );
             }
 
-            let dbg_offset = 0x1000usize + 0x30usize + 0x4usize;
-            let dbg_handle = *(teb_struct.add(dbg_offset) as *mut HANDLE);
+            let dbg_handle = (*teb_ptr).DbgSsReserved[1];
             if !dbg_handle.is_null() {
                 ObCloseHandle(dbg_handle, UserMode);
             }

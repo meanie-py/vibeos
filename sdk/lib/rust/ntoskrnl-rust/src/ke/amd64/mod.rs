@@ -14,5 +14,5 @@ pub mod spinlock;
 pub mod stubs;
 pub mod thrdini;
 pub mod traphandler;
-pub mod usercall;
+// pub mod usercall; // Using C version — Rust version has undiagnosed return-address corruption bug
 pub mod xstate;

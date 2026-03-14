@@ -56,8 +56,13 @@ pub const MI_HIGHEST_USER_ADDRESS: ULONG_PTR = MM_HIGHEST_USER_ADDRESS;
 // MI_DEFAULT_SYSTEM_RANGE_START
 #[cfg(target_arch = "x86")]
 pub const MI_DEFAULT_SYSTEM_RANGE_START: ULONG_PTR = 0x80000000;
+// NOTE: The C header defines MI_DEFAULT_SYSTEM_RANGE_START as 0xFFFF080000000000 but
+// also has #define MmSystemRangeStart ((PVOID)MI_REAL_SYSTEM_RANGE_START) with
+// MI_REAL_SYSTEM_RANGE_START = 0xFFFF800000000000. Since Rust has no macro override,
+// we use the canonical MI_REAL value here. The MI_DEFAULT value (0xFFFF080000000000)
+// is non-canonical on 48-bit VA CPUs and causes #GP when accessed.
 #[cfg(target_arch = "x86_64")]
-pub const MI_DEFAULT_SYSTEM_RANGE_START: ULONG_PTR = 0xFFFF080000000000;
+pub const MI_DEFAULT_SYSTEM_RANGE_START: ULONG_PTR = 0xFFFF800000000000;
 #[cfg(target_arch = "aarch64")]
 pub const MI_DEFAULT_SYSTEM_RANGE_START: ULONG_PTR = 0xFFFF800000000000;
 
@@ -1172,9 +1177,9 @@ const MMPFN_ORIGINAL_PTE_OFFSET: usize = 32;
 #[cfg(target_pointer_width = "32")]
 const MMPFN_ORIGINAL_PTE_OFFSET: usize = 16;
 
-// UsedPageTableEntries offset (64-bit only, at u3 + 4)
-#[cfg(target_pointer_width = "64")]
-const MMPFN_USED_PAGE_TABLE_ENTRIES_OFFSET: usize = 28;
+// Note: MMPFN has a dedicated ULONG UsedPageTableEntries at offset 28 on _WIN64,
+// but ReactOS C code (miarm.h) uses OriginalPte.u.Soft.UsedPageTableEntries
+// (bits 12-21 of OriginalPte at offset 32) instead. Rust accessors match C.
 
 /// Get OriginalPte.Long from an MMPFN
 #[inline]
@@ -1307,19 +1312,27 @@ pub unsafe fn mmpfn_set_rom_pte(pfn: PMMPFN, val: bool) {
 }
 
 /// Get UsedPageTableEntries (64-bit only)
+/// C code uses Pfn->OriginalPte.u.Soft.UsedPageTableEntries — bits 12-21 of OriginalPte.
+/// NOT the dedicated ULONG at offset 28 (which exists in the struct but is unused by ReactOS).
 #[cfg(target_pointer_width = "64")]
 #[inline]
 pub unsafe fn mmpfn_used_page_table_entries(pfn: PMMPFN) -> ULONG {
-    let p = (pfn as *const u8).add(MMPFN_USED_PAGE_TABLE_ENTRIES_OFFSET);
-    *(p as *const ULONG)
+    let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+    let original_pte = *(p as *const u64);
+    ((original_pte >> 12) & 0x3FF) as ULONG
 }
 
 /// Set UsedPageTableEntries (64-bit only)
+/// C code uses Pfn->OriginalPte.u.Soft.UsedPageTableEntries — bits 12-21 of OriginalPte.
+/// NOT the dedicated ULONG at offset 28 (which exists in the struct but is unused by ReactOS).
 #[cfg(target_pointer_width = "64")]
 #[inline]
 pub unsafe fn mmpfn_set_used_page_table_entries(pfn: PMMPFN, val: ULONG) {
-    let p = (pfn as *mut u8).add(MMPFN_USED_PAGE_TABLE_ENTRIES_OFFSET);
-    *(p as *mut ULONG) = val;
+    let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+    let original_pte = *(p as *const u64);
+    let cleared = original_pte & !(0x3FF_u64 << 12);
+    let new_val = cleared | (((val as u64) & 0x3FF) << 12);
+    *(p as *mut u64) = new_val;
 }
 
 /// On 32-bit, UsedPageTableEntries is stored in OriginalPte.u.Soft bits

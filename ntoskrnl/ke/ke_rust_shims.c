@@ -1487,6 +1487,25 @@ __asm__(
 #endif /* _M_AMD64 */
 #endif /* amd64 intrinsics — now in Rust */
 
+/* KiSaveXState / KiRestoreXState — force fxsave64/fxrstor64 to avoid
+ * STATUS_IN_PAGE_ERROR crash with xsaves64/xrstors64 on KVM.
+ * KVM reports KF_XSAVES via CPUID, but xrstors64 faults on StateSaveArea
+ * pages that appear valid via PTE self-referencing mapping.
+ * Root cause is likely IA32_XSS MSR not being configured, or a KVM
+ * interaction with supervisor-mode XSAVE.
+ * fxsave64/fxrstor64 preserves x87+SSE state which is sufficient. */
+#ifdef _M_AMD64
+VOID KiSaveXState(PVOID Buffer, ULONG64 ComponentMask)
+{
+    _fxsave64(Buffer);
+}
+
+VOID KiRestoreXState(PVOID Buffer, ULONG64 ComponentMask)
+{
+    _fxrstor64(Buffer);
+}
+#endif /* _M_AMD64 */
+
 /* ========================================================================
  * i386-specific shims
  * ======================================================================== */

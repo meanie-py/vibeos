@@ -28,6 +28,8 @@ use ntkrnl_sys::ddk::{
     KiApcInterrupt,
     RtlDispatchException,
     RtlImageDirectoryEntryToData,
+    MmAccessFault,
+    MmIsAddressValid,
     ZwTerminateProcess,
 };
 
@@ -67,17 +69,18 @@ extern "system" {
 }
 extern "C" {
     fn __lidt(descriptor: *const u16);
+    fn DbgPrint(fmt: *const i8, ...) -> u32;
 }
 
 const KGDT64_R0_CODE: u16 = 0x10;
-const KGDT64_R3_CODE: u16 = 0x18;
-const KGDT64_R3_DATA: u16 = 0x20;
-const KGDT64_R3_CMCODE: u16 = 0x23;
+const KGDT64_R3_CMCODE: u16 = 0x20;
+const KGDT64_R3_DATA: u16 = 0x28;
+const KGDT64_R3_CODE: u16 = 0x30;
 const KGDT64_R3_CMTEB: u16 = 0x50;
 const RPL_MASK: u16 = 3;
 
 const CONTEXT_ALL: ULONG = 0x10001f;
-const KI_EXCEPTION_ACCESS_VIOLATION: NTSTATUS = 0x80000002u32 as NTSTATUS;
+const KI_EXCEPTION_ACCESS_VIOLATION: NTSTATUS = 0x10000004u32 as NTSTATUS;
 const KMODE_EXCEPTION_NOT_HANDLED: ULONG = 0x1E;
 const UNEXPECTED_KERNEL_MODE_TRAP: ULONG = 0x7F;
 const TRAP_CAUSE_UNKNOWN: ULONG = 0x12;
@@ -157,9 +160,10 @@ struct MACHINE_FRAME {
 
 #[repr(C)]
 struct KUSER_EXCEPTION_STACK {
-    MachineFrame: MACHINE_FRAME,
     Context: CONTEXT,
     ExceptionRecord: EXCEPTION_RECORD,
+    Alignment: u64,
+    MachineFrame: MACHINE_FRAME,
 }
 
 type PKUSER_EXCEPTION_STACK = *mut KUSER_EXCEPTION_STACK;
@@ -273,18 +277,36 @@ unsafe fn KiDispatchExceptionToUser(
         })() {
             break 'seh 0u8;
         }
-        
-        core::ptr::write_bytes(UserStack as *mut u8, 0, core::mem::size_of::<KUSER_EXCEPTION_STACK>());
-        
+
+        // DUMMY_PSEH: SEH can't catch page faults from writing to the user
+        // stack. Pre-fault each page via MmAccessFault (simulating a write
+        // fault in user mode). If any page can't be committed, bail out.
+        let stack_size = core::mem::size_of::<KUSER_EXCEPTION_STACK>();
+        {
+            let start = UserStack as usize;
+            let end = start + stack_size;
+            let mut page = start & !0xFFF;
+            while page < end {
+                // FaultCode=2 (write, not present), Mode=UserMode(1)
+                let status = MmAccessFault(2, page as PVOID, 1i8, core::ptr::null_mut());
+                if status < 0 {
+                    break 'seh 0u8;
+                }
+                page += 0x1000;
+            }
+        }
+
+        core::ptr::write_bytes(UserStack as *mut u8, 0, stack_size);
+
         (*UserStack).Context = *Context;
         (*UserStack).ExceptionRecord = *ExceptionRecordPtr;
-        
+
         (*UserStack).MachineFrame.Rip = (*Context).Rip;
         (*UserStack).MachineFrame.SegCs = (*Context).SegCs;
         (*UserStack).MachineFrame.EFlags = (*Context).EFlags;
         (*UserStack).MachineFrame.Rsp = (*Context).Rsp;
         (*UserStack).MachineFrame.SegSs = (*Context).SegSs;
-        
+
         1u8
     };
     
@@ -293,8 +315,8 @@ unsafe fn KiDispatchExceptionToUser(
         return 0u8;
     }
     
-    (*TrapFrame).Rcx = core::ptr::addr_of_mut!((*UserStack).ExceptionRecord) as u64;
-    (*TrapFrame).Rdx = core::ptr::addr_of_mut!((*UserStack).Context) as u64;
+    (*TrapFrame).Rcx = core::ptr::addr_of_mut!((*UserStack).Context) as u64;
+    (*TrapFrame).Rdx = core::ptr::addr_of_mut!((*UserStack).ExceptionRecord) as u64;
     
     (*TrapFrame).Rsp = UserRsp;
     
@@ -313,18 +335,27 @@ unsafe fn KiDispatchExceptionToUser(
 }
 
 unsafe fn KiPageInDirectory(ImageBase: PVOID, Directory: USHORT) {
+    // DUMMY_PSEH: validate ImageBase before passing to RtlImageDirectoryEntryToData
+    // since SEH can't catch page faults
+    if ImageBase.is_null() || MmIsAddressValid(ImageBase) == 0 {
+        return;
+    }
+
     let mut Size: ULONG = 0;
-    
+
     let Pointer = RtlImageDirectoryEntryToData(ImageBase, 1, Directory, core::ptr::addr_of_mut!(Size));
     if Pointer.is_null() {
         return;
     }
-    
+
     let mut ptr = Pointer as *const u8;
     let mut size = Size as LONG;
-    
+
     while size > 0 {
-        let _touch = *ptr;
+        // DUMMY_PSEH: check page is accessible before touching
+        if MmIsAddressValid(ptr as PVOID) != 0 {
+            let _touch = *ptr;
+        }
         ptr = ptr.add(PAGE_SIZE);
         size -= PAGE_SIZE as LONG;
     }
@@ -335,33 +366,43 @@ unsafe fn KiPrepareUserDebugData() {
     if Teb.is_null() {
         return;
     }
-    
+
     _enable();
-    
-    'seh: {
-        if let Err(_) = (|| -> Result<(), NTSTATUS> {
-            let PebLdr = (*(*Teb).ProcessEnvironmentBlock).Ldr;
-            if PebLdr.is_null() {
-                return Ok(());
+
+    // DUMMY_PSEH: The C code wraps this in __try/__except, but with DUMMY_PSEH
+    // the handler is dead code. Validate every user-mode pointer with
+    // MmIsAddressValid before dereferencing to avoid kernel-mode ACCESS_VIOLATION.
+    'done: {
+        if MmIsAddressValid(Teb as PVOID) == 0 {
+            break 'done;
+        }
+        let Peb = (*Teb).ProcessEnvironmentBlock;
+        if Peb.is_null() || MmIsAddressValid(Peb as PVOID) == 0 {
+            break 'done;
+        }
+        let PebLdr = (*Peb).Ldr;
+        if PebLdr.is_null() || MmIsAddressValid(PebLdr as PVOID) == 0 {
+            break 'done;
+        }
+
+        let ListHead = core::ptr::addr_of_mut!((*PebLdr).InLoadOrderModuleList) as PLIST_ENTRY;
+        let mut ListEntry = (*PebLdr).InLoadOrderModuleList.Flink;
+
+        while ListEntry != ListHead {
+            if MmIsAddressValid(ListEntry as PVOID) == 0 {
+                break;
             }
-            
-            let mut ListEntry = (*PebLdr).InLoadOrderModuleList.Flink;
-            
-            while ListEntry != core::ptr::addr_of_mut!((*PebLdr).InLoadOrderModuleList) as PLIST_ENTRY {
-                let LdrEntry = ((ListEntry as usize) - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as PLDR_DATA_TABLE_ENTRY;
-                
+            let LdrEntry = ((ListEntry as usize) - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as PLDR_DATA_TABLE_ENTRY;
+
+            if MmIsAddressValid(LdrEntry as PVOID) != 0 {
                 KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_DEBUG);
                 KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_EXCEPTION);
-                
-                ListEntry = (*ListEntry).Flink;
             }
-            
-            Ok(())
-        })() {
-            break 'seh;
+
+            ListEntry = (*ListEntry).Flink;
         }
     }
-    
+
     _disable();
 }
 
@@ -479,7 +520,7 @@ pub unsafe extern "system" fn KiDispatchException(
                 || KdIsThisAKdTrap(ExceptionRecord, core::ptr::addr_of_mut!(Context), PreviousMode) != 0
             {
                 KiPrepareUserDebugData();
-                
+
                 if KiDebugRoutine(
                     TrapFrame,
                     ExceptionFrame,
@@ -499,11 +540,11 @@ pub unsafe extern "system" fn KiDispatchException(
                     return;
                 }
             }
-            
+
             if DbgkForwardException(ExceptionRecord, 1u8, 0u8) != 0 {
                 return;
             }
-            
+
             if KiDispatchExceptionToUser(TrapFrame, core::ptr::addr_of_mut!(Context), ExceptionRecord) != 0 {
                 return;
             }
@@ -673,7 +714,7 @@ pub unsafe extern "system" fn KiGeneralProtectionFaultHandler(TrapFrame: PKTRAP_
     {
         return STATUS_ACCESS_VIOLATION;
     }
-    
+
     STATUS_ACCESS_VIOLATION
 }
 

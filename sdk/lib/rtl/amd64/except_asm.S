@@ -329,7 +329,12 @@ RaiseException:
     cmp dword ptr [rax + ErExceptionCode], HEX(C0000000)
     jae _RtlRaise_NoSwallow
 
-    /* Continuable software exception - swallow by resuming */
+    /* Continuable software exception - swallow by resuming.
+     * For STATUS_BREAKPOINT: skip past the int3 byte to avoid infinite loop. */
+    cmp dword ptr [rax + ErExceptionCode], HEX(80000003)
+    jne _RtlRaise_NoBreakpointAdjust
+    inc qword ptr [rsp + CxRip]
+_RtlRaise_NoBreakpointAdjust:
     mov rcx, rsp
     mov dl, 0
     call ZwContinue

@@ -45,12 +45,6 @@ extern "C" {
     fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
     fn KeGetContextReturnRegister(Context: PCONTEXT) -> ULONG_PTR;
 }
-extern "C" {
-    fn ARM64_UART_TRACE(msg: PCSTR);
-}
-extern "C" {
-    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
-}
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
@@ -151,22 +145,11 @@ unsafe extern "system" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, 
 
     let terminated = (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.Terminated();
     let dead = (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.DeadThread();
-    ARM64_UART_TRACE(b"[PS] PspSystemThreadStartup: Terminated=\0".as_ptr() as PCSTR);
-    ARM64_UART_TRACE_HEX(b"\0".as_ptr() as PCSTR, terminated as ULONG_PTR);
-    ARM64_UART_TRACE(b" DeadThread=\0".as_ptr() as PCSTR);
-    ARM64_UART_TRACE_HEX(b"\0".as_ptr() as PCSTR, dead as ULONG_PTR);
-    ARM64_UART_TRACE(b" StartRoutine=\0".as_ptr() as PCSTR);
-    ARM64_UART_TRACE_HEX(b"\0".as_ptr() as PCSTR, StartRoutine.map(|f| f as usize).unwrap_or(0) as ULONG_PTR);
-    ARM64_UART_TRACE(b"\r\n\0".as_ptr() as PCSTR);
 
     if terminated == 0 && dead == 0 {
-        ARM64_UART_TRACE(b"[PS] calling StartRoutine\r\n\0".as_ptr() as PCSTR);
         (StartRoutine.unwrap())(StartContext);
-    } else {
-        ARM64_UART_TRACE(b"[PS] SKIPPING StartRoutine!\r\n\0".as_ptr() as PCSTR);
     }
 
-    ARM64_UART_TRACE(b"[PS] PspSystemThreadStartup: calling PspTerminateThreadByPointer\r\n\0".as_ptr() as PCSTR);
     PspTerminateThreadByPointer(Thread, STATUS_SUCCESS, 1u8);
 }
 

@@ -2083,6 +2083,15 @@ MmAccessFaultSectionView(PMMSUPPORT AddressSpace,
     Unmapped = MmDeleteVirtualMapping(Process, PAddress, NULL, &UnmappedPage);
     if (!Unmapped || (UnmappedPage != OldPage))
     {
+#ifdef _M_AMD64
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'C');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'O');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'W');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '1');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+#endif
         /* Uh , we had a page just before, but suddenly it changes. Someone corrupted us. */
         KeBugCheckEx(MEMORY_MANAGEMENT,
                     (ULONG_PTR)Process,
@@ -2101,6 +2110,15 @@ MmAccessFaultSectionView(PMMSUPPORT AddressSpace,
      */
     if (!NT_SUCCESS(MmCreateVirtualMapping(Process, PAddress, NewProtect, NewPage)))
     {
+#ifdef _M_AMD64
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'C');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'O');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'W');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '2');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+#endif
         DPRINT1("MmCreateVirtualMapping failed, unable to create virtual mapping, not out of memory\n");
         KeBugCheck(MEMORY_MANAGEMENT);
     }

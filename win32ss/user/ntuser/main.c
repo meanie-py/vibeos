@@ -696,7 +696,15 @@ InitThreadCallback(PETHREAD Thread)
     /* Last things to do only if we are not a SYSTEM or CSRSS thread */
     if (!(ptiCurrent->TIF_flags & (TIF_SYSTEMTHREAD | TIF_CSRSSTHREAD)))
     {
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+#if defined(_USE_DUMMY_PSEH)
+        /* On DUMMY_PSEH builds (amd64, ARM64), skip co_IntClientThreadSetup
+         * entirely. The KeUserModeCallback to User32CallClientThreadSetupFromKernel
+         * can raise exceptions in user-mode that are unrecoverable without SEH.
+         * User32 DllMain already calls ClientThreadSetupHelper() after
+         * NtUserProcessConnect returns, making this kernel-side callback redundant.
+         * On i386 (PSEH_CLANG), setjmp/longjmp catches the exception so it's safe. */
+        goto skip_client_thread_setup;
+#elif defined(_M_ARM64) || defined(_USE_PSEH_CLANG)
         /* Check if PEB->KernelCallbackTable is set up (by user32 DllMain).
          * If not, skip co_IntClientThreadSetup — KeUserModeCallback would
          * crash in user-mode trying to call through a NULL table.
@@ -715,7 +723,7 @@ InitThreadCallback(PETHREAD Thread)
         Status = co_IntClientThreadSetup();
         if (!NT_SUCCESS(Status))
         {
-#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+#if defined(_M_ARM64) || defined(_USE_PSEH_CLANG)
             ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (non-fatal)\n", Status);
 #else
             ERR_CH(UserThread, "ClientThreadSetup failed with Status 0x%08lx\n", Status);

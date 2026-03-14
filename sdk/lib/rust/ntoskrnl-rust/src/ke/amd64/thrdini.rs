@@ -201,10 +201,11 @@ pub unsafe extern "system" fn KiSwapContextResume(
     (*(*Pcr).__bindgen_anon_1.__bindgen_anon_1.TssBase).Rsp0 = (*NewThread).InitialStack as u64;
     (*Pcr).Prcb.RspBase = (*(*Pcr).__bindgen_anon_1.__bindgen_anon_1.TssBase).Rsp0;
 
+    // xstate save/restore — using forced fxsave64/fxrstor64 in C shim
+    // to avoid xsaves64/xrstors64 crash on KVM
     if (*OldThread).__bindgen_anon_5.__bindgen_anon_6.NpxState != 0 {
         KiSaveXState((*OldThread).StateSaveArea as *mut _XSAVE_AREA, (*OldThread).__bindgen_anon_5.__bindgen_anon_6.NpxState as u64);
     }
-
     if (*NewThread).__bindgen_anon_5.__bindgen_anon_6.NpxState != 0 {
         KiRestoreXState((*NewThread).StateSaveArea as *mut _XSAVE_AREA, (*NewThread).__bindgen_anon_5.__bindgen_anon_6.NpxState as u64);
     }

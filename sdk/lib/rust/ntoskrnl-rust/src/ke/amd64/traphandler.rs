@@ -187,7 +187,9 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         }
     }
 
-    DescriptorTable = &mut (*((*Thread).ServiceTable as *mut [core::ffi::c_void; 2]))[TableIndex as usize] as *mut core::ffi::c_void as PKSERVICE_TABLE_DESCRIPTOR;
+    // C: DescriptorTable = (PKSERVICE_TABLE_DESCRIPTOR)Thread->ServiceTable + TableIndex;
+    // Pointer arithmetic: advances by TableIndex * sizeof(KSERVICE_TABLE_DESCRIPTOR)
+    DescriptorTable = ((*Thread).ServiceTable as PKSERVICE_TABLE_DESCRIPTOR).add(TableIndex as usize);
 
     if ServiceNumber >= (*DescriptorTable).Limit {
         if (TableIndex == WIN32K_SERVICE_INDEX) &&
@@ -195,7 +197,6 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         {
             return KiConvertToGuiThread as PVOID;
         }
-
         (*TrapFrame).Rax = STATUS_INVALID_SYSTEM_SERVICE as u64;
         return NtSyscallFailure as PVOID;
     }
@@ -213,22 +214,21 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         }
     }
 
-    match Count {
-        16 => { *KernelParams.add(15) = *UserParams.add(15); }
-        15 => { *KernelParams.add(14) = *UserParams.add(14); }
-        14 => { *KernelParams.add(13) = *UserParams.add(13); }
-        13 => { *KernelParams.add(12) = *UserParams.add(12); }
-        12 => { *KernelParams.add(11) = *UserParams.add(11); }
-        11 => { *KernelParams.add(10) = *UserParams.add(10); }
-        10 => { *KernelParams.add(9) = *UserParams.add(9); }
-        9 => { *KernelParams.add(8) = *UserParams.add(8); }
-        8 => { *KernelParams.add(7) = *UserParams.add(7); }
-        7 => { *KernelParams.add(6) = *UserParams.add(6); }
-        6 => { *KernelParams.add(5) = *UserParams.add(5); }
-        5 => { *KernelParams.add(4) = *UserParams.add(4); }
-        4 | 3 | 2 | 1 | 0 => {}
-        _ => {}
-    }
+    // C uses Duff's device-style fall-through: case 16 copies params 15..4,
+    // case 5 copies only param 4, etc. Rust match doesn't fall through,
+    // so use if-chain instead. First 4 params are in registers (rcx,rdx,r8,r9).
+    if Count >= 16 { *KernelParams.add(15) = *UserParams.add(15); }
+    if Count >= 15 { *KernelParams.add(14) = *UserParams.add(14); }
+    if Count >= 14 { *KernelParams.add(13) = *UserParams.add(13); }
+    if Count >= 13 { *KernelParams.add(12) = *UserParams.add(12); }
+    if Count >= 12 { *KernelParams.add(11) = *UserParams.add(11); }
+    if Count >= 11 { *KernelParams.add(10) = *UserParams.add(10); }
+    if Count >= 10 { *KernelParams.add(9) = *UserParams.add(9); }
+    if Count >= 9  { *KernelParams.add(8) = *UserParams.add(8); }
+    if Count >= 8  { *KernelParams.add(7) = *UserParams.add(7); }
+    if Count >= 7  { *KernelParams.add(6) = *UserParams.add(6); }
+    if Count >= 6  { *KernelParams.add(5) = *UserParams.add(5); }
+    if Count >= 5  { *KernelParams.add(4) = *UserParams.add(4); }
 
     (*(*DescriptorTable).Base.add(ServiceNumber as usize)) as PVOID
 }

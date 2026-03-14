@@ -734,8 +734,9 @@ RtlpDeleteAvlTreeNode(
  * All were renamed in Phase 1, so _orig_* versions are available.
  * =================================================================== */
 
-USHORT MiIncrementPageTableReferences(IN PVOID Address)
-{ return _orig_MiIncrementPageTableReferences(Address); }
+/* MiIncrementPageTableReferences — now implemented in Rust (helpers.rs)
+ * to ensure it uses the same UsedPageTableEntries accessor as
+ * MiDecrementPageTableReferences and MiIsPageTablePresent. */
 
 void MiDropLockCount(IN PMMPFN Pfn1)
 { _orig_MiDropLockCount(Pfn1); }

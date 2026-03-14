@@ -1245,11 +1245,6 @@ IopInitializeBootDrivers(VOID)
 
     DbgPrint("BOOT DRIVERS LOADED\n");
 
-    /* Diagnostic: write to debugcon port (0xE9) directly to bypass DbgPrint */
-    {
-        const char *_msg = "[DEBUGCON] PiQueueDeviceAction start\n";
-        while (*_msg) { __asm__ __volatile__("outb %b0, %w1" :: "a"((unsigned char)*_msg), "Nd"((unsigned short)0xE9)); _msg++; }
-    }
     PiQueueDeviceAction(IopRootDeviceNode->PhysicalDeviceObject,
                         PiActionEnumDeviceTree,
                         NULL,
@@ -2095,6 +2090,7 @@ IopLoadDriver(
     Status = MmLoadSystemImage(&ImagePath, NULL, NULL, 0, (PVOID)&ModuleObject, &BaseAddress);
     RtlFreeUnicodeString(&ImagePath);
 
+
     if (!NT_SUCCESS(Status))
     {
         DPRINT("MmLoadSystemImage() failed (Status %lx)\n", Status);
@@ -2205,6 +2201,7 @@ IopDoLoadUnloadDriver(
     LoadParams.RegistryPath = RegistryPath;
     LoadParams.DriverObject = *DriverObject;
 
+
     if (PsGetCurrentProcess() != PsInitialSystemProcess)
     {
         LoadParams.SetEvent = TRUE;
@@ -2223,6 +2220,7 @@ IopDoLoadUnloadDriver(
         LoadParams.SetEvent = FALSE;
         IopLoadUnloadDriverWorker(&LoadParams);
     }
+
 
     return LoadParams.Status;
 }
@@ -2252,6 +2250,7 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
 
     PAGED_CODE();
 
+
     PreviousMode = KeGetPreviousMode();
 
     /* Need the appropriate priviliege */
@@ -2260,6 +2259,7 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
         DPRINT1("No load privilege!\n");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
+
 
     /* Capture the service name */
     Status = ProbeAndCaptureUnicodeString(&CapturedServiceName,
@@ -2279,9 +2279,11 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
         return STATUS_INVALID_PARAMETER;
     }
 
+
     /* Load driver and call its entry point */
     DriverObject = NULL;
     Status = IopDoLoadUnloadDriver(&CapturedServiceName, &DriverObject);
+
 
     ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
     return Status;

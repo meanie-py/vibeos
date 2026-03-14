@@ -26,7 +26,6 @@ co_AddGuiApp(PPROCESSINFO W32Data)
     {
         BOOL Initialized;
 
-        DbgPrint("co_AddGuiApp: NrGuiAppsRunning==1, calling co_IntInitializeDesktopGraphics\n");
         Initialized = co_IntInitializeDesktopGraphics();
 
         if (!Initialized)
@@ -35,6 +34,12 @@ co_AddGuiApp(PPROCESSINFO W32Data)
             InterlockedDecrement(&NrGuiAppsRunning);
             return FALSE;
         }
+    }
+    else
+    {
+        /* Desktop graphics already initialized. Try to load deferred
+         * cursors/icons if a previous process didn't have user32 ready. */
+        co_IntDeferredCursorsAndIcons();
     }
     return TRUE;
 }
@@ -59,12 +64,7 @@ co_IntGraphicsCheck(BOOL Create)
     {
         if (!(W32Data->W32PF_flags & W32PF_CREATEDWINORDC) && !(W32Data->W32PF_flags & W32PF_MANUALGUICHECK))
         {
-            DbgPrint("co_IntGraphicsCheck: calling co_AddGuiApp (flags=0x%lx)\n", W32Data->W32PF_flags);
             return co_AddGuiApp(W32Data);
-        }
-        else
-        {
-            DbgPrint("co_IntGraphicsCheck: skipped (flags=0x%lx, NrGui=%ld)\n", W32Data->W32PF_flags, NrGuiAppsRunning);
         }
     }
     else

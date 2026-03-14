@@ -110,7 +110,7 @@ class Amd64Config(ArchConfig):
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
     boot_marker: str = "explorer.exe created"
-    boot_timeout: float = 180.0
+    boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
     desktop_settle_seconds: float = 5.0
 
@@ -119,7 +119,7 @@ class Amd64Config(ArchConfig):
         return [
             *self.machine_args,
             "-m", self.memory,
-            "-vga", "std",
+            "-vga", "cirrus",
             "-cdrom", str(iso),
             "-display", "none",
             "-no-reboot",

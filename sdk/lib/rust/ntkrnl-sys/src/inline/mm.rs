@@ -919,8 +919,11 @@ pub unsafe fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
     {
         // i386 (2-level paging): index into MmWorkingSetList->UsedPageTableEntries
         // MiGetPdeOffset(Va) = (ULONG_PTR)(Va) / PDE_MAPPED_VA (4MB = 0x400000)
+        // NOTE: C code intentionally indexes past the array bounds (768 entries)
+        // for kernel VAs (index >= 768). Use raw pointer arithmetic to avoid
+        // Rust bounds checking panic.
         let pde_offset = (address as usize) / 0x400000;
-        let ref_count = &mut (*MmWorkingSetList).UsedPageTableEntries[pde_offset];
+        let ref_count = (*MmWorkingSetList).UsedPageTableEntries.as_mut_ptr().add(pde_offset);
         *ref_count += 1;
         *ref_count
     }

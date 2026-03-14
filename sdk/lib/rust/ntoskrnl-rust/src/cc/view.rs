@@ -777,16 +777,10 @@ unsafe fn CcRosCreateVacb(
     let mut old_irql: KIRQL;
     let mut view_size: SIZE_T = VACB_MAPPING_GRANULARITY as SIZE_T;
 
-    #[cfg(target_arch = "aarch64")]
-    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc\r\n\0".as_ptr());
-    
     current = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(VacbLookasideList)) as PROS_VACB;
     if current.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
-    #[cfg(target_arch = "aarch64")]
-    ARM64_UART_TRACE(b"[CC] CreateVacb: alloc done\r\n\0".as_ptr());
     
     (*current).BaseAddress = core::ptr::null_mut();
     (*current).Dirty = 0u8;
@@ -802,9 +796,6 @@ unsafe fn CcRosCreateVacb(
     CcRosVacbIncRefCount(current);
 
     loop {
-        #[cfg(target_arch = "aarch64")]
-        ARM64_UART_TRACE(b"[CC] CreateVacb: MmMapViewInSystemSpaceEx\r\n\0".as_ptr());
-        
         status = MmMapViewInSystemSpaceEx(
             (*shared_cache_map).Section,
             core::ptr::addr_of_mut!((*current).BaseAddress),
@@ -817,7 +808,6 @@ unsafe fn CcRosCreateVacb(
             #[cfg(target_arch = "aarch64")]
             {
                 core::arch::asm!("dsb sy", "isb", options(nostack));
-                ARM64_UART_TRACE(b"[CC] CreateVacb: MapView done\r\n\0".as_ptr());
             }
             break;
         }
@@ -901,17 +891,11 @@ pub unsafe extern "C" fn CcRosEnsureVacbResident(
 ) -> BOOLEAN {
     let shared_cache_map = (*vacb).SharedCacheMap;
 
-    #[cfg(target_arch = "aarch64")]
-    ARM64_UART_TRACE(b"[CC] EnsureResident: MmIsDataSectionResident\r\n\0".as_ptr());
-    
     if MmIsDataSectionResident(
         (*(*shared_cache_map).FileObject).SectionObjectPointer,
         (*vacb).FileOffset.QuadPart + offset as i64,
         length
     ) == 0 {
-        #[cfg(target_arch = "aarch64")]
-        ARM64_UART_TRACE(b"[CC] EnsureResident: pages NOT resident\r\n\0".as_ptr());
-        
         if wait == 0 {
             return 0u8;
         }
@@ -1362,9 +1346,6 @@ extern "fastcall" {
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
-}
-extern "C" {
-    fn ARM64_UART_TRACE(msg: *const u8);
 }
 extern "system" {
     fn CcInitCacheZeroPage();

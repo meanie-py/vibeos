@@ -17,9 +17,7 @@
 
 PUCHAR KdComPortInUse;
 
-/* Dispatch tables - pointers filled in by the kernel */
-PHAL_DISPATCH HalDispatchTable;
-PHAL_PRIVATE_DISPATCH HalPrivateDispatchTable;
+/* Dispatch tables - provided by ntoskrnl via dllimport (see haltypes.h) */
 
 static ULONG HalpCurrentTimeIncrement = 100000;
 static ULONG HalpNextTimeIncrement = 100000;

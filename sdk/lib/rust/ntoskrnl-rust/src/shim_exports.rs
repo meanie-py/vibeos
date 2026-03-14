@@ -2066,10 +2066,28 @@ pub unsafe extern "C" fn MmInitializeMdl(mdl: PMDL, base_va: PVOID, length: ULON
 
 // --- PFN reference counting (cdecl) ---
 
+/// MiIncrementPageTableReferences — uses OriginalPte.u.Soft.UsedPageTableEntries
+/// (bits 12-21 of OriginalPte at MMPFN offset 32), matching the C FORCEINLINE in miarm.h.
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
-    ntkrnl_sys::inline::mm::MiIncrementPageTableReferences(address)
+    #[cfg(target_arch = "x86")]
+    {
+        // i386 (2-level paging): MmWorkingSetList->UsedPageTableEntries[pde_offset]
+        ntkrnl_sys::inline::mm::MiIncrementPageTableReferences(address)
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        // 64-bit (3+ level paging): use OriginalPte.u.Soft.UsedPageTableEntries (bits 12-21),
+        // matching the C FORCEINLINE in miarm.h.
+        use crate::ARM3::helpers::{mmpfn_used_page_table_entries, mmpfn_set_used_page_table_entries};
+        let pde = ntkrnl_sys::mm::MiAddressToPde(address);
+        let pfn = ntkrnl_sys::mm::MiGetPfnEntry(ntkrnl_sys::mm::PFN_FROM_PTE(pde));
+        let val = mmpfn_used_page_table_entries(pfn);
+        let new_val = val + 1;
+        mmpfn_set_used_page_table_entries(pfn, new_val);
+        new_val as u16
+    }
 }
 
 #[no_mangle]
@@ -2800,15 +2818,10 @@ mod ke_amd64_exports {
         ntkrnl_sys::inline::ke_amd64::KiSetGdtDescriptorLimit(entry, limit)
     }
 
-    #[no_mangle]
-    pub unsafe extern "C" fn KiSaveXState(buffer: ntkrnl_sys::base::PVOID, component_mask: u64) {
-        ntkrnl_sys::inline::ke_amd64::KiSaveXState(buffer, component_mask)
-    }
-
-    #[no_mangle]
-    pub unsafe extern "C" fn KiRestoreXState(buffer: ntkrnl_sys::base::PVOID, component_mask: u64) {
-        ntkrnl_sys::inline::ke_amd64::KiRestoreXState(buffer, component_mask)
-    }
+    // KiSaveXState / KiRestoreXState — provided by ke_rust_shims.c (C version)
+    // which properly checks KeFeatureBits and uses xsaves64/xsaveopt64/xsave64.
+    // The Rust inline version in ntkrnl-sys is simplified and incorrect for KVM
+    // (doesn't mask XSTATE_MASK_LEGACY_SSE, doesn't check KF_XSAVES/KF_XSAVEOPT).
 
     #[no_mangle]
     pub unsafe extern "C" fn KiSendEOI() {

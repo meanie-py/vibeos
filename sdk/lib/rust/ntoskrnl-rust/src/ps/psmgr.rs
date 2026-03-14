@@ -132,10 +132,8 @@ const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
 
 const JOB_OBJECT_ALL_ACCESS: ACCESS_MASK = 0x001F001F;
 
-#[cfg(target_pointer_width = "32")]
+// ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: usize = 7;
-#[cfg(target_pointer_width = "64")]
-const MAX_FAST_REFS: usize = 15;
 
 unsafe fn PspLookupSystemDllEntryPoint(
     name: PCSTR,
