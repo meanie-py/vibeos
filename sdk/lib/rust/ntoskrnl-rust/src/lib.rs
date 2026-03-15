@@ -34,12 +34,16 @@ macro_rules! abi_cast {
     };
 }
 
+
 pub mod ARM3;
 pub mod cc;
 pub mod dbgk;
 pub mod ex;
 pub mod fsrtl;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod i386;
 pub mod inbv;
+pub mod iomgr;
 pub mod ke;
 pub mod lpc;
 pub mod mm;
@@ -48,15 +52,12 @@ pub mod po;
 pub mod ps;
 pub mod rtl;
 pub mod se;
+pub mod shim_exports;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;
-pub mod iomgr;
-pub mod shim_exports;
 
 // Arch-specific MM modules
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub mod i386;
 #[cfg(target_arch = "x86_64")]
 pub mod amd64;
 #[cfg(target_arch = "aarch64")]

@@ -135,30 +135,31 @@ list(APPEND SOURCE
     # IO Tier 0: adapter, controller, ioevent, iomdl, iotimer, iowork, remlock, symlink → Rust
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust translation has stubbed-out IopReassignSystemRoot/IopVerifyDiskSignature
+    # IO Tier 2b: arcname, iomgr, irp, rawfs → Rust
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs has stubbed IopReassignSystemRoot/IopVerifyDiskSignature
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c  # Rust device.rs has LLVM optimizer bug
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c  # Fixed: byte-string-as-wide-string bugs caused BUGCHECK 0x6B
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c  # Rust file.rs truncated — missing NtCreateFile etc.
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # Rust translation crashes (LLVM codegen bug in IoInitSystem)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Rust iorsrce.rs missing globals/functions
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c  # Rust irp.rs causes boot hang (BUGCHECK 0x1E)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # ARM64 only — see below
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/remlock.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c  # Replaced by Rust volume.rs
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c

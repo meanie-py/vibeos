@@ -6,8 +6,10 @@
  */
 
 #include <ntoskrnl.h>
+#include <ntstrsafe.h>
 #define NDEBUG
 #include <debug.h>
+#include "internal/io_i.h"
 
 /* ========================================================================
  * Extern declarations for Rust-defined symbols used by IopInitializeDriverModule
@@ -35,6 +37,197 @@ HalInitPnpDriver_shim(VOID)
     return HalInitPnpDriver();
 }
 
+/*
+ * IopValidateOpenPacket — static __inline in io_x.h.
+ * Validates that an OPEN_PACKET structure is properly formed.
+ */
+BOOLEAN
+NTAPI
+IopValidateOpenPacket_shim(IN POPEN_PACKET OpenPacket)
+{
+    return IopValidateOpenPacket(OpenPacket);
+}
+
+/*
+ * IoGetDevObjExtension — C macro in io.h.
+ * Returns the device object extension pointer.
+ */
+PEXTENDED_DEVOBJ_EXTENSION
+NTAPI
+IoGetDevObjExtension_shim(IN PDEVICE_OBJECT DeviceObject)
+{
+    return IoGetDevObjExtension(DeviceObject);
+}
+
+/*
+ * IopUnlockFileObject — static __inline in io_x.h.
+ * Wraps InterlockedExchange(Busy,FALSE) + event signal + ObDereferenceObject.
+ */
+VOID
+NTAPI
+IopUnlockFileObject_shim(IN PFILE_OBJECT FileObject)
+{
+    IopUnlockFileObject(FileObject);
+}
+
+/*
+ * IopUpdateTransferCount — static __inline in io_x.h.
+ * Updates per-process and global I/O transfer counters.
+ */
+VOID
+NTAPI
+IopUpdateTransferCount_shim(IN IOP_TRANSFER_TYPE Type, IN ULONG TransferCount)
+{
+    IopUpdateTransferCount(Type, TransferCount);
+}
+
+
+/*
+ * IopLockFileObject — static __inline in io_x.h.
+ * Acquires the file object lock for synchronous I/O.
+ */
+NTSTATUS
+NTAPI
+IopLockFileObject_shim(IN PFILE_OBJECT FileObject, IN KPROCESSOR_MODE WaitMode)
+{
+    return IopLockFileObject(FileObject, WaitMode);
+}
+
+/*
+ * IopUpdateOperationCount — static __inline in io_x.h.
+ * Updates per-process I/O operation counts.
+ */
+VOID
+NTAPI
+IopUpdateOperationCount_shim(IN IOP_TRANSFER_TYPE Type)
+{
+    IopUpdateOperationCount(Type);
+}
+
+/*
+ * RtlUnicodeStringPrintf_4wZ — wrapper for RtlUnicodeStringPrintf with
+ * format "%wZ%wZ#%wZ%wZ" and 4 PUNICODE_STRING args.
+ * RtlUnicodeStringPrintf is FORCEINLINE from ntstrsafe.h (variadic).
+ */
+NTSTATUS
+NTAPI
+RtlUnicodeStringPrintf_4wZ_shim(
+    PUNICODE_STRING DestinationString,
+    PUNICODE_STRING Arg1,
+    PUNICODE_STRING Arg2,
+    PUNICODE_STRING Arg3,
+    PUNICODE_STRING Arg4)
+{
+    return RtlUnicodeStringPrintf(DestinationString,
+                                  L"%wZ%wZ#%wZ%wZ",
+                                  Arg1, Arg2, Arg3, Arg4);
+}
+
+/*
+ * IopQueueIrpToThread — FORCEINLINE in io_x.h.
+ * Queues an IRP to the current thread's IRP list.
+ */
+VOID
+NTAPI
+IopQueueIrpToThread_shim(IN PIRP Irp)
+{
+    IopQueueIrpToThread(Irp);
+}
+
+/*
+ * IopUnQueueIrpFromThread — FORCEINLINE in io_x.h.
+ * Removes an IRP from its thread's IRP list.
+ */
+VOID
+NTAPI
+IopUnQueueIrpFromThread_shim(IN PIRP Irp)
+{
+    IopUnQueueIrpFromThread(Irp);
+}
+
+/*
+ * IoCopyCurrentIrpStackLocationToNext — FORCEINLINE in iofuncs.h.
+ * Copies the current IRP stack location to the next one.
+ * Uses CDECL (not NTAPI) so Rust can link with extern "C".
+ */
+VOID
+__cdecl
+IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
+{
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+}
+
+
+/*
+ * RtlAnsiStringToUnicodeString — NTAPI (stdcall) in ntdll/rtl.
+ * Rust extern "stdcall" on i686-pc-windows-gnu doesn't generate @12 decoration
+ * for this function. Use a cdecl shim to avoid symbol mismatch.
+ */
+NTSTATUS
+__cdecl
+RtlAnsiStringToUnicodeString_shim(
+    PUNICODE_STRING DestinationString,
+    PANSI_STRING SourceString,
+    BOOLEAN AllocateDestinationString)
+{
+    return RtlAnsiStringToUnicodeString(DestinationString, SourceString, AllocateDestinationString);
+}
+
+/* ========================================================================
+ * ObCreateObject/ObInsertObject/ObReferenceObjectByHandle shims for device.rs
+ *
+ * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
+ * when Ob* functions (defined in ob/*.rs, same crate) land in a different
+ * codegen unit, LLVM propagates `captures(none)` to the declaration, then
+ * concludes the output pointer is never written → eliminates the success path.
+ * Calling through C shims avoids this.
+ * ======================================================================== */
+
+NTSTATUS
+NTAPI
+ObCreateObject_shim(
+    IN KPROCESSOR_MODE ProbeMode,
+    IN POBJECT_TYPE ObjectType,
+    IN POBJECT_ATTRIBUTES ObjectAttributes,
+    IN KPROCESSOR_MODE OwnershipMode,
+    IN OUT PVOID ParseContext,
+    IN ULONG ObjectBodySize,
+    IN ULONG PagedPoolCharge,
+    IN ULONG NonPagedPoolCharge,
+    OUT PVOID *Object)
+{
+    return ObCreateObject(ProbeMode, ObjectType, ObjectAttributes,
+                          OwnershipMode, ParseContext, ObjectBodySize,
+                          PagedPoolCharge, NonPagedPoolCharge, Object);
+}
+
+NTSTATUS
+NTAPI
+ObInsertObject_shim(
+    IN PVOID Object,
+    IN PACCESS_STATE AccessState,
+    IN ACCESS_MASK DesiredAccess,
+    IN ULONG ObjectPointerBias,
+    OUT PVOID *NewObject,
+    OUT PHANDLE Handle)
+{
+    return ObInsertObject(Object, AccessState, DesiredAccess,
+                          ObjectPointerBias, NewObject, Handle);
+}
+
+NTSTATUS
+NTAPI
+ObReferenceObjectByHandle_shim(
+    IN HANDLE Handle,
+    IN ACCESS_MASK DesiredAccess,
+    IN POBJECT_TYPE ObjectType,
+    IN KPROCESSOR_MODE AccessMode,
+    OUT PVOID *Object,
+    OUT POBJECT_HANDLE_INFORMATION HandleInformation)
+{
+    return ObReferenceObjectByHandle(Handle, DesiredAccess, ObjectType,
+                                     AccessMode, Object, HandleInformation);
+}
 
 /* ========================================================================
  * IopInitializeDriverModule — from driver.c
