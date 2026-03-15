@@ -7,7 +7,7 @@ pub mod deviface;
 #[cfg(not(target_arch = "aarch64"))]
 pub mod driver;
 pub mod error;
-// pub mod file;  // All 20 missing functions translated — needs smoke testing
+// pub mod file;  // Agent-translated functions crash on both arches — needs debugging
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
