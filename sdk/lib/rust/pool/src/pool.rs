@@ -430,10 +430,11 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                         / core::mem::size_of::<MMPTE>();
                     *MmSystemPagePtes.add(idx) = temp_pde;
                     let pde_index = pointer_pde.offset_from(MiAddressToPde(null_mut())) as usize;
+                    let spd_index = pde_index / PDE_PER_PAGE;
                     MiInitializePfnForOtherProcess(
                         page_frame_number,
                         pointer_pde as PMMPTE,
-                        MmSystemPageDirectory[pde_index / PDE_PER_PAGE],
+                        *MmSystemPageDirectory.as_ptr().add(spd_index),
                     );
                 }
 

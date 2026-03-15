@@ -13,7 +13,7 @@ pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
 pub mod iomdl;
 // pub mod iomgr;  // LLVM codegen bug: IoInitSystem crashes (ud2/access violation in IopInitLookasideLists loop)
-// pub mod iorsrce;  // Boot stalls during HAL init — IopFetchConfigurationInformation/IopStoreSystemPartitionInformation buggy
+// pub mod iorsrce;  // Boot stalls during IoQueryDeviceDescription/IopQueryBusDescription (registry bus enumeration infinite loop or deadlock). IopFetchConfigurationInformation and IopStoreSystemPartitionInformation are correct.
 pub mod iotimer;
 pub mod iowork;
 // pub mod irp;  // Causes i386+amd64 boot hang (BUGCHECK 0x1E in KiInsertQueueApc, STATUS_IN_PAGE_ERROR at elevated IRQL)
