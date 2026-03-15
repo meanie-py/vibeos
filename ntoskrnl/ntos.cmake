@@ -136,14 +136,14 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
     # IO Tier 2b: arcname, iomgr, irp, rawfs → Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs crashes (BUGCHECK 0x1E)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs passes amd64 but crashes i386
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c  # Rust device.rs has LLVM optimizer bug
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c  # Fixed: byte-string-as-wide-string bugs caused BUGCHECK 0x6B
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c  # Rust file.rs truncated — missing NtCreateFile etc.
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c  # Rust file.rs needs testing
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)

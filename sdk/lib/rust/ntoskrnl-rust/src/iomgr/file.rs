@@ -10,6 +10,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::CONTAINING_RECORD;
 
 use ntkrnl_sys::ddk::{
     _DEVICE_OBJECT, _FILE_OBJECT, _EPROCESS, _ETHREAD, _VPB, _IRP, _IO_STACK_LOCATION,
@@ -63,9 +64,6 @@ extern "system" {
     static mut SeRestorePrivilege: _LUID;
     static mut IoFileObjectType: *mut _OBJECT_TYPE;
     static mut IopFileMapping: _GENERIC_MAPPING;
-    fn ProbeForWriteHandle(Address: *mut HANDLE);
-    fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
-    fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn ProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: usize);
     fn RtlMapGenericMask(AccessMask: *mut ACCESS_MASK, GenericMapping: PGENERIC_MAPPING);
     fn RtlRaiseStatus(Status: NTSTATUS);
@@ -103,6 +101,9 @@ extern "system" {
 extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
+    fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
+    fn ProbeForWriteHandle(Address: *mut HANDLE);
+    fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
 }
 
 const TAG_IO: ULONG = 0x20204F49;      // '  OI' — generic IO pool tag
@@ -381,7 +382,8 @@ unsafe fn IopCheckDeviceAndDriver(
     }
 }
 
-unsafe fn IopDoNameTransmogrify(
+#[no_mangle]
+pub unsafe extern "system" fn IopDoNameTransmogrify(
     Irp: PIRP,
     FileObject: PFILE_OBJECT,
     DataBuffer: PREPARSE_DATA_BUFFER,
@@ -1381,7 +1383,8 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
     }
 }
 
-unsafe fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+#[no_mangle]
+pub unsafe extern "system" fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
     let mut PDO = DeviceObject;
 
     loop {
@@ -2760,6 +2763,350 @@ pub unsafe extern "system" fn IoCreateStreamFileObject(
     DeviceObject: PDEVICE_OBJECT,
 ) -> PFILE_OBJECT {
     IoCreateStreamFileObjectEx(FileObject, DeviceObject, core::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoCreateStreamFileObjectLite(
+    FileObject: PFILE_OBJECT,
+    DeviceObject: PDEVICE_OBJECT,
+) -> PFILE_OBJECT {
+    let mut CreatedFileObject: PFILE_OBJECT = core::ptr::null_mut();
+    let device_to_use = if !FileObject.is_null() { (*FileObject).DeviceObject } else { DeviceObject };
+    InterlockedIncrement(core::ptr::addr_of_mut!((*device_to_use).ReferenceCount) as *mut LONG);
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
+    let Status = ObCreateObject(0i8, IoFileObjectType, core::ptr::addr_of_mut!(ObjectAttributes), 0i8,
+        core::ptr::null_mut(), core::mem::size_of::<_FILE_OBJECT>() as u32, core::mem::size_of::<_FILE_OBJECT>() as u32,
+        0, core::ptr::addr_of_mut!(CreatedFileObject) as *mut PVOID);
+    if Status < 0 { IopDereferenceDeviceObject(device_to_use, 0u8); ExRaiseStatus(Status); }
+    core::ptr::write_bytes(CreatedFileObject as *mut u8, 0, core::mem::size_of::<_FILE_OBJECT>());
+    (*CreatedFileObject).DeviceObject = device_to_use;
+    (*CreatedFileObject).Type = IO_TYPE_FILE as i16;
+    (*CreatedFileObject).Size = core::mem::size_of::<_FILE_OBJECT>() as i16;
+    (*CreatedFileObject).Flags = FO_STREAM_FILE;
+    KeInitializeEvent(core::ptr::addr_of_mut!((*CreatedFileObject).Event), _EVENT_TYPE_SynchronizationEvent, 0u8);
+    let obj_header = OBJECT_TO_OBJECT_HEADER(CreatedFileObject as PVOID);
+    ObFreeObjectCreateInfoBuffer((*obj_header).__bindgen_anon_2.ObjectCreateInfo);
+    (*obj_header).__bindgen_anon_2.ObjectCreateInfo = core::ptr::null_mut();
+    (*CreatedFileObject).Flags |= FO_HANDLE_CREATED;
+    if !(*device_to_use).Vpb.is_null() {
+        InterlockedIncrement(core::ptr::addr_of_mut!((*(*device_to_use).Vpb).ReferenceCount) as *mut LONG);
+    }
+    CreatedFileObject
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoGetFileObjectGenericMapping() -> PGENERIC_MAPPING {
+    core::ptr::addr_of_mut!(IopFileMapping)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoIsFileOriginRemote(FileObject: PFILE_OBJECT) -> BOOLEAN {
+    if (*FileObject).Flags & FO_REMOTE_ORIGIN != 0 { 1u8 } else { 0u8 }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoSetFileOrigin(FileObject: PFILE_OBJECT, Remote: BOOLEAN) -> NTSTATUS {
+    let FlagSet = ((*FileObject).Flags & FO_REMOTE_ORIGIN) != 0;
+    if Remote != 0 && !FlagSet { (*FileObject).Flags |= FO_REMOTE_ORIGIN; }
+    else if Remote == 0 && FlagSet { (*FileObject).Flags &= !FO_REMOTE_ORIGIN; }
+    else { return STATUS_INVALID_PARAMETER_MIX; }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoFastQueryNetworkAttributes(
+    ObjectAttributes: POBJECT_ATTRIBUTES, DesiredAccess: ACCESS_MASK, OpenOptions: ULONG,
+    IoStatus: PIO_STATUS_BLOCK, Buffer: PFILE_NETWORK_OPEN_INFORMATION,
+) -> BOOLEAN {
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let mut OpenPacket: _OPEN_PACKET = core::mem::zeroed();
+    let mut LocalFileObject: _DUMMY_FILE_OBJECT = core::mem::zeroed();
+    OpenPacket.Type = IO_TYPE_OPEN_PACKET as i16;
+    OpenPacket.Size = core::mem::size_of::<_OPEN_PACKET>() as i16;
+    OpenPacket.CreateOptions = OpenOptions | FILE_OPEN_REPARSE_POINT;
+    OpenPacket.ShareAccess = (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) as u16;
+    OpenPacket.Options = IO_FORCE_ACCESS_CHECK;
+    OpenPacket.Disposition = FILE_OPEN;
+    OpenPacket.NetworkInformation = Buffer;
+    OpenPacket.QueryOnly = 1u8;
+    OpenPacket.FullAttributes = 1u8;
+    OpenPacket.LocalFileObject = core::ptr::addr_of_mut!(LocalFileObject);
+    let Status = ObOpenObjectByName(ObjectAttributes, core::ptr::null_mut(), 0i8, core::ptr::null_mut(),
+        DesiredAccess, core::ptr::addr_of_mut!(OpenPacket) as PVOID, core::ptr::addr_of_mut!(Handle));
+    if OpenPacket.ParseCheck == 0 { (*IoStatus).__bindgen_anon_1.Status = Status; }
+    else { (*IoStatus).__bindgen_anon_1.Status = OpenPacket.FinalStatus; (*IoStatus).Information = OpenPacket.Information as DdkUlongPtr; }
+    1u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoUpdateShareAccess(FileObject: PFILE_OBJECT, ShareAccess: PSHARE_ACCESS) {
+    if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 { return; }
+    if (*FileObject).ReadAccess != 0 || (*FileObject).WriteAccess != 0 || (*FileObject).DeleteAccess != 0 {
+        (*ShareAccess).OpenCount += 1;
+        (*ShareAccess).Readers += (*FileObject).ReadAccess as u32;
+        (*ShareAccess).Writers += (*FileObject).WriteAccess as u32;
+        (*ShareAccess).Deleters += (*FileObject).DeleteAccess as u32;
+        (*ShareAccess).SharedRead += (*FileObject).SharedRead as u32;
+        (*ShareAccess).SharedWrite += (*FileObject).SharedWrite as u32;
+        (*ShareAccess).SharedDelete += (*FileObject).SharedDelete as u32;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoCheckShareAccess(
+    DesiredAccess: ACCESS_MASK, DesiredShareAccess: ULONG, FileObject: PFILE_OBJECT,
+    ShareAccess: PSHARE_ACCESS, Update: BOOLEAN,
+) -> NTSTATUS {
+    let ReadAccess: BOOLEAN = if (DesiredAccess & (FILE_READ_DATA | FILE_EXECUTE)) != 0 { 1 } else { 0 };
+    let WriteAccess: BOOLEAN = if (DesiredAccess & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0 { 1 } else { 0 };
+    let DeleteAccess: BOOLEAN = if (DesiredAccess & DELETE) != 0 { 1 } else { 0 };
+    (*FileObject).ReadAccess = ReadAccess; (*FileObject).WriteAccess = WriteAccess; (*FileObject).DeleteAccess = DeleteAccess;
+    if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 { return STATUS_SUCCESS; }
+    if ReadAccess != 0 || WriteAccess != 0 || DeleteAccess != 0 {
+        let SharedRead: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_READ) != 0 { 1 } else { 0 };
+        let SharedWrite: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_WRITE) != 0 { 1 } else { 0 };
+        let SharedDelete: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_DELETE) != 0 { 1 } else { 0 };
+        if (ReadAccess != 0 && (*ShareAccess).SharedRead < (*ShareAccess).OpenCount) ||
+           (WriteAccess != 0 && (*ShareAccess).SharedWrite < (*ShareAccess).OpenCount) ||
+           (DeleteAccess != 0 && (*ShareAccess).SharedDelete < (*ShareAccess).OpenCount) ||
+           ((*ShareAccess).Readers != 0 && SharedRead == 0) ||
+           ((*ShareAccess).Writers != 0 && SharedWrite == 0) ||
+           ((*ShareAccess).Deleters != 0 && SharedDelete == 0) { return STATUS_SHARING_VIOLATION; }
+        (*FileObject).SharedRead = SharedRead; (*FileObject).SharedWrite = SharedWrite; (*FileObject).SharedDelete = SharedDelete;
+        if Update != 0 {
+            (*ShareAccess).OpenCount += 1;
+            (*ShareAccess).Readers += ReadAccess as u32; (*ShareAccess).Writers += WriteAccess as u32; (*ShareAccess).Deleters += DeleteAccess as u32;
+            (*ShareAccess).SharedRead += SharedRead as u32; (*ShareAccess).SharedWrite += SharedWrite as u32; (*ShareAccess).SharedDelete += SharedDelete as u32;
+        }
+    }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoRemoveShareAccess(FileObject: PFILE_OBJECT, ShareAccess: PSHARE_ACCESS) {
+    if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 { return; }
+    if (*FileObject).ReadAccess != 0 || (*FileObject).WriteAccess != 0 || (*FileObject).DeleteAccess != 0 {
+        (*ShareAccess).OpenCount -= 1;
+        (*ShareAccess).Readers -= (*FileObject).ReadAccess as u32; (*ShareAccess).Writers -= (*FileObject).WriteAccess as u32;
+        (*ShareAccess).Deleters -= (*FileObject).DeleteAccess as u32; (*ShareAccess).SharedRead -= (*FileObject).SharedRead as u32;
+        (*ShareAccess).SharedWrite -= (*FileObject).SharedWrite as u32; (*ShareAccess).SharedDelete -= (*FileObject).SharedDelete as u32;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoSetShareAccess(
+    DesiredAccess: ACCESS_MASK, DesiredShareAccess: ULONG, FileObject: PFILE_OBJECT, ShareAccess: PSHARE_ACCESS,
+) {
+    let ReadAccess: BOOLEAN = if (DesiredAccess & (FILE_READ_DATA | FILE_EXECUTE)) != 0 { 1 } else { 0 };
+    let WriteAccess: BOOLEAN = if (DesiredAccess & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0 { 1 } else { 0 };
+    let DeleteAccess: BOOLEAN = if (DesiredAccess & DELETE) != 0 { 1 } else { 0 };
+    let mut Update = true;
+    if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 { Update = false; }
+    (*FileObject).ReadAccess = ReadAccess; (*FileObject).WriteAccess = WriteAccess; (*FileObject).DeleteAccess = DeleteAccess;
+    if ReadAccess == 0 && WriteAccess == 0 && DeleteAccess == 0 {
+        if !Update { return; }
+        (*ShareAccess).OpenCount = 0; (*ShareAccess).Readers = 0; (*ShareAccess).Writers = 0; (*ShareAccess).Deleters = 0;
+        (*ShareAccess).SharedRead = 0; (*ShareAccess).SharedWrite = 0; (*ShareAccess).SharedDelete = 0;
+    } else {
+        let SharedRead: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_READ) != 0 { 1 } else { 0 };
+        let SharedWrite: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_WRITE) != 0 { 1 } else { 0 };
+        let SharedDelete: BOOLEAN = if (DesiredShareAccess & FILE_SHARE_DELETE) != 0 { 1 } else { 0 };
+        (*FileObject).SharedRead = SharedRead; (*FileObject).SharedWrite = SharedWrite; (*FileObject).SharedDelete = SharedDelete;
+        if !Update { return; }
+        (*ShareAccess).OpenCount = 1; (*ShareAccess).Readers = ReadAccess as u32; (*ShareAccess).Writers = WriteAccess as u32;
+        (*ShareAccess).Deleters = DeleteAccess as u32; (*ShareAccess).SharedRead = SharedRead as u32;
+        (*ShareAccess).SharedWrite = SharedWrite as u32; (*ShareAccess).SharedDelete = SharedDelete as u32;
+    }
+}
+
+const INVALID_CANCEL_OF_FILE_OPEN: ULONG = 0xE8;
+#[no_mangle]
+pub unsafe extern "system" fn IoCancelFileOpen(DeviceObject: PDEVICE_OBJECT, FileObject: PFILE_OBJECT) {
+    if (*FileObject).Flags & FO_HANDLE_CREATED != 0 {
+        KeBugCheckEx(INVALID_CANCEL_OF_FILE_OPEN, FileObject as usize, DeviceObject as usize, 0, 0);
+    }
+    let mut Event: _KEVENT = core::mem::zeroed();
+    KeInitializeEvent(core::ptr::addr_of_mut!(Event), _EVENT_TYPE_SynchronizationEvent, 0u8);
+    KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
+    let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
+    (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
+    (*Irp).UserEvent = core::ptr::addr_of_mut!(Event);
+    (*Irp).UserIosb = core::ptr::addr_of_mut!((*Irp).IoStatus);
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
+    (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
+    (*Irp).RequestorMode = 0i8;
+    (*Irp).Flags = IRP_CLOSE_OPERATION | IRP_SYNCHRONOUS_API;
+    let Stack = IoGetNextIrpStackLocation(Irp);
+    (*Stack).MajorFunction = IRP_MJ_CLEANUP; (*Stack).FileObject = FileObject;
+    IopQueueIrpToThread(Irp);
+    let Status = IoCallDriver(DeviceObject, Irp);
+    if Status == STATUS_PENDING { KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, _KWAIT_REASON_UserRequest, 0i8, 0u8, core::ptr::null_mut()); }
+    let mut OldIrql: KIRQL = 0;
+    KeRaiseIrql(APC_LEVEL as u8, core::ptr::addr_of_mut!(OldIrql));
+    IopUnQueueIrpFromThread(Irp);
+    KeLowerIrql(OldIrql);
+    IoFreeIrp(Irp);
+    KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
+    (*FileObject).Flags |= FO_FILE_OPEN_CANCELLED;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IoQueryFileDosDeviceName(
+    FileObject: PFILE_OBJECT, ObjectNameInformation: *mut POBJECT_NAME_INFORMATION,
+) -> NTSTATUS {
+    let mut ReturnLength: ULONG = 200;
+    let mut Length: ULONG = 200;
+    loop {
+        let LocalInfo = ExAllocatePoolWithTag(PagedPool, Length as usize, 0x6E446F49) as POBJECT_NAME_INFORMATION;
+        if LocalInfo.is_null() { return STATUS_INSUFFICIENT_RESOURCES; }
+        let Status = IopQueryNameInternal(FileObject as PVOID, 1u8, 1u8, LocalInfo, Length, core::ptr::addr_of_mut!(ReturnLength), 0i8);
+        if Status == STATUS_SUCCESS { *ObjectNameInformation = LocalInfo; return STATUS_SUCCESS; }
+        ExFreePoolWithTag(LocalInfo as PVOID, 0x6E446F49);
+        if Status != STATUS_BUFFER_OVERFLOW { return Status; }
+        Length = ReturnLength;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateFile(
+    FileHandle: *mut HANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES,
+    IoStatusBlock: PIO_STATUS_BLOCK, AllocateSize: *mut LARGE_INTEGER, FileAttributes: ULONG,
+    ShareAccess: ULONG, CreateDisposition: ULONG, CreateOptions: ULONG, EaBuffer: PVOID, EaLength: ULONG,
+) -> NTSTATUS {
+    IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocateSize,
+        FileAttributes, ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
+        CreateFileTypeNone, core::ptr::null_mut(), 0)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenFile(
+    FileHandle: *mut HANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES,
+    IoStatusBlock: PIO_STATUS_BLOCK, ShareAccess: ULONG, OpenOptions: ULONG,
+) -> NTSTATUS {
+    IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, core::ptr::null_mut(),
+        0, ShareAccess, FILE_OPEN, OpenOptions, core::ptr::null_mut(), 0,
+        CreateFileTypeNone, core::ptr::null_mut(), 0)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateMailslotFile(
+    FileHandle: *mut HANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES,
+    IoStatusBlock: PIO_STATUS_BLOCK, CreateOptions: ULONG, MailslotQuota: ULONG,
+    MaxMessageSize: ULONG, TimeOut: *mut LARGE_INTEGER,
+) -> NTSTATUS {
+    let mut Buffer: _MAILSLOT_CREATE_PARAMETERS = core::mem::zeroed();
+    if !TimeOut.is_null() {
+        if ExGetPreviousMode() != 0i8 {
+            let probed = ProbeForReadLargeInteger(TimeOut); Buffer.ReadTimeout.QuadPart = probed.QuadPart;
+        } else { Buffer.ReadTimeout.QuadPart = (*TimeOut).QuadPart; }
+        Buffer.TimeoutSpecified = 1u8;
+    } else { Buffer.TimeoutSpecified = 0u8; }
+    Buffer.MailslotQuota = MailslotQuota; Buffer.MaximumMessageSize = MaxMessageSize;
+    IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, core::ptr::null_mut(), 0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE, CreateOptions, core::ptr::null_mut(), 0,
+        CreateFileTypeMailslot, core::ptr::addr_of_mut!(Buffer) as PVOID, 0)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateNamedPipeFile(
+    FileHandle: *mut HANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES,
+    IoStatusBlock: PIO_STATUS_BLOCK, ShareAccess: ULONG, CreateDisposition: ULONG,
+    CreateOptions: ULONG, NamedPipeType: ULONG, ReadMode: ULONG, CompletionMode: ULONG,
+    MaximumInstances: ULONG, InboundQuota: ULONG, OutboundQuota: ULONG, DefaultTimeout: *mut LARGE_INTEGER,
+) -> NTSTATUS {
+    let mut Buffer: _NAMED_PIPE_CREATE_PARAMETERS = core::mem::zeroed();
+    if !DefaultTimeout.is_null() {
+        if ExGetPreviousMode() != 0i8 {
+            let probed = ProbeForReadLargeInteger(DefaultTimeout); Buffer.DefaultTimeout.QuadPart = probed.QuadPart;
+        } else { Buffer.DefaultTimeout.QuadPart = (*DefaultTimeout).QuadPart; }
+        Buffer.TimeoutSpecified = 1u8;
+    } else { Buffer.TimeoutSpecified = 0u8; }
+    Buffer.NamedPipeType = NamedPipeType; Buffer.ReadMode = ReadMode; Buffer.CompletionMode = CompletionMode;
+    Buffer.MaximumInstances = MaximumInstances; Buffer.InboundQuota = InboundQuota; Buffer.OutboundQuota = OutboundQuota;
+    IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, core::ptr::null_mut(), 0,
+        ShareAccess, CreateDisposition, CreateOptions, core::ptr::null_mut(), 0,
+        CreateFileTypeNamedPipe, core::ptr::addr_of_mut!(Buffer) as PVOID, 0)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtFlushWriteBuffer() -> NTSTATUS { KeFlushWriteBuffer(); STATUS_SUCCESS }
+
+#[no_mangle]
+pub unsafe extern "system" fn NtQueryAttributesFile(
+    ObjectAttributes: POBJECT_ATTRIBUTES, FileInformation: PFILE_BASIC_INFORMATION,
+) -> NTSTATUS {
+    IopQueryAttributesFile(ObjectAttributes, FileBasicInformation, core::mem::size_of::<_FILE_BASIC_INFORMATION>() as ULONG, FileInformation as PVOID)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtQueryFullAttributesFile(
+    ObjectAttributes: POBJECT_ATTRIBUTES, FileInformation: PFILE_NETWORK_OPEN_INFORMATION,
+) -> NTSTATUS {
+    IopQueryAttributesFile(ObjectAttributes, FileNetworkOpenInformation, core::mem::size_of::<_FILE_NETWORK_OPEN_INFORMATION>() as ULONG, FileInformation as PVOID)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtDeleteFile(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS {
+    let mut LocalFileObject: _DUMMY_FILE_OBJECT = core::mem::zeroed();
+    let mut Handle: HANDLE = core::ptr::null_mut();
+    let AccessMode = ExGetPreviousMode();
+    let mut OpenPacket: _OPEN_PACKET = core::mem::zeroed();
+    OpenPacket.Type = IO_TYPE_OPEN_PACKET as i16;
+    OpenPacket.Size = core::mem::size_of::<_OPEN_PACKET>() as i16;
+    OpenPacket.CreateOptions = FILE_DELETE_ON_CLOSE;
+    OpenPacket.ShareAccess = (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) as u16;
+    OpenPacket.Disposition = FILE_OPEN;
+    OpenPacket.DeleteOnly = 1u8;
+    OpenPacket.LocalFileObject = core::ptr::addr_of_mut!(LocalFileObject);
+    IopUpdateOperationCount(IopOtherTransfer);
+    let Status = ObOpenObjectByName(ObjectAttributes, core::ptr::null_mut(), AccessMode, core::ptr::null_mut(),
+        DELETE, core::ptr::addr_of_mut!(OpenPacket) as PVOID, core::ptr::addr_of_mut!(Handle));
+    if OpenPacket.ParseCheck == 0 { return Status; }
+    OpenPacket.FinalStatus
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtCancelIoFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS {
+    let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
+    let mut OldIrql: KIRQL = 0;
+    let mut OurIrpsInList: BOOLEAN = 0u8;
+    let PreviousMode = ExGetPreviousMode();
+    if PreviousMode != 0i8 { ProbeForWriteIoStatusBlock(IoStatusBlock); }
+    let Status = ObReferenceObjectByHandle(FileHandle, 0, IoFileObjectType, PreviousMode,
+        core::ptr::addr_of_mut!(FileObject) as *mut PVOID, core::ptr::null_mut());
+    if Status < 0 { return Status; }
+    KeRaiseIrql(APC_LEVEL as u8, core::ptr::addr_of_mut!(OldIrql));
+    let Thread = PsGetCurrentThread();
+    IopUpdateOperationCount(IopOtherTransfer);
+    let ListHead = core::ptr::addr_of_mut!((*Thread).IrpList);
+    let mut NextEntry = (*ListHead).Flink;
+    while NextEntry != ListHead {
+        let Irp = CONTAINING_RECORD!(NextEntry, _IRP, ThreadListEntry) as PIRP;
+        if (*Irp).Tail.Overlay.OriginalFileObject == FileObject { IoCancelIrp(Irp); OurIrpsInList = 1u8; }
+        NextEntry = (*NextEntry).Flink;
+    }
+    KeLowerIrql(OldIrql);
+    if OurIrpsInList != 0 {
+        let mut Interval: LARGE_INTEGER = core::mem::zeroed();
+        Interval.QuadPart = -100000i64;
+        while OurIrpsInList != 0 {
+            KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(Interval));
+            OurIrpsInList = 0u8;
+            KeRaiseIrql(APC_LEVEL as u8, core::ptr::addr_of_mut!(OldIrql));
+            let mut NextEntry2 = (*ListHead).Flink;
+            while NextEntry2 != ListHead {
+                let Irp = CONTAINING_RECORD!(NextEntry2, _IRP, ThreadListEntry) as PIRP;
+                if (*Irp).Tail.Overlay.OriginalFileObject == FileObject { OurIrpsInList = 1u8; break; }
+                NextEntry2 = (*NextEntry2).Flink;
+            }
+            KeLowerIrql(OldIrql);
+        }
+    }
+    (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*IoStatusBlock).Information = 0;
+    ObDereferenceObject(FileObject as PVOID);
+    STATUS_SUCCESS
 }
 
 

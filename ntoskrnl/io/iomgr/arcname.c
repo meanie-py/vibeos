@@ -14,6 +14,10 @@
 #define NDEBUG
 #include <debug.h>
 
+/* When arcname.rs is enabled, uncomment this to exclude C versions:
+ * #define ARCNAME_RUST_REASSIGN
+ */
+
 /* GLOBALS *******************************************************************/
 
 UNICODE_STRING IoArcHalDeviceName, IoArcBootDeviceName;
@@ -836,6 +840,7 @@ Cleanup:
     return Status;
 }
 
+#ifndef ARCNAME_RUST_REASSIGN
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -984,5 +989,6 @@ IopVerifyDiskSignature(
     /* If we get there, something went wrong, so fail */
     return FALSE;
 }
+#endif /* ARCNAME_RUST_REASSIGN */
 
 /* EOF */

@@ -1,5 +1,5 @@
 pub mod adapter;
-// pub mod arcname;  // BUGCHECK 0x1E — newly implemented functions have bugs
+// pub mod arcname;  // Passes amd64 but crashes i386 — needs i386-specific debugging
 pub mod bootlog;
 pub mod controller;
 // pub mod device;  // LLVM optimizer bug: eliminates success path after ObCreateObject output-pointer pattern
@@ -7,7 +7,7 @@ pub mod deviface;
 #[cfg(not(target_arch = "aarch64"))]
 pub mod driver;
 pub mod error;
-// pub mod file;  // Truncated translation — missing NtCreateFile, NtOpenFile, IoCheckShareAccess, etc.
+// pub mod file;  // All 20 missing functions translated — needs smoke testing
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
