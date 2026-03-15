@@ -21,8 +21,7 @@ use ntkrnl_sys::ddk::{
     RtlAppendUnicodeStringToString, RtlInitEmptyUnicodeString,
     RtlIntegerToUnicodeString, ObCloseHandle, IopOpenRegistryKeyEx,
     IopCreateRegistryKeyEx, IopGetDeviceNode, IopDetectResourceConflict,
-    IopFixupResourceListWithRequirements, IopFetchConfigurationInformation,
-    IopStoreSystemPartitionInformation, IoGetDeviceInterfaces,
+    IopFixupResourceListWithRequirements, IoGetDeviceInterfaces,
     PDEVICE_NODE, KEY_BASIC_INFORMATION,
 };
 
@@ -33,6 +32,8 @@ const IoQueryDeviceConfigurationData: usize = _IO_QUERY_DEVICE_DATA_FORMAT_IoQue
 
 const KEY_ALL_ACCESS: u32 = 0xF003F;
 const REG_OPTION_VOLATILE: u32 = 1;
+const REG_OPTION_NON_VOLATILE: u32 = 0;
+const REG_SZ: u32 = 1;
 const REG_RESOURCE_LIST: u32 = 8;
 
 const TAG_IO_RESOURCE: ULONG = 0x52734F49;
@@ -795,6 +796,190 @@ unsafe fn IopQueryBusDescription(
     }
 
     Status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn IopFetchConfigurationInformation(
+    SymbolicLinkList: *mut PWSTR,
+    Guid: GUID,
+    ExpectedInterfaces: ULONG,
+    Interfaces: *mut ULONG,
+) -> NTSTATUS {
+    let mut interfaces: ULONG = 0;
+
+    /* Get the associated enabled interfaces with the given GUID */
+    let Status = IoGetDeviceInterfaces(
+        &Guid,
+        core::ptr::null_mut(),
+        0,
+        SymbolicLinkList,
+    );
+    if Status < 0 {
+        /* Zero output and leave */
+        if !SymbolicLinkList.is_null() {
+            *SymbolicLinkList = core::ptr::null_mut();
+        }
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    let mut symbolicLinkList = *SymbolicLinkList;
+
+    /* Count the number of enabled interfaces by counting the number of symbolic links */
+    while *symbolicLinkList != 0 {
+        interfaces += 1;
+        /* Advance past the current string (wcslen + 1 for null terminator) */
+        let mut len: usize = 0;
+        while *symbolicLinkList.add(len) != 0 {
+            len += 1;
+        }
+        symbolicLinkList = symbolicLinkList.add(len + 1);
+    }
+
+    /* Matching result will define the result */
+    let Status = if interfaces >= ExpectedInterfaces {
+        STATUS_SUCCESS
+    } else {
+        STATUS_UNSUCCESSFUL
+    };
+    /* Finally, give back to the caller the number of found interfaces */
+    *Interfaces = interfaces;
+
+    Status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
+    NtSystemPartitionDeviceName: PUNICODE_STRING,
+    OsLoaderPathName: PUNICODE_STRING,
+) {
+    let mut Status: NTSTATUS;
+    let mut LinkTarget: _UNICODE_STRING = core::mem::zeroed();
+    let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut LinkHandle: HANDLE = core::ptr::null_mut();
+    let mut RegistryHandle: HANDLE = core::ptr::null_mut();
+    let mut KeyHandle: HANDLE = core::ptr::null_mut();
+    let mut LinkTargetBuffer: [u16; 256] = [0; 256];
+
+    let mut CmRegistryMachineSystemName: _UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(
+        &mut CmRegistryMachineSystemName,
+        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as PCWSTR,
+    );
+
+    /* First define needed stuff to open NtSystemPartitionDeviceName symbolic link */
+    InitializeObjectAttributes(
+        &mut ObjectAttributes,
+        NtSystemPartitionDeviceName,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+
+    /* Open NtSystemPartitionDeviceName symbolic link */
+    Status = ZwOpenSymbolicLinkObject(
+        &mut LinkHandle,
+        SYMBOLIC_LINK_QUERY,
+        &mut ObjectAttributes,
+    );
+    if Status < 0 {
+        return;
+    }
+
+    /* Prepare the string that will receive where symbolic link points to */
+    RtlInitEmptyUnicodeString(
+        &mut LinkTarget,
+        LinkTargetBuffer.as_mut_ptr(),
+        (core::mem::size_of::<[u16; 256]>() - core::mem::size_of::<u16>()) as u16,
+    );
+
+    /* Query target */
+    Status = ZwQuerySymbolicLinkObject(LinkHandle, &mut LinkTarget, core::ptr::null_mut());
+
+    /* We are done with symbolic link */
+    ObCloseHandle(LinkHandle, KernelMode);
+
+    if Status < 0 {
+        return;
+    }
+
+    /* Zero the end */
+    *LinkTarget.Buffer.add((LinkTarget.Length / 2) as usize) = 0;
+
+    /* Open registry to save data (HKLM\SYSTEM) */
+    Status = IopOpenRegistryKeyEx(
+        &mut RegistryHandle,
+        core::ptr::null_mut(),
+        &mut CmRegistryMachineSystemName,
+        KEY_ALL_ACCESS,
+    );
+    if Status < 0 {
+        return;
+    }
+
+    /* Open or create the Setup subkey */
+    RtlInitUnicodeString(
+        &mut KeyName,
+        b"S\0e\0t\0u\0p\0\0\0".as_ptr() as PCWSTR,
+    );
+
+    Status = IopCreateRegistryKeyEx(
+        &mut KeyHandle,
+        RegistryHandle,
+        &mut KeyName,
+        KEY_ALL_ACCESS,
+        REG_OPTION_NON_VOLATILE,
+        core::ptr::null_mut(),
+    );
+
+    /* We're done with HKLM\SYSTEM */
+    ObCloseHandle(RegistryHandle, KernelMode);
+
+    if Status < 0 {
+        return;
+    }
+
+    /* Write SystemPartition value */
+    RtlInitUnicodeString(
+        &mut KeyName,
+        b"S\0y\0s\0t\0e\0m\0P\0a\0r\0t\0i\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
+    );
+
+    ZwSetValueKey(
+        KeyHandle,
+        &mut KeyName,
+        0,
+        REG_SZ,
+        LinkTarget.Buffer as PVOID,
+        LinkTarget.Length as u32 + core::mem::size_of::<u16>() as u32,
+    );
+
+    /* Prepare for second data writing */
+    RtlInitUnicodeString(
+        &mut KeyName,
+        b"O\0s\0L\0o\0a\0d\0e\0r\0P\0a\0t\0h\0\0\0".as_ptr() as PCWSTR,
+    );
+
+    /* Remove trailing slash if any (one slash only excepted) */
+    if (*OsLoaderPathName).Length > core::mem::size_of::<u16>() as u16
+        && *(*OsLoaderPathName).Buffer.add(((*OsLoaderPathName).Length / 2 - 1) as usize) == OBJ_NAME_PATH_SEPARATOR as u16
+    {
+        (*OsLoaderPathName).Length -= core::mem::size_of::<u16>() as u16;
+        *(*OsLoaderPathName).Buffer.add(((*OsLoaderPathName).Length / 2) as usize) = 0;
+    }
+
+    /* Write OsLoaderPath value */
+    ZwSetValueKey(
+        KeyHandle,
+        &mut KeyName,
+        0,
+        REG_SZ,
+        (*OsLoaderPathName).Buffer as PVOID,
+        (*OsLoaderPathName).Length as u32 + core::mem::size_of::<u16>() as u32,
+    );
+
+    /* We're finally done! */
+    ObCloseHandle(KeyHandle, KernelMode);
 }
 
 #[no_mangle]

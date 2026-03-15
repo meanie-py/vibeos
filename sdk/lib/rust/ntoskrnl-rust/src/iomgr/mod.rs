@@ -1,5 +1,5 @@
 pub mod adapter;
-// pub mod arcname;  // Stubbed-out IopReassignSystemRoot/IopVerifyDiskSignature — using C
+// pub mod arcname;  // BUGCHECK 0x1E — newly implemented functions have bugs
 pub mod bootlog;
 pub mod controller;
 // pub mod device;  // LLVM optimizer bug: eliminates success path after ObCreateObject output-pointer pattern
@@ -13,7 +13,7 @@ pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
 pub mod iomdl;
 // pub mod iomgr;  // LLVM codegen bug: IoInitSystem crashes (ud2/access violation in IopInitLookasideLists loop)
-// pub mod iorsrce;  // Missing globals (IopCdRomFileSystemQueueHead etc.) and functions
+// pub mod iorsrce;  // Boot stalls during HAL init — IopFetchConfigurationInformation/IopStoreSystemPartitionInformation buggy
 pub mod iotimer;
 pub mod iowork;
 // pub mod irp;  // Causes i386+amd64 boot hang (BUGCHECK 0x1E in KiInsertQueueApc, STATUS_IN_PAGE_ERROR at elevated IRQL)

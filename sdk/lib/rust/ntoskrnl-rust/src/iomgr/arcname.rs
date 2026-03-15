@@ -8,6 +8,7 @@ use ntkrnl_sys::ddk::{
     ANSI_STRING,
     ExFreePool,
     _IO_STATUS_BLOCK,
+    _OBJECT_ATTRIBUTES,
     _UNICODE_STRING,
     _EVENT_TYPE_NotificationEvent,
     _KWAIT_REASON_Executive,
@@ -57,6 +58,30 @@ extern "C" {
     fn strstr(haystack: *const i8, needle: *const i8) -> *const i8;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn wcslen(s: *const u16) -> usize;
+    fn RtlUnicodeStringToAnsiString(
+        DestinationString: *mut ANSI_STRING,
+        SourceString: *const _UNICODE_STRING,
+        AllocateDestinationString: BOOLEAN,
+    ) -> NTSTATUS;
+    fn RtlCopyString(DestinationString: *mut ANSI_STRING, SourceString: *const ANSI_STRING);
+    fn ObCloseHandle(Handle: HANDLE, AccessMode: i8) -> NTSTATUS;
+    fn NtOpenSymbolicLinkObject(
+        SymbolicLinkHandle: *mut HANDLE,
+        DesiredAccess: ULONG,
+        ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
+    ) -> NTSTATUS;
+    fn NtQuerySymbolicLinkObject(
+        SymLinkObjHandle: HANDLE,
+        LinkTarget: *mut _UNICODE_STRING,
+        DataWritten: *mut ULONG,
+    ) -> NTSTATUS;
+    fn NtMakeTemporaryObject(Handle: HANDLE) -> NTSTATUS;
+    fn NtCreateSymbolicLinkObject(
+        SymbolicLinkHandle: *mut HANDLE,
+        DesiredAccess: ULONG,
+        ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
+        Name: *mut _UNICODE_STRING,
+    ) -> NTSTATUS;
 }
 #[inline(always)]
 unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
@@ -69,6 +94,7 @@ unsafe fn IoAssignArcName(ArcName: *mut _UNICODE_STRING, DeviceName: *mut _UNICO
 }
 extern "C" {
     fn IsEqualGUID(guid1: PGUID, guid2: PGUID) -> BOOLEAN;
+    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
 #[no_mangle]
@@ -538,7 +564,140 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     NtBootPath: PANSI_STRING,
 ) -> NTSTATUS {
-    STATUS_SUCCESS
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut Buffer: [i8; 256] = core::mem::zeroed();
+    let mut AnsiBuffer: [i8; 256] = core::mem::zeroed();
+    let mut ArcNameBuffer: [u16; 64] = core::mem::zeroed();
+    let mut TargetString: ANSI_STRING = core::mem::zeroed();
+    let mut ArcString: ANSI_STRING = core::mem::zeroed();
+    let mut TempString: ANSI_STRING = core::mem::zeroed();
+    let mut LinkName: _UNICODE_STRING = core::mem::zeroed();
+    let mut TargetName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ArcName: _UNICODE_STRING = core::mem::zeroed();
+    let mut LinkHandle: HANDLE = core::ptr::null_mut();
+
+    // Create the Unicode name for the current ARC boot device
+    sprintf(
+        Buffer.as_mut_ptr(),
+        b"\\ArcName\\%s\0".as_ptr() as *const i8,
+        (*LoaderBlock).ArcBootDeviceName,
+    );
+    RtlInitAnsiString(&mut TargetString, Buffer.as_ptr());
+    Status = RtlAnsiStringToUnicodeString(&mut TargetName, &mut TargetString, TRUE as BOOLEAN);
+    if !NT_SUCCESS(Status) {
+        return FALSE as NTSTATUS;
+    }
+
+    // Initialize the attributes and open the link
+    InitializeObjectAttributes(
+        &mut ObjectAttributes,
+        &mut TargetName,
+        OBJ_CASE_INSENSITIVE,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    Status = NtOpenSymbolicLinkObject(
+        &mut LinkHandle,
+        SYMBOLIC_LINK_ALL_ACCESS,
+        &mut ObjectAttributes,
+    );
+    if !NT_SUCCESS(Status) {
+        // We failed, free the string
+        RtlFreeUnicodeString(&mut TargetName);
+        return FALSE as NTSTATUS;
+    }
+
+    // Query the current \SystemRoot
+    ArcName.Buffer = ArcNameBuffer.as_mut_ptr();
+    ArcName.Length = 0;
+    ArcName.MaximumLength = core::mem::size_of_val(&ArcNameBuffer) as u16;
+    Status = NtQuerySymbolicLinkObject(LinkHandle, &mut ArcName, core::ptr::null_mut());
+    if !NT_SUCCESS(Status) {
+        // We failed, free the string
+        RtlFreeUnicodeString(&mut TargetName);
+        return FALSE as NTSTATUS;
+    }
+
+    // Convert it to Ansi
+    ArcString.Buffer = AnsiBuffer.as_mut_ptr();
+    ArcString.Length = 0;
+    ArcString.MaximumLength = core::mem::size_of_val(&AnsiBuffer) as u16;
+    Status = RtlUnicodeStringToAnsiString(&mut ArcString, &mut ArcName as *mut _UNICODE_STRING as *const _, FALSE as BOOLEAN);
+    AnsiBuffer[ArcString.Length as usize] = 0; // ANSI_NULL
+
+    // Close the link handle and free the name
+    ObCloseHandle(LinkHandle, 0); // KernelMode = 0
+    RtlFreeUnicodeString(&mut TargetName);
+
+    // Setup the system root name again
+    RtlInitAnsiString(&mut TempString, b"\\SystemRoot\0".as_ptr() as *const i8);
+    Status = RtlAnsiStringToUnicodeString(&mut LinkName, &mut TempString, TRUE as BOOLEAN);
+    if !NT_SUCCESS(Status) {
+        return FALSE as NTSTATUS;
+    }
+
+    // Open the symbolic link for it
+    InitializeObjectAttributes(
+        &mut ObjectAttributes,
+        &mut LinkName,
+        OBJ_CASE_INSENSITIVE,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    Status = NtOpenSymbolicLinkObject(
+        &mut LinkHandle,
+        SYMBOLIC_LINK_ALL_ACCESS,
+        &mut ObjectAttributes,
+    );
+    if !NT_SUCCESS(Status) {
+        return FALSE as NTSTATUS;
+    }
+
+    // Destroy it
+    NtMakeTemporaryObject(LinkHandle);
+    ObCloseHandle(LinkHandle, 0); // KernelMode = 0
+
+    // Now create the new name for it
+    sprintf(
+        Buffer.as_mut_ptr(),
+        b"%s%s\0".as_ptr() as *const i8,
+        ArcString.Buffer,
+        (*LoaderBlock).NtBootPathName,
+    );
+
+    // Copy it into the passed parameter and null-terminate it
+    RtlCopyString(NtBootPath as *mut _, &ArcString as *const ANSI_STRING as *const _);
+    let buf_len = strlen(Buffer.as_ptr());
+    Buffer[buf_len - 1] = 0; // ANSI_NULL
+
+    // Setup the Unicode-name for the new symbolic link value
+    RtlInitAnsiString(&mut TargetString, Buffer.as_ptr());
+    InitializeObjectAttributes(
+        &mut ObjectAttributes,
+        &mut LinkName,
+        OBJ_CASE_INSENSITIVE | OBJ_PERMANENT,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    Status = RtlAnsiStringToUnicodeString(&mut ArcName, &mut TargetString, TRUE as BOOLEAN);
+    if !NT_SUCCESS(Status) {
+        return FALSE as NTSTATUS;
+    }
+
+    // Create it
+    Status = NtCreateSymbolicLinkObject(
+        &mut LinkHandle,
+        SYMBOLIC_LINK_ALL_ACCESS,
+        &mut ObjectAttributes,
+        &mut ArcName,
+    );
+
+    // Free all the strings and close the handle and return success
+    RtlFreeUnicodeString(&mut ArcName);
+    RtlFreeUnicodeString(&mut LinkName);
+    ObCloseHandle(LinkHandle, 0); // KernelMode = 0
+    TRUE as NTSTATUS
 }
 
 #[no_mangle]
@@ -547,7 +706,41 @@ pub unsafe extern "C" fn IopVerifyDiskSignature(
     ArcDiskSignature: PARC_DISK_SIGNATURE,
     Signature: *mut ULONG,
 ) -> BOOLEAN {
-    0u8
+    // Fail if the partition table is invalid
+    if (*ArcDiskSignature).ValidPartitionTable == 0 {
+        return FALSE as BOOLEAN;
+    }
+
+    // If the partition style is MBR
+    if (*DriveLayout).PartitionStyle == PARTITION_STYLE_MBR as ULONG {
+        // Check the MBR signature
+        if (*DriveLayout).__bindgen_anon_1.Mbr.Signature == (*ArcDiskSignature).Signature {
+            // And return it
+            if !Signature.is_null() {
+                *Signature = (*DriveLayout).__bindgen_anon_1.Mbr.Signature;
+            }
+            return TRUE as BOOLEAN;
+        }
+    }
+    // If the partition style is GPT
+    else if (*DriveLayout).PartitionStyle == PARTITION_STYLE_GPT as ULONG {
+        // Verify whether the signature is GPT and compare the GUID
+        if (*ArcDiskSignature).IsGpt != 0
+            && IsEqualGUID(
+                (*ArcDiskSignature).GptSignature.as_ptr() as PGUID,
+                &(*DriveLayout).__bindgen_anon_1.Gpt.DiskId as *const GUID as PGUID,
+            ) != 0
+        {
+            // There is no signature to return, just zero it
+            if !Signature.is_null() {
+                *Signature = 0;
+            }
+            return TRUE as BOOLEAN;
+        }
+    }
+
+    // If we get there, something went wrong, so fail
+    FALSE as BOOLEAN
 }
 
 

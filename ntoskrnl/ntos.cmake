@@ -136,7 +136,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
     # IO Tier 2b: arcname, iomgr, irp, rawfs → Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs has stubbed IopReassignSystemRoot/IopVerifyDiskSignature
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs crashes (BUGCHECK 0x1E)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
@@ -149,7 +149,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # Rust translation crashes (LLVM codegen bug in IoInitSystem)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Rust iorsrce.rs missing globals/functions
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Rust iorsrce.rs stalls boot
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c  # Rust irp.rs causes boot hang (BUGCHECK 0x1E)
