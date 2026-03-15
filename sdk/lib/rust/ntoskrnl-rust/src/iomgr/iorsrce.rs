@@ -157,7 +157,7 @@ unsafe fn IopQueryDeviceDescription(
 
     RtlInitEmptyUnicodeString(&mut TempString, TempBuffer.as_mut_ptr(), core::mem::size_of_val(&TempBuffer) as u16);
 
-    RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0".as_ptr() as PCWSTR);
+    RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
     RtlAppendUnicodeToString(&mut ControllerRootRegName, ARC_TYPES[*(*Query).ControllerType as usize]);
 
     if !(*Query).ControllerNumber.is_null() {
@@ -177,7 +177,7 @@ unsafe fn IopQueryDeviceDescription(
         if Status >= 0 {
             ZwQueryKey(
                 ControllerKeyHandle,
-                1,
+                2, // KeyFullInformation
                 core::ptr::null_mut(),
                 0,
                 &mut LenFullInformation,
@@ -191,7 +191,7 @@ unsafe fn IopQueryDeviceDescription(
 
             Status = ZwQueryKey(
                 ControllerKeyHandle,
-                1,
+                2, // KeyFullInformation
                 ControllerFullInformation as PVOID,
                 LenFullInformation,
                 &mut LenFullInformation,
@@ -222,7 +222,7 @@ unsafe fn IopQueryDeviceDescription(
 
         Status = RtlIntegerToUnicodeString(ControllerNum, 10, &mut TempString);
 
-        Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0".as_ptr() as PCWSTR);
+        Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
         Status |= RtlAppendUnicodeStringToString(&mut ControllerRootRegName, &mut TempString);
 
         if Status < 0 {
@@ -247,7 +247,7 @@ unsafe fn IopQueryDeviceDescription(
                 Status = ZwQueryValueKey(
                     ControllerKeyHandle,
                     &mut ControllerString,
-                    2,
+                    1, // KeyValueFullInformation
                     core::ptr::null_mut(),
                     0,
                     &mut LenKeyFullInformation,
@@ -272,7 +272,7 @@ unsafe fn IopQueryDeviceDescription(
                 Status = ZwQueryValueKey(
                     ControllerKeyHandle,
                     &mut ControllerString,
-                    2,
+                    1, // KeyValueFullInformation
                     ControllerInformation[ControllerLoop as usize] as PVOID,
                     LenKeyFullInformation,
                     &mut LenKeyFullInformation,
@@ -330,7 +330,7 @@ unsafe fn IopQueryDeviceDescription(
             continue;
         }
 
-        Status = RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0".as_ptr() as PCWSTR);
+        Status = RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
         Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, ARC_TYPES[*(*Query).PeripheralType as usize]);
 
         if Status < 0 {
@@ -366,7 +366,7 @@ unsafe fn IopQueryDeviceDescription(
             if Status >= 0 {
                 ZwQueryKey(
                     PeripheralKeyHandle,
-                    1,
+                    2, // KeyFullInformation
                     core::ptr::null_mut(),
                     0,
                     &mut LenFullInformation,
@@ -393,7 +393,7 @@ unsafe fn IopQueryDeviceDescription(
 
                 Status = ZwQueryKey(
                     PeripheralKeyHandle,
-                    1,
+                    2, // KeyFullInformation
                     PeripheralFullInformation as PVOID,
                     LenFullInformation,
                     &mut LenFullInformation,
@@ -434,7 +434,7 @@ unsafe fn IopQueryDeviceDescription(
 
             Status = RtlIntegerToUnicodeString(PeripheralNum, 10, &mut TempString);
 
-            Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0".as_ptr() as PCWSTR);
+            Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
             Status |= RtlAppendUnicodeStringToString(&mut ControllerRootRegName, &mut TempString);
 
             if Status < 0 {
@@ -459,7 +459,7 @@ unsafe fn IopQueryDeviceDescription(
                     Status = ZwQueryValueKey(
                         PeripheralKeyHandle,
                         &mut PeripheralString,
-                        2,
+                        1, // KeyValueFullInformation
                         core::ptr::null_mut(),
                         0,
                         &mut LenKeyFullInformation,
@@ -484,7 +484,7 @@ unsafe fn IopQueryDeviceDescription(
                     Status = ZwQueryValueKey(
                         PeripheralKeyHandle,
                         &mut PeripheralString,
-                        2,
+                        1, // KeyValueFullInformation
                         PeripheralInformation[PeripheralLoop as usize] as PVOID,
                         LenKeyFullInformation,
                         &mut LenKeyFullInformation,
@@ -573,7 +573,7 @@ unsafe fn IopQueryBusDescription(
 
     Status = ZwQueryKey(
         RootKeyHandle,
-        1,
+        2, // KeyFullInformation
         core::ptr::null_mut(),
         0,
         &mut LenFullInformation,
@@ -590,7 +590,7 @@ unsafe fn IopQueryBusDescription(
 
     Status = ZwQueryKey(
         RootKeyHandle,
-        1,
+        2, // KeyFullInformation
         FullInformation as PVOID,
         LenFullInformation,
         &mut LenFullInformation,
@@ -686,7 +686,7 @@ unsafe fn IopQueryBusDescription(
         }
 
         SubRootRegName = RootKey;
-        RtlAppendUnicodeToString(&mut SubRootRegName, b"\\\0".as_ptr() as PCWSTR);
+        RtlAppendUnicodeToString(&mut SubRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
         RtlAppendUnicodeStringToString(&mut SubRootRegName, &mut BusString);
 
         if KeyIsRoot == 0 {
@@ -697,7 +697,7 @@ unsafe fn IopQueryBusDescription(
                 ZwQueryValueKey(
                     SubRootKeyHandle,
                     &mut SubBusString,
-                    2,
+                    1, // KeyValueFullInformation
                     core::ptr::null_mut(),
                     0,
                     &mut LenKeyFullInformation,
@@ -716,7 +716,7 @@ unsafe fn IopQueryBusDescription(
                 Status = ZwQueryValueKey(
                     SubRootKeyHandle,
                     &mut SubBusString,
-                    2,
+                    1, // KeyValueFullInformation
                     BusInformation[SubBusLoop as usize] as PVOID,
                     LenKeyFullInformation,
                     &mut LenKeyFullInformation,
