@@ -7,7 +7,7 @@ pub mod deviface;
 #[cfg(not(target_arch = "aarch64"))]
 pub mod driver;
 pub mod error;
-// pub mod file;  // Agent-translated functions crash on both arches — needs debugging
+// pub mod file;  // Crashes both arches — agent-translated NtCreateFile etc. have bugs
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
