@@ -637,3 +637,14 @@ IopInitializeDriverModule(
 
     return STATUS_SUCCESS;
 }
+
+/*
+ * IopDeviceNodeSetFlag — C macro in io.h → real function for Rust.
+ */
+#undef IopDeviceNodeSetFlag
+VOID
+NTAPI
+IopDeviceNodeSetFlag(IN PDEVICE_NODE DeviceNode, IN ULONG Flag)
+{
+    DeviceNode->Flags |= Flag;
+}
