@@ -3,9 +3,14 @@ pub mod pnputil;
 pub mod pnpirp;
 
 // Disabled: runtime bugs when enabled
-// All remaining pnpmgr files pass amd64 but crash i386 — systematic issue
-// pub mod pnpnotify;
-// pub mod pnpmap;
+// pnpnotify: Rust version disabled on i386 due to undiagnosed runtime crash
+// (BUGCHECK 0x1E STATUS_IN_PAGE_ERROR at KeSynchronizeExecution during scsiport init).
+// Root cause: not calling convention or code logic — pure Rust wrapper around C impl works,
+// full Rust code crashes. Crash is in unrelated KeSynchronizeExecution, suggesting subtle
+// interaction with kernel image layout or BSS/data section handling on i386.
+// amd64 and arm64 use the Rust version.
+#[cfg(not(target_arch = "x86"))]
+pub mod pnpnotify;
 pub mod pnpdma;
 // pub mod devnode;
 // pub mod plugplay;

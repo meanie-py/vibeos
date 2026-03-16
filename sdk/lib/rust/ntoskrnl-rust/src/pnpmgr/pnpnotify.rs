@@ -31,10 +31,21 @@ extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 extern "system" {
-    fn IsEqualGUID(guid1: LPCGUID, guid2: LPCGUID) -> BOOLEAN;
     static GUID_DEVICE_INTERFACE_ARRIVAL: GUID;
     static GUID_PNP_CUSTOM_NOTIFICATION: GUID;
     fn IopGetRelatedTargetDevice(FileObject: PFILE_OBJECT, DeviceNode: *mut PDEVICE_NODE) -> NTSTATUS;
+}
+
+#[inline]
+unsafe fn IsEqualGUID(guid1: LPCGUID, guid2: LPCGUID) -> BOOLEAN {
+    if (*guid1).Data1 == (*guid2).Data1 &&
+       (*guid1).Data2 == (*guid2).Data2 &&
+       (*guid1).Data3 == (*guid2).Data3 &&
+       (*guid1).Data4 == (*guid2).Data4 {
+        1u8
+    } else {
+        0u8
+    }
 }
 extern "fastcall" {
     fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
