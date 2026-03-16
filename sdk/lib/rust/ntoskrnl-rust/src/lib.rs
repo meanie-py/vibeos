@@ -48,6 +48,7 @@ pub mod ke;
 pub mod lpc;
 pub mod mm;
 pub mod ob;
+pub mod pnpmgr;
 pub mod po;
 pub mod ps;
 pub mod rtl;
