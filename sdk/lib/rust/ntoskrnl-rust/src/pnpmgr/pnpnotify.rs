@@ -146,7 +146,7 @@ unsafe fn PiProcessSingleNotification(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiNotifyDeviceInterfaceChange(
+pub unsafe extern "C" fn PiNotifyDeviceInterfaceChange(
     Event: LPCGUID,
     InterfaceClassGuid: LPCGUID,
     SymbolicLinkName: PUNICODE_STRING,
@@ -234,7 +234,7 @@ unsafe fn PiNotifyHardwareProfileChange(Event: LPCGUID) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiNotifyTargetDeviceChange(
+pub unsafe extern "C" fn PiNotifyTargetDeviceChange(
     Event: LPCGUID,
     DeviceObject: PDEVICE_OBJECT,
     CustomNotification: PTARGET_DEVICE_CUSTOM_NOTIFICATION,
