@@ -54,11 +54,11 @@ static mut PiNotifyDeviceInterfaceListHead: LIST_ENTRY = LIST_ENTRY {
     Blink: core::ptr::null_mut(),
 };
 
-const TAG_PNP_NOTIFY: ULONG = u32::from_le_bytes(*b"nPnP");
+const TAG_PNP_NOTIFY: ULONG = u32::from_le_bytes(*b"PnPN");
 const PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES: ULONG = 1;
-const EventCategoryDeviceInterfaceChange: IO_NOTIFICATION_EVENT_CATEGORY = 0;
+const EventCategoryDeviceInterfaceChange: IO_NOTIFICATION_EVENT_CATEGORY = 2;
 const EventCategoryHardwareProfileChange: IO_NOTIFICATION_EVENT_CATEGORY = 1;
-const EventCategoryTargetDeviceChange: IO_NOTIFICATION_EVENT_CATEGORY = 2;
+const EventCategoryTargetDeviceChange: IO_NOTIFICATION_EVENT_CATEGORY = 3;
 
 type IO_NOTIFICATION_EVENT_CATEGORY = i32;
 
@@ -197,7 +197,8 @@ pub unsafe extern "C" fn PiNotifyDeviceInterfaceChange(
     ExFreePoolWithTag(notifyStruct as PVOID, TAG_PNP_NOTIFY);
 }
 
-unsafe fn PiNotifyHardwareProfileChange(Event: LPCGUID) {
+#[no_mangle]
+pub unsafe extern "C" fn PiNotifyHardwareProfileChange(Event: LPCGUID) {
     let notifyStruct = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_HWPROFILE_CHANGE_NOTIFICATION>(),
@@ -322,6 +323,9 @@ pub unsafe extern "system" fn IoRegisterPlugPlayNotification(
         ObDereferenceObject(DriverObject as PVOID);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    // Zero the entire struct first (matches C designated initializer behavior)
+    core::ptr::write_bytes(Entry as *mut u8, 0, core::mem::size_of::<PNP_NOTIFY_ENTRY>());
 
     (*Entry).PnpNotificationProc = CallbackRoutine;
     (*Entry).Context = Context;

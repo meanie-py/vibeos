@@ -3,8 +3,8 @@ pub mod pnputil;
 pub mod pnpirp;
 
 // Disabled: runtime bugs when enabled
-// pub mod pnpnotify;  // Crashes i386 boot — needs debugging
-// pub mod pnpdma;  // Crashes with pnpnotify
+// pub mod pnpnotify;  // Agent debugging ACCESS_VIOLATION
+pub mod pnpdma;
 // pub mod devnode;
 // pub mod plugplay;
 // pub mod pnpinit;

@@ -1,18 +1,15 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{
     BUS_INTERFACE_STANDARD, DEVICE_DESCRIPTION, IO_STACK_LOCATION, _IO_STATUS_BLOCK,
     IoGetDeviceProperty, IopInitiatePnpIrp, PDEVICE_DESCRIPTION, PDEVICE_OBJECT,
     PDMA_ADAPTER, PINTERFACE, DEVICE_REGISTRY_PROPERTY_DevicePropertyLegacyBusType,
     _INTERFACE_TYPE, _INTERFACE_TYPE_PNPBus, _INTERFACE_TYPE_InterfaceTypeUndefined,
-    _INTERFACE_TYPE_Internal, GUID,
+    _INTERFACE_TYPE_Internal, GUID, HAL_DISPATCH,
 };
-use ntkrnl_sys::rtl::*;
 
-extern "system" {
+extern "C" {
     static GUID_BUS_INTERFACE_STANDARD: GUID;
-    fn HalGetDmaAdapter( PhysicalDeviceObject: PDEVICE_OBJECT, DeviceDescription: PDEVICE_DESCRIPTION, NumberOfMapRegisters: *mut ULONG, ) -> PDMA_ADAPTER;
+    static mut HalDispatchTable: HAL_DISPATCH;
 }
 
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08;
@@ -85,7 +82,12 @@ pub unsafe extern "system" fn IoGetDmaAdapter(
         }
     }
 
-    HalGetDmaAdapter(PhysicalDeviceObject, DeviceDescriptionPtr, NumberOfMapRegisters)
+    /* Fall back to HAL */
+    (HalDispatchTable.HalGetDmaAdapter.unwrap())(
+        PhysicalDeviceObject as PVOID,
+        DeviceDescriptionPtr,
+        NumberOfMapRegisters,
+    )
 }
 
 
