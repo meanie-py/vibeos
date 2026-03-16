@@ -17,7 +17,8 @@ pub mod pnpmap;
 // Phase 3: one-at-a-time integration
 #[cfg(not(target_arch = "x86"))]
 pub mod devnode;
-// pub mod plugplay;
+#[cfg(not(target_arch = "x86"))]
+pub mod plugplay;
 // pub mod pnpreport;
 // pub mod pnpres;
 // pub mod pnproot;
