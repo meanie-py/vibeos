@@ -20,12 +20,15 @@ use ntkrnl_sys::ddk::{
 const TAG_IO_DEVNODE: u32 = u32::from_le_bytes(*b"donI");
 
 #[no_mangle]
+#[used]
 pub static mut IopRootDeviceNode: PDEVICE_NODE = core::ptr::null_mut();
 
 #[no_mangle]
+#[used]
 pub static mut IopDeviceTreeLock: KSPIN_LOCK = 0;
 
 #[no_mangle]
+#[used]
 pub static mut IopNumberDeviceNodes: i32 = 0;
 
 #[no_mangle]
@@ -55,7 +58,7 @@ pub unsafe extern "C" fn PipAllocateDeviceNode(
     (*DeviceNode).ChildInterfaceType = -1i32;
     (*DeviceNode).ChildBusNumber = -1i32 as u32;
     (*DeviceNode).ChildBusTypeIndex = 0xFFFF;
-    (*DeviceNode).State = 0x300;
+    (*DeviceNode).State = 0x301;
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceNode).DeviceArbiterList));
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceNode).DeviceTranslatorList));
     InitializeListHead(core::ptr::addr_of_mut!((*DeviceNode).TargetDeviceNotify));

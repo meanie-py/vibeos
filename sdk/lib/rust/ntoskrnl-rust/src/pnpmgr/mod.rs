@@ -14,8 +14,9 @@ pub mod pnpnotify;
 pub mod pnpdma;
 #[cfg(not(target_arch = "x86"))]
 pub mod pnpmap;
-// Phase 3+: amd64 crashes with 5 at once (BUGCHECK 0x6B). Need one-at-a-time.
-// pub mod devnode;
+// Phase 3: one-at-a-time integration
+#[cfg(not(target_arch = "x86"))]
+pub mod devnode;
 // pub mod plugplay;
 // pub mod pnpreport;
 // pub mod pnpres;

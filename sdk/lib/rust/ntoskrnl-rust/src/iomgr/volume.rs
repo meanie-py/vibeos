@@ -1068,7 +1068,7 @@ pub unsafe extern "system" fn IoSetSystemPartition(VolumeNameString: *mut _UNICO
     };
     let mut Buffer = [0u16; 16];
 
-    RtlInitUnicodeString(&mut HKLMSystem, b"\\REGISTRY\\MACHINE\\SYSTEM\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut HKLMSystem, b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as *const u16);
 
     let mut Status = IopOpenRegistryKeyEx(&mut RootHandle, core::ptr::null_mut(), &mut HKLMSystem, KEY_ALL_ACCESS);
     if Status < 0 {
