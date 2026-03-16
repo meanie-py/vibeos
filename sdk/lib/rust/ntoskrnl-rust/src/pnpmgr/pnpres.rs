@@ -52,7 +52,7 @@ use ntkrnl_sys::ddk::{
 
 extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG) -> ULONG;
 }
 extern "system" {
     fn PnpDetermineResourceListSize(ResourceList: PCM_RESOURCE_LIST) -> ULONG;
@@ -641,7 +641,7 @@ unsafe fn IopUpdateControlKeyWithResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut Control,
-        0x00000040 | 0x00000001,
+        0x00000040 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
         InstanceKey,
         core::ptr::null_mut(),
     );
@@ -727,7 +727,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
-        0x00000040 | 0x00000200 | 0x00000001,
+        0x00000040 | 0x00000080 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_KERNEL_HANDLE
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
@@ -748,7 +748,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
-        0x00000040 | 0x00000200 | 0x00000001,
+        0x00000040 | 0x00000080 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_KERNEL_HANDLE
         ResourceMapKey,
         core::ptr::null_mut(),
     );
@@ -770,7 +770,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
-        0x00000040 | 0x00000200 | 0x00000001,
+        0x00000040 | 0x00000080 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_KERNEL_HANDLE
         PnpMgrLevel1,
         core::ptr::null_mut(),
     );
@@ -1251,7 +1251,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
-        0x00000040 | 0x00000001,
+        0x00000040 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
@@ -1339,7 +1339,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
         InitializeObjectAttributes(
             &mut ObjectAttributes,
             &mut KeyName,
-            0x00000040 | 0x00000001,
+            0x00000040 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
             ResourceMapKey,
             core::ptr::null_mut(),
         );
@@ -1442,7 +1442,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
             InitializeObjectAttributes(
                 &mut ObjectAttributes,
                 &mut KeyName,
-                0x00000040 | 0x00000001,
+                0x00000040 | 0x00000200, // OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE
                 ChildKey2,
                 core::ptr::null_mut(),
             );

@@ -21,8 +21,11 @@ pub mod devnode;
 pub mod plugplay;
 #[cfg(not(target_arch = "x86"))]
 pub mod pnpreport;
-#[cfg(not(target_arch = "x86"))]
-pub mod pnpres;
+// pnpres: Rust version still crashes amd64 (BUGCHECK 0x6B STATUS_OBJECT_PATH_NOT_FOUND).
+// Multiple LLM translation bugs fixed (wide strings, enum values, OBJ flags, calling conventions)
+// but residual issue remains — likely memory corruption in IopDetectResourceConflict or
+// IopTranslateDeviceResources. Needs serial debugging to isolate.
+// pub mod pnpres;
 // pub mod pnproot;  // Testing next
 // pub mod pnproot;
 // pub mod pnpinit;
