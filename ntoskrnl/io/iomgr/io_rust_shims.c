@@ -230,6 +230,83 @@ ObReferenceObjectByHandle_shim(
 }
 
 /* ========================================================================
+ * PnP manager macro/FORCEINLINE shims for Rust pnpmgr
+ * ======================================================================== */
+
+/*
+ * IopIsValidPhysicalDeviceObject — macro in io.h.
+ * Checks DeviceNode exists and has DNF_ENUMERATED flag.
+ * The macro name is #define'd in io.h, so we #undef it and provide a real function.
+ */
+#undef IopIsValidPhysicalDeviceObject
+BOOLEAN
+NTAPI
+IopIsValidPhysicalDeviceObject(
+    IN PDEVICE_OBJECT PhysicalDeviceObject)
+{
+    PEXTENDED_DEVOBJ_EXTENSION ext;
+    if (!PhysicalDeviceObject) return FALSE;
+    ext = (PEXTENDED_DEVOBJ_EXTENSION)PhysicalDeviceObject->DeviceObjectExtension;
+    if (!ext) return FALSE;
+    if (!ext->DeviceNode) return FALSE;
+    return (ext->DeviceNode->Flags & DNF_ENUMERATED) ? TRUE : FALSE;
+}
+
+/*
+ * HalGetDmaAdapter — macro in haltypes.h: HALDISPATCH->HalGetDmaAdapter.
+ * Rust pnpdma.rs declares extern "system" fn HalGetDmaAdapter(...).
+ * We save the dispatch pointer, #undef the macro, and provide a real function.
+ */
+#undef HalGetDmaAdapter
+PDMA_ADAPTER
+NTAPI
+HalGetDmaAdapter(
+    IN PDEVICE_OBJECT PhysicalDeviceObject,
+    IN PDEVICE_DESCRIPTION DeviceDescription,
+    IN OUT PULONG NumberOfMapRegisters)
+{
+    return HALDISPATCH->HalGetDmaAdapter(PhysicalDeviceObject, DeviceDescription, NumberOfMapRegisters);
+}
+
+/*
+ * CmiGetNextResourceDescriptor — FORCEINLINE in cmreslist.h.
+ * Bindgen declares it as extern "C" but there's no real symbol since it's inline.
+ * Provide a non-inline definition. We implement it directly to avoid
+ * conflicting with the FORCEINLINE declaration in the header.
+ */
+PCM_FULL_RESOURCE_DESCRIPTOR
+CmiGetNextResourceDescriptor(
+    IN const CM_FULL_RESOURCE_DESCRIPTOR *ResourceDescriptor)
+{
+    const CM_PARTIAL_RESOURCE_DESCRIPTOR *LastPartialDescriptor;
+    LastPartialDescriptor = &ResourceDescriptor->PartialResourceList.PartialDescriptors[
+            ResourceDescriptor->PartialResourceList.Count - 1];
+    /* CmiGetNextPartialDescriptor is also FORCEINLINE, expand it inline */
+    return (PCM_FULL_RESOURCE_DESCRIPTOR)(
+        (PCHAR)LastPartialDescriptor +
+        sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR) +
+        ((LastPartialDescriptor->Type == CmResourceTypeDeviceSpecific)
+            ? LastPartialDescriptor->u.DeviceSpecificData.DataSize
+            : 0));
+}
+
+/*
+ * RtlStringCbPrintfW — FORCEINLINE variadic in ntstrsafe.h.
+ * Rust can't call variadic inlines. This shim handles the specific
+ * "%lx&%lx" format used in IopGetParentIdPrefix.
+ */
+NTSTATUS
+NTAPI
+RtlStringCbPrintfW_2lx(
+    IN OUT PWSTR pszDest,
+    IN SIZE_T cbDest,
+    IN ULONG Value1,
+    IN ULONG Value2)
+{
+    return RtlStringCbPrintfW(pszDest, cbDest, L"%lx&%lx", Value1, Value2);
+}
+
+/* ========================================================================
  * IopInitializeDriverModule — from driver.c
  * Creates a driver object, initializes it, and calls DriverEntry.
  * ======================================================================== */

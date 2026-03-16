@@ -31,7 +31,7 @@ const IRP_MN_QUERY_DEVICE_TEXT: u8 = 0x0C;
 const IRP_MN_QUERY_PNP_DEVICE_STATE: u8 = 0x14;
 
 #[no_mangle]
-pub unsafe extern "system" fn IopSynchronousCall(
+pub unsafe extern "C" fn IopSynchronousCall(
     DeviceObject: PDEVICE_OBJECT,
     IoStackLocation: PIO_STACK_LOCATION,
     Information: *mut PVOID,
@@ -98,7 +98,7 @@ pub unsafe extern "system" fn IopSynchronousCall(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpStartDevice(
+pub unsafe extern "C" fn PiIrpStartDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
     let mut info: PVOID = core::ptr::null_mut();
@@ -119,7 +119,7 @@ pub unsafe extern "system" fn PiIrpStartDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpStopDevice(
+pub unsafe extern "C" fn PiIrpStopDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
     let mut info: PVOID = core::ptr::null_mut();
@@ -137,7 +137,7 @@ pub unsafe extern "system" fn PiIrpStopDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryStopDevice(
+pub unsafe extern "C" fn PiIrpQueryStopDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
     let mut info: PVOID = core::ptr::null_mut();
@@ -156,7 +156,7 @@ pub unsafe extern "system" fn PiIrpQueryStopDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpCancelStopDevice(
+pub unsafe extern "C" fn PiIrpCancelStopDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
     let mut info: PVOID = core::ptr::null_mut();
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn PiIrpCancelStopDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryDeviceRelations(
+pub unsafe extern "C" fn PiIrpQueryDeviceRelations(
     DeviceNode: PDEVICE_NODE,
     Type: DEVICE_RELATION_TYPE,
 ) -> NTSTATUS {
@@ -194,7 +194,7 @@ pub unsafe extern "system" fn PiIrpQueryDeviceRelations(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryResources(
+pub unsafe extern "C" fn PiIrpQueryResources(
     DeviceNode: PDEVICE_NODE,
     Resources: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
@@ -217,7 +217,7 @@ pub unsafe extern "system" fn PiIrpQueryResources(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryResourceRequirements(
+pub unsafe extern "C" fn PiIrpQueryResourceRequirements(
     DeviceNode: PDEVICE_NODE,
     Resources: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
 ) -> NTSTATUS {
@@ -240,7 +240,7 @@ pub unsafe extern "system" fn PiIrpQueryResourceRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryDeviceText(
+pub unsafe extern "C" fn PiIrpQueryDeviceText(
     DeviceNode: PDEVICE_NODE,
     LocaleId: LCID,
     Type: DEVICE_TEXT_TYPE,
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn PiIrpQueryDeviceText(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiIrpQueryPnPDeviceState(
+pub unsafe extern "C" fn PiIrpQueryPnPDeviceState(
     DeviceNode: PDEVICE_NODE,
     DeviceState: PPNP_DEVICE_STATE,
 ) -> NTSTATUS {

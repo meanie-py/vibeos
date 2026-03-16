@@ -6,7 +6,7 @@ use ntkrnl_sys::ddk::{
     PIO_RESOURCE_DESCRIPTOR, PUINT32, PUINT64, UINT64,
 };
 
-extern "C" {
+extern "system" {
     static mut IopRootIrqArbiter: ARBITER_INSTANCE;
     fn ArbInitializeArbiterInstance( arbiter: *mut ARBITER_INSTANCE, device: PVOID, resource_type: i32, name: *const u16, ordering_name: *const u16, translation: PVOID, ) -> NTSTATUS;
 }

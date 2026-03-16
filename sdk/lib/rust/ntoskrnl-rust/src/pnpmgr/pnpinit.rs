@@ -46,14 +46,21 @@ type DEVICE_NODE = _DEVICE_NODE;
 static mut PiInitGroupOrderTable: PUNICODE_STRING = core::ptr::null_mut();
 static mut PiInitGroupOrderTableCount: USHORT = 0;
 static mut PnpDefaultInterfaceType: INTERFACE_TYPE = 0;
-static mut PnPBootDriversLoaded: BOOLEAN = 0;
-static mut PnPBootDriversInitialized: BOOLEAN = 0;
+#[no_mangle]
+pub static mut PnPBootDriversLoaded: BOOLEAN = 0;
+#[no_mangle]
+pub static mut PnPBootDriversInitialized: BOOLEAN = 0;
 
-static mut IopRootBusNumberArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
-static mut IopRootIrqArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
-static mut IopRootDmaArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
-static mut IopRootMemArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
-static mut IopRootPortArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopRootBusNumberArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopRootIrqArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopRootDmaArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopRootMemArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopRootPortArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
 
 extern "system" {
     static mut PiEnumerationFinished: _KEVENT;
@@ -68,6 +75,9 @@ extern "system" {
     fn IopArbDmaInitialize() -> NTSTATUS;
     fn IopArbIrqInitialize() -> NTSTATUS;
     fn IopArbBusNumberInitialize() -> NTSTATUS;
+}
+// cdecl functions (no NTAPI in C declarations)
+extern "C" {
     fn PnpRegMultiSzToUnicodeStrings( KeyValueInformation: PKEY_VALUE_FULL_INFORMATION, GroupTable: *mut PUNICODE_STRING, Count: *mut ULONG, ) -> NTSTATUS;
     fn PnpRegSzToString(Buffer: PVOID, DataLength: ULONG, Length: *mut USHORT);
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
@@ -76,7 +86,7 @@ extern "system" {
     fn PiQueueDeviceAction( DeviceObject: PDEVICE_OBJECT, Action: u32, Callback: PVOID, Context: PVOID, );
 }
 
-extern "C" {
+extern "system" {
     fn PnpRootDriverEntry(DriverObject: PDRIVER_OBJECT, RegistryPath: PUNICODE_STRING) -> NTSTATUS;
 }
 

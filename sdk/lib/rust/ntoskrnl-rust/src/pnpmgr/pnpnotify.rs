@@ -27,13 +27,17 @@ use ntkrnl_sys::ddk::{
     RtlInitUnicodeString,
 };
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
+}
+extern "system" {
+    fn IsEqualGUID(guid1: LPCGUID, guid2: LPCGUID) -> BOOLEAN;
     static GUID_DEVICE_INTERFACE_ARRIVAL: GUID;
     static GUID_PNP_CUSTOM_NOTIFICATION: GUID;
-    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn IopGetRelatedTargetDevice(FileObject: PFILE_OBJECT, DeviceNode: *mut PDEVICE_NODE) -> NTSTATUS;
-    fn IsEqualGUID(guid1: LPCGUID, guid2: LPCGUID) -> BOOLEAN;
+}
+extern "fastcall" {
+    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
 
 static mut PiNotifyTargetDeviceLock: KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
@@ -87,7 +91,8 @@ struct PNP_TARGET_DEVICE {
 type PPNP_NOTIFY_ENTRY = *mut PNP_NOTIFY_ENTRY;
 
 // CODE_SEG("INIT")
-unsafe fn PiInitializeNotifications() {
+#[no_mangle]
+pub unsafe extern "C" fn PiInitializeNotifications() {
     KeInitializeGuardedMutex(core::ptr::addr_of_mut!(PiNotifyTargetDeviceLock));
     KeInitializeGuardedMutex(core::ptr::addr_of_mut!(PiNotifyHwProfileLock));
     KeInitializeGuardedMutex(core::ptr::addr_of_mut!(PiNotifyDeviceInterfaceLock));
@@ -140,7 +145,8 @@ unsafe fn PiProcessSingleNotification(
     PiDereferencePnpNotifyEntry(Entry);
 }
 
-unsafe fn PiNotifyDeviceInterfaceChange(
+#[no_mangle]
+pub unsafe extern "system" fn PiNotifyDeviceInterfaceChange(
     Event: LPCGUID,
     InterfaceClassGuid: LPCGUID,
     SymbolicLinkName: PUNICODE_STRING,
@@ -227,7 +233,8 @@ unsafe fn PiNotifyHardwareProfileChange(Event: LPCGUID) {
     ExFreePoolWithTag(notifyStruct as PVOID, TAG_PNP_NOTIFY);
 }
 
-unsafe fn PiNotifyTargetDeviceChange(
+#[no_mangle]
+pub unsafe extern "system" fn PiNotifyTargetDeviceChange(
     Event: LPCGUID,
     DeviceObject: PDEVICE_OBJECT,
     CustomNotification: PTARGET_DEVICE_CUSTOM_NOTIFICATION,

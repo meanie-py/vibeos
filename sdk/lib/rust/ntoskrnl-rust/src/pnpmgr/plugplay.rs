@@ -69,27 +69,31 @@ use ntkrnl_sys::ddk::{
 
 use ntkrnl_sys::probe::*;
 
+// NTAPI (stdcall on i386) functions
 extern "system" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut SeTcbPrivilege: LUID;
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
     fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
-    fn PnpRootCreateDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS;
-    fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn RtlDuplicateUnicodeString(Flags: ULONG, SourceString: PUNICODE_STRING, DestinationString: PUNICODE_STRING) -> NTSTATUS;
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: ULONG);
-    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
-    fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
     fn IopInitiatePnpIrp(DeviceObject: PDEVICE_OBJECT, IoStatusBlock: *mut _IO_STATUS_BLOCK, MinorFunction: UCHAR, Stack: *mut _IO_STACK_LOCATION) -> NTSTATUS;
     fn IoGetDeviceProperty(DeviceObject: PDEVICE_OBJECT, DeviceProperty: DEVICE_REGISTRY_PROPERTY, BufferLength: ULONG, PropertyBuffer: PVOID, ResultLength: *mut ULONG) -> NTSTATUS;
-    fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
-    fn IopInitDeviceTreeTraverseContext(Context: *mut _DEVICETREE_TRAVERSE_CONTEXT, DeviceNode: PDEVICE_NODE, Callback: PVOID, CallbackContext: PVOID);
     fn RtlEqualUnicodeString(String1: PUNICODE_STRING, String2: PUNICODE_STRING, CaseInSensitive: BOOLEAN) -> BOOLEAN;
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: *const u16);
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
+    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+}
+// cdecl functions (no NTAPI in C declaration, or CRT functions)
+extern "C" {
+    fn PnpRootCreateDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS;
+    fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: ULONG);
+    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
+    fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
+    fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
+    fn IopInitDeviceTreeTraverseContext(Context: *mut _DEVICETREE_TRAVERSE_CONTEXT, DeviceNode: PDEVICE_NODE, Callback: PVOID, CallbackContext: PVOID);
     fn wcslen(s: *const u16) -> usize;
     fn memcpy(dest: PVOID, src: *const core::ffi::c_void, n: usize) -> PVOID;
-    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
 }
 
 const RTL_DUPLICATE_UNICODE_STRING_NULL_TERMINATE: ULONG = 1;

@@ -6,7 +6,7 @@ use ntkrnl_sys::ddk::{
     PUINT32, PUINT64, UINT64,
 };
 
-extern "C" {
+extern "system" {
     static mut IopRootPortArbiter: ARBITER_INSTANCE;
     fn ArbInitializeArbiterInstance( Arbiter: *mut ARBITER_INSTANCE, BusDeviceObject: PVOID, ResourceType: i32, ArbiterName: *const u16, OrderingName: *const u16, TranslateOrdering: PVOID, ) -> NTSTATUS;
 }

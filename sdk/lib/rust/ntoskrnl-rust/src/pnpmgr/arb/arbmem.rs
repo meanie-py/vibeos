@@ -8,7 +8,7 @@ use ntkrnl_sys::ddk::{
 
 const CmResourceTypeMemory: i32 = 3;
 
-extern "C" {
+extern "system" {
     static mut IopRootMemArbiter: ARBITER_INSTANCE;
     fn ArbInitializeArbiterInstance( Arbiter: *mut ARBITER_INSTANCE, BusDeviceObject: PVOID, ResourceType: i32, Name: *const u16, OrderingName: *const u16, TranslateOrdering: PVOID, ) -> NTSTATUS;
 }

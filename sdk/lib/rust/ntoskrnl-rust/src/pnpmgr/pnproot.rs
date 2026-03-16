@@ -38,11 +38,13 @@ use ntkrnl_sys::ddk::{
 extern "C" {
     fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+    fn wcsrchr(s: PWSTR, c: WCHAR) -> PWSTR;
+    fn _snwprintf(buf: PWSTR, count: usize, fmt: PCWSTR, ...) -> i32;
+}
+extern "system" {
     static mut IopRootDriverObject: PDRIVER_OBJECT;
     static mut IopRootDeviceNode: PDEVICE_NODE;
     fn PoStartNextPowerIrp(Irp: PIRP);
-    fn wcsrchr(s: PWSTR, c: WCHAR) -> PWSTR;
-    fn _snwprintf(buf: PWSTR, count: usize, fmt: PCWSTR, ...) -> i32;
 }
 
 #[allow(non_upper_case_globals)]
@@ -176,7 +178,7 @@ unsafe fn LocateChildDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+pub unsafe extern "C" fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
     let DeviceExtension = core::ptr::addr_of_mut!(PnpRootDOExtension);
     let mut InstancePathCopy: _UNICODE_STRING = core::mem::zeroed();
 
@@ -250,7 +252,7 @@ pub unsafe extern "system" fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PnpRootCreateDeviceObject(
+pub unsafe extern "C" fn PnpRootCreateDeviceObject(
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
     IoCreateDevice(
@@ -265,7 +267,7 @@ pub unsafe extern "system" fn PnpRootCreateDeviceObject(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PnpRootCreateDevice(
+pub unsafe extern "C" fn PnpRootCreateDevice(
     ServiceName: PUNICODE_STRING,
     PhysicalDeviceObject: *mut PDEVICE_OBJECT,
     FullInstancePath: PUNICODE_STRING,
@@ -1378,7 +1380,7 @@ unsafe extern "system" fn PnpRootPowerControl(DeviceObject: PDEVICE_OBJECT, Irp:
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PnpRootInitializeDevExtension() {
+pub unsafe extern "C" fn PnpRootInitializeDevExtension() {
     PnpRootDOExtension.DeviceListCount = 0;
     InitializeListHead(core::ptr::addr_of_mut!(PnpRootDOExtension.DeviceListHead));
     KeInitializeGuardedMutex(core::ptr::addr_of_mut!(PnpRootDOExtension.DeviceListLock));

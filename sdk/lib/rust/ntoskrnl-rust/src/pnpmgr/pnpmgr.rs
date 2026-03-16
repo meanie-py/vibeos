@@ -27,6 +27,11 @@ use ntkrnl_sys::ddk::{
 
 extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+    fn wcslen(s: PCWSTR) -> SIZE_T;
+    fn wcschr(s: PCWSTR, c: WCHAR) -> PWSTR;
+    fn _wcsnicmp(s1: PCWSTR, s2: PCWSTR, n: SIZE_T) -> i32;
+}
+extern "system" {
     fn ZwOpenKey( KeyHandle: PHANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     fn ZwQueryValueKey( KeyHandle: HANDLE, ValueName: PUNICODE_STRING, KeyValueInformationClass: ULONG, KeyValueInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG, ) -> NTSTATUS;
@@ -42,20 +47,22 @@ extern "C" {
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
     fn RtlComputeCrc32(InitialCrc: ULONG, Buffer: *const UCHAR, Length: ULONG) -> ULONG;
     fn RtlCompareMemory(Source1: PVOID, Source2: PVOID, Length: SIZE_T) -> SIZE_T;
-    fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: SIZE_T, pszFormat: PCWSTR, ...) -> NTSTATUS;
+    fn RtlStringCbPrintfW_2lx(pszDest: PWSTR, cbDest: SIZE_T, Value1: ULONG, Value2: ULONG) -> NTSTATUS;
     fn RtlInitializeGenericTableAvl( Table: PRTL_AVL_TABLE, CompareRoutine: PVOID, AllocateRoutine: PVOID, FreeRoutine: PVOID, TableContext: PVOID, );
-    fn wcslen(s: PCWSTR) -> SIZE_T;
-    fn wcschr(s: PCWSTR, c: WCHAR) -> PWSTR;
-    fn _wcsnicmp(s1: PCWSTR, s2: PCWSTR, n: SIZE_T) -> i32;
     static mut ExpInitializationPhase: ULONG;
     static mut PopSystemPowerDeviceNode: PDEVICE_NODE;
     static mut IopDeviceTreeLock: KSPIN_LOCK;
     fn IopIsValidPhysicalDeviceObject(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
-    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
-    fn IopSynchronousCall( DeviceObject: PDEVICE_OBJECT, IoStackLocation: PIO_STACK_LOCATION, Information: PVOID, ) -> NTSTATUS;
     fn IopQueryDeviceCapabilities( DeviceNode: PDEVICE_NODE, DeviceCaps: *mut DEVICE_CAPABILITIES, ) -> NTSTATUS;
+}
+// cdecl functions (no NTAPI in C declaration)
+extern "C" {
     fn PiQueueDeviceAction( DeviceObject: PDEVICE_OBJECT, Action: ULONG, Request: PVOID, Context: PVOID, );
     fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
+    fn IopSynchronousCall( DeviceObject: PDEVICE_OBJECT, IoStackLocation: PIO_STACK_LOCATION, Information: PVOID, ) -> NTSTATUS;
+}
+extern "fastcall" {
+    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
 
 const KeyValuePartialInformation: ULONG = 1;
@@ -164,7 +171,8 @@ unsafe fn IopFixupDeviceId(String: PWSTR) {
     }
 }
 
-unsafe fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE) {
+#[no_mangle]
+pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE) {
     let mut Status: NTSTATUS;
     let mut CriticalDeviceKey: HANDLE = core::ptr::null_mut();
     let mut InstanceKey: HANDLE = core::ptr::null_mut();
@@ -553,7 +561,8 @@ unsafe fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE) {
     ZwClose(CriticalDeviceKey);
 }
 
-unsafe fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
     let mut OldIrql: KIRQL = 0;
 
     if !PopSystemPowerDeviceNode.is_null() {
@@ -573,7 +582,8 @@ unsafe fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NT
     STATUS_UNSUCCESSFUL
 }
 
-unsafe fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
+#[no_mangle]
+pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
     let mut i: USHORT = 0;
     let mut FoundIndex: USHORT = 0xFFFF;
     let mut NewSize: ULONG;
@@ -633,7 +643,8 @@ unsafe fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
     FoundIndex
 }
 
-unsafe fn IopInitiatePnpIrp(
+#[no_mangle]
+pub unsafe extern "system" fn IopInitiatePnpIrp(
     DeviceObject: PDEVICE_OBJECT,
     IoStatusBlock: *mut _IO_STATUS_BLOCK,
     MinorFunction: UCHAR,
@@ -743,7 +754,8 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
     STATUS_UNSUCCESSFUL
 }
 
-unsafe fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut LogConfKey: HANDLE = core::ptr::null_mut();
@@ -882,7 +894,8 @@ unsafe fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE
     Status
 }
 
-unsafe fn IopGetParentIdPrefix(
+#[no_mangle]
+pub unsafe extern "system" fn IopGetParentIdPrefix(
     DeviceNode: PDEVICE_NODE,
     ParentIdPrefix: PUNICODE_STRING,
 ) -> NTSTATUS {
@@ -995,10 +1008,9 @@ unsafe fn IopGetParentIdPrefix(
         (*(*DeviceNode).Parent).InstancePath.Length as ULONG,
     );
 
-    RtlStringCbPrintfW(
+    RtlStringCbPrintfW_2lx(
         ParentIdPrefixInformation as PWSTR,
         KeyNameBufferLength as SIZE_T,
-        b"%lx&%lx\0".as_ptr() as PCWSTR,
         (*(*DeviceNode).Parent).Level,
         crc32,
     );
@@ -1250,7 +1262,8 @@ unsafe fn PiInitPhase0() -> BOOLEAN {
     1u8
 }
 
-unsafe fn PpInitSystem() -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "system" fn PpInitSystem() -> BOOLEAN {
     match ExpInitializationPhase {
         0 => PiInitPhase0(),
         1 => 1u8,

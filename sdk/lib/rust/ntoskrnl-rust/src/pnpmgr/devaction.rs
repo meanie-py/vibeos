@@ -268,9 +268,8 @@ static GUID_TARGET_DEVICE_REMOVE_COMPLETE: GUID = GUID {
     Data4: [0xb0, 0x8f, 0x00, 0x60, 0x97, 0x13, 0x05, 0x3f],
 };
 
-extern "system" {
+extern "C" {
     fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
-    fn RtlMoveMemory(dst: PVOID, src: PVOID, len: usize);
     fn wcslen(s: *const u16) -> usize;
     fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
 }
@@ -291,11 +290,15 @@ extern "system" {
 }
 
 // Functions defined in sibling pnpmgr modules (linked via #[no_mangle])
-extern "system" {
+// devnode.rs functions are cdecl (no NTAPI in C declarations)
+extern "C" {
     fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: _PNP_DEVNODE_STATE);
     fn PiSetDevNodeProblem(DeviceNode: PDEVICE_NODE, Problem: ULONG);
+}
+// pnpirp.rs functions — these are also cdecl (no NTAPI in C)
+extern "C" {
     fn PiIrpStartDevice(DeviceNode: PDEVICE_NODE);
     fn PiIrpStopDevice(DeviceNode: PDEVICE_NODE);
     fn PiIrpQueryStopDevice(DeviceNode: PDEVICE_NODE);
@@ -305,12 +308,15 @@ extern "system" {
     fn PiIrpQueryResourceRequirements(DeviceNode: PDEVICE_NODE, ResourceReqs: *mut PIO_RESOURCE_REQUIREMENTS_LIST);
     fn PiIrpQueryDeviceText(DeviceNode: PDEVICE_NODE, LocaleId: LCID, TextType: _DEVICE_TEXT_TYPE, Text: *mut PWSTR) -> NTSTATUS;
     fn PiIrpQueryPnPDeviceState(DeviceNode: PDEVICE_NODE, PnPFlags: *mut PNP_DEVICE_STATE) -> NTSTATUS;
+}
+// pnpnotify.rs — PiNotifyTargetDeviceChange is NTAPI (extern "system")
+extern "system" {
     fn PiNotifyTargetDeviceChange(Event: LPCGUID, DeviceObject: PDEVICE_OBJECT, CustomNotification: PTARGET_DEVICE_CUSTOM_NOTIFICATION);
 }
 
 // IopDeviceNodeSetFlag is a macro/inline in C - define as direct flag set
-#[inline(always)]
-unsafe fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG) {
+#[no_mangle]
+pub unsafe extern "system" fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG) {
     (*DeviceNode).Flags |= Flag;
 }
 
@@ -318,11 +324,14 @@ const MAX_DEVICE_ID_LEN: usize = 200;
 const MAX_SEPARATORS_INSTANCEID: ULONG = 0;
 const MAX_SEPARATORS_DEVICEID: ULONG = 1;
 
-static mut IopDeviceActionRequestList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopDeviceActionRequestList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
 static mut IopDeviceActionWorkItem: _WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
 static mut IopDeviceActionInProgress: BOOLEAN = 0;
-static mut IopDeviceActionLock: KSPIN_LOCK = 0;
-static mut PiEnumerationFinished: _KEVENT = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut IopDeviceActionLock: KSPIN_LOCK = 0;
+#[no_mangle]
+pub static mut PiEnumerationFinished: _KEVENT = unsafe { core::mem::zeroed() };
 // L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\"
 static ServicesKeyName: [u16; 53] = [
     b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16,
@@ -617,9 +626,9 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     Status = IopGetRegistryValue(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if (*kvInfo).Type == REG_DWORD {
-            RtlMoveMemory(
-                &mut startType as *mut _ as PVOID,
-                (kvInfo as ULONG_PTR + (*kvInfo).DataOffset as ULONG_PTR) as PVOID,
+            core::ptr::copy_nonoverlapping(
+                (kvInfo as ULONG_PTR + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
+                &mut startType as *mut _ as *mut u8,
                 core::mem::size_of::<SERVICE_LOAD_TYPE>(),
             );
         }
@@ -982,7 +991,8 @@ unsafe fn PiCallDriverAddDevice(
     Status
 }
 
-unsafe extern "system" fn IopQueryDeviceCapabilities(
+#[no_mangle]
+pub unsafe extern "system" fn IopQueryDeviceCapabilities(
     DeviceNode: PDEVICE_NODE,
     DeviceCaps: PDEVICE_CAPABILITIES,
 ) -> NTSTATUS {
@@ -1189,7 +1199,8 @@ unsafe fn IopQueryCompatibleIds(
     Status
 }
 
-unsafe fn PiSetDevNodeText(
+#[no_mangle]
+pub unsafe extern "system" fn PiSetDevNodeText(
     DeviceNode: PDEVICE_NODE,
     InstanceKey: HANDLE,
 ) {
@@ -2461,7 +2472,8 @@ unsafe extern "system" fn PipDeviceActionWorker(
     KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
 }
 
-unsafe fn PiQueueDeviceAction(
+#[no_mangle]
+pub unsafe extern "C" fn PiQueueDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
     CompletionEvent: PKEVENT,
@@ -2503,7 +2515,8 @@ unsafe fn PiQueueDeviceAction(
     ExQueueWorkItem(&mut IopDeviceActionWorkItem as *mut _, DelayedWorkQueue);
 }
 
-unsafe fn PiPerformSyncDeviceAction(
+#[no_mangle]
+pub unsafe extern "C" fn PiPerformSyncDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
 ) -> NTSTATUS {

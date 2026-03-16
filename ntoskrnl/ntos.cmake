@@ -160,6 +160,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c  # Replaced by Rust volume.rs
+    # pnpmgr/ — translated to Rust but runtime bugs (BUGCHECK 0x1E, uninitialized KGATE)
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c

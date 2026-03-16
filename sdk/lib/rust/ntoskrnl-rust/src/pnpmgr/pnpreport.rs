@@ -34,24 +34,27 @@ struct INTERNAL_WORK_QUEUE_ITEM {
 
 type PINTERNAL_WORK_QUEUE_ITEM = *mut INTERNAL_WORK_QUEUE_ITEM;
 
-extern "system" {
-    fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
-    fn IopGetInterfaceTypeString(IfType: INTERFACE_TYPE) -> *mut u16;
+// Functions that are cdecl (no NTAPI in C declarations)
+extern "C" {
     fn PnpRootCreateDevice(ServiceName: *mut _UNICODE_STRING, Pdo: *mut PDEVICE_OBJECT, InstancePath: *mut _UNICODE_STRING) -> NTSTATUS;
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
+    fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, Parent: PDEVICE_NODE);
+    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG);
+    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
+    fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG, Request: PVOID, Callback: PVOID);
+    fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
+}
+// Functions that are NTAPI (stdcall on i386)
+extern "system" {
+    fn IsEqualGUID(guid1: *const GUID, guid2: *const GUID) -> BOOLEAN;
+    fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
     fn IopCreateDeviceKeyPath(InstancePath: *const _UNICODE_STRING, Options: ULONG, InstanceKey: *mut HANDLE) -> NTSTATUS;
     fn PiSetDevNodeText(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
     fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG);
     fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS;
-    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
-    fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, Parent: PDEVICE_NODE);
-    fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG);
-    fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG, Request: PVOID, Callback: PVOID);
     fn IopDetectResourceConflict(ResourceList: PCM_RESOURCE_LIST, Silent: BOOLEAN, ConflictingDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn IopIsValidPhysicalDeviceObject(PhysicalDeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
     fn PiNotifyTargetDeviceChange(Event: *const GUID, DeviceObject: PDEVICE_OBJECT, NotificationStructure: PTARGET_DEVICE_CUSTOM_NOTIFICATION);
-    fn IsEqualGUID(guid1: *const GUID, guid2: *const GUID) -> BOOLEAN;
-    fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static GUID_PNP_CUSTOM_NOTIFICATION: GUID;
     static GUID_TARGET_DEVICE_QUERY_REMOVE: GUID;
@@ -94,6 +97,47 @@ const PNPISABus: INTERFACE_TYPE = 14;
 const PNPBus: INTERFACE_TYPE = 15;
 const Vmcs: INTERFACE_TYPE = 16;
 const InterfaceTypeUndefined: INTERFACE_TYPE = -1i32 as INTERFACE_TYPE;
+
+// Wide string literals for IopGetInterfaceTypeString
+static IFACE_INTERNAL: [u16; 9] = [b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'a' as u16, b'l' as u16, 0];
+static IFACE_ISA: [u16; 4] = [b'I' as u16, b's' as u16, b'a' as u16, 0];
+static IFACE_EISA: [u16; 5] = [b'E' as u16, b'i' as u16, b's' as u16, b'a' as u16, 0];
+static IFACE_MICROCHANNEL: [u16; 13] = [b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b'C' as u16, b'h' as u16, b'a' as u16, b'n' as u16, b'n' as u16, b'e' as u16, b'l' as u16, 0];
+static IFACE_TURBOCHANNEL: [u16; 13] = [b'T' as u16, b'u' as u16, b'r' as u16, b'b' as u16, b'o' as u16, b'C' as u16, b'h' as u16, b'a' as u16, b'n' as u16, b'n' as u16, b'e' as u16, b'l' as u16, 0];
+static IFACE_PCIBUS: [u16; 7] = [b'P' as u16, b'C' as u16, b'I' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_VMEBUS: [u16; 7] = [b'V' as u16, b'M' as u16, b'E' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_NUBUS: [u16; 6] = [b'N' as u16, b'u' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_PCMCIABUS: [u16; 10] = [b'P' as u16, b'C' as u16, b'M' as u16, b'C' as u16, b'I' as u16, b'A' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_CBUS: [u16; 5] = [b'C' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_MPIBUS: [u16; 7] = [b'M' as u16, b'P' as u16, b'I' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_MPSABUS: [u16; 8] = [b'M' as u16, b'P' as u16, b'S' as u16, b'A' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_PROCESSORINTERNAL: [u16; 18] = [b'P' as u16, b'r' as u16, b'o' as u16, b'c' as u16, b'e' as u16, b's' as u16, b's' as u16, b'o' as u16, b'r' as u16, b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'a' as u16, b'l' as u16, 0];
+static IFACE_PNPISABUS: [u16; 10] = [b'P' as u16, b'N' as u16, b'P' as u16, b'I' as u16, b'S' as u16, b'A' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_PNPBUS: [u16; 7] = [b'P' as u16, b'N' as u16, b'P' as u16, b'B' as u16, b'u' as u16, b's' as u16, 0];
+static IFACE_VMCS: [u16; 5] = [b'V' as u16, b'm' as u16, b'c' as u16, b's' as u16, 0];
+
+#[no_mangle]
+pub unsafe extern "system" fn IopGetInterfaceTypeString(IfType: INTERFACE_TYPE) -> *mut u16 {
+    match IfType {
+        0 /* Internal */ => IFACE_INTERNAL.as_ptr() as *mut u16,
+        1 /* Isa */ => IFACE_ISA.as_ptr() as *mut u16,
+        2 /* Eisa */ => IFACE_EISA.as_ptr() as *mut u16,
+        3 /* MicroChannel */ => IFACE_MICROCHANNEL.as_ptr() as *mut u16,
+        4 /* TurboChannel */ => IFACE_TURBOCHANNEL.as_ptr() as *mut u16,
+        5 /* PCIBus */ => IFACE_PCIBUS.as_ptr() as *mut u16,
+        6 /* VMEBus */ => IFACE_VMEBUS.as_ptr() as *mut u16,
+        7 /* NuBus */ => IFACE_NUBUS.as_ptr() as *mut u16,
+        8 /* PCMCIABus */ => IFACE_PCMCIABUS.as_ptr() as *mut u16,
+        9 /* CBus */ => IFACE_CBUS.as_ptr() as *mut u16,
+        10 /* MPIBus */ => IFACE_MPIBUS.as_ptr() as *mut u16,
+        11 /* MPSABus */ => IFACE_MPSABUS.as_ptr() as *mut u16,
+        12 /* ProcessorInternal */ => IFACE_PROCESSORINTERNAL.as_ptr() as *mut u16,
+        14 /* PNPISABus */ => IFACE_PNPISABUS.as_ptr() as *mut u16,
+        15 /* PNPBus */ => IFACE_PNPBUS.as_ptr() as *mut u16,
+        16 /* Vmcs */ => IFACE_VMCS.as_ptr() as *mut u16,
+        _ => core::ptr::null_mut(),
+    }
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn IopReportTargetDeviceChangeAsyncWorker(Context: PVOID) {

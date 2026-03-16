@@ -29,14 +29,14 @@ pub static mut IopDeviceTreeLock: KSPIN_LOCK = 0;
 pub static mut IopNumberDeviceNodes: i32 = 0;
 
 #[no_mangle]
-pub unsafe extern "C" fn IopGetDeviceNode(
+pub unsafe extern "fastcall" fn IopGetDeviceNode(
     DeviceObject: PDEVICE_OBJECT,
 ) -> PDEVICE_NODE {
     (*((*DeviceObject).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION)).DeviceNode
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PipAllocateDeviceNode(
+pub unsafe extern "C" fn PipAllocateDeviceNode(
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> PDEVICE_NODE {
     let DeviceNode = ExAllocatePoolZero(
@@ -72,7 +72,7 @@ pub unsafe extern "system" fn PipAllocateDeviceNode(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiInsertDevNode(
+pub unsafe extern "C" fn PiInsertDevNode(
     DeviceNode: PDEVICE_NODE,
     ParentNode: PDEVICE_NODE,
 ) {
@@ -93,7 +93,7 @@ pub unsafe extern "system" fn PiInsertDevNode(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiSetDevNodeState(
+pub unsafe extern "C" fn PiSetDevNodeState(
     DeviceNode: PDEVICE_NODE,
     NewState: UINT32,
 ) -> UINT32 {
@@ -115,7 +115,7 @@ pub unsafe extern "system" fn PiSetDevNodeState(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiSetDevNodeProblem(
+pub unsafe extern "C" fn PiSetDevNodeProblem(
     DeviceNode: PDEVICE_NODE,
     Problem: UINT32,
 ) {
@@ -124,7 +124,7 @@ pub unsafe extern "system" fn PiSetDevNodeProblem(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiClearDevNodeProblem(
+pub unsafe extern "C" fn PiClearDevNodeProblem(
     DeviceNode: PDEVICE_NODE,
 ) {
     (*DeviceNode).Flags &= !0x00000800;
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn PiClearDevNodeProblem(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopFreeDeviceNode(
+pub unsafe extern "C" fn IopFreeDeviceNode(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
     let mut OldIrql: KIRQL = 0;
@@ -212,7 +212,7 @@ unsafe fn IopFindNextDeviceNodeForTraversal(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopTraverseDeviceTree(
+pub unsafe extern "C" fn IopTraverseDeviceTree(
     Context: PDEVICETREE_TRAVERSE_CONTEXT,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
