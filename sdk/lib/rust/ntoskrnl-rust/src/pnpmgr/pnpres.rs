@@ -690,7 +690,7 @@ unsafe fn IopFilterResourceRequirements(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
         0x0D,
         &mut Stack,
     );
-    if Status < 0 && Status != STATUS_NOT_IMPLEMENTED {
+    if Status < 0 && Status != STATUS_NOT_SUPPORTED {
         return Status;
     } else if Status >= 0 && IoStatusBlock.Information != 0 {
         (*DeviceNode).ResourceRequirements =
@@ -803,7 +803,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
 
         Status = IoGetDeviceProperty(
             (*DeviceNode).PhysicalDeviceObject,
-            18,
+            0xb, // DevicePropertyPhysicalDeviceObjectName
             0,
             core::ptr::null_mut(),
             &mut OldLength,

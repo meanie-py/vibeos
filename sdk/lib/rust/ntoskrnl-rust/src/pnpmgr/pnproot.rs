@@ -106,6 +106,100 @@ static GUID_BUS_TYPE_INTERNAL: _GUID = _GUID {
 
 const ENUM_NAME_ROOT: &[u16] = &[b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, 0];
 
+// Wide string constants (UTF-16LE) — b"..." byte strings MUST NOT be used as PCWSTR
+static W_ENUM_KEY: [u16; 50] = {
+    const S: &[u8] = b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\0";
+    let mut a = [0u16; 50];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_ENUM_ROOT_KEY: [u16; 55] = {
+    const S: &[u8] = b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\Root\0";
+    let mut a = [0u16; 55];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_ROOT_BACKSLASH: [u16; 6] = {
+    const S: &[u8] = b"Root\\\0";
+    let mut a = [0u16; 6];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_BACKSLASH: [u16; 2] = [b'\\' as u16, 0];
+static W_NEXT_INSTANCE: [u16; 13] = {
+    const S: &[u8] = b"NextInstance\0";
+    let mut a = [0u16; 13];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_FMT_04LU: [u16; 6] = {
+    const S: &[u8] = b"%04lu\0";
+    let mut a = [0u16; 6];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_DEVICE_DESC: [u16; 11] = {
+    const S: &[u8] = b"DeviceDesc\0";
+    let mut a = [0u16; 11];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_LOG_CONF: [u16; 8] = {
+    const S: &[u8] = b"LogConf\0";
+    let mut a = [0u16; 8];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_BASIC_CONFIG_VECTOR: [u16; 18] = {
+    const S: &[u8] = b"BasicConfigVector\0";
+    let mut a = [0u16; 18];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_BOOT_CONFIG: [u16; 11] = {
+    const S: &[u8] = b"BootConfig\0";
+    let mut a = [0u16; 11];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_DEVICE_REPORTED: [u16; 15] = {
+    const S: &[u8] = b"DeviceReported\0";
+    let mut a = [0u16; 15];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_CONTROL: [u16; 8] = {
+    const S: &[u8] = b"Control\0";
+    let mut a = [0u16; 8];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_LEGACY: [u16; 8] = {
+    const S: &[u8] = b"LEGACY_\0";
+    let mut a = [0u16; 8];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+static W_DEVICE_PFN_DUMP: [u16; 16] = {
+    const S: &[u8] = b"\\Device\\PfnDump\0";
+    let mut a = [0u16; 16];
+    let mut i = 0;
+    while i < S.len() { a[i] = S[i] as u16; i += 1; }
+    a
+};
+
 #[repr(C)]
 struct PNPROOT_DEVICE {
     ListEntry: LIST_ENTRY,
@@ -140,6 +234,7 @@ struct BUFFER {
 }
 type PBUFFER = *mut BUFFER;
 
+#[used]
 static mut PnpRootDOExtension: PNPROOT_FDO_DEVICE_EXTENSION = unsafe { core::mem::zeroed() };
 
 unsafe fn LocateChildDevice(
@@ -287,16 +382,15 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
 
     RtlInitUnicodeString(
         &mut EnumKeyName,
-        b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\0"
-            .as_ptr()
-            .cast(),
+        W_ENUM_KEY.as_ptr(),
     );
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*DeviceExtension).DeviceListLock));
 
     DevicePath.Length = 0;
+    // sizeof(ENUM_NAME_ROOT) = sizeof(L"Root") = 5 WCHARs = 10 bytes
     DevicePath.MaximumLength =
-        (core::mem::size_of_val(b"Root\0") + core::mem::size_of::<WCHAR>() + (*ServiceName).Length as usize) as u16;
+        (5 * core::mem::size_of::<WCHAR>() + core::mem::size_of::<WCHAR>() + (*ServiceName).Length as usize) as u16;
     DevicePath.Buffer = ExAllocatePoolWithTag(
         PagedPool,
         DevicePath.MaximumLength as usize,
@@ -307,7 +401,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
         KeReleaseGuardedMutex(core::ptr::addr_of_mut!((*DeviceExtension).DeviceListLock));
         return Status;
     }
-    RtlAppendUnicodeToString(&mut DevicePath, b"Root\\\0".as_ptr().cast());
+    RtlAppendUnicodeToString(&mut DevicePath, W_ROOT_BACKSLASH.as_ptr());
     RtlAppendUnicodeStringToString(&mut DevicePath, ServiceName);
 
     Device = ExAllocatePoolWithTag(
@@ -361,7 +455,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
             0,
             core::mem::size_of_val(&QueryTable),
         );
-        QueryTable[0].Name = b"NextInstance\0".as_ptr().cast();
+        QueryTable[0].Name = W_NEXT_INSTANCE.as_ptr();
         QueryTable[0].EntryContext = core::ptr::addr_of_mut!(NextInstance) as PVOID;
         QueryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_REQUIRED;
 
@@ -378,7 +472,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
             _snwprintf(
                 InstancePath.as_mut_ptr(),
                 InstancePath.len(),
-                b"%04lu\0".as_ptr().cast(),
+                W_FMT_04LU.as_ptr(),
                 NextInstance,
             );
             Status = LocateChildDevice(
@@ -401,7 +495,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
         _snwprintf(
             InstancePath.as_mut_ptr(),
             InstancePath.len(),
-            b"%04lu\0".as_ptr().cast(),
+            W_FMT_04LU.as_ptr(),
             NextInstance,
         );
         Status = LocateChildDevice(
@@ -414,7 +508,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
             RtlDeleteRegistryValue(
                 RTL_REGISTRY_HANDLE,
                 DeviceKeyHandle as PWSTR,
-                b"NextInstance\0".as_ptr().cast(),
+                W_NEXT_INSTANCE.as_ptr(),
             );
             continue;
         }
@@ -423,7 +517,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
         Status = RtlWriteRegistryValue(
             RTL_REGISTRY_HANDLE,
             DeviceKeyHandle as PWSTR,
-            b"NextInstance\0".as_ptr().cast(),
+            W_NEXT_INSTANCE.as_ptr(),
             REG_DWORD,
             core::ptr::addr_of_mut!(NextInstance) as PVOID,
             core::mem::size_of::<ULONG>() as ULONG,
@@ -475,7 +569,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
                         FullInstancePath,
                         core::ptr::addr_of_mut!((*Device).DeviceID),
                     );
-                    RtlAppendUnicodeToString(FullInstancePath, b"\\\0".as_ptr().cast());
+                    RtlAppendUnicodeToString(FullInstancePath, W_BACKSLASH.as_ptr());
                     RtlAppendUnicodeStringToString(
                         FullInstancePath,
                         core::ptr::addr_of_mut!((*Device).InstanceID),
@@ -636,7 +730,7 @@ unsafe fn CreateDeviceFromRegistry(
         core::mem::size_of_val(&QueryTable),
     );
     QueryTable[0].QueryRoutine = core::mem::transmute(Some(QueryStringCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS));
-    QueryTable[0].Name = b"DeviceDesc\0".as_ptr().cast();
+    QueryTable[0].Name = W_DEVICE_DESC.as_ptr();
     QueryTable[0].EntryContext = core::ptr::addr_of_mut!((*Device).DeviceDescription) as PVOID;
 
     RtlQueryRegistryValues(
@@ -657,12 +751,12 @@ unsafe fn CreateDeviceFromRegistry(
         core::mem::size_of_val(&QueryTable),
     );
     QueryTable[0].Flags = RTL_QUERY_REGISTRY_SUBKEY;
-    QueryTable[0].Name = b"LogConf\0".as_ptr().cast();
+    QueryTable[0].Name = W_LOG_CONF.as_ptr();
     QueryTable[1].QueryRoutine = core::mem::transmute(Some(QueryBinaryValueCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS));
-    QueryTable[1].Name = b"BasicConfigVector\0".as_ptr().cast();
+    QueryTable[1].Name = W_BASIC_CONFIG_VECTOR.as_ptr();
     QueryTable[1].EntryContext = core::ptr::addr_of_mut!(Buffer1) as PVOID;
     QueryTable[2].QueryRoutine = core::mem::transmute(Some(QueryBinaryValueCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS));
-    QueryTable[2].Name = b"BootConfig\0".as_ptr().cast();
+    QueryTable[2].Name = W_BOOT_CONFIG.as_ptr();
     QueryTable[2].EntryContext = core::ptr::addr_of_mut!(Buffer2) as PVOID;
 
     RtlQueryRegistryValues(
@@ -697,8 +791,8 @@ unsafe fn IopShouldProcessDevice(SubKey: HANDLE, InstanceID: PCWSTR) -> NTSTATUS
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut DeviceReportedValue, b"DeviceReported\0".as_ptr().cast());
-    RtlInitUnicodeString(&mut Control, b"Control\0".as_ptr().cast());
+    RtlInitUnicodeString(&mut DeviceReportedValue, W_DEVICE_REPORTED.as_ptr());
+    RtlInitUnicodeString(&mut Control, W_CONTROL.as_ptr());
 
     let pKeyValueFullInformation = ExAllocatePool(PagedPool, Size as SIZE_T) as PKEY_VALUE_FULL_INFORMATION;
     if pKeyValueFullInformation.is_null() {
@@ -815,12 +909,10 @@ unsafe fn EnumerateDevices(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
     let mut Index2: ULONG;
     let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
 
-    RtlInitUnicodeString(&mut LegacyU, b"LEGACY_\0".as_ptr().cast());
+    RtlInitUnicodeString(&mut LegacyU, W_LEGACY.as_ptr());
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum\\Root\0"
-            .as_ptr()
-            .cast(),
+        W_ENUM_ROOT_KEY.as_ptr(),
     );
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*DeviceExtension).DeviceListLock));
@@ -932,7 +1024,8 @@ unsafe fn EnumerateDevices(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
             *(((*SubKeyInfo).Name.as_mut_ptr() as usize + (*SubKeyInfo).NameLength as usize) as *mut WCHAR) = 0;
 
             DevicePath.Length = 0;
-            DevicePath.MaximumLength = (core::mem::size_of_val(b"Root\0")
+            // sizeof(ENUM_NAME_ROOT) = sizeof(L"Root") = 5 WCHARs = 10 bytes
+            DevicePath.MaximumLength = (5 * core::mem::size_of::<WCHAR>()
                 + core::mem::size_of::<WCHAR>()
                 + SubKeyName.Length as usize) as u16;
             DevicePath.Buffer = ExAllocatePoolWithTag(
@@ -945,7 +1038,7 @@ unsafe fn EnumerateDevices(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
                 break;
             }
 
-            RtlAppendUnicodeToString(&mut DevicePath, b"Root\\\0".as_ptr().cast());
+            RtlAppendUnicodeToString(&mut DevicePath, W_ROOT_BACKSLASH.as_ptr());
             RtlAppendUnicodeStringToString(&mut DevicePath, &mut SubKeyName);
 
             Status = IopShouldProcessDevice(SubKeyHandle, (*SubKeyInfo).Name.as_ptr());
@@ -1395,6 +1488,7 @@ pub unsafe extern "system" fn PnpRootAddDevice(
 }
 
 #[cfg(feature = "mi_trace_pfns")]
+#[used]
 static mut IopPfnDumpDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
 
 #[cfg(feature = "mi_trace_pfns")]
@@ -1429,7 +1523,7 @@ pub unsafe extern "system" fn PnpRootDriverEntry(
 
     #[cfg(feature = "mi_trace_pfns")]
     {
-        RtlInitUnicodeString(&mut PfnDumpDeviceName, b"\\Device\\PfnDump\0".as_ptr().cast());
+        RtlInitUnicodeString(&mut PfnDumpDeviceName, W_DEVICE_PFN_DUMP.as_ptr());
         (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = core::mem::transmute(Some(PnpRootCreateClose as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS));
         (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = core::mem::transmute(Some(PnpRootCreateClose as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS));
     }
