@@ -284,7 +284,7 @@ static mut IopPnpNotifyEvent: KEVENT = unsafe { core::mem::zeroed() };
 
 // CODE_SEG("INIT")
 #[no_mangle]
-pub unsafe extern "system" fn IopInitPlugPlayEvents() -> NTSTATUS {
+pub unsafe extern "C" fn IopInitPlugPlayEvents() -> NTSTATUS {
     InitializeListHead(&mut IopPnpEventQueueHead);
 
     KeInitializeEvent(

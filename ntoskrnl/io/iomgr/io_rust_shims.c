@@ -230,6 +230,91 @@ ObReferenceObjectByHandle_shim(
 }
 
 /* ========================================================================
+ * Debug tracing for Rust pnpmgr (temporary)
+ * ======================================================================== */
+void __cdecl pnp_trace(const char *msg)
+{
+    DbgPrint("%s", msg);
+}
+void __cdecl pnp_trace_ulong(const char *msg, ULONG val)
+{
+    DbgPrint("%s%lx\n", msg, val);
+}
+
+
+/* ========================================================================
+ * IopGetRegistryValue shim
+ *
+ * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
+ * when IopGetRegistryValue (defined in pnpmgr.rs) is called from pnpinit.rs
+ * (different codegen unit), LLVM propagates `captures(none)` to the
+ * declaration, then concludes the output pointer (Information) is never
+ * written → eliminates the success path. Calling through a C shim avoids this.
+ * ======================================================================== */
+NTSTATUS NTAPI IopGetRegistryValue(IN HANDLE Handle, IN PWSTR ValueName,
+    OUT PKEY_VALUE_FULL_INFORMATION *Information);
+NTSTATUS NTAPI IopGetRegistryValue_shim(IN HANDLE Handle, IN PWSTR ValueName,
+    OUT PKEY_VALUE_FULL_INFORMATION *Information)
+{
+    return IopGetRegistryValue(Handle, ValueName, Information);
+}
+
+/* ========================================================================
+ * PiInitCacheGroupInformation shim
+ *
+ * The entire function must be in C because LLVM's cross-CGU captures(none)
+ * optimization eliminates the success path for IopGetRegistryValue output
+ * pointers in the Rust version, even with volatile reads. The compiler
+ * hard-codes the else branch despite runtime values being correct.
+ * ======================================================================== */
+extern PUNICODE_STRING PiInitGroupOrderTable;
+extern USHORT PiInitGroupOrderTableCount;
+NTSTATUS PnpRegMultiSzToUnicodeStrings(
+    IN PKEY_VALUE_FULL_INFORMATION KeyValueInformation,
+    OUT PUNICODE_STRING *UnicodeStringList,
+    OUT PULONG Count);
+
+CODE_SEG("INIT")
+NTSTATUS NTAPI
+PiInitCacheGroupInformation_shim(VOID)
+{
+    HANDLE KeyHandle;
+    NTSTATUS Status;
+    PKEY_VALUE_FULL_INFORMATION KeyValueInformation;
+    PUNICODE_STRING GroupTable;
+    ULONG Count;
+    UNICODE_STRING GroupString =
+        RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet"
+                            L"\\Control\\ServiceGroupOrder");
+
+    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &GroupString, KEY_READ);
+    if (NT_SUCCESS(Status))
+    {
+        Status = IopGetRegistryValue(KeyHandle, L"List", &KeyValueInformation);
+        ZwClose(KeyHandle);
+
+        if (NT_SUCCESS(Status))
+        {
+            if ((KeyValueInformation->Type == REG_MULTI_SZ) &&
+                (KeyValueInformation->DataLength))
+            {
+                Status = PnpRegMultiSzToUnicodeStrings(KeyValueInformation,
+                                                        &GroupTable,
+                                                        &Count);
+                PiInitGroupOrderTable = GroupTable;
+                PiInitGroupOrderTableCount = (USHORT)Count;
+            }
+            else
+            {
+                Status = STATUS_UNSUCCESSFUL;
+            }
+            ExFreePool(KeyValueInformation);
+        }
+    }
+    return Status;
+}
+
+/* ========================================================================
  * PnP manager macro/FORCEINLINE shims for Rust pnpmgr
  * ======================================================================== */
 

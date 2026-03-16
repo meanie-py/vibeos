@@ -14,12 +14,20 @@ use ntkrnl_sys::ddk::{
     HANDLE, INTERFACE_TYPE, KPROCESSOR_MODE,
     ExAllocatePool, ExFreePool, ExInitializeFastMutex,
     IoCreateDevice, IoCreateDriver,
-    IopCreateRegistryKeyEx, IopGetRegistryValue, IopInitPlugPlayEvents,
+    IopCreateRegistryKeyEx,
     IopOpenRegistryKeyEx, IopUpdateRootKey,
     KeInitializeEvent, KeInitializeSpinLock,
     NtClose, RtlCreateUnicodeString, RtlEqualUnicodeString, RtlInitUnicodeString,
     ZwClose,
 };
+
+extern "C" {
+    fn IopInitPlugPlayEvents() -> NTSTATUS;
+}
+extern "system" {
+    fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
+    fn PiInitCacheGroupInformation_shim() -> NTSTATUS;
+}
 
 const Isa: INTERFACE_TYPE = 1;
 const NotificationEvent: u32 = 1;
@@ -43,8 +51,10 @@ use ntkrnl_sys::ddk::{_DRIVER_OBJECT, _DEVICE_NODE, PDEVICE_NODE, PDRIVER_OBJECT
 type DRIVER_OBJECT = _DRIVER_OBJECT;
 type DEVICE_NODE = _DEVICE_NODE;
 
-static mut PiInitGroupOrderTable: PUNICODE_STRING = core::ptr::null_mut();
-static mut PiInitGroupOrderTableCount: USHORT = 0;
+#[no_mangle]
+pub static mut PiInitGroupOrderTable: PUNICODE_STRING = core::ptr::null_mut();
+#[no_mangle]
+pub static mut PiInitGroupOrderTableCount: USHORT = 0;
 static mut PnpDefaultInterfaceType: INTERFACE_TYPE = 0;
 #[no_mangle]
 pub static mut PnPBootDriversLoaded: BOOLEAN = 0;
@@ -91,9 +101,9 @@ extern "system" {
 }
 
 const DRIVER_ROOT_NAME: &[u8] = b"\\Driver\\\0";
-const REGSTR_KEY_ENUM: &[u8] = b"Enum\0";
-const REGSTR_KEY_ROOTENUM: &[u8] = b"Root\0";
-const REGSTR_VAL_ROOT_DEVNODE: &[u8] = b"HTREE\\ROOT\\0\0";
+const REGSTR_KEY_ENUM: &[u16] = &[b'E' as u16, b'n' as u16, b'u' as u16, b'm' as u16, 0];
+const REGSTR_KEY_ROOTENUM: &[u16] = &[b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, 0];
+const REGSTR_VAL_ROOT_DEVNODE: &[u16] = &[b'H' as u16, b'T' as u16, b'R' as u16, b'E' as u16, b'E' as u16, b'\\' as u16, b'R' as u16, b'O' as u16, b'O' as u16, b'T' as u16, b'\\' as u16, b'0' as u16, 0];
 
 const PiActionEnumRootDevices: u32 = 1;
 const DeviceNodeStarted: u32 = 0x308;
@@ -146,17 +156,24 @@ pub unsafe extern "system" fn PiInitCacheGroupInformation() -> NTSTATUS {
 
     RtlInitUnicodeString(
         &mut GroupString,
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ServiceGroupOrder\0"
+        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0S\0e\0r\0v\0i\0c\0e\0G\0r\0o\0u\0p\0O\0r\0d\0e\0r\0\0\0"
             .as_ptr() as *mut u16,
     );
 
     Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
     if Status >= 0 {
-        Status = IopGetRegistryValue(KeyHandle, b"List\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+        Status = IopGetRegistryValue_shim(KeyHandle, b"L\0i\0s\0t\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
         ZwClose(KeyHandle);
 
         if Status >= 0 {
-            if (*KeyValueInformation).Type == REG_MULTI_SZ && (*KeyValueInformation).DataLength != 0 {
+            // Use volatile reads to prevent LLVM from optimizing away the
+            // checks (cross-CGU captures(none) attribute propagation bug)
+            let kvi_ptr = core::ptr::read_volatile(&KeyValueInformation);
+            let kvi_type = core::ptr::read_volatile(core::ptr::addr_of!((*kvi_ptr).Type));
+            let kvi_datalen = core::ptr::read_volatile(core::ptr::addr_of!((*kvi_ptr).DataLength));
+            let cond1 = (kvi_type == REG_MULTI_SZ) as ULONG;
+            let cond2 = (kvi_datalen != 0) as ULONG;
+            if kvi_type == REG_MULTI_SZ && kvi_datalen != 0 {
                 Status = PnpRegMultiSzToUnicodeStrings(
                     KeyValueInformation,
                     &mut GroupTable,
@@ -170,7 +187,9 @@ pub unsafe extern "system" fn PiInitCacheGroupInformation() -> NTSTATUS {
             }
 
             ExFreePool(KeyValueInformation as PVOID);
+        } else {
         }
+    } else {
     }
 
     Status
@@ -192,7 +211,7 @@ pub unsafe extern "system" fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) ->
         return PiInitGroupOrderTableCount + 1;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"Group\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue_shim(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         return PiInitGroupOrderTableCount;
     }
@@ -231,7 +250,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
 
     RtlInitUnicodeString(
         &mut GroupString,
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\ServiceGroupOrder\0"
+        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0S\0e\0r\0v\0i\0c\0e\0G\0r\0o\0u\0p\0O\0r\0d\0e\0r\0\0\0"
             .as_ptr() as *mut u16,
     );
 
@@ -240,7 +259,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
         return u16::MAX;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"Group\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue_shim(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         if !KeyHandle.is_null() {
             NtClose(KeyHandle);
@@ -255,7 +274,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
         Group.Buffer = Buffer as *mut u16;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"Tag\0".as_ptr() as *mut u16, &mut KeyValueInformationTag);
+    Status = IopGetRegistryValue_shim(ServiceHandle, b"T\0a\0g\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformationTag);
     if Status < 0 {
         if !KeyValueInformation.is_null() {
             ExFreePool(KeyValueInformation as PVOID);
@@ -273,7 +292,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
 
     ExFreePool(KeyValueInformationTag as PVOID);
 
-    Status = IopGetRegistryValue(KeyHandle, Group.Buffer, &mut KeyValueInformationGroupOrderList);
+    Status = IopGetRegistryValue_shim(KeyHandle, Group.Buffer, &mut KeyValueInformationGroupOrderList);
 
     if !KeyValueInformation.is_null() {
         ExFreePool(KeyValueInformation as PVOID);
@@ -335,21 +354,21 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         return Status;
     }
 
-    Status = PiInitCacheGroupInformation();
+    Status = PiInitCacheGroupInformation_shim();
     if Status < 0 {
         return Status;
     }
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\0".as_ptr() as *mut u16,
+        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\0\0".as_ptr() as *mut u16,
     );
     Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status < 0 {
         return Status;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"Control\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut KeyName, b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *mut u16);
     Status = IopCreateRegistryKeyEx(
         &mut ControlHandle,
         KeyHandle,
@@ -365,7 +384,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     if Disposition == REG_CREATED_NEW_KEY {
         let mut DeviceClassesHandle: HANDLE = core::ptr::null_mut();
 
-        RtlInitUnicodeString(&mut KeyName, b"DeviceClasses\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut KeyName, b"D\0e\0v\0i\0c\0e\0C\0l\0a\0s\0s\0e\0s\0\0\0".as_ptr() as *mut u16);
         Status = IopCreateRegistryKeyEx(
             &mut DeviceClassesHandle,
             ControlHandle,
@@ -414,7 +433,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM\0".as_ptr() as *mut u16,
+        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\\\0E\0N\0U\0M\0\0\0".as_ptr() as *mut u16,
     );
     Status = IopOpenRegistryKeyEx(&mut EnumHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status >= 0 {
@@ -675,7 +694,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     if (!ServiceHandle) return PiInitGroupOrderTableCount + 1;
 //
 //     /* Otherwise, get the group value */
-//     Status = IopGetRegistryValue(ServiceHandle, L"Group", &KeyValueInformation);
+//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Group", &KeyValueInformation);
 //     if (!NT_SUCCESS(Status)) return PiInitGroupOrderTableCount;
 //
 //     /* Make sure we have a valid string */
@@ -723,7 +742,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Read the group */
-//     Status = IopGetRegistryValue(ServiceHandle, L"Group", &KeyValueInformation);
+//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Group", &KeyValueInformation);
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Make sure we have a group */
@@ -738,7 +757,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     }
 //
 //     /* Now read the tag */
-//     Status = IopGetRegistryValue(ServiceHandle, L"Tag", &KeyValueInformationTag);
+//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Tag", &KeyValueInformationTag);
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Make sure we have a tag */
