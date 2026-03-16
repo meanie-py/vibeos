@@ -50,10 +50,12 @@ use ntkrnl_sys::ddk::{
     _UNICODE_STRING,
 };
 
-extern "system" {
+extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
-    fn PnpDetermineResourceListSize(ResourceList: PCM_RESOURCE_LIST) -> ULONG;
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG);
+}
+extern "system" {
+    fn PnpDetermineResourceListSize(ResourceList: PCM_RESOURCE_LIST) -> ULONG;
 }
 
 const STATUS_CONFLICTING_ADDRESSES: NTSTATUS = 0xC0000018u32 as NTSTATUS;
@@ -98,7 +100,7 @@ unsafe fn IopFindBusNumberResource(
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
     debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 1);
+    debug_assert!((*IoDesc).Type == 6); // CmResourceTypeBusNumber
 
     Start = (*IoDesc).u.BusNumber.MinBusNumber;
     while Start <= (*IoDesc).u.BusNumber.MaxBusNumber - (*IoDesc).u.BusNumber.Length + 1 {
@@ -124,7 +126,7 @@ unsafe fn IopFindMemoryResource(
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
     debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 3);
+    debug_assert!((*IoDesc).Type == 3); // CmResourceTypeMemory
 
     if (*IoDesc).u.Memory.Alignment == 0 {
         // Set Alignment to 1 via direct field write
@@ -160,7 +162,7 @@ unsafe fn IopFindPortResource(
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
     debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 2);
+    debug_assert!((*IoDesc).Type == 1); // CmResourceTypePort
 
     if (*IoDesc).u.Port.Alignment == 0 {
         (*(IoDesc)).u.Port.Alignment = 1;
@@ -194,7 +196,7 @@ unsafe fn IopFindDmaResource(
     let mut Channel: ULONG;
 
     debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 4);
+    debug_assert!((*IoDesc).Type == 4); // CmResourceTypeDma
 
     Channel = (*IoDesc).u.Dma.MinimumChannel;
     while Channel <= (*IoDesc).u.Dma.MaximumChannel {
@@ -217,7 +219,7 @@ unsafe fn IopFindInterruptResource(
     let mut Vector: ULONG;
 
     debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 0);
+    debug_assert!((*IoDesc).Type == 2); // CmResourceTypeInterrupt
 
     Vector = (*IoDesc).u.Interrupt.MinimumVector;
     while Vector <= (*IoDesc).u.Interrupt.MaximumVector {
@@ -294,12 +296,12 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                 core::ptr::addr_of_mut!((*ResList).Descriptors[ii as usize]);
             let mut Matched: BOOLEAN = 0u8;
 
-            if AlternateRequired == 0 && ((*IoDesc).Option & 0x02) != 0 {
+            if AlternateRequired == 0 && ((*IoDesc).Option & 0x08) != 0 {
                 ii += 1;
                 continue;
             }
 
-            if AlternateRequired != 0 && ((*IoDesc).Option & 0x02) == 0 {
+            if AlternateRequired != 0 && ((*IoDesc).Option & 0x08) == 0 {
                 break;
             }
 
@@ -314,14 +316,14 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                 }
 
                 match (*IoDesc).Type as u32 {
-                    0 => {
+                    2 => { // CmResourceTypeInterrupt
                         if (*CmDesc).u.Interrupt.Vector >= (*IoDesc).u.Interrupt.MinimumVector
                             && (*CmDesc).u.Interrupt.Vector <= (*IoDesc).u.Interrupt.MaximumVector
                         {
                             Matched = 1u8;
                         }
                     }
-                    3 | 2 => {
+                    3 | 1 => { // CmResourceTypeMemory | CmResourceTypePort
                         if (*CmDesc).u.Memory.Length == (*IoDesc).u.Memory.Length
                             && (*CmDesc).u.Memory.Start.QuadPart as ULONGLONG
                                 >= (*IoDesc).u.Memory.MinimumAddress.QuadPart as ULONGLONG
@@ -333,7 +335,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                             Matched = 1u8;
                         }
                     }
-                    1 => {
+                    6 => { // CmResourceTypeBusNumber
                         if (*CmDesc).u.BusNumber.Length == (*IoDesc).u.BusNumber.Length
                             && (*CmDesc).u.BusNumber.Start >= (*IoDesc).u.BusNumber.MinBusNumber
                             && (*CmDesc).u.BusNumber.Start + (*CmDesc).u.BusNumber.Length - 1
@@ -342,7 +344,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                             Matched = 1u8;
                         }
                     }
-                    4 => {
+                    4 => { // CmResourceTypeDma
                         if (*CmDesc).u.Dma.Channel >= (*IoDesc).u.Dma.MinimumChannel
                             && (*CmDesc).u.Dma.Channel <= (*IoDesc).u.Dma.MaximumChannel
                         {
@@ -367,27 +369,27 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                 NewDesc.ShareDisposition = (*IoDesc).ShareDisposition;
 
                 match (*IoDesc).Type as u32 {
-                    0 => {
+                    2 => { // CmResourceTypeInterrupt
                         if IopFindInterruptResource(IoDesc, &mut NewDesc) == 0 {
                             FoundResource = 0u8;
                         }
                     }
-                    2 => {
+                    1 => { // CmResourceTypePort
                         if IopFindPortResource(IoDesc, &mut NewDesc) == 0 {
                             FoundResource = 0u8;
                         }
                     }
-                    3 => {
+                    3 => { // CmResourceTypeMemory
                         if IopFindMemoryResource(IoDesc, &mut NewDesc) == 0 {
                             FoundResource = 0u8;
                         }
                     }
-                    1 => {
+                    6 => { // CmResourceTypeBusNumber
                         if IopFindBusNumberResource(IoDesc, &mut NewDesc) == 0 {
                             FoundResource = 0u8;
                         }
                     }
-                    4 => {
+                    4 => { // CmResourceTypeDma
                         if IopFindDmaResource(IoDesc, &mut NewDesc) == 0 {
                             FoundResource = 0u8;
                         }
@@ -501,7 +503,7 @@ unsafe fn IopCheckResourceDescriptor(
             let ResDesc2: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
                 core::ptr::addr_of_mut!((*ResList).PartialDescriptors[ii as usize]);
 
-            if (*ResDesc).ShareDisposition == 2 && (*ResDesc2).ShareDisposition == 2 {
+            if (*ResDesc).ShareDisposition == 3 && (*ResDesc2).ShareDisposition == 3 { // CmResourceShareShared
                 ii += 1;
                 continue;
             }
@@ -512,7 +514,7 @@ unsafe fn IopCheckResourceDescriptor(
             }
 
             match (*ResDesc).Type as u32 {
-                3 => {
+                3 => { // CmResourceTypeMemory
                     let rStart = (*ResDesc).u.Memory.Start.QuadPart as UINT64;
                     let rEnd =
                         (*ResDesc).u.Memory.Start.QuadPart as UINT64 + (*ResDesc).u.Memory.Length as UINT64;
@@ -525,7 +527,7 @@ unsafe fn IopCheckResourceDescriptor(
                         break;
                     }
                 }
-                2 => {
+                1 => { // CmResourceTypePort
                     let rStart = (*ResDesc).u.Port.Start.QuadPart as UINT64;
                     let rEnd =
                         (*ResDesc).u.Port.Start.QuadPart as UINT64 + (*ResDesc).u.Port.Length as UINT64;
@@ -538,13 +540,13 @@ unsafe fn IopCheckResourceDescriptor(
                         break;
                     }
                 }
-                0 => {
+                2 => { // CmResourceTypeInterrupt
                     if (*ResDesc).u.Interrupt.Vector == (*ResDesc2).u.Interrupt.Vector {
                         Result = 1u8;
                         break;
                     }
                 }
-                1 => {
+                6 => { // CmResourceTypeBusNumber
                     let rStart = (*ResDesc).u.BusNumber.Start;
                     let rEnd = (*ResDesc).u.BusNumber.Start + (*ResDesc).u.BusNumber.Length;
                     let r2Start = (*ResDesc2).u.BusNumber.Start;
@@ -555,7 +557,7 @@ unsafe fn IopCheckResourceDescriptor(
                         break;
                     }
                 }
-                4 => {
+                4 => { // CmResourceTypeDma
                     if (*ResDesc).u.Dma.Channel == (*ResDesc2).u.Dma.Channel {
                         Result = 1u8;
                         break;
@@ -597,9 +599,22 @@ unsafe fn IopUpdateControlKeyWithResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut EnumRoot, b"\\Registry\\Machine\\System\\CurrentControlSet\\Enum\0".as_ptr() as *const u16);
-    RtlInitUnicodeString(&mut Control, b"Control\0".as_ptr() as *const u16);
-    RtlInitUnicodeString(&mut ValueName, b"AllocConfig\0".as_ptr() as *const u16);
+    static ENUM_ROOT: [u16; 50] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16,
+        b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16,
+        b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16,
+        b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
+        b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+        b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16,
+        b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
+        b'\\' as u16, b'E' as u16, b'n' as u16, b'u' as u16, b'm' as u16, 0, 0, 0,
+    ];
+    // \Registry\Machine\System\CurrentControlSet\Enum = 47 chars + NUL
+    RtlInitUnicodeString(&mut EnumRoot, ENUM_ROOT.as_ptr());
+    static CONTROL: [u16; 8] = [b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, 0];
+    RtlInitUnicodeString(&mut Control, CONTROL.as_ptr());
+    static ALLOC_CONFIG: [u16; 12] = [b'A' as u16, b'l' as u16, b'l' as u16, b'o' as u16, b'c' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, 0];
+    RtlInitUnicodeString(&mut ValueName, ALLOC_CONFIG.as_ptr());
 
     Status = IopOpenRegistryKeyEx(
         &mut EnumKey,
@@ -686,7 +701,7 @@ unsafe fn IopFilterResourceRequirements(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopUpdateResourceMap(
+pub unsafe extern "C" fn IopUpdateResourceMap(
     DeviceNode: PDEVICE_NODE,
     Level1Key: *mut u16,
     Level2Key: *mut u16,
@@ -699,7 +714,16 @@ pub unsafe extern "system" fn IopUpdateResourceMap(
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut KeyName, b"\\Registry\\Machine\\HARDWARE\\RESOURCEMAP\0".as_ptr() as *const u16);
+    static RESOURCEMAP_KEY: [u16; 39] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16,
+        b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16,
+        b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16,
+        b'H' as u16, b'A' as u16, b'R' as u16, b'D' as u16, b'W' as u16, b'A' as u16,
+        b'R' as u16, b'E' as u16, b'\\' as u16, b'R' as u16, b'E' as u16, b'S' as u16,
+        b'O' as u16, b'U' as u16, b'R' as u16, b'C' as u16, b'E' as u16, b'M' as u16,
+        b'A' as u16, b'P' as u16, 0,
+    ];
+    RtlInitUnicodeString(&mut KeyName, RESOURCEMAP_KEY.as_ptr());
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
@@ -772,8 +796,10 @@ pub unsafe extern "system" fn IopUpdateResourceMap(
 
         debug_assert!(!(*DeviceNode).ResourceListTranslated.is_null());
 
-        RtlInitUnicodeString(&mut TranslatedSuffix, b".Translated\0".as_ptr() as *const u16);
-        RtlInitUnicodeString(&mut RawSuffix, b".Raw\0".as_ptr() as *const u16);
+        static TRANSLATED_SUFFIX: [u16; 12] = [b'.' as u16, b'T' as u16, b'r' as u16, b'a' as u16, b'n' as u16, b's' as u16, b'l' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'd' as u16, 0];
+        RtlInitUnicodeString(&mut TranslatedSuffix, TRANSLATED_SUFFIX.as_ptr());
+        static RAW_SUFFIX: [u16; 5] = [b'.' as u16, b'R' as u16, b'a' as u16, b'w' as u16, 0];
+        RtlInitUnicodeString(&mut RawSuffix, RAW_SUFFIX.as_ptr());
 
         Status = IoGetDeviceProperty(
             (*DeviceNode).PhysicalDeviceObject,
@@ -797,7 +823,7 @@ pub unsafe extern "system" fn IopUpdateResourceMap(
 
             Status = IoGetDeviceProperty(
                 (*DeviceNode).PhysicalDeviceObject,
-                18,
+                0xb, // DevicePropertyPhysicalDeviceObjectName
                 NameU.MaximumLength as ULONG,
                 NameU.Buffer as PVOID,
                 &mut OldLength,
@@ -858,13 +884,15 @@ pub unsafe extern "system" fn IopUpdateResourceMap(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopUpdateResourceMapForPnPDevice(
+pub unsafe extern "C" fn IopUpdateResourceMapForPnPDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
+    static PNP_MANAGER: [u16; 12] = [b'P' as u16, b'n' as u16, b'P' as u16, b' ' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'r' as u16, 0];
+    static PNPMANAGER: [u16; 11] = [b'P' as u16, b'n' as u16, b'p' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'r' as u16, 0];
     IopUpdateResourceMap(
         DeviceNode,
-        b"PnP Manager\0".as_ptr() as *mut u16,
-        b"PnpManager\0".as_ptr() as *mut u16,
+        PNP_MANAGER.as_ptr() as *mut u16,
+        PNPMANAGER.as_ptr() as *mut u16,
     )
 }
 
@@ -915,7 +943,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
             )) as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
             match (*DescriptorRaw).Type as u32 {
-                2 => {
+                1 => { // CmResourceTypePort
                     let mut AddressSpace: ULONG = 1;
                     if HalTranslateBusAddress(
                         (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
@@ -936,11 +964,11 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                     }
 
                     if AddressSpace == 0 {
-                        (*DescriptorRaw).Flags = 0x0300;
-                        (*DescriptorTranslated).Flags = 0x0300;
+                        (*DescriptorRaw).Flags = 0x0000; // CM_RESOURCE_PORT_MEMORY
+                        (*DescriptorTranslated).Flags = 0x0000;
                     }
                 }
-                0 => {
+                2 => { // CmResourceTypeInterrupt
                     let mut Irql: KIRQL = 0;
                     (*DescriptorTranslated).u.Interrupt.Vector = HalGetInterruptVector(
                         (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
@@ -962,7 +990,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                         return Status;
                     }
                 }
-                3 => {
+                3 => { // CmResourceTypeMemory
                     let mut AddressSpace: ULONG = 0;
                     if HalTranslateBusAddress(
                         (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
@@ -987,7 +1015,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                     }
                 }
 
-                4 | 1 | 5 | 6 => {}
+                4 | 6 | 129 | 5 => {} // Dma, BusNumber, DevicePrivate, DeviceSpecific
                 _ => {
                     Status = STATUS_NOT_IMPLEMENTED;
                     ExFreePool((*DeviceNode).ResourceList as PVOID);
@@ -1024,8 +1052,8 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
     if (*DeviceNode).BootResources.is_null() && (*DeviceNode).ResourceRequirements.is_null() {
         (*DeviceNode).ResourceList = core::ptr::null_mut();
         (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
-        PiSetDevNodeState(DeviceNode, 5);
-        (*DeviceNode).Flags |= 0x00000040;
+        PiSetDevNodeState(DeviceNode, 0x304);
+        (*DeviceNode).Flags |= 0x00000100; // DNF_NO_RESOURCE_REQUIRED
 
         return STATUS_SUCCESS;
     }
@@ -1062,7 +1090,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
     if (*DeviceNode).ResourceRequirements.is_null() {
         Status = IopTranslateDeviceResources(DeviceNode);
         if Status < 0 {
-            (*DeviceNode).Problem = 13;
+            (*DeviceNode).Problem = 0x21; // CM_PROB_TRANSLATION_FAILED
             if !(*DeviceNode).ResourceList.is_null() {
                 ExFreePool((*DeviceNode).ResourceList as PVOID);
                 (*DeviceNode).ResourceList = core::ptr::null_mut();
@@ -1091,7 +1119,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             return Status;
         }
 
-        PiSetDevNodeState(DeviceNode, 5);
+        PiSetDevNodeState(DeviceNode, 0x304);
         return STATUS_SUCCESS;
     }
 
@@ -1118,7 +1146,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
 
     Status = IopTranslateDeviceResources(DeviceNode);
     if Status < 0 {
-        (*DeviceNode).Problem = 13;
+        (*DeviceNode).Problem = 0x21; // CM_PROB_TRANSLATION_FAILED
         if !(*DeviceNode).ResourceList.is_null() {
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
@@ -1147,7 +1175,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
         return Status;
     }
 
-    PiSetDevNodeState(DeviceNode, 5);
+    PiSetDevNodeState(DeviceNode, 0x304);
 
     STATUS_SUCCESS
 }
@@ -1210,7 +1238,16 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
     let mut ChildKeyIndex3: ULONG;
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut KeyName, b"\\Registry\\Machine\\HARDWARE\\RESOURCEMAP\0".as_ptr() as *const u16);
+    static RESOURCEMAP_KEY2: [u16; 39] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16,
+        b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16,
+        b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16,
+        b'H' as u16, b'A' as u16, b'R' as u16, b'D' as u16, b'W' as u16, b'A' as u16,
+        b'R' as u16, b'E' as u16, b'\\' as u16, b'R' as u16, b'E' as u16, b'S' as u16,
+        b'O' as u16, b'U' as u16, b'R' as u16, b'C' as u16, b'E' as u16, b'M' as u16,
+        b'A' as u16, b'P' as u16, 0,
+    ];
+    RtlInitUnicodeString(&mut KeyName, RESOURCEMAP_KEY2.as_ptr());
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
@@ -1506,7 +1543,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
                 Status = ZwEnumerateValueKey(
                     ChildKey3,
                     ChildKeyIndex3,
-                    1,
+                    0, // KeyValueBasicInformation
                     core::ptr::null_mut(),
                     0,
                     &mut RequiredLength,
@@ -1538,7 +1575,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
                     Status = ZwEnumerateValueKey(
                         ChildKey3,
                         ChildKeyIndex3,
-                        1,
+                        0, // KeyValueBasicInformation
                         KeyNameInformation as PVOID,
                         KeyNameInformationLength,
                         &mut RequiredLength,
