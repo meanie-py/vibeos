@@ -3,7 +3,9 @@ pub mod pnputil;
 pub mod pnpirp;
 
 // Disabled: runtime bugs when enabled
-// pub mod pnpnotify;  // Agent debugging ACCESS_VIOLATION
+// All remaining pnpmgr files pass amd64 but crash i386 — systematic issue
+// pub mod pnpnotify;
+// pub mod pnpmap;
 pub mod pnpdma;
 // pub mod devnode;
 // pub mod plugplay;
