@@ -19,8 +19,9 @@ pub mod pnpmap;
 pub mod devnode;
 #[cfg(not(target_arch = "x86"))]
 pub mod plugplay;
-// pub mod pnpreport;
-// pub mod pnpres;
+// pub mod pnpreport;  // Crashes both arches — needs debugging
+// pub mod pnpres;  // Crashes amd64
+// pub mod pnproot;  // Testing next
 // pub mod pnproot;
 // pub mod pnpinit;
 // pub mod pnpmgr;
