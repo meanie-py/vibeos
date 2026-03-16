@@ -12,10 +12,11 @@ pub mod pnpirp;
 #[cfg(not(target_arch = "x86"))]
 pub mod pnpnotify;
 pub mod pnpdma;
+#[cfg(not(target_arch = "x86"))]
+pub mod pnpmap;
 // pub mod devnode;
 // pub mod plugplay;
 // pub mod pnpinit;
-// pub mod pnpmap;
 // pub mod pnpmgr;
 // pub mod pnpreport;
 // pub mod pnpres;

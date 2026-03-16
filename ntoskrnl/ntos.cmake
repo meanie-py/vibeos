@@ -172,7 +172,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpdma.c  # Replaced by Rust
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpinit.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpirp.c  # Replaced by Rust pnpirp.rs
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmap.c
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmap.c>  # Rust on amd64/arm64
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmgr.c
     # pnpnotify.c: Rust version on amd64/arm64, C version on i386 (Rust crashes on i386)
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpnotify.c>
