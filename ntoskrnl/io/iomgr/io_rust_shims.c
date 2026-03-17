@@ -260,6 +260,32 @@ NTSTATUS NTAPI IopGetRegistryValue_shim(IN HANDLE Handle, IN PWSTR ValueName,
 }
 
 /* ========================================================================
+ * IopOpenRegistryKeyEx / IopCreateRegistryKeyEx shims
+ *
+ * Same captures(none) workaround as IopGetRegistryValue_shim: these functions
+ * write to output pointer parameters (*KeyHandle / *Handle). When called from
+ * a different Rust CGU, LLVM may eliminate the write.
+ * ======================================================================== */
+NTSTATUS NTAPI IopOpenRegistryKeyEx(IN PHANDLE KeyHandle, IN HANDLE ParentKey,
+    IN PUNICODE_STRING Name, IN ACCESS_MASK DesiredAccess);
+NTSTATUS NTAPI IopOpenRegistryKeyEx_shim(IN PHANDLE KeyHandle, IN HANDLE ParentKey,
+    IN PUNICODE_STRING Name, IN ACCESS_MASK DesiredAccess)
+{
+    return IopOpenRegistryKeyEx(KeyHandle, ParentKey, Name, DesiredAccess);
+}
+
+NTSTATUS NTAPI IopCreateRegistryKeyEx(OUT PHANDLE Handle, IN HANDLE RootHandle,
+    IN PUNICODE_STRING KeyName, IN ACCESS_MASK DesiredAccess,
+    IN ULONG CreateOptions, OUT PULONG Disposition);
+NTSTATUS NTAPI IopCreateRegistryKeyEx_shim(OUT PHANDLE Handle, IN HANDLE RootHandle,
+    IN PUNICODE_STRING KeyName, IN ACCESS_MASK DesiredAccess,
+    IN ULONG CreateOptions, OUT PULONG Disposition)
+{
+    return IopCreateRegistryKeyEx(Handle, RootHandle, KeyName, DesiredAccess,
+                                  CreateOptions, Disposition);
+}
+
+/* ========================================================================
  * PiInitCacheGroupInformation shim
  *
  * The entire function must be in C because LLVM's cross-CGU captures(none)

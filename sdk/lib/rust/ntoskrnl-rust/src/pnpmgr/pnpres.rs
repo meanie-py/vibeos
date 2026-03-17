@@ -491,6 +491,14 @@ unsafe fn IopCheckResourceDescriptor(
     let mut Result: BOOLEAN = 0u8;
     let mut FullDescriptor: PCM_FULL_RESOURCE_DESCRIPTOR;
 
+    // The C code returns `Silent ? Result : FALSE`, so when Silent=FALSE
+    // the return value is always FALSE regardless of conflicts found.
+    // Short-circuit here to avoid iterating potentially unvalidated registry data
+    // that can contain garbage descriptor counts.
+    if Silent == 0 {
+        return 0u8;
+    }
+
     FullDescriptor = core::ptr::addr_of_mut!((*ResourceList).List[0]);
     i = 0;
     while i < (*ResourceList).Count {
@@ -1038,8 +1046,10 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
 pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let ListSize: ULONG;
+    DbgPrint(b"PNPRES: Assign Boot=%p Req=%p\n\0".as_ptr(), (*DeviceNode).BootResources, (*DeviceNode).ResourceRequirements);
 
     Status = IopFilterResourceRequirements(DeviceNode);
+    DbgPrint(b"PNPRES: filter=0x%x\n\0".as_ptr(), Status);
     if Status < 0 {
         if !(*DeviceNode).ResourceList.is_null() {
             ExFreePool((*DeviceNode).ResourceList as PVOID);
@@ -1078,7 +1088,9 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ListSize as usize,
         );
 
+        DbgPrint(b"PNPRES: detecting conflict\n\0".as_ptr());
         Status = IopDetectResourceConflict((*DeviceNode).ResourceList, 0u8, core::ptr::null_mut());
+        DbgPrint(b"PNPRES: conflict=0x%x\n\0".as_ptr(), Status);
         if Status < 0 {
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
@@ -1125,10 +1137,12 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
 
     HalAdjustResourceList(core::ptr::addr_of_mut!((*DeviceNode).ResourceRequirements));
 
+    DbgPrint(b"PNPRES: calling Fixup\n\0".as_ptr());
     Status = IopFixupResourceListWithRequirements(
         (*DeviceNode).ResourceRequirements,
         core::ptr::addr_of_mut!((*DeviceNode).ResourceList),
     );
+    DbgPrint(b"PNPRES: Fixup returned 0x%x\n\0".as_ptr(), Status);
     if Status < 0 {
         (*DeviceNode).Problem = 12;
         if !(*DeviceNode).ResourceList.is_null() {
@@ -1144,7 +1158,9 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             != STATUS_CONFLICTING_ADDRESSES
     );
 
+    DbgPrint(b"PNPRES: translating\n\0".as_ptr());
     Status = IopTranslateDeviceResources(DeviceNode);
+    DbgPrint(b"PNPRES: translate=0x%x\n\0".as_ptr(), Status);
     if Status < 0 {
         (*DeviceNode).Problem = 0x21; // CM_PROB_TRANSLATION_FAILED
         if !(*DeviceNode).ResourceList.is_null() {
@@ -1155,7 +1171,9 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
         return Status;
     }
 
+    DbgPrint(b"PNPRES: updating resource map\n\0".as_ptr());
     Status = IopUpdateResourceMapForPnPDevice(DeviceNode);
+    DbgPrint(b"PNPRES: map=0x%x\n\0".as_ptr(), Status);
     if Status < 0 {
         if !(*DeviceNode).ResourceList.is_null() {
             ExFreePool((*DeviceNode).ResourceList as PVOID);
@@ -1221,6 +1239,12 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
     Silent: BOOLEAN,
     ConflictingDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
 ) -> NTSTATUS {
+    // When Silent=FALSE, the C code's IopCheckResourceDescriptor always returns FALSE
+    // (due to `return Silent ? Result : FALSE` hack), so IopDetectResourceConflict
+    // never finds conflicts. Short-circuit to avoid expensive registry enumeration.
+    if Silent == 0 {
+        return STATUS_SUCCESS;
+    }
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut ResourceMapKey: HANDLE = core::ptr::null_mut();
@@ -1333,6 +1357,12 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
             return Status;
         }
 
+        // Close handle from previous outer loop iteration to prevent leak
+        if !ChildKey2.is_null() {
+            ObCloseHandle(ChildKey2, 0i8);
+            ChildKey2 = core::ptr::null_mut();
+        }
+
         KeyName.Buffer = (*KeyInformation).Name.as_mut_ptr();
         KeyName.MaximumLength = (*KeyInformation).NameLength as u16;
         KeyName.Length = (*KeyInformation).NameLength as u16;
@@ -1434,6 +1464,12 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
                     Status = STATUS_SUCCESS;
                 }
                 return Status;
+            }
+
+            // Close handle from previous middle loop iteration to prevent leak
+            if !ChildKey3.is_null() {
+                ObCloseHandle(ChildKey3, 0i8);
+                ChildKey3 = core::ptr::null_mut();
             }
 
             KeyName.Buffer = (*KeyInformation).Name.as_mut_ptr();
@@ -1695,6 +1731,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
         Status = STATUS_SUCCESS;
     }
 
+    DbgPrint(b"PNPRES: DRC done=0x%x\n\0".as_ptr(), Status);
     Status
 }
 

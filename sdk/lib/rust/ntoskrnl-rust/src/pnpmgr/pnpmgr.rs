@@ -113,18 +113,18 @@ const BusRelations: DEVICE_RELATION_TYPE = 0;
 const PowerRelations: DEVICE_RELATION_TYPE = 1;
 const TargetDeviceRelation: DEVICE_RELATION_TYPE = 2;
 
-const REGSTR_VAL_UI_NUMBER: PCWSTR = b"UINumber\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_LOCATION_INFORMATION: PCWSTR = b"LocationInformation\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_DEVDESC: PCWSTR = b"DeviceDesc\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_HARDWAREID: PCWSTR = b"HardwareID\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_COMPATIBLEIDS: PCWSTR = b"CompatibleIDs\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_BOOTCONFIG: PCWSTR = b"BootConfig\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_CLASS: PCWSTR = b"Class\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_CLASSGUID: PCWSTR = b"ClassGUID\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_DRIVER: PCWSTR = b"Driver\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_MFG: PCWSTR = b"Mfg\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_FRIENDLYNAME: PCWSTR = b"FriendlyName\0".as_ptr() as PCWSTR;
-const REGSTR_VAL_CONFIGFLAGS: PCWSTR = b"ConfigFlags\0".as_ptr() as PCWSTR;
+const REGSTR_VAL_UI_NUMBER: &[u16] = &[b'U' as u16, b'I' as u16, b'N' as u16, b'u' as u16, b'm' as u16, b'b' as u16, b'e' as u16, b'r' as u16, 0];
+const REGSTR_VAL_LOCATION_INFORMATION: &[u16] = &[b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'I' as u16, b'n' as u16, b'f' as u16, b'o' as u16, b'r' as u16, b'm' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0];
+const REGSTR_VAL_DEVDESC: &[u16] = &[b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'D' as u16, b'e' as u16, b's' as u16, b'c' as u16, 0];
+const REGSTR_VAL_HARDWAREID: &[u16] = &[b'H' as u16, b'a' as u16, b'r' as u16, b'd' as u16, b'w' as u16, b'a' as u16, b'r' as u16, b'e' as u16, b'I' as u16, b'D' as u16, 0];
+const REGSTR_VAL_COMPATIBLEIDS: &[u16] = &[b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'I' as u16, b'D' as u16, b's' as u16, 0];
+const REGSTR_VAL_BOOTCONFIG: &[u16] = &[b'B' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, 0];
+const REGSTR_VAL_CLASS: &[u16] = &[b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, 0];
+const REGSTR_VAL_CLASSGUID: &[u16] = &[b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, b'G' as u16, b'U' as u16, b'I' as u16, b'D' as u16, 0];
+const REGSTR_VAL_DRIVER: &[u16] = &[b'D' as u16, b'r' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'r' as u16, 0];
+const REGSTR_VAL_MFG: &[u16] = &[b'M' as u16, b'f' as u16, b'g' as u16, 0];
+const REGSTR_VAL_FRIENDLYNAME: &[u16] = &[b'F' as u16, b'r' as u16, b'i' as u16, b'e' as u16, b'n' as u16, b'd' as u16, b'l' as u16, b'y' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0];
+const REGSTR_VAL_CONFIGFLAGS: &[u16] = &[b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, b'F' as u16, b'l' as u16, b'a' as u16, b'g' as u16, b's' as u16, 0];
 
 const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 0;
 const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 1;
@@ -151,15 +151,20 @@ const DevicePropertyResourceRequirements: DEVICE_REGISTRY_PROPERTY = 24;
 const DevicePropertyAllocatedResources: DEVICE_REGISTRY_PROPERTY = 25;
 
 #[no_mangle]
+#[used]
 pub static mut PpRegistryDeviceResource: _ERESOURCE = unsafe { core::mem::zeroed() };
 #[no_mangle]
+#[used]
 pub static mut PpDeviceReferenceTableLock: KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
 #[no_mangle]
+#[used]
 pub static mut PpDeviceReferenceTable: _RTL_AVL_TABLE = unsafe { core::mem::zeroed() };
 
 #[no_mangle]
+#[used]
 pub static mut IopRootDriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
 #[no_mangle]
+#[used]
 pub static mut PnpBusTypeGuidList: PIO_BUS_TYPE_GUID_LIST = core::ptr::null_mut();
 
 unsafe fn IopFixupDeviceId(String: PWSTR) {
@@ -177,31 +182,47 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
     let mut CriticalDeviceKey: HANDLE = core::ptr::null_mut();
     let mut InstanceKey: HANDLE = core::ptr::null_mut();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    // L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\CriticalDeviceDatabase"
+    static CRITICAL_DEVICE_KEY_STR: [u16; 74] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16,
+        b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16,
+        b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
+        b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+        b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
+        b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+        b'\\' as u16, b'C' as u16, b'r' as u16, b'i' as u16, b't' as u16, b'i' as u16, b'c' as u16, b'a' as u16, b'l' as u16,
+        b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16,
+        b'D' as u16, b'a' as u16, b't' as u16, b'a' as u16, b'b' as u16, b'a' as u16, b's' as u16, b'e' as u16, 0,
+    ];
+    static COMPATIBLE_IDS_STR: [u16; 14] = [b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'I' as u16, b'D' as u16, b's' as u16, 0];
+    static HARDWARE_ID_STR: [u16; 11] = [b'H' as u16, b'a' as u16, b'r' as u16, b'd' as u16, b'w' as u16, b'a' as u16, b'r' as u16, b'e' as u16, b'I' as u16, b'D' as u16, 0];
+    static SERVICE_STR: [u16; 8] = [b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, 0];
+    static CLASSGUID_STR: [u16; 10] = [b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, b'G' as u16, b'U' as u16, b'I' as u16, b'D' as u16, 0];
+
     let mut CriticalDeviceKeyU = _UNICODE_STRING {
-        Length: 144,
-        MaximumLength: 146,
-        Buffer: b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\CriticalDeviceDatabase\0"
-            .as_ptr() as *mut u16,
+        Length: 146, // 73 chars * 2
+        MaximumLength: 148,
+        Buffer: CRITICAL_DEVICE_KEY_STR.as_ptr() as *mut u16,
     };
     let mut CompatibleIdU = _UNICODE_STRING {
-        Length: 26,
+        Length: 26, // 13 chars * 2
         MaximumLength: 28,
-        Buffer: b"CompatibleIDs\0".as_ptr() as *mut u16,
+        Buffer: COMPATIBLE_IDS_STR.as_ptr() as *mut u16,
     };
     let mut HardwareIdU = _UNICODE_STRING {
-        Length: 20,
+        Length: 20, // 10 chars * 2
         MaximumLength: 22,
-        Buffer: b"HardwareID\0".as_ptr() as *mut u16,
+        Buffer: HARDWARE_ID_STR.as_ptr() as *mut u16,
     };
     let mut ServiceU = _UNICODE_STRING {
-        Length: 14,
+        Length: 14, // 7 chars * 2
         MaximumLength: 16,
-        Buffer: b"Service\0".as_ptr() as *mut u16,
+        Buffer: SERVICE_STR.as_ptr() as *mut u16,
     };
     let mut ClassGuidU = _UNICODE_STRING {
-        Length: 18,
+        Length: 18, // 9 chars * 2
         MaximumLength: 20,
-        Buffer: b"ClassGUID\0".as_ptr() as *mut u16,
+        Buffer: CLASSGUID_STR.as_ptr() as *mut u16,
     };
     let mut PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut HidLength: ULONG = 0;
@@ -765,7 +786,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut KeyName, b"LogConf\0".as_ptr() as PCWSTR);
+    {static W: [u16; 8] = [b'L' as u16, b'o' as u16, b'g' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
@@ -786,7 +807,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         if !(*DeviceNode).BootResources.is_null() {
             ResCount = (*((*DeviceNode).BootResources)).Count;
             if ResCount != 0 {
-                RtlInitUnicodeString(&mut KeyName, b"BootConfig\0".as_ptr() as PCWSTR);
+                {static W: [u16; 11] = [b'B' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
                 Status = ZwSetValueKey(
                     LogConfKey,
                     &mut KeyName,
@@ -801,7 +822,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         if !(*DeviceNode).ResourceRequirements.is_null()
             && (*(*DeviceNode).ResourceRequirements).ListSize != 0
         {
-            RtlInitUnicodeString(&mut KeyName, b"BasicConfigVector\0".as_ptr() as PCWSTR);
+            {static W: [u16; 18] = [b'B' as u16, b'a' as u16, b's' as u16, b'i' as u16, b'c' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, b'V' as u16, b'e' as u16, b'c' as u16, b't' as u16, b'o' as u16, b'r' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
             Status = ZwSetValueKey(
                 LogConfKey,
                 &mut KeyName,
@@ -815,7 +836,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         ZwClose(LogConfKey);
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"ConfigFlags\0".as_ptr() as PCWSTR);
+    {static W: [u16; 12] = [b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, b'F' as u16, b'l' as u16, b'a' as u16, b'g' as u16, b's' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
     Status = ZwQueryValueKey(
         InstanceKey,
         &mut KeyName,
@@ -836,7 +857,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         );
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"Control\0".as_ptr() as PCWSTR);
+    {static W: [u16; 8] = [b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut KeyName,
@@ -857,8 +878,8 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         ZwClose(ControlKey);
     }
 
-    if _wcsnicmp((*DeviceNode).InstancePath.Buffer, b"ACPI\\\0".as_ptr() as PCWSTR, 5) == 0 {
-        RtlInitUnicodeString(&mut KeyName, b"Device Parameters\0".as_ptr() as PCWSTR);
+    if _wcsnicmp((*DeviceNode).InstancePath.Buffer, {static W: [u16; 6] = [b'A' as u16, b'C' as u16, b'P' as u16, b'I' as u16, b'\\' as u16, 0]; W.as_ptr() as PCWSTR}, 5) == 0 {
+        {static W: [u16; 18] = [b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b' ' as u16, b'P' as u16, b'a' as u16, b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
         InitializeObjectAttributes(
             &mut ObjectAttributes,
             &mut KeyName,
@@ -877,7 +898,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
         );
         if Status >= 0 {
             let FirmwareIdentified: ULONG = 1;
-            RtlInitUnicodeString(&mut KeyName, b"FirmwareIdentified\0".as_ptr() as PCWSTR);
+            {static W: [u16; 19] = [b'F' as u16, b'i' as u16, b'r' as u16, b'm' as u16, b'w' as u16, b'a' as u16, b'r' as u16, b'e' as u16, b'I' as u16, b'd' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'i' as u16, b'f' as u16, b'i' as u16, b'e' as u16, b'd' as u16, 0]; RtlInitUnicodeString(&mut KeyName, W.as_ptr() as PCWSTR);}
             Status = ZwSetValueKey(
                 DeviceParamsKey,
                 &mut KeyName,
@@ -899,10 +920,19 @@ pub unsafe extern "system" fn IopGetParentIdPrefix(
     DeviceNode: PDEVICE_NODE,
     ParentIdPrefix: PUNICODE_STRING,
 ) -> NTSTATUS {
+    // L"\\Registry\\Machine\\System\\CurrentControlSet\\Enum\\"
+    static ENUM_KEY_PATH_STR: [u16; 49] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16,
+        b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16,
+        b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
+        b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+        b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
+        b'\\' as u16, b'E' as u16, b'n' as u16, b'u' as u16, b'm' as u16, b'\\' as u16, 0,
+    ];
     let EnumKeyPath = _UNICODE_STRING {
-        Length: 94,
-        MaximumLength: 96,
-        Buffer: b"\\Registry\\Machine\\System\\CurrentControlSet\\Enum\\\0".as_ptr() as *mut u16,
+        Length: 96,  // 48 chars * 2
+        MaximumLength: 98,
+        Buffer: ENUM_KEY_PATH_STR.as_ptr() as *mut u16,
     };
     let mut KeyNameBufferLength: ULONG;
     let mut ParentIdPrefixInformation: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::null_mut();
@@ -922,7 +952,7 @@ pub unsafe extern "system" fn IopGetParentIdPrefix(
     }
 
     KeyNameBufferLength = FIELD_OFFSET_KEY_VALUE_PARTIAL_INFORMATION_Data as ULONG
-        + core::mem::size_of_val(b"12345678&12345678\0") as ULONG;
+        + (18 * core::mem::size_of::<WCHAR>()) as ULONG;  // sizeof(L"12345678&12345678") = 18 wchars * 2
     ParentIdPrefixInformation = ExAllocatePoolWithTag(
         PagedPool,
         (KeyNameBufferLength + core::mem::size_of::<WCHAR>() as ULONG) as SIZE_T,
@@ -952,7 +982,7 @@ pub unsafe extern "system" fn IopGetParentIdPrefix(
         ExFreePoolWithTag(ParentIdPrefixInformation as PVOID, TAG_IO);
         return Status;
     }
-    RtlInitUnicodeString(&mut ValueName, b"ParentIdPrefix\0".as_ptr() as PCWSTR);
+    {static W: [u16; 15] = [b'P' as u16, b'a' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'I' as u16, b'd' as u16, b'P' as u16, b'r' as u16, b'e' as u16, b'f' as u16, b'i' as u16, b'x' as u16, 0]; RtlInitUnicodeString(&mut ValueName, W.as_ptr() as PCWSTR);}
     Status = ZwQueryValueKey(
         hKey,
         &mut ValueName,
@@ -1305,10 +1335,19 @@ unsafe fn PnpDeviceObjectToDeviceInstance(
     let mut Status: NTSTATUS;
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let DeviceNode: PDEVICE_NODE;
+    // L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM"
+    static ENUM_REG_STR: [u16; 48] = [
+        b'\\' as u16, b'R' as u16, b'E' as u16, b'G' as u16, b'I' as u16, b'S' as u16, b'T' as u16, b'R' as u16, b'Y' as u16,
+        b'\\' as u16, b'M' as u16, b'A' as u16, b'C' as u16, b'H' as u16, b'I' as u16, b'N' as u16, b'E' as u16,
+        b'\\' as u16, b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16,
+        b'\\' as u16, b'C' as u16, b'U' as u16, b'R' as u16, b'R' as u16, b'E' as u16, b'N' as u16, b'T' as u16,
+        b'C' as u16, b'O' as u16, b'N' as u16, b'T' as u16, b'R' as u16, b'O' as u16, b'L' as u16, b'S' as u16, b'E' as u16, b'T' as u16,
+        b'\\' as u16, b'E' as u16, b'N' as u16, b'U' as u16, b'M' as u16, 0,
+    ];
     let mut KeyName = _UNICODE_STRING {
-        Length: 112,
-        MaximumLength: 114,
-        Buffer: b"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM\0".as_ptr() as *mut u16,
+        Length: 94, // 47 chars * 2
+        MaximumLength: 96,
+        Buffer: ENUM_REG_STR.as_ptr() as *mut u16,
     };
 
     Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_READ);
@@ -1567,52 +1606,52 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Status = STATUS_SUCCESS;
         }
         7 => {
-            ValueName = REGSTR_VAL_UI_NUMBER as PWSTR;
+            ValueName = REGSTR_VAL_UI_NUMBER.as_ptr() as PWSTR;
             ValueType = REG_DWORD;
         }
         8 => {
-            ValueName = REGSTR_VAL_LOCATION_INFORMATION as PWSTR;
+            ValueName = REGSTR_VAL_LOCATION_INFORMATION.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         9 => {
-            ValueName = REGSTR_VAL_DEVDESC as PWSTR;
+            ValueName = REGSTR_VAL_DEVDESC.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         11 => {
-            ValueName = REGSTR_VAL_HARDWAREID as PWSTR;
+            ValueName = REGSTR_VAL_HARDWAREID.as_ptr() as PWSTR;
             ValueType = REG_MULTI_SZ;
         }
         12 => {
-            ValueName = REGSTR_VAL_COMPATIBLEIDS as PWSTR;
+            ValueName = REGSTR_VAL_COMPATIBLEIDS.as_ptr() as PWSTR;
             ValueType = REG_MULTI_SZ;
         }
         5 => {
-            ValueName = REGSTR_VAL_BOOTCONFIG as PWSTR;
+            ValueName = REGSTR_VAL_BOOTCONFIG.as_ptr() as PWSTR;
             ValueType = REG_RESOURCE_LIST;
         }
         13 => {
-            ValueName = REGSTR_VAL_CLASS as PWSTR;
+            ValueName = REGSTR_VAL_CLASS.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         14 => {
-            ValueName = REGSTR_VAL_CLASSGUID as PWSTR;
+            ValueName = REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         15 => {
-            ValueName = REGSTR_VAL_DRIVER as PWSTR;
+            ValueName = REGSTR_VAL_DRIVER.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         17 => {
-            ValueName = REGSTR_VAL_MFG as PWSTR;
+            ValueName = REGSTR_VAL_MFG.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         18 => {
-            ValueName = REGSTR_VAL_FRIENDLYNAME as PWSTR;
+            ValueName = REGSTR_VAL_FRIENDLYNAME.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
         22 => {}
         23 => {
-            ValueName = REGSTR_VAL_CONFIGFLAGS as PWSTR;
+            ValueName = REGSTR_VAL_CONFIGFLAGS.as_ptr() as PWSTR;
             ValueType = REG_DWORD;
         }
         24 => {}
@@ -1628,7 +1667,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             ValueType,
             ValueName,
             if DeviceProperty == 5 {
-                b"LogConf\0".as_ptr() as PWSTR
+                {static W: [u16; 8] = [b'L' as u16, b'o' as u16, b'g' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, 0]; W.as_ptr() as PWSTR}
             } else {
                 core::ptr::null_mut()
             },

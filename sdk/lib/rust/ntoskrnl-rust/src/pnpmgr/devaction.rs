@@ -309,14 +309,14 @@ extern "C" {
     fn PiIrpQueryDeviceText(DeviceNode: PDEVICE_NODE, LocaleId: LCID, TextType: _DEVICE_TEXT_TYPE, Text: *mut PWSTR) -> NTSTATUS;
     fn PiIrpQueryPnPDeviceState(DeviceNode: PDEVICE_NODE, PnPFlags: *mut PNP_DEVICE_STATE) -> NTSTATUS;
 }
-// pnpnotify.rs — PiNotifyTargetDeviceChange is NTAPI (extern "system")
-extern "system" {
+// pnpnotify.rs — PiNotifyTargetDeviceChange is non-NTAPI (extern "C")
+extern "C" {
     fn PiNotifyTargetDeviceChange(Event: LPCGUID, DeviceObject: PDEVICE_OBJECT, CustomNotification: PTARGET_DEVICE_CUSTOM_NOTIFICATION);
 }
 
 // IopDeviceNodeSetFlag is a macro/inline in C - define as direct flag set
 #[no_mangle]
-pub unsafe extern "system" fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG) {
+pub unsafe extern "C" fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG) {
     (*DeviceNode).Flags |= Flag;
 }
 
@@ -324,12 +324,15 @@ const MAX_DEVICE_ID_LEN: usize = 200;
 const MAX_SEPARATORS_INSTANCEID: ULONG = 0;
 const MAX_SEPARATORS_DEVICEID: ULONG = 1;
 
+#[used]
 #[no_mangle]
 pub static mut IopDeviceActionRequestList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
 static mut IopDeviceActionWorkItem: _WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
 static mut IopDeviceActionInProgress: BOOLEAN = 0;
+#[used]
 #[no_mangle]
 pub static mut IopDeviceActionLock: KSPIN_LOCK = 0;
+#[used]
 #[no_mangle]
 pub static mut PiEnumerationFinished: _KEVENT = unsafe { core::mem::zeroed() };
 // L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\"
@@ -380,11 +383,13 @@ struct ATTACH_FILTER_DRIVERS_CONTEXT {
 }
 type PATTACH_FILTER_DRIVERS_CONTEXT = *mut ATTACH_FILTER_DRIVERS_CONTEXT;
 
-extern "system" {
+extern "C" {
     fn IopGetDeviceObjectFromDeviceInstance(DeviceInstance: PUNICODE_STRING) -> PDEVICE_OBJECT;
     fn IopGetParentIdPrefix(DeviceNode: PDEVICE_NODE, ParentIdPrefix: PUNICODE_STRING) -> NTSTATUS;
-    fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT;
     fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
+}
+extern "system" {
+    fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT;
     fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE);
 }
 
@@ -540,7 +545,9 @@ unsafe fn IopCreateDeviceInstancePath(
     }
 
     RtlCopyUnicodeString(InstancePath, &mut DeviceId as *mut _);
-    RtlAppendUnicodeToString(InstancePath, b"\\\\0\0" as *const u8 as *const u16);
+    // L"\\"
+    static BACKSLASH: [u16; 2] = [b'\\' as u16, 0];
+    RtlAppendUnicodeToString(InstancePath, BACKSLASH.as_ptr());
 
     RtlAppendUnicodeStringToString(InstancePath, &mut ParentIdPrefix as *mut _);
     if ParentIdPrefix.Length != 0 && InstanceId.Length != 0 {
@@ -1200,7 +1207,7 @@ unsafe fn IopQueryCompatibleIds(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PiSetDevNodeText(
+pub unsafe extern "C" fn PiSetDevNodeText(
     DeviceNode: PDEVICE_NODE,
     InstanceKey: HANDLE,
 ) {
@@ -1760,7 +1767,7 @@ unsafe fn PiIrpSendRemoveCheckVpb(
     IopSynchronousCall(targetDevice, &stack as *const _ as *mut _, &mut info as *mut _)
 }
 
-extern "system" {
+extern "C" {
     fn IopUpdateResourceMapForPnPDevice(DeviceNode: PDEVICE_NODE) -> NTSTATUS;
 }
 
