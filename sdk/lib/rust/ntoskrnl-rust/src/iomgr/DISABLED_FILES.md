@@ -88,11 +88,18 @@ have translation bugs causing SMSS to crash during session initialization.
 
 **Status:** Retranslated. Works on i386/amd64 (never called). Crashes on ARM64.
 
-**Known issue:** ARM64 crash during IopStartRamdisk (UEFI ramdisk boot).
-The retranslation fixed wide string bugs but something else is wrong —
-possibly the RAMDISK_CREATE_INPUT struct layout or the FSCTL dispatch.
+**Bugs found (fixed in source):**
+1. **`InitializeObjectAttributes` as extern** — Called a C shim that had calling
+   convention mismatch on ARM64. Fixed by inlining the struct initialization.
+2. **`sprintf` format string missing null** — `[b'X', b':', b'%', b's']` had no `\0`,
+   causing `sprintf` to read past the buffer. Fixed by adding null terminator.
 
-**Category:** Translation bug (ARM64-specific). Small file, should be fixable.
+**Remaining issue:** After fixing the above, bugcheck changes from 0x9C
+(RAMDISK_BOOT_INITIALIZATION_FAILED) to 0x6B (PROCESS1_INITIALIZATION_FAILED).
+The ramdisk init now succeeds but something in the subsequent SystemRoot/drive
+letter setup is wrong. Needs further investigation.
+
+**Category:** Translation bugs (ARM64-specific). Small file, partially fixed.
 
 ---
 

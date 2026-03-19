@@ -477,7 +477,7 @@ elseif(ARCH STREQUAL "arm64")
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Testing Rust driver.rs on ARM64
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # Rust ramdisk.rs retranslated but still crashes ARM64
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c
         )
 endif()
 

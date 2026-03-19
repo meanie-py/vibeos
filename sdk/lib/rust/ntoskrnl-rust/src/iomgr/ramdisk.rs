@@ -51,7 +51,7 @@ extern "C" {
     static mut PiEnumerationFinished: KEVENT;
     static mut SharedUserData: *mut SharedUserDataStruct;
     fn CONTAINING_RECORD( address: PVOID, type_size: usize, field_offset: usize, ) -> PVOID;
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+    // InitializeObjectAttributes inlined below
     fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8;
     fn _strupr(s: *mut i8) -> *mut i8;
     fn atol(s: *const i8) -> i32;
@@ -64,6 +64,17 @@ extern "C" {
 struct SharedUserDataStruct {
     _padding: [u8; 0x030],
     NtSystemRoot: [u16; 260],
+}
+
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).ObjectName = n;
+    (*p).Attributes = a;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
 const RAMDISK_BOOT_INITIALIZATION_FAILED: ULONG = 0x9C;
@@ -330,7 +341,7 @@ pub unsafe extern "system" fn IopStartRamdisk(
             Buffer: DRIVE_LETTER_FMT.as_ptr() as *mut u16,
         };
 
-        static FMT_X_COLON: [u8; 4] = [b'X', b':', b'%', b's'];
+        static FMT_X_COLON: [u8; 5] = [b'X', b':', b'%', b's', 0];
         AnsiPath.Length = sprintf(
             Buffer.as_mut_ptr(),
             FMT_X_COLON.as_ptr() as *const i8,

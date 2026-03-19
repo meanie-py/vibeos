@@ -18,8 +18,9 @@ pub mod iotimer;
 pub mod iowork;
 // pub mod irp;  // 3 bugs found+fixed (NT_ERROR, KTHREAD offset, PacketType), still hangs — more bugs in IopCompleteRequest
 pub mod irq;
+// pub mod ramdisk;  // ARM64: 0x9C fixed (InitializeObjectAttributes+sprintf null), now 0x6B
 #[cfg(not(target_arch = "aarch64"))]
-pub mod ramdisk;  // ARM64 uses C ramdisk.c (Rust retranslation still crashes)
+pub mod ramdisk;
 pub mod rawfs;
 pub mod remlock;
 pub mod symlink;
