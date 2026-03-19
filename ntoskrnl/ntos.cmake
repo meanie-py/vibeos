@@ -152,7 +152,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c  # Rust irp.rs causes boot hang (BUGCHECK 0x1E)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # ARM64 only — see below
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c
@@ -476,7 +476,7 @@ elseif(ARCH STREQUAL "arm64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Rust driver.rs causes Phase0 crash on ARM64
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Testing Rust driver.rs on ARM64
         ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # Rust ramdisk.rs retranslated but still crashes ARM64
         )
 endif()

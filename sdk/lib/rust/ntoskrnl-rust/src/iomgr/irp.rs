@@ -210,7 +210,7 @@ unsafe fn IRP_FROM_APC(apc: PKAPC) -> PIRP {
 }
 
 unsafe fn NT_ERROR(status: NTSTATUS) -> bool {
-    status < 0
+    ((status as u32) >> 30) == 3
 }
 
 unsafe fn IsIrpSynchronous(irp: PIRP, file_object: PFILE_OBJECT) -> bool {
@@ -390,7 +390,8 @@ pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: 
     }
 }
 
-unsafe fn IopDisassociateThreadIrp() {
+#[no_mangle]
+pub unsafe extern "system" fn IopDisassociateThreadIrp() {
     let mut OldIrql: KIRQL = 0;
     let LockIrql: KIRQL;
     let IrpThread: PETHREAD;
@@ -445,7 +446,8 @@ unsafe fn IopDisassociateThreadIrp() {
     }
 }
 
-unsafe fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT) {
+#[no_mangle]
+pub unsafe extern "system" fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT) {
     let mut Mdl: PMDL = (*Irp).MdlAddress;
 
     while !Mdl.is_null() {
@@ -603,7 +605,7 @@ unsafe fn IopCompleteRequestInner(
         if (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine.is_some() {
             KeInitializeApc(
                 addr_of_mut!((*Irp).Tail.Apc),
-                &mut (*(PsGetCurrentThread())).Tcb.__bindgen_anon_1 as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
+                &mut (*(PsGetCurrentThread())).Tcb as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
                 CurrentApcEnvironment as u32,
                 Some(IopFreeIrpKernelApc),
                 Some(IopAbortIrpKernelApc),
@@ -619,7 +621,7 @@ unsafe fn IopCompleteRequestInner(
             );
         } else if !Port.is_null() && !(*Irp).Overlay.AsynchronousParameters.UserApcContext.is_null() {
             (*Irp).Tail.CompletionKey = Key;
-            (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.PacketType = IoPagingPriorityHigh;
+            (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.PacketType = 0; // IopCompletionPacketIrp
             extern "system" {
     fn KeInsertQueue(Queue: PVOID, Entry: PLIST_ENTRY) -> LONG;
 }
@@ -1310,7 +1312,7 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
     if (*Irp).Cancel == 0 {
         KeInitializeApc(
             addr_of_mut!((*Irp).Tail.Apc),
-            &mut (*Thread).Tcb.__bindgen_anon_1 as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
+            &mut (*Thread).Tcb as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
             (*Irp).ApcEnvironment as u32,
             Some(IopCompleteRequest),
             None,
@@ -1328,7 +1330,7 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
         if !Thread.is_null() {
             KeInitializeApc(
                 addr_of_mut!((*Irp).Tail.Apc),
-                &mut (*Thread).Tcb.__bindgen_anon_1 as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
+                &mut (*Thread).Tcb as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD,
                 (*Irp).ApcEnvironment as u32,
                 Some(IopCompleteRequest),
                 None,

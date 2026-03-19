@@ -844,6 +844,161 @@ IopDeviceNodeSetFlag(IN PDEVICE_NODE DeviceNode, IN ULONG Flag)
     DeviceNode->Flags |= Flag;
 }
 
+/* IopCompleteRequest: kept in C (irp.c) — Rust version has APC bugs */
+
+#if 0 /* IopCompleteRequest_c — disabled, using irp.c version */
+VOID
+NTAPI
+IopCompleteRequest_c(IN PKAPC Apc,
+                     IN PKNORMAL_ROUTINE* NormalRoutine,
+                     IN PVOID* NormalContext,
+                     IN PVOID* SystemArgument1,
+                     IN PVOID* SystemArgument2)
+{
+    PFILE_OBJECT FileObject;
+    PIRP Irp;
+    PMDL Mdl, NextMdl;
+    PVOID Port, Key;
+    BOOLEAN SignalCompletion;
+
+    Irp = CONTAINING_RECORD(Apc, IRP, Tail.Apc);
+
+    DPRINT("IopCompleteRequest(Irp %p)\n", Irp);
+
+    FileObject = (PFILE_OBJECT)*SystemArgument1;
+    SignalCompletion = (Irp->UserIosb != NULL && Irp->AssociatedIrp.SystemBuffer != NULL);
+
+    if ((Irp->Flags & IRP_BUFFERED_IO) && (Irp->Flags & IRP_DEALLOCATE_BUFFER))
+    {
+        if ((Irp->Flags & IRP_INPUT_OPERATION) && NT_SUCCESS(Irp->IoStatus.Status))
+        {
+            _SEH2_TRY
+            {
+                RtlCopyMemory(Irp->UserBuffer,
+                              Irp->AssociatedIrp.SystemBuffer,
+                              Irp->IoStatus.Information);
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                Irp->IoStatus.Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+        }
+
+        ExFreePool(Irp->AssociatedIrp.SystemBuffer);
+    }
+
+    Irp->Flags &= ~(IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION);
+
+    if (Irp->UserIosb)
+    {
+        _SEH2_TRY
+        {
+            *Irp->UserIosb = Irp->IoStatus;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            DPRINT1("IopCompleteRequest: UserIosb write failed\n");
+        }
+        _SEH2_END;
+    }
+
+    if ((Irp->Flags & IRP_CREATE_OPERATION) && FileObject)
+    {
+        if (!NT_SUCCESS(Irp->IoStatus.Status))
+        {
+            DPRINT("IopCompleteRequest: failed create\n");
+            FileObject->Flags |= FO_FILE_OPEN_CANCELLED;
+        }
+    }
+
+    if (Irp->UserEvent)
+    {
+        KeSetEvent(Irp->UserEvent, 0, FALSE);
+    }
+    else if (FileObject)
+    {
+        KeSetEvent(&FileObject->Event, 0, FALSE);
+    }
+
+    Port = (Irp->Flags & IRP_CREATE_OPERATION) ? NULL : Irp->Tail.Overlay.OriginalFileObject;
+    Key = NULL;
+    if (Port && FileObject)
+    {
+        Port = FileObject->CompletionContext;
+        if (Port)
+        {
+            Key = FileObject->CompletionContext->Key;
+            Port = FileObject->CompletionContext->Port;
+        }
+    }
+
+    if (FileObject)
+    {
+        if (!(Irp->Flags & IRP_CREATE_OPERATION))
+        {
+            ObDereferenceObjectDeferDelete(FileObject);
+        }
+    }
+
+    Irp->Tail.Overlay.PacketType = IopCompletionPacketIrp;
+    if (Port && Irp->Overlay.AsynchronousParameters.UserApcRoutine == NULL)
+    {
+        if (NT_SUCCESS(IoSetIoCompletion(Port,
+                                          Key,
+                                          Irp->Overlay.AsynchronousParameters.UserApcContext,
+                                          Irp->IoStatus.Status,
+                                          Irp->IoStatus.Information,
+                                          TRUE)))
+        {
+            Mdl = Irp->MdlAddress;
+            while (Mdl)
+            {
+                NextMdl = Mdl->Next;
+                IoFreeMdl(Mdl);
+                Mdl = NextMdl;
+            }
+            IoFreeIrp(Irp);
+            return;
+        }
+    }
+
+    if (Irp->Overlay.AsynchronousParameters.UserApcRoutine)
+    {
+        KeInitializeApc(&Irp->Tail.Apc,
+                        KeGetCurrentThread(),
+                        CurrentApcEnvironment,
+                        IopAbortIrpKernelApc,
+                        NULL,
+                        (PKNORMAL_ROUTINE)Irp->Overlay.AsynchronousParameters.UserApcRoutine,
+                        Irp->RequestorMode,
+                        Irp->Overlay.AsynchronousParameters.UserApcContext);
+        KeInsertQueueApc(&Irp->Tail.Apc,
+                          Irp->UserIosb,
+                          NULL,
+                          2);
+    }
+    else
+    {
+        Mdl = Irp->MdlAddress;
+        while (Mdl)
+        {
+            NextMdl = Mdl->Next;
+            IoFreeMdl(Mdl);
+            Mdl = NextMdl;
+        }
+        if (Irp == IopReserveIrpAllocator.ReserveIrp)
+        {
+            IopFreeReserveIrp(0);
+        }
+        else
+        {
+            IoFreeIrp(Irp);
+        }
+    }
+}
+#endif /* IopCompleteRequest_c */
+
 /* ========================================================================
  * devaction.rs C shims — DISABLED: devaction.c is used on all arches.
  * The Rust devaction.rs has an undiagnosed amd64-specific PnP hang in

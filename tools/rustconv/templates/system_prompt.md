@@ -277,11 +277,20 @@ static mut ExpLuid: LARGE_INTEGER = unsafe { core::mem::transmute(0x3e9_u64) };
 
 ## Macro Expansions
 
-### NT_SUCCESS / NT_ERROR
+### NT_SUCCESS / NT_ERROR / NT_WARNING / NT_INFORMATION
 ```rust
-// NT_SUCCESS(Status) → Status >= 0
-// !NT_SUCCESS(Status) → Status < 0
+// NT_SUCCESS(Status) → Status >= 0 (includes success + informational + warning)
+// !NT_SUCCESS(Status) → Status < 0 (errors only — severity 3)
 if status >= 0 { ... }
+
+// CRITICAL: NT_ERROR is NOT the same as !NT_SUCCESS!
+// NT_ERROR only matches severity 3 (error), NOT severity 2 (warning).
+// NT_ERROR(Status) → ((Status as u32) >> 30) == 3
+// Warnings like STATUS_BUFFER_OVERFLOW (0x80000005) are NOT NT_ERROR.
+fn NT_ERROR(status: NTSTATUS) -> bool { ((status as u32) >> 30) == 3 }
+
+// NT_WARNING(Status) → ((Status as u32) >> 30) == 2
+// NT_INFORMATION(Status) → ((Status as u32) >> 30) == 1
 ```
 
 ### RtlCopyMemory / RtlZeroMemory / RtlMoveMemory
