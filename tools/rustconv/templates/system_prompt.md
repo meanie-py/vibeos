@@ -659,3 +659,110 @@ unsafe { (*time).__bindgen_anon_1.QuadPart = value; }
 ```
 
 Check the actual bindgen layout — if LARGE_INTEGER has `.QuadPart` directly, use it. If it's nested in an anonymous union, use the `__bindgen_anon_1` accessor.
+
+## Critical Translation Bugs (Field-Verified)
+
+These are the most common bugs found in LLM-translated kernel code. Each one has caused kernel crashes or hangs in production testing. Pay special attention to these patterns.
+
+### Wide String Encoding (L"..." → [u16; N])
+
+C wide string literals (`L"..."`) MUST be translated to `[u16; N]` arrays with explicit UTF-16 values. **NEVER** use `b"..."` byte strings cast to `*const u16` — this produces ASCII bytes (1 byte per char) instead of UTF-16 (2 bytes per char), causing garbage data in all wide string APIs.
+
+```rust
+// WRONG — produces ASCII bytes, NOT UTF-16:
+b"\\Registry\\Machine\0".as_ptr() as *const u16
+
+// RIGHT — explicit UTF-16 array:
+static REG_PATH: [u16; 19] = [
+    b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16,
+    b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+    b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16,
+    b'n' as u16, b'e' as u16, 0, 0,
+];
+```
+
+The `b"S\0e\0r\0v\0i\0c\0e\0\0\0"` byte-string hack (ASCII char + `\0` pairs reinterpreted as LE u16) works on little-endian but is fragile. Prefer explicit `[u16; N]` arrays for all wide strings.
+
+### Enum/Constant Value Ordering
+
+When translating a C `switch` statement with symbolic enum constants, use the **actual enum values**, not sequential ordinals. A common LLM mistake is assigning match arm values 0, 1, 2, 3... in the ORDER the cases appear in the switch, rather than using the correct enum values.
+
+```rust
+// WRONG — sequential ordinals matching C source order:
+match DeviceProperty {
+    0 => { /* BusTypeGuid logic */ }    // Should be 12
+    1 => { /* LegacyBusType logic */ }  // Should be 13
+    // ...
+}
+
+// RIGHT — use symbolic constants with correct values:
+const DevicePropertyBusTypeGuid: u32 = 12;
+const DevicePropertyLegacyBusType: u32 = 13;
+match DeviceProperty {
+    DevicePropertyBusTypeGuid => { /* BusTypeGuid logic */ }
+    DevicePropertyLegacyBusType => { /* LegacyBusType logic */ }
+    // ...
+}
+```
+
+Similarly, `KEY_VALUE_INFORMATION_CLASS` values differ from `KEY_INFORMATION_CLASS`:
+- `KeyValueBasicInformation = 0, KeyValueFullInformation = 1, KeyValuePartialInformation = 2`
+- `KeyBasicInformation = 0, KeyNodeInformation = 1, KeyFullInformation = 2`
+
+### Global Variables: #[no_mangle] and #[used]
+
+Globals referenced from C code MUST have `#[no_mangle]`. Additionally, if no Rust code reads the global (only C reads it), add `#[used]` to prevent LLVM from eliminating it:
+
+```rust
+#[no_mangle]
+#[used]  // C code reads this; LLVM would eliminate without #[used]
+pub static mut IopRootDeviceNode: PDEVICE_NODE = core::ptr::null_mut();
+```
+
+### Static Lifetime for Wide String Temporaries
+
+Inline `[u16; N]` arrays used with `RtlInitUnicodeString` MUST be `static` — a local array is a temporary that dies at the semicolon, leaving a dangling pointer:
+
+```rust
+// WRONG — dangling pointer (array is temporary):
+RtlInitUnicodeString(&mut name, [b'F' as u16, b'o' as u16, b'o' as u16, 0].as_ptr());
+
+// RIGHT — static array has 'static lifetime:
+static FOO: [u16; 4] = [b'F' as u16, b'o' as u16, b'o' as u16, 0];
+RtlInitUnicodeString(&mut name, FOO.as_ptr());
+```
+
+### Output Pointer Functions and LLVM Cross-CGU Optimization
+
+Functions that write to output pointers (`PHANDLE`, `*mut PKEY_VALUE_FULL_INFORMATION`, etc.) may have their writes eliminated by LLVM when called across codegen units (different Rust files). The LLVM `captures(none)` optimization concludes the pointer isn't captured and eliminates the store.
+
+**Workaround**: For functions like `IopOpenRegistryKeyEx`, `IopGetRegistryValue`, `IopCreateRegistryKeyEx` that are called from many other files, provide a C shim wrapper that calls the Rust implementation through the ABI boundary:
+
+```c
+// io_rust_shims.c
+NTSTATUS NTAPI IopOpenRegistryKeyEx(PHANDLE, HANDLE, PUNICODE_STRING, ACCESS_MASK);
+NTSTATUS NTAPI IopOpenRegistryKeyEx_shim(PHANDLE KeyHandle, ...) {
+    return IopOpenRegistryKeyEx(KeyHandle, ...);  // C→Rust ABI boundary prevents optimization
+}
+```
+
+### Calling Convention on Exported Functions
+
+All `NTAPI` functions must use `extern "system"` (stdcall on i386, cdecl on amd64/arm64). Functions WITHOUT `NTAPI` in C are cdecl — use `extern "C"`. Getting this wrong causes stack corruption on i386:
+
+```rust
+// C: NTSTATUS NTAPI IoGetDeviceProperty(...)  →  extern "system"
+// C: VOID PiQueueDeviceAction(...)            →  extern "C"  (no NTAPI)
+// C: PDEVICE_NODE FASTCALL IopGetDeviceNode(...)  →  extern "fastcall"
+```
+
+### IO_STATUS_BLOCK Anonymous Union
+
+`IO_STATUS_BLOCK.Status` is inside an anonymous union. In bindgen:
+```rust
+// WRONG:
+(*IoStatusBlock).Status
+
+// RIGHT:
+(*IoStatusBlock).__bindgen_anon_1.Status
+```

@@ -243,6 +243,175 @@ void __cdecl pnp_trace_ulong(const char *msg, ULONG val)
 
 
 /* ========================================================================
+ * IopQueryDeviceCapabilities C implementation
+ *
+ * The Rust version causes an amd64-specific hang during PnP enumeration.
+ * ======================================================================== */
+NTSTATUS
+NTAPI
+IopQueryDeviceCapabilities_c(PDEVICE_NODE DeviceNode,
+                             PDEVICE_CAPABILITIES DeviceCaps)
+{
+    IO_STATUS_BLOCK StatusBlock;
+    IO_STACK_LOCATION Stack;
+    NTSTATUS Status;
+    HANDLE InstanceKey;
+    UNICODE_STRING ValueName;
+
+    RtlZeroMemory(DeviceCaps, sizeof(DEVICE_CAPABILITIES));
+    DeviceCaps->Size = sizeof(DEVICE_CAPABILITIES);
+    DeviceCaps->Version = 1;
+    DeviceCaps->Address = -1;
+    DeviceCaps->UINumber = -1;
+
+    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
+    Stack.Parameters.DeviceCapabilities.Capabilities = DeviceCaps;
+
+    Status = IopInitiatePnpIrp(DeviceNode->PhysicalDeviceObject,
+                               &StatusBlock,
+                               IRP_MN_QUERY_CAPABILITIES,
+                               &Stack);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    DeviceNode->CapabilityFlags = 0;
+    if (DeviceCaps->LockSupported)
+        DeviceNode->CapabilityFlags |= 0x00000001;
+    if (DeviceCaps->EjectSupported)
+        DeviceNode->CapabilityFlags |= 0x00000002;
+    if (DeviceCaps->Removable)
+        DeviceNode->CapabilityFlags |= 0x00000004;
+    if (DeviceCaps->DockDevice)
+        DeviceNode->CapabilityFlags |= 0x00000008;
+    if (DeviceCaps->UniqueID)
+        DeviceNode->CapabilityFlags |= 0x00000010;
+    if (DeviceCaps->SilentInstall)
+        DeviceNode->CapabilityFlags |= 0x00000020;
+    if (DeviceCaps->RawDeviceOK)
+        DeviceNode->CapabilityFlags |= 0x00000040;
+    if (DeviceCaps->SurpriseRemovalOK)
+        DeviceNode->CapabilityFlags |= 0x00000080;
+    if (DeviceCaps->HardwareDisabled)
+        DeviceNode->CapabilityFlags |= 0x00000100;
+    if (DeviceCaps->NonDynamic)
+        DeviceNode->CapabilityFlags |= 0x00000200;
+
+    if (DeviceCaps->NoDisplayInUI)
+        DeviceNode->UserFlags |= DNUF_DONT_SHOW_IN_UI;
+    else
+        DeviceNode->UserFlags &= ~DNUF_DONT_SHOW_IN_UI;
+
+    Status = IopCreateDeviceKeyPath(&DeviceNode->InstancePath, REG_OPTION_NON_VOLATILE, &InstanceKey);
+    if (NT_SUCCESS(Status))
+    {
+        RtlInitUnicodeString(&ValueName, L"Capabilities");
+        Status = ZwSetValueKey(InstanceKey, &ValueName, 0, REG_DWORD,
+                               &DeviceNode->CapabilityFlags, sizeof(ULONG));
+        if (DeviceCaps->UINumber != MAXULONG)
+        {
+            RtlInitUnicodeString(&ValueName, L"UINumber");
+            Status = ZwSetValueKey(InstanceKey, &ValueName, 0, REG_DWORD,
+                                   &DeviceCaps->UINumber, sizeof(ULONG));
+        }
+        ZwClose(InstanceKey);
+    }
+
+    return Status;
+}
+
+/* ========================================================================
+ * IopGetBusTypeGuidIndex C implementation
+ *
+ * The Rust version in pnpmgr.rs causes an amd64-specific hang. The root cause
+ * is unclear (code logic appears identical). Using C version avoids the issue.
+ * ======================================================================== */
+extern PIO_BUS_TYPE_GUID_LIST PnpBusTypeGuidList;
+
+USHORT
+NTAPI
+IopGetBusTypeGuidIndex_c(LPGUID BusTypeGuid)
+{
+    USHORT i = 0, FoundIndex = 0xFFFF;
+    ULONG NewSize;
+    PVOID NewList;
+
+    ExAcquireFastMutex(&PnpBusTypeGuidList->Lock);
+
+    while (i < PnpBusTypeGuidList->GuidCount)
+    {
+         if (RtlCompareMemory(BusTypeGuid,
+                              &PnpBusTypeGuidList->Guids[i],
+                              sizeof(GUID)) == sizeof(GUID))
+         {
+              FoundIndex = i;
+              goto Quickie;
+         }
+         i++;
+    }
+
+    if (PnpBusTypeGuidList->GuidCount)
+    {
+        NewSize = sizeof(IO_BUS_TYPE_GUID_LIST) +
+                 (sizeof(GUID) * PnpBusTypeGuidList->GuidCount);
+        NewList = ExAllocatePool(PagedPool, NewSize);
+        if (!NewList)
+        {
+            ExFreePool(PnpBusTypeGuidList);
+            goto Quickie;
+        }
+        NewSize -= sizeof(GUID);
+        RtlCopyMemory(NewList, PnpBusTypeGuidList, NewSize);
+        ExFreePool(PnpBusTypeGuidList);
+        PnpBusTypeGuidList = NewList;
+    }
+
+    RtlCopyMemory(&PnpBusTypeGuidList->Guids[PnpBusTypeGuidList->GuidCount],
+                  BusTypeGuid,
+                  sizeof(GUID));
+    FoundIndex = (USHORT)PnpBusTypeGuidList->GuidCount;
+    PnpBusTypeGuidList->GuidCount++;
+
+Quickie:
+    ExReleaseFastMutex(&PnpBusTypeGuidList->Lock);
+    return FoundIndex;
+}
+
+/* ========================================================================
+ * IopInitiatePnpIrp C implementation
+ *
+ * The Rust version in pnpmgr.rs causes an amd64-specific hang during PnP
+ * device enumeration. The exact cause is unknown but likely related to
+ * IO_STACK_LOCATION stack alignment or volatile semantics differences.
+ * Using the C version avoids the issue.
+ * ======================================================================== */
+NTSTATUS
+NTAPI
+IopInitiatePnpIrp_c(IN PDEVICE_OBJECT DeviceObject,
+                     IN OUT PIO_STATUS_BLOCK IoStatusBlock,
+                     IN UCHAR MinorFunction,
+                     IN PIO_STACK_LOCATION Stack OPTIONAL)
+{
+    IO_STACK_LOCATION IoStackLocation;
+
+    RtlZeroMemory(&IoStackLocation, sizeof(IO_STACK_LOCATION));
+    IoStackLocation.MajorFunction = IRP_MJ_PNP;
+    IoStackLocation.MinorFunction = MinorFunction;
+    if (Stack)
+    {
+        RtlCopyMemory(&IoStackLocation.Parameters,
+                      &Stack->Parameters,
+                      sizeof(Stack->Parameters));
+    }
+
+    IoStatusBlock->Status = IopSynchronousCall(DeviceObject,
+                                               &IoStackLocation,
+                                               (PVOID)&IoStatusBlock->Information);
+    return IoStatusBlock->Status;
+}
+
+/* ========================================================================
  * IopGetRegistryValue shim
  *
  * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
@@ -674,3 +843,311 @@ IopDeviceNodeSetFlag(IN PDEVICE_NODE DeviceNode, IN ULONG Flag)
 {
     DeviceNode->Flags |= Flag;
 }
+
+/* ========================================================================
+ * devaction.rs C shims — DISABLED: devaction.c is used on all arches.
+ * The Rust devaction.rs has an undiagnosed amd64-specific PnP hang in
+ * its internal static function graph (PipDeviceActionWorker and callees).
+ * ======================================================================== */
+#if 0 /* devaction shims disabled — devaction.c used on all arches */
+
+/* GUIDs needed by IoRequestDeviceEject_c */
+#define INITGUID
+#include <reactos/libs/umpnpmgr/sysguid.h>
+#undef INITGUID
+
+/* DEVICE_ACTION_REQUEST struct — needed by PiQueueDeviceAction_c */
+typedef struct _DEVICE_ACTION_REQUEST
+{
+    LIST_ENTRY RequestListEntry;
+    PDEVICE_OBJECT DeviceObject;
+    PKEVENT CompletionEvent;
+    NTSTATUS *CompletionStatus;
+    DEVICE_ACTION Action;
+} DEVICE_ACTION_REQUEST, *PDEVICE_ACTION_REQUEST;
+
+/* Forward declarations for functions called by IoRequestDeviceEject_c */
+NTSTATUS NTAPI IopQueryDeviceCapabilities(PDEVICE_NODE DeviceNode, PDEVICE_CAPABILITIES DeviceCaps);
+NTSTATUS IopQueryRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations, BOOLEAN Force);
+NTSTATUS IopQueryRemoveChildDevices(PDEVICE_NODE ParentDeviceNode, BOOLEAN Force);
+NTSTATUS IopPrepareDeviceForRemoval(PDEVICE_OBJECT DeviceObject, BOOLEAN Force);
+VOID IopCancelRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations);
+VOID IopCancelRemoveChildDevices(PDEVICE_NODE ParentDeviceNode);
+VOID IopSendRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations);
+VOID IopSendRemoveChildDevices(PDEVICE_NODE ParentDeviceNode);
+NTSTATUS NTAPI IopSendEject(PDEVICE_OBJECT DeviceObject);
+NTSTATUS PiIrpQueryDeviceText(PDEVICE_NODE DeviceNode, LCID LocaleId,
+    DEVICE_TEXT_TYPE TextType, PWSTR *Text);
+
+/*
+ * PiSetDevNodeText_c — Sets DeviceDesc and LocationInformation registry values.
+ * Delegated from Rust to C to avoid potential cross-CGU issues.
+ */
+VOID
+PiSetDevNodeText_c(
+    _In_ PDEVICE_NODE DeviceNode,
+    _In_ HANDLE InstanceKey)
+{
+    PAGED_CODE();
+
+    LCID localeId;
+
+    NTSTATUS status = ZwQueryDefaultLocale(FALSE, &localeId);
+    if (!NT_SUCCESS(status))
+    {
+        DPRINT1("ZwQueryDefaultLocale() failed with status %x\n", status);
+        return;
+    }
+
+    // Step 1: Write the DeviceDesc value if does not exist
+    UNICODE_STRING valDeviceDesc = RTL_CONSTANT_STRING(L"DeviceDesc");
+    ULONG len;
+
+    status = ZwQueryValueKey(InstanceKey, &valDeviceDesc, KeyValueBasicInformation, NULL, 0, &len);
+    if (status == STATUS_OBJECT_NAME_NOT_FOUND)
+    {
+        PWSTR deviceDesc = NULL;
+        status = PiIrpQueryDeviceText(DeviceNode, localeId, DeviceTextDescription, &deviceDesc);
+
+        if (deviceDesc && deviceDesc[0] != UNICODE_NULL)
+        {
+            status = ZwSetValueKey(InstanceKey,
+                                   &valDeviceDesc,
+                                   0,
+                                   REG_SZ,
+                                   deviceDesc,
+                                   ((ULONG)wcslen(deviceDesc) + 1) * sizeof(WCHAR));
+
+            if (!NT_SUCCESS(status))
+            {
+                DPRINT1("ZwSetValueKey() failed (Status %x)\n", status);
+            }
+        }
+        else
+        {
+            UNICODE_STRING unknownDeviceDesc = RTL_CONSTANT_STRING(L"Unknown device");
+            DPRINT("Driver didn't return DeviceDesc (status %x)\n", status);
+
+            status = ZwSetValueKey(InstanceKey,
+                                   &valDeviceDesc,
+                                   0,
+                                   REG_SZ,
+                                   unknownDeviceDesc.Buffer,
+                                   unknownDeviceDesc.MaximumLength);
+            if (!NT_SUCCESS(status))
+            {
+                DPRINT1("ZwSetValueKey() failed (Status %x)\n", status);
+            }
+        }
+
+        if (deviceDesc)
+        {
+            ExFreePoolWithTag(deviceDesc, 0);
+        }
+    }
+
+    // Step 2: LocationInformation is overwritten unconditionally
+    PWSTR deviceLocationInfo = NULL;
+    status = PiIrpQueryDeviceText(DeviceNode,
+                                  localeId,
+                                  DeviceTextLocationInformation,
+                                  &deviceLocationInfo);
+
+    if (deviceLocationInfo && deviceLocationInfo[0] != UNICODE_NULL)
+    {
+        UNICODE_STRING valLocationInfo = RTL_CONSTANT_STRING(L"LocationInformation");
+
+        status = ZwSetValueKey(InstanceKey,
+                               &valLocationInfo,
+                               0,
+                               REG_SZ,
+                               deviceLocationInfo,
+                               ((ULONG)wcslen(deviceLocationInfo) + 1) * sizeof(WCHAR));
+        if (!NT_SUCCESS(status))
+        {
+            DPRINT1("ZwSetValueKey() failed (Status %x)\n", status);
+        }
+    }
+
+    if (deviceLocationInfo)
+    {
+        ExFreePoolWithTag(deviceLocationInfo, 0);
+    }
+    else
+    {
+        DPRINT("Driver didn't return LocationInformation (status %x)\n", status);
+    }
+}
+
+/*
+ * IoRequestDeviceEject_c — Eject a device.
+ * Delegated from Rust to C to avoid potential cross-CGU issues.
+ */
+VOID
+NTAPI
+IoRequestDeviceEject_c(IN PDEVICE_OBJECT PhysicalDeviceObject)
+{
+    PDEVICE_NODE DeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
+    PDEVICE_RELATIONS DeviceRelations;
+    IO_STATUS_BLOCK IoStatusBlock;
+    IO_STACK_LOCATION Stack;
+    DEVICE_CAPABILITIES Capabilities;
+    NTSTATUS Status;
+
+    IopQueueTargetDeviceEvent(&GUID_DEVICE_KERNEL_INITIATED_EJECT,
+                              &DeviceNode->InstancePath);
+
+    if (IopQueryDeviceCapabilities(DeviceNode, &Capabilities) != STATUS_SUCCESS)
+    {
+        goto cleanup;
+    }
+
+    Stack.Parameters.QueryDeviceRelations.Type = EjectionRelations;
+
+    Status = IopInitiatePnpIrp(PhysicalDeviceObject,
+                               &IoStatusBlock,
+                               IRP_MN_QUERY_DEVICE_RELATIONS,
+                               &Stack);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT("IopInitiatePnpIrp() failed with status 0x%08lx\n", Status);
+        DeviceRelations = NULL;
+    }
+    else
+    {
+        DeviceRelations = (PDEVICE_RELATIONS)IoStatusBlock.Information;
+    }
+
+    if (DeviceRelations)
+    {
+        Status = IopQueryRemoveDeviceRelations(DeviceRelations, FALSE);
+        if (!NT_SUCCESS(Status))
+            goto cleanup;
+    }
+
+    Status = IopQueryRemoveChildDevices(DeviceNode, FALSE);
+    if (!NT_SUCCESS(Status))
+    {
+        if (DeviceRelations)
+            IopCancelRemoveDeviceRelations(DeviceRelations);
+        goto cleanup;
+    }
+
+    if (IopPrepareDeviceForRemoval(PhysicalDeviceObject, FALSE) != STATUS_SUCCESS)
+    {
+        if (DeviceRelations)
+            IopCancelRemoveDeviceRelations(DeviceRelations);
+        IopCancelRemoveChildDevices(DeviceNode);
+        goto cleanup;
+    }
+
+    if (DeviceRelations)
+        IopSendRemoveDeviceRelations(DeviceRelations);
+    IopSendRemoveChildDevices(DeviceNode);
+
+    DeviceNode->Problem = CM_PROB_HELD_FOR_EJECT;
+    if (Capabilities.EjectSupported)
+    {
+        if (IopSendEject(PhysicalDeviceObject) != STATUS_SUCCESS)
+        {
+            goto cleanup;
+        }
+    }
+    else
+    {
+        // DeviceNode->Flags |= DNF_DISABLED;
+    }
+
+    IopQueueTargetDeviceEvent(&GUID_DEVICE_EJECT,
+                              &DeviceNode->InstancePath);
+
+    return;
+
+cleanup:
+    IopQueueTargetDeviceEvent(&GUID_DEVICE_EJECT_VETOED,
+                              &DeviceNode->InstancePath);
+}
+
+/*
+ * PiQueueDeviceAction_c — Queue a device operation to a worker thread.
+ * Delegated from Rust to C to avoid potential cross-CGU issues.
+ */
+extern BOOLEAN PnPBootDriversLoaded;
+extern LIST_ENTRY IopDeviceActionRequestList;
+extern KSPIN_LOCK IopDeviceActionLock;
+extern KEVENT PiEnumerationFinished;
+extern WORK_QUEUE_ITEM IopDeviceActionWorkItem;
+extern BOOLEAN IopDeviceActionInProgress;
+
+VOID NTAPI PipDeviceActionWorker(PVOID Context);
+
+VOID
+PiQueueDeviceAction_c(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ DEVICE_ACTION Action,
+    _In_opt_ PKEVENT CompletionEvent,
+    _Out_opt_ NTSTATUS *CompletionStatus)
+{
+    PDEVICE_ACTION_REQUEST Request;
+    KIRQL OldIrql;
+
+    Request = ExAllocatePoolWithTag(NonPagedPoolMustSucceed, sizeof(*Request), TAG_IO);
+
+    DPRINT("PiQueueDeviceAction: DeviceObject - %p, Request - %p\n",
+        DeviceObject, Request);
+
+    ObReferenceObject(DeviceObject);
+
+    Request->DeviceObject = DeviceObject;
+    Request->Action = Action;
+    Request->CompletionEvent = CompletionEvent;
+    Request->CompletionStatus = CompletionStatus;
+
+    KeAcquireSpinLock(&IopDeviceActionLock, &OldIrql);
+    InsertTailList(&IopDeviceActionRequestList, &Request->RequestListEntry);
+
+    if (Action == PiActionEnumRootDevices || Action == PiActionAddBootDevices)
+    {
+        ASSERT(!IopDeviceActionInProgress);
+
+        IopDeviceActionInProgress = TRUE;
+        KeClearEvent(&PiEnumerationFinished);
+        KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
+
+        PipDeviceActionWorker(NULL);
+        return;
+    }
+
+    if (IopDeviceActionInProgress || !PnPBootDriversLoaded)
+    {
+        KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
+        return;
+    }
+    IopDeviceActionInProgress = TRUE;
+    KeClearEvent(&PiEnumerationFinished);
+    KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
+
+    ExInitializeWorkItem(&IopDeviceActionWorkItem, PipDeviceActionWorker, NULL);
+    ExQueueWorkItem(&IopDeviceActionWorkItem, DelayedWorkQueue);
+}
+
+/*
+ * PiPerformSyncDeviceAction_c — Perform a device operation synchronously.
+ * Delegated from Rust to C to avoid potential cross-CGU issues.
+ */
+NTSTATUS
+PiPerformSyncDeviceAction_c(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ DEVICE_ACTION Action)
+{
+    KEVENT opFinished;
+    NTSTATUS status;
+
+    KeInitializeEvent(&opFinished, SynchronizationEvent, FALSE);
+    PiQueueDeviceAction_c(DeviceObject, Action, &opFinished, &status);
+    KeWaitForSingleObject(&opFinished, Executive, KernelMode, FALSE, NULL);
+
+    return status;
+}
+
+#endif /* _M_IX86 */

@@ -14,20 +14,15 @@
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
-
 ERESOURCE PpRegistryDeviceResource;
 KGUARDED_MUTEX PpDeviceReferenceTableLock;
 RTL_AVL_TABLE PpDeviceReferenceTable;
-
-extern ULONG ExpInitializationPhase;
-
-/* DATA **********************************************************************/
-
 PDRIVER_OBJECT IopRootDriverObject;
 PIO_BUS_TYPE_GUID_LIST PnpBusTypeGuidList = NULL;
 
-/* FUNCTIONS *****************************************************************/
+extern ULONG ExpInitializationPhase;
 
+/* FUNCTIONS *****************************************************************/
 VOID
 IopFixupDeviceId(PWCHAR String)
 {

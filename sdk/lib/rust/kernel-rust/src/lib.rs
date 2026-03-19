@@ -446,13 +446,33 @@ mod _force_shim_symbols {
             fn KeQueryInterruptTime();
             fn KeQuerySystemTime();
             fn MiIsPdeForAddressValid();
+            // devaction.rs PnP functions called from C shims
+            fn IopCancelRemoveChildDevices();
+            fn IopCancelRemoveDeviceRelations();
+            fn IopPrepareDeviceForRemoval();
+            fn IopQueryRemoveChildDevices();
+            fn IopQueryRemoveDeviceRelations();
+            fn IopSendRemoveChildDevices();
+            fn IopSendRemoveDeviceRelations();
+        }
+        extern "system" {
+            fn IopSendEject();
+            fn PipDeviceActionWorker();
         }
         #[used]
-        static REFS: [unsafe extern "C" fn(); 8] = [
+        static REFS_CDECL: [unsafe extern "C" fn(); 15] = [
             ExAcquireRundownProtection, ExInitializeRundownProtection,
             ExReleaseRundownProtection, ExRundownCompleted,
             ExWaitForRundownProtectionRelease, KeQueryInterruptTime,
             KeQuerySystemTime, MiIsPdeForAddressValid,
+            IopCancelRemoveChildDevices, IopCancelRemoveDeviceRelations,
+            IopPrepareDeviceForRemoval, IopQueryRemoveChildDevices,
+            IopQueryRemoveDeviceRelations, IopSendRemoveChildDevices,
+            IopSendRemoveDeviceRelations,
+        ];
+        #[used]
+        static REFS_STDCALL: [unsafe extern "system" fn(); 2] = [
+            IopSendEject, PipDeviceActionWorker,
         ];
     }
 

@@ -64,8 +64,11 @@ extern "C" {
 extern "fastcall" {
     fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
+extern "system" {
+    fn IopGetBusTypeGuidIndex_c(BusTypeGuid: LPGUID) -> USHORT;
+}
 
-const KeyValuePartialInformation: ULONG = 1;
+const KeyValuePartialInformation: ULONG = 2;
 const KeyValueFullInformation: ULONG = 1;
 const KeyValueBasicInformation: ULONG = 0;
 const KeyBasicInformation: ULONG = 0;
@@ -126,29 +129,29 @@ const REGSTR_VAL_MFG: &[u16] = &[b'M' as u16, b'f' as u16, b'g' as u16, 0];
 const REGSTR_VAL_FRIENDLYNAME: &[u16] = &[b'F' as u16, b'r' as u16, b'i' as u16, b'e' as u16, b'n' as u16, b'd' as u16, b'l' as u16, b'y' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0];
 const REGSTR_VAL_CONFIGFLAGS: &[u16] = &[b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, b'F' as u16, b'l' as u16, b'a' as u16, b'g' as u16, b's' as u16, 0];
 
-const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 0;
-const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 1;
-const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 2;
-const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 3;
-const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 4;
-const DevicePropertyBootConfiguration: DEVICE_REGISTRY_PROPERTY = 5;
-const DevicePropertyBootConfigurationTranslated: DEVICE_REGISTRY_PROPERTY = 6;
-const DevicePropertyPhysicalDeviceObjectName: DEVICE_REGISTRY_PROPERTY = 10;
-const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 16;
-const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 7;
-const DevicePropertyLocationInformation: DEVICE_REGISTRY_PROPERTY = 8;
-const DevicePropertyDeviceDescription: DEVICE_REGISTRY_PROPERTY = 9;
-const DevicePropertyHardwareID: DEVICE_REGISTRY_PROPERTY = 11;
-const DevicePropertyCompatibleIDs: DEVICE_REGISTRY_PROPERTY = 12;
-const DevicePropertyClassName: DEVICE_REGISTRY_PROPERTY = 13;
-const DevicePropertyClassGuid: DEVICE_REGISTRY_PROPERTY = 14;
-const DevicePropertyDriverKeyName: DEVICE_REGISTRY_PROPERTY = 15;
-const DevicePropertyManufacturer: DEVICE_REGISTRY_PROPERTY = 17;
-const DevicePropertyFriendlyName: DEVICE_REGISTRY_PROPERTY = 18;
+const DevicePropertyDeviceDescription: DEVICE_REGISTRY_PROPERTY = 0;
+const DevicePropertyHardwareID: DEVICE_REGISTRY_PROPERTY = 1;
+const DevicePropertyCompatibleIDs: DEVICE_REGISTRY_PROPERTY = 2;
+const DevicePropertyBootConfiguration: DEVICE_REGISTRY_PROPERTY = 3;
+const DevicePropertyBootConfigurationTranslated: DEVICE_REGISTRY_PROPERTY = 4;
+const DevicePropertyClassName: DEVICE_REGISTRY_PROPERTY = 5;
+const DevicePropertyClassGuid: DEVICE_REGISTRY_PROPERTY = 6;
+const DevicePropertyDriverKeyName: DEVICE_REGISTRY_PROPERTY = 7;
+const DevicePropertyManufacturer: DEVICE_REGISTRY_PROPERTY = 8;
+const DevicePropertyFriendlyName: DEVICE_REGISTRY_PROPERTY = 9;
+const DevicePropertyLocationInformation: DEVICE_REGISTRY_PROPERTY = 10;
+const DevicePropertyPhysicalDeviceObjectName: DEVICE_REGISTRY_PROPERTY = 11;
+const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 12;
+const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 13;
+const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 14;
+const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 15;
+const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 16;
+const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 17;
+const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 18;
+const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 19;
+const DevicePropertyResourceRequirements: DEVICE_REGISTRY_PROPERTY = 20;
+const DevicePropertyAllocatedResources: DEVICE_REGISTRY_PROPERTY = 21;
 const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 22;
-const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 23;
-const DevicePropertyResourceRequirements: DEVICE_REGISTRY_PROPERTY = 24;
-const DevicePropertyAllocatedResources: DEVICE_REGISTRY_PROPERTY = 25;
 
 #[no_mangle]
 #[used]
@@ -605,63 +608,8 @@ pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut P
 
 #[no_mangle]
 pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
-    let mut i: USHORT = 0;
-    let mut FoundIndex: USHORT = 0xFFFF;
-    let mut NewSize: ULONG;
-    let NewList: PVOID;
-
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-
-    while (i as ULONG) < (*PnpBusTypeGuidList).GuidCount {
-        if RtlCompareMemory(
-            BusTypeGuid as PVOID,
-            core::ptr::addr_of!((*PnpBusTypeGuidList).Guids[i as usize]) as PVOID,
-            core::mem::size_of::<GUID>() as SIZE_T,
-        ) == core::mem::size_of::<GUID>() as SIZE_T
-        {
-            FoundIndex = i;
-            ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-            return FoundIndex;
-        }
-        i += 1;
-    }
-
-    if (*PnpBusTypeGuidList).GuidCount != 0 {
-        NewSize = core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>() as ULONG
-            + (core::mem::size_of::<GUID>() as ULONG * (*PnpBusTypeGuidList).GuidCount);
-
-        NewList = ExAllocatePool(PagedPool, NewSize as ULONG_PTR);
-
-        if NewList.is_null() {
-            ExFreePool(PnpBusTypeGuidList as PVOID);
-            ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-            return FoundIndex;
-        }
-
-        NewSize -= core::mem::size_of::<GUID>() as ULONG;
-        core::ptr::copy_nonoverlapping(
-            PnpBusTypeGuidList as *const u8,
-            NewList as *mut u8,
-            NewSize as usize,
-        );
-
-        ExFreePool(PnpBusTypeGuidList as PVOID);
-
-        PnpBusTypeGuidList = NewList as PIO_BUS_TYPE_GUID_LIST;
-    }
-
-    core::ptr::copy_nonoverlapping(
-        BusTypeGuid as *const u8,
-        core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids[(*PnpBusTypeGuidList).GuidCount as usize])
-            as *mut u8,
-        core::mem::size_of::<GUID>(),
-    );
-
-    FoundIndex = (*PnpBusTypeGuidList).GuidCount as USHORT;
-    (*PnpBusTypeGuidList).GuidCount += 1;
-
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-    FoundIndex
+    // Delegate to C implementation — Rust version causes amd64-specific hang
+    IopGetBusTypeGuidIndex_c(BusTypeGuid)
 }
 
 #[no_mangle]
@@ -1512,7 +1460,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     }
 
     match DeviceProperty {
-        0 => {
+        DevicePropertyBusTypeGuid => {
             Status = PnpBusTypeGuidGet((*DeviceNode).ChildBusTypeIndex, &mut BusTypeGuid);
             if Status < 0 {
                 return Status;
@@ -1522,7 +1470,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = core::ptr::addr_of_mut!(BusTypeGuid) as PVOID;
             Status = STATUS_SUCCESS;
         }
-        1 => {
+        DevicePropertyLegacyBusType => {
             if (*DeviceNode).ChildInterfaceType == InterfaceTypeUndefined {
                 return STATUS_OBJECT_NAME_NOT_FOUND;
             }
@@ -1531,7 +1479,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = core::ptr::addr_of_mut!((*DeviceNode).ChildInterfaceType) as PVOID;
             Status = STATUS_SUCCESS;
         }
-        2 => {
+        DevicePropertyBusNumber => {
             if ((*DeviceNode).ChildBusNumber & 0x80000000) == 0x80000000 {
                 return STATUS_OBJECT_NAME_NOT_FOUND;
             }
@@ -1540,7 +1488,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = core::ptr::addr_of_mut!((*DeviceNode).ChildBusNumber) as PVOID;
             Status = STATUS_SUCCESS;
         }
-        3 => {
+        DevicePropertyEnumeratorName => {
             DeviceInstanceName = (*DeviceNode).InstancePath.Buffer;
 
             EnumeratorNameEnd = wcschr(DeviceInstanceName, OBJ_NAME_PATH_SEPARATOR);
@@ -1553,7 +1501,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = DeviceInstanceName as PVOID;
             Status = STATUS_SUCCESS;
         }
-        4 => {
+        DevicePropertyAddress => {
             Status = IopQueryDeviceCapabilities(DeviceNode, &mut DeviceCaps);
             if Status < 0 || (DeviceCaps.Address == MAXULONG) {
                 return STATUS_OBJECT_NAME_NOT_FOUND;
@@ -1563,7 +1511,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = core::ptr::addr_of_mut!(DeviceCaps.Address) as PVOID;
             Status = STATUS_SUCCESS;
         }
-        6 => {
+        DevicePropertyBootConfigurationTranslated => {
             if (*DeviceNode).BootResources.is_null() {
                 *ResultLength = 0;
                 return STATUS_SUCCESS;
@@ -1573,7 +1521,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             Data = (*DeviceNode).BootResources as PVOID;
             Status = STATUS_SUCCESS;
         }
-        10 => {
+        DevicePropertyPhysicalDeviceObjectName => {
             Length = BufferLength + core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
             ObjectNameInfo = ExAllocatePool(PagedPool, Length as ULONG_PTR) as POBJECT_NAME_INFORMATION;
             if ObjectNameInfo.is_null() {
@@ -1599,63 +1547,63 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
                 return Status;
             }
         }
-        16 => {
+        DevicePropertyRemovalPolicy => {
             Policy = (*DeviceNode).RemovalPolicy as DEVICE_REMOVAL_POLICY;
             ReturnLength = core::mem::size_of::<DEVICE_REMOVAL_POLICY>() as ULONG;
             Data = core::ptr::addr_of!(Policy) as PVOID;
             Status = STATUS_SUCCESS;
         }
-        7 => {
+        DevicePropertyUINumber => {
             ValueName = REGSTR_VAL_UI_NUMBER.as_ptr() as PWSTR;
             ValueType = REG_DWORD;
         }
-        8 => {
+        DevicePropertyLocationInformation => {
             ValueName = REGSTR_VAL_LOCATION_INFORMATION.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        9 => {
+        DevicePropertyDeviceDescription => {
             ValueName = REGSTR_VAL_DEVDESC.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        11 => {
+        DevicePropertyHardwareID => {
             ValueName = REGSTR_VAL_HARDWAREID.as_ptr() as PWSTR;
             ValueType = REG_MULTI_SZ;
         }
-        12 => {
+        DevicePropertyCompatibleIDs => {
             ValueName = REGSTR_VAL_COMPATIBLEIDS.as_ptr() as PWSTR;
             ValueType = REG_MULTI_SZ;
         }
-        5 => {
+        DevicePropertyBootConfiguration => {
             ValueName = REGSTR_VAL_BOOTCONFIG.as_ptr() as PWSTR;
             ValueType = REG_RESOURCE_LIST;
         }
-        13 => {
+        DevicePropertyClassName => {
             ValueName = REGSTR_VAL_CLASS.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        14 => {
+        DevicePropertyClassGuid => {
             ValueName = REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        15 => {
+        DevicePropertyDriverKeyName => {
             ValueName = REGSTR_VAL_DRIVER.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        17 => {
+        DevicePropertyManufacturer => {
             ValueName = REGSTR_VAL_MFG.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        18 => {
+        DevicePropertyFriendlyName => {
             ValueName = REGSTR_VAL_FRIENDLYNAME.as_ptr() as PWSTR;
             ValueType = REG_SZ;
         }
-        22 => {}
-        23 => {
+        DevicePropertyContainerID => {}
+        DevicePropertyInstallState => {
             ValueName = REGSTR_VAL_CONFIGFLAGS.as_ptr() as PWSTR;
             ValueType = REG_DWORD;
         }
-        24 => {}
-        25 => {}
+        DevicePropertyResourceRequirements => {}
+        DevicePropertyAllocatedResources => {}
         _ => return STATUS_INVALID_PARAMETER_2,
     }
 
@@ -1666,7 +1614,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             DeviceObject,
             ValueType,
             ValueName,
-            if DeviceProperty == 5 {
+            if DeviceProperty == DevicePropertyBootConfiguration {
                 {static W: [u16; 8] = [b'L' as u16, b'o' as u16, b'g' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b'f' as u16, 0]; W.as_ptr() as PWSTR}
             } else {
                 core::ptr::null_mut()

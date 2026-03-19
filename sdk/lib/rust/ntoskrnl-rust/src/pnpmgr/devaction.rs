@@ -273,6 +273,15 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
     fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
 }
+extern "system" {
+    fn IopQueryDeviceCapabilities_c(DeviceNode: PDEVICE_NODE, DeviceCaps: PDEVICE_CAPABILITIES) -> NTSTATUS;
+    fn IoRequestDeviceEject_c(PhysicalDeviceObject: PDEVICE_OBJECT);
+}
+extern "C" {
+    fn PiSetDevNodeText_c(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
+    fn PiQueueDeviceAction_c(DeviceObject: PDEVICE_OBJECT, Action: _DEVICE_ACTION, CompletionEvent: PKEVENT, CompletionStatus: *mut NTSTATUS);
+    fn PiPerformSyncDeviceAction_c(DeviceObject: PDEVICE_OBJECT, Action: _DEVICE_ACTION) -> NTSTATUS;
+}
 
 extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
@@ -327,8 +336,12 @@ const MAX_SEPARATORS_DEVICEID: ULONG = 1;
 #[used]
 #[no_mangle]
 pub static mut IopDeviceActionRequestList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
-static mut IopDeviceActionWorkItem: _WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
-static mut IopDeviceActionInProgress: BOOLEAN = 0;
+#[used]
+#[no_mangle]
+pub static mut IopDeviceActionWorkItem: _WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
+#[used]
+#[no_mangle]
+pub static mut IopDeviceActionInProgress: BOOLEAN = 0;
 #[used]
 #[no_mangle]
 pub static mut IopDeviceActionLock: KSPIN_LOCK = 0;
@@ -1003,99 +1016,8 @@ pub unsafe extern "system" fn IopQueryDeviceCapabilities(
     DeviceNode: PDEVICE_NODE,
     DeviceCaps: PDEVICE_CAPABILITIES,
 ) -> NTSTATUS {
-    let mut StatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-    let mut InstanceKey: HANDLE = core::ptr::null_mut();
-    let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
-
-    core::ptr::write_bytes(DeviceCaps as *mut u8, 0, core::mem::size_of::<_DEVICE_CAPABILITIES>());
-    (*DeviceCaps).Size = core::mem::size_of::<_DEVICE_CAPABILITIES>() as u16;
-    (*DeviceCaps).Version = 1;
-    (*DeviceCaps).Address = 0xFFFFFFFF;
-    (*DeviceCaps).UINumber = 0xFFFFFFFF;
-
-    core::ptr::write_bytes(&mut Stack as *mut _ as *mut u8, 0, core::mem::size_of::<_IO_STACK_LOCATION>());
-    Stack.Parameters.DeviceCapabilities.Capabilities = DeviceCaps;
-
-    Status = IopInitiatePnpIrp(
-        (*DeviceNode).PhysicalDeviceObject,
-        &mut StatusBlock as *mut _,
-        IRP_MN_QUERY_CAPABILITIES,
-        &mut Stack as *mut _,
-    );
-    if Status < 0 {
-        if Status != STATUS_NOT_SUPPORTED {
-        }
-        return Status;
-    }
-
-    (*DeviceNode).CapabilityFlags = 0;
-    if (*DeviceCaps).LockSupported() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000001;
-    }
-    if (*DeviceCaps).EjectSupported() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000002;
-    }
-    if (*DeviceCaps).Removable() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000004;
-    }
-    if (*DeviceCaps).DockDevice() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000008;
-    }
-    if (*DeviceCaps).UniqueID() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000010;
-    }
-    if (*DeviceCaps).SilentInstall() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000020;
-    }
-    if (*DeviceCaps).RawDeviceOK() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000040;
-    }
-    if (*DeviceCaps).SurpriseRemovalOK() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000080;
-    }
-    if (*DeviceCaps).HardwareDisabled() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000100;
-    }
-    if (*DeviceCaps).NonDynamic() != 0 {
-        (*DeviceNode).CapabilityFlags |= 0x00000200;
-    }
-
-    if (*DeviceCaps).NoDisplayInUI() != 0 {
-        (*DeviceNode).UserFlags |= DNUF_DONT_SHOW_IN_UI;
-    } else {
-        (*DeviceNode).UserFlags &= !DNUF_DONT_SHOW_IN_UI;
-    }
-
-    Status = IopCreateDeviceKeyPath(&mut (*DeviceNode).InstancePath as *mut _, REG_OPTION_NON_VOLATILE, &mut InstanceKey as *mut _);
-    if Status >= 0 {
-        RtlInitUnicodeString(&mut ValueName as *mut _, b"C\0a\0p\0a\0b\0i\0l\0i\0t\0i\0e\0s\0\0\0" as *const u8 as *const u16);
-        Status = ZwSetValueKey(
-            InstanceKey,
-            &mut ValueName as *mut _,
-            0,
-            REG_DWORD,
-            &(*DeviceNode).CapabilityFlags as *const _ as PVOID,
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
-
-        if (*DeviceCaps).UINumber != 0xFFFFFFFF {
-            RtlInitUnicodeString(&mut ValueName as *mut _, b"U\0I\0N\0u\0m\0b\0e\0r\0\0\0" as *const u8 as *const u16);
-            Status = ZwSetValueKey(
-                InstanceKey,
-                &mut ValueName as *mut _,
-                0,
-                REG_DWORD,
-                &(*DeviceCaps).UINumber as *const _ as PVOID,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-        }
-
-        ZwClose(InstanceKey);
-    }
-
-    Status
+    // Delegate to C implementation — Rust version causes amd64-specific hang
+    IopQueryDeviceCapabilities_c(DeviceNode, DeviceCaps)
 }
 
 unsafe fn IopQueryHardwareIds(
@@ -1211,99 +1133,8 @@ pub unsafe extern "C" fn PiSetDevNodeText(
     DeviceNode: PDEVICE_NODE,
     InstanceKey: HANDLE,
 ) {
-    let mut localeId: LCID = 0;
-
-    let mut status = ZwQueryDefaultLocale(0, &mut localeId as *mut _);
-    if status < 0 {
-        return;
-    }
-
-    // L"DeviceDesc"
-    static VAL_DEVICE_DESC: [u16; 11] = [
-        b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
-        b'e' as u16, b'D' as u16, b'e' as u16, b's' as u16, b'c' as u16, 0,
-    ];
-    let mut valDeviceDesc: _UNICODE_STRING = core::mem::zeroed();
-    RtlInitUnicodeString(&mut valDeviceDesc as *mut _, VAL_DEVICE_DESC.as_ptr());
-    let mut len: ULONG = 0;
-
-    status = ZwQueryValueKey(InstanceKey, &valDeviceDesc as *const _ as *mut _, KeyValueBasicInformation, core::ptr::null_mut(), 0, &mut len as *mut _);
-    if status == STATUS_OBJECT_NAME_NOT_FOUND {
-        let mut deviceDesc: PWSTR = core::ptr::null_mut();
-        status = PiIrpQueryDeviceText(DeviceNode, localeId, DeviceTextDescription, &mut deviceDesc as *mut _);
-
-        if !deviceDesc.is_null() && *deviceDesc != 0 {
-            status = ZwSetValueKey(
-                InstanceKey,
-                &valDeviceDesc as *const _ as *mut _,
-                0,
-                REG_SZ,
-                deviceDesc as PVOID,
-                (wcslen(deviceDesc) as ULONG + 1) * core::mem::size_of::<WCHAR>() as ULONG,
-            );
-
-            if status < 0 {
-            }
-        } else {
-            static UNKNOWN_DEVICE_DESC: [u16; 15] = unsafe { core::mem::transmute(*b"U\0n\0k\0n\0o\0w\0n\0 \0d\0e\0v\0i\0c\0e\0\0\0") };
-            let unknownDeviceDesc = _UNICODE_STRING {
-                Length: 28,
-                MaximumLength: 30,
-                Buffer: UNKNOWN_DEVICE_DESC.as_ptr() as PWSTR,
-            };
-
-            status = ZwSetValueKey(
-                InstanceKey,
-                &valDeviceDesc as *const _ as *mut _,
-                0,
-                REG_SZ,
-                unknownDeviceDesc.Buffer as PVOID,
-                unknownDeviceDesc.MaximumLength as ULONG,
-            );
-            if status < 0 {
-            }
-        }
-
-        if !deviceDesc.is_null() {
-            ExFreePoolWithTag(deviceDesc as PVOID, 0);
-        }
-    }
-
-    let mut deviceLocationInfo: PWSTR = core::ptr::null_mut();
-    status = PiIrpQueryDeviceText(
-        DeviceNode,
-        localeId,
-        DeviceTextLocationInformation,
-        &mut deviceLocationInfo as *mut _,
-    );
-
-    if !deviceLocationInfo.is_null() && *deviceLocationInfo != 0 {
-        // L"LocationInformation"
-        static VAL_LOCATION_INFO: [u16; 20] = [
-            b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b't' as u16,
-            b'i' as u16, b'o' as u16, b'n' as u16, b'I' as u16, b'n' as u16,
-            b'f' as u16, b'o' as u16, b'r' as u16, b'm' as u16, b'a' as u16,
-            b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
-        ];
-        let mut valLocationInfo: _UNICODE_STRING = core::mem::zeroed();
-        RtlInitUnicodeString(&mut valLocationInfo as *mut _, VAL_LOCATION_INFO.as_ptr());
-
-        status = ZwSetValueKey(
-            InstanceKey,
-            &valLocationInfo as *const _ as *mut _,
-            0,
-            REG_SZ,
-            deviceLocationInfo as PVOID,
-            (wcslen(deviceLocationInfo) as ULONG + 1) * core::mem::size_of::<WCHAR>() as ULONG,
-        );
-        if status < 0 {
-        }
-    }
-
-    if !deviceLocationInfo.is_null() {
-        ExFreePoolWithTag(deviceLocationInfo as PVOID, 0);
-    } else {
-    }
+    // Delegate to C implementation
+    PiSetDevNodeText_c(DeviceNode, InstanceKey)
 }
 
 unsafe fn PiInitializeDevNode(
@@ -1787,7 +1618,8 @@ unsafe extern "system" fn IopSendRemoveDevice(DeviceObject: PDEVICE_OBJECT) {
     ObDereferenceObject(DeviceObject as PVOID);
 }
 
-unsafe fn IopSendRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS) {
+#[no_mangle]
+pub unsafe extern "C" fn IopSendRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS) {
     let mut i: ULONG;
 
     for i in 0..(*DeviceRelations).Count {
@@ -1798,7 +1630,8 @@ unsafe fn IopSendRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS) {
     ExFreePool(DeviceRelations as PVOID);
 }
 
-unsafe fn IopSendRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
+#[no_mangle]
+pub unsafe extern "C" fn IopSendRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
     let mut ChildDeviceNode: PDEVICE_NODE;
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut OldIrql: KIRQL = 0;
@@ -1828,7 +1661,8 @@ unsafe extern "system" fn IopCancelRemoveDevice(DeviceObject: PDEVICE_OBJECT) {
     PiNotifyTargetDeviceChange(&GUID_TARGET_DEVICE_REMOVE_CANCELLED as *const _ as *mut _, DeviceObject, core::ptr::null_mut());
 }
 
-unsafe fn IopCancelRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
+#[no_mangle]
+pub unsafe extern "C" fn IopCancelRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
     let mut ChildDeviceNode: PDEVICE_NODE;
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut OldIrql: KIRQL = 0;
@@ -1848,7 +1682,8 @@ unsafe fn IopCancelRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
     KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
 }
 
-unsafe fn IopCancelRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS) {
+#[no_mangle]
+pub unsafe extern "C" fn IopCancelRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS) {
     let mut i: ULONG;
 
     for i in 0..(*DeviceRelations).Count {
@@ -1910,7 +1745,8 @@ unsafe extern "system" fn IopQueryRemoveDevice(DeviceObject: PDEVICE_OBJECT) -> 
     Status
 }
 
-unsafe fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE, Force: BOOLEAN) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE, Force: BOOLEAN) -> NTSTATUS {
     let mut ChildDeviceNode: PDEVICE_NODE;
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut FailedRemoveDevice: PDEVICE_NODE;
@@ -1956,7 +1792,8 @@ unsafe fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE, Force: BOOL
     STATUS_SUCCESS
 }
 
-unsafe fn IopQueryRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS, Force: BOOLEAN) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn IopQueryRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS, Force: BOOLEAN) -> NTSTATUS {
     let mut i: ULONG;
     let mut j: ULONG;
     let mut Status: NTSTATUS;
@@ -1983,7 +1820,8 @@ unsafe fn IopQueryRemoveDeviceRelations(DeviceRelations: PDEVICE_RELATIONS, Forc
     STATUS_SUCCESS
 }
 
-unsafe fn IopPrepareDeviceForRemoval(DeviceObject: PDEVICE_OBJECT, Force: BOOLEAN) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn IopPrepareDeviceForRemoval(DeviceObject: PDEVICE_OBJECT, Force: BOOLEAN) -> NTSTATUS {
     let DeviceNode = IopGetDeviceNode(DeviceObject);
     let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -2119,7 +1957,8 @@ unsafe fn PiEnumerateDevice(
     STATUS_SUCCESS
 }
 
-unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
     let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
     let mut Dummy: PVOID = core::ptr::null_mut();
 
@@ -2132,96 +1971,8 @@ unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS
 
 #[no_mangle]
 pub unsafe extern "system" fn IoRequestDeviceEject(PhysicalDeviceObject: PDEVICE_OBJECT) {
-    let DeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
-    let mut DeviceRelations: PDEVICE_RELATIONS;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
-    let mut Capabilities: _DEVICE_CAPABILITIES = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-
-    IopQueueTargetDeviceEvent(
-        &GUID_DEVICE_KERNEL_INITIATED_EJECT as *const _ as *mut _,
-        &mut (*DeviceNode).InstancePath as *mut _,
-    );
-
-    if IopQueryDeviceCapabilities(DeviceNode, &mut Capabilities as *mut _) != STATUS_SUCCESS {
-        IopQueueTargetDeviceEvent(
-            &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
-            &mut (*DeviceNode).InstancePath as *mut _,
-        );
-        return;
-    }
-
-    Stack.Parameters.QueryDeviceRelations.Type = EjectionRelations;
-
-    Status = IopInitiatePnpIrp(
-        PhysicalDeviceObject,
-        &mut IoStatusBlock as *mut _,
-        IRP_MN_QUERY_DEVICE_RELATIONS,
-        &mut Stack as *mut _,
-    );
-    if Status < 0 {
-        DeviceRelations = core::ptr::null_mut();
-    } else {
-        DeviceRelations = IoStatusBlock.Information as PDEVICE_RELATIONS;
-    }
-
-    if !DeviceRelations.is_null() {
-        Status = IopQueryRemoveDeviceRelations(DeviceRelations, 0);
-        if Status < 0 {
-            IopQueueTargetDeviceEvent(
-                &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
-                &mut (*DeviceNode).InstancePath as *mut _,
-            );
-            return;
-        }
-    }
-
-    Status = IopQueryRemoveChildDevices(DeviceNode, 0);
-    if Status < 0 {
-        if !DeviceRelations.is_null() {
-            IopCancelRemoveDeviceRelations(DeviceRelations);
-        }
-        IopQueueTargetDeviceEvent(
-            &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
-            &mut (*DeviceNode).InstancePath as *mut _,
-        );
-        return;
-    }
-
-    if IopPrepareDeviceForRemoval(PhysicalDeviceObject, 0) != STATUS_SUCCESS {
-        if !DeviceRelations.is_null() {
-            IopCancelRemoveDeviceRelations(DeviceRelations);
-        }
-        IopCancelRemoveChildDevices(DeviceNode);
-        IopQueueTargetDeviceEvent(
-            &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
-            &mut (*DeviceNode).InstancePath as *mut _,
-        );
-        return;
-    }
-
-    if !DeviceRelations.is_null() {
-        IopSendRemoveDeviceRelations(DeviceRelations);
-    }
-    IopSendRemoveChildDevices(DeviceNode);
-
-    (*DeviceNode).Problem = CM_PROB_HELD_FOR_EJECT;
-    if Capabilities.EjectSupported() != 0 {
-        if IopSendEject(PhysicalDeviceObject) != STATUS_SUCCESS {
-            IopQueueTargetDeviceEvent(
-                &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
-                &mut (*DeviceNode).InstancePath as *mut _,
-            );
-            return;
-        }
-    } else {
-    }
-
-    IopQueueTargetDeviceEvent(
-        &GUID_DEVICE_EJECT as *const _ as *mut _,
-        &mut (*DeviceNode).InstancePath as *mut _,
-    );
+    // Delegate to C implementation
+    IoRequestDeviceEject_c(PhysicalDeviceObject)
 }
 
 unsafe fn PiFakeResourceRebalance(
@@ -2402,7 +2153,8 @@ unsafe fn PiDevNodeStateMachine(
     }
 }
 
-unsafe extern "system" fn PipDeviceActionWorker(
+#[no_mangle]
+pub unsafe extern "system" fn PipDeviceActionWorker(
     Context: PVOID,
 ) {
     let mut ListEntry: PLIST_ENTRY;
@@ -2486,40 +2238,8 @@ pub unsafe extern "C" fn PiQueueDeviceAction(
     CompletionEvent: PKEVENT,
     CompletionStatus: *mut NTSTATUS,
 ) {
-    let mut Request: PDEVICE_ACTION_REQUEST;
-    let mut OldIrql: KIRQL = 0;
-
-    Request = ExAllocatePoolWithTag(NonPagedPoolMustSucceed, core::mem::size_of::<DEVICE_ACTION_REQUEST>() as _, TAG_IO) as PDEVICE_ACTION_REQUEST;
-
-    ObReferenceObject(DeviceObject as PVOID);
-
-    (*Request).DeviceObject = DeviceObject;
-    (*Request).Action = Action;
-    (*Request).CompletionEvent = CompletionEvent;
-    (*Request).CompletionStatus = CompletionStatus;
-
-    KeAcquireSpinLock(&IopDeviceActionLock as *const _ as *mut _, &mut OldIrql as *mut _);
-    InsertTailList(&IopDeviceActionRequestList as *const _ as *mut _, &mut (*Request).RequestListEntry as *mut _);
-
-    if Action == PiActionEnumRootDevices || Action == PiActionAddBootDevices {
-        IopDeviceActionInProgress = 1;
-        KeClearEvent(&PiEnumerationFinished as *const _ as PKEVENT);
-        KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
-
-        PipDeviceActionWorker(core::ptr::null_mut());
-        return;
-    }
-
-    if IopDeviceActionInProgress != 0 || PnPBootDriversLoaded == 0 {
-        KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
-        return;
-    }
-    IopDeviceActionInProgress = 1;
-    KeClearEvent(&PiEnumerationFinished as *const _ as PKEVENT);
-    KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
-
-    ExInitializeWorkItem(&mut IopDeviceActionWorkItem as *mut _, PipDeviceActionWorker, core::ptr::null_mut());
-    ExQueueWorkItem(&mut IopDeviceActionWorkItem as *mut _, DelayedWorkQueue);
+    // Delegate to C implementation
+    PiQueueDeviceAction_c(DeviceObject, Action, CompletionEvent, CompletionStatus)
 }
 
 #[no_mangle]
@@ -2527,14 +2247,8 @@ pub unsafe extern "C" fn PiPerformSyncDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
 ) -> NTSTATUS {
-    let mut opFinished: _KEVENT = core::mem::zeroed();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
-
-    KeInitializeEvent(&mut opFinished as *mut _, _EVENT_TYPE_SynchronizationEvent, 0);
-    PiQueueDeviceAction(DeviceObject, Action, &mut opFinished as *mut _, &mut status as *mut _);
-    KeWaitForSingleObject(&mut opFinished as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i32 as i8, 0, core::ptr::null_mut());
-
-    status
+    // Delegate to C implementation
+    PiPerformSyncDeviceAction_c(DeviceObject, Action)
 }
 
 

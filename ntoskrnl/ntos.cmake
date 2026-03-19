@@ -148,7 +148,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # Rust translation crashes (LLVM codegen bug in IoInitSystem)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
@@ -160,17 +160,17 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c  # Replaced by Rust volume.rs
-    # pnpmgr/ — pnpinit, pnpmgr, arb, devaction: Rust on amd64/arm64, C on i386
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c>
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c>
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c>
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbmem.c>
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbport.c>
-    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devaction.c>
+    # pnpmgr/ — Rust on amd64/arm64, C on i386 (devaction+arb stay in C, pnpres stays in C)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbmem.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbport.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devaction.c
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devnode.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/plugplay.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpdma.c  # Replaced by Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpinit.c
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpinit.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpirp.c  # Replaced by Rust pnpirp.rs
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmap.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmgr.c>
@@ -180,7 +180,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpres.c
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnproot.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c  # Replaced by Rust pnputil.rs
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/debug.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/debug.c  # Replaced by Rust debug.rs
     # KD64 subsystem: using C (Rust KD64 causes recursive exception flood on amd64)
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdapi.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdbreak.c
@@ -477,7 +477,7 @@ elseif(ARCH STREQUAL "arm64")
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
         ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Rust driver.rs causes Phase0 crash on ARM64
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # Rust ramdisk.rs has struct layout bugs — use C for ARM64 boot
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # Rust ramdisk.rs retranslated but still crashes ARM64
         )
 endif()
 

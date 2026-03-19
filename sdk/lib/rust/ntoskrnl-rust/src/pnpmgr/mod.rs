@@ -14,4 +14,8 @@ pub mod pnpreport;
 #[cfg(not(target_arch = "x86"))]
 pub mod pnproot;
 #[cfg(not(target_arch = "x86"))]
+pub mod pnpinit;
+#[cfg(not(target_arch = "x86"))]
 pub mod pnpmgr;
+// devaction stays in C — complex internal static function graph with undiagnosed
+// amd64-specific PnP hang. arb/ stays in C (depends on devaction globals).
