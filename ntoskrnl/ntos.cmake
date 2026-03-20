@@ -152,7 +152,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/irq.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c  # ARM64 only — see below
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/rawfs.c

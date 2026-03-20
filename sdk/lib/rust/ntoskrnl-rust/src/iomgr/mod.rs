@@ -17,7 +17,7 @@ pub mod iomgr;  // ARM64: PE layout issue (same as ramdisk.rs)
 pub mod iorsrce;
 pub mod iotimer;
 pub mod iowork;
-// pub mod irp;  // 4 bugs fixed (NT_ERROR, KTHREAD, PacketType, IsIrpSynchronous), still hangs — IopCompleteRequest verified correct, bug elsewhere in irp.rs
+pub mod irp;
 pub mod irq;
 #[cfg(not(target_arch = "aarch64"))]
 pub mod ramdisk;  // ARM64: binary layout change causes 0x6B crash (not a translation bug)

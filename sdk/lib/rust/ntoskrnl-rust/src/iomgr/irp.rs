@@ -718,7 +718,7 @@ unsafe fn IopFreeReserveIrp(PriorityBoost: CCHAR) {
 #[no_mangle]
 pub unsafe extern "system" fn IoAllocateIrp(StackSize: CCHAR, ChargeQuota: BOOLEAN) -> PIRP {
     let mut Irp: PIRP = null_mut();
-    let Size: USHORT = IoSizeOfIrp(StackSize);
+    let mut Size: USHORT = IoSizeOfIrp(StackSize);
     let Prcb: PKPRCB;
     let mut Flags: UCHAR = 0;
     let mut List: PNPAGED_LOOKASIDE_LIST = null_mut();
@@ -734,6 +734,7 @@ pub unsafe extern "system" fn IoAllocateIrp(StackSize: CCHAR, ChargeQuota: BOOLE
         Flags |= IRP_ALLOCATED_FIXED_SIZE;
 
         if StackSize != 1 {
+            Size = IoSizeOfIrp(8);
             ListType = _PP_NPAGED_LOOKASIDE_NUMBER_LookasideLargeIrpList;
         }
 
