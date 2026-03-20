@@ -13,10 +13,11 @@ use ntkrnl_sys::ddk::{
     _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _OBJECT_HEADER, _OBJECT_TYPE, _KPRCB,
     _FILE_OBJECT, _DEVICE_OBJECT, _DRIVER_OBJECT, _IRP, _IO_STACK_LOCATION, _KEVENT,
     _FAST_IO_DISPATCH, _MDL, _OBJECT_ATTRIBUTES, _UNICODE_STRING,
+    _FILE_OBJECT_EXTENSION, _IO_STATUS_BLOCK__bindgen_ty_1, _VPB,
     PEPROCESS, PETHREAD, POBJECT_HEADER, POBJECT_TYPE, PHANDLE_TABLE, PHANDLE_TABLE_ENTRY,
     PFILE_OBJECT, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PKEVENT,
-    PFAST_IO_DISPATCH, PMDL, POBJECT_ATTRIBUTES, PUNICODE_STRING,
-    ACCESS_MASK, KPROCESSOR_MODE, HANDLE, OB_OPEN_REASON,
+    PFAST_IO_DISPATCH, PMDL, POBJECT_ATTRIBUTES, PUNICODE_STRING, PVPB,
+    ACCESS_MASK, KPROCESSOR_MODE, HANDLE, OB_OPEN_REASON, CREATE_FILE_TYPE, PKNORMAL_ROUTINE,
     _OBJECT_HANDLE_INFORMATION, _IO_STATUS_BLOCK, PIO_STATUS_BLOCK,
     LARGE_INTEGER, PLARGE_INTEGER, ULARGE_INTEGER,
     FILE_INFORMATION_CLASS, FS_INFORMATION_CLASS,
@@ -31,24 +32,223 @@ use ntkrnl_sys::ddk::{
     FILE_SEGMENT_ELEMENT,
     FILE_FS_DEVICE_INFORMATION, PFILE_FS_DEVICE_INFORMATION,
     FILE_FS_DRIVER_PATH_INFORMATION, PFILE_FS_DRIVER_PATH_INFORMATION,
+    FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION,
+    FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION,
+    FILE_BOTH_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION,
     IO_COMPLETION_CONTEXT, PIO_COMPLETION_CONTEXT,
     PIO_APC_ROUTINE,
     TARGET_DEVICE_CUSTOM_NOTIFICATION,
-    IoAllocateIrp, IoFreeIrp, IoFreeMdl, IoCallDriver,
+    IoAllocateIrp, IoFreeIrp, IoFreeMdl,
     IoGetRelatedDeviceObject, IoGetAttachedDevice, IoAllocateMdl,
-    IopAbortInterruptedIrp, IopCompleteRequest, IopQueueIrpToThread,
-    KeWaitForSingleObject, KeClearEvent, KeSetEvent, KeRaiseIrql, KeLowerIrql,
-    ExAllocatePoolWithQuotaTag, ExFreePool, ExGetPreviousMode, ExEventObjectType,
-    ObReferenceObjectByHandle, ObDereferenceObject, ObCloseHandle,
-    MmProbeAndLockPages, MmGetMdlVirtualAddress, MmGetMdlByteCount,
-    IoFileObjectType, IoCompletionType,
+    IoGetNextIrpStackLocation, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
+    IopAbortInterruptedIrp, IopCompleteRequest,
+    IopCleanupFailedIrp, IopGetDeviceAttachmentBase, IopAllocateReserveIrp,
+    MmIsFileObjectAPagingFile,
+    KeWaitForSingleObject, KeClearEvent, KeSetEvent,
+    KeInitializeEvent, KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock,
+    ExGetPreviousMode,
+    ObReferenceObjectByHandle, ObCloseHandle, ObReferenceObjectByName,
+    MmProbeAndLockPages,
     IoCreateFile, IoCreateFileSpecifyDeviceObjectHint,
     IoSetIoCompletion, IoReportTargetDeviceChange, IoGetRelatedTargetDevice,
     ObReferenceFileObjectForWrite,
-    PsGetCurrentThread, PsGetCurrentProcess as PsGetCurrentProcessDdk,
+    PsGetCurrentThread,
 };
 
 use ntkrnl_sys::probe::*;
+
+// C macros inlined
+#[inline(always)]
+unsafe fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID {
+    ((*Mdl).MappedSystemVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
+}
+#[inline(always)]
+unsafe fn MmGetMdlByteCount(Mdl: PMDL) -> ULONG {
+    (*Mdl).ByteCount
+}
+
+// Extern declarations for FORCEINLINE / macro symbols not in bindgen
+extern "system" {
+    fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn ObDereferenceObject(Object: PVOID);
+    fn ObReferenceObject(Object: PVOID);
+    fn ExFreePool(P: PVOID);
+    static mut IoFileObjectType: *mut _OBJECT_TYPE;
+    static mut ExEventObjectType: *mut _OBJECT_TYPE;
+    static mut IoCompletionType: *mut _OBJECT_TYPE;
+    static mut IoDriverObjectType: *mut _OBJECT_TYPE;
+    #[link_name = "IopLockFileObject_shim"]
+    fn IopLockFileObject(FileObject: PFILE_OBJECT, PreviousMode: KPROCESSOR_MODE) -> NTSTATUS;
+    #[link_name = "IopUnlockFileObject_shim"]
+    fn IopUnlockFileObject(FileObject: PFILE_OBJECT);
+    #[link_name = "IopUpdateOperationCount_shim"]
+    fn IopUpdateOperationCount(TransferType: ULONG);
+    #[link_name = "IopUpdateTransferCount_shim"]
+    fn IopUpdateTransferCount(TransferType: ULONG, TransferCount: ULONG);
+    #[link_name = "IopQueueIrpToThread_shim"]
+    fn IopQueueIrpToThread(Irp: PIRP);
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+
+extern "C" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
+    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+    // MmGetMdlVirtualAddress and MmGetMdlByteCount are inlined below
+    fn InterlockedExchangeAdd(Addend: *mut LONG, Value: LONG) -> LONG;
+}
+
+// Type aliases for missing types
+type CCHAR = i8;
+type KEVENT = _KEVENT;
+type PSID = PVOID;
+
+// IO constants
+const FO_SYNCHRONOUS_IO: ULONG = 0x0000002;
+const FO_ALERTABLE_IO: ULONG = 0x0000004;
+const FO_NO_INTERMEDIATE_BUFFERING: ULONG = 0x0000008;
+const FO_WRITE_THROUGH: ULONG = 0x0000010;
+const FO_SEQUENTIAL_ONLY: ULONG = 0x0000020;
+const FO_NAMED_PIPE: ULONG = 0x0000040;
+const FO_MAILSLOT: ULONG = 0x0000100;
+const FO_DIRECT_DEVICE_OPEN: ULONG = 0x0000200;
+const FO_DELETE_ON_CLOSE: ULONG = 0x0001000;
+const FO_OPENED_CASE_SENSITIVE: ULONG = 0x0002000;
+const FO_FILE_OBJECT_HAS_EXTENSION: ULONG = 0x0800000;
+
+// IRP constants
+const IRP_MJ_DEVICE_CONTROL: u32 = 0x0E;
+const IRP_MJ_FILE_SYSTEM_CONTROL: u32 = 0x0D;
+const IRP_MJ_QUERY_INFORMATION: u32 = 0x05;
+const IRP_MJ_SET_INFORMATION: u32 = 0x06;
+const IRP_MJ_QUERY_VOLUME_INFORMATION: u32 = 0x0A;
+const IRP_MJ_READ: u32 = 0x03;
+const IRP_MJ_WRITE: u32 = 0x04;
+const IRP_MJ_LOCK_CONTROL: u32 = 0x11;
+const IRP_MJ_DIRECTORY_CONTROL: u32 = 0x0C;
+const IRP_MJ_FLUSH_BUFFERS: u32 = 0x09;
+
+const IRP_MN_LOCK: u32 = 0x01;
+const IRP_MN_NOTIFY_CHANGE_DIRECTORY: u32 = 0x02;
+const IRP_MN_QUERY_DIRECTORY: u32 = 0x01;
+
+const IRP_BUFFERED_IO: u32 = 0x00000010;
+const IRP_DEALLOCATE_BUFFER: u32 = 0x00000004;
+const IRP_INPUT_OPERATION: u32 = 0x00000020;
+const IRP_SYNCHRONOUS_API: u32 = 0x00000001;
+const IRP_OB_QUERY_NAME: u32 = 0x00000040;
+const IRP_DEFER_IO_COMPLETION: u32 = 0x00000002;
+const IRP_PAGING_IO: u32 = 0x00000002;
+const IRP_NOCACHE: u32 = 0x00000001;
+const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;
+const IRP_READ_OPERATION: u32 = 0x00000100;
+
+// Method constants (from IoControlCode)
+const METHOD_BUFFERED: u32 = 0;
+const METHOD_IN_DIRECT: u32 = 1;
+const METHOD_OUT_DIRECT: u32 = 2;
+const METHOD_NEITHER: u32 = 3;
+
+// File access / attribute / option constants
+const FILE_ANY_ACCESS: ACCESS_MASK = 0;
+const FILE_READ_DATA: ACCESS_MASK = 0x0001;
+const FILE_WRITE_DATA: ACCESS_MASK = 0x0002;
+const FILE_LIST_DIRECTORY: ACCESS_MASK = 0x0001;
+const FILE_ADD_SUBDIRECTORY: ACCESS_MASK = 0x0004;
+const FILE_APPEND_DATA: ACCESS_MASK = 0x0004;
+const FILE_ATTRIBUTE_DIRECTORY: ULONG = 0x00000010;
+const FILE_SHARE_READ: ULONG = 0x00000001;
+const FILE_SHARE_WRITE: ULONG = 0x00000002;
+const FILE_OPEN: ULONG = 0x00000001;
+const FILE_OPEN_FOR_BACKUP_INTENT: ULONG = 0x00004000;
+const FILE_SYNCHRONOUS_IO_ALERT: ULONG = 0x00000010;
+const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x00000020;
+const FILE_NO_INTERMEDIATE_BUFFERING: ULONG = 0x00000008;
+const FILE_SEQUENTIAL_ONLY: ULONG = 0x00000004;
+const FILE_DELETE_ON_CLOSE: ULONG = 0x00001000;
+const FILE_WRITE_THROUGH: ULONG = 0x00000002;
+const FILE_USE_FILE_POINTER_POSITION: ULONG = 0xFFFFFFFE;
+const FILE_EXISTS: ULONG = 0x00000001;
+const FILE_NOTIFY_VALID_MASK: ULONG = 0x00000FFF;
+
+// IO flags
+const IO_FORCE_ACCESS_CHECK: ULONG = 0x0001;
+const IO_OPEN_TARGET_DIRECTORY: ULONG = 0x0004;
+const IO_NO_PARAMETER_CHECKING: ULONG = 0x0100;
+
+// DO flags
+const DO_BUFFERED_IO: ULONG = 0x00000004;
+const DO_DIRECT_IO: ULONG = 0x00000010;
+
+// SL flags
+const SL_RESTART_SCAN: u32 = 0x01;
+const SL_RETURN_SINGLE_ENTRY: u32 = 0x02;
+const SL_WATCH_TREE: u32 = 0x01;
+const SL_FAIL_IMMEDIATELY: u32 = 0x01;
+const SL_EXCLUSIVE_LOCK: u32 = 0x02;
+
+// EVENT_MODIFY_STATE
+const EVENT_MODIFY_STATE: ACCESS_MASK = 0x0002;
+
+// VPB flags
+const VPB_MOUNTED: USHORT = 0x0001;
+
+// Pool tags
+const TAG_IO: ULONG = 0x20204F49;       // '  OI'
+const TAG_IOBUF: ULONG = 0x66624F49;    // 'fbOI'
+const TAG_LOCK: ULONG = 0x6B634C49;     // 'kcLI'
+
+// Status constants
+const STATUS_USER_APC: NTSTATUS = 0xC0 as NTSTATUS;
+const STATUS_NOT_SAME_DEVICE: NTSTATUS = 0xC00000D4_u32 as i32;
+
+// FSCTL
+const FSCTL_DISMOUNT_VOLUME: ULONG = 0x00090020;
+
+// Lock queue
+const LockQueueIoDatabaseLock: u32 = 3;
+
+// IO Operation Transfer types
+const IopOtherTransfer: ULONG = 0;
+const IopReadTransfer: ULONG = 1;
+
+// IO access/length arrays
+extern "C" {
+    static IopQueryOperationAccess: [ACCESS_MASK; 0];
+    static IopQueryOperationLength: [ULONG; 0];
+}
+
+// Create file type enum values
+const CreateFileTypeNone: CREATE_FILE_TYPE = 0;
+
+// File information class enum values
+const FileDirectoryInformation: u32 = 1;
+const FileFullDirectoryInformation: u32 = 2;
+const FileIdFullDirectoryInformation: u32 = 38;
+const FileBothDirectoryInformation: u32 = 3;
+const FileIdBothDirectoryInformation: u32 = 37;
+const FileNamesInformation: u32 = 12;
+const FileBasicInformation: u32 = 4;
+const FileStandardInformation: u32 = 5;
+const FilePositionInformation: u32 = 14;
+const FileAccessInformation: u32 = 8;
+const FileModeInformation: u32 = 16;
+const FileAlignmentInformation: u32 = 17;
+const FileAllInformation: u32 = 18;
+const FileMaximumInformation: u32 = 64;
+const FileLinkInformation: u32 = 11;
+
+// IO read/write access
+const IoReadAccess: u32 = 0;
+const IoWriteAccess: u32 = 1;
+
+// CC globals
+extern "system" {
+    static mut CcDataFlushes: ULONG;
+    static mut CcDataPages: LONG;
+}
 
 #[no_mangle]
 #[used]
@@ -106,10 +306,7 @@ unsafe fn IopFinalizeAsynchronousIo(
         }
         FinalStatus = (*KernelIosb).__bindgen_anon_1.Status;
     }
-    let write_result = write_user_nofail(IoStatusBlock, *KernelIosb, PreviousMode);
-    if write_result.is_err() {
-        FinalStatus = write_result.unwrap_err();
-    }
+    write_user_nofail(IoStatusBlock, *KernelIosb, PreviousMode);
     ExFreePool(Event as PVOID);
     FinalStatus
 }
@@ -117,7 +314,7 @@ unsafe fn IopFinalizeAsynchronousIo(
 unsafe fn IopPerformSynchronousRequest(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
-    FileObject: PFILE_OBJECT,
+    mut FileObject: PFILE_OBJECT,
     Deferred: BOOLEAN,
     PreviousMode: KPROCESSOR_MODE,
     SynchIo: BOOLEAN,
@@ -128,7 +325,7 @@ unsafe fn IopPerformSynchronousRequest(
     let mut Status = IoCallDriver(DeviceObject, Irp);
     if Deferred != 0 {
         if Status != STATUS_PENDING {
-            let mut NormalRoutine: PKNORMAL_ROUTINE = core::ptr::null_mut();
+            let mut NormalRoutine: PKNORMAL_ROUTINE = None;
             let mut NormalContext: PVOID = core::ptr::null_mut();
             let mut OldIrql: KIRQL = 0;
             KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
@@ -190,30 +387,30 @@ unsafe fn IopDeviceFsIoControl(
     };
 
     if PreviousMode != 0i8 {
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        )?;
+        ) { return e; }
         if AccessType == METHOD_BUFFERED {
             if !OutputBuffer.is_null() {
-                probe_user_buffer(
+                if let Err(e) = probe_user_buffer(
                     OutputBuffer,
                     OutputBufferLength as usize,
                     core::mem::size_of::<CHAR>(),
                     PreviousMode,
-                )?;
+                ) { return e; }
             }
         }
         if AccessType != METHOD_NEITHER {
             if !InputBuffer.is_null() {
-                probe_user_buffer(
+                if let Err(e) = probe_user_buffer(
                     InputBuffer,
                     InputBufferLength as usize,
                     core::mem::size_of::<CHAR>(),
                     PreviousMode,
-                )?;
+                ) { return e; }
             }
         }
     }
@@ -287,25 +484,25 @@ unsafe fn IopDeviceFsIoControl(
             let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
             if PreviousMode != 0i8 && !OutputBuffer.is_null() {
                 if AccessType == METHOD_IN_DIRECT {
-                    probe_user_buffer(
+                    if let Err(e) = probe_user_buffer(
                         OutputBuffer,
                         OutputBufferLength as usize,
                         core::mem::size_of::<CHAR>(),
                         PreviousMode,
-                    ).map_err(|e| {
+                    ) {
                         IopCleanupAfterException(FileObject, core::ptr::null_mut(), EventObject, core::ptr::null_mut());
-                        e
-                    })?;
+                        return e;
+                    }
                 } else if AccessType == METHOD_OUT_DIRECT {
-                    probe_user_buffer(
+                    if let Err(e) = probe_user_buffer(
                         OutputBuffer,
                         OutputBufferLength as usize,
                         core::mem::size_of::<CHAR>(),
                         PreviousMode,
-                    ).map_err(|e| {
+                    ) {
                         IopCleanupAfterException(FileObject, core::ptr::null_mut(), EventObject, core::ptr::null_mut());
-                        e
-                    })?;
+                        return e;
+                    }
                 }
             }
 
@@ -365,7 +562,7 @@ unsafe fn IopDeviceFsIoControl(
 
     (*Irp).UserIosb = IoStatusBlock;
     (*Irp).UserEvent = EventObject;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = UserApcRoutine;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = UserApcRoutine;
     (*Irp).Overlay.AsynchronousParameters.UserApcContext = UserApcContext;
     (*Irp).Cancel = 0u8;
     (*Irp).CancelRoutine = None;
@@ -545,7 +742,7 @@ unsafe fn IopQueryDeviceInformation(
 
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
     (*Irp).RequestorMode = 0i8;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
     (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock);
     (*Irp).UserEvent = if LocalEvent != 0 {
         core::ptr::addr_of_mut!(Event)
@@ -636,7 +833,7 @@ unsafe fn IopGetFileInformation(
 
     (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock);
     (*Irp).UserEvent = core::ptr::addr_of_mut!(Event);
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
     (*Irp).RequestorMode = 0i8;
     (*Irp).AssociatedIrp.SystemBuffer = Buffer;
     (*Irp).Flags = IRP_SYNCHRONOUS_API | IRP_BUFFERED_IO | IRP_OB_QUERY_NAME;
@@ -740,7 +937,7 @@ unsafe fn IopOpenLinkOrRenameTarget(
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 {
-        let FileObjectExtension = (*FileObject).FileObjectExtension;
+        let FileObjectExtension = (*FileObject).FileObjectExtension as *mut _FILE_OBJECT_EXTENSION;
         Status = IoCreateFileSpecifyDeviceObjectHint(
             core::ptr::addr_of_mut!(TargetHandle),
             DesiredAccess | SYNCHRONIZE,
@@ -756,7 +953,7 @@ unsafe fn IopOpenLinkOrRenameTarget(
             CreateFileTypeNone,
             core::ptr::null_mut(),
             IO_FORCE_ACCESS_CHECK | IO_OPEN_TARGET_DIRECTORY | IO_NO_PARAMETER_CHECKING,
-            (*FileObjectExtension).TopDeviceObjectHint,
+            (*FileObjectExtension).TopDeviceObjectHint as PVOID,
         );
     } else {
         Status = IoCreateFile(
@@ -784,7 +981,7 @@ unsafe fn IopOpenLinkOrRenameTarget(
     Stack = IoGetNextIrpStackLocation(Irp);
     if (*Stack).Parameters.SetFile.FileInformationClass == FileLinkInformation
         && (*RenameInfo).ReplaceIfExists == 0
-        && IoStatusBlock.Information == FILE_EXISTS as usize
+        && IoStatusBlock.Information == FILE_EXISTS as _
     {
         ObCloseHandle(TargetHandle, 0i8);
         return STATUS_OBJECT_NAME_COLLISION;
@@ -877,15 +1074,15 @@ unsafe fn IopGetDriverPathInformation(
     let mut DriverName: _UNICODE_STRING = core::mem::zeroed();
     let mut DriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
 
-    if Length
+    if (Length as usize)
         - core::mem::offset_of!(FILE_FS_DRIVER_PATH_INFORMATION, DriverName)
         < (*DriverPathInfo).DriverNameLength as usize
     {
         return STATUS_INVALID_PARAMETER;
     }
 
-    DriverName.Length = (*DriverPathInfo).DriverNameLength;
-    DriverName.MaximumLength = (*DriverPathInfo).DriverNameLength;
+    DriverName.Length = (*DriverPathInfo).DriverNameLength as USHORT;
+    DriverName.MaximumLength = (*DriverPathInfo).DriverNameLength as USHORT;
     DriverName.Buffer = (*DriverPathInfo).DriverName.as_mut_ptr();
 
     Status = ObReferenceObjectByName(
@@ -902,7 +1099,7 @@ unsafe fn IopGetDriverPathInformation(
         return Status;
     }
 
-    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
     if !(*FileObject).Vpb.is_null() && !(*(*FileObject).Vpb).DeviceObject.is_null() {
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*(*FileObject).Vpb).DeviceObject, DriverObject);
@@ -910,7 +1107,7 @@ unsafe fn IopGetDriverPathInformation(
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*FileObject).DeviceObject, DriverObject);
     }
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
 
     ObDereferenceObject(DriverObject as PVOID);
     STATUS_SUCCESS
@@ -1079,7 +1276,7 @@ pub unsafe extern "system" fn IoSetInformation(
 
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
     (*Irp).RequestorMode = 0i8;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
     (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock);
     (*Irp).UserEvent = if LocalEvent != 0 {
         core::ptr::addr_of_mut!(Event)
@@ -1206,12 +1403,12 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
     let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        )?;
+        ) { return e; }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -1258,7 +1455,7 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
     KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
     Irp = IoAllocateIrp((*DeviceObject).StackSize as CCHAR, 1u8);
     if Irp.is_null() {
-        return IopCleanupFailedIrp(FileObject, core::ptr::null_mut(), Event);
+        return IopCleanupFailedIrp(FileObject, core::ptr::null_mut(), Event as PVOID);
     }
 
     (*Irp).Flags = if LocalEvent != 0 {
@@ -1275,7 +1472,7 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
     (*Irp).RequestorMode = PreviousMode;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
 
     StackPtr = IoGetNextIrpStackLocation(Irp);
     (*StackPtr).MajorFunction = IRP_MJ_FLUSH_BUFFERS as u8;
@@ -1327,19 +1524,19 @@ pub unsafe extern "system" fn NtNotifyChangeDirectoryFile(
     let mut LockedForSync: BOOLEAN = 0u8;
 
     if PreviousMode != 0i8 {
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        )?;
+        ) { return e; }
         if BufferSize != 0 {
-            probe_user_buffer(
+            if let Err(e) = probe_user_buffer(
                 Buffer,
                 BufferSize as usize,
                 core::mem::size_of::<ULONG>(),
                 PreviousMode,
-            )?;
+            ) { return e; }
         }
         if CompletionFilter == 0 || (CompletionFilter & !FILE_NOTIFY_VALID_MASK != 0) {
             return STATUS_INVALID_PARAMETER;
@@ -1404,7 +1601,7 @@ pub unsafe extern "system" fn NtNotifyChangeDirectoryFile(
     (*Irp).UserBuffer = Buffer;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = ApcRoutine;
     (*Irp).Overlay.AsynchronousParameters.UserApcContext = ApcContext;
 
     IoStack = IoGetNextIrpStackLocation(Irp);
@@ -1476,23 +1673,23 @@ pub unsafe extern "system" fn NtLockFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_ACCESS_DENIED;
         }
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        ).map_err(|e| {
+        ) {
             ObDereferenceObject(FileObject as PVOID);
-            e
-        })?;
-        CapturedByteOffset = probe_read_user::<LARGE_INTEGER>(ByteOffset, PreviousMode).map_err(|e| {
-            ObDereferenceObject(FileObject as PVOID);
-            e
-        })?;
-        CapturedLength = probe_read_user::<LARGE_INTEGER>(Length, PreviousMode).map_err(|e| {
-            ObDereferenceObject(FileObject as PVOID);
-            e
-        })?;
+            return e;
+        }
+        match probe_read_user::<LARGE_INTEGER>(ByteOffset, PreviousMode) {
+            Ok(v) => CapturedByteOffset = v,
+            Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+        }
+        match probe_read_user::<LARGE_INTEGER>(Length, PreviousMode) {
+            Ok(v) => CapturedLength = v,
+            Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+        }
     } else {
         CapturedByteOffset = *ByteOffset;
         CapturedLength = *Length;
@@ -1519,8 +1716,8 @@ pub unsafe extern "system" fn NtLockFile(
         let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
         if ((*FastIoDispatch).FastIoLock.unwrap())(
             FileObject,
-            core::ptr::addr_of!(CapturedByteOffset),
-            core::ptr::addr_of!(CapturedLength),
+            core::ptr::addr_of_mut!(CapturedByteOffset),
+            core::ptr::addr_of_mut!(CapturedLength),
             PsGetCurrentProcess() as PEPROCESS,
             Key,
             FailImmediately,
@@ -1577,7 +1774,7 @@ pub unsafe extern "system" fn NtLockFile(
     (*Irp).UserEvent = Event;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = ApcRoutine;
     (*Irp).Overlay.AsynchronousParameters.UserApcContext = ApcContext;
 
     StackPtr = IoGetNextIrpStackLocation(Irp);
@@ -1594,7 +1791,7 @@ pub unsafe extern "system" fn NtLockFile(
     }
 
     *LocalLength = CapturedLength;
-    (*Irp).Tail.Overlay.AuxiliaryBuffer = LocalLength as PVOID;
+    (*Irp).Tail.Overlay.AuxiliaryBuffer = LocalLength as *mut i8;
     (*StackPtr).Parameters.LockControl.Length = LocalLength;
     (*StackPtr).Parameters.LockControl.ByteOffset = CapturedByteOffset;
     (*StackPtr).Parameters.LockControl.Key = Key;
@@ -1645,47 +1842,42 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     let SearchPattern: PUNICODE_STRING;
 
     if PreviousMode != 0i8 {
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        ).map_err(|e| {
-            if !AuxBuffer.is_null() {
-                ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
-            }
-            e
-        })?;
-        probe_user_buffer(
+        ) {
+            if !AuxBuffer.is_null() { ExFreePoolWithTag(AuxBuffer, TAG_IOBUF); }
+            return e;
+        }
+        if let Err(e) = probe_user_buffer(
             FileInformation,
             Length as usize,
             core::mem::size_of::<ULONG>(),
             PreviousMode,
-        ).map_err(|e| {
-            if !AuxBuffer.is_null() {
-                ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
-            }
-            e
-        })?;
+        ) {
+            if !AuxBuffer.is_null() { ExFreePoolWithTag(AuxBuffer, TAG_IOBUF); }
+            return e;
+        }
         if !FileName.is_null() {
-            CapturedFileName = probe_capture_unicode_string_header(FileName, PreviousMode).map_err(|e| {
-                if !AuxBuffer.is_null() {
-                    ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
+            match probe_capture_unicode_string_header(FileName as *const ntkrnl_sys::UNICODE_STRING, PreviousMode) {
+                Ok(v) => CapturedFileName = core::mem::transmute(v),
+                Err(e) => {
+                    if !AuxBuffer.is_null() { ExFreePoolWithTag(AuxBuffer, TAG_IOBUF); }
+                    return e;
                 }
-                e
-            })?;
+            }
             if CapturedFileName.Length != 0 {
-                probe_user_buffer(
+                if let Err(e) = probe_user_buffer(
                     CapturedFileName.Buffer as *const core::ffi::c_void,
                     CapturedFileName.Length as usize,
                     1,
                     PreviousMode,
-                ).map_err(|e| {
-                    if !AuxBuffer.is_null() {
-                        ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
-                    }
-                    e
-                })?;
+                ) {
+                    if !AuxBuffer.is_null() { ExFreePoolWithTag(AuxBuffer, TAG_IOBUF); }
+                    return e;
+                }
             }
             AuxBuffer = ExAllocatePoolWithTag(
                 NonPagedPool,
@@ -1821,7 +2013,7 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
     Irp = IoAllocateIrp((*DeviceObject).StackSize as CCHAR, 1u8);
     if Irp.is_null() {
-        return IopCleanupFailedIrp(FileObject, EventHandle, AuxBuffer);
+        return IopCleanupFailedIrp(FileObject, Event, AuxBuffer);
     }
 
     (*Irp).RequestorMode = PreviousMode;
@@ -1829,10 +2021,10 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     (*Irp).UserEvent = Event;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = ApcRoutine;
     (*Irp).Overlay.AsynchronousParameters.UserApcContext = ApcContext;
     (*Irp).MdlAddress = core::ptr::null_mut();
-    (*Irp).Tail.Overlay.AuxiliaryBuffer = AuxBuffer;
+    (*Irp).Tail.Overlay.AuxiliaryBuffer = AuxBuffer as *mut i8;
     (*Irp).AssociatedIrp.SystemBuffer = core::ptr::null_mut();
 
     if (*DeviceObject).Flags & DO_BUFFERED_IO != 0 {
@@ -1875,7 +2067,7 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     (*StackPtr).MajorFunction = IRP_MJ_DIRECTORY_CONTROL as u8;
     (*StackPtr).MinorFunction = IRP_MN_QUERY_DIRECTORY as u8;
     (*StackPtr).Parameters.QueryDirectory.FileInformationClass = FileInformationClass as u32;
-    (*StackPtr).Parameters.QueryDirectory.FileName = AuxBuffer;
+    (*StackPtr).Parameters.QueryDirectory.FileName = AuxBuffer as PUNICODE_STRING;
     (*StackPtr).Parameters.QueryDirectory.FileIndex = 0;
     (*StackPtr).Parameters.QueryDirectory.Length = Length;
     (*StackPtr).Flags = 0;
@@ -1931,9 +2123,9 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Event: PKEVENT = core::ptr::null_mut();
     let mut LocalEvent: BOOLEAN = 0u8;
-    let mut NormalRoutine: PKNORMAL_ROUTINE;
-    let mut NormalContext: PVOID;
-    let mut OldIrql: KIRQL;
+    let mut NormalRoutine: PKNORMAL_ROUTINE = None;
+    let mut NormalContext: PVOID = core::ptr::null_mut();
+    let mut OldIrql: KIRQL = 0;
     let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut CallDriver: BOOLEAN = 1u8;
     let AccessBuffer: PFILE_ACCESS_INFORMATION;
@@ -1952,18 +2144,18 @@ pub unsafe extern "system" fn NtQueryInformationFile(
         if Length < IopQueryOperationLength[FileInformationClass as usize] {
             return STATUS_INFO_LENGTH_MISMATCH;
         }
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        )?;
-        probe_user_buffer(
+        ) { return e; }
+        if let Err(e) = probe_user_buffer(
             FileInformation,
             Length as usize,
             core::mem::size_of::<ULONG>(),
             PreviousMode,
-        )?;
+        ) { return e; }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -2004,10 +2196,10 @@ pub unsafe extern "system" fn NtQueryInformationFile(
                 return e;
             }
             let iosb = _IO_STATUS_BLOCK {
-                __bindgen_anon_1: IO_STATUS_BLOCK__bindgen_ty_1 {
+                __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 {
                     Status: STATUS_SUCCESS,
                 },
-                Information: core::mem::size_of::<FILE_POSITION_INFORMATION>(),
+                Information: core::mem::size_of::<FILE_POSITION_INFORMATION>() as _,
             };
             let write_result = write_user(IoStatusBlock, iosb, PreviousMode);
             Status = match write_result {
@@ -2040,7 +2232,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
             Success = ((*FastIoDispatch).FastIoQueryBasicInfo.unwrap())(
                 FileObject,
                 1u8,
-                FileInformation,
+                FileInformation as PFILE_BASIC_INFORMATION,
                 core::ptr::addr_of_mut!(KernelIosb),
                 DeviceObject,
             );
@@ -2048,7 +2240,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
             Success = ((*FastIoDispatch).FastIoQueryStandardInfo.unwrap())(
                 FileObject,
                 1u8,
-                FileInformation,
+                FileInformation as *mut ntkrnl_sys::ddk::_FILE_STANDARD_INFORMATION,
                 core::ptr::addr_of_mut!(KernelIosb),
                 DeviceObject,
             );
@@ -2069,13 +2261,13 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
     Irp = IoAllocateIrp((*DeviceObject).StackSize as CCHAR, 0u8);
     if Irp.is_null() {
-        return IopCleanupFailedIrp(FileObject, core::ptr::null_mut(), Event);
+        return IopCleanupFailedIrp(FileObject, core::ptr::null_mut(), Event as PVOID);
     }
 
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).RequestorMode = PreviousMode;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
     (*Irp).Flags = if LocalEvent != 0 {
         IRP_SYNCHRONOUS_API
     } else {
@@ -2118,26 +2310,26 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     if FileInformationClass == FileAccessInformation {
         AccessBuffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_ACCESS_INFORMATION;
         (*AccessBuffer).AccessFlags = HandleInformation.GrantedAccess;
-        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_ACCESS_INFORMATION>();
+        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_ACCESS_INFORMATION>() as _;
         CallDriver = 0u8;
     } else if FileInformationClass == FileModeInformation {
         ModeBuffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_MODE_INFORMATION;
         (*ModeBuffer).Mode = IopGetFileMode(FileObject);
-        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_MODE_INFORMATION>();
+        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_MODE_INFORMATION>() as _;
         CallDriver = 0u8;
     } else if FileInformationClass == FileAlignmentInformation {
         AlignmentBuffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_ALIGNMENT_INFORMATION;
         (*AlignmentBuffer).AlignmentRequirement = (*DeviceObject).AlignmentRequirement;
-        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>();
+        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>() as _;
         CallDriver = 0u8;
     } else if FileInformationClass == FileAllInformation {
         AllBuffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_ALL_INFORMATION;
         (*AllBuffer).AccessInformation.AccessFlags = HandleInformation.GrantedAccess;
         (*AllBuffer).ModeInformation.Mode = IopGetFileMode(FileObject);
         (*AllBuffer).AlignmentInformation.AlignmentRequirement = (*DeviceObject).AlignmentRequirement;
-        (*Irp).IoStatus.Information = core::mem::size_of::<FILE_ACCESS_INFORMATION>()
+        (*Irp).IoStatus.Information = (core::mem::size_of::<FILE_ACCESS_INFORMATION>()
             + core::mem::size_of::<FILE_MODE_INFORMATION>()
-            + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>();
+            + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>()) as _;
     }
 
     if CallDriver != 0 {
@@ -2185,7 +2377,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
             ExFreePoolWithTag(Event as PVOID, TAG_IO);
         }
         (*Irp).UserIosb = IoStatusBlock;
-        NormalRoutine = core::ptr::null_mut();
+        NormalRoutine = None;
         NormalContext = core::ptr::null_mut();
         KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
         IopCompleteRequest(
@@ -2261,24 +2453,24 @@ pub unsafe extern "system" fn NtReadFile(
     DeviceObject = IoGetRelatedDeviceObject(FileObject);
 
     if PreviousMode != 0i8 {
-        probe_user_buffer(
+        if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
-        ).map_err(|e| {
+        ) {
             ObDereferenceObject(FileObject as PVOID);
-            e
-        })?;
-        probe_user_buffer(Buffer, Length as usize, 1, PreviousMode).map_err(|e| {
+            return e;
+        }
+        if let Err(e) = probe_user_buffer(Buffer, Length as usize, 1, PreviousMode) {
             ObDereferenceObject(FileObject as PVOID);
-            e
-        })?;
+            return e;
+        }
         if !ByteOffset.is_null() {
-            CapturedByteOffset = probe_read_user::<LARGE_INTEGER>(ByteOffset, PreviousMode).map_err(|e| {
-                ObDereferenceObject(FileObject as PVOID);
-                e
-            })?;
+            match probe_read_user::<LARGE_INTEGER>(ByteOffset, PreviousMode) {
+                Ok(v) => CapturedByteOffset = v,
+                Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+            }
         }
         if !(*FileObject).CompletionContext.is_null() && ApcRoutine.is_some() {
             ObDereferenceObject(FileObject as PVOID);
@@ -2286,9 +2478,9 @@ pub unsafe extern "system" fn NtReadFile(
         }
         if (*FileObject).Flags & FO_NO_INTERMEDIATE_BUFFERING != 0 {
             if (*DeviceObject).SectorSize != 0
-                && ((*DeviceObject).SectorSize - 1) & Length != 0
+                && ((*DeviceObject).SectorSize as ULONG - 1) & Length != 0
             {
-                if Length % (*DeviceObject).SectorSize != 0 {
+                if Length % (*DeviceObject).SectorSize as ULONG != 0 {
                     ObDereferenceObject(FileObject as PVOID);
                     return STATUS_INVALID_PARAMETER;
                 }
@@ -2307,10 +2499,10 @@ pub unsafe extern "system" fn NtReadFile(
             }
         }
         if !Key.is_null() {
-            CapturedKey = probe_read_user::<ULONG>(Key, PreviousMode).map_err(|e| {
-                ObDereferenceObject(FileObject as PVOID);
-                e
-            })?;
+            match probe_read_user::<ULONG>(Key, PreviousMode) {
+                Ok(v) => CapturedKey = v,
+                Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+            }
         }
     } else {
         if !ByteOffset.is_null() {
@@ -2352,8 +2544,8 @@ pub unsafe extern "system" fn NtReadFile(
             return Status;
         }
         if ByteOffset.is_null()
-            || (CapturedByteOffset.u.__bindgen_anon_1.LowPart == FILE_USE_FILE_POINTER_POSITION
-                && CapturedByteOffset.u.__bindgen_anon_1.HighPart == (-1i32) as u32)
+            || (CapturedByteOffset.u.LowPart == FILE_USE_FILE_POINTER_POSITION
+                && CapturedByteOffset.u.HighPart == -1i32)
         {
             CapturedByteOffset = (*FileObject).CurrentByteOffset;
         }
@@ -2361,7 +2553,7 @@ pub unsafe extern "system" fn NtReadFile(
             FastIoDispatch = (*(*DeviceObject).DriverObject).FastIoDispatch;
             Success = ((*FastIoDispatch).FastIoRead.unwrap())(
                 FileObject,
-                core::ptr::addr_of!(CapturedByteOffset),
+                core::ptr::addr_of_mut!(CapturedByteOffset),
                 Length,
                 1u8,
                 CapturedKey,
@@ -2414,7 +2606,7 @@ pub unsafe extern "system" fn NtReadFile(
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
     (*Irp).RequestorMode = PreviousMode;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
+    (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = ApcRoutine;
     (*Irp).Overlay.AsynchronousParameters.UserApcContext = ApcContext;
     (*Irp).UserIosb = IoStatusBlock;
     (*Irp).UserEvent = EventObject;
@@ -2512,229 +2704,3 @@ pub unsafe extern "system" fn NtSetEaFile(
     STATUS_NOT_IMPLEMENTED
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn NtSetInformationFile(
-    FileHandle: HANDLE,
-    IoStatusBlock: PIO_STATUS_BLOCK,
-    FileInformation: PVOID,
-    Length: ULONG,
-    FileInformationClass: FILE_INFORMATION_CLASS,
-) -> NTSTATUS {
-    let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
-    let Irp: PIRP;
-    let DeviceObject: PDEVICE_OBJECT;
-    let StackPtr: PIO_STACK_LOCATION;
-    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
-    let mut Event: PKEVENT = core::ptr::null_mut();
-    let mut LocalEvent: BOOLEAN = 0u8;
-    let mut NormalRoutine: PKNORMAL_ROUTINE;
-    let mut NormalContext: PVOID;
-    let mut OldIrql: KIRQL;
-    let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Queue: PVOID;
-    let CompletionInfo: PFILE_COMPLETION_INFORMATION = FileInformation as PFILE_COMPLETION_INFORMATION;
-    let Context: PIO_COMPLETION_CONTEXT;
-    let RenameInfo: PFILE_RENAME_INFORMATION;
-    let mut TargetHandle: HANDLE = core::ptr::null_mut();
-
-    if PreviousMode != 0i8 {
-        if (FileInformationClass as i32) < 0
-            || (FileInformationClass as u32) >= FileMaximumInformation
-            || IopSetOperationLength[FileInformationClass as usize] == 0
-        {
-            return STATUS_INVALID_INFO_CLASS;
-        }
-        if Length < IopSetOperationLength[FileInformationClass as usize] {
-            return STATUS_INFO_LENGTH_MISMATCH;
-        }
-        probe_user_buffer(
-            IoStatusBlock as *const core::ffi::c_void,
-            core::mem::size_of::<_IO_STATUS_BLOCK>(),
-            core::mem::align_of::<_IO_STATUS_BLOCK>(),
-            PreviousMode,
-        )?;
-        probe_user_buffer(
-            FileInformation,
-            Length as usize,
-            if Length == core::mem::size_of::<BOOLEAN>() {
-                core::mem::size_of::<BOOLEAN>()
-            } else {
-                core::mem::size_of::<ULONG>()
-            },
-            PreviousMode,
-        )?;
-    } else {
-        if (FileInformationClass as i32) < 0
-            || (FileInformationClass as u32) >= FileMaximumInformation
-            || IopSetOperationLength[FileInformationClass as usize] == 0
-        {
-            return STATUS_INVALID_INFO_CLASS;
-        }
-        if Length < IopSetOperationLength[FileInformationClass as usize] {
-            return STATUS_INFO_LENGTH_MISMATCH;
-        }
-    }
-
-    Status = ObReferenceObjectByHandle(
-        FileHandle,
-        IopSetOperationAccess[FileInformationClass as usize],
-        IoFileObjectType,
-        PreviousMode,
-        core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-    if Status < 0 {
-        return Status;
-    }
-
-    if (*FileObject).Flags & FO_DIRECT_DEVICE_OPEN != 0 {
-        DeviceObject = IoGetAttachedDevice((*FileObject).DeviceObject);
-    } else {
-        DeviceObject = IoGetRelatedDeviceObject(FileObject);
-    }
-
-    if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
-        Status = IopLockFileObject(FileObject, PreviousMode);
-        if Status != STATUS_SUCCESS {
-            ObDereferenceObject(FileObject as PVOID);
-            return Status;
-        }
-        if FileInformationClass == FilePositionInformation {
-            let pos_write = write_user(
-                core::ptr::addr_of_mut!((*FileObject).CurrentByteOffset),
-                (*(FileInformation as PFILE_POSITION_INFORMATION)).CurrentByteOffset,
-                PreviousMode,
-            );
-            if let Err(e) = pos_write {
-                IopUnlockFileObject(FileObject);
-                ObDereferenceObject(FileObject as PVOID);
-                return e;
-            }
-            let iosb = _IO_STATUS_BLOCK {
-                __bindgen_anon_1: IO_STATUS_BLOCK__bindgen_ty_1 {
-                    Status: STATUS_SUCCESS,
-                },
-                Information: 0,
-            };
-            let iosb_write = write_user(IoStatusBlock, iosb, PreviousMode);
-            Status = match iosb_write {
-                Ok(_) => STATUS_SUCCESS,
-                Err(e) => e,
-            };
-            IopUpdateTransferCount(IopOtherTransfer, Length);
-            IopUnlockFileObject(FileObject);
-            ObDereferenceObject(FileObject as PVOID);
-            return Status;
-        }
-    } else {
-        Event = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<KEVENT>(), TAG_IO) as PKEVENT;
-        if Event.is_null() {
-            ObDereferenceObject(FileObject as PVOID);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        KeInitializeEvent(Event, 0, 0u8);
-        LocalEvent = 1u8;
-    }
-
-    KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
-    Irp = IoAllocateIrp((*DeviceObject).StackSize as CCHAR, 1u8);
-    if Irp.is_null() {
-        return IopCleanupFailedIrp(FileObject, core::ptr::null_mut(), Event);
-    }
-
-    (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
-    (*Irp).Tail.Overlay.Thread = PsGetCurrentThread();
-    (*Irp).RequestorMode = PreviousMode;
-    (*Irp).Overlay.AsynchronousParameters.UserApcRoutine = None;
-    (*Irp).Flags = if LocalEvent != 0 {
-        IRP_SYNCHRONOUS_API
-    } else {
-        0
-    };
-    (*Irp).UserIosb = if LocalEvent != 0 {
-        core::ptr::addr_of_mut!(KernelIosb)
-    } else {
-        IoStatusBlock
-    };
-    (*Irp).UserEvent = if LocalEvent != 0 { Event } else { core::ptr::null_mut() };
-    (*Irp).AssociatedIrp.SystemBuffer = core::ptr::null_mut();
-    (*Irp).MdlAddress = core::ptr::null_mut();
-    (*Irp).UserBuffer = FileInformation;
-
-    StackPtr = IoGetNextIrpStackLocation(Irp);
-    (*StackPtr).MajorFunction = IRP_MJ_SET_INFORMATION as u8;
-    (*StackPtr).FileObject = FileObject;
-
-    let alloc_result: Result<_, NTSTATUS> = (|| {
-        let buffer = ExAllocatePoolWithQuotaTag(NonPagedPool, Length as SIZE_T, TAG_IOBUF);
-        if buffer.is_null() {
-            return Err(STATUS_INSUFFICIENT_RESOURCES);
-        }
-        (*Irp).AssociatedIrp.SystemBuffer = buffer;
-        core::ptr::copy_nonoverlapping(
-            FileInformation as *const u8,
-            buffer as *mut u8,
-            Length as usize,
-        );
-        Ok(())
-    })();
-    if let Err(e) = alloc_result {
-        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
-        return e;
-    }
-
-    (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_DEFER_IO_COMPLETION;
-    (*StackPtr).Parameters.SetFile.FileInformationClass = FileInformationClass as u32;
-    (*StackPtr).Parameters.SetFile.Length = Length;
-
-    IopQueueIrpToThread(Irp);
-    IopUpdateOperationCount(IopOtherTransfer);
-
-    if FileInformationClass == FileCompletionInformation {
-        if ((*FileObject).Flags & FO_SYNCHRONOUS_IO != 0)
-            || !(*FileObject).CompletionContext.is_null()
-        {
-            Status = STATUS_INVALID_PARAMETER;
-        } else {
-            Status = ObReferenceObjectByHandle(
-                (*CompletionInfo).Port,
-                IO_COMPLETION_MODIFY_STATE,
-                IoCompletionType,
-                PreviousMode,
-                core::ptr::addr_of_mut!(Queue),
-                core::ptr::null_mut(),
-            );
-            if Status >= 0 {
-                Context = ExAllocatePoolWithTag(
-                    PagedPool,
-                    core::mem::size_of::<IO_COMPLETION_CONTEXT>(),
-                    IOC_TAG,
-                ) as PIO_COMPLETION_CONTEXT;
-                if !Context.is_null() {
-                    (*Context).Key = (*CompletionInfo).Key;
-                    (*Context).Port = Queue;
-                    if !InterlockedCompareExchangePointer(
-                        core::ptr::addr_of_mut!((*FileObject).CompletionContext) as *mut PVOID,
-                        Context as PVOID,
-                        core::ptr::null_mut(),
-                    )
-                    .is_null()
-                    {
-                        ExFreePoolWithTag(Context as PVOID, IOC_TAG);
-                        ObDereferenceObject(Queue);
-                        Status = STATUS_INVALID_PARAMETER;
-                    }
-                } else {
-                    ObDereferenceObject(Queue);
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                }
-            }
-        }
-        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        (*Irp).IoStatus.Information = 0;
-    } else if FileInformationClass == FileRenameInformation
-        || FileInformationClass == FileLinkInformation
-        || FileInformationClass == FileMoveClusterInformation
-    {
-        RenameInfo = (*Irp).AssociatedIrp.SystemBuffer as PFILE_RENAME

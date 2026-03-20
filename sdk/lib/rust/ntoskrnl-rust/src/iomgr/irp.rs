@@ -214,11 +214,8 @@ unsafe fn NT_ERROR(status: NTSTATUS) -> bool {
 }
 
 unsafe fn IsIrpSynchronous(irp: PIRP, file_object: PFILE_OBJECT) -> bool {
-    if !file_object.is_null() {
-        ((*file_object).Flags & FO_SYNCHRONOUS_IO) != 0
-    } else {
-        false
-    }
+    ((*irp).Flags & IRP_SYNCHRONOUS_API != 0)
+        || (!file_object.is_null() && ((*file_object).Flags & FO_SYNCHRONOUS_IO) != 0)
 }
 
 unsafe fn IO_METHOD_FROM_CTL_CODE(code: ULONG) -> ULONG {
