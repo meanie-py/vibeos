@@ -150,10 +150,36 @@ def parse_rust_const(line: str) -> tuple[str, int] | None:
     return None
 
 
+def fix_const_line(line: str, name: str, c_val: int) -> str:
+    """Rewrite a const definition line with the correct C value."""
+    # Match the const pattern and replace the value
+    m = re.match(r'(const\s+' + re.escape(name) + r'\s*:\s*\w+\s*=\s*)(.+?)(;.*)', line.rstrip())
+    if not m:
+        return line
+    prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
+
+    # Determine the best representation
+    rust_type = re.search(r':\s*(\w+)', prefix)
+    type_name = rust_type.group(1) if rust_type else 'ULONG'
+
+    if type_name in ('NTSTATUS', 'i32') and c_val > 0x7FFFFFFF:
+        # NTSTATUS: use unsigned cast pattern
+        new_val = f'0x{c_val:08X}_u32 as i32'
+    elif c_val > 0xFFFF:
+        new_val = f'0x{c_val:08X}'
+    elif c_val > 0xFF:
+        new_val = f'0x{c_val:04X}'
+    else:
+        new_val = f'0x{c_val:02X}'
+
+    return prefix + new_val + suffix
+
+
 def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> list[dict]:
     """Verify constants in a single Rust file. Returns list of mismatches."""
     mismatches = []
     lines = rs_path.read_text().splitlines()
+    modified = False
 
     for lineno, line in enumerate(lines, 1):
         parsed = parse_rust_const(line)
@@ -171,6 +197,12 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
                     'rust_val': f'0x{rust_val:08X}',
                     'c_val': f'0x{c_val:08X}',
                 })
+                if fix:
+                    lines[lineno - 1] = fix_const_line(line, name, c_val)
+                    modified = True
+
+    if fix and modified:
+        rs_path.write_text('\n'.join(lines) + '\n')
 
     return mismatches
 
@@ -195,16 +227,23 @@ def main():
         )
 
     total_mismatches = 0
+    files_fixed = 0
     for rs_file in rs_files:
         mismatches = verify_file(rs_file, catalog, fix=args.fix)
         if mismatches:
             for m in mismatches:
-                print(f"  {m['file']}:{m['line']}: {m['name']}: "
-                      f"Rust={m['rust_val']} C={m['c_val']}")
+                action = "FIXED" if args.fix else "MISMATCH"
+                print(f"  {action}: {m['file']}:{m['line']}: {m['name']}: "
+                      f"Rust={m['rust_val']} → C={m['c_val']}")
             total_mismatches += len(mismatches)
+            if args.fix:
+                files_fixed += 1
 
-    print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
-    return 1 if total_mismatches > 0 else 0
+    if args.fix:
+        print(f"\nFixed {total_mismatches} constants in {files_fixed} files")
+    else:
+        print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
+    return 1 if total_mismatches > 0 and not args.fix else 0
 
 
 if __name__ == '__main__':
