@@ -10,7 +10,7 @@ pub mod error;
 pub mod file;
 pub mod iocomp;
 pub mod ioevent;
-// pub mod iofunc;  // PE binary layout issue: adding to Rust lib hangs ksecdd.sys even with C functions winning
+pub mod iofunc;  // Constants fixed, truncated (missing NtSetInformationFile+), C provides missing functions
 pub mod iomdl;
 #[cfg(not(target_arch = "aarch64"))]
 pub mod iomgr;  // ARM64: PE layout issue (same as ramdisk.rs)
