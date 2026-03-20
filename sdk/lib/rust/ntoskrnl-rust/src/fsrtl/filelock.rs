@@ -45,9 +45,9 @@ extern "C" {
     fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
 
-const TAG_TABLE: ULONG = 0x656C6261; // 'able'
-const TAG_FLOCK: ULONG = 0x6B636F6C; // 'lock'
-const TAG_RANGE: ULONG = 0x65676E61; // 'ange'
+const TAG_TABLE: ULONG = 0x4241544C; // 'able'
+const TAG_FLOCK: ULONG = 0x4B434C46; // 'lock'
+const TAG_RANGE: ULONG = 0x41525346; // 'ange'
 
 const _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan: RTL_GENERIC_COMPARE_RESULTS = 0;
 const _RTL_GENERIC_COMPARE_RESULTS_GenericEqual: RTL_GENERIC_COMPARE_RESULTS = 1;

@@ -68,7 +68,7 @@ extern "C" {
 }
 
 const ANSI_NULL: u8 = 0;
-const TAG_OSTR: ULONG = 0x7274734F;
+const TAG_OSTR: ULONG = 0x5254534F;
 const MAXUSHORT: ULONG = 0xFFFF;
 
 const LANG_NEUTRAL: USHORT = 0x00;

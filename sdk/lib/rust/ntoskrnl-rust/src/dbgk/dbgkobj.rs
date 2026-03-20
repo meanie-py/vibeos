@@ -42,7 +42,7 @@ use ntkrnl_sys::ddk::{
     _DBGKM_APINUMBER_DbgKmUnloadDllApi,
 };
 
-const TAG_DEBUG_EVENT: u32 = 0x65627044;
+const TAG_DEBUG_EVENT: u32 = 0x45676244;
 const DBGK_ALL_FLAGS: ULONG = 1;
 const DBGK_KILL_PROCESS_ON_EXIT: ULONG = 1;
 

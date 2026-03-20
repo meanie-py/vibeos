@@ -52,7 +52,11 @@ def parse_c_multichar(s: str) -> int | None:
 
 
 def parse_ntstatus_cast(s: str) -> int | None:
-    """Parse ((NTSTATUS)0xC0000001) pattern."""
+    """Parse ((NTSTATUS)0xC0000001) pattern — reject macro calls and expressions."""
+    s = s.strip()
+    # Reject expressions with operators or macro-call commas
+    if any(op in s for op in [',', '|', '+', '<<', '>>']):
+        return None
     m = re.search(r'0x[0-9A-Fa-f]+', s)
     if m:
         return int(m.group(), 16)
@@ -175,6 +179,12 @@ def fix_const_line(line: str, name: str, c_val: int) -> str:
     return prefix + new_val + suffix
 
 
+# Constants that differ per architecture (#ifdef _WIN64 etc.) — skip auto-fix
+ARCH_DEPENDENT_CONSTANTS = {
+    'PORT_MAXIMUM_MESSAGE_LENGTH',  # 512 on 64-bit, 256 on 32-bit
+}
+
+
 def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> list[dict]:
     """Verify constants in a single Rust file. Returns list of mismatches."""
     mismatches = []
@@ -186,6 +196,9 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
         if not parsed:
             continue
         name, rust_val = parsed
+
+        if name in ARCH_DEPENDENT_CONSTANTS:
+            continue
 
         if name in catalog:
             c_val = catalog[name]

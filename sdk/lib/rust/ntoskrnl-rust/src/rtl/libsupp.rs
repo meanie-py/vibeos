@@ -53,9 +53,9 @@ pub unsafe fn KeGetPcr() -> *mut ntkrnl_sys::ddk::_KPCR {
 
 // Constants — these are C #define macros, not extern symbols.
 const FLG_ENABLE_EXCEPTION_LOGGING: ULONG = 0x00800000;
-const TAG_ASTR: ULONG = u32::from_le_bytes(*b"RTSA");
-const TAG_OSTR: ULONG = u32::from_le_bytes(*b"RTSO");
-const TAG_USTR: ULONG = u32::from_le_bytes(*b"RTSU");
+const TAG_ASTR: ULONG = 0x52545341;
+const TAG_OSTR: ULONG = 0x5254534F;
+const TAG_USTR: ULONG = 0x52545355;
 const TAG_RTHL: ULONG = u32::from_le_bytes(*b"LHtR");
 const TAG_ATMT: ULONG = u32::from_le_bytes(*b"TotA");
 const POOL_COLD_ALLOCATION: ULONG = 0x100;

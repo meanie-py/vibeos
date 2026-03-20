@@ -36,7 +36,7 @@ const REG_OPTION_NON_VOLATILE: u32 = 0;
 const REG_SZ: u32 = 1;
 const REG_RESOURCE_LIST: u32 = 8;
 
-const TAG_IO_RESOURCE: ULONG = 0x52734F49;
+const TAG_IO_RESOURCE: ULONG = 0x43525352;
 const MaximumType: usize = 41;
 const IoQueryDeviceMaxData: usize = 3;
 

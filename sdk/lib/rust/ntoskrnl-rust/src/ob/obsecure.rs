@@ -47,7 +47,7 @@ const FILE_WRITE_DATA: ULONG = 0x0002;
 
 // Missing NTSTATUS codes
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
-const STATUS_INVALID_SECURITY_DESCR: NTSTATUS = 0xC00000E7_u32 as i32;
+const STATUS_INVALID_SECURITY_DESCR: NTSTATUS = 0xC0000079_u32 as i32;
 
 #[no_mangle]
 pub unsafe extern "system" fn ObAssignObjectSecurityDescriptor(

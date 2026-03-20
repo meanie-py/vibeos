@@ -53,7 +53,7 @@ use ntkrnl_sys::ddk::{
 const LookasideNameBufferList: u32 = _PP_NPAGED_LOOKASIDE_NUMBER_LookasideNameBufferList;
 const LookasideCreateInfoList: u32 = _PP_NPAGED_LOOKASIDE_NUMBER_LookasideCreateInfoList;
 
-const TAG_OBJECT_TYPE: ULONG = u32::from_le_bytes(*b"ObTt");
+const TAG_OBJECT_TYPE: ULONG = 0x546A624F;
 const FLG_MAINTAIN_OBJECT_TYPELIST: ULONG = 0x4000;
 
 extern "C" {

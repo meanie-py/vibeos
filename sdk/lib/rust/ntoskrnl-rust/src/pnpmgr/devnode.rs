@@ -17,7 +17,7 @@ use ntkrnl_sys::ddk::{
     ExAllocatePool, ExAllocatePoolZero, ExFreePool,
 };
 
-const TAG_IO_DEVNODE: u32 = u32::from_le_bytes(*b"donI");
+const TAG_IO_DEVNODE: u32 = 0x646F6E44;
 
 #[no_mangle]
 #[used]

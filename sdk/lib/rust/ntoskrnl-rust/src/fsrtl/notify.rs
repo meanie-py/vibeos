@@ -49,14 +49,14 @@ extern "system" {
     fn KeGetCurrentThread() -> ntkrnl_sys::ddk::PKTHREAD;
 }
 
-const TAG_FS_NOTIFICATIONS: u32 = u32::from_le_bytes(*b"NrSF");
+const TAG_FS_NOTIFICATIONS: u32 = 0x4E725346;
 const NOTIFY_IMMEDIATELY: u32 = 1;
 const NOTIFY_LATER: u32 = 2;
 const CLEANUP_IN_PROCESS: u32 = 4;
 const DELETE_IN_PROCESS: u32 = 8;
 
 const IO_DISK_INCREMENT: i8 = 1;
-const FO_CLEANUP_COMPLETE: u32 = 0x00002000;
+const FO_CLEANUP_COMPLETE: u32 = 0x4000;
 const IRP_BUFFERED_IO: u32 = 0x00000010;
 const IRP_DEALLOCATE_BUFFER: u32 = 0x00000020;
 const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;

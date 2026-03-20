@@ -60,7 +60,7 @@ struct BASE_MCB_INTERNAL {
 type PBASE_MCB_INTERNAL = *mut BASE_MCB_INTERNAL;
 
 const MAXIMUM_PAIR_COUNT: ULONG = 0xFFFFFFFF;
-const IFS_POOL_TAG: ULONG = 0x53464920;
+const IFS_POOL_TAG: ULONG = 0x74725346;
 
 unsafe extern "system" fn McbMappingAllocate(Table: PRTL_GENERIC_TABLE, Bytes: CLONG) -> PVOID {
     let mcb = (*Table).TableContext as PBASE_MCB;

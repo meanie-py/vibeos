@@ -28,7 +28,7 @@ use ntkrnl_sys::ddk::{
     IoCreateSymbolicLink, IoDeleteSymbolicLink,
 };
 
-const TAG_IO: ULONG = 0x206f4920; // ' oI '
+const TAG_IO: ULONG = 0x20206F49; // ' oI '
 const REG_OPTION_NON_VOLATILE: ULONG = 0x00000000;
 const REG_OPTION_VOLATILE: ULONG = 0x00000001;
 const KEY_WRITE: ULONG = STANDARD_RIGHTS_WRITE | KEY_SET_VALUE | KEY_CREATE_SUB_KEY;

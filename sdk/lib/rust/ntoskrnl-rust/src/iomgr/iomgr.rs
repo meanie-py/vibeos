@@ -78,12 +78,12 @@ use ntkrnl_sys::ddk::{
 };
 
 // IO tag constants
-const IOC_TAG1: ULONG = u32::from_le_bytes(*b" cpI");
-const IO_LARGEIRP: ULONG = u32::from_le_bytes(*b"lprI");
-const IO_SMALLIRP: ULONG = u32::from_le_bytes(*b"sprI");
-const IO_LARGEIRP_CPU: ULONG = u32::from_le_bytes(*b"LprI");
-const IO_SMALLIRP_CPU: ULONG = u32::from_le_bytes(*b"SprI");
-const TAG_IO: ULONG = u32::from_le_bytes(*b"  oI");
+const IOC_TAG1: ULONG = 0x20637049;
+const IO_LARGEIRP: ULONG = 0x6C707249;
+const IO_SMALLIRP: ULONG = 0x73707249;
+const IO_LARGEIRP_CPU: ULONG = 0x4C707249;
+const IO_SMALLIRP_CPU: ULONG = 0x53707249;
+const TAG_IO: ULONG = 0x20206F49;
 const IO_COMPLETION_ALL_ACCESS: ULONG = 0x001F0003;
 const FILE_NON_DIRECTORY_FILE: ULONG = 0x00000040;
 const INACCESSIBLE_BOOT_DEVICE: ULONG = 0x0000007B;

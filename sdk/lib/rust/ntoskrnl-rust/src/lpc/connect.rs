@@ -155,7 +155,7 @@ unsafe fn lpcp_check_name_deleted(port: PLPCP_PORT_OBJECT) -> bool {
 
 const LPC_CONNECTION_REQUEST: i16 = 10;
 
-const TAG_SE: ULONG = u32::from_le_bytes(*b"  eS");
+const TAG_SE: ULONG = 0x20206553;
 
 #[no_mangle]
 pub unsafe extern "system" fn LpcpFreeConMsg(

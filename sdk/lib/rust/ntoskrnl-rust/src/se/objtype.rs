@@ -6,7 +6,7 @@ use ntkrnl_sys::probe::*;
 
 const ACCESS_OBJECT_GUID: u16 = 0;
 const ACCESS_MAX_LEVEL: u16 = 4;
-const TAG_SEPA: ULONG = u32::from_le_bytes(*b"aSeP");
+const TAG_SEPA: ULONG = 0x61506553;
 
 unsafe fn SepValidateObjectTypeList(
     ObjectTypeList: POBJECT_TYPE_LIST,

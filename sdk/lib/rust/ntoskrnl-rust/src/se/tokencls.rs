@@ -91,7 +91,7 @@ extern "C" {
     fn SepRmDereferenceLogonSession(logon_id: *const LUID);
 }
 
-const TAG_SE: ULONG = 0x53206553;
+const TAG_SE: ULONG = 0x20206553;
 
 const ICIF_QUERY: ULONG = 0x01;
 const ICIF_SET: ULONG = 0x02;
@@ -256,7 +256,7 @@ const TOKEN_ADJUST_SESSIONID: ULONG = 0x0100;
 
 const TOKEN_IMPERSONATION: ULONG = 2;
 
-const TOKEN_SESSION_NOT_REFERENCED: ULONG = 0x00000010;
+const TOKEN_SESSION_NOT_REFERENCED: ULONG = 0x20;
 
 #[derive(Clone, Copy)]
 #[repr(C)]

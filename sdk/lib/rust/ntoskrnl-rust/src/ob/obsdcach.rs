@@ -17,7 +17,7 @@ const SD_CACHE_ENTRIES: usize = 0x100;
 static mut ObsSecurityDescriptorCache: [OB_SD_CACHE_LIST; SD_CACHE_ENTRIES] =
     unsafe { core::mem::zeroed() };
 
-const TAG_OB_SD_CACHE: ULONG = u32::from_le_bytes(*b"cSbO");
+const TAG_OB_SD_CACHE: ULONG = 0x6353624F;
 // ReactOS uses 7 for ALL architectures (3 low bits), matching the C #define.
 pub const MAX_FAST_REFS: ULONG = 7;
 

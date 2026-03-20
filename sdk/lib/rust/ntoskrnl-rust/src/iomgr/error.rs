@@ -68,9 +68,9 @@ unsafe fn ExInitializeWorkItem(Item: *mut WORK_QUEUE_ITEM, Routine: PVOID, Conte
 extern "system" {
 }
 
-const TAG_IO: ULONG = 0x206f4920;
-const TAG_ERROR_LOG: ULONG = 0x676f4c45;
-const TAG_APC: ULONG = 0x2043504b;
+const TAG_IO: ULONG = 0x20206F49;
+const TAG_ERROR_LOG: ULONG = 0x72456F49;
+const TAG_APC: ULONG = 0x4350414B;
 
 const ELF_PORT_NAME: &[u16] = &[
     b'\\' as u16, b'E' as u16, b'r' as u16, b'r' as u16, b'o' as u16, b'r' as u16,

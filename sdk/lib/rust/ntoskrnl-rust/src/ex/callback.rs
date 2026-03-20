@@ -30,8 +30,8 @@ extern "C" {
     static SePublicDefaultSd: PVOID;
 }
 
-const TAG_CALLBACK_ROUTINE_BLOCK: ULONG = 0x6B636243; // 'cbCk'
-const TAG_CALLBACK_REGISTRATION: ULONG = 0x72636243; // 'cbCr'
+const TAG_CALLBACK_ROUTINE_BLOCK: ULONG = 0x62726243; // 'cbCk'
+const TAG_CALLBACK_REGISTRATION: ULONG = 0x65524243; // 'cbCr'
 
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: ULONG = 7;

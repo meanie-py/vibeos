@@ -33,7 +33,7 @@ extern "system" {
     fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT);
 }
 
-const TAG_IO_INTERRUPT: ULONG = 0x49726E49;
+const TAG_IO_INTERRUPT: ULONG = 0x6E696F49;
 
 #[repr(C)]
 struct CONTAINING_RECORD_HELPER {

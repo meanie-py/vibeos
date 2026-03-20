@@ -116,8 +116,8 @@ const METHOD_OUT_DIRECT: ULONG = 2;
 const METHOD_NEITHER: ULONG = 3;
 
 // Pool tags
-const TAG_IRP: ULONG = u32::from_le_bytes(*b" prI");
-const TAG_IOBUF: ULONG = u32::from_le_bytes(*b"UBOI");
+const TAG_IRP: ULONG = 0x20707249;
+const TAG_IOBUF: ULONG = 0x55424F49;
 
 // Reparse buffer size
 const MAXIMUM_REPARSE_DATA_BUFFER_SIZE: ULONG = 16 * 1024;

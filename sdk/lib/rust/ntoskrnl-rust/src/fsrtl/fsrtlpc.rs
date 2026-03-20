@@ -176,7 +176,7 @@ unsafe impl Send for SyncPtr {}
 pub static FsRtlLegalAnsiCharacterArray: SyncPtr = SyncPtr(LEGAL_ANSI_CHARACTER_ARRAY_DATA.as_ptr());
 
 const FSRTL_MAX_RESOURCES: usize = 16;
-const IFS_POOL_TAG: ULONG = 0x73664946;
+const IFS_POOL_TAG: ULONG = 0x74725346;
 const MAXLONG: i32 = 0x7fffffff;
 
 // CODE_SEG("INIT")

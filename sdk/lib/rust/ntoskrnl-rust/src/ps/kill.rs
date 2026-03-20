@@ -20,7 +20,7 @@ const KERNEL_STACK_LOCKED_AT_EXIT: ULONG = 0xEC;
 const DBG_TERMINATE_PROCESS: NTSTATUS = 0x40010004_u32 as i32;
 
 // Pool tags
-const TAG_TERMINATE_APC: ULONG = u32::from_le_bytes(*b"Tmap");
+const TAG_TERMINATE_APC: ULONG = 0x43504154;
 const TAG_SEPA: ULONG = u32::from_le_bytes(*b"SePa");
 
 // APC environment

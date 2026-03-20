@@ -84,7 +84,10 @@ unsafe fn CONTAINING_RECORD(address: PVOID, _type_size: usize, field_offset: usi
 }
 
 // SharedUserData = (KUSER_SHARED_DATA *)KI_USER_SHARED_DATA — fixed kernel VA, not a symbol
+#[cfg(target_arch = "x86_64")]
 const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
+#[cfg(target_arch = "x86")]
+const KI_USER_SHARED_DATA: usize = 0xFFDF0000;
 #[inline(always)]
 unsafe fn SharedUserData() -> *mut SharedUserDataStruct {
     KI_USER_SHARED_DATA as *mut SharedUserDataStruct
@@ -100,7 +103,7 @@ const RD_SYSROOT_INIT_FAILED: ULONG = 6;
 
 const LoaderXIPRom: u32 = 0x10;
 
-const RAMDISK_BOOT_DISK: ULONG = 0;
+const RAMDISK_BOOT_DISK: ULONG = 0x03;
 
 static RAMDISK_BOOTDISK_GUID: _GUID = _GUID {
     Data1: 0x9E475CAB,

@@ -105,6 +105,74 @@ IopUpdateOperationCount_shim(IN IOP_TRANSFER_TYPE Type)
 }
 
 /*
+ * ObReferenceObject — C macro that calls ObfReferenceObject (FASTCALL).
+ * On i386, Rust extern "C" generates cdecl symbol; needs wrapper.
+ */
+#undef ObReferenceObject
+VOID
+NTAPI
+ObReferenceObject(IN PVOID Object)
+{
+    ObfReferenceObject(Object);
+}
+
+/*
+ * ObDereferenceObject — C macro that calls ObfDereferenceObject (FASTCALL).
+ */
+#undef ObDereferenceObject
+VOID
+NTAPI
+ObDereferenceObject(IN PVOID Object)
+{
+    ObfDereferenceObject(Object);
+}
+
+/*
+ * ExRaiseStatus — C macro that expands to RtlRaiseStatus.
+ * Rust extern "system" needs stdcall (NTAPI) wrapper.
+ */
+#undef ExRaiseStatus
+VOID
+NTAPI
+ExRaiseStatus(IN NTSTATUS Status)
+{
+    RtlRaiseStatus(Status);
+}
+
+/*
+ * Probe helper macros from probe.h — Rust extern "system" needs function wrappers.
+ */
+#undef ProbeForWriteHandle
+VOID
+NTAPI
+ProbeForWriteHandle(IN PHANDLE Ptr)
+{
+    ProbeForWrite(Ptr, sizeof(HANDLE), sizeof(HANDLE));
+}
+
+#undef ProbeForWriteIoStatusBlock
+VOID
+NTAPI
+ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
+{
+    ProbeForWrite(Ptr, sizeof(IO_STATUS_BLOCK), sizeof(ULONG));
+}
+
+#undef ProbeForReadLargeInteger
+LARGE_INTEGER
+NTAPI
+ProbeForReadLargeInteger(IN const LARGE_INTEGER *Ptr)
+{
+    LARGE_INTEGER Result;
+    if ((ULONG_PTR)Ptr + sizeof(LARGE_INTEGER) < (ULONG_PTR)Ptr ||
+        (ULONG_PTR)Ptr + sizeof(LARGE_INTEGER) > (ULONG_PTR)MmUserProbeAddress) {
+        ExRaiseAccessViolation();
+    }
+    Result = *(volatile const LARGE_INTEGER *)Ptr;
+    return Result;
+}
+
+/*
  * RtlUnicodeStringPrintf_4wZ — wrapper for RtlUnicodeStringPrintf with
  * format "%wZ%wZ#%wZ%wZ" and 4 PUNICODE_STRING args.
  * RtlUnicodeStringPrintf is FORCEINLINE from ntstrsafe.h (variadic).

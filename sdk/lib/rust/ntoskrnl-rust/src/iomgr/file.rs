@@ -186,7 +186,7 @@ extern "system" {
     static mut PsInitialSystemProcess: PVOID;
 }
 
-extern "C" {
+extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
@@ -199,15 +199,15 @@ extern "C" {
     fn ExRaiseStatus(Status: NTSTATUS);
 }
 
-const TAG_IO: ULONG = 0x20204F49;      // '  OI' — generic IO pool tag
-const TAG_IO_NAME: ULONG = 0x4E204F49;  // 'N OI' — IO name pool tag
-const TAG_EA: ULONG = 0x20204145;        // '  AE' — EA pool tag
+const TAG_IO: ULONG = 0x20206F49;      // '  OI' — generic IO pool tag
+const TAG_IO_NAME: ULONG = 0x6D4E6F49;  // 'N OI' — IO name pool tag
+const TAG_EA: ULONG = 0x61456F49;        // '  AE' — EA pool tag
 
 const IOP_MAX_REPARSE_TRAVERSAL: ULONG = 0x20;
 const IopOtherTransfer: ULONG = 0;
 
-const IOP_CREATE_FILE_OBJECT_EXTENSION: ULONG = 0x1;
-const IOP_USE_TOP_LEVEL_DEVICE_HINT: ULONG = 0x2;
+const IOP_CREATE_FILE_OBJECT_EXTENSION: ULONG = 0x02;
+const IOP_USE_TOP_LEVEL_DEVICE_HINT: ULONG = 0x01;
 
 const FILE_GENERIC_READ: ACCESS_MASK = 0x00120089;
 const FILE_GENERIC_WRITE: ACCESS_MASK = 0x00120116;
@@ -226,11 +226,11 @@ const IO_TYPE_OPEN_PACKET: USHORT = 8;  // from iotypes.h
 const IO_TYPE_FILE: USHORT = 0x05;
 const IO_TYPE_DEVICE: USHORT = 0x03;
 
-const SE_BACKUP_PRIVILEGES_CHECKED: ULONG = 0x10;
-const TOKEN_HAS_BACKUP_PRIVILEGE: ULONG = 0x01;
-const TOKEN_HAS_RESTORE_PRIVILEGE: ULONG = 0x02;
-const TOKEN_HAS_TRAVERSE_PRIVILEGE: ULONG = 0x40;
-const TOKEN_IS_RESTRICTED: ULONG = 0x10000;
+const SE_BACKUP_PRIVILEGES_CHECKED: ULONG = 0x0100;
+const TOKEN_HAS_BACKUP_PRIVILEGE: ULONG = 0x02;
+const TOKEN_HAS_RESTORE_PRIVILEGE: ULONG = 0x04;
+const TOKEN_HAS_TRAVERSE_PRIVILEGE: ULONG = 0x01;
+const TOKEN_IS_RESTRICTED: ULONG = 0x10;
 
 const IO_REPARSE: ULONG = 0x0;
 const IO_REMOUNT: ULONG = 0x1;
@@ -284,19 +284,19 @@ const FO_ALERTABLE_IO: ULONG = 0x00000004;
 const FO_NO_INTERMEDIATE_BUFFERING: ULONG = 0x00000008;
 const FO_WRITE_THROUGH: ULONG = 0x00000010;
 const FO_SEQUENTIAL_ONLY: ULONG = 0x00000020;
-const FO_RANDOM_ACCESS: ULONG = 0x00000200;
+const FO_RANDOM_ACCESS: ULONG = 0x00100000;
 const FO_FILE_OBJECT_HAS_EXTENSION: ULONG = 0x00800000;
 const FO_HANDLE_CREATED: ULONG = 0x00040000;
-const FO_DIRECT_DEVICE_OPEN: ULONG = 0x00000001;
-const FO_VOLUME_OPEN: ULONG = 0x00080000;
-const FO_STREAM_FILE: ULONG = 0x00400000;
-const FO_OPENED_CASE_SENSITIVE: ULONG = 0x01000000;
+const FO_DIRECT_DEVICE_OPEN: ULONG = 0x0800;
+const FO_VOLUME_OPEN: ULONG = 0x00400000;
+const FO_STREAM_FILE: ULONG = 0x0100;
+const FO_OPENED_CASE_SENSITIVE: ULONG = 0x00020000;
 const FO_REMOTE_ORIGIN: ULONG = 0x01000000;
-const FO_FILE_OPEN_CANCELLED: ULONG = 0x00100000;
+const FO_FILE_OPEN_CANCELLED: ULONG = 0x00200000;
 
 const DO_DEVICE_INITIALIZING: ULONG = 0x00000080;
 const DO_EXCLUSIVE: ULONG = 0x00000008;
-const DO_NEVER_LAST_DEVICE: ULONG = 0x40000000;
+const DO_NEVER_LAST_DEVICE: ULONG = 0x0400;
 const DO_BUS_ENUMERATED_DEVICE: ULONG = 0x00001000;
 
 const DOE_UNLOAD_PENDING: ULONG = 0x01;
@@ -326,7 +326,7 @@ const IO_IGNORE_SHARE_ACCESS_CHECK: ULONG = 0x800;
 
 const FILE_DEVICE_DISK_FILE_SYSTEM: ULONG = 0x00000008;
 const FILE_DEVICE_CD_ROM_FILE_SYSTEM: ULONG = 0x00000003;
-const FILE_DEVICE_TAPE_FILE_SYSTEM: ULONG = 0x00000005;
+const FILE_DEVICE_TAPE_FILE_SYSTEM: ULONG = 0x20;
 const FILE_DEVICE_NETWORK_FILE_SYSTEM: ULONG = 0x00000014;
 const FILE_DEVICE_DFS_FILE_SYSTEM: ULONG = 0x00000035;
 const FILE_DEVICE_DISK: ULONG = 0x00000007;
@@ -2378,7 +2378,7 @@ unsafe fn IopCreateFile(
             Status = IoCheckEaBufferValidity((*OpenPacket).EaBuffer, EaLength, &mut EaErrorOffset);
             if Status < 0 {
                 (*IoStatusBlock).__bindgen_anon_1.Status = Status;
-                (*IoStatusBlock).Information = EaErrorOffset as u64;
+                (*IoStatusBlock).Information = EaErrorOffset as _;
                 if !(*OpenPacket).EaBuffer.is_null() {
                     ExFreePool((*OpenPacket).EaBuffer);
                 }
@@ -2410,7 +2410,7 @@ unsafe fn IopCreateFile(
             if Status < 0 {
                 ExFreePool((*OpenPacket).EaBuffer);
                 (*IoStatusBlock).__bindgen_anon_1.Status = Status;
-                (*IoStatusBlock).Information = EaErrorOffset as u64;
+                (*IoStatusBlock).Information = EaErrorOffset as _;
                 ExFreePool(OpenPacket as PVOID);
                 return Status;
             }

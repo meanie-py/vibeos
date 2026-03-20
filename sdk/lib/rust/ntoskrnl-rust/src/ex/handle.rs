@@ -40,7 +40,7 @@ use ntkrnl_sys::ddk::{
 };
 
 // Pool tag for handle tables
-const TAG_OBJECT_TABLE: ULONG = u32::from_le_bytes(*b"btbO");
+const TAG_OBJECT_TABLE: ULONG = 0x6274624F;
 
 // InterlockedOr — atomic bitwise OR, returns OLD value.
 #[inline]

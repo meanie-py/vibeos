@@ -182,13 +182,13 @@ extern "system" {
 }
 
 // Constants
-const TAG_IO: ULONG = u32::from_le_bytes(*b"  oI");
-const TAG_REINIT: ULONG = u32::from_le_bytes(*b"niRI");
-const TAG_DRIVER_EXTENSION: ULONG = u32::from_le_bytes(*b"xErD");
+const TAG_IO: ULONG = 0x20206F49;
+const TAG_REINIT: ULONG = 0x69526F49;
+const TAG_DRIVER_EXTENSION: ULONG = 0x45565244;
 const TAG_LDR_WSTR: ULONG = u32::from_le_bytes(*b"swdL");
-const TAG_RTLREGISTRY: ULONG = u32::from_le_bytes(*b"grMC");
+const TAG_RTLREGISTRY: ULONG = 0x76727152;
 const UNICODE_STRING_MAX_BYTES: ULONG = 65534;
-const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC000028Du32 as i32;
+const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as i32;
 const SERVICE_RECOGNIZER_DRIVER: ULONG = 8;
 const SERVICE_FILE_SYSTEM_DRIVER: ULONG = 2;
 const DRVO_UNLOAD_INVOKED: ULONG = 0x00000001;

@@ -196,9 +196,9 @@ const EVENT_MODIFY_STATE: ACCESS_MASK = 0x0002;
 const VPB_MOUNTED: USHORT = 0x0001;
 
 // Pool tags
-const TAG_IO: ULONG = 0x20204F49;       // '  OI'
-const TAG_IOBUF: ULONG = 0x66624F49;    // 'fbOI'
-const TAG_LOCK: ULONG = 0x6B634C49;     // 'kcLI'
+const TAG_IO: ULONG = 0x20206F49;       // '  OI'
+const TAG_IOBUF: ULONG = 0x55424F49;    // 'fbOI'
+const TAG_LOCK: ULONG = 0x6B636C46;     // 'kcLI'
 
 // Status constants
 const STATUS_USER_APC: NTSTATUS = 0xC0 as NTSTATUS;

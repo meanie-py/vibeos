@@ -14,7 +14,7 @@ extern "system" {
     pub static mut SeCreatorGroupSid: PSID;
 }
 
-const TAG_ACL: u32 = u32::from_le_bytes(*b"cAeS");
+const TAG_ACL: u32 = 0x63416553;
 
 const ACL_REVISION: UCHAR = 2;
 const ACCESS_MAX_MS_V2_ACE_TYPE: UCHAR = 0x03;
@@ -27,7 +27,7 @@ const OBJECT_INHERIT_ACE: UCHAR = 0x01;
 const CONTAINER_INHERIT_ACE: UCHAR = 0x02;
 const NO_PROPAGATE_INHERIT_ACE: UCHAR = 0x04;
 const INHERIT_ONLY_ACE: UCHAR = 0x08;
-const VALID_INHERIT_FLAGS: UCHAR = 0x0F;
+const VALID_INHERIT_FLAGS: UCHAR = 0x1F;
 
 const GENERIC_EXECUTE: ACCESS_MASK = 0x20000000;
 const GENERIC_ALL: ACCESS_MASK = 0x10000000;
