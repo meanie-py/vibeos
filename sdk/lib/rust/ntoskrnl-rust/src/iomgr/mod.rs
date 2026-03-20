@@ -7,7 +7,7 @@ pub mod debug;
 pub mod deviface;
 pub mod driver;
 pub mod error;
-// pub mod file;  // Crashes both arches — agent-translated NtCreateFile etc. have bugs
+// pub mod file;  // 10 bugs fixed, pending IRP deadlock on 2nd open remains
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)
@@ -18,9 +18,8 @@ pub mod iotimer;
 pub mod iowork;
 // pub mod irp;  // 3 bugs found+fixed (NT_ERROR, KTHREAD offset, PacketType), still hangs — more bugs in IopCompleteRequest
 pub mod irq;
-// pub mod ramdisk;  // ARM64: 0x9C fixed (InitializeObjectAttributes+sprintf null), now 0x6B
 #[cfg(not(target_arch = "aarch64"))]
-pub mod ramdisk;
+pub mod ramdisk;  // ARM64: binary layout change causes 0x6B crash (not a translation bug)
 pub mod rawfs;
 pub mod remlock;
 pub mod symlink;

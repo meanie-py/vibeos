@@ -458,6 +458,7 @@ mod _force_shim_symbols {
         extern "system" {
             fn IopSendEject();
             fn PipDeviceActionWorker();
+            fn IopStartRamdisk();
         }
         #[used]
         static REFS_CDECL: [unsafe extern "C" fn(); 15] = [
@@ -471,8 +472,8 @@ mod _force_shim_symbols {
             IopSendRemoveDeviceRelations,
         ];
         #[used]
-        static REFS_STDCALL: [unsafe extern "system" fn(); 2] = [
-            IopSendEject, PipDeviceActionWorker,
+        static REFS_STDCALL: [unsafe extern "system" fn(); 3] = [
+            IopSendEject, PipDeviceActionWorker, IopStartRamdisk,
         ];
     }
 

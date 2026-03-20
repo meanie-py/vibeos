@@ -99,7 +99,11 @@ have translation bugs causing SMSS to crash during session initialization.
 The ramdisk init now succeeds but something in the subsequent SystemRoot/drive
 letter setup is wrong. Needs further investigation.
 
-**Category:** Translation bugs (ARM64-specific). Small file, partially fixed.
+**Category:** PE binary layout issue (compiler), NOT a translation bug. Even with
+both C and Rust compiled (C wins), ARM64 crashes — the extra Rust code in the
+binary changes PE layout enough to trigger 0x6B. Same pattern as i386 PE sensitivity.
+Translation bugs (InitializeObjectAttributes, sprintf null, SharedUserData) are
+all fixed but won't help until the layout issue is resolved.
 
 ---
 
