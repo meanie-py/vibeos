@@ -148,7 +148,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # amd64/i386 uses Rust; ARM64 uses C (in arm64 section below)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iotimer.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iowork.c
@@ -477,6 +477,7 @@ elseif(ARCH STREQUAL "arm64")
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/driver.c  # Testing Rust driver.rs on ARM64
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # ARM64 PE layout issue with Rust iomgr.rs
         ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ramdisk.c
         )
 endif()

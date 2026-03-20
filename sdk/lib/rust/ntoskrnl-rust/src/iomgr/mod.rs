@@ -12,7 +12,8 @@ pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // PE binary layout issue: adding to Rust lib hangs ksecdd.sys even with C functions winning
 pub mod iomdl;
-// pub mod iomgr;  // Testing: crashes/hangs on both i386 and amd64
+#[cfg(not(target_arch = "aarch64"))]
+pub mod iomgr;  // ARM64: PE layout issue (same as ramdisk.rs)
 pub mod iorsrce;
 pub mod iotimer;
 pub mod iowork;

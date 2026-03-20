@@ -91,8 +91,15 @@ const DO_SYSTEM_BOOT_PARTITION: ULONG = 0x00000100;
 const FILE_READ_ACCESS: ULONG = 0x00000001;
 const FILE_SHARE_READ: ULONG = 0x00000001;
 
-extern "system" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).ObjectName = n;
+    (*p).Attributes = a;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
 extern "C" {
@@ -734,7 +741,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         }
     }
 
-    IopInitializePlugPlayServices();
+    core::hint::black_box(IopInitializePlugPlayServices());
     ApphelpCacheInitialize();
     WmiInitialize();
 
@@ -763,7 +770,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
     }
 
     PiQueueDeviceAction(
-        (*IopRootDeviceNode) as PDEVICE_OBJECT,
+        (*(IopRootDeviceNode as *mut ntkrnl_sys::ddk::_DEVICE_NODE)).PhysicalDeviceObject,
         _DEVICE_ACTION_PiActionEnumRootDevices,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
