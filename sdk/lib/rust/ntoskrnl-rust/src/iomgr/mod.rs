@@ -7,7 +7,7 @@ pub mod debug;
 pub mod deviface;
 pub mod driver;
 pub mod error;
-// pub mod file;  // 13 bugs fixed, ksecdd.sys deadlock — not LLVM, likely subtle state bug
+pub mod file;
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)

@@ -272,10 +272,10 @@ const FILE_PIPE_MESSAGE_TYPE: ULONG = 0x00000001;
 const FILE_PIPE_MESSAGE_MODE: ULONG = 0x00000001;
 const FILE_PIPE_COMPLETE_OPERATION: ULONG = 0x00000001;
 
-const IRP_CREATE_OPERATION: ULONG = 0x01;
+const IRP_CREATE_OPERATION: ULONG = 0x00000080;
 const IRP_SYNCHRONOUS_API: ULONG = 0x04;
 const IRP_DEFER_IO_COMPLETION: ULONG = 0x800;
-const IRP_CLOSE_OPERATION: ULONG = 0x200;
+const IRP_CLOSE_OPERATION: ULONG = 0x00000400;
 const IRP_BUFFERED_IO: ULONG = 0x10;
 const IRP_DEALLOCATE_BUFFER: ULONG = 0x20;
 
@@ -309,13 +309,13 @@ const SL_CASE_SENSITIVE: UCHAR = 0x80;
 const IRP_MJ_CREATE: UCHAR = 0x00;
 const IRP_MJ_CLOSE: UCHAR = 0x02;
 const IRP_MJ_CLEANUP: UCHAR = 0x12;
-const IRP_MJ_CREATE_NAMED_PIPE: UCHAR = 0x1C;
-const IRP_MJ_CREATE_MAILSLOT: UCHAR = 0x1D;
+const IRP_MJ_CREATE_NAMED_PIPE: UCHAR = 0x01;
+const IRP_MJ_CREATE_MAILSLOT: UCHAR = 0x13;
 const IRP_MJ_QUERY_SECURITY: UCHAR = 0x14;
 const IRP_MJ_SET_SECURITY: UCHAR = 0x15;
 const IRP_MJ_LOCK_CONTROL: UCHAR = 0x11;
 
-const IRP_MN_UNLOCK_ALL: UCHAR = 0x04;
+const IRP_MN_UNLOCK_ALL: UCHAR = 0x03;
 
 const IO_NO_PARAMETER_CHECKING: ULONG = 0x100;
 const IO_CHECK_CREATE_PARAMETERS: ULONG = 0x200;
@@ -634,8 +634,6 @@ pub unsafe extern "system" fn IopParseDevice(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     Object: *mut PVOID,
 ) -> NTSTATUS {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'P' as u8, options(nomem, nostack));
 
     let OpenPacket = Context as POPEN_PACKET;
     let OriginalDeviceObject = ParseObject as PDEVICE_OBJECT;
@@ -1401,8 +1399,6 @@ pub unsafe extern "system" fn IopParseFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'X' as u8, options(nomem, nostack));
 
     let FileObject = ObjectBody as PFILE_OBJECT;
     if (*FileObject).DeviceObject.is_null() {
@@ -1492,14 +1488,14 @@ pub unsafe extern "system" fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_O
 }
 
 unsafe fn IopGetDevicePDO(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as u64);
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
     let mut PDO = IopGetDeviceAttachmentBase(DeviceObject);
     if (*PDO).Flags & DO_BUS_ENUMERATED_DEVICE != DO_BUS_ENUMERATED_DEVICE {
         PDO = null_mut();
     } else {
         ObReferenceObject(PDO as PVOID);
     }
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as u64, OldIrql);
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
     PDO
 }
 
@@ -1612,8 +1608,6 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     PoolType: u32,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'Q' as u8, options(nomem, nostack));
 
     let DeviceObject: PDEVICE_OBJECT;
     let FileObject: PFILE_OBJECT;
@@ -1773,8 +1767,6 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
         *BufferLength = IoStatusBlock.Information as ULONG;
     }
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'q' as u8, options(nomem, nostack));
     Status
 }
 
@@ -1799,8 +1791,6 @@ unsafe fn IopQueryNameInternal(
     ReturnLength: *mut ULONG,
     PreviousMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'N' as u8, options(nomem, nostack));
 
     let FileObject = ObjectBody as PFILE_OBJECT;
 
@@ -1985,8 +1975,6 @@ pub unsafe extern "system" fn IopCloseFile(
     HandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'C' as u8, options(nomem, nostack));
 
     let FileObject = ObjectBody as PFILE_OBJECT;
 
@@ -2088,8 +2076,6 @@ pub unsafe extern "system" fn IopCloseFile(
     if !Process.is_null() && ((*FileObject).Flags & FO_SYNCHRONOUS_IO != 0) {
         IopUnlockFileObject(FileObject);
     }
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'c' as u8, options(nomem, nostack));
 }
 
 unsafe fn IopQueryAttributesFile(
@@ -2166,8 +2152,6 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
     Alertable: BOOLEAN,
     LockFailed: PBOOLEAN,
 ) -> NTSTATUS {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'L' as u8, options(nomem, nostack));
 
     InterlockedIncrement(&raw mut (*FileObject).Waiters as *mut LONG);
 
@@ -2261,8 +2245,6 @@ unsafe fn IopCreateFile(
     Flags: ULONG,
     DeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-    core::arch::asm!("out 0xe9, al", in("al") b'F' as u8, options(nomem, nostack));
 
     let AccessMode = if Options & IO_NO_PARAMETER_CHECKING != 0 {
         0i8
@@ -2460,6 +2442,8 @@ unsafe fn IopCreateFile(
         OpenPacket as PVOID,
         &mut LocalHandle,
     );
+
+    // Trace: ObOpenObjectByName returned Status, ParseCheck value
 
     if !(*OpenPacket).EaBuffer.is_null() {
         ExFreePool((*OpenPacket).EaBuffer);
