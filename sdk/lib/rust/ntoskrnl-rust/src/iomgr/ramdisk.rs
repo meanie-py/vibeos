@@ -49,8 +49,8 @@ unsafe fn arm64_uart_trace(_s: &[u8]) {}
 
 extern "C" {
     static mut PiEnumerationFinished: KEVENT;
-    static mut SharedUserData: *mut SharedUserDataStruct;
-    fn CONTAINING_RECORD( address: PVOID, type_size: usize, field_offset: usize, ) -> PVOID;
+    // SharedUserData is defined as a constant below, not an extern
+    // CONTAINING_RECORD inlined below
     // InitializeObjectAttributes inlined below
     fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8;
     fn _strupr(s: *mut i8) -> *mut i8;
@@ -75,6 +75,19 @@ unsafe fn InitializeObjectAttributes(
     (*p).Attributes = a;
     (*p).SecurityDescriptor = s;
     (*p).SecurityQualityOfService = core::ptr::null_mut();
+}
+
+// CONTAINING_RECORD: compute struct base from member pointer
+#[inline(always)]
+unsafe fn CONTAINING_RECORD(address: PVOID, _type_size: usize, field_offset: usize) -> PVOID {
+    (address as usize - field_offset) as PVOID
+}
+
+// SharedUserData = (KUSER_SHARED_DATA *)KI_USER_SHARED_DATA — fixed kernel VA, not a symbol
+const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
+#[inline(always)]
+unsafe fn SharedUserData() -> *mut SharedUserDataStruct {
+    KI_USER_SHARED_DATA as *mut SharedUserDataStruct
 }
 
 const RAMDISK_BOOT_INITIALIZATION_FAILED: ULONG = 0x9C;
@@ -327,32 +340,39 @@ pub unsafe extern "system" fn IopStartRamdisk(
         );
     }
 
+    // ReactOS hack: set up drive letter and NtSystemRoot
     {
         let mut AnsiPath: _STRING = core::mem::zeroed();
         let mut Buffer: [i8; 256] = [0; 256];
         let mut NtSystemRoot: _UNICODE_STRING = core::mem::zeroed();
-        static DRIVE_LETTER_FMT: [u16; 7] = [
+
+        // L"\\??\\X:" — 6 chars + null = 7 WCHARs
+        // RTL_CONSTANT_STRING: Length = 6*2=12, MaximumLength = 7*2=14
+        static mut DRIVE_LETTER_BUF: [u16; 7] = [
             b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16,
             b'X' as u16, b':' as u16, 0,
         ];
         let mut DriveLetter: _UNICODE_STRING = _UNICODE_STRING {
             Length: 12,
             MaximumLength: 14,
-            Buffer: DRIVE_LETTER_FMT.as_ptr() as *mut u16,
+            Buffer: DRIVE_LETTER_BUF.as_mut_ptr(),
         };
 
-        static FMT_X_COLON: [u8; 5] = [b'X', b':', b'%', b's', 0];
+        // sprintf(Buffer, "X:%s", LoaderBlock->NtBootPathName)
         AnsiPath.Length = sprintf(
             Buffer.as_mut_ptr(),
-            FMT_X_COLON.as_ptr() as *const i8,
+            b"X:%s\0".as_ptr() as *const i8,
             (*LoaderBlock).NtBootPathName,
         ) as u16;
         AnsiPath.MaximumLength = AnsiPath.Length + 1;
         AnsiPath.Buffer = Buffer.as_mut_ptr();
+
+        // Write the system root path to SharedUserData->NtSystemRoot
+        let usd = KI_USER_SHARED_DATA as *mut SharedUserDataStruct;
         RtlInitEmptyUnicodeString(
             &mut NtSystemRoot,
-            (*SharedUserData).NtSystemRoot.as_mut_ptr(),
-            core::mem::size_of_val(&(*SharedUserData).NtSystemRoot) as u16,
+            (*usd).NtSystemRoot.as_mut_ptr(),
+            core::mem::size_of_val(&(*usd).NtSystemRoot) as u16,
         );
         Status = RtlAnsiStringToUnicodeString(&mut NtSystemRoot, &mut AnsiPath, 0u8);
         if Status < 0 {
