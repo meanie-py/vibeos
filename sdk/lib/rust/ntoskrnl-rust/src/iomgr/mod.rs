@@ -7,7 +7,7 @@ pub mod debug;
 pub mod deviface;
 pub mod driver;
 pub mod error;
-// pub mod file;  // 10 bugs fixed, pending IRP deadlock on 2nd open remains
+// pub mod file;  // 12 bugs fixed, ksecdd.sys deadlock remains (post-close state issue)
 pub mod iocomp;
 pub mod ioevent;
 // pub mod iofunc;  // Nt* syscalls translated but buggy (SMSS crash, DbgPrint failed)

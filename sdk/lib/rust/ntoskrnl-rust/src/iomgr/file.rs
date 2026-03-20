@@ -435,9 +435,9 @@ unsafe fn IopCheckBackupRestorePrivilege(
                     (*AccessState).Flags |= TOKEN_HAS_BACKUP_PRIVILEGE;
                 }
             }
-            0
+            1u8  // CheckRestore = TRUE when Disposition & FILE_OPEN
         } else {
-            1
+            0u8  // CheckRestore = FALSE otherwise
         };
 
         if (WriteAccess & DesiredAccess != 0) || (CheckRestore != 0) {
@@ -634,6 +634,9 @@ pub unsafe extern "system" fn IopParseDevice(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     Object: *mut PVOID,
 ) -> NTSTATUS {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'P' as u8, options(nomem, nostack));
+
     let OpenPacket = Context as POPEN_PACKET;
     let OriginalDeviceObject = ParseObject as PDEVICE_OBJECT;
     let mut DeviceObject: PDEVICE_OBJECT = null_mut();
@@ -996,7 +999,7 @@ pub unsafe extern "system" fn IopParseDevice(
         (*Irp).RequestorMode = AccessMode;
         (*Irp).Flags = IRP_CREATE_OPERATION | IRP_SYNCHRONOUS_API | IRP_DEFER_IO_COMPLETION;
         (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
-        (*Irp).UserIosb = &mut IoStatusBlock as PIO_STATUS_BLOCK;
+        (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock) as PIO_STATUS_BLOCK;
         (*Irp).MdlAddress = null_mut();
         (*Irp).PendingReturned = 0;
         (*Irp).UserEvent = null_mut();
@@ -1041,7 +1044,7 @@ pub unsafe extern "system" fn IopParseDevice(
             ((*OpenPacket).Disposition << 24) | ((*OpenPacket).CreateOptions & 0xFFFFFF);
         (*StackLoc).Parameters.Create.FileAttributes = (*OpenPacket).FileAttributes as u16;
         (*StackLoc).Parameters.Create.ShareAccess = (*OpenPacket).ShareAccess as u16;
-        (*StackLoc).Parameters.Create.SecurityContext = &mut SecurityContext;
+        (*StackLoc).Parameters.Create.SecurityContext = core::ptr::addr_of_mut!(SecurityContext);
 
         if UseDummyFile == 0 {
             let mut ObjectSize = size_of::<_FILE_OBJECT>();
@@ -1164,7 +1167,7 @@ pub unsafe extern "system" fn IopParseDevice(
         (*OpenPacket).FileObject = FileObject;
 
         IopQueueIrpToThread(Irp);
-        Status = IoCallDriver(DeviceObject, Irp);
+        Status = core::hint::black_box(IoCallDriver(DeviceObject, Irp));
         if Status == STATUS_PENDING {
             KeWaitForSingleObject(
                 core::ptr::addr_of_mut!((*FileObject).Event) as PVOID,
@@ -1183,9 +1186,9 @@ pub unsafe extern "system" fn IopParseDevice(
             }
 
             KeRaiseIrql(2, &mut OldIrql);
-            IoStatusBlock = (*Irp).IoStatus;
+            IoStatusBlock = core::ptr::read_volatile(&(*Irp).IoStatus);
             Status = IoStatusBlock.__bindgen_anon_1.Status;
-            (*FileObject).Event.Header.SignalState = 1;
+            core::ptr::write_volatile(&mut (*FileObject).Event.Header.SignalState, 1);
             IopUnQueueIrpFromThread(Irp);
 
             if ((*Irp).Flags & IRP_BUFFERED_IO != 0) && ((*Irp).Flags & IRP_DEALLOCATE_BUFFER != 0)
@@ -1398,6 +1401,9 @@ pub unsafe extern "system" fn IopParseFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'X' as u8, options(nomem, nostack));
+
     let FileObject = ObjectBody as PFILE_OBJECT;
     if (*FileObject).DeviceObject.is_null() {
         return;
@@ -1418,7 +1424,7 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
     KeInitializeEvent(&mut Event, 0, 0);
 
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
-    (*Irp).UserEvent = &mut Event as *mut _KEVENT;
+    (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
     (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
@@ -1436,15 +1442,15 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
     }
 
     let DereferenceDone = if (*(*FileObject).DeviceObject).Flags & DO_NEVER_LAST_DEVICE != 0 {
-        InterlockedDecrement(&mut (*(*FileObject).DeviceObject).ReferenceCount);
+        InterlockedDecrement(&raw mut (*(*FileObject).DeviceObject).ReferenceCount as *mut LONG);
         1u8
     } else {
         0u8
     };
 
-    let Status = IoCallDriver(DeviceObject, Irp);
+    let Status = core::hint::black_box(IoCallDriver(DeviceObject, Irp));
     if Status == STATUS_PENDING {
-        KeWaitForSingleObject(&mut Event as *mut _ as PVOID, 0, 0i8, 0, null_mut());
+        KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 0, 0i8, 0, null_mut());
     }
 
     let mut OldIrql: KIRQL = 0;
@@ -1606,6 +1612,9 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     PoolType: u32,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'Q' as u8, options(nomem, nostack));
+
     let DeviceObject: PDEVICE_OBJECT;
     let FileObject: PFILE_OBJECT;
 
@@ -1705,9 +1714,9 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
     (*Irp).RequestorMode = KeGetPreviousMode();
-    (*Irp).UserIosb = &mut IoStatusBlock as PIO_STATUS_BLOCK;
+    (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock) as PIO_STATUS_BLOCK;
     (*Irp).UserEvent = if LocalEvent {
-        &mut Event as *mut _KEVENT
+        core::ptr::addr_of_mut!(Event) as *mut _KEVENT
     } else {
         null_mut()
     };
@@ -1730,23 +1739,23 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
 
     IopQueueIrpToThread(Irp);
     IopUpdateOperationCount(IopOtherTransfer);
-    Status = IoCallDriver(RelatedDevice, Irp);
+    Status = core::hint::black_box(IoCallDriver(RelatedDevice, Irp));
 
     if LocalEvent {
         if Status == STATUS_PENDING {
-            KeWaitForSingleObject(&mut Event as *mut _ as PVOID, 0, 0i8, 0, null_mut());
-            Status = IoStatusBlock.__bindgen_anon_1.Status;
+            KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 0, 0i8, 0, null_mut());
+            Status = core::ptr::read_volatile(&IoStatusBlock.__bindgen_anon_1.Status);
         }
     } else {
         if Status == STATUS_PENDING {
             KeWaitForSingleObject(
-                &mut (*FileObject).Event as *mut _ as PVOID,
+                core::ptr::addr_of_mut!((*FileObject).Event) as PVOID,
                 0,
                 0i8,
-                0,
+                0u8,
                 null_mut(),
             );
-            Status = (*FileObject).FinalStatus;
+            Status = core::ptr::read_volatile(&(*FileObject).FinalStatus);
         }
         IopUnlockFileObject(FileObject);
     }
@@ -1764,6 +1773,8 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
         *BufferLength = IoStatusBlock.Information as ULONG;
     }
 
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'q' as u8, options(nomem, nostack));
     Status
 }
 
@@ -1788,6 +1799,9 @@ unsafe fn IopQueryNameInternal(
     ReturnLength: *mut ULONG,
     PreviousMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'N' as u8, options(nomem, nostack));
+
     let FileObject = ObjectBody as PFILE_OBJECT;
 
     if Length < size_of::<_OBJECT_NAME_INFORMATION>() as u32 {
@@ -1971,6 +1985,9 @@ pub unsafe extern "system" fn IopCloseFile(
     HandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'C' as u8, options(nomem, nostack));
+
     let FileObject = ObjectBody as PFILE_OBJECT;
 
     if HandleCount != 1 {
@@ -2003,7 +2020,7 @@ pub unsafe extern "system" fn IopCloseFile(
             let mut Event: _KEVENT = zeroed();
             KeInitializeEvent(&mut Event, 0, 0);
             let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
-            (*Irp).UserEvent = &mut Event as *mut _KEVENT;
+            (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
             (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
             (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
             (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
@@ -2016,9 +2033,9 @@ pub unsafe extern "system" fn IopCloseFile(
             (*StackPtr).MinorFunction = IRP_MN_UNLOCK_ALL as u8;
             (*StackPtr).FileObject = FileObject;
             IopQueueIrpToThread(Irp);
-            let Status = IoCallDriver(DeviceObject, Irp);
+            let Status = core::hint::black_box(IoCallDriver(DeviceObject, Irp));
             if Status == STATUS_PENDING {
-                KeWaitForSingleObject(&mut Event as *mut _ as PVOID, 1, 0i8, 0, null_mut());
+                KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 1, 0i8, 0, null_mut());
             }
         }
 
@@ -2047,7 +2064,7 @@ pub unsafe extern "system" fn IopCloseFile(
     let mut Event: _KEVENT = zeroed();
     KeInitializeEvent(&mut Event, 0, 0);
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
-    (*Irp).UserEvent = &mut Event as *mut _KEVENT;
+    (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
     (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
@@ -2058,9 +2075,9 @@ pub unsafe extern "system" fn IopCloseFile(
     (*StackPtr).FileObject = FileObject;
     IopQueueIrpToThread(Irp);
     IopUpdateOperationCount(IopOtherTransfer);
-    let Status = IoCallDriver(DeviceObject, Irp);
+    let Status = core::hint::black_box(IoCallDriver(DeviceObject, Irp));
     if Status == STATUS_PENDING {
-        KeWaitForSingleObject(&mut Event as *mut _ as PVOID, 1, 0i8, 0, null_mut());
+        KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 1, 0i8, 0, null_mut());
     }
     let mut OldIrql: KIRQL = 0;
     KeRaiseIrql(2, &mut OldIrql);
@@ -2071,6 +2088,8 @@ pub unsafe extern "system" fn IopCloseFile(
     if !Process.is_null() && ((*FileObject).Flags & FO_SYNCHRONOUS_IO != 0) {
         IopUnlockFileObject(FileObject);
     }
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'c' as u8, options(nomem, nostack));
 }
 
 unsafe fn IopQueryAttributesFile(
@@ -2147,6 +2166,9 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
     Alertable: BOOLEAN,
     LockFailed: PBOOLEAN,
 ) -> NTSTATUS {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'L' as u8, options(nomem, nostack));
+
     InterlockedIncrement(&raw mut (*FileObject).Waiters as *mut LONG);
 
     let mut Status = STATUS_SUCCESS;
@@ -2155,7 +2177,7 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
             break;
         }
         Status = KeWaitForSingleObject(
-            &mut (*FileObject).Lock as *mut _ as PVOID,
+            core::ptr::addr_of_mut!((*FileObject).Lock) as PVOID,
             0,
             WaitMode,
             Alertable,
@@ -2239,6 +2261,9 @@ unsafe fn IopCreateFile(
     Flags: ULONG,
     DeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    core::arch::asm!("out 0xe9, al", in("al") b'F' as u8, options(nomem, nostack));
+
     let AccessMode = if Options & IO_NO_PARAMETER_CHECKING != 0 {
         0i8
     } else {
@@ -2938,7 +2963,7 @@ pub unsafe extern "system" fn IoCancelFileOpen(
 
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
     (*Irp).Tail.Overlay.Thread = PsGetCurrentThread() as PETHREAD;
-    (*Irp).UserEvent = &mut Event as *mut _KEVENT;
+    (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
     (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
     (*Irp).Overlay.AsynchronousParameters.__bindgen_anon_1.UserApcRoutine = None;
     (*Irp).Tail.Overlay.OriginalFileObject = FileObject;
@@ -2951,9 +2976,9 @@ pub unsafe extern "system" fn IoCancelFileOpen(
 
     IopQueueIrpToThread(Irp);
 
-    let Status = IoCallDriver(DeviceObject, Irp);
+    let Status = core::hint::black_box(IoCallDriver(DeviceObject, Irp));
     if Status == STATUS_PENDING {
-        KeWaitForSingleObject(&mut Event as *mut _ as PVOID, 1, 0i8, 0, null_mut());
+        KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 1, 0i8, 0, null_mut());
     }
 
     let mut OldIrql: KIRQL = 0;
