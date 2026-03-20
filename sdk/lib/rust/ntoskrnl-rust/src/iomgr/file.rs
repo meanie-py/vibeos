@@ -1421,7 +1421,7 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
 
     KeClearEvent(&mut (*FileObject).Event);
     let mut Event: _KEVENT = zeroed();
-    KeInitializeEvent(&mut Event, 0, 0);
+    KeInitializeEvent(&mut Event, 1, 0);  // SynchronizationEvent
 
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
     (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
@@ -1700,7 +1700,7 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     let LocalEvent = (*FileObject).Flags & FO_SYNCHRONOUS_IO == 0;
     let mut Event: _KEVENT = zeroed();
     if LocalEvent {
-        KeInitializeEvent(&mut Event, 0, 0);
+        KeInitializeEvent(&mut Event, 1, 0);  // SynchronizationEvent
     }
 
     KeClearEvent(&mut (*FileObject).Event);
@@ -2018,7 +2018,7 @@ pub unsafe extern "system" fn IopCloseFile(
         {
             KeClearEvent(&mut (*FileObject).Event);
             let mut Event: _KEVENT = zeroed();
-            KeInitializeEvent(&mut Event, 0, 0);
+            KeInitializeEvent(&mut Event, 1, 0);  // SynchronizationEvent
             let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
             (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
             (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
@@ -2062,7 +2062,7 @@ pub unsafe extern "system" fn IopCloseFile(
 
     KeClearEvent(&mut (*FileObject).Event);
     let mut Event: _KEVENT = zeroed();
-    KeInitializeEvent(&mut Event, 0, 0);
+    KeInitializeEvent(&mut Event, 1, 0);  // SynchronizationEvent
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
     (*Irp).UserEvent = core::ptr::addr_of_mut!(Event) as *mut _KEVENT;
     (*Irp).UserIosb = addr_of_mut!((*Irp).IoStatus) as PIO_STATUS_BLOCK;
@@ -2120,15 +2120,15 @@ unsafe fn IopQueryAttributesFile(
         null_mut()
     };
     OpenPacket.NetworkInformation = if IsBasic {
-        &mut NetworkOpenInfo
+        core::ptr::addr_of_mut!(NetworkOpenInfo)
     } else if AccessMode != 0i8 {
-        &mut NetworkOpenInfo
+        core::ptr::addr_of_mut!(NetworkOpenInfo)
     } else {
         FileInformation as _
     };
     OpenPacket.QueryOnly = 1;
     OpenPacket.FullAttributes = if IsBasic { 0 } else { 1 };
-    OpenPacket.LocalFileObject = &mut LocalFileObject;
+    OpenPacket.LocalFileObject = core::ptr::addr_of_mut!(LocalFileObject);
 
     IopUpdateOperationCount(IopOtherTransfer);
 
@@ -2139,7 +2139,7 @@ unsafe fn IopQueryAttributesFile(
         AccessMode,
         null_mut(),
         FILE_READ_ATTRIBUTES,
-        &mut OpenPacket as *mut _ as PVOID,
+        core::ptr::addr_of_mut!(OpenPacket) as PVOID,
         &mut Handle,
     );
     if OpenPacket.ParseCheck == 0 {
@@ -2767,7 +2767,7 @@ pub unsafe extern "system" fn IoFastQueryNetworkAttributes(
     OpenPacket.NetworkInformation = Buffer;
     OpenPacket.QueryOnly = 1;
     OpenPacket.FullAttributes = 1;
-    OpenPacket.LocalFileObject = &mut LocalFileObject;
+    OpenPacket.LocalFileObject = core::ptr::addr_of_mut!(LocalFileObject);
 
     let mut Handle: HANDLE = 0 as _;
     let Status = ObOpenObjectByName(
@@ -2776,7 +2776,7 @@ pub unsafe extern "system" fn IoFastQueryNetworkAttributes(
         0i8,
         null_mut(),
         DesiredAccess,
-        &mut OpenPacket as *mut _ as PVOID,
+        core::ptr::addr_of_mut!(OpenPacket) as PVOID,
         &mut Handle,
     );
     if OpenPacket.ParseCheck == 0 {
@@ -2958,7 +2958,7 @@ pub unsafe extern "system" fn IoCancelFileOpen(
     }
 
     let mut Event: _KEVENT = zeroed();
-    KeInitializeEvent(&mut Event, 0, 0);
+    KeInitializeEvent(&mut Event, 1, 0);  // SynchronizationEvent
     KeClearEvent(&mut (*FileObject).Event);
 
     let Irp = IopAllocateIrpMustSucceed((*DeviceObject).StackSize as i8);
@@ -3338,7 +3338,7 @@ pub unsafe extern "system" fn NtDeleteFile(
     OpenPacket.ShareAccess = (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) as u16;
     OpenPacket.Disposition = FILE_OPEN;
     OpenPacket.DeleteOnly = 1u8;
-    OpenPacket.LocalFileObject = &mut LocalFileObject;
+    OpenPacket.LocalFileObject = core::ptr::addr_of_mut!(LocalFileObject);
 
     IopUpdateOperationCount(IopOtherTransfer);
 
@@ -3348,7 +3348,7 @@ pub unsafe extern "system" fn NtDeleteFile(
         AccessMode,
         core::ptr::null_mut(),
         DELETE,
-        &mut OpenPacket as *mut _ as PVOID,
+        core::ptr::addr_of_mut!(OpenPacket) as PVOID,
         &mut Handle,
     );
     if OpenPacket.ParseCheck == 0 { return Status; }
