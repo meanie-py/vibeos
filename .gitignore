@@ -22,3 +22,5 @@ __pycache__/
 *.egg-info/
 sdk/lib/rust/rust-kernel-target/
 sdk/lib/rust/target/
+CMakeCache.txt
+CMakeFiles/
