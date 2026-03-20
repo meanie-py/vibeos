@@ -140,7 +140,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c  # Rust device.rs has LLVM optimizer bug
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/device.c  # Testing Rust device.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/deviface.c  # Fixed: byte-string-as-wide-string bugs caused BUGCHECK 0x6B
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/error.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c

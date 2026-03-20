@@ -3,7 +3,7 @@ pub mod adapter;
 pub mod bootlog;
 pub mod controller;
 pub mod debug;
-// pub mod device;  // LLVM optimizer bug: eliminates success path after ObCreateObject output-pointer pattern
+pub mod device;
 pub mod deviface;
 pub mod driver;
 pub mod error;
