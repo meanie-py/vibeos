@@ -28,11 +28,17 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
 }
-extern "system" {
+
+#[inline(always)]
+unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usize) -> *mut T {
+    (ptr as usize - field_offset) as *mut T
+}
+extern "C" {
     static GUID_DEVICE_INTERFACE_ARRIVAL: GUID;
     static GUID_PNP_CUSTOM_NOTIFICATION: GUID;
+}
+extern "system" {
     fn IopGetRelatedTargetDevice(FileObject: PFILE_OBJECT, DeviceNode: *mut PDEVICE_NODE) -> NTSTATUS;
 }
 

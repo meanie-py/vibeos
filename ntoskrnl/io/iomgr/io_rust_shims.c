@@ -1162,11 +1162,8 @@ IopCompleteRequest_c(IN PKAPC Apc,
 #endif /* IopCompleteRequest_c */
 
 /* ========================================================================
- * devaction.rs C shims — DISABLED: devaction.c is used on all arches.
- * The Rust devaction.rs has an undiagnosed amd64-specific PnP hang in
- * its internal static function graph (PipDeviceActionWorker and callees).
+ * devaction.rs C shims
  * ======================================================================== */
-#ifndef _M_IX86
 
 /* GUIDs needed by IoRequestDeviceEject_c */
 #define INITGUID
@@ -1466,5 +1463,3 @@ PiPerformSyncDeviceAction_c(
 
     return status;
 }
-
-#endif /* !_M_IX86 */

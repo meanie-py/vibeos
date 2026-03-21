@@ -14,7 +14,7 @@ extern "system" {
 const CmResourceTypeBusNumber: i32 = 6;
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbBusNumberUnpackRequirements(
+pub unsafe extern "system" fn IopArbBusNumberUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn IopArbBusNumberUnpackRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbBusNumberPackResource(
+pub unsafe extern "system" fn IopArbBusNumberPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn IopArbBusNumberPackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbBusNumberUnpackResource(
+pub unsafe extern "system" fn IopArbBusNumberUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
     OutLength: PUINT32,
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn IopArbBusNumberUnpackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbBusNumberScoreRequirement(
+pub unsafe extern "system" fn IopArbBusNumberScoreRequirement(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
 ) -> INT32 {
     0

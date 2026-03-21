@@ -1641,6 +1641,7 @@ co_IntShowDesktop(PDESKTOP Desktop, ULONG Width, ULONG Height, BOOL bRedraw)
     if (bRedraw)
         co_UserRedrawWindow( pwnd, NULL, 0, RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_INVALIDATE );
 
+    DbgPrint("[WIN32K] shell ready\n");
     return STATUS_SUCCESS;
 }
 

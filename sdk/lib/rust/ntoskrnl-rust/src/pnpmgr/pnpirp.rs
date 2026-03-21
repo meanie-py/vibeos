@@ -14,8 +14,8 @@ use ntkrnl_sys::ddk::{
 
 use ntkrnl_sys::ob::ObDereferenceObject;
 
-extern "system" {
-    fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+extern "fastcall" {
+    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 const IRP_MJ_PNP: u8 = 0x1B;
@@ -78,7 +78,7 @@ pub unsafe extern "C" fn IopSynchronousCall(
     IrpStack = IoGetNextIrpStackLocation(Irp);
     *IrpStack = *IoStackLocation;
 
-    Status = IoCallDriver(TopDeviceObject, Irp);
+    Status = IofCallDriver(TopDeviceObject, Irp);
 
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(

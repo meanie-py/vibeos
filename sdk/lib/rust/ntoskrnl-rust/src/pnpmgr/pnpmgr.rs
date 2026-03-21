@@ -26,10 +26,25 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn wcslen(s: PCWSTR) -> SIZE_T;
     fn wcschr(s: PCWSTR, c: WCHAR) -> PWSTR;
     fn _wcsnicmp(s1: PCWSTR, s2: PCWSTR, n: SIZE_T) -> i32;
+}
+
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 extern "system" {
     fn ZwOpenKey( KeyHandle: PHANDLE, DesiredAccess: ACCESS_MASK, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
@@ -49,9 +64,13 @@ extern "system" {
     fn RtlCompareMemory(Source1: PVOID, Source2: PVOID, Length: SIZE_T) -> SIZE_T;
     fn RtlStringCbPrintfW_2lx(pszDest: PWSTR, cbDest: SIZE_T, Value1: ULONG, Value2: ULONG) -> NTSTATUS;
     fn RtlInitializeGenericTableAvl( Table: PRTL_AVL_TABLE, CompareRoutine: PVOID, AllocateRoutine: PVOID, FreeRoutine: PVOID, TableContext: PVOID, );
+}
+extern "C" {
     static mut ExpInitializationPhase: ULONG;
     static mut PopSystemPowerDeviceNode: PDEVICE_NODE;
     static mut IopDeviceTreeLock: KSPIN_LOCK;
+}
+extern "system" {
     fn IopIsValidPhysicalDeviceObject(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
     fn IopQueryDeviceCapabilities( DeviceNode: PDEVICE_NODE, DeviceCaps: *mut DEVICE_CAPABILITIES, ) -> NTSTATUS;
 }
@@ -724,7 +743,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS {
+pub unsafe extern "C" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut LogConfKey: HANDLE = core::ptr::null_mut();
@@ -864,7 +883,7 @@ pub unsafe extern "system" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, Devi
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopGetParentIdPrefix(
+pub unsafe extern "C" fn IopGetParentIdPrefix(
     DeviceNode: PDEVICE_NODE,
     ParentIdPrefix: PUNICODE_STRING,
 ) -> NTSTATUS {
@@ -987,12 +1006,12 @@ pub unsafe extern "system" fn IopGetParentIdPrefix(
     );
 
     RtlStringCbPrintfW_2lx(
-        ParentIdPrefixInformation as PWSTR,
+        core::ptr::addr_of_mut!((*ParentIdPrefixInformation).Data) as PWSTR,
         KeyNameBufferLength as SIZE_T,
         (*(*DeviceNode).Parent).Level,
         crc32,
     );
-    RtlInitUnicodeString(&mut KeyValue, ParentIdPrefixInformation as PWSTR);
+    RtlInitUnicodeString(&mut KeyValue, core::ptr::addr_of!((*ParentIdPrefixInformation).Data) as PWSTR);
 
     Status = ZwSetValueKey(
         hKey,

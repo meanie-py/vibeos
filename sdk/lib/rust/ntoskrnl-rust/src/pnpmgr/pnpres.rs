@@ -49,9 +49,25 @@ use ntkrnl_sys::ddk::{
     _IO_RESOURCE_LIST,
     _UNICODE_STRING,
 };
-
 extern "C" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+}
+
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
+}
+
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG) -> ULONG;
 }
 extern "system" {

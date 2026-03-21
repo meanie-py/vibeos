@@ -24,3 +24,4 @@ sdk/lib/rust/rust-kernel-target/
 sdk/lib/rust/target/
 CMakeCache.txt
 CMakeFiles/
+sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction_codex.rs.bak

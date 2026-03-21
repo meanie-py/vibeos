@@ -23,7 +23,7 @@ static ROOT_NAME: [u16; 5] = [
 const CmResourceTypeInterrupt: i32 = 2;
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbIrqUnpackRequirements(
+pub unsafe extern "system" fn IopArbIrqUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn IopArbIrqUnpackRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbIrqPackResource(
+pub unsafe extern "system" fn IopArbIrqPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn IopArbIrqPackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbIrqUnpackResource(
+pub unsafe extern "system" fn IopArbIrqUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
     OutLength: PUINT32,
@@ -52,7 +52,7 @@ pub unsafe extern "C" fn IopArbIrqUnpackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbIrqScoreRequirement(
+pub unsafe extern "system" fn IopArbIrqScoreRequirement(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
 ) -> INT32 {
     0

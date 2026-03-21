@@ -36,17 +36,17 @@ extern "C" {
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, Parent: PDEVICE_NODE);
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32);
-    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
+    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: u32, Request: PVOID, Callback: PVOID);
     fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
     fn PiSetDevNodeText(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
     fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
+    fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG);
     fn PiNotifyTargetDeviceChange(Event: *const GUID, DeviceObject: PDEVICE_OBJECT, NotificationStructure: PTARGET_DEVICE_CUSTOM_NOTIFICATION);
 }
 // Functions that are NTAPI (stdcall on i386)
 extern "system" {
     fn IopCreateDeviceKeyPath(InstancePath: *const _UNICODE_STRING, Options: ULONG, InstanceKey: *mut HANDLE) -> NTSTATUS;
-    fn IopDeviceNodeSetFlag(DeviceNode: PDEVICE_NODE, Flag: ULONG);
     fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS;
     fn IopDetectResourceConflict(ResourceList: PCM_RESOURCE_LIST, Silent: BOOLEAN, ConflictingDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn IopIsValidPhysicalDeviceObject(PhysicalDeviceObject: PDEVICE_OBJECT) -> BOOLEAN;

@@ -14,7 +14,7 @@ extern "system" {
 const CmResourceTypePort: i32 = 1;
 
 #[no_mangle]
-pub unsafe extern "C" fn IopPortMemUnpackRequirements(
+pub unsafe extern "system" fn IopPortMemUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn IopPortMemUnpackRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopPortMemPackResource(
+pub unsafe extern "system" fn IopPortMemPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn IopPortMemPackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopPortMemUnpackResource(
+pub unsafe extern "system" fn IopPortMemUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
     OutLength: PUINT32,
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn IopPortMemUnpackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopPortMemScoreRequirement(
+pub unsafe extern "system" fn IopPortMemScoreRequirement(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
 ) -> INT32 {
     0

@@ -268,9 +268,13 @@ static GUID_TARGET_DEVICE_REMOVE_COMPLETE: GUID = GUID {
 };
 
 extern "C" {
-    fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
     fn wcslen(s: *const u16) -> usize;
     fn ExInitializeWorkItem(WorkItem: PWORK_QUEUE_ITEM, Routine: unsafe extern "system" fn(PVOID), Context: PVOID);
+}
+
+#[inline(always)]
+unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usize) -> *mut T {
+    (ptr as usize - field_offset) as *mut T
 }
 extern "system" {
     fn IopQueryDeviceCapabilities_c(DeviceNode: PDEVICE_NODE, DeviceCaps: PDEVICE_CAPABILITIES) -> NTSTATUS;
@@ -290,10 +294,12 @@ extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
 
+extern "C" {
+    static mut IopRootDeviceNode: PDEVICE_NODE;
+    static mut PnpSystemInit: BOOLEAN;
+}
 extern "system" {
     static mut IopDriverLoadResource: _ERESOURCE;
-    static mut PnpSystemInit: BOOLEAN;
-    static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PnPBootDriversLoaded: BOOLEAN;
     static mut PnPBootDriversInitialized: BOOLEAN;
     static mut IoDriverObjectType: POBJECT_TYPE;
@@ -537,6 +543,11 @@ unsafe fn IopCreateDeviceInstancePath(
     }
 
     RtlInitUnicodeString(&mut DeviceId as *mut _, IoStatusBlock.Information as PWSTR);
+
+    if DeviceId.Length == 0 {
+        RtlFreeUnicodeString(&mut DeviceId as *mut _);
+        return STATUS_PLUGPLAY_NO_DEVICE;
+    }
 
     Status = IopQueryDeviceCapabilities(DeviceNode, &mut DeviceCapabilities as *mut _);
     if Status < 0 {

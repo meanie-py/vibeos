@@ -1,23 +1,13 @@
 pub mod pnputil;
 pub mod pnpirp;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnpnotify;
 pub mod pnpdma;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnpmap;
-#[cfg(not(target_arch = "x86"))]
 pub mod devnode;
-#[cfg(not(target_arch = "x86"))]
 pub mod plugplay;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnpreport;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnproot;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnpinit;
-#[cfg(not(target_arch = "x86"))]
 pub mod pnpmgr;
-#[cfg(not(target_arch = "x86"))]
 pub mod devaction;
-#[cfg(not(target_arch = "x86"))]
-pub mod arb;  // Testing Rust arb on amd64/arm64
+pub mod arb;

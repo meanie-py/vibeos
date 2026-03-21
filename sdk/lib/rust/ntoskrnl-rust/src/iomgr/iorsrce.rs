@@ -1165,6 +1165,9 @@ pub unsafe extern "system" fn IoQueryDeviceDescription(
     Status
 }
 
+extern "C" {
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IoReportHalResourceUsage(
     HalName: PUNICODE_STRING,

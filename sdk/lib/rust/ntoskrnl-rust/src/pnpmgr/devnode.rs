@@ -214,6 +214,9 @@ unsafe fn IopFindNextDeviceNodeForTraversal(
     0xC0000001u32 as NTSTATUS
 }
 
+extern "C" {
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn IopTraverseDeviceTree(
     Context: PDEVICETREE_TRAVERSE_CONTEXT,
@@ -225,15 +228,22 @@ pub unsafe extern "C" fn IopTraverseDeviceTree(
 
     loop {
         DeviceNode = (*Context).DeviceNode;
+        if DeviceNode.is_null() {
+            return STATUS_SUCCESS;
+        }
 
-        ObReferenceObject((*DeviceNode).PhysicalDeviceObject as *mut core::ffi::c_void);
+        if !(*DeviceNode).PhysicalDeviceObject.is_null() {
+            ObReferenceObject((*DeviceNode).PhysicalDeviceObject as *mut core::ffi::c_void);
+        }
 
         Status = ((*Context).Action.unwrap())(DeviceNode, (*Context).Context);
         if Status >= 0 {
             Status = IopFindNextDeviceNodeForTraversal(Context);
         }
 
-        ObDereferenceObject((*DeviceNode).PhysicalDeviceObject as *mut core::ffi::c_void);
+        if !(*DeviceNode).PhysicalDeviceObject.is_null() {
+            ObDereferenceObject((*DeviceNode).PhysicalDeviceObject as *mut core::ffi::c_void);
+        }
 
         if Status < 0 {
             break;

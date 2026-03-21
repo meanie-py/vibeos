@@ -14,7 +14,7 @@ extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbDmaUnpackRequirements(
+pub unsafe extern "system" fn IopArbDmaUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn IopArbDmaUnpackRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbDmaPackResource(
+pub unsafe extern "system" fn IopArbDmaPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn IopArbDmaPackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbDmaUnpackResource(
+pub unsafe extern "system" fn IopArbDmaUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
     OutLength: PUINT32,
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn IopArbDmaUnpackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbDmaScoreRequirement(
+pub unsafe extern "system" fn IopArbDmaScoreRequirement(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
 ) -> INT32 {
     0

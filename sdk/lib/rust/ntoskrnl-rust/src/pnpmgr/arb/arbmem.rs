@@ -14,7 +14,7 @@ extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbMemUnpackRequirements(
+pub unsafe extern "system" fn IopArbMemUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn IopArbMemUnpackRequirements(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbMemPackResource(
+pub unsafe extern "system" fn IopArbMemPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn IopArbMemPackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbMemUnpackResource(
+pub unsafe extern "system" fn IopArbMemUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
     OutLength: PUINT32,
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn IopArbMemUnpackResource(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IopArbMemScoreRequirement(
+pub unsafe extern "system" fn IopArbMemScoreRequirement(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
 ) -> INT32 {
     0

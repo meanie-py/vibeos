@@ -36,14 +36,35 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn wcsrchr(s: PWSTR, c: WCHAR) -> PWSTR;
     fn _snwprintf(buf: PWSTR, count: usize, fmt: PCWSTR, ...) -> i32;
 }
-extern "system" {
+
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
+}
+
+#[inline(always)]
+unsafe fn CONTAINING_RECORD<T>(address: PVOID, _type_size: usize, field_offset: usize) -> *mut T {
+    (address as usize - field_offset) as *mut T
+}
+extern "C" {
     static mut IopRootDriverObject: PDRIVER_OBJECT;
     static mut IopRootDeviceNode: PDEVICE_NODE;
+}
+extern "system" {
     fn PoStartNextPowerIrp(Irp: PIRP);
 }
 

@@ -82,7 +82,7 @@ pub static mut IopRootMemArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed
 #[used]
 pub static mut IopRootPortArbiter: _ARBITER_INSTANCE = unsafe { core::mem::zeroed() };
 
-extern "system" {
+extern "C" {
     static mut PiEnumerationFinished: _KEVENT;
     static mut IopDeviceTreeLock: KSPIN_LOCK;
     static mut IopDeviceActionLock: KSPIN_LOCK;
@@ -90,16 +90,20 @@ extern "system" {
     static mut IopRootDriverObject: PDRIVER_OBJECT;
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PnpBusTypeGuidList: *mut _IO_BUS_TYPE_GUID_LIST;
+}
+
+extern "system" {
     fn IopArbPortInitialize() -> NTSTATUS;
     fn IopArbMemInitialize() -> NTSTATUS;
     fn IopArbDmaInitialize() -> NTSTATUS;
     fn IopArbIrqInitialize() -> NTSTATUS;
     fn IopArbBusNumberInitialize() -> NTSTATUS;
-}
-// cdecl functions (no NTAPI in C declarations)
-extern "C" {
     fn PnpRegMultiSzToUnicodeStrings( KeyValueInformation: PKEY_VALUE_FULL_INFORMATION, GroupTable: *mut PUNICODE_STRING, Count: *mut ULONG, ) -> NTSTATUS;
     fn PnpRegSzToString(Buffer: PVOID, DataLength: ULONG, Length: *mut USHORT);
+}
+
+// cdecl functions (no NTAPI in C declarations)
+extern "C" {
     fn PipAllocateDeviceNode(Pdo: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PnpRootInitializeDevExtension();
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: u32);

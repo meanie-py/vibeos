@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     _DEVICE_NODE,
     _DEVICE_RELATIONS,
     _DEVICETREE_TRAVERSE_CONTEXT,
+    DEVICETREE_TRAVERSE_ROUTINE,
     _IO_STACK_LOCATION,
     _IO_STATUS_BLOCK,
     _KEVENT,
@@ -69,12 +70,13 @@ use ntkrnl_sys::ddk::{
 
 use ntkrnl_sys::probe::*;
 
+extern "C" {
+    static mut IopRootDeviceNode: PDEVICE_NODE;
+}
 // NTAPI (stdcall on i386) functions
 extern "system" {
-    static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut SeTcbPrivilege: LUID;
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
-    fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
     fn RtlDuplicateUnicodeString(Flags: ULONG, SourceString: PUNICODE_STRING, DestinationString: PUNICODE_STRING) -> NTSTATUS;
     fn IopInitiatePnpIrp(DeviceObject: PDEVICE_OBJECT, IoStatusBlock: *mut _IO_STATUS_BLOCK, MinorFunction: UCHAR, Stack: *mut _IO_STACK_LOCATION) -> NTSTATUS;
     fn IoGetDeviceProperty(DeviceObject: PDEVICE_OBJECT, DeviceProperty: DEVICE_REGISTRY_PROPERTY, BufferLength: ULONG, PropertyBuffer: PVOID, ResultLength: *mut ULONG) -> NTSTATUS;
@@ -82,16 +84,17 @@ extern "system" {
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: *const u16);
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
+    fn IopInitDeviceTreeTraverseContext(Context: *mut _DEVICETREE_TRAVERSE_CONTEXT, DeviceNode: PDEVICE_NODE, Callback: DEVICETREE_TRAVERSE_ROUTINE, CallbackContext: PVOID);
 }
 // cdecl functions (no NTAPI in C declaration, or CRT functions)
 extern "C" {
+    fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS;
     fn PnpRootCreateDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS;
     fn PipAllocateDeviceNode(PhysicalDeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: ULONG);
-    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT);
+    fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
     fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
-    fn IopInitDeviceTreeTraverseContext(Context: *mut _DEVICETREE_TRAVERSE_CONTEXT, DeviceNode: PDEVICE_NODE, Callback: PVOID, CallbackContext: PVOID);
     fn wcslen(s: *const u16) -> usize;
     fn memcpy(dest: PVOID, src: *const core::ffi::c_void, n: usize) -> PVOID;
 }
@@ -297,7 +300,7 @@ pub unsafe extern "C" fn IopInitPlugPlayEvents() -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopQueueDeviceChangeEvent(
+pub unsafe extern "C" fn IopQueueDeviceChangeEvent(
     EventGuid: *const GUID,
     InterfaceClassGuid: *const GUID,
     SymbolicLinkName: PUNICODE_STRING,
@@ -353,10 +356,11 @@ pub unsafe extern "system" fn IopQueueDeviceChangeEvent(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopQueueDeviceInstallEvent(
+pub unsafe extern "C" fn IopQueueDeviceInstallEvent(
     EventGuid: *const GUID,
     DeviceId: PUNICODE_STRING,
 ) -> NTSTATUS {
+
     let mut Copy: _UNICODE_STRING = core::mem::zeroed();
     
     Copy.Length = 0;
@@ -402,8 +406,8 @@ pub unsafe extern "system" fn IopQueueDeviceInstallEvent(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopQueueTargetDeviceEvent(
-    Guid: *const GUID,
+pub unsafe extern "C" fn IopQueueTargetDeviceEvent(
+    EventGuid: *const GUID,
     DeviceIds: PUNICODE_STRING,
 ) -> NTSTATUS {
     let mut Copy: _UNICODE_STRING = core::mem::zeroed();
@@ -424,7 +428,7 @@ pub unsafe extern "system" fn IopQueueTargetDeviceEvent(
     core::ptr::write_bytes(EventEntry as *mut u8, 0, TotalSize + core::mem::size_of::<LIST_ENTRY>());
 
     core::ptr::copy_nonoverlapping(
-        Guid as *const u8,
+        EventGuid as *const u8,
         core::ptr::addr_of_mut!((*EventEntry).Event.EventGuid) as *mut u8,
         core::mem::size_of::<GUID>(),
     );
@@ -448,7 +452,7 @@ pub unsafe extern "system" fn IopQueueTargetDeviceEvent(
     STATUS_SUCCESS
 }
 
-unsafe extern "system" fn IopFindDeviceInstanceTraverse(
+unsafe extern "C" fn IopFindDeviceInstanceTraverse(
     DeviceNode: PDEVICE_NODE,
     Context: PVOID,
 ) -> NTSTATUS {
@@ -469,7 +473,7 @@ unsafe extern "system" fn IopFindDeviceInstanceTraverse(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn IopGetDeviceObjectFromDeviceInstance(
+pub unsafe extern "C" fn IopGetDeviceObjectFromDeviceInstance(
     DeviceInstance: PUNICODE_STRING,
 ) -> PDEVICE_OBJECT {
     let mut Context: _DEVICETREE_TRAVERSE_CONTEXT = core::mem::zeroed();
@@ -492,11 +496,12 @@ pub unsafe extern "system" fn IopGetDeviceObjectFromDeviceInstance(
     DeviceInstanceContext.DeviceObject = core::ptr::null_mut();
     
     IopInitDeviceTreeTraverseContext(
-        &mut Context,
+        &mut Context as *mut _,
         IopRootDeviceNode,
-        IopFindDeviceInstanceTraverse as PVOID,
+        Some(IopFindDeviceInstanceTraverse),
         &mut DeviceInstanceContext as *mut _ as PVOID,
     );
+
     
     let _ = IopTraverseDeviceTree(&mut Context);
 
