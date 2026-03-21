@@ -153,6 +153,10 @@ unsafe extern "system" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, 
     PspTerminateThreadByPointer(Thread, STATUS_SUCCESS, 1u8);
 }
 
+// ARM64 early boot hit an optimizer-sensitive failure in this routine during
+// Phase 1 system-thread creation. Keeping it uninlined avoids the bad codegen
+// while preserving the Rust implementation on that architecture.
+#[cfg_attr(target_arch = "aarch64", inline(never))]
 unsafe fn PspCreateThread(
     ThreadHandle: *mut HANDLE,
     DesiredAccess: ACCESS_MASK,
