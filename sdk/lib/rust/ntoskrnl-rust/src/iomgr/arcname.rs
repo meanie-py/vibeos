@@ -1,5 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
@@ -32,6 +33,12 @@ use ntkrnl_sys::ddk::{
     PGUID,
     PIRP,
     PLOADER_PARAMETER_BLOCK,
+    NtCreateSymbolicLinkObject,
+    NtMakeTemporaryObject,
+    NtOpenSymbolicLinkObject,
+    NtQuerySymbolicLinkObject,
+    ObCloseHandle,
+    RtlCopyString,
     RtlFreeUnicodeString,
     RtlInitAnsiString,
     RtlInitUnicodeString,
@@ -50,6 +57,13 @@ extern "C" {
         SourceString: PANSI_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
+
+    #[link_name = "RtlUnicodeStringToAnsiString_shim"]
+    fn RtlUnicodeStringToAnsiString(
+        DestinationString: *mut ANSI_STRING,
+        SourceString: *mut _UNICODE_STRING,
+        AllocateDestinationString: BOOLEAN,
+    ) -> NTSTATUS;
 }
 
 extern "C" {
@@ -58,30 +72,6 @@ extern "C" {
     fn strstr(haystack: *const i8, needle: *const i8) -> *const i8;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn wcslen(s: *const u16) -> usize;
-    fn RtlUnicodeStringToAnsiString(
-        DestinationString: *mut ANSI_STRING,
-        SourceString: *const _UNICODE_STRING,
-        AllocateDestinationString: BOOLEAN,
-    ) -> NTSTATUS;
-    fn RtlCopyString(DestinationString: *mut ANSI_STRING, SourceString: *const ANSI_STRING);
-    fn ObCloseHandle(Handle: HANDLE, AccessMode: i8) -> NTSTATUS;
-    fn NtOpenSymbolicLinkObject(
-        SymbolicLinkHandle: *mut HANDLE,
-        DesiredAccess: ULONG,
-        ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
-    ) -> NTSTATUS;
-    fn NtQuerySymbolicLinkObject(
-        SymLinkObjHandle: HANDLE,
-        LinkTarget: *mut _UNICODE_STRING,
-        DataWritten: *mut ULONG,
-    ) -> NTSTATUS;
-    fn NtMakeTemporaryObject(Handle: HANDLE) -> NTSTATUS;
-    fn NtCreateSymbolicLinkObject(
-        SymbolicLinkHandle: *mut HANDLE,
-        DesiredAccess: ULONG,
-        ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
-        Name: *mut _UNICODE_STRING,
-    ) -> NTSTATUS;
 }
 #[inline(always)]
 unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
@@ -94,7 +84,6 @@ unsafe fn IoAssignArcName(ArcName: *mut _UNICODE_STRING, DeviceName: *mut _UNICO
 }
 extern "C" {
     fn IsEqualGUID(guid1: PGUID, guid2: PGUID) -> BOOLEAN;
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
 #[no_mangle]
@@ -623,7 +612,7 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
     ArcString.Buffer = AnsiBuffer.as_mut_ptr();
     ArcString.Length = 0;
     ArcString.MaximumLength = core::mem::size_of_val(&AnsiBuffer) as u16;
-    Status = RtlUnicodeStringToAnsiString(&mut ArcString, &mut ArcName as *mut _UNICODE_STRING as *const _, FALSE as BOOLEAN);
+    Status = RtlUnicodeStringToAnsiString(&mut ArcString, &mut ArcName, FALSE as BOOLEAN);
     AnsiBuffer[ArcString.Length as usize] = 0; // ANSI_NULL
 
     // Close the link handle and free the name

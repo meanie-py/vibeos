@@ -19,10 +19,10 @@ use ntkrnl_sys::ddk::{
     PVPB, POBJECT_ATTRIBUTES, PSHUTDOWN_ENTRY, PUNICODE_STRING, POBJECT_TYPE,
     ACCESS_MASK, HANDLE, KPROCESSOR_MODE,
     IoAcquireCancelSpinLock, IoReleaseCancelSpinLock, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
-    IoBuildSynchronousFsdRequest, IofCallDriver, ObReferenceObjectByHandle,
+    IoBuildSynchronousFsdRequest, IofCallDriver,
     ZwOpenFile, ZwClose, KeWaitForSingleObject, KeInitializeEvent, KeInitializeDeviceQueue,
     KeRemoveDeviceQueue, KeRemoveByKeyDeviceQueue, KeInsertDeviceQueue, KeInsertByKeyDeviceQueue,
-    ObMakeTemporaryObject, ObCreateObject, ObInsertObject, ObCloseHandle, ObDereferenceSecurityDescriptor,
+    ObMakeTemporaryObject, ObCloseHandle, ObDereferenceSecurityDescriptor,
     _DEVOBJ_EXTENSION,
     PACL,
     RtlCreateSecurityDescriptor, RtlSetDaclSecurityDescriptor,
@@ -87,6 +87,9 @@ extern "C" {
     fn IoGetDevObjExtension(DeviceObject: PDEVICE_OBJECT) -> *mut _EXTENDED_DEVOBJ_EXTENSION;
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
+}
+
+extern "system" {
     fn PoInitializeDeviceObject(DeviceObjectExtension: *mut _DEVOBJ_EXTENSION);
     fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT);
     fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT);
@@ -97,21 +100,27 @@ extern "C" {
 // when these Ob* functions (defined in ob/*.rs, same crate) land in a different
 // codegen unit, LLVM propagates `captures(none)` to the declaration, then
 // concludes the output pointer is never written → eliminates the success path.
-// Calling through C shims (compiled by Clang, no cross-CGU metadata) avoids this.
+// On i386, raw-pointer results crossing this boundary also get folded back to
+// null, so the shims traffic object identities as ULONG_PTR instead.
 extern "system" {
-    fn ObCreateObject_shim(
+    fn ObCreateObjectAddress_shim(
         ProbeMode: i8, ObjectType: POBJECT_TYPE, ObjectAttributes: POBJECT_ATTRIBUTES,
         OwnershipMode: i8, ParseContext: PVOID, ObjectBodySize: ULONG,
-        PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Object: *mut PVOID,
-    ) -> NTSTATUS;
+        PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Status: *mut NTSTATUS,
+    ) -> ULONG_PTR;
     fn ObInsertObject_shim(
         Object: PVOID, AccessState: PVOID, DesiredAccess: ACCESS_MASK,
-        ObjectPointerBias: ULONG, NewObject: *mut PVOID, Handle: *mut HANDLE,
+        ObjectPointerBias: ULONG, NewObject: *mut ULONG_PTR, Handle: *mut HANDLE,
     ) -> NTSTATUS;
     fn ObReferenceObjectByHandle_shim(
         Handle: HANDLE, DesiredAccess: ACCESS_MASK, ObjectType: POBJECT_TYPE,
-        AccessMode: i8, Object: *mut PVOID, HandleInformation: PVOID,
+        AccessMode: i8, Object: *mut ULONG_PTR, HandleInformation: PVOID,
     ) -> NTSTATUS;
+}
+
+#[inline(always)]
+fn ptr_from_exposed_addr_mut<T>(addr: ULONG_PTR) -> *mut T {
+    core::ptr::with_exposed_provenance_mut::<T>(addr as usize)
 }
 
 #[inline(always)]
@@ -435,7 +444,7 @@ unsafe fn IopGetDeviceObjectPointer(
         return Status;
     }
 
-    let mut LocalFileObject: PVOID = core::ptr::null_mut();
+    let mut LocalFileObject: ULONG_PTR = 0;
     Status = ObReferenceObjectByHandle_shim(
         FileHandle,
         0,
@@ -444,7 +453,7 @@ unsafe fn IopGetDeviceObjectPointer(
         &mut LocalFileObject,
         core::ptr::null_mut(),
     );
-    let LocalFileObject = LocalFileObject as *mut _FILE_OBJECT;
+    let LocalFileObject = ptr_from_exposed_addr_mut::<_FILE_OBJECT>(LocalFileObject);
     if Status >= 0 {
         *DeviceObject = IoGetRelatedDeviceObject(LocalFileObject);
         *FileObject = LocalFileObject;
@@ -906,6 +915,131 @@ pub unsafe extern "system" fn IoAttachDeviceToDeviceStackSafe(
     }
 }
 
+#[inline(never)]
+unsafe fn IopFinishCreatedDeviceObject(
+    CreatedDeviceObject: ULONG_PTR,
+    TotalSize: usize,
+    DriverObject: PDRIVER_OBJECT,
+    DeviceExtensionSize: ULONG,
+    AlignedDeviceExtensionSize: usize,
+    DeviceName: PUNICODE_STRING,
+    DeviceType: DEVICE_TYPE,
+    DeviceCharacteristics: ULONG,
+    Exclusive: BOOLEAN,
+    DeviceObject: *mut PDEVICE_OBJECT,
+) -> NTSTATUS {
+    // Keep the post-ObCreateObject path in a separate function: on i386 LLVM
+    // otherwise folds the caller's success path into the null-object cleanup.
+    if CreatedDeviceObject == 0 {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let mut Status: NTSTATUS;
+    let mut CreatedDeviceObject = ptr_from_exposed_addr_mut::<_DEVICE_OBJECT>(CreatedDeviceObject);
+    core::ptr::write_bytes(CreatedDeviceObject.cast::<u8>(), 0, TotalSize);
+
+    (*CreatedDeviceObject).Type = IO_TYPE_DEVICE as i16;
+    (*CreatedDeviceObject).Size =
+        (core::mem::size_of::<_DEVICE_OBJECT>() + DeviceExtensionSize as usize) as USHORT;
+
+    let DeviceObjectExtension = CreatedDeviceObject
+        .add(1)
+        .cast::<u8>()
+        .add(AlignedDeviceExtensionSize) as *mut _EXTENDED_DEVOBJ_EXTENSION;
+
+    (*DeviceObjectExtension).Type = IO_TYPE_DEVICE_OBJECT_EXTENSION as i16;
+    (*DeviceObjectExtension).Size = 0;
+    PoInitializeDeviceObject(DeviceObjectExtension as *mut _);
+
+    (*DeviceObjectExtension).DeviceObject = CreatedDeviceObject;
+    (*CreatedDeviceObject).DeviceObjectExtension = DeviceObjectExtension as *mut _;
+
+    (*CreatedDeviceObject).DeviceType = DeviceType;
+    (*CreatedDeviceObject).Characteristics = DeviceCharacteristics;
+    (*CreatedDeviceObject).DeviceExtension = if DeviceExtensionSize != 0 {
+        CreatedDeviceObject.add(1) as PVOID
+    } else {
+        core::ptr::null_mut()
+    };
+    (*CreatedDeviceObject).StackSize = 1;
+    (*CreatedDeviceObject).AlignmentRequirement = 0;
+
+    (*CreatedDeviceObject).Flags = DO_DEVICE_INITIALIZING;
+    if Exclusive != 0 {
+        (*CreatedDeviceObject).Flags |= DO_EXCLUSIVE;
+    }
+    if !DeviceName.is_null() {
+        (*CreatedDeviceObject).Flags |= DO_DEVICE_HAS_NAME;
+    }
+
+    if (*CreatedDeviceObject).DeviceType == FILE_DEVICE_DISK
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_VIRTUAL_DISK
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_CD_ROM
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_TAPE
+    {
+        Status = IopCreateVpb(CreatedDeviceObject);
+        if Status < 0 {
+            ObDereferenceObject(CreatedDeviceObject as PVOID);
+            return Status;
+        }
+
+        KeInitializeEvent(
+            core::ptr::addr_of_mut!((*CreatedDeviceObject).DeviceLock) as *mut _,
+            _EVENT_TYPE_SynchronizationEvent,
+            1u8,
+        );
+    }
+
+    match DeviceType {
+        FILE_DEVICE_DISK_FILE_SYSTEM | FILE_DEVICE_DISK | FILE_DEVICE_VIRTUAL_DISK => {
+            (*CreatedDeviceObject).SectorSize = 512;
+        }
+        FILE_DEVICE_CD_ROM_FILE_SYSTEM => {
+            (*CreatedDeviceObject).SectorSize = 2048;
+        }
+        _ => {}
+    }
+
+    if (*CreatedDeviceObject).DeviceType == FILE_DEVICE_DISK_FILE_SYSTEM
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_FILE_SYSTEM
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_CD_ROM_FILE_SYSTEM
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_NETWORK_FILE_SYSTEM
+        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_TAPE_FILE_SYSTEM
+    {
+        InitializeListHead(
+            core::ptr::addr_of_mut!((*CreatedDeviceObject).Queue.ListEntry) as PLIST_ENTRY,
+        );
+    } else {
+        KeInitializeDeviceQueue(core::ptr::addr_of_mut!((*CreatedDeviceObject).DeviceQueue));
+    }
+
+    let mut TempHandle: HANDLE = core::ptr::null_mut();
+    let mut InsertedDeviceObject: ULONG_PTR = 0;
+    Status = ObInsertObject_shim(
+        CreatedDeviceObject as PVOID,
+        core::ptr::null_mut(),
+        FILE_READ_DATA | FILE_WRITE_DATA,
+        1,
+        &mut InsertedDeviceObject,
+        &mut TempHandle,
+    );
+    if Status < 0 {
+        return Status;
+    }
+    CreatedDeviceObject = ptr_from_exposed_addr_mut::<_DEVICE_OBJECT>(InsertedDeviceObject);
+
+    ObReferenceObject(DriverObject as PVOID);
+    (*CreatedDeviceObject).DriverObject = DriverObject;
+    IopEditDeviceList(DriverObject, CreatedDeviceObject, IOP_DEVICE_LIST_OPERATION::IopAdd);
+
+    if !(*CreatedDeviceObject).Vpb.is_null() {
+        PoVolumeDevice(CreatedDeviceObject);
+    }
+
+    ObCloseHandle(TempHandle, 0i32 as i8);
+    *DeviceObject = CreatedDeviceObject;
+    STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IoCreateDevice(
     DriverObject: PDRIVER_OBJECT,
@@ -967,9 +1101,11 @@ pub unsafe extern "system" fn IoCreateDevice(
         + core::mem::size_of::<_DEVICE_OBJECT>()
         + core::mem::size_of::<_EXTENDED_DEVOBJ_EXTENSION>();
 
-    let mut created_obj_pvoid: PVOID = core::ptr::null_mut();
     *DeviceObject = core::ptr::null_mut();
-    let mut Status = ObCreateObject_shim(
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    // Carry the object address back as an integer; on i386 LLVM keeps folding
+    // raw-pointer results from this boundary to null.
+    let CreatedDeviceObject = ObCreateObjectAddress_shim(
         0i32 as i8,
         IoDeviceObjectType,
         &mut ObjectAttributes,
@@ -978,7 +1114,7 @@ pub unsafe extern "system" fn IoCreateDevice(
         TotalSize as ULONG,
         0,
         0,
-        &mut created_obj_pvoid,
+        &mut Status,
     );
     if Status < 0 {
         if !Dacl.is_null() {
@@ -986,122 +1122,17 @@ pub unsafe extern "system" fn IoCreateDevice(
         }
         return Status;
     }
-    // LLVM workaround: use inline asm to load the output pointer from the stack.
-    // LLVM's optimizer proves created_obj_pvoid is still null after the opaque
-    // ObCreateObject_shim call. The asm MUST NOT use options(readonly) — that
-    // generates memory(read) which lets LLVM conclude the asm reads null.
-    // Without readonly, the asm is a full memory barrier and the loaded value
-    // is completely opaque to the optimizer.
-    let CreatedDeviceObject: PDEVICE_OBJECT;
-    #[cfg(target_arch = "x86")]
-    core::arch::asm!(
-        "mov {out}, [{ptr}]",
-        ptr = in(reg) &created_obj_pvoid,
-        out = out(reg) CreatedDeviceObject,
-        options(nostack, preserves_flags),
-    );
-    #[cfg(target_arch = "x86_64")]
-    core::arch::asm!(
-        "mov {out}, [{ptr}]",
-        ptr = in(reg) &created_obj_pvoid,
-        out = out(reg) CreatedDeviceObject,
-        options(nostack, preserves_flags),
-    );
-    #[cfg(target_arch = "aarch64")]
-    core::arch::asm!(
-        "ldr {out}, [{ptr}]",
-        ptr = in(reg) &created_obj_pvoid,
-        out = out(reg) CreatedDeviceObject,
-        options(nostack, preserves_flags),
-    );
-    let mut CreatedDeviceObject = CreatedDeviceObject;
-
-    RtlZeroMemory(CreatedDeviceObject as PVOID, TotalSize);
-
-    (*CreatedDeviceObject).Type = IO_TYPE_DEVICE as i16;
-    (*CreatedDeviceObject).Size = (core::mem::size_of::<_DEVICE_OBJECT>() + DeviceExtensionSize as usize) as USHORT;
-
-    let DeviceObjectExtension = ((CreatedDeviceObject as usize)
-        + core::mem::size_of::<_DEVICE_OBJECT>()
-        + AlignedDeviceExtensionSize) as *mut _EXTENDED_DEVOBJ_EXTENSION;
-
-    (*DeviceObjectExtension).Type = IO_TYPE_DEVICE_OBJECT_EXTENSION as i16;
-    (*DeviceObjectExtension).Size = 0;
-
-    PoInitializeDeviceObject(DeviceObjectExtension as *mut _);
-
-    (*DeviceObjectExtension).DeviceObject = CreatedDeviceObject;
-    (*CreatedDeviceObject).DeviceObjectExtension = DeviceObjectExtension as *mut _;
-
-    (*CreatedDeviceObject).DeviceType = DeviceType;
-    (*CreatedDeviceObject).Characteristics = DeviceCharacteristics;
-    (*CreatedDeviceObject).DeviceExtension = if DeviceExtensionSize != 0 {
-        (CreatedDeviceObject as usize + core::mem::size_of::<_DEVICE_OBJECT>()) as PVOID
-    } else {
-        core::ptr::null_mut()
-    };
-    (*CreatedDeviceObject).StackSize = 1;
-    (*CreatedDeviceObject).AlignmentRequirement = 0;
-
-    (*CreatedDeviceObject).Flags = DO_DEVICE_INITIALIZING;
-    if Exclusive != 0 {
-        (*CreatedDeviceObject).Flags |= DO_EXCLUSIVE;
-    }
-    if !DeviceName.is_null() {
-        (*CreatedDeviceObject).Flags |= DO_DEVICE_HAS_NAME;
-    }
-
-    if (*CreatedDeviceObject).DeviceType == FILE_DEVICE_DISK
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_VIRTUAL_DISK
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_CD_ROM
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_TAPE
-    {
-        Status = IopCreateVpb(CreatedDeviceObject);
-        if Status < 0 {
-            if !Dacl.is_null() {
-                ExFreePoolWithTag(Dacl as PVOID, TAG_SHUTDOWN_ENTRY);
-            }
-            ObDereferenceObject(CreatedDeviceObject as PVOID);
-            return Status;
-        }
-
-        KeInitializeEvent(
-            core::ptr::addr_of_mut!((*CreatedDeviceObject).DeviceLock) as *mut _,
-            _EVENT_TYPE_SynchronizationEvent,
-            1u8,
-        );
-    }
-
-    match DeviceType {
-        FILE_DEVICE_DISK_FILE_SYSTEM | FILE_DEVICE_DISK | FILE_DEVICE_VIRTUAL_DISK => {
-            (*CreatedDeviceObject).SectorSize = 512;
-        }
-        FILE_DEVICE_CD_ROM_FILE_SYSTEM => {
-            (*CreatedDeviceObject).SectorSize = 2048;
-        }
-        _ => {}
-    }
-
-    if (*CreatedDeviceObject).DeviceType == FILE_DEVICE_DISK_FILE_SYSTEM
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_FILE_SYSTEM
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_CD_ROM_FILE_SYSTEM
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_NETWORK_FILE_SYSTEM
-        || (*CreatedDeviceObject).DeviceType == FILE_DEVICE_TAPE_FILE_SYSTEM
-    {
-        InitializeListHead(core::ptr::addr_of_mut!((*CreatedDeviceObject).Queue.ListEntry) as PLIST_ENTRY);
-    } else {
-        KeInitializeDeviceQueue(core::ptr::addr_of_mut!((*CreatedDeviceObject).DeviceQueue));
-    }
-
-    let mut TempHandle: HANDLE = core::ptr::null_mut();
-    let mut obj_ref_pvoid: PVOID = CreatedDeviceObject as PVOID;
-    Status = ObInsertObject_shim(
-        CreatedDeviceObject as PVOID,
-        core::ptr::null_mut(),
-        FILE_READ_DATA | FILE_WRITE_DATA,
-        1,
-        &mut obj_ref_pvoid,
-        &mut TempHandle,
+    Status = IopFinishCreatedDeviceObject(
+        CreatedDeviceObject,
+        TotalSize,
+        DriverObject,
+        DeviceExtensionSize,
+        AlignedDeviceExtensionSize,
+        DeviceName,
+        DeviceType,
+        DeviceCharacteristics,
+        Exclusive,
+        DeviceObject,
     );
     if Status < 0 {
         if !Dacl.is_null() {
@@ -1109,18 +1140,6 @@ pub unsafe extern "system" fn IoCreateDevice(
         }
         return Status;
     }
-    let CreatedDeviceObject = obj_ref_pvoid as PDEVICE_OBJECT;
-
-    ObReferenceObject(DriverObject as PVOID);
-    (*CreatedDeviceObject).DriverObject = DriverObject;
-    IopEditDeviceList(DriverObject, CreatedDeviceObject, IOP_DEVICE_LIST_OPERATION::IopAdd);
-
-    if !(*CreatedDeviceObject).Vpb.is_null() {
-        PoVolumeDevice(CreatedDeviceObject);
-    }
-
-    ObCloseHandle(TempHandle, 0i32 as i8);
-    *DeviceObject = CreatedDeviceObject;
 
     if !Dacl.is_null() {
         ExFreePoolWithTag(Dacl as PVOID, TAG_SHUTDOWN_ENTRY);

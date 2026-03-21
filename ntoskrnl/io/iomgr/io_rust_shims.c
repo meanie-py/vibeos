@@ -38,6 +38,18 @@ HalInitPnpDriver_shim(VOID)
 }
 
 /*
+ * IopInitializePlugPlayServices — Rust-defined stdcall entry point.
+ * Calling it through core::hint::black_box() in iomgr.rs miscompiles on i386
+ * into an immediate `ud2`. Route through a C shim so LLVM can't fold the
+ * continuation in IoInitSystem away.
+ */
+NTSTATUS
+IopInitializePlugPlayServices_shim(VOID)
+{
+    return IopInitializePlugPlayServices();
+}
+
+/*
  * IopValidateOpenPacket — static __inline in io_x.h.
  * Validates that an OPEN_PACKET structure is properly formed.
  */
@@ -241,6 +253,37 @@ RtlAnsiStringToUnicodeString_shim(
     return RtlAnsiStringToUnicodeString(DestinationString, SourceString, AllocateDestinationString);
 }
 
+/*
+ * Additional RTL string helpers for i386 Rust callers.
+ * Keep them cdecl for consistent linkage from extern "C" declarations.
+ */
+NTSTATUS
+__cdecl
+RtlUnicodeStringToAnsiString_shim(
+    PANSI_STRING DestinationString,
+    PUNICODE_STRING SourceString,
+    BOOLEAN AllocateDestinationString)
+{
+    return RtlUnicodeStringToAnsiString(DestinationString, SourceString, AllocateDestinationString);
+}
+
+VOID
+__cdecl
+RtlInitAnsiString_shim(
+    PANSI_STRING DestinationString,
+    PCSZ SourceString)
+{
+    RtlInitAnsiString(DestinationString, SourceString);
+}
+
+VOID
+__cdecl
+RtlFreeUnicodeString_shim(
+    PUNICODE_STRING UnicodeString)
+{
+    RtlFreeUnicodeString(UnicodeString);
+}
+
 /* ========================================================================
  * ObCreateObject/ObInsertObject/ObReferenceObjectByHandle shims for device.rs
  *
@@ -269,6 +312,34 @@ ObCreateObject_shim(
                           PagedPoolCharge, NonPagedPoolCharge, Object);
 }
 
+/*
+ * i386-specific LLVM workaround for Rust IoCreateDevice:
+ * return the created object address as ULONG_PTR rather than PVOID because the
+ * i386 Rust codegen keeps folding raw-pointer shim results back to NULL.
+ * The Rust side performs the visible zero-init after the non-zero check so
+ * later field reads are seen as initialized by the optimizer.
+ */
+ULONG_PTR
+NTAPI
+ObCreateObjectAddress_shim(
+    IN KPROCESSOR_MODE ProbeMode,
+    IN POBJECT_TYPE ObjectType,
+    IN POBJECT_ATTRIBUTES ObjectAttributes,
+    IN KPROCESSOR_MODE OwnershipMode,
+    IN OUT PVOID ParseContext,
+    IN ULONG ObjectBodySize,
+    IN ULONG PagedPoolCharge,
+    IN ULONG NonPagedPoolCharge,
+    OUT NTSTATUS *Status)
+{
+    PVOID Object = NULL;
+
+    *Status = ObCreateObject(ProbeMode, ObjectType, ObjectAttributes,
+                             OwnershipMode, ParseContext, ObjectBodySize,
+                             PagedPoolCharge, NonPagedPoolCharge, &Object);
+    return (ULONG_PTR)Object;
+}
+
 NTSTATUS
 NTAPI
 ObInsertObject_shim(
@@ -276,11 +347,16 @@ ObInsertObject_shim(
     IN PACCESS_STATE AccessState,
     IN ACCESS_MASK DesiredAccess,
     IN ULONG ObjectPointerBias,
-    OUT PVOID *NewObject,
+    OUT PULONG_PTR NewObject,
     OUT PHANDLE Handle)
 {
-    return ObInsertObject(Object, AccessState, DesiredAccess,
-                          ObjectPointerBias, NewObject, Handle);
+    PVOID LocalNewObject = NULL;
+    NTSTATUS Status;
+
+    Status = ObInsertObject(Object, AccessState, DesiredAccess,
+                            ObjectPointerBias, &LocalNewObject, Handle);
+    *NewObject = (ULONG_PTR)LocalNewObject;
+    return Status;
 }
 
 NTSTATUS
@@ -290,11 +366,16 @@ ObReferenceObjectByHandle_shim(
     IN ACCESS_MASK DesiredAccess,
     IN POBJECT_TYPE ObjectType,
     IN KPROCESSOR_MODE AccessMode,
-    OUT PVOID *Object,
+    OUT PULONG_PTR Object,
     OUT POBJECT_HANDLE_INFORMATION HandleInformation)
 {
-    return ObReferenceObjectByHandle(Handle, DesiredAccess, ObjectType,
-                                     AccessMode, Object, HandleInformation);
+    PVOID LocalObject = NULL;
+    NTSTATUS Status;
+
+    Status = ObReferenceObjectByHandle(Handle, DesiredAccess, ObjectType,
+                                       AccessMode, &LocalObject, HandleInformation);
+    *Object = (ULONG_PTR)LocalObject;
+    return Status;
 }
 
 /* ========================================================================

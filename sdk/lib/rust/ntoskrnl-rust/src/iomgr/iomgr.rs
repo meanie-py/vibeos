@@ -46,7 +46,6 @@ use ntkrnl_sys::ddk::{
     IopDeleteIoCompletion,
     IopGetSetSecurityObject,
     IopInitializeBootDrivers,
-    IopInitializePlugPlayServices,
     IopInitializeReserveIrp,
     IopInitializeSystemDrivers,
     IopParseDevice,
@@ -102,19 +101,23 @@ unsafe fn InitializeObjectAttributes(
     (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
-extern "C" {
+extern "system" {
     fn WmiInitialize() -> BOOLEAN;
+    fn ApphelpCacheInitialize() -> NTSTATUS;
+    fn PsLocateSystemDll() -> NTSTATUS;
+}
+
+extern "C" {
     fn PiInitializeNotifications();
-    fn ApphelpCacheInitialize();
     #[link_name = "HalInitPnpDriver_shim"]
     fn HalInitPnpDriver();
+    fn IopInitializePlugPlayServices_shim() -> NTSTATUS;
     fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
-    fn PsLocateSystemDll() -> NTSTATUS;
-    fn RtlAnsiStringToUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const ANSI_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
-    fn RtlUnicodeStringToAnsiString(DestinationString: *mut ANSI_STRING, SourceString: *const _UNICODE_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
-    fn RtlInitAnsiString(DestinationString: *mut ANSI_STRING, SourceString: *const i8);
+    fn RtlAnsiStringToUnicodeString_shim(DestinationString: *mut _UNICODE_STRING, SourceString: *mut ANSI_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
+    fn RtlUnicodeStringToAnsiString_shim(DestinationString: *mut ANSI_STRING, SourceString: *mut _UNICODE_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
+    fn RtlInitAnsiString_shim(DestinationString: *mut ANSI_STRING, SourceString: *const i8);
     fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: *mut i8, BufferSize: USHORT);
-    fn RtlFreeUnicodeString(UnicodeString: *mut _UNICODE_STRING);
+    fn RtlFreeUnicodeString_shim(UnicodeString: *mut _UNICODE_STRING);
     static mut IoDriverObjectType: POBJECT_TYPE;
     static mut IoCompletionType: POBJECT_TYPE;
     static mut IopCompletionMapping: _GENERIC_MAPPING;
@@ -572,8 +575,8 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
         b"\\ArcName\\%s\0".as_ptr() as *const i8,
         (*LoaderBlock).ArcBootDeviceName,
     );
-    RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceString), Buffer.as_ptr() as *const i8);
-    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(DeviceName), core::ptr::addr_of_mut!(DeviceString), 1u8);
+    RtlInitAnsiString_shim(core::ptr::addr_of_mut!(DeviceString), Buffer.as_ptr() as *const i8);
+    Status = RtlAnsiStringToUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName), core::ptr::addr_of_mut!(DeviceString), 1u8);
     if Status < 0 {
         return 0u8;
     }
@@ -596,13 +599,13 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
     if Status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
+            RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
             return 0u8;
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
             if InitIsWinPEMode != 0 {
-                RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
+                RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
                 return 0u8;
             }
             KeBugCheckEx(
@@ -624,7 +627,7 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
         core::ptr::null_mut(),
     );
     if Status < 0 {
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
+        RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
         return 0u8;
     }
 
@@ -633,16 +636,14 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
     ObReferenceObject((*FileObject).DeviceObject as PVOID);
     IopErrorLogObject = (*FileObject).DeviceObject;
 
-    RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
+    RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
     NtClose(FileHandle);
     ObDereferenceObject(FileObject as PVOID);
     1u8
 }
 
-// CODE_SEG("INIT")
-#[no_mangle]
-pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
-    let mut ExpireTime: LARGE_INTEGER = core::mem::zeroed();
+#[inline(never)]
+unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     let mut Status: NTSTATUS;
     let mut Buffer: [u8; 256] = [0; 256];
     let mut NtBootPath: ANSI_STRING = core::mem::zeroed();
@@ -658,82 +659,6 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
     {
         if !Arm64UartKernelBase.is_null() {
             let uart = Arm64UartKernelBase as *mut ULONG;
-            let msg = b"[IO] IopInitLookasideLists\r\n";
-            for &ch in msg.iter() {
-                *uart = ch as ULONG;
-            }
-        }
-    }
-
-    IopInitLookasideLists();
-
-    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopDatabaseResource));
-    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopSecurityResource));
-    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopDriverLoadResource));
-    InitializeListHead(core::ptr::addr_of_mut!(IopDiskFileSystemQueueHead));
-    InitializeListHead(core::ptr::addr_of_mut!(IopCdRomFileSystemQueueHead));
-    InitializeListHead(core::ptr::addr_of_mut!(IopTapeFileSystemQueueHead));
-    InitializeListHead(core::ptr::addr_of_mut!(IopNetworkFileSystemQueueHead));
-    InitializeListHead(core::ptr::addr_of_mut!(DriverBootReinitListHead));
-    InitializeListHead(core::ptr::addr_of_mut!(DriverReinitListHead));
-    InitializeListHead(core::ptr::addr_of_mut!(ShutdownListHead));
-    InitializeListHead(core::ptr::addr_of_mut!(LastChanceShutdownListHead));
-    InitializeListHead(core::ptr::addr_of_mut!(IopFsNotifyChangeQueueHead));
-    InitializeListHead(core::ptr::addr_of_mut!(IopErrorLogListHead));
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(IoStatisticsLock) as *mut _);
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(DriverReinitListLock) as *mut _);
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(DriverBootReinitListLock) as *mut _);
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(ShutdownListLock) as *mut _);
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(IopLogListLock) as *mut _);
-
-    PiInitializeNotifications();
-
-    if IopInitializeReserveIrp(core::ptr::addr_of_mut!(IopReserveIrpAllocator) as _) == 0 {
-        return 0u8;
-    }
-
-    KeInitializeSpinLock(core::ptr::addr_of_mut!(IopTimerLock) as *mut _);
-    InitializeListHead(core::ptr::addr_of_mut!(IopTimerQueueHead));
-
-    ExpireTime.QuadPart = -10000000;
-    KeInitializeDpc(core::ptr::addr_of_mut!(IopTimerDpc) as *mut _, core::mem::transmute(Some(IopTimerDispatch as unsafe extern "system" fn(_, _, _, _))), core::ptr::null_mut());
-    KeInitializeTimerEx(core::ptr::addr_of_mut!(IopTimer) as *mut _, 1);
-    KeSetTimerEx(core::ptr::addr_of_mut!(IopTimer) as *mut _, ExpireTime, 1000, core::ptr::addr_of_mut!(IopTimerDpc) as *mut _);
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        if !Arm64UartKernelBase.is_null() {
-            let uart = Arm64UartKernelBase as *mut ULONG;
-            let msg = b"[IO] IopCreateObjectTypes\r\n";
-            for &ch in msg.iter() {
-                *uart = ch as ULONG;
-            }
-        }
-    }
-
-    if IopCreateObjectTypes() == 0 {
-        return 0u8;
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        if !Arm64UartKernelBase.is_null() {
-            let uart = Arm64UartKernelBase as *mut ULONG;
-            let msg = b"[IO] IopCreateRootDirectories\r\n";
-            for &ch in msg.iter() {
-                *uart = ch as ULONG;
-            }
-        }
-    }
-
-    if IopCreateRootDirectories() == 0 {
-        return 0u8;
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        if !Arm64UartKernelBase.is_null() {
-            let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitializePlugPlayServices\r\n";
             for &ch in msg.iter() {
                 *uart = ch as ULONG;
@@ -741,7 +666,10 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         }
     }
 
-    core::hint::black_box(IopInitializePlugPlayServices());
+    Status = IopInitializePlugPlayServices_shim();
+    if Status < 0 {
+        return 0u8;
+    }
     ApphelpCacheInitialize();
     WmiInitialize();
 
@@ -1057,7 +985,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         TAG_IO,
     ) as *mut i8;
 
-    Status = RtlUnicodeStringToAnsiString(core::ptr::addr_of_mut!(RootString), core::ptr::addr_of_mut!(NtSystemRoot), 0u8);
+    Status = RtlUnicodeStringToAnsiString_shim(core::ptr::addr_of_mut!(RootString), core::ptr::addr_of_mut!(NtSystemRoot), 0u8);
     if Status < 0 {
         return 0u8;
     }
@@ -1091,7 +1019,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         }
     }
 
-    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(NtSystemRoot), core::ptr::addr_of_mut!(RootString), 0u8);
+    Status = RtlAnsiStringToUnicodeString_shim(core::ptr::addr_of_mut!(NtSystemRoot), core::ptr::addr_of_mut!(RootString), 0u8);
     if Status < 0 {
         return 0u8;
     }
@@ -1137,6 +1065,92 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
     }
 
     1u8
+}
+
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
+    let mut ExpireTime: LARGE_INTEGER = core::mem::zeroed();
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !Arm64UartKernelBase.is_null() {
+            let uart = Arm64UartKernelBase as *mut ULONG;
+            let msg = b"[IO] IopInitLookasideLists\r\n";
+            for &ch in msg.iter() {
+                *uart = ch as ULONG;
+            }
+        }
+    }
+
+    IopInitLookasideLists();
+
+    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopDatabaseResource));
+    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopSecurityResource));
+    ExInitializeResourceLite(core::ptr::addr_of_mut!(IopDriverLoadResource));
+    InitializeListHead(core::ptr::addr_of_mut!(IopDiskFileSystemQueueHead));
+    InitializeListHead(core::ptr::addr_of_mut!(IopCdRomFileSystemQueueHead));
+    InitializeListHead(core::ptr::addr_of_mut!(IopTapeFileSystemQueueHead));
+    InitializeListHead(core::ptr::addr_of_mut!(IopNetworkFileSystemQueueHead));
+    InitializeListHead(core::ptr::addr_of_mut!(DriverBootReinitListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(DriverReinitListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(ShutdownListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(LastChanceShutdownListHead));
+    InitializeListHead(core::ptr::addr_of_mut!(IopFsNotifyChangeQueueHead));
+    InitializeListHead(core::ptr::addr_of_mut!(IopErrorLogListHead));
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(IoStatisticsLock) as *mut _);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(DriverReinitListLock) as *mut _);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(DriverBootReinitListLock) as *mut _);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(ShutdownListLock) as *mut _);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(IopLogListLock) as *mut _);
+
+    PiInitializeNotifications();
+
+    if IopInitializeReserveIrp(core::ptr::addr_of_mut!(IopReserveIrpAllocator) as _) == 0 {
+        return 0u8;
+    }
+
+    KeInitializeSpinLock(core::ptr::addr_of_mut!(IopTimerLock) as *mut _);
+    InitializeListHead(core::ptr::addr_of_mut!(IopTimerQueueHead));
+
+    ExpireTime.QuadPart = -10000000;
+    KeInitializeDpc(core::ptr::addr_of_mut!(IopTimerDpc) as *mut _, core::mem::transmute(Some(IopTimerDispatch as unsafe extern "system" fn(_, _, _, _))), core::ptr::null_mut());
+    KeInitializeTimerEx(core::ptr::addr_of_mut!(IopTimer) as *mut _, 1);
+    KeSetTimerEx(core::ptr::addr_of_mut!(IopTimer) as *mut _, ExpireTime, 1000, core::ptr::addr_of_mut!(IopTimerDpc) as *mut _);
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !Arm64UartKernelBase.is_null() {
+            let uart = Arm64UartKernelBase as *mut ULONG;
+            let msg = b"[IO] IopCreateObjectTypes\r\n";
+            for &ch in msg.iter() {
+                *uart = ch as ULONG;
+            }
+        }
+    }
+
+    if IopCreateObjectTypes() == 0 {
+        return 0u8;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !Arm64UartKernelBase.is_null() {
+            let uart = Arm64UartKernelBase as *mut ULONG;
+            let msg = b"[IO] IopCreateRootDirectories\r\n";
+            for &ch in msg.iter() {
+                *uart = ch as ULONG;
+            }
+        }
+    }
+
+    if IopCreateRootDirectories() == 0 {
+        return 0u8;
+    }
+
+    // Keep the post-PnP phase out of the large entry function on i386; LLVM has
+    // previously collapsed the continuation after PnP init into a `ud2`.
+    IopFinishIoInitSystem(LoaderBlock)
 }
 
 #[no_mangle]
