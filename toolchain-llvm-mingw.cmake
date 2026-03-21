@@ -31,11 +31,16 @@ endif()
 
 # Find llvm-mingw - user can override with LLVM_MINGW_PATH
 if(NOT DEFINED LLVM_MINGW_PATH)
-    # Try to find it relative to source
-    get_filename_component(_src_parent "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-    file(GLOB _llvm_dirs "${_src_parent}/llvm-mingw-*")
-    if(_llvm_dirs)
-        list(GET _llvm_dirs 0 LLVM_MINGW_PATH)
+    # Try .build-tools/llvm-mingw inside the source tree first
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/.build-tools/llvm-mingw")
+        set(LLVM_MINGW_PATH "${CMAKE_CURRENT_LIST_DIR}/.build-tools/llvm-mingw")
+    else()
+        # Try to find it relative to source parent (legacy layout)
+        get_filename_component(_src_parent "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+        file(GLOB _llvm_dirs "${_src_parent}/llvm-mingw-*")
+        if(_llvm_dirs)
+            list(GET _llvm_dirs 0 LLVM_MINGW_PATH)
+        endif()
     endif()
 endif()
 

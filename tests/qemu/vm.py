@@ -16,7 +16,7 @@ from .qmp_client import QmpClient
 from .serial_client import SerialClient
 
 # Project root: os-playground/
-PROJECT_DIR = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent.parent  # vibeos/ repo root
 QEMU_DIR = PROJECT_DIR / "qemu"
 
 

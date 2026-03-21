@@ -25,3 +25,28 @@ sdk/lib/rust/target/
 CMakeCache.txt
 CMakeFiles/
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction_codex.rs.bak
+
+# Build directories and toolchain
+.build-tools/
+build-amd64/
+build-arm64/
+build-i386/
+
+# QEMU binary images (tracked scripts are fine)
+qemu/*.img
+qemu/*.qcow2
+qemu/*.fd
+qemu/*.efi
+qemu/*.map
+qemu/*.png
+qemu/*.ppm
+qemu/*.log
+qemu/*.hdd.img
+qemu/reactos_*.qcow2
+
+# API keys
+.env
+
+# Host tools cmake artifacts (from in-tree configure)
+Makefile
+cmake_install.cmake
