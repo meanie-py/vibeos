@@ -160,12 +160,12 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c  # Replaced by Rust volume.rs
-    # pnpmgr/ — Rust on amd64/arm64, C on i386 (devaction+arb stay in C, pnpres stays in C)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbmem.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbport.c
+    # pnpmgr/ — Rust on amd64/arm64, C on i386 (pnpres stays in C)
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c>
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c>
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c>
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbmem.c>
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbport.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devaction.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devnode.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/plugplay.c>

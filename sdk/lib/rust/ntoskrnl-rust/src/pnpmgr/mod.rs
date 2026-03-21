@@ -19,4 +19,5 @@ pub mod pnpinit;
 pub mod pnpmgr;
 #[cfg(not(target_arch = "x86"))]
 pub mod devaction;
-// arb/ stays in C (depends on devaction globals).
+#[cfg(not(target_arch = "x86"))]
+pub mod arb;  // Testing Rust arb on amd64/arm64
