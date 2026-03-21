@@ -429,6 +429,46 @@ Stage 3 will operate **function-by-function** (not file-by-file) using paired C+
 | Full ntoskrnl (393 files) | ~$8.70 |
 | 5 iterations | ~$43.50 |
 
+### Codex CLI (Cross-Model Translation)
+
+OpenAI Codex CLI (`codex`) can be used as an alternative to rustconv for C-to-Rust translations. Cross-model translation catches different blind spots than same-model review.
+
+```bash
+# Non-interactive translation
+codex exec --full-auto "Translate these C functions to Rust: ..."
+
+# Default model works (o3 requires paid OpenAI API, not ChatGPT account)
+codex exec --full-auto "$(cat prompt.md)"
+```
+
+**Key prompt rules to include:**
+- `#[no_mangle] pub unsafe extern "system" fn` for all exported functions
+- Pool tags: `u32::from_le_bytes(*b"XXXX")` (C multi-char literals are big-endian)
+- `NT_ERROR(x)` = `((x as u32) >> 30) == 3`, NOT `x < 0`
+- `extern "system"` for FFI (stdcall on i386)
+- DUMMY_PSEH: skip `_SEH2_EXCEPT` handlers entirely
+- `core::ptr::addr_of_mut!` for KeWaitForSingleObject event pointers
+- `IO_STATUS_BLOCK.Information`: use `as _` for cross-arch portability
+
+**Post-integration checklist:**
+1. Run `verify_constants.py` on the output to catch wrong constant values
+2. Add missing `extern` declarations for C macros/FORCEINLINE functions
+3. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
+4. Build all 3 arches + run smoke tests
+
+### verify_constants.py
+
+Cross-checks Rust `const` values against C `#define` values from kernel headers.
+
+```bash
+cd reactos
+.venv/bin/python tools/rustconv/rustconv/verify_constants.py                    # Check all
+.venv/bin/python tools/rustconv/rustconv/verify_constants.py --fix              # Auto-fix
+.venv/bin/python tools/rustconv/rustconv/verify_constants.py path/to/file.rs    # Single file
+```
+
+Catches pool tag endianness errors, wrong STATUS_* codes, wrong flag values. Skips arch-dependent constants (`PORT_MAXIMUM_MESSAGE_LENGTH`). Rejects false matches from macro expressions (CTL_CODE, compound `|` expressions).
+
 ## ARM64 Specifics
 
 ### Memory Layout

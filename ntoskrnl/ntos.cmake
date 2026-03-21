@@ -166,7 +166,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbmem.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbport.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devaction.c
+    $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devaction.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/devnode.c>
     $<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/plugplay.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpdma.c  # Replaced by Rust

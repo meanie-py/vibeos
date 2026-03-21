@@ -28,9 +28,8 @@ use ntkrnl_sys::ddk::{
     _CM_SERVICE_LOAD_TYPE, _WORK_QUEUE_TYPE, _EVENT_TYPE,
     ExAllocatePool, ExAllocatePoolZero, ExFreePool, ExQueueWorkItem,
     IoAcquireVpbSpinLock, IoGetAttachedDevice, IoGetAttachedDeviceReference, IoReleaseVpbSpinLock,
-    IopAssignDeviceResources, IopCreateDeviceKeyPath, IopCreateRegistryKeyEx, IopGetDeviceNode,
-    IopGetDriverNames, IopGetRegistryValue, IopInitiatePnpIrp, IopLoadDriver,
-    IopOpenRegistryKeyEx, IopQueueDeviceInstallEvent,
+    IopAssignDeviceResources, IopCreateDeviceKeyPath, IopGetDeviceNode,
+    IopGetDriverNames, IopInitiatePnpIrp, IopQueueDeviceInstallEvent,
     IopQueueTargetDeviceEvent, IopSynchronousCall, KeInitializeEvent, KeWaitForSingleObject,
     ObReferenceObjectByName, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString,
     RtlInitUnicodeString, RtlFreeUnicodeString, RtlCopyUnicodeString, RtlDuplicateUnicodeString,
@@ -276,6 +275,10 @@ extern "C" {
 extern "system" {
     fn IopQueryDeviceCapabilities_c(DeviceNode: PDEVICE_NODE, DeviceCaps: PDEVICE_CAPABILITIES) -> NTSTATUS;
     fn IoRequestDeviceEject_c(PhysicalDeviceObject: PDEVICE_OBJECT);
+    fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
+    fn IopOpenRegistryKeyEx_shim(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
+    fn IopCreateRegistryKeyEx_shim(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
+    fn IopLoadDriver_shim(ServiceHandle: HANDLE, DriverObject: *mut PDRIVER_OBJECT) -> NTSTATUS;
 }
 extern "C" {
     fn PiSetDevNodeText_c(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
@@ -348,6 +351,45 @@ pub static mut IopDeviceActionLock: KSPIN_LOCK = 0;
 #[used]
 #[no_mangle]
 pub static mut PiEnumerationFinished: _KEVENT = unsafe { core::mem::zeroed() };
+
+#[inline(always)]
+unsafe fn device_tree_lock_ptr() -> *mut KSPIN_LOCK {
+    core::ptr::addr_of_mut!(IopDeviceTreeLock)
+}
+
+#[inline(always)]
+unsafe fn device_action_lock_ptr() -> *mut KSPIN_LOCK {
+    core::ptr::addr_of_mut!(IopDeviceActionLock)
+}
+
+#[inline(always)]
+unsafe fn device_action_request_list_ptr() -> PLIST_ENTRY {
+    core::ptr::addr_of_mut!(IopDeviceActionRequestList) as PLIST_ENTRY
+}
+
+#[inline(always)]
+unsafe fn enumeration_finished_ptr() -> PKEVENT {
+    core::ptr::addr_of_mut!(PiEnumerationFinished) as PKEVENT
+}
+
+#[inline(always)]
+unsafe fn device_relations_object_slot(
+    device_relations: PDEVICE_RELATIONS,
+    index: ULONG,
+) -> *mut PDEVICE_OBJECT {
+    // bindgen models the trailing flexible array as `[T; 1]`, so callers must
+    // use raw pointer arithmetic instead of Rust indexing when Count > 1.
+    core::ptr::addr_of_mut!((*device_relations).Objects[0]).add(index as usize)
+}
+
+#[inline(always)]
+unsafe fn device_relations_object(
+    device_relations: PDEVICE_RELATIONS,
+    index: ULONG,
+) -> PDEVICE_OBJECT {
+    *device_relations_object_slot(device_relations, index)
+}
+
 // L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\"
 static ServicesKeyName: [u16; 53] = [
     b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16,
@@ -608,7 +650,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     let mut ccsServicesHandle: HANDLE = core::ptr::null_mut();
     let mut serviceHandle: HANDLE = core::ptr::null_mut();
 
-    Status = IopOpenRegistryKeyEx(
+    Status = IopOpenRegistryKeyEx_shim(
         &mut ccsServicesHandle as *mut _,
         core::ptr::null_mut(),
         &mut servicesKeyName as *mut _,
@@ -618,7 +660,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
         return Status;
     }
 
-    Status = IopOpenRegistryKeyEx(
+    Status = IopOpenRegistryKeyEx_shim(
         &mut serviceHandle as *mut _,
         ccsServicesHandle,
         &mut serviceName as *mut _,
@@ -643,7 +685,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     let mut kvInfo: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
     let mut startType: SERVICE_LOAD_TYPE = DisableLoad;
 
-    Status = IopGetRegistryValue(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
+    Status = IopGetRegistryValue_shim(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if (*kvInfo).Type == REG_DWORD {
             core::ptr::copy_nonoverlapping(
@@ -693,7 +735,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
 
     if Status < 0 {
         if loadDrivers != 0 {
-            Status = IopLoadDriver(serviceHandle, &mut DriverObject as *mut _);
+            Status = IopLoadDriver_shim(serviceHandle, &mut DriverObject as *mut _);
         } else {
             Status = STATUS_UNSUCCESSFUL;
             ExFreePoolWithTag(driverEntry as PVOID, TAG_PNP_DEVACTION);
@@ -820,18 +862,18 @@ unsafe fn PiCallDriverAddDevice(
 
     RtlInitUnicodeString(&mut EnumRoot as *mut _, ENUM_ROOT.as_ptr());
 
-    Status = IopOpenRegistryKeyEx(&mut EnumRootKey as *mut _, core::ptr::null_mut(), &mut EnumRoot as *mut _, KEY_READ);
+    Status = IopOpenRegistryKeyEx_shim(&mut EnumRootKey as *mut _, core::ptr::null_mut(), &mut EnumRoot as *mut _, KEY_READ);
     if Status < 0 {
         return Status;
     }
 
-    Status = IopOpenRegistryKeyEx(&mut SubKey as *mut _, EnumRootKey, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
+    Status = IopOpenRegistryKeyEx_shim(&mut SubKey as *mut _, EnumRootKey, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
     ZwClose(EnumRootKey);
     if Status < 0 {
         return Status;
     }
 
-    Status = IopGetRegistryValue(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
+    Status = IopGetRegistryValue_shim(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if ((*kvInfo).Type == REG_SZ)
             && ((*kvInfo).DataLength > core::mem::size_of::<u16>() as ULONG)
@@ -845,9 +887,9 @@ unsafe fn PiCallDriverAddDevice(
             };
             let mut ccsControlHandle: HANDLE = core::ptr::null_mut();
 
-            Status = IopOpenRegistryKeyEx(&mut ccsControlHandle as *mut _, core::ptr::null_mut(), &ccsControlClass as *const _ as *mut _, KEY_READ);
+            Status = IopOpenRegistryKeyEx_shim(&mut ccsControlHandle as *mut _, core::ptr::null_mut(), &ccsControlClass as *const _ as *mut _, KEY_READ);
             if Status >= 0 {
-                Status = IopOpenRegistryKeyEx(&mut ClassKey as *mut _, ccsControlHandle, &classGUID as *const _ as *mut _, KEY_READ);
+                Status = IopOpenRegistryKeyEx_shim(&mut ClassKey as *mut _, ccsControlHandle, &classGUID as *const _ as *mut _, KEY_READ);
                 ZwClose(ccsControlHandle);
             }
 
@@ -856,7 +898,7 @@ unsafe fn PiCallDriverAddDevice(
                 RtlInitUnicodeString(&mut properties as *mut _, REGSTR_KEY_DEVICE_PROPERTIES.as_ptr());
                 let mut propertiesHandle: HANDLE = core::ptr::null_mut();
 
-                Status = IopOpenRegistryKeyEx(&mut propertiesHandle as *mut _, ClassKey, &mut properties as *mut _, KEY_READ);
+                Status = IopOpenRegistryKeyEx_shim(&mut propertiesHandle as *mut _, ClassKey, &mut properties as *mut _, KEY_READ);
                 if Status >= 0 {
                     ZwClose(propertiesHandle);
                 }
@@ -1270,7 +1312,7 @@ unsafe fn IopSetServiceEnumData(
     let mut ValueBuffer: [WCHAR; 6] = [0; 6];
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    Status = IopGetRegistryValue(InstanceHandle, b"S\0e\0r\0v\0i\0c\0e\0\0\0" as *const u8 as PWSTR, &mut kvInfo2 as *mut _);
+    Status = IopGetRegistryValue_shim(InstanceHandle, b"S\0e\0r\0v\0i\0c\0e\0\0\0" as *const u8 as PWSTR, &mut kvInfo2 as *mut _);
     if Status < 0 {
         return Status;
     }
@@ -1298,7 +1340,7 @@ unsafe fn IopSetServiceEnumData(
     RtlAppendUnicodeStringToString(&mut ServiceKeyName as *mut _, &ServicesKeyPath as *const _ as *mut _);
     RtlAppendUnicodeStringToString(&mut ServiceKeyName as *mut _, &mut ServiceName as *mut _);
 
-    Status = IopOpenRegistryKeyEx(&mut ServiceKey as *mut _, core::ptr::null_mut(), &mut ServiceKeyName as *mut _, KEY_CREATE_SUB_KEY);
+    Status = IopOpenRegistryKeyEx_shim(&mut ServiceKey as *mut _, core::ptr::null_mut(), &mut ServiceKeyName as *mut _, KEY_CREATE_SUB_KEY);
     if Status < 0 {
         ExFreePool(ServiceKeyName.Buffer as PVOID);
         ExFreePool(kvInfo2 as PVOID);
@@ -1323,7 +1365,7 @@ unsafe fn IopSetServiceEnumData(
     }
 
     RtlInitUnicodeString(&mut EnumKeyName as *mut _, b"E\0n\0u\0m\0\0\0" as *const u8 as *const u16);
-    Status = IopCreateRegistryKeyEx(
+    Status = IopCreateRegistryKeyEx_shim(
         &mut ServiceEnumKey as *mut _,
         ServiceKey,
         &mut EnumKeyName as *mut _,
@@ -1333,7 +1375,7 @@ unsafe fn IopSetServiceEnumData(
     );
     if Status >= 0 {
         if Disposition == REG_OPENED_EXISTING_KEY {
-            Status = IopGetRegistryValue(ServiceEnumKey, b"C\0o\0u\0n\0t\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
+            Status = IopGetRegistryValue_shim(ServiceEnumKey, b"C\0o\0u\0n\0t\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
             if Status < 0 {
                 if !ServiceEnumKey.is_null() {
                     ZwClose(ServiceEnumKey);
@@ -1353,7 +1395,7 @@ unsafe fn IopSetServiceEnumData(
             ExFreePool(KeyValueInformation as PVOID);
             KeyValueInformation = core::ptr::null_mut();
 
-            Status = IopGetRegistryValue(ServiceEnumKey, b"N\0e\0x\0t\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
+            Status = IopGetRegistryValue_shim(ServiceEnumKey, b"N\0e\0x\0t\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
             if Status < 0 {
                 if !ServiceEnumKey.is_null() {
                     ZwClose(ServiceEnumKey);
@@ -1512,12 +1554,12 @@ unsafe fn PiStartDeviceFinal(
         let mut enumRootHandle: HANDLE = core::ptr::null_mut();
         let mut instanceHandle: HANDLE = core::ptr::null_mut();
 
-        Status = IopOpenRegistryKeyEx(&mut enumRootHandle as *mut _, core::ptr::null_mut(), &mut enumRoot as *mut _, KEY_READ);
+        Status = IopOpenRegistryKeyEx_shim(&mut enumRootHandle as *mut _, core::ptr::null_mut(), &mut enumRoot as *mut _, KEY_READ);
         if Status < 0 {
             return Status;
         }
 
-        Status = IopOpenRegistryKeyEx(&mut instanceHandle as *mut _, enumRootHandle, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
+        Status = IopOpenRegistryKeyEx_shim(&mut instanceHandle as *mut _, enumRootHandle, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
         ZwClose(enumRootHandle);
         if Status < 0 {
             return Status;
@@ -1623,8 +1665,9 @@ pub unsafe extern "C" fn IopSendRemoveDeviceRelations(DeviceRelations: PDEVICE_R
     let mut i: ULONG;
 
     for i in 0..(*DeviceRelations).Count {
-        IopSendRemoveDevice((*DeviceRelations).Objects[i as usize]);
-        (*DeviceRelations).Objects[i as usize] = core::ptr::null_mut();
+        let object = device_relations_object(DeviceRelations, i);
+        IopSendRemoveDevice(object);
+        *device_relations_object_slot(DeviceRelations, i) = core::ptr::null_mut();
     }
 
     ExFreePool(DeviceRelations as PVOID);
@@ -1636,19 +1679,19 @@ pub unsafe extern "C" fn IopSendRemoveChildDevices(ParentDeviceNode: PDEVICE_NOD
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 
         IopSendRemoveDevice((*ChildDeviceNode).PhysicalDeviceObject);
 
         ChildDeviceNode = NextDeviceNode;
 
-        KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
     }
-    KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 }
 
 unsafe extern "system" fn IopSendSurpriseRemoval(DeviceObject: PDEVICE_OBJECT) {
@@ -1667,19 +1710,19 @@ pub unsafe extern "C" fn IopCancelRemoveChildDevices(ParentDeviceNode: PDEVICE_N
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 
         IopCancelPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject);
 
         ChildDeviceNode = NextDeviceNode;
 
-        KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
     }
-    KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 }
 
 #[no_mangle]
@@ -1687,9 +1730,10 @@ pub unsafe extern "C" fn IopCancelRemoveDeviceRelations(DeviceRelations: PDEVICE
     let mut i: ULONG;
 
     for i in 0..(*DeviceRelations).Count {
-        IopCancelPrepareDeviceForRemoval((*DeviceRelations).Objects[i as usize]);
-        ObDereferenceObject((*DeviceRelations).Objects[i as usize] as PVOID);
-        (*DeviceRelations).Objects[i as usize] = core::ptr::null_mut();
+        let object = device_relations_object(DeviceRelations, i);
+        IopCancelPrepareDeviceForRemoval(object);
+        ObDereferenceObject(object as PVOID);
+        *device_relations_object_slot(DeviceRelations, i) = core::ptr::null_mut();
     }
 
     ExFreePool(DeviceRelations as PVOID);
@@ -1753,21 +1797,21 @@ pub unsafe extern "C" fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NO
     let mut Status: NTSTATUS;
     let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
         PiSetDevNodeState(ChildDeviceNode, DeviceNodeAwaitingQueuedRemoval);
 
         Status = IopPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject, Force);
         if Status < 0 {
             FailedRemoveDevice = ChildDeviceNode;
-            KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
             ChildDeviceNode = (*ParentDeviceNode).Child;
             while !ChildDeviceNode.is_null() {
                 NextDeviceNode = (*ChildDeviceNode).Sibling;
-                KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+                KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 
                 IopCancelPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject);
 
@@ -1777,17 +1821,17 @@ pub unsafe extern "C" fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NO
 
                 ChildDeviceNode = NextDeviceNode;
 
-                KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+                KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
             }
-            KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 
             return Status;
         }
 
-        KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
         ChildDeviceNode = NextDeviceNode;
     }
-    KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
 
     STATUS_SUCCESS
 }
@@ -1799,17 +1843,19 @@ pub unsafe extern "C" fn IopQueryRemoveDeviceRelations(DeviceRelations: PDEVICE_
     let mut Status: NTSTATUS;
 
     for i in 0..(*DeviceRelations).Count {
-        Status = IopPrepareDeviceForRemoval((*DeviceRelations).Objects[i as usize], Force);
+        Status = IopPrepareDeviceForRemoval(device_relations_object(DeviceRelations, i), Force);
         if Status < 0 {
             j = i;
             for i in 0..=j {
-                IopCancelPrepareDeviceForRemoval((*DeviceRelations).Objects[i as usize]);
-                ObDereferenceObject((*DeviceRelations).Objects[i as usize] as PVOID);
-                (*DeviceRelations).Objects[i as usize] = core::ptr::null_mut();
+                let object = device_relations_object(DeviceRelations, i);
+                IopCancelPrepareDeviceForRemoval(object);
+                ObDereferenceObject(object as PVOID);
+                *device_relations_object_slot(DeviceRelations, i) = core::ptr::null_mut();
             }
             for i in (j + 1)..(*DeviceRelations).Count {
-                ObDereferenceObject((*DeviceRelations).Objects[i as usize] as PVOID);
-                (*DeviceRelations).Objects[i as usize] = core::ptr::null_mut();
+                let object = device_relations_object(DeviceRelations, i);
+                ObDereferenceObject(object as PVOID);
+                *device_relations_object_slot(DeviceRelations, i) = core::ptr::null_mut();
             }
             ExFreePool(DeviceRelations as PVOID);
 
@@ -1923,16 +1969,13 @@ unsafe fn PiEnumerateDevice(
     }
 
     for i in 0..(*DeviceRelations).Count {
-        ChildDeviceObject = (*DeviceRelations).Objects[i as usize];
-
+        ChildDeviceObject = device_relations_object(DeviceRelations, i);
         ChildDeviceNode = IopGetDeviceNode(ChildDeviceObject);
         if ChildDeviceNode.is_null() {
             ChildDeviceNode = PipAllocateDeviceNode(ChildDeviceObject);
             if !ChildDeviceNode.is_null() {
                 PiInsertDevNode(ChildDeviceNode, DeviceNode);
-
                 (*ChildDeviceNode).Flags |= DNF_ENUMERATED;
-
                 (*ChildDeviceObject).Flags |= DO_BUS_ENUMERATED_DEVICE;
             } else {
                 ObDereferenceObject(ChildDeviceObject as PVOID);
@@ -2012,7 +2055,7 @@ unsafe fn PiDevNodeStateMachine(
             && (*currentNode).State != DeviceNodeAwaitingQueuedRemoval
         {
             let mut OldIrql: KIRQL = 0;
-            KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
             if (*currentNode).State != DeviceNodeRemoved && !(*currentNode).Child.is_null() {
                 currentNode = (*currentNode).Child;
             } else {
@@ -2025,7 +2068,7 @@ unsafe fn PiDevNodeStateMachine(
                     }
                 }
             }
-            KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
             ObDereferenceObject(referencedObject as PVOID);
             if currentNode == RootNode {
                 break;
@@ -2130,7 +2173,7 @@ unsafe fn PiDevNodeStateMachine(
 
         if doProcessAgain == 0 {
             let mut OldIrql: KIRQL = 0;
-            KeAcquireSpinLock(&IopDeviceTreeLock as *const _ as *mut _, &mut OldIrql as *mut _);
+            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
             if (*currentNode).State != DeviceNodeRemoved && !(*currentNode).Child.is_null() {
                 currentNode = (*currentNode).Child;
             } else {
@@ -2143,7 +2186,7 @@ unsafe fn PiDevNodeStateMachine(
                     }
                 }
             }
-            KeReleaseSpinLock(&IopDeviceTreeLock as *const _ as *mut _, OldIrql);
+            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
         }
         ObDereferenceObject(referencedObject as PVOID);
 
@@ -2163,10 +2206,10 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
     let mut deviceNode: PDEVICE_NODE;
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    KeAcquireSpinLock(&IopDeviceActionLock as *const _ as *mut _, &mut OldIrql as *mut _);
-    while !IsListEmpty(&IopDeviceActionRequestList as *const _ as *mut _) {
-        ListEntry = RemoveHeadList(&IopDeviceActionRequestList as *const _ as *mut _);
-        KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
+    KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql as *mut _);
+    while !IsListEmpty(device_action_request_list_ptr()) {
+        ListEntry = RemoveHeadList(device_action_request_list_ptr());
+        KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
         Request = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<DEVICE_ACTION_REQUEST>(), 0) as PDEVICE_ACTION_REQUEST;
 
         deviceNode = IopGetDeviceNode((*Request).DeviceObject);
@@ -2224,11 +2267,11 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
 
         ObDereferenceObject((*Request).DeviceObject as PVOID);
         ExFreePoolWithTag(Request as PVOID, TAG_IO);
-        KeAcquireSpinLock(&IopDeviceActionLock as *const _ as *mut _, &mut OldIrql as *mut _);
+        KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql as *mut _);
     }
     IopDeviceActionInProgress = 0;
-    KeSetEvent(&PiEnumerationFinished as *const _ as PKEVENT, IO_NO_INCREMENT as i32, 0);
-    KeReleaseSpinLock(&IopDeviceActionLock as *const _ as *mut _, OldIrql);
+    KeSetEvent(enumeration_finished_ptr(), IO_NO_INCREMENT as i32, 0);
+    KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
 }
 
 #[no_mangle]

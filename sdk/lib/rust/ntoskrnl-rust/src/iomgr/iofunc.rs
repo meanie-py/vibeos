@@ -92,13 +92,12 @@ extern "system" {
     fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
 }
 
-extern "C" {
+extern "system" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
-    // MmGetMdlVirtualAddress and MmGetMdlByteCount are inlined below
     fn InterlockedExchangeAdd(Addend: *mut LONG, Value: LONG) -> LONG;
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);

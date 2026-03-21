@@ -523,6 +523,19 @@ NTSTATUS NTAPI IopCreateRegistryKeyEx_shim(OUT PHANDLE Handle, IN HANDLE RootHan
 }
 
 /* ========================================================================
+ * IopLoadDriver shim
+ *
+ * This helper also writes through an output pointer (DriverObject). Keep the
+ * same C boundary workaround as the registry helpers on the early PnP path.
+ * ======================================================================== */
+NTSTATUS IopLoadDriver(IN HANDLE ServiceHandle, OUT PDRIVER_OBJECT *DriverObject);
+NTSTATUS NTAPI IopLoadDriver_shim(IN HANDLE ServiceHandle,
+    OUT PDRIVER_OBJECT *DriverObject)
+{
+    return IopLoadDriver(ServiceHandle, DriverObject);
+}
+
+/* ========================================================================
  * PiInitCacheGroupInformation shim
  *
  * The entire function must be in C because LLVM's cross-CGU captures(none)
@@ -1072,7 +1085,7 @@ IopCompleteRequest_c(IN PKAPC Apc,
  * The Rust devaction.rs has an undiagnosed amd64-specific PnP hang in
  * its internal static function graph (PipDeviceActionWorker and callees).
  * ======================================================================== */
-#if 0 /* devaction shims disabled — devaction.c used on all arches */
+#ifndef _M_IX86
 
 /* GUIDs needed by IoRequestDeviceEject_c */
 #define INITGUID
@@ -1373,4 +1386,4 @@ PiPerformSyncDeviceAction_c(
     return status;
 }
 
-#endif /* _M_IX86 */
+#endif /* !_M_IX86 */

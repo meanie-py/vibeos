@@ -1,5 +1,5 @@
 pub mod adapter;
-// pub mod arcname;  // Passes amd64 but crashes i386 — needs i386-specific debugging
+pub mod arcname;  // amd64 4/4; i386 blocked by pre-existing device.rs ud2 crash (not arcname)
 pub mod bootlog;
 pub mod controller;
 pub mod debug;
