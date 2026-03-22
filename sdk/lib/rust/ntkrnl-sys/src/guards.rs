@@ -181,4 +181,30 @@ impl Drop for SpinLockGuard {
     }
 }
 
+// ── SpinLockAtDpcGuard ──────────────────────────────────────────────
+
+/// RAII guard for kernel spinlocks when ALREADY at DISPATCH_LEVEL or higher.
+/// Does not change IRQL.
+pub struct SpinLockAtDpcGuard {
+    lock: PKSPIN_LOCK,
+}
+
+impl SpinLockAtDpcGuard {
+    /// Acquire a spinlock at DPC level.
+    #[inline]
+    pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
+        crate::ke::KeAcquireSpinLockAtDpcLevel(lock);
+        Self { lock }
+    }
+}
+
+impl Drop for SpinLockAtDpcGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe {
+            crate::ke::KeReleaseSpinLockFromDpcLevel(self.lock);
+        }
+    }
+}
+
 

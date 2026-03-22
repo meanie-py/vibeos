@@ -117,9 +117,10 @@ unsafe fn MiEnsureKernelPdeValid(Address: PVOID) {
     }
 
     if !(*PointerPpe).valid() {
-        OldIrql = MiAcquirePfnLock();
+        // [guard] OldIrql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
         PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard);
 
         TempPte.Long = ValidKernelPde.Long;
         TempPte.set_page_frame_number(PageFrameIndex);
@@ -129,9 +130,10 @@ unsafe fn MiEnsureKernelPdeValid(Address: PVOID) {
     }
 
     if !(*PointerPde).valid() {
-        OldIrql = MiAcquirePfnLock();
+        // [guard] OldIrql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
         PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard);
 
         TempPte.Long = ValidKernelPde.Long;
         TempPte.set_page_frame_number(PageFrameIndex);
@@ -454,11 +456,12 @@ unsafe fn MmCreateVirtualMappingUnsafeEx(
         let Pfn1: PMMPFN;
         let OldIrql: KIRQL;
 
-        OldIrql = MiAcquirePfnLock();
+        // [guard] OldIrql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
         Pfn1 = MiGetPfnEntry(TempPte.page_frame_number());
         (*Pfn1).set_share_count((*Pfn1).share_count() + 1);
         (*Pfn1).set_page_location(ActiveAndValid);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard);
     }
 
     if Address < MmSystemRangeStart {
@@ -559,9 +562,10 @@ unsafe fn MmDeleteVirtualMappingEx(
     if !Process.is_null() {
         if OldPte.Long != 0 {
             if MiDecrementPageTableReferences(Address) == 0 {
-                let OldIrql = MiAcquirePfnLock();
+                // [guard] let OldIrql = MiAcquirePfnLock();
+                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
                 MiDeletePde(as_ddk_pde(MiAddressToPde(Address)), Process);
-                MiReleasePfnLock(OldIrql);
+                drop(pfn_guard);
             }
         }
 
@@ -569,14 +573,15 @@ unsafe fn MmDeleteVirtualMappingEx(
             let Pfn1: PMMPFN;
             let OldIrql: KIRQL;
 
-            OldIrql = MiAcquirePfnLock();
+            // [guard] OldIrql = MiAcquirePfnLock();
+            let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
             Pfn1 = MiGetPfnEntry(OldPte.page_frame_number());
             let sc = (*Pfn1).share_count();
             (*Pfn1).set_share_count(sc - 1);
             if sc - 1 == 0 {
                 (*Pfn1).set_page_location(TransitionPage);
             }
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard);
         }
 
         MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
@@ -731,23 +736,24 @@ pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
     TableBasePfn = (*DirectoryTableBase.add(0) >> PAGE_SHIFT) as PFN_NUMBER;
     HyperPfn = (*DirectoryTableBase.add(1) >> PAGE_SHIFT) as PFN_NUMBER;
 
-    OldIrql = MiAcquirePfnLock();
+    // [guard] OldIrql = MiAcquirePfnLock();
+    let mut pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     PageColor = MI_GET_NEXT_PROCESS_COLOR(Process as PVOID);
     HyperPdPfn = MiRemoveZeroPageSafe(PageColor) as PFN_NUMBER;
     if HyperPdPfn == 0 {
         HyperPdPfn = MiRemoveAnyPage(PageColor);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard_0);
         MiZeroPhysicalPage(HyperPdPfn);
-        OldIrql = MiAcquirePfnLock();
+        pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     }
     PageColor = MI_GET_NEXT_PROCESS_COLOR(Process as PVOID);
     HyperPtPfn = MiRemoveZeroPageSafe(PageColor) as PFN_NUMBER;
     if HyperPtPfn == 0 {
         HyperPtPfn = MiRemoveAnyPage(PageColor);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard_0);
         MiZeroPhysicalPage(HyperPtPfn);
     } else {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard_0);
     }
 
     SystemPte = MiReserveSystemPtes(1, SystemPteSpace);

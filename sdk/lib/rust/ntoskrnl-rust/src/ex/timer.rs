@@ -93,10 +93,11 @@ pub unsafe extern "system" fn ExTimerRundown() {
     let mut Timer: PETIMER;
     let mut DerefsToDo: ULONG;
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize,
-        &mut OldIrql,
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!((*Thread).ActiveTimerListLock), &mut OldIrql);
+    let mut active_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
+
     CurrentEntry = (*Thread).ActiveTimerListHead.Flink;
     while CurrentEntry != core::ptr::addr_of_mut!((*Thread).ActiveTimerListHead) {
         Timer = (CurrentEntry as usize - core::mem::offset_of!(_ETIMER, ActiveTimerListEntry)) as PETIMER;
@@ -104,14 +105,18 @@ pub unsafe extern "system" fn ExTimerRundown() {
         ObReferenceObject(Timer as PVOID);
         DerefsToDo = 1;
 
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize,
-            OldIrql,
-        );
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(active_lock_guard);
 
-        KeAcquireSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, &mut OldIrql);
+        // [guard] KeAcquireSpinLock(addr_of_mut!((*Timer).Lock), &mut OldIrql);
+        let timer_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!((*Timer).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
 
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
+        // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!((*Thread).ActiveTimerListLock));
+        let active_at_dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+            core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
 
         if (*Timer).ApcAssociated != 0
             && core::ptr::addr_of_mut!((*Thread).Tcb) == (*Timer).TimerApc.Thread
@@ -128,23 +133,24 @@ pub unsafe extern "system" fn ExTimerRundown() {
             DerefsToDo += 1;
         }
 
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
+        // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+        drop(active_at_dpc_guard);
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, OldIrql);
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(timer_lock_guard);
 
         ObDereferenceObjectEx(Timer as PVOID, DerefsToDo as LONG);
 
-        KeAcquireSpinLock(
-            core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize,
-            &mut OldIrql,
-        );
+        // [guard] KeAcquireSpinLock(addr_of_mut!((*Thread).ActiveTimerListLock), &mut OldIrql);
+        active_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
+
         CurrentEntry = (*Thread).ActiveTimerListHead.Flink;
     }
 
-    KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize,
-        OldIrql,
-    );
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(active_lock_guard);
 }
 
 // On i386, bindgen's OB_DELETE_METHOD is `extern "stdcall"` (not `extern "system"`).
@@ -164,14 +170,18 @@ unsafe fn ExpDeleteTimerInner(ObjectBody: PVOID) {
     let Timer = ObjectBody as PETIMER;
 
     if !(*Timer).WakeTimerListEntry.Flink.is_null() {
-        KeAcquireSpinLock(core::ptr::addr_of_mut!(ExpWakeListLock) as *mut usize, &mut OldIrql);
+        // [guard] KeAcquireSpinLock(addr_of_mut!(ExpWakeListLock), &mut OldIrql);
+        let wake_list_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(ExpWakeListLock) as *mut _ as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
 
         if !(*Timer).WakeTimerListEntry.Flink.is_null() {
             RemoveEntryList(core::ptr::addr_of_mut!((*Timer).WakeTimerListEntry));
             (*Timer).WakeTimerListEntry.Flink = core::ptr::null_mut();
         }
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!(ExpWakeListLock) as *mut usize, OldIrql);
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(wake_list_lock_guard);
     }
 
     KeCancelTimer(core::ptr::addr_of_mut!((*Timer).KeTimer));
@@ -191,7 +201,10 @@ unsafe extern "system" fn ExpTimerDpcRoutine(
         return;
     }
 
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize);
+    // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!((*Timer).Lock));
+    let timer_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+        core::ptr::addr_of_mut!((*Timer).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
     if (*Timer).ApcAssociated != 0 {
         Inserted = KeInsertQueueApc(
@@ -202,7 +215,8 @@ unsafe extern "system" fn ExpTimerDpcRoutine(
         );
     }
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize);
+    // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+    drop(timer_lock_guard);
 
     if Inserted == 0 {
         ObDereferenceObject(Timer as PVOID);
@@ -223,9 +237,15 @@ unsafe extern "C" fn ExpTimerApcKernelRoutine(
 
     Timer = (Apc as usize - core::mem::offset_of!(_ETIMER, TimerApc)) as PETIMER;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, &mut OldIrql);
+    // [guard] KeAcquireSpinLock(addr_of_mut!((*Timer).Lock), &mut OldIrql);
+    let timer_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!((*Timer).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
+    // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!((*Thread).ActiveTimerListLock));
+    let active_list_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+        core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
     if (*Timer).ApcAssociated != 0
         && core::ptr::addr_of_mut!((*Thread).Tcb) == (*Timer).TimerApc.Thread
@@ -240,8 +260,10 @@ unsafe extern "C" fn ExpTimerApcKernelRoutine(
         *NormalRoutine = None;
     }
 
-    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, OldIrql);
+    // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+    drop(active_list_lock_guard);
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(timer_lock_guard);
 
     ObDereferenceObjectEx(Timer as PVOID, DerefsToDo as LONG);
 }
@@ -609,20 +631,25 @@ pub unsafe extern "system" fn NtSetTimer(
     }
 
     if Status >= 0 {
-        KeAcquireSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, &mut OldIrql);
+        // [guard] KeAcquireSpinLock(addr_of_mut!((*Timer).Lock), &mut OldIrql);
+        let timer_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!((*Timer).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
 
         if (*Timer).ApcAssociated != 0 {
             TimerThread = ((*Timer).TimerApc.Thread as usize - core::mem::offset_of!(_ETHREAD, Tcb))
                 as PETHREAD;
 
-            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*TimerThread).ActiveTimerListLock) as *mut usize);
+            // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!((*TimerThread).ActiveTimerListLock));
+            let thread_active_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+                core::ptr::addr_of_mut!((*TimerThread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+            ) };
 
             RemoveEntryList(core::ptr::addr_of_mut!((*Timer).ActiveTimerListEntry));
             (*Timer).ApcAssociated = 0;
 
-            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
-                (*TimerThread).ActiveTimerListLock
-            ) as *mut usize);
+            // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+            drop(thread_active_lock_guard);
 
             KeCancelTimer(core::ptr::addr_of_mut!((*Timer).KeTimer));
             KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Timer).TimerDpc));
@@ -637,7 +664,10 @@ pub unsafe extern "system" fn NtSetTimer(
         State = KeReadStateTimer(core::ptr::addr_of_mut!((*Timer).KeTimer));
 
         (*Timer).WakeTimer = WakeTimer;
-        KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(ExpWakeListLock) as *mut usize);
+        // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!(ExpWakeListLock));
+        let wake_list_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+            core::ptr::addr_of_mut!(ExpWakeListLock) as *mut _ as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
         if WakeTimer != 0 && (*Timer).WakeTimerListEntry.Flink.is_null() {
             InsertTailList(
                 core::ptr::addr_of_mut!(ExpWakeList),
@@ -647,7 +677,8 @@ pub unsafe extern "system" fn NtSetTimer(
             RemoveEntryList(core::ptr::addr_of_mut!((*Timer).WakeTimerListEntry));
             (*Timer).WakeTimerListEntry.Flink = core::ptr::null_mut();
         }
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!(ExpWakeListLock) as *mut usize);
+        // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+        drop(wake_list_lock_guard);
 
         (*Timer).Period = Period;
         if TimerApcRoutine.is_some() {
@@ -662,13 +693,17 @@ pub unsafe extern "system" fn NtSetTimer(
                 TimerContext,
             );
 
-            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
+            // [guard] KeAcquireSpinLockAtDpcLevel(addr_of_mut!((*Thread).ActiveTimerListLock));
+            let thread_active_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+                core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+            ) };
             InsertTailList(
                 core::ptr::addr_of_mut!((*Thread).ActiveTimerListHead),
                 core::ptr::addr_of_mut!((*Timer).ActiveTimerListEntry),
             );
             (*Timer).ApcAssociated = 1;
-            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*Thread).ActiveTimerListLock) as *mut usize);
+            // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+            drop(thread_active_lock_guard);
 
             DerefsToDo -= 1;
         }
@@ -684,7 +719,8 @@ pub unsafe extern "system" fn NtSetTimer(
             },
         );
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*Timer).Lock) as *mut usize, OldIrql);
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(timer_lock_guard);
 
         if DerefsToDo != 0 {
             ObDereferenceObjectEx(Timer as PVOID, DerefsToDo as LONG);

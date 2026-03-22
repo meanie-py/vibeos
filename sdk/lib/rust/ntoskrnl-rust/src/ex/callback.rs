@@ -451,10 +451,10 @@ pub unsafe extern "system" fn ExNotifyCallback(
         return;
     }
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-        core::ptr::addr_of_mut!(OldIrql),
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!((*CallbackObject).Lock), addr_of_mut!(OldIrql));
+    let mut spin_guard_0 = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!((*CallbackObject).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
     RegisteredCallbacks = (*CallbackObject).RegisteredCallbacks.Flink;
     while RegisteredCallbacks != core::ptr::addr_of_mut!((*CallbackObject).RegisteredCallbacks) {
@@ -467,10 +467,8 @@ pub unsafe extern "system" fn ExNotifyCallback(
         if (*CallbackRegistration).UnregisterWaiting == 0 {
             (*CallbackRegistration).Busy += 1;
 
-            KeReleaseSpinLock(
-                core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-                OldIrql,
-            );
+            // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+            drop(spin_guard_0);
 
             ((*CallbackRegistration).CallbackFunction.unwrap())(
                 (*CallbackRegistration).CallbackContext,
@@ -478,10 +476,10 @@ pub unsafe extern "system" fn ExNotifyCallback(
                 Argument2,
             );
 
-            KeAcquireSpinLock(
-                core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-                core::ptr::addr_of_mut!(OldIrql),
-            );
+            // [guard] KeAcquireSpinLock(addr_of_mut!((*CallbackObject).Lock), addr_of_mut!(OldIrql));
+            spin_guard_0 = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+                core::ptr::addr_of_mut!((*CallbackObject).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+            ) };
 
             (*CallbackRegistration).Busy -= 1;
 
@@ -499,10 +497,8 @@ pub unsafe extern "system" fn ExNotifyCallback(
         RegisteredCallbacks = (*RegisteredCallbacks).Flink;
     }
 
-    KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-        OldIrql,
-    );
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(spin_guard_0);
 }
 
 #[no_mangle]
@@ -533,10 +529,10 @@ pub unsafe extern "system" fn ExRegisterCallback(
     (*CallbackRegistration).Busy = 0;
     (*CallbackRegistration).UnregisterWaiting = 0u8;
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-        core::ptr::addr_of_mut!(OldIrql),
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!((*CallbackObject).Lock), addr_of_mut!(OldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!((*CallbackObject).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
     if (*CallbackObject).AllowMultipleCallbacks != 0
         || IsListEmpty(core::ptr::addr_of_mut!((*CallbackObject).RegisteredCallbacks))
@@ -546,15 +542,11 @@ pub unsafe extern "system" fn ExRegisterCallback(
             core::ptr::addr_of_mut!((*CallbackRegistration).Link),
         );
 
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-            OldIrql,
-        );
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(spin_guard);
     } else {
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-            OldIrql,
-        );
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(spin_guard);
 
         ExFreePoolWithTag(CallbackRegistration as PVOID, TAG_CALLBACK_REGISTRATION);
         CallbackRegistration = core::ptr::null_mut();
@@ -571,18 +563,16 @@ pub unsafe extern "system" fn ExUnregisterCallback(CallbackRegistrationHandle: P
     let CallbackObject = (*CallbackRegistration).CallbackObject;
     let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-        core::ptr::addr_of_mut!(OldIrql),
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!((*CallbackObject).Lock), addr_of_mut!(OldIrql));
+    let mut spin_guard_0 = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!((*CallbackObject).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
 
     while (*CallbackRegistration).Busy != 0 {
         (*CallbackRegistration).UnregisterWaiting = 1u8;
 
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-            OldIrql,
-        );
+        // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+        drop(spin_guard_0);
 
         KeClearEvent(core::ptr::addr_of_mut!(ExpCallbackEvent) as PVOID);
 
@@ -594,18 +584,16 @@ pub unsafe extern "system" fn ExUnregisterCallback(CallbackRegistrationHandle: P
             core::ptr::null_mut(),
         );
 
-        KeAcquireSpinLock(
-            core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-            core::ptr::addr_of_mut!(OldIrql),
-        );
+        // [guard] KeAcquireSpinLock(addr_of_mut!((*CallbackObject).Lock), addr_of_mut!(OldIrql));
+        spin_guard_0 = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!((*CallbackObject).Lock) as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
     }
 
     RemoveEntryList(core::ptr::addr_of_mut!((*CallbackRegistration).Link));
 
-    KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*CallbackObject).Lock) as *mut usize,
-        OldIrql,
-    );
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(spin_guard_0);
 
     ExFreePoolWithTag(CallbackRegistration as PVOID, TAG_CALLBACK_REGISTRATION);
 

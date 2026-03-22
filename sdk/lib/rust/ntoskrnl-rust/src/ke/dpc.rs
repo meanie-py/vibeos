@@ -538,7 +538,10 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
         }
 
         while (*DpcData).DpcQueueDepth != 0 {
-            KeAcquireSpinLockAtDpcLevel(&mut (*DpcData).DpcLock as *mut _ as PKSPIN_LOCK);
+            // [guard] KeAcquireSpinLockAtDpcLevel(&mut (*DpcData).DpcLock);
+            let dpc_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+                &mut (*DpcData).DpcLock as *mut _ as ntkrnl_sys::ke::PKSPIN_LOCK
+            ) };
             DpcEntry = (*ListHead).Flink;
 
             if DpcEntry != ListHead {
@@ -553,7 +556,8 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
 
                 (*DpcData).DpcQueueDepth -= 1;
 
-                KeReleaseSpinLockFromDpcLevel(&mut (*DpcData).DpcLock as *mut _ as PKSPIN_LOCK);
+                // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+                drop(dpc_lock_guard);
 
                 _enable();
 
@@ -561,7 +565,8 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
 
                 _disable();
             } else {
-                KeReleaseSpinLockFromDpcLevel(&mut (*DpcData).DpcLock as *mut _ as PKSPIN_LOCK);
+                // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this
+                drop(dpc_lock_guard);
             }
         }
 

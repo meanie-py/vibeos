@@ -251,12 +251,13 @@ pub unsafe extern "system" fn ExDeleteNPagedLookasideList(Lookaside: PNPAGED_LOO
         free_fn(Entry as PVOID);
     }
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock),
-        core::ptr::addr_of_mut!(OldIrql),
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!(ExpNonPagedLookasideListLock), core::ptr::addr_of_mut!(OldIrql));
+    let lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
     RemoveEntryList(core::ptr::addr_of_mut!((*Lookaside).L.ListEntry) as PLIST_ENTRY);
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock), OldIrql);
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(lock_guard);
 }
 
 #[no_mangle]
@@ -272,12 +273,13 @@ pub unsafe extern "system" fn ExDeletePagedLookasideList(Lookaside: PPAGED_LOOKA
         free_fn(Entry as PVOID);
     }
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(ExpPagedLookasideListLock),
-        core::ptr::addr_of_mut!(OldIrql),
-    );
+    // [guard] KeAcquireSpinLock(addr_of_mut!(ExpPagedLookasideListLock), core::ptr::addr_of_mut!(OldIrql));
+    let lock_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+        core::ptr::addr_of_mut!(ExpPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK
+    ) };
     RemoveEntryList(core::ptr::addr_of_mut!((*Lookaside).L.ListEntry) as PLIST_ENTRY);
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(ExpPagedLookasideListLock), OldIrql);
+    // [guard-drop] KeReleaseSpinLock — guard Drop handles this
+    drop(lock_guard);
 }
 
 #[no_mangle]
