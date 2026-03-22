@@ -588,7 +588,35 @@ These are approaches we tried, found to be unworkable, and documented for future
 - Using `#[inline(never)]` on every function that LLVM misanalyzes (doesn't fully work — LLVM still does interprocedural analysis without inlining)
 - Keeping CGU=16 where CGU boundaries accidentally prevent LLVM from seeing the full picture
 
-**Current approach:** Stay on CGU=16 for now. The global write barrier is kept as defense-in-depth. The 7 known CGU=16 ud2s are tracked in `scan_ud2.py`'s `KNOWN_CGU_UD2` set.
+**Current approach:** Stay on CGU=16 for now. CGU=1 enabled experimentally — down from 45 to 21 ud2s after ABI fixes. Remaining 21 traced to rustc codegen bug (see below).
+
+### Root Cause Found: Rustc Emits Contradictory LLVM Attributes (2026-03-22)
+
+**Discovery:** LLVM IR inspection revealed the REAL root cause of the CGU=1 ud2s. For 15 of 21 affected functions, **rustc itself** emits `unreachable` as the function body before LLVM even runs. The LLVM IR shows:
+
+```llvm
+define x86_stdcallcc i8 @DbgkpSuspendProcess() #10 {
+start:
+  unreachable
+}
+
+attributes #10 = { mustprogress noreturn willreturn memory(none) }
+```
+
+The attribute set includes `noreturn` AND `willreturn` — a logical contradiction. A function can't both "never return" and "will eventually return." LLVM resolves this by treating the function body as unreachable → ud2.
+
+**15 functions with this bug:** DbgkCreateThread, DbgkExitProcess, DbgkExitThread, DbgkForwardException, DbgkMapViewOfSection, DbgkUnMapViewOfSection, DbgkpSendApiMessage, DbgkpSendApiMessageLpc, DbgkpSuspendProcess, FsRtlAllocateFileLock, IoQueryFileInformation, IoQueryVolumeInformation, IoSetInformation, NtTerminateProcess, PipAllocateDeviceNode.
+
+**Remaining 6 functions** (IoOpenDeviceRegistryKey, IoSetHardErrorOrVerifyDevice, IopCloseFile, LpcpFreeToPortZone, MmCreateArm3Section, MmCreateImageSection) have normal attributes but ud2 inserted by LLVM optimization — a separate issue.
+
+**Why rustc thinks they're `noreturn`:** Under investigation. Likely causes:
+- `_SEH2_YIELD` is declared as `-> !` (noreturn) in dummy PSEH. If rustc traces through the call graph and finds a path that inevitably calls `_SEH2_YIELD`, it may mark the caller as `noreturn`.
+- MIR-level analysis may prove a code path always reaches a `!`-returning function (like `KeBugCheckEx`) and propagate `noreturn` upward.
+- With CGU=1, rustc has full visibility to trace these paths; with CGU=16, the analysis stops at CGU boundaries.
+
+**Key insight:** This is NOT an LLVM bug — it's **rustc codegen** emitting contradictory attributes. The fix must be at the source level (prevent rustc from inferring `noreturn`) or by filing a rustc bug report if the inference is incorrect.
+
+**Distinction from CGU=16:** With CGU=16, rustc can't see across CGU boundaries, so it can't trace call paths to `-> !` functions. The CGU boundaries accidentally prevent the incorrect `noreturn` inference.
 
 ### Breakthrough: ABI Mismatches Are the Primary CGU=1 Root Cause (2026-03-22)
 
