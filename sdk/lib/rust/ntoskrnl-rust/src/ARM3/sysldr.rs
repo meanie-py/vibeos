@@ -80,7 +80,6 @@ unsafe fn MiLoadImageSection(
     let last_pte: PMMPTE;
     let driver_base: PVOID;
     let mut temp_pte: MMPTE;
-    let old_irql: KIRQL;
     let mut page_frame_index: PFN_NUMBER;
 
     if session_load != 0 {
@@ -97,7 +96,7 @@ unsafe fn MiLoadImageSection(
     driver_base = MiPteToAddress(pointer_pte);
     *image_base = driver_base;
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     temp_pte = ValidKernelPte;
     while pointer_pte < last_pte {
@@ -109,7 +108,7 @@ unsafe fn MiLoadImageSection(
         pointer_pte = pointer_pte.add(1);
     }
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 
     #[cfg(target_arch = "aarch64")]
     {

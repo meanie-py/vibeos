@@ -89,8 +89,6 @@ pub static mut PopDopeGlobalLock: KSPIN_LOCK = 0;
 pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT_POWER_EXTENSION {
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
     let mut dope: PDEVICE_OBJECT_POWER_EXTENSION;
-    let mut old_irql: KIRQL = 0;
-
     device_extension = IoGetDevObjExtension(DeviceObject);
     if !(*device_extension).Dope.is_null() {
         return (*device_extension).Dope as PDEVICE_OBJECT_POWER_EXTENSION;
@@ -113,17 +111,14 @@ pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVIC
     (*dope).State = PowerDeviceUnspecified;
     InitializeListHead(core::ptr::addr_of_mut!((*dope).IdleList) as PLIST_ENTRY);
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(PopDopeGlobalLock),
-        core::ptr::addr_of_mut!(old_irql),
-    );
+    let spin_guard = ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PopDopeGlobalLock)); // [guard]
 
     if (*device_extension).Dope.is_null() {
         (*device_extension).Dope = dope;
         dope = core::ptr::null_mut();
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PopDopeGlobalLock), old_irql);
+    drop(spin_guard); // [guard-drop]
 
     if !dope.is_null() {
         ExFreePoolWithTag(dope as PVOID, TAG_PO_DOPE);
@@ -155,7 +150,6 @@ pub unsafe extern "system" fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT) {
 pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT) {
     let dope: PDEVICE_OBJECT_POWER_EXTENSION;
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
-    let mut old_irql: KIRQL = 0;
 
     device_extension = IoGetDevObjExtension(DeviceObject);
     if (*device_extension).Dope.is_null() {
@@ -172,14 +166,11 @@ pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT)
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(PopVolumeLock));
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(PopDopeGlobalLock),
-        core::ptr::addr_of_mut!(old_irql),
-    );
+    let spin_guard = ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PopDopeGlobalLock)); // [guard]
 
     (*device_extension).Dope = core::ptr::null_mut();
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PopDopeGlobalLock), old_irql);
+    drop(spin_guard); // [guard-drop]
 
     ExFreePoolWithTag(dope as PVOID, TAG_PO_DOPE);
 }

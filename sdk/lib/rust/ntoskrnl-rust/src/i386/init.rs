@@ -302,7 +302,6 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     let mut last_pte: PMMPTE;
     let mut temp_pde: MMPTE;
     let mut temp_pte: MMPTE;
-    let mut old_irql: KIRQL;
     let mut pfn1: PMMPFN;
     let mut flags: ULONG;
 
@@ -462,7 +461,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     // DBG: before MiAddressToPde(HYPER_SPACE)
     start_pde = MiAddressToPde(HYPER_SPACE as PVOID);
     // DBG: after MiAddressToPde, before MiAcquirePfnLock
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard_0 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     // DBG: after MiAcquirePfnLock
 
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
@@ -476,7 +475,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
 
     KeFlushCurrentTb();
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard_0); // [guard-drop]
 
     pointer_pte = MiAddressToPte(HYPER_SPACE as PVOID);
     RtlZeroMemory(pointer_pte as PVOID, PAGE_SIZE);
@@ -501,7 +500,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     // Set PageFrameNumber field in the first zeroing PTE to MI_ZERO_PTES
     (*MiFirstReservedZeroingPte).set_page_frame_number(MI_ZERO_PTES as PFN_NUMBER);
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard_1 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     pfn1 = MiGetPfnEntry(PFN_FROM_PTE(MiAddressToPde(PDE_BASE as PVOID)));
     (*pfn1).set_share_count(0);
@@ -525,7 +524,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         (*pointer_pte).Long |= PTE_WRITE_THROUGH_BIT;
     }
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard_1); // [guard-drop]
 
     flags = 0;
     MmInitializeProcessAddressSpace(

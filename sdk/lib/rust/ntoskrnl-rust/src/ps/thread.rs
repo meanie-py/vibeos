@@ -107,7 +107,6 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
     let mut Thread: PETHREAD;
     let mut Teb: PTEB;
     let mut DeadThread: BOOLEAN = 0u8;
-    let mut OldIrql: KIRQL = 0;
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -194,7 +193,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
         if CcPfEnablePrefetcher != 0 {
         }
 
-        KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+        let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
 
         #[cfg(target_arch = "aarch64")]
         {
@@ -215,7 +214,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
             ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: KiInitializeUserApc done\r\n\0".as_ptr() as PCSTR);
         }
 
-        KeLowerIrql(PASSIVE_LEVEL);
+        drop(irql_guard); // [guard-drop]
     } else {
         PspTerminateThreadByPointer(Thread, STATUS_THREAD_IS_TERMINATING, 1u8);
     }

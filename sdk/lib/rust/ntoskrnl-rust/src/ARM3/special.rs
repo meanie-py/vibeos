@@ -232,16 +232,16 @@ pub unsafe extern "system" fn MmAllocateSpecialPool(
         return core::ptr::null_mut();
     }
 
-    irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     if MmAvailablePages < 0x100 {
-        MiReleasePfnLock(irql);
+        drop(pfn_guard); // [guard-drop]
         return core::ptr::null_mut();
     }
 
     if (*MiSpecialPoolFirstPte).list_next_entry() == MM_EMPTY_PTE_LIST {
         if MmExpandSpecialPool() < 0 {
-            MiReleasePfnLock(irql);
+            drop(pfn_guard); // [guard-drop]
             return core::ptr::null_mut();
         }
     }
@@ -263,7 +263,7 @@ pub unsafe extern "system" fn MmAllocateSpecialPool(
     temp_pte.set_page_frame_number(page_frame_number);
     MiInitializePfnAndMakePteValid(page_frame_number as _, pointer_pte as *mut ntkrnl_sys::ddk::_MMPTE, core::mem::transmute(temp_pte));
 
-    MiReleasePfnLock(irql);
+    drop(pfn_guard); // [guard-drop]
 
     pages_in_use = InterlockedIncrementUL(core::ptr::addr_of_mut!(MmSpecialPagesInUse));
     if pages_in_use > MmSpecialPagesInUsePeak {
@@ -445,12 +445,13 @@ pub unsafe extern "system" fn MmFreeSpecialPool(P: PVOID) {
     (*freed_header).StackPointer = core::ptr::null_mut();
     (*freed_header).StackBytes = 0;
 
+    let pfn_guard; // [guard]
     if pool_type == NonPagedPool {
         pfn = MI_PFN_ELEMENT((*pointer_pte).page_frame_number());
 
         InterlockedDecrementUL(core::ptr::addr_of_mut!(MiSpecialPagesNonPaged));
 
-        irql = MiAcquirePfnLock();
+        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
         MI_SET_PFN_DELETED(pfn);
 
@@ -464,7 +465,7 @@ pub unsafe extern "system" fn MmFreeSpecialPool(P: PVOID) {
 
         InterlockedDecrementUL(core::ptr::addr_of_mut!(MiSpecialPagesPagable));
 
-        irql = MiAcquirePfnLock();
+        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     }
 
     MI_ERASE_PTE(pointer_pte.add(1));
@@ -474,7 +475,7 @@ pub unsafe extern "system" fn MmFreeSpecialPool(P: PVOID) {
     (*pointer_pte).set_list_next_entry(MM_EMPTY_PTE_LIST as ULONG_PTR);
     MiSpecialPoolLastPte = pointer_pte;
 
-    MiReleasePfnLock(irql);
+    drop(pfn_guard); // [guard-drop]
 
     InterlockedDecrementUL(core::ptr::addr_of_mut!(MmSpecialPagesInUse));
 }

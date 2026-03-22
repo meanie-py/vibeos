@@ -1669,7 +1669,6 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
     DriverObjectExtensionSize: ULONG,
     DriverObjectExtension: *mut PVOID,
 ) -> NTSTATUS {
-    let mut OldIrql: KIRQL;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
     let NewDriverExtension: PIO_CLIENT_EXTENSION;
     let mut Inserted = 0u8;
@@ -1691,7 +1690,7 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
         core::mem::size_of::<IO_CLIENT_EXTENSION>() + DriverObjectExtensionSize as usize,
     );
 
-    OldIrql = KeRaiseIrqlToDpcLevel();
+    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc(); // [guard]
 
     (*NewDriverExtension).ClientIdentificationAddress = ClientIdentificationAddress;
 
@@ -1710,7 +1709,7 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
         Inserted = 1u8;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard); // [guard-drop]
 
     if Inserted == 0 {
         ExFreePoolWithTag(NewDriverExtension as PVOID, TAG_DRIVER_EXTENSION);
@@ -1726,10 +1725,9 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
     DriverObject: PDRIVER_OBJECT,
     ClientIdentificationAddress: PVOID,
 ) -> PVOID {
-    let mut OldIrql: KIRQL = 0;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
 
-    OldIrql = KeRaiseIrqlToDpcLevel();
+    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc(); // [guard]
 
     DriverExtensions = (*((*DriverObject).DriverExtension as PEXTENDED_DRIVER_EXTENSION)).ClientDriverExtension;
     while !DriverExtensions.is_null() {
@@ -1740,7 +1738,7 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
         DriverExtensions = (*DriverExtensions).NextExtension;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard); // [guard-drop]
 
     if DriverExtensions.is_null() {
         return core::ptr::null_mut();

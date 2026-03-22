@@ -358,15 +358,14 @@ pub unsafe extern "system" fn IopCleanupFailedIrp(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: PIRP) {
-    let mut OldIrql: KIRQL = 0;
     let CancelResult: BOOLEAN;
     let mut Wait = LARGE_INTEGER { QuadPart: -100000 };
 
-    KeRaiseIrql(APC_LEVEL, addr_of_mut!(OldIrql));
+    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
 
     if KeReadStateEvent(EventObject) == 0 {
         CancelResult = IoCancelIrp(Irp);
-        KeLowerIrql(OldIrql);
+        drop(irql_guard); // [guard-drop]
 
         if CancelResult != 0 {
             while KeReadStateEvent(EventObject) == 0 {
@@ -383,24 +382,23 @@ pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: 
             );
         }
     } else {
-        KeLowerIrql(OldIrql);
+        drop(irql_guard); // [guard-drop]
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDisassociateThreadIrp() {
-    let mut OldIrql: KIRQL = 0;
     let IrpThread: PETHREAD;
     let IrpEntry: PLIST_ENTRY;
     let mut ErrorLogEntry: PIO_ERROR_LOG_PACKET;
     let mut DeviceObject: PDEVICE_OBJECT = null_mut();
     let IoStackLocation: PIO_STACK_LOCATION;
 
-    KeRaiseIrql(APC_LEVEL, addr_of_mut!(OldIrql));
+    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
 
     IrpThread = PsGetCurrentThread();
     if IsListEmpty(addr_of_mut!((*IrpThread).IrpList)) {
-        KeLowerIrql(OldIrql);
+        drop(irql_guard); // [guard-drop]
         return;
     }
 
@@ -414,7 +412,7 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
 
     if (*IopDeadIrp).CurrentLocation == ((*IopDeadIrp).StackCount + 2) as i8 {
         drop(qsl_guard); // [guard-drop]
-        KeLowerIrql(OldIrql);
+        drop(irql_guard); // [guard-drop]
         return;
     }
 
@@ -428,7 +426,7 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
     }
 
     drop(qsl_guard); // [guard-drop]
-    KeLowerIrql(OldIrql);
+    drop(irql_guard); // [guard-drop]
 
     if !DeviceObject.is_null() {
         ErrorLogEntry = IoAllocateErrorLogEntry(

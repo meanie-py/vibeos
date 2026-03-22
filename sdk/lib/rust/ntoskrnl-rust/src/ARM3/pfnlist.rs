@@ -690,7 +690,6 @@ pub unsafe extern "system" fn MiInitializeAndChargePfn(
     SessionAllocation: BOOLEAN,
 ) -> NTSTATUS {
     let mut temp_pde: MMPDE;
-    let old_irql: KIRQL;
 
     temp_pde = if SessionAllocation != 0 {
         ValidKernelPdeLocal
@@ -698,10 +697,10 @@ pub unsafe extern "system" fn MiInitializeAndChargePfn(
         ValidKernelPde
     };
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     if ((*PointerPde).valid() as usize) == 1 {
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
         return STATUS_RETRY;
     }
 
@@ -715,7 +714,7 @@ pub unsafe extern "system" fn MiInitializeAndChargePfn(
         ContainingPageFrame,
     );
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
     STATUS_SUCCESS
 }
 
