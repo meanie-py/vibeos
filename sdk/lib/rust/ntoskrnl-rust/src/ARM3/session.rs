@@ -207,7 +207,7 @@ pub unsafe extern "system" fn MiReleaseProcessReferenceToSessionDataPage(
         i += 1;
     }
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
     i = 0;
     while i < MiSessionDataPages as ULONG {
         pfn1 = MI_PFN_ELEMENT(page_frame_index[i as usize]);
@@ -215,7 +215,7 @@ pub unsafe extern "system" fn MiReleaseProcessReferenceToSessionDataPage(
         i += 1;
     }
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 
     InterlockedDecrement(core::ptr::addr_of_mut!(MmSessionDataPages));
 

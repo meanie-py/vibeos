@@ -927,7 +927,8 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     core::arch::asm!("cli", options(nomem, nostack));
     #[cfg(target_arch = "aarch64")]
     core::arch::asm!("msr daifset, #2", options(nomem, nostack));
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let _irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     if InterlockedDecrement(&mut KeBugCheckCount as *mut _ as *mut LONG) == 0 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

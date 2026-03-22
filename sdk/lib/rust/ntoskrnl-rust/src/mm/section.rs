@@ -439,7 +439,7 @@ unsafe fn MmGetMdlPfnArray(mdl: *mut MDL) -> *mut PFN_NUMBER {
 }
 
 unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> PMM_SECTION_SEGMENT {
-    let mut OldIrql = MiAcquirePfnLock();
+    let mut pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
     let mut Segment: PMM_SECTION_SEGMENT;
 
     loop {
@@ -449,9 +449,9 @@ unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> P
         }
 
         if (*Segment).SegFlags & (MM_SEGMENT_INCREATE | MM_SEGMENT_INDELETE) != 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
-            OldIrql = MiAcquirePfnLock();
+            pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
             continue;
         }
 
@@ -459,7 +459,7 @@ unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> P
         break;
     }
 
-    MiReleasePfnLock(OldIrql);
+    drop(pfn_guard); // [guard-drop]
     Segment
 }
 
@@ -771,8 +771,7 @@ unsafe fn MmMakeSegmentResident(
             let mut FileOffset = LARGE_INTEGER { QuadPart: (*Segment).Image.FileOffset as i64 + ChunkOffset };
             let mut Event: KEVENT = core::mem::zeroed();
             KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0, 0u8);
-            let mut OldIrql: KIRQL = 0;
-            KeRaiseIrql(APC_LEVEL as KIRQL, core::ptr::addr_of_mut!(OldIrql));
+            let _irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL as KIRQL) }; // [guard]
             let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
             let mut Status = IoPageRead((*Segment).FileObject, Mdl, core::ptr::addr_of_mut!(FileOffset), core::ptr::addr_of_mut!(Event), core::ptr::addr_of_mut!(Iosb));
             if Status == STATUS_PENDING {
@@ -782,7 +781,7 @@ unsafe fn MmMakeSegmentResident(
             if (*Mdl).MdlFlags & 0x01 != 0 {
                 MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
             }
-            KeLowerIrql(OldIrql);
+            drop(_irql_guard); // [guard-drop]
             if Status == STATUS_END_OF_FILE {
                 Status = STATUS_SUCCESS;
             }

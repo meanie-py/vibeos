@@ -653,7 +653,7 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
     let mut system_map_pde = pointer_pde;
     let mut temp_pde = ValidKernelPde;
     while pointer_pde <= last_pde {
-        let old_irql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
         if (*system_map_pde).valid() == false {
             MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
             MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
@@ -678,7 +678,7 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
                 MI_WRITE_VALID_PDE(pointer_pde, temp_pde);
             }
         }
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
         system_map_pde = system_map_pde.add(1);
         pointer_pde = pointer_pde.add(1);
     }
@@ -688,10 +688,10 @@ unsafe fn MiCheckPurgeAndUpMapCount(
     control_area: *mut _CONTROL_AREA,
     fail_if_system_views: BOOLEAN,
 ) -> NTSTATUS {
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
     (*control_area).NumberOfMappedViews += 1;
     (*control_area).NumberOfUserReferences += 1;
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
     STATUS_SUCCESS
 }
 
@@ -882,7 +882,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         start_pde = MiAddressToPde(start_va);
         while start_pde <= end_pde {
             if (*start_pde).valid() == false {
-                let old_irql = MiAcquirePfnLock();
+                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
                 MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
                 MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
@@ -898,7 +898,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
                     start_pde as PVOID,
                     (*session_space).SessionPageDirectoryIndex as _,
                 );
-                MiReleasePfnLock(old_irql);
+                drop(pfn_guard); // [guard-drop]
                 actual_pages += 1;
             }
             start_pde = start_pde.add(1);
@@ -921,7 +921,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         index = ((start_va as ULONG_PTR - MmSessionBase as ULONG_PTR) >> 22) as usize;
         while start_pde <= end_pde {
             if (*((*session_space).PageTables as PMMPTE).add(index)).Long == 0 {
-                let old_irql = MiAcquirePfnLock();
+                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
                 MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
                 MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
@@ -938,7 +938,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
                     start_pde as PVOID,
                     (*session_space).SessionPageDirectoryIndex as _,
                 );
-                MiReleasePfnLock(old_irql);
+                drop(pfn_guard); // [guard-drop]
                 actual_pages += 1;
             }
             start_pde = start_pde.add(1);
@@ -1417,7 +1417,7 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
         protection_mask as ULONG_PTR,
         previous_pte.page_frame_number() as PFN_NUMBER,
     );
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
     let mut rebuild_pte = false;
     if (*pfn1).cache_attribute() == MiCached as u16 {
         if (protection_mask & (MM_NOCACHE | MM_NOACCESS)) != 0 {
@@ -1452,7 +1452,7 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
             if !(*pfn1).modified() {}
         }
     }
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 }
 
 unsafe fn MiRemoveMappedPtes(
@@ -1468,7 +1468,7 @@ unsafe fn MiRemoveMappedPtes(
         if pte_contents.valid() {
             let pfn1 = MiGetPfnEntry(PFN_FROM_PTE(&pte_contents as *const MMPTE as *mut MMPTE));
             let pointer_pde = MiPteToPde(pointer_pte);
-            let old_irql = MiAcquirePfnLock();
+            let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
             if MI_IS_PAGE_DIRTY(&pte_contents) {
                 (*pfn1).set_modified(true);
             }
@@ -1482,7 +1482,7 @@ unsafe fn MiRemoveMappedPtes(
             let pfn2 = MiGetPfnEntry(PFN_FROM_PTE(pointer_pde));
             MiDecrementShareCount(pfn2 as *mut _ as *mut DDK_MMPFN, PFN_FROM_PTE(pointer_pde) as _);
             MiDecrementShareCount(pfn1 as *mut _ as *mut DDK_MMPFN, PFN_FROM_PTE(&pte_contents as *const MMPTE as *mut MMPTE) as _);
-            MiReleasePfnLock(old_irql);
+            drop(pfn_guard); // [guard-drop]
         } else {
             if mmpte_software_prototype(&pte_contents) {
                 let _proto_pte = MiProtoPteToPte(&pte_contents as *const MMPTE as PMMPTE);
@@ -1603,12 +1603,12 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             IoSetTopLevelIrp(0x01usize as ntkrnl_sys::ddk::PIRP); // FSRTL_FSP_TOP_LEVEL_IRP
             file_lock = true;
         }
-        let old_irql = MiAcquirePfnLock();
+        let pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
         (*control_area).u.Flags.set_BeingCreated(1);
         let _previous_section_pointer = (*file).SectionObjectPointer;
         (*(*file).SectionObjectPointer).DataSectionObject = control_area as *mut c_void;
         let mut segment: PSEGMENT = core::ptr::null_mut();
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard_0); // [guard-drop]
         status = MiCreateDataFileMap(
             file,
             &mut segment,
@@ -1618,12 +1618,12 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             kernel_call as ULONG,
         );
         if status < 0 {
-            let old_irql = MiAcquirePfnLock();
+            let pfn_guard_1 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
             (*control_area).WaitingForDeletion = core::ptr::null_mut();
             (*control_area).u.Flags.set_FilePointerNull(1);
             (*(*file).SectionObjectPointer).DataSectionObject = core::ptr::null_mut();
             (*control_area).u.Flags.set_BeingCreated(0);
-            MiReleasePfnLock(old_irql);
+            drop(pfn_guard_1); // [guard-drop]
             if file_lock {
                 IoSetTopLevelIrp(core::ptr::null_mut());
             }
@@ -1638,10 +1638,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             section.SizeOfSection.QuadPart = (*input_maximum_size).QuadPart;
         }
         // Clear BeingCreated on the control area
-        let old_irql = MiAcquirePfnLock();
+        let pfn_guard_2 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
         (*control_area).WaitingForDeletion = core::ptr::null_mut();
         (*control_area).u.Flags.set_BeingCreated(0);
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard_2); // [guard-drop]
     } else {
         if (allocation_attributes & SEC_IMAGE) != 0 {
             return STATUS_INVALID_FILE_FOR_SECTION;
@@ -1786,10 +1786,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
 
     // The control area is not being created anymore
     if (*control_area).u.Flags.BeingCreated() == 1 {
-        let old_irql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
         (*control_area).u.Flags.set_BeingCreated(0);
         (*new_section).u.Flags.set_BeingCreated(0);
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
     }
 
     // Migrate the attribute into a flag

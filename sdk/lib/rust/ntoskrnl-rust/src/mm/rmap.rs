@@ -110,7 +110,8 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
     let mut OldIrql: KIRQL;
 
     'GetEntry: loop {
-        OldIrql = MiAcquirePfnLock();
+        // [guard] OldIrql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
         entry = MmGetRmapListHeadPage(Page as _);
 
@@ -119,7 +120,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         }
 
         if entry.is_null() {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard);
             #[cfg(target_arch = "aarch64")]
             {
                 return STATUS_UNSUCCESSFUL;
@@ -136,7 +137,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         if ((Address as ULONG_PTR) & 0xFFF) != 0 {
             #[cfg(target_arch = "aarch64")]
             {
-                MiReleasePfnLock(OldIrql);
+                drop(pfn_guard);
                 return STATUS_UNSUCCESSFUL;
             }
             #[cfg(not(target_arch = "aarch64"))]
@@ -148,12 +149,12 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         if ExAcquireRundownProtection(core::ptr::addr_of_mut!(
             (*(Process as *mut _EPROCESS)).RundownProtect
         )) == 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard);
             return STATUS_PROCESS_IS_TERMINATING;
         }
 
         Status = ObReferenceObjectByPointer(Process as PVOID, PROCESS_ALL_ACCESS, core::ptr::null_mut(), 0);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard);
         if Status < 0 {
             ExReleaseRundownProtection(core::ptr::addr_of_mut!(
                 (*(Process as *mut _EPROCESS)).RundownProtect
@@ -422,7 +423,8 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         }
     }
 
-    OldIrql = MiAcquirePfnLock();
+    // [guard] OldIrql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     current_entry = MmGetRmapListHeadPage(Page as _);
 
     let mut previous_entry: PMM_RMAP_ENTRY = core::ptr::null_mut();
@@ -444,7 +446,7 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
     {
         // Duplicate rmap — skip insertion instead of bugcheck (defensive)
         ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         return;
     }
 
@@ -455,7 +457,7 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         MmSetRmapListHeadPage(Page as _, new_entry);
     }
 
-    MiReleasePfnLock(OldIrql);
+    drop(pfn_guard); // [guard-drop]
 
     if !RMAP_IS_SEGMENT(Address) {
         PrevSize = InterlockedExchangeAddUL(
@@ -474,7 +476,8 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     let mut previous_entry: PMM_RMAP_ENTRY;
     let OldIrql: KIRQL;
 
-    OldIrql = MiAcquirePfnLock();
+    // [guard] OldIrql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     previous_entry = core::ptr::null_mut();
     current_entry = MmGetRmapListHeadPage(Page as _);
 
@@ -485,7 +488,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
             } else {
                 (*previous_entry).Next = (*current_entry).Next;
             }
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
 
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), current_entry as PVOID);
             if !RMAP_IS_SEGMENT(Address) {
@@ -501,7 +504,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     }
     #[cfg(target_arch = "aarch64")]
     {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         return;
     }
     #[cfg(not(target_arch = "aarch64"))]
