@@ -27,7 +27,7 @@ use ntkrnl_sys::ddk::{
     _BUS_QUERY_ID_TYPE, _DEVICE_RELATION_TYPE, _DEVICE_TEXT_TYPE, _PNP_DEVNODE_STATE,
     _CM_SERVICE_LOAD_TYPE, _WORK_QUEUE_TYPE, _EVENT_TYPE,
     ExAllocatePool, ExAllocatePoolZero, ExFreePool, ExQueueWorkItem,
-    IoAcquireVpbSpinLock, IoGetAttachedDevice, IoGetAttachedDeviceReference, IoReleaseVpbSpinLock,
+    IoGetAttachedDevice, IoGetAttachedDeviceReference,
     IopAssignDeviceResources, IopCreateDeviceKeyPath, IopGetDeviceNode,
     IopGetDriverNames, IopInitiatePnpIrp, IopQueueDeviceInstallEvent,
     IopQueueTargetDeviceEvent, IopSynchronousCall, KeInitializeEvent, KeWaitForSingleObject,
@@ -1602,15 +1602,13 @@ unsafe fn PiIrpSendRemoveCheckVpb(
     DeviceObject: PDEVICE_OBJECT,
     MinorFunction: UCHAR,
 ) -> NTSTATUS {
-    let mut oldIrql: KIRQL = 0;
-
     let mut vpbDevObj = DeviceObject;
     let mut targetDevice = DeviceObject;
 
     loop {
         if !(*vpbDevObj).Vpb.is_null() {
             KeWaitForSingleObject(&(*vpbDevObj).DeviceLock as *const _ as PVOID, _KWAIT_REASON_Executive, 0i32 as i8, 0, core::ptr::null_mut());
-            IoAcquireVpbSpinLock(&mut oldIrql as *mut _);
+            let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
 
             if MinorFunction == IRP_MN_CANCEL_REMOVE_DEVICE {
                 (*(*vpbDevObj).Vpb).Flags &= !VPB_REMOVE_PENDING;
@@ -1624,7 +1622,7 @@ unsafe fn PiIrpSendRemoveCheckVpb(
                 targetDevice = (*(*vpbDevObj).Vpb).DeviceObject;
             }
 
-            IoReleaseVpbSpinLock(oldIrql);
+            drop(vpb_guard); // [guard-drop]
             KeSetEvent(&(*vpbDevObj).DeviceLock as *const _ as PKEVENT, IO_NO_INCREMENT as i32, 0);
 
             if isMounted {
@@ -1632,7 +1630,7 @@ unsafe fn PiIrpSendRemoveCheckVpb(
             }
         }
 
-        oldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+        let oldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
         vpbDevObj = (*vpbDevObj).AttachedDevice;
         KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, oldIrql);
 
@@ -1688,21 +1686,20 @@ pub unsafe extern "C" fn IopSendRemoveDeviceRelations(DeviceRelations: PDEVICE_R
 pub unsafe extern "C" fn IopSendRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
     let mut ChildDeviceNode: PDEVICE_NODE;
     let mut NextDeviceNode: PDEVICE_NODE;
-    let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+    let mut spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+        drop(spin_guard); // [guard-drop]
 
         IopSendRemoveDevice((*ChildDeviceNode).PhysicalDeviceObject);
 
         ChildDeviceNode = NextDeviceNode;
 
-        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+        spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     }
-    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+    drop(spin_guard); // [guard-drop]
 }
 
 unsafe extern "system" fn IopSendSurpriseRemoval(DeviceObject: PDEVICE_OBJECT) {
@@ -1719,21 +1716,20 @@ unsafe extern "system" fn IopCancelRemoveDevice(DeviceObject: PDEVICE_OBJECT) {
 pub unsafe extern "C" fn IopCancelRemoveChildDevices(ParentDeviceNode: PDEVICE_NODE) {
     let mut ChildDeviceNode: PDEVICE_NODE;
     let mut NextDeviceNode: PDEVICE_NODE;
-    let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+    let mut spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+        drop(spin_guard); // [guard-drop]
 
         IopCancelPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject);
 
         ChildDeviceNode = NextDeviceNode;
 
-        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+        spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     }
-    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+    drop(spin_guard); // [guard-drop]
 }
 
 #[no_mangle]
@@ -1806,23 +1802,22 @@ pub unsafe extern "C" fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NO
     let mut NextDeviceNode: PDEVICE_NODE;
     let mut FailedRemoveDevice: PDEVICE_NODE;
     let mut Status: NTSTATUS;
-    let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+    let mut spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     ChildDeviceNode = (*ParentDeviceNode).Child;
     while !ChildDeviceNode.is_null() {
         NextDeviceNode = (*ChildDeviceNode).Sibling;
-        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+        drop(spin_guard); // [guard-drop]
         PiSetDevNodeState(ChildDeviceNode, DeviceNodeAwaitingQueuedRemoval);
 
         Status = IopPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject, Force);
         if Status < 0 {
             FailedRemoveDevice = ChildDeviceNode;
-            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+            spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
             ChildDeviceNode = (*ParentDeviceNode).Child;
             while !ChildDeviceNode.is_null() {
                 NextDeviceNode = (*ChildDeviceNode).Sibling;
-                KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+                drop(spin_guard); // [guard-drop]
 
                 IopCancelPrepareDeviceForRemoval((*ChildDeviceNode).PhysicalDeviceObject);
 
@@ -1832,17 +1827,17 @@ pub unsafe extern "C" fn IopQueryRemoveChildDevices(ParentDeviceNode: PDEVICE_NO
 
                 ChildDeviceNode = NextDeviceNode;
 
-                KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+                spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
             }
-            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+            drop(spin_guard); // [guard-drop]
 
             return Status;
         }
 
-        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+        spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
         ChildDeviceNode = NextDeviceNode;
     }
-    KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+    drop(spin_guard); // [guard-drop]
 
     STATUS_SUCCESS
 }
@@ -2065,8 +2060,7 @@ unsafe fn PiDevNodeStateMachine(
         if ((*currentNode).Flags & DNF_HAS_PROBLEM) != 0
             && (*currentNode).State != DeviceNodeAwaitingQueuedRemoval
         {
-            let mut OldIrql: KIRQL = 0;
-            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+            let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
             if (*currentNode).State != DeviceNodeRemoved && !(*currentNode).Child.is_null() {
                 currentNode = (*currentNode).Child;
             } else {
@@ -2079,7 +2073,7 @@ unsafe fn PiDevNodeStateMachine(
                     }
                 }
             }
-            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+            drop(spin_guard); // [guard-drop]
             ObDereferenceObject(referencedObject as PVOID);
             if currentNode == RootNode {
                 break;
@@ -2183,8 +2177,7 @@ unsafe fn PiDevNodeStateMachine(
         }
 
         if doProcessAgain == 0 {
-            let mut OldIrql: KIRQL = 0;
-            KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql as *mut _);
+            let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_tree_lock_ptr() as PKSPIN_LOCK) }; // [guard]
             if (*currentNode).State != DeviceNodeRemoved && !(*currentNode).Child.is_null() {
                 currentNode = (*currentNode).Child;
             } else {
@@ -2197,7 +2190,7 @@ unsafe fn PiDevNodeStateMachine(
                     }
                 }
             }
-            KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+            drop(spin_guard); // [guard-drop]
         }
         ObDereferenceObject(referencedObject as PVOID);
 
@@ -2213,14 +2206,13 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
 ) {
     let mut ListEntry: PLIST_ENTRY;
     let mut Request: PDEVICE_ACTION_REQUEST;
-    let mut OldIrql: KIRQL = 0;
     let mut deviceNode: PDEVICE_NODE;
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql as *mut _);
+    let mut spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_action_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     while !IsListEmpty(device_action_request_list_ptr()) {
         ListEntry = RemoveHeadList(device_action_request_list_ptr());
-        KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
+        drop(spin_guard); // [guard-drop]
         Request = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<DEVICE_ACTION_REQUEST>(), 0) as PDEVICE_ACTION_REQUEST;
 
         deviceNode = IopGetDeviceNode((*Request).DeviceObject);
@@ -2278,11 +2270,11 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
 
         ObDereferenceObject((*Request).DeviceObject as PVOID);
         ExFreePoolWithTag(Request as PVOID, TAG_IO);
-        KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql as *mut _);
+        spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(device_action_lock_ptr() as PKSPIN_LOCK) }; // [guard]
     }
     IopDeviceActionInProgress = 0;
     KeSetEvent(enumeration_finished_ptr(), IO_NO_INCREMENT as i32, 0);
-    KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
+    drop(spin_guard); // [guard-drop]
 }
 
 #[no_mangle]

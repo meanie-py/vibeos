@@ -313,29 +313,37 @@ while cond { drop(pfn_guard); delay(); pfn_guard = PfnLockGuard::acquire(); }
 drop(pfn_guard);
 ```
 
-### Phase 3: Cross-Function Patterns — IN PROGRESS
-The main remaining blocker. ~300+ call sites where `OldIrql` is passed to another function that releases the lock internally.
+### Phase 3: Cross-Function Patterns — MOSTLY DONE
 
-**Key cross-function families:**
-- `MiCheckControlArea(ControlArea, OldIrql)` — called from 6+ functions in ARM3/section.rs
-- `MmDereferenceSegmentWithLock(Segment, OldIrql)` — called from 4+ functions in mm/section.rs
-- `MiResolveProtoPteFault(OldIrql, ...)` / `MiCompleteProtoPteFault(OldIrql, ...)` — page fault chain
-- `MiMakeSystemAddressValidPfn(Pfn, OldIrql)` — releases lock, maps page, reacquires
+**Tier 1 (guard-passing, callee always releases once):** DONE
+- `MiCheckControlArea` → accepts `PfnLockGuard` by value (5 callers migrated)
 
-See "Cross-Function Pattern Analysis" section below.
+**Tier 2 (inner+wrapper for exported functions):** DONE
+- `MmDereferenceSegmentWithLock` → `MmDereferenceSegmentWithLockInner(Segment, Option<PfnLockGuard>)`
+- `MiCompleteProtoPteFault` → `MiCompleteProtoPteFaultInner(..., PfnLockGuard)`
+- `MiResolveProtoPteFault` → `MiResolveProtoPteFaultInner(..., mut PfnLockGuard)`
+- `CcRosDeleteFileCache` → `CcRosDeleteFileCacheInner(..., QueuedSpinLockGuard) -> QueuedSpinLockGuard`
+- Added `from_raw(irql)` / `into_raw()` / `irql()` accessors for guard ↔ raw KIRQL interop
 
-### Phase 4: Complex Control Flow — NOT STARTED
-High-acquire-count files needing restructuring:
-- `ex/timer.rs` (38 calls) — timer cancellation/insertion with multiple lock types
-- `pnpmgr/devaction.rs` (50 calls) — PnP device state machine
-- `cc/view.rs` (48 calls) — cache manager view management
-- `ke/dpc.rs` (21 calls) — DPC queue management
+**Tier 3 (won't migrate — scheduler split-release):** DEFERRED
+- `KiExitDispatcher(OldIrql)` — 15+ callers across 7 ke/ files. Pattern: release spinlock first via `KiReleaseDispatcherLockFromSynchLevel()`, then lower IRQL separately via `KiExitDispatcher(saved_irql)`. The IRQL value is also stored into `Thread.WaitIrql` and passed to `KiSwapContext` for context switches. This split-release pattern is fundamental to the scheduler's lock ordering and cannot be safely wrapped in a single guard.
+- `MiMakeSystemAddressValidPfn(ptr, OldIrql)` — release-pagefault-reacquire pattern; caller's IRQL copy becomes stale but works because DISPATCH spinlocks always save/restore the same IRQL.
+
+**Remaining cross-function patterns (not yet migrated):**
+- `KiTimerListExpire_body(list, OldIrql)` — ke/dpc.rs, 1 caller
+- `MiMakeSystemAddressValidPfn` callers in ARM3/section.rs and ARM3/virtual.rs
+
+### Phase 4: Complex Control Flow — PARTIALLY DONE
+- `cc/view.rs` — 5 complex functions migrated (FlushDirtyPages, TrimCache, ReleaseFileCache, InitializeFileCache, DeleteFileCache)
+- Still remaining:
+  - `ex/timer.rs` (38 calls) — timer cancellation/insertion with multiple lock types
+  - `pnpmgr/devaction.rs` (50 calls) — PnP device state machine
+  - `ke/dpc.rs` (21 calls) — DPC queue management
 
 ### Phase 5: Output Pointers → Result — NOT STARTED
 Priority targets for `captures(none)` protection:
 1. **ps/thread.rs** — PspCreateThread output pointers → Result
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
-3. **ke/wait.rs** — KiExitDispatcher IRQL restoration
 
 ### Phase 6: Remove Shims — NOT STARTED
 Depends on Phase 3-4 completion per subsystem.

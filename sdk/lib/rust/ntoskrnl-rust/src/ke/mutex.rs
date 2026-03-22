@@ -21,20 +21,19 @@ pub unsafe extern "system" fn KeInitializeMutant(
     InitialOwner: BOOLEAN,
 ) {
     let mut CurrentThread: PKTHREAD;
-    let mut OldIrql: KIRQL;
 
     if InitialOwner != 0 {
         CurrentThread = PsGetCurrentThread();
         (*Mutant).OwnerThread = CurrentThread;
 
-        OldIrql = KiAcquireDispatcherLock();
+        let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
         InsertTailList(
             core::ptr::addr_of_mut!((*CurrentThread).MutantListHead),
             core::ptr::addr_of_mut!((*Mutant).MutantListEntry),
         );
 
-        KiReleaseDispatcherLock(OldIrql);
+        drop(disp_guard); // [guard-drop]
     } else {
         (*Mutant).OwnerThread = core::ptr::null_mut();
     }

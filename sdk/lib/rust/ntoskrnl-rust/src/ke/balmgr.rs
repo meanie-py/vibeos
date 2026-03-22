@@ -19,10 +19,8 @@ use ntkrnl_sys::ddk::{
     KeSetPriorityThread,
     KeSetTimerEx,
     KeWaitForMultipleObjects,
-    KiAcquireDispatcherLock,
     KiAcquirePrcbLock,
     KiInsertDeferredReadyList,
-    KiReleaseDispatcherLock,
     KiReleasePrcbLock,
 };
 
@@ -61,12 +59,11 @@ pub unsafe extern "system" fn KiScanReadyQueues(
     let mut Index = (*Prcb).QueueIndex;
     let WaitLimit = (*core::ptr::addr_of!(KeTickCount)).LowPart - 300;
     let mut Summary: ULONG;
-    let mut OldIrql: KIRQL;
     let mut ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut Thread: PKTHREAD;
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
     KiAcquirePrcbLock(Prcb);
 
     Summary = (*Prcb).ReadySummary & ((1 << THREAD_BOOST_PRIORITY) - 2);
@@ -128,7 +125,7 @@ pub unsafe extern "system" fn KiScanReadyQueues(
     }
 
     KiReleasePrcbLock(Prcb);
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     if Count != 0 && Number != 0 {
         (*Prcb).QueueIndex = 1;

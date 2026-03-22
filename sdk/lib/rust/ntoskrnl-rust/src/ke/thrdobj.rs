@@ -249,15 +249,14 @@ unsafe fn KeSetDisableBoostThread_impl(Thread: PKTHREAD, Disable: BOOLEAN) -> BO
 }
 
 unsafe fn KeReadyThread_impl(Thread: PKTHREAD) {
-    let OldIrql: KIRQL;
     ASSERT_THREAD!(Thread);
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     KiReadyThread(Thread);
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 unsafe fn KeAlertResumeThread_impl(Thread: PKTHREAD) -> ULONG {
@@ -320,11 +319,10 @@ unsafe fn KeAlertThread_impl(Thread: PKTHREAD, AlertMode: KPROCESSOR_MODE) -> BO
 }
 
 unsafe fn KeBoostPriorityThread_impl(Thread: PKTHREAD, Increment: KPRIORITY) {
-    let OldIrql: KIRQL;
     let mut Priority: KPRIORITY;
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     if ((*Thread).Priority as KPRIORITY) < LOW_REALTIME_PRIORITY {
         KiAcquireThreadLock(Thread);
@@ -345,7 +343,7 @@ unsafe fn KeBoostPriorityThread_impl(Thread: PKTHREAD, Increment: KPRIORITY) {
         KiReleaseThreadLock(Thread);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 unsafe fn KeForceResumeThread_impl(Thread: PKTHREAD) -> ULONG {
@@ -461,7 +459,6 @@ unsafe fn KeResumeThread_impl(Thread: PKTHREAD) -> ULONG {
 }
 
 unsafe fn KeRundownThread_impl() {
-    let OldIrql: KIRQL;
     let Thread = PsGetCurrentThread();
     let mut NextEntry: PLIST_ENTRY;
     let ListHead: PLIST_ENTRY;
@@ -472,7 +469,7 @@ unsafe fn KeRundownThread_impl() {
         return;
     }
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     ListHead = core::ptr::addr_of_mut!((*Thread).MutantListHead);
     NextEntry = (*ListHead).Flink;
@@ -503,7 +500,7 @@ unsafe fn KeRundownThread_impl() {
         NextEntry = (*Thread).MutantListHead.Flink;
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 unsafe fn KeStartThread_impl(Thread: PKTHREAD) {
@@ -921,14 +918,13 @@ pub unsafe extern "system" fn KeQueryPriorityThread(Thread: PKTHREAD) -> KPRIORI
 
 #[no_mangle]
 pub unsafe extern "system" fn KeRevertToUserAffinityThread() {
-    let OldIrql: KIRQL;
     let Prcb: PKPRCB;
     let mut NextThread: PKTHREAD;
     let CurrentThread = PsGetCurrentThread();
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
     ASSERT!(*kt_SystemAffinityActive(CurrentThread) != 0);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     (*CurrentThread).Affinity = (*CurrentThread).UserAffinity;
     (*CurrentThread).IdealProcessor = *kt_UserIdealProcessor(CurrentThread);
@@ -947,7 +943,7 @@ pub unsafe extern "system" fn KeRevertToUserAffinityThread() {
         KiReleasePrcbLock(Prcb);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 #[no_mangle]
@@ -956,10 +952,9 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
     Processor: u8,
 ) -> u8 {
     let OldIdealProcessor: u8;
-    let OldIrql: KIRQL;
     ASSERT!(Processor as ULONG <= 64);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     OldIdealProcessor = *kt_UserIdealProcessor(Thread);
 
@@ -973,20 +968,19 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
         }
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
     OldIdealProcessor
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
-    let OldIrql: KIRQL;
     let Prcb: PKPRCB;
     let mut NextThread: PKTHREAD;
     let CurrentThread = PsGetCurrentThread();
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
     ASSERT!((Affinity & KeActiveProcessors) != 0);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     (*CurrentThread).Affinity = Affinity;
     *kt_SystemAffinityActive(CurrentThread) = 1;
@@ -1009,7 +1003,7 @@ pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
         KiReleasePrcbLock(Prcb);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 #[no_mangle]
@@ -1017,7 +1011,6 @@ pub unsafe extern "system" fn KeSetBasePriorityThread(
     Thread: PKTHREAD,
     Increment: LONG,
 ) -> LONG {
-    let OldIrql: KIRQL;
     let OldBasePriority: KPRIORITY;
     let mut Priority: KPRIORITY;
     let mut BasePriority: KPRIORITY;
@@ -1028,7 +1021,7 @@ pub unsafe extern "system" fn KeSetBasePriorityThread(
 
     Process = kt_ApcState(Thread).Process;
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     KiAcquireThreadLock(Thread);
 
@@ -1090,7 +1083,7 @@ pub unsafe extern "system" fn KeSetBasePriorityThread(
 
     KiReleaseThreadLock(Thread);
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
     OldIncrement
 }
 
@@ -1099,16 +1092,15 @@ pub unsafe extern "system" fn KeSetAffinityThread(
     Thread: PKTHREAD,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
-    let OldIrql: KIRQL;
     let OldAffinity: KAFFINITY;
     ASSERT_THREAD!(Thread);
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     OldAffinity = KiSetAffinityThread(Thread, Affinity);
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
     OldAffinity
 }
 
@@ -1117,7 +1109,6 @@ pub unsafe extern "system" fn KeSetPriorityThread(
     Thread: PKTHREAD,
     Priority: KPRIORITY,
 ) -> KPRIORITY {
-    let OldIrql: KIRQL;
     let OldPriority: KPRIORITY;
     ASSERT_THREAD!(Thread);
     ASSERT_IRQL_LESS_OR_EQUAL!(DISPATCH_LEVEL);
@@ -1126,7 +1117,7 @@ pub unsafe extern "system" fn KeSetPriorityThread(
 
     // DBG: KeSetPriorityThread entry
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     // DBG: after KiAcquireDispatcherLock
 
@@ -1154,7 +1145,7 @@ pub unsafe extern "system" fn KeSetPriorityThread(
 
     // DBG: before KiReleaseDispatcherLock
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     // DBG: after KiReleaseDispatcherLock
 

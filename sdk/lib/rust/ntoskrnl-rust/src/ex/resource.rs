@@ -344,12 +344,12 @@ unsafe fn ExpExpandResourceOwnerTable(Resource: PERESOURCE, LockHandle: PKLOCK_Q
             );
         }
 
-        let OldIrql = KiAcquireDispatcherLock();
+        let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
         owner_set_table_size(Table, NewSize);
         (*Resource).OwnerTable = Table;
 
-        KiReleaseDispatcherLock(OldIrql);
+        drop(disp_guard); // [guard-drop]
 
         ExpVerifyResource(Resource);
 

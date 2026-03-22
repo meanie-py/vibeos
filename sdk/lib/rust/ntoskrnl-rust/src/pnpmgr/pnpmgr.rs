@@ -606,18 +606,10 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
 
 #[no_mangle]
 pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
-    let mut OldIrql: KIRQL = 0;
-
     if !PopSystemPowerDeviceNode.is_null() {
-        KeAcquireSpinLock(
-            core::ptr::addr_of_mut!(IopDeviceTreeLock),
-            &mut OldIrql,
-        );
+        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopDeviceTreeLock) as PKSPIN_LOCK) }; // [guard]
         *DeviceObject = (*PopSystemPowerDeviceNode).PhysicalDeviceObject;
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!(IopDeviceTreeLock),
-            OldIrql,
-        );
+        drop(spin_guard); // [guard-drop]
 
         return STATUS_SUCCESS;
     }

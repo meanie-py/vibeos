@@ -10,11 +10,11 @@ use ntkrnl_sys::ddk::{
     KAFFINITY, KPRIORITY,
     HalRequestSoftwareInterrupt,
     KeBugCheck,
-    KiAcquireApcLockRaiseToSynch, KiAcquireDispatcherLock,
+    KiAcquireApcLockRaiseToSynch,
     KiAcquireDispatcherLockAtSynchLevel, KiAcquireProcessLockRaiseToSynch,
     KiAcquireThreadLock, KiAttachProcess, KiExitDispatcher,
     KiMoveApcState, KiReleaseApcLock,
-    KiReleaseApcLockFromSynchLevel, KiReleaseDispatcherLock,
+    KiReleaseApcLockFromSynchLevel,
     KiReleaseDispatcherLockFromSynchLevel, KiReleaseProcessLock,
     KiReleaseProcessLockFromSynchLevel, KiReleaseThreadLock,
     KiSetAffinityThread, KiSetPriorityThread, KiSwapProcess,
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn KeSetProcess(
     fn KxUnwaitThread(header: PVOID, increment: KPRIORITY);
 }
 
-    let OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
     let OldState = (*Process).Header.SignalState;
 
     (*Process).Header.SignalState = 1;
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn KeSetProcess(
         KxUnwaitThread(core::ptr::addr_of_mut!((*Process).Header) as PVOID, Increment);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     OldState as ULONG
 }

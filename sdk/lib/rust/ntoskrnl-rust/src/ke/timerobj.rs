@@ -255,17 +255,16 @@ unsafe fn KiCompleteTimerImpl(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeCancelTimer(Timer: PKTIMER) -> BOOLEAN {
-    let OldIrql: KIRQL;
     let Inserted: BOOLEAN;
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     Inserted = (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.Inserted;
     if Inserted != 0 {
         KxRemoveTreeTimer(Timer);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     Inserted
 }

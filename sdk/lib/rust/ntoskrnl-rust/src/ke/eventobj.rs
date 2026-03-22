@@ -97,13 +97,13 @@ pub unsafe extern "system" fn KeReadStateEvent(Event: PKEVENT) -> LONG {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeResetEvent(Event: PKEVENT) -> LONG {
-    let OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     let PreviousState = (*Event).Header.SignalState;
 
     (*Event).Header.SignalState = 0;
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
     PreviousState
 }
 
@@ -152,11 +152,11 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
 ) {
     let Thread = PsGetCurrentThread() as PKTHREAD;
 
-    let OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
 
     if IsListEmpty(core::ptr::addr_of_mut!((*Event).Header.WaitListHead)) {
         (*Event).Header.SignalState = 1;
-        KiReleaseDispatcherLock(OldIrql);
+        drop(disp_guard); // [guard-drop]
         return;
     }
 
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
         KiReadyThread(WaitThread);
     }
 
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 }
 
 

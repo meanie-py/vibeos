@@ -148,11 +148,10 @@ pub unsafe extern "system" fn KeInsertHeadQueue(
     Entry: PLIST_ENTRY,
 ) -> LONG {
     let PreviousState: LONG;
-    let OldIrql: KIRQL;
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
     PreviousState = KiInsertQueue(Queue, Entry, 1u8);
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     PreviousState
 }
@@ -163,11 +162,10 @@ pub unsafe extern "system" fn KeInsertQueue(
     Entry: PLIST_ENTRY,
 ) -> LONG {
     let PreviousState: LONG;
-    let OldIrql: KIRQL;
 
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
     PreviousState = KiInsertQueue(Queue, Entry, 0u8);
-    KiReleaseDispatcherLock(OldIrql);
+    drop(disp_guard); // [guard-drop]
 
     PreviousState
 }
