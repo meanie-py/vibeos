@@ -1446,6 +1446,9 @@ impl PfnLockGuard {
     /// Return the raw IRQL without releasing the lock.
     /// Used when passing to functions that still take raw KIRQL.
     #[inline] pub fn irql(&self) -> KIRQL { self.previous_irql }
+    /// Consume the guard without releasing the lock.
+    /// Returns the saved IRQL. Caller is responsible for releasing.
+    #[inline] pub fn into_raw(self) -> KIRQL { let irql = self.previous_irql; core::mem::forget(self); irql }
 }
 impl Drop for PfnLockGuard {
     #[inline] fn drop(&mut self) { unsafe { MiReleasePfnLock(self.previous_irql) } }

@@ -69,8 +69,9 @@ use ntkrnl_sys::ddk::{
     MiInitializePfnForOtherProcess,
     MiRemoveZeroPage,
     MiDecrementShareCount,
-    MiMakeSystemAddressValidPfn,
     MiUnlinkPageFromList,
+    MmIsAddressValid,
+    MmAccessFault,
     MiInsertPageInFreeList,
     ObOpenObjectByName,
     ObInsertObject,
@@ -702,21 +703,53 @@ pub unsafe extern "system" fn MiLocateSubsection(vad: *mut _MMVAD_LONG, vpn: ULO
     subsection
 }
 
+/// Inner version of MiMakeSystemAddressValidPfn that uses PfnLockGuard.
+/// Consumes the guard, faults in the page, returns (LockChange, new_guard).
+unsafe fn MiMakeSystemAddressValidPfnInner(
+    VirtualAddress: PVOID,
+    guard: crate::ARM3::helpers::PfnLockGuard,
+) -> (ULONG, crate::ARM3::helpers::PfnLockGuard) {
+    let mut LockChange = 0u32;
+    let mut current_guard = guard;
+
+    while MmIsAddressValid(VirtualAddress) == 0 {
+        drop(current_guard); // [guard-drop] — releases PFN lock
+
+        let Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
+        if Status < 0 {
+            KeBugCheckEx(
+                0x7A,
+                3,
+                Status as ULONG_PTR,
+                0,
+                VirtualAddress as ULONG_PTR,
+            );
+        }
+
+        LockChange = 1;
+        current_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    }
+
+    (LockChange, current_guard)
+}
+
 unsafe fn MiSegmentDelete(segment: PSEGMENT) {
     let control_area = (*segment).ControlArea;
     let subsection = (control_area.add(1)) as PSUBSECTION;
     let mut pointer_pte = (*subsection).SubsectionBase as PMMPTE;
     let last_pte = pointer_pte.add((*segment).NonExtendedPtes as usize);
-    let old_irql = MiAcquirePfnLock();
+    let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     let mut pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
     if (*pte_for_proto).valid() == false {
-        MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
+        let (_, new_guard) = MiMakeSystemAddressValidPfnInner(pointer_pte as PVOID, pfn_guard);
+        pfn_guard = new_guard;
     }
     while pointer_pte < last_pte {
         if MiIsPteOnPdeBoundary(pointer_pte) && pointer_pte != (*subsection).SubsectionBase as PMMPTE {
             pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
             if (*pte_for_proto).valid() == false {
-                MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
+                let (_, new_guard) = MiMakeSystemAddressValidPfnInner(pointer_pte as PVOID, pfn_guard);
+                pfn_guard = new_guard;
             }
         }
         let temp_pte = *pointer_pte;
@@ -733,7 +766,7 @@ unsafe fn MiSegmentDelete(segment: PSEGMENT) {
         (*pointer_pte).Long = 0;
         pointer_pte = pointer_pte.add(1);
     }
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
     ExFreePool(control_area as PVOID);
     ExFreePool(segment as PVOID);
 }

@@ -353,7 +353,9 @@ pub unsafe extern "fastcall" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
-    KiTimerListExpire_body(ExpiredListHead, OldIrql)
+    // C callers pass raw IRQL — wrap in guard for inner function
+    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::from_raw(OldIrql); // [guard]
+    KiTimerListExpire_inner(ExpiredListHead, disp_guard)
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -362,10 +364,17 @@ pub unsafe extern "C" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
-    KiTimerListExpire_body(ExpiredListHead, OldIrql)
+    // C callers pass raw IRQL — wrap in guard for inner function
+    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::from_raw(OldIrql); // [guard]
+    KiTimerListExpire_inner(ExpiredListHead, disp_guard)
 }
 
-unsafe fn KiTimerListExpire_body(ExpiredListHead: PLIST_ENTRY, OldIrql: KIRQL) {
+/// Inner implementation taking a DispatcherLockGuard. Called from Rust callers
+/// (clock.rs) and from the exported C wrappers above.
+pub(crate) unsafe fn KiTimerListExpire_inner(
+    ExpiredListHead: PLIST_ENTRY,
+    disp_guard: ntkrnl_sys::guards::DispatcherLockGuard,
+) {
     let mut SystemTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
     let mut i: LONG;
@@ -411,6 +420,10 @@ unsafe fn KiTimerListExpire_body(ExpiredListHead: PLIST_ENTRY, OldIrql: KIRQL) {
     }
 
     if DpcCalls != 0 {
+        // Split-release: release dispatcher lock but stay at DISPATCH_LEVEL to call DPCs,
+        // then lower IRQL to the original level afterwards.
+        let old_irql = disp_guard.previous_irql(); // [guard]
+        core::mem::forget(disp_guard); // [guard-drop] — manual release below
         KiReleaseDispatcherLock(DISPATCH_LEVEL);
 
         i = 0;
@@ -425,9 +438,9 @@ unsafe fn KiTimerListExpire_body(ExpiredListHead: PLIST_ENTRY, OldIrql: KIRQL) {
             i += 1;
         }
 
-        KeLowerIrql(OldIrql);
+        KeLowerIrql(old_irql);
     } else {
-        KiReleaseDispatcherLock(OldIrql);
+        drop(disp_guard); // [guard-drop]
     }
 }
 

@@ -9,8 +9,8 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{
     HalSetRealTimeClock, KSYSTEM_TIME, KTIMER, LARGE_INTEGER, LIST_ENTRY, PKSPIN_LOCK_QUEUE,
     PKTIMER, PLARGE_INTEGER, TIME_FIELDS, KeRevertToUserAffinityThread, KeSetSystemAffinityThread,
-    KiAcquireDispatcherLock, KiAcquireTimerLock, KiComputeTimerTableIndex, KiInsertTimerTable,
-    KiReleaseTimerLock, KiRemoveEntryTimer, KiTimerListExpire, RtlTimeToTimeFields,
+    KiAcquireTimerLock, KiComputeTimerTableIndex, KiInsertTimerTable,
+    KiReleaseTimerLock, KiRemoveEntryTimer, RtlTimeToTimeFields,
 };
 
 #[no_mangle]
@@ -64,8 +64,6 @@ pub unsafe extern "system" fn KeSetSystemTime(
     HalTime: PLARGE_INTEGER,
 ) {
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
-    let mut OldIrql: KIRQL = 0;
-    let mut OldIrql2: KIRQL = 0;
     let mut DeltaTime: LARGE_INTEGER = core::mem::zeroed();
     let mut TempList: LIST_ENTRY = core::mem::zeroed();
     let mut TempList2: LIST_ENTRY = core::mem::zeroed();
@@ -75,7 +73,7 @@ pub unsafe extern "system" fn KeSetSystemTime(
     }
 
     KeSetSystemAffinityThread(1);
-    OldIrql = KiAcquireDispatcherLock();
+    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::acquire(); // [guard]
     // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql2);
     let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
@@ -144,7 +142,8 @@ pub unsafe extern "system" fn KeSetSystemTime(
         KiReleaseTimerLock(LockQueue);
     }
 
-    KiTimerListExpire(&mut TempList2 as PLIST_ENTRY, OldIrql);
+    // Pass guard to inner — it handles release/IRQL lowering // [guard-drop]
+    super::dpc::KiTimerListExpire_inner(&mut TempList2 as PLIST_ENTRY, disp_guard);
 
     KeRevertToUserAffinityThread();
 }

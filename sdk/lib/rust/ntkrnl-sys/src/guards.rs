@@ -223,6 +223,14 @@ impl DispatcherLockGuard {
         Self { previous_irql }
     }
 
+    /// Wrap a raw IRQL value (from a prior `KiAcquireDispatcherLock` call) into
+    /// a guard. The caller must ensure the dispatcher lock is currently held and
+    /// `previous_irql` is the value returned by the acquire call.
+    #[inline]
+    pub unsafe fn from_raw(previous_irql: KIRQL) -> Self {
+        Self { previous_irql }
+    }
+
     #[inline]
     pub fn previous_irql(&self) -> KIRQL {
         self.previous_irql

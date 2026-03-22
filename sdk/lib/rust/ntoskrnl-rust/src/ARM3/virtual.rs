@@ -356,16 +356,18 @@ pub unsafe extern "system" fn MiMakeSystemAddressValid(
     LockChange
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
+/// Inner version that takes and returns a PfnLockGuard.
+/// Returns (LockChange, new_guard) — consumes the old guard, returns a fresh one.
+pub(crate) unsafe fn MiMakeSystemAddressValidPfnInner(
     VirtualAddress: PVOID,
-    mut OldIrql: KIRQL,
-) -> ULONG {
+    guard: crate::ARM3::helpers::PfnLockGuard,
+) -> (ULONG, crate::ARM3::helpers::PfnLockGuard) {
     let mut Status: NTSTATUS;
     let mut LockChange = 0u32;
+    let mut current_guard = guard;
 
     while MmIsAddressValid(VirtualAddress) == 0 {
-        MiReleasePfnLock(OldIrql);
+        drop(current_guard); // [guard-drop] — releases PFN lock
 
         Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
         if Status < 0 {
@@ -379,10 +381,22 @@ pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
         }
 
         LockChange = 1;
-        OldIrql = MiAcquirePfnLock();
+        current_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     }
 
-    LockChange
+    (LockChange, current_guard)
+}
+
+/// C-ABI wrapper — keeps the old signature for any remaining C callers.
+#[no_mangle]
+pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
+    VirtualAddress: PVOID,
+    OldIrql: KIRQL,
+) -> ULONG {
+    let guard = crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql); // [guard]
+    let (lock_change, guard) = MiMakeSystemAddressValidPfnInner(VirtualAddress, guard);
+    guard.into_raw(); // discard guard without releasing — caller owns the lock
+    lock_change
 }
 
 #[no_mangle]
@@ -1602,7 +1616,6 @@ pub unsafe extern "system" fn MiGetPageProtection(
     let mut WsSafe: BOOLEAN = 0;
     let mut WsShared: BOOLEAN = 0;
     let Protect: ULONG;
-    let OldIrql: KIRQL;
     // PAGED_CODE();
 
     // Copy this PTE's contents
@@ -1643,12 +1656,13 @@ pub unsafe extern "system" fn MiGetPageProtection(
         } else {
             // The PTE is valid, so we might need to get the protection from
             // the PFN. Lock the PFN database
-            OldIrql = MiAcquirePfnLock();
+            let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
             // Check if the PDE is still valid
             if !(*MiAddressToPte(PointerPte as PVOID)).valid() {
                 // It's not, make it valid
-                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);
+                let (_, new_guard) = MiMakeSystemAddressValidPfnInner(PointerPte as PVOID, pfn_guard);
+                pfn_guard = new_guard;
             }
 
             // Now it's safe to read the PTE value again
@@ -1667,7 +1681,7 @@ pub unsafe extern "system" fn MiGetPageProtection(
             }
 
             // Release the PFN database
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
         }
 
         // Lock the working set again
