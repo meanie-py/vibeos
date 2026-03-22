@@ -17,6 +17,8 @@ extern "C" {
     pub fn KeLowerIrql(NewIrql: u8);
 
     // Critical/Guarded regions (provided by ke_rust_shims.c)
+}
+extern "system" {
     pub fn KeEnterCriticalRegion();
     pub fn KeLeaveCriticalRegion();
 }

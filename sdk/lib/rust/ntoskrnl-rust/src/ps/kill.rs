@@ -82,13 +82,15 @@ extern "system" {
     fn DbgBreakPoint();
 }
 extern "C" {
-    fn PsGetCurrentThread() -> PETHREAD;
     fn KeLowerIrql(irql: KIRQL);
     #[link_name = "IoGetCurrentProcess"]
-    fn PsGetCurrentProcess() -> PEPROCESS;
 
     fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG);
     fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG);
+}
+extern "system" {
+    fn PsGetCurrentThread() -> PETHREAD;
+    fn PsGetCurrentProcess() -> PEPROCESS;
 }
 
 // PspW32ProcessCallout and PspW32ThreadCallout are function pointer VARIABLES

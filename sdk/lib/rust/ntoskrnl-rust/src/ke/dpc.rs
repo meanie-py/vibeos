@@ -48,12 +48,7 @@ extern "C" {
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 #[cfg(target_arch = "x86")]
@@ -72,20 +67,10 @@ extern "fastcall" {
 extern "C" {
     fn KiProcessDeferredReadyList(Prcb: PKPRCB);
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
 }
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
-    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
-}
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
 }
 extern "C" {

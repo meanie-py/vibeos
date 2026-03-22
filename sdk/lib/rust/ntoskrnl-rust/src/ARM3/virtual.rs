@@ -164,9 +164,11 @@ extern "C" {
     fn KeSweepICache(BaseAddress: PVOID, Length: SIZE_T);
     fn MiLockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
     fn MiUnlockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
+    static MmUserProbeAddress: ULONG_PTR;
+}
+extern "system" {
     fn ExAllocatePoolZero(PoolType: u32, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
     fn ExFreePool(P: PVOID);
-    static MmUserProbeAddress: ULONG_PTR;
 }
 
 // ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.

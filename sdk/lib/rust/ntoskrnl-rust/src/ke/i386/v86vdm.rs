@@ -39,12 +39,7 @@ extern "system" {
 extern "C" {
     fn KeGetTrapFrame(Thread: PETHREAD) -> PKTRAP_FRAME;
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
 }
 

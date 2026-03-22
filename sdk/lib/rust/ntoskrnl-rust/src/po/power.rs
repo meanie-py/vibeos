@@ -144,7 +144,7 @@ extern "stdcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,

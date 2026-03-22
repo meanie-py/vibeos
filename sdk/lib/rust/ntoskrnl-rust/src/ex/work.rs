@@ -43,12 +43,7 @@ extern "stdcall" {
 extern "system" {
     fn ExpDebuggerWorker(Context: PVOID);
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 

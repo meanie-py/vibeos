@@ -74,12 +74,7 @@ extern "system" {
 extern "C" {
     fn MmInitializeMdl(Mdl: *mut ntkrnl_sys::ddk::_MDL, BaseAddress: PVOID, Length: ULONG);
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn ObfDereferenceObject(Object: PVOID) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn ObfDereferenceObject(Object: PVOID) -> LONG;
 }
 

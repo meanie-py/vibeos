@@ -588,7 +588,25 @@ These are approaches we tried, found to be unworkable, and documented for future
 - Using `#[inline(never)]` on every function that LLVM misanalyzes (doesn't fully work — LLVM still does interprocedural analysis without inlining)
 - Keeping CGU=16 where CGU boundaries accidentally prevent LLVM from seeing the full picture
 
-**Current approach:** Stay on CGU=16. The global write barrier is kept as defense-in-depth against future CGU-boundary-shifting constant-fold bugs. The 7 known CGU=16 ud2s are tracked in `scan_ud2.py`'s `KNOWN_CGU_UD2` set.
+**Current approach:** Stay on CGU=16 for now. The global write barrier is kept as defense-in-depth. The 7 known CGU=16 ud2s are tracked in `scan_ud2.py`'s `KNOWN_CGU_UD2` set.
+
+### Breakthrough: ABI Mismatches Are the Primary CGU=1 Root Cause (2026-03-22)
+
+**Discovery:** After the global barrier failed, deeper disassembly analysis revealed **ud2 contagion** — one function gets ud2, then every caller of that function also gets ud2, propagating up the call graph. Tracing the contagion chains to their roots revealed that `extern "C"` blocks (cdecl) were declaring stdcall/fastcall kernel functions. With CGU=16, LLVM can't see across the boundary to detect the mismatch. With CGU=1, it can.
+
+**`verify_abi.py` already existed** and catches these mismatches perfectly (reports function name, declared convention, correct convention per ntoskrnl.spec/bindgen). It found **61 ABI mismatches** — but it wasn't integrated into the smoke tests and hadn't been run since it was created. New C→Rust translations kept adding `extern "C"` blocks because the LLM translation prompt defaults to `extern "C"`.
+
+**Fix:** Changed 61 `extern "C"` blocks to `extern "system"` (stdcall) or `extern "fastcall"` as appropriate. Purely mechanical — the tool tells you exactly what each function should be.
+
+**Result: CGU=1 ud2 count dropped from 45 to 21.** 24 ud2s were caused by ABI mismatches alone. The remaining 21 still need investigation — they may be further ABI mismatches that verify_abi.py doesn't cover (functions not in ntoskrnl.spec), or genuine UB in translated code.
+
+**ud2 contagion pattern:** When function A has ud2, LLVM knows calling A is unreachable. So any function B that calls A without a guaranteed-taken early return also gets ud2. This propagates transitively — the Dbgk subsystem had 10 ud2s all traceable to a single root cause (`DbgkpSuspendProcess` calling `PsGetCurrentProcess` with wrong ABI → ud2 → every Dbgk function that calls `DbgkpSuspendProcess` also gets ud2).
+
+**Action items:**
+1. Integrate verify_abi.py into smoke tests (like scan_ud2 and lint_kernel)
+2. Update LLM translation prompts to use `extern "system"` instead of `extern "C"` for NTAPI functions
+3. Investigate remaining 21 ud2s — likely more ABI mismatches or actual UB in unsafe code
+4. CGU=1 becomes viable once ud2 count reaches 0
 
 ## Relationship to Other Docs
 

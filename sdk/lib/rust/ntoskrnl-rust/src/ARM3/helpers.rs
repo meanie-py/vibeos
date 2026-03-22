@@ -882,7 +882,7 @@ extern "system" {
         FileObject: PVOID, bInit: BOOLEAN, AuditInfo: *mut PVOID,
     ) -> NTSTATUS;
 }
-extern "C" {
+extern "system" {
     pub fn PsGetCurrentThread() -> PVOID;
 }
 

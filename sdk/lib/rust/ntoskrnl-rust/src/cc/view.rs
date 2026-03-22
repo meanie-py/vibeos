@@ -1342,14 +1342,11 @@ pub unsafe extern "system" fn CcInitView() {
 
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> ULONG;
+}
+extern "system" {
     fn DbgBreakPoint();
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 extern "system" {

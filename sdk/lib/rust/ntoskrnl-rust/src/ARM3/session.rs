@@ -12,12 +12,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ddk::{ExInitializePushLock, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, KeZeroPages, LCID, MiDecrementShareCount, MiInitializePfnAndMakePteValid, MiInitializePfnForOtherProcess, MiInitializeSystemSpaceMap, MiRemoveZeroPageSafe, MmIsAddressValid, PEPROCESS, PETHREAD, PKAPC_STATE, PMMSESSION, PMMWSL, PMMWSLE, PMM_SESSION_SPACE, _EPROCESS, _KGUARDED_MUTEX, _KPROCESS, _MMPFN, _MMPTE, _MMWSL, _MMWSLE, _MM_SESSION_SPACE};
 use super::helpers::*;
 
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 

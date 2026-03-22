@@ -145,12 +145,7 @@ extern "C" {
 extern "C" {
     fn DbgPrint(format: PCHAR, ...) -> ULONG;
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 extern "system" {

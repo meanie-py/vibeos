@@ -58,6 +58,8 @@ extern "C" {
     fn ReleaseCapturedUnicodeString(CapturedString: PUNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
+}
+extern "system" {
     fn RtlUnicodeStringToOemSize(UnicodeString: PUNICODE_STRING) -> ULONG;
 }
 

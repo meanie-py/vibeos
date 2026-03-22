@@ -26,12 +26,14 @@ extern "C" {
     );
 
     #[link_name = "IoGetCurrentProcess"]
-    fn PsGetCurrentProcess() -> PEPROCESS;
-    fn PsGetCurrentThread() -> PETHREAD;
 
     static PspSystemDllBase: PVOID;
     static PsNtDllPathName: _UNICODE_STRING;
     static PsImageNotifyEnabled: BOOLEAN;
+}
+extern "system" {
+    fn PsGetCurrentProcess() -> PEPROCESS;
+    fn PsGetCurrentThread() -> PETHREAD;
 }
 
 const PSF_CREATE_REPORTED_BIT: ULONG = 0x00000001;

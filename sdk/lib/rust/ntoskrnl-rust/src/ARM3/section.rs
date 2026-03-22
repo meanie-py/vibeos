@@ -392,7 +392,7 @@ extern "system" {
         FileObject: PFILE_OBJECT, ResourceToRelease: PVOID,
     );
 }
-extern "C" {
+extern "system" {
     fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
 }
 extern "C" {
@@ -2182,9 +2182,11 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     extern "C" {
         fn ProbeForWritePointer(Address: *mut PVOID);
         fn ProbeForWriteSize_t(Address: *mut SIZE_T);
-        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
         static mut MmHighestPhysicalPage: PFN_NUMBER;
     }
+extern "system" {
+        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
+}
 
     let previous_mode = ExGetPreviousMode();
 

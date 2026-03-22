@@ -77,12 +77,7 @@ extern "system" {
 extern "C" {
     fn KeGetPcr() -> *mut KPCR;
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 

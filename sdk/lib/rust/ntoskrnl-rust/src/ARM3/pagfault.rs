@@ -15,12 +15,7 @@ use super::helpers::*;
 extern "system" {
     fn MmRebalanceMemoryConsumersAndWait();
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 

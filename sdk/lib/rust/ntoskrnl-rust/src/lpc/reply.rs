@@ -48,8 +48,10 @@ extern "C" {
     fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn ProbeForWritePointer(Address: *mut PVOID);
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER);
-    fn PsGetCurrentProcess() -> PEPROCESS;
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
+}
+extern "system" {
+    fn PsGetCurrentProcess() -> PEPROCESS;
 }
 
 #[no_mangle]

@@ -225,7 +225,7 @@ const IopReadTransfer: ULONG = 1;
 const IopWriteTransfer: ULONG = 2;
 
 // IO access/length arrays
-extern "C" {
+extern "system" {
     static IopQueryOperationAccess: [ACCESS_MASK; 0];
     static IopQueryOperationLength: [ULONG; 0];
     static IopSetOperationAccess: [ACCESS_MASK; 0];

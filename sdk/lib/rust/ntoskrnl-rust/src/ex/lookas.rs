@@ -29,16 +29,7 @@ unsafe fn ExInterlockedInsertTailList(
     ListEntry: PLIST_ENTRY,
     Lock: DdkPKSPIN_LOCK,
 ) -> PLIST_ENTRY {
-    #[cfg(target_arch = "x86")]
-extern "fastcall" {
-    fn ExfInterlockedInsertTailList(
-            ListHead: PLIST_ENTRY,
-            ListEntry: PLIST_ENTRY,
-            Lock: DdkPKSPIN_LOCK,
-        ) -> PLIST_ENTRY;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+    extern "fastcall" {
     fn ExfInterlockedInsertTailList(
             ListHead: PLIST_ENTRY,
             ListEntry: PLIST_ENTRY,

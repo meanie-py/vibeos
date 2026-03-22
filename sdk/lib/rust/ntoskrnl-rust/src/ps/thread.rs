@@ -46,12 +46,7 @@ extern "C" {
     fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
     fn KeGetContextReturnRegister(Context: PCONTEXT) -> ULONG_PTR;
 }
-#[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 extern "system" {

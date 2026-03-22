@@ -27,7 +27,7 @@ use ntkrnl_sys::ddk::{
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 pub const MAX_FAST_REFS: LONG = 7;
 
-extern "C" {
+extern "system" {
     static mut PsThreadType: POBJECT_TYPE;
     fn PsGetCurrentThread() -> *mut _ETHREAD;
 }

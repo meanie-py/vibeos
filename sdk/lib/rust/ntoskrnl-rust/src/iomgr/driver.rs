@@ -168,13 +168,15 @@ unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8) {
 
 extern "C" {
     fn IopGetDeviceObjectFromDeviceInstance(DeviceInstance: PUNICODE_STRING) -> *mut DEVICE_OBJECT;
-    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
     fn PiPerformSyncDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG);
     fn PiQueueDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
     fn _snprintf(buf: PCHAR, count: usize, format: PCHAR, ...) -> i32;
     fn _snwprintf(buf: PWCHAR, count: usize, format: *const u16, ...) -> i32;
     fn ExInitializeWorkItem(Item: *mut _WORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID);
     fn CONTAINING_RECORD(ptr: PVOID, ty: PVOID, field: PVOID) -> PVOID;
+}
+extern "system" {
+    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
 }
 
 extern "system" {

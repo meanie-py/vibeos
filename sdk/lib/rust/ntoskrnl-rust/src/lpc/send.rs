@@ -44,11 +44,13 @@ extern "system" {
     ) -> NTSTATUS;
 }
 extern "C" {
-    fn KeEnterCriticalRegion();
-    fn KeLeaveCriticalRegion();
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn LpcpCompleteWait(semaphore: PVOID);
     fn LpcpReplyWait(semaphore: PVOID, mode: KPROCESSOR_MODE);
+}
+extern "system" {
+    fn KeEnterCriticalRegion();
+    fn KeLeaveCriticalRegion();
 }
 
 const LPCP_LOCK_HELD: ULONG = 1;
