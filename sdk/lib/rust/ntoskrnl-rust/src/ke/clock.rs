@@ -179,10 +179,21 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86", target_arch = "arm"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
+    // Use write_volatile to prevent LLVM from deducing writeonly+captures(none)
+    // on CurrentTime. Without volatile, LLVM eliminates callers' reads of the
+    // written value via dead store elimination, causing ud2 contagion.
     loop {
-        (*CurrentTime).__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
-        (*CurrentTime).__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.LowPart;
-        if (*CurrentTime).__bindgen_anon_1.HighPart == (*SharedUserData).SystemTime.High2Time {
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentTime).__bindgen_anon_1.HighPart),
+            (*SharedUserData).SystemTime.High1Time,
+        );
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentTime).__bindgen_anon_1.LowPart),
+            (*SharedUserData).SystemTime.LowPart,
+        );
+        if core::ptr::read_volatile(core::ptr::addr_of!((*CurrentTime).__bindgen_anon_1.HighPart))
+            == (*SharedUserData).SystemTime.High2Time
+        {
             break;
         }
         YieldProcessor();

@@ -474,7 +474,7 @@ extern "C" {
 }
 
 /// _ExAcquireFastMutex — raise IRQL to APC, acquire via InterlockedDecrement.
-#[inline]
+#[inline(never)]
 pub unsafe fn _ExAcquireFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
     let mut old_irql: KIRQL = 0;
     super::tier1::KeRaiseIrqlInternal(crate::base::APC_LEVEL, &mut old_irql);
@@ -492,7 +492,7 @@ pub unsafe fn _ExAcquireFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
 }
 
 /// _ExReleaseFastMutex — release via InterlockedIncrement, lower IRQL.
-#[inline]
+#[inline(never)]
 pub unsafe fn _ExReleaseFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
     (*fast_mutex).Owner = core::ptr::null_mut::<ddk::_KTHREAD>();
     let old_irql = (*fast_mutex).OldIrql as KIRQL;
@@ -512,7 +512,7 @@ pub unsafe fn _ExReleaseFastMutex(fast_mutex: ddk::PFAST_MUTEX) {
 }
 
 /// _ExAcquireFastMutexUnsafe — acquire without IRQL change (caller already at APC_LEVEL).
-#[inline]
+#[inline(never)]
 pub unsafe fn _ExAcquireFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
     let thread = crate::mm::KeGetCurrentThread() as ddk::PKTHREAD;
 
@@ -528,7 +528,7 @@ pub unsafe fn _ExAcquireFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
 }
 
 /// _ExReleaseFastMutexUnsafe — release without IRQL change.
-#[inline]
+#[inline(never)]
 pub unsafe fn _ExReleaseFastMutexUnsafe(fast_mutex: ddk::PFAST_MUTEX) {
     (*fast_mutex).Owner = core::ptr::null_mut::<ddk::_KTHREAD>();
 

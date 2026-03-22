@@ -81,6 +81,7 @@ static mut ExpTimeRefreshLock: ERESOURCE = unsafe { core::mem::zeroed() };
 static mut ExpKernelResolutionCount: ULONG = 0;
 static mut ExpTimerResolutionCount: ULONG = 0;
 
+#[inline(never)]
 unsafe fn ExpGetTimeZoneId(
     TimeNow: PLARGE_INTEGER,
     TimeZoneId: *mut ULONG,

@@ -356,6 +356,7 @@ pub unsafe extern "C" fn KiTimerListExpire(
 
 /// Inner implementation taking a DispatcherLockGuard. Called from Rust callers
 /// (clock.rs) and from the exported C wrappers above.
+#[inline(never)]
 pub(crate) unsafe fn KiTimerListExpire_inner(
     ExpiredListHead: PLIST_ENTRY,
     disp_guard: ntkrnl_sys::guards::DispatcherLockGuard,
@@ -509,6 +510,7 @@ pub unsafe extern "C" fn KiRetireDpcList(Prcb: PKPRCB) {
     KiRetireDpcList_body(Prcb)
 }
 
+#[inline(never)]
 unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
     let DpcData: PKDPC_DATA;
     let ListHead: PLIST_ENTRY;
