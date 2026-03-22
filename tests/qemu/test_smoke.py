@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tests.qemu.vm import QemuVM, PROJECT_DIR
+
+# Add tools/ to path for scan_ud2
+sys.path.insert(0, str(PROJECT_DIR / "tools"))
 
 
 def _screenshot_path(arch: str) -> Path:
@@ -26,7 +30,84 @@ def _debugcon_hint(vm: QemuVM) -> str:
     return "\n\n" + "\n".join(parts)
 
 
-def test_boot_and_serial(vm: QemuVM) -> None:
+def _symbolicate_bugcheck(serial_output: str, arch: str) -> str:
+    """Extract BUGCHECK info from serial output and symbolicate crash address."""
+    # Match: *** BUGCHECK: 0x0000001E (0xC000001D, 0x804C4213, 0xF7BBB8C8, 0x00000000)
+    # Or:    *** STOP: 0x0000001E (0xC000001D,0x804C4213,0xF7BBB8C8,0x00000000)
+    match = re.search(
+        r'\*\*\*\s+(?:BUGCHECK|STOP):\s+(0x[0-9A-Fa-f]+)\s*'
+        r'\((0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)\)',
+        serial_output,
+    )
+    if not match:
+        return ""
+
+    bugcode = match.group(1)
+    p1, p2, p3, p4 = match.group(2), match.group(3), match.group(4), match.group(5)
+
+    # Known bugcheck codes
+    bugcheck_names = {
+        "0x0000001E": "KMODE_EXCEPTION_NOT_HANDLED",
+        "0x0000007E": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+        "0x0000000A": "IRQL_NOT_LESS_OR_EQUAL",
+        "0x00000050": "PAGE_FAULT_IN_NONPAGED_AREA",
+        "0x0000007F": "UNEXPECTED_KERNEL_MODE_TRAP",
+        "0x0000006A": "LPC_INITIALIZATION_FAILED",
+    }
+    exception_codes = {
+        "0xC000001D": "STATUS_ILLEGAL_INSTRUCTION (ud2 — likely LLVM miscompilation)",
+        "0xC0000005": "STATUS_ACCESS_VIOLATION",
+        "0xC000001E": "STATUS_INVALID_LOCK_SEQUENCE",
+    }
+
+    name = bugcheck_names.get(bugcode.upper(), "UNKNOWN")
+    parts = [f"\n  BUGCHECK {bugcode} ({name})"]
+    parts.append(f"    P1={p1} P2={p2} P3={p3} P4={p4}")
+
+    exc_name = exception_codes.get(p1.upper(), "")
+    if exc_name:
+        parts.append(f"    Exception: {exc_name}")
+
+    # Try to symbolicate crash address (P2 for 0x1E)
+    crash_addr = int(p2, 16) if bugcode.upper() == "0X0000001E" else None
+    if crash_addr:
+        # PE ImageBase: i386=0x80400000, amd64=varies
+        image_bases = {"i386": 0x80400000, "amd64": 0xFFFFF80000000000}
+        base = image_bases.get(arch, 0)
+        if crash_addr > base:
+            rva = crash_addr - base
+            parts.append(f"    Crash RVA: 0x{rva:X} (base 0x{base:X})")
+
+            # Try objdump to find function
+            ntoskrnl = PROJECT_DIR / f"build-{arch}" / "ntoskrnl" / "ntoskrnl.exe"
+            if ntoskrnl.exists():
+                try:
+                    from scan_ud2 import find_objdump
+                    objdump = find_objdump(arch)
+                    if objdump:
+                        result = subprocess.run(
+                            [objdump, "-d", str(ntoskrnl)],
+                            capture_output=True, text=True, timeout=120,
+                        )
+                        # Find which function contains the crash address
+                        last_func = None
+                        for line in result.stdout.splitlines():
+                            func_match = re.match(r'^([0-9a-f]+)\s+<(.+)>:', line)
+                            if func_match:
+                                func_addr = int(func_match.group(1), 16)
+                                if func_addr <= rva:
+                                    last_func = func_match.group(2)
+                                else:
+                                    break
+                        if last_func:
+                            parts.append(f"    Function: {last_func}")
+                except Exception:
+                    pass
+
+    return "\n".join(parts)
+
+
+def test_boot_and_serial(vm: QemuVM, arch: str) -> None:
     """Verify QEMU boots and produces serial output without crashing."""
     hint = _debugcon_hint(vm)
     assert vm._boot_output, f"No boot output captured{hint}"
@@ -37,9 +118,11 @@ def test_boot_and_serial(vm: QemuVM) -> None:
     )
     # Detect crashes in serial output (catches BSODs that idle detection misses)
     for crash_sig in ["*** BUGCHECK:", "*** STOP:"]:
-        assert crash_sig not in vm._boot_output, (
-            f"Crash detected in serial output: {crash_sig!r}{hint}"
-        )
+        if crash_sig in vm._boot_output:
+            sym = _symbolicate_bugcheck(vm._boot_output, arch)
+            assert False, (
+                f"Crash detected in serial output: {crash_sig!r}{sym}{hint}"
+            )
 
 
 def test_qmp_status(vm: QemuVM) -> None:
@@ -89,6 +172,39 @@ def test_screenshot(vm: QemuVM, arch: str) -> None:
             shutil.copy2(ppm_path, png_path)
 
     print(f"\n[screenshot] Saved to {png_path}")
+
+
+def test_no_unexpected_ud2(arch: str) -> None:
+    """Scan ntoskrnl.exe for ud2 instructions in named functions.
+
+    ud2 in a named function means LLVM proved the function body has undefined
+    behavior and replaced it with an illegal instruction. This catches
+    captures(none) miscompilation and ABI mismatches WITHOUT needing to boot.
+
+    Expected ud2 in core::option::unwrap_unchecked etc. are excluded.
+    """
+    build_dir = PROJECT_DIR / f"build-{arch}"
+    ntoskrnl = build_dir / "ntoskrnl" / "ntoskrnl.exe"
+    if not ntoskrnl.exists():
+        pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
+
+    try:
+        from scan_ud2 import scan_ud2, find_objdump
+    except ImportError:
+        pytest.skip("scan_ud2.py not found in tools/")
+
+    objdump = find_objdump(arch)
+    if objdump is None:
+        pytest.skip("No objdump available")
+
+    findings = scan_ud2(ntoskrnl, objdump)
+    unexpected = [f for f in findings if not f["expected"]]
+
+    if unexpected:
+        lines = [f"Found {len(unexpected)} unexpected ud2 (LLVM miscompilation):"]
+        for f in unexpected:
+            lines.append(f"  0x{f['address']}: {f['function']}")
+        assert False, "\n".join(lines)
 
 
 def test_sacred_primitives(arch: str) -> None:
