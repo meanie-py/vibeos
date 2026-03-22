@@ -329,21 +329,77 @@ KeReleaseSpinLock(&mut lock, old_irql);
 2. Add `ntkrnl-sys/src/guards.rs` — IrqlGuard, SpinLockGuard, PfnLockGuard
 3. Verify on all 3 architectures with smoke tests
 
-### Phase 2: Migrate Hot Paths First
-Priority targets (high call count + known LLVM victims):
+### Phase 2: Automated Migration of Simple Patterns (~60% of sites)
+Use `tools/rustconv/rustconv/migrate_guards.py` to transform simple acquire-release pairs.
+
+**Automatable patterns (Python/tree-sitter):**
+```rust
+// Pattern A: PFN lock — acquire returns IRQL, release takes IRQL
+OldIrql = MiAcquirePfnLock();
+// ... straight-line code, no reacquire ...
+MiReleasePfnLock(OldIrql);
+→
+let _pfn_guard = unsafe { PfnLockGuard::acquire() };
+// ... straight-line code ...
+// (guard drops at scope end or enclosing block)
+
+// Pattern B: Spinlock — acquire takes lock+irql, release takes lock+irql
+KeAcquireSpinLock(addr_of_mut!(Lock) as PKSPIN_LOCK, &mut OldIrql);
+// ... straight-line code ...
+KeReleaseSpinLock(addr_of_mut!(Lock) as PKSPIN_LOCK, OldIrql);
+→
+let _guard = unsafe { SpinLockGuard::acquire(addr_of_mut!(Lock)) };
+// ... straight-line code ...
+
+// Pattern C: IRQL raise/lower — raise takes level+irql ptr, lower takes irql
+KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+// ... straight-line code ...
+KeLowerIrql(OldIrql);
+→
+let _irql = unsafe { IrqlGuard::raise(DISPATCH_LEVEL) };
+// ... straight-line code ...
+```
+
+**Detection criteria for "simple" (automatable):**
+- Acquire and release are in the same function
+- No reacquire of the same lock between acquire and release
+- Release is not inside a conditional (if/match) that the acquire isn't in
+- The OldIrql variable is only used for the release call, not read elsewhere
+- No other function is called with the OldIrql value
+
+**~25% needs LLM assistance** (acquire-release-reacquire):
+```rust
+OldIrql = MiAcquirePfnLock();
+if page == 0 {
+    MiReleasePfnLock(OldIrql);
+    MiZeroPhysicalPage(page);
+    OldIrql = MiAcquirePfnLock();
+}
+// ... use page ...
+MiReleasePfnLock(OldIrql);
+```
+These need `drop(guard)` + reacquire, or restructured scoping. Feed to Codex/Sonnet with the guard API as context.
+
+**~15% needs manual review** (32 acquires in timer.rs, 24 in devaction.rs, complex error paths).
+
+### Phase 3: Migrate Hot Paths (known LLVM victims)
+Priority targets:
 1. **ps/thread.rs** — PspCreateThread output pointers → Result (Bug 1 fix)
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
 3. **ARM3/procsup.rs** — MiAcquirePfnLock/MiReleasePfnLock → PfnLockGuard
 4. **ke/wait.rs** — KiExitDispatcher IRQL restoration
 
-### Phase 3: Systematic Migration
-Use `verify_ffi.py` to identify remaining C-style patterns. Migrate subsystem by subsystem:
-- KE (62 files, 906 spinlock sites)
-- MM (30 files, heavy PFN lock usage)
-- PS (13 files, output pointers)
-- OB, SE, EX, IO (already using some Result patterns via probe API)
+### Phase 4: LLM-Assisted Migration of Complex Patterns (~25%)
+Use rustconv pipeline or Codex to transform acquire-release-reacquire patterns.
+Template prompt includes the guard API, the original C code, and the current Rust code.
 
-### Phase 4: Remove Shims
+### Phase 5: Manual Migration of Complex Control Flow (~15%)
+Files with high acquire counts need manual restructuring:
+- `ex/timer.rs` (32 acquires)
+- `pnpmgr/devaction.rs` (24 acquires)
+- `ke/` dispatcher/scheduler files
+
+### Phase 6: Remove Shims
 As guards replace manual lock/unlock patterns, the FORCEINLINE C shims for lock functions become unnecessary. Each migrated subsystem allows removing its corresponding shims.
 
 ## Current State (for reference)

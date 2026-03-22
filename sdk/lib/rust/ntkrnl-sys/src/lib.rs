@@ -39,6 +39,7 @@ pub mod macros;
 pub mod mm;
 pub mod ob;
 pub mod probe;
+pub mod guards;
 pub mod ps;
 pub mod rtl;
 
