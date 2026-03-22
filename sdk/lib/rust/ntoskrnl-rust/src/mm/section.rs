@@ -548,30 +548,30 @@ unsafe extern "C" fn FreeSegmentPage(Segment: PMM_SECTION_SEGMENT, Offset: PLARG
     MmReleasePageMemoryConsumer(MC_USER, Page);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn MmDereferenceSegmentWithLock(
-    Segment: PMM_SECTION_SEGMENT, mut OldIrql: KIRQL
+/// Internal guard-based implementation. Takes ownership of the PFN lock.
+/// If `pfn_guard` is None, acquires the lock internally.
+unsafe fn MmDereferenceSegmentWithLockInner(
+    Segment: PMM_SECTION_SEGMENT,
+    pfn_guard: Option<crate::ARM3::helpers::PfnLockGuard>,
 ) {
-    if OldIrql == MM_NOIRQL as KIRQL {
-        OldIrql = MiAcquirePfnLock();
-    }
+    let pfn_guard = pfn_guard.unwrap_or_else(|| crate::ARM3::helpers::PfnLockGuard::acquire());
     if InterlockedDecrement64((*Segment).ReferenceCount as *mut i64) > 0 {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         return;
     }
     *(*Segment).Flags |= MM_SEGMENT_INDELETE;
     if *(*Segment).Flags & MM_DATAFILE_SEGMENT != 0 {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         MmFreePageTablesSectionSegment(Segment, Some(FreeSegmentPage));
-        OldIrql = MiAcquirePfnLock();
+        let pfn_guard_1 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         (*(*(*Segment).FileObject).SectionObjectPointer).DataSectionObject = core::ptr::null_mut();
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard_1); // [guard-drop]
         ObDereferenceObject((*Segment).FileObject as PVOID);
         ExFreePoolWithTag(Segment as PVOID, TAG_MM_SECTION_SEGMENT);
     } else {
         let ImageSectionObject = ImageSectionObjectFromSegment(Segment);
         (*(*(*ImageSectionObject).FileObject).SectionObjectPointer).ImageSectionObject = core::ptr::null_mut();
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         ObDereferenceObject((*ImageSectionObject).FileObject as PVOID);
         let NrSegments = (*ImageSectionObject).NrSegments;
         let SectionSegments = (*ImageSectionObject).Segments;
@@ -583,6 +583,18 @@ pub unsafe extern "system" fn MmDereferenceSegmentWithLock(
         }
         ExFreePoolWithTag(SectionSegments as PVOID, TAG_MM_SECTION_SEGMENT);
         ExFreePoolWithTag(ImageSectionObject as PVOID, TAG_MM_SECTION_SEGMENT);
+    }
+}
+
+/// C-facing export — wraps raw KIRQL into guard, delegates to inner.
+#[no_mangle]
+pub unsafe extern "system" fn MmDereferenceSegmentWithLock(
+    Segment: PMM_SECTION_SEGMENT, OldIrql: KIRQL
+) {
+    if OldIrql == MM_NOIRQL as KIRQL {
+        MmDereferenceSegmentWithLockInner(Segment, None);
+    } else {
+        MmDereferenceSegmentWithLockInner(Segment, Some(crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql)));
     }
 }
 
@@ -841,14 +853,14 @@ unsafe fn MmpDeleteSectionInner(ObjectBody: PVOID) {
     }
     if (*Section).u.Flags.Image() != 0 {
         let ImageSectionObject = (*Section).Segment as PMM_IMAGE_SECTION_OBJECT;
-        let mut OldIrql = MiAcquirePfnLock();
+        let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         (*ImageSectionObject).SectionCount -= 1;
-        MmDereferenceSegmentWithLock((*ImageSectionObject).Segments, OldIrql);
+        MmDereferenceSegmentWithLockInner((*ImageSectionObject).Segments, Some(pfn_guard));
     } else {
         let Segment = (*Section).Segment as PMM_SECTION_SEGMENT;
-        let mut OldIrql = MiAcquirePfnLock();
+        let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         (*Segment).SectionCount -= 1;
-        MmDereferenceSegmentWithLock(Segment, OldIrql);
+        MmDereferenceSegmentWithLockInner(Segment, Some(pfn_guard));
     }
 }
 
@@ -1070,12 +1082,12 @@ pub unsafe extern "system" fn MmFlushImageSection(
             }
         }
 
-        OldIrql = MiAcquirePfnLock();
+        let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         if (*ImageSectionObject).SegFlags & 0x80000000 == 0 {
-            MmDereferenceSegmentWithLock(&mut *(*ImageSectionObject).Segments, OldIrql);
+            MmDereferenceSegmentWithLockInner(&mut *(*ImageSectionObject).Segments, Some(pfn_guard));
             return 0u8;
         }
-        MmDereferenceSegmentWithLock(&mut *(*ImageSectionObject).Segments, OldIrql);
+        MmDereferenceSegmentWithLockInner(&mut *(*ImageSectionObject).Segments, Some(pfn_guard));
         return 1u8;
     }
     0u8

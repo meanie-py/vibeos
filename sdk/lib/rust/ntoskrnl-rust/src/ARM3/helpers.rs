@@ -1440,6 +1440,12 @@ macro_rules! _A3_TRACE {
 pub struct PfnLockGuard { previous_irql: KIRQL }
 impl PfnLockGuard {
     #[inline] pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }
+    /// Wrap a raw KIRQL from an existing MiAcquirePfnLock() call into a guard.
+    /// The caller MUST have already acquired the PFN lock.
+    #[inline] pub unsafe fn from_raw(previous_irql: KIRQL) -> Self { Self { previous_irql } }
+    /// Return the raw IRQL without releasing the lock.
+    /// Used when passing to functions that still take raw KIRQL.
+    #[inline] pub fn irql(&self) -> KIRQL { self.previous_irql }
 }
 impl Drop for PfnLockGuard {
     #[inline] fn drop(&mut self) { unsafe { MiReleasePfnLock(self.previous_irql) } }

@@ -256,6 +256,20 @@ impl QueuedSpinLockGuard {
     pub fn previous_irql(&self) -> KIRQL {
         self.previous_irql
     }
+
+    /// Wrap an already-acquired queued spinlock into a guard.
+    #[inline]
+    pub unsafe fn from_raw(number: u32, previous_irql: KIRQL) -> Self {
+        Self { number, previous_irql }
+    }
+
+    /// Consume the guard without releasing the lock. Returns the saved IRQL.
+    #[inline]
+    pub fn into_raw(self) -> KIRQL {
+        let irql = self.previous_irql;
+        core::mem::forget(self);
+        irql
+    }
 }
 
 impl Drop for QueuedSpinLockGuard {

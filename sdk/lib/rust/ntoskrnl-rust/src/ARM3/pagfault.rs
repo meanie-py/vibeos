@@ -524,12 +524,12 @@ unsafe fn MiResolveDemandZeroFault(
     STATUS_PAGE_FAULT_DEMAND_ZERO
 }
 
-unsafe fn MiCompleteProtoPteFault(
+unsafe fn MiCompleteProtoPteFaultInner(
     mut StoreInstruction: BOOLEAN,
     Address: PVOID,
     PointerPte: PMMPTE,
     PointerProtoPte: PMMPTE,
-    OldIrql: KIRQL,
+    pfn_guard: crate::ARM3::helpers::PfnLockGuard, // [guard]
     LockedProtoPfn: *mut PMMPFN,
 ) -> NTSTATUS {
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
@@ -579,7 +579,7 @@ unsafe fn MiCompleteProtoPteFault(
         *LockedProtoPfn = core::ptr::null_mut();
     }
 
-    MiReleasePfnLock(OldIrql);
+    drop(pfn_guard); // [guard-drop]
 
     Protection &= !(MM_PROTECT_SPECIAL as ULONG_PTR);
 
@@ -609,6 +609,25 @@ unsafe fn MiCompleteProtoPteFault(
 
     ASSERT!(PointerPte == MiAddressToPte(Address));
     STATUS_SUCCESS
+}
+
+/// C-ABI wrapper — constructs guard from raw IRQL for external callers
+unsafe fn MiCompleteProtoPteFault(
+    StoreInstruction: BOOLEAN,
+    Address: PVOID,
+    PointerPte: PMMPTE,
+    PointerProtoPte: PMMPTE,
+    OldIrql: KIRQL,
+    LockedProtoPfn: *mut PMMPFN,
+) -> NTSTATUS {
+    MiCompleteProtoPteFaultInner(
+        StoreInstruction,
+        Address,
+        PointerPte,
+        PointerProtoPte,
+        crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql), // [guard]
+        LockedProtoPfn,
+    )
 }
 
 unsafe fn MiResolvePageFileFault(
@@ -807,7 +826,7 @@ unsafe fn MiResolveTransitionFault(
     STATUS_PAGE_FAULT_TRANSITION
 }
 
-unsafe fn MiResolveProtoPteFault(
+unsafe fn MiResolveProtoPteFaultInner(
     StoreInstruction: BOOLEAN,
     Address: PVOID,
     PointerPte: PMMPTE,
@@ -816,7 +835,7 @@ unsafe fn MiResolveProtoPteFault(
     PageFileData: *mut PVOID,
     PteValue: PMMPTE,
     Process: PEPROCESS,
-    mut OldIrql: KIRQL,
+    mut pfn_guard: crate::ARM3::helpers::PfnLockGuard, // [guard]
     TrapInformation: PVOID,
 ) -> NTSTATUS {
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
@@ -839,11 +858,11 @@ unsafe fn MiResolveProtoPteFault(
 
         // MmTransitionCount increment elided (not in bindgen KPRCB)
 
-        return MiCompleteProtoPteFault(StoreInstruction, Address, PointerPte, PointerProtoPte, OldIrql, OutPfn);
+        return MiCompleteProtoPteFaultInner(StoreInstruction, Address, PointerPte, PointerProtoPte, pfn_guard, OutPfn);
     }
 
     if TempPte.Long == 0 {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         return STATUS_ACCESS_VIOLATION;
     }
 
@@ -872,7 +891,8 @@ unsafe fn MiResolveProtoPteFault(
     if ((Protection & MM_WRITECOPY) == MM_WRITECOPY) && (StoreInstruction != 0) {
         let mut ProtoPageFrameIndex: PFN_NUMBER;
 
-        Status = MiResolveProtoPteFault(
+        // Recursive call consumes the guard (it will release the lock internally)
+        Status = MiResolveProtoPteFaultInner(
             0,
             Address,
             PointerPte,
@@ -881,7 +901,7 @@ unsafe fn MiResolveProtoPteFault(
             PageFileData,
             PteValue,
             Process,
-            OldIrql,
+            pfn_guard,
             TrapInformation,
         );
 
@@ -889,7 +909,7 @@ unsafe fn MiResolveProtoPteFault(
             return Status;
         }
 
-        OldIrql = MiAcquirePfnLock();
+        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
         TempPte = *PointerProtoPte;
         ASSERT!((TempPte.valid() as usize) == 1);
@@ -907,7 +927,7 @@ unsafe fn MiResolveProtoPteFault(
 
         PageFrameIndex = MiRemoveAnyPage(Color);
         if PageFrameIndex == 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             return STATUS_NO_MEMORY;
         }
 
@@ -928,7 +948,7 @@ unsafe fn MiResolveProtoPteFault(
 
         MI_WRITE_VALID_PTE(PointerPte, PteContents);
 
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         return Status;
     }
 
@@ -938,14 +958,19 @@ unsafe fn MiResolveProtoPteFault(
 
     ASSERT!((TempPte.prototype() as usize) == 0);
 
+    // MiResolveTransitionFault and MiResolveDemandZeroFault still take raw KIRQL —
+    // extract it from the guard without dropping (they don't release the lock)
+    let raw_irql = pfn_guard.irql();
+    core::mem::forget(pfn_guard);
+
     if (TempPte.prototype() as usize) == 0 && (TempPte.transition() as usize) == 1 {
-        ASSERT!(OldIrql != MM_NOIRQL);
+        ASSERT!(raw_irql != MM_NOIRQL);
         Status = MiResolveTransitionFault(
             StoreInstruction,
             Address,
             PointerProtoPte,
             Process,
-            OldIrql,
+            raw_irql,
             &mut InPageBlock,
         );
         ASSERT!(Status >= 0);
@@ -957,7 +982,7 @@ unsafe fn MiResolveProtoPteFault(
             PointerProtoPte,
             TempPte.soft_protection() as ULONG,
             Process,
-            OldIrql,
+            raw_irql,
         );
         #[cfg(feature = "MI_TRACE_PFNS")]
         {
@@ -970,8 +995,37 @@ unsafe fn MiResolveProtoPteFault(
         ASSERT!(Status >= 0);
     }
 
+    // Re-wrap the raw IRQL — lock is still held, will be consumed by MiCompleteProtoPteFaultInner
     ASSERT!(((*PointerPte).valid() as usize) == 0);
-    MiCompleteProtoPteFault(StoreInstruction, Address, PointerPte, PointerProtoPte, OldIrql, OutPfn)
+    MiCompleteProtoPteFaultInner(StoreInstruction, Address, PointerPte, PointerProtoPte,
+        crate::ARM3::helpers::PfnLockGuard::from_raw(raw_irql), OutPfn)
+}
+
+/// C-ABI wrapper — constructs guard from raw IRQL for external callers
+unsafe fn MiResolveProtoPteFault(
+    StoreInstruction: BOOLEAN,
+    Address: PVOID,
+    PointerPte: PMMPTE,
+    PointerProtoPte: PMMPTE,
+    OutPfn: *mut PMMPFN,
+    PageFileData: *mut PVOID,
+    PteValue: PMMPTE,
+    Process: PEPROCESS,
+    OldIrql: KIRQL,
+    TrapInformation: PVOID,
+) -> NTSTATUS {
+    MiResolveProtoPteFaultInner(
+        StoreInstruction,
+        Address,
+        PointerPte,
+        PointerProtoPte,
+        OutPfn,
+        PageFileData,
+        PteValue,
+        Process,
+        crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql), // [guard]
+        TrapInformation,
+    )
 }
 
 unsafe fn MiDispatchFault(
