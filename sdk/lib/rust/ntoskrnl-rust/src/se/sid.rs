@@ -332,11 +332,10 @@ pub unsafe extern "system" fn SepCaptureSid(
         if let Err(s) = safe_copy_from_user(NewSid as PVOID, Sid as _, SidSize as usize, core::mem::size_of::<UCHAR>(), AccessMode) {
             return s;
         }
-        // CapturedSid is always a kernel-mode pointer (caller's output param) — direct write, no probe
-        *CapturedSid = NewSid as PSID;
+        core::ptr::write_volatile(CapturedSid, NewSid as PSID);
         _guard.disarm();
     } else if CaptureIfKernel == 0u8 {
-        *CapturedSid = InputSid;
+        core::ptr::write_volatile(CapturedSid, InputSid);
     } else {
         SidSize = RtlLengthRequiredSid((*Sid).SubAuthorityCount as ULONG);
 
@@ -346,7 +345,7 @@ pub unsafe extern "system" fn SepCaptureSid(
         }
 
         core::ptr::copy_nonoverlapping(Sid as *const u8, NewSid as *mut u8, SidSize as usize);
-        *CapturedSid = NewSid as PSID;
+        core::ptr::write_volatile(CapturedSid, NewSid as PSID);
     }
 
     STATUS_SUCCESS

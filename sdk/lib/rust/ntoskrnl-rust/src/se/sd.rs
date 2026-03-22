@@ -189,11 +189,11 @@ pub unsafe extern "system" fn SeSetWorldSecurityDescriptor(
     }
 
     if *BufferLength < SdSize {
-        *BufferLength = SdSize;
+        core::ptr::write_volatile(BufferLength, SdSize);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
-    *BufferLength = SdSize;
+    core::ptr::write_volatile(BufferLength, SdSize);
 
     Status = RtlCreateSecurityDescriptorRelative(SdRel, SECURITY_DESCRIPTOR_REVISION);
     if Status < 0 {
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     let mut Offset: ULONG;
 
     if OriginalDescriptor.is_null() {
-        *CapturedSecurityDescriptor = core::ptr::null_mut();
+        core::ptr::write_volatile(CapturedSecurityDescriptor, core::ptr::null_mut());
         return STATUS_SUCCESS;
     }
 
@@ -352,7 +352,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
             return STATUS_UNKNOWN_REVISION;
         }
 
-        *CapturedSecurityDescriptor = _OriginalSecurityDescriptor;
+        core::ptr::write_volatile(CapturedSecurityDescriptor, _OriginalSecurityDescriptor);
         return STATUS_SUCCESS;
     }
 
@@ -486,7 +486,7 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         Offset += ((DaclSize + 3) & !3);
     }
 
-    *CapturedSecurityDescriptor = NewDescriptor as PSECURITY_DESCRIPTOR;
+    core::ptr::write_volatile(CapturedSecurityDescriptor, NewDescriptor as PSECURITY_DESCRIPTOR);
     _guard.disarm();
     STATUS_SUCCESS
 }
@@ -516,11 +516,11 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
 
     if (*ObjectsSecurityDescriptor).is_null() {
         if *Length < core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG {
-            *Length = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
+            core::ptr::write_volatile(Length, core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
-        *Length = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
+        core::ptr::write_volatile(Length, core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG);
         RtlCreateSecurityDescriptorRelative(RelSD, SECURITY_DESCRIPTOR_REVISION);
         return STATUS_SUCCESS;
     }
@@ -569,7 +569,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     SdLength = OwnerLength + GroupLength + DaclLength + SaclLength +
                core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
     if *Length < SdLength {
-        *Length = SdLength;
+        core::ptr::write_volatile(Length, SdLength);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -602,7 +602,7 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
         Current += SaclLength as usize;
     }
 
-    *Length = SdLength;
+    core::ptr::write_volatile(Length, SdLength);
 
     STATUS_SUCCESS
 }
@@ -766,7 +766,7 @@ pub unsafe extern "system" fn SeSetSecurityDescriptorInfoEx(
     }
 
     (*NewSd).Control |= Control;
-    *ObjectsSecurityDescriptor = NewSd as PSECURITY_DESCRIPTOR;
+    core::ptr::write_volatile(ObjectsSecurityDescriptor, NewSd as PSECURITY_DESCRIPTOR);
     STATUS_SUCCESS
 }
 
@@ -895,7 +895,7 @@ pub unsafe extern "system" fn SeDeassignSecurity(
 ) -> NTSTATUS {
     if !(*SecurityDescriptor).is_null() {
         ExFreePoolWithTag(*SecurityDescriptor as PVOID, TAG_SD);
-        *SecurityDescriptor = core::ptr::null_mut();
+        core::ptr::write_volatile(SecurityDescriptor, core::ptr::null_mut());
     }
 
     STATUS_SUCCESS
@@ -938,7 +938,7 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
     let mut SaclPresent: BOOLEAN = 0;
     let mut Status: NTSTATUS;
 
-    *NewDescriptor = core::ptr::null_mut();
+    core::ptr::write_volatile(NewDescriptor, core::ptr::null_mut());
 
     if SubjectContext.is_null() {
         return STATUS_NO_TOKEN;
@@ -1139,7 +1139,7 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
 
     SeUnlockSubjectContext(SubjectContext);
 
-    *NewDescriptor = Descriptor as PSECURITY_DESCRIPTOR;
+    core::ptr::write_volatile(NewDescriptor, Descriptor as PSECURITY_DESCRIPTOR);
 
     STATUS_SUCCESS
 }
@@ -1175,9 +1175,10 @@ pub unsafe extern "system" fn SeComputeQuotaInformationSize(
     let Group: PSID;
     let Dacl: PACL;
 
-    *QuotaInfoSize = 0;
+    let mut quota_size: ULONG = 0;
 
     if (*(SecurityDescriptor as PISECURITY_DESCRIPTOR)).Revision != SECURITY_DESCRIPTOR_REVISION1 as u8 {
+        core::ptr::write_volatile(QuotaInfoSize, 0);
         return STATUS_UNKNOWN_REVISION;
     }
 
@@ -1185,13 +1186,14 @@ pub unsafe extern "system" fn SeComputeQuotaInformationSize(
     Dacl = SepGetDaclFromDescriptor(SecurityDescriptor as PISECURITY_DESCRIPTOR);
 
     if !Group.is_null() {
-        *QuotaInfoSize = ((RtlLengthSid(Group) + 3) & !3);
+        quota_size = ((RtlLengthSid(Group) + 3) & !3);
     }
 
     if !Dacl.is_null() {
-        *QuotaInfoSize += (((*Dacl).AclSize as ULONG + 3) & !3);
+        quota_size += (((*Dacl).AclSize as ULONG + 3) & !3);
     }
 
+    core::ptr::write_volatile(QuotaInfoSize, quota_size);
     STATUS_SUCCESS
 }
 

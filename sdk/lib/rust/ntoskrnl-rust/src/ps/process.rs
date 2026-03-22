@@ -307,7 +307,8 @@ unsafe fn PspComputeQuantumAndPriority(
         local_quantum = 6;
     }
 
-    *quantum = local_quantum;
+    // Use write_volatile to prevent captures(none) optimization
+    core::ptr::write_volatile(quantum, local_quantum);
 
     PspPriorityTable[(*proc).PriorityClass as usize]
 }
@@ -1012,14 +1013,12 @@ pub unsafe extern "system" fn PsCreateSystemProcess(
     )
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn PsLookupProcessByProcessId(
+unsafe fn PsLookupProcessByProcessId_inner(
     process_id: HANDLE,
-    process: *mut PEPROCESS,
-) -> NTSTATUS {
+) -> Result<PEPROCESS, NTSTATUS> {
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_process: PEPROCESS;
-    let mut status: NTSTATUS = STATUS_INVALID_PARAMETER;
+    let mut result: Result<PEPROCESS, NTSTATUS> = Err(STATUS_INVALID_PARAMETER);
 
     KeEnterCriticalRegion();
 
@@ -1029,8 +1028,7 @@ pub unsafe extern "system" fn PsLookupProcessByProcessId(
 
         if (*(found_process as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ProcessObject as UCHAR {
             if ObReferenceObjectSafe(found_process as PVOID) != 0 {
-                *process = found_process;
-                status = STATUS_SUCCESS;
+                result = Ok(found_process);
             }
         }
 
@@ -1038,18 +1036,31 @@ pub unsafe extern "system" fn PsLookupProcessByProcessId(
     }
 
     KeLeaveCriticalRegion();
-    status
+    result
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PsLookupProcessThreadByCid(
-    cid: PCLIENT_ID,
+pub unsafe extern "system" fn PsLookupProcessByProcessId(
+    process_id: HANDLE,
     process: *mut PEPROCESS,
-    thread: *mut PETHREAD,
 ) -> NTSTATUS {
+    match PsLookupProcessByProcessId_inner(process_id) {
+        Ok(found) => {
+            core::ptr::write_volatile(process, found);
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
+}
+
+/// On success returns (found_thread, optional_process).
+unsafe fn PsLookupProcessThreadByCid_inner(
+    cid: PCLIENT_ID,
+    want_process: bool,
+) -> Result<(PETHREAD, PEPROCESS), NTSTATUS> {
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_thread: PETHREAD;
-    let mut status: NTSTATUS = STATUS_INVALID_CID;
+    let mut result: Result<(PETHREAD, PEPROCESS), NTSTATUS> = Err(STATUS_INVALID_CID);
 
     KeEnterCriticalRegion();
 
@@ -1060,13 +1071,12 @@ pub unsafe extern "system" fn PsLookupProcessThreadByCid(
         if (*(found_thread as *mut _ETHREAD)).Tcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ThreadObject as UCHAR &&
            (*(found_thread as *mut _ETHREAD)).Cid.UniqueProcess == (*cid).UniqueProcess {
             if ObReferenceObjectSafe(found_thread as PVOID) != 0 {
-                *thread = found_thread;
-                status = STATUS_SUCCESS;
-
-                if !process.is_null() {
-                    *process = (*(found_thread as *mut _ETHREAD)).ThreadsProcess;
-                    ObReferenceObject(*process as PVOID);
+                let mut found_process: PEPROCESS = core::ptr::null_mut();
+                if want_process {
+                    found_process = (*(found_thread as *mut _ETHREAD)).ThreadsProcess;
+                    ObReferenceObject(found_process as PVOID);
                 }
+                result = Ok((found_thread, found_process));
             }
         }
 
@@ -1074,7 +1084,25 @@ pub unsafe extern "system" fn PsLookupProcessThreadByCid(
     }
 
     KeLeaveCriticalRegion();
-    status
+    result
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PsLookupProcessThreadByCid(
+    cid: PCLIENT_ID,
+    process: *mut PEPROCESS,
+    thread: *mut PETHREAD,
+) -> NTSTATUS {
+    match PsLookupProcessThreadByCid_inner(cid, !process.is_null()) {
+        Ok((found_thread, found_process)) => {
+            core::ptr::write_volatile(thread, found_thread);
+            if !process.is_null() {
+                core::ptr::write_volatile(process, found_process);
+            }
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
 }
 
 #[no_mangle]

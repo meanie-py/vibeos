@@ -55,13 +55,13 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                             return s;
                         }
                         // Present and CapturedSecurityQualityOfService are kernel-mode output pointers — direct write
-                        *Present = 1u8;
+                        core::ptr::write_volatile(Present, 1u8);
                     } else {
                         status = STATUS_INVALID_PARAMETER;
                     }
                 } else {
                     // Kernel-mode output pointers — direct write, no probe
-                    *CapturedSecurityQualityOfService = core::ptr::null_mut();
+                    core::ptr::write_volatile(CapturedSecurityQualityOfService, core::ptr::null_mut());
                     *Present = 0u8;
                 }
             } else {
@@ -81,12 +81,12 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                             captured_qos as *mut u8,
                             core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
                         );
-                        *CapturedSecurityQualityOfService = captured_qos;
+                        core::ptr::write_volatile(CapturedSecurityQualityOfService, captured_qos);
                     } else {
                         status = STATUS_INSUFFICIENT_RESOURCES;
                     }
                 } else {
-                    *CapturedSecurityQualityOfService = core::ptr::null_mut();
+                    core::ptr::write_volatile(CapturedSecurityQualityOfService, core::ptr::null_mut());
                 }
             }
         } else {
@@ -107,8 +107,8 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                                     captured_qos as *mut u8,
                                     core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
                                 );
-                                *CapturedSecurityQualityOfService = captured_qos;
-                                *Present = 1u8;
+                                core::ptr::write_volatile(CapturedSecurityQualityOfService, captured_qos);
+                                core::ptr::write_volatile(Present, 1u8);
                             } else {
                                 status = STATUS_INSUFFICIENT_RESOURCES;
                             }
@@ -116,20 +116,20 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                             status = STATUS_INVALID_PARAMETER;
                         }
                     } else {
-                        *CapturedSecurityQualityOfService = core::ptr::null_mut();
-                        *Present = 0u8;
+                        core::ptr::write_volatile(CapturedSecurityQualityOfService, core::ptr::null_mut());
+                        core::ptr::write_volatile(Present, 0u8);
                     }
                 } else {
-                    *CapturedSecurityQualityOfService = (*ObjectAttributes).SecurityQualityOfService as PSECURITY_QUALITY_OF_SERVICE;
-                    *Present = if !(*ObjectAttributes).SecurityQualityOfService.is_null() { 1u8 } else { 0u8 };
+                    core::ptr::write_volatile(CapturedSecurityQualityOfService, (*ObjectAttributes).SecurityQualityOfService as PSECURITY_QUALITY_OF_SERVICE);
+                    core::ptr::write_volatile(Present, if !(*ObjectAttributes).SecurityQualityOfService.is_null() { 1u8 } else { 0u8 });
                 }
             } else {
                 status = STATUS_INVALID_PARAMETER;
             }
         }
     } else {
-        *CapturedSecurityQualityOfService = core::ptr::null_mut();
-        *Present = 0u8;
+        core::ptr::write_volatile(CapturedSecurityQualityOfService, core::ptr::null_mut());
+        core::ptr::write_volatile(Present, 0u8);
     }
 
     status

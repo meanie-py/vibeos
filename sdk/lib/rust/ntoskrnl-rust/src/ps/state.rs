@@ -36,7 +36,8 @@ pub unsafe extern "system" fn PsResumeThread(
     let old_count = KeResumeThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
 
     if !previous_count.is_null() {
-        *previous_count = old_count;
+        // Use write_volatile to prevent captures(none) optimization
+        core::ptr::write_volatile(previous_count, old_count);
     }
     STATUS_SUCCESS
 }
@@ -72,7 +73,8 @@ pub unsafe extern "system" fn PsSuspendThread(
     }
 
     if !previous_count.is_null() {
-        *previous_count = old_count;
+        // Use write_volatile to prevent captures(none) optimization
+        core::ptr::write_volatile(previous_count, old_count);
     }
     status
 }

@@ -321,7 +321,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                     core::ptr::addr_of_mut!(unused_ulong),
                 );
 
-                *TokenInformation = tu as PVOID;
+                core::ptr::write_volatile(TokenInformation, tu as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -354,7 +354,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                     core::ptr::addr_of_mut!(unused_ulong),
                 );
 
-                *TokenInformation = tg as PVOID;
+                core::ptr::write_volatile(TokenInformation, tg as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -374,7 +374,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                     core::ptr::addr_of_mut!((*tp).Privileges) as PLUID_AND_ATTRIBUTES,
                 );
 
-                *TokenInformation = tp as PVOID;
+                core::ptr::write_volatile(TokenInformation, tp as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -394,7 +394,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                     (*(*token).UserAndGroups.offset((*token).DefaultOwnerIndex as isize)).Sid,
                 );
 
-                *TokenInformation = to as PVOID;
+                core::ptr::write_volatile(TokenInformation, to as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -410,7 +410,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                 (*tpg).PrimaryGroup = (tpg as *mut u8).offset(core::mem::size_of::<TOKEN_PRIMARY_GROUP>() as isize) as PSID;
                 status = RtlCopySid(sid_len, (*tpg).PrimaryGroup, (*token).PrimaryGroup);
 
-                *TokenInformation = tpg as PVOID;
+                core::ptr::write_volatile(TokenInformation, tpg as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -437,7 +437,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                     (*tdd).DefaultDacl = core::ptr::null_mut();
                 }
 
-                *TokenInformation = tdd as PVOID;
+                core::ptr::write_volatile(TokenInformation, tdd as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -451,7 +451,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
             } else {
                 *ts = (*token).TokenSource;
 
-                *TokenInformation = ts as PVOID;
+                core::ptr::write_volatile(TokenInformation, ts as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -465,7 +465,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
             } else {
                 *tt = (*token).TokenType;
 
-                *TokenInformation = tt as PVOID;
+                core::ptr::write_volatile(TokenInformation, tt as PVOID);
                 status = STATUS_SUCCESS;
             }
         }
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                 } else {
                     *sil = (*token).ImpersonationLevel;
 
-                    *TokenInformation = sil as PVOID;
+                    core::ptr::write_volatile(TokenInformation, sil as PVOID);
                     status = STATUS_SUCCESS;
                 }
             }
@@ -510,7 +510,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
                 (*ts).PrivilegeCount = (*token).PrivilegeCount;
                 (*ts).ModifiedId = (*token).ModifiedId;
 
-                *TokenInformation = ts as PVOID;
+                core::ptr::write_volatile(TokenInformation, ts as PVOID);
                 status = STATUS_SUCCESS;
             }
         }

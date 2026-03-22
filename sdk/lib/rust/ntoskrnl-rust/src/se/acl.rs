@@ -186,7 +186,7 @@ pub unsafe extern "system" fn SepCreateImpersonationTokenDacl(
     let mut acl_length: ULONG;
     let token_dacl: PACL;
 
-    *Dacl = core::ptr::null_mut();
+    core::ptr::write_volatile(Dacl, core::ptr::null_mut());
 
     acl_length = core::mem::size_of::<ACL>() as ULONG +
         (core::mem::size_of::<ACE>() as ULONG + RtlLengthSid(SeAliasAdminsSid)) +
@@ -210,7 +210,7 @@ pub unsafe extern "system" fn SepCreateImpersonationTokenDacl(
         RtlAddAccessAllowedAce(token_dacl, ACL_REVISION as ULONG, GENERIC_ALL, SeRestrictedCodeSid);
     }
 
-    *Dacl = token_dacl;
+    core::ptr::write_volatile(Dacl, token_dacl);
 
     STATUS_SUCCESS
 }
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn SepCaptureAcl(
     let mut acl_size: ULONG;
 
     if (AccessMode == 0i8) && CaptureIfKernel == 0u8 {
-        *CapturedAcl = InputAcl;
+        core::ptr::write_volatile(CapturedAcl, InputAcl);
         return STATUS_SUCCESS;
     }
 
@@ -280,7 +280,7 @@ pub unsafe extern "system" fn SepCaptureAcl(
         return STATUS_INVALID_ACL;
     }
 
-    *CapturedAcl = new_acl;
+    core::ptr::write_volatile(CapturedAcl, new_acl);
     STATUS_SUCCESS
 }
 

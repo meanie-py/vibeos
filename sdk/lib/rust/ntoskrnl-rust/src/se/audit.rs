@@ -56,7 +56,7 @@ pub unsafe extern "system" fn SeInitializeProcessAuditName(
     let mut return_length: ULONG = 8;
     let mut status: NTSTATUS;
 
-    *audit_info = core::ptr::null_mut();
+    core::ptr::write_volatile(audit_info, core::ptr::null_mut());
 
     if do_audit != 0 {
     }
@@ -109,7 +109,7 @@ pub unsafe extern "system" fn SeInitializeProcessAuditName(
         status = STATUS_NO_MEMORY;
     }
 
-    *audit_info = object_name_info;
+    core::ptr::write_volatile(audit_info, object_name_info);
 
     status
 }
@@ -124,7 +124,7 @@ pub unsafe extern "system" fn SeLocateProcessImageName(
     let mut file_object: PFILE_OBJECT = core::ptr::null_mut();
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    *process_image_name = core::ptr::null_mut();
+    core::ptr::write_volatile(process_image_name, core::ptr::null_mut());
 
     let eprocess = process as *mut _EPROCESS;
     audit_name = (*eprocess).SeAuditProcessCreationInfo.ImageFileName;
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn SeLocateProcessImageName(
 
     (*image_name).Buffer = (image_name as usize + core::mem::size_of::<_UNICODE_STRING>()) as PWCHAR;
 
-    *process_image_name = image_name;
+    core::ptr::write_volatile(process_image_name, image_name);
 
     status
 }

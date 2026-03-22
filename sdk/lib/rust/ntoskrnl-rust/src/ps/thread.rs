@@ -585,7 +585,9 @@ unsafe fn PspCreateThread(
 
     if Status >= 0 {
         if !ClientId.is_null() {
-            *ClientId = (*Thread).Cid;
+            // Use write_volatile to prevent captures(none) optimization
+            // from eliding this output write
+            core::ptr::write_volatile(ClientId, (*Thread).Cid);
         }
         // Write-back to user-mode pointer (was inside _SEH2_TRY in C)
         if let Err(s) = probe_write_user(ThreadHandle, hThread, PreviousMode) {
@@ -690,14 +692,12 @@ pub unsafe extern "system" fn PsCreateSystemThread(
     )
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn PsLookupThreadByThreadId(
+unsafe fn PsLookupThreadByThreadId_inner(
     ThreadId: HANDLE,
-    Thread: *mut PETHREAD,
-) -> NTSTATUS {
+) -> Result<PETHREAD, NTSTATUS> {
     let mut CidEntry: PHANDLE_TABLE_ENTRY;
     let mut FoundThread: PETHREAD;
-    let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
+    let mut result: Result<PETHREAD, NTSTATUS> = Err(STATUS_INVALID_PARAMETER);
 
     KeEnterCriticalRegion();
 
@@ -707,8 +707,7 @@ pub unsafe extern "system" fn PsLookupThreadByThreadId(
 
         if (*FoundThread).Tcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ThreadObject {
             if ObReferenceObjectSafe(FoundThread as PVOID) != 0 {
-                *Thread = FoundThread;
-                Status = STATUS_SUCCESS;
+                result = Ok(FoundThread);
             }
         }
 
@@ -716,7 +715,21 @@ pub unsafe extern "system" fn PsLookupThreadByThreadId(
     }
 
     KeLeaveCriticalRegion();
-    Status
+    result
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PsLookupThreadByThreadId(
+    ThreadId: HANDLE,
+    Thread: *mut PETHREAD,
+) -> NTSTATUS {
+    match PsLookupThreadByThreadId_inner(ThreadId) {
+        Ok(found) => {
+            core::ptr::write_volatile(Thread, found);
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
 }
 
 #[no_mangle]
@@ -795,7 +808,8 @@ pub unsafe extern "system" fn PsGetCurrentThreadWin32ThreadAndEnterCriticalRegio
 
     CurrentThread = PsGetCurrentThread();
 
-    *OutProcessId = (*CurrentThread).Cid.UniqueProcess;
+    // Use write_volatile to prevent captures(none) optimization
+    core::ptr::write_volatile(OutProcessId, (*CurrentThread).Cid.UniqueProcess);
 
     KeEnterCriticalRegion();
 

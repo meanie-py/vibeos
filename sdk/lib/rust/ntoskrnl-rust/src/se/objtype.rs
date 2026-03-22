@@ -119,7 +119,7 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
     }
 
     if ObjectTypeListLength == 0 {
-        *CapturedObjectTypeList = core::ptr::null_mut();
+        core::ptr::write_volatile(CapturedObjectTypeList, core::ptr::null_mut());
         return STATUS_SUCCESS;
     }
 
@@ -151,8 +151,7 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
         (*InternalTypeList.offset(ObjectTypeIndex as isize)).ObjectAccessRights.DeniedAccessRights = 0;
     }
 
-    // CapturedObjectTypeList is always a kernel-mode output pointer — direct write, no probe
-    *CapturedObjectTypeList = InternalTypeList;
+    core::ptr::write_volatile(CapturedObjectTypeList, InternalTypeList);
 
     _guard.disarm();
 

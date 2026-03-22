@@ -276,36 +276,16 @@ pub unsafe extern "system" fn IoSetCompletionRoutineEx(
     STATUS_SUCCESS
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn NtCreateIoCompletion(
-    IoCompletionHandle: PHANDLE,
+unsafe fn NtCreateIoCompletion_inner(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
     NumberOfConcurrentThreads: ULONG,
-) -> NTSTATUS {
+    PreviousMode: KPROCESSOR_MODE,
+) -> Result<(HANDLE, NTSTATUS), NTSTATUS> {
     let mut Queue: PKQUEUE = core::ptr::null_mut();
     let mut hIoCompletionHandle: HANDLE = core::ptr::null_mut();
-    let PreviousMode = ExGetPreviousMode();
-    let mut Status: NTSTATUS;
 
-    if PreviousMode != 0i8 {
-        Status = 'seh: {
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
-                IoCompletionHandle as *const core::ffi::c_void,
-                core::mem::size_of::<HANDLE>(),
-                core::mem::align_of::<HANDLE>(),
-                PreviousMode,
-            ) {
-                break 'seh e;
-            }
-            STATUS_SUCCESS
-        };
-        if Status < 0 {
-            return Status;
-        }
-    }
-
-    Status = ObCreateObject(
+    let mut Status = ObCreateObject(
         PreviousMode,
         IoCompletionType,
         ObjectAttributes,
@@ -317,44 +297,39 @@ pub unsafe extern "system" fn NtCreateIoCompletion(
         &mut Queue as *mut PKQUEUE as *mut PVOID,
     );
 
-    if Status >= 0 {
-        KeInitializeQueue(Queue, NumberOfConcurrentThreads);
-
-        Status = ObInsertObject(
-            Queue as PVOID,
-            core::ptr::null_mut(),
-            DesiredAccess,
-            0,
-            core::ptr::null_mut(),
-            &mut hIoCompletionHandle,
-        );
-
-        if Status >= 0 {
-            if let Err(e) = ntkrnl_sys::probe::write_user(
-                IoCompletionHandle,
-                hIoCompletionHandle,
-                PreviousMode,
-            ) {
-                Status = e;
-            }
-        }
+    if Status < 0 {
+        return Err(Status);
     }
 
-    Status
+    KeInitializeQueue(Queue, NumberOfConcurrentThreads);
+
+    Status = ObInsertObject(
+        Queue as PVOID,
+        core::ptr::null_mut(),
+        DesiredAccess,
+        0,
+        core::ptr::null_mut(),
+        &mut hIoCompletionHandle,
+    );
+
+    if Status < 0 {
+        return Err(Status);
+    }
+
+    Ok((hIoCompletionHandle, Status))
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NtOpenIoCompletion(
+pub unsafe extern "system" fn NtCreateIoCompletion(
     IoCompletionHandle: PHANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
+    NumberOfConcurrentThreads: ULONG,
 ) -> NTSTATUS {
     let PreviousMode = ExGetPreviousMode();
-    let mut hIoCompletionHandle: HANDLE = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
 
     if PreviousMode != 0i8 {
-        Status = 'seh: {
+        let probe_status = 'seh: {
             if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
                 IoCompletionHandle as *const core::ffi::c_void,
                 core::mem::size_of::<HANDLE>(),
@@ -365,12 +340,28 @@ pub unsafe extern "system" fn NtOpenIoCompletion(
             }
             STATUS_SUCCESS
         };
-        if Status < 0 {
-            return Status;
+        if probe_status < 0 {
+            return probe_status;
         }
     }
 
-    Status = ObOpenObjectByName(
+    match NtCreateIoCompletion_inner(DesiredAccess, ObjectAttributes, NumberOfConcurrentThreads, PreviousMode) {
+        Ok((handle, status)) => {
+            core::ptr::write_volatile(IoCompletionHandle, handle);
+            status
+        }
+        Err(status) => status,
+    }
+}
+
+unsafe fn NtOpenIoCompletion_inner(
+    DesiredAccess: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+    PreviousMode: KPROCESSOR_MODE,
+) -> Result<(HANDLE, NTSTATUS), NTSTATUS> {
+    let mut hIoCompletionHandle: HANDLE = core::ptr::null_mut();
+
+    let Status = ObOpenObjectByName(
         ObjectAttributes,
         IoCompletionType,
         PreviousMode,
@@ -380,17 +371,45 @@ pub unsafe extern "system" fn NtOpenIoCompletion(
         &mut hIoCompletionHandle,
     );
 
-    if Status >= 0 {
-        if let Err(e) = ntkrnl_sys::probe::write_user(
-            IoCompletionHandle,
-            hIoCompletionHandle,
-            PreviousMode,
-        ) {
-            Status = e;
+    if Status < 0 {
+        return Err(Status);
+    }
+
+    Ok((hIoCompletionHandle, Status))
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenIoCompletion(
+    IoCompletionHandle: PHANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+) -> NTSTATUS {
+    let PreviousMode = ExGetPreviousMode();
+
+    if PreviousMode != 0i8 {
+        let probe_status = 'seh: {
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+                IoCompletionHandle as *const core::ffi::c_void,
+                core::mem::size_of::<HANDLE>(),
+                core::mem::align_of::<HANDLE>(),
+                PreviousMode,
+            ) {
+                break 'seh e;
+            }
+            STATUS_SUCCESS
+        };
+        if probe_status < 0 {
+            return probe_status;
         }
     }
 
-    Status
+    match NtOpenIoCompletion_inner(DesiredAccess, ObjectAttributes, PreviousMode) {
+        Ok((handle, status)) => {
+            core::ptr::write_volatile(IoCompletionHandle, handle);
+            status
+        }
+        Err(status) => status,
+    }
 }
 
 #[no_mangle]

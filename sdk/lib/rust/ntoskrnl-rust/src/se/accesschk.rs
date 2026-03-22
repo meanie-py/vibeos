@@ -464,19 +464,19 @@ unsafe fn SepAccessCheckWorker(
         if PreviouslyGrantedAccess == 0 {
             Status = STATUS_ACCESS_DENIED;
             if UseResultList == 0 {
-                *GrantedAccessList = PreviouslyGrantedAccess;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, PreviouslyGrantedAccess);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         }
 
         Status = STATUS_SUCCESS;
         if !Privileges.is_null() {
-            *Privileges = core::ptr::null_mut();
+            core::ptr::write_volatile(Privileges, core::ptr::null_mut());
         }
         if UseResultList == 0 {
-            *GrantedAccessList = PreviouslyGrantedAccess;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, PreviouslyGrantedAccess);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -521,8 +521,8 @@ unsafe fn SepAccessCheckWorker(
     );
     if Status < 0 {
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -530,8 +530,8 @@ unsafe fn SepAccessCheckWorker(
     if RemainingAccess == 0 {
         Status = STATUS_SUCCESS;
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -545,8 +545,8 @@ unsafe fn SepAccessCheckWorker(
             previously_granted_access |= RemainingAccess;
             Status = STATUS_SUCCESS;
             if UseResultList == 0 {
-                *GrantedAccessList = previously_granted_access;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         }
@@ -554,8 +554,8 @@ unsafe fn SepAccessCheckWorker(
         previously_granted_access = 0;
         Status = STATUS_ACCESS_DENIED;
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -568,8 +568,8 @@ unsafe fn SepAccessCheckWorker(
     );
     if Status < 0 {
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -583,8 +583,8 @@ unsafe fn SepAccessCheckWorker(
 
         Status = STATUS_SUCCESS;
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -597,8 +597,8 @@ unsafe fn SepAccessCheckWorker(
             Status = STATUS_ACCESS_DENIED;
         }
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -642,8 +642,8 @@ unsafe fn SepAccessCheckWorker(
                 previously_granted_access = 0;
                 Status = STATUS_ACCESS_DENIED;
                 if UseResultList == 0 {
-                    *GrantedAccessList = previously_granted_access;
-                    *AccessStatusList = Status;
+                    core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                    core::ptr::write_volatile(AccessStatusList, Status);
                 }
                 return if Status >= 0 { 1u8 } else { 0u8 };
             }
@@ -656,8 +656,8 @@ unsafe fn SepAccessCheckWorker(
             }
 
             if UseResultList == 0 {
-                *GrantedAccessList = previously_granted_access;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         } else if UseResultList == 0 {
@@ -674,8 +674,8 @@ unsafe fn SepAccessCheckWorker(
                 previously_granted_access = 0;
                 Status = STATUS_ACCESS_DENIED;
                 if UseResultList == 0 {
-                    *GrantedAccessList = previously_granted_access;
-                    *AccessStatusList = Status;
+                    core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                    core::ptr::write_volatile(AccessStatusList, Status);
                 }
                 return if Status >= 0 { 1u8 } else { 0u8 };
             }
@@ -688,8 +688,8 @@ unsafe fn SepAccessCheckWorker(
             }
 
             if UseResultList == 0 {
-                *GrantedAccessList = previously_granted_access;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         } else {
@@ -745,8 +745,8 @@ unsafe fn SepAccessCheckWorker(
             previously_granted_access = 0;
             Status = STATUS_ACCESS_DENIED;
             if UseResultList == 0 {
-                *GrantedAccessList = previously_granted_access;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         }
@@ -764,8 +764,8 @@ unsafe fn SepAccessCheckWorker(
             previously_granted_access = 0;
             Status = STATUS_ACCESS_DENIED;
             if UseResultList == 0 {
-                *GrantedAccessList = previously_granted_access;
-                *AccessStatusList = Status;
+                core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                core::ptr::write_volatile(AccessStatusList, Status);
             }
             return if Status >= 0 { 1u8 } else { 0u8 };
         }
@@ -792,8 +792,8 @@ unsafe fn SepAccessCheckWorker(
                 previously_granted_access = 0;
                 Status = STATUS_ACCESS_DENIED;
                 if UseResultList == 0 {
-                    *GrantedAccessList = previously_granted_access;
-                    *AccessStatusList = Status;
+                    core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                    core::ptr::write_volatile(AccessStatusList, Status);
                 }
                 return if Status >= 0 { 1u8 } else { 0u8 };
             }
@@ -812,8 +812,8 @@ unsafe fn SepAccessCheckWorker(
                 previously_granted_access = 0;
                 Status = STATUS_ACCESS_DENIED;
                 if UseResultList == 0 {
-                    *GrantedAccessList = previously_granted_access;
-                    *AccessStatusList = Status;
+                    core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+                    core::ptr::write_volatile(AccessStatusList, Status);
                 }
                 return if Status >= 0 { 1u8 } else { 0u8 };
             }
@@ -825,8 +825,8 @@ unsafe fn SepAccessCheckWorker(
     if previously_granted_access == 0 {
         Status = STATUS_ACCESS_DENIED;
         if UseResultList == 0 {
-            *GrantedAccessList = previously_granted_access;
-            *AccessStatusList = Status;
+            core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+            core::ptr::write_volatile(AccessStatusList, Status);
         }
         return if Status >= 0 { 1u8 } else { 0u8 };
     }
@@ -834,8 +834,8 @@ unsafe fn SepAccessCheckWorker(
     Status = STATUS_SUCCESS;
 
     if UseResultList == 0 {
-        *GrantedAccessList = previously_granted_access;
-        *AccessStatusList = Status;
+        core::ptr::write_volatile(GrantedAccessList, previously_granted_access);
+        core::ptr::write_volatile(AccessStatusList, Status);
     }
 
     #[cfg(debug_assertions)]
@@ -903,13 +903,13 @@ unsafe fn SepAccessCheck(
 
     if PreviousMode == 0i8 {
         if DesiredAccess & MAXIMUM_ALLOWED != 0 {
-            *GrantedAccess = (*GenericMapping).GenericAll;
-            *GrantedAccess |= DesiredAccess & !MAXIMUM_ALLOWED;
+            core::ptr::write_volatile(GrantedAccess, (*GenericMapping).GenericAll);
+            core::ptr::write_volatile(GrantedAccess, core::ptr::read_volatile(GrantedAccess) | (DesiredAccess & !MAXIMUM_ALLOWED));
         } else {
-            *GrantedAccess = DesiredAccess;
+            core::ptr::write_volatile(GrantedAccess, DesiredAccess);
         }
 
-        *AccessStatus = STATUS_SUCCESS;
+        core::ptr::write_volatile(AccessStatus, STATUS_SUCCESS);
         return STATUS_SUCCESS;
     }
 
@@ -997,13 +997,13 @@ unsafe fn SepAccessCheck(
         if UseResultList != 0 {
             let mut ResultListIndex = 0;
             while ResultListIndex < ObjectTypeListLength {
-                *AccessStatus.add(ResultListIndex as usize) = Status;
-                *GrantedAccess.add(ResultListIndex as usize) = 0;
+                core::ptr::write_volatile(AccessStatus.add(ResultListIndex as usize), Status);
+                core::ptr::write_volatile(GrantedAccess.add(ResultListIndex as usize), 0);
                 ResultListIndex += 1;
             }
         } else {
-            *AccessStatus = Status;
-            *GrantedAccess = 0;
+            core::ptr::write_volatile(AccessStatus, Status);
+            core::ptr::write_volatile(GrantedAccess, 0);
         }
 
         return STATUS_SUCCESS;
@@ -1016,7 +1016,7 @@ unsafe fn SepAccessCheck(
             SeFreePrivileges(Privileges);
             SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
             ObDereferenceObject(Token as PVOID);
-            *PrivilegeSetLength = RequiredPrivilegeSetLength;
+            core::ptr::write_volatile(PrivilegeSetLength, RequiredPrivilegeSetLength);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
@@ -1031,7 +1031,7 @@ unsafe fn SepAccessCheck(
         if CapturedPrivilegeSetLength < core::mem::size_of::<PRIVILEGE_SET>() as ULONG {
             SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
             ObDereferenceObject(Token as PVOID);
-            *PrivilegeSetLength = core::mem::size_of::<PRIVILEGE_SET>() as ULONG;
+            core::ptr::write_volatile(PrivilegeSetLength, core::mem::size_of::<PRIVILEGE_SET>() as ULONG);
             return STATUS_BUFFER_TOO_SMALL;
         }
 
@@ -1105,13 +1105,13 @@ unsafe fn SepAccessCheck(
         if UseResultList != 0 {
             let mut ResultListIndex = 0;
             while ResultListIndex < ObjectTypeListLength {
-                *AccessStatus.add(ResultListIndex as usize) = STATUS_SUCCESS;
-                *GrantedAccess.add(ResultListIndex as usize) = PreviouslyGrantedAccess;
+                core::ptr::write_volatile(AccessStatus.add(ResultListIndex as usize), STATUS_SUCCESS);
+                core::ptr::write_volatile(GrantedAccess.add(ResultListIndex as usize), PreviouslyGrantedAccess);
                 ResultListIndex += 1;
             }
         } else {
-            *GrantedAccess = PreviouslyGrantedAccess;
-            *AccessStatus = STATUS_SUCCESS;
+            core::ptr::write_volatile(GrantedAccess, PreviouslyGrantedAccess);
+            core::ptr::write_volatile(AccessStatus, STATUS_SUCCESS);
         }
     } else {
         SepAccessCheckWorker(
@@ -1163,26 +1163,26 @@ pub unsafe extern "system" fn SeAccessCheck(
 
     if AccessMode == 0i8 {
         if DesiredAccess & MAXIMUM_ALLOWED != 0 {
-            *GrantedAccess = (*GenericMapping).GenericAll;
-            *GrantedAccess |= DesiredAccess & !MAXIMUM_ALLOWED;
-            *GrantedAccess |= PreviouslyGrantedAccess;
+            core::ptr::write_volatile(GrantedAccess, (*GenericMapping).GenericAll);
+            core::ptr::write_volatile(GrantedAccess, core::ptr::read_volatile(GrantedAccess) | (DesiredAccess & !MAXIMUM_ALLOWED));
+            core::ptr::write_volatile(GrantedAccess, core::ptr::read_volatile(GrantedAccess) | PreviouslyGrantedAccess);
         } else {
-            *GrantedAccess = DesiredAccess | PreviouslyGrantedAccess;
+            core::ptr::write_volatile(GrantedAccess, DesiredAccess | PreviouslyGrantedAccess);
         }
 
-        *AccessStatus = STATUS_SUCCESS;
+        core::ptr::write_volatile(AccessStatus, STATUS_SUCCESS);
         return 1u8;
     }
 
     if SecurityDescriptor.is_null() {
-        *AccessStatus = STATUS_ACCESS_DENIED;
+        core::ptr::write_volatile(AccessStatus, STATUS_ACCESS_DENIED);
         return 0u8;
     }
 
     if !(*SubjectSecurityContext).ClientToken.is_null()
         && (*SubjectSecurityContext).ImpersonationLevel < 2
     {
-        *AccessStatus = STATUS_BAD_IMPERSONATION_LEVEL;
+        core::ptr::write_volatile(AccessStatus, STATUS_BAD_IMPERSONATION_LEVEL);
         return 0u8;
     }
 
@@ -1211,12 +1211,12 @@ pub unsafe extern "system" fn SeAccessCheck(
     }
 
     if DesiredAccess == 0 {
-        *GrantedAccess = previously_granted_access;
+        core::ptr::write_volatile(GrantedAccess, previously_granted_access);
         if previously_granted_access == 0 {
-            *AccessStatus = STATUS_ACCESS_DENIED;
+            core::ptr::write_volatile(AccessStatus, STATUS_ACCESS_DENIED);
             ret = 0u8;
         } else {
-            *AccessStatus = STATUS_SUCCESS;
+            core::ptr::write_volatile(AccessStatus, STATUS_SUCCESS);
             ret = 1u8;
         }
     } else {
@@ -2690,7 +2690,7 @@ pub unsafe extern "system" fn SeAccessCheck(
 //     if (!UseResultList)
 //     {
 //         *GrantedAccessList = PreviouslyGrantedAccess;
-//         *AccessStatusList = Status;
+//         core::ptr::write_volatile(AccessStatusList, Status);
 //     }
 //
 // #if DBG

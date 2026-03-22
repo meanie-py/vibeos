@@ -608,7 +608,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         );
 
         if !PortContext.is_null() {
-            *PortContext = core::ptr::null_mut();
+            core::ptr::write_volatile(PortContext, core::ptr::null_mut());
         }
     } else if LpcpGetMessageType(core::ptr::addr_of_mut!((*message).Request)) != LPC_REPLY {
         LpcpMoveMessage(
@@ -621,7 +621,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         );
 
         if !PortContext.is_null() {
-            *PortContext = (*message).PortContext;
+            core::ptr::write_volatile(PortContext, (*message).PortContext);
         }
 
         if (*message).Request.u2.s2.DataInfoOffset != 0 {
@@ -808,7 +808,7 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
     }
 
     if !ReturnLength.is_null() {
-        *ReturnLength = local_return_length as ULONG;
+        core::ptr::write_volatile(ReturnLength, local_return_length as ULONG);
     }
 
     ObDereferenceObject(client_thread as PVOID);

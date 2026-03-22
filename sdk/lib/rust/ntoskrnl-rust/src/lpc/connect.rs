@@ -614,7 +614,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
         if !connection_information.is_null() {
             if !connection_information_length.is_null() {
-                *connection_information_length = connection_info_length;
+                core::ptr::write_volatile(connection_information_length, connection_info_length);
             }
 
             core::ptr::copy_nonoverlapping(
@@ -636,10 +636,10 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 &mut handle,
             );
             if status >= 0 {
-                *port_handle = handle;
+                core::ptr::write_volatile(port_handle, handle);
 
                 if !max_message_length.is_null() {
-                    *max_message_length = port_message_length;
+                    core::ptr::write_volatile(max_message_length, port_message_length);
                 }
 
                 if !client_view.is_null() {
