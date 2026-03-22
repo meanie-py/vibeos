@@ -628,8 +628,8 @@ unsafe fn ExpLoadInitialProcess(
         KeBugCheckEx(0x65, Status as ULONG_PTR, 0, 0, 0);
     }
 
-    *ProcessParameters = ProcessParams;
-    *ProcessEnvironment = EnvironmentPtr as *mut i8;
+    core::ptr::write_volatile(ProcessParameters, ProcessParams);
+    core::ptr::write_volatile(ProcessEnvironment, EnvironmentPtr as *mut i8);
 }
 
 unsafe fn ExComputeTickCountMultiplier(ClockIncrement: ULONG) -> ULONG {

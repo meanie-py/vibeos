@@ -137,8 +137,8 @@ pub unsafe extern "system" fn GetEntryPointData(
             return 0u8;
         }
 
-        *TableAddress = (*EntryPoint21).TableAddress as ULONG64;
-        *TableSize = (*EntryPoint21).TableLength as ULONG;
+        core::ptr::write_volatile(TableAddress, (*EntryPoint21).TableAddress as ULONG64);
+        core::ptr::write_volatile(TableSize, (*EntryPoint21).TableLength as ULONG);
         (*BiosTablesHeader).Used20CallingMethod = 0;
         (*BiosTablesHeader).SmbiosMajorVersion = (*EntryPoint21).MajorVersion;
         (*BiosTablesHeader).SmbiosMinorVersion = (*EntryPoint21).MinorVersion;
@@ -166,8 +166,8 @@ pub unsafe extern "system" fn GetEntryPointData(
             return 0u8;
         }
 
-        *TableAddress = (*EntryPoint30).TableAddress;
-        *TableSize = (*EntryPoint30).TableMaxSize;
+        core::ptr::write_volatile(TableAddress, (*EntryPoint30).TableAddress);
+        core::ptr::write_volatile(TableSize, (*EntryPoint30).TableMaxSize);
         (*BiosTablesHeader).Used20CallingMethod = 0;
         (*BiosTablesHeader).SmbiosMajorVersion = (*EntryPoint30).MajorVersion;
         (*BiosTablesHeader).SmbiosMinorVersion = (*EntryPoint30).MinorVersion;
@@ -253,10 +253,10 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
 
         MmUnmapIoSpace(TableMapping, TableSize as _);
 
-        *OutTableData = BiosTables;
+        core::ptr::write_volatile(OutTableData, BiosTables);
     }
 
-    *OutDataSize = HeaderSize + TableSize;
+    core::ptr::write_volatile(OutDataSize, HeaderSize + TableSize);
     STATUS_SUCCESS
 }
 
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn WmipQueryRawSMBiosTables(
         );
     }
 
-    *InOutBufferSize = ResultSize;
+    core::ptr::write_volatile(InOutBufferSize, ResultSize);
 
     if !TableData.is_null() {
         ExFreePoolWithTag(TableData, 0x534D5442);

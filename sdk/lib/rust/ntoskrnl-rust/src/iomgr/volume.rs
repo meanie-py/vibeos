@@ -248,7 +248,7 @@ pub unsafe extern "system" fn IopCheckVpbMounted(
                     return core::ptr::null_mut();
                 }
 
-                *Status = STATUS_WRONG_VOLUME as i32;
+                core::ptr::write_volatile(Status, STATUS_WRONG_VOLUME as i32);
                 return core::ptr::null_mut();
             } else if !Vpb.is_null() {
                 return Vpb;
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn IopCheckVpbMounted(
 
     Vpb = (*DeviceObject).Vpb;
     if (*Vpb).Flags & VPB_LOCKED != 0 {
-        *Status = STATUS_ACCESS_DENIED as i32;
+        core::ptr::write_volatile(Status, STATUS_ACCESS_DENIED as i32);
         Vpb = core::ptr::null_mut();
     } else {
         (*Vpb).ReferenceCount += 1;
@@ -318,13 +318,13 @@ pub unsafe extern "system" fn IopReferenceVerifyVpb(
     let mut Result = 0u8;
 
     let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
-    *Vpb = core::ptr::null_mut();
-    *FileSystemObject = core::ptr::null_mut();
+    core::ptr::write_volatile(Vpb, core::ptr::null_mut());
+    core::ptr::write_volatile(FileSystemObject, core::ptr::null_mut());
 
     let LocalVpb = (*DeviceObject).Vpb;
     if !LocalVpb.is_null() && ((*LocalVpb).Flags & VPB_MOUNTED) != 0 {
-        *Vpb = LocalVpb;
-        *FileSystemObject = (*LocalVpb).DeviceObject;
+        core::ptr::write_volatile(Vpb, LocalVpb);
+        core::ptr::write_volatile(FileSystemObject, (*LocalVpb).DeviceObject);
         (*LocalVpb).ReferenceCount += 1;
         Result = 1u8;
     }
@@ -606,7 +606,7 @@ pub unsafe extern "system" fn IopMountVolume(
             );
 
             if Status >= 0 {
-                *Vpb = IopMountInitializeVpb(
+                core::ptr::write_volatile(Vpb, IopMountInitializeVpb(
                     DeviceObject,
                     AttachedDeviceObject,
                     if ((*(*DeviceObject).Vpb).Flags & VPB_RAW_MOUNT) != 0 {
@@ -614,7 +614,7 @@ pub unsafe extern "system" fn IopMountVolume(
                     } else {
                         0u8
                     },
-                );
+                ));
             } else {
                 if IoIsErrorUserInduced(Status) != 0 && IoStatusBlock.Information == 1 {
                     break;
@@ -765,7 +765,7 @@ pub unsafe extern "system" fn IoEnumerateRegisteredFiltersList(
         ListEntry = (*ListEntry).Flink;
     }
 
-    *ActualNumberDriverObjects = ListSize;
+    core::ptr::write_volatile(ActualNumberDriverObjects, ListSize);
 
     ExReleaseResourceLite(core::ptr::addr_of_mut!(IopDatabaseResource));
     KeLeaveCriticalRegion();
@@ -1039,7 +1039,7 @@ pub unsafe extern "system" fn IoUnregisterFsRegistrationChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoAcquireVpbSpinLock(Irql: PKIRQL) {
-    *Irql = KeAcquireQueuedSpinLock(LockQueueIoVpbLock);
+    core::ptr::write_volatile(Irql, KeAcquireQueuedSpinLock(LockQueueIoVpbLock));
 }
 
 #[no_mangle]
@@ -2190,7 +2190,7 @@ pub unsafe extern "system" fn IoVolumeDeviceToDosName(
 //     }
 //
 //     /* Return list size */
-//     *ActualNumberDriverObjects = ListSize;
+//     core::ptr::write_volatile(ActualNumberDriverObjects, ListSize);
 //
 //     /* Release the FS lock */
 //     ExReleaseResourceLite(&IopDatabaseResource);
@@ -2534,7 +2534,7 @@ pub unsafe extern "system" fn IoVolumeDeviceToDosName(
 // IoAcquireVpbSpinLock(OUT PKIRQL Irql)
 // {
 //     /* Simply acquire the lock */
-//     *Irql = KeAcquireQueuedSpinLock(LockQueueIoVpbLock);
+//     core::ptr::write_volatile(Irql, KeAcquireQueuedSpinLock(LockQueueIoVpbLock));
 // }
 //
 // /*

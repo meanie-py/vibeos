@@ -235,9 +235,9 @@ pub unsafe extern "system" fn ExGetCurrentProcessorCpuUsage(CpuUsage: *mut ULONG
     let ScaledIdle = ((*(*Prcb).IdleThread).__bindgen_anon_7.__bindgen_anon_3.KernelTime as ULONGLONG) * 100;
     let TotalTime = (*Prcb).KernelTime + (*Prcb).UserTime;
     if TotalTime != 0 {
-        *CpuUsage = (100 - (ScaledIdle / TotalTime as ULONGLONG)) as ULONG;
+        core::ptr::write_volatile(CpuUsage, (100 - (ScaledIdle / TotalTime as ULONGLONG)) as ULONG);
     } else {
-        *CpuUsage = 0;
+        core::ptr::write_volatile(CpuUsage, 0);
     }
 }
 
@@ -249,11 +249,11 @@ pub unsafe extern "system" fn ExGetCurrentProcessorCounts(
 ) {
     let Prcb = KeGetCurrentPrcb() as *mut ntkrnl_sys::ddk::_KPRCB;
     #[cfg(target_arch = "x86")]
-    { *IdleTime = (*(*Prcb).IdleThread).__bindgen_anon_9.__bindgen_anon_3.KernelTime; }
+    { core::ptr::write_volatile(IdleTime, (*(*Prcb).IdleThread).__bindgen_anon_9.__bindgen_anon_3.KernelTime); }
     #[cfg(not(target_arch = "x86"))]
-    { *IdleTime = (*(*Prcb).IdleThread).__bindgen_anon_7.__bindgen_anon_3.KernelTime; }
-    *KernelAndUserTime = (*Prcb).KernelTime + (*Prcb).UserTime;
-    *ProcessorNumber = (*Prcb).Number as ULONG;
+    { core::ptr::write_volatile(IdleTime, (*(*Prcb).IdleThread).__bindgen_anon_7.__bindgen_anon_3.KernelTime); }
+    core::ptr::write_volatile(KernelAndUserTime, (*Prcb).KernelTime + (*Prcb).UserTime);
+    core::ptr::write_volatile(ProcessorNumber, (*Prcb).Number as ULONG);
 }
 
 #[no_mangle]
@@ -469,8 +469,8 @@ pub unsafe extern "system" fn ExLockUserBuffer(
     MappedSystemVa: *mut PVOID,
     OutMdl: *mut PMDL,
 ) -> NTSTATUS {
-    *MappedSystemVa = core::ptr::null_mut();
-    *OutMdl = core::ptr::null_mut();
+    core::ptr::write_volatile(MappedSystemVa, core::ptr::null_mut());
+    core::ptr::write_volatile(OutMdl, core::ptr::null_mut());
 
     /* Allocate an MDL for the buffer */
     let Mdl = IoAllocateMdl(BaseAddress, Length, 0u8, 1u8, core::ptr::null_mut());
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn ExLockUserBuffer(
     }
 
     /* Return the MDL */
-    *OutMdl = MdlPvoid;
+    core::ptr::write_volatile(OutMdl, MdlPvoid);
     STATUS_SUCCESS
 }
 
@@ -549,7 +549,7 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
         Status = RtlAnsiStringToUnicodeString(&mut WValue, &AValue, 0u8);
 
         if !ReturnLength.is_null() {
-            *ReturnLength = WValue.Length as ULONG;
+            core::ptr::write_volatile(ReturnLength, WValue.Length as ULONG);
         }
     } else {
         Status = STATUS_UNSUCCESSFUL;
