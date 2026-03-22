@@ -115,7 +115,7 @@ def test_sacred_primitives(arch: str) -> None:
             subprocess.run([candidate, "--version"], capture_output=True, check=True)
             objdump = candidate
             break
-        except (FileNotFoundError, subprocess.CalledProcessError):
+        except (FileNotFoundError, subprocess.CalledProcessError, PermissionError):
             continue
     if objdump is None:
         pytest.skip("No objdump available")
