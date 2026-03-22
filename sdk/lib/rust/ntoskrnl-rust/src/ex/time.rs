@@ -123,11 +123,11 @@ unsafe fn ExpGetTimeZoneId(
             if LocalTimeNow.QuadPart >= DaylightTime.QuadPart
                 && LocalTimeNow.QuadPart < StandardTime.QuadPart
             {
-                *TimeZoneId = TIME_ZONE_ID_DAYLIGHT;
+                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_DAYLIGHT);
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.DaylightBias as i64 * TICKSPERMINUTE;
             } else {
-                *TimeZoneId = TIME_ZONE_ID_STANDARD;
+                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_STANDARD);
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.StandardBias as i64 * TICKSPERMINUTE;
             }
@@ -135,17 +135,17 @@ unsafe fn ExpGetTimeZoneId(
             if LocalTimeNow.QuadPart >= StandardTime.QuadPart
                 && LocalTimeNow.QuadPart < DaylightTime.QuadPart
             {
-                *TimeZoneId = TIME_ZONE_ID_STANDARD;
+                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_STANDARD);
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.StandardBias as i64 * TICKSPERMINUTE;
             } else {
-                *TimeZoneId = TIME_ZONE_ID_DAYLIGHT;
+                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_DAYLIGHT);
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.DaylightBias as i64 * TICKSPERMINUTE;
             }
         }
     } else {
-        *TimeZoneId = TIME_ZONE_ID_UNKNOWN;
+        core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_UNKNOWN);
     }
 
     1u8
@@ -506,9 +506,9 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
             return status;
         }
     } else {
-        *MinimumResolution = KeMaximumIncrement;
-        *MaximumResolution = KeMinimumIncrement;
-        *ActualResolution = KeTimeIncrement;
+        core::ptr::write_volatile(MinimumResolution, KeMaximumIncrement);
+        core::ptr::write_volatile(MaximumResolution, KeMinimumIncrement);
+        core::ptr::write_volatile(ActualResolution, KeTimeIncrement);
     }
 
     STATUS_SUCCESS
@@ -543,7 +543,7 @@ pub unsafe extern "system" fn NtSetTimerResolution(
             return status;
         }
     } else {
-        *CurrentResolution = NewResolution;
+        core::ptr::write_volatile(CurrentResolution, NewResolution);
     }
 
     if SetResolution != 0 || (*Process).__bindgen_anon_2.__bindgen_anon_1.SetTimerResolution() != 0 {

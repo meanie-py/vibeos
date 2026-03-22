@@ -417,7 +417,7 @@ unsafe fn CcRosDeleteFileCache(
 ) -> NTSTATUS {
     let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::from_raw(17u32, *old_irql); // [guard]
     let new_guard = CcRosDeleteFileCacheInner(file_object, shared_cache_map, qsl_guard);
-    *old_irql = new_guard.into_raw();
+    core::ptr::write_volatile(old_irql, new_guard.into_raw());
     STATUS_SUCCESS
 }
 
@@ -432,7 +432,7 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
     let flush_all = (target == MAXULONG) as BOOLEAN;
     let mut local_target = target;
 
-    *count = 0;
+    core::ptr::write_volatile(count, 0);
 
     KeEnterCriticalRegion();
     let mut qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn CcRosTrimCache(
 
     InitializeListHead(core::ptr::addr_of_mut!(free_list));
 
-    *nr_freed = 0;
+    core::ptr::write_volatile(nr_freed, 0);
 
     loop {
         let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
@@ -827,7 +827,7 @@ unsafe fn CcRosCreateVacb(
 
     let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
 
-    *vacb = current;
+    core::ptr::write_volatile(vacb, current);
 
     let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
     current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
@@ -847,7 +847,7 @@ unsafe fn CcRosCreateVacb(
 
             let refs = CcRosVacbDecRefCount(*vacb);
 
-            *vacb = current;
+            core::ptr::write_volatile(vacb, current);
             return STATUS_SUCCESS;
         }
 
@@ -953,7 +953,7 @@ pub unsafe extern "C" fn CcRosGetVacb(
 
     drop(qsl_guard); // [guard-drop]
 
-    *vacb = current;
+    core::ptr::write_volatile(vacb, current);
 
     STATUS_SUCCESS
 }

@@ -549,7 +549,7 @@ pub unsafe extern "C" fn IopGetDriverNames(
         (*ServiceName).Buffer = buf;
     }
 
-    *DriverName = driverName;
+    core::ptr::write_volatile(DriverName, driverName);
     status = STATUS_SUCCESS;
 
     if !basicInfo.is_null() {
@@ -815,7 +815,7 @@ unsafe extern "system" fn LdrProcessDriverModule(
         return Status;
     }
 
-    *ModuleObject = LdrEntry;
+    core::ptr::write_volatile(ModuleObject, LdrEntry);
     STATUS_SUCCESS
 }
 
@@ -1673,7 +1673,7 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
     let NewDriverExtension: PIO_CLIENT_EXTENSION;
     let mut Inserted = 0u8;
 
-    *DriverObjectExtension = core::ptr::null_mut();
+    core::ptr::write_volatile(DriverObjectExtension, core::ptr::null_mut());
 
     NewDriverExtension = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -1716,7 +1716,7 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
         return STATUS_OBJECT_NAME_COLLISION;
     }
 
-    *DriverObjectExtension = (NewDriverExtension as usize + core::mem::size_of::<IO_CLIENT_EXTENSION>()) as PVOID;
+    core::ptr::write_volatile(DriverObjectExtension, (NewDriverExtension as usize + core::mem::size_of::<IO_CLIENT_EXTENSION>()) as PVOID);
     STATUS_SUCCESS
 }
 

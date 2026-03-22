@@ -780,7 +780,7 @@ pub unsafe extern "system" fn KeQueryRuntimeProcess(
 
     KiReleaseProcessLock(core::ptr::addr_of_mut!(ProcessLock));
 
-    *UserTime = TotalUser;
+    core::ptr::write_volatile(UserTime, TotalUser);
 
     TotalKernel
 }

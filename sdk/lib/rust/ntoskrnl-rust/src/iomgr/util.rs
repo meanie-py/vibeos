@@ -36,20 +36,20 @@ pub unsafe extern "system" fn IoComputeDesiredAccessFileObject(
     FileObject: PFILE_OBJECT,
     DesiredAccess: PACCESS_MASK,
 ) -> NTSTATUS {
-    *DesiredAccess = 0;
+    core::ptr::write_volatile(DesiredAccess, 0);
 
     if (*OBJECT_TO_OBJECT_HEADER(FileObject as PVOID)).Type != IoFileObjectType as *mut _OBJECT_TYPE {
         return STATUS_OBJECT_TYPE_MISMATCH;
     }
 
-    *DesiredAccess = (if (*FileObject).Flags & FO_NAMED_PIPE == 0 { FILE_APPEND_DATA } else { 0 }) | FILE_WRITE_DATA;
+    core::ptr::write_volatile(DesiredAccess, (if (*FileObject).Flags & FO_NAMED_PIPE == 0 { FILE_APPEND_DATA } else { 0 }) | FILE_WRITE_DATA);
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoAcquireCancelSpinLock(Irql: PKIRQL) {
-    *Irql = KeAcquireQueuedSpinLock(LockQueueIoCancelLock);
+    core::ptr::write_volatile(Irql, KeAcquireQueuedSpinLock(LockQueueIoCancelLock));
 }
 
 #[no_mangle]
@@ -76,8 +76,8 @@ pub unsafe extern "system" fn IoGetStackLimits(
                 && (StackAddress <= DpcStack)
                 && (StackAddress >= DpcStack - KERNEL_STACK_SIZE)
             {
-                *HighLimit = DpcStack;
-                *LowLimit = DpcStack - KERNEL_STACK_SIZE;
+                core::ptr::write_volatile(HighLimit, DpcStack);
+                core::ptr::write_volatile(LowLimit, DpcStack - KERNEL_STACK_SIZE);
             }
         }
     }
@@ -141,7 +141,7 @@ pub unsafe extern "system" fn IoCheckEaBufferValidity(
 
     loop {
         if EaLength < core::mem::offset_of!(FILE_FULL_EA_INFORMATION, EaName) as ULONG {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
@@ -152,12 +152,12 @@ pub unsafe extern "system" fn IoCheckEaBufferValidity(
             + 1;
 
         if EaLength < ComputedLength {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
         if (*Current).EaName[EaNameLength as usize] != 0 {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
@@ -165,26 +165,26 @@ pub unsafe extern "system" fn IoCheckEaBufferValidity(
 
         if NextEntryOffset == 0 {
             if (EaLength as LONG - ComputedLength as LONG) < 0 {
-                *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+                core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
                 return STATUS_EA_LIST_INCONSISTENT;
             }
             break;
         }
 
         if ALIGN_UP_BY(ComputedLength as ULONG_PTR, core::mem::size_of::<ULONG>()) != NextEntryOffset as ULONG_PTR {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
         if (NextEntryOffset as LONG) < 0 {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
         EaLength -= NextEntryOffset;
 
         if (EaLength as LONG) < 0 {
-            *ErrorOffset = ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG;
+            core::ptr::write_volatile(ErrorOffset, ((Current as ULONG_PTR) - (EaBuffer as ULONG_PTR)) as ULONG);
             return STATUS_EA_LIST_INCONSISTENT;
         }
 
@@ -311,7 +311,7 @@ pub unsafe extern "system" fn IoCheckQuerySetVolumeInformation(
 // IoAcquireCancelSpinLock(OUT PKIRQL Irql)
 // {
 //     /* Just acquire the internal lock */
-//     *Irql = KeAcquireQueuedSpinLock(LockQueueIoCancelLock);
+//     core::ptr::write_volatile(Irql, KeAcquireQueuedSpinLock(LockQueueIoCancelLock));
 // }
 //
 // /*

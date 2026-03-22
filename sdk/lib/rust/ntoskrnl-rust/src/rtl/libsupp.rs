@@ -156,16 +156,16 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
         // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock), core::ptr::addr_of_mut!(OldIrql));
         let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock)) };
 
-        *BaseOfImage = KiPcToFileHeader(
+        core::ptr::write_volatile(BaseOfImage, KiPcToFileHeader(
             PcValue,
             core::ptr::addr_of_mut!(LdrEntry),
             0u8,
             core::ptr::addr_of_mut!(InSystem),
-        );
+        ));
 
         drop(spin_guard);
     } else {
-        *BaseOfImage = core::ptr::null_mut();
+        core::ptr::write_volatile(BaseOfImage, core::ptr::null_mut());
     }
 
     *BaseOfImage
@@ -288,7 +288,7 @@ pub unsafe extern "system" fn RtlInitializeHeapLock(Lock: *mut PHEAP_LOCK) -> NT
     }
 
     ExInitializeResourceLite(core::ptr::addr_of_mut!((*HeapLock).__bindgen_anon_1.Resource));
-    *Lock = HeapLock;
+    core::ptr::write_volatile(Lock, HeapLock);
 
     STATUS_SUCCESS
 }
@@ -376,8 +376,8 @@ pub unsafe extern "system" fn RtlpHandleDpcStackException(
             && (RegistrationFrameEnd <= DpcStack)
             && ((_RegistrationFrame as ULONG_PTR) >= DpcStack - KERNEL_STACK_SIZE as ULONG_PTR)
         {
-            *StackHigh = DpcStack;
-            *StackLow = DpcStack - KERNEL_STACK_SIZE as ULONG_PTR;
+            core::ptr::write_volatile(StackHigh, DpcStack);
+            core::ptr::write_volatile(StackLow, DpcStack - KERNEL_STACK_SIZE as ULONG_PTR);
             return 1u8;
         }
     }
@@ -398,27 +398,27 @@ pub unsafe extern "system" fn RtlpCaptureStackLimits(
         return 0u8;
     }
 
-    *StackBegin = (*Thread).StackLimit as ULONG_PTR;
-    *StackEnd = (*Thread).StackBase as ULONG_PTR;
+    core::ptr::write_volatile(StackBegin, (*Thread).StackLimit as ULONG_PTR);
+    core::ptr::write_volatile(StackEnd, (*Thread).StackBase as ULONG_PTR);
 
     if (*StackBegin <= Ebp) && (Ebp <= *StackEnd) {
-        *StackBegin = Ebp;
+        core::ptr::write_volatile(StackBegin, Ebp);
     } else {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            *StackEnd = (*(*KeGetPcr()).__bindgen_anon_1.__bindgen_anon_1.CurrentPrcb).DpcStack as ULONG_PTR;
+            core::ptr::write_volatile(StackEnd, (*(*KeGetPcr()).__bindgen_anon_1.__bindgen_anon_1.CurrentPrcb).DpcStack as ULONG_PTR);
         }
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
-            *StackEnd = (*(*KeGetPcr()).Prcb).DpcStack as ULONG_PTR;
+            core::ptr::write_volatile(StackEnd, (*(*KeGetPcr()).Prcb).DpcStack as ULONG_PTR);
         }
-        *StackBegin = *StackEnd - KERNEL_STACK_SIZE as ULONG_PTR;
+        core::ptr::write_volatile(StackBegin, *StackEnd - KERNEL_STACK_SIZE as ULONG_PTR);
 
         if (*StackEnd != 0) && (*StackBegin < Ebp) && (Ebp <= *StackEnd) {
-            *StackBegin = Ebp;
+            core::ptr::write_volatile(StackBegin, Ebp);
         } else {
             *StackBegin = Ebp;
-            *StackEnd = PAGE_ALIGN(*StackBegin) as ULONG_PTR;
+            core::ptr::write_volatile(StackEnd, PAGE_ALIGN(*StackBegin) as ULONG_PTR);
         }
     }
 
@@ -564,14 +564,14 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
 #[no_mangle]
 pub unsafe extern "system" fn RtlpGetStackLimits(LowLimit: *mut ULONG_PTR, HighLimit: *mut ULONG_PTR) {
     let CurrentThread = KeGetCurrentThread();
-    *LowLimit = (*CurrentThread).StackLimit as ULONG_PTR;
+    core::ptr::write_volatile(LowLimit, (*CurrentThread).StackLimit as ULONG_PTR);
     #[cfg(target_arch = "x86")]
     {
-        *HighLimit = ((*CurrentThread).InitialStack as ULONG_PTR) - core::mem::size_of::<FX_SAVE_AREA>();
+        core::ptr::write_volatile(HighLimit, ((*CurrentThread).InitialStack as ULONG_PTR) - core::mem::size_of::<FX_SAVE_AREA>());
     }
     #[cfg(not(target_arch = "x86"))]
     {
-        *HighLimit = (*CurrentThread).InitialStack as ULONG_PTR;
+        core::ptr::write_volatile(HighLimit, (*CurrentThread).InitialStack as ULONG_PTR);
     }
 }
 
@@ -730,7 +730,7 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
     let mut Status: NTSTATUS;
 
     if !OutHeaders.is_null() {
-        *OutHeaders = core::ptr::null_mut();
+        core::ptr::write_volatile(OutHeaders, core::ptr::null_mut());
     }
 
     Status = RtlpImageNtHeaderEx(Flags, Base, Size, OutHeaders);

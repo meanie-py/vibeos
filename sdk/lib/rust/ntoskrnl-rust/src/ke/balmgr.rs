@@ -138,7 +138,7 @@ pub unsafe extern "system" fn KiScanReadyQueues(
         ScanIndex = 0;
     }
 
-    *ScanLast = ScanIndex;
+    core::ptr::write_volatile(ScanLast, ScanIndex);
 }
 
 #[no_mangle]

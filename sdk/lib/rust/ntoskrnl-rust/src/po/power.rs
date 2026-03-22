@@ -515,6 +515,7 @@ pub unsafe extern "C" fn PopSetSystemPowerStateTraverse(
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM eliminates function body on certain CGU partitionings
 pub unsafe extern "system" fn PopSetSystemPowerState(
     PowerState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
@@ -848,7 +849,7 @@ pub unsafe extern "system" fn PoRequestPowerIrp(
     }
 
     if !pIrp.is_null() {
-        *pIrp = Irp;
+        core::ptr::write_volatile(pIrp, Irp);
     }
 
     IoSetCompletionRoutine(
@@ -1164,7 +1165,7 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         }
     }
 
-    *PreviousFlags = PreviousState;
+    core::ptr::write_volatile(PreviousFlags, PreviousState);
 
     STATUS_SUCCESS
 }

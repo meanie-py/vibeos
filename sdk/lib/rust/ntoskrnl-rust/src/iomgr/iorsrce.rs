@@ -817,7 +817,7 @@ pub unsafe extern "C" fn IopFetchConfigurationInformation(
     if Status < 0 {
         /* Zero output and leave */
         if !SymbolicLinkList.is_null() {
-            *SymbolicLinkList = core::ptr::null_mut();
+            core::ptr::write_volatile(SymbolicLinkList, core::ptr::null_mut());
         }
         return STATUS_UNSUCCESSFUL;
     }
@@ -842,7 +842,7 @@ pub unsafe extern "C" fn IopFetchConfigurationInformation(
         STATUS_UNSUCCESSFUL
     };
     /* Finally, give back to the caller the number of found interfaces */
-    *Interfaces = interfaces;
+    core::ptr::write_volatile(Interfaces, interfaces);
 
     Status
 }
@@ -1014,7 +1014,7 @@ pub unsafe extern "system" fn IoReportResourceUsage(
 
     Status = IopDetectResourceConflict(ResourceList, 0u8, core::ptr::null_mut());
     if Status == STATUS_CONFLICTING_ADDRESSES {
-        *ConflictDetected = 1;
+        core::ptr::write_volatile(ConflictDetected, 1);
 
         if OverrideConflict == 0 {
             return STATUS_CONFLICTING_ADDRESSES;
@@ -1023,7 +1023,7 @@ pub unsafe extern "system" fn IoReportResourceUsage(
         return Status;
     }
 
-    *ConflictDetected = 0;
+    core::ptr::write_volatile(ConflictDetected, 0);
 
     STATUS_SUCCESS
 }
@@ -1084,7 +1084,7 @@ pub unsafe extern "system" fn IoAssignResources(
     }
 
     if !AllocatedResources.is_null() {
-        *AllocatedResources = core::ptr::null_mut();
+        core::ptr::write_volatile(AllocatedResources, core::ptr::null_mut());
     }
 
     IopLegacyResourceAllocation(

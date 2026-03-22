@@ -853,7 +853,7 @@ unsafe fn IopQueryDeviceInformation(
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
 
-    *ReturnedLength = IoStatusBlock.Information as ULONG;
+    core::ptr::write_volatile(ReturnedLength, IoStatusBlock.Information as ULONG);
     Status
 }
 
@@ -909,7 +909,7 @@ unsafe fn IopGetFileInformation(
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
 
-    *ReturnedLength = IoStatusBlock.Information as ULONG;
+    core::ptr::write_volatile(ReturnedLength, IoStatusBlock.Information as ULONG);
     Status
 }
 
@@ -1057,7 +1057,7 @@ unsafe fn IopOpenLinkOrRenameTarget(
     }
 
     (*Stack).Parameters.SetFile.FileObject = TargetFileObject;
-    *Handle = TargetHandle;
+    core::ptr::write_volatile(Handle, TargetHandle);
 
     STATUS_SUCCESS
 }
@@ -2989,7 +2989,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
             }
 
             Status = KernelIosb.__bindgen_anon_1.Status;
-            *IoStatusBlock = KernelIosb;
+            core::ptr::write_volatile(IoStatusBlock, KernelIosb);
             ExFreePoolWithTag(Event as PVOID, TAG_IO);
         } else {
             Status = KeWaitForSingleObject(
@@ -3117,7 +3117,7 @@ pub unsafe extern "system" fn NtUnlockFile(
             DeviceObject,
         ) != 0
         {
-            *IoStatusBlock = KernelIosb;
+            core::ptr::write_volatile(IoStatusBlock, KernelIosb);
             ObDereferenceObject(FileObject as PVOID);
             return KernelIosb.__bindgen_anon_1.Status;
         }
@@ -3358,7 +3358,7 @@ pub unsafe extern "system" fn NtWriteFile(
             if Success != 0 && KernelIosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
                 IopUpdateOperationCount(IopWriteTransfer);
                 IopUpdateTransferCount(IopWriteTransfer, KernelIosb.Information as ULONG);
-                *IoStatusBlock = KernelIosb;
+                core::ptr::write_volatile(IoStatusBlock, KernelIosb);
 
                 if !EventObject.is_null() {
                     KeSetEvent(EventObject, 0, 0u8);

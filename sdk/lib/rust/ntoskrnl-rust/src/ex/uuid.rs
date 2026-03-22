@@ -161,7 +161,7 @@ unsafe fn ExpUuidLoadSequenceNumber(Sequence: *mut ULONG) -> NTSTATUS {
         return STATUS_UNSUCCESSFUL;
     }
 
-    *Sequence = *((*ValueInfo).Data.as_ptr() as *const ULONG);
+    core::ptr::write_volatile(Sequence, *((*ValueInfo).Data.as_ptr() as *const ULONG));
 
     STATUS_SUCCESS
 }
@@ -277,17 +277,17 @@ unsafe fn ExpAllocateUuids(
     }
 
     if TimeDiff.u.HighPart < 0 || TimeDiff.QuadPart <= TIME_FRAME {
-        *Range = TimeDiff.QuadPart as ULONG;
+        core::ptr::write_volatile(Range, TimeDiff.QuadPart as ULONG);
         ClockDiff.QuadPart = 0;
     } else {
-        *Range = TIME_FRAME as ULONG;
+        core::ptr::write_volatile(Range, TIME_FRAME as ULONG);
         ClockDiff.QuadPart = TimeDiff.QuadPart - TIME_FRAME;
         ClockDiff.u.HighPart -= 1;
     }
 
     (*Time).QuadPart = (CurrentTime.QuadPart - (*Range as i64) - ClockDiff.QuadPart) as u64;
     ExpUuidLastTimeAllocated.QuadPart = CurrentTime.QuadPart - ClockDiff.QuadPart;
-    *Sequence = ExpUuidSequenceNumber;
+    core::ptr::write_volatile(Sequence, ExpUuidSequenceNumber);
 
     STATUS_SUCCESS
 }
@@ -484,8 +484,8 @@ pub unsafe extern "system" fn NtAllocateUuids(
         let mut __exception_code: NTSTATUS = 0;
         let result = (|| {
             (*Time).QuadPart = IntTime.QuadPart;
-            *Range = IntRange;
-            *Sequence = IntSequence;
+            core::ptr::write_volatile(Range, IntRange);
+            core::ptr::write_volatile(Sequence, IntSequence);
 
             core::ptr::copy_nonoverlapping(
                 ExpUuidCachedValues.NodeId().as_ptr(),

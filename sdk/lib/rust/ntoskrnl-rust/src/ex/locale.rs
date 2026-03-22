@@ -280,7 +280,7 @@ unsafe fn ExpGetCurrentUserUILanguage(
                 RtlInitUnicodeString(&mut ValueString, ValueString.Buffer);
                 Status = RtlUnicodeStringToInteger(&mut ValueString, 16, &mut Value);
                 if Status >= 0 {
-                    *LanguageId = Value as LANGID;
+                    core::ptr::write_volatile(LanguageId, Value as LANGID);
                 }
             } else {
                 Status = STATUS_UNSUCCESSFUL;

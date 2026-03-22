@@ -171,7 +171,7 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
-    *TickCount = *(core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER);
+    core::ptr::write_volatile(TickCount, *(core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER));
 }
 
 #[cfg(not(target_arch = "x86_64"))]

@@ -45,7 +45,7 @@ pub unsafe extern "system" fn KeFindConfigurationNextEntry(
     while !Child.is_null() {
         if !(*NextLink).is_null() {
             if Child == *NextLink {
-                *NextLink = core::ptr::null_mut();
+                core::ptr::write_volatile(NextLink, core::ptr::null_mut());
             }
         } else {
             if (*Child).ComponentEntry.Class == Class
@@ -60,7 +60,7 @@ pub unsafe extern "system" fn KeFindConfigurationNextEntry(
         while !Sibling.is_null() {
             if !(*NextLink).is_null() {
                 if Sibling == *NextLink {
-                    *NextLink = core::ptr::null_mut();
+                    core::ptr::write_volatile(NextLink, core::ptr::null_mut());
                 }
             } else {
                 if (*Sibling).ComponentEntry.Class == Class

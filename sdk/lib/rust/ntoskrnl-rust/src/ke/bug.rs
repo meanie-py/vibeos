@@ -201,7 +201,7 @@ pub unsafe extern "system" fn KiPcToFileHeader(
         &mut PsLoadedModuleList as PLIST_ENTRY
     };
 
-    *InKernel = 0u8;
+    core::ptr::write_volatile(InKernel, 0u8);
 
     NextEntry = (*ListHead).Flink;
     if !NextEntry.is_null() {
@@ -221,11 +221,11 @@ pub unsafe extern "system" fn KiPcToFileHeader(
             if ((Pc as ULONG_PTR) >= ((*Entry).DllBase as ULONG_PTR)) &&
                ((Pc as ULONG_PTR) < (((*Entry).DllBase as ULONG_PTR) + (*Entry).SizeOfImage as ULONG_PTR))
             {
-                *LdrEntry = Entry;
+                core::ptr::write_volatile(LdrEntry, Entry);
                 PcBase = ImageBase;
 
                 if i <= 2 {
-                    *InKernel = 1u8;
+                    core::ptr::write_volatile(InKernel, 1u8);
                 }
                 break;
             }
@@ -260,7 +260,7 @@ unsafe fn KiRosPcToUserFileHeader(
             if ((Pc as ULONG_PTR) >= ((*Entry).DllBase as ULONG_PTR)) &&
                ((Pc as ULONG_PTR) < (((*Entry).DllBase as ULONG_PTR) + (*Entry).SizeOfImage as ULONG_PTR))
             {
-                *LdrEntry = Entry;
+                core::ptr::write_volatile(LdrEntry, Entry);
                 PcBase = ImageBase;
                 break;
             }
@@ -306,7 +306,7 @@ pub unsafe extern "system" fn KeRosCaptureUserStackBackTrace(
     }
 
     if !BackTraceHash.is_null() {
-        *BackTraceHash = Hash;
+        core::ptr::write_volatile(BackTraceHash, Hash);
     }
 
     RtlFillMemoryUlong(Frames.as_mut_ptr() as PVOID, 128, 0);

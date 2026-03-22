@@ -281,13 +281,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
             }
             if status >= 0 {
                 FsRtlpRedirs += 1;
-                *Handle = device_handle;
+                core::ptr::write_volatile(Handle, device_handle);
             } else {
                 if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
                     ZwClose(device_handle);
                 }
 
-                *Handle = INVALID_HANDLE_VALUE_PTR;
+                core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
             }
 
             KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
@@ -306,13 +306,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
             }
             if status >= 0 {
                 FsRtlpRedirs += 1;
-                *Handle = device_handle;
+                core::ptr::write_volatile(Handle, device_handle);
             } else {
                 if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
                     ZwClose(device_handle);
                 }
 
-                *Handle = INVALID_HANDLE_VALUE_PTR;
+                core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
             }
 
             KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
@@ -347,13 +347,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
-                    *Handle = device_handle;
+                    core::ptr::write_volatile(Handle, device_handle);
                 } else {
                     if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
                         ZwClose(device_handle);
                     }
 
-                    *Handle = INVALID_HANDLE_VALUE_PTR;
+                    core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
                 }
 
                 KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
@@ -373,13 +373,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
-                    *Handle = device_handle;
+                    core::ptr::write_volatile(Handle, device_handle);
                 } else {
                     if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
                         ZwClose(device_handle);
                     }
 
-                    *Handle = INVALID_HANDLE_VALUE_PTR;
+                    core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
                 }
 
                 KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
@@ -398,13 +398,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
-                    *Handle = device_handle;
+                    core::ptr::write_volatile(Handle, device_handle);
                 } else {
                     if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
                         ZwClose(device_handle);
                     }
 
-                    *Handle = INVALID_HANDLE_VALUE_PTR;
+                    core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
                 }
 
                 KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);
@@ -420,13 +420,13 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
 
     if status >= 0 {
         FsRtlpRedirs += 1;
-        *Handle = device_handle;
+        core::ptr::write_volatile(Handle, device_handle);
     } else {
         if device_handle != INVALID_HANDLE_VALUE_PTR && !device_handle.is_null() {
             ZwClose(device_handle);
         }
 
-        *Handle = INVALID_HANDLE_VALUE_PTR;
+        core::ptr::write_volatile(Handle, INVALID_HANDLE_VALUE_PTR);
     }
 
     KeReleaseSemaphore(&mut FsRtlpUncSemaphore, 0, 1, 0);

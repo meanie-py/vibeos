@@ -169,7 +169,7 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
     } else {
         let WaitThread = (*WaitBlock).Thread;
         if !WaitingThread.is_null() {
-            *WaitingThread = WaitThread;
+            core::ptr::write_volatile(WaitingThread, WaitThread);
         }
 
         (*Thread).Priority = KiComputeNewPriority(Thread, 0);

@@ -165,7 +165,7 @@ extern "C" {
 #[inline(always)]
 unsafe fn BitScanReverse_local(index: *mut u32, mask: u32) -> u8 {
     if mask == 0 { return 0; }
-    *index = 31 - mask.leading_zeros();
+    core::ptr::write_volatile(index, 31 - mask.leading_zeros());
     1
 }
 
@@ -178,7 +178,7 @@ unsafe fn BitScanReverseAffinity(Index: *mut u32, Mask: KAFFINITY) {
         let mut hi: u32 = 0;
         if (Mask >> 32) != 0 {
             BitScanReverse_local(&mut hi, (Mask >> 32) as u32);
-            *Index = hi + 32;
+            core::ptr::write_volatile(Index, hi + 32);
         }
     }
 }
@@ -892,7 +892,7 @@ pub unsafe extern "system" fn KeQueryRuntimeThread(
 ) -> ULONG {
     ASSERT_THREAD!(Thread);
 
-    *UserTime = *kt_UserTime(Thread);
+    core::ptr::write_volatile(UserTime, *kt_UserTime(Thread));
 
     *kt_KernelTime(Thread)
 }

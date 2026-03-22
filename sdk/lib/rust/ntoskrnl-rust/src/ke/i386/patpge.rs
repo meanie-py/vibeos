@@ -131,11 +131,11 @@ pub unsafe extern "system" fn Ki386IdentityMapMakeValid(
         (*Pde).set_Valid(1);
 
         if !PageTable.is_null() {
-            *PageTable = NewPage as PHARDWARE_PTE;
+            core::ptr::write_volatile(PageTable, NewPage as PHARDWARE_PTE);
         }
     } else {
         if !PageTable.is_null() {
-            *PageTable = ((*Pde).PageFrameNumber() << PAGE_SHIFT) as PHARDWARE_PTE;
+            core::ptr::write_volatile(PageTable, ((*Pde).PageFrameNumber() << PAGE_SHIFT) as PHARDWARE_PTE);
         }
     }
 

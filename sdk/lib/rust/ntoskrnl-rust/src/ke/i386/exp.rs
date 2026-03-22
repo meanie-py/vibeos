@@ -275,7 +275,7 @@ pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULO
     }
 
     if !DrMask.is_null() {
-        *DrMask = new_mask;
+        core::ptr::write_volatile(DrMask, new_mask);
     } else {
         if mask != new_mask {
             (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive = new_mask as UCHAR;

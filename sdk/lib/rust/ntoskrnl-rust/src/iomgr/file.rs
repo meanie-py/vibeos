@@ -607,7 +607,7 @@ unsafe fn IopCheckTopDeviceHint(
     }
 
     if IopVerifyDeviceObjectOnStack(LocalDevice, (*OpenPacket).TopDeviceObjectHint) != 0 {
-        *DeviceObject = (*OpenPacket).TopDeviceObjectHint;
+        core::ptr::write_volatile(DeviceObject, (*OpenPacket).TopDeviceObjectHint);
         return STATUS_SUCCESS;
     }
 
@@ -661,7 +661,7 @@ pub unsafe extern "system" fn IopParseDevice(
     let mut Attempt: ULONG = 0;
 
     while Attempt < IOP_MAX_REPARSE_TRAVERSAL {
-        *Object = null_mut();
+        core::ptr::write_volatile(Object, null_mut());
 
         if IopValidateOpenPacket(OpenPacket) == 0 {
             return STATUS_OBJECT_TYPE_MISMATCH;
@@ -1764,7 +1764,7 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
         if Status == STATUS_BUFFER_OVERFLOW {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
-        *BufferLength = IoStatusBlock.Information as ULONG;
+        core::ptr::write_volatile(BufferLength, IoStatusBlock.Information as ULONG);
     }
 
     Status
@@ -2147,6 +2147,7 @@ unsafe fn IopQueryAttributesFile(
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM eliminates function body via captures(none) on certain CGU partitionings
 pub unsafe extern "system" fn IopAcquireFileObjectLock(
     FileObject: PFILE_OBJECT,
     WaitMode: KPROCESSOR_MODE,
@@ -3003,7 +3004,7 @@ pub unsafe extern "system" fn IoQueryFileDosDeviceName(
             0i8,
         );
         if Status == STATUS_SUCCESS {
-            *_OBJECT_INFORMATION_CLASS_ObjectNameInformation = LocalInfo;
+            core::ptr::write_volatile(_OBJECT_INFORMATION_CLASS_ObjectNameInformation, LocalInfo);
             return STATUS_SUCCESS;
         }
 

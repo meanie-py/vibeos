@@ -363,7 +363,7 @@ pub unsafe extern "system" fn PoQueueShutdownWorkItem(WorkItem: PWORK_QUEUE_ITEM
 #[no_mangle]
 pub unsafe extern "system" fn PoRequestShutdownEvent(Event: *mut PVOID) -> NTSTATUS {
     if !Event.is_null() {
-        *Event = core::ptr::null_mut();
+        core::ptr::write_volatile(Event, core::ptr::null_mut());
     }
 
     let Status = PoRequestShutdownWait(PsGetCurrentThread());
@@ -372,7 +372,7 @@ pub unsafe extern "system" fn PoRequestShutdownEvent(Event: *mut PVOID) -> NTSTA
     }
 
     if !Event.is_null() {
-        *Event = core::ptr::addr_of_mut!(PopShutdownEvent) as PVOID;
+        core::ptr::write_volatile(Event, core::ptr::addr_of_mut!(PopShutdownEvent) as PVOID);
     }
     STATUS_SUCCESS
 }

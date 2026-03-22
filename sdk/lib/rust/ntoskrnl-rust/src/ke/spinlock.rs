@@ -108,7 +108,7 @@ pub unsafe extern "system" fn KeReleaseInterruptSpinLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn _KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
-    *SpinLock = 0;
+    core::ptr::write_volatile(SpinLock, 0);
 }
 
 #[no_mangle]

@@ -110,7 +110,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     let buffer_key = ExAllocatePoolWithTag(PagedPool, buffer_key_length as SIZE_T, PRODUCT_TAG);
     if buffer_key.is_null() {
         success = 0u8;
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
         return success;
     }
 
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     if status < 0 {
         success = 0u8;
         ExFreePoolWithTag(buffer_key, PRODUCT_TAG);
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
         return success;
     }
 
@@ -144,7 +144,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     if status < 0 {
         success = 0u8;
         ExFreePoolWithTag(buffer_key, PRODUCT_TAG);
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
         return success;
     }
 
@@ -152,7 +152,7 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     if (*buffer_key_info).Type != 1 {
         success = 0u8;
         ExFreePoolWithTag(buffer_key, PRODUCT_TAG);
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
         return success;
     }
 
@@ -172,17 +172,17 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     }
 
     if RtlCompareUnicodeString(&mut nt_product_type, &mut WORKSTATION_PRODUCT, 1) == 0 {
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
         success = 1u8;
     } else if RtlCompareUnicodeString(&mut nt_product_type, &mut LANMAN_PRODUCT, 1) == 0 {
-        *ProductType = 2;
+        core::ptr::write_volatile(ProductType, 2);
         success = 1u8;
     } else if RtlCompareUnicodeString(&mut nt_product_type, &mut SERVER_PRODUCT, 1) == 0 {
-        *ProductType = 3;
+        core::ptr::write_volatile(ProductType, 3);
         success = 1u8;
     } else {
         success = 0u8;
-        *ProductType = 1;
+        core::ptr::write_volatile(ProductType, 1);
     }
 
     ExFreePoolWithTag(buffer_key, PRODUCT_TAG);

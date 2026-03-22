@@ -157,7 +157,7 @@ pub unsafe extern "system" fn InbvPortInitialize(
         port_address,
         baud_rate,
     );
-    *PortId = port_number - 1;
+    core::ptr::write_volatile(PortId, port_number - 1);
 
     1u8
 }

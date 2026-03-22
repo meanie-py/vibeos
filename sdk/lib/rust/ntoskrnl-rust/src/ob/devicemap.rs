@@ -185,7 +185,7 @@ pub unsafe extern "system" fn ObSetDirectoryDeviceMap(
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(ObpDeviceMapLock) as PKGUARDED_MUTEX);
 
     if !DeviceMap.is_null() {
-        *DeviceMap = local_map;
+        core::ptr::write_volatile(DeviceMap, local_map);
     }
 
     object_header = OBJECT_TO_OBJECT_HEADER(directory_object as PVOID);
