@@ -170,7 +170,8 @@ unsafe fn FreeWsleIndex(WsList: PMMWSL, mut Index: ULONG) {
             let Page = PFN_FROM_PTE(PointerPte);
 
             {
-                let OldIrql = MiAcquirePfnLock();
+                // [guard] let OldIrql = MiAcquirePfnLock();
+                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
                 let Pfn = MiGetPfnEntry(Page);
                 MI_SET_PFN_DELETED(Pfn);
@@ -178,7 +179,7 @@ unsafe fn FreeWsleIndex(WsList: PMMWSL, mut Index: ULONG) {
                 MiDecrementShareCount(MiGetPfnEntry(pte_frame) as *mut _MMPFN, pte_frame as _);
                 MiDecrementShareCount(Pfn as *mut _MMPFN, Page as _);
 
-                MiReleasePfnLock(OldIrql);
+                drop(pfn_guard);
             }
 
             (*PointerPte).Long = 0;
@@ -272,7 +273,8 @@ unsafe fn GetFreeWsleIndex(WsList: PMMWSL) -> ULONG {
             let PointerPte = MiAddressToPte((*WsList).Wsle.add((*WsList).LastInitializedWsle as usize) as PVOID);
             let mut TempPte = GetPteTemplateForWsList(WsList);
             {
-                let OldIrql = MiAcquirePfnLock();
+                // [guard] let OldIrql = MiAcquirePfnLock();
+                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
                 let pfn = MiRemoveAnyPage(GetNextPageColorForWsList(WsList));
                 TempPte.set_page_frame_number(pfn);
@@ -282,7 +284,7 @@ unsafe fn GetFreeWsleIndex(WsList: PMMWSL) -> ULONG {
                     core::mem::transmute(TempPte),
                 );
 
-                MiReleasePfnLock(OldIrql);
+                drop(pfn_guard);
             }
 
             (*WsList).LastInitializedWsle += (PAGE_SIZE / core::mem::size_of::<_MMWSLE>()) as u32;

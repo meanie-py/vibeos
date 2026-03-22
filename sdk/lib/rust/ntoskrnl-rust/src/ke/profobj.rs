@@ -106,7 +106,8 @@ pub unsafe extern "system" fn KeStartProfile(
     }
     core::ptr::write_bytes(SourceBuffer as *mut u8, 0, core::mem::size_of::<KPROFILE_SOURCE_OBJECT>());
 
-    KeRaiseIrql(KiProfileIrql, core::ptr::addr_of_mut!(OldIrql));
+    // [guard] KeRaiseIrql(KiProfileIrql, core::ptr::addr_of_mut!(OldIrql));
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(KiProfileIrql) };
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KiProfileLock));
 
     if (*Profile).Started == 0 {
@@ -159,7 +160,7 @@ pub unsafe extern "system" fn KeStartProfile(
 
     HalStartProfileInterrupt((*Profile).Source);
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 
     if FreeBuffer != 0 {
         ExFreePoolWithTag(SourceBuffer as PVOID, u32::from_ne_bytes(*b"forP"));
@@ -176,7 +177,8 @@ pub unsafe extern "system" fn KeStopProfile(Profile: PKPROFILE) -> BOOLEAN {
     let mut SourceFound = 0u8;
     let StoppedProfile: BOOLEAN;
 
-    KeRaiseIrql(KiProfileIrql, core::ptr::addr_of_mut!(OldIrql));
+    // [guard] KeRaiseIrql(KiProfileIrql, core::ptr::addr_of_mut!(OldIrql));
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(KiProfileIrql) };
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KiProfileLock));
 
     if (*Profile).Started != 0 {
@@ -204,7 +206,7 @@ pub unsafe extern "system" fn KeStopProfile(Profile: PKPROFILE) -> BOOLEAN {
 
     HalStopProfileInterrupt((*Profile).Source);
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 
     if SourceFound != 0 {
         ExFreePool(CurrentSource as PVOID);

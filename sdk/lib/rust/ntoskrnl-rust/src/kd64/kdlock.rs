@@ -94,7 +94,8 @@ pub unsafe extern "system" fn KdPollBreakIn() -> BOOLEAN {
             KdpContext.KdpControlCPending = 0u8;
         } else {
             let mut old_irql: KIRQL = 0;
-            KeRaiseIrql(HIGH_LEVEL, core::ptr::addr_of_mut!(old_irql));
+            // [guard] KeRaiseIrql(HIGH_LEVEL, core::ptr::addr_of_mut!(old_irql));
+            let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
             if KeTryToAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!(KdpDebuggerLock) as *mut _) != 0 {
                 if KdReceivePacket(
                     PACKET_TYPE_KD_POLL_BREAKIN,
@@ -110,7 +111,7 @@ pub unsafe extern "system" fn KdPollBreakIn() -> BOOLEAN {
 
                 KdpPortUnlock();
             }
-            KeLowerIrql(old_irql);
+            drop(irql_guard);
         }
 
         KeRestoreInterrupts(enable);

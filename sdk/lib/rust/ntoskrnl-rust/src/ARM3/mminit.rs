@@ -1183,7 +1183,8 @@ pub unsafe extern "system" fn MmDumpArmPfnDatabase(status_only: BOOLEAN) {
     let mut free_pages: ULONG = 0;
     let mut other_pages: ULONG = 0;
 
-    KeRaiseIrql(HIGH_LEVEL as u8, core::ptr::addr_of_mut!(old_irql));
+    // [guard] KeRaiseIrql(HIGH_LEVEL as u8, core::ptr::addr_of_mut!(old_irql));
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL as u8) };
     for i in 0..=MmHighestPhysicalPage as ULONG {
         pfn1 = MiGetPfnEntry(i as PFN_NUMBER);
         if pfn1.is_null() {
@@ -1206,7 +1207,7 @@ pub unsafe extern "system" fn MmDumpArmPfnDatabase(status_only: BOOLEAN) {
         }
     }
 
-    KeLowerIrql(old_irql);
+    drop(irql_guard);
 }
 
 #[no_mangle]

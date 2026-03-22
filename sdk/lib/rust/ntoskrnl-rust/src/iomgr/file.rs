@@ -1183,7 +1183,8 @@ pub unsafe extern "system" fn IopParseDevice(
                 }
             }
 
-            KeRaiseIrql(2, &mut OldIrql);
+            // [guard] KeRaiseIrql(2, &mut OldIrql);
+            let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(2) };
             IoStatusBlock = core::ptr::read_volatile(&(*Irp).IoStatus);
             Status = IoStatusBlock.__bindgen_anon_1.Status;
             core::ptr::write_volatile(&mut (*FileObject).Event.Header.SignalState, 1);
@@ -1195,7 +1196,7 @@ pub unsafe extern "system" fn IopParseDevice(
             }
 
             IoFreeIrp(Irp);
-            KeLowerIrql(OldIrql);
+            drop(irql_guard);
         }
 
         (*OpenPacket).Information = IoStatusBlock.Information;
@@ -1450,9 +1451,10 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
     }
 
     let mut OldIrql: KIRQL = 0;
-    KeRaiseIrql(2, &mut OldIrql);
+    // [guard] KeRaiseIrql(2, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(2) };
     IopUnQueueIrpFromThread(Irp);
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 
     IoFreeIrp(Irp);
 
@@ -2068,9 +2070,10 @@ pub unsafe extern "system" fn IopCloseFile(
         KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 1, 0i8, 0, null_mut());
     }
     let mut OldIrql: KIRQL = 0;
-    KeRaiseIrql(2, &mut OldIrql);
+    // [guard] KeRaiseIrql(2, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(2) };
     IopUnQueueIrpFromThread(Irp);
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     IoFreeIrp(Irp);
 
     if !Process.is_null() && ((*FileObject).Flags & FO_SYNCHRONOUS_IO != 0) {
@@ -2966,9 +2969,10 @@ pub unsafe extern "system" fn IoCancelFileOpen(
     }
 
     let mut OldIrql: KIRQL = 0;
-    KeRaiseIrql(2, &mut OldIrql);
+    // [guard] KeRaiseIrql(2, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(2) };
     IopUnQueueIrpFromThread(Irp);
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 
     IoFreeIrp(Irp);
 

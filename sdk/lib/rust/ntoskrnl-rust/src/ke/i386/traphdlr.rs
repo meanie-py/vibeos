@@ -465,12 +465,13 @@ pub unsafe extern "fastcall" fn KiTrap06Handler(TrapFrame: PKTRAP_FRAME) -> ! {
             KiDispatchException0Args(STATUS_ILLEGAL_INSTRUCTION, (*TrapFrame).Eip, TrapFrame);
         }
         let mut old_irql: KIRQL = 0;
-        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(old_irql));
+        // [guard] KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(old_irql));
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         _enable();
         if VdmDispatchBop(TrapFrame) == 0 {
             KeBugCheck(TRAP_CAUSE_UNKNOWN);
         }
-        KeLowerIrql(old_irql);
+        drop(irql_guard);
         _disable();
         KiExitV86Trap(TrapFrame);
     }
@@ -606,12 +607,13 @@ pub unsafe extern "fastcall" fn KiTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! {
             KiDispatchException0Args(STATUS_ILLEGAL_INSTRUCTION, (*TrapFrame).Eip, TrapFrame);
         }
         let mut old_irql: KIRQL = 0;
-        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(old_irql));
+        // [guard] KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(old_irql));
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         _enable();
         if Ki386HandleOpcodeV86(TrapFrame) == 0xFF {
             KeBugCheck(TRAP_CAUSE_UNKNOWN);
         }
-        KeLowerIrql(old_irql);
+        drop(irql_guard);
         _disable();
         KiExitV86Trap(TrapFrame);
     }

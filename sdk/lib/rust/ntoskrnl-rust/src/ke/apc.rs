@@ -70,9 +70,10 @@ pub unsafe extern "system" fn KiCheckForKernelApcDelivery() {
     let mut OldIrql: KIRQL = 0;
 
     if KeGetCurrentIrql() == PASSIVE_LEVEL {
-        KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+        // [guard] KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         KiDeliverApc(0i8, core::ptr::null_mut(), core::ptr::null_mut());
-        KeLowerIrql(PASSIVE_LEVEL);
+        drop(irql_guard);
     } else {
         let thread = PsGetCurrentThread();
         kt_ApcState(thread).KernelApcPending = 1u8;

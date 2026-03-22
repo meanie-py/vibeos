@@ -458,9 +458,12 @@ codex exec --full-auto "$(cat prompt.md)"
 
 **Post-integration checklist:**
 1. Run `verify_constants.py` on the output to catch wrong constant values
-2. Add missing `extern` declarations for C macros/FORCEINLINE functions
-3. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
-4. Build all 3 arches + run smoke tests
+2. Run `verify_ffi.py` to check ABI mismatches and C macro usage
+3. Use RAII guards (`PfnLockGuard`, `SpinLockGuard`, `IrqlGuard`) instead of manual lock pairs
+4. Use `drop(guard)` at the exact original release point — do NOT let guards drop at function end
+5. Prefer `Result<T, NTSTATUS>` returns over output pointers for internal functions
+6. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
+7. Build all 3 arches + run smoke tests
 
 ### verify_constants.py
 

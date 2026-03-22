@@ -215,7 +215,8 @@ pub unsafe extern "system" fn VdmEndExecution(TrapFrame: PKTRAP_FRAME, VdmTib: P
     );
 
     let mut OldIrql: KIRQL = 0;
-    KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
 
     (*VdmTib).MonitorContext.Eax = STATUS_SUCCESS as ULONG;
 
@@ -239,7 +240,7 @@ pub unsafe extern "system" fn VdmEndExecution(TrapFrame: PKTRAP_FRAME, VdmTib: P
         }
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 }
 
 #[no_mangle]

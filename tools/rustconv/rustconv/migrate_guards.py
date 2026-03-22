@@ -184,6 +184,58 @@ def _check_simple(lines: list[str], acquire_line: int, release_line: int,
     return True, ''
 
 
+def fix_file(path: Path, pairs: list[LockPair]) -> int:
+    """Apply guard transforms to simple pairs in a file. Returns count of transforms."""
+    simple_pairs = [p for p in pairs if p.simple]
+    if not simple_pairs:
+        return 0
+
+    lines = path.read_text().splitlines()
+    # Process pairs in reverse order (bottom-up) to preserve line numbers
+    simple_pairs.sort(key=lambda p: p.release_line, reverse=True)
+
+    # Track unique guard counter per function to avoid name collisions
+    guard_counter = 0
+    needs_import = {'pfn': False, 'spinlock': False, 'irql': False}
+
+    for pair in simple_pairs:
+        acquire_idx = pair.acquire_line - 1
+        release_idx = pair.release_line - 1
+        indent = ' ' * (len(lines[acquire_idx]) - len(lines[acquire_idx].lstrip()))
+
+        # Comment out the release line (keep it visible for review)
+        release_indent = ' ' * (len(lines[release_idx]) - len(lines[release_idx].lstrip()))
+        lines[release_idx] = f'{release_indent}// GUARD: {lines[release_idx].strip()}  // replaced by guard drop'
+
+        # Add guard AFTER the acquire line (keep original acquire for variable declaration)
+        if pair.pattern == 'pfn':
+            guard_name = f'_pfn_guard_{guard_counter}'
+            guard_line = f'{indent}let {guard_name} = unsafe {{ ntkrnl_sys::guards::PfnLockGuard::acquire() }};'
+            needs_import['pfn'] = True
+        elif pair.pattern == 'spinlock':
+            guard_name = f'_spin_guard_{guard_counter}'
+            lock_expr = pair.lock_expr
+            guard_line = f'{indent}let {guard_name} = unsafe {{ ntkrnl_sys::guards::SpinLockGuard::acquire({lock_expr}) }};'
+            needs_import['spinlock'] = True
+        elif pair.pattern == 'irql':
+            guard_name = f'_irql_guard_{guard_counter}'
+            level = pair.lock_expr
+            guard_line = f'{indent}let {guard_name} = unsafe {{ ntkrnl_sys::guards::IrqlGuard::raise({level}) }};'
+            needs_import['irql'] = True
+
+        # Comment out the acquire and add guard after it
+        lines[acquire_idx] = f'{indent}// GUARD: {lines[acquire_idx].strip()}  // replaced by guard below\n{guard_line}'
+
+        guard_counter += 1
+
+
+    # Remove marked lines
+    lines = [l for l in lines if l is not None]
+
+    path.write_text('\n'.join(lines) + '\n')
+    return len(simple_pairs)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Migrate lock patterns to RAII guards')
@@ -207,6 +259,8 @@ def main():
     total = {'pfn': 0, 'spinlock': 0, 'irql': 0}
     simple = {'pfn': 0, 'spinlock': 0, 'irql': 0}
     complex_reasons = []
+    files_fixed = 0
+    total_fixed = 0
 
     for rs_file in rs_files:
         pairs = scan_file(rs_file)
@@ -218,10 +272,17 @@ def main():
                     print(f"  [SIMPLE] {pair.file}:{pair.acquire_line}-{pair.release_line}: "
                           f"{pair.pattern} ({pair.irql_var})")
             else:
-                if args.scan:
+                if args.scan or args.fix:
                     print(f"  [COMPLEX] {pair.file}:{pair.acquire_line}-{pair.release_line}: "
                           f"{pair.pattern} ({pair.irql_var}) — {pair.reason}")
                 complex_reasons.append(pair.reason)
+
+        if args.fix and pairs:
+            count = fix_file(rs_file, pairs)
+            if count > 0:
+                files_fixed += 1
+                total_fixed += count
+                print(f"  FIXED: {rs_file} ({count} pairs)")
 
     print(f"\nSummary:")
     for pat in ['pfn', 'spinlock', 'irql']:

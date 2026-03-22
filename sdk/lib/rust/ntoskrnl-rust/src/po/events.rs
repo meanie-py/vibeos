@@ -126,9 +126,10 @@ pub unsafe extern "system" fn PoNotifySystemTimeSet() {
     let mut old_irql: KIRQL = 0;
 
     if PopEventCallout.is_some() {
-        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
         ExNotifyCallback(SetSystemTimeCallback, core::ptr::null_mut(), core::ptr::null_mut());
-        KeLowerIrql(old_irql);
+        drop(irql_guard);
     }
 }
 

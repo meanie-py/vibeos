@@ -1631,11 +1631,12 @@ pub unsafe extern "system" fn KdpTimeSlipWork(_context: PVOID) {
     ExUpdateSystemTimeFromCmos(0u8, 0);
     ExReleaseTimeRefreshLock();
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), &mut old_irql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), &mut old_irql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KdpTimeSlipEventLock)) };
     if !KdpTimeSlipEvent.is_null() {
         KeSetEvent(KdpTimeSlipEvent, 0, 0u8);
     }
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpTimeSlipEventLock), old_irql);
+    drop(spin_guard);
 
     let mut due_time = core::mem::zeroed::<LARGE_INTEGER>();
     due_time.QuadPart = -1800000000i64;

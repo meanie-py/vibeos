@@ -100,7 +100,8 @@ pub unsafe extern "system" fn MmGetLRUNextUserPage(
 ) -> PFN_NUMBER {
     let mut page: PFN_NUMBER = 0;
 
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     let previous_pfn = MiGetPfnEntry(previous_page);
     let next_pfn = (*previous_pfn).next_lru();
@@ -117,7 +118,7 @@ pub unsafe extern "system" fn MmGetLRUNextUserPage(
 
     MmDereferencePage(previous_page);
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard);
 
     page
 }
@@ -350,18 +351,20 @@ pub unsafe extern "system" fn MmGetRmapListHeadPage(pfn: PFN_NUMBER) -> PMM_RMAP
 pub unsafe extern "system" fn MmSetSavedSwapEntryPage(pfn: PFN_NUMBER, swap_entry: ULONG_PTR) {
     let pfn1 = MiGetPfnEntry(pfn);
 
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     (*pfn1).set_swap_entry(swap_entry);
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetSavedSwapEntryPage(pfn: PFN_NUMBER) -> ULONG_PTR {
     let pfn1 = MiGetPfnEntry(pfn);
 
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
     let swap_entry = (*pfn1).swap_entry();
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard);
 
     swap_entry
 }

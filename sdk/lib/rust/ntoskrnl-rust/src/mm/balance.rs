@@ -135,11 +135,12 @@ pub unsafe extern "system" fn MmReleasePageMemoryConsumer(
     );
     UpdateTotalCommittedPages(-1);
 
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     MmDereferencePage(Page as _);
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard);
 
     STATUS_SUCCESS
 }

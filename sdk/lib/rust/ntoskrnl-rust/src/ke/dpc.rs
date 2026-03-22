@@ -620,7 +620,8 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
     let mut DpcConfigured: BOOLEAN = 0;
     let mut DpcInserted: BOOLEAN = 0;
 
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
     CurrentPrcb = KeGetCurrentPrcb();
 
     if (*Dpc).Number as ULONG >= MAXIMUM_PROCESSORS {
@@ -699,7 +700,7 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
         }
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     DpcConfigured
 }
 
@@ -781,14 +782,15 @@ pub unsafe extern "system" fn KeGenericCallDpc(Routine: PKDEFERRED_ROUTINE, Cont
         TotalProcessors: Barrier,
     };
 
-    KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
     (Routine)(
         &mut (*KeGetCurrentPrcb()).CallDpc as *mut _ as ntkrnl_sys::ke::PKDPC,
         Context,
         &mut Barrier as *mut ULONG as PVOID,
         &mut ReverseBarrier as *mut DEFERRED_REVERSE_BARRIER as PVOID,
     );
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 }
 
 #[no_mangle]

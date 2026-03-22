@@ -1437,3 +1437,10 @@ pub fn mmpte_list_next_entry(pte: &MMPTE) -> ULONG_PTR {
 macro_rules! _A3_TRACE {
     ($($arg:tt)*) => {};
 }
+pub struct PfnLockGuard { previous_irql: KIRQL }
+impl PfnLockGuard {
+    #[inline] pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }
+}
+impl Drop for PfnLockGuard {
+    #[inline] fn drop(&mut self) { unsafe { MiReleasePfnLock(self.previous_irql) } }
+}

@@ -1903,7 +1903,8 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
                 if (NewAccessProtection & PAGE_NOACCESS) != 0 ||
                    (NewAccessProtection & PAGE_GUARD) != 0
                 {
-                    let OldIrql = MiAcquirePfnLock();
+                    // [guard] let OldIrql = MiAcquirePfnLock();
+                    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
                     // Mark the PTE as transition and change its protection
                     PteContents.set_valid(false);
@@ -1916,7 +1917,7 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
                     KeInvalidateTlbEntry(MiPteToAddress(PointerPte));
 
                     // We are done for this PTE
-                    MiReleasePfnLock(OldIrql);
+                    drop(pfn_guard);
                 } else {
                     // Write the protection mask and write it with a TLB flush
                     (*mmpfn_original_pte_ptr(Pfn1)).set_soft_protection(ProtectionMask);

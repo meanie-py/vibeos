@@ -647,7 +647,8 @@ unsafe fn MiAddDescriptorToDatabase(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiBuildPfnDatabase(loader_block: PLOADER_PARAMETER_BLOCK) {
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     MiMapPPEs(
         MmPfnDatabase as PVOID,
@@ -707,7 +708,7 @@ pub unsafe extern "system" fn MiBuildPfnDatabase(loader_block: PLOADER_PARAMETER
 
     MiPfnsInitialized = 1;
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard);
 }
 
 // ============================================================================

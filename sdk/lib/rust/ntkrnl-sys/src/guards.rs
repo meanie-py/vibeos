@@ -155,24 +155,13 @@ pub struct SpinLockGuard {
 }
 
 impl SpinLockGuard {
-    /// Acquire a spinlock, raising IRQL to DISPATCH_LEVEL.
+    /// Acquire a spinlock using the kernel's real KeAcquireSpinLock implementation.
+    /// This ensures compatibility with queued spinlocks and other kernel-internal
+    /// locking mechanisms that may use the same KSPIN_LOCK.
     #[inline]
     pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
-        // Raise IRQL first, then spin on the lock
-        let previous_irql = irql_raise(DISPATCH_LEVEL);
-
-        // Atomic acquire — spin until we get it
-        let lock_val = lock as *mut core::sync::atomic::AtomicUsize;
-        while (*lock_val).compare_exchange_weak(
-            0, 1,
-            core::sync::atomic::Ordering::Acquire,
-            core::sync::atomic::Ordering::Relaxed,
-        ).is_err() {
-            while (*lock_val).load(core::sync::atomic::Ordering::Relaxed) != 0 {
-                core::hint::spin_loop();
-            }
-        }
-
+        let mut previous_irql: KIRQL = 0;
+        crate::ke::KeAcquireSpinLock(lock, &mut previous_irql);
         Self { lock, previous_irql }
     }
 
@@ -187,69 +176,9 @@ impl Drop for SpinLockGuard {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            // Release the spinlock
-            let lock_val = self.lock as *mut core::sync::atomic::AtomicUsize;
-            (*lock_val).store(0, core::sync::atomic::Ordering::Release);
-
-            // Lower IRQL back
-            irql_lower(self.previous_irql);
+            crate::ke::KeReleaseSpinLock(self.lock, self.previous_irql);
         }
     }
 }
 
 
-// ── PfnLockGuard ────────────────────────────────────────────────────
-
-/// Specialized guard for the PFN database lock (MmPfnLock).
-/// This is the most frequently used lock in MM code.
-///
-/// ```rust,ignore
-/// let _pfn = unsafe { PfnLockGuard::acquire() };
-/// // ... PFN database operations at DISPATCH_LEVEL ...
-/// ```
-pub struct PfnLockGuard {
-    previous_irql: KIRQL,
-}
-
-impl PfnLockGuard {
-    /// Acquire the PFN lock.
-    #[inline]
-    pub unsafe fn acquire() -> Self {
-        // Use the existing MiAcquirePfnLock which handles the
-        // queued spinlock implementation
-        extern "system" {
-            fn MiAcquirePfnLock() -> KIRQL;
-        }
-        core::arch::asm!("", options(nostack));
-        let previous_irql = MiAcquirePfnLock();
-        core::arch::asm!("", options(nostack));
-        Self { previous_irql }
-    }
-
-    /// Get the IRQL before lock acquisition.
-    #[inline]
-    pub fn previous_irql(&self) -> KIRQL {
-        self.previous_irql
-    }
-}
-
-impl Drop for PfnLockGuard {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            extern "system" {
-                fn MiReleasePfnLock(OldIrql: KIRQL);
-            }
-            core::arch::asm!("", options(nostack));
-            MiReleasePfnLock(self.previous_irql);
-            core::arch::asm!("", options(nostack));
-        }
-    }
-}
-
-
-// ── Constants ───────────────────────────────────────────────────────
-
-pub const PASSIVE_LEVEL: KIRQL = 0;
-pub const APC_LEVEL: KIRQL = 1;
-pub const DISPATCH_LEVEL: KIRQL = 2;

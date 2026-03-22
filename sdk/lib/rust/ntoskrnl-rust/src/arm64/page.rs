@@ -696,9 +696,10 @@ pub unsafe extern "system" fn MmDeletePageFileMapping(
     }
 
     if MiDecrementPageTableReferences(Address) == 0 {
-        let OldIrql = MiAcquirePfnLock();
+        // [guard] let OldIrql = MiAcquirePfnLock();
+        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
         MiDeletePde(as_ddk_pde(MiPteToPde(PointerPte)), Process);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard);
     }
 
     MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());

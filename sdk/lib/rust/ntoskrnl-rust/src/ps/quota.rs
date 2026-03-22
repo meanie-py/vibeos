@@ -219,7 +219,8 @@ unsafe fn PspReturnProcessQuotaSpecifiedPool(
     let return_threshold: SIZE_T;
     let mut amount_to_return: SIZE_T = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK) };
 
     if (!process.is_null()
         && (*(process as *mut _EPROCESS)).QuotaUsage[quota_type] < amount)
@@ -287,7 +288,7 @@ unsafe fn PspReturnProcessQuotaSpecifiedPool(
         );
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
+    drop(spin_guard);
 }
 
 #[no_mangle]
@@ -333,12 +334,13 @@ pub unsafe extern "system" fn PspInheritQuota(process: PEPROCESS, parent_process
 pub unsafe extern "system" fn PspInsertQuotaBlock(quota_block: PEPROCESS_QUOTA_BLOCK) {
     let mut old_irql: KIRQL = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK) };
     InsertTailList(
         core::ptr::addr_of_mut!(PspQuotaBlockList) as PLIST_ENTRY,
         core::ptr::addr_of_mut!((*quota_block).QuotaList) as PLIST_ENTRY,
     );
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
+    drop(spin_guard);
 }
 
 #[no_mangle]
@@ -365,12 +367,13 @@ pub unsafe extern "system" fn PspDereferenceQuotaBlock(
             core::ptr::addr_of_mut!((*quota_block).ReferenceCount)
         ) == 0
     {
-        KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+        // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK) };
 
         PspReturnQuotasOnDestroy(quota_block);
         RemoveEntryList(core::ptr::addr_of_mut!((*quota_block).QuotaList) as PLIST_ENTRY);
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
+        drop(spin_guard);
         ExFreePoolWithTag(quota_block as PVOID, TAG_QUOTA_BLOCK);
     }
 }

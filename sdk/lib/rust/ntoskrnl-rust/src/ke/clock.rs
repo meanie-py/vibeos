@@ -76,7 +76,8 @@ pub unsafe extern "system" fn KeSetSystemTime(
 
     KeSetSystemAffinityThread(1);
     OldIrql = KiAcquireDispatcherLock();
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql2);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql2);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     KeQuerySystemTime(OldTime as *mut _);
 
@@ -93,7 +94,7 @@ pub unsafe extern "system" fn KeSetSystemTime(
     KeBootTime.QuadPart += DeltaTime.QuadPart;
     KeBootTimeBias = KeBootTimeBias + DeltaTime.QuadPart as u64;
 
-    KeLowerIrql(OldIrql2);
+    drop(irql_guard);
 
     if FixInterruptTime != 0 {
         DbgBreakPoint();

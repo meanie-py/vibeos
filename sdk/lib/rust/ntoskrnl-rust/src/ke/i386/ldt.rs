@@ -63,7 +63,8 @@ pub unsafe extern "C" fn KeSetBaseGdtSelector(Entry: ULONG, Base: PVOID) {
     let mut oldIrql: KIRQL = 0;
     let mut Gdt: *mut USHORT;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(GdtLock), core::ptr::addr_of_mut!(oldIrql));
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(GdtLock), core::ptr::addr_of_mut!(oldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(GdtLock)) };
 
     Gdt = (*KeGetPcr()).GDT as *mut USHORT;
     let mut Entry = (Entry & !0x3) / 2;
@@ -78,7 +79,7 @@ pub unsafe extern "C" fn KeSetBaseGdtSelector(Entry: ULONG, Base: PVOID) {
     *Gdt.add(Entry as usize + 3) = (*Gdt.add(Entry as usize + 3) as ULONG
         | ((Base as ULONG & 0xff000000) >> 16)) as USHORT;
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(GdtLock), oldIrql);
+    drop(spin_guard);
 }
 
 #[no_mangle]
@@ -86,7 +87,8 @@ pub unsafe extern "C" fn KeSetGdtSelector(Entry: ULONG, Value1: ULONG, Value2: U
     let mut oldIrql: KIRQL = 0;
     let Gdt: *mut ULONG;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(GdtLock), core::ptr::addr_of_mut!(oldIrql));
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(GdtLock), core::ptr::addr_of_mut!(oldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(GdtLock)) };
 
     Gdt = (*KeGetPcr()).GDT as *mut ULONG;
     let Entry = (Entry & !0x3) / 4;
@@ -94,7 +96,7 @@ pub unsafe extern "C" fn KeSetGdtSelector(Entry: ULONG, Value1: ULONG, Value2: U
     *Gdt.add(Entry as usize) = Value1;
     *Gdt.add(Entry as usize + 1) = Value2;
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(GdtLock), oldIrql);
+    drop(spin_guard);
 }
 
 unsafe fn PspIsDescriptorValid(ldt_entry: PLDT_ENTRY) -> BOOLEAN {

@@ -1000,7 +1000,8 @@ pub unsafe extern "system" fn KeDeregisterBugCheckCallback(
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     if (*CallbackRecord).State == BufferInserted {
         (*CallbackRecord).State = BufferEmpty;
@@ -1008,7 +1009,7 @@ pub unsafe extern "system" fn KeDeregisterBugCheckCallback(
         Status = 1u8;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     Status
 }
 
@@ -1019,7 +1020,8 @@ pub unsafe extern "system" fn KeDeregisterBugCheckReasonCallback(
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     if (*CallbackRecord).State == BufferInserted {
         (*CallbackRecord).State = BufferEmpty;
@@ -1027,7 +1029,7 @@ pub unsafe extern "system" fn KeDeregisterBugCheckReasonCallback(
         Status = 1u8;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     Status
 }
 
@@ -1042,7 +1044,8 @@ pub unsafe extern "system" fn KeRegisterBugCheckCallback(
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     if (*CallbackRecord).State == BufferEmpty {
         (*CallbackRecord).Length = Length;
@@ -1054,7 +1057,7 @@ pub unsafe extern "system" fn KeRegisterBugCheckCallback(
         Status = 1u8;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     Status
 }
 
@@ -1068,7 +1071,8 @@ pub unsafe extern "system" fn KeRegisterBugCheckReasonCallback(
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
-    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
     if (*CallbackRecord).State == BufferEmpty {
         (*CallbackRecord).Component = Component;
@@ -1079,7 +1083,7 @@ pub unsafe extern "system" fn KeRegisterBugCheckReasonCallback(
         Status = 1u8;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
     Status
 }
 

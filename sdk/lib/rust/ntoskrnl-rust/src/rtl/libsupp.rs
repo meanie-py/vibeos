@@ -153,7 +153,8 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
     let mut OldIrql: KIRQL = 0;
 
     if (PcValue as ULONG_PTR) > (MmHighestUserAddress as ULONG_PTR) {
-        KeAcquireSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock), core::ptr::addr_of_mut!(OldIrql));
+        // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock), core::ptr::addr_of_mut!(OldIrql));
+        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock)) };
 
         *BaseOfImage = KiPcToFileHeader(
             PcValue,
@@ -162,7 +163,7 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
             core::ptr::addr_of_mut!(InSystem),
         );
 
-        KeReleaseSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock), OldIrql);
+        drop(spin_guard);
     } else {
         *BaseOfImage = core::ptr::null_mut();
     }

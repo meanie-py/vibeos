@@ -2054,7 +2054,8 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                     core::ptr::null_mut(),
                 );
                 if Status >= 0 {
-                    KeRaiseIrql(APC_LEVEL as KIRQL, &mut OldIrql);
+                    // [guard] KeRaiseIrql(APC_LEVEL as KIRQL, &mut OldIrql);
+                    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL as KIRQL) };
 
                     *(ThreadInformation as PULONG) = if IsListEmpty(core::ptr::addr_of_mut!((*(Thread as *mut _ETHREAD)).IrpList)) == 0 {
                         1
@@ -2062,7 +2063,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                         0
                     };
 
-                    KeLowerIrql(OldIrql);
+                    drop(irql_guard);
 
                     ObDereferenceObject(Thread as PVOID);
                 }

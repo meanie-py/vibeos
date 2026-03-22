@@ -64,11 +64,12 @@ pub unsafe extern "system" fn ExInterlockedExtendZone(
     let Status: NTSTATUS;
     let mut OldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(Lock, core::ptr::addr_of_mut!(OldIrql));
+    // [guard] KeAcquireSpinLock(Lock, core::ptr::addr_of_mut!(OldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(Lock) };
 
     Status = ExExtendZone(Zone, Segment, SegmentSize);
 
-    KeReleaseSpinLock(Lock, OldIrql);
+    drop(spin_guard);
     Status
 }
 

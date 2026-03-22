@@ -1428,7 +1428,8 @@ pub unsafe extern "system" fn IoUnregisterShutdownNotification(DeviceObject: PDE
     (*DeviceObject).Flags &= !DO_SHUTDOWN_REGISTERED;
 
     let mut OldIrql = 0u8;
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(ShutdownListLock), core::ptr::addr_of_mut!(OldIrql));
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(ShutdownListLock), core::ptr::addr_of_mut!(OldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(ShutdownListLock)) };
 
     let mut NextEntry = ShutdownListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!(ShutdownListHead) as PLIST_ENTRY {
@@ -1466,7 +1467,7 @@ pub unsafe extern "system" fn IoUnregisterShutdownNotification(DeviceObject: PDE
         NextEntry = (*NextEntry).Flink;
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(ShutdownListLock), OldIrql);
+    drop(spin_guard);
 }
 
 #[no_mangle]
@@ -1527,7 +1528,8 @@ pub unsafe extern "system" fn IoStartPacket(
     CancelFunction: ntkrnl_sys::ddk::PDRIVER_CANCEL,
 ) {
     let mut OldIrql = 0u8;
-    KeRaiseIrql(DISPATCH_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+    // [guard] KeRaiseIrql(DISPATCH_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
 
     let mut CancelIrql = 0u8;
     if CancelFunction.is_some() {
@@ -1571,7 +1573,7 @@ pub unsafe extern "system" fn IoStartPacket(
         }
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard);
 }
 
 #[cfg(target_pointer_width = "64")]

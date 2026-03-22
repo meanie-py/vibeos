@@ -775,3 +775,51 @@ All `NTAPI` functions must use `extern "system"` (stdcall on i386, cdecl on amd6
 // RIGHT:
 (*IoStatusBlock).__bindgen_anon_1.Status
 ```
+
+### RAII Guards for Locks and IRQL (REQUIRED for new translations)
+
+Use RAII guard types instead of manual acquire/release pairs. This prevents LLVM from optimizing away lock operations and makes error paths automatically safe.
+
+**PFN Lock:**
+```rust
+// WRONG — manual pair, LLVM can eliminate
+OldIrql = MiAcquirePfnLock();
+// ... work ...
+MiReleasePfnLock(OldIrql);
+
+// RIGHT — RAII guard, drop() at release point
+let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
+// ... work ...
+drop(pfn_guard);
+```
+
+**Spinlock:**
+```rust
+// WRONG
+KeAcquireSpinLock(&mut Lock, &mut OldIrql);
+// ... critical section ...
+KeReleaseSpinLock(&mut Lock, OldIrql);
+
+// RIGHT
+let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(&raw mut Lock) };
+// ... critical section ...
+drop(spin_guard);
+```
+
+**IRQL Raise/Lower:**
+```rust
+// WRONG
+KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+// ... work at DISPATCH ...
+KeLowerIrql(OldIrql);
+
+// RIGHT
+let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
+// ... work at DISPATCH ...
+drop(irql_guard);
+```
+
+**Rules:**
+- Always use `drop(guard)` at the exact point the original release/lower was. Do NOT let guards drop implicitly at function end — this changes lock duration.
+- For output pointer functions (ObCreateObject, etc.), prefer returning `Result<T, NTSTATUS>` internally with a thin `extern "C"` wrapper for C callers.
+- See `docs/engineering/rust-kernel-patterns.md` for the full architecture.
