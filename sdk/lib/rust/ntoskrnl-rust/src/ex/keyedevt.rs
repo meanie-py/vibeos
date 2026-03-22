@@ -243,22 +243,20 @@ pub unsafe extern "system" fn ExpReleaseKeyedEvent(
     ExpReleaseOrWaitForKeyedEvent(KeyedEvent, KeyedWaitValue, Alertable, Timeout, 1u8)
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn NtCreateKeyedEvent(
-    OutHandle: PHANDLE,
+unsafe fn NtCreateKeyedEvent_inner(
     AccessMask: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
     Flags: ULONG,
-) -> NTSTATUS {
+) -> Result<HANDLE, NTSTATUS> {
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEvent: PEX_KEYED_EVENT = core::ptr::null_mut();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
 
     if Flags != 0 {
-        return STATUS_INVALID_PARAMETER;
+        return Err(STATUS_INVALID_PARAMETER);
     }
 
-    let mut Status = ObCreateObject(
+    let Status = ObCreateObject(
         PreviousMode,
         ExKeyedEventObjectType,
         ObjectAttributes,
@@ -271,12 +269,12 @@ pub unsafe extern "system" fn NtCreateKeyedEvent(
     );
 
     if Status < 0 {
-        return Status;
+        return Err(Status);
     }
 
     ExpInitializeKeyedEvent(KeyedEvent);
 
-    Status = ObInsertObject(
+    let Status = ObInsertObject(
         KeyedEvent as PVOID,
         core::ptr::null_mut(),
         AccessMask,
@@ -286,31 +284,44 @@ pub unsafe extern "system" fn NtCreateKeyedEvent(
     );
 
     if Status < 0 {
-        return Status;
+        return Err(Status);
     }
 
-    if PreviousMode != 0i8 {
-        if let Err(e) = write_user(OutHandle, KeyedEventHandle, PreviousMode) {
-            ObCloseHandle(KeyedEventHandle, PreviousMode);
-            return e;
-        }
-    } else {
-        *OutHandle = KeyedEventHandle;
-    }
-
-    Status
+    Ok(KeyedEventHandle)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NtOpenKeyedEvent(
+pub unsafe extern "system" fn NtCreateKeyedEvent(
     OutHandle: PHANDLE,
     AccessMask: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
+    Flags: ULONG,
 ) -> NTSTATUS {
+    match NtCreateKeyedEvent_inner(AccessMask, ObjectAttributes, Flags) {
+        Ok(handle) => {
+            let PreviousMode = KeGetPreviousMode();
+            if PreviousMode != 0i8 {
+                if let Err(e) = write_user(OutHandle, handle, PreviousMode) {
+                    ObCloseHandle(handle, PreviousMode);
+                    return e;
+                }
+            } else {
+                core::ptr::write_volatile(OutHandle, handle);
+            }
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
+}
+
+unsafe fn NtOpenKeyedEvent_inner(
+    AccessMask: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+) -> Result<HANDLE, NTSTATUS> {
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
 
-    let mut Status = ObOpenObjectByName(
+    let Status = ObOpenObjectByName(
         ObjectAttributes,
         ExKeyedEventObjectType,
         PreviousMode,
@@ -321,19 +332,33 @@ pub unsafe extern "system" fn NtOpenKeyedEvent(
     );
 
     if Status < 0 {
-        return Status;
+        return Err(Status);
     }
 
-    if PreviousMode != 0i8 {
-        if let Err(e) = write_user(OutHandle, KeyedEventHandle, PreviousMode) {
-            ObCloseHandle(KeyedEventHandle, PreviousMode);
-            return e;
+    Ok(KeyedEventHandle)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenKeyedEvent(
+    OutHandle: PHANDLE,
+    AccessMask: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+) -> NTSTATUS {
+    match NtOpenKeyedEvent_inner(AccessMask, ObjectAttributes) {
+        Ok(handle) => {
+            let PreviousMode = KeGetPreviousMode();
+            if PreviousMode != 0i8 {
+                if let Err(e) = write_user(OutHandle, handle, PreviousMode) {
+                    ObCloseHandle(handle, PreviousMode);
+                    return e;
+                }
+            } else {
+                core::ptr::write_volatile(OutHandle, handle);
+            }
+            STATUS_SUCCESS
         }
-    } else {
-        *OutHandle = KeyedEventHandle;
+        Err(status) => status,
     }
-
-    Status
 }
 
 #[no_mangle]

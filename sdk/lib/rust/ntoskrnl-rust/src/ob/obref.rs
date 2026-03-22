@@ -479,8 +479,7 @@ pub unsafe extern "system" fn ObReferenceObjectByPointer(
     STATUS_SUCCESS
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn ObReferenceObjectByName(
+unsafe fn ObReferenceObjectByName_inner(
     ObjectPath: PUNICODE_STRING,
     Attributes: ULONG,
     PassedAccessState: PACCESS_STATE,
@@ -488,8 +487,7 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
     ObjectType: POBJECT_TYPE,
     AccessMode: KPROCESSOR_MODE,
     ParseContext: PVOID,
-    ObjectPtr: *mut PVOID,
-) -> NTSTATUS {
+) -> Result<(PVOID, NTSTATUS), NTSTATUS> {
     let mut object: PVOID = core::ptr::null_mut();
     let mut object_name: _UNICODE_STRING = core::mem::zeroed();
     let mut context: _OBP_LOOKUP_CONTEXT = core::mem::zeroed();
@@ -497,7 +495,7 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
     let mut access_state: _ACCESS_STATE = core::mem::zeroed();
 
     if ObjectPath.is_null() {
-        return STATUS_OBJECT_NAME_INVALID;
+        return Err(STATUS_OBJECT_NAME_INVALID);
     }
 
     let mut status = ObpCaptureObjectName(
@@ -507,11 +505,11 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
         1u8,
     );
     if status < 0 {
-        return status;
+        return Err(status);
     }
 
     if object_name.Length == 0 {
-        return STATUS_OBJECT_NAME_INVALID;
+        return Err(STATUS_OBJECT_NAME_INVALID);
     }
 
     let passed_access_state = if PassedAccessState.is_null() {
@@ -523,14 +521,13 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
         );
         if status < 0 {
             ObpFreeObjectNameBuffer(core::ptr::addr_of_mut!(object_name));
-            return status;
+            return Err(status);
         }
         core::ptr::addr_of_mut!(access_state)
     } else {
         PassedAccessState
     };
 
-    *ObjectPtr = core::ptr::null_mut();
     status = ObpLookupObjectName(
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(object_name),
@@ -547,7 +544,7 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
 
     ObpReleaseLookupContext(core::ptr::addr_of_mut!(context));
 
-    if status >= 0 {
+    let result = if status >= 0 {
         if ObpCheckObjectReference(
             object,
             passed_access_state,
@@ -556,40 +553,63 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
             core::ptr::addr_of_mut!(status),
         ) != 0
         {
-            *ObjectPtr = object;
+            Ok((object, status))  // preserve original status (may not be STATUS_SUCCESS)
+        } else {
+            Err(status)
         }
-    }
+    } else {
+        Err(status)
+    };
 
     if passed_access_state == core::ptr::addr_of_mut!(access_state) {
         SeDeleteAccessState(passed_access_state);
     }
 
     ObpFreeObjectNameBuffer(core::ptr::addr_of_mut!(object_name));
-    status
+    result
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ObReferenceObjectByHandle(
+pub unsafe extern "system" fn ObReferenceObjectByName(
+    ObjectPath: PUNICODE_STRING,
+    Attributes: ULONG,
+    PassedAccessState: PACCESS_STATE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectType: POBJECT_TYPE,
+    AccessMode: KPROCESSOR_MODE,
+    ParseContext: PVOID,
+    ObjectPtr: *mut PVOID,
+) -> NTSTATUS {
+    match ObReferenceObjectByName_inner(ObjectPath, Attributes, PassedAccessState, DesiredAccess, ObjectType, AccessMode, ParseContext) {
+        Ok((obj, status)) => {
+            core::ptr::write_volatile(ObjectPtr, obj);
+            status  // preserve original status (may be STATUS_REPARSE etc.)
+        }
+        Err(status) => {
+            core::ptr::write_volatile(ObjectPtr, core::ptr::null_mut());
+            status
+        }
+    }
+}
+
+unsafe fn ObReferenceObjectByHandle_inner(
     Handle: HANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectType: POBJECT_TYPE,
     AccessMode: KPROCESSOR_MODE,
-    Object: *mut PVOID,
     HandleInformation: POBJECT_HANDLE_INFORMATION,
-) -> NTSTATUS {
-    *Object = core::ptr::null_mut();
-
+) -> Result<PVOID, NTSTATUS> {
     if HandleToLong(Handle) < 0 {
         if Handle == NtCurrentProcess() {
             if !ObjectType.is_null() && ObjectType != PsProcessType {
-                return STATUS_OBJECT_TYPE_MISMATCH;
+                return Err(STATUS_OBJECT_TYPE_MISMATCH);
             }
 
             let current_process = PsGetCurrentProcess();
             let granted_access = (*(current_process as *mut _EPROCESS)).GrantedAccess;
 
             if AccessMode != 0i8 && ((!(granted_access) & DesiredAccess) != 0) {
-                return STATUS_ACCESS_DENIED;
+                return Err(STATUS_ACCESS_DENIED);
             }
 
             if !HandleInformation.is_null() {
@@ -603,18 +623,17 @@ pub unsafe extern "system" fn ObReferenceObjectByHandle(
                 1,
             );
 
-            *Object = current_process as PVOID;
-            return STATUS_SUCCESS;
+            return Ok(current_process as PVOID);
         } else if Handle == NtCurrentThread() {
             if !ObjectType.is_null() && ObjectType != PsThreadType {
-                return STATUS_OBJECT_TYPE_MISMATCH;
+                return Err(STATUS_OBJECT_TYPE_MISMATCH);
             }
 
             let current_thread = PsGetCurrentThread();
             let granted_access = (*(current_thread as *mut _ETHREAD)).GrantedAccess;
 
             if AccessMode != 0i8 && ((!(granted_access) & DesiredAccess) != 0) {
-                return STATUS_ACCESS_DENIED;
+                return Err(STATUS_ACCESS_DENIED);
             }
 
             if !HandleInformation.is_null() {
@@ -628,57 +647,74 @@ pub unsafe extern "system" fn ObReferenceObjectByHandle(
                 1,
             );
 
-            *Object = current_thread as PVOID;
-            return STATUS_SUCCESS;
+            return Ok(current_thread as PVOID);
         } else if AccessMode == 0i8 {
             let handle_table = ObpKernelHandleTable;
             let handle_value = ObKernelHandleToHandle(Handle);
-            return ObReferenceObjectByHandleInternal(
+            return ObReferenceObjectByHandleInternal_inner(
                 handle_value,
                 DesiredAccess,
                 ObjectType,
                 AccessMode,
-                Object,
                 HandleInformation,
                 handle_table,
             );
         } else {
-            return STATUS_INVALID_HANDLE;
+            return Err(STATUS_INVALID_HANDLE);
         }
     } else {
         let handle_table = (*(PsGetCurrentProcess() as *mut _EPROCESS)).ObjectTable;
-        return ObReferenceObjectByHandleInternal(
+        return ObReferenceObjectByHandleInternal_inner(
             Handle,
             DesiredAccess,
             ObjectType,
             AccessMode,
-            Object,
             HandleInformation,
             handle_table,
         );
     }
 }
 
-unsafe fn ObReferenceObjectByHandleInternal(
+#[no_mangle]
+pub unsafe extern "system" fn ObReferenceObjectByHandle(
     Handle: HANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectType: POBJECT_TYPE,
     AccessMode: KPROCESSOR_MODE,
     Object: *mut PVOID,
     HandleInformation: POBJECT_HANDLE_INFORMATION,
-    HandleTable: PHANDLE_TABLE,
 ) -> NTSTATUS {
+    match ObReferenceObjectByHandle_inner(Handle, DesiredAccess, ObjectType, AccessMode, HandleInformation) {
+        Ok(obj) => {
+            core::ptr::write_volatile(Object, obj);
+            STATUS_SUCCESS
+        }
+        Err(status) => {
+            core::ptr::write_volatile(Object, core::ptr::null_mut());
+            status
+        }
+    }
+}
+
+unsafe fn ObReferenceObjectByHandleInternal_inner(
+    Handle: HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectType: POBJECT_TYPE,
+    AccessMode: KPROCESSOR_MODE,
+    HandleInformation: POBJECT_HANDLE_INFORMATION,
+    HandleTable: PHANDLE_TABLE,
+) -> Result<PVOID, NTSTATUS> {
     KeEnterCriticalRegion();
 
     let handle_entry = ExMapHandleToPointer(HandleTable, Handle);
-    let status = if !handle_entry.is_null() {
+    let result = if !handle_entry.is_null() {
         let object_header = ObpGetHandleObject(handle_entry);
         if ObjectType.is_null() || ObjectType == (*object_header).Type {
             let granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
 
             if AccessMode != 0i8 && ((!(granted_access) & DesiredAccess) != 0) {
                 ExUnlockHandleTableEntry(HandleTable, handle_entry);
-                STATUS_ACCESS_DENIED
+                Err(STATUS_ACCESS_DENIED)
             } else {
                 InterlockedIncrementSizeT(
                     core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
@@ -692,23 +728,22 @@ unsafe fn ObReferenceObjectByHandleInternal(
                     (*HandleInformation).GrantedAccess = granted_access;
                 }
 
-                *Object = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
+                let obj = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
 
                 ExUnlockHandleTableEntry(HandleTable, handle_entry);
                 KeLeaveCriticalRegion();
-                return STATUS_SUCCESS;
+                return Ok(obj);
             }
         } else {
             ExUnlockHandleTableEntry(HandleTable, handle_entry);
-            STATUS_OBJECT_TYPE_MISMATCH
+            Err(STATUS_OBJECT_TYPE_MISMATCH)
         }
     } else {
-        STATUS_INVALID_HANDLE
+        Err(STATUS_INVALID_HANDLE)
     };
 
     KeLeaveCriticalRegion();
-    *Object = core::ptr::null_mut();
-    status
+    result
 }
 
 

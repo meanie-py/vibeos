@@ -259,7 +259,7 @@ pub unsafe extern "system" fn LpcpCreatePort(
     );
 
     if Status >= 0 {
-        *PortHandle = Handle;
+        core::ptr::write_volatile(PortHandle, Handle);
     }
 
     Status

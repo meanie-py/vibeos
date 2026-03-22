@@ -1224,7 +1224,7 @@ pub unsafe extern "system" fn ExEnumHandleTable(
 
                 if Result != 0 {
                     if !EnumHandle.is_null() {
-                        *EnumHandle = Handle.GenericHandleOverlay;
+                        core::ptr::write_volatile(EnumHandle, Handle.GenericHandleOverlay);
                     }
                     break;
                 }

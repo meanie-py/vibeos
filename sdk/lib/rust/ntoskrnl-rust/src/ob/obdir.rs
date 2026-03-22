@@ -256,23 +256,14 @@ pub unsafe extern "system" fn ObpDeleteEntryDirectory(Context: POBP_LOOKUP_CONTE
     1u8
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn NtOpenDirectoryObject(
-    DirectoryHandle: PHANDLE,
+unsafe fn NtOpenDirectoryObject_inner(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
+) -> Result<HANDLE, NTSTATUS> {
     let mut Directory: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
-    let mut Status: NTSTATUS;
 
-    if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
-            return s;
-        }
-    }
-
-    Status = ObOpenObjectByName(
+    let Status = ObOpenObjectByName(
         ObjectAttributes,
         ObpDirectoryObjectType,
         PreviousMode,
@@ -282,10 +273,33 @@ pub unsafe extern "system" fn NtOpenDirectoryObject(
         core::ptr::addr_of_mut!(Directory),
     );
     if Status >= 0 {
-        *DirectoryHandle = Directory;
+        Ok(Directory)
+    } else {
+        Err(Status)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenDirectoryObject(
+    DirectoryHandle: PHANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+) -> NTSTATUS {
+    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+
+    if PreviousMode != 0 {
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
     }
 
-    Status
+    match NtOpenDirectoryObject_inner(DesiredAccess, ObjectAttributes) {
+        Ok(handle) => {
+            core::ptr::write_volatile(DirectoryHandle, handle);
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
 }
 
 #[no_mangle]
@@ -495,24 +509,15 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     Status
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn NtCreateDirectoryObject(
-    DirectoryHandle: PHANDLE,
+unsafe fn NtCreateDirectoryObject_inner(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
+) -> Result<HANDLE, NTSTATUS> {
     let mut Directory: POBJECT_DIRECTORY = core::ptr::null_mut();
     let mut NewHandle: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
-    let mut Status: NTSTATUS;
 
-    if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
-            return s;
-        }
-    }
-
-    Status = ObCreateObject(
+    let mut Status = ObCreateObject(
         PreviousMode,
         ObpDirectoryObjectType,
         ObjectAttributes,
@@ -524,7 +529,7 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
         core::ptr::addr_of_mut!(Directory) as *mut PVOID,
     );
     if Status < 0 {
-        return Status;
+        return Err(Status);
     }
 
     core::ptr::write_bytes(Directory as *mut u8, 0, core::mem::size_of::<_OBJECT_DIRECTORY>());
@@ -540,9 +545,34 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
         core::ptr::addr_of_mut!(NewHandle),
     );
 
-    *DirectoryHandle = NewHandle;
+    if Status >= 0 {
+        Ok(NewHandle)
+    } else {
+        Err(Status)
+    }
+}
 
-    Status
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateDirectoryObject(
+    DirectoryHandle: PHANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+) -> NTSTATUS {
+    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+
+    if PreviousMode != 0 {
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
+    }
+
+    match NtCreateDirectoryObject_inner(DesiredAccess, ObjectAttributes) {
+        Ok(handle) => {
+            core::ptr::write_volatile(DirectoryHandle, handle);
+            STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
 }
 
 // ============================================================================

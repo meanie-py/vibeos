@@ -443,6 +443,60 @@ KeLowerIrql(InbvOldIrql);
 
 Against ~300+ migrated guard instances, this means we've converted **~70%** of all lock sites. The remaining 30% are genuinely different patterns that would each need targeted design work, not mechanical transformation.
 
+## The Three LLVM Defenses
+
+LLVM can break kernel code in three distinct ways. Each requires a different defense:
+
+### 1. Guards — Make state transitions visible
+
+LLVM eliminates function calls it proves have no effect. Guards encode lock/IRQL state as live Rust values with `Drop` — LLVM cannot eliminate a value that's used (dropped) later.
+
+**Protects against:** `captures(none)` eliminating output pointer writes, dead store elimination of IRQL changes, spinlock acquire/release pairs being optimized away.
+
+**Implemented:** 9 guard types, ~300+ instances, ~70% of lock sites.
+
+### 2. Asm barriers — Make function calls visible
+
+LLVM can prove extern function calls are dead if it can see (or infer) they have no side effects. Empty `asm!("", options(nostack))` statements without `nomem` act as memory barriers — LLVM must assume arbitrary memory was read/written, so it can't prove the adjacent extern call is dead.
+
+**Protects against:** LLVM eliminating calls to `KfRaiseIrql`, `KfLowerIrql`, `KeAcquireSpinLock` when it infers they're `readnone`/`readonly`.
+
+**Implemented:** In `guards.rs` Layer 1 sacred primitives (ARM64 + i386 paths). Verified by `test_sacred_primitives` smoke test.
+
+### 3. `Volatile<T>` — Make data stores visible
+
+LLVM can eliminate stores to `static mut` variables it proves are never read, or hoist/sink loads across code that doesn't touch the variable. `Volatile<T>` wraps a value in `UnsafeCell<T>` and forces all access through `read_volatile`/`write_volatile`, which LLVM must preserve.
+
+```rust
+#[repr(transparent)]
+pub struct Volatile<T>(UnsafeCell<T>);
+
+impl<T: Copy> Volatile<T> {
+    pub const fn new(val: T) -> Self { Self(UnsafeCell::new(val)) }
+    pub fn read(&self) -> T { unsafe { core::ptr::read_volatile(self.0.get()) } }
+    pub fn write(&self, val: T) { unsafe { core::ptr::write_volatile(self.0.get(), val) } }
+}
+```
+
+**Protects against:** LLVM eliminating stores to global IRQL state, reordering loads of hardware-modified memory, dead store elimination of state that's read asynchronously (by interrupt handlers, other CPUs, etc.).
+
+**Status:** Not yet implemented. Applicable to:
+- `inbv/inbv.rs` — `InbvOldIrql` global
+- `ke/freeze.rs` — freeze IRQL global
+- `kd64/kdprint.rs` — KD lock state
+- Any `static mut` accessed across function boundaries where LLVM might not see the reader
+
+**Relationship to guards:** Complementary, not alternative. Guards protect *state transitions* (acquire→release). `Volatile<T>` protects *data at rest* (stores that must survive). Asm barriers protect *function calls* (extern calls that must not be eliminated). A fully defended kernel function might use all three:
+
+```rust
+fn example() {
+    let guard = SpinLockGuard::acquire(lock);  // guard: state transition visible
+    GLOBAL_STATE.write(new_value);              // volatile: store visible
+    extern_hal_function();                      // asm barrier: call visible (inside guard impl)
+    drop(guard);                                // guard: release visible
+}
+```
+
 ## Relationship to Other Docs
 
 - `shim-elimination.md` — Guard migration enables shim removal (Category 1+4)
@@ -458,4 +512,5 @@ Against ~300+ migrated guard instances, this means we've converted **~70%** of a
 > IRQL → IrqlGuard (scoped lifetime)
 > Output pointers → Result (return value)
 > Spinlocks → SpinLockGuard (RAII)
+> Global state → Volatile<T> (load/store visible)
 > Trap state → Assembly (non-optimizable)

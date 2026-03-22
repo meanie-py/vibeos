@@ -21,11 +21,10 @@ const EVENT_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3;
 const NotificationEvent: EVENT_TYPE = _EVENT_TYPE_NotificationEvent;
 const SynchronizationEvent: EVENT_TYPE = _EVENT_TYPE_SynchronizationEvent;
 
-unsafe fn IopCreateEvent(
+unsafe fn IopCreateEvent_inner(
     EventName: PUNICODE_STRING,
-    EventHandle: PHANDLE,
     Type: EVENT_TYPE,
-) -> PKEVENT {
+) -> Option<(PKEVENT, HANDLE)> {
     let mut object_attributes = _OBJECT_ATTRIBUTES {
         Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
         RootDirectory: core::ptr::null_mut(),
@@ -44,7 +43,7 @@ unsafe fn IopCreateEvent(
         1u8,
     );
     if status < 0 {
-        return core::ptr::null_mut();
+        return None;
     }
 
     let mut event: PKEVENT = core::ptr::null_mut();
@@ -58,12 +57,25 @@ unsafe fn IopCreateEvent(
     );
     if status < 0 {
         ZwClose(handle);
-        return core::ptr::null_mut();
+        return None;
     }
 
     ObDereferenceObject(event as PVOID);
-    *EventHandle = handle;
-    event
+    Some((event, handle))
+}
+
+unsafe fn IopCreateEvent(
+    EventName: PUNICODE_STRING,
+    EventHandle: PHANDLE,
+    Type: EVENT_TYPE,
+) -> PKEVENT {
+    match IopCreateEvent_inner(EventName, Type) {
+        Some((event, handle)) => {
+            core::ptr::write_volatile(EventHandle, handle);
+            event
+        }
+        None => core::ptr::null_mut(),
+    }
 }
 
 #[no_mangle]
