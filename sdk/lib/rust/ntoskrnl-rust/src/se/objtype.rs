@@ -95,7 +95,7 @@ pub unsafe extern "C" fn SepObjectTypeGuidInList(
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         ObjectTypeGuidToSearch = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).ObjectTypeGuid;
         if SepIsEqualObjectTypeGuid(ObjectTypeGuid, &ObjectTypeGuidToSearch) != 0 {
-            *ObjectIndex = ObjectTypeIndex;
+            core::ptr::write_volatile(ObjectIndex, ObjectTypeIndex);
             return 1u8;
         }
     }

@@ -67,7 +67,7 @@ pub unsafe extern "system" fn IoConnectInterrupt(
     let mut Count: CCHAR = 0;
     let mut Affinity: KAFFINITY;
 
-    *InterruptObject = core::ptr::null_mut();
+    core::ptr::write_volatile(InterruptObject, core::ptr::null_mut());
 
     Affinity = ProcessorEnableMask & KeActiveProcessors;
     while Affinity != 0 {
@@ -151,7 +151,7 @@ pub unsafe extern "system" fn IoConnectInterrupt(
         Affinity >>= 1;
     }
 
-    *InterruptObject = core::ptr::addr_of_mut!((*IoInterrupt).FirstInterrupt);
+    core::ptr::write_volatile(InterruptObject, core::ptr::addr_of_mut!((*IoInterrupt).FirstInterrupt));
     STATUS_SUCCESS
 }
 

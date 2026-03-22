@@ -1009,7 +1009,7 @@ pub unsafe extern "C" fn MiMapViewInSystemSpace(
             MiDereferenceControlArea(control_area);
             return STATUS_INVALID_VIEW_SIZE;
         }
-        *view_size = (section_size - (*section_offset).QuadPart) as SIZE_T;
+        core::ptr::write_volatile(view_size, (section_size - (*section_offset).QuadPart) as SIZE_T);
     }
     if ((*section_offset).QuadPart + *view_size as i64) < (*section_offset).QuadPart {
         MiDereferenceControlArea(control_area);
@@ -1047,7 +1047,7 @@ pub unsafe extern "C" fn MiMapViewInSystemSpace(
         control_area,
         (*section_offset).QuadPart,
     );
-    *mapped_base = base;
+    core::ptr::write_volatile(mapped_base, base);
     STATUS_SUCCESS
 }
 
@@ -1312,7 +1312,7 @@ pub unsafe extern "system" fn MmGetImageInformation(image_information: PSECTION_
         RtlZeroMemory(image_information as PVOID, core::mem::size_of::<_SECTION_IMAGE_INFORMATION>());
         return;
     }
-    *image_information = (*((*((section_object as PSECTION) as *mut _SECTION)).Segment as PMM_IMAGE_SECTION_OBJECT)).ImageInformation;
+    core::ptr::write_volatile(image_information, (*((*((section_object as PSECTION) as *mut _SECTION)).Segment as PMM_IMAGE_SECTION_OBJECT)).ImageInformation);
 }
 
 unsafe fn MmGetFileNameForFileObject(
@@ -1417,7 +1417,7 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
             );
             RtlCopyUnicodeString(&mut (*section_name).SectionFileName, &module_file_name);
             if !return_length.is_null() {
-                *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
+                core::ptr::write_volatile(return_length, module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>());
             }
         } else {
             RtlInitEmptyUnicodeString(
@@ -1427,7 +1427,7 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
             );
             RtlCopyUnicodeString(&mut (*section_name).SectionFileName, &module_file_name);
             if !return_length.is_null() {
-                *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
+                core::ptr::write_volatile(return_length, module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>());
             }
         }
         RtlFreeUnicodeString(&mut module_file_name);
@@ -1849,7 +1849,7 @@ pub unsafe extern "system" fn MmCreateArm3Section(
     );
 
     // Return the object and the creation status
-    *section_object = new_section as PVOID;
+    core::ptr::write_volatile(section_object, new_section as PVOID);
     status
 }
 
@@ -1908,7 +1908,7 @@ pub unsafe extern "system" fn MmMapViewOfArm3Section(
                 return STATUS_INVALID_VIEW_SIZE;
             }
         }
-        *view_size = calculated_view_size as SIZE_T;
+        core::ptr::write_volatile(view_size, calculated_view_size as SIZE_T);
         if (MM_HIGHEST_VAD_ADDRESS as ULONG_PTR - *base_address as ULONG_PTR) < *view_size {
             return STATUS_INVALID_VIEW_SIZE;
         }
@@ -2137,7 +2137,7 @@ pub unsafe extern "system" fn NtCreateSection(
         &mut handle,
     );
     if status >= 0 {
-        *section_handle = handle;
+        core::ptr::write_volatile(section_handle, handle);
     }
     status
 }
@@ -2162,7 +2162,7 @@ pub unsafe extern "system" fn NtOpenSection(
         core::ptr::null_mut(),
         &mut handle,
     );
-    *section_handle = handle;
+    core::ptr::write_volatile(section_handle, handle);
     status
 }
 
@@ -2354,10 +2354,10 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         }
 
         // Return parameters to user
-        *base_address = safe_base_address;
-        *view_size = safe_view_size;
+        core::ptr::write_volatile(base_address, safe_base_address);
+        core::ptr::write_volatile(view_size, safe_view_size);
         if !section_offset.is_null() {
-            *section_offset = safe_section_offset;
+            core::ptr::write_volatile(section_offset, safe_section_offset);
         }
     }
 

@@ -372,7 +372,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
     let mut TempLength: SIZE_T;
     let mut Status: NTSTATUS;
 
-    *NextObject = core::ptr::null_mut();
+    core::ptr::write_volatile(NextObject, core::ptr::null_mut());
 
     if (*RemainingName).Length == 0 {
         if ObjectType != core::ptr::null_mut() {
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
                 AccessMode,
             );
             if Status >= 0 {
-                *NextObject = ParsedObject;
+                core::ptr::write_volatile(NextObject, ParsedObject);
             }
 
             if Status >= 0 || Status != STATUS_OBJECT_TYPE_MISMATCH {
@@ -396,7 +396,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
 
     if (*SymlinkObject).LinkTargetObject != core::ptr::null_mut() {
         if (*SymlinkObject).LinkTargetRemaining.Length == 0 {
-            *NextObject = (*SymlinkObject).LinkTargetObject;
+            core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
             return STATUS_REPARSE_OBJECT;
         }
 
@@ -444,7 +444,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
                 .offset(((*FullPath).Length / core::mem::size_of::<WCHAR>() as USHORT) as isize) =
                 0;
 
-            *NextObject = (*SymlinkObject).LinkTargetObject;
+            core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
             return STATUS_REPARSE_OBJECT;
         }
 
@@ -501,7 +501,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
         (*RemainingName).MaximumLength =
             (*RemainingName).Length + core::mem::size_of::<WCHAR>() as USHORT;
 
-        *NextObject = (*SymlinkObject).LinkTargetObject;
+        core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
         return STATUS_REPARSE_OBJECT;
     }
 
@@ -802,7 +802,7 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
         }
 
         if ResultLength != core::ptr::null_mut() {
-            *ResultLength = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
+            core::ptr::write_volatile(ResultLength, (*SymlinkObject).LinkTarget.MaximumLength as ULONG);
         }
 
         ObpReleaseObjectLock(ObjectHeader);

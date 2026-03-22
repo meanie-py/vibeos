@@ -54,6 +54,7 @@ pub mod ps;
 pub mod rtl;
 pub mod se;
 pub mod shim_exports;
+mod global_barrier;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;

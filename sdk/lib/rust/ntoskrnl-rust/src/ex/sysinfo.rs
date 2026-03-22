@@ -483,7 +483,7 @@ pub unsafe extern "system" fn ExLockUserBuffer(
 
     /* Return the safe kernel mode buffer */
     let MdlPvoid: PMDL = Mdl as _;
-    *MappedSystemVa = MmGetSystemAddressForMdlSafe(MdlPvoid, NormalPagePriority);
+    core::ptr::write_volatile(MappedSystemVa, MmGetSystemAddressForMdlSafe(MdlPvoid, NormalPagePriority));
     if (*MappedSystemVa).is_null() {
         ExUnlockUserBuffer(MdlPvoid);
         return STATUS_INSUFFICIENT_RESOURCES;

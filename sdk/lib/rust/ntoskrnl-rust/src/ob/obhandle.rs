@@ -1510,7 +1510,7 @@ pub unsafe extern "system" fn ObDuplicateObject(
     let mut kernel_handle = 0u8;
 
     if !target_handle.is_null() {
-        *target_handle = core::ptr::null_mut();
+        core::ptr::write_volatile(target_handle, core::ptr::null_mut());
     }
 
     if options & DUPLICATE_SAME_ACCESS == 0 {
@@ -1700,7 +1700,7 @@ pub unsafe extern "system" fn ObDuplicateObject(
     }
 
     if !target_handle.is_null() {
-        *target_handle = new_handle;
+        core::ptr::write_volatile(target_handle, new_handle);
     }
 
     ObDereferenceProcessHandleTable(source_process);
@@ -1728,7 +1728,7 @@ pub unsafe extern "system" fn ObOpenObjectByName(
     let open_reason: OB_OPEN_REASON;
     let temp_buffer: POB_TEMP_BUFFER;
 
-    *handle = core::ptr::null_mut();
+    core::ptr::write_volatile(handle, core::ptr::null_mut());
 
     if object_attributes.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -1890,7 +1890,7 @@ pub unsafe extern "system" fn ObOpenObjectByPointer(
     let mut access_state: _ACCESS_STATE = core::mem::zeroed();
     let mut aux_data: _AUX_ACCESS_DATA = core::mem::zeroed();
 
-    *handle = core::ptr::null_mut();
+    core::ptr::write_volatile(handle, core::ptr::null_mut());
 
     status = ObReferenceObjectByPointer(object, 0, object_type, access_mode);
     if status < 0 {
@@ -2032,7 +2032,7 @@ pub unsafe extern "system" fn ObInsertObject(
 
     previous_mode = KeGetPreviousMode();
     if ((*object_type).TypeInfo.SecurityRequired == 0) && object_name.is_null() {
-        *handle = core::ptr::null_mut();
+        core::ptr::write_volatile(handle, core::ptr::null_mut());
         (*object_header).__bindgen_anon_2.ObjectCreateInfo = core::ptr::null_mut();
 
         status = ObpCreateUnnamedHandle(
@@ -2202,7 +2202,7 @@ pub unsafe extern "system" fn ObInsertObject(
                 ObpDeleteNameCheck(object);
             }
 
-            *handle = core::ptr::null_mut();
+            core::ptr::write_volatile(handle, core::ptr::null_mut());
             real_status = status;
         }
 
@@ -2315,7 +2315,7 @@ pub unsafe extern "system" fn NtDuplicateObject(
         if let Err(s) = probe_write_handle(target_handle as _, previous_mode) {
             return s;
         }
-        *target_handle = core::ptr::null_mut();
+        core::ptr::write_volatile(target_handle, core::ptr::null_mut());
     }
 
     status = ObReferenceObjectByHandle(
@@ -2361,7 +2361,7 @@ pub unsafe extern "system" fn NtDuplicateObject(
     );
 
     if !target_handle.is_null() {
-        *target_handle = h_target;
+        core::ptr::write_volatile(target_handle, h_target);
     }
 
     if !target.is_null() {

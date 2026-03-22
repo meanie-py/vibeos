@@ -463,10 +463,10 @@ pub unsafe extern "C" fn SepPropagateAcl(
     }
 
     if written > *AclLength {
-        *AclLength = written;
+        core::ptr::write_volatile(AclLength, written);
         return STATUS_BUFFER_TOO_SMALL;
     }
-    *AclLength = written;
+    core::ptr::write_volatile(AclLength, written);
     STATUS_SUCCESS
 }
 
@@ -488,13 +488,13 @@ pub unsafe extern "C" fn SepSelectAcl(
     let acl: PACL;
     let mut status: NTSTATUS;
 
-    *AclPresent = 1u8;
+    core::ptr::write_volatile(AclPresent, 1u8);
     if ExplicitPresent != 0u8 && ExplicitDefaulted == 0u8 {
         acl = ExplicitAcl;
     } else {
         if !ParentAcl.is_null() {
-            *IsInherited = 1u8;
-            *AclLength = 0;
+            core::ptr::write_volatile(IsInherited, 1u8);
+            core::ptr::write_volatile(AclLength, 0);
             status = SepPropagateAcl(
                 core::ptr::null_mut(),
                 AclLength,
@@ -516,13 +516,13 @@ pub unsafe extern "C" fn SepSelectAcl(
         } else if !DefaultAcl.is_null() {
             acl = DefaultAcl;
         } else {
-            *AclPresent = 0u8;
+            core::ptr::write_volatile(AclPresent, 0u8);
             acl = core::ptr::null_mut();
         }
     }
 
-    *IsInherited = 0u8;
-    *AclLength = 0;
+    core::ptr::write_volatile(IsInherited, 0u8);
+    core::ptr::write_volatile(AclLength, 0);
     if !acl.is_null() {
         status = SepPropagateAcl(
             core::ptr::null_mut(),

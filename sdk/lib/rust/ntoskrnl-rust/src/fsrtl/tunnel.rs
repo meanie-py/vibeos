@@ -623,7 +623,7 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
 
         RtlMoveMemory(Data, (*CurEntry).Data, (*CurEntry).DataLength as usize);
 
-        *DataLength = (*CurEntry).DataLength;
+        core::ptr::write_volatile(DataLength, (*CurEntry).DataLength);
 
         Ret = 1u8;
     }

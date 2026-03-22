@@ -539,7 +539,7 @@ pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
     let EndOfEntries: *mut UCHAR;
 
     if (*Message).u2.s2.DataInfoOffset == 0 {
-        *NumberOfDataEntries = 0;
+        core::ptr::write_volatile(NumberOfDataEntries, 0);
         return STATUS_SUCCESS;
     }
 
@@ -562,7 +562,7 @@ pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
         return STATUS_INVALID_PARAMETER;
     }
 
-    *NumberOfDataEntries = (*DataInfo).NumberOfEntries;
+    core::ptr::write_volatile(NumberOfDataEntries, (*DataInfo).NumberOfEntries);
     return STATUS_SUCCESS;
 }
 

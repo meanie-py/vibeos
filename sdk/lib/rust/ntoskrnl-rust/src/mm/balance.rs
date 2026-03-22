@@ -196,7 +196,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
     NrFreedPages: *mut ULONG,
 ) -> NTSTATUS {
     let mut target = Target;
-    *NrFreedPages = 0;
+    core::ptr::write_volatile(NrFreedPages, 0);
 
     let mut first_page: PFN_NUMBER = MmGetLRUFirstUserPage() as PFN_NUMBER;
     let mut current_page: PFN_NUMBER = first_page;
@@ -362,10 +362,10 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
 
     let page = MmAllocPage(Consumer) as PFN_NUMBER;
     if page == 0 {
-        *AllocatedPage = 0;
+        core::ptr::write_volatile(AllocatedPage, 0);
         return STATUS_NO_MEMORY;
     }
-    *AllocatedPage = page as _;
+    core::ptr::write_volatile(AllocatedPage, page as _);
 
     InterlockedIncrementUL(
         core::ptr::addr_of_mut!(MiMemoryConsumers[Consumer as usize].PagesUsed)

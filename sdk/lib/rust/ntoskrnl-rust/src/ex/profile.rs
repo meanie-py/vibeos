@@ -395,6 +395,7 @@ pub unsafe extern "system" fn NtStartProfile(ProfileHandle: HANDLE) -> NTSTATUS 
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn NtStopProfile(ProfileHandle: HANDLE) -> NTSTATUS {
     let mut Profile: PEPROFILE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();

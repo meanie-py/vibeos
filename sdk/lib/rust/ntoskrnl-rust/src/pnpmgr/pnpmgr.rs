@@ -1619,7 +1619,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     }
 
     if !ValueName.is_null() {
-        *ResultLength = BufferLength;
+        core::ptr::write_volatile(ResultLength, BufferLength);
 
         Status = PiGetDeviceRegistryProperty(
             DeviceObject,
@@ -1634,7 +1634,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             ResultLength,
         );
     } else if Status >= 0 {
-        *ResultLength = ReturnLength + if NullTerminate != 0 { core::mem::size_of::<WCHAR>() as ULONG } else { 0 };
+        core::ptr::write_volatile(ResultLength, ReturnLength + if NullTerminate != 0 { core::mem::size_of::<WCHAR>() as ULONG } else { 0 });
         if *ResultLength <= BufferLength {
             core::ptr::copy_nonoverlapping(Data as *const u8, PropertyBuffer as *mut u8, ReturnLength as usize);
 

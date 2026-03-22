@@ -53,7 +53,7 @@ pub static mut VdmBopCount: ULONG = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn VdmpGetVdmTib(VdmTib: *mut PVDM_TIB) -> NTSTATUS {
-    *VdmTib = core::ptr::null_mut();
+    core::ptr::write_volatile(VdmTib, core::ptr::null_mut());
 
     let Tib = (*NtCurrentTeb()).Vdm as PVDM_TIB;
     if Tib.is_null() {
@@ -64,7 +64,7 @@ pub unsafe extern "system" fn VdmpGetVdmTib(VdmTib: *mut PVDM_TIB) -> NTSTATUS {
         return STATUS_INVALID_SYSTEM_SERVICE;
     }
 
-    *VdmTib = Tib;
+    core::ptr::write_volatile(VdmTib, Tib);
     STATUS_SUCCESS
 }
 

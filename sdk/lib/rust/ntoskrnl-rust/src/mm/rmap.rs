@@ -98,6 +98,7 @@ pub unsafe extern "system" fn MmInitializeRmapList() {
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTSTATUS {
     let mut entry: PMM_RMAP_ENTRY;
     let mut MemoryArea: PMEMORY_AREA;
@@ -522,7 +523,7 @@ pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut
     while !current_entry.is_null() {
         if RMAP_IS_SEGMENT((*current_entry).Address) {
             Result = (*current_entry).Process as PVOID;
-            *RawOffset = ((*current_entry).Address as ULONG_PTR & !RMAP_SEGMENT_MASK) as ULONG;
+            core::ptr::write_volatile(RawOffset, ((*current_entry).Address as ULONG_PTR & !RMAP_SEGMENT_MASK) as ULONG);
             if /* TODO: _CACHE_SECTION_PAGE_TABLE not in bindgen */ false {
                 return core::ptr::null_mut();
             }

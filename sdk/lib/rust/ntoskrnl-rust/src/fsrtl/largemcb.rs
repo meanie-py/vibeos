@@ -245,7 +245,7 @@ pub unsafe extern "system" fn FsRtlGetNextBaseMcbEntry(
     while !run.is_null() {
         if (*run).RunStartVbn.QuadPart as u64 > (last_vbn + last_sector_count) {
             if RunIndex == current_index {
-                *Vbn = (last_vbn + last_sector_count) as i64;
+                core::ptr::write_volatile(Vbn, (last_vbn + last_sector_count) as i64);
                 core::ptr::write_volatile(Lbn, -1);
                 core::ptr::write_volatile(SectorCount, (*run).RunStartVbn.QuadPart - *Vbn);
 

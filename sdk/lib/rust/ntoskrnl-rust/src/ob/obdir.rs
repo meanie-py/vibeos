@@ -488,7 +488,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
             i -= 1;
         }
 
-        *Context = CurrentEntry;
+        core::ptr::write_volatile(Context, CurrentEntry);
     }
 
     core::ptr::copy_nonoverlapping(
@@ -498,7 +498,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     );
 
     if !ReturnLength.is_null() {
-        *ReturnLength = TotalLength;
+        core::ptr::write_volatile(ReturnLength, TotalLength);
     }
 
     ObpReleaseDirectoryLock(Directory, core::ptr::addr_of_mut!(LookupContext));

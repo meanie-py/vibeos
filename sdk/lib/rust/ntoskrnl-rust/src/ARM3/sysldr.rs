@@ -306,15 +306,15 @@ pub unsafe extern "system" fn RtlpFindExportedRoutineByName(
     let function_address = (image_base as ULONG_PTR) + (*export_table.add(ordinal as usize) as ULONG_PTR);
 
     if !is_forwarder.is_null() {
-        *is_forwarder = 0u8;
+        core::ptr::write_volatile(is_forwarder, 0u8);
         if (function_address > (export_directory as ULONG_PTR)) &&
            (function_address < (export_directory as ULONG_PTR) + (export_size as ULONG_PTR))
         {
-            *is_forwarder = 1u8;
+            core::ptr::write_volatile(is_forwarder, 1u8);
         }
     }
 
-    *function = function_address as PVOID;
+    core::ptr::write_volatile(function, function_address as PVOID);
     STATUS_SUCCESS
 }
 

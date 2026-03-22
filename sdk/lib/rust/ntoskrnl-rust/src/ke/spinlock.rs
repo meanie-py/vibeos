@@ -264,7 +264,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
 
     #[cfg(debug_assertions)]
     {
-        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
+        core::ptr::write_volatile(SpinLock, (PsGetCurrentThread() as ULONG_PTR) | 1);
     }
 
     1u8
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
 
     #[cfg(debug_assertions)]
     {
-        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
+        core::ptr::write_volatile(SpinLock, (PsGetCurrentThread() as ULONG_PTR) | 1);
     }
 
     1u8

@@ -62,7 +62,7 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
                 } else {
                     // Kernel-mode output pointers — direct write, no probe
                     core::ptr::write_volatile(CapturedSecurityQualityOfService, core::ptr::null_mut());
-                    *Present = 0u8;
+                    core::ptr::write_volatile(Present, 0u8);
                 }
             } else {
                 status = STATUS_INVALID_PARAMETER;

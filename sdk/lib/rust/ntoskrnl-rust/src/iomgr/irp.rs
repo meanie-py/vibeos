@@ -1504,11 +1504,11 @@ pub unsafe extern "system" fn IoGetRequestorSessionId(
 ) -> NTSTATUS {
     if !(*Irp).Tail.Overlay.Thread.is_null() {
         let Process = (*(*Irp).Tail.Overlay.Thread).ThreadsProcess;
-        *pSessionId = MmGetSessionId(Process);
+        core::ptr::write_volatile(pSessionId, MmGetSessionId(Process));
         return STATUS_SUCCESS;
     }
 
-    *pSessionId = (-1i32) as ULONG;
+    core::ptr::write_volatile(pSessionId, (-1i32) as ULONG);
     STATUS_UNSUCCESSFUL
 }
 

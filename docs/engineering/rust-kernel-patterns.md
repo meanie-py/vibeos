@@ -569,6 +569,27 @@ These are approaches we tried, found to be unworkable, and documented for future
 
 **Lesson:** NT functions' NTSTATUS return values carry information even on success. Inner functions must return `Result<(OutputValue, NTSTATUS), NTSTATUS>` to preserve the exact status code, not `Result<OutputValue, NTSTATUS>` with `STATUS_SUCCESS` hardcoded in the wrapper.
 
+### Failed: Global write barrier for CGU=1 (2026-03-22)
+
+**Hypothesis:** LLVM constant-folds `pub static mut` globals initialized to 0 because it can see (with CGU=1) that no Rust code writes to them. A `#[no_mangle]` function that `write_volatile`s every global would prevent constant-folding because LLVM can't prove the function is never called.
+
+**Result:** The barrier compiled and linked cleanly, but the 45 ud2s remained unchanged. The global write barrier did NOT reduce the ud2 count.
+
+**Root cause was wrong:** The ud2s are NOT from constant-folding globals. Analysis of the disassembly revealed three distinct mechanisms:
+
+1. **`noreturn` propagation** (5 sites): `PspCatchCriticalBreak` calls `KeBugCheckEx` (which is `-> !` / noreturn). LLVM with CGU=1 can inline `PspCatchCriticalBreak`, see the `KeBugCheckEx` call, and prove the code after the call is unreachable — inserting ud2. The global `KdDebuggerEnabled` check was a red herring; the real issue is LLVM proving the `handled == 0` path always leads to `KeBugCheckEx`.
+
+2. **Interprocedural call graph analysis** (10+ sites): Functions that call `KeAttachProcess`, `PsGetCurrentThread`, or `KiExitDispatcher` get ud2 AFTER the call. LLVM with full CGU=1 visibility inlines these and finds UB in the inlined body — likely from `unsafe` pointer arithmetic that's technically UB in Rust but was safe in C.
+
+3. **Entire body replacement** (30+ sites): Functions like `DbgkCreateThread`, `NtTerminateProcess`, `PsConvertToGuiThread` have their ENTIRE body replaced with `push ebp; mov ebp,esp; ud2`. LLVM proves the function body is unreachable from the first instruction — possibly through interprocedural alias analysis or calling convention verification.
+
+**Lesson:** CGU=1's ud2 problem is NOT solvable by making globals volatile. It's caused by LLVM's interprocedural analysis finding (real or false) UB through the full call graph. The translated C→Rust code contains patterns that are valid C but technically UB in Rust (null pointer offsets, union access patterns, etc.). Fixing this requires either:
+- Auditing every ud2 function for actual UB and fixing it
+- Using `#[inline(never)]` on every function that LLVM misanalyzes (doesn't fully work — LLVM still does interprocedural analysis without inlining)
+- Keeping CGU=16 where CGU boundaries accidentally prevent LLVM from seeing the full picture
+
+**Current approach:** Stay on CGU=16. The global write barrier is kept as defense-in-depth against future CGU-boundary-shifting constant-fold bugs. The 7 known CGU=16 ud2s are tracked in `scan_ud2.py`'s `KNOWN_CGU_UD2` set.
+
 ## Relationship to Other Docs
 
 - `shim-elimination.md` — Guard migration enables shim removal (Category 1+4)

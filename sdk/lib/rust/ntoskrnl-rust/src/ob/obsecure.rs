@@ -81,7 +81,7 @@ pub unsafe extern "system" fn ObAssignObjectSecurityDescriptor(
 #[no_mangle]
 pub unsafe extern "system" fn ObDeassignSecurity(SecurityDescriptor: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS {
     let FastRef = *(SecurityDescriptor as PEX_FAST_REF);
-    *SecurityDescriptor = core::ptr::null_mut();
+    core::ptr::write_volatile(SecurityDescriptor, core::ptr::null_mut());
 
     let OldSecurityDescriptor = ExGetObjectFastReference(FastRef);
     let Count = ExGetCountFastReference(FastRef);
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn ObCheckCreateObjectAccess(
     );
 
     if Status < 0 {
-        *AccessStatus = Status;
+        core::ptr::write_volatile(AccessStatus, Status);
         return 0;
     }
 
@@ -259,7 +259,7 @@ pub unsafe extern "system" fn ObpCheckTraverseAccess(
     );
     
     if Status < 0 {
-        *AccessStatus = Status;
+        core::ptr::write_volatile(AccessStatus, Status);
         return 0;
     }
 
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn ObpCheckObjectReference(
     );
     
     if Status < 0 {
-        *AccessStatus = Status;
+        core::ptr::write_volatile(AccessStatus, Status);
         return 0;
     }
 
@@ -377,10 +377,10 @@ pub unsafe extern "system" fn ObCheckObjectAccess(
     );
     
     if Status < 0 {
-        *ReturnedStatus = Status;
+        core::ptr::write_volatile(ReturnedStatus, Status);
         return 0;
     } else if SecurityDescriptor.is_null() {
-        *ReturnedStatus = Status;
+        core::ptr::write_volatile(ReturnedStatus, Status);
         return 1;
     }
 
@@ -482,10 +482,10 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let Type = (*Header).Type;
 
-    *MemoryAllocated = 0;
+    core::ptr::write_volatile(MemoryAllocated, 0);
 
     if (*Type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod) {
-        *SecurityDescriptor = ObpReferenceSecurityDescriptor(Header);
+        core::ptr::write_volatile(SecurityDescriptor, ObpReferenceSecurityDescriptor(Header));
         return STATUS_SUCCESS;
     }
 
@@ -514,11 +514,11 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
         return Status;
     }
 
-    *SecurityDescriptor = ExAllocatePoolWithTag(PagedPool, Length as usize, TAG_SEC_QUERY);
+    core::ptr::write_volatile(SecurityDescriptor, ExAllocatePoolWithTag(PagedPool, Length as usize, TAG_SEC_QUERY));
     if (*SecurityDescriptor).is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    *MemoryAllocated = 1;
+    core::ptr::write_volatile(MemoryAllocated, 1);
 
     ObpCalloutStart(&mut CalloutIrql);
     Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
@@ -535,7 +535,7 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
 
     if Status < 0 {
         ExFreePoolWithTag(*SecurityDescriptor, TAG_SEC_QUERY);
-        *MemoryAllocated = 0;
+        core::ptr::write_volatile(MemoryAllocated, 0);
     }
 
     Status
@@ -631,7 +631,7 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
 
     ObDereferenceObject(Object);
 
-    *ResultLength = CallLength;
+    core::ptr::write_volatile(ResultLength, CallLength);
 
     Status
 }
@@ -720,7 +720,7 @@ pub unsafe extern "system" fn ObQueryObjectAuditingByHandle(
 
     let HandleEntry = ExMapHandleToPointer(HandleTable, ActualHandle);
     let Status = if !HandleEntry.is_null() {
-        *GenerateOnClose = if ((*HandleEntry).__bindgen_anon_1.ObAttributes as usize) & (OBJ_AUDIT_OBJECT_CLOSE as usize) != 0 { 1 } else { 0 };
+        core::ptr::write_volatile(GenerateOnClose, if ((*HandleEntry).__bindgen_anon_1.ObAttributes as usize) & (OBJ_AUDIT_OBJECT_CLOSE as usize) != 0 { 1 } else { 0 });
         ExUnlockHandleTableEntry(HandleTable, HandleEntry);
         STATUS_SUCCESS
     } else {

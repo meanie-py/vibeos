@@ -408,7 +408,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
     let mut RootHandle = RootHandle;
 
     ObpInitializeLookupContext(LookupContext);
-    *FoundObject = core::ptr::null_mut();
+    core::ptr::write_volatile(FoundObject, core::ptr::null_mut());
     status = STATUS_SUCCESS;
     object = core::ptr::null_mut();
 
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                         status = STATUS_OBJECT_NAME_NOT_FOUND;
                     }
 
-                    *FoundObject = object;
+                    core::ptr::write_volatile(FoundObject, object);
                     ObDereferenceObject(root_directory as PVOID);
                     return status;
                 } else if (*ObjectName).Length == 0 ||
@@ -498,7 +498,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                     max_reparse = max_reparse.wrapping_sub(1);
                     if max_reparse == 0 {
                         ObDereferenceObject(root_directory as PVOID);
-                        *FoundObject = object;
+                        core::ptr::write_volatile(FoundObject, object);
                         if object.is_null() {
                             status = STATUS_OBJECT_NAME_NOT_FOUND;
                         }
@@ -519,7 +519,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
             }
 
             ObDereferenceObject(root_directory as PVOID);
-            *FoundObject = object;
+            core::ptr::write_volatile(FoundObject, object);
             return status;
         }
 
@@ -544,7 +544,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                         AccessMode,
                     );
                     if status >= 0 {
-                        *FoundObject = InsertObject;
+                        core::ptr::write_volatile(FoundObject, InsertObject);
                     }
                     return status;
                 } else {
@@ -558,7 +558,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                     AccessMode,
                 );
                 if status >= 0 {
-                    *FoundObject = root_directory as PVOID;
+                    core::ptr::write_volatile(FoundObject, root_directory as PVOID);
                 }
                 return status;
             }
@@ -600,7 +600,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                     AccessMode,
                 );
                 if status >= 0 {
-                    *FoundObject = (*device_map).DosDevicesDirectory as PVOID;
+                    core::ptr::write_volatile(FoundObject, (*device_map).DosDevicesDirectory as PVOID);
                 }
                 ObfDereferenceDeviceMap(device_map);
                 return status;
@@ -647,7 +647,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                             AccessMode,
                         );
                         if status >= 0 {
-                            *FoundObject = (*device_map).DosDevicesDirectory as PVOID;
+                            core::ptr::write_volatile(FoundObject, (*device_map).DosDevicesDirectory as PVOID);
                         }
                         ObfDereferenceDeviceMap(device_map);
                         return status;
@@ -1030,7 +1030,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
         ObDereferenceObject(referenced_parent_directory as PVOID);
     }
 
-    *FoundObject = object;
+    core::ptr::write_volatile(FoundObject, object);
     if object.is_null() {
         if status == STATUS_REPARSE || status >= 0 {
             status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -1080,7 +1080,7 @@ pub unsafe extern "system" fn ObQueryNameString(
     if local_info.is_null() || (*local_info).Name.Buffer.is_null() {
         status = STATUS_SUCCESS;
 
-        *ReturnLength = core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
+        core::ptr::write_volatile(ReturnLength, core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG);
 
         if *ReturnLength > Length {
             status = STATUS_INFO_LENGTH_MISMATCH;
@@ -1112,9 +1112,9 @@ pub unsafe extern "system" fn ObQueryNameString(
         }
     }
 
-    *ReturnLength = name_size +
+    core::ptr::write_volatile(ReturnLength, name_size +
                     core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG +
-                    2;
+                    2);
 
     if *ReturnLength > Length {
         return STATUS_INFO_LENGTH_MISMATCH;

@@ -199,14 +199,14 @@ pub unsafe extern "system" fn WmipCaptureGuidObjectAttributes(
         core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
         core::mem::size_of::<PVOID>() as ULONG,
     );
-    *CapturedObjectAttributes = *GuidObjectAttributes;
+    core::ptr::write_volatile(CapturedObjectAttributes, *GuidObjectAttributes);
 
     ProbeForRead(
         (*CapturedObjectAttributes).ObjectName as PVOID,
         core::mem::size_of::<_UNICODE_STRING>(),
         core::mem::size_of::<PVOID>() as ULONG,
     );
-    *CapturedObjectName = *(*CapturedObjectAttributes).ObjectName;
+    core::ptr::write_volatile(CapturedObjectName, *(*CapturedObjectAttributes).ObjectName);
 
     if (*CapturedObjectName).Length != 45 * core::mem::size_of::<u16>() as u16 {
         return STATUS_INVALID_PARAMETER;
@@ -282,7 +282,7 @@ pub unsafe extern "system" fn WmipRegisterGuids(
 
     (*Result).Handle = GuidObjectHandle;
     (*Result).TraceHandle = 0;
-    *OutputLength = 24;
+    core::ptr::write_volatile(OutputLength, 24);
 
     STATUS_SUCCESS
 }

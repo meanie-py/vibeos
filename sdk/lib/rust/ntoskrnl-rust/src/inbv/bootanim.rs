@@ -440,7 +440,7 @@ pub unsafe extern "system" fn DisplayFilter_impl(string: *mut PCSTR) {
     if DotHack != 0 {
         let str_ptr = *string as *const i8;
         if *str_ptr == b'.' as i8 && *str_ptr.add(1) == 0 {
-            *string = b"\0".as_ptr() as PCSTR;
+            core::ptr::write_volatile(string, b"\0".as_ptr() as PCSTR);
         }
     }
 

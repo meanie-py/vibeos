@@ -175,7 +175,7 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
 
     reply_message = LpcpGetMessageFromThread(current_thread);
     if !reply_message.is_null() {
-        *message = reply_message;
+        core::ptr::write_volatile(message, reply_message);
 
         if !IsListEmpty(core::ptr::addr_of_mut!((*reply_message).__bindgen_anon_1.Entry)) {
             RemoveEntryList(core::ptr::addr_of_mut!((*reply_message).__bindgen_anon_1.Entry));
@@ -185,11 +185,11 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
         (*current_thread).__bindgen_anon_6.LpcReceivedMessageId = 0;
         (*current_thread).__bindgen_anon_5.LpcReplyMessage = core::ptr::null_mut();
 
-        *connect_message = (reply_message as usize + core::mem::size_of::<_LPCP_MESSAGE>()) as PLPCP_CONNECTION_MESSAGE;
+        core::ptr::write_volatile(connect_message, (reply_message as usize + core::mem::size_of::<_LPCP_MESSAGE>()) as PLPCP_CONNECTION_MESSAGE);
         section_to_map = (**connect_message).SectionToMap;
         (**connect_message).SectionToMap = core::ptr::null_mut();
     } else {
-        *message = core::ptr::null_mut();
+        core::ptr::write_volatile(message, core::ptr::null_mut());
         section_to_map = core::ptr::null_mut();
     }
 

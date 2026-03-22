@@ -1154,6 +1154,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn IoInitializeCrashDump(_PageFileHandle: HANDLE) -> BOOLEAN {
     0u8
 }

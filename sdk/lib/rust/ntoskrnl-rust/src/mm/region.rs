@@ -261,7 +261,7 @@ pub unsafe extern "system" fn MmFindRegion(
 
         if StartAddress <= Address && (StartAddress as usize + cur_len) > Address as usize {
             if !RegionBaseAddress.is_null() {
-                *RegionBaseAddress = StartAddress;
+                core::ptr::write_volatile(RegionBaseAddress, StartAddress);
             }
             return current;
         }

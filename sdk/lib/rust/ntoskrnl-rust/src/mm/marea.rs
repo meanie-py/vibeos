@@ -366,12 +366,12 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
     
     if (*BaseAddress).is_null() {
         let tmpLength = ((Length + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-        *BaseAddress = MmFindGap(
+        core::ptr::write_volatile(BaseAddress, MmFindGap(
             AddressSpace,
             tmpLength,
             Granularity as ULONG_PTR,
             if (AllocationFlags & MEM_TOP_DOWN as ULONG) == MEM_TOP_DOWN as ULONG { 1 } else { 0 },
-        );
+        ));
         
         if (*BaseAddress).is_null() {
             if (Type & MEMORY_AREA_STATIC) == 0 {
@@ -385,7 +385,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     } else {
         let EndingAddress = ((*BaseAddress) as ULONG_PTR + Length - 1) | (PAGE_SIZE - 1);
-        *BaseAddress = ((*BaseAddress) as ULONG_PTR & !(Granularity as usize - 1)) as PVOID;
+        core::ptr::write_volatile(BaseAddress, ((*BaseAddress) as ULONG_PTR & !(Granularity as usize - 1)) as PVOID);
         let tmpLength = EndingAddress + 1 - (*BaseAddress) as ULONG_PTR;
         
         if MmGetAddressSpaceOwner(AddressSpace).is_null() && (*BaseAddress) < MmSystemRangeStart {
@@ -417,7 +417,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     }
     
-    *Result = MemoryArea;
+    core::ptr::write_volatile(Result, MemoryArea);
     
     STATUS_SUCCESS
 }

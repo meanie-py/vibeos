@@ -305,8 +305,8 @@ pub unsafe extern "system" fn ObLogSecurityDescriptor(
 
             ObpSdReleaseLockShared(CacheEntry);
 
-            *OutputSecurityDescriptor =
-                core::ptr::addr_of_mut!((*SdHeader).SecurityDescriptor) as PSECURITY_DESCRIPTOR;
+            core::ptr::write_volatile(OutputSecurityDescriptor,
+                core::ptr::addr_of_mut!((*SdHeader).SecurityDescriptor) as PSECURITY_DESCRIPTOR);
 
             if !NewHeader.is_null() {
                 ExFreePoolWithTag(NewHeader as PVOID, TAG_OB_SD_CACHE);
@@ -335,8 +335,8 @@ pub unsafe extern "system" fn ObLogSecurityDescriptor(
 
     ObpSdReleaseLock(CacheEntry);
 
-    *OutputSecurityDescriptor =
-        core::ptr::addr_of_mut!((*NewHeader).SecurityDescriptor) as PSECURITY_DESCRIPTOR;
+    core::ptr::write_volatile(OutputSecurityDescriptor,
+        core::ptr::addr_of_mut!((*NewHeader).SecurityDescriptor) as PSECURITY_DESCRIPTOR);
     STATUS_SUCCESS
 }
 

@@ -821,9 +821,9 @@ pub unsafe extern "system" fn MiDoMappedCopy(
 
         if Status < 0 {
             if _FailedInProbe != 0 {
-                *ReturnSize = BufferSize - RemainingSize;
+                core::ptr::write_volatile(ReturnSize, BufferSize - RemainingSize);
             } else {
-                *ReturnSize = 0;
+                core::ptr::write_volatile(ReturnSize, 0);
                 Status = 0xC000009Bu32 as NTSTATUS;
             }
             break;
@@ -847,7 +847,7 @@ pub unsafe extern "system" fn MiDoMappedCopy(
     }
 
     if Status >= 0 {
-        *ReturnSize = BufferSize;
+        core::ptr::write_volatile(ReturnSize, BufferSize);
     }
     Status
 }
@@ -908,9 +908,9 @@ pub unsafe extern "system" fn MiDoPoolCopy(
 
         if Status < 0 {
             if _FailedInProbe != 0 {
-                *ReturnSize = BufferSize - RemainingSize;
+                core::ptr::write_volatile(ReturnSize, BufferSize - RemainingSize);
             } else {
-                *ReturnSize = 0;
+                core::ptr::write_volatile(ReturnSize, 0);
                 Status = 0xC000009Bu32 as NTSTATUS;
             }
             break;
@@ -933,9 +933,9 @@ pub unsafe extern "system" fn MiDoPoolCopy(
 
         if Status < 0 {
             if _FailedInProbe != 0 {
-                *ReturnSize = BufferSize - RemainingSize;
+                core::ptr::write_volatile(ReturnSize, BufferSize - RemainingSize);
             } else {
-                *ReturnSize = 0;
+                core::ptr::write_volatile(ReturnSize, 0);
                 Status = 0xC000009Bu32 as NTSTATUS;
             }
             break;
@@ -951,7 +951,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
     }
 
     if Status >= 0 {
-        *ReturnSize = BufferSize;
+        core::ptr::write_volatile(ReturnSize, BufferSize);
     }
     Status
 }
@@ -985,13 +985,13 @@ pub unsafe extern "system" fn MiQueryAddressState(
     #[cfg(target_arch = "x86_64")]
     { PointerPxe = MiAddressToPxe(Va); }
 
-    *NextVa = ((Va as ULONG_PTR) + PAGE_SIZE) as PVOID;
+    core::ptr::write_volatile(NextVa, ((Va as ULONG_PTR) + PAGE_SIZE) as PVOID);
 
     loop {
         #[cfg(target_arch = "x86_64")]
         {
             if (*PointerPxe).Long == 0 {
-                *NextVa = MiPxeToAddress(PointerPxe.add(1));
+                core::ptr::write_volatile(NextVa, MiPxeToAddress(PointerPxe.add(1)));
                 break;
             }
             if !(*PointerPxe).valid() {
@@ -1002,7 +1002,7 @@ pub unsafe extern "system" fn MiQueryAddressState(
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if (*PointerPpe).Long == 0 {
-                *NextVa = MiPpeToAddress(PointerPpe.add(1));
+                core::ptr::write_volatile(NextVa, MiPpeToAddress(PointerPpe.add(1)));
                 break;
             }
             if !(*PointerPpe).valid() {
@@ -1011,7 +1011,7 @@ pub unsafe extern "system" fn MiQueryAddressState(
         }
 
         if (*PointerPde).Long == 0 {
-            *NextVa = MiPdeToAddress(PointerPde.add(1));
+            core::ptr::write_volatile(NextVa, MiPdeToAddress(PointerPde.add(1)));
             break;
         }
         if !(*PointerPde).valid() {
@@ -1047,7 +1047,7 @@ pub unsafe extern "system" fn MiQueryAddressState(
 
     if IsDemandZeroPte != 0 {
         if ((*Vad).u.VadFlags.PrivateMemory() == 0) && !(*Vad).ControlArea.is_null() {
-            *NextVa = ((Va as ULONG_PTR) + PAGE_SIZE) as PVOID;
+            core::ptr::write_volatile(NextVa, ((Va as ULONG_PTR) + PAGE_SIZE) as PVOID);
             ProtoPte = MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad, (Va as ULONG_PTR) >> PAGE_SHIFT);
             if !ProtoPte.is_null() {
                 TempProtoPte = *ProtoPte;
@@ -1062,7 +1062,7 @@ pub unsafe extern "system" fn MiQueryAddressState(
         }
     }
 
-    *ReturnedProtect = Protect;
+    core::ptr::write_volatile(ReturnedProtect, Protect);
     State
 }
 
@@ -1774,8 +1774,8 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
     // Check if this is a ROSMM VAD
     if MI_IS_ROSMM_VAD(Vad as PVOID) {
         // Not too shabby hack
-        *NumberOfBytesToProtect = PAGE_ROUND_UP((*BaseAddress as ULONG_PTR) + (*NumberOfBytesToProtect)) - PAGE_ROUND_DOWN(*BaseAddress as ULONG_PTR);
-        *BaseAddress = PAGE_ROUND_DOWN(*BaseAddress as ULONG_PTR) as PVOID;
+        core::ptr::write_volatile(NumberOfBytesToProtect, PAGE_ROUND_UP((*BaseAddress as ULONG_PTR) + (*NumberOfBytesToProtect)) - PAGE_ROUND_DOWN(*BaseAddress as ULONG_PTR));
+        core::ptr::write_volatile(BaseAddress, PAGE_ROUND_DOWN(*BaseAddress as ULONG_PTR) as PVOID);
         Status = MmProtectSectionView(
             AddressSpace as ntkrnl_sys::ddk::PMMSUPPORT,
             Vad as PMEMORY_AREA,
@@ -1965,9 +1965,9 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
     MmUnlockAddressSpace(AddressSpace as PVOID);
 
     // Return parameters and success
-    *NumberOfBytesToProtect = EndingAddress - StartingAddress + 1;
-    *BaseAddress = StartingAddress as PVOID;
-    *OldAccessProtection = OldProtect;
+    core::ptr::write_volatile(NumberOfBytesToProtect, EndingAddress - StartingAddress + 1);
+    core::ptr::write_volatile(BaseAddress, StartingAddress as PVOID);
+    core::ptr::write_volatile(OldAccessProtection, OldProtect);
     STATUS_SUCCESS
 }
 
@@ -2131,7 +2131,7 @@ pub unsafe extern "system" fn NtReadVirtualMemory(
     }
 
     if !NumberOfBytesRead.is_null() {
-        *NumberOfBytesRead = BytesRead;
+        core::ptr::write_volatile(NumberOfBytesRead, BytesRead);
     }
 
     Status
@@ -2188,7 +2188,7 @@ pub unsafe extern "system" fn NtWriteVirtualMemory(
     }
 
     if !NumberOfBytesWritten.is_null() {
-        *NumberOfBytesWritten = BytesWritten;
+        core::ptr::write_volatile(NumberOfBytesWritten, BytesWritten);
     }
 
     Status
@@ -2331,9 +2331,9 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *UnsafeOldAccessProtection = OldAccessProtection;
-    *UnsafeBaseAddress = BaseAddress;
-    *UnsafeNumberOfBytesToProtect = NumberOfBytesToProtect;
+    core::ptr::write_volatile(UnsafeOldAccessProtection, OldAccessProtection);
+    core::ptr::write_volatile(UnsafeBaseAddress, BaseAddress);
+    core::ptr::write_volatile(UnsafeNumberOfBytesToProtect, NumberOfBytesToProtect);
 
     Status
 }
@@ -2658,8 +2658,8 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToLock = CapturedBytesToLock;
+    core::ptr::write_volatile(BaseAddress, CapturedBaseAddress);
+    core::ptr::write_volatile(NumberOfBytesToLock, CapturedBytesToLock);
 
     Status
 }
@@ -2933,8 +2933,8 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToUnlock = CapturedBytesToUnlock;
+    core::ptr::write_volatile(BaseAddress, CapturedBaseAddress);
+    core::ptr::write_volatile(NumberOfBytesToUnlock, CapturedBytesToUnlock);
 
     STATUS_SUCCESS
 }
@@ -2994,9 +2994,9 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID;
-    *NumberOfBytesToFlush = 0;
-    *IoStatusBlock = LocalStatusBlock;
+    core::ptr::write_volatile(BaseAddress, PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID);
+    core::ptr::write_volatile(NumberOfBytesToFlush, 0);
+    core::ptr::write_volatile(IoStatusBlock, LocalStatusBlock);
 
     Status
 }
@@ -3077,8 +3077,8 @@ pub unsafe extern "system" fn NtGetWriteWatch(
         ObDereferenceObject(Process as PVOID);
     }
 
-    *EntriesInUserAddressArray = 0;
-    *Granularity = PAGE_SIZE as ULONG;
+    core::ptr::write_volatile(EntriesInUserAddressArray, 0);
+    core::ptr::write_volatile(Granularity, PAGE_SIZE as ULONG);
 
     STATUS_SUCCESS
 }

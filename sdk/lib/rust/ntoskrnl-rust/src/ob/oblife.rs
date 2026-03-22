@@ -1246,7 +1246,7 @@ pub unsafe extern "system" fn NtQueryObject(
     }
 
     if !ResultLength.is_null() {
-        *ResultLength = InfoLength;
+        core::ptr::write_volatile(ResultLength, InfoLength);
     }
 
     if !Object.is_null() {

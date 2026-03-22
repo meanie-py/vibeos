@@ -382,7 +382,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     let mut Status: NTSTATUS;
     let Characteristics: USHORT;
     SectionOffset.QuadPart = (0u64 as ULONGLONG) as i64;
-    *BasePeb = core::ptr::null_mut();
+    core::ptr::write_volatile(BasePeb, core::ptr::null_mut());
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     }
 
     KeDetachProcess();
-    *BasePeb = Peb;
+    core::ptr::write_volatile(BasePeb, Peb);
     STATUS_SUCCESS
 }
 
@@ -504,7 +504,7 @@ pub unsafe extern "system" fn MmCreateTeb(
 ) -> NTSTATUS {
     let mut Teb: PTEB = core::ptr::null_mut();
     let mut Status = STATUS_SUCCESS;
-    *BaseTeb = core::ptr::null_mut();
+    core::ptr::write_volatile(BaseTeb, core::ptr::null_mut());
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn MmCreateTeb(
     (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
 
     KeDetachProcess();
-    *BaseTeb = Teb;
+    core::ptr::write_volatile(BaseTeb, Teb);
     Status
 }
 

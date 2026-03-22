@@ -362,7 +362,7 @@ pub unsafe extern "system" fn KdpCopyMemoryChunks(
     KeSweepICache(addr as PVOID, total_size as SIZE_T);
 
     if !actual_size.is_null() {
-        *actual_size = total_size - remaining;
+        core::ptr::write_volatile(actual_size, total_size - remaining);
     }
     if remaining == 0 {
         STATUS_SUCCESS
@@ -2157,7 +2157,7 @@ pub unsafe extern "system" fn KdSystemDebugControl(
     }
 
     if !return_length.is_null() {
-        *return_length = length;
+        core::ptr::write_volatile(return_length, length);
     }
 
     status
@@ -2178,7 +2178,7 @@ pub unsafe extern "system" fn KdChangeOption(
 
     if option != KD_OPTION_SET_BLOCK_ENABLE {
         if !out_buffer_needed.is_null() {
-            *out_buffer_needed = 0;
+            core::ptr::write_volatile(out_buffer_needed, 0);
         }
         return STATUS_INVALID_INFO_CLASS;
     }
@@ -2194,7 +2194,7 @@ pub unsafe extern "system" fn KdChangeOption(
     KdBlockEnable = *(in_buffer as *mut u8) as u32;
 
     if !out_buffer_needed.is_null() {
-        *out_buffer_needed = 0;
+        core::ptr::write_volatile(out_buffer_needed, 0);
     }
 
     STATUS_SUCCESS

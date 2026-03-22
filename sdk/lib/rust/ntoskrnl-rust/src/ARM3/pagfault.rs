@@ -2229,7 +2229,7 @@ pub unsafe extern "system" fn MmGetExecuteOptions(ExecuteOptions: *mut ULONG) ->
     let CurrentProcess = core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb);
     ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
-    *ExecuteOptions = 0;
+    core::ptr::write_volatile(ExecuteOptions, 0);
 
     if (*CurrentProcess).__bindgen_anon_2.Flags.ExecuteDisable() != 0 {
         *ExecuteOptions |= 0x1;

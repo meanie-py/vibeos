@@ -302,6 +302,7 @@ pub unsafe extern "system" fn NtSetLowWaitHighEventPair(EventPairHandle: HANDLE)
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn NtWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();

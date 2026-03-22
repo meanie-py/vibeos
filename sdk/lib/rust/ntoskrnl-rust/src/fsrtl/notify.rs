@@ -720,14 +720,14 @@ pub unsafe extern "system" fn FsRtlNotifyFullReportChange(
 pub unsafe extern "system" fn FsRtlNotifyInitializeSync(notify_sync: *mut PNOTIFY_SYNC) {
     let real_notify_sync: PREAL_NOTIFY_SYNC;
 
-    *notify_sync = core::ptr::null_mut();
+    core::ptr::write_volatile(notify_sync, core::ptr::null_mut());
 
     real_notify_sync = ExAllocatePoolWithTag(NonPagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE, core::mem::size_of::<_REAL_NOTIFY_SYNC>(), u32::from_le_bytes(*b"FSNR")) as PREAL_NOTIFY_SYNC;
     ExInitializeFastMutex(core::ptr::addr_of_mut!((*real_notify_sync).FastMutex));
     (*real_notify_sync).OwningThread = 0;
     (*real_notify_sync).OwnerCount = 0;
 
-    *notify_sync = real_notify_sync as PNOTIFY_SYNC;
+    core::ptr::write_volatile(notify_sync, real_notify_sync as PNOTIFY_SYNC);
 }
 
 #[no_mangle]
@@ -756,7 +756,7 @@ pub unsafe extern "system" fn FsRtlNotifyReportChange(
 pub unsafe extern "system" fn FsRtlNotifyUninitializeSync(notify_sync: *mut PNOTIFY_SYNC) {
     if !(*notify_sync).is_null() {
         ExFreePoolWithTag(*notify_sync, u32::from_le_bytes(*b"FSNR"));
-        *notify_sync = core::ptr::null_mut();
+        core::ptr::write_volatile(notify_sync, core::ptr::null_mut());
     }
 }
 

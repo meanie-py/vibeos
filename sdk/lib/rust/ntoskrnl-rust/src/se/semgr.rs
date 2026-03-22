@@ -452,7 +452,7 @@ pub unsafe extern "system" fn SeQuerySecurityAccessMask(
     security_information: SECURITY_INFORMATION,
     desired_access: PACCESS_MASK,
 ) {
-    *desired_access = 0;
+    core::ptr::write_volatile(desired_access, 0);
 
     if (security_information
         & (OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION))
@@ -471,7 +471,7 @@ pub unsafe extern "system" fn SeSetSecurityAccessMask(
     security_information: SECURITY_INFORMATION,
     desired_access: PACCESS_MASK,
 ) {
-    *desired_access = 0;
+    core::ptr::write_volatile(desired_access, 0);
 
     if (security_information & (OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION)) != 0 {
         *desired_access |= WRITE_OWNER;

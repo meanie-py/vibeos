@@ -460,11 +460,11 @@ pub unsafe extern "system" fn KdpPrint(
     let mut output_string: STRING = core::mem::zeroed();
 
     if NtQueryDebugFilterState(ComponentId, Level) == 0 {
-        *Handled = 1u8;
+        core::ptr::write_volatile(Handled, 1u8);
         return STATUS_SUCCESS;
     }
 
-    *Handled = 0u8;
+    core::ptr::write_volatile(Handled, 0u8);
 
     let length = min(Length as usize, KD_PRINT_MAX_BYTES) as USHORT;
 
@@ -488,7 +488,7 @@ pub unsafe extern "system" fn KdpPrint(
     KdLogDbgPrint(&mut output_string as PSTRING);
 
     if KdDebuggerNotPresent != 0 {
-        *Handled = 1u8;
+        core::ptr::write_volatile(Handled, 1u8);
         return STATUS_DEVICE_NOT_CONNECTED;
     }
 
@@ -501,7 +501,7 @@ pub unsafe extern "system" fn KdpPrint(
     }
 
     KdExitDebugger(enable);
-    *Handled = 1u8;
+    core::ptr::write_volatile(Handled, 1u8);
     status
 }
 

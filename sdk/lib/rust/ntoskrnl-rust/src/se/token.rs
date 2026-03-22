@@ -750,19 +750,19 @@ pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
     let mut doi_search = !default_owner_index.is_null();
 
     if pgi_search {
-        *primary_group_index = (*token).UserAndGroupCount;
+        core::ptr::write_volatile(primary_group_index, (*token).UserAndGroupCount);
     }
 
     if doi_search {
         if !default_owner.is_null() {
             if RtlEqualSid((*(*token).UserAndGroups.offset(0)).Sid, default_owner) != 0 {
-                *default_owner_index = 0;
+                core::ptr::write_volatile(default_owner_index, 0);
                 doi_search = false;
             } else {
-                *default_owner_index = (*token).UserAndGroupCount;
+                core::ptr::write_volatile(default_owner_index, (*token).UserAndGroupCount);
             }
         } else {
-            *default_owner_index = 0;
+            core::ptr::write_volatile(default_owner_index, 0);
             doi_search = false;
         }
     }
@@ -777,12 +777,12 @@ pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
             && RtlEqualSid((*(*token).UserAndGroups.offset(i as isize)).Sid, default_owner) != 0
             && ((*(*token).UserAndGroups.offset(i as isize)).Attributes & SE_GROUP_OWNER) != 0
         {
-            *default_owner_index = i;
+            core::ptr::write_volatile(default_owner_index, i);
             doi_search = false;
         }
 
         if pgi_search && RtlEqualSid((*(*token).UserAndGroups.offset(i as isize)).Sid, primary_group) != 0 {
-            *primary_group_index = i;
+            core::ptr::write_volatile(primary_group_index, i);
             pgi_search = false;
         }
     }

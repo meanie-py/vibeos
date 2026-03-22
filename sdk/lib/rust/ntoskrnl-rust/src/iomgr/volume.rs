@@ -230,13 +230,13 @@ pub unsafe extern "system" fn IopCheckVpbMounted(
         if (*(*DeviceObject).Vpb).Flags & VPB_MOUNTED == 0 {
             IoReleaseVpbSpinLock(OldIrql);
 
-            *Status = IopMountVolume(
+            core::ptr::write_volatile(Status, IopMountVolume(
                 DeviceObject,
                 if Raw { 1u8 } else { 0u8 },
                 0u8,
                 Alertable,
                 &mut Vpb,
-            );
+            ));
 
             if *Status < 0
                 || *Status == STATUS_USER_APC as i32

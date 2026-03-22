@@ -417,7 +417,7 @@ pub unsafe extern "system" fn RtlpCaptureStackLimits(
         if (*StackEnd != 0) && (*StackBegin < Ebp) && (Ebp <= *StackEnd) {
             core::ptr::write_volatile(StackBegin, Ebp);
         } else {
-            *StackBegin = Ebp;
+            core::ptr::write_volatile(StackBegin, Ebp);
             core::ptr::write_volatile(StackEnd, PAGE_ALIGN(*StackBegin) as ULONG_PTR);
         }
     }
@@ -767,17 +767,17 @@ pub unsafe extern "C" fn find_entry(
     resdirptr = root as *mut IMAGE_RESOURCE_DIRECTORY;
 
     if current_level == 0 {
-        *ret = resdirptr as PVOID;
+        core::ptr::write_volatile(ret, resdirptr as PVOID);
         return STATUS_SUCCESS;
     }
     current_level -= 1;
 
-    *ret = find_entry_by_name(
+    core::ptr::write_volatile(ret, find_entry_by_name(
         resdirptr,
         (*info).Type as LPCWSTR,
         root,
         if want_dir != 0 || current_level > 0 { 1 } else { 0 },
-    ) as PVOID;
+    ) as PVOID);
     
     if (*ret).is_null() {
         return STATUS_RESOURCE_TYPE_NOT_FOUND;
@@ -788,12 +788,12 @@ pub unsafe extern "C" fn find_entry(
     current_level -= 1;
 
     resdirptr = *ret as *mut IMAGE_RESOURCE_DIRECTORY;
-    *ret = find_entry_by_name(
+    core::ptr::write_volatile(ret, find_entry_by_name(
         resdirptr,
         (*info).Name as LPCWSTR,
         root,
         if want_dir != 0 || current_level > 0 { 1 } else { 0 },
-    ) as PVOID;
+    ) as PVOID);
     
     if (*ret).is_null() {
         return STATUS_RESOURCE_NAME_NOT_FOUND;
@@ -808,7 +808,7 @@ pub unsafe extern "C" fn find_entry(
     }
 
     resdirptr = *ret as *mut IMAGE_RESOURCE_DIRECTORY;
-    *ret = find_first_entry(resdirptr, root, want_dir) as PVOID;
+    core::ptr::write_volatile(ret, find_first_entry(resdirptr, root, want_dir) as PVOID);
     
     if !(*ret).is_null() {
         return STATUS_SUCCESS;

@@ -218,7 +218,7 @@ pub unsafe extern "system" fn WmipCreateGuidObject(
     );
     (*guid_object).Guid = *Guid;
 
-    *OutGuidObject = guid_object;
+    core::ptr::write_volatile(OutGuidObject, guid_object);
 
     STATUS_SUCCESS
 }
@@ -236,7 +236,7 @@ pub unsafe extern "system" fn WmipOpenGuidObject(
 
     let mut status = WmipCreateGuidObject(Guid, &mut guid_object);
     if status < 0 {
-        *OutGuidObject = core::ptr::null_mut();
+        core::ptr::write_volatile(OutGuidObject, core::ptr::null_mut());
         return status;
     }
 
@@ -256,7 +256,7 @@ pub unsafe extern "system" fn WmipOpenGuidObject(
         guid_object = core::ptr::null_mut();
     }
 
-    *OutGuidObject = guid_object as PVOID;
+    core::ptr::write_volatile(OutGuidObject, guid_object as PVOID);
 
     status
 }

@@ -703,7 +703,7 @@ pub unsafe extern "system" fn IopGetRelatedTargetDevice(
         return Status;
     }
 
-    *DeviceNode = IopGetDeviceNode((*(DeviceRelations as *mut DEVICE_RELATIONS)).Objects[0]);
+    core::ptr::write_volatile(DeviceNode, IopGetDeviceNode((*(DeviceRelations as *mut DEVICE_RELATIONS)).Objects[0]));
     let Status = if (*DeviceNode).is_null() {
         STATUS_NO_SUCH_DEVICE
     } else {

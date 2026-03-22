@@ -286,7 +286,7 @@ pub unsafe extern "system" fn DbgkpQueueMessage(
                 core::ptr::null_mut(),
             );
 
-            *message = (*debug_event).ApiMsg;
+            core::ptr::write_volatile(message, (*debug_event).ApiMsg);
             status = (*debug_event).Status;
         }
     } else {
@@ -779,8 +779,8 @@ pub unsafe extern "system" fn DbgkpPostFakeThreadMessages(
         return STATUS_UNSUCCESSFUL;
     }
 
-    *first_thread = p_first_thread;
-    *last_thread = p_last_thread;
+    core::ptr::write_volatile(first_thread, p_first_thread);
+    core::ptr::write_volatile(last_thread, p_last_thread);
     status
 }
 
@@ -821,7 +821,7 @@ pub unsafe extern "system" fn DbgkpPostFakeProcessCreateMessages(
 
     KeUnstackDetachProcess(&mut apc_state);
 
-    *last_thread = return_thread;
+    core::ptr::write_volatile(last_thread, return_thread);
     status
 }
 

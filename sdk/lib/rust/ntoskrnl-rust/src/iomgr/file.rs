@@ -161,7 +161,6 @@ extern "system" {
     fn KeFlushWriteBuffer();
     fn KeDelayExecutionThread(WaitMode: KPROCESSOR_MODE, Alertable: BOOLEAN, Interval: *const LARGE_INTEGER) -> NTSTATUS;
     fn ExFreePool(P: PVOID);
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     #[link_name = "IopValidateOpenPacket_shim"]
     fn IopValidateOpenPacket(OpenPacket: POPEN_PACKET) -> BOOLEAN;
@@ -2147,14 +2146,13 @@ unsafe fn IopQueryAttributesFile(
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM eliminates function body via captures(none) on certain CGU partitionings
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn IopAcquireFileObjectLock(
     FileObject: PFILE_OBJECT,
     WaitMode: KPROCESSOR_MODE,
     Alertable: BOOLEAN,
     LockFailed: PBOOLEAN,
 ) -> NTSTATUS {
-
     InterlockedIncrement(&raw mut (*FileObject).Waiters as *mut LONG);
 
     let mut Status = STATUS_SUCCESS;

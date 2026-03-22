@@ -704,7 +704,7 @@ pub unsafe extern "system" fn MiInitializeAndChargePfn(
         return STATUS_RETRY;
     }
 
-    *PageFrameIndex = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
+    core::ptr::write_volatile(PageFrameIndex, MiRemoveZeroPage(MI_GET_NEXT_COLOR()));
     temp_pde.set_page_frame_number((*PageFrameIndex as usize) as PFN_NUMBER);
     MI_WRITE_VALID_PDE(PointerPde, temp_pde);
 

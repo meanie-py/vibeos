@@ -326,7 +326,7 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
     FileObject: *mut PFILE_OBJECT,
     HandleInformation: POBJECT_HANDLE_INFORMATION,
 ) -> NTSTATUS {
-    *FileObject = core::ptr::null_mut();
+    core::ptr::write_volatile(FileObject, core::ptr::null_mut());
 
     let (handle_table, handle_value) = if HandleToLong(Handle) < 0 {
         if AccessMode != 0i8 || Handle == NtCurrentProcess() || Handle == NtCurrentThread() {
@@ -368,7 +368,7 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
                 ExUnlockHandleTableEntry(handle_table, handle_entry);
                 KeLeaveCriticalRegion();
 
-                *FileObject = core::ptr::addr_of_mut!((*object_header).Body) as PFILE_OBJECT;
+                core::ptr::write_volatile(FileObject, core::ptr::addr_of_mut!((*object_header).Body) as PFILE_OBJECT);
                 return STATUS_SUCCESS;
             }
 

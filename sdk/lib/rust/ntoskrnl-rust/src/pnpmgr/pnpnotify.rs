@@ -438,7 +438,7 @@ pub unsafe extern "system" fn IoRegisterPlugPlayNotification(
         }
     }
 
-    *NotificationEntry = Entry as PVOID;
+    core::ptr::write_volatile(NotificationEntry, Entry as PVOID);
 
     STATUS_SUCCESS
 }

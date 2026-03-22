@@ -515,7 +515,7 @@ pub unsafe extern "C" fn PopSetSystemPowerStateTraverse(
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM eliminates function body on certain CGU partitionings
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn PopSetSystemPowerState(
     PowerState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
@@ -1129,6 +1129,7 @@ pub unsafe extern "system" fn NtRequestWakeupLatency(Latency: LATENCY_TIME) -> N
 }
 
 #[no_mangle]
+#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn NtSetThreadExecutionState(
     esFlags: EXECUTION_STATE,
     PreviousFlags: *mut EXECUTION_STATE,

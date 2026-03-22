@@ -593,7 +593,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         connection_info_length = (*message).Request.u1.s1.DataLength as ULONG
             - core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>() as ULONG;
 
-        *ReceiveMessage = (*message).Request;
+        core::ptr::write_volatile(ReceiveMessage, (*message).Request);
 
         message = core::ptr::null_mut();
 
