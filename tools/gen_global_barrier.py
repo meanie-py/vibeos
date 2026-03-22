@@ -73,7 +73,10 @@ def generate(globals: list[tuple[str, str, str]]) -> str:
         '/// NEVER CALLED. Exists solely to prevent LLVM constant-folding.',
         '#[no_mangle]',
         '#[inline(never)]',
-        'pub unsafe extern "C" fn _global_write_barrier() {',
+        'pub unsafe extern "C" fn _global_write_barrier(seed: usize) {',
+        '    // The seed parameter is opaque to LLVM — it cannot prove what',
+        '    // value is written, so it cannot constant-fold any global.',
+        '    let s = seed as u8;',
     ]
 
     # Group by source file for readability
@@ -101,15 +104,16 @@ def generate(globals: list[tuple[str, str, str]]) -> str:
             elif not cfg and current_cfg:
                 current_cfg = None
 
-        # Identity write: read the current value, write it back.
-        # This tells LLVM the value can change without actually changing it.
-        # Using read_volatile + write_volatile ensures LLVM can't optimize it away.
+        # Write a seed-dependent value: XOR the first byte of the global
+        # with the seed parameter. LLVM cannot prove what value is written
+        # because the seed comes from an external caller.
         indent = '        ' if current_cfg else '    '
         path = f'crate::{_module_path(file)}{name}'
         lines.append(
-            f'{indent}core::ptr::write_volatile('
-            f'core::ptr::addr_of_mut!({path}), '
-            f'core::ptr::read_volatile(core::ptr::addr_of!({path})));'
+            f'{indent}let p = core::ptr::addr_of_mut!({path}) as *mut u8;'
+        )
+        lines.append(
+            f'{indent}core::ptr::write_volatile(p, core::ptr::read_volatile(p) ^ s);'
         )
 
     # Close any open cfg block
