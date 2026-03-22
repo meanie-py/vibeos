@@ -41,17 +41,18 @@ static mut LastUserLRUPfn: PMMPFN = core::ptr::null_mut();
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetLRUFirstUserPage() -> PFN_NUMBER {
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     if FirstUserLRUPfn.is_null() {
-        MiReleasePfnLock(old_irql);
+        // [guard-drop] MiReleasePfnLock(old_irql);
         return 0;
     }
 
     let page = MiGetPfnEntryIndex(FirstUserLRUPfn);
     MmReferencePage(page);
 
-    MiReleasePfnLock(old_irql);
+    // [guard-drop] MiReleasePfnLock(old_irql);
 
     page
 }
@@ -411,11 +412,12 @@ pub unsafe extern "system" fn MmDereferencePage(pfn: PFN_NUMBER) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmAllocPage(typ: ULONG) -> PFN_NUMBER {
-    let old_irql = MiAcquirePfnLock();
+    // [guard] let old_irql = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     let pfn_offset = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
     if pfn_offset == 0 {
-        MiReleasePfnLock(old_irql);
+        // [guard-drop] MiReleasePfnLock(old_irql);
         return 0;
     }
 
@@ -436,7 +438,7 @@ pub unsafe extern "system" fn MmAllocPage(typ: ULONG) -> PFN_NUMBER {
         MmInsertLRULastUserPage(pfn_offset);
     }
 
-    MiReleasePfnLock(old_irql);
+    // [guard-drop] MiReleasePfnLock(old_irql);
 
     pfn_offset
 }

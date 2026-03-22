@@ -172,7 +172,8 @@ pub unsafe extern "system" fn NtSetLdtEntries(
         Selector2
     };
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(LdtLock), core::ptr::addr_of_mut!(oldIrql));
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(LdtLock), core::ptr::addr_of_mut!(oldIrql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(LdtLock)) };
 
     LdtDescriptor = core::ptr::addr_of_mut!(
         (*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb.LdtDescriptor
@@ -186,7 +187,7 @@ pub unsafe extern "system" fn NtSetLdtEntries(
         let NewLdtBase: ULONG = ExAllocatePool(NonPagedPool, NewLdtSize) as ULONG;
 
         if NewLdtBase == 0 {
-            KeReleaseSpinLock(core::ptr::addr_of_mut!(LdtLock), oldIrql);
+            // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(LdtLock), oldIrql);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -236,7 +237,7 @@ pub unsafe extern "system" fn NtSetLdtEntries(
         );
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(LdtLock), oldIrql);
+    // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(LdtLock), oldIrql);
     STATUS_SUCCESS
 }
 

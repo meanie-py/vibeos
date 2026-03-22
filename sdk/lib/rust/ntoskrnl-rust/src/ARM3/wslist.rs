@@ -350,7 +350,8 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
 
         let Page = PFN_FROM_PTE(PointerPte);
         {
-            let OldIrql = MiAcquirePfnLock();
+            // [guard] let OldIrql = MiAcquirePfnLock();
+            let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
             let Pfn = MiGetPfnEntry(Page);
 
@@ -360,7 +361,7 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
                 (*(Pfn as *mut _MMPFN)).Wsle
             ) as PMMWSLE;
             if (*PfnWsle).u1.e1.LockedInMemory() != 0 || (*PfnWsle).u1.e1.LockedInWs() != 0 {
-                MiReleasePfnLock(OldIrql);
+                // [guard-drop] MiReleasePfnLock(OldIrql);
                 i += 1;
                 continue;
             }
@@ -389,7 +390,7 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
 
             MiDecrementShareCount(Pfn as *mut _MMPFN, Page as _);
 
-            MiReleasePfnLock(OldIrql);
+            // [guard-drop] MiReleasePfnLock(OldIrql);
         }
 
         Ret += 1;

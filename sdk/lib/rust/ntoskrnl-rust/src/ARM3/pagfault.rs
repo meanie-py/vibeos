@@ -1565,7 +1565,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
             WorkingSet = core::ptr::addr_of_mut!((*(*(MmSessionSpace as *mut _MM_SESSION_SPACE)).GlobalVirtualAddress).Vm) as PMMSUPPORT;
         }
 'RetryKernel: loop {
-        KeRaiseIrql(APC_LEVEL, &mut LockIrql);
+        // [guard] KeRaiseIrql(APC_LEVEL, &mut LockIrql);
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         MiLockWorkingSet(CurrentThread, WorkingSet);
 
         TempPte = *PointerPte;
@@ -1617,7 +1618,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             }
 
             MiUnlockWorkingSet(CurrentThread, WorkingSet);
-            KeLowerIrql(LockIrql);
+            // [guard-drop] KeLowerIrql(LockIrql);
             return STATUS_SUCCESS;
         }
 
@@ -1724,7 +1725,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         ASSERT!(KeAreAllApcsDisabled() != 0);
         MiUnlockWorkingSet(CurrentThread, WorkingSet);
-        KeLowerIrql(LockIrql);
+        // [guard-drop] KeLowerIrql(LockIrql);
 
         if Status == STATUS_NO_MEMORY {
             MmRebalanceMemoryConsumersAndWait();

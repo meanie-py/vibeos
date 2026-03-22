@@ -1727,14 +1727,15 @@ pub unsafe extern "system" fn KdEnableDebuggerWithLock(need_lock: BOOLEAN) -> NT
     }
 
     if need_lock != 0 {
-        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
         KdpPortLock();
     }
 
     if KdDisableCount == 0 {
         if need_lock != 0 {
             KdpPortUnlock();
-            KeLowerIrql(old_irql);
+            // [guard-drop] KeLowerIrql(old_irql);
 
             return STATUS_INVALID_PARAMETER;
         } else {
@@ -1754,7 +1755,7 @@ pub unsafe extern "system" fn KdEnableDebuggerWithLock(need_lock: BOOLEAN) -> NT
 
     if need_lock != 0 {
         KdpPortUnlock();
-        KeLowerIrql(old_irql);
+        // [guard-drop] KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS
@@ -1769,7 +1770,8 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
     }
 
     if need_lock != 0 {
-        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
         KdpPortLock();
     }
 
@@ -1784,7 +1786,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
             let status = KdpAllowDisable();
             if status < 0 {
                 KdpPortUnlock();
-                KeLowerIrql(old_irql);
+                // [guard-drop] KeLowerIrql(old_irql);
                 return status;
             }
         }
@@ -1802,7 +1804,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
 
     if need_lock != 0 {
         KdpPortUnlock();
-        KeLowerIrql(old_irql);
+        // [guard-drop] KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS

@@ -536,7 +536,8 @@ pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut
 pub unsafe extern "system" fn MmDeleteSectionAssociation(Page: PFN_NUMBER) {
     let mut current_entry: PMM_RMAP_ENTRY;
     let mut previous_entry: PMM_RMAP_ENTRY;
-    let OldIrql: KIRQL = MiAcquirePfnLock();
+    // [guard] let OldIrql: KIRQL = MiAcquirePfnLock();
+    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
     previous_entry = core::ptr::null_mut();
     current_entry = MmGetRmapListHeadPage(Page as _);
@@ -547,14 +548,14 @@ pub unsafe extern "system" fn MmDeleteSectionAssociation(Page: PFN_NUMBER) {
             } else {
                 (*previous_entry).Next = (*current_entry).Next;
             }
-            MiReleasePfnLock(OldIrql);
+            // [guard-drop] MiReleasePfnLock(OldIrql);
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), current_entry as PVOID);
             return;
         }
         previous_entry = current_entry;
         current_entry = (*current_entry).Next;
     }
-    MiReleasePfnLock(OldIrql);
+    // [guard-drop] MiReleasePfnLock(OldIrql);
 }
 
 // ============================================================================

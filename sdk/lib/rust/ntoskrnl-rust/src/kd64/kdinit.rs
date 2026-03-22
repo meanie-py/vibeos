@@ -171,7 +171,8 @@ pub unsafe extern "system" fn KdRegisterDebuggerDataBlock(
 ) -> BOOLEAN {
     let mut old_irql: KIRQL = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), core::ptr::addr_of_mut!(old_irql));
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), core::ptr::addr_of_mut!(old_irql));
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KdpDataSpinLock)) };
 
     let mut next_entry = KdpDebuggerDataListHead.Flink;
     while next_entry != core::ptr::addr_of_mut!(KdpDebuggerDataListHead) as PLIST_ENTRY {
@@ -182,7 +183,7 @@ pub unsafe extern "system" fn KdRegisterDebuggerDataBlock(
         next_entry = (*next_entry).Flink;
 
         if current_header == data_header || (*current_header).OwnerTag == tag {
-            KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
+            // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
             return 0u8;
         }
     }
@@ -194,7 +195,7 @@ pub unsafe extern "system" fn KdRegisterDebuggerDataBlock(
         core::ptr::addr_of_mut!(KdpDebuggerDataListHead) as PLIST_ENTRY,
         core::ptr::addr_of_mut!((*data_header).List) as PLIST_ENTRY
     );
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
+    // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(KdpDataSpinLock), old_irql);
     1u8
 }
 

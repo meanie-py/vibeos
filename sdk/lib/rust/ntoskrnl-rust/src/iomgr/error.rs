@@ -181,7 +181,8 @@ unsafe fn IopGetErrorLogEntry() -> PLIST_ENTRY {
     let mut OldIrql: KIRQL = 0;
     let ListEntry: PLIST_ENTRY;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(IopLogListLock), &mut OldIrql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopLogListLock), &mut OldIrql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopLogListLock)) };
     if IsListEmpty(core::ptr::addr_of_mut!(IopErrorLogListHead)) {
         IopLogWorkerRunning = 0u8;
         ListEntry = core::ptr::null_mut();
@@ -189,7 +190,7 @@ unsafe fn IopGetErrorLogEntry() -> PLIST_ENTRY {
         ListEntry = RemoveHeadList(core::ptr::addr_of_mut!(IopErrorLogListHead));
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopLogListLock), OldIrql);
+    drop(spin_guard);
     ListEntry
 }
 
@@ -634,7 +635,8 @@ pub unsafe extern "system" fn IoWriteErrorLogEntry(ElEntry: PVOID) {
     KeQuerySystemTime(core::ptr::addr_of_mut!((*LogEntry).TimeStamp));
 
     let mut Irql: KIRQL = 0;
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(IopLogListLock), &mut Irql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopLogListLock), &mut Irql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopLogListLock)) };
     InsertHeadList(
         core::ptr::addr_of_mut!(IopErrorLogListHead),
         core::ptr::addr_of_mut!((*LogEntry).ListEntry),
@@ -653,7 +655,7 @@ pub unsafe extern "system" fn IoWriteErrorLogEntry(ElEntry: PVOID) {
         );
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopLogListLock), Irql);
+    drop(spin_guard);
 }
 
 #[no_mangle]

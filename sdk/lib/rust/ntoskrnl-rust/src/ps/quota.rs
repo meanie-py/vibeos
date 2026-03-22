@@ -134,7 +134,8 @@ unsafe fn PspChargeProcessQuotaSpecifiedPool(
     let mut returned_quotas: SIZE_T = 0;
     let mut updated_limit: SIZE_T = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, &mut old_irql);
+    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK) };
 
     if (*quota_block).QuotaEntry[quota_type].Usage + amount
         > (*quota_block).QuotaEntry[quota_type].Limit
@@ -152,7 +153,7 @@ unsafe fn PspChargeProcessQuotaSpecifiedPool(
         {
             PspReturnExcessQuotas(quota_type, &mut returned_quotas);
             if returned_quotas == 0 {
-                KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
+                // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
                 return STATUS_QUOTA_EXCEEDED;
             }
 
@@ -205,7 +206,7 @@ unsafe fn PspChargeProcessQuotaSpecifiedPool(
         }
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
+    // [guard-drop] KeReleaseSpinLock(core::ptr::addr_of_mut!(PspQuotaLock) as ntkrnl_sys::ke::PKSPIN_LOCK, old_irql);
     STATUS_SUCCESS
 }
 

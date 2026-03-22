@@ -377,7 +377,8 @@ unsafe fn IopPerformSynchronousRequest(
             let mut NormalRoutine: PKNORMAL_ROUTINE = None;
             let mut NormalContext: PVOID = core::ptr::null_mut();
             let mut OldIrql: KIRQL = 0;
-            KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+            // [guard] KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+            let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
             IopCompleteRequest(
                 core::ptr::addr_of_mut!((*Irp).Tail.Apc),
                 core::ptr::addr_of_mut!(NormalRoutine),
@@ -385,7 +386,7 @@ unsafe fn IopPerformSynchronousRequest(
                 core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
                 core::ptr::addr_of_mut!(NormalContext),
             );
-            KeLowerIrql(OldIrql);
+            drop(irql_guard);
         }
     }
     if SynchIo != 0 {
@@ -2428,7 +2429,8 @@ pub unsafe extern "system" fn NtQueryInformationFile(
         (*Irp).UserIosb = IoStatusBlock;
         NormalRoutine = None;
         NormalContext = core::ptr::null_mut();
-        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+        // [guard] KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         IopCompleteRequest(
             core::ptr::addr_of_mut!((*Irp).Tail.Apc),
             core::ptr::addr_of_mut!(NormalRoutine),
@@ -2436,7 +2438,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
             core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
             core::ptr::addr_of_mut!(NormalContext),
         );
-        KeLowerIrql(OldIrql);
+        drop(irql_guard);
         if LocalEvent == 0 {
             IopUnlockFileObject(FileObject);
         }
@@ -3014,7 +3016,8 @@ pub unsafe extern "system" fn NtSetInformationFile(
         (*Irp).UserIosb = IoStatusBlock;
         NormalRoutine = None;
         NormalContext = core::ptr::null_mut();
-        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+        // [guard] KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
         IopCompleteRequest(
             core::ptr::addr_of_mut!((*Irp).Tail.Apc),
             core::ptr::addr_of_mut!(NormalRoutine),
@@ -3022,7 +3025,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
             core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
             core::ptr::addr_of_mut!(NormalContext),
         );
-        KeLowerIrql(OldIrql);
+        drop(irql_guard);
 
         if LocalEvent == 0 {
             IopUnlockFileObject(FileObject);

@@ -171,7 +171,8 @@ pub unsafe extern "system" fn VdmpStartExecution() -> NTSTATUS {
     }
 
     let mut OldIrql: KIRQL = 0;
-    KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+    // [guard] KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+    let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL) };
 
     let Interrupts = ((*VdmTib).VdmContext.EFlags & EFLAGS_INTERRUPT_MASK) != 0;
 
@@ -197,13 +198,13 @@ pub unsafe extern "system" fn VdmpStartExecution() -> NTSTATUS {
 
     let VdmContext = &(*VdmTib).VdmContext as *const _ as PCONTEXT;
     if (*VdmContext).SegCs & FRAME_EDITED as ULONG == 0 {
-        KeLowerIrql(OldIrql);
+        // [guard-drop] KeLowerIrql(OldIrql);
         return STATUS_INVALID_SYSTEM_SERVICE;
     }
 
     VdmSwapContext(VdmFrame, &mut (*VdmTib).MonitorContext, VdmContext);
 
-    KeLowerIrql(OldIrql);
+    // [guard-drop] KeLowerIrql(OldIrql);
     (*VdmFrame).Eax as NTSTATUS
 }
 

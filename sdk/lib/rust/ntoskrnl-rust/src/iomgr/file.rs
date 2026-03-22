@@ -3267,7 +3267,8 @@ pub unsafe extern "system" fn NtCancelIoFile(
     );
     if Status < 0 { return Status; }
 
-    KeRaiseIrql(APC_LEVEL as u8, &mut OldIrql);
+    // [guard] KeRaiseIrql(APC_LEVEL as u8, &mut OldIrql);
+    let irql_guard_0 = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL as u8) };
     Thread = PsGetCurrentThread();
     IopUpdateOperationCount(IopOtherTransfer);
 
@@ -3282,7 +3283,7 @@ pub unsafe extern "system" fn NtCancelIoFile(
         NextEntry = (*NextEntry).Flink;
     }
 
-    KeLowerIrql(OldIrql);
+    drop(irql_guard_0);
 
     if OurIrpsInList != 0 {
         Interval.QuadPart = -100000i64;
@@ -3290,7 +3291,8 @@ pub unsafe extern "system" fn NtCancelIoFile(
             KeDelayExecutionThread(KernelMode, 0u8, &mut Interval);
             OurIrpsInList = 0u8;
 
-            KeRaiseIrql(APC_LEVEL as u8, &mut OldIrql);
+            // [guard] KeRaiseIrql(APC_LEVEL as u8, &mut OldIrql);
+            let irql_guard_1 = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL as u8) };
             NextEntry = (*ListHead).Flink;
             while NextEntry != ListHead {
                 Irp = (NextEntry as usize - core::mem::offset_of!(_IRP, ThreadListEntry)) as PIRP;
@@ -3300,7 +3302,7 @@ pub unsafe extern "system" fn NtCancelIoFile(
                 }
                 NextEntry = (*NextEntry).Flink;
             }
-            KeLowerIrql(OldIrql);
+            drop(irql_guard_1);
         }
     }
 
