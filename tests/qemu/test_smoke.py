@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -88,3 +89,53 @@ def test_screenshot(vm: QemuVM, arch: str) -> None:
             shutil.copy2(ppm_path, png_path)
 
     print(f"\n[screenshot] Saved to {png_path}")
+
+
+def test_sacred_primitives(arch: str) -> None:
+    """Verify that LLVM has not eliminated sacred IRQL/spinlock primitives.
+
+    Static binary analysis — no QEMU needed. Checks that KfRaiseIrql,
+    KfLowerIrql, KeAcquireSpinLock, etc. survive optimization in the
+    final ntoskrnl binary.
+    """
+    build_dir = PROJECT_DIR / f"build-{arch}"
+    ntoskrnl = build_dir / "ntoskrnl" / "ntoskrnl.exe"
+    if not ntoskrnl.exists():
+        pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
+
+    # Find a working objdump
+    objdump_candidates = {
+        "arm64": ["aarch64-w64-mingw32-objdump", "llvm-objdump"],
+        "amd64": ["x86_64-w64-mingw32-objdump", "llvm-objdump"],
+        "i386": ["i686-w64-mingw32-objdump", "llvm-objdump"],
+    }
+    objdump = None
+    for candidate in objdump_candidates.get(arch, ["llvm-objdump"]):
+        try:
+            subprocess.run([candidate, "--version"], capture_output=True, check=True)
+            objdump = candidate
+            break
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    if objdump is None:
+        pytest.skip("No objdump available")
+
+    result = subprocess.run(
+        [objdump, "-d", str(ntoskrnl)],
+        capture_output=True, text=True, timeout=120,
+    )
+    disasm = result.stdout
+
+    # amd64 uses direct CR8 access for IRQL, not KfRaiseIrql/KfLowerIrql
+    if arch == "amd64":
+        assert disasm.count("cr8") > 0, (
+            "No CR8 accesses in ntoskrnl — IRQL primitives may be eliminated"
+        )
+        assert "KeAcquireSpinLock" in disasm, (
+            "KeAcquireSpinLock not found in ntoskrnl — spinlock primitive eliminated"
+        )
+    else:
+        for prim in ["KfRaiseIrql", "KfLowerIrql", "KeAcquireSpinLock"]:
+            assert prim in disasm, (
+                f"{prim} not found in ntoskrnl — sacred primitive eliminated by LLVM"
+            )

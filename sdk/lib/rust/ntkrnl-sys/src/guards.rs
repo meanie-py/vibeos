@@ -100,6 +100,7 @@ pub unsafe fn irql_current() -> KIRQL {
 /// // ... code at DISPATCH_LEVEL ...
 /// // IRQL automatically restored when _irql goes out of scope
 /// ```
+#[must_use = "guard will immediately lower IRQL if not bound to a variable"]
 pub struct IrqlGuard {
     previous: KIRQL,
 }
@@ -149,6 +150,7 @@ impl Drop for IrqlGuard {
 /// // ... critical section at DISPATCH_LEVEL ...
 /// // lock released + IRQL restored when _lock goes out of scope
 /// ```
+#[must_use = "guard will immediately release spinlock if not bound to a variable"]
 pub struct SpinLockGuard {
     lock: PKSPIN_LOCK,
     previous_irql: KIRQL,
@@ -185,6 +187,7 @@ impl Drop for SpinLockGuard {
 
 /// RAII guard for kernel spinlocks when ALREADY at DISPATCH_LEVEL or higher.
 /// Does not change IRQL.
+#[must_use = "guard will immediately release spinlock if not bound to a variable"]
 pub struct SpinLockAtDpcGuard {
     lock: PKSPIN_LOCK,
 }
@@ -212,6 +215,7 @@ impl Drop for SpinLockAtDpcGuard {
 
 /// RAII guard for the kernel dispatcher lock (KiAcquireDispatcherLock/KiReleaseDispatcherLock).
 /// Raises to SYNCH_LEVEL on acquire, lowers on drop.
+#[must_use = "guard will immediately release dispatcher lock if not bound to a variable"]
 pub struct DispatcherLockGuard {
     previous_irql: KIRQL,
 }
@@ -248,6 +252,7 @@ impl Drop for DispatcherLockGuard {
 // ── QueuedSpinLockGuard ─────────────────────────────────────────────
 
 /// RAII guard for queued spinlocks (KeAcquireQueuedSpinLock/KeReleaseQueuedSpinLock).
+#[must_use = "guard will immediately release queued spinlock if not bound to a variable"]
 pub struct QueuedSpinLockGuard {
     number: u32,
     previous_irql: KIRQL,
@@ -291,6 +296,7 @@ impl Drop for QueuedSpinLockGuard {
 // ── CancelSpinLockGuard ─────────────────────────────────────────────
 
 /// RAII guard for the IO cancel spinlock (IoAcquireCancelSpinLock/IoReleaseCancelSpinLock).
+#[must_use = "guard will immediately release cancel spinlock if not bound to a variable"]
 pub struct CancelSpinLockGuard {
     previous_irql: KIRQL,
 }
@@ -320,6 +326,7 @@ impl Drop for CancelSpinLockGuard {
 // ── VpbSpinLockGuard ────────────────────────────────────────────────
 
 /// RAII guard for the VPB spinlock (IoAcquireVpbSpinLock/IoReleaseVpbSpinLock).
+#[must_use = "guard will immediately release VPB spinlock if not bound to a variable"]
 pub struct VpbSpinLockGuard {
     previous_irql: KIRQL,
 }
@@ -349,6 +356,7 @@ impl Drop for VpbSpinLockGuard {
 // ── ExpansionLockGuard ──────────────────────────────────────────────
 
 /// RAII guard for the MM expansion lock (MiAcquireExpansionLock/MiReleaseExpansionLock).
+#[must_use = "guard will immediately release expansion lock if not bound to a variable"]
 pub struct ExpansionLockGuard {
     previous_irql: KIRQL,
 }

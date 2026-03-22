@@ -1437,6 +1437,7 @@ pub fn mmpte_list_next_entry(pte: &MMPTE) -> ULONG_PTR {
 macro_rules! _A3_TRACE {
     ($($arg:tt)*) => {};
 }
+#[must_use = "guard will immediately release PFN lock if not bound to a variable"]
 pub struct PfnLockGuard { previous_irql: KIRQL }
 impl PfnLockGuard {
     #[inline] pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }

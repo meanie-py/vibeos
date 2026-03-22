@@ -37,99 +37,28 @@ These are the ~10 operations where hardware state changes must survive optimizat
 
 ### IRQL Raise/Lower
 
+Implemented in `ntkrnl-sys/src/guards.rs` as `irql_raise`/`irql_lower`/`irql_current`.
+
+- **amd64**: Direct `mov cr8` via inline asm — LLVM cannot optimize away real asm instructions
+- **ARM64/i386**: Extern call to HAL (`KfRaiseIrql`/`KfLowerIrql`) with asm barriers before and after
+
+### Asm Barrier Design
+
+The ARM64/i386 pattern uses empty asm statements as fences around extern calls:
+
 ```rust
-// In ntkrnl-sys/src/inline/irql.rs (new module)
-
-/// Raise IRQL — returns old IRQL. Uses architecture-specific implementation
-/// that LLVM cannot optimize away.
-#[inline(always)]
-pub unsafe fn irql_raise(new_irql: KIRQL) -> KIRQL {
-    let old: KIRQL;
-    #[cfg(target_arch = "x86_64")]
-    {
-        // Direct CR8 access — asm is opaque to LLVM
-        let old64: u64;
-        core::arch::asm!(
-            "mov {old}, cr8",
-            "mov cr8, {new}",
-            old = out(reg) old64,
-            new = in(reg) new_irql as u64,
-        );
-        old = old64 as KIRQL;
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        // ARM64 — call HAL via opaque extern (separate compilation unit)
-        extern "C" { fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL; }
-        // asm barrier prevents LLVM from proving the call is dead
-        core::arch::asm!("", options(nostack));
-        old = KfRaiseIrql(new_irql);
-        core::arch::asm!("", options(nostack));
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        extern "fastcall" { fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL; }
-        core::arch::asm!("", options(nostack));
-        old = KfRaiseIrql(new_irql);
-        core::arch::asm!("", options(nostack));
-    }
-    old
-}
-
-/// Lower IRQL — restores previous IRQL.
-#[inline(always)]
-pub unsafe fn irql_lower(new_irql: KIRQL) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        core::arch::asm!("mov cr8, {}", in(reg) new_irql as u64);
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        extern "C" { fn KfLowerIrql(NewIrql: KIRQL); }
-        core::arch::asm!("", options(nostack));
-        KfLowerIrql(new_irql);
-        core::arch::asm!("", options(nostack));
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        extern "fastcall" { fn KfLowerIrql(NewIrql: KIRQL); }
-        core::arch::asm!("", options(nostack));
-        KfLowerIrql(new_irql);
-        core::arch::asm!("", options(nostack));
-    }
-}
-
-/// Read current IRQL without changing it.
-#[inline(always)]
-pub unsafe fn irql_current() -> KIRQL {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let val: u64;
-        core::arch::asm!("mov {}, cr8", out(reg) val);
-        val as KIRQL
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        extern "C" { fn KeGetCurrentIrql() -> KIRQL; }
-        core::arch::asm!("", options(nostack));
-        let r = KeGetCurrentIrql();
-        core::arch::asm!("", options(nostack));
-        r
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        extern "system" { fn KeGetCurrentIrql() -> KIRQL; }
-        core::arch::asm!("", options(nostack));
-        let r = KeGetCurrentIrql();
-        core::arch::asm!("", options(nostack));
-        r
-    }
-}
+core::arch::asm!("", options(nostack));  // barrier
+let old = KfRaiseIrql(new_irql);
+core::arch::asm!("", options(nostack));  // barrier
 ```
+
+**Why this works:** Rust's `asm!` without the `nomem` option (our case) defaults to "may read and write memory." This prevents LLVM from reordering the extern call past the barriers or proving it has no observable effects. The `nostack` option just says we don't push/pop the stack — it does NOT imply `nomem`.
+
+**Verification:** The emitted LLVM IR should show the asm barriers as `call void asm sideeffect ""` with memory clobbers. Check with `--emit=llvm-ir` on each architecture. A post-build verification script (`tools/verify_sacred_primitives.sh`) greps `objdump -d` output to confirm `KfRaiseIrql`/`KfLowerIrql`/`KeAcquireSpinLock` calls survive in the final binary.
 
 ### Spinlock Acquire/Release
 
-Similar pattern — the actual lock acquire (atomic exchange) is inline asm, and the IRQL transition uses the sacred IRQL primitives above.
+SpinLockGuard delegates to the kernel's `KeAcquireSpinLock`/`KeReleaseSpinLock` — NOT a custom atomic spin loop. See "Lessons Learned" below.
 
 ### Trap Entry/Exit (ARM64)
 
@@ -137,70 +66,57 @@ Already in assembly (`ntoskrnl/ke/arm64/trap.S`, `zwdispatch.S`). No change need
 
 ## Layer 2: Guard Primitives
 
-All implemented in `ntkrnl-sys/src/guards.rs` and `ntoskrnl-rust/src/ARM3/helpers.rs`.
+All guards are `#[must_use]` — dropping without binding produces a compiler warning.
 
-### IrqlGuard
+### Core guards (`ntkrnl-sys/src/guards.rs`)
 
-```rust
-// ntkrnl-sys/src/guards.rs
-pub struct IrqlGuard { previous: KIRQL }
-impl IrqlGuard {
-    pub unsafe fn raise(new_irql: KIRQL) -> Self { ... }
-    pub unsafe fn raise_to_dpc() -> Self { ... }
-    pub unsafe fn raise_to_apc() -> Self { ... }
-    pub fn previous(&self) -> KIRQL { ... }
-}
-impl Drop for IrqlGuard { fn drop(&mut self) { irql_lower(self.previous) } }
-```
+| Guard | Acquire | Release | Use case |
+|-------|---------|---------|----------|
+| `IrqlGuard` | `irql_raise(level)` | `irql_lower(prev)` | Bare IRQL raise/lower |
+| `SpinLockGuard` | `KeAcquireSpinLock` | `KeReleaseSpinLock` | Standard kernel spinlocks |
+| `SpinLockAtDpcGuard` | `KeAcquireSpinLockAtDpcLevel` | `KeReleaseSpinLockFromDpcLevel` | Nested spinlocks at DISPATCH |
+| `DispatcherLockGuard` | `KiAcquireDispatcherLock` | `KiReleaseDispatcherLock` | Scheduler dispatcher lock |
+| `QueuedSpinLockGuard` | `KeAcquireQueuedSpinLock(N)` | `KeReleaseQueuedSpinLock(N)` | Queued spinlocks (e.g., IO database) |
+| `CancelSpinLockGuard` | `IoAcquireCancelSpinLock` | `IoReleaseCancelSpinLock` | IRP cancel spinlock |
+| `VpbSpinLockGuard` | `IoAcquireVpbSpinLock` | `IoReleaseVpbSpinLock` | Volume parameter block lock |
+| `ExpansionLockGuard` | `MiAcquireExpansionLock` | `MiReleaseExpansionLock` | MM working set expansion |
 
-### SpinLockGuard
+### Kernel-internal guard (`ntoskrnl-rust/src/ARM3/helpers.rs`)
 
-**IMPORTANT:** Uses kernel's `KeAcquireSpinLock`/`KeReleaseSpinLock`, NOT a custom atomic spin loop. A custom `AtomicUsize` spin loop was tried and caused deadlocks on i386 because the kernel's spinlock protocol involves more than just an atomic exchange (queued spinlocks, debugging hooks, etc.).
+| Guard | Acquire | Release | Use case |
+|-------|---------|---------|----------|
+| `PfnLockGuard` | `MiAcquirePfnLock` | `MiReleasePfnLock` | PFN database lock |
 
-```rust
-// ntkrnl-sys/src/guards.rs
-pub struct SpinLockGuard { lock: PKSPIN_LOCK, previous_irql: KIRQL }
-impl SpinLockGuard {
-    pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
-        let mut previous_irql: KIRQL = 0;
-        KeAcquireSpinLock(lock, &mut previous_irql);
-        Self { lock, previous_irql }
-    }
-}
-impl Drop for SpinLockGuard {
-    fn drop(&mut self) { KeReleaseSpinLock(self.lock, self.previous_irql) }
-}
-```
+### Guard Interop API
 
-### SpinLockAtDpcGuard
-
-For nested spinlock acquisition when already at DISPATCH_LEVEL.
+For bridging between guard-based Rust code and raw-KIRQL C interfaces:
 
 ```rust
-// ntkrnl-sys/src/guards.rs
-pub struct SpinLockAtDpcGuard { lock: PKSPIN_LOCK }
-impl SpinLockAtDpcGuard {
-    pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self { ... }
-}
-impl Drop for SpinLockAtDpcGuard {
-    fn drop(&mut self) { KeReleaseSpinLockFromDpcLevel(self.lock) }
-}
+// Wrap a raw KIRQL from an existing acquire into a guard
+let guard = PfnLockGuard::from_raw(old_irql);        // caller already holds lock
+let guard = QueuedSpinLockGuard::from_raw(17, irql);  // queued spinlock variant
+
+// Extract raw IRQL without releasing (for scheduler patterns)
+let irql = guard.previous_irql();  // borrow — guard still owns the lock
+
+// Consume guard WITHOUT releasing (for split-release patterns)
+let irql = guard.into_raw();  // guard is consumed, lock NOT released
+// caller must manually release: KiReleaseDispatcherLock(irql)
+
+// mem::forget is also used for split-release, equivalent to into_raw()
+let irql = guard.previous_irql();
+core::mem::forget(guard);  // prevent Drop from releasing
 ```
 
-### PfnLockGuard
+### SpinLockGuard: Why Not AtomicUsize
 
-Lives in `ntoskrnl-rust` (not `ntkrnl-sys`) because `MiAcquirePfnLock`/`MiReleasePfnLock` are kernel-internal.
+SpinLockGuard delegates to `KeAcquireSpinLock`/`KeReleaseSpinLock`, not a custom atomic spin loop. An earlier version used `AtomicUsize::compare_exchange_weak` and caused **deadlocks on i386** because:
 
-```rust
-// ntoskrnl-rust/src/ARM3/helpers.rs
-pub struct PfnLockGuard { previous_irql: KIRQL }
-impl PfnLockGuard {
-    pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }
-}
-impl Drop for PfnLockGuard {
-    fn drop(&mut self) { MiReleasePfnLock(self.previous_irql) }
-}
-```
+1. The kernel's spinlock protocol involves queued spinlocks, not simple test-and-set
+2. C code and Rust code racing on the same `KSPIN_LOCK` with different atomic implementations is a data race
+3. Debugging hooks (`KD_SPIN_LOCK_DEBUG`) in the C acquire path were bypassed
+
+Lesson: never reimplement kernel lock primitives — call the kernel's own functions.
 
 ## Layer 3: Internal Patterns
 
