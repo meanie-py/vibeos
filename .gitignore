@@ -50,3 +50,5 @@ qemu/reactos_*.qcow2
 # Host tools cmake artifacts (from in-tree configure)
 Makefile
 cmake_install.cmake
+qemu/manual-arm64-*/
+~*.md
