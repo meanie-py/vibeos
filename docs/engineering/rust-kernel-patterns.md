@@ -313,32 +313,28 @@ while cond { drop(pfn_guard); delay(); pfn_guard = PfnLockGuard::acquire(); }
 drop(pfn_guard);
 ```
 
-### Phase 3: Cross-Function Patterns — MOSTLY DONE
+### Phase 3: Cross-Function Patterns — DONE
 
-**Tier 1 (guard-passing, callee always releases once):** DONE
-- `MiCheckControlArea` → accepts `PfnLockGuard` by value (5 callers migrated)
+All tractable cross-function patterns have been migrated using three techniques:
 
-**Tier 2 (inner+wrapper for exported functions):** DONE
-- `MmDereferenceSegmentWithLock` → `MmDereferenceSegmentWithLockInner(Segment, Option<PfnLockGuard>)`
-- `MiCompleteProtoPteFault` → `MiCompleteProtoPteFaultInner(..., PfnLockGuard)`
-- `MiResolveProtoPteFault` → `MiResolveProtoPteFaultInner(..., mut PfnLockGuard)`
-- `CcRosDeleteFileCache` → `CcRosDeleteFileCacheInner(..., QueuedSpinLockGuard) -> QueuedSpinLockGuard`
-- Added `from_raw(irql)` / `into_raw()` / `irql()` accessors for guard ↔ raw KIRQL interop
+**Tier 1 — Guard-passing (callee always releases once):**
+- `MiCheckControlArea` → accepts `PfnLockGuard` by value (5 callers)
 
-**Tier 3 (won't migrate — scheduler split-release):** DEFERRED
-- `KiExitDispatcher(OldIrql)` — 15+ callers across 7 ke/ files. Pattern: release spinlock first via `KiReleaseDispatcherLockFromSynchLevel()`, then lower IRQL separately via `KiExitDispatcher(saved_irql)`. The IRQL value is also stored into `Thread.WaitIrql` and passed to `KiSwapContext` for context switches. This split-release pattern is fundamental to the scheduler's lock ordering and cannot be safely wrapped in a single guard.
-- `MiMakeSystemAddressValidPfn(ptr, OldIrql)` — release-pagefault-reacquire pattern; caller's IRQL copy becomes stale but works because DISPATCH spinlocks always save/restore the same IRQL.
+**Tier 2 — Inner+wrapper (exported functions with C ABI):**
+- `MmDereferenceSegmentWithLock` → `Inner(Segment, Option<PfnLockGuard>)`
+- `MiCompleteProtoPteFault` / `MiResolveProtoPteFault` → `Inner(..., PfnLockGuard)`
+- `CcRosDeleteFileCache` → `Inner(..., QueuedSpinLockGuard) -> QueuedSpinLockGuard`
+- Guard interop: `from_raw(irql)` / `into_raw()` / `previous_irql()` for bridging guards ↔ raw KIRQL
 
-**Remaining cross-function patterns (not yet migrated):**
-- `KiTimerListExpire_body(list, OldIrql)` — ke/dpc.rs, 1 caller
-- `MiMakeSystemAddressValidPfn` callers in ARM3/section.rs and ARM3/virtual.rs
+**Tier 3 — Consume+return (release-work-reacquire):**
+- `MiMakeSystemAddressValidPfn` → `Inner(PVOID, PfnLockGuard) -> (ULONG, PfnLockGuard)`
+- `KiTimerListExpire` → `Inner(PLIST_ENTRY, DispatcherLockGuard)` with `previous_irql()` + `mem::forget()` for the split-release DPC branch
 
 ### Phase 4: Complex Control Flow — PARTIALLY DONE
-- `cc/view.rs` — 5 complex functions migrated (FlushDirtyPages, TrimCache, ReleaseFileCache, InitializeFileCache, DeleteFileCache)
+- `cc/view.rs` — 5 complex functions migrated
 - Still remaining:
   - `ex/timer.rs` (38 calls) — timer cancellation/insertion with multiple lock types
-  - `pnpmgr/devaction.rs` (50 calls) — PnP device state machine
-  - `ke/dpc.rs` (21 calls) — DPC queue management
+  - `pnpmgr/devaction.rs` — remaining complex patterns after simple ones migrated
 
 ### Phase 5: Output Pointers → Result — NOT STARTED
 Priority targets for `captures(none)` protection:
@@ -346,74 +342,93 @@ Priority targets for `captures(none)` protection:
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
 
 ### Phase 6: Remove Shims — NOT STARTED
-Depends on Phase 3-4 completion per subsystem.
+Depends on Phase 4-5 completion per subsystem.
 
 ## Current State (as of 2026-03-22)
 
-| Pattern | Remaining Calls | Guard Instances | Status |
-|---------|----------------|-----------------|--------|
-| PFN lock (MiAcquire/ReleasePfnLock) | ~93 acquire + ~195 release | ~55 guards | Phase 2 done, Phase 3 in progress |
-| Spinlock (KeAcquire/ReleaseSpinLock) | ~102 acquire + ~120 release | ~40 guards | Phase 2 done |
-| SpinlockAtDpc | ~51 acquire + ~57 release | ~5 guards | Phase 2 done |
-| IRQL (KeRaiseIrql/KeLowerIrql) | ~139 raise + ~190 lower | ~48 guards | Phase 2 done |
-| Output pointers (Nt* exports) | ~100 | 0 | Not started |
-| Result-based probe API | 97 | N/A | Done (SE+OB) |
-| **Total guard instances** | | **~148** | |
+~260+ guard instances across the kernel. 9 guard types:
+- `IrqlGuard`, `SpinLockGuard`, `SpinLockAtDpcGuard`, `PfnLockGuard`
+- `DispatcherLockGuard`, `QueuedSpinLockGuard`, `CancelSpinLockGuard`, `VpbSpinLockGuard`, `ExpansionLockGuard`
 
-## Cross-Function Pattern Analysis
+All simple same-function patterns, cross-function guard-passing, inner+wrapper, and consume+return patterns are migrated. What remains is the scheduler's split-release pattern (see below) and some high-count complex files.
 
-The remaining ~300 sites are dominated by a few recurring cross-function patterns. These can't be migrated with simple guard replacement — they require API redesign.
+## Scheduler Split-Release — The Hard Problem
 
-### Pattern: Lock-Passing Chain (MiCheckControlArea)
+~24 call sites in the KE subsystem use a pattern that fundamentally resists single-guard RAII:
+
+### The Pattern
 
 ```rust
-// Current: OldIrql threaded through call chain
-fn MiDereferenceControlArea(ControlArea: PCONTROL_AREA) {
-    OldIrql = MiAcquirePfnLock();          // acquire here
-    MiCheckControlArea(ControlArea, OldIrql);  // release inside
-}
+// 1. Acquire APC lock — saves IRQL into lock handle struct
+KiAcquireApcLockRaiseToSynch(Thread, &mut ApcLock);  // ApcLock.OldIrql = previous IRQL
 
-fn MiCheckControlArea(ControlArea: PCONTROL_AREA, OldIrql: KIRQL) {
-    // ... check conditions ...
-    MiReleasePfnLock(OldIrql);  // release buried in callee
-}
+// 2. Acquire dispatcher lock at already-elevated IRQL (no IRQL change)
+KiAcquireDispatcherLockAtSynchLevel();
+
+// 3. Do dispatcher work (signal objects, wake threads, etc.)
+KiUnwaitThread(Thread, STATUS_SUCCESS, INCREMENT);
+
+// 4. Release spinlocks — but STAY at elevated IRQL
+KiReleaseDispatcherLockFromSynchLevel();    // release dispatcher spinlock
+KiReleaseApcLockFromSynchLevel(&mut ApcLock);  // release APC spinlock
+
+// 5. Lower IRQL + check for preemption — SEPARATELY from spinlock release
+KiExitDispatcher(ApcLock.OldIrql);  // may context switch!
 ```
 
-**Options:**
-1. **Guard-passing**: Change callee to accept `PfnLockGuard` by value (move semantics)
-2. **Split acquire/check**: Return a bool, let caller handle lock lifecycle
-3. **Callback**: Callee takes a closure that runs under the lock
+### Why a Single Guard Can't Work
 
-### Pattern: Release-Work-Reacquire (MiMakeSystemAddressValidPfn)
+A guard's `Drop` combines "release lock" and "restore IRQL" into one atomic operation. But the scheduler **intentionally separates these**:
+
+1. **Spinlocks are released first** (step 4) — other CPUs can now acquire the dispatcher lock and modify scheduler state.
+
+2. **IRQL stays elevated** — this prevents interrupts on the current CPU from preempting us between "spinlock released" and "preemption check done."
+
+3. **`KiExitDispatcher` then lowers IRQL** (step 5) — but first it checks `Prcb.NextThread` to see if a higher-priority thread became ready while we held the lock. If so, it does an immediate context switch rather than waiting for the next timer interrupt.
+
+If a guard dropped IRQL at the same time as releasing the spinlock, an interrupt could fire between the release and the preemption check. That interrupt's DPC could ready a high-priority thread, but we'd miss the preemption because we already lowered IRQL and returned to the caller.
+
+### IRQL Crosses the Context Switch Boundary
+
+In 6 of these sites, the raw IRQL value is stored into the thread struct before a context switch:
 
 ```rust
-fn MiSegmentDelete(Segment: PSEGMENT) {
-    old_irql = MiAcquirePfnLock();
-    // ... work under lock ...
-    MiMakeSystemAddressValidPfn(pfn, old_irql);  // releases, maps page, reacquires
-    // ... more work under lock ...
-    MiReleasePfnLock(old_irql);
-}
+*kt_WaitIrql(Thread) = OldIrql;       // save IRQL into thread for later
+PendingApc = KiSwapContext(OldIrql, Thread);  // context switch (asm)
+// ... we return here later, when rescheduled, possibly on a different CPU ...
+KeLowerIrql(OldIrql);
 ```
 
-**Options:**
-1. **Guard-passing with return**: Callee consumes guard, returns new guard
-2. **Split into explicit phases**: `drop(guard); do_work(); guard = acquire();`
+The IRQL value is consumed by the context switch assembly — it's saved into the thread's state and restored when the thread runs again, potentially much later and on a different processor. A guard's lifetime is meaningless across a context switch because the thread's execution is suspended and resumed in an entirely different context.
 
-### Pattern: Conditional Lock Ownership (MmDereferenceSegmentWithLock)
+### What Would It Take to Guard This?
+
+A hypothetical `DispatcherSession` API would need to model the full lifecycle:
 
 ```rust
-fn MmDereferenceSegmentWithLock(Segment: PMM_SECTION_SEGMENT, OldIrql: KIRQL) {
-    if InterlockedDecrement64(&mut (*Segment).RefCount) == 0 {
-        // ... cleanup, releases lock somewhere inside ...
-    }
-    MiReleasePfnLock(OldIrql);  // unconditional release at end
-}
+// Hypothetical — NOT implemented
+let session = DispatcherSession::begin(Thread);  // acquire APC + dispatcher locks
+session.unwait_thread(Thread, STATUS_SUCCESS);   // work under both locks
+session.exit();  // release locks, lower IRQL, check preemption, maybe context switch
 ```
 
-**Options:**
-1. **Accept guard by value**: `fn ...(guard: PfnLockGuard)` — drop handles release
-2. **Return remaining IRQL**: If callee needs to release early in some paths
+This would be a significant scheduler API redesign — every KE function that signals an object (`KeSetEvent`, `KeReleaseSemaphore`, `KeReleaseMutant`, `KeInsertQueue`, etc.) would need to use it. The benefit is real (the split-release dance is error-prone and the raw IRQL threading is invisible state), but the scope is large and the scheduler is the most risk-sensitive part of the kernel.
+
+### Files Affected
+
+| File | Sites | Pattern |
+|------|-------|---------|
+| ke/thrdobj.rs | 7 | ApcLock/LockHandle → KiExitDispatcher |
+| ke/procobj.rs | 4 | ProcessLock/ApcLock → KiExitDispatcher |
+| ke/eventobj.rs | 2 | WaitIrql store + KiExitDispatcher |
+| ke/queue.rs | 3 | WaitIrql + KiExitDispatcher |
+| ke/gate.rs | 1 | ApcLock → KiExitDispatcher |
+| ke/timerobj.rs | 1 | OldIrql → KiExitDispatcher |
+| ke/apc.rs | 1 | ApcLock → KiExitDispatcher |
+| ke/mutex.rs | 1 | WaitIrql store + KiExitDispatcher |
+| ke/semphobj.rs | 1 | WaitIrql store + KiExitDispatcher |
+| ke/wait.rs | 1 | WaitIrql + KiSwapContext + KeLowerIrql |
+| ke/thrdschd.rs | 2 | WaitIrql + KiSwapContext |
 
 ## Relationship to Other Docs
 
