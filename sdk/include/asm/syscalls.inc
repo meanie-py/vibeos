@@ -158,9 +158,13 @@ ENDM
 .endm
 .macro STUB_K Name, ArgCount
     START_PROC Zw\Name, 0
+    /* ARM64 kernel-mode Zw* — direct dispatch, no SVC.
+     * x0-x7 contain the original syscall arguments (untouched).
+     * x8 = syscall ID (set below, used by KiArm64ZwDispatch).
+     * KiArm64ZwDispatch is a C function that reads x8 via inline asm,
+     * sets PreviousMode=KernelMode, dispatches Nt*, restores PreviousMode. */
     mov x8, #SyscallId
-    svc #0
-    ret
+    b KiArm64ZwDispatch
     SyscallId = SyscallId + 1
 .endm
 #else

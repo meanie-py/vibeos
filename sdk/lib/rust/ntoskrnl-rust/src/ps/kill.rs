@@ -40,6 +40,26 @@ unsafe fn RemoveEntryList(entry: *mut _LIST_ENTRY) -> bool {
     flink == blink
 }
 
+#[cfg(target_arch = "aarch64")]
+unsafe fn Arm64TraceImageName(prefix: PCSTR, image_name: *const i8, len: usize) {
+    let mut buf = [0u8; 32];
+    let mut i = 0usize;
+
+    while i < len && i + 1 < buf.len() {
+        let ch = *image_name.add(i) as u8;
+        if ch == 0 {
+            break;
+        }
+        buf[i] = ch;
+        i += 1;
+    }
+    buf[i] = 0;
+
+    ARM64_UART_TRACE(prefix);
+    ARM64_UART_TRACE(buf.as_ptr() as PCSTR);
+    ARM64_UART_TRACE(b"\r\n\0".as_ptr() as PCSTR);
+}
+
 extern "C" {
     static mut PspActiveProcessMutex: _KGUARDED_MUTEX;
     static mut PspCidTable: PHANDLE_TABLE;
@@ -474,6 +494,27 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
 
     thread = PsGetCurrentThread();
     current_process = (*(thread as *mut _ETHREAD)).ThreadsProcess;
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Process=\0".as_ptr() as PCSTR, current_process as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Thread=\0".as_ptr() as PCSTR, thread as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: ExitStatus=\0".as_ptr() as PCSTR, exit_status as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Teb=\0".as_ptr() as PCSTR, (*(thread as *mut _ETHREAD)).Tcb.Teb as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspExitThread: StartAddress=\0".as_ptr() as PCSTR,
+            (*(thread as *mut _ETHREAD))
+                .__bindgen_anon_6
+                .StartAddress
+                .map(|f| f as ULONG_PTR)
+                .unwrap_or(0),
+        );
+        Arm64TraceImageName(
+            b"[PS] PspExitThread: Image=\0".as_ptr() as PCSTR,
+            (*(current_process as *mut _EPROCESS)).ImageFileName.as_ptr(),
+            core::mem::size_of_val(&(*(current_process as *mut _EPROCESS)).ImageFileName),
+        );
+    }
 
     if KeIsAttachedProcess() != 0 {
         KeBugCheckEx(

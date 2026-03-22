@@ -565,7 +565,10 @@ pub unsafe fn NtCurrentTeb() -> PVOID {
     #[cfg(target_arch = "aarch64")]
     {
         let teb: PVOID;
-        core::arch::asm!("mrs {}, TPIDR_EL0", out(reg) teb);
+        // Windows ARM64 uses x18 as the platform register that carries the
+        // current TEB pointer. TPIDR_EL0 is not the kernel's source of truth
+        // for NtCurrentTeb and can hold unrelated values during thread startup.
+        core::arch::asm!("mov {}, x18", out(reg) teb, options(nomem, nostack, preserves_flags));
         teb
     }
 }

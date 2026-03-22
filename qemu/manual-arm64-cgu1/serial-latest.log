@@ -1,0 +1,281 @@
+UEFI firmware (version edk2-stable202402-prebuilt.qemu.org built at 18:18:38 on Apr  9 2024)
+Error: Image at 0007FC7F000 start failed: Unsupported
+Error: Image at 0007FBFF000 start failed: Not Found
+Tpm2SubmitCommand - Tcg2 - Not Found
+Tpm2GetCapabilityPcrs fail!
+Tpm2SubmitCommand - Tcg2 - Not Found
+Image type X64 can't be loaded on AARCH64 UEFI system.
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI Non-Block Boot Device" from PciRoot(0x0)/Pci(0x2,0x0)
+ConvertPages: failed to find range 140000000 - 140057FFF
+BdsDxe: starting Boot0001 "UEFI Non-Block Boot Device" from PciRoot(0x0)/Pci(0x2,0x0)
+UEFI EntryPoint: Starting freeldr from UEFI
+[freeldr] MachInit done
+[freeldr] UI initialized
+ConvertPages: Incompatible memory types, the pages to allocate have been allocated
+[freeldr] Memory manager initialized
+[freeldr] Filesystem initialized
+[freeldr] Module list initialized
+(\boot\freeldr\freeldr\disk\partition.c:433) fixme: DiskGetPartitionEntry() unimplemented for RAW
+[freeldr] Boot devices initialized
+[freeldr] Switching stack...
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('sacdrv.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\sacdrv.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('wdf01000.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\wdf01000.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('isapnp.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\isapnp.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('pci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\pci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('acpi.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\acpi.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('partmgr.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\partmgr.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbccgp.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbccgp.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbehci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbehci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbhub.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbhub.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbohci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbohci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbuhci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbuhci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('mountmgr.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\mountmgr.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('uniata.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\uniata.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('buslogic.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\buslogic.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbstor.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbstor.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('disk.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\disk.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('cdrom.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\cdrom.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('ksecdd.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\ksecdd.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('nmidebug.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\nmidebug.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('ndis.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\ndis.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('swenum.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\swenum.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('mup.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\mup.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:1275) err: Debug mode: connect debugger on port COM1
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:335) err: >>> WinLdrSetupMachineDependent for ARM64
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:350) err: >>> Allocating page tables...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:359) err: >>> Mapping special pages...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:368) err: <<< WinLdrSetupMachineDependent done
+(\boot\freeldr\freeldr\ntldr\winldr.c:1290) err: >>> WinLdrSetupMemoryLayout...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1296) err: >>> WinLdrSetProcessorContext...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:260) err: >>> WinLdrSetProcessorContext for ARM64
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:261) err:   PGD at physical 0000000042C77000
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:304) err: <<< WinLdrSetProcessorContext done: TTBR0=TTBR1=0000000042C77000 TCR=0x2b5103510 MAIR=0x4400ff
+(\boot\freeldr\freeldr\ntldr\winldr.c:1303) err: >>> Page tables active! Extension=FFFFF800421360F0 KiSystemStartup=FFFFF8004222BA84
+(\boot\freeldr\freeldr\ntldr\winldr.c:1304) err: >>> Writing LoaderPagesSpanned...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1310) err: >>> Zeroing KI_USER_SHARED_DATA at FFFFF78000000000...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1316) err: >>> Calling KiSystemStartup(FFFFF80042136000)...
+[KERNEL] KiSystemStartup entered!
+[KERNEL] VBAR_EL1 installed
+[KERNEL] pre-HAL
+[KERNEL] Calling ExpInitializeExecutive
+[MM] MmArmInitSystem entered
+[MM] MiScanMemoryDescriptors
+[MM] MiScanMemoryDescriptors done
+[MM] MiInitMachineDependent
+[MM] post-MiInitMachineDependent
+[MM] MmInitializeMemoryLimits enter
+[MM] MmInitializeMemoryLimits alloc
+[MM] MmInitializeMemoryLimits loop
+[MM] post-MmInitializeMemoryLimits
+[MM] post-bitmap
+[MM] post-product
+[MM] MiBuildPagedPool
+[MM] MiInitializeLoadedModuleList
+[MM] MiInitializeLoadedModuleList returned
+[MM] MmArmInitSystem about to return
+[MM] MmArmInitSystem returning TRUE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[KERNEL] ExpInitializeExecutive returned!
+[KERNEL] Entering KiIdleLoop
+[KERNEL] KiIdleLoop@0xfffff80042229e2c
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:496) Display: 'UEFI GOP Framebuffer'
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:53) IsNewConfigData:TRUE
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:225) **  FbBVid: New Config data found
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:84) GetVideoData
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:136)     CmResourceTypeMemory
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:155)     CmResourceTypeDeviceSpecific
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:239) **  FbBVid: Got video RAM address: 0x7C7A0000 - Size: 3145728
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:260) **  FbBVid: Framebuffer at: 0x7C7A0000
+(\sdk\include\reactos\drivers\bootvid\framebuf.c:599) 
+Boot Display found on Interface 0, Bus 0
+    VideoRamAddress   : 0x7C7A0000
+    VideoRamSize      : 3145728
+    Version           : 1.3
+    VideoClock        : 0
+Framebuffer format:
+    BaseAddress       : 0x7C7A0000
+    ScreenWidth       : 800
+    ScreenHeight      : 600
+    PixelsPerScanLine : 800
+    BitsPerPixel      : 32
+    ARGB masks:       : ff000000/00ff0000/0000ff00/000000ff
+(\drivers\base\bootvid\framebuf\bootvid.c:280) Scaling X = 1, Y = 1
+(\drivers\base\bootvid\framebuf\bootvid.c:287) Borders X = 80, Y = 60
+[MM1] MiCreateMemoryEvent LowMem
+[MM1] MiCreateMemoryEvent HighMem
+[MM1] MiCreateMemoryEvent LowPagedPool
+[MM1] MiCreateMemoryEvent HighPagedPool
+[MM1] MiCreateMemoryEvent LowNonPagedPool
+[MM1] MiCreateMemoryEvent HighNonPagedPool
+[MM1] MiInitializePoolEvents
+[MM1] MiNotifyMemoryEvents
+[MM1] MiInitializeMemoryEvents done
+[IO] IopInitLookasideLists
+[IO] IopCreateObjectTypes
+[IO] IopCreateRootDirectories
+[IO] IopInitializePlugPlayServices
+WARNING:  ArbBuildAssignmentOrdering at \sdk\lib\drivers\arbiter\arbiter.c:275 is UNIMPLEMENTED!
+WARNING:  ArbBuildAssignmentOrdering at \sdk\lib\drivers\arbiter\arbiter.c:275 is UNIMPLEMENTED!
+WARNING:  ArbBuildAssignmentOrdering at \sdk\lib\drivers\arbiter\arbiter.c:275 is UNIMPLEMENTED!
+WARNING:  ArbBuildAssignmentOrdering at \sdk\lib\drivers\arbiter\arbiter.c:275 is UNIMPLEMENTED!
+WARNING:  ArbBuildAssignmentOrdering at \sdk\lib\drivers\arbiter\arbiter.c:275 is UNIMPLEMENTED!
+[IO] HalInitPnpDriver
+[IO] PiQueueDeviceAction
+[IO] IopInitializeBootDrivers
+ arm64input.sys
+[ARM64INPUT] DriverEntry
+[ARM64INPUT] \Device\KeyboardClass0 created
+[ARM64INPUT] \Device\PointerClass0 created
+[VIRTIO-INPUT] Found 0 input device(s)
+
+ arm64vid.sys
+[arm64vid] DriverEntry
+[arm64vid] Found DisplayController at adapter 0 instance 0
+[arm64vid] Configuration Data: 2 partial descriptors
+[arm64vid] Memory resource: phys=0x7c7a0000, size=0x300000
+[arm64vid] Display: 800x600, 32 BPP, stride=3200, R=0xff0000 G=0xff00 B=0xff
+[arm64vid] Framebuffer: 800x600 32 BPP, phys=0x7c7a0000, size=0x300000, stride=3200
+[arm64vid] DEVICEMAP\VIDEO written
+[arm64vid] Service config written (framebuf, 800x600 32bpp)
+[arm64vid] DriverEntry SUCCESS
+
+ pl011.sys
+[PL011] DriverEntry
+[PL011] UART mapped at FFFF800004FDB000
+[PL011] UARTCR = 0x00000301 (UARTEN=1 TXE=1 RXE=1)
+[PL011] Driver loaded OK
+
+ fastfat.sys
+
+ ramdisk.sys
+
+(\drivers\storage\class\ramdisk\ramdisk.c:2122) Illegal IRP: 14
+[IO] IopReinitializeBootDrivers
+[IO] Checking ArcBootDeviceName for ramdisk...
+[IO] IopStartRamdisk
+[RAMDISK] Scanning for XIPRom descriptor
+[RAMDISK] Opening \Device\Ramdisk
+[RAMDISK] Sending FSCTL_CREATE_RAM_DISK
+[RAMDISK] Creating \ArcName\ramdisk(0) symlink
+[RAMDISK] Waiting for PiEnumerationFinished
+(\drivers\storage\class\ramdisk\ramdisk.c:2122) Illegal IRP: d
+(\drivers\storage\class\ramdisk\ramdisk.c:2122) Illegal IRP: 14
+[RAMDISK] PiEnumerationFinished signaled
+[RAMDISK] IopStartRamdisk SUCCESS
+[IO] IopStartRamdisk done
+[IO] Testing ramdisk filesystem access...
+[IO] ZwOpenFile(ntdll.dll) start
+
+
+
+
+(\drivers\storage\class\ramdisk\ramdisk.c:1344) IOCTL: 0x70048 is UNSUPPORTED!
+(\drivers\storage\class\ramdisk\ramdisk.c:1344) IOCTL: 0x2d0c14 is UNSUPPORTED!
+(\drivers\storage\class\ramdisk\ramdisk.c:1344) IOCTL: 0x2d1080 is UNSUPPORTED!
+(\drivers\storage\class\ramdisk\ramdisk.c:1344) IOCTL: 0x74000 is UNSUPPORTED!
+ERROR:  RamdiskDeviceControl at \drivers\storage\class\ramdisk\ramdisk.c:1336 is UNIMPLEMENTED!
+IOCTL: 0x70024 is UNIMPLEMENTED!
+[IO] ZwOpenFile(ntdll.dll) SUCCESS!
+[IO] IopCreateArcNames
+[IO] IopMarkBootPartition
+[IO] IopMarkBootPartition done
+[IO] IopInitializeSystemDrivers
+
+[IO] IopInitializeSystemDrivers done
+[IO] IopReassignSystemRoot
+[IO] IopReassignSystemRoot done
+[IO] IoAssignDriveLetters
+[IO] IoAssignDriveLetters done
+[IO] PsLocateSystemDll
+[IO] IoInitSystem returning TRUE
+=4=\SeRmCommandPort
+[MM] MiArchCreateProcessAddressSpace
+[MM] MiArchCreateProcessAddressSpace done
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1206
+
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at \ntoskrnl\mm\ARM3\miarm.h:1283
+
+*** BUGCHECK: 0x0000006A
+x

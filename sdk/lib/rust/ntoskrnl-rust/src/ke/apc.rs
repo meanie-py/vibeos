@@ -504,7 +504,7 @@ pub unsafe extern "system" fn KeInsertQueueApc(
     }
 
     KiReleaseApcLockFromSynchLevel(&mut ApcLock);
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
     State
 }
 

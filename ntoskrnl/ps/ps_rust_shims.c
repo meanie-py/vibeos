@@ -511,7 +511,13 @@ VOID PspUnlockThreadSecurityExclusive(PETHREAD Thread)
 
 PTEB NtCurrentTeb(void)
 {
+#ifdef _M_ARM64
+    PTEB Teb;
+    __asm__ __volatile__("mov %0, x18" : "=r"(Teb));
+    return Teb;
+#else
     return _fi_NtCurrentTeb();
+#endif
 }
 
 VOID KeInitializeSpinLock(PKSPIN_LOCK SpinLock)

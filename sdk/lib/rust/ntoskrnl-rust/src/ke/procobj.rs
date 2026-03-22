@@ -334,7 +334,7 @@ pub unsafe extern "system" fn KeSetAffinityProcess(
 
     KiReleaseDispatcherLockFromSynchLevel();
     KiReleaseProcessLockFromSynchLevel(core::ptr::addr_of_mut!(ProcessLock));
-    KiExitDispatcher(ProcessLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ProcessLock.OldIrql));
 
     OldAffinity
 }
@@ -494,7 +494,7 @@ pub unsafe extern "system" fn KeSetPriorityAndQuantumProcess(
 
     KiReleaseDispatcherLockFromSynchLevel();
     KiReleaseProcessLockFromSynchLevel(core::ptr::addr_of_mut!(ProcessLock));
-    KiExitDispatcher(ProcessLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ProcessLock.OldIrql));
 
     OldPriority
 }
@@ -544,6 +544,7 @@ pub unsafe extern "system" fn KeQueryValuesProcess(
 }
 
 #[no_mangle]
+#[cfg_attr(target_arch = "aarch64", inline(never))]
 pub unsafe extern "system" fn KeAttachProcess(Process: PKPROCESS) {
     const OriginalApcEnvironment: UCHAR = 0;
 
@@ -576,6 +577,7 @@ pub unsafe extern "system" fn KeAttachProcess(Process: PKPROCESS) {
 }
 
 #[no_mangle]
+#[cfg_attr(target_arch = "aarch64", inline(never))]
 pub unsafe extern "system" fn KeDetachProcess() {
     const OriginalApcEnvironment: UCHAR = 0;
 
@@ -620,7 +622,9 @@ pub unsafe extern "system" fn KeDetachProcess() {
 
     KiSwapProcess((*Thread).__bindgen_anon_1.ApcState.Process, Process);
 
-    KiExitDispatcher(ApcLock.OldIrql);
+    // read_volatile prevents LLVM from proving OldIrql is the zeroed init value
+    // (C shim KiAcquireApcLockRaiseToSynch writes it through a pointer)
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
 
     if !IsListEmpty(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.ApcState.ApcListHead[0])) {
         (*Thread).__bindgen_anon_1.ApcState.KernelApcPending = 1;
@@ -736,7 +740,9 @@ pub unsafe extern "system" fn KeUnstackDetachProcess(ApcState: PRKAPC_STATE) {
 
     KiSwapProcess((*Thread).__bindgen_anon_1.ApcState.Process, Process);
 
-    KiExitDispatcher(ApcLock.OldIrql);
+    // read_volatile prevents LLVM from proving OldIrql is the zeroed init value
+    // (C shim KiAcquireApcLockRaiseToSynch writes it through a pointer)
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
 
     if !IsListEmpty(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.ApcState.ApcListHead[0])) {
         (*Thread).__bindgen_anon_1.ApcState.KernelApcPending = 1;

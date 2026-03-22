@@ -8,19 +8,15 @@ Items below are drawn from ChatGPT planning sessions and ongoing work. Scoped wi
 
 ## Phase 0 — Active Translation Work (before this roadmap)
 
-Everything below in this document is longer-term. The immediate translation campaign is tracked in these documents and should be substantially complete first:
+Everything below in this document is longer-term. The immediate translation campaign is tracked in these documents and should be substantially complete first.
 
-### 0a. IO Subsystem Activation — [`~status-update.md`](~status-update.md)
+Completed items: see [`vibeos-roadmap-complete.md`](vibeos-roadmap-complete.md)
 
-Current file-by-file debugging of iomgr/ and pnpmgr/ C→Rust activation. In-the-weeds crash diagnosis and fix work. See that doc for details.
+### 0a. IO Subsystem Activation — [`status-update.md`](status-update.md)
 
-### 0b. Repo Restructure — [`~repo-restructure-plan.md`](~repo-restructure-plan.md)
+IO subsystem C→Rust activation is **substantially complete**. All iomgr/ and pnpmgr/ modules now active on all 3 arches. Remaining: ARM64 desktop rendering (SMSS not starting), amd64 taskbar regression (explorer shell UI not rendering). See status-update.md and engineering docs.
 
-Flatten `os-playground/reactos/` → `vibeos/` as a single git repo. Move build dirs, qemu scripts, docs, and toolchain inside the repo root. Update all paths in CLAUDE.md, cmake, and scripts. Migrate Claude Code memory directory.
-
-**Size: S** — Mechanical but touches many paths. Half a day if nothing breaks.
-
-### 0c. Finish ntoskrnl Translation — [`~ntoskrnl-translation-audit.md`](~ntoskrnl-translation-audit.md)
+### 0b. Finish ntoskrnl Translation — [`../engineering/ntoskrnl-translation-audit.md`](../engineering/ntoskrnl-translation-audit.md)
 
 **~52K lines of C remaining** across 70 files in 6 subsystems. Current kernel is ~344K lines Rust (~80%). After this phase: ~98% Rust.
 
@@ -37,7 +33,7 @@ Flatten `os-playground/reactos/` → `vibeos/` as a single git repo. Move build 
 
 **Size: M-L** — config/ is the hard one (complex data structures, locking). fstub/ is a quick win. Total ~2-3 weeks.
 
-### 0d. Beyond ntoskrnl — [`~beyond-ntoskrnl-targets.md`](~beyond-ntoskrnl-targets.md)
+### 0c. Beyond ntoskrnl — [`../engineering/beyond-ntoskrnl-targets.md`](../engineering/beyond-ntoskrnl-targets.md)
 
 After ntoskrnl is fully Rust, translate the rest of the kernel-adjacent stack. **~500K+ lines across multiple components**, spanning months of work.
 

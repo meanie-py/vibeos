@@ -1,139 +1,147 @@
-# ARM64 Boot Regression — Debug Brief
+# ARM64 Desktop Boot — Debug Brief
 
-## Problem
+## Current State
 
-ARM64 crashes with BUGCHECK 0x6B (PROCESS1_INITIALIZATION_FAILED) during early kernel init. `PsCreateSystemThread` returns `STATUS_INSUFFICIENT_RESOURCES` (0xC000009A) when trying to create the Phase 1 initialization thread. The system process itself is created successfully.
+ARM64 boots through kernel init and IoInitSystem under CGU=16, but SMSS never starts (black screen). Under CGU=1 the boot gets further but hits a different crash. There are two independent bugs with different root causes.
 
-**i386 and amd64 both boot to desktop (4/4 smoke tests).** Only ARM64 is affected.
+**i386 and amd64 boot to desktop.** ARM64 previously had a full desktop (Milestone 27+, Feb 2026).
 
-The ARM64 regression was confirmed as pre-existing — it reproduces identically with and without the recent constant-fix changes (tested by stashing all changes and retesting baseline).
+## The Two Bugs
 
-## Boot Trace (Serial Output)
+### Bug 1: PspCreateThread `captures(none)` (CGU=16) — WORKED AROUND
+- **Symptom:** BUGCHECK 0x6B — PsCreateSystemThread returns STATUS_INSUFFICIENT_RESOURCES during Phase 1
+- **Root cause:** LLVM cross-CGU `captures(none)` attribute propagation eliminates output pointer writes in PspCreateThread
+- **Workaround:** `#[inline(never)]` on PspCreateThread (committed `08f89eb8`)
+- **With workaround:** Boot reaches IoInitSystem, but SMSS never starts. Serial goes silent after `IoInitSystem returning TRUE`. No crash, just idle.
+- **Note:** The CGU=16 idle-out (SMSS never starting) is likely ANOTHER `captures(none)` victim — some APC queueing or thread state transition is being silently optimized away, causing the kernel to idle forever waiting for a flag that was never set.
+- **Proper fix:** CGU=1 eliminates this class entirely, but exposes Bug 2
 
-The kernel gets through:
-1. FreeLDR UEFI boot, page table setup, KiSystemStartup
-2. Full MM init (MmArmInitSystem, pool, PFN database, paged pool)
-3. PS Phase 0 init (PspInitPhase0)
-4. System process creation (PspCreateProcess succeeds, Status=0)
+### Bug 2: ARM64 Zw* Stubs at Elevated IRQL (CGU=1) — UNRESOLVED
+- **Symptom:** BUGCHECK 0x6A — `ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL` in MiLockProcessWorkingSetShared
+- **Caller:** CmpFindSubKeyInLeaf → ZwFlushVirtualMemory (via `svc #0`) at IRQL=2
+- **Root cause:** ARM64 kernel-mode `Zw*` stubs use `svc #0` (software exception) for ALL callers, including kernel-mode callers at elevated IRQL. The SVC handler (`KiSvcDispatch` in trap.rs) dispatches the Nt* function without managing IRQL.
 
-Then fails at:
+**This is an architectural bug, NOT a compiler optimization bug.** Multiple independent reviews (Gemini, Claude, ChatGPT) agree:
+- On real Windows ARM64, kernel-mode `Zw*` calls are **inline thunks** that set PreviousMode and call the Nt* function directly — they do NOT go through SVC
+- SVC (`svc #0`) should only be used for **user-mode → kernel-mode transitions**
+- On x86/amd64, `int 0x2E` / `syscall` trap handlers implicitly manage IRQL as part of the hardware exception entry, masking the issue. ARM64 SVC has no such implicit IRQL management.
+
+## Revised Root Cause Analysis
+
+### Why Bug 1 ≠ Bug 2
+
+Bug 1 is a `captures(none)` attribute propagation issue — well-understood, has workaround, would be fixed by stripping the attribute.
+
+Bug 2 is an **architecture-level** problem with how ARM64 `Zw*` stubs work. Attempts to fix it by adding IRQL management to the SVC handler all failed — not because LLVM "deletes arbitrary opaque C calls," but because the approach is architecturally wrong. Lowering IRQL in the generic SVC handler would mask violations and risk breaking invariants for callers that are legitimately at DISPATCH.
+
+The earlier diagnosis ("LLVM eliminates extern C calls under CGU=1") was too broad. The more likely explanation is one of:
+1. The IRQL helper has `memory(none)` or `readnone` attributes in LLVM IR, making the elimination legitimate from LLVM's perspective
+2. LLVM proves the store to `HalpCurrentIrql` (in the HAL DLL) is not observable from the Rust module and eliminates it
+3. The entire issue is moot — the fix shouldn't be "lower IRQL in SVC handler" but "don't use SVC for kernel-mode Zw* calls"
+
+## Recommended Fix: Direct Zw* Dispatch for Kernel Mode
+
+Instead of `svc #0`, ARM64 kernel-mode `Zw*` stubs should:
+
 ```
-[PS] Creating Phase1 thread
-[PS] FAIL: PsCreateSystemThread status=0xFFFFFFFFC000009A
-*** BUGCHECK: 0x0000006B
+ZwFlushVirtualMemory:
+    // Save PreviousMode, set to KernelMode
+    mrs x9, tpidr_el1           // get KPCR/KTHREAD
+    ldrb w10, [x9, #PreviousMode_offset]  // save old mode
+    strb wzr, [x9, #PreviousMode_offset]  // set KernelMode (0)
+
+    // Call Nt* function directly (no SVC, no IRQL change)
+    bl NtFlushVirtualMemory
+
+    // Restore PreviousMode
+    strb w10, [x9, #PreviousMode_offset]
+    ret
 ```
 
-## Call Chain
+This matches the Windows NT architecture: `Zw*` from kernel mode = direct call with PreviousMode set to KernelMode. No trap, no IRQL transition, no SVC overhead.
 
+**Implementation options:**
+1. Generate ARM64 `Zw*` thunks in assembly (`.S` file) — cleanest, LLVM can't touch it
+2. Generate them as `global_asm!` in Rust — same effect, stays in Rust source
+3. Generate them as C functions with `__attribute__((naked))` — Clang handles ARM64 naked functions
+
+This fix would simultaneously:
+- Eliminate the IRQL assertion failure (no SVC = no IRQL context switch)
+- Fix the performance overhead of going through SVC for kernel calls
+- Match the NT architecture more closely
+- Be immune to LLVM optimization (assembly is not optimized)
+
+## Debugging Leads Still Open
+
+### Pre-opt vs Post-opt IR Comparison
+Use `-C no-prepopulate-passes --emit=llvm-ir` to see the IR before LLVM's optimization pipeline, then compare with the normal `--emit=llvm-ir` output. This would reveal:
+- Whether IRQL helper calls have wrong attributes (`memory(none)`, `readnone`, `speculatable`)
+- Whether the call elimination is a legitimate optimization from LLVM's perspective
+- Whether `captures(none)` is even the right attribute to blame
+
+### ASM Memory Clobber Barrier
+`core::arch::asm!("", options(nostack))` WITHOUT `nomem` forces LLVM to treat all memory as potentially modified. This is stronger than `black_box` (which Rust docs explicitly say is best-effort only). Worth testing as a lighter alternative to the LLVM pass:
+```rust
+// Before IRQL-sensitive call
+core::arch::asm!("", options(nostack)); // memory clobber
+KeLowerIrql(PASSIVE_LEVEL);
+core::arch::asm!("", options(nostack)); // memory clobber
 ```
-ExpInitializeExecutive (Phase 0)
-  → PspInitPhase0
-    → PspCreateProcess (system process) → OK
-    → PsCreateSystemThread (Phase 1 thread)
-      → PspCreateThread(ThreadHandle, ..., PsInitialSystemProcess, ...)
-        → ObCreateObject(PsThreadType, ...) → returns ETHREAD
-        → MmCreateKernelStack → allocates thread stack
-        → KeInitThread → sets up KTHREAD context
-        → ObInsertObject → inserts into handle table
-        → ... → returns STATUS_INSUFFICIENT_RESOURCES somewhere
-```
 
-STATUS_INSUFFICIENT_RESOURCES (0xC000009A) can come from:
-- Pool allocation failure (unlikely — pool just initialized, ~64MB available)
-- ObCreateObject failure (object creation)
-- MmCreateKernelStack failure (kernel stack allocation)
-- ObInsertObject failure (handle table)
+### CGU=16 Idle-Out Investigation
+The CGU=16 workaround gets past PspCreateThread but SMSS never starts. This is likely another `captures(none)` victim in the Phase1 init path — some thread state transition or APC delivery is being silently eliminated. Adding IRQL/state traces between IoInitSystem return and the SMSS creation point would identify which call is being lost.
 
-## Key Differences: ARM64 vs amd64/i386
+## Resolution Priority
 
-1. **Boot media**: ARM64 uses UEFI ramdisk (boot.img + ramdisk.img), not LiveCD ISO
-2. **No KVM**: ARM64 runs in TCG (software emulation), not KVM
-3. **QEMU machine**: ARM64 uses `-M virt -cpu cortex-a72`, not PC/q35
-4. **No debugcon**: ARM64 has no 0xE9 port for boot tracing
-5. **Module gating**: Some Rust modules are `#[cfg(not(target_arch = "aarch64"))]`:
-   - `iomgr.rs` — excluded on ARM64
-   - `ramdisk.rs` — excluded on ARM64
-   - `devaction.rs` — excluded on ARM64 (just enabled for amd64)
-6. **KiSystemStartup entry**: ARM64 has a different entry path (`FFFFF800422418D8`)
-7. **PspCreateThread**: Same Rust code on all arches (thread.rs)
+| Priority | Action | Fixes |
+|----------|--------|-------|
+| **1** | Implement direct Zw* dispatch for ARM64 kernel mode | Bug 2 (architectural fix) |
+| **2** | Custom LLVM pass to strip `captures(none)` from declarations | Bug 1 + CGU=16 idle-out + future captures bugs |
+| **3** | Enable CGU=1 with coordinated workaround revert | Eliminates all cross-CGU issues |
+| **4** | Audit LLVM IR for wrong attributes on IRQL helpers | Confirms/denies "LLVM deletes C calls" theory |
 
-## Last Known Working State
+With Priority 1 done, CGU=1 should boot ARM64 to SMSS. With Priority 2, CGU=1 becomes reliable. With Priority 3, CGU=1 becomes production.
 
-Per memory (MEMORY.md, "PREVIOUS STATUS as of 2026-03-13"):
-> ALL 3 ARCHITECTURES PASS SMOKE TESTS 4/4
-
-So ARM64 was working on 2026-03-13 and broke sometime between then and 2026-03-19. The commits in that range include constant fixes, iofunc.rs completion, devaction enablement, and various IO module activations.
-
-## Theories
-
-### A. Rust code change broke ARM64-specific path
-A commit between 2026-03-13 and 2026-03-19 changed Rust kernel code that is active on ARM64 and affects PspCreateThread or its callees. Most likely candidates:
-- ps/thread.rs changes
-- ob/obhandle.rs or ob/oblife.rs changes (ObCreateObject, ObInsertObject)
-- ke/arm64/ changes (KeInitThread)
-- mm/ changes (MmCreateKernelStack)
-
-### B. Stale ramdisk
-The ARM64 ramdisk might have stale system files from a much older build. However, `mkramdisk.sh` was run recently and the kernel was updated via mcopy. Other system DLLs on the ramdisk might be out of date with the current kernel.
-
-### C. Constant fix side effect
-The 154-constant bulk fix changed values in files active on ARM64 (se/token*.rs, ps/*.rs, ob/*.rs). A wrong constant could cause ObCreateObject or handle operations to fail. However, the baseline test (without constant fixes) also fails.
-
-### D. Pool allocator issue on ARM64
-The Rust pool allocator might have a latent ARM64-specific bug that wasn't triggered before. Since the system process is created successfully (which also uses pool), this seems unlikely unless thread creation uses a different pool path.
-
-### E. `#[used]` / LLVM optimization eliminating ARM64-specific globals
-Similar to the i386 `captures(none)` issue but specific to ARM64. Some critical global might be optimized away on aarch64 target.
-
-## How to Test
+## How to Reproduce
 
 ```bash
-# Rebuild ARM64 kernel:
-cd build-arm64
-rm -rf ntoskrnl/rust-kernel-target/ ntoskrnl/libkernel_rust.a
-ninja ntoskrnl
+cd /home/curi/Projects/os-playground/vibeos
 
-# Update ramdisk:
-mcopy -o -i ../qemu/ramdisk.img ntoskrnl/ntoskrnl.exe ::/reactos/system32/ntoskrnl.exe
-mcopy -o -i ../qemu/boot.img ../qemu/ramdisk.img ::/ramdisk.img
-
-# Full ramdisk rebuild (if needed):
-cd .. && bash qemu/mkramdisk.sh
-
-# Smoke test:
-cd reactos
+# Bug 1 workaround (CGU=16, current production):
+# ARM64 boots but SMSS doesn't start — idle detection passes, black screen
 .venv/bin/python -m pytest tests/qemu/test_smoke.py -v --arch arm64 --timeout 300
+
+# Bug 2 (CGU=1):
+sed -i 's/codegen-units = 16/codegen-units = 1/' sdk/lib/rust/Cargo.toml
+cd build-arm64 && rm -rf ntoskrnl/rust-kernel-target/ ntoskrnl/libkernel_rust.a
+ninja ntoskrnl
+cd .. && mcopy -o -i qemu/ramdisk.img build-arm64/ntoskrnl/ntoskrnl.exe ::/reactos/system32/ntoskrnl.exe
+mcopy -o -i qemu/boot.img qemu/ramdisk.img ::/ramdisk.img
+.venv/bin/python -m pytest tests/qemu/test_smoke.py -v --arch arm64 --timeout 300
+# IMPORTANT: revert after
+sed -i 's/codegen-units = 1/codegen-units = 16/' sdk/lib/rust/Cargo.toml
 ```
 
-## Suggested Debug Approach
+## Instrumentation In Tree (uncommitted)
 
-1. **Git bisect** between the last known-good commit and current HEAD to find which commit broke ARM64. The last known-good was around 2026-03-13 (`da76333d` era). Use `git stash` to save current work, checkout each commit, rebuild ARM64, test.
-
-2. **Add serial tracing to PspCreateThread** on ARM64 to see exactly which sub-call returns STATUS_INSUFFICIENT_RESOURCES:
-   - Before/after ObCreateObject (does ETHREAD creation succeed?)
-   - Before/after MmCreateKernelStack (does stack allocation succeed?)
-   - Before/after KeInitThread
-   - Before/after ObInsertObject
-
-3. **Full ramdisk rebuild** with `bash qemu/mkramdisk.sh` to rule out stale system files. Also rebuild the SYSTEM hive: `ninja -C build-arm64 boot/bootdata/system`.
-
-4. **Check if reverting specific subsystem constant fixes helps**: The se/token*.rs and ps/*.rs constant changes are most suspicious since they affect security token creation during thread setup.
-
-5. **Check the PspCreateThread → KeInitThread path** on ARM64 — KeInitThread sets up the ARM64 thread context (CONTEXT structure, stack pointer, etc.) and might have different layout requirements.
+- `ntoskrnl/mm/mm_rust_shims.c`: UART-based IRQL checks in MiLockProcessWorkingSet, MiLockProcessWorkingSetShared, MiUnlockProcessWorkingSet, MiReleaseExpansionLock, plus `MmDbgCheckIrql` utility, plus `MmSvcLowerIrql` helper
+- `sdk/lib/rust/ntoskrnl-rust/src/ARM3/procsup.rs`: `MmDbgCheckIrql` calls at MmInitializeProcessAddressSpace and MmCreateProcessAddressSpace boundaries
+- `sdk/lib/rust/ntoskrnl-rust/src/ps/process.rs`: `MmDbgCheckIrql` calls at KeInitializeProcess, PspInitializeProcessSecurity, ObInitProcess boundaries
+- Various Codex debug traces in ps/thread.rs, ke/arm64/stubs.rs, ex/init.rs
 
 ## Reference Files
 
 | File | Description |
 |------|-------------|
-| `/home/curi/Projects/os-playground/reactos/CLAUDE.md` | Project instructions, build commands, architecture overview |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/MEMORY.md` | Memory index with project state and known bugs |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/io_translation_status.md` | IO subsystem translation progress |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs` | PsCreateSystemThread + PspCreateThread (the failing function) |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/ps/process.rs` | PspCreateProcess (succeeds — useful for comparison) |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs` | ObInsertObject (handle table operations) |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/ob/oblife.rs` | ObCreateObject (object creation) |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/thrdini.rs` | ARM64 KeInitThread |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/mm/ARM3/procsup.rs` | MmCreateKernelStack |
-| `/home/curi/Projects/os-playground/reactos/ntoskrnl/ntos.cmake` | Build config — C vs Rust file selection |
-| `/home/curi/Projects/os-playground/qemu/mkramdisk.sh` | ARM64 ramdisk creation script |
-| `/home/curi/Projects/os-playground/reactos/tests/qemu/test_smoke.py` | Smoke test framework |
+| `/home/curi/Projects/os-playground/vibeos/AGENTS.md` | Project instructions |
+| `/home/curi/.claude/projects/-home-curi-Projects-os-playground-vibeos/memory/MEMORY.md` | Memory index |
+| `/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/trap.rs` | ARM64 SVC handler (KiSvcDispatch) — no IRQL management |
+| `/home/curi/Projects/os-playground/vibeos/hal/halarm64/generic/halstubs.c` | HAL IRQL functions (KfRaiseIrql, KfLowerIrql, HalpCurrentIrql) |
+| `/home/curi/Projects/os-playground/vibeos/ntoskrnl/mm/mm_rust_shims.c` | MM shims with UART IRQL instrumentation |
+| `/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/ntoskrnl-rust/src/ARM3/procsup.rs` | MmInitializeProcessAddressSpace / MmCreateProcessAddressSpace |
+| `/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/ntoskrnl-rust/src/ps/process.rs` | PspCreateProcess with IRQL check points |
+| `/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs` | PspCreateThread with `#[inline(never)]` workaround |
+| `/home/curi/Projects/os-playground/vibeos/sdk/lib/rust/Cargo.toml` | codegen-units setting (line 37) |
+| `/home/curi/Projects/os-playground/vibeos/ntoskrnl/ex/zw.S` | ARM64 Zw* stubs (current: all use `svc #0`) |
+| `/home/curi/Projects/os-playground/vibeos/docs/engineering/shim-elimination.md` | Shim elimination plan with CGU=1 analysis |
+| `/home/curi/Projects/os-playground/vibeos/~temp-ai-chats.md` | External AI reviews of this bug |

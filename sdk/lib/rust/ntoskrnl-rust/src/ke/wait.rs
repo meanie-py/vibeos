@@ -285,10 +285,12 @@ pub unsafe extern "fastcall" fn KiExitDispatcher(OldIrql: KIRQL) {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn KiExitDispatcher(OldIrql: KIRQL) {
     KiExitDispatcherImpl(OldIrql)
 }
 
+#[inline(never)]
 unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
     let Prcb: *mut _KPRCB = KeGetCurrentPrcb();
     let mut Thread: PKTHREAD;

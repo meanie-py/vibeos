@@ -1,0 +1,157 @@
+UEFI firmware (version edk2-stable202402-prebuilt.qemu.org built at 18:18:38 on Apr  9 2024)
+Error: Image at 0007FC7F000 start failed: Unsupported
+Error: Image at 0007FBFF000 start failed: Not Found
+Tpm2SubmitCommand - Tcg2 - Not Found
+Tpm2GetCapabilityPcrs fail!
+Tpm2SubmitCommand - Tcg2 - Not Found
+Image type X64 can't be loaded on AARCH64 UEFI system.
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI Non-Block Boot Device" from PciRoot(0x0)/Pci(0x2,0x0)
+ConvertPages: failed to find range 140000000 - 140057FFF
+BdsDxe: starting Boot0001 "UEFI Non-Block Boot Device" from PciRoot(0x0)/Pci(0x2,0x0)
+UEFI EntryPoint: Starting freeldr from UEFI
+[freeldr] MachInit done
+[freeldr] UI initialized
+ConvertPages: Incompatible memory types, the pages to allocate have been allocated
+[freeldr] Memory manager initialized
+[freeldr] Filesystem initialized
+[freeldr] Module list initialized
+(\boot\freeldr\freeldr\disk\partition.c:433) fixme: DiskGetPartitionEntry() unimplemented for RAW
+[freeldr] Boot devices initialized
+[freeldr] Switching stack...
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('sacdrv.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\sacdrv.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('wdf01000.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\wdf01000.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('isapnp.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\isapnp.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('pci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\pci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('acpi.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\acpi.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('partmgr.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\partmgr.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbccgp.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbccgp.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbehci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbehci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbhub.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbhub.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbohci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbohci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbuhci.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbuhci.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('mountmgr.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\mountmgr.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('uniata.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\uniata.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('buslogic.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\buslogic.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('usbstor.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\usbstor.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('disk.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\disk.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('cdrom.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\cdrom.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('ksecdd.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\ksecdd.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('nmidebug.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\nmidebug.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('ndis.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\ndis.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('swenum.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\swenum.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:339) err: PeLdrLoadImage('mup.sys') failed
+(\boot\freeldr\freeldr\ntldr\winldr.c:423) err: Cannot load boot driver 'system32\drivers\mup.sys'!
+(\boot\freeldr\freeldr\ntldr\winldr.c:1275) err: Debug mode: connect debugger on port COM1
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:335) err: >>> WinLdrSetupMachineDependent for ARM64
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:350) err: >>> Allocating page tables...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:359) err: >>> Mapping special pages...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:368) err: <<< WinLdrSetupMachineDependent done
+(\boot\freeldr\freeldr\ntldr\winldr.c:1290) err: >>> WinLdrSetupMemoryLayout...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1296) err: >>> WinLdrSetProcessorContext...
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:260) err: >>> WinLdrSetProcessorContext for ARM64
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:261) err:   PGD at physical 0000000042C79000
+(\boot\freeldr\freeldr\ntldr\arch\arm64\winldr.c:304) err: <<< WinLdrSetProcessorContext done: TTBR0=TTBR1=0000000042C79000 TCR=0x2b5103510 MAIR=0x4400ff
+(\boot\freeldr\freeldr\ntldr\winldr.c:1303) err: >>> Page tables active! Extension=FFFFF800421360F0 KiSystemStartup=FFFFF800422811A8
+(\boot\freeldr\freeldr\ntldr\winldr.c:1304) err: >>> Writing LoaderPagesSpanned...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1310) err: >>> Zeroing KI_USER_SHARED_DATA at FFFFF78000000000...
+(\boot\freeldr\freeldr\ntldr\winldr.c:1316) err: >>> Calling KiSystemStartup(FFFFF80042136000)...
+[KERNEL] KiSystemStartup entered!
+[KERNEL] VBAR_EL1 installed
+[KERNEL] pre-HAL
+[KERNEL] Calling ExpInitializeExecutive
+[MM] MmArmInitSystem entered
+[MM] MiScanMemoryDescriptors
+[MM] MiScanMemoryDescriptors done
+[MM] MiInitMachineDependent
+[MM] MiInitMachineDependent ARM64
+[MM] MiBuildNonPagedPool
+  MinPoolSize=0x0000000000040000
+  PhysPages=0x000000000007FA39
+  MinAddPerMb=0x0000000000008000
+  Addition=0x0000000003FB0000
+  PoolSizeAfterMin=0x0000000003FF0000
+  PfnDb=0xFFFFFA0000000000
+  MxPfn=0x00000000000023E7
+  PoolStart=0xFFFFFA00023E7000
+  PoolExpStart=0xFFFFFA00063D7000
+  PoolEnd=0xFFFFFA000A3E7000
+  PoolSize=0x0000000003FF0000
+  MaxPoolSize=0x0000000008000000
+[MM] MiMapPTEs for pool
+[MM] MiInitializeNonPagedPool
+[MM] MiBuildSystemPteSpace
+[MM] SysPTE space initialized
+[MM] MiBuildPfnDatabase
+[MM] InitProcAS: IRQL before attach=0x0000000000000001[MM] InitProcAS: IRQL after attach=0x0000000000000001[MM] InitProcAS: IRQL before WS lock=0x0000000000000001[MM] InitProcAS: IRQL after WS lock=0x0000000000000001[MM] InitProcAS: IRQL after WS unlock=0x0000000000000001[MM] InitProcAS: IRQL before detach=0x0000000000000001[MM] InitProcAS: IRQL after detach=0x0000000000000001[MM] MiInitMachineDependent done
+[MM] post-MiInitMachineDependent
+[MM] MmInitializeMemoryLimits enter
+[MM] MmInitializeMemoryLimits alloc
+[MM] MmInitializeMemoryLimits loop
+[MM] post-MmInitializeMemoryLimits
+[MM] post-bitmap
+[MM] post-product
+[MM] MiBuildPagedPool
+[MM] MiInitializeLoadedModuleList
+[MM] MiInitializeLoadedModuleList returned
+[MM] MmArmInitSystem about to return
+[MM] MmArmInitSystem returning TRUE
+
+
+
+
+
+
+
+
+[TOKI] before ObCreateObjectType(Token)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[PS] PspInitPhase0 enter
+[PS] PspActiveProcessMutex addr=0xFFFFF80042324920[PS] Creating initial system process
+[PS] PspCreateProcess: enter
+[PS] PspCreateProcess: KeInitializeProcess
+[PS] PspCreateProcess: PspInitializeProcessSecurity
+[PS] PspCreateProcess: PspInitializeProcessSecurity done
+[PS] PspCreateProcess: MmInitProcAS
+[PS] PspCreateProcess: PspMapSystemDll
+[PS] PspCreateProcess: CreateHandle
+[PS] PspCreateProcess: returning
+[PS]   Status=0x0000000000000000[PS] System process created
+[PS] Creating Phase1 thread
+[PS] FAIL: PsCreateSystemThread status=0xFFFFFFFFC000009A
+*** BUGCHECK: 0x0000006B
+x

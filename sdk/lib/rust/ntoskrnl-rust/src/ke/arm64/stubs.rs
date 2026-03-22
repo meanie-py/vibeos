@@ -15,7 +15,7 @@ use ntkrnl_sys::ddk::{
     _EPROCESS, _KINTERRUPT, _KAPC, _KEXCEPTION_FRAME, _KTRAP_FRAME, _CONTEXT,
     _EXCEPTION_RECORD, _KPROCESSOR_STATE, _DBGKD_MANIPULATE_STATE64,
     _DBGKD_ANY_WAIT_STATE_CHANGE, _KD_CONTEXT, _OBJECT_ATTRIBUTES,
-    _UNICODE_STRING, _STRING, _LOADER_PARAMETER_BLOCK, KDSTATUS,
+    _UNICODE_STRING, _STRING, _LOADER_PARAMETER_BLOCK, KDSTATUS, PCSTR,
     PEPROCESS, PKINTERRUPT, PKAPC, PKEXCEPTION_FRAME, PKTRAP_FRAME, PCONTEXT,
     PEXCEPTION_RECORD, PKPROCESSOR_STATE, PDBGKD_MANIPULATE_STATE64,
     PDBGKD_ANY_WAIT_STATE_CHANGE, PKD_CONTEXT, POBJECT_ATTRIBUTES,
@@ -47,6 +47,41 @@ extern "C" {
     static KeUserExceptionDispatcher: PVOID;
 }
 use crate::ke::processor::KeNumberProcessors;
+
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn ARM64_UART_TRACE(msg: PCSTR);
+    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
+    fn Arm64DumpPte(prefix: PCSTR, address: PVOID);
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn Arm64TraceImageName(prefix: PCSTR, image_name: *const i8, len: usize) {
+    let mut buf = [0u8; 32];
+    let mut i = 0usize;
+
+    while i < len && i + 1 < buf.len() {
+        let ch = *image_name.add(i) as u8;
+        if ch == 0 {
+            break;
+        }
+        buf[i] = ch;
+        i += 1;
+    }
+    buf[i] = 0;
+
+    ARM64_UART_TRACE(prefix);
+    ARM64_UART_TRACE(buf.as_ptr() as PCSTR);
+    ARM64_UART_TRACE(b"\r\n\0".as_ptr() as PCSTR);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn Arm64ReadTtbr0El1() -> ULONG_PTR {
+    let mut value: u64;
+    core::arch::asm!("mrs {}, ttbr0_el1", out(reg) value, options(nomem, nostack));
+    value as ULONG_PTR
+}
 
 #[no_mangle]
 pub static mut ProcessCount: ULONG = 0;
@@ -576,10 +611,6 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
     }
 }
 
-extern "system" {
-    fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn KiInitializeUserApc(
     ExceptionFrame: PKEXCEPTION_FRAME,
@@ -590,14 +621,53 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     SystemArgument2: PVOID,
 ) {
     let mut Context: _CONTEXT = core::mem::zeroed();
+    let context_size = core::mem::size_of::<_CONTEXT>() as u64;
     Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     KeTrapFrameToContext(TrapFrame, ExceptionFrame, core::ptr::addr_of_mut!(Context));
 
     let mut Stack = Context.Sp & !15u64;
-    Stack -= core::mem::size_of::<_CONTEXT>() as u64;
+    Stack -= context_size;
     Stack &= !15u64;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        // ARM64 runs with DUMMY_PSEH, so a faulting probe/copy can be skipped
+        // by the generic kernel exception workaround instead of being handled
+        // locally. Explicitly fault in the user stack pages before copying.
+        let page_mask = !(PAGE_SIZE as u64 - 1);
+        let page_start = Stack & page_mask;
+        let page_end = (Stack + context_size + PAGE_SIZE as u64 - 1) & page_mask;
+        let mut page = page_start;
+
+        while page < page_end {
+            if MmIsAddressValid(page as PVOID) == 0 {
+                let status = MmAccessFault(0x02, page as PVOID, 1i8, TrapFrame as PVOID);
+                if status < 0 {
+                    ARM64_UART_TRACE_HEX(
+                        b"[APC] FaultIn=\0".as_ptr() as PCSTR,
+                        status as ULONG_PTR,
+                    );
+                }
+            }
+            page += PAGE_SIZE as u64;
+        }
+
+        if MmIsAddressValid(Stack as PVOID) == 0
+            || MmIsAddressValid((Stack + context_size - 1) as PVOID) == 0
+        {
+            ARM64_UART_TRACE_HEX(
+                b"[APC] StackInvalid=\0".as_ptr() as PCSTR,
+                Stack as ULONG_PTR,
+            );
+            return;
+        }
+
+        Arm64DumpPte(b"[APC] StackPage=\0".as_ptr() as PCSTR, Stack as PVOID);
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
     ProbeForWrite(Stack as PVOID, core::mem::size_of::<_CONTEXT>(), 16);
+
     core::ptr::copy_nonoverlapping(
         core::ptr::addr_of!(Context) as *const u8,
         Stack as *mut u8,
@@ -611,6 +681,32 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     (*TrapFrame).Sp = Stack;
     (*TrapFrame).Pc = KeUserApcDispatcher as u64;
     (*TrapFrame).Spsr &= !0xF;
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE_HEX(b"[APC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[APC] SP=\0".as_ptr() as PCSTR, (*TrapFrame).Sp as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(
+            b"[APC] NR=\0".as_ptr() as PCSTR,
+            NormalRoutine.map(|f| f as ULONG_PTR).unwrap_or(0),
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[APC] X0=\0".as_ptr() as PCSTR,
+            (*TrapFrame).__bindgen_anon_3.X[0] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[APC] X1=\0".as_ptr() as PCSTR,
+            (*TrapFrame).__bindgen_anon_3.X[1] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[APC] X2=\0".as_ptr() as PCSTR,
+            (*TrapFrame).__bindgen_anon_3.X[2] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[APC] X3=\0".as_ptr() as PCSTR,
+            (*TrapFrame).__bindgen_anon_3.X[3] as ULONG_PTR,
+        );
+    }
 }
 
 #[no_mangle]
@@ -768,6 +864,43 @@ pub unsafe extern "system" fn KiDispatchException(
             0,
         );
     } else {
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] Code=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionCode as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(b"[UEXC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(b"[UEXC] SP=\0".as_ptr() as PCSTR, (*TrapFrame).Sp as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(b"[UEXC] LR=\0".as_ptr() as PCSTR, (*TrapFrame).Lr as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] ESR=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Esr as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] ExAddr=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionAddress as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC] 1st=\0".as_ptr() as PCSTR,
+                FirstChance as ULONG_PTR,
+            );
+            if (*ExceptionRecord).NumberParameters >= 2 {
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC] P0=\0".as_ptr() as PCSTR,
+                    (*ExceptionRecord).ExceptionInformation[0] as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC] P1=\0".as_ptr() as PCSTR,
+                    (*ExceptionRecord).ExceptionInformation[1] as ULONG_PTR,
+                );
+                Arm64DumpPte(
+                    b"[UEXC] FaultPage=\0".as_ptr() as PCSTR,
+                    (*ExceptionRecord).ExceptionInformation[1] as PVOID,
+                );
+            }
+        }
+
         if FirstChance != 0 {
             let UserRsp = (Context.Sp - core::mem::size_of::<KUSER_EXCEPTION_STACK_ARM64>() as u64) & !15u64;
             let UserStack = UserRsp as *mut KUSER_EXCEPTION_STACK_ARM64;
@@ -775,6 +908,13 @@ pub unsafe extern "system" fn KiDispatchException(
             if UserRsp >= MmHighestUserAddress as u64
                 || UserRsp < core::mem::size_of::<KUSER_EXCEPTION_STACK_ARM64>() as u64
             {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    ARM64_UART_TRACE_HEX(
+                        b"[UEXC-STKBAD] SP=\0".as_ptr() as PCSTR,
+                        Context.Sp as ULONG_PTR,
+                    );
+                }
                 ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
                 KeBugCheckEx(
                     KMODE_EXCEPTION_NOT_HANDLED,
@@ -798,6 +938,13 @@ pub unsafe extern "system" fn KiDispatchException(
                     (UserStack as *mut u8).add(core::mem::size_of::<KUSER_EXCEPTION_STACK_ARM64>() - 1) as PVOID,
                 ) == 0
             {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    ARM64_UART_TRACE_HEX(
+                        b"[UEXC-STKOVERFLOW] SP=\0".as_ptr() as PCSTR,
+                        Context.Sp as ULONG_PTR,
+                    );
+                }
                 ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
                 KeBugCheckEx(
                     KMODE_EXCEPTION_NOT_HANDLED,
@@ -817,7 +964,59 @@ pub unsafe extern "system" fn KiDispatchException(
             (*TrapFrame).Sp = UserRsp;
             (*TrapFrame).Pc = KeUserExceptionDispatcher as u64;
             (*TrapFrame).Spsr &= !0xF;
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC-DISPATCH] PC=\0".as_ptr() as PCSTR,
+                    (*TrapFrame).Pc as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC-DISPATCH] SP=\0".as_ptr() as PCSTR,
+                    (*TrapFrame).Sp as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC-DISPATCH] X0=\0".as_ptr() as PCSTR,
+                    (*TrapFrame).__bindgen_anon_3.X[0] as ULONG_PTR,
+                );
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC-DISPATCH] X1=\0".as_ptr() as PCSTR,
+                    (*TrapFrame).__bindgen_anon_3.X[1] as ULONG_PTR,
+                );
+            }
             return;
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC-KILL] Code=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionCode as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC-KILL] PC=\0".as_ptr() as PCSTR,
+                (*ExceptionRecord).ExceptionAddress as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC-KILL] LR=\0".as_ptr() as PCSTR,
+                (*TrapFrame).Lr as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[UEXC-KILL] 1st=\0".as_ptr() as PCSTR,
+                FirstChance as ULONG_PTR,
+            );
+            Arm64TraceImageName(
+                b"[UEXC-KILL] Proc=\0".as_ptr() as PCSTR,
+                (*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr(),
+                core::mem::size_of_val(&(*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName),
+            );
+            if MmIsAddressValid((*ExceptionRecord).ExceptionAddress as PVOID) != 0 {
+                let instr = *((*ExceptionRecord).ExceptionAddress as *const ULONG);
+                ARM64_UART_TRACE_HEX(
+                    b"[UEXC-KILL] Instr=\0".as_ptr() as PCSTR,
+                    instr as ULONG_PTR,
+                );
+            }
         }
 
         ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
@@ -839,12 +1038,36 @@ pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: P
         return;
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE_HEX(
+            b"[CTX] KiSwapProcess: Old.DTB=\0".as_ptr() as PCSTR,
+            (*OldProcess).DirectoryTableBase[0] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[CTX] KiSwapProcess: New.DTB=\0".as_ptr() as PCSTR,
+            NewPageTable as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[CTX] KiSwapProcess: TTBR0(before)=\0".as_ptr() as PCSTR,
+            Arm64ReadTtbr0El1(),
+        );
+    }
+
     core::arch::asm!("dsb ish", options(nomem, nostack));
     core::arch::asm!("msr ttbr0_el1, {}", in(reg) NewPageTable, options(nomem, nostack));
     core::arch::asm!("msr ttbr1_el1, {}", in(reg) NewPageTable, options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1is", options(nomem, nostack));
     core::arch::asm!("dsb ish", options(nomem, nostack));
     core::arch::asm!("isb", options(nomem, nostack));
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE_HEX(
+            b"[CTX] KiSwapProcess: TTBR0(after)=\0".as_ptr() as PCSTR,
+            Arm64ReadTtbr0El1(),
+        );
+    }
 }
 
 #[no_mangle]

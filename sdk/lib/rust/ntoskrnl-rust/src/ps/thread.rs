@@ -8,6 +8,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ke::KeGetCurrentPrcb;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::ps::PsGetCurrentProcess;
 
 extern "system" {
 
@@ -57,6 +58,12 @@ extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn ARM64_UART_TRACE(msg: PCSTR);
+    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
+}
+
 type PACCESS_TOKEN = PVOID;
 
 const CT_SYSTEM_THREAD_BIT: ULONG = 0x00000010;
@@ -66,26 +73,121 @@ const ThreadObject: UCHAR = 6;
 #[no_mangle]
 pub static mut PsThreadType: POBJECT_TYPE = core::ptr::null_mut();
 
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn Arm64ReadTtbr0El1() -> ULONG_PTR {
+    let mut value: u64;
+    core::arch::asm!("mrs {}, ttbr0_el1", out(reg) value, options(nomem, nostack));
+    value as ULONG_PTR
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn Arm64TraceImageName(prefix: PCSTR, process: PEPROCESS) {
+    let mut buf = [0u8; 32];
+    let image_name = (*(process as *mut _EPROCESS)).ImageFileName.as_ptr();
+    let len = core::mem::size_of_val(&(*(process as *mut _EPROCESS)).ImageFileName);
+    let mut i = 0usize;
+
+    while i < len && i + 1 < buf.len() {
+        let ch = *image_name.add(i) as u8;
+        if ch == 0 {
+            break;
+        }
+        buf[i] = ch;
+        i += 1;
+    }
+    buf[i] = 0;
+
+    ARM64_UART_TRACE(prefix);
+    ARM64_UART_TRACE(buf.as_ptr() as PCSTR);
+    ARM64_UART_TRACE(b"\r\n\0".as_ptr() as PCSTR);
+}
+
 unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID) {
     let mut Thread: PETHREAD;
     let mut Teb: PTEB;
     let mut DeadThread: BOOLEAN = 0u8;
     let mut OldIrql: KIRQL = 0;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE(b"[PS] PspUserThreadStartup enter\r\n\0".as_ptr() as PCSTR);
+        ARM64_UART_TRACE_HEX(b"[PS] PspUserThreadStartup: StartRoutine=\0".as_ptr() as PCSTR, StartRoutine.map(|f| f as ULONG_PTR).unwrap_or(0));
+        ARM64_UART_TRACE_HEX(b"[PS] PspUserThreadStartup: StartContext=\0".as_ptr() as PCSTR, StartContext as ULONG_PTR);
+    }
+
     KeLowerIrql(PASSIVE_LEVEL);
     Thread = PsGetCurrentThread();
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let current_process = PsGetCurrentProcess() as PEPROCESS;
+        let thread_process = (*Thread).ThreadsProcess;
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspUserThreadStartup: CurrentProcess=\0".as_ptr() as PCSTR,
+            current_process as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspUserThreadStartup: ThreadProcess=\0".as_ptr() as PCSTR,
+            thread_process as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspUserThreadStartup: Current.DTB=\0".as_ptr() as PCSTR,
+            (*(current_process as *mut _EPROCESS)).Pcb.DirectoryTableBase[0] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspUserThreadStartup: Thread.DTB=\0".as_ptr() as PCSTR,
+            (*(thread_process as *mut _EPROCESS)).Pcb.DirectoryTableBase[0] as ULONG_PTR,
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PspUserThreadStartup: TTBR0=\0".as_ptr() as PCSTR,
+            Arm64ReadTtbr0El1(),
+        );
+        Arm64TraceImageName(
+            b"[PS] PspUserThreadStartup: Current.Image=\0".as_ptr() as PCSTR,
+            current_process,
+        );
+        Arm64TraceImageName(
+            b"[PS] PspUserThreadStartup: Thread.Image=\0".as_ptr() as PCSTR,
+            thread_process,
+        );
+    }
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.DeadThread() != 0 {
         DeadThread = 1u8;
     } else {
         Teb = NtCurrentTeb();
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(b"[PS] PspUserThreadStartup: Teb=\0".as_ptr() as PCSTR, Teb as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspUserThreadStartup: Teb.StackBase=\0".as_ptr() as PCSTR,
+                (*Teb).NtTib.StackBase as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspUserThreadStartup: Teb.StackLimit=\0".as_ptr() as PCSTR,
+                (*Teb).NtTib.StackLimit as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspUserThreadStartup: Teb.Dealloc=\0".as_ptr() as PCSTR,
+                (*Teb).DeallocationStack as ULONG_PTR,
+            );
+        }
         (*Teb).CurrentLocale = MmGetSessionLocaleId();
         (*Teb).IdealProcessor = (*Thread).Tcb.IdealProcessor;
     }
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.DeadThread() == 0
         && (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.HideFromDebugger() == 0 {
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: DbgkCreateThread\r\n\0".as_ptr() as PCSTR);
+        }
         DbgkCreateThread(Thread, StartContext);
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: DbgkCreateThread done\r\n\0".as_ptr() as PCSTR);
+        }
     }
 
     if DeadThread == 0 {
@@ -94,6 +196,12 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
 
         KeRaiseIrql(APC_LEVEL, &mut OldIrql);
 
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(b"[PS] PspUserThreadStartup: PspSystemDllEntryPoint=\0".as_ptr() as PCSTR, PspSystemDllEntryPoint as ULONG_PTR);
+            ARM64_UART_TRACE_HEX(b"[PS] PspUserThreadStartup: PspSystemDllBase=\0".as_ptr() as PCSTR, PspSystemDllBase as ULONG_PTR);
+            ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: KiInitializeUserApc\r\n\0".as_ptr() as PCSTR);
+        }
         KiInitializeUserApc(
             KeGetExceptionFrame(&mut (*Thread).Tcb),
             KeGetTrapFrame(&mut (*Thread).Tcb),
@@ -102,10 +210,19 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
             PspSystemDllBase,
             core::ptr::null_mut(),
         );
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: KiInitializeUserApc done\r\n\0".as_ptr() as PCSTR);
+        }
 
         KeLowerIrql(PASSIVE_LEVEL);
     } else {
         PspTerminateThreadByPointer(Thread, STATUS_THREAD_IS_TERMINATING, 1u8);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: returning\r\n\0".as_ptr() as PCSTR);
     }
 
     while (*SharedUserData).Cookie == 0 {
@@ -272,17 +389,61 @@ unsafe fn PspCreateThread(
     }
 
     if !ThreadContext.is_null() {
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE(b"[PS] PspCreateThread: MmCreateTeb\r\n\0".as_ptr() as PCSTR);
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspCreateThread: InitialTeb.Alloc=\0".as_ptr() as PCSTR,
+                (*InitialTeb).AllocatedStackBase as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspCreateThread: InitialTeb.Base=\0".as_ptr() as PCSTR,
+                (*InitialTeb).StackBase as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspCreateThread: InitialTeb.Limit=\0".as_ptr() as PCSTR,
+                (*InitialTeb).StackLimit as ULONG_PTR,
+            );
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspCreateThread: InitialCtx.Sp=\0".as_ptr() as PCSTR,
+                (*ThreadContext).Sp as ULONG_PTR,
+            );
+        }
         Status = MmCreateTeb(Process, &mut (*Thread).Cid, InitialTeb, &mut TebBase);
         if Status < 0 {
+            #[cfg(target_arch = "aarch64")]
+            {
+                ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: MmCreateTeb FAILED=\0".as_ptr() as PCSTR, Status as ULONG_PTR);
+            }
             ExReleaseRundownProtection(core::ptr::addr_of_mut!((*Process).RundownProtect));
             ObDereferenceObject(Thread as PVOID);
             return Status;
         }
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: TebBase=\0".as_ptr() as PCSTR, TebBase as ULONG_PTR);
+        }
 
         (*(Thread as *mut _ETHREAD)).__bindgen_anon_6.StartAddress = core::mem::transmute(KeGetContextPc(ThreadContext));
         (*Thread).Win32StartAddress = KeGetContextReturnRegister(ThreadContext) as PVOID;
+        #[cfg(target_arch = "aarch64")]
+        {
+            ARM64_UART_TRACE_HEX(
+                b"[PS] PspCreateThread: StartAddress=\0".as_ptr() as PCSTR,
+                (*(Thread as *mut _ETHREAD))
+                    .__bindgen_anon_6
+                    .StartAddress
+                    .map(|f| f as ULONG_PTR)
+                    .unwrap_or(0),
+            );
+            ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: Win32StartAddress=\0".as_ptr() as PCSTR, (*Thread).Win32StartAddress as ULONG_PTR);
+        }
 
         if Status >= 0 {
+            #[cfg(target_arch = "aarch64")]
+            {
+                ARM64_UART_TRACE(b"[PS] PspCreateThread: KeInitThread\r\n\0".as_ptr() as PCSTR);
+            }
             Status = KeInitThread(
                 &mut (*Thread).Tcb,
                 core::ptr::null_mut(),
@@ -293,6 +454,10 @@ unsafe fn PspCreateThread(
                 TebBase as PVOID,
                 &mut (*Process).Pcb,
             );
+            #[cfg(target_arch = "aarch64")]
+            {
+                ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: KeInitThread status=\0".as_ptr() as PCSTR, Status as ULONG_PTR);
+            }
         }
     } else {
 
@@ -354,7 +519,17 @@ unsafe fn PspCreateThread(
     );
     (*Process).ActiveThreads += 1;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: Thread=\0".as_ptr() as PCSTR, Thread as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[PS] PspCreateThread: Process=\0".as_ptr() as PCSTR, Process as ULONG_PTR);
+        ARM64_UART_TRACE(b"[PS] PspCreateThread: KeStartThread\r\n\0".as_ptr() as PCSTR);
+    }
     KeStartThread(&mut (*Thread).Tcb);
+    #[cfg(target_arch = "aarch64")]
+    {
+        ARM64_UART_TRACE(b"[PS] PspCreateThread: KeStartThread done\r\n\0".as_ptr() as PCSTR);
+    }
 
     ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*Process).ProcessLock));
     KeLeaveCriticalRegion();

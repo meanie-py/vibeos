@@ -625,6 +625,11 @@ pub unsafe extern "system" fn PspCreateProcess(
 
     (*proc).Vm.MaximumWorkingSetSize = max_ws;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"PspCreateProcess-before-KeInitProc\0".as_ptr() as *const i8);
+    }
     ARM64_UART_TRACE(b"[PS] PspCreateProcess: KeInitializeProcess\r\n\0".as_ptr() as *const i8);
     KeInitializeProcess(
         core::ptr::addr_of_mut!((*proc).Pcb),
@@ -634,6 +639,11 @@ pub unsafe extern "system" fn PspCreateProcess(
         if ((*proc).DefaultHardErrorProcessing & SEM_NOALIGNMENTFAULTEXCEPT) != 0 { 1u8 } else { 0u8 },
     );
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"PspCreateProcess-after-KeInitProc\0".as_ptr() as *const i8);
+    }
     ARM64_UART_TRACE(b"[PS] PspCreateProcess: PspInitializeProcessSecurity\r\n\0".as_ptr() as *const i8);
     status = PspInitializeProcessSecurity(process, parent);
     if status < 0 {
@@ -642,6 +652,11 @@ pub unsafe extern "system" fn PspCreateProcess(
             ObDereferenceObject(parent as PVOID);
         }
         return status;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"PspCreateProcess-after-InitSecurity\0".as_ptr() as *const i8);
     }
     ARM64_UART_TRACE(b"[PS] PspCreateProcess: PspInitializeProcessSecurity done\r\n\0".as_ptr() as *const i8);
 
@@ -653,6 +668,11 @@ pub unsafe extern "system" fn PspCreateProcess(
             (*proc).PriorityClass = (*(parent as *mut _EPROCESS)).PriorityClass;
         }
 
+        #[cfg(target_arch = "aarch64")]
+        {
+            extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+            MmDbgCheckIrql(b"before-ObInitProcess\0".as_ptr() as *const i8);
+        }
         ARM64_UART_TRACE(b"[PS] PspCreateProcess: ObInitProcess\r\n\0".as_ptr() as *const i8);
         status = ObInitProcess(
             if (flags & PROCESS_CREATE_FLAGS_INHERIT_HANDLES) != 0 { parent } else { core::ptr::null_mut() },
@@ -664,6 +684,11 @@ pub unsafe extern "system" fn PspCreateProcess(
                 ObDereferenceObject(parent as PVOID);
             }
             return status;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+            MmDbgCheckIrql(b"after-ObInitProcess\0".as_ptr() as *const i8);
         }
         ARM64_UART_TRACE(b"[PS] PspCreateProcess: ObInitProcess done\r\n\0".as_ptr() as *const i8);
     } else {
@@ -766,11 +791,26 @@ pub unsafe extern "system" fn PspCreateProcess(
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"before-MapSystemDll\0".as_ptr() as *const i8);
+    }
     ARM64_UART_TRACE(b"[PS] PspCreateProcess: PspMapSystemDll\r\n\0".as_ptr() as *const i8);
     if !section_object.is_null() {
         PspMapSystemDll(process, core::ptr::null_mut(), 0u8);
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"after-MapSystemDll\0".as_ptr() as *const i8);
+    }
     ARM64_UART_TRACE(b"[PS] PspCreateProcess: CreateHandle\r\n\0".as_ptr() as *const i8);
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"after-CreateHandle\0".as_ptr() as *const i8);
+    }
 
     cid_entry.__bindgen_anon_1.Object = process as PVOID;
     cid_entry.__bindgen_anon_2.GrantedAccess = 0;

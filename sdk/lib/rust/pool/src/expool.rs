@@ -1309,6 +1309,10 @@ pub unsafe extern "system" fn ExAllocatePool(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExFreePoolWithTag(p: PVOID, tag_to_free: ULONG) {
+    // NULL check — some kernel/driver code calls ExFreePool(NULL)
+    if p.is_null() {
+        return;
+    }
     // Check for special pool
     if ExpPoolFlags
         & (POOL_FLAG_CHECK_TIMERS

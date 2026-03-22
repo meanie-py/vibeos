@@ -12,6 +12,12 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiAcquireExpansionLock, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiReleaseExpansionLock, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
 use super::helpers::*;
 
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn ARM64_UART_TRACE(msg: *const i8);
+    fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
+}
+
 static mut MmProcessColorSeed: ULONG = 0x12345678;
 #[no_mangle]
 pub static mut MmMaximumDeadKernelStacks: ULONG = 5;
@@ -633,7 +639,17 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     #[cfg(target_arch = "aarch64")]
     let PointerPxe: PMMPTE;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"InitProcAS-entry\0".as_ptr() as *const i8);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL before attach=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after attach=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
     (*(Process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.set_AddressSpaceInitialized(2 as ULONG);
 
@@ -642,7 +658,11 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
 
     (*(Process as *mut _EPROCESS)).VadRoot.BalancedRoot.u1.Parent = core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).VadRoot.BalancedRoot) as *mut _;
 
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL before WS lock=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
     MiLockProcessWorkingSet(Process, PsGetCurrentThread() as PETHREAD);
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after WS lock=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
     OldIrql = MiAcquirePfnLock();
 
@@ -687,6 +707,8 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     (*Pfn).set_flink((Process as *mut _ as *mut _) as PFN_NUMBER);
 
     MiUnlockProcessWorkingSet(Process, PsGetCurrentThread() as PETHREAD);
+    #[cfg(target_arch = "aarch64")]
+    ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after WS unlock=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -730,6 +752,8 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
             }
         }
 
+        #[cfg(target_arch = "aarch64")]
+        ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL before map=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
         Status = MmMapViewOfSection(
             Section,
             Process,
@@ -742,11 +766,23 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
             MEM_COMMIT,
             PAGE_READWRITE,
         );
+        #[cfg(target_arch = "aarch64")]
+        ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after map=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
         (*(Process as *mut _EPROCESS)).SectionBaseAddress = ImageBase;
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"before-detach\0".as_ptr() as *const i8);
+    }
     KeDetachProcess();
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"after-detach\0".as_ptr() as *const i8);
+    }
 
     Status
 }
@@ -829,6 +865,11 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
     *DirectoryTableBase.add(0) = TableBaseIndex << PAGE_SHIFT;
     *DirectoryTableBase.add(1) = HyperIndex << PAGE_SHIFT;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"CreateProcAS-before-MiArch\0".as_ptr() as *const i8);
+    }
     if MiArchCreateProcessAddressSpace(Process, DirectoryTableBase as *mut _ as *mut _) == 0 {
         OldIrql = MiAcquirePfnLock();
         MiInsertPageInFreeList(WsListIndex);
@@ -841,9 +882,21 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
         return 0u8;
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"CreateProcAS-after-MiArch\0".as_ptr() as *const i8);
+    }
+
     (*(Process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.set_AddressSpaceInitialized(1 as ULONG);
 
     MiSessionAddProcess(Process);
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" { fn MmDbgCheckIrql(label: *const i8); }
+        MmDbgCheckIrql(b"CreateProcAS-exit\0".as_ptr() as *const i8);
+    }
     1u8
 }
 

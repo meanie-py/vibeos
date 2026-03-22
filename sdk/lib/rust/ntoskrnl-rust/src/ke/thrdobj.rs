@@ -289,7 +289,7 @@ unsafe fn KeAlertResumeThread_impl(Thread: PKTHREAD) -> ULONG {
 
     KiReleaseDispatcherLockFromSynchLevel();
     KiReleaseApcLockFromSynchLevel(core::ptr::addr_of_mut!(ApcLock));
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
     PreviousCount
 }
 
@@ -314,7 +314,7 @@ unsafe fn KeAlertThread_impl(Thread: PKTHREAD, AlertMode: KPROCESSOR_MODE) -> BO
 
     KiReleaseDispatcherLockFromSynchLevel();
     KiReleaseApcLockFromSynchLevel(core::ptr::addr_of_mut!(ApcLock));
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
 
     PreviousState
 }
@@ -371,7 +371,7 @@ unsafe fn KeForceResumeThread_impl(Thread: PKTHREAD) -> ULONG {
     }
 
     KiReleaseApcLockFromSynchLevel(core::ptr::addr_of_mut!(ApcLock));
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
     PreviousCount
 }
 
@@ -429,7 +429,7 @@ unsafe fn KeFreezeAllThreads_impl() {
     }
 
     KiReleaseProcessLockFromSynchLevel(core::ptr::addr_of_mut!(LockHandle));
-    KiExitDispatcher(LockHandle.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&LockHandle.OldIrql));
 }
 
 unsafe fn KeResumeThread_impl(Thread: PKTHREAD) -> ULONG {
@@ -456,7 +456,7 @@ unsafe fn KeResumeThread_impl(Thread: PKTHREAD) -> ULONG {
     }
 
     KiReleaseApcLockFromSynchLevel(core::ptr::addr_of_mut!(ApcLock));
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
     PreviousCount
 }
 
@@ -651,7 +651,7 @@ unsafe fn KeSuspendThread_impl(Thread: PKTHREAD) -> ULONG {
     }
 
     KiReleaseApcLockFromSynchLevel(core::ptr::addr_of_mut!(ApcLock));
-    KiExitDispatcher(ApcLock.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&ApcLock.OldIrql));
     PreviousCount
 }
 
@@ -698,7 +698,7 @@ unsafe fn KeThawAllThreads_impl() {
     }
 
     KiReleaseProcessLockFromSynchLevel(core::ptr::addr_of_mut!(LockHandle));
-    KiExitDispatcher(LockHandle.OldIrql);
+    KiExitDispatcher(core::ptr::read_volatile(&LockHandle.OldIrql));
 
     KeLeaveCriticalRegion();
 }

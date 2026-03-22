@@ -199,6 +199,29 @@ MI_MAKE_HARDWARE_PTE(
     _orig_MI_MAKE_HARDWARE_PTE(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
 }
 
+#ifdef _M_ARM64
+VOID
+NTAPI
+Arm64DumpPte(
+    IN PCSTR Prefix,
+    IN PVOID Address)
+{
+    PMMPTE Pte = MiAddressToPte(Address);
+
+    ARM64_UART_TRACE_HEX(Prefix, (ULONG_PTR)Address);
+    ARM64_UART_TRACE_HEX("[PTE] Entry=", Pte->u.Long);
+    ARM64_UART_TRACE_HEX("[PTE] Valid=", Pte->u.Hard.Valid);
+    ARM64_UART_TRACE_HEX("[PTE] Owner=", Pte->u.Hard.Owner);
+    ARM64_UART_TRACE_HEX("[PTE] Writable=", Pte->u.Hard.Writable);
+    ARM64_UART_TRACE_HEX("[PTE] UserNoExec=", Pte->u.Hard.UserNoExecute);
+    ARM64_UART_TRACE_HEX("[PTE] CopyOnWrite=", Pte->u.Hard.CopyOnWrite);
+    ARM64_UART_TRACE_HEX("[PTE] NotDirty=", Pte->u.Hard.NotDirty);
+    ARM64_UART_TRACE_HEX("[PTE] Accessed=", Pte->u.Hard.Accessed);
+    ARM64_UART_TRACE_HEX("[PTE] NonGlobal=", Pte->u.Hard.NonGlobal);
+    ARM64_UART_TRACE_HEX("[PTE] Pfn=", Pte->u.Hard.PageFrameNumber);
+}
+#endif
+
 /*
  * PTE update (volatile write with assertion checks)
  */
@@ -245,9 +268,37 @@ void MmDebugWsFaultCheck(PVOID Address, PVOID TrapInfo)
 volatile PVOID MmDbgLastSafeLocker = NULL;   /* last MiLockProcessWorkingSet caller */
 volatile PVOID MmDbgLastSafeUnlocker = NULL; /* last MiUnlockProcessWorkingSet caller */
 
+/* ARM64 direct UART for tracing (DbgPrint doesn't reach serial on ARM64) */
+#ifdef _M_ARM64
+extern volatile PVOID Arm64UartKernelBase;
+static void MmUartPuts(const char *s) {
+    volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+    if (u) while (*s) *u = (ULONG)*s++;
+}
+static void MmUartHex(const char *prefix, ULONG_PTR val) {
+    char buf[20];
+    int i;
+    MmUartPuts(prefix);
+    for (i = 15; i >= 0; i--)
+        buf[15-i] = "0123456789ABCDEF"[(val >> (i*4)) & 0xF];
+    buf[16] = '\r'; buf[17] = '\n'; buf[18] = 0;
+    MmUartPuts(buf);
+}
+#endif
+
 void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastSafeLocker = __builtin_return_address(0);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] BUG: MiLockProcessWorkingSet IRQL=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
     _orig_MiLockProcessWorkingSet(Process, Thread);
 }
 
@@ -255,6 +306,16 @@ void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastSafeUnlocker = __builtin_return_address(0);
     _orig_MiUnlockProcessWorkingSet(Process, Thread);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] IRQL after MiUnlockProcessWorkingSet=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
 }
 
 void MiLockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
@@ -277,6 +338,18 @@ void MiUnlockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 
 void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
 {
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] BUG: MiLockProcessWorkingSetShared IRQL=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+            MmUartHex("  caller2=", (ULONG_PTR)__builtin_return_address(1));
+            MmUartHex("  caller3=", (ULONG_PTR)__builtin_return_address(2));
+        }
+    }
+#endif
     if (Thread->OwnsProcessWorkingSetExclusive) {
         DPRINT1("[WS-BUG] MiLockProcessWorkingSetShared: OwnsExcl=%u, Flags=0x%x, caller=%p\n"
                 "  LastExclLocker=%p, LastExclUnlocker=%p\n"
@@ -309,7 +382,19 @@ KIRQL MiAcquireExpansionLock(VOID)
 { return _orig_MiAcquireExpansionLock(); }
 
 void MiReleaseExpansionLock(IN KIRQL OldIrql)
-{ _orig_MiReleaseExpansionLock(OldIrql); }
+{
+    _orig_MiReleaseExpansionLock(OldIrql);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] IRQL after MiReleaseExpansionLock=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
+}
 
 /*
  * PTE mapping check — arch-specific, accesses hardware PTE bitfields
@@ -1336,3 +1421,79 @@ NtCreateSection_removed(OUT PHANDLE SectionHandle,
 }
 #endif
 
+/* ARM64 IRQL debugging for SMSS creation path */
+#ifdef _M_ARM64
+BOOLEAN MiArchCreateProcessAddressSpace(PEPROCESS Process, PULONG_PTR DirectoryTableBase);
+
+BOOLEAN MiArchCreateProcessAddressSpace_checked(PEPROCESS Process, PULONG_PTR DirectoryTableBase)
+{
+    KIRQL before, after;
+    BOOLEAN result;
+    
+    before = KeGetCurrentIrql();
+    result = MiArchCreateProcessAddressSpace(Process, DirectoryTableBase);
+    after = KeGetCurrentIrql();
+    
+    if (before != after) {
+        MmUartPuts("[MM] IRQL CHANGED in MiArchCreateProcessAddressSpace!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+    return result;
+}
+#endif
+
+#ifdef _M_ARM64
+/* KeAttachProcess IRQL tracing shim */
+void KeAttachProcess_irql_check(PKPROCESS Process)
+{
+    KIRQL before = KeGetCurrentIrql();
+    KeAttachProcess(Process);
+    KIRQL after = KeGetCurrentIrql();
+    if (after > APC_LEVEL) {
+        MmUartPuts("[MM] KeAttachProcess left IRQL elevated!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* KeDetachProcess IRQL diagnostic wrapper */
+VOID NTAPI KeDetachProcess(VOID);
+VOID NTAPI KeDetachProcess_irql_checked(VOID)
+{
+    KIRQL before = KeGetCurrentIrql();
+    KeDetachProcess();
+    KIRQL after = KeGetCurrentIrql();
+    if (after > APC_LEVEL) {
+        MmUartPuts("[MM] KeDetachProcess IRQL leak!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* Track IRQL for ARM64 debugging */
+void MmCheckIrqlAfterCall(const char *label)
+{
+    KIRQL irql = KeGetCurrentIrql();
+    if (irql > APC_LEVEL) {
+        MmUartPuts(label);
+        MmUartHex(" IRQL=", irql);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* ARM64 debugging: check and report IRQL via UART */
+VOID NTAPI MmDbgCheckIrql(PCSTR label)
+{
+    KIRQL irql = KeGetCurrentIrql();
+    /* Always trace — unconditional */
+    MmUartPuts("[IRQL-CHK] ");
+    MmUartPuts(label);
+    MmUartHex(" irql=", irql);
+}
+#endif

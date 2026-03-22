@@ -1112,6 +1112,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut OptionHandle: HANDLE = core::ptr::null_mut();
     let mut ProcessParameters: *mut RTL_USER_PROCESS_PARAMETERS = core::ptr::null_mut();
+    let IoInitSucceeded: BOOLEAN;
 
     InitBuffer = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<INIT_BUFFER>(), 0x74696E49) as *mut INIT_BUFFER;
     if InitBuffer.is_null() {
@@ -1267,7 +1268,8 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvSetProgressBarSubset(25, 75);
 
-    if IoInitSystem(LoaderBlock) == 0 {
+    IoInitSucceeded = IoInitSystem(LoaderBlock);
+    if IoInitSucceeded == 0 {
         #[cfg(not(target_arch = "aarch64"))]
         {
             KeBugCheck(0x6E);
@@ -1316,7 +1318,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     InbvEnableDisplayString(1);
 
     #[cfg(target_arch = "aarch64")]
-    {
+    if IoInitSucceeded == 0 {
         ExpInitializationPhase += 1;
         ExFreePoolWithTag(InitBuffer as PVOID, 0x74696E49);
         return;

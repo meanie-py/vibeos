@@ -2,6 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
+use ntkrnl_sys::mm::KI_USER_SHARED_DATA;
 use ntkrnl_sys::rtl::*;
 
 use ntkrnl_sys::ddk::{
@@ -83,14 +84,9 @@ unsafe fn CONTAINING_RECORD(address: PVOID, _type_size: usize, field_offset: usi
     (address as usize - field_offset) as PVOID
 }
 
-// SharedUserData = (KUSER_SHARED_DATA *)KI_USER_SHARED_DATA — fixed kernel VA, not a symbol
-#[cfg(target_arch = "x86_64")]
-const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
-#[cfg(target_arch = "x86")]
-const KI_USER_SHARED_DATA: usize = 0xFFDF0000;
 #[inline(always)]
 unsafe fn SharedUserData() -> *mut SharedUserDataStruct {
-    KI_USER_SHARED_DATA as *mut SharedUserDataStruct
+    KI_USER_SHARED_DATA as usize as *mut SharedUserDataStruct
 }
 
 const RAMDISK_BOOT_INITIALIZATION_FAILED: ULONG = 0x9C;
@@ -133,7 +129,7 @@ struct _RAMDISK_CREATE_INPUT {
     _pad: [u8; 14], // pad union to 24 bytes (8+2+14=24)
 }
 
-const FSCTL_CREATE_RAM_DISK: ULONG = 0x7C000;
+const FSCTL_CREATE_RAM_DISK: ULONG = 0x240000; // CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 const GENERIC_ALL: u32 = 0x10000000;
 const SYNCHRONIZE: u32 = 0x00100000;
@@ -371,7 +367,7 @@ pub unsafe extern "system" fn IopStartRamdisk(
         AnsiPath.Buffer = Buffer.as_mut_ptr();
 
         // Write the system root path to SharedUserData->NtSystemRoot
-        let usd = KI_USER_SHARED_DATA as *mut SharedUserDataStruct;
+        let usd = SharedUserData();
         RtlInitEmptyUnicodeString(
             &mut NtSystemRoot,
             (*usd).NtSystemRoot.as_mut_ptr(),

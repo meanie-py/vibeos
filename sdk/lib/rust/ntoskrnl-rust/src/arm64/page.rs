@@ -723,6 +723,8 @@ pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
     let PageTablePointer: PMMPTE;
     let mut PageColor: ULONG;
 
+    // Enable IRQL transition tracing for SMSS creation debugging
+
     PagePuts(b"[MM] MiArchCreateProcessAddressSpace\r\n");
 
     TableBasePfn = (*DirectoryTableBase.add(0) >> PAGE_SHIFT) as PFN_NUMBER;

@@ -466,6 +466,7 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/boot.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/ctxswitch.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/zwdispatch.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall_asm.S)
     list(APPEND SOURCE
         # ke/arm64/ — replaced by Rust (ntoskrnl-rust/src/ke/arm64/)
