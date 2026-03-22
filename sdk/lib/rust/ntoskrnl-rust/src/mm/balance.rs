@@ -366,7 +366,7 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MiBalancerThread(_Unused: PVOID) {
+unsafe extern "system" fn MiBalancerThread(_Unused: PVOID) {
     MiBalancerThreadInner();
 }
 

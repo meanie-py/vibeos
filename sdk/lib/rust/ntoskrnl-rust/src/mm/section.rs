@@ -834,7 +834,7 @@ unsafe fn MmMakeSegmentResident(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MmpDeleteSection(ObjectBody: PVOID) {
+unsafe extern "system" fn MmpDeleteSection(ObjectBody: PVOID) {
     MmpDeleteSectionInner(ObjectBody);
 }
 #[cfg(not(target_arch = "x86"))]
@@ -865,7 +865,7 @@ unsafe fn MmpDeleteSectionInner(ObjectBody: PVOID) {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MmpCloseSection(
+unsafe extern "system" fn MmpCloseSection(
     _Process: PEPROCESS, _Object: PVOID, _GrantedAccess: ACCESS_MASK,
     _ProcessHandleCount: ULONG, _SystemHandleCount: ULONG
 ) {}

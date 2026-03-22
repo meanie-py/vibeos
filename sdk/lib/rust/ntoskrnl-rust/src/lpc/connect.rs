@@ -118,10 +118,12 @@ extern "C" {
     fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
 }
 extern "system" {
-    fn PsGetCurrentProcess() -> PEPROCESS;
     fn KeEnterCriticalRegion();
     fn KeLeaveCriticalRegion();
 }
+  extern "C" {
+    fn PsGetCurrentProcess() -> PEPROCESS;
+  }
 
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;
 const LPCP_CONNECTION_PORT: ULONG = 0x00000001;

@@ -177,7 +177,7 @@ pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT)
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopFlushVolumeWorker(Context: PVOID) {
+pub unsafe extern "system" fn PopFlushVolumeWorker(Context: PVOID) {
     PopFlushVolumeWorkerInner(Context)
 }
 

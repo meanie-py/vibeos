@@ -22,7 +22,7 @@ extern "C" {
     static mut LpcpMessagesLookaside: ntkrnl_sys::ddk::PAGED_LOOKASIDE_LIST;
     fn SeDeleteClientSecurity(ClientContext: *mut _SECURITY_CLIENT_CONTEXT);
 }
-extern "system" {
+extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }

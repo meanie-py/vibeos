@@ -82,7 +82,7 @@ extern "system" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     #[link_name = "RtlInterlockedPopEntrySList"]
     fn RtlInterlockedPopEntrySList_i386(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
 }
@@ -104,7 +104,7 @@ extern "system" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     #[link_name = "RtlInterlockedPushEntrySList"]
     fn RtlInterlockedPushEntrySList_i386(
         ListHead: PSLIST_HEADER,

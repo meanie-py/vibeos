@@ -167,9 +167,11 @@ extern "C" {
     static MmUserProbeAddress: ULONG_PTR;
 }
 extern "system" {
-    fn ExAllocatePoolZero(PoolType: u32, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
     fn ExFreePool(P: PVOID);
 }
+  extern "C" {
+    fn ExAllocatePoolZero(PoolType: u32, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
+  }
 
 // ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.
 // Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.

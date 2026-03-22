@@ -50,14 +50,14 @@ unsafe fn InsertTailList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
     (*head).Blink = entry;
 }
 
-/// IoGetCurrentProcess wrapper returning ddk PEPROCESS.
+/// PsGetCurrentProcess — calls the shim_exports extern "C" definition.
 #[inline]
 unsafe fn PsGetCurrentProcess() -> PEPROCESS {
-    extern "system" {
-        #[link_name = "IoGetCurrentProcess"]
-        fn IoGetCurrentProcess() -> PEPROCESS;
+    extern "C" {
+        #[link_name = "PsGetCurrentProcess"]
+        fn _PsGetCurrentProcess() -> PEPROCESS;
     }
-    IoGetCurrentProcess()
+    _PsGetCurrentProcess()
 }
 
 /// Inline InterlockedOr -- atomic OR on LONG, returns old value.
@@ -114,7 +114,7 @@ extern "C" {
 extern "C" {
     fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
 }
 

@@ -59,7 +59,7 @@ extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
 }
-extern "system" {
+extern "C" {
     fn RtlUnicodeStringToOemSize(UnicodeString: PUNICODE_STRING) -> ULONG;
 }
 

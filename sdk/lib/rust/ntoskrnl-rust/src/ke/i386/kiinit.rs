@@ -204,7 +204,7 @@ extern "C" {
 }
 
 // KeIpiGenericCall callback functions — stdcall with c_ulong ULONG_PTR on i386
-extern "stdcall" {
+extern "system" {
     fn Ki386EnableTargetLargePage(Arg: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableGlobalPage(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableDE(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;

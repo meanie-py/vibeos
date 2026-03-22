@@ -24,7 +24,7 @@ extern "C" {
     fn KxUnwaitThread(object: PVOID, increment: KPRIORITY);
     fn KxUnwaitThreadForEvent(event: PKEVENT, increment: KPRIORITY);
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 

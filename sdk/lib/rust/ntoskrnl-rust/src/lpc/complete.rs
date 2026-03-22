@@ -65,7 +65,7 @@ extern "C" {
     fn ProbeForWriteHandle(address: *mut HANDLE);
     fn LpcpCompleteWait(semaphore: PVOID);
 }
-extern "system" {
+extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
 }
 

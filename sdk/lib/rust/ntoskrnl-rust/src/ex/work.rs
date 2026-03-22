@@ -36,7 +36,7 @@ extern "system" {
 
 // ExpDebuggerWorker is a C function; calling convention differs by arch.
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn ExpDebuggerWorker(Context: PVOID);
 }
 #[cfg(not(target_arch = "x86"))]
@@ -230,7 +230,7 @@ unsafe fn ExpWorkerThreadEntryPoint_impl(Context: PVOID) {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
+unsafe extern "system" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
     ExpWorkerThreadEntryPoint_impl(Context)
 }
 

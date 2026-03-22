@@ -940,7 +940,7 @@ unsafe fn ExeFmtpCreateImageSection(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn MmCreateImageSection(
+pub unsafe extern "C" fn MmCreateImageSection(
     SectionObject: *mut *mut SECTION,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: *mut _OBJECT_ATTRIBUTES,

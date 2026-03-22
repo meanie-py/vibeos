@@ -28,7 +28,7 @@ extern "C" {
     fn InterlockedExchangeAdd64(Addend: *mut i64, Value: i64) -> i64;
     fn SeQuerySubjectContextToken(SubjectContext: *mut SECURITY_SUBJECT_CONTEXT) -> PACCESS_TOKEN;
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 

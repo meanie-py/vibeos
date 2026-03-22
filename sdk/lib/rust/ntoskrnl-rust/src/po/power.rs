@@ -136,7 +136,7 @@ extern "C" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,
@@ -224,7 +224,7 @@ pub static mut PopCapabilities: SYSTEM_POWER_CAPABILITIES = unsafe { core::mem::
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopPassivePowerCall(Parameter: PVOID) {
+pub unsafe extern "system" fn PopPassivePowerCall(Parameter: PVOID) {
     PopPassivePowerCallInner(Parameter)
 }
 #[no_mangle]
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn PopPresentIrp(NextStack: PIO_STACK_LOCATION, Irp: 
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopRequestPowerIrpCompletion(
+pub unsafe extern "system" fn PopRequestPowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
 ) -> NTSTATUS {
     PopRequestPowerIrpCompletionInner(DeviceObject, Irp, Context)
@@ -663,7 +663,7 @@ pub unsafe extern "system" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PopPerfIdleDpc(
+pub unsafe extern "system" fn PopPerfIdleDpc(
     Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
 ) {
     PopPerfIdle(core::ptr::addr_of_mut!((*(DeferredContext as *mut _KPRCB)).PowerState));

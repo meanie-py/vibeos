@@ -43,7 +43,7 @@ extern "system" {
     static LpcPortObjectType: PVOID;
     static LpcpMaxMessageSize: ULONG;
 }
-extern "system" {
+extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
 }
 extern "C" {

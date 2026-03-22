@@ -138,7 +138,7 @@ extern "C" {
     fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: PCHAR, BufferSize: USHORT);
     fn RtlInitEmptyUnicodeString(UnicodeString: *mut _UNICODE_STRING, Buffer: PWSTR, MaximumLength: USHORT);
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 

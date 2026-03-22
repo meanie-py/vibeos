@@ -71,7 +71,6 @@ unsafe fn MmGetMdlByteCount(Mdl: PMDL) -> ULONG {
 extern "system" {
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn ObDereferenceObject(Object: PVOID);
-    fn ObReferenceObject(Object: PVOID);
     fn ExFreePool(P: PVOID);
     fn ExRaiseStatus(Status: NTSTATUS);
     static mut IoFileObjectType: *mut _OBJECT_TYPE;
@@ -89,12 +88,13 @@ extern "system" {
     #[link_name = "IopQueueIrpToThread_shim"]
     fn IopQueueIrpToThread(Irp: PIRP);
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-    fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
 }
+  extern "C" {
+    fn ObReferenceObject(Object: PVOID);
+    fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
+  }
 
 extern "system" {
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
@@ -102,8 +102,12 @@ extern "system" {
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
+  extern "C" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
+  }
 
-extern "system" {
+extern "C" {
     fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
     fn ProbeForWriteHandle(Ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;

@@ -43,7 +43,7 @@ extern "system" {
     pub fn PoNotifySystemTimeSet();
     pub fn ExGetPreviousMode() -> KPROCESSOR_MODE;
 }
-extern "system" {
+extern "C" {
     pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 

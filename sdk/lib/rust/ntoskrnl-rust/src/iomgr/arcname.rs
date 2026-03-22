@@ -47,7 +47,7 @@ use ntkrnl_sys::ddk::{
     IoCreateSymbolicLink,
 };
 
-// RtlAnsiStringToUnicodeString: On i386, the ddk extern "stdcall" declaration
+// RtlAnsiStringToUnicodeString: On i386, the ddk extern "system" declaration
 // generates _RtlAnsiStringToUnicodeString (without @12 decoration) on i686-pc-windows-gnu
 // for unknown reasons. Use a cdecl C shim to avoid the decoration mismatch.
 extern "C" {

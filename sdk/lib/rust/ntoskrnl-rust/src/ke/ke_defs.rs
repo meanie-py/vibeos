@@ -149,7 +149,7 @@ extern "C" {
     // MainSSPT is `UCHAR MainSSPT[]`
     pub static mut MainSSPT: u8;
 }
-extern "system" {
+extern "C" {
     pub fn KeQuerySystemTime(CurrentTime: *mut i64);
 }
 extern "system" {

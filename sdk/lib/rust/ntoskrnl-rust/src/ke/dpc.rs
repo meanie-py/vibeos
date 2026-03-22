@@ -76,7 +76,7 @@ extern "fastcall" {
 extern "C" {
     fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 

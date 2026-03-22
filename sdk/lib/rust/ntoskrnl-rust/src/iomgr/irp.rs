@@ -313,7 +313,7 @@ unsafe extern "C" fn IopFreeIrpKernelApc(
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopFreeIrpKernelApc(
+unsafe extern "system" fn IopFreeIrpKernelApc(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -328,7 +328,7 @@ unsafe extern "C" fn IopAbortIrpKernelApc(Apc: PKAPC) {
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopAbortIrpKernelApc(Apc: PKAPC) {
+unsafe extern "system" fn IopAbortIrpKernelApc(Apc: PKAPC) {
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 
@@ -482,7 +482,7 @@ pub unsafe extern "C" fn IopCompleteRequest(
 }
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn IopCompleteRequest(
+pub unsafe extern "system" fn IopCompleteRequest(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -1357,7 +1357,7 @@ unsafe extern "C" fn IopSynchronousCompletion(
     STATUS_MORE_PROCESSING_REQUIRED
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopSynchronousCompletion(
+unsafe extern "system" fn IopSynchronousCompletion(
     _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

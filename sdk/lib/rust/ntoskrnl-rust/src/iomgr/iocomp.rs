@@ -85,7 +85,7 @@ const IopCompletionPacketIrp: ULONG = 1;
 const IopCompletionPacketMini: ULONG = 2;
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopUnloadSafeCompletion(
+unsafe extern "system" fn IopUnloadSafeCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

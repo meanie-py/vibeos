@@ -31,7 +31,7 @@ unsafe extern "C" fn IopWorkItemCallback(Parameter: PVOID) {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopWorkItemCallback(Parameter: PVOID) {
+unsafe extern "system" fn IopWorkItemCallback(Parameter: PVOID) {
     let IoWorkItem = Parameter as PIO_WORKITEM;
     let DeviceObject = (*IoWorkItem).DeviceObject;
 

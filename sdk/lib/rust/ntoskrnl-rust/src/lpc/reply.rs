@@ -50,7 +50,7 @@ extern "C" {
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER);
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
 }
-extern "system" {
+extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
 }
 

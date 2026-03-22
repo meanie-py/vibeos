@@ -19,7 +19,7 @@ use ntkrnl_sys::ddk::{
 
 #[cfg(not(target_arch = "x86"))]
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn KdpStub(
         TrapFrame: PKTRAP_FRAME,
         ExceptionFrame: PKEXCEPTION_FRAME,

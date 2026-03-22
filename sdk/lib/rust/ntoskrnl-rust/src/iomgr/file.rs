@@ -184,17 +184,19 @@ extern "system" {
 }
 
 extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+    fn ObDereferenceObject(Object: PVOID);
+    fn ExRaiseStatus(Status: NTSTATUS);
+}
+  extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn ProbeForWriteHandle(Address: *mut HANDLE);
     fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
-    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
-    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
     fn ObReferenceObject(Object: PVOID);
-    fn ObDereferenceObject(Object: PVOID);
-    fn ExRaiseStatus(Status: NTSTATUS);
-}
+  }
 
 const TAG_IO: ULONG = 0x20206F49;      // '  OI' — generic IO pool tag
 const TAG_IO_NAME: ULONG = 0x6D4E6F49;  // 'N OI' — IO name pool tag

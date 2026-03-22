@@ -234,7 +234,7 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
         type VirtFn = unsafe extern "system" fn(PEPROCESS, PVOID, *mut BOOLEAN, *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
         // Cast fn items → usize, volatile-read to make opaque, transmute back.
         // The usize intermediate avoids calling convention type mismatches between
-        // bindgen's extern "stdcall"/"C" and our extern "system" type aliases.
+        // bindgen's extern "system"/"C" and our extern "system" type aliases.
         let is_swap_fn: IsSwapFn = {
             let mut p = MmIsPageSwapEntry as usize;
             p = core::ptr::read_volatile(&p);

@@ -148,7 +148,7 @@ extern "C" {
 extern "fastcall" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 

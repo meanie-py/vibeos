@@ -53,9 +53,11 @@ unsafe fn ExInterlockedInsertHeadList(
 }
 
 extern "system" {
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8);
 }
+  extern "C" {
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
+  }
 
 // ExInitializeWorkItem is a FORCEINLINE macro
 #[inline(always)]
@@ -63,9 +65,6 @@ unsafe fn ExInitializeWorkItem(Item: *mut WORK_QUEUE_ITEM, Routine: PVOID, Conte
     (*Item).WorkerRoutine = core::mem::transmute(Routine);
     (*Item).Parameter = Context;
     (*Item).List = core::mem::zeroed();
-}
-
-extern "system" {
 }
 
 const TAG_IO: ULONG = 0x20206F49;
@@ -147,7 +146,7 @@ unsafe extern "C" fn IopLogDpcRoutine(
     IopLogDpcRoutineInner(Dpc, _DeferredContext, _SystemArgument1, _SystemArgument2);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopLogDpcRoutine(
+unsafe extern "system" fn IopLogDpcRoutine(
     Dpc: PKDPC,
     _DeferredContext: PVOID,
     _SystemArgument1: PVOID,
@@ -507,7 +506,7 @@ unsafe extern "C" fn IopFreeApc(
     ExFreePoolWithTag(Apc as PVOID, TAG_APC);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopFreeApc(
+unsafe extern "system" fn IopFreeApc(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -526,7 +525,7 @@ unsafe extern "C" fn IopRaiseHardError(
     IopRaiseHardErrorInner(NormalContext, _SystemArgument1, _SystemArgument2);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopRaiseHardError(
+unsafe extern "system" fn IopRaiseHardError(
     NormalContext: PVOID,
     _SystemArgument1: PVOID,
     _SystemArgument2: PVOID,

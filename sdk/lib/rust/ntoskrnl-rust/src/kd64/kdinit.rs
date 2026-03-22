@@ -88,7 +88,7 @@ extern "system" {
 
 #[cfg(not(target_arch = "x86"))]
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
     fn KdpTimeSlipWork(Context: PVOID);
 }

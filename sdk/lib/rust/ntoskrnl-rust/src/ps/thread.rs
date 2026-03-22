@@ -49,7 +49,7 @@ extern "C" {
 extern "fastcall" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 

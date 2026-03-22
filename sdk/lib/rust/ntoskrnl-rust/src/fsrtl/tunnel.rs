@@ -43,11 +43,11 @@ extern "C" {
     fn RtlParent(links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
     fn RtlIsLeftChild(links: PRTL_SPLAY_LINKS) -> BOOLEAN;
 }
-extern "system" {
+extern "C" {
     fn ExAllocateFromPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST, entry: PVOID);
 }
-extern "system" {
+extern "C" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 

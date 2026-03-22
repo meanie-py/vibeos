@@ -19,7 +19,7 @@ use ntkrnl_sys::ddk::{
     _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan,
 };
 
-extern "system" {
+extern "C" {
     fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
