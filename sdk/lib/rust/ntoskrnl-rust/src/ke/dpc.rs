@@ -248,12 +248,14 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                     i = 0;
                     while DpcCalls > 0 {
-                        (DpcEntry[i as usize].Routine.unwrap())(
-                            DpcEntry[i as usize].Dpc,
-                            DpcEntry[i as usize].Context,
-                            SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                            SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                        );
+                        if let Some(f) = DpcEntry[i as usize].Routine {
+                            f(
+                                DpcEntry[i as usize].Dpc,
+                                DpcEntry[i as usize].Context,
+                                SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                                SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                            );
+                        }
                         DpcCalls -= 1;
                         i += 1;
                     }
@@ -278,12 +280,14 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                     i = 0;
                     while DpcCalls > 0 {
-                        (DpcEntry[i as usize].Routine.unwrap())(
-                            DpcEntry[i as usize].Dpc,
-                            DpcEntry[i as usize].Context,
-                            SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                            SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                        );
+                        if let Some(f) = DpcEntry[i as usize].Routine {
+                            f(
+                                DpcEntry[i as usize].Dpc,
+                                DpcEntry[i as usize].Context,
+                                SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                                SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                            );
+                        }
                         DpcCalls -= 1;
                         i += 1;
                     }
@@ -313,12 +317,14 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
         i = 0;
         while DpcCalls > 0 {
-            (DpcEntry[i as usize].Routine.unwrap())(
-                DpcEntry[i as usize].Dpc,
-                DpcEntry[i as usize].Context,
-                SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                SystemTime.__bindgen_anon_1.HighPart as PVOID,
-            );
+            if let Some(f) = DpcEntry[i as usize].Routine {
+                f(
+                    DpcEntry[i as usize].Dpc,
+                    DpcEntry[i as usize].Context,
+                    SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                    SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                );
+            }
             DpcCalls -= 1;
             i += 1;
         }
@@ -414,12 +420,14 @@ pub(crate) unsafe fn KiTimerListExpire_inner(
 
         i = 0;
         while DpcCalls > 0 {
-            (DpcEntry[i as usize].Routine.unwrap())(
-                DpcEntry[i as usize].Dpc,
-                DpcEntry[i as usize].Context,
-                SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                SystemTime.__bindgen_anon_1.HighPart as PVOID,
-            );
+            if let Some(f) = DpcEntry[i as usize].Routine {
+                f(
+                    DpcEntry[i as usize].Dpc,
+                    DpcEntry[i as usize].Context,
+                    SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                    SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                );
+            }
             DpcCalls -= 1;
             i += 1;
         }
@@ -561,7 +569,9 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
 
                 _enable();
 
-                (DeferredRoutine.unwrap())(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
+                if let Some(f) = DeferredRoutine {
+                    f(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
+                }
 
                 _disable();
             } else {
