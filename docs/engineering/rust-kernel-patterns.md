@@ -506,6 +506,26 @@ fn example() {
 }
 ```
 
+## Automated Verification Tooling
+
+The defenses above are only useful if we can verify they're applied. These tools catch miscompilation and coverage gaps automatically:
+
+### `tools/scan_ud2.py` — Binary miscompilation scanner
+Scans `ntoskrnl.exe` with objdump for `ud2` (illegal instruction) in named functions. LLVM replaces function bodies with ud2 when it proves undefined behavior exists — almost always from `captures(none)` or ABI mismatch. Expected ud2 in `unwrap_unchecked` panic stubs are excluded. Runs in ~30s, no boot needed.
+
+Integrated into smoke tests as `test_no_unexpected_ud2`. Also runs automatically as a post-build check before QEMU boot (via conftest `_run_post_build_checks`).
+
+### `tools/lint_kernel.py` — Source-level output pointer linter
+Scans Rust source for `*OutputParam = value` writes in `#[no_mangle]` functions that don't use `write_volatile`. Every such write is vulnerable to `captures(none)` elimination. Catches the bug before compilation — no binary analysis needed.
+
+### `tools/verify_sacred_primitives.sh` — IRQL/spinlock call verification
+Checks that `KfRaiseIrql`, `KfLowerIrql`, `KeAcquireSpinLock` calls survive in the final binary. Integrated into smoke tests as `test_sacred_primitives`.
+
+### Smoke test infrastructure (`tests/qemu/conftest.py`)
+- **Clean Rust rebuild**: Nukes `rust-kernel-target/` before each test session to prevent stale cargo cache from masking regressions. Skip with `--skip-clean-build` for fast iteration.
+- **Post-build checks**: ud2 scanner runs automatically after build, before QEMU boot.
+- **BSOD auto-symbolication**: When a BUGCHECK is detected in serial output, automatically extracts exception code, crash RVA, and function name via objdump.
+
 ## Lessons Learned: Approaches That Failed
 
 These are approaches we tried, found to be unworkable, and documented for future reference. Each failure taught us something about how Rust/LLVM interacts with kernel code.

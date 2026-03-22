@@ -177,10 +177,19 @@ cd ../reactos
 
 ```bash
 source .venv/bin/activate
-pytest tests/qemu/test_smoke.py -v --arch arm64 --timeout 300
-pytest tests/qemu/test_smoke.py -v --arch amd64 --timeout 300
-pytest tests/qemu/test_smoke.py -v --arch i386 --timeout 300
+
+# Full test (clean Rust rebuild + boot + static analysis) — ~5 min per arch
+pytest tests/qemu/test_smoke.py -v --arch i386 --timeout 600
+pytest tests/qemu/test_smoke.py -v --arch amd64 --timeout 600
+
+# Fast iteration (skip nuclear rebuild) — ~30s per arch
+pytest tests/qemu/test_smoke.py -v --arch i386 --timeout 300 --skip-clean-build
+
+# Static analysis only (no QEMU boot)
+pytest tests/qemu/test_smoke.py -v --arch i386 -k "sacred_primitives or no_unexpected_ud2" --skip-clean-build
 ```
+
+**IMPORTANT:** Cargo's incremental cache can mask regressions. Always run WITHOUT `--skip-clean-build` for final verification before committing. The clean build nukes `rust-kernel-target/` to ensure deterministic results.
 
 ### Smoke Test Infrastructure
 
@@ -461,21 +470,41 @@ codex exec --full-auto "$(cat prompt.md)"
 2. Run `verify_ffi.py` to check ABI mismatches and C macro usage
 3. Use RAII guards (`PfnLockGuard`, `SpinLockGuard`, `IrqlGuard`) instead of manual lock pairs
 4. Use `drop(guard)` at the exact original release point — do NOT let guards drop at function end
-5. Prefer `Result<T, NTSTATUS>` returns over output pointers for internal functions
-6. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
-7. Build all 3 arches + run smoke tests
+5. Prefer `Result<(T, NTSTATUS), NTSTATUS>` returns over output pointers for internal Nt* functions — preserve exact NTSTATUS, don't hardcode STATUS_SUCCESS
+6. Use `core::ptr::write_volatile` for ALL writes to output pointer parameters — prevents LLVM captures(none) elimination
+7. Run `python3 tools/scan_ud2.py --check build-i386` after building — catches LLVM miscompilation (ud2 in named functions)
+8. Run `python3 tools/lint_kernel.py` to find unprotected output pointer writes
+9. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
+10. Build all 3 arches + run smoke tests (use `--skip-clean-build` for fast iteration, omit for final verification)
 
-### verify_constants.py
-
-Cross-checks Rust `const` values against C `#define` values from kernel headers.
+### Static Analysis Tools
 
 ```bash
+# Check for LLVM miscompilation (ud2 in named functions)
+python3 tools/scan_ud2.py build-i386              # Report all ud2
+python3 tools/scan_ud2.py --check build-i386      # Exit 1 if unexpected ud2
+
+# Check for unprotected output pointer writes (captures(none) vulnerable)
+python3 tools/lint_kernel.py                       # Report all violations
+python3 tools/lint_kernel.py --fix                 # Show suggested fixes
+python3 tools/lint_kernel.py path/to/file.rs       # Single file
+
+# Check sacred primitives survive optimization (KfRaiseIrql, KeAcquireSpinLock)
+bash tools/verify_sacred_primitives.sh build-i386
+
+# Check constant values against C headers
 .venv/bin/python tools/rustconv/rustconv/verify_constants.py                    # Check all
 .venv/bin/python tools/rustconv/rustconv/verify_constants.py --fix              # Auto-fix
-.venv/bin/python tools/rustconv/rustconv/verify_constants.py path/to/file.rs    # Single file
+
+# Check ABI mismatches
+.venv/bin/python tools/rustconv/rustconv/verify_ffi.py
 ```
 
-Catches pool tag endianness errors, wrong STATUS_* codes, wrong flag values. Skips arch-dependent constants (`PORT_MAXIMUM_MESSAGE_LENGTH`). Rejects false matches from macro expressions (CTL_CODE, compound `|` expressions).
+**`scan_ud2.py`** — Scans ntoskrnl.exe binary for `ud2` (0f 0b) instructions in named functions. ud2 in a named function means LLVM proved the function body has UB and replaced it — almost always a captures(none) or ABI mismatch bug. Expected ud2 in `unwrap_unchecked` panic stubs are excluded. Integrated into smoke tests as `test_no_unexpected_ud2`.
+
+**`lint_kernel.py`** — Static source-level scanner that finds `*OutputParam = value` writes in `#[no_mangle]` functions that don't use `write_volatile`. Every such write is a potential captures(none) target. Catches the bug BEFORE compilation.
+
+**Smoke test infrastructure** — `conftest.py` nukes `rust-kernel-target/` before each test session (unless `--skip-clean-build`). This prevents cargo's incremental cache from masking regressions. Post-build checks (ud2 scan) run automatically before QEMU boot. BSOD crashes are auto-symbolicated with function names from objdump.
 
 ## ARM64 Specifics
 
