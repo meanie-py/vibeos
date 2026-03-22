@@ -98,8 +98,6 @@ use ntkrnl_sys::ddk::{
     KeWaitForSingleObject,
     KeClearEvent,
     KeSetEvent,
-    KeAcquireQueuedSpinLock,
-    KeReleaseQueuedSpinLock,
     ObCreateObject,
     ObInsertObject,
     ObOpenObjectByName,
@@ -1490,14 +1488,14 @@ pub unsafe extern "system" fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_O
 }
 
 unsafe fn IopGetDevicePDO(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock as _) }; // [guard]
     let mut PDO = IopGetDeviceAttachmentBase(DeviceObject);
     if (*PDO).Flags & DO_BUS_ENUMERATED_DEVICE != DO_BUS_ENUMERATED_DEVICE {
         PDO = null_mut();
     } else {
         ObReferenceObject(PDO as PVOID);
     }
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
+    drop(qsl_guard); // [guard-drop]
     PDO
 }
 

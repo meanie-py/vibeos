@@ -4,8 +4,6 @@ use ntkrnl_sys::ps::PEPROCESS;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     _EPROCESS,
-    MiAcquireExpansionLock,
-    MiReleaseExpansionLock,
 };
 use crate::ARM3::helpers::{
     MI_MAKE_DIRTY_PAGE,
@@ -44,8 +42,6 @@ pub unsafe extern "C" fn MiArchCreateProcessAddressSpace(
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
     let mut PteTable: PMMPTE = core::ptr::null_mut();
     let mut PdeOffset: ULONG = 0;
-    let OldIrql: KIRQL;
-
     PointerPte = MiReserveSystemPtes(1, SystemPteSpace);
     if PointerPte.is_null() {
         return 0u8;
@@ -96,12 +92,12 @@ pub unsafe extern "C" fn MiArchCreateProcessAddressSpace(
 
     MiReleaseSystemPtes(PointerPte, 1, SystemPteSpace);
 
-    OldIrql = MiAcquireExpansionLock();
+    let exp_guard = unsafe { ntkrnl_sys::guards::ExpansionLockGuard::acquire() }; // [guard]
     InsertTailList(
         core::ptr::addr_of_mut!(MmProcessList) as PLIST_ENTRY,
         core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).MmProcessLinks) as PLIST_ENTRY,
     );
-    MiReleaseExpansionLock(OldIrql);
+    drop(exp_guard); // [guard-drop]
 
     1u8
 }

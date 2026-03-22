@@ -208,3 +208,146 @@ impl Drop for SpinLockAtDpcGuard {
 }
 
 
+// ── DispatcherLockGuard ─────────────────────────────────────────────
+
+/// RAII guard for the kernel dispatcher lock (KiAcquireDispatcherLock/KiReleaseDispatcherLock).
+/// Raises to SYNCH_LEVEL on acquire, lowers on drop.
+pub struct DispatcherLockGuard {
+    previous_irql: KIRQL,
+}
+
+impl DispatcherLockGuard {
+    #[inline]
+    pub unsafe fn acquire() -> Self {
+        let previous_irql = crate::inline::ke::KiAcquireDispatcherLock();
+        Self { previous_irql }
+    }
+
+    #[inline]
+    pub fn previous_irql(&self) -> KIRQL {
+        self.previous_irql
+    }
+}
+
+impl Drop for DispatcherLockGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { crate::inline::ke::KiReleaseDispatcherLock(self.previous_irql) }
+    }
+}
+
+
+// ── QueuedSpinLockGuard ─────────────────────────────────────────────
+
+/// RAII guard for queued spinlocks (KeAcquireQueuedSpinLock/KeReleaseQueuedSpinLock).
+pub struct QueuedSpinLockGuard {
+    number: u32,
+    previous_irql: KIRQL,
+}
+
+impl QueuedSpinLockGuard {
+    #[inline]
+    pub unsafe fn acquire(number: u32) -> Self {
+        let previous_irql = crate::ke::KeAcquireQueuedSpinLock(number);
+        Self { number, previous_irql }
+    }
+
+    #[inline]
+    pub fn previous_irql(&self) -> KIRQL {
+        self.previous_irql
+    }
+}
+
+impl Drop for QueuedSpinLockGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { crate::ke::KeReleaseQueuedSpinLock(self.number, self.previous_irql) }
+    }
+}
+
+
+// ── CancelSpinLockGuard ─────────────────────────────────────────────
+
+/// RAII guard for the IO cancel spinlock (IoAcquireCancelSpinLock/IoReleaseCancelSpinLock).
+pub struct CancelSpinLockGuard {
+    previous_irql: KIRQL,
+}
+
+impl CancelSpinLockGuard {
+    #[inline]
+    pub unsafe fn acquire() -> Self {
+        let mut previous_irql: KIRQL = 0;
+        crate::ddk::IoAcquireCancelSpinLock(&mut previous_irql);
+        Self { previous_irql }
+    }
+
+    #[inline]
+    pub fn previous_irql(&self) -> KIRQL {
+        self.previous_irql
+    }
+}
+
+impl Drop for CancelSpinLockGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { crate::ddk::IoReleaseCancelSpinLock(self.previous_irql) }
+    }
+}
+
+
+// ── VpbSpinLockGuard ────────────────────────────────────────────────
+
+/// RAII guard for the VPB spinlock (IoAcquireVpbSpinLock/IoReleaseVpbSpinLock).
+pub struct VpbSpinLockGuard {
+    previous_irql: KIRQL,
+}
+
+impl VpbSpinLockGuard {
+    #[inline]
+    pub unsafe fn acquire() -> Self {
+        let mut previous_irql: KIRQL = 0;
+        crate::ddk::IoAcquireVpbSpinLock(&mut previous_irql);
+        Self { previous_irql }
+    }
+
+    #[inline]
+    pub fn previous_irql(&self) -> KIRQL {
+        self.previous_irql
+    }
+}
+
+impl Drop for VpbSpinLockGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { crate::ddk::IoReleaseVpbSpinLock(self.previous_irql) }
+    }
+}
+
+
+// ── ExpansionLockGuard ──────────────────────────────────────────────
+
+/// RAII guard for the MM expansion lock (MiAcquireExpansionLock/MiReleaseExpansionLock).
+pub struct ExpansionLockGuard {
+    previous_irql: KIRQL,
+}
+
+impl ExpansionLockGuard {
+    #[inline]
+    pub unsafe fn acquire() -> Self {
+        let previous_irql = crate::inline::mm::MiAcquireExpansionLock();
+        Self { previous_irql }
+    }
+
+    #[inline]
+    pub fn previous_irql(&self) -> KIRQL {
+        self.previous_irql
+    }
+}
+
+impl Drop for ExpansionLockGuard {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { crate::inline::mm::MiReleaseExpansionLock(self.previous_irql) }
+    }
+}
+

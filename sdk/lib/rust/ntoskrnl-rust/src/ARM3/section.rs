@@ -738,23 +738,25 @@ unsafe fn MiSegmentDelete(segment: PSEGMENT) {
     ExFreePool(segment as PVOID);
 }
 
-unsafe fn MiCheckControlArea(control_area: *mut _CONTROL_AREA, old_irql: KIRQL) {
+/// Check if a control area should be deleted after reference count changes.
+/// Takes ownership of the PFN lock guard (releases it internally).
+unsafe fn MiCheckControlArea(control_area: *mut _CONTROL_AREA, pfn_guard: crate::ARM3::helpers::PfnLockGuard) {
     let mut delete_segment = false;
     if ((*control_area).NumberOfMappedViews == 0) && ((*control_area).NumberOfSectionReferences == 0) {
         (*control_area).u.Flags.set_BeingDeleted(1);
         delete_segment = true;
     }
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop] — replaces MiReleasePfnLock(old_irql)
     if delete_segment {
         MiSegmentDelete((*control_area).Segment);
     }
 }
 
 unsafe fn MiDereferenceControlArea(control_area: *mut _CONTROL_AREA) {
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     (*control_area).NumberOfMappedViews -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, old_irql);
+    MiCheckControlArea(control_area, pfn_guard);
 }
 
 #[no_mangle]
@@ -767,10 +769,10 @@ pub unsafe extern "system" fn MiRemoveMappedView(current_process: PEPROCESS, vad
         vad as *mut _ as ntkrnl_sys::ddk::PMMVAD,
     );
     MiUnlockProcessWorkingSetUnsafe(current_process, current_thread);
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     (*control_area).NumberOfMappedViews -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, old_irql);
+    MiCheckControlArea(control_area, pfn_guard);
 }
 
 unsafe fn MiUnmapViewOfSection(
@@ -1493,10 +1495,10 @@ unsafe fn MiRemoveMappedPtes(
         number_of_ptes -= 1;
     }
     KeFlushCurrentTb();
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     (*control_area).NumberOfUserReferences -= 1;
     (*control_area).NumberOfMappedViews -= 1;
-    MiCheckControlArea(control_area, old_irql);
+    MiCheckControlArea(control_area, pfn_guard);
 }
 
 unsafe fn MiRemoveFromSystemSpace(
@@ -1728,10 +1730,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
         }
         // Check if a user reference was added
         if user_ref_incremented {
-            let old_irql = MiAcquirePfnLock();
+            let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
             (*control_area).NumberOfSectionReferences -= 1;
             (*control_area).NumberOfUserReferences -= 1;
-            MiCheckControlArea(control_area, old_irql);
+            MiCheckControlArea(control_area, pfn_guard);
         }
         return status;
     }
@@ -2013,11 +2015,11 @@ pub unsafe extern "system" fn MiDeleteARM3Section(object_body: PVOID) {
         MiRemoveNode(&mut (*((section_object as PSECTION) as *mut _SECTION)).Address as *mut _ as *mut _MMADDRESS_NODE, &mut MmSectionBasedRoot);
         KeReleaseGuardedMutex(&mut MmSectionBasedMutex as *mut _ as PKGUARDED_MUTEX);
     }
-    let old_irql = MiAcquirePfnLock();
+    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     let control_area = (*(*((section_object as PSECTION) as *mut _SECTION)).Segment).ControlArea;
     (*control_area).NumberOfSectionReferences -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, old_irql);
+    MiCheckControlArea(control_area, pfn_guard);
 }
 
 #[no_mangle]

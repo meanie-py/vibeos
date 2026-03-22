@@ -183,15 +183,15 @@ const MOUNTMGR_DEVICE_NAME: &[u16] = &[
 ];
 
 unsafe fn IopDecrementDeviceObjectRef(DeviceObject: PDEVICE_OBJECT, UnloadIfUnused: u8) {
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
 
     (*DeviceObject).ReferenceCount -= 1;
     if (*DeviceObject).ReferenceCount > 0 {
-        KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+        drop(qsl_guard); // [guard-drop]
         return;
     }
 
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     let ext = IoGetDevObjExtension(DeviceObject) as *mut u32;
     if UnloadIfUnused != 0
@@ -295,19 +295,17 @@ pub unsafe extern "system" fn IopCreateVpb(DeviceObject: PDEVICE_OBJECT) -> NTST
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDereferenceVpbAndFree(Vpb: PVPB) {
-    let mut OldIrql: KIRQL = 0;
-
-    IoAcquireVpbSpinLock(&mut OldIrql);
+    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
     (*Vpb).ReferenceCount -= 1;
 
     if (*Vpb).ReferenceCount == 0
         && (*(*Vpb).RealDevice).Vpb == Vpb
         && ((*Vpb).Flags & VPB_PERSISTENT) == 0
     {
-        IoReleaseVpbSpinLock(OldIrql);
+        drop(vpb_guard); // [guard-drop]
         ExFreePoolWithTag(Vpb as PVOID, TAG_VPB);
     } else {
-        IoReleaseVpbSpinLock(OldIrql);
+        drop(vpb_guard); // [guard-drop]
     }
 }
 
@@ -317,10 +315,9 @@ pub unsafe extern "system" fn IopReferenceVerifyVpb(
     FileSystemObject: *mut PDEVICE_OBJECT,
     Vpb: *mut PVPB,
 ) -> u8 {
-    let mut OldIrql: KIRQL = 0;
     let mut Result = 0u8;
 
-    IoAcquireVpbSpinLock(&mut OldIrql);
+    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
     *Vpb = core::ptr::null_mut();
     *FileSystemObject = core::ptr::null_mut();
 
@@ -332,7 +329,7 @@ pub unsafe extern "system" fn IopReferenceVerifyVpb(
         Result = 1u8;
     }
 
-    IoReleaseVpbSpinLock(OldIrql);
+    drop(vpb_guard); // [guard-drop]
     Result
 }
 
@@ -341,9 +338,7 @@ unsafe fn IopMountInitializeVpb(
     AttachedDeviceObject: PDEVICE_OBJECT,
     Raw: u8,
 ) -> PVPB {
-    let mut OldIrql: KIRQL = 0;
-
-    IoAcquireVpbSpinLock(&mut OldIrql);
+    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
     let Vpb = (*DeviceObject).Vpb;
 
     (*Vpb).Flags |= VPB_MOUNTED | if Raw != 0 { VPB_RAW_MOUNT } else { 0 };
@@ -358,7 +353,7 @@ unsafe fn IopMountInitializeVpb(
 
     (*Vpb).ReferenceCount += 1;
 
-    IoReleaseVpbSpinLock(OldIrql);
+    drop(vpb_guard); // [guard-drop]
     Vpb
 }
 
@@ -372,18 +367,18 @@ unsafe fn IopNotifyFileSystemChange(DeviceObject: PDEVICE_OBJECT, DriverActive: 
 }
 
 unsafe fn IopInterlockedIncrementUlong(Queue: u32, Ulong: PULONG) -> ULONG {
-    let Irql = KeAcquireQueuedSpinLock(Queue);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(Queue) }; // [guard]
     let OldValue = *Ulong;
     *Ulong += 1;
-    KeReleaseQueuedSpinLock(Queue, Irql);
+    drop(qsl_guard); // [guard-drop]
     OldValue
 }
 
 unsafe fn IopInterlockedDecrementUlong(Queue: u32, Ulong: PULONG) -> ULONG {
-    let Irql = KeAcquireQueuedSpinLock(Queue);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(Queue) }; // [guard]
     let OldValue = *Ulong;
     *Ulong -= 1;
-    KeReleaseQueuedSpinLock(Queue, Irql);
+    drop(qsl_guard); // [guard-drop]
     OldValue
 }
 

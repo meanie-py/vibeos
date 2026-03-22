@@ -30,9 +30,9 @@ use ntkrnl_sys::ddk::{
     InbvResetDisplay, InbvSetScrollRegion, InbvSetTextColor, InbvSolidColorFill,
     KeBugCheckUnicodeToAnsi as KeBugCheckUnicodeToAnsiExtern,
     KeBugCheckWithTf as KeBugCheckWithTfExtern,
-    KiAcquireNmiListLock, KiHandleNmi as KiHandleNmiExtern,
+    KiHandleNmi as KiHandleNmiExtern,
     KiInitializeBugCheck as KiInitializeBugCheckExtern, KiPcToFileHeader as KiPcToFileHeaderExtern,
-    KiReleaseNmiListLock, KiRosPcToUserFileHeader as KiRosPcToUserFileHeaderExtern,
+    KiRosPcToUserFileHeader as KiRosPcToUserFileHeaderExtern,
     KiSaveProcessorControlState, LdrAccessResource, LdrFindResource_U,
     MmIsSpecialPoolAddress, MmIsSpecialPoolAddressFree, MmMakeKernelResourceSectionWritable,
     PKE_BUGCHECK_UNICODE_TO_ANSI, PANSI_STRING,
@@ -1093,7 +1093,6 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
     CallbackRoutine: PNMI_CALLBACK,
     Context: PVOID,
 ) -> PVOID {
-    let mut OldIrql: KIRQL = 0;
     let NmiData: PKNMI_HANDLER_CALLBACK;
     let Next: PKNMI_HANDLER_CALLBACK;
 
@@ -1106,25 +1105,24 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
     (*NmiData).Context = Context;
     (*NmiData).Handle = NmiData as PVOID;
 
-    KiAcquireNmiListLock(&mut OldIrql);
+    let nmi_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KiNmiCallbackListLock)) }; // [guard]
     (*NmiData).Next = KiNmiCallbackListHead;
     Next = InterlockedCompareExchangePointer(
         &mut KiNmiCallbackListHead as *mut _ as *mut PVOID,
         NmiData as PVOID,
         (*NmiData).Next as PVOID,
     ) as PKNMI_HANDLER_CALLBACK;
-    KiReleaseNmiListLock(OldIrql);
+    drop(nmi_guard); // [guard-drop]
 
     (*NmiData).Handle
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS {
-    let mut OldIrql: KIRQL = 0;
     let mut NmiData: PKNMI_HANDLER_CALLBACK;
     let mut Previous: *mut PKNMI_HANDLER_CALLBACK;
 
-    KiAcquireNmiListLock(&mut OldIrql);
+    let nmi_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KiNmiCallbackListLock)) }; // [guard]
     Previous = &mut KiNmiCallbackListHead;
     NmiData = *Previous;
     while !NmiData.is_null() {
@@ -1136,7 +1134,7 @@ pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS
         Previous = &mut (*NmiData).Next;
         NmiData = *Previous;
     }
-    KiReleaseNmiListLock(OldIrql);
+    drop(nmi_guard); // [guard-drop]
 
     if !NmiData.is_null() {
         ExFreePoolWithTag(NmiData as PVOID, TAG_KNMI);

@@ -78,10 +78,9 @@ pub unsafe extern "C" fn CcPostWorkQueue(
     WorkItem: PWORK_QUEUE_ENTRY,
     WorkQueue: PLIST_ENTRY,
 ) {
-    let mut OldIrql: KIRQL = 0;
     let mut ThreadToSpawn: PWORK_QUEUE_ITEM;
 
-    OldIrql = KeAcquireQueuedSpinLock(6u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(6u32) }; // [guard]
     InsertTailList(WorkQueue, core::ptr::addr_of_mut!((*WorkItem).WorkQueueLinks) as PLIST_ENTRY);
 
     ThreadToSpawn = core::ptr::null_mut();
@@ -95,7 +94,7 @@ pub unsafe extern "C" fn CcPostWorkQueue(
         CcNumberActiveWorkerThreads += 1;
     }
 
-    KeReleaseQueuedSpinLock(6u32, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     if ThreadToSpawn != core::ptr::null_mut() {
         (*ThreadToSpawn).List.Flink = core::ptr::null_mut();
@@ -143,13 +142,12 @@ unsafe fn CcWriteBehind() {
 
 unsafe fn CcLazyWriteScan() {
     let Target: ULONG;
-    let mut OldIrql: KIRQL = 0;
     let mut ListEntry: PLIST_ENTRY;
     let mut ToPost: LIST_ENTRY = core::mem::zeroed();
     let mut WorkItem: PWORK_QUEUE_ENTRY;
 
     InitializeListHead(core::ptr::addr_of_mut!(ToPost) as PLIST_ENTRY);
-    OldIrql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
     if LazyWriter.OtherWork != 0 {
         while !IsListEmpty(core::ptr::addr_of_mut!(CcPostTickWorkQueue) as PLIST_ENTRY) {
             ListEntry = RemoveHeadList(core::ptr::addr_of_mut!(CcPostTickWorkQueue) as PLIST_ENTRY);
@@ -159,7 +157,7 @@ unsafe fn CcLazyWriteScan() {
         }
         LazyWriter.OtherWork = 0u8;
     }
-    KeReleaseQueuedSpinLock(17u32, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     Target = CcTotalDirtyPages / 8;
     if Target != 0 {
@@ -181,9 +179,9 @@ unsafe fn CcLazyWriteScan() {
         CcPostDeferredWrites();
         CcScheduleLazyWriteScan(0u8);
     } else {
-        OldIrql = KeAcquireQueuedSpinLock(17u32);
+        let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
         LazyWriter.ScanActive = 0u8;
-        KeReleaseQueuedSpinLock(17u32, OldIrql);
+        drop(qsl_guard); // [guard-drop]
     }
 }
 
@@ -214,7 +212,6 @@ pub unsafe extern "C" fn CcScheduleLazyWriteScan(NoDelay: BOOLEAN) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
-    let mut OldIrql: KIRQL = 0;
     let mut DropThrottle: BOOLEAN;
     let mut WritePerformed: BOOLEAN;
     let Item: PWORK_QUEUE_ITEM;
@@ -223,10 +220,11 @@ pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
     DropThrottle = 0u8;
     WritePerformed = 0u8;
 
+    let mut qsl_guard;
     loop {
         let WorkItem: PWORK_QUEUE_ENTRY;
 
-        OldIrql = KeAcquireQueuedSpinLock(6u32);
+        qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(6u32) }; // [guard]
 
         if DropThrottle != 0 {
             CcQueueThrottle = 0u8;
@@ -251,7 +249,7 @@ pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
         }
 
         RemoveEntryList(core::ptr::addr_of_mut!((*WorkItem).WorkQueueLinks) as PLIST_ENTRY);
-        KeReleaseQueuedSpinLock(6u32, OldIrql);
+        drop(qsl_guard); // [guard-drop]
 
         match (*WorkItem).Function {
             x if x == ReadAhead => {
@@ -285,7 +283,7 @@ pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
         core::ptr::addr_of_mut!((*Item).List) as PLIST_ENTRY,
     );
     CcNumberActiveWorkerThreads -= 1;
-    KeReleaseQueuedSpinLock(6u32, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     if !IsListEmpty(core::ptr::addr_of_mut!(CcDeferredWrites) as PLIST_ENTRY) && CcTotalDirtyPages >= 20 {
         if WritePerformed != 0 {
@@ -296,7 +294,6 @@ pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CcWaitForCurrentLazyWriterActivity() -> NTSTATUS {
-    let mut OldIrql: KIRQL = 0;
     let mut WaitEvent: _KEVENT = core::mem::zeroed();
     let WorkItem: PWORK_QUEUE_ENTRY;
 
@@ -309,7 +306,7 @@ pub unsafe extern "system" fn CcWaitForCurrentLazyWriterActivity() -> NTSTATUS {
     KeInitializeEvent(core::ptr::addr_of_mut!(WaitEvent), _EVENT_TYPE_NotificationEvent, 0u8);
     (*WorkItem).Parameters.Event.Event = core::ptr::addr_of_mut!(WaitEvent);
 
-    OldIrql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
     InsertTailList(
         core::ptr::addr_of_mut!(CcPostTickWorkQueue) as PLIST_ENTRY,
         core::ptr::addr_of_mut!((*WorkItem).WorkQueueLinks) as PLIST_ENTRY,
@@ -320,7 +317,7 @@ pub unsafe extern "system" fn CcWaitForCurrentLazyWriterActivity() -> NTSTATUS {
         CcScheduleLazyWriteScan(1u8);
     }
 
-    KeReleaseQueuedSpinLock(17u32, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     return KeWaitForSingleObject(
         core::ptr::addr_of_mut!(WaitEvent) as PVOID,

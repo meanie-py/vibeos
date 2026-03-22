@@ -40,12 +40,12 @@ use ntkrnl_sys::ddk::{
     TARGET_DEVICE_CUSTOM_NOTIFICATION,
     IoAllocateIrp, IoFreeIrp, IoFreeMdl,
     IoGetRelatedDeviceObject, IoGetAttachedDevice, IoAllocateMdl,
-    IoGetNextIrpStackLocation, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
+    IoGetNextIrpStackLocation,
     IopAbortInterruptedIrp, IopCompleteRequest,
     IopCleanupFailedIrp, IopGetDeviceAttachmentBase, IopAllocateReserveIrp,
     MmIsFileObjectAPagingFile,
     KeWaitForSingleObject, KeClearEvent, KeSetEvent,
-    KeInitializeEvent, KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock,
+    KeInitializeEvent,
     ExGetPreviousMode,
     ObReferenceObjectByHandle, ObCloseHandle, ObReferenceObjectByName,
     MmProbeAndLockPages,
@@ -1087,16 +1087,15 @@ unsafe fn IopGetFileMode(FileObject: PFILE_OBJECT) -> ULONG {
 }
 
 unsafe fn IopGetMountFlag(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN {
-    let mut OldIrql: KIRQL = 0;
     let Vpb: PVPB;
     let mut Mounted: BOOLEAN = 0u8;
 
-    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(OldIrql));
+    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
     Vpb = (*DeviceObject).Vpb;
     if !Vpb.is_null() && ((*Vpb).Flags & VPB_MOUNTED != 0) {
         Mounted = 1u8;
     }
-    IoReleaseVpbSpinLock(OldIrql);
+    drop(vpb_guard); // [guard-drop]
     Mounted
 }
 
@@ -1119,7 +1118,6 @@ unsafe fn IopGetDriverPathInformation(
     DriverPathInfo: PFILE_FS_DRIVER_PATH_INFORMATION,
     Length: ULONG,
 ) -> NTSTATUS {
-    let mut OldIrql: KIRQL;
     let mut Status: NTSTATUS;
     let mut DriverName: _UNICODE_STRING = core::mem::zeroed();
     let mut DriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
@@ -1149,7 +1147,7 @@ unsafe fn IopGetDriverPathInformation(
         return Status;
     }
 
-    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock as _) }; // [guard]
     if !(*FileObject).Vpb.is_null() && !(*(*FileObject).Vpb).DeviceObject.is_null() {
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*(*FileObject).Vpb).DeviceObject, DriverObject);
@@ -1157,7 +1155,7 @@ unsafe fn IopGetDriverPathInformation(
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*FileObject).DeviceObject, DriverObject);
     }
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 
     ObDereferenceObject(DriverObject as PVOID);
     STATUS_SUCCESS

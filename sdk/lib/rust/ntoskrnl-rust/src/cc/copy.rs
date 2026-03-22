@@ -163,10 +163,10 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
     let mut locked = 0u8;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
     let private_cache_map = (*file_object).PrivateCacheMap as PPRIVATE_CACHE_MAP;
     let (current_offset, length) = if private_cache_map.is_null() {
-        KeReleaseQueuedSpinLock(17u32, old_irql);
+        drop(qsl_guard); // [guard-drop]
         ObDereferenceObject(file_object as PVOID);
         return;
     } else {
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
         (offset, len)
     };
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    drop(qsl_guard); // [guard-drop]
 
     let mut current_offset = current_offset;
     let mut length = length;
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         }
     }
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
     let private_cache_map = (*file_object).PrivateCacheMap as PPRIVATE_CACHE_MAP;
     if !private_cache_map.is_null() {
         KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         ).fetch_and(!PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE, core::sync::atomic::Ordering::SeqCst);
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
     }
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    drop(qsl_guard); // [guard-drop]
 
     if locked != 0 {
         ((*(*shared_cache_map).Callbacks).ReleaseFromReadAhead.unwrap())((*shared_cache_map).LazyWriteContext);
@@ -323,9 +323,9 @@ pub unsafe extern "system" fn CcCanIWrite(
     }
 
     if IsListEmpty(core::ptr::addr_of_mut!(CcDeferredWrites)) {
-        let old_irql = KeAcquireQueuedSpinLock(17u32);
+        let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
         CcScheduleLazyWriteScan(1u8);
-        KeReleaseQueuedSpinLock(17u32, old_irql);
+        drop(qsl_guard); // [guard-drop]
     }
 
     let mut wait_event: _KEVENT = core::mem::zeroed();
@@ -563,11 +563,11 @@ pub unsafe extern "system" fn CcDeferWrite(
 
     CcPostDeferredWrites();
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
     if (*core::ptr::addr_of!(LazyWriter)).ScanActive == 0 {
         CcScheduleLazyWriteScan(0u8);
     }
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    drop(qsl_guard); // [guard-drop]
 }
 
 #[no_mangle]

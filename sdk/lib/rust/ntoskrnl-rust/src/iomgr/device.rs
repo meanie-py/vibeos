@@ -18,7 +18,7 @@ use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP,
     PVPB, POBJECT_ATTRIBUTES, PSHUTDOWN_ENTRY, PUNICODE_STRING, POBJECT_TYPE,
     ACCESS_MASK, HANDLE, KPROCESSOR_MODE,
-    IoAcquireCancelSpinLock, IoReleaseCancelSpinLock, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
+    IoAcquireCancelSpinLock, IoReleaseCancelSpinLock,
     IoBuildSynchronousFsdRequest, IofCallDriver,
     ZwOpenFile, ZwClose, KeWaitForSingleObject, KeInitializeEvent, KeInitializeDeviceQueue,
     KeRemoveDeviceQueue, KeRemoveByKeyDeviceQueue, KeInsertDeviceQueue, KeInsertByKeyDeviceQueue,
@@ -480,7 +480,7 @@ unsafe fn IopEditDeviceList(
     DeviceObject: PDEVICE_OBJECT,
     Type: IOP_DEVICE_LIST_OPERATION,
 ) {
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
 
     match Type {
         IOP_DEVICE_LIST_OPERATION::IopRemove => {
@@ -490,7 +490,7 @@ unsafe fn IopEditDeviceList(
             } else {
                 while (*Previous).NextDevice != DeviceObject {
                     if (*Previous).NextDevice.is_null() {
-                        KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+                        drop(qsl_guard); // [guard-drop]
                         return;
                     }
                     Previous = (*Previous).NextDevice;
@@ -504,7 +504,7 @@ unsafe fn IopEditDeviceList(
         }
     }
 
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+    drop(qsl_guard); // [guard-drop]
 }
 
 #[no_mangle]
@@ -720,7 +720,7 @@ pub unsafe extern "system" fn IopVerifyDeviceObjectOnStack(
     TopDeviceObjectHint: PDEVICE_OBJECT,
 ) -> BOOLEAN {
     let mut Result = 0u8;
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
     let mut LoopObject = BaseDeviceObject;
     loop {
         if LoopObject == TopDeviceObjectHint {
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn IopVerifyDeviceObjectOnStack(
         }
         LoopObject = (*LoopObject).AttachedDevice;
     }
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+    drop(qsl_guard); // [guard-drop]
     Result
 }
 
@@ -1198,7 +1198,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
     let mut ActualDevices = 1u32;
     let mut CurrentDevice = (*DriverObject).DeviceObject;
 
-    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
 
     while !(*CurrentDevice).NextDevice.is_null() {
         CurrentDevice = (*CurrentDevice).NextDevice;
@@ -1210,7 +1210,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
     *ActualNumberDeviceObjects = ActualDevices;
 
     if (ActualDevices * core::mem::size_of::<PDEVICE_OBJECT>() as u32) > DeviceObjectListSize {
-        KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+        drop(qsl_guard); // [guard-drop]
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
         }
     }
 
-    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
+    drop(qsl_guard); // [guard-drop]
     STATUS_SUCCESS
 }
 
@@ -1271,8 +1271,7 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
         return STATUS_INVALID_PARAMETER;
     }
 
-    let mut OldIrql = 0u8;
-    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(OldIrql));
+    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
 
     let DeviceExtension = IoGetDevObjExtension(FileSystemDeviceObject);
     let Vpb = (*DeviceExtension).Vpb;
@@ -1289,7 +1288,7 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
         STATUS_INVALID_PARAMETER
     };
 
-    IoReleaseVpbSpinLock(OldIrql);
+    drop(vpb_guard); // [guard-drop]
     Status
 }
 

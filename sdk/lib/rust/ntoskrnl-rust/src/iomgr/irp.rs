@@ -390,7 +390,6 @@ pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: 
 #[no_mangle]
 pub unsafe extern "system" fn IopDisassociateThreadIrp() {
     let mut OldIrql: KIRQL = 0;
-    let LockIrql: KIRQL;
     let IrpThread: PETHREAD;
     let IrpEntry: PLIST_ENTRY;
     let mut ErrorLogEntry: PIO_ERROR_LOG_PACKET;
@@ -405,7 +404,7 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
         return;
     }
 
-    LockIrql = KeAcquireQueuedSpinLock(LockQueueIoCompletionLock);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoCompletionLock) }; // [guard]
 
     IrpEntry = (*IrpThread).IrpList.Flink;
     IopDeadIrp = CONTAINING_RECORD(
@@ -414,7 +413,7 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
     ) as PIRP;
 
     if (*IopDeadIrp).CurrentLocation == ((*IopDeadIrp).StackCount + 2) as i8 {
-        KeReleaseQueuedSpinLock(LockQueueIoCompletionLock, LockIrql);
+        drop(qsl_guard); // [guard-drop]
         KeLowerIrql(OldIrql);
         return;
     }
@@ -428,7 +427,7 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
         DeviceObject = (*IoStackLocation).DeviceObject;
     }
 
-    KeReleaseQueuedSpinLock(LockQueueIoCompletionLock, LockIrql);
+    drop(qsl_guard); // [guard-drop]
     KeLowerIrql(OldIrql);
 
     if !DeviceObject.is_null() {

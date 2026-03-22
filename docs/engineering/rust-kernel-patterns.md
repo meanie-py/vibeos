@@ -137,103 +137,69 @@ Already in assembly (`ntoskrnl/ke/arm64/trap.S`, `zwdispatch.S`). No change need
 
 ## Layer 2: Guard Primitives
 
+All implemented in `ntkrnl-sys/src/guards.rs` and `ntoskrnl-rust/src/ARM3/helpers.rs`.
+
 ### IrqlGuard
 
 ```rust
-// In ntkrnl-sys/src/guards.rs (new module)
-
-/// RAII guard that restores IRQL when dropped.
-/// The old IRQL is a live value — LLVM cannot eliminate the Drop.
-pub struct IrqlGuard {
-    previous: KIRQL,
-}
-
+// ntkrnl-sys/src/guards.rs
+pub struct IrqlGuard { previous: KIRQL }
 impl IrqlGuard {
-    /// Raise IRQL and return a guard that restores it on drop.
-    #[inline]
-    pub unsafe fn raise(new_irql: KIRQL) -> Self {
-        let previous = irql_raise(new_irql);
-        Self { previous }
-    }
-
-    /// Raise to DISPATCH_LEVEL.
-    #[inline]
-    pub unsafe fn raise_to_dpc() -> Self {
-        Self::raise(DISPATCH_LEVEL)
-    }
-
-    /// Get the saved (previous) IRQL.
-    #[inline]
-    pub fn previous(&self) -> KIRQL {
-        self.previous
-    }
+    pub unsafe fn raise(new_irql: KIRQL) -> Self { ... }
+    pub unsafe fn raise_to_dpc() -> Self { ... }
+    pub unsafe fn raise_to_apc() -> Self { ... }
+    pub fn previous(&self) -> KIRQL { ... }
 }
-
-impl Drop for IrqlGuard {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe { irql_lower(self.previous) }
-    }
-}
+impl Drop for IrqlGuard { fn drop(&mut self) { irql_lower(self.previous) } }
 ```
 
 ### SpinLockGuard
 
+**IMPORTANT:** Uses kernel's `KeAcquireSpinLock`/`KeReleaseSpinLock`, NOT a custom atomic spin loop. A custom `AtomicUsize` spin loop was tried and caused deadlocks on i386 because the kernel's spinlock protocol involves more than just an atomic exchange (queued spinlocks, debugging hooks, etc.).
+
 ```rust
-/// RAII guard for spinlocks. Acquires on creation, releases on drop.
-/// Embeds the IRQL guard so IRQL is automatically restored.
-pub struct SpinLockGuard {
-    lock: *mut KSPIN_LOCK,
-    irql: IrqlGuard,
-}
-
+// ntkrnl-sys/src/guards.rs
+pub struct SpinLockGuard { lock: PKSPIN_LOCK, previous_irql: KIRQL }
 impl SpinLockGuard {
-    /// Acquire a spinlock, raising IRQL to DISPATCH_LEVEL.
-    #[inline]
-    pub unsafe fn acquire(lock: *mut KSPIN_LOCK) -> Self {
-        let irql = IrqlGuard::raise_to_dpc();
-        // Atomic spinlock acquire
-        while core::sync::atomic::AtomicUsize::from_ptr(lock as *mut usize)
-            .compare_exchange_weak(0, 1,
-                core::sync::atomic::Ordering::Acquire,
-                core::sync::atomic::Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-        Self { lock, irql }
+    pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
+        let mut previous_irql: KIRQL = 0;
+        KeAcquireSpinLock(lock, &mut previous_irql);
+        Self { lock, previous_irql }
     }
 }
-
 impl Drop for SpinLockGuard {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            // Release spinlock
-            core::sync::atomic::AtomicUsize::from_ptr(self.lock as *mut usize)
-                .store(0, core::sync::atomic::Ordering::Release);
-            // IrqlGuard drop restores IRQL automatically
-        }
-    }
+    fn drop(&mut self) { KeReleaseSpinLock(self.lock, self.previous_irql) }
 }
 ```
 
-### PfnLockGuard (Specialized)
+### SpinLockAtDpcGuard
+
+For nested spinlock acquisition when already at DISPATCH_LEVEL.
 
 ```rust
-/// Guard for the PFN database lock — a frequently used pattern.
-pub struct PfnLockGuard {
-    inner: SpinLockGuard,
+// ntkrnl-sys/src/guards.rs
+pub struct SpinLockAtDpcGuard { lock: PKSPIN_LOCK }
+impl SpinLockAtDpcGuard {
+    pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self { ... }
 }
+impl Drop for SpinLockAtDpcGuard {
+    fn drop(&mut self) { KeReleaseSpinLockFromDpcLevel(self.lock) }
+}
+```
 
+### PfnLockGuard
+
+Lives in `ntoskrnl-rust` (not `ntkrnl-sys`) because `MiAcquirePfnLock`/`MiReleasePfnLock` are kernel-internal.
+
+```rust
+// ntoskrnl-rust/src/ARM3/helpers.rs
+pub struct PfnLockGuard { previous_irql: KIRQL }
 impl PfnLockGuard {
-    #[inline]
-    pub unsafe fn acquire() -> Self {
-        extern "C" { static mut MmPfnLock: KSPIN_LOCK; }
-        Self { inner: SpinLockGuard::acquire(core::ptr::addr_of_mut!(MmPfnLock)) }
-    }
+    pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }
 }
-// Drop is automatic via inner SpinLockGuard
+impl Drop for PfnLockGuard {
+    fn drop(&mut self) { MiReleasePfnLock(self.previous_irql) }
+}
 ```
 
 ## Layer 3: Internal Patterns
@@ -324,99 +290,129 @@ KeReleaseSpinLock(&mut lock, old_irql);
 
 ## Migration Strategy
 
-### Phase 1: Build the Primitives (ntkrnl-sys)
-1. Add `ntkrnl-sys/src/inline/irql.rs` — sacred IRQL primitives with asm barriers
-2. Add `ntkrnl-sys/src/guards.rs` — IrqlGuard, SpinLockGuard, PfnLockGuard
-3. Verify on all 3 architectures with smoke tests
+### Phase 1: Build the Primitives — DONE
+Sacred IRQL primitives (`irql_raise`/`irql_lower`/`irql_current`) in `ntkrnl-sys/src/guards.rs` with asm barriers. Guard types: `IrqlGuard`, `SpinLockGuard`, `SpinLockAtDpcGuard`, `PfnLockGuard`. Verified on all 3 architectures with smoke tests.
 
-### Phase 2: Automated Migration of Simple Patterns (~60% of sites)
-Use `tools/rustconv/rustconv/migrate_guards.py` to transform simple acquire-release pairs.
+### Phase 2: Automated Migration of Simple Patterns — DONE (~148 sites)
+Tools: `migrate_guards.py` (regex scanner), `migrate_guards_ts.py` (tree-sitter transform). Subagent-driven parallel migration for remaining simple patterns. Handles single, early_return, sequential, and loop-reacquire patterns.
 
-**Automatable patterns (Python/tree-sitter):**
+**Pattern examples migrated:**
 ```rust
-// Pattern A: PFN lock — acquire returns IRQL, release takes IRQL
-OldIrql = MiAcquirePfnLock();
-// ... straight-line code, no reacquire ...
-MiReleasePfnLock(OldIrql);
-→
-let _pfn_guard = unsafe { PfnLockGuard::acquire() };
-// ... straight-line code ...
-// (guard drops at scope end or enclosing block)
+// Simple: acquire → ... → release
+OldIrql = MiAcquirePfnLock();          →  let pfn_guard = PfnLockGuard::acquire(); // [guard]
+MiReleasePfnLock(OldIrql);             →  drop(pfn_guard); // [guard-drop]
 
-// Pattern B: Spinlock — acquire takes lock+irql, release takes lock+irql
-KeAcquireSpinLock(addr_of_mut!(Lock) as PKSPIN_LOCK, &mut OldIrql);
-// ... straight-line code ...
-KeReleaseSpinLock(addr_of_mut!(Lock) as PKSPIN_LOCK, OldIrql);
-→
-let _guard = unsafe { SpinLockGuard::acquire(addr_of_mut!(Lock)) };
-// ... straight-line code ...
+// Early return: acquire → if { release; return } → release
+KeAcquireSpinLock(&mut Lock, &mut OldIrql);  →  let guard = SpinLockGuard::acquire(&mut Lock);
+if err { KeReleaseSpinLock(&mut Lock, OldIrql); return; }  →  if err { drop(guard); return; }
+KeReleaseSpinLock(&mut Lock, OldIrql);       →  drop(guard);
 
-// Pattern C: IRQL raise/lower — raise takes level+irql ptr, lower takes irql
-KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
-// ... straight-line code ...
-KeLowerIrql(OldIrql);
-→
-let _irql = unsafe { IrqlGuard::raise(DISPATCH_LEVEL) };
-// ... straight-line code ...
+// Loop reacquire: acquire → while { release; delay; reacquire } → release
+let mut pfn_guard = PfnLockGuard::acquire();
+while cond { drop(pfn_guard); delay(); pfn_guard = PfnLockGuard::acquire(); }
+drop(pfn_guard);
 ```
 
-**Detection criteria for "simple" (automatable):**
-- Acquire and release are in the same function
-- No reacquire of the same lock between acquire and release
-- Release is not inside a conditional (if/match) that the acquire isn't in
-- The OldIrql variable is only used for the release call, not read elsewhere
-- No other function is called with the OldIrql value
+### Phase 3: Cross-Function Patterns — IN PROGRESS
+The main remaining blocker. ~300+ call sites where `OldIrql` is passed to another function that releases the lock internally.
 
-**~25% needs LLM assistance** (acquire-release-reacquire):
-```rust
-OldIrql = MiAcquirePfnLock();
-if page == 0 {
-    MiReleasePfnLock(OldIrql);
-    MiZeroPhysicalPage(page);
-    OldIrql = MiAcquirePfnLock();
-}
-// ... use page ...
-MiReleasePfnLock(OldIrql);
-```
-These need `drop(guard)` + reacquire, or restructured scoping. Feed to Codex/Sonnet with the guard API as context.
+**Key cross-function families:**
+- `MiCheckControlArea(ControlArea, OldIrql)` — called from 6+ functions in ARM3/section.rs
+- `MmDereferenceSegmentWithLock(Segment, OldIrql)` — called from 4+ functions in mm/section.rs
+- `MiResolveProtoPteFault(OldIrql, ...)` / `MiCompleteProtoPteFault(OldIrql, ...)` — page fault chain
+- `MiMakeSystemAddressValidPfn(Pfn, OldIrql)` — releases lock, maps page, reacquires
 
-**~15% needs manual review** (32 acquires in timer.rs, 24 in devaction.rs, complex error paths).
+See "Cross-Function Pattern Analysis" section below.
 
-### Phase 3: Migrate Hot Paths (known LLVM victims)
-Priority targets:
-1. **ps/thread.rs** — PspCreateThread output pointers → Result (Bug 1 fix)
+### Phase 4: Complex Control Flow — NOT STARTED
+High-acquire-count files needing restructuring:
+- `ex/timer.rs` (38 calls) — timer cancellation/insertion with multiple lock types
+- `pnpmgr/devaction.rs` (50 calls) — PnP device state machine
+- `cc/view.rs` (48 calls) — cache manager view management
+- `ke/dpc.rs` (21 calls) — DPC queue management
+
+### Phase 5: Output Pointers → Result — NOT STARTED
+Priority targets for `captures(none)` protection:
+1. **ps/thread.rs** — PspCreateThread output pointers → Result
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
-3. **ARM3/procsup.rs** — MiAcquirePfnLock/MiReleasePfnLock → PfnLockGuard
-4. **ke/wait.rs** — KiExitDispatcher IRQL restoration
+3. **ke/wait.rs** — KiExitDispatcher IRQL restoration
 
-### Phase 4: LLM-Assisted Migration of Complex Patterns (~25%)
-Use rustconv pipeline or Codex to transform acquire-release-reacquire patterns.
-Template prompt includes the guard API, the original C code, and the current Rust code.
+### Phase 6: Remove Shims — NOT STARTED
+Depends on Phase 3-4 completion per subsystem.
 
-### Phase 5: Manual Migration of Complex Control Flow (~15%)
-Files with high acquire counts need manual restructuring:
-- `ex/timer.rs` (32 acquires)
-- `pnpmgr/devaction.rs` (24 acquires)
-- `ke/` dispatcher/scheduler files
+## Current State (as of 2026-03-22)
 
-### Phase 6: Remove Shims
-As guards replace manual lock/unlock patterns, the FORCEINLINE C shims for lock functions become unnecessary. Each migrated subsystem allows removing its corresponding shims.
-
-## Current State (for reference)
-
-| Pattern | Call Sites | Guard Instances | Migration Status |
-|---------|-----------|-----------------|------------------|
-| IRQL raise/lower | 711 | 0 | Not started |
-| Spinlock acquire/release | 906 | 0 | Not started |
+| Pattern | Remaining Calls | Guard Instances | Status |
+|---------|----------------|-----------------|--------|
+| PFN lock (MiAcquire/ReleasePfnLock) | ~93 acquire + ~195 release | ~55 guards | Phase 2 done, Phase 3 in progress |
+| Spinlock (KeAcquire/ReleaseSpinLock) | ~102 acquire + ~120 release | ~40 guards | Phase 2 done |
+| SpinlockAtDpc | ~51 acquire + ~57 release | ~5 guards | Phase 2 done |
+| IRQL (KeRaiseIrql/KeLowerIrql) | ~139 raise + ~190 lower | ~48 guards | Phase 2 done |
 | Output pointers (Nt* exports) | ~100 | 0 | Not started |
-| PFN lock | ~30 | 0 | Not started |
 | Result-based probe API | 97 | N/A | Done (SE+OB) |
+| **Total guard instances** | | **~148** | |
+
+## Cross-Function Pattern Analysis
+
+The remaining ~300 sites are dominated by a few recurring cross-function patterns. These can't be migrated with simple guard replacement — they require API redesign.
+
+### Pattern: Lock-Passing Chain (MiCheckControlArea)
+
+```rust
+// Current: OldIrql threaded through call chain
+fn MiDereferenceControlArea(ControlArea: PCONTROL_AREA) {
+    OldIrql = MiAcquirePfnLock();          // acquire here
+    MiCheckControlArea(ControlArea, OldIrql);  // release inside
+}
+
+fn MiCheckControlArea(ControlArea: PCONTROL_AREA, OldIrql: KIRQL) {
+    // ... check conditions ...
+    MiReleasePfnLock(OldIrql);  // release buried in callee
+}
+```
+
+**Options:**
+1. **Guard-passing**: Change callee to accept `PfnLockGuard` by value (move semantics)
+2. **Split acquire/check**: Return a bool, let caller handle lock lifecycle
+3. **Callback**: Callee takes a closure that runs under the lock
+
+### Pattern: Release-Work-Reacquire (MiMakeSystemAddressValidPfn)
+
+```rust
+fn MiSegmentDelete(Segment: PSEGMENT) {
+    old_irql = MiAcquirePfnLock();
+    // ... work under lock ...
+    MiMakeSystemAddressValidPfn(pfn, old_irql);  // releases, maps page, reacquires
+    // ... more work under lock ...
+    MiReleasePfnLock(old_irql);
+}
+```
+
+**Options:**
+1. **Guard-passing with return**: Callee consumes guard, returns new guard
+2. **Split into explicit phases**: `drop(guard); do_work(); guard = acquire();`
+
+### Pattern: Conditional Lock Ownership (MmDereferenceSegmentWithLock)
+
+```rust
+fn MmDereferenceSegmentWithLock(Segment: PMM_SECTION_SEGMENT, OldIrql: KIRQL) {
+    if InterlockedDecrement64(&mut (*Segment).RefCount) == 0 {
+        // ... cleanup, releases lock somewhere inside ...
+    }
+    MiReleasePfnLock(OldIrql);  // unconditional release at end
+}
+```
+
+**Options:**
+1. **Accept guard by value**: `fn ...(guard: PfnLockGuard)` — drop handles release
+2. **Return remaining IRQL**: If callee needs to release early in some paths
 
 ## Relationship to Other Docs
 
 - `shim-elimination.md` — Guard migration enables shim removal (Category 1+4)
 - `arm64-debug.md` — Bug 1 would be prevented by Result pattern; Bug 2 is fixed by ASM dispatch
-- `AGENTS.md` — Translation rules should be updated to use guards for new translations
+- `AGENTS.md` — Translation rules updated to use guards for new translations
+- `~gemini-guard-migration-prompt.md` — Prompt template for LLM-assisted guard migration
 
 ## Key Principle
 

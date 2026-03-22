@@ -220,7 +220,6 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
     FileOffset: PLARGE_INTEGER,
     Length: ULONG,
 ) {
-    let mut old_irql: KIRQL = 0;
     let mut new_offset = core::mem::zeroed::<LARGE_INTEGER>();
 
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
@@ -236,19 +235,15 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
     let length = ROUND_UP(Length, (*private_cache_map).ReadAheadMask + 1);
     new_offset.QuadPart = (*FileOffset).QuadPart + length as i64;
 
-    KeAcquireSpinLock(
+    let mut spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
         core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-        &mut old_irql,
-    );
+    ) }; // [guard]
 
     if BooleanFlagOn((*FileObject).Flags, FO_SEQUENTIAL_ONLY) {
         if new_offset.QuadPart
             < (*private_cache_map).ReadAheadOffset[1].QuadPart
         {
-            KeReleaseSpinLock(
-                core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-                old_irql,
-            );
+            drop(spin_guard); // [guard-drop]
             return;
         }
 
@@ -265,10 +260,7 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
                 new_offset.QuadPart;
             (*private_cache_map).ReadAheadLength[1] = length;
         } else {
-            KeReleaseSpinLock(
-                core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-                old_irql,
-            );
+            drop(spin_guard); // [guard-drop]
             return;
         }
     }
@@ -278,10 +270,7 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
             core::ptr::addr_of_mut!((*private_cache_map).__bindgen_anon_1.UlongFlags) as *mut i32,
             PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32,
         );
-        KeReleaseSpinLock(
-            core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-            old_irql,
-        );
+        drop(spin_guard); // [guard-drop]
 
         let work_item = ExAllocateFromNPagedLookasideList(
             core::ptr::addr_of_mut!(CcTwilightLookasideList),
@@ -296,20 +285,16 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
             return;
         }
 
-        KeAcquireSpinLock(
+        spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
             core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-            &mut old_irql,
-        );
+        ) }; // [guard]
         InterlockedAnd(
             core::ptr::addr_of_mut!((*private_cache_map).__bindgen_anon_1.UlongFlags) as *mut i32,
             !(PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE as i32),
         );
     }
 
-    KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _,
-        old_irql,
-    );
+    drop(spin_guard); // [guard-drop]
 }
 
 #[no_mangle]
@@ -320,7 +305,7 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
 ) {
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
 
     if DisableReadAhead != 0 {
         SetFlag(
@@ -346,7 +331,7 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
         );
     }
 
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    drop(qsl_guard); // [guard-drop]
 }
 
 #[no_mangle]

@@ -9,7 +9,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 
-use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiAcquireExpansionLock, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiReleaseExpansionLock, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
+use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
 use super::helpers::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -961,21 +961,20 @@ pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
 pub unsafe extern "system" fn MmDeleteProcessAddressSpace(Process: PEPROCESS) {
     let Pfn1: PMMPFN;
     let Pfn2: PMMPFN;
-    let mut OldIrql: KIRQL;
     let mut PageFrameIndex: PFN_NUMBER;
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        OldIrql = MiAcquireExpansionLock();
+        let exp_guard = unsafe { ntkrnl_sys::guards::ExpansionLockGuard::acquire() }; // [guard]
         RemoveEntryList(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).MmProcessLinks) as *mut _);
-        MiReleaseExpansionLock(OldIrql);
+        drop(exp_guard); // [guard-drop]
     }
 
-    OldIrql = MiAcquireExpansionLock();
+    let exp_guard = unsafe { ntkrnl_sys::guards::ExpansionLockGuard::acquire() }; // [guard]
     if !(*(Process as *mut _EPROCESS)).Vm.WorkingSetExpansionLinks.Flink.is_null() {
         RemoveEntryList(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Vm.WorkingSetExpansionLinks) as *mut _);
     }
-    MiReleaseExpansionLock(OldIrql);
+    drop(exp_guard); // [guard-drop]
 
     let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
 
