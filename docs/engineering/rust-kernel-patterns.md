@@ -246,11 +246,14 @@ All tractable cross-function patterns have been migrated using three techniques:
 - `MiMakeSystemAddressValidPfn` → `Inner(PVOID, PfnLockGuard) -> (ULONG, PfnLockGuard)`
 - `KiTimerListExpire` → `Inner(PLIST_ENTRY, DispatcherLockGuard)` with `previous_irql()` + `mem::forget()` for the split-release DPC branch
 
-### Phase 4: Complex Control Flow — PARTIALLY DONE
-- `cc/view.rs` — 5 complex functions migrated
-- Still remaining:
-  - `ex/timer.rs` (38 calls) — timer cancellation/insertion with multiple lock types
-  - `pnpmgr/devaction.rs` — remaining complex patterns after simple ones migrated
+### Phase 4: Complex Control Flow — DONE (what's tractable)
+- `cc/view.rs` — 5 complex functions migrated (FlushDirtyPages, TrimCache, etc.)
+- `mm/section.rs` — grab_segment + grab_image_section_object complex loops migrated
+- `ARM3/session.rs` — expansion lock loops + release-wait-reacquire patterns migrated
+- `ARM3/mminit.rs` — PfnLock in init functions migrated
+- Many small files across ARM3/, ke/, iomgr/, ps/, po/ migrated
+
+Remaining calls are in the intractable categories below — conditional acquires, cancel IRQL escapes, and scheduler patterns. These represent the migration ceiling without API redesign.
 
 ### Phase 5: Output Pointers → Result — NOT STARTED
 Priority targets for `captures(none)` protection:
@@ -258,15 +261,17 @@ Priority targets for `captures(none)` protection:
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
 
 ### Phase 6: Remove Shims — NOT STARTED
-Depends on Phase 4-5 completion per subsystem.
+Depends on Phase 5 completion per subsystem.
 
 ## Current State (as of 2026-03-22)
 
-~260+ guard instances across the kernel. 9 guard types:
+~300+ guard instances across the kernel. 9 guard types:
 - `IrqlGuard`, `SpinLockGuard`, `SpinLockAtDpcGuard`, `PfnLockGuard`
 - `DispatcherLockGuard`, `QueuedSpinLockGuard`, `CancelSpinLockGuard`, `VpbSpinLockGuard`, `ExpansionLockGuard`
 
-All simple same-function patterns, cross-function guard-passing, inner+wrapper, and consume+return patterns are migrated. What remains is the scheduler's split-release pattern (see below) and some high-count complex files.
+All `#[must_use]` to catch unbound guards at compile time. Sacred primitives verified by `test_sacred_primitives` in the smoke test suite (objdump-based check that KfRaiseIrql etc. survive LLVM optimization).
+
+**Migration is at the ceiling** — every pattern that can be mechanically transformed with the current guard API has been. What remains falls into 4 intractable categories (see below) that would each require targeted API design work.
 
 ## Scheduler Split-Release — The Hard Problem
 
@@ -345,6 +350,98 @@ This would be a significant scheduler API redesign — every KE function that si
 | ke/semphobj.rs | 1 | WaitIrql store + KiExitDispatcher |
 | ke/wait.rs | 1 | WaitIrql + KiSwapContext + KeLowerIrql |
 | ke/thrdschd.rs | 2 | WaitIrql + KiSwapContext |
+
+## Other Intractable Patterns
+
+Beyond the scheduler split-release, three more categories resist guard migration. Each has a different root cause.
+
+### Conditional Acquire (~40 sites)
+
+```rust
+// Pattern: lock acquired inside a condition, released unconditionally
+if OldIrql == MM_NOIRQL {
+    OldIrql = MiAcquirePfnLock();
+    HaveLock = true;
+}
+// ... work (may or may not hold lock) ...
+if HaveLock {
+    MiReleasePfnLock(OldIrql);
+}
+```
+
+**Why it resists:** A guard must be created unconditionally (Rust ownership is compile-time, not runtime). You can use `Option<PfnLockGuard>` — acquire returns `Some(guard)`, release does `if let Some(g) = guard.take() { drop(g) }` — but this adds runtime overhead (Option discriminant + branch on every drop) and obscures the lock state in code review.
+
+**Files affected:**
+- `ARM3/pagfault.rs` (15 calls) — `MM_NOIRQL` sentinel throughout `MmArmAccessFault`
+- `ARM3/mdlsup.rs` (9 calls) — `UsePfnLock` flag in `MmProbeAndLockPages`
+- `cc/view.rs` (conditional `lock_views`) — `CcRosUnmarkDirtyVacb`
+- `cc/copy.rs` (conditional `RetryMasterLocked`) — `CcCanIWrite`
+- `mm/section.rs` (conditional `PageOut`) — `MmpPageOutPhysicalAddress`
+
+**Possible approach:** `Option<Guard>` pattern, but only worth it for hot paths where LLVM visibility matters. For cold paths the manual pattern is fine.
+
+### Cancel IRQL Escape (~30 sites)
+
+```rust
+IoAcquireCancelSpinLock(&mut OldIrql);
+(*Irp).CancelIrql = OldIrql;  // IRQL value escapes into IRP struct
+// ... set cancel routine ...
+// Cancel routine will later call IoReleaseCancelSpinLock(Irp->CancelIrql)
+```
+
+**Why it resists:** The raw IRQL value is stored into the IRP's `CancelIrql` field and consumed later by the cancel routine — potentially in a different function, different thread, or different driver entirely. The lock acquire and release are fundamentally decoupled across an asynchronous boundary. A guard can't span this because the "release" happens in a callback that the guard has no knowledge of.
+
+**Files affected:**
+- `fsrtl/oplock.rs` (29 calls) — all oplock IRP handling
+- `iomgr/irp.rs` — `IoCancelIrp`
+- `iomgr/device.rs` — `IoStartPacket`
+- `fsrtl/notify.rs` — notify change IRP handling
+
+**Possible approach:** Not guardable without redesigning the IRP cancel protocol. The cancel spinlock is a Windows API contract — drivers expect to call `IoReleaseCancelSpinLock(Irp->CancelIrql)` in their cancel routines.
+
+### Scheduler Timer/DPC Core (~15 sites in ke/dpc.rs)
+
+```rust
+// KiTimerExpiration: complex multi-phase lock dance
+OldIrql = KeRaiseIrqlToSynchLevel();
+KiAcquireDispatcherLockAtSynchLevel();
+// ... expire timers, call DPC routines ...
+KiReleaseDispatcherLock(DISPATCH_LEVEL);  // release to DPC, not to OldIrql!
+// ... process DPC queue at DISPATCH_LEVEL ...
+KeLowerIrql(OldIrql);  // finally lower to original
+```
+
+**Why it resists:** The IRQL is lowered in two stages — first from SYNCH to DISPATCH (to process DPCs), then from DISPATCH to the original level. A single guard can only restore to one level. The intermediate DISPATCH_LEVEL plateau is intentional: DPC processing must happen above APC_LEVEL but below SYNCH_LEVEL.
+
+**Also:** `KeRaiseIrqlToSynchLevel()` is a different primitive than `KeRaiseIrql(SYNCH_LEVEL, &mut OldIrql)` — it's a HAL function with its own calling convention (returns IRQL directly). Would need a `SynchLevelGuard` or similar.
+
+### IRQL Stored in Globals (~10 sites)
+
+```rust
+// Pattern: IRQL saved in a static/global, not a local
+static mut InbvOldIrql: KIRQL = 0;
+KeRaiseIrql(HIGH_LEVEL, &mut InbvOldIrql);
+// ... much later, possibly different function ...
+KeLowerIrql(InbvOldIrql);
+```
+
+**Files affected:** `inbv/inbv.rs`, `ke/freeze.rs`, `kd64/kdprint.rs`
+
+**Why it resists:** The acquire and release are in different functions, with the IRQL stored in a global. A guard would need to be stored in the same global, which means `static mut Option<IrqlGuard>` — possible but adds complexity and doesn't prevent the global from being accessed incorrectly.
+
+## Summary: Migration Ceiling
+
+| Category | Sites | Guardable? | Effort to fix |
+|---|---|---|---|
+| Scheduler split-release | ~24 | No | DispatcherSession redesign |
+| WaitIrql + context switch | ~6 | No | Semantically impossible |
+| Conditional acquire | ~40 | Partially (`Option<Guard>`) | Medium per-site |
+| Cancel IRQL escape | ~30 | No | Windows API contract |
+| Timer/DPC multi-phase | ~15 | No | Multi-level guard design |
+| IRQL in globals | ~10 | Partially (`static Option<Guard>`) | Medium per-site |
+| **Total at ceiling** | **~125** | | |
+
+Against ~300+ migrated guard instances, this means we've converted **~70%** of all lock sites. The remaining 30% are genuinely different patterns that would each need targeted design work, not mechanical transformation.
 
 ## Relationship to Other Docs
 

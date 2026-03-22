@@ -218,7 +218,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
 
             loop {
                 let mut apc_state: _KAPC_STATE = core::mem::zeroed();
-                let old_irql = MiAcquirePfnLock();
+                let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
                 let mut entry = MmGetRmapListHeadPage(current_page as _);
 
                 loop {
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
                 }
 
                 if entry.is_null() {
-                    MiReleasePfnLock(old_irql);
+                    drop(pfn_guard); // [guard-drop]
                     break;
                 }
 
@@ -259,11 +259,11 @@ pub unsafe extern "C" fn MmTrimUserMemory(
                 ) == 0
                 {
                     ObDereferenceObject(process as PVOID);
-                    MiReleasePfnLock(old_irql);
+                    drop(pfn_guard); // [guard-drop]
                     continue;
                 }
 
-                MiReleasePfnLock(old_irql);
+                drop(pfn_guard); // [guard-drop]
 
                 KeStackAttachProcess(
                     core::ptr::addr_of_mut!((*(process as *mut _EPROCESS)).Pcb),
@@ -308,9 +308,9 @@ pub unsafe extern "C" fn MmTrimUserMemory(
     }
 
     if current_page != 0 {
-        let old_irql = MiAcquirePfnLock();
+        let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         MmDereferencePage(current_page as _);
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
     }
 
     STATUS_SUCCESS

@@ -820,7 +820,6 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> BOOLEAN {
-    let mut OldIrql: KIRQL;
     let mut TableBaseIndex: PFN_NUMBER;
     let mut HyperIndex: PFN_NUMBER;
     let mut WsListIndex: PFN_NUMBER;
@@ -830,35 +829,35 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
 
     KeInitializeSpinLock(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).HyperSpaceLock));
 
-    OldIrql = MiAcquirePfnLock();
+    let mut pfn_guard = PfnLockGuard::acquire(); // [guard]
 
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     TableBaseIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if TableBaseIndex == 0 {
         TableBaseIndex = MiRemoveAnyPage(Color);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         MiZeroPhysicalPage(TableBaseIndex);
-        OldIrql = MiAcquirePfnLock();
+        pfn_guard = PfnLockGuard::acquire(); // [guard]
     }
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     HyperIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if HyperIndex == 0 {
         HyperIndex = MiRemoveAnyPage(Color);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         MiZeroPhysicalPage(HyperIndex);
-        OldIrql = MiAcquirePfnLock();
+        pfn_guard = PfnLockGuard::acquire(); // [guard]
     }
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     WsListIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if WsListIndex == 0 {
         WsListIndex = MiRemoveAnyPage(Color);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
         MiZeroPhysicalPage(WsListIndex);
     } else {
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
     }
 
     (*(Process as *mut _EPROCESS)).WorkingSetPage = (WsListIndex) as _;

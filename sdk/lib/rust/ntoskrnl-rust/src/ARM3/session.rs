@@ -9,7 +9,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
-use ntkrnl_sys::ddk::{ExInitializePushLock, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, KeZeroPages, LCID, MiAcquireExpansionLock, MiDecrementShareCount, MiInitializePfnAndMakePteValid, MiInitializePfnForOtherProcess, MiInitializeSystemSpaceMap, MiReleaseExpansionLock, MiRemoveZeroPageSafe, MmIsAddressValid, PEPROCESS, PETHREAD, PKAPC_STATE, PMMSESSION, PMMWSL, PMMWSLE, PMM_SESSION_SPACE, _EPROCESS, _KGUARDED_MUTEX, _KPROCESS, _MMPFN, _MMPTE, _MMWSL, _MMWSLE, _MM_SESSION_SPACE};
+use ntkrnl_sys::ddk::{ExInitializePushLock, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, KeZeroPages, LCID, MiDecrementShareCount, MiInitializePfnAndMakePteValid, MiInitializePfnForOtherProcess, MiInitializeSystemSpaceMap, MiRemoveZeroPageSafe, MmIsAddressValid, PEPROCESS, PETHREAD, PKAPC_STATE, PMMSESSION, PMMWSL, PMMWSLE, PMM_SESSION_SPACE, _EPROCESS, _KGUARDED_MUTEX, _KPROCESS, _MMPFN, _MMPTE, _MMWSL, _MMWSLE, _MM_SESSION_SPACE};
 use super::helpers::*;
 
 #[cfg(target_arch = "x86")]
@@ -175,7 +175,6 @@ pub unsafe extern "system" fn MiReleaseProcessReferenceToSessionDataPage(
     let mut page_frame_index: [PFN_NUMBER; MI_SESSION_DATA_PAGES_MAXIMUM as usize] =
         [0; MI_SESSION_DATA_PAGES_MAXIMUM as usize];
     let mut pfn1: PMMPFN;
-    let mut old_irql: KIRQL;
 
     if InterlockedDecrement(core::ptr::addr_of_mut!(
         (*session_global).ProcessReferenceToSession
@@ -224,11 +223,10 @@ pub unsafe extern "system" fn MiReleaseProcessReferenceToSessionDataPage(
 
 unsafe fn MiDereferenceSessionFinal() {
     let session_global: PMM_SESSION_SPACE;
-    let mut old_irql: KIRQL;
 
     session_global = (*(MmSessionSpace as *mut _MM_SESSION_SPACE)).GlobalVirtualAddress as PMM_SESSION_SPACE;
 
-    old_irql = MiAcquireExpansionLock();
+    let mut exp_guard = ntkrnl_sys::guards::ExpansionLockGuard::acquire(); // [guard]
 
     (*session_global).u.Flags._bitfield_1.set(0, 1, 1);
 
@@ -239,7 +237,7 @@ unsafe fn MiDereferenceSessionFinal() {
             0u8,
         );
 
-        MiReleaseExpansionLock(old_irql);
+        drop(exp_guard); // [guard-drop]
 
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*session_global).AttachEvent) as PVOID,
@@ -249,7 +247,7 @@ unsafe fn MiDereferenceSessionFinal() {
             core::ptr::null_mut(),
         );
 
-        old_irql = MiAcquireExpansionLock();
+        exp_guard = ntkrnl_sys::guards::ExpansionLockGuard::acquire(); // [guard]
     }
 
     if !(*session_global)
@@ -268,7 +266,7 @@ unsafe fn MiDereferenceSessionFinal() {
         (*session_global).WsListEntry.Flink = core::ptr::null_mut();
     }
 
-    MiReleaseExpansionLock(old_irql);
+    drop(exp_guard); // [guard-drop]
 
     if (*session_global).Win32KDriverUnload.is_some() {
         ((*session_global).Win32KDriverUnload.unwrap())(core::ptr::null_mut());
@@ -365,7 +363,6 @@ pub unsafe extern "system" fn MiSessionAddProcess(new_process: PEPROCESS) {
 }
 
 unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
-    let mut old_irql: KIRQL;
     let mut pointer_pte: PMMPTE;
     let mut pointer_pde: PMMPTE;
     let mut temp_pte: MMPTE = core::mem::zeroed();
@@ -395,7 +392,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
     pointer_pte = MiAddressToPte(working_set_list as PVOID);
 
     ExInitializePushLock(core::ptr::addr_of_mut!((*session_global).Vm.WorkingSetMutex) as *mut _);
-    old_irql = MiAcquirePfnLock();
+    let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     if allocated_page_table != 0 {
         MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
@@ -404,9 +401,9 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
         if page_frame_index == 0 {
             page_frame_index = MiRemoveAnyPage(color);
 
-            MiReleasePfnLock(old_irql);
+            drop(pfn_guard); // [guard-drop]
             MiZeroPhysicalPage(page_frame_index);
-            old_irql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         }
 
         temp_pde = ValidKernelPdeLocal;
@@ -433,9 +430,9 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
     if page_frame_index == 0 {
         page_frame_index = MiRemoveAnyPage(color);
 
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
         MiZeroPhysicalPage(page_frame_index);
-        old_irql = MiAcquirePfnLock();
+        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     }
 
     temp_pte = ValidKernelPteLocal;
@@ -444,7 +441,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
 
     MiInitializePfnAndMakePteValid((page_frame_index) as _, pointer_pte as *mut _MMPTE, core::mem::transmute(temp_pte));
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 
     (*MmSessionSpace).Vm.Flags._bitfield_1.set(0, 1, 1);
     (*MmSessionSpace).Vm.MinimumWorkingSetSize = 20;
@@ -481,7 +478,6 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
     let size: ULONG;
     #[cfg(not(target_pointer_width = "64"))]
     let mut page_tables: PMMPTE = core::ptr::null_mut();
-    let mut old_irql: KIRQL;
     let mut pointer_pte: PMMPTE;
     let mut session_pte: PMMPTE;
     let mut pointer_pde: PMMPTE;
@@ -535,7 +531,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
 
     session_pte = MiReserveSystemPtes(MiSessionDataPages as ULONG, SystemPteSpace);
 
-    old_irql = MiAcquirePfnLock();
+    let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
     temp_pte = ValidKernelPte;
     i = 0;
@@ -546,9 +542,9 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
         if data_page[i as usize] == 0 {
             data_page[i as usize] = MiRemoveAnyPage(color);
 
-            MiReleasePfnLock(old_irql);
+            drop(pfn_guard); // [guard-drop]
             MiZeroPhysicalPage(data_page[i as usize]);
-            old_irql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         }
 
         temp_pte.set_page_frame_number((data_page[i as usize]) as PFN_NUMBER);
@@ -564,9 +560,9 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
     if session_page_dir_index == 0 {
         session_page_dir_index = MiRemoveAnyPage(color);
 
-        MiReleasePfnLock(old_irql);
+        drop(pfn_guard); // [guard-drop]
         MiZeroPhysicalPage(session_page_dir_index);
-        old_irql = MiAcquirePfnLock();
+        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
     }
 
     temp_pde = ValidKernelPdeLocal;
@@ -593,9 +589,9 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
         if tag_page[i as usize] == 0 {
             tag_page[i as usize] = MiRemoveAnyPage(color);
 
-            MiReleasePfnLock(old_irql);
+            drop(pfn_guard); // [guard-drop]
             MiZeroPhysicalPage(tag_page[i as usize]);
-            old_irql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         }
 
         temp_pte.set_page_frame_number((tag_page[i as usize]) as PFN_NUMBER);
@@ -607,7 +603,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
         i += 1;
     }
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 
     (*MmSessionSpace).GlobalVirtualAddress = session_global;
     (*MmSessionSpace).ReferenceCount = 1;

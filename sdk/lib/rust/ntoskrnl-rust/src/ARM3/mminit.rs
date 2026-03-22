@@ -646,8 +646,6 @@ unsafe fn MiBuildPfnDatabaseFromLoaderBlock(loader_block: PLOADER_PARAMETER_BLOC
     let mut pfn1: PMMPFN;
     let mut pointer_pte: PMMPTE;
     let mut pointer_pde: PMMPTE;
-    let mut old_irql: KIRQL;
-
     next_entry = (*loader_block).MemoryDescriptorListHead.Flink;
     while next_entry != core::ptr::addr_of_mut!((*loader_block).MemoryDescriptorListHead) as PLIST_ENTRY {
         md_block = CONTAINING_RECORD!(next_entry, _MEMORY_ALLOCATION_DESCRIPTOR, ListEntry)
@@ -675,7 +673,7 @@ unsafe fn MiBuildPfnDatabaseFromLoaderBlock(loader_block: PLOADER_PARAMETER_BLOC
                 page_frame_index += page_count - 1;
                 pfn1 = MiGetPfnEntry(page_frame_index);
 
-                old_irql = MiAcquirePfnLock();
+                let pfn_guard = PfnLockGuard::acquire(); // [guard]
                 while page_count > 0 {
                     page_count -= 1;
                     if (*pfn1).reference_count() == 0 {
@@ -687,7 +685,7 @@ unsafe fn MiBuildPfnDatabaseFromLoaderBlock(loader_block: PLOADER_PARAMETER_BLOC
                     page_frame_index -= 1;
                 }
 
-                MiReleasePfnLock(old_irql);
+                drop(pfn_guard); // [guard-drop]
             }
             LoaderFirmwarePermanent | LoaderSpecialMemory | LoaderBBTMemory => {}
             _ => {
@@ -766,7 +764,6 @@ pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_
     let mut base_page: PFN_NUMBER;
     let mut loader_pages: PFN_NUMBER;
     let mut pfn1: PMMPFN;
-    let mut old_irql: KIRQL;
     let mut buffer: PPHYSICAL_MEMORY_RUN;
     let mut entry: PPHYSICAL_MEMORY_RUN;
 
@@ -803,7 +800,7 @@ pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_
         next_md = (*md_block).ListEntry.Flink;
     }
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard = PfnLockGuard::acquire(); // [guard]
 
     loader_pages = 0;
     while entry > buffer {
@@ -831,7 +828,7 @@ pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_
         }
     }
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
     KeFlushCurrentTb();
 
     ExFreePoolWithTag(buffer as PVOID, TAG_MM);
@@ -1303,7 +1300,6 @@ unsafe fn MiBuildPagedPool() {
     let mut pointer_pde: PMMPTE;
     let mut temp_pde = ValidKernelPde;
     let mut page_frame_index: PFN_NUMBER;
-    let mut old_irql: KIRQL;
     let mut size: SIZE_T;
     let mut number_of_pages: SIZE_T;
     let mut number_of_pdes: SIZE_T;
@@ -1355,7 +1351,7 @@ unsafe fn MiBuildPagedPool() {
 
     // DBG: before MiAcquirePfnLock in MiBuildPagedPool
 
-    old_irql = MiAcquirePfnLock();
+    let pfn_guard = PfnLockGuard::acquire(); // [guard]
 
     #[cfg(target_pointer_width = "64")]
     {
@@ -1431,7 +1427,7 @@ unsafe fn MiBuildPagedPool() {
 
     // DBG: after MiInitializePfnForOtherProcess
 
-    MiReleasePfnLock(old_irql);
+    drop(pfn_guard); // [guard-drop]
 
     // DBG: after PfnLock release, before bitmap alloc
 

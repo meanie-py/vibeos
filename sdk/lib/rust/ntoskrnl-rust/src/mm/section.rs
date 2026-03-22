@@ -1050,31 +1050,31 @@ pub unsafe extern "system" fn MmFlushImageSection(
     FlushType: u32,
 ) -> BOOLEAN {
     if FlushType == 0 || FlushType == 1 {
-        let mut OldIrql = MiAcquirePfnLock();
+        let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         let mut ImageSectionObject = (*SectionObjectPointer).ImageSectionObject as PMM_IMAGE_SECTION_OBJECT;
 
         while !ImageSectionObject.is_null()
             && ((*ImageSectionObject).SegFlags & (MM_SEGMENT_INCREATE | MM_SEGMENT_INDELETE) != 0)
         {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
-            OldIrql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
             ImageSectionObject = (*SectionObjectPointer).ImageSectionObject as PMM_IMAGE_SECTION_OBJECT;
         }
 
         if ImageSectionObject.is_null() {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             return 1u8;
         }
 
         if (*ImageSectionObject).SectionCount != 0 || (*ImageSectionObject).MapCount != 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             return 0u8;
         }
 
         (*ImageSectionObject).SegFlags |= 0x80000000;
         InterlockedIncrement64(core::ptr::addr_of_mut!((*ImageSectionObject).RefCount) as *mut i64);
-        MiReleasePfnLock(OldIrql);
+        drop(pfn_guard); // [guard-drop]
 
         for i in 0..(*ImageSectionObject).NrSegments {
             if MiPurgeImageSegment(&mut *(*ImageSectionObject).Segments.add(i as usize)) == 0 {
@@ -2440,18 +2440,18 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
     }
 
     'grab_segment: loop {
-        OldIrql = MiAcquirePfnLock();
+        let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
         Segment = (*(*FileObject).SectionObjectPointer).DataSectionObject as PMM_SECTION_SEGMENT;
 
         while !Segment.is_null() && ((*Segment).SegFlags & (MM_SEGMENT_INDELETE | MM_SEGMENT_INCREATE)) != 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
-            OldIrql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
             Segment = (*(*FileObject).SectionObjectPointer).DataSectionObject as PMM_SECTION_SEGMENT;
         }
 
         if Segment.is_null() {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
 
             Segment = ExAllocatePoolWithTag(
                 NonPagedPool,
@@ -2467,16 +2467,16 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
             (*Segment).SegFlags = MM_DATAFILE_SEGMENT | MM_SEGMENT_INCREATE;
             (*Segment).RefCount = 1;
 
-            OldIrql = MiAcquirePfnLock();
+            let pfn_guard2 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
             if !(*(*FileObject).SectionObjectPointer).DataSectionObject.is_null() {
-                MiReleasePfnLock(OldIrql);
+                drop(pfn_guard2); // [guard-drop]
                 ExFreePoolWithTag(Segment as PVOID, TAG_MM_SECTION_SEGMENT);
                 continue 'grab_segment;
             }
 
             (*(*FileObject).SectionObjectPointer).DataSectionObject = Segment as *mut core::ffi::c_void;
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard2); // [guard-drop]
 
             (*Section).Segment = Segment as *mut _;
             (*Segment).Flags = core::ptr::addr_of_mut!((*Segment).SegFlags);
@@ -2502,16 +2502,18 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
             (*Segment).Image.VirtualAddress = 0;
             MiInitializeSectionPageTable(Segment);
 
-            OldIrql = MiAcquirePfnLock();
-            (*Segment).SegFlags &= !MM_SEGMENT_INCREATE;
-            MiReleasePfnLock(OldIrql);
+            {
+                let pfn_guard3 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                (*Segment).SegFlags &= !MM_SEGMENT_INCREATE;
+                drop(pfn_guard3); // [guard-drop]
+            }
             break;
         } else {
             (*Section).Segment = Segment as *mut _;
             InterlockedIncrement64(core::ptr::addr_of_mut!((*Segment).RefCount) as *mut i64);
             InterlockedIncrementUL(core::ptr::addr_of_mut!((*Segment).SectionCount));
 
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
 
             MmLockSectionSegment(Segment as PVOID);
 
@@ -2748,18 +2750,18 @@ pub unsafe extern "C" fn MmCreateImageSection(
     }
 
     'grab_image_section_object: loop {
-        OldIrql = MiAcquirePfnLock();
+        let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
 
         ImageSectionObject = (*(*FileObject).SectionObjectPointer).ImageSectionObject as PMM_IMAGE_SECTION_OBJECT;
         while !ImageSectionObject.is_null() && ((*ImageSectionObject).SegFlags & (MM_SEGMENT_INDELETE | MM_SEGMENT_INCREATE)) != 0 {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
             KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of!(TinyTime) as *mut _);
-            OldIrql = MiAcquirePfnLock();
+            pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
             ImageSectionObject = (*(*FileObject).SectionObjectPointer).ImageSectionObject as PMM_IMAGE_SECTION_OBJECT;
         }
 
         if ImageSectionObject.is_null() {
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
 
             ImageSectionObject = ExAllocatePoolZero(
                 NonPagedPool,
@@ -2775,24 +2777,28 @@ pub unsafe extern "C" fn MmCreateImageSection(
             (*ImageSectionObject).RefCount = 1;
             (*ImageSectionObject).SectionCount = 1;
 
-            OldIrql = MiAcquirePfnLock();
-            if !(*(*FileObject).SectionObjectPointer).ImageSectionObject.is_null() {
-                MiReleasePfnLock(OldIrql);
-                ExFreePoolWithTag(ImageSectionObject as PVOID, TAG_MM_SECTION_SEGMENT);
-                continue 'grab_image_section_object;
-            }
+            {
+                let pfn_guard2 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                if !(*(*FileObject).SectionObjectPointer).ImageSectionObject.is_null() {
+                    drop(pfn_guard2); // [guard-drop]
+                    ExFreePoolWithTag(ImageSectionObject as PVOID, TAG_MM_SECTION_SEGMENT);
+                    continue 'grab_image_section_object;
+                }
 
-            (*(*FileObject).SectionObjectPointer).ImageSectionObject = ImageSectionObject as *mut _;
-            MiReleasePfnLock(OldIrql);
+                (*(*FileObject).SectionObjectPointer).ImageSectionObject = ImageSectionObject as *mut _;
+                drop(pfn_guard2); // [guard-drop]
+            }
 
             CcFlushCache((*FileObject).SectionObjectPointer, core::ptr::null_mut(), 0, core::ptr::null_mut());
 
             let StatusExeFmt = ExeFmtpCreateImageSection(FileObject, ImageSectionObject);
 
             if StatusExeFmt < 0 {
-                OldIrql = MiAcquirePfnLock();
-                (*(*FileObject).SectionObjectPointer).ImageSectionObject = core::ptr::null_mut();
-                MiReleasePfnLock(OldIrql);
+                {
+                    let pfn_guard3 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                    (*(*FileObject).SectionObjectPointer).ImageSectionObject = core::ptr::null_mut();
+                    drop(pfn_guard3); // [guard-drop]
+                }
 
                 if !(*ImageSectionObject).Segments.is_null() {
                     ExFreePool((*ImageSectionObject).Segments as PVOID);
@@ -2813,9 +2819,11 @@ pub unsafe extern "C" fn MmCreateImageSection(
 
             Status = MmspWaitForFileLock(FileObject);
             if Status < 0 {
-                OldIrql = MiAcquirePfnLock();
-                (*(*FileObject).SectionObjectPointer).ImageSectionObject = core::ptr::null_mut();
-                MiReleasePfnLock(OldIrql);
+                {
+                    let pfn_guard4 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                    (*(*FileObject).SectionObjectPointer).ImageSectionObject = core::ptr::null_mut();
+                    drop(pfn_guard4); // [guard-drop]
+                }
 
                 ExFreePool((*ImageSectionObject).Segments as PVOID);
                 ExFreePool(ImageSectionObject as PVOID);
@@ -2823,12 +2831,14 @@ pub unsafe extern "C" fn MmCreateImageSection(
                 return Status;
             }
 
-            OldIrql = MiAcquirePfnLock();
-            (*ImageSectionObject).SegFlags &= !MM_SEGMENT_INCREATE;
+            {
+                let pfn_guard5 = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                (*ImageSectionObject).SegFlags &= !MM_SEGMENT_INCREATE;
 
-            ObReferenceObject(FileObject as PVOID);
+                ObReferenceObject(FileObject as PVOID);
 
-            MiReleasePfnLock(OldIrql);
+                drop(pfn_guard5); // [guard-drop]
+            }
 
             Status = StatusExeFmt;
         } else {
@@ -2837,7 +2847,7 @@ pub unsafe extern "C" fn MmCreateImageSection(
             InterlockedIncrement64(core::ptr::addr_of_mut!((*ImageSectionObject).RefCount) as *mut i64);
             (*ImageSectionObject).SectionCount += 1;
 
-            MiReleasePfnLock(OldIrql);
+            drop(pfn_guard); // [guard-drop]
 
             (*Section).Segment = ImageSectionObject as *mut _;
 
