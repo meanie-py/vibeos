@@ -257,7 +257,7 @@ unsafe extern "C" fn ExpTimerApcKernelRoutine(
             DerefsToDo += 1;
         }
     } else {
-        core::ptr::write_volatile(NormalRoutine, None);
+        *NormalRoutine = None;
     }
 
     // [guard-drop] KeReleaseSpinLockFromDpcLevel — guard Drop handles this

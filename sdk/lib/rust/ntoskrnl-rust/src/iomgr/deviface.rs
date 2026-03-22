@@ -167,7 +167,7 @@ unsafe fn IopBuildSymbolicLink(
         return Status;
     }
 
-    core::ptr::write_volatile(SymbolicLinkName, SymbolicLink);
+    *SymbolicLinkName = SymbolicLink;
     STATUS_SUCCESS
 }
 
@@ -226,23 +226,23 @@ unsafe fn IopSeparateSymbolicLink(
         MungedStringReal.Buffer = LinkNameNoPrefix.Buffer;
         MungedStringReal.Length = LinkNameNoPrefix.Length - ReferenceStringReal.Length - GUID_STRING_BYTES as u16 - 2;
         MungedStringReal.MaximumLength = MungedStringReal.Length;
-        core::ptr::write_volatile(MungedString, MungedStringReal);
+        *MungedString = MungedStringReal;
     }
 
     if !GuidString.is_null() {
-        core::ptr::write_volatile(GuidString, GuidStringReal);
+        *GuidString = GuidStringReal;
     }
 
     if !ReferenceString.is_null() {
         if ReferenceStringReal.Length > 2 {
-            core::ptr::write_volatile(ReferenceString, ReferenceStringReal);
+            *ReferenceString = ReferenceStringReal;
         } else {
             RtlInitEmptyUnicodeString(ReferenceString, core::ptr::null_mut(), 0);
         }
     }
 
     if !ReferenceStringPresent.is_null() {
-        core::ptr::write_volatile(ReferenceStringPresent, if ReferenceStringReal.Length > 2 { 1 } else { 0 });
+        *ReferenceStringPresent = if ReferenceStringReal.Length > 2 { 1 } else { 0 };
     }
 
     if !InterfaceClassGuid.is_null() {
@@ -358,23 +358,23 @@ unsafe fn IopOpenOrCreateSymbolicLinkSubKeys(
     }
 
     if !DeviceHandle.is_null() {
-        core::ptr::write_volatile(DeviceHandle, DeviceKeyHandle);
+        *DeviceHandle = DeviceKeyHandle;
     } else {
         ZwClose(DeviceKeyHandle);
     }
 
     if !DeviceDisposition.is_null() {
-        core::ptr::write_volatile(DeviceDisposition, DeviceKeyDisposition);
+        *DeviceDisposition = DeviceKeyDisposition;
     }
 
     if !InstanceHandle.is_null() {
-        core::ptr::write_volatile(InstanceHandle, InstanceKeyHandle);
+        *InstanceHandle = InstanceKeyHandle;
     } else {
         ZwClose(InstanceKeyHandle);
     }
 
     if !InstanceDisposition.is_null() {
-        core::ptr::write_volatile(InstanceDisposition, InstanceKeyDisposition);
+        *InstanceDisposition = InstanceKeyDisposition;
     }
 
     RtlFreeUnicodeString(&mut SymbolicLink);
@@ -448,19 +448,19 @@ unsafe fn OpenRegistryHandlesFromSymbolicLink(
     }
 
     if !GuidKey.is_null() {
-        core::ptr::write_volatile(GuidKey, GuidKeyReal);
+        *GuidKey = GuidKeyReal;
     } else {
         ZwClose(GuidKeyReal);
     }
 
     if !DeviceKey.is_null() {
-        core::ptr::write_volatile(DeviceKey, DeviceKeyReal);
+        *DeviceKey = DeviceKeyReal;
     } else {
         ZwClose(DeviceKeyReal);
     }
 
     if !InstanceKey.is_null() {
-        core::ptr::write_volatile(InstanceKey, InstanceKeyReal);
+        *InstanceKey = InstanceKeyReal;
     } else {
         ZwClose(InstanceKeyReal);
     }
@@ -519,7 +519,7 @@ pub unsafe extern "system" fn IoOpenDeviceInterfaceRegistryKey(
     ZwClose(InstanceKey);
 
     if Status >= 0 {
-        core::ptr::write_volatile(DeviceInterfaceKey, DeviceParametersKey);
+        *DeviceInterfaceKey = DeviceParametersKey;
     }
 
     Status
@@ -717,7 +717,7 @@ pub unsafe extern "system" fn IoGetDeviceInterfaceAlias(
     }
     ZwClose(AliasInstanceKey);
 
-    core::ptr::write_volatile(AliasSymbolicLinkName, AliasSymbolicLink);
+    *AliasSymbolicLinkName = AliasSymbolicLink;
     RtlFreeUnicodeString(&mut AliasGuidString);
     STATUS_SUCCESS
 }
@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn IoGetDeviceInterfaces(
 
     if !ReturnBuffer.Buffer.is_null() {
         *ReturnBuffer.Buffer.add((ReturnBuffer.Length / 2) as usize) = 0;
-        core::ptr::write_volatile(SymbolicLinkList, ReturnBuffer.Buffer);
+        *SymbolicLinkList = ReturnBuffer.Buffer;
         Status = STATUS_SUCCESS;
     }
 
@@ -2266,7 +2266,7 @@ pub unsafe extern "system" fn IoSetDeviceInterfaceState(
 //     ZwClose(InstanceKey);
 //
 //     if (NT_SUCCESS(Status))
-//         core::ptr::write_volatile(DeviceInterfaceKey, DeviceParametersKey);
+//         *DeviceInterfaceKey = DeviceParametersKey;
 //
 //     return Status;
 // }
@@ -2520,7 +2520,7 @@ pub unsafe extern "system" fn IoSetDeviceInterfaceState(
 //
 //     /* We're done */
 //     DPRINT("IoGetDeviceInterfaceAlias(): alias symbolic link %wZ\n", &AliasSymbolicLink);
-//     core::ptr::write_volatile(AliasSymbolicLinkName, AliasSymbolicLink);
+//     *AliasSymbolicLinkName = AliasSymbolicLink;
 //     Status = STATUS_SUCCESS;
 //
 // Quit:

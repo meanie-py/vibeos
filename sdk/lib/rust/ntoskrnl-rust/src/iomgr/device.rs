@@ -296,7 +296,7 @@ unsafe fn IopAttachDeviceToDeviceStackSafe(
     }
 
     if !AttachedToDeviceObject.is_null() {
-        core::ptr::write_volatile(AttachedToDeviceObject, AttachedDevice);
+        *AttachedToDeviceObject = AttachedDevice;
     }
     AttachedDevice
 }
@@ -455,8 +455,8 @@ unsafe fn IopGetDeviceObjectPointer(
     );
     let LocalFileObject = ptr_from_exposed_addr_mut::<_FILE_OBJECT>(LocalFileObject);
     if Status >= 0 {
-        core::ptr::write_volatile(DeviceObject, IoGetRelatedDeviceObject(LocalFileObject));
-        core::ptr::write_volatile(FileObject, LocalFileObject);
+        *DeviceObject = IoGetRelatedDeviceObject(LocalFileObject);
+        *FileObject = LocalFileObject;
     }
 
     ZwClose(FileHandle);
@@ -767,9 +767,9 @@ unsafe fn IopCreateDefaultDeviceSecurityDescriptor(
     OutputFlags: *mut ULONG,
 ) -> PSECURITY_DESCRIPTOR {
     if !OutputFlags.is_null() {
-        core::ptr::write_volatile(OutputFlags, 0);
+        *OutputFlags = 0;
     }
-    core::ptr::write_volatile(OutputDacl, core::ptr::null_mut());
+    *OutputDacl = core::ptr::null_mut();
 
     let Status = if DeviceType == FILE_DEVICE_TAPE_FILE_SYSTEM
         || DeviceType == FILE_DEVICE_CD_ROM_FILE_SYSTEM
@@ -844,7 +844,7 @@ unsafe fn IopCreateDefaultDeviceSecurityDescriptor(
             *OutputFlags |= DACL_SET;
         }
 
-        core::ptr::write_volatile(OutputDacl, Dacl);
+        *OutputDacl = Dacl;
         status
     };
 
@@ -1036,7 +1036,7 @@ unsafe fn IopFinishCreatedDeviceObject(
     }
 
     ObCloseHandle(TempHandle, 0i32 as i8);
-    core::ptr::write_volatile(DeviceObject, CreatedDeviceObject);
+    *DeviceObject = CreatedDeviceObject;
     STATUS_SUCCESS
 }
 
@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn IoCreateDevice(
         + core::mem::size_of::<_DEVICE_OBJECT>()
         + core::mem::size_of::<_EXTENDED_DEVOBJ_EXTENSION>();
 
-    core::ptr::write_volatile(DeviceObject, core::ptr::null_mut());
+    *DeviceObject = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     // Carry the object address back as an integer; on i386 LLVM keeps folding
     // raw-pointer results from this boundary to null.
@@ -1207,7 +1207,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
 
     CurrentDevice = (*DriverObject).DeviceObject;
 
-    core::ptr::write_volatile(ActualNumberDeviceObjects, ActualDevices);
+    *ActualNumberDeviceObjects = ActualDevices;
 
     if (ActualDevices * core::mem::size_of::<PDEVICE_OBJECT>() as u32) > DeviceObjectListSize {
         drop(qsl_guard); // [guard-drop]
@@ -1278,7 +1278,7 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
 
     let Status = if !Vpb.is_null() {
         if (*Vpb).ReferenceCount != 0 && ((*Vpb).Flags & VPB_MOUNTED) != 0 {
-            core::ptr::write_volatile(DiskDeviceObject, (*Vpb).RealDevice);
+            *DiskDeviceObject = (*Vpb).RealDevice;
             ObReferenceObject((*Vpb).RealDevice as PVOID);
             STATUS_SUCCESS
         } else {
@@ -1353,7 +1353,7 @@ pub unsafe extern "system" fn IoGetRelatedTargetDevice(
     let mut DeviceNode = core::ptr::null_mut();
     let Status = IopGetRelatedTargetDevice(FileObject, core::ptr::addr_of_mut!(DeviceNode));
     if Status >= 0 && !DeviceNode.is_null() {
-        core::ptr::write_volatile(DeviceObject, (*DeviceNode).PhysicalDeviceObject);
+        *DeviceObject = (*DeviceNode).PhysicalDeviceObject;
     }
     Status
 }
@@ -2926,7 +2926,7 @@ pub unsafe extern "system" fn IoWMIDeviceObjectToProviderId(_DeviceObject: PDEVI
 //     CurrentDevice = DriverObject->DeviceObject;
 //
 //     /* Start by at least returning this */
-//     core::ptr::write_volatile(ActualNumberDeviceObjects, ActualDevices);
+//     *ActualNumberDeviceObjects = ActualDevices;
 //
 //     /* Check if we can support so many */
 //     if ((ActualDevices * sizeof(PDEVICE_OBJECT)) > DeviceObjectListSize)

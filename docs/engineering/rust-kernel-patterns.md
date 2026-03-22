@@ -480,11 +480,20 @@ impl<T: Copy> Volatile<T> {
 
 **Protects against:** LLVM eliminating stores to global IRQL state, reordering loads of hardware-modified memory, dead store elimination of state that's read asynchronously (by interrupt handlers, other CPUs, etc.).
 
-**Status:** Not yet implemented. Applicable to:
+**Status:** `Volatile<T>` type implemented in `ntkrnl-sys/src/volatile.rs`. However, it CANNOT be used on `#[no_mangle] pub static` globals — Rust places `static` (vs `static mut`) in read-only sections regardless of `UnsafeCell`. See "Lessons Learned" below.
+
+For `#[no_mangle]` globals, use `read_volatile`/`write_volatile` directly on the `static mut`:
+```rust
+static mut InbvOldIrql: KIRQL = 0;
+// Write: core::ptr::write_volatile(&raw mut InbvOldIrql, old_irql);
+// Read:  core::ptr::read_volatile(&raw const InbvOldIrql);
+```
+
+Applicable sites:
 - `inbv/inbv.rs` — `InbvOldIrql` global
-- `ke/freeze.rs` — freeze IRQL global
+- `ke/freeze.rs` — `KiOldIrql` global
+- `ke/profobj.rs` — `KiProfileIrql` global
 - `kd64/kdprint.rs` — KD lock state
-- Any `static mut` accessed across function boundaries where LLVM might not see the reader
 
 **Relationship to guards:** Complementary, not alternative. Guards protect *state transitions* (acquire→release). `Volatile<T>` protects *data at rest* (stores that must survive). Asm barriers protect *function calls* (extern calls that must not be eliminated). A fully defended kernel function might use all three:
 
@@ -496,6 +505,49 @@ fn example() {
     drop(guard);                                // guard: release visible
 }
 ```
+
+## Lessons Learned: Approaches That Failed
+
+These are approaches we tried, found to be unworkable, and documented for future reference. Each failure taught us something about how Rust/LLVM interacts with kernel code.
+
+### Failed: Removing `#[inline(never)]` from shim_exports (2026-03-22)
+
+**Hypothesis:** Since `#[no_mangle]` prevents symbol removal, `#[inline(never)]` should be redundant.
+
+**Result:** Boot hang on i386. LLVM still inlines the function *body* into callers within the same CGU, even though the symbol is preserved for the linker. The inlined body is then subject to `captures(none)` and other optimizations. `#[no_mangle]` prevents the *symbol* from being removed but does NOT prevent the *code* from being inlined into call sites.
+
+**Lesson:** `#[no_mangle]` ≠ `#[inline(never)]`. They protect different things. Both are needed for shim functions that wrap FORCEINLINE kernel primitives.
+
+### Failed: `Volatile<T>` wrapper on `#[no_mangle]` statics (2026-03-22)
+
+**Hypothesis:** Wrapping `static mut X: KIRQL` as `static X: Volatile<KIRQL>` (using `UnsafeCell` for interior mutability) would force volatile load/store semantics while keeping the symbol exported.
+
+**Result:** Boot hang on i386. Changing from `static mut` to `static` (even with `UnsafeCell`) causes Rust to place the symbol in a read-only `.rdata` section instead of writable `.data`. The first write to the global faults.
+
+**Root cause:** Rust's `static` vs `static mut` affects linker section placement. `UnsafeCell` provides interior mutability at the *language* level (borrow checker), but the compiler's section placement logic doesn't consider `UnsafeCell` — it sees `static` (not `static mut`) and emits into `.rdata`. This is a Rust compiler behavior, not a language spec guarantee.
+
+**Workaround:** Use `read_volatile`/`write_volatile` directly on `static mut` globals instead of wrapping in `Volatile<T>`. Same LLVM protection (volatile load/store instructions emitted), no linker section issue.
+
+**`Volatile<T>` IS safe for:** Local variables, struct fields, non-`#[no_mangle]` statics — anywhere the linker section placement doesn't matter because the variable lives on the stack or in a heap allocation.
+
+### Failed: Custom `AtomicUsize` SpinLockGuard (2026-03-21)
+
+**Hypothesis:** SpinLockGuard can implement its own spinlock using `AtomicUsize::compare_exchange_weak` instead of calling the kernel's `KeAcquireSpinLock`.
+
+**Result:** Deadlock on i386. The kernel's spinlock protocol is more complex than a simple test-and-set:
+1. Queued spinlocks use a different data structure than a plain atomic flag
+2. Debugging hooks (`KD_SPIN_LOCK_DEBUG`) in the C acquire path are bypassed
+3. C code and Rust code racing on the same `KSPIN_LOCK` with different atomic implementations is technically a data race under the C++ memory model
+
+**Lesson:** Never reimplement kernel lock primitives in Rust atomics. Always call the kernel's own functions (`KeAcquireSpinLock`/`KeReleaseSpinLock`) through the guard.
+
+### Failed: `ObReferenceObjectByName` inner returning `Result<PVOID, NTSTATUS>` (2026-03-22)
+
+**Hypothesis:** The inner function returns `Ok(object)` on success and the wrapper returns `STATUS_SUCCESS`.
+
+**Result:** Black screen. `ObReferenceObjectByName` can return success codes OTHER than `STATUS_SUCCESS` (e.g., `STATUS_REPARSE`). Callers check for specific status values. Returning `STATUS_SUCCESS` when the original returned a different success code broke object lookup for the display driver.
+
+**Lesson:** NT functions' NTSTATUS return values carry information even on success. Inner functions must return `Result<(OutputValue, NTSTATUS), NTSTATUS>` to preserve the exact status code, not `Result<OutputValue, NTSTATUS>` with `STATUS_SUCCESS` hardcoded in the wrapper.
 
 ## Relationship to Other Docs
 
@@ -512,5 +564,5 @@ fn example() {
 > IRQL → IrqlGuard (scoped lifetime)
 > Output pointers → Result (return value)
 > Spinlocks → SpinLockGuard (RAII)
-> Global state → Volatile<T> (load/store visible)
+> Global state → read_volatile/write_volatile (load/store visible)
 > Trap state → Assembly (non-optimizable)

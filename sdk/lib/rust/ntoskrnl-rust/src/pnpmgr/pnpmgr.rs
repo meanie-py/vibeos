@@ -608,7 +608,7 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
 pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
     if !PopSystemPowerDeviceNode.is_null() {
         let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopDeviceTreeLock) as PKSPIN_LOCK) }; // [guard]
-        core::ptr::write_volatile(DeviceObject, (*PopSystemPowerDeviceNode).PhysicalDeviceObject);
+        *DeviceObject = (*PopSystemPowerDeviceNode).PhysicalDeviceObject;
         drop(spin_guard); // [guard-drop]
 
         return STATUS_SUCCESS;
@@ -671,7 +671,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
     let mut Length: USHORT;
     let mut Status: NTSTATUS;
 
-    core::ptr::write_volatile(Handle, core::ptr::null_mut());
+    *Handle = core::ptr::null_mut();
 
     Status = IopOpenRegistryKeyEx(&mut hParent, core::ptr::null_mut(), &EnumU as *const _ as *mut _, KEY_CREATE_SUB_KEY);
     if Status < 0 {
@@ -722,7 +722,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
         }
 
         if (Current as usize) == (Last as usize) {
-            core::ptr::write_volatile(Handle, hKey);
+            *Handle = hKey;
             return STATUS_SUCCESS;
         }
 
@@ -1038,7 +1038,7 @@ pub unsafe extern "system" fn IopOpenRegistryKeyEx(
 ) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    core::ptr::write_volatile(KeyHandle, core::ptr::null_mut());
+    *KeyHandle = core::ptr::null_mut();
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
@@ -1160,9 +1160,9 @@ pub unsafe extern "system" fn IopCreateRegistryKeyEx(
     }
 
     if Status >= 0 {
-        core::ptr::write_volatile(Handle, HandleArray[i as usize]);
+        *Handle = HandleArray[i as usize];
         if !Disposition.is_null() {
-            core::ptr::write_volatile(Disposition, KeyDisposition);
+            *Disposition = KeyDisposition;
         }
     }
 
@@ -1212,7 +1212,7 @@ pub unsafe extern "system" fn IopGetRegistryValue(
         return Status;
     }
 
-    core::ptr::write_volatile(Information, FullInformation);
+    *Information = FullInformation;
     STATUS_SUCCESS
 }
 
@@ -1436,7 +1436,7 @@ unsafe fn PiGetDeviceRegistryProperty(
         Status = STATUS_BUFFER_TOO_SMALL;
     }
 
-    core::ptr::write_volatile(BufferLength, Length);
+    *BufferLength = Length;
     ExFreePool(KeyValueInfo as PVOID);
     Status
 }
@@ -1464,7 +1464,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     let Policy: DEVICE_REMOVAL_POLICY;
     let mut Length: ULONG = 0;
 
-    core::ptr::write_volatile(ResultLength, 0);
+    *ResultLength = 0;
 
     if DeviceNode.is_null() {
         return STATUS_INVALID_DEVICE_REQUEST;
@@ -1524,7 +1524,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
         }
         DevicePropertyBootConfigurationTranslated => {
             if (*DeviceNode).BootResources.is_null() {
-                core::ptr::write_volatile(ResultLength, 0);
+                *ResultLength = 0;
                 return STATUS_SUCCESS;
             }
 

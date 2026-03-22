@@ -121,7 +121,7 @@ unsafe fn ExpRaiseHardError(
                 PreviousMode,
             ) == 0u8
         {
-            core::ptr::write_volatile(Response, ResponseNotHandled);
+            *Response = ResponseNotHandled;
             return STATUS_PRIVILEGE_NOT_HELD;
         }
 
@@ -167,7 +167,7 @@ unsafe fn ExpRaiseHardError(
     }
 
     if PortHandle.is_null() {
-        core::ptr::write_volatile(Response, ResponseReturnToCaller);
+        *Response = ResponseReturnToCaller;
         return STATUS_SUCCESS;
     }
 
@@ -181,7 +181,7 @@ unsafe fn ExpRaiseHardError(
                 if PreviousMode != 0i8 { 1u8 } else { 0u8 },
             );
 
-            core::ptr::write_volatile(Response, ResponseReturnToCaller);
+            *Response = ResponseReturnToCaller;
             return STATUS_SUCCESS;
         }
     }
@@ -225,9 +225,9 @@ unsafe fn ExpRaiseHardError(
             (*Message).Response = ResponseReturnToCaller;
         }
 
-        core::ptr::write_volatile(Response, (*Message).Response);
+        *Response = (*Message).Response;
     } else {
-        core::ptr::write_volatile(Response, ResponseReturnToCaller);
+        *Response = ResponseReturnToCaller;
     }
 
     Status
@@ -292,7 +292,7 @@ pub unsafe extern "system" fn ExRaiseHardError(
                 PAGE_READWRITE,
             );
             if Status < 0 {
-                core::ptr::write_volatile(Response, ResponseNotHandled);
+                *Response = ResponseNotHandled;
                 return Status;
             }
 
@@ -341,7 +341,7 @@ pub unsafe extern "system" fn ExRaiseHardError(
         ZwFreeVirtualMemory((-1isize) as HANDLE, &mut UserData, core::ptr::addr_of_mut!(FreeSize) as *mut _, MEM_RELEASE);
     }
 
-    core::ptr::write_volatile(Response, SafeResponse);
+    *Response = SafeResponse;
     Status
 }
 
@@ -424,7 +424,7 @@ pub unsafe extern "system" fn NtRaiseHardError(
             ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
         }
 
-        core::ptr::write_volatile(Response, SafeResponse);
+        *Response = SafeResponse;
 
         Status
     } else {
@@ -439,7 +439,7 @@ pub unsafe extern "system" fn NtRaiseHardError(
             &mut SafeResponse,
         );
 
-        core::ptr::write_volatile(Response, SafeResponse);
+        *Response = SafeResponse;
 
         Status
     }

@@ -2176,12 +2176,12 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
     InterlockedDecrement(&raw mut (*FileObject).Waiters as *mut LONG);
     if Status == STATUS_SUCCESS {
         ObReferenceObject(FileObject as PVOID);
-        *LockFailed = 0;
+        core::ptr::write_volatile(LockFailed, 0);
     } else {
         if (*FileObject).Busy == 0 && (*FileObject).Waiters != 0 {
             KeSetEvent(&mut (*FileObject).Lock, 0, 0);
         }
-        *LockFailed = 1;
+        core::ptr::write_volatile(LockFailed, 1);
     }
     Status
 }

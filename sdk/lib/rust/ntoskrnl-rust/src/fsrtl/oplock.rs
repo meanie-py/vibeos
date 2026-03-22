@@ -1085,7 +1085,7 @@ pub unsafe extern "system" fn FsRtlUninitializeOplock(Oplock: POPLOCK) {
         return;
     }
 
-    core::ptr::write_volatile(Oplock, core::ptr::null_mut());
+    *Oplock = core::ptr::null_mut();
 
     ExAcquireFastMutexUnsafe((*int_oplock).IntLock);
 

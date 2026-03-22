@@ -58,9 +58,9 @@ pub unsafe extern "system" fn FsRtlGetNextMcbEntry(
         &mut ll_sector_count,
     );
 
-    core::ptr::write_volatile(Vbn, ll_vbn as ULONG);
-    core::ptr::write_volatile(Lbn, ll_lbn as ULONG);
-    core::ptr::write_volatile(SectorCount, ll_sector_count as ULONG);
+    *Vbn = ll_vbn as ULONG;
+    *Lbn = ll_lbn as ULONG;
+    *SectorCount = ll_sector_count as ULONG;
 
     return_value
 }
@@ -91,8 +91,8 @@ pub unsafe extern "system" fn FsRtlLookupLastMcbEntry(
         &mut ll_lbn,
     );
 
-    core::ptr::write_volatile(Vbn, ll_vbn as ULONG);
-    core::ptr::write_volatile(Lbn, ll_lbn as ULONG);
+    *Vbn = ll_vbn as ULONG;
+    *Lbn = ll_lbn as ULONG;
 
     return_value
 }
@@ -118,9 +118,9 @@ pub unsafe extern "system" fn FsRtlLookupMcbEntry(
         Index,
     );
 
-    core::ptr::write_volatile(Lbn, ll_lbn as ULONG);
+    *Lbn = ll_lbn as ULONG;
     if !SectorCount.is_null() {
-        core::ptr::write_volatile(SectorCount, ll_sector_count as ULONG);
+        *SectorCount = ll_sector_count as ULONG;
     }
 
     return_value

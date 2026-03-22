@@ -246,8 +246,8 @@ pub unsafe extern "system" fn FsRtlGetNextBaseMcbEntry(
         if (*run).RunStartVbn.QuadPart as u64 > (last_vbn + last_sector_count) {
             if RunIndex == current_index {
                 *Vbn = (last_vbn + last_sector_count) as i64;
-                core::ptr::write_volatile(Lbn, -1);
-                core::ptr::write_volatile(SectorCount, (*run).RunStartVbn.QuadPart - *Vbn);
+                *Lbn = -1;
+                *SectorCount = (*run).RunStartVbn.QuadPart - *Vbn;
 
                 result = 1;
                 return result;
@@ -257,9 +257,9 @@ pub unsafe extern "system" fn FsRtlGetNextBaseMcbEntry(
         }
 
         if RunIndex == current_index {
-            core::ptr::write_volatile(Vbn, (*run).RunStartVbn.QuadPart);
-            core::ptr::write_volatile(Lbn, (*run).StartingLbn.QuadPart);
-            core::ptr::write_volatile(SectorCount, (*run).RunEndVbn.QuadPart - (*run).RunStartVbn.QuadPart);
+            *Vbn = (*run).RunStartVbn.QuadPart;
+            *Lbn = (*run).StartingLbn.QuadPart;
+            *SectorCount = (*run).RunEndVbn.QuadPart - (*run).RunStartVbn.QuadPart;
 
             result = 1;
             return result;
@@ -375,23 +375,23 @@ pub unsafe extern "system" fn FsRtlLookupBaseMcbEntry(
         if Vbn < last_vbn + count {
             if !Lbn.is_null() {
                 if last_lbn == -1 {
-                    core::ptr::write_volatile(Lbn, -1);
+                    *Lbn = -1;
                 } else {
-                    core::ptr::write_volatile(Lbn, last_lbn + (Vbn - last_vbn));
+                    *Lbn = last_lbn + (Vbn - last_vbn);
                 }
             }
 
             if !SectorCountFromLbn.is_null() {
-                core::ptr::write_volatile(SectorCountFromLbn, last_vbn + count - Vbn);
+                *SectorCountFromLbn = last_vbn + count - Vbn;
             }
             if !StartingLbn.is_null() {
-                core::ptr::write_volatile(StartingLbn, last_lbn);
+                *StartingLbn = last_lbn;
             }
             if !SectorCountFromStartingLbn.is_null() {
-                core::ptr::write_volatile(SectorCountFromStartingLbn, last_vbn + count - last_vbn);
+                *SectorCountFromStartingLbn = last_vbn + count - last_vbn;
             }
             if !Index.is_null() {
-                core::ptr::write_volatile(Index, i);
+                *Index = i;
             }
 
             result = 1;
@@ -456,15 +456,15 @@ unsafe fn FsRtlLookupLastLargeMcbEntryAndIndex_internal(
     }
 
     if !Vbn.is_null() {
-        core::ptr::write_volatile(Vbn, (*run_found).RunEndVbn.QuadPart - 1);
+        *Vbn = (*run_found).RunEndVbn.QuadPart - 1;
     }
     if !Lbn.is_null() {
-        core::ptr::write_volatile(Lbn, (*run_found).StartingLbn.QuadPart
+        *Lbn = (*run_found).StartingLbn.QuadPart
             + ((*run_found).RunEndVbn.QuadPart - (*run_found).RunStartVbn.QuadPart)
-            - 1);
+            - 1;
     }
     if !Index.is_null() {
-        core::ptr::write_volatile(Index, run_index - 1);
+        *Index = run_index - 1;
     }
 
     1

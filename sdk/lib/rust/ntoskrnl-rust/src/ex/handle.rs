@@ -546,7 +546,7 @@ unsafe fn ExpAllocateMidLevelTable(
     }
 
     *Mid.add(0) = Low;
-    core::ptr::write_volatile(LowTableEntry, Low);
+    *LowTableEntry = Low;
     Mid
 }
 
@@ -796,7 +796,7 @@ unsafe fn ExpAllocateHandleTableEntry(
 
     InterlockedIncrement(core::ptr::addr_of_mut!((*HandleTable).HandleCount));
 
-    core::ptr::write_volatile(NewHandle, Handle);
+    *NewHandle = Handle;
     Entry
 }
 
