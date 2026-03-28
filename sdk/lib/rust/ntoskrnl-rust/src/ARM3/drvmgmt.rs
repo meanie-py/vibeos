@@ -192,10 +192,10 @@ pub unsafe extern "system" fn MmIsDriverVerifying(DriverObject: PDRIVER_OBJECT) 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsVerifierEnabled(VerifierFlags: *mut ULONG) -> NTSTATUS {
     if !MiVerifierDriverAddedThunkListHead.Flink.is_null() {
-        core::ptr::write_volatile(VerifierFlags, MmVerifierData.Level);
+        *VerifierFlags = MmVerifierData.Level;
         STATUS_SUCCESS
     } else {
-        core::ptr::write_volatile(VerifierFlags, 0);
+        *VerifierFlags = 0;
         STATUS_NOT_SUPPORTED
     }
 }

@@ -50,14 +50,14 @@ unsafe fn InsertTailList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
     (*head).Blink = entry;
 }
 
-/// PsGetCurrentProcess — calls the shim_exports extern "C" definition.
+/// IoGetCurrentProcess wrapper returning ddk PEPROCESS.
 #[inline]
 unsafe fn PsGetCurrentProcess() -> PEPROCESS {
-    extern "C" {
-        #[link_name = "PsGetCurrentProcess"]
-        fn _PsGetCurrentProcess() -> PEPROCESS;
+    extern "system" {
+        #[link_name = "IoGetCurrentProcess"]
+        fn IoGetCurrentProcess() -> PEPROCESS;
     }
-    _PsGetCurrentProcess()
+    IoGetCurrentProcess()
 }
 
 /// Inline InterlockedOr -- atomic OR on LONG, returns old value.
@@ -95,8 +95,6 @@ extern "C" {
     fn PspPrioritySeparationFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumTypeFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumLengthFromMask(mask: ULONG) -> ULONG;
-}
-extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 extern "C" {
@@ -114,7 +112,7 @@ extern "C" {
 extern "C" {
     fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(time: *mut LARGE_INTEGER);
 }
 
@@ -309,8 +307,7 @@ unsafe fn PspComputeQuantumAndPriority(
         local_quantum = 6;
     }
 
-    // Use write_volatile to prevent captures(none) optimization
-    core::ptr::write_volatile(quantum, local_quantum);
+    *quantum = local_quantum;
 
     PspPriorityTable[(*proc).PriorityClass as usize]
 }
@@ -1015,12 +1012,14 @@ pub unsafe extern "system" fn PsCreateSystemProcess(
     )
 }
 
-unsafe fn PsLookupProcessByProcessId_inner(
+#[no_mangle]
+pub unsafe extern "system" fn PsLookupProcessByProcessId(
     process_id: HANDLE,
-) -> Result<PEPROCESS, NTSTATUS> {
+    process: *mut PEPROCESS,
+) -> NTSTATUS {
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_process: PEPROCESS;
-    let mut result: Result<PEPROCESS, NTSTATUS> = Err(STATUS_INVALID_PARAMETER);
+    let mut status: NTSTATUS = STATUS_INVALID_PARAMETER;
 
     KeEnterCriticalRegion();
 
@@ -1030,7 +1029,8 @@ unsafe fn PsLookupProcessByProcessId_inner(
 
         if (*(found_process as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ProcessObject as UCHAR {
             if ObReferenceObjectSafe(found_process as PVOID) != 0 {
-                result = Ok(found_process);
+                *process = found_process;
+                status = STATUS_SUCCESS;
             }
         }
 
@@ -1038,31 +1038,18 @@ unsafe fn PsLookupProcessByProcessId_inner(
     }
 
     KeLeaveCriticalRegion();
-    result
+    status
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PsLookupProcessByProcessId(
-    process_id: HANDLE,
-    process: *mut PEPROCESS,
-) -> NTSTATUS {
-    match PsLookupProcessByProcessId_inner(process_id) {
-        Ok(found) => {
-            core::ptr::write_volatile(process, found);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
-}
-
-/// On success returns (found_thread, optional_process).
-unsafe fn PsLookupProcessThreadByCid_inner(
+pub unsafe extern "system" fn PsLookupProcessThreadByCid(
     cid: PCLIENT_ID,
-    want_process: bool,
-) -> Result<(PETHREAD, PEPROCESS), NTSTATUS> {
+    process: *mut PEPROCESS,
+    thread: *mut PETHREAD,
+) -> NTSTATUS {
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_thread: PETHREAD;
-    let mut result: Result<(PETHREAD, PEPROCESS), NTSTATUS> = Err(STATUS_INVALID_CID);
+    let mut status: NTSTATUS = STATUS_INVALID_CID;
 
     KeEnterCriticalRegion();
 
@@ -1073,12 +1060,13 @@ unsafe fn PsLookupProcessThreadByCid_inner(
         if (*(found_thread as *mut _ETHREAD)).Tcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ThreadObject as UCHAR &&
            (*(found_thread as *mut _ETHREAD)).Cid.UniqueProcess == (*cid).UniqueProcess {
             if ObReferenceObjectSafe(found_thread as PVOID) != 0 {
-                let mut found_process: PEPROCESS = core::ptr::null_mut();
-                if want_process {
-                    found_process = (*(found_thread as *mut _ETHREAD)).ThreadsProcess;
-                    ObReferenceObject(found_process as PVOID);
+                *thread = found_thread;
+                status = STATUS_SUCCESS;
+
+                if !process.is_null() {
+                    *process = (*(found_thread as *mut _ETHREAD)).ThreadsProcess;
+                    ObReferenceObject(*process as PVOID);
                 }
-                result = Ok((found_thread, found_process));
             }
         }
 
@@ -1086,25 +1074,7 @@ unsafe fn PsLookupProcessThreadByCid_inner(
     }
 
     KeLeaveCriticalRegion();
-    result
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn PsLookupProcessThreadByCid(
-    cid: PCLIENT_ID,
-    process: *mut PEPROCESS,
-    thread: *mut PETHREAD,
-) -> NTSTATUS {
-    match PsLookupProcessThreadByCid_inner(cid, !process.is_null()) {
-        Ok((found_thread, found_process)) => {
-            core::ptr::write_volatile(thread, found_thread);
-            if !process.is_null() {
-                core::ptr::write_volatile(process, found_process);
-            }
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    status
 }
 
 #[no_mangle]

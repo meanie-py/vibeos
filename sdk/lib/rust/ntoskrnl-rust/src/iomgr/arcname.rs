@@ -47,7 +47,7 @@ use ntkrnl_sys::ddk::{
     IoCreateSymbolicLink,
 };
 
-// RtlAnsiStringToUnicodeString: On i386, the ddk extern "system" declaration
+// RtlAnsiStringToUnicodeString: On i386, the ddk extern "stdcall" declaration
 // generates _RtlAnsiStringToUnicodeString (without @12 decoration) on i686-pc-windows-gnu
 // for unknown reasons. Use a cdecl C shim to avoid the decoration mismatch.
 extern "C" {
@@ -706,7 +706,7 @@ pub unsafe extern "C" fn IopVerifyDiskSignature(
         if (*DriveLayout).__bindgen_anon_1.Mbr.Signature == (*ArcDiskSignature).Signature {
             // And return it
             if !Signature.is_null() {
-                core::ptr::write_volatile(Signature, (*DriveLayout).__bindgen_anon_1.Mbr.Signature);
+                *Signature = (*DriveLayout).__bindgen_anon_1.Mbr.Signature;
             }
             return TRUE as BOOLEAN;
         }
@@ -722,7 +722,7 @@ pub unsafe extern "C" fn IopVerifyDiskSignature(
         {
             // There is no signature to return, just zero it
             if !Signature.is_null() {
-                core::ptr::write_volatile(Signature, 0);
+                *Signature = 0;
             }
             return TRUE as BOOLEAN;
         }

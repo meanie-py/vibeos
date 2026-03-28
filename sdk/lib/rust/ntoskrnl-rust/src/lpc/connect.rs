@@ -110,20 +110,16 @@ extern "system" {
 }
 extern "C" {
     fn ObReferenceObject(Object: PVOID);
+    fn PsGetCurrentProcess() -> PEPROCESS;
     fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeForWriteUlong(Address: *mut ULONG);
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
     fn LpcpCompleteWait(Semaphore: PVOID);
-    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
-}
-extern "system" {
     fn KeEnterCriticalRegion();
     fn KeLeaveCriticalRegion();
+    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
 }
-  extern "C" {
-    fn PsGetCurrentProcess() -> PEPROCESS;
-  }
 
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;
 const LPCP_CONNECTION_PORT: ULONG = 0x00000001;
@@ -179,7 +175,7 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
 
     reply_message = LpcpGetMessageFromThread(current_thread);
     if !reply_message.is_null() {
-        core::ptr::write_volatile(message, reply_message);
+        *message = reply_message;
 
         if !IsListEmpty(core::ptr::addr_of_mut!((*reply_message).__bindgen_anon_1.Entry)) {
             RemoveEntryList(core::ptr::addr_of_mut!((*reply_message).__bindgen_anon_1.Entry));
@@ -189,11 +185,11 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
         (*current_thread).__bindgen_anon_6.LpcReceivedMessageId = 0;
         (*current_thread).__bindgen_anon_5.LpcReplyMessage = core::ptr::null_mut();
 
-        core::ptr::write_volatile(connect_message, (reply_message as usize + core::mem::size_of::<_LPCP_MESSAGE>()) as PLPCP_CONNECTION_MESSAGE);
+        *connect_message = (reply_message as usize + core::mem::size_of::<_LPCP_MESSAGE>()) as PLPCP_CONNECTION_MESSAGE;
         section_to_map = (**connect_message).SectionToMap;
         (**connect_message).SectionToMap = core::ptr::null_mut();
     } else {
-        core::ptr::write_volatile(message, core::ptr::null_mut());
+        *message = core::ptr::null_mut();
         section_to_map = core::ptr::null_mut();
     }
 
@@ -618,7 +614,7 @@ pub unsafe extern "system" fn NtSecureConnectPort(
 
         if !connection_information.is_null() {
             if !connection_information_length.is_null() {
-                core::ptr::write_volatile(connection_information_length, connection_info_length);
+                *connection_information_length = connection_info_length;
             }
 
             core::ptr::copy_nonoverlapping(
@@ -640,10 +636,10 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 &mut handle,
             );
             if status >= 0 {
-                core::ptr::write_volatile(port_handle, handle);
+                *port_handle = handle;
 
                 if !max_message_length.is_null() {
-                    core::ptr::write_volatile(max_message_length, port_message_length);
+                    *max_message_length = port_message_length;
                 }
 
                 if !client_view.is_null() {

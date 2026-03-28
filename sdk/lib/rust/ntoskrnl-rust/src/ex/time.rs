@@ -43,7 +43,7 @@ extern "system" {
     pub fn PoNotifySystemTimeSet();
     pub fn ExGetPreviousMode() -> KPROCESSOR_MODE;
 }
-extern "C" {
+extern "system" {
     pub fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
@@ -81,7 +81,6 @@ static mut ExpTimeRefreshLock: ERESOURCE = unsafe { core::mem::zeroed() };
 static mut ExpKernelResolutionCount: ULONG = 0;
 static mut ExpTimerResolutionCount: ULONG = 0;
 
-#[inline(never)]
 unsafe fn ExpGetTimeZoneId(
     TimeNow: PLARGE_INTEGER,
     TimeZoneId: *mut ULONG,
@@ -124,11 +123,11 @@ unsafe fn ExpGetTimeZoneId(
             if LocalTimeNow.QuadPart >= DaylightTime.QuadPart
                 && LocalTimeNow.QuadPart < StandardTime.QuadPart
             {
-                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_DAYLIGHT);
+                *TimeZoneId = TIME_ZONE_ID_DAYLIGHT;
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.DaylightBias as i64 * TICKSPERMINUTE;
             } else {
-                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_STANDARD);
+                *TimeZoneId = TIME_ZONE_ID_STANDARD;
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.StandardBias as i64 * TICKSPERMINUTE;
             }
@@ -136,17 +135,17 @@ unsafe fn ExpGetTimeZoneId(
             if LocalTimeNow.QuadPart >= StandardTime.QuadPart
                 && LocalTimeNow.QuadPart < DaylightTime.QuadPart
             {
-                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_STANDARD);
+                *TimeZoneId = TIME_ZONE_ID_STANDARD;
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.StandardBias as i64 * TICKSPERMINUTE;
             } else {
-                core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_DAYLIGHT);
+                *TimeZoneId = TIME_ZONE_ID_DAYLIGHT;
                 (*NewTimeZoneBias).QuadPart +=
                     ExpTimeZoneInfo.DaylightBias as i64 * TICKSPERMINUTE;
             }
         }
     } else {
-        core::ptr::write_volatile(TimeZoneId, TIME_ZONE_ID_UNKNOWN);
+        *TimeZoneId = TIME_ZONE_ID_UNKNOWN;
     }
 
     1u8
@@ -507,9 +506,9 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
             return status;
         }
     } else {
-        core::ptr::write_volatile(MinimumResolution, KeMaximumIncrement);
-        core::ptr::write_volatile(MaximumResolution, KeMinimumIncrement);
-        core::ptr::write_volatile(ActualResolution, KeTimeIncrement);
+        *MinimumResolution = KeMaximumIncrement;
+        *MaximumResolution = KeMinimumIncrement;
+        *ActualResolution = KeTimeIncrement;
     }
 
     STATUS_SUCCESS
@@ -544,7 +543,7 @@ pub unsafe extern "system" fn NtSetTimerResolution(
             return status;
         }
     } else {
-        core::ptr::write_volatile(CurrentResolution, NewResolution);
+        *CurrentResolution = NewResolution;
     }
 
     if SetResolution != 0 || (*Process).__bindgen_anon_2.__bindgen_anon_1.SetTimerResolution() != 0 {

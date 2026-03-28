@@ -44,13 +44,11 @@ extern "system" {
     ) -> NTSTATUS;
 }
 extern "C" {
+    fn KeEnterCriticalRegion();
+    fn KeLeaveCriticalRegion();
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn LpcpCompleteWait(semaphore: PVOID);
     fn LpcpReplyWait(semaphore: PVOID, mode: KPROCESSOR_MODE);
-}
-extern "system" {
-    fn KeEnterCriticalRegion();
-    fn KeLeaveCriticalRegion();
 }
 
 const LPCP_LOCK_HELD: ULONG = 1;
@@ -541,7 +539,7 @@ pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
     let EndOfEntries: *mut UCHAR;
 
     if (*Message).u2.s2.DataInfoOffset == 0 {
-        core::ptr::write_volatile(NumberOfDataEntries, 0);
+        *NumberOfDataEntries = 0;
         return STATUS_SUCCESS;
     }
 
@@ -564,7 +562,7 @@ pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
         return STATUS_INVALID_PARAMETER;
     }
 
-    core::ptr::write_volatile(NumberOfDataEntries, (*DataInfo).NumberOfEntries);
+    *NumberOfDataEntries = (*DataInfo).NumberOfEntries;
     return STATUS_SUCCESS;
 }
 

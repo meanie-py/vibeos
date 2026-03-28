@@ -77,7 +77,12 @@ extern "system" {
 extern "C" {
     fn KeGetPcr() -> *mut KPCR;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 
@@ -270,7 +275,7 @@ pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULO
     }
 
     if !DrMask.is_null() {
-        core::ptr::write_volatile(DrMask, new_mask);
+        *DrMask = new_mask;
     } else {
         if mask != new_mask {
             (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive = new_mask as UCHAR;
@@ -294,11 +299,10 @@ unsafe fn KiEspFromTrapFrame(TrapFrame: PKTRAP_FRAME) -> ULONG {
 
 unsafe fn KiEspToTrapFrame(TrapFrame: PKTRAP_FRAME, Esp: ULONG) {
     let old_irql = KeGetCurrentIrql();
-    let _irql_guard = if old_irql < APC_LEVEL { // [guard]
-        Some(ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL))
-    } else {
-        None
-    };
+    let mut raised_irql = old_irql;
+    if old_irql < APC_LEVEL {
+        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(raised_irql));
+    }
 
     let previous = KiEspFromTrapFrame(TrapFrame);
 
@@ -326,7 +330,9 @@ unsafe fn KiEspToTrapFrame(TrapFrame: PKTRAP_FRAME, Esp: ULONG) {
         }
     }
 
-    drop(_irql_guard); // [guard-drop]
+    if old_irql < APC_LEVEL {
+        KeLowerIrql(old_irql);
+    }
 }
 
 unsafe fn KiSsFromTrapFrame(TrapFrame: PKTRAP_FRAME) -> ULONG {
@@ -389,11 +395,10 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
 ) {
     let mut v86_switch = 0u8;
     let old_irql = KeGetCurrentIrql();
-    let _irql_guard = if old_irql < APC_LEVEL { // [guard]
-        Some(ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL))
-    } else {
-        None
-    };
+    let mut raised_irql = old_irql;
+    if old_irql < APC_LEVEL {
+        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(raised_irql));
+    }
 
     let mut dr_mask: ULONG = 0;
 
@@ -576,7 +581,9 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
         (*TrapFrame).EFlags |= EFLAGS_IOPL;
     }
 
-    drop(_irql_guard); // [guard-drop]
+    if old_irql < APC_LEVEL {
+        KeLowerIrql(old_irql);
+    }
 }
 
 #[no_mangle]
@@ -595,11 +602,10 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
     let float_save_area: *mut FLOATING_SAVE_AREA;
 
     let old_irql = KeGetCurrentIrql();
-    let _irql_guard = if old_irql < APC_LEVEL { // [guard]
-        Some(ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL))
-    } else {
-        None
-    };
+    let mut raised_irql = old_irql;
+    if old_irql < APC_LEVEL {
+        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(raised_irql));
+    }
 
     if ((*Context).ContextFlags & CONTEXT_CONTROL) == CONTEXT_CONTROL {
         (*Context).Ebp = (*TrapFrame).Ebp;
@@ -701,7 +707,9 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
         }
     }
 
-    drop(_irql_guard); // [guard-drop]
+    if old_irql < APC_LEVEL {
+        KeLowerIrql(old_irql);
+    }
 }
 
 #[cfg(target_arch = "x86")]

@@ -327,10 +327,10 @@ unsafe fn MmDeleteVirtualMappingEx(
         if OldPte.Long != 0 {
             if !WasDirty.is_null() {
                 // Dirty bit is bit 6 on x86/x86_64
-                core::ptr::write_volatile(WasDirty, (((*PointerPte).Long >> 6) & 1) as BOOLEAN);
+                *WasDirty = (((*PointerPte).Long >> 6) & 1) as BOOLEAN;
             }
             if !Page.is_null() {
-                core::ptr::write_volatile(Page, OldPte.page_frame_number() as _);
+                *Page = OldPte.page_frame_number() as _;
             }
         }
     }
@@ -420,7 +420,7 @@ pub unsafe extern "system" fn MmDeletePageFileMapping(
 
     MiUnlockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
 
-    core::ptr::write_volatile(SwapEntry, (OldPte.Long >> 1) as _);
+    *SwapEntry = (OldPte.Long >> 1) as _;
 }
 
 #[no_mangle]
@@ -538,7 +538,7 @@ pub unsafe extern "system" fn MmGetPageFileMapping(
     let PointerPte: PMMPTE;
 
     if Address >= MmSystemRangeStart {
-        core::ptr::write_volatile(SwapEntry, 0);
+        *SwapEntry = 0;
         return;
     }
 
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn MmGetPageFileMapping(
 
     if MiIsPageTablePresent(Address) == 0 {
         MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());
-        core::ptr::write_volatile(SwapEntry, 0);
+        *SwapEntry = 0;
         return;
     }
 
@@ -554,9 +554,9 @@ pub unsafe extern "system" fn MmGetPageFileMapping(
 
     PointerPte = MiAddressToPte(Address);
     if !(*PointerPte).valid() && ((*PointerPte).Long & 0x800) != 0 {
-        core::ptr::write_volatile(SwapEntry, ((*PointerPte).Long >> 1) as _);
+        *SwapEntry = ((*PointerPte).Long >> 1) as _;
     } else {
-        core::ptr::write_volatile(SwapEntry, 0);
+        *SwapEntry = 0;
     }
 
     MiUnlockProcessWorkingSetShared(Process, PsGetCurrentThread());

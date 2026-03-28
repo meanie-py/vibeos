@@ -64,8 +64,6 @@ extern "system" {
 extern "C" {
     fn ProbeForWriteHandle(address: *mut HANDLE);
     fn LpcpCompleteWait(semaphore: PVOID);
-}
-extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
 }
 
@@ -349,7 +347,7 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
         (*client_view).ViewBase = (*connect_message).ClientView.ViewRemoteBase;
         (*client_view).ViewSize = (*connect_message).ClientView.ViewSize;
     }
-    core::ptr::write_volatile(port_handle, handle);
+    *port_handle = handle;
 
     if port_context.is_null() {
         (*server_port).PortContext = handle;

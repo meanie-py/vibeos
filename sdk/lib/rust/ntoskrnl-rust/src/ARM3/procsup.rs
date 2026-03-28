@@ -9,7 +9,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 
-use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
+use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiAcquireExpansionLock, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiReleaseExpansionLock, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
 use super::helpers::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
 
     StackPages = (BYTES_TO_PAGES(if GuiStack != 0 { MmLargeStackSize } else { KERNEL_STACK_SIZE })) as u32;
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    let OldIrql = MiAcquirePfnLock();
 
     i = 0;
     while i < StackPages {
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
         i += 1;
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     MiReleaseSystemPtes(PointerPte, StackPages + 1, SystemPteSpace);
 }
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn MmCreateKernelStack(GuiStack: BOOLEAN, Node: UCHAR
 
     MI_MAKE_HARDWARE_PTE_KERNEL(&mut *core::ptr::addr_of_mut!(TempPte), PointerPte.add(1), MM_READWRITE, 0);
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    let OldIrql = MiAcquirePfnLock();
 
     i = 0;
     while i < (StackPages) as u32 {
@@ -292,7 +292,7 @@ pub unsafe extern "system" fn MmCreateKernelStack(GuiStack: BOOLEAN, Node: UCHAR
         i += 1;
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     BaseAddress
 }
@@ -323,7 +323,7 @@ unsafe fn MmGrowKernelStackEx(StackPointer: PVOID, GrowSize: ULONG) -> NTSTATUS 
 
     MI_MAKE_SOFTWARE_PTE(&mut *core::ptr::addr_of_mut!(InvalidPte), MM_NOACCESS);
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    let OldIrql = MiAcquirePfnLock();
 
     while (LimitPte as ULONG_PTR) >= (NewLimitPte as ULONG_PTR) {
         MI_SET_USAGE(MI_USAGE_KERNEL_STACK_EXPANSION);
@@ -339,7 +339,7 @@ unsafe fn MmGrowKernelStackEx(StackPointer: PVOID, GrowSize: ULONG) -> NTSTATUS 
         LimitPte = LimitPte.sub(1);
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     (*(Thread as *mut _KTHREAD)).StackLimit = MiPteToAddress(NewLimitPte) as _;
     STATUS_SUCCESS
@@ -382,7 +382,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     let mut Status: NTSTATUS;
     let Characteristics: USHORT;
     SectionOffset.QuadPart = (0u64 as ULONGLONG) as i64;
-    core::ptr::write_volatile(BasePeb, core::ptr::null_mut());
+    *BasePeb = core::ptr::null_mut();
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     }
 
     KeDetachProcess();
-    core::ptr::write_volatile(BasePeb, Peb);
+    *BasePeb = Peb;
     STATUS_SUCCESS
 }
 
@@ -504,7 +504,7 @@ pub unsafe extern "system" fn MmCreateTeb(
 ) -> NTSTATUS {
     let mut Teb: PTEB = core::ptr::null_mut();
     let mut Status = STATUS_SUCCESS;
-    core::ptr::write_volatile(BaseTeb, core::ptr::null_mut());
+    *BaseTeb = core::ptr::null_mut();
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn MmCreateTeb(
     (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
 
     KeDetachProcess();
-    core::ptr::write_volatile(BaseTeb, Teb);
+    *BaseTeb = Teb;
     Status
 }
 
@@ -664,7 +664,7 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     #[cfg(target_arch = "aarch64")]
     ARM64_UART_TRACE_HEX(b"[MM] InitProcAS: IRQL after WS lock=\0".as_ptr() as *const i8, KeGetCurrentIrql() as ULONG_PTR);
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquirePfnLock();
 
     #[cfg(target_arch = "aarch64")]
     let PointerPte = MiAddressToPte(PXE_BASE as PVOID);
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
     MiInitializePfn((PageFrameNumber) as _, PointerPte as *mut _MMPTE, 1u8);
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     (*(Process as *mut _EPROCESS)).Vm.VmWorkingSetList = MmWorkingSetList as _;
 
@@ -820,6 +820,7 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> BOOLEAN {
+    let mut OldIrql: KIRQL;
     let mut TableBaseIndex: PFN_NUMBER;
     let mut HyperIndex: PFN_NUMBER;
     let mut WsListIndex: PFN_NUMBER;
@@ -829,35 +830,35 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
 
     KeInitializeSpinLock(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).HyperSpaceLock));
 
-    let mut pfn_guard = PfnLockGuard::acquire(); // [guard]
+    OldIrql = MiAcquirePfnLock();
 
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     TableBaseIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if TableBaseIndex == 0 {
         TableBaseIndex = MiRemoveAnyPage(Color);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         MiZeroPhysicalPage(TableBaseIndex);
-        pfn_guard = PfnLockGuard::acquire(); // [guard]
+        OldIrql = MiAcquirePfnLock();
     }
     MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     HyperIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if HyperIndex == 0 {
         HyperIndex = MiRemoveAnyPage(Color);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         MiZeroPhysicalPage(HyperIndex);
-        pfn_guard = PfnLockGuard::acquire(); // [guard]
+        OldIrql = MiAcquirePfnLock();
     }
     MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     WsListIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if WsListIndex == 0 {
         WsListIndex = MiRemoveAnyPage(Color);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         MiZeroPhysicalPage(WsListIndex);
     } else {
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
     }
 
     (*(Process as *mut _EPROCESS)).WorkingSetPage = (WsListIndex) as _;
@@ -870,11 +871,11 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
         MmDbgCheckIrql(b"CreateProcAS-before-MiArch\0".as_ptr() as *const i8);
     }
     if MiArchCreateProcessAddressSpace(Process, DirectoryTableBase as *mut _ as *mut _) == 0 {
-        let pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        OldIrql = MiAcquirePfnLock();
         MiInsertPageInFreeList(WsListIndex);
         MiInsertPageInFreeList(HyperIndex);
         MiInsertPageInFreeList(TableBaseIndex);
-        drop(pfn_guard_0); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         (*(Process as *mut _EPROCESS)).WorkingSetPage = 0;
         *DirectoryTableBase.add(0) = 0;
         *DirectoryTableBase.add(1) = 0;
@@ -960,22 +961,23 @@ pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
 pub unsafe extern "system" fn MmDeleteProcessAddressSpace(Process: PEPROCESS) {
     let Pfn1: PMMPFN;
     let Pfn2: PMMPFN;
+    let mut OldIrql: KIRQL;
     let mut PageFrameIndex: PFN_NUMBER;
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        let exp_guard = unsafe { ntkrnl_sys::guards::ExpansionLockGuard::acquire() }; // [guard]
+        OldIrql = MiAcquireExpansionLock();
         RemoveEntryList(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).MmProcessLinks) as *mut _);
-        drop(exp_guard); // [guard-drop]
+        MiReleaseExpansionLock(OldIrql);
     }
 
-    let exp_guard = unsafe { ntkrnl_sys::guards::ExpansionLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquireExpansionLock();
     if !(*(Process as *mut _EPROCESS)).Vm.WorkingSetExpansionLinks.Flink.is_null() {
         RemoveEntryList(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Vm.WorkingSetExpansionLinks) as *mut _);
     }
-    drop(exp_guard); // [guard-drop]
+    MiReleaseExpansionLock(OldIrql);
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquirePfnLock();
 
     if (*(Process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.AddressSpaceInitialized() == 2 {
         let Pfn1 = MiGetPfnEntry(((*(Process as *mut _EPROCESS)).WorkingSetPage) as usize);
@@ -1000,7 +1002,7 @@ pub unsafe extern "system" fn MmDeleteProcessAddressSpace(Process: PEPROCESS) {
         MiDecrementShareCount(Pfn1 as *mut _MMPFN, (PageFrameIndex) as _);
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     if !(*(Process as *mut _EPROCESS)).Session.is_null() {
         MiReleaseProcessReferenceToSessionDataPage((*(Process as *mut _EPROCESS)).Session);

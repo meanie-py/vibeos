@@ -145,10 +145,15 @@ extern "C" {
 extern "C" {
     fn DbgPrint(format: PCHAR, ...) -> ULONG;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
+    fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+extern "system" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
@@ -212,10 +217,8 @@ pub unsafe extern "system" fn PsReferenceProcessFilePointer(
 
     let section = (*process).SectionObject as PSECTION;
     if !section.is_null() {
-        let file_obj = MmGetFileObjectForSection(section as PVOID);
-        // Use write_volatile to prevent captures(none) optimization
-        core::ptr::write_volatile(FileObject, file_obj);
-        ObReferenceObject(file_obj as PVOID);
+        *FileObject = MmGetFileObjectForSection(section as PVOID);
+        ObReferenceObject(*FileObject as PVOID);
     }
 
     ExReleaseRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect));

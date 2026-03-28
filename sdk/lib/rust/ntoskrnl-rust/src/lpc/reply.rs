@@ -48,10 +48,8 @@ extern "C" {
     fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn ProbeForWritePointer(Address: *mut PVOID);
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER);
-    fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
-}
-extern "C" {
     fn PsGetCurrentProcess() -> PEPROCESS;
+    fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
 }
 
 #[no_mangle]
@@ -595,7 +593,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         connection_info_length = (*message).Request.u1.s1.DataLength as ULONG
             - core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>() as ULONG;
 
-        core::ptr::write_volatile(ReceiveMessage, (*message).Request);
+        *ReceiveMessage = (*message).Request;
 
         message = core::ptr::null_mut();
 
@@ -610,7 +608,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         );
 
         if !PortContext.is_null() {
-            core::ptr::write_volatile(PortContext, core::ptr::null_mut());
+            *PortContext = core::ptr::null_mut();
         }
     } else if LpcpGetMessageType(core::ptr::addr_of_mut!((*message).Request)) != LPC_REPLY {
         LpcpMoveMessage(
@@ -623,7 +621,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         );
 
         if !PortContext.is_null() {
-            core::ptr::write_volatile(PortContext, (*message).PortContext);
+            *PortContext = (*message).PortContext;
         }
 
         if (*message).Request.u2.s2.DataInfoOffset != 0 {
@@ -810,7 +808,7 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
     }
 
     if !ReturnLength.is_null() {
-        core::ptr::write_volatile(ReturnLength, local_return_length as ULONG);
+        *ReturnLength = local_return_length as ULONG;
     }
 
     ObDereferenceObject(client_thread as PVOID);

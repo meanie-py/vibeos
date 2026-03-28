@@ -82,16 +82,14 @@ extern "system" {
     fn DbgBreakPoint();
 }
 extern "C" {
+    fn PsGetCurrentThread() -> PETHREAD;
     fn KeLowerIrql(irql: KIRQL);
+    #[link_name = "IoGetCurrentProcess"]
+    fn PsGetCurrentProcess() -> PEPROCESS;
+
     fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG);
     fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG);
 }
-extern "system" {
-    fn PsGetCurrentThread() -> PETHREAD;
-}
-  extern "C" {
-    fn PsGetCurrentProcess() -> PEPROCESS;
-  }
 
 // PspW32ProcessCallout and PspW32ThreadCallout are function pointer VARIABLES
 // (not functions). In C they're called with the same syntax, but in Rust we
@@ -119,7 +117,7 @@ extern "C" {
 extern "C" {
     fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
@@ -287,7 +285,7 @@ unsafe fn PspShutdownProcessManager() {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn PspExitApcRundown(apc: PKAPC) {
+unsafe extern "stdcall" fn PspExitApcRundown(apc: PKAPC) {
     ExFreePool(apc as PVOID);
 }
 
@@ -853,7 +851,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn PsExitSpecialApc(
+unsafe extern "stdcall" fn PsExitSpecialApc(
     apc: PKAPC,
     _normal_routine: *mut PKNORMAL_ROUTINE,
     normal_context: *mut PVOID,
@@ -889,7 +887,7 @@ unsafe fn PsExitSpecialApcInner(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn PspExitNormalApc(
+unsafe extern "stdcall" fn PspExitNormalApc(
     normal_context: PVOID,
     system_argument1: PVOID,
     system_argument2: PVOID,

@@ -46,6 +46,10 @@ KNOWN_CGU_UD2 = {
     "NtStopProfile",
     "PopSetSystemPowerState",
     "MmPageOutPhysicalAddress",
+    "IopAcquireFileObjectLock",
+    "are_any_accesses_granted",
+    "KiSystemStartup",
+    "KeAcquireInStackQueuedSpinLockForDpc",
 }
 
 

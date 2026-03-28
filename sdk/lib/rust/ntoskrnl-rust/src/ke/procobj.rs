@@ -10,11 +10,11 @@ use ntkrnl_sys::ddk::{
     KAFFINITY, KPRIORITY,
     HalRequestSoftwareInterrupt,
     KeBugCheck,
-    KiAcquireApcLockRaiseToSynch,
+    KiAcquireApcLockRaiseToSynch, KiAcquireDispatcherLock,
     KiAcquireDispatcherLockAtSynchLevel, KiAcquireProcessLockRaiseToSynch,
     KiAcquireThreadLock, KiAttachProcess, KiExitDispatcher,
     KiMoveApcState, KiReleaseApcLock,
-    KiReleaseApcLockFromSynchLevel,
+    KiReleaseApcLockFromSynchLevel, KiReleaseDispatcherLock,
     KiReleaseDispatcherLockFromSynchLevel, KiReleaseProcessLock,
     KiReleaseProcessLockFromSynchLevel, KiReleaseThreadLock,
     KiSetAffinityThread, KiSetPriorityThread, KiSwapProcess,
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn KeSetProcess(
     fn KxUnwaitThread(header: PVOID, increment: KPRIORITY);
 }
 
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    let OldIrql = KiAcquireDispatcherLock();
     let OldState = (*Process).Header.SignalState;
 
     (*Process).Header.SignalState = 1;
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn KeSetProcess(
         KxUnwaitThread(core::ptr::addr_of_mut!((*Process).Header) as PVOID, Increment);
     }
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
 
     OldState as ULONG
 }
@@ -780,7 +780,7 @@ pub unsafe extern "system" fn KeQueryRuntimeProcess(
 
     KiReleaseProcessLock(core::ptr::addr_of_mut!(ProcessLock));
 
-    core::ptr::write_volatile(UserTime, TotalUser);
+    *UserTime = TotalUser;
 
     TotalKernel
 }

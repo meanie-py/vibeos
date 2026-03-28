@@ -56,10 +56,20 @@ extern "C" {
     fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG;
     fn InterlockedIncrementUL(addend: *mut ULONG) -> ULONG;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
 
@@ -186,7 +196,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
     NrFreedPages: *mut ULONG,
 ) -> NTSTATUS {
     let mut target = Target;
-    core::ptr::write_volatile(NrFreedPages, 0);
+    *NrFreedPages = 0;
 
     let mut first_page: PFN_NUMBER = MmGetLRUFirstUserPage() as PFN_NUMBER;
     let mut current_page: PFN_NUMBER = first_page;
@@ -208,7 +218,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
 
             loop {
                 let mut apc_state: _KAPC_STATE = core::mem::zeroed();
-                let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                let old_irql = MiAcquirePfnLock();
                 let mut entry = MmGetRmapListHeadPage(current_page as _);
 
                 loop {
@@ -235,7 +245,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
                 }
 
                 if entry.is_null() {
-                    drop(pfn_guard); // [guard-drop]
+                    MiReleasePfnLock(old_irql);
                     break;
                 }
 
@@ -249,11 +259,11 @@ pub unsafe extern "C" fn MmTrimUserMemory(
                 ) == 0
                 {
                     ObDereferenceObject(process as PVOID);
-                    drop(pfn_guard); // [guard-drop]
+                    MiReleasePfnLock(old_irql);
                     continue;
                 }
 
-                drop(pfn_guard); // [guard-drop]
+                MiReleasePfnLock(old_irql);
 
                 KeStackAttachProcess(
                     core::ptr::addr_of_mut!((*(process as *mut _EPROCESS)).Pcb),
@@ -298,9 +308,9 @@ pub unsafe extern "C" fn MmTrimUserMemory(
     }
 
     if current_page != 0 {
-        let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+        let old_irql = MiAcquirePfnLock();
         MmDereferencePage(current_page as _);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(old_irql);
     }
 
     STATUS_SUCCESS
@@ -352,10 +362,10 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
 
     let page = MmAllocPage(Consumer) as PFN_NUMBER;
     if page == 0 {
-        core::ptr::write_volatile(AllocatedPage, 0);
+        *AllocatedPage = 0;
         return STATUS_NO_MEMORY;
     }
-    core::ptr::write_volatile(AllocatedPage, page as _);
+    *AllocatedPage = page as _;
 
     InterlockedIncrementUL(
         core::ptr::addr_of_mut!(MiMemoryConsumers[Consumer as usize].PagesUsed)
@@ -366,7 +376,7 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn MiBalancerThread(_Unused: PVOID) {
+unsafe extern "stdcall" fn MiBalancerThread(_Unused: PVOID) {
     MiBalancerThreadInner();
 }
 

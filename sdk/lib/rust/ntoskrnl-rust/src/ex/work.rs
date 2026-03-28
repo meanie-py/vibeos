@@ -36,14 +36,19 @@ extern "system" {
 
 // ExpDebuggerWorker is a C function; calling convention differs by arch.
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "stdcall" {
     fn ExpDebuggerWorker(Context: PVOID);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn ExpDebuggerWorker(Context: PVOID);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 
@@ -230,7 +235,7 @@ unsafe fn ExpWorkerThreadEntryPoint_impl(Context: PVOID) {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
+unsafe extern "stdcall" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
     ExpWorkerThreadEntryPoint_impl(Context)
 }
 

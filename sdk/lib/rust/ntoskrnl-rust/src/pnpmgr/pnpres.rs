@@ -275,7 +275,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
 
         if OldCount == 0 && !(*ResourceList).is_null() {
             ExFreePool(*ResourceList as PVOID);
-            core::ptr::write_volatile(ResourceList, core::ptr::null_mut());
+            *ResourceList = core::ptr::null_mut();
         } else if OldCount != 0 {
             let NewList: PCM_RESOURCE_LIST;
 
@@ -297,7 +297,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
 
             ExFreePool(*ResourceList as PVOID);
 
-            core::ptr::write_volatile(ResourceList, NewList);
+            *ResourceList = NewList;
         }
 
         ii = 0;
@@ -474,7 +474,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
 
                 *DescPtr = NewDesc;
 
-                core::ptr::write_volatile(ResourceList, NewList);
+                *ResourceList = NewList;
             }
             ii += 1;
         }
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
 
     if !(*ResourceList).is_null() {
         ExFreePool(*ResourceList as PVOID);
-        core::ptr::write_volatile(ResourceList, core::ptr::null_mut());
+        *ResourceList = core::ptr::null_mut();
     }
 
     STATUS_CONFLICTING_ADDRESSES

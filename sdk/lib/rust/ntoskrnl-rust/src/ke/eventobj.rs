@@ -97,13 +97,13 @@ pub unsafe extern "system" fn KeReadStateEvent(Event: PKEVENT) -> LONG {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeResetEvent(Event: PKEVENT) -> LONG {
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    let OldIrql = KiAcquireDispatcherLock();
 
     let PreviousState = (*Event).Header.SignalState;
 
     (*Event).Header.SignalState = 0;
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
     PreviousState
 }
 
@@ -152,11 +152,11 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
 ) {
     let Thread = PsGetCurrentThread() as PKTHREAD;
 
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    let OldIrql = KiAcquireDispatcherLock();
 
     if IsListEmpty(core::ptr::addr_of_mut!((*Event).Header.WaitListHead)) {
         (*Event).Header.SignalState = 1;
-        drop(disp_guard); // [guard-drop]
+        KiReleaseDispatcherLock(OldIrql);
         return;
     }
 
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
     } else {
         let WaitThread = (*WaitBlock).Thread;
         if !WaitingThread.is_null() {
-            core::ptr::write_volatile(WaitingThread, WaitThread);
+            *WaitingThread = WaitThread;
         }
 
         (*Thread).Priority = KiComputeNewPriority(Thread, 0);
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
         KiReadyThread(WaitThread);
     }
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
 }
 
 

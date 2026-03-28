@@ -199,14 +199,14 @@ pub unsafe extern "system" fn WmipCaptureGuidObjectAttributes(
         core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
         core::mem::size_of::<PVOID>() as ULONG,
     );
-    core::ptr::write_volatile(CapturedObjectAttributes, *GuidObjectAttributes);
+    *CapturedObjectAttributes = *GuidObjectAttributes;
 
     ProbeForRead(
         (*CapturedObjectAttributes).ObjectName as PVOID,
         core::mem::size_of::<_UNICODE_STRING>(),
         core::mem::size_of::<PVOID>() as ULONG,
     );
-    core::ptr::write_volatile(CapturedObjectName, *(*CapturedObjectAttributes).ObjectName);
+    *CapturedObjectName = *(*CapturedObjectAttributes).ObjectName;
 
     if (*CapturedObjectName).Length != 45 * core::mem::size_of::<u16>() as u16 {
         return STATUS_INVALID_PARAMETER;
@@ -282,7 +282,7 @@ pub unsafe extern "system" fn WmipRegisterGuids(
 
     (*Result).Handle = GuidObjectHandle;
     (*Result).TraceHandle = 0;
-    core::ptr::write_volatile(OutputLength, 24);
+    *OutputLength = 24;
 
     STATUS_SUCCESS
 }
@@ -618,7 +618,7 @@ pub unsafe extern "system" fn WmipDriverEntry(
 
     // SAFETY: extern "system" maps to the correct ABI per-platform (stdcall on i386, C on amd64/arm64).
     // Transmute is needed because Rust's type system treats extern "system" differently from
-    // bindgen's extern "system" (i386) / extern "C" (amd64) even though the ABI is identical.
+    // bindgen's extern "stdcall" (i386) / extern "C" (amd64) even though the ABI is identical.
     (*DriverObject).MajorFunction[IRP_MJ_CREATE] = core::mem::transmute(WmipOpenCloseCleanup as usize);
     (*DriverObject).MajorFunction[IRP_MJ_CLOSE] = core::mem::transmute(WmipOpenCloseCleanup as usize);
     (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL] = core::mem::transmute(WmipIoControl as usize);

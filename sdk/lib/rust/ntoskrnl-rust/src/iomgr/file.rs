@@ -98,6 +98,8 @@ use ntkrnl_sys::ddk::{
     KeWaitForSingleObject,
     KeClearEvent,
     KeSetEvent,
+    KeAcquireQueuedSpinLock,
+    KeReleaseQueuedSpinLock,
     ObCreateObject,
     ObInsertObject,
     ObOpenObjectByName,
@@ -161,6 +163,7 @@ extern "system" {
     fn KeFlushWriteBuffer();
     fn KeDelayExecutionThread(WaitMode: KPROCESSOR_MODE, Alertable: BOOLEAN, Interval: *const LARGE_INTEGER) -> NTSTATUS;
     fn ExFreePool(P: PVOID);
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     #[link_name = "IopValidateOpenPacket_shim"]
     fn IopValidateOpenPacket(OpenPacket: POPEN_PACKET) -> BOOLEAN;
@@ -184,19 +187,17 @@ extern "system" {
 }
 
 extern "system" {
-    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
-    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
-    fn ObDereferenceObject(Object: PVOID);
-    fn ExRaiseStatus(Status: NTSTATUS);
-}
-  extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn ProbeForWriteHandle(Address: *mut HANDLE);
     fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
+    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
     fn ObReferenceObject(Object: PVOID);
-  }
+    fn ObDereferenceObject(Object: PVOID);
+    fn ExRaiseStatus(Status: NTSTATUS);
+}
 
 const TAG_IO: ULONG = 0x20206F49;      // '  OI' — generic IO pool tag
 const TAG_IO_NAME: ULONG = 0x6D4E6F49;  // 'N OI' — IO name pool tag
@@ -608,7 +609,7 @@ unsafe fn IopCheckTopDeviceHint(
     }
 
     if IopVerifyDeviceObjectOnStack(LocalDevice, (*OpenPacket).TopDeviceObjectHint) != 0 {
-        core::ptr::write_volatile(DeviceObject, (*OpenPacket).TopDeviceObjectHint);
+        *DeviceObject = (*OpenPacket).TopDeviceObjectHint;
         return STATUS_SUCCESS;
     }
 
@@ -662,7 +663,7 @@ pub unsafe extern "system" fn IopParseDevice(
     let mut Attempt: ULONG = 0;
 
     while Attempt < IOP_MAX_REPARSE_TRAVERSAL {
-        core::ptr::write_volatile(Object, null_mut());
+        *Object = null_mut();
 
         if IopValidateOpenPacket(OpenPacket) == 0 {
             return STATUS_OBJECT_TYPE_MISMATCH;
@@ -1489,14 +1490,14 @@ pub unsafe extern "system" fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_O
 }
 
 unsafe fn IopGetDevicePDO(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock as _) }; // [guard]
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
     let mut PDO = IopGetDeviceAttachmentBase(DeviceObject);
     if (*PDO).Flags & DO_BUS_ENUMERATED_DEVICE != DO_BUS_ENUMERATED_DEVICE {
         PDO = null_mut();
     } else {
         ObReferenceObject(PDO as PVOID);
     }
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
     PDO
 }
 
@@ -1765,7 +1766,7 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
         if Status == STATUS_BUFFER_OVERFLOW {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
-        core::ptr::write_volatile(BufferLength, IoStatusBlock.Information as ULONG);
+        *BufferLength = IoStatusBlock.Information as ULONG;
     }
 
     Status
@@ -1796,7 +1797,7 @@ unsafe fn IopQueryNameInternal(
     let FileObject = ObjectBody as PFILE_OBJECT;
 
     if Length < size_of::<_OBJECT_NAME_INFORMATION>() as u32 {
-        core::ptr::write_volatile(ReturnLength, size_of::<_OBJECT_NAME_INFORMATION>() as u32);
+        *ReturnLength = size_of::<_OBJECT_NAME_INFORMATION>() as u32;
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 
@@ -1893,7 +1894,7 @@ unsafe fn IopQueryNameInternal(
 
     if LocalReturnLength > Length {
         LengthMismatch = 1;
-        core::ptr::write_volatile(ReturnLength, LocalReturnLength);
+        *ReturnLength = LocalReturnLength;
     }
 
     let LocalFileInfo = LocalInfo as PFILE_NAME_INFORMATION;
@@ -1958,7 +1959,7 @@ unsafe fn IopQueryNameInternal(
     *p = 0;
     LocalReturnLength += 2;
 
-    core::ptr::write_volatile(ReturnLength, LocalReturnLength);
+    *ReturnLength = LocalReturnLength;
 
     let FileLength = (p as ULONG_PTR - ObjectNameInfo as ULONG_PTR) as u32;
     (*ObjectNameInfo).Name.Length = (FileLength - size_of::<_OBJECT_NAME_INFORMATION>() as u32) as u16;
@@ -2148,13 +2149,13 @@ unsafe fn IopQueryAttributesFile(
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn IopAcquireFileObjectLock(
     FileObject: PFILE_OBJECT,
     WaitMode: KPROCESSOR_MODE,
     Alertable: BOOLEAN,
     LockFailed: PBOOLEAN,
 ) -> NTSTATUS {
+
     InterlockedIncrement(&raw mut (*FileObject).Waiters as *mut LONG);
 
     let mut Status = STATUS_SUCCESS;
@@ -2177,12 +2178,12 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
     InterlockedDecrement(&raw mut (*FileObject).Waiters as *mut LONG);
     if Status == STATUS_SUCCESS {
         ObReferenceObject(FileObject as PVOID);
-        core::ptr::write_volatile(LockFailed, 0);
+        *LockFailed = 0;
     } else {
         if (*FileObject).Busy == 0 && (*FileObject).Waiters != 0 {
             KeSetEvent(&mut (*FileObject).Lock, 0, 0);
         }
-        core::ptr::write_volatile(LockFailed, 1);
+        *LockFailed = 1;
     }
     Status
 }
@@ -2379,8 +2380,8 @@ unsafe fn IopCreateFile(
             let mut EaErrorOffset: ULONG = 0;
             Status = IoCheckEaBufferValidity((*OpenPacket).EaBuffer, EaLength, &mut EaErrorOffset);
             if Status < 0 {
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).__bindgen_anon_1.Status, Status);
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).Information, EaErrorOffset as _);
+                (*IoStatusBlock).__bindgen_anon_1.Status = Status;
+                (*IoStatusBlock).Information = EaErrorOffset as _;
                 if !(*OpenPacket).EaBuffer.is_null() {
                     ExFreePool((*OpenPacket).EaBuffer);
                 }
@@ -2411,8 +2412,8 @@ unsafe fn IopCreateFile(
             Status = IoCheckEaBufferValidity((*OpenPacket).EaBuffer, EaLength, &mut EaErrorOffset);
             if Status < 0 {
                 ExFreePool((*OpenPacket).EaBuffer);
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).__bindgen_anon_1.Status, Status);
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).Information, EaErrorOffset as _);
+                (*IoStatusBlock).__bindgen_anon_1.Status = Status;
+                (*IoStatusBlock).Information = EaErrorOffset as _;
                 ExFreePool(OpenPacket as PVOID);
                 return Status;
             }
@@ -2460,8 +2461,8 @@ unsafe fn IopCreateFile(
         if (*OpenPacket).FinalStatus < 0 {
             Status = (*OpenPacket).FinalStatus;
             if ((Status as u32) >> 30) == 2 {  // NT_WARNING
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).Information, (*OpenPacket).Information);
-                core::ptr::write_volatile(&raw mut (*IoStatusBlock).__bindgen_anon_1.Status, (*OpenPacket).FinalStatus);
+                (*IoStatusBlock).Information = (*OpenPacket).Information;
+                (*IoStatusBlock).__bindgen_anon_1.Status = (*OpenPacket).FinalStatus;
             }
         } else if !(*OpenPacket).FileObject.is_null() && (*OpenPacket).ParseCheck == 0 {
             if (*(*OpenPacket).FileObject).FileName.Length != 0 {
@@ -2472,9 +2473,9 @@ unsafe fn IopCreateFile(
         }
     } else {
         (*(*OpenPacket).FileObject).Flags |= FO_HANDLE_CREATED;
-        core::ptr::write_volatile(FileHandle, LocalHandle);
-        core::ptr::write_volatile(&raw mut (*IoStatusBlock).Information, (*OpenPacket).Information);
-        core::ptr::write_volatile(&raw mut (*IoStatusBlock).__bindgen_anon_1.Status, (*OpenPacket).FinalStatus);
+        *FileHandle = LocalHandle;
+        (*IoStatusBlock).Information = (*OpenPacket).Information;
+        (*IoStatusBlock).__bindgen_anon_1.Status = (*OpenPacket).FinalStatus;
         Status = (*OpenPacket).FinalStatus;
     }
 
@@ -2646,7 +2647,7 @@ pub unsafe extern "system" fn IoCreateStreamFileObjectEx(
     }
 
     if !FileObjectHandle.is_null() {
-        core::ptr::write_volatile(FileObjectHandle, FileHandle);
+        *FileObjectHandle = FileHandle;
         ObDereferenceObject(CreatedFileObject as PVOID);
     } else {
         ObCloseHandle(FileHandle, 0i8);
@@ -3004,7 +3005,7 @@ pub unsafe extern "system" fn IoQueryFileDosDeviceName(
             0i8,
         );
         if Status == STATUS_SUCCESS {
-            core::ptr::write_volatile(_OBJECT_INFORMATION_CLASS_ObjectNameInformation, LocalInfo);
+            *_OBJECT_INFORMATION_CLASS_ObjectNameInformation = LocalInfo;
             return STATUS_SUCCESS;
         }
 
@@ -3305,8 +3306,8 @@ pub unsafe extern "system" fn NtCancelIoFile(
         }
     }
 
-    core::ptr::write_volatile(&raw mut (*IoStatusBlock).__bindgen_anon_1.Status, STATUS_SUCCESS);
-    core::ptr::write_volatile(&raw mut (*IoStatusBlock).Information, 0);
+    (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*IoStatusBlock).Information = 0;
 
     ObDereferenceObject(FileObject as PVOID);
     STATUS_SUCCESS

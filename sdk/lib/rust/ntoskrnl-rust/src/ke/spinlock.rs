@@ -108,7 +108,7 @@ pub unsafe extern "system" fn KeReleaseInterruptSpinLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn _KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
-    core::ptr::write_volatile(SpinLock, 0);
+    *SpinLock = 0;
 }
 
 #[no_mangle]
@@ -264,7 +264,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
 
     #[cfg(debug_assertions)]
     {
-        core::ptr::write_volatile(SpinLock, (PsGetCurrentThread() as ULONG_PTR) | 1);
+        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }
 
     1u8
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
 
     #[cfg(debug_assertions)]
     {
-        core::ptr::write_volatile(SpinLock, (PsGetCurrentThread() as ULONG_PTR) | 1);
+        *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }
 
     1u8

@@ -30,9 +30,9 @@ use ntkrnl_sys::ddk::{
     InbvResetDisplay, InbvSetScrollRegion, InbvSetTextColor, InbvSolidColorFill,
     KeBugCheckUnicodeToAnsi as KeBugCheckUnicodeToAnsiExtern,
     KeBugCheckWithTf as KeBugCheckWithTfExtern,
-    KiHandleNmi as KiHandleNmiExtern,
+    KiAcquireNmiListLock, KiHandleNmi as KiHandleNmiExtern,
     KiInitializeBugCheck as KiInitializeBugCheckExtern, KiPcToFileHeader as KiPcToFileHeaderExtern,
-    KiRosPcToUserFileHeader as KiRosPcToUserFileHeaderExtern,
+    KiReleaseNmiListLock, KiRosPcToUserFileHeader as KiRosPcToUserFileHeaderExtern,
     KiSaveProcessorControlState, LdrAccessResource, LdrFindResource_U,
     MmIsSpecialPoolAddress, MmIsSpecialPoolAddressFree, MmMakeKernelResourceSectionWritable,
     PKE_BUGCHECK_UNICODE_TO_ANSI, PANSI_STRING,
@@ -201,7 +201,7 @@ pub unsafe extern "system" fn KiPcToFileHeader(
         &mut PsLoadedModuleList as PLIST_ENTRY
     };
 
-    core::ptr::write_volatile(InKernel, 0u8);
+    *InKernel = 0u8;
 
     NextEntry = (*ListHead).Flink;
     if !NextEntry.is_null() {
@@ -221,11 +221,11 @@ pub unsafe extern "system" fn KiPcToFileHeader(
             if ((Pc as ULONG_PTR) >= ((*Entry).DllBase as ULONG_PTR)) &&
                ((Pc as ULONG_PTR) < (((*Entry).DllBase as ULONG_PTR) + (*Entry).SizeOfImage as ULONG_PTR))
             {
-                core::ptr::write_volatile(LdrEntry, Entry);
+                *LdrEntry = Entry;
                 PcBase = ImageBase;
 
                 if i <= 2 {
-                    core::ptr::write_volatile(InKernel, 1u8);
+                    *InKernel = 1u8;
                 }
                 break;
             }
@@ -260,7 +260,7 @@ unsafe fn KiRosPcToUserFileHeader(
             if ((Pc as ULONG_PTR) >= ((*Entry).DllBase as ULONG_PTR)) &&
                ((Pc as ULONG_PTR) < (((*Entry).DllBase as ULONG_PTR) + (*Entry).SizeOfImage as ULONG_PTR))
             {
-                core::ptr::write_volatile(LdrEntry, Entry);
+                *LdrEntry = Entry;
                 PcBase = ImageBase;
                 break;
             }
@@ -306,7 +306,7 @@ pub unsafe extern "system" fn KeRosCaptureUserStackBackTrace(
     }
 
     if !BackTraceHash.is_null() {
-        core::ptr::write_volatile(BackTraceHash, Hash);
+        *BackTraceHash = Hash;
     }
 
     RtlFillMemoryUlong(Frames.as_mut_ptr() as PVOID, 128, 0);
@@ -927,8 +927,7 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     core::arch::asm!("cli", options(nomem, nostack));
     #[cfg(target_arch = "aarch64")]
     core::arch::asm!("msr daifset, #2", options(nomem, nostack));
-    // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
-    let _irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
+    KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
 
     if InterlockedDecrement(&mut KeBugCheckCount as *mut _ as *mut LONG) == 0 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1093,6 +1092,7 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
     CallbackRoutine: PNMI_CALLBACK,
     Context: PVOID,
 ) -> PVOID {
+    let mut OldIrql: KIRQL = 0;
     let NmiData: PKNMI_HANDLER_CALLBACK;
     let Next: PKNMI_HANDLER_CALLBACK;
 
@@ -1105,24 +1105,25 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
     (*NmiData).Context = Context;
     (*NmiData).Handle = NmiData as PVOID;
 
-    let nmi_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KiNmiCallbackListLock)) }; // [guard]
+    KiAcquireNmiListLock(&mut OldIrql);
     (*NmiData).Next = KiNmiCallbackListHead;
     Next = InterlockedCompareExchangePointer(
         &mut KiNmiCallbackListHead as *mut _ as *mut PVOID,
         NmiData as PVOID,
         (*NmiData).Next as PVOID,
     ) as PKNMI_HANDLER_CALLBACK;
-    drop(nmi_guard); // [guard-drop]
+    KiReleaseNmiListLock(OldIrql);
 
     (*NmiData).Handle
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS {
+    let mut OldIrql: KIRQL = 0;
     let mut NmiData: PKNMI_HANDLER_CALLBACK;
     let mut Previous: *mut PKNMI_HANDLER_CALLBACK;
 
-    let nmi_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(KiNmiCallbackListLock)) }; // [guard]
+    KiAcquireNmiListLock(&mut OldIrql);
     Previous = &mut KiNmiCallbackListHead;
     NmiData = *Previous;
     while !NmiData.is_null() {
@@ -1134,7 +1135,7 @@ pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS
         Previous = &mut (*NmiData).Next;
         NmiData = *Previous;
     }
-    drop(nmi_guard); // [guard-drop]
+    KiReleaseNmiListLock(OldIrql);
 
     if !NmiData.is_null() {
         ExFreePoolWithTag(NmiData as PVOID, TAG_KNMI);

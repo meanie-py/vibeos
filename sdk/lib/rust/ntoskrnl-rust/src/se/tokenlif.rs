@@ -409,7 +409,7 @@ pub unsafe extern "system" fn SepCreateToken(
             return status;
         }
     } else {
-        core::ptr::write_volatile(token_handle, access_token as HANDLE);
+        *token_handle = access_token as HANDLE;
     }
 
     STATUS_SUCCESS
@@ -648,7 +648,7 @@ pub unsafe extern "system" fn SepDuplicateToken(
         }
     }
 
-    core::ptr::write_volatile(new_access_token, access_token);
+    *new_access_token = access_token;
 
     SepReleaseTokenLock(token);
 
@@ -1021,7 +1021,7 @@ unsafe fn SepPerformTokenFiltering(
         }
     }
 
-    core::ptr::write_volatile(filtered_token, access_token);
+    *filtered_token = access_token;
 
     SepReleaseTokenLock(token);
 
@@ -1083,7 +1083,7 @@ pub unsafe extern "system" fn SeFilterToken(
         return status;
     }
 
-    core::ptr::write_volatile(filtered_token, access_token as PACCESS_TOKEN);
+    *filtered_token = access_token as PACCESS_TOKEN;
     status
 }
 

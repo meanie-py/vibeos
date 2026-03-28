@@ -78,7 +78,7 @@ pub unsafe extern "system" fn CcInitializeCacheMap(
 pub unsafe extern "system" fn CcIsThereDirtyData(Vpb: PVPB) -> BOOLEAN {
     let mut dirty = 0u8;
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
+    let old_irql = KeAcquireQueuedSpinLock(17u32);
 
     let mut entry = DirtyVacbListHead.Flink;
     while entry != core::ptr::addr_of_mut!(DirtyVacbListHead) as PLIST_ENTRY {
@@ -102,7 +102,7 @@ pub unsafe extern "system" fn CcIsThereDirtyData(Vpb: PVPB) -> BOOLEAN {
         entry = (*entry).Flink;
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     dirty
 }
@@ -150,8 +150,8 @@ pub unsafe extern "system" fn CcPurgeCacheSection(
 
     let mut success = 1u8;
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
-    let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     let mut list_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
     while list_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) as PLIST_ENTRY {
@@ -189,8 +189,8 @@ pub unsafe extern "system" fn CcPurgeCacheSection(
         );
     }
 
-    drop(dpc_guard); // [guard-drop]
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     while !IsListEmpty(core::ptr::addr_of_mut!(free_list) as PLIST_ENTRY) {
         let vacb = (RemoveHeadList(core::ptr::addr_of_mut!(free_list) as PLIST_ENTRY) as *const u8)
@@ -219,12 +219,13 @@ pub unsafe extern "system" fn CcSetFileSizes(
 
     let shared_cache_map = shared_cache_map as PROS_SHARED_CACHE_MAP;
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+    let mut old_irql: KIRQL = 0;
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _, &mut old_irql);
     let old_section_size = (*shared_cache_map).SectionSize;
     (*shared_cache_map).SectionSize = (*FileSizes).AllocationSize;
     (*shared_cache_map).FileSize = (*FileSizes).FileSize;
     (*shared_cache_map).ValidDataLength = (*FileSizes).ValidDataLength;
-    drop(spin_guard); // [guard-drop]
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _, old_irql);
 
     if (*FileSizes).AllocationSize.QuadPart < old_section_size.QuadPart {
         CcPurgeCacheSection(
@@ -257,11 +258,12 @@ pub unsafe extern "system" fn CcUninitializeCacheMap(
 ) -> BOOLEAN {
     if !TruncateSize.is_null() && !(*(*FileObject).SectionObjectPointer).SharedCacheMap.is_null() {
         let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
-        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+        let mut old_irql: KIRQL = 0;
+        KeAcquireSpinLock(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _, &mut old_irql);
         if (*shared_cache_map).FileSize.QuadPart > (*TruncateSize).QuadPart {
             (*shared_cache_map).FileSize = *TruncateSize;
         }
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _, old_irql);
         CcPurgeCacheSection(
             (*FileObject).SectionObjectPointer,
             TruncateSize,

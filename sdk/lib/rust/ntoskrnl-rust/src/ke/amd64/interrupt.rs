@@ -15,6 +15,8 @@ use ntkrnl_sys::ddk::{
     KeInitializeSpinLock,
     KeSetSystemAffinityThread,
     KeRevertToUserAffinityThread,
+    KiAcquireDispatcherLock,
+    KiReleaseDispatcherLock,
     KINTERRUPT_MODE,
 };
 
@@ -106,7 +108,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
     }
 
     KeSetSystemAffinityThread(1u64 << (*Interrupt).Number);
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    let OldIrql = KiAcquireDispatcherLock();
 
     let CurrentHandler = KeQueryInterruptHandler((*Interrupt).Vector);
 
@@ -125,7 +127,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 
         if HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode) == 0 {
             KeRegisterInterruptHandler((*Interrupt).Vector, CurrentHandler);
-            drop(disp_guard); // [guard-drop]
+            KiReleaseDispatcherLock(OldIrql);
             KeRevertToUserAffinityThread();
             return (*Interrupt).Connected;
         }
@@ -137,7 +139,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
             || ((*ConnectedInterrupt).ShareVector == 0)
             || ((*Interrupt).Mode != (*ConnectedInterrupt).Mode)
         {
-            drop(disp_guard); // [guard-drop]
+            KiReleaseDispatcherLock(OldIrql);
             KeRevertToUserAffinityThread();
             return (*Interrupt).Connected;
         }
@@ -150,7 +152,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 
     (*Interrupt).Connected = 1u8;
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
     KeRevertToUserAffinityThread();
     (*Interrupt).Connected
 }
@@ -158,7 +160,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 #[no_mangle]
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     KeSetSystemAffinityThread(1u64 << (*Interrupt).Number);
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    let OldIrql = KiAcquireDispatcherLock();
 
     if (*Interrupt).Connected != 0 {
         let VectorHandler = KeQueryInterruptHandler((*Interrupt).Vector);
@@ -193,7 +195,7 @@ pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> B
         (*Interrupt).Connected = 0u8;
     }
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
     KeRevertToUserAffinityThread();
 
     1u8

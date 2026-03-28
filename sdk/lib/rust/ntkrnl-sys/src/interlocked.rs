@@ -27,14 +27,6 @@ pub unsafe fn InterlockedDecrement(Addend: *mut LONG) -> LONG {
     atomic.fetch_sub(1, Ordering::SeqCst).wrapping_sub(1)
 }
 
-/// InterlockedExchange — atomically exchange a value, returns OLD value.
-#[inline]
-pub unsafe fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG {
-    use core::sync::atomic::{AtomicI32, Ordering};
-    let atomic = &*(Target as *const AtomicI32);
-    atomic.swap(Value, Ordering::SeqCst)
-}
-
 /// InterlockedExchangeAdd — returns the OLD value.
 #[inline]
 pub unsafe fn InterlockedExchangeAdd(Addend: *mut LONG, Value: LONG) -> LONG {
@@ -82,7 +74,7 @@ extern "system" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "stdcall" {
     #[link_name = "RtlInterlockedPopEntrySList"]
     fn RtlInterlockedPopEntrySList_i386(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
 }
@@ -104,7 +96,7 @@ extern "system" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "stdcall" {
     #[link_name = "RtlInterlockedPushEntrySList"]
     fn RtlInterlockedPushEntrySList_i386(
         ListHead: PSLIST_HEADER,

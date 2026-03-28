@@ -22,7 +22,7 @@ macro_rules! ASSERT {
 
 /// Cast an `extern "system"` function to the target callback ABI.
 ///
-/// On i386, DDK callback types use `extern "system"`, while on amd64/arm64
+/// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64
 /// they use `extern "C"`. Both are semantically identical to `extern "system"`
 /// on their respective platforms, but Rust's type system treats them as distinct.
 /// This macro performs the transmute via usize, which is safe because the ABIs
@@ -54,7 +54,6 @@ pub mod ps;
 pub mod rtl;
 pub mod se;
 pub mod shim_exports;
-mod global_barrier;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;

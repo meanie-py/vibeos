@@ -136,7 +136,7 @@ extern "C" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "system" {
+extern "stdcall" {
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,
@@ -144,7 +144,7 @@ extern "system" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "system" {
+extern "C" {
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,
@@ -224,7 +224,7 @@ pub static mut PopCapabilities: SYSTEM_POWER_CAPABILITIES = unsafe { core::mem::
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn PopPassivePowerCall(Parameter: PVOID) {
+pub unsafe extern "stdcall" fn PopPassivePowerCall(Parameter: PVOID) {
     PopPassivePowerCallInner(Parameter)
 }
 #[no_mangle]
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn PopPresentIrp(NextStack: PIO_STACK_LOCATION, Irp: 
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn PopRequestPowerIrpCompletion(
+pub unsafe extern "stdcall" fn PopRequestPowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
 ) -> NTSTATUS {
     PopRequestPowerIrpCompletionInner(DeviceObject, Irp, Context)
@@ -515,7 +515,6 @@ pub unsafe extern "C" fn PopSetSystemPowerStateTraverse(
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn PopSetSystemPowerState(
     PowerState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
@@ -663,7 +662,7 @@ pub unsafe extern "system" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "system" fn PopPerfIdleDpc(
+pub unsafe extern "stdcall" fn PopPerfIdleDpc(
     Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
 ) {
     PopPerfIdle(core::ptr::addr_of_mut!((*(DeferredContext as *mut _KPRCB)).PowerState));
@@ -849,7 +848,7 @@ pub unsafe extern "system" fn PoRequestPowerIrp(
     }
 
     if !pIrp.is_null() {
-        core::ptr::write_volatile(pIrp, Irp);
+        *pIrp = Irp;
     }
 
     IoSetCompletionRoutine(
@@ -1129,7 +1128,6 @@ pub unsafe extern "system" fn NtRequestWakeupLatency(Latency: LATENCY_TIME) -> N
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn NtSetThreadExecutionState(
     esFlags: EXECUTION_STATE,
     PreviousFlags: *mut EXECUTION_STATE,
@@ -1166,7 +1164,7 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         }
     }
 
-    core::ptr::write_volatile(PreviousFlags, PreviousState);
+    *PreviousFlags = PreviousState;
 
     STATUS_SUCCESS
 }

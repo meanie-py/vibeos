@@ -284,8 +284,8 @@ pub unsafe extern "C" fn CcRosTraceCacheMap(
         (*shared_cache_map).Trace = trace;
 
         if trace != 0 {
-            let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
-            let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+            let oldirql = KeAcquireQueuedSpinLock(17u32);
+            KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
             let mut current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
             while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
@@ -293,8 +293,8 @@ pub unsafe extern "C" fn CcRosTraceCacheMap(
                 current_entry = (*current_entry).Flink;
             }
 
-            drop(dpc_guard); // [guard-drop]
-            drop(qsl_guard); // [guard-drop]
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, oldirql);
         }
     }
 }
@@ -347,15 +347,13 @@ pub unsafe extern "C" fn CcRosFlushVacb(
     status
 }
 
-/// Inner version: takes a QueuedSpinLockGuard by value (consuming it), releases it
-/// internally, does cleanup work, then re-acquires and returns the new guard.
-unsafe fn CcRosDeleteFileCacheInner(
+unsafe fn CcRosDeleteFileCache(
     file_object: PFILE_OBJECT,
     shared_cache_map: PROS_SHARED_CACHE_MAP,
-    qsl_guard: ntkrnl_sys::guards::QueuedSpinLockGuard,
-) -> ntkrnl_sys::guards::QueuedSpinLockGuard {
+    old_irql: *mut KIRQL
+) -> NTSTATUS {
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
-
+    
     let mut current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
     while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
         let vacb = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
@@ -375,16 +373,16 @@ unsafe fn CcRosDeleteFileCacheInner(
     RemoveEntryList(core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks));
 
     KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, *old_irql);
 
     while !IsListEmpty(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) {
         let vacb = (RemoveHeadList(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
-
+        
         InitializeListHead(core::ptr::addr_of_mut!((*vacb).CacheMapVacbListEntry));
 
         if (*vacb).Dirty != 0 {
             let mut iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-            let _status = MmFlushSegment(
+            let status = MmFlushSegment(
                 (*file_object).SectionObjectPointer,
                 core::ptr::addr_of_mut!((*vacb).FileOffset),
                 VACB_MAPPING_GRANULARITY,
@@ -393,7 +391,7 @@ unsafe fn CcRosDeleteFileCacheInner(
             (*vacb).Dirty = 0u8;
         }
 
-        let _ref_count = CcRosVacbDecRefCount(vacb);
+        let ref_count = CcRosVacbDecRefCount(vacb);
     }
 
     if !(*shared_cache_map).Section.is_null() {
@@ -406,18 +404,8 @@ unsafe fn CcRosDeleteFileCacheInner(
         shared_cache_map as PVOID
     );
 
-    ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) // [guard]
-}
+    *old_irql = KeAcquireQueuedSpinLock(17u32);
 
-/// Wrapper for C callers: takes raw KIRQL pointer, delegates to inner version.
-unsafe fn CcRosDeleteFileCache(
-    file_object: PFILE_OBJECT,
-    shared_cache_map: PROS_SHARED_CACHE_MAP,
-    old_irql: *mut KIRQL
-) -> NTSTATUS {
-    let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::from_raw(17u32, *old_irql); // [guard]
-    let new_guard = CcRosDeleteFileCacheInner(file_object, shared_cache_map, qsl_guard);
-    core::ptr::write_volatile(old_irql, new_guard.into_raw());
     STATUS_SUCCESS
 }
 
@@ -429,16 +417,17 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
     called_from_lazy: BOOLEAN
 ) -> NTSTATUS {
     let mut status: NTSTATUS;
+    let mut old_irql: KIRQL;
     let flush_all = (target == MAXULONG) as BOOLEAN;
     let mut local_target = target;
 
-    core::ptr::write_volatile(count, 0);
+    *count = 0;
 
     KeEnterCriticalRegion();
-    let mut qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
     let mut current_entry = DirtyVacbListHead.Flink;
-
+    
     while ((current_entry != core::ptr::addr_of_mut!(DirtyVacbListHead)) && (local_target > 0)) || flush_all != 0 {
         if current_entry == core::ptr::addr_of_mut!(DirtyVacbListHead) {
             if IsListEmpty(core::ptr::addr_of_mut!(DirtyVacbListHead)) {
@@ -472,21 +461,21 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
         (*shared_cache_map).Flags |= SHARED_CACHE_MAP_IN_LAZYWRITE;
         (*shared_cache_map).OpenCount += 1;
 
-        drop(qsl_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
         let locked = ((*(*shared_cache_map).Callbacks).AcquireForLazyWrite.unwrap())(
             (*shared_cache_map).LazyWriteContext,
             wait
         );
-
+        
         if locked == 0 {
             CcRosVacbDecRefCount(current);
-            qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+            old_irql = KeAcquireQueuedSpinLock(17u32);
             (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_LAZYWRITE;
 
             (*shared_cache_map).OpenCount -= 1;
             if (*shared_cache_map).OpenCount == 0 {
-                qsl_guard = CcRosDeleteFileCacheInner((*shared_cache_map).FileObject, shared_cache_map, qsl_guard);
+                CcRosDeleteFileCache((*shared_cache_map).FileObject, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
             }
 
             continue;
@@ -498,13 +487,13 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
         ((*(*shared_cache_map).Callbacks).ReleaseFromLazyWrite.unwrap())((*shared_cache_map).LazyWriteContext);
 
         CcRosVacbDecRefCount(current);
-        qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
         (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_LAZYWRITE;
 
         (*shared_cache_map).OpenCount -= 1;
         if (*shared_cache_map).OpenCount == 0 {
-            qsl_guard = CcRosDeleteFileCacheInner((*shared_cache_map).FileObject, shared_cache_map, qsl_guard);
+            CcRosDeleteFileCache((*shared_cache_map).FileObject, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
         }
 
         if status >= 0 || status == 0xC0000011u32 as i32 || status == 0xC00000A2u32 as i32 {
@@ -523,7 +512,7 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
         current_entry = DirtyVacbListHead.Flink;
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
     KeLeaveCriticalRegion();
 
     STATUS_SUCCESS
@@ -537,16 +526,17 @@ pub unsafe extern "C" fn CcRosTrimCache(
     let mut current_entry: PLIST_ENTRY;
     let mut current: PROS_VACB;
     let mut pages_freed: ULONG = 0;
+    let mut old_irql: KIRQL;
     let mut free_list: _LIST_ENTRY = core::mem::zeroed();
     let mut flushed_pages = 0u8;
     let mut local_target = target;
 
     InitializeListHead(core::ptr::addr_of_mut!(free_list));
 
-    core::ptr::write_volatile(nr_freed, 0);
+    *nr_freed = 0;
 
     loop {
-        let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
         current_entry = VacbLruListHead.Flink;
         while current_entry != core::ptr::addr_of_mut!(VacbLruListHead) {
@@ -556,7 +546,7 @@ pub unsafe extern "C" fn CcRosTrimCache(
 
             CcRosVacbIncRefCount(current);
 
-            if InterlockedCompareExchange(core::ptr::addr_of_mut!((*current).MappedCount) as *mut LONG, 0, 0) > 0
+            if InterlockedCompareExchange(core::ptr::addr_of_mut!((*current).MappedCount) as *mut LONG, 0, 0) > 0 
                 && (*current).Dirty == 0 {
             }
 
@@ -581,7 +571,7 @@ pub unsafe extern "C" fn CcRosTrimCache(
             KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*(*current).SharedCacheMap).CacheMapLock) as *mut _);
         }
 
-        drop(qsl_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
         if local_target > 0 && flushed_pages == 0 {
             CcRosFlushDirtyPages(local_target, core::ptr::addr_of_mut!(pages_freed), 0u8, 0u8);
@@ -636,46 +626,48 @@ pub unsafe extern "C" fn CcRosLookupVacb(
 ) -> PROS_VACB {
     let mut current_entry: PLIST_ENTRY;
     let mut current: PROS_VACB;
+    let old_irql: KIRQL;
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
-    let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
     while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
         current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
-
+        
         if IsPointInRange(
             (*current).FileOffset.QuadPart,
             VACB_MAPPING_GRANULARITY,
             file_offset
         ) != 0 {
             CcRosVacbIncRefCount(current);
-            drop(dpc_guard); // [guard-drop]
-            drop(qsl_guard); // [guard-drop]
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return current;
         }
-
+        
         if (*current).FileOffset.QuadPart > file_offset {
             break;
         }
-
+        
         current_entry = (*current_entry).Flink;
     }
 
-    drop(dpc_guard); // [guard-drop]
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     core::ptr::null_mut()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
+    let old_irql: KIRQL;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
     shared_cache_map = (*vacb).SharedCacheMap;
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
-    let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     InsertTailList(
         core::ptr::addr_of_mut!(DirtyVacbListHead),
@@ -693,13 +685,13 @@ pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
 
     (*vacb).Dirty = 1u8;
 
-    drop(dpc_guard); // [guard-drop]
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     if LazyWriter.ScanActive == 0 {
         CcScheduleLazyWriteScan(0u8);
     }
-
-    drop(qsl_guard); // [guard-drop]
+    
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 }
 
 #[no_mangle]
@@ -735,10 +727,11 @@ pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
 
 #[no_mangle]
 pub unsafe extern "C" fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
+    let old_irql: KIRQL;
     let mut current_entry: PLIST_ENTRY;
     let mut to_free: PROS_VACB = core::ptr::null_mut();
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
     current_entry = VacbLruListHead.Flink;
     while (current_entry != core::ptr::addr_of_mut!(VacbLruListHead)) && to_free.is_null() {
@@ -761,7 +754,7 @@ pub unsafe extern "C" fn CcRosFreeOneUnusedVacb() -> BOOLEAN {
         current_entry = (*current_entry).Flink;
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     if to_free.is_null() {
         return 0u8;
@@ -825,43 +818,43 @@ unsafe fn CcRosCreateVacb(
         }
     }
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
-    core::ptr::write_volatile(vacb, current);
-
-    let dpc_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _) }; // [guard]
+    *vacb = current;
+    
+    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
     current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
     previous = core::ptr::null_mut();
-
+    
     while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
         current = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
-
+        
         if IsPointInRange(
             (*current).FileOffset.QuadPart,
             VACB_MAPPING_GRANULARITY,
             file_offset
         ) != 0 {
             CcRosVacbIncRefCount(current);
-            drop(dpc_guard); // [guard-drop]
-            drop(qsl_guard); // [guard-drop]
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(17u32, old_irql);
 
             let refs = CcRosVacbDecRefCount(*vacb);
 
-            core::ptr::write_volatile(vacb, current);
+            *vacb = current;
             return STATUS_SUCCESS;
         }
-
+        
         if (*current).FileOffset.QuadPart < file_offset {
             previous = current;
         }
-
+        
         if (*current).FileOffset.QuadPart > file_offset {
             break;
         }
-
+        
         current_entry = (*current_entry).Flink;
     }
-
+    
     current = *vacb;
     if !previous.is_null() {
         InsertHeadList(
@@ -874,8 +867,8 @@ unsafe fn CcRosCreateVacb(
             core::ptr::addr_of_mut!((*current).CacheMapVacbListEntry)
         );
     }
-
-    drop(dpc_guard); // [guard-drop]
+    
+    KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
     InsertTailList(
         core::ptr::addr_of_mut!(VacbLruListHead),
         core::ptr::addr_of_mut!((*current).VacbLruListEntry)
@@ -883,7 +876,7 @@ unsafe fn CcRosCreateVacb(
 
     CcRosVacbIncRefCount(current);
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     status
 }
@@ -932,6 +925,8 @@ pub unsafe extern "C" fn CcRosGetVacb(
     vacb: *mut PROS_VACB
 ) -> NTSTATUS {
     let mut current: PROS_VACB;
+    let status: NTSTATUS;
+    let mut old_irql: KIRQL;
 
     current = CcRosLookupVacb(shared_cache_map, file_offset);
     if current.is_null() {
@@ -943,7 +938,7 @@ pub unsafe extern "C" fn CcRosGetVacb(
 
     let refs = CcRosVacbGetRefCount(current);
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32) }; // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
     RemoveEntryList(core::ptr::addr_of_mut!((*current).VacbLruListEntry));
     InsertTailList(
@@ -951,9 +946,9 @@ pub unsafe extern "C" fn CcRosGetVacb(
         core::ptr::addr_of_mut!((*current).VacbLruListEntry)
     );
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
-    core::ptr::write_volatile(vacb, current);
+    *vacb = current;
 
     STATUS_SUCCESS
 }
@@ -1096,10 +1091,11 @@ pub unsafe extern "system" fn CcFlushCache(
 
 #[no_mangle]
 pub unsafe extern "C" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTSTATUS {
+    let mut old_irql: KIRQL;
     let mut private_map: PPRIVATE_CACHE_MAP;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    let mut qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
     if !(*(*file_object).SectionObjectPointer).SharedCacheMap.is_null() {
         shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
@@ -1120,12 +1116,12 @@ pub unsafe extern "C" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTS
 
             (*shared_cache_map).OpenCount -= 1;
             if (*shared_cache_map).OpenCount == 0 {
-                qsl_guard = CcRosDeleteFileCacheInner(file_object, shared_cache_map, qsl_guard);
+                CcRosDeleteFileCache(file_object, shared_cache_map, core::ptr::addr_of_mut!(old_irql));
             }
         }
     }
-
-    drop(qsl_guard); // [guard-drop]
+    
+    KeReleaseQueuedSpinLock(17u32, old_irql);
     STATUS_SUCCESS
 }
 
@@ -1137,24 +1133,25 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
     call_backs: PCACHE_MANAGER_CALLBACKS,
     lazy_writer_context: PVOID
 ) -> NTSTATUS {
+    let mut old_irql: KIRQL;
     let mut allocated: BOOLEAN;
     let mut shared_cache_map: PROS_SHARED_CACHE_MAP;
 
-    let mut qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+    old_irql = KeAcquireQueuedSpinLock(17u32);
 
     allocated = 0u8;
     shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
-
+    
     if shared_cache_map.is_null() {
         shared_cache_map = ExAllocateFromNPagedLookasideList(
             core::ptr::addr_of_mut!(SharedCacheMapLookasideList)
         ) as PROS_SHARED_CACHE_MAP;
-
+        
         if shared_cache_map.is_null() {
-            drop(qsl_guard); // [guard-drop]
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-
+        
         RtlZeroMemory(shared_cache_map as PVOID, core::mem::size_of::<ROS_SHARED_CACHE_MAP>());
         (*shared_cache_map).NodeTypeCode = NODE_TYPE_SHARED_MAP;
         (*shared_cache_map).NodeByteSize = core::mem::size_of::<ROS_SHARED_CACHE_MAP>() as USHORT;
@@ -1191,7 +1188,7 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
         KeInitializeEvent(&mut waiter, 0, 0u8);
         (*shared_cache_map).CreateEvent = &mut waiter;
 
-        drop(qsl_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(17u32, old_irql);
 
         KeWaitForSingleObject(&mut waiter as *mut _ as PVOID, 0, 0i8, 0u8, core::ptr::null_mut());
 
@@ -1199,7 +1196,7 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
             KeSetEvent(previous_waiter, 0, 0u8);
         }
 
-        qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+        old_irql = KeAcquireQueuedSpinLock(17u32);
     }
 
     if (*file_object).PrivateCacheMap.is_null() {
@@ -1222,7 +1219,7 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
                 );
             }
 
-            drop(qsl_guard); // [guard-drop]
+            KeReleaseQueuedSpinLock(17u32, old_irql);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -1243,7 +1240,7 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
         (*shared_cache_map).OpenCount += 1;
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(17u32, old_irql);
 
     if allocated != 0 {
         let mut status: NTSTATUS;
@@ -1264,22 +1261,20 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
             return status;
         }
 
-        {
-            let qsl_guard2 = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(17u32); // [guard]
+        old_irql = KeAcquireQueuedSpinLock(17u32);
 
-            InsertTailList(
-                core::ptr::addr_of_mut!(CcCleanSharedCacheMapList),
-                core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks)
-            );
-            (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_CREATION;
+        InsertTailList(
+            core::ptr::addr_of_mut!(CcCleanSharedCacheMapList),
+            core::ptr::addr_of_mut!((*shared_cache_map).SharedCacheMapLinks)
+        );
+        (*shared_cache_map).Flags &= !SHARED_CACHE_MAP_IN_CREATION;
 
-            if !(*shared_cache_map).CreateEvent.is_null() {
-                KeSetEvent((*shared_cache_map).CreateEvent, 0, 0u8);
-                (*shared_cache_map).CreateEvent = core::ptr::null_mut();
-            }
-
-            drop(qsl_guard2); // [guard-drop]
+        if !(*shared_cache_map).CreateEvent.is_null() {
+            KeSetEvent((*shared_cache_map).CreateEvent, 0, 0u8);
+            (*shared_cache_map).CreateEvent = core::ptr::null_mut();
         }
+
+        KeReleaseQueuedSpinLock(17u32, old_irql);
     }
 
     STATUS_SUCCESS
@@ -1342,11 +1337,14 @@ pub unsafe extern "system" fn CcInitView() {
 
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> ULONG;
-}
-extern "system" {
     fn DbgBreakPoint();
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 extern "system" {

@@ -38,17 +38,15 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
     mut ContextFlags: u32,
     PreviousMode: KPROCESSOR_MODE,
 ) {
-    let OldIrql: KIRQL;
+    let mut OldIrql: KIRQL;
 
     debug_assert!((*Context).ContextFlags & CONTEXT_AMD64 != 0);
     ContextFlags &= !CONTEXT_AMD64;
 
     OldIrql = KeGetCurrentIrql();
-    let _irql_guard = if OldIrql < APC_LEVEL { // [guard]
-        Some(ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL))
-    } else {
-        None
-    };
+    if OldIrql < APC_LEVEL {
+        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+    }
 
     if ContextFlags & CONTEXT_INTEGER != 0 {
         (*TrapFrame).Rax = (*Context).Rax;
@@ -153,7 +151,9 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
         }
     }
 
-    drop(_irql_guard); // [guard-drop]
+    if OldIrql < APC_LEVEL {
+        KeLowerIrql(OldIrql);
+    }
 }
 
 #[no_mangle]
@@ -163,14 +163,12 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
     Context: PCONTEXT,
 ) {
     let mut ContextFlags: u32;
-    let OldIrql: KIRQL;
+    let mut OldIrql: KIRQL;
 
     OldIrql = KeGetCurrentIrql();
-    let _irql_guard = if OldIrql < APC_LEVEL { // [guard]
-        Some(ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL))
-    } else {
-        None
-    };
+    if OldIrql < APC_LEVEL {
+        KeRaiseIrql(APC_LEVEL, core::ptr::addr_of_mut!(OldIrql));
+    }
 
     ContextFlags = (*Context).ContextFlags;
     debug_assert!(ContextFlags & CONTEXT_AMD64 != 0);
@@ -256,7 +254,9 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
         (*Context).Dr7 = (*TrapFrame).Dr7;
     }
 
-    drop(_irql_guard); // [guard-drop]
+    if OldIrql < APC_LEVEL {
+        KeLowerIrql(OldIrql);
+    }
 }
 
 extern "system" {

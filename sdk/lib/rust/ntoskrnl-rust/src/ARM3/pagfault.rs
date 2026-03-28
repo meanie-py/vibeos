@@ -15,7 +15,12 @@ use super::helpers::*;
 extern "system" {
     fn MmRebalanceMemoryConsumersAndWait();
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 
@@ -519,12 +524,12 @@ unsafe fn MiResolveDemandZeroFault(
     STATUS_PAGE_FAULT_DEMAND_ZERO
 }
 
-unsafe fn MiCompleteProtoPteFaultInner(
+unsafe fn MiCompleteProtoPteFault(
     mut StoreInstruction: BOOLEAN,
     Address: PVOID,
     PointerPte: PMMPTE,
     PointerProtoPte: PMMPTE,
-    pfn_guard: crate::ARM3::helpers::PfnLockGuard, // [guard]
+    OldIrql: KIRQL,
     LockedProtoPfn: *mut PMMPFN,
 ) -> NTSTATUS {
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
@@ -574,7 +579,7 @@ unsafe fn MiCompleteProtoPteFaultInner(
         *LockedProtoPfn = core::ptr::null_mut();
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     Protection &= !(MM_PROTECT_SPECIAL as ULONG_PTR);
 
@@ -604,25 +609,6 @@ unsafe fn MiCompleteProtoPteFaultInner(
 
     ASSERT!(PointerPte == MiAddressToPte(Address));
     STATUS_SUCCESS
-}
-
-/// C-ABI wrapper — constructs guard from raw IRQL for external callers
-unsafe fn MiCompleteProtoPteFault(
-    StoreInstruction: BOOLEAN,
-    Address: PVOID,
-    PointerPte: PMMPTE,
-    PointerProtoPte: PMMPTE,
-    OldIrql: KIRQL,
-    LockedProtoPfn: *mut PMMPFN,
-) -> NTSTATUS {
-    MiCompleteProtoPteFaultInner(
-        StoreInstruction,
-        Address,
-        PointerPte,
-        PointerProtoPte,
-        crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql), // [guard]
-        LockedProtoPfn,
-    )
 }
 
 unsafe fn MiResolvePageFileFault(
@@ -821,7 +807,7 @@ unsafe fn MiResolveTransitionFault(
     STATUS_PAGE_FAULT_TRANSITION
 }
 
-unsafe fn MiResolveProtoPteFaultInner(
+unsafe fn MiResolveProtoPteFault(
     StoreInstruction: BOOLEAN,
     Address: PVOID,
     PointerPte: PMMPTE,
@@ -830,7 +816,7 @@ unsafe fn MiResolveProtoPteFaultInner(
     PageFileData: *mut PVOID,
     PteValue: PMMPTE,
     Process: PEPROCESS,
-    mut pfn_guard: crate::ARM3::helpers::PfnLockGuard, // [guard]
+    mut OldIrql: KIRQL,
     TrapInformation: PVOID,
 ) -> NTSTATUS {
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
@@ -853,11 +839,11 @@ unsafe fn MiResolveProtoPteFaultInner(
 
         // MmTransitionCount increment elided (not in bindgen KPRCB)
 
-        return MiCompleteProtoPteFaultInner(StoreInstruction, Address, PointerPte, PointerProtoPte, pfn_guard, OutPfn);
+        return MiCompleteProtoPteFault(StoreInstruction, Address, PointerPte, PointerProtoPte, OldIrql, OutPfn);
     }
 
     if TempPte.Long == 0 {
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         return STATUS_ACCESS_VIOLATION;
     }
 
@@ -886,8 +872,7 @@ unsafe fn MiResolveProtoPteFaultInner(
     if ((Protection & MM_WRITECOPY) == MM_WRITECOPY) && (StoreInstruction != 0) {
         let mut ProtoPageFrameIndex: PFN_NUMBER;
 
-        // Recursive call consumes the guard (it will release the lock internally)
-        Status = MiResolveProtoPteFaultInner(
+        Status = MiResolveProtoPteFault(
             0,
             Address,
             PointerPte,
@@ -896,7 +881,7 @@ unsafe fn MiResolveProtoPteFaultInner(
             PageFileData,
             PteValue,
             Process,
-            pfn_guard,
+            OldIrql,
             TrapInformation,
         );
 
@@ -904,7 +889,7 @@ unsafe fn MiResolveProtoPteFaultInner(
             return Status;
         }
 
-        pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+        OldIrql = MiAcquirePfnLock();
 
         TempPte = *PointerProtoPte;
         ASSERT!((TempPte.valid() as usize) == 1);
@@ -922,7 +907,7 @@ unsafe fn MiResolveProtoPteFaultInner(
 
         PageFrameIndex = MiRemoveAnyPage(Color);
         if PageFrameIndex == 0 {
-            drop(pfn_guard); // [guard-drop]
+            MiReleasePfnLock(OldIrql);
             return STATUS_NO_MEMORY;
         }
 
@@ -943,7 +928,7 @@ unsafe fn MiResolveProtoPteFaultInner(
 
         MI_WRITE_VALID_PTE(PointerPte, PteContents);
 
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         return Status;
     }
 
@@ -953,19 +938,14 @@ unsafe fn MiResolveProtoPteFaultInner(
 
     ASSERT!((TempPte.prototype() as usize) == 0);
 
-    // MiResolveTransitionFault and MiResolveDemandZeroFault still take raw KIRQL —
-    // extract it from the guard without dropping (they don't release the lock)
-    let raw_irql = pfn_guard.irql();
-    core::mem::forget(pfn_guard);
-
     if (TempPte.prototype() as usize) == 0 && (TempPte.transition() as usize) == 1 {
-        ASSERT!(raw_irql != MM_NOIRQL);
+        ASSERT!(OldIrql != MM_NOIRQL);
         Status = MiResolveTransitionFault(
             StoreInstruction,
             Address,
             PointerProtoPte,
             Process,
-            raw_irql,
+            OldIrql,
             &mut InPageBlock,
         );
         ASSERT!(Status >= 0);
@@ -977,7 +957,7 @@ unsafe fn MiResolveProtoPteFaultInner(
             PointerProtoPte,
             TempPte.soft_protection() as ULONG,
             Process,
-            raw_irql,
+            OldIrql,
         );
         #[cfg(feature = "MI_TRACE_PFNS")]
         {
@@ -990,37 +970,8 @@ unsafe fn MiResolveProtoPteFaultInner(
         ASSERT!(Status >= 0);
     }
 
-    // Re-wrap the raw IRQL — lock is still held, will be consumed by MiCompleteProtoPteFaultInner
     ASSERT!(((*PointerPte).valid() as usize) == 0);
-    MiCompleteProtoPteFaultInner(StoreInstruction, Address, PointerPte, PointerProtoPte,
-        crate::ARM3::helpers::PfnLockGuard::from_raw(raw_irql), OutPfn)
-}
-
-/// C-ABI wrapper — constructs guard from raw IRQL for external callers
-unsafe fn MiResolveProtoPteFault(
-    StoreInstruction: BOOLEAN,
-    Address: PVOID,
-    PointerPte: PMMPTE,
-    PointerProtoPte: PMMPTE,
-    OutPfn: *mut PMMPFN,
-    PageFileData: *mut PVOID,
-    PteValue: PMMPTE,
-    Process: PEPROCESS,
-    OldIrql: KIRQL,
-    TrapInformation: PVOID,
-) -> NTSTATUS {
-    MiResolveProtoPteFaultInner(
-        StoreInstruction,
-        Address,
-        PointerPte,
-        PointerProtoPte,
-        OutPfn,
-        PageFileData,
-        PteValue,
-        Process,
-        crate::ARM3::helpers::PfnLockGuard::from_raw(OldIrql), // [guard]
-        TrapInformation,
-    )
+    MiCompleteProtoPteFault(StoreInstruction, Address, PointerPte, PointerProtoPte, OldIrql, OutPfn)
 }
 
 unsafe fn MiDispatchFault(
@@ -1193,12 +1144,12 @@ unsafe fn MiDispatchFault(
 
             if !OutPfn.is_null() {
                 ASSERT!(!PointerProtoPte.is_null());
-                let pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                OldIrql = MiAcquirePfnLock();
 
                 MiDereferencePfnAndDropLockCount(OutPfn as *mut _MMPFN);
                 ASSERT!((*OutPfn).reference_count() >= 1);
 
-                drop(pfn_guard_0); // [guard-drop]
+                MiReleasePfnLock(OldIrql);
             }
 
             ASSERT!(OldIrql == KeGetCurrentIrql());
@@ -1409,7 +1360,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 let UserPpe: PMMPTE;
                 let mut NewPage: PFN_NUMBER;
                 let mut NewPte: MMPTE = MMPTE { Long: 0 };
-                let mut _PfnIrql: KIRQL;
+                let mut PfnIrql: KIRQL;
 
                 let mut _goto_user_fault = false;
                 if (Address as ULONG_PTR) >= PXE_BASE as ULONG_PTR
@@ -1428,14 +1379,14 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 UserPxe = MiAddressToPxe(UnderlyingVa);
                 if ((*UserPxe).valid() as usize) == 0 {
-                    let pfn_guard_1 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                    PfnIrql = MiAcquirePfnLock();
                     NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                     if NewPage == 0 {
-                        drop(pfn_guard_1); // [guard-drop]
+                        MiReleasePfnLock(PfnIrql);
                         return STATUS_NO_MEMORY;
                     }
                     MiInitializePfn(NewPage as _, UserPxe as *mut _MMPTE, 1);
-                    drop(pfn_guard_1); // [guard-drop]
+                    MiReleasePfnLock(PfnIrql);
 
                     MI_MAKE_HARDWARE_PTE(&mut NewPte, UserPxe, MM_EXECUTE_READWRITE as usize, NewPage);
                     if MI_IS_PAGE_WRITEABLE(&NewPte) != 0 {
@@ -1455,10 +1406,10 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 UserPpe = MiAddressToPpe(UnderlyingVa);
                 if ((*UserPpe).valid() as usize) == 0 {
-                    let pfn_guard_2 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                    PfnIrql = MiAcquirePfnLock();
                     NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                     if NewPage == 0 {
-                        drop(pfn_guard_2); // [guard-drop]
+                        MiReleasePfnLock(PfnIrql);
                         return STATUS_NO_MEMORY;
                     }
                     MiInitializePfn(NewPage as _, UserPpe as *mut _MMPTE, 1);
@@ -1467,7 +1418,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                         let L1Pfn = MiGetPfnEntry(PFN_FROM_PXE(UserPxe));
                         mmpfn_set_used_page_table_entries(L1Pfn, mmpfn_used_page_table_entries(L1Pfn).wrapping_add(1));
                     }
-                    drop(pfn_guard_2); // [guard-drop]
+                    MiReleasePfnLock(PfnIrql);
 
                     MI_MAKE_HARDWARE_PTE(&mut NewPte, UserPpe, MM_EXECUTE_READWRITE as usize, NewPage);
                     if MI_IS_PAGE_WRITEABLE(&NewPte) != 0 {
@@ -1485,10 +1436,10 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 {
                     let UserPde = MiAddressToPde(UnderlyingVa);
                     if ((*UserPde).valid() as usize) == 0 {
-                        let pfn_guard_3 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                        PfnIrql = MiAcquirePfnLock();
                         NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                         if NewPage == 0 {
-                            drop(pfn_guard_3); // [guard-drop]
+                            MiReleasePfnLock(PfnIrql);
                             return STATUS_NO_MEMORY;
                         }
                         MiInitializePfn(NewPage as _, UserPde as *mut _MMPTE, 1);
@@ -1497,7 +1448,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                             let L2Pfn = MiGetPfnEntry(PFN_FROM_PPE(UserPpe));
                             mmpfn_set_used_page_table_entries(L2Pfn, mmpfn_used_page_table_entries(L2Pfn).wrapping_add(1));
                         }
-                        drop(pfn_guard_3); // [guard-drop]
+                        MiReleasePfnLock(PfnIrql);
 
                         MI_MAKE_HARDWARE_PTE(&mut NewPte, UserPde, MM_EXECUTE_READWRITE as usize, NewPage);
                         if MI_IS_PAGE_WRITEABLE(&NewPte) != 0 {
@@ -1543,7 +1494,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
         TempPte = *PointerPte;
         if (TempPte.valid() as usize) == 1 {
             if IsSessionAddress == 0 {
-                let pfn_guard_4 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                OldIrql = MiAcquirePfnLock();
                 TempPte = *PointerPte;
                 if (TempPte.valid() as usize) != 0 {
                     if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
@@ -1572,7 +1523,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     }
                 }
 
-                drop(pfn_guard_4); // [guard-drop]
+                MiReleasePfnLock(OldIrql);
                 return STATUS_SUCCESS;
             }
         }
@@ -1947,7 +1898,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             if MI_IS_PAGE_COPY_ON_WRITE(&TempPte) != 0 {
                 let mut OldPageFrameIndex: PFN_NUMBER;
 
-                let pfn_guard_5 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                LockIrql = MiAcquirePfnLock();
 
                 ASSERT!(MmAvailablePages > 0);
 
@@ -1956,7 +1907,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_PROCESS_COLOR(CurrentProcess as *mut _EPROCESS as *mut c_void));
                 if PageFrameIndex == 0 {
-                    drop(pfn_guard_5); // [guard-drop]
+                    MiReleasePfnLock(LockIrql);
                     Status = STATUS_NO_MEMORY;
                     break 'exit_user;
                 }
@@ -1978,7 +1929,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 MI_WRITE_VALID_PTE(PointerPte, TempPte);
 
-                drop(pfn_guard_5); // [guard-drop]
+                MiReleasePfnLock(LockIrql);
 
                 MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
                 return STATUS_PAGE_FAULT_COPY_ON_WRITE;
@@ -2224,7 +2175,7 @@ pub unsafe extern "system" fn MmGetExecuteOptions(ExecuteOptions: *mut ULONG) ->
     let CurrentProcess = core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb);
     ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
-    core::ptr::write_volatile(ExecuteOptions, 0);
+    *ExecuteOptions = 0;
 
     if (*CurrentProcess).__bindgen_anon_2.Flags.ExecuteDisable() != 0 {
         *ExecuteOptions |= 0x1;

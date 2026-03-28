@@ -40,12 +40,12 @@ use ntkrnl_sys::ddk::{
     TARGET_DEVICE_CUSTOM_NOTIFICATION,
     IoAllocateIrp, IoFreeIrp, IoFreeMdl,
     IoGetRelatedDeviceObject, IoGetAttachedDevice, IoAllocateMdl,
-    IoGetNextIrpStackLocation,
+    IoGetNextIrpStackLocation, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
     IopAbortInterruptedIrp, IopCompleteRequest,
     IopCleanupFailedIrp, IopGetDeviceAttachmentBase, IopAllocateReserveIrp,
     MmIsFileObjectAPagingFile,
     KeWaitForSingleObject, KeClearEvent, KeSetEvent,
-    KeInitializeEvent,
+    KeInitializeEvent, KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock,
     ExGetPreviousMode,
     ObReferenceObjectByHandle, ObCloseHandle, ObReferenceObjectByName,
     MmProbeAndLockPages,
@@ -71,6 +71,7 @@ unsafe fn MmGetMdlByteCount(Mdl: PMDL) -> ULONG {
 extern "system" {
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn ObDereferenceObject(Object: PVOID);
+    fn ObReferenceObject(Object: PVOID);
     fn ExFreePool(P: PVOID);
     fn ExRaiseStatus(Status: NTSTATUS);
     static mut IoFileObjectType: *mut _OBJECT_TYPE;
@@ -88,13 +89,12 @@ extern "system" {
     #[link_name = "IopQueueIrpToThread_shim"]
     fn IopQueueIrpToThread(Irp: PIRP);
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-}
-  extern "C" {
-    fn ObReferenceObject(Object: PVOID);
     fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
-  }
+}
 
 extern "system" {
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
@@ -102,12 +102,8 @@ extern "system" {
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
-  extern "C" {
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
-  }
 
-extern "C" {
+extern "system" {
     fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
     fn ProbeForWriteHandle(Ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;
@@ -229,7 +225,7 @@ const IopReadTransfer: ULONG = 1;
 const IopWriteTransfer: ULONG = 2;
 
 // IO access/length arrays
-extern "system" {
+extern "C" {
     static IopQueryOperationAccess: [ACCESS_MASK; 0];
     static IopQueryOperationLength: [ULONG; 0];
     static IopSetOperationAccess: [ACCESS_MASK; 0];
@@ -857,7 +853,7 @@ unsafe fn IopQueryDeviceInformation(
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
 
-    core::ptr::write_volatile(ReturnedLength, IoStatusBlock.Information as ULONG);
+    *ReturnedLength = IoStatusBlock.Information as ULONG;
     Status
 }
 
@@ -913,7 +909,7 @@ unsafe fn IopGetFileInformation(
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
 
-    core::ptr::write_volatile(ReturnedLength, IoStatusBlock.Information as ULONG);
+    *ReturnedLength = IoStatusBlock.Information as ULONG;
     Status
 }
 
@@ -1061,7 +1057,7 @@ unsafe fn IopOpenLinkOrRenameTarget(
     }
 
     (*Stack).Parameters.SetFile.FileObject = TargetFileObject;
-    core::ptr::write_volatile(Handle, TargetHandle);
+    *Handle = TargetHandle;
 
     STATUS_SUCCESS
 }
@@ -1091,15 +1087,16 @@ unsafe fn IopGetFileMode(FileObject: PFILE_OBJECT) -> ULONG {
 }
 
 unsafe fn IopGetMountFlag(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN {
+    let mut OldIrql: KIRQL = 0;
     let Vpb: PVPB;
     let mut Mounted: BOOLEAN = 0u8;
 
-    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
+    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(OldIrql));
     Vpb = (*DeviceObject).Vpb;
     if !Vpb.is_null() && ((*Vpb).Flags & VPB_MOUNTED != 0) {
         Mounted = 1u8;
     }
-    drop(vpb_guard); // [guard-drop]
+    IoReleaseVpbSpinLock(OldIrql);
     Mounted
 }
 
@@ -1122,6 +1119,7 @@ unsafe fn IopGetDriverPathInformation(
     DriverPathInfo: PFILE_FS_DRIVER_PATH_INFORMATION,
     Length: ULONG,
 ) -> NTSTATUS {
+    let mut OldIrql: KIRQL;
     let mut Status: NTSTATUS;
     let mut DriverName: _UNICODE_STRING = core::mem::zeroed();
     let mut DriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
@@ -1151,7 +1149,7 @@ unsafe fn IopGetDriverPathInformation(
         return Status;
     }
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock as _) }; // [guard]
+    OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock as _);
     if !(*FileObject).Vpb.is_null() && !(*(*FileObject).Vpb).DeviceObject.is_null() {
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*(*FileObject).Vpb).DeviceObject, DriverObject);
@@ -1159,7 +1157,7 @@ unsafe fn IopGetDriverPathInformation(
         (*DriverPathInfo).DriverInPath =
             IopVerifyDriverObjectOnStack((*FileObject).DeviceObject, DriverObject);
     }
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock as _, OldIrql);
 
     ObDereferenceObject(DriverObject as PVOID);
     STATUS_SUCCESS
@@ -2993,7 +2991,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
             }
 
             Status = KernelIosb.__bindgen_anon_1.Status;
-            core::ptr::write_volatile(IoStatusBlock, KernelIosb);
+            *IoStatusBlock = KernelIosb;
             ExFreePoolWithTag(Event as PVOID, TAG_IO);
         } else {
             Status = KeWaitForSingleObject(
@@ -3121,7 +3119,7 @@ pub unsafe extern "system" fn NtUnlockFile(
             DeviceObject,
         ) != 0
         {
-            core::ptr::write_volatile(IoStatusBlock, KernelIosb);
+            *IoStatusBlock = KernelIosb;
             ObDereferenceObject(FileObject as PVOID);
             return KernelIosb.__bindgen_anon_1.Status;
         }
@@ -3362,7 +3360,7 @@ pub unsafe extern "system" fn NtWriteFile(
             if Success != 0 && KernelIosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
                 IopUpdateOperationCount(IopWriteTransfer);
                 IopUpdateTransferCount(IopWriteTransfer, KernelIosb.Information as ULONG);
-                core::ptr::write_volatile(IoStatusBlock, KernelIosb);
+                *IoStatusBlock = KernelIosb;
 
                 if !EventObject.is_null() {
                     KeSetEvent(EventObject, 0, 0u8);

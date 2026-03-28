@@ -61,8 +61,10 @@ pub unsafe extern "system" fn IopTimerDispatch(
     let mut i: ULONG;
 
     if IopTimerCount != 0 {
-        // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopTimerLock), core::ptr::addr_of_mut!(OldIrql));
-        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopTimerLock) as PKSPIN_LOCK) };
+        KeAcquireSpinLock(
+            core::ptr::addr_of_mut!(IopTimerLock),
+            core::ptr::addr_of_mut!(OldIrql),
+        );
 
         TimerEntry = IopTimerQueueHead.Flink;
         i = IopTimerCount;
@@ -79,7 +81,7 @@ pub unsafe extern "system" fn IopTimerDispatch(
             TimerEntry = (*TimerEntry).Flink;
         }
 
-        drop(spin_guard);
+        KeReleaseSpinLock(core::ptr::addr_of_mut!(IopTimerLock), OldIrql);
     }
 }
 
@@ -87,15 +89,17 @@ pub unsafe extern "system" fn IopTimerDispatch(
 pub unsafe extern "system" fn IopRemoveTimerFromTimerList(Timer: PIO_TIMER) {
     let mut OldIrql: KIRQL = 0;
 
-    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopTimerLock), core::ptr::addr_of_mut!(OldIrql));
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopTimerLock) as PKSPIN_LOCK) };
+    KeAcquireSpinLock(
+        core::ptr::addr_of_mut!(IopTimerLock),
+        core::ptr::addr_of_mut!(OldIrql),
+    );
 
     RemoveEntryList(core::ptr::addr_of_mut!((*Timer).IoTimerList));
     if (*Timer).TimerEnabled != 0 {
         IopTimerCount -= 1;
     }
 
-    drop(spin_guard);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopTimerLock), OldIrql);
 }
 
 #[no_mangle]
@@ -144,15 +148,17 @@ pub unsafe extern "system" fn IoStartTimer(DeviceObject: PDEVICE_OBJECT) {
     let flags = (*extension).ExtensionFlags;
 
     if (flags & (0x00000001 | 0x00000002 | 0x00000004 | 0x00000008)) == 0 {
-        // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopTimerLock), core::ptr::addr_of_mut!(OldIrql));
-        let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopTimerLock) as PKSPIN_LOCK) };
+        KeAcquireSpinLock(
+            core::ptr::addr_of_mut!(IopTimerLock),
+            core::ptr::addr_of_mut!(OldIrql),
+        );
 
         if (*IoTimer).TimerEnabled == 0 {
             (*IoTimer).TimerEnabled = 1u16;
             IopTimerCount += 1;
         }
 
-        drop(spin_guard);
+        KeReleaseSpinLock(core::ptr::addr_of_mut!(IopTimerLock), OldIrql);
     }
 }
 
@@ -161,15 +167,17 @@ pub unsafe extern "system" fn IoStopTimer(DeviceObject: PDEVICE_OBJECT) {
     let mut OldIrql: KIRQL = 0;
     let IoTimer: PIO_TIMER = (*DeviceObject).Timer;
 
-    // [guard] KeAcquireSpinLock(core::ptr::addr_of_mut!(IopTimerLock), core::ptr::addr_of_mut!(OldIrql));
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopTimerLock) as PKSPIN_LOCK) };
+    KeAcquireSpinLock(
+        core::ptr::addr_of_mut!(IopTimerLock),
+        core::ptr::addr_of_mut!(OldIrql),
+    );
 
     if (*IoTimer).TimerEnabled != 0 {
         (*IoTimer).TimerEnabled = 0u16;
         IopTimerCount -= 1;
     }
 
-    drop(spin_guard);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopTimerLock), OldIrql);
 }
 
 

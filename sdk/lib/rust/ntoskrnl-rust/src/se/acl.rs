@@ -186,7 +186,7 @@ pub unsafe extern "system" fn SepCreateImpersonationTokenDacl(
     let mut acl_length: ULONG;
     let token_dacl: PACL;
 
-    core::ptr::write_volatile(Dacl, core::ptr::null_mut());
+    *Dacl = core::ptr::null_mut();
 
     acl_length = core::mem::size_of::<ACL>() as ULONG +
         (core::mem::size_of::<ACE>() as ULONG + RtlLengthSid(SeAliasAdminsSid)) +
@@ -210,7 +210,7 @@ pub unsafe extern "system" fn SepCreateImpersonationTokenDacl(
         RtlAddAccessAllowedAce(token_dacl, ACL_REVISION as ULONG, GENERIC_ALL, SeRestrictedCodeSid);
     }
 
-    core::ptr::write_volatile(Dacl, token_dacl);
+    *Dacl = token_dacl;
 
     STATUS_SUCCESS
 }
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn SepCaptureAcl(
     let mut acl_size: ULONG;
 
     if (AccessMode == 0i8) && CaptureIfKernel == 0u8 {
-        core::ptr::write_volatile(CapturedAcl, InputAcl);
+        *CapturedAcl = InputAcl;
         return STATUS_SUCCESS;
     }
 
@@ -280,7 +280,7 @@ pub unsafe extern "system" fn SepCaptureAcl(
         return STATUS_INVALID_ACL;
     }
 
-    core::ptr::write_volatile(CapturedAcl, new_acl);
+    *CapturedAcl = new_acl;
     STATUS_SUCCESS
 }
 
@@ -463,10 +463,10 @@ pub unsafe extern "C" fn SepPropagateAcl(
     }
 
     if written > *AclLength {
-        core::ptr::write_volatile(AclLength, written);
+        *AclLength = written;
         return STATUS_BUFFER_TOO_SMALL;
     }
-    core::ptr::write_volatile(AclLength, written);
+    *AclLength = written;
     STATUS_SUCCESS
 }
 
@@ -488,13 +488,13 @@ pub unsafe extern "C" fn SepSelectAcl(
     let acl: PACL;
     let mut status: NTSTATUS;
 
-    core::ptr::write_volatile(AclPresent, 1u8);
+    *AclPresent = 1u8;
     if ExplicitPresent != 0u8 && ExplicitDefaulted == 0u8 {
         acl = ExplicitAcl;
     } else {
         if !ParentAcl.is_null() {
-            core::ptr::write_volatile(IsInherited, 1u8);
-            core::ptr::write_volatile(AclLength, 0);
+            *IsInherited = 1u8;
+            *AclLength = 0;
             status = SepPropagateAcl(
                 core::ptr::null_mut(),
                 AclLength,
@@ -516,13 +516,13 @@ pub unsafe extern "C" fn SepSelectAcl(
         } else if !DefaultAcl.is_null() {
             acl = DefaultAcl;
         } else {
-            core::ptr::write_volatile(AclPresent, 0u8);
+            *AclPresent = 0u8;
             acl = core::ptr::null_mut();
         }
     }
 
-    core::ptr::write_volatile(IsInherited, 0u8);
-    core::ptr::write_volatile(AclLength, 0);
+    *IsInherited = 0u8;
+    *AclLength = 0;
     if !acl.is_null() {
         status = SepPropagateAcl(
             core::ptr::null_mut(),

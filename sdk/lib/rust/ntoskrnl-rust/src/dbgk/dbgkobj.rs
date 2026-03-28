@@ -137,20 +137,12 @@ extern "C" {
     ) -> NTSTATUS;
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
+    #[link_name = "IoGetCurrentProcess"]
+    fn PsGetCurrentProcess() -> PEPROCESS;
+    fn PsGetCurrentThread() -> PETHREAD;
+    fn NtCurrentProcess() -> HANDLE;
 }
 extern "system" {
-    fn PsGetCurrentThread() -> PETHREAD;
-}
-
-/// NtCurrentProcess() macro — returns (HANDLE)-1
-#[inline(always)]
-unsafe fn NtCurrentProcess() -> HANDLE {
-    -1isize as HANDLE
-}
-  extern "C" {
-    fn PsGetCurrentProcess() -> PEPROCESS;
-  }
-extern "C" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
@@ -294,7 +286,7 @@ pub unsafe extern "system" fn DbgkpQueueMessage(
                 core::ptr::null_mut(),
             );
 
-            core::ptr::write_volatile(message, (*debug_event).ApiMsg);
+            *message = (*debug_event).ApiMsg;
             status = (*debug_event).Status;
         }
     } else {
@@ -787,8 +779,8 @@ pub unsafe extern "system" fn DbgkpPostFakeThreadMessages(
         return STATUS_UNSUCCESSFUL;
     }
 
-    core::ptr::write_volatile(first_thread, p_first_thread);
-    core::ptr::write_volatile(last_thread, p_last_thread);
+    *first_thread = p_first_thread;
+    *last_thread = p_last_thread;
     status
 }
 
@@ -829,7 +821,7 @@ pub unsafe extern "system" fn DbgkpPostFakeProcessCreateMessages(
 
     KeUnstackDetachProcess(&mut apc_state);
 
-    core::ptr::write_volatile(last_thread, return_thread);
+    *last_thread = return_thread;
     status
 }
 
@@ -1422,18 +1414,24 @@ pub unsafe extern "system" fn DbgkOpenProcessDebugPort(
     status
 }
 
-unsafe fn NtCreateDebugObject_inner(
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateDebugObject(
+    debug_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
     object_attributes: POBJECT_ATTRIBUTES,
     flags: ULONG,
-    previous_mode: KPROCESSOR_MODE,
-) -> Result<(HANDLE, NTSTATUS), NTSTATUS> {
+) -> NTSTATUS {
+    let previous_mode = ExGetPreviousMode();
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let mut h_debug: HANDLE = core::ptr::null_mut();
     let mut status: NTSTATUS;
 
+    if previous_mode != 0i8 {
+        ProbeForWriteHandle(debug_handle);
+    }
+
     if flags & !DBGK_ALL_FLAGS != 0 {
-        return Err(STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
     }
 
     status = ObCreateObject(
@@ -1447,60 +1445,36 @@ unsafe fn NtCreateDebugObject_inner(
         0,
         &mut debug_object as *mut _ as *mut PVOID,
     );
-    if status < 0 {
-        return Err(status);
-    }
+    if status >= 0 {
+        ExInitializeFastMutex(core::ptr::addr_of_mut!((*debug_object).Mutex));
 
-    ExInitializeFastMutex(core::ptr::addr_of_mut!((*debug_object).Mutex));
+        InitializeListHead(core::ptr::addr_of_mut!((*debug_object).EventList));
 
-    InitializeListHead(core::ptr::addr_of_mut!((*debug_object).EventList));
+        KeInitializeEvent(
+            core::ptr::addr_of_mut!((*debug_object).EventsPresent),
+            0u32,
+            0u8,
+        );
 
-    KeInitializeEvent(
-        core::ptr::addr_of_mut!((*debug_object).EventsPresent),
-        0u32,
-        0u8,
-    );
-
-    (*debug_object).__bindgen_anon_1.Flags = 0;
-    if flags & DBGK_KILL_PROCESS_ON_EXIT != 0 {
-        (*debug_object).__bindgen_anon_1.__bindgen_anon_1.set_KillProcessOnExit(1);
-    }
-
-    status = ObInsertObject(
-        debug_object as PVOID,
-        core::ptr::null_mut(),
-        desired_access,
-        0,
-        core::ptr::null_mut(),
-        &mut h_debug,
-    );
-    if status < 0 {
-        return Err(status);
-    }
-
-    Ok((h_debug, status))
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn NtCreateDebugObject(
-    debug_handle: *mut HANDLE,
-    desired_access: ACCESS_MASK,
-    object_attributes: POBJECT_ATTRIBUTES,
-    flags: ULONG,
-) -> NTSTATUS {
-    let previous_mode = ExGetPreviousMode();
-
-    if previous_mode != 0i8 {
-        ProbeForWriteHandle(debug_handle);
-    }
-
-    match NtCreateDebugObject_inner(desired_access, object_attributes, flags, previous_mode) {
-        Ok((handle, status)) => {
-            core::ptr::write_volatile(debug_handle, handle);
-            status
+        (*debug_object).__bindgen_anon_1.Flags = 0;
+        if flags & DBGK_KILL_PROCESS_ON_EXIT != 0 {
+            (*debug_object).__bindgen_anon_1.__bindgen_anon_1.set_KillProcessOnExit(1);
         }
-        Err(status) => status,
+
+        status = ObInsertObject(
+            debug_object as PVOID,
+            core::ptr::null_mut(),
+            desired_access,
+            0,
+            core::ptr::null_mut(),
+            &mut h_debug,
+        );
+        if status >= 0 {
+            *debug_handle = h_debug;
+        }
     }
+
+    status
 }
 
 #[no_mangle]
@@ -1731,7 +1705,7 @@ pub unsafe extern "system" fn NtSetInformationDebugObject(
 
     if !return_length.is_null() {
         ProbeForWriteUlong(return_length);
-        core::ptr::write_volatile(return_length, core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG);
+        *return_length = core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG;
     }
 
     status = ObReferenceObjectByHandle(
@@ -1933,7 +1907,7 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
 
     ObDereferenceObject(debug_object as PVOID);
 
-    core::ptr::write_volatile(state_change, wait_state_change);
+    *state_change = wait_state_change;
 
     status
 }

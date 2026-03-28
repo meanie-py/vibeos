@@ -882,7 +882,7 @@ extern "system" {
         FileObject: PVOID, bInit: BOOLEAN, AuditInfo: *mut PVOID,
     ) -> NTSTATUS;
 }
-extern "system" {
+extern "C" {
     pub fn PsGetCurrentThread() -> PVOID;
 }
 
@@ -1437,19 +1437,9 @@ pub fn mmpte_list_next_entry(pte: &MMPTE) -> ULONG_PTR {
 macro_rules! _A3_TRACE {
     ($($arg:tt)*) => {};
 }
-#[must_use = "guard will immediately release PFN lock if not bound to a variable"]
 pub struct PfnLockGuard { previous_irql: KIRQL }
 impl PfnLockGuard {
     #[inline] pub unsafe fn acquire() -> Self { Self { previous_irql: MiAcquirePfnLock() } }
-    /// Wrap a raw KIRQL from an existing MiAcquirePfnLock() call into a guard.
-    /// The caller MUST have already acquired the PFN lock.
-    #[inline] pub unsafe fn from_raw(previous_irql: KIRQL) -> Self { Self { previous_irql } }
-    /// Return the raw IRQL without releasing the lock.
-    /// Used when passing to functions that still take raw KIRQL.
-    #[inline] pub fn irql(&self) -> KIRQL { self.previous_irql }
-    /// Consume the guard without releasing the lock.
-    /// Returns the saved IRQL. Caller is responsible for releasing.
-    #[inline] pub fn into_raw(self) -> KIRQL { let irql = self.previous_irql; core::mem::forget(self); irql }
 }
 impl Drop for PfnLockGuard {
     #[inline] fn drop(&mut self) { unsafe { MiReleasePfnLock(self.previous_irql) } }

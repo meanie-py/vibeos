@@ -204,7 +204,7 @@ pub unsafe extern "system" fn KiComputeReciprocal(
         }
     }
 
-    core::ptr::write_volatile(Shift, (BitCount - 64) as UCHAR);
+    *Shift = (BitCount - 64) as UCHAR;
     Reciprocal
 }
 

@@ -715,7 +715,8 @@ unsafe fn ObQueryTypeInfo(
     Status
 }
 
-unsafe fn ObCreateObject_inner(
+#[no_mangle]
+pub unsafe extern "system" fn ObCreateObject(
     ProbeMode: KPROCESSOR_MODE,
     Type: POBJECT_TYPE,
     ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -724,11 +725,12 @@ unsafe fn ObCreateObject_inner(
     ObjectSize: ULONG,
     PagedPoolCharge: ULONG,
     NonPagedPoolCharge: ULONG,
-) -> Result<PVOID, NTSTATUS> {
+    Object: *mut PVOID,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let ObjectCreateInfo = ObpAllocateObjectCreateInfoBuffer(LookasideCreateInfoList) as POBJECT_CREATE_INFORMATION;
     if ObjectCreateInfo.is_null() {
-        return Err(STATUS_INSUFFICIENT_RESOURCES);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
@@ -760,16 +762,16 @@ unsafe fn ObCreateObject_inner(
                 core::ptr::addr_of_mut!(Header),
             );
             if NT_SUCCESS(Status) {
-                let object_body = core::ptr::addr_of_mut!((*Header).Body) as PVOID;
+                *Object = core::ptr::addr_of_mut!((*Header).Body) as PVOID;
 
                 if ((*Header).Flags & OB_FLAG_PERMANENT) != 0 {
                     if SeSinglePrivilegeCheck(SeCreatePermanentPrivilege, ProbeMode) == 0 {
-                        ObpDeallocateObject(object_body);
-                        return Err(STATUS_PRIVILEGE_NOT_HELD);
+                        ObpDeallocateObject(*Object);
+                        Status = STATUS_PRIVILEGE_NOT_HELD;
                     }
                 }
 
-                return Ok(object_body);
+                return Status;
             }
         }
 
@@ -777,39 +779,20 @@ unsafe fn ObCreateObject_inner(
         if !ObjectName.Buffer.is_null() {
             ObpFreeObjectNameBuffer(core::ptr::addr_of_mut!(ObjectName));
         }
-        return Err(Status);
+        return Status;
     }
 
     ObpFreeCapturedAttributes(ObjectCreateInfo as PVOID, LookasideCreateInfoList);
-    Err(Status)
+    Status
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ObCreateObject(
-    ProbeMode: KPROCESSOR_MODE,
-    Type: POBJECT_TYPE,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    AccessMode: KPROCESSOR_MODE,
-    ParseContext: PVOID,
-    ObjectSize: ULONG,
-    PagedPoolCharge: ULONG,
-    NonPagedPoolCharge: ULONG,
-    Object: *mut PVOID,
-) -> NTSTATUS {
-    match ObCreateObject_inner(ProbeMode, Type, ObjectAttributes, AccessMode, ParseContext, ObjectSize, PagedPoolCharge, NonPagedPoolCharge) {
-        Ok(obj) => {
-            core::ptr::write_volatile(Object, obj);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
-}
-
-unsafe fn ObCreateObjectType_inner(
+pub unsafe extern "system" fn ObCreateObjectType(
     TypeName: PUNICODE_STRING,
     ObjectTypeInitializer: POBJECT_TYPE_INITIALIZER,
     Reserved: PVOID,
-) -> Result<POBJECT_TYPE, NTSTATUS> {
+    ObjectType: *mut POBJECT_TYPE,
+) -> NTSTATUS {
     let mut Header: POBJECT_HEADER = core::ptr::null_mut();
     let mut LocalObjectType: POBJECT_TYPE;
     let HeaderSize: ULONG;
@@ -831,14 +814,14 @@ unsafe fn ObCreateObjectType_inner(
             && (*ObjectTypeInitializer).CloseProcedure.is_none())
         || ((*ObjectTypeInitializer).UseDefaultObject == 0 && (*ObjectTypeInitializer).PoolType != NonPagedPool)
     {
-        return Err(STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
     }
 
     p = (*TypeName).Buffer;
     i = ((*TypeName).Length / core::mem::size_of::<u16>() as u16) as ULONG;
     while i > 0 {
         if *p == OBJ_NAME_PATH_SEPARATOR as u16 {
-            return Err(STATUS_OBJECT_NAME_INVALID);
+            return STATUS_OBJECT_NAME_INVALID;
         }
         p = p.offset(1);
         i -= 1;
@@ -858,7 +841,7 @@ unsafe fn ObCreateObjectType_inner(
         ).is_null()
         {
             ObpReleaseLookupContext(core::ptr::addr_of_mut!(Context));
-            return Err(STATUS_OBJECT_NAME_COLLISION);
+            return STATUS_OBJECT_NAME_COLLISION;
         }
     }
 
@@ -869,7 +852,7 @@ unsafe fn ObCreateObjectType_inner(
     ) as PWCHAR;
     if ObjectName.Buffer.is_null() {
         ObpReleaseLookupContext(core::ptr::addr_of_mut!(Context));
-        return Err(STATUS_INSUFFICIENT_RESOURCES);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ObjectName.MaximumLength = (*TypeName).MaximumLength;
@@ -886,7 +869,7 @@ unsafe fn ObCreateObjectType_inner(
     if !NT_SUCCESS(Status) {
         ObpReleaseLookupContext(core::ptr::addr_of_mut!(Context));
         ExFreePool(ObjectName.Buffer as PVOID);
-        return Err(Status);
+        return Status;
     }
 
     LocalObjectType = core::ptr::addr_of_mut!((*Header).Body) as POBJECT_TYPE;
@@ -1003,27 +986,12 @@ unsafe fn ObCreateObjectType_inner(
 
         ObpReleaseLookupContext(core::ptr::addr_of_mut!(Context));
 
-        return Ok(LocalObjectType);
+        *ObjectType = LocalObjectType;
+        return STATUS_SUCCESS;
     }
 
     ObpReleaseLookupContext(core::ptr::addr_of_mut!(Context));
-    Err(STATUS_INSUFFICIENT_RESOURCES)
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ObCreateObjectType(
-    TypeName: PUNICODE_STRING,
-    ObjectTypeInitializer: POBJECT_TYPE_INITIALIZER,
-    Reserved: PVOID,
-    ObjectType: *mut POBJECT_TYPE,
-) -> NTSTATUS {
-    match ObCreateObjectType_inner(TypeName, ObjectTypeInitializer, Reserved) {
-        Ok(obj_type) => {
-            core::ptr::write_volatile(ObjectType, obj_type);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    STATUS_INSUFFICIENT_RESOURCES
 }
 
 #[no_mangle]
@@ -1246,7 +1214,7 @@ pub unsafe extern "system" fn NtQueryObject(
     }
 
     if !ResultLength.is_null() {
-        core::ptr::write_volatile(ResultLength, InfoLength);
+        *ResultLength = InfoLength;
     }
 
     if !Object.is_null() {

@@ -243,20 +243,22 @@ pub unsafe extern "system" fn ExpReleaseKeyedEvent(
     ExpReleaseOrWaitForKeyedEvent(KeyedEvent, KeyedWaitValue, Alertable, Timeout, 1u8)
 }
 
-unsafe fn NtCreateKeyedEvent_inner(
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateKeyedEvent(
+    OutHandle: PHANDLE,
     AccessMask: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
     Flags: ULONG,
-) -> Result<HANDLE, NTSTATUS> {
+) -> NTSTATUS {
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEvent: PEX_KEYED_EVENT = core::ptr::null_mut();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
 
     if Flags != 0 {
-        return Err(STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
     }
 
-    let Status = ObCreateObject(
+    let mut Status = ObCreateObject(
         PreviousMode,
         ExKeyedEventObjectType,
         ObjectAttributes,
@@ -269,12 +271,12 @@ unsafe fn NtCreateKeyedEvent_inner(
     );
 
     if Status < 0 {
-        return Err(Status);
+        return Status;
     }
 
     ExpInitializeKeyedEvent(KeyedEvent);
 
-    let Status = ObInsertObject(
+    Status = ObInsertObject(
         KeyedEvent as PVOID,
         core::ptr::null_mut(),
         AccessMask,
@@ -284,44 +286,31 @@ unsafe fn NtCreateKeyedEvent_inner(
     );
 
     if Status < 0 {
-        return Err(Status);
+        return Status;
     }
 
-    Ok(KeyedEventHandle)
+    if PreviousMode != 0i8 {
+        if let Err(e) = write_user(OutHandle, KeyedEventHandle, PreviousMode) {
+            ObCloseHandle(KeyedEventHandle, PreviousMode);
+            return e;
+        }
+    } else {
+        *OutHandle = KeyedEventHandle;
+    }
+
+    Status
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NtCreateKeyedEvent(
+pub unsafe extern "system" fn NtOpenKeyedEvent(
     OutHandle: PHANDLE,
     AccessMask: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-    Flags: ULONG,
 ) -> NTSTATUS {
-    match NtCreateKeyedEvent_inner(AccessMask, ObjectAttributes, Flags) {
-        Ok(handle) => {
-            let PreviousMode = KeGetPreviousMode();
-            if PreviousMode != 0i8 {
-                if let Err(e) = write_user(OutHandle, handle, PreviousMode) {
-                    ObCloseHandle(handle, PreviousMode);
-                    return e;
-                }
-            } else {
-                core::ptr::write_volatile(OutHandle, handle);
-            }
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
-}
-
-unsafe fn NtOpenKeyedEvent_inner(
-    AccessMask: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> Result<HANDLE, NTSTATUS> {
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
 
-    let Status = ObOpenObjectByName(
+    let mut Status = ObOpenObjectByName(
         ObjectAttributes,
         ExKeyedEventObjectType,
         PreviousMode,
@@ -332,33 +321,19 @@ unsafe fn NtOpenKeyedEvent_inner(
     );
 
     if Status < 0 {
-        return Err(Status);
+        return Status;
     }
 
-    Ok(KeyedEventHandle)
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn NtOpenKeyedEvent(
-    OutHandle: PHANDLE,
-    AccessMask: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
-    match NtOpenKeyedEvent_inner(AccessMask, ObjectAttributes) {
-        Ok(handle) => {
-            let PreviousMode = KeGetPreviousMode();
-            if PreviousMode != 0i8 {
-                if let Err(e) = write_user(OutHandle, handle, PreviousMode) {
-                    ObCloseHandle(handle, PreviousMode);
-                    return e;
-                }
-            } else {
-                core::ptr::write_volatile(OutHandle, handle);
-            }
-            STATUS_SUCCESS
+    if PreviousMode != 0i8 {
+        if let Err(e) = write_user(OutHandle, KeyedEventHandle, PreviousMode) {
+            ObCloseHandle(KeyedEventHandle, PreviousMode);
+            return e;
         }
-        Err(status) => status,
+    } else {
+        *OutHandle = KeyedEventHandle;
     }
+
+    Status
 }
 
 #[no_mangle]

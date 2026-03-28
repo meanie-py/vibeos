@@ -69,7 +69,7 @@ extern "C" {
 // On amd64/arm64 it reads SharedSystemTime. We declare it extern on i386
 // and provide a stub on other architectures that calls KeQueryInterruptTime.
 #[cfg(target_arch = "x86")]
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
@@ -372,7 +372,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
     let mut TempLength: SIZE_T;
     let mut Status: NTSTATUS;
 
-    core::ptr::write_volatile(NextObject, core::ptr::null_mut());
+    *NextObject = core::ptr::null_mut();
 
     if (*RemainingName).Length == 0 {
         if ObjectType != core::ptr::null_mut() {
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
                 AccessMode,
             );
             if Status >= 0 {
-                core::ptr::write_volatile(NextObject, ParsedObject);
+                *NextObject = ParsedObject;
             }
 
             if Status >= 0 || Status != STATUS_OBJECT_TYPE_MISMATCH {
@@ -396,7 +396,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
 
     if (*SymlinkObject).LinkTargetObject != core::ptr::null_mut() {
         if (*SymlinkObject).LinkTargetRemaining.Length == 0 {
-            core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
+            *NextObject = (*SymlinkObject).LinkTargetObject;
             return STATUS_REPARSE_OBJECT;
         }
 
@@ -444,7 +444,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
                 .offset(((*FullPath).Length / core::mem::size_of::<WCHAR>() as USHORT) as isize) =
                 0;
 
-            core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
+            *NextObject = (*SymlinkObject).LinkTargetObject;
             return STATUS_REPARSE_OBJECT;
         }
 
@@ -501,7 +501,7 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
         (*RemainingName).MaximumLength =
             (*RemainingName).Length + core::mem::size_of::<WCHAR>() as USHORT;
 
-        core::ptr::write_volatile(NextObject, (*SymlinkObject).LinkTargetObject);
+        *NextObject = (*SymlinkObject).LinkTargetObject;
         return STATUS_REPARSE_OBJECT;
     }
 
@@ -566,70 +566,6 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
     STATUS_REPARSE
 }
 
-unsafe fn NtCreateSymbolicLinkObject_inner(
-    DesiredAccess: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    LinkTarget: PUNICODE_STRING,
-    PreviousMode: KPROCESSOR_MODE,
-    CapturedLinkTarget: &_UNICODE_STRING,
-) -> Result<HANDLE, NTSTATUS> {
-    let mut hLink: HANDLE = core::mem::zeroed();
-    let mut SymbolicLink: POBJECT_SYMBOLIC_LINK = core::ptr::null_mut();
-
-    let mut Status = ObCreateObject(
-        PreviousMode,
-        ObpSymbolicLinkObjectType,
-        ObjectAttributes,
-        PreviousMode,
-        core::ptr::null_mut(),
-        core::mem::size_of::<_OBJECT_SYMBOLIC_LINK>() as ULONG,
-        0,
-        0,
-        &mut SymbolicLink as *mut POBJECT_SYMBOLIC_LINK as *mut PVOID,
-    );
-    if Status < 0 {
-        return Err(Status);
-    }
-
-    KeQuerySystemTime(&mut (*SymbolicLink).CreationTime as *mut _ as PLARGE_INTEGER);
-
-    (*SymbolicLink).LinkTarget.Length = CapturedLinkTarget.Length;
-    (*SymbolicLink).LinkTarget.MaximumLength = CapturedLinkTarget.MaximumLength;
-    (*SymbolicLink).LinkTarget.Buffer = ExAllocatePoolWithTag(
-        PagedPool,
-        CapturedLinkTarget.MaximumLength as SIZE_T,
-        TAG_SYMLINK_TARGET,
-    ) as PWSTR;
-    if (*SymbolicLink).LinkTarget.Buffer == core::ptr::null_mut() {
-        ObDereferenceObject(SymbolicLink as PVOID);
-        return Err(STATUS_NO_MEMORY);
-    }
-
-    core::ptr::copy_nonoverlapping(
-        CapturedLinkTarget.Buffer as *const u8,
-        (*SymbolicLink).LinkTarget.Buffer as *mut u8,
-        CapturedLinkTarget.MaximumLength as usize,
-    );
-
-    (*SymbolicLink).LinkTargetObject = core::ptr::null_mut();
-    (*SymbolicLink).DosDeviceDriveIndex = 0;
-    RtlInitUnicodeString(&mut (*SymbolicLink).LinkTargetRemaining, core::ptr::null_mut());
-
-    Status = ObInsertObject(
-        SymbolicLink as PVOID,
-        core::ptr::null_mut(),
-        DesiredAccess,
-        0,
-        core::ptr::null_mut(),
-        &mut hLink,
-    );
-    if Status >= 0 {
-        Ok(hLink)
-    } else {
-        Err(Status)
-    }
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
     LinkHandle: PHANDLE,
@@ -637,15 +573,18 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     LinkTarget: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let mut hLink: HANDLE = core::mem::zeroed();
+    let mut SymbolicLink: POBJECT_SYMBOLIC_LINK = core::ptr::null_mut();
     let mut CapturedLinkTarget: _UNICODE_STRING;
     let PreviousMode = ExGetPreviousMode();
+    let mut Status: NTSTATUS;
 
     if PreviousMode != 0 {
         if let Err(s) = probe_user_buffer(LinkTarget as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
         CapturedLinkTarget = core::ptr::read_volatile(LinkTarget);
-
+        
         if let Err(s) = probe_user_buffer(
             CapturedLinkTarget.Buffer as _,
             CapturedLinkTarget.MaximumLength as usize,
@@ -679,23 +618,75 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
         return STATUS_INVALID_PARAMETER;
     }
 
-    match NtCreateSymbolicLinkObject_inner(DesiredAccess, ObjectAttributes, LinkTarget, PreviousMode, &CapturedLinkTarget) {
-        Ok(handle) => {
-            core::ptr::write_volatile(LinkHandle, handle);
-            STATUS_SUCCESS
+    Status = ObCreateObject(
+        PreviousMode,
+        ObpSymbolicLinkObjectType,
+        ObjectAttributes,
+        PreviousMode,
+        core::ptr::null_mut(),
+        core::mem::size_of::<_OBJECT_SYMBOLIC_LINK>() as ULONG,
+        0,
+        0,
+        &mut SymbolicLink as *mut POBJECT_SYMBOLIC_LINK as *mut PVOID,
+    );
+    if Status >= 0 {
+        KeQuerySystemTime(&mut (*SymbolicLink).CreationTime as *mut _ as PLARGE_INTEGER);
+
+        (*SymbolicLink).LinkTarget.Length = CapturedLinkTarget.Length;
+        (*SymbolicLink).LinkTarget.MaximumLength = CapturedLinkTarget.MaximumLength;
+        (*SymbolicLink).LinkTarget.Buffer = ExAllocatePoolWithTag(
+            PagedPool,
+            CapturedLinkTarget.MaximumLength as SIZE_T,
+            TAG_SYMLINK_TARGET,
+        ) as PWSTR;
+        if (*SymbolicLink).LinkTarget.Buffer == core::ptr::null_mut() {
+            ObDereferenceObject(SymbolicLink as PVOID);
+            return STATUS_NO_MEMORY;
         }
-        Err(status) => status,
+
+        core::ptr::copy_nonoverlapping(
+            CapturedLinkTarget.Buffer as *const u8,
+            (*SymbolicLink).LinkTarget.Buffer as *mut u8,
+            CapturedLinkTarget.MaximumLength as usize,
+        );
+
+        (*SymbolicLink).LinkTargetObject = core::ptr::null_mut();
+        (*SymbolicLink).DosDeviceDriveIndex = 0;
+        RtlInitUnicodeString(&mut (*SymbolicLink).LinkTargetRemaining, core::ptr::null_mut());
+
+        Status = ObInsertObject(
+            SymbolicLink as PVOID,
+            core::ptr::null_mut(),
+            DesiredAccess,
+            0,
+            core::ptr::null_mut(),
+            &mut hLink,
+        );
+        if Status >= 0 {
+            *LinkHandle = hLink;
+        }
     }
+
+    Status
 }
 
-unsafe fn NtOpenSymbolicLinkObject_inner(
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
+    LinkHandle: PHANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> Result<HANDLE, NTSTATUS> {
+) -> NTSTATUS {
     let mut hLink: HANDLE = core::mem::zeroed();
     let PreviousMode = ExGetPreviousMode();
+    let mut Status: NTSTATUS;
 
-    let Status = ObOpenObjectByName(
+    if PreviousMode != 0 {
+        if let Err(s) = probe_write_handle(LinkHandle as _, PreviousMode) {
+            return s;
+        }
+    }
+
+    Status = ObOpenObjectByName(
         ObjectAttributes,
         ObpSymbolicLinkObjectType,
         PreviousMode,
@@ -705,34 +696,9 @@ unsafe fn NtOpenSymbolicLinkObject_inner(
         &mut hLink,
     );
 
-    if Status >= 0 {
-        Ok(hLink)
-    } else {
-        Err(Status)
-    }
-}
+    *LinkHandle = hLink;
 
-#[no_mangle]
-pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
-    LinkHandle: PHANDLE,
-    DesiredAccess: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
-    let PreviousMode = ExGetPreviousMode();
-
-    if PreviousMode != 0 {
-        if let Err(s) = probe_write_handle(LinkHandle as _, PreviousMode) {
-            return s;
-        }
-    }
-
-    match NtOpenSymbolicLinkObject_inner(DesiredAccess, ObjectAttributes) {
-        Ok(handle) => {
-            core::ptr::write_volatile(LinkHandle, handle);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    Status
 }
 
 #[no_mangle]
@@ -802,7 +768,7 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
         }
 
         if ResultLength != core::ptr::null_mut() {
-            core::ptr::write_volatile(ResultLength, (*SymlinkObject).LinkTarget.MaximumLength as ULONG);
+            *ResultLength = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
         }
 
         ObpReleaseObjectLock(ObjectHeader);

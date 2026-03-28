@@ -852,7 +852,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
     }
 
     if !(*CurrentSession).pDeviceMap.is_null() {
-        core::ptr::write_volatile(DeviceMap, (*CurrentSession).pDeviceMap);
+        *DeviceMap = (*CurrentSession).pDeviceMap;
         KeReleaseGuardedMutex(&mut SepRmDbLock);
         return STATUS_SUCCESS;
     }
@@ -914,9 +914,9 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
             (*CurrentSession).pDeviceMap = LocalMap;
         }
 
-        core::ptr::write_volatile(DeviceMap, (*CurrentSession).pDeviceMap);
+        *DeviceMap = (*CurrentSession).pDeviceMap;
     } else {
-        core::ptr::write_volatile(DeviceMap, core::ptr::null_mut());
+        *DeviceMap = core::ptr::null_mut();
     }
 
     KeReleaseGuardedMutex(&mut SepRmDbLock);

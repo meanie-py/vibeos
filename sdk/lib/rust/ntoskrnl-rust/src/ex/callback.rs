@@ -362,11 +362,13 @@ pub unsafe extern "system" fn ExpInitializeCallbacks() -> BOOLEAN {
     1u8
 }
 
-unsafe fn ExCreateCallback_inner(
+#[no_mangle]
+pub unsafe extern "system" fn ExCreateCallback(
+    CallbackObject: *mut PCALLBACK_OBJECT,
     ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
     Create: BOOLEAN,
     AllowMultipleCallbacks: BOOLEAN,
-) -> Result<PCALLBACK_OBJECT, NTSTATUS> {
+) -> NTSTATUS {
     let mut Callback: *mut _CALLBACK_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut Handle: HANDLE = core::ptr::null_mut();
@@ -414,42 +416,23 @@ unsafe fn ExCreateCallback_inner(
         }
     }
 
-    if Status < 0 {
-        return Err(Status);
+    if Status >= 0 {
+        Status = ObReferenceObjectByHandle(
+            Handle,
+            0,
+            ExCallbackObjectType,
+            0i8,
+            core::ptr::addr_of_mut!(Callback) as *mut PVOID,
+            core::ptr::null_mut(),
+        );
+
+        ZwClose(Handle);
     }
 
-    Status = ObReferenceObjectByHandle(
-        Handle,
-        0,
-        ExCallbackObjectType,
-        0i8,
-        core::ptr::addr_of_mut!(Callback) as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-
-    ZwClose(Handle);
-
-    if Status < 0 {
-        return Err(Status);
+    if Status >= 0 {
+        *CallbackObject = Callback;
     }
-
-    Ok(Callback)
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ExCreateCallback(
-    CallbackObject: *mut PCALLBACK_OBJECT,
-    ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
-    Create: BOOLEAN,
-    AllowMultipleCallbacks: BOOLEAN,
-) -> NTSTATUS {
-    match ExCreateCallback_inner(ObjectAttributes, Create, AllowMultipleCallbacks) {
-        Ok(callback) => {
-            core::ptr::write_volatile(CallbackObject, callback);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    Status
 }
 
 #[no_mangle]

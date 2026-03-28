@@ -79,7 +79,9 @@ pub unsafe extern "C" fn PiInsertDevNode(
     DeviceNode: PDEVICE_NODE,
     ParentNode: PDEVICE_NODE,
 ) {
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopDeviceTreeLock) as PKSPIN_LOCK) }; // [guard]
+    let mut oldIrql: KIRQL = 0;
+
+    KeAcquireSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), &mut oldIrql as *mut KIRQL);
     (*DeviceNode).Parent = ParentNode;
     (*DeviceNode).Sibling = core::ptr::null_mut();
     if (*ParentNode).LastChild.is_null() {
@@ -89,7 +91,7 @@ pub unsafe extern "C" fn PiInsertDevNode(
         (*(*ParentNode).LastChild).Sibling = DeviceNode;
         (*ParentNode).LastChild = DeviceNode;
     }
-    drop(spin_guard); // [guard-drop]
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), oldIrql);
     (*DeviceNode).Level = (*ParentNode).Level + 1;
 }
 
@@ -98,7 +100,9 @@ pub unsafe extern "C" fn PiSetDevNodeState(
     DeviceNode: PDEVICE_NODE,
     NewState: UINT32,
 ) -> UINT32 {
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopDeviceTreeLock) as PKSPIN_LOCK) }; // [guard]
+    let mut oldIrql: KIRQL = 0;
+
+    KeAcquireSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), &mut oldIrql as *mut KIRQL);
 
     let prevState = (*DeviceNode).State;
     if prevState != NewState {
@@ -108,7 +112,7 @@ pub unsafe extern "C" fn PiSetDevNodeState(
         (*DeviceNode).StateHistoryEntry = ((*DeviceNode).StateHistoryEntry + 1) % 20;
     }
 
-    drop(spin_guard); // [guard-drop]
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), oldIrql);
 
     prevState
 }
@@ -134,9 +138,10 @@ pub unsafe extern "C" fn PiClearDevNodeProblem(
 pub unsafe extern "C" fn IopFreeDeviceNode(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
+    let mut OldIrql: KIRQL = 0;
     let mut PrevSibling: PDEVICE_NODE = core::ptr::null_mut();
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!(IopDeviceTreeLock) as PKSPIN_LOCK) }; // [guard]
+    KeAcquireSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), &mut OldIrql as *mut KIRQL);
 
     if !(*DeviceNode).Parent.is_null() && (*(*DeviceNode).Parent).Child != DeviceNode {
         PrevSibling = (*(*DeviceNode).Parent).Child;
@@ -161,7 +166,7 @@ pub unsafe extern "C" fn IopFreeDeviceNode(
         (*PrevSibling).Sibling = (*DeviceNode).Sibling;
     }
 
-    drop(spin_guard); // [guard-drop]
+    KeReleaseSpinLock(core::ptr::addr_of_mut!(IopDeviceTreeLock), OldIrql);
 
     RtlFreeUnicodeString(core::ptr::addr_of_mut!((*DeviceNode).InstancePath));
 

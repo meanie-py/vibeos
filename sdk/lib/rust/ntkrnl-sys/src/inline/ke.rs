@@ -1848,13 +1848,9 @@ pub unsafe fn KxQueueThreadWait(
 
 /// YieldProcessor — architecture-dependent yield hint.
 ///
-/// IMPORTANT: Do NOT use `nomem` in the asm options. When YieldProcessor is
-/// called in retry loops (e.g., KeQueryInterruptTime spinning on
-/// High1Time == High2Time), `nomem` tells LLVM the loop body has no memory
-/// effects. LLVM then treats the infinite loop as UB (C/C++ semantics:
-/// infinite loop without side effects is undefined behavior) and eliminates
-/// the entire function body → ud2 contagion across the call graph.
-/// Omitting `nomem` makes LLVM treat the loop as potentially side-effecting.
+/// NOTE: `nomem` intentionally absent. With it, LLVM treats retry loops as
+/// having no memory side effects → infinite loop without side effects is UB
+/// → LLVM eliminates the loop entirely.
 #[inline]
 pub unsafe fn YieldProcessor() {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

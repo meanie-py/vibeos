@@ -283,7 +283,7 @@ unsafe fn LocateChildDevice(
             ) != 0
         {
             if !ChildDevice.is_null() {
-                core::ptr::write_volatile(ChildDevice, Device);
+                *ChildDevice = Device;
             }
             return STATUS_SUCCESS;
         }
@@ -616,7 +616,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
                         );
                         (*DeviceExtension).DeviceListCount += 1;
 
-                        core::ptr::write_volatile(PhysicalDeviceObject, (*Device).Pdo);
+                        *PhysicalDeviceObject = (*Device).Pdo;
                         Status = STATUS_SUCCESS;
                         Device = core::ptr::null_mut();
                     }
@@ -1674,7 +1674,7 @@ pub unsafe extern "system" fn PnpRootDriverEntry(
 //         {
 //             /* They do, so set the pointer and return success */
 //             if (ChildDevice)
-//                 core::ptr::write_volatile(ChildDevice, Device);
+//                 *ChildDevice = Device;
 //             return STATUS_SUCCESS;
 //         }
 //     }

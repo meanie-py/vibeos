@@ -98,7 +98,6 @@ pub unsafe extern "system" fn MmInitializeRmapList() {
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTSTATUS {
     let mut entry: PMM_RMAP_ENTRY;
     let mut MemoryArea: PMEMORY_AREA;
@@ -111,8 +110,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
     let mut OldIrql: KIRQL;
 
     'GetEntry: loop {
-        // [guard] OldIrql = MiAcquirePfnLock();
-        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
+        OldIrql = MiAcquirePfnLock();
 
         entry = MmGetRmapListHeadPage(Page as _);
 
@@ -121,7 +119,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         }
 
         if entry.is_null() {
-            drop(pfn_guard);
+            MiReleasePfnLock(OldIrql);
             #[cfg(target_arch = "aarch64")]
             {
                 return STATUS_UNSUCCESSFUL;
@@ -138,7 +136,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         if ((Address as ULONG_PTR) & 0xFFF) != 0 {
             #[cfg(target_arch = "aarch64")]
             {
-                drop(pfn_guard);
+                MiReleasePfnLock(OldIrql);
                 return STATUS_UNSUCCESSFUL;
             }
             #[cfg(not(target_arch = "aarch64"))]
@@ -150,12 +148,12 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
         if ExAcquireRundownProtection(core::ptr::addr_of_mut!(
             (*(Process as *mut _EPROCESS)).RundownProtect
         )) == 0 {
-            drop(pfn_guard);
+            MiReleasePfnLock(OldIrql);
             return STATUS_PROCESS_IS_TERMINATING;
         }
 
         Status = ObReferenceObjectByPointer(Process as PVOID, PROCESS_ALL_ACCESS, core::ptr::null_mut(), 0);
-        drop(pfn_guard);
+        MiReleasePfnLock(OldIrql);
         if Status < 0 {
             ExReleaseRundownProtection(core::ptr::addr_of_mut!(
                 (*(Process as *mut _EPROCESS)).RundownProtect
@@ -424,8 +422,7 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         }
     }
 
-    // [guard] OldIrql = MiAcquirePfnLock();
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
+    OldIrql = MiAcquirePfnLock();
     current_entry = MmGetRmapListHeadPage(Page as _);
 
     let mut previous_entry: PMM_RMAP_ENTRY = core::ptr::null_mut();
@@ -447,7 +444,7 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
     {
         // Duplicate rmap — skip insertion instead of bugcheck (defensive)
         ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         return;
     }
 
@@ -458,7 +455,7 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         MmSetRmapListHeadPage(Page as _, new_entry);
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     if !RMAP_IS_SEGMENT(Address) {
         PrevSize = InterlockedExchangeAddUL(
@@ -477,8 +474,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     let mut previous_entry: PMM_RMAP_ENTRY;
     let OldIrql: KIRQL;
 
-    // [guard] OldIrql = MiAcquirePfnLock();
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
+    OldIrql = MiAcquirePfnLock();
     previous_entry = core::ptr::null_mut();
     current_entry = MmGetRmapListHeadPage(Page as _);
 
@@ -489,7 +485,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
             } else {
                 (*previous_entry).Next = (*current_entry).Next;
             }
-            drop(pfn_guard); // [guard-drop]
+            MiReleasePfnLock(OldIrql);
 
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), current_entry as PVOID);
             if !RMAP_IS_SEGMENT(Address) {
@@ -505,7 +501,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     }
     #[cfg(target_arch = "aarch64")]
     {
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
         return;
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -523,7 +519,7 @@ pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut
     while !current_entry.is_null() {
         if RMAP_IS_SEGMENT((*current_entry).Address) {
             Result = (*current_entry).Process as PVOID;
-            core::ptr::write_volatile(RawOffset, ((*current_entry).Address as ULONG_PTR & !RMAP_SEGMENT_MASK) as ULONG);
+            *RawOffset = ((*current_entry).Address as ULONG_PTR & !RMAP_SEGMENT_MASK) as ULONG;
             if /* TODO: _CACHE_SECTION_PAGE_TABLE not in bindgen */ false {
                 return core::ptr::null_mut();
             }

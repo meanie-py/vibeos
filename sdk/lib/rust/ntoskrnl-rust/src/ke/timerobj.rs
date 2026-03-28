@@ -24,7 +24,7 @@ extern "C" {
     fn KxUnwaitThread(object: PVOID, increment: KPRIORITY);
     fn KxUnwaitThreadForEvent(event: PKEVENT, increment: KPRIORITY);
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
 }
 
@@ -255,16 +255,17 @@ unsafe fn KiCompleteTimerImpl(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeCancelTimer(Timer: PKTIMER) -> BOOLEAN {
+    let OldIrql: KIRQL;
     let Inserted: BOOLEAN;
 
-    let disp_guard = unsafe { ntkrnl_sys::guards::DispatcherLockGuard::acquire() }; // [guard]
+    OldIrql = KiAcquireDispatcherLock();
 
     Inserted = (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.Inserted;
     if Inserted != 0 {
         KxRemoveTreeTimer(Timer);
     }
 
-    drop(disp_guard); // [guard-drop]
+    KiReleaseDispatcherLock(OldIrql);
 
     Inserted
 }

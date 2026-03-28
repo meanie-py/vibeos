@@ -9,8 +9,8 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{
     HalSetRealTimeClock, KSYSTEM_TIME, KTIMER, LARGE_INTEGER, LIST_ENTRY, PKSPIN_LOCK_QUEUE,
     PKTIMER, PLARGE_INTEGER, TIME_FIELDS, KeRevertToUserAffinityThread, KeSetSystemAffinityThread,
-    KiAcquireTimerLock, KiComputeTimerTableIndex, KiInsertTimerTable,
-    KiReleaseTimerLock, KiRemoveEntryTimer, RtlTimeToTimeFields,
+    KiAcquireDispatcherLock, KiAcquireTimerLock, KiComputeTimerTableIndex, KiInsertTimerTable,
+    KiReleaseTimerLock, KiRemoveEntryTimer, KiTimerListExpire, RtlTimeToTimeFields,
 };
 
 #[no_mangle]
@@ -64,6 +64,8 @@ pub unsafe extern "system" fn KeSetSystemTime(
     HalTime: PLARGE_INTEGER,
 ) {
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
+    let mut OldIrql: KIRQL = 0;
+    let mut OldIrql2: KIRQL = 0;
     let mut DeltaTime: LARGE_INTEGER = core::mem::zeroed();
     let mut TempList: LIST_ENTRY = core::mem::zeroed();
     let mut TempList2: LIST_ENTRY = core::mem::zeroed();
@@ -73,7 +75,7 @@ pub unsafe extern "system" fn KeSetSystemTime(
     }
 
     KeSetSystemAffinityThread(1);
-    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::acquire(); // [guard]
+    OldIrql = KiAcquireDispatcherLock();
     // [guard] KeRaiseIrql(HIGH_LEVEL, &mut OldIrql2);
     let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(HIGH_LEVEL) };
 
@@ -142,8 +144,7 @@ pub unsafe extern "system" fn KeSetSystemTime(
         KiReleaseTimerLock(LockQueue);
     }
 
-    // Pass guard to inner — it handles release/IRQL lowering // [guard-drop]
-    super::dpc::KiTimerListExpire_inner(&mut TempList2 as PLIST_ENTRY, disp_guard);
+    KiTimerListExpire(&mut TempList2 as PLIST_ENTRY, OldIrql);
 
     KeRevertToUserAffinityThread();
 }
@@ -171,7 +172,7 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
-    core::ptr::write_volatile(TickCount, *(core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER));
+    *TickCount = *(core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER);
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -179,21 +180,10 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86", target_arch = "arm"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
-    // Use write_volatile to prevent LLVM from deducing writeonly+captures(none)
-    // on CurrentTime. Without volatile, LLVM eliminates callers' reads of the
-    // written value via dead store elimination, causing ud2 contagion.
     loop {
-        core::ptr::write_volatile(
-            core::ptr::addr_of_mut!((*CurrentTime).__bindgen_anon_1.HighPart),
-            (*SharedUserData).SystemTime.High1Time,
-        );
-        core::ptr::write_volatile(
-            core::ptr::addr_of_mut!((*CurrentTime).__bindgen_anon_1.LowPart),
-            (*SharedUserData).SystemTime.LowPart,
-        );
-        if core::ptr::read_volatile(core::ptr::addr_of!((*CurrentTime).__bindgen_anon_1.HighPart))
-            == (*SharedUserData).SystemTime.High2Time
-        {
+        (*CurrentTime).__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
+        (*CurrentTime).__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.LowPart;
+        if (*CurrentTime).__bindgen_anon_1.HighPart == (*SharedUserData).SystemTime.High2Time {
             break;
         }
         YieldProcessor();

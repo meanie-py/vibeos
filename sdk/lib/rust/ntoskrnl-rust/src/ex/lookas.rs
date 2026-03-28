@@ -29,7 +29,16 @@ unsafe fn ExInterlockedInsertTailList(
     ListEntry: PLIST_ENTRY,
     Lock: DdkPKSPIN_LOCK,
 ) -> PLIST_ENTRY {
-    extern "fastcall" {
+    #[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ExfInterlockedInsertTailList(
+            ListHead: PLIST_ENTRY,
+            ListEntry: PLIST_ENTRY,
+            Lock: DdkPKSPIN_LOCK,
+        ) -> PLIST_ENTRY;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ExfInterlockedInsertTailList(
             ListHead: PLIST_ENTRY,
             ListEntry: PLIST_ENTRY,
@@ -42,7 +51,7 @@ unsafe fn ExInterlockedInsertTailList(
 // PALLOCATE_FUNCTION / PFREE_FUNCTION use "stdcall" on i386 and "C" on amd64/arm64.
 // Provide two sets of wrappers gated by cfg.
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn ExAllocatePoolWithTag_C(
+unsafe extern "stdcall" fn ExAllocatePoolWithTag_C(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T,
     Tag: ULONG,
@@ -51,7 +60,7 @@ unsafe extern "system" fn ExAllocatePoolWithTag_C(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn ExFreePool_C(Buffer: PVOID) {
+unsafe extern "stdcall" fn ExFreePool_C(Buffer: PVOID) {
     ExFreePoolWithTag(Buffer, 0);
 }
 

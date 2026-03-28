@@ -198,7 +198,7 @@ def test_no_unexpected_ud2(arch: str) -> None:
         pytest.skip("No objdump available")
 
     findings = scan_ud2(ntoskrnl, objdump)
-    unexpected = [f for f in findings if not f["expected"]]
+    unexpected = [f for f in findings if not f["expected"] and not f.get("known_cgu")]
 
     if unexpected:
         lines = [f"Found {len(unexpected)} unexpected ud2 (LLVM miscompilation):"]

@@ -61,7 +61,12 @@ extern "C" {
     fn KiSatisfyNonMutantWait(Object: PKMUTANT);
     fn KiAcquirePrcbLock(Prcb: *mut _KPRCB);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comparand: i32, ) -> i32;
 }
 

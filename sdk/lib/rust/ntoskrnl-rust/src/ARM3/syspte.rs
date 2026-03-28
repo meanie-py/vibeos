@@ -59,7 +59,7 @@ pub unsafe extern "system" fn MiReserveAlignedSystemPtes(
     let return_pte: PMMPTE;
     let mut cluster_size: ULONG = 0;
 
-    let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueSystemSpaceLock); // [guard]
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueSystemSpaceLock);
 
     previous_pte = core::ptr::addr_of_mut!(MmFirstFreeSystemPte[system_pte_pool_type as usize]);
 
@@ -75,7 +75,7 @@ pub unsafe extern "system" fn MiReserveAlignedSystemPtes(
     }
 
     if (*previous_pte).list_next_entry() == MM_EMPTY_PTE_LIST {
-        drop(qsl_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, old_irql);
         return core::ptr::null_mut();
     }
 
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn MiReserveAlignedSystemPtes(
 
     MmTotalFreeSystemPtes[system_pte_pool_type as usize] -= number_of_ptes;
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, old_irql);
 
     KeFlushProcessTb();
 
@@ -171,7 +171,7 @@ pub unsafe extern "system" fn MiReleaseSystemPtes(
         (number_of_ptes as usize * core::mem::size_of::<MMPTE>()) as SIZE_T,
     );
 
-    let qsl_guard = ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueSystemSpaceLock); // [guard]
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueSystemSpaceLock);
 
     MmTotalFreeSystemPtes[system_pte_pool_type as usize] += number_of_ptes;
 
@@ -225,7 +225,7 @@ pub unsafe extern "system" fn MiReleaseSystemPtes(
     (*starting_pte).set_list_next_entry((*insert_pte).list_next_entry() as ULONG_PTR);
     (*insert_pte).set_list_next_entry(starting_pte.offset_from(MmSystemPteBase) as ULONG_PTR as ULONG_PTR);
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueSystemSpaceLock, old_irql);
 }
 
 #[no_mangle]

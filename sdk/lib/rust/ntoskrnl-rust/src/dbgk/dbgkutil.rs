@@ -25,16 +25,14 @@ extern "C" {
         s: PVOID,
     );
 
+    #[link_name = "IoGetCurrentProcess"]
+    fn PsGetCurrentProcess() -> PEPROCESS;
+    fn PsGetCurrentThread() -> PETHREAD;
+
     static PspSystemDllBase: PVOID;
     static PsNtDllPathName: _UNICODE_STRING;
     static PsImageNotifyEnabled: BOOLEAN;
 }
-extern "system" {
-    fn PsGetCurrentThread() -> PETHREAD;
-}
-  extern "C" {
-    fn PsGetCurrentProcess() -> PEPROCESS;
-  }
 
 const PSF_CREATE_REPORTED_BIT: ULONG = 0x00000001;
 const PSF_IMAGE_NOTIFY_DONE_BIT: ULONG = 0x00000002;
@@ -58,7 +56,7 @@ const LPC_DEBUG_EVENT: i16 = 9;
 extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(current_time: PVOID);
 }
 

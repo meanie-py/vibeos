@@ -127,12 +127,12 @@ pub unsafe extern "system" fn MiCheckForConflictingNode(
         } else if EndVpn < ((*current_node).StartingVpn as ULONG_PTR) {
             current_node = RtlLeftChildAvl(current_node);
         } else {
-            core::ptr::write_volatile(NodeOrParent, parent_node);
+            *NodeOrParent = parent_node;
             return TableFoundNode;
         }
     }
 
-    core::ptr::write_volatile(NodeOrParent, parent_node);
+    *NodeOrParent = parent_node;
     if StartVpn > ((*parent_node).EndingVpn as ULONG_PTR) {
         return TableInsertAsRight;
     } else {
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn MiInsertVadEx(
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!((*(current_process as *mut ntkrnl_sys::ddk::_EPROCESS)).AddressCreationLock).cast::<KGUARDED_MUTEX>());
 
-    core::ptr::write_volatile(BaseAddress, starting_address);
+    *BaseAddress = starting_address;
     return STATUS_SUCCESS;
 }
 
@@ -386,7 +386,7 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeInTree(
     }
 
     if (*Table).NumberGenericTableElements() == 0 {
-        core::ptr::write_volatile(Base, low_vpn << PAGE_SHIFT);
+        *Base = low_vpn << PAGE_SHIFT;
         return TableEmptyTree;
     }
 
@@ -402,13 +402,13 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeInTree(
     previous_node = core::ptr::null_mut();
     while !node.is_null() {
         if ((*node).StartingVpn as ULONG_PTR) >= low_vpn + page_count {
-            core::ptr::write_volatile(Base, low_vpn << PAGE_SHIFT);
+            *Base = low_vpn << PAGE_SHIFT;
 
             if RtlLeftChildAvl(node).is_null() {
-                core::ptr::write_volatile(PreviousVad, node);
+                *PreviousVad = node;
                 return TableInsertAsLeft;
             } else {
-                core::ptr::write_volatile(PreviousVad, previous_node);
+                *PreviousVad = previous_node;
                 return TableInsertAsRight;
             }
         }
@@ -428,8 +428,8 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeInTree(
     }
 
     if highest_vpn >= low_vpn + page_count {
-        core::ptr::write_volatile(PreviousVad, previous_node);
-        core::ptr::write_volatile(Base, low_vpn << PAGE_SHIFT);
+        *PreviousVad = previous_node;
+        *Base = low_vpn << PAGE_SHIFT;
         return TableInsertAsRight;
     }
 
@@ -469,7 +469,7 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownTree(
     }
 
     if (*Table).NumberGenericTableElements() == 0 {
-        core::ptr::write_volatile(Base, ALIGN_DOWN_BY(BoundaryAddress + 1 - length, Alignment));
+        *Base = ALIGN_DOWN_BY(BoundaryAddress + 1 - length, Alignment);
         return TableEmptyTree;
     }
 
@@ -492,13 +492,13 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownTree(
 
         if (high_vpn > low_vpn) && ((high_vpn - low_vpn) >= page_count) {
             low_vpn = ALIGN_DOWN_BY(high_vpn - page_count, alignment_vpn);
-            core::ptr::write_volatile(Base, low_vpn << PAGE_SHIFT);
+            *Base = low_vpn << PAGE_SHIFT;
 
             if RtlRightChildAvl(node).is_null() {
-                core::ptr::write_volatile(Parent, node);
+                *Parent = node;
                 return TableInsertAsRight;
             } else {
-                core::ptr::write_volatile(Parent, old_node);
+                *Parent = old_node;
                 return TableInsertAsLeft;
             }
         }
@@ -514,13 +514,13 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownTree(
     low_vpn = ALIGN_UP_BY(MI_LOWEST_VAD_ADDRESS as ULONG_PTR, Alignment) / PAGE_SIZE;
     if (high_vpn > low_vpn) && ((high_vpn - low_vpn) >= page_count) {
         low_vpn = ALIGN_DOWN_BY(high_vpn - page_count, Alignment >> PAGE_SHIFT);
-        core::ptr::write_volatile(Base, low_vpn << PAGE_SHIFT);
-        core::ptr::write_volatile(Parent, old_node);
+        *Base = low_vpn << PAGE_SHIFT;
+        *Parent = old_node;
         return TableInsertAsLeft;
     }
 
-    core::ptr::write_volatile(Base, 0);
-    core::ptr::write_volatile(Parent, core::ptr::null_mut());
+    *Base = 0;
+    *Parent = core::ptr::null_mut();
     return TableFoundNode;
 }
 
@@ -545,7 +545,7 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownBasedTree(
 
     best_vpn = ROUND_DOWN(BoundaryAddress + 1 - length, Alignment);
     if (*Table).NumberGenericTableElements() == 0 {
-        core::ptr::write_volatile(Base, best_vpn);
+        *Base = best_vpn;
         return STATUS_SUCCESS;
     }
 
@@ -562,11 +562,11 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownBasedTree(
     if (low_vpn < BoundaryAddress) && (length <= (BoundaryAddress - low_vpn)) {
         #[cfg(not(feature = "ntddi_vista"))]
         {
-            core::ptr::write_volatile(Base, ROUND_DOWN(BoundaryAddress - length, Alignment));
+            *Base = ROUND_DOWN(BoundaryAddress - length, Alignment);
         }
         #[cfg(feature = "ntddi_vista")]
         {
-            core::ptr::write_volatile(Base, best_vpn);
+            *Base = best_vpn;
         }
         return STATUS_SUCCESS;
     }
@@ -583,10 +583,10 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownBasedTree(
             (length <= (((*node).StartingVpn as ULONG_PTR) - low_vpn))
         {
             if BoundaryAddress < ((*node).StartingVpn as ULONG_PTR) {
-                core::ptr::write_volatile(Base, best_vpn);
+                *Base = best_vpn;
                 return STATUS_SUCCESS;
             } else {
-                core::ptr::write_volatile(Base, ROUND_DOWN(((*node).StartingVpn as ULONG_PTR) - length, Alignment));
+                *Base = ROUND_DOWN(((*node).StartingVpn as ULONG_PTR) - length, Alignment);
                 return STATUS_SUCCESS;
             }
         }
@@ -598,11 +598,11 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownBasedTree(
         ((((*node).StartingVpn as ULONG_PTR) - MI_LOWEST_VAD_ADDRESS as ULONG_PTR) >= length)
     {
         if BoundaryAddress < ((*node).StartingVpn as ULONG_PTR) {
-            core::ptr::write_volatile(Base, best_vpn);
+            *Base = best_vpn;
             return STATUS_SUCCESS;
         }
 
-        core::ptr::write_volatile(Base, ROUND_DOWN(((*node).StartingVpn as ULONG_PTR) - length, Alignment));
+        *Base = ROUND_DOWN(((*node).StartingVpn as ULONG_PTR) - length, Alignment);
         return STATUS_SUCCESS;
     }
 

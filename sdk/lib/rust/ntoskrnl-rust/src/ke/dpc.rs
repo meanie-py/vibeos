@@ -48,7 +48,12 @@ extern "C" {
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 #[cfg(target_arch = "x86")]
@@ -67,16 +72,26 @@ extern "fastcall" {
 extern "C" {
     fn KiProcessDeferredReadyList(Prcb: PKPRCB);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
 }
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiAcquireSpinLock(SpinLock: PKSPIN_LOCK);
+}
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
 }
 extern "C" {
     fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
@@ -248,14 +263,12 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                     i = 0;
                     while DpcCalls > 0 {
-                        if let Some(f) = DpcEntry[i as usize].Routine {
-                            f(
-                                DpcEntry[i as usize].Dpc,
-                                DpcEntry[i as usize].Context,
-                                SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                                SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                            );
-                        }
+                        (DpcEntry[i as usize].Routine.unwrap())(
+                            DpcEntry[i as usize].Dpc,
+                            DpcEntry[i as usize].Context,
+                            SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                            SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                        );
                         DpcCalls -= 1;
                         i += 1;
                     }
@@ -280,14 +293,12 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
                     i = 0;
                     while DpcCalls > 0 {
-                        if let Some(f) = DpcEntry[i as usize].Routine {
-                            f(
-                                DpcEntry[i as usize].Dpc,
-                                DpcEntry[i as usize].Context,
-                                SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                                SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                            );
-                        }
+                        (DpcEntry[i as usize].Routine.unwrap())(
+                            DpcEntry[i as usize].Dpc,
+                            DpcEntry[i as usize].Context,
+                            SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                            SystemTime.__bindgen_anon_1.HighPart as PVOID,
+                        );
                         DpcCalls -= 1;
                         i += 1;
                     }
@@ -317,14 +328,12 @@ pub unsafe extern "system" fn KiTimerExpiration(
 
         i = 0;
         while DpcCalls > 0 {
-            if let Some(f) = DpcEntry[i as usize].Routine {
-                f(
-                    DpcEntry[i as usize].Dpc,
-                    DpcEntry[i as usize].Context,
-                    SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                    SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                );
-            }
+            (DpcEntry[i as usize].Routine.unwrap())(
+                DpcEntry[i as usize].Dpc,
+                DpcEntry[i as usize].Context,
+                SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                SystemTime.__bindgen_anon_1.HighPart as PVOID,
+            );
             DpcCalls -= 1;
             i += 1;
         }
@@ -344,9 +353,7 @@ pub unsafe extern "fastcall" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
-    // C callers pass raw IRQL — wrap in guard for inner function
-    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::from_raw(OldIrql); // [guard]
-    KiTimerListExpire_inner(ExpiredListHead, disp_guard)
+    KiTimerListExpire_body(ExpiredListHead, OldIrql)
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -355,18 +362,10 @@ pub unsafe extern "C" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
-    // C callers pass raw IRQL — wrap in guard for inner function
-    let disp_guard = ntkrnl_sys::guards::DispatcherLockGuard::from_raw(OldIrql); // [guard]
-    KiTimerListExpire_inner(ExpiredListHead, disp_guard)
+    KiTimerListExpire_body(ExpiredListHead, OldIrql)
 }
 
-/// Inner implementation taking a DispatcherLockGuard. Called from Rust callers
-/// (clock.rs) and from the exported C wrappers above.
-#[inline(never)]
-pub(crate) unsafe fn KiTimerListExpire_inner(
-    ExpiredListHead: PLIST_ENTRY,
-    disp_guard: ntkrnl_sys::guards::DispatcherLockGuard,
-) {
+unsafe fn KiTimerListExpire_body(ExpiredListHead: PLIST_ENTRY, OldIrql: KIRQL) {
     let mut SystemTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
     let mut i: LONG;
@@ -412,29 +411,23 @@ pub(crate) unsafe fn KiTimerListExpire_inner(
     }
 
     if DpcCalls != 0 {
-        // Split-release: release dispatcher lock but stay at DISPATCH_LEVEL to call DPCs,
-        // then lower IRQL to the original level afterwards.
-        let old_irql = disp_guard.previous_irql(); // [guard]
-        core::mem::forget(disp_guard); // [guard-drop] — manual release below
         KiReleaseDispatcherLock(DISPATCH_LEVEL);
 
         i = 0;
         while DpcCalls > 0 {
-            if let Some(f) = DpcEntry[i as usize].Routine {
-                f(
-                    DpcEntry[i as usize].Dpc,
-                    DpcEntry[i as usize].Context,
-                    SystemTime.__bindgen_anon_1.LowPart as PVOID,
-                    SystemTime.__bindgen_anon_1.HighPart as PVOID,
-                );
-            }
+            (DpcEntry[i as usize].Routine.unwrap())(
+                DpcEntry[i as usize].Dpc,
+                DpcEntry[i as usize].Context,
+                SystemTime.__bindgen_anon_1.LowPart as PVOID,
+                SystemTime.__bindgen_anon_1.HighPart as PVOID,
+            );
             DpcCalls -= 1;
             i += 1;
         }
 
-        KeLowerIrql(old_irql);
+        KeLowerIrql(OldIrql);
     } else {
-        drop(disp_guard); // [guard-drop]
+        KiReleaseDispatcherLock(OldIrql);
     }
 }
 
@@ -518,7 +511,6 @@ pub unsafe extern "C" fn KiRetireDpcList(Prcb: PKPRCB) {
     KiRetireDpcList_body(Prcb)
 }
 
-#[inline(never)]
 unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
     let DpcData: PKDPC_DATA;
     let ListHead: PLIST_ENTRY;
@@ -569,9 +561,7 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
 
                 _enable();
 
-                if let Some(f) = DeferredRoutine {
-                    f(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
-                }
+                (DeferredRoutine.unwrap())(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
 
                 _disable();
             } else {

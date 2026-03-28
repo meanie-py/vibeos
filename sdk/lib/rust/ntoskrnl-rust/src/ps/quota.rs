@@ -121,8 +121,7 @@ unsafe fn PspReturnExcessQuotas(quota_type: PS_QUOTA_TYPE, returned_quotas: *mut
     }
 
     MmReturnPoolQuota(quota_type as POOL_TYPE, amount_to_return);
-    // Use write_volatile to prevent captures(none) optimization
-    core::ptr::write_volatile(returned_quotas, amount_to_return);
+    *returned_quotas = amount_to_return;
 }
 
 unsafe fn PspChargeProcessQuotaSpecifiedPool(

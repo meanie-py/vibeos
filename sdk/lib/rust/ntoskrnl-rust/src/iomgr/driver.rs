@@ -168,15 +168,13 @@ unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8) {
 
 extern "C" {
     fn IopGetDeviceObjectFromDeviceInstance(DeviceInstance: PUNICODE_STRING) -> *mut DEVICE_OBJECT;
+    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
     fn PiPerformSyncDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG);
     fn PiQueueDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
     fn _snprintf(buf: PCHAR, count: usize, format: PCHAR, ...) -> i32;
     fn _snwprintf(buf: PWCHAR, count: usize, format: *const u16, ...) -> i32;
     fn ExInitializeWorkItem(Item: *mut _WORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID);
     fn CONTAINING_RECORD(ptr: PVOID, ty: PVOID, field: PVOID) -> PVOID;
-}
-extern "system" {
-    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
 }
 
 extern "system" {
@@ -551,7 +549,7 @@ pub unsafe extern "C" fn IopGetDriverNames(
         (*ServiceName).Buffer = buf;
     }
 
-    core::ptr::write_volatile(DriverName, driverName);
+    *DriverName = driverName;
     status = STATUS_SUCCESS;
 
     if !basicInfo.is_null() {
@@ -817,7 +815,7 @@ unsafe extern "system" fn LdrProcessDriverModule(
         return Status;
     }
 
-    core::ptr::write_volatile(ModuleObject, LdrEntry);
+    *ModuleObject = LdrEntry;
     STATUS_SUCCESS
 }
 
@@ -1671,11 +1669,12 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
     DriverObjectExtensionSize: ULONG,
     DriverObjectExtension: *mut PVOID,
 ) -> NTSTATUS {
+    let mut OldIrql: KIRQL;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
     let NewDriverExtension: PIO_CLIENT_EXTENSION;
     let mut Inserted = 0u8;
 
-    core::ptr::write_volatile(DriverObjectExtension, core::ptr::null_mut());
+    *DriverObjectExtension = core::ptr::null_mut();
 
     NewDriverExtension = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -1692,7 +1691,7 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
         core::mem::size_of::<IO_CLIENT_EXTENSION>() + DriverObjectExtensionSize as usize,
     );
 
-    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc(); // [guard]
+    OldIrql = KeRaiseIrqlToDpcLevel();
 
     (*NewDriverExtension).ClientIdentificationAddress = ClientIdentificationAddress;
 
@@ -1711,14 +1710,14 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
         Inserted = 1u8;
     }
 
-    drop(irql_guard); // [guard-drop]
+    KeLowerIrql(OldIrql);
 
     if Inserted == 0 {
         ExFreePoolWithTag(NewDriverExtension as PVOID, TAG_DRIVER_EXTENSION);
         return STATUS_OBJECT_NAME_COLLISION;
     }
 
-    core::ptr::write_volatile(DriverObjectExtension, (NewDriverExtension as usize + core::mem::size_of::<IO_CLIENT_EXTENSION>()) as PVOID);
+    *DriverObjectExtension = (NewDriverExtension as usize + core::mem::size_of::<IO_CLIENT_EXTENSION>()) as PVOID;
     STATUS_SUCCESS
 }
 
@@ -1727,9 +1726,10 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
     DriverObject: PDRIVER_OBJECT,
     ClientIdentificationAddress: PVOID,
 ) -> PVOID {
+    let mut OldIrql: KIRQL = 0;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
 
-    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc(); // [guard]
+    OldIrql = KeRaiseIrqlToDpcLevel();
 
     DriverExtensions = (*((*DriverObject).DriverExtension as PEXTENDED_DRIVER_EXTENSION)).ClientDriverExtension;
     while !DriverExtensions.is_null() {
@@ -1740,7 +1740,7 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
         DriverExtensions = (*DriverExtensions).NextExtension;
     }
 
-    drop(irql_guard); // [guard-drop]
+    KeLowerIrql(OldIrql);
 
     if DriverExtensions.is_null() {
         return core::ptr::null_mut();

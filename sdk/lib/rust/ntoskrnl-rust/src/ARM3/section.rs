@@ -69,9 +69,8 @@ use ntkrnl_sys::ddk::{
     MiInitializePfnForOtherProcess,
     MiRemoveZeroPage,
     MiDecrementShareCount,
+    MiMakeSystemAddressValidPfn,
     MiUnlinkPageFromList,
-    MmIsAddressValid,
-    MmAccessFault,
     MiInsertPageInFreeList,
     ObOpenObjectByName,
     ObInsertObject,
@@ -654,7 +653,7 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
     let mut system_map_pde = pointer_pde;
     let mut temp_pde = ValidKernelPde;
     while pointer_pde <= last_pde {
-        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        let old_irql = MiAcquirePfnLock();
         if (*system_map_pde).valid() == false {
             MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
             MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
@@ -679,7 +678,7 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
                 MI_WRITE_VALID_PDE(pointer_pde, temp_pde);
             }
         }
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(old_irql);
         system_map_pde = system_map_pde.add(1);
         pointer_pde = pointer_pde.add(1);
     }
@@ -689,10 +688,10 @@ unsafe fn MiCheckPurgeAndUpMapCount(
     control_area: *mut _CONTROL_AREA,
     fail_if_system_views: BOOLEAN,
 ) -> NTSTATUS {
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfMappedViews += 1;
     (*control_area).NumberOfUserReferences += 1;
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(old_irql);
     STATUS_SUCCESS
 }
 
@@ -703,53 +702,21 @@ pub unsafe extern "system" fn MiLocateSubsection(vad: *mut _MMVAD_LONG, vpn: ULO
     subsection
 }
 
-/// Inner version of MiMakeSystemAddressValidPfn that uses PfnLockGuard.
-/// Consumes the guard, faults in the page, returns (LockChange, new_guard).
-unsafe fn MiMakeSystemAddressValidPfnInner(
-    VirtualAddress: PVOID,
-    guard: crate::ARM3::helpers::PfnLockGuard,
-) -> (ULONG, crate::ARM3::helpers::PfnLockGuard) {
-    let mut LockChange = 0u32;
-    let mut current_guard = guard;
-
-    while MmIsAddressValid(VirtualAddress) == 0 {
-        drop(current_guard); // [guard-drop] — releases PFN lock
-
-        let Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
-        if Status < 0 {
-            KeBugCheckEx(
-                0x7A,
-                3,
-                Status as ULONG_PTR,
-                0,
-                VirtualAddress as ULONG_PTR,
-            );
-        }
-
-        LockChange = 1;
-        current_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
-    }
-
-    (LockChange, current_guard)
-}
-
 unsafe fn MiSegmentDelete(segment: PSEGMENT) {
     let control_area = (*segment).ControlArea;
     let subsection = (control_area.add(1)) as PSUBSECTION;
     let mut pointer_pte = (*subsection).SubsectionBase as PMMPTE;
     let last_pte = pointer_pte.add((*segment).NonExtendedPtes as usize);
-    let mut pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let old_irql = MiAcquirePfnLock();
     let mut pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
     if (*pte_for_proto).valid() == false {
-        let (_, new_guard) = MiMakeSystemAddressValidPfnInner(pointer_pte as PVOID, pfn_guard);
-        pfn_guard = new_guard;
+        MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
     }
     while pointer_pte < last_pte {
         if MiIsPteOnPdeBoundary(pointer_pte) && pointer_pte != (*subsection).SubsectionBase as PMMPTE {
             pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
             if (*pte_for_proto).valid() == false {
-                let (_, new_guard) = MiMakeSystemAddressValidPfnInner(pointer_pte as PVOID, pfn_guard);
-                pfn_guard = new_guard;
+                MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
             }
         }
         let temp_pte = *pointer_pte;
@@ -766,30 +733,28 @@ unsafe fn MiSegmentDelete(segment: PSEGMENT) {
         (*pointer_pte).Long = 0;
         pointer_pte = pointer_pte.add(1);
     }
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(old_irql);
     ExFreePool(control_area as PVOID);
     ExFreePool(segment as PVOID);
 }
 
-/// Check if a control area should be deleted after reference count changes.
-/// Takes ownership of the PFN lock guard (releases it internally).
-unsafe fn MiCheckControlArea(control_area: *mut _CONTROL_AREA, pfn_guard: crate::ARM3::helpers::PfnLockGuard) {
+unsafe fn MiCheckControlArea(control_area: *mut _CONTROL_AREA, old_irql: KIRQL) {
     let mut delete_segment = false;
     if ((*control_area).NumberOfMappedViews == 0) && ((*control_area).NumberOfSectionReferences == 0) {
         (*control_area).u.Flags.set_BeingDeleted(1);
         delete_segment = true;
     }
-    drop(pfn_guard); // [guard-drop] — replaces MiReleasePfnLock(old_irql)
+    MiReleasePfnLock(old_irql);
     if delete_segment {
         MiSegmentDelete((*control_area).Segment);
     }
 }
 
 unsafe fn MiDereferenceControlArea(control_area: *mut _CONTROL_AREA) {
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfMappedViews -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, pfn_guard);
+    MiCheckControlArea(control_area, old_irql);
 }
 
 #[no_mangle]
@@ -802,10 +767,10 @@ pub unsafe extern "system" fn MiRemoveMappedView(current_process: PEPROCESS, vad
         vad as *mut _ as ntkrnl_sys::ddk::PMMVAD,
     );
     MiUnlockProcessWorkingSetUnsafe(current_process, current_thread);
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfMappedViews -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, pfn_guard);
+    MiCheckControlArea(control_area, old_irql);
 }
 
 unsafe fn MiUnmapViewOfSection(
@@ -917,7 +882,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         start_pde = MiAddressToPde(start_va);
         while start_pde <= end_pde {
             if (*start_pde).valid() == false {
-                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                let old_irql = MiAcquirePfnLock();
                 MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
                 MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
@@ -933,7 +898,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
                     start_pde as PVOID,
                     (*session_space).SessionPageDirectoryIndex as _,
                 );
-                drop(pfn_guard); // [guard-drop]
+                MiReleasePfnLock(old_irql);
                 actual_pages += 1;
             }
             start_pde = start_pde.add(1);
@@ -956,7 +921,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         index = ((start_va as ULONG_PTR - MmSessionBase as ULONG_PTR) >> 22) as usize;
         while start_pde <= end_pde {
             if (*((*session_space).PageTables as PMMPTE).add(index)).Long == 0 {
-                let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+                let old_irql = MiAcquirePfnLock();
                 MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
                 MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
@@ -973,7 +938,7 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
                     start_pde as PVOID,
                     (*session_space).SessionPageDirectoryIndex as _,
                 );
-                drop(pfn_guard); // [guard-drop]
+                MiReleasePfnLock(old_irql);
                 actual_pages += 1;
             }
             start_pde = start_pde.add(1);
@@ -1009,7 +974,7 @@ pub unsafe extern "C" fn MiMapViewInSystemSpace(
             MiDereferenceControlArea(control_area);
             return STATUS_INVALID_VIEW_SIZE;
         }
-        core::ptr::write_volatile(view_size, (section_size - (*section_offset).QuadPart) as SIZE_T);
+        *view_size = (section_size - (*section_offset).QuadPart) as SIZE_T;
     }
     if ((*section_offset).QuadPart + *view_size as i64) < (*section_offset).QuadPart {
         MiDereferenceControlArea(control_area);
@@ -1047,7 +1012,7 @@ pub unsafe extern "C" fn MiMapViewInSystemSpace(
         control_area,
         (*section_offset).QuadPart,
     );
-    core::ptr::write_volatile(mapped_base, base);
+    *mapped_base = base;
     STATUS_SUCCESS
 }
 
@@ -1312,7 +1277,7 @@ pub unsafe extern "system" fn MmGetImageInformation(image_information: PSECTION_
         RtlZeroMemory(image_information as PVOID, core::mem::size_of::<_SECTION_IMAGE_INFORMATION>());
         return;
     }
-    core::ptr::write_volatile(image_information, (*((*((section_object as PSECTION) as *mut _SECTION)).Segment as PMM_IMAGE_SECTION_OBJECT)).ImageInformation);
+    *image_information = (*((*((section_object as PSECTION) as *mut _SECTION)).Segment as PMM_IMAGE_SECTION_OBJECT)).ImageInformation;
 }
 
 unsafe fn MmGetFileNameForFileObject(
@@ -1417,7 +1382,7 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
             );
             RtlCopyUnicodeString(&mut (*section_name).SectionFileName, &module_file_name);
             if !return_length.is_null() {
-                core::ptr::write_volatile(return_length, module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>());
+                *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
             }
         } else {
             RtlInitEmptyUnicodeString(
@@ -1427,7 +1392,7 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
             );
             RtlCopyUnicodeString(&mut (*section_name).SectionFileName, &module_file_name);
             if !return_length.is_null() {
-                core::ptr::write_volatile(return_length, module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>());
+                *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
             }
         }
         RtlFreeUnicodeString(&mut module_file_name);
@@ -1452,7 +1417,7 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
         protection_mask as ULONG_PTR,
         previous_pte.page_frame_number() as PFN_NUMBER,
     );
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    let old_irql = MiAcquirePfnLock();
     let mut rebuild_pte = false;
     if (*pfn1).cache_attribute() == MiCached as u16 {
         if (protection_mask & (MM_NOCACHE | MM_NOACCESS)) != 0 {
@@ -1487,7 +1452,7 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
             if !(*pfn1).modified() {}
         }
     }
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(old_irql);
 }
 
 unsafe fn MiRemoveMappedPtes(
@@ -1503,7 +1468,7 @@ unsafe fn MiRemoveMappedPtes(
         if pte_contents.valid() {
             let pfn1 = MiGetPfnEntry(PFN_FROM_PTE(&pte_contents as *const MMPTE as *mut MMPTE));
             let pointer_pde = MiPteToPde(pointer_pte);
-            let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+            let old_irql = MiAcquirePfnLock();
             if MI_IS_PAGE_DIRTY(&pte_contents) {
                 (*pfn1).set_modified(true);
             }
@@ -1517,7 +1482,7 @@ unsafe fn MiRemoveMappedPtes(
             let pfn2 = MiGetPfnEntry(PFN_FROM_PTE(pointer_pde));
             MiDecrementShareCount(pfn2 as *mut _ as *mut DDK_MMPFN, PFN_FROM_PTE(pointer_pde) as _);
             MiDecrementShareCount(pfn1 as *mut _ as *mut DDK_MMPFN, PFN_FROM_PTE(&pte_contents as *const MMPTE as *mut MMPTE) as _);
-            drop(pfn_guard); // [guard-drop]
+            MiReleasePfnLock(old_irql);
         } else {
             if mmpte_software_prototype(&pte_contents) {
                 let _proto_pte = MiProtoPteToPte(&pte_contents as *const MMPTE as PMMPTE);
@@ -1528,10 +1493,10 @@ unsafe fn MiRemoveMappedPtes(
         number_of_ptes -= 1;
     }
     KeFlushCurrentTb();
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfUserReferences -= 1;
     (*control_area).NumberOfMappedViews -= 1;
-    MiCheckControlArea(control_area, pfn_guard);
+    MiCheckControlArea(control_area, old_irql);
 }
 
 unsafe fn MiRemoveFromSystemSpace(
@@ -1638,12 +1603,12 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             IoSetTopLevelIrp(0x01usize as ntkrnl_sys::ddk::PIRP); // FSRTL_FSP_TOP_LEVEL_IRP
             file_lock = true;
         }
-        let pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        let old_irql = MiAcquirePfnLock();
         (*control_area).u.Flags.set_BeingCreated(1);
         let _previous_section_pointer = (*file).SectionObjectPointer;
         (*(*file).SectionObjectPointer).DataSectionObject = control_area as *mut c_void;
         let mut segment: PSEGMENT = core::ptr::null_mut();
-        drop(pfn_guard_0); // [guard-drop]
+        MiReleasePfnLock(old_irql);
         status = MiCreateDataFileMap(
             file,
             &mut segment,
@@ -1653,12 +1618,12 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             kernel_call as ULONG,
         );
         if status < 0 {
-            let pfn_guard_1 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+            let old_irql = MiAcquirePfnLock();
             (*control_area).WaitingForDeletion = core::ptr::null_mut();
             (*control_area).u.Flags.set_FilePointerNull(1);
             (*(*file).SectionObjectPointer).DataSectionObject = core::ptr::null_mut();
             (*control_area).u.Flags.set_BeingCreated(0);
-            drop(pfn_guard_1); // [guard-drop]
+            MiReleasePfnLock(old_irql);
             if file_lock {
                 IoSetTopLevelIrp(core::ptr::null_mut());
             }
@@ -1673,10 +1638,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
             section.SizeOfSection.QuadPart = (*input_maximum_size).QuadPart;
         }
         // Clear BeingCreated on the control area
-        let pfn_guard_2 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        let old_irql = MiAcquirePfnLock();
         (*control_area).WaitingForDeletion = core::ptr::null_mut();
         (*control_area).u.Flags.set_BeingCreated(0);
-        drop(pfn_guard_2); // [guard-drop]
+        MiReleasePfnLock(old_irql);
     } else {
         if (allocation_attributes & SEC_IMAGE) != 0 {
             return STATUS_INVALID_FILE_FOR_SECTION;
@@ -1763,10 +1728,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
         }
         // Check if a user reference was added
         if user_ref_incremented {
-            let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+            let old_irql = MiAcquirePfnLock();
             (*control_area).NumberOfSectionReferences -= 1;
             (*control_area).NumberOfUserReferences -= 1;
-            MiCheckControlArea(control_area, pfn_guard);
+            MiCheckControlArea(control_area, old_irql);
         }
         return status;
     }
@@ -1821,10 +1786,10 @@ pub unsafe extern "system" fn MmCreateArm3Section(
 
     // The control area is not being created anymore
     if (*control_area).u.Flags.BeingCreated() == 1 {
-        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        let old_irql = MiAcquirePfnLock();
         (*control_area).u.Flags.set_BeingCreated(0);
         (*new_section).u.Flags.set_BeingCreated(0);
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(old_irql);
     }
 
     // Migrate the attribute into a flag
@@ -1849,7 +1814,7 @@ pub unsafe extern "system" fn MmCreateArm3Section(
     );
 
     // Return the object and the creation status
-    core::ptr::write_volatile(section_object, new_section as PVOID);
+    *section_object = new_section as PVOID;
     status
 }
 
@@ -1908,7 +1873,7 @@ pub unsafe extern "system" fn MmMapViewOfArm3Section(
                 return STATUS_INVALID_VIEW_SIZE;
             }
         }
-        core::ptr::write_volatile(view_size, calculated_view_size as SIZE_T);
+        *view_size = calculated_view_size as SIZE_T;
         if (MM_HIGHEST_VAD_ADDRESS as ULONG_PTR - *base_address as ULONG_PTR) < *view_size {
             return STATUS_INVALID_VIEW_SIZE;
         }
@@ -2048,11 +2013,11 @@ pub unsafe extern "system" fn MiDeleteARM3Section(object_body: PVOID) {
         MiRemoveNode(&mut (*((section_object as PSECTION) as *mut _SECTION)).Address as *mut _ as *mut _MMADDRESS_NODE, &mut MmSectionBasedRoot);
         KeReleaseGuardedMutex(&mut MmSectionBasedMutex as *mut _ as PKGUARDED_MUTEX);
     }
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let old_irql = MiAcquirePfnLock();
     let control_area = (*(*((section_object as PSECTION) as *mut _SECTION)).Segment).ControlArea;
     (*control_area).NumberOfSectionReferences -= 1;
     (*control_area).NumberOfUserReferences -= 1;
-    MiCheckControlArea(control_area, pfn_guard);
+    MiCheckControlArea(control_area, old_irql);
 }
 
 #[no_mangle]
@@ -2137,7 +2102,7 @@ pub unsafe extern "system" fn NtCreateSection(
         &mut handle,
     );
     if status >= 0 {
-        core::ptr::write_volatile(section_handle, handle);
+        *section_handle = handle;
     }
     status
 }
@@ -2162,7 +2127,7 @@ pub unsafe extern "system" fn NtOpenSection(
         core::ptr::null_mut(),
         &mut handle,
     );
-    core::ptr::write_volatile(section_handle, handle);
+    *section_handle = handle;
     status
 }
 
@@ -2182,11 +2147,9 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     extern "C" {
         fn ProbeForWritePointer(Address: *mut PVOID);
         fn ProbeForWriteSize_t(Address: *mut SIZE_T);
+        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
         static mut MmHighestPhysicalPage: PFN_NUMBER;
     }
-extern "system" {
-        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-}
 
     let previous_mode = ExGetPreviousMode();
 
@@ -2356,10 +2319,10 @@ extern "system" {
         }
 
         // Return parameters to user
-        core::ptr::write_volatile(base_address, safe_base_address);
-        core::ptr::write_volatile(view_size, safe_view_size);
+        *base_address = safe_base_address;
+        *view_size = safe_view_size;
         if !section_offset.is_null() {
-            core::ptr::write_volatile(section_offset, safe_section_offset);
+            *section_offset = safe_section_offset;
         }
     }
 

@@ -111,7 +111,7 @@ extern "system" {
     fn VidBufferToScreenBlt(Buffer: PUCHAR, X: ULONG, Y: ULONG, Width: ULONG, Height: ULONG, Delta: ULONG);
     fn VidScreenToBufferBlt(Buffer: PUCHAR, X: ULONG, Y: ULONG, Width: ULONG, Height: ULONG, Delta: ULONG);
 }
-extern "C" {
+extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
@@ -311,7 +311,7 @@ pub unsafe extern "system" fn BootAnimTickProgressBar(sub_percent_times100: ULON
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn InbvRotationThread(_context: PVOID) {
+pub unsafe extern "stdcall" fn InbvRotationThread(_context: PVOID) {
     InbvRotationThread_impl(_context);
 }
 #[no_mangle]
@@ -427,7 +427,7 @@ pub static mut DotHack: BOOLEAN = 1u8;
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn DisplayFilter(string: *mut PCSTR) {
+pub unsafe extern "stdcall" fn DisplayFilter(string: *mut PCSTR) {
     DisplayFilter_impl(string);
 }
 #[no_mangle]
@@ -440,7 +440,7 @@ pub unsafe extern "system" fn DisplayFilter_impl(string: *mut PCSTR) {
     if DotHack != 0 {
         let str_ptr = *string as *const i8;
         if *str_ptr == b'.' as i8 && *str_ptr.add(1) == 0 {
-            core::ptr::write_volatile(string, b"\0".as_ptr() as PCSTR);
+            *string = b"\0".as_ptr() as PCSTR;
         }
     }
 

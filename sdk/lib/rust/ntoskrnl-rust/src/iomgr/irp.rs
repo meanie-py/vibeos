@@ -313,7 +313,7 @@ unsafe extern "C" fn IopFreeIrpKernelApc(
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn IopFreeIrpKernelApc(
+unsafe extern "stdcall" fn IopFreeIrpKernelApc(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -328,7 +328,7 @@ unsafe extern "C" fn IopAbortIrpKernelApc(Apc: PKAPC) {
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn IopAbortIrpKernelApc(Apc: PKAPC) {
+unsafe extern "stdcall" fn IopAbortIrpKernelApc(Apc: PKAPC) {
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 
@@ -358,14 +358,15 @@ pub unsafe extern "system" fn IopCleanupFailedIrp(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: PIRP) {
+    let mut OldIrql: KIRQL = 0;
     let CancelResult: BOOLEAN;
     let mut Wait = LARGE_INTEGER { QuadPart: -100000 };
 
-    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
+    KeRaiseIrql(APC_LEVEL, addr_of_mut!(OldIrql));
 
     if KeReadStateEvent(EventObject) == 0 {
         CancelResult = IoCancelIrp(Irp);
-        drop(irql_guard); // [guard-drop]
+        KeLowerIrql(OldIrql);
 
         if CancelResult != 0 {
             while KeReadStateEvent(EventObject) == 0 {
@@ -382,27 +383,29 @@ pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: 
             );
         }
     } else {
-        drop(irql_guard); // [guard-drop]
+        KeLowerIrql(OldIrql);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDisassociateThreadIrp() {
+    let mut OldIrql: KIRQL = 0;
+    let LockIrql: KIRQL;
     let IrpThread: PETHREAD;
     let IrpEntry: PLIST_ENTRY;
     let mut ErrorLogEntry: PIO_ERROR_LOG_PACKET;
     let mut DeviceObject: PDEVICE_OBJECT = null_mut();
     let IoStackLocation: PIO_STACK_LOCATION;
 
-    let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
+    KeRaiseIrql(APC_LEVEL, addr_of_mut!(OldIrql));
 
     IrpThread = PsGetCurrentThread();
     if IsListEmpty(addr_of_mut!((*IrpThread).IrpList)) {
-        drop(irql_guard); // [guard-drop]
+        KeLowerIrql(OldIrql);
         return;
     }
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoCompletionLock) }; // [guard]
+    LockIrql = KeAcquireQueuedSpinLock(LockQueueIoCompletionLock);
 
     IrpEntry = (*IrpThread).IrpList.Flink;
     IopDeadIrp = CONTAINING_RECORD(
@@ -411,8 +414,8 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
     ) as PIRP;
 
     if (*IopDeadIrp).CurrentLocation == ((*IopDeadIrp).StackCount + 2) as i8 {
-        drop(qsl_guard); // [guard-drop]
-        drop(irql_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(LockQueueIoCompletionLock, LockIrql);
+        KeLowerIrql(OldIrql);
         return;
     }
 
@@ -425,8 +428,8 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
         DeviceObject = (*IoStackLocation).DeviceObject;
     }
 
-    drop(qsl_guard); // [guard-drop]
-    drop(irql_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoCompletionLock, LockIrql);
+    KeLowerIrql(OldIrql);
 
     if !DeviceObject.is_null() {
         ErrorLogEntry = IoAllocateErrorLogEntry(
@@ -482,7 +485,7 @@ pub unsafe extern "C" fn IopCompleteRequest(
 }
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn IopCompleteRequest(
+pub unsafe extern "stdcall" fn IopCompleteRequest(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -1357,7 +1360,7 @@ unsafe extern "C" fn IopSynchronousCompletion(
     STATUS_MORE_PROCESSING_REQUIRED
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn IopSynchronousCompletion(
+unsafe extern "stdcall" fn IopSynchronousCompletion(
     _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -1504,11 +1507,11 @@ pub unsafe extern "system" fn IoGetRequestorSessionId(
 ) -> NTSTATUS {
     if !(*Irp).Tail.Overlay.Thread.is_null() {
         let Process = (*(*Irp).Tail.Overlay.Thread).ThreadsProcess;
-        core::ptr::write_volatile(pSessionId, MmGetSessionId(Process));
+        *pSessionId = MmGetSessionId(Process);
         return STATUS_SUCCESS;
     }
 
-    core::ptr::write_volatile(pSessionId, (-1i32) as ULONG);
+    *pSessionId = (-1i32) as ULONG;
     STATUS_UNSUCCESSFUL
 }
 

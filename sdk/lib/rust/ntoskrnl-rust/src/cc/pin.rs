@@ -77,21 +77,30 @@ unsafe fn CcpFindBcb(
 }
 
 unsafe fn CcpDereferenceBcb(shared_cache_map: PROS_SHARED_CACHE_MAP, bcb: PINTERNAL_BCB) {
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+    let mut old_irql: KIRQL = 0;
+
+    KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
-    ) }; // [guard]
+        &mut old_irql,
+    );
     (*bcb).RefCount -= 1;
     let ref_count = (*bcb).RefCount;
     if ref_count == 0 {
         RemoveEntryList(core::ptr::addr_of_mut!((*bcb).BcbEntry) as PLIST_ENTRY);
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
 
         CcRosReleaseVacb(shared_cache_map, (*bcb).Vacb, 0u8, 0u8);
 
         ExDeleteResourceLite(core::ptr::addr_of_mut!((*bcb).Lock));
         ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(iBcbLookasideList), bcb as PVOID);
     } else {
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
     }
 }
 
@@ -103,6 +112,7 @@ unsafe fn CcpGetAppropriateBcb(
     pin_flags: ULONG,
     to_pin: BOOLEAN,
 ) -> PVOID {
+    let mut old_irql: KIRQL = 0;
     let mut result: BOOLEAN;
 
     let i_bcb = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(iBcbLookasideList)) as PINTERNAL_BCB;
@@ -121,15 +131,19 @@ unsafe fn CcpGetAppropriateBcb(
     (*i_bcb).RefCount = 1;
     ExInitializeResourceLite(core::ptr::addr_of_mut!((*i_bcb).Lock));
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+    KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
-    ) }; // [guard]
+        &mut old_irql,
+    );
 
     let mut dup_bcb = CcpFindBcb(shared_cache_map, file_offset, length, to_pin);
     if !dup_bcb.is_null() {
         (*dup_bcb).RefCount += 1;
         result = 1u8;
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
 
         if to_pin != 0 {
             if BooleanFlagOn(pin_flags, PIN_EXCLUSIVE) != 0 {
@@ -180,7 +194,10 @@ unsafe fn CcpGetAppropriateBcb(
             core::ptr::addr_of_mut!((*shared_cache_map).BcbList) as PLIST_ENTRY,
             core::ptr::addr_of_mut!((*i_bcb).BcbEntry) as PLIST_ENTRY,
         );
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
     }
 
     i_bcb as PVOID
@@ -194,6 +211,7 @@ unsafe fn CcpPinData(
     bcb: *mut PVOID,
     buffer: *mut PVOID,
 ) -> BOOLEAN {
+    let mut old_irql: KIRQL = 0;
     let mut length = length;
     let vacb_offset = ((*file_offset).QuadPart % VACB_MAPPING_GRANULARITY as i64) as ULONG;
 
@@ -201,14 +219,18 @@ unsafe fn CcpPinData(
         length = (VACB_MAPPING_GRANULARITY as ULONG) - vacb_offset;
     }
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+    KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
-    ) }; // [guard]
+        &mut old_irql,
+    );
     let mut new_bcb = CcpFindBcb(shared_cache_map, file_offset, length, 1u8);
 
     if !new_bcb.is_null() {
         (*new_bcb).RefCount += 1;
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
 
         let result = if BooleanFlagOn(flags, PIN_EXCLUSIVE) != 0 {
             ExAcquireResourceExclusiveLite(
@@ -229,7 +251,10 @@ unsafe fn CcpPinData(
 
         (*new_bcb).PinCount += 1;
     } else {
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
 
         if BooleanFlagOn(flags, PIN_IF_BCB) != 0 {
             return 0u8;
@@ -260,11 +285,11 @@ unsafe fn CcpPinData(
 
     if result == 0 {
         CcUnpinData(core::ptr::addr_of_mut!((*new_bcb).PFCB) as PVOID);
-        core::ptr::write_volatile(bcb, core::ptr::null_mut());
-        core::ptr::write_volatile(buffer, core::ptr::null_mut());
+        *bcb = core::ptr::null_mut();
+        *buffer = core::ptr::null_mut();
     } else {
-        core::ptr::write_volatile(bcb, core::ptr::addr_of_mut!((*new_bcb).PFCB) as PVOID);
-        core::ptr::write_volatile(buffer, ((*(*new_bcb).Vacb).BaseAddress as usize + vacb_offset as usize) as PVOID);
+        *bcb = core::ptr::addr_of_mut!((*new_bcb).PFCB) as PVOID;
+        *buffer = ((*(*new_bcb).Vacb).BaseAddress as usize + vacb_offset as usize) as PVOID;
     }
 
     result
@@ -293,13 +318,18 @@ pub unsafe extern "system" fn CcMapData(
         length = (VACB_MAPPING_GRANULARITY as ULONG) - vacb_offset;
     }
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+    let mut old_irql: KIRQL = 0;
+    KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
-    ) }; // [guard]
+        &mut old_irql,
+    );
     let mut i_bcb = CcpFindBcb(shared_cache_map, file_offset, length, 0u8);
 
     if i_bcb.is_null() {
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
         #[cfg(target_arch = "aarch64")]
         {
             core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
@@ -309,21 +339,24 @@ pub unsafe extern "system" fn CcMapData(
         let status = CcRosGetVacb(shared_cache_map, (*file_offset).QuadPart, &mut vacb);
         if status < 0 {
             // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
-            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
-            core::ptr::write_volatile(p_buffer, core::ptr::null_mut());
+            *p_bcb = core::ptr::null_mut();
+            *p_buffer = core::ptr::null_mut();
             return 0u8;
         }
 
         i_bcb = CcpGetAppropriateBcb(shared_cache_map, vacb, file_offset, length, 0, 0u8) as PINTERNAL_BCB;
         if i_bcb.is_null() {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
-            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
-            core::ptr::write_volatile(p_buffer, core::ptr::null_mut());
+            *p_bcb = core::ptr::null_mut();
+            *p_buffer = core::ptr::null_mut();
             return 0u8;
         }
     } else {
         (*i_bcb).RefCount += 1;
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
     }
 
     let result = CcRosEnsureVacbResident(
@@ -336,12 +369,12 @@ pub unsafe extern "system" fn CcMapData(
 
     if result == 0 {
         CcpDereferenceBcb(shared_cache_map, i_bcb);
-        core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
-        core::ptr::write_volatile(p_buffer, core::ptr::null_mut());
+        *p_bcb = core::ptr::null_mut();
+        *p_buffer = core::ptr::null_mut();
     } else {
-        core::ptr::write_volatile(p_bcb, core::ptr::addr_of_mut!((*i_bcb).PFCB) as PVOID);
+        *p_bcb = core::ptr::addr_of_mut!((*i_bcb).PFCB) as PVOID;
         let base_addr = (*(*i_bcb).Vacb).BaseAddress;
-        core::ptr::write_volatile(p_buffer, (base_addr as usize + vacb_offset as usize) as PVOID);
+        *p_buffer = (base_addr as usize + vacb_offset as usize) as PVOID;
     }
 
     result
@@ -464,6 +497,7 @@ pub unsafe extern "system" fn CcUnpinRepinnedBcb(
     io_status: PIO_STATUS_BLOCK,
 ) {
     let i_bcb = ((bcb as usize) - core::mem::offset_of!(_INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
+    let mut old_irql: KIRQL = 0;
     let shared_cache_map = (*(*i_bcb).Vacb).SharedCacheMap;
 
     (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
@@ -480,13 +514,17 @@ pub unsafe extern "system" fn CcUnpinRepinnedBcb(
         (*io_status).Information = 0;
     }
 
-    let spin_guard = unsafe { ntkrnl_sys::guards::SpinLockGuard::acquire(
+    KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
-    ) }; // [guard]
+        &mut old_irql,
+    );
     (*i_bcb).RefCount -= 1;
     if (*i_bcb).RefCount == 0 {
         RemoveEntryList(core::ptr::addr_of_mut!((*i_bcb).BcbEntry) as PLIST_ENTRY);
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
 
         if (*i_bcb).PinCount != 0 {
             ExReleaseResourceLite(core::ptr::addr_of_mut!((*i_bcb).Lock));
@@ -503,6 +541,9 @@ pub unsafe extern "system" fn CcUnpinRepinnedBcb(
         ExDeleteResourceLite(core::ptr::addr_of_mut!((*i_bcb).Lock));
         ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(iBcbLookasideList), i_bcb as PVOID);
     } else {
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(
+            core::ptr::addr_of_mut!((*shared_cache_map).BcbSpinLock) as *mut _,
+            old_irql,
+        );
     }
 }

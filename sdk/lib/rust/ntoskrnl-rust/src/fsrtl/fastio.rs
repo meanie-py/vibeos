@@ -1288,7 +1288,7 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
         ExReleaseResourceLite(OldResourceToAcquire);
     }
 
-    core::ptr::write_volatile(ResourceToRelease, ResourceToAcquire);
+    *ResourceToRelease = ResourceToAcquire;
     STATUS_SUCCESS
 }
 

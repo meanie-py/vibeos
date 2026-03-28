@@ -135,7 +135,7 @@ pub unsafe extern "system" fn PoNotifySystemTimeSet() {
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn PopGetSysButtonCompletion(
+pub unsafe extern "stdcall" fn PopGetSysButtonCompletion(
     _device_object: PDEVICE_OBJECT,
     irp: PIRP,
     context: PVOID,
@@ -184,7 +184,7 @@ pub unsafe extern "system" fn PopGetSysButtonCompletionInner(
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
-pub unsafe extern "system" fn PopGetSysButton(
+pub unsafe extern "stdcall" fn PopGetSysButton(
     device_object: PDEVICE_OBJECT,
     context: PVOID,
 ) {
@@ -245,7 +245,7 @@ pub unsafe extern "system" fn PopGetSysButtonInner(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "system" fn PopAddRemoveSysCapsCallback(
+pub unsafe extern "stdcall" fn PopAddRemoveSysCapsCallback(
     notification_structure: PVOID,
     context: PVOID,
 ) -> NTSTATUS {

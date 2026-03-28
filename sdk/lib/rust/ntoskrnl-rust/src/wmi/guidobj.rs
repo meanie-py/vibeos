@@ -135,7 +135,7 @@ pub unsafe extern "system" fn WmipInitializeGuidObjectType() -> NTSTATUS {
     object_type_initializer.ValidAccessMask = STANDARD_RIGHTS_ALL | 0xFFF;
     object_type_initializer.SecurityRequired = 1u8;
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<WMIP_GUID_OBJECT>() as ULONG;
-    // SAFETY: transmute needed because extern "system" != extern "system"/"C" in Rust's type system
+    // SAFETY: transmute needed because extern "system" != extern "stdcall"/"C" in Rust's type system
     object_type_initializer.SecurityProcedure = core::mem::transmute(WmipSecurityMethod as usize);
     object_type_initializer.DeleteProcedure = core::mem::transmute(WmipDeleteMethod as usize);
     object_type_initializer.CloseProcedure = core::mem::transmute(WmipCloseMethod as usize);
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn WmipCreateGuidObject(
     );
     (*guid_object).Guid = *Guid;
 
-    core::ptr::write_volatile(OutGuidObject, guid_object);
+    *OutGuidObject = guid_object;
 
     STATUS_SUCCESS
 }
@@ -236,7 +236,7 @@ pub unsafe extern "system" fn WmipOpenGuidObject(
 
     let mut status = WmipCreateGuidObject(Guid, &mut guid_object);
     if status < 0 {
-        core::ptr::write_volatile(OutGuidObject, core::ptr::null_mut());
+        *OutGuidObject = core::ptr::null_mut();
         return status;
     }
 
@@ -256,7 +256,7 @@ pub unsafe extern "system" fn WmipOpenGuidObject(
         guid_object = core::ptr::null_mut();
     }
 
-    core::ptr::write_volatile(OutGuidObject, guid_object as PVOID);
+    *OutGuidObject = guid_object as PVOID;
 
     status
 }

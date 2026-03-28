@@ -298,9 +298,9 @@ unsafe fn MiMapLockedPagesInUserSpace(
         MI_WRITE_VALID_PTE(PointerPte, TempPte);
 
         Pfn1 = MI_PFN_ELEMENT((*PointerPde).page_frame_number());
-        let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        OldIrql = MiAcquirePfnLock();
         (*Pfn1).set_share_count((*Pfn1).share_count().wrapping_add((1) as ULONG_PTR));
-        drop(pfn_guard); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
 
         MdlPages = MdlPages.add(1);
         PointerPte = PointerPte.add(1);
@@ -341,7 +341,7 @@ unsafe fn MiUnmapLockedPagesInUserSpace(mut BaseAddress: PVOID, Mdl: PMDL) {
     PsReturnProcessNonPagedPoolQuota(Process, (core::mem::size_of::<_MMVAD_LONG>()) as _);
 
     PointerPte = MiAddressToPte(BaseAddress);
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquirePfnLock();
     let mut NumberOfPagesLeft = NumberOfPages;
     while NumberOfPagesLeft != 0 && *MdlPages != LIST_HEAD {
         MI_ERASE_PTE(PointerPte);
@@ -361,7 +361,7 @@ unsafe fn MiUnmapLockedPagesInUserSpace(mut BaseAddress: PVOID, Mdl: PMDL) {
     }
 
     KeFlushProcessTb();
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
     MiUnlockProcessWorkingSetUnsafe(Process, Thread);
     MmUnlockAddressSpace(core::ptr::addr_of_mut!((*Process).Vm) as PVOID);
     ExFreePoolWithTag(Vad, u32::from_le_bytes(*b"Vadl"));
@@ -472,7 +472,7 @@ pub unsafe extern "system" fn MmFreePagesFromMdl(Mdl: PMDL) {
     Base = ((*Mdl).StartVa as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID;
     NumberOfPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, (*Mdl).ByteCount as usize) as LONG;
 
-    let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquirePfnLock();
 
     Pages = (Mdl as usize + core::mem::size_of::<_MDL>()) as PPFN_NUMBER;
     loop {
@@ -506,7 +506,7 @@ pub unsafe extern "system" fn MmFreePagesFromMdl(Mdl: PMDL) {
         NumberOfPages -= 1;
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     (*Mdl).MdlFlags &= !(MDL_PAGES_LOCKED as i16);
 }
@@ -907,7 +907,7 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
     PageCount = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, (*Mdl).ByteCount as usize)) as u32;
 
     if (Flags & MDL_IO_SPACE) != 0 {
-        let pfn_guard_0 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+        OldIrql = MiAcquirePfnLock();
 
         LastPage = MdlPages.add(PageCount as usize);
         loop {
@@ -925,7 +925,7 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
             }
         }
 
-        drop(pfn_guard_0); // [guard-drop]
+        MiReleasePfnLock(OldIrql);
 
         if !Process.is_null() {
             InterlockedExchangeAddSizeT(
@@ -966,7 +966,7 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
 
     MdlPages = (Mdl as usize + core::mem::size_of::<_MDL>()) as PPFN_NUMBER;
 
-    let pfn_guard_1 = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() }; // [guard]
+    OldIrql = MiAcquirePfnLock();
     loop {
         Pfn1 = *MdlPages as PMMPFN;
         MiDereferencePfnAndDropLockCount(Pfn1 as *mut _MMPFN);
@@ -976,7 +976,7 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
         }
     }
 
-    drop(pfn_guard_1); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 
     (*Mdl).MdlFlags &= !(MDL_PAGES_LOCKED as i16);
 }

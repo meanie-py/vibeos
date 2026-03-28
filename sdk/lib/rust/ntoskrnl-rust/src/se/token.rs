@@ -646,35 +646,40 @@ pub unsafe extern "system" fn SepCopyProxyData(_dest: *mut PVOID, _src: PVOID) -
 }
 
 #[no_mangle]
-unsafe fn SeExchangePrimaryToken_inner(
+pub unsafe extern "system" fn SeExchangePrimaryToken(
     process: PEPROCESS,
     new_access_token: PACCESS_TOKEN,
-) -> Result<PACCESS_TOKEN, (PACCESS_TOKEN, NTSTATUS)> {
+    old_access_token: *mut PACCESS_TOKEN,
+) -> NTSTATUS {
     let new_token = new_access_token as PTOKEN;
 
     if (*new_token).TokenType != TokenPrimary {
-        return Err((core::ptr::null_mut(), STATUS_BAD_TOKEN_TYPE));
+        return STATUS_BAD_TOKEN_TYPE;
     }
 
     if (*new_token).TokenInUse != 0 {
         let old_token = PsReferencePrimaryToken(process as *mut _EPROCESS);
         if old_token == new_token as PVOID {
-            return Ok(old_token as PACCESS_TOKEN);
+            *old_access_token = old_token as PACCESS_TOKEN;
+            return STATUS_SUCCESS;
         }
 
         let mut is_equal = 0u8;
         let status = SepCompareTokens(old_token as PTOKEN, new_token, &mut is_equal);
         if status < 0 {
             PsDereferencePrimaryToken(old_token);
-            return Err((core::ptr::null_mut(), status));
+            *old_access_token = core::ptr::null_mut();
+            return status;
         }
 
         if is_equal == 0 {
             PsDereferencePrimaryToken(old_token);
-            return Err((core::ptr::null_mut(), STATUS_TOKEN_ALREADY_IN_USE));
+            *old_access_token = core::ptr::null_mut();
+            return STATUS_TOKEN_ALREADY_IN_USE;
         }
 
-        return Ok(old_token as PACCESS_TOKEN);
+        *old_access_token = old_token as PACCESS_TOKEN;
+        return STATUS_SUCCESS;
     }
 
     SepAcquireTokenLockExclusive(new_token);
@@ -693,25 +698,8 @@ unsafe fn SeExchangePrimaryToken_inner(
     (*old_token).TokenInUse = 0u8;
     SepReleaseTokenLock(old_token);
 
-    Ok(old_token as PACCESS_TOKEN)
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn SeExchangePrimaryToken(
-    process: PEPROCESS,
-    new_access_token: PACCESS_TOKEN,
-    old_access_token: *mut PACCESS_TOKEN,
-) -> NTSTATUS {
-    match SeExchangePrimaryToken_inner(process, new_access_token) {
-        Ok(token) => {
-            core::ptr::write_volatile(old_access_token, token);
-            STATUS_SUCCESS
-        }
-        Err((token, status)) => {
-            core::ptr::write_volatile(old_access_token, token);
-            status
-        }
-    }
+    *old_access_token = old_token as PACCESS_TOKEN;
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -750,19 +738,19 @@ pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
     let mut doi_search = !default_owner_index.is_null();
 
     if pgi_search {
-        core::ptr::write_volatile(primary_group_index, (*token).UserAndGroupCount);
+        *primary_group_index = (*token).UserAndGroupCount;
     }
 
     if doi_search {
         if !default_owner.is_null() {
             if RtlEqualSid((*(*token).UserAndGroups.offset(0)).Sid, default_owner) != 0 {
-                core::ptr::write_volatile(default_owner_index, 0);
+                *default_owner_index = 0;
                 doi_search = false;
             } else {
-                core::ptr::write_volatile(default_owner_index, (*token).UserAndGroupCount);
+                *default_owner_index = (*token).UserAndGroupCount;
             }
         } else {
-            core::ptr::write_volatile(default_owner_index, 0);
+            *default_owner_index = 0;
             doi_search = false;
         }
     }
@@ -777,12 +765,12 @@ pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
             && RtlEqualSid((*(*token).UserAndGroups.offset(i as isize)).Sid, default_owner) != 0
             && ((*(*token).UserAndGroups.offset(i as isize)).Attributes & SE_GROUP_OWNER) != 0
         {
-            core::ptr::write_volatile(default_owner_index, i);
+            *default_owner_index = i;
             doi_search = false;
         }
 
         if pgi_search && RtlEqualSid((*(*token).UserAndGroups.offset(i as isize)).Sid, primary_group) != 0 {
-            core::ptr::write_volatile(primary_group_index, i);
+            *primary_group_index = i;
             pgi_search = false;
         }
     }
@@ -810,7 +798,7 @@ unsafe fn SepOpenThreadToken(
     previous_mode: KPROCESSOR_MODE,
     opened_token_handle: PHANDLE,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(opened_token_handle, core::ptr::null_mut());
+    *opened_token_handle = core::ptr::null_mut();
 
     if copy_on_open == 0 {
         let mut token_handle: HANDLE = core::ptr::null_mut();
@@ -826,7 +814,7 @@ unsafe fn SepOpenThreadToken(
         if status < 0 {
             return status;
         }
-        core::ptr::write_volatile(opened_token_handle, token_handle);
+        *opened_token_handle = token_handle;
         return STATUS_SUCCESS;
     }
 
@@ -945,18 +933,19 @@ unsafe fn SepOpenThreadToken(
         return status;
     }
 
-    core::ptr::write_volatile(opened_token_handle, token_handle);
+    *opened_token_handle = token_handle;
     ObDereferenceObject(new_token as PVOID);
     ObDereferenceObject(thread2 as PVOID);
     status
 }
 
 #[no_mangle]
-unsafe fn SeSubProcessToken_inner(
+pub unsafe extern "system" fn SeSubProcessToken(
     parent_token: PTOKEN,
+    token: *mut PTOKEN,
     in_use: BOOLEAN,
     session_id: ULONG,
-) -> Result<(PTOKEN, NTSTATUS), NTSTATUS> {
+) -> NTSTATUS {
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
@@ -970,48 +959,31 @@ unsafe fn SeSubProcessToken_inner(
         0i8,
         &mut new_token,
     );
-    if status < 0 {
-        return Err(status);
-    }
-
-    let status = ObInsertObject(
-        new_token as PVOID,
-        core::ptr::null_mut(),
-        0,
-        0,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-    );
-    if status < 0 {
-        return Err(status);
-    }
-
-    (*new_token).SessionId = session_id;
-    (*new_token).TokenInUse = in_use;
-    Ok((new_token, status))
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn SeSubProcessToken(
-    parent_token: PTOKEN,
-    token: *mut PTOKEN,
-    in_use: BOOLEAN,
-    session_id: ULONG,
-) -> NTSTATUS {
-    match SeSubProcessToken_inner(parent_token, in_use, session_id) {
-        Ok((new_token, status)) => {
-            core::ptr::write_volatile(token, new_token);
-            status
+    if status >= 0 {
+        let status = ObInsertObject(
+            new_token as PVOID,
+            core::ptr::null_mut(),
+            0,
+            0,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if status >= 0 {
+            (*new_token).SessionId = session_id;
+            (*new_token).TokenInUse = in_use;
+            *token = new_token;
         }
-        Err(status) => status,
     }
+    status
 }
 
 #[no_mangle]
-unsafe fn SeIsTokenChild_inner(token: PTOKEN) -> Result<BOOLEAN, NTSTATUS> {
+pub unsafe extern "system" fn SeIsTokenChild(token: PTOKEN, is_child: *mut BOOLEAN) -> NTSTATUS {
+    *is_child = 0u8;
+
     let process_token = PsReferencePrimaryToken(PsGetCurrentProcess() as *mut _EPROCESS);
     if process_token.is_null() {
-        return Err(STATUS_UNSUCCESSFUL);
+        return STATUS_UNSUCCESSFUL;
     }
 
     let process_token_id = (*(process_token as PTOKEN)).TokenId;
@@ -1028,31 +1000,22 @@ unsafe fn SeIsTokenChild_inner(token: PTOKEN) -> Result<BOOLEAN, NTSTATUS> {
         &process_token_id as *const LUID,
     ) != 0
     {
-        Ok(1u8)
-    } else {
-        Ok(0u8)
+        *is_child = 1u8;
     }
+
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SeIsTokenChild(token: PTOKEN, is_child: *mut BOOLEAN) -> NTSTATUS {
-    match SeIsTokenChild_inner(token) {
-        Ok(result) => {
-            core::ptr::write_volatile(is_child, result);
-            STATUS_SUCCESS
-        }
-        Err(status) => {
-            core::ptr::write_volatile(is_child, 0u8);
-            status
-        }
-    }
-}
+pub unsafe extern "system" fn SeIsTokenSibling(
+    token: PTOKEN,
+    is_sibling: *mut BOOLEAN,
+) -> NTSTATUS {
+    *is_sibling = 0u8;
 
-#[no_mangle]
-unsafe fn SeIsTokenSibling_inner(token: PTOKEN) -> Result<BOOLEAN, NTSTATUS> {
     let process_token = PsReferencePrimaryToken(PsGetCurrentProcess() as *mut _EPROCESS);
     if process_token.is_null() {
-        return Err(STATUS_UNSUCCESSFUL);
+        return STATUS_UNSUCCESSFUL;
     }
 
     let process_parent_id = (*(process_token as PTOKEN)).ParentTokenId;
@@ -1075,27 +1038,10 @@ unsafe fn SeIsTokenSibling_inner(token: PTOKEN) -> Result<BOOLEAN, NTSTATUS> {
             &process_auth_id as *const LUID,
         ) != 0
     {
-        Ok(1u8)
-    } else {
-        Ok(0u8)
+        *is_sibling = 1u8;
     }
-}
 
-#[no_mangle]
-pub unsafe extern "system" fn SeIsTokenSibling(
-    token: PTOKEN,
-    is_sibling: *mut BOOLEAN,
-) -> NTSTATUS {
-    match SeIsTokenSibling_inner(token) {
-        Ok(result) => {
-            core::ptr::write_volatile(is_sibling, result);
-            STATUS_SUCCESS
-        }
-        Err(status) => {
-            core::ptr::write_volatile(is_sibling, 0u8);
-            status
-        }
-    }
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -1470,9 +1416,8 @@ pub unsafe extern "system" fn SeQuerySessionIdToken(
     p_session_id: *mut ULONG,
 ) -> NTSTATUS {
     SepAcquireTokenLockShared(token as PTOKEN);
-    let session_id = (*(token as PTOKEN)).SessionId;
+    *p_session_id = (*(token as PTOKEN)).SessionId;
     SepReleaseTokenLock(token as PTOKEN);
-    core::ptr::write_volatile(p_session_id, session_id);
     STATUS_SUCCESS
 }
 
@@ -1481,8 +1426,7 @@ pub unsafe extern "system" fn SeQueryAuthenticationIdToken(
     token: PACCESS_TOKEN,
     logon_id: PLUID,
 ) -> NTSTATUS {
-    let auth_id = (*(token as PTOKEN)).AuthenticationId;
-    core::ptr::write_volatile(logon_id, auth_id);
+    *logon_id = (*(token as PTOKEN)).AuthenticationId;
     STATUS_SUCCESS
 }
 

@@ -396,40 +396,28 @@ pub unsafe extern "system" fn PsReferencePrimaryToken(Process: PEPROCESS) -> PAC
     Token
 }
 
-unsafe fn PsOpenTokenOfProcess_inner(
-    ProcessHandle: HANDLE,
-) -> Result<PACCESS_TOKEN, NTSTATUS> {
-    let mut Process: PEPROCESS = core::ptr::null_mut();
-
-    let Status = ObReferenceObjectByHandle(
-        ProcessHandle,
-        PROCESS_QUERY_INFORMATION,
-        PsProcessType as POBJECT_TYPE,
-        ExGetPreviousMode(),
-        &mut Process as *mut _ as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-    if Status < 0 {
-        return Err(Status);
-    }
-
-    let token = PsReferencePrimaryToken(Process);
-    ObDereferenceObject(Process as PVOID);
-    Ok(token)
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn PsOpenTokenOfProcess(
     ProcessHandle: HANDLE,
     Token: *mut PACCESS_TOKEN,
 ) -> NTSTATUS {
-    match PsOpenTokenOfProcess_inner(ProcessHandle) {
-        Ok(token) => {
-            core::ptr::write_volatile(Token, token);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
+    let mut Process: PEPROCESS = core::ptr::null_mut();
+    let Status: NTSTATUS;
+
+    Status = ObReferenceObjectByHandle(
+        ProcessHandle,
+        PROCESS_QUERY_INFORMATION,
+        PsProcessType as POBJECT_TYPE,
+        ExGetPreviousMode(),
+        &Process as *const _ as *mut PVOID,
+        core::ptr::null_mut(),
+    );
+    if Status >= 0 {
+        *Token = PsReferencePrimaryToken(Process);
+        ObDereferenceObject(Process as PVOID);
     }
+
+    Status
 }
 
 #[no_mangle]
@@ -661,12 +649,11 @@ pub unsafe extern "system" fn PsReferenceEffectiveToken(
             Token = (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).Token as PACCESS_TOKEN;
             ObReferenceObject(Token as PVOID);
 
-            // Use write_volatile to prevent captures(none) optimization
-            core::ptr::write_volatile(TokenType, TokenImpersonation);
-            core::ptr::write_volatile(EffectiveOnly,
-                (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).EffectiveOnly);
-            core::ptr::write_volatile(ImpersonationLevel,
-                (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).ImpersonationLevel);
+            *TokenType = TokenImpersonation;
+            *EffectiveOnly =
+                (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).EffectiveOnly;
+            *ImpersonationLevel =
+                (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).ImpersonationLevel;
 
             PspUnlockProcessSecurityShared(Process);
             return Token;
@@ -687,9 +674,8 @@ pub unsafe extern "system" fn PsReferenceEffectiveToken(
         PspUnlockProcessSecurityShared(Process);
     }
 
-    // Use write_volatile to prevent captures(none) optimization
-    core::ptr::write_volatile(TokenType, TokenPrimary);
-    core::ptr::write_volatile(EffectiveOnly, 0u8);
+    *TokenType = TokenPrimary;
+    *EffectiveOnly = 0u8;
     Token
 }
 
@@ -710,13 +696,10 @@ pub unsafe extern "system" fn PsReferenceImpersonationToken(
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() != 0 {
         ObReferenceObject((*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).Token as PVOID);
-        // Use write_volatile to prevent captures(none) optimization
-        core::ptr::write_volatile(ImpersonationLevel,
-            (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).ImpersonationLevel);
-        core::ptr::write_volatile(CopyOnOpen,
-            (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).CopyOnOpen);
-        core::ptr::write_volatile(EffectiveOnly,
-            (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).EffectiveOnly);
+        *ImpersonationLevel =
+            (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).ImpersonationLevel;
+        *CopyOnOpen = (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).CopyOnOpen;
+        *EffectiveOnly = (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).EffectiveOnly;
 
         Token = (*(*(Thread as *mut _ETHREAD)).ImpersonationInfo).Token as PACCESS_TOKEN;
     }

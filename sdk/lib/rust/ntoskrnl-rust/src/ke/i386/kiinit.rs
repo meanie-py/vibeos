@@ -204,7 +204,7 @@ extern "C" {
 }
 
 // KeIpiGenericCall callback functions — stdcall with c_ulong ULONG_PTR on i386
-extern "system" {
+extern "stdcall" {
     fn Ki386EnableTargetLargePage(Arg: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableGlobalPage(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableDE(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
@@ -848,24 +848,24 @@ pub unsafe extern "fastcall" fn KiGetMachineBootPointers(
     let Fs: u16;
     core::arch::asm!("mov {:x}, fs", out(reg) Fs, options(nomem, nostack));
 
-    core::ptr::write_volatile(Gdt, gdt_base as PKGDTENTRY);
-    core::ptr::write_volatile(Idt, idt_base as PKIDTENTRY);
+    *Gdt = gdt_base as PKGDTENTRY;
+    *Idt = idt_base as PKIDTENTRY;
 
     PcrSelector = *((gdt_base as ULONG_PTR + (Fs & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    core::ptr::write_volatile(Pcr, (PcrSelector.BaseLow as ULONG_PTR
+    *Pcr = (PcrSelector.BaseLow as ULONG_PTR
         | ((PcrSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
         | ((PcrSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKIPCR);
+        as PKIPCR;
 
     TssSelector = *((gdt_base as ULONG_PTR + (Tr & !RPL_MASK) as ULONG_PTR)
         as *const _KGDTENTRY);
 
-    core::ptr::write_volatile(Tss, (TssSelector.BaseLow as ULONG_PTR
+    *Tss = (TssSelector.BaseLow as ULONG_PTR
         | ((TssSelector.HighWord.Bytes.BaseMid as ULONG_PTR) << 16)
         | ((TssSelector.HighWord.Bytes.BaseHi as ULONG_PTR) << 24))
-        as PKTSS);
+        as PKTSS;
 }
 
 // CODE_SEG("INIT")

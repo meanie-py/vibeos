@@ -256,14 +256,23 @@ pub unsafe extern "system" fn ObpDeleteEntryDirectory(Context: POBP_LOOKUP_CONTE
     1u8
 }
 
-unsafe fn NtOpenDirectoryObject_inner(
+#[no_mangle]
+pub unsafe extern "system" fn NtOpenDirectoryObject(
+    DirectoryHandle: PHANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> Result<HANDLE, NTSTATUS> {
+) -> NTSTATUS {
     let mut Directory: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+    let mut Status: NTSTATUS;
 
-    let Status = ObOpenObjectByName(
+    if PreviousMode != 0 {
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
+    }
+
+    Status = ObOpenObjectByName(
         ObjectAttributes,
         ObpDirectoryObjectType,
         PreviousMode,
@@ -273,33 +282,10 @@ unsafe fn NtOpenDirectoryObject_inner(
         core::ptr::addr_of_mut!(Directory),
     );
     if Status >= 0 {
-        Ok(Directory)
-    } else {
-        Err(Status)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn NtOpenDirectoryObject(
-    DirectoryHandle: PHANDLE,
-    DesiredAccess: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
-    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
-
-    if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
-            return s;
-        }
+        *DirectoryHandle = Directory;
     }
 
-    match NtOpenDirectoryObject_inner(DesiredAccess, ObjectAttributes) {
-        Ok(handle) => {
-            core::ptr::write_volatile(DirectoryHandle, handle);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    Status
 }
 
 #[no_mangle]
@@ -488,7 +474,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
             i -= 1;
         }
 
-        core::ptr::write_volatile(Context, CurrentEntry);
+        *Context = CurrentEntry;
     }
 
     core::ptr::copy_nonoverlapping(
@@ -498,7 +484,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     );
 
     if !ReturnLength.is_null() {
-        core::ptr::write_volatile(ReturnLength, TotalLength);
+        *ReturnLength = TotalLength;
     }
 
     ObpReleaseDirectoryLock(Directory, core::ptr::addr_of_mut!(LookupContext));
@@ -509,15 +495,24 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     Status
 }
 
-unsafe fn NtCreateDirectoryObject_inner(
+#[no_mangle]
+pub unsafe extern "system" fn NtCreateDirectoryObject(
+    DirectoryHandle: PHANDLE,
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> Result<HANDLE, NTSTATUS> {
+) -> NTSTATUS {
     let mut Directory: POBJECT_DIRECTORY = core::ptr::null_mut();
     let mut NewHandle: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+    let mut Status: NTSTATUS;
 
-    let mut Status = ObCreateObject(
+    if PreviousMode != 0 {
+        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+            return s;
+        }
+    }
+
+    Status = ObCreateObject(
         PreviousMode,
         ObpDirectoryObjectType,
         ObjectAttributes,
@@ -529,7 +524,7 @@ unsafe fn NtCreateDirectoryObject_inner(
         core::ptr::addr_of_mut!(Directory) as *mut PVOID,
     );
     if Status < 0 {
-        return Err(Status);
+        return Status;
     }
 
     core::ptr::write_bytes(Directory as *mut u8, 0, core::mem::size_of::<_OBJECT_DIRECTORY>());
@@ -545,34 +540,9 @@ unsafe fn NtCreateDirectoryObject_inner(
         core::ptr::addr_of_mut!(NewHandle),
     );
 
-    if Status >= 0 {
-        Ok(NewHandle)
-    } else {
-        Err(Status)
-    }
-}
+    *DirectoryHandle = NewHandle;
 
-#[no_mangle]
-pub unsafe extern "system" fn NtCreateDirectoryObject(
-    DirectoryHandle: PHANDLE,
-    DesiredAccess: ACCESS_MASK,
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-) -> NTSTATUS {
-    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
-
-    if PreviousMode != 0 {
-        if let Err(s) = probe_user_buffer(DirectoryHandle as _, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
-            return s;
-        }
-    }
-
-    match NtCreateDirectoryObject_inner(DesiredAccess, ObjectAttributes) {
-        Ok(handle) => {
-            core::ptr::write_volatile(DirectoryHandle, handle);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    Status
 }
 
 // ============================================================================

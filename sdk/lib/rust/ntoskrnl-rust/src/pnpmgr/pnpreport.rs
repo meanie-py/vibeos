@@ -174,7 +174,7 @@ unsafe fn PpSetCustomTargetEvent(
     NotificationStructure: PTARGET_DEVICE_CUSTOM_NOTIFICATION,
 ) -> NTSTATUS {
     if !SyncEvent.is_null() {
-        core::ptr::write_volatile(SyncStatus, STATUS_PENDING);
+        *SyncStatus = STATUS_PENDING;
     }
 
     PiNotifyTargetDeviceChange(
@@ -185,7 +185,7 @@ unsafe fn PpSetCustomTargetEvent(
 
     if !SyncEvent.is_null() {
         KeSetEvent(SyncEvent as PVOID, 0i32, 0u8);
-        core::ptr::write_volatile(SyncStatus, STATUS_SUCCESS);
+        *SyncStatus = STATUS_SUCCESS;
     }
 
     STATUS_SUCCESS
@@ -425,7 +425,7 @@ pub unsafe extern "system" fn IoReportDetectedDevice(
     PiQueueDeviceAction(Pdo, PiActionEnumDeviceTree, core::ptr::null_mut(), core::ptr::null_mut());
 
     if !DeviceObject.is_null() {
-        core::ptr::write_volatile(DeviceObject, Pdo);
+        *DeviceObject = Pdo;
     }
 
     STATUS_SUCCESS
@@ -488,7 +488,7 @@ pub unsafe extern "system" fn IoReportResourceForDetection(
     _DeviceListSize: ULONG,
     ConflictDetected: *mut BOOLEAN,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ConflictDetected, 0u8);
+    *ConflictDetected = 0u8;
 
     if DriverList.is_null() && DeviceList.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -498,7 +498,7 @@ pub unsafe extern "system" fn IoReportResourceForDetection(
 
     let Status = IopDetectResourceConflict(ResourceList, 1u8, core::ptr::null_mut());
     if Status == STATUS_CONFLICTING_ADDRESSES {
-        core::ptr::write_volatile(ConflictDetected, 1u8);
+        *ConflictDetected = 1u8;
     } else if Status >= 0 {
         // TODO: Claim the resources in the ResourceMap
     }

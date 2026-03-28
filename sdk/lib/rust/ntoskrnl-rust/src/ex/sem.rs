@@ -201,7 +201,6 @@ pub unsafe extern "system" fn NtOpenSemaphore(
 }
 
 #[no_mangle]
-#[inline(never)] // LLVM interprocedural captures(none) replaces body with ud2 on some CGU partitionings
 pub unsafe extern "system" fn NtQuerySemaphore(
     SemaphoreHandle: HANDLE,
     SemaphoreInformationClass: ULONG,

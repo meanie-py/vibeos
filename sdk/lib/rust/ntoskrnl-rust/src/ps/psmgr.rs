@@ -269,8 +269,7 @@ pub unsafe extern "system" fn PspMapSystemDll(
     }
 
     if !dll_base.is_null() {
-        // Use write_volatile to prevent captures(none) optimization
-        core::ptr::write_volatile(dll_base, image_base);
+        *dll_base = image_base;
     }
     status
 }
@@ -639,21 +638,20 @@ pub unsafe extern "system" fn PsGetVersion(
     build_number: *mut ULONG,
     csd_version: PUNICODE_STRING,
 ) -> BOOLEAN {
-    // Use write_volatile to prevent captures(none) optimization
     if !major_version.is_null() {
-        core::ptr::write_volatile(major_version, NtMajorVersion);
+        *major_version = NtMajorVersion;
     }
     if !minor_version.is_null() {
-        core::ptr::write_volatile(minor_version, NtMinorVersion);
+        *minor_version = NtMinorVersion;
     }
     if !build_number.is_null() {
-        core::ptr::write_volatile(build_number, NtBuildNumber & 0x3FFF);
+        *build_number = NtBuildNumber & 0x3FFF;
     }
 
     if !csd_version.is_null() {
-        core::ptr::write_volatile(&mut (*csd_version).Length, CmCSDVersionString.Length);
-        core::ptr::write_volatile(&mut (*csd_version).MaximumLength, CmCSDVersionString.MaximumLength);
-        core::ptr::write_volatile(&mut (*csd_version).Buffer, CmCSDVersionString.Buffer);
+        (*csd_version).Length = CmCSDVersionString.Length;
+        (*csd_version).MaximumLength = CmCSDVersionString.MaximumLength;
+        (*csd_version).Buffer = CmCSDVersionString.Buffer;
     }
 
     if (NtBuildNumber >> 28) == 0xC { 1u8 } else { 0u8 }

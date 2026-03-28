@@ -93,7 +93,7 @@ pub unsafe extern "C" fn IopSynchronousCall(
 
     ObDereferenceObject(TopDeviceObject as PVOID);
 
-    core::ptr::write_volatile(Information, IoStatusBlock.Information as PVOID);
+    *Information = IoStatusBlock.Information as PVOID;
     Status
 }
 
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn PiIrpQueryResources(
         core::ptr::addr_of_mut!(longRes) as *mut PVOID,
     );
     if status >= 0 {
-        core::ptr::write_volatile(Resources, longRes as PVOID as PCM_RESOURCE_LIST);
+        *Resources = longRes as PVOID as PCM_RESOURCE_LIST;
     }
 
     status
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn PiIrpQueryResourceRequirements(
         core::ptr::addr_of_mut!(longRes) as *mut PVOID,
     );
     if status >= 0 {
-        core::ptr::write_volatile(Resources, longRes as PVOID as PIO_RESOURCE_REQUIREMENTS_LIST);
+        *Resources = longRes as PVOID as PIO_RESOURCE_REQUIREMENTS_LIST;
     }
 
     status
@@ -260,7 +260,7 @@ pub unsafe extern "C" fn PiIrpQueryDeviceText(
         core::ptr::addr_of_mut!(longText) as *mut PVOID,
     );
     if status >= 0 {
-        core::ptr::write_volatile(DeviceText, longText as PVOID as PWSTR);
+        *DeviceText = longText as PVOID as PWSTR;
     }
 
     status
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn PiIrpQueryPnPDeviceState(
         core::ptr::addr_of_mut!(longState) as *mut PVOID,
     );
     if status >= 0 {
-        core::ptr::write_volatile(DeviceState, longState as ULONG);
+        *DeviceState = longState as ULONG;
     }
 
     status

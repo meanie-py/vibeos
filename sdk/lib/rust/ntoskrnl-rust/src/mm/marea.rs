@@ -234,7 +234,7 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
         type VirtFn = unsafe extern "system" fn(PEPROCESS, PVOID, *mut BOOLEAN, *mut ntkrnl_sys::ddk::PFN_NUMBER) -> BOOLEAN;
         // Cast fn items → usize, volatile-read to make opaque, transmute back.
         // The usize intermediate avoids calling convention type mismatches between
-        // bindgen's extern "system"/"C" and our extern "system" type aliases.
+        // bindgen's extern "stdcall"/"C" and our extern "system" type aliases.
         let is_swap_fn: IsSwapFn = {
             let mut p = MmIsPageSwapEntry as usize;
             p = core::ptr::read_volatile(&p);
@@ -366,12 +366,12 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
     
     if (*BaseAddress).is_null() {
         let tmpLength = ((Length + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-        core::ptr::write_volatile(BaseAddress, MmFindGap(
+        *BaseAddress = MmFindGap(
             AddressSpace,
             tmpLength,
             Granularity as ULONG_PTR,
             if (AllocationFlags & MEM_TOP_DOWN as ULONG) == MEM_TOP_DOWN as ULONG { 1 } else { 0 },
-        ));
+        );
         
         if (*BaseAddress).is_null() {
             if (Type & MEMORY_AREA_STATIC) == 0 {
@@ -385,7 +385,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     } else {
         let EndingAddress = ((*BaseAddress) as ULONG_PTR + Length - 1) | (PAGE_SIZE - 1);
-        core::ptr::write_volatile(BaseAddress, ((*BaseAddress) as ULONG_PTR & !(Granularity as usize - 1)) as PVOID);
+        *BaseAddress = ((*BaseAddress) as ULONG_PTR & !(Granularity as usize - 1)) as PVOID;
         let tmpLength = EndingAddress + 1 - (*BaseAddress) as ULONG_PTR;
         
         if MmGetAddressSpaceOwner(AddressSpace).is_null() && (*BaseAddress) < MmSystemRangeStart {
@@ -417,7 +417,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     }
     
-    core::ptr::write_volatile(Result, MemoryArea);
+    *Result = MemoryArea;
     
     STATUS_SUCCESS
 }

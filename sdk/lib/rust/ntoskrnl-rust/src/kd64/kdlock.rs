@@ -21,10 +21,20 @@ extern "C" {
     fn KeDisableInterrupts() -> BOOLEAN;
     fn KeRestoreInterrupts(enable: BOOLEAN);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
 }
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiAcquireSpinLock(lock: *mut KSPIN_LOCK);
+}
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
 }
 

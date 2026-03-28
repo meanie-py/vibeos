@@ -205,7 +205,7 @@ pub unsafe extern "system" fn SePrivilegePolicyCheck(
             privilege_size = core::mem::size_of::<PRIVILEGE_SET>() as SIZE_T
                 + (privilege_count as SIZE_T - 1) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as SIZE_T;
             privilege_set = ExAllocatePoolWithTag(PagedPool, privilege_size, TAG_PRIVILEGE_SET) as PPRIVILEGE_SET;
-            core::ptr::write_volatile(out_privilege_set, privilege_set);
+            *out_privilege_set = privilege_set;
             if privilege_set.is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -224,7 +224,7 @@ pub unsafe extern "system" fn SePrivilegePolicyCheck(
                 (*privilege_set).Privilege[index as usize].Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
             }
         } else {
-            core::ptr::write_volatile(out_privilege_set, core::ptr::null_mut());
+            *out_privilege_set = core::ptr::null_mut();
         }
     }
 
@@ -281,8 +281,8 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
     let mut status = STATUS_SUCCESS;
 
     if privilege_count == 0 {
-        core::ptr::write_volatile(dest, core::ptr::null_mut());
-        core::ptr::write_volatile(length, 0);
+        *dest = core::ptr::null_mut();
+        *length = 0;
         return STATUS_SUCCESS;
     }
 
@@ -291,12 +291,12 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
     }
 
     if previous_mode == 0i8 && capture_if_kernel == 0 {
-        core::ptr::write_volatile(dest, src);
+        *dest = src;
         return STATUS_SUCCESS;
     }
 
     buffer_size = privilege_count * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
-    core::ptr::write_volatile(length, (buffer_size + 3) & !3);
+    *length = (buffer_size + 3) & !3;
 
     if previous_mode != 0i8 {
         if let Err(s) = probe_user_buffer(src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
@@ -309,9 +309,9 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
             return STATUS_BUFFER_TOO_SMALL;
         }
 
-        core::ptr::write_volatile(dest, allocated_mem);
+        *dest = allocated_mem;
     } else {
-        core::ptr::write_volatile(dest, ExAllocatePoolWithTag(pool_type, buffer_size as SIZE_T, TAG_LUID) as PLUID_AND_ATTRIBUTES);
+        *dest = ExAllocatePoolWithTag(pool_type, buffer_size as SIZE_T, TAG_LUID) as PLUID_AND_ATTRIBUTES;
         if (*dest).is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }

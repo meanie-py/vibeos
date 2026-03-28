@@ -12,7 +12,7 @@ use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PIRP, PIO_STACK_LOCATION,
     PVPB, PUNICODE_STRING,
     ACCESS_MASK,
-    IoCreateDevice, IoDeleteDevice,
+    IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, IoCreateDevice, IoDeleteDevice,
     IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending,
     IofCompleteRequest, IofCallDriver,
     IoSetCompletionRoutine, IoCheckShareAccess, IoSetShareAccess, IoRemoveShareAccess,
@@ -198,10 +198,11 @@ unsafe fn RawInitializeVcb(
 }
 
 unsafe fn RawCheckForDismount(Vcb: PVCB, CreateOperation: BOOLEAN) -> BOOLEAN {
+    let mut OldIrql: KIRQL = 0;
     let Vpb: PVPB;
     let Delete: BOOLEAN;
 
-    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
+    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(OldIrql));
 
     Vpb = (*Vcb).Vpb;
     if (*(*Vcb).Vpb).ReferenceCount != CreateOperation as ULONG {
@@ -227,7 +228,7 @@ unsafe fn RawCheckForDismount(Vcb: PVCB, CreateOperation: BOOLEAN) -> BOOLEAN {
         }
     }
 
-    drop(vpb_guard); // [guard-drop]
+    IoReleaseVpbSpinLock(OldIrql);
 
     if Delete != 0 {
         KeReleaseMutex(core::ptr::addr_of_mut!((*Vcb).Mutex), 0u8);

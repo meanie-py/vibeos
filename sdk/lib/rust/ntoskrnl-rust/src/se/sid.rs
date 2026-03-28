@@ -332,10 +332,11 @@ pub unsafe extern "system" fn SepCaptureSid(
         if let Err(s) = safe_copy_from_user(NewSid as PVOID, Sid as _, SidSize as usize, core::mem::size_of::<UCHAR>(), AccessMode) {
             return s;
         }
-        core::ptr::write_volatile(CapturedSid, NewSid as PSID);
+        // CapturedSid is always a kernel-mode pointer (caller's output param) — direct write, no probe
+        *CapturedSid = NewSid as PSID;
         _guard.disarm();
     } else if CaptureIfKernel == 0u8 {
-        core::ptr::write_volatile(CapturedSid, InputSid);
+        *CapturedSid = InputSid;
     } else {
         SidSize = RtlLengthRequiredSid((*Sid).SubAuthorityCount as ULONG);
 
@@ -345,7 +346,7 @@ pub unsafe extern "system" fn SepCaptureSid(
         }
 
         core::ptr::copy_nonoverlapping(Sid as *const u8, NewSid as *mut u8, SidSize as usize);
-        core::ptr::write_volatile(CapturedSid, NewSid as PSID);
+        *CapturedSid = NewSid as PSID;
     }
 
     STATUS_SUCCESS
@@ -480,8 +481,8 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
     let mut Sid: PISID;
     let mut Status: NTSTATUS;
 
-    core::ptr::write_volatile(CapturedSidAndAttributes, core::ptr::null_mut());
-    core::ptr::write_volatile(ResultLength, 0);
+    *CapturedSidAndAttributes = core::ptr::null_mut();
+    *ResultLength = 0;
 
     if AttributeCount == 0 {
         return STATUS_SUCCESS;
@@ -492,7 +493,7 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
     }
 
     if PreviousMode == 0i8 && CaptureIfKernel == 0u8 {
-        core::ptr::write_volatile(CapturedSidAndAttributes, SrcSidAndAttributes);
+        *CapturedSidAndAttributes = SrcSidAndAttributes;
         return STATUS_SUCCESS;
     }
 
@@ -531,7 +532,7 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
         }
 
         Status = STATUS_SUCCESS;
-        core::ptr::write_volatile(ResultLength, RequiredLength);
+        *ResultLength = RequiredLength;
 
         if AllocatedMem.is_null() {
             SidAndAttributes = ExAllocatePoolWithTag(PoolType, RequiredLength as SIZE_T, TAG_SID_AND_ATTRIBUTES) as PSID_AND_ATTRIBUTES;
@@ -551,7 +552,7 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
                 if SidAndAttributes != AllocatedMem as PSID_AND_ATTRIBUTES { SidAndAttributes as PVOID } else { core::ptr::null_mut() },
                 TAG_SID_AND_ATTRIBUTES,
             );
-            core::ptr::write_volatile(CapturedSidAndAttributes, SidAndAttributes);
+            *CapturedSidAndAttributes = SidAndAttributes;
 
             CurrentDest = SidAndAttributes as *mut UCHAR;
             CurrentDest = CurrentDest.offset((((ArraySize + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);
@@ -604,7 +605,7 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
         }
 
         Status = STATUS_SUCCESS;
-        core::ptr::write_volatile(ResultLength, RequiredLength);
+        *ResultLength = RequiredLength;
 
         if AllocatedMem.is_null() {
             SidAndAttributes = ExAllocatePoolWithTag(PoolType, RequiredLength as SIZE_T, TAG_SID_AND_ATTRIBUTES) as PSID_AND_ATTRIBUTES;
@@ -624,7 +625,7 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
                 if SidAndAttributes != AllocatedMem as PSID_AND_ATTRIBUTES { SidAndAttributes as PVOID } else { core::ptr::null_mut() },
                 TAG_SID_AND_ATTRIBUTES,
             );
-            core::ptr::write_volatile(CapturedSidAndAttributes, SidAndAttributes);
+            *CapturedSidAndAttributes = SidAndAttributes;
 
             CurrentDest = SidAndAttributes as *mut UCHAR;
             CurrentDest = CurrentDest.offset((((ArraySize + core::mem::size_of::<ULONG>() as ULONG - 1) / core::mem::size_of::<ULONG>() as ULONG) * core::mem::size_of::<ULONG>() as ULONG) as isize);

@@ -442,7 +442,7 @@ pub unsafe extern "system" fn KdpSysReadBusData(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualLength, 0);
+    *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
 
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn KdpSysReadControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualLength, 0);
+    *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
 
@@ -468,13 +468,13 @@ pub unsafe extern "system" fn KdpSysReadIoSpace(
     DataSize: ULONG,
     ActualDataSize: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualDataSize, 0);
+    *ActualDataSize = 0;
     STATUS_UNSUCCESSFUL
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSysReadMsr(Msr: ULONG, MsrValue: *mut u64) -> NTSTATUS {
-    core::ptr::write_volatile(MsrValue, 0);
+    *MsrValue = 0;
     STATUS_UNSUCCESSFUL
 }
 
@@ -488,7 +488,7 @@ pub unsafe extern "system" fn KdpSysWriteBusData(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualLength, 0);
+    *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
 
@@ -500,7 +500,7 @@ pub unsafe extern "system" fn KdpSysWriteControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualLength, 0);
+    *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
 
@@ -514,7 +514,7 @@ pub unsafe extern "system" fn KdpSysWriteIoSpace(
     DataSize: ULONG,
     ActualDataSize: *mut ULONG,
 ) -> NTSTATUS {
-    core::ptr::write_volatile(ActualDataSize, 0);
+    *ActualDataSize = 0;
     STATUS_UNSUCCESSFUL
 }
 

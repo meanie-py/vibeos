@@ -80,6 +80,7 @@ unsafe fn MiLoadImageSection(
     let last_pte: PMMPTE;
     let driver_base: PVOID;
     let mut temp_pte: MMPTE;
+    let old_irql: KIRQL;
     let mut page_frame_index: PFN_NUMBER;
 
     if session_load != 0 {
@@ -96,7 +97,7 @@ unsafe fn MiLoadImageSection(
     driver_base = MiPteToAddress(pointer_pte);
     *image_base = driver_base;
 
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    old_irql = MiAcquirePfnLock();
 
     temp_pte = ValidKernelPte;
     while pointer_pte < last_pte {
@@ -108,7 +109,7 @@ unsafe fn MiLoadImageSection(
         pointer_pte = pointer_pte.add(1);
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(old_irql);
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -306,15 +307,15 @@ pub unsafe extern "system" fn RtlpFindExportedRoutineByName(
     let function_address = (image_base as ULONG_PTR) + (*export_table.add(ordinal as usize) as ULONG_PTR);
 
     if !is_forwarder.is_null() {
-        core::ptr::write_volatile(is_forwarder, 0u8);
+        *is_forwarder = 0u8;
         if (function_address > (export_directory as ULONG_PTR)) &&
            (function_address < (export_directory as ULONG_PTR) + (export_size as ULONG_PTR))
         {
-            core::ptr::write_volatile(is_forwarder, 1u8);
+            *is_forwarder = 1u8;
         }
     }
 
-    core::ptr::write_volatile(function, function_address as PVOID);
+    *function = function_address as PVOID;
     STATUS_SUCCESS
 }
 

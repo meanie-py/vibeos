@@ -95,7 +95,7 @@ pub unsafe extern "C" fn SepObjectTypeGuidInList(
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         ObjectTypeGuidToSearch = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).ObjectTypeGuid;
         if SepIsEqualObjectTypeGuid(ObjectTypeGuid, &ObjectTypeGuidToSearch) != 0 {
-            core::ptr::write_volatile(ObjectIndex, ObjectTypeIndex);
+            *ObjectIndex = ObjectTypeIndex;
             return 1u8;
         }
     }
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
     }
 
     if ObjectTypeListLength == 0 {
-        core::ptr::write_volatile(CapturedObjectTypeList, core::ptr::null_mut());
+        *CapturedObjectTypeList = core::ptr::null_mut();
         return STATUS_SUCCESS;
     }
 
@@ -151,7 +151,8 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
         (*InternalTypeList.offset(ObjectTypeIndex as isize)).ObjectAccessRights.DeniedAccessRights = 0;
     }
 
-    core::ptr::write_volatile(CapturedObjectTypeList, InternalTypeList);
+    // CapturedObjectTypeList is always a kernel-mode output pointer — direct write, no probe
+    *CapturedObjectTypeList = InternalTypeList;
 
     _guard.disarm();
 

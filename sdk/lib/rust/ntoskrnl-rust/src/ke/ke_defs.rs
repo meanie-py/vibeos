@@ -17,8 +17,6 @@ extern "C" {
     pub fn KeLowerIrql(NewIrql: u8);
 
     // Critical/Guarded regions (provided by ke_rust_shims.c)
-}
-extern "system" {
     pub fn KeEnterCriticalRegion();
     pub fn KeLeaveCriticalRegion();
 }
@@ -149,7 +147,7 @@ extern "C" {
     // MainSSPT is `UCHAR MainSSPT[]`
     pub static mut MainSSPT: u8;
 }
-extern "C" {
+extern "system" {
     pub fn KeQuerySystemTime(CurrentTime: *mut i64);
 }
 extern "system" {

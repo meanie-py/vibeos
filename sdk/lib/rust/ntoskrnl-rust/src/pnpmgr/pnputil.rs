@@ -74,11 +74,11 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
         Count += 1;
     }
 
-    core::ptr::write_volatile(UnicodeStringList, ExAllocatePoolWithTag(
+    *UnicodeStringList = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_UNICODE_STRING>() * Count as usize,
         0x73557050, // 'sUpP'
-    ) as PUNICODE_STRING);
+    ) as PUNICODE_STRING;
     if (*UnicodeStringList).is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -148,7 +148,7 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
         (*(*UnicodeStringList).add(i as usize)).MaximumLength = (n + core::mem::size_of::<WCHAR>()) as u16;
     }
 
-    core::ptr::write_volatile(UnicodeStringCount, Count);
+    *UnicodeStringCount = Count;
     STATUS_SUCCESS
 }
 
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn PnpRegSzToString(
     }
 
     if !StringLength.is_null() {
-        core::ptr::write_volatile(StringLength, ((p as usize - RegSzData as usize) / core::mem::size_of::<WCHAR>() * core::mem::size_of::<WCHAR>()) as u16);
+        *StringLength = ((p as usize - RegSzData as usize) / core::mem::size_of::<WCHAR>() * core::mem::size_of::<WCHAR>()) as u16;
     }
 
     1u8

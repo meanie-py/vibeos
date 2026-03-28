@@ -46,10 +46,15 @@ extern "C" {
     fn KeGetContextPc(Context: PCONTEXT) -> ULONG_PTR;
     fn KeGetContextReturnRegister(Context: PCONTEXT) -> ULONG_PTR;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
+    fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
+}
+extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
@@ -102,6 +107,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
     let mut Thread: PETHREAD;
     let mut Teb: PTEB;
     let mut DeadThread: BOOLEAN = 0u8;
+    let mut OldIrql: KIRQL = 0;
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -188,7 +194,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
         if CcPfEnablePrefetcher != 0 {
         }
 
-        let irql_guard = ntkrnl_sys::guards::IrqlGuard::raise(APC_LEVEL); // [guard]
+        KeRaiseIrql(APC_LEVEL, &mut OldIrql);
 
         #[cfg(target_arch = "aarch64")]
         {
@@ -209,7 +215,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
             ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: KiInitializeUserApc done\r\n\0".as_ptr() as PCSTR);
         }
 
-        drop(irql_guard); // [guard-drop]
+        KeLowerIrql(PASSIVE_LEVEL);
     } else {
         PspTerminateThreadByPointer(Thread, STATUS_THREAD_IS_TERMINATING, 1u8);
     }
@@ -580,9 +586,7 @@ unsafe fn PspCreateThread(
 
     if Status >= 0 {
         if !ClientId.is_null() {
-            // Use write_volatile to prevent captures(none) optimization
-            // from eliding this output write
-            core::ptr::write_volatile(ClientId, (*Thread).Cid);
+            *ClientId = (*Thread).Cid;
         }
         // Write-back to user-mode pointer (was inside _SEH2_TRY in C)
         if let Err(s) = probe_write_user(ThreadHandle, hThread, PreviousMode) {
@@ -687,12 +691,14 @@ pub unsafe extern "system" fn PsCreateSystemThread(
     )
 }
 
-unsafe fn PsLookupThreadByThreadId_inner(
+#[no_mangle]
+pub unsafe extern "system" fn PsLookupThreadByThreadId(
     ThreadId: HANDLE,
-) -> Result<PETHREAD, NTSTATUS> {
+    Thread: *mut PETHREAD,
+) -> NTSTATUS {
     let mut CidEntry: PHANDLE_TABLE_ENTRY;
     let mut FoundThread: PETHREAD;
-    let mut result: Result<PETHREAD, NTSTATUS> = Err(STATUS_INVALID_PARAMETER);
+    let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
 
     KeEnterCriticalRegion();
 
@@ -702,7 +708,8 @@ unsafe fn PsLookupThreadByThreadId_inner(
 
         if (*FoundThread).Tcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type == ThreadObject {
             if ObReferenceObjectSafe(FoundThread as PVOID) != 0 {
-                result = Ok(FoundThread);
+                *Thread = FoundThread;
+                Status = STATUS_SUCCESS;
             }
         }
 
@@ -710,21 +717,7 @@ unsafe fn PsLookupThreadByThreadId_inner(
     }
 
     KeLeaveCriticalRegion();
-    result
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn PsLookupThreadByThreadId(
-    ThreadId: HANDLE,
-    Thread: *mut PETHREAD,
-) -> NTSTATUS {
-    match PsLookupThreadByThreadId_inner(ThreadId) {
-        Ok(found) => {
-            core::ptr::write_volatile(Thread, found);
-            STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
+    Status
 }
 
 #[no_mangle]
@@ -803,8 +796,7 @@ pub unsafe extern "system" fn PsGetCurrentThreadWin32ThreadAndEnterCriticalRegio
 
     CurrentThread = PsGetCurrentThread();
 
-    // Use write_volatile to prevent captures(none) optimization
-    core::ptr::write_volatile(OutProcessId, (*CurrentThread).Cid.UniqueProcess);
+    *OutProcessId = (*CurrentThread).Cid.UniqueProcess;
 
     KeEnterCriticalRegion();
 

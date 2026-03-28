@@ -121,10 +121,11 @@ pub unsafe extern "system" fn IoAcquireRemoveLockEx(
                 (*TrackingBlock).Line = Line;
                 KeQueryTickCount(core::ptr::addr_of_mut!((*TrackingBlock).LockMoment));
 
-                let spin_guard = ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR); // [guard]
+                let mut OldIrql: KIRQL = 0;
+                KeAcquireSpinLock(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR, &mut OldIrql);
                 (*TrackingBlock).Next = (*Lock).Dbg.Blocks as *mut IO_REMOVE_LOCK_TRACKING_BLOCK;
                 (*Lock).Dbg.Blocks = TrackingBlock as *mut _;
-                drop(spin_guard); // [guard-drop]
+                KeReleaseSpinLock(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR, OldIrql);
             }
         }
     } else {
@@ -151,7 +152,8 @@ pub unsafe extern "system" fn IoReleaseRemoveLockEx(
     let Lock = RemoveLock as PEXTENDED_IO_REMOVE_LOCK;
 
     if RemlockSize == (core::mem::size_of::<IO_REMOVE_LOCK_DBG_BLOCK>() + core::mem::size_of::<IO_REMOVE_LOCK_COMMON_BLOCK>()) as ULONG {
-        let spin_guard = ntkrnl_sys::guards::SpinLockGuard::acquire(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR); // [guard]
+        let mut OldIrql: KIRQL = 0;
+        KeAcquireSpinLock(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR, &mut OldIrql);
 
         let mut CurrentMoment: LARGE_INTEGER = core::mem::zeroed();
         KeQueryTickCount(core::ptr::addr_of_mut!(CurrentMoment));
@@ -176,7 +178,7 @@ pub unsafe extern "system" fn IoReleaseRemoveLockEx(
             }
         }
 
-        drop(spin_guard); // [guard-drop]
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*Lock).Dbg.Spin) as *mut ULONG_PTR, OldIrql);
 
         if TagFound == 0 {
             if InterlockedDecrement(core::ptr::addr_of_mut!((*Lock).Dbg.LowMemoryCount)) < 0 {

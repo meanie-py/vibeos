@@ -81,7 +81,7 @@ unsafe fn MiFindContiguousPages(
                 Pfn1 = Pfn1.sub((Length - 1) as usize);
                 Page -= Length - 1;
 
-                let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+                let OldIrql = MiAcquirePfnLock();
                 loop {
                     if MiIsPfnInUse(Pfn1 as *mut ntkrnl_sys::ddk::_MMPFN) != 0 {
                         break;
@@ -112,7 +112,7 @@ unsafe fn MiFindContiguousPages(
                         (*Pfn1).set_start_of_allocation(true);
                         (*Pfn1.add((SizeInPages - 1) as usize)).set_end_of_allocation(true);
 
-                        drop(pfn_guard); // [guard-drop]
+                        MiReleasePfnLock(OldIrql);
 
                         let EndPfn = Pfn1.add(SizeInPages as usize);
 
@@ -126,7 +126,7 @@ unsafe fn MiFindContiguousPages(
                     Page += 1;
                 }
 
-                drop(pfn_guard); // [guard-drop]
+                MiReleasePfnLock(OldIrql);
                 Length = 0;
             }
 
@@ -343,7 +343,7 @@ unsafe fn MiFreeContiguousMemory(BaseAddress: PVOID) {
 
     MmUnmapIoSpace(BaseAddress, (PageCount << PAGE_SHIFT) as ntkrnl_sys::ddk::SIZE_T);
 
-    let pfn_guard = crate::ARM3::helpers::PfnLockGuard::acquire(); // [guard]
+    let OldIrql = MiAcquirePfnLock();
 
     let LastPage = PageFrameIndex + PageCount as PFN_NUMBER;
     Pfn1 = MiGetPfnEntry(PageFrameIndex);
@@ -356,7 +356,7 @@ unsafe fn MiFreeContiguousMemory(BaseAddress: PVOID) {
         }
     }
 
-    drop(pfn_guard); // [guard-drop]
+    MiReleasePfnLock(OldIrql);
 }
 
 #[no_mangle]

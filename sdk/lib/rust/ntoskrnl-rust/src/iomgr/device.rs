@@ -18,7 +18,7 @@ use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP,
     PVPB, POBJECT_ATTRIBUTES, PSHUTDOWN_ENTRY, PUNICODE_STRING, POBJECT_TYPE,
     ACCESS_MASK, HANDLE, KPROCESSOR_MODE,
-    IoAcquireCancelSpinLock, IoReleaseCancelSpinLock,
+    IoAcquireCancelSpinLock, IoReleaseCancelSpinLock, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock,
     IoBuildSynchronousFsdRequest, IofCallDriver,
     ZwOpenFile, ZwClose, KeWaitForSingleObject, KeInitializeEvent, KeInitializeDeviceQueue,
     KeRemoveDeviceQueue, KeRemoveByKeyDeviceQueue, KeInsertDeviceQueue, KeInsertByKeyDeviceQueue,
@@ -296,7 +296,7 @@ unsafe fn IopAttachDeviceToDeviceStackSafe(
     }
 
     if !AttachedToDeviceObject.is_null() {
-        core::ptr::write_volatile(AttachedToDeviceObject, AttachedDevice);
+        *AttachedToDeviceObject = AttachedDevice;
     }
     AttachedDevice
 }
@@ -455,8 +455,8 @@ unsafe fn IopGetDeviceObjectPointer(
     );
     let LocalFileObject = ptr_from_exposed_addr_mut::<_FILE_OBJECT>(LocalFileObject);
     if Status >= 0 {
-        core::ptr::write_volatile(DeviceObject, IoGetRelatedDeviceObject(LocalFileObject));
-        core::ptr::write_volatile(FileObject, LocalFileObject);
+        *DeviceObject = IoGetRelatedDeviceObject(LocalFileObject);
+        *FileObject = LocalFileObject;
     }
 
     ZwClose(FileHandle);
@@ -480,7 +480,7 @@ unsafe fn IopEditDeviceList(
     DeviceObject: PDEVICE_OBJECT,
     Type: IOP_DEVICE_LIST_OPERATION,
 ) {
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
 
     match Type {
         IOP_DEVICE_LIST_OPERATION::IopRemove => {
@@ -490,7 +490,7 @@ unsafe fn IopEditDeviceList(
             } else {
                 while (*Previous).NextDevice != DeviceObject {
                     if (*Previous).NextDevice.is_null() {
-                        drop(qsl_guard); // [guard-drop]
+                        KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
                         return;
                     }
                     Previous = (*Previous).NextDevice;
@@ -504,7 +504,7 @@ unsafe fn IopEditDeviceList(
         }
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
 }
 
 #[no_mangle]
@@ -703,7 +703,7 @@ pub unsafe extern "system" fn IopGetRelatedTargetDevice(
         return Status;
     }
 
-    core::ptr::write_volatile(DeviceNode, IopGetDeviceNode((*(DeviceRelations as *mut DEVICE_RELATIONS)).Objects[0]));
+    *DeviceNode = IopGetDeviceNode((*(DeviceRelations as *mut DEVICE_RELATIONS)).Objects[0]);
     let Status = if (*DeviceNode).is_null() {
         STATUS_NO_SUCH_DEVICE
     } else {
@@ -720,7 +720,7 @@ pub unsafe extern "system" fn IopVerifyDeviceObjectOnStack(
     TopDeviceObjectHint: PDEVICE_OBJECT,
 ) -> BOOLEAN {
     let mut Result = 0u8;
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
     let mut LoopObject = BaseDeviceObject;
     loop {
         if LoopObject == TopDeviceObjectHint {
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn IopVerifyDeviceObjectOnStack(
         }
         LoopObject = (*LoopObject).AttachedDevice;
     }
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
     Result
 }
 
@@ -767,9 +767,9 @@ unsafe fn IopCreateDefaultDeviceSecurityDescriptor(
     OutputFlags: *mut ULONG,
 ) -> PSECURITY_DESCRIPTOR {
     if !OutputFlags.is_null() {
-        core::ptr::write_volatile(OutputFlags, 0);
+        *OutputFlags = 0;
     }
-    core::ptr::write_volatile(OutputDacl, core::ptr::null_mut());
+    *OutputDacl = core::ptr::null_mut();
 
     let Status = if DeviceType == FILE_DEVICE_TAPE_FILE_SYSTEM
         || DeviceType == FILE_DEVICE_CD_ROM_FILE_SYSTEM
@@ -844,7 +844,7 @@ unsafe fn IopCreateDefaultDeviceSecurityDescriptor(
             *OutputFlags |= DACL_SET;
         }
 
-        core::ptr::write_volatile(OutputDacl, Dacl);
+        *OutputDacl = Dacl;
         status
     };
 
@@ -1036,7 +1036,7 @@ unsafe fn IopFinishCreatedDeviceObject(
     }
 
     ObCloseHandle(TempHandle, 0i32 as i8);
-    core::ptr::write_volatile(DeviceObject, CreatedDeviceObject);
+    *DeviceObject = CreatedDeviceObject;
     STATUS_SUCCESS
 }
 
@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn IoCreateDevice(
         + core::mem::size_of::<_DEVICE_OBJECT>()
         + core::mem::size_of::<_EXTENDED_DEVOBJ_EXTENSION>();
 
-    core::ptr::write_volatile(DeviceObject, core::ptr::null_mut());
+    *DeviceObject = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     // Carry the object address back as an integer; on i386 LLVM keeps folding
     // raw-pointer results from this boundary to null.
@@ -1198,7 +1198,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
     let mut ActualDevices = 1u32;
     let mut CurrentDevice = (*DriverObject).DeviceObject;
 
-    let qsl_guard = unsafe { ntkrnl_sys::guards::QueuedSpinLockGuard::acquire(LockQueueIoDatabaseLock) }; // [guard]
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
 
     while !(*CurrentDevice).NextDevice.is_null() {
         CurrentDevice = (*CurrentDevice).NextDevice;
@@ -1207,10 +1207,10 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
 
     CurrentDevice = (*DriverObject).DeviceObject;
 
-    core::ptr::write_volatile(ActualNumberDeviceObjects, ActualDevices);
+    *ActualNumberDeviceObjects = ActualDevices;
 
     if (ActualDevices * core::mem::size_of::<PDEVICE_OBJECT>() as u32) > DeviceObjectListSize {
-        drop(qsl_guard); // [guard-drop]
+        KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
         }
     }
 
-    drop(qsl_guard); // [guard-drop]
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
     STATUS_SUCCESS
 }
 
@@ -1271,14 +1271,15 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
         return STATUS_INVALID_PARAMETER;
     }
 
-    let vpb_guard = unsafe { ntkrnl_sys::guards::VpbSpinLockGuard::acquire() }; // [guard]
+    let mut OldIrql = 0u8;
+    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(OldIrql));
 
     let DeviceExtension = IoGetDevObjExtension(FileSystemDeviceObject);
     let Vpb = (*DeviceExtension).Vpb;
 
     let Status = if !Vpb.is_null() {
         if (*Vpb).ReferenceCount != 0 && ((*Vpb).Flags & VPB_MOUNTED) != 0 {
-            core::ptr::write_volatile(DiskDeviceObject, (*Vpb).RealDevice);
+            *DiskDeviceObject = (*Vpb).RealDevice;
             ObReferenceObject((*Vpb).RealDevice as PVOID);
             STATUS_SUCCESS
         } else {
@@ -1288,7 +1289,7 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
         STATUS_INVALID_PARAMETER
     };
 
-    drop(vpb_guard); // [guard-drop]
+    IoReleaseVpbSpinLock(OldIrql);
     Status
 }
 
@@ -1353,7 +1354,7 @@ pub unsafe extern "system" fn IoGetRelatedTargetDevice(
     let mut DeviceNode = core::ptr::null_mut();
     let Status = IopGetRelatedTargetDevice(FileObject, core::ptr::addr_of_mut!(DeviceNode));
     if Status >= 0 && !DeviceNode.is_null() {
-        core::ptr::write_volatile(DeviceObject, (*DeviceNode).PhysicalDeviceObject);
+        *DeviceObject = (*DeviceNode).PhysicalDeviceObject;
     }
     Status
 }
@@ -2926,7 +2927,7 @@ pub unsafe extern "system" fn IoWMIDeviceObjectToProviderId(_DeviceObject: PDEVI
 //     CurrentDevice = DriverObject->DeviceObject;
 //
 //     /* Start by at least returning this */
-//     core::ptr::write_volatile(ActualNumberDeviceObjects, ActualDevices);
+//     *ActualNumberDeviceObjects = ActualDevices;
 //
 //     /* Check if we can support so many */
 //     if ((ActualDevices * sizeof(PDEVICE_OBJECT)) > DeviceObjectListSize)
