@@ -146,7 +146,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust: 5 ud2s from LLVM captures(none), needs systematic opaque_ptr
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Replaced by Rust iofunc.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # amd64/i386 uses Rust; ARM64 uses C (in arm64 section below)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs

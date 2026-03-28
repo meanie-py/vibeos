@@ -61,7 +61,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // C macros inlined
 #[inline(always)]
 unsafe fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID {
-    ((*Mdl).MappedSystemVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
+    ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
 }
 #[inline(always)]
 unsafe fn MmGetMdlByteCount(Mdl: PMDL) -> ULONG {
@@ -69,10 +69,11 @@ unsafe fn MmGetMdlByteCount(Mdl: PMDL) -> ULONG {
 }
 
 // Extern declarations for FORCEINLINE / macro symbols not in bindgen
+// NOTE: Calling conventions must match their definitions in the crate.
+// On i386 stdcall != cdecl != fastcall — mismatches cause LLVM ud2.
 extern "system" {
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn ObDereferenceObject(Object: PVOID);
-    fn ObReferenceObject(Object: PVOID);
     fn ExFreePool(P: PVOID);
     fn ExRaiseStatus(Status: NTSTATUS);
     static mut IoFileObjectType: *mut _OBJECT_TYPE;
@@ -89,25 +90,32 @@ extern "system" {
     fn IopUpdateTransferCount(TransferType: ULONG, TransferCount: ULONG);
     #[link_name = "IopQueueIrpToThread_shim"]
     fn IopQueueIrpToThread(Irp: PIRP);
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-    fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
-}
-
-extern "system" {
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn KeLowerIrql(NewIrql: KIRQL);
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
-    fn InterlockedExchangeAdd(Addend: *mut LONG, Value: LONG) -> LONG;
     fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
-extern "system" {
+// These are defined as extern "C" in shim_exports.rs — must match.
+extern "C" {
+    fn ObReferenceObject(Object: PVOID);
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
     fn ProbeForWriteHandle(Ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;
+    fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
+}
+
+// InterlockedExchange is fastcall on i386, cdecl on others
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 
 // Type aliases for missing types
@@ -225,16 +233,27 @@ const IopOtherTransfer: ULONG = 0;
 const IopReadTransfer: ULONG = 1;
 const IopWriteTransfer: ULONG = 2;
 
-// IO access/length arrays
+// IO access/length arrays — declared as single-element to get correct base address;
+// actual sizes are in C data segment. Access via raw pointer arithmetic.
+// Length arrays are UCHAR in C; Access arrays are ACCESS_MASK (ULONG).
 extern "C" {
-    static IopQueryOperationAccess: [ACCESS_MASK; 0];
-    static IopQueryOperationLength: [ULONG; 0];
-    static IopSetOperationAccess: [ACCESS_MASK; 0];
-    static IopSetOperationLength: [ULONG; 0];
-    static IopQueryFsOperationAccess: [ACCESS_MASK; 0];
-    static IopQueryFsOperationLength: [ULONG; 0];
-    static IopSetFsOperationAccess: [ACCESS_MASK; 0];
-    static IopSetFsOperationLength: [ULONG; 0];
+    static IopQueryOperationAccess: ACCESS_MASK;
+    static IopQueryOperationLength: u8;
+    static IopSetOperationAccess: ACCESS_MASK;
+    static IopSetOperationLength: u8;
+    static IopQueryFsOperationAccess: ACCESS_MASK;
+    static IopQueryFsOperationLength: u8;
+    static IopSetFsOperationAccess: ACCESS_MASK;
+    static IopSetFsOperationLength: u8;
+}
+
+// Accessor for extern C arrays (flexible arrays declared as single element in Rust)
+#[inline(always)]
+unsafe fn c_array_get<T: Copy>(base: *const T, index: usize) -> T {
+    *base.add(index)
+}
+// KeGetPreviousMode is extern "system" (stdcall on i386)
+extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
 }
 
@@ -779,7 +798,7 @@ unsafe fn IopQueryDeviceInformation(
     } else {
         KeInitializeEvent(
             core::ptr::addr_of_mut!(Event),
-            0,
+            1,
             0u8,
         );
         LocalEvent = 1u8;
@@ -858,13 +877,17 @@ unsafe fn IopQueryDeviceInformation(
     Status
 }
 
-unsafe fn IopGetFileInformation(
+#[no_mangle]
+pub unsafe extern "system" fn IopGetFileInformation(
     FileObject: PFILE_OBJECT,
     Length: ULONG,
     FileInfoClass: FILE_INFORMATION_CLASS,
     Buffer: PVOID,
     ReturnedLength: *mut ULONG,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let Buffer = opaque_ptr(Buffer);
+    let ReturnedLength = opaque_ptr(ReturnedLength);
     let Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -880,7 +903,7 @@ unsafe fn IopGetFileInformation(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0, 0u8);
+    KeInitializeEvent(core::ptr::addr_of_mut!(Event), 1, 0u8);
 
     (*Irp).UserIosb = core::ptr::addr_of_mut!(IoStatusBlock);
     (*Irp).UserEvent = core::ptr::addr_of_mut!(Event);
@@ -1333,7 +1356,7 @@ pub unsafe extern "system" fn IoSetInformation(
         IopLockFileObject(FileObject, 0i8);
         KeClearEvent(core::ptr::addr_of_mut!((*FileObject).Event));
     } else {
-        KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0, 0u8);
+        KeInitializeEvent(core::ptr::addr_of_mut!(Event), 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -1530,7 +1553,7 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -2245,11 +2268,11 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     if PreviousMode != 0i8 {
         if (FileInformationClass as i32) < 0
             || (FileInformationClass as u32) >= FileMaximumInformation
-            || IopQueryOperationLength[FileInformationClass as usize] == 0
+            || c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG == 0
         {
             return STATUS_INVALID_INFO_CLASS;
         }
-        if Length < IopQueryOperationLength[FileInformationClass as usize] {
+        if Length < c_array_get(&IopQueryOperationLength, FileInformationClass as usize) as ULONG {
             return STATUS_INFO_LENGTH_MISMATCH;
         }
         if let Err(e) = probe_user_buffer(
@@ -2268,7 +2291,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
 
     Status = ObReferenceObjectByHandle(
         FileHandle,
-        IopQueryOperationAccess[FileInformationClass as usize],
+        c_array_get(&IopQueryOperationAccess, FileInformationClass as usize),
         IoFileObjectType,
         PreviousMode,
         core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
@@ -2324,7 +2347,7 @@ pub unsafe extern "system" fn NtQueryInformationFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -2864,12 +2887,12 @@ pub unsafe extern "system" fn NtSetInformationFile(
     let mut TargetHandle: HANDLE = core::ptr::null_mut();
 
     if FileInformationClass >= FileMaximumInformation
-        || IopSetOperationLength[FileInformationClass as usize] == 0
+        || c_array_get(&IopSetOperationLength, FileInformationClass as usize) as ULONG == 0
     {
         return STATUS_INVALID_INFO_CLASS;
     }
 
-    if Length < IopSetOperationLength[FileInformationClass as usize] as ULONG {
+    if Length < c_array_get(&IopSetOperationLength, FileInformationClass as usize) as ULONG as ULONG {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 
@@ -2881,7 +2904,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
 
     Status = ObReferenceObjectByHandle(
         FileHandle,
-        IopSetOperationAccess[FileInformationClass as usize],
+        c_array_get(&IopSetOperationAccess, FileInformationClass as usize),
         IoFileObjectType,
         PreviousMode,
         core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
@@ -2925,7 +2948,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -3230,7 +3253,7 @@ pub unsafe extern "system" fn NtUnlockFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -3599,12 +3622,12 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
 
     if PreviousMode != 0i8 {
         if FsInformationClass >= FileFsMaximumInformation
-            || IopQueryFsOperationLength[FsInformationClass as usize] == 0
+            || c_array_get(&IopQueryFsOperationLength, FsInformationClass as usize) as ULONG == 0
         {
             return STATUS_INVALID_INFO_CLASS;
         }
 
-        if Length < IopQueryFsOperationLength[FsInformationClass as usize] as ULONG {
+        if Length < c_array_get(&IopQueryFsOperationLength, FsInformationClass as usize) as ULONG as ULONG {
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
@@ -3614,7 +3637,7 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
 
     Status = ObReferenceObjectByHandle(
         FileHandle,
-        IopQueryFsOperationAccess[FsInformationClass as usize],
+        c_array_get(&IopQueryFsOperationAccess, FsInformationClass as usize),
         IoFileObjectType,
         PreviousMode,
         core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
@@ -3707,7 +3730,7 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 
@@ -3794,12 +3817,12 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
 
     if PreviousMode != 0i8 {
         if FsInformationClass >= FileFsMaximumInformation
-            || IopSetFsOperationLength[FsInformationClass as usize] == 0
+            || c_array_get(&IopSetFsOperationLength, FsInformationClass as usize) as ULONG == 0
         {
             return STATUS_INVALID_INFO_CLASS;
         }
 
-        if Length < IopSetFsOperationLength[FsInformationClass as usize] as ULONG {
+        if Length < c_array_get(&IopSetFsOperationLength, FsInformationClass as usize) as ULONG as ULONG {
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
@@ -3809,7 +3832,7 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
 
     Status = ObReferenceObjectByHandle(
         FileHandle,
-        IopSetFsOperationAccess[FsInformationClass as usize],
+        c_array_get(&IopSetFsOperationAccess, FsInformationClass as usize),
         IoFileObjectType,
         PreviousMode,
         core::ptr::addr_of_mut!(FileObject) as *mut PVOID,
@@ -3846,7 +3869,7 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
             }
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        KeInitializeEvent(Event, 0, 0u8);
+        KeInitializeEvent(Event, 1, 0u8);
         LocalEvent = 1u8;
     }
 

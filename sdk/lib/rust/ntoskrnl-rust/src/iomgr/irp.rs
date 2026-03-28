@@ -155,6 +155,14 @@ extern "system" {
     fn IopQueueIrpToThread(Irp: PIRP);
     #[link_name = "IopUnQueueIrpFromThread_shim"]
     fn IopUnQueueIrpFromThread(Irp: PIRP);
+}
+// InterlockedExchange is fastcall on i386, cdecl on others
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 

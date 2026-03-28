@@ -164,7 +164,6 @@ extern "system" {
     fn KeFlushWriteBuffer();
     fn KeDelayExecutionThread(WaitMode: KPROCESSOR_MODE, Alertable: BOOLEAN, Interval: *const LARGE_INTEGER) -> NTSTATUS;
     fn ExFreePool(P: PVOID);
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     #[link_name = "IopValidateOpenPacket_shim"]
     fn IopValidateOpenPacket(OpenPacket: POPEN_PACKET) -> BOOLEAN;
@@ -188,16 +187,28 @@ extern "system" {
 }
 
 extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+    fn ObDereferenceObject(Object: PVOID);
+    fn ExRaiseStatus(Status: NTSTATUS);
+}
+// These are extern "C" in shim_exports.rs — must match.
+extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
     fn ProbeForReadLargeInteger(Address: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn ProbeForWriteHandle(Address: *mut HANDLE);
     fn ProbeForWriteIoStatusBlock(IoStatusBlock: PIO_STATUS_BLOCK);
-    fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
-    fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
     fn ObReferenceObject(Object: PVOID);
-    fn ObDereferenceObject(Object: PVOID);
-    fn ExRaiseStatus(Status: NTSTATUS);
+}
+// InterlockedExchange is fastcall on i386, cdecl on others
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 
 const TAG_IO: ULONG = 0x20206F49;      // '  OI' — generic IO pool tag
