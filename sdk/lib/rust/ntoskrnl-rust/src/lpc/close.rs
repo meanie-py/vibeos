@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     _LPC_TYPE_LPC_CONNECTION_REQUEST, _LPC_TYPE_LPC_PORT_CLOSED,
     _SECURITY_CLIENT_CONTEXT,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static mut LpcpLock: KGUARDED_MUTEX;
@@ -42,6 +43,7 @@ fn CONTAINING_RECORD<T>(address: PLIST_ENTRY, offset: usize) -> *mut T {
 
 #[no_mangle]
 pub unsafe extern "system" fn LpcExitThread(Thread: PETHREAD) {
+    let Thread = opaque_ptr(Thread);
     let mut Message: PLPCP_MESSAGE;
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
@@ -223,6 +225,8 @@ pub unsafe extern "system" fn LpcpClosePort(
     _ProcessHandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
+    let _Process = opaque_ptr(_Process);
+    let Object = opaque_ptr(Object);
     let Port: PLPCP_PORT_OBJECT = Object as PLPCP_PORT_OBJECT;
 
     if ((*Port).Flags & LPCP_PORT_TYPE_MASK) == LPCP_CONNECTION_PORT {
@@ -251,6 +255,7 @@ pub unsafe extern "system" fn LpcpFreePortClientSecurity(Port: PLPCP_PORT_OBJECT
 
 #[no_mangle]
 pub unsafe extern "system" fn LpcpDeletePort(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut Thread: PETHREAD;
     let Port: PLPCP_PORT_OBJECT = ObjectBody as PLPCP_PORT_OBJECT;

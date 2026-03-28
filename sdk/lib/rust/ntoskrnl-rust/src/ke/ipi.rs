@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     PKTRAP_FRAME, PKEXCEPTION_FRAME,
     HalRequestSoftwareInterrupt, KeGetCurrentProcessorNumber,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Use actual definitions, not extern declarations (lto=false splits them)
 use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
@@ -26,6 +27,9 @@ pub unsafe extern "system" fn KiIpiGenericCallTarget(
     Argument: PVOID,
     Count: PVOID,
 ) {
+    let BroadcastFunction = opaque_ptr(BroadcastFunction);
+    let Argument = opaque_ptr(Argument);
+    let Count = opaque_ptr(Count);
     DbgBreakPoint();
 }
 
@@ -56,6 +60,7 @@ pub unsafe extern "system" fn KiIpiSendPacket(
     Context: ULONG_PTR,
     Count: *mut ULONG,
 ) {
+    let Count = opaque_ptr(Count);
     DbgBreakPoint();
 }
 
@@ -77,6 +82,7 @@ pub unsafe extern "fastcall" fn KiIpiSignalPacketDoneAndStall(
     PacketContext: PKIPI_CONTEXT,
     ReverseStall: *mut ULONG,
 ) {
+    let ReverseStall = opaque_ptr(ReverseStall);
     DbgBreakPoint();
 }
 
@@ -86,6 +92,7 @@ pub unsafe extern "C" fn KiIpiSignalPacketDoneAndStall(
     PacketContext: PKIPI_CONTEXT,
     ReverseStall: *mut ULONG,
 ) {
+    let ReverseStall = opaque_ptr(ReverseStall);
     DbgBreakPoint();
 }
 

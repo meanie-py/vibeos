@@ -6,6 +6,7 @@ use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -875,6 +876,8 @@ pub unsafe extern "system" fn KeCapturePersistentThreadState(
     Setting5: ULONG,
     ThreadState: PVOID,
 ) {
+    let CurrentThread = opaque_ptr(CurrentThread);
+    let ThreadState = opaque_ptr(ThreadState);
     unimplemented!();
 }
 
@@ -893,6 +896,8 @@ pub unsafe extern "system" fn KeQueryRuntimeThread(
     Thread: PKTHREAD,
     UserTime: *mut ULONG,
 ) -> ULONG {
+    let Thread = opaque_ptr(Thread);
+    let UserTime = opaque_ptr(UserTime);
     ASSERT_THREAD!(Thread);
 
     *UserTime = *kt_UserTime(Thread);
@@ -914,6 +919,7 @@ pub unsafe extern "system" fn KeSetKernelStackSwapEnable(Enable: BOOLEAN) -> BOO
 
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryPriorityThread(Thread: PKTHREAD) -> KPRIORITY {
+    let Thread = opaque_ptr(Thread);
     ASSERT_THREAD!(Thread);
 
     (*Thread).Priority as KPRIORITY
@@ -955,6 +961,7 @@ pub unsafe extern "system" fn KeSetIdealProcessorThread(
     Thread: PKTHREAD,
     Processor: u8,
 ) -> u8 {
+    let Thread = opaque_ptr(Thread);
     let OldIdealProcessor: u8;
     let OldIrql: KIRQL;
     ASSERT!(Processor as ULONG <= 64);
@@ -1017,6 +1024,7 @@ pub unsafe extern "system" fn KeSetBasePriorityThread(
     Thread: PKTHREAD,
     Increment: LONG,
 ) -> LONG {
+    let Thread = opaque_ptr(Thread);
     let OldIrql: KIRQL;
     let OldBasePriority: KPRIORITY;
     let mut Priority: KPRIORITY;
@@ -1099,6 +1107,7 @@ pub unsafe extern "system" fn KeSetAffinityThread(
     Thread: PKTHREAD,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
+    let Thread = opaque_ptr(Thread);
     let OldIrql: KIRQL;
     let OldAffinity: KAFFINITY;
     ASSERT_THREAD!(Thread);
@@ -1117,6 +1126,7 @@ pub unsafe extern "system" fn KeSetPriorityThread(
     Thread: PKTHREAD,
     Priority: KPRIORITY,
 ) -> KPRIORITY {
+    let Thread = opaque_ptr(Thread);
     let OldIrql: KIRQL;
     let OldPriority: KPRIORITY;
     ASSERT_THREAD!(Thread);
@@ -1246,41 +1256,49 @@ pub unsafe extern "system" fn KeTerminateThread(Increment: KPRIORITY) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadStateThread(Thread: PKTHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     KeReadStateThread_impl(Thread)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryBasePriorityThread(Thread: PKTHREAD) -> KPRIORITY {
+    let Thread = opaque_ptr(Thread);
     KeQueryBasePriorityThread_impl(Thread)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetDisableBoostThread(Thread: PKTHREAD, Disable: BOOLEAN) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     KeSetDisableBoostThread_impl(Thread, Disable)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadyThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     KeReadyThread_impl(Thread)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeAlertResumeThread(Thread: PKTHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     KeAlertResumeThread_impl(Thread)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeAlertThread(Thread: PKTHREAD, AlertMode: KPROCESSOR_MODE) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     KeAlertThread_impl(Thread, AlertMode)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeBoostPriorityThread(Thread: PKTHREAD, Increment: KPRIORITY) {
+    let Thread = opaque_ptr(Thread);
     KeBoostPriorityThread_impl(Thread, Increment)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeForceResumeThread(Thread: PKTHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     KeForceResumeThread_impl(Thread)
 }
 
@@ -1291,6 +1309,7 @@ pub unsafe extern "system" fn KeFreezeAllThreads() {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeResumeThread(Thread: PKTHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     KeResumeThread_impl(Thread)
 }
 
@@ -1301,11 +1320,13 @@ pub unsafe extern "system" fn KeRundownThread() {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeStartThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     KeStartThread_impl(Thread)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSuspendThread(Thread: PKTHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     KeSuspendThread_impl(Thread)
 }
 
@@ -1330,6 +1351,14 @@ pub unsafe extern "system" fn KeInitThread(
     Teb: PVOID,
     Process: PKPROCESS,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
+    let KernelStack = opaque_ptr(KernelStack);
+    let SystemRoutine = opaque_ptr(SystemRoutine);
+    let StartRoutine = opaque_ptr(StartRoutine);
+    let StartContext = opaque_ptr(StartContext);
+    let Context = opaque_ptr(Context);
+    let Teb = opaque_ptr(Teb);
+    let Process = opaque_ptr(Process);
     KeInitThread_impl(Thread, KernelStack, SystemRoutine, StartRoutine, StartContext, Context, Teb, Process)
 }
 
@@ -1344,10 +1373,19 @@ pub unsafe extern "system" fn KeInitializeThread(
     Teb: PVOID,
     KernelStack: PVOID,
 ) {
+    let Process = opaque_ptr(Process);
+    let Thread = opaque_ptr(Thread);
+    let SystemRoutine = opaque_ptr(SystemRoutine);
+    let StartRoutine = opaque_ptr(StartRoutine);
+    let StartContext = opaque_ptr(StartContext);
+    let Context = opaque_ptr(Context);
+    let Teb = opaque_ptr(Teb);
+    let KernelStack = opaque_ptr(KernelStack);
     KeInitializeThread_impl(Process, Thread, SystemRoutine, StartRoutine, StartContext, Context, Teb, KernelStack)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeUninitThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     KeUninitThread_impl(Thread)
 }

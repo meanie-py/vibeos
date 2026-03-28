@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     FS_INFORMATION_CLASS,
     PsGetCurrentThread, PsIsSystemThread, RtlMapGenericMask,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // FO_NAMED_PIPE is a #define not captured by bindgen
 const FO_NAMED_PIPE: ULONG = 0x00000080;
@@ -36,6 +37,7 @@ pub unsafe extern "system" fn IoComputeDesiredAccessFileObject(
     FileObject: PFILE_OBJECT,
     DesiredAccess: PACCESS_MASK,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     *DesiredAccess = 0;
 
     if (*OBJECT_TO_OBJECT_HEADER(FileObject as PVOID)).Type != IoFileObjectType as *mut _OBJECT_TYPE {
@@ -62,6 +64,8 @@ pub unsafe extern "system" fn IoGetStackLimits(
     LowLimit: PULONG_PTR,
     HighLimit: PULONG_PTR,
 ) {
+    let LowLimit = opaque_ptr(LowLimit);
+    let HighLimit = opaque_ptr(HighLimit);
     let Prcb = KeGetCurrentPrcb();
     let DpcStack = (*Prcb).DpcStack as ULONG_PTR;
     let StackAddress: ULONG_PTR = 0;
@@ -85,6 +89,7 @@ pub unsafe extern "system" fn IoGetStackLimits(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     PsIsSystemThread(Thread)
 }
 
@@ -109,6 +114,7 @@ pub unsafe extern "system" fn IoReleaseCancelSpinLock(Irql: KIRQL) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoThreadToProcess(Thread: PETHREAD) -> PEPROCESS {
+    let Thread = opaque_ptr(Thread);
     (*(Thread as *mut _ETHREAD)).ThreadsProcess
 }
 
@@ -134,6 +140,7 @@ pub unsafe extern "system" fn IoCheckEaBufferValidity(
     mut EaLength: ULONG,
     ErrorOffset: PULONG,
 ) -> NTSTATUS {
+    let ErrorOffset = opaque_ptr(ErrorOffset);
     let mut NextEntryOffset: ULONG;
     let mut EaNameLength: UCHAR;
     let mut ComputedLength: ULONG;
@@ -203,6 +210,8 @@ pub unsafe extern "system" fn IoCheckFunctionAccess(
     _ExtraData: PVOID,
     _ExtraData2: PVOID,
 ) -> NTSTATUS {
+    let _ExtraData = opaque_ptr(_ExtraData);
+    let _ExtraData2 = opaque_ptr(_ExtraData2);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -211,6 +220,7 @@ pub unsafe extern "system" fn IoValidateDeviceIoControlAccess(
     _Irp: PIRP,
     _RequiredAccess: ULONG,
 ) -> NTSTATUS {
+    let _Irp = opaque_ptr(_Irp);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -219,6 +229,8 @@ pub unsafe extern "system" fn IoSetDeviceToVerify(
     Thread: PETHREAD,
     DeviceObject: PDEVICE_OBJECT,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let DeviceObject = opaque_ptr(DeviceObject);
     (*(Thread as *mut _ETHREAD)).DeviceToVerify = DeviceObject;
 }
 
@@ -227,6 +239,8 @@ pub unsafe extern "system" fn IoSetHardErrorOrVerifyDevice(
     Irp: PIRP,
     DeviceObject: PDEVICE_OBJECT,
 ) {
+    let Irp = opaque_ptr(Irp);
+    let DeviceObject = opaque_ptr(DeviceObject);
     if (*Irp).Tail.Overlay.Thread.is_null() {
         return;
     }
@@ -236,6 +250,7 @@ pub unsafe extern "system" fn IoSetHardErrorOrVerifyDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetDeviceToVerify(Thread: PETHREAD) -> PDEVICE_OBJECT {
+    let Thread = opaque_ptr(Thread);
     (*(Thread as *mut _ETHREAD)).DeviceToVerify
 }
 

@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     SeQueryAuthenticationIdToken,
     RtlInitUnicodeString, RtlRaiseStatus, PLARGE_INTEGER,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const STATUS_RETRY: NTSTATUS = 0xC000022Du32 as NTSTATUS;
 
@@ -330,6 +331,7 @@ pub unsafe extern "system" fn ExLuidInitialization() -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn ExAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) {
+    let LocallyUniqueId = opaque_ptr(LocallyUniqueId);
     *(LocallyUniqueId as *mut i64) = InterlockedExchangeAdd64(
         core::ptr::addr_of_mut!(ExpLuid.QuadPart),
         ExpLuidIncrement as i64,
@@ -338,6 +340,7 @@ pub unsafe extern "system" fn ExAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
 
 #[no_mangle]
 pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS {
+    let LocallyUniqueId = opaque_ptr(LocallyUniqueId);
     let PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0 {
         let Status = 'seh: {
@@ -365,6 +368,7 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
 
 #[no_mangle]
 pub unsafe extern "system" fn ExUuidCreate(Uuid: *mut UUID) -> NTSTATUS {
+    let Uuid = opaque_ptr(Uuid);
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     loop {
@@ -425,6 +429,10 @@ pub unsafe extern "system" fn NtAllocateUuids(
     Sequence: *mut ULONG,
     Seed: *mut u8,
 ) -> NTSTATUS {
+    let Time = opaque_ptr(Time);
+    let Range = opaque_ptr(Range);
+    let Sequence = opaque_ptr(Sequence);
+    let Seed = opaque_ptr(Seed);
     let mut IntTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut IntRange: ULONG = 0;
     let mut IntSequence: ULONG = 0;

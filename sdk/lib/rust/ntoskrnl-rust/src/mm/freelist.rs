@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     MmCreateMdl,
     ExFreePoolWithTag as ddk_ExFreePoolWithTag,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MmPfnDatabase: PMMPFN = core::ptr::null_mut();
@@ -126,6 +127,7 @@ pub unsafe extern "system" fn MmGetLRUNextUserPage(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiIsPfnFree(pfn1: PMMPFN) -> BOOLEAN {
+    let pfn1 = opaque_ptr(pfn1);
     if (*pfn1).page_location() <= StandbyPageList as u16
         && (*pfn1).flink() != 0
         && (*pfn1).blink() != 0
@@ -139,6 +141,7 @@ pub unsafe extern "system" fn MiIsPfnFree(pfn1: PMMPFN) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiIsPfnInUse(pfn1: PMMPFN) -> BOOLEAN {
+    let pfn1 = opaque_ptr(pfn1);
     if MiIsPfnFree(pfn1) != 0 {
         0u8
     } else {

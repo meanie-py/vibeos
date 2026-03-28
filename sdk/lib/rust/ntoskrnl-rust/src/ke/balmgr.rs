@@ -25,6 +25,7 @@ use ntkrnl_sys::ddk::{
     KiReleaseDispatcherLock,
     KiReleasePrcbLock,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn MmWorkingSetManager();
@@ -53,6 +54,10 @@ pub unsafe extern "system" fn KiScanReadyQueues(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let ScanLast = DeferredContext as *mut ULONG;
     let mut ScanIndex = *ScanLast;
     let mut Count = 10u32;
@@ -146,6 +151,7 @@ pub unsafe extern "system" fn KiScanReadyQueues(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeBalanceSetManager(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let mut ScanDpc: KDPC = core::mem::zeroed();
     let mut PeriodTimer: KTIMER = core::mem::zeroed();
     let mut DueTime: DDK_LARGE_INTEGER = core::mem::zeroed();

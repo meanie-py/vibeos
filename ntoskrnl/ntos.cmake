@@ -136,7 +136,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
     # IO Tier 2b: arcname, iomgr, irp, rawfs → Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs passes amd64 but crashes i386
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs has functional bug on i386 LiveCD (ARC name creation)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
@@ -146,7 +146,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/file.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust iofunc.rs Nt* syscalls buggy (SMSS crash)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Rust: 5 ud2s from LLVM captures(none), needs systematic opaque_ptr
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # amd64/i386 uses Rust; ARM64 uses C (in arm64 section below)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs

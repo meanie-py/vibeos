@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan,
     _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
@@ -361,6 +362,7 @@ pub unsafe extern "system" fn FsRtlLookupBaseMcbEntry(
     SectorCountFromStartingLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
+    let Index = opaque_ptr(Index);
     let mut result = 0u8;
     let mut i: ULONG = 0;
     let mut last_vbn: LONGLONG = 0;
@@ -414,6 +416,7 @@ pub unsafe extern "system" fn FsRtlLookupLargeMcbEntry(
     SectorCountFromStartingLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
+    let Index = opaque_ptr(Index);
     KeAcquireGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
     let result = FsRtlLookupBaseMcbEntry(
         &mut (*Mcb).BaseMcb,
@@ -477,6 +480,7 @@ pub unsafe extern "system" fn FsRtlLookupLastBaseMcbEntryAndIndex(
     LargeLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
+    let Index = opaque_ptr(Index);
     let mcb = OpaqueMcb as PBASE_MCB_INTERNAL;
     FsRtlLookupLastLargeMcbEntryAndIndex_internal(mcb, LargeVbn, LargeLbn, Index)
 }
@@ -488,6 +492,7 @@ pub unsafe extern "system" fn FsRtlLookupLastLargeMcbEntryAndIndex(
     LargeLbn: PLONGLONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
+    let Index = opaque_ptr(Index);
     KeAcquireGuardedMutex((*OpaqueMcb).GuardedMutex as PKGUARDED_MUTEX);
     let result =
         FsRtlLookupLastBaseMcbEntryAndIndex(&mut (*OpaqueMcb).BaseMcb, LargeVbn, LargeLbn, Index);

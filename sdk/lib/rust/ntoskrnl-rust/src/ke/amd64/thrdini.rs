@@ -6,6 +6,7 @@ use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     HalRequestSoftwareInterrupt,
@@ -97,6 +98,8 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     StartContext: PVOID,
     Context: PCONTEXT,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let StartContext = opaque_ptr(StartContext);
     let mut InitialStack: PVOID;
 
     InitialStack = ((*Thread).InitialStack as *mut u8).sub(KeXStateLength as usize) as PVOID;
@@ -194,6 +197,8 @@ pub unsafe extern "system" fn KiSwapContextResume(
     OldThread: PKTHREAD,
     NewThread: PKTHREAD,
 ) -> BOOLEAN {
+    let OldThread = opaque_ptr(OldThread);
+    let NewThread = opaque_ptr(NewThread);
     let Pcr = KeGetPcr() as PKIPCR;
     let OldProcess: PKPROCESS;
     let NewProcess: PKPROCESS;

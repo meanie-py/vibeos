@@ -27,6 +27,7 @@ use crate::ke::krnlinit::{
     KeLoaderBlock, KiProcessorBlock, KeFeatureBits, KiInitialThread, KiInitialProcess,
     KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
 use crate::ARM3::sysldr::PsLoadedModuleList;
 use super::cpu::{KeI386CpuType, KeI386CpuStep};
@@ -498,6 +499,11 @@ pub unsafe extern "system" fn KiInitializeProcessorBootStructures(
     DoubleFaultStack: PVOID,
     NmiStack: PVOID,
 ) {
+    let IdleThread = opaque_ptr(IdleThread);
+    let KernelStack = opaque_ptr(KernelStack);
+    let DpcStack = opaque_ptr(DpcStack);
+    let DoubleFaultStack = opaque_ptr(DoubleFaultStack);
+    let NmiStack = opaque_ptr(NmiStack);
     KiInitializePcr(
         Pcr,
         ProcessorNumber,
@@ -573,6 +579,7 @@ pub unsafe extern "system" fn KiInitializeKernelMachineDependent(
     Prcb: PKPRCB,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let FeatureBits = KeFeatureBits;
 
     KeI386CpuType = (*Prcb).CpuType as u32;
@@ -688,6 +695,7 @@ unsafe fn KiInitModuleList(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> ! {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let Cpu: i8;
     let InitialThread: PKTHREAD;
     let InitialStack: u64;

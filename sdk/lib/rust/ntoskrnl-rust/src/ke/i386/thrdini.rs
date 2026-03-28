@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     KiAcquirePrcbLock, KiQuantumEnd, KiRetireDpcList, KiSwapContext, KeBugCheck,
     _KWAIT_REASON_WrDispatchInt,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[repr(C)]
 struct KSWITCHFRAME {
@@ -125,6 +126,8 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     StartContext: PVOID,
     ContextPointer: PCONTEXT,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let StartContext = opaque_ptr(StartContext);
     let mut FxSaveArea: *mut _FX_SAVE_AREA;
     let mut StartFrame: *mut KSTART_FRAME;
     let mut CtxSwitchFrame: *mut KSWITCHFRAME;
@@ -297,6 +300,8 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
     OldThread: PKTHREAD,
     SwitchFrame: *mut KSWITCHFRAME,
 ) -> BOOLEAN {
+    let OldThread = opaque_ptr(OldThread);
+    let SwitchFrame = opaque_ptr(SwitchFrame);
     let Pcr = KeGetPcr() as PKIPCR;
     let OldProcess: PKPROCESS;
     let NewProcess: PKPROCESS;
@@ -375,6 +380,7 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
     SwitchFrame: *mut KSWITCHFRAME,
     OldThreadAndApcFlag: ULONG_PTR,
 ) {
+    let SwitchFrame = opaque_ptr(SwitchFrame);
     let Pcr = KeGetPcr() as PKIPCR;
     let OldThread: PKTHREAD;
     let NewThread: PKTHREAD;

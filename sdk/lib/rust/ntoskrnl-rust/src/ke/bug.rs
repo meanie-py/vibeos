@@ -7,6 +7,7 @@ use ntkrnl_sys::mm::NonPagedPool;
 // mm symbols imported from ddk below (MmIsSpecialPoolAddress etc.)
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _LDR_DATA_TABLE_ENTRY, PLDR_DATA_TABLE_ENTRY,
@@ -190,6 +191,9 @@ pub unsafe extern "system" fn KiPcToFileHeader(
     DriversOnly: BOOLEAN,
     InKernel: PBOOLEAN,
 ) -> PVOID {
+    let Pc = opaque_ptr(Pc);
+    let LdrEntry = opaque_ptr(LdrEntry);
+    let InKernel = opaque_ptr(InKernel);
     let mut i: ULONG = 0;
     let mut PcBase: PVOID = core::ptr::null_mut();
     let mut ListHead: PLIST_ENTRY;
@@ -277,6 +281,8 @@ pub unsafe extern "system" fn KeRosCaptureUserStackBackTrace(
     BackTrace: *mut PVOID,
     BackTraceHash: PULONG,
 ) -> USHORT {
+    let BackTrace = opaque_ptr(BackTrace);
+    let BackTraceHash = opaque_ptr(BackTraceHash);
     let mut Frames: [PVOID; 128] = [core::ptr::null_mut(); 128];
     let mut FrameCount: ULONG;
     let mut Hash: ULONG = 0;
@@ -349,6 +355,7 @@ unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeRosDumpStackFrames(Frame: PULONG_PTR, FrameCount: ULONG) {
+    let Frame = opaque_ptr(Frame);
     let mut Frames: [ULONG_PTR; 32] = [0; 32];
     let mut RealFrameCount: ULONG;
     let FrameCount = if FrameCount == 0 || FrameCount > 32 { 32 } else { FrameCount };
@@ -522,6 +529,8 @@ pub unsafe extern "system" fn KeBugCheckUnicodeToAnsi(
     Ansi: *mut i8,
     Length: ULONG,
 ) -> *mut i8 {
+    let Unicode = opaque_ptr(Unicode);
+    let Ansi = opaque_ptr(Ansi);
     let mut p: *mut i8;
     let mut pw: *mut u16;
     let mut i: ULONG;
@@ -990,6 +999,7 @@ pub unsafe extern "system" fn KeInitializeCrashDumpHeader(
     BufferSize: ULONG,
     BufferNeeded: ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
     STATUS_UNSUCCESSFUL
 }
 
@@ -1041,6 +1051,8 @@ pub unsafe extern "system" fn KeRegisterBugCheckCallback(
     Length: ULONG,
     Component: *mut u8,
 ) -> BOOLEAN {
+    let Buffer = opaque_ptr(Buffer);
+    let Component = opaque_ptr(Component);
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
@@ -1068,6 +1080,7 @@ pub unsafe extern "system" fn KeRegisterBugCheckReasonCallback(
     Reason: KBUGCHECK_CALLBACK_REASON,
     Component: *mut u8,
 ) -> BOOLEAN {
+    let Component = opaque_ptr(Component);
     let mut OldIrql: KIRQL = 0;
     let mut Status: BOOLEAN = 0u8;
 
@@ -1092,6 +1105,7 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
     CallbackRoutine: PNMI_CALLBACK,
     Context: PVOID,
 ) -> PVOID {
+    let Context = opaque_ptr(Context);
     let mut OldIrql: KIRQL = 0;
     let NmiData: PKNMI_HANDLER_CALLBACK;
     let Next: PKNMI_HANDLER_CALLBACK;
@@ -1119,6 +1133,7 @@ pub unsafe extern "system" fn KeRegisterNmiCallback(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
     let mut OldIrql: KIRQL = 0;
     let mut NmiData: PKNMI_HANDLER_CALLBACK;
     let mut Previous: *mut PKNMI_HANDLER_CALLBACK;

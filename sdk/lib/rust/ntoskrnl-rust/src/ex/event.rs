@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     _EVENT_TYPE_NotificationEvent, _EVENT_TYPE_SynchronizationEvent,
     GENERIC_MAPPING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeInitializeEvent(Event: PKEVENT, Type: EVENT_TYPE, State: BOOLEAN);
@@ -86,6 +87,7 @@ pub unsafe extern "system" fn ExpInitializeEventImplementation() -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn NtClearEvent(EventHandle: HANDLE) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
     let mut Event: PKEVENT = core::ptr::null_mut();
 
     let Status = ObReferenceObjectByHandle(
@@ -113,6 +115,8 @@ pub unsafe extern "system" fn NtCreateEvent(
     EventType: EVENT_TYPE,
     InitialState: BOOLEAN,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = ExGetPreviousMode();
     let mut Event: PKEVENT = core::ptr::null_mut();
     let mut hEvent: HANDLE = core::ptr::null_mut();
@@ -174,6 +178,8 @@ pub unsafe extern "system" fn NtOpenEvent(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut hEvent: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -212,6 +218,8 @@ pub unsafe extern "system" fn NtPulseEvent(
     EventHandle: HANDLE,
     PreviousState: *mut LONG,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let PreviousState = opaque_ptr(PreviousState);
     let mut Event: PKEVENT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -257,6 +265,9 @@ pub unsafe extern "system" fn NtQueryEvent(
     EventInformationLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let EventInformation = opaque_ptr(EventInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Event: PKEVENT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let BasicInfo = EventInformation as PEVENT_BASIC_INFORMATION;
@@ -322,6 +333,8 @@ pub unsafe extern "system" fn NtResetEvent(
     EventHandle: HANDLE,
     PreviousState: *mut LONG,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let PreviousState = opaque_ptr(PreviousState);
     let mut Event: PKEVENT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -364,6 +377,8 @@ pub unsafe extern "system" fn NtSetEvent(
     EventHandle: HANDLE,
     PreviousState: *mut LONG,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let PreviousState = opaque_ptr(PreviousState);
     let mut Event: PKEVENT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -402,6 +417,7 @@ pub unsafe extern "system" fn NtSetEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetEventBoostPriority(EventHandle: HANDLE) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
     let mut Event: PKEVENT = core::ptr::null_mut();
 
     let Status = ObReferenceObjectByHandle(

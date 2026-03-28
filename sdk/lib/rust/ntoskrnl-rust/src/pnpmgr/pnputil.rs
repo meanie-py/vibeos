@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     PKEY_VALUE_FULL_INFORMATION,
     PUNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use core::ffi::c_void;
 
@@ -30,6 +31,7 @@ pub unsafe extern "system" fn PnpFreeUnicodeStringList(
     UnicodeStringList: PUNICODE_STRING,
     StringCount: ULONG,
 ) {
+    let UnicodeStringList = opaque_ptr(UnicodeStringList);
     if !UnicodeStringList.is_null() {
         for i in 0..StringCount {
             if !(*UnicodeStringList.add(i as usize)).Buffer.is_null() {
@@ -46,6 +48,8 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
     UnicodeStringList: *mut PUNICODE_STRING,
     UnicodeStringCount: *mut ULONG,
 ) -> NTSTATUS {
+    let UnicodeStringList = opaque_ptr(UnicodeStringList);
+    let UnicodeStringCount = opaque_ptr(UnicodeStringCount);
     let mut p: PWCHAR;
     let mut pp: PWCHAR;
     let mut ps: PWCHAR;
@@ -158,6 +162,7 @@ pub unsafe extern "system" fn PnpRegSzToString(
     RegSzLength: ULONG,
     StringLength: PUSHORT,
 ) -> BOOLEAN {
+    let StringLength = opaque_ptr(StringLength);
     let pp: PWCHAR = RegSzData.add(RegSzLength as usize / core::mem::size_of::<WCHAR>());
     let mut p: PWCHAR = RegSzData;
 

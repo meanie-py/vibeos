@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     OBP_LOOKUP_CONTEXT,
     RtlInitUnicodeString, RtlUpcaseUnicodeChar,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // ============================================================================
 // Constants not in ntkrnl-sys (C #defines)
@@ -343,6 +344,7 @@ pub unsafe extern "system" fn ObpCreateSymbolicLinkName(SymbolicLink: POBJECT_SY
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpDeleteSymbolicLink(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     let SymlinkObject = ObjectBody as POBJECT_SYMBOLIC_LINK;
 
     if (*SymlinkObject).LinkTarget.Buffer != core::ptr::null_mut() {
@@ -364,6 +366,13 @@ pub unsafe extern "system" fn ObpParseSymbolicLink(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     NextObject: *mut PVOID,
 ) -> NTSTATUS {
+    let ParsedObject = opaque_ptr(ParsedObject);
+    let ObjectType = opaque_ptr(ObjectType);
+    let AccessState = opaque_ptr(AccessState);
+    let FullPath = opaque_ptr(FullPath);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Context = opaque_ptr(Context);
+    let NextObject = opaque_ptr(NextObject);
     let SymlinkObject = ParsedObject as POBJECT_SYMBOLIC_LINK;
     let mut TargetPath: PUNICODE_STRING;
     let mut NewTargetPath: PWSTR;
@@ -573,6 +582,9 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     LinkTarget: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let LinkHandle = opaque_ptr(LinkHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let LinkTarget = opaque_ptr(LinkTarget);
     let mut hLink: HANDLE = core::mem::zeroed();
     let mut SymbolicLink: POBJECT_SYMBOLIC_LINK = core::ptr::null_mut();
     let mut CapturedLinkTarget: _UNICODE_STRING;
@@ -676,6 +688,8 @@ pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let LinkHandle = opaque_ptr(LinkHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut hLink: HANDLE = core::mem::zeroed();
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -707,6 +721,9 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
     LinkTarget: PUNICODE_STRING,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let LinkHandle = opaque_ptr(LinkHandle);
+    let LinkTarget = opaque_ptr(LinkTarget);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: NTSTATUS;
     let mut SafeLinkTarget: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkObject: POBJECT_SYMBOLIC_LINK = core::ptr::null_mut();

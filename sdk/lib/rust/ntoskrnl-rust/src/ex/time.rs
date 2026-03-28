@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -228,6 +229,7 @@ pub unsafe extern "system" fn ExUpdateSystemTimeFromCmos(
 pub unsafe extern "system" fn ExRefreshTimeZoneInformation(
     CurrentBootTime: PLARGE_INTEGER,
 ) -> BOOLEAN {
+    let CurrentBootTime = opaque_ptr(CurrentBootTime);
     let mut CurrentTime: LARGE_INTEGER = core::mem::zeroed();
     let mut NewTimeZoneBias: LARGE_INTEGER = core::mem::zeroed();
     let Success: BOOLEAN;
@@ -340,6 +342,8 @@ pub unsafe extern "system" fn NtSetSystemTime(
     SystemTime: PLARGE_INTEGER,
     PreviousTime: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let SystemTime = opaque_ptr(SystemTime);
+    let PreviousTime = opaque_ptr(PreviousTime);
     let mut OldSystemTime: LARGE_INTEGER = core::mem::zeroed();
     let mut NewSystemTime: LARGE_INTEGER;
     let mut LocalTime: LARGE_INTEGER = core::mem::zeroed();
@@ -424,6 +428,7 @@ pub unsafe extern "system" fn NtSetSystemTime(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtQuerySystemTime(SystemTime: PLARGE_INTEGER) -> NTSTATUS {
+    let SystemTime = opaque_ptr(SystemTime);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i32 as i8 {
@@ -451,6 +456,8 @@ pub unsafe extern "system" fn ExLocalTimeToSystemTime(
     LocalTime: PLARGE_INTEGER,
     SystemTime: PLARGE_INTEGER,
 ) {
+    let LocalTime = opaque_ptr(LocalTime);
+    let SystemTime = opaque_ptr(SystemTime);
     (*SystemTime).QuadPart = (*LocalTime).QuadPart + ExpTimeZoneBias.QuadPart;
 }
 
@@ -459,6 +466,8 @@ pub unsafe extern "system" fn ExSystemTimeToLocalTime(
     SystemTime: PLARGE_INTEGER,
     LocalTime: PLARGE_INTEGER,
 ) {
+    let SystemTime = opaque_ptr(SystemTime);
+    let LocalTime = opaque_ptr(LocalTime);
     (*LocalTime).QuadPart = (*SystemTime).QuadPart - ExpTimeZoneBias.QuadPart;
 }
 
@@ -468,6 +477,9 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
     MaximumResolution: *mut ULONG,
     ActualResolution: *mut ULONG,
 ) -> NTSTATUS {
+    let MinimumResolution = opaque_ptr(MinimumResolution);
+    let MaximumResolution = opaque_ptr(MaximumResolution);
+    let ActualResolution = opaque_ptr(ActualResolution);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i32 as i8 {
@@ -520,6 +532,7 @@ pub unsafe extern "system" fn NtSetTimerResolution(
     SetResolution: BOOLEAN,
     CurrentResolution: *mut ULONG,
 ) -> NTSTATUS {
+    let CurrentResolution = opaque_ptr(CurrentResolution);
     let Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let Process: *mut _EPROCESS = PsGetCurrentProcess() as *mut _EPROCESS;

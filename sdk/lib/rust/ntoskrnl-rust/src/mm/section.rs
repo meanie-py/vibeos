@@ -590,6 +590,7 @@ pub unsafe extern "system" fn MmDereferenceSegmentWithLock(
 pub unsafe extern "system" fn MmSharePageEntrySectionSegment(
     Segment: PMM_SECTION_SEGMENT, Offset: PLARGE_INTEGER
 ) {
+    let Offset = opaque_ptr(Offset);
     let Entry = MmGetPageEntrySectionSegment(Segment as PVOID, Offset as *const i64);
     if Entry == 0 || SHARE_COUNT_FROM_SSE(Entry) == MAX_SHARE_COUNT || IS_SWAP_FROM_SSE(Entry) {
         KeBugCheck(MEMORY_MANAGEMENT);
@@ -602,6 +603,8 @@ pub unsafe extern "system" fn MmUnsharePageEntrySectionSegment(
     _MemoryArea: PMEMORY_AREA, Segment: PMM_SECTION_SEGMENT,
     Offset: PLARGE_INTEGER, Dirty: BOOLEAN, PageOut: BOOLEAN, InEntry: *mut ULONG_PTR
 ) -> BOOLEAN {
+    let Offset = opaque_ptr(Offset);
+    let InEntry = opaque_ptr(InEntry);
     let mut Entry = if !InEntry.is_null() { *InEntry } else { MmGetPageEntrySectionSegment(Segment as PVOID, Offset as *const i64) };
     let Page = PFN_FROM_SSE(Entry);
     let IsDataMap = (*Segment).SegFlags & MM_DATAFILE_SEGMENT != 0;
@@ -1000,6 +1003,7 @@ pub unsafe extern "system" fn MmCanFileBeTruncated(
     SectionObjectPointer: PSECTION_OBJECT_POINTERS,
     NewFileSize: PLARGE_INTEGER,
 ) -> BOOLEAN {
+    let NewFileSize = opaque_ptr(NewFileSize);
     if !(*SectionObjectPointer).ImageSectionObject.is_null() {
         return 0u8;
     }
@@ -1088,6 +1092,9 @@ pub unsafe extern "system" fn MmMapViewInSystemSpace(
     MappedBase: *mut PVOID,
     ViewSize: PSIZE_T,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let MappedBase = opaque_ptr(MappedBase);
+    let ViewSize = opaque_ptr(ViewSize);
     let mut SectionOffset = LARGE_INTEGER { QuadPart: 0 };
     MmMapViewInSystemSpaceEx(SectionObject, MappedBase, ViewSize, core::ptr::addr_of_mut!(SectionOffset), 0)
 }
@@ -1100,6 +1107,10 @@ pub unsafe extern "system" fn MmMapViewInSystemSpaceEx(
     SectionOffset: PLARGE_INTEGER,
     _Flags: ULONG_PTR,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let MappedBase = opaque_ptr(MappedBase);
+    let ViewSize = opaque_ptr(ViewSize);
+    let SectionOffset = opaque_ptr(SectionOffset);
     extern "C" {
     fn MmGetKernelAddressSpace() -> *mut core::ffi::c_void;
     fn MmLockAddressSpace(AddressSpace: *mut core::ffi::c_void);
@@ -1172,6 +1183,11 @@ pub unsafe extern "system" fn MmCreateSection(
     FileHandle: HANDLE,
     FileObject: PFILE_OBJECT,
 ) -> NTSTATUS {
+    let Section = opaque_ptr(Section);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let MaximumSize = opaque_ptr(MaximumSize);
+    let FileHandle = opaque_ptr(FileHandle);
+    let FileObject = opaque_ptr(FileObject);
     if AllocationAttributes & SEC_LARGE_PAGES != 0 {
         return 0xC000000D_u32 as i32;
     }
@@ -1291,6 +1307,8 @@ pub unsafe extern "system" fn MmArePagesResident(
     Address: PVOID,
     Length: ULONG,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let address_space = if !Process.is_null() {
         core::ptr::addr_of_mut!((*Process).Vm) as PVOID
     } else {
@@ -1341,6 +1359,7 @@ pub unsafe extern "system" fn MmPurgeSegment(
     Offset: PLARGE_INTEGER,
     Length: ULONG,
 ) -> BOOLEAN {
+    let Offset = opaque_ptr(Offset);
     let mut purge_start = LARGE_INTEGER { QuadPart: 0 };
     let mut purge_end = LARGE_INTEGER { QuadPart: 0 };
 
@@ -1468,6 +1487,7 @@ pub unsafe extern "system" fn MmMakeDataSectionResident(
     Length: ULONG,
     ValidDataLength: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let ValidDataLength = opaque_ptr(ValidDataLength);
     let segment = MiGrabDataSection(SectionObjectPointer);
 
     let status = MmMakeSegmentResident(segment, Offset, Length, ValidDataLength, 0u8);
@@ -1527,6 +1547,8 @@ pub unsafe extern "system" fn MmFlushSegment(
     Length: ULONG,
     Iosb: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let Offset = opaque_ptr(Offset);
+    let Iosb = opaque_ptr(Iosb);
     let mut flush_start = LARGE_INTEGER { QuadPart: 0 };
     let mut flush_end = LARGE_INTEGER { QuadPart: 0 };
 
@@ -1607,6 +1629,7 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
     ForceDirty: BOOLEAN,
     PageOut: BOOLEAN,
 ) -> BOOLEAN {
+    let Offset = opaque_ptr(Offset);
     let mut entry = MmGetPageEntrySectionSegment(Segment as PVOID, Offset as *const i64);
     if entry == 0 {
         return 0u8;
@@ -1709,6 +1732,8 @@ pub unsafe extern "system" fn MmExtendSection(
     _Section: PVOID,
     NewSize: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let _Section = opaque_ptr(_Section);
+    let NewSize = opaque_ptr(NewSize);
     let section = _Section as PSECTION;
 
     if (*section).u.Flags.Image() != 0 {
@@ -1779,6 +1804,7 @@ use ntkrnl_sys::ddk::{
     SECTION_IMAGE_INFORMATION,
     SECTION_BASIC_INFORMATION,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const SectionBasicInformation: SECTION_INFORMATION_CLASS = 0;
 const SectionImageInformation: SECTION_INFORMATION_CLASS = 1;
@@ -1933,6 +1959,9 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
     Address: PVOID,
     Locked: BOOLEAN,
 ) -> NTSTATUS {
+    let AddressSpace = opaque_ptr(AddressSpace);
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let Address = opaque_ptr(Address);
     let mut Offset = LARGE_INTEGER { QuadPart: 0 };
     let mut Page: PFN_NUMBER = 0;
     let mut Status: NTSTATUS;
@@ -2146,6 +2175,9 @@ pub unsafe extern "system" fn MmAccessFaultSectionView(
     Address: PVOID,
     _Locked: BOOLEAN,
 ) -> NTSTATUS {
+    let AddressSpace = opaque_ptr(AddressSpace);
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let Address = opaque_ptr(Address);
     let Segment: PMM_SECTION_SEGMENT;
     let mut OldPage: PFN_NUMBER = 0;
     let mut NewPage: PFN_NUMBER = 0;
@@ -2261,6 +2293,9 @@ pub unsafe extern "system" fn MmProtectSectionView(
     Protect: ULONG,
     OldProtect: *mut ULONG,
 ) -> NTSTATUS {
+    let AddressSpace = opaque_ptr(AddressSpace);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let OldProtect = opaque_ptr(OldProtect);
     let Region: PMM_REGION;
     let mut Status: NTSTATUS;
     let mut MaxLength: ULONG_PTR;
@@ -2310,6 +2345,9 @@ pub unsafe extern "system" fn MmQuerySectionView(
     Info: *mut MEMORY_BASIC_INFORMATION,
     ResultLength: *mut SIZE_T,
 ) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
+    let Info = opaque_ptr(Info);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut RegionBaseAddress: PVOID = core::ptr::null_mut();
     let Region = MmFindRegion(
         MA_GetStartingAddress(MemoryArea) as PVOID,
@@ -2353,6 +2391,10 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
     FileObject: PFILE_OBJECT,
     GotFileHandle: BOOLEAN,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let UMaximumSize = opaque_ptr(UMaximumSize);
+    let FileObject = opaque_ptr(FileObject);
     let mut Section: PSECTION = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut MaximumSize = LARGE_INTEGER { QuadPart: 0 };
@@ -2698,6 +2740,10 @@ pub unsafe extern "C" fn MmCreateImageSection(
     AllocationAttributes: ULONG,
     FileObject: PFILE_OBJECT,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let UMaximumSize = opaque_ptr(UMaximumSize);
+    let FileObject = opaque_ptr(FileObject);
     let mut Section: PSECTION = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut ImageSectionObject: PMM_IMAGE_SECTION_OBJECT;
@@ -3002,6 +3048,8 @@ pub unsafe extern "system" fn MiRosUnmapViewOfSection(
     BaseAddress: PVOID,
     SkipDebuggerNotify: BOOLEAN,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut Status: NTSTATUS;
     let AddressSpace: PVOID;
     let mut ImageBaseAddress: PVOID = core::ptr::null_mut();
@@ -3083,6 +3131,9 @@ pub unsafe extern "system" fn NtQuerySection(
     SectionInformationLength: SIZE_T,
     ResultLength: *mut SIZE_T,
 ) -> NTSTATUS {
+    let SectionHandle = opaque_ptr(SectionHandle);
+    let SectionInformation = opaque_ptr(SectionInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Section: PSECTION = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE;
     let mut Status: NTSTATUS;
@@ -3195,6 +3246,11 @@ pub unsafe extern "system" fn MmMapViewOfSection(
     AllocationType: ULONG,
     Protect: ULONG,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let Process = opaque_ptr(Process);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let SectionOffset = opaque_ptr(SectionOffset);
+    let ViewSize = opaque_ptr(ViewSize);
     if MiIsRosSectionObject(SectionObject as PSECTION) == 0 {
         return MmMapViewOfArm3Section(
             SectionObject, Process as ntkrnl_sys::ddk::PEPROCESS, BaseAddress, ZeroBits, CommitSize,
@@ -3390,5 +3446,6 @@ pub unsafe extern "system" fn MmMapViewOfSection(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiRosUnmapViewInSystemSpace(MappedBase: PVOID) -> NTSTATUS {
+    let MappedBase = opaque_ptr(MappedBase);
     MmUnmapViewOfSegment(MmGetKernelAddressSpace(), MappedBase)
 }

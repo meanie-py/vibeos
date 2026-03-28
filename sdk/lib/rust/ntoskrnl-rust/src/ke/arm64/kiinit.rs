@@ -24,6 +24,7 @@ use crate::ke::krnlinit::{
     KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
     KeFeatureBits, KiServiceLimit,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::processor::{KeNumberProcessors, KeActiveProcessors};
 use crate::ke::thrdschd::KiIdleSummary;
 use crate::ke::bug::{KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead, BugCheckCallbackLock};
@@ -169,6 +170,7 @@ unsafe fn KiInitModuleList(
 pub unsafe extern "system" fn KiSystemStartup(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> ! {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     // Direct PL011 UART write to confirm kernel entry (bypasses KD)
     {
         let uart = Arm64UartKernelBase as *mut ULONG;
@@ -327,6 +329,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
     Prcb: PKPRCB,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    let InitProcess = opaque_ptr(InitProcess);
+    let InitThread = opaque_ptr(InitThread);
+    let IdleStack = opaque_ptr(IdleStack);
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut PageDirectory: [u64; 2] = [0, 0];
 
     (*Prcb).MultiThreadSetMaster = Prcb;

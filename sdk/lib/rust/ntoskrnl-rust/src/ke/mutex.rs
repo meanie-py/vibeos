@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     PKMUTANT, PKMUTEX, PKTHREAD,
     KPRIORITY,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const MutantObject: u8 = 2;
 const MUTANT_INCREMENT: KPRIORITY = 1;
@@ -20,6 +21,7 @@ pub unsafe extern "system" fn KeInitializeMutant(
     Mutant: PKMUTANT,
     InitialOwner: BOOLEAN,
 ) {
+    let Mutant = opaque_ptr(Mutant);
     let mut CurrentThread: PKTHREAD;
     let mut OldIrql: KIRQL;
 
@@ -65,6 +67,7 @@ pub unsafe extern "system" fn KeInitializeMutex(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadStateMutant(Mutant: PKMUTANT) -> LONG {
+    let Mutant = opaque_ptr(Mutant);
     (*Mutant).Header.SignalState
 }
 
@@ -75,6 +78,7 @@ pub unsafe extern "system" fn KeReleaseMutant(
     Abandon: BOOLEAN,
     Wait: BOOLEAN,
 ) -> LONG {
+    let Mutant = opaque_ptr(Mutant);
     let mut OldIrql: KIRQL;
     let PreviousState: LONG;
     let CurrentThread: PKTHREAD = PsGetCurrentThread();

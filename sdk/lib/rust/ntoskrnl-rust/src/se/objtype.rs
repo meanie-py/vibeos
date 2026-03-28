@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NOT
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const ACCESS_OBJECT_GUID: u16 = 0;
 const ACCESS_MAX_LEVEL: u16 = 4;
@@ -90,6 +91,7 @@ pub unsafe extern "C" fn SepObjectTypeGuidInList(
     ObjectTypeGuid: PGUID,
     ObjectIndex: *mut ULONG,
 ) -> BOOLEAN {
+    let ObjectIndex = opaque_ptr(ObjectIndex);
     let mut ObjectTypeGuidToSearch: GUID;
 
     for ObjectTypeIndex in 0..ObjectTypeListLength {
@@ -110,6 +112,7 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
     PreviousMode: KPROCESSOR_MODE,
     CapturedObjectTypeList: *mut POBJECT_TYPE_LIST_INTERNAL,
 ) -> NTSTATUS {
+    let CapturedObjectTypeList = opaque_ptr(CapturedObjectTypeList);
     let Size: SIZE_T;
     let mut ObjectTypeGuid: PGUID;
     let InternalTypeList: POBJECT_TYPE_LIST_INTERNAL;

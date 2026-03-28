@@ -7,6 +7,7 @@ use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ddk::{
     PZONE_HEADER, PZONE_SEGMENT_HEADER, ZONE_SEGMENT_HEADER,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 /// Inline replacement for the C macro PushEntryList.
 #[inline(always)]
@@ -21,6 +22,7 @@ pub unsafe extern "system" fn ExExtendZone(
     Segment: PVOID,
     SegmentSize: ULONG,
 ) -> NTSTATUS {
+    let Segment = opaque_ptr(Segment);
     let mut Entry: ULONG_PTR;
     let mut i: ULONG;
 
@@ -61,6 +63,7 @@ pub unsafe extern "system" fn ExInterlockedExtendZone(
     SegmentSize: ULONG,
     Lock: PKSPIN_LOCK,
 ) -> NTSTATUS {
+    let Segment = opaque_ptr(Segment);
     let Status: NTSTATUS;
     let mut OldIrql: KIRQL = 0;
 
@@ -80,6 +83,7 @@ pub unsafe extern "system" fn ExInitializeZone(
     InitialSegment: PVOID,
     InitialSegmentSize: ULONG,
 ) -> NTSTATUS {
+    let InitialSegment = opaque_ptr(InitialSegment);
     let mut i: ULONG;
     let mut Entry: ULONG_PTR;
 

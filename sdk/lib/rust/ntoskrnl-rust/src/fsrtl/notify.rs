@@ -5,6 +5,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _FILE_NOTIFY_INFORMATION,
@@ -103,6 +104,8 @@ pub unsafe extern "system" fn FsRtlCancelNotify(
     _device_object: PDEVICE_OBJECT,
     irp: PIRP,
 ) {
+    let _device_object = opaque_ptr(_device_object);
+    let irp = opaque_ptr(irp);
     let mut buffer: PVOID;
     let mut notify_irp: PIRP;
     let mut buffer_length: ULONG;
@@ -433,6 +436,9 @@ pub unsafe extern "system" fn FsRtlNotifyChangeDirectory(
     completion_filter: ULONG,
     notify_irp: PIRP,
 ) {
+    let fs_context = opaque_ptr(fs_context);
+    let notify_list = opaque_ptr(notify_list);
+    let notify_irp = opaque_ptr(notify_irp);
     FsRtlNotifyFilterChangeDirectory(
         notify_sync,
         notify_list,
@@ -454,6 +460,8 @@ pub unsafe extern "system" fn FsRtlNotifyCleanup(
     notify_list: PLIST_ENTRY,
     fs_context: PVOID,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let fs_context = opaque_ptr(fs_context);
     let notify_change: PNOTIFY_CHANGE;
     let real_notify_sync: PREAL_NOTIFY_SYNC;
     let mut subject_context: PSECURITY_SUBJECT_CONTEXT = core::ptr::null_mut();
@@ -508,6 +516,10 @@ pub unsafe extern "system" fn FsRtlNotifyFilterChangeDirectory(
     subject_context: PSECURITY_SUBJECT_CONTEXT,
     filter_callback: PFILTER_REPORT_CHANGE,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let fs_context = opaque_ptr(fs_context);
+    let notify_irp = opaque_ptr(notify_irp);
+    let subject_context = opaque_ptr(subject_context);
     let mut saved_length: ULONG;
     let stack: PIO_STACK_LOCATION;
     let mut notify_change: PNOTIFY_CHANGE = core::ptr::null_mut();
@@ -652,6 +664,9 @@ pub unsafe extern "system" fn FsRtlNotifyFilterReportChange(
     target_context: PVOID,
     _filter_context: PVOID,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let target_context = opaque_ptr(target_context);
+    let _filter_context = opaque_ptr(_filter_context);
     let real_notify_sync: PREAL_NOTIFY_SYNC = notify_sync as PREAL_NOTIFY_SYNC;
 
     FsRtlNotifyAcquireFastMutex(real_notify_sync);
@@ -675,6 +690,10 @@ pub unsafe extern "system" fn FsRtlNotifyFullChangeDirectory(
     traverse_callback: PCHECK_FOR_TRAVERSE_ACCESS,
     subject_context: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let fs_context = opaque_ptr(fs_context);
+    let notify_irp = opaque_ptr(notify_irp);
+    let subject_context = opaque_ptr(subject_context);
     FsRtlNotifyFilterChangeDirectory(
         notify_sync,
         notify_list,
@@ -702,6 +721,8 @@ pub unsafe extern "system" fn FsRtlNotifyFullReportChange(
     action: ULONG,
     target_context: PVOID,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let target_context = opaque_ptr(target_context);
     FsRtlNotifyFilterReportChange(
         notify_sync,
         notify_list,
@@ -718,6 +739,7 @@ pub unsafe extern "system" fn FsRtlNotifyFullReportChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNotifyInitializeSync(notify_sync: *mut PNOTIFY_SYNC) {
+    let notify_sync = opaque_ptr(notify_sync);
     let real_notify_sync: PREAL_NOTIFY_SYNC;
 
     *notify_sync = core::ptr::null_mut();
@@ -738,6 +760,8 @@ pub unsafe extern "system" fn FsRtlNotifyReportChange(
     file_name_part_length: *mut USHORT,
     filter_match: ULONG,
 ) {
+    let notify_list = opaque_ptr(notify_list);
+    let file_name_part_length = opaque_ptr(file_name_part_length);
     FsRtlNotifyFilterReportChange(
         notify_sync,
         notify_list,
@@ -754,6 +778,7 @@ pub unsafe extern "system" fn FsRtlNotifyReportChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlNotifyUninitializeSync(notify_sync: *mut PNOTIFY_SYNC) {
+    let notify_sync = opaque_ptr(notify_sync);
     if !(*notify_sync).is_null() {
         ExFreePoolWithTag(*notify_sync, u32::from_le_bytes(*b"FSNR"));
         *notify_sync = core::ptr::null_mut();

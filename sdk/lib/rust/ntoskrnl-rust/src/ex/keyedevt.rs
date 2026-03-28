@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     POBJECT_ATTRIBUTES, POBJECT_TYPE, PsGetCurrentThread, ZwClose,
     KPROCESSOR_MODE, ZwCreateKeyedEvent, _UNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Keyed event access rights (from extypes.h)
 const KEYEDEVENT_WAIT: ACCESS_MASK = 0x0001;
@@ -138,6 +139,8 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
     Timeout: PLARGE_INTEGER,
     Release: BOOLEAN,
 ) -> NTSTATUS {
+    let KeyedWaitValue = opaque_ptr(KeyedWaitValue);
+    let Timeout = opaque_ptr(Timeout);
     let CurrentProcess = PsGetCurrentProcess();
     let mut HashIndex: usize = (KeyedWaitValue as usize) >> 5;
     HashIndex ^= (CurrentProcess as usize) >> 6;
@@ -230,6 +233,8 @@ pub unsafe extern "system" fn ExpWaitForKeyedEvent(
     Alertable: BOOLEAN,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let KeyedWaitValue = opaque_ptr(KeyedWaitValue);
+    let Timeout = opaque_ptr(Timeout);
     ExpReleaseOrWaitForKeyedEvent(KeyedEvent, KeyedWaitValue, Alertable, Timeout, 0u8)
 }
 
@@ -240,6 +245,8 @@ pub unsafe extern "system" fn ExpReleaseKeyedEvent(
     Alertable: BOOLEAN,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let KeyedWaitValue = opaque_ptr(KeyedWaitValue);
+    let Timeout = opaque_ptr(Timeout);
     ExpReleaseOrWaitForKeyedEvent(KeyedEvent, KeyedWaitValue, Alertable, Timeout, 1u8)
 }
 
@@ -250,6 +257,8 @@ pub unsafe extern "system" fn NtCreateKeyedEvent(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     Flags: ULONG,
 ) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEvent: PEX_KEYED_EVENT = core::ptr::null_mut();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
@@ -307,6 +316,8 @@ pub unsafe extern "system" fn NtOpenKeyedEvent(
     AccessMask: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEventHandle: HANDLE = core::ptr::null_mut();
 
@@ -343,6 +354,9 @@ pub unsafe extern "system" fn NtWaitForKeyedEvent(
     Alertable: BOOLEAN,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let Key = opaque_ptr(Key);
+    let Timeout = opaque_ptr(Timeout);
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEvent: PEX_KEYED_EVENT = core::ptr::null_mut();
     let mut TimeoutCopy: LARGE_INTEGER = core::mem::zeroed();
@@ -392,6 +406,9 @@ pub unsafe extern "system" fn NtReleaseKeyedEvent(
     Alertable: BOOLEAN,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let Key = opaque_ptr(Key);
+    let Timeout = opaque_ptr(Timeout);
     let PreviousMode = KeGetPreviousMode();
     let mut KeyedEvent: PEX_KEYED_EVENT = core::ptr::null_mut();
     let mut TimeoutCopy: LARGE_INTEGER = core::mem::zeroed();

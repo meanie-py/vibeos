@@ -20,6 +20,7 @@ use ntkrnl_sys::ddk::{
     ExConvertPushLockSharedToExclusive, ExInitializePushLock,
     ObOpenObjectByName, ObReferenceObjectByHandle, ObCreateObject, ObInsertObject,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 /// STATUS_MORE_ENTRIES — not in ntkrnl_sys::constants, define locally.
 const STATUS_MORE_ENTRIES: NTSTATUS = 0x00000105;
@@ -33,6 +34,7 @@ pub unsafe extern "system" fn ObpInsertEntryDirectory(
     Context: POBP_LOOKUP_CONTEXT,
     ObjectHeader: POBJECT_HEADER,
 ) -> BOOLEAN {
+    let ObjectHeader = opaque_ptr(ObjectHeader);
     let mut AllocatedEntry: *mut POBJECT_DIRECTORY_ENTRY;
     let NewEntry: POBJECT_DIRECTORY_ENTRY;
     let HeaderNameInfo: POBJECT_HEADER_NAME_INFO;
@@ -99,6 +101,7 @@ pub unsafe extern "system" fn ObpLookupEntryDirectory(
     SearchShadow: BOOLEAN,
     Context: POBP_LOOKUP_CONTEXT,
 ) -> PVOID {
+    let Name = opaque_ptr(Name);
     let mut CaseInsensitive: BOOLEAN = 0u8;
     let mut HeaderNameInfo: POBJECT_HEADER_NAME_INFO;
     let mut ObjectHeader: POBJECT_HEADER;
@@ -262,6 +265,8 @@ pub unsafe extern "system" fn NtOpenDirectoryObject(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let DirectoryHandle = opaque_ptr(DirectoryHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Directory: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -298,6 +303,10 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
     Context: *mut ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let DirectoryHandle = opaque_ptr(DirectoryHandle);
+    let Buffer = opaque_ptr(Buffer);
+    let Context = opaque_ptr(Context);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Directory: POBJECT_DIRECTORY = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut SkipEntries: ULONG = 0;
@@ -501,6 +510,8 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let DirectoryHandle = opaque_ptr(DirectoryHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Directory: POBJECT_DIRECTORY = core::ptr::null_mut();
     let mut NewHandle: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();

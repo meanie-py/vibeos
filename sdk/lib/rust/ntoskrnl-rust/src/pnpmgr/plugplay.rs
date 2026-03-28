@@ -69,6 +69,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
@@ -305,6 +306,7 @@ pub unsafe extern "C" fn IopQueueDeviceChangeEvent(
     InterfaceClassGuid: *const GUID,
     SymbolicLinkName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
     let mut Copy: _UNICODE_STRING = core::mem::zeroed();
     
     Copy.Length = 0;
@@ -360,6 +362,7 @@ pub unsafe extern "C" fn IopQueueDeviceInstallEvent(
     EventGuid: *const GUID,
     DeviceId: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DeviceId = opaque_ptr(DeviceId);
 
     let mut Copy: _UNICODE_STRING = core::mem::zeroed();
     
@@ -410,6 +413,7 @@ pub unsafe extern "C" fn IopQueueTargetDeviceEvent(
     EventGuid: *const GUID,
     DeviceIds: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DeviceIds = opaque_ptr(DeviceIds);
     let mut Copy: _UNICODE_STRING = core::mem::zeroed();
     
     Copy.Length = 0;
@@ -476,6 +480,7 @@ unsafe extern "C" fn IopFindDeviceInstanceTraverse(
 pub unsafe extern "C" fn IopGetDeviceObjectFromDeviceInstance(
     DeviceInstance: PUNICODE_STRING,
 ) -> PDEVICE_OBJECT {
+    let DeviceInstance = opaque_ptr(DeviceInstance);
     let mut Context: _DEVICETREE_TRAVERSE_CONTEXT = core::mem::zeroed();
     let mut DeviceInstanceContext: IOP_FIND_DEVICE_INSTANCE_TRAVERSE_CONTEXT = core::mem::zeroed();
 
@@ -1664,6 +1669,7 @@ pub unsafe extern "system" fn NtPlugPlayControl(
     Buffer: PVOID,
     BufferLength: ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
     if KeGetPreviousMode() == 0i8 {
         return STATUS_ACCESS_DENIED;
     }

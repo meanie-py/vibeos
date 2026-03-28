@@ -1,5 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PSTR};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[repr(C)]
 pub enum VF_OBJECT_TYPE {
@@ -16,6 +17,7 @@ pub unsafe extern "system" fn VfIsVerificationEnabled(
     _vf_object_type: VF_OBJECT_TYPE,
     _object: PVOID,
 ) -> BOOLEAN {
+    let _object = opaque_ptr(_object);
     0u8
 }
 
@@ -29,6 +31,10 @@ pub unsafe extern "C" fn VfFailDeviceNode(
     _debugger_message_text: PSTR,
     _parameter_format_string: PSTR,
 ) {
+    let _physical_device_object = opaque_ptr(_physical_device_object);
+    let _assertion_control = opaque_ptr(_assertion_control);
+    let _debugger_message_text = opaque_ptr(_debugger_message_text);
+    let _parameter_format_string = opaque_ptr(_parameter_format_string);
 }
 
 #[no_mangle]
@@ -40,6 +46,9 @@ pub unsafe extern "C" fn VfFailSystemBIOS(
     _debugger_message_text: PSTR,
     _parameter_format_string: PSTR,
 ) {
+    let _assertion_control = opaque_ptr(_assertion_control);
+    let _debugger_message_text = opaque_ptr(_debugger_message_text);
+    let _parameter_format_string = opaque_ptr(_parameter_format_string);
 }
 
 #[no_mangle]
@@ -51,6 +60,9 @@ pub unsafe extern "C" fn VfFailDriver(
     _debugger_message_text: PSTR,
     _parameter_format_string: PSTR,
 ) {
+    let _assertion_control = opaque_ptr(_assertion_control);
+    let _debugger_message_text = opaque_ptr(_debugger_message_text);
+    let _parameter_format_string = opaque_ptr(_parameter_format_string);
 }
 
 

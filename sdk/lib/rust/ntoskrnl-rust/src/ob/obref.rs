@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     SeCreateAccessState, SeDeleteAccessState,
     PGENERIC_MAPPING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 pub const MAX_FAST_REFS: LONG = 7;
@@ -55,6 +56,7 @@ unsafe fn InterlockedCompareExchangeSizeT(
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObReferenceObjectSafe(
 Object: PVOID) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
     let object_header = OBJECT_TO_OBJECT_HEADER(Object);
     let mut old_value = (*object_header).PointerCount as isize;
     if old_value == 0 {
@@ -83,6 +85,7 @@ Object: PVOID) -> BOOLEAN {
 #[no_mangle]
 pub unsafe extern "C" fn ObReferenceObjectSafe(
 Object: PVOID) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
     let object_header = OBJECT_TO_OBJECT_HEADER(Object);
     let mut old_value = (*object_header).PointerCount as isize;
     if old_value == 0 {
@@ -134,6 +137,7 @@ unsafe fn ObpDeferObjectDeletion(Header: POBJECT_HEADER) {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObReferenceObjectEx(Object: PVOID, Count: LONG) -> LONG {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     (InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
@@ -144,6 +148,7 @@ pub unsafe extern "fastcall" fn ObReferenceObjectEx(Object: PVOID, Count: LONG) 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObReferenceObjectEx(Object: PVOID, Count: LONG) -> LONG {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     (InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
@@ -154,6 +159,7 @@ pub unsafe extern "C" fn ObReferenceObjectEx(Object: PVOID, Count: LONG) -> LONG
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObDereferenceObjectEx(Object: PVOID, Count: LONG) -> LONG {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     let new_count = InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
@@ -168,6 +174,7 @@ pub unsafe extern "fastcall" fn ObDereferenceObjectEx(Object: PVOID, Count: LONG
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObDereferenceObjectEx(Object: PVOID, Count: LONG) -> LONG {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     let new_count = InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
@@ -182,6 +189,7 @@ pub unsafe extern "C" fn ObDereferenceObjectEx(Object: PVOID, Count: LONG) -> LO
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObInitializeFastReference(FastRef: PEX_FAST_REF, Object: PVOID) {
+    let Object = opaque_ptr(Object);
     if !Object.is_null() {
         ObReferenceObjectEx(Object, MAX_FAST_REFS);
     }
@@ -191,6 +199,7 @@ pub unsafe extern "fastcall" fn ObInitializeFastReference(FastRef: PEX_FAST_REF,
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObInitializeFastReference(FastRef: PEX_FAST_REF, Object: PVOID) {
+    let Object = opaque_ptr(Object);
     if !Object.is_null() {
         ObReferenceObjectEx(Object, MAX_FAST_REFS);
     }
@@ -270,6 +279,7 @@ pub unsafe extern "C" fn ObFastReferenceObject(FastRef: PEX_FAST_REF) -> PVOID {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObFastDereferenceObject(FastRef: PEX_FAST_REF, Object: PVOID) {
+    let Object = opaque_ptr(Object);
     if ExReleaseFastReference(FastRef, Object) == 0 {
         ObfDereferenceObject(Object);
     }
@@ -278,6 +288,7 @@ pub unsafe extern "fastcall" fn ObFastDereferenceObject(FastRef: PEX_FAST_REF, O
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObFastDereferenceObject(FastRef: PEX_FAST_REF, Object: PVOID) {
+    let Object = opaque_ptr(Object);
     if ExReleaseFastReference(FastRef, Object) == 0 {
         ObfDereferenceObject(Object);
     }
@@ -286,6 +297,7 @@ pub unsafe extern "C" fn ObFastDereferenceObject(FastRef: PEX_FAST_REF, Object: 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObFastReplaceObject(FastRef: PEX_FAST_REF, Object: PVOID) -> PVOID {
+    let Object = opaque_ptr(Object);
     if !Object.is_null() {
         ObReferenceObjectEx(Object, MAX_FAST_REFS);
     }
@@ -304,6 +316,7 @@ pub unsafe extern "fastcall" fn ObFastReplaceObject(FastRef: PEX_FAST_REF, Objec
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObFastReplaceObject(FastRef: PEX_FAST_REF, Object: PVOID) -> PVOID {
+    let Object = opaque_ptr(Object);
     if !Object.is_null() {
         ObReferenceObjectEx(Object, MAX_FAST_REFS);
     }
@@ -326,6 +339,8 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
     FileObject: *mut PFILE_OBJECT,
     HandleInformation: POBJECT_HANDLE_INFORMATION,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let FileObject = opaque_ptr(FileObject);
     *FileObject = core::ptr::null_mut();
 
     let (handle_table, handle_value) = if HandleToLong(Handle) < 0 {
@@ -386,6 +401,7 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObfReferenceObject(Object: PVOID) -> isize {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     InterlockedIncrementSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize
@@ -395,6 +411,7 @@ pub unsafe extern "fastcall" fn ObfReferenceObject(Object: PVOID) -> isize {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObfReferenceObject(Object: PVOID) -> isize {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     InterlockedIncrementSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize
@@ -404,6 +421,7 @@ pub unsafe extern "C" fn ObfReferenceObject(Object: PVOID) -> isize {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn ObfDereferenceObject(Object: PVOID) -> isize {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     if ((*header).PointerCount as isize) < ((*header).__bindgen_anon_1.HandleCount as isize) {
         return (*header).PointerCount as isize;
@@ -426,6 +444,7 @@ pub unsafe extern "fastcall" fn ObfDereferenceObject(Object: PVOID) -> isize {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn ObfDereferenceObject(Object: PVOID) -> isize {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     if ((*header).PointerCount as isize) < ((*header).__bindgen_anon_1.HandleCount as isize) {
         return (*header).PointerCount as isize;
@@ -447,11 +466,13 @@ pub unsafe extern "C" fn ObfDereferenceObject(Object: PVOID) -> isize {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObDereferenceObject(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     ObfDereferenceObject(Object);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ObDereferenceObjectDeferDelete(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     if InterlockedDecrementSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize
@@ -468,6 +489,8 @@ pub unsafe extern "system" fn ObReferenceObjectByPointer(
     ObjectType: POBJECT_TYPE,
     AccessMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let ObjectType = opaque_ptr(ObjectType);
     let header = OBJECT_TO_OBJECT_HEADER(Object);
     if (*header).Type != ObjectType
         && (AccessMode != 0i8 || ObjectType == ObpSymbolicLinkObjectType)
@@ -490,6 +513,11 @@ pub unsafe extern "system" fn ObReferenceObjectByName(
     ParseContext: PVOID,
     ObjectPtr: *mut PVOID,
 ) -> NTSTATUS {
+    let ObjectPath = opaque_ptr(ObjectPath);
+    let PassedAccessState = opaque_ptr(PassedAccessState);
+    let ObjectType = opaque_ptr(ObjectType);
+    let ParseContext = opaque_ptr(ParseContext);
+    let ObjectPtr = opaque_ptr(ObjectPtr);
     let mut object: PVOID = core::ptr::null_mut();
     let mut object_name: _UNICODE_STRING = core::mem::zeroed();
     let mut context: _OBP_LOOKUP_CONTEXT = core::mem::zeroed();
@@ -577,6 +605,9 @@ pub unsafe extern "system" fn ObReferenceObjectByHandle(
     Object: *mut PVOID,
     HandleInformation: POBJECT_HANDLE_INFORMATION,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let ObjectType = opaque_ptr(ObjectType);
+    let Object = opaque_ptr(Object);
     *Object = core::ptr::null_mut();
 
     if HandleToLong(Handle) < 0 {

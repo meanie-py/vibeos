@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     ZwAllocateVirtualMemory, ZwFreeVirtualMemory,
     LpcRequestWaitReplyPort,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut LpcPortObjectType: PVOID;
@@ -261,6 +262,8 @@ pub unsafe extern "system" fn ExRaiseHardError(
     ValidResponseOptions: ULONG,
     Response: *mut ULONG,
 ) -> NTSTATUS {
+    let Parameters = opaque_ptr(Parameters);
+    let Response = opaque_ptr(Response);
     let mut CapturedParams: [UNICODE_STRING; MAXIMUM_HARDERROR_PARAMETERS] = core::mem::zeroed();
     let mut UserData: PVOID = core::ptr::null_mut();
     let mut SafeResponse = ResponseNotHandled;
@@ -354,6 +357,8 @@ pub unsafe extern "system" fn NtRaiseHardError(
     ValidResponseOptions: ULONG,
     Response: *mut ULONG,
 ) -> NTSTATUS {
+    let Parameters = opaque_ptr(Parameters);
+    let Response = opaque_ptr(Response);
     let mut SafeParams: PULONG_PTR = core::ptr::null_mut();
     let mut SafeResponse = ResponseNotHandled;
     let mut SafeString: UNICODE_STRING = unsafe { core::mem::zeroed() };
@@ -447,6 +452,7 @@ pub unsafe extern "system" fn NtRaiseHardError(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetDefaultHardErrorPort(PortHandle: HANDLE) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     let PreviousMode = ExGetPreviousMode();
     let mut Status = STATUS_UNSUCCESSFUL;
 

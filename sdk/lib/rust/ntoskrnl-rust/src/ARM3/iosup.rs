@@ -13,6 +13,7 @@ extern "system" {
 use ntkrnl_sys::ddk::{
     LOGICAL, PHYSICAL_ADDRESS, MEMORY_CACHING_TYPE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MiPlatformCacheAttributes: [[MI_PFN_CACHE_ATTRIBUTE; MmMaximumCacheType as usize]; 2] = [
@@ -118,6 +119,7 @@ pub unsafe extern "system" fn MmUnmapIoSpace(
     BaseAddress: PVOID,
     NumberOfBytes: SIZE_T,
 ) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     let Pfn: PFN_NUMBER;
     let PageCount: PFN_COUNT;
     let PointerPte: PMMPTE;
@@ -151,6 +153,7 @@ pub unsafe extern "system" fn MmUnmapVideoDisplay(
     BaseAddress: PVOID,
     NumberOfBytes: SIZE_T,
 ) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     MmUnmapIoSpace(BaseAddress, NumberOfBytes);
 }
 

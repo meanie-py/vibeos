@@ -22,6 +22,7 @@ use ntkrnl_sys::ddk::{
     ObReferenceObjectSafe, _TIMER_TYPE_NotificationTimer,
     _TIMER_TYPE_SynchronizationTimer, _KWAIT_REASON_Executive,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // KDEFERRED_ROUTINE, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLockFromDpcLevel
 // come from ntkrnl_sys::ke::* (portable wrappers for i386 fastcall variants)
 
@@ -309,6 +310,8 @@ pub unsafe extern "system" fn NtCancelTimer(
     TimerHandle: HANDLE,
     CurrentState: PBOOLEAN,
 ) -> NTSTATUS {
+    let TimerHandle = opaque_ptr(TimerHandle);
+    let CurrentState = opaque_ptr(CurrentState);
     let mut Timer: PETIMER = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let mut State: BOOLEAN;
@@ -394,6 +397,8 @@ pub unsafe extern "system" fn NtCreateTimer(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     TimerType: u32,
 ) -> NTSTATUS {
+    let TimerHandle = opaque_ptr(TimerHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Timer: PETIMER = core::ptr::null_mut();
     let mut hTimer: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
@@ -465,6 +470,8 @@ pub unsafe extern "system" fn NtOpenTimer(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let TimerHandle = opaque_ptr(TimerHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut hTimer: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -504,6 +511,9 @@ pub unsafe extern "system" fn NtQueryTimer(
     TimerInformationLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let TimerHandle = opaque_ptr(TimerHandle);
+    let TimerInformation = opaque_ptr(TimerInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Timer: PETIMER = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -581,6 +591,10 @@ pub unsafe extern "system" fn NtSetTimer(
     Period: LONG,
     PreviousState: PBOOLEAN,
 ) -> NTSTATUS {
+    let TimerHandle = opaque_ptr(TimerHandle);
+    let DueTime = opaque_ptr(DueTime);
+    let TimerContext = opaque_ptr(TimerContext);
+    let PreviousState = opaque_ptr(PreviousState);
     let mut Timer: PETIMER = core::ptr::null_mut();
     let mut OldIrql: KIRQL = 0;
     let mut State: BOOLEAN;

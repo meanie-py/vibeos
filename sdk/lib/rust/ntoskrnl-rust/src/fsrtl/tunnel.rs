@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::CONTAINING_RECORD;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _RTL_SPLAY_LINKS,
@@ -326,6 +327,9 @@ pub unsafe extern "system" fn FsRtlAddToTunnelCache(
     DataLength: ULONG,
     Data: PVOID,
 ) {
+    let ShortName = opaque_ptr(ShortName);
+    let LongName = opaque_ptr(LongName);
+    let Data = opaque_ptr(Data);
     let mut NodeEntry: PTUNNEL_NODE_ENTRY = core::ptr::null_mut();
     let mut CurEntry: PRTL_SPLAY_LINKS;
     let mut LastEntry: PRTL_SPLAY_LINKS;
@@ -576,6 +580,11 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
     DataLength: *mut ULONG,
     Data: PVOID,
 ) -> BOOLEAN {
+    let Name = opaque_ptr(Name);
+    let ShortName = opaque_ptr(ShortName);
+    let LongName = opaque_ptr(LongName);
+    let DataLength = opaque_ptr(DataLength);
+    let Data = opaque_ptr(Data);
     let mut Ret: BOOLEAN = 0u8;
     let mut CurEntry: PTUNNEL_NODE_ENTRY;
     let mut PoolList: LIST_ENTRY = core::mem::zeroed();

@@ -5,6 +5,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::KeFlushProcessTb;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MmSystemPteBase: PMMPTE = core::ptr::null_mut();
@@ -142,6 +143,7 @@ pub unsafe extern "system" fn MiReleaseSystemPtes(
     mut number_of_ptes: ULONG,
     system_pte_pool_type: MMSYSTEM_PTE_POOL_TYPE,
 ) {
+    let mut starting_pte = opaque_ptr(starting_pte);
     let mut cluster_size: ULONG;
     let mut previous_pte: PMMPTE;
     let mut next_pte: PMMPTE;
@@ -234,6 +236,7 @@ pub unsafe extern "system" fn MiInitializeSystemPtes(
     number_of_ptes: ULONG,
     pool_type: MMSYSTEM_PTE_POOL_TYPE,
 ) {
+    let mut starting_pte = opaque_ptr(starting_pte);
     MmSystemPteBase = MI_SYSTEM_PTE_BASE as PMMPTE;
     MmSystemPtesStart[pool_type as usize] = starting_pte;
     MmSystemPtesEnd[pool_type as usize] = starting_pte.add(number_of_ptes as usize - 1);

@@ -10,6 +10,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 
 use ntkrnl_sys::ddk::{ACCESS_MASK, ExFreePool, HANDLE, KPROCESSOR_MODE, KeAttachProcess, KeDetachProcess, KeInitializeSpinLock, LARGE_INTEGER, MiAcquireExpansionLock, MiArchCreateProcessAddressSpace, MiDecrementShareCount, MiDeleteVirtualAddresses, MiInitializePfn, MiInitializeWorkingSetList, MiInsertVadEx, MiLocateAddress, MiLockProcessWorkingSet, MiLockProcessWorkingSetUnsafe, MiReleaseExpansionLock, MiRemoveMappedView, MiRemoveNode, MiRemoveZeroPageSafe, MiRosCleanupMemoryArea, MiSessionAddProcess, MiSessionRemoveProcess, MiUnlockProcessWorkingSet, MiUnlockProcessWorkingSetUnsafe, MmGetFileObjectForSection, MmGetSessionId, MmLockAddressSpace, MmMapViewOfSection, MmUnlockAddressSpace, PCLIENT_ID, PEPROCESS, PETHREAD, PFILE_OBJECT, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PINITIAL_PEB, PINITIAL_TEB, PMMVAD, PMMVAD_LONG, PNT_TIB, POBJECT_NAME_INFORMATION, PPEB, PTEB, _EPROCESS, _ETHREAD, _IMAGE_NT_HEADERS, _KLOCK_QUEUE_HANDLE, _KTHREAD, _MMPFN, _MMPTE, _MMVAD_LONG, _MM_AVL_TABLE};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -109,6 +110,7 @@ unsafe fn MiCreatePebOrTeb(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteTeb(Process: PEPROCESS, Teb: PTEB) {
+    let Process = opaque_ptr(Process);
     let TebEnd: ULONG_PTR;
     let Thread = PsGetCurrentThread() as PETHREAD;
     let Vad: PMMVAD;
@@ -146,6 +148,7 @@ pub unsafe extern "system" fn MmDeleteTeb(Process: PEPROCESS, Teb: PTEB) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BOOLEAN) {
+    let StackBase = opaque_ptr(StackBase);
     let mut PointerPte: PMMPTE;
     let PageFrameNumber: PFN_NUMBER;
     let PageTableFrameNumber: PFN_NUMBER;
@@ -347,6 +350,7 @@ unsafe fn MmGrowKernelStackEx(StackPointer: PVOID, GrowSize: ULONG) -> NTSTATUS 
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGrowKernelStack(StackPointer: PVOID) -> NTSTATUS {
+    let StackPointer = opaque_ptr(StackPointer);
     MmGrowKernelStackEx(StackPointer, KERNEL_LARGE_STACK_COMMIT as ULONG)
 }
 
@@ -355,6 +359,7 @@ pub unsafe extern "system" fn MmSetMemoryPriorityProcess(
     Process: PEPROCESS,
     MemoryPriority: UCHAR,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
     let mut MemoryPriority = MemoryPriority;
 
     if (MmSystemSize == MmSmallSystem) && (MmNumberOfPhysicalPages < ((15 * 1024 * 1024) / PAGE_SIZE)) {
@@ -373,6 +378,8 @@ pub unsafe extern "system" fn MmCreatePeb(
     InitialPeb: PINITIAL_PEB,
     BasePeb: *mut PPEB,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let BasePeb = opaque_ptr(BasePeb);
     let mut Peb: PPEB = core::ptr::null_mut();
     let mut SectionOffset: LARGE_INTEGER = unsafe { core::mem::zeroed() };
     let mut ViewSize: SIZE_T = 0;
@@ -502,6 +509,9 @@ pub unsafe extern "system" fn MmCreateTeb(
     InitialTeb: PINITIAL_TEB,
     BaseTeb: *mut PTEB,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let ClientId = opaque_ptr(ClientId);
+    let BaseTeb = opaque_ptr(BaseTeb);
     let mut Teb: PTEB = core::ptr::null_mut();
     let mut Status = STATUS_SUCCESS;
     *BaseTeb = core::ptr::null_mut();
@@ -621,6 +631,11 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
     Flags: *mut ULONG,
     AuditName: *mut POBJECT_NAME_INFORMATION,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let ProcessClone = opaque_ptr(ProcessClone);
+    let Section = opaque_ptr(Section);
+    let Flags = opaque_ptr(Flags);
+    let AuditName = opaque_ptr(AuditName);
     let mut Status = STATUS_SUCCESS;
     let mut ViewSize: SIZE_T = 0;
     let mut ImageBase: PVOID = core::ptr::null_mut();
@@ -793,6 +808,8 @@ pub unsafe extern "system" fn MmInitializeHandBuiltProcess(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let DirectoryTableBase = opaque_ptr(DirectoryTableBase);
     *DirectoryTableBase.add(0) = ((*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb.DirectoryTableBase[0]) as usize;
     *DirectoryTableBase.add(1) = ((*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb.DirectoryTableBase[1]) as usize;
 
@@ -811,6 +828,7 @@ pub unsafe extern "system" fn MmInitializeHandBuiltProcess(
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn MmInitializeHandBuiltProcess2(Process: PEPROCESS) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
     STATUS_SUCCESS
 }
 
@@ -820,6 +838,8 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let DirectoryTableBase = opaque_ptr(DirectoryTableBase);
     let mut OldIrql: KIRQL;
     let mut TableBaseIndex: PFN_NUMBER;
     let mut HyperIndex: PFN_NUMBER;
@@ -902,6 +922,7 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
+    let Process = opaque_ptr(Process);
     let mut Vad: PMMVAD;
     let VadTree: *mut _MM_AVL_TABLE;
     let Thread = PsGetCurrentThread() as PETHREAD;
@@ -959,6 +980,7 @@ pub unsafe extern "system" fn MmCleanProcessAddressSpace(Process: PEPROCESS) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteProcessAddressSpace(Process: PEPROCESS) {
+    let Process = opaque_ptr(Process);
     let Pfn1: PMMPFN;
     let Pfn2: PMMPFN;
     let mut OldIrql: KIRQL;
@@ -1018,6 +1040,9 @@ pub unsafe extern "system" fn NtAllocateUserPhysicalPages(
     NumberOfPages: *mut ULONG_PTR,
     UserPfnArray: *mut ULONG_PTR,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let NumberOfPages = opaque_ptr(NumberOfPages);
+    let UserPfnArray = opaque_ptr(UserPfnArray);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1027,6 +1052,8 @@ pub unsafe extern "system" fn NtMapUserPhysicalPages(
     NumberOfPages: ULONG_PTR,
     UserPfnArray: *mut ULONG_PTR,
 ) -> NTSTATUS {
+    let VirtualAddresses = opaque_ptr(VirtualAddresses);
+    let UserPfnArray = opaque_ptr(UserPfnArray);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1036,6 +1063,8 @@ pub unsafe extern "system" fn NtMapUserPhysicalPagesScatter(
     NumberOfPages: ULONG_PTR,
     UserPfnArray: *mut ULONG_PTR,
 ) -> NTSTATUS {
+    let VirtualAddresses = opaque_ptr(VirtualAddresses);
+    let UserPfnArray = opaque_ptr(UserPfnArray);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1045,6 +1074,9 @@ pub unsafe extern "system" fn NtFreeUserPhysicalPages(
     NumberOfPages: *mut ULONG_PTR,
     UserPfnArray: *mut ULONG_PTR,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let NumberOfPages = opaque_ptr(NumberOfPages);
+    let UserPfnArray = opaque_ptr(UserPfnArray);
     STATUS_NOT_IMPLEMENTED
 }
 

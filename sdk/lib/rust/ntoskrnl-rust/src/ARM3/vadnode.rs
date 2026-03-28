@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
     MiRemoveNode as ddk_MiRemoveNode,
     MiLockProcessWorkingSetUnsafe, MiUnlockProcessWorkingSetUnsafe,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut MiRosKernelVadRoot: MM_AVL_TABLE;
@@ -71,6 +72,7 @@ pub static mut MmReadWrite: [i8; 32] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn MiLocateVad(Table: PMM_AVL_TABLE, VirtualAddress: PVOID) -> PMMVAD {
+    let VirtualAddress = opaque_ptr(VirtualAddress);
     let mut found_vad: PMMVAD;
     let vpn: ULONG_PTR;
     let mut search_result: TABLE_SEARCH_RESULT;
@@ -100,6 +102,7 @@ pub unsafe extern "system" fn MiLocateVad(Table: PMM_AVL_TABLE, VirtualAddress: 
 
 #[no_mangle]
 pub unsafe extern "system" fn MiLocateAddress(VirtualAddress: PVOID) -> PMMVAD {
+    let VirtualAddress = opaque_ptr(VirtualAddress);
     let table: PMM_AVL_TABLE = &mut (*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).VadRoot;
     return MiLocateVad(table, VirtualAddress);
 }
@@ -111,6 +114,7 @@ pub unsafe extern "system" fn MiCheckForConflictingNode(
     Table: PMM_AVL_TABLE,
     NodeOrParent: *mut PMMADDRESS_NODE,
 ) -> TABLE_SEARCH_RESULT {
+    let NodeOrParent = opaque_ptr(NodeOrParent);
     let mut parent_node: PMMADDRESS_NODE = core::ptr::null_mut();
     let mut current_node: PMMADDRESS_NODE;
 
@@ -152,6 +156,7 @@ pub unsafe extern "system" fn MiInsertNode(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiInsertVad(Vad: PMMVAD, VadRoot: PMM_AVL_TABLE) {
+    let Vad = opaque_ptr(Vad);
     let mut result: TABLE_SEARCH_RESULT;
     let mut parent: PMMADDRESS_NODE = core::ptr::null_mut();
 
@@ -171,6 +176,8 @@ pub unsafe extern "system" fn MiInsertVadEx(
     Alignment: ULONG_PTR,
     AllocationType: ULONG,
 ) -> NTSTATUS {
+    let Vad = opaque_ptr(Vad);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut starting_address: ULONG_PTR = 0;
     let mut ending_address: ULONG_PTR = 0;
     let current_process: PEPROCESS;
@@ -370,6 +377,8 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeInTree(
     PreviousVad: *mut PMMADDRESS_NODE,
     Base: *mut ULONG_PTR,
 ) -> TABLE_SEARCH_RESULT {
+    let PreviousVad = opaque_ptr(PreviousVad);
+    let Base = opaque_ptr(Base);
     let mut node: PMMADDRESS_NODE;
     let mut previous_node: PMMADDRESS_NODE;
     let page_count: ULONG_PTR;
@@ -445,6 +454,8 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownTree(
     Base: *mut ULONG_PTR,
     Parent: *mut PMMADDRESS_NODE,
 ) -> TABLE_SEARCH_RESULT {
+    let Base = opaque_ptr(Base);
+    let Parent = opaque_ptr(Parent);
     let mut node: PMMADDRESS_NODE;
     let mut old_node: PMMADDRESS_NODE = core::ptr::null_mut();
     let mut child: PMMADDRESS_NODE;
@@ -532,6 +543,7 @@ pub unsafe extern "system" fn MiFindEmptyAddressRangeDownBasedTree(
     Table: PMM_AVL_TABLE,
     Base: *mut ULONG_PTR,
 ) -> NTSTATUS {
+    let Base = opaque_ptr(Base);
     let mut node: PMMADDRESS_NODE;
     let mut lowest_node: PMMADDRESS_NODE;
     let mut low_vpn: ULONG_PTR;
@@ -616,6 +628,8 @@ pub unsafe extern "system" fn MiCheckSecuredVad(
     Size: SIZE_T,
     ProtectionMask: ULONG,
 ) -> NTSTATUS {
+    let Vad = opaque_ptr(Vad);
+    let Base = opaque_ptr(Base);
     let start_address: ULONG_PTR;
     let end_address: ULONG_PTR;
     let mut protection_mask = ProtectionMask;

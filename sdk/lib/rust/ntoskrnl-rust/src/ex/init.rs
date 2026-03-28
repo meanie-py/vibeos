@@ -1,3 +1,4 @@
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -787,6 +788,7 @@ pub unsafe extern "system" fn ExBurnMemory(
     PagesToDestroy: ULONG_PTR,
     MemoryType: ULONG,
 ) {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut ListEntry: PLIST_ENTRY;
     let mut MemDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR;
     let mut PagesToDestroy = PagesToDestroy as ULONG_PTR;
@@ -817,6 +819,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     Cpu: ULONG,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut NlsData: *mut NLS_DATA_BLOCK;
     let mut Buffer: [u8; 256] = [0; 256];
     let mut AnsiPath: ANSI_STRING = core::mem::zeroed();
@@ -1085,6 +1088,7 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
 
 #[no_mangle]
 pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let LoaderBlock = Context as PLOADER_PARAMETER_BLOCK;
     let mut Status: NTSTATUS;
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
@@ -1352,6 +1356,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn Phase1Initialization(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     Phase1InitializationDiscard(Context);
     MmZeroPageThread();
 }

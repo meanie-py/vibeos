@@ -7,6 +7,7 @@ use ntkrnl_sys::ddk::{
     MmIsSessionAddress,
     KeInvalidateTlbEntry,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MiDebugMapping: PVOID = MI_DEBUG_MAPPING as PVOID;
@@ -66,6 +67,7 @@ pub unsafe extern "system" fn MmDbgCopyMemory(
     Size: ULONG,
     mut Flags: ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
     let mut TargetAddress: PVOID;
     let CopyDestination: PVOID;
     let CopySource: PVOID;

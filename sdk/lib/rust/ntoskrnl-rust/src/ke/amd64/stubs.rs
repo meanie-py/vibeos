@@ -1,3 +1,4 @@
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::ke_defs::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
@@ -25,6 +26,8 @@ pub unsafe extern "system" fn KiSwitchKernelStack(
     StackBase: PVOID,
     StackLimit: PVOID,
 ) -> PVOID {
+    let StackBase = opaque_ptr(StackBase);
+    let StackLimit = opaque_ptr(StackLimit);
     let CurrentThread = PsGetCurrentThread();
     let OldStackBase = (*CurrentThread).StackBase;
     let StackSize = (*CurrentThread).StackBase as usize - (*CurrentThread).StackLimit as usize;
@@ -107,11 +110,14 @@ pub unsafe extern "system" fn KiSwapProcess(
     NewProcess: PKPROCESS,
     OldProcess: PKPROCESS,
 ) {
+    let NewProcess = opaque_ptr(NewProcess);
+    let OldProcess = opaque_ptr(OldProcess);
     let Pcr = KeGetPcr() as PKIPCR;
     
     #[cfg(feature = "smp")]
     {
         use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
         InterlockedXor64(
             core::ptr::addr_of_mut!((*(NewProcess as *mut _KPROCESS)).ActiveProcessors) as PLONG64,
             (*Pcr).__bindgen_anon_1.__bindgen_anon_1.Prcb.SetMember as i64,
@@ -144,6 +150,7 @@ pub unsafe extern "system" fn NtVdmControl(
     ControlCode: ULONG,
     ControlData: PVOID,
 ) -> NTSTATUS {
+    let ControlData = opaque_ptr(ControlData);
     STATUS_NOT_IMPLEMENTED
 }
 

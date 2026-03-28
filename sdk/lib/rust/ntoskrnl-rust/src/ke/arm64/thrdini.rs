@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     KiInitializeContextThread as _KiInitializeContextThread,
     HalRequestSoftwareInterrupt, HalClearSoftwareInterrupt,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn KiInvalidSystemThreadStartupExit();
@@ -65,6 +66,8 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     StartContext: PVOID,
     ContextRecord: PCONTEXT,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let StartContext = opaque_ptr(StartContext);
     let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512);
     InitialStack = (InitialStack as usize & !(15usize)) as *mut u8;
     (*Thread).InitialStack = InitialStack as PVOID;
@@ -125,6 +128,8 @@ pub unsafe extern "system" fn KiSwapContextResume(
     OldThread: PKTHREAD,
     NewThread: PKTHREAD,
 ) -> BOOLEAN {
+    let OldThread = opaque_ptr(OldThread);
+    let NewThread = opaque_ptr(NewThread);
     let Pcr = KeGetPcr() as PKIPCR;
     let OldProcess = (*OldThread).__bindgen_anon_1.ApcState.Process;
     let NewProcess = (*NewThread).__bindgen_anon_1.ApcState.Process;
@@ -217,6 +222,9 @@ pub unsafe extern "system" fn KiInitializeHandBuiltThread(
     Process: PKPROCESS,
     Stack: PVOID,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let Process = opaque_ptr(Process);
+    let Stack = opaque_ptr(Stack);
     let Prcb = KeGetCurrentPrcb();
 
     KeInitializeThread(

@@ -2,6 +2,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _CLIENT_ID, HANDLE,
@@ -105,6 +106,7 @@ const PORT_ALL_ACCESS: u32 = 0x1F0001;
 
 #[no_mangle]
 pub unsafe extern "system" fn CONTAINING_RECORD_MSG(address: PLIST_ENTRY, offset: usize) -> PLPCP_MESSAGE {
+    let address = opaque_ptr(address);
     (address as usize - offset) as PLPCP_MESSAGE
 }
 
@@ -194,6 +196,8 @@ pub unsafe extern "system" fn LpcpMoveMessage(
     MessageType: ULONG,
     ClientId: PCLIENT_ID,
 ) {
+    let Data = opaque_ptr(Data);
+    let ClientId = opaque_ptr(ClientId);
     (*Destination).u1.Length = (*Origin).u1.Length;
 
     (*Destination).u2.s2.Type = if MessageType == 0 {
@@ -228,6 +232,7 @@ pub unsafe extern "system" fn NtReplyPort(
     PortHandle: HANDLE,
     ReplyMessage: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     let mut status: NTSTATUS;
     let previous_mode = KeGetPreviousMode();
     let mut captured_reply_message: PORT_MESSAGE = core::mem::zeroed();
@@ -360,6 +365,9 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
     ReceiveMessage: PPORT_MESSAGE,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let PortContext = opaque_ptr(PortContext);
+    let Timeout = opaque_ptr(Timeout);
     let mut status: NTSTATUS;
     let previous_mode = KeGetPreviousMode();
     let mut wait_mode = previous_mode;
@@ -650,6 +658,8 @@ pub unsafe extern "system" fn NtReplyWaitReceivePort(
     ReplyMessage: PPORT_MESSAGE,
     ReceiveMessage: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let PortContext = opaque_ptr(PortContext);
     NtReplyWaitReceivePortEx(
         PortHandle,
         PortContext,
@@ -664,6 +674,7 @@ pub unsafe extern "system" fn NtReplyWaitReplyPort(
     PortHandle: HANDLE,
     ReplyMessage: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -677,6 +688,9 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
     BufferLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let Buffer = opaque_ptr(Buffer);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut status: NTSTATUS;
     let previous_mode = KeGetPreviousMode();
     let mut captured_message: PORT_MESSAGE = core::mem::zeroed();
@@ -825,6 +839,9 @@ pub unsafe extern "system" fn NtReadRequestData(
     BufferLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let Buffer = opaque_ptr(Buffer);
+    let ReturnLength = opaque_ptr(ReturnLength);
     LpcpCopyRequestData(0, PortHandle, Message, Index, Buffer, BufferLength, ReturnLength)
 }
 
@@ -837,5 +854,8 @@ pub unsafe extern "system" fn NtWriteRequestData(
     BufferLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let Buffer = opaque_ptr(Buffer);
+    let ReturnLength = opaque_ptr(ReturnLength);
     LpcpCopyRequestData(1, PortHandle, Message, Index, Buffer, BufferLength, ReturnLength)
 }

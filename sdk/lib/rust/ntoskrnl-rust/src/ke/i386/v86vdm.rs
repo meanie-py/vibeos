@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     KeRevertToUserAffinityThread, KeSetSystemAffinityThread,
     NtVdmControl,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn RtlMoveMemory(dst: PVOID, src: PVOID, len: SIZE_T);
@@ -613,6 +614,7 @@ pub unsafe extern "system" fn Ke386IoSetAccessProcess(
     Process: *mut _EPROCESS,
     MapNumber: ULONG,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
     0u8
 }
 

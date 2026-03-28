@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     PMUTANT_BASIC_INFORMATION, POBJECT_ATTRIBUTES, POBJECT_TYPE, ExGetPreviousMode,
     RtlInitUnicodeString, _UNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const MUTANT_QUERY_STATE: ACCESS_MASK = 0x0001;
 const MUTANT_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | MUTANT_QUERY_STATE;
@@ -48,6 +49,7 @@ static ExMutantInfoClass: [INFORMATION_CLASS_INFO; 1] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn ExpDeleteMutant(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     KeReleaseMutant(ObjectBody as PKMUTANT, 1, 1u8, 0u8);
 }
 
@@ -90,6 +92,8 @@ pub unsafe extern "system" fn NtCreateMutant(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     InitialOwner: BOOLEAN,
 ) -> NTSTATUS {
+    let MutantHandle = opaque_ptr(MutantHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = ExGetPreviousMode();
     let mut hMutant: HANDLE = core::ptr::null_mut();
     let mut Mutant: PKMUTANT = core::ptr::null_mut();
@@ -146,6 +150,8 @@ pub unsafe extern "system" fn NtOpenMutant(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let MutantHandle = opaque_ptr(MutantHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut hMutant: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -187,6 +193,9 @@ pub unsafe extern "system" fn NtQueryMutant(
     MutantInformationLength: ULONG,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let MutantHandle = opaque_ptr(MutantHandle);
+    let MutantInformation = opaque_ptr(MutantInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Mutant: PKMUTANT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let BasicInfo = MutantInformation as PMUTANT_BASIC_INFORMATION;
@@ -265,6 +274,8 @@ pub unsafe extern "system" fn NtReleaseMutant(
     MutantHandle: HANDLE,
     PreviousCount: *mut LONG,
 ) -> NTSTATUS {
+    let MutantHandle = opaque_ptr(MutantHandle);
+    let PreviousCount = opaque_ptr(PreviousCount);
     let mut Mutant: PKMUTANT = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 

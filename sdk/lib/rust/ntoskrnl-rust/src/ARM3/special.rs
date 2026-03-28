@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     MiInitializePfnAndMakePteValid,
     PsGetCurrentThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeQueryTickCount(TickCount: *mut LARGE_INTEGER);
@@ -84,11 +85,13 @@ pub unsafe extern "system" fn MmUseSpecialPool(NumberOfBytes: SIZE_T, Tag: ULONG
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsSpecialPoolAddress(P: PVOID) -> BOOLEAN {
+    let P = opaque_ptr(P);
     if (P >= MmSpecialPoolStart) && (P <= MmSpecialPoolEnd) { 1 } else { 0 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsSpecialPoolAddressFree(P: PVOID) -> BOOLEAN {
+    let P = opaque_ptr(P);
     let pointer_pte = MiAddressToPte(P);
 
     if (*pointer_pte).soft_page_file_high() == SPECIAL_POOL_PAGED_PTE ||
@@ -334,6 +337,7 @@ unsafe fn MiSpecialPoolCheckPattern(P: PUCHAR, Header: PPOOL_HEADER) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmFreeSpecialPool(P: PVOID) {
+    let P = opaque_ptr(P);
     let pointer_pte: PMMPTE;
     let header: PPOOL_HEADER;
     let mut overruns = 0u8;

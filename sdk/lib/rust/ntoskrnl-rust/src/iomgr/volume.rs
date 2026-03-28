@@ -22,6 +22,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread, RtlInitUnicodeString, IofCallDriver,
     _EVENT_TYPE_NotificationEvent, _KWAIT_REASON_Executive,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> i8;
@@ -204,6 +205,7 @@ unsafe fn IopDecrementDeviceObjectRef(DeviceObject: PDEVICE_OBJECT, UnloadIfUnus
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDecrementDeviceObjectHandleCount(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     IopDecrementDeviceObjectRef(DeviceObject, 0u8);
 }
 
@@ -214,6 +216,10 @@ pub unsafe extern "system" fn IopCheckVpbMounted(
     RemainingName: *mut _UNICODE_STRING,
     Status: PNTSTATUS,
 ) -> PVPB {
+    let OpenPacket = opaque_ptr(OpenPacket);
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Status = opaque_ptr(Status);
     let mut OldIrql: KIRQL = 0;
     let mut Vpb: PVPB = core::ptr::null_mut();
 
@@ -274,6 +280,7 @@ pub unsafe extern "system" fn IopCheckVpbMounted(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateVpb(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let Vpb = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<_VPB>(),
@@ -295,6 +302,7 @@ pub unsafe extern "system" fn IopCreateVpb(DeviceObject: PDEVICE_OBJECT) -> NTST
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDereferenceVpbAndFree(Vpb: PVPB) {
+    let Vpb = opaque_ptr(Vpb);
     let mut OldIrql: KIRQL = 0;
 
     IoAcquireVpbSpinLock(&mut OldIrql);
@@ -317,6 +325,9 @@ pub unsafe extern "system" fn IopReferenceVerifyVpb(
     FileSystemObject: *mut PDEVICE_OBJECT,
     Vpb: *mut PVPB,
 ) -> u8 {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let FileSystemObject = opaque_ptr(FileSystemObject);
+    let Vpb = opaque_ptr(Vpb);
     let mut OldIrql: KIRQL = 0;
     let mut Result = 0u8;
 
@@ -389,6 +400,7 @@ unsafe fn IopInterlockedDecrementUlong(Queue: u32, Ulong: PULONG) -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopShutdownBaseFileSystems(ListHead: PLIST_ENTRY) {
+    let ListHead = opaque_ptr(ListHead);
     let mut Event: _KEVENT = core::mem::zeroed();
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
@@ -482,6 +494,8 @@ pub unsafe extern "system" fn IopMountVolume(
     Alertable: u8,
     Vpb: *mut PVPB,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Vpb = opaque_ptr(Vpb);
     let mut Event: _KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut AttachedDeviceObject = DeviceObject;
@@ -748,6 +762,8 @@ pub unsafe extern "system" fn IoEnumerateRegisteredFiltersList(
     DriverObjectListSize: ULONG,
     ActualNumberDriverObjects: PULONG,
 ) -> NTSTATUS {
+    let DriverObjectList = opaque_ptr(DriverObjectList);
+    let ActualNumberDriverObjects = opaque_ptr(ActualNumberDriverObjects);
     let mut Status = STATUS_SUCCESS;
     let mut ListSize = 0u32;
     let MaximumSize = DriverObjectListSize / core::mem::size_of::<PDRIVER_OBJECT>() as u32;
@@ -783,6 +799,7 @@ pub unsafe extern "system" fn IoVerifyVolume(
     DeviceObject: PDEVICE_OBJECT,
     AllowRawMount: u8,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let Status = KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*DeviceObject).DeviceLock) as PVOID,
         _KWAIT_REASON_Executive,
@@ -878,6 +895,7 @@ pub unsafe extern "system" fn IoVerifyVolume(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoRegisterFileSystem(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(IopDatabaseResource), 1u8);
 
@@ -924,6 +942,7 @@ pub unsafe extern "system" fn IoRegisterFileSystem(DeviceObject: PDEVICE_OBJECT)
 
 #[no_mangle]
 pub unsafe extern "system" fn IoUnregisterFileSystem(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(IopDatabaseResource), 1u8);
 
@@ -949,6 +968,7 @@ pub unsafe extern "system" fn IoRegisterFsRegistrationChange(
     DriverObject: PDRIVER_OBJECT,
     DriverNotificationRoutine: PDRIVER_FS_NOTIFICATION,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(IopDatabaseResource), 1u8);
 
@@ -1018,6 +1038,7 @@ pub unsafe extern "system" fn IoUnregisterFsRegistrationChange(
     DriverObject: PDRIVER_OBJECT,
     FSDNotificationProc: PDRIVER_FS_NOTIFICATION,
 ) {
+    let DriverObject = opaque_ptr(DriverObject);
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(IopDatabaseResource), 1u8);
 
@@ -1054,6 +1075,7 @@ pub unsafe extern "system" fn IoReleaseVpbSpinLock(Irql: KIRQL) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoSetSystemPartition(VolumeNameString: *mut _UNICODE_STRING) -> NTSTATUS {
+    let VolumeNameString = opaque_ptr(VolumeNameString);
     let mut RootHandle: HANDLE = core::ptr::null_mut();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut HKLMSystem = _UNICODE_STRING {
@@ -1117,6 +1139,8 @@ pub unsafe extern "system" fn IoVolumeDeviceToDosName(
     VolumeDeviceObject: PVOID,
     DosName: *mut _UNICODE_STRING,
 ) -> NTSTATUS {
+    let VolumeDeviceObject = opaque_ptr(VolumeDeviceObject);
+    let DosName = opaque_ptr(DosName);
     #[repr(C)]
     struct DeviceNameStruct {
         NameLength: u16,

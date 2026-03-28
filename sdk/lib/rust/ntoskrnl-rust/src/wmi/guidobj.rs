@@ -20,6 +20,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::ddk::PEPROCESS;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn InitializeObjectAttributes(
@@ -70,6 +71,11 @@ pub unsafe extern "system" fn WmipSecurityMethod(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let CapturedLength = opaque_ptr(CapturedLength);
+    let ObjectSecurityDescriptor = opaque_ptr(ObjectSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     if OperationType == _SECURITY_OPERATION_CODE_QuerySecurityDescriptor {
         return ObQuerySecurityDescriptorInfo(
             Object,
@@ -99,6 +105,7 @@ pub unsafe extern "system" fn WmipSecurityMethod(
 
 #[no_mangle]
 pub unsafe extern "system" fn WmipDeleteMethod(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     let guid_object = Object as PWMIP_GUID_OBJECT;
 
     if (*guid_object).Irp != core::ptr::null_mut() {
@@ -114,6 +121,8 @@ pub unsafe extern "system" fn WmipCloseMethod(
     _ProcessHandleCount: ULONG,
     _SystemHandleCount: ULONG,
 ) {
+    let _Process = opaque_ptr(_Process);
+    let _Object = opaque_ptr(_Object);
     // For now nothing
 }
 
@@ -155,6 +164,7 @@ pub unsafe extern "system" fn WmipGUIDFromString(
     GuidString: PUNICODE_STRING,
     Guid: PGUID,
 ) -> NTSTATUS {
+    let GuidString = opaque_ptr(GuidString);
     let mut buffer: [u16; GUID_STRING_LENGTH + 2] = [0; GUID_STRING_LENGTH + 2];
     let mut string: _UNICODE_STRING;
 
@@ -184,6 +194,7 @@ pub unsafe extern "system" fn WmipCreateGuidObject(
     Guid: *const GUID,
     OutGuidObject: *mut PWMIP_GUID_OBJECT,
 ) -> NTSTATUS {
+    let OutGuidObject = opaque_ptr(OutGuidObject);
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut guid_object: PWMIP_GUID_OBJECT = core::ptr::null_mut();
 
@@ -231,6 +242,8 @@ pub unsafe extern "system" fn WmipOpenGuidObject(
     OutGuidObjectHandle: PHANDLE,
     OutGuidObject: *mut PVOID,
 ) -> NTSTATUS {
+    let OutGuidObjectHandle = opaque_ptr(OutGuidObjectHandle);
+    let OutGuidObject = opaque_ptr(OutGuidObject);
     let mut guid_object: PWMIP_GUID_OBJECT = core::ptr::null_mut();
     let handle_attributes: ULONG;
 
@@ -269,6 +282,9 @@ pub unsafe extern "system" fn WmipOpenGuidObjectByName(
     OutGuidObjectHandle: PHANDLE,
     OutGuidObject: *mut PVOID,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let OutGuidObjectHandle = opaque_ptr(OutGuidObjectHandle);
+    let OutGuidObject = opaque_ptr(OutGuidObject);
     #[no_mangle]
     pub static mut PREFIX: _UNICODE_STRING = _UNICODE_STRING {
         Length: 18,

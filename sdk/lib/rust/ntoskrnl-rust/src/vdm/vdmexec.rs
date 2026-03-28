@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread, VDM_TIB,
 };
 use ntkrnl_sys::ke::KeGetCurrentIrql;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static KeI386EFlagsAndMaskV86: ULONG;
@@ -53,6 +54,7 @@ pub static mut VdmBopCount: ULONG = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn VdmpGetVdmTib(VdmTib: *mut PVDM_TIB) -> NTSTATUS {
+    let VdmTib = opaque_ptr(VdmTib);
     *VdmTib = core::ptr::null_mut();
 
     let Tib = (*NtCurrentTeb()).Vdm as PVDM_TIB;

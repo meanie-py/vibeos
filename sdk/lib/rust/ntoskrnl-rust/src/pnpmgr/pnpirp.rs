@@ -13,6 +13,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::ob::ObDereferenceObject;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "fastcall" {
     fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
@@ -36,6 +37,9 @@ pub unsafe extern "C" fn IopSynchronousCall(
     IoStackLocation: PIO_STACK_LOCATION,
     Information: *mut PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let IoStackLocation = opaque_ptr(IoStackLocation);
+    let Information = opaque_ptr(Information);
     let mut Irp: PIRP;
     let mut IrpStack: PIO_STACK_LOCATION;
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -198,6 +202,7 @@ pub unsafe extern "C" fn PiIrpQueryResources(
     DeviceNode: PDEVICE_NODE,
     Resources: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
+    let Resources = opaque_ptr(Resources);
     let mut longRes: ULONG_PTR = 0;
     let mut stack: _IO_STACK_LOCATION = core::mem::zeroed();
 
@@ -221,6 +226,7 @@ pub unsafe extern "C" fn PiIrpQueryResourceRequirements(
     DeviceNode: PDEVICE_NODE,
     Resources: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
 ) -> NTSTATUS {
+    let Resources = opaque_ptr(Resources);
     let mut longRes: ULONG_PTR = 0;
     let mut stack: _IO_STACK_LOCATION = core::mem::zeroed();
 
@@ -246,6 +252,7 @@ pub unsafe extern "C" fn PiIrpQueryDeviceText(
     Type: DEVICE_TEXT_TYPE,
     DeviceText: *mut PWSTR,
 ) -> NTSTATUS {
+    let DeviceText = opaque_ptr(DeviceText);
     let mut longText: ULONG_PTR = 0;
     let mut stack: _IO_STACK_LOCATION = core::mem::zeroed();
 

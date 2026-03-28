@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     POBJECT_TYPE,
     PWAIT_CONTEXT_BLOCK,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn HalAllocateAdapterChannel( AdapterObject: PADAPTER_OBJECT, Wcb: PWAIT_CONTEXT_BLOCK, NumberOfMapRegisters: ULONG, ExecutionRoutine: PDRIVER_CONTROL, ) -> NTSTATUS;
@@ -29,6 +30,8 @@ pub unsafe extern "system" fn IoAllocateAdapterChannel(
     ExecutionRoutine: PDRIVER_CONTROL,
     Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Context = opaque_ptr(Context);
     let Wcb = core::ptr::addr_of_mut!((*DeviceObject).Queue.Wcb);
 
     (*Wcb).DeviceObject = DeviceObject as PVOID;

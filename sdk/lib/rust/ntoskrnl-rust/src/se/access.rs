@@ -1,6 +1,7 @@
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn SeQuerySubjectContextToken(subject_context: *const _SECURITY_SUBJECT_CONTEXT) -> PTOKEN;
@@ -19,6 +20,11 @@ pub unsafe extern "system" fn SeCreateAccessStateEx(
     Access: ACCESS_MASK,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
+    let Process = opaque_ptr(Process);
+    let AccessState = opaque_ptr(AccessState);
+    let AuxData = opaque_ptr(AuxData);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let mut AccessMask = Access;
     let Token: PTOKEN;
 
@@ -69,6 +75,9 @@ pub unsafe extern "system" fn SeCreateAccessState(
     Access: ACCESS_MASK,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let AccessState = opaque_ptr(AccessState);
+    let AuxData = opaque_ptr(AuxData);
+    let GenericMapping = opaque_ptr(GenericMapping);
     SeCreateAccessStateEx(
         PsGetCurrentThread(),
         PsGetCurrentProcess() as *mut _EPROCESS,
@@ -81,6 +90,7 @@ pub unsafe extern "system" fn SeCreateAccessState(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeDeleteAccessState(AccessState: PACCESS_STATE) {
+    let AccessState = opaque_ptr(AccessState);
     let AuxData: PAUX_ACCESS_DATA;
 
     AuxData = (*AccessState).AuxData as PAUX_ACCESS_DATA;
@@ -107,6 +117,8 @@ pub unsafe extern "system" fn SeSetAccessStateGenericMapping(
     AccessState: PACCESS_STATE,
     GenericMapping: PGENERIC_MAPPING,
 ) {
+    let AccessState = opaque_ptr(AccessState);
+    let GenericMapping = opaque_ptr(GenericMapping);
     (*((*AccessState).AuxData as PAUX_ACCESS_DATA)).GenericMapping = *GenericMapping;
 }
 

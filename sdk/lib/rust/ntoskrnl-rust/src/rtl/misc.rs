@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const PRODUCT_TAG: ULONG = u32::from_be_bytes(*b"RtPi");
 
@@ -201,16 +202,15 @@ struct KEY_VALUE_PARTIAL_INFORMATION {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
-
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
-
 #[no_mangle]
 pub unsafe extern "system" fn AVrfInternalHeapFreeNotification(
     _AllocationBase: PVOID,
     _AllocationSize: SIZE_T,
 ) {
+    let _AllocationBase = opaque_ptr(_AllocationBase);
 }
 
 

@@ -11,6 +11,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
 use ntkrnl_sys::ddk::{ACCESS_MASK, ANSI_STRING, ERESOURCE, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExInitializeResourceLite, ExReleaseResourceLite, FILE_STANDARD_INFORMATION, HANDLE, IMAGE_INFO, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, KMUTANT, KPROCESSOR_MODE, KeAcquireSpinLockRaiseToSynch, KeEnterCriticalRegion, KeFlushCurrentTb, KeFlushQueuedDpcs, KeInitializeSpinLock, KeLeaveCriticalRegion, KeQueryPerformanceCounter, KeReleaseMutant, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, LOAD_IMPORTS, LOGICAL, LdrRelocateImageWithBias, LdrVerifyMappedImageMatchesChecksum, OB_OPEN_REASON, PEPROCESS, PETHREAD, PHANDLE_TABLE, PHANDLE_TABLE_ENTRY, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, POBJECT_HEADER, POBJECT_TYPE, PSECTION, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IO_STATUS_BLOCK, _KAPC_STATE, _LDR_DATA_TABLE_ENTRY, _MM_IMAGE_SECTION_OBJECT, _MMPTE, _OBJECT_HEADER, _OBJECT_TYPE, _UNICODE_STRING};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 #[no_mangle]
@@ -272,6 +273,9 @@ pub unsafe extern "system" fn RtlpFindExportedRoutineByName(
     is_forwarder: *mut BOOLEAN,
     not_found_status: NTSTATUS,
 ) -> NTSTATUS {
+    let image_base = opaque_ptr(image_base);
+    let function = opaque_ptr(function);
+    let is_forwarder = opaque_ptr(is_forwarder);
     let mut export_size: ULONG = 0;
     let export_directory = RtlImageDirectoryEntryToData(
         image_base,
@@ -347,6 +351,8 @@ pub unsafe extern "system" fn MmCallDllInitialize(
     ldr_entry: *mut LDR_DATA_TABLE_ENTRY,
     _module_list_head: *mut LIST_ENTRY,
 ) -> NTSTATUS {
+    let ldr_entry = opaque_ptr(ldr_entry);
+    let _module_list_head = opaque_ptr(_module_list_head);
     type PMM_DLL_INITIALIZE = Option<unsafe extern "system" fn(*mut _UNICODE_STRING) -> NTSTATUS>;
 
     let dll_init: PMM_DLL_INITIALIZE = core::mem::transmute(RtlFindExportedRoutineByName(
@@ -556,6 +562,7 @@ unsafe fn MiSnapThunk(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmUnloadSystemImage(image_handle: PVOID) -> NTSTATUS {
+    let image_handle = opaque_ptr(image_handle);
     let ldr_entry = image_handle as *mut LDR_DATA_TABLE_ENTRY;
     let mut had_entry = 0u8;
 
@@ -625,6 +632,8 @@ pub unsafe extern "system" fn MmUnloadSystemImage(image_handle: PVOID) -> NTSTAT
 
 #[no_mangle]
 pub unsafe extern "system" fn MiFreeInitializationCode(init_start: PVOID, init_end: PVOID) {
+    let init_start = opaque_ptr(init_start);
+    let init_end = opaque_ptr(init_end);
     let pointer_pte = MiAddressToPte(init_start);
     let pages_freed = (MiAddressToPte(init_end) as usize - pointer_pte as usize) / core::mem::size_of::<MMPTE>();
     MiDeleteSystemPageableVm(pointer_pte, pages_freed as PFN_NUMBER, 0, core::ptr::null_mut());
@@ -632,14 +641,18 @@ pub unsafe extern "system" fn MiFreeInitializationCode(init_start: PVOID, init_e
 
 #[no_mangle]
 pub unsafe extern "system" fn MiFindInitializationCode(_start_va: *mut PVOID, _end_va: *mut PVOID) {
+    let _start_va = opaque_ptr(_start_va);
+    let _end_va = opaque_ptr(_end_va);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmFreeDriverInitialization(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
+    let _ldr_entry = opaque_ptr(_ldr_entry);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MiReloadBootLoadedDrivers(_loader_block: *mut LOADER_PARAMETER_BLOCK) {
+    let _loader_block = opaque_ptr(_loader_block);
 }
 
 unsafe fn MiBuildImportsForBootDrivers() -> NTSTATUS {
@@ -651,6 +664,7 @@ unsafe fn MiLocateKernelSections(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LOADER_PARAMETER_BLOCK) -> BOOLEAN {
+    let loader_block = opaque_ptr(loader_block);
     extern "system" {
         fn RtlImageNtHeader(base: PVOID) -> PVOID;
     }
@@ -793,6 +807,7 @@ unsafe fn MiSetSystemCodeProtection(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiWriteProtectSystemImage(_image_base: PVOID) {
+    let _image_base = opaque_ptr(_image_base);
 }
 
 unsafe fn MiSetPagingOfDriver(_pointer_pte: PMMPTE, _last_pte: PMMPTE) {
@@ -803,6 +818,7 @@ unsafe fn MiEnablePagingOfDriver(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmCheckSystemImage(_image_handle: HANDLE) -> NTSTATUS {
+    let _image_handle = opaque_ptr(_image_handle);
     STATUS_SUCCESS
 }
 
@@ -841,6 +857,7 @@ unsafe fn MiLookupDataTableEntry(address: PVOID) -> *mut LDR_DATA_TABLE_ENTRY {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmPageEntireDriver(address_within_section: PVOID) -> PVOID {
+    let address_within_section = opaque_ptr(address_within_section);
     let ldr_entry = MiLookupDataTableEntry(address_within_section);
     if ldr_entry.is_null() {
         return core::ptr::null_mut();
@@ -862,10 +879,12 @@ pub unsafe extern "system" fn MmPageEntireDriver(address_within_section: PVOID) 
 
 #[no_mangle]
 pub unsafe extern "system" fn MmResetDriverPaging(_address_within_section: PVOID) {
+    let _address_within_section = opaque_ptr(_address_within_section);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetSystemRoutineAddress(system_routine_name: *mut _UNICODE_STRING) -> PVOID {
+    let system_routine_name = opaque_ptr(system_routine_name);
     let mut ansi_routine_name: ANSI_STRING = core::mem::zeroed();
     let status = RtlUnicodeStringToAnsiString(
         core::ptr::addr_of_mut!(ansi_routine_name),

@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     ExQueueWorkItem, KeInitializeEvent, KeWaitForSingleObject, RtlInitUnicodeString,
     ZwClose, ZwCreateKey, ZwSetValueKey,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TAG_PNP: u32 = u32::from_le_bytes(*b"Pp  ");
 
@@ -152,6 +153,7 @@ unsafe fn IopGetInterfaceTypeString(IfType: INTERFACE_TYPE) -> *mut u16 {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopReportTargetDeviceChangeAsyncWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let Item = Context as PINTERNAL_WORK_QUEUE_ITEM;
     PpSetCustomTargetEvent(
         (*Item).PhysicalDeviceObject,
@@ -202,6 +204,8 @@ pub unsafe extern "system" fn IoReportDetectedDevice(
     ResourceAssigned: BOOLEAN,
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
     static CONTROL_STRING: [u16; 8] = [b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, 0];
     static DEVICE_REPORTED_STRING: [u16; 15] = [b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'R' as u16, b'e' as u16, b'p' as u16, b'o' as u16, b'r' as u16, b't' as u16, b'e' as u16, b'd' as u16, 0];
 
@@ -488,6 +492,9 @@ pub unsafe extern "system" fn IoReportResourceForDetection(
     _DeviceListSize: ULONG,
     ConflictDetected: *mut BOOLEAN,
 ) -> NTSTATUS {
+    let _DriverObject = opaque_ptr(_DriverObject);
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let ConflictDetected = opaque_ptr(ConflictDetected);
     *ConflictDetected = 0u8;
 
     if DriverList.is_null() && DeviceList.is_null() {
@@ -508,6 +515,7 @@ pub unsafe extern "system" fn IoReportResourceForDetection(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopSetEvent(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     KeSetEvent(Context, 0i32, 0u8);
 }
 
@@ -516,6 +524,8 @@ pub unsafe extern "system" fn IoReportTargetDeviceChange(
     PhysicalDeviceObject: PDEVICE_OBJECT,
     NotificationStructure: PVOID,
 ) -> NTSTATUS {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let NotificationStructure = opaque_ptr(NotificationStructure);
     let notifyStruct = NotificationStructure as PTARGET_DEVICE_CUSTOM_NOTIFICATION;
 
     if IopIsValidPhysicalDeviceObject(PhysicalDeviceObject) == 0u8 {
@@ -566,6 +576,9 @@ pub unsafe extern "system" fn IoReportTargetDeviceChangeAsynchronous(
     Callback: PDEVICE_CHANGE_COMPLETE_CALLBACK,
     Context: PVOID,
 ) -> NTSTATUS {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let NotificationStructure = opaque_ptr(NotificationStructure);
+    let Context = opaque_ptr(Context);
     let notifyStruct = NotificationStructure as PTARGET_DEVICE_CUSTOM_NOTIFICATION;
 
     if IopIsValidPhysicalDeviceObject(PhysicalDeviceObject) == 0u8 {

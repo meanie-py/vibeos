@@ -2,6 +2,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     KEVENT, _KEVENT,
@@ -78,6 +79,7 @@ pub unsafe extern "C" fn CcPostWorkQueue(
     WorkItem: PWORK_QUEUE_ENTRY,
     WorkQueue: PLIST_ENTRY,
 ) {
+    let WorkQueue = opaque_ptr(WorkQueue);
     let mut OldIrql: KIRQL = 0;
     let mut ThreadToSpawn: PWORK_QUEUE_ITEM;
 
@@ -110,6 +112,10 @@ pub unsafe extern "system" fn CcScanDpc(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let WorkItem: PWORK_QUEUE_ENTRY;
 
     WorkItem = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(CcTwilightLookasideList)) as PWORK_QUEUE_ENTRY;
@@ -214,6 +220,7 @@ pub unsafe extern "C" fn CcScheduleLazyWriteScan(NoDelay: BOOLEAN) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CcWorkerThread(Parameter: PVOID) {
+    let Parameter = opaque_ptr(Parameter);
     let mut OldIrql: KIRQL = 0;
     let mut DropThrottle: BOOLEAN;
     let mut WritePerformed: BOOLEAN;

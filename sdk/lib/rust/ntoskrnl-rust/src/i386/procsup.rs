@@ -13,6 +13,7 @@ use crate::ARM3::helpers::{
     ValidKernelPteLocal,
     PDE_MAPPED_VA,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ARM3::largepag::MmProcessList;
 
 /// i386-specific: MiAddressToPteOffset — within-page-table offset (0..1023)
@@ -37,6 +38,8 @@ pub unsafe extern "C" fn MiArchCreateProcessAddressSpace(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let DirectoryTableBase = opaque_ptr(DirectoryTableBase);
     let PdeIndex = (*DirectoryTableBase.offset(0)) >> PAGE_SHIFT;
     let HyperIndex = (*DirectoryTableBase.offset(1)) >> PAGE_SHIFT;
     let mut PointerPte: PMMPTE;

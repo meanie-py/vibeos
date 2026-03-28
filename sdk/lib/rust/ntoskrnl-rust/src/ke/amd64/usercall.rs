@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     KiGetUserModeStackAddress, KeGetPcr,
     KiCallUserMode, KiCallbackReturn,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static KeUserApcDispatcher: u64;
@@ -85,6 +86,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let NormalContext = opaque_ptr(NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let ApcFrame: *mut UAPC_FRAME;
     let Context: PCONTEXT;
 
@@ -223,6 +227,9 @@ pub unsafe extern "system" fn KeUserModeCallback(
     Result: *mut PVOID,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let Argument = opaque_ptr(Argument);
+    let Result = opaque_ptr(Result);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut OldStack: ULONG_PTR;
     let UserArguments: *mut u8;
     let CalloutFrame: PUCALLOUT_FRAME;
@@ -313,6 +320,7 @@ pub unsafe extern "system" fn NtCallbackReturn(
     ResultLength: ULONG,
     CallbackStatus: NTSTATUS,
 ) -> NTSTATUS {
+    let Result = opaque_ptr(Result);
     let CurrentThread: PKTHREAD;
     let CalloutFrame: PKCALLOUT_FRAME;
     let CallbackTrapFrame: PKTRAP_FRAME;

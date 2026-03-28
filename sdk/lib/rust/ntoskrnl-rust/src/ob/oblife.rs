@@ -7,6 +7,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _OBJECT_HEADER, _OBJECT_TYPE, _OBJECT_HEADER_HANDLE_INFO, _OBJECT_HEADER_NAME_INFO,
@@ -164,6 +165,7 @@ unsafe fn ObpDeallocateObjectImpl(Object: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpDeleteObject(Object: PVOID, CalledFromWorkerThread: BOOLEAN) {
+    let Object = opaque_ptr(Object);
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let ObjectType = (*Header).Type;
 
@@ -217,6 +219,7 @@ pub unsafe extern "system" fn ObpDeleteObject(Object: PVOID, CalledFromWorkerThr
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpReapObject(_Parameter: PVOID) {
+    let _Parameter = opaque_ptr(_Parameter);
     loop {
         let mut ReapObject = InterlockedExchangePointer(
             core::ptr::addr_of_mut!(ObpReaperList),
@@ -301,6 +304,7 @@ unsafe fn ObpAllocateObjectNameBuffer(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpFreeObjectNameBuffer(Name: *mut _UNICODE_STRING) {
+    let Name = opaque_ptr(Name);
     let Buffer = (*Name).Buffer as PVOID;
 
     if (*Name).MaximumLength as ULONG != OBP_NAME_LOOKASIDE_MAX_SIZE {
@@ -317,6 +321,8 @@ pub unsafe extern "system" fn ObpCaptureObjectName(
     AccessMode: KPROCESSOR_MODE,
     UseLookaside: BOOLEAN,
 ) -> NTSTATUS {
+    let CapturedName = opaque_ptr(CapturedName);
+    let ObjectName = opaque_ptr(ObjectName);
     let mut Status = STATUS_SUCCESS;
     let mut StringBuffer: PWCHAR = core::ptr::null_mut();
     let mut LocalName: _UNICODE_STRING = core::mem::zeroed();
@@ -377,6 +383,9 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
     ObjectCreateInfo: POBJECT_CREATE_INFORMATION,
     ObjectName: *mut _UNICODE_STRING,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let ObjectCreateInfo = opaque_ptr(ObjectCreateInfo);
+    let ObjectName = opaque_ptr(ObjectName);
     let mut SdCharge: ULONG;
     let mut QuotaInfoSize: ULONG = 0;
     let mut Status = STATUS_SUCCESS;
@@ -477,6 +486,7 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObFreeObjectCreateInfoBuffer(ObjectCreateInfo: POBJECT_CREATE_INFORMATION) {
+    let ObjectCreateInfo = opaque_ptr(ObjectCreateInfo);
     ObpFreeCapturedAttributes(ObjectCreateInfo as PVOID, LookasideCreateInfoList);
 }
 
@@ -727,6 +737,10 @@ pub unsafe extern "system" fn ObCreateObject(
     NonPagedPoolCharge: ULONG,
     Object: *mut PVOID,
 ) -> NTSTATUS {
+    let Type = opaque_ptr(Type);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let ParseContext = opaque_ptr(ParseContext);
+    let Object = opaque_ptr(Object);
     let mut Status: NTSTATUS;
     let ObjectCreateInfo = ObpAllocateObjectCreateInfoBuffer(LookasideCreateInfoList) as POBJECT_CREATE_INFORMATION;
     if ObjectCreateInfo.is_null() {
@@ -793,6 +807,9 @@ pub unsafe extern "system" fn ObCreateObjectType(
     Reserved: PVOID,
     ObjectType: *mut POBJECT_TYPE,
 ) -> NTSTATUS {
+    let TypeName = opaque_ptr(TypeName);
+    let Reserved = opaque_ptr(Reserved);
+    let ObjectType = opaque_ptr(ObjectType);
     let mut Header: POBJECT_HEADER = core::ptr::null_mut();
     let mut LocalObjectType: POBJECT_TYPE;
     let HeaderSize: ULONG;
@@ -996,6 +1013,7 @@ pub unsafe extern "system" fn ObCreateObjectType(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObDeleteCapturedInsertInfo(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     if ((*ObjectHeader).Flags & OB_FLAG_CREATE_INFO) != 0 && !(*ObjectHeader).__bindgen_anon_2.ObjectCreateInfo.is_null() {
         ObpFreeObjectCreateInformation((*ObjectHeader).__bindgen_anon_2.ObjectCreateInfo);
@@ -1005,6 +1023,7 @@ pub unsafe extern "system" fn ObDeleteCapturedInsertInfo(Object: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpDeleteObjectType(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     let ObjectType = Object as POBJECT_TYPE;
 
     let mut i: ULONG = 0;
@@ -1018,11 +1037,13 @@ pub unsafe extern "system" fn ObpDeleteObjectType(Object: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObMakeTemporaryObject(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     ObpSetPermanentObject(ObjectBody, 0u8);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn NtMakeTemporaryObject(ObjectHandle: HANDLE) -> NTSTATUS {
+    let ObjectHandle = opaque_ptr(ObjectHandle);
     let mut ObjectBody: PVOID = core::ptr::null_mut();
     let Status = ObReferenceObjectByHandle(
         ObjectHandle,
@@ -1043,6 +1064,7 @@ pub unsafe extern "system" fn NtMakeTemporaryObject(ObjectHandle: HANDLE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn NtMakePermanentObject(ObjectHandle: HANDLE) -> NTSTATUS {
+    let ObjectHandle = opaque_ptr(ObjectHandle);
     let mut ObjectBody: PVOID = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -1075,6 +1097,9 @@ pub unsafe extern "system" fn NtQueryObject(
     Length: ULONG,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let ObjectHandle = opaque_ptr(ObjectHandle);
+    let ObjectInformation = opaque_ptr(ObjectInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut HandleInfo: OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
     let mut ObjectHeader: POBJECT_HEADER = core::ptr::null_mut();
     let mut InfoLength: ULONG = 0;
@@ -1231,6 +1256,8 @@ pub unsafe extern "system" fn NtSetInformationObject(
     ObjectInformation: PVOID,
     Length: ULONG,
 ) -> NTSTATUS {
+    let ObjectHandle = opaque_ptr(ObjectHandle);
+    let ObjectInformation = opaque_ptr(ObjectInformation);
     let mut Status: NTSTATUS;
     let mut Context: OBP_SET_HANDLE_ATTRIBUTES_CONTEXT = core::mem::zeroed();
     let mut ApcState: _KAPC_STATE = core::mem::zeroed();

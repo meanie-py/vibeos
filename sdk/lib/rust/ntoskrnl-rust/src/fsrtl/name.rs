@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     RtlFreeUnicodeString, RtlUpcaseUnicodeString,
     _UNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[inline(always)]
 unsafe fn RtlEqualMemory(a: PVOID, b: PVOID, len: usize) -> bool {
@@ -327,6 +328,8 @@ pub unsafe extern "system" fn FsRtlDissectName(
     FirstPart: PUNICODE_STRING,
     RemainingPart: PUNICODE_STRING,
 ) {
+    let FirstPart = opaque_ptr(FirstPart);
+    let RemainingPart = opaque_ptr(RemainingPart);
     let mut FirstPosition: USHORT;
     let mut SkipFirstSlash: USHORT = 0;
 
@@ -364,6 +367,7 @@ pub unsafe extern "system" fn FsRtlDissectName(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlDoesNameContainWildCards(Name: PUNICODE_STRING) -> BOOLEAN {
+    let Name = opaque_ptr(Name);
     if (*Name).Length != 0 {
         let mut Ptr = (*Name).Buffer.offset(((*Name).Length / core::mem::size_of::<WCHAR>() as USHORT - 1) as isize);
         while Ptr >= (*Name).Buffer && *Ptr != b'\\' as u16 {
@@ -384,6 +388,8 @@ pub unsafe extern "system" fn FsRtlIsNameInExpression(
     IgnoreCase: BOOLEAN,
     UpcaseTable: PCWCH,
 ) -> BOOLEAN {
+    let Expression = opaque_ptr(Expression);
+    let Name = opaque_ptr(Name);
     let mut Result: BOOLEAN;
     let mut IntName: _UNICODE_STRING = core::mem::zeroed();
     let mut NamePtr = Name;

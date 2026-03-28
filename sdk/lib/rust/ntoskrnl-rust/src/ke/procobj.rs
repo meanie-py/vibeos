@@ -1,3 +1,4 @@
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::ke_defs::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
@@ -181,6 +182,8 @@ pub unsafe extern "system" fn KeInitializeProcess(
     DirectoryTableBase: PULONG_PTR,
     Enable: BOOLEAN,
 ) {
+    let Process = opaque_ptr(Process);
+    let DirectoryTableBase = opaque_ptr(DirectoryTableBase);
     #[cfg(target_arch = "x86")]
     {
         extern "system" {
@@ -261,6 +264,7 @@ pub unsafe extern "system" fn KeSetProcess(
     Increment: KPRIORITY,
     InWait: BOOLEAN,
 ) -> ULONG {
+    let Process = opaque_ptr(Process);
     extern "C" {
     fn KxUnwaitThread(header: PVOID, increment: KPRIORITY);
 }
@@ -281,6 +285,7 @@ pub unsafe extern "system" fn KeSetProcess(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetQuantumProcess(Process: PKPROCESS, Quantum: UCHAR) {
+    let Process = opaque_ptr(Process);
     let mut ProcessLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
 
     KiAcquireProcessLockRaiseToSynch(Process, core::ptr::addr_of_mut!(ProcessLock));
@@ -310,6 +315,7 @@ pub unsafe extern "system" fn KeSetAffinityProcess(
     Process: PKPROCESS,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
+    let Process = opaque_ptr(Process);
     let mut ProcessLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
 
     KiAcquireProcessLockRaiseToSynch(Process, core::ptr::addr_of_mut!(ProcessLock));
@@ -344,6 +350,7 @@ pub unsafe extern "system" fn KeSetAutoAlignmentProcess(
     Process: PKPROCESS,
     Enable: BOOLEAN,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
     const KPSF_AUTO_ALIGNMENT_BIT: LONG = 0;
 
     if Enable != 0 {
@@ -364,6 +371,7 @@ pub unsafe extern "system" fn KeSetDisableBoostProcess(
     Process: PKPROCESS,
     Disable: BOOLEAN,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
     const KPSF_DISABLE_BOOST_BIT: LONG = 1;
 
     if Disable != 0 {
@@ -385,6 +393,7 @@ pub unsafe extern "system" fn KeSetPriorityAndQuantumProcess(
     Priority: KPRIORITY,
     Quantum: UCHAR,
 ) -> KPRIORITY {
+    let Process = opaque_ptr(Process);
     const LOW_PRIORITY: KPRIORITY = 0;
     const LOW_REALTIME_PRIORITY: KPRIORITY = 16;
     const HIGH_PRIORITY: KPRIORITY = 31;
@@ -504,6 +513,8 @@ pub unsafe extern "system" fn KeQueryValuesProcess(
     Process: PKPROCESS,
     Values: *mut PROCESS_VALUES,
 ) {
+    let Process = opaque_ptr(Process);
+    let Values = opaque_ptr(Values);
     use ntkrnl_sys::ddk::_EPROCESS;
     // Use actual definition from clock.rs, not extern (lto=false splits them)
     use crate::ke::clock::KeMaximumIncrement;
@@ -546,6 +557,7 @@ pub unsafe extern "system" fn KeQueryValuesProcess(
 #[no_mangle]
 #[cfg_attr(target_arch = "aarch64", inline(never))]
 pub unsafe extern "system" fn KeAttachProcess(Process: PKPROCESS) {
+    let Process = opaque_ptr(Process);
     const OriginalApcEnvironment: UCHAR = 0;
 
     let Thread = KeGetCurrentThread() as PKTHREAD;
@@ -642,6 +654,7 @@ pub unsafe extern "system" fn KeStackAttachProcess(
     Process: PKPROCESS,
     ApcState: PRKAPC_STATE,
 ) {
+    let Process = opaque_ptr(Process);
     const OriginalApcEnvironment: UCHAR = 0;
 
     let Thread = KeGetCurrentThread() as PKTHREAD;
@@ -755,6 +768,8 @@ pub unsafe extern "system" fn KeQueryRuntimeProcess(
     Process: PKPROCESS,
     UserTime: *mut ULONG,
 ) -> ULONG {
+    let Process = opaque_ptr(Process);
+    let UserTime = opaque_ptr(UserTime);
     let mut ProcessLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
 
     let mut TotalUser = (*Process).UserTime;
@@ -793,6 +808,9 @@ pub unsafe extern "system" fn KeAddSystemServiceTable(
     Number: *mut UCHAR,
     Index: ULONG,
 ) -> BOOLEAN {
+    let Base = opaque_ptr(Base);
+    let Count = opaque_ptr(Count);
+    let Number = opaque_ptr(Number);
     if Index > (SSDT_MAX_ENTRIES - 1) as ULONG
         || !KeServiceDescriptorTable[Index as usize].Base.is_null()
         || !KeServiceDescriptorTableShadow[Index as usize].Base.is_null()

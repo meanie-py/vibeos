@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     MmDereferencePage,
     MmRebalanceMemoryConsumers,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 #[no_mangle]
@@ -156,6 +157,7 @@ pub unsafe extern "system" fn MiZeroPhysicalPage(PageFrameIndex: PFN_NUMBER) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiUnlinkFreeOrZeroedPage(Entry: PMMPFN) {
+    let Entry = opaque_ptr(Entry);
     let old_flink: PFN_NUMBER;
     let mut old_blink: PFN_NUMBER;
     let list_head: PMMPFNLIST;
@@ -220,6 +222,7 @@ pub unsafe extern "system" fn MiUnlinkFreeOrZeroedPage(Entry: PMMPFN) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiUnlinkPageFromList(Pfn: PMMPFN) {
+    let Pfn = opaque_ptr(Pfn);
     let mut list_head: PMMPFNLIST;
     let old_flink: PFN_NUMBER;
     let old_blink: PFN_NUMBER;
@@ -598,6 +601,7 @@ pub unsafe extern "system" fn MiInitializePfn(
     PointerPte: PMMPTE,
     Modified: BOOLEAN,
 ) {
+    let PointerPte = opaque_ptr(PointerPte);
     let pfn1: PMMPFN;
     let mut status: NTSTATUS;
     let pointer_pte_pte: PMMPTE;
@@ -646,6 +650,7 @@ pub unsafe extern "system" fn MiInitializePfnAndMakePteValid(
     PointerPte: PMMPTE,
     TempPte: MMPTE,
 ) {
+    let PointerPte = opaque_ptr(PointerPte);
     let pfn1: PMMPFN;
     let mut status: NTSTATUS;
     let pointer_pte_pte: PMMPTE;
@@ -721,6 +726,7 @@ pub unsafe extern "system" fn MiInitializeAndChargePfn(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex: PFN_NUMBER) {
+    let Pfn1 = opaque_ptr(Pfn1);
     let mut pointer_pte: PMMPTE;
     let pointer_pte_pte: PMMPTE;
     let mut temp_pte: MMPTE;
@@ -775,6 +781,7 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
 
 #[no_mangle]
 pub unsafe extern "system" fn MiDecrementReferenceCount(Pfn1: PMMPFN, PageFrameIndex: PFN_NUMBER) {
+    let Pfn1 = opaque_ptr(Pfn1);
     if unsafe { core::ptr::read_volatile(&Pfn1) }.is_null() {
         return;
     }
@@ -824,6 +831,7 @@ pub unsafe extern "system" fn MiInitializePfnForOtherProcess(
     PteAddress: PVOID,
     PteFrame: PFN_NUMBER,
 ) {
+    let PteAddress = opaque_ptr(PteAddress);
     let pfn1: PMMPFN;
 
     pfn1 = MI_PFN_ELEMENT(PageFrameIndex);

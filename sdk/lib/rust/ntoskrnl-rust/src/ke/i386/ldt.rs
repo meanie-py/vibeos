@@ -13,6 +13,7 @@ use ntkrnl_sys::ddk::{
     KGDTENTRY, PKGDTENTRY, LDT_ENTRY, PLDT_ENTRY,
     ULONG_PTR, USHORT, UCHAR,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 static mut LdtLock: KSPIN_LOCK = 0;
 static mut GdtLock: KSPIN_LOCK = 0;
@@ -31,6 +32,7 @@ pub unsafe extern "system" fn Ke386GetGdtEntryThread(
     Offset: ULONG,
     Descriptor: PKGDTENTRY,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
     if Offset >= (KGDT_NUMBER * core::mem::size_of::<KGDTENTRY>()) as ULONG {
         return STATUS_ACCESS_VIOLATION;
     }
@@ -60,6 +62,7 @@ pub unsafe extern "system" fn Ke386GetGdtEntryThread(
 
 #[no_mangle]
 pub unsafe extern "C" fn KeSetBaseGdtSelector(Entry: ULONG, Base: PVOID) {
+    let Base = opaque_ptr(Base);
     let mut oldIrql: KIRQL = 0;
     let mut Gdt: *mut USHORT;
 

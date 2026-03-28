@@ -47,6 +47,37 @@ pub mod rtl;
 pub use base::*;
 pub use probe::*;
 
+/// Make a mutable pointer opaque to LLVM's interprocedural analysis.
+///
+/// Prevents LLVM from deducing `captures(none)` and `readnone` on pointer
+/// parameters, which causes callers to pass `poison` → ud2 cascade.
+/// Zero runtime cost (single mov instruction, register allocator eliminates it).
+#[inline(always)]
+pub unsafe fn opaque_ptr<T>(ptr: *mut T) -> *mut T {
+    let p: *mut T;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    p
+}
+
+/// Make a const pointer opaque to LLVM's interprocedural analysis.
+/// Same as `opaque_ptr` but for `*const T` parameters.
+#[inline(always)]
+pub unsafe fn opaque_ptr_const<T>(ptr: *const T) -> *const T {
+    let p: *const T;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    p
+}
+
 // ============================================================================
 // Auto-generated DDK bindings (full kernel API surface)
 // ============================================================================

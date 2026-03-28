@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     KiInitMachineDependent,
     KiTimerExpiration,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut KeProcessorArchitecture: USHORT = 0;
@@ -168,6 +169,7 @@ pub unsafe extern "system" fn KiComputeReciprocal(
     Divisor: LONG,
     Shift: *mut UCHAR,
 ) -> LARGE_INTEGER {
+    let Shift = opaque_ptr(Shift);
     let mut Reciprocal: LARGE_INTEGER = core::mem::zeroed();
     Reciprocal.QuadPart = 0;
     let mut BitCount: LONG = 0;

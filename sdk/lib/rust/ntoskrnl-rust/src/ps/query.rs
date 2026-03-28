@@ -7,6 +7,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::macros::NtCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::clock::KeMaximumIncrement;
 use crate::ke::processor::KeActiveProcessors;
 
@@ -209,6 +210,8 @@ pub unsafe extern "system" fn PsReferenceProcessFilePointer(
     Process: PEPROCESS,
     FileObject: *mut PFILE_OBJECT,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let FileObject = opaque_ptr(FileObject);
     let process = Process as *mut _EPROCESS;
     
     if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect)) == 0 {
@@ -234,6 +237,9 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
     ProcessInformationLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let ProcessInformation = opaque_ptr(ProcessInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -1014,6 +1020,8 @@ pub unsafe extern "system" fn NtSetInformationProcess(
     ProcessInformation: PVOID,
     ProcessInformationLength: ULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let ProcessInformation = opaque_ptr(ProcessInformation);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Access: ACCESS_MASK;
@@ -1488,6 +1496,8 @@ pub unsafe extern "system" fn NtSetInformationThread(
     ThreadInformation: PVOID,
     ThreadInformationLength: ULONG,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ThreadInformation = opaque_ptr(ThreadInformation);
     let mut Thread: PETHREAD = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -1878,6 +1888,9 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     ThreadInformationLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ThreadInformation = opaque_ptr(ThreadInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Thread: PETHREAD = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;

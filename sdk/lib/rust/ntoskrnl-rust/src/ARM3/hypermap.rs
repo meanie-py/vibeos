@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     KeFlushProcessTb,
     PKIRQL,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // ValidKernelPteLocal is a copy of ValidKernelPte used by hyperspace code
 extern "C" {
@@ -33,6 +34,7 @@ pub unsafe extern "system" fn MiMapPageInHyperSpace(
     Page: PFN_NUMBER,
     OldIrql: PKIRQL,
 ) -> PVOID {
+    let Process = opaque_ptr(Process);
     let mut TempPte: MMPTE;
     let mut PointerPte: PMMPTE;
     let mut Offset: PFN_NUMBER;
@@ -71,6 +73,8 @@ pub unsafe extern "system" fn MiUnmapPageInHyperSpace(
     Address: PVOID,
     OldIrql: KIRQL,
 ) {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     debug_assert!(Process == PsGetCurrentProcess());
 
     (*MiAddressToPte(Address)).Long = 0;
@@ -87,6 +91,7 @@ pub unsafe extern "system" fn MiMapPagesInZeroSpace(
     mut Pfn1: PMMPFN,
     NumberOfPages: PFN_NUMBER,
 ) -> PVOID {
+    let mut Pfn1 = opaque_ptr(Pfn1);
     let mut TempPte: MMPTE;
     let mut PointerPte: PMMPTE;
     let mut Offset: PFN_NUMBER;
@@ -133,6 +138,7 @@ pub unsafe extern "system" fn MiUnmapPagesInZeroSpace(
     VirtualAddress: PVOID,
     NumberOfPages: PFN_NUMBER,
 ) {
+    let VirtualAddress = opaque_ptr(VirtualAddress);
     let PointerPte: PMMPTE;
 
     debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL);

@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _OBJECT_ATTRIBUTES, _UNICODE_STRING,
@@ -227,6 +228,7 @@ pub unsafe extern "system" fn MmInitSystem(
     Phase: ULONG,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> BOOLEAN {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut PointerPte: PMMPTE;
     let mut TempPte: MMPTE = ValidKernelPte;
     let mut PageFrameNumber: PFN_NUMBER;

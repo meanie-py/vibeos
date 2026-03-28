@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     RtlUpcaseUnicodeString, RtlFreeUnicodeString, ZwClose, ZwSetValueKey,
     ExAllocatePool, ExAllocatePoolZero, ExFreePool,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TAG_IO_DEVNODE: u32 = 0x646F6E44;
 
@@ -35,6 +36,7 @@ pub static mut IopNumberDeviceNodes: i32 = 0;
 pub unsafe extern "fastcall" fn IopGetDeviceNode(
     DeviceObject: PDEVICE_OBJECT,
 ) -> PDEVICE_NODE {
+    let DeviceObject = opaque_ptr(DeviceObject);
     (*((*DeviceObject).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION)).DeviceNode
 }
 
@@ -42,6 +44,7 @@ pub unsafe extern "fastcall" fn IopGetDeviceNode(
 pub unsafe extern "C" fn PipAllocateDeviceNode(
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> PDEVICE_NODE {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
     let DeviceNode = ExAllocatePoolZero(
         NonPagedPool,
         core::mem::size_of::<DEVICE_NODE>() as _,

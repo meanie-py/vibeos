@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     _ATOM_BASIC_INFORMATION,
     _ATOM_TABLE_INFORMATION,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn ExGetPreviousMode() -> KPROCESSOR_MODE;
@@ -58,6 +59,7 @@ pub unsafe extern "system" fn NtAddAtom(
     AtomNameLength: ULONG,
     Atom: PRTL_ATOM,
 ) -> NTSTATUS {
+    let AtomName = opaque_ptr(AtomName);
     let inner = || -> Result<NTSTATUS, NTSTATUS> {
         let AtomTable = ExpGetGlobalAtomTable();
         let PreviousMode = ExGetPreviousMode();
@@ -153,6 +155,7 @@ pub unsafe extern "system" fn NtFindAtom(
     AtomNameLength: ULONG,
     Atom: PRTL_ATOM,
 ) -> NTSTATUS {
+    let AtomName = opaque_ptr(AtomName);
     let inner = || -> Result<NTSTATUS, NTSTATUS> {
         let AtomTable = ExpGetGlobalAtomTable();
         let PreviousMode = ExGetPreviousMode();
@@ -235,6 +238,8 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
     AtomInformationLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let AtomInformation = opaque_ptr(AtomInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let inner = || -> Result<NTSTATUS, NTSTATUS> {
         let AtomTable = ExpGetGlobalAtomTable();
         let BasicInformation = AtomInformation as *mut _ATOM_BASIC_INFORMATION;

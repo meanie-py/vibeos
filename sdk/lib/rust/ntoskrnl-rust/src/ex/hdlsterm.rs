@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
     _HEADLESS_CMD_HeadlessCmdSendBlueScreenData, _HEADLESS_CMD_HeadlessCmdQueryGUID,
     _HEADLESS_CMD_HeadlessCmdPutData,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Constants not in bindgen
 const HeadlessSerialPort: u32 = 1;
@@ -191,6 +192,7 @@ unsafe fn HdlspEnableTerminal(Enable: BOOLEAN) -> NTSTATUS {
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn HeadlessInit(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let HeadlessBlock: PHEADLESS_LOADER_BLOCK;
 
     HeadlessBlock = (*(*LoaderBlock).Extension).HeadlessLoaderBlock;
@@ -502,6 +504,9 @@ pub unsafe extern "system" fn HeadlessDispatch(
     OutputBuffer: PVOID,
     OutputBufferSize: PSIZE_T,
 ) -> NTSTATUS {
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
+    let OutputBufferSize = opaque_ptr(OutputBufferSize);
     if HeadlessGlobals.is_null() {
         if Command == HeadlessCmdEnableTerminal {
             return STATUS_UNSUCCESSFUL;

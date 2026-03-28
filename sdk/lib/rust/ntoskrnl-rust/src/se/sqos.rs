@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
@@ -13,6 +14,9 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
     CapturedSecurityQualityOfService: *mut PSECURITY_QUALITY_OF_SERVICE,
     Present: PBOOLEAN,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let CapturedSecurityQualityOfService = opaque_ptr(CapturedSecurityQualityOfService);
+    let Present = opaque_ptr(Present);
     let mut captured_qos: PSECURITY_QUALITY_OF_SERVICE;
     let mut status: NTSTATUS = STATUS_SUCCESS;
 

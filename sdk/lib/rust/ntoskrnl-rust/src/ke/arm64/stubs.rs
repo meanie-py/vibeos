@@ -32,6 +32,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::macros::NtCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Types/aliases not in arm64 bindgen
 type PANSI_STRING = *mut _STRING;
@@ -176,11 +177,13 @@ pub static MmProtectToValue: [ULONG; 32] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     0u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     0u8
 }
 
@@ -210,6 +213,8 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     ProcessorNumber: i8,
     FloatingSave: BOOLEAN,
 ) {
+    let Interrupt = opaque_ptr(Interrupt);
+    let ServiceContext = opaque_ptr(ServiceContext);
     (*Interrupt).Type = _KOBJECTS_InterruptObject as i16;
     (*Interrupt).Size = core::mem::size_of::<_KINTERRUPT>() as i16;
     (*Interrupt).ServiceRoutine = ServiceRoutine;
@@ -243,6 +248,7 @@ pub unsafe extern "system" fn KeRaiseUserException(ExceptionCode: NTSTATUS) -> N
 
 #[no_mangle]
 pub unsafe extern "C" fn KeSaveStateForHibernate(State: PVOID) {
+    let State = opaque_ptr(State);
 }
 
 #[no_mangle]
@@ -255,6 +261,8 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
     SynchronizeRoutine: PKSYNCHRONIZE_ROUTINE,
     SynchronizeContext: PVOID,
 ) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
+    let SynchronizeContext = opaque_ptr(SynchronizeContext);
     let mut OldIrql: KIRQL = 0;
     KeRaiseIrql((*Interrupt).SynchronizeIrql, core::ptr::addr_of_mut!(OldIrql));
     let Result = (SynchronizeRoutine.unwrap())(SynchronizeContext);
@@ -264,6 +272,7 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtVdmControl(ControlCode: ULONG, ControlData: PVOID) -> NTSTATUS {
+    let ControlData = opaque_ptr(ControlData);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -271,6 +280,7 @@ pub unsafe extern "system" fn NtVdmControl(ControlCode: ULONG, ControlData: PVOI
 pub unsafe extern "system" fn CmpInitializeMachineDependentConfiguration(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -442,6 +452,8 @@ pub unsafe extern "system" fn KdpSysReadBusData(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let ActualLength = opaque_ptr(ActualLength);
     *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
@@ -454,6 +466,8 @@ pub unsafe extern "system" fn KdpSysReadControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let ActualLength = opaque_ptr(ActualLength);
     *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
@@ -468,12 +482,15 @@ pub unsafe extern "system" fn KdpSysReadIoSpace(
     DataSize: ULONG,
     ActualDataSize: *mut ULONG,
 ) -> NTSTATUS {
+    let DataValue = opaque_ptr(DataValue);
+    let ActualDataSize = opaque_ptr(ActualDataSize);
     *ActualDataSize = 0;
     STATUS_UNSUCCESSFUL
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSysReadMsr(Msr: ULONG, MsrValue: *mut u64) -> NTSTATUS {
+    let MsrValue = opaque_ptr(MsrValue);
     *MsrValue = 0;
     STATUS_UNSUCCESSFUL
 }
@@ -488,6 +505,8 @@ pub unsafe extern "system" fn KdpSysWriteBusData(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let ActualLength = opaque_ptr(ActualLength);
     *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
@@ -500,6 +519,8 @@ pub unsafe extern "system" fn KdpSysWriteControlSpace(
     Length: ULONG,
     ActualLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let ActualLength = opaque_ptr(ActualLength);
     *ActualLength = 0;
     STATUS_UNSUCCESSFUL
 }
@@ -514,12 +535,15 @@ pub unsafe extern "system" fn KdpSysWriteIoSpace(
     DataSize: ULONG,
     ActualDataSize: *mut ULONG,
 ) -> NTSTATUS {
+    let DataValue = opaque_ptr(DataValue);
+    let ActualDataSize = opaque_ptr(ActualDataSize);
     *ActualDataSize = 0;
     STATUS_UNSUCCESSFUL
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSysWriteMsr(Msr: ULONG, MsrValue: *mut u64) -> NTSTATUS {
+    let MsrValue = opaque_ptr(MsrValue);
     STATUS_UNSUCCESSFUL
 }
 
@@ -620,6 +644,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let NormalContext = opaque_ptr(NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut Context: _CONTEXT = core::mem::zeroed();
     let context_size = core::mem::size_of::<_CONTEXT>() as u64;
     Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -772,6 +799,7 @@ pub unsafe extern "system" fn KdbgReceivePacket(
     DataLength: *mut ULONG,
     Context: PKD_CONTEXT,
 ) -> KDSTATUS {
+    let DataLength = opaque_ptr(DataLength);
     KdPacketTimedOut
 }
 
@@ -790,6 +818,7 @@ pub unsafe extern "system" fn KdbRegisterCliCallback(
     Callback: PVOID,
     Deregister: BOOLEAN,
 ) -> BOOLEAN {
+    let Callback = opaque_ptr(Callback);
     0u8
 }
 
@@ -1032,6 +1061,8 @@ pub unsafe extern "system" fn KiDispatchException(
 
 #[no_mangle]
 pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: PKPROCESS) {
+    let NewProcess = opaque_ptr(NewProcess);
+    let OldProcess = opaque_ptr(OldProcess);
     let NewPageTable = (*NewProcess).DirectoryTableBase[0];
 
     if NewPageTable == (*OldProcess).DirectoryTableBase[0] {
@@ -1079,6 +1110,7 @@ pub unsafe extern "system" fn KeFlushCurrentTb() {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeZeroPages(Address: PVOID, Size: ULONG) {
+    let Address = opaque_ptr(Address);
     RtlZeroMemory(Address, Size as usize);
 }
 
@@ -1101,6 +1133,10 @@ pub unsafe extern "system" fn PspGetOrSetContextKernelRoutine(
     SystemArgument1: *mut PVOID,
     SystemArgument2: *mut PVOID,
 ) {
+    let NormalRoutine = opaque_ptr(NormalRoutine);
+    let NormalContext = opaque_ptr(NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
 }
 
 #[no_mangle]
@@ -1108,6 +1144,8 @@ pub unsafe extern "system" fn KeSwitchKernelStack(
     StackBase: PVOID,
     StackLimit: PVOID,
 ) -> PVOID {
+    let StackBase = opaque_ptr(StackBase);
+    let StackLimit = opaque_ptr(StackLimit);
     core::ptr::null_mut()
 }
 
@@ -1125,6 +1163,7 @@ pub unsafe extern "C" fn RtlUshortByteSwap(Source: u16) -> u16 {
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn READ_REGISTER_UCHAR(Register: *mut u8) -> u8 {
+    let Register = opaque_ptr(Register);
     let Value = core::ptr::read_volatile(Register);
     core::arch::asm!("dmb ld", options(nomem, nostack));
     Value
@@ -1133,6 +1172,7 @@ pub unsafe extern "system" fn READ_REGISTER_UCHAR(Register: *mut u8) -> u8 {
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn READ_REGISTER_USHORT(Register: *mut u16) -> u16 {
+    let Register = opaque_ptr(Register);
     let Value = core::ptr::read_volatile(Register);
     core::arch::asm!("dmb ld", options(nomem, nostack));
     Value
@@ -1141,6 +1181,7 @@ pub unsafe extern "system" fn READ_REGISTER_USHORT(Register: *mut u16) -> u16 {
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn READ_REGISTER_ULONG(Register: *mut ULONG) -> ULONG {
+    let Register = opaque_ptr(Register);
     let Value = core::ptr::read_volatile(Register);
     core::arch::asm!("dmb ld", options(nomem, nostack));
     Value
@@ -1153,6 +1194,8 @@ pub unsafe extern "system" fn READ_REGISTER_BUFFER_UCHAR(
     Buffer: *mut u8,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     for i in 0..Count as usize {
         *Buffer.add(i) = core::ptr::read_volatile(Register.add(i));
     }
@@ -1166,6 +1209,8 @@ pub unsafe extern "system" fn READ_REGISTER_BUFFER_USHORT(
     Buffer: *mut u16,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     for i in 0..Count as usize {
         *Buffer.add(i) = core::ptr::read_volatile(Register.add(i));
     }
@@ -1179,6 +1224,8 @@ pub unsafe extern "system" fn READ_REGISTER_BUFFER_ULONG(
     Buffer: *mut ULONG,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     for i in 0..Count as usize {
         *Buffer.add(i) = core::ptr::read_volatile(Register.add(i));
     }
@@ -1188,6 +1235,7 @@ pub unsafe extern "system" fn READ_REGISTER_BUFFER_ULONG(
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn WRITE_REGISTER_UCHAR(Register: *mut u8, Value: u8) {
+    let Register = opaque_ptr(Register);
     core::arch::asm!("dmb st", options(nomem, nostack));
     core::ptr::write_volatile(Register, Value);
 }
@@ -1195,6 +1243,7 @@ pub unsafe extern "system" fn WRITE_REGISTER_UCHAR(Register: *mut u8, Value: u8)
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn WRITE_REGISTER_USHORT(Register: *mut u16, Value: u16) {
+    let Register = opaque_ptr(Register);
     core::arch::asm!("dmb st", options(nomem, nostack));
     core::ptr::write_volatile(Register, Value);
 }
@@ -1202,6 +1251,7 @@ pub unsafe extern "system" fn WRITE_REGISTER_USHORT(Register: *mut u16, Value: u
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn WRITE_REGISTER_ULONG(Register: *mut ULONG, Value: ULONG) {
+    let Register = opaque_ptr(Register);
     core::arch::asm!("dmb st", options(nomem, nostack));
     core::ptr::write_volatile(Register, Value);
 }
@@ -1213,6 +1263,8 @@ pub unsafe extern "system" fn WRITE_REGISTER_BUFFER_UCHAR(
     Buffer: *mut u8,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     core::arch::asm!("dmb st", options(nomem, nostack));
     for i in 0..Count as usize {
         core::ptr::write_volatile(Register.add(i), *Buffer.add(i));
@@ -1226,6 +1278,8 @@ pub unsafe extern "system" fn WRITE_REGISTER_BUFFER_USHORT(
     Buffer: *mut u16,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     core::arch::asm!("dmb st", options(nomem, nostack));
     for i in 0..Count as usize {
         core::ptr::write_volatile(Register.add(i), *Buffer.add(i));
@@ -1239,6 +1293,8 @@ pub unsafe extern "system" fn WRITE_REGISTER_BUFFER_ULONG(
     Buffer: *mut ULONG,
     Count: ULONG,
 ) {
+    let Register = opaque_ptr(Register);
+    let Buffer = opaque_ptr(Buffer);
     core::arch::asm!("dmb st", options(nomem, nostack));
     for i in 0..Count as usize {
         core::ptr::write_volatile(Register.add(i), *Buffer.add(i));
@@ -2497,6 +2553,7 @@ pub unsafe extern "system" fn KdbInitialize(
     _DispatchTable: *mut core::ffi::c_void,
     _BootPhase: ULONG,
 ) -> NTSTATUS {
+    let _DispatchTable = opaque_ptr(_DispatchTable);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2505,6 +2562,7 @@ pub unsafe extern "C" fn KdbGetHistoryEntry(
     _NextIndex: *mut LONG,
     _Next: BOOLEAN,
 ) -> *const u8 {
+    let _NextIndex = opaque_ptr(_NextIndex);
     core::ptr::null()
 }
 
@@ -2513,6 +2571,7 @@ pub unsafe extern "system" fn KdbpGetHexNumber(
     _pszNum: *const u8,
     _pulValue: *mut ULONG_PTR,
 ) -> BOOLEAN {
+    let _pulValue = opaque_ptr(_pulValue);
     0
 }
 
@@ -2523,6 +2582,8 @@ pub unsafe extern "C" fn KdbSymPrintAddress(
     _Address: PVOID,
     _Context: *mut core::ffi::c_void,
 ) -> BOOLEAN {
+    let _Address = opaque_ptr(_Address);
+    let _Context = opaque_ptr(_Context);
     0
 }
 //

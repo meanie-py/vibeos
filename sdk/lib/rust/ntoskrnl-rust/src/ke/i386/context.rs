@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     PKIPCR,
     PKPROCESS,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const KGDT_LDT: u16 = 0x48;
 
@@ -19,6 +20,8 @@ pub unsafe extern "system" fn KiSwapProcess(
     NewProcess: PKPROCESS,
     OldProcess: PKPROCESS,
 ) {
+    let NewProcess = opaque_ptr(NewProcess);
+    let OldProcess = opaque_ptr(OldProcess);
     let Pcr = KeGetPcr() as PKIPCR;
     
     #[cfg(feature = "CONFIG_SMP")]

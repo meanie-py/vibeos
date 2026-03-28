@@ -6,6 +6,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -398,6 +399,8 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
 
 #[no_mangle]
 pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROCESS, mut Address: PVOID) {
+    let Process = opaque_ptr(Process);
+    let mut Address = opaque_ptr(Address);
     let mut current_entry: PMM_RMAP_ENTRY;
     let new_entry: PMM_RMAP_ENTRY;
     let PrevSize: ULONG;
@@ -470,6 +473,8 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
 
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS, Address: PVOID) {
+    let Process = opaque_ptr(Process);
+    let mut Address = opaque_ptr(Address);
     let mut current_entry: PMM_RMAP_ENTRY;
     let mut previous_entry: PMM_RMAP_ENTRY;
     let OldIrql: KIRQL;
@@ -512,6 +517,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetSegmentRmap(Page: PFN_NUMBER, RawOffset: *mut ULONG) -> PVOID {
+    let RawOffset = opaque_ptr(RawOffset);
     let Result: PVOID;
     let mut current_entry: PMM_RMAP_ENTRY;
 

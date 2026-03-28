@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use core::mem::align_of;
 
 #[no_mangle]
@@ -163,6 +164,7 @@ pub unsafe extern "system" fn SeSetWorldSecurityDescriptor(
     SecurityDescriptor: PISECURITY_DESCRIPTOR,
     BufferLength: *mut ULONG,
 ) -> NTSTATUS {
+    let BufferLength = opaque_ptr(BufferLength);
     let mut Current: ULONG;
     let SidSize: ULONG;
     let mut SdSize: ULONG;
@@ -330,6 +332,8 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     CaptureIfKernel: BOOLEAN,
     CapturedSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let _OriginalSecurityDescriptor = opaque_ptr(_OriginalSecurityDescriptor);
+    let CapturedSecurityDescriptor = opaque_ptr(CapturedSecurityDescriptor);
     let OriginalDescriptor = _OriginalSecurityDescriptor as PISECURITY_DESCRIPTOR;
     let mut DescriptorCopy: _SECURITY_DESCRIPTOR = core::mem::zeroed();
     let NewDescriptor: PISECURITY_DESCRIPTOR_RELATIVE;
@@ -498,6 +502,9 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
     Length: *mut ULONG,
     ObjectsSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let Length = opaque_ptr(Length);
+    let ObjectsSecurityDescriptor = opaque_ptr(ObjectsSecurityDescriptor);
     let ObjectSd: PISECURITY_DESCRIPTOR;
     let RelSD: PISECURITY_DESCRIPTOR_RELATIVE;
     let mut Owner: PSID = core::ptr::null_mut();
@@ -613,6 +620,7 @@ pub unsafe extern "system" fn SeReleaseSecurityDescriptor(
     CurrentMode: KPROCESSOR_MODE,
     CaptureIfKernelMode: BOOLEAN,
 ) -> NTSTATUS {
+    let CapturedSecurityDescriptor = opaque_ptr(CapturedSecurityDescriptor);
     if !CapturedSecurityDescriptor.is_null() &&
        (CurrentMode != 0 || (CurrentMode == 0 && CaptureIfKernelMode != 0))
     {
@@ -631,6 +639,10 @@ pub unsafe extern "system" fn SeSetSecurityDescriptorInfo(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let ObjectsSecurityDescriptor = opaque_ptr(ObjectsSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     SeSetSecurityDescriptorInfoEx(
         Object,
         SecurityInformation,
@@ -652,6 +664,10 @@ pub unsafe extern "system" fn SeSetSecurityDescriptorInfoEx(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let _SecurityDescriptor = opaque_ptr(_SecurityDescriptor);
+    let ObjectsSecurityDescriptor = opaque_ptr(ObjectsSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let ObjectSd: PISECURITY_DESCRIPTOR_RELATIVE;
     let NewSd: PISECURITY_DESCRIPTOR_RELATIVE;
     let SecurityDescriptor = _SecurityDescriptor as PISECURITY_DESCRIPTOR;
@@ -775,6 +791,7 @@ pub unsafe extern "system" fn SeValidSecurityDescriptor(
     Length: ULONG,
     _SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> BOOLEAN {
+    let _SecurityDescriptor = opaque_ptr(_SecurityDescriptor);
     let mut SdLength: ULONG;
     let mut Sid: PISID;
     let mut Acl: PACL;
@@ -893,6 +910,7 @@ pub unsafe extern "system" fn SeValidSecurityDescriptor(
 pub unsafe extern "system" fn SeDeassignSecurity(
     SecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     if !(*SecurityDescriptor).is_null() {
         ExFreePoolWithTag(*SecurityDescriptor as PVOID, TAG_SD);
         *SecurityDescriptor = core::ptr::null_mut();
@@ -913,6 +931,12 @@ pub unsafe extern "system" fn SeAssignSecurityEx(
     GenericMapping: PGENERIC_MAPPING,
     PoolType: POOL_TYPE,
 ) -> NTSTATUS {
+    let _ParentDescriptor = opaque_ptr(_ParentDescriptor);
+    let _ExplicitDescriptor = opaque_ptr(_ExplicitDescriptor);
+    let NewDescriptor = opaque_ptr(NewDescriptor);
+    let ObjectType = opaque_ptr(ObjectType);
+    let SubjectContext = opaque_ptr(SubjectContext);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let ParentDescriptor = _ParentDescriptor as PISECURITY_DESCRIPTOR;
     let ExplicitDescriptor = _ExplicitDescriptor as PISECURITY_DESCRIPTOR;
     let Descriptor: PISECURITY_DESCRIPTOR_RELATIVE;
@@ -1154,6 +1178,11 @@ pub unsafe extern "system" fn SeAssignSecurity(
     GenericMapping: PGENERIC_MAPPING,
     PoolType: POOL_TYPE,
 ) -> NTSTATUS {
+    let ParentDescriptor = opaque_ptr(ParentDescriptor);
+    let ExplicitDescriptor = opaque_ptr(ExplicitDescriptor);
+    let NewDescriptor = opaque_ptr(NewDescriptor);
+    let SubjectContext = opaque_ptr(SubjectContext);
+    let GenericMapping = opaque_ptr(GenericMapping);
     SeAssignSecurityEx(
         ParentDescriptor,
         ExplicitDescriptor,
@@ -1172,6 +1201,8 @@ pub unsafe extern "system" fn SeComputeQuotaInformationSize(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     QuotaInfoSize: *mut ULONG,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let QuotaInfoSize = opaque_ptr(QuotaInfoSize);
     let Group: PSID;
     let Dacl: PACL;
 

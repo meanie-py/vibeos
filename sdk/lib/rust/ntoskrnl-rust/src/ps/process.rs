@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::probe::{probe_write_user, probe_user_buffer};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::processor::KeActiveProcessors;
 
 // Status codes not in ddk
@@ -200,6 +201,8 @@ pub unsafe extern "system" fn PsGetNextProcessThread(
     process: PEPROCESS,
     thread: PETHREAD,
 ) -> PETHREAD {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
     let mut found_thread: PETHREAD = core::ptr::null_mut();
     let list_head: PLIST_ENTRY;
     let mut entry: PLIST_ENTRY;
@@ -241,6 +244,7 @@ pub unsafe extern "system" fn PsGetNextProcessThread(
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetNextProcess(old_process: PEPROCESS) -> PEPROCESS {
+    let old_process = opaque_ptr(old_process);
     let mut entry: PLIST_ENTRY;
     let mut found_process: PEPROCESS = core::ptr::null_mut();
 
@@ -401,6 +405,12 @@ pub unsafe extern "system" fn PspCreateProcess(
     exception_port: HANDLE,
     in_job: BOOLEAN,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let parent_process = opaque_ptr(parent_process);
+    let section_handle = opaque_ptr(section_handle);
+    let debug_port = opaque_ptr(debug_port);
+    let exception_port = opaque_ptr(exception_port);
     let mut h_process: HANDLE = core::ptr::null_mut();
     let mut process: PEPROCESS = core::ptr::null_mut();
     let mut parent: PEPROCESS = core::ptr::null_mut();
@@ -999,6 +1009,8 @@ pub unsafe extern "system" fn PsCreateSystemProcess(
     desired_access: ACCESS_MASK,
     object_attributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
+    let object_attributes = opaque_ptr(object_attributes);
     PspCreateProcess(
         process_handle,
         desired_access,
@@ -1017,6 +1029,8 @@ pub unsafe extern "system" fn PsLookupProcessByProcessId(
     process_id: HANDLE,
     process: *mut PEPROCESS,
 ) -> NTSTATUS {
+    let process_id = opaque_ptr(process_id);
+    let process = opaque_ptr(process);
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_process: PEPROCESS;
     let mut status: NTSTATUS = STATUS_INVALID_PARAMETER;
@@ -1047,6 +1061,9 @@ pub unsafe extern "system" fn PsLookupProcessThreadByCid(
     process: *mut PEPROCESS,
     thread: *mut PETHREAD,
 ) -> NTSTATUS {
+    let cid = opaque_ptr(cid);
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
     let mut cid_entry: PHANDLE_TABLE_ENTRY;
     let mut found_thread: PETHREAD;
     let mut status: NTSTATUS = STATUS_INVALID_CID;
@@ -1084,51 +1101,61 @@ pub unsafe extern "system" fn PsGetProcessExitTime() -> LARGE_INTEGER {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessCreateTimeQuadPart(process: PEPROCESS) -> i64 {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).CreateTime.QuadPart
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessDebugPort(process: PEPROCESS) -> PVOID {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).DebugPort
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessExitProcessCalled(process: PEPROCESS) -> BOOLEAN {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.ProcessExiting() as BOOLEAN
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessExitStatus(process: PEPROCESS) -> NTSTATUS {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).ExitStatus
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessId(process: PEPROCESS) -> HANDLE {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).UniqueProcessId
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessImageFileName(process: PEPROCESS) -> LPSTR {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).ImageFileName.as_ptr() as LPSTR
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessInheritedFromUniqueProcessId(process: PEPROCESS) -> HANDLE {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).InheritedFromUniqueProcessId
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessJob(process: PEPROCESS) -> PEJOB {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).Job
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessPeb(process: PEPROCESS) -> PPEB {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).Peb
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessPriorityClass(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).PriorityClass as ULONG
 }
 
@@ -1144,21 +1171,25 @@ pub unsafe extern "system" fn PsGetCurrentProcessSessionId() -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessSectionBaseAddress(process: PEPROCESS) -> PVOID {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).SectionBaseAddress
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessSecurityPort(process: PEPROCESS) -> PVOID {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).SecurityPort
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessSessionId(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     MmGetSessionId(process)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessSessionIdEx(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     MmGetSessionIdEx(process)
 }
 
@@ -1169,21 +1200,25 @@ pub unsafe extern "system" fn PsGetCurrentProcessWin32Process() -> PVOID {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessWin32Process(process: PEPROCESS) -> PVOID {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).Win32Process as PVOID
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetProcessWin32WindowStation(process: PEPROCESS) -> PVOID {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).Win32WindowStation
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsIsProcessBeingDebugged(process: PEPROCESS) -> BOOLEAN {
+    let process = opaque_ptr(process);
     if (*(process as *mut _EPROCESS)).DebugPort.is_null() { 0u8 } else { 1u8 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsIsSystemProcess(process: PEPROCESS) -> BOOLEAN {
+    let process = opaque_ptr(process);
     if process == PsInitialSystemProcess as PEPROCESS { 1u8 } else { 0u8 }
 }
 
@@ -1192,6 +1227,7 @@ pub unsafe extern "system" fn PsSetProcessPriorityClass(
     process: PEPROCESS,
     priority_class: ULONG,
 ) {
+    let process = opaque_ptr(process);
     (*(process as *mut _EPROCESS)).PriorityClass = priority_class as UCHAR;
 }
 
@@ -1200,6 +1236,8 @@ pub unsafe extern "system" fn PsSetProcessSecurityPort(
     process: PEPROCESS,
     security_port: PVOID,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let security_port = opaque_ptr(security_port);
     (*(process as *mut _EPROCESS)).SecurityPort = security_port;
     STATUS_SUCCESS
 }
@@ -1210,6 +1248,9 @@ pub unsafe extern "system" fn PsSetProcessWin32Process(
     win32_process: PVOID,
     old_win32_process: PVOID,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let win32_process = opaque_ptr(win32_process);
+    let old_win32_process = opaque_ptr(old_win32_process);
     let mut status: NTSTATUS;
     let proc = process as *mut _EPROCESS;
 
@@ -1244,6 +1285,8 @@ pub unsafe extern "system" fn PsSetProcessWindowStation(
     process: PEPROCESS,
     window_station: PVOID,
 ) {
+    let process = opaque_ptr(process);
+    let window_station = opaque_ptr(window_station);
     (*(process as *mut _EPROCESS)).Win32WindowStation = window_station;
 }
 
@@ -1252,6 +1295,7 @@ pub unsafe extern "system" fn PsSetProcessPriorityByClass(
     process: PEPROCESS,
     ty: PSPROCESSPRIORITYMODE,
 ) {
+    let process = opaque_ptr(process);
     let mut quantum: UCHAR = 0;
     let priority: ULONG;
 
@@ -1276,6 +1320,12 @@ pub unsafe extern "system" fn NtCreateProcessEx(
     exception_port: HANDLE,
     in_job: BOOLEAN,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let parent_process = opaque_ptr(parent_process);
+    let section_handle = opaque_ptr(section_handle);
+    let debug_port = opaque_ptr(debug_port);
+    let exception_port = opaque_ptr(exception_port);
     let previous_mode: KPROCESSOR_MODE = KeGetPreviousMode();
     let status: NTSTATUS;
 
@@ -1314,6 +1364,12 @@ pub unsafe extern "system" fn NtCreateProcess(
     debug_port: HANDLE,
     exception_port: HANDLE,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let parent_process = opaque_ptr(parent_process);
+    let section_handle = opaque_ptr(section_handle);
+    let debug_port = opaque_ptr(debug_port);
+    let exception_port = opaque_ptr(exception_port);
     let mut flags: ULONG = 0;
 
     if (section_handle as ULONG_PTR) & 1 != 0 {
@@ -1346,6 +1402,9 @@ pub unsafe extern "system" fn NtOpenProcess(
     object_attributes: POBJECT_ATTRIBUTES,
     client_id: PCLIENT_ID,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let client_id = opaque_ptr(client_id);
     let previous_mode: KPROCESSOR_MODE = KeGetPreviousMode();
     let mut safe_client_id: _CLIENT_ID = core::mem::zeroed();
     let mut attributes: ULONG = 0;

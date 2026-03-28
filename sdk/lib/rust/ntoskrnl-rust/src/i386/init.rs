@@ -27,6 +27,7 @@ use ntkrnl_sys::ddk::{
     MmInitializeBalancer,
     MmInitializeProcessAddressSpace,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ARM3::helpers::*;
 use crate::ARM3::mminit::{
@@ -291,6 +292,7 @@ unsafe fn MiComputeNonPagedPoolVa(free_pages: ULONG) {
 pub unsafe extern "system" fn MiInitMachineDependent(
     loader_block: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
+    let loader_block = opaque_ptr(loader_block);
     // Initialize template PTEs that have zero static initializers in Rust
     // (in C these are compile-time initialized, but Rust requires runtime init)
     init_globals();

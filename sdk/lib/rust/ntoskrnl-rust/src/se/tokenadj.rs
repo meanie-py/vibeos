@@ -6,6 +6,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -197,6 +198,8 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
     PreviousState: PTOKEN_PRIVILEGES,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let TokenHandle = opaque_ptr(TokenHandle);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE;
     let mut Token: PTOKEN = core::ptr::null_mut();
@@ -357,6 +360,8 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
     PreviousState: PTOKEN_GROUPS,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let TokenHandle = opaque_ptr(TokenHandle);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Token: PTOKEN = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE;

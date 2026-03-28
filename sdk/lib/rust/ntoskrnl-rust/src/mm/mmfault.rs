@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     MmNotPresentFaultSectionView,
     PsGetCurrentThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static mut MiRosKernelVadRoot: MM_AVL_TABLE;
@@ -193,6 +194,8 @@ pub unsafe extern "system" fn MmAccessFault(
     Mode: KPROCESSOR_MODE,
     TrapInformation: PVOID,
 ) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
+    let TrapInformation = opaque_ptr(TrapInformation);
     let mut Vad: PMMVAD = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut IsArm3Fault = 0u8;

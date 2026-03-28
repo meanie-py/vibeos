@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     CM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -257,6 +258,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
     RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST,
     ResourceList: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
+    let ResourceList = opaque_ptr(ResourceList);
     let mut i: ULONG;
     let OldCount: ULONG;
     let mut AlternateRequired: BOOLEAN = 0u8;
@@ -730,6 +732,8 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
     Level1Key: *mut u16,
     Level2Key: *mut u16,
 ) -> NTSTATUS {
+    let Level1Key = opaque_ptr(Level1Key);
+    let Level2Key = opaque_ptr(Level2Key);
     let mut Status: NTSTATUS;
     let mut Disposition: ULONG = 0;
     let mut PnpMgrLevel1: HANDLE = core::ptr::null_mut();

@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn SepAcquireTokenLockShared(token: PTOKEN);
@@ -1159,6 +1160,11 @@ pub unsafe extern "system" fn SeAccessCheck(
     GrantedAccess: PACCESS_MASK,
     AccessStatus: PNTSTATUS,
 ) -> BOOLEAN {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let SubjectSecurityContext = opaque_ptr(SubjectSecurityContext);
+    let Privileges = opaque_ptr(Privileges);
+    let GenericMapping = opaque_ptr(GenericMapping);
+    let AccessStatus = opaque_ptr(AccessStatus);
     let ret: BOOLEAN;
 
     if AccessMode == 0i8 {
@@ -3367,6 +3373,8 @@ pub unsafe extern "system" fn SeFastTraverseCheck(
     DesiredAccess: ACCESS_MASK,
     AccessMode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let AccessState = opaque_ptr(AccessState);
     if SecurityDescriptor.is_null() {
         return 0u8;
     }
@@ -3420,6 +3428,12 @@ pub unsafe extern "system" fn NtAccessCheck(
     GrantedAccess: PACCESS_MASK,
     AccessStatus: PNTSTATUS,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let ClientToken = opaque_ptr(ClientToken);
+    let GenericMapping = opaque_ptr(GenericMapping);
+    let PrivilegeSet = opaque_ptr(PrivilegeSet);
+    let PrivilegeSetLength = opaque_ptr(PrivilegeSetLength);
+    let AccessStatus = opaque_ptr(AccessStatus);
     SepAccessCheck(
         SecurityDescriptor,
         ClientToken,
@@ -3450,6 +3464,13 @@ pub unsafe extern "system" fn NtAccessCheckByType(
     GrantedAccess: PACCESS_MASK,
     AccessStatus: PNTSTATUS,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let PrincipalSelfSid = opaque_ptr(PrincipalSelfSid);
+    let ClientToken = opaque_ptr(ClientToken);
+    let GenericMapping = opaque_ptr(GenericMapping);
+    let PrivilegeSet = opaque_ptr(PrivilegeSet);
+    let PrivilegeSetLength = opaque_ptr(PrivilegeSetLength);
+    let AccessStatus = opaque_ptr(AccessStatus);
     SepAccessCheck(
         SecurityDescriptor,
         ClientToken,
@@ -3480,6 +3501,13 @@ pub unsafe extern "system" fn NtAccessCheckByTypeResultList(
     GrantedAccess: PACCESS_MASK,
     AccessStatus: PNTSTATUS,
 ) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let PrincipalSelfSid = opaque_ptr(PrincipalSelfSid);
+    let ClientToken = opaque_ptr(ClientToken);
+    let GenericMapping = opaque_ptr(GenericMapping);
+    let PrivilegeSet = opaque_ptr(PrivilegeSet);
+    let PrivilegeSetLength = opaque_ptr(PrivilegeSetLength);
+    let AccessStatus = opaque_ptr(AccessStatus);
     SepAccessCheck(
         SecurityDescriptor,
         ClientToken,

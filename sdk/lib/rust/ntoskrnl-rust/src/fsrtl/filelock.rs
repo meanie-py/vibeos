@@ -29,6 +29,7 @@ use ntkrnl_sys::ddk::{
     RtlNumberGenericTableElements,
     IofCompleteRequest,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[inline(always)]
 unsafe fn FsRtlCompleteRequest(Irp: ntkrnl_sys::ddk::PIRP, Status: NTSTATUS) {
@@ -308,6 +309,13 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
     Context: PVOID,
     AlreadySynchronized: BOOLEAN,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Length = opaque_ptr(Length);
+    let Process = opaque_ptr(Process);
+    let IoStatus = opaque_ptr(IoStatus);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let mut Status: NTSTATUS = 0;
     let mut ToInsert: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let mut Conflict: PCOMBINED_LOCK_ELEMENT;
@@ -566,6 +574,7 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCheckLockForReadAccess(FileLock: PFILE_LOCK, Irp: PIRP) -> BOOLEAN {
+    let Irp = opaque_ptr(Irp);
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
@@ -595,6 +604,7 @@ pub unsafe extern "system" fn FsRtlCheckLockForReadAccess(FileLock: PFILE_LOCK, 
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCheckLockForWriteAccess(FileLock: PFILE_LOCK, Irp: PIRP) -> BOOLEAN {
+    let Irp = opaque_ptr(Irp);
     let IoStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
@@ -629,6 +639,10 @@ pub unsafe extern "system" fn FsRtlFastCheckLockForRead(
     FileObject: PFILE_OBJECT,
     Process: PVOID,
 ) -> BOOLEAN {
+    let FileOffset = opaque_ptr(FileOffset);
+    let Length = opaque_ptr(Length);
+    let FileObject = opaque_ptr(FileObject);
+    let Process = opaque_ptr(Process);
     let EProcess = Process as PEPROCESS;
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
@@ -661,6 +675,10 @@ pub unsafe extern "system" fn FsRtlFastCheckLockForWrite(
     FileObject: PFILE_OBJECT,
     Process: PVOID,
 ) -> BOOLEAN {
+    let FileOffset = opaque_ptr(FileOffset);
+    let Length = opaque_ptr(Length);
+    let FileObject = opaque_ptr(FileObject);
+    let Process = opaque_ptr(Process);
     let EProcess = Process as PEPROCESS;
     let mut ToFind: COMBINED_LOCK_ELEMENT = core::mem::zeroed();
     let Found: PCOMBINED_LOCK_ELEMENT;
@@ -695,6 +713,11 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
     Context: PVOID,
     AlreadySynchronized: BOOLEAN,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Length = opaque_ptr(Length);
+    let Process = opaque_ptr(Process);
+    let Context = opaque_ptr(Context);
     let mut FoundShared = 0u8;
     let mut SharedEntry: PLIST_ENTRY;
     let mut SharedRange: PLOCK_SHARED_RANGE = core::ptr::null_mut();
@@ -800,6 +823,9 @@ pub unsafe extern "system" fn FsRtlFastUnlockAll(
     Process: PEPROCESS,
     Context: PVOID,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let Process = opaque_ptr(Process);
+    let Context = opaque_ptr(Context);
     let mut ListEntry: PLIST_ENTRY;
     let mut Entry: PCOMBINED_LOCK_ELEMENT;
     let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
@@ -855,6 +881,9 @@ pub unsafe extern "system" fn FsRtlFastUnlockAllByKey(
     Key: ULONG,
     Context: PVOID,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let Process = opaque_ptr(Process);
+    let Context = opaque_ptr(Context);
     let mut ListEntry: PLIST_ENTRY;
     let mut Entry: PCOMBINED_LOCK_ELEMENT;
     let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
@@ -911,6 +940,8 @@ pub unsafe extern "system" fn FsRtlProcessFileLock(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let IoStackLocation: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 

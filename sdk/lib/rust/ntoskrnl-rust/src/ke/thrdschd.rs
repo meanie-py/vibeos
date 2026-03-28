@@ -6,6 +6,7 @@ use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
 // mm::* import removed to avoid KeGetCurrentThread ambiguity
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _KTHREAD,
@@ -154,6 +155,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB) {
+    let Thread = opaque_ptr(Thread);
     KxQueueReadyThread(Thread, Prcb);
 }
 
@@ -230,12 +232,14 @@ unsafe fn KiSelectNextProcessor(_Thread: PKTHREAD) -> ULONG {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiDeferredReadyThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     KiDeferredReadyThreadImpl(Thread)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiDeferredReadyThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     KiDeferredReadyThreadImpl(Thread)
 }
 
@@ -440,6 +444,7 @@ pub unsafe extern "fastcall" fn KiSwapThread(
     CurrentThread: PKTHREAD,
     Prcb: PKPRCB,
 ) -> isize {
+    let CurrentThread = opaque_ptr(CurrentThread);
     KiSwapThreadImpl(CurrentThread, Prcb)
 }
 
@@ -449,6 +454,7 @@ pub unsafe extern "C" fn KiSwapThread(
     CurrentThread: PKTHREAD,
     Prcb: PKPRCB,
 ) -> isize {
+    let CurrentThread = opaque_ptr(CurrentThread);
     KiSwapThreadImpl(CurrentThread, Prcb)
 }
 
@@ -512,6 +518,7 @@ unsafe fn KiSwapThreadImpl(
 
 #[no_mangle]
 pub unsafe extern "system" fn KiReadyThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
 
     let Process: PKPROCESS = (*Thread).__bindgen_anon_1.ApcState.Process;
 
@@ -526,6 +533,7 @@ pub unsafe extern "system" fn KiReadyThread(Thread: PKTHREAD) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KiAdjustQuantumThread(Thread: PKTHREAD) {
+    let Thread = opaque_ptr(Thread);
     let Prcb: PKPRCB = KeGetCurrentPrcb();
     let NextThread: PKTHREAD;
 
@@ -563,6 +571,7 @@ pub unsafe extern "fastcall" fn KiSetPriorityThread(
     Thread: PKTHREAD,
     Priority: KPRIORITY,
 ) {
+    let Thread = opaque_ptr(Thread);
     KiSetPriorityThreadImpl(Thread, Priority)
 }
 
@@ -572,6 +581,7 @@ pub unsafe extern "C" fn KiSetPriorityThread(
     Thread: PKTHREAD,
     Priority: KPRIORITY,
 ) {
+    let Thread = opaque_ptr(Thread);
     KiSetPriorityThreadImpl(Thread, Priority)
 }
 
@@ -773,6 +783,7 @@ pub unsafe extern "C" fn KiSetAffinityThread(
     Thread: PKTHREAD,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
+    let Thread = opaque_ptr(Thread);
     KiSetAffinityThread_impl(Thread, Affinity)
 }
 
@@ -782,6 +793,7 @@ pub unsafe extern "fastcall" fn KiSetAffinityThread(
     Thread: PKTHREAD,
     Affinity: KAFFINITY,
 ) -> KAFFINITY {
+    let Thread = opaque_ptr(Thread);
     KiSetAffinityThread_impl(Thread, Affinity)
 }
 

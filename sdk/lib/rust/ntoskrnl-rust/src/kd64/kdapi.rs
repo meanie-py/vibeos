@@ -9,6 +9,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::processor::KeNumberProcessors;
 use crate::ke::krnlinit::KiProcessorBlock;
 
@@ -324,6 +325,8 @@ pub unsafe extern "system" fn KdpCopyMemoryChunks(
     flags: ULONG,
     actual_size: *mut ULONG,
 ) -> NTSTATUS {
+    let buffer = opaque_ptr(buffer);
+    let actual_size = opaque_ptr(actual_size);
     let mut chunk = chunk_size;
     if chunk == 0 {
         chunk = 4;
@@ -1374,6 +1377,7 @@ pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
     unload: BOOLEAN,
     context: PCONTEXT,
 ) {
+    let symbol_info = opaque_ptr(symbol_info);
     let mut extra_data: PSTRING;
     let mut data = STRING {
         Length: 0,
@@ -1602,6 +1606,10 @@ pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
     _system_argument1: PVOID,
     _system_argument2: PVOID,
 ) {
+    let _dpc = opaque_ptr(_dpc);
+    let _deferred_context = opaque_ptr(_deferred_context);
+    let _system_argument1 = opaque_ptr(_system_argument1);
+    let _system_argument2 = opaque_ptr(_system_argument2);
     let mut pending_slip = KdpTimeSlipPending;
     loop {
         let old_slip = pending_slip;
@@ -1625,6 +1633,7 @@ pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpTimeSlipWork(_context: PVOID) {
+    let _context = opaque_ptr(_context);
     let mut old_irql = PASSIVE_LEVEL;
 
     ExAcquireTimeRefreshLock(0u8);
@@ -1659,6 +1668,8 @@ unsafe fn KdpQueryPerformanceCounter(trap_frame: *mut PVOID) -> LARGE_INTEGER {
 
 #[no_mangle]
 pub unsafe extern "system" fn KdEnterDebugger(trap_frame: *mut PVOID, exception_frame: *mut PVOID) -> BOOLEAN {
+    let trap_frame = opaque_ptr(trap_frame);
+    let exception_frame = opaque_ptr(exception_frame);
     let enable;
 
     if !trap_frame.is_null() {
@@ -1830,6 +1841,9 @@ pub unsafe extern "system" fn KdSystemDebugControl(
     return_length: PULONG,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let input_buffer = opaque_ptr(input_buffer);
+    let output_buffer = opaque_ptr(output_buffer);
+    let return_length = opaque_ptr(return_length);
     let mut status;
     let mut length = 0u32;
 
@@ -2172,6 +2186,9 @@ pub unsafe extern "system" fn KdChangeOption(
     out_buffer: PVOID,
     out_buffer_needed: PULONG,
 ) -> NTSTATUS {
+    let in_buffer = opaque_ptr(in_buffer);
+    let out_buffer = opaque_ptr(out_buffer);
+    let out_buffer_needed = opaque_ptr(out_buffer_needed);
     if KdPitchDebugger != 0 {
         return 0xC0000354u32 as NTSTATUS;
     }

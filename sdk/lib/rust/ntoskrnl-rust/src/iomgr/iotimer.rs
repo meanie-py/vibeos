@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
 // On i386 it's ExfInterlockedInsertTailList (fastcall).
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ddk::ExInterlockedInsertTailList;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 unsafe fn ExInterlockedInsertTailList(
@@ -55,6 +56,10 @@ pub unsafe extern "system" fn IopTimerDispatch(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut OldIrql: KIRQL = 0;
     let mut TimerEntry: PLIST_ENTRY;
     let mut Timer: PIO_TIMER;
@@ -108,6 +113,8 @@ pub unsafe extern "system" fn IoInitializeTimer(
     TimerRoutine: PIO_TIMER_ROUTINE,
     Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Context = opaque_ptr(Context);
     let mut IoTimer: PIO_TIMER = (*DeviceObject).Timer;
 
     if IoTimer.is_null() {
@@ -141,6 +148,7 @@ pub unsafe extern "system" fn IoInitializeTimer(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoStartTimer(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut OldIrql: KIRQL = 0;
     let IoTimer: PIO_TIMER = (*DeviceObject).Timer;
 
@@ -164,6 +172,7 @@ pub unsafe extern "system" fn IoStartTimer(DeviceObject: PDEVICE_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoStopTimer(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut OldIrql: KIRQL = 0;
     let IoTimer: PIO_TIMER = (*DeviceObject).Timer;
 

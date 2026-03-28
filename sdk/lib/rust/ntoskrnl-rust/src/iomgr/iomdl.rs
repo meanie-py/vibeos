@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     PIRP, PMDL, PPFN_NUMBER, _MDL,
     _PP_NPAGED_LOOKASIDE_NUMBER_LookasideMdlList,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn MmUnmapLockedPages(BaseAddress: PVOID, MemoryDescriptorList: PMDL);
@@ -66,6 +67,8 @@ pub unsafe extern "system" fn IoAllocateMdl(
     ChargeQuota: BOOLEAN,
     Irp: PIRP,
 ) -> PMDL {
+    let VirtualAddress = opaque_ptr(VirtualAddress);
+    let Irp = opaque_ptr(Irp);
     let mut Mdl: PMDL = core::ptr::null_mut();
     let mut Flags: ULONG = 0;
     let mut Size: ULONG;
@@ -120,6 +123,9 @@ pub unsafe extern "system" fn IoBuildPartialMdl(
     VirtualAddress: PVOID,
     Length: ULONG,
 ) {
+    let SourceMdl = opaque_ptr(SourceMdl);
+    let TargetMdl = opaque_ptr(TargetMdl);
+    let VirtualAddress = opaque_ptr(VirtualAddress);
     let TargetPages = (TargetMdl.add(1)) as PPFN_NUMBER;
     let SourcePages = (SourceMdl.add(1)) as PPFN_NUMBER;
     let mut Offset: ULONG;
@@ -163,6 +169,7 @@ pub unsafe extern "system" fn IoBuildPartialMdl(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoFreeMdl(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
     MmPrepareMdlForReuse(Mdl);
 
     if (*Mdl).MdlFlags & MDL_ALLOCATED_FIXED_SIZE == 0 {

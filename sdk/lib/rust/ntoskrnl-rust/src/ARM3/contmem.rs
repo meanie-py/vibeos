@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     MmMapIoSpace, MmUnmapIoSpace,
     MiIsPfnInUse,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 unsafe fn MiFindContiguousPages(
     LowestPfn: PFN_NUMBER,
@@ -410,6 +411,7 @@ pub unsafe extern "system" fn MmAllocateContiguousMemory(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmFreeContiguousMemory(BaseAddress: PVOID) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     MiFreeContiguousMemory(BaseAddress);
 }
 
@@ -419,6 +421,7 @@ pub unsafe extern "system" fn MmFreeContiguousMemorySpecifyCache(
     NumberOfBytes: SIZE_T,
     CacheType: MEMORY_CACHING_TYPE,
 ) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     MiFreeContiguousMemory(BaseAddress);
 }
 

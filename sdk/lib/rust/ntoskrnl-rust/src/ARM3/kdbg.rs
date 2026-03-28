@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     PIRP, PIO_STACK_LOCATION, PUNICODE_STRING,
     IoGetCurrentIrpStackLocation, MmIsAddressValid,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // TAG_IRP = ' prI' (little-endian): bytes 'I'=0x49, 'r'=0x72, 'p'=0x70, ' '=0x20
 const TAG_IRP: u32 = 0x20707249;
@@ -61,6 +62,7 @@ extern "C" {
         Argc: ULONG,
         Argv: *mut PCHAR,
     ) -> BOOLEAN {
+    let Argv = opaque_ptr(Argv);
         let mut Address: ULONG_PTR = 0;
         let mut Flags: ULONG_PTR = 0;
         let mut PoolPage: PVOID;
@@ -176,6 +178,7 @@ extern "C" {
         Argc: ULONG,
         Argv: *mut PCHAR,
     ) -> BOOLEAN {
+    let Argv = opaque_ptr(Argv);
         let mut Tag: ULONG = 0;
         let mut Mask: ULONG = 0;
         let mut Flags: ULONG_PTR = 0;
@@ -404,6 +407,7 @@ extern "C" {
         Argc: ULONG,
         Argv: *mut PCHAR,
     ) -> BOOLEAN {
+    let Argv = opaque_ptr(Argv);
         let mut Tag: ULONG = 0;
         let mut Mask: ULONG = 0;
         let mut PoolType: ULONG = NonPagedPool;
@@ -442,6 +446,8 @@ extern "C" {
         Entry: PPOOL_HEADER,
         Context: PVOID,
     ) {
+    let Entry = opaque_ptr(Entry);
+    let Context = opaque_ptr(Context);
         let Irp: PIRP;
         let mut IsComplete: BOOLEAN = 0u8;
         let FindCtxt: *mut IRP_FIND_CTXT = Context as *mut IRP_FIND_CTXT;
@@ -503,6 +509,7 @@ extern "C" {
         Argc: ULONG,
         Argv: *mut PCHAR,
     ) -> BOOLEAN {
+    let Argv = opaque_ptr(Argv);
         let mut PoolType: ULONG = NonPagedPool;
         let mut FindCtxt: IRP_FIND_CTXT = core::mem::zeroed();
 

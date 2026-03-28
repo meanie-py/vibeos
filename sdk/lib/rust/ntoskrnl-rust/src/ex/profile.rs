@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static SeSystemProfilePrivilege: LUID;
@@ -114,6 +115,10 @@ pub unsafe extern "system" fn NtCreateProfile(
     ProfileSource: KPROFILE_SOURCE,
     Affinity: KAFFINITY,
 ) -> NTSTATUS {
+    let ProfileHandle = opaque_ptr(ProfileHandle);
+    let Process = opaque_ptr(Process);
+    let RangeBase = opaque_ptr(RangeBase);
+    let Buffer = opaque_ptr(Buffer);
     let mut hProfile: HANDLE = core::ptr::null_mut();
     let mut Profile: PEPROFILE = core::ptr::null_mut();
     let mut pProcess: PEPROCESS = core::ptr::null_mut();
@@ -272,6 +277,8 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
     PerformanceCounter: PLARGE_INTEGER,
     PerformanceFrequency: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let PerformanceCounter = opaque_ptr(PerformanceCounter);
+    let PerformanceFrequency = opaque_ptr(PerformanceFrequency);
     let PreviousMode = ExGetPreviousMode();
     let mut PerfFrequency: LARGE_INTEGER = core::mem::zeroed();
 
@@ -309,6 +316,7 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtStartProfile(ProfileHandle: HANDLE) -> NTSTATUS {
+    let ProfileHandle = opaque_ptr(ProfileHandle);
     let mut Profile: PEPROFILE = core::ptr::null_mut();
     let mut ProfileObject: PKPROFILE;
     let PreviousMode = ExGetPreviousMode();
@@ -396,6 +404,7 @@ pub unsafe extern "system" fn NtStartProfile(ProfileHandle: HANDLE) -> NTSTATUS 
 
 #[no_mangle]
 pub unsafe extern "system" fn NtStopProfile(ProfileHandle: HANDLE) -> NTSTATUS {
+    let ProfileHandle = opaque_ptr(ProfileHandle);
     let mut Profile: PEPROFILE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
 
@@ -442,6 +451,7 @@ pub unsafe extern "system" fn NtQueryIntervalProfile(
     ProfileSource: KPROFILE_SOURCE,
     Interval: PULONG,
 ) -> NTSTATUS {
+    let Interval = opaque_ptr(Interval);
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {

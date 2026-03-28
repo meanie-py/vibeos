@@ -13,6 +13,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -477,6 +478,8 @@ pub unsafe extern "system" fn KiInitializePcr(
     IdleThread: PKTHREAD,
     DpcStack: PVOID,
 ) {
+    let IdleThread = opaque_ptr(IdleThread);
+    let DpcStack = opaque_ptr(DpcStack);
     (*Pcr).__bindgen_anon_1.NtTib.ExceptionList = EXCEPTION_CHAIN_END as *mut _;
     (*Pcr).__bindgen_anon_1.NtTib.StackBase = core::ptr::null_mut();
     (*Pcr).__bindgen_anon_1.NtTib.StackLimit = core::ptr::null_mut();
@@ -586,6 +589,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
     Number: i8,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    let InitProcess = opaque_ptr(InitProcess);
+    let InitThread = opaque_ptr(InitThread);
+    let IdleStack = opaque_ptr(IdleStack);
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut PageDirectory: [ULONG; 2] = [0, 0];
     let DpcStack: PVOID;
     let mut DummyIrql: KIRQL = 0;
@@ -829,6 +836,10 @@ pub unsafe extern "fastcall" fn KiGetMachineBootPointers(
     Pcr: *mut PKIPCR,
     Tss: *mut PKTSS,
 ) {
+    let Gdt = opaque_ptr(Gdt);
+    let Idt = opaque_ptr(Idt);
+    let Pcr = opaque_ptr(Pcr);
+    let Tss = opaque_ptr(Tss);
     let TssSelector: _KGDTENTRY;
     let PcrSelector: _KGDTENTRY;
 
@@ -908,6 +919,7 @@ unsafe fn KiMarkPageAsReadOnly(Address: PVOID) {
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> ! {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let Cpu: ULONG;
     let InitialThread: PKTHREAD;
     let InitialStack: ULONG;

@@ -7,6 +7,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TOKEN_TYPE_TokenImpersonation: TOKEN_TYPE = _TOKEN_TYPE_TokenImpersonation;
 const TOKEN_TYPE_TokenPrimary: TOKEN_TYPE = _TOKEN_TYPE_TokenPrimary;
@@ -168,6 +169,13 @@ pub unsafe extern "system" fn SepCreateToken(
     token_source: PTOKEN_SOURCE,
     system_token: BOOLEAN,
 ) -> NTSTATUS {
+    let token_handle = opaque_ptr(token_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let authentication_id = opaque_ptr(authentication_id);
+    let expiration_time = opaque_ptr(expiration_time);
+    let owner = opaque_ptr(owner);
+    let primary_group = opaque_ptr(primary_group);
+    let default_dacl = opaque_ptr(default_dacl);
     let mut status: NTSTATUS;
     let mut access_token: PTOKEN = core::ptr::null_mut();
     let mut token_flags: ULONG = 0;
@@ -425,6 +433,9 @@ pub unsafe extern "system" fn SepDuplicateToken(
     previous_mode: KPROCESSOR_MODE,
     new_access_token: *mut PTOKEN,
 ) -> NTSTATUS {
+    let token = opaque_ptr(token);
+    let object_attributes = opaque_ptr(object_attributes);
+    let new_access_token = opaque_ptr(new_access_token);
     let mut status: NTSTATUS;
     let mut access_token: PTOKEN = core::ptr::null_mut();
     let mut end_mem: PVOID;
@@ -1037,6 +1048,7 @@ pub unsafe extern "system" fn SeFilterToken(
     restricted_sids: PTOKEN_GROUPS,
     filtered_token: *mut PACCESS_TOKEN,
 ) -> NTSTATUS {
+    let filtered_token = opaque_ptr(filtered_token);
     let mut status: NTSTATUS;
     let mut access_token: PTOKEN = core::ptr::null_mut();
     let mut privileges_count: ULONG = 0;
@@ -1103,6 +1115,10 @@ pub unsafe extern "system" fn NtCreateToken(
     token_default_dacl: PTOKEN_DEFAULT_DACL,
     token_source: PTOKEN_SOURCE,
 ) -> NTSTATUS {
+    let token_handle = opaque_ptr(token_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let authentication_id = opaque_ptr(authentication_id);
+    let expiration_time = opaque_ptr(expiration_time);
     let mut h_token: HANDLE = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE;
     let mut group_count: ULONG;
@@ -1355,6 +1371,9 @@ pub unsafe extern "system" fn NtDuplicateToken(
     token_type: TOKEN_TYPE,
     new_token_handle: PHANDLE,
 ) -> NTSTATUS {
+    let existing_token_handle = opaque_ptr(existing_token_handle);
+    let object_attributes = opaque_ptr(object_attributes);
+    let new_token_handle = opaque_ptr(new_token_handle);
     let previous_mode: KPROCESSOR_MODE;
     let mut h_token: HANDLE = core::ptr::null_mut();
     let mut token: PTOKEN = core::ptr::null_mut();
@@ -1467,6 +1486,8 @@ pub unsafe extern "system" fn NtFilterToken(
     restricted_sids: PTOKEN_GROUPS,
     new_token_handle: PHANDLE,
 ) -> NTSTATUS {
+    let existing_token_handle = opaque_ptr(existing_token_handle);
+    let new_token_handle = opaque_ptr(new_token_handle);
     let mut token: PTOKEN = core::ptr::null_mut();
     let mut filtered_token: PTOKEN = core::ptr::null_mut();
     let mut filtered_token_handle: HANDLE = core::ptr::null_mut();

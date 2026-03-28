@@ -1,5 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::PKTHREAD;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // External declarations from other KD modules
 extern "C" {
@@ -47,6 +48,7 @@ const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x7FFFFFFF as PVOID;
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {
+    let Address = opaque_ptr(Address);
     let mut content: KD_BREAKPOINT_TYPE = 0;
     let mut i: ULONG;
     let mut status: NTSTATUS;
@@ -368,6 +370,8 @@ pub unsafe extern "system" fn KdpDeleteBreakpoint(BpEntry: ULONG) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpDeleteBreakpointRange(Base: PVOID, Limit: PVOID) -> BOOLEAN {
+    let Base = opaque_ptr(Base);
+    let Limit = opaque_ptr(Limit);
     let mut bp_index: ULONG;
     let mut deleted_breakpoints: BOOLEAN;
 

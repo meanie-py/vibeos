@@ -4,6 +4,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _CLIENT_ID,
@@ -167,6 +168,7 @@ pub unsafe extern "system" fn LpcpValidateClientPort(
     ClientThread: PETHREAD,
     Port: PLPCP_PORT_OBJECT,
 ) -> BOOLEAN {
+    let ClientThread = opaque_ptr(ClientThread);
     let ThreadPort = LpcpGetPortFromThread(ClientThread);
     if ThreadPort.is_null() {
         return 0u8;
@@ -193,6 +195,7 @@ pub unsafe extern "system" fn NtImpersonateClientOfPort(
     PortHandle: HANDLE,
     ClientMessage: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
     let mut ClientId: _CLIENT_ID;
@@ -376,5 +379,8 @@ pub unsafe extern "system" fn NtQueryInformationPort(
     PortInformationLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let PortInformation = opaque_ptr(PortInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     STATUS_NOT_IMPLEMENTED
 }

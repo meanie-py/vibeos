@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     MiUnlockWorkingSet, MiUnlockWorkingSetShared,
     MmGetKernelAddressSpace, PsGetCurrentThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use super::helpers::*;
 
@@ -405,6 +406,7 @@ pub unsafe extern "system" fn MiInsertInWorkingSetList(
     Address: PVOID,
     Protection: ULONG,
 ) {
+    let Address = opaque_ptr(Address);
     let WsList = (*Vm).VmWorkingSetList;
 
     let PointerPte = MiAddressToPte(Address);
@@ -438,6 +440,7 @@ pub unsafe extern "system" fn MiRemoveFromWorkingSetList(
     Vm: PMMSUPPORT,
     Address: PVOID,
 ) {
+    let Address = opaque_ptr(Address);
     RemoveFromWsList((*Vm).VmWorkingSetList, Address);
 
     (*Vm).WorkingSetSize = (*Vm).WorkingSetSize.wrapping_sub(PAGE_SIZE as u32);

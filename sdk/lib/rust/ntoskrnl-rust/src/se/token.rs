@@ -7,6 +7,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "aarch64")]
 extern "C" {
@@ -245,6 +246,7 @@ static mut SepTokenMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
 
 #[no_mangle]
 pub unsafe extern "C" fn SepCreateTokenLock(token: PTOKEN) -> NTSTATUS {
+    let mut token = opaque_ptr(token);
     (*token).TokenLock = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<ERESOURCE>() as SIZE_T,
@@ -471,6 +473,7 @@ unsafe fn SepImpersonateAnonymousToken(
 
 #[no_mangle]
 pub unsafe extern "C" fn SepUpdateSinglePrivilegeFlagToken(token: PTOKEN, index: ULONG) {
+    let mut token = opaque_ptr(token);
     let token_flag: ULONG;
 
     if (*(*token).Privileges.offset(index as isize)).Luid.HighPart != 0 {
@@ -507,6 +510,7 @@ pub unsafe extern "system" fn SepTokenIsOwner(
     security_descriptor: PSECURITY_DESCRIPTOR,
     token_locked: BOOLEAN,
 ) -> BOOLEAN {
+    let security_descriptor = opaque_ptr(security_descriptor);
     let token = _token as PTOKEN;
     let sid = SepGetOwnerFromDescriptor(security_descriptor);
 
@@ -544,6 +548,7 @@ pub unsafe extern "system" fn SepTokenIsOwner(
 
 #[no_mangle]
 pub unsafe extern "C" fn SepUpdatePrivilegeFlagsToken(token: PTOKEN) {
+    let mut token = opaque_ptr(token);
     for i in 0..(*token).PrivilegeCount {
         SepUpdateSinglePrivilegeFlagToken(token, i);
     }
@@ -551,6 +556,7 @@ pub unsafe extern "C" fn SepUpdatePrivilegeFlagsToken(token: PTOKEN) {
 
 #[no_mangle]
 pub unsafe extern "C" fn SepRemovePrivilegeToken(token: PTOKEN, index: ULONG) {
+    let mut token = opaque_ptr(token);
     let move_count = (*token).PrivilegeCount - index - 1;
     if move_count != 0 {
         core::ptr::copy(
@@ -564,6 +570,7 @@ pub unsafe extern "C" fn SepRemovePrivilegeToken(token: PTOKEN, index: ULONG) {
 
 #[no_mangle]
 pub unsafe extern "C" fn SepRemoveUserGroupToken(token: PTOKEN, index: ULONG) {
+    let mut token = opaque_ptr(token);
     let move_count = (*token).UserAndGroupCount - index - 1;
     if move_count != 0 {
         core::ptr::copy(
@@ -581,6 +588,8 @@ pub unsafe extern "C" fn SepComputeAvailableDynamicSpace(
     primary_group: PSID,
     default_dacl: PACL,
 ) -> ULONG {
+    let primary_group = opaque_ptr(primary_group);
+    let default_dacl = opaque_ptr(default_dacl);
     let mut dynamic_available = dynamic_charged - RtlLengthSid(primary_group);
     if !default_dacl.is_null() {
         dynamic_available -= (*default_dacl).AclSize as ULONG;
@@ -593,6 +602,7 @@ pub unsafe extern "C" fn SepRebuildDynamicPartOfToken(
     access_token: PTOKEN,
     new_dynamic_part_size: ULONG,
 ) -> NTSTATUS {
+    let access_token = opaque_ptr(access_token);
     let mut current_dynamic_length =
         (*access_token).DynamicAvailable + RtlLengthSid((*access_token).PrimaryGroup);
     if !(*access_token).DefaultDacl.is_null() {
@@ -639,9 +649,10 @@ pub unsafe extern "C" fn SepRebuildDynamicPartOfToken(
 
 #[no_mangle]
 pub unsafe extern "system" fn SepFreeProxyData(_proxy_data: PVOID) {}
-
 #[no_mangle]
 pub unsafe extern "system" fn SepCopyProxyData(_dest: *mut PVOID, _src: PVOID) -> NTSTATUS {
+    let _dest = opaque_ptr(_dest);
+    let _src = opaque_ptr(_src);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -651,6 +662,8 @@ pub unsafe extern "system" fn SeExchangePrimaryToken(
     new_access_token: PACCESS_TOKEN,
     old_access_token: *mut PACCESS_TOKEN,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let old_access_token = opaque_ptr(old_access_token);
     let new_token = new_access_token as PTOKEN;
 
     if (*new_token).TokenType != TokenPrimary {
@@ -704,6 +717,7 @@ pub unsafe extern "system" fn SeExchangePrimaryToken(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeDeassignPrimaryToken(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     let old_token = ObFastReplaceObject(
         core::ptr::addr_of_mut!((*process).Token),
         core::ptr::null_mut(),
@@ -730,6 +744,11 @@ pub unsafe extern "C" fn SepFindPrimaryGroupAndDefaultOwner(
     primary_group_index: *mut ULONG,
     default_owner_index: *mut ULONG,
 ) -> NTSTATUS {
+    let mut token = opaque_ptr(token);
+    let primary_group = opaque_ptr(primary_group);
+    let default_owner = opaque_ptr(default_owner);
+    let primary_group_index = opaque_ptr(primary_group_index);
+    let default_owner_index = opaque_ptr(default_owner_index);
     if primary_group_index.is_null() && default_owner_index.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
@@ -946,6 +965,8 @@ pub unsafe extern "system" fn SeSubProcessToken(
     in_use: BOOLEAN,
     session_id: ULONG,
 ) -> NTSTATUS {
+    let parent_token = opaque_ptr(parent_token);
+    let mut token = opaque_ptr(token);
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
@@ -979,6 +1000,8 @@ pub unsafe extern "system" fn SeSubProcessToken(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeIsTokenChild(token: PTOKEN, is_child: *mut BOOLEAN) -> NTSTATUS {
+    let mut token = opaque_ptr(token);
+    let is_child = opaque_ptr(is_child);
     *is_child = 0u8;
 
     let process_token = PsReferencePrimaryToken(PsGetCurrentProcess() as *mut _EPROCESS);
@@ -1011,6 +1034,8 @@ pub unsafe extern "system" fn SeIsTokenSibling(
     token: PTOKEN,
     is_sibling: *mut BOOLEAN,
 ) -> NTSTATUS {
+    let mut token = opaque_ptr(token);
+    let is_sibling = opaque_ptr(is_sibling);
     *is_sibling = 0u8;
 
     let process_token = PsReferencePrimaryToken(PsGetCurrentProcess() as *mut _EPROCESS);
@@ -1051,6 +1076,7 @@ pub unsafe extern "system" fn SeCopyClientToken(
     previous_mode: KPROCESSOR_MODE,
     new_token: *mut PACCESS_TOKEN,
 ) -> NTSTATUS {
+    let new_token = opaque_ptr(new_token);
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
 
@@ -1067,6 +1093,7 @@ pub unsafe extern "system" fn SeCopyClientToken(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeTokenIsInert(token: PTOKEN) -> BOOLEAN {
+    let mut token = opaque_ptr(token);
     (((*token).TokenFlags & TOKEN_SANDBOX_INERT) != 0) as BOOLEAN
 }
 
@@ -1122,6 +1149,8 @@ pub unsafe extern "system" fn SepInitializeTokenImplementation() {
 
 #[no_mangle]
 pub unsafe extern "system" fn SeAssignPrimaryToken(process: PEPROCESS, token: PTOKEN) {
+    let process = opaque_ptr(process);
+    let mut token = opaque_ptr(token);
     if !(*process).Token.__bindgen_anon_1.Object.is_null() {
         SeDeassignPrimaryToken(process);
     }
@@ -1139,6 +1168,7 @@ pub unsafe extern "system" fn SeGetTokenControlInformation(
     _token: PACCESS_TOKEN,
     token_control: *mut _TOKEN_CONTROL,
 ) {
+    let token_control = opaque_ptr(token_control);
     let token = _token as PTOKEN;
 
     (*token_control).AuthenticationId = (*token).AuthenticationId;
@@ -1415,6 +1445,7 @@ pub unsafe extern "system" fn SeQuerySessionIdToken(
     token: PACCESS_TOKEN,
     p_session_id: *mut ULONG,
 ) -> NTSTATUS {
+    let p_session_id = opaque_ptr(p_session_id);
     SepAcquireTokenLockShared(token as PTOKEN);
     *p_session_id = (*(token as PTOKEN)).SessionId;
     SepReleaseTokenLock(token as PTOKEN);
@@ -1426,6 +1457,7 @@ pub unsafe extern "system" fn SeQueryAuthenticationIdToken(
     token: PACCESS_TOKEN,
     logon_id: PLUID,
 ) -> NTSTATUS {
+    let logon_id = opaque_ptr(logon_id);
     *logon_id = (*(token as PTOKEN)).AuthenticationId;
     STATUS_SUCCESS
 }
@@ -1463,6 +1495,8 @@ pub unsafe extern "system" fn SeTokenCanImpersonate(
     token_to_impersonate: PTOKEN,
     impersonation_level: SECURITY_IMPERSONATION_LEVEL,
 ) -> BOOLEAN {
+    let process_token = opaque_ptr(process_token);
+    let token_to_impersonate = opaque_ptr(token_to_impersonate);
     if impersonation_level < SecurityIdentification {
         return 1u8;
     }
@@ -1527,6 +1561,8 @@ pub unsafe extern "system" fn NtOpenThreadTokenEx(
     handle_attributes: ULONG,
     token_handle: PHANDLE,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let token_handle = opaque_ptr(token_handle);
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
@@ -1621,6 +1657,8 @@ pub unsafe extern "system" fn NtOpenThreadToken(
     open_as_self: BOOLEAN,
     token_handle: PHANDLE,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let token_handle = opaque_ptr(token_handle);
     NtOpenThreadTokenEx(thread_handle, desired_access, open_as_self, 0, token_handle)
 }
 
@@ -1630,6 +1668,9 @@ pub unsafe extern "system" fn NtCompareTokens(
     second_token_handle: HANDLE,
     equal: *mut BOOLEAN,
 ) -> NTSTATUS {
+    let first_token_handle = opaque_ptr(first_token_handle);
+    let second_token_handle = opaque_ptr(second_token_handle);
+    let equal = opaque_ptr(equal);
     let previous_mode = ExGetPreviousMode();
 
     if previous_mode != 0i8 {
@@ -1687,6 +1728,7 @@ pub unsafe extern "system" fn NtCompareTokens(
 pub unsafe extern "system" fn NtImpersonateAnonymousToken(
     thread_handle: HANDLE,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
     let previous_mode = ExGetPreviousMode();
 
     let mut thread: PETHREAD = core::ptr::null_mut();

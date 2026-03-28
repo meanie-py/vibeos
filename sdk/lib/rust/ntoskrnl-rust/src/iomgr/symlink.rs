@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut SePublicDefaultSd: *mut core::ffi::c_void;
@@ -26,6 +27,8 @@ pub unsafe extern "system" fn IoCreateSymbolicLink(
     SymbolicLinkName: PUNICODE_STRING,
     DeviceName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
+    let DeviceName = opaque_ptr(DeviceName);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
 
@@ -56,6 +59,8 @@ pub unsafe extern "system" fn IoCreateUnprotectedSymbolicLink(
     SymbolicLinkName: PUNICODE_STRING,
     DeviceName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
+    let DeviceName = opaque_ptr(DeviceName);
     let mut SecurityDescriptor: _SECURITY_DESCRIPTOR = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
@@ -104,6 +109,7 @@ pub unsafe extern "system" fn IoCreateUnprotectedSymbolicLink(
 pub unsafe extern "system" fn IoDeleteSymbolicLink(
     SymbolicLinkName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
 

@@ -13,6 +13,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut IoControllerObjectType: POBJECT_TYPE = core::ptr::null_mut();
@@ -24,6 +25,8 @@ pub unsafe extern "system" fn IoAllocateController(
     ExecutionRoutine: PDRIVER_CONTROL,
     Context: PVOID,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Context = opaque_ptr(Context);
     (*DeviceObject).Queue.Wcb.DeviceContext = Context;
     (*DeviceObject).Queue.Wcb.DeviceRoutine = ExecutionRoutine;
 

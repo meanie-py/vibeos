@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     KeInitializeQueue, KeInsertQueue, KeRundownQueue, KeReadStateQueue, KeRemoveQueue,
     ObCreateObject, ObInsertObject, ObOpenObjectByName, ObReferenceObjectByHandle,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn DefaultQueryInfoBufferCheck(
@@ -152,6 +153,7 @@ unsafe fn IopFreeMiniPacket(Packet: PIOP_MINI_COMPLETION_PACKET) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteIoCompletion(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     let Queue = ObjectBody as PKQUEUE;
     let mut CurrentEntry: PLIST_ENTRY;
     let mut Irp: PIRP;
@@ -196,6 +198,9 @@ pub unsafe extern "system" fn IoSetIoCompletion(
     IoStatusInformation: ULONG_PTR,
     Quota: BOOLEAN,
 ) -> NTSTATUS {
+    let IoCompletion = opaque_ptr(IoCompletion);
+    let KeyContext = opaque_ptr(KeyContext);
+    let ApcContext = opaque_ptr(ApcContext);
     let Queue = IoCompletion as PKQUEUE;
     let mut List: PNPAGED_LOOKASIDE_LIST;
     let Prcb = KeGetCurrentPrcb();
@@ -250,6 +255,9 @@ pub unsafe extern "system" fn IoSetCompletionRoutineEx(
     InvokeOnError: BOOLEAN,
     InvokeOnCancel: BOOLEAN,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let UnloadContext = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<_IO_UNLOAD_SAFE_COMPLETION_CONTEXT>(),
@@ -283,6 +291,8 @@ pub unsafe extern "system" fn NtCreateIoCompletion(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     NumberOfConcurrentThreads: ULONG,
 ) -> NTSTATUS {
+    let IoCompletionHandle = opaque_ptr(IoCompletionHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Queue: PKQUEUE = core::ptr::null_mut();
     let mut hIoCompletionHandle: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
@@ -349,6 +359,8 @@ pub unsafe extern "system" fn NtOpenIoCompletion(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let IoCompletionHandle = opaque_ptr(IoCompletionHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = ExGetPreviousMode();
     let mut hIoCompletionHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -401,6 +413,9 @@ pub unsafe extern "system" fn NtQueryIoCompletion(
     IoCompletionInformationLength: ULONG,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let IoCompletionHandle = opaque_ptr(IoCompletionHandle);
+    let IoCompletionInformation = opaque_ptr(IoCompletionInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Queue: PKQUEUE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
@@ -466,6 +481,11 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
     IoStatusBlock: PIO_STATUS_BLOCK,
     Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let IoCompletionHandle = opaque_ptr(IoCompletionHandle);
+    let KeyContext = opaque_ptr(KeyContext);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Timeout = opaque_ptr(Timeout);
     let mut SafeTimeout: LARGE_INTEGER = core::mem::zeroed();
     let mut Queue: PKQUEUE = core::ptr::null_mut();
     let mut Packet: PIOP_MINI_COMPLETION_PACKET;
@@ -588,6 +608,9 @@ pub unsafe extern "system" fn NtSetIoCompletion(
     CompletionStatus: NTSTATUS,
     CompletionInformation: ULONG,
 ) -> NTSTATUS {
+    let IoCompletionPortHandle = opaque_ptr(IoCompletionPortHandle);
+    let CompletionKey = opaque_ptr(CompletionKey);
+    let CompletionContext = opaque_ptr(CompletionContext);
     let mut Status: NTSTATUS;
     let mut Queue: PKQUEUE = core::ptr::null_mut();
 

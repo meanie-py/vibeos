@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     MiAllocatePagesForMdl,
     MmFreePagesFromMdl,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn MmAllocateNonCachedMemory(NumberOfBytes: SIZE_T) -> PVOID {
@@ -109,6 +110,7 @@ pub unsafe extern "system" fn MmFreeNonCachedMemory(
     BaseAddress: PVOID,
     NumberOfBytes: SIZE_T,
 ) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     let Mdl: PMDL;
     let mut PointerPte: PMMPTE;
     let PageCount: PFN_COUNT;

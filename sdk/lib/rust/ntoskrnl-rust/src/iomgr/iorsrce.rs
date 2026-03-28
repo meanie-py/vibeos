@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const ArbiterRequestLegacyAssigned: _ARBITER_REQUEST_SOURCE = _ARBITER_REQUEST_SOURCE_ArbiterRequestLegacyAssigned;
 const IoQueryDeviceConfigurationData: usize = _IO_QUERY_DEVICE_DATA_FORMAT_IoQueryDeviceConfigurationData as usize;
@@ -805,6 +806,8 @@ pub unsafe extern "C" fn IopFetchConfigurationInformation(
     ExpectedInterfaces: ULONG,
     Interfaces: *mut ULONG,
 ) -> NTSTATUS {
+    let SymbolicLinkList = opaque_ptr(SymbolicLinkList);
+    let Interfaces = opaque_ptr(Interfaces);
     let mut interfaces: ULONG = 0;
 
     /* Get the associated enabled interfaces with the given GUID */
@@ -852,6 +855,8 @@ pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
     NtSystemPartitionDeviceName: PUNICODE_STRING,
     OsLoaderPathName: PUNICODE_STRING,
 ) {
+    let NtSystemPartitionDeviceName = opaque_ptr(NtSystemPartitionDeviceName);
+    let OsLoaderPathName = opaque_ptr(OsLoaderPathName);
     let mut Status: NTSTATUS;
     let mut LinkTarget: _UNICODE_STRING = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -999,6 +1004,10 @@ pub unsafe extern "system" fn IoReportResourceUsage(
     OverrideConflict: BOOLEAN,
     ConflictDetected: PBOOLEAN,
 ) -> NTSTATUS {
+    let DriverClassName = opaque_ptr(DriverClassName);
+    let DriverObject = opaque_ptr(DriverObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let ConflictDetected = opaque_ptr(ConflictDetected);
     let mut Status: NTSTATUS;
     let ResourceList: PCM_RESOURCE_LIST;
 
@@ -1061,6 +1070,11 @@ pub unsafe extern "system" fn IoAssignResources(
     RequestedResources: PIO_RESOURCE_REQUIREMENTS_LIST,
     AllocatedResources: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
+    let RegistryPath = opaque_ptr(RegistryPath);
+    let DriverClassName = opaque_ptr(DriverClassName);
+    let DriverObject = opaque_ptr(DriverObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let AllocatedResources = opaque_ptr(AllocatedResources);
     let DeviceNode: PDEVICE_NODE;
 
     if !DeviceObject.is_null() {
@@ -1107,6 +1121,10 @@ pub unsafe extern "system" fn IoQueryDeviceDescription(
     CalloutRoutine: PIO_QUERY_DEVICE_ROUTINE,
     Context: PVOID,
 ) -> NTSTATUS {
+    let BusNumber = opaque_ptr(BusNumber);
+    let ControllerNumber = opaque_ptr(ControllerNumber);
+    let PeripheralNumber = opaque_ptr(PeripheralNumber);
+    let Context = opaque_ptr(Context);
     let mut Status: NTSTATUS;
     let mut BusLoopNumber: ULONG = 0xFFFFFFFF;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -1175,6 +1193,7 @@ pub unsafe extern "system" fn IoReportHalResourceUsage(
     TranslatedResourceList: PCM_RESOURCE_LIST,
     ResourceListSize: ULONG,
 ) -> NTSTATUS {
+    let HalName = opaque_ptr(HalName);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Name: _UNICODE_STRING = core::mem::zeroed();

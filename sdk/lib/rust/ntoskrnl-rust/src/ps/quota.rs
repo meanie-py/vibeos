@@ -7,6 +7,7 @@ use ntkrnl_sys::ke::{KeAcquireSpinLock, KeReleaseSpinLock};
 use ntkrnl_sys::mm::{PsInitialSystemProcess, PAGED_POOL_MASK};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn SeSinglePrivilegeCheck(PrivilegeValue: LUID, PreviousMode: KPROCESSOR_MODE) -> BOOLEAN;
@@ -313,6 +314,8 @@ pub unsafe extern "system" fn PsInitializeQuotaSystem() {
 
 #[no_mangle]
 pub unsafe extern "system" fn PspInheritQuota(process: PEPROCESS, parent_process: PEPROCESS) {
+    let process = opaque_ptr(process);
+    let parent_process = opaque_ptr(parent_process);
     let quota_block: PEPROCESS_QUOTA_BLOCK;
 
     if !parent_process.is_null() {
@@ -349,6 +352,7 @@ pub unsafe extern "system" fn PspDereferenceQuotaBlock(
     process: PEPROCESS,
     quota_block: PEPROCESS_QUOTA_BLOCK,
 ) {
+    let process = opaque_ptr(process);
     let mut ps_quota_type_index: ULONG;
     let mut old_irql: KIRQL = 0;
 
@@ -412,6 +416,7 @@ pub unsafe extern "system" fn PsChargeSharedPoolQuota(
     amount_to_charge_paged: SIZE_T,
     amount_to_charge_non_paged: SIZE_T,
 ) -> PEPROCESS_QUOTA_BLOCK {
+    let process = opaque_ptr(process);
     let mut status: NTSTATUS;
 
     if amount_to_charge_paged != 0 {
@@ -458,6 +463,7 @@ pub unsafe extern "system" fn PsChargeProcessPageFileQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return STATUS_SUCCESS;
     }
@@ -476,6 +482,7 @@ pub unsafe extern "system" fn PsChargePoolQuota(
     pool_type: POOL_TYPE,
     amount: SIZE_T,
 ) {
+    let process = opaque_ptr(process);
     let status: NTSTATUS;
 
     if process as PVOID == PsInitialSystemProcess {
@@ -493,6 +500,7 @@ pub unsafe extern "system" fn PsChargeProcessNonPagedPoolQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     PsChargeProcessPoolQuota(process, _POOL_TYPE_NonPagedPool, amount)
 }
 
@@ -501,6 +509,7 @@ pub unsafe extern "system" fn PsChargeProcessPagedPoolQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     PsChargeProcessPoolQuota(process, _POOL_TYPE_PagedPool, amount)
 }
 
@@ -510,6 +519,7 @@ pub unsafe extern "system" fn PsChargeProcessPoolQuota(
     pool_type: POOL_TYPE,
     amount: SIZE_T,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return STATUS_SUCCESS;
     }
@@ -528,6 +538,7 @@ pub unsafe extern "system" fn PsReturnPoolQuota(
     pool_type: POOL_TYPE,
     amount: SIZE_T,
 ) {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return;
     }
@@ -545,6 +556,7 @@ pub unsafe extern "system" fn PsReturnProcessNonPagedPoolQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return;
     }
@@ -557,6 +569,7 @@ pub unsafe extern "system" fn PsReturnProcessPagedPoolQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return;
     }
@@ -569,6 +582,7 @@ pub unsafe extern "system" fn PsReturnProcessPageFileQuota(
     process: PEPROCESS,
     amount: SIZE_T,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     if process as PVOID == PsInitialSystemProcess {
         return STATUS_SUCCESS;
     }
@@ -590,6 +604,8 @@ pub unsafe extern "system" fn PspSetQuotaLimits(
     quota_limits_length: ULONG,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let quota_limits = opaque_ptr(quota_limits);
     let mut captured_quota_limits: QUOTA_LIMITS_EX = core::mem::zeroed();
     let mut quota_block: PEPROCESS_QUOTA_BLOCK;
     let old_quota_block: PEPROCESS_QUOTA_BLOCK;

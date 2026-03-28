@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     PLOADER_PARAMETER_BLOCK, _KEVENT, _KDPC, _FAST_MUTEX,
     _KTIMER_TABLE_ENTRY, _KNODE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Most globals now come via ke_defs re-exports (KiTimerExpireDpc, KiProfileLock, etc.)
 // Only declare symbols NOT already in ke_defs or from C-only sources
@@ -114,6 +115,9 @@ pub unsafe extern "system" fn KiInitializeHandBuiltThread(
     Process: PKPROCESS,
     Stack: PVOID,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let Process = opaque_ptr(Process);
+    let Stack = opaque_ptr(Stack);
     let Prcb = KeGetCurrentPrcb();
 
     KeInitializeThread(
@@ -207,6 +211,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
     Prcb: PKPRCB,
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) {
+    let InitProcess = opaque_ptr(InitProcess);
+    let InitThread = opaque_ptr(InitThread);
+    let IdleStack = opaque_ptr(IdleStack);
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut PageDirectory: [u64; 2] = [0, 0];
     let DpcStack: PVOID;
 

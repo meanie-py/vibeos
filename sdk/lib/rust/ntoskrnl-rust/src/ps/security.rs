@@ -5,6 +5,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut PsProcessType: *mut _OBJECT_TYPE;
@@ -59,6 +60,7 @@ const KernelMode: KPROCESSOR_MODE = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteProcessSecurity(Process: PEPROCESS) {
+    let Process = opaque_ptr(Process);
     if (*(Process as *mut _EPROCESS)).Token.__bindgen_anon_1.Object != core::ptr::null_mut() {
         SeDeassignPrimaryToken(Process);
         (*(Process as *mut _EPROCESS)).Token.__bindgen_anon_1.Object = core::ptr::null_mut();
@@ -67,6 +69,7 @@ pub unsafe extern "system" fn PspDeleteProcessSecurity(Process: PEPROCESS) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteThreadSecurity(Thread: PETHREAD) {
+    let Thread = opaque_ptr(Thread);
     let ImpersonationInfo = (*(Thread as *mut _ETHREAD)).ImpersonationInfo;
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() != 0 {
@@ -85,6 +88,8 @@ pub unsafe extern "system" fn PspInitializeProcessSecurity(
     Process: PEPROCESS,
     Parent: PEPROCESS,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let Parent = opaque_ptr(Parent);
     let mut Status = STATUS_SUCCESS;
     let mut NewToken: PTOKEN = core::ptr::null_mut();
     let ParentToken: PACCESS_TOKEN;
@@ -216,6 +221,8 @@ pub unsafe extern "system" fn PspSetPrimaryToken(
     TokenHandle: HANDLE,
     Token: PACCESS_TOKEN,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let TokenHandle = opaque_ptr(TokenHandle);
     let PreviousMode = ExGetPreviousMode();
     let mut IsChildOrSibling: BOOLEAN = 0;
     let mut NewToken = Token;
@@ -331,6 +338,8 @@ pub unsafe extern "system" fn NtOpenProcessToken(
     DesiredAccess: ACCESS_MASK,
     TokenHandle: PHANDLE,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let TokenHandle = opaque_ptr(TokenHandle);
     NtOpenProcessTokenEx(ProcessHandle, DesiredAccess, 0, TokenHandle)
 }
 
@@ -341,6 +350,8 @@ pub unsafe extern "system" fn NtOpenProcessTokenEx(
     HandleAttributes: ULONG,
     TokenHandle: PHANDLE,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let TokenHandle = opaque_ptr(TokenHandle);
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
     let mut hToken: HANDLE = core::ptr::null_mut();
     let PreviousMode = ExGetPreviousMode();
@@ -379,6 +390,7 @@ pub unsafe extern "system" fn NtOpenProcessTokenEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn PsReferencePrimaryToken(Process: PEPROCESS) -> PACCESS_TOKEN {
+    let Process = opaque_ptr(Process);
     let mut Token: PACCESS_TOKEN;
 
     Token = ObFastReferenceObject(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Token));
@@ -401,6 +413,8 @@ pub unsafe extern "system" fn PsOpenTokenOfProcess(
     ProcessHandle: HANDLE,
     Token: *mut PACCESS_TOKEN,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let Token = opaque_ptr(Token);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let Status: NTSTATUS;
 
@@ -425,6 +439,8 @@ pub unsafe extern "system" fn PsAssignImpersonationToken(
     Thread: PETHREAD,
     TokenHandle: HANDLE,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
+    let TokenHandle = opaque_ptr(TokenHandle);
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
     let ImpersonationLevel: ULONG;
     let mut Status: NTSTATUS;
@@ -466,6 +482,7 @@ pub unsafe extern "system" fn PsRevertToSelf() {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsRevertThreadToSelf(Thread: PETHREAD) {
+    let Thread = opaque_ptr(Thread);
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() != 0 {
@@ -495,6 +512,7 @@ pub unsafe extern "system" fn PsImpersonateClient(
     EffectiveOnly: BOOLEAN,
     ImpersonationLevel: ULONG,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
     let mut Impersonation: PPS_IMPERSONATION_INFORMATION;
     let OldData: PPS_IMPERSONATION_INFORMATION;
     let mut OldToken: PACCESS_TOKEN = core::ptr::null_mut();
@@ -638,6 +656,8 @@ pub unsafe extern "system" fn PsReferenceEffectiveToken(
     EffectiveOnly: PBOOLEAN,
     ImpersonationLevel: PSECURITY_IMPERSONATION_LEVEL,
 ) -> PACCESS_TOKEN {
+    let Thread = opaque_ptr(Thread);
+    let EffectiveOnly = opaque_ptr(EffectiveOnly);
     let Process: PEPROCESS;
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
 
@@ -686,6 +706,9 @@ pub unsafe extern "system" fn PsReferenceImpersonationToken(
     EffectiveOnly: PBOOLEAN,
     ImpersonationLevel: PSECURITY_IMPERSONATION_LEVEL,
 ) -> PACCESS_TOKEN {
+    let Thread = opaque_ptr(Thread);
+    let CopyOnOpen = opaque_ptr(CopyOnOpen);
+    let EffectiveOnly = opaque_ptr(EffectiveOnly);
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() == 0 {
@@ -725,6 +748,7 @@ pub unsafe extern "system" fn PsDisableImpersonation(
     Thread: PETHREAD,
     ImpersonationState: PSE_IMPERSONATION_STATE,
 ) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     let mut Impersonation: PPS_IMPERSONATION_INFORMATION = core::ptr::null_mut();
     let OldFlags: LONG;
 
@@ -760,6 +784,7 @@ pub unsafe extern "system" fn PsRestoreImpersonation(
     Thread: PETHREAD,
     ImpersonationState: PSE_IMPERSONATION_STATE,
 ) {
+    let Thread = opaque_ptr(Thread);
     let mut Token: PACCESS_TOKEN = core::ptr::null_mut();
     let Impersonation: PPS_IMPERSONATION_INFORMATION;
 
@@ -795,6 +820,8 @@ pub unsafe extern "system" fn NtImpersonateThread(
     ThreadToImpersonateHandle: HANDLE,
     SecurityQualityOfService: PSECURITY_QUALITY_OF_SERVICE,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ThreadToImpersonateHandle = opaque_ptr(ThreadToImpersonateHandle);
     let mut SafeServiceQoS: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
     let mut ClientContext: SECURITY_CLIENT_CONTEXT = core::mem::zeroed();
     let mut Thread: PETHREAD = core::ptr::null_mut();

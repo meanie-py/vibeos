@@ -27,6 +27,7 @@ use ntkrnl_sys::ddk::{
     IopQueueDeviceChangeEvent,
     IoCreateSymbolicLink, IoDeleteSymbolicLink,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TAG_IO: ULONG = 0x20206F49; // ' oI '
 const REG_OPTION_NON_VOLATILE: ULONG = 0x00000000;
@@ -475,6 +476,8 @@ pub unsafe extern "system" fn IoOpenDeviceInterfaceRegistryKey(
     DesiredAccess: ACCESS_MASK,
     DeviceInterfaceKey: PHANDLE,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
+    let DeviceInterfaceKey = opaque_ptr(DeviceInterfaceKey);
     let mut InstanceKey = core::ptr::null_mut();
     let mut DeviceParametersKey = core::ptr::null_mut();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -622,6 +625,8 @@ pub unsafe extern "system" fn IoGetDeviceInterfaceAlias(
     AliasInterfaceClassGuid: LPCGUID,
     AliasSymbolicLinkName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
+    let AliasSymbolicLinkName = opaque_ptr(AliasSymbolicLinkName);
     let mut AliasSymbolicLink: _UNICODE_STRING = core::mem::zeroed();
     let mut AliasGuidString: _UNICODE_STRING = core::mem::zeroed();
     let mut DeviceString: _UNICODE_STRING = core::mem::zeroed();
@@ -729,6 +734,8 @@ pub unsafe extern "system" fn IoGetDeviceInterfaces(
     Flags: ULONG,
     SymbolicLinkList: *mut PWSTR,
 ) -> NTSTATUS {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let SymbolicLinkList = opaque_ptr(SymbolicLinkList);
     // L"Control" — 7 chars, Length = 14
     const CONTROL_W: [u16; 8] = [
         b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16,
@@ -1140,6 +1147,9 @@ pub unsafe extern "system" fn IoRegisterDeviceInterface(
     ReferenceString: PUNICODE_STRING,
     SymbolicLinkName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let ReferenceString = opaque_ptr(ReferenceString);
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
     let mut InstancePath: PUNICODE_STRING;
     let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
     let mut InterfaceKeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -1470,6 +1480,7 @@ pub unsafe extern "system" fn IoSetDeviceInterfaceState(
     SymbolicLinkName: PUNICODE_STRING,
     Enable: BOOLEAN,
 ) -> NTSTATUS {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
     let mut GuidString: _UNICODE_STRING = core::mem::zeroed();
     let mut InstanceHandle = core::ptr::null_mut();
     let mut ControlHandle = core::ptr::null_mut();

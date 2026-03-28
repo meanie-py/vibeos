@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread,
     MiLockWorkingSet, MiUnlockWorkingSet,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MmMinimumWorkingSetSize: SIZE_T = 0;
@@ -23,6 +24,8 @@ pub unsafe extern "system" fn MmMapUserAddressesToPage(
     _number_of_bytes: SIZE_T,
     _page_address: PVOID,
 ) -> NTSTATUS {
+    let _base_address = opaque_ptr(_base_address);
+    let _page_address = opaque_ptr(_page_address);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -130,11 +133,13 @@ pub unsafe extern "system" fn MmSetAddressRangeModified(
     _address: PVOID,
     _length: SIZE_T,
 ) -> BOOLEAN {
+    let _address = opaque_ptr(_address);
     0u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsAddressValid(virtual_address: PVOID) -> BOOLEAN {
+    let virtual_address = opaque_ptr(virtual_address);
     #[cfg(target_pointer_width = "64")]
     {
         if !(*MiAddressToPxe(virtual_address)).valid() {
@@ -158,6 +163,7 @@ pub unsafe extern "system" fn MmIsAddressValid(virtual_address: PVOID) -> BOOLEA
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsNonPagedSystemAddressValid(virtual_address: PVOID) -> BOOLEAN {
+    let virtual_address = opaque_ptr(virtual_address);
     MmIsAddressValid(virtual_address)
 }
 
@@ -170,6 +176,10 @@ pub unsafe extern "system" fn MmSetBankedSection(
     _bank_routine: PVOID,
     _context: PVOID,
 ) -> NTSTATUS {
+    let _process_handle = opaque_ptr(_process_handle);
+    let _virtual_address = opaque_ptr(_virtual_address);
+    let _bank_routine = opaque_ptr(_bank_routine);
+    let _context = opaque_ptr(_context);
     STATUS_NOT_IMPLEMENTED
 }
 

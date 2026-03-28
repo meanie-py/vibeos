@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     _INTERFACE_TYPE, _INTERFACE_TYPE_PNPBus, _INTERFACE_TYPE_InterfaceTypeUndefined,
     _INTERFACE_TYPE_Internal, GUID, HAL_DISPATCH,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static GUID_BUS_INTERFACE_STANDARD: GUID;
@@ -23,6 +24,8 @@ pub unsafe extern "system" fn IoGetDmaAdapter(
     DeviceDescription: PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: *mut ULONG,
 ) -> PDMA_ADAPTER {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let NumberOfMapRegisters = opaque_ptr(NumberOfMapRegisters);
     let mut ResultLength: ULONG = 0;
     let mut BusInterface: BUS_INTERFACE_STANDARD = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();

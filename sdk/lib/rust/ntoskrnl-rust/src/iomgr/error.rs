@@ -35,6 +35,7 @@ const IO_TYPE_ERROR_MESSAGE: USHORT = 12;
 
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ddk::ExInterlockedInsertHeadList;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 unsafe fn ExInterlockedInsertHeadList(
@@ -551,6 +552,7 @@ pub unsafe extern "system" fn IoAllocateErrorLogEntry(
     IoObject: PVOID,
     EntrySize: UCHAR,
 ) -> PVOID {
+    let IoObject = opaque_ptr(IoObject);
     if IoObject.is_null() {
         return core::ptr::null_mut();
     }
@@ -607,6 +609,7 @@ pub unsafe extern "system" fn IoAllocateErrorLogEntry(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoFreeErrorLogEntry(ElEntry: PVOID) {
+    let ElEntry = opaque_ptr(ElEntry);
     if ElEntry.is_null() {
         return;
     }
@@ -626,6 +629,7 @@ pub unsafe extern "system" fn IoFreeErrorLogEntry(ElEntry: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoWriteErrorLogEntry(ElEntry: PVOID) {
+    let ElEntry = opaque_ptr(ElEntry);
     if ElEntry.is_null() {
         return;
     }
@@ -664,6 +668,9 @@ pub unsafe extern "system" fn IoRaiseHardError(
     Vpb: PVPB,
     RealDeviceObject: PDEVICE_OBJECT,
 ) {
+    let Irp = opaque_ptr(Irp);
+    let Vpb = opaque_ptr(Vpb);
+    let RealDeviceObject = opaque_ptr(RealDeviceObject);
     let Thread = (*Irp).Tail.Overlay.Thread as PETHREAD;
 
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.HardErrorsAreDisabled() != 0 {
@@ -698,6 +705,8 @@ pub unsafe extern "system" fn IoRaiseInformationalHardError(
     _String: PUNICODE_STRING,
     _Thread: *mut core::ffi::c_void,
 ) -> BOOLEAN {
+    let _String = opaque_ptr(_String);
+    let _Thread = opaque_ptr(_Thread);
     0u8
 }
 

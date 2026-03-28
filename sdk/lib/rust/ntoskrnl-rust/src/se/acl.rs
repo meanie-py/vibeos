@@ -3,6 +3,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, TRUE, FALS
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     pub static mut SeWorldSid: PSID;
@@ -183,6 +184,9 @@ pub unsafe extern "system" fn SepCreateImpersonationTokenDacl(
     PrimaryToken: PTOKEN,
     Dacl: *mut PACL,
 ) -> NTSTATUS {
+    let Token = opaque_ptr(Token);
+    let PrimaryToken = opaque_ptr(PrimaryToken);
+    let Dacl = opaque_ptr(Dacl);
     let mut acl_length: ULONG;
     let token_dacl: PACL;
 
@@ -223,6 +227,8 @@ pub unsafe extern "system" fn SepCaptureAcl(
     CaptureIfKernel: BOOLEAN,
     CapturedAcl: *mut PACL,
 ) -> NTSTATUS {
+    let InputAcl = opaque_ptr(InputAcl);
+    let CapturedAcl = opaque_ptr(CapturedAcl);
     let new_acl: PACL;
     let mut acl_size: ULONG;
 
@@ -290,6 +296,7 @@ pub unsafe extern "system" fn SepReleaseAcl(
     AccessMode: KPROCESSOR_MODE,
     CaptureIfKernel: BOOLEAN,
 ) {
+    let CapturedAcl = opaque_ptr(CapturedAcl);
     if !CapturedAcl.is_null() &&
         (AccessMode != 0i8 || (AccessMode == 0i8 && CaptureIfKernel != 0u8))
     {
@@ -348,6 +355,12 @@ pub unsafe extern "C" fn SepPropagateAcl(
     IsDirectoryObject: BOOLEAN,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let AclDest = opaque_ptr(AclDest);
+    let AclLength = opaque_ptr(AclLength);
+    let AclSource = opaque_ptr(AclSource);
+    let Owner = opaque_ptr(Owner);
+    let Group = opaque_ptr(Group);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let mut mask: ACCESS_MASK;
     let mut ace_source: PACCESS_ALLOWED_ACE;
     let mut ace_dest: PACCESS_ALLOWED_ACE;
@@ -485,6 +498,15 @@ pub unsafe extern "C" fn SepSelectAcl(
     IsDirectoryObject: BOOLEAN,
     GenericMapping: PGENERIC_MAPPING,
 ) -> PACL {
+    let ExplicitAcl = opaque_ptr(ExplicitAcl);
+    let ParentAcl = opaque_ptr(ParentAcl);
+    let DefaultAcl = opaque_ptr(DefaultAcl);
+    let AclLength = opaque_ptr(AclLength);
+    let Owner = opaque_ptr(Owner);
+    let Group = opaque_ptr(Group);
+    let AclPresent = opaque_ptr(AclPresent);
+    let IsInherited = opaque_ptr(IsInherited);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let acl: PACL;
     let mut status: NTSTATUS;
 

@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     RtlInitUnicodeString,
     POBJECT_TYPE, PHANDLE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn CONTAINING_RECORD( address: PVOID, type_size: usize, field_offset: usize, ) -> PVOID;
@@ -106,6 +107,7 @@ static mut ExpCallBackFlush: _EX_PUSH_LOCK = unsafe { core::mem::zeroed() };
 
 #[no_mangle]
 pub unsafe extern "system" fn ExInitializeCallBack(Callback: *mut _EX_CALLBACK) {
+    let Callback = opaque_ptr(Callback);
     ExInitializeFastReference(
         core::ptr::addr_of_mut!((*Callback).RoutineBlock),
         core::ptr::null_mut(),
@@ -117,6 +119,7 @@ pub unsafe extern "system" fn ExAllocateCallBack(
     Function: PEX_CALLBACK_FUNCTION,
     Context: PVOID,
 ) -> *mut _EX_CALLBACK_ROUTINE_BLOCK {
+    let Context = opaque_ptr(Context);
     let CallbackBlock = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_EX_CALLBACK_ROUTINE_BLOCK>(),
@@ -136,11 +139,13 @@ pub unsafe extern "system" fn ExAllocateCallBack(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExFreeCallBack(CallbackBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK) {
+    let CallbackBlock = opaque_ptr(CallbackBlock);
     ExFreePoolWithTag(CallbackBlock as PVOID, TAG_CALLBACK_ROUTINE_BLOCK);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ExWaitForCallBacks(CallbackBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK) {
+    let CallbackBlock = opaque_ptr(CallbackBlock);
     ExWaitForRundownProtectionRelease(core::ptr::addr_of_mut!(
         (*CallbackBlock).RundownProtect
     ));
@@ -150,6 +155,7 @@ pub unsafe extern "system" fn ExWaitForCallBacks(CallbackBlock: *mut _EX_CALLBAC
 pub unsafe extern "system" fn ExGetCallBackBlockRoutine(
     CallbackBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK,
 ) -> PEX_CALLBACK_FUNCTION {
+    let CallbackBlock = opaque_ptr(CallbackBlock);
     (*CallbackBlock).Function
 }
 
@@ -157,6 +163,7 @@ pub unsafe extern "system" fn ExGetCallBackBlockRoutine(
 pub unsafe extern "system" fn ExGetCallBackBlockContext(
     CallbackBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK,
 ) -> PVOID {
+    let CallbackBlock = opaque_ptr(CallbackBlock);
     (*CallbackBlock).Context
 }
 
@@ -165,6 +172,8 @@ pub unsafe extern "system" fn ExDereferenceCallBackBlock(
     CallBack: *mut _EX_CALLBACK,
     CallbackBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK,
 ) {
+    let CallBack = opaque_ptr(CallBack);
+    let CallbackBlock = opaque_ptr(CallbackBlock);
     if ExReleaseFastReference(
         core::ptr::addr_of_mut!((*CallBack).RoutineBlock),
         CallbackBlock as PVOID,
@@ -178,6 +187,7 @@ pub unsafe extern "system" fn ExDereferenceCallBackBlock(
 pub unsafe extern "system" fn ExReferenceCallBackBlock(
     CallBack: *mut _EX_CALLBACK,
 ) -> *mut _EX_CALLBACK_ROUTINE_BLOCK {
+    let CallBack = opaque_ptr(CallBack);
     let OldValue = ExAcquireFastReference(core::ptr::addr_of_mut!((*CallBack).RoutineBlock));
     let Count = ExGetCountFastReference(OldValue);
 
@@ -219,6 +229,9 @@ pub unsafe extern "system" fn ExCompareExchangeCallBack(
     NewBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK,
     OldBlock: *mut _EX_CALLBACK_ROUTINE_BLOCK,
 ) -> BOOLEAN {
+    let CallBack = opaque_ptr(CallBack);
+    let NewBlock = opaque_ptr(NewBlock);
+    let OldBlock = opaque_ptr(OldBlock);
     if !NewBlock.is_null() {
         if ExfAcquireRundownProtectionEx(
             core::ptr::addr_of_mut!((*NewBlock).RundownProtect),
@@ -369,6 +382,8 @@ pub unsafe extern "system" fn ExCreateCallback(
     Create: BOOLEAN,
     AllowMultipleCallbacks: BOOLEAN,
 ) -> NTSTATUS {
+    let CallbackObject = opaque_ptr(CallbackObject);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Callback: *mut _CALLBACK_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut Handle: HANDLE = core::ptr::null_mut();
@@ -441,6 +456,8 @@ pub unsafe extern "system" fn ExNotifyCallback(
     Argument1: PVOID,
     Argument2: PVOID,
 ) {
+    let Argument1 = opaque_ptr(Argument1);
+    let Argument2 = opaque_ptr(Argument2);
     let mut RegisteredCallbacks: PLIST_ENTRY;
     let mut CallbackRegistration: *mut _CALLBACK_REGISTRATION;
     let mut OldIrql: KIRQL = 0;
@@ -507,6 +524,7 @@ pub unsafe extern "system" fn ExRegisterCallback(
     CallbackFunction: PCALLBACK_FUNCTION,
     CallbackContext: PVOID,
 ) -> PVOID {
+    let CallbackContext = opaque_ptr(CallbackContext);
     let mut CallbackRegistration: *mut _CALLBACK_REGISTRATION = core::ptr::null_mut();
     let mut OldIrql: KIRQL = 0;
 
@@ -559,6 +577,7 @@ pub unsafe extern "system" fn ExRegisterCallback(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExUnregisterCallback(CallbackRegistrationHandle: PVOID) {
+    let CallbackRegistrationHandle = opaque_ptr(CallbackRegistrationHandle);
     let CallbackRegistration = CallbackRegistrationHandle as *mut _CALLBACK_REGISTRATION;
     let CallbackObject = (*CallbackRegistration).CallbackObject;
     let mut OldIrql: KIRQL = 0;

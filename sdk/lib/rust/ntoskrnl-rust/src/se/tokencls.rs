@@ -6,6 +6,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[inline]
 unsafe fn RtlInterlockedSetBits(Flags: *mut ULONG, Flag: ULONG) -> ULONG {
@@ -294,6 +295,7 @@ pub unsafe extern "system" fn SeQueryInformationToken(
     TokenInformationClass: TOKEN_INFORMATION_CLASS,
     TokenInformation: *mut PVOID,
 ) -> NTSTATUS {
+    let TokenInformation = opaque_ptr(TokenInformation);
     let mut status: NTSTATUS;
     let token = AccessToken as PTOKEN;
     let mut required_length: ULONG;
@@ -537,6 +539,9 @@ pub unsafe extern "system" fn NtQueryInformationToken(
     TokenInformationLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let TokenHandle = opaque_ptr(TokenHandle);
+    let TokenInformation = opaque_ptr(TokenInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut status: NTSTATUS;
     let previous_mode: KPROCESSOR_MODE;
     let mut token: PTOKEN = core::ptr::null_mut();
@@ -993,6 +998,8 @@ pub unsafe extern "system" fn NtSetInformationToken(
     TokenInformation: PVOID,
     TokenInformationLength: ULONG,
 ) -> NTSTATUS {
+    let TokenHandle = opaque_ptr(TokenHandle);
+    let TokenInformation = opaque_ptr(TokenInformation);
     let mut status: NTSTATUS;
     let mut token: PTOKEN = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE;

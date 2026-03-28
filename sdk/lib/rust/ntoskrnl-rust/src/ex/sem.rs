@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
     SEMAPHORE_BASIC_INFORMATION,
     _UNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const SEMAPHORE_QUERY_STATE: ACCESS_MASK = 0x0001;
 const SEMAPHORE_MODIFY_STATE: ACCESS_MASK = 0x0002;
@@ -104,6 +105,8 @@ pub unsafe extern "system" fn NtCreateSemaphore(
     InitialCount: LONG,
     MaximumCount: LONG,
 ) -> NTSTATUS {
+    let SemaphoreHandle = opaque_ptr(SemaphoreHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = ExGetPreviousMode();
     let mut Semaphore: PVOID = core::ptr::null_mut();
     let mut hSemaphore: HANDLE = core::ptr::null_mut();
@@ -167,6 +170,8 @@ pub unsafe extern "system" fn NtOpenSemaphore(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let SemaphoreHandle = opaque_ptr(SemaphoreHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = ExGetPreviousMode();
     let mut hSemaphore: HANDLE = core::ptr::null_mut();
 
@@ -208,6 +213,9 @@ pub unsafe extern "system" fn NtQuerySemaphore(
     SemaphoreInformationLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let SemaphoreHandle = opaque_ptr(SemaphoreHandle);
+    let SemaphoreInformation = opaque_ptr(SemaphoreInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let PreviousMode = ExGetPreviousMode();
     let mut Semaphore: PVOID = core::ptr::null_mut();
 
@@ -278,6 +286,8 @@ pub unsafe extern "system" fn NtReleaseSemaphore(
     ReleaseCount: LONG,
     PreviousCount: *mut LONG,
 ) -> NTSTATUS {
+    let SemaphoreHandle = opaque_ptr(SemaphoreHandle);
+    let PreviousCount = opaque_ptr(PreviousCount);
     let PreviousMode = ExGetPreviousMode();
     let mut Semaphore: PVOID = core::ptr::null_mut();
 

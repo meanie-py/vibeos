@@ -7,6 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     KeAttachProcess, KeDetachProcess,
@@ -73,6 +74,7 @@ pub unsafe extern "system" fn MmLocateMemoryAreaByAddress(
     AddressSpace: PMMSUPPORT,
     Address: PVOID,
 ) -> PMEMORY_AREA {
+    let Address = opaque_ptr(Address);
     MmLocateMemoryAreaByRegion(AddressSpace, Address, 1)
 }
 
@@ -82,6 +84,7 @@ pub unsafe extern "system" fn MmLocateMemoryAreaByRegion(
     Address_: PVOID,
     Length: ULONG_PTR,
 ) -> PMEMORY_AREA {
+    let Address_ = opaque_ptr(Address_);
     let StartVpn = Address_ as ULONG_PTR / PAGE_SIZE;
     let EndVpn = (Address_ as ULONG_PTR + Length - 1) / PAGE_SIZE;
     let Process = MmGetAddressSpaceOwner(AddressSpace);
@@ -113,6 +116,7 @@ pub unsafe extern "system" fn MmIsAddressRangeFree(
     Address: PVOID,
     Length: ULONG_PTR,
 ) -> BOOLEAN {
+    let Address = opaque_ptr(Address);
     let StartVpn = Address as ULONG_PTR / PAGE_SIZE;
     let EndVpn = (Address as ULONG_PTR + Length - 1) / PAGE_SIZE;
     let Process = MmGetAddressSpaceOwner(AddressSpace);
@@ -211,6 +215,7 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
     _KWAIT_REASON_FreePage: PMM_FREE_PAGE_FUNC,
     FreePageContext: PVOID,
 ) -> NTSTATUS {
+    let FreePageContext = opaque_ptr(FreePageContext);
     if (*MemoryArea).Type != MEMORY_AREA_OWNED_BY_ARM3 {
         let CurrentProcess = PsGetCurrentProcess();
         let Process = MmGetAddressSpaceOwner(AddressSpace);
@@ -332,6 +337,8 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
     AllocationFlags: ULONG,
     Granularity: ULONG,
 ) -> NTSTATUS {
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let Result = opaque_ptr(Result);
     let MemoryArea: PMEMORY_AREA;
     
     if (Type & MEMORY_AREA_STATIC) != 0 {
@@ -427,6 +434,8 @@ pub unsafe extern "system" fn MiRosCleanupMemoryArea(
     Process: PEPROCESS,
     Vad: PMMVAD,
 ) {
+    let Process = opaque_ptr(Process);
+    let Vad = opaque_ptr(Vad);
     let MemoryArea = Vad as PMEMORY_AREA;
     let BaseAddress = (((*MemoryArea).VadNode.StartingVpn as ULONG_PTR) << PAGE_SHIFT) as PVOID;
     

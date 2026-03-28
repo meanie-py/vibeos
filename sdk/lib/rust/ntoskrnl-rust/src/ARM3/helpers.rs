@@ -913,6 +913,7 @@ unsafe fn InterlockedCompareExchange16(destination: *mut i16, exchange: i16, com
 /// Translated from FORCEINLINE in miarm.h.
 #[no_mangle]
 pub unsafe extern "C" fn MiDereferencePfnAndDropLockCount(Pfn1: *mut _MMPFN) {
+    let Pfn1 = opaque_ptr(Pfn1);
     let pfn = Pfn1 as PMMPFN;
     let mut OldRefCount: USHORT;
     let mut RefCount: USHORT;
@@ -970,6 +971,7 @@ pub unsafe extern "C" fn MiDereferencePfnAndDropLockCount(Pfn1: *mut _MMPFN) {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHORT {
+    let Address = opaque_ptr(Address);
     // On i386: MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)]
     // MiGetPdeOffset(Va) = (ULONG_PTR)Va / PDE_MAPPED_VA
     // PDE_MAPPED_VA = 4MB = 0x400000
@@ -990,6 +992,7 @@ pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHOR
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHORT {
+    let Address = opaque_ptr(Address);
     let PointerPde = MiAddressToPde(Address);
     let Pfn = MiGetPfnEntry(PFN_FROM_PTE(PointerPde));
     ASSERT!(!Pfn.is_null());
@@ -1005,6 +1008,7 @@ pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHOR
 /// Translated from FORCEINLINE in miarm.h.
 #[no_mangle]
 pub unsafe extern "C" fn MiDeletePde(PointerPde: PMMPDE, CurrentProcess: PEPROCESS) {
+    let CurrentProcess = opaque_ptr(CurrentProcess);
     ASSERT!(MiIsUserPde(PointerPde as PVOID) != 0);
 
     // Kill this one as a PTE
@@ -1043,6 +1047,7 @@ pub unsafe extern "C" fn MiDeletePde(PointerPde: PMMPDE, CurrentProcess: PEPROCE
 // ============================================================================
 
 use ntkrnl_sys::ddk::{_MDL, PMDL};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 /// MmGetMdlByteCount — returns the byte count from an MDL.
 #[inline]

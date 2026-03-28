@@ -1,3 +1,4 @@
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{NT_SUCCESS, TRUE, FALSE};
 
@@ -217,6 +218,7 @@ pub unsafe extern "system" fn SepDumpSdDebugInfo(security_descriptor: PISECURITY
 
 #[no_mangle]
 pub unsafe extern "system" fn SepDumpTokenDebugInfo(token: PTOKEN) {
+    let token = opaque_ptr(token);
     if token.is_null() {
         return;
     }
@@ -275,6 +277,7 @@ pub unsafe extern "system" fn SepDumpAccessAndStatusList(
     object_type_list: POBJECT_TYPE_LIST_INTERNAL,
     object_type_list_length: ULONG,
 ) {
+    let access_status_list = opaque_ptr(access_status_list);
     #[cfg(debug_assertions)]
     {
         DbgPrint(b"================== ACCESS & STATUS OBJECT TYPE LIST STATISTICS ==================\n\0".as_ptr() as PCSTR);

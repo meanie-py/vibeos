@@ -12,6 +12,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ddk::{ACCESS_ALLOWED_ACE, ACL, ExInitializePushLock, KEVENT, KeFlushCurrentTb, KeInitializeEvent, KeInitializeMutant, KeReadStateEvent, LARGE_INTEGER, MEMORY_ALLOCATION_DESCRIPTOR, MMSUPPORT, MiDecrementShareCount, MiInitMachineDependent, MiInitializeDriverLargePageList, MiInitializeLargePageSupport, MiInitializeLoadedModuleList, MiInitializePoolEvents, MiInitializeSessionSpaceLayout, MiInitializeSpecialPool, MiInitializeSystemSpaceMap, MiIsMemoryTypeFree, MiIsMemoryTypeInvisible, MiReloadBootLoadedDrivers, MiSyncCachedRanges, MmIsAddressValid, ObReferenceObjectByHandle, PACL, PKEVENT, PLOADER_PARAMETER_BLOCK, PMEMORY_ALLOCATION_DESCRIPTOR, PMMWSL, PPHYSICAL_MEMORY_RUN, PUNICODE_STRING, RtlAddAccessAllowedAce, RtlCreateAcl, RtlCreateSecurityDescriptor, RtlLengthSid, ZwClose, ZwCreateEvent, _EVENT_TYPE_NotificationEvent, _KEVENT, _KMUTANT, _KPCR, _LOADER_PARAMETER_BLOCK, _MEMORY_ALLOCATION_DESCRIPTOR, _MMPFN, _MMPTE, _OBJECT_ATTRIBUTES, _OBJECT_TYPE, _PHYSICAL_MEMORY_DESCRIPTOR, _PHYSICAL_MEMORY_RUN, _RTL_BITMAP, _SECURITY_DESCRIPTOR};
 #[cfg(target_arch = "x86_64")]
 use ntkrnl_sys::ddk::MiMapPfnDatabase;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 extern "C" {
@@ -474,6 +475,7 @@ unsafe fn MiIsRegularMemory(
 #[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "system" fn MiMapPfnDatabase(loader_block: PLOADER_PARAMETER_BLOCK) {
+    let loader_block = opaque_ptr(loader_block);
     let mut free_page: PFN_NUMBER;
     let mut free_page_count: PFN_NUMBER;
     let mut pages_left: PFN_NUMBER;
@@ -748,6 +750,7 @@ unsafe fn MiBuildPfnDatabaseSelf() {
 #[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "system" fn MiInitializePfnDatabase(loader_block: PLOADER_PARAMETER_BLOCK) {
+    let loader_block = opaque_ptr(loader_block);
     #[cfg(not(target_arch = "aarch64"))]
     MiBuildPfnDatabaseFromPages(loader_block);
 
@@ -760,6 +763,7 @@ pub unsafe extern "system" fn MiInitializePfnDatabase(loader_block: PLOADER_PARA
 
 #[no_mangle]
 pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_BLOCK) {
+    let loader_block = opaque_ptr(loader_block);
     let mut next_md: PLIST_ENTRY;
     let mut md_block: PMEMORY_ALLOCATION_DESCRIPTOR;
     let mut i: ULONG_PTR;
@@ -1215,6 +1219,8 @@ pub unsafe extern "system" fn MmInitializeMemoryLimits(
     loader_block: PLOADER_PARAMETER_BLOCK,
     include_type: PBOOLEAN,
 ) -> PPHYSICAL_MEMORY_DESCRIPTOR {
+    let loader_block = opaque_ptr(loader_block);
+    let include_type = opaque_ptr(include_type);
     let mut next_entry: PLIST_ENTRY;
     let mut run: ULONG = 0;
     let initial_runs: ULONG;
@@ -1508,6 +1514,7 @@ pub unsafe extern "system" fn MmArmInitSystem(
     phase: ULONG,
     loader_block: PLOADER_PARAMETER_BLOCK,
 ) -> BOOLEAN {
+    let loader_block = opaque_ptr(loader_block);
     let mut i: ULONG;
     let mut include_type: [BOOLEAN; LoaderMaximum as usize] = [0; LoaderMaximum as usize];
     let mut bitmap: PVOID;

@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{
     WORK_QUEUE_ITEM, ZwClose, _WORK_QUEUE_ITEM, PKTHREAD, KPRIORITY,
     HANDLE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn ExInitializeWorkItem( Item: PWORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID, );
@@ -180,6 +181,8 @@ pub unsafe extern "system" fn FsRtlPostPagingFileStackOverflow(
     Event: PKEVENT,
     StackOverflowRoutine: PFSRTL_STACK_OVERFLOW_ROUTINE,
 ) {
+    let Context = opaque_ptr(Context);
+    let Event = opaque_ptr(Event);
     FsRtlpPostStackOverflow(Context, Event, StackOverflowRoutine, 1u8);
 }
 
@@ -189,6 +192,8 @@ pub unsafe extern "system" fn FsRtlPostStackOverflow(
     Event: PKEVENT,
     StackOverflowRoutine: PFSRTL_STACK_OVERFLOW_ROUTINE,
 ) {
+    let Context = opaque_ptr(Context);
+    let Event = opaque_ptr(Event);
     FsRtlpPostStackOverflow(Context, Event, StackOverflowRoutine, 0u8);
 }
 

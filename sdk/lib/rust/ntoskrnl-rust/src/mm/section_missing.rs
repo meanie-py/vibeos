@@ -8,6 +8,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -173,6 +174,8 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
     Address: PVOID,
     Locked: BOOLEAN,
 ) -> NTSTATUS {
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let Address = opaque_ptr(Address);
     let mut Offset = LARGE_INTEGER { QuadPart: 0 };
     let mut Page: PFN_NUMBER = 0;
     let mut Status: NTSTATUS;
@@ -389,6 +392,8 @@ pub unsafe extern "system" fn MmAccessFaultSectionView(
     Address: PVOID,
     Locked: BOOLEAN,
 ) -> NTSTATUS {
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let Address = opaque_ptr(Address);
     let Segment: *mut MM_SECTION_SEGMENT;
     let mut OldPage: PFN_NUMBER = 0;
     let mut NewPage: PFN_NUMBER = 0;
@@ -509,6 +514,9 @@ pub unsafe extern "system" fn MmProtectSectionView(
     Protect: ULONG,
     OldProtect: *mut ULONG,
 ) -> NTSTATUS {
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let OldProtect = opaque_ptr(OldProtect);
     let Region: PMM_REGION;
     let mut Status: NTSTATUS;
     let mut MaxLength: ULONG_PTR;
@@ -558,6 +566,10 @@ pub unsafe extern "system" fn MmQuerySectionView(
     Info: *mut MEMORY_BASIC_INFORMATION,
     ResultLength: *mut SIZE_T,
 ) -> NTSTATUS {
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let Address = opaque_ptr(Address);
+    let Info = opaque_ptr(Info);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut RegionBaseAddress: PVOID = core::ptr::null_mut();
     let Region = MmFindRegion(
         MA_GetStartingAddress(MemoryArea) as PVOID,
@@ -945,6 +957,10 @@ pub unsafe extern "system" fn MmCreateImageSection(
     AllocationAttributes: ULONG,
     FileObject: *mut FILE_OBJECT,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let UMaximumSize = opaque_ptr(UMaximumSize);
+    let FileObject = opaque_ptr(FileObject);
     let mut Section: *mut SECTION;
     let mut Status: NTSTATUS;
     let mut ImageSectionObject: *mut MM_IMAGE_SECTION_OBJECT;
@@ -1246,6 +1262,9 @@ pub unsafe extern "system" fn MiRosUnmapViewOfSection(
     BaseAddress: PVOID,
     SkipDebuggerNotify: BOOLEAN,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let MemoryArea = opaque_ptr(MemoryArea);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut Status: NTSTATUS;
     let AddressSpace: PMMSUPPORT;
     let mut ImageBaseAddress: PVOID = core::ptr::null_mut();
@@ -1327,6 +1346,9 @@ pub unsafe extern "system" fn NtQuerySection(
     SectionInformationLength: SIZE_T,
     ResultLength: *mut SIZE_T,
 ) -> NTSTATUS {
+    let SectionHandle = opaque_ptr(SectionHandle);
+    let SectionInformation = opaque_ptr(SectionInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Section: *mut SECTION;
     let PreviousMode: KPROCESSOR_MODE;
     let mut Status: NTSTATUS;
@@ -1413,6 +1435,11 @@ pub unsafe extern "system" fn MmMapViewOfSection(
     AllocationType: ULONG,
     Protect: ULONG,
 ) -> NTSTATUS {
+    let SectionObject = opaque_ptr(SectionObject);
+    let Process = opaque_ptr(Process);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let SectionOffset = opaque_ptr(SectionOffset);
+    let ViewSize = opaque_ptr(ViewSize);
     let Section: *mut SECTION;
     let AddressSpace: PMMSUPPORT;
     let mut Status = STATUS_SUCCESS;
@@ -1522,5 +1549,6 @@ pub unsafe extern "system" fn MmMapViewOfSection(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiRosUnmapViewInSystemSpace(MappedBase: PVOID) -> NTSTATUS {
+    let MappedBase = opaque_ptr(MappedBase);
     MmUnmapViewOfSegment(MmGetKernelAddressSpace(), MappedBase)
 }

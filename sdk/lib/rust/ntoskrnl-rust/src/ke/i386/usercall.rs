@@ -20,6 +20,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
@@ -60,6 +61,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let NormalContext = opaque_ptr(NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut Context: _CONTEXT = core::mem::zeroed();
     let mut SehExceptRecord: _EXCEPTION_RECORD = core::mem::zeroed();
     let Stack: ULONG_PTR;
@@ -170,6 +174,9 @@ pub unsafe extern "system" fn KeUserModeCallback(
     Result: *mut PVOID,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Argument = opaque_ptr(Argument);
+    let Result = opaque_ptr(Result);
+    let ResultLength = opaque_ptr(ResultLength);
     let NewStack: ULONG_PTR;
     let mut OldStack: ULONG_PTR;
     let UserEsp: *mut ULONG;
@@ -354,6 +361,7 @@ pub unsafe extern "system" fn NtCallbackReturn(
     ResultLength: ULONG,
     CallbackStatus: NTSTATUS,
 ) -> NTSTATUS {
+    let Result = opaque_ptr(Result);
     let CurrentThread: PKTHREAD;
     let CalloutFrame: PKCALLOUT_FRAME;
     let CallbackTrapFrame: PKTRAP_FRAME;

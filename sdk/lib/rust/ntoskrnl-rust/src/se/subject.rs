@@ -1,5 +1,6 @@
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn SepAcquireTokenLockShared(Token: PTOKEN);
@@ -15,6 +16,9 @@ pub unsafe extern "system" fn SeCaptureSubjectContextEx(
     Process: ntkrnl_sys::ps::PEPROCESS,
     SubjectContext: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let Process = opaque_ptr(Process);
+    let SubjectContext = opaque_ptr(SubjectContext);
     let mut CopyOnOpen: BOOLEAN = 0;
     let mut EffectiveOnly: BOOLEAN = 0;
 
@@ -38,6 +42,7 @@ pub unsafe extern "system" fn SeCaptureSubjectContextEx(
 pub unsafe extern "system" fn SeCaptureSubjectContext(
     SubjectContext: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let SubjectContext = opaque_ptr(SubjectContext);
     SeCaptureSubjectContextEx(
         PsGetCurrentThread(),
         PsGetCurrentProcess(),
@@ -49,6 +54,7 @@ pub unsafe extern "system" fn SeCaptureSubjectContext(
 pub unsafe extern "system" fn SeLockSubjectContext(
     SubjectContext: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let SubjectContext = opaque_ptr(SubjectContext);
     let PrimaryToken: PTOKEN = (*SubjectContext).PrimaryToken as PTOKEN;
     let ClientToken: PTOKEN = (*SubjectContext).ClientToken as PTOKEN;
 
@@ -64,6 +70,7 @@ pub unsafe extern "system" fn SeLockSubjectContext(
 pub unsafe extern "system" fn SeUnlockSubjectContext(
     SubjectContext: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let SubjectContext = opaque_ptr(SubjectContext);
     let PrimaryToken: PTOKEN = (*SubjectContext).PrimaryToken as PTOKEN;
     let ClientToken: PTOKEN = (*SubjectContext).ClientToken as PTOKEN;
 
@@ -78,6 +85,7 @@ pub unsafe extern "system" fn SeUnlockSubjectContext(
 pub unsafe extern "system" fn SeReleaseSubjectContext(
     SubjectContext: PSECURITY_SUBJECT_CONTEXT,
 ) {
+    let SubjectContext = opaque_ptr(SubjectContext);
     ObFastDereferenceObject(
         core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Token) as *mut _EX_FAST_REF,
         (*SubjectContext).PrimaryToken,

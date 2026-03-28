@@ -9,6 +9,7 @@ use ntkrnl_sys::ke::KeGetCurrentPrcb;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
 
@@ -668,6 +669,11 @@ pub unsafe extern "system" fn PsCreateSystemThread(
     StartRoutine: PKSTART_ROUTINE,
     StartContext: PVOID,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let ClientId = opaque_ptr(ClientId);
+    let StartContext = opaque_ptr(StartContext);
     let mut TargetProcess: PEPROCESS = core::ptr::null_mut();
     let mut Handle: HANDLE = ProcessHandle;
 
@@ -696,6 +702,8 @@ pub unsafe extern "system" fn PsLookupThreadByThreadId(
     ThreadId: HANDLE,
     Thread: *mut PETHREAD,
 ) -> NTSTATUS {
+    let ThreadId = opaque_ptr(ThreadId);
+    let Thread = opaque_ptr(Thread);
     let mut CidEntry: PHANDLE_TABLE_ENTRY;
     let mut FoundThread: PETHREAD;
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
@@ -722,6 +730,7 @@ pub unsafe extern "system" fn PsLookupThreadByThreadId(
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadFreezeCount(Thread: PETHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     #[cfg(not(target_arch = "x86"))]
     { (*Thread).Tcb.__bindgen_anon_6.__bindgen_anon_1.FreezeCount as ULONG }
     #[cfg(target_arch = "x86")]
@@ -730,11 +739,13 @@ pub unsafe extern "system" fn PsGetThreadFreezeCount(Thread: PETHREAD) -> ULONG 
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadHardErrorsAreDisabled(Thread: PETHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.HardErrorsAreDisabled() != 0 { 1u8 } else { 0u8 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadId(Thread: PETHREAD) -> HANDLE {
+    let Thread = opaque_ptr(Thread);
     (*Thread).Cid.UniqueThread
 }
 
@@ -745,6 +756,7 @@ pub unsafe extern "system" fn PsGetCurrentThreadId() -> HANDLE {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadProcess(Thread: PETHREAD) -> PEPROCESS {
+    let Thread = opaque_ptr(Thread);
     (*Thread).ThreadsProcess
 }
 
@@ -755,6 +767,7 @@ pub unsafe extern "system" fn PsGetCurrentThreadProcess() -> PEPROCESS {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadProcessId(Thread: PETHREAD) -> HANDLE {
+    let Thread = opaque_ptr(Thread);
     (*Thread).Cid.UniqueProcess
 }
 
@@ -765,11 +778,13 @@ pub unsafe extern "system" fn PsGetCurrentThreadProcessId() -> HANDLE {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadSessionId(Thread: PETHREAD) -> ULONG {
+    let Thread = opaque_ptr(Thread);
     MmGetSessionId((*Thread).ThreadsProcess)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadTeb(Thread: PETHREAD) -> PTEB {
+    let Thread = opaque_ptr(Thread);
     (*Thread).Tcb.Teb
 }
 
@@ -780,6 +795,7 @@ pub unsafe extern "system" fn PsGetCurrentThreadTeb() -> PVOID {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsGetThreadWin32Thread(Thread: PETHREAD) -> PVOID {
+    let Thread = opaque_ptr(Thread);
     (*Thread).Tcb.Win32Thread
 }
 
@@ -792,6 +808,7 @@ pub unsafe extern "system" fn PsGetCurrentThreadWin32Thread() -> PVOID {
 pub unsafe extern "system" fn PsGetCurrentThreadWin32ThreadAndEnterCriticalRegion(
     OutProcessId: *mut HANDLE,
 ) -> PVOID {
+    let OutProcessId = opaque_ptr(OutProcessId);
     let CurrentThread: PETHREAD;
 
     CurrentThread = PsGetCurrentThread();
@@ -823,16 +840,19 @@ pub unsafe extern "system" fn PsGetCurrentThreadStackLimit() -> PVOID {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsIsThreadTerminating(Thread: PETHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.Terminated() != 0 { 1u8 } else { 0u8 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsIsSystemThread(Thread: PETHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.SystemThread() != 0 { 1u8 } else { 0u8 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PsIsThreadImpersonating(Thread: PETHREAD) -> BOOLEAN {
+    let Thread = opaque_ptr(Thread);
     if (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.ActiveImpersonationInfo() != 0 { 1u8 } else { 0u8 }
 }
 
@@ -841,6 +861,7 @@ pub unsafe extern "system" fn PsSetThreadHardErrorsAreDisabled(
     Thread: PETHREAD,
     HardErrorsAreDisabled: BOOLEAN,
 ) {
+    let Thread = opaque_ptr(Thread);
     (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.set_HardErrorsAreDisabled(HardErrorsAreDisabled as ULONG);
 }
 
@@ -850,6 +871,9 @@ pub unsafe extern "system" fn PsSetThreadWin32Thread(
     Win32Thread: PVOID,
     OldWin32Thread: PVOID,
 ) -> PVOID {
+    let Thread = opaque_ptr(Thread);
+    let Win32Thread = opaque_ptr(Win32Thread);
+    let OldWin32Thread = opaque_ptr(OldWin32Thread);
     if !Win32Thread.is_null() {
         InterlockedExchangePointer(
             core::ptr::addr_of_mut!((*Thread).Tcb.Win32Thread),
@@ -869,6 +893,8 @@ pub unsafe extern "system" fn PsWrapApcWow64Thread(
     ApcContext: *mut PVOID,
     ApcRoutine: *mut PVOID,
 ) -> NTSTATUS {
+    let ApcContext = opaque_ptr(ApcContext);
+    let ApcRoutine = opaque_ptr(ApcRoutine);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -883,6 +909,10 @@ pub unsafe extern "system" fn NtCreateThread(
     InitialTeb: PINITIAL_TEB,
     CreateSuspended: BOOLEAN,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let ClientId = opaque_ptr(ClientId);
     let mut SafeInitialTeb: _INITIAL_TEB = core::mem::zeroed();
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
 
@@ -955,6 +985,9 @@ pub unsafe extern "system" fn NtOpenThread(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     ClientId: PCLIENT_ID,
 ) -> NTSTATUS {
+    let ThreadHandle = opaque_ptr(ThreadHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let ClientId = opaque_ptr(ClientId);
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
     let mut SafeClientId: _CLIENT_ID = core::mem::zeroed();
     let mut Attributes: ULONG = 0;

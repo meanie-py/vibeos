@@ -8,6 +8,7 @@ use ntkrnl_sys::ddk::{
     KeDisableInterrupts, KeRestoreInterrupts,
     MmAllocateContiguousMemory, MmFreeContiguousMemory, MmGetPhysicalAddress,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const PDE_BITS: usize = 10;
 const PTE_BITS: usize = 10;
@@ -110,6 +111,8 @@ pub unsafe extern "system" fn Ki386BuildIdentityBuffer(
     StartPtr: PVOID,
     Length: ULONG,
 ) -> PHYSICAL_ADDRESS {
+    let IdentityMap = opaque_ptr(IdentityMap);
+    let StartPtr = opaque_ptr(StartPtr);
     MmGetPhysicalAddress(StartPtr)
 }
 
@@ -119,6 +122,8 @@ pub unsafe extern "system" fn Ki386IdentityMapMakeValid(
     Pde: PHARDWARE_PTE,
     PageTable: *mut PHARDWARE_PTE,
 ) -> BOOLEAN {
+    let IdentityMap = opaque_ptr(IdentityMap);
+    let PageTable = opaque_ptr(PageTable);
     let NewPage: ULONG;
 
     if (*Pde).Valid() == 0 {
@@ -148,6 +153,7 @@ pub unsafe extern "system" fn Ki386MapAddress(
     VirtualPtr: ULONG_PTR,
     PhysicalPtr: PHYSICAL_ADDRESS,
 ) -> BOOLEAN {
+    let IdentityMap = opaque_ptr(IdentityMap);
     let Pde: PHARDWARE_PTE;
     let Pte: PHARDWARE_PTE;
     let mut PageTable: PHARDWARE_PTE = core::ptr::null_mut();
@@ -190,6 +196,8 @@ pub unsafe extern "system" fn Ki386CreateIdentityMap(
     StartPtr: PVOID,
     PagesCount: ULONG,
 ) -> BOOLEAN {
+    let IdentityMap = opaque_ptr(IdentityMap);
+    let StartPtr = opaque_ptr(StartPtr);
     let mut Ptr: ULONG_PTR;
     let mut PteIndex: ULONG;
     let mut IdentityPtr: PHYSICAL_ADDRESS;
@@ -238,6 +246,7 @@ pub unsafe extern "system" fn Ki386CreateIdentityMap(
 
 #[no_mangle]
 pub unsafe extern "system" fn Ki386FreeIdentityMap(IdentityMap: *mut LARGE_IDENTITY_MAP) {
+    let IdentityMap = opaque_ptr(IdentityMap);
     let mut Page: ULONG;
 
     Page = 0;

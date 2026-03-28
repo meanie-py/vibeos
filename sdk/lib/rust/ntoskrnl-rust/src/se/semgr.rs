@@ -7,6 +7,7 @@ use ntkrnl_sys::base::{STATUS_SUCCESS, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::{PagedPool, NonPagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn ZwCreateDirectoryObject(
@@ -419,6 +420,11 @@ pub unsafe extern "system" fn SeDefaultObjectMethod(
     pool_type: POOL_TYPE,
     generic_mapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let object = opaque_ptr(object);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let return_length = opaque_ptr(return_length);
+    let old_security_descriptor = opaque_ptr(old_security_descriptor);
+    let generic_mapping = opaque_ptr(generic_mapping);
     match operation_type {
         _SECURITY_OPERATION_CODE_SetSecurityDescriptor => ObSetSecurityDescriptorInfo(
             object,
@@ -493,6 +499,8 @@ pub unsafe extern "system" fn SeReportSecurityEvent(
     user_sid: PSID,
     audit_parameters: PSE_ADT_PARAMETER_ARRAY,
 ) -> NTSTATUS {
+    let source_name = opaque_ptr(source_name);
+    let user_sid = opaque_ptr(user_sid);
     let mut subject_context: SECURITY_SUBJECT_CONTEXT = core::mem::zeroed();
     let mut effective_token: PTOKEN;
     let mut sid: PISID;
@@ -544,6 +552,7 @@ pub unsafe extern "system" fn SeSetAuditParameter(
     _index: ULONG,
     _data: PVOID,
 ) -> NTSTATUS {
+    let _data = opaque_ptr(_data);
     STATUS_SUCCESS
 }
 

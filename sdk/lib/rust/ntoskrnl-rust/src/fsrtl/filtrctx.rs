@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::mm::NonPagedPool;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 type FAST_MUTEX = _FAST_MUTEX;
 type LIST_ENTRY = _LIST_ENTRY;
@@ -23,6 +24,7 @@ type PFILE_OBJECT_FILTER_CONTEXTS = *mut FILE_OBJECT_FILTER_CONTEXTS;
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlPTeardownPerFileObjectContexts(FileObject: PFILE_OBJECT) {
+    let FileObject = opaque_ptr(FileObject);
     let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
 
     if FileObject.is_null() {
@@ -48,6 +50,7 @@ pub unsafe extern "system" fn FsRtlPTeardownPerFileObjectContexts(FileObject: PF
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlIsPagingFile(FileObject: PFILE_OBJECT) -> LOGICAL {
+    let FileObject = opaque_ptr(FileObject);
     MmIsFileObjectAPagingFile(FileObject) as LOGICAL
 }
 
@@ -57,6 +60,9 @@ pub unsafe extern "system" fn FsRtlLookupPerFileObjectContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_FILEOBJECT_CONTEXT {
+    let FileObject = opaque_ptr(FileObject);
+    let OwnerId = opaque_ptr(OwnerId);
+    let InstanceId = opaque_ptr(InstanceId);
     let mut next_entry: PLIST_ENTRY;
     let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
     let mut tmp_per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT;
@@ -107,6 +113,8 @@ pub unsafe extern "system" fn FsRtlLookupPerStreamContextInternal(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_STREAM_CONTEXT {
+    let OwnerId = opaque_ptr(OwnerId);
+    let InstanceId = opaque_ptr(InstanceId);
     let mut next_entry: PLIST_ENTRY;
     let mut tmp_per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
     let mut per_stream_context: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
@@ -150,6 +158,7 @@ pub unsafe extern "system" fn FsRtlInsertPerFileObjectContext(
     FileObject: PFILE_OBJECT,
     Ptr: PFSRTL_PER_FILEOBJECT_CONTEXT,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
     let status: NTSTATUS;
 
@@ -220,6 +229,9 @@ pub unsafe extern "system" fn FsRtlRemovePerFileObjectContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_FILEOBJECT_CONTEXT {
+    let FileObject = opaque_ptr(FileObject);
+    let OwnerId = opaque_ptr(OwnerId);
+    let InstanceId = opaque_ptr(InstanceId);
     let mut next_entry: PLIST_ENTRY;
     let mut fo_context: PFILE_OBJECT_FILTER_CONTEXTS = core::ptr::null_mut();
     let mut tmp_per_fo_context: PFSRTL_PER_FILEOBJECT_CONTEXT;
@@ -274,6 +286,8 @@ pub unsafe extern "system" fn FsRtlRemovePerStreamContext(
     OwnerId: PVOID,
     InstanceId: PVOID,
 ) -> PFSRTL_PER_STREAM_CONTEXT {
+    let OwnerId = opaque_ptr(OwnerId);
+    let InstanceId = opaque_ptr(InstanceId);
     let mut next_entry: PLIST_ENTRY;
     let mut tmp_per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
     let mut per_stream_context: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();

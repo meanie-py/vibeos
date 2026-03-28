@@ -6,11 +6,13 @@ use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PIRP, _IO_STATUS_BLOCK, KEVENT,
     IoBuildDeviceIoControlRequest, IofCallDriver, KeInitializeEvent, KeWaitForSingleObject,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const FT_BALANCED_READ_MODE: ULONG = 0x00074000;
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlBalanceReads(TargetDevice: PDEVICE_OBJECT) -> NTSTATUS {
+    let TargetDevice = opaque_ptr(TargetDevice);
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 

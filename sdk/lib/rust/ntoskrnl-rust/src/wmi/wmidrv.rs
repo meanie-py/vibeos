@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP,
     POBJECT_ATTRIBUTES, PUNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "fastcall" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
@@ -168,6 +169,8 @@ pub unsafe extern "system" fn WmipOpenCloseCleanup(
     _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let Irp = opaque_ptr(Irp);
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -176,11 +179,13 @@ pub unsafe extern "system" fn WmipOpenCloseCleanup(
 
 #[no_mangle]
 pub unsafe extern "system" fn WmiTraceEvent(_InputBuffer: PVOID, _PreviousMode: KPROCESSOR_MODE) -> NTSTATUS {
+    let _InputBuffer = opaque_ptr(_InputBuffer);
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn WmiTraceUserMessage(_InputBuffer: PVOID, _InputBufferLength: ULONG) -> NTSTATUS {
+    let _InputBuffer = opaque_ptr(_InputBuffer);
     STATUS_SUCCESS
 }
 
@@ -192,6 +197,10 @@ pub unsafe extern "system" fn WmipCaptureGuidObjectAttributes(
     ObjectNameBuffer: PWSTR,
     AccessMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let GuidObjectAttributes = opaque_ptr(GuidObjectAttributes);
+    let CapturedObjectAttributes = opaque_ptr(CapturedObjectAttributes);
+    let CapturedObjectName = opaque_ptr(CapturedObjectName);
+    let ObjectNameBuffer = opaque_ptr(ObjectNameBuffer);
     debug_assert!(AccessMode != 0);
 
     ProbeForRead(
@@ -236,6 +245,9 @@ pub unsafe extern "system" fn WmipRegisterGuids(
     InputLength: ULONG,
     OutputLength: *mut ULONG,
 ) -> NTSTATUS {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let Buffer = opaque_ptr(Buffer);
+    let OutputLength = opaque_ptr(OutputLength);
     let RegisterGuids = Buffer as *mut WMIP_REGISTER_GUIDS;
     let Result = Buffer as *mut WMIP_RESULT;
     let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -293,11 +305,14 @@ pub unsafe extern "system" fn WmipUnregisterGuids(
     _InputLength: ULONG,
     _OutputLength: *mut ULONG,
 ) -> NTSTATUS {
+    let _Buffer = opaque_ptr(_Buffer);
+    let _OutputLength = opaque_ptr(_OutputLength);
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn WmipClearIrpObjectList(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
     let IrpContext = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] as *mut WMIP_IRP_CONTEXT;
 
     let mut ListEntry = (*IrpContext).GuidObjectListHead.Flink;
@@ -315,6 +330,8 @@ pub unsafe extern "system" fn WmipClearIrpObjectList(Irp: PIRP) {
 
 #[no_mangle]
 pub unsafe extern "system" fn WmipNotificationIrpCancel(_DeviceObject: PDEVICE_OBJECT, Irp: PIRP) {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let Irp = opaque_ptr(Irp);
     WmipClearIrpObjectList(Irp);
 
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
@@ -326,6 +343,7 @@ pub unsafe extern "system" fn WmipNotificationIrpCancel(_DeviceObject: PDEVICE_O
 
 #[no_mangle]
 pub unsafe extern "system" fn WmipInitializeIrpContext(IrpContext: *mut WMIP_IRP_CONTEXT) {
+    let IrpContext = opaque_ptr(IrpContext);
     InitializeListHead(core::ptr::addr_of_mut!((*IrpContext).GuidObjectListHead));
 }
 
@@ -336,6 +354,9 @@ pub unsafe extern "system" fn WmipReceiveNotifications(
     InputLength: ULONG,
     OutputLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Irp = opaque_ptr(Irp);
+    let Buffer = opaque_ptr(Buffer);
+    let OutputLength = opaque_ptr(OutputLength);
     if InputLength < core::mem::size_of::<WMI_NOTIFICATION>() as ULONG || *OutputLength < 0x38 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
@@ -359,6 +380,8 @@ pub unsafe extern "system" fn WmipOpenGuidForEvents(
     InputLength: ULONG,
     OutputLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let OutputLength = opaque_ptr(OutputLength);
     let OpenGuidForEvents = Buffer as *mut WMI_OPEN_GUID_FOR_EVENTS;
     let Result = Buffer as *mut WMIP_RESULT2;
     let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -405,6 +428,7 @@ pub unsafe extern "system" fn WmipOpenGuidForEvents(
 
 #[no_mangle]
 pub unsafe extern "system" fn WmiSetMark(_Buffer: *mut WMI_SET_MARK, _Length: ULONG) -> NTSTATUS {
+    let _Buffer = opaque_ptr(_Buffer);
     STATUS_SUCCESS
 }
 
@@ -413,6 +437,8 @@ pub unsafe extern "system" fn WmipIoControl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     let IoStackLocation = IoGetCurrentIrpStackLocation(Irp);
 
     let IoControlCode = (*IoStackLocation).Parameters.DeviceIoControl.IoControlCode;
@@ -466,11 +492,15 @@ pub unsafe extern "system" fn WmipSystemControl(
     _DeviceObject: PDEVICE_OBJECT,
     _Irp: PIRP,
 ) -> NTSTATUS {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let _Irp = opaque_ptr(_Irp);
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn WmipShutdown(_DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
+    let Irp = opaque_ptr(Irp);
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     STATUS_SUCCESS
@@ -488,6 +518,11 @@ pub unsafe extern "system" fn WmipFastIoDeviceControl(
     IoStatus: PIO_STATUS_BLOCK,
     _DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let _FileObject = opaque_ptr(_FileObject);
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let _OutputBuffer = opaque_ptr(_OutputBuffer);
+    let IoStatus = opaque_ptr(IoStatus);
+    let _DeviceObject = opaque_ptr(_DeviceObject);
     if IoControlCode == IOCTL_WMI_TRACE_EVENT {
         if InputBufferLength < 0x30 {
             return 0;
@@ -512,6 +547,8 @@ pub unsafe extern "system" fn WmipDockUndockEventCallback(
     _NotificationStructure: PVOID,
     _Context: PVOID,
 ) -> NTSTATUS {
+    let _NotificationStructure = opaque_ptr(_NotificationStructure);
+    let _Context = opaque_ptr(_Context);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -520,6 +557,8 @@ pub unsafe extern "system" fn WmipDriverEntry(
     DriverObject: PDRIVER_OBJECT,
     _RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let _RegistryPath = opaque_ptr(_RegistryPath);
     static SERVICE_DEVICE_NAME_BUF: [u16; 21] = [
         b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
         b'e' as u16, b'\\' as u16, b'W' as u16, b'M' as u16, b'I' as u16, b'D' as u16,

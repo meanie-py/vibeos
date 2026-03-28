@@ -7,6 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _DEVICE_CAPABILITIES, _DEVICE_OBJECT, _DEVICE_RELATIONS, _DRIVER_OBJECT, _EPROCESS,
@@ -295,6 +296,7 @@ unsafe fn LocateChildDevice(
 
 #[no_mangle]
 pub unsafe extern "C" fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceExtension = core::ptr::addr_of_mut!(PnpRootDOExtension);
     let mut InstancePathCopy: _UNICODE_STRING = core::mem::zeroed();
 
@@ -371,6 +373,7 @@ pub unsafe extern "C" fn PnpRootRegisterDevice(DeviceObject: PDEVICE_OBJECT) -> 
 pub unsafe extern "C" fn PnpRootCreateDeviceObject(
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     IoCreateDevice(
         IopRootDriverObject,
         core::mem::size_of::<PNPROOT_PDO_DEVICE_EXTENSION>() as ULONG,
@@ -388,6 +391,9 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
     PhysicalDeviceObject: *mut PDEVICE_OBJECT,
     FullInstancePath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let ServiceName = opaque_ptr(ServiceName);
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let FullInstancePath = opaque_ptr(FullInstancePath);
     let DeviceExtension = core::ptr::addr_of_mut!(PnpRootDOExtension);
     let mut DevicePath: _UNICODE_STRING = core::mem::zeroed();
     let mut InstancePath: [WCHAR; 5] = [0; 5];
@@ -1505,6 +1511,8 @@ pub unsafe extern "system" fn PnpRootAddDevice(
     DriverObject: PDRIVER_OBJECT,
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
     STATUS_SUCCESS
 }
 
@@ -1535,6 +1543,8 @@ pub unsafe extern "system" fn PnpRootDriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let RegistryPath = opaque_ptr(RegistryPath);
     #[cfg(feature = "mi_trace_pfns")]
     let mut PfnDumpDeviceName: _UNICODE_STRING = core::mem::zeroed();
 

@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{
     HAL_PROFILE_SOURCE_INTERVAL,
     HalStartProfileInterrupt, HalStopProfileInterrupt, HalSetProfileInterval,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn HalQuerySystemInformation(
@@ -70,6 +71,8 @@ pub unsafe extern "system" fn KeInitializeProfile(
     ProfileSource: KPROFILE_SOURCE,
     Affinity: KAFFINITY,
 ) {
+    let Process = opaque_ptr(Process);
+    let ImageBase = opaque_ptr(ImageBase);
     (*Profile).Type = 24i16;
     (*Profile).Size = core::mem::size_of::<KPROFILE>() as i16;
 
@@ -87,6 +90,7 @@ pub unsafe extern "system" fn KeStartProfile(
     Profile: PKPROFILE,
     Buffer: PVOID,
 ) -> BOOLEAN {
+    let Buffer = opaque_ptr(Buffer);
     let mut OldIrql: KIRQL = 0;
     let mut SourceBuffer: PKPROFILE_SOURCE_OBJECT;
     let mut CurrentSource: PKPROFILE_SOURCE_OBJECT = core::ptr::null_mut();

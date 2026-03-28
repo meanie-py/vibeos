@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{
     PBOOT_ENTRY, PBOOT_OPTIONS, PEFI_DRIVER_ENTRY, PFILE_PATH,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn NtAddBootEntry(
@@ -36,6 +37,8 @@ pub unsafe extern "system" fn NtEnumerateBootEntries(
     Buffer: PVOID,
     BufferLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let BufferLength = opaque_ptr(BufferLength);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -44,6 +47,8 @@ pub unsafe extern "system" fn NtEnumerateDriverEntries(
     Buffer: PVOID,
     BufferLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
+    let BufferLength = opaque_ptr(BufferLength);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -64,6 +69,8 @@ pub unsafe extern "system" fn NtQueryBootEntryOrder(
     Ids: *mut ULONG,
     Count: *mut ULONG,
 ) -> NTSTATUS {
+    let Ids = opaque_ptr(Ids);
+    let Count = opaque_ptr(Count);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -72,6 +79,8 @@ pub unsafe extern "system" fn NtQueryDriverEntryOrder(
     Ids: *mut ULONG,
     Count: *mut ULONG,
 ) -> NTSTATUS {
+    let Ids = opaque_ptr(Ids);
+    let Count = opaque_ptr(Count);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -80,6 +89,7 @@ pub unsafe extern "system" fn NtQueryBootOptions(
     BootOptions: PBOOT_OPTIONS,
     BootOptionsLength: *mut ULONG,
 ) -> NTSTATUS {
+    let BootOptionsLength = opaque_ptr(BootOptionsLength);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -88,6 +98,8 @@ pub unsafe extern "system" fn NtSetBootEntryOrder(
     Ids: *mut ULONG,
     Count: *mut ULONG,
 ) -> NTSTATUS {
+    let Ids = opaque_ptr(Ids);
+    let Count = opaque_ptr(Count);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -96,6 +108,8 @@ pub unsafe extern "system" fn NtSetDriverEntryOrder(
     Ids: *mut ULONG,
     Count: *mut ULONG,
 ) -> NTSTATUS {
+    let Ids = opaque_ptr(Ids);
+    let Count = opaque_ptr(Count);
     STATUS_NOT_IMPLEMENTED
 }
 

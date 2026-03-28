@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     PspRunLoadImageNotifyRoutines, RtlInitUnicodeString,
     ExGetPreviousMode, NtCurrentTeb,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn InitializeObjectAttributes(
@@ -62,6 +63,7 @@ extern "system" {
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgkpSectionToFileHandle(Section: PVOID) -> HANDLE {
+    let Section = opaque_ptr(Section);
     let mut file_name: POBJECT_NAME_INFORMATION = core::ptr::null_mut();
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut io_status_block: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -117,6 +119,8 @@ pub unsafe extern "system" fn DbgkpResumeProcess() {
 #[no_mangle]
 #[allow(unused_variables)]
 pub unsafe extern "system" fn DbgkCreateThread(Thread: PETHREAD, StartAddress: PVOID) {
+    let Thread = opaque_ptr(Thread);
+    let StartAddress = opaque_ptr(StartAddress);
     let process = PsGetCurrentProcess();
     let process_ptr = process as *mut _EPROCESS;
     let mut process_flags: ULONG;
@@ -367,6 +371,8 @@ pub unsafe extern "system" fn DbgkMapViewOfSection(
     SectionOffset: ULONG,
     ViewSize: ULONG_PTR,
 ) {
+    let Section = opaque_ptr(Section);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut api_message: DBGKM_MSG = core::mem::zeroed();
     let load_dll: PDBGKM_LOAD_DLL = core::ptr::addr_of_mut!(api_message.__bindgen_anon_1.LoadDll);
     let process = PsGetCurrentProcess() as *mut _EPROCESS;
@@ -405,6 +411,7 @@ pub unsafe extern "system" fn DbgkMapViewOfSection(
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgkUnMapViewOfSection(BaseAddress: PVOID) {
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut api_message: DBGKM_MSG = core::mem::zeroed();
     let unload_dll: PDBGKM_UNLOAD_DLL = core::ptr::addr_of_mut!(api_message.__bindgen_anon_1.UnloadDll);
     let process = PsGetCurrentProcess() as *mut _EPROCESS;

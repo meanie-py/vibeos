@@ -30,6 +30,7 @@ use ntkrnl_sys::ddk::PRUNTIME_FUNCTION;
 use ntkrnl_sys::ddk::PUNWIND_HISTORY_TABLE;
 #[cfg(target_arch = "x86")]
 use ntkrnl_sys::ddk::PKPCR;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 /// i386 KeGetPcr — reads KPCR pointer from fs:0x1C (SelfPcr field).
 #[no_mangle]
@@ -148,6 +149,8 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
     PcValue: PVOID,
     BaseOfImage: *mut PVOID,
 ) -> PVOID {
+    let PcValue = opaque_ptr(PcValue);
+    let BaseOfImage = opaque_ptr(BaseOfImage);
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut InSystem: BOOLEAN = 0;
     let mut OldIrql: KIRQL = 0;
@@ -210,6 +213,7 @@ pub unsafe extern "system" fn RtlpAllocateMemory(Bytes: ULONG, Tag: ULONG) -> PV
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpFreeMemory(Mem: PVOID, Tag: ULONG) {
+    let Mem = opaque_ptr(Mem);
     if Tag == TAG_ASTR || Tag == TAG_OSTR || Tag == TAG_USTR {
         ExFreePool(Mem);
     } else {
@@ -277,6 +281,7 @@ pub unsafe extern "system" fn RtlTryEnterHeapLock(Lock: PHEAP_LOCK, Exclusive: B
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlInitializeHeapLock(Lock: *mut PHEAP_LOCK) -> NTSTATUS {
+    let Lock = opaque_ptr(Lock);
     let HeapLock = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<HEAP_LOCK>(),
@@ -307,10 +312,12 @@ struct _HEAP {
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpAddHeapToProcessList(_Heap: *mut _HEAP) {
+    let _Heap = opaque_ptr(_Heap);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpRemoveHeapFromProcessList(_Heap: *mut _HEAP) {
+    let _Heap = opaque_ptr(_Heap);
 }
 
 #[no_mangle]
@@ -354,6 +361,7 @@ pub unsafe extern "system" fn RtlpCheckLogException(
     _ContextData: PVOID,
     _Size: ULONG,
 ) {
+    let _ContextData = opaque_ptr(_ContextData);
     if (NtGlobalFlag & FLG_ENABLE_EXCEPTION_LOGGING) != 0 {
     }
 }
@@ -365,6 +373,8 @@ pub unsafe extern "system" fn RtlpHandleDpcStackException(
     StackLow: *mut ULONG_PTR,
     StackHigh: *mut ULONG_PTR,
 ) -> BOOLEAN {
+    let StackLow = opaque_ptr(StackLow);
+    let StackHigh = opaque_ptr(StackHigh);
     let Prcb: *mut _KPRCB;
     let DpcStack: ULONG_PTR;
 
@@ -392,6 +402,8 @@ pub unsafe extern "system" fn RtlpCaptureStackLimits(
     StackBegin: *mut ULONG_PTR,
     StackEnd: *mut ULONG_PTR,
 ) -> BOOLEAN {
+    let StackBegin = opaque_ptr(StackBegin);
+    let StackEnd = opaque_ptr(StackEnd);
     let Thread = KeGetCurrentThread();
 
     if KeGetCurrentIrql() > DISPATCH_LEVEL {
@@ -432,6 +444,7 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     Count: ULONG,
     Flags: ULONG,
 ) -> ULONG {
+    let Callers = opaque_ptr(Callers);
     let mut Stack: ULONG_PTR;
     let mut NewStack: ULONG_PTR;
     let mut StackBegin: ULONG_PTR;
@@ -563,6 +576,8 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpGetStackLimits(LowLimit: *mut ULONG_PTR, HighLimit: *mut ULONG_PTR) {
+    let LowLimit = opaque_ptr(LowLimit);
+    let HighLimit = opaque_ptr(HighLimit);
     let CurrentThread = KeGetCurrentThread();
     *LowLimit = (*CurrentThread).StackLimit as ULONG_PTR;
     #[cfg(target_arch = "x86")]
@@ -613,6 +628,9 @@ pub unsafe extern "system" fn RtlpCloseHandleCallback(
     Handle: HANDLE,
     HandleTable: PVOID,
 ) -> BOOLEAN {
+    let HandleTableEntry = opaque_ptr(HandleTableEntry);
+    let Handle = opaque_ptr(Handle);
+    let HandleTable = opaque_ptr(HandleTable);
     ExDestroyHandle(HandleTable as *mut _, Handle, HandleTableEntry)
 }
 
@@ -727,6 +745,8 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
     Size: DWORD64,
     OutHeaders: *mut PIMAGE_NT_HEADERS,
 ) -> NTSTATUS {
+    let Base = opaque_ptr(Base);
+    let OutHeaders = opaque_ptr(OutHeaders);
     let mut Status: NTSTATUS;
 
     if !OutHeaders.is_null() {
@@ -746,6 +766,9 @@ pub unsafe extern "C" fn find_entry(
     ret: *mut PVOID,
     want_dir: i32,
 ) -> NTSTATUS {
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let info = opaque_ptr(info);
+    let ret = opaque_ptr(ret);
     let mut size: ULONG = 0;
     let root: PVOID;
     let mut resdirptr: *mut IMAGE_RESOURCE_DIRECTORY;
@@ -823,6 +846,8 @@ pub unsafe extern "system" fn RtlpSafeCopyMemory(
     Source: PVOID,
     Length: SIZE_T,
 ) -> NTSTATUS {
+    let Destination = opaque_ptr(Destination);
+    let Source = opaque_ptr(Source);
     RtlCopyMemory(Destination, Source, Length);
     STATUS_SUCCESS
 }

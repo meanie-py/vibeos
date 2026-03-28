@@ -2,6 +2,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 
 use ntkrnl_sys::ddk::CPPORT;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 type PCPPORT = *mut CPPORT;
 
@@ -42,6 +43,7 @@ pub unsafe extern "system" fn InbvPortPollOnly(PortId: ULONG) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn InbvPortGetByte(PortId: ULONG, Byte: *mut UCHAR) -> BOOLEAN {
+    let Byte = opaque_ptr(Byte);
     if CpGetByte(
         core::ptr::addr_of_mut!(Port[PortId as usize]),
         Byte,
@@ -78,6 +80,8 @@ pub unsafe extern "system" fn InbvPortInitialize(
     PortId: *mut ULONG,
     IsMMIODevice: BOOLEAN,
 ) -> BOOLEAN {
+    let PortAddress = opaque_ptr(PortAddress);
+    let PortId = opaque_ptr(PortId);
     debug_assert!(IsMMIODevice == 0u8);
 
     let mut baud_rate = BaudRate;

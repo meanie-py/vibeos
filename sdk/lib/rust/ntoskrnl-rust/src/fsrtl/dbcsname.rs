@@ -8,6 +8,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     ANSI_STRING, PANSI_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use core::ptr;
 
@@ -54,6 +55,8 @@ pub unsafe extern "system" fn FsRtlDissectDbcs(
     FirstPart: PANSI_STRING,
     RemainingPart: PANSI_STRING,
 ) {
+    let FirstPart = opaque_ptr(FirstPart);
+    let RemainingPart = opaque_ptr(RemainingPart);
     let mut first_position: USHORT;
     let mut i: USHORT;
     let mut skip_first_slash: USHORT = 0;
@@ -94,6 +97,7 @@ pub unsafe extern "system" fn FsRtlDissectDbcs(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlDoesDbcsContainWildCards(Name: PANSI_STRING) -> BOOLEAN {
+    let Name = opaque_ptr(Name);
     let mut i: USHORT = 0;
 
     while i < (*Name).Length {
@@ -113,6 +117,8 @@ pub unsafe extern "system" fn FsRtlIsDbcsInExpression(
     Expression: PANSI_STRING,
     Name: PANSI_STRING,
 ) -> BOOLEAN {
+    let Expression = opaque_ptr(Expression);
+    let Name = opaque_ptr(Name);
     let mut offset: USHORT;
     let mut position: USHORT;
     let mut backtracking_position: USHORT;

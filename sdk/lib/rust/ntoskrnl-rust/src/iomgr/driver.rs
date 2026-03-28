@@ -118,6 +118,7 @@ use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 // ExInterlockedInsertTailList / ExInterlockedRemoveHeadList: in bindgen on amd64/arm64 only
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ddk::{ExInterlockedInsertTailList, ExInterlockedRemoveHeadList};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 unsafe fn ExInterlockedInsertTailList(
@@ -378,6 +379,8 @@ pub unsafe extern "system" fn IopInvalidDeviceRequest(
     DeviceObject: *mut DEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -386,6 +389,7 @@ pub unsafe extern "system" fn IopInvalidDeviceRequest(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteDriver(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     let DriverObject = ObjectBody as PDRIVER_OBJECT;
     let mut DriverExtension: PIO_CLIENT_EXTENSION;
     let mut NextDriverExtension: PIO_CLIENT_EXTENSION;
@@ -416,6 +420,9 @@ pub unsafe extern "C" fn IopGetDriverNames(
     DriverName: *mut _UNICODE_STRING,
     ServiceName: *mut _UNICODE_STRING,
 ) -> NTSTATUS {
+    let ServiceHandle = opaque_ptr(ServiceHandle);
+    let DriverName = opaque_ptr(DriverName);
+    let ServiceName = opaque_ptr(ServiceName);
     let mut driverName = _UNICODE_STRING {
         Buffer: core::ptr::null_mut(),
         Length: 0,
@@ -1471,6 +1478,7 @@ pub unsafe extern "system" fn IoCreateDriver(
     DriverName: PUNICODE_STRING,
     InitializationFunction: ntkrnl_sys::ddk::PDRIVER_INITIALIZE,
 ) -> NTSTATUS {
+    let DriverName = opaque_ptr(DriverName);
     let mut NameBuffer: [u16; 100] = [0; 100];
     let mut NameLength: USHORT;
     let mut LocalDriverName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
@@ -1613,6 +1621,7 @@ pub unsafe extern "system" fn IoCreateDriver(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoDeleteDriver(DriverObject: PDRIVER_OBJECT) {
+    let DriverObject = opaque_ptr(DriverObject);
     ObDereferenceObject(DriverObject as PVOID);
 }
 
@@ -1622,6 +1631,8 @@ pub unsafe extern "system" fn IoRegisterBootDriverReinitialization(
     ReinitRoutine: ntkrnl_sys::ddk::PDRIVER_REINITIALIZE,
     Context: PVOID,
 ) {
+    let DriverObject = opaque_ptr(DriverObject);
+    let Context = opaque_ptr(Context);
     let ReinitItem = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<DRIVER_REINIT_ITEM>(), TAG_REINIT) as PDRIVER_REINIT_ITEM;
     if ReinitItem.is_null() {
         return;
@@ -1645,6 +1656,8 @@ pub unsafe extern "system" fn IoRegisterDriverReinitialization(
     ReinitRoutine: ntkrnl_sys::ddk::PDRIVER_REINITIALIZE,
     Context: PVOID,
 ) {
+    let DriverObject = opaque_ptr(DriverObject);
+    let Context = opaque_ptr(Context);
     let ReinitItem = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<DRIVER_REINIT_ITEM>(), TAG_REINIT) as PDRIVER_REINIT_ITEM;
     if ReinitItem.is_null() {
         return;
@@ -1669,6 +1682,9 @@ pub unsafe extern "system" fn IoAllocateDriverObjectExtension(
     DriverObjectExtensionSize: ULONG,
     DriverObjectExtension: *mut PVOID,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let ClientIdentificationAddress = opaque_ptr(ClientIdentificationAddress);
+    let DriverObjectExtension = opaque_ptr(DriverObjectExtension);
     let mut OldIrql: KIRQL;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
     let NewDriverExtension: PIO_CLIENT_EXTENSION;
@@ -1726,6 +1742,8 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
     DriverObject: PDRIVER_OBJECT,
     ClientIdentificationAddress: PVOID,
 ) -> PVOID {
+    let DriverObject = opaque_ptr(DriverObject);
+    let ClientIdentificationAddress = opaque_ptr(ClientIdentificationAddress);
     let mut OldIrql: KIRQL = 0;
     let mut DriverExtensions: PIO_CLIENT_EXTENSION;
 
@@ -1750,6 +1768,8 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
 
 #[no_mangle]
 pub unsafe extern "C" fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut PDRIVER_OBJECT) -> NTSTATUS {
+    let ServiceHandle = opaque_ptr(ServiceHandle);
+    let DriverObject = opaque_ptr(DriverObject);
     let mut ImagePath = _UNICODE_STRING {
         Buffer: core::ptr::null_mut(),
         Length: 0,
@@ -1898,6 +1918,7 @@ unsafe fn IopDoLoadUnloadDriver(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtLoadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS {
+    let DriverServiceName = opaque_ptr(DriverServiceName);
     let mut CapturedServiceName = _UNICODE_STRING {
         Buffer: core::ptr::null_mut(),
         Length: 0,
@@ -1931,6 +1952,7 @@ pub unsafe extern "system" fn NtLoadDriver(DriverServiceName: PUNICODE_STRING) -
 
 #[no_mangle]
 pub unsafe extern "system" fn NtUnloadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS {
+    let DriverServiceName = opaque_ptr(DriverServiceName);
     IopUnloadDriver(DriverServiceName, 0u8)
 }
 

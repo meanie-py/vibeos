@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     KiSelectReadyThread, KiSetThreadSwapBusy, KiSwapContext, KiSwapThread,
     NtYieldExecution,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> _LARGE_INTEGER;
@@ -93,12 +94,14 @@ const GM_LOCK_WAITER_INC: i32 = 0x4;
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiWaitTest(ObjectPointer: PVOID, Increment: KPRIORITY) {
+    let ObjectPointer = opaque_ptr(ObjectPointer);
     KiWaitTestImpl(ObjectPointer, Increment)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiWaitTest(ObjectPointer: PVOID, Increment: KPRIORITY) {
+    let ObjectPointer = opaque_ptr(ObjectPointer);
     KiWaitTestImpl(ObjectPointer, Increment)
 }
 
@@ -131,12 +134,14 @@ unsafe fn KiWaitTestImpl(ObjectPointer: PVOID, Increment: KPRIORITY) {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiUnlinkThread(Thread: PKTHREAD, WaitStatus: isize) {
+    let Thread = opaque_ptr(Thread);
     KiUnlinkThreadImpl(Thread, WaitStatus)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiUnlinkThread(Thread: PKTHREAD, WaitStatus: isize) {
+    let Thread = opaque_ptr(Thread);
     KiUnlinkThreadImpl(Thread, WaitStatus)
 }
 
@@ -172,12 +177,14 @@ unsafe fn KiUnlinkThreadImpl(Thread: PKTHREAD, WaitStatus: isize) {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiUnwaitThread(Thread: PKTHREAD, WaitStatus: isize, Increment: KPRIORITY) {
+    let Thread = opaque_ptr(Thread);
     KiUnwaitThreadImpl(Thread, WaitStatus, Increment)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiUnwaitThread(Thread: PKTHREAD, WaitStatus: isize, Increment: KPRIORITY) {
+    let Thread = opaque_ptr(Thread);
     KiUnwaitThreadImpl(Thread, WaitStatus, Increment)
 }
 
@@ -193,12 +200,14 @@ unsafe fn KiUnwaitThreadImpl(Thread: PKTHREAD, WaitStatus: isize, Increment: KPR
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiAcquireFastMutex(FastMutex: *mut FAST_MUTEX) {
+    let FastMutex = opaque_ptr(FastMutex);
     KiAcquireFastMutexImpl(FastMutex)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiAcquireFastMutex(FastMutex: *mut FAST_MUTEX) {
+    let FastMutex = opaque_ptr(FastMutex);
     KiAcquireFastMutexImpl(FastMutex)
 }
 
@@ -378,6 +387,7 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeIsWaitListEmpty(_Object: PVOID) -> BOOLEAN {
+    let _Object = opaque_ptr(_Object);
     0u8
 }
 
@@ -387,6 +397,7 @@ pub unsafe extern "system" fn KeDelayExecutionThread(
     Alertable: BOOLEAN,
     mut Interval: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let mut Interval = opaque_ptr(Interval);
     #[cfg(target_arch = "aarch64")]
     {
         NtYieldExecution();
@@ -555,6 +566,8 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
     Alertable: BOOLEAN,
     mut Timeout: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let mut Timeout = opaque_ptr(Timeout);
 
     let Thread: PKTHREAD = PsGetCurrentThread();
     let mut CurrentObject: PKMUTANT = Object as PKMUTANT;
@@ -774,6 +787,8 @@ pub unsafe extern "system" fn KeWaitForMultipleObjects(
     mut Timeout: PLARGE_INTEGER,
     WaitBlockArray: PKWAIT_BLOCK,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let mut Timeout = opaque_ptr(Timeout);
     let mut CurrentObject: PKMUTANT = core::ptr::null_mut();
     let mut WaitBlock: PKWAIT_BLOCK = core::ptr::null_mut();
     let Thread: PKTHREAD = PsGetCurrentThread();
@@ -1123,6 +1138,7 @@ pub unsafe extern "system" fn NtDelayExecution(
     Alertable: BOOLEAN,
     DelayInterval: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let DelayInterval = opaque_ptr(DelayInterval);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut SafeInterval: _LARGE_INTEGER = core::mem::zeroed();
 

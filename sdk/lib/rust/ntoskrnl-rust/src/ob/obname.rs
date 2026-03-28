@@ -7,6 +7,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _OBJECT_HEADER, _OBJECT_TYPE, _OBJECT_DIRECTORY, _SECURITY_DESCRIPTOR,
@@ -268,6 +269,7 @@ pub unsafe extern "system" fn ObpCreateDosDevicesDirectory() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObpDeleteNameCheck(Object: PVOID) {
+    let Object = opaque_ptr(Object);
     let object_header: POBJECT_HEADER;
     let mut context: _OBP_LOOKUP_CONTEXT = core::mem::zeroed();
     let mut object_name_info: POBJECT_HEADER_NAME_INFO;
@@ -383,6 +385,13 @@ pub unsafe extern "system" fn ObpLookupObjectName(
     LookupContext: POBP_LOOKUP_CONTEXT,
     FoundObject: *mut PVOID,
 ) -> NTSTATUS {
+    let RootHandle = opaque_ptr(RootHandle);
+    let ObjectName = opaque_ptr(ObjectName);
+    let ObjectType = opaque_ptr(ObjectType);
+    let ParseContext = opaque_ptr(ParseContext);
+    let InsertObject = opaque_ptr(InsertObject);
+    let AccessState = opaque_ptr(AccessState);
+    let FoundObject = opaque_ptr(FoundObject);
     let mut object: PVOID;
     let mut object_header: POBJECT_HEADER;
     let mut component_name: ntkrnl_sys::ddk::UNICODE_STRING = core::mem::zeroed();
@@ -1051,6 +1060,9 @@ pub unsafe extern "system" fn ObQueryNameString(
     Length: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let ObjectNameInfo = opaque_ptr(ObjectNameInfo);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut local_info: POBJECT_HEADER_NAME_INFO;
     let object_header: POBJECT_HEADER;
     let mut parent_directory: POBJECT_DIRECTORY;

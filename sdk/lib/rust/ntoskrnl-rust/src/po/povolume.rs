@@ -5,6 +5,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     HANDLE,
@@ -87,6 +88,7 @@ pub static mut PopDopeGlobalLock: KSPIN_LOCK = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT_POWER_EXTENSION {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
     let mut dope: PDEVICE_OBJECT_POWER_EXTENSION;
     let mut old_irql: KIRQL = 0;
@@ -134,6 +136,7 @@ pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVIC
 
 #[no_mangle]
 pub unsafe extern "system" fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let dope: PDEVICE_OBJECT_POWER_EXTENSION;
 
     dope = PopGetDope(DeviceObject);
@@ -153,6 +156,7 @@ pub unsafe extern "system" fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let dope: PDEVICE_OBJECT_POWER_EXTENSION;
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
     let mut old_irql: KIRQL = 0;
@@ -187,18 +191,21 @@ pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT)
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "stdcall" fn PopFlushVolumeWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     PopFlushVolumeWorkerInner(Context)
 }
 
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn PopFlushVolumeWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     PopFlushVolumeWorkerInner(Context)
 }
 
 #[no_mangle]
 #[inline(always)]
 pub unsafe extern "system" fn PopFlushVolumeWorkerInner(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let flush_context = Context as *mut POP_FLUSH_VOLUME;
     let mut dope: PDEVICE_OBJECT_POWER_EXTENSION;
     let mut next_entry: PLIST_ENTRY;

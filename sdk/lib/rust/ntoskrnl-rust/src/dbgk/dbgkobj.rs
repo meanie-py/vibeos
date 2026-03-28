@@ -7,6 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _DEBUG_OBJECT, _DEBUG_EVENT, _DBGKM_MSG, _DBGKM_EXCEPTION, _DBGUI_WAIT_STATE_CHANGE,
@@ -188,6 +189,8 @@ pub unsafe extern "system" fn DbgkpQueueMessage(
     flags: ULONG,
     target_object: PDEBUG_OBJECT,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
     let mut debug_event: PDEBUG_EVENT;
     let mut local_debug_event: _DEBUG_EVENT = core::mem::zeroed();
     let mut debug_object: PDEBUG_OBJECT;
@@ -306,6 +309,7 @@ pub unsafe extern "system" fn DbgkpSendApiMessageLpc(
     port: PVOID,
     suspend_process: BOOLEAN,
 ) -> NTSTATUS {
+    let port = opaque_ptr(port);
     let mut status: NTSTATUS;
     let mut buffer: [u8; PORT_MAXIMUM_MESSAGE_LENGTH] = [0; PORT_MAXIMUM_MESSAGE_LENGTH];
     let mut suspended = 0u8;
@@ -379,6 +383,8 @@ pub unsafe extern "system" fn DbgkCopyProcessDebugPort(
     process: PEPROCESS,
     parent: PEPROCESS,
 ) {
+    let process = opaque_ptr(process);
+    let parent = opaque_ptr(parent);
     let mut debug_object: PDEBUG_OBJECT;
 
     (*(process as *mut _EPROCESS)).DebugPort = core::ptr::null_mut();
@@ -511,6 +517,8 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
     thread: PETHREAD,
     debug_object: PDEBUG_OBJECT,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
     let peb: PPEB = (*(process as *mut _EPROCESS)).Peb as PPEB;
     let mut ldr_data: PPEB_LDR_DATA;
     let mut ldr_entry: PLDR_DATA_TABLE_ENTRY;
@@ -640,6 +648,10 @@ pub unsafe extern "system" fn DbgkpPostFakeThreadMessages(
     first_thread: *mut PETHREAD,
     last_thread: *mut PETHREAD,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let start_thread = opaque_ptr(start_thread);
+    let first_thread = opaque_ptr(first_thread);
+    let last_thread = opaque_ptr(last_thread);
     let mut p_first_thread: PETHREAD = core::ptr::null_mut();
     let mut this_thread: PETHREAD;
     let mut old_thread: PETHREAD = core::ptr::null_mut();
@@ -790,6 +802,8 @@ pub unsafe extern "system" fn DbgkpPostFakeProcessCreateMessages(
     debug_object: PDEBUG_OBJECT,
     last_thread: *mut PETHREAD,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let last_thread = opaque_ptr(last_thread);
     let mut apc_state: _KAPC_STATE = core::mem::zeroed();
     let mut first_thread: PETHREAD = core::ptr::null_mut();
     let mut final_thread: PETHREAD = core::ptr::null_mut();
@@ -896,6 +910,7 @@ pub unsafe extern "system" fn DbgkpConvertKernelToUserStateChange(
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgkpMarkProcessPeb(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     let mut apc_state: _KAPC_STATE = core::mem::zeroed();
 
     if ExAcquireRundownProtection(core::ptr::addr_of_mut!(
@@ -936,6 +951,8 @@ pub unsafe extern "system" fn DbgkpOpenHandles(
     process: PEPROCESS,
     thread: PETHREAD,
 ) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
     let mut status: NTSTATUS;
     let mut handle: HANDLE = core::ptr::null_mut();
     let mut dup_handle: PHANDLE;
@@ -1028,7 +1045,6 @@ pub unsafe extern "system" fn DbgkpOpenHandles(
 
 #[no_mangle]
 pub unsafe extern "system" fn DbgkpDeleteObject(debug_object: PVOID) {}
-
 #[no_mangle]
 pub unsafe extern "system" fn DbgkpCloseObject(
     _owner_process: PEPROCESS,
@@ -1037,6 +1053,8 @@ pub unsafe extern "system" fn DbgkpCloseObject(
     _handle_count: ULONG,
     system_handle_count: ULONG,
 ) {
+    let _owner_process = opaque_ptr(_owner_process);
+    let object_body = opaque_ptr(object_body);
     let debug_object = object_body as PDEBUG_OBJECT;
     let mut process: PEPROCESS = core::ptr::null_mut();
     let mut debug_port_cleared: BOOLEAN;
@@ -1112,6 +1130,8 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
     msg_status: NTSTATUS,
     last_thread: PETHREAD,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let last_thread = opaque_ptr(last_thread);
     let mut status: NTSTATUS;
     let mut temp_list: LIST_ENTRY = core::mem::zeroed();
     let mut global_held = 0u8;
@@ -1277,6 +1297,7 @@ pub unsafe extern "system" fn DbgkClearProcessDebugObject(
     process: PEPROCESS,
     source_debug_object: PDEBUG_OBJECT,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     let mut debug_object: PDEBUG_OBJECT;
     let mut debug_event: PDEBUG_EVENT;
     let mut temp_list: LIST_ENTRY = core::mem::zeroed();
@@ -1378,6 +1399,8 @@ pub unsafe extern "system" fn DbgkOpenProcessDebugPort(
     previous_mode: KPROCESSOR_MODE,
     debug_handle: *mut HANDLE,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let debug_handle = opaque_ptr(debug_handle);
     let mut debug_object: PDEBUG_OBJECT;
     let mut status: NTSTATUS;
 
@@ -1421,6 +1444,8 @@ pub unsafe extern "system" fn NtCreateDebugObject(
     object_attributes: POBJECT_ATTRIBUTES,
     flags: ULONG,
 ) -> NTSTATUS {
+    let debug_handle = opaque_ptr(debug_handle);
+    let object_attributes = opaque_ptr(object_attributes);
     let previous_mode = ExGetPreviousMode();
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let mut h_debug: HANDLE = core::ptr::null_mut();
@@ -1483,6 +1508,8 @@ pub unsafe extern "system" fn NtDebugContinue(
     app_client_id: PCLIENT_ID,
     continue_status: NTSTATUS,
 ) -> NTSTATUS {
+    let debug_handle = opaque_ptr(debug_handle);
+    let app_client_id = opaque_ptr(app_client_id);
     let previous_mode = ExGetPreviousMode();
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let mut status: NTSTATUS;
@@ -1579,6 +1606,8 @@ pub unsafe extern "system" fn NtDebugActiveProcess(
     process_handle: HANDLE,
     debug_handle: HANDLE,
 ) -> NTSTATUS {
+    let process_handle = opaque_ptr(process_handle);
+    let debug_handle = opaque_ptr(debug_handle);
     let mut process: PEPROCESS = core::ptr::null_mut();
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let previous_mode = ExGetPreviousMode();
@@ -1641,6 +1670,8 @@ pub unsafe extern "system" fn NtRemoveProcessDebug(
     process_handle: HANDLE,
     debug_handle: HANDLE,
 ) -> NTSTATUS {
+    let process_handle = opaque_ptr(process_handle);
+    let debug_handle = opaque_ptr(debug_handle);
     let mut process: PEPROCESS = core::ptr::null_mut();
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let previous_mode = ExGetPreviousMode();
@@ -1686,6 +1717,9 @@ pub unsafe extern "system" fn NtSetInformationDebugObject(
     debug_information_length: ULONG,
     return_length: *mut ULONG,
 ) -> NTSTATUS {
+    let debug_handle = opaque_ptr(debug_handle);
+    let debug_information = opaque_ptr(debug_information);
+    let return_length = opaque_ptr(return_length);
     let mut debug_object: PDEBUG_OBJECT = core::ptr::null_mut();
     let previous_mode = ExGetPreviousMode();
     let mut status: NTSTATUS;
@@ -1740,6 +1774,7 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
     timeout: *const LARGE_INTEGER,
     state_change: PDBGUI_WAIT_STATE_CHANGE,
 ) -> NTSTATUS {
+    let debug_handle = opaque_ptr(debug_handle);
     let previous_mode = ExGetPreviousMode();
     let mut local_time_out: LARGE_INTEGER = core::mem::zeroed();
     let mut process: PEPROCESS = core::ptr::null_mut();

@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     KiReleaseDispatcherLock,
     KINTERRUPT_MODE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static KiInterruptDispatchTemplate: [UCHAR; 16];
@@ -60,6 +61,8 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     ProcessorNumber: CHAR,
     FloatingSave: BOOLEAN,
 ) {
+    let Interrupt = opaque_ptr(Interrupt);
+    let ServiceContext = opaque_ptr(ServiceContext);
     (*Interrupt).Type = InterruptObject as i16;
     (*Interrupt).Size = core::mem::size_of::<_KINTERRUPT>() as i16;
 
@@ -99,6 +102,7 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     if ((*Interrupt).Vector < PRIMARY_VECTOR_BASE) || ((*Interrupt).Vector > MAXIMUM_IDTVECTOR) {
         return 0u8;
     }
@@ -159,6 +163,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     KeSetSystemAffinityThread(1u64 << (*Interrupt).Number);
     let OldIrql = KiAcquireDispatcherLock();
 
@@ -207,6 +212,8 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
     SynchronizeRoutine: PKSYNCHRONIZE_ROUTINE,
     SynchronizeContext: PVOID,
 ) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
+    let SynchronizeContext = opaque_ptr(SynchronizeContext);
     let OldIrql = KfRaiseIrql((*Interrupt).SynchronizeIrql);
 
     KeAcquireSpinLockAtDpcLevel((*Interrupt).ActualLock as *mut usize);

@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread,
     LpcpGetMessageFromThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -163,6 +164,9 @@ pub unsafe extern "system" fn LpcpFreeConMsg(
     connect_message: *mut PLPCP_CONNECTION_MESSAGE,
     current_thread: PETHREAD,
 ) -> PVOID {
+    let message = opaque_ptr(message);
+    let connect_message = opaque_ptr(connect_message);
+    let current_thread = opaque_ptr(current_thread);
     let mut section_to_map: PVOID;
     let reply_message: PLPCP_MESSAGE;
 
@@ -209,6 +213,12 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     connection_information: PVOID,
     connection_information_length: *mut ULONG,
 ) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
+    let port_name = opaque_ptr(port_name);
+    let server_sid = opaque_ptr(server_sid);
+    let max_message_length = opaque_ptr(max_message_length);
+    let connection_information = opaque_ptr(connection_information);
+    let connection_information_length = opaque_ptr(connection_information_length);
     let mut status = STATUS_SUCCESS;
     let previous_mode = KeGetPreviousMode();
     let thread = PsGetCurrentThread();
@@ -707,6 +717,11 @@ pub unsafe extern "system" fn NtConnectPort(
     connection_information: PVOID,
     connection_information_length: *mut ULONG,
 ) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
+    let port_name = opaque_ptr(port_name);
+    let max_message_length = opaque_ptr(max_message_length);
+    let connection_information = opaque_ptr(connection_information);
+    let connection_information_length = opaque_ptr(connection_information_length);
     NtSecureConnectPort(
         port_handle,
         port_name,

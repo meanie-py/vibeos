@@ -13,6 +13,7 @@ use ntkrnl_sys::ddk::{
     HalRequestSoftwareInterrupt, KeDisableInterrupts, KeRestoreInterrupts,
     KeSetSystemAffinityThread, KeRevertToUserAffinityThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Use actual definitions, not extern declarations (lto=false splits them)
 use super::krnlinit::KiProcessorBlock;
@@ -163,6 +164,10 @@ pub unsafe extern "system" fn KiTimerExpiration(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut SystemTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut InterruptTime: ULARGE_INTEGER = core::mem::zeroed();
     let mut Interval: LARGE_INTEGER = core::mem::zeroed();
@@ -353,6 +358,7 @@ pub unsafe extern "fastcall" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
+    let ExpiredListHead = opaque_ptr(ExpiredListHead);
     KiTimerListExpire_body(ExpiredListHead, OldIrql)
 }
 
@@ -362,6 +368,7 @@ pub unsafe extern "C" fn KiTimerListExpire(
     ExpiredListHead: PLIST_ENTRY,
     OldIrql: KIRQL,
 ) {
+    let ExpiredListHead = opaque_ptr(ExpiredListHead);
     KiTimerListExpire_body(ExpiredListHead, OldIrql)
 }
 
@@ -599,6 +606,8 @@ pub unsafe extern "system" fn KeInitializeThreadedDpc(
     DeferredRoutine: PKDEFERRED_ROUTINE,
     DeferredContext: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
     KiInitializeDpc(Dpc, DeferredRoutine, DeferredContext, ThreadedDpcObject);
 }
 
@@ -608,6 +617,8 @@ pub unsafe extern "system" fn KeInitializeDpc(
     DeferredRoutine: PKDEFERRED_ROUTINE,
     DeferredContext: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
     KiInitializeDpc(Dpc, DeferredRoutine, DeferredContext, DpcObject);
 }
 
@@ -617,6 +628,9 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) -> BOOLEAN {
+    let Dpc = opaque_ptr(Dpc);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut OldIrql: KIRQL = 0;
     let Prcb: PKPRCB;
     let CurrentPrcb: PKPRCB;
@@ -711,6 +725,7 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeRemoveQueueDpc(Dpc: PKDPC) -> BOOLEAN {
+    let Dpc = opaque_ptr(Dpc);
     let DpcData: PKDPC_DATA;
     let Enable: BOOLEAN;
 
@@ -770,16 +785,19 @@ pub unsafe extern "system" fn KeIsExecutingDpc() -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetImportanceDpc(Dpc: PKDPC, Importance: KDPC_IMPORTANCE) {
+    let Dpc = opaque_ptr(Dpc);
     (*Dpc).Importance = Importance as u8;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetTargetProcessorDpc(Dpc: PKDPC, Number: i8) {
+    let Dpc = opaque_ptr(Dpc);
     (*Dpc).Number = (Number as ULONG + MAXIMUM_PROCESSORS) as u16;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeGenericCallDpc(Routine: PKDEFERRED_ROUTINE, Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let mut Barrier: ULONG = KeNumberProcessors as ULONG;
     let mut OldIrql: KIRQL = 0;
     let mut ReverseBarrier: DEFERRED_REVERSE_BARRIER = DEFERRED_REVERSE_BARRIER {
@@ -800,11 +818,13 @@ pub unsafe extern "system" fn KeGenericCallDpc(Routine: PKDEFERRED_ROUTINE, Cont
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSignalCallDpcDone(SystemArgument1: PVOID) {
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
     InterlockedDecrement(SystemArgument1 as *mut LONG);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSignalCallDpcSynchronize(SystemArgument2: PVOID) -> BOOLEAN {
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     1u8
 }
 

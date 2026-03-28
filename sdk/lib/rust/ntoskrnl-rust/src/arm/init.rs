@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     MmIsAddressValid,
     KeFlushCurrentTb,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ARM3::helpers::*;
 use crate::ARM3::mminit::{
@@ -633,6 +634,7 @@ const MI_PFN_DATABASE: ULONG_PTR = 0xFFFFFA0000000000;
 pub unsafe extern "system" fn MiInitMachineDependent(
     LoaderBlock: PLOADER_PARAMETER_BLOCK
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Pfn: PMMPFN;
     let mut Flags: ULONG;
 
@@ -839,5 +841,6 @@ pub static mut MmHyperSpaceEnd: PVOID = core::ptr::null_mut();
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn MiInitMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     STATUS_SUCCESS
 }

@@ -9,6 +9,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
@@ -228,6 +229,7 @@ unsafe fn ExpGetRawSMBiosTable(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExGetCurrentProcessorCpuUsage(CpuUsage: *mut ULONG) {
+    let CpuUsage = opaque_ptr(CpuUsage);
     let Prcb = KeGetCurrentPrcb() as *mut ntkrnl_sys::ddk::_KPRCB;
     #[cfg(target_arch = "x86")]
     let ScaledIdle = ((*(*Prcb).IdleThread).__bindgen_anon_9.__bindgen_anon_3.KernelTime as ULONGLONG) * 100;
@@ -247,6 +249,9 @@ pub unsafe extern "system" fn ExGetCurrentProcessorCounts(
     KernelAndUserTime: *mut ULONG,
     ProcessorNumber: *mut ULONG,
 ) {
+    let IdleTime = opaque_ptr(IdleTime);
+    let KernelAndUserTime = opaque_ptr(KernelAndUserTime);
+    let ProcessorNumber = opaque_ptr(ProcessorNumber);
     let Prcb = KeGetCurrentPrcb() as *mut ntkrnl_sys::ddk::_KPRCB;
     #[cfg(target_arch = "x86")]
     { *IdleTime = (*(*Prcb).IdleThread).__bindgen_anon_9.__bindgen_anon_3.KernelTime; }
@@ -279,6 +284,8 @@ pub unsafe extern "system" fn NtQuerySystemInformation(
     SystemInformationLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let SystemInformation = opaque_ptr(SystemInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -288,6 +295,7 @@ pub unsafe extern "system" fn NtSetSystemInformation(
     SystemInformation: PVOID,
     SystemInformationLength: ULONG,
 ) -> NTSTATUS {
+    let SystemInformation = opaque_ptr(SystemInformation);
     let PreviousMode = KeGetPreviousMode();
 
     // Class 38 - SystemExtendServiceTableInformation (loads win32k.sys)
@@ -456,6 +464,7 @@ pub unsafe extern "system" fn ExGetPreviousMode() -> KPROCESSOR_MODE {
 
 #[no_mangle]
 pub unsafe extern "system" fn ExUnlockUserBuffer(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
     MmUnlockPages(Mdl as _);
     ExFreePoolWithTag(Mdl, TAG_MDL);
 }
@@ -469,6 +478,9 @@ pub unsafe extern "system" fn ExLockUserBuffer(
     MappedSystemVa: *mut PVOID,
     OutMdl: *mut PMDL,
 ) -> NTSTATUS {
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let MappedSystemVa = opaque_ptr(MappedSystemVa);
+    let OutMdl = opaque_ptr(OutMdl);
     *MappedSystemVa = core::ptr::null_mut();
     *OutMdl = core::ptr::null_mut();
 
@@ -501,6 +513,9 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
     ValueBufferLength: ULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let VariableName = opaque_ptr(VariableName);
+    let ValueBuffer = opaque_ptr(ValueBuffer);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut AName: ANSI_STRING = core::mem::zeroed();
     let mut WName: _UNICODE_STRING = core::mem::zeroed();
     let mut AValue: ANSI_STRING = core::mem::zeroed();
@@ -566,6 +581,8 @@ pub unsafe extern "system" fn NtSetSystemEnvironmentValue(
     VariableName: *mut _UNICODE_STRING,
     Value: *mut _UNICODE_STRING,
 ) -> NTSTATUS {
+    let VariableName = opaque_ptr(VariableName);
+    let Value = opaque_ptr(Value);
     let mut CapturedName: _UNICODE_STRING = core::mem::zeroed();
     let mut CapturedValue: _UNICODE_STRING = core::mem::zeroed();
     let mut AName: ANSI_STRING = core::mem::zeroed();
@@ -605,6 +622,7 @@ pub unsafe extern "system" fn NtEnumerateSystemEnvironmentValuesEx(
     Buffer: PVOID,
     BufferLength: ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -616,6 +634,10 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValueEx(
     ReturnLength: PULONG,
     Attributes: PULONG,
 ) -> NTSTATUS {
+    let VariableName = opaque_ptr(VariableName);
+    let Value = opaque_ptr(Value);
+    let ReturnLength = opaque_ptr(ReturnLength);
+    let Attributes = opaque_ptr(Attributes);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -627,6 +649,8 @@ pub unsafe extern "system" fn NtSetSystemEnvironmentValueEx(
     ValueLength: ULONG,
     Attributes: ULONG,
 ) -> NTSTATUS {
+    let VariableName = opaque_ptr(VariableName);
+    let Value = opaque_ptr(Value);
     STATUS_NOT_IMPLEMENTED
 }
 

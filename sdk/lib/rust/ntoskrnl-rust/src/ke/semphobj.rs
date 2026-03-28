@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     KPRIORITY, KSEMAPHORE, PKSEMAPHORE, PKTHREAD,
     KiAcquireDispatcherLock, KiReleaseDispatcherLock, KiWaitTest,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn KeInitializeSemaphore(
@@ -16,6 +17,7 @@ pub unsafe extern "system" fn KeInitializeSemaphore(
     Count: LONG,
     Limit: LONG,
 ) {
+    let Semaphore = opaque_ptr(Semaphore);
     (*Semaphore).Header.__bindgen_anon_1.__bindgen_anon_1.Type = SemaphoreObject as u8;
     (*Semaphore).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Size = (core::mem::size_of::<KSEMAPHORE>() / core::mem::size_of::<ULONG>()) as u8;
     (*Semaphore).Header.SignalState = Count;
@@ -26,6 +28,7 @@ pub unsafe extern "system" fn KeInitializeSemaphore(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadStateSemaphore(Semaphore: PKSEMAPHORE) -> LONG {
+    let Semaphore = opaque_ptr(Semaphore);
     (*Semaphore).Header.SignalState
 }
 
@@ -36,6 +39,7 @@ pub unsafe extern "system" fn KeReleaseSemaphore(
     Adjustment: LONG,
     Wait: BOOLEAN,
 ) -> LONG {
+    let Semaphore = opaque_ptr(Semaphore);
     let OldIrql: KIRQL;
     let CurrentThread: PKTHREAD;
 

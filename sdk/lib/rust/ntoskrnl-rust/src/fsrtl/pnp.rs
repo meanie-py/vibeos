@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     IoGetRelatedTargetDevice, IoReportTargetDeviceChange,
     IoReportTargetDeviceChangeAsynchronous,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const FSRTL_VOLUME_DISMOUNT: ULONG = 1;
 const FSRTL_VOLUME_DISMOUNT_FAILED: ULONG = 2;
@@ -31,6 +32,7 @@ pub unsafe extern "system" fn FsRtlNotifyVolumeEvent(
     FileObject: PFILE_OBJECT,
     EventCode: ULONG,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     let mut status: NTSTATUS;
     let mut guid: LPGUID = core::ptr::null_mut();
     let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();

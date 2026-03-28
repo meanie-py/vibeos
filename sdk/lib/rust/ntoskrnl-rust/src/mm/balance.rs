@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -195,6 +196,7 @@ pub unsafe extern "C" fn MmTrimUserMemory(
     Priority: ULONG,
     NrFreedPages: *mut ULONG,
 ) -> NTSTATUS {
+    let NrFreedPages = opaque_ptr(NrFreedPages);
     let mut target = Target;
     *NrFreedPages = 0;
 

@@ -13,6 +13,7 @@ use ntkrnl_sys::ddk::{
     KiAcquireDispatcherLock, KiReleaseDispatcherLock,
     KiWaitTest, KiUnlinkThread, KiReadyThread, KiComputeNewPriority,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn KxUnwaitThread(Object: PVOID, Increment: KPRIORITY);
@@ -30,6 +31,7 @@ const EVENT_INCREMENT: KPRIORITY = 1;
 
 #[no_mangle]
 pub unsafe extern "system" fn KeClearEvent(Event: PKEVENT) {
+    let Event = opaque_ptr(Event);
     (*Event).Header.SignalState = 0;
 }
 
@@ -39,6 +41,7 @@ pub unsafe extern "system" fn KeInitializeEvent(
     Type: u32,
     State: BOOLEAN,
 ) {
+    let Event = opaque_ptr(Event);
     (*Event).Header.__bindgen_anon_1.__bindgen_anon_1.Type = EventNotificationObject + Type as u8;
     (*Event).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Size = (core::mem::size_of::<_KEVENT>() / core::mem::size_of::<ULONG>()) as u8;
     (*Event).Header.SignalState = State as LONG;
@@ -68,6 +71,7 @@ pub unsafe extern "system" fn KePulseEvent(
     Increment: KPRIORITY,
     Wait: BOOLEAN,
 ) -> LONG {
+    let Event = opaque_ptr(Event);
     let OldIrql = KiAcquireDispatcherLock();
 
     let PreviousState = (*Event).Header.SignalState;
@@ -92,11 +96,13 @@ pub unsafe extern "system" fn KePulseEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadStateEvent(Event: PKEVENT) -> LONG {
+    let Event = opaque_ptr(Event);
     (*Event).Header.SignalState
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeResetEvent(Event: PKEVENT) -> LONG {
+    let Event = opaque_ptr(Event);
     let OldIrql = KiAcquireDispatcherLock();
 
     let PreviousState = (*Event).Header.SignalState;
@@ -113,6 +119,7 @@ pub unsafe extern "system" fn KeSetEvent(
     Increment: KPRIORITY,
     Wait: BOOLEAN,
 ) -> LONG {
+    let Event = opaque_ptr(Event);
     if (*Event).Header.__bindgen_anon_1.__bindgen_anon_1.Type == EventNotificationObject
         && (*Event).Header.SignalState == 1
         && Wait == 0u8
@@ -150,6 +157,8 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
     Event: PKEVENT,
     WaitingThread: *mut PKTHREAD,
 ) {
+    let Event = opaque_ptr(Event);
+    let WaitingThread = opaque_ptr(WaitingThread);
     let Thread = PsGetCurrentThread() as PKTHREAD;
 
     let OldIrql = KiAcquireDispatcherLock();

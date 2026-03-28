@@ -9,6 +9,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _KAPC_STATE,
@@ -373,6 +374,8 @@ pub unsafe extern "system" fn MmCreateMdl(
     Base: PVOID,
     Length: SIZE_T,
 ) -> PMDL {
+    let Mdl = opaque_ptr(Mdl);
+    let Base = opaque_ptr(Base);
     let Size: SIZE_T;
 
     if Mdl.is_null() {
@@ -391,11 +394,13 @@ pub unsafe extern "system" fn MmCreateMdl(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmSizeOfMdl(Base: PVOID, Length: SIZE_T) -> SIZE_T {
+    let Base = opaque_ptr(Base);
     core::mem::size_of::<_MDL>() + (ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, Length) as usize * core::mem::size_of::<PFN_NUMBER>())
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmBuildMdlForNonPagedPool(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
     let mut MdlPages: PPFN_NUMBER;
     let EndPage: PPFN_NUMBER;
     let mut Pfn: PFN_NUMBER = 0;
@@ -463,6 +468,7 @@ pub unsafe extern "system" fn MmAllocatePagesForMdlEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmFreePagesFromMdl(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
     let Base: PVOID;
     let mut Pages: PPFN_NUMBER;
     let mut NumberOfPages: LONG;
@@ -520,6 +526,8 @@ pub unsafe extern "system" fn MmMapLockedPagesSpecifyCache(
     BugCheckOnFailure: ULONG,
     Priority: ULONG,
 ) -> PVOID {
+    let Mdl = opaque_ptr(Mdl);
+    let mut BaseAddress = opaque_ptr(BaseAddress);
     let mut Base: PVOID;
     let mut MdlPages: PPFN_NUMBER;
     let LastPage: PPFN_NUMBER;
@@ -599,11 +607,14 @@ pub unsafe extern "system" fn MmMapLockedPages(
     Mdl: PMDL,
     AccessMode: KPROCESSOR_MODE,
 ) -> PVOID {
+    let Mdl = opaque_ptr(Mdl);
     MmMapLockedPagesSpecifyCache(Mdl, AccessMode, 0, core::ptr::null_mut(), 1, HighPagePriority as ULONG)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PMDL) {
+    let mut BaseAddress = opaque_ptr(BaseAddress);
+    let Mdl = opaque_ptr(Mdl);
     let Base: PVOID;
     let mut PageCount: PFN_COUNT;
     let ExtraPageCount: PFN_COUNT;
@@ -654,6 +665,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     AccessMode: KPROCESSOR_MODE,
     mut Operation: LOCK_OPERATION,
 ) {
+    let Mdl = opaque_ptr(Mdl);
     let mut MdlPages: PPFN_NUMBER;
     let mut Address: PVOID;
     let mut LastAddress: PVOID;
@@ -880,6 +892,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
     let mut MdlPages: PPFN_NUMBER;
     let mut LastPage: PPFN_NUMBER;
     let Process: *mut _EPROCESS;
@@ -983,6 +996,7 @@ pub unsafe extern "system" fn MmUnlockPages(Mdl: PMDL) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmAdvanceMdl(Mdl: PMDL, NumberOfBytes: ULONG) -> NTSTATUS {
+    let Mdl = opaque_ptr(Mdl);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -993,6 +1007,8 @@ pub unsafe extern "system" fn MmMapLockedPagesWithReservedMapping(
     Mdl: PMDL,
     CacheType: MEMORY_CACHING_TYPE,
 ) -> PVOID {
+    let MappingAddress = opaque_ptr(MappingAddress);
+    let Mdl = opaque_ptr(Mdl);
     let mut MdlPages: PPFN_NUMBER;
     let LastPage: PPFN_NUMBER;
     let PageCount: PFN_COUNT;
@@ -1061,6 +1077,8 @@ pub unsafe extern "system" fn MmUnmapReservedMapping(
     PoolTag: ULONG,
     Mdl: PMDL,
 ) {
+    let mut BaseAddress = opaque_ptr(BaseAddress);
+    let Mdl = opaque_ptr(Mdl);
     let Base: PVOID;
     let mut PageCount: PFN_COUNT;
     let ExtraPageCount: PFN_COUNT;
@@ -1105,6 +1123,7 @@ pub unsafe extern "system" fn MmPrefetchPages(
     NumberOfLists: ULONG,
     ReadLists: *mut PVOID,
 ) -> NTSTATUS {
+    let ReadLists = opaque_ptr(ReadLists);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1113,6 +1132,7 @@ pub unsafe extern "system" fn MmProtectMdlSystemAddress(
     MemoryDescriptorList: PMDL,
     NewProtect: ULONG,
 ) -> NTSTATUS {
+    let MemoryDescriptorList = opaque_ptr(MemoryDescriptorList);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1123,6 +1143,8 @@ pub unsafe extern "system" fn MmProbeAndLockProcessPages(
     AccessMode: KPROCESSOR_MODE,
     Operation: LOCK_OPERATION,
 ) {
+    let MemoryDescriptorList = opaque_ptr(MemoryDescriptorList);
+    let Process = opaque_ptr(Process);
     let mut ApcState: _KAPC_STATE = core::mem::zeroed();
     let mut IsAttached: BOOLEAN = 0;
 
@@ -1148,10 +1170,13 @@ pub unsafe extern "system" fn MmProbeAndLockSelectedPages(
     AccessMode: KPROCESSOR_MODE,
     Operation: LOCK_OPERATION,
 ) {
+    let MemoryDescriptorList = opaque_ptr(MemoryDescriptorList);
+    let PageList = opaque_ptr(PageList);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmMapMemoryDumpMdl(Mdl: PMDL) {
+    let Mdl = opaque_ptr(Mdl);
 }
 
 

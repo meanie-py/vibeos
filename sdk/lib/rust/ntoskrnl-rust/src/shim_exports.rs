@@ -5,6 +5,7 @@
 //! delegate to `ntkrnl_sys::inline::*` for the actual logic.
 
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // ============================================================================
 // SE subsystem exports (was: se/se_rust_shims.c)
@@ -17,6 +18,7 @@ use ntkrnl_sys::ddk::*;
 pub unsafe extern "C" fn SepGetGroupFromDescriptor(
     descriptor: PSECURITY_DESCRIPTOR,
 ) -> PSID {
+    let descriptor = opaque_ptr(descriptor);
     ntkrnl_sys::inline::se::SepGetGroupFromDescriptor(
         descriptor as PISECURITY_DESCRIPTOR,
     )
@@ -27,6 +29,7 @@ pub unsafe extern "C" fn SepGetGroupFromDescriptor(
 pub unsafe extern "C" fn SepGetOwnerFromDescriptor(
     descriptor: PSECURITY_DESCRIPTOR,
 ) -> PSID {
+    let descriptor = opaque_ptr(descriptor);
     ntkrnl_sys::inline::se::SepGetOwnerFromDescriptor(
         descriptor as PISECURITY_DESCRIPTOR,
     )
@@ -37,6 +40,7 @@ pub unsafe extern "C" fn SepGetOwnerFromDescriptor(
 pub unsafe extern "C" fn SepGetDaclFromDescriptor(
     descriptor: PSECURITY_DESCRIPTOR,
 ) -> PACL {
+    let descriptor = opaque_ptr(descriptor);
     ntkrnl_sys::inline::se::SepGetDaclFromDescriptor(
         descriptor as PISECURITY_DESCRIPTOR,
     )
@@ -47,6 +51,7 @@ pub unsafe extern "C" fn SepGetDaclFromDescriptor(
 pub unsafe extern "C" fn SepGetSaclFromDescriptor(
     descriptor: PSECURITY_DESCRIPTOR,
 ) -> PACL {
+    let descriptor = opaque_ptr(descriptor);
     ntkrnl_sys::inline::se::SepGetSaclFromDescriptor(
         descriptor as PISECURITY_DESCRIPTOR,
     )
@@ -57,18 +62,21 @@ pub unsafe extern "C" fn SepGetSaclFromDescriptor(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn SepAcquireTokenLockExclusive(token: PVOID) {
+    let token = opaque_ptr(token);
     ntkrnl_sys::inline::se::SepAcquireTokenLockExclusive(token as PTOKEN)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn SepAcquireTokenLockShared(token: PVOID) {
+    let token = opaque_ptr(token);
     ntkrnl_sys::inline::se::SepAcquireTokenLockShared(token as PTOKEN)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn SepReleaseTokenLock(token: PVOID) {
+    let token = opaque_ptr(token);
     ntkrnl_sys::inline::se::SepReleaseTokenLock(token as PTOKEN)
 }
 
@@ -87,6 +95,7 @@ pub unsafe extern "C" fn SeQuerySubjectContextToken(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn SeLengthSid(sid: PSID) -> ULONG {
+    let sid = opaque_ptr(sid);
     ntkrnl_sys::inline::se::SeLengthSid(sid)
 }
 
@@ -109,6 +118,9 @@ pub unsafe extern "C" fn DefaultQueryInfoBufferCheck(
     return_length_ptr: *mut ULONG_PTR,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let buffer = opaque_ptr(buffer);
+    let return_length = opaque_ptr(return_length);
+    let return_length_ptr = opaque_ptr(return_length_ptr);
     ntkrnl_sys::inline::common::DefaultQueryInfoBufferCheck(
         class,
         class_list,
@@ -134,6 +146,7 @@ pub unsafe extern "C" fn DefaultSetInfoBufferCheck(
     buffer_length: ULONG,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let buffer = opaque_ptr(buffer);
     ntkrnl_sys::inline::common::DefaultSetInfoBufferCheck(
         class,
         class_list,
@@ -151,6 +164,7 @@ pub unsafe extern "C" fn DefaultSetInfoBufferCheck(
 pub unsafe extern "C" fn ProbeForReadLargeInteger(
     addr: PLARGE_INTEGER,
 ) -> _LARGE_INTEGER {
+    let addr = opaque_ptr(addr);
     ntkrnl_sys::inline::common::ProbeForReadLargeInteger(addr)
 }
 
@@ -169,6 +183,7 @@ pub unsafe extern "C" fn ProbeForReadUshort(addr: *const u16) -> u16 {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteHandle(ptr: *mut HANDLE) {
+    let ptr = opaque_ptr(ptr);
     ntkrnl_sys::inline::common::ProbeForWriteHandle(ptr)
 }
 
@@ -181,6 +196,7 @@ pub unsafe extern "C" fn ProbeAndCaptureUnicodeString(
     mode: KPROCESSOR_MODE,
     src: *const _UNICODE_STRING,
 ) -> NTSTATUS {
+    let dest = opaque_ptr(dest);
     ntkrnl_sys::inline::common::ProbeAndCaptureUnicodeString(dest, mode, src)
 }
 
@@ -192,6 +208,7 @@ pub unsafe extern "C" fn ReleaseCapturedUnicodeString(
     str: PUNICODE_STRING,
     mode: KPROCESSOR_MODE,
 ) {
+    let str = opaque_ptr(str);
     ntkrnl_sys::inline::common::ReleaseCapturedUnicodeString(str, mode)
 }
 
@@ -206,6 +223,10 @@ pub unsafe extern "C" fn InitializeObjectAttributes(
     r: HANDLE,
     s: PVOID,
 ) {
+    let p = opaque_ptr(p);
+    let n = opaque_ptr(n);
+    let r = opaque_ptr(r);
+    let s = opaque_ptr(s);
     ntkrnl_sys::inline::common::InitializeObjectAttributes(p, n, a, r, s)
 }
 
@@ -224,6 +245,7 @@ pub unsafe extern "C" fn ExInitializeResource(resource: PERESOURCE) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspClearCrossThreadFlag(thread: PETHREAD, flag: ULONG) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::common::PspClearCrossThreadFlag(thread, flag)
 }
 
@@ -239,6 +261,7 @@ pub unsafe extern "C" fn KeSetContextPc(
     ctx: *mut _CONTEXT,
     pc: ULONG_PTR,
 ) {
+    let ctx = opaque_ptr(ctx);
     ntkrnl_sys::inline::ke::KeSetContextPc(ctx, pc as usize)
 }
 
@@ -248,6 +271,7 @@ pub unsafe extern "C" fn KeSetContextReturnRegister(
     ctx: *mut _CONTEXT,
     val: ULONG_PTR,
 ) {
+    let ctx = opaque_ptr(ctx);
     ntkrnl_sys::inline::ke::KeSetContextReturnRegister(ctx, val as usize)
 }
 
@@ -284,6 +308,7 @@ pub unsafe extern "C" fn KeSweepICache(
     base: PVOID,
     size: usize,
 ) {
+    let base = opaque_ptr(base);
     ntkrnl_sys::inline::ke::KeSweepICache(base, size)
 }
 
@@ -308,12 +333,14 @@ pub unsafe extern "C" fn MiIsMemoryTypeInvisible(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MmGetMdlPfnArray(mdl: PMDL) -> *mut ULONG_PTR {
+    let mdl = opaque_ptr(mdl);
     ntkrnl_sys::inline::mm::MmGetMdlPfnArray(mdl) as *mut ULONG_PTR
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MmGetSystemAddressForMdl(mdl: PMDL) -> PVOID {
+    let mdl = opaque_ptr(mdl);
     ntkrnl_sys::inline::mm::MmGetSystemAddressForMdl(mdl)
 }
 
@@ -333,6 +360,7 @@ pub unsafe extern "C" fn ExFreeToNPagedLookasideList(
     lookaside: PNPAGED_LOOKASIDE_LIST,
     entry: PVOID,
 ) {
+    let entry = opaque_ptr(entry);
     ntkrnl_sys::inline::ex::ExFreeToNPagedLookasideList(lookaside, entry)
 }
 
@@ -351,6 +379,8 @@ pub unsafe extern "C" fn ExInitializeWorkItem(
     routine: PWORKER_THREAD_ROUTINE,
     context: PVOID,
 ) {
+    let item = opaque_ptr(item);
+    let context = opaque_ptr(context);
     ntkrnl_sys::inline::ex::ExInitializeWorkItem(item, routine, context)
 }
 
@@ -381,6 +411,7 @@ pub unsafe extern "C" fn CcBugCheck(a: ULONG, b: ULONG, c: ULONG) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn RtlInitializeSplayLinks(links: PRTL_SPLAY_LINKS) {
+    let links = opaque_ptr(links);
     ntkrnl_sys::inline::common::RtlInitializeSplayLinks(links)
 }
 
@@ -390,6 +421,8 @@ pub unsafe extern "C" fn RtlInsertAsLeftChild(
     parent: PRTL_SPLAY_LINKS,
     child: PRTL_SPLAY_LINKS,
 ) {
+    let parent = opaque_ptr(parent);
+    let child = opaque_ptr(child);
     ntkrnl_sys::inline::common::RtlInsertAsLeftChild(parent, child)
 }
 
@@ -399,18 +432,22 @@ pub unsafe extern "C" fn RtlInsertAsRightChild(
     parent: PRTL_SPLAY_LINKS,
     child: PRTL_SPLAY_LINKS,
 ) {
+    let parent = opaque_ptr(parent);
+    let child = opaque_ptr(child);
     ntkrnl_sys::inline::common::RtlInsertAsRightChild(parent, child)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn RtlIsLeftChild(links: PRTL_SPLAY_LINKS) -> BOOLEAN {
+    let links = opaque_ptr(links);
     ntkrnl_sys::inline::common::RtlIsLeftChild(links)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn RtlParent(links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS {
+    let links = opaque_ptr(links);
     ntkrnl_sys::inline::common::RtlParent(links)
 }
 
@@ -423,6 +460,7 @@ pub unsafe extern "C" fn RtlLongLongAdd(
     addend: i64,
     result: *mut i64,
 ) -> NTSTATUS {
+    let result = opaque_ptr(result);
     ntkrnl_sys::inline::common::RtlLongLongAdd(augend, addend, result)
 }
 
@@ -434,6 +472,7 @@ pub unsafe extern "C" fn ExceptionRecord32To64(
     ex32: *const _EXCEPTION_RECORD32,
     ex64: *mut _EXCEPTION_RECORD64,
 ) {
+    let ex64 = opaque_ptr(ex64);
     ntkrnl_sys::inline::common::ExceptionRecord32To64(ex32, ex64)
 }
 
@@ -450,6 +489,7 @@ pub unsafe extern "C" fn CONTAINING_RECORD(
     type_size: usize,
     field_offset: usize,
 ) -> PVOID {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::tier1::CONTAINING_RECORD(address, type_size, field_offset)
 }
 
@@ -458,6 +498,7 @@ pub unsafe extern "C" fn CONTAINING_RECORD(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWritePointer(address: *mut PVOID) {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::common::ProbeForWritePointer(address)
 }
 
@@ -466,6 +507,7 @@ pub unsafe extern "C" fn ProbeForWritePointer(address: *mut PVOID) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::common::ProbeForWriteUlong(address)
 }
 
@@ -476,6 +518,7 @@ pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
 pub unsafe extern "C" fn IoGetDevObjExtension(
     device_object: PDEVICE_OBJECT,
 ) -> PEXTENDED_DEVOBJ_EXTENSION {
+    let device_object = opaque_ptr(device_object);
     ntkrnl_sys::inline::tier1::IoGetDevObjExtension(device_object)
 }
 
@@ -486,6 +529,7 @@ pub unsafe extern "C" fn IoGetDevObjExtension(
 pub unsafe extern "C" fn SeDeleteClientSecurity(
     ctx: *mut _SECURITY_CLIENT_CONTEXT,
 ) {
+    let ctx = opaque_ptr(ctx);
     ntkrnl_sys::inline::tier1::SeDeleteClientSecurity(ctx)
 }
 
@@ -494,6 +538,7 @@ pub unsafe extern "C" fn SeDeleteClientSecurity(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ObReferenceObject(object: PVOID) -> LONG_PTR {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::tier1::ObReferenceObject(object) as LONG_PTR
 }
 
@@ -532,6 +577,8 @@ pub unsafe extern "C" fn RtlInitEmptyAnsiString(
     buffer: *mut i8,
     maximum_length: u16,
 ) {
+    let ansi_string = opaque_ptr(ansi_string);
+    let buffer = opaque_ptr(buffer);
     ntkrnl_sys::inline::common::RtlInitEmptyAnsiString(ansi_string, buffer, maximum_length)
 }
 
@@ -543,6 +590,8 @@ pub unsafe extern "C" fn InsertTailList(
     list_head: PLIST_ENTRY,
     entry: PLIST_ENTRY,
 ) {
+    let list_head = opaque_ptr(list_head);
+    let entry = opaque_ptr(entry);
     ntkrnl_sys::inline::common::InsertTailList(list_head, entry)
 }
 
@@ -554,6 +603,7 @@ pub unsafe extern "C" fn ExFreeToPagedLookasideList(
     lookaside: PPAGED_LOOKASIDE_LIST,
     entry: PVOID,
 ) {
+    let entry = opaque_ptr(entry);
     ntkrnl_sys::inline::ex::ExFreeToPagedLookasideList(lookaside, entry)
 }
 
@@ -565,6 +615,7 @@ pub unsafe extern "C" fn LpcpReceiveWait(
     semaphore: PVOID,
     wait_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let semaphore = opaque_ptr(semaphore);
     ntkrnl_sys::inline::tier1::LpcpReceiveWait(semaphore, wait_mode)
 }
 
@@ -574,6 +625,7 @@ pub unsafe extern "C" fn LpcpReplyWait(
     semaphore: PVOID,
     wait_mode: KPROCESSOR_MODE,
 ) {
+    let semaphore = opaque_ptr(semaphore);
     ntkrnl_sys::inline::tier1::LpcpReplyWait(semaphore, wait_mode)
 }
 
@@ -583,12 +635,14 @@ pub unsafe extern "C" fn LpcpConnectWait(
     semaphore: PVOID,
     wait_mode: KPROCESSOR_MODE,
 ) {
+    let semaphore = opaque_ptr(semaphore);
     ntkrnl_sys::inline::tier1::LpcpConnectWait(semaphore, wait_mode)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn LpcpCompleteWait(semaphore: PVOID) {
+    let semaphore = opaque_ptr(semaphore);
     ntkrnl_sys::inline::tier1::LpcpCompleteWait(semaphore)
 }
 
@@ -606,18 +660,21 @@ pub unsafe extern "C" fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn LpcpGetMessageFromThread(thread: PETHREAD) -> PLPCP_MESSAGE {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::tier1::LpcpGetMessageFromThread(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn LpcpGetPortFromThread(thread: PETHREAD) -> PLPCP_PORT_OBJECT {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::tier1::LpcpGetPortFromThread(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn LpcpSetPortToThread(thread: PETHREAD, port: PLPCP_PORT_OBJECT) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::tier1::LpcpSetPortToThread(thread, port)
 }
 
@@ -626,6 +683,7 @@ pub unsafe extern "C" fn LpcpSetPortToThread(thread: PETHREAD, port: PLPCP_PORT_
 pub unsafe extern "C" fn LpcpGetDataInfoFromMessage(
     message: *mut _PORT_MESSAGE,
 ) -> PLPCP_DATA_INFO {
+    let message = opaque_ptr(message);
     ntkrnl_sys::inline::tier1::LpcpGetDataInfoFromMessage(message)
 }
 
@@ -654,24 +712,28 @@ pub unsafe extern "C" fn HalEndOfBoot() {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn IoGetNextIrpStackLocation(irp: PIRP) -> PIO_STACK_LOCATION {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation(irp)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn IoGetCurrentIrpStackLocation(irp: PIRP) -> PIO_STACK_LOCATION {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation(irp)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn IoSetNextIrpStackLocation(irp: PIRP) {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoSetNextIrpStackLocation(irp)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn IoSkipCurrentIrpStackLocation(irp: PIRP) {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation(irp)
 }
 
@@ -681,12 +743,14 @@ pub unsafe extern "C" fn IoSetCancelRoutine(
     irp: PIRP,
     cancel_routine: PDRIVER_CANCEL,
 ) -> PDRIVER_CANCEL {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoSetCancelRoutine(irp, cancel_routine)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn IoMarkIrpPending(irp: PIRP) {
+    let irp = opaque_ptr(irp);
     ntkrnl_sys::inline::tier1::IoMarkIrpPending(irp)
 }
 
@@ -700,6 +764,8 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
     invoke_on_error: BOOLEAN,
     invoke_on_cancel: BOOLEAN,
 ) {
+    let irp = opaque_ptr(irp);
+    let context = opaque_ptr(context);
     ntkrnl_sys::inline::tier1::IoSetCompletionRoutine(
         irp,
         completion_routine,
@@ -725,6 +791,7 @@ pub unsafe extern "C" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL) {
+    let old_irql = opaque_ptr(old_irql);
     ntkrnl_sys::inline::tier1::KeRaiseIrql(new_irql, old_irql)
 }
 
@@ -795,6 +862,7 @@ pub unsafe extern "C" fn KeGetContextSwitches(prcb: PKPRCB) -> ULONG {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MmGetSystemAddressForMdlSafe(mdl: PMDL, priority: ULONG) -> PVOID {
+    let mdl = opaque_ptr(mdl);
     ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe(mdl, priority)
 }
 
@@ -803,6 +871,7 @@ pub unsafe extern "C" fn MmGetSystemAddressForMdlSafe(mdl: PMDL, priority: ULONG
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ObpGetHandleObject(entry: PHANDLE_TABLE_ENTRY) -> POBJECT_HEADER {
+    let entry = opaque_ptr(entry);
     ntkrnl_sys::macros::ObpGetHandleObject(entry)
 }
 
@@ -811,6 +880,7 @@ pub unsafe extern "C" fn ObpGetHandleObject(entry: PHANDLE_TABLE_ENTRY) -> POBJE
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteBoolean(address: *mut BOOLEAN) {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::common::ProbeForWriteBoolean(address)
 }
 
@@ -819,6 +889,7 @@ pub unsafe extern "C" fn ProbeForWriteBoolean(address: *mut BOOLEAN) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteLangId(address: *mut u16) {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::common::ProbeForWriteLangId(address)
 }
 
@@ -827,6 +898,7 @@ pub unsafe extern "C" fn ProbeForWriteLangId(address: *mut u16) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn InterlockedExchangeAdd64(addend: *mut i64, value: i64) -> i64 {
+    let addend = opaque_ptr(addend);
     ntkrnl_sys::inline::common::InterlockedExchangeAdd64(addend, value)
 }
 
@@ -837,6 +909,7 @@ pub unsafe extern "C" fn InterlockedExchangeAdd64(addend: *mut i64, value: i64) 
 pub unsafe extern "C" fn PopEntryList(
     list_head: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY,
 ) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY {
+    let list_head = opaque_ptr(list_head);
     ntkrnl_sys::inline::common::PopEntryList(list_head)
 }
 
@@ -912,6 +985,7 @@ pub unsafe extern "C" fn RtlStringCbCopyA(
     cb_dest: usize,
     psz_src: *const u8,
 ) -> NTSTATUS {
+    let psz_dest = opaque_ptr(psz_dest);
     ntkrnl_sys::inline::common::RtlStringCbCopyA(psz_dest, cb_dest, psz_src)
 }
 
@@ -920,12 +994,14 @@ pub unsafe extern "C" fn RtlStringCbCopyA(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
+    let spin_lock = opaque_ptr(spin_lock);
     ntkrnl_sys::inline::ke::KxAcquireSpinLock(spin_lock as *mut usize)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
+    let spin_lock = opaque_ptr(spin_lock);
     ntkrnl_sys::inline::ke::KxReleaseSpinLock(spin_lock as *mut usize)
 }
 
@@ -984,6 +1060,7 @@ pub unsafe extern "C" fn RtlInitEmptyUnicodeString(
     buffer: *mut u16,
     buffer_size: u16,
 ) {
+    let buffer = opaque_ptr(buffer);
     ntkrnl_sys::inline::common::RtlInitEmptyUnicodeString(
         unicode_string,
         buffer,
@@ -1161,6 +1238,7 @@ pub unsafe extern "C" fn ExInitializeFastReference(
     fast_ref: PEX_FAST_REF,
     object: PVOID,
 ) {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ex::ExInitializeFastReference(fast_ref, object)
 }
 
@@ -1179,6 +1257,7 @@ pub unsafe extern "C" fn ExInsertFastReference(
     fast_ref: PEX_FAST_REF,
     object: PVOID,
 ) -> BOOLEAN {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ex::ExInsertFastReference(fast_ref, object)
 }
 
@@ -1188,6 +1267,7 @@ pub unsafe extern "C" fn ExReleaseFastReference(
     fast_ref: PEX_FAST_REF,
     object: PVOID,
 ) -> BOOLEAN {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ex::ExReleaseFastReference(fast_ref, object)
 }
 
@@ -1197,6 +1277,7 @@ pub unsafe extern "C" fn ExSwapFastReference(
     fast_ref: PEX_FAST_REF,
     object: PVOID,
 ) -> _EX_FAST_REF {
+    let object = opaque_ptr(object);
     let result = ntkrnl_sys::inline::ex::ExSwapFastReference(fast_ref, object);
     core::mem::transmute(result)
 }
@@ -1208,6 +1289,8 @@ pub unsafe extern "C" fn ExCompareSwapFastReference(
     object: PVOID,
     old_object: PVOID,
 ) -> _EX_FAST_REF {
+    let object = opaque_ptr(object);
+    let old_object = opaque_ptr(old_object);
     let result = ntkrnl_sys::inline::ex::ExCompareSwapFastReference(
         fast_ref,
         object,
@@ -1223,6 +1306,7 @@ pub unsafe extern "C" fn ExCompareSwapFastReference(
 pub unsafe extern "C" fn ObpSelectObjectLockSlot(
     header: POBJECT_HEADER,
 ) -> ULONG {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ob::ObpSelectObjectLockSlot(header)
 }
 
@@ -1240,6 +1324,7 @@ pub unsafe extern "C" fn ObpValidateAttributes(
 pub unsafe extern "C" fn ObpAcquireObjectLock(
     header: POBJECT_HEADER,
 ) {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ob::ObpAcquireObjectLock(header)
 }
 
@@ -1248,6 +1333,7 @@ pub unsafe extern "C" fn ObpAcquireObjectLock(
 pub unsafe extern "C" fn ObpReleaseObjectLock(
     header: POBJECT_HEADER,
 ) {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ob::ObpReleaseObjectLock(header)
 }
 
@@ -1256,6 +1342,7 @@ pub unsafe extern "C" fn ObpReleaseObjectLock(
 pub unsafe extern "C" fn ObpAcquireObjectLockShared(
     header: POBJECT_HEADER,
 ) {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ob::ObpAcquireObjectLockShared(header)
 }
 
@@ -1264,6 +1351,7 @@ pub unsafe extern "C" fn ObpAcquireObjectLockShared(
 pub unsafe extern "C" fn ObpEnterObjectTypeMutex(
     object_type: POBJECT_TYPE,
 ) {
+    let object_type = opaque_ptr(object_type);
     ntkrnl_sys::inline::ob::ObpEnterObjectTypeMutex(object_type)
 }
 
@@ -1272,6 +1360,7 @@ pub unsafe extern "C" fn ObpEnterObjectTypeMutex(
 pub unsafe extern "C" fn ObpLeaveObjectTypeMutex(
     object_type: POBJECT_TYPE,
 ) {
+    let object_type = opaque_ptr(object_type);
     ntkrnl_sys::inline::ob::ObpLeaveObjectTypeMutex(object_type)
 }
 
@@ -1280,6 +1369,7 @@ pub unsafe extern "C" fn ObpLeaveObjectTypeMutex(
 pub unsafe extern "C" fn ObpCalloutStart(
     callout_irql: *mut u8,
 ) {
+    let callout_irql = opaque_ptr(callout_irql);
     ntkrnl_sys::inline::ob::ObpCalloutStart(callout_irql)
 }
 
@@ -1291,6 +1381,8 @@ pub unsafe extern "C" fn ObpCalloutEnd(
     object_type: POBJECT_TYPE,
     object: PVOID,
 ) {
+    let object_type = opaque_ptr(object_type);
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ob::ObpCalloutEnd(
         callout_irql,
         procedure,
@@ -1304,6 +1396,7 @@ pub unsafe extern "C" fn ObpCalloutEnd(
 pub unsafe extern "C" fn ObpReferenceNameInfo(
     header: POBJECT_HEADER,
 ) -> POBJECT_HEADER_NAME_INFO {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ob::ObpReferenceNameInfo(header)
 }
 
@@ -1380,6 +1473,7 @@ pub unsafe extern "C" fn ObpReleaseLookupContext(
 pub unsafe extern "C" fn ObpReleaseObjectCreateInformation(
     create_info: POBJECT_CREATE_INFORMATION,
 ) {
+    let create_info = opaque_ptr(create_info);
     ntkrnl_sys::inline::ob::ObpReleaseObjectCreateInformation(create_info)
 }
 
@@ -1397,6 +1491,7 @@ pub unsafe extern "C" fn ObpFreeCapturedAttributes(
     buffer: PVOID,
     lookaside_type: PP_NPAGED_LOOKASIDE_NUMBER,
 ) {
+    let buffer = opaque_ptr(buffer);
     ntkrnl_sys::inline::ob::ObpFreeCapturedAttributes(buffer, lookaside_type)
 }
 
@@ -1405,6 +1500,7 @@ pub unsafe extern "C" fn ObpFreeCapturedAttributes(
 pub unsafe extern "C" fn ObpFreeObjectCreateInformation(
     create_info: POBJECT_CREATE_INFORMATION,
 ) {
+    let create_info = opaque_ptr(create_info);
     ntkrnl_sys::inline::ob::ObpFreeObjectCreateInformation(create_info)
 }
 
@@ -1417,18 +1513,21 @@ pub unsafe extern "C" fn ObpFreeObjectCreateInformation(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspSetCrossThreadFlag(thread, flag)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspSetProcessFlag(process, flag)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspClearProcessFlag(process: PEPROCESS, flag: ULONG) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspClearProcessFlag(process, flag)
 }
 
@@ -1465,6 +1564,7 @@ pub unsafe extern "C" fn KeGetContextPc(ctx: *const _CONTEXT) -> ULONG_PTR {
 pub unsafe extern "C" fn KeGetContextReturnRegister(
     ctx: *mut _CONTEXT,
 ) -> ULONG_PTR {
+    let ctx = opaque_ptr(ctx);
     ntkrnl_sys::inline::ke::KeGetContextReturnRegister(ctx) as ULONG_PTR
 }
 
@@ -1473,6 +1573,7 @@ pub unsafe extern "C" fn KeGetContextReturnRegister(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG {
+    let addend = opaque_ptr(addend);
     ntkrnl_sys::inline::common::InterlockedDecrementUL(addend)
 }
 
@@ -1482,6 +1583,7 @@ pub unsafe extern "C" fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeQuerySystemTime(current_time: PLARGE_INTEGER) {
+    let current_time = opaque_ptr(current_time);
     ntkrnl_sys::inline::ke::KeQuerySystemTime(current_time)
 }
 
@@ -1505,6 +1607,7 @@ pub unsafe extern "C" fn KeLowerIrql(new_irql: KIRQL) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL) {
+    let old_irql = opaque_ptr(old_irql);
     *old_irql = ntkrnl_sys::inline::ke::KfRaiseIrql_amd64(new_irql);
 }
 
@@ -1527,12 +1630,14 @@ pub unsafe extern "system" fn KeLeaveGuardedRegion() {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeEnterGuardedRegionThread(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KeEnterGuardedRegionThread(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeLeaveGuardedRegionThread(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KeLeaveGuardedRegionThread(thread)
 }
 
@@ -1553,6 +1658,9 @@ pub unsafe extern "C" fn InterlockedCompareExchangePointer(
     exchange: PVOID,
     comparand: PVOID,
 ) -> PVOID {
+    let destination = opaque_ptr(destination);
+    let exchange = opaque_ptr(exchange);
+    let comparand = opaque_ptr(comparand);
     ntkrnl_sys::inline::common::InterlockedCompareExchangePointer(
         destination, exchange, comparand,
     )
@@ -1566,6 +1674,7 @@ pub unsafe extern "C" fn InterlockedCompareExchangePointer(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeGetTrapFrame(thread: PKTHREAD) -> PKTRAP_FRAME {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KeGetTrapFrame(thread)
 }
 
@@ -1574,6 +1683,7 @@ pub unsafe extern "C" fn KeGetTrapFrame(thread: PKTHREAD) -> PKTRAP_FRAME {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeGetExceptionFrame(thread: PKTHREAD) -> PKEXCEPTION_FRAME {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KeGetExceptionFrame(thread)
 }
 
@@ -1585,6 +1695,7 @@ pub unsafe extern "C" fn PspRunCreateThreadNotifyRoutines(
     current_thread: PETHREAD,
     create: BOOLEAN,
 ) {
+    let current_thread = opaque_ptr(current_thread);
     ntkrnl_sys::inline::ps::PspRunCreateThreadNotifyRoutines(current_thread, create)
 }
 
@@ -1594,6 +1705,7 @@ pub unsafe extern "C" fn PspRunCreateProcessNotifyRoutines(
     current_process: PEPROCESS,
     create: BOOLEAN,
 ) {
+    let current_process = opaque_ptr(current_process);
     ntkrnl_sys::inline::ps::PspRunCreateProcessNotifyRoutines(current_process, create)
 }
 
@@ -1604,6 +1716,9 @@ pub unsafe extern "C" fn PspRunLoadImageNotifyRoutines(
     process_id: HANDLE,
     image_info: *mut _IMAGE_INFO,
 ) {
+    let full_image_name = opaque_ptr(full_image_name);
+    let process_id = opaque_ptr(process_id);
+    let image_info = opaque_ptr(image_info);
     ntkrnl_sys::inline::ps::PspRunLoadImageNotifyRoutines(
         full_image_name, process_id, image_info,
     )
@@ -1612,54 +1727,63 @@ pub unsafe extern "C" fn PspRunLoadImageNotifyRoutines(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspRunLegoRoutine(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspRunLegoRoutine(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspLockProcessSecurityShared(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspLockProcessSecurityShared(process)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspUnlockProcessSecurityShared(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspUnlockProcessSecurityShared(process)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspLockProcessSecurityExclusive(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspLockProcessSecurityExclusive(process)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspUnlockProcessSecurityExclusive(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::ps::PspUnlockProcessSecurityExclusive(process)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspLockThreadSecurityShared(thread: PETHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspLockThreadSecurityShared(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspUnlockThreadSecurityShared(thread: PETHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspUnlockThreadSecurityShared(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspLockThreadSecurityExclusive(thread: PETHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspLockThreadSecurityExclusive(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PspUnlockThreadSecurityExclusive(thread: PETHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ps::PspUnlockThreadSecurityExclusive(thread)
 }
 
@@ -1677,6 +1801,7 @@ pub unsafe extern "C" fn NtCurrentTeb() -> PVOID {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeInitializeSpinLock(spin_lock: *mut ULONG_PTR) {
+    let spin_lock = opaque_ptr(spin_lock);
     ntkrnl_sys::inline::ke::KeInitializeSpinLock(spin_lock as *mut usize)
 }
 
@@ -1732,66 +1857,77 @@ pub unsafe extern "C" fn MiIsMemoryTypeFree(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiMakeDirtyPage(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiMakeDirtyPage(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiMakeCleanPage(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiMakeCleanPage(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiMakeAccessedPage(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiMakeAccessedPage(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiPageDisableCache(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiPageDisableCache(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiPageWriteThrough(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiPageWriteThrough(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiPageWriteCombined(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiPageWriteCombined(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsPageWriteable(pte: PMMPTE) -> BOOLEAN {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiIsPageWriteable(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsPageDirty(pte: PMMPTE) -> BOOLEAN {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiIsPageDirty(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiMakeOwnerPage(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiMakeOwnerPage(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiMakeWritePage(pte: PMMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiMakeWritePage(pte)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsMappedPte(pte: PMMPTE) -> BOOLEAN {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiIsMappedPte(pte)
 }
 
@@ -1804,6 +1940,7 @@ pub unsafe extern "C" fn MiInterlockedCompareExchangePte(
     exchange: ntkrnl_sys::base::LONG_PTR,
     comperand: ntkrnl_sys::base::LONG_PTR,
 ) -> ntkrnl_sys::base::LONG_PTR {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiInterlockedCompareExchangePte(pte, exchange, comperand)
 }
 
@@ -1813,6 +1950,7 @@ pub unsafe extern "C" fn MiInterlockedExchangePte(
     pte: PMMPTE,
     value: ntkrnl_sys::base::LONG_PTR,
 ) -> ntkrnl_sys::base::LONG_PTR {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MiInterlockedExchangePte(pte, value)
 }
 
@@ -1821,6 +1959,7 @@ pub unsafe extern "C" fn MiInterlockedExchangePte(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeInvalidateTlbEntry(address: PVOID) {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::KeInvalidateTlbEntry(address)
 }
 
@@ -1835,6 +1974,7 @@ pub unsafe extern "C" fn KeFlushProcessTb() {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MM_ANY_WS_LOCK_HELD(thread: PETHREAD) -> BOOLEAN {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::mm::MM_ANY_WS_LOCK_HELD(thread)
 }
 
@@ -1844,6 +1984,7 @@ pub unsafe extern "C" fn MM_ANY_WS_LOCK_HELD(thread: PETHREAD) -> BOOLEAN {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsPdeForAddressValid(address: PVOID) -> BOOLEAN {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::MiIsPdeForAddressValid(address)
 }
 
@@ -1871,12 +2012,14 @@ pub unsafe extern "C" fn MiReleaseExpansionLock(old_irql: ntkrnl_sys::base::KIRQ
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsUserPte(address: PVOID) -> BOOLEAN {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::MiIsUserPte(address)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIsUserPde(address: PVOID) -> BOOLEAN {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::MiIsUserPde(address)
 }
 
@@ -1890,6 +2033,8 @@ pub unsafe extern "C" fn MI_MAKE_HARDWARE_PTE_KERNEL(
     protection_mask: ntkrnl_sys::base::ULONG_PTR,
     page_frame_number: ntkrnl_sys::base::ULONG_PTR,
 ) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
     ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE_KERNEL(
         new_pte, mapping_pte, protection_mask, page_frame_number,
     )
@@ -1903,6 +2048,8 @@ pub unsafe extern "C" fn MI_MAKE_HARDWARE_PTE_USER(
     protection_mask: ntkrnl_sys::base::ULONG_PTR,
     page_frame_number: ntkrnl_sys::base::ULONG_PTR,
 ) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
     ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE_USER(
         new_pte, mapping_pte, protection_mask, page_frame_number,
     )
@@ -1916,6 +2063,8 @@ pub unsafe extern "C" fn MI_MAKE_HARDWARE_PTE(
     protection_mask: ntkrnl_sys::base::ULONG_PTR,
     page_frame_number: ntkrnl_sys::base::ULONG_PTR,
 ) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
     ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE(
         new_pte, mapping_pte, protection_mask, page_frame_number,
     )
@@ -1924,6 +2073,7 @@ pub unsafe extern "C" fn MI_MAKE_HARDWARE_PTE(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MI_UPDATE_VALID_PTE(pte: PMMPTE, temp_pte: _MMPTE) {
+    let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MI_UPDATE_VALID_PTE(pte, temp_pte)
 }
 
@@ -1934,6 +2084,7 @@ pub unsafe extern "C" fn MI_UPDATE_VALID_PTE(pte: PMMPTE, temp_pte: _MMPTE) {
 pub unsafe extern "C" fn MiDetermineUserGlobalPteMask(
     pointer_pte: PMMPTE,
 ) -> ntkrnl_sys::base::ULONG_PTR {
+    let pointer_pte = opaque_ptr(pointer_pte);
     ntkrnl_sys::inline::mm::MiDetermineUserGlobalPteMask(pointer_pte)
 }
 
@@ -1942,12 +2093,14 @@ pub unsafe extern "C" fn MiDetermineUserGlobalPteMask(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn RMAP_IS_SEGMENT(address: PVOID) -> BOOLEAN {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::RMAP_IS_SEGMENT(address)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn PAGE_ROUND_DOWN(address: PVOID) -> ntkrnl_sys::base::ULONG_PTR {
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::PAGE_ROUND_DOWN(address)
 }
 
@@ -1982,12 +2135,15 @@ pub unsafe extern "C" fn SWAPENTRY_FROM_SSE(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MmSetDirtyPage(process: PEPROCESS, address: PVOID) {
+    let process = opaque_ptr(process);
+    let address = opaque_ptr(address);
     ntkrnl_sys::inline::mm::MmSetDirtyPage(process, address)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn InterlockedIncrementUL(addend: *mut ULONG) -> ULONG {
+    let addend = opaque_ptr(addend);
     ntkrnl_sys::inline::mm::InterlockedIncrementUL(addend)
 }
 
@@ -1997,6 +2153,7 @@ pub unsafe extern "C" fn InterlockedExchangeAddUL(
     addend: *mut ULONG,
     value: ULONG,
 ) -> ULONG {
+    let addend = opaque_ptr(addend);
     ntkrnl_sys::inline::mm::InterlockedExchangeAddUL(addend, value)
 }
 
@@ -2061,6 +2218,8 @@ pub unsafe extern "C" fn MiIsRosSectionObject(section: PSECTION) -> BOOLEAN {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MmInitializeMdl(mdl: PMDL, base_va: PVOID, length: ULONG) {
+    let mdl = opaque_ptr(mdl);
+    let base_va = opaque_ptr(base_va);
     ntkrnl_sys::inline::mm::MmInitializeMdl(mdl, base_va, length)
 }
 
@@ -2071,6 +2230,7 @@ pub unsafe extern "C" fn MmInitializeMdl(mdl: PMDL, base_va: PVOID, length: ULON
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
+    let address = opaque_ptr(address);
     #[cfg(target_arch = "x86")]
     {
         // i386 (2-level paging): MmWorkingSetList->UsedPageTableEntries[pde_offset]
@@ -2093,6 +2253,7 @@ pub unsafe extern "C" fn MiIncrementPageTableReferences(address: PVOID) -> u16 {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiDropLockCount(pfn: PMMPFN) {
+    let pfn = opaque_ptr(pfn);
     ntkrnl_sys::inline::mm::MiDropLockCount(pfn)
 }
 
@@ -2101,18 +2262,21 @@ pub unsafe extern "C" fn MiDropLockCount(pfn: PMMPFN) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiReferenceProbedPageAndBumpLockCount(pfn: PMMPFN) {
+    let pfn = opaque_ptr(pfn);
     ntkrnl_sys::inline::mm::MiReferenceProbedPageAndBumpLockCount(pfn)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiReferenceUnusedPageAndBumpLockCount(pfn: PMMPFN) {
+    let pfn = opaque_ptr(pfn);
     ntkrnl_sys::inline::mm::MiReferenceUnusedPageAndBumpLockCount(pfn)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn MiReferenceUsedPageAndBumpLockCount(pfn: PMMPFN) {
+    let pfn = opaque_ptr(pfn);
     ntkrnl_sys::inline::mm::MiReferenceUsedPageAndBumpLockCount(pfn)
 }
 
@@ -2139,6 +2303,7 @@ pub unsafe extern "C" fn KiAcquireProcessLockRaiseToSynch(
     process: PKPROCESS,
     handle: PKLOCK_QUEUE_HANDLE,
 ) {
+    let process = opaque_ptr(process);
     ntkrnl_sys::inline::mm::KiAcquireProcessLockRaiseToSynch(process, handle)
 }
 
@@ -2152,12 +2317,14 @@ pub unsafe extern "C" fn KiAcquireProcessLockRaiseToSynch(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteSize_t(ptr: *mut ntkrnl_sys::base::ULONG_PTR) {
+    let ptr = opaque_ptr(ptr);
     ntkrnl_sys::inline::mm::ProbeForWriteSize_t(ptr)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ProbeForWriteIoStatusBlock(ptr: *mut IO_STATUS_BLOCK) {
+    let ptr = opaque_ptr(ptr);
     ntkrnl_sys::inline::mm::ProbeForWriteIoStatusBlock(ptr)
 }
 
@@ -2194,24 +2361,28 @@ pub unsafe extern "C" fn KfLowerIrql(new_irql: ntkrnl_sys::base::KIRQL) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiAcquireThreadLock(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiAcquireThreadLock(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiReleaseThreadLock(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiReleaseThreadLock(thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiAcquireDispatcherObject(object: *mut _DISPATCHER_HEADER) {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ke::KiAcquireDispatcherObject(object)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiReleaseDispatcherObject(object: *mut _DISPATCHER_HEADER) {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ke::KiReleaseDispatcherObject(object)
 }
 
@@ -2236,6 +2407,7 @@ pub unsafe extern "C" fn KiRescheduleThread(new_thread: ntkrnl_sys::base::BOOLEA
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiSetThreadSwapBusy(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiSetThreadSwapBusy(thread)
 }
 
@@ -2254,6 +2426,7 @@ pub unsafe extern "C" fn KiReleasePrcbLock(prcb: PKPRCB) {
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiTryThreadLock(thread: PKTHREAD) -> ntkrnl_sys::base::BOOLEAN {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiTryThreadLock(thread)
 }
 
@@ -2300,6 +2473,7 @@ pub unsafe extern "C" fn KiReleaseDispatcherLock(old_irql: ntkrnl_sys::base::KIR
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiInsertDeferredReadyList(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiInsertDeferredReadyList(thread)
 }
 
@@ -2311,6 +2485,7 @@ pub unsafe extern "C" fn KiAcquireApcLockRaiseToSynch(
     thread: PKTHREAD,
     handle: PKLOCK_QUEUE_HANDLE,
 ) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiAcquireApcLockRaiseToSynch(thread, handle)
 }
 
@@ -2320,6 +2495,7 @@ pub unsafe extern "C" fn KiAcquireApcLockAtSynchLevel(
     thread: PKTHREAD,
     handle: PKLOCK_QUEUE_HANDLE,
 ) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiAcquireApcLockAtSynchLevel(thread, handle)
 }
 
@@ -2329,6 +2505,7 @@ pub unsafe extern "C" fn KiAcquireApcLockRaiseToDpc(
     thread: PKTHREAD,
     handle: PKLOCK_QUEUE_HANDLE,
 ) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiAcquireApcLockRaiseToDpc(thread, handle)
 }
 
@@ -2374,6 +2551,7 @@ pub unsafe extern "C" fn KiReleaseDeviceQueueLock(device_lock: PKLOCK_QUEUE_HAND
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiAcquireNmiListLock(old_irql: *mut ntkrnl_sys::base::KIRQL) {
+    let old_irql = opaque_ptr(old_irql);
     ntkrnl_sys::inline::ke::KiAcquireNmiListLock(old_irql)
 }
 
@@ -2392,6 +2570,9 @@ pub unsafe extern "C" fn KiRecalculateDueTime(
     due_time: *mut _LARGE_INTEGER,
     new_due_time: *mut _LARGE_INTEGER,
 ) -> *mut _LARGE_INTEGER {
+    let original_due_time = opaque_ptr(original_due_time);
+    let due_time = opaque_ptr(due_time);
+    let new_due_time = opaque_ptr(new_due_time);
     ntkrnl_sys::inline::ke::KiRecalculateDueTime(original_due_time, due_time, new_due_time)
 }
 
@@ -2401,6 +2582,7 @@ pub unsafe extern "C" fn KiCheckThreadStackSwap(
     thread: PKTHREAD,
     wait_mode: KPROCESSOR_MODE,
 ) -> ntkrnl_sys::base::BOOLEAN {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiCheckThreadStackSwap(thread, wait_mode)
 }
 
@@ -2411,6 +2593,7 @@ pub unsafe extern "C" fn KiCheckAlertability(
     alertable: ntkrnl_sys::base::BOOLEAN,
     wait_mode: KPROCESSOR_MODE,
 ) -> ntkrnl_sys::base::NTSTATUS {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiCheckAlertability(thread, alertable, wait_mode)
 }
 
@@ -2425,12 +2608,14 @@ pub unsafe extern "C" fn KiComputeTimerTableIndex(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiRemoveEntryTimer(timer: PKTIMER) {
+    let timer = opaque_ptr(timer);
     ntkrnl_sys::inline::ke::KiRemoveEntryTimer(timer)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KxInsertTimer(timer: PKTIMER, hand: ntkrnl_sys::base::ULONG) {
+    let timer = opaque_ptr(timer);
     ntkrnl_sys::inline::ke::KxInsertTimer(timer, hand)
 }
 
@@ -2441,12 +2626,15 @@ pub unsafe extern "C" fn KiComputeDueTime(
     due_time: _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) -> ntkrnl_sys::base::BOOLEAN {
+    let timer = opaque_ptr(timer);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KiComputeDueTime(timer, due_time, hand)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KxRemoveTreeTimer(timer: PKTIMER) {
+    let timer = opaque_ptr(timer);
     ntkrnl_sys::inline::ke::KxRemoveTreeTimer(timer)
 }
 
@@ -2457,6 +2645,8 @@ pub unsafe extern "C" fn KxSetTimerForThreadWait(
     interval: _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) {
+    let timer = opaque_ptr(timer);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KxSetTimerForThreadWait(timer, interval, hand)
 }
 
@@ -2468,6 +2658,7 @@ pub unsafe extern "C" fn KxUnwaitThread(
     object: *mut _DISPATCHER_HEADER,
     increment: KPRIORITY,
 ) {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ke::KxUnwaitThread(object, increment)
 }
 
@@ -2477,6 +2668,7 @@ pub unsafe extern "C" fn KxUnwaitThread_impl(
     header: *mut _DISPATCHER_HEADER,
     increment: KPRIORITY,
 ) {
+    let header = opaque_ptr(header);
     ntkrnl_sys::inline::ke::KxUnwaitThread(header, increment)
 }
 
@@ -2486,6 +2678,7 @@ pub unsafe extern "C" fn KxUnwaitThreadForEvent(
     event: PKEVENT,
     increment: KPRIORITY,
 ) {
+    let event = opaque_ptr(event);
     ntkrnl_sys::inline::ke::KxUnwaitThreadForEvent(event, increment)
 }
 
@@ -2494,6 +2687,7 @@ pub unsafe extern "C" fn KxUnwaitThreadForEvent(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KxQueueReadyThread(thread: PKTHREAD, prcb: PKPRCB) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KxQueueReadyThread(thread, prcb)
 }
 
@@ -2509,6 +2703,7 @@ pub unsafe extern "C" fn KiSelectReadyThread(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiComputeNewPriority(thread: PKTHREAD, adjustment: i8) -> i8 {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiComputeNewPriority(thread, adjustment)
 }
 
@@ -2522,18 +2717,23 @@ pub unsafe extern "C" fn KiComputeNewPriority(thread: PKTHREAD, adjustment: i8) 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiSatisfyMutantWait(object: *mut _KMUTANT, thread: PKTHREAD) {
+    let object = opaque_ptr(object);
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiSatisfyMutantWait(object, thread)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiSatisfyNonMutantWait(object: *mut _KMUTANT) {
+    let object = opaque_ptr(object);
     ntkrnl_sys::inline::ke::KiSatisfyNonMutantWait(object)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiSatisfyObjectWait(object: *mut _KMUTANT, thread: PKTHREAD) {
+    let object = opaque_ptr(object);
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiSatisfyObjectWait(object, thread)
 }
 
@@ -2543,6 +2743,7 @@ pub unsafe extern "C" fn KiAddThreadToWaitList(
     thread: PKTHREAD,
     swappable: ntkrnl_sys::base::BOOLEAN,
 ) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiAddThreadToWaitList(thread, swappable)
 }
 
@@ -2560,6 +2761,11 @@ pub unsafe extern "C" fn KxSingleThreadWait(
     due_time: *mut _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) {
+    let object = opaque_ptr(object);
+    let timeout = opaque_ptr(timeout);
+    let swappable = opaque_ptr(swappable);
+    let due_time = opaque_ptr(due_time);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KxSingleThreadWait(
         object, timeout, wait_mode, wait_reason, alertable, swappable, due_time, hand,
     )
@@ -2574,6 +2780,10 @@ pub unsafe extern "C" fn KxDelayThreadWait(
     due_time: *mut _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) {
+    let interval = opaque_ptr(interval);
+    let swappable = opaque_ptr(swappable);
+    let due_time = opaque_ptr(due_time);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KxDelayThreadWait(interval, wait_mode, swappable, due_time, hand)
 }
 
@@ -2592,6 +2802,12 @@ pub unsafe extern "C" fn KxMultiThreadWait(
     due_time: *mut _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) {
+    let wait_block_array = opaque_ptr(wait_block_array);
+    let objects = opaque_ptr(objects);
+    let timeout = opaque_ptr(timeout);
+    let swappable = opaque_ptr(swappable);
+    let due_time = opaque_ptr(due_time);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KxMultiThreadWait(
         wait_block_array, objects, count, timeout, wait_type, wait_mode, wait_reason,
         alertable, swappable, due_time, hand,
@@ -2608,6 +2824,11 @@ pub unsafe extern "C" fn KxQueueThreadWait(
     due_time: *mut _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
 ) {
+    let queue = opaque_ptr(queue);
+    let timeout = opaque_ptr(timeout);
+    let swappable = opaque_ptr(swappable);
+    let due_time = opaque_ptr(due_time);
+    let hand = opaque_ptr(hand);
     ntkrnl_sys::inline::ke::KxQueueThreadWait(
         queue, timeout, wait_mode, swappable, due_time, hand,
     )
@@ -2632,6 +2853,7 @@ pub unsafe extern "system" fn KeGetTrapFramePc(
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KiRundownThread(thread: PKTHREAD) {
+    let thread = opaque_ptr(thread);
     ntkrnl_sys::inline::ke::KiRundownThread(thread)
 }
 
@@ -2650,12 +2872,14 @@ pub unsafe extern "C" fn KiGetUserModeStackAddress() -> *mut ntkrnl_sys::base::U
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn InterlockedBitTestAndSet(base: *mut i32, bit: i32) -> ntkrnl_sys::base::BOOLEAN {
+    let base = opaque_ptr(base);
     ntkrnl_sys::inline::ke::InterlockedBitTestAndSet(base, bit)
 }
 
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn InterlockedBitTestAndReset(base: *mut i32, bit: i32) -> ntkrnl_sys::base::BOOLEAN {
+    let base = opaque_ptr(base);
     ntkrnl_sys::inline::ke::InterlockedBitTestAndReset(base, bit)
 }
 
@@ -2666,6 +2890,7 @@ pub unsafe extern "C" fn InterlockedBitTestAndReset(base: *mut i32, bit: i32) ->
 #[cfg(target_arch = "x86_64")]
 mod ke_amd64_exports {
     use ntkrnl_sys::ddk::*;
+    use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
     #[no_mangle]
     pub unsafe extern "C" fn __readcr0() -> ntkrnl_sys::base::ULONG_PTR {
@@ -2734,31 +2959,37 @@ mod ke_amd64_exports {
 
     #[no_mangle]
     pub unsafe extern "C" fn __lidt(source: ntkrnl_sys::base::PVOID) {
+    let source = opaque_ptr(source);
         ntkrnl_sys::inline::ke_amd64::__lidt(source)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn __lgdt(source: ntkrnl_sys::base::PVOID) {
+    let source = opaque_ptr(source);
         ntkrnl_sys::inline::ke_amd64::__lgdt(source)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn __sidt(dest: ntkrnl_sys::base::PVOID) {
+    let dest = opaque_ptr(dest);
         ntkrnl_sys::inline::ke_amd64::__sidt(dest)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn __sgdt(dest: ntkrnl_sys::base::PVOID) {
+    let dest = opaque_ptr(dest);
         ntkrnl_sys::inline::ke_amd64::__sgdt(dest)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn __sldt(ldtr: *mut u16) {
+    let ldtr = opaque_ptr(ldtr);
         ntkrnl_sys::inline::ke_amd64::__sldt(ldtr)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn __str(tr: *mut u16) {
+    let tr = opaque_ptr(tr);
         ntkrnl_sys::inline::ke_amd64::__str(tr)
     }
 
@@ -2784,16 +3015,19 @@ mod ke_amd64_exports {
 
     #[no_mangle]
     pub unsafe extern "C" fn KeRegisterInterruptHandler(vector: ntkrnl_sys::base::ULONG, handler: ntkrnl_sys::base::PVOID) {
+    let handler = opaque_ptr(handler);
         ntkrnl_sys::inline::ke_amd64::KeRegisterInterruptHandler(vector, handler)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn KiGetGdtEntry(gdt: ntkrnl_sys::base::PVOID, selector: u16) -> *mut _KGDTENTRY64 {
+    let gdt = opaque_ptr(gdt);
         ntkrnl_sys::inline::ke_amd64::KiGetGdtEntry(gdt, selector)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn KiGetGdtDescriptorBase(entry: *mut _KGDTENTRY64) -> ntkrnl_sys::base::PVOID {
+    let entry = opaque_ptr(entry);
         ntkrnl_sys::inline::ke_amd64::KiGetGdtDescriptorBase(entry)
     }
 
@@ -2805,16 +3039,19 @@ mod ke_amd64_exports {
         type_: u8,
         dpl: u8,
     ) {
+    let entry = opaque_ptr(entry);
         ntkrnl_sys::inline::ke_amd64::KiInitGdtEntry(entry, base, size, type_, dpl)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn KiSetGdtDescriptorBase(entry: *mut _KGDTENTRY64, base: u64) {
+    let entry = opaque_ptr(entry);
         ntkrnl_sys::inline::ke_amd64::KiSetGdtDescriptorBase(entry, base)
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn KiSetGdtDescriptorLimit(entry: *mut _KGDTENTRY64, limit: ntkrnl_sys::base::ULONG) {
+    let entry = opaque_ptr(entry);
         ntkrnl_sys::inline::ke_amd64::KiSetGdtDescriptorLimit(entry, limit)
     }
 
@@ -2830,6 +3067,7 @@ mod ke_amd64_exports {
 
     #[no_mangle]
     pub unsafe extern "C" fn RtlFillMemoryUlong(dest: ntkrnl_sys::base::PVOID, length: usize, pattern: ntkrnl_sys::base::ULONG) {
+    let dest = opaque_ptr(dest);
         ntkrnl_sys::inline::ke_amd64::RtlFillMemoryUlong(dest, length, pattern)
     }
 }
@@ -2853,12 +3091,14 @@ pub unsafe extern "C" fn KeMemoryBarrier() {
 mod ke_i386_exports {
     use ntkrnl_sys::ddk::*;
 
+    use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
     #[no_mangle]
     #[inline(never)]
     pub unsafe extern "C" fn KiGetGdtEntry(
         gdt: ntkrnl_sys::base::PVOID,
         selector: u16,
     ) -> *mut _KGDTENTRY {
+    let gdt = opaque_ptr(gdt);
         ntkrnl_sys::inline::ke_i386::KiGetGdtEntry(gdt, selector)
     }
 
@@ -2868,6 +3108,7 @@ mod ke_i386_exports {
         entry: *mut _KGDTENTRY,
         base: ntkrnl_sys::base::ULONG_PTR,
     ) {
+    let entry = opaque_ptr(entry);
         ntkrnl_sys::inline::ke_i386::KiSetGdtDescriptorBase(entry, base)
     }
 
@@ -2878,6 +3119,7 @@ mod ke_i386_exports {
         length: usize,
         pattern: ntkrnl_sys::base::ULONG,
     ) {
+    let dest = opaque_ptr(dest);
         ntkrnl_sys::inline::ke_i386::RtlFillMemoryUlong(dest, length, pattern)
     }
 }
@@ -3043,6 +3285,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
     LockNumber: ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE_NUMBER,
     OldIrql: *mut KIRQL,
 ) -> BOOLEAN {
+    let OldIrql = opaque_ptr(OldIrql);
     ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::inline::ke::SYNCH_LEVEL, OldIrql);
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     1u8
@@ -3055,6 +3298,7 @@ pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLock(
     LockNumber: ntkrnl_sys::ddk::KSPIN_LOCK_QUEUE_NUMBER,
     OldIrql: *mut KIRQL,
 ) -> u32 {
+    let OldIrql = opaque_ptr(OldIrql);
     ntkrnl_sys::inline::tier1::KeRaiseIrql(ntkrnl_sys::base::DISPATCH_LEVEL, OldIrql);
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     1u32

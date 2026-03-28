@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     ExSetResourceOwnerPointer, MmQuerySystemSize, KeInitializeDpc,
     KeInitializeTimer,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut CcPfGlobals: _PFSN_PREFETCHER_GLOBALS = unsafe { core::mem::zeroed() };
@@ -211,6 +212,7 @@ pub unsafe extern "system" fn CcGetFlushedValidData(
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRemapBcb(Bcb: PVOID) -> PVOID {
+    let Bcb = opaque_ptr(Bcb);
     core::ptr::null_mut()
 }
 
@@ -220,6 +222,8 @@ pub unsafe extern "system" fn CcScheduleReadAhead(
     FileOffset: PLARGE_INTEGER,
     Length: ULONG,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
     let mut old_irql: KIRQL = 0;
     let mut new_offset = core::mem::zeroed::<LARGE_INTEGER>();
 
@@ -318,6 +322,7 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
     DisableReadAhead: BOOLEAN,
     DisableWriteBehind: BOOLEAN,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     let old_irql = KeAcquireQueuedSpinLock(17u32);
@@ -351,6 +356,8 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
 
 #[no_mangle]
 pub unsafe extern "system" fn CcSetBcbOwnerPointer(Bcb: PVOID, Owner: PVOID) {
+    let Bcb = opaque_ptr(Bcb);
+    let Owner = opaque_ptr(Owner);
     let i_bcb = (Bcb as usize - core::mem::offset_of!(INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
 
     if ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*i_bcb).Lock)) == 0
@@ -367,6 +374,7 @@ pub unsafe extern "system" fn CcSetDirtyPageThreshold(
     FileObject: PFILE_OBJECT,
     DirtyPageThreshold: ULONG,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
     if !shared_cache_map.is_null() {
         (*shared_cache_map).DirtyPageThreshold = DirtyPageThreshold;
@@ -383,6 +391,7 @@ pub unsafe extern "system" fn CcSetReadAheadGranularity(
     FileObject: PFILE_OBJECT,
     Granularity: ULONG,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let private_map = (*FileObject).PrivateCacheMap as PPRIVATE_CACHE_MAP;
     (*private_map).ReadAheadMask = Granularity - 1;
 }

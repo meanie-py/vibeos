@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     PKTHREAD, PKTRAP_FRAME, PKEXCEPTION_FRAME, PKSERVICE_TABLE_DESCRIPTOR,
     PULONG64, PKPRCB, KIPCR,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ke::procobj::KeServiceDescriptorTable;
 extern "system" {
@@ -239,6 +240,7 @@ pub unsafe extern "system" fn KiSystemService(
     TrapFrame: PKTRAP_FRAME,
     Instruction: ULONG,
 ) {
+    let Thread = opaque_ptr(Thread);
     __debugbreak();
 }
 

@@ -66,6 +66,7 @@ static mut RawCdromDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
 static mut RawTapeDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
 
 use ntkrnl_sys::inline::common::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn FsRtlNotifyVolumeEvent(FileObject: PFILE_OBJECT, EventCode: ULONG) -> NTSTATUS;
@@ -255,6 +256,9 @@ pub unsafe extern "system" fn RawCompletionRoutine(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let IoStackLocation = IoGetCurrentIrpStackLocation(Irp);
 
     if (((*IoStackLocation).MajorFunction == IRP_MJ_READ)
@@ -909,6 +913,8 @@ unsafe fn RawCleanup(Vcb: PVCB, Irp: PIRP, IoStackLocation: PIO_STACK_LOCATION) 
 
 #[no_mangle]
 pub unsafe extern "system" fn RawDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     let VolumeDeviceObject = DeviceObject as PVOLUME_DEVICE_OBJECT;
     let mut Status = STATUS_INVALID_DEVICE_REQUEST;
     let IoStackLocation: PIO_STACK_LOCATION;
@@ -973,6 +979,8 @@ pub unsafe extern "system" fn RawDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIR
 
 #[no_mangle]
 pub unsafe extern "system" fn RawShutdown(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     STATUS_SUCCESS
@@ -980,12 +988,13 @@ pub unsafe extern "system" fn RawShutdown(DeviceObject: PDEVICE_OBJECT, Irp: PIR
 
 #[no_mangle]
 pub unsafe extern "system" fn RawUnload(DriverObject: PDRIVER_OBJECT) {}
-
 #[no_mangle]
 pub unsafe extern "system" fn RawFsDriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let RegistryPath = opaque_ptr(RegistryPath);
     let mut Status: NTSTATUS;
     let mut DeviceName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
 

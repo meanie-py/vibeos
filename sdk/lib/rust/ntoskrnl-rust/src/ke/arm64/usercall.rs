@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     PKCALLOUT_FRAME,
     PKEXCEPTION_FRAME,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 /// Get current thread as PKTHREAD (avoids PVOID ambiguity from mm::KeGetCurrentThread)
 #[inline(always)]
@@ -83,6 +84,9 @@ pub unsafe extern "system" fn KeUserModeCallback(
     Result: *mut PVOID,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let Argument = opaque_ptr(Argument);
+    let Result = opaque_ptr(Result);
+    let ResultLength = opaque_ptr(ResultLength);
     let UserStackPointer: *mut ULONG_PTR = KiGetUserModeStackAddress();
     let OldStack: ULONG_PTR = *UserStackPointer;
 
@@ -146,6 +150,7 @@ pub unsafe extern "system" fn NtCallbackReturn(
     ResultLength: ULONG,
     CallbackStatus: NTSTATUS,
 ) -> NTSTATUS {
+    let Result = opaque_ptr(Result);
     let CurrentThread: PKTHREAD = KiGetCurrentThread();
 
     let CalloutFrame: PKCALLOUT_FRAME = (*CurrentThread).CallbackStack as PKCALLOUT_FRAME;

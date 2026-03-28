@@ -5,6 +5,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeInitializeEvent(event: PVOID, event_type: ULONG, state: BOOLEAN);
@@ -54,6 +55,7 @@ pub unsafe extern "system" fn PsGetContextThread(
     thread_context: PCONTEXT,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let thread = opaque_ptr(thread);
     let mut get_set_context: GET_SET_CTX_CONTEXT = core::mem::zeroed();
     let mut size: usize;
     let flags: ULONG;
@@ -169,6 +171,7 @@ pub unsafe extern "system" fn PsSetContextThread(
     thread_context: PCONTEXT,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let thread = opaque_ptr(thread);
     let mut get_set_context: GET_SET_CTX_CONTEXT = core::mem::zeroed();
     let mut size: usize;
     let flags: ULONG;
@@ -278,6 +281,7 @@ pub unsafe extern "system" fn NtGetContextThread(
     thread_handle: HANDLE,
     thread_context: PCONTEXT,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -309,6 +313,7 @@ pub unsafe extern "system" fn NtSetContextThread(
     thread_handle: HANDLE,
     thread_context: PCONTEXT,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE = ExGetPreviousMode();
 

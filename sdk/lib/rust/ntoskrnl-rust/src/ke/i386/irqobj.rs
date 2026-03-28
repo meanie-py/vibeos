@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     KeRevertToUserAffinityThread, KeSetSystemAffinityThread, KiAcquireDispatcherLock,
     KiReleaseDispatcherLock,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ke::processor::KeNumberProcessors;
 extern "system" {
@@ -373,6 +374,7 @@ pub unsafe extern "fastcall" fn KiInterruptTemplateHandler(
     TrapFrame: PKTRAP_FRAME,
     Interrupt: PKINTERRUPT,
 ) {
+    let Interrupt = opaque_ptr(Interrupt);
     KiEnterInterruptTrap(TrapFrame);
 
     let dispatcher: PKI_INTERRUPT_DISPATCH =
@@ -404,6 +406,8 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     ProcessorNumber: CHAR,
     FloatingSave: BOOLEAN,
 ) {
+    let Interrupt = opaque_ptr(Interrupt);
+    let ServiceContext = opaque_ptr(ServiceContext);
     let mut DispatchCode =
         core::ptr::addr_of_mut!((*Interrupt).DispatchCode) as *mut ULONG;
     let mut Patch = DispatchCode;
@@ -446,6 +450,7 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     let mut Connected: BOOLEAN;
     let mut Error: BOOLEAN;
     let mut Status: BOOLEAN;
@@ -519,6 +524,7 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 
 #[no_mangle]
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
     let mut OldIrql: KIRQL;
     let Irql: KIRQL;
     let Vector: ULONG;
@@ -580,6 +586,8 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
     SynchronizeRoutine: PKSYNCHRONIZE_ROUTINE,
     SynchronizeContext: PVOID,
 ) -> BOOLEAN {
+    let Interrupt = opaque_ptr(Interrupt);
+    let SynchronizeContext = opaque_ptr(SynchronizeContext);
     let Success: BOOLEAN;
     let mut OldIrql: KIRQL = 0;
 

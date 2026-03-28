@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::ex::ExRaiseStatus;
 use ntkrnl_sys::ke::{KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock, KeAcquireSpinLock, KeReleaseSpinLock};
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut DirtyVacbListHead: LIST_ENTRY;
@@ -36,11 +37,15 @@ pub unsafe extern "system" fn CcGetDirtyPages(
     _Context1: PVOID,
     _Context2: PVOID,
 ) -> LARGE_INTEGER {
+    let _LogHandle = opaque_ptr(_LogHandle);
+    let _Context1 = opaque_ptr(_Context1);
+    let _Context2 = opaque_ptr(_Context2);
     LARGE_INTEGER { QuadPart: 0 }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcGetFileObjectFromBcb(Bcb: PVOID) -> PFILE_OBJECT {
+    let Bcb = opaque_ptr(Bcb);
     let i_bcb = (Bcb as *const u8).offset(-(core::mem::offset_of!(INTERNAL_BCB, PFCB) as isize)) as PINTERNAL_BCB;
     (*(*i_bcb).Vacb).SharedCacheMap.as_ref().unwrap().FileObject
 }
@@ -50,6 +55,8 @@ pub unsafe extern "system" fn CcGetLsnForFileObject(
     _FileObject: PFILE_OBJECT,
     _OldestLsn: PLARGE_INTEGER,
 ) -> LARGE_INTEGER {
+    let _FileObject = opaque_ptr(_FileObject);
+    let _OldestLsn = opaque_ptr(_OldestLsn);
     LARGE_INTEGER { QuadPart: 0 }
 }
 
@@ -61,6 +68,8 @@ pub unsafe extern "system" fn CcInitializeCacheMap(
     CallBacks: PCACHE_MANAGER_CALLBACKS,
     LazyWriterContext: PVOID,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let LazyWriterContext = opaque_ptr(LazyWriterContext);
     let status = CcRosInitializeFileCache(
         FileObject,
         FileSizes,
@@ -76,6 +85,7 @@ pub unsafe extern "system" fn CcInitializeCacheMap(
 
 #[no_mangle]
 pub unsafe extern "system" fn CcIsThereDirtyData(Vpb: PVPB) -> BOOLEAN {
+    let Vpb = opaque_ptr(Vpb);
     let mut dirty = 0u8;
 
     let old_irql = KeAcquireQueuedSpinLock(17u32);
@@ -114,6 +124,7 @@ pub unsafe extern "system" fn CcPurgeCacheSection(
     Length: ULONG,
     UninitializeCacheMaps: BOOLEAN,
 ) -> BOOLEAN {
+    let FileOffset = opaque_ptr(FileOffset);
     let shared_cache_map = (*SectionObjectPointer).SharedCacheMap;
     if shared_cache_map.is_null() {
         return MmPurgeSegment(SectionObjectPointer, FileOffset, Length) as BOOLEAN;
@@ -211,6 +222,7 @@ pub unsafe extern "system" fn CcSetFileSizes(
     FileObject: PFILE_OBJECT,
     FileSizes: PCC_FILE_SIZES,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
 
     if shared_cache_map.is_null() {
@@ -248,6 +260,8 @@ pub unsafe extern "system" fn CcSetLogHandleForFile(
     _LogHandle: PVOID,
     _FlushToLsnRoutine: PFLUSH_TO_LSN,
 ) {
+    let _FileObject = opaque_ptr(_FileObject);
+    let _LogHandle = opaque_ptr(_LogHandle);
 }
 
 #[no_mangle]
@@ -256,6 +270,8 @@ pub unsafe extern "system" fn CcUninitializeCacheMap(
     TruncateSize: PLARGE_INTEGER,
     UninitializeCompleteEvent: PCACHE_UNINITIALIZE_EVENT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let TruncateSize = opaque_ptr(TruncateSize);
     if !TruncateSize.is_null() && !(*(*FileObject).SectionObjectPointer).SharedCacheMap.is_null() {
         let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
         let mut old_irql: KIRQL = 0;
@@ -288,6 +304,7 @@ pub unsafe extern "system" fn CcGetFileSizes(
     FileObject: PFILE_OBJECT,
     FileSizes: PCC_FILE_SIZES,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap;
 
     if shared_cache_map.is_null() {

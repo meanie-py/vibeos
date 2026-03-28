@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{
     LARGE_INTEGER, PKQUEUE, PKTHREAD, PKTIMER, PKWAIT_BLOCK,
     PLARGE_INTEGER, PWORK_QUEUE_ITEM,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
@@ -80,6 +81,7 @@ pub unsafe extern "system" fn KiInsertQueue(
     Entry: PLIST_ENTRY,
     Head: BOOLEAN,
 ) -> LONG {
+    let Entry = opaque_ptr(Entry);
     let InitialState: LONG;
     let mut Thread: PKTHREAD = KeGetCurrentThread() as PKTHREAD;
     let mut WaitBlock: PKWAIT_BLOCK;
@@ -147,6 +149,7 @@ pub unsafe extern "system" fn KeInsertHeadQueue(
     Queue: PKQUEUE,
     Entry: PLIST_ENTRY,
 ) -> LONG {
+    let Entry = opaque_ptr(Entry);
     let PreviousState: LONG;
     let OldIrql: KIRQL;
 
@@ -162,6 +165,7 @@ pub unsafe extern "system" fn KeInsertQueue(
     Queue: PKQUEUE,
     Entry: PLIST_ENTRY,
 ) -> LONG {
+    let Entry = opaque_ptr(Entry);
     let PreviousState: LONG;
     let OldIrql: KIRQL;
 
@@ -183,6 +187,7 @@ pub unsafe extern "system" fn KeRemoveQueue(
     WaitMode: KPROCESSOR_MODE,
     Timeout: PLARGE_INTEGER,
 ) -> PLIST_ENTRY {
+    let Timeout = opaque_ptr(Timeout);
     let mut QueueEntry: PLIST_ENTRY;
     let mut Status: LONG_PTR;
     let Thread: PKTHREAD = KeGetCurrentThread() as PKTHREAD;

@@ -10,6 +10,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -496,6 +497,8 @@ pub unsafe extern "system" fn IopDoNameTransmogrify(
     FileObject: PFILE_OBJECT,
     DataBuffer: PREPARSE_DATA_BUFFER,
 ) {
+    let Irp = opaque_ptr(Irp);
+    let FileObject = opaque_ptr(FileObject);
     if (*Irp).IoStatus.__bindgen_anon_1.Status != STATUS_REPARSE
         || (*Irp).IoStatus.Information as u32 != IO_REPARSE_TAG_MOUNT_POINT
         || (*Irp).Tail.Overlay.AuxiliaryBuffer.is_null()
@@ -634,6 +637,13 @@ pub unsafe extern "system" fn IopParseDevice(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     Object: *mut PVOID,
 ) -> NTSTATUS {
+    let ParseObject = opaque_ptr(ParseObject);
+    let ObjectType = opaque_ptr(ObjectType);
+    let AccessState = opaque_ptr(AccessState);
+    let CompleteName = opaque_ptr(CompleteName);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Context = opaque_ptr(Context);
+    let Object = opaque_ptr(Object);
 
     let OpenPacket = Context as POPEN_PACKET;
     let OriginalDeviceObject = ParseObject as PDEVICE_OBJECT;
@@ -1378,6 +1388,13 @@ pub unsafe extern "system" fn IopParseFile(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     Object: *mut PVOID,
 ) -> NTSTATUS {
+    let ParseObject = opaque_ptr(ParseObject);
+    let ObjectType = opaque_ptr(ObjectType);
+    let AccessState = opaque_ptr(AccessState);
+    let CompleteName = opaque_ptr(CompleteName);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Context = opaque_ptr(Context);
+    let Object = opaque_ptr(Object);
     let OpenPacket = Context as POPEN_PACKET;
     if IopValidateOpenPacket(OpenPacket) == 0 {
         return STATUS_OBJECT_TYPE_MISMATCH;
@@ -1400,6 +1417,7 @@ pub unsafe extern "system" fn IopParseFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
 
     let FileObject = ObjectBody as PFILE_OBJECT;
     if (*FileObject).DeviceObject.is_null() {
@@ -1479,6 +1497,7 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopGetDeviceAttachmentBase(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut PDO = DeviceObject;
     while !(*((*PDO).DeviceObjectExtension as *mut ntkrnl_sys::ddk::_EXTENDED_DEVOBJ_EXTENSION))
         .AttachedTo
@@ -1610,6 +1629,12 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     PoolType: u32,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let ObjectBody = opaque_ptr(ObjectBody);
+    let SecurityInformation = opaque_ptr(SecurityInformation);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let BufferLength = opaque_ptr(BufferLength);
+    let OldSecurityDescriptor = opaque_ptr(OldSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
 
     let DeviceObject: PDEVICE_OBJECT;
     let FileObject: PFILE_OBJECT;
@@ -1781,6 +1806,9 @@ pub unsafe extern "system" fn IopQueryName(
     ReturnLength: *mut ULONG,
     PreviousMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let ObjectBody = opaque_ptr(ObjectBody);
+    let ObjectNameInfo = opaque_ptr(ObjectNameInfo);
+    let ReturnLength = opaque_ptr(ReturnLength);
     IopQueryNameInternal(ObjectBody, HasName, 0u8, ObjectNameInfo, Length, ReturnLength, PreviousMode)
 }
 
@@ -1977,6 +2005,8 @@ pub unsafe extern "system" fn IopCloseFile(
     HandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
+    let Process = opaque_ptr(Process);
+    let ObjectBody = opaque_ptr(ObjectBody);
 
     let FileObject = ObjectBody as PFILE_OBJECT;
 
@@ -2155,6 +2185,8 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
     Alertable: BOOLEAN,
     LockFailed: PBOOLEAN,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let LockFailed = opaque_ptr(LockFailed);
 
     InterlockedIncrement(&raw mut (*FileObject).Waiters as *mut LONG);
 
@@ -2190,6 +2222,7 @@ pub unsafe extern "system" fn IopAcquireFileObjectLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetFileObjectFilterContext(FileObject: PFILE_OBJECT) -> PVOID {
+    let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 {
         let FileObjectExtension = (*FileObject).FileObjectExtension as PFILE_OBJECT_EXTENSION;
         return (*FileObjectExtension).FilterContext;
@@ -2203,6 +2236,8 @@ pub unsafe extern "system" fn IoChangeFileObjectFilterContext(
     FilterContext: PVOID,
     Define: BOOLEAN,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FilterContext = opaque_ptr(FilterContext);
     if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION == 0 {
         return STATUS_INVALID_PARAMETER;
     }
@@ -2502,6 +2537,8 @@ pub unsafe extern "system" fn IoCheckQuotaBufferValidity(
     QuotaLength: ULONG,
     ErrorOffset: *mut ULONG,
 ) -> NTSTATUS {
+    let QuotaBuffer = opaque_ptr(QuotaBuffer);
+    let ErrorOffset = opaque_ptr(ErrorOffset);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2522,6 +2559,12 @@ pub unsafe extern "system" fn IoCreateFile(
     ExtraCreateParameters: PVOID,
     Options: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let AllocationSize = opaque_ptr(AllocationSize);
+    let EaBuffer = opaque_ptr(EaBuffer);
+    let ExtraCreateParameters = opaque_ptr(ExtraCreateParameters);
     IopCreateFile(
         FileHandle,
         DesiredAccess,
@@ -2560,6 +2603,13 @@ pub unsafe extern "system" fn IoCreateFileSpecifyDeviceObjectHint(
     Options: ULONG,
     DeviceObject: PVOID,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let AllocationSize = opaque_ptr(AllocationSize);
+    let EaBuffer = opaque_ptr(EaBuffer);
+    let ExtraCreateParameters = opaque_ptr(ExtraCreateParameters);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let Flags = if !DeviceObject.is_null() {
         IOP_CREATE_FILE_OBJECT_EXTENSION | IOP_USE_TOP_LEVEL_DEVICE_HINT
     } else {
@@ -2592,6 +2642,9 @@ pub unsafe extern "system" fn IoCreateStreamFileObjectEx(
     DeviceObject: PDEVICE_OBJECT,
     FileObjectHandle: *mut HANDLE,
 ) -> PFILE_OBJECT {
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let FileObjectHandle = opaque_ptr(FileObjectHandle);
     let TargetDevice = if !FileObject.is_null() {
         (*FileObject).DeviceObject
     } else {
@@ -2661,6 +2714,8 @@ pub unsafe extern "system" fn IoCreateStreamFileObject(
     FileObject: PFILE_OBJECT,
     DeviceObject: PDEVICE_OBJECT,
 ) -> PFILE_OBJECT {
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
     IoCreateStreamFileObjectEx(FileObject, DeviceObject, null_mut())
 }
 
@@ -2669,6 +2724,8 @@ pub unsafe extern "system" fn IoCreateStreamFileObjectLite(
     FileObject: PFILE_OBJECT,
     DeviceObject: PDEVICE_OBJECT,
 ) -> PFILE_OBJECT {
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let TargetDevice = if !FileObject.is_null() {
         (*FileObject).DeviceObject
     } else {
@@ -2727,6 +2784,7 @@ pub unsafe extern "system" fn IoGetFileObjectGenericMapping() -> PGENERIC_MAPPIN
 
 #[no_mangle]
 pub unsafe extern "system" fn IoIsFileOriginRemote(FileObject: PFILE_OBJECT) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_REMOTE_ORIGIN != 0 {
         1
     } else {
@@ -2742,6 +2800,9 @@ pub unsafe extern "system" fn IoFastQueryNetworkAttributes(
     IoStatus: PIO_STATUS_BLOCK,
     Buffer: *mut _FILE_NETWORK_OPEN_INFORMATION,
 ) -> BOOLEAN {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatus = opaque_ptr(IoStatus);
+    let Buffer = opaque_ptr(Buffer);
     let mut OpenPacket: _OPEN_PACKET = zeroed();
     let mut LocalFileObject: _DUMMY_FILE_OBJECT = zeroed();
 
@@ -2781,6 +2842,7 @@ pub unsafe extern "system" fn IoUpdateShareAccess(
     FileObject: PFILE_OBJECT,
     ShareAccess: PSHARE_ACCESS,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 {
         return;
     }
@@ -2807,6 +2869,7 @@ pub unsafe extern "system" fn IoCheckShareAccess(
     ShareAccess: PSHARE_ACCESS,
     Update: BOOLEAN,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     let ReadAccess = (DesiredAccess & (FILE_READ_DATA | FILE_EXECUTE)) != 0;
     let WriteAccess = (DesiredAccess & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0;
     let DeleteAccess = (DesiredAccess & DELETE) != 0;
@@ -2857,6 +2920,7 @@ pub unsafe extern "system" fn IoRemoveShareAccess(
     FileObject: PFILE_OBJECT,
     ShareAccess: PSHARE_ACCESS,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION != 0 {
         return;
     }
@@ -2882,6 +2946,7 @@ pub unsafe extern "system" fn IoSetShareAccess(
     FileObject: PFILE_OBJECT,
     ShareAccess: PSHARE_ACCESS,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let ReadAccess = (DesiredAccess & (FILE_READ_DATA | FILE_EXECUTE)) != 0;
     let WriteAccess = (DesiredAccess & (FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0;
     let DeleteAccess = (DesiredAccess & DELETE) != 0;
@@ -2934,6 +2999,8 @@ pub unsafe extern "system" fn IoCancelFileOpen(
     DeviceObject: PDEVICE_OBJECT,
     FileObject: PFILE_OBJECT,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let FileObject = opaque_ptr(FileObject);
     if (*FileObject).Flags & FO_HANDLE_CREATED != 0 {
         KeBugCheckEx(
             0x0000012C,
@@ -2985,6 +3052,8 @@ pub unsafe extern "system" fn IoQueryFileDosDeviceName(
     FileObject: PFILE_OBJECT,
     _OBJECT_INFORMATION_CLASS_ObjectNameInformation: *mut POBJECT_NAME_INFORMATION,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let _OBJECT_INFORMATION_CLASS_ObjectNameInformation = opaque_ptr(_OBJECT_INFORMATION_CLASS_ObjectNameInformation);
     let mut ReturnLength: ULONG = 200;
     let mut Length = 200;
 
@@ -3024,6 +3093,7 @@ pub unsafe extern "system" fn IoSetFileOrigin(
     FileObject: PFILE_OBJECT,
     Remote: BOOLEAN,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     let FlagSet = if (*FileObject).Flags & FO_REMOTE_ORIGIN != 0 {
         1
     } else {
@@ -3055,6 +3125,11 @@ pub unsafe extern "system" fn NtCreateFile(
     EaBuffer: PVOID,
     EaLength: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let AllocateSize = opaque_ptr(AllocateSize);
+    let EaBuffer = opaque_ptr(EaBuffer);
     IoCreateFile(
         FileHandle,
         DesiredAccess,
@@ -3084,6 +3159,10 @@ pub unsafe extern "system" fn NtCreateMailslotFile(
     MaxMessageSize: ULONG,
     TimeOut: *mut LARGE_INTEGER,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let TimeOut = opaque_ptr(TimeOut);
     let mut Buffer: _MAILSLOT_CREATE_PARAMETERS = core::mem::zeroed();
 
     if !TimeOut.is_null() {
@@ -3135,6 +3214,10 @@ pub unsafe extern "system" fn NtCreateNamedPipeFile(
     OutboundQuota: ULONG,
     DefaultTimeout: *mut LARGE_INTEGER,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let DefaultTimeout = opaque_ptr(DefaultTimeout);
     let mut Buffer: _NAMED_PIPE_CREATE_PARAMETERS = core::mem::zeroed();
 
     if !DefaultTimeout.is_null() {
@@ -3188,6 +3271,9 @@ pub unsafe extern "system" fn NtOpenFile(
     ShareAccess: ULONG,
     OpenOptions: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     IoCreateFile(
         FileHandle,
         DesiredAccess,
@@ -3211,6 +3297,8 @@ pub unsafe extern "system" fn NtQueryAttributesFile(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     FileInformation: PVOID,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let FileInformation = opaque_ptr(FileInformation);
     IopQueryAttributesFile(
         ObjectAttributes,
         FileBasicInformation,
@@ -3224,6 +3312,8 @@ pub unsafe extern "system" fn NtQueryFullAttributesFile(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     FileInformation: PVOID,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let FileInformation = opaque_ptr(FileInformation);
     IopQueryAttributesFile(
         ObjectAttributes,
         FileNetworkOpenInformation,
@@ -3237,6 +3327,8 @@ pub unsafe extern "system" fn NtCancelIoFile(
     FileHandle: HANDLE,
     IoStatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let Thread: PETHREAD;
     let mut Irp: PIRP;
@@ -3317,6 +3409,7 @@ pub unsafe extern "system" fn NtCancelIoFile(
 pub unsafe extern "system" fn NtDeleteFile(
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut LocalFileObject: _DUMMY_FILE_OBJECT = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
     let AccessMode: KPROCESSOR_MODE = KeGetPreviousMode();

@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     KINTERRUPT_MODE,
     ExAllocatePoolZero,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 type CCHAR = i8;
 
@@ -60,6 +61,8 @@ pub unsafe extern "system" fn IoConnectInterrupt(
     ProcessorEnableMask: KAFFINITY,
     FloatingSave: BOOLEAN,
 ) -> NTSTATUS {
+    let InterruptObject = opaque_ptr(InterruptObject);
+    let ServiceContext = opaque_ptr(ServiceContext);
     let mut Interrupt: PKINTERRUPT;
     let mut InterruptUsed: PKINTERRUPT;
     let IoInterrupt: PIO_INTERRUPT;
@@ -157,6 +160,7 @@ pub unsafe extern "system" fn IoConnectInterrupt(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoDisconnectInterrupt(InterruptObject: PKINTERRUPT) {
+    let InterruptObject = opaque_ptr(InterruptObject);
     let IoInterrupt: PIO_INTERRUPT = container_of_io_interrupt(InterruptObject);
 
     KeDisconnectInterrupt(core::ptr::addr_of_mut!((*IoInterrupt).FirstInterrupt));

@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     LARGE_INTEGER, LIST_ENTRY, PKTHREAD, PETHREAD,
     PsGetCurrentThread, _KWAIT_REASON_WrResource,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 
 const TAG_RESOURCE_EVENT: u32 = u32::from_be_bytes(*b"EvtR");
@@ -1196,6 +1197,7 @@ pub unsafe extern "system" fn ExSetResourceOwnerPointer(
     Resource: PERESOURCE,
     OwnerPointer: PVOID,
 ) {
+    let OwnerPointer = opaque_ptr(OwnerPointer);
     let Thread = ExGetCurrentResourceThread();
 
     ExpVerifyResource(Resource);

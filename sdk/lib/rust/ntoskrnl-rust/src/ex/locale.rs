@@ -8,6 +8,7 @@ use ntkrnl_sys::ddk::{
     ZwSetValueKey, _KEY_VALUE_PARTIAL_INFORMATION, KPROCESSOR_MODE, ExSystemExceptionFilter,
 };
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut PsDefaultSystemLocaleId: LCID = 0x00000409;
@@ -545,6 +546,7 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtQueryInstallUILanguage(LanguageId: *mut LANGID) -> NTSTATUS {
+    let LanguageId = opaque_ptr(LanguageId);
     let Status = 'seh: {
         if KeGetPreviousMode() != 0i8 {
             if let Err(e) = probe_user_buffer(
@@ -569,6 +571,7 @@ pub unsafe extern "system" fn NtQueryInstallUILanguage(LanguageId: *mut LANGID) 
 
 #[no_mangle]
 pub unsafe extern "system" fn NtQueryDefaultUILanguage(LanguageId: *mut LANGID) -> NTSTATUS {
+    let LanguageId = opaque_ptr(LanguageId);
     let mut SafeLanguageId: LANGID = 0;
 
     let Status = ExpGetCurrentUserUILanguage(

@@ -10,6 +10,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
 use ntkrnl_sys::ddk::{ExInitializePushLock, KPROCESSOR_MODE, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, KeZeroPages, LCID, MiAcquireExpansionLock, MiDecrementShareCount, MiInitializePfnAndMakePteValid, MiInitializePfnForOtherProcess, MiInitializeSystemSpaceMap, MiReleaseExpansionLock, MiRemoveZeroPageSafe, MmIsAddressValid, PEPROCESS, PETHREAD, PKAPC_STATE, PMMSESSION, PMMWSL, PMMWSLE, PMM_SESSION_SPACE, _EPROCESS, _KGUARDED_MUTEX, _KPROCESS, _MMPFN, _MMPTE, _MMWSL, _MMWSLE, _MM_SESSION_SPACE};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 #[cfg(target_arch = "x86")]
@@ -58,6 +59,7 @@ pub unsafe extern "system" fn MiInitializeSessionWsSupport() {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsSessionAddress(address: PVOID) -> BOOLEAN {
+    let address = opaque_ptr(address);
     if MI_IS_SESSION_ADDRESS(address) { 1u8 } else { 0u8 }
 }
 
@@ -139,6 +141,7 @@ unsafe fn MiSessionLeader(process: PEPROCESS) {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetSessionId(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     let session_global: PMM_SESSION_SPACE;
 
     if (*(process as *mut _EPROCESS)).Vm.Flags.SessionLeader() == 1 {
@@ -154,6 +157,7 @@ pub unsafe extern "system" fn MmGetSessionId(process: PEPROCESS) -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetSessionIdEx(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     let session_global: PMM_SESSION_SPACE;
 
     if (*(process as *mut _EPROCESS)).Vm.Flags.SessionLeader() == 1 {
@@ -339,6 +343,7 @@ pub unsafe extern "system" fn MiSessionRemoveProcess() {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiSessionAddProcess(new_process: PEPROCESS) {
+    let new_process = opaque_ptr(new_process);
     let session_global: PMM_SESSION_SPACE;
     let mut old_irql: KIRQL;
 
@@ -652,6 +657,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
 
 #[no_mangle]
 pub unsafe extern "system" fn MmSessionCreate(session_id: *mut ULONG) -> NTSTATUS {
+    let session_id = opaque_ptr(session_id);
     let process = PsGetCurrentProcess() as *mut _EPROCESS;
     let session_leader_exists: LONG;
     let mut status: NTSTATUS;
@@ -717,6 +723,7 @@ pub unsafe extern "system" fn MmAttachSession(
     session_entry: PVOID,
     apc_state: PKAPC_STATE,
 ) -> NTSTATUS {
+    let session_entry = opaque_ptr(session_entry);
     let mut entry_process: PEPROCESS;
     let entry_session: PMM_SESSION_SPACE;
     let current_session: PMM_SESSION_SPACE;
@@ -759,6 +766,7 @@ pub unsafe extern "system" fn MmAttachSession(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmDetachSession(session_entry: PVOID, apc_state: PKAPC_STATE) {
+    let session_entry = opaque_ptr(session_entry);
     let entry_process: PEPROCESS;
     let entry_session: PMM_SESSION_SPACE;
     let mut old_irql: KIRQL;
@@ -795,6 +803,7 @@ pub unsafe extern "system" fn MmDetachSession(session_entry: PVOID, apc_state: P
 
 #[no_mangle]
 pub unsafe extern "system" fn MmQuitNextSession(session_entry: PVOID) {
+    let session_entry = opaque_ptr(session_entry);
     let entry_process: PEPROCESS;
 
     entry_process = session_entry as PEPROCESS;

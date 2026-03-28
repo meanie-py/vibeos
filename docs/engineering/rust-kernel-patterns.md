@@ -255,23 +255,29 @@ All tractable cross-function patterns have been migrated using three techniques:
 
 Remaining calls are in the intractable categories below — conditional acquires, cancel IRQL escapes, and scheduler patterns. These represent the migration ceiling without API redesign.
 
-### Phase 5: Output Pointers → Result — NOT STARTED
+### Phase 5: `opaque_ptr` Barriers — IN PROGRESS
+Automated tool to apply `opaque_ptr` to all `#[no_mangle]` pointer parameters. This unblocks:
+- Re-enabling write_volatile sweep (Phase 5a)
+- Re-enabling RAII guards (Phase 5b)
+- Re-enabling ABI unification (Phase 5c)
+- Lowering CGU count (Phase 5d)
+- Enabling iofunc.rs, arcname.rs holdouts (Phase 5e)
+
+### Phase 6: Output Pointers → Result — BLOCKED on Phase 5
 Priority targets for `captures(none)` protection:
 1. **ps/thread.rs** — PspCreateThread output pointers → Result
 2. **ke/procobj.rs** — KeAttachProcess/KeDetachProcess IRQL management
 
-### Phase 6: Remove Shims — NOT STARTED
-Depends on Phase 5 completion per subsystem.
+### Phase 7: Remove Shims — NOT STARTED
+Depends on Phase 6 completion per subsystem.
 
-## Current State (as of 2026-03-22)
+## Current State (as of 2026-03-28)
 
-~300+ guard instances across the kernel. 9 guard types:
-- `IrqlGuard`, `SpinLockGuard`, `SpinLockAtDpcGuard`, `PfnLockGuard`
-- `DispatcherLockGuard`, `QueuedSpinLockGuard`, `CancelSpinLockGuard`, `VpbSpinLockGuard`, `ExpansionLockGuard`
+**Guard infrastructure reverted.** The write_volatile sweep, RAII guards, Result patterns, and ABI unification were all reverted because they destabilized CGU partitioning and caused boot-blocking ud2s. Zero translations lost — only the defensive hardening layer was removed. The guard types and migration tooling still exist in git history and can be re-applied after the `opaque_ptr` tool is built.
 
-All `#[must_use]` to catch unbound guards at compile time. Sacred primitives verified by `test_sacred_primitives` in the smoke test suite (objdump-based check that KfRaiseIrql etc. survive LLVM optimization).
+**Current defense:** CGU=256 (near-function-isolation, prevents interprocedural cascade). i386 + amd64 6/6 smoke tests pass, 0 unexpected ud2.
 
-**Migration is at the ceiling** — every pattern that can be mechanically transformed with the current guard API has been. What remains falls into 4 intractable categories (see below) that would each require targeted API design work.
+**Next step:** Build automated `opaque_ptr` tool → apply to all `#[no_mangle]` functions → re-enable guards/write_volatile/ABI fixes → lower CGU count.
 
 ## Scheduler Split-Release — The Hard Problem
 
@@ -635,6 +641,91 @@ The attribute set includes `noreturn` AND `willreturn` — a logical contradicti
 2. Update LLM translation prompts to use `extern "system"` instead of `extern "C"` for NTAPI functions
 3. Investigate remaining 21 ud2s — likely more ABI mismatches or actual UB in unsafe code
 4. CGU=1 becomes viable once ud2 count reaches 0
+
+### Root Cause Confirmed: LLVM Ignores Volatile Stores in Attribute Deduction (2026-03-28)
+
+**Discovery:** Emitting LLVM IR for `PspCreateProcess` revealed the complete mechanism:
+
+1. **Pre-optimization IR** has `store volatile ptr %src, ptr %dst` inside `write_volatile` — the volatile store exists
+2. **Post-optimization IR** has `define ... @PspCreateProcess(ptr readnone captures(none) %process_handle)` — LLVM deduced `readnone captures(none)` despite the volatile store
+3. **Callers** pass `ptr poison` for the parameter (since LLVM thinks it's unused)
+4. **Function body** collapses: all stores through `poison` are UB → `unreachable` → `ud2`
+5. **Cascade**: function becomes `noreturn` → every caller gets `unreachable` after calling it → 66+ functions affected
+
+**LLVM's reasoning (technically correct per its semantics):**
+- `captures(none)`: storing *through* a pointer isn't "capturing" it (the pointer value doesn't escape)
+- `readnone`: LLVM's attribute deduction pass ignores volatile stores when computing memory effects on parameters
+- Combined: `readnone captures(none)` = parameter is completely unused → callers can pass `poison`
+
+This is arguably an LLVM bug — volatile stores should count as memory effects during attribute deduction. But it's consistent with LLVM's internal model where "capture" specifically means the pointer VALUE escaping, not effects through the pointer.
+
+### Failed: write_volatile Sweep (2026-03-22 → reverted 2026-03-28)
+
+**Hypothesis:** Converting all `*output_ptr = value` to `core::ptr::write_volatile(output_ptr, value)` in `#[no_mangle]` functions would prevent LLVM from eliminating output pointer writes via `captures(none)`.
+
+**Result:** Paradoxically made things worse. The write_volatile sweep (247 conversions across 66 files) changed enough code to reshuffle LLVM's CGU=16 partitioning, exposing captures(none) bugs in DIFFERENT functions (PspCreateProcess, PspCreateThread, ExInitSystem) that were previously hidden by favorable CGU assignments.
+
+**Why write_volatile alone can't work:** LLVM ignores volatile stores when deducing parameter attributes (see above). Even with `write_volatile`, LLVM still deduces `readnone captures(none)` → callers pass `poison` → volatile store through poison is UB → eliminated anyway.
+
+**Lesson:** write_volatile protects against dead store elimination WITHIN a function, but NOT against interprocedural attribute deduction that poisons the parameter at call sites.
+
+### Failed: ABI Unification (extern "stdcall" → extern "system") (2026-03-22 → reverted 2026-03-28)
+
+**Hypothesis:** Unifying 2835 `extern "stdcall"` to `extern "system"` in bindgen_i386.rs (both are stdcall on i386, but rustc treats them as distinct types) would prevent future ABI mismatches.
+
+**Result:** The type-level change to function pointer signatures in structs cascaded through the entire codebase. This reshuffled CGU partitioning enough to cause ud2 count to jump from 6 to 19 — introducing boot-blocking ud2s in PspCreateProcess and ExInitSystem.
+
+**Lesson:** ANY code change — even nominally equivalent type aliasing — can destabilize CGU partitioning. ABI unification is correct in principle but must be done AFTER the captures(none) defense is in place.
+
+### Validated: `opaque_ptr` Inline Asm Barrier (2026-03-28)
+
+**Mechanism:** A zero-cost inline asm barrier that makes pointer parameters opaque to LLVM:
+
+```rust
+#[inline(always)]
+pub unsafe fn opaque_ptr<T>(ptr: *mut T) -> *mut T {
+    let p: *mut T;
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr,
+                     options(nostack, preserves_flags));
+    p
+}
+```
+
+The `out(reg) + in(reg)` forces the pointer through an opaque register transformation. LLVM must assume the output is an arbitrary address → can't deduce `captures(none)` or `readnone` → callers pass the real pointer → no poison → no ud2.
+
+**Verified via LLVM IR:** Applied to PspCreateProcess's `process_handle` parameter. Before: `ptr readnone captures(none)`, callers pass `ptr poison`. After: `ptr noundef`, callers pass `ptr noundef %process_handle`. The attribute deduction was completely blocked.
+
+**Limitation:** PspCreateProcess had a SECOND ud2 cause beyond captures(none) — LLVM proved a different code path unreachable through interprocedural analysis (the `llvm.assume` + security check path). opaque_ptr fixed the attribute deduction but not the path elimination.
+
+**Also validated on iofunc.rs:** Applied to all PIO_STATUS_BLOCK parameters across 21 functions. But IoPageRead's ud2 came from a DIFFERENT parameter interaction — `MmIsFileObjectAPagingFile` is correctly deduced as `readnone` (it only compares the pointer address, doesn't dereference it), and this propagates to collapse the caller's code paths.
+
+**Conclusion:** opaque_ptr works for its intended purpose (blocking attribute deduction on specific parameters), but must be applied to ALL pointer parameters of ALL `#[no_mangle]` functions to be effective against the full cascade. A targeted approach is whack-a-mole — the cascade propagates through any unprotected parameter.
+
+### Current Workaround: CGU=256 (2026-03-28)
+
+**Mechanism:** Setting `codegen-units = 256` gives each function near-isolation in its own compilation unit. LLVM's interprocedural analysis can only operate within a CGU, so with ~2-3 functions per CGU, it can't build the cross-function attribute chains that cause the cascade.
+
+**Result:** i386 + amd64 6/6 smoke tests pass, 0 unexpected ud2s.
+
+**Trade-off:** Slightly larger binary (less inlining across functions), slightly slower compilation. No runtime cost for the kernel.
+
+**Fragility:** CGU assignment is not deterministic — any code change CAN reshuffle partitioning. CGU=256 minimizes the risk but doesn't eliminate it. The only durable fix is opaque_ptr barriers.
+
+### Next: Automated `opaque_ptr` Tool (planned)
+
+Build a Python tool that:
+1. Parses all `#[no_mangle] pub unsafe extern` functions in ntoskrnl-rust
+2. Finds all pointer parameters (`*mut T`, `*const T`, PVOID, HANDLE, etc.)
+3. Inserts `let param = opaque_ptr(param);` after the opening brace
+4. Runs across all source files
+
+Once applied, we can:
+- Re-enable the write_volatile sweep (now safe because opaque_ptr blocks attribute deduction)
+- Re-enable the ABI unification (CGU reshuffling can't cause ud2 because opaque_ptr blocks the cascade)
+- Lower CGU count back to 16 or even 1 (the interprocedural analysis finds nothing to exploit)
+- Enable iofunc.rs, arcname.rs, and other holdouts
+
+The key insight: **opaque_ptr transforms the LLVM problem from "prevent interprocedural analysis from finding false UB" to "prevent interprocedural analysis from starting."** All the downstream defenses (write_volatile, guards, asm barriers) then work correctly because the attribute deduction that undermines them is blocked at the source.
 
 ## Relationship to Other Docs
 

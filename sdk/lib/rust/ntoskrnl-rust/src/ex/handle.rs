@@ -3,6 +3,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     // Handle table types
@@ -180,6 +181,7 @@ pub unsafe extern "system" fn ExpLookupHandleTableEntry(
     HandleTable: PHANDLE_TABLE,
     mut Handle: EXHANDLE,
 ) -> PHANDLE_TABLE_ENTRY {
+    let HandleTable = opaque_ptr(HandleTable);
     let mut TableLevel: ULONG;
     let mut TableBase: ULONG_PTR;
     let mut HandleArray: PHANDLE_TABLE_ENTRY;
@@ -802,6 +804,7 @@ unsafe fn ExpAllocateHandleTableEntry(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExCreateHandleTable(Process: PEPROCESS) -> PHANDLE_TABLE {
+    let Process = opaque_ptr(Process);
     let HandleTable: PHANDLE_TABLE;
 
     HandleTable = ExpAllocateHandleTable(Process, 1u8);
@@ -839,6 +842,8 @@ pub unsafe extern "system" fn ExCreateHandle(
     HandleTable: PHANDLE_TABLE,
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) -> HANDLE {
+    let HandleTable = opaque_ptr(HandleTable);
+    let HandleTableEntry = opaque_ptr(HandleTableEntry);
     let mut Handle: EXHANDLE = core::mem::zeroed();
     let NewEntry: PHANDLE_TABLE_ENTRY;
 
@@ -888,6 +893,8 @@ pub unsafe extern "system" fn ExpLockHandleTableEntry(
     HandleTable: PHANDLE_TABLE,
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) -> BOOLEAN {
+    let HandleTable = opaque_ptr(HandleTable);
+    let HandleTableEntry = opaque_ptr(HandleTableEntry);
     let mut NewValue: LONG_PTR;
     let mut OldValue: LONG_PTR;
 
@@ -917,6 +924,8 @@ pub unsafe extern "system" fn ExUnlockHandleTableEntry(
     HandleTable: PHANDLE_TABLE,
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) {
+    let HandleTable = opaque_ptr(HandleTable);
+    let HandleTableEntry = opaque_ptr(HandleTableEntry);
     let OldValue: LONG_PTR;
 
     OldValue = InterlockedOr(
@@ -932,6 +941,7 @@ pub unsafe extern "system" fn ExUnlockHandleTableEntry(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExRemoveHandleTable(HandleTable: PHANDLE_TABLE) {
+    let HandleTable = opaque_ptr(HandleTable);
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!(HandleTableListLock));
 
@@ -947,6 +957,8 @@ pub unsafe extern "system" fn ExDestroyHandleTable(
     HandleTable: PHANDLE_TABLE,
     DestroyHandleProcedure: PVOID,
 ) {
+    let HandleTable = opaque_ptr(HandleTable);
+    let DestroyHandleProcedure = opaque_ptr(DestroyHandleProcedure);
     ExRemoveHandleTable(HandleTable);
 
     if !DestroyHandleProcedure.is_null() {
@@ -961,6 +973,9 @@ pub unsafe extern "system" fn ExDestroyHandle(
     Handle: HANDLE,
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) -> BOOLEAN {
+    let HandleTable = opaque_ptr(HandleTable);
+    let Handle = opaque_ptr(Handle);
+    let HandleTableEntry = opaque_ptr(HandleTableEntry);
     let mut ExHandle: EXHANDLE = core::mem::zeroed();
     let Object: PVOID;
     let mut entry = HandleTableEntry;
@@ -1005,6 +1020,8 @@ pub unsafe extern "system" fn ExMapHandleToPointer(
     HandleTable: PHANDLE_TABLE,
     Handle: HANDLE,
 ) -> PHANDLE_TABLE_ENTRY {
+    let HandleTable = opaque_ptr(HandleTable);
+    let Handle = opaque_ptr(Handle);
     let mut ExHandle: EXHANDLE = core::mem::zeroed();
     let HandleTableEntry: PHANDLE_TABLE_ENTRY;
 
@@ -1033,6 +1050,8 @@ pub unsafe extern "system" fn ExDupHandleTable(
     DupHandleProcedure: PEX_DUPLICATE_HANDLE_CALLBACK,
     Mask: ULONG_PTR,
 ) -> PHANDLE_TABLE {
+    let Process = opaque_ptr(Process);
+    let HandleTable = opaque_ptr(HandleTable);
     let NewTable: PHANDLE_TABLE;
     let mut Handle: EXHANDLE = core::mem::zeroed();
     let mut HandleTableEntry: PHANDLE_TABLE_ENTRY;
@@ -1129,6 +1148,8 @@ pub unsafe extern "system" fn ExChangeHandle(
     ChangeRoutine: PEX_CHANGE_HANDLE_CALLBACK,
     Context: ULONG_PTR,
 ) -> BOOLEAN {
+    let HandleTable = opaque_ptr(HandleTable);
+    let Handle = opaque_ptr(Handle);
     let mut ExHandle: EXHANDLE = core::mem::zeroed();
     let HandleTableEntry: PHANDLE_TABLE_ENTRY;
     let mut Result: BOOLEAN = 0u8;
@@ -1160,6 +1181,8 @@ pub unsafe extern "system" fn ExSweepHandleTable(
     EnumHandleProcedure: PEX_SWEEP_HANDLE_CALLBACK,
     Context: PVOID,
 ) {
+    let HandleTable = opaque_ptr(HandleTable);
+    let Context = opaque_ptr(Context);
     let mut Handle: EXHANDLE = core::mem::zeroed();
     let mut HandleTableEntry: PHANDLE_TABLE_ENTRY;
 
@@ -1198,6 +1221,9 @@ pub unsafe extern "system" fn ExEnumHandleTable(
     Context: PVOID,
     EnumHandle: PHANDLE,
 ) -> BOOLEAN {
+    let HandleTable = opaque_ptr(HandleTable);
+    let Context = opaque_ptr(Context);
+    let EnumHandle = opaque_ptr(EnumHandle);
     let mut Handle: EXHANDLE = core::mem::zeroed();
     let mut HandleTableEntry: PHANDLE_TABLE_ENTRY;
     let mut Result: BOOLEAN = 0u8;

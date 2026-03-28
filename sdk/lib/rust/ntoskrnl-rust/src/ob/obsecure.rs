@@ -6,6 +6,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -55,6 +56,8 @@ pub unsafe extern "system" fn ObAssignObjectSecurityDescriptor(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     PoolType: POOL_TYPE,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let FastRef = core::ptr::addr_of_mut!((*ObjectHeader).SecurityDescriptor) as PEX_FAST_REF;
     
@@ -80,6 +83,7 @@ pub unsafe extern "system" fn ObAssignObjectSecurityDescriptor(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObDeassignSecurity(SecurityDescriptor: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let FastRef = *(SecurityDescriptor as PEX_FAST_REF);
     *SecurityDescriptor = core::ptr::null_mut();
 
@@ -99,6 +103,10 @@ pub unsafe extern "system" fn ObQuerySecurityDescriptorInfo(
     Length: PULONG,
     OutputSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let Length = opaque_ptr(Length);
+    let OutputSecurityDescriptor = opaque_ptr(OutputSecurityDescriptor);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let mut ObjectSd = ObpReferenceSecurityDescriptor(ObjectHeader);
 
@@ -125,6 +133,10 @@ pub unsafe extern "system" fn ObSetSecurityDescriptorInfo(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let OutputSecurityDescriptor = opaque_ptr(OutputSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     
     loop {
@@ -188,6 +200,10 @@ pub unsafe extern "system" fn ObCheckCreateObjectAccess(
     AccessMode: KPROCESSOR_MODE,
     AccessStatus: PNTSTATUS,
 ) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
+    let AccessState = opaque_ptr(AccessState);
+    let ComponentName = opaque_ptr(ComponentName);
+    let AccessStatus = opaque_ptr(AccessStatus);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let ObjectType = (*ObjectHeader).Type;
 
@@ -244,6 +260,9 @@ pub unsafe extern "system" fn ObpCheckTraverseAccess(
     AccessMode: KPROCESSOR_MODE,
     AccessStatus: PNTSTATUS,
 ) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
+    let AccessState = opaque_ptr(AccessState);
+    let AccessStatus = opaque_ptr(AccessStatus);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let ObjectType = (*ObjectHeader).Type;
 
@@ -308,6 +327,9 @@ pub unsafe extern "system" fn ObpCheckObjectReference(
     AccessMode: KPROCESSOR_MODE,
     AccessStatus: PNTSTATUS,
 ) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
+    let AccessState = opaque_ptr(AccessState);
+    let AccessStatus = opaque_ptr(AccessStatus);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let ObjectType = (*ObjectHeader).Type;
 
@@ -364,6 +386,9 @@ pub unsafe extern "system" fn ObCheckObjectAccess(
     AccessMode: KPROCESSOR_MODE,
     ReturnedStatus: PNTSTATUS,
 ) -> BOOLEAN {
+    let Object = opaque_ptr(Object);
+    let AccessState = opaque_ptr(AccessState);
+    let ReturnedStatus = opaque_ptr(ReturnedStatus);
     let ObjectHeader = OBJECT_TO_OBJECT_HEADER(Object);
     let ObjectType = (*ObjectHeader).Type;
 
@@ -436,6 +461,10 @@ pub unsafe extern "system" fn ObAssignSecurity(
     Object: PVOID,
     Type: POBJECT_TYPE,
 ) -> NTSTATUS {
+    let AccessState = opaque_ptr(AccessState);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let Object = opaque_ptr(Object);
+    let Type = opaque_ptr(Type);
     let mut NewDescriptor: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut CalloutIrql: KIRQL = 0;
 
@@ -479,6 +508,9 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     SecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     MemoryAllocated: PBOOLEAN,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let MemoryAllocated = opaque_ptr(MemoryAllocated);
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let Type = (*Header).Type;
 
@@ -546,6 +578,7 @@ pub unsafe extern "system" fn ObReleaseObjectSecurity(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     MemoryAllocated: BOOLEAN,
 ) {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     if SecurityDescriptor.is_null() {
         return;
     }
@@ -563,6 +596,8 @@ pub unsafe extern "system" fn ObSetSecurityObjectByPointer(
     SecurityInformation: SECURITY_INFORMATION,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let Type = (*Header).Type;
 
@@ -586,6 +621,9 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let ResultLength = opaque_ptr(ResultLength);
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
@@ -642,6 +680,8 @@ pub unsafe extern "system" fn NtSetSecurityObject(
     SecurityInformation: SECURITY_INFORMATION,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let PreviousMode = ExGetPreviousMode();
 
     if SecurityDescriptor.is_null() {
@@ -706,6 +746,8 @@ pub unsafe extern "system" fn ObQueryObjectAuditingByHandle(
     Handle: HANDLE,
     GenerateOnClose: PBOOLEAN,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let GenerateOnClose = opaque_ptr(GenerateOnClose);
     let mut HandleTable: PHANDLE_TABLE;
     let mut ActualHandle = Handle;
 

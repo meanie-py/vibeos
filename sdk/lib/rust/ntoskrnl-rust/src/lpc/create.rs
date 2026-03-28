@@ -13,6 +13,7 @@ use ntkrnl_sys::ddk::{
     PETHREAD, PEPROCESS, ACCESS_MASK,
     PsGetCurrentThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -92,6 +93,8 @@ pub unsafe extern "system" fn LpcpCreatePort(
     MaxPoolUsage: ULONG,
     Waitable: BOOLEAN,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let PreviousMode = KeGetPreviousMode();
     let mut CapturedObjectName = _UNICODE_STRING {
         Length: 0,
@@ -273,6 +276,8 @@ pub unsafe extern "system" fn NtCreatePort(
     MaxDataLength: ULONG,
     MaxPoolUsage: ULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     LpcpCreatePort(
         PortHandle,
         ObjectAttributes,
@@ -291,6 +296,8 @@ pub unsafe extern "system" fn NtCreateWaitablePort(
     MaxDataLength: ULONG,
     MaxPoolUsage: ULONG,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     LpcpCreatePort(
         PortHandle,
         ObjectAttributes,

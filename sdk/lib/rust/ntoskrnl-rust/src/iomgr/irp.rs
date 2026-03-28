@@ -7,6 +7,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _IRP, _IO_STACK_LOCATION, _IO_STATUS_BLOCK, _FILE_OBJECT, _DEVICE_OBJECT, _DRIVER_OBJECT,
@@ -338,6 +339,9 @@ pub unsafe extern "system" fn IopCleanupFailedIrp(
     EventObject: PKEVENT,
     Buffer: PVOID,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let EventObject = opaque_ptr(EventObject);
+    let Buffer = opaque_ptr(Buffer);
     if !EventObject.is_null() {
         ObDereferenceObject(EventObject as PVOID);
     }
@@ -358,6 +362,8 @@ pub unsafe extern "system" fn IopCleanupFailedIrp(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopAbortInterruptedIrp(EventObject: PKEVENT, Irp: PIRP) {
+    let EventObject = opaque_ptr(EventObject);
+    let Irp = opaque_ptr(Irp);
     let mut OldIrql: KIRQL = 0;
     let CancelResult: BOOLEAN;
     let mut Wait = LARGE_INTEGER { QuadPart: -100000 };
@@ -445,6 +451,8 @@ pub unsafe extern "system" fn IopDisassociateThreadIrp() {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT) {
+    let Irp = opaque_ptr(Irp);
+    let FileObject = opaque_ptr(FileObject);
     let mut Mdl: PMDL = (*Irp).MdlAddress;
 
     while !Mdl.is_null() {
@@ -481,6 +489,10 @@ pub unsafe extern "C" fn IopCompleteRequest(
     SystemArgument1: *mut PVOID,
     SystemArgument2: *mut PVOID,
 ) {
+    let _NormalRoutine = opaque_ptr(_NormalRoutine);
+    let _NormalContext = opaque_ptr(_NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     IopCompleteRequestInner(Apc, _NormalRoutine, _NormalContext, SystemArgument1, SystemArgument2);
 }
 #[no_mangle]
@@ -492,6 +504,10 @@ pub unsafe extern "stdcall" fn IopCompleteRequest(
     SystemArgument1: *mut PVOID,
     SystemArgument2: *mut PVOID,
 ) {
+    let _NormalRoutine = opaque_ptr(_NormalRoutine);
+    let _NormalContext = opaque_ptr(_NormalContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     IopCompleteRequestInner(Apc, _NormalRoutine, _NormalContext, SystemArgument1, SystemArgument2);
 }
 #[inline(always)]
@@ -664,6 +680,7 @@ unsafe fn IopCompleteRequestInner(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopInitializeReserveIrp(ReserveIrpAllocator: *mut RESERVE_IRP_ALLOCATOR) -> BOOLEAN {
+    let ReserveIrpAllocator = opaque_ptr(ReserveIrpAllocator);
     (*ReserveIrpAllocator).StackSize = 20;
 
     (*ReserveIrpAllocator).ReserveIrp = IoAllocateIrp((*ReserveIrpAllocator).StackSize, 0u8);
@@ -821,6 +838,10 @@ pub unsafe extern "system" fn IoBuildAsynchronousFsdRequest(
     StartingOffset: *mut LARGE_INTEGER,
     IoStatusBlock: *mut _IO_STATUS_BLOCK,
 ) -> PIRP {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Buffer = opaque_ptr(Buffer);
+    let StartingOffset = opaque_ptr(StartingOffset);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let Irp: PIRP;
     let StackPtr: PIO_STACK_LOCATION;
 
@@ -904,6 +925,11 @@ pub unsafe extern "system" fn IoBuildDeviceIoControlRequest(
     Event: PKEVENT,
     IoStatusBlock: *mut _IO_STATUS_BLOCK,
 ) -> PIRP {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
+    let Event = opaque_ptr(Event);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let Irp: PIRP;
     let StackPtr: PIO_STACK_LOCATION;
     let BufferLength: ULONG;
@@ -1021,6 +1047,11 @@ pub unsafe extern "system" fn IoBuildSynchronousFsdRequest(
     Event: PKEVENT,
     IoStatusBlock: *mut _IO_STATUS_BLOCK,
 ) -> PIRP {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Buffer = opaque_ptr(Buffer);
+    let StartingOffset = opaque_ptr(StartingOffset);
+    let Event = opaque_ptr(Event);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let Irp: PIRP = IoBuildAsynchronousFsdRequest(
         MajorFunction,
         DeviceObject,
@@ -1040,6 +1071,7 @@ pub unsafe extern "system" fn IoBuildSynchronousFsdRequest(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoCancelIrp(Irp: PIRP) -> BOOLEAN {
+    let Irp = opaque_ptr(Irp);
     let mut OldIrql: KIRQL = 0;
     let CancelRoutine: PDRIVER_CANCEL;
 
@@ -1072,6 +1104,7 @@ pub unsafe extern "system" fn IoCancelIrp(Irp: PIRP) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoCancelThreadIo(Thread: PETHREAD) {
+    let Thread = opaque_ptr(Thread);
     let mut OldIrql: KIRQL = 0;
     let mut Retries: ULONG = 3000;
     let mut Interval = LARGE_INTEGER { QuadPart: -1000000 };
@@ -1115,27 +1148,35 @@ pub unsafe extern "system" fn IoCancelThreadIo(Thread: PETHREAD) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     IofCallDriver(DeviceObject, Irp)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR) {
+    let Irp = opaque_ptr(Irp);
     IofCompleteRequest(Irp, PriorityBoost);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoEnqueueIrp(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
     IoQueueThreadIrp(Irp);
 }
 
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     IofCallDriverInner(DeviceObject, Irp)
 }
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     IofCallDriverInner(DeviceObject, Irp)
 }
 #[inline(always)]
@@ -1160,11 +1201,13 @@ unsafe fn IofCallDriverInner(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATU
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn IofCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR) {
+    let Irp = opaque_ptr(Irp);
     IofCompleteRequestInner(Irp, PriorityBoost);
 }
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn IofCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR) {
+    let Irp = opaque_ptr(Irp);
     IofCompleteRequestInner(Irp, PriorityBoost);
 }
 #[inline(always)]
@@ -1376,6 +1419,8 @@ pub unsafe extern "system" fn IoForwardIrpSynchronously(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> BOOLEAN {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     let mut Event: _KEVENT = zeroed();
     let mut Status: NTSTATUS;
 
@@ -1404,6 +1449,7 @@ pub unsafe extern "system" fn IoForwardIrpSynchronously(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoFreeIrp(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
     let mut List: PNPAGED_LOOKASIDE_LIST;
     let mut ListType: PP_NPAGED_LOOKASIDE_NUMBER = _PP_NPAGED_LOOKASIDE_NUMBER_LookasideSmallIrpList;
     let Prcb: PKPRCB;
@@ -1455,11 +1501,13 @@ pub unsafe extern "system" fn IoFreeIrp(Irp: PIRP) {
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn IoGetPagingIoPriority(Irp: PIRP) -> IO_PAGING_PRIORITY {
+    let Irp = opaque_ptr(Irp);
     IoGetPagingIoPriorityInner(Irp)
 }
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn IoGetPagingIoPriority(Irp: PIRP) -> IO_PAGING_PRIORITY {
+    let Irp = opaque_ptr(Irp);
     IoGetPagingIoPriorityInner(Irp)
 }
 #[inline(always)]
@@ -1480,6 +1528,7 @@ unsafe fn IoGetPagingIoPriorityInner(Irp: PIRP) -> IO_PAGING_PRIORITY {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetRequestorProcess(Irp: PIRP) -> PEPROCESS {
+    let Irp = opaque_ptr(Irp);
     if !(*Irp).Tail.Overlay.Thread.is_null() {
         if (*Irp).ApcEnvironment as u32 == OriginalApcEnvironment {
             return (*(*Irp).Tail.Overlay.Thread).ThreadsProcess;
@@ -1493,6 +1542,7 @@ pub unsafe extern "system" fn IoGetRequestorProcess(Irp: PIRP) -> PEPROCESS {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetRequestorProcessId(Irp: PIRP) -> ULONG {
+    let Irp = opaque_ptr(Irp);
     let Process: PEPROCESS = IoGetRequestorProcess(Irp);
     if !Process.is_null() {
         return PtrToUlong((*Process).UniqueProcessId);
@@ -1505,6 +1555,8 @@ pub unsafe extern "system" fn IoGetRequestorSessionId(
     Irp: PIRP,
     pSessionId: *mut ULONG,
 ) -> NTSTATUS {
+    let Irp = opaque_ptr(Irp);
+    let pSessionId = opaque_ptr(pSessionId);
     if !(*Irp).Tail.Overlay.Thread.is_null() {
         let Process = (*(*Irp).Tail.Overlay.Thread).ThreadsProcess;
         *pSessionId = MmGetSessionId(Process);
@@ -1522,6 +1574,7 @@ pub unsafe extern "system" fn IoGetTopLevelIrp() -> PIRP {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoInitializeIrp(Irp: PIRP, PacketSize: USHORT, StackSize: CCHAR) {
+    let Irp = opaque_ptr(Irp);
     core::ptr::write_bytes(Irp as *mut u8, 0, PacketSize as usize);
 
     (*Irp).Type = IO_TYPE_IRP as i16;
@@ -1537,6 +1590,7 @@ pub unsafe extern "system" fn IoInitializeIrp(Irp: PIRP, PacketSize: USHORT, Sta
 
 #[no_mangle]
 pub unsafe extern "system" fn IoIsOperationSynchronous(Irp: PIRP) -> BOOLEAN {
+    let Irp = opaque_ptr(Irp);
     let SynchIO: bool;
     let ForceAsync: bool;
 
@@ -1559,11 +1613,13 @@ pub unsafe extern "system" fn IoIsValidNameGraftingBuffer(
     _Irp: PIRP,
     _ReparseBuffer: PREPARSE_DATA_BUFFER,
 ) -> BOOLEAN {
+    let _Irp = opaque_ptr(_Irp);
     0u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoMakeAssociatedIrp(Irp: PIRP, StackSize: CCHAR) -> PIRP {
+    let Irp = opaque_ptr(Irp);
     let AssocIrp: PIRP = IoAllocateIrp(StackSize, 0u8);
     if AssocIrp.is_null() {
         return null_mut();
@@ -1578,11 +1634,13 @@ pub unsafe extern "system" fn IoMakeAssociatedIrp(Irp: PIRP, StackSize: CCHAR) -
 
 #[no_mangle]
 pub unsafe extern "system" fn IoQueueThreadIrp(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
     IopQueueIrpToThread(Irp);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoReuseIrp(Irp: PIRP, Status: NTSTATUS) {
+    let Irp = opaque_ptr(Irp);
     let AllocationFlags: UCHAR = (*Irp).AllocationFlags;
 
     IoInitializeIrp(Irp, (*Irp).Size, (*Irp).StackCount as i8);
@@ -1592,12 +1650,14 @@ pub unsafe extern "system" fn IoReuseIrp(Irp: PIRP, Status: NTSTATUS) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoSetTopLevelIrp(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
     (*(PsGetCurrentThread() as *mut _ETHREAD)).TopLevelIrp = Irp as usize as ntkrnl_sys::ddk::ULONG_PTR;
 }
 
 #[cfg(target_pointer_width = "64")]
 #[no_mangle]
 pub unsafe extern "system" fn IoIs32bitProcess(_Irp: PIRP) -> BOOLEAN {
+    let _Irp = opaque_ptr(_Irp);
     0u8
 }
 

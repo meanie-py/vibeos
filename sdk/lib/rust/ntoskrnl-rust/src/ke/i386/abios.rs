@@ -3,6 +3,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{KGDTENTRY, PCONTEXT, PDRIVER_OBJECT, PKGDTENTRY};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -20,6 +21,7 @@ pub unsafe extern "system" fn KeI386ReleaseGdtSelectors(
     SelArray: *mut ULONG,
     NumOfSelectors: ULONG,
 ) -> NTSTATUS {
+    let SelArray = opaque_ptr(SelArray);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -29,6 +31,7 @@ pub unsafe extern "system" fn KeI386AllocateGdtSelectors(
     SelArray: *mut ULONG,
     NumOfSelectors: ULONG,
 ) -> NTSTATUS {
+    let SelArray = opaque_ptr(SelArray);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -38,6 +41,7 @@ pub unsafe extern "system" fn KeI386SetGdtSelector(
     Selector: ULONG,
     GdtValue: *mut KGDTENTRY,
 ) -> NTSTATUS {
+    let GdtValue = opaque_ptr(GdtValue);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -49,6 +53,8 @@ pub unsafe extern "system" fn KeI386AbiosCall(
     RequestBlock: *mut ULONG,
     EntryPoint: USHORT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let RequestBlock = opaque_ptr(RequestBlock);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -61,6 +67,8 @@ pub unsafe extern "system" fn KeI386GetLid(
     DriverObject: PDRIVER_OBJECT,
     LogicalId: *mut USHORT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let LogicalId = opaque_ptr(LogicalId);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -70,6 +78,7 @@ pub unsafe extern "system" fn KeI386ReleaseLid(
     LogicalId: USHORT,
     DriverObject: PDRIVER_OBJECT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -81,6 +90,7 @@ pub unsafe extern "system" fn KeI386Call16BitCStyleFunction(
     Parameters: *mut ULONG,
     Size: ULONG,
 ) -> USHORT {
+    let Parameters = opaque_ptr(Parameters);
     0
 }
 

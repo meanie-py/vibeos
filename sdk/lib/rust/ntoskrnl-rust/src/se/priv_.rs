@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -167,6 +168,9 @@ pub unsafe extern "system" fn SePrivilegePolicyCheck(
     out_privilege_set: *mut PPRIVILEGE_SET,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let subject_context = opaque_ptr(subject_context);
+    let mut token = opaque_ptr(token);
+    let out_privilege_set = opaque_ptr(out_privilege_set);
     let mut privilege_size: SIZE_T;
     let mut privilege_set: PPRIVILEGE_SET;
     let mut privilege_count: ULONG = 0;
@@ -236,6 +240,7 @@ pub unsafe extern "system" fn SeCheckAuditPrivilege(
     subject_context: PSECURITY_SUBJECT_CONTEXT,
     previous_mode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let subject_context = opaque_ptr(subject_context);
     let mut privilege_set = PRIVILEGE_SET {
         PrivilegeCount: 1,
         Control: PRIVILEGE_SET_ALL_NECESSARY,
@@ -277,6 +282,8 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
     dest: *mut PLUID_AND_ATTRIBUTES,
     length: *mut ULONG,
 ) -> NTSTATUS {
+    let dest = opaque_ptr(dest);
+    let length = opaque_ptr(length);
     let buffer_size: ULONG;
     let mut status = STATUS_SUCCESS;
 
@@ -345,6 +352,8 @@ pub unsafe extern "system" fn SeAppendPrivileges(
     access_state: PACCESS_STATE,
     privileges: PPRIVILEGE_SET,
 ) -> NTSTATUS {
+    let access_state = opaque_ptr(access_state);
+    let privileges = opaque_ptr(privileges);
     let aux_data: PAUX_ACCESS_DATA;
     let old_privilege_set_size: ULONG;
     let new_privilege_set_size: ULONG;
@@ -411,6 +420,7 @@ pub unsafe extern "system" fn SeAppendPrivileges(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeFreePrivileges(privileges: PPRIVILEGE_SET) {
+    let privileges = opaque_ptr(privileges);
     ExFreePoolWithTag(privileges as PVOID, TAG_PRIVILEGE_SET);
 }
 
@@ -420,6 +430,8 @@ pub unsafe extern "system" fn SePrivilegeCheck(
     subject_context: PSECURITY_SUBJECT_CONTEXT,
     previous_mode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let privileges = opaque_ptr(privileges);
+    let subject_context = opaque_ptr(subject_context);
     let token: PACCESS_TOKEN;
 
     if (*subject_context).ClientToken.is_null() {
@@ -481,6 +493,7 @@ pub unsafe extern "system" fn SeCheckPrivilegedObject(
     _desired_access: ACCESS_MASK,
     previous_mode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let _object_handle = opaque_ptr(_object_handle);
     let mut subject_context: SECURITY_SUBJECT_CONTEXT = core::mem::zeroed();
     let mut priv_set = PRIVILEGE_SET {
         PrivilegeCount: 1,
@@ -507,6 +520,9 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
     required_privileges: PPRIVILEGE_SET,
     result: PBOOLEAN,
 ) -> NTSTATUS {
+    let client_token = opaque_ptr(client_token);
+    let required_privileges = opaque_ptr(required_privileges);
+    let result = opaque_ptr(result);
     let mut privileges: PLUID_AND_ATTRIBUTES = core::ptr::null_mut();
     let mut token: PTOKEN = core::ptr::null_mut();
     let mut privilege_count: ULONG = 0;

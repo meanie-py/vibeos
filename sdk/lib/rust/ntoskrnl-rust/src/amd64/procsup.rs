@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     PULONG_PTR,
     MiRemoveZeroPageSafe,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ARM3::helpers::*;
 use crate::ARM3::mminit::MmHyperSpaceEnd;
@@ -53,6 +54,8 @@ pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
     Process: PEPROCESS,
     DirectoryTableBase: PULONG_PTR,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let DirectoryTableBase = opaque_ptr(DirectoryTableBase);
     let mut OldIrql: KIRQL;
     let TableBasePfn: PFN_NUMBER;
     let HyperPfn: PFN_NUMBER;

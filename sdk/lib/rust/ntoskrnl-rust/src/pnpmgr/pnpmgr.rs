@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     ExInitializeResourceLite, HalTranslateBusAddress, ObQueryNameString,
     ULONG_PTR,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn wcslen(s: PCWSTR) -> SIZE_T;
@@ -606,6 +607,7 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
 
 #[no_mangle]
 pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut OldIrql: KIRQL = 0;
 
     if !PopSystemPowerDeviceNode.is_null() {
@@ -638,6 +640,9 @@ pub unsafe extern "system" fn IopInitiatePnpIrp(
     MinorFunction: UCHAR,
     Stack: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Stack = opaque_ptr(Stack);
     let mut IoStackLocation: _IO_STACK_LOCATION = core::mem::zeroed();
 
     core::ptr::write_bytes(&mut IoStackLocation as *mut _ as *mut u8, 0, core::mem::size_of::<_IO_STACK_LOCATION>());
@@ -665,6 +670,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
     CreateOptions: ULONG,
     Handle: PHANDLE,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
     let EnumU = _UNICODE_STRING {
         Length: (ENUM_ROOT.len() * 2 - 2) as USHORT,
         MaximumLength: (ENUM_ROOT.len() * 2) as USHORT,
@@ -744,6 +750,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
 
 #[no_mangle]
 pub unsafe extern "C" fn IopSetDeviceInstanceData(InstanceKey: HANDLE, DeviceNode: PDEVICE_NODE) -> NTSTATUS {
+    let InstanceKey = opaque_ptr(InstanceKey);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut LogConfKey: HANDLE = core::ptr::null_mut();
@@ -887,6 +894,7 @@ pub unsafe extern "C" fn IopGetParentIdPrefix(
     DeviceNode: PDEVICE_NODE,
     ParentIdPrefix: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let ParentIdPrefix = opaque_ptr(ParentIdPrefix);
     // L"\\Registry\\Machine\\System\\CurrentControlSet\\Enum\\"
     static ENUM_KEY_PATH_STR: [u16; 49] = [
         b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16,
@@ -1044,6 +1052,9 @@ pub unsafe extern "system" fn IopOpenRegistryKeyEx(
     Name: PUNICODE_STRING,
     DesiredAccess: ACCESS_MASK,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ParentKey = opaque_ptr(ParentKey);
+    let Name = opaque_ptr(Name);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     *KeyHandle = core::ptr::null_mut();
@@ -1068,6 +1079,10 @@ pub unsafe extern "system" fn IopCreateRegistryKeyEx(
     CreateOptions: ULONG,
     Disposition: *mut ULONG,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let RootHandle = opaque_ptr(RootHandle);
+    let KeyName = opaque_ptr(KeyName);
+    let Disposition = opaque_ptr(Disposition);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyDisposition: ULONG = 0;
     let mut RootHandleIndex: ULONG = 0;
@@ -1183,6 +1198,9 @@ pub unsafe extern "system" fn IopGetRegistryValue(
     ValueName: PWSTR,
     Information: *mut PKEY_VALUE_FULL_INFORMATION,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
+    let ValueName = opaque_ptr(ValueName);
+    let Information = opaque_ptr(Information);
     let mut ValueString: _UNICODE_STRING = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let FullInformation: PKEY_VALUE_FULL_INFORMATION;
@@ -1457,6 +1475,9 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     PropertyBuffer: PVOID,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let PropertyBuffer = opaque_ptr(PropertyBuffer);
+    let ResultLength = opaque_ptr(ResultLength);
     let DeviceNode = IopGetDeviceNode(DeviceObject);
     let mut DeviceCaps: DEVICE_CAPABILITIES = core::mem::zeroed();
     let mut ReturnLength: ULONG = 0;
@@ -1669,6 +1690,8 @@ pub unsafe extern "system" fn IoOpenDeviceRegistryKey(
     DesiredAccess: ACCESS_MASK,
     DevInstRegKey: PHANDLE,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let DevInstRegKey = opaque_ptr(DevInstRegKey);
     static RootKeyName: [WCHAR; 44] = [
         b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
         b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16,
@@ -1819,6 +1842,7 @@ pub unsafe extern "system" fn IoInvalidateDeviceRelations(
     DeviceObject: PDEVICE_OBJECT,
     Type: DEVICE_RELATION_TYPE,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     if IopIsValidPhysicalDeviceObject(DeviceObject) == 0 {
         KeBugCheckEx(PNP_DETECTED_FATAL_ERROR, 0x2usize, DeviceObject as usize, 0usize, 0usize);
     }
@@ -1836,6 +1860,7 @@ pub unsafe extern "system" fn IoSynchronousInvalidateDeviceRelations(
     DeviceObject: PDEVICE_OBJECT,
     Type: DEVICE_RELATION_TYPE,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     if IopIsValidPhysicalDeviceObject(DeviceObject) == 0 {
         KeBugCheckEx(PNP_DETECTED_FATAL_ERROR, 0x2usize, DeviceObject as usize, 0usize, 0usize);
     }
@@ -1856,11 +1881,13 @@ pub unsafe extern "system" fn IoTranslateBusAddress(
     AddressSpace: *mut ULONG,
     TranslatedAddress: PPHYSICAL_ADDRESS,
 ) -> BOOLEAN {
+    let AddressSpace = opaque_ptr(AddressSpace);
     HalTranslateBusAddress(InterfaceType, BusNumber, BusAddress, AddressSpace, TranslatedAddress)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoInvalidateDeviceState(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     if IopIsValidPhysicalDeviceObject(DeviceObject) == 0 {
         KeBugCheckEx(PNP_DETECTED_FATAL_ERROR, 0x2usize, DeviceObject as usize, 0usize, 0usize);
     }

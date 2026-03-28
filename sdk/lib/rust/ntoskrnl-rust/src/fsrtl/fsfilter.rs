@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     PLARGE_INTEGER,
     POBJECT_ATTRIBUTES,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCreateSectionForDataScan(
@@ -23,6 +24,12 @@ pub unsafe extern "system" fn FsRtlCreateSectionForDataScan(
     AllocationAttributes: ULONG,
     Flags: ULONG,
 ) -> NTSTATUS {
+    let SectionHandle = opaque_ptr(SectionHandle);
+    let SectionObject = opaque_ptr(SectionObject);
+    let SectionFileSize = opaque_ptr(SectionFileSize);
+    let FileObject = opaque_ptr(FileObject);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let MaximumSize = opaque_ptr(MaximumSize);
     KeBugCheck(0x00000007);
     STATUS_NOT_IMPLEMENTED
 }

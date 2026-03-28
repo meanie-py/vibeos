@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     KeReleaseMutant, KeWaitForSingleObject,
     _LIST_ENTRY,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut MmVerifierData: MM_DRIVER_VERIFIER_DATA = unsafe { core::mem::zeroed() };
@@ -53,6 +54,7 @@ struct DRIVER_SPECIFIED_VERIFIER_THUNKS {
 
 #[no_mangle]
 pub unsafe extern "system" fn MmUnlockPageableImageSection(_ImageSectionHandle: PVOID) {
+    let _ImageSectionHandle = opaque_ptr(_ImageSectionHandle);
     static mut WARN: ULONG = 0;
     if WARN == 0 {
         WARN = 1;
@@ -61,10 +63,12 @@ pub unsafe extern "system" fn MmUnlockPageableImageSection(_ImageSectionHandle: 
 
 #[no_mangle]
 pub unsafe extern "system" fn MmLockPageableSectionByHandle(_ImageSectionHandle: PVOID) {
+    let _ImageSectionHandle = opaque_ptr(_ImageSectionHandle);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn MmLockPageableDataSection(AddressWithinSection: PVOID) -> PVOID {
+    let AddressWithinSection = opaque_ptr(AddressWithinSection);
     static mut WARN: ULONG = 0;
     if WARN == 0 {
         WARN = 1;
@@ -82,6 +86,7 @@ pub unsafe extern "system" fn MmAddVerifierThunks(
     ThunkBuffer: PVOID,
     ThunkBufferSize: ULONG,
 ) -> NTSTATUS {
+    let ThunkBuffer = opaque_ptr(ThunkBuffer);
     let mut Status = STATUS_SUCCESS;
 
     if MiVerifierDriverAddedThunkListHead.Flink.is_null() {
@@ -177,6 +182,7 @@ pub unsafe extern "system" fn MmAddVerifierThunks(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsDriverVerifying(DriverObject: PDRIVER_OBJECT) -> ULONG {
+    let DriverObject = opaque_ptr(DriverObject);
     let LdrEntry = (*DriverObject).DriverSection as PLDR_DATA_TABLE_ENTRY;
     if LdrEntry.is_null() {
         return 0;
@@ -191,6 +197,7 @@ pub unsafe extern "system" fn MmIsDriverVerifying(DriverObject: PDRIVER_OBJECT) 
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsVerifierEnabled(VerifierFlags: *mut ULONG) -> NTSTATUS {
+    let VerifierFlags = opaque_ptr(VerifierFlags);
     if !MiVerifierDriverAddedThunkListHead.Flink.is_null() {
         *VerifierFlags = MmVerifierData.Level;
         STATUS_SUCCESS

@@ -3,6 +3,7 @@ use ntkrnl_sys::ddk::BOOLEAN as DDK_BOOLEAN;
 use ntkrnl_sys::base::{STATUS_SUCCESS, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TokenImpersonation: TOKEN_TYPE = _TOKEN_TYPE_TokenImpersonation;
 const TokenPrimary: TOKEN_TYPE = _TOKEN_TYPE_TokenPrimary;
@@ -93,6 +94,7 @@ pub unsafe extern "system" fn SeCreateClientSecurity(
     RemoteClient: BOOLEAN,
     ClientContext: PSECURITY_CLIENT_CONTEXT,
 ) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
     let mut TokenType: TOKEN_TYPE = core::mem::zeroed();
     let mut ThreadEffectiveOnly: DDK_BOOLEAN = 0;
     let mut ImpersonationLevel: SECURITY_IMPERSONATION_LEVEL = SecurityAnonymous;
@@ -130,6 +132,7 @@ pub unsafe extern "system" fn SeCreateClientSecurityFromSubjectContext(
     ServerIsRemote: BOOLEAN,
     ClientContext: PSECURITY_CLIENT_CONTEXT,
 ) -> NTSTATUS {
+    let SubjectContext = opaque_ptr(SubjectContext);
     let Token: PACCESS_TOKEN;
     let Status: NTSTATUS;
 
@@ -160,6 +163,7 @@ pub unsafe extern "system" fn SeImpersonateClientEx(
     ClientContext: PSECURITY_CLIENT_CONTEXT,
     ServerThread: PETHREAD,
 ) -> NTSTATUS {
+    let ServerThread = opaque_ptr(ServerThread);
     let EffectiveOnly: BOOLEAN;
 
     if (*ClientContext).DirectlyAccessClientToken == 0 {
@@ -188,6 +192,7 @@ pub unsafe extern "system" fn SeImpersonateClient(
     ClientContext: PSECURITY_CLIENT_CONTEXT,
     ServerThread: PETHREAD,
 ) {
+    let ServerThread = opaque_ptr(ServerThread);
     SeImpersonateClientEx(ClientContext, ServerThread);
 }
 

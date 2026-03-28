@@ -5,6 +5,7 @@ use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn RtlEqualLuid(l1: PLUID, l2: PLUID) -> BOOLEAN;
@@ -84,6 +85,7 @@ pub unsafe extern "system" fn SepRegQueryHelper(
     DataLength: ULONG,
     ValueData: PVOID,
 ) -> NTSTATUS {
+    let ValueData = opaque_ptr(ValueData);
     let mut ValueNameString: _UNICODE_STRING = core::mem::zeroed();
     let mut KeyNameString: _UNICODE_STRING = core::mem::zeroed();
     let mut ResultLength: ULONG = 0;
@@ -279,6 +281,7 @@ unsafe fn SepRmSetAuditEvent(Message: PSEP_RM_API_MESSAGE) -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) -> NTSTATUS {
+    let Token = opaque_ptr(Token);
     debug_assert!(!Token.is_null());
 
     KeAcquireGuardedMutex(&mut SepRmDbLock);
@@ -326,6 +329,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
 
 #[no_mangle]
 pub unsafe extern "system" fn SepRmRemoveLogonSessionFromToken(Token: PTOKEN) -> NTSTATUS {
+    let Token = opaque_ptr(Token);
     debug_assert!(!Token.is_null());
 
     KeAcquireGuardedMutex(&mut SepRmDbLock);
@@ -443,6 +447,7 @@ unsafe fn SepRmDeleteLogonSession(LogonLuid: PLUID) -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "C" fn SepRmReferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
+    let LogonLuid = opaque_ptr(LogonLuid);
     KeAcquireGuardedMutex(&mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
@@ -625,6 +630,7 @@ unsafe fn SepCleanupLUIDDeviceMapDirectory(LogonLuid: PLUID) -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "C" fn SepRmDereferenceLogonSession(LogonLuid: PLUID) -> NTSTATUS {
+    let LogonLuid = opaque_ptr(LogonLuid);
     KeAcquireGuardedMutex(&mut SepRmDbLock);
 
     let mut CurrentSession = SepLogonSessions;
@@ -832,6 +838,8 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
     LogonId: PLUID,
     DeviceMap: *mut PDEVICE_MAP,
 ) -> NTSTATUS {
+    let LogonId = opaque_ptr(LogonId);
+    let DeviceMap = opaque_ptr(DeviceMap);
     if LogonId.is_null() || DeviceMap.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
@@ -928,6 +936,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
 
 #[no_mangle]
 pub unsafe extern "system" fn SeMarkLogonSessionForTerminationNotification(LogonId: PLUID) -> NTSTATUS {
+    let LogonId = opaque_ptr(LogonId);
     KeAcquireGuardedMutex(&mut SepRmDbLock);
 
     let mut SessionToMark = SepLogonSessions;

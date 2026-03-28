@@ -9,6 +9,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use super::oblife::{ObpCaptureObjectCreateInformation, ObpFreeObjectNameBuffer};
 use super::obname::ObpLookupObjectName;
@@ -117,6 +118,7 @@ unsafe fn ObDereferenceProcessHandleTable(process: PEPROCESS) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObGetProcessHandleCount(process: PEPROCESS) -> ULONG {
+    let process = opaque_ptr(process);
     let handle_table = ObReferenceProcessHandleTable(process);
 
     if !handle_table.is_null() {
@@ -231,7 +233,6 @@ pub unsafe extern "stdcall" fn ObpSetHandleAttributes(
 pub unsafe extern "C" fn ObpSetHandleAttributes(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, context: u64,
 ) -> BOOLEAN { _ObpSetHandleAttributes(handle_entry, context as ULONG_PTR) }
-
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn ObpCloseHandleCallback(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, handle: HANDLE, context: PVOID,
@@ -1358,6 +1359,7 @@ unsafe fn _ObpDuplicateHandleCallback(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObClearProcessHandleTable(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     let handle_table: PHANDLE_TABLE;
     let mut context: _OBP_CLOSE_HANDLE_CONTEXT = core::mem::zeroed();
     let mut apc_state: _KAPC_STATE = core::mem::zeroed();
@@ -1401,6 +1403,8 @@ pub unsafe extern "system" fn ObInitProcess(
     parent: PEPROCESS,
     process: PEPROCESS,
 ) -> NTSTATUS {
+    let parent = opaque_ptr(parent);
+    let process = opaque_ptr(process);
     let parent_table: PHANDLE_TABLE;
     let object_table: PHANDLE_TABLE;
 
@@ -1443,6 +1447,7 @@ pub unsafe extern "system" fn ObInitProcess(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObKillProcess(process: PEPROCESS) {
+    let process = opaque_ptr(process);
     let handle_table: PHANDLE_TABLE;
     let mut context: _OBP_CLOSE_HANDLE_CONTEXT = core::mem::zeroed();
     let mut hard_errors: BOOLEAN;
@@ -1491,6 +1496,10 @@ pub unsafe extern "system" fn ObDuplicateObject(
     options: ULONG,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let source_process = opaque_ptr(source_process);
+    let source_handle = opaque_ptr(source_handle);
+    let target_process = opaque_ptr(target_process);
+    let target_handle = opaque_ptr(target_handle);
     let mut new_handle_entry: _HANDLE_TABLE_ENTRY = core::mem::zeroed();
     let mut attached_to_process = 0u8;
     let mut source_object: PVOID = core::ptr::null_mut();
@@ -1719,6 +1728,11 @@ pub unsafe extern "system" fn ObOpenObjectByName(
     parse_context: PVOID,
     handle: *mut HANDLE,
 ) -> NTSTATUS {
+    let object_attributes = opaque_ptr(object_attributes);
+    let object_type = opaque_ptr(object_type);
+    let mut passed_access_state = opaque_ptr(passed_access_state);
+    let parse_context = opaque_ptr(parse_context);
+    let mut handle = opaque_ptr(handle);
     let mut object = core::ptr::null_mut();
     let mut object_name: _UNICODE_STRING = core::mem::zeroed();
     let mut status: NTSTATUS;
@@ -1885,6 +1899,10 @@ pub unsafe extern "system" fn ObOpenObjectByPointer(
     access_mode: KPROCESSOR_MODE,
     handle: *mut HANDLE,
 ) -> NTSTATUS {
+    let object = opaque_ptr(object);
+    let mut passed_access_state = opaque_ptr(passed_access_state);
+    let object_type = opaque_ptr(object_type);
+    let mut handle = opaque_ptr(handle);
     let header: POBJECT_HEADER;
     let mut status: NTSTATUS;
     let mut access_state: _ACCESS_STATE = core::mem::zeroed();
@@ -1953,6 +1971,10 @@ pub unsafe extern "system" fn ObFindHandleForObject(
     handle_information: POBJECT_HANDLE_INFORMATION,
     handle: *mut HANDLE,
 ) -> BOOLEAN {
+    let process = opaque_ptr(process);
+    let object = opaque_ptr(object);
+    let object_type = opaque_ptr(object_type);
+    let mut handle = opaque_ptr(handle);
     let mut find_data: _OBP_FIND_HANDLE_DATA = core::mem::zeroed();
     let mut result = 0u8;
     let object_table: PVOID;
@@ -1993,6 +2015,10 @@ pub unsafe extern "system" fn ObInsertObject(
     new_object: *mut PVOID,
     handle: *mut HANDLE,
 ) -> NTSTATUS {
+    let object = opaque_ptr(object);
+    let mut access_state = opaque_ptr(access_state);
+    let new_object = opaque_ptr(new_object);
+    let mut handle = opaque_ptr(handle);
     let object_create_info: POBJECT_CREATE_INFORMATION;
     let object_header: POBJECT_HEADER;
     let object_type: POBJECT_TYPE;
@@ -2239,6 +2265,7 @@ pub unsafe extern "system" fn ObSetHandleAttributes(
     handle_flags: POBJECT_HANDLE_ATTRIBUTE_INFORMATION,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let mut handle = opaque_ptr(handle);
     let mut set_handle_attributes_context: _OBP_SET_HANDLE_ATTRIBUTES_CONTEXT = core::mem::zeroed();
     let mut result: BOOLEAN;
     let mut attached_to_system_process = 0u8;
@@ -2286,11 +2313,13 @@ pub unsafe extern "system" fn ObCloseHandle(
     handle: HANDLE,
     access_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
+    let mut handle = opaque_ptr(handle);
     ObpCloseHandle(handle, access_mode)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn NtClose(handle: HANDLE) -> NTSTATUS {
+    let mut handle = opaque_ptr(handle);
     ObpCloseHandle(handle, ExGetPreviousMode())
 }
 
@@ -2304,6 +2333,10 @@ pub unsafe extern "system" fn NtDuplicateObject(
     handle_attributes: ULONG,
     options: ULONG,
 ) -> NTSTATUS {
+    let source_process_handle = opaque_ptr(source_process_handle);
+    let source_handle = opaque_ptr(source_handle);
+    let target_process_handle = opaque_ptr(target_process_handle);
+    let target_handle = opaque_ptr(target_handle);
     let mut source_process: PEPROCESS = core::ptr::null_mut();
     let mut target_process: PEPROCESS = core::ptr::null_mut();
     let mut target: PEPROCESS;
@@ -2373,6 +2406,7 @@ pub unsafe extern "system" fn NtDuplicateObject(
 
 #[no_mangle]
 pub unsafe extern "system" fn ObIsKernelHandle(handle: HANDLE) -> BOOLEAN {
+    let mut handle = opaque_ptr(handle);
     (ObpIsKernelHandle(handle, 0i8) != 0) as u8
 }
 

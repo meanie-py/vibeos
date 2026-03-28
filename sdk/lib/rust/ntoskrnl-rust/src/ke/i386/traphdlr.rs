@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     KiSaveProcessorState, KiSystemFatalException, MmAccessFault,
     NtCallbackReturn, NtCurrentTeb,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // stdcall functions (NTAPI shims, ke_rust_shims.c)
 extern "system" {
@@ -277,6 +278,7 @@ pub unsafe extern "fastcall" fn KiNpxHandler(
     Thread: PKTHREAD,
     SaveArea: PFX_SAVE_AREA,
 ) -> ! {
+    let Thread = opaque_ptr(Thread);
     if !KiUserTrap(TrapFrame) != 0 {
         (*SaveArea).Cr0NpxState |= CR0_TS;
         if (*TrapFrame).Eip as PVOID == FrRestore {
@@ -931,6 +933,7 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
     mut TrapFrame: PKTRAP_FRAME,
     Arguments: PVOID,
 ) -> ! {
+    let Arguments = opaque_ptr(Arguments);
     let thread = KeGetCurrentThread();
     KiFillTrapFrameDebug(TrapFrame);
     (*TrapFrame).Edx = (*(thread as *mut _ETHREAD)).Tcb.TrapFrame as u32;

@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     PMM_REGION, PMMSUPPORT, PMM_ALTER_REGION_FUNC,
     _MM_REGION, MM_REGION,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const TAG_MM_REGION: u32 = u32::from_be_bytes(*b"RMmM");
 
@@ -106,6 +107,9 @@ pub unsafe extern "system" fn MmAlterRegion(
     NewProtect: ULONG,
     AlterFunc: PMM_ALTER_REGION_FUNC,
 ) -> NTSTATUS {
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let RegionListHead = opaque_ptr(RegionListHead);
+    let StartAddress = opaque_ptr(StartAddress);
     let mut InitialBaseAddress: PVOID = core::ptr::null_mut();
     let InitialRegion = MmFindRegion(
         BaseAddress,
@@ -229,6 +233,7 @@ pub unsafe extern "system" fn MmInitializeRegion(
     Type: ULONG,
     Protect: ULONG,
 ) {
+    let RegionListHead = opaque_ptr(RegionListHead);
     let Region = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<MM_REGION>(),
@@ -252,6 +257,10 @@ pub unsafe extern "system" fn MmFindRegion(
     Address: PVOID,
     RegionBaseAddress: *mut PVOID,
 ) -> PMM_REGION {
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let RegionListHead = opaque_ptr(RegionListHead);
+    let Address = opaque_ptr(Address);
+    let RegionBaseAddress = opaque_ptr(RegionBaseAddress);
     let mut current_entry = (*RegionListHead).Flink;
     let mut StartAddress = BaseAddress;
 

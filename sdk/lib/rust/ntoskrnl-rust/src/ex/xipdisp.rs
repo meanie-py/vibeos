@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     MEMORY_ALLOCATION_DESCRIPTOR, PLOADER_PARAMETER_BLOCK, PMEMORY_ALLOCATION_DESCRIPTOR,
     _TYPE_OF_MEMORY_LoaderXIPRom as LoaderXIPRom,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn DbgPrint(Format: PCHAR, ...) -> ULONG;
@@ -18,6 +19,7 @@ pub unsafe extern "system" fn XIPDispatch(
     Buffer: PVOID,
     BufferSize: ULONG,
 ) -> NTSTATUS {
+    let Buffer = opaque_ptr(Buffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -44,6 +46,7 @@ unsafe fn XIPpFindMemoryDescriptor(
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn XIPInit(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let CommandLine: PCHAR;
     let XipBoot: PCHAR;
     let XipRom: PCHAR;

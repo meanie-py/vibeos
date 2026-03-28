@@ -49,6 +49,7 @@ const DNF_NO_RESOURCE_REQUIRED: ULONG = 0x0100;
 const PHASE1_INITIALIZATION_FAILED: ULONG = 0x00000031;
 
 use ntkrnl_sys::ddk::{_DRIVER_OBJECT, _DEVICE_NODE, PDEVICE_NODE, PDRIVER_OBJECT};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 type DRIVER_OBJECT = _DRIVER_OBJECT;
 type DEVICE_NODE = _DEVICE_NODE;
 
@@ -211,6 +212,7 @@ pub unsafe extern "system" fn PiInitCacheGroupInformation() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) -> USHORT {
+    let ServiceHandle = opaque_ptr(ServiceHandle);
     let mut Status: NTSTATUS;
     let mut KeyValueInformation: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
     let mut i: USHORT;
@@ -249,6 +251,7 @@ pub unsafe extern "system" fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) ->
 
 #[no_mangle]
 pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> USHORT {
+    let ServiceHandle = opaque_ptr(ServiceHandle);
     let mut Status: NTSTATUS;
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut KeyValueInformation: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();

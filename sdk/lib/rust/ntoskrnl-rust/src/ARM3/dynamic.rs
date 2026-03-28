@@ -9,12 +9,14 @@ use ntkrnl_sys::ddk::{
     PPHYSICAL_MEMORY_RANGE,
     PHYSICAL_MEMORY_RANGE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn MmAddPhysicalMemory(
     _start_address: PPHYSICAL_ADDRESS,
     _number_of_bytes: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let _number_of_bytes = opaque_ptr(_number_of_bytes);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -23,6 +25,7 @@ pub unsafe extern "system" fn MmMarkPhysicalMemoryAsBad(
     _start_address: PPHYSICAL_ADDRESS,
     _number_of_bytes: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let _number_of_bytes = opaque_ptr(_number_of_bytes);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -31,6 +34,7 @@ pub unsafe extern "system" fn MmMarkPhysicalMemoryAsGood(
     _start_address: PPHYSICAL_ADDRESS,
     _number_of_bytes: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let _number_of_bytes = opaque_ptr(_number_of_bytes);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -39,6 +43,7 @@ pub unsafe extern "system" fn MmRemovePhysicalMemory(
     _start_address: PPHYSICAL_ADDRESS,
     _number_of_bytes: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let _number_of_bytes = opaque_ptr(_number_of_bytes);
     STATUS_NOT_IMPLEMENTED
 }
 

@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     KeReleaseSemaphore, KeWaitForMultipleObjects, KeWaitForSingleObject,
     ObReferenceObjectByHandle,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const MAXIMUM_WAIT_OBJECTS: ULONG = 64;
 const THREAD_WAIT_OBJECTS: ULONG = 3;
@@ -77,6 +78,8 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
     Alertable: BOOLEAN,
     TimeOut: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let HandleArray = opaque_ptr(HandleArray);
+    let TimeOut = opaque_ptr(TimeOut);
     let mut WaitBlockArray: PKWAIT_BLOCK;
     let mut Handles: [HANDLE; MAXIMUM_WAIT_OBJECTS as usize] = core::mem::zeroed();
     let mut Objects: [PVOID; MAXIMUM_WAIT_OBJECTS as usize] = [core::ptr::null_mut(); MAXIMUM_WAIT_OBJECTS as usize];
@@ -273,6 +276,8 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects32(
     Alertable: BOOLEAN,
     TimeOut: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let Handles = opaque_ptr(Handles);
+    let TimeOut = opaque_ptr(TimeOut);
     NtWaitForMultipleObjects(
         ObjectCount,
         Handles as PHANDLE,
@@ -288,6 +293,8 @@ pub unsafe extern "system" fn NtWaitForSingleObject(
     Alertable: BOOLEAN,
     TimeOut: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let ObjectHandle = opaque_ptr(ObjectHandle);
+    let TimeOut = opaque_ptr(TimeOut);
     let mut Object: PVOID = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE;
     let mut SafeTimeOut: LARGE_INTEGER = core::mem::zeroed();
@@ -346,6 +353,9 @@ pub unsafe extern "system" fn NtSignalAndWaitForSingleObject(
     Alertable: BOOLEAN,
     TimeOut: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let ObjectHandleToSignal = opaque_ptr(ObjectHandleToSignal);
+    let WaitableObjectHandle = opaque_ptr(WaitableObjectHandle);
+    let TimeOut = opaque_ptr(TimeOut);
     let PreviousMode: KPROCESSOR_MODE;
     let Type: POBJECT_TYPE;
     let mut SignalObj: PVOID = core::ptr::null_mut();

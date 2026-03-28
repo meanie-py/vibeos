@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     SeQueryAuthenticationIdToken, SeGetLogonIdDeviceMap,
     ObpReferenceNameInfo, ObpDereferenceNameInfo, ObpEnterObjectTypeMutex, ObpLeaveObjectTypeMutex,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // NTSTATUS codes not in ntkrnl_sys::constants
 const STATUS_NO_TOKEN: NTSTATUS = 0xC000007C_u32 as i32;
@@ -42,6 +43,8 @@ pub unsafe extern "system" fn ObSetDeviceMap(
     Process: PEPROCESS,
     DirectoryHandle: HANDLE,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let DirectoryHandle = opaque_ptr(DirectoryHandle);
     let mut directory_object: POBJECT_DIRECTORY = core::ptr::null_mut();
     let mut device_map: PDEVICE_MAP = core::ptr::null_mut();
     let mut new_device_map: PDEVICE_MAP = core::ptr::null_mut();
@@ -135,6 +138,8 @@ pub unsafe extern "system" fn ObSetDirectoryDeviceMap(
     DeviceMap: *mut PDEVICE_MAP,
     DirectoryHandle: HANDLE,
 ) -> NTSTATUS {
+    let DeviceMap = opaque_ptr(DeviceMap);
+    let DirectoryHandle = opaque_ptr(DirectoryHandle);
     let mut directory_object: POBJECT_DIRECTORY = core::ptr::null_mut();
     let mut local_map: PDEVICE_MAP = core::ptr::null_mut();
     let mut new_device_map: PDEVICE_MAP = core::ptr::null_mut();
@@ -357,6 +362,7 @@ pub unsafe extern "system" fn ObpReferenceDeviceMap() -> PDEVICE_MAP {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObDereferenceDeviceMap(Process: PEPROCESS) {
+    let Process = opaque_ptr(Process);
     let device_map: PDEVICE_MAP;
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(ObpDeviceMapLock) as PKGUARDED_MUTEX);
@@ -402,6 +408,8 @@ unsafe fn ObfDereferenceDeviceMapImpl(device_map: PDEVICE_MAP) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ObInheritDeviceMap(Parent: PEPROCESS, Process: PEPROCESS) {
+    let Parent = opaque_ptr(Parent);
+    let Process = opaque_ptr(Process);
     let device_map: PDEVICE_MAP;
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(ObpDeviceMapLock) as PKGUARDED_MUTEX);
@@ -427,6 +435,7 @@ pub unsafe extern "system" fn ObQueryDeviceMapInformation(
     DeviceMapInfo: PPROCESS_DEVICEMAP_INFORMATION,
     Flags: ULONG,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
     let mut device_map: PDEVICE_MAP = core::ptr::null_mut();
     let mut global_device_map: PDEVICE_MAP;
     let mut dereference: BOOLEAN;

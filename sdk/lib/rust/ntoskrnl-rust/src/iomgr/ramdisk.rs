@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::KI_USER_SHARED_DATA;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _STRING,
@@ -145,6 +146,7 @@ const KernelMode: i8 = 0;
 pub unsafe extern "system" fn IopStartRamdisk(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut MemoryDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR;
     let mut Status: NTSTATUS;
     let CommandLine: *mut i8;

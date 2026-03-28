@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     PEX_FAST_REF, POBJECT_HEADER, POB_SD_CACHE_LIST, PSECURITY_DESCRIPTOR,
     PSECURITY_DESCRIPTOR_HEADER, QUAD, RtlLengthSecurityDescriptor, SECURITY_DESCRIPTOR_HEADER,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const SD_CACHE_ENTRIES: usize = 0x100;
 static mut ObsSecurityDescriptorCache: [OB_SD_CACHE_LIST; SD_CACHE_ENTRIES] =
@@ -162,6 +163,7 @@ unsafe fn ObpGetHeaderForEntry(Entry: PLIST_ENTRY) -> PSECURITY_DESCRIPTOR_HEADE
 pub unsafe extern "system" fn ObpReferenceSecurityDescriptor(
     ObjectHeader: POBJECT_HEADER,
 ) -> PSECURITY_DESCRIPTOR {
+    let ObjectHeader = opaque_ptr(ObjectHeader);
     let FastRef = core::ptr::addr_of_mut!((*ObjectHeader).SecurityDescriptor) as PEX_FAST_REF;
     let OldValue = ExAcquireFastReference(FastRef);
 
@@ -203,6 +205,7 @@ pub unsafe extern "system" fn ObReferenceSecurityDescriptor(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     Count: LONG,
 ) {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let SdHeader = ObpGetHeaderForSd(SecurityDescriptor);
     InterlockedExchangeAdd(
         core::ptr::addr_of_mut!((*SdHeader).RefCount) as *mut LONG,
@@ -215,6 +218,7 @@ pub unsafe extern "system" fn ObDereferenceSecurityDescriptor(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     Count: LONG,
 ) {
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let SdHeader = ObpGetHeaderForSd(SecurityDescriptor);
 
     let mut OldValue = (*SdHeader).RefCount as LONG;
@@ -258,6 +262,8 @@ pub unsafe extern "system" fn ObLogSecurityDescriptor(
     OutputSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     RefBias: LONG,
 ) -> NTSTATUS {
+    let InputSecurityDescriptor = opaque_ptr(InputSecurityDescriptor);
+    let OutputSecurityDescriptor = opaque_ptr(OutputSecurityDescriptor);
     let mut SdHeader: PSECURITY_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let mut NewHeader: PSECURITY_DESCRIPTOR_HEADER = core::ptr::null_mut();
 

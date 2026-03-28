@@ -2,6 +2,7 @@ use super::ke_defs::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _KAPC,
@@ -457,6 +458,8 @@ pub unsafe extern "system" fn KeInitializeApc(
     Mode: i8,
     Context: PVOID,
 ) {
+    let Thread = opaque_ptr(Thread);
+    let Context = opaque_ptr(Context);
     (*Apc).Type = APC_OBJECT_TYPE;
     (*Apc).Size = core::mem::size_of::<_KAPC>() as u8;
 
@@ -489,6 +492,8 @@ pub unsafe extern "system" fn KeInsertQueueApc(
     SystemArgument2: PVOID,
     PriorityBoost: i32,
 ) -> BOOLEAN {
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     let Thread = (*Apc).Thread;
     let mut ApcLock: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
     let mut State = 1u8;
@@ -514,6 +519,7 @@ pub unsafe extern "system" fn KeFlushQueueApc(
     Thread: PKTHREAD,
     PreviousMode: i8,
 ) -> PLIST_ENTRY {
+    let Thread = opaque_ptr(Thread);
     let mut Apc: PKAPC;
     let mut FirstEntry: PLIST_ENTRY;
     let mut CurrentEntry: PLIST_ENTRY;

@@ -103,6 +103,7 @@ use ntkrnl_sys::ddk::{
     _KEY_VALUE_INFORMATION_CLASS_KeyValueBasicInformation as KeyValueBasicInformation,
     _INTERFACE_TYPE_InterfaceTypeUndefined as InterfaceTypeUndefined,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const LockQueueIoDatabaseLock: KSPIN_LOCK_QUEUE_NUMBER = 10;
 
@@ -1186,6 +1187,7 @@ pub unsafe extern "C" fn PiSetDevNodeText(
     DeviceNode: PDEVICE_NODE,
     InstanceKey: HANDLE,
 ) {
+    let InstanceKey = opaque_ptr(InstanceKey);
     // Delegate to C implementation
     PiSetDevNodeText_c(DeviceNode, InstanceKey)
 }
@@ -1879,6 +1881,7 @@ pub unsafe extern "C" fn IopQueryRemoveDeviceRelations(DeviceRelations: PDEVICE_
 
 #[no_mangle]
 pub unsafe extern "C" fn IopPrepareDeviceForRemoval(DeviceObject: PDEVICE_OBJECT, Force: BOOLEAN) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceNode = IopGetDeviceNode(DeviceObject);
     let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -2013,6 +2016,7 @@ unsafe fn PiEnumerateDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
     let mut Dummy: PVOID = core::ptr::null_mut();
 
@@ -2025,6 +2029,7 @@ pub unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTST
 
 #[no_mangle]
 pub unsafe extern "system" fn IoRequestDeviceEject(PhysicalDeviceObject: PDEVICE_OBJECT) {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
     // Delegate to C implementation
     IoRequestDeviceEject_c(PhysicalDeviceObject)
 }
@@ -2211,6 +2216,7 @@ unsafe fn PiDevNodeStateMachine(
 pub unsafe extern "system" fn PipDeviceActionWorker(
     Context: PVOID,
 ) {
+    let Context = opaque_ptr(Context);
     let mut ListEntry: PLIST_ENTRY;
     let mut Request: PDEVICE_ACTION_REQUEST;
     let mut OldIrql: KIRQL = 0;
@@ -2292,6 +2298,9 @@ pub unsafe extern "C" fn PiQueueDeviceAction(
     CompletionEvent: PKEVENT,
     CompletionStatus: *mut NTSTATUS,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let CompletionEvent = opaque_ptr(CompletionEvent);
+    let CompletionStatus = opaque_ptr(CompletionStatus);
     // Delegate to C implementation
     PiQueueDeviceAction_c(DeviceObject, Action, CompletionEvent, CompletionStatus)
 }
@@ -2301,6 +2310,7 @@ pub unsafe extern "C" fn PiPerformSyncDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     // Delegate to C implementation
     PiPerformSyncDeviceAction_c(DeviceObject, Action)
 }

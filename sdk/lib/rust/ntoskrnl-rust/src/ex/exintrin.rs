@@ -7,6 +7,7 @@ use ntkrnl_sys::ddk::{
     ExRaiseAccessViolation,
     ExRaiseDatatypeMisalignment,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static MmUserProbeAddress: PVOID;
@@ -17,24 +18,28 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn InterlockedIncrement(Addend: *mut LONG) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedIncrement(Addend)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn InterlockedIncrement(Addend: *mut LONG) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedIncrement(Addend)
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn InterlockedDecrement(Addend: *mut LONG) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedDecrement(Addend)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut LONG) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedDecrement(Addend)
 }
 
@@ -44,6 +49,7 @@ pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut LONG) -> LONG {
 pub unsafe extern "fastcall" fn InterlockedCompareExchange(
     Destination: *mut LONG, Exchange: LONG, Comperand: LONG,
 ) -> LONG {
+    let Destination = opaque_ptr(Destination);
     use core::sync::atomic::{AtomicI32, Ordering};
     let atomic = &*(Destination as *const AtomicI32);
     match atomic.compare_exchange(Comperand, Exchange, Ordering::SeqCst, Ordering::SeqCst) {
@@ -57,6 +63,7 @@ pub unsafe extern "fastcall" fn InterlockedCompareExchange(
 pub unsafe extern "C" fn InterlockedCompareExchange(
     Destination: *mut LONG, Exchange: LONG, Comperand: LONG,
 ) -> LONG {
+    let Destination = opaque_ptr(Destination);
     use core::sync::atomic::{AtomicI32, Ordering};
     let atomic = &*(Destination as *const AtomicI32);
     match atomic.compare_exchange(Comperand, Exchange, Ordering::SeqCst, Ordering::SeqCst) {
@@ -71,6 +78,7 @@ pub unsafe extern "C" fn InterlockedCompareExchange(
 pub unsafe extern "fastcall" fn InterlockedExchange(
     Target: *mut LONG, Value: LONG,
 ) -> LONG {
+    let Target = opaque_ptr(Target);
     use core::sync::atomic::{AtomicI32, Ordering};
     let atomic = &*(Target as *const AtomicI32);
     atomic.swap(Value, Ordering::SeqCst)
@@ -81,6 +89,7 @@ pub unsafe extern "fastcall" fn InterlockedExchange(
 pub unsafe extern "C" fn InterlockedExchange(
     Target: *mut LONG, Value: LONG,
 ) -> LONG {
+    let Target = opaque_ptr(Target);
     use core::sync::atomic::{AtomicI32, Ordering};
     let atomic = &*(Target as *const AtomicI32);
     atomic.swap(Value, Ordering::SeqCst)
@@ -92,6 +101,7 @@ pub unsafe extern "C" fn InterlockedExchange(
 pub unsafe extern "fastcall" fn InterlockedExchangeAdd(
     Addend: *mut LONG, Value: LONG,
 ) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedExchangeAdd(Addend, Value)
 }
 
@@ -100,6 +110,7 @@ pub unsafe extern "fastcall" fn InterlockedExchangeAdd(
 pub unsafe extern "C" fn InterlockedExchangeAdd(
     Addend: *mut LONG, Value: LONG,
 ) -> LONG {
+    let Addend = opaque_ptr(Addend);
     ntkrnl_sys::interlocked::InterlockedExchangeAdd(Addend, Value)
 }
 
@@ -137,6 +148,7 @@ pub unsafe extern "system" fn ProbeForWrite(
     Length: SIZE_T,
     Alignment: ULONG,
 ) {
+    let Address = opaque_ptr(Address);
     let mut Current = Address as ULONG_PTR;
 
     if Length != 0 {

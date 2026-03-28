@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     PKINTERRUPT,
     PKSPIN_LOCK_QUEUE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // FASTCALL on i386 (matching Windows API / bindgen), "system" on others
 #[cfg(target_arch = "x86")]
@@ -88,6 +89,7 @@ unsafe fn KeReleaseQueuedSpinLockFromDpcLevelInner(LockHandle: PKSPIN_LOCK_QUEUE
 
 #[no_mangle]
 pub unsafe extern "system" fn KeAcquireInterruptSpinLock(Interrupt: PKINTERRUPT) -> KIRQL {
+    let Interrupt = opaque_ptr(Interrupt);
     let mut OldIrql: KIRQL = 0;
 
     KeRaiseIrql((*Interrupt).SynchronizeIrql, core::ptr::addr_of_mut!(OldIrql));
@@ -101,6 +103,7 @@ pub unsafe extern "system" fn KeReleaseInterruptSpinLock(
     Interrupt: PKINTERRUPT,
     OldIrql: KIRQL,
 ) {
+    let Interrupt = opaque_ptr(Interrupt);
     KeReleaseSpinLockFromDpcLevel((*Interrupt).ActualLock as PKSPIN_LOCK);
 
     KeLowerIrql(OldIrql);

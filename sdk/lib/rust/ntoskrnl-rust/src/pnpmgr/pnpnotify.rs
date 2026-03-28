@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
     IoGetDeviceInterfaces,
     RtlInitUnicodeString,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
 }
@@ -168,6 +169,7 @@ pub unsafe extern "C" fn PiNotifyDeviceInterfaceChange(
     InterfaceClassGuid: LPCGUID,
     SymbolicLinkName: PUNICODE_STRING,
 ) {
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
     let notifyStruct = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_DEVICE_INTERFACE_CHANGE_NOTIFICATION>(),
@@ -257,6 +259,7 @@ pub unsafe extern "C" fn PiNotifyTargetDeviceChange(
     DeviceObject: PDEVICE_OBJECT,
     CustomNotification: PTARGET_DEVICE_CUSTOM_NOTIFICATION,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let notificationStruct: PVOID;
     ObReferenceObject(DeviceObject as PVOID);
 
@@ -329,6 +332,10 @@ pub unsafe extern "system" fn IoRegisterPlugPlayNotification(
     Context: PVOID,
     NotificationEntry: *mut PVOID,
 ) -> NTSTATUS {
+    let EventCategoryData = opaque_ptr(EventCategoryData);
+    let DriverObject = opaque_ptr(DriverObject);
+    let Context = opaque_ptr(Context);
+    let NotificationEntry = opaque_ptr(NotificationEntry);
     ObReferenceObject(DriverObject as PVOID);
 
     let Entry = ExAllocatePoolWithTag(
@@ -447,6 +454,7 @@ pub unsafe extern "system" fn IoRegisterPlugPlayNotification(
 pub unsafe extern "system" fn IoUnregisterPlugPlayNotification(
     NotificationEntry: PVOID,
 ) -> NTSTATUS {
+    let NotificationEntry = opaque_ptr(NotificationEntry);
     let Entry = NotificationEntry as PPNP_NOTIFY_ENTRY;
 
     let Lock: PKGUARDED_MUTEX = match (*Entry).EventCategory {

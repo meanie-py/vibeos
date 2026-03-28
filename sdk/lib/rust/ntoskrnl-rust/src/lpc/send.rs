@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
     LpcpGetDataInfoFromMessage,
     ObReferenceObjectSafe,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -75,6 +76,7 @@ pub unsafe extern "system" fn LpcRequestPort(
     PortObject: PVOID,
     LpcMessage: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortObject = opaque_ptr(PortObject);
     let Port = PortObject as PLPCP_PORT_OBJECT;
     let mut QueuePort: PLPCP_PORT_OBJECT;
     let mut ConnectionPort: PLPCP_PORT_OBJECT = core::ptr::null_mut();
@@ -197,6 +199,7 @@ pub unsafe extern "system" fn LpcRequestWaitReplyPort(
     LpcRequest: PPORT_MESSAGE,
     LpcReply: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortObject = opaque_ptr(PortObject);
     let mut Status = STATUS_SUCCESS;
     let PreviousMode = KeGetPreviousMode();
     let Thread = PsGetCurrentThread();
@@ -381,6 +384,7 @@ pub unsafe extern "system" fn NtRequestPort(
     PortHandle: HANDLE,
     LpcRequest: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     let mut Status: NTSTATUS;
     let PreviousMode = KeGetPreviousMode();
     let Thread = PsGetCurrentThread();
@@ -535,6 +539,7 @@ pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
     Message: PPORT_MESSAGE,
     NumberOfDataEntries: *mut ULONG,
 ) -> NTSTATUS {
+    let NumberOfDataEntries = opaque_ptr(NumberOfDataEntries);
     let DataInfo: PLPCP_DATA_INFO;
     let EndOfEntries: *mut UCHAR;
 
@@ -572,6 +577,7 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
     LpcRequest: PPORT_MESSAGE,
     LpcReply: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let PortHandle = opaque_ptr(PortHandle);
     let mut Status: NTSTATUS;
     let mut CapturedLpcRequest: PORT_MESSAGE;
     let mut NumberOfDataEntries: ULONG = 0;

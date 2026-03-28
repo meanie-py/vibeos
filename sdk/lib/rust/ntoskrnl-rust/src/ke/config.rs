@@ -7,6 +7,7 @@ use ntkrnl_sys::ddk::{
     CONFIGURATION_CLASS,
     CONFIGURATION_TYPE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn KeFindConfigurationEntry(
@@ -15,6 +16,7 @@ pub unsafe extern "system" fn KeFindConfigurationEntry(
     Type: CONFIGURATION_TYPE,
     ComponentKey: PULONG,
 ) -> PCONFIGURATION_COMPONENT_DATA {
+    let ComponentKey = opaque_ptr(ComponentKey);
     let mut NextLink: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
 
     KeFindConfigurationNextEntry(
@@ -34,6 +36,8 @@ pub unsafe extern "system" fn KeFindConfigurationNextEntry(
     ComponentKey: PULONG,
     NextLink: *mut PCONFIGURATION_COMPONENT_DATA,
 ) -> PCONFIGURATION_COMPONENT_DATA {
+    let ComponentKey = opaque_ptr(ComponentKey);
+    let NextLink = opaque_ptr(NextLink);
     let mut Key: ULONG = 0;
     let mut Mask: ULONG = 0;
 

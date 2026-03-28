@@ -5,6 +5,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::krnlinit::KeFeatureBits;
 
 extern "system" {
@@ -248,6 +249,8 @@ pub unsafe extern "system" fn PspMapSystemDll(
     dll_base: *mut PVOID,
     use_large_pages: BOOLEAN,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let dll_base = opaque_ptr(dll_base);
     let mut offset = LARGE_INTEGER { QuadPart: 0 };
     let mut view_size: SIZE_T = 0;
     let mut image_base: PVOID = core::ptr::null_mut();
@@ -616,6 +619,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn PsInitSystem(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
+    let loader_block = opaque_ptr(loader_block);
     match ExpInitializationPhase {
         0 => PspInitPhase0(loader_block),
         1 => PspInitPhase1(),
@@ -638,6 +642,10 @@ pub unsafe extern "system" fn PsGetVersion(
     build_number: *mut ULONG,
     csd_version: PUNICODE_STRING,
 ) -> BOOLEAN {
+    let major_version = opaque_ptr(major_version);
+    let minor_version = opaque_ptr(minor_version);
+    let build_number = opaque_ptr(build_number);
+    let csd_version = opaque_ptr(csd_version);
     if !major_version.is_null() {
         *major_version = NtMajorVersion;
     }

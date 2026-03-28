@@ -56,6 +56,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // C macros inlined
 #[inline(always)]
@@ -1171,6 +1172,11 @@ pub unsafe extern "system" fn IoSynchronousPageWrite(
     Event: PKEVENT,
     StatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let Mdl = opaque_ptr(Mdl);
+    let Offset = opaque_ptr(Offset);
+    let Event = opaque_ptr(Event);
+    let StatusBlock = opaque_ptr(StatusBlock);
     let Irp: PIRP;
     let StackPtr: PIO_STACK_LOCATION;
     let DeviceObject: PDEVICE_OBJECT;
@@ -1215,6 +1221,11 @@ pub unsafe extern "system" fn IoPageRead(
     Event: PKEVENT,
     StatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let Mdl = opaque_ptr(Mdl);
+    let Offset = opaque_ptr(Offset);
+    let Event = opaque_ptr(Event);
+    let StatusBlock = opaque_ptr(StatusBlock);
     let mut Irp: PIRP;
     let StackPtr: PIO_STACK_LOCATION;
     let DeviceObject: PDEVICE_OBJECT;
@@ -1265,6 +1276,9 @@ pub unsafe extern "system" fn IoQueryFileInformation(
     FileInformation: PVOID,
     ReturnedLength: *mut ULONG,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FileInformation = opaque_ptr(FileInformation);
+    let ReturnedLength = opaque_ptr(ReturnedLength);
     IopQueryDeviceInformation(
         FileObject,
         FileInformationClass as ULONG,
@@ -1283,6 +1297,9 @@ pub unsafe extern "system" fn IoQueryVolumeInformation(
     FsInformation: PVOID,
     ReturnedLength: *mut ULONG,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FsInformation = opaque_ptr(FsInformation);
+    let ReturnedLength = opaque_ptr(ReturnedLength);
     IopQueryDeviceInformation(
         FileObject,
         FsInformationClass as ULONG,
@@ -1300,6 +1317,8 @@ pub unsafe extern "system" fn IoSetInformation(
     Length: ULONG,
     FileInformation: PVOID,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FileInformation = opaque_ptr(FileInformation);
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let Irp: PIRP;
     let DeviceObject: PDEVICE_OBJECT;
@@ -1393,6 +1412,12 @@ pub unsafe extern "system" fn NtDeviceIoControlFile(
     OutputBuffer: PVOID,
     OutputBufferLength: ULONG,
 ) -> NTSTATUS {
+    let DeviceHandle = opaque_ptr(DeviceHandle);
+    let Event = opaque_ptr(Event);
+    let UserApcContext = opaque_ptr(UserApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
     IopDeviceFsIoControl(
         DeviceHandle,
         Event,
@@ -1421,6 +1446,12 @@ pub unsafe extern "system" fn NtFsControlFile(
     OutputBuffer: PVOID,
     OutputBufferLength: ULONG,
 ) -> NTSTATUS {
+    let DeviceHandle = opaque_ptr(DeviceHandle);
+    let Event = opaque_ptr(Event);
+    let UserApcContext = opaque_ptr(UserApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
     IopDeviceFsIoControl(
         DeviceHandle,
         Event,
@@ -1441,6 +1472,8 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
     FileHandle: HANDLE,
     IoStatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let Irp: PIRP;
     let StackPtr: PIO_STACK_LOCATION;
@@ -1564,6 +1597,11 @@ pub unsafe extern "system" fn NtNotifyChangeDirectoryFile(
     CompletionFilter: ULONG,
     WatchTree: BOOLEAN,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let EventHandle = opaque_ptr(EventHandle);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
     let Irp: PIRP;
     let mut Event: PKEVENT = core::ptr::null_mut();
     let DeviceObject: PDEVICE_OBJECT;
@@ -1688,6 +1726,12 @@ pub unsafe extern "system" fn NtLockFile(
     FailImmediately: BOOLEAN,
     ExclusiveLock: BOOLEAN,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let EventHandle = opaque_ptr(EventHandle);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Length = opaque_ptr(Length);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut LocalLength: PLARGE_INTEGER = core::ptr::null_mut();
     let Irp: PIRP;
@@ -1878,6 +1922,12 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     FileName: PUNICODE_STRING,
     RestartScan: BOOLEAN,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let EventHandle = opaque_ptr(EventHandle);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let FileInformation = opaque_ptr(FileInformation);
+    let FileName = opaque_ptr(FileName);
     let Irp: PIRP;
     let DeviceObject: PDEVICE_OBJECT;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
@@ -2153,6 +2203,11 @@ pub unsafe extern "system" fn NtQueryEaFile(
     EaIndex: *mut ULONG,
     RestartScan: BOOLEAN,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
+    let EaList = opaque_ptr(EaList);
+    let EaIndex = opaque_ptr(EaIndex);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2164,6 +2219,9 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     Length: ULONG,
     FileInformationClass: FILE_INFORMATION_CLASS,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let FileInformation = opaque_ptr(FileInformation);
     let mut HandleInformation: _OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -2459,6 +2517,11 @@ pub unsafe extern "system" fn NtQueryQuotaInformationFile(
     StartSid: PSID,
     RestartScan: BOOLEAN,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
+    let SidList = opaque_ptr(SidList);
+    let StartSid = opaque_ptr(StartSid);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2474,6 +2537,13 @@ pub unsafe extern "system" fn NtReadFile(
     ByteOffset: PLARGE_INTEGER,
     Key: *mut ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let Event = opaque_ptr(Event);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Key = opaque_ptr(Key);
     let mut Status: NTSTATUS;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let Irp: PIRP;
@@ -2742,6 +2812,12 @@ pub unsafe extern "system" fn NtReadFileScatter(
     ByteOffset: PLARGE_INTEGER,
     Key: *mut ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let Event = opaque_ptr(Event);
+    let UserApcContext = opaque_ptr(UserApcContext);
+    let UserIoStatusBlock = opaque_ptr(UserIoStatusBlock);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Key = opaque_ptr(Key);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2752,6 +2828,9 @@ pub unsafe extern "system" fn NtSetEaFile(
     EaBuffer: PVOID,
     EaBufferSize: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let EaBuffer = opaque_ptr(EaBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2763,6 +2842,9 @@ pub unsafe extern "system" fn NtSetInformationFile(
     Length: ULONG,
     FileInformationClass: FILE_INFORMATION_CLASS,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let FileInformation = opaque_ptr(FileInformation);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut Irp: PIRP;
@@ -3046,6 +3128,9 @@ pub unsafe extern "system" fn NtSetQuotaInformationFile(
     Buffer: PVOID,
     BufferLength: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -3057,6 +3142,10 @@ pub unsafe extern "system" fn NtUnlockFile(
     Length: PLARGE_INTEGER,
     Key: ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Length = opaque_ptr(Length);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut LocalLength: PLARGE_INTEGER = core::ptr::null_mut();
     let mut Irp: PIRP;
@@ -3216,6 +3305,13 @@ pub unsafe extern "system" fn NtWriteFile(
     ByteOffset: PLARGE_INTEGER,
     Key: *mut ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let Event = opaque_ptr(Event);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Key = opaque_ptr(Key);
     let mut Status: NTSTATUS;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut Irp: PIRP;
@@ -3471,6 +3567,12 @@ pub unsafe extern "system" fn NtWriteFileGather(
     ByteOffset: PLARGE_INTEGER,
     Key: *mut ULONG,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let Event = opaque_ptr(Event);
+    let UserApcContext = opaque_ptr(UserApcContext);
+    let UserIoStatusBlock = opaque_ptr(UserIoStatusBlock);
+    let ByteOffset = opaque_ptr(ByteOffset);
+    let Key = opaque_ptr(Key);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -3482,6 +3584,9 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
     Length: ULONG,
     FsInformationClass: FS_INFORMATION_CLASS,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let FsInformation = opaque_ptr(FsInformation);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut Irp: PIRP;
     let mut StackPtr: PIO_STACK_LOCATION;
@@ -3672,6 +3777,9 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
     Length: ULONG,
     FsInformationClass: FS_INFORMATION_CLASS,
 ) -> NTSTATUS {
+    let FileHandle = opaque_ptr(FileHandle);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let FsInformation = opaque_ptr(FsInformation);
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let mut Irp: PIRP;
     let mut StackPtr: PIO_STACK_LOCATION;
@@ -3823,6 +3931,7 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
 pub unsafe extern "system" fn NtCancelDeviceWakeupRequest(
     DeviceHandle: HANDLE,
 ) -> NTSTATUS {
+    let DeviceHandle = opaque_ptr(DeviceHandle);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -3830,5 +3939,6 @@ pub unsafe extern "system" fn NtCancelDeviceWakeupRequest(
 pub unsafe extern "system" fn NtRequestDeviceWakeup(
     DeviceHandle: HANDLE,
 ) -> NTSTATUS {
+    let DeviceHandle = opaque_ptr(DeviceHandle);
     STATUS_NOT_IMPLEMENTED
 }

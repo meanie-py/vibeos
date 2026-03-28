@@ -17,6 +17,7 @@ use ntkrnl_sys::ddk::{
     KiComputeDueTime, KiComputeTimerTableIndex,
     KiRemoveEntryTimer, KiExitDispatcher,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
@@ -51,6 +52,7 @@ pub unsafe extern "fastcall" fn KiInsertTreeTimer(
     Timer: PKTIMER,
     Interval: LARGE_INTEGER,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiInsertTreeTimerImpl(Timer, Interval)
 }
 
@@ -60,6 +62,7 @@ pub unsafe extern "C" fn KiInsertTreeTimer(
     Timer: PKTIMER,
     Interval: LARGE_INTEGER,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiInsertTreeTimerImpl(Timer, Interval)
 }
 
@@ -94,6 +97,7 @@ pub unsafe extern "fastcall" fn KiInsertTimerTable(
     Timer: PKTIMER,
     Hand: ULONG,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiInsertTimerTableImpl(Timer, Hand)
 }
 
@@ -103,6 +107,7 @@ pub unsafe extern "C" fn KiInsertTimerTable(
     Timer: PKTIMER,
     Hand: ULONG,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiInsertTimerTableImpl(Timer, Hand)
 }
 
@@ -159,12 +164,14 @@ unsafe fn KiInsertTimerTableImpl(
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiSignalTimer(Timer: PKTIMER) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiSignalTimerImpl(Timer)
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiSignalTimer(Timer: PKTIMER) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     KiSignalTimerImpl(Timer)
 }
 
@@ -211,6 +218,7 @@ pub unsafe extern "fastcall" fn KiCompleteTimer(
     Timer: PKTIMER,
     LockQueue: PKSPIN_LOCK_QUEUE,
 ) {
+    let Timer = opaque_ptr(Timer);
     KiCompleteTimerImpl(Timer, LockQueue)
 }
 
@@ -220,6 +228,7 @@ pub unsafe extern "C" fn KiCompleteTimer(
     Timer: PKTIMER,
     LockQueue: PKSPIN_LOCK_QUEUE,
 ) {
+    let Timer = opaque_ptr(Timer);
     KiCompleteTimerImpl(Timer, LockQueue)
 }
 
@@ -255,6 +264,7 @@ unsafe fn KiCompleteTimerImpl(
 
 #[no_mangle]
 pub unsafe extern "system" fn KeCancelTimer(Timer: PKTIMER) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     let OldIrql: KIRQL;
     let Inserted: BOOLEAN;
 
@@ -272,11 +282,13 @@ pub unsafe extern "system" fn KeCancelTimer(Timer: PKTIMER) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeInitializeTimer(Timer: PKTIMER) {
+    let Timer = opaque_ptr(Timer);
     KeInitializeTimerEx(Timer, NotificationTimer);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeInitializeTimerEx(Timer: PKTIMER, Type: ULONG) {
+    let Timer = opaque_ptr(Timer);
     (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.Type = TimerNotificationObject + Type as u8;
     (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Hand = (core::mem::size_of::<KTIMER>() / core::mem::size_of::<ULONG>()) as u8;
     (*Timer).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.Inserted = 0u8;
@@ -289,6 +301,7 @@ pub unsafe extern "system" fn KeInitializeTimerEx(Timer: PKTIMER, Type: ULONG) {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeReadStateTimer(Timer: PKTIMER) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
     (*Timer).Header.SignalState as BOOLEAN
 }
 
@@ -298,6 +311,8 @@ pub unsafe extern "system" fn KeSetTimer(
     DueTime: LARGE_INTEGER,
     Dpc: PKDPC,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
+    let Dpc = opaque_ptr(Dpc);
     KeSetTimerEx(Timer, DueTime, 0, Dpc)
 }
 
@@ -308,6 +323,8 @@ pub unsafe extern "system" fn KeSetTimerEx(
     Period: LONG,
     Dpc: PKDPC,
 ) -> BOOLEAN {
+    let Timer = opaque_ptr(Timer);
+    let Dpc = opaque_ptr(Dpc);
     let OldIrql: KIRQL;
     let Inserted: BOOLEAN;
     let mut Hand: ULONG = 0;

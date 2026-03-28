@@ -17,6 +17,7 @@ use super::helpers::*;
 
 use ntkrnl_sys::mm::PAGE_READONLY;
 use ntkrnl_sys::macros::NtCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[allow(unused_imports)]
 use ntkrnl_sys::ddk::{
@@ -217,6 +218,8 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
     Vad: PMMVAD,
     Process: PEPROCESS,
 ) -> ULONG {
+    let Vad = opaque_ptr(Vad);
+    let Process = opaque_ptr(Process);
     let mut PointerPte: PMMPTE;
     let LastPte: PMMPTE;
     let mut PointerPde: PMMPDE;
@@ -318,6 +321,8 @@ pub unsafe extern "system" fn MiMakeSystemAddressValid(
     PageTableVirtualAddress: PVOID,
     CurrentProcess: PEPROCESS,
 ) -> ULONG {
+    let PageTableVirtualAddress = opaque_ptr(PageTableVirtualAddress);
+    let CurrentProcess = opaque_ptr(CurrentProcess);
     let mut Status: NTSTATUS;
     let mut WsShared: BOOLEAN = 0;
     let mut WsSafe: BOOLEAN = 0;
@@ -361,6 +366,7 @@ pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
     VirtualAddress: PVOID,
     mut OldIrql: KIRQL,
 ) -> ULONG {
+    let VirtualAddress = opaque_ptr(VirtualAddress);
     let mut Status: NTSTATUS;
     let mut LockChange = 0u32;
 
@@ -392,6 +398,8 @@ pub unsafe extern "system" fn MiDeleteSystemPageableVm(
     _Flags: ULONG,
     ValidPages: *mut PFN_NUMBER,
 ) -> PFN_COUNT {
+    let PointerPte = opaque_ptr(PointerPte);
+    let ValidPages = opaque_ptr(ValidPages);
     let mut ActualPages: PFN_COUNT = 0;
     let CurrentThread = PsGetCurrentThread() as PETHREAD;
     let mut Pfn1: PMMPFN;
@@ -445,6 +453,10 @@ pub unsafe extern "system" fn MiDeletePte(
     CurrentProcess: PEPROCESS,
     ProtoPteArg: PMMPTE,
 ) {
+    let PointerPte = opaque_ptr(PointerPte);
+    let VirtualAddress = opaque_ptr(VirtualAddress);
+    let CurrentProcess = opaque_ptr(CurrentProcess);
+    let ProtoPteArg = opaque_ptr(ProtoPteArg);
     let mut Pfn1: PMMPFN;
     let TempPte: MMPTE;
     let mut PageFrameIndex: PFN_NUMBER;
@@ -580,6 +592,7 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
     EndingAddress: ULONG_PTR,
     Vad: PMMVAD,
 ) {
+    let Vad = opaque_ptr(Vad);
     let mut PointerPte: PMMPTE;
     let mut ProtoPtr: PMMPTE;
     let mut LastPrototypePte: PMMPTE;
@@ -740,6 +753,11 @@ pub unsafe extern "system" fn MiDoMappedCopy(
     PreviousMode: KPROCESSOR_MODE,
     ReturnSize: *mut SIZE_T,
 ) -> NTSTATUS {
+    let SourceProcess = opaque_ptr(SourceProcess);
+    let SourceAddress = opaque_ptr(SourceAddress);
+    let TargetProcess = opaque_ptr(TargetProcess);
+    let TargetAddress = opaque_ptr(TargetAddress);
+    let ReturnSize = opaque_ptr(ReturnSize);
     let mut MdlBuffer: [PFN_NUMBER; (core::mem::size_of::<MDL>() / core::mem::size_of::<PFN_NUMBER>()) + MI_MAPPED_COPY_PAGES + 1] = [0; (core::mem::size_of::<MDL>() / core::mem::size_of::<PFN_NUMBER>()) + MI_MAPPED_COPY_PAGES + 1];
     let Mdl = MdlBuffer.as_mut_ptr() as *mut MDL;
     let mut TotalSize: SIZE_T;
@@ -848,6 +866,11 @@ pub unsafe extern "system" fn MiDoPoolCopy(
     PreviousMode: KPROCESSOR_MODE,
     ReturnSize: *mut SIZE_T,
 ) -> NTSTATUS {
+    let SourceProcess = opaque_ptr(SourceProcess);
+    let SourceAddress = opaque_ptr(SourceAddress);
+    let TargetProcess = opaque_ptr(TargetProcess);
+    let TargetAddress = opaque_ptr(TargetAddress);
+    let ReturnSize = opaque_ptr(ReturnSize);
     let mut StackBuffer: [u8; MI_POOL_COPY_BYTES] = [0; MI_POOL_COPY_BYTES];
     let mut TotalSize: SIZE_T;
     let mut CurrentSize: SIZE_T;
@@ -950,6 +973,11 @@ pub unsafe extern "system" fn MiQueryAddressState(
     ReturnedProtect: PULONG,
     NextVa: *mut PVOID,
 ) -> ULONG {
+    let Va = opaque_ptr(Va);
+    let Vad = opaque_ptr(Vad);
+    let TargetProcess = opaque_ptr(TargetProcess);
+    let ReturnedProtect = opaque_ptr(ReturnedProtect);
+    let NextVa = opaque_ptr(NextVa);
     let mut PointerPte: PMMPTE;
     let mut ProtoPte: PMMPTE;
     let mut PointerPde: PMMPDE;
@@ -1060,6 +1088,10 @@ pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
     _MemoryInformationLength: SIZE_T,
     ReturnLength: *mut SIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let MemoryInformation = opaque_ptr(MemoryInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut TargetProcess: PEPROCESS = core::ptr::null_mut();
     let mut Status = STATUS_SUCCESS;
     let mut Vad: PMMVAD = core::ptr::null_mut();
@@ -1251,6 +1283,8 @@ pub unsafe extern "system" fn MiIsEntireRangeCommitted(
     Vad: PMMVAD,
     Process: PEPROCESS,
 ) -> BOOLEAN {
+    let Vad = opaque_ptr(Vad);
+    let Process = opaque_ptr(Process);
     let mut PointerPte: PMMPTE;
     let LastPte: PMMPTE;
     let mut PointerPde: PMMPDE;
@@ -1350,6 +1384,7 @@ pub unsafe extern "system" fn MiMakePdeExistAndMakeValid(
     TargetProcess: PEPROCESS,
     _OldIrql: KIRQL,
 ) {
+    let TargetProcess = opaque_ptr(TargetProcess);
     let PointerPte: PMMPTE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let PointerPpe = MiPdeToPpe(PointerPde);
@@ -1407,6 +1442,7 @@ pub unsafe extern "system" fn MiProcessValidPteList(
     ValidPteList: *mut PMMPTE,
     Count: ULONG,
 ) {
+    let ValidPteList = opaque_ptr(ValidPteList);
     let mut OldIrql: KIRQL;
     let mut i: ULONG;
     let mut TempPte: MMPTE;
@@ -1442,6 +1478,10 @@ pub unsafe extern "system" fn MiDecommitPages(
     Process: PEPROCESS,
     Vad: PMMVAD,
 ) -> ULONG {
+    let StartingAddress = opaque_ptr(StartingAddress);
+    let EndingPte = opaque_ptr(EndingPte);
+    let Process = opaque_ptr(Process);
+    let Vad = opaque_ptr(Vad);
     let mut PointerPte: PMMPTE;
     let mut CommitPte: PMMPTE = core::ptr::null_mut();
     let mut PointerPde: PMMPDE;
@@ -1521,6 +1561,11 @@ pub unsafe extern "system" fn MmCopyVirtualMemory(
     PreviousMode: KPROCESSOR_MODE,
     ReturnSize: PSIZE_T,
 ) -> NTSTATUS {
+    let SourceProcess = opaque_ptr(SourceProcess);
+    let SourceAddress = opaque_ptr(SourceAddress);
+    let TargetProcess = opaque_ptr(TargetProcess);
+    let TargetAddress = opaque_ptr(TargetAddress);
+    let ReturnSize = opaque_ptr(ReturnSize);
     let Status: NTSTATUS;
     let mut Process: PEPROCESS = SourceProcess;
 
@@ -1580,6 +1625,10 @@ pub unsafe extern "system" fn MmFlushVirtualMemory(
     _RegionSize: *mut SIZE_T,
     IoStatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let _Process = opaque_ptr(_Process);
+    let _BaseAddress = opaque_ptr(_BaseAddress);
+    let _RegionSize = opaque_ptr(_RegionSize);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     // PAGED_CODE();
     // UNIMPLEMENTED;
 
@@ -1595,6 +1644,7 @@ pub unsafe extern "system" fn MmFlushVirtualMemory(
 pub unsafe extern "system" fn MiGetPageProtection(
     mut PointerPte: PMMPTE,
 ) -> ULONG {
+    let PointerPte = opaque_ptr(PointerPte);
     let mut TempPte: MMPTE;
     let Pfn: PMMPFN;
     let CurrentProcess: PEPROCESS;
@@ -1705,6 +1755,10 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
     NewAccessProtection: ULONG,
     OldAccessProtection: *mut ULONG,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let NumberOfBytesToProtect = opaque_ptr(NumberOfBytesToProtect);
+    let OldAccessProtection = opaque_ptr(OldAccessProtection);
     let mut Vad: PMMVAD;
     let AddressSpace: PMMSUPPORT;
     let StartingAddress: ULONG_PTR;
@@ -1970,6 +2024,7 @@ pub unsafe extern "system" fn MmSecureVirtualMemory(
     _Length: SIZE_T,
     _Mode: ULONG,
 ) -> PVOID {
+    let Address = opaque_ptr(Address);
     Address
 }
 
@@ -1977,6 +2032,7 @@ pub unsafe extern "system" fn MmSecureVirtualMemory(
 pub unsafe extern "system" fn MmUnsecureVirtualMemory(
     _SecureMem: PVOID,
 ) {
+    let _SecureMem = opaque_ptr(_SecureMem);
 }
 
 #[no_mangle]
@@ -1988,6 +2044,9 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
     _AllocationType: ULONG,
     _Protect: ULONG,
 ) -> NTSTATUS {
+    let _ProcessHandle = opaque_ptr(_ProcessHandle);
+    let _UBaseAddress = opaque_ptr(_UBaseAddress);
+    let _URegionSize = opaque_ptr(_URegionSize);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1998,6 +2057,9 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
     _URegionSize: *mut SIZE_T,
     _FreeType: ULONG,
 ) -> NTSTATUS {
+    let _ProcessHandle = opaque_ptr(_ProcessHandle);
+    let _UBaseAddress = opaque_ptr(_UBaseAddress);
+    let _URegionSize = opaque_ptr(_URegionSize);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -2005,6 +2067,7 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
 pub unsafe extern "system" fn MmGetPhysicalAddress(
     Address: PVOID,
 ) -> PHYSICAL_ADDRESS {
+    let Address = opaque_ptr(Address);
     let mut PhysicalAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
     let TempPde: MMPTE;
     let TempPte: MMPTE;
@@ -2074,6 +2137,10 @@ pub unsafe extern "system" fn NtReadVirtualMemory(
     NumberOfBytesToRead: SIZE_T,
     NumberOfBytesRead: PSIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let Buffer = opaque_ptr(Buffer);
+    let NumberOfBytesRead = opaque_ptr(NumberOfBytesRead);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -2131,6 +2198,10 @@ pub unsafe extern "system" fn NtWriteVirtualMemory(
     NumberOfBytesToWrite: SIZE_T,
     NumberOfBytesWritten: PSIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let Buffer = opaque_ptr(Buffer);
+    let NumberOfBytesWritten = opaque_ptr(NumberOfBytesWritten);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -2186,6 +2257,8 @@ pub unsafe extern "system" fn NtFlushInstructionCache(
     BaseAddress: PVOID,
     FlushSize: SIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut ApcState: _KAPC_STATE = core::mem::zeroed();
     let mut Process: PKPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -2236,6 +2309,10 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
     NewAccessProtection: ULONG,
     UnsafeOldAccessProtection: PULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let UnsafeBaseAddress = opaque_ptr(UnsafeBaseAddress);
+    let UnsafeNumberOfBytesToProtect = opaque_ptr(UnsafeNumberOfBytesToProtect);
+    let UnsafeOldAccessProtection = opaque_ptr(UnsafeOldAccessProtection);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut OldAccessProtection: ULONG = 0;
     let Protection: ULONG;
@@ -2570,6 +2647,9 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
     NumberOfBytesToLock: PSIZE_T,
     MapType: ULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let NumberOfBytesToLock = opaque_ptr(NumberOfBytesToLock);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let CurrentProcess: PEPROCESS = PsGetCurrentProcess() as PEPROCESS;
     let mut Status: NTSTATUS;
@@ -2845,6 +2925,9 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
     NumberOfBytesToUnlock: PSIZE_T,
     MapType: ULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let NumberOfBytesToUnlock = opaque_ptr(NumberOfBytesToUnlock);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let CurrentProcess: PEPROCESS = PsGetCurrentProcess() as PEPROCESS;
     let mut Status: NTSTATUS;
@@ -2932,6 +3015,10 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
     NumberOfBytesToFlush: PSIZE_T,
     IoStatusBlock: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let NumberOfBytesToFlush = opaque_ptr(NumberOfBytesToFlush);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
@@ -2997,6 +3084,11 @@ pub unsafe extern "system" fn NtGetWriteWatch(
     EntriesInUserAddressArray: PULONG_PTR,
     Granularity: PULONG,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let UserAddressArray = opaque_ptr(UserAddressArray);
+    let EntriesInUserAddressArray = opaque_ptr(EntriesInUserAddressArray);
+    let Granularity = opaque_ptr(Granularity);
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut EndAddress: PVOID;
@@ -3075,6 +3167,8 @@ pub unsafe extern "system" fn NtResetWriteWatch(
     BaseAddress: PVOID,
     RegionSize: SIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
     let mut EndAddress: PVOID;
     let mut Process: PEPROCESS = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -3130,6 +3224,10 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
     MemoryInformationLength: SIZE_T,
     ReturnLength: PSIZE_T,
 ) -> NTSTATUS {
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let BaseAddress = opaque_ptr(BaseAddress);
+    let MemoryInformation = opaque_ptr(MemoryInformation);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let PreviousMode: KPROCESSOR_MODE;
 

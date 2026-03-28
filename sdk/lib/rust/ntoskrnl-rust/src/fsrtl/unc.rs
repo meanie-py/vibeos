@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     ZwClose, ZwCreateFile, ZwLoadDriver, ZwOpenKey, ZwQueryValueKey,
     _UNICODE_STRING, HANDLE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Redefine as HANDLE (*mut c_void) rather than isize
 const INVALID_HANDLE_VALUE_PTR: HANDLE = -1isize as HANDLE;
@@ -213,6 +214,7 @@ unsafe fn FsRtlpRegisterProviderWithMUP(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlDeregisterUncProvider(Handle: HANDLE) {
+    let Handle = opaque_ptr(Handle);
     if Handle == INVALID_HANDLE_VALUE_PTR || Handle.is_null() {
         return;
     }
@@ -254,6 +256,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
     RedirectorDeviceName: PCUNICODE_STRING,
     MailslotsSupported: BOOLEAN,
 ) -> NTSTATUS {
+    let Handle = opaque_ptr(Handle);
     let mut status: NTSTATUS;
     let mut device_handle: HANDLE = core::ptr::null_mut();
     let mut mup_string: _UNICODE_STRING = core::mem::zeroed();

@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     LpcpGetMessageFromThread, PsGetCurrentThread,
     PsLookupProcessThreadByCid,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut LpcpLock: KGUARDED_MUTEX;
@@ -76,6 +77,7 @@ const PAGE_READWRITE: ULONG = 0x04;
 
 #[no_mangle]
 pub unsafe extern "system" fn LpcpPrepareToWakeClient(thread: PETHREAD) {
+    let thread = opaque_ptr(thread);
     if (*thread).__bindgen_anon_9.__bindgen_anon_1.LpcExitThreadCalled() == 0
         && !IsListEmpty(core::ptr::addr_of_mut!((*thread).__bindgen_anon_1.LpcReplyChain))
     {
@@ -93,6 +95,8 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     server_view: PPORT_VIEW,
     client_view: PREMOTE_PORT_VIEW,
 ) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
+    let port_context = opaque_ptr(port_context);
     let previous_mode = KeGetPreviousMode();
     let mut captured_server_view: PORT_VIEW = core::mem::zeroed();
     let mut captured_reply_message: PORT_MESSAGE;
@@ -381,6 +385,7 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtCompleteConnectPort(port_handle: HANDLE) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
     let previous_mode = KeGetPreviousMode();
     let mut port: PLPCP_PORT_OBJECT = core::ptr::null_mut();
     let mut thread: PETHREAD;

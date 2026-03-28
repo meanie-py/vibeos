@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread,
     PopSetSystemPowerState,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
@@ -99,6 +100,7 @@ pub unsafe extern "system" fn PopInitShutdownList() {
 
 #[no_mangle]
 pub unsafe extern "system" fn PopGracefulShutdown(_Context: PVOID) {
+    let _Context = opaque_ptr(_Context);
     // Process the registered waits and work items
     PopProcessShutDownLists();
 
@@ -215,6 +217,7 @@ pub unsafe extern "system" fn PopReadShutdownPolicy() {
 
 #[no_mangle]
 pub unsafe extern "system" fn PoRequestShutdownWait(Thread: PETHREAD) -> NTSTATUS {
+    let Thread = opaque_ptr(Thread);
     let ShutDownWaitEntry = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<PopShutdownWaitEntryStruct>() as usize,
@@ -362,6 +365,7 @@ pub unsafe extern "system" fn PoQueueShutdownWorkItem(WorkItem: PWORK_QUEUE_ITEM
 
 #[no_mangle]
 pub unsafe extern "system" fn PoRequestShutdownEvent(Event: *mut PVOID) -> NTSTATUS {
+    let Event = opaque_ptr(Event);
     if !Event.is_null() {
         *Event = core::ptr::null_mut();
     }

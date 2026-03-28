@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     _EVENT_TYPE_NotificationEvent, _EVENT_TYPE_SynchronizationEvent,
     EVENT_TYPE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static ExEventObjectType: POBJECT_TYPE;
@@ -71,6 +72,8 @@ pub unsafe extern "system" fn IoCreateNotificationEvent(
     EventName: PUNICODE_STRING,
     EventHandle: PHANDLE,
 ) -> PKEVENT {
+    let EventName = opaque_ptr(EventName);
+    let EventHandle = opaque_ptr(EventHandle);
     IopCreateEvent(EventName, EventHandle, _EVENT_TYPE_NotificationEvent)
 }
 
@@ -79,6 +82,8 @@ pub unsafe extern "system" fn IoCreateSynchronizationEvent(
     EventName: PUNICODE_STRING,
     EventHandle: PHANDLE,
 ) -> PKEVENT {
+    let EventName = opaque_ptr(EventName);
+    let EventHandle = opaque_ptr(EventHandle);
     IopCreateEvent(EventName, EventHandle, _EVENT_TYPE_SynchronizationEvent)
 }
 

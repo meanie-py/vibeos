@@ -20,6 +20,7 @@ use ntkrnl_sys::ddk::{
     ObReferenceObjectByPointer,
     KeBugCheck, MMPFNLIST,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn RtlFillMemory(destination: PVOID, length: SIZE_T, fill: UCHAR);
@@ -304,6 +305,7 @@ pub unsafe extern "C" fn CcRosFlushVacb(
     vacb: PROS_VACB,
     iosb: PIO_STATUS_BLOCK
 ) -> NTSTATUS {
+    let iosb = opaque_ptr(iosb);
     let mut status: NTSTATUS;
     let mut have_lock = 0u8;
     let shared_cache_map = (*vacb).SharedCacheMap;
@@ -416,6 +418,7 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
     wait: BOOLEAN,
     called_from_lazy: BOOLEAN
 ) -> NTSTATUS {
+    let count = opaque_ptr(count);
     let mut status: NTSTATUS;
     let mut old_irql: KIRQL;
     let flush_all = (target == MAXULONG) as BOOLEAN;
@@ -523,6 +526,7 @@ pub unsafe extern "C" fn CcRosTrimCache(
     target: ULONG,
     nr_freed: *mut ULONG
 ) {
+    let nr_freed = opaque_ptr(nr_freed);
     let mut current_entry: PLIST_ENTRY;
     let mut current: PROS_VACB;
     let mut pages_freed: ULONG = 0;
@@ -924,6 +928,7 @@ pub unsafe extern "C" fn CcRosGetVacb(
     file_offset: LONGLONG,
     vacb: *mut PROS_VACB
 ) -> NTSTATUS {
+    let vacb = opaque_ptr(vacb);
     let mut current: PROS_VACB;
     let status: NTSTATUS;
     let mut old_irql: KIRQL;
@@ -959,6 +964,7 @@ pub unsafe extern "C" fn CcRosRequestVacb(
     file_offset: LONGLONG,
     vacb: *mut PROS_VACB
 ) -> NTSTATUS {
+    let vacb = opaque_ptr(vacb);
     if file_offset % VACB_MAPPING_GRANULARITY as i64 != 0 {
         KeBugCheck(0x34);
     }
@@ -985,6 +991,8 @@ pub unsafe extern "system" fn CcFlushCache(
     length: ULONG,
     io_status: PIO_STATUS_BLOCK
 ) {
+    let file_offset = opaque_ptr(file_offset);
+    let io_status = opaque_ptr(io_status);
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
     let mut flush_start: LONGLONG;
     let mut flush_end: LONGLONG;
@@ -1091,6 +1099,7 @@ pub unsafe extern "system" fn CcFlushCache(
 
 #[no_mangle]
 pub unsafe extern "C" fn CcRosReleaseFileCache(file_object: PFILE_OBJECT) -> NTSTATUS {
+    let file_object = opaque_ptr(file_object);
     let mut old_irql: KIRQL;
     let mut private_map: PPRIVATE_CACHE_MAP;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
@@ -1133,6 +1142,8 @@ pub unsafe extern "C" fn CcRosInitializeFileCache(
     call_backs: PCACHE_MANAGER_CALLBACKS,
     lazy_writer_context: PVOID
 ) -> NTSTATUS {
+    let file_object = opaque_ptr(file_object);
+    let lazy_writer_context = opaque_ptr(lazy_writer_context);
     let mut old_irql: KIRQL;
     let mut allocated: BOOLEAN;
     let mut shared_cache_map: PROS_SHARED_CACHE_MAP;

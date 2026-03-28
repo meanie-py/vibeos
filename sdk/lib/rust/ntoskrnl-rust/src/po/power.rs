@@ -4,6 +4,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     HANDLE, ACCESS_MASK, PKTHREAD,
@@ -159,6 +160,7 @@ pub unsafe extern "system" fn ExInitializeWorkItem_inline(
     routine: ntkrnl_sys::ddk::PWORKER_THREAD_ROUTINE,
     context: PVOID,
 ) {
+    let context = opaque_ptr(context);
     (*item).WorkerRoutine = routine;
     (*item).Parameter = context;
     (*item).List.Flink = core::ptr::null_mut();
@@ -173,6 +175,8 @@ pub unsafe extern "system" fn IopInitDeviceTreeTraverseContext(
     action: ntkrnl_sys::ddk::DEVICETREE_TRAVERSE_ROUTINE,
     context: PVOID,
 ) {
+    let ctx = opaque_ptr(ctx);
+    let context = opaque_ptr(context);
     (*ctx).FirstDeviceNode = device_node;
     (*ctx).Action = action;
     (*ctx).Context = context;
@@ -225,16 +229,19 @@ pub static mut PopCapabilities: SYSTEM_POWER_CAPABILITIES = unsafe { core::mem::
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "stdcall" fn PopPassivePowerCall(Parameter: PVOID) {
+    let Parameter = opaque_ptr(Parameter);
     PopPassivePowerCallInner(Parameter)
 }
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn PopPassivePowerCall(Parameter: PVOID) {
+    let Parameter = opaque_ptr(Parameter);
     PopPassivePowerCallInner(Parameter)
 }
 #[no_mangle]
 #[inline(always)]
 pub unsafe extern "system" fn PopPassivePowerCallInner(Parameter: PVOID) {
+    let Parameter = opaque_ptr(Parameter);
     let Irp = Parameter as PIRP;
     let IoStack: PIO_STACK_LOCATION;
 
@@ -245,6 +252,8 @@ pub unsafe extern "system" fn PopPassivePowerCallInner(Parameter: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PopPresentIrp(NextStack: PIO_STACK_LOCATION, Irp: PIRP) -> NTSTATUS {
+    let NextStack = opaque_ptr(NextStack);
+    let Irp = opaque_ptr(Irp);
     let Status: NTSTATUS;
     let mut CallAtPassiveLevel: BOOLEAN;
     let DeviceObject: PDEVICE_OBJECT;
@@ -292,6 +301,9 @@ pub unsafe extern "system" fn PopPresentIrp(NextStack: PIO_STACK_LOCATION, Irp: 
 pub unsafe extern "stdcall" fn PopRequestPowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     PopRequestPowerIrpCompletionInner(DeviceObject, Irp, Context)
 }
 #[no_mangle]
@@ -299,6 +311,9 @@ pub unsafe extern "stdcall" fn PopRequestPowerIrpCompletion(
 pub unsafe extern "C" fn PopRequestPowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     PopRequestPowerIrpCompletionInner(DeviceObject, Irp, Context)
 }
 #[no_mangle]
@@ -308,6 +323,9 @@ pub unsafe extern "system" fn PopRequestPowerIrpCompletionInner(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let Stack: PIO_STACK_LOCATION;
     let CompletionRoutine: PREQUEST_POWER_COMPLETE;
     let mut PowerState: POWER_STATE = core::mem::zeroed();
@@ -336,6 +354,7 @@ pub unsafe extern "system" fn PopRequestPowerIrpCompletionInner(
 
 #[no_mangle]
 pub unsafe extern "system" fn PopCleanupPowerState(PowerState: *mut POWER_STATE) {
+    let PowerState = opaque_ptr(PowerState);
 }
 
 #[no_mangle]
@@ -344,6 +363,7 @@ pub unsafe extern "C" fn PopSendQuerySystemPowerState(
     SystemState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let IrpSp: PIO_STACK_LOCATION;
@@ -398,6 +418,7 @@ pub unsafe extern "C" fn PopSendSetSystemPowerState(
     SystemState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let IrpSp: PIO_STACK_LOCATION;
@@ -451,6 +472,7 @@ pub unsafe extern "C" fn PopQuerySystemPowerStateTraverse(
     DeviceNode: PDEVICE_NODE,
     Context: PVOID,
 ) -> NTSTATUS {
+    let Context = opaque_ptr(Context);
     let PowerStateContext = Context as *mut POWER_STATE_TRAVERSE_CONTEXT;
     let TopDeviceObject: PDEVICE_OBJECT;
     let Status: NTSTATUS;
@@ -481,6 +503,7 @@ pub unsafe extern "C" fn PopSetSystemPowerStateTraverse(
     DeviceNode: PDEVICE_NODE,
     Context: PVOID,
 ) -> NTSTATUS {
+    let Context = opaque_ptr(Context);
     let PowerStateContext = Context as *mut POWER_STATE_TRAVERSE_CONTEXT;
     let TopDeviceObject: PDEVICE_OBJECT;
     let Status: NTSTATUS;
@@ -665,6 +688,10 @@ pub unsafe extern "system" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
 pub unsafe extern "stdcall" fn PopPerfIdleDpc(
     Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     PopPerfIdle(core::ptr::addr_of_mut!((*(DeferredContext as *mut _KPRCB)).PowerState));
 }
 #[cfg(not(target_arch = "x86"))]
@@ -672,6 +699,10 @@ pub unsafe extern "stdcall" fn PopPerfIdleDpc(
 pub unsafe extern "C" fn PopPerfIdleDpc(
     Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     PopPerfIdle(core::ptr::addr_of_mut!((*(DeferredContext as *mut _KPRCB)).PowerState));
 }
 
@@ -688,6 +719,7 @@ pub unsafe extern "C" fn PopIdle0(PowerState: PPROCESSOR_POWER_STATE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PoInitializePrcb(Prcb: *mut _KPRCB) {
+    let Prcb = opaque_ptr(Prcb);
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!((*Prcb).PowerState) as *mut u8,
         0,
@@ -715,6 +747,7 @@ pub unsafe extern "system" fn PoInitializePrcb(Prcb: *mut _KPRCB) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PoCancelDeviceNotify(NotifyBlock: PVOID) -> NTSTATUS {
+    let NotifyBlock = opaque_ptr(NotifyBlock);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -727,6 +760,9 @@ pub unsafe extern "system" fn PoRegisterDeviceNotify(
     Unknown4: PVOID,
     Unknown5: PVOID,
 ) -> NTSTATUS {
+    let Unknown0 = opaque_ptr(Unknown0);
+    let Unknown4 = opaque_ptr(Unknown4);
+    let Unknown5 = opaque_ptr(Unknown5);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -756,6 +792,8 @@ pub unsafe extern "system" fn PoSetHiberRange(
     Length: ULONG,
     PageTag: ULONG,
 ) {
+    let HiberContext = opaque_ptr(HiberContext);
+    let StartPage = opaque_ptr(StartPage);
 }
 
 #[no_mangle]
@@ -763,6 +801,8 @@ pub unsafe extern "system" fn PoCallDriver(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
     let NextStack: PIO_STACK_LOCATION;
 
     NextStack = IoGetNextIrpStackLocation(Irp);
@@ -785,6 +825,7 @@ pub unsafe extern "system" fn PoRegisterDeviceForIdleDetection(
     PerformanceIdleTime: ULONG,
     State: DEVICE_POWER_STATE,
 ) -> *mut ULONG {
+    let DeviceObject = opaque_ptr(DeviceObject);
     core::ptr::null_mut()
 }
 
@@ -793,6 +834,7 @@ pub unsafe extern "system" fn PoRegisterSystemState(
     StateHandle: PVOID,
     Flags: EXECUTION_STATE,
 ) -> PVOID {
+    let StateHandle = opaque_ptr(StateHandle);
     core::ptr::null_mut()
 }
 
@@ -805,6 +847,9 @@ pub unsafe extern "system" fn PoRequestPowerIrp(
     Context: PVOID,
     pIrp: *mut PIRP,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Context = opaque_ptr(Context);
+    let pIrp = opaque_ptr(pIrp);
     let TopDeviceObject: PDEVICE_OBJECT;
     let mut Stack: PIO_STACK_LOCATION;
     let Irp: PIRP;
@@ -870,6 +915,7 @@ pub unsafe extern "system" fn PoSetPowerState(
     Type: POWER_STATE_TYPE,
     State: POWER_STATE,
 ) -> POWER_STATE {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut ps: POWER_STATE = core::mem::zeroed();
 
     ps.SystemState = PowerSystemWorking;
@@ -884,10 +930,12 @@ pub unsafe extern "system" fn PoSetSystemState(Flags: EXECUTION_STATE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PoStartNextPowerIrp(Irp: PIRP) {
+    let Irp = opaque_ptr(Irp);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PoUnregisterSystemState(StateHandle: PVOID) {
+    let StateHandle = opaque_ptr(StateHandle);
 }
 
 #[no_mangle]
@@ -902,6 +950,7 @@ pub unsafe extern "system" fn NtInitiatePowerAction(
 
 #[no_mangle]
 pub unsafe extern "system" fn PopQueryBatteryState(BatteryState: *mut SYSTEM_BATTERY_STATE) -> NTSTATUS {
+    let BatteryState = opaque_ptr(BatteryState);
     static COMP_BATT_DEVICE_NAME: [u16; 26] = [
         92, 68, 101, 118, 105, 99, 101, 92, 67, 111, 109, 112, 111, 115, 105, 116, 101, 66, 97,
         116, 116, 101, 114, 121, 0, 0,
@@ -1021,6 +1070,8 @@ pub unsafe extern "system" fn NtPowerInformation(
     OutputBuffer: PVOID,
     OutputBufferLength: ULONG,
 ) -> NTSTATUS {
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
 
@@ -1114,6 +1165,8 @@ pub unsafe extern "system" fn NtGetDevicePowerState(
     Device: ntkrnl_sys::ddk::HANDLE,
     PowerState: *mut DEVICE_POWER_STATE,
 ) -> NTSTATUS {
+    let Device = opaque_ptr(Device);
+    let PowerState = opaque_ptr(PowerState);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1132,6 +1185,7 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
     esFlags: EXECUTION_STATE,
     PreviousFlags: *mut EXECUTION_STATE,
 ) -> NTSTATUS {
+    let PreviousFlags = opaque_ptr(PreviousFlags);
     let Thread = KeGetCurrentThread();
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
     let PreviousState: EXECUTION_STATE;

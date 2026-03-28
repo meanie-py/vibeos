@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
     _UNICODE_STRING,
     _KWAIT_REASON_WrEventPair,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const EVENT_PAIR_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE;
 const EVENT_INCREMENT: LONG = 1;
@@ -89,6 +90,8 @@ pub unsafe extern "system" fn NtCreateEventPair(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let mut hEventPair: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
@@ -144,6 +147,8 @@ pub unsafe extern "system" fn NtOpenEventPair(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut hEventPair: HANDLE = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -179,6 +184,7 @@ pub unsafe extern "system" fn NtOpenEventPair(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -206,6 +212,7 @@ pub unsafe extern "system" fn NtSetHighEventPair(EventPairHandle: HANDLE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetHighWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -241,6 +248,7 @@ pub unsafe extern "system" fn NtSetHighWaitLowEventPair(EventPairHandle: HANDLE)
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -268,6 +276,7 @@ pub unsafe extern "system" fn NtSetLowEventPair(EventPairHandle: HANDLE) -> NTST
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSetLowWaitHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -303,6 +312,7 @@ pub unsafe extern "system" fn NtSetLowWaitHighEventPair(EventPairHandle: HANDLE)
 
 #[no_mangle]
 pub unsafe extern "system" fn NtWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
@@ -332,6 +342,7 @@ pub unsafe extern "system" fn NtWaitLowEventPair(EventPairHandle: HANDLE) -> NTS
 
 #[no_mangle]
 pub unsafe extern "system" fn NtWaitHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS {
+    let EventPairHandle = opaque_ptr(EventPairHandle);
     let mut EventPair: PKEVENT_PAIR = core::ptr::null_mut();
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 

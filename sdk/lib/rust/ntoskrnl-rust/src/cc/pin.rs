@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     ExInitializeResourceLite, ExReleaseResourceForThreadLite, ExReleaseResourceLite,
     MmMakeSegmentDirty, PsGetCurrentThread,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static mut iBcbLookasideList: _NPAGED_LOOKASIDE_LIST;
@@ -304,6 +305,10 @@ pub unsafe extern "system" fn CcMapData(
     p_bcb: *mut PVOID,
     p_buffer: *mut PVOID,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let p_bcb = opaque_ptr(p_bcb);
+    let p_buffer = opaque_ptr(p_buffer);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     if (flags & MAP_WAIT) != 0 {
@@ -388,6 +393,9 @@ pub unsafe extern "system" fn CcPinMappedData(
     flags: ULONG,
     bcb: *mut PVOID,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let bcb = opaque_ptr(bcb);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     if (*shared_cache_map).PinAccess == 0 {
@@ -420,6 +428,10 @@ pub unsafe extern "system" fn CcPinRead(
     bcb: *mut PVOID,
     buffer: *mut PVOID,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let bcb = opaque_ptr(bcb);
+    let buffer = opaque_ptr(buffer);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     if (*shared_cache_map).PinAccess == 0 {
@@ -445,11 +457,17 @@ pub unsafe extern "system" fn CcPreparePinWrite(
     bcb: *mut PVOID,
     buffer: *mut PVOID,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let bcb = opaque_ptr(bcb);
+    let buffer = opaque_ptr(buffer);
     CcPinRead(file_object, file_offset, length, flags, bcb, buffer)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcSetDirtyPinnedData(bcb: PVOID, lsn: PLARGE_INTEGER) {
+    let bcb = opaque_ptr(bcb);
+    let lsn = opaque_ptr(lsn);
     let i_bcb = ((bcb as usize) - core::mem::offset_of!(_INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
     let vacb = (*i_bcb).Vacb;
 
@@ -466,11 +484,13 @@ pub unsafe extern "system" fn CcSetDirtyPinnedData(bcb: PVOID, lsn: PLARGE_INTEG
 
 #[no_mangle]
 pub unsafe extern "system" fn CcUnpinData(bcb: PVOID) {
+    let bcb = opaque_ptr(bcb);
     CcUnpinDataForThread(bcb, PsGetCurrentThread() as ERESOURCE_THREAD);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CcUnpinDataForThread(bcb: PVOID, resource_thread_id: ERESOURCE_THREAD) {
+    let bcb = opaque_ptr(bcb);
     let i_bcb = ((bcb as usize) - core::mem::offset_of!(_INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
 
     if (*i_bcb).PinCount != 0 {
@@ -486,6 +506,7 @@ pub unsafe extern "system" fn CcUnpinDataForThread(bcb: PVOID, resource_thread_i
 
 #[no_mangle]
 pub unsafe extern "system" fn CcRepinBcb(bcb: PVOID) {
+    let bcb = opaque_ptr(bcb);
     let i_bcb = ((bcb as usize) - core::mem::offset_of!(_INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
     (*i_bcb).RefCount += 1;
 }
@@ -496,6 +517,8 @@ pub unsafe extern "system" fn CcUnpinRepinnedBcb(
     write_through: BOOLEAN,
     io_status: PIO_STATUS_BLOCK,
 ) {
+    let bcb = opaque_ptr(bcb);
+    let io_status = opaque_ptr(io_status);
     let i_bcb = ((bcb as usize) - core::mem::offset_of!(_INTERNAL_BCB, PFCB)) as PINTERNAL_BCB;
     let mut old_irql: KIRQL = 0;
     let shared_cache_map = (*(*i_bcb).Vacb).SharedCacheMap;

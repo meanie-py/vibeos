@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     ObReferenceObjectByHandle, RtlCompareMemory, ZwClose, ZwOpenFile,
     ZwShutdownSystem,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn InitializeObjectAttributes(
@@ -140,6 +141,9 @@ pub unsafe extern "stdcall" fn PopGetSysButtonCompletion(
     irp: PIRP,
     context: PVOID,
 ) -> NTSTATUS {
+    let _device_object = opaque_ptr(_device_object);
+    let irp = opaque_ptr(irp);
+    let context = opaque_ptr(context);
     PopGetSysButtonCompletionInner(_device_object, irp, context)
 }
 
@@ -150,6 +154,9 @@ pub unsafe extern "C" fn PopGetSysButtonCompletion(
     irp: PIRP,
     context: PVOID,
 ) -> NTSTATUS {
+    let _device_object = opaque_ptr(_device_object);
+    let irp = opaque_ptr(irp);
+    let context = opaque_ptr(context);
     PopGetSysButtonCompletionInner(_device_object, irp, context)
 }
 
@@ -160,6 +167,9 @@ pub unsafe extern "system" fn PopGetSysButtonCompletionInner(
     irp: PIRP,
     context: PVOID,
 ) -> NTSTATUS {
+    let _device_object = opaque_ptr(_device_object);
+    let irp = opaque_ptr(irp);
+    let context = opaque_ptr(context);
     let sys_button_context = context as PSYS_BUTTON_CONTEXT;
     let sys_button: ULONG;
 
@@ -188,6 +198,8 @@ pub unsafe extern "stdcall" fn PopGetSysButton(
     device_object: PDEVICE_OBJECT,
     context: PVOID,
 ) {
+    let device_object = opaque_ptr(device_object);
+    let context = opaque_ptr(context);
     PopGetSysButtonInner(device_object, context)
 }
 
@@ -197,6 +209,8 @@ pub unsafe extern "C" fn PopGetSysButton(
     device_object: PDEVICE_OBJECT,
     context: PVOID,
 ) {
+    let device_object = opaque_ptr(device_object);
+    let context = opaque_ptr(context);
     PopGetSysButtonInner(device_object, context)
 }
 
@@ -206,6 +220,8 @@ pub unsafe extern "system" fn PopGetSysButtonInner(
     device_object: PDEVICE_OBJECT,
     context: PVOID,
 ) {
+    let device_object = opaque_ptr(device_object);
+    let context = opaque_ptr(context);
     let sys_button_context = context as PSYS_BUTTON_CONTEXT;
     let current_work_item = (*sys_button_context).WorkItem;
     let irp: PIRP;
@@ -249,6 +265,8 @@ pub unsafe extern "stdcall" fn PopAddRemoveSysCapsCallback(
     notification_structure: PVOID,
     context: PVOID,
 ) -> NTSTATUS {
+    let notification_structure = opaque_ptr(notification_structure);
+    let context = opaque_ptr(context);
     PopAddRemoveSysCapsCallbackInner(notification_structure, context)
 }
 
@@ -258,6 +276,8 @@ pub unsafe extern "C" fn PopAddRemoveSysCapsCallback(
     notification_structure: PVOID,
     context: PVOID,
 ) -> NTSTATUS {
+    let notification_structure = opaque_ptr(notification_structure);
+    let context = opaque_ptr(context);
     PopAddRemoveSysCapsCallbackInner(notification_structure, context)
 }
 
@@ -267,6 +287,8 @@ pub unsafe extern "system" fn PopAddRemoveSysCapsCallbackInner(
     notification_structure: PVOID,
     context: PVOID,
 ) -> NTSTATUS {
+    let notification_structure = opaque_ptr(notification_structure);
+    let context = opaque_ptr(context);
     let notification: PDEVICE_INTERFACE_CHANGE_NOTIFICATION;
     let mut sys_button_context: PSYS_BUTTON_CONTEXT;
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();

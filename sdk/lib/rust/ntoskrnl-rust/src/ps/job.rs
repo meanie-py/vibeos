@@ -10,6 +10,7 @@ use ntkrnl_sys::probe::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use core::mem::align_of;
 
 extern "C" {
@@ -129,6 +130,7 @@ pub static mut PspJobInfoAlign: [ULONG; 11] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteJob(object_body: PVOID) {
+    let object_body = opaque_ptr(object_body);
     let job = object_body as PEJOB;
 
     if (*job).CompletionPort != core::ptr::null_mut() {
@@ -160,14 +162,18 @@ unsafe fn PspTerminateJobObject(job: PEJOB, access_mode: KPROCESSOR_MODE, exit_s
 
 #[no_mangle]
 pub unsafe extern "system" fn PspRemoveProcessFromJob(process: PEPROCESS, job: PEJOB) {
+    let process = opaque_ptr(process);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn PspExitProcessFromJob(job: PEJOB, process: PEPROCESS) {
+    let process = opaque_ptr(process);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn NtAssignProcessToJobObject(job_handle: HANDLE, process_handle: HANDLE) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
+    let process_handle = opaque_ptr(process_handle);
     let mut process: PEPROCESS = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE;
     let mut status: NTSTATUS;
@@ -239,6 +245,8 @@ pub unsafe extern "system" fn NtCreateJobObject(
     desired_access: ACCESS_MASK,
     object_attributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
+    let object_attributes = opaque_ptr(object_attributes);
     let mut h_job: HANDLE = core::ptr::null_mut();
     let mut job: PEJOB = core::ptr::null_mut();
     let previous_mode: KPROCESSOR_MODE;
@@ -318,6 +326,8 @@ pub unsafe extern "system" fn NtIsProcessInJob(
     process_handle: HANDLE,
     job_handle: HANDLE,
 ) -> NTSTATUS {
+    let process_handle = opaque_ptr(process_handle);
+    let job_handle = opaque_ptr(job_handle);
     let previous_mode: KPROCESSOR_MODE;
     let mut process: PEPROCESS = core::ptr::null_mut();
     let mut status: NTSTATUS;
@@ -375,6 +385,8 @@ pub unsafe extern "system" fn NtOpenJobObject(
     desired_access: ACCESS_MASK,
     object_attributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
+    let object_attributes = opaque_ptr(object_attributes);
     let previous_mode: KPROCESSOR_MODE;
     let mut h_job: HANDLE = core::ptr::null_mut();
     let mut status: NTSTATUS;
@@ -412,6 +424,9 @@ pub unsafe extern "system" fn NtQueryInformationJobObject(
     job_information_length: ULONG,
     return_length: *mut ULONG,
 ) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
+    let job_information = opaque_ptr(job_information);
+    let return_length = opaque_ptr(return_length);
     let mut job: PEJOB = core::ptr::null_mut();
     let mut status: NTSTATUS;
     let mut no_output: BOOLEAN;
@@ -607,6 +622,8 @@ pub unsafe extern "system" fn NtSetInformationJobObject(
     job_information: PVOID,
     job_information_length: ULONG,
 ) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
+    let job_information = opaque_ptr(job_information);
     let mut job: PEJOB = core::ptr::null_mut();
     let mut status: NTSTATUS;
     let current_thread: PKTHREAD;
@@ -671,6 +688,7 @@ pub unsafe extern "system" fn NtSetInformationJobObject(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtTerminateJobObject(job_handle: HANDLE, exit_status: NTSTATUS) -> NTSTATUS {
+    let job_handle = opaque_ptr(job_handle);
     let previous_mode: KPROCESSOR_MODE;
     let mut job: PEJOB = core::ptr::null_mut();
     let mut status: NTSTATUS;

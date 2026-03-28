@@ -10,6 +10,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
 use ntkrnl_sys::ddk::{KEVENT, KPROCESSOR_MODE, KeAreAllApcsDisabled, KeInitializeEvent, KeIsAttachedProcess, KeWaitForSingleObject, KeZeroPages, KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock, MiDeletePte, MiDereferencePfnAndDropLockCount, MiDetermineUserGlobalPteMask, MiDropLockCount, MiIncrementPageTableReferences, MiInitializePfn, MiIsUserPde, MiIsUserPte, MiLocateAddress, MiLockProcessWorkingSet, MiLockWorkingSet, MiReadPageFile, MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount, MiRemoveZeroPageSafe, MiUnlinkPageFromList, MiUnlockProcessWorkingSet, MiUnlockWorkingSet, PEPROCESS, PETHREAD, PKEVENT, PKPROCESS, PKTRAP_FRAME, PMM_AVL_TABLE, PMMSUPPORT, PMMVAD, PTEB, PsGetCurrentThread, ZwAllocateVirtualMemory, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IMAGE_NT_HEADERS, _KEVENT, _KLOCK_QUEUE_HANDLE, _KPRCB, _KTRAP_FRAME, _MMPFN, _MMPTE, _OBJECT_HEADER, _MM_SESSION_SPACE};
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 extern "system" {
@@ -287,6 +288,7 @@ unsafe fn MiCheckPdeForSessionSpace(Address: PVOID) -> NTSTATUS {
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn MiCheckPdeForPagedPool(Address: PVOID) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
     let PointerPde: PMMPTE;
     let mut Status = STATUS_SUCCESS;
 
@@ -322,12 +324,14 @@ pub unsafe extern "fastcall" fn MiCheckPdeForPagedPool(Address: PVOID) -> NTSTAT
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn MiCheckPdeForPagedPool(Address: PVOID) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
     STATUS_ACCESS_VIOLATION
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn MiCheckPdeForPagedPool(Address: PVOID) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
     STATUS_ACCESS_VIOLATION
 }
 
@@ -1262,6 +1266,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
     Mode: KPROCESSOR_MODE,
     TrapInformation: PVOID,
 ) -> NTSTATUS {
+    let Address = opaque_ptr(Address);
+    let TrapInformation = opaque_ptr(TrapInformation);
     let mut OldIrql = KeGetCurrentIrql();
     let mut LockIrql: KIRQL = 0;
     let mut ProtoPte: PMMPTE = core::ptr::null_mut();
@@ -2172,6 +2178,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetExecuteOptions(ExecuteOptions: *mut ULONG) -> NTSTATUS {
+    let ExecuteOptions = opaque_ptr(ExecuteOptions);
     let CurrentProcess = core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut _EPROCESS)).Pcb);
     ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 

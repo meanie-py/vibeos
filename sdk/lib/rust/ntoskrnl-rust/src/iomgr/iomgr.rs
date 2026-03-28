@@ -7,6 +7,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
@@ -1070,6 +1071,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut ExpireTime: LARGE_INTEGER = core::mem::zeroed();
 
     #[cfg(target_arch = "aarch64")]
@@ -1155,5 +1157,6 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
 
 #[no_mangle]
 pub unsafe extern "system" fn IoInitializeCrashDump(_PageFileHandle: HANDLE) -> BOOLEAN {
+    let _PageFileHandle = opaque_ptr(_PageFileHandle);
     0u8
 }

@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     PLONGLONG,
     PopEntryList,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 type INTERLOCKED_RESULT = LONG;
@@ -85,6 +86,7 @@ pub unsafe extern "system" fn ExInterlockedAddLargeInteger(
     Increment: LARGE_INTEGER,
     Lock: PKSPIN_LOCK,
 ) -> LARGE_INTEGER {
+    let Addend = opaque_ptr(Addend);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let OldValue = LARGE_INTEGER {
@@ -104,6 +106,7 @@ pub unsafe extern "system" fn ExInterlockedAddUlong(
     Increment: ULONG,
     Lock: PKSPIN_LOCK,
 ) -> ULONG {
+    let Addend = opaque_ptr(Addend);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let OldValue = *Addend;
@@ -121,6 +124,8 @@ pub unsafe extern "system" fn ExInterlockedInsertHeadList(
     ListEntry: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let FirstEntry = (*ListHead).Flink;
@@ -142,6 +147,8 @@ pub unsafe extern "system" fn ExInterlockedInsertTailList(
     ListEntry: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let LastEntry = (*ListHead).Blink;
@@ -162,6 +169,7 @@ pub unsafe extern "system" fn ExInterlockedRemoveHeadList(
     ListHead: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = if IsListEmpty(ListHead) {
@@ -186,6 +194,7 @@ pub unsafe extern "system" fn ExInterlockedPopEntryList(
     ListHead: PSINGLE_LIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PSINGLE_LIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = PopEntryList(ListHead as *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY) as PSINGLE_LIST_ENTRY;
@@ -207,6 +216,8 @@ pub unsafe extern "system" fn ExInterlockedPushEntryList(
     ListEntry: PSINGLE_LIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PSINGLE_LIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let OldListEntry = (*ListHead).Next;
@@ -224,6 +235,7 @@ pub unsafe extern "system" fn ExInterlockedIncrementLong(
     Addend: *mut LONG,
     Lock: PKSPIN_LOCK,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedIncrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -240,6 +252,7 @@ pub unsafe extern "system" fn ExInterlockedDecrementLong(
     Addend: *mut LONG,
     Lock: PKSPIN_LOCK,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedDecrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -257,6 +270,7 @@ pub unsafe extern "system" fn ExInterlockedExchangeUlong(
     Value: ULONG,
     Lock: PKSPIN_LOCK,
 ) -> ULONG {
+    let Target = opaque_ptr(Target);
     _InterlockedExchange(Target as *mut LONG, Value as LONG) as ULONG
 }
 
@@ -267,6 +281,7 @@ pub unsafe extern "fastcall" fn ExfInterlockedAddUlong(
     Increment: ULONG,
     Lock: PKSPIN_LOCK,
 ) -> ULONG {
+    let Addend = opaque_ptr(Addend);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let OldValue = *Addend;
@@ -285,6 +300,8 @@ pub unsafe extern "fastcall" fn ExfInterlockedInsertHeadList(
     ListEntry: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let FirstEntry = (*ListHead).Flink;
@@ -307,6 +324,8 @@ pub unsafe extern "fastcall" fn ExfInterlockedInsertTailList(
     ListEntry: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let LastEntry = (*ListHead).Blink;
@@ -328,6 +347,7 @@ pub unsafe extern "fastcall" fn ExfInterlockedRemoveHeadList(
     ListHead: PLIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PLIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = if IsListEmpty(ListHead) {
@@ -353,6 +373,7 @@ pub unsafe extern "fastcall" fn ExfInterlockedPopEntryList(
     ListHead: PSINGLE_LIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PSINGLE_LIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let ListEntry = PopEntryList(ListHead as *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY) as PSINGLE_LIST_ENTRY;
@@ -375,6 +396,8 @@ pub unsafe extern "fastcall" fn ExfInterlockedPushEntryList(
     ListEntry: PSINGLE_LIST_ENTRY,
     Lock: PKSPIN_LOCK,
 ) -> PSINGLE_LIST_ENTRY {
+    let ListHead = opaque_ptr(ListHead);
+    let ListEntry = opaque_ptr(ListEntry);
     let Enable = _ExiDisableInterruptsAndAcquireSpinlock(Lock);
 
     let OldListEntry = (*ListHead).Next;
@@ -391,6 +414,7 @@ pub unsafe extern "fastcall" fn ExfInterlockedPushEntryList(
 pub unsafe extern "system" fn Exi386InterlockedIncrementLong(
     Addend: *mut LONG,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedIncrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -406,6 +430,7 @@ pub unsafe extern "system" fn Exi386InterlockedIncrementLong(
 pub unsafe extern "fastcall" fn Exfi386InterlockedIncrementLong(
     Addend: *mut LONG,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedIncrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -421,6 +446,7 @@ pub unsafe extern "fastcall" fn Exfi386InterlockedIncrementLong(
 pub unsafe extern "system" fn Exi386InterlockedDecrementLong(
     Addend: *mut LONG,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedDecrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -436,6 +462,7 @@ pub unsafe extern "system" fn Exi386InterlockedDecrementLong(
 pub unsafe extern "fastcall" fn Exfi386InterlockedDecrementLong(
     Addend: *mut LONG,
 ) -> INTERLOCKED_RESULT {
+    let Addend = opaque_ptr(Addend);
     let Result = InterlockedDecrement(Addend);
     if Result < 0 {
         ResultNegative
@@ -452,6 +479,7 @@ pub unsafe extern "system" fn Exi386InterlockedExchangeUlong(
     Target: *mut LONG,
     Exchange: LONG,
 ) -> LONG {
+    let Target = opaque_ptr(Target);
     _InterlockedExchange(Target, Exchange)
 }
 
@@ -461,6 +489,7 @@ pub unsafe extern "fastcall" fn Exfi386InterlockedExchangeUlong(
     Target: *mut ULONG,
     Exchange: ULONG,
 ) -> ULONG {
+    let Target = opaque_ptr(Target);
     _InterlockedExchange(Target as *mut LONG, Exchange as LONG) as ULONG
 }
 
@@ -472,6 +501,7 @@ pub unsafe extern "fastcall" fn ExInterlockedCompareExchange64(
     Comparand: PLONGLONG,
     Lock: PKSPIN_LOCK,
 ) -> LONGLONG {
+    let Destination = opaque_ptr(Destination);
     _InterlockedCompareExchange64(Destination, *Exchange, *Comparand)
 }
 
@@ -482,6 +512,7 @@ pub unsafe extern "fastcall" fn ExfInterlockedCompareExchange64(
     Exchange: PLONGLONG,
     Comparand: PLONGLONG,
 ) -> LONGLONG {
+    let Destination = opaque_ptr(Destination);
     _InterlockedCompareExchange64(Destination, *Exchange, *Comparand)
 }
 

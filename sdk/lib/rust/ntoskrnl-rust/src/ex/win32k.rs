@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS, _UNICODE_STRING,
@@ -116,6 +117,9 @@ pub unsafe extern "system" fn ExpDesktopOkToClose(
     Handle: HANDLE,
     AccessMode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Object = opaque_ptr(Object);
+    let Handle = opaque_ptr(Handle);
     let mut Parameters: WIN32_OKAYTOCLOSEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.Process = Process;
@@ -139,6 +143,9 @@ pub unsafe extern "system" fn ExpWindowStationOkToClose(
     Handle: HANDLE,
     AccessMode: KPROCESSOR_MODE,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Object = opaque_ptr(Object);
+    let Handle = opaque_ptr(Handle);
     let mut Parameters: WIN32_OKAYTOCLOSEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.Process = Process;
@@ -157,6 +164,7 @@ pub unsafe extern "system" fn ExpWindowStationOkToClose(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExpWinStaObjectDelete(DeletedObject: PVOID) {
+    let DeletedObject = opaque_ptr(DeletedObject);
     let mut Parameters: WIN32_DELETEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.Object = DeletedObject;
@@ -181,6 +189,13 @@ pub unsafe extern "system" fn ExpWinStaObjectParse(
     SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
     Object: *mut PVOID,
 ) -> NTSTATUS {
+    let ParseObject = opaque_ptr(ParseObject);
+    let ObjectType = opaque_ptr(ObjectType);
+    let AccessState = opaque_ptr(AccessState);
+    let CompleteName = opaque_ptr(CompleteName);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Context = opaque_ptr(Context);
+    let Object = opaque_ptr(Object);
     let mut Parameters: WIN32_PARSEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.ParseObject = ParseObject;
@@ -203,6 +218,7 @@ pub unsafe extern "system" fn ExpWinStaObjectParse(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExpDesktopDelete(DeletedObject: PVOID) {
+    let DeletedObject = opaque_ptr(DeletedObject);
     let mut Parameters: WIN32_DELETEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.Object = DeletedObject;
@@ -222,6 +238,8 @@ pub unsafe extern "system" fn ExpDesktopOpen(
     GrantedAccess: ACCESS_MASK,
     HandleCount: ULONG,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let ObjectBody = opaque_ptr(ObjectBody);
     let mut Parameters: WIN32_OPENMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.OpenReason = Reason;
@@ -245,6 +263,8 @@ pub unsafe extern "system" fn ExpDesktopClose(
     ProcessHandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
+    let Process = opaque_ptr(Process);
+    let Object = opaque_ptr(Object);
     let mut Parameters: WIN32_CLOSEMETHOD_PARAMETERS = core::mem::zeroed();
 
     Parameters.Process = Process;

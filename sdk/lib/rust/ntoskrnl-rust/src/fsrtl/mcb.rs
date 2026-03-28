@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{
     PVBN,
     VBN,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn FsRtlAddLargeMcbEntry( Mcb: PVOID, Vbn: i64, Lbn: i64, SectorCount: i64, ) -> BOOLEAN;
@@ -46,6 +47,7 @@ pub unsafe extern "system" fn FsRtlGetNextMcbEntry(
     Lbn: PLBN,
     SectorCount: *mut ULONG,
 ) -> BOOLEAN {
+    let SectorCount = opaque_ptr(SectorCount);
     let mut ll_vbn: i64 = 0;
     let mut ll_lbn: i64 = 0;
     let mut ll_sector_count: i64 = 0;
@@ -105,6 +107,8 @@ pub unsafe extern "system" fn FsRtlLookupMcbEntry(
     SectorCount: *mut ULONG,
     Index: *mut ULONG,
 ) -> BOOLEAN {
+    let SectorCount = opaque_ptr(SectorCount);
+    let Index = opaque_ptr(Index);
     let mut ll_lbn: i64 = 0;
     let mut ll_sector_count: i64 = 0;
 

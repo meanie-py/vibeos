@@ -5,6 +5,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _MMPAGING_FILE, _RTL_BITMAP,
@@ -142,6 +143,7 @@ static mut MmSystemPageFileLocated: BOOLEAN = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn MmBuildMdlFromPages(Mdl: PMDL, Pages: PPFN_NUMBER) {
+    let Mdl = opaque_ptr(Mdl);
     let page_count = (((*Mdl).ByteOffset as usize + (*Mdl).ByteCount as usize + PAGE_SIZE - 1) / PAGE_SIZE) as usize;
     let dest = (Mdl as *mut u8).add(core::mem::size_of::<MDL>()) as PPFN_NUMBER;
     core::ptr::copy_nonoverlapping(Pages, dest, page_count);
@@ -149,6 +151,7 @@ pub unsafe extern "system" fn MmBuildMdlFromPages(Mdl: PMDL, Pages: PPFN_NUMBER)
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsFileObjectAPagingFile(FileObject: PFILE_OBJECT) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
     for i in 0..MmNumberOfPagingFiles as usize {
         if (*(MmPagingFile[i] as *mut ntkrnl_sys::ddk::_MMPAGING_FILE)).FileObject == FileObject {
             return 1;
@@ -405,6 +408,9 @@ pub unsafe extern "system" fn NtCreatePagingFile(
     MaximumSize: PLARGE_INTEGER,
     Reserved: ULONG,
 ) -> NTSTATUS {
+    let FileName = opaque_ptr(FileName);
+    let MinimumSize = opaque_ptr(MinimumSize);
+    let MaximumSize = opaque_ptr(MaximumSize);
     if MmNumberOfPagingFiles >= MAX_PAGING_FILES as ULONG {
         return STATUS_TOO_MANY_PAGING_FILES;
     }

@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 unsafe fn RtlEqualMemory(dst: PVOID, src: PVOID, len: usize) -> BOOLEAN {
     if RtlCompareMemory(dst, src, len as SIZE_T) == len as SIZE_T { 1 } else { 0 }
@@ -310,6 +311,8 @@ pub unsafe extern "system" fn SepCaptureSid(
     CaptureIfKernel: BOOLEAN,
     CapturedSid: *mut PSID,
 ) -> NTSTATUS {
+    let InputSid = opaque_ptr(InputSid);
+    let CapturedSid = opaque_ptr(CapturedSid);
     let mut SidSize: ULONG = 0;
     let mut NewSid: PISID;
     let Sid = InputSid as PISID;
@@ -358,6 +361,7 @@ pub unsafe extern "system" fn SepReleaseSid(
     AccessMode: KPROCESSOR_MODE,
     CaptureIfKernel: BOOLEAN,
 ) {
+    let CapturedSid = opaque_ptr(CapturedSid);
     if !CapturedSid.is_null() &&
         (AccessMode != 0i8 || (AccessMode == 0i8 && CaptureIfKernel != 0u8))
     {
@@ -373,6 +377,8 @@ pub unsafe extern "system" fn SepSidInTokenEx(
     Deny: BOOLEAN,
     Restricted: BOOLEAN,
 ) -> BOOLEAN {
+    let PrincipalSelfSid = opaque_ptr(PrincipalSelfSid);
+    let _Sid = opaque_ptr(_Sid);
     let mut SidIndex: ULONG;
     let Token = _Token as PTOKEN;
     let mut TokenSid: PISID;
@@ -426,6 +432,7 @@ pub unsafe extern "system" fn SepSidInToken(
     _Token: PACCESS_TOKEN,
     Sid: PSID,
 ) -> BOOLEAN {
+    let Sid = opaque_ptr(Sid);
     SepSidInTokenEx(_Token, core::ptr::null_mut(), Sid, 0u8, 0u8)
 }
 
@@ -469,6 +476,9 @@ pub unsafe extern "system" fn SeCaptureSidAndAttributesArray(
     CapturedSidAndAttributes: *mut PSID_AND_ATTRIBUTES,
     ResultLength: *mut ULONG,
 ) -> NTSTATUS {
+    let AllocatedMem = opaque_ptr(AllocatedMem);
+    let CapturedSidAndAttributes = opaque_ptr(CapturedSidAndAttributes);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut ArraySize: ULONG;
     let mut RequiredLength: ULONG;
     let mut SidLength: ULONG;

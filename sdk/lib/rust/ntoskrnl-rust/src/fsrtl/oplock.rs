@@ -35,6 +35,7 @@ use ntkrnl_sys::ke::KeSetEvent;
 use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
 use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
 use ntkrnl_sys::rtl::RtlZeroMemory;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn KeGetCurrentThread() -> ntkrnl_sys::ddk::PKTHREAD;
@@ -814,6 +815,8 @@ pub unsafe extern "system" fn FsRtlCheckOplock(
     CompletionRoutine: POPLOCK_WAIT_COMPLETE_ROUTINE,
     PostIrpRoutine: POPLOCK_FS_PREPOST_IRP,
 ) -> NTSTATUS {
+    let Irp = opaque_ptr(Irp);
+    let Context = opaque_ptr(Context);
     let int_oplock = *Oplock as PINTERNAL_OPLOCK;
 
     if int_oplock.is_null() {
@@ -979,6 +982,7 @@ pub unsafe extern "system" fn FsRtlOplockFsctrl(
     Irp: PIRP,
     OpenCount: ULONG,
 ) -> NTSTATUS {
+    let Irp = opaque_ptr(Irp);
     let int_oplock = *Oplock as PINTERNAL_OPLOCK;
     let stack = IoGetCurrentIrpStackLocation(Irp);
 

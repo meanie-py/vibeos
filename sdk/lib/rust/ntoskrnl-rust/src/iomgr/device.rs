@@ -129,6 +129,7 @@ unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
 }
 
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000Eu32 as i32;
 const STATUS_VOLUME_DISMOUNTED: NTSTATUS = 0xC000026Eu32 as i32;
@@ -244,6 +245,7 @@ type PSECURITY_DESCRIPTOR = PVOID;
 
 #[no_mangle]
 pub unsafe extern "system" fn IopReadyDeviceObjects(Driver: PDRIVER_OBJECT) {
+    let Driver = opaque_ptr(Driver);
     (*Driver).Flags |= DRVO_INITIALIZED;
     let mut DeviceObject = (*Driver).DeviceObject;
     while !DeviceObject.is_null() {
@@ -254,6 +256,7 @@ pub unsafe extern "system" fn IopReadyDeviceObjects(Driver: PDRIVER_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDeleteDevice(ObjectBody: PVOID) {
+    let ObjectBody = opaque_ptr(ObjectBody);
     let DeviceObject = ObjectBody as PDEVICE_OBJECT;
     let DeviceNode = IopGetDeviceNode(DeviceObject);
 
@@ -509,6 +512,7 @@ unsafe fn IopEditDeviceList(
 
 #[no_mangle]
 pub unsafe extern "system" fn IopUnloadDevice(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DriverObject = (*DeviceObject).DriverObject;
     let ThisExtension = IoGetDevObjExtension(DeviceObject);
 
@@ -559,6 +563,7 @@ pub unsafe extern "system" fn IopUnloadDevice(DeviceObject: PDEVICE_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopDereferenceDeviceObject(DeviceObject: PDEVICE_OBJECT, ForceUnload: BOOLEAN) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     InterlockedDecrement(core::ptr::addr_of_mut!((*DeviceObject).ReferenceCount));
 
     if (*DeviceObject).ReferenceCount == 0
@@ -682,6 +687,8 @@ pub unsafe extern "system" fn IopGetRelatedTargetDevice(
     FileObject: PFILE_OBJECT,
     DeviceNode: *mut *mut _DEVICE_NODE,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceNode = opaque_ptr(DeviceNode);
     let mut Stack = core::mem::zeroed::<_IO_STACK_LOCATION>();
     let DeviceObject = IoGetRelatedDeviceObject(FileObject);
     if DeviceObject.is_null() {
@@ -719,6 +726,8 @@ pub unsafe extern "system" fn IopVerifyDeviceObjectOnStack(
     BaseDeviceObject: PDEVICE_OBJECT,
     TopDeviceObjectHint: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let BaseDeviceObject = opaque_ptr(BaseDeviceObject);
+    let TopDeviceObjectHint = opaque_ptr(TopDeviceObjectHint);
     let mut Result = 0u8;
     let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
     let mut LoopObject = BaseDeviceObject;
@@ -861,6 +870,9 @@ pub unsafe extern "system" fn IoAttachDevice(
     TargetDeviceName: *mut _UNICODE_STRING,
     AttachedDevice: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let SourceDevice = opaque_ptr(SourceDevice);
+    let TargetDeviceName = opaque_ptr(TargetDeviceName);
+    let AttachedDevice = opaque_ptr(AttachedDevice);
     let mut FileObject = core::ptr::null_mut();
     let mut TargetDevice = core::ptr::null_mut();
 
@@ -886,6 +898,8 @@ pub unsafe extern "system" fn IoAttachDeviceByPointer(
     SourceDevice: PDEVICE_OBJECT,
     TargetDevice: PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let SourceDevice = opaque_ptr(SourceDevice);
+    let TargetDevice = opaque_ptr(TargetDevice);
     let AttachedDevice = IoAttachDeviceToDeviceStack(SourceDevice, TargetDevice);
     if AttachedDevice.is_null() {
         STATUS_NO_SUCH_DEVICE
@@ -899,6 +913,8 @@ pub unsafe extern "system" fn IoAttachDeviceToDeviceStack(
     SourceDevice: PDEVICE_OBJECT,
     TargetDevice: PDEVICE_OBJECT,
 ) -> PDEVICE_OBJECT {
+    let SourceDevice = opaque_ptr(SourceDevice);
+    let TargetDevice = opaque_ptr(TargetDevice);
     IopAttachDeviceToDeviceStackSafe(SourceDevice, TargetDevice, core::ptr::null_mut())
 }
 
@@ -908,6 +924,9 @@ pub unsafe extern "system" fn IoAttachDeviceToDeviceStackSafe(
     TargetDevice: PDEVICE_OBJECT,
     AttachedToDeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let SourceDevice = opaque_ptr(SourceDevice);
+    let TargetDevice = opaque_ptr(TargetDevice);
+    let AttachedToDeviceObject = opaque_ptr(AttachedToDeviceObject);
     if IopAttachDeviceToDeviceStackSafe(SourceDevice, TargetDevice, AttachedToDeviceObject).is_null() {
         STATUS_NO_SUCH_DEVICE
     } else {
@@ -1050,6 +1069,9 @@ pub unsafe extern "system" fn IoCreateDevice(
     Exclusive: BOOLEAN,
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let DeviceName = opaque_ptr(DeviceName);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut AutoNameBuffer = [0u16; 20];
     let mut AutoName = core::mem::zeroed::<_UNICODE_STRING>();
     let mut DeviceName = DeviceName;
@@ -1150,6 +1172,7 @@ pub unsafe extern "system" fn IoCreateDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoDeleteDevice(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     if ((*DeviceObject).Flags & DO_SHUTDOWN_REGISTERED) != 0 {
         IoUnregisterShutdownNotification(DeviceObject);
     }
@@ -1177,6 +1200,7 @@ pub unsafe extern "system" fn IoDeleteDevice(DeviceObject: PDEVICE_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoDetachDevice(TargetDevice: PDEVICE_OBJECT) {
+    let TargetDevice = opaque_ptr(TargetDevice);
     let DeviceExtension = IoGetDevObjExtension((*TargetDevice).AttachedDevice);
     (*DeviceExtension).AttachedTo = core::ptr::null_mut();
     (*TargetDevice).AttachedDevice = core::ptr::null_mut();
@@ -1195,6 +1219,9 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
     DeviceObjectListSize: ULONG,
     ActualNumberDeviceObjects: *mut ULONG,
 ) -> NTSTATUS {
+    let DriverObject = opaque_ptr(DriverObject);
+    let DeviceObjectList = opaque_ptr(DeviceObjectList);
+    let ActualNumberDeviceObjects = opaque_ptr(ActualNumberDeviceObjects);
     let mut ActualDevices = 1u32;
     let mut CurrentDevice = (*DriverObject).DeviceObject;
 
@@ -1231,6 +1258,7 @@ pub unsafe extern "system" fn IoEnumerateDeviceObjectList(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetAttachedDevice(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut DeviceObject = DeviceObject;
     while !(*DeviceObject).AttachedDevice.is_null() {
         DeviceObject = (*DeviceObject).AttachedDevice;
@@ -1240,6 +1268,7 @@ pub unsafe extern "system" fn IoGetAttachedDevice(DeviceObject: PDEVICE_OBJECT) 
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetAttachedDeviceReference(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceObject = IoGetAttachedDevice(DeviceObject);
     ObReferenceObject(DeviceObject as PVOID);
     DeviceObject
@@ -1247,6 +1276,7 @@ pub unsafe extern "system" fn IoGetAttachedDeviceReference(DeviceObject: PDEVICE
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetDeviceAttachmentBaseRef(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceObject = IopGetLowestDevice(DeviceObject);
     ObReferenceObject(DeviceObject as PVOID);
     DeviceObject
@@ -1259,6 +1289,9 @@ pub unsafe extern "system" fn IoGetDeviceObjectPointer(
     FileObject: *mut PFILE_OBJECT,
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let ObjectName = opaque_ptr(ObjectName);
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
     IopGetDeviceObjectPointer(ObjectName, DesiredAccess, FileObject, DeviceObject, 0)
 }
 
@@ -1267,6 +1300,8 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
     FileSystemDeviceObject: PDEVICE_OBJECT,
     DiskDeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let FileSystemDeviceObject = opaque_ptr(FileSystemDeviceObject);
+    let DiskDeviceObject = opaque_ptr(DiskDeviceObject);
     if (*FileSystemDeviceObject).Vpb.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
@@ -1295,6 +1330,7 @@ pub unsafe extern "system" fn IoGetDiskDeviceObject(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetLowerDeviceObject(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceExtension = IoGetDevObjExtension(DeviceObject);
     if ((*DeviceExtension).ExtensionFlags
         & (DOE_UNLOAD_PENDING | DOE_DELETE_PENDING | DOE_REMOVE_PENDING | DOE_REMOVE_PROCESSED))
@@ -1314,6 +1350,7 @@ pub unsafe extern "system" fn IoGetLowerDeviceObject(DeviceObject: PDEVICE_OBJEC
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetRelatedDeviceObject(FileObject: PFILE_OBJECT) -> PDEVICE_OBJECT {
+    let FileObject = opaque_ptr(FileObject);
     let mut DeviceObject = (*FileObject).DeviceObject;
 
     if !(*FileObject).Vpb.is_null() && !(*(*FileObject).Vpb).DeviceObject.is_null() {
@@ -1351,6 +1388,8 @@ pub unsafe extern "system" fn IoGetRelatedTargetDevice(
     FileObject: PFILE_OBJECT,
     DeviceObject: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut DeviceNode = core::ptr::null_mut();
     let Status = IopGetRelatedTargetDevice(FileObject, core::ptr::addr_of_mut!(DeviceNode));
     if Status >= 0 && !DeviceNode.is_null() {
@@ -1361,6 +1400,7 @@ pub unsafe extern "system" fn IoGetRelatedTargetDevice(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetBaseFileSystemDeviceObject(FileObject: PFILE_OBJECT) -> PDEVICE_OBJECT {
+    let FileObject = opaque_ptr(FileObject);
     let DeviceObject = if !(*FileObject).Vpb.is_null() && !(*(*FileObject).Vpb).DeviceObject.is_null() {
         (*(*FileObject).Vpb).DeviceObject
     } else if ((*FileObject).Flags & FO_DIRECT_DEVICE_OPEN) == 0
@@ -1377,6 +1417,7 @@ pub unsafe extern "system" fn IoGetBaseFileSystemDeviceObject(FileObject: PFILE_
 
 #[no_mangle]
 pub unsafe extern "system" fn IoRegisterLastChanceShutdownNotification(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let Entry = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<_SHUTDOWN_ENTRY>(),
@@ -1401,6 +1442,7 @@ pub unsafe extern "system" fn IoRegisterLastChanceShutdownNotification(DeviceObj
 
 #[no_mangle]
 pub unsafe extern "system" fn IoRegisterShutdownNotification(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let Entry = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<_SHUTDOWN_ENTRY>(),
@@ -1425,6 +1467,7 @@ pub unsafe extern "system" fn IoRegisterShutdownNotification(DeviceObject: PDEVI
 
 #[no_mangle]
 pub unsafe extern "system" fn IoUnregisterShutdownNotification(DeviceObject: PDEVICE_OBJECT) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     (*DeviceObject).Flags &= !DO_SHUTDOWN_REGISTERED;
 
     let mut OldIrql = 0u8;
@@ -1476,6 +1519,7 @@ pub unsafe extern "system" fn IoSetStartIoAttributes(
     DeferredStartIo: BOOLEAN,
     NonCancelable: BOOLEAN,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceExtension = IoGetDevObjExtension(DeviceObject);
 
     if DeferredStartIo != 0 {
@@ -1492,6 +1536,7 @@ pub unsafe extern "system" fn IoStartNextPacketByKey(
     Cancelable: BOOLEAN,
     Key: ULONG,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceExtension = IoGetDevObjExtension(DeviceObject);
 
     if ((*DeviceExtension).StartIoFlags & DOE_SIO_DEFERRED) != 0 {
@@ -1507,6 +1552,7 @@ pub unsafe extern "system" fn IoStartNextPacketByKey(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoStartNextPacket(DeviceObject: PDEVICE_OBJECT, Cancelable: BOOLEAN) {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let DeviceExtension = IoGetDevObjExtension(DeviceObject);
 
     if ((*DeviceExtension).StartIoFlags & DOE_SIO_DEFERRED) != 0 {
@@ -1527,6 +1573,9 @@ pub unsafe extern "system" fn IoStartPacket(
     Key: *mut ULONG,
     CancelFunction: ntkrnl_sys::ddk::PDRIVER_CANCEL,
 ) {
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let Irp = opaque_ptr(Irp);
+    let Key = opaque_ptr(Key);
     let mut OldIrql = 0u8;
     // [guard] KeRaiseIrql(DISPATCH_LEVEL, core::ptr::addr_of_mut!(OldIrql));
     let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
@@ -1579,6 +1628,7 @@ pub unsafe extern "system" fn IoStartPacket(
 #[cfg(target_pointer_width = "64")]
 #[no_mangle]
 pub unsafe extern "system" fn IoWMIDeviceObjectToProviderId(_DeviceObject: PDEVICE_OBJECT) -> ULONG {
+    let _DeviceObject = opaque_ptr(_DeviceObject);
     0
 }
 

@@ -24,6 +24,7 @@ use ntkrnl_sys::ddk::{
     PKSPIN_LOCK as DdkPKSPIN_LOCK,
 };
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock as KeInitializeSpinLockInline;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // _IO_REMOVE_LOCK_TRACKING_BLOCK is opaque in bindgen, define it here
 // with its real layout matching the C definition.
@@ -96,6 +97,7 @@ pub unsafe extern "system" fn IoAcquireRemoveLockEx(
     Line: ULONG,
     RemlockSize: ULONG,
 ) -> NTSTATUS {
+    let Tag = opaque_ptr(Tag);
     let Lock = RemoveLock as PEXTENDED_IO_REMOVE_LOCK;
 
     let LockValue = InterlockedIncrement(core::ptr::addr_of_mut!((*Lock).Common.IoCount));
@@ -149,6 +151,7 @@ pub unsafe extern "system" fn IoReleaseRemoveLockEx(
     Tag: PVOID,
     RemlockSize: ULONG,
 ) {
+    let Tag = opaque_ptr(Tag);
     let Lock = RemoveLock as PEXTENDED_IO_REMOVE_LOCK;
 
     if RemlockSize == (core::mem::size_of::<IO_REMOVE_LOCK_DBG_BLOCK>() + core::mem::size_of::<IO_REMOVE_LOCK_COMMON_BLOCK>()) as ULONG {
@@ -204,6 +207,7 @@ pub unsafe extern "system" fn IoReleaseRemoveLockAndWaitEx(
     Tag: PVOID,
     RemlockSize: ULONG,
 ) {
+    let Tag = opaque_ptr(Tag);
     let Lock = RemoveLock as PEXTENDED_IO_REMOVE_LOCK;
 
     (*Lock).Common.Removed = 1u8;

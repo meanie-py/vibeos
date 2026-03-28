@@ -5,6 +5,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     MmMapIoSpace, MmUnmapIoSpace, PHYSICAL_ADDRESS, PULONG64, ULONG64,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[repr(C)]
 struct SMBIOS21_ENTRY_POINT {
@@ -114,6 +115,8 @@ pub unsafe extern "system" fn GetEntryPointData(
     TableSize: *mut ULONG,
     BiosTablesHeader: *mut MSSmBios_RawSMBiosTables,
 ) -> BOOLEAN {
+    let TableSize = opaque_ptr(TableSize);
+    let BiosTablesHeader = opaque_ptr(BiosTablesHeader);
     let EntryPoint21 = EntryPointAddress as *const SMBIOS21_ENTRY_POINT;
     let EntryPoint30 = EntryPointAddress as *const SMBIOS30_ENTRY_POINT;
     let mut Checksum: UCHAR;
@@ -184,6 +187,8 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
     OutTableData: *mut PVOID,
     OutDataSize: *mut ULONG,
 ) -> NTSTATUS {
+    let OutTableData = opaque_ptr(OutTableData);
+    let OutDataSize = opaque_ptr(OutDataSize);
     const SearchSize: SIZE_T = 0x10000;
     const HeaderSize: ULONG = core::mem::size_of::<MSSmBios_RawSMBiosTables>() as ULONG;
     let mut PhysicalAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
@@ -265,6 +270,8 @@ pub unsafe extern "system" fn WmipQueryRawSMBiosTables(
     InOutBufferSize: *mut ULONG,
     OutBuffer: PVOID,
 ) -> NTSTATUS {
+    let InOutBufferSize = opaque_ptr(InOutBufferSize);
+    let OutBuffer = opaque_ptr(OutBuffer);
     let mut Status: NTSTATUS;
     let mut TableData: PVOID = core::ptr::null_mut();
     let mut TableSize: ULONG = 0;

@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     ZwDeleteValueKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey, ZwWriteFile,
     _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // Registry constants not in ntkrnl-sys
 const KEY_ALL_ACCESS: ULONG = 0xF003F;
@@ -56,6 +57,7 @@ pub unsafe extern "system" fn IopStopBootLog() {
 
 #[no_mangle]
 pub unsafe extern "system" fn IopBootLog(DriverName: PUNICODE_STRING, Success: BOOLEAN) {
+    let DriverName = opaque_ptr(DriverName);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Buffer: [u16; 256] = [0; 256];
     let mut ValueNameBuffer: [u16; 8] = [0; 8];

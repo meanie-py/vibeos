@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     PsGetCurrentThread,
     ACCESS_MASK, KPROCESSOR_MODE,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "system" {
     static mut CcFastReadResourceMiss: ULONG;
     static mut CcFastReadNotPossible: ULONG;
@@ -118,6 +119,11 @@ pub unsafe extern "system" fn FsRtlCopyRead(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Buffer = opaque_ptr(Buffer);
+    let IoStatus = opaque_ptr(IoStatus);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let mut Offset = LARGE_INTEGER { QuadPart: 0 };
     let FastIoDispatch: PFAST_IO_DISPATCH;
@@ -230,6 +236,11 @@ pub unsafe extern "system" fn FsRtlCopyWrite(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Buffer = opaque_ptr(Buffer);
+    let IoStatus = opaque_ptr(IoStatus);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut Result: BOOLEAN = 1u8;
     let FastIoDispatch: PFAST_IO_DISPATCH;
     let Device: PDEVICE_OBJECT;
@@ -541,6 +552,8 @@ pub unsafe extern "system" fn FsRtlGetFileSize(
     FileObject: PFILE_OBJECT,
     FileSize: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let FileSize = opaque_ptr(FileSize);
     let mut Info: FILE_STANDARD_INFORMATION = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut IoStatus = _IO_STATUS_BLOCK {
@@ -632,6 +645,10 @@ pub unsafe extern "system" fn FsRtlMdlRead(
     MdlChain: *mut PMDL,
     IoStatus: PIO_STATUS_BLOCK,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -660,6 +677,8 @@ pub unsafe extern "system" fn FsRtlMdlReadComplete(
     FileObject: PFILE_OBJECT,
     MdlChain: PMDL,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let MdlChain = opaque_ptr(MdlChain);
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -689,6 +708,9 @@ pub unsafe extern "system" fn FsRtlMdlReadCompleteDev(
     MemoryDescriptorList: PMDL,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let MemoryDescriptorList = opaque_ptr(MemoryDescriptorList);
+    let DeviceObject = opaque_ptr(DeviceObject);
     CcMdlReadComplete2(FileObject, MemoryDescriptorList);
     1u8
 }
@@ -703,6 +725,11 @@ pub unsafe extern "system" fn FsRtlMdlReadDev(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let mut Result: BOOLEAN = 1u8;
     let mut Offset = LARGE_INTEGER { QuadPart: 0 };
@@ -776,6 +803,9 @@ pub unsafe extern "system" fn FsRtlMdlWriteComplete(
     FileOffset: PLARGE_INTEGER,
     MdlChain: PMDL,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -806,6 +836,10 @@ pub unsafe extern "system" fn FsRtlMdlWriteCompleteDev(
     MdlChain: PMDL,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let DeviceObject = opaque_ptr(DeviceObject);
     if ((*FileObject).Flags & FO_WRITE_THROUGH) != 0 {
         return 0u8;
     }
@@ -823,6 +857,10 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWrite(
     MdlChain: *mut PMDL,
     IoStatus: PIO_STATUS_BLOCK,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -856,6 +894,11 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
     IoStatus: PIO_STATUS_BLOCK,
     DeviceObject: PDEVICE_OBJECT,
 ) -> BOOLEAN {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
+    let DeviceObject = opaque_ptr(DeviceObject);
     let mut Result: BOOLEAN = 1u8;
     let FastIoDispatch: PFAST_IO_DISPATCH;
     let Device: PDEVICE_OBJECT;
@@ -1084,6 +1127,7 @@ unsafe fn FsRtlAcquireFileExclusiveCommon(
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAcquireFileExclusive(FileObject: PFILE_OBJECT) {
+    let FileObject = opaque_ptr(FileObject);
     FsRtlAcquireFileExclusiveCommon(FileObject, SyncTypeOther, 0);
 }
 
@@ -1092,11 +1136,13 @@ pub unsafe extern "system" fn FsRtlAcquireToCreateMappedSection(
     FileObject: PFILE_OBJECT,
     SectionPageProtection: ULONG,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     FsRtlAcquireFileExclusiveCommon(FileObject, SyncTypeCreateSection, SectionPageProtection)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlReleaseFile(FileObject: PFILE_OBJECT) {
+    let FileObject = opaque_ptr(FileObject);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let DeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -1120,6 +1166,7 @@ pub unsafe extern "system" fn FsRtlReleaseFile(FileObject: PFILE_OBJECT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAcquireFileForCcFlushEx(FileObject: PFILE_OBJECT) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
@@ -1165,11 +1212,13 @@ pub unsafe extern "system" fn FsRtlAcquireFileForCcFlushEx(FileObject: PFILE_OBJ
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlAcquireFileForCcFlush(FileObject: PFILE_OBJECT) {
+    let FileObject = opaque_ptr(FileObject);
     FsRtlAcquireFileForCcFlushEx(FileObject);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlReleaseFileForCcFlush(FileObject: PFILE_OBJECT) {
+    let FileObject = opaque_ptr(FileObject);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
@@ -1228,6 +1277,9 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
     EndingOffset: PLARGE_INTEGER,
     ResourceToRelease: *mut PERESOURCE,
 ) -> NTSTATUS {
+    let FileObject = opaque_ptr(FileObject);
+    let EndingOffset = opaque_ptr(EndingOffset);
+    let ResourceToRelease = opaque_ptr(ResourceToRelease);
     let FcbHeader: PFSRTL_COMMON_FCB_HEADER;
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
@@ -1297,6 +1349,7 @@ pub unsafe extern "system" fn FsRtlReleaseFileForModWrite(
     FileObject: PFILE_OBJECT,
     ResourceToRelease: PERESOURCE,
 ) {
+    let FileObject = opaque_ptr(FileObject);
     let DeviceObject: PDEVICE_OBJECT;
     let BaseDeviceObject: PDEVICE_OBJECT;
     let FastDispatch: PFAST_IO_DISPATCH;
@@ -1322,6 +1375,7 @@ pub unsafe extern "system" fn FsRtlRegisterFileSystemFilterCallbacks(
     FilterDriverObject: PDRIVER_OBJECT,
     Callbacks: PFS_FILTER_CALLBACKS,
 ) -> NTSTATUS {
+    let FilterDriverObject = opaque_ptr(FilterDriverObject);
     let NewCallbacks: PFS_FILTER_CALLBACKS;
     let DriverExtension: PEXTENDED_DRIVER_EXTENSION;
 

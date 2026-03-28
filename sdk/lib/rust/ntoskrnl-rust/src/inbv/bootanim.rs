@@ -6,6 +6,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _TIME_FIELDS,
@@ -227,6 +228,7 @@ pub unsafe extern "system" fn BootLogoFadeIn() {
 
 #[no_mangle]
 pub unsafe extern "system" fn BitBltPalette(image: PVOID, no_palette: BOOLEAN, x: ULONG, y: ULONG) {
+    let image = opaque_ptr(image);
     let mut orig_palette: [RGBQUAD; 16] = core::mem::zeroed();
 
     if no_palette != 0 {
@@ -257,6 +259,7 @@ pub unsafe extern "system" fn BitBltAligned(
     margin_right: ULONG,
     margin_bottom: ULONG,
 ) {
+    let image = opaque_ptr(image);
     let bitmap_info_header = image as *mut BITMAPINFOHEADER;
 
     let x = match horizontal_alignment {
@@ -289,6 +292,7 @@ pub unsafe extern "system" fn BootAnimInitialize(
     _loader_block: PLOADER_PARAMETER_BLOCK,
     _count: ULONG,
 ) -> BOOLEAN {
+    let _loader_block = opaque_ptr(_loader_block);
     1u8
 }
 
@@ -312,15 +316,18 @@ pub unsafe extern "system" fn BootAnimTickProgressBar(sub_percent_times100: ULON
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "stdcall" fn InbvRotationThread(_context: PVOID) {
+    let _context = opaque_ptr(_context);
     InbvRotationThread_impl(_context);
 }
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn InbvRotationThread(_context: PVOID) {
+    let _context = opaque_ptr(_context);
     InbvRotationThread_impl(_context);
 }
 #[no_mangle]
 pub unsafe extern "system" fn InbvRotationThread_impl(_context: PVOID) {
+    let _context = opaque_ptr(_context);
     let mut x: ULONG;
     let mut y: ULONG;
     let mut index: ULONG;
@@ -428,15 +435,18 @@ pub static mut DotHack: BOOLEAN = 1u8;
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "stdcall" fn DisplayFilter(string: *mut PCSTR) {
+    let string = opaque_ptr(string);
     DisplayFilter_impl(string);
 }
 #[no_mangle]
 #[cfg(not(target_arch = "x86"))]
 pub unsafe extern "C" fn DisplayFilter(string: *mut PCSTR) {
+    let string = opaque_ptr(string);
     DisplayFilter_impl(string);
 }
 #[no_mangle]
 pub unsafe extern "system" fn DisplayFilter_impl(string: *mut PCSTR) {
+    let string = opaque_ptr(string);
     if DotHack != 0 {
         let str_ptr = *string as *const i8;
         if *str_ptr == b'.' as i8 && *str_ptr.add(1) == 0 {

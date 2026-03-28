@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{
     PPORT_MESSAGE, HANDLE,
     _LPC_TYPE_LPC_CONNECTION_REQUEST,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn LpcpGetMessageType(message: PPORT_MESSAGE) -> u16 {
@@ -15,6 +16,7 @@ pub unsafe extern "system" fn NtListenPort(
     port_handle: HANDLE,
     connect_message: PPORT_MESSAGE,
 ) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
     let mut status: NTSTATUS;
 
     loop {

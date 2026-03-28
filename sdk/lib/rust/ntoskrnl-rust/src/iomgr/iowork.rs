@@ -16,6 +16,7 @@ use ntkrnl_sys::ddk::{
     ExFreePool,
 };
 use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // TAG_IOWI = 'IWOI'
 const TAG_IOWI: ULONG = 0x49574F49;
@@ -47,6 +48,7 @@ pub unsafe extern "system" fn IoQueueWorkItem(
     QueueType: WORK_QUEUE_TYPE,
     Context: PVOID,
 ) {
+    let Context = opaque_ptr(Context);
     ObReferenceObject((*IoWorkItem).DeviceObject as PVOID);
 
     (*IoWorkItem).WorkerRoutine = WorkerRoutine;
@@ -62,6 +64,7 @@ pub unsafe extern "system" fn IoFreeWorkItem(IoWorkItem: PIO_WORKITEM) {
 
 #[no_mangle]
 pub unsafe extern "system" fn IoAllocateWorkItem(DeviceObject: PDEVICE_OBJECT) -> PIO_WORKITEM {
+    let DeviceObject = opaque_ptr(DeviceObject);
     let IoWorkItem = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<_IO_WORKITEM>(),

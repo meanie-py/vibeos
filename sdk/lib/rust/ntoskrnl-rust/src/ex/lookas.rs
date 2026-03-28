@@ -22,6 +22,7 @@ use ntkrnl_sys::ddk::{
 // On i386 the same function is exported as ExfInterlockedInsertTailList.
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ddk::ExInterlockedInsertTailList;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 unsafe fn ExInterlockedInsertTailList(
@@ -133,6 +134,7 @@ pub unsafe extern "system" fn ExInitializeSystemLookasideList(
     MaximumDepth: USHORT,
     ListHead: PLIST_ENTRY,
 ) {
+    let ListHead = opaque_ptr(ListHead);
     (*List).Tag = Tag;
     (*List).Type = Type;
     (*List).Size = Size;
@@ -225,6 +227,7 @@ pub unsafe extern "system" fn ExiFreeToPagedLookasideList(
     Lookaside: PPAGED_LOOKASIDE_LIST,
     Entry: PVOID,
 ) {
+    let Entry = opaque_ptr(Entry);
     (*Lookaside).L.TotalFrees += 1;
     if ExQueryDepthSList(core::ptr::addr_of_mut!((*Lookaside).L.__bindgen_anon_1.ListHead) as *mut SLIST_HEADER) >= (*Lookaside).L.Depth as u16 {
         (*Lookaside).L.__bindgen_anon_3.FreeMisses += 1;

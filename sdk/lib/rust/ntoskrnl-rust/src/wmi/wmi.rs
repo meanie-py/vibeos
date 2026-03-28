@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     WMI_NOTIFICATION_CALLBACK, _DRIVER_OBJECT, _EVENT_TRACE_HEADER, _UNICODE_STRING, va_list,
 };
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 type PWMI_LOGGER_INFORMATION = PVOID;
 
@@ -112,6 +113,7 @@ pub unsafe extern "system" fn IoWMIRegistrationControl(
     DeviceObject: PDEVICE_OBJECT,
     Action: ULONG,
 ) -> NTSTATUS {
+    let DeviceObject = opaque_ptr(DeviceObject);
     STATUS_SUCCESS
 }
 
@@ -121,6 +123,8 @@ pub unsafe extern "system" fn IoWMIAllocateInstanceIds(
     InstanceCount: ULONG,
     FirstInstanceId: *mut ULONG,
 ) -> NTSTATUS {
+    let Guid = opaque_ptr(Guid);
+    let FirstInstanceId = opaque_ptr(FirstInstanceId);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -131,11 +135,15 @@ pub unsafe extern "system" fn IoWMISuggestInstanceName(
     CombineNames: BOOLEAN,
     SuggestedInstanceName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
+    let SymbolicLinkName = opaque_ptr(SymbolicLinkName);
+    let SuggestedInstanceName = opaque_ptr(SuggestedInstanceName);
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoWMIWriteEvent(WnodeEventItem: PVOID) -> NTSTATUS {
+    let WnodeEventItem = opaque_ptr(WnodeEventItem);
     let header = WnodeEventItem as PWNODE_HEADER;
 
     if header.is_null() {
@@ -157,6 +165,7 @@ pub unsafe extern "system" fn IoWMIOpenBlock(
     DesiredAccess: ULONG,
     DataBlockObject: *mut PVOID,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
     let mut guid_object_handle: HANDLE = core::ptr::null_mut();
 
     let status = WmipOpenGuidObject(
@@ -179,6 +188,9 @@ pub unsafe extern "system" fn IoWMIQueryAllData(
     InOutBufferSize: *mut ULONG,
     OutBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let InOutBufferSize = opaque_ptr(InOutBufferSize);
+    let OutBuffer = opaque_ptr(OutBuffer);
     let status = ObReferenceObjectByPointer(
         DataBlockObject,
         WMIGUID_QUERY,
@@ -212,6 +224,9 @@ pub unsafe extern "system" fn IoWMIQueryAllDataMultiple(
     InOutBufferSize: *mut ULONG,
     OutBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObjectList = opaque_ptr(DataBlockObjectList);
+    let InOutBufferSize = opaque_ptr(InOutBufferSize);
+    let OutBuffer = opaque_ptr(OutBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -222,6 +237,10 @@ pub unsafe extern "system" fn IoWMIQuerySingleInstance(
     InOutBufferSize: *mut ULONG,
     OutBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let InstanceName = opaque_ptr(InstanceName);
+    let InOutBufferSize = opaque_ptr(InOutBufferSize);
+    let OutBuffer = opaque_ptr(OutBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -233,6 +252,10 @@ pub unsafe extern "system" fn IoWMIQuerySingleInstanceMultiple(
     InOutBufferSize: *mut ULONG,
     OutBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObjectList = opaque_ptr(DataBlockObjectList);
+    let InstanceNames = opaque_ptr(InstanceNames);
+    let InOutBufferSize = opaque_ptr(InOutBufferSize);
+    let OutBuffer = opaque_ptr(OutBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -244,6 +267,9 @@ pub unsafe extern "system" fn IoWMISetSingleInstance(
     ValueBufferSize: ULONG,
     ValueBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let InstanceName = opaque_ptr(InstanceName);
+    let ValueBuffer = opaque_ptr(ValueBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -256,6 +282,9 @@ pub unsafe extern "system" fn IoWMISetSingleItem(
     ValueBufferSize: ULONG,
     ValueBuffer: PVOID,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let InstanceName = opaque_ptr(InstanceName);
+    let ValueBuffer = opaque_ptr(ValueBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -268,6 +297,10 @@ pub unsafe extern "system" fn IoWMIExecuteMethod(
     OutBufferSize: *mut ULONG,
     InOutBuffer: *mut UCHAR,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let InstanceName = opaque_ptr(InstanceName);
+    let OutBufferSize = opaque_ptr(OutBufferSize);
+    let InOutBuffer = opaque_ptr(InOutBuffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -277,6 +310,8 @@ pub unsafe extern "system" fn IoWMISetNotificationCallback(
     Callback: WMI_NOTIFICATION_CALLBACK,
     Context: PVOID,
 ) -> NTSTATUS {
+    let Object = opaque_ptr(Object);
+    let Context = opaque_ptr(Context);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -286,6 +321,9 @@ pub unsafe extern "system" fn IoWMIHandleToInstanceName(
     FileHandle: HANDLE,
     InstanceName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let FileHandle = opaque_ptr(FileHandle);
+    let InstanceName = opaque_ptr(InstanceName);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -295,6 +333,9 @@ pub unsafe extern "system" fn IoWMIDeviceObjectToInstanceName(
     DeviceObject: PDEVICE_OBJECT,
     InstanceName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DataBlockObject = opaque_ptr(DataBlockObject);
+    let DeviceObject = opaque_ptr(DeviceObject);
+    let InstanceName = opaque_ptr(InstanceName);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -306,6 +347,9 @@ pub unsafe extern "system" fn WmiQueryTraceInformation(
     RequiredLength: *mut ULONG,
     Buffer: PVOID,
 ) -> NTSTATUS {
+    let TraceInformation = opaque_ptr(TraceInformation);
+    let RequiredLength = opaque_ptr(RequiredLength);
+    let Buffer = opaque_ptr(Buffer);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -341,6 +385,7 @@ pub unsafe extern "fastcall" fn WmiGetClock(
     ClockType: WMI_CLOCK_TYPE,
     Context: PVOID,
 ) -> LONGLONG {
+    let Context = opaque_ptr(Context);
     STATUS_NOT_IMPLEMENTED as LONGLONG
 }
 
@@ -350,6 +395,7 @@ pub unsafe extern "C" fn WmiGetClock(
     ClockType: WMI_CLOCK_TYPE,
     Context: PVOID,
 ) -> LONGLONG {
+    let Context = opaque_ptr(Context);
     STATUS_NOT_IMPLEMENTED as LONGLONG
 }
 
@@ -392,6 +438,7 @@ pub unsafe extern "system" fn NtTraceEvent(
     TraceHeaderLength: ULONG,
     TraceHeader: *mut _EVENT_TRACE_HEADER,
 ) -> NTSTATUS {
+    let TraceHeader = opaque_ptr(TraceHeader);
     STATUS_NOT_IMPLEMENTED
 }
 

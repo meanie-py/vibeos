@@ -7,6 +7,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::clock::KeMaximumIncrement;
 
 // Bugcheck codes
@@ -271,6 +272,7 @@ pub unsafe extern "system" fn PsTerminateProcess(
     process: PEPROCESS,
     exit_status: NTSTATUS,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
     PspTerminateProcess(process, exit_status)
 }
 
@@ -338,6 +340,7 @@ unsafe extern "system" fn PspReapRoutine(context: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteProcess(object_body: PVOID) {
+    let object_body = opaque_ptr(object_body);
     let process = object_body as PEPROCESS;
     let mut apc_state: _KAPC_STATE = core::mem::zeroed();
 
@@ -423,6 +426,7 @@ pub unsafe extern "system" fn PspDeleteProcess(object_body: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn PspDeleteThread(object_body: PVOID) {
+    let object_body = opaque_ptr(object_body);
     let thread = object_body as PETHREAD;
     let process = (*(thread as *mut _ETHREAD)).ThreadsProcess;
 
@@ -937,6 +941,7 @@ pub unsafe extern "system" fn PspTerminateThreadByPointer(
     exit_status: NTSTATUS,
     b_self: BOOLEAN,
 ) -> NTSTATUS {
+    let thread = opaque_ptr(thread);
     let apc: PKAPC;
     let mut status = STATUS_SUCCESS;
     let flags: ULONG;
@@ -1055,6 +1060,7 @@ pub unsafe extern "system" fn NtTerminateProcess(
     mut process_handle: HANDLE,
     exit_status: NTSTATUS,
 ) -> NTSTATUS {
+    let mut process_handle = opaque_ptr(process_handle);
     let mut status: NTSTATUS;
     let mut process: PEPROCESS = core::ptr::null_mut();
     let current_process = PsGetCurrentProcess();
@@ -1188,6 +1194,7 @@ pub unsafe extern "system" fn NtTerminateThread(
     thread_handle: HANDLE,
     exit_status: NTSTATUS,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let current_thread = PsGetCurrentThread();
     let mut status: NTSTATUS;
@@ -1228,6 +1235,7 @@ pub unsafe extern "system" fn NtTerminateThread(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtRegisterThreadTerminatePort(port_handle: HANDLE) -> NTSTATUS {
+    let port_handle = opaque_ptr(port_handle);
     let mut status: NTSTATUS;
     let termination_port: PTERMINATION_PORT;
     let mut termination_lpc_port: PVOID = core::ptr::null_mut();

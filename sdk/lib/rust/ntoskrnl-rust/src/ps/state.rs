@@ -4,6 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::{NonPagedPool};
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     pub static PsThreadType: POBJECT_TYPE;
@@ -33,6 +34,8 @@ pub unsafe extern "system" fn PsResumeThread(
     thread: PETHREAD,
     previous_count: *mut ULONG,
 ) -> NTSTATUS {
+    let thread = opaque_ptr(thread);
+    let previous_count = opaque_ptr(previous_count);
     let old_count = KeResumeThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
 
     if !previous_count.is_null() {
@@ -46,6 +49,8 @@ pub unsafe extern "system" fn PsSuspendThread(
     thread: PETHREAD,
     previous_count: *mut ULONG,
 ) -> NTSTATUS {
+    let thread = opaque_ptr(thread);
+    let previous_count = opaque_ptr(previous_count);
     let mut status = STATUS_SUCCESS;
     let mut old_count = 0u32;
 
@@ -109,6 +114,7 @@ unsafe fn PsSuspendProcess(process: PEPROCESS) -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn NtAlertThread(thread_handle: HANDLE) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
     let previous_mode = ExGetPreviousMode();
     let mut thread: PETHREAD = core::ptr::null_mut();
 
@@ -134,6 +140,8 @@ pub unsafe extern "system" fn NtAlertResumeThread(
     thread_handle: HANDLE,
     suspend_count: *mut ULONG,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let suspend_count = opaque_ptr(suspend_count);
     let previous_mode = ExGetPreviousMode();
     let mut thread: PETHREAD = core::ptr::null_mut();
     let mut status: NTSTATUS;
@@ -172,6 +180,8 @@ pub unsafe extern "system" fn NtResumeThread(
     thread_handle: HANDLE,
     suspend_count: *mut ULONG,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let suspend_count = opaque_ptr(suspend_count);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let mut prev: ULONG = 0;
     let previous_mode = ExGetPreviousMode();
@@ -212,6 +222,8 @@ pub unsafe extern "system" fn NtSuspendThread(
     thread_handle: HANDLE,
     previous_suspend_count: *mut ULONG,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let previous_suspend_count = opaque_ptr(previous_suspend_count);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let mut prev: ULONG = 0;
     let previous_mode = ExGetPreviousMode();
@@ -253,6 +265,7 @@ pub unsafe extern "system" fn NtSuspendThread(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtSuspendProcess(process_handle: HANDLE) -> NTSTATUS {
+    let process_handle = opaque_ptr(process_handle);
     let previous_mode = ExGetPreviousMode();
     let mut process: PEPROCESS = core::ptr::null_mut();
 
@@ -275,6 +288,7 @@ pub unsafe extern "system" fn NtSuspendProcess(process_handle: HANDLE) -> NTSTAT
 
 #[no_mangle]
 pub unsafe extern "system" fn NtResumeProcess(process_handle: HANDLE) -> NTSTATUS {
+    let process_handle = opaque_ptr(process_handle);
     let previous_mode = ExGetPreviousMode();
     let mut process: PEPROCESS = core::ptr::null_mut();
 
@@ -313,6 +327,11 @@ pub unsafe extern "system" fn NtQueueApcThreadEx(
     system_argument1: PVOID,
     system_argument2: PVOID,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let _user_apc_reserve_handle = opaque_ptr(_user_apc_reserve_handle);
+    let normal_context = opaque_ptr(normal_context);
+    let system_argument1 = opaque_ptr(system_argument1);
+    let system_argument2 = opaque_ptr(system_argument2);
     let mut thread: PETHREAD = core::ptr::null_mut();
     let mut status = STATUS_SUCCESS;
 
@@ -381,6 +400,10 @@ pub unsafe extern "system" fn NtQueueApcThread(
     system_argument1: PVOID,
     system_argument2: PVOID,
 ) -> NTSTATUS {
+    let thread_handle = opaque_ptr(thread_handle);
+    let normal_context = opaque_ptr(normal_context);
+    let system_argument1 = opaque_ptr(system_argument1);
+    let system_argument2 = opaque_ptr(system_argument2);
     NtQueueApcThreadEx(
         thread_handle,
         core::ptr::null_mut(),

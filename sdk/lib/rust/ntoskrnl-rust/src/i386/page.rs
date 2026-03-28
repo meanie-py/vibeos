@@ -37,6 +37,7 @@ use ntkrnl_sys::ddk::MiIsPdeForAddressValid;
 use ntkrnl_sys::ddk::MiMakeSystemAddressValid;
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ps::PsGetCurrentProcess;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use crate::ARM3::helpers::*;
 
@@ -257,6 +258,8 @@ pub unsafe extern "system" fn MmGetPfnForProcess(
     Process: PEPROCESS,
     Address: PVOID,
 ) -> PFN_NUMBER {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let PointerPte: PMMPTE;
     let Page: PFN_NUMBER;
 
@@ -373,6 +376,9 @@ pub unsafe extern "system" fn MmDeleteVirtualMapping(
     WasDirty: *mut BOOLEAN,
     Page: PPFN_NUMBER,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
+    let WasDirty = opaque_ptr(WasDirty);
     MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, 0u8)
 }
 
@@ -383,6 +389,9 @@ pub unsafe extern "system" fn MmDeletePhysicalMapping(
     WasDirty: *mut BOOLEAN,
     Page: PPFN_NUMBER,
 ) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
+    let WasDirty = opaque_ptr(WasDirty);
     MmDeleteVirtualMappingEx(Process, Address, WasDirty, Page, 1u8)
 }
 
@@ -392,6 +401,9 @@ pub unsafe extern "system" fn MmDeletePageFileMapping(
     Address: PVOID,
     SwapEntry: *mut SWAPENTRY,
 ) {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
+    let SwapEntry = opaque_ptr(SwapEntry);
     let PointerPte: PMMPTE;
     let mut OldPte = MMPTE { Long: 0 };
 
@@ -425,6 +437,8 @@ pub unsafe extern "system" fn MmDeletePageFileMapping(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let Ret: BOOLEAN;
 
     if Address >= MmSystemRangeStart {
@@ -462,6 +476,8 @@ pub unsafe extern "system" fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsDisabledPage(Process: PEPROCESS, Address: PVOID) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let Ret: BOOLEAN;
     let PointerPte: PMMPTE;
 
@@ -505,6 +521,8 @@ pub unsafe extern "system" fn MmIsDisabledPage(Process: PEPROCESS, Address: PVOI
 
 #[no_mangle]
 pub unsafe extern "system" fn MmIsPageSwapEntry(Process: PEPROCESS, Address: PVOID) -> BOOLEAN {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let Ret: BOOLEAN;
     let PointerPte: PMMPTE;
 
@@ -535,6 +553,9 @@ pub unsafe extern "system" fn MmGetPageFileMapping(
     Address: PVOID,
     SwapEntry: *mut SWAPENTRY,
 ) {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
+    let SwapEntry = opaque_ptr(SwapEntry);
     let PointerPte: PMMPTE;
 
     if Address >= MmSystemRangeStart {
@@ -568,6 +589,8 @@ pub unsafe extern "system" fn MmCreatePageFileMapping(
     Address: PVOID,
     SwapEntry: SWAPENTRY,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let PointerPte: PMMPTE;
     let Pte: ULONG_PTR;
 
@@ -675,6 +698,8 @@ pub unsafe extern "system" fn MmCreateVirtualMappingUnsafe(
     flProtect: ULONG,
     Page: PFN_NUMBER,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 0u8)
 }
 
@@ -685,6 +710,8 @@ pub unsafe extern "system" fn MmCreatePhysicalMapping(
     flProtect: ULONG,
     Page: PFN_NUMBER,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 1u8)
 }
 
@@ -695,6 +722,8 @@ pub unsafe extern "system" fn MmCreateVirtualMapping(
     flProtect: ULONG,
     Page: PFN_NUMBER,
 ) -> NTSTATUS {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     if MmIsPageInUse(Page as _) == 0 {
         KeBugCheck(MEMORY_MANAGEMENT);
     }
@@ -704,6 +733,8 @@ pub unsafe extern "system" fn MmCreateVirtualMapping(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmGetPageProtect(Process: PEPROCESS, Address: PVOID) -> ULONG {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let PointerPte: PMMPTE;
     let mut Protect: ULONG;
 
@@ -793,6 +824,8 @@ pub unsafe extern "system" fn MmSetPageProtect(
     Address: PVOID,
     flProtect: ULONG,
 ) {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let ProtectionMask: ULONG;
     let PointerPte: PMMPTE;
     let mut TempPte = MMPTE { Long: 0 };
@@ -842,6 +875,8 @@ pub unsafe extern "system" fn MmSetPageProtect(
 
 #[no_mangle]
 pub unsafe extern "system" fn MmSetDirtyBit(Process: PEPROCESS, Address: PVOID, Bit: BOOLEAN) {
+    let Process = opaque_ptr(Process);
+    let Address = opaque_ptr(Address);
     let PointerPte: PMMPTE;
 
     MiLockProcessWorkingSetUnsafe(Process, PsGetCurrentThread());
@@ -876,6 +911,7 @@ pub unsafe extern "system" fn MmInitGlobalKernelPageDirectory() {}
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn Mmi386MakeKernelPageTableGlobal(Address: PVOID) -> BOOLEAN {
+    let Address = opaque_ptr(Address);
     let PointerPde = MiAddressToPde(Address);
     let PointerPte = MiAddressToPte(Address);
 

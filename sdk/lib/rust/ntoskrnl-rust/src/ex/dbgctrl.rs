@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     PsTerminateProcess,
     SeSinglePrivilegeCheck,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     static SeDebugPrivilege: LUID;
@@ -106,6 +107,7 @@ pub static mut ExpDebuggerPageIn: ULONG_PTR = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn ExpDebuggerWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let ProcessToAttach: PEPROCESS;
     let ProcessToKill: PEPROCESS;
     let PageInAddress: ULONG_PTR;
@@ -194,6 +196,9 @@ pub unsafe extern "system" fn NtSystemDebugControl(
     OutputBufferLength: ULONG,
     ReturnLength: *mut ULONG,
 ) -> NTSTATUS {
+    let InputBuffer = opaque_ptr(InputBuffer);
+    let OutputBuffer = opaque_ptr(OutputBuffer);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let PreviousMode = KeGetPreviousMode();
     let mut Length: ULONG = 0;
 

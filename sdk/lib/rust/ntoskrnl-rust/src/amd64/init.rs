@@ -14,6 +14,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _MEMORY_ALLOCATION_DESCRIPTOR,
@@ -280,6 +281,8 @@ pub unsafe extern "system" fn MiInitializeSessionSpaceLayout() {
 
 #[no_mangle]
 pub unsafe extern "system" fn MiMapPPEs(start_address: PVOID, end_address: PVOID) {
+    let start_address = opaque_ptr(start_address);
+    let end_address = opaque_ptr(end_address);
     let mut pointer_ppe = MiAddressToPpe(start_address);
     let end_ppe = MiAddressToPpe(end_address);
     let mut tmpl_pde = ValidKernelPde;
@@ -296,6 +299,8 @@ pub unsafe extern "system" fn MiMapPPEs(start_address: PVOID, end_address: PVOID
 
 #[no_mangle]
 pub unsafe extern "system" fn MiMapPDEs(start_address: PVOID, end_address: PVOID) {
+    let start_address = opaque_ptr(start_address);
+    let end_address = opaque_ptr(end_address);
     let mut pointer_pde = MiAddressToPde(start_address);
     let end_pde = MiAddressToPde(end_address);
     let mut tmpl_pde = ValidKernelPde;
@@ -312,6 +317,8 @@ pub unsafe extern "system" fn MiMapPDEs(start_address: PVOID, end_address: PVOID
 
 #[no_mangle]
 pub unsafe extern "system" fn MiMapPTEs(start_address: PVOID, end_address: PVOID) {
+    let start_address = opaque_ptr(start_address);
+    let end_address = opaque_ptr(end_address);
     let mut pointer_pte = MiAddressToPte(start_address);
     let end_pte = MiAddressToPte(end_address);
     let mut tmpl_pte = ValidKernelPte;
@@ -647,6 +654,7 @@ unsafe fn MiAddDescriptorToDatabase(
 
 #[no_mangle]
 pub unsafe extern "system" fn MiBuildPfnDatabase(loader_block: PLOADER_PARAMETER_BLOCK) {
+    let loader_block = opaque_ptr(loader_block);
     // [guard] let old_irql = MiAcquirePfnLock();
     let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
@@ -717,6 +725,7 @@ pub unsafe extern "system" fn MiBuildPfnDatabase(loader_block: PLOADER_PARAMETER
 
 #[no_mangle]
 pub unsafe extern "system" fn MiInitMachineDependent(loader_block: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let loader_block = opaque_ptr(loader_block);
     // Initialize template PTEs that have zero static initializers in Rust
     // (in C these are compile-time initialized, but Rust requires runtime init)
     init_globals();

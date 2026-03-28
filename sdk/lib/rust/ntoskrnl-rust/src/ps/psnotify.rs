@@ -2,6 +2,7 @@ use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use core::mem::transmute;
 
 const PSP_MAX_CREATE_THREAD_NOTIFY: usize = 64;
@@ -99,6 +100,7 @@ pub unsafe extern "system" fn PsSetCreateProcessNotifyRoutine(
 
 #[no_mangle]
 pub unsafe extern "system" fn PsSetLegoNotifyRoutine(LegoNotifyRoutine: PVOID) -> ULONG {
+    let LegoNotifyRoutine = opaque_ptr(LegoNotifyRoutine);
     PspLegoNotifyRoutine = transmute(LegoNotifyRoutine);
 
     #[cfg(target_arch = "x86")]

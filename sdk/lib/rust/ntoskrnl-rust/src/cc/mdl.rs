@@ -6,12 +6,15 @@ use ntkrnl_sys::ddk::{
     PDEVICE_OBJECT, PFAST_IO_DISPATCH, PFILE_OBJECT, PIO_STATUS_BLOCK,
     PLARGE_INTEGER, PMDL,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub unsafe extern "system" fn CcMdlReadComplete2(
     FileObject: PFILE_OBJECT,
     MemoryDescriptorList: PMDL,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let MemoryDescriptorList = opaque_ptr(MemoryDescriptorList);
     let mut mdl = MemoryDescriptorList;
     
     while !mdl.is_null() {
@@ -28,6 +31,9 @@ pub unsafe extern "system" fn CcMdlWriteComplete2(
     FileOffset: PLARGE_INTEGER,
     MdlChain: PMDL,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
     // UNIMPLEMENTED in original C source
 }
 
@@ -39,6 +45,10 @@ pub unsafe extern "system" fn CcMdlRead(
     MdlChain: *mut PMDL,
     IoStatus: PIO_STATUS_BLOCK,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
     unimplemented!();
 }
 
@@ -47,6 +57,8 @@ pub unsafe extern "system" fn CcMdlReadComplete(
     FileObject: PFILE_OBJECT,
     MdlChain: PMDL,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let MdlChain = opaque_ptr(MdlChain);
     let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
     let fast_dispatch: PFAST_IO_DISPATCH;
 
@@ -73,6 +85,9 @@ pub unsafe extern "system" fn CcMdlWriteComplete(
     FileOffset: PLARGE_INTEGER,
     MdlChain: PMDL,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
     let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
     let fast_dispatch: PFAST_IO_DISPATCH;
 
@@ -99,6 +114,8 @@ pub unsafe extern "system" fn CcMdlWriteAbort(
     FileObject: PFILE_OBJECT,
     MdlChain: PMDL,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let MdlChain = opaque_ptr(MdlChain);
     unimplemented!();
 }
 
@@ -110,6 +127,10 @@ pub unsafe extern "system" fn CcPrepareMdlWrite(
     MdlChain: *mut PMDL,
     IoStatus: PIO_STATUS_BLOCK,
 ) {
+    let FileObject = opaque_ptr(FileObject);
+    let FileOffset = opaque_ptr(FileOffset);
+    let MdlChain = opaque_ptr(MdlChain);
+    let IoStatus = opaque_ptr(IoStatus);
     unimplemented!();
 }
 

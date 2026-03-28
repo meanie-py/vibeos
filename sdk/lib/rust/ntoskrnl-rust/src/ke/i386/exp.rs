@@ -10,6 +10,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::macros::NtCurrentProcess;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _EPROCESS,
@@ -247,6 +248,8 @@ pub unsafe extern "fastcall" fn KiUpdateDr7(Dr7: ULONG) -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULONG) -> BOOLEAN {
+    let Dr7Ptr = opaque_ptr(Dr7Ptr);
+    let DrMask = opaque_ptr(DrMask);
     let mask = if DrMask.is_null() {
         (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive as ULONG
     } else {
@@ -717,6 +720,7 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeInvalidAccessAllowed(TrapInformation: PVOID) -> BOOLEAN {
+    let TrapInformation = opaque_ptr(TrapInformation);
     if TrapInformation.is_null() {
         return 0u8;
     }

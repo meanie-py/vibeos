@@ -6,6 +6,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::probe::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
     fn ReleaseCapturedUnicodeString(Name: *mut _UNICODE_STRING, PreviousMode: KPROCESSOR_MODE);
@@ -34,15 +35,18 @@ static mut SeSubsystemName: _UNICODE_STRING = _UNICODE_STRING {
 
 #[no_mangle]
 pub unsafe extern "system" fn SeDetailedAuditingWithToken(_token: PTOKEN) -> BOOLEAN {
+    let _token = opaque_ptr(_token);
     0u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SeAuditProcessCreate(_process: PEPROCESS) {
+    let _process = opaque_ptr(_process);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SeAuditProcessExit(_process: PEPROCESS) {
+    let _process = opaque_ptr(_process);
 }
 
 #[no_mangle]
@@ -51,6 +55,8 @@ pub unsafe extern "system" fn SeInitializeProcessAuditName(
     do_audit: BOOLEAN,
     audit_info: *mut POBJECT_NAME_INFORMATION,
 ) -> NTSTATUS {
+    let file_object = opaque_ptr(file_object);
+    let audit_info = opaque_ptr(audit_info);
     let mut local_name_info: OBJECT_NAME_INFORMATION = core::mem::zeroed();
     let mut object_name_info: POBJECT_NAME_INFORMATION = core::ptr::null_mut();
     let mut return_length: ULONG = 8;
@@ -119,6 +125,8 @@ pub unsafe extern "system" fn SeLocateProcessImageName(
     process: PEPROCESS,
     process_image_name: *mut PUNICODE_STRING,
 ) -> NTSTATUS {
+    let process = opaque_ptr(process);
+    let process_image_name = opaque_ptr(process_image_name);
     let mut audit_name: POBJECT_NAME_INFORMATION;
     let mut image_name: PUNICODE_STRING;
     let mut file_object: PFILE_OBJECT = core::ptr::null_mut();
@@ -204,6 +212,9 @@ pub unsafe extern "system" fn SePrivilegedServiceAuditAlarm(
     privilege_set: PPRIVILEGE_SET,
     access_granted: BOOLEAN,
 ) {
+    let service_name = opaque_ptr(service_name);
+    let subject_context = opaque_ptr(subject_context);
+    let privilege_set = opaque_ptr(privilege_set);
     let effective_token: PTOKEN;
     let user_sid: PSID;
 
@@ -692,6 +703,8 @@ pub unsafe extern "system" fn SeAuditHardLinkCreation(
     _link_name: PUNICODE_STRING,
     _b_success: BOOLEAN,
 ) {
+    let _file_name = opaque_ptr(_file_name);
+    let _link_name = opaque_ptr(_link_name);
 }
 
 #[no_mangle]
@@ -699,6 +712,7 @@ pub unsafe extern "system" fn SeAuditingFileEvents(
     _access_granted: BOOLEAN,
     _security_descriptor: PSECURITY_DESCRIPTOR,
 ) -> BOOLEAN {
+    let _security_descriptor = opaque_ptr(_security_descriptor);
     0u8
 }
 
@@ -708,6 +722,8 @@ pub unsafe extern "system" fn SeAuditingFileEventsWithContext(
     _security_descriptor: PSECURITY_DESCRIPTOR,
     _subject_security_context: PSECURITY_SUBJECT_CONTEXT,
 ) -> BOOLEAN {
+    let _security_descriptor = opaque_ptr(_security_descriptor);
+    let _subject_security_context = opaque_ptr(_subject_security_context);
     0u8
 }
 
@@ -716,6 +732,7 @@ pub unsafe extern "system" fn SeAuditingHardLinkEvents(
     _access_granted: BOOLEAN,
     _security_descriptor: PSECURITY_DESCRIPTOR,
 ) -> BOOLEAN {
+    let _security_descriptor = opaque_ptr(_security_descriptor);
     0u8
 }
 
@@ -725,6 +742,8 @@ pub unsafe extern "system" fn SeAuditingHardLinkEventsWithContext(
     _security_descriptor: PSECURITY_DESCRIPTOR,
     _subject_security_context: PSECURITY_SUBJECT_CONTEXT,
 ) -> BOOLEAN {
+    let _security_descriptor = opaque_ptr(_security_descriptor);
+    let _subject_security_context = opaque_ptr(_subject_security_context);
     0u8
 }
 
@@ -734,6 +753,8 @@ pub unsafe extern "system" fn SeAuditingFileOrGlobalEvents(
     _security_descriptor: PSECURITY_DESCRIPTOR,
     _subject_security_context: PSECURITY_SUBJECT_CONTEXT,
 ) -> BOOLEAN {
+    let _security_descriptor = opaque_ptr(_security_descriptor);
+    let _subject_security_context = opaque_ptr(_subject_security_context);
     0u8
 }
 
@@ -743,6 +764,8 @@ pub unsafe extern "system" fn SeCloseObjectAuditAlarm(
     _handle: HANDLE,
     _perform_action: BOOLEAN,
 ) {
+    let _object = opaque_ptr(_object);
+    let _handle = opaque_ptr(_handle);
 }
 
 #[no_mangle]
@@ -750,6 +773,8 @@ pub unsafe extern "system" fn SeDeleteObjectAuditAlarm(
     _object: PVOID,
     _handle: HANDLE,
 ) {
+    let _object = opaque_ptr(_object);
+    let _handle = opaque_ptr(_handle);
 }
 
 #[no_mangle]
@@ -764,6 +789,12 @@ pub unsafe extern "system" fn SeOpenObjectAuditAlarm(
     access_mode: KPROCESSOR_MODE,
     _generate_on_close: PBOOLEAN,
 ) {
+    let _object_type_name = opaque_ptr(_object_type_name);
+    let _object = opaque_ptr(_object);
+    let _absolute_object_name = opaque_ptr(_absolute_object_name);
+    let _security_descriptor = opaque_ptr(_security_descriptor);
+    let _access_state = opaque_ptr(_access_state);
+    let _generate_on_close = opaque_ptr(_generate_on_close);
     if access_mode == KernelMode {
         return;
     }
@@ -781,6 +812,12 @@ pub unsafe extern "system" fn SeOpenObjectForDeleteAuditAlarm(
     _access_mode: KPROCESSOR_MODE,
     _generate_on_close: PBOOLEAN,
 ) {
+    let _object_type_name = opaque_ptr(_object_type_name);
+    let _object = opaque_ptr(_object);
+    let _absolute_object_name = opaque_ptr(_absolute_object_name);
+    let _security_descriptor = opaque_ptr(_security_descriptor);
+    let _access_state = opaque_ptr(_access_state);
+    let _generate_on_close = opaque_ptr(_generate_on_close);
 }
 
 #[no_mangle]
@@ -792,6 +829,9 @@ pub unsafe extern "system" fn SePrivilegeObjectAuditAlarm(
     _access_granted: BOOLEAN,
     _current_mode: KPROCESSOR_MODE,
 ) {
+    let _handle = opaque_ptr(_handle);
+    let _subject_context = opaque_ptr(_subject_context);
+    let _privileges = opaque_ptr(_privileges);
 }
 
 #[no_mangle]
@@ -800,6 +840,8 @@ pub unsafe extern "system" fn NtCloseObjectAuditAlarm(
     handle_id: PVOID,
     generate_on_close: BOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
     let mut subject_context: SECURITY_SUBJECT_CONTEXT = core::mem::zeroed();
     let mut captured_subsystem_name: _UNICODE_STRING = core::mem::zeroed();
     let previous_mode: KPROCESSOR_MODE;
@@ -876,6 +918,8 @@ pub unsafe extern "system" fn NtDeleteObjectAuditAlarm(
     _handle_id: PVOID,
     _generate_on_close: BOOLEAN,
 ) -> NTSTATUS {
+    let _subsystem_name = opaque_ptr(_subsystem_name);
+    let _handle_id = opaque_ptr(_handle_id);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -912,6 +956,14 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
     access_granted: BOOLEAN,
     generate_on_close: PBOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
+    let object_type_name = opaque_ptr(object_type_name);
+    let object_name = opaque_ptr(object_name);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let client_token_handle = opaque_ptr(client_token_handle);
+    let privilege_set = opaque_ptr(privilege_set);
+    let generate_on_close = opaque_ptr(generate_on_close);
     let mut client_token: PTOKEN = core::ptr::null_mut();
     let mut captured_security_descriptor: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut captured_subsystem_name: _UNICODE_STRING = core::mem::zeroed();
@@ -1289,6 +1341,10 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
     privileges: PPRIVILEGE_SET,
     access_granted: BOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let service_name = opaque_ptr(service_name);
+    let client_token_handle = opaque_ptr(client_token_handle);
+    let privileges = opaque_ptr(privileges);
     let previous_mode: KPROCESSOR_MODE;
     let mut client_token: PTOKEN = core::ptr::null_mut();
     let mut captured_privileges: PPRIVILEGE_SET = core::ptr::null_mut();
@@ -1482,6 +1538,10 @@ pub unsafe extern "system" fn NtPrivilegeObjectAuditAlarm(
     _privileges: PPRIVILEGE_SET,
     _access_granted: BOOLEAN,
 ) -> NTSTATUS {
+    let _subsystem_name = opaque_ptr(_subsystem_name);
+    let _handle_id = opaque_ptr(_handle_id);
+    let _client_token = opaque_ptr(_client_token);
+    let _privileges = opaque_ptr(_privileges);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1499,6 +1559,14 @@ pub unsafe extern "system" fn NtAccessCheckAndAuditAlarm(
     access_status: PNTSTATUS,
     generate_on_close: PBOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
+    let object_type_name = opaque_ptr(object_type_name);
+    let object_name = opaque_ptr(object_name);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let generic_mapping = opaque_ptr(generic_mapping);
+    let access_status = opaque_ptr(access_status);
+    let generate_on_close = opaque_ptr(generate_on_close);
     SepAccessCheckAndAuditAlarm(
         subsystem_name,
         handle_id,
@@ -1539,6 +1607,15 @@ pub unsafe extern "system" fn NtAccessCheckByTypeAndAuditAlarm(
     access_status: PNTSTATUS,
     generate_on_close: PBOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
+    let object_type_name = opaque_ptr(object_type_name);
+    let object_name = opaque_ptr(object_name);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let principal_self_sid = opaque_ptr(principal_self_sid);
+    let generic_mapping = opaque_ptr(generic_mapping);
+    let access_status = opaque_ptr(access_status);
+    let generate_on_close = opaque_ptr(generate_on_close);
     SepAccessCheckAndAuditAlarm(
         subsystem_name,
         handle_id,
@@ -1579,6 +1656,15 @@ pub unsafe extern "system" fn NtAccessCheckByTypeResultListAndAuditAlarm(
     access_status_list: PNTSTATUS,
     generate_on_close: PBOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
+    let object_type_name = opaque_ptr(object_type_name);
+    let object_name = opaque_ptr(object_name);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let principal_self_sid = opaque_ptr(principal_self_sid);
+    let generic_mapping = opaque_ptr(generic_mapping);
+    let access_status_list = opaque_ptr(access_status_list);
+    let generate_on_close = opaque_ptr(generate_on_close);
     SepAccessCheckAndAuditAlarm(
         subsystem_name,
         handle_id,
@@ -1620,6 +1706,16 @@ pub unsafe extern "system" fn NtAccessCheckByTypeResultListAndAuditAlarmByHandle
     access_status_list: PNTSTATUS,
     generate_on_close: PBOOLEAN,
 ) -> NTSTATUS {
+    let subsystem_name = opaque_ptr(subsystem_name);
+    let handle_id = opaque_ptr(handle_id);
+    let client_token = opaque_ptr(client_token);
+    let object_type_name = opaque_ptr(object_type_name);
+    let object_name = opaque_ptr(object_name);
+    let security_descriptor = opaque_ptr(security_descriptor);
+    let principal_self_sid = opaque_ptr(principal_self_sid);
+    let generic_mapping = opaque_ptr(generic_mapping);
+    let access_status_list = opaque_ptr(access_status_list);
+    let generate_on_close = opaque_ptr(generate_on_close);
     SepAccessCheckAndAuditAlarm(
         subsystem_name,
         handle_id,

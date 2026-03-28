@@ -18,6 +18,7 @@ use ntkrnl_sys::ddk::{
     CcFlushCache, CcScheduleLazyWriteScan, KeBugCheck,
     PCC_POST_DEFERRED_WRITE, MMPFNLIST,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     static mut CcDeferredWrites: LIST_ENTRY;
@@ -160,6 +161,7 @@ pub unsafe extern "C" fn CcPostDeferredWrites() {
 
 #[no_mangle]
 pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
+    let file_object = opaque_ptr(file_object);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
     let mut locked = 0u8;
 
@@ -269,6 +271,7 @@ pub unsafe extern "system" fn CcCanIWrite(
     wait: BOOLEAN,
     retrying: BOOLEAN,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
     if ((*file_object).Flags & FO_WRITE_THROUGH) != 0 {
         return 1;
     }
@@ -405,6 +408,10 @@ pub unsafe extern "system" fn CcCopyRead(
     buffer: PVOID,
     io_status: PIO_STATUS_BLOCK,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let buffer = opaque_ptr(buffer);
+    let io_status = opaque_ptr(io_status);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     if (shared_cache_map as PVOID).is_null() {
@@ -457,6 +464,9 @@ pub unsafe extern "system" fn CcCopyWrite(
     wait: BOOLEAN,
     buffer: PVOID,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let file_offset = opaque_ptr(file_offset);
+    let buffer = opaque_ptr(buffer);
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
     if (shared_cache_map as PVOID).is_null() {
@@ -529,6 +539,9 @@ pub unsafe extern "system" fn CcDeferWrite(
     bytes_to_write: ULONG,
     retrying: BOOLEAN,
 ) {
+    let file_object = opaque_ptr(file_object);
+    let context1 = opaque_ptr(context1);
+    let context2 = opaque_ptr(context2);
     let context = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<_DEFERRED_WRITE>(), u32::from_ne_bytes(*b"CcDw")) as PDEFERRED_WRITE;
     if context.is_null() {
         (post_routine.unwrap())(context1, context2);
@@ -579,6 +592,9 @@ pub unsafe extern "system" fn CcFastCopyRead(
     buffer: PVOID,
     io_status: PIO_STATUS_BLOCK,
 ) {
+    let file_object = opaque_ptr(file_object);
+    let buffer = opaque_ptr(buffer);
+    let io_status = opaque_ptr(io_status);
     let mut large_file_offset: LARGE_INTEGER = core::mem::zeroed();
     large_file_offset.QuadPart = file_offset as i64;
     CcCopyRead(file_object, core::ptr::addr_of_mut!(large_file_offset), length, 1u8, buffer, io_status);
@@ -591,6 +607,8 @@ pub unsafe extern "system" fn CcFastCopyWrite(
     length: ULONG,
     buffer: PVOID,
 ) {
+    let file_object = opaque_ptr(file_object);
+    let buffer = opaque_ptr(buffer);
     let mut large_file_offset: LARGE_INTEGER = core::mem::zeroed();
     large_file_offset.QuadPart = file_offset as i64;
     CcCopyWrite(file_object, core::ptr::addr_of_mut!(large_file_offset), length, 1u8, buffer);
@@ -603,6 +621,9 @@ pub unsafe extern "system" fn CcZeroData(
     end_offset: PLARGE_INTEGER,
     wait: BOOLEAN,
 ) -> BOOLEAN {
+    let file_object = opaque_ptr(file_object);
+    let start_offset = opaque_ptr(start_offset);
+    let end_offset = opaque_ptr(end_offset);
     let mut length = (*end_offset).QuadPart - (*start_offset).QuadPart;
     let mut write_offset: LARGE_INTEGER = *start_offset;
 

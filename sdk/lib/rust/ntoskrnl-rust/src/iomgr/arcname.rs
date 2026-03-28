@@ -4,6 +4,7 @@ use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
@@ -117,6 +118,7 @@ const UNICODE_NULL: u16 = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     STATUS_SUCCESS
 }
 
@@ -126,12 +128,15 @@ pub unsafe extern "system" fn IopCreateArcNamesDisk(
     SingleDisk: BOOLEAN,
     FoundBoot: PBOOLEAN,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
+    let FoundBoot = opaque_ptr(FoundBoot);
     STATUS_SUCCESS
 }
 
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateArcNames(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Length: usize;
     let mut Status: NTSTATUS;
     let mut Buffer: [i8; 128] = [0; 128];
@@ -235,6 +240,7 @@ pub unsafe extern "system" fn IopCreateArcNames(LoaderBlock: PLOADER_PARAMETER_B
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateArcNamesCd_impl(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -544,6 +550,8 @@ pub unsafe extern "system" fn IopCreateArcNamesDisk_impl(
     SingleDisk: BOOLEAN,
     FoundBoot: PBOOLEAN,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
+    let FoundBoot = opaque_ptr(FoundBoot);
     STATUS_SUCCESS
 }
 
@@ -553,6 +561,8 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     NtBootPath: PANSI_STRING,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
+    let NtBootPath = opaque_ptr(NtBootPath);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut Buffer: [i8; 256] = core::mem::zeroed();
@@ -695,6 +705,7 @@ pub unsafe extern "C" fn IopVerifyDiskSignature(
     ArcDiskSignature: PARC_DISK_SIGNATURE,
     Signature: *mut ULONG,
 ) -> BOOLEAN {
+    let Signature = opaque_ptr(Signature);
     // Fail if the partition table is invalid
     if (*ArcDiskSignature).ValidPartitionTable == 0 {
         return FALSE as BOOLEAN;

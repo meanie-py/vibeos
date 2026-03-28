@@ -12,6 +12,7 @@ use ntkrnl_sys::ddk::{
     KiAcquireDispatcherLock, KiAcquireTimerLock, KiComputeTimerTableIndex, KiInsertTimerTable,
     KiReleaseTimerLock, KiRemoveEntryTimer, KiTimerListExpire, RtlTimeToTimeFields,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[no_mangle]
 pub static mut KeBootTime: LARGE_INTEGER = unsafe { core::mem::zeroed() };
@@ -63,6 +64,9 @@ pub unsafe extern "system" fn KeSetSystemTime(
     FixInterruptTime: BOOLEAN,
     HalTime: PLARGE_INTEGER,
 ) {
+    let NewTime = opaque_ptr(NewTime);
+    let OldTime = opaque_ptr(OldTime);
+    let HalTime = opaque_ptr(HalTime);
     let mut TimeFields: TIME_FIELDS = core::mem::zeroed();
     let mut OldIrql: KIRQL = 0;
     let mut OldIrql2: KIRQL = 0;
@@ -157,6 +161,7 @@ pub unsafe extern "system" fn KeQueryTimeIncrement() -> ULONG {
 #[cfg(any(target_arch = "x86", target_arch = "arm"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
+    let TickCount = opaque_ptr(TickCount);
     loop {
         (*TickCount).__bindgen_anon_1.HighPart = KeTickCount.High1Time;
         (*TickCount).__bindgen_anon_1.LowPart = KeTickCount.LowPart;
@@ -172,6 +177,7 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
+    let TickCount = opaque_ptr(TickCount);
     *TickCount = *(core::ptr::addr_of!(KeTickCount) as *const LARGE_INTEGER);
 }
 
@@ -180,6 +186,7 @@ pub unsafe extern "system" fn KeQueryTickCount(TickCount: PLARGE_INTEGER) {
 #[cfg(any(target_arch = "x86", target_arch = "arm"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
+    let CurrentTime = opaque_ptr(CurrentTime);
     loop {
         (*CurrentTime).__bindgen_anon_1.HighPart = (*SharedUserData).SystemTime.High1Time;
         (*CurrentTime).__bindgen_anon_1.LowPart = (*SharedUserData).SystemTime.LowPart;

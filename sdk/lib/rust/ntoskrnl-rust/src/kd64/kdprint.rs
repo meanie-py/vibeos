@@ -22,6 +22,7 @@ use ntkrnl_sys::ddk::{
     PSTRING,
     STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
@@ -62,6 +63,8 @@ const STATUS_BREAKPOINT: NTSTATUS = 0x80000003u32 as NTSTATUS;
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpMoveMemory(dst: PVOID, src: PVOID, len: usize) {
+    let dst = opaque_ptr(dst);
+    let src = opaque_ptr(src);
     core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
 
@@ -456,6 +459,7 @@ pub unsafe extern "system" fn KdpPrint(
     ExceptionFrame: PKEXCEPTION_FRAME,
     Handled: PBOOLEAN,
 ) -> NTSTATUS {
+    let Handled = opaque_ptr(Handled);
     let mut status: NTSTATUS;
     let mut output_string: STRING = core::mem::zeroed();
 

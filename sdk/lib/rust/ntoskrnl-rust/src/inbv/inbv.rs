@@ -3,6 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ex::*;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
     _LUID,
@@ -181,6 +182,7 @@ pub unsafe extern "system" fn FindBitmapResource(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     ResourceId: ULONG,
 ) -> PVOID {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut UpString = _UNICODE_STRING {
         Length: 24,
         MaximumLength: 26,
@@ -270,6 +272,7 @@ pub unsafe extern "system" fn InbvDriverInitialize(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     Count: ULONG,
 ) -> BOOLEAN {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut CommandLine: PCHAR;
     let mut ResetMode: BOOLEAN = 0u8;
     let mut i: ULONG;
@@ -567,6 +570,7 @@ pub unsafe extern "system" fn InbvBitBlt(
     X: ULONG,
     Y: ULONG,
 ) {
+    let Buffer = opaque_ptr(Buffer);
     if InbvBootDriverInstalled != 0 &&
         InbvDisplayState == INBV_DISPLAY_STATE_OWNED {
         InbvAcquireLock();
@@ -586,6 +590,7 @@ pub unsafe extern "system" fn InbvBufferToScreenBlt(
     Height: ULONG,
     Delta: ULONG,
 ) {
+    let Buffer = opaque_ptr(Buffer);
     if InbvBootDriverInstalled != 0 &&
         InbvDisplayState == INBV_DISPLAY_STATE_OWNED {
         VidBufferToScreenBlt(Buffer, X, Y, Width, Height, Delta);
@@ -601,6 +606,7 @@ pub unsafe extern "system" fn InbvScreenToBufferBlt(
     Height: ULONG,
     Delta: ULONG,
 ) {
+    let Buffer = opaque_ptr(Buffer);
     if InbvBootDriverInstalled != 0 &&
         InbvDisplayState == INBV_DISPLAY_STATE_OWNED {
         VidScreenToBufferBlt(Buffer, X, Y, Width, Height, Delta);
@@ -663,6 +669,7 @@ pub unsafe extern "system" fn InbvUpdateProgressBar(
 pub unsafe extern "system" fn NtDisplayString(
     DisplayString: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let DisplayString = opaque_ptr(DisplayString);
     let mut Status: NTSTATUS;
     let mut CapturedString: _UNICODE_STRING = core::mem::zeroed();
     let mut OemString: OEM_STRING = core::mem::zeroed();

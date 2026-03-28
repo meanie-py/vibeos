@@ -35,6 +35,7 @@ use ntkrnl_sys::ddk::{
 
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::ddk::KeGetPcr;
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 #[cfg(target_arch = "x86")]
 #[inline(always)]
@@ -204,6 +205,7 @@ pub unsafe extern "system" fn KdInitSystem(
     boot_phase: ULONG,
     loader_block: PLOADER_PARAMETER_BLOCK,
 ) -> BOOLEAN {
+    let loader_block = opaque_ptr(loader_block);
     let mut enable_kd: BOOLEAN;
     let mut disable_kd_after_init = 0u8;
     let mut block_enable = 0u8;

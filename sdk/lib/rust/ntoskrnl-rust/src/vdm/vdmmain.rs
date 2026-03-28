@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     _OBJECT_ATTRIBUTES,
     _UNICODE_STRING,
 };
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use core::arch::asm;
 
@@ -195,6 +196,7 @@ pub unsafe extern "system" fn KeI386VdmInitialize() {
 
 #[no_mangle]
 pub unsafe extern "system" fn VdmpInitialize(control_data: PVOID) -> NTSTATUS {
+    let control_data = opaque_ptr(control_data);
     let mut object_attributes: _OBJECT_ATTRIBUTES;
     let mut phys_mem_name: _UNICODE_STRING = core::mem::zeroed();
     let mut status: NTSTATUS;
@@ -270,6 +272,7 @@ pub unsafe extern "system" fn NtVdmControl(
     control_code: ULONG,
     control_data: PVOID,
 ) -> NTSTATUS {
+    let control_data = opaque_ptr(control_data);
     let status: NTSTATUS;
 
     match control_code {
