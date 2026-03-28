@@ -116,130 +116,16 @@ const SYMBOLIC_LINK_ALL_ACCESS: ULONG = 0x000F0001;
 const ANSI_NULL: i8 = 0;
 const UNICODE_NULL: u16 = 0;
 
+// IopCreateArcNamesDisk is not translated — the C version in arcname.c is used.
+// IopCreateArcNames is also in C — it calls IopCreateArcNamesDisk (C) and
+// IopCreateArcNamesCd (Rust, below).
+
+// IopCreateArcNames is in C (arcname.c). It calls IopCreateArcNamesDisk (C)
+// and IopCreateArcNamesCd (Rust, below).
+
+// CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
-    let LoaderBlock = opaque_ptr(LoaderBlock);
-    STATUS_SUCCESS
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn IopCreateArcNamesDisk(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
-    SingleDisk: BOOLEAN,
-    FoundBoot: PBOOLEAN,
-) -> NTSTATUS {
-    let LoaderBlock = opaque_ptr(LoaderBlock);
-    let FoundBoot = opaque_ptr(FoundBoot);
-    STATUS_SUCCESS
-}
-
-// CODE_SEG("INIT")
-#[no_mangle]
-pub unsafe extern "system" fn IopCreateArcNames(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
-    let LoaderBlock = opaque_ptr(LoaderBlock);
-    let mut Length: usize;
-    let mut Status: NTSTATUS;
-    let mut Buffer: [i8; 128] = [0; 128];
-    let mut SingleDisk: BOOLEAN;
-    let mut FoundBoot: BOOLEAN = 0u8;
-    let mut SystemDevice: _UNICODE_STRING = core::mem::zeroed();
-    let mut LoaderPathNameW: _UNICODE_STRING = core::mem::zeroed();
-    let mut BootDeviceName: _UNICODE_STRING = core::mem::zeroed();
-    let ArcDiskInfo: PARC_DISK_INFORMATION = (*LoaderBlock).ArcDiskInformation;
-    let mut ArcSystemString: ANSI_STRING = core::mem::zeroed();
-    let mut ArcString: ANSI_STRING = core::mem::zeroed();
-    let mut LanmanRedirector: ANSI_STRING = core::mem::zeroed();
-    let mut LoaderPathNameA: ANSI_STRING = core::mem::zeroed();
-
-    SingleDisk = if (*(*ArcDiskInfo).DiskSignatureListHead.Flink).Flink as PVOID == 
-                    core::ptr::addr_of_mut!((*ArcDiskInfo).DiskSignatureListHead) as PVOID {
-        1u8
-    } else {
-        0u8
-    };
-
-    sprintf(
-        Buffer.as_mut_ptr(),
-        b"\\ArcName\\%s\0".as_ptr() as *const i8,
-        (*LoaderBlock).ArcHalDeviceName,
-    );
-    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
-    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(IoArcHalDeviceName), core::ptr::addr_of_mut!(ArcString), 1u8);
-    if Status < 0 {
-        return Status;
-    }
-
-    sprintf(
-        Buffer.as_mut_ptr(),
-        b"\\ArcName\\%s\0".as_ptr() as *const i8,
-        (*LoaderBlock).ArcBootDeviceName,
-    );
-    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
-    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(IoArcBootDeviceName), core::ptr::addr_of_mut!(ArcString), 1u8);
-    if Status < 0 {
-        return Status;
-    }
-
-    Length = strlen((*LoaderBlock).ArcBootDeviceName) + 1;
-    IoLoaderArcBootDeviceName = ExAllocatePoolWithTag(PagedPool, Length, TAG_IO) as *mut i8;
-    if !IoLoaderArcBootDeviceName.is_null() {
-        core::ptr::copy_nonoverlapping(
-            (*LoaderBlock).ArcBootDeviceName as *const u8,
-            IoLoaderArcBootDeviceName as *mut u8,
-            Length,
-        );
-    }
-
-    if SingleDisk != 0 && !strstr((*LoaderBlock).ArcBootDeviceName, b"cdrom\0".as_ptr() as *const i8).is_null() {
-        SingleDisk = 0u8;
-    }
-
-    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcSystemString), (*LoaderBlock).ArcHalDeviceName);
-
-    if IoRemoteBootClient != 0 {
-        FoundBoot = 1u8;
-
-        RtlInitAnsiString(core::ptr::addr_of_mut!(LanmanRedirector), b"\\Device\\LanmanRedirector\0".as_ptr() as *const i8);
-        Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(SystemDevice), core::ptr::addr_of_mut!(LanmanRedirector), 1u8);
-        if Status < 0 {
-            return Status;
-        }
-
-        sprintf(
-            Buffer.as_mut_ptr(),
-            b"\\ArcName\\%s\0".as_ptr() as *const i8,
-            (*LoaderBlock).ArcBootDeviceName,
-        );
-        RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
-        Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(BootDeviceName), core::ptr::addr_of_mut!(ArcString), 1u8);
-        if Status >= 0 {
-            IoAssignArcName(core::ptr::addr_of_mut!(BootDeviceName), core::ptr::addr_of_mut!(SystemDevice));
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!(BootDeviceName));
-
-            RtlInitAnsiString(core::ptr::addr_of_mut!(LoaderPathNameA), (*LoaderBlock).NtHalPathName);
-            Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(LoaderPathNameW), core::ptr::addr_of_mut!(LoaderPathNameA), 1u8);
-            if Status < 0 {
-                RtlFreeUnicodeString(core::ptr::addr_of_mut!(SystemDevice));
-                return Status;
-            }
-
-            IopStoreSystemPartitionInformation(core::ptr::addr_of_mut!(SystemDevice), core::ptr::addr_of_mut!(LoaderPathNameW));
-        }
-
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!(SystemDevice));
-    }
-
-    Status = IopCreateArcNamesDisk(LoaderBlock, SingleDisk, core::ptr::addr_of_mut!(FoundBoot));
-    if Status >= 0 && FoundBoot == 0 {
-        Status = IopCreateArcNamesCd(LoaderBlock);
-    }
-
-    Status
-}
-
-// CODE_SEG("INIT")
-#[no_mangle]
-pub unsafe extern "system" fn IopCreateArcNamesCd_impl(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
     let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
@@ -543,17 +429,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd_impl(LoaderBlock: PLOADER_PARA
     Status
 }
 
-// CODE_SEG("INIT")
-#[no_mangle]
-pub unsafe extern "system" fn IopCreateArcNamesDisk_impl(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK,
-    SingleDisk: BOOLEAN,
-    FoundBoot: PBOOLEAN,
-) -> NTSTATUS {
-    let LoaderBlock = opaque_ptr(LoaderBlock);
-    let FoundBoot = opaque_ptr(FoundBoot);
-    STATUS_SUCCESS
-}
+// IopCreateArcNamesDisk is not translated — C version in arcname.c is used.
 
 // CODE_SEG("INIT")
 #[no_mangle]

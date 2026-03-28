@@ -14,9 +14,10 @@
 #define NDEBUG
 #include <debug.h>
 
-/* When arcname.rs is enabled, uncomment this to exclude C versions:
- * #define ARCNAME_RUST_REASSIGN
- */
+/* Rust arcname.rs provides IopCreateArcNamesCd, IopReassignSystemRoot,
+ * IopVerifyDiskSignature. C provides IopCreateArcNames, IopCreateArcNamesDisk. */
+#define ARCNAME_RUST_CD
+#define ARCNAME_RUST_REASSIGN
 
 /* GLOBALS *******************************************************************/
 
@@ -152,6 +153,8 @@ IopCreateArcNames(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     return Status;
 }
 
+#ifndef ARCNAME_RUST_CD
+/* Replaced by Rust IopCreateArcNamesCd in arcname.rs */
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -413,6 +416,7 @@ Cleanup:
 
     return Status;
 }
+#endif /* ARCNAME_RUST_CD */
 
 CODE_SEG("INIT")
 NTSTATUS

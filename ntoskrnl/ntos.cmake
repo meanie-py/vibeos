@@ -136,7 +136,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     # IO Tier 2a: bootlog, error, iocomp, irq, ramdisk, util → Rust
     # IO Tier 2b: arcname, iomgr, irp, rawfs → Rust
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Rust arcname.rs has functional bug on i386 LiveCD (ARC name creation)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c  # Hybrid: C has IopCreateArcNames+Disk, Rust has IopCreateArcNamesCd+Reassign+Verify
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/controller.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c
