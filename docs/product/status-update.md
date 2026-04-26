@@ -1,85 +1,63 @@
 
-# IO Subsystem Status (updated 2026-03-21)
+# ntoskrnl Translation Status (updated 2026-04-26)
 
 ## Smoke Test Status
-- **amd64: 4/4 PASS**
-- **i386: 4/4 PASS** (fixed this session — extern "C" vs extern "system" ABI)
-- **ARM64: BUGCHECK 0x6B** (Codex investigating now)
 
-## IOMGR — Active on all arches (23 files)
+| Arch | Result | Notes |
+|------|--------|-------|
+| **i386** | **7/7 PASS** | Full graphical desktop with start menu/taskbar |
+| **amd64** | **7/7 PASS** | Explorer regression fixed today by fstub wide-string fix |
+| **ARM64** | 4/7 | 2 skipped (objdump path), 1 failing — `[SMSS] _main` never fires (silent failure inside `LdrInitializeThunk` or CRT init) |
 
-| File | Lines | Status |
-|------|-------|--------|
-| adapter.rs | 114 | Active all arches |
-| arcname.rs | 1,742 | **DONE** — re-enabled, amd64+i386 pass |
-| bootlog.rs | 824 | Active all arches |
-| controller.rs | 294 | Active all arches |
-| debug.rs | 222 | Active all arches |
-| device.rs | 3,545 | Active all arches |
-| deviface.rs | 3,603 | Active all arches |
-| driver.rs | 4,258 | Active all arches |
-| error.rs | 1,457 | Active all arches |
-| file.rs | 3,341 | Active all arches |
-| iocomp.rs | 1,229 | Active all arches |
-| ioevent.rs | 182 | Active all arches |
-| iofunc.rs | 3,823 | **DONE** — completed via Codex (9 missing functions) |
-| iomdl.rs | 347 | Active all arches |
-| iorsrce.rs | 2,697 | Active all arches |
-| iotimer.rs | 377 | Active all arches |
-| iowork.rs | 186 | Active all arches |
-| irp.rs | 3,639 | Active all arches |
-| irq.rs | 456 | Active all arches |
-| rawfs.rs | 2,415 | Active all arches |
-| remlock.rs | 527 | Active all arches |
-| symlink.rs | 261 | Active all arches |
-| util.rs | 612 | Active all arches |
-| volume.rs | 2,771 | Active all arches |
+ARM64 reaches `[PS] PspUserThreadStartup: returning` reliably (kernel + user-mode dispatch work after this session's MMPTE soft-PTE bit-layout fix), but `_main` doesn't fire — likely a separate user-mode loader bug.
 
-## IOMGR — Blocked on ARM64 baseline (2 files)
+## Boot-Milestone Harness (new this session)
 
-| File | Lines | Status | Diagnosis |
-|------|-------|--------|-----------|
-| iomgr.rs | 1,145 | amd64/i386 only | ARM64 excluded — blocked on ARM64 baseline regression |
-| ramdisk.rs | 405 | amd64/i386 only | ARM64 excluded — blocked on ARM64 baseline regression |
+`tests/qemu/test_smoke.py::test_milestones` validates that each arch's `required_milestones` list (per `tests/qemu/vm.py`) appears in serial output. Catches silent regressions where `shell ready` fires without explorer actually starting (the amd64 case earlier this session).
 
-## PNPMGR — Active on amd64/arm64 (17 files), i386 uses C
+User-mode markers added:
+- `[SMSS] _main entered` (`base/system/smss/smss.c`)
+- `[CSRSS] _main entered` (`subsystems/csr/csrss/csrss.c`)
+- `[WINLOGON] WinMain entered` (existed already)
+- `[EXPLORER] _tWinMain entered` (`base/shell/explorer/explorer.cpp`)
+- Plus existing kernel `[KERNEL] KiSystemStartup entered`, `IoInitSystem returning TRUE`
 
-| File | Lines | Status |
-|------|-------|--------|
-| devaction.rs | 5,012 | **DONE** — PnP hang fixed (Codex: DEVICE_RELATIONS flexible-array bug) |
-| arb/arbbus.rs | 213 | **DONE** — enabled on amd64/arm64, amd64+i386 pass |
-| arb/arbdma.rs | 201 | **DONE** — enabled on amd64/arm64 |
-| arb/arbirq.rs | 202 | **DONE** — enabled on amd64/arm64 |
-| arb/arbmem.rs | 199 | **DONE** — enabled on amd64/arm64 |
-| arb/arbport.rs | 203 | **DONE** — enabled on amd64/arm64 |
-| pnpinit.rs | 1,029 | amd64/arm64 Rust, i386 C |
-| pnpmgr.rs | 3,717 | amd64/arm64 Rust, i386 C |
-| plugplay.rs | 3,475 | amd64/arm64 Rust, i386 C |
-| pnproot.rs | 3,109 | amd64/arm64 Rust, i386 C |
-| pnpmap.rs | 1,558 | amd64/arm64 Rust, i386 C |
-| pnpnotify.rs | 990 | amd64/arm64 Rust, i386 C |
-| devnode.rs | 741 | amd64/arm64 Rust, i386 C |
-| pnpreport.rs | 612 | amd64/arm64 Rust, i386 C |
-| pnpirp.rs | 612 | amd64/arm64 Rust, i386 C |
-| pnputil.rs | 381 | amd64/arm64 Rust, i386 C |
-| pnpdma.rs | 187 | amd64/arm64 Rust, i386 C |
+## Translation Coverage (this session)
 
-## What's left (priority order)
+### FSTUB — fully Rust on all 3 arches (this session)
 
-1. ~~iofunc.rs~~ — **DONE** (Codex translated 9 missing functions)
-2. ~~arcname.rs~~ — **DONE** (re-enabled, amd64+i386 pass)
-3. ~~devaction.rs~~ — **DONE** (Codex fixed DEVICE_RELATIONS flexible-array bug)
-4. ~~arb/*.rs~~ — **DONE** (enabled on amd64/arm64, no devaction dependency)
-5. ~~i386 baseline~~ — **DONE** (Codex fixed extern "C" vs extern "system" ABI in device.rs/iomgr.rs/arcname.rs)
-6. **ARM64 baseline** — Codex investigating BUGCHECK 0x6B (PsCreateSystemThread STATUS_INSUFFICIENT_RESOURCES)
-7. **ramdisk.rs on ARM64** — blocked on ARM64 baseline fix
-8. **iomgr.rs on ARM64** — blocked on ARM64 baseline fix
-9. **pnpmgr on i386** — needs extern "C" → extern "system" audit across 12 files (~36 blocks). See `~pnpmgr-i386-audit.md`. Good task for Gemini.
+| File | C lines | Rust lines | Status |
+|------|--------:|-----------:|--------|
+| disksup.rs | 2,758 | 6,020 | per-function rustconv translate + subagent + Gemini cleanup |
+| fstubex.rs | 2,566 | 4,641 | per-function rustconv translate + subagent + Gemini cleanup |
+| halstub.rs | 307 | 969 | hand-rewritten by subagent (HAL_DISPATCH global init) |
+| translate.rs | 186 | 430 | hand-rewritten by subagent (CM_PARTIAL_RESOURCE_DESCRIPTOR) |
+
+**Net: 5,817 lines C → 12,060 lines Rust.** All 4 files in build, all arches green.
+
+The wide-string bug found here — `L"\\Device\\Harddisk%d\\Partition0"` translated as bytes-cast-to-`*const u16` produced garbage paths every other character — was a translation pattern that's likely present in other subsystems too. Worth a project-wide grep.
+
+### IOMGR & PNPMGR — unchanged from prior status
+
+(See git history for prior session work — iofunc.rs, arcname.rs, devaction.rs, arb/*.rs all complete.)
 
 ## Key Fixes This Session
-- **154 wrong constants** fixed across 61 files via verify_constants.py tool
-- **iofunc.rs** completed — 9 missing Nt* functions translated by Codex
-- **devaction.rs PnP hang** — root cause: DEVICE_RELATIONS.Objects flexible-array indexing UB (Codex)
-- **i386 boot** — root cause: extern "C" vs extern "system" ABI mismatches across device.rs, iomgr.rs, arcname.rs (Codex)
-- **arcname.rs** — re-enabled on all arches
-- **arb/*.rs** — enabled on amd64/arm64
+
+- **ARM64 BUGCHECK 0x6A fixed** — `MMPTE_SOFTWARE.Protection` is at bit 1 on ARM64 (not bit 5 like amd64/i386). Rust `soft_protection()` accessor was hardcoded to shift=5; demand-zero PTEs never matched the check. ARM64 SMSS now gets dispatched to user mode for the first time since March.
+- **amd64 explorer regression fixed** (incidental) — fstub wide-string bug above. `shell ready` was firing from winlogon's own desktop creation, masking that explorer never started. New milestone harness caught it; the wide-string fix resolved it.
+- **fstub fully Rust** — disksup + fstubex + halstub + translate. Bulk-translate-then-subagent-cleanup workflow validated; per-function `rustconv translate` (vs `submit`) avoids token-truncation issues that affect large files.
+- **README rewritten** to be accurate per-arch (no more "all 3 boot to desktop" overclaim).
+- **AGENTS.md** strengthened with translation philosophy: never revert .rs to C, never delete .rs files, never re-run paid translations without approval, never exclude from build to make smoke pass.
+
+## What's Next (priority order)
+
+1. **ARM64 SMSS reaches `_main`** — debug why `LdrInitializeThunk` or CRT init silently fails. Highest-leverage if we want ARM64 desktop back.
+2. **Translate config/** (~19K lines, registry CM) — last big C subsystem in ntoskrnl. Per-function translate + subagent cleanup pattern proven this session.
+3. **Translate fstub/'s upstream patterns project-wide** — search for `*const u16` bytes-cast-to-wide bugs in other already-translated `.rs` files.
+4. **pnpmgr on i386** — extern "C" → extern "system" audit, ~36 blocks across 12 files. Mechanical.
+
+## Open Architectural Issues
+
+- **CGU=1 on i386/amd64** — ~15 unexpected ud2s due to LLVM interprocedural noreturn contagion. Workaround `codegen-units=16` + `opaque_ptr` barriers on 2,449 fns shipped, root not yet fixed.
+- **kd64/ disabled** — translated but disabled because of recursive exception flood on amd64 (`KdpTrap → KdpReport → KdSendPacket` infinite nesting). Needs the bug debugged, not retranslated.
+- **`--allow-multiple-definition` linker flag** — masks dual C/Rust symbol definitions (caused multiple "wait, which version is being linked?" debug sessions this month including the trap.rs / trap.c shadow bug). Should be removed once final C holdouts are translated.

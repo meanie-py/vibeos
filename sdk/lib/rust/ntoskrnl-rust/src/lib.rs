@@ -40,6 +40,7 @@ pub mod cc;
 pub mod dbgk;
 pub mod ex;
 pub mod fsrtl;
+pub mod fstub;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
 pub mod inbv;

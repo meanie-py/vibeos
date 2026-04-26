@@ -47,6 +47,12 @@ qemu/reactos_*.qcow2
 # API keys
 .env
 
+# Claude Code runtime state (lock files, agent scratch, project memory)
+.claude/
+
+# OpenAI Codex runtime state
+.codex/
+
 # Host tools cmake artifacts (from in-tree configure)
 Makefile
 cmake_install.cmake

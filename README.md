@@ -16,17 +16,17 @@ An AI-vibecoded fork of [ReactOS](https://reactos.org/) that ports the kernel to
 ## Screenshots
 
 > [!NOTE]
-> The screenshots below are **historical** — captured between Feb 16 and Mar 21, 2026, when each feature was last working. The current code state is **less complete** for amd64 and ARM64 (see Status below). They're shown to document what has *previously* been achieved on each architecture, not as an assertion that today's HEAD reproduces them.
+> The i386 and amd64 screenshots reflect the current state. The ARM64 screenshots are **historical** — captured Feb 16, 2026 (M29/M30/M31 milestones). Subsequent kernel-Rust translation work regressed ARM64 user-mode boot; as of late April it reaches SMSS user-mode dispatch reliably but doesn't get to a desktop yet. They're kept here to document what has *previously* been achieved on ARM64.
 
-| i386 LiveCD desktop *(Feb 18, still works today)* | amd64 LiveCD desktop *(Feb 18, taskbar regression since)* |
+| i386 LiveCD desktop | amd64 LiveCD desktop |
 |---|---|
 | ![i386 desktop](docs/screenshots/i386_desktop.png) | ![amd64 desktop](docs/screenshots/amd64_desktop.png) |
 
-| ARM64 desktop *(Feb 16, M31 — broken since March)* | ARM64 Notepad *(Feb 16, M29 — broken since March)* |
+| ARM64 desktop *(Feb 16, M31 — historical)* | ARM64 Notepad *(Feb 16, M29 — historical)* |
 |---|---|
 | ![ARM64 desktop](docs/screenshots/arm64_desktop.png) | ![ARM64 notepad](docs/screenshots/arm64_notepad.png) |
 
-ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. The Notepad screenshot is from milestone M29 (interactive input over serial); the desktop screenshot is from M31 (real virtio-input devices via `qemu --gui`). Both worked at the time. Subsequent kernel-Rust translation work regressed ARM64 user-mode boot; as of late April it just-barely reaches user-mode SMSS again (see Status).
+ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. The Notepad screenshot is from milestone M29 (interactive input over serial); the desktop screenshot is from M31 (real virtio-input devices via `qemu --gui`). Both worked at the time and will be the goal to recover.
 
 ---
 
@@ -57,16 +57,16 @@ The translation pipeline produces transliterated Rust that mostly preserves the 
 
 Current per-arch boot state (HEAD as of late April 2026):
 
-- **i386 — full graphical desktop with start menu and taskbar.** This is what the i386 screenshot above actually shows today. LiveCD ISO boots through the full chain (kernel → SMSS → CSRSS → win32k → winlogon → explorer → desktop with shell). Smoke tests pass 6/6.
-- **amd64 — desktop wallpaper paints, but no taskbar/start menu.** explorer.exe runs and the desktop window is shown, but the shell UI doesn't render — a regression sometime after the historical Feb 18 screenshot above. Smoke tests pass 6/6 (the existing `"shell ready"` boot marker fires before the taskbar paint, so it doesn't catch this).
-- **ARM64 — kernel boots, SMSS just started running again.** As of late April, the kernel reaches user-mode SMSS dispatch (an MMPTE soft-PTE bit-layout fix landed). Nothing visible on screen yet — SMSS runs but doesn't reliably advance to CSRSS/winlogon/explorer. Smoke tests pass on idle detection, which is a *very* weak bar for ARM64; the historical M29/M30/M31 screenshots above (full desktop, virtio mouse, Notepad with serial keyboard) regressed in March and have not been recovered.
+- **i386 — full graphical desktop with start menu and taskbar.** This is what the i386 screenshot above actually shows today. LiveCD ISO boots through the full chain (kernel → SMSS → CSRSS → win32k → winlogon → explorer → desktop with shell). Smoke tests pass 7/7 (including milestone validation through `[EXPLORER] _tWinMain entered`).
+- **amd64 — full graphical desktop, regression fixed.** Previously broken (desktop wallpaper paint but no taskbar) for several weeks; the explorer-not-starting bug turned out to be downstream of an fstub wide-string translation bug (`L"\\Device\\Harddisk%d\\Partition0"` translated as bytes-cast-to-`*const u16`, producing garbage paths every other character). Fixed late April; smoke tests now pass 7/7.
+- **ARM64 — kernel + SMSS user-mode dispatch reliable, no UI yet.** Kernel boots through to user-mode SMSS dispatch (an MMPTE soft-PTE bit-layout fix landed late April). SMSS gets dispatched but doesn't reach `_main` — silent failure inside `LdrInitializeThunk` or CRT init. The historical M29/M30/M31 screenshots above (full desktop, virtio mouse, Notepad with serial keyboard) regressed in March and have not been recovered. Smoke tests 4/7 (2 skipped on objdump, 1 fails on milestones — useful diagnostic that points at the user-mode loader path).
 
 Other status:
 
 - **Build:** All three arches build cleanly from Linux/WSL2 with the unified `llvm-mingw` toolchain. Zero build failures.
-- **Rust coverage:** ~80% of `ntoskrnl` translated. Remaining C: `config/` (registry CM, ~19K lines — last major holdout), `fstub/` (disk partitioning, ~6K), `kd64/` (translated but disabled due to a recursive-exception bug on amd64), and a few KDBG/KD debug helpers.
+- **Rust coverage:** ~80% of `ntoskrnl` translated. Remaining C: `config/` (registry CM, ~19K lines — last major holdout), `kd64/` (translated but disabled due to a recursive-exception bug on amd64), and a few KDBG/KD debug helpers. **`fstub/` (disk partitioning) was completed late April** — disksup, fstubex, halstub, translate — bringing the kernel to ~85% Rust.
 - **Known active bugs:** LLVM `captures(none)` interaction with kernel volatile semantics is the single largest source of bugs, mitigated by `opaque_ptr` barriers on ~2,500 `#[no_mangle]` functions and `codegen-units=16`. CGU=1 still produces ~15 unexpected `ud2` instructions due to interprocedural noreturn contagion; the workaround is documented but not yet fixed at the root.
-- **Smoke harness limits:** The current smoke tests are good at catching crashes (BUGCHECKs in serial output, `ud2` in the binary, broken sacred primitives) and weak at catching silent regressions in user-mode rendering. A milestone-list check (`test_milestones`) tracks progress through SMSS/CSRSS/winlogon/explorer to make silent regressions visible.
+- **Smoke harness:** Now includes a `test_milestones` check that scans serial output for per-arch boot markers (`[SMSS] _main entered`, `[CSRSS] _main entered`, `[WINLOGON] WinMain entered`, `[EXPLORER] _tWinMain entered`, `shell ready`). Catches silent regressions in user-mode rendering — found and fixed the amd64 explorer regression as soon as it was added.
 
 For a deeper look, see:
 

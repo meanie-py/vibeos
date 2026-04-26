@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. The source is a fork of `github.com/reactos/reactos` on the `arm64-port` branch. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU.
 
+## Translation Philosophy — Rust Is The Goal
+
+**The project's goal is to translate ntoskrnl to Rust.** Getting the binary to build and boot is *important and necessary* but it is not the goal. Translation progress (lines of C → Rust) and boot status are independent axes.
+
+**Rules:**
+- **Never revert a Rust translation to C** to make a build link or a smoke test pass. Keep the Rust file. Fix it.
+- **Never delete a translated Rust file** without explicit user approval. API translations cost real money; even broken output has value as a starting point for further work. Deletion is destructive and the work cannot be recovered without paying for the API call again.
+- **Don't regenerate API translations without user approval.** Always ask before re-submitting a file that's already been translated. Cost matters.
+- **Don't exclude a Rust translation from the build to dodge a regression.** Commenting out `pub mod X;` in `mod.rs` (or `lib.rs`) so the smoke tests pass while the C version is enabled is the same anti-pattern as reverting — it hides the regression from the smoke harness, which is *the diagnostic tool* for finding the bug.
+- **A broken Rust translation in the tree, integrated and failing, is the correct state** when a regression is unsolved. The smoke harness reports it; you debug from there. The right response to a broken translation is (a) fix it in place, or (b) leave it broken with the failure visible in smoke and ask the user how to proceed — never (c) hide it from the build, and never (d) delete it.
+
+These rules override the smoke-test imperative below when they conflict. If you have to choose between "smoke tests pass today" and "preserve in-progress Rust translation work as a debug signal," preserve the translation. A red smoke result that points at a real translation bug is more useful than a green smoke result that hides it.
+
 ## Smoke Tests — The North Star
 
 The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of truth** for whether the OS works. They boot each architecture in QEMU and verify the system reaches a graphical desktop — the boot marker is `shell ready` (i386/amd64) which proves the full chain (kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render) completed. ARM64 uses idle detection. A screenshot is always saved for visual inspection.

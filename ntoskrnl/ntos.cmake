@@ -124,10 +124,14 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/stackovf.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/tunnel.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/fsrtl/unc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/disksup.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/fstubex.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/halstub.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/translate.c
+    # fstub/ — fully replaced by Rust (ntoskrnl-rust/src/fstub/).
+    # i386 boot regression in SMSS \KnownDlls path is a known issue to
+    # debug — kernel is left in this state intentionally so the smoke
+    # harness reports the regression. Don't re-enable the C versions.
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/disksup.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/fstubex.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/halstub.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/fstub/translate.c
     # inbv/ — replaced by Rust (ntoskrnl-rust/src/inbv/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/bootanim.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbv.c
