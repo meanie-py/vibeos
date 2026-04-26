@@ -12,6 +12,33 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 QEMU TCG workaround: MMIO write + barrier around splay tree ops.
+ *
+ * QEMU's TCG JIT generates incorrect code for indirect calls through function
+ * pointers loaded from freshly-allocated pool memory. Stores to newly-allocated
+ * nodes aren't visible to subsequent reads, causing splay tree corruption and
+ * infinite loops. An MMIO write (to PL011 UART) forces QEMU to break the
+ * translation block and flush stale cached values.
+ *
+ * Arm64UartKernelBase is defined in ntoskrnl (kernel VA of UART); declared
+ * weak here so ntdll (which lacks UART access) links with it as NULL. */
+#ifdef _M_ARM64
+/*
+ * Arm64UartKernelBase is defined in ntoskrnl (kernel VA of UART).
+ * Declared weak so ntdll (which lacks UART access) resolves it as NULL.
+ */
+volatile void *Arm64UartKernelBase __attribute__((weak)) = (void *)0;
+static inline void _gt_mmio_barrier(void) {
+    volatile unsigned int *u = (volatile unsigned int *)Arm64UartKernelBase;
+    if (u) *u = (unsigned int)' ';
+    __asm__ __volatile__("dsb sy\nisb" ::: "memory");
+}
+#define GT_BARRIER() _gt_mmio_barrier()
+#else
+#define GT_BARRIER() ((void)0)
+#endif
+#define GT_TRACE(s) ((void)0)
+
 /* Internal header for table entries */
 typedef struct _TABLE_ENTRY_HEADER
 {
@@ -30,8 +57,12 @@ RtlpFindGenericTableNodeOrParent(IN PRTL_GENERIC_TABLE Table,
 {
     PRTL_SPLAY_LINKS CurrentNode, ChildNode;
     RTL_GENERIC_COMPARE_RESULTS Result;
+#ifdef _M_ARM64
+    ULONG LoopCount = 0;
+#endif
 
     /* Quick check to see if the table is empty */
+    GT_BARRIER();
     if (RtlIsGenericTableEmpty(Table))
     {
         return TableEmptyTree;
@@ -40,10 +71,69 @@ RtlpFindGenericTableNodeOrParent(IN PRTL_GENERIC_TABLE Table,
     /* Set the current node */
     CurrentNode = Table->TableRoot;
 
+    /* Guard against corrupt root pointer (e.g. uninitialized table).
+     * With DUMMY_PSEH, callers cannot rely on SEH to catch the fault. */
+    if ((ULONG_PTR)CurrentNode < PAGE_SIZE)
+    {
+        DPRINT1("RtlpFindGenericTableNodeOrParent: corrupt TableRoot %p\n", CurrentNode);
+        Table->TableRoot = NULL;
+        return TableEmptyTree;
+    }
+
     /* Start compare loop */
     while (TRUE)
     {
+#ifdef _M_ARM64
+        if (++LoopCount > 100000)
+        {
+            /* Infinite loop detected — dump diagnostic info via UART */
+            volatile unsigned int *_u = (volatile unsigned int *)Arm64UartKernelBase;
+            if (_u) {
+                const char *s = "[GT-LOOP] Compare stuck! Node=";
+                while (*s) *_u = (unsigned int)*s++;
+                { ULONG_PTR _v = (ULONG_PTR)CurrentNode; int _i;
+                  *_u = '0'; *_u = 'x';
+                  for (_i = 60; _i >= 0; _i -= 4) {
+                      int _d = (_v >> _i) & 0xF;
+                      *_u = (unsigned int)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+                  }
+                }
+                s = " L=";
+                while (*s) *_u = (unsigned int)*s++;
+                { ULONG_PTR _v = (ULONG_PTR)RtlLeftChild(CurrentNode); int _i;
+                  *_u = '0'; *_u = 'x';
+                  for (_i = 60; _i >= 0; _i -= 4) {
+                      int _d = (_v >> _i) & 0xF;
+                      *_u = (unsigned int)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+                  }
+                }
+                s = " R=";
+                while (*s) *_u = (unsigned int)*s++;
+                { ULONG_PTR _v = (ULONG_PTR)RtlRightChild(CurrentNode); int _i;
+                  *_u = '0'; *_u = 'x';
+                  for (_i = 60; _i >= 0; _i -= 4) {
+                      int _d = (_v >> _i) & 0xF;
+                      *_u = (unsigned int)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+                  }
+                }
+                s = " P=";
+                while (*s) *_u = (unsigned int)*s++;
+                { ULONG_PTR _v = (ULONG_PTR)RtlParent(CurrentNode); int _i;
+                  *_u = '0'; *_u = 'x';
+                  for (_i = 60; _i >= 0; _i -= 4) {
+                      int _d = (_v >> _i) & 0xF;
+                      *_u = (unsigned int)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+                  }
+                }
+                *_u = '\r'; *_u = '\n';
+            }
+            /* Break the infinite loop — return as if not found */
+            *NodeOrParent = CurrentNode;
+            return TableInsertAsLeft;
+        }
+#endif
         /* Do the compare */
+        GT_BARRIER();
         Result = Table->CompareRoutine(Table,
                                        Buffer,
                                        &((PTABLE_ENTRY_HEADER)CurrentNode)->
@@ -129,7 +219,9 @@ RtlInsertElementGenericTable(IN PRTL_GENERIC_TABLE Table,
     TABLE_SEARCH_RESULT Result;
 
     /* Get the splay links and table search result immediately */
+    GT_TRACE("[GT] Find\r\n");
     Result = RtlpFindGenericTableNodeOrParent(Table, Buffer, &NodeOrParent);
+    GT_TRACE("[GT] FindDone\r\n");
 
     /* Now call the routine to do the full insert */
     return RtlInsertElementGenericTableFull(Table,
@@ -159,12 +251,14 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
     {
         /* We're doing an allocation, sanity check */
         ASSERT(Table->NumberGenericTableElements != (MAXULONG - 1));
-
         /* Allocate a node */
+        GT_TRACE("[GT] Alloc\r\n");
+        GT_BARRIER();
         NewNode = Table->AllocateRoutine(Table,
                                          BufferSize +
                                          FIELD_OFFSET(TABLE_ENTRY_HEADER,
                                                       UserData));
+        GT_TRACE("[GT] AllocDone\r\n");
         if (!NewNode)
         {
             /* No memory or other allocation error, fail */
@@ -209,7 +303,10 @@ RtlInsertElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
     }
 
     /* Splay the tree */
+    GT_TRACE("[GT] Splay\r\n");
+    GT_BARRIER();
     Table->TableRoot = RtlSplay(NewNode);
+    GT_TRACE("[GT] SplayDone\r\n");
 
     /* Return status */
     if (NewElement) *NewElement = (SearchResult != TableFoundNode);
@@ -282,6 +379,7 @@ RtlLookupElementGenericTableFull(IN PRTL_GENERIC_TABLE Table,
     }
 
     /* Otherwise, splay the tree and return this entry */
+    GT_BARRIER();
     Table->TableRoot = RtlSplay(*NodeOrParent);
     return &((PTABLE_ENTRY_HEADER)*NodeOrParent)->UserData;
 }
@@ -315,6 +413,7 @@ RtlDeleteElementGenericTable(IN PRTL_GENERIC_TABLE Table,
     Table->OrderedPointer = &Table->InsertOrderList;
 
     /* Free the entry */
+    GT_BARRIER();
     Table->FreeRoutine(Table, NodeOrParent);
     return TRUE;
 }
@@ -345,13 +444,14 @@ RtlEnumerateGenericTable(IN PRTL_GENERIC_TABLE Table,
 
         /* Splay it */
         _Analysis_assume_(FoundNode != NULL);
+        GT_BARRIER();
         Table->TableRoot = RtlSplay(FoundNode);
     }
     else
     {
         /* Otherwise, try using the real successor */
         FoundNode = RtlRealSuccessor(Table->TableRoot);
-        if (FoundNode) Table->TableRoot = RtlSplay(FoundNode);
+        if (FoundNode) { GT_BARRIER(); Table->TableRoot = RtlSplay(FoundNode); }
     }
 
     /* Check if we found the node and return it */

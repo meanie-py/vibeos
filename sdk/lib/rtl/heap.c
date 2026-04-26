@@ -116,8 +116,8 @@ RtlpInitializeHeap(OUT PHEAP Heap,
     SIZE_T DeCommitFreeBlockThreshold;
 
     /* Preconditions */
-    ASSERT(Heap != NULL);
-    ASSERT(Parameters != NULL);
+    if (Heap == NULL || Parameters == NULL)
+        return STATUS_INVALID_PARAMETER;
     ASSERT(!(Flags & HEAP_LOCK_USER_ALLOCATED));
     ASSERT(!(Flags & HEAP_NO_SERIALIZE) || (Lock == NULL));  /* HEAP_NO_SERIALIZE => no lock */
 

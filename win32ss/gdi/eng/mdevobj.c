@@ -110,10 +110,18 @@ MDEVOBJ_Create(
         /* Get or create a PDEV for these settings */
         if (LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice, pdm ? pdm : &dmDefault, &localPdm, !pdm))
         {
+            ERR("MDEVOBJ_Create: ProbeAndCapture OK for '%S', creating PDEV (mode %lux%lux%lu)\n",
+                pGraphicsDevice->szWinDeviceName,
+                localPdm ? localPdm->dmPelsWidth : 0,
+                localPdm ? localPdm->dmPelsHeight : 0,
+                localPdm ? localPdm->dmBitsPerPel : 0);
             ppdev = PDEVOBJ_Create(pGraphicsDevice, localPdm, dwAccelerationLevel, LDEV_DEVICE_DISPLAY);
+            if (!ppdev)
+                ERR("MDEVOBJ_Create: PDEVOBJ_Create FAILED for '%S'\n", pGraphicsDevice->szWinDeviceName);
         }
         else
         {
+            ERR("MDEVOBJ_Create: LDEVOBJ_bProbeAndCaptureDevmode FAILED for '%S'\n", pGraphicsDevice->szWinDeviceName);
             ppdev = NULL;
         }
 

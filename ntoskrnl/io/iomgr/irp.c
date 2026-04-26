@@ -13,6 +13,9 @@
 
 #include <ntoskrnl.h>
 #define NDEBUG
+
+/* ARM64 verbose IRP traces removed — IRP completion confirmed working */
+#define _IRP_TRACE2(s) ((void)0)
 #include <debug.h>
 
 PIRP IopDeadIrp;
@@ -1324,6 +1327,8 @@ IofCompleteRequest(IN PIRP Irp,
             __FUNCTION__,
             Irp);
 
+    _IRP_TRACE2("[IRP2] IofCompleteRequest\r\n");
+
     /* Make sure this IRP isn't getting completed twice or is invalid */
     if ((Irp->CurrentLocation) > (Irp->StackCount + 1))
     {
@@ -1423,6 +1428,8 @@ IofCompleteRequest(IN PIRP Irp,
             IopClearStackLocation(StackPtr);
         }
     }
+
+    _IRP_TRACE2("[IRP2] loop done\r\n");
 
     /* Check if the IRP is an associated IRP */
     if (Irp->Flags & IRP_ASSOCIATED_IRP)
@@ -1536,6 +1543,7 @@ IofCompleteRequest(IN PIRP Irp,
         Mdl = Mdl->Next;
     }
 
+    _IRP_TRACE2("[IRP2] mdl done\r\n");
     /* Check if we should exit because of a Deferred I/O (page 168) */
     if ((Irp->Flags & IRP_DEFER_IO_COMPLETION) && !(Irp->PendingReturned))
     {
@@ -1554,12 +1562,14 @@ IofCompleteRequest(IN PIRP Irp,
     }
 
     /* Get the thread and file object */
+    _IRP_TRACE2("[IRP2] APC path\r\n");
     Thread = Irp->Tail.Overlay.Thread;
     FileObject = Irp->Tail.Overlay.OriginalFileObject;
 
     /* Make sure the IRP isn't canceled */
     if (!Irp->Cancel)
     {
+        _IRP_TRACE2("[IRP2] KeInitializeApc\r\n");
         /* Initialize the APC */
         KeInitializeApc(&Irp->Tail.Apc,
                         &Thread->Tcb,
@@ -1570,11 +1580,13 @@ IofCompleteRequest(IN PIRP Irp,
                         KernelMode,
                         NULL);
 
+        _IRP_TRACE2("[IRP2] KeInsertQueueApc\r\n");
         /* Queue it */
         KeInsertQueueApc(&Irp->Tail.Apc,
                          FileObject,
                          DataBuffer,
                          PriorityBoost);
+        _IRP_TRACE2("[IRP2] KeInsertQueueApc done\r\n");
     }
     else
     {

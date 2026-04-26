@@ -194,6 +194,15 @@ Return Value:
                &DirContext->Sector );
 
     //
+    //  Verify that the mapping succeeded and we got a valid sector pointer.
+    //
+
+    if ((DirContext->Bcb == NULL) || (DirContext->Sector == NULL)) {
+
+        CdRaiseStatus( IrpContext, STATUS_FILE_CORRUPT_ERROR );
+    }
+
+    //
     //  Verify the dirent bounds.
     //
 
@@ -280,6 +289,15 @@ Return Value:
                    &NextDirContext->Sector );
 
         //
+        //  Verify that the mapping succeeded and we got a valid sector pointer.
+        //
+
+        if ((NextDirContext->Bcb == NULL) || (NextDirContext->Sector == NULL)) {
+
+            CdRaiseStatus( IrpContext, STATUS_FILE_CORRUPT_ERROR );
+        }
+
+        //
         //  Copy the data length and sector offset.
         //
 
@@ -354,6 +372,15 @@ Return Value:
                        TRUE,
                        &NextDirContext->Bcb,
                        &NextDirContext->Sector );
+
+            //
+            //  Verify that the mapping succeeded and we got a valid sector pointer.
+            //
+
+            if ((NextDirContext->Bcb == NULL) || (NextDirContext->Sector == NULL)) {
+
+                CdRaiseStatus( IrpContext, STATUS_FILE_CORRUPT_ERROR );
+            }
 
             NextDirContext->BaseOffset = (ULONG) CurrentBaseOffset;
             NextDirContext->SectorOffset = 0;
@@ -1729,6 +1756,17 @@ Return Value:
     //
 
     NT_ASSERT( (DirContext->DataLength - DirContext->SectorOffset) >= 1 );
+
+    //
+    //  Validate sector bounds before dereferencing.
+    //  SectorOffset must be within the mapped data length.
+    //
+
+    if ((DirContext->SectorOffset >= DirContext->DataLength) ||
+        (DirContext->Sector == NULL)) {
+
+        CdRaiseStatus( IrpContext, STATUS_FILE_CORRUPT_ERROR );
+    }
 
     //
     //  Get a pointer to the current dirent.

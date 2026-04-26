@@ -55,8 +55,11 @@ thread_data_t *CDECL msvcrt_get_thread_data(void)
         ptr->tid = GetCurrentThreadId();
         ptr->handle = INVALID_HANDLE_VALUE;
         ptr->random_seed = 1;
-        ptr->locinfo = MSVCRT_locale->locinfo;
-        ptr->mbcinfo = MSVCRT_locale->mbcinfo;
+        if (MSVCRT_locale)
+        {
+            ptr->locinfo = MSVCRT_locale->locinfo;
+            ptr->mbcinfo = MSVCRT_locale->mbcinfo;
+        }
         ptr->cached_locale[0] = 'C';
         ptr->cached_locale[1] = 0;
 #if _MSVCR_VER >= 140

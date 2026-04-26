@@ -273,7 +273,8 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         endif()
     elseif(ARCH STREQUAL "arm64")
         # GNU tools refer to arm64 as aarch64
-        add_definitions(-D_ARM64_ -D__arm64__ -D__aarch64__ -D_WIN64)
+        # _M_ARM64 is needed for MSVC-style headers (e.g., setjmp.h)
+        add_definitions(-D_ARM64_ -D_M_ARM64 -D__arm64__ -D__aarch64__ -D_WIN64)
     endif()
 
     # Other
@@ -318,25 +319,52 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     # We're using widl now for both MSVC and GCC builds
     include(sdk/cmake/widl-support.cmake)
 
-    include_directories(
-        sdk/include
-        sdk/include/crt
-        sdk/include/ddk
-        sdk/include/ndk
-        sdk/include/psdk
-        sdk/include/reactos
-        sdk/include/reactos/libs
-        sdk/include/vcruntime
-        sdk/include/winrt
-        ${REACTOS_BINARY_DIR}/sdk/include
-        ${REACTOS_BINARY_DIR}/sdk/include/psdk
-        ${REACTOS_BINARY_DIR}/sdk/include/ddk
-        ${REACTOS_BINARY_DIR}/sdk/include/dxsdk
-        ${REACTOS_BINARY_DIR}/sdk/include/reactos
-        ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
-        sdk/include/dxsdk
-        sdk/lib/pseh/include
-    )
+    # Note: On ARM64 with libc++, sdk/include/crt is NOT included here.
+    # It is added back in gcc.cmake with lower priority (-idirafter for C++,
+    # -isystem for C/ASM) so that libc++'s wrapper headers (stdio.h, etc.)
+    # are found first and their #include_next chains work correctly.
+    # sdk/include/vcruntime stays in -I because msvcrt and other Wine components
+    # depend on it being found before their own local headers.
+    if(ARCH STREQUAL "arm64")
+        include_directories(
+            sdk/include
+            sdk/include/ddk
+            sdk/include/ndk
+            sdk/include/psdk
+            sdk/include/reactos
+            sdk/include/reactos/libs
+            sdk/include/vcruntime
+            sdk/include/winrt
+            ${REACTOS_BINARY_DIR}/sdk/include
+            ${REACTOS_BINARY_DIR}/sdk/include/psdk
+            ${REACTOS_BINARY_DIR}/sdk/include/ddk
+            ${REACTOS_BINARY_DIR}/sdk/include/dxsdk
+            ${REACTOS_BINARY_DIR}/sdk/include/reactos
+            ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
+            sdk/include/dxsdk
+            sdk/lib/pseh/include
+        )
+    else()
+        include_directories(
+            sdk/include
+            sdk/include/crt
+            sdk/include/ddk
+            sdk/include/ndk
+            sdk/include/psdk
+            sdk/include/reactos
+            sdk/include/reactos/libs
+            sdk/include/vcruntime
+            sdk/include/winrt
+            ${REACTOS_BINARY_DIR}/sdk/include
+            ${REACTOS_BINARY_DIR}/sdk/include/psdk
+            ${REACTOS_BINARY_DIR}/sdk/include/ddk
+            ${REACTOS_BINARY_DIR}/sdk/include/dxsdk
+            ${REACTOS_BINARY_DIR}/sdk/include/reactos
+            ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
+            sdk/include/dxsdk
+            sdk/lib/pseh/include
+        )
+    endif()
 
     if(ARCH STREQUAL "arm")
         include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/arm)

@@ -340,7 +340,11 @@ RtlpCaptureStackLimits(IN ULONG_PTR Ebp,
     else
     {
         /* Now we're going to assume we're on the DPC stack */
+#if defined(_M_AMD64) || defined(_M_ARM64)
+        *StackEnd = (ULONG_PTR)(KeGetPcr()->CurrentPrcb->DpcStack);
+#else
         *StackEnd = (ULONG_PTR)(KeGetPcr()->Prcb->DpcStack);
+#endif
         *StackBegin = *StackEnd - KERNEL_STACK_SIZE;
 
         /* Check if we seem to be on the DPC stack */
@@ -391,6 +395,8 @@ RtlWalkFrameChain(OUT PVOID *Callers,
     __asm__("mr %0,1" : "=r" (Stack) : );
 #elif defined(_M_ARM)
     __asm__("mov sp, %0" : "=r"(Stack) : );
+#elif defined(_M_ARM64)
+    __asm__("mov %0, sp" : "=r"(Stack));
 #else
 #error Unknown architecture
 #endif
@@ -432,6 +438,12 @@ RtlWalkFrameChain(OUT PVOID *Callers,
             StackEnd = (ULONG_PTR)Teb->NtTib.StackBase;
 #ifdef _M_IX86
             Stack = TrapFrame->Ebp;
+#elif defined(_M_AMD64)
+            Stack = TrapFrame->Rbp;
+#elif defined(_M_ARM64)
+            Stack = TrapFrame->Fp;
+#elif defined(_M_ARM)
+            Stack = TrapFrame->R11;
 #elif defined(_M_PPC)
             Stack = TrapFrame->Gpr1;
 #else

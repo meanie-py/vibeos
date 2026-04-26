@@ -405,11 +405,12 @@ Init(PUSERCONNECT UserCon /*PUSERSRV_API_CONNECTINFO*/)
             UserCon->ulVersion = USER_VERSION;
             // UserCon->dwDispatchCount;
 
-            TRACE("HACK: Hackish NtUserProcessConnect call!!\n");
+            ERR("HACK: NtUserProcessConnect call...\n");
             /* Connect to win32k */
             Status = NtUserProcessConnect(NtCurrentProcess(),
                                           UserCon,
                                           sizeof(*UserCon));
+            ERR("NtUserProcessConnect returned 0x%lx\n", Status);
             if (!NT_SUCCESS(Status)) return FALSE;
         }
 
@@ -422,19 +423,24 @@ Init(PUSERCONNECT UserCon /*PUSERSRV_API_CONNECTINFO*/)
         gSharedInfo = UserCon->siClient;
         gpsi = gSharedInfo.psi;
         gHandleTable = gSharedInfo.aheList;
-        /* ReactOS-Specific! */ gHandleEntries = SharedPtrToUser(gHandleTable->handles);
+        ERR("user32 Init: gpsi=%p gHandleTable=%p delta=0x%lx\n",
+            gpsi, gHandleTable, (ULONG_PTR)gSharedInfo.ulSharedDelta);
+        if (gHandleTable)
+        {
+            /* ReactOS-Specific! */ gHandleEntries = SharedPtrToUser(gHandleTable->handles);
+        }
     }
 
     // FIXME: Yet another hack... This call should normally not be done here, but
     // instead in ClientThreadSetup, and in User32CallClientThreadSetupFromKernel as well.
-    TRACE("HACK: Using Init-ClientThreadSetupHelper hack!!\n");
+    ERR("HACK: Using Init-ClientThreadSetupHelper hack!!\n");
     if (!ClientThreadSetupHelper(FALSE))
     {
-        TRACE("Init-ClientThreadSetupHelper hack failed!\n");
+        ERR("Init-ClientThreadSetupHelper hack failed!\n");
         return FALSE;
     }
 
-    TRACE("<-- user32::Init()\n");
+    ERR("<-- user32::Init() OK\n");
 
     return NT_SUCCESS(Status);
 }
@@ -467,6 +473,7 @@ DllMain(
 #define SESSION_DIR L"\\Sessions"
 
             USERSRV_API_CONNECTINFO ConnectInfo; // USERCONNECT
+            DbgPrint("[user32] DllMain PROCESS_ATTACH PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
 
 #if 0 // Disabling this code is a BIG HACK!!
 
@@ -527,7 +534,9 @@ DllMain(
             /* Finish initialization */
             TRACE("Checkpoint (call Init)\n");
             if (!Init(&ConnectInfo))
+            {
                 return FALSE;
+            }
 
             if (!gfServerProcess)
             {
@@ -542,7 +551,9 @@ DllMain(
                 }
 
                 if (!IMM_FN(ImmRegisterClient)(&gSharedInfo, hImm32))
+                {
                     return FALSE;
+                }
             }
             break;
         }
@@ -558,7 +569,12 @@ DllMain(
     }
 
     /* Finally, initialize GDI */
-    return GdiDllInitialize(hDll, dwReason, pReserved);
+    {
+        BOOL gdiResult = GdiDllInitialize(hDll, dwReason, pReserved);
+        if (dwReason == DLL_PROCESS_ATTACH)
+            DbgPrint("[user32] DllMain PROCESS_ATTACH done, GdiDllInitialize=%d PID=%lu\n", gdiResult, (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
+        return gdiResult;
+    }
 }
 
 NTSTATUS
@@ -592,7 +608,7 @@ User32CallSetWndIconsFromKernel(PVOID Arguments, ULONG ArgumentLength)
 {
   PSETWNDICONS_CALLBACK_ARGUMENTS Common = Arguments;
 
-  if (!gpsi->hIconSmWindows)
+  if (!gpsi || !gpsi->hIconSmWindows)
   {
       Common->hIconSample    = LoadImageW(0, IDI_APPLICATION, IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
       Common->hIconHand      = LoadImageW(0, IDI_HAND,        IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);

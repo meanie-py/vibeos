@@ -20,6 +20,10 @@
 
 #include "framebuf.h"
 
+/* No UART trace for framebuf — traces are in win32k EngCreateBitmap instead */
+#define _FbTrace(m) ((void)0)
+#define _FbHex(v)   ((void)0)
+
 /*
  * DrvEnableSurface
  *
@@ -42,6 +46,8 @@ DrvEnableSurface(
    VIDEO_MEMORY_INFORMATION VideoMemoryInfo;
    ULONG ulTemp;
 
+   _FbTrace("[FB] DrvEnableSurface enter\n");
+
    /*
     * Set video mode of our adapter.
     */
@@ -50,8 +56,10 @@ DrvEnableSurface(
                           &(ppdev->ModeIndex), sizeof(ULONG), NULL, 0,
                           &ulTemp))
    {
+      _FbTrace("[FB] SET_CURRENT_MODE failed\n");
       return NULL;
    }
+   _FbTrace("[FB] SET_CURRENT_MODE ok\n");
 
    /*
     * Map the framebuffer into our memory.
@@ -63,10 +71,16 @@ DrvEnableSurface(
                           &VideoMemoryInfo, sizeof(VIDEO_MEMORY_INFORMATION),
                           &ulTemp))
    {
+      _FbTrace("[FB] MAP_VIDEO_MEMORY failed\n");
       return NULL;
    }
 
    ppdev->ScreenPtr = VideoMemoryInfo.FrameBufferBase;
+   _FbTrace("[FB] MAP ok, ScreenPtr=");
+   _FbHex((ULONG_PTR)ppdev->ScreenPtr);
+   _FbTrace(" BPP=");
+   _FbHex((ULONG_PTR)ppdev->BitsPerPixel);
+   _FbTrace("\n");
 
    switch (ppdev->BitsPerPixel)
    {
@@ -88,6 +102,7 @@ DrvEnableSurface(
          break;
 
       default:
+         _FbTrace("[FB] Unknown BPP, returning NULL\n");
          return NULL;
    }
 
@@ -96,11 +111,23 @@ DrvEnableSurface(
    ScreenSize.cx = ppdev->ScreenWidth;
    ScreenSize.cy = ppdev->ScreenHeight;
 
+   _FbTrace("[FB] calling EngCreateBitmap w=");
+   _FbHex((ULONG_PTR)ScreenSize.cx);
+   _FbTrace(" h=");
+   _FbHex((ULONG_PTR)ScreenSize.cy);
+   _FbTrace(" delta=");
+   _FbHex((ULONG_PTR)ppdev->ScreenDelta);
+   _FbTrace("\n");
+
    hSurface = (HSURF)EngCreateBitmap(ScreenSize, ppdev->ScreenDelta, BitmapType,
                                      (ppdev->ScreenDelta > 0) ? BMF_TOPDOWN : 0,
                                      ppdev->ScreenPtr);
+   _FbTrace("[FB] EngCreateBitmap returned ");
+   _FbHex((ULONG_PTR)hSurface);
+   _FbTrace("\n");
    if (hSurface == NULL)
    {
+      _FbTrace("[FB] EngCreateBitmap FAILED\n");
       return NULL;
    }
 
@@ -108,13 +135,16 @@ DrvEnableSurface(
     * Associate the surface with our device.
     */
 
+   _FbTrace("[FB] calling EngAssociateSurface\n");
    if (!EngAssociateSurface(hSurface, ppdev->hDevEng, 0))
    {
+      _FbTrace("[FB] EngAssociateSurface FAILED\n");
       EngDeleteSurface(hSurface);
       return NULL;
    }
 
    ppdev->hSurfEng = hSurface;
+   _FbTrace("[FB] DrvEnableSurface SUCCESS\n");
 
    return hSurface;
 }

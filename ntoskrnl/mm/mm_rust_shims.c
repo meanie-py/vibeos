@@ -1,0 +1,1499 @@
+/*
+ * mm_rust_shims.c — Non-inline ("outline") implementations of FORCEINLINE/macro
+ * functions that the Rust ntoskrnl-rust MM crate calls via extern declarations.
+ *
+ * Strategy: Rename only the target FORCEINLINE functions so we can define
+ * our own with the original name. Lower-level deps (KeEnterGuardedRegion,
+ * ExAcquirePushLockExclusive, etc.) keep their names so the renamed originals
+ * can call them normally.
+ */
+
+/* === Phase 1: Rename only the functions we're shimming === */
+
+/* FORCEINLINE functions (from miarm.h, mm.h, ke.h) */
+#define MI_MAKE_HARDWARE_PTE_KERNEL _orig_MI_MAKE_HARDWARE_PTE_KERNEL
+#define MI_MAKE_HARDWARE_PTE_USER   _orig_MI_MAKE_HARDWARE_PTE_USER
+#define MI_MAKE_HARDWARE_PTE        _orig_MI_MAKE_HARDWARE_PTE
+#define MI_UPDATE_VALID_PTE         _orig_MI_UPDATE_VALID_PTE
+#define MiLockProcessWorkingSet     _orig_MiLockProcessWorkingSet
+#define MiUnlockProcessWorkingSet   _orig_MiUnlockProcessWorkingSet
+#define MiLockProcessWorkingSetShared   _orig_MiLockProcessWorkingSetShared
+#define MiUnlockProcessWorkingSetShared _orig_MiUnlockProcessWorkingSetShared
+#define MiLockProcessWorkingSetUnsafe   _orig_MiLockProcessWorkingSetUnsafe
+#define MiUnlockProcessWorkingSetUnsafe _orig_MiUnlockProcessWorkingSetUnsafe
+#define MiLockWorkingSet            _orig_MiLockWorkingSet
+#define MiUnlockWorkingSet          _orig_MiUnlockWorkingSet
+#define MiLockWorkingSetShared      _orig_MiLockWorkingSetShared
+#define MiUnlockWorkingSetShared    _orig_MiUnlockWorkingSetShared
+#define MiAcquireExpansionLock      _orig_MiAcquireExpansionLock
+#define MiReleaseExpansionLock      _orig_MiReleaseExpansionLock
+#define MiDetermineUserGlobalPteMask _orig_MiDetermineUserGlobalPteMask
+#define MM_ANY_WS_LOCK_HELD         _orig_MM_ANY_WS_LOCK_HELD
+/* Tier 3b FORCEINLINE shims (miarm.h, mm.h) */
+#define MiLockProcessWorkingSetForFault  _orig_MiLockProcessWorkingSetForFault
+#define MiUnlockProcessWorkingSetForFault _orig_MiUnlockProcessWorkingSetForFault
+/* MmGetCurrentAddressSpace: PCH-covered FORCEINLINE, can't rename — manually inlined below */
+/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim needed */
+#define MiIsRosSectionObject _orig_MiIsRosSectionObject
+/* Tier 3a FORCEINLINE shims (miarm.h, ke_x.h) */
+#define MiIncrementPageTableReferences  _orig_MiIncrementPageTableReferences
+#define MiDropLockCount                 _orig_MiDropLockCount
+#define MiReferenceProbedPageAndBumpLockCount  _orig_MiReferenceProbedPageAndBumpLockCount
+#define MiReferenceUnusedPageAndBumpLockCount  _orig_MiReferenceUnusedPageAndBumpLockCount
+#define MiReferenceUsedPageAndBumpLockCount    _orig_MiReferenceUsedPageAndBumpLockCount
+#define MiIsUserPde                     _orig_MiIsUserPde
+#define MiIsUserPte                     _orig_MiIsUserPte
+#define MiRemoveZeroPageSafe            _orig_MiRemoveZeroPageSafe
+#define MiIsMemoryTypeFree              _orig_MiIsMemoryTypeFree
+/* Tier 4 FORCEINLINE shims (miarm.h) */
+#define MiSynchronizeSystemPde          _orig_MiSynchronizeSystemPde
+#define MiConvertSharedWorkingSetLockToExclusive _orig_MiConvertSharedWorkingSetLockToExclusive
+#define MiIsPdeForAddressValid          _orig_MiIsPdeForAddressValid
+/* KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock are FORCEINLINE in
+ * ke_x.h (PCH-covered) — can't rename, manually inlined below.
+ * UpdateTotalCommittedPages, KeInvalidateTlbEntry, MmDereferenceSegment are
+ * FORCEINLINE in PCH-covered headers — can't rename, manually inlined below */
+/* KfRaiseIrql/KfLowerIrql: see Phase 4 for i386/amd64 wrappers */
+
+/* #define macros (from ex.h, mm.h) — rename to prevent expansion */
+/* InterlockedIncrementUL/DecrementUL already shimmed in ps_rust_shims.c */
+#define MmLockSectionSegment        _orig_MmLockSectionSegment
+#define MmUnlockSectionSegment      _orig_MmUnlockSectionSegment
+#define MmGetPageEntrySectionSegment _orig_MmGetPageEntrySectionSegment
+
+/* === Phase 2: Include headers === */
+#include <ntoskrnl.h>
+#define NDEBUG
+#include <debug.h>
+#include <mm/ARM3/miarm.h>
+/* Include arch-specific mm.h for FORCEINLINE functions like MiIsPdeForAddressValid */
+#include <internal/arch/mm.h>
+
+/* === Phase 3: Undef renamed functions === */
+#undef MI_MAKE_HARDWARE_PTE_KERNEL
+#undef MI_MAKE_HARDWARE_PTE_USER
+#undef MI_MAKE_HARDWARE_PTE
+#undef MI_UPDATE_VALID_PTE
+#undef MiLockProcessWorkingSet
+#undef MiUnlockProcessWorkingSet
+#undef MiLockProcessWorkingSetShared
+#undef MiUnlockProcessWorkingSetShared
+#undef MiLockProcessWorkingSetUnsafe
+#undef MiUnlockProcessWorkingSetUnsafe
+#undef MiLockWorkingSet
+#undef MiUnlockWorkingSet
+#undef MiLockWorkingSetShared
+#undef MiUnlockWorkingSetShared
+#undef MiAcquireExpansionLock
+#undef MiReleaseExpansionLock
+#undef MiDetermineUserGlobalPteMask
+#undef MM_ANY_WS_LOCK_HELD
+/* Tier 3b FORCEINLINE undefs */
+#undef MiLockProcessWorkingSetForFault
+#undef MiUnlockProcessWorkingSetForFault
+/* MmGetCurrentAddressSpace: PCH-covered, no rename — undef before Phase 4 implementation */
+/* MiDereferencePfnAndDropLockCount: provided by Rust — no undef needed */
+#undef MiIsRosSectionObject
+/* Tier 3a FORCEINLINE undefs */
+#undef MiIncrementPageTableReferences
+#undef MiDropLockCount
+#undef MiReferenceProbedPageAndBumpLockCount
+#undef MiReferenceUnusedPageAndBumpLockCount
+#undef MiReferenceUsedPageAndBumpLockCount
+#undef MiIsUserPde
+#undef MiIsUserPte
+#undef MiRemoveZeroPageSafe
+#undef MiIsMemoryTypeFree
+/* Tier 4 FORCEINLINE undefs */
+#undef MiSynchronizeSystemPde
+#undef MiConvertSharedWorkingSetLockToExclusive
+#undef MiIsPdeForAddressValid
+/* KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock: PCH-covered, no rename */
+/* (UpdateTotalCommittedPages, KeInvalidateTlbEntry, MmDereferenceSegment: no rename) */
+/* KfRaiseIrql/KfLowerIrql: see Phase 4 for i386/amd64 wrappers */
+/* MmInitializeMdl is a #define macro — undef so we can define an outline function */
+#undef MmInitializeMdl
+/* Additional macros that need outline wrappers */
+#undef RMAP_IS_SEGMENT
+#undef PAGE_ROUND_DOWN
+#undef InterlockedExchangeAddUL
+#undef MmSetDirtyPage
+#undef PFN_FROM_SSE
+#undef MM_IS_WAIT_PTE
+#undef IS_SWAP_FROM_SSE
+#undef SWAPENTRY_FROM_SSE
+#undef MmLockSectionSegment
+#undef MmUnlockSectionSegment
+#undef MmGetPageEntrySectionSegment
+
+/* === Globals that were previously in section.c === */
+/* Guarded: section.c provides these when compiled as C */
+#if !defined(MM_SECTION_C_ACTIVE)
+#ifndef NEWCC
+KEVENT MmWaitPageEvent;
+#endif
+ULONG_PTR MmSubsectionBase;
+#endif
+
+/* MmVerifyImageIsOkForMpUse — only needed in CONFIG_SMP (ntkrnlmp) build.
+ * Was in sysldr.c under #ifdef CONFIG_SMP, not translated to Rust.
+ * Guarded: sysldr.c provides this when compiled as C */
+#if !defined(MM_SYSLDR_C_ACTIVE) && defined(CONFIG_SMP)
+BOOLEAN
+NTAPI
+MmVerifyImageIsOkForMpUse(
+    _In_ PVOID BaseAddress)
+{
+    PIMAGE_NT_HEADERS NtHeaders;
+    PAGED_CODE();
+
+    NtHeaders = RtlImageNtHeader(BaseAddress);
+    if (!NtHeaders)
+        return TRUE;
+
+    /* Fail if we have more than one CPU, but the image is only safe for UP */
+    if ((KeNumberProcessors > 1) &&
+        (NtHeaders->FileHeader.Characteristics & IMAGE_FILE_UP_SYSTEM_ONLY))
+    {
+        return FALSE;
+    }
+    return TRUE;
+}
+#endif // !MM_SYSLDR_C_ACTIVE && CONFIG_SMP
+
+/* === Phase 4: Export implementations === */
+
+/*
+ * Hardware PTE creation
+ */
+void
+NTAPI
+MI_MAKE_HARDWARE_PTE_KERNEL(
+    IN PMMPTE NewPte,
+    IN PMMPTE MappingPte,
+    IN ULONG_PTR ProtectionMask,
+    IN PFN_NUMBER PageFrameNumber)
+{
+    _orig_MI_MAKE_HARDWARE_PTE_KERNEL(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+}
+
+void
+NTAPI
+MI_MAKE_HARDWARE_PTE_USER(
+    IN PMMPTE NewPte,
+    IN PMMPTE MappingPte,
+    IN ULONG_PTR ProtectionMask,
+    IN PFN_NUMBER PageFrameNumber)
+{
+    _orig_MI_MAKE_HARDWARE_PTE_USER(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+}
+
+void
+NTAPI
+MI_MAKE_HARDWARE_PTE(
+    IN PMMPTE NewPte,
+    IN PMMPTE MappingPte,
+    IN ULONG_PTR ProtectionMask,
+    IN PFN_NUMBER PageFrameNumber)
+{
+    _orig_MI_MAKE_HARDWARE_PTE(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+}
+
+#ifdef _M_ARM64
+VOID
+NTAPI
+Arm64DumpPte(
+    IN PCSTR Prefix,
+    IN PVOID Address)
+{
+    PMMPTE Pte = MiAddressToPte(Address);
+
+    ARM64_UART_TRACE_HEX(Prefix, (ULONG_PTR)Address);
+    ARM64_UART_TRACE_HEX("[PTE] Entry=", Pte->u.Long);
+    ARM64_UART_TRACE_HEX("[PTE] Valid=", Pte->u.Hard.Valid);
+    ARM64_UART_TRACE_HEX("[PTE] Owner=", Pte->u.Hard.Owner);
+    ARM64_UART_TRACE_HEX("[PTE] Writable=", Pte->u.Hard.Writable);
+    ARM64_UART_TRACE_HEX("[PTE] UserNoExec=", Pte->u.Hard.UserNoExecute);
+    ARM64_UART_TRACE_HEX("[PTE] CopyOnWrite=", Pte->u.Hard.CopyOnWrite);
+    ARM64_UART_TRACE_HEX("[PTE] NotDirty=", Pte->u.Hard.NotDirty);
+    ARM64_UART_TRACE_HEX("[PTE] Accessed=", Pte->u.Hard.Accessed);
+    ARM64_UART_TRACE_HEX("[PTE] NonGlobal=", Pte->u.Hard.NonGlobal);
+    ARM64_UART_TRACE_HEX("[PTE] Pfn=", Pte->u.Hard.PageFrameNumber);
+}
+#endif
+
+/*
+ * PTE update (volatile write with assertion checks)
+ */
+void
+NTAPI
+MI_UPDATE_VALID_PTE(
+    IN PMMPTE PointerPte,
+    IN MMPTE TempPte)
+{
+    _orig_MI_UPDATE_VALID_PTE(PointerPte, TempPte);
+}
+
+/*
+ * Working set locks
+ * Bindgen says extern "C" (FORCEINLINE with no calling convention) — no NTAPI.
+ */
+/* Lightweight caller tracking — just a pointer store, no serial I/O overhead.
+ * When MiLockProcessWorkingSetShared fires with OwnsExcl==1, we print these. */
+volatile PVOID MmDbgLastExclLocker = NULL;   /* last MiLockProcessWorkingSetUnsafe caller */
+volatile PVOID MmDbgLastExclUnlocker = NULL; /* last MiUnlockProcessWorkingSetUnsafe caller */
+/* Called from MmAccessFault entry when OwnsExcl is set — print faulting address + EIP */
+void MmDebugWsFaultCheck(PVOID Address, PVOID TrapInfo)
+{
+    PETHREAD Thread = PsGetCurrentThread();
+    if (Thread->OwnsProcessWorkingSetExclusive) {
+        ULONG_PTR Eip = 0;
+#ifdef _M_IX86
+        if (TrapInfo) {
+            /* KTRAP_FRAME.Eip is at offset 0x68 on i386 */
+            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x68);
+        }
+#elif defined(_M_AMD64)
+        if (TrapInfo) {
+            /* KTRAP_FRAME.Rip is at offset 0x168 on amd64 */
+            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x168);
+        }
+#endif
+        DPRINT1("[WS-FAULT] MmAccessFault with OwnsExcl=1! FaultAddr=%p, EIP=%p\n"
+                "  LastExclLocker=%p, LastExclUnlocker=%p\n",
+                Address, (PVOID)Eip,
+                MmDbgLastExclLocker, MmDbgLastExclUnlocker);
+    }
+}
+volatile PVOID MmDbgLastSafeLocker = NULL;   /* last MiLockProcessWorkingSet caller */
+volatile PVOID MmDbgLastSafeUnlocker = NULL; /* last MiUnlockProcessWorkingSet caller */
+
+/* ARM64 direct UART for tracing (DbgPrint doesn't reach serial on ARM64) */
+#ifdef _M_ARM64
+extern volatile PVOID Arm64UartKernelBase;
+static void MmUartPuts(const char *s) {
+    volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+    if (u) while (*s) *u = (ULONG)*s++;
+}
+static void MmUartHex(const char *prefix, ULONG_PTR val) {
+    char buf[20];
+    int i;
+    MmUartPuts(prefix);
+    for (i = 15; i >= 0; i--)
+        buf[15-i] = "0123456789ABCDEF"[(val >> (i*4)) & 0xF];
+    buf[16] = '\r'; buf[17] = '\n'; buf[18] = 0;
+    MmUartPuts(buf);
+}
+#endif
+
+void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+    MmDbgLastSafeLocker = __builtin_return_address(0);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] BUG: MiLockProcessWorkingSet IRQL=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
+    _orig_MiLockProcessWorkingSet(Process, Thread);
+}
+
+void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+    MmDbgLastSafeUnlocker = __builtin_return_address(0);
+    _orig_MiUnlockProcessWorkingSet(Process, Thread);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] IRQL after MiUnlockProcessWorkingSet=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
+}
+
+void MiLockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+    MmDbgLastExclLocker = __builtin_return_address(0);
+    _orig_MiLockProcessWorkingSetUnsafe(Process, Thread);
+}
+
+void MiUnlockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+    MmDbgLastExclUnlocker = __builtin_return_address(0);
+    _orig_MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+}
+
+void MiLockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
+{ _orig_MiLockWorkingSet(Thread, WorkingSet); }
+
+void MiUnlockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
+{ _orig_MiUnlockWorkingSet(Thread, WorkingSet); }
+
+void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] BUG: MiLockProcessWorkingSetShared IRQL=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+            MmUartHex("  caller2=", (ULONG_PTR)__builtin_return_address(1));
+            MmUartHex("  caller3=", (ULONG_PTR)__builtin_return_address(2));
+        }
+    }
+#endif
+    if (Thread->OwnsProcessWorkingSetExclusive) {
+        DPRINT1("[WS-BUG] MiLockProcessWorkingSetShared: OwnsExcl=%u, Flags=0x%x, caller=%p\n"
+                "  LastExclLocker=%p, LastExclUnlocker=%p\n"
+                "  LastSafeLocker=%p, LastSafeUnlocker=%p\n",
+                Thread->OwnsProcessWorkingSetExclusive,
+                Thread->SameThreadApcFlags,
+                __builtin_return_address(0),
+                MmDbgLastExclLocker, MmDbgLastExclUnlocker,
+                MmDbgLastSafeLocker, MmDbgLastSafeUnlocker);
+    }
+    _orig_MiLockProcessWorkingSetShared(Process, Thread);
+}
+
+void MiUnlockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
+{
+    _orig_MiUnlockProcessWorkingSetShared(Process, Thread);
+}
+
+void MiLockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
+{ _orig_MiLockWorkingSetShared(Thread, WorkingSet); }
+
+void MiUnlockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
+{ _orig_MiUnlockWorkingSetShared(Thread, WorkingSet); }
+
+/*
+ * Expansion lock
+ * Bindgen says extern "C" (FORCEINLINE with no calling convention) — no NTAPI.
+ */
+KIRQL MiAcquireExpansionLock(VOID)
+{ return _orig_MiAcquireExpansionLock(); }
+
+void MiReleaseExpansionLock(IN KIRQL OldIrql)
+{
+    _orig_MiReleaseExpansionLock(OldIrql);
+#ifdef _M_ARM64
+    {
+        KIRQL irql = KeGetCurrentIrql();
+        if (irql > APC_LEVEL) {
+            MmUartPuts("[MM] IRQL after MiReleaseExpansionLock=");
+            MmUartHex("", irql);
+            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
+        }
+    }
+#endif
+}
+
+/*
+ * PTE mapping check — arch-specific, accesses hardware PTE bitfields
+ * Bindgen says extern "C" — no NTAPI.
+ */
+BOOLEAN MiIsMappedPte(IN PMMPTE PointerPte)
+{ return MI_IS_MAPPED_PTE(PointerPte); }
+
+/*
+ * User/global PTE mask determination
+ * Bindgen says extern "C" — no NTAPI.
+ */
+ULONG_PTR MiDetermineUserGlobalPteMask(IN PMMPTE PointerPte)
+{ return _orig_MiDetermineUserGlobalPteMask(PointerPte); }
+
+/*
+ * Working set lock check (FORCEINLINE in miarm.h — no NTAPI, no calling convention)
+ */
+BOOLEAN MM_ANY_WS_LOCK_HELD(IN PETHREAD Thread)
+{ return _orig_MM_ANY_WS_LOCK_HELD(Thread); }
+
+/*
+ * PDE hierarchy validity check (4-level paging on amd64/arm64)
+ * No NTAPI — bindgen would say extern "C" for FORCEINLINE.
+ */
+#if defined(_M_AMD64) || defined(_M_ARM64)
+BOOLEAN MiIsPdeForAddressValid(IN PVOID Address)
+{
+    return ((MiAddressToPxe(Address)->u.Hard.Valid) &&
+            (MiAddressToPpe(Address)->u.Hard.Valid) &&
+            (MiAddressToPde(Address)->u.Hard.Valid));
+}
+#endif
+
+/*
+ * PTE portable macros — access hardware PTE bitfields that differ per arch.
+ * These wrap C macros (no calling convention) — no NTAPI.
+ */
+void MiMakeDirtyPage(IN PMMPTE Pte)    { MI_MAKE_DIRTY_PAGE(Pte); }
+void MiMakeCleanPage(IN PMMPTE Pte)    { MI_MAKE_CLEAN_PAGE(Pte); }
+void MiMakeAccessedPage(IN PMMPTE Pte) { MI_MAKE_ACCESSED_PAGE(Pte); }
+void MiPageDisableCache(IN PMMPTE Pte) { MI_PAGE_DISABLE_CACHE(Pte); }
+void MiPageWriteThrough(IN PMMPTE Pte) { MI_PAGE_WRITE_THROUGH(Pte); }
+void MiPageWriteCombined(IN PMMPTE Pte){ MI_PAGE_WRITE_COMBINED(Pte); }
+BOOLEAN MiIsPageWriteable(IN PMMPTE Pte) { return MI_IS_PAGE_WRITEABLE(Pte); }
+BOOLEAN MiIsPageDirty(IN PMMPTE Pte)     { return MI_IS_PAGE_DIRTY(Pte); }
+void MiMakeOwnerPage(IN PMMPTE Pte)    { MI_MAKE_OWNER_PAGE(Pte); }
+void MiMakeWritePage(IN PMMPTE Pte)    { MI_MAKE_WRITE_PAGE(Pte); }
+
+/*
+ * InterlockedCompareExchangePte / InterlockedExchangePte — arch-specific PTE atomic update.
+ * Not NTAPI, no calling convention in C — no NTAPI.
+ */
+LONG_PTR MiInterlockedCompareExchangePte(
+    IN volatile PMMPTE PointerPte, IN LONG_PTR Exchange, IN LONG_PTR Comperand)
+{ return InterlockedCompareExchangePte(PointerPte, Exchange, Comperand); }
+
+LONG_PTR MiInterlockedExchangePte(
+    IN volatile PMMPTE PointerPte, IN LONG_PTR Value)
+{ return InterlockedExchangePte(PointerPte, Value); }
+
+/*
+ * InterlockedExchange / InterlockedCompareExchange — used by Rust balance.rs as
+ * extern "C" (cdecl).
+ *
+ * On amd64/arm64: exintrin.c provides these as FASTCALL (which expands to cdecl
+ * on non-i386) with an undecorated symbol. Rust's extern "C" also expects the
+ * undecorated symbol. No shim needed.
+ *
+ * On i386: exintrin.c provides these as __fastcall (symbol @Name@N), but Rust's
+ * extern "C" expects the cdecl symbol _Name. We provide cdecl wrappers here.
+ * The headers define InterlockedExchange/_CompareExchange as macros, so undef first.
+ */
+#if defined(_M_IX86)
+#undef InterlockedExchange
+#undef InterlockedCompareExchange
+
+LONG InterlockedExchange(volatile LONG *Target, LONG Value)
+{ return _InterlockedExchange(Target, Value); }
+
+LONG InterlockedCompareExchange(
+    volatile LONG *Destination, LONG Exchange, LONG Comparand)
+{ return _InterlockedCompareExchange(Destination, Exchange, Comparand); }
+#endif /* _M_IX86 */
+
+/* InterlockedDecrementUL — already in ps_rust_shims.c */
+/* InterlockedIncrementUL — not in any other shim file, provide here */
+#undef InterlockedIncrementUL
+ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
+{ return (ULONG)_InterlockedIncrement((volatile LONG *)Addend); }
+
+/*
+ * UpdateTotalCommittedPages — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ * Manually inline the implementation.
+ */
+void UpdateTotalCommittedPages(IN LONG Delta)
+{
+    SIZE_T TotalCommittedPages = InterlockedExchangeAddSizeT(&MmTotalCommittedPages, Delta) + Delta;
+    SIZE_T PeakCommitment = MmPeakCommitment;
+    while (TotalCommittedPages > PeakCommitment &&
+           InterlockedCompareExchangeSizeT(&MmPeakCommitment, TotalCommittedPages, PeakCommitment) != PeakCommitment)
+    {
+        PeakCommitment = MmPeakCommitment;
+    }
+}
+
+/*
+ * KeInvalidateTlbEntry — FORCEINLINE per-arch in ke.h (covered by PCH, can't rename)
+ * Manually inline the arch-specific implementation.
+ */
+void KeInvalidateTlbEntry(IN PVOID Address)
+{
+#if defined(_M_AMD64) || defined(_M_IX86)
+    __invlpg(Address);
+#elif defined(_M_ARM64)
+    ULONG64 TlbiArg = (ULONG64)Address >> 12;
+    __asm__ __volatile__("tlbi vale1is, %0" : : "r"(TlbiArg) : "memory");
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb" ::: "memory");
+#else
+#error "Unsupported architecture"
+#endif
+}
+
+/*
+ * Section segment lock/unlock — macros wrapping underscored versions
+ */
+void NTAPI MmLockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
+{ _MmLockSectionSegment(Segment, __FILE__, __LINE__); }
+
+void NTAPI MmUnlockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
+{ _MmUnlockSectionSegment(Segment, __FILE__, __LINE__); }
+
+ULONG_PTR NTAPI MmGetPageEntrySectionSegment(
+    IN PMM_SECTION_SEGMENT Segment, IN PLARGE_INTEGER Offset)
+{ return _MmGetPageEntrySectionSegment(Segment, Offset, __FILE__, __LINE__); }
+
+/*
+ * MmDereferenceSegment — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ * Calls MmDereferenceSegmentWithLock with MM_NOIRQL.
+ */
+void MmDereferenceSegment(IN PMM_SECTION_SEGMENT Segment)
+{ MmDereferenceSegmentWithLock(Segment, MM_NOIRQL); }
+
+/*
+ * ExAllocatePoolZero — FORCEINLINE in exfuncs.h (covered by PCH, can't rename)
+ * Calls ExAllocatePoolWithTag + RtlZeroMemory.
+ */
+PVOID
+NTAPI
+ExAllocatePoolZero(
+    IN POOL_TYPE PoolType,
+    IN SIZE_T NumberOfBytes,
+    IN ULONG Tag)
+{
+    PVOID Allocation = ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
+    if (Allocation != NULL) {
+        RtlZeroMemory(Allocation, NumberOfBytes);
+    }
+    return Allocation;
+}
+
+/*
+ * MmGetAddressSpaceOwner — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ */
+PEPROCESS MmGetAddressSpaceOwner(IN PMMSUPPORT AddressSpace)
+{
+    if (AddressSpace == MmKernelAddressSpace) return NULL;
+    return CONTAINING_RECORD(AddressSpace, EPROCESS, Vm);
+}
+
+/*
+ * MmGetKernelAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ */
+PMMSUPPORT MmGetKernelAddressSpace(VOID)
+{
+    return MmKernelAddressSpace;
+}
+
+/*
+ * MmLockAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ */
+void MmLockAddressSpace(IN PMMSUPPORT AddressSpace)
+{
+    PKGUARDED_MUTEX Mtx = &CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock;
+    KeAcquireGuardedMutex(Mtx);
+}
+
+/*
+ * MmUnlockAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ */
+void MmUnlockAddressSpace(IN PMMSUPPORT AddressSpace)
+{
+    KeReleaseGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
+}
+
+/*
+ * InterlockedExchangeAddUL — macro in ex.h (undeffed in Phase 3)
+ * Wraps InterlockedExchangeAdd.
+ */
+ULONG
+NTAPI
+InterlockedExchangeAddUL(IN PULONG Addend, IN ULONG Value)
+{
+    return (ULONG)InterlockedExchangeAdd((volatile LONG *)Addend, (LONG)Value);
+}
+
+/*
+ * RMAP_IS_SEGMENT — macro in mm.h (undeffed in Phase 3)
+ */
+BOOLEAN
+NTAPI
+RMAP_IS_SEGMENT(IN PVOID Address)
+{
+    return (((ULONG_PTR)(Address) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK);
+}
+
+/*
+ * PAGE_ROUND_DOWN — macro in mmtypes.h (undeffed in Phase 3)
+ */
+ULONG_PTR
+NTAPI
+PAGE_ROUND_DOWN(IN PVOID Address)
+{
+    return (((ULONG_PTR)(Address)) & ~((ULONG_PTR)(PAGE_SIZE - 1)));
+}
+
+/*
+ * PFN_FROM_SSE — macro in mm.h (undeffed in Phase 3)
+ */
+PFN_NUMBER
+NTAPI
+PFN_FROM_SSE(IN ULONG_PTR Entry)
+{
+    return (PFN_NUMBER)(Entry >> PAGE_SHIFT);
+}
+
+/*
+ * MM_IS_WAIT_PTE — macro in mm.h (undeffed in Phase 3)
+ */
+BOOLEAN
+NTAPI
+MM_IS_WAIT_PTE(IN ULONG_PTR Entry)
+{
+    return ((Entry & 0x1) && ((Entry >> 1) == MM_WAIT_ENTRY));
+}
+
+/*
+ * MmSetDirtyPage — macro in mm.h: MmSetDirtyBit(P, A, TRUE)
+ */
+VOID
+NTAPI
+MmSetDirtyPage(IN PEPROCESS Process, IN PVOID Address)
+{
+    MmSetDirtyBit(Process, Address, TRUE);
+}
+
+/*
+ * KeFlushProcessTb — FORCEINLINE per-arch in ke.h (covered by PCH, can't rename)
+ * Manually inline the arch-specific TLB flush.
+ */
+void KeFlushProcessTb(VOID)
+{
+#if defined(_M_AMD64) || defined(_M_IX86)
+    __writecr3(__readcr3());
+#elif defined(_M_ARM64)
+    __asm__ __volatile__("tlbi vmalle1is" ::: "memory");
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb" ::: "memory");
+#else
+#error "Unsupported architecture"
+#endif
+}
+
+/*
+ * MmInitializeMdl — macro in xdk/mmfuncs.h (covered by PCH).
+ * The Rust side declares this as extern "system" (stdcall on i386).
+ */
+void
+NTAPI
+MmInitializeMdl(
+    IN PMDL Mdl,
+    IN PVOID BaseVa,
+    IN ULONG Length)
+{
+    Mdl->Next = (PMDL)NULL;
+    Mdl->Size = (CSHORT)(sizeof(MDL) +
+        (sizeof(PFN_NUMBER) * ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseVa, Length)));
+    Mdl->MdlFlags = 0;
+    Mdl->StartVa = (PVOID)PAGE_ALIGN(BaseVa);
+    Mdl->ByteOffset = BYTE_OFFSET(BaseVa);
+    Mdl->ByteCount = Length;
+}
+
+/* ===================================================================
+ * AVL Tree support for vadnode.rs
+ *
+ * vadnode.c used to #include "miavl.h" + avlsupp.c to get MM-flavored
+ * AVL routines (Mi* names).  The Rust vadnode.rs calls the Rtl* / Rtlp*
+ * names from extern "system".  We provide outline wrappers here.
+ * =================================================================== */
+
+/* --- Simple FORCEINLINE helpers (miavl.h MiXxx equivalents) --- */
+
+PMMADDRESS_NODE
+NTAPI
+RtlRightChildAvl(IN PMMADDRESS_NODE Node)
+{
+    return Node->RightChild;
+}
+
+PMMADDRESS_NODE
+NTAPI
+RtlLeftChildAvl(IN PMMADDRESS_NODE Node)
+{
+    return Node->LeftChild;
+}
+
+PMMADDRESS_NODE
+NTAPI
+RtlParentAvl(IN PMMADDRESS_NODE Node)
+{
+    return (PMMADDRESS_NODE)((ULONG_PTR)Node->u1.Parent & ~(ULONG_PTR)3);
+}
+
+BOOLEAN
+NTAPI
+RtlIsRightChildAvl(IN PMMADDRESS_NODE Node)
+{
+    return (RtlRightChildAvl(RtlParentAvl(Node)) == Node);
+}
+
+BOOLEAN
+NTAPI
+RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
+{
+    return (RtlLeftChildAvl(RtlParentAvl(Node)) == Node);
+}
+
+/* --- Heavyweight AVL algorithms from avlsupp.c (Mi-flavored) ---
+ *
+ * Include miavl.h to get the FORCEINLINE helpers (MiSetParent, MiSetBalance,
+ * MiBalance, MiInsertAsLeftChildAvl, etc.) and then #include avlsupp.c which
+ * compiles the algorithms using those helpers.
+ *
+ * miavl.h renames Rtlp* → Mi* via #define, so avlsupp.c produces:
+ *   MiFindAvlTableNodeOrParent, MiPromoteAvlTreeNode,
+ *   MiRebalanceAvlTreeNode, MiInsertAvlTreeNode, MiDeleteAvlTreeNode
+ *
+ * After the include, we #undef and write thin Rtlp* wrappers.
+ */
+#include "ARM3/miavl.h"
+#include <sdk/lib/rtl/avlsupp.c>
+
+/* Undef miavl.h renames so we can define our own Rtlp* symbols */
+#undef RtlpFindAvlTableNodeOrParent
+#undef RtlpPromoteAvlTreeNode
+#undef RtlpRebalanceAvlTreeNode
+#undef RtlpInsertAvlTreeNode
+#undef RtlpDeleteAvlTreeNode
+#undef RtlpCopyAvlNodeData
+#undef RtlpAvlCompareRoutine
+#undef RtlSetParent
+#undef RtlSetBalance
+#undef RtlBalance
+#undef RtlRightChildAvl
+#undef RtlLeftChildAvl
+#undef RtlParentAvl
+#undef RtlIsLeftChildAvl
+#undef RtlIsRightChildAvl
+#undef RtlInsertAsLeftChildAvl
+#undef RtlInsertAsRightChildAvl
+#undef PRTL_AVL_TABLE
+#undef PRTL_BALANCED_LINKS
+#undef MI_ASSERT
+
+TABLE_SEARCH_RESULT
+NTAPI
+RtlpFindAvlTableNodeOrParent(
+    IN PMM_AVL_TABLE Table,
+    IN PVOID Buffer,
+    OUT PMMADDRESS_NODE *NodeOrParent)
+{
+    return MiFindAvlTableNodeOrParent(Table, Buffer, NodeOrParent);
+}
+
+void
+NTAPI
+RtlpInsertAvlTreeNode(
+    IN PMM_AVL_TABLE Table,
+    IN PMMADDRESS_NODE NewNode,
+    IN PMMADDRESS_NODE Parent,
+    IN TABLE_SEARCH_RESULT SearchResult)
+{
+    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks */
+    if (SearchResult == TableFoundNode)
+    {
+        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate insertion! NewNode=%p Parent=%p "
+                "VPN=[%lx-%lx] ParentVPN=[%lx-%lx]\n",
+                NewNode, Parent,
+                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn,
+                (ULONG)Parent->StartingVpn, (ULONG)Parent->EndingVpn);
+        return;
+    }
+    MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult);
+}
+
+void
+NTAPI
+RtlpDeleteAvlTreeNode(
+    IN PMM_AVL_TABLE Table,
+    IN PMMADDRESS_NODE Node)
+{
+    MiDeleteAvlTreeNode(Table, Node);
+}
+
+/* ===================================================================
+ * FORCEINLINE shims for Tier 3a Rust integration
+ *
+ * These functions are FORCEINLINE in miarm.h / ke_x.h — they have no
+ * C symbol.  The Rust code calls them via extern "C" declarations.
+ * All were renamed in Phase 1, so _orig_* versions are available.
+ * =================================================================== */
+
+/* MiIncrementPageTableReferences — now implemented in Rust (helpers.rs)
+ * to ensure it uses the same UsedPageTableEntries accessor as
+ * MiDecrementPageTableReferences and MiIsPageTablePresent. */
+
+void MiDropLockCount(IN PMMPFN Pfn1)
+{ _orig_MiDropLockCount(Pfn1); }
+
+void MiReferenceProbedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{ _orig_MiReferenceProbedPageAndBumpLockCount(Pfn1); }
+
+void MiReferenceUnusedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{ _orig_MiReferenceUnusedPageAndBumpLockCount(Pfn1); }
+
+void MiReferenceUsedPageAndBumpLockCount(IN PMMPFN Pfn1)
+{ _orig_MiReferenceUsedPageAndBumpLockCount(Pfn1); }
+
+BOOLEAN MiIsUserPde(PVOID Address)
+{ return _orig_MiIsUserPde(Address); }
+
+BOOLEAN MiIsUserPte(PVOID Address)
+{ return _orig_MiIsUserPte(Address); }
+
+PFN_NUMBER MiRemoveZeroPageSafe(IN ULONG Color)
+{ return _orig_MiRemoveZeroPageSafe(Color); }
+
+BOOLEAN MiIsMemoryTypeFree(TYPE_OF_MEMORY MemoryType)
+{ return _orig_MiIsMemoryTypeFree(MemoryType); }
+
+/* Tier 4 FORCEINLINE shim implementations */
+#if (_MI_PAGING_LEVELS == 2)
+BOOLEAN MiSynchronizeSystemPde(PMMPDE PointerPde)
+{ return _orig_MiSynchronizeSystemPde(PointerPde); }
+#endif
+
+BOOLEAN MiConvertSharedWorkingSetLockToExclusive(PETHREAD Thread, PMMSUPPORT Vm)
+{ return _orig_MiConvertSharedWorkingSetLockToExclusive(Thread, Vm); }
+
+/*
+ * KiAcquireProcessLockRaiseToSynch / KiReleaseProcessLock —
+ * FORCEINLINE in ke_x.h (covered by PCH, can't rename).
+ * Manually inline the implementation.
+ *
+ * On i386, KeReleaseInStackQueuedSpinLock is declared DECLSPEC_IMPORT (HAL import)
+ * in the SDK headers, so the compiler generates an indirect call through the IAT.
+ * However, the Rust shim_exports.rs provides its own local UP implementation of
+ * KeAcquireInStackQueuedSpinLock* / KeReleaseInStackQueuedSpinLock with fastcall
+ * convention.  The Rust acquire does NOT store (KeGetCurrentThread()|1) into the
+ * spinlock, but the HAL's release checks for that value and bugchecks on mismatch.
+ * To avoid the acquire/release mismatch, re-declare without __declspec(dllimport)
+ * so the linker resolves to the Rust-provided version (matching acquire semantics).
+ */
+#ifdef _X86_
+VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
+#endif
+
+void KiAcquireProcessLockRaiseToSynch(IN PKPROCESS Process,
+                                       IN PKLOCK_QUEUE_HANDLE Handle)
+{
+    KeAcquireInStackQueuedSpinLockRaiseToSynch(&Process->ProcessLock, Handle);
+}
+
+void KiReleaseProcessLock(IN PKLOCK_QUEUE_HANDLE Handle)
+{
+    KeReleaseInStackQueuedSpinLock(Handle);
+}
+
+/* ===================================================================
+ * Tier 3b FORCEINLINE shims (ARM3/section.c, ARM3/virtual.c)
+ * =================================================================== */
+
+void MiLockProcessWorkingSetForFault(IN PEPROCESS Process,
+                                      IN PETHREAD Thread,
+                                      IN BOOLEAN Safe,
+                                      IN BOOLEAN Shared)
+{
+    _orig_MiLockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
+}
+
+void MiUnlockProcessWorkingSetForFault(IN PEPROCESS Process,
+                                        IN PETHREAD Thread,
+                                        OUT PBOOLEAN Safe,
+                                        OUT PBOOLEAN Shared)
+{
+    _orig_MiUnlockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
+}
+
+#undef MmGetCurrentAddressSpace
+PMMSUPPORT MmGetCurrentAddressSpace(VOID)
+{
+    return &((PEPROCESS)KeGetCurrentThread()->ApcState.Process)->Vm;
+}
+
+/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim */
+
+BOOLEAN MiIsRosSectionObject(IN PSECTION Section)
+{
+    return _orig_MiIsRosSectionObject(Section);
+}
+
+/*
+ * ProbeForWriteSize_t — macro in probe.h
+ * ProbeForWriteIoStatusBlock — macro in probe.h
+ * Must #undef the macros before defining outline functions.
+ * These are cdecl (no NTAPI) — Rust imports via extern "C".
+ *
+ * ProbeForWriteUlong / ProbeForWritePointer are already provided as NTAPI
+ * in tier1_rust_shims.c — do not duplicate here.
+ */
+#undef ProbeForWriteSize_t
+void ProbeForWriteSize_t(IN SIZE_T *Ptr)
+{
+    volatile SIZE_T *p = (volatile SIZE_T *)Ptr;
+    *p = *p;
+}
+
+#undef ProbeForWriteIoStatusBlock
+void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
+{
+    volatile IO_STATUS_BLOCK *p = (volatile IO_STATUS_BLOCK *)Ptr;
+    *p = *p;
+}
+
+/*
+ * KfRaiseIrql / KfLowerIrql wrappers for Rust (extern "C" / cdecl).
+ *
+ * - amd64: FORCEINLINE in SDK header (__readcr8/__writecr8) — no HAL symbol.
+ *   Manually inline the implementation.
+ * - i386: HAL exports as __fastcall (@KfRaiseIrql@4). Rust needs cdecl.
+ *   Call the HAL fastcall function, wrap in cdecl.
+ * - ARM64: HAL exports as cdecl. Rust's extern "C" works directly.
+ *   But we provide a wrapper anyway for uniformity (compiler will inline it).
+ */
+#if defined(_M_AMD64)
+KIRQL KfRaiseIrql(IN KIRQL NewIrql)
+{
+    KIRQL OldIrql = (KIRQL)__readcr8();
+    __writecr8(NewIrql);
+    return OldIrql;
+}
+
+void KfLowerIrql(IN KIRQL NewIrql)
+{
+    __writecr8(NewIrql);
+}
+#elif defined(_M_IX86)
+/* On i386, KfRaiseIrql/KfLowerIrql are __fastcall HAL imports (declared in
+ * xdk/x86/ke.h). The Rust side calls cdecl wrappers named RustShimKf*.
+ * We can't redefine the same name with a different calling convention,
+ * so provide differently-named cdecl wrappers. */
+KIRQL RustShimKfRaiseIrql(IN KIRQL NewIrql)
+{
+    return KfRaiseIrql(NewIrql);
+}
+
+void RustShimKfLowerIrql(IN KIRQL NewIrql)
+{
+    KfLowerIrql(NewIrql);
+}
+#endif
+
+/* RtlFindSetBits cdecl wrapper for Rust (NTAPI→cdecl calling convention) */
+ULONG RustShimRtlFindSetBits(PRTL_BITMAP BitMapHeader, ULONG NumberToFind, ULONG HintIndex)
+{
+    return RtlFindSetBits(BitMapHeader, NumberToFind, HintIndex);
+}
+
+/* KdbpGetHexNumber cdecl wrapper for Rust (NTAPI→cdecl calling convention) */
+BOOLEAN NTAPI KdbpGetHexNumber(IN PCHAR pszNum, OUT ULONG_PTR *pulValue);
+BOOLEAN RustShimKdbpGetHexNumber(PCHAR Arg, ULONG_PTR *Number)
+{
+    return KdbpGetHexNumber(Arg, Number);
+}
+
+/* =====================================================================
+ * MmFixupImageSectionSegments — called from Rust ExeFmtpCreateImageSection
+ * to sort, bounds-check, page-align, trim, and initialize image section
+ * segments. This entire block was missing from the Rust translation of
+ * section.c, causing uninitialized FAST_MUTEX in segment locks.
+ * ===================================================================== */
+
+#include <reactos/exeformat.h>
+#include <cache/section/newmm.h>
+
+static
+int
+__cdecl
+MmspCompareSegments_Shim(const void * x, const void * y)
+{
+    const MM_SECTION_SEGMENT *Segment1 = (const MM_SECTION_SEGMENT *)x;
+    const MM_SECTION_SEGMENT *Segment2 = (const MM_SECTION_SEGMENT *)y;
+
+    if (Segment1->Image.VirtualAddress > Segment2->Image.VirtualAddress)
+        return 1;
+    else if (Segment1->Image.VirtualAddress < Segment2->Image.VirtualAddress)
+        return -1;
+    else
+        return 0;
+}
+
+static
+VOID
+NTAPI
+MmspSortSegments_Shim(IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+                       IN ULONG Flags)
+{
+    if (!(Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_SORTED))
+    {
+        qsort(ImageSectionObject->Segments,
+              ImageSectionObject->NrSegments,
+              sizeof(ImageSectionObject->Segments[0]),
+              MmspCompareSegments_Shim);
+    }
+}
+
+static
+BOOLEAN
+NTAPI
+MmspCheckSegmentBounds_Shim(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags)
+{
+    ULONG i;
+
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_NO_OVERLAP)
+        return TRUE;
+
+    ASSERT(ImageSectionObject->NrSegments >= 1);
+
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        if (ImageSectionObject->Segments[i].Length.QuadPart == 0)
+            return FALSE;
+
+        if (i > 0)
+        {
+            if ((ImageSectionObject->Segments[i - 1].Image.VirtualAddress +
+                    ImageSectionObject->Segments[i - 1].Length.QuadPart) !=
+                    ImageSectionObject->Segments[i].Image.VirtualAddress)
+            {
+                return FALSE;
+            }
+        }
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+NTAPI
+MmspPageAlignSegments_Shim(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags)
+{
+    ULONG i;
+    ULONG LastSegment;
+    PMM_SECTION_SEGMENT EffectiveSegment;
+
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_PAGE_ALIGNED)
+        return TRUE;
+
+    LastSegment = 0;
+    EffectiveSegment = &ImageSectionObject->Segments[LastSegment];
+
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        if (i == 0)
+        {
+            ULONG_PTR VirtualAddress;
+            ULONG_PTR VirtualOffset;
+
+            VirtualAddress = EffectiveSegment->Image.VirtualAddress;
+            EffectiveSegment->Image.VirtualAddress = (ULONG_PTR)PAGE_ROUND_DOWN((PVOID)VirtualAddress);
+            EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(VirtualAddress + EffectiveSegment->Length.QuadPart) -
+                                                EffectiveSegment->Image.VirtualAddress;
+
+            VirtualOffset = VirtualAddress - EffectiveSegment->Image.VirtualAddress;
+
+            if (EffectiveSegment->Image.FileOffset < VirtualOffset)
+                return FALSE;
+
+            EffectiveSegment->Image.FileOffset -= VirtualOffset;
+            EffectiveSegment->RawLength.QuadPart += VirtualOffset;
+        }
+        else
+        {
+            PMM_SECTION_SEGMENT Segment = &ImageSectionObject->Segments[i];
+            ULONG_PTR EndOfEffectiveSegment;
+
+            EndOfEffectiveSegment = (ULONG_PTR)(EffectiveSegment->Image.VirtualAddress + EffectiveSegment->Length.QuadPart);
+            ASSERT((EndOfEffectiveSegment % PAGE_SIZE) == 0);
+
+            if (EndOfEffectiveSegment == Segment->Image.VirtualAddress)
+            {
+                LastSegment++;
+                ASSERT(LastSegment <= i);
+                ASSERT(LastSegment < ImageSectionObject->NrSegments);
+
+                EffectiveSegment = &ImageSectionObject->Segments[LastSegment];
+
+                if (LastSegment != i)
+                    *EffectiveSegment = *Segment;
+
+                ASSERT((EffectiveSegment->Image.VirtualAddress % PAGE_SIZE) == 0);
+                EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(EffectiveSegment->Length.QuadPart);
+            }
+            else if (EndOfEffectiveSegment > Segment->Image.VirtualAddress)
+            {
+                static const ULONG FlagsToProtection[16] =
+                {
+                    PAGE_NOACCESS,
+                    PAGE_READONLY,
+                    PAGE_READWRITE,
+                    PAGE_READWRITE,
+                    PAGE_EXECUTE_READ,
+                    PAGE_EXECUTE_READ,
+                    PAGE_EXECUTE_READWRITE,
+                    PAGE_EXECUTE_READWRITE,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY,
+                    PAGE_EXECUTE_WRITECOPY
+                };
+
+                unsigned ProtectionFlags;
+
+                if (Segment->Image.FileOffset != (EffectiveSegment->Image.FileOffset +
+                                                  EffectiveSegment->RawLength.QuadPart))
+                {
+                    return FALSE;
+                }
+
+                EffectiveSegment->RawLength.QuadPart += Segment->RawLength.QuadPart;
+
+                ASSERT(PAGE_ROUND_UP(Segment->Image.VirtualAddress + Segment->Length.QuadPart) >= EndOfEffectiveSegment);
+
+                EffectiveSegment->Length.QuadPart = PAGE_ROUND_UP(Segment->Image.VirtualAddress + Segment->Length.QuadPart) -
+                                                    EffectiveSegment->Image.VirtualAddress;
+
+                EffectiveSegment->Protection |= Segment->Protection;
+
+                ProtectionFlags = 0;
+
+                if (EffectiveSegment->Protection & PAGE_IS_READABLE)
+                    ProtectionFlags |= 1 << 0;
+
+                if (EffectiveSegment->Protection & PAGE_IS_WRITABLE)
+                    ProtectionFlags |= 1 << 1;
+
+                if (EffectiveSegment->Protection & PAGE_IS_EXECUTABLE)
+                    ProtectionFlags |= 1 << 2;
+
+                if (EffectiveSegment->Protection & PAGE_IS_WRITECOPY)
+                    ProtectionFlags |= 1 << 3;
+
+                ASSERT(ProtectionFlags < 16);
+                EffectiveSegment->Protection = FlagsToProtection[ProtectionFlags];
+
+                if (!(Segment->Protection & PAGE_IS_WRITECOPY) &&
+                        EffectiveSegment->Protection & PAGE_IS_WRITECOPY)
+                {
+                    return FALSE;
+                }
+            }
+            else
+            {
+                KeBugCheck(MEMORY_MANAGEMENT);
+            }
+        }
+    }
+    ImageSectionObject->NrSegments = LastSegment + 1;
+
+    return TRUE;
+}
+
+NTSTATUS
+NTAPI
+MmFixupImageSectionSegments(
+    IN OUT PMM_IMAGE_SECTION_OBJECT ImageSectionObject,
+    IN ULONG Flags,
+    IN PFILE_OBJECT FileObject)
+{
+    ULONG i;
+    ULONG OldNrSegments;
+
+    /* Sort them by virtual address */
+    MmspSortSegments_Shim(ImageSectionObject, Flags);
+
+    /* Ensure they don't overlap in memory */
+    if (!MmspCheckSegmentBounds_Shim(ImageSectionObject, Flags))
+        return STATUS_INVALID_IMAGE_FORMAT;
+
+    /* Ensure they are aligned */
+    OldNrSegments = ImageSectionObject->NrSegments;
+
+    if (!MmspPageAlignSegments_Shim(ImageSectionObject, Flags))
+        return STATUS_INVALID_IMAGE_FORMAT;
+
+    /* Trim them if the alignment phase merged some of them */
+    if (ImageSectionObject->NrSegments < OldNrSegments)
+    {
+        PMM_SECTION_SEGMENT Segments;
+        SIZE_T SizeOfSegments;
+
+        SizeOfSegments = sizeof(MM_SECTION_SEGMENT) * ImageSectionObject->NrSegments;
+
+        Segments = ExAllocatePoolWithTag(PagedPool,
+                                         SizeOfSegments,
+                                         TAG_MM_SECTION_SEGMENT);
+
+        if (Segments == NULL)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        RtlCopyMemory(Segments, ImageSectionObject->Segments, SizeOfSegments);
+        ExFreePool(ImageSectionObject->Segments);
+        ImageSectionObject->Segments = Segments;
+    }
+
+    DPRINT("MmFixupImageSectionSegments: Flags=0x%x, OldNrSegments=%u, NrSegments=%u\n",
+           Flags, OldNrSegments, ImageSectionObject->NrSegments);
+
+    /* And finish their initialization */
+    for (i = 0; i < ImageSectionObject->NrSegments; ++i)
+    {
+        DPRINT("  Segment[%u]: VA=0x%lx Len=0x%llx RawLen=0x%llx FileOff=0x%llx Prot=0x%x\n",
+               i,
+               (ULONG)ImageSectionObject->Segments[i].Image.VirtualAddress,
+               ImageSectionObject->Segments[i].Length.QuadPart,
+               ImageSectionObject->Segments[i].RawLength.QuadPart,
+               (ULONGLONG)ImageSectionObject->Segments[i].Image.FileOffset,
+               ImageSectionObject->Segments[i].Protection);
+        ExInitializeFastMutex(&ImageSectionObject->Segments[i].Lock);
+        ImageSectionObject->Segments[i].ReferenceCount = &ImageSectionObject->RefCount;
+        ImageSectionObject->Segments[i].Flags = &ImageSectionObject->SegFlags;
+        MiInitializeSectionPageTable(&ImageSectionObject->Segments[i]);
+        ImageSectionObject->Segments[i].FileObject = FileObject;
+    }
+
+    ASSERT(ImageSectionObject->RefCount > 0);
+
+    ImageSectionObject->FileObject = FileObject;
+
+    return STATUS_SUCCESS;
+}
+
+/* Debug trace helper callable from Rust (stdcall on i386) */
+VOID NTAPI MmDebugTrace(ULONG Code, ULONG_PTR Param1, ULONG_PTR Param2)
+{
+    DPRINT1("MmDebugTrace: code=%lu p1=0x%lx p2=0x%lx IRQL=%u\n",
+            Code, Param1, Param2, (ULONG)KeGetCurrentIrql());
+
+    /* When code==100, Param1 is FileObject — dump resource state */
+    if (Code == 100 && Param1 != 0)
+    {
+        PFILE_OBJECT fo = (PFILE_OBJECT)Param1;
+        PFSRTL_COMMON_FCB_HEADER fcb = (PFSRTL_COMMON_FCB_HEADER)(fo->FsContext);
+        if (fcb && fcb->Resource) {
+            PERESOURCE res = fcb->Resource;
+            DPRINT1("  FileObj=%p FsContext=%p Resource=%p ActiveEntries=%d "
+                    "NumberOfExclusiveWaiters=%u NumberOfSharedWaiters=%u "
+                    "OwnerEntry.OwnerThread=%p Flag=0x%x\n",
+                    fo, fcb, res, res->ActiveEntries,
+                    res->NumberOfExclusiveWaiters, res->NumberOfSharedWaiters,
+                    (PVOID)res->OwnerEntry.OwnerThread, res->Flag);
+        } else {
+            DPRINT1("  FileObj=%p FsContext=%p Resource=%p (NULL resource)\n",
+                    fo, fcb, fcb ? fcb->Resource : NULL);
+        }
+    }
+}
+
+/* Removed: Temporary C NtCreateSection — Rust version re-enabled */
+#if 0
+NTSTATUS
+NTAPI
+NtCreateSection_removed(OUT PHANDLE SectionHandle,
+                IN ACCESS_MASK DesiredAccess,
+                IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
+                IN PLARGE_INTEGER MaximumSize OPTIONAL,
+                IN ULONG SectionPageProtection OPTIONAL,
+                IN ULONG AllocationAttributes,
+                IN HANDLE FileHandle OPTIONAL)
+{
+    LARGE_INTEGER SafeMaximumSize;
+    PVOID SectionObject;
+    HANDLE Handle;
+    KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
+    NTSTATUS Status;
+    PAGED_CODE();
+
+    DbgPrint("C-NtCreateSection: ENTER SH=%p DA=0x%lx OA=%p FH=%p Alloc=0x%lx\n",
+             SectionHandle, DesiredAccess, ObjectAttributes, FileHandle, AllocationAttributes);
+
+    /* Check for non-existing flags */
+    if ((AllocationAttributes & ~(SEC_COMMIT | SEC_RESERVE | SEC_BASED |
+                                  SEC_LARGE_PAGES | SEC_IMAGE | SEC_NOCACHE |
+                                  SEC_NO_CHANGE)))
+    {
+        if (!(AllocationAttributes & 1))
+        {
+            return STATUS_INVALID_PARAMETER_6;
+        }
+    }
+
+    /* Check for no allocation type */
+    if (!(AllocationAttributes & (SEC_COMMIT | SEC_RESERVE | SEC_IMAGE)))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Check for image allocation with invalid attributes */
+    if ((AllocationAttributes & SEC_IMAGE) &&
+        (AllocationAttributes & (SEC_COMMIT | SEC_RESERVE | SEC_LARGE_PAGES |
+                                 SEC_NOCACHE | SEC_NO_CHANGE)))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Check for allocation type is both commit and reserve */
+    if ((AllocationAttributes & SEC_COMMIT) && (AllocationAttributes & SEC_RESERVE))
+    {
+        return STATUS_INVALID_PARAMETER_6;
+    }
+
+    /* Now check for valid protection */
+    if ((SectionPageProtection & PAGE_NOCACHE) ||
+        (SectionPageProtection & PAGE_WRITECOMBINE) ||
+        (SectionPageProtection & PAGE_GUARD) ||
+        (SectionPageProtection & PAGE_NOACCESS))
+    {
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Use a maximum size of zero, if none was specified */
+    SafeMaximumSize.QuadPart = 0;
+
+    /* Check for user-mode caller */
+    if (PreviousMode != KernelMode)
+    {
+        /* Enter SEH */
+        _SEH2_TRY
+        {
+            /* Safely check user-mode parameters */
+            if (MaximumSize) SafeMaximumSize = ProbeForReadLargeInteger(MaximumSize);
+            MaximumSize = &SafeMaximumSize;
+            ProbeForWriteHandle(SectionHandle);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Return the exception code */
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    else if (!MaximumSize) MaximumSize = &SafeMaximumSize;
+
+    /* Check that MaximumSize is valid if backed by paging file */
+    if ((!FileHandle) && (!MaximumSize->QuadPart))
+        return STATUS_INVALID_PARAMETER_4;
+
+    /* Create the section */
+    DbgPrint("C-NtCreateSection: calling MmCreateSection FH=%p\n", FileHandle);
+    Status = MmCreateSection(&SectionObject,
+                             DesiredAccess,
+                             ObjectAttributes,
+                             MaximumSize,
+                             SectionPageProtection,
+                             AllocationAttributes,
+                             FileHandle,
+                             NULL);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    /* Now insert the object */
+    Status = ObInsertObject(SectionObject,
+                            NULL,
+                            DesiredAccess,
+                            0,
+                            NULL,
+                            &Handle);
+    if (NT_SUCCESS(Status))
+    {
+        /* Enter SEH */
+        _SEH2_TRY
+        {
+            /* Return the handle safely */
+            *SectionHandle = Handle;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* Nothing here */
+        }
+        _SEH2_END;
+    }
+
+    return Status;
+}
+#endif
+
+/* ARM64 IRQL debugging for SMSS creation path */
+#ifdef _M_ARM64
+BOOLEAN MiArchCreateProcessAddressSpace(PEPROCESS Process, PULONG_PTR DirectoryTableBase);
+
+BOOLEAN MiArchCreateProcessAddressSpace_checked(PEPROCESS Process, PULONG_PTR DirectoryTableBase)
+{
+    KIRQL before, after;
+    BOOLEAN result;
+    
+    before = KeGetCurrentIrql();
+    result = MiArchCreateProcessAddressSpace(Process, DirectoryTableBase);
+    after = KeGetCurrentIrql();
+    
+    if (before != after) {
+        MmUartPuts("[MM] IRQL CHANGED in MiArchCreateProcessAddressSpace!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+    return result;
+}
+#endif
+
+#ifdef _M_ARM64
+/* KeAttachProcess IRQL tracing shim */
+void KeAttachProcess_irql_check(PKPROCESS Process)
+{
+    KIRQL before = KeGetCurrentIrql();
+    KeAttachProcess(Process);
+    KIRQL after = KeGetCurrentIrql();
+    if (after > APC_LEVEL) {
+        MmUartPuts("[MM] KeAttachProcess left IRQL elevated!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* KeDetachProcess IRQL diagnostic wrapper */
+VOID NTAPI KeDetachProcess(VOID);
+VOID NTAPI KeDetachProcess_irql_checked(VOID)
+{
+    KIRQL before = KeGetCurrentIrql();
+    KeDetachProcess();
+    KIRQL after = KeGetCurrentIrql();
+    if (after > APC_LEVEL) {
+        MmUartPuts("[MM] KeDetachProcess IRQL leak!\r\n");
+        MmUartHex("  before=", before);
+        MmUartHex("  after=", after);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* Track IRQL for ARM64 debugging */
+void MmCheckIrqlAfterCall(const char *label)
+{
+    KIRQL irql = KeGetCurrentIrql();
+    if (irql > APC_LEVEL) {
+        MmUartPuts(label);
+        MmUartHex(" IRQL=", irql);
+    }
+}
+#endif
+
+#ifdef _M_ARM64
+/* ARM64 debugging: check and report IRQL via UART */
+VOID NTAPI MmDbgCheckIrql(PCSTR label)
+{
+    KIRQL irql = KeGetCurrentIrql();
+    /* Always trace — unconditional */
+    MmUartPuts("[IRQL-CHK] ");
+    MmUartPuts(label);
+    MmUartHex(" irql=", irql);
+}
+#endif

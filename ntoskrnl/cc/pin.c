@@ -366,14 +366,19 @@ CcMapData (
         Length = VACB_MAPPING_GRANULARITY - VacbOffset;
     }
 
+    ARM64_UART_TRACE("[CC] CcMapData: AcquireSpinLock\r\n");
     KeAcquireSpinLock(&SharedCacheMap->BcbSpinLock, &OldIrql);
     iBcb = CcpFindBcb(SharedCacheMap, FileOffset, Length, FALSE);
+    ARM64_UART_TRACE("[CC] CcMapData: FindBcb done\r\n");
 
     if (iBcb == NULL)
     {
         KeReleaseSpinLock(&SharedCacheMap->BcbSpinLock, OldIrql);
-
+#ifdef _M_ARM64
+        ARM64_BARRIER();
+#endif
         /* Call internal helper for getting a VACB */
+        ARM64_UART_TRACE("[CC] CcMapData: CcRosGetVacb\r\n");
         Status = CcRosGetVacb(SharedCacheMap, FileOffset->QuadPart, &Vacb);
         if (!NT_SUCCESS(Status))
         {
@@ -381,7 +386,9 @@ CcMapData (
                 SharedCacheMap->FileObject, FileOffset, Length, Flags);
             ExRaiseStatus(Status);
         }
+        ARM64_UART_TRACE("[CC] CcMapData: CcRosGetVacb done\r\n");
 
+        ARM64_UART_TRACE("[CC] CcMapData: GetBcb\r\n");
         iBcb = CcpGetAppropriateBcb(SharedCacheMap, Vacb, FileOffset, Length, 0, FALSE);
         if (iBcb == NULL)
         {
@@ -391,9 +398,11 @@ CcMapData (
             *pBcb = NULL; // If you ever remove this for compat, make sure to review all callers for using an unititialized value
             ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
         }
+        ARM64_UART_TRACE("[CC] CcMapData: GetBcb done\r\n");
     }
     else
     {
+        ARM64_UART_TRACE("[CC] CcMapData: BCB found\r\n");
         ++iBcb->RefCount;
         KeReleaseSpinLock(&SharedCacheMap->BcbSpinLock, OldIrql);
     }
@@ -402,8 +411,10 @@ CcMapData (
     {
         Result = FALSE;
         /* Ensure the pages are resident */
+        ARM64_UART_TRACE("[CC] CcMapData: EnsureVacbResident\r\n");
         Result = CcRosEnsureVacbResident(iBcb->Vacb, BooleanFlagOn(Flags, MAP_WAIT),
                 BooleanFlagOn(Flags, MAP_NO_READ), VacbOffset, Length);
+        ARM64_UART_TRACE("[CC] CcMapData: EnsureVacbResident done\r\n");
     }
     _SEH2_FINALLY
     {
@@ -420,6 +431,7 @@ CcMapData (
     {
         *pBcb = &iBcb->PFCB;
         *pBuffer = (PVOID)((ULONG_PTR)iBcb->Vacb->BaseAddress + VacbOffset);
+        ARM64_UART_TRACE("[CC] CcMapData: returning TRUE\r\n");
     }
 
     CCTRACE(CC_API_DEBUG, "FileObject=%p FileOffset=%p Length=%lu Flags=0x%lx -> TRUE Bcb=%p, Buffer %p\n",

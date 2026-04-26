@@ -208,6 +208,13 @@ void NOTEPAD_LoadSettingsFromRegistry(PWINDOWPLACEMENT pWP)
             break;
     }
 
+#ifdef _M_ARM64
+    /* ARM64: Only FreeSans.ttf is available on the ramdisk.
+     * Override to a face/pitch that the font mapper can match. */
+    _tcscpy(Globals.lfFont.lfFaceName, _T("FreeSans"));
+    Globals.lfFont.lfPitchAndFamily = DEFAULT_PITCH | FF_SWISS;
+#endif
+
     hFont = CreateFontIndirect(&Globals.lfFont);
     SendMessage(Globals.hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
     if (hFont)

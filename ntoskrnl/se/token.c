@@ -12,6 +12,31 @@
 #define NDEBUG
 #include <debug.h>
 
+/* DEBUG: UART trace for crash diagnosis */
+#ifdef _M_ARM64
+#define _TOKI_TRACE(msg) do { \
+    extern volatile PVOID Arm64UartKernelBase; \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) { const char *_m = (msg); while (*_m) *_u = (ULONG)*_m++; } \
+} while(0)
+#define _TOKI_HEX(prefix, val) do { \
+    extern volatile PVOID Arm64UartKernelBase; \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) { \
+        const char *_m = (prefix); while (*_m) *_u = (ULONG)*_m++; \
+        ULONG_PTR _v = (ULONG_PTR)(val); \
+        const char _hex[] = "0123456789ABCDEF"; \
+        *_u = (ULONG)'0'; *_u = (ULONG)'x'; \
+        for (int _i = 60; _i >= 0; _i -= 4) *_u = (ULONG)_hex[(_v >> _i) & 0xF]; \
+        *_u = (ULONG)'\n'; \
+    } \
+} while(0)
+#else
+#define _TOKI_TRACE(msg) ((void)0)
+#define _TOKI_HEX(prefix, val) ((void)0)
+#endif
+
+
 /* GLOBALS ********************************************************************/
 
 POBJECT_TYPE SeTokenObjectType = NULL;
@@ -1666,7 +1691,16 @@ SepInitializeTokenImplementation(VOID)
     ObjectTypeInitializer.ValidAccessMask = TOKEN_ALL_ACCESS;
     ObjectTypeInitializer.UseDefaultObject = TRUE;
     ObjectTypeInitializer.DeleteProcedure = SepDeleteToken;
-    ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &SeTokenObjectType);
+    {
+        NTSTATUS _st;
+        _TOKI_TRACE("[TOKI] before ObCreateObjectType(Token)\n");
+        _TOKI_HEX("[TOKI] OTI.Length=", ObjectTypeInitializer.Length);
+        _TOKI_HEX("[TOKI] OTI.PoolType=", ObjectTypeInitializer.PoolType);
+        _TOKI_HEX("[TOKI] OTI.UseDefaultObject=", ObjectTypeInitializer.UseDefaultObject);
+        _st = ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &SeTokenObjectType);
+        _TOKI_HEX("[TOKI] ObCreateObjectType returned=", _st);
+        _TOKI_HEX("[TOKI] SeTokenObjectType=", SeTokenObjectType);
+    }
 }
 
 /**

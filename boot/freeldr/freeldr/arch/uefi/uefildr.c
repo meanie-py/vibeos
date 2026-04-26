@@ -28,7 +28,7 @@ EfiEntry(
 {
     PCSTR CmdLine = ""; // FIXME: Determine a command-line from UEFI boot options
 
-    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI EntryPoint: Starting freeldr from UEFI");
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI EntryPoint: Starting freeldr from UEFI\r\n");
     GlobalImageHandle = ImageHandle;
     GlobalSystemTable = SystemTable;
 
@@ -39,6 +39,7 @@ EfiEntry(
     DebugInit(BootMgrInfo.DebugString);
 
     MachInit(CmdLine);
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] MachInit done\r\n");
 
     /* UI pre-initialization */
     if (!UiInitialize(FALSE))
@@ -46,6 +47,7 @@ EfiEntry(
         UiMessageBoxCritical("Unable to initialize UI.");
         goto Quit;
     }
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] UI initialized\r\n");
 
     /* Initialize memory manager */
     if (!MmInitializeMemoryManager())
@@ -53,9 +55,11 @@ EfiEntry(
         UiMessageBoxCritical("Unable to initialize memory manager.");
         goto Quit;
     }
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] Memory manager initialized\r\n");
 
     /* Initialize I/O subsystem */
     FsInit();
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] Filesystem initialized\r\n");
 
     /* Initialize the module list */
     if (!PeLdrInitializeModuleList())
@@ -63,15 +67,18 @@ EfiEntry(
         UiMessageBoxCritical("Unable to initialize module list.");
         goto Quit;
     }
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] Module list initialized\r\n");
 
     if (!MachInitializeBootDevices())
     {
         UiMessageBoxCritical("Error when detecting hardware.");
         goto Quit;
     }
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] Boot devices initialized\r\n");
 
     /* 0x32000 is what UEFI defines, but we can go smaller if we want */
     BasicStack = (PVOID)((ULONG_PTR)0x32000 + (ULONG_PTR)MmAllocateMemoryWithType(0x32000, LoaderOsloaderStack));
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"[freeldr] Switching stack...\r\n");
     _changestack();
 
 Quit:
@@ -89,10 +96,13 @@ ExecuteLoaderCleanly(PVOID PreviousStack)
     UefiServiceStack = PreviousStack;
 
     RunLoader();
-    UNREACHABLE;
+
+    /* RunLoader can return if no boot configuration was found */
+    WARN("RunLoader returned, halting\n");
+    Reboot();
 }
 
-#ifndef _M_ARM
+#if !defined(_M_ARM)
 DECLSPEC_NORETURN
 VOID __cdecl Reboot(VOID)
 {

@@ -147,6 +147,9 @@ extern LPTOP_LEVEL_EXCEPTION_FILTER GlobalTopLevelExceptionFilter;
 extern SYSTEM_BASIC_INFORMATION BaseCachedSysInfo;
 
 extern BOOLEAN BaseRunningInServerProcess;
+#ifdef _M_ARM64
+extern BOOLEAN BaseCsrConnectionEstablished;
+#endif
 
 /* FUNCTION PROTOTYPES *******************************************************/
 

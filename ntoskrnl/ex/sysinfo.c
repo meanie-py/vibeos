@@ -1980,12 +1980,17 @@ SSI_DEF(SystemExtendServiceTableInformation)
                                (PVOID)&ModuleObject,
                                &ImageBase);
 
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("MmLoadSystemImage failed: 0x%x\n", Status);
+        return Status;
+    }
 
     /* Get the headers */
     NtHeader = RtlImageNtHeader(ImageBase);
     if (!NtHeader)
     {
+        DPRINT1("RtlImageNtHeader returned NULL\n");
         /* Fail */
         MmUnloadSystemImage(ModuleObject);
         return STATUS_INVALID_IMAGE_FORMAT;

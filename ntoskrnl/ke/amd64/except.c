@@ -667,8 +667,42 @@ KiGeneralProtectionFaultHandler(
         return STATUS_ACCESS_VIOLATION;
     }
 
-    ASSERT(FALSE);
-    return STATUS_UNSUCCESSFUL;
+    /* Check for IN/OUT instructions (I/O port access) */
+    if (Instructions[0] == 0xE4 || Instructions[0] == 0xE5 ||  // IN  imm8
+        Instructions[0] == 0xE6 || Instructions[0] == 0xE7 ||  // OUT imm8
+        Instructions[0] == 0xEC || Instructions[0] == 0xED ||  // IN  DX
+        Instructions[0] == 0xEE || Instructions[0] == 0xEF)    // OUT DX
+    {
+        /* I/O port access fault */
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    /* Unrecognized kernel-mode GPF — log and dispatch as access violation */
+    DPRINT1("KiGeneralProtectionFaultHandler: Unhandled kernel GPF at RIP=%p "
+            "Instr: %02x %02x %02x %02x\n",
+            (PVOID)TrapFrame->Rip,
+            Instructions[0], Instructions[1], Instructions[2], Instructions[3]);
+    /* DBG: also write to debugcon (port 0xE9) for QEMU tracing */
+    {
+        static const char hex[] = "0123456789ABCDEF";
+        char buf[80];
+        ULONG_PTR rip = TrapFrame->Rip;
+        int i;
+        char *p = buf;
+        *p++ = '['; *p++ = 'G'; *p++ = 'P'; *p++ = 'F'; *p++ = ']';
+        for (i = 60; i >= 0; i -= 4)
+            *p++ = hex[(rip >> i) & 0xF];
+        *p++ = ' ';
+        for (i = 0; i < 4; i++) {
+            *p++ = hex[(Instructions[i] >> 4) & 0xF];
+            *p++ = hex[Instructions[i] & 0xF];
+            *p++ = ' ';
+        }
+        *p++ = '\n';
+        for (char *c = buf; c < p; c++)
+            __outbyte(0xE9, *c);
+    }
+    return STATUS_ACCESS_VIOLATION;
 }
 
 NTSTATUS

@@ -208,7 +208,6 @@ ByteZero:
     pop edi
     ret 8
 
-
 _RtlMoveMemory@12:
 	push ebp
 	mov ebp, esp

@@ -935,7 +935,7 @@ co_IntSetForegroundAndFocusWindow(
 
    if (Wnd) ASSERT_REFS_CO(Wnd);
 
-   TRACE("SetForegroundAndFocusWindow(%x, %s)\n", hWnd, (MouseActivate ? "TRUE" : "FALSE"));
+   TRACE("co_IntSetForegroundAndFocusWindow hwnd=%p mouse=%d\n", hWnd, MouseActivate);
 
    PrevForegroundQueue = IntGetFocusMessageQueue(); // Use this active desktop.
    pti = PsGetCurrentThreadWin32Thread();

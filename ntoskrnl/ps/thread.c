@@ -38,6 +38,8 @@ PspUserThreadStartup(IN PKSTART_ROUTINE StartRoutine,
     KeLowerIrql(PASSIVE_LEVEL);
     Thread = PsGetCurrentThread();
 
+    ARM64_UART_TRACE("[PS] PspUserThreadStartup enter\r\n");
+
     /* Check if the thread is dead */
     if (Thread->DeadThread)
     {
@@ -47,16 +49,21 @@ PspUserThreadStartup(IN PKSTART_ROUTINE StartRoutine,
     else
     {
         /* Get the Locale ID and save Preferred Proc */
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: NtCurrentTeb\r\n");
         Teb =  NtCurrentTeb();
+        ARM64_UART_TRACE_HEX("[PS] PspUserThreadStartup: Teb=", (ULONG_PTR)Teb);
         Teb->CurrentLocale = MmGetSessionLocaleId();
         Teb->IdealProcessor = Thread->Tcb.IdealProcessor;
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: Teb written\r\n");
     }
 
     /* Check if this is a dead thread, or if we're hiding */
     if (!(Thread->DeadThread) && !(Thread->HideFromDebugger))
     {
         /* We're not, so notify the debugger */
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: DbgkCreateThread\r\n");
         DbgkCreateThread(Thread, StartContext);
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: DbgkCreateThread done\r\n");
     }
 
     /* Make sure we're not already dead */
@@ -72,15 +79,18 @@ PspUserThreadStartup(IN PKSTART_ROUTINE StartRoutine,
         KeRaiseIrql(APC_LEVEL, &OldIrql);
 
         /* Queue the User APC */
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: KiInitializeUserApc\r\n");
         KiInitializeUserApc(KeGetExceptionFrame(&Thread->Tcb),
                             KeGetTrapFrame(&Thread->Tcb),
                             PspSystemDllEntryPoint,
                             NULL,
                             PspSystemDllBase,
                             NULL);
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: KiInitializeUserApc done\r\n");
 
         /* Lower it back to passive */
         KeLowerIrql(PASSIVE_LEVEL);
+        ARM64_UART_TRACE("[PS] PspUserThreadStartup: returning\r\n");
     }
     else
     {
@@ -308,14 +318,17 @@ PspCreateThread(OUT PHANDLE ThreadHandle,
     if (ThreadContext)
     {
         /* User-mode Thread, create Teb */
+        ARM64_UART_TRACE("[PS] PspCreateThread: MmCreateTeb\r\n");
         Status = MmCreateTeb(Process, &Thread->Cid, InitialTeb, &TebBase);
         if (!NT_SUCCESS(Status))
         {
+            ARM64_UART_TRACE("[PS] PspCreateThread: MmCreateTeb FAILED\r\n");
             /* Failed to create the TEB. Release rundown and dereference */
             ExReleaseRundownProtection(&Process->RundownProtect);
             ObDereferenceObject(Thread);
             return Status;
         }
+        ARM64_UART_TRACE("[PS] PspCreateThread: MmCreateTeb OK\r\n");
 
         /* Set the Start Addresses from the untrusted ThreadContext */
         _SEH2_TRY
@@ -332,6 +345,7 @@ PspCreateThread(OUT PHANDLE ThreadHandle,
         /* Let the kernel intialize the Thread */
         if (NT_SUCCESS(Status))
         {
+            ARM64_UART_TRACE("[PS] PspCreateThread: KeInitThread\r\n");
             Status = KeInitThread(&Thread->Tcb,
                                   NULL,
                                   PspUserThreadStartup,
@@ -340,6 +354,7 @@ PspCreateThread(OUT PHANDLE ThreadHandle,
                                   ThreadContext,
                                   TebBase,
                                   &Process->Pcb);
+            ARM64_UART_TRACE("[PS] PspCreateThread: KeInitThread done\r\n");
         }
     }
     else
@@ -396,7 +411,9 @@ PspCreateThread(OUT PHANDLE ThreadHandle,
     Process->ActiveThreads++;
 
     /* Start the thread */
+    ARM64_UART_TRACE("[PS] PspCreateThread: KeStartThread\r\n");
     KeStartThread(&Thread->Tcb);
+    ARM64_UART_TRACE("[PS] PspCreateThread: KeStartThread done\r\n");
 
     /* Release the process lock */
     ExReleasePushLockExclusive(&Process->ProcessLock);
@@ -410,6 +427,7 @@ PspCreateThread(OUT PHANDLE ThreadHandle,
     //WmiTraceThread(Thread, InitialTeb, TRUE);
 
     /* Notify Thread Creation */
+    ARM64_UART_TRACE("[PS] PspCreateThread: PspRunCreateThreadNotify\r\n");
     PspRunCreateThreadNotifyRoutines(Thread, TRUE);
 
     /* Reference ourselves as a keep-alive */

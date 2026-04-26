@@ -111,4 +111,10 @@ if(NOT MSVC)
     target_link_libraries(msvcrtex INTERFACE oldnames)
 endif()
 
+# For clang/llvm-mingw, link compiler-rt builtins for i386 64-bit division
+# (__divdi3, __udivdi3, __umoddi3, __moddi3) and other builtins
+if(USE_LLVM_MINGW AND TARGET libclang_rt_builtins)
+    target_link_libraries(msvcrtex INTERFACE libclang_rt_builtins)
+endif()
+
 add_dependencies(msvcrtex psdk asm)

@@ -75,8 +75,6 @@ ENDM
 #define KI_DONT_SAVE_SEGS       HEX(0100)
 
 MACRO(KiEnterTrap, Flags)
-    LOCAL not_v86_trap
-    LOCAL set_sane_segs
 
     /* Check what kind of trap frame this trap requires */
     if (Flags AND KI_FAST_SYSTEM_CALL)
@@ -155,7 +153,7 @@ MACRO(KiEnterTrap, Flags)
 
         /* Check for V86 mode */
         test byte ptr [esp + KTRAP_FRAME_EFLAGS + 2], (EFLAGS_V86_MASK / HEX(10000))
-        jz not_v86_trap
+        jz .Lnot_v86_trap\@
 
             /* Restore V8086 segments into Protected Mode segments */
             mov eax, [esp + KTRAP_FRAME_V86_DS]
@@ -166,9 +164,9 @@ MACRO(KiEnterTrap, Flags)
             mov ecx, [esp + KTRAP_FRAME_V86_GS]
             mov [esp + KTRAP_FRAME_FS], eax
             mov [esp + KTRAP_FRAME_GS], ecx
-            jmp set_sane_segs
+            jmp .Lset_sane_segs\@
 
-        not_v86_trap:
+        .Lnot_v86_trap\@:
 
             /* Save segment selectors */
             mov eax, ds
@@ -182,7 +180,7 @@ MACRO(KiEnterTrap, Flags)
 
     endif
 
-set_sane_segs:
+.Lset_sane_segs\@:
     /* Load correct data segments */
     mov ax, KGDT_R3_DATA OR RPL_MASK
     mov ds, ax
@@ -262,9 +260,9 @@ MACRO(KiCallHandler, Handler)
 ENDM
 
 MACRO(TRAP_ENTRY, Trap, Flags)
-    EXTERN @&Trap&Handler@4 :PROC
-    PUBLIC _&Trap
-    .PROC _&Trap
+    EXTERN @\Trap\()Handler@4 :PROC
+    PUBLIC _\Trap
+    .PROC _\Trap
         /* Generate proper debugging symbols */
         FPO 0, 0, 0, 0, 1, FRAME_TRAP
 
@@ -272,26 +270,26 @@ MACRO(TRAP_ENTRY, Trap, Flags)
         KiEnterTrap Flags
 
         /* Call the C handler */
-        KiCallHandler @&Trap&Handler@4
+        KiCallHandler @\Trap\()Handler@4
     .ENDP
 ENDM
 
 #define KI_NMI  HEX(0001)
 
 MACRO(TASK_ENTRY, Trap, Flags)
-    EXTERN _&Trap&Handler :PROC
-    PUBLIC _&Trap
-    .PROC _&Trap
+    EXTERN _\Trap\()Handler :PROC
+    PUBLIC _\Trap
+    .PROC _\Trap
         /* Generate proper debugging symbols */
         FPO 0, 0, 0, 0, 0, FRAME_TSS
 
         /* Call the C handler */
-        call _&Trap&Handler
+        call _\Trap\()Handler
 
         if (Flags AND KI_NMI)
             /* Return from NMI: return with iret and handle NMI recursion */
             iretd
-            jmp _&Trap
+            jmp _\Trap
         endif
 
     .ENDP
@@ -311,11 +309,9 @@ ENDM
 #define KI_RESTORE_VOLATILES  (KI_RESTORE_EAX OR KI_RESTORE_ECX_EDX)
 
 MACRO(KiTrapExitStub, Name, Flags)
-    LOCAL ret8_instruction
-    LOCAL not_nested_int
 
-PUBLIC @&Name&@4
-@&Name&@4:
+PUBLIC @\Name\()@4
+@\Name\()@4:
 
     if (Flags AND KI_EXIT_RET8) OR (Flags AND KI_EXIT_IRET)
 
@@ -409,15 +405,17 @@ PUBLIC @&Name&@4
             /* Check if we return from a nested interrupt, i.e. an interrupt
                that occurred in the ret8 return path between restoring
                EFLAGS and returning with the ret instruction. */
-            cmp dword ptr [esp], offset ret8_instruction
-            jne not_nested_int
+            .att_syntax prefix
+            cmpl $97f, (%esp)
+            .intel_syntax noprefix
+            jne .Lnot_nested_int\@
 
             /* This is a nested interrupt, so we have 2 IRET frames.
                Skip the first, and go directly to the previous return address.
                Do not pass Go. Do not collect $200 */
             add esp, 12
 
-not_nested_int:
+.Lnot_nested_int\@:
             /* We are at the IRET frame, so push EFLAGS first */
             push dword ptr [esp + 8]
 
@@ -448,7 +446,7 @@ not_nested_int:
     elseif (Flags AND KI_EXIT_RET8)
 
         /* Return to kernel mode with a ret 8 */
-ret8_instruction:
+97:
         ret 8
 
     elseif (Flags AND KI_EXIT_RET)

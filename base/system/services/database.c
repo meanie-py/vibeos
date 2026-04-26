@@ -1973,16 +1973,12 @@ ScmLoadService(PSERVICE Service,
     LPCWSTR lpLogStrings[2];
     WCHAR szLogBuffer[80];
 
-    DPRINT("ScmLoadService() called\n");
-    DPRINT("Start Service %p (%S)\n", Service, Service->lpServiceName);
+    DbgPrint("[SERVICES] ScmLoadService(%S) type=%lu\n", Service->lpServiceName, Service->Status.dwServiceType);
 
     if (Service->Status.dwCurrentState != SERVICE_STOPPED)
     {
-        DPRINT("Service %S is already running\n", Service->lpServiceName);
         return ERROR_SERVICE_ALREADY_RUNNING;
     }
-
-    DPRINT("Service->Type: %lu\n", Service->Status.dwServiceType);
 
     if (Service->Status.dwServiceType & SERVICE_DRIVER)
     {
@@ -1992,9 +1988,12 @@ ScmLoadService(PSERVICE Service,
     else // if (Service->Status.dwServiceType & (SERVICE_WIN32 | SERVICE_INTERACTIVE_PROCESS))
     {
         /* Start user-mode service */
+        DbgPrint("[SERVICES] CreateOrReferenceServiceImage(%S)\n", Service->lpServiceName);
         dwError = ScmCreateOrReferenceServiceImage(Service);
+        DbgPrint("[SERVICES] CreateOrReferenceServiceImage(%S) = %lu\n", Service->lpServiceName, dwError);
         if (dwError == ERROR_SUCCESS)
         {
+            DbgPrint("[SERVICES] ScmStartUserModeService(%S)\n", Service->lpServiceName);
             dwError = ScmStartUserModeService(Service, argc, argv);
             if (dwError == ERROR_SUCCESS)
             {
@@ -2014,7 +2013,7 @@ ScmLoadService(PSERVICE Service,
         }
     }
 
-    DPRINT("ScmLoadService() done (Error %lu)\n", dwError);
+    DbgPrint("[SERVICES] ScmLoadService(%S) done: %lu\n", Service->lpServiceName, dwError);
 
     if (dwError == ERROR_SUCCESS)
     {
@@ -2023,8 +2022,11 @@ ScmLoadService(PSERVICE Service,
             Group->ServicesRunning = TRUE;
         }
 
+        DbgPrint("[SERVICES] ScmLoadService(%S) logging success event\n", Service->lpServiceName);
+
         /* Log a successful service start */
         LoadStringW(GetModuleHandle(NULL), IDS_SERVICE_START, szLogBuffer, 80);
+        DbgPrint("[SERVICES] ScmLoadService(%S) LoadStringW done\n", Service->lpServiceName);
         lpLogStrings[0] = Service->lpDisplayName;
         lpLogStrings[1] = szLogBuffer;
 
@@ -2032,6 +2034,7 @@ ScmLoadService(PSERVICE Service,
                     EVENTLOG_INFORMATION_TYPE,
                     2,
                     lpLogStrings);
+        DbgPrint("[SERVICES] ScmLoadService(%S) event logged OK\n", Service->lpServiceName);
     }
     else
     {
@@ -2159,6 +2162,8 @@ ScmAutoStartServices(VOID)
     if (dwError != ERROR_SUCCESS)
         SafeBootEnabled = 0;
 
+    DbgPrint("[SERVICES] ScmAutoStartServices entered, SafeBoot=%lu\n", SafeBootEnabled);
+
     /* Acquire the service control critical section, to synchronize starts */
     EnterCriticalSection(&ControlServiceCriticalSection);
 
@@ -2231,13 +2236,13 @@ ScmAutoStartServices(VOID)
         ServiceEntry = ServiceEntry->Flink;
     }
 
+    DbgPrint("[SERVICES] Starting grouped services\n");
+
     /* Start all services which are members of an existing group */
     GroupEntry = GroupListHead.Flink;
     while (GroupEntry != &GroupListHead)
     {
         CurrentGroup = CONTAINING_RECORD(GroupEntry, SERVICE_GROUP, GroupListEntry);
-
-        DPRINT("Group '%S'\n", CurrentGroup->lpGroupName);
 
         /* Start all services witch have a valid tag */
         for (i = 0; i < CurrentGroup->TagCount; i++)
@@ -2253,6 +2258,7 @@ ScmAutoStartServices(VOID)
                     (CurrentService->dwTag == CurrentGroup->TagArray[i]))
                 {
                     CurrentService->ServiceVisited = TRUE;
+                    DbgPrint("[SERVICES] Loading(tag): %S\n", CurrentService->lpServiceName);
                     ScmLoadService(CurrentService, 0, NULL);
                 }
 
@@ -2271,6 +2277,7 @@ ScmAutoStartServices(VOID)
                 (CurrentService->ServiceVisited == FALSE))
             {
                 CurrentService->ServiceVisited = TRUE;
+                DbgPrint("[SERVICES] Loading(grp): %S\n", CurrentService->lpServiceName);
                 ScmLoadService(CurrentService, 0, NULL);
             }
 
@@ -2279,6 +2286,8 @@ ScmAutoStartServices(VOID)
 
         GroupEntry = GroupEntry->Flink;
     }
+
+    DbgPrint("[SERVICES] Starting non-existing-group services\n");
 
     /* Start all services which are members of any non-existing group */
     ServiceEntry = ServiceListHead.Flink;
@@ -2291,11 +2300,14 @@ ScmAutoStartServices(VOID)
             (CurrentService->ServiceVisited == FALSE))
         {
             CurrentService->ServiceVisited = TRUE;
+            DbgPrint("[SERVICES] Loading(nogrp): %S\n", CurrentService->lpServiceName);
             ScmLoadService(CurrentService, 0, NULL);
         }
 
         ServiceEntry = ServiceEntry->Flink;
     }
+
+    DbgPrint("[SERVICES] Starting ungrouped services\n");
 
     /* Start all services which are not a member of any group */
     ServiceEntry = ServiceListHead.Flink;
@@ -2308,6 +2320,7 @@ ScmAutoStartServices(VOID)
             (CurrentService->ServiceVisited == FALSE))
         {
             CurrentService->ServiceVisited = TRUE;
+            DbgPrint("[SERVICES] Loading(none): %S\n", CurrentService->lpServiceName);
             ScmLoadService(CurrentService, 0, NULL);
         }
 
@@ -2322,6 +2335,8 @@ ScmAutoStartServices(VOID)
         CurrentService->ServiceVisited = FALSE;
         ServiceEntry = ServiceEntry->Flink;
     }
+
+    DbgPrint("[SERVICES] ScmAutoStartServices completed\n");
 
     /* Release the critical section */
     LeaveCriticalSection(&ControlServiceCriticalSection);

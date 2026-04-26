@@ -18,12 +18,62 @@
 
 /* PRIVATE FUNCTIONS ********************************************************/
 
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(__NTDLL__)
+/*
+ * Direct COM1 serial output for kernel-mode DbgPrint. Bypasses INT 0x2D
+ * entirely. On amd64 with Rust KE the int 0x2D → KdpTrap path fails to
+ * produce serial output, so we write directly to the COM1 UART.
+ *
+ * The SEH_TRY/EXCEPT wrapper is dead code with DUMMY_PSEH, but in kernel
+ * mode the IN/OUT instructions are always safe (ring 0).
+ */
+static __inline UCHAR _DbgPortRead(USHORT Port)
+{
+    UCHAR Value;
+    __asm__ __volatile__("inb %w1, %0" : "=a"(Value) : "Nd"(Port));
+    return Value;
+}
+
+static __inline VOID _DbgPortWrite(USHORT Port, UCHAR Value)
+{
+    __asm__ __volatile__("outb %b0, %w1" : : "a"(Value), "Nd"(Port));
+}
+#endif
+
+__attribute__((noinline))
 ULONG
 NTAPI
 DebugPrint(IN PSTRING DebugString,
            IN ULONG ComponentId,
            IN ULONG Level)
 {
+#if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(__NTDLL__)
+    /* Direct COM1 output — bypasses INT 0x2D entirely.
+     * Only safe in kernel mode (ring 0). The RTL library is shared between
+     * ntoskrnl and ntdll, so check CS RPL at runtime to avoid #GP in user mode. */
+    {
+        USHORT cs;
+#ifdef _M_IX86
+        __asm__ __volatile__("movw %%cs, %0" : "=r"(cs));
+#else
+        __asm__ __volatile__("movw %%cs, %0" : "=r"(cs));
+#endif
+        if ((cs & 3) == 0)
+        {
+            USHORT i;
+            UCHAR lcr = _DbgPortRead(0x3FB);
+            if (lcr & 0x80)
+                _DbgPortWrite(0x3FB, lcr & 0x7F);
+            for (i = 0; i < DebugString->Length; i++)
+            {
+                while (!(_DbgPortRead(0x3FD) & 0x20))
+                    ;
+                _DbgPortWrite(0x3F8, (UCHAR)DebugString->Buffer[i]);
+            }
+            return STATUS_SUCCESS;
+        }
+    }
+#endif
     /* Call the Debug Service */
     return DebugService(BREAKPOINT_PRINT,
                         DebugString->Buffer,
@@ -60,7 +110,9 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
     STRING DebugString;
     CHAR Buffer[512];
     SIZE_T Length, PrefixLength;
+#ifndef _USE_DUMMY_PSEH
     EXCEPTION_RECORD ExceptionRecord;
+#endif
 
     /* Check if we should print it or not */
     if ((ComponentId != MAXULONG) &&
@@ -119,8 +171,11 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
     DebugString.Buffer = Buffer;
 
     /* First, let the debugger know as well */
+#ifndef _USE_DUMMY_PSEH
     if (RtlpCheckForActiveDebugger())
     {
+        BOOLEAN Handled = TRUE;
+
         /* Fill out an exception record */
         ExceptionRecord.ExceptionCode = DBG_PRINTEXCEPTION_C;
         ExceptionRecord.ExceptionRecord = NULL;
@@ -129,13 +184,28 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
         ExceptionRecord.ExceptionInformation[0] = DebugString.Length + 1;
         ExceptionRecord.ExceptionInformation[1] = (ULONG_PTR)DebugString.Buffer;
 
-        /* Raise the exception */
-        RtlRaiseException(&ExceptionRecord);
+        /* Raise the exception. Wrap in SEH to handle the case where no
+         * debugger catches it (e.g., kernel debugger only, no user-mode
+         * debugger). Without this, the unhandled exception kills the process. */
+        _SEH2_TRY
+        {
+            RtlRaiseException(&ExceptionRecord);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            /* No debugger caught it; fall through to DebugPrint */
+            Handled = FALSE;
+        }
+        _SEH2_END;
 
-        /* In user-mode, clear the InDbgPrint Flag */
-        RtlpClearInDbgPrint();
-        return STATUS_SUCCESS;
+        if (Handled)
+        {
+            /* In user-mode, clear the InDbgPrint Flag */
+            RtlpClearInDbgPrint();
+            return STATUS_SUCCESS;
+        }
     }
+#endif /* !_USE_DUMMY_PSEH */
 
     /* Call the Debug Print routine */
     Status = DebugPrint(&DebugString, ComponentId, Level);

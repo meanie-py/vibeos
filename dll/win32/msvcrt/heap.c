@@ -68,11 +68,16 @@ static void* msvcrt_heap_alloc(DWORD flags, size_t size)
         return memblock;
     }
 
+    /* Lazy init if DllMain was never called (e.g. DLL mapped but not initialized) */
+    if(!heap)
+        heap = GetProcessHeap();
+
     return HeapAlloc(heap, flags, size);
 }
 
 static void* msvcrt_heap_realloc(DWORD flags, void *ptr, size_t size)
 {
+    if(!heap) heap = GetProcessHeap();
     if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
     {
         /* TODO: move data to normal heap if it exceeds sbh_threshold limit */
@@ -105,6 +110,7 @@ static void* msvcrt_heap_realloc(DWORD flags, void *ptr, size_t size)
 
 static BOOL msvcrt_heap_free(void *ptr)
 {
+    if(!heap) heap = GetProcessHeap();
     if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
     {
         void **saved = SAVED_PTR(ptr);
@@ -116,6 +122,7 @@ static BOOL msvcrt_heap_free(void *ptr)
 
 static size_t msvcrt_heap_size(void *ptr)
 {
+    if(!heap) heap = GetProcessHeap();
     if(sb_heap && ptr && !HeapValidate(heap, 0, ptr))
     {
         void **saved = SAVED_PTR(ptr);

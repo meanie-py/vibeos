@@ -19,15 +19,6 @@ IntCreateDICW(
 
     HANDLE hspool = NULL;
 
-    if ( !ghSpooler && !LoadTheSpoolerDrv())
-    {
-        DPRINT1("WinSpooler.Drv Did not load!\n");
-    }
-    else
-    {
-        DPRINT("WinSpooler.Drv Loaded! hMod -> 0x%p\n", ghSpooler);
-    }
-
     if ((!lpwszDevice) && (!lpwszDriver))
     {
         Default = TRUE;  // Ask Win32k to set Default device.
@@ -56,6 +47,13 @@ IntCreateDICW(
     // Handle Print device or something else.
     if (!Display)
     {
+        /* Only load the spooler for non-display DCs.
+         * On LiveCD, LoadLibraryW("WINSPOOL.DRV") inside semLocal CS
+         * blocks on CD I/O and triggers deadlock detection. */
+        if ( !ghSpooler && !LoadTheSpoolerDrv())
+        {
+            DPRINT1("WinSpooler.Drv Did not load!\n");
+        }
         // WIP - GDI Print Commit coming in soon.
         DPRINT1("Not a DISPLAY device! %wZ\n", &Device);
         return NULL; // Return NULL until then.....

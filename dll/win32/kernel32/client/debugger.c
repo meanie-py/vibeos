@@ -692,6 +692,15 @@ VOID
 WINAPI
 OutputDebugStringA(IN LPCSTR _OutputString)
 {
+    /* On ARM64 (DUMMY_PSEH) and amd64 (broken unwind tables for SEH around
+     * RaiseException), the _SEH2_EXCEPT below doesn't catch DBG_PRINTEXCEPTION_C,
+     * causing the unhandled exception to reach csrss which kills the process.
+     * Bypass: if no user-mode debugger is attached, go straight to DbgPrint. */
+    if (!NtCurrentPeb()->BeingDebugged)
+    {
+        DbgPrint("%s", _OutputString);
+        return;
+    }
     _SEH2_TRY
     {
         ULONG_PTR a_nArgs[2];

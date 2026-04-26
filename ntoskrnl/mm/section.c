@@ -89,6 +89,9 @@ MiGrabDataSection(PSECTION_OBJECT_POINTERS SectionObjectPointer)
 {
     KIRQL OldIrql = MiAcquirePfnLock();
     PMM_SECTION_SEGMENT Segment = NULL;
+#ifdef _M_ARM64
+    ULONG GrabSpinCount = 0;
+#endif
 
     while (TRUE)
     {
@@ -98,6 +101,14 @@ MiGrabDataSection(PSECTION_OBJECT_POINTERS SectionObjectPointer)
 
         if (Segment->SegFlags & (MM_SEGMENT_INCREATE | MM_SEGMENT_INDELETE))
         {
+#ifdef _M_ARM64
+            if ((GrabSpinCount++ % 1000) == 0)
+            {
+                ARM64_UART_TRACE("[MM] MiGrabDataSection: INCREATE/INDELETE spin\r\n");
+                ARM64_UART_TRACE_HEX("[MM]   SegFlags=", Segment->SegFlags);
+                ARM64_UART_TRACE_HEX("[MM]   SpinCount=", GrabSpinCount);
+            }
+#endif
             MiReleasePfnLock(OldIrql);
             KeDelayExecutionThread(KernelMode, FALSE, &TinyTime);
             OldIrql = MiAcquirePfnLock();
@@ -1238,17 +1249,25 @@ MmMakeSegmentResident(
         if (ChunkEnd > RangeEnd)
             ChunkEnd = RangeEnd;
 
+        ARM64_UART_TRACE("[MM] MakeSegResident: LockSegment\r\n");
         MmLockSectionSegment(Segment);
+#ifdef _M_ARM64
+        ARM64_BARRIER();
+#endif
+        ARM64_UART_TRACE("[MM] MakeSegResident: scanning pages\r\n");
         for (LONGLONG ChunkOffset = RangeStart; ChunkOffset < ChunkEnd; ChunkOffset += PAGE_SIZE)
         {
             LARGE_INTEGER CurrentOffset;
 
             CurrentOffset.QuadPart = ChunkOffset;
+            ARM64_UART_TRACE("[MM] GetPageEntry\r\n");
             ULONG_PTR Entry = MmGetPageEntrySectionSegment(Segment, &CurrentOffset);
+            ARM64_UART_TRACE("[MM] GetPageEntry done\r\n");
 
             /* Let any pending read proceed */
             while (MM_IS_WAIT_PTE(Entry))
             {
+                ARM64_UART_TRACE("[MM] WAIT_PTE spinning\r\n");
                 MmUnlockSectionSegment(Segment);
 
                 KeDelayExecutionThread(KernelMode, FALSE, &TinyTime);
@@ -1270,6 +1289,7 @@ MmMakeSegmentResident(
             ToReadPageBits |= 1UL << ((ChunkOffset - RangeStart) >> PAGE_SHIFT);
 
             /* Put a wait entry here */
+            ARM64_UART_TRACE("[MM] SetPageEntry(WAIT)\r\n");
             Status = MmSetPageEntrySectionSegment(Segment, &CurrentOffset, MAKE_SWAP_SSE(MM_WAIT_ENTRY));
             if (!NT_SUCCESS(Status))
             {
@@ -1291,14 +1311,16 @@ MmMakeSegmentResident(
             }
             ASSERT(MM_IS_WAIT_PTE(MmGetPageEntrySectionSegment(Segment, &CurrentOffset)));
         }
+        ARM64_UART_TRACE("[MM] UnlockSeg after scan\r\n");
         MmUnlockSectionSegment(Segment);
 
         if (ToReadPageBits == 0)
         {
+            ARM64_UART_TRACE("[MM] No pages to read\r\n");
             /* Nothing to do for this chunk */
             continue;
         }
-
+        ARM64_UART_TRACE("[MM] Reading pages...\r\n");
         /* Now perform the actual read */
         LONGLONG ChunkOffset = RangeStart;
         while (ChunkOffset < ChunkEnd)
@@ -1327,6 +1349,7 @@ MmMakeSegmentResident(
             ASSERT(ReadLength != 0);
 
             /* Allocate a MDL */
+            ARM64_UART_TRACE("[MM] IoAllocateMdl\r\n");
             PMDL Mdl = IoAllocateMdl(NULL, ReadLength, FALSE, FALSE, NULL);
             if (!Mdl)
             {
@@ -1349,6 +1372,7 @@ MmMakeSegmentResident(
             }
 
             /* Get our pages */
+            ARM64_UART_TRACE("[MM] MdlOK, alloc pages\r\n");
             PPFN_NUMBER Pages = MmGetMdlPfnArray(Mdl);
             RtlZeroMemory(Pages, BYTES_TO_PAGES(ReadLength) * sizeof(PFN_NUMBER));
             for (UINT i = 0; i < BYTES_TO_PAGES(ReadLength); i++)
@@ -1380,6 +1404,7 @@ MmMakeSegmentResident(
                 Mdl->Size = (FileOffset.QuadPart + ReadLength) - ValidDataLength->QuadPart;
             }
 
+            ARM64_UART_TRACE("[MM] IoPageRead start\r\n");
             KEVENT Event;
             KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
@@ -1389,6 +1414,11 @@ MmMakeSegmentResident(
 
             IO_STATUS_BLOCK Iosb;
             Status = IoPageRead(FileObject, Mdl, &FileOffset, &Event, &Iosb);
+            if (Status == STATUS_PENDING) {
+                ARM64_UART_TRACE("[MM] IoPageRead PENDING, waiting...\r\n");
+            } else {
+                ARM64_UART_TRACE("[MM] IoPageRead done (not pending)\r\n");
+            }
             if (Status == STATUS_PENDING)
             {
                 KeWaitForSingleObject(&Event, WrPageIn, KernelMode, FALSE, NULL);
@@ -2053,6 +2083,15 @@ MmAccessFaultSectionView(PMMSUPPORT AddressSpace,
     Unmapped = MmDeleteVirtualMapping(Process, PAddress, NULL, &UnmappedPage);
     if (!Unmapped || (UnmappedPage != OldPage))
     {
+#ifdef _M_AMD64
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'C');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'O');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'W');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '1');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+#endif
         /* Uh , we had a page just before, but suddenly it changes. Someone corrupted us. */
         KeBugCheckEx(MEMORY_MANAGEMENT,
                     (ULONG_PTR)Process,
@@ -2071,6 +2110,15 @@ MmAccessFaultSectionView(PMMSUPPORT AddressSpace,
      */
     if (!NT_SUCCESS(MmCreateVirtualMapping(Process, PAddress, NewProtect, NewPage)))
     {
+#ifdef _M_AMD64
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'C');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'O');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'W');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '2');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+#endif
         DPRINT1("MmCreateVirtualMapping failed, unable to create virtual mapping, not out of memory\n");
         KeBugCheck(MEMORY_MANAGEMENT);
     }
@@ -2688,7 +2736,9 @@ ExeFmtpReadFile(IN PVOID File,
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    ARM64_UART_TRACE("[MM] ExeFmtpReadFile: MiSimpleRead\r\n");
     Status = MiSimpleRead(FileObject, &FileOffset, Buffer, BufferSize, TRUE, &Iosb);
+    ARM64_UART_TRACE("[MM] ExeFmtpReadFile: MiSimpleRead done\r\n");
 
     UsedSize = (ULONG)Iosb.Information;
 
@@ -3306,9 +3356,13 @@ grab_image_section_object:
         MiReleasePfnLock(OldIrql);
 
         /* Purge the cache */
+        ARM64_UART_TRACE("[MM] CreateImageSection: CcFlushCache\r\n");
         CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, NULL);
 
+        ARM64_UART_TRACE("[MM] CreateImageSection: ExeFmtpCreateImageSection\r\n");
         StatusExeFmt = ExeFmtpCreateImageSection(FileObject, ImageSectionObject);
+        ARM64_UART_TRACE("[MM] CreateImageSection: ExeFmtpCreateImageSection done\r\n");
+        ARM64_UART_TRACE_HEX("[MM]   StatusExeFmt=", (ULONG_PTR)StatusExeFmt);
 
         if (!NT_SUCCESS(StatusExeFmt))
         {
@@ -3390,6 +3444,7 @@ grab_image_section_object:
     *SectionObject = Section;
     ASSERT(ImageSectionObject->RefCount > 0);
 
+    ARM64_UART_TRACE("[MM] CreateImageSection: returning\r\n");
     return Status;
 }
 
@@ -4683,6 +4738,8 @@ MmCreateSection (OUT PVOID  * Section,
     BOOLEAN FileLock = FALSE;
     BOOLEAN HaveFileObject = FALSE;
 
+    DbgPrint("MmCreateSection: ENTER alloc=0x%lx fh=%p fo=%p\n", AllocationAttributes, FileHandle, FileObject);
+
     // FIXME: Implement support for large pages
     if (AllocationAttributes & SEC_LARGE_PAGES)
     {
@@ -4737,12 +4794,14 @@ MmCreateSection (OUT PVOID  * Section,
         else
         {
             /* Reference the file handle to get the object */
+            DbgPrint("MmCreateSection: ObReferenceObjectByHandle(fh=%p)\n", FileHandle);
             Status = ObReferenceObjectByHandle(FileHandle,
                                                MmMakeFileAccess[Protection],
                                                IoFileObjectType,
                                                ExGetPreviousMode(),
                                                (PVOID*)&FileObject,
                                                NULL);
+            DbgPrint("MmCreateSection: ObRefByHandle returned 0x%lx fo=%p\n", Status, FileObject);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT1("Failed to get a handle to the FO: %lx\n", Status);
@@ -4750,6 +4809,7 @@ MmCreateSection (OUT PVOID  * Section,
             }
 
             /* Lock the file */
+            DbgPrint("MmCreateSection: FsRtlAcquireToCreateMappedSection\n");
             Status = FsRtlAcquireToCreateMappedSection(FileObject, SectionPageProtection);
             if (!NT_SUCCESS(Status))
             {
@@ -4757,6 +4817,7 @@ MmCreateSection (OUT PVOID  * Section,
                 return Status;
             }
 
+            DbgPrint("MmCreateSection: FsRtlAcquire returned 0x%lx\n", Status);
             FileLock = TRUE;
 
             /* Deny access if there are writes on the file */
@@ -4805,6 +4866,7 @@ MmCreateSection (OUT PVOID  * Section,
 #ifndef NEWCC
     if (!(AllocationAttributes & SEC_IMAGE))
     {
+        DbgPrint("MmCreateSection: calling MmCreateDataFileSection\n");
         Status =  MmCreateDataFileSection(SectionObject,
                                           DesiredAccess,
                                           ObjectAttributes,
@@ -5004,14 +5066,20 @@ MmIsDataSectionResident(
     if (!NT_SUCCESS(RtlLongLongAdd(RangeStart.QuadPart, Length, &RangeEnd.QuadPart)))
         return FALSE;
 
+    ARM64_UART_TRACE("[MM] IsDataSectionResident: grabbing\r\n");
     Segment = MiGrabDataSection(SectionObjectPointer);
     if (!Segment)
+    {
+        ARM64_UART_TRACE("[MM] IsDataSectionResident: no segment\r\n");
         return FALSE;
+    }
 
     /* Find byte offset of the page to start */
     RangeStart.QuadPart = PAGE_ROUND_DOWN_64(RangeStart.QuadPart);
 
+    ARM64_UART_TRACE("[MM] IsDataSectionResident: locking\r\n");
     MmLockSectionSegment(Segment);
+    ARM64_UART_TRACE("[MM] IsDataSectionResident: locked\r\n");
 
     while (RangeStart.QuadPart < RangeEnd.QuadPart)
     {
@@ -5028,6 +5096,7 @@ MmIsDataSectionResident(
     MmUnlockSectionSegment(Segment);
     MmDereferenceSegment(Segment);
 
+    ARM64_UART_TRACE("[MM] IsDataSectionResident: done\r\n");
     return Ret;
 }
 
@@ -5039,15 +5108,18 @@ MmMakeDataSectionResident(
     _In_ ULONG Length,
     _In_ PLARGE_INTEGER ValidDataLength)
 {
+    ARM64_UART_TRACE("[MM] MakeDataSectionResident: grabbing\r\n");
     PMM_SECTION_SEGMENT Segment = MiGrabDataSection(SectionObjectPointer);
 
     /* There must be a segment for this call */
     ASSERT(Segment);
 
+    ARM64_UART_TRACE("[MM] MakeDataSectionResident: MakeSegResident\r\n");
     NTSTATUS Status = MmMakeSegmentResident(Segment, Offset, Length, ValidDataLength, FALSE);
 
     MmDereferenceSegment(Segment);
 
+    ARM64_UART_TRACE("[MM] MakeDataSectionResident: done\r\n");
     return Status;
 }
 

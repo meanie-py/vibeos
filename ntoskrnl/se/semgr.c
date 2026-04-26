@@ -14,6 +14,18 @@
 #define NDEBUG
 #include <debug.h>
 
+/* DEBUG: UART trace for crash diagnosis */
+#ifdef _M_ARM64
+#define _SE_TRACE(msg) do { \
+    extern volatile PVOID Arm64UartKernelBase; \
+    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase; \
+    if (_u) { const char *_m = (msg); while (*_m) *_u = (ULONG)*_m++; } \
+} while(0)
+#else
+#define _SE_TRACE(msg) ((void)0)
+#endif
+
+
 /* GLOBALS ********************************************************************/
 
 PTOKEN SeAnonymousLogonToken = NULL;
@@ -116,40 +128,59 @@ SepInitializationPhase0(VOID)
 {
     PAGED_CODE();
 
+    _SE_TRACE("[SE] SepInitPhase0 enter\n");
     if (!ExLuidInitialization()) return FALSE;
+    _SE_TRACE("[SE] after ExLuidInit\n");
     if (!SepInitSecurityIDs()) return FALSE;
+    _SE_TRACE("[SE] after SepInitSecurityIDs\n");
     if (!SepInitDACLs()) return FALSE;
+    _SE_TRACE("[SE] after SepInitDACLs\n");
     if (!SepInitSDs()) return FALSE;
+    _SE_TRACE("[SE] after SepInitSDs\n");
     SepInitPrivileges();
+    _SE_TRACE("[SE] after SepInitPrivileges\n");
     if (!SepInitExports()) return FALSE;
+    _SE_TRACE("[SE] after SepInitExports\n");
 
     /* Initialize the subject context lock */
     ExInitializeResource(&SepSubjectContextLock);
+    _SE_TRACE("[SE] after ExInitializeResource\n");
 
     /* Initialize token objects */
     SepInitializeTokenImplementation();
+    _SE_TRACE("[SE] after SepInitTokenImpl\n");
 
     /* Initialize logon sessions */
     if (!SeRmInitPhase0()) return FALSE;
+    _SE_TRACE("[SE] after SeRmInitPhase0\n");
 
     /* Clear impersonation info for the idle thread */
     PsGetCurrentThread()->ImpersonationInfo = NULL;
     PspClearCrossThreadFlag(PsGetCurrentThread(),
                             CT_ACTIVE_IMPERSONATION_INFO_BIT);
+    _SE_TRACE("[SE] after clear impersonation\n");
 
     /* Initialize the boot token */
+    _SE_TRACE("[SE] before ObInitFastRef(NULL)\n");
     ObInitializeFastReference(&PsGetCurrentProcess()->Token, NULL);
-    ObInitializeFastReference(&PsGetCurrentProcess()->Token,
-                              SepCreateSystemProcessToken());
+    _SE_TRACE("[SE] after ObInitFastRef(NULL)\n");
+    {
+        PTOKEN _tok = SepCreateSystemProcessToken();
+        _SE_TRACE("[SE] after SepCreateSystemProcessToken\n");
+        ObInitializeFastReference(&PsGetCurrentProcess()->Token, _tok);
+    }
+    _SE_TRACE("[SE] after boot token\n");
 
     /* Initialise the anonymous logon tokens */
     SeAnonymousLogonToken = SepCreateSystemAnonymousLogonToken();
     if (!SeAnonymousLogonToken)
         return FALSE;
+    _SE_TRACE("[SE] after anon token\n");
 
     SeAnonymousLogonTokenNoEveryone = SepCreateSystemAnonymousLogonTokenNoEveryone();
     if (!SeAnonymousLogonTokenNoEveryone)
         return FALSE;
+    _SE_TRACE("[SE] after anon token no everyone\n");
 
     return TRUE;
 }

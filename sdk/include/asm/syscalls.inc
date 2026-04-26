@@ -64,7 +64,7 @@ MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
     ret StackBytes
 ENDM
 MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
-    StackBytes = 4 * &ArgCount
+    StackBytes = 4 * \ArgCount
     FPO 0, 0, 0, 0, 0, FRAME_FPO
     mov eax, SyscallId
     lea edx, [esp + 4]
@@ -83,8 +83,8 @@ MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
 ENDM
 MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     .ENDPROLOG
-    EXTERN Nt&Name:PROC
-    lea rax, Nt&Name[rip]
+    EXTERN Nt\Name:PROC
+    lea rax, Nt\Name\()[rip]
     mov r10, ArgCount * 8
     jmp KiZwSystemService
 ENDM
@@ -112,43 +112,87 @@ MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     j KiSystemService
     nop
 ENDM
+#elif defined(_M_ARM64)
+MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
+    mov x8, SyscallId
+    svc #0
+    ret
+ENDM
+MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
+    /* ARM64 kernel syscall stubs - TODO: implement properly */
+    mov x8, SyscallId
+    svc #0
+    ret
+ENDM
 #else
 #error unsupported architecture
 #endif
 
 #ifdef _M_IX86
 MACRO(MAKE_LABEL, Name, StackBytes)
-    PUBLIC _&Name&@&StackBytes
-    _&Name&@&StackBytes:
+    PUBLIC _\Name\()@\StackBytes
+    _\Name\()@\StackBytes\():
 ENDM
 MACRO(START_PROC, Name, StackBytes)
-    PUBLIC _&Name&@&StackBytes
-    .PROC _&Name&@&StackBytes
+    PUBLIC _\Name\()@\StackBytes
+    .PROC _\Name\()@\StackBytes
 ENDM
+#elif defined(_M_ARM64)
+/* ARM64 uses GAS-style syntax with Clang */
+.macro MAKE_LABEL Name, StackBytes
+    .globl \Name
+    \Name:
+.endm
+.macro START_PROC Name, StackBytes
+    .globl \Name
+    .p2align 2
+    \Name:
+.endm
+.macro STUB_U Name, ArgCount
+    MAKE_LABEL Zw\Name, 0
+    START_PROC Nt\Name, 0
+    mov x8, #SyscallId
+    svc #0
+    ret
+    SyscallId = SyscallId + 1
+.endm
+.macro STUB_K Name, ArgCount
+    START_PROC Zw\Name, 0
+    /* ARM64 kernel-mode Zw* — direct dispatch, no SVC.
+     * x0-x7 contain the original syscall arguments (untouched).
+     * x8 = syscall ID (set below, used by KiArm64ZwDispatch).
+     * KiArm64ZwDispatch is a C function that reads x8 via inline asm,
+     * sets PreviousMode=KernelMode, dispatches Nt*, restores PreviousMode. */
+    mov x8, #SyscallId
+    b KiArm64ZwDispatch
+    SyscallId = SyscallId + 1
+.endm
 #else
 MACRO(MAKE_LABEL, Name, StackBytes)
-    PUBLIC &Name
-    &Name:
+    PUBLIC \Name
+    \Name\():
 ENDM
 MACRO(START_PROC, Name, StackBytes)
-    PUBLIC &Name
-    .PROC &Name
+    PUBLIC \Name
+    .PROC \Name
 ENDM
 #endif
 
+#ifndef _M_ARM64
 MACRO(STUB_U, Name, ArgCount)
-    MAKE_LABEL Zw&Name, %ArgCount * 4
-    START_PROC Nt&Name, %ArgCount * 4
+    MAKE_LABEL Zw\Name, %ArgCount * 4
+    START_PROC Nt\Name, %ArgCount * 4
     STUBCODE_U Name, SyscallId, %ArgCount
     .ENDP
     SyscallId = SyscallId + 1
 ENDM
 
 MACRO(STUB_K, Name, ArgCount)
-    START_PROC Zw&Name, %ArgCount * 4
+    START_PROC Zw\Name, %ArgCount * 4
     STUBCODE_K Name, SyscallId, %ArgCount
     .ENDP
     SyscallId = SyscallId + 1
 ENDM
+#endif
 
 #endif

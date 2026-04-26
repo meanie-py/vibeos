@@ -27,10 +27,12 @@
 
 
 #ifndef _MSC_VER
+#if defined(_M_IX86) || defined(_M_AMD64)
 #ifdef __REACTOS__
 #define __cpuidex __cpuidex_ // prevent redeclaration
 #endif
 #include <cpuid.h>
+#endif
 #else
 #include <intrin.h>
 #endif

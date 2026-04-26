@@ -314,9 +314,9 @@ RawInputThreadMain(VOID)
         /* Have we successed reading from keyboard? */
         if (NT_SUCCESS(KbdStatus) && KbdStatus != STATUS_PENDING)
         {
-            TRACE("KeyboardEvent: %s %04x\n",
-                  (KeyInput.Flags & KEY_BREAK) ? "up" : "down",
-                  KeyInput.MakeCode);
+            TRACE("Keyboard: key %s scan=0x%x\n",
+                (KeyInput.Flags & KEY_BREAK) ? "up" : "dn",
+                KeyInput.MakeCode);
 
             /* Set LastInputTick */
             IntLastInputTick(TRUE);

@@ -1,0 +1,135 @@
+
+# Unified llvm-mingw toolchain file for ReactOS (i386, amd64, arm64)
+#
+# Usage:
+#   cmake -DARCH=i386  -DCMAKE_TOOLCHAIN_FILE=../reactos/toolchain-llvm-mingw.cmake ../reactos
+#   cmake -DARCH=amd64 -DCMAKE_TOOLCHAIN_FILE=../reactos/toolchain-llvm-mingw.cmake ../reactos
+#   cmake -DARCH=arm64 -DCMAKE_TOOLCHAIN_FILE=../reactos/toolchain-llvm-mingw.cmake ../reactos
+
+# pass variables necessary for the toolchain (needed for try_compile)
+set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES ARCH LLVM_MINGW_PATH)
+
+# The name of the target operating system
+set(CMAKE_SYSTEM_NAME Windows)
+
+# Map ARCH to triplet, system processor, and dlltool machine
+if(ARCH STREQUAL "i386")
+    set(CMAKE_SYSTEM_PROCESSOR i686)
+    set(triplet i686-w64-mingw32)
+    set(CMAKE_DLLTOOL_MACHINE "i386" CACHE STRING "dlltool machine type")
+elseif(ARCH STREQUAL "amd64")
+    set(CMAKE_SYSTEM_PROCESSOR x86_64)
+    set(triplet x86_64-w64-mingw32)
+    set(CMAKE_DLLTOOL_MACHINE "i386:x86-64" CACHE STRING "dlltool machine type")
+elseif(ARCH STREQUAL "arm64")
+    set(CMAKE_SYSTEM_PROCESSOR aarch64)
+    set(triplet aarch64-w64-mingw32)
+    set(CMAKE_DLLTOOL_MACHINE "arm64" CACHE STRING "dlltool machine type")
+else()
+    message(FATAL_ERROR "Unsupported ARCH: ${ARCH}. Use i386, amd64, or arm64.")
+endif()
+
+# Find llvm-mingw - user can override with LLVM_MINGW_PATH
+if(NOT DEFINED LLVM_MINGW_PATH)
+    # Try .build-tools/llvm-mingw inside the source tree first
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/.build-tools/llvm-mingw")
+        set(LLVM_MINGW_PATH "${CMAKE_CURRENT_LIST_DIR}/.build-tools/llvm-mingw")
+    else()
+        # Try to find it relative to source parent (legacy layout)
+        get_filename_component(_src_parent "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+        file(GLOB _llvm_dirs "${_src_parent}/llvm-mingw-*")
+        if(_llvm_dirs)
+            list(GET _llvm_dirs 0 LLVM_MINGW_PATH)
+        endif()
+    endif()
+endif()
+
+if(LLVM_MINGW_PATH)
+    message(STATUS "Using llvm-mingw from: ${LLVM_MINGW_PATH}")
+    set(TOOLCHAIN_PREFIX "${LLVM_MINGW_PATH}/bin/${triplet}-")
+else()
+    # Assume tools are in PATH
+    set(TOOLCHAIN_PREFIX "${triplet}-")
+endif()
+
+# Which tools to use
+set(CMAKE_C_COMPILER "${TOOLCHAIN_PREFIX}clang")
+set(CMAKE_C_COMPILER_TARGET ${triplet})
+set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PREFIX}clang++")
+set(CMAKE_CXX_COMPILER_TARGET ${triplet})
+set(CMAKE_ASM_COMPILER "${TOOLCHAIN_PREFIX}clang")
+set(CMAKE_ASM_COMPILER_ID Clang)
+# windmc is a host tool (generates headers from .mc files)
+# llvm-mingw doesn't include windmc, so we need one from mingw-w64.
+# Override with -DCMAKE_MC_COMPILER=/path/to/windmc if needed.
+if(NOT DEFINED CMAKE_MC_COMPILER)
+    find_program(CMAKE_MC_COMPILER
+        NAMES x86_64-w64-mingw32-windmc windmc)
+    if(NOT CMAKE_MC_COMPILER)
+        # Try Homebrew on macOS
+        file(GLOB _windmc_candidates "/opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/bin/x86_64-w64-mingw32-windmc")
+        if(_windmc_candidates)
+            list(GET _windmc_candidates -1 CMAKE_MC_COMPILER)
+        endif()
+    endif()
+endif()
+set(CMAKE_RC_COMPILER "${TOOLCHAIN_PREFIX}windres")
+set(CMAKE_AR "${TOOLCHAIN_PREFIX}ar")
+set(CMAKE_DLLTOOL "${TOOLCHAIN_PREFIX}dlltool")
+set(CMAKE_OBJCOPY "${TOOLCHAIN_PREFIX}objcopy")
+
+# Signal to gcc.cmake that we're using llvm-mingw (affects nostdinc, libc++, lld behavior)
+set(USE_LLVM_MINGW TRUE CACHE BOOL "Using llvm-mingw toolchain" FORCE)
+
+# For i386/amd64: Find GNU assembler for 16-bit real-mode code (boot sectors, frldr16, MVDM).
+# Clang's integrated assembler can't handle some 16-bit constructs (.org with backwards offset,
+# symbol arithmetic in memory operands). We use GNU as from Homebrew mingw-w64 as a fallback.
+if(NOT ARCH STREQUAL "arm64")
+    if(NOT DEFINED GNU_AS_COMPILER)
+        # Try x86_64 version first (can assemble both 32-bit and 16-bit code)
+        find_program(GNU_AS_COMPILER
+            NAMES x86_64-w64-mingw32-as i686-w64-mingw32-as)
+        if(NOT GNU_AS_COMPILER)
+            file(GLOB _gas_candidates
+                "/opt/homebrew/Cellar/mingw-w64/*/toolchain-x86_64/bin/x86_64-w64-mingw32-as"
+                "/opt/homebrew/Cellar/mingw-w64/*/toolchain-i686/bin/i686-w64-mingw32-as")
+            if(_gas_candidates)
+                list(GET _gas_candidates -1 GNU_AS_COMPILER)
+            endif()
+        endif()
+    endif()
+    # Boot sectors are always 16/32-bit x86, assembled with GCC + GNU as.
+    # Find Homebrew's i686-w64-mingw32-gcc which handles both preprocessing and assembly.
+    if(NOT DEFINED CMAKE_ASM16_GCC)
+        find_program(CMAKE_ASM16_GCC NAMES i686-w64-mingw32-gcc)
+        if(NOT CMAKE_ASM16_GCC)
+            file(GLOB _gcc16_candidates "/opt/homebrew/Cellar/mingw-w64/*/toolchain-i686/bin/i686-w64-mingw32-gcc")
+            if(_gcc16_candidates)
+                list(GET _gcc16_candidates -1 CMAKE_ASM16_GCC)
+            endif()
+        endif()
+    endif()
+    if(CMAKE_ASM16_GCC)
+        message(STATUS "16-bit assembler (GCC): ${CMAKE_ASM16_GCC}")
+    else()
+        message(WARNING "i686-w64-mingw32-gcc not found. 16-bit assembly (boot sectors) will fail. Install mingw-w64: brew install mingw-w64")
+    endif()
+endif()
+
+# This allows to have CMake test the compiler without linking
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+set(CMAKE_C_CREATE_STATIC_LIBRARY "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
+set(CMAKE_CXX_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
+set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
+
+# Don't link with anything by default unless we say so
+set(CMAKE_C_STANDARD_LIBRARIES "" CACHE STRING "Standard C Libraries")
+set(CMAKE_CXX_STANDARD_LIBRARIES "" CACHE STRING "Standard C++ Libraries")
+
+# Use lld linker
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-nostdlib -fuse-ld=lld -Wl,--enable-auto-image-base,--disable-auto-import")
+
+set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_LIST_DIR}/overrides-gcc.cmake")

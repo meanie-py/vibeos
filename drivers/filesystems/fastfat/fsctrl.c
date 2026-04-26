@@ -663,12 +663,13 @@ Return Value:
 {
     BOOLEAN Wait;
     NTSTATUS Status;
-    PIRP_CONTEXT IrpContext = NULL;
+    _SEH2_VOLATILE PIRP_CONTEXT IrpContext = NULL;
 
     BOOLEAN TopLevel;
 
     PAGED_CODE();
     UNREFERENCED_PARAMETER( VolumeDeviceObject );
+
 
     DebugTrace(+1, Dbg,"FatFsdFileSystemControl\n", 0);
 
@@ -931,6 +932,7 @@ Return Value:
 
     PAGED_CODE();
 
+
     DebugTrace(+1, Dbg, "FatMountVolume\n", 0);
     DebugTrace( 0, Dbg, "TargetDeviceObject = %p\n", TargetDeviceObject);
     DebugTrace( 0, Dbg, "Vpb                = %p\n", Vpb);
@@ -1031,6 +1033,7 @@ Return Value:
 
     FatScanForDismountedVcb( IrpContext );
 
+
     //
     //  Initialize the Bcbs and our final state so that the termination
     //  handlers will know what to free or unpin
@@ -1057,6 +1060,7 @@ Return Value:
 
         (VOID)FatAcquireExclusiveGlobal( IrpContext );
 
+
 #ifdef _MSC_VER
 #pragma prefast( pop )
 #endif
@@ -1077,6 +1081,7 @@ Return Value:
 
             try_return( Status );
         }
+
 
         //
         //  Our alignment requirement is the larger of the processor alignment requirement
@@ -1128,6 +1133,7 @@ Return Value:
 
             try_return( Status );
         }
+
 
 #ifdef _MSC_VER
 #pragma prefast( suppress: 28175, "this is a filesystem driver, touching SectorSize is fine" )
@@ -1202,6 +1208,7 @@ Return Value:
 
               NOTHING;
         } _SEH2_END;
+
 
         //
         //  Call a routine to check the boot sector to see if it is fat

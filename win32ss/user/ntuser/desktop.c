@@ -1339,14 +1339,13 @@ IntSetFocusMessageQueue(PUSER_MESSAGE_QUEUE NewQueue)
     PDESKTOP pdo = IntGetActiveDesktop();
     if (!pdo)
     {
-        TRACE("No active desktop\n");
+        ERR("IntSetFocusMessageQueue: no active desktop!\n");
         return;
     }
     if (NewQueue != NULL)
     {
         if (NewQueue->Desktop != NULL)
         {
-            TRACE("Message Queue already attached to another desktop!\n");
             return;
         }
         IntReferenceMessageQueue(NewQueue);
@@ -1642,6 +1641,7 @@ co_IntShowDesktop(PDESKTOP Desktop, ULONG Width, ULONG Height, BOOL bRedraw)
     if (bRedraw)
         co_UserRedrawWindow( pwnd, NULL, 0, RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_INVALIDATE );
 
+    DbgPrint("[WIN32K] shell ready\n");
     return STATUS_SUCCESS;
 }
 
@@ -2975,13 +2975,18 @@ NtUserSwitchDesktop(HDESK hdesk)
     BOOL bRedrawDesktop;
     BOOL Ret = FALSE;
 
+#ifdef _M_IX86
+    /* Debugcon trace: write '#' to port 0xE9 so we can see in debugcon
+     * whether NtUserSwitchDesktop is ever called */
+    __asm__ __volatile__("outb %b0, %w1" : : "a"((unsigned char)'#'), "Nd"((unsigned short)0xE9));
+#endif
+
     UserEnterExclusive();
-    TRACE("Enter NtUserSwitchDesktop(0x%p)\n", hdesk);
 
     Status = IntValidateDesktopHandle(hdesk, UserMode, 0, &pdesk);
     if (!NT_SUCCESS(Status))
     {
-        ERR("Validation of desktop handle 0x%p failed\n", hdesk);
+        ERR("Validation of desktop handle 0x%p failed (0x%lx)\n", hdesk, Status);
         goto Exit; // Return FALSE
     }
 
@@ -2995,7 +3000,6 @@ NtUserSwitchDesktop(HDESK hdesk)
     if (pdesk == gpdeskInputDesktop)
     {
         ObDereferenceObject(pdesk);
-        WARN("NtUserSwitchDesktop called for active desktop\n");
         Ret = TRUE;
         goto Exit;
     }
@@ -3045,10 +3049,10 @@ NtUserSwitchDesktop(HDESK hdesk)
 
     /* Show the new desktop window */
     co_IntShowDesktop(pdesk, UserGetSystemMetrics(SM_CXSCREEN), UserGetSystemMetrics(SM_CYSCREEN), bRedrawDesktop);
-
-    TRACE("SwitchDesktop gpdeskInputDesktop 0x%p\n", gpdeskInputDesktop);
     ObDereferenceObject(pdesk);
 
+    TRACE("SwitchDesktop OK (0x%p)\n", pdesk);
+    DbgPrint("[KERNEL] SwitchDesktop OK\n");
     Ret = TRUE;
 
 Exit:

@@ -37,8 +37,13 @@ void __cdecl longjmp(
     exceptionRecord.NumberParameters = 1;
     exceptionRecord.ExceptionInformation[0] = (ULONG_PTR)jumpBuffer;
 
-    RtlUnwind((PVOID)jumpBuffer->Frame,
-                (PVOID)jumpBuffer->Lr,
-                &exceptionRecord,
-                (PVOID)(ULONG_PTR)_Value);
+    if (jumpBuffer->Frame != 0)
+    {
+        RtlUnwind((PVOID)jumpBuffer->Frame,
+                    (PVOID)jumpBuffer->Lr,
+                    &exceptionRecord,
+                    (PVOID)(ULONG_PTR)_Value);
+    }
+
+    __longjmp_noframe(jumpBuffer, _Value);
 }

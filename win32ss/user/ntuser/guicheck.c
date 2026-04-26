@@ -35,6 +35,12 @@ co_AddGuiApp(PPROCESSINFO W32Data)
             return FALSE;
         }
     }
+    else
+    {
+        /* Desktop graphics already initialized. Try to load deferred
+         * cursors/icons if a previous process didn't have user32 ready. */
+        co_IntDeferredCursorsAndIcons();
+    }
     return TRUE;
 }
 

@@ -26,7 +26,7 @@ KxAcquireSpinLock(
 #endif
     PKSPIN_LOCK SpinLock)
 {
-#if DBG
+#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
     /* Make sure that we don't own the lock already */
     if (((KSPIN_LOCK)KeGetCurrentThread() | 1) == *SpinLock)
     {
@@ -57,7 +57,7 @@ KxAcquireSpinLock(
        memory accesses across the borders of spinlocks */
     KeMemoryBarrierWithoutFence();
 
-#if DBG
+#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
     /* On debug builds, we OR in the KTHREAD */
     *SpinLock = (KSPIN_LOCK)KeGetCurrentThread() | 1;
 #endif
@@ -77,7 +77,7 @@ KxReleaseSpinLock(
 #endif
     PKSPIN_LOCK SpinLock)
 {
-#if DBG
+#if DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG)
     /* Make sure that the threads match */
     if (((KSPIN_LOCK)KeGetCurrentThread() | 1) != *SpinLock)
     {
@@ -86,7 +86,7 @@ KxReleaseSpinLock(
     }
 #endif
 
-#if defined(CONFIG_SMP) || DBG
+#if defined(CONFIG_SMP) || (DBG && !defined(_USE_DUMMY_PSEH) && !defined(_USE_PSEH_CLANG))
     /* Clear the lock  */
 #ifdef _WIN64
     InterlockedAnd64((PLONG64)SpinLock, 0);

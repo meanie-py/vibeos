@@ -115,7 +115,7 @@ Return Value:
 
 {
     NTSTATUS Status;
-    PIRP_CONTEXT IrpContext = NULL;
+    _SEH2_VOLATILE PIRP_CONTEXT IrpContext = NULL;
 
     BOOLEAN TopLevel;
 
@@ -196,7 +196,7 @@ Return Value:
 
 {
     NTSTATUS Status;
-    PIRP_CONTEXT IrpContext = NULL;
+    _SEH2_VOLATILE PIRP_CONTEXT IrpContext = NULL;
 
     BOOLEAN TopLevel;
 

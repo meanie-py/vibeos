@@ -381,6 +381,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
             "ProcessHandle: %p Parent: %p\n", ProcessHandle, ParentProcess);
 
     /* Validate flags */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: enter\r\n");
     if (Flags & ~PROCESS_CREATE_FLAGS_LEGAL_MASK) return STATUS_INVALID_PARAMETER;
 
     /* Check for parent */
@@ -557,6 +558,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     if (Parent)
     {
         /* Create the address space for the child */
+        ARM64_UART_TRACE("[PS] PspCreateProcess: MmCreateProcessAddressSpace\r\n");
         if (!MmCreateProcessAddressSpace(MinWs,
                                          Process,
                                          DirectoryTableBase))
@@ -581,6 +583,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     Process->Vm.MaximumWorkingSetSize = MaxWs;
 
     /* Now initialize the Kernel Process */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: KeInitializeProcess\r\n");
     KeInitializeProcess(&Process->Pcb,
                         PROCESS_PRIORITY_NORMAL,
                         Affinity,
@@ -589,8 +592,10 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
                                       SEM_NOALIGNMENTFAULTEXCEPT));
 
     /* Duplicate Parent Token */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspInitializeProcessSecurity\r\n");
     Status = PspInitializeProcessSecurity(Process, Parent);
     if (!NT_SUCCESS(Status)) goto CleanupWithRef;
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspInitializeProcessSecurity done\r\n");
 
     /* Set default priority class */
     Process->PriorityClass = PROCESS_PRIORITY_CLASS_NORMAL;
@@ -607,10 +612,12 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
         }
 
         /* Initialize object manager for the process */
+        ARM64_UART_TRACE("[PS] PspCreateProcess: ObInitProcess\r\n");
         Status = ObInitProcess(Flags & PROCESS_CREATE_FLAGS_INHERIT_HANDLES ?
                                Parent : NULL,
                                Process);
         if (!NT_SUCCESS(Status)) goto CleanupWithRef;
+        ARM64_UART_TRACE("[PS] PspCreateProcess: ObInitProcess done\r\n");
     }
     else
     {
@@ -623,6 +630,7 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
     Status = STATUS_SUCCESS;
 
     /* Check if this is a real user-mode process */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: MmInitProcAS\r\n");
     if (SectionHandle)
     {
         /* Initialize the address space */
@@ -690,7 +698,9 @@ PspCreateProcess(OUT PHANDLE ProcessHandle,
 #endif
 
     /* Check if we have a section object and map the system DLL */
+    ARM64_UART_TRACE("[PS] PspCreateProcess: PspMapSystemDll\r\n");
     if (SectionObject) PspMapSystemDll(Process, NULL, FALSE);
+    ARM64_UART_TRACE("[PS] PspCreateProcess: CreateHandle\r\n");
 
     /* Create a handle for the Process */
     CidEntry.Object = Process;
@@ -884,6 +894,8 @@ Cleanup:
     /* Dereference the parent */
     if (Parent) ObDereferenceObject(Parent);
 
+    ARM64_UART_TRACE("[PS] PspCreateProcess: returning\r\n");
+    ARM64_UART_TRACE_HEX("[PS]   Status=", (ULONG_PTR)Status);
     /* Return status to caller */
     return Status;
 }

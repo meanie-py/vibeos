@@ -1,0 +1,76 @@
+# Shim manifest for ob subsystem
+# Used by `python -m rustconv shims ob` to generate ob_rust_shims.c
+#
+# [forceinline] — FORCEINLINE static inline functions renamed via Phase 1 #define
+# [macro] — C macro functions that need trampoline wrappers
+# [macro_arch] — Macros that only exist on certain architectures
+
+[forceinline]
+# ob_x.h FORCEINLINE functions
+ObpAcquireObjectLock = "void (POBJECT_HEADER ObjectHeader)"
+ObpReleaseObjectLock = "void (POBJECT_HEADER ObjectHeader)"
+ObpCalloutStart = "void (PKIRQL CalloutIrql)"
+ObpCalloutEnd = "void (KIRQL CalloutIrql, PCHAR Procedure, POBJECT_TYPE ObjectType, PVOID Object)"
+ObpDereferenceNameInfo = "void (POBJECT_HEADER_NAME_INFO HeaderNameInfo)"
+ObpEnterObjectTypeMutex = "void (POBJECT_TYPE ObjectType)"
+ObpLeaveObjectTypeMutex = "void (POBJECT_TYPE ObjectType)"
+ObpFreeObjectCreateInformation = "void (POBJECT_CREATE_INFORMATION ObjectCreateInfo)"
+ObpInitializeLookupContext = "void (POBP_LOOKUP_CONTEXT Context)"
+ObpReferenceNameInfo = "POBJECT_HEADER_NAME_INFO (POBJECT_HEADER ObjectHeader)"
+ObpReleaseLookupContext = "void (POBP_LOOKUP_CONTEXT Context)"
+ObpReleaseObjectCreateInformation = "void (POBJECT_CREATE_INFORMATION ObjectCreateInfo)"
+# Helpers only called by renamed functions
+ObpSelectObjectLockSlot = "ULONG (POBJECT_HEADER ObjectHeader)"
+ObpValidateAttributes = "ULONG (ULONG Attributes, KPROCESSOR_MODE PreviousMode)"
+ObpAcquireObjectLockShared = "void (POBJECT_HEADER ObjectHeader)"
+ObpAcquireDirectoryLockShared = "void (POBJECT_DIRECTORY Directory, POBP_LOOKUP_CONTEXT Context)"
+ObpAcquireDirectoryLockExclusive = "void (POBJECT_DIRECTORY Directory, POBP_LOOKUP_CONTEXT Context)"
+ObpReleaseDirectoryLock = "void (POBJECT_DIRECTORY Directory, POBP_LOOKUP_CONTEXT Context)"
+ObpAcquireLookupContextLock = "void (POBP_LOOKUP_CONTEXT Context, POBJECT_DIRECTORY Directory)"
+ObpReleaseLookupContextObject = "void (POBP_LOOKUP_CONTEXT Context)"
+ObpAllocateObjectCreateInfoBuffer = "PVOID (PP_NPAGED_LOOKASIDE_NUMBER Type)"
+ObpFreeCapturedAttributes = "void (PVOID Buffer, PP_NPAGED_LOOKASIDE_NUMBER Type)"
+
+# psfuncs.h FORCEINLINE function
+PsGetCurrentThread = "PETHREAD NTAPI (void)"
+
+# ex.h FORCEINLINE fast reference functions
+ExGetObjectFastReference = "PVOID (EX_FAST_REF FastRef)"
+ExGetCountFastReference = "ULONG (EX_FAST_REF FastRef)"
+ExInitializeFastReference = "void (PEX_FAST_REF FastRef, PVOID Object)"
+ExAcquireFastReference = "EX_FAST_REF (PEX_FAST_REF FastRef)"
+ExInsertFastReference = "BOOLEAN (PEX_FAST_REF FastRef, PVOID Object)"
+ExReleaseFastReference = "BOOLEAN (PEX_FAST_REF FastRef, PVOID Object)"
+ExSwapFastReference = "EX_FAST_REF (PEX_FAST_REF FastRef, PVOID Object)"
+ExCompareSwapFastReference = "EX_FAST_REF (PEX_FAST_REF FastRef, PVOID Object, PVOID OldObject)"
+
+# ex.h FORCEINLINE push lock functions
+ExAcquirePushLockExclusive = "void (PEX_PUSH_LOCK PushLock)"
+ExAcquirePushLockShared = "void (PEX_PUSH_LOCK PushLock)"
+ExReleasePushLock = "void (PEX_PUSH_LOCK PushLock)"
+ExReleasePushLockExclusive = "void (PEX_PUSH_LOCK PushLock)"
+ExConvertPushLockSharedToExclusive = "BOOLEAN (PEX_PUSH_LOCK PushLock)"
+
+# ndk ketypes.h FORCEINLINE function
+KeGetCurrentPrcb = "PKPRCB NTAPI (void)"
+
+# sdk/rtlfuncs.h FORCEINLINE function
+RtlInitEmptyUnicodeString = "void (PUNICODE_STRING UnicodeString, PWCHAR Buffer, USHORT BufferSize)"
+
+[macro]
+# ke_x.h macros
+KeEnterCriticalRegion = "void (void)"
+KeLeaveCriticalRegion = "void (void)"
+
+# ex.h rundown protection macros
+ExAcquireRundownProtection = "BOOLEAN (PEX_RUNDOWN_REF RunRef)"
+ExReleaseRundownProtection = "void (PEX_RUNDOWN_REF RunRef)"
+ExWaitForRundownProtectionRelease = "void (PEX_RUNDOWN_REF RunRef)"
+ExRundownCompleted = "void (PEX_RUNDOWN_REF RunRef)"
+
+# ex.h push lock (macro → _ExInitializePushLock FORCEINLINE)
+ExInitializePushLock = "VOID NTAPI (PEX_PUSH_LOCK PushLock)"
+
+[macro_arch]
+# KeQueryInterruptTime: macro on ARM64 and amd64, real function on i386
+KeQueryInterruptTime = { sig = "ULONGLONG NTAPI (void)", arches = ["_M_ARM64", "_M_AMD64"] }

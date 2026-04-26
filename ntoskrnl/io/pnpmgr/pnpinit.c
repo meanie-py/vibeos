@@ -12,6 +12,7 @@
 #define NDEBUG
 #include <debug.h>
 
+
 /* GLOBALS ********************************************************************/
 
 PUNICODE_STRING PiInitGroupOrderTable;
@@ -294,23 +295,28 @@ IopInitializePlugPlayServices(VOID)
     PDEVICE_OBJECT Pdo;
 
     /* Initialize locks and such */
+    ARM64_UART_TRACE("[PNP] init locks\r\n");
     KeInitializeSpinLock(&IopDeviceTreeLock);
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
     KeInitializeEvent(&PiEnumerationFinished, NotificationEvent, TRUE);
 
     /* Get the default interface */
+    ARM64_UART_TRACE("[PNP] IopDetermineDefaultInterfaceType\r\n");
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
     /* Initialize arbiters */
+    ARM64_UART_TRACE("[PNP] IopInitializeArbiters\r\n");
     Status = IopInitializeArbiters();
     if (!NT_SUCCESS(Status)) return Status;
 
     /* Setup the group cache */
+    ARM64_UART_TRACE("[PNP] PiInitCacheGroupInformation\r\n");
     Status = PiInitCacheGroupInformation();
     if (!NT_SUCCESS(Status)) return Status;
 
     /* Open the current control set */
+    ARM64_UART_TRACE("[PNP] open CurrentControlSet\r\n");
     Status = IopOpenRegistryKeyEx(&KeyHandle,
                                   NULL,
                                   &KeyName,
@@ -397,6 +403,7 @@ IopInitializePlugPlayServices(VOID)
     }
 
     /* Create the root driver */
+    ARM64_UART_TRACE("[PNP] IoCreateDriver PnpManager\r\n");
     Status = IoCreateDriver(&PnpManagerDriverName, PnpRootDriverEntry);
     if (!NT_SUCCESS(Status))
     {
@@ -405,6 +412,7 @@ IopInitializePlugPlayServices(VOID)
     }
 
     /* Create the root PDO */
+    ARM64_UART_TRACE("[PNP] IoCreateDevice root PDO\r\n");
     Status = IoCreateDevice(IopRootDriverObject,
                             0,
                             NULL,
@@ -440,6 +448,7 @@ IopInitializePlugPlayServices(VOID)
     PiSetDevNodeState(IopRootDeviceNode, DeviceNodeStarted);
 
     /* Initialize PnP-Event notification support */
+    ARM64_UART_TRACE("[PNP] IopInitPlugPlayEvents\r\n");
     Status = IopInitPlugPlayEvents();
     if (!NT_SUCCESS(Status)) return Status;
 
@@ -449,9 +458,12 @@ IopInitializePlugPlayServices(VOID)
     ExInitializeFastMutex(&PnpBusTypeGuidList->Lock);
 
     /* Initialize PnP root relations (this is a syncronous operation) */
+    ARM64_UART_TRACE("[PNP] PiQueueDeviceAction(1)\r\n");
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, NULL, NULL);
+    ARM64_UART_TRACE("[PNP] PiQueueDeviceAction(1) done\r\n");
 
     /* Launch the firmware mapper */
+    ARM64_UART_TRACE("[PNP] IopUpdateRootKey\r\n");
     Status = IopUpdateRootKey();
     if (!NT_SUCCESS(Status)) return Status;
 
@@ -459,9 +471,12 @@ IopInitializePlugPlayServices(VOID)
     NtClose(KeyHandle);
 
     /* Initialize PnP root relations (this is a syncronous operation) */
+    ARM64_UART_TRACE("[PNP] PiQueueDeviceAction(2)\r\n");
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, NULL, NULL);
+    ARM64_UART_TRACE("[PNP] PiQueueDeviceAction(2) done\r\n");
 
     /* We made it */
+    ARM64_UART_TRACE("[PNP] IopInitializePlugPlayServices done\r\n");
     return STATUS_SUCCESS;
 }
 

@@ -39,6 +39,7 @@
 #include "wnetpriv.h"
 #ifdef __REACTOS__
 #include <wine/unicode.h>
+ULONG __cdecl DbgPrint(const char *fmt, ...);
 #endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(mpr);
@@ -143,8 +144,10 @@ static void _tryLoadProvider(PCWSTR provider)
     HKEY hKey;
 
     TRACE("%s\n", debugstr_w(provider));
+    DbgPrint("[mpr] _tryLoadProvider: '%S' ENTER\n", provider);
     swprintf(serviceName, serviceFmt, servicePrefix, provider);
     serviceName[ARRAY_SIZE(serviceName) - 1] = '\0';
+    DbgPrint("[mpr] _tryLoadProvider: opening reg key\n");
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, serviceName, 0, KEY_READ, &hKey) ==
      ERROR_SUCCESS)
     {
@@ -153,11 +156,13 @@ static void _tryLoadProvider(PCWSTR provider)
         WCHAR providerPath[MAX_PATH];
         DWORD type, size = sizeof(providerPath);
 
+        DbgPrint("[mpr] _tryLoadProvider: reg key opened, reading ProviderPath\n");
         if (RegQueryValueExW(hKey, szProviderPath, NULL, &type,
          (LPBYTE)providerPath, &size) == ERROR_SUCCESS && (type == REG_SZ || type == REG_EXPAND_SZ))
         {
             static const WCHAR szProviderName[] = { 'N','a','m','e',0 };
             PWSTR name = NULL;
+            DbgPrint("[mpr] _tryLoadProvider: ProviderPath='%S'\n", providerPath);
 
             if (type == REG_EXPAND_SZ)
             {
@@ -179,7 +184,10 @@ static void _tryLoadProvider(PCWSTR provider)
             }
             if (name)
             {
-                HMODULE hLib = LoadLibraryW(providerPath);
+                HMODULE hLib;
+                DbgPrint("[mpr] _tryLoadProvider: calling LoadLibraryW('%S')\n", providerPath);
+                hLib = LoadLibraryW(providerPath);
+                DbgPrint("[mpr] _tryLoadProvider: LoadLibraryW returned %p\n", hLib);
 
                 if (hLib)
                 {
@@ -362,6 +370,8 @@ void wnetInit(HINSTANCE hInstDll)
       'O','r','d','e','r',0 };
     HKEY hKey;
 
+    DbgPrint("[mpr] wnetInit: ENTER\n");
+
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, providerOrderKey, 0, KEY_READ, &hKey)
      == ERROR_SUCCESS)
     {
@@ -420,7 +430,9 @@ void wnetInit(HINSTANCE hInstDll)
                             ptr = wcschr(ptr, ',');
                             if (ptr)
                                 *ptr++ = '\0';
+                            DbgPrint("[mpr] wnetInit: loading provider '%S'\n", ptrPrev);
                             _tryLoadProvider(ptrPrev);
+                            DbgPrint("[mpr] wnetInit: provider done\n");
                         }
                     }
                 }
@@ -431,19 +443,23 @@ void wnetInit(HINSTANCE hInstDll)
     }
 
 #ifdef __REACTOS__
+    DbgPrint("[mpr] wnetInit: providers done, checking saved connections (providerTable=%p)\n", providerTable);
     if (providerTable)
     {
         HKEY user_profile;
 
+        DbgPrint("[mpr] wnetInit: calling RegOpenCurrentUser\n");
         if (RegOpenCurrentUser(KEY_ALL_ACCESS, &user_profile) == ERROR_SUCCESS)
         {
             HKEY network;
             WCHAR subkey[8] = {'N', 'e', 't', 'w', 'o', 'r', 'k', 0};
 
+            DbgPrint("[mpr] wnetInit: RegOpenCurrentUser ok, opening Network key\n");
             if (RegOpenKeyExW(user_profile, subkey, 0, KEY_READ, &network) == ERROR_SUCCESS)
             {
                 DWORD size, max;
 
+                DbgPrint("[mpr] wnetInit: Network key opened, querying info\n");
                 TRACE("Enumerating remembered connections\n");
 
                 if (RegQueryInfoKey(network, NULL, NULL, NULL, &max, &size, NULL, NULL, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
@@ -484,8 +500,11 @@ void wnetInit(HINSTANCE hInstDll)
             }
 
             RegCloseKey(user_profile);
+        } else {
+            DbgPrint("[mpr] wnetInit: RegOpenCurrentUser failed\n");
         }
     }
+    DbgPrint("[mpr] wnetInit: EXIT\n");
 #endif
 }
 

@@ -28,22 +28,22 @@ __SEHCleanHandlerEnvironment:
 
 .globl __SEHCurrentRegistration
 __SEHCurrentRegistration:
-	mov eax, [fs:0]
+	mov eax, dword ptr fs:[0]
 	ret
 
 .globl __SEHRegisterFrame
 __SEHRegisterFrame:
 	mov ecx, [esp+4]
-	mov eax, [fs:0]
+	mov eax, dword ptr fs:[0]
 	mov [ecx+0], eax
-	mov [fs:0], ecx
+	mov dword ptr fs:[0], ecx
 	ret
 
 .globl __SEHUnregisterFrame
 __SEHUnregisterFrame:
-	mov ecx, [fs:0]
+	mov ecx, dword ptr fs:[0]
 	mov ecx, [ecx+0]
-	mov [fs:0], ecx
+	mov dword ptr fs:[0], ecx
 	ret
 
 .globl __SEHGlobalUnwind

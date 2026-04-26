@@ -1103,8 +1103,6 @@ ProcessKeyEvent(WORD wVk, WORD wScanCode, DWORD dwFlags, BOOL bInjected, DWORD d
         }
 
         /* Post a keyboard message */
-        TRACE("Posting keyboard msg %u wParam 0x%x lParam 0x%x\n", Msg.message, Msg.wParam, Msg.lParam);
-        if (!Wnd) {ERR("Window is NULL\n");}
         MsqPostMessage(pti, &Msg, TRUE, QS_KEY, 0, dwExtraInfo);
     }
     return TRUE;
@@ -1218,7 +1216,10 @@ UserProcessKeyboardInput(
     if (!pKl)
         pKl = W32kGetDefaultKeyLayout();
     if (!pKl)
+    {
+        ERR("UserProcessKeyboardInput: NO keyboard layout!\n");
         return;
+    }
 
     pKbdTbl = pKl->spkf->pKbdTbl;
 
@@ -1226,8 +1227,6 @@ UserProcessKeyboardInput(
        Note: We could call UserSendKeyboardInput using scan code,
              but it wouldn't interpret E1 key(s) properly */
     wVk = IntVscToVk(wScanCode, pKbdTbl);
-    TRACE("UserProcessKeyboardInput: %x (break: %u) -> %x\n",
-          wScanCode, (pKbdInputData->Flags & KEY_BREAK) ? 1u : 0, wVk);
 
     if (wVk)
     {
@@ -1329,7 +1328,8 @@ IntTranslateKbdMessage(LPMSG lpMsg,
     NewMsg.time = EngGetTickCount32();
 
     TRACE("Enter IntTranslateKbdMessage msg %s, vk %x\n",
-        lpMsg->message == WM_SYSKEYDOWN ? "WM_SYSKEYDOWN" : "WM_KEYDOWN", lpMsg->wParam);
+        lpMsg->message == WM_SYSKEYDOWN ? "WM_SYSKEYDOWN" : "WM_KEYDOWN",
+        lpMsg->wParam);
 
     if (lpMsg->wParam == VK_PACKET)
     {

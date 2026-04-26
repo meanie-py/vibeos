@@ -62,13 +62,40 @@ FrldrStartup:
     mov eax, dword ptr [BSS_RealModeEntry]
     mov dword ptr [AddressOfRealModeEntryPoint], eax
 
-    /* Clean out BSS */
+    /* Clean out BSS by scanning PE section headers for VirtualSize > RawDataSize gaps.
+     * This is necessary because LLD merges .bss into .data, and the __bss_start__/__bss_end__
+     * markers don't bracket the BSS correctly in PE section $ suffix ordering. */
+    lea rbx, [__ImageBase]
+    mov eax, dword ptr [rbx + 60]          /* e_lfanew */
+    lea rbx, [rbx + rax]                    /* NT headers */
+    movzx ecx, word ptr [rbx + 6]          /* FileHeader.NumberOfSections */
+    movzx eax, word ptr [rbx + 20]         /* FileHeader.SizeOfOptionalHeader */
+    lea rsi, [rbx + 24 + rax]              /* First IMAGE_SECTION_HEADER */
+.LBssZeroLoop:
+    test ecx, ecx
+    jz .LBssZeroDone
+    mov r8d, dword ptr [rsi + 8]           /* VirtualSize */
+    mov r9d, dword ptr [rsi + 16]          /* SizeOfRawData */
+    cmp r8d, r9d
+    jbe .LBssNextSection
+    /* Zero from (ImageBase + VirtualAddress + SizeOfRawData) to
+     *           (ImageBase + VirtualAddress + VirtualSize) */
+    push rcx
+    push rsi
+    lea rdi, [__ImageBase]
+    add edi, dword ptr [rsi + 12]          /* + VirtualAddress */
+    add rdi, r9                            /* + SizeOfRawData */
+    mov ecx, r8d
+    sub ecx, r9d                           /* VirtualSize - SizeOfRawData */
     xor rax, rax
-    mov rdi, offset __bss_start__
-    mov rcx, offset __bss_end__ + 7
-    sub rcx, rdi
-    shr rcx, 3
-    rep stosq
+    rep stosb                              /* Zero byte-by-byte for simplicity */
+    pop rsi
+    pop rcx
+.LBssNextSection:
+    add rsi, 40                            /* sizeof(IMAGE_SECTION_HEADER) */
+    dec ecx
+    jmp .LBssZeroLoop
+.LBssZeroDone:
 
     /* Pass the command line to BootMain */
     mov rcx, offset cmdline

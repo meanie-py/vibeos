@@ -159,18 +159,27 @@ MmWriteToSwapPage(SWAPENTRY SwapEntry, PFN_NUMBER Page)
 
     if (SwapEntry == 0)
     {
+#ifdef _M_ARM64
+        DPRINT1("MmWriteToSwapPage: SwapEntry is 0\n");
+        return(STATUS_UNSUCCESSFUL);
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
         return(STATUS_UNSUCCESSFUL);
+#endif
     }
 
     i = FILE_FROM_ENTRY(SwapEntry);
     offset = OFFSET_FROM_ENTRY(SwapEntry) - 1;
 
-    if (MmPagingFile[i]->FileObject == NULL ||
+    if (MmPagingFile[i] == NULL || MmPagingFile[i]->FileObject == NULL ||
             MmPagingFile[i]->FileObject->DeviceObject == NULL)
     {
         DPRINT1("Bad paging file 0x%.8X\n", SwapEntry);
+#ifdef _M_ARM64
+        return(STATUS_UNSUCCESSFUL);
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
+#endif
     }
 
     MmInitializeMdl(Mdl, NULL, PAGE_SIZE);
@@ -225,8 +234,13 @@ MiReadPageFile(
 
     if (PageFileOffset == 0)
     {
+#ifdef _M_ARM64
+        DPRINT1("MiReadPageFile: PageFileOffset is 0\n");
+        return(STATUS_UNSUCCESSFUL);
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
         return(STATUS_UNSUCCESSFUL);
+#endif
     }
 
     /* Normalize offset. */
@@ -236,10 +250,14 @@ MiReadPageFile(
 
     PagingFile = MmPagingFile[PageFileIndex];
 
-    if (PagingFile->FileObject == NULL || PagingFile->FileObject->DeviceObject == NULL)
+    if (PagingFile == NULL || PagingFile->FileObject == NULL || PagingFile->FileObject->DeviceObject == NULL)
     {
         DPRINT1("Bad paging file %u\n", PageFileIndex);
+#ifdef _M_ARM64
+        return(STATUS_UNSUCCESSFUL);
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
+#endif
     }
 
     MmInitializeMdl(Mdl, NULL, PAGE_SIZE);
@@ -302,7 +320,14 @@ MmFreeSwapPage(SWAPENTRY Entry)
     PagingFile = MmPagingFile[i];
     if (PagingFile == NULL)
     {
+#ifdef _M_ARM64
+        /* ARM64: No pagefile on ramdisk — log and return gracefully */
+        DPRINT1("MmFreeSwapPage: PagingFile[%lu] is NULL for Entry 0x%lx — no pagefile?\n", i, Entry);
+        KeReleaseGuardedMutex(&MmPageFileCreationLock);
+        return;
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
+#endif
     }
 
     RtlClearBit(PagingFile->Bitmap, off >> 5);
@@ -357,8 +382,14 @@ MmAllocSwapPage(VOID)
     }
 
     KeReleaseGuardedMutex(&MmPageFileCreationLock);
+#ifdef _M_ARM64
+    /* ARM64: No pagefile on ramdisk — return 0 (allocation failed) */
+    DPRINT1("MmAllocSwapPage: No free swap pages and MiFreeSwapPages > 0 — inconsistent state\n");
+    return(0);
+#else
     KeBugCheck(MEMORY_MANAGEMENT);
     return(0);
+#endif
 }
 
 NTSTATUS

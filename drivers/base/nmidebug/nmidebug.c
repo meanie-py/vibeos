@@ -38,6 +38,7 @@ NTAPI
 NmiDbgCallback(IN PVOID Context,
                IN BOOLEAN Handled)
 {
+#if defined(_M_IX86) || defined(_M_AMD64)
     /* Clear the NMI flag */
     NmiClearFlag();
 
@@ -48,6 +49,10 @@ NmiDbgCallback(IN PVOID Context,
     /* Handle the NMI safely */
 #ifdef _M_IX86
     KiEnableTimerWatchdog = (RtlCompareMemory(NmiBegin, NmiBegin + 4, 4) != 4);
+#endif
+#else
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Handled);
 #endif
     return TRUE;
 }

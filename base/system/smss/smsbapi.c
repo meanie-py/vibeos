@@ -60,6 +60,15 @@ SmpSbCreateSession(IN PVOID Reserved,
         CreateSessionMsg->DbgUiClientId.UniqueProcess = NULL;
     }
 
+    /* Native apps don't need a subsystem — handle them directly */
+    if (SubSystemType == IMAGE_SUBSYSTEM_NATIVE)
+    {
+        NtClose(ProcessInformation->ProcessHandle);
+        NtResumeThread(ProcessInformation->ThreadHandle, NULL);
+        NtClose(ProcessInformation->ThreadHandle);
+        return STATUS_SUCCESS;
+    }
+
     /* Find a subsystem responsible for this session */
     SmpGetProcessMuSessionId(ProcessInformation->ProcessHandle, &MuSessionId);
     if (!SmpCheckDuplicateMuSessionId(MuSessionId))

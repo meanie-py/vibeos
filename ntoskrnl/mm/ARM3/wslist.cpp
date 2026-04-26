@@ -288,7 +288,11 @@ TrimWsList(PMMWSL WsList)
             RemoveFromWsList(WsList, Entry.u1.VirtualAddress);
 
             /* Dirtify the page, if needed */
+#ifdef _M_ARM64
+            if (!PointerPte->u.Hard.NotDirty)
+#else
             if (PointerPte->u.Hard.Dirty)
+#endif
                 Pfn->u3.e1.Modified = 1;
 
             /* Make this a transition PTE */
@@ -317,15 +321,21 @@ MiInsertInWorkingSetList(
     _In_ ULONG Protection)
 {
     PMMWSL WsList = Vm->VmWorkingSetList;
+    ARM64_UART_TRACE_HEX("[WSINS] addr=", (ULONG_PTR)Address);
 
     /* Make sure that we are holding the WS lock. */
     ASSERT(MM_ANY_WS_LOCK_HELD_EXCLUSIVE(PsGetCurrentThread()));
 
     PMMPTE PointerPte = MiAddressToPte(Address);
+    ARM64_UART_TRACE_HEX("[WSINS] pte=", (ULONG_PTR)PointerPte);
 
     /* Make sure we are adding a paged-in address */
+    ARM64_UART_TRACE_HEX("[WSINS] pte.val=", PointerPte->u.Long);
     ASSERT(PointerPte->u.Hard.Valid == 1);
-    PMMPFN Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
+    PFN_NUMBER pfnNum = PFN_FROM_PTE(PointerPte);
+    ARM64_UART_TRACE_HEX("[WSINS] pfn=", pfnNum);
+    PMMPFN Pfn1 = MiGetPfnEntry(pfnNum);
+    ARM64_UART_TRACE_HEX("[WSINS] Pfn1=", (ULONG_PTR)Pfn1);
     ASSERT(Pfn1->u3.e1.PageLocation == ActiveAndValid);
 
     /* Shared pages not supported yet */
@@ -369,9 +379,11 @@ NTAPI
 MiInitializeWorkingSetList(_Inout_ PMMSUPPORT WorkingSet)
 {
     PMMWSL WsList = WorkingSet->VmWorkingSetList;
+    ARM64_UART_TRACE_HEX("[WS] WsList=", (ULONG_PTR)WsList);
 
     /* Initialize some fields */
     WsList->FirstFree = ULONG_MAX;
+    ARM64_UART_TRACE("[WS] fields init\r\n");
     WsList->Wsle = reinterpret_cast<PMMWSLE>(WsList + 1);
     WsList->LastEntry = 0;
     /* The first page is already allocated */
@@ -382,7 +394,9 @@ MiInitializeWorkingSetList(_Inout_ PMMSUPPORT WorkingSet)
     {
         ASSERT(WorkingSet->VmWorkingSetList == MmWorkingSetList);
 #if _MI_PAGING_LEVELS == 4
+        ARM64_UART_TRACE("[WS] insert PXE_BASE\r\n");
         MiInsertInWorkingSetList(WorkingSet, (PVOID)PXE_BASE, 0U);
+        ARM64_UART_TRACE("[WS] PXE_BASE done\r\n");
 #elif _MI_PAGING_LEVELS == 3
         MiInsertInWorkingSetList(WorkingSet, (PVOID)PPE_BASE, 0U);
 #elif _MI_PAGING_LEVELS == 2
@@ -391,19 +405,29 @@ MiInitializeWorkingSetList(_Inout_ PMMSUPPORT WorkingSet)
     }
 
 #if _MI_PAGING_LEVELS == 4
+    ARM64_UART_TRACE("[WS] insert PPE\r\n");
     MiInsertInWorkingSetList(WorkingSet, MiAddressToPpe(WorkingSet->VmWorkingSetList), 0UL);
+    ARM64_UART_TRACE("[WS] PPE done\r\n");
 #endif
 #if _MI_PAGING_LEVELS >= 3
+    ARM64_UART_TRACE("[WS] insert PDE\r\n");
     MiInsertInWorkingSetList(WorkingSet, MiAddressToPde(WorkingSet->VmWorkingSetList), 0UL);
+    ARM64_UART_TRACE("[WS] PDE done\r\n");
 #endif
+    ARM64_UART_TRACE("[WS] insert PTE\r\n");
     MiInsertInWorkingSetList(WorkingSet, (PVOID)MiAddressToPte(WorkingSet->VmWorkingSetList), 0UL);
+    ARM64_UART_TRACE("[WS] PTE done\r\n");
+    ARM64_UART_TRACE("[WS] insert WsList page\r\n");
     MiInsertInWorkingSetList(WorkingSet, (PVOID)WorkingSet->VmWorkingSetList, 0UL);
+    ARM64_UART_TRACE("[WS] WsList page done\r\n");
 
     /* From now on, every added page can be trimmed at any time */
     WsList->FirstDynamic = WsList->LastEntry;
+    ARM64_UART_TRACE("[WS] FirstDynamic set\r\n");
 
     /* We can add this to our list */
     ExInterlockedInsertTailList(&MmWorkingSetExpansionHead, &WorkingSet->WorkingSetExpansionLinks, &MmExpansionLock);
+    ARM64_UART_TRACE("[WS] ExInterlockedInsertTailList done\r\n");
 }
 
 VOID

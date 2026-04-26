@@ -138,20 +138,31 @@ MiSectionPageTableGetOrAllocate(PRTL_GENERIC_TABLE Table,
 {
     LARGE_INTEGER SearchFileOffset;
     CACHE_SECTION_PAGE_TABLE SectionZeroPageTable;
+    ARM64_UART_TRACE("[SPTAB] Get\r\n");
     PCACHE_SECTION_PAGE_TABLE PageTableSlice = MiSectionPageTableGet(Table,
                                                                      FileOffset);
+    ARM64_UART_TRACE("[SPTAB] Get done\r\n");
     /* Please zero memory when taking away zero initialization. */
     RtlZeroMemory(&SectionZeroPageTable, sizeof(CACHE_SECTION_PAGE_TABLE));
     if (!PageTableSlice)
     {
+        ARM64_UART_TRACE("[SPTAB] Insert needed\r\n");
         SearchFileOffset.QuadPart = ROUND_DOWN(FileOffset->QuadPart,
                                                ENTRIES_PER_ELEMENT * PAGE_SIZE);
         SectionZeroPageTable.FileOffset = SearchFileOffset;
         SectionZeroPageTable.Refcount = 1;
+#ifdef _M_ARM64
+        /* ARM64: ensure all prior stores (pool metadata, PTE updates) are
+         * visible before the splay-tree walk reads from pool memory.
+         * Without this barrier, QEMU TCG can stall in the tree traversal. */
+        ARM64_BARRIER();
+#endif
+        ARM64_UART_TRACE("[SPTAB] RtlInsert\r\n");
         PageTableSlice = RtlInsertElementGenericTable(Table,
                                                       &SectionZeroPageTable,
                                                       sizeof(SectionZeroPageTable),
                                                       NULL);
+        ARM64_UART_TRACE("[SPTAB] RtlInsert done\r\n");
         if (!PageTableSlice) return NULL;
         DPRINT("Allocate page table %p (%I64x)\n",
                PageTableSlice,
@@ -187,7 +198,9 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
     ASSERT(Segment->Locked);
     ASSERT(!IS_SWAP_FROM_SSE(Entry) || !IS_DIRTY_SSE(Entry));
 
+    ARM64_UART_TRACE("[SPTAB] GetOrAllocate\r\n");
     PageTable = MiSectionPageTableGetOrAllocate(&Segment->PageTable, Offset);
+    ARM64_UART_TRACE("[SPTAB] GetOrAllocate done\r\n");
 
     if (!PageTable) return STATUS_NO_MEMORY;
 

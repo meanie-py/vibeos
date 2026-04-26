@@ -12,6 +12,7 @@
 #define NDEBUG
 #include <debug.h>
 
+
 extern ULONG ExpInitializationPhase;
 
 PVOID KeUserPopEntrySListEnd;
@@ -279,16 +280,25 @@ PspInitializeSystemDll(VOID)
                                           &PspSystemDllEntryPoint);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        /* On ARM64 without ntdll.dll, this is expected */
+        return Status;
+#else
         /* Failed, bugcheck */
         KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, Status, 7, 0, 0);
+#endif
     }
 
     /* Get all the other entrypoints */
     Status = PspLookupKernelUserEntryPoints();
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        return Status;
+#else
         /* Failed, bugcheck */
         KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, Status, 8, 0, 0);
+#endif
     }
 
     /* Let KD know we are done */
@@ -321,6 +331,8 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     UNICODE_STRING Name;
     OBJECT_TYPE_INITIALIZER ObjectTypeInitializer;
     ULONG i;
+
+    ARM64_UART_TRACE("[PS] PspInitPhase0 enter\r\n");
 
     /* Get the system size */
     SystemSize = MmQuerySystemSize();
@@ -463,6 +475,8 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                NULL,
                                NULL);
 
+    ARM64_UART_TRACE("[PS] Creating initial system process\r\n");
+
     /* Create the Initial System Process */
     Status = PspCreateProcess(&PspInitialSystemProcessHandle,
                               PROCESS_ALL_ACCESS,
@@ -482,6 +496,8 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                               KernelMode,
                               (PVOID*)&PsInitialSystemProcess,
                               NULL);
+
+    ARM64_UART_TRACE("[PS] System process created\r\n");
 
     /* Copy the process names */
     strcpy(PsIdleProcess->ImageFileName, "Idle");
@@ -503,6 +519,8 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                   SeAuditProcessCreationInfo.ImageFileName,
                   sizeof(OBJECT_NAME_INFORMATION));
 
+    ARM64_UART_TRACE("[PS] Creating Phase1 thread\r\n");
+
     /* Setup the system initialization thread */
     Status = PsCreateSystemThread(&SysThreadHandle,
                                   THREAD_ALL_ACCESS,
@@ -521,6 +539,8 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                               (PVOID*)&SysThread,
                               NULL);
     ObCloseHandle(SysThreadHandle, KernelMode);
+
+    ARM64_UART_TRACE("[PS] PspInitPhase0 done\r\n");
 
     /* Return success */
     return TRUE;

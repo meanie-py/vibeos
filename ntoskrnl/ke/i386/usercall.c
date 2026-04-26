@@ -143,6 +143,21 @@ KeUserModeCallback(IN ULONG RoutineIndex,
     ASSERT(KeGetCurrentThread()->ApcState.KernelApcInProgress == FALSE);
     ASSERT(KeGetPreviousMode() == UserMode);
 
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Guard: if PEB->KernelCallbackTable is not set up (user32 DllMain hasn't
+     * run yet), user-mode dispatch will crash with an access violation.
+     * Return STATUS_CALLBACK_POP_STACK so the caller knows the callback failed. */
+    {
+        PPEB Peb = PsGetCurrentProcess()->Peb;
+        if (!Peb || !Peb->KernelCallbackTable)
+        {
+            DbgPrint("[CALLBACK] Skipping RoutineIndex=%lu PID=%lu - KernelCallbackTable NULL\n",
+                     RoutineIndex, (ULONG)(ULONG_PTR)PsGetCurrentProcessId());
+            return STATUS_CALLBACK_POP_STACK;
+        }
+    }
+#endif
+
     /* Get the current user-mode stack */
     UserEsp = KiGetUserModeStackAddress();
     OldStack = *UserEsp;

@@ -75,6 +75,10 @@ endif()
 
 add_asm_files(user32_asm ${ASM_SOURCE})
 
+if(ARCH STREQUAL "arm64")
+    list(APPEND SOURCE arm64_user32_stubs.c)
+endif()
+
 add_library(user32 MODULE
     ${SOURCE}
     ${user32_asm}
@@ -85,7 +89,13 @@ set_module_type(user32 win32dll UNICODE ENTRYPOINT DllMain 12)
 target_link_libraries(user32 user32_vista_static user32_optional_vista user32_wsprintf wine win32ksys ${PSEH_LIB})
 add_dependencies(user32 asm)
 
-add_delay_importlibs(user32 usp10 libpng)
+if(ARCH STREQUAL "arm64")
+    # ARM64: skip libpng delay-import (PNG cursor/icon loading not needed during
+    # boot; stubs in arm64_user32_stubs.c). Keep usp10 (text shaping, small deps).
+    add_delay_importlibs(user32 usp10)
+else()
+    add_delay_importlibs(user32 usp10 libpng)
+endif()
 add_importlibs(user32 gdi32 advapi32 kernel32 ntdll)
 add_pch(user32 include/user32.h SOURCE)
 add_cd_file(TARGET user32 DESTINATION reactos/system32 FOR all)

@@ -114,6 +114,68 @@ NTAPI
 MiFillSystemPageDirectory(IN PVOID Base,
                           IN SIZE_T NumberOfBytes);
 
+#if (_MI_PAGING_LEVELS >= 3)
+/*
+ * Ensure the page table hierarchy (PPE, PDE) exists for a kernel-space
+ * address on 3+ level paging systems.  PXE is assumed valid (created during
+ * boot for the entire upper half).  Called from MmCreateVirtualMappingUnsafeEx
+ * before writing a PTE for kernel mappings.
+ */
+static
+VOID
+MiEnsureKernelPdeValid(
+    _In_ PVOID Address)
+{
+#if (_MI_PAGING_LEVELS == 4)
+    PMMPTE PointerPxe = MiAddressToPxe(Address);
+#endif
+    PMMPTE PointerPpe = MiAddressToPpe(Address);
+    PMMPDE PointerPde = MiAddressToPde(Address);
+    PFN_NUMBER PageFrameIndex;
+    MMPTE TempPte;
+    KIRQL OldIrql;
+
+    ASSERT(Address >= MmSystemRangeStart);
+
+#if (_MI_PAGING_LEVELS == 4)
+    /* PXE must be valid (created during boot for all kernel space) */
+    if (!PointerPxe->u.Hard.Valid)
+    {
+        DPRINT1("MiEnsureKernelPdeValid: PXE invalid for %p\n", Address);
+        KeBugCheck(MEMORY_MANAGEMENT);
+    }
+#endif
+
+    /* Create PPE if needed */
+    if (!PointerPpe->u.Hard.Valid)
+    {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.u.Long = ValidKernelPde.u.Long;
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPpe, TempPte);
+        KeMemoryBarrierWithoutFence();
+        RtlZeroMemory(MiPteToAddress(PointerPpe), PAGE_SIZE);
+    }
+
+    /* Create PDE if needed */
+    if (!PointerPde->u.Hard.Valid)
+    {
+        OldIrql = MiAcquirePfnLock();
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiReleasePfnLock(OldIrql);
+
+        TempPte.u.Long = ValidKernelPde.u.Long;
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPde, TempPte);
+        KeMemoryBarrierWithoutFence();
+        RtlZeroMemory(MiPteToAddress(PointerPde), PAGE_SIZE);
+    }
+}
+#endif /* _MI_PAGING_LEVELS >= 3 */
+
 static
 BOOLEAN
 MiIsPageTablePresent(PVOID Address)
@@ -146,10 +208,16 @@ MiIsPageTablePresent(PVOID Address)
     {
         Pfn = MiGetPfnEntry(PFN_FROM_PXE(PointerPxe));
         if (Pfn->OriginalPte.u.Soft.UsedPageTableEntries == 0)
+        {
+            /* DEBUG: PXE valid but PPE page refcount=0 */
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '1');
             return FALSE;
+        }
     }
     else if (PointerPxe->u.Soft.UsedPageTableEntries == 0)
     {
+        /* DEBUG: PXE invalid and no refs */
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '2');
         return FALSE;
     }
 
@@ -164,10 +232,16 @@ MiIsPageTablePresent(PVOID Address)
     {
         Pfn = MiGetPfnEntry(PFN_FROM_PPE(PointerPpe));
         if (Pfn->OriginalPte.u.Soft.UsedPageTableEntries == 0)
+        {
+            /* DEBUG: PPE valid but PDE page refcount=0 */
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '3');
             return FALSE;
+        }
     }
     else if (PointerPpe->u.Soft.UsedPageTableEntries == 0)
     {
+        /* DEBUG: PPE invalid and no refs */
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '4');
         return FALSE;
     }
 
@@ -179,11 +253,21 @@ MiIsPageTablePresent(PVOID Address)
     PointerPde = MiAddressToPde(Address);
     if ((PointerPde->u.Hard.Valid == 0) && (PointerPde->u.Soft.Transition == 0))
     {
+        if (PointerPde->u.Soft.UsedPageTableEntries == 0)
+        {
+            /* DEBUG: PDE invalid, no refs */
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '5');
+        }
         return PointerPde->u.Soft.UsedPageTableEntries != 0;
     }
 
     /* This lies on the PFN */
     Pfn = MiGetPfnEntry(PFN_FROM_PDE(PointerPde));
+    if (Pfn->OriginalPte.u.Soft.UsedPageTableEntries == 0)
+    {
+        /* DEBUG: PDE valid but PTE page refcount=0 */
+        WRITE_PORT_UCHAR((PUCHAR)0x3F8, '6');
+    }
     return Pfn->OriginalPte.u.Soft.UsedPageTableEntries != 0;
 #endif
 }
@@ -664,6 +748,9 @@ MmCreateVirtualMappingUnsafeEx(
 #if _MI_PAGING_LEVELS == 2
         if (!MiSynchronizeSystemPde(MiAddressToPde(Address)))
             MiFillSystemPageDirectory(Address, PAGE_SIZE);
+#elif _MI_PAGING_LEVELS >= 3
+        if (!MiIsPdeForAddressValid(Address))
+            MiEnsureKernelPdeValid(Address);
 #endif
     }
     else
@@ -686,10 +773,37 @@ MmCreateVirtualMappingUnsafeEx(
 
     MI_MAKE_HARDWARE_PTE(&TempPte, PointerPte, ProtectionMask, Page);
 
+    /* Diagnostic: catch PFN 0 mapping */
+    if (Page == 0 && Address < MmSystemRangeStart)
+    {
+        DPRINT1("WARNING: MmCreateVirtualMapping PFN=0 at VA=%p Protect=0x%lx\n", Address, flProtect);
+    }
+
     Pte = InterlockedExchangePte(PointerPte, TempPte.u.Long);
     /* There should not have been anything valid here */
     if (Pte != 0)
     {
+#ifdef _M_AMD64
+        {
+            static const char hex[] = "0123456789ABCDEF";
+            int i;
+            ULONG_PTR v;
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'C');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'V');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'M');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '=');
+            v = Pte;
+            for (i = 60; i >= 0; i -= 4)
+                WRITE_PORT_UCHAR((PUCHAR)0x3F8, hex[(v >> i) & 0xF]);
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, ' ');
+            v = (ULONG_PTR)Address;
+            for (i = 60; i >= 0; i -= 4)
+                WRITE_PORT_UCHAR((PUCHAR)0x3F8, hex[(v >> i) & 0xF]);
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+        }
+#endif
         DPRINT1("Bad PTE %lx at %p for %p\n", Pte, PointerPte, Address);
         KeBugCheck(MEMORY_MANAGEMENT);
     }
@@ -875,6 +989,31 @@ MmSetPageProtect(PEPROCESS Process, PVOID Address, ULONG flProtect)
     // We should be able to bring a page back from PAGE_NOACCESS
     if (!OldPte.u.Hard.Valid && (FlagOn(OldPte.u.Long, 0x800) || (OldPte.u.Hard.PageFrameNumber == 0)))
     {
+#ifdef _M_AMD64
+        /* DEBUG: trace the bad PTE to COM1 */
+        {
+            static const char hex[] = "0123456789ABCDEF";
+            int i;
+            ULONG_PTR v;
+            /* Output "!SPP=" (SetPageProtect) */
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '!');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'S');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'P');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'P');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '=');
+            v = OldPte.u.Long;
+            for (i = 60; i >= 0; i -= 4)
+                WRITE_PORT_UCHAR((PUCHAR)0x3F8, hex[(v >> i) & 0xF]);
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, ' ');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, 'A');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '=');
+            v = (ULONG_PTR)Address;
+            for (i = 60; i >= 0; i -= 4)
+                WRITE_PORT_UCHAR((PUCHAR)0x3F8, hex[(v >> i) & 0xF]);
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\r');
+            WRITE_PORT_UCHAR((PUCHAR)0x3F8, '\n');
+        }
+#endif
         DPRINT1("Invalid Pte %lx\n", OldPte.u.Long);
         KeBugCheck(MEMORY_MANAGEMENT);
     }

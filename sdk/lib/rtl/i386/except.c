@@ -74,7 +74,12 @@ RtlDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
     ULONG_PTR StackLow, StackHigh;
     ULONG_PTR RegistrationFrameEnd;
 
-    /* Perform vectored exception handling for user mode */
+    /*
+     * Perform vectored exception handling for user mode.
+     * In kernel mode (ntoskrnl), skip VEH — the VEH lock uses
+     * NtCurrentTeb() which may not be valid in kernel context.
+     */
+#ifndef _NTOSKRNL_
     if (RtlCallVectoredExceptionHandlers(ExceptionRecord, Context))
     {
         /* Exception handled, now call vectored continue handlers */
@@ -83,6 +88,7 @@ RtlDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
         /* Continue execution */
         return TRUE;
     }
+#endif
 
     /* Get the current stack limits and registration frame */
     RtlpGetStackLimits(&StackLow, &StackHigh);

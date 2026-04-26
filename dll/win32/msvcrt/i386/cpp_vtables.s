@@ -14,18 +14,18 @@
 ASSUME CS:NOTHING
 
 MACRO(START_VTABLE, shortname, cxxname)
-EXTERN _&shortname&_rtti:PROC
-    .long _&shortname&_rtti
-PUBLIC _&shortname&_vtable
-_&shortname&_vtable:
-PUBLIC &cxxname
-&cxxname:
+EXTERN _\shortname\()_rtti:PROC
+    .long _\shortname\()_rtti
+PUBLIC _\shortname\()_vtable
+_\shortname\()_vtable:
+PUBLIC \cxxname
+\cxxname\():
 ENDM
 
 MACRO(DEFINE_EXCEPTION_VTABLE, shortname, cxxname)
     START_VTABLE shortname, cxxname
-    EXTERN ___thiscall_&shortname&_vector_dtor:PROC
-    .long ___thiscall_&shortname&_vector_dtor
+    EXTERN ___thiscall_\shortname\()_vector_dtor:PROC
+    .long ___thiscall_\shortname\()_vector_dtor
     EXTERN ___thiscall_exception_what:PROC
     .long ___thiscall_exception_what
 ENDM

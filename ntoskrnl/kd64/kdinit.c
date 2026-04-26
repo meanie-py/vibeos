@@ -364,6 +364,15 @@ KdInitSystem(
     KdDebuggerDataBlock.KernBase = (ULONG_PTR)KdVersionBlock.KernBase;
 
     /* Initialize the debugger if requested */
+#if defined(_M_IX86) || defined(_M_AMD64)
+    /*
+     * On i386/amd64 with Rust KE trap handlers, skip full KD initialization.
+     * The INT 0x2D → KdpTrap → KdSendPacket path crashes early in boot
+     * (i386: KVM register corruption, amd64: recursive exception flood).
+     * Instead, KdpStub provides direct COM1 output for BREAKPOINT_PRINT.
+     */
+    EnableKd = FALSE;
+#endif
     if (EnableKd && (NT_SUCCESS(KdDebuggerInitialize0(LoaderBlock))))
     {
         /* Now set our real KD routine */
@@ -452,11 +461,20 @@ KdInitSystem(
                 /* Null-terminate */
                 NameBuffer[j] = ANSI_NULL;
 
+                /*
+                 * Skip DbgLoadImageSymbols on i386/amd64 with Rust KE handlers.
+                 * The int 0x2d trap path through the Rust trap handlers
+                 * causes crashes (i386: KVM register corruption, amd64:
+                 * recursive exception flood).  Root cause is unknown.
+                 * KDBG symbol loading from disk still works (kdb_symbols.c).
+                 */
+#ifdef _M_ARM64
                 /* Load the symbols */
                 RtlInitString(&ImageName, NameBuffer);
                 DbgLoadImageSymbols(&ImageName,
                                     LdrEntry->DllBase,
                                     (ULONG_PTR)PsGetCurrentProcessId());
+#endif
             }
 
             /* Check for incoming break-in and break on symbol load

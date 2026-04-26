@@ -1,4 +1,11 @@
 
+# Set up dlltool machine flag for llvm-dlltool (needed for ARM64)
+if(CMAKE_DLLTOOL_MACHINE)
+    set(DLLTOOL_MACHINE_FLAG -m ${CMAKE_DLLTOOL_MACHINE})
+else()
+    set(DLLTOOL_MACHINE_FLAG "")
+endif()
+
 # Show a note about ccache build
 if(ENABLE_CCACHE)
     message("-- Enabling ccache build - done")
@@ -16,25 +23,56 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(NO_ROSSYM TRUE)
 elseif(NOT ARCH STREQUAL "i386")
     set(NO_ROSSYM TRUE)
+elseif(USE_LLVM_MINGW)
+    # rsym can't handle Clang-generated binaries (long mangled names, different debug info)
+    set(NO_ROSSYM TRUE)
 elseif(NOT DEFINED NO_ROSSYM)
     set(NO_ROSSYM FALSE)
 endif()
 
-if(NOT DEFINED USE_PSEH3)
-    set(USE_PSEH3 1)
+# PSEH configuration for llvm-mingw:
+# - i386: Setjmp-based PSEH (USE_PSEH_CLANG). Always catches via longjmp, then
+#   evaluates the filter in the original function context where ESP is correct.
+#   Avoids PSEH3's embedded filter issue (Clang ESP-relative locals + different
+#   stack in handler context = corruption).
+# - ARM64/amd64: DUMMY_PSEH (no i386-style fs:[0] SEH chain; separate workarounds).
+if(ARCH STREQUAL "arm64")
+    set(USE_PSEH3 0)
+    set(USE_DUMMY_PSEH 1)
+elseif(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+    set(USE_PSEH3 0)
+    set(USE_DUMMY_PSEH 1)
+    # TODO: Enable USE_PSEH_CLANG once setjmp-based PSEH is debugged
+    # set(USE_DUMMY_PSEH 0)
+    # set(USE_PSEH_CLANG 1)
+elseif(USE_LLVM_MINGW)
+    set(USE_PSEH3 0)
+    set(USE_DUMMY_PSEH 1)
+else()
+    if(NOT DEFINED USE_PSEH3)
+        set(USE_PSEH3 1)
+    endif()
+    if(NOT DEFINED USE_DUMMY_PSEH)
+        set(USE_DUMMY_PSEH 0)
+    endif()
 endif()
 
 if(USE_PSEH3)
     add_definitions(-D_USE_PSEH3=1)
 endif()
 
-if(NOT DEFINED USE_DUMMY_PSEH)
-    set(USE_DUMMY_PSEH 0)
-endif()
-
 if(USE_DUMMY_PSEH)
     add_definitions(-D_USE_DUMMY_PSEH=1)
 endif()
+
+if(USE_PSEH_CLANG)
+    add_definitions(-D_USE_PSEH_CLANG=1)
+endif()
+
+if(USE_NATIVE_SEH)
+    add_definitions(-D_USE_NATIVE_SEH=1)
+endif()
+
 
 if(STACK_PROTECTOR)
     add_compile_options(-fstack-protector-strong)
@@ -44,12 +82,54 @@ endif()
 # note: -fno-common is default since GCC 10
 add_compile_options(-pipe -fms-extensions -fno-strict-aliasing -fno-common)
 
-# A long double is 64 bits
-add_compile_options(-mlong-double-64)
+# A long double is 64 bits (x86/amd64 only)
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+    add_compile_options(-mlong-double-64)
+endif()
 
 # Prevent GCC from searching any of the default directories.
-# The case for C++ is handled through the reactos_c++ INTERFACE library
-add_compile_options("$<$<NOT:$<COMPILE_LANGUAGE:CXX>>:-nostdinc>")
+if(USE_LLVM_MINGW)
+    # llvm-mingw: use -nostdinc for all languages.
+    # sdk/include/crt is excluded from include_directories() in CMakeLists.txt
+    # and re-added here with lower priority so libc++ wrappers are found first.
+    add_compile_options(-nostdinc)
+
+    # Discover libc++ and clang builtin include paths from the toolchain
+    get_filename_component(_llvm_mingw_compiler_dir ${CMAKE_CXX_COMPILER} DIRECTORY)
+    get_filename_component(_llvm_mingw_toolchain_root ${_llvm_mingw_compiler_dir} DIRECTORY)
+    get_filename_component(_llvm_mingw_compiler_name ${CMAKE_CXX_COMPILER} NAME)
+    string(REGEX REPLACE "-clang\\+\\+$" "" _llvm_mingw_triplet "${_llvm_mingw_compiler_name}")
+    set(_llvm_mingw_libcxx "${_llvm_mingw_toolchain_root}/${_llvm_mingw_triplet}/include/c++/v1")
+    execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} --version
+        OUTPUT_VARIABLE _llvm_mingw_clang_ver_out OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "clang version ([0-9]+)" _llvm_mingw_match "${_llvm_mingw_clang_ver_out}")
+    set(_llvm_mingw_clang_inc "${_llvm_mingw_toolchain_root}/lib/clang/${CMAKE_MATCH_1}/include")
+
+    # For C/ASM: add CRT and clang builtins as -isystem
+    # (vcruntime stays in -I via include_directories)
+    add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-isystem${REACTOS_SOURCE_DIR}/sdk/include/crt>")
+    if(EXISTS "${_llvm_mingw_clang_inc}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-isystem${_llvm_mingw_clang_inc}>")
+    endif()
+    # For RC (resource compiler): add CRT path via CMAKE_RC_FLAGS since windres
+    # uses -I directly and doesn't support -isystem/-idirafter.
+    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I ${REACTOS_SOURCE_DIR}/sdk/include/crt")
+
+    # For C++: add libc++ and clang builtins as -isystem, then CRT as -idirafter.
+    # Search order: -I (ReactOS non-CRT) > -isystem (libc++ wrappers) > -idirafter (CRT)
+    # This way libc++ wrapper headers are found first, and #include_next chains to CRT.
+    if(EXISTS "${_llvm_mingw_libcxx}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_llvm_mingw_libcxx}>")
+    endif()
+    if(EXISTS "${_llvm_mingw_clang_inc}")
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-isystem${_llvm_mingw_clang_inc}>")
+    endif()
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-idirafter${REACTOS_SOURCE_DIR}/sdk/include/crt>")
+else()
+    # The case for C++ is handled through the reactos_c++ INTERFACE library
+    add_compile_options("$<$<NOT:$<COMPILE_LANGUAGE:CXX>>:-nostdinc>")
+endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     add_compile_options("-Wno-unknown-pragmas")
@@ -252,6 +332,7 @@ endif()
 # Fix build with GLIBCXX + our c++ headers
 add_definitions(-D_GLIBCXX_HAVE_BROKEN_VSWPRINTF)
 
+
 # Fix build with UCRT headers
 add_definitions(-D_CRT_SUPPRESS_RESTRICT)
 
@@ -337,8 +418,10 @@ set(CMAKE_CXX_CREATE_SHARED_MODULE ${CMAKE_CXX_CREATE_SHARED_LIBRARY})
 set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup")
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup")
+# --allow-multiple-definition: Rust crates each define __rustc::rust_begin_unwind;
+# when multiple .a libraries link into one PE (e.g. ntdll), LLD sees duplicates.
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
 
 set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_sections_flag} <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 # FIXME: Once the GCC toolchain bugs are fixed, add _compress_debug_sections_flag to CXX too
@@ -359,7 +442,18 @@ set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCE
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)
     if(${ENTRYPOINT} STREQUAL "0")
-        target_link_options(${MODULE} PRIVATE "-Wl,-entry,0")
+        # lld interprets "0" as a symbol name, not an address
+        # Use __ImageBase as a dummy entry point for modules that don't need one
+        if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            if(ARCH STREQUAL "i386")
+                # i386 adds _ prefix: __ImageBase becomes ___ImageBase
+                target_link_options(${MODULE} PRIVATE "-Wl,-e,___ImageBase")
+            else()
+                target_link_options(${MODULE} PRIVATE "-Wl,-e,__ImageBase")
+            endif()
+        else()
+            target_link_options(${MODULE} PRIVATE "-Wl,-entry,0")
+        endif()
     elseif(ARCH STREQUAL "i386")
         set(_entrysymbol _${ENTRYPOINT})
         if(${ARGC} GREATER 2)
@@ -372,6 +466,16 @@ function(set_entrypoint MODULE ENTRYPOINT)
 endfunction()
 
 function(set_subsystem MODULE SUBSYSTEM)
+    # LLD doesn't recognize numeric subsystem IDs; map EFI types to names
+    if(SUBSYSTEM STREQUAL "10")
+        set(SUBSYSTEM "efi_application")
+    elseif(SUBSYSTEM STREQUAL "11")
+        set(SUBSYSTEM "efi_boot_service_driver")
+    elseif(SUBSYSTEM STREQUAL "12")
+        set(SUBSYSTEM "efi_runtime_driver")
+    elseif(SUBSYSTEM STREQUAL "13")
+        set(SUBSYSTEM "efi_rom")
+    endif()
     target_link_options(${MODULE} PRIVATE "-Wl,--subsystem,${SUBSYSTEM}:5.01")
 endfunction()
 
@@ -393,7 +497,10 @@ function(set_module_type_toolchain MODULE TYPE)
         target_link_options(${MODULE} PRIVATE -Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000)
 
         if(${TYPE} STREQUAL "wdmdriver")
-            target_link_options(${MODULE} PRIVATE "-Wl,--wdmdriver")
+            # --wdmdriver is a GNU ld custom flag, not supported by lld
+            if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+                target_link_options(${MODULE} PRIVATE "-Wl,--wdmdriver")
+            endif()
         endif()
 
         # Place INIT &.rsrc section at the tail of the module, before .reloc
@@ -410,6 +517,16 @@ function(set_module_type_toolchain MODULE TYPE)
         # Believe it or not, cmake doesn't do that
         set_property(TARGET ${MODULE} APPEND PROPERTY LINK_DEPENDS $<TARGET_PROPERTY:native-pefixup,IMPORTED_LOCATION>)
     endif()
+
+    # Fix lld i386 forwarding string underscore bug.
+    # lld adds '_' prefix to DLL forwarding targets (e.g. ntdll.Xxx -> _ntdll.Xxx).
+    # This post-build step patches the PE export table to skip the underscore.
+    if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+        add_custom_command(TARGET ${MODULE} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py
+                $<TARGET_FILE:${MODULE}>)
+    endif()
 endfunction()
 
 function(add_delay_importlibs _module)
@@ -419,9 +536,18 @@ function(add_delay_importlibs _module)
     endif()
     foreach(_lib ${ARGN})
         get_filename_component(_basename "${_lib}" NAME_WE)
-        target_link_libraries(${_module} lib${_basename}_delayed)
+        # llvm-dlltool doesn't support --output-delaylib, so on ARM64/LLVM builds
+        # we use regular imports instead of delayed imports
+        if(CMAKE_DLLTOOL_MACHINE)
+            target_link_libraries(${_module} lib${_basename})
+        else()
+            target_link_libraries(${_module} lib${_basename}_delayed)
+        endif()
     endforeach()
-    target_link_libraries(${_module} delayimp)
+    # Only link delayimp when actually using delayed imports
+    if(NOT CMAKE_DLLTOOL_MACHINE)
+        target_link_libraries(${_module} delayimp)
+    endif()
 endfunction()
 
 if(NOT ARCH STREQUAL "i386")
@@ -454,7 +580,7 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
         OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}.a
         # ar just puts stuff into the archive, without looking twice. Just delete the lib, we're going to rebuild it anyway
         COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}.a
-        COMMAND ${CMAKE_DLLTOOL} --def ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def --kill-at --output-lib=${_libname}.a -t ${_libname}
+        COMMAND ${CMAKE_DLLTOOL} ${DLLTOOL_MACHINE_FLAG} -d ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def -k -l ${_libname}.a -t ${_libname}
         DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
         WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
 
@@ -468,13 +594,24 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
 
     # Do the same with delay-import libs
     set(LIBRARY_PRIVATE_DIR ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_libname}_delayed.dir)
-    add_custom_command(
-        OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-        # ar just puts stuff into the archive, without looking twice. Just delete the lib, we're going to rebuild it anyway
-        COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-        COMMAND ${CMAKE_DLLTOOL} --def ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def --kill-at --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
-        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
-        WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
+    # llvm-dlltool doesn't support --output-delaylib, so create an empty archive for LLVM builds
+    if(CMAKE_DLLTOOL_MACHINE)
+        add_custom_command(
+            OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_AR} crT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
+            WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR}
+            COMMENT "Creating empty delay-import stub for ${_libname} (llvm-dlltool)")
+    else()
+        add_custom_command(
+            OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            # ar just puts stuff into the archive, without looking twice. Just delete the lib, we're going to rebuild it anyway
+            COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_DLLTOOL} ${DLLTOOL_MACHINE_FLAG} -d ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def -k --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
+            WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
+    endif()
 
     # Create a custom target for the delay-import library generation
     add_custom_target(${_libname}_delayed_implib_target DEPENDS ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a)
@@ -543,10 +680,18 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
     get_defines(_defines)
     get_includes(_includes)
 
-    add_custom_command(
-        OUTPUT ${_object_file}
-        COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
-        DEPENDS ${_asm_file})
+    if(CMAKE_ASM16_GCC)
+        # Use i686 mingw GCC for 16-bit boot sector code (handles preprocessing + GNU as)
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM16_GCC} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
+            DEPENDS ${_asm_file})
+    else()
+        add_custom_command(
+            OUTPUT ${_object_file}
+            COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
+            DEPENDS ${_asm_file})
+    endif()
 
     add_custom_command(
         OUTPUT ${_binary_file}
@@ -557,6 +702,28 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
     set_source_files_properties(${_object_file} ${_binary_file} PROPERTIES GENERATED TRUE)
 
     add_custom_target(${_target_name} ALL DEPENDS ${_binary_file})
+endfunction()
+
+# Compile an assembly file with i686 mingw GCC instead of Clang.
+# Used for 16-bit code that Clang's assembler can't handle (symbol arithmetic, .code16, etc.)
+# Returns the object file path in the parent scope variable _result_var.
+function(compile_asm_with_gcc _source_file _result_var)
+    if(NOT CMAKE_ASM16_GCC)
+        message(FATAL_ERROR "compile_asm_with_gcc: CMAKE_ASM16_GCC not set")
+    endif()
+    get_filename_component(_src_name ${_source_file} NAME_WE)
+    set(_object_file ${CMAKE_CURRENT_BINARY_DIR}/${_src_name}_gcc.obj)
+    get_filename_component(_source_file_full_path ${_source_file} ABSOLUTE)
+
+    get_defines(_defines)
+    get_includes(_includes)
+
+    add_custom_command(
+        OUTPUT ${_object_file}
+        COMMAND ${CMAKE_ASM16_GCC} -x assembler-with-cpp -o ${_object_file} ${_includes} ${_defines} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm -D__ASM__ -c ${_source_file_full_path}
+        DEPENDS ${_source_file_full_path})
+
+    set(${_result_var} ${_object_file} PARENT_SCOPE)
 endfunction()
 
 function(allow_warnings __module)
@@ -598,6 +765,10 @@ macro(add_asm_files _target)
 endmacro()
 
 function(add_linker_script _target _linker_script_file)
+    # LLD in MinGW PE mode does not support -T linker scripts
+    if(USE_LLVM_MINGW)
+        return()
+    endif()
     get_filename_component(_file_full_path ${_linker_script_file} ABSOLUTE)
     target_link_options(${_target} PRIVATE "-Wl,-T,${_file_full_path}")
     set_property(TARGET ${_target} APPEND PROPERTY LINK_DEPENDS ${_file_full_path})
@@ -611,57 +782,164 @@ add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:WIT
 # We disable exceptions, unless said so
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:WITH_CXX_EXCEPTIONS>>,-fexceptions,-fno-exceptions>>")
 
-# G++ shipped with ROSBE uses sjlj exceptions on i386. Tell Clang it is so
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND ARCH STREQUAL "i386")
+# G++ shipped with ROSBE uses sjlj exceptions on i386. Tell Clang it is so.
+# But when using llvm-mingw, use DWARF exceptions (matching libunwind).
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND ARCH STREQUAL "i386" AND NOT USE_LLVM_MINGW)
     add_compile_options("$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<BOOL:$<TARGET_PROPERTY:WITH_CXX_EXCEPTIONS>>>:-fsjlj-exceptions>")
 endif()
 
 # Find default G++ libraries
+# For llvm-mingw, we use clang directly and provide fallbacks for missing GCC libraries
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    set(GXX_EXECUTABLE ${CMAKE_CXX_COMPILER_TARGET}-g++)
+    # Use clang to find libraries
+    set(GXX_EXECUTABLE ${CMAKE_CXX_COMPILER})
 else()
     set(GXX_EXECUTABLE ${CMAKE_CXX_COMPILER})
 endif()
 
-execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libwinpthread.a OUTPUT_VARIABLE LIBWINPTHREAD_LOCATION)
-if(LIBWINPTHREAD_LOCATION MATCHES "mingw32")
+# Helper macro to find a library with fallback to interface
+macro(find_compiler_lib LIBNAME LIBFILE LIBVAR)
+    execute_process(
+        COMMAND ${GXX_EXECUTABLE} -print-file-name=${LIBFILE}
+        OUTPUT_VARIABLE ${LIBVAR}
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    # Check if the file actually exists (clang returns just the name if not found)
+    if(${LIBVAR} AND EXISTS "${${LIBVAR}}")
+        set(${LIBVAR}_FOUND TRUE)
+    else()
+        set(${LIBVAR}_FOUND FALSE)
+    endif()
+endmacro()
+
+find_compiler_lib(winpthread libwinpthread.a LIBWINPTHREAD_LOCATION)
+if(LIBWINPTHREAD_LOCATION_FOUND)
     add_library(libwinpthread STATIC IMPORTED)
-    string(STRIP ${LIBWINPTHREAD_LOCATION} LIBWINPTHREAD_LOCATION)
     message(STATUS "Using libwinpthread from ${LIBWINPTHREAD_LOCATION}")
     set_target_properties(libwinpthread PROPERTIES IMPORTED_LOCATION ${LIBWINPTHREAD_LOCATION})
     # libwinpthread needs kernel32 imports, a CRT and msvcrtex
     target_link_libraries(libwinpthread INTERFACE libkernel32 libmsvcrt msvcrtex)
 else()
     add_library(libwinpthread INTERFACE)
+    message(STATUS "libwinpthread not found, using interface library")
 endif()
 
-add_library(libgcc STATIC IMPORTED)
-execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libgcc.a OUTPUT_VARIABLE LIBGCC_LOCATION)
-string(STRIP ${LIBGCC_LOCATION} LIBGCC_LOCATION)
-set_target_properties(libgcc PROPERTIES IMPORTED_LOCATION ${LIBGCC_LOCATION})
-# libgcc needs kernel32 and winpthread (an appropriate CRT must be linked manually)
-target_link_libraries(libgcc INTERFACE libwinpthread libkernel32)
+find_compiler_lib(gcc libgcc.a LIBGCC_LOCATION)
+if(LIBGCC_LOCATION_FOUND)
+    add_library(libgcc STATIC IMPORTED)
+    set_target_properties(libgcc PROPERTIES IMPORTED_LOCATION ${LIBGCC_LOCATION})
+    # libgcc needs kernel32 and winpthread (an appropriate CRT must be linked manually)
+    target_link_libraries(libgcc INTERFACE libwinpthread libkernel32)
+else()
+    # For clang/llvm-mingw, use compiler-rt builtins instead of libgcc
+    # (needed for i386 64-bit division: __divdi3, __udivdi3, __umoddi3)
+    add_library(libgcc INTERFACE)
+    if(USE_LLVM_MINGW)
+        execute_process(
+            COMMAND ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -print-libgcc-file-name
+            OUTPUT_VARIABLE _clang_rt_builtins OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(EXISTS "${_clang_rt_builtins}")
+            add_library(libclang_rt_builtins STATIC IMPORTED)
+            set_target_properties(libclang_rt_builtins PROPERTIES IMPORTED_LOCATION "${_clang_rt_builtins}")
+            target_link_libraries(libgcc INTERFACE libclang_rt_builtins)
+            # Also add to global link flags so kernel-mode drivers get it too
+            add_link_options("${_clang_rt_builtins}")
+            message(STATUS "Using compiler-rt builtins: ${_clang_rt_builtins}")
+        endif()
+    endif()
+    target_link_libraries(libgcc INTERFACE libwinpthread libkernel32)
+    message(STATUS "libgcc not found (using clang runtime), using interface library")
+endif()
 
-add_library(libsupc++ STATIC IMPORTED GLOBAL)
-execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libsupc++.a OUTPUT_VARIABLE LIBSUPCXX_LOCATION)
-string(STRIP ${LIBSUPCXX_LOCATION} LIBSUPCXX_LOCATION)
-set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
-# libsupc++ requires libgcc and stdc++compat
-target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
+find_compiler_lib(supc++ libsupc++.a LIBSUPCXX_LOCATION)
+if(LIBSUPCXX_LOCATION_FOUND)
+    add_library(libsupc++ STATIC IMPORTED GLOBAL)
+    set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
+    # libsupc++ requires libgcc and stdc++compat
+    target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
+else()
+    # For clang/llvm-mingw, use libc++, libc++abi, and libunwind instead of libsupc++
+    find_compiler_lib(c++ libc++.a LIBCXX_LOCATION)
+    find_compiler_lib(c++abi libc++abi.a LIBCXXABI_LOCATION)
+    find_compiler_lib(unwind libunwind.a LIBUNWIND_LOCATION)
+    if(LIBCXX_LOCATION_FOUND AND LIBCXXABI_LOCATION_FOUND AND LIBUNWIND_LOCATION_FOUND)
+        add_library(libcxx STATIC IMPORTED GLOBAL)
+        set_target_properties(libcxx PROPERTIES IMPORTED_LOCATION ${LIBCXX_LOCATION})
+        add_library(libcxxabi STATIC IMPORTED GLOBAL)
+        set_target_properties(libcxxabi PROPERTIES IMPORTED_LOCATION ${LIBCXXABI_LOCATION})
+        add_library(libunwind STATIC IMPORTED GLOBAL)
+        set_target_properties(libunwind PROPERTIES IMPORTED_LOCATION ${LIBUNWIND_LOCATION})
+        # libc++ and libc++abi have circular deps, resolved by --start-group
+        target_link_libraries(libcxxabi INTERFACE libunwind)
+        target_link_libraries(libcxx INTERFACE libcxxabi)
+        add_library(libsupc++ INTERFACE)
+        target_link_libraries(libsupc++ INTERFACE libcxx libgcc stdc++compat)
+        message(STATUS "Using libc++ (${LIBCXX_LOCATION}), libc++abi (${LIBCXXABI_LOCATION}), libunwind (${LIBUNWIND_LOCATION})")
+    else()
+        add_library(libsupc++ INTERFACE)
+        target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
+        message(STATUS "libsupc++ not found (using clang runtime), using interface library")
+    endif()
+endif()
 
-add_library(libmingwex STATIC IMPORTED)
-execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libmingwex.a OUTPUT_VARIABLE LIBMINGWEX_LOCATION)
-string(STRIP ${LIBMINGWEX_LOCATION} LIBMINGWEX_LOCATION)
-set_target_properties(libmingwex PROPERTIES IMPORTED_LOCATION ${LIBMINGWEX_LOCATION})
-# libmingwex requires a CRT and imports from kernel32
-target_link_libraries(libmingwex INTERFACE libmsvcrt libkernel32)
+find_compiler_lib(mingwex libmingwex.a LIBMINGWEX_LOCATION)
+if(LIBMINGWEX_LOCATION_FOUND)
+    add_library(libmingwex STATIC IMPORTED)
+    set_target_properties(libmingwex PROPERTIES IMPORTED_LOCATION ${LIBMINGWEX_LOCATION})
+    # libmingwex requires a CRT and imports from kernel32
+    target_link_libraries(libmingwex INTERFACE libmsvcrt libkernel32)
+else()
+    add_library(libmingwex INTERFACE)
+    target_link_libraries(libmingwex INTERFACE libmsvcrt libkernel32)
+    message(STATUS "libmingwex not found, using interface library")
+endif()
 
-add_library(libstdc++ STATIC IMPORTED GLOBAL)
-execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libstdc++.a OUTPUT_VARIABLE LIBSTDCCXX_LOCATION)
-string(STRIP ${LIBSTDCCXX_LOCATION} LIBSTDCCXX_LOCATION)
-set_target_properties(libstdc++ PROPERTIES IMPORTED_LOCATION ${LIBSTDCCXX_LOCATION})
-# libstdc++ requires libsupc++ and mingwex provided by GCC
-target_link_libraries(libstdc++ INTERFACE libsupc++ libmingwex oldnames)
+find_compiler_lib(stdc++ libstdc++.a LIBSTDCXX_LOCATION)
+if(LIBSTDCXX_LOCATION_FOUND)
+    add_library(libstdc++ STATIC IMPORTED GLOBAL)
+    set_target_properties(libstdc++ PROPERTIES IMPORTED_LOCATION ${LIBSTDCXX_LOCATION})
+    # libstdc++ requires libsupc++ and mingwex provided by GCC
+    target_link_libraries(libstdc++ INTERFACE libsupc++ libmingwex oldnames)
+else()
+    # For clang/llvm-mingw, we use libc++ instead (libcxx target already created above)
+    add_library(libstdc++ INTERFACE)
+    if(TARGET libcxx)
+        target_link_libraries(libstdc++ INTERFACE libcxx stdc++compat libmingwex oldnames)
+    else()
+        target_link_libraries(libstdc++ INTERFACE libsupc++ libmingwex oldnames)
+    endif()
+    message(STATUS "libstdc++ not found (using clang runtime), using interface library")
+
+    # For llvm-mingw, we need to add the libc++ include paths
+    # Since -nostdinc removes all default paths, we need to add them back for C++
+    get_filename_component(_compiler_dir ${CMAKE_CXX_COMPILER} DIRECTORY)
+    get_filename_component(_toolchain_root ${_compiler_dir} DIRECTORY)
+    # Get the target triplet (e.g., aarch64-w64-mingw32)
+    get_filename_component(_compiler_name ${CMAKE_CXX_COMPILER} NAME)
+    string(REGEX REPLACE "-clang\\+\\+$" "" _target_triplet "${_compiler_name}")
+    set(_libcxx_include "${_toolchain_root}/${_target_triplet}/include/c++/v1")
+    set(_mingw_include "${_toolchain_root}/${_target_triplet}/include")
+    # Find clang version for builtin headers
+    execute_process(
+        COMMAND ${CMAKE_CXX_COMPILER} --version
+        OUTPUT_VARIABLE _clang_version_output
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "clang version ([0-9]+)" _clang_match "${_clang_version_output}")
+    set(_clang_major "${CMAKE_MATCH_1}")
+    set(_clang_include "${_toolchain_root}/lib/clang/${_clang_major}/include")
+    if(EXISTS "${_libcxx_include}")
+        target_include_directories(libstdc++ SYSTEM INTERFACE ${_libcxx_include})
+        message(STATUS "Found libc++ headers at: ${_libcxx_include}")
+    endif()
+    if(EXISTS "${_clang_include}")
+        target_include_directories(libstdc++ SYSTEM INTERFACE ${_clang_include})
+        message(STATUS "Found clang headers at: ${_clang_include}")
+    endif()
+    if(EXISTS "${_mingw_include}")
+        target_include_directories(libstdc++ SYSTEM INTERFACE ${_mingw_include})
+        message(STATUS "Found mingw headers at: ${_mingw_include}")
+    endif()
+endif()
 # this is for our SAL annotations
 target_compile_definitions(libstdc++ INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:PAL_STDCPP_COMPAT>")
 

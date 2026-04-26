@@ -1,0 +1,191 @@
+"""Stitch API output into Rust crate modules."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from .batch_runner import TranslationResult
+from .config import OUTPUT_CRATE
+from .postprocess import postprocess
+
+if TYPE_CHECKING:
+    from .scanner import ScanResult
+    from .spec_parser import SpecEntry
+
+
+def assemble_file(
+    result: TranslationResult,
+    subsystem: str,
+    c_source: str,
+    output_dir: Path = OUTPUT_CRATE,
+    exports: dict[str, SpecEntry] | None = None,
+    scan: ScanResult | None = None,
+) -> Path:
+    """Write a single translation result into the crate structure.
+
+    Creates: output_dir/src/{subsystem}/{filename}.rs
+
+    Applies post-processing and appends original C source as comments.
+
+    Args:
+        result: Translation result with Rust code
+        subsystem: Subsystem name (e.g., "ex", "ob", "mm")
+        c_source: Original C source code to embed as comments
+        output_dir: Root of the output crate
+        exports: Spec-exported functions for #[no_mangle] fixup
+        scan: Scanner result for global #[no_mangle] fixup
+
+    Returns:
+        Path to the written file
+    """
+    # Derive module name from source filename
+    stem = Path(result.source_file).stem  # e.g., "uuid" from "uuid.c"
+
+    sub_dir = output_dir / "src" / subsystem
+    sub_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = sub_dir / f"{stem}.rs"
+
+    # Post-process the Rust code
+    rust_code = postprocess(
+        result.rust_code,
+        exports=exports,
+        globals=scan.globals if scan else None,
+    )
+
+    # Build the file content with C source as trailing comments
+    content_parts = [rust_code.rstrip()]
+    content_parts.append("")
+    content_parts.append("")
+    content_parts.append("// " + "=" * 76)
+    content_parts.append("// ORIGINAL C SOURCE")
+    content_parts.append("// " + "=" * 76)
+    content_parts.append("//")
+    for line in c_source.splitlines():
+        if line:
+            content_parts.append(f"// {line}")
+        else:
+            content_parts.append("//")
+    content_parts.append("//")
+    content_parts.append("// " + "=" * 76)
+    content_parts.append("// END ORIGINAL C SOURCE")
+    content_parts.append("// " + "=" * 76)
+    content_parts.append("")
+
+    out_path.write_text("\n".join(content_parts))
+    return out_path
+
+
+def generate_mod_rs(subsystem: str, module_names: list[str], output_dir: Path = OUTPUT_CRATE) -> Path:
+    """Generate or update mod.rs for a subsystem, merging with existing modules."""
+    sub_dir = output_dir / "src" / subsystem
+    sub_dir.mkdir(parents=True, exist_ok=True)
+
+    mod_path = sub_dir / "mod.rs"
+
+    # Parse existing modules from mod.rs if it exists
+    existing_modules = set()
+    if mod_path.exists():
+        import re
+        for line in mod_path.read_text().splitlines():
+            m = re.match(r'pub mod (\w+);', line)
+            if m:
+                existing_modules.add(m.group(1))
+
+    # Merge new module names with existing
+    all_modules = sorted(existing_modules | set(module_names))
+
+    lines = [f"//! {subsystem} subsystem — translated from C.", ""]
+    for name in all_modules:
+        lines.append(f"pub mod {name};")
+    lines.append("")
+
+    mod_path.write_text("\n".join(lines))
+    return mod_path
+
+
+def generate_lib_rs(subsystems: list[str], output_dir: Path = OUTPUT_CRATE) -> Path:
+    """Update the top-level lib.rs, merging with existing subsystem modules.
+
+    If lib.rs already exists, parses existing `pub mod X;` lines and merges
+    with the new subsystems list. Preserves any extra attributes/allows.
+    """
+    src_dir = output_dir / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+
+    lib_path = src_dir / "lib.rs"
+
+    # If lib.rs exists, parse existing subsystem modules and preserve content
+    if lib_path.exists():
+        import re
+        existing_text = lib_path.read_text()
+        existing_subs = set()
+        for line in existing_text.splitlines():
+            m = re.match(r'pub mod (\w+);', line)
+            if m:
+                existing_subs.add(m.group(1))
+
+        all_subs = sorted(existing_subs | set(subsystems))
+
+        # Replace just the pub mod lines, keep everything else
+        # Remove old pub mod lines, then append merged list
+        new_lines = []
+        for line in existing_text.splitlines():
+            if re.match(r'pub mod \w+;', line):
+                continue
+            new_lines.append(line)
+
+        # Remove trailing blank lines
+        while new_lines and new_lines[-1] == '':
+            new_lines.pop()
+        new_lines.append('')
+
+        for sub in all_subs:
+            new_lines.append(f"pub mod {sub};")
+        new_lines.append('')
+
+        lib_path.write_text("\n".join(new_lines))
+    else:
+        lines = [
+            "//! ntoskrnl-rust: Rust translation of ReactOS ntoskrnl.",
+            "//!",
+            "//! Auto-generated by rustconv. Do not edit manually.",
+            "",
+            "#![no_std]",
+            "#![allow(non_snake_case)]",
+            "#![allow(non_camel_case_types)]",
+            "#![allow(non_upper_case_globals)]",
+            "#![allow(unused_unsafe)]",
+            "#![allow(dead_code)]",
+            "",
+        ]
+        for sub in sorted(subsystems):
+            lines.append(f"pub mod {sub};")
+        lines.append("")
+
+        lib_path.write_text("\n".join(lines))
+
+    return lib_path
+
+
+def generate_cargo_toml(output_dir: Path = OUTPUT_CRATE) -> Path:
+    """Generate Cargo.toml for the output crate."""
+    cargo_path = output_dir / "Cargo.toml"
+    content = """\
+[package]
+name = "ntoskrnl-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+
+[features]
+default = []
+"""
+    cargo_path.write_text(content)
+    return cargo_path

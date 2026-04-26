@@ -21,6 +21,9 @@ namespace std
   using ::clock_t;
   using ::time_t;
   using ::tm;
+#ifndef _CRT_NO_TIME_T
+  using ::timespec;
+#endif
 
   using ::clock;
   using ::difftime;

@@ -86,7 +86,7 @@ static __inline void LoadUserApiHook()
 {
    if (!gfServerProcess &&
        !IsInsideUserApiHook() &&
-       (gpsi->dwSRVIFlags & SRVINFO_APIHOOK) &&
+       gpsi && (gpsi->dwSRVIFlags & SRVINFO_APIHOOK) &&
        !RtlIsThreadWithinLoaderCallout())
    {
       NtUserCallNoParam(NOPARAM_ROUTINE_LOADUSERAPIHOOK);

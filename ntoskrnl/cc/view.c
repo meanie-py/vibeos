@@ -812,11 +812,13 @@ CcRosCreateVacb (
 
     DPRINT("CcRosCreateVacb()\n");
 
+    ARM64_UART_TRACE("[CC] CreateVacb: alloc\r\n");
     current = ExAllocateFromNPagedLookasideList(&VacbLookasideList);
     if (!current)
     {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    ARM64_UART_TRACE("[CC] CreateVacb: alloc done\r\n");
     current->BaseAddress = NULL;
     current->Dirty = FALSE;
     current->PageOut = FALSE;
@@ -830,12 +832,19 @@ CcRosCreateVacb (
 
     CcRosVacbIncRefCount(current);
 
+
+
     while (TRUE)
     {
         /* Map VACB in system space */
+        ARM64_UART_TRACE("[CC] CreateVacb: MmMapViewInSystemSpaceEx\r\n");
         Status = MmMapViewInSystemSpaceEx(SharedCacheMap->Section, &current->BaseAddress, &ViewSize, &current->FileOffset, 0);
         if (NT_SUCCESS(Status))
         {
+#ifdef _M_ARM64
+            ARM64_BARRIER();
+#endif
+            ARM64_UART_TRACE("[CC] CreateVacb: MapView done\r\n");
             break;
         }
 
@@ -950,10 +959,12 @@ CcRosEnsureVacbResident(
 #endif
 
     /* Check if the pages are resident */
+    ARM64_UART_TRACE("[CC] EnsureResident: MmIsDataSectionResident\r\n");
     if (!MmIsDataSectionResident(SharedCacheMap->FileObject->SectionObjectPointer,
                                  Vacb->FileOffset.QuadPart + Offset,
                                  Length))
     {
+        ARM64_UART_TRACE("[CC] EnsureResident: pages NOT resident\r\n");
         if (!Wait)
         {
             return FALSE;
@@ -961,6 +972,10 @@ CcRosEnsureVacbResident(
 
         if (!NoRead)
         {
+#ifdef _M_ARM64
+            ARM64_BARRIER();
+#endif
+            ARM64_UART_TRACE("[CC] EnsureResident: MmMakeDataSectionResident\r\n");
             NTSTATUS Status = MmMakeDataSectionResident(SharedCacheMap->FileObject->SectionObjectPointer,
                                                         Vacb->FileOffset.QuadPart + Offset,
                                                         Length,

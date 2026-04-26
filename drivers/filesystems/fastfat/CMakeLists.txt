@@ -35,6 +35,9 @@ list(APPEND SOURCE
     write.c
     fatprocs.h)
 
+if(ARCH STREQUAL "arm64")
+    add_definitions(-DARM64_UART_TRACE_ENABLE)
+endif()
 add_library(fastfat MODULE ${SOURCE} fastfat.rc)
 set_module_type(fastfat kernelmodedriver)
 target_link_libraries(fastfat ${PSEH_LIB} memcmp)

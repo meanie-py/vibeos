@@ -12,6 +12,7 @@
 #define NDEBUG
 #include "debug.h"
 
+
 POBJECT_TYPE CmpKeyObjectType;
 PCMHIVE CmiVolatileHive;
 LIST_ENTRY CmpHiveListHead;
@@ -907,7 +908,11 @@ CmpInitializeSystemHive(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Get the System Hive base address */
     HiveBase = LoaderBlock->RegistryBase;
+    ARM64_UART_TRACE("[CM] SysHive: HiveBase=");
+    if (HiveBase) ARM64_UART_TRACE("non-null"); else ARM64_UART_TRACE("NULL");
+    ARM64_UART_TRACE("\r\n");
 
+    ARM64_UART_TRACE("[CM] SysHive: CmpInitializeHive\r\n");
     Status = CmpInitializeHive(&SystemHive,
                                HiveBase ? HINIT_MEMORY : HINIT_CREATE,
                                HIVE_NOLAZYFLUSH,
@@ -923,6 +928,8 @@ CmpInitializeSystemHive(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     {
         return FALSE;
     }
+
+    ARM64_UART_TRACE("[CM] SysHive: CmpInitializeHive done\r\n");
 
     /* Set the hive filename */
     if (!RtlCreateUnicodeString(&SystemHive->FileFullPath, L"\\SystemRoot\\System32\\Config\\SYSTEM"))
@@ -956,6 +963,7 @@ CmpInitializeSystemHive(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Attach it to the system key */
     /* Let CmpLinkHiveToMaster allocate a new hive if we got none from the LoaderBlock. */
+    ARM64_UART_TRACE("[CM] SysHive: CmpLinkHiveToMaster\r\n");
     RtlInitUnicodeString(&KeyName, L"\\Registry\\Machine\\SYSTEM");
     Status = CmpLinkHiveToMaster(&KeyName,
                                  NULL,
@@ -1667,6 +1675,7 @@ CmInitSystem1(VOID)
     CmpSystemProcess = PsGetCurrentProcess();
 
     /* Create the key object types */
+    ARM64_UART_TRACE("[CM] CmpCreateObjectTypes\r\n");
     Status = CmpCreateObjectTypes();
     if (!NT_SUCCESS(Status))
     {
@@ -1675,6 +1684,7 @@ CmInitSystem1(VOID)
     }
 
     /* Build the master hive */
+    ARM64_UART_TRACE("[CM] CmpInitializeHive (master)\r\n");
     Status = CmpInitializeHive(&CmiVolatileHive,
                                HINIT_CREATE,
                                HIVE_VOLATILE,
@@ -1693,6 +1703,7 @@ CmInitSystem1(VOID)
     }
 
     /* Create the \REGISTRY key node */
+    ARM64_UART_TRACE("[CM] CmpCreateRegistryRoot\r\n");
     if (!CmpCreateRegistryRoot())
     {
         /* Bugcheck */
@@ -1703,6 +1714,7 @@ CmInitSystem1(VOID)
     SecurityDescriptor = CmpHiveRootSecurityDescriptor();
 
     /* Create '\Registry\Machine' key */
+    ARM64_UART_TRACE("[CM] NtCreateKey MACHINE\r\n");
     RtlInitUnicodeString(&KeyName, L"\\REGISTRY\\MACHINE");
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyName,
@@ -1726,6 +1738,7 @@ CmInitSystem1(VOID)
     NtClose(KeyHandle);
 
     /* Create '\Registry\User' key */
+    ARM64_UART_TRACE("[CM] NtCreateKey USER\r\n");
     RtlInitUnicodeString(&KeyName, L"\\REGISTRY\\USER");
     InitializeObjectAttributes(&ObjectAttributes,
                                &KeyName,
@@ -1752,6 +1765,7 @@ CmInitSystem1(VOID)
     CmpNoVolatileCreates = TRUE;
 
     /* Initialize the system hive */
+    ARM64_UART_TRACE("[CM] CmpInitializeSystemHive\r\n");
     if (!CmpInitializeSystemHive(KeLoaderBlock))
     {
         /* Bugcheck */
@@ -1759,6 +1773,7 @@ CmInitSystem1(VOID)
     }
 
     /* Create the 'CurrentControlSet' link */
+    ARM64_UART_TRACE("[CM] CmpCreateControlSet\r\n");
     Status = CmpCreateControlSet(KeLoaderBlock);
     if (!NT_SUCCESS(Status))
     {
@@ -1767,6 +1782,7 @@ CmInitSystem1(VOID)
     }
 
     /* Create the hardware hive */
+    ARM64_UART_TRACE("[CM] CmpInitializeHive (hardware)\r\n");
     Status = CmpInitializeHive(&HardwareHive,
                                HINIT_CREATE,
                                HIVE_VOLATILE,
@@ -1807,7 +1823,9 @@ CmInitSystem1(VOID)
     ExFreePoolWithTag(SecurityDescriptor, TAG_CMSD);
 
     /* Fill out the Hardware key with the ARC Data from the Loader */
+    ARM64_UART_TRACE("[CM] CmpInitializeHardwareConfiguration\r\n");
     Status = CmpInitializeHardwareConfiguration(KeLoaderBlock);
+    ARM64_UART_TRACE("[CM] CmpInitializeHardwareConfiguration returned\r\n");
     if (!NT_SUCCESS(Status))
     {
         /* Bugcheck */
@@ -1815,6 +1833,7 @@ CmInitSystem1(VOID)
     }
 
     /* Initialize machine-dependent information into the registry */
+    ARM64_UART_TRACE("[CM] CmpInitializeMachineDependentConfiguration\r\n");
     Status = CmpInitializeMachineDependentConfiguration(KeLoaderBlock);
     if (!NT_SUCCESS(Status))
     {
@@ -1834,6 +1853,7 @@ CmInitSystem1(VOID)
     ExFreePoolWithTag(CmpLoadOptions.Buffer, TAG_CM);
 
     /* If we got here, all went well */
+    ARM64_UART_TRACE("[CM] CmInitSystem1 done\r\n");
     return TRUE;
 }
 

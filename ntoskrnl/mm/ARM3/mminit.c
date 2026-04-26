@@ -12,6 +12,17 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 UART diagnostic helper */
+#ifdef _M_ARM64
+static void _arm3_trace(const char *s) {
+    volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+    while (*s) { *u = (ULONG)*s++; }
+}
+#define _A3_TRACE(s) _arm3_trace(s)
+#else
+#define _A3_TRACE(s) ((void)0)
+#endif
+
 #define MODULE_INVOLVED_IN_ARM3
 #include "miarm.h"
 #undef MmSystemRangeStart
@@ -1036,7 +1047,6 @@ MiBuildPfnDatabaseSelf(VOID)
 {
     PMMPTE PointerPte, LastPte;
     PMMPFN Pfn1;
-
     /* Loop the PFN database page */
     PointerPte = MiAddressToPte(MiGetPfnEntry(MmLowestPhysicalPage));
     LastPte = MiAddressToPte(MiGetPfnEntry(MmHighestPhysicalPage));
@@ -1064,8 +1074,13 @@ VOID
 NTAPI
 MiInitializePfnDatabase(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    /* Scan memory and start setting up PFN entries */
+    /* Scan memory and start setting up PFN entries.
+     * MiBuildPfnDatabaseFromPages does a linear PDE scan that only works on
+     * i386 (single-level PDE). ARM64 uses MiBuildPfnDatabaseFromPageTables
+     * (hierarchical PXE→PPE→PDE→PTE walk) instead, called separately. */
+#ifndef _M_ARM64
     MiBuildPfnDatabaseFromPages(LoaderBlock);
+#endif
 
     /* Add the zero page */
     MiBuildPfnDatabaseZeroPage();
@@ -1382,24 +1397,33 @@ MiInitializeMemoryEvents(VOID)
     MmHighMemoryThreshold = max(MmHighMemoryThreshold, MmLowMemoryThreshold);
 
     /* Create the memory events for all the thresholds */
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowMem\r\n");
     Status = MiCreateMemoryEvent(&LowString, &MiLowMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighMem\r\n");
     Status = MiCreateMemoryEvent(&HighString, &MiHighMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowPagedPool\r\n");
     Status = MiCreateMemoryEvent(&LowPagedPoolString, &MiLowPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighPagedPool\r\n");
     Status = MiCreateMemoryEvent(&HighPagedPoolString, &MiHighPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent LowNonPagedPool\r\n");
     Status = MiCreateMemoryEvent(&LowNonPagedPoolString, &MiLowNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+    _A3_TRACE("[MM1] MiCreateMemoryEvent HighNonPagedPool\r\n");
     Status = MiCreateMemoryEvent(&HighNonPagedPoolString, &MiHighNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
 
     /* Now setup the pool events */
+    _A3_TRACE("[MM1] MiInitializePoolEvents\r\n");
     MiInitializePoolEvents();
 
     /* Set the initial event state */
+    _A3_TRACE("[MM1] MiNotifyMemoryEvents\r\n");
     MiNotifyMemoryEvents();
+    _A3_TRACE("[MM1] MiInitializeMemoryEvents done\r\n");
     return TRUE;
 }
 
@@ -2048,6 +2072,9 @@ MmArmInitSystem(IN ULONG Phase,
     MMPTE TempPte;
 #endif
 
+
+    ARM64_UART_TRACE("[MM] MmArmInitSystem entered\r\n");
+
     /* Dump memory descriptors */
     if (MiDbgEnableMdDump) MiDbgDumpMemoryDescriptors();
 
@@ -2292,9 +2319,9 @@ MmArmInitSystem(IN ULONG Phase,
         MxPfnAllocation++;
 
         /* Initialize the platform-specific parts */
+        ARM64_UART_TRACE("[MM] MiInitMachineDependent\r\n");
         MiInitMachineDependent(LoaderBlock);
-
-#if DBG
+#if DBG && !defined(_M_ARM64)
         /* Prototype PTEs are assumed to be in paged pool, so check if the math works */
         PointerPte = (PMMPTE)MmPagedPoolStart;
         MI_MAKE_PROTOTYPE_PTE(&TempPte, PointerPte);
@@ -2401,7 +2428,6 @@ MmArmInitSystem(IN ULONG Phase,
         MiReloadBootLoadedDrivers(LoaderBlock);
 
         /* FIXME: Call out into Driver Verifier for initialization  */
-
         /* Check how many pages the system has */
         if (MmNumberOfPhysicalPages <= ((13 * _1MB) / PAGE_SIZE))
         {
@@ -2533,18 +2559,37 @@ MmArmInitSystem(IN ULONG Phase,
         MmTotalCommitLimitMaximum = MmTotalCommitLimit;
 
         /* Size up paged pool and build the shadow system page directory */
+        ARM64_UART_TRACE("[MM] MiBuildPagedPool\r\n");
         MiBuildPagedPool();
 
         /* Debugger physical memory support is now ready to be used */
         MmDebugPte = MiAddressToPte(MiDebugMapping);
 
         /* Initialize the loaded module list */
+        ARM64_UART_TRACE("[MM] MiInitializeLoadedModuleList\r\n");
         MiInitializeLoadedModuleList(LoaderBlock);
+#ifdef _M_ARM64
+        {
+            extern volatile PVOID Arm64UartKernelBase;
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            const char *_s = "[MM] MiInitializeLoadedModuleList returned\r\n";
+            if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+        }
+#endif
     }
 
     //
     // Always return success for now
     //
+#ifdef _M_ARM64
+        {
+            extern volatile PVOID Arm64UartKernelBase;
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            const char *_s = "[MM] MmArmInitSystem about to return\r\n";
+            if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+        }
+#endif
+    ARM64_UART_TRACE("[MM] MmArmInitSystem returning TRUE\r\n");
     return TRUE;
 }
 

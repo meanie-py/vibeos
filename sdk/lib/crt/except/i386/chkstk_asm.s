@@ -14,6 +14,7 @@
 PUBLIC __chkstk
 PUBLIC __alloca_probe
 PUBLIC __alloca_probe_16
+PUBLIC ___alloca   /* Clang emits _alloca -> ___alloca (with i386 underscore prefix) */
 .code
 
     /* 16 byte aligned alloca probe
@@ -51,6 +52,7 @@ l1:
  */
 __chkstk:
 __alloca_probe:
+___alloca:
 
     /* EAX = size to be allocated */
     /* save the ECX register */

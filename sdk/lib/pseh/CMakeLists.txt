@@ -5,7 +5,7 @@ if(ARCH STREQUAL "i386")
         i386/seh_prolog.s)
 endif()
 
-if(MSVC OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (ARCH STREQUAL "amd64")))
+if(MSVC OR USE_NATIVE_SEH OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (ARCH STREQUAL "amd64")))
     list(APPEND SOURCE dummy.c)
     add_asm_files(pseh_asm ${ASM_SOURCE})
     add_library(pseh ${SOURCE} ${pseh_asm})
@@ -27,6 +27,10 @@ else()
         list(APPEND SOURCE
             i386/pseh3.c
             i386/pseh3_i386.S)
+    elseif(USE_PSEH_CLANG)
+        list(APPEND SOURCE
+            i386/pseh_clang.c
+            i386/pseh_clang_asm.S)
     elseif(USE_DUMMY_PSEH)
         list(APPEND SOURCE dummy.c)
     elseif(ARCH STREQUAL "i386")

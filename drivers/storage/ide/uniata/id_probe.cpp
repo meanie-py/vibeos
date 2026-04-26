@@ -1702,6 +1702,7 @@ UniataFindBusMasterController(
             }
             UniataInitMapBase(chan, BaseIoAddress1[c], BaseIoAddress2[c]);
         }
+
         //ioSpace = (PUCHAR)(deviceExtension->BaseIoAddress1[c]);
 
         DbgDumpRegTranslation(chan, IDX_IO1);

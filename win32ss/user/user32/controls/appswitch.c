@@ -212,7 +212,7 @@ BOOL CALLBACK EnumerateCallback(HWND window, LPARAM lParam)
             if (!hIcon)
             {
                 // using windows logo icon as default
-                hIcon = gpsi->hIconWindows;
+                hIcon = gpsi ? gpsi->hIconWindows : NULL;
                 if (!hIcon)
                 {
                     //if all attempts to get icon fails go to the next window

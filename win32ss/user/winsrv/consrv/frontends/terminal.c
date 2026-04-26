@@ -89,6 +89,16 @@ ConioInputEventToUnicode(PCONSOLE Console, PINPUT_RECORD InputEvent)
 /* CONSRV TERMINAL FRONTENDS INTERFACE ****************************************/
 
 /***************/
+#ifdef SERIALTERM_COMPILE
+NTSTATUS NTAPI
+SerialLoadFrontEnd(IN OUT PFRONTEND FrontEnd,
+                   IN OUT PCONSOLE_STATE_INFO ConsoleInfo,
+                   IN OUT PCONSOLE_INIT_INFO ConsoleInitInfo,
+                   IN HANDLE ConsoleLeaderProcessHandle);
+NTSTATUS NTAPI
+SerialUnloadFrontEnd(IN OUT PFRONTEND FrontEnd);
+#endif
+
 #ifdef TUITERM_COMPILE
 NTSTATUS NTAPI
 TuiLoadFrontEnd(IN OUT PFRONTEND FrontEnd,
@@ -142,6 +152,9 @@ static struct
     FRONTEND_UNLOAD FrontEndUnload;
 } FrontEndLoadingMethods[] =
 {
+#ifdef SERIALTERM_COMPILE
+    {"Serial", SerialLoadFrontEnd, SerialUnloadFrontEnd},
+#endif
 #ifdef TUITERM_COMPILE
     {"TUI", TuiLoadFrontEnd,    TuiUnloadFrontEnd},
 #endif

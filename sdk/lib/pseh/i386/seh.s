@@ -108,7 +108,7 @@ __abnormal_termination:
     xor eax, eax
 
     /* Check if the handler is the unwind handler */
-    mov ecx, fs:0
+    mov ecx, dword ptr fs:[0]
     cmp dword ptr [ecx+4], offset _unwind_handler
     jne short ab_return
 
@@ -142,9 +142,9 @@ __local_unwind2:
     push ebp
     push eax
     push -2
-    push offset _unwind_handler
-    push fs:0
-    mov fs:0, esp
+    push _unwind_handler
+    push dword ptr fs:[0]
+    mov dword ptr fs:[0], esp
 
 unwind_loop:
     /* Get the exception registration and try level */
@@ -182,7 +182,7 @@ __NLG_Return2:
 
 unwind_return:
     /* Cleanup SEH */
-    pop fs:0
+    pop dword ptr fs:[0]
     add esp, 16
     pop edi
     pop esi

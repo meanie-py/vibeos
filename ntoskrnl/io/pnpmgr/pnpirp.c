@@ -10,6 +10,7 @@
 #define NDEBUG
 #include <debug.h>
 
+
 NTSTATUS
 IopSynchronousCall(
     _In_ PDEVICE_OBJECT DeviceObject,
@@ -64,11 +65,14 @@ IopSynchronousCall(
     *IrpStack = *IoStackLocation;
 
     /* Call the driver */
+    ARM64_UART_TRACE("[IRP] IoCallDriver\r\n");
     Status = IoCallDriver(TopDeviceObject, Irp);
+    ARM64_UART_TRACE("[IRP] IoCallDriver returned\r\n");
     /* Otherwise we may get stuck here or have IoStatusBlock not populated */
     ASSERT(!KeAreAllApcsDisabled());
     if (Status == STATUS_PENDING)
     {
+        ARM64_UART_TRACE("[IRP] STATUS_PENDING, waiting\r\n");
         /* Wait for it */
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         Status = IoStatusBlock.Status;

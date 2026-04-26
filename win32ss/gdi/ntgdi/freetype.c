@@ -1021,9 +1021,9 @@ InitFontSupport(VOID)
     if (!IntLoadFontsInRegistry())
     {
         DPRINT1("Fonts registry is empty.\n");
-
-        /* Load font(s) with writing registry */
+        DbgPrint("InitFontSupport: loading system fonts (direct-by-name)\n");
         IntLoadSystemFonts();
+        DbgPrint("InitFontSupport: font loading done\n");
     }
 
     IntLoadFontSubstList(&g_FontSubstListHead);
@@ -1498,127 +1498,57 @@ FontLink_Chain_Populate(
 VOID FASTCALL
 IntLoadSystemFonts(VOID)
 {
-    OBJECT_ATTRIBUTES ObjectAttributes;
-    UNICODE_STRING Directory, FileName, TempString;
-    IO_STATUS_BLOCK Iosb;
-    HANDLE hDirectory;
-    BYTE *DirInfoBuffer;
-    PFILE_DIRECTORY_INFORMATION DirInfo;
-    BOOLEAN bRestartScan = TRUE;
-    NTSTATUS Status;
+    UNICODE_STRING FileName;
     INT i;
-    static UNICODE_STRING SearchPatterns[] =
+    INT nLoaded = 0;
+
+    /* On LiveCD (non-ARM64), loading fonts from CD-ROM here causes
+     * Work Queue Deadlock spam because CD I/O blocks the work queue.
+     * Fonts are loaded from user-space by winlogon via AddFontResourceW
+     * after explorer.exe is launched, avoiding CD contention. */
+#ifndef _M_ARM64
+    DbgPrint("IntLoadSystemFonts: SKIPPED (deferred to winlogon user-space)\n");
+    return;
+#endif
+
+    /* Known system font files. Load by direct path to avoid
+     * ZwQueryDirectoryFile which hangs on CD-ROM media (ISO9660).
+     * Only load the essential fonts here to avoid Work Queue Deadlock
+     * from prolonged CD I/O during NtUserInitialize. */
+    static PCWSTR KnownFonts[] =
     {
-        RTL_CONSTANT_STRING(L"*.ttf"),
-        RTL_CONSTANT_STRING(L"*.ttc"),
-        RTL_CONSTANT_STRING(L"*.otf"),
-        RTL_CONSTANT_STRING(L"*.otc"),
-        RTL_CONSTANT_STRING(L"*.fon"),
-        RTL_CONSTANT_STRING(L"*.fnt")
+        /* Core UI fonts (System, MS Sans Serif, Tahoma) */
+        L"\\SystemRoot\\Fonts\\tahoma.ttf",
+        L"\\SystemRoot\\Fonts\\tahomabd.ttf",
+        /* Marlett — window chrome glyphs (min/max/close buttons) */
+        L"\\SystemRoot\\Fonts\\Marlett.ttf",
+        /* One serif, one mono for basic coverage */
+        L"\\SystemRoot\\Fonts\\arial.ttf",
+        L"\\SystemRoot\\Fonts\\cour.ttf",
+        /* Symbol font */
+        L"\\SystemRoot\\Fonts\\symbol.ttf",
     };
-    static UNICODE_STRING IgnoreFiles[] =
+
+    DbgPrint("IntLoadSystemFonts: loading %d known fonts by path\n",
+             (int)_countof(KnownFonts));
+
+    for (i = 0; i < (INT)_countof(KnownFonts); i++)
     {
-        RTL_CONSTANT_STRING(L"."),
-        RTL_CONSTANT_STRING(L".."),
-    };
-
-    RtlInitUnicodeString(&Directory, L"\\SystemRoot\\Fonts\\");
-
-    InitializeObjectAttributes(
-        &ObjectAttributes,
-        &Directory,
-        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-        NULL,
-        NULL);
-
-    Status = ZwOpenFile(
-                 &hDirectory,
-                 SYNCHRONIZE | FILE_LIST_DIRECTORY,
-                 &ObjectAttributes,
-                 &Iosb,
-                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                 FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE);
-
-    if (NT_SUCCESS(Status))
-    {
-        for (i = 0; i < _countof(SearchPatterns); ++i)
+        RtlInitUnicodeString(&FileName, KnownFonts[i]);
+        DbgPrint("IntLoadSystemFonts: [%d/%d] loading %S\n",
+                 i + 1, (int)_countof(KnownFonts), KnownFonts[i]);
+        if (IntGdiAddFontResourceEx(&FileName, 1, 0, AFRX_WRITE_REGISTRY))
         {
-            DirInfoBuffer = ExAllocatePoolWithTag(PagedPool, 0x4000, TAG_FONT);
-            if (DirInfoBuffer == NULL)
-            {
-                ZwClose(hDirectory);
-                return;
-            }
-
-            FileName.Buffer = ExAllocatePoolWithTag(PagedPool, MAX_PATH * sizeof(WCHAR), TAG_FONT);
-            if (FileName.Buffer == NULL)
-            {
-                ExFreePoolWithTag(DirInfoBuffer, TAG_FONT);
-                ZwClose(hDirectory);
-                return;
-            }
-            FileName.Length = 0;
-            FileName.MaximumLength = MAX_PATH * sizeof(WCHAR);
-
-            while (1)
-            {
-                Status = ZwQueryDirectoryFile(
-                             hDirectory,
-                             NULL,
-                             NULL,
-                             NULL,
-                             &Iosb,
-                             DirInfoBuffer,
-                             0x4000,
-                             FileDirectoryInformation,
-                             FALSE,
-                             &SearchPatterns[i],
-                             bRestartScan);
-
-                if (!NT_SUCCESS(Status) || Status == STATUS_NO_MORE_FILES)
-                {
-                    break;
-                }
-
-                DirInfo = (PFILE_DIRECTORY_INFORMATION)DirInfoBuffer;
-                while (1)
-                {
-                    SIZE_T ign;
-
-                    TempString.Buffer = DirInfo->FileName;
-                    TempString.Length = TempString.MaximumLength = DirInfo->FileNameLength;
-
-                    /* Should we ignore this file? */
-                    for (ign = 0; ign < _countof(IgnoreFiles); ++ign)
-                    {
-                        /* Yes.. */
-                        if (RtlEqualUnicodeString(IgnoreFiles + ign, &TempString, FALSE))
-                            break;
-                    }
-
-                    /* If we tried all Ignore patterns and there was no match, try to create a font */
-                    if (ign == _countof(IgnoreFiles))
-                    {
-                        RtlCopyUnicodeString(&FileName, &Directory);
-                        RtlAppendUnicodeStringToString(&FileName, &TempString);
-                        if (!IntGdiAddFontResourceEx(&FileName, 1, 0, AFRX_WRITE_REGISTRY))
-                            DPRINT1("ERR: Failed to load %wZ\n", &FileName);
-                    }
-
-                    if (DirInfo->NextEntryOffset == 0)
-                        break;
-
-                    DirInfo = (PFILE_DIRECTORY_INFORMATION)((ULONG_PTR)DirInfo + DirInfo->NextEntryOffset);
-                }
-
-                bRestartScan = FALSE;
-            }
-
-            ExFreePoolWithTag(FileName.Buffer, TAG_FONT);
-            ExFreePoolWithTag(DirInfoBuffer, TAG_FONT);
+            nLoaded++;
         }
-        ZwClose(hDirectory);
+        else
+        {
+            DbgPrint("IntLoadSystemFonts: [%d] FAILED\n", i + 1);
+        }
     }
+
+    DbgPrint("IntLoadSystemFonts: loaded %d of %d fonts\n",
+             nLoaded, (int)_countof(KnownFonts));
 }
 
 /* NOTE: If nIndex < 0 then return the number of charsets. */
@@ -2658,6 +2588,12 @@ IntGdiCleanupPrivateFontsForProcess(VOID)
     PFONT_ENTRY_COLL_MEM EntryCollection;
 
     DPRINT("IntGdiCleanupPrivateFontsForProcess()\n");
+
+    /* If font support was never initialized (e.g. winsrv not loaded,
+     * NtUserInitialize never called), there's nothing to clean up. */
+    if (g_FreeTypeLock == NULL)
+        return;
+
     do {
         Entry = NULL;
         EntryCollection = NULL;
@@ -6020,7 +5956,7 @@ IntRealizeFont(const LOGFONTW *pLogFont, _Inout_opt_ PTEXTOBJ TextObj)
            pLogFont->lfFaceName, pLogFont->lfCharSet,
            SubstitutedLogFont.lfFaceName, SubstitutedLogFont.lfCharSet);
 
-    FONTOBJ *pFontObj;
+    FONTOBJ *pFontObj = NULL;
     PFONT_LOOKUP_CACHE pLookUp = FontLookUp_LookUp(pLogFont);
     if (pLookUp)
     {
@@ -6043,7 +5979,9 @@ IntRealizeFont(const LOGFONTW *pLogFont, _Inout_opt_ PTEXTOBJ TextObj)
 
     if (!pFontObj)
     {
-        DPRINT1("Request font %S not found, no fonts loaded at all\n", pLogFont->lfFaceName);
+        static volatile LONG s_NoFontWarned = 0;
+        if (InterlockedCompareExchange(&s_NoFontWarned, 1, 0) == 0)
+            DPRINT1("Request font %S not found, no fonts loaded yet (suppressing further)\n", pLogFont->lfFaceName);
         return NULL;
     }
 

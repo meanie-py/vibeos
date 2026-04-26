@@ -5,7 +5,7 @@
  * PURPOSE:         Logon
  * PROGRAMMERS:     Thomas Weidenmueller (w3seek@users.sourceforge.net)
  *                  Ge van Geldorp (gvg@reactos.com)
- *                  Hervé Poussineau (hpoussin@reactos.org)
+ *                  Hervï¿½ Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -953,6 +953,7 @@ BOOL
 CreateWindowStationAndDesktops(
     _Inout_ PWLSESSION Session)
 {
+#ifndef _M_ARM64
     SECURITY_ATTRIBUTES WinstaSecurity;
     SECURITY_ATTRIBUTES ApplicationDesktopSecurity;
     SECURITY_ATTRIBUTES WinlogonDesktopSecurity;
@@ -961,8 +962,16 @@ CreateWindowStationAndDesktops(
     PSECURITY_DESCRIPTOR WlApplicationDesktopSecurityDescriptor = NULL;
     PSECURITY_DESCRIPTOR WlWinlogonDesktopSecurityDescriptor = NULL;
     PSECURITY_DESCRIPTOR WlScreenSaverDesktopSecurityDescriptor = NULL;
+#endif
     BOOL ret = FALSE;
 
+#ifdef _M_ARM64
+    /*
+     * ARM64: Skip security descriptor creation (requires full SAM/LSA
+     * infrastructure). Pass NULL security to use defaults.
+     */
+#else
+    DbgPrint("[WINLOGON] CreateWindowStationAndDesktops: creating winsta security\n");
     if (!CreateWinstaSecurity(&WlWinstaSecurityDescriptor))
     {
         ERR("WL: Failed to create winsta security!\n");
@@ -1002,31 +1011,93 @@ CreateWindowStationAndDesktops(
     ScreenSaverDesktopSecurity.nLength = sizeof(SECURITY_ATTRIBUTES);
     ScreenSaverDesktopSecurity.lpSecurityDescriptor = WlScreenSaverDesktopSecurityDescriptor;
     ScreenSaverDesktopSecurity.bInheritHandle = TRUE;
+#endif
 
     /*
      * Create the interactive window station
      */
+    DbgPrint("[WINLOGON] CreateWindowStationAndDesktops: calling CreateWindowStationW(WinSta0)\n");
     Session->InteractiveWindowStationName = L"WinSta0";
     Session->InteractiveWindowStation = CreateWindowStationW(
         Session->InteractiveWindowStationName,
         0,
         MAXIMUM_ALLOWED,
+#ifdef _M_ARM64
+        NULL);
+#else
         &WinstaSecurity);
+#endif
     if (!Session->InteractiveWindowStation)
     {
         ERR("WL: Failed to create window station (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] CreateWindowStationW succeeded: handle=%p\n", Session->InteractiveWindowStation);
 
+    DbgPrint("[WINLOGON] Calling SetProcessWindowStation\n");
     if (!SetProcessWindowStation(Session->InteractiveWindowStation))
     {
         ERR("WL: SetProcessWindowStation() failed (error %lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] SetProcessWindowStation OK\n");
 
+#ifdef _M_ARM64
+    /*
+     * ARM64: Create desktops with default security (no SAM/LSA).
+     * Desktop thread + RIT are now running (M21).
+     */
+    Session->ApplicationDesktop = CreateDesktopW(
+        L"Default",
+        NULL,
+        NULL,
+        0,
+        MAXIMUM_ALLOWED,
+        NULL);
+    if (!Session->ApplicationDesktop)
+    {
+        ERR("WL: ARM64: Failed to create Default desktop (%lu)\n", GetLastError());
+        goto cleanup;
+    }
+
+    /* Create Winlogon desktop */
+    Session->WinlogonDesktop = CreateDesktopW(
+        L"Winlogon",
+        NULL,
+        NULL,
+        0,
+        MAXIMUM_ALLOWED,
+        NULL);
+    if (!Session->WinlogonDesktop)
+    {
+        ERR("WL: ARM64: Failed to create Winlogon desktop (%lu), non-fatal\n", GetLastError());
+        /* Non-fatal: Default desktop is sufficient */
+    }
+
+    /* Skip Screen-Saver desktop on ARM64 */
+
+    /* Switch to Application desktop. SwitchDesktop triggers co_IntShowDesktop
+     * which sets WS_VISIBLE on the desktop window â€” required for
+     * VIS_ComputeVisibleRegion and WM_PAINT delivery to child windows.
+     * testgui.exe inherits this desktop from its creating thread.
+     * Note: SetThreadDesktop may fail if thread already has windows,
+     * but SwitchDesktop must still be called independently. */
+    if (Session->ApplicationDesktop)
+    {
+        if (!SetThreadDesktop(Session->ApplicationDesktop))
+        {
+            ERR("WL: ARM64: SetThreadDesktop(Application) failed (%lu)\n", GetLastError());
+        }
+        if (!SwitchDesktop(Session->ApplicationDesktop))
+        {
+            ERR("WL: ARM64: SwitchDesktop(Application) failed (%lu)\n", GetLastError());
+        }
+    }
+#else
     /*
      * Create the application desktop
      */
+    DbgPrint("[WINLOGON] Creating Default desktop\n");
     Session->ApplicationDesktop = CreateDesktopW(
         L"Default",
         NULL,
@@ -1039,10 +1110,12 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Default desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Default desktop created: %p\n", Session->ApplicationDesktop);
 
     /*
      * Create the winlogon desktop
      */
+    DbgPrint("[WINLOGON] Creating Winlogon desktop\n");
     Session->WinlogonDesktop = CreateDesktopW(
         L"Winlogon",
         NULL,
@@ -1055,10 +1128,12 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Winlogon desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Winlogon desktop created: %p\n", Session->WinlogonDesktop);
 
     /*
      * Create the screen saver desktop
      */
+    DbgPrint("[WINLOGON] Creating Screen-Saver desktop\n");
     Session->ScreenSaverDesktop = CreateDesktopW(
         L"Screen-Saver",
         NULL,
@@ -1071,16 +1146,20 @@ CreateWindowStationAndDesktops(
         ERR("WL: Failed to create Screen-Saver desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] Screen-Saver desktop created\n");
 
     /*
      * Switch to winlogon desktop
     */
+    DbgPrint("[WINLOGON] Switching to Winlogon desktop\n");
     if (!SetThreadDesktop(Session->WinlogonDesktop) ||
         !SwitchDesktop(Session->WinlogonDesktop))
     {
         ERR("WL: Cannot switch to Winlogon desktop (%lu)\n", GetLastError());
         goto cleanup;
     }
+    DbgPrint("[WINLOGON] SwitchDesktop OK\n");
+#endif
 
     SetWindowStationUser(Session->InteractiveWindowStation,
                          &LuidNone, NULL, 0);
@@ -1112,6 +1191,7 @@ cleanup:
         }
     }
 
+#ifndef _M_ARM64
     /* Free security descriptors regardless of success or failure */
     if (WlWinstaSecurityDescriptor)
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlWinstaSecurityDescriptor);
@@ -1121,6 +1201,7 @@ cleanup:
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlWinlogonDesktopSecurityDescriptor);
     if (WlScreenSaverDesktopSecurityDescriptor)
         RtlFreeHeap(RtlGetProcessHeap(), 0, WlScreenSaverDesktopSecurityDescriptor);
+#endif
 
     return ret;
 }

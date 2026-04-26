@@ -317,12 +317,9 @@ PDEVOBJ_pSurface(
     if (ppdev->pSurface == NULL)
     {
         /* Call the drivers DrvEnableSurface */
-        TRACE("DrvEnableSurface(dhpdev %p)\n", ppdev->dhpdev);
         hsurf = ppdev->pfn.EnableSurface(ppdev->dhpdev);
-        TRACE("DrvEnableSurface(dhpdev %p) => hsurf %p\n", ppdev->dhpdev, hsurf);
-        if (hsurf== NULL)
+        if (hsurf == NULL)
         {
-            ERR("Failed to create PDEV surface!\n");
             return NULL;
         }
 
@@ -343,6 +340,12 @@ PDEVOBJ_bEnableDirectDraw(
 {
     PGD_DXDDENABLEDIRECTDRAW pfnDdEnableDirectDraw = (PGD_DXDDENABLEDIRECTDRAW)gpDxFuncs[DXG_INDEX_DxDdEnableDirectDraw].pfn;
     BOOL Success;
+
+    /* Check if DirectDraw is available (dxg.sys may not be loaded, e.g. ARM64) */
+    if (!pfnDdEnableDirectDraw)
+    {
+        return TRUE;
+    }
 
     /* Enable DirectDraw */
     TRACE("DxDdEnableDirectDraw(ppdev %p)\n", ppdev);
@@ -581,7 +584,6 @@ PDEVOBJ_Create(
     /* Call the driver to enable the PDEV */
     if (!PDEVOBJ_bEnablePDEV(ppdev, pdm, NULL))
     {
-        ERR("Failed to enable PDEV!\n");
         PDEVOBJ_vRelease(ppdev);
         EngUnloadImage(pldev);
         return NULL;
@@ -594,7 +596,6 @@ PDEVOBJ_Create(
     pSurface = PDEVOBJ_pSurface(ppdev);
     if (!pSurface)
     {
-        ERR("Failed to create surface\n");
         PDEVOBJ_vRelease(ppdev);
         EngUnloadImage(pldev);
         return NULL;
@@ -603,7 +604,6 @@ PDEVOBJ_Create(
     /* Enable DirectDraw */
     if (!PDEVOBJ_bEnableDirectDraw(ppdev))
     {
-        ERR("Failed to enable DirectDraw\n");
         PDEVOBJ_vRelease(ppdev);
         EngUnloadImage(pldev);
         return NULL;

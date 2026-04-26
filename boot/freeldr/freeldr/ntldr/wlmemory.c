@@ -183,6 +183,16 @@ WinLdrSetupMemoryLayout(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Cleanup heap */
     FrLdrHeapCleanupAll();
 
+    /* Re-mark NLS data pages that may have been clobbered by heap cleanup */
+    {
+        extern ULONG TotalNLSSize;
+        extern PVOID NlsDataBase;
+        if (TotalNLSSize > 0 && NlsDataBase != NULL)
+        {
+            MmSetMemoryType(NlsDataBase, TotalNLSSize * MM_PAGE_SIZE, LoaderNlsData);
+        }
+    }
+
     //
     // Creating a suitable memory map for Windows can be tricky, so let's
     // give a few advices:

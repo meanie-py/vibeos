@@ -852,7 +852,17 @@ KeInitThread(IN OUT PKTHREAD Thread,
     /* Set the Thread Stacks */
     Thread->InitialStack = KernelStack;
     Thread->StackBase = KernelStack;
+#ifdef _M_ARM64
+    /* ARM64: MmCreateKernelStack always creates large stacks (KeSwitchKernelStack
+     * not implemented). Set StackLimit to reflect the actual fully-committed size. */
+    {
+        extern ULONG MmLargeStackSize;
+        Thread->StackLimit = (ULONG_PTR)KernelStack - MmLargeStackSize;
+    }
+    Thread->LargeStack = TRUE;
+#else
     Thread->StackLimit = (ULONG_PTR)KernelStack - KERNEL_STACK_SIZE;
+#endif
     Thread->KernelStackResident = TRUE;
 
     /* Enter SEH to avoid crashes due to user mode */
@@ -875,7 +885,7 @@ KeInitThread(IN OUT PKTHREAD Thread,
         if (AllocatedStack)
         {
             /* Delete the stack */
-            MmDeleteKernelStack((PVOID)Thread->StackBase, FALSE);
+            MmDeleteKernelStack((PVOID)Thread->StackBase, Thread->LargeStack);
             Thread->InitialStack = NULL;
         }
     }
@@ -917,7 +927,7 @@ NTAPI
 KeUninitThread(IN PKTHREAD Thread)
 {
     /* Delete the stack */
-    MmDeleteKernelStack((PVOID)Thread->StackBase, FALSE);
+    MmDeleteKernelStack((PVOID)Thread->StackBase, Thread->LargeStack);
     Thread->InitialStack = NULL;
 }
 

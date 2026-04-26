@@ -21,15 +21,24 @@
 
 extern char __ImageBase;
 #ifdef __GNUC__
-  #ifdef _M_AMD64
-    /* .text/.data/.rdata, and .bss */
-    #define FREELDR_SECTION_COUNT 2
+  #ifdef __clang__
+    /* Clang/LLD doesn't use linker scripts; natural section layout:
+     * .text, .rdata, .buildid, .data, .pdata (amd64), .reloc */
+    #if defined(_M_AMD64)
+      #define FREELDR_SECTION_COUNT 6  /* + .pdata */
+    #else
+      #define FREELDR_SECTION_COUNT 5  /* .text, .rdata, .buildid, .data, .reloc */
+    #endif
   #else
-    /* .text/.data/.rdata, .edata and .bss */
-    #define FREELDR_SECTION_COUNT 3
+    /* GCC + GNU ld linker script merges .text/.data/.rdata into one section */
+    #if defined(_M_AMD64) || defined(_M_ARM64)
+      #define FREELDR_SECTION_COUNT 2
+    #else
+      #define FREELDR_SECTION_COUNT 3
+    #endif
   #endif
 #else
-#ifdef _M_AMD64
+#if defined(_M_AMD64) || defined(_M_ARM64)
 /* .text, .rdata/.edata, .pdata and .data/.bss */
 #define FREELDR_SECTION_COUNT 4
 #else
@@ -72,6 +81,23 @@ typedef struct _FREELDR_MEMORY_DESCRIPTOR
 //#define MM_MAX_PAGE        0xFFFFFFFFF /* 36 bits for the PFN */
 #define MM_MAX_PAGE        0x1FFFFF
 #define MM_MAX_PAGE_LOADER 0x3FFFF /* on x64 freeldr only maps 1 GB */
+
+#define MM_SIZE_TO_PAGES(a)  \
+    ( ((a) >> MM_PAGE_SHIFT) + ((a) & MM_PAGE_MASK ? 1 : 0) )
+
+#endif
+
+#if defined (_ARM64_)
+
+#define MM_PAGE_SIZE    4096
+#define MM_PAGE_MASK    0xFFF
+#define MM_PAGE_SHIFT    12
+/* ARM64 has a 48-bit virtual address space with 4KB pages */
+#define MM_MAX_PAGE        0xFFFFFFFFF /* 36 bits for the PFN (256TB addressable) */
+/* ARM64 UEFI identity-maps all of physical memory, so we can address more
+ * than x64's 1GB limit. QEMU virt places RAM at 0x40000000 (1GB+), so we
+ * need at least 2GB. Use 4GB to cover common ARM64 platforms. */
+#define MM_MAX_PAGE_LOADER 0x100000 /* 4 GB (0x100000 pages * 4KB) */
 
 #define MM_SIZE_TO_PAGES(a)  \
     ( ((a) >> MM_PAGE_SHIFT) + ((a) & MM_PAGE_MASK ? 1 : 0) )

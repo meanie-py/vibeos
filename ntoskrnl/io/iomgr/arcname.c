@@ -14,6 +14,11 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Rust arcname.rs provides IopCreateArcNamesCd, IopReassignSystemRoot,
+ * IopVerifyDiskSignature. C provides IopCreateArcNames, IopCreateArcNamesDisk. */
+#define ARCNAME_RUST_CD
+#define ARCNAME_RUST_REASSIGN
+
 /* GLOBALS *******************************************************************/
 
 UNICODE_STRING IoArcHalDeviceName, IoArcBootDeviceName;
@@ -148,6 +153,8 @@ IopCreateArcNames(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     return Status;
 }
 
+#ifndef ARCNAME_RUST_CD
+/* Replaced by Rust IopCreateArcNamesCd in arcname.rs */
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -409,6 +416,7 @@ Cleanup:
 
     return Status;
 }
+#endif /* ARCNAME_RUST_CD */
 
 CODE_SEG("INIT")
 NTSTATUS
@@ -836,6 +844,7 @@ Cleanup:
     return Status;
 }
 
+#ifndef ARCNAME_RUST_REASSIGN
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -984,5 +993,6 @@ IopVerifyDiskSignature(
     /* If we get there, something went wrong, so fail */
     return FALSE;
 }
+#endif /* ARCNAME_RUST_REASSIGN */
 
 /* EOF */

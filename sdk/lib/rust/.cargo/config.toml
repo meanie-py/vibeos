@@ -1,0 +1,5 @@
+# Kernel code must not use SSE/FP registers on i386.
+# CR4.OSFXSR is not set until Phase 1 (KiInitMachineDependent),
+# but pool init runs in Phase 0 (MmArmInitSystem).
+[target.i686-pc-windows-gnu]
+rustflags = ["-C", "target-feature=-sse,-sse2"]

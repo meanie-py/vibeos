@@ -1416,6 +1416,59 @@ KeBugCheckEx(IN ULONG BugCheckCode,
              IN ULONG_PTR BugCheckParameter3,
              IN ULONG_PTR BugCheckParameter4)
 {
+    DbgPrint("\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n",
+             BugCheckCode,
+             (PVOID)BugCheckParameter1,
+             (PVOID)BugCheckParameter2,
+             (PVOID)BugCheckParameter3,
+             (PVOID)BugCheckParameter4);
+#ifdef _M_ARM64
+    /* UART trace for bugcheck on ARM64 */
+    {
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "\r\n*** BUGCHECK: code=0x";
+        int _i;
+        ULONG_PTR _lr;
+        __asm__ __volatile__("mov %0, x30" : "=r" (_lr));
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 28; _i >= 0; _i -= 4) {
+            int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " LR=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (_lr >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P1=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter1 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P2=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter2 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P3=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter3 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " P4=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (BugCheckParameter4 >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = "\r\n";
+        while (*_s) *_u = (ULONG)*_s++;
+    }
+#endif
     /* Call the internal API */
     KeBugCheckWithTf(BugCheckCode,
                      BugCheckParameter1,
@@ -1433,6 +1486,29 @@ VOID
 NTAPI
 KeBugCheck(ULONG BugCheckCode)
 {
+    DbgPrint("\n*** BUGCHECK: 0x%08lX\n", BugCheckCode);
+#ifdef _M_ARM64
+    {
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "\r\n*** BUGCHECK: code=0x";
+        int _i;
+        ULONG_PTR _lr;
+        __asm__ __volatile__("mov %0, x30" : "=r" (_lr));
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 28; _i >= 0; _i -= 4) {
+            int _d = (BugCheckCode >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = " LR=0x";
+        while (*_s) *_u = (ULONG)*_s++;
+        for (_i = 60; _i >= 0; _i -= 4) {
+            int _d = (_lr >> _i) & 0xF;
+            *_u = (ULONG)(_d < 10 ? '0' + _d : 'A' + _d - 10);
+        }
+        _s = "\r\n";
+        while (*_s) *_u = (ULONG)*_s++;
+    }
+#endif
     /* Call the internal API */
     KeBugCheckWithTf(BugCheckCode, 0, 0, 0, 0, NULL);
 }

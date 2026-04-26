@@ -23,6 +23,10 @@ PWINSTATION_OBJECT InputWindowStation = NULL;
 /* Winlogon SAS window */
 HWND hwndSAS = NULL;
 
+/* Whether cursor/icon loading has been completed (may be deferred if the
+ * first GUI process didn't have user32's KernelCallbackTable ready) */
+BOOL gbDesktopCursorsAndIconsLoaded = FALSE;
+
 /* Full path to WindowStations directory */
 UNICODE_STRING gustrWindowStationsDir;
 
@@ -258,30 +262,117 @@ IntValidateWindowStationHandle(
     return Status;
 }
 
+/*
+ * Try to load system cursors and icons if not yet loaded.
+ * Called from co_AddGuiApp for each new GUI process until loading succeeds.
+ * Requires the calling process to have user32's KernelCallbackTable set up.
+ */
+VOID FASTCALL
+co_IntDeferredCursorsAndIcons(VOID)
+{
+    PEPROCESS Process;
+
+    if (gbDesktopCursorsAndIconsLoaded)
+        return;
+
+    /* Don't attempt user-mode callbacks on the desktop thread —
+     * callback functions assert PsGetCurrentThreadWin32Thread() != gptiDesktopThread */
+    if (PsGetCurrentThreadWin32Thread() == gptiDesktopThread)
+        return;
+
+    Process = PsGetCurrentProcess();
+    if (!Process || !Process->Peb || !Process->Peb->KernelCallbackTable)
+        return;
+
+    co_IntLoadDefaultCursors();
+    co_IntSetWndIcons();
+    gbDesktopCursorsAndIconsLoaded = TRUE;
+}
+
 BOOL FASTCALL
 co_IntInitializeDesktopGraphics(VOID)
 {
-    TEXTMETRICW tmw;
+    LONG lRet;
     UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
     PDESKTOP pdesk;
-    LONG lRet;
+#ifndef _M_ARM64
+    TEXTMETRICW tmw;
+#endif
 
-    lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
-    if (lRet != DISP_CHANGE_SUCCESSFUL && !gbBaseVideo)
+    /* If PDEV already created (e.g. early init from UserInitialize), skip re-creation */
+    if (gpmdev)
     {
-        ERR("Failed to initialize graphics, switching to base video\n");
-        gbBaseVideo = TRUE;
-        EngpUpdateGraphicsDeviceList();
-        lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
-        gbBaseVideo = FALSE;
-        EngpUpdateGraphicsDeviceList();
+        /* PDEV already exists — just need to do ScreenDC + UI init below */
     }
-    if (lRet != DISP_CHANGE_SUCCESSFUL)
+    else
     {
-        ERR("PDEVOBJ_lChangeDisplaySettings() failed.\n");
+        lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
+        if (lRet != DISP_CHANGE_SUCCESSFUL && !gbBaseVideo)
+        {
+            gbBaseVideo = TRUE;
+            EngpUpdateGraphicsDeviceList();
+            lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &gpmdev, TRUE);
+            gbBaseVideo = FALSE;
+            EngpUpdateGraphicsDeviceList();
+        }
+        if (lRet != DISP_CHANGE_SUCCESSFUL)
+        {
+            return FALSE;
+        }
+    }
+
+#ifdef _M_ARM64
+    /* ARM64: Create screen DC and primary surface. DC_InitHack (dclife.c)
+     * skips TextIntRealizeFont on ARM64, so IntGdiCreateDC is safe.
+     * Skip font measurement, monitor setup, cursors, icons. */
+    ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
+    if (NULL == ScreenDeviceContext)
+    {
+        IntDestroyPrimarySurface();
+        return FALSE;
+    }
+    GreSetDCOwner(ScreenDeviceContext, GDI_OBJ_HMGR_PUBLIC);
+
+    /* Cache PDEV surface reference + populate GdiHandleTable->DevCaps */
+    if (!IntCreatePrimarySurface())
+    {
         return FALSE;
     }
 
+    /* Set metrics from PDEV's gdiinfo (skip font measurement) */
+    gpsi->aiSysMet[SM_CXSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulHorzRes;
+    gpsi->aiSysMet[SM_CYSCREEN] = gpmdev->ppdevGlobal->gdiinfo.ulVertRes;
+    gpsi->Planes        = 1;
+    gpsi->BitsPixel     = gpmdev->ppdevGlobal->gdiinfo.cBitsPixel;
+    gpsi->BitCount      = gpsi->Planes * gpsi->BitsPixel;
+    gpsi->dmLogPixels   = 96;
+    gpsi->PUSIFlags    &= ~PUSIF_PALETTEDISPLAY;
+    gpsi->cxSysFontChar = 8;
+    gpsi->cySysFontChar = 16;
+    gpsi->ptCursor.x    = gpsi->aiSysMet[SM_CXSCREEN] / 2;
+    gpsi->ptCursor.y    = gpsi->aiSysMet[SM_CYSCREEN] / 2;
+
+    /* Refresh metrics with actual screen resolution. InitMetrics was first
+     * called from SpiUpdatePerUserSystemParameters with gpmdev=NULL which
+     * defaulted to 640x480. Now that PDEV is live, recalculate all
+     * screen-size-dependent metrics (SM_CXMAXIMIZED, SM_CXFULLSCREEN, etc.) */
+    InitMetrics();
+
+    MenuInit();
+
+    /* Show the desktop if one already exists (it won't on first call from
+     * NtUserInitialize since desktops are created later by winlogon) */
+    pdesk = IntGetActiveDesktop();
+    if (pdesk)
+    {
+        co_IntShowDesktop(pdesk,
+                          gpsi->aiSysMet[SM_CXSCREEN],
+                          gpsi->aiSysMet[SM_CYSCREEN],
+                          TRUE);
+    }
+
+    return TRUE;
+#else
     ScreenDeviceContext = IntGdiCreateDC(&DriverName, NULL, NULL, NULL, FALSE);
     if (NULL == ScreenDeviceContext)
     {
@@ -332,19 +423,40 @@ co_IntInitializeDesktopGraphics(VOID)
     /* Attach monitor */
     UserAttachMonitor((HDEV)gpmdev->ppdevGlobal);
 
-    /* Setup the cursor */
-    co_IntLoadDefaultCursors();
+    /* HACK: Brief yield to let concurrent DLL loading I/O complete.
+     * Without this, a timing-dependent deadlock in the cache manager
+     * Rust code can freeze the system when the first user-mode callback
+     * races with concurrent NtCreateSection calls from other processes. */
+    {
+        LARGE_INTEGER Delay;
+        Delay.QuadPart = -500000; /* 50ms */
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+    }
 
-    /* Setup the icons */
+    /* Setup the cursor and icons.
+     * On DUMMY_PSEH builds (amd64), the KeUserModeCallbacks for icon/cursor
+     * loading can crash in user-mode code (LoadImageW → RtlVirtualUnwind AV),
+     * corrupting the calling process state and ultimately killing winlogon.
+     * Skip on amd64/ARM64 — system will work with NULL cursors/icons.
+     * On i386 (PSEH_CLANG), callbacks work because exceptions are caught. */
+#if !defined(_USE_DUMMY_PSEH)
+    co_IntLoadDefaultCursors();
     co_IntSetWndIcons();
+    gbDesktopCursorsAndIconsLoaded = TRUE;
+#else
+    /* DUMMY_PSEH: skip cursor/icon loading — KeUserModeCallbacks can crash */
+#endif
 
     /* Setup Menu */
     MenuInit();
 
-    /* Show the desktop */
+    /* Show the desktop if one already exists (it won't on first call from
+     * NtUserInitialize since desktops are created later by winlogon) */
     pdesk = IntGetActiveDesktop();
-    ASSERT(pdesk);
-    co_IntShowDesktop(pdesk, gpsi->aiSysMet[SM_CXSCREEN], gpsi->aiSysMet[SM_CYSCREEN], TRUE);
+    if (pdesk)
+    {
+        co_IntShowDesktop(pdesk, gpsi->aiSysMet[SM_CXSCREEN], gpsi->aiSysMet[SM_CYSCREEN], TRUE);
+    }
 
     /* HACK: display wallpaper on all secondary displays */
     {
@@ -363,6 +475,7 @@ co_IntInitializeDesktopGraphics(VOID)
     }
 
     return TRUE;
+#endif
 }
 
 VOID FASTCALL
@@ -756,7 +869,6 @@ NtUserCreateWindowStation(
     KPROCESSOR_MODE OwnerMode = UserMode;
 
     TRACE("NtUserCreateWindowStation called\n");
-
     /* Capture the object attributes and the window station name */
     _SEH2_TRY
     {
@@ -831,12 +943,14 @@ NtUserCreateWindowStation(
     {
         TRACE("NtUserCreateWindowStation created window station '%wZ' with handle 0x%p\n",
               ObjectAttributes->ObjectName, hWinSta);
+        /* success */
     }
     else
     {
         ASSERT(hWinSta == NULL);
         ERR("NtUserCreateWindowStation failed to create window station '%wZ', Status 0x%08lx\n",
             ObjectAttributes->ObjectName, Status);
+        /* failed */
     }
 
     /* Try to restore the user's ObjectAttributes and release the window station name */

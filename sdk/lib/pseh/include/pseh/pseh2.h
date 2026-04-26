@@ -44,6 +44,138 @@
 
 #include "pseh2_64.h"
 
+#elif defined(_USE_PSEH_CLANG) && defined(_M_IX86)
+
+/*
+ * Setjmp-based PSEH for i386 Clang (llvm-mingw).
+ *
+ * PSEH3's embedded filter functions reference parent locals via ESP-relative
+ * addressing (Clang's default). The filter runs in the exception handler
+ * context (different stack frame), so ESP is wrong → corruption/crash.
+ *
+ * This implementation always catches via longjmp, then evaluates the filter
+ * expression in the original function context where ESP is correct.
+ *
+ * Frame layout (_PSEH_CLANG_FRAME) - 124 bytes:
+ *   +0   Prev            (EXCEPTION_REGISTRATION_RECORD)
+ *   +4   Handler
+ *   +8   SavedEbp        (setjmp context)
+ *   +12  SavedEsp
+ *   +16  SavedEip
+ *   +20  SavedEbx
+ *   +24  SavedEsi
+ *   +28  SavedEdi
+ *   +32  ExceptionCode    (DWORD)
+ *   +36  ExceptionRecordCopy (80 bytes)
+ *   +116 ExceptionPointersCopy (8 bytes)
+ */
+
+struct _EXCEPTION_POINTERS;
+
+typedef struct _PSEH_CLANG_FRAME {
+    void *Prev;             /* +0  EXCEPTION_REGISTRATION_RECORD.Next */
+    void *Handler;          /* +4  EXCEPTION_REGISTRATION_RECORD.Handler */
+    unsigned long SavedEbp; /* +8  */
+    unsigned long SavedEsp; /* +12 */
+    unsigned long SavedEip; /* +16 */
+    unsigned long SavedEbx; /* +20 */
+    unsigned long SavedEsi; /* +24 */
+    unsigned long SavedEdi; /* +28 */
+    unsigned long ExceptionCode;           /* +32 */
+    unsigned char ExceptionRecordCopy[80]; /* +36 */
+    unsigned char ExceptionPointersCopy[8]; /* +116 */
+} _PSEH_CLANG_FRAME;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern __attribute__((returns_twice)) int __cdecl _PsehSetjmp(void *frame);
+extern void __cdecl _PsehPushFrame(void *frame);
+extern void __cdecl _PsehPopFrame(void *frame);
+extern int __cdecl _PsehExceptionHandler(void *, void *, void *, void *);
+extern void __cdecl _PsehReRaise(void *frame);
+
+#ifdef __cplusplus
+}
+#endif
+
+/*
+ * Auto-cleanup for PSEH_CLANG frames: ensures the handler is removed from
+ * the fs:[0] chain even if the function returns via raw 'return' inside
+ * a __try block (bypassing _SEH2_LEAVE/_SEH2_YIELD).  Without this,
+ * the stale handler stays on the chain and the next exception dispatches
+ * into a dead stack frame -> crash (typically EIP=0).
+ */
+static __inline void _PsehFrameCleanup(void *p) {
+    volatile _PSEH_CLANG_FRAME *frame = *(volatile _PSEH_CLANG_FRAME **)p;
+    if (frame && frame->Handler != (void *)0) {
+        _PsehPopFrame((_PSEH_CLANG_FRAME *)frame);
+    }
+}
+
+#define _SEH2_TRY                                                       \
+_Pragma("GCC diagnostic push")                                          \
+_Pragma("GCC diagnostic ignored \"-Wunused-label\"")                    \
+_Pragma("GCC diagnostic ignored \"-Wunused-variable\"")                 \
+{                                                                       \
+    __label__ __pseh_try_end;                                           \
+    volatile _PSEH_CLANG_FRAME _pseh_frame;                             \
+    volatile _PSEH_CLANG_FRAME *_pseh_guard                             \
+        __attribute__((cleanup(_PsehFrameCleanup))) = &_pseh_frame;     \
+    volatile int _pseh_abnormal = 1;                                    \
+    _pseh_frame.Handler = (void *)&_PsehExceptionHandler;              \
+    _PsehPushFrame((_PSEH_CLANG_FRAME *)&_pseh_frame);                 \
+    if (_PsehSetjmp((_PSEH_CLANG_FRAME *)&_pseh_frame) == 0)           \
+    {
+
+#define _SEH2_FINALLY                                                   \
+        _pseh_abnormal = 0;                                             \
+        __pseh_try_end:;                                                \
+    }                                                                   \
+    _PsehPopFrame((_PSEH_CLANG_FRAME *)&_pseh_frame);                  \
+    _pseh_frame.Handler = (void *)0; /* prevent double-pop */           \
+    {                                                                   \
+        __label__ __pseh_try_end;
+
+#define _SEH2_EXCEPT(...)                                               \
+        _pseh_abnormal = 0;                                             \
+        __pseh_try_end:;                                                \
+    }                                                                   \
+    _PsehPopFrame((_PSEH_CLANG_FRAME *)&_pseh_frame);                  \
+    _pseh_frame.Handler = (void *)0; /* prevent double-pop */           \
+    if (_pseh_abnormal && ((__VA_ARGS__) > 0))                          \
+    {                                                                   \
+        __label__ __pseh_try_end;                                       \
+        _pseh_abnormal = 0;
+
+#define _SEH2_END                                                       \
+        __pseh_try_end:;                                                \
+    }                                                                   \
+    if (_pseh_abnormal) {                                               \
+        _PsehReRaise((_PSEH_CLANG_FRAME *)&_pseh_frame);               \
+    }                                                                   \
+    _pseh_frame.Handler = (void *)0; /* mark done for cleanup */        \
+}                                                                       \
+_Pragma("GCC diagnostic pop")
+
+#define _SEH2_GetExceptionInformation() ((struct _EXCEPTION_POINTERS *)_pseh_frame.ExceptionPointersCopy)
+#define _SEH2_GetExceptionCode() ((long)_pseh_frame.ExceptionCode)
+#define _SEH2_AbnormalTermination() (_pseh_abnormal)
+#define _SEH2_YIELD(STMT_) for(;;) { _PsehPopFrame((void *)&_pseh_frame); _pseh_frame.Handler = (void *)0; _pseh_abnormal = 0; STMT_; }
+#define _SEH2_LEAVE do { _pseh_abnormal = 0; goto __pseh_try_end; } while(0)
+#define _SEH2_VOLATILE volatile
+
+#ifndef __try
+#define __try _SEH2_TRY
+#define __except _SEH2_EXCEPT
+#define __finally _SEH2_FINALLY
+#define __endtry _SEH2_END
+#define __leave _SEH2_LEAVE
+#endif
+#define _exception_code() _SEH2_GetExceptionCode()
+#define _exception_info() _SEH2_GetExceptionInformation()
+
 #elif defined(_USE_DUMMY_PSEH) || defined (__arm__) || defined(_M_AMD64)
 
 #ifdef __cplusplus

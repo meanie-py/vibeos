@@ -1792,7 +1792,4 @@ ScsiPortStartIo(
         /* Release the spinlock only */
         KeReleaseSpinLockFromDpcLevel(&DeviceExtension->SpinLock);
     }
-
-
-    DPRINT("ScsiPortStartIo() done\n");
 }

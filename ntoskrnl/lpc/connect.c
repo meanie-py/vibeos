@@ -241,6 +241,8 @@ NtSecureConnectPort(OUT PHANDLE PortHandle,
              ServerSid);
 #endif
 
+    /* ARM64 LPC-CONN trace — disabled for clean console output */
+
     /* Get the port */
     Status = ObReferenceObjectByName(PortName,
                                      0,
@@ -752,6 +754,8 @@ NtSecureConnectPort(OUT PHANDLE PortHandle,
     }
 
     ObDereferenceObject(Port);
+
+    /* ARM64 LPC-CONN result trace — disabled for clean console output */
 
     /* Return status */
     return Status;

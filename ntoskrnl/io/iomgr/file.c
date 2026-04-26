@@ -3768,8 +3768,9 @@ NtCreateFile(PHANDLE FileHandle,
              PVOID EaBuffer,
              ULONG EaLength)
 {
+    NTSTATUS Status;
     /* Call the I/O Function */
-    return IoCreateFile(FileHandle,
+    Status = IoCreateFile(FileHandle,
                         DesiredAccess,
                         ObjectAttributes,
                         IoStatusBlock,
@@ -3783,6 +3784,7 @@ NtCreateFile(PHANDLE FileHandle,
                         CreateFileTypeNone,
                         NULL,
                         0);
+    return Status;
 }
 
 NTSTATUS
@@ -3957,8 +3959,9 @@ NtOpenFile(OUT PHANDLE FileHandle,
            IN ULONG ShareAccess,
            IN ULONG OpenOptions)
 {
+    NTSTATUS Status;
     /* Call the I/O Function */
-    return IoCreateFile(FileHandle,
+    Status = IoCreateFile(FileHandle,
                         DesiredAccess,
                         ObjectAttributes,
                         IoStatusBlock,
@@ -3972,6 +3975,7 @@ NtOpenFile(OUT PHANDLE FileHandle,
                         CreateFileTypeNone,
                         NULL,
                         0);
+    return Status;
 }
 
 NTSTATUS

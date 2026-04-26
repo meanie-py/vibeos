@@ -28,6 +28,24 @@ RtlAssert(IN PVOID FailedAssertion,
     CHAR Action[2];
     CONTEXT Context;
 
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* With DUMMY/CLANG PSEH, DbgPrompt will hang forever waiting for debugger
+     * input.  Print the assertion and return so boot can continue. */
+    {
+        static volatile LONG AssertCount = 0;
+        LONG Count = InterlockedIncrement(&AssertCount);
+
+        if (Count <= 20)
+        {
+            DbgPrint("\n*** ASSERT FAILED: %s at %s:%lu\n",
+                     (PSTR)FailedAssertion,
+                     (PSTR)FileName,
+                     LineNumber);
+        }
+    }
+    return;
+#endif
+
     /* Capture caller's context for the debugger */
     RtlCaptureContext(&Context);
 

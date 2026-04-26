@@ -252,11 +252,13 @@ ENDM
 
 #else /***********************************************************************/
 
-/* Force intel syntax */
+#ifndef _M_ARM64
+/* Force intel syntax (x86/x64 only) */
 .intel_syntax noprefix
 
 /* Put dwarf debug info in the .dwarf_debug section, which will be properly stripped */
 .cfi_sections .debug_frame
+#endif
 
 .altmacro
 
@@ -279,11 +281,27 @@ ENDM
 
 /* To avoid reverse syntax we provide a new macro .PROC, replacing PROC... */
 .macro .PROC name
-    .func \name
+#ifdef _M_ARM64
+    /* ARM64 COFF doesn't support .func/.seh_proc */
+    .globl \name
+    .p2align 2
+    \name:
+#elif defined(__clang__)
+    /* Clang's integrated assembler doesn't support .func/.endfunc */
+    .globl \name
     \name:
 #ifdef _X86_
     .cfi_startproc
 #else
+    .seh_proc \name
+#endif
+#elif defined(_X86_)
+    .func \name
+    \name:
+    .cfi_startproc
+#else
+    .func \name
+    \name:
     .seh_proc \name
 #endif
 .endm
@@ -291,12 +309,22 @@ ENDM
 
 /* ... and .ENDP, replacing ENDP */
 .macro .ENDP
+#ifdef _M_ARM64
+    /* ARM64 COFF doesn't support .endfunc/.seh_endproc */
+#elif defined(__clang__)
+    /* Clang's integrated assembler doesn't support .func/.endfunc */
 #ifdef _X86_
     .cfi_endproc
 #else
     .seh_endproc
 #endif
+#elif defined(_X86_)
+    .cfi_endproc
     .endfunc
+#else
+    .seh_endproc
+    .endfunc
+#endif
 .endm
 #define ENDFUNC .ENDP
 
@@ -304,6 +332,12 @@ ENDM
 .macro PUBLIC symbol
     .global \symbol
 .endm
+#ifdef __clang__
+/* Clang is case-sensitive — define lowercase alias */
+.macro public symbol
+    .global \symbol
+.endm
+#endif
 
 /* No special marking of global labels */
 .macro GLOBAL_LABEL label
@@ -319,9 +353,14 @@ ENDM
 .endm
 
 /* MASM compatible ALIGN */
+.macro ALIGN x
+    .align x
+.endm
+#ifdef __clang__
 .macro align x
     .align x
 .endm
+#endif
 
 /* MASM compatible REPEAT, additional ENDR */
 #define REPEAT .rept
@@ -350,16 +389,20 @@ ENDM
 .endm
 
 .macro retf
-    lret
+    .byte 0xCB
 .endm
 
 /* MASM compatible EXTERN */
-.macro EXTERN name
+.macro EXTERN name:vararg
 .endm
 
 /* MASM needs an END tag */
 .macro END
 .endm
+#ifdef __clang__
+.macro end
+.endm
+#endif
 
 .macro .MODEL model
 .endm
@@ -388,11 +431,12 @@ ENDM
 .endm
 
 .macro .pushframe param
-    /*
-     * FIXME. .seh_pushframe doesn't accept code argument.
-     * Patch sent.
-     */
-    .seh_pushframe \param
+    /* Clang requires @code prefix for .seh_pushframe */
+    .ifc \param, code
+    .seh_pushframe @code
+    .else
+    .seh_pushframe
+    .endif
 .endm
 
 .macro .pushreg reg
@@ -415,6 +459,46 @@ ENDM
     .seh_endprologue
 .endm
 
+#ifdef __clang__
+/* Uppercase aliases (Clang is case-sensitive for macro names) */
+.macro .ALLOCSTACK size
+    .seh_stackalloc \size
+.endm
+
+.macro .PUSHFRAME param
+    .ifc \param, code
+    .seh_pushframe @code
+    .else
+    .seh_pushframe
+    .endif
+.endm
+
+.macro .PUSHREG reg
+    .seh_pushreg \reg
+.endm
+
+.macro .SAVEREG reg, offset
+    .seh_savereg \reg, \offset
+.endm
+
+.macro .SAVEXMM128 reg, offset
+    .seh_savexmm \reg, \offset
+.endm
+
+.macro .SETFRAME reg, offset
+    .seh_setframe \reg, \offset
+.endm
+
+.macro .ENDPROLOG
+    .seh_endprologue
+.endm
+
+/* .seh_code switches back to .text after .seh_handlerdata */
+.macro .seh_code
+    .text
+.endm
+#endif /* __clang__ */
+
 .macro absolute address
     __absolute__address__ = \address
 .endm
@@ -428,7 +512,7 @@ ENDM
     jmp 4f
 1:  .ascii "Unimplemented %s (%s:%d)", CR, LF, NUL
 2:  .asciz "\func"
-3:  .asciz \file
+3:  .asciz "\file"
 4:
     sub rsp, 0x20
     lea rcx, 1b[rip]
@@ -447,6 +531,15 @@ ENDM
 #define else .else
 #define elseif .elseif
 
+/* MASM logical/bitwise operators → GAS equivalents */
+#define AND &
+#define OR |
+#define NOT ~
+#define EQ ==
+#define NE !=
+#define LT <
+#define GT >
+
 /* CFI annotations */
 #define CFI_STARTPROC .cfi_startproc
 #define CFI_ENDPROC .cfi_endproc
@@ -458,6 +551,64 @@ ENDM
 #define CFI_REGISTER .cfi_register
 #define CFI_REL_OFFSET .cfi_rel_offset
 #define CFI_SAME_VALUE .cfi_same_value
+
+/* ARM64-specific macros */
+#ifdef _M_ARM64
+
+.macro TEXTAREA
+    .text
+    .p2align 2
+.endm
+
+.macro DATAAREA
+    .data
+.endm
+
+.macro RODATAAREA
+    .section .rdata,"dr"
+.endm
+
+/*
+ * LEAF_ENTRY - Start a leaf function (no stack frame, no calls to other functions)
+ */
+.macro LEAF_ENTRY Name
+    .globl \Name
+    .p2align 2
+\Name:
+.endm
+
+/*
+ * LEAF_END - End a leaf function
+ */
+.macro LEAF_END Name
+    /* No .size directive for COFF */
+.endm
+
+/*
+ * NESTED_ENTRY - Start a nested function (has stack frame, calls other functions)
+ */
+.macro NESTED_ENTRY Name
+    .globl \Name
+    .p2align 2
+\Name:
+.endm
+
+/*
+ * NESTED_END - End a nested function
+ */
+.macro NESTED_END Name
+    /* No .size directive for COFF */
+.endm
+
+/*
+ * ALTERNATE_ENTRY - Define an alternate entry point to a function
+ */
+.macro ALTERNATE_ENTRY Name
+    .globl \Name
+\Name:
+.endm
+
+#endif /* _M_ARM64 */
 
 #endif
 

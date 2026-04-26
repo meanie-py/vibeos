@@ -176,6 +176,7 @@ Arguments:
         FatRaiseStatus( IrpContext, STATUS_CANT_WAIT );
     }
 
+
     DbgDoit( IrpContext->PinCount += 1 )
 
     DebugTrace(-1, Dbg, "FatReadVolumeFile -> VOID, *BCB = %p\n", *Bcb);
@@ -435,6 +436,7 @@ Arguments:
         *Buffer = NULL;
         FatRaiseStatus( IrpContext, STATUS_CANT_WAIT );
     }
+
 
     DbgDoit( IrpContext->PinCount += 1 )
 

@@ -45,6 +45,8 @@ CHeap_Exception HeapException(CHeap_Exception::E_ALLOCATION_ERROR);
 // Our own delete operator
 // It is here basically because MS guys don't known about set_new_handler()
 // See operator new
+// When building with libc++ (Clang), the C++ runtime already provides these.
+#ifndef __clang__
 void operator delete(void* ptr)
 {
     // In Windows 2k3, they check for ptr being null.
@@ -72,6 +74,7 @@ void* operator new(size_t uSize)
 
     return Buffer;
 }
+#endif /* !__clang__ */
 
 // This is a char to wchar string conversion helper
 int mbstowcsz(LPWSTR lpDest, LPCSTR lpSrc, int nLen)

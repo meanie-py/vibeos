@@ -57,15 +57,17 @@ list(APPEND UCRT_STRING_SOURCES
     string/wmemmove_s.cpp
 )
 
-# Special handling for GCC and Clang
+# Special handling for GCC and Clang (x86/x64 only - SSE/AVX are x86-specific)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    list(APPEND UCRT_STRING_SOURCES
-        string/strnlen-avx2.cpp
-        string/strnlen-sse2.cpp
-    )
+    if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+        list(APPEND UCRT_STRING_SOURCES
+            string/strnlen-avx2.cpp
+            string/strnlen-sse2.cpp
+        )
 
-    set_source_files_properties(string/strnlen-sse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2")
-    set_source_files_properties(string/strnlen-avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+        set_source_files_properties(string/strnlen-sse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2")
+        set_source_files_properties(string/strnlen-avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+    endif()
 endif()
 
 if(${ARCH} STREQUAL "i386")
@@ -106,10 +108,11 @@ elseif(${ARCH} STREQUAL "amd64")
     )
 else()
     if(${ARCH} STREQUAL "arm64")
-        list(APPEND UCRT_STRING_ASM_SOURCES
-            string/arm64/strlen.s
-            string/arm64/wcslen.s
-    )
+        # ARM64 assembly files use ARMASM syntax which isn't compatible with Clang/GAS
+        # Use C fallbacks instead
+        list(APPEND UCRT_STRING_SOURCES
+            string/arm/strlen.c
+        )
     else()
         list(APPEND UCRT_STRING_SOURCES
             string/arm/strlen.c

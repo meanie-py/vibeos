@@ -28,6 +28,8 @@
 #define NDEBUG
 #include <debug.h>
 
+#define RD_TRACE(s) ((void)0)
+
 #define DO_XIP   0x00020000
 
 /* GLOBALS ********************************************************************/
@@ -967,7 +969,9 @@ RamdiskReadWriteReal(IN PIRP Irp,
 
     /* Make sure we were able to map it */
     CurrentBase = SystemVa;
-    if (!SystemVa) return STATUS_INSUFFICIENT_RESOURCES;
+    if (!SystemVa) { RD_TRACE("[RAMDISK-DRV] RWReal: no SystemVa\r\n"); return STATUS_INSUFFICIENT_RESOURCES; }
+
+    RD_TRACE("[RAMDISK-DRV] RWReal: start\r\n");
 
     /* Initialize default */
     Irp->IoStatus.Information = 0;
@@ -986,7 +990,7 @@ RamdiskReadWriteReal(IN PIRP Irp,
                                       CurrentOffset,
                                       BytesLeft,
                                       &BytesRead);
-        if (!BaseAddress) return STATUS_INSUFFICIENT_RESOURCES;
+        if (!BaseAddress) { RD_TRACE("[RAMDISK-DRV] RWReal: MapPages failed\r\n"); return STATUS_INSUFFICIENT_RESOURCES; }
 
         /* Update our lengths */
         Irp->IoStatus.Information += BytesRead;
@@ -1026,7 +1030,7 @@ DoCopy:
         CurrentBase = (PVOID)((ULONG_PTR)CurrentBase + BytesRead);
 
         /* Check if we are done */
-        if (!BytesLeft) return Status;
+        if (!BytesLeft) { RD_TRACE("[RAMDISK-DRV] RWReal: done\r\n"); return Status; }
     }
 }
 
@@ -1035,6 +1039,7 @@ NTAPI
 RamdiskOpenClose(IN PDEVICE_OBJECT DeviceObject,
                  IN PIRP Irp)
 {
+    RD_TRACE("[RAMDISK-DRV] OpenClose\r\n");
     /* Complete the IRP */
     Irp->IoStatus.Information = 1;
     Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -1052,6 +1057,8 @@ RamdiskReadWrite(IN PDEVICE_OBJECT DeviceObject,
     // LARGE_INTEGER ByteOffset;
     PIO_STACK_LOCATION IoStackLocation;
     NTSTATUS Status, ReturnStatus;
+
+    RD_TRACE("[RAMDISK-DRV] ReadWrite\r\n");
 
     /* Get the device extension and make sure this isn't a bus */
     DeviceExtension = DeviceObject->DeviceExtension;
@@ -2417,6 +2424,7 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
     PCHAR BootDeviceName, CommandLine;
     PDEVICE_OBJECT PhysicalDeviceObject = NULL;
     NTSTATUS Status;
+    RD_TRACE("[RAMDISK-DRV] DriverEntry called\r\n");
     DPRINT("RAM Disk Driver Initialized\n");
 
     /* Save the registry path */
@@ -2492,6 +2500,7 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
     /* Are we reporting the device */
     if (ReportDetectedDevice)
     {
+        RD_TRACE("[RAMDISK-DRV] Reporting detected device\r\n");
         /* Do it */
         Status = IoReportDetectedDevice(DriverObject,
                                         InterfaceTypeUndefined,
@@ -2520,5 +2529,6 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
     }
 
     /* Done */
+    RD_TRACE("[RAMDISK-DRV] DriverEntry returning\r\n");
     return Status;
 }

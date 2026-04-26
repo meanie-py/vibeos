@@ -18,6 +18,7 @@ typedef NTSTATUS (NTAPI *USER_CALL)(PVOID Argument, ULONG ArgumentLength);
 
 /* FUNCTIONS ****************************************************************/
 
+#ifndef _M_ARM64
 /*
  * @implemented
  */
@@ -50,6 +51,7 @@ KiUserExceptionDispatcher(PEXCEPTION_RECORD ExceptionRecord,
     /* Raise the exception */
     RtlRaiseException(&NestedExceptionRecord);
 }
+#endif /* _M_ARM64 */
 
 /*
  * @implemented

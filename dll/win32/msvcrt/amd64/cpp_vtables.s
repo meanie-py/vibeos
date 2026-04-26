@@ -13,18 +13,18 @@
 .const
 
 MACRO(START_VTABLE, shortname, cxxname)
-EXTERN shortname&_rtti:PROC
-    .quad shortname&_rtti
-PUBLIC &shortname&_vtable
-&shortname&_vtable:
-PUBLIC &cxxname
-&cxxname:
+EXTERN \shortname\()_rtti:PROC
+    .quad \shortname\()_rtti
+PUBLIC \shortname\()_vtable
+\shortname\()_vtable:
+PUBLIC \cxxname
+\cxxname\():
 ENDM
 
 MACRO(DEFINE_EXCEPTION_VTABLE, shortname, cxxname)
     START_VTABLE shortname, cxxname
-    EXTERN &shortname&_vector_dtor:PROC
-    .quad &shortname&_vector_dtor
+    EXTERN \shortname\()_vector_dtor:PROC
+    .quad \shortname\()_vector_dtor
     EXTERN exception_what:ABS
     .quad exception_what
 ENDM

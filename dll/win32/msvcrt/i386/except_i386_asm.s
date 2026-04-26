@@ -89,9 +89,9 @@ __EH_prolog:
     //.cfi_adjust_cfa_offset 4
     push eax
     //.cfi_adjust_cfa_offset 4
-    push fs:0
+    push dword ptr fs:[0]
     //.cfi_adjust_cfa_offset 4
-    mov fs:0, esp
+    mov dword ptr fs:[0], esp
     mov eax, [esp + 12]
     mov [esp + 12], ebp
     lea ebp, [esp + 12]

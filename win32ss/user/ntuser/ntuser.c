@@ -143,6 +143,19 @@ UserInitialize(VOID)
 //     Initialize User Screen.
 // }
 
+    /* Create the PDEV eagerly so that NtGdiOpenDCW calls from DLL init
+     * (e.g., comctl32 DllMain) can find a display device. The full desktop
+     * graphics init (cursors, icons, menus) is deferred to co_AddGuiApp
+     * when the first GUI process creates a DC after the winstation exists. */
+    {
+        PMDEVOBJ pmdev = NULL;
+        LONG lRet = PDEVOBJ_lChangeDisplaySettings(NULL, NULL, NULL, &pmdev, TRUE);
+        if (lRet == DISP_CHANGE_SUCCESSFUL)
+        {
+            gpmdev = pmdev;
+        }
+    }
+
 // Set Global SERVERINFO Error flags.
 // Load Resources.
 
@@ -175,12 +188,11 @@ NtUserInitialize(
 {
     NTSTATUS Status;
 
-    TRACE("Enter NtUserInitialize(%lx, %p, %p)\n",
-          dwWinVersion, hPowerRequestEvent, hMediaRequestEvent);
-
     /* Check if we are already initialized */
     if (gpepCSRSS)
+    {
         return STATUS_UNSUCCESSFUL;
+    }
 
     /* Check Windows USER subsystem version */
     if (dwWinVersion != USER_VERSION)
@@ -207,7 +219,10 @@ NtUserInitialize(
 
     /* Initialize various GDI stuff (DirectX, fonts, language ID etc.) */
     if (!InitializeGreCSRSS())
+    {
+        UserLeave();
         return STATUS_UNSUCCESSFUL;
+    }
 
     /* Initialize USER */
     Status = UserInitialize();

@@ -4,7 +4,7 @@
  * FILE:            ntoskrnl/io/iomgr/volume.c
  * PURPOSE:         Volume and File System I/O Support
  * PROGRAMMERS:     Alex Ionescu (alex.ionescu@reactos.org)
- *                  Hervé Poussineau (hpoussin@reactos.org)
+ *                  Hervï¿½ Poussineau (hpoussin@reactos.org)
  *                  Eric Kohl
  *                  Pierre Schweitzer (pierre.schweitzer@reactos.org)
  */
@@ -477,10 +477,24 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
     ULONG FsStackOverhead, RegistrationOps;
     PAGED_CODE();
 
+
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        char _buf[128];
+        const char *_p;
+        sprintf(_buf, "[MOUNT] IopMountVolume DevType=0x%lx Vpb=%p\r\n",
+                (unsigned long)DeviceObject->DeviceType, DeviceObject->Vpb);
+        _p = _buf;
+        while (*_p) { *_u = (ULONG)*_p++; }
+    }
+#endif
+
     /* Check if the device isn't already locked */
     if (!DeviceIsLocked)
     {
         /* Lock it ourselves */
+        ARM64_UART_TRACE("[MOUNT] Acquiring DeviceLock\r\n");
         Status = KeWaitForSingleObject(&DeviceObject->DeviceLock,
                                        Executive,
                                        KeGetPreviousMode(),
@@ -491,11 +505,28 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
             /* Don't mount if we were interrupted */
             return Status;
         }
+        ARM64_UART_TRACE("[MOUNT] DeviceLock acquired\r\n");
     }
 
     /* Acquire the FS Lock*/
     KeEnterCriticalRegion();
     ExAcquireResourceSharedLite(&IopDatabaseResource, TRUE);
+
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+    {
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        char _buf[128];
+        const char *_p;
+        PLIST_ENTRY _fl = &IopDiskFileSystemQueueHead;
+        int _cnt = 0;
+        PLIST_ENTRY _le = _fl->Flink;
+        while (_le != _fl) { _cnt++; _le = _le->Flink; }
+        sprintf(_buf, "[MOUNT] DiskFS list has %d entries, VpbFlags=0x%lx\r\n",
+                _cnt, DeviceObject->Vpb ? (unsigned long)DeviceObject->Vpb->Flags : 0UL);
+        _p = _buf;
+        while (*_p) { *_u = (ULONG)*_p++; }
+    }
+#endif
 
     /* Make sure we weren't already mounted */
     if (!(DeviceObject->Vpb->Flags & (VPB_MOUNTED | VPB_REMOVE_PENDING)))
@@ -619,16 +650,38 @@ IopMountVolume(IN PDEVICE_OBJECT DeviceObject,
             ExReleaseResourceLite(&IopDatabaseResource);
 
             /* Call the driver */
+            ARM64_UART_TRACE("[MOUNT] IoCallDriver(mount IRP)\r\n");
             Status = IoCallDriver(FileSystemDeviceObject, Irp);
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+            {
+                volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+                char _buf[64];
+                const char *_p;
+                sprintf(_buf, "[MOUNT] IoCallDriver returned 0x%lx\r\n", (unsigned long)Status);
+                _p = _buf;
+                while (*_p) { *_u = (ULONG)*_p++; }
+            }
+#endif
             if (Status == STATUS_PENDING)
             {
                 /* Wait on it */
+                ARM64_UART_TRACE("[MOUNT] Waiting for mount completion...\r\n");
                 KeWaitForSingleObject(&Event,
                                       Executive,
                                       KernelMode,
                                       FALSE,
                                       NULL);
                 Status = IoStatusBlock.Status;
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+                {
+                    volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+                    char _buf[64];
+                    const char *_p;
+                    sprintf(_buf, "[MOUNT] Wait done, status=0x%lx\r\n", (unsigned long)Status);
+                    _p = _buf;
+                    while (*_p) { *_u = (ULONG)*_p++; }
+                }
+#endif
             }
 
             ExAcquireResourceSharedLite(&IopDatabaseResource, TRUE);

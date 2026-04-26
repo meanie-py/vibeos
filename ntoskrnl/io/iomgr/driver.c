@@ -15,6 +15,18 @@
 #include <debug.h>
 #include <mm/ARM3/miarm.h>
 
+/* Direct UART trace for ARM64 boot debugging — bypasses PCH limitation */
+#ifdef _M_ARM64
+extern volatile PVOID Arm64UartKernelBase;
+#undef ARM64_UART_TRACE
+#define ARM64_UART_TRACE(s) do { \
+    volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase; \
+    const char *_p = (s); \
+    if (!_uart) break; \
+    while (*_p) *_uart = (ULONG)*_p++; \
+} while(0)
+#endif
+
 /* GLOBALS ********************************************************************/
 
 ERESOURCE IopDriverLoadResource;
@@ -460,6 +472,7 @@ IopInitializeDriverModule(
     Status = IopGetDriverNames(ServiceHandle, &DriverName, &ServiceName);
     if (!NT_SUCCESS(Status))
     {
+        DPRINT1("IopInitializeDriverModule: IopGetDriverNames failed 0x%x\n", Status);
         MmUnloadSystemImage(ModuleObject);
         return Status;
     }
@@ -825,6 +838,19 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
     /*
      * Display 'Loading XXX...' message
      */
+#ifdef _M_ARM64
+    /* Print driver name to UART for boot debugging */
+    {
+        volatile ULONG *_uart = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_p = "[DRV] Loading ";
+        USHORT _i;
+        while (*_p) *_uart = (ULONG)*_p++;
+        for (_i = 0; _i < ModuleName->Length / sizeof(WCHAR); _i++)
+            *_uart = (ULONG)(ModuleName->Buffer[_i] & 0x7F);
+        _p = "\r\n";
+        while (*_p) *_uart = (ULONG)*_p++;
+    }
+#endif
     IopDisplayLoadingMessage(ModuleName);
     InbvIndicateProgress();
 
@@ -917,9 +943,11 @@ IopInitializeBuiltinDriver(IN PLDR_DATA_TABLE_ENTRY BootLdrEntry)
 
     if (!NT_SUCCESS(Status))
     {
+        ARM64_UART_TRACE("[DRV] DriverEntry FAILED\r\n");
         DPRINT1("Driver '%wZ' load failed, status (%x)\n", ModuleName, Status);
         return FALSE;
     }
+    ARM64_UART_TRACE("[DRV] DriverEntry OK\r\n");
 
     // The driver has been loaded, now check if where are any PDOs
     // for that driver, and queue AddDevice call for them.
@@ -1189,6 +1217,13 @@ IopInitializeBootDrivers(VOID)
             /* Get the driver loader entry */
             LdrEntry = DriverInfo->DataTableEntry->LdrEntry;
 
+            /* Log boot driver init to serial (DbgPrint) */
+            {
+                static ULONG _drv_count = 0;
+                DbgPrint("[BOOT] Init driver %lu: %wZ\n", _drv_count, &LdrEntry->BaseDllName);
+                _drv_count++;
+            }
+
             /* Initialize it */
             if (IopInitializeBuiltinDriver(LdrEntry))
             {
@@ -1226,17 +1261,54 @@ IopInitializeSystemDrivers(VOID)
     PiPerformSyncDeviceAction(IopRootDeviceNode->PhysicalDeviceObject, PiActionEnumDeviceTree);
 
     /* HACK: No system drivers on the BootCD */
-    if (KeLoaderBlock->SetupLdrBlock) return;
+    if (KeLoaderBlock->SetupLdrBlock)
+    {
+        DPRINT1("IopInitializeSystemDrivers: SetupLdrBlock is set, skipping system drivers\n");
+        return;
+    }
+
+#ifdef _M_ARM64
+    /* ARM64: Skip loading system-start drivers from the filesystem.
+     * ZwLoadDriver hangs when trying to load drivers that don't exist
+     * on the ramdisk. All critical drivers are boot-start. */
+    ARM64_UART_TRACE("[SYSDRV] ARM64: Skipping system-start drivers\r\n");
+    return;
+#endif
 
     /* Get the driver list */
     SavedList = DriverList = CmGetSystemDriverList();
     ASSERT(DriverList);
 
+    DPRINT1("IopInitializeSystemDrivers: loading system-start drivers\n");
+
+    ARM64_UART_TRACE("[SYSDRV] Loading system drivers...\r\n");
+
     /* Loop it */
     while (*DriverList)
     {
+        DPRINT1("  SysDrv: %wZ\n", *DriverList);
+#if defined(_M_ARM64) && defined(ARM64_UART_TRACE_ENABLE)
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            const char *_m = "[SYSDRV] ZwLoadDriver: ";
+            while (*_m) { *_u = (ULONG)*_m++; }
+            /* Print the driver name (Unicode to ASCII) */
+            if (*DriverList && (*DriverList)->Buffer)
+            {
+                USHORT i;
+                for (i = 0; i < (*DriverList)->Length / sizeof(WCHAR); i++)
+                    *_u = (ULONG)(UCHAR)(*DriverList)->Buffer[i];
+            }
+            _m = "\r\n";
+            while (*_m) { *_u = (ULONG)*_m++; }
+        }
+#endif
+
         /* Load the driver */
-        ZwLoadDriver(*DriverList);
+        {
+            NTSTATUS _st = ZwLoadDriver(*DriverList);
+            DPRINT1("  SysDrv: %wZ => 0x%x\n", *DriverList, _st);
+        }
 
         /* Free the entry */
         RtlFreeUnicodeString(*DriverList);
@@ -1247,6 +1319,8 @@ IopInitializeSystemDrivers(VOID)
         DriverList++;
     }
 
+    ARM64_UART_TRACE("[SYSDRV] All system drivers loaded\r\n");
+
     /* Free the list */
     ExFreePool(SavedList);
 
@@ -1254,6 +1328,8 @@ IopInitializeSystemDrivers(VOID)
                         PiActionEnumDeviceTree,
                         NULL,
                         NULL);
+
+    ARM64_UART_TRACE("[SYSDRV] IopInitializeSystemDrivers complete\r\n");
 }
 
 /*
@@ -2014,6 +2090,7 @@ IopLoadDriver(
     Status = MmLoadSystemImage(&ImagePath, NULL, NULL, 0, (PVOID)&ModuleObject, &BaseAddress);
     RtlFreeUnicodeString(&ImagePath);
 
+
     if (!NT_SUCCESS(Status))
     {
         DPRINT("MmLoadSystemImage() failed (Status %lx)\n", Status);
@@ -2124,6 +2201,7 @@ IopDoLoadUnloadDriver(
     LoadParams.RegistryPath = RegistryPath;
     LoadParams.DriverObject = *DriverObject;
 
+
     if (PsGetCurrentProcess() != PsInitialSystemProcess)
     {
         LoadParams.SetEvent = TRUE;
@@ -2142,6 +2220,7 @@ IopDoLoadUnloadDriver(
         LoadParams.SetEvent = FALSE;
         IopLoadUnloadDriverWorker(&LoadParams);
     }
+
 
     return LoadParams.Status;
 }
@@ -2171,6 +2250,7 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
 
     PAGED_CODE();
 
+
     PreviousMode = KeGetPreviousMode();
 
     /* Need the appropriate priviliege */
@@ -2179,6 +2259,7 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
         DPRINT1("No load privilege!\n");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
+
 
     /* Capture the service name */
     Status = ProbeAndCaptureUnicodeString(&CapturedServiceName,
@@ -2198,9 +2279,11 @@ NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
         return STATUS_INVALID_PARAMETER;
     }
 
+
     /* Load driver and call its entry point */
     DriverObject = NULL;
     Status = IopDoLoadUnloadDriver(&CapturedServiceName, &DriverObject);
+
 
     ReleaseCapturedUnicodeString(&CapturedServiceName, PreviousMode);
     return Status;

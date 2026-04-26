@@ -12,6 +12,7 @@
 #define NDEBUG
 #include "debug.h"
 
+
 /* FUNCTIONS *****************************************************************/
 
 CODE_SEG("INIT")
@@ -349,6 +350,7 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                NULL);
 
     /* Create the device map key */
+    ARM64_UART_TRACE("[CFG] NtCreateKey DeviceMap\r\n");
     Status = NtCreateKey(&KeyHandle,
                          KEY_READ | KEY_WRITE,
                          &ObjectAttributes,
@@ -359,6 +361,7 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     if (!NT_SUCCESS(Status))
         return Status;
     NtClose(KeyHandle);
+    ARM64_UART_TRACE("[CFG] DeviceMap created\r\n");
 
     /* Nobody should've created this key yet! */
     ASSERT(Disposition == REG_CREATED_NEW_KEY);
@@ -396,7 +399,12 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    ARM64_UART_TRACE("[CFG] Description created\r\n");
+
     /* Check if we got anything from NTLDR */
+    ARM64_UART_TRACE("[CFG] ConfigurationRoot=");
+    if (LoaderBlock->ConfigurationRoot) ARM64_UART_TRACE("non-null"); else ARM64_UART_TRACE("NULL");
+    ARM64_UART_TRACE("\r\n");
     if (LoaderBlock->ConfigurationRoot)
     {
         /* Setup the configuration tree */
@@ -411,8 +419,12 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         Status = STATUS_SUCCESS;
     }
 
+    ARM64_UART_TRACE("[CFG] CmpSetupConfigurationTree done\r\n");
+
     /* Free the buffer, close our handle and return status */
     ExFreePoolWithTag(CmpConfigurationData, TAG_CM);
+    ARM64_UART_TRACE("[CFG] NtClose Description\r\n");
     NtClose(KeyHandle);
+    ARM64_UART_TRACE("[CFG] CmpInitializeHardwareConfiguration returning\r\n");
     return Status;
 }

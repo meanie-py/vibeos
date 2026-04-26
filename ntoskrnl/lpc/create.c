@@ -102,6 +102,52 @@ LpcpCreatePort(OUT PHANDLE PortHandle,
     ReleaseCapturedUnicodeString(&CapturedPortName, PreviousMode);
 #endif
 
+#ifdef _M_ARM64
+    /* ARM64 trace: log port creation to UART */
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *u = (volatile ULONG *)Arm64UartKernelBase;
+        if (u)
+        {
+            USHORT ii;
+            const char *m = "[LPC-CREATE] PID=";
+            while (*m) *u = (ULONG)*m++;
+            {
+                ULONG pid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+                char buf[12]; int pos = 0;
+                if (pid == 0) buf[pos++] = '0';
+                else { char t[12]; int tp=0; while(pid){t[tp++]='0'+pid%10;pid/=10;} while(tp>0)buf[pos++]=t[--tp]; }
+                buf[pos] = 0;
+                for(int bi=0;bi<pos;bi++) *u = (ULONG)buf[bi];
+            }
+            m = " Port=";
+            while (*m) *u = (ULONG)*m++;
+            if (CapturedObjectName.Buffer && CapturedObjectName.Length > 0)
+            {
+                for (ii = 0; ii < CapturedObjectName.Length / sizeof(WCHAR) && ii < 120; ii++)
+                {
+                    WCHAR ch = 0;
+                    if (PreviousMode == UserMode)
+                    {
+                        _SEH2_TRY { ch = ((volatile WCHAR*)CapturedObjectName.Buffer)[ii]; } _SEH2_EXCEPT(1) { } _SEH2_END;
+                    }
+                    else
+                    {
+                        ch = CapturedObjectName.Buffer[ii];
+                    }
+                    *u = (ULONG)(ch & 0xFF);
+                }
+            }
+            else
+            {
+                m = "(unnamed)";
+                while (*m) *u = (ULONG)*m++;
+            }
+            *u = '\r'; *u = '\n';
+        }
+    }
+#endif
+
     /* Create the Object */
     Status = ObCreateObject(PreviousMode,
                             LpcPortObjectType,

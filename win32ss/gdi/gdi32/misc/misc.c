@@ -760,7 +760,14 @@ GdiQueryTable(VOID)
 
 BOOL GdiGetHandleUserData(HGDIOBJ hGdiObj, DWORD ObjectType, PVOID *UserData)
 {
-    PGDI_TABLE_ENTRY Entry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hGdiObj);
+    PGDI_TABLE_ENTRY Entry;
+
+    /* GdiHandleTable is set by GdiProcessSetup (called from user32 init).
+     * If user32 isn't loaded yet, the table is NULL. */
+    if (!GdiHandleTable)
+        return FALSE;
+
+    Entry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hGdiObj);
 
     /* Check if twe have the correct type */
     if (GDI_HANDLE_GET_TYPE(hGdiObj) != ObjectType ||

@@ -956,7 +956,7 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Network\{4D36E974-E325-11CE-BFC1-08002BE1
 HKLM,"SYSTEM\CurrentControlSet\Control\Network\{4D36E974-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"NetService"
 HKLM,"SYSTEM\CurrentControlSet\Control\Network\{4D36E975-E325-11CE-BFC1-08002BE10318}",,0x00000000,"Network Protocol"
 HKLM,"SYSTEM\CurrentControlSet\Control\Network\{4D36E975-E325-11CE-BFC1-08002BE10318}","Class",0x00000000,"NetTrans"
-HKLM,"SYSTEM\CurrentControlSet\Control\NetworkProvider\Order","ProviderOrder",0x00000000,"nfs41_driver"
+HKLM,"SYSTEM\CurrentControlSet\Control\NetworkProvider\Order","ProviderOrder",0x00000000,""
 
 ; NLS Files
 HKLM,"SYSTEM\CurrentControlSet\Control\Nls\CodePage","37",0x00000000,"c_037.nls"
@@ -1563,11 +1563,17 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","PATHEXT",0x
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TEMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","windir",0x00020002,"%SystemRoot%"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\Administrator"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\All Users"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEDRIVE",0x00000002,"C:"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEPATH",0x00020002,"\Documents and Settings\Administrator"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIMENG_DEBUG_LEVEL",0x00000000,"4"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIM_DEBUG_LEVEL",0x00000000,"4"
 
 
 ; Known DLLs
+; NOTE: ARM64 ramdisk boot may have SEC_IMAGE sharing issues with KnownDlls.
+; Re-enabled for i386/amd64 LiveCD boot where NtCreateSection works correctly.
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","DllDirectory",0x00020000,"%SystemRoot%\system32"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","advapi32",0x00000000,"advapi32.dll"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","comdlg32",0x00000000,"comdlg32.dll"
@@ -1590,17 +1596,53 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","user32",0x000
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","version",0x00000000,"version.dll"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","wininet",0x00000000,"wininet.dll"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","wldap32",0x00000000,"wldap32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","advapi32_vista",0x00000000,"advapi32_vista.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","advpack",0x00000000,"advpack.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","bcrypt",0x00000000,"bcrypt.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","browseui",0x00000000,"browseui.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","comctl32",0x00000000,"comctl32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","crypt32",0x00000000,"crypt32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","cryptnet",0x00000000,"cryptnet.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","cryptui",0x00000000,"cryptui.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","dbghelp",0x00000000,"dbghelp.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","dhcpcsvc",0x00000000,"dhcpcsvc.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","imm32",0x00000000,"imm32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","iphlpapi",0x00000000,"iphlpapi.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","kernel32_vista",0x00000000,"kernel32_vista.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","lpk",0x00000000,"lpk.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","lsasrv",0x00000000,"lsasrv.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","mbedtls",0x00000000,"mbedtls.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","mpr",0x00000000,"mpr.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","msimg32",0x00000000,"msimg32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","netapi32",0x00000000,"netapi32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","ntdll_vista",0x00000000,"ntdll_vista.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","powrprof",0x00000000,"powrprof.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","psapi",0x00000000,"psapi.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","samlib",0x00000000,"samlib.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","samsrv",0x00000000,"samsrv.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","secur32",0x00000000,"secur32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","shdocvw",0x00000000,"shdocvw.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","shlwapi",0x00000000,"shlwapi.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","userenv",0x00000000,"userenv.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","usp10",0x00000000,"usp10.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","uxtheme",0x00000000,"uxtheme.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","winmm",0x00000000,"winmm.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","winspool",0x00000000,"winspool.drv"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","wintrust",0x00000000,"wintrust.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","ws2_32",0x00000000,"ws2_32.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDlls","ws2help",0x00000000,"ws2help.dll"
 
 ; Memory Management
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",,0x00000012
 
 ; SubSystems
+; Kmode (win32k.sys) is loaded separately via NtSetSystemInformation, NOT as a user process.
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Debug",0x00020002,""
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Kmode",0x00020000,"%SystemRoot%\system32\win32k.sys"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Optional",0x00010000,"Posix"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Posix",0x00020000,"%SystemRoot%\system32\psxss.exe"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Required",0x00010000,"Debug","Windows"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Windows",0x00020000,"%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,12288,512 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=winsrv:ConServerDllInitialization,2 ProfileControl=Off MaxRequestThreads=16"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems","Windows",0x00020000,"%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,12288,512 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:ConServerDllInitialization,2 ServerDll=winsrv:UserServerDllInitialization,3 ProfileControl=Off MaxRequestThreads=16"
 
 ; This is an empty App Compat cache
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache","AppCompatCache", 0x00000001, \

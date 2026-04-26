@@ -36,6 +36,7 @@ list(APPEND CONSRV_SOURCE
     consrv/frontends/gui/graphics.c
     consrv/frontends/gui/text.c
     consrv/frontends/tui/tuiterm.c
+    consrv/frontends/serial/serialterm.c
     # consrv/consrv.rc
     consrv/consrv.h)
 
@@ -52,12 +53,27 @@ else()
     set_source_files_properties(${CONSRV_SOURCE} PROPERTIES COMPILE_OPTIONS "-fms-extensions")
 endif()
 
+if(ARCH STREQUAL "arm64")
+    list(APPEND CONSRV_SOURCE consrv/arm64_delay_stubs.c)
+endif()
+
 add_library(consrv ${CONSRV_SOURCE})
 target_link_libraries(consrv pseh)
 add_dependencies(consrv psdk)
+if(ARCH STREQUAL "arm64")
+    target_compile_definitions(consrv PRIVATE SERIALTERM_COMPILE)
+endif()
 add_pch(consrv consrv/consrv.h CONSRV_SOURCE)
 #add_object_library(consrv ${CONSRV_SOURCE})
 #list(APPEND CONSRV_IMPORT_LIBS)
-list(APPEND CONSRV_DELAY_IMPORT_LIBS shell32 ole32 psapi)
+if(ARCH STREQUAL "arm64")
+    # ARM64: llvm-dlltool converts delay-imports to regular imports, which
+    # causes csrss to load shell32 + 30 transitive deps at startup,
+    # overflowing the user-mode stack. Skip shell32/ole32 (clipboard/OLE
+    # not needed during boot). Keep psapi (small, no deep dep chain).
+    list(APPEND CONSRV_DELAY_IMPORT_LIBS psapi)
+else()
+    list(APPEND CONSRV_DELAY_IMPORT_LIBS shell32 ole32 psapi)
+endif()
 list(APPEND CONSRV_TARGET_LINK_LIBS concfg uuid)
 set_module_type(consrv module UNICODE)

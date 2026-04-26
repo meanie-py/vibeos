@@ -1540,7 +1540,7 @@ VOID
 UniataInitIoRes(
     IN struct _HW_CHANNEL* chan,
     IN ULONG idx,
-    IN ULONG addr,
+    IN ULONGIO_PTR addr,
     IN BOOLEAN MemIo,
     IN BOOLEAN Proc
     );
@@ -1548,7 +1548,7 @@ UniataInitIoRes(
 VOID
 UniataInitIoResEx(
     IN struct _IORES* IoRes,
-    IN ULONG addr,
+    IN ULONGIO_PTR addr,
     IN BOOLEAN MemIo,
     IN BOOLEAN Proc
     );

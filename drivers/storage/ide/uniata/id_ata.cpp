@@ -414,6 +414,7 @@ AtapiReadBuffer##sz( \
 { \
     PIORES res; \
                  \
+    if(!Buffer || !Count || !MmIsAddressValid(Buffer)) return; \
     if(Timing) { \
         while(Count) { \
             (*((_type*)Buffer)) = AtapiReadPort##sz(chan, _port); \
@@ -459,6 +460,7 @@ AtapiWriteBuffer##sz( \
 { \
     PIORES res; \
                  \
+    if(!Buffer || !Count || !MmIsAddressValid(Buffer)) return; \
     if(Timing) { \
         while(Count) { \
             AtapiWritePort##sz(chan, _port, *((_type*)Buffer)); \

@@ -94,7 +94,6 @@ KdbpReleaseLock(
 {
     /* Release the spinlock */
     KiReleaseSpinLock(SpinLock);
-    // KeReleaseSpinLockFromDpcLevel(SpinLock);
 
     /* Restore the old IRQL */
     KeLowerIrql(OldIrql);
@@ -559,7 +558,6 @@ KdIoPrintString(
         CurrentTable = CONTAINING_RECORD(CurrentEntry,
                                          KD_DISPATCH_TABLE,
                                          KdProvidersList);
-
         CurrentTable->KdpPrintRoutine(String, Length);
     }
 }

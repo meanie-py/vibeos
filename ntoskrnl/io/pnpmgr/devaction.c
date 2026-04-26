@@ -27,6 +27,9 @@
 
 #include <ntoskrnl.h>
 #define NDEBUG
+
+/* ARM64 verbose device action traces removed — PnP confirmed working */
+#define _DA_TRACE(s) ((void)0)
 #include <debug.h>
 
 /* GLOBALS *******************************************************************/
@@ -2403,8 +2406,11 @@ PiDevNodeStateMachine(
                 if (currentNode->Flags & DNF_REENUMERATE)
                 {
                     DPRINT("DeviceNodeStarted REENUMERATE %wZ\n", &currentNode->InstancePath);
+                    _DA_TRACE("[DA] DeviceNodeStarted REENUMERATE\r\n");
                     currentNode->Flags &= ~DNF_REENUMERATE;
+                    _DA_TRACE("[DA] PiIrpQueryDeviceRelations enter\r\n");
                     status = PiIrpQueryDeviceRelations(currentNode, BusRelations);
+                    _DA_TRACE("[DA] PiIrpQueryDeviceRelations done\r\n");
 
                     // again, skip DeviceNodeEnumeratePending as with the starting sequence
                     PiSetDevNodeState(currentNode, DeviceNodeEnumerateCompletion);
@@ -2454,7 +2460,9 @@ PiDevNodeStateMachine(
                 break;
             case DeviceNodeEnumerateCompletion:
                 DPRINT("DeviceNodeEnumerateCompletion %wZ\n", &currentNode->InstancePath);
+                _DA_TRACE("[DA] PiEnumerateDevice enter\r\n");
                 status = PiEnumerateDevice(currentNode);
+                _DA_TRACE("[DA] PiEnumerateDevice done\r\n");
                 doProcessAgain = TRUE;
                 break;
             case DeviceNodeAwaitingQueuedDeletion:
@@ -2569,6 +2577,7 @@ PipDeviceActionWorker(
         DPRINT("Processing PnP request %p: DeviceObject - %p, Action - %s\n",
                Request, Request->DeviceObject, ActionToStr(Request->Action));
 
+        _DA_TRACE("[DA] PipDeviceActionWorker processing\r\n");
         switch (Request->Action)
         {
             case PiActionAddBootDevices:
@@ -2582,8 +2591,10 @@ PipDeviceActionWorker(
             }
             case PiActionEnumRootDevices:
             case PiActionEnumDeviceTree:
+                _DA_TRACE("[DA] PiDevNodeStateMachine enter\r\n");
                 deviceNode->Flags |= DNF_REENUMERATE;
                 PiDevNodeStateMachine(deviceNode);
+                _DA_TRACE("[DA] PiDevNodeStateMachine done\r\n");
                 break;
 
             case PiActionResetDevice:

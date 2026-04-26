@@ -163,7 +163,7 @@ _Ki386LargePageIdentityLabel:
     mov cr0, eax
 
     /* Jump to the next instruction to clear the prefetch queue */
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Enable Page Size Extension in CR4 */
     mov ecx, cr4
@@ -196,7 +196,7 @@ _Ki386SetupAndExitToV86Mode@4:
     sub esp, (12 + KTRAP_FRAME_LENGTH + NPX_FRAME_LENGTH + 16)
     mov ecx, esp
     call @KiEnterV86Mode@4
-    jmp $
+    .byte 0xEB, 0xFE /* jmp $ (infinite loop) */
 
 
 PUBLIC @Ki386BiosCallReturnAddress@4
@@ -216,6 +216,14 @@ PUBLIC @Ke386LoadFpuState@4
     /* Check if we have FXSR and choose which operand to use */
     test byte ptr [_KeI386FxsrPresent], 1
     jz _FrRestore
+
+    /* Sanitize MXCSR to prevent #GP from reserved bits */
+    mov eax, [ecx+28]      /* MXCSR_MASK */
+    test eax, eax
+    jnz _FxHasMask
+    mov eax, HEX(0FFBF)    /* Default mask if MXCSR_MASK is 0 */
+_FxHasMask:
+    and [ecx+24], eax      /* MXCSR &= mask */
 
     /* Restore all the FPU, MMX, XMM and MXCSR registers */
     fxrstor [ecx]

@@ -13,6 +13,12 @@
 #define NDEBUG
 #include <debug.h>
 
+#ifdef _M_ARM64
+/* ARM64: User-mode cannot access kernel UART MMIO (PA 0x09000000).
+ * Keep as no-op — use NtClose marker syscalls for tracing instead. */
+#define LdrpUartPuts(s) ((void)0)
+#endif
+
 /* GLOBALS *******************************************************************/
 
 PLDR_MANIFEST_PROBER_ROUTINE LdrpManifestProberRoutine;
@@ -179,7 +185,15 @@ LdrpSnapIAT(IN PLDR_DATA_TABLE_ENTRY ExportLdrEntry,
             } _SEH2_END;
 
             /* If we messed up, exit */
-            if (!NT_SUCCESS(Status)) break;
+            if (!NT_SUCCESS(Status))
+            {
+#ifdef _M_ARM64
+                /* ARM64: tolerate missing exports, continue snapping */
+                Status = STATUS_SUCCESS;
+#else
+                break;
+#endif
+            }
         }
     }
     else if (IatEntry->FirstThunk)
@@ -236,7 +250,16 @@ LdrpSnapIAT(IN PLDR_DATA_TABLE_ENTRY ExportLdrEntry,
             } _SEH2_END;
 
             /* If we failed the snap, break out */
-            if (!NT_SUCCESS(Status)) break;
+            if (!NT_SUCCESS(Status))
+            {
+#ifdef _M_ARM64
+                /* ARM64: tolerate missing exports, continue snapping */
+                Status = STATUS_SUCCESS;
+                continue;
+#else
+                break;
+#endif
+            }
         }
     }
 
@@ -290,6 +313,13 @@ LdrpHandleOneNewFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
                                   &AlreadyLoaded);
     if (!NT_SUCCESS(Status))
     {
+#ifdef _M_ARM64
+        /* ARM64 early boot: tolerate missing DLLs (see OldFormat handler) */
+        DPRINT1("LDR: ARM64 skipping missing bound import %s for %wZ (status %x)\n",
+                BoundImportName, &LdrEntry->BaseDllName, Status);
+        Status = STATUS_SUCCESS;
+        goto Quickie;
+#else
         /* Show debug message */
         if (ShowSnaps)
         {
@@ -299,6 +329,7 @@ LdrpHandleOneNewFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
                     Status);
         }
         goto Quickie;
+#endif
     }
 
     /* Check if it wasn't already loaded */
@@ -549,6 +580,16 @@ LdrpHandleOneOldFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
                                   &AlreadyLoaded);
     if (!NT_SUCCESS(Status))
     {
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+        /* Early boot: tolerate missing DLLs. Many DLLs have large
+         * transitive dependency trees (rpcrt4 -> wininet -> shell32 etc.)
+         * that aren't needed at boot time. Skip the missing import and
+         * leave its IAT thunks unresolved — DllMain code paths don't
+         * call functions from these missing dependencies. */
+        DbgPrint("LDR: Skipping missing import %s for %wZ (status %x)\n",
+                ImportName, &LdrEntry->BaseDllName, Status);
+        goto SkipEntry;
+#else
         /* Fail */
         if (ShowSnaps)
         {
@@ -560,6 +601,7 @@ LdrpHandleOneOldFormatImportDescriptor(IN LPWSTR DllPath OPTIONAL,
 
         /* Return */
         return Status;
+#endif
     }
 
     /* Show debug message */
@@ -1015,6 +1057,17 @@ FailurePath:
         /* Is this a static snap? */
         if (Static)
         {
+#ifdef _M_ARM64
+            /* ARM64: DUMMY_PSEH can't catch RtlRaiseStatus. Skip the hard
+             * error and fall through to the non-fatal path which sets the
+             * thunk to 0xffbadd11. The caller will tolerate the error. */
+            if (IsOrdinal)
+                DPRINT1("ARM64: Missing export ordinal 0x%x from %s\n",
+                        OriginalOrdinal, DllName ? DllName : "Unknown");
+            else
+                DPRINT1("ARM64: Missing export %s from %s\n",
+                        ImportName, DllName ? DllName : "Unknown");
+#else
             UNICODE_STRING SnapTarget;
             PLDR_DATA_TABLE_ENTRY LdrEntry;
 
@@ -1082,6 +1135,7 @@ FailurePath:
 
             /* Return ordinal error */
             RtlRaiseStatus(STATUS_ORDINAL_NOT_FOUND);
+#endif
         }
         else
         {
@@ -1124,6 +1178,17 @@ FailurePath:
             ForwarderName.Buffer = ImportName;
             ForwarderName.Length = (USHORT)(DotPosition - ImportName);
             ForwarderName.MaximumLength = ForwarderName.Length;
+
+            /* LLD/MinGW workaround: LLD prepends '_' to forward module names
+               on i386 (e.g. "_ntdll.RtlFoo" instead of "ntdll.RtlFoo").
+               DLL module names never start with '_', so strip it. */
+            if (ForwarderName.Length > 1 && ForwarderName.Buffer[0] == '_')
+            {
+                ForwarderName.Buffer++;
+                ForwarderName.Length--;
+                ForwarderName.MaximumLength--;
+            }
+
             Status = RtlAnsiStringToUnicodeString(&TempUString,
                                                   &ForwarderName,
                                                   TRUE);

@@ -682,6 +682,10 @@ function(set_module_type MODULE TYPE)
         # special case for kernel
         if (TYPE STREQUAL kernel)
             set_image_base(${MODULE} 0x00400000)
+        elseif(ARCH STREQUAL "arm64")
+            # ARM64: use high address to avoid SEC_IMAGE mapping relocation
+            # issues where relocated SEC_IMAGE data is corrupted in ReactOS MM.
+            set_image_base(${MODULE} 0x7FFB00000000)
         else()
             set_image_base(${MODULE} 0x00010000)
         endif()

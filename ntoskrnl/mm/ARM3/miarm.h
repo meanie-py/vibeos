@@ -110,11 +110,18 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 //
 // Access Flags
 //
+/*
+ * NOTE: On amd64, NX (bit 63) is available but ReactOS does not yet
+ * differentiate NonPagedPool from NonPagedPoolNx. Many subsystems
+ * allocate executable code in NonPagedPool (e.g., KINTERRUPT DispatchCode
+ * in IoConnectInterrupt). Until NonPagedPoolNx support is added, we must
+ * keep READWRITE pages executable so that interrupt dispatch code works.
+ */
 #define PTE_READONLY            0x8000000000000000ULL
 #define PTE_EXECUTE             0x0000000000000000ULL
 #define PTE_EXECUTE_READ        PTE_EXECUTE /* EXECUTE implies READ on x64 */
-#define PTE_READWRITE           0x8000000000000002ULL
-#define PTE_WRITECOPY           0x8000000000000200ULL
+#define PTE_READWRITE           0x0000000000000002ULL
+#define PTE_WRITECOPY           0x0000000000000200ULL
 #define PTE_EXECUTE_READWRITE   0x0000000000000002ULL
 #define PTE_EXECUTE_WRITECOPY   0x0000000000000200ULL
 #define PTE_PROTOTYPE           0x0000000000000400ULL
@@ -150,6 +157,36 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 #define PTE_DISABLE_CACHE       0x10
 #define PTE_WRITECOMBINED_CACHE 0x10
 #define PTE_PROTECT_MASK        0x610
+#elif defined(_M_ARM64)
+//
+// Access Flags for ARM64
+// Bit 55: Writable, Bit 56: CopyOnWrite, Bit 54: UserNoExecute (UXN)
+// Bit 10: Prototype (in software PTE) / Accessed (in hardware PTE)
+//
+#define PTE_READONLY            0x0040000000000000ULL   /* UXN=1, Writable=0 */
+#define PTE_EXECUTE             0x0000000000000000ULL   /* UXN=0, Writable=0 */
+#define PTE_EXECUTE_READ        PTE_EXECUTE
+#define PTE_READWRITE           0x00C0000000000000ULL   /* UXN=1, Writable=1 */
+#define PTE_WRITECOPY           0x0140000000000000ULL   /* UXN=1, CopyOnWrite=1 */
+#define PTE_EXECUTE_READWRITE   0x0080000000000000ULL   /* UXN=0, Writable=1 */
+#define PTE_EXECUTE_WRITECOPY   0x0100000000000000ULL   /* UXN=0, CopyOnWrite=1 */
+#define PTE_PROTOTYPE           0x0000000000000400ULL   /* Bit 10 */
+
+//
+// State Flags
+//
+#define PTE_VALID               0x0000000000000001ULL
+#define PTE_NOT_LARGE_PAGE      0x0000000000000002ULL   /* Bit 1: Table (L0-L2) or Page (L3) descriptor */
+#define PTE_ACCESSED            0x0000000000000400ULL   /* Bit 10 */
+#define PTE_DIRTY               0x0000000000000080ULL   /* Bit 7 (NotDirty inverted) */
+
+//
+// Cache flags (CacheType bits 2-3)
+//
+#define PTE_ENABLE_CACHE        0x0000000000000004ULL   /* CacheType=01 (Normal WB) */
+#define PTE_DISABLE_CACHE       0x0000000000000000ULL   /* CacheType=00 (Device) */
+#define PTE_WRITECOMBINED_CACHE 0x000000000000000CULL   /* CacheType=11 (Normal NC) */
+#define PTE_PROTECT_MASK        0x01C0000000000C0FULL  /* Includes bit 1 (NotLargePage) */
 #else
 #error Define these please!
 #endif
@@ -687,33 +724,33 @@ MiIsMemoryTypeInvisible(TYPE_OF_MEMORY MemoryType)
             (MemoryType == LoaderBBTMemory));
 }
 
-#ifdef _M_AMD64
+#if defined(_M_AMD64) || defined(_M_ARM64)
 FORCEINLINE
 BOOLEAN
 MiIsUserPxe(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 7) == 0x1FFFFEDF6FB7DA0ULL;
+    return ((ULONG_PTR)Address >> 11) == 0x1FFFFEDF6FB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPpe(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 16) == 0xFFFFF6FB7DA0ULL;
+    return ((ULONG_PTR)Address >> 20) == 0xFFFFF6FB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPde(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 25) == 0x7FFFFB7DA0ULL;
+    return ((ULONG_PTR)Address >> 29) == 0x7FFFFB7DAULL;
 }
 
 FORCEINLINE
 BOOLEAN
 MiIsUserPte(PVOID Address)
 {
-    return ((ULONG_PTR)Address >> 34) == 0x3FFFFDA0ULL;
+    return ((ULONG_PTR)Address >> 38) == 0x3FFFFDAULL;
 }
 #else
 FORCEINLINE
@@ -852,7 +889,7 @@ MI_MAKE_HARDWARE_PTE_USER(IN PMMPTE NewPte,
     NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
 }
 
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
 //
 // Builds a Prototype PTE for the address of the PTE
 //
@@ -955,7 +992,12 @@ MI_IS_PHYSICAL_ADDRESS(IN PVOID Address)
 
     /* Large pages are never paged out, always physically resident */
     PointerPde = MiAddressToPde(Address);
+#if defined(_M_ARM64)
+    /* ARM64: NotLargePage=0 means block/large page descriptor */
+    return ((!PointerPde->u.Hard.NotLargePage) && (PointerPde->u.Hard.Valid));
+#else
     return ((PointerPde->u.Hard.LargePage) && (PointerPde->u.Hard.Valid));
+#endif
 }
 
 //
@@ -974,6 +1016,10 @@ MI_WRITE_VALID_PTE(IN PMMPTE PointerPte,
            (TempPte.u.Hard.NoExecute == 0));
 #endif
     *PointerPte = TempPte;
+#ifdef _M_ARM64
+    /* ARM64: ensure PTE store is visible to hardware page table walker */
+    __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
+#endif
 }
 
 //

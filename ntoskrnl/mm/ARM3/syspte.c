@@ -277,6 +277,20 @@ MiReleaseSystemPtes(IN PMMPTE StartingPte,
     ASSERT(StartingPte + NumberOfPtes - 1 <= MmSystemPtesEnd[SystemPtePoolType]);
 
     //
+    // Guard against use-after-free: callers may pass freed MDL data containing
+    // pool fill patterns (0xFCFCFCFC), resulting in enormous NumberOfPtes.
+    // A reasonable upper bound is the total system PTE range.
+    //
+    if (NumberOfPtes > 0x10000 ||
+        StartingPte < MmSystemPtesStart[SystemPtePoolType] ||
+        StartingPte + NumberOfPtes - 1 > MmSystemPtesEnd[SystemPtePoolType])
+    {
+        DPRINT1("MiReleaseSystemPtes: corrupt NumberOfPtes=0x%lx, StartingPte=%p — skipping\n",
+                NumberOfPtes, StartingPte);
+        return;
+    }
+
+    //
     // Zero PTEs
     //
     RtlZeroMemory(StartingPte, NumberOfPtes * sizeof(MMPTE));

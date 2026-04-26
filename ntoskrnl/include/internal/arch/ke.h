@@ -27,10 +27,20 @@
 #include <internal/mips/ke.h>
 #elif defined(_M_ARM)
 #include <internal/arm/ke.h>
+#elif defined(_M_ARM64)
+#include <internal/arm64/ke.h>
 #elif defined(_M_AMD64)
 #include <internal/amd64/ke.h>
 #else
 #error "Unknown processor"
+#endif
+
+/* Provide no-op ARM64 UART trace macros for non-ARM64 architectures */
+#ifndef ARM64_UART_TRACE
+#define ARM64_UART_TRACE(s) do { } while(0)
+#endif
+#ifndef ARM64_UART_TRACE_HEX
+#define ARM64_UART_TRACE_HEX(prefix, val) do { } while(0)
 #endif
 
 /* EOF */

@@ -1,0 +1,143 @@
+//! ntkrnl-sys — FFI declarations for the ReactOS/NT kernel.
+//!
+//! Two layers of bindings:
+//!
+//! 1. **Hand-written modules** (`base`, `ke`, `mm`, `ex`, `ps`, `ob`, `rtl`,
+//!    `interlocked`) — curated declarations for the pool allocator and other
+//!    existing Rust kernel components. Includes inline functions, macros,
+//!    internal kernel types, and convenience wrappers that bindgen can't
+//!    generate.
+//!
+//! 2. **Bindgen kernel module** (`ddk`) — auto-generated from the full
+//!    `ntoskrnl.h` master header + `mm/ARM3/miarm.h` via `bindgen`.
+//!    Provides ~3,300 extern functions, ~1,850 structs, ~4,400 type aliases
+//!    covering ALL internal kernel subsystems (MM, Ob, Se, Ps, Ke, Io, Ex,
+//!    Cc, Cm, Lpc, etc.) with correct calling conventions on all 3
+//!    architectures. ~1,500 compile-time size assertions per arch verify
+//!    struct layout matches C. Use `ntkrnl_sys::ddk::*` for full kernel API
+//!    access when porting new kernel subsystems.
+//!
+//! NOT built as a standalone static library — this is an `rlib` dependency.
+
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(clippy::upper_case_acronyms)]
+#![allow(dead_code)]
+
+// ============================================================================
+// Hand-written modules (curated, stable API for existing consumers)
+// ============================================================================
+
+pub mod base;
+pub mod constants;
+pub mod ex;
+pub mod globals;
+pub mod inline;
+pub mod interlocked;
+pub mod ke;
+pub mod macros;
+pub mod mm;
+pub mod ob;
+pub mod probe;
+pub mod guards;
+pub mod ps;
+pub mod rtl;
+
+// Re-export commonly used types at crate root
+pub use base::*;
+pub use probe::*;
+
+/// Make a mutable pointer opaque to LLVM's interprocedural analysis.
+///
+/// Prevents LLVM from deducing `captures(none)` and `readnone` on pointer
+/// parameters, which causes callers to pass `poison` → ud2 cascade.
+/// Zero runtime cost (single mov instruction, register allocator eliminates it).
+#[inline(always)]
+pub unsafe fn opaque_ptr<T>(ptr: *mut T) -> *mut T {
+    let p: *mut T;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    p
+}
+
+/// Make a const pointer opaque to LLVM's interprocedural analysis.
+/// Same as `opaque_ptr` but for `*const T` parameters.
+#[inline(always)]
+pub unsafe fn opaque_ptr_const<T>(ptr: *const T) -> *const T {
+    let p: *const T;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {0}, {1}", out(reg) p, in(reg) ptr, options(nostack, preserves_flags));
+    p
+}
+
+// ============================================================================
+// Auto-generated DDK bindings (full kernel API surface)
+// ============================================================================
+
+mod bindgen_common;
+
+#[cfg(target_arch = "aarch64")]
+mod bindgen_arm64;
+
+#[cfg(target_arch = "x86_64")]
+mod bindgen_amd64;
+
+#[cfg(target_arch = "x86")]
+mod bindgen_i386;
+
+/// Full kernel API — auto-generated bindings with correct calling conventions.
+///
+/// Provides ~3,300 extern functions covering all internal kernel subsystems
+/// (Mi*, Ki*, Obp*, Psp*, Sep*, Cmp*, Iop*, Cc*, Ex*, Ke*, Io*, Mm*, Rtl*,
+/// Nt/Zw*, etc.), ~1,850 structs (EPROCESS, ETHREAD, OBJECT_HEADER, MMPTE,
+/// MMPFN, MMVAD, TOKEN, HANDLE_TABLE, POOL_HEADER, etc.), and ~4,400 type
+/// aliases. Use `ntkrnl_sys::ddk::*` when porting new kernel subsystems —
+/// every kernel function is available without hand-writing extern declarations.
+///
+/// Note: Types here use bindgen naming (`_LIST_ENTRY`, `_KDPC`, etc.) with
+/// Windows-style type aliases (`LIST_ENTRY = _LIST_ENTRY`). The hand-written
+/// modules above use the alias names directly as struct names.
+pub mod ddk {
+    pub use super::bindgen_common::*;
+
+    #[cfg(target_arch = "aarch64")]
+    pub use super::bindgen_arm64::*;
+
+    #[cfg(target_arch = "x86_64")]
+    pub use super::bindgen_amd64::*;
+
+    #[cfg(target_arch = "x86")]
+    pub use super::bindgen_i386::*;
+
+    // i386 fat-LTO ud2 workaround: The C shims for KeEnterCriticalRegion and
+    // KeLeaveCriticalRegion are eliminated by LTO (replaced with ud2) because
+    // C code uses the ke_x.h macros instead. Override with inline Rust versions.
+    #[cfg(target_arch = "x86")]
+    pub use super::inline::ke::KeEnterCriticalRegion;
+    #[cfg(target_arch = "x86")]
+    pub use super::inline::ke::KeLeaveCriticalRegion;
+}
+
+// ============================================================================
+// Compile-time struct size verification (generated by verify_sizes.py)
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+mod size_check_arm64;
+
+#[cfg(target_arch = "x86_64")]
+mod size_check_amd64;
+
+#[cfg(target_arch = "x86")]
+mod size_check_i386;
+
+// Inline function field offset verification (all arches)
+mod offset_check_inline;

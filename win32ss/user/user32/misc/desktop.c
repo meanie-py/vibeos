@@ -128,7 +128,7 @@ int WINAPI
 RealGetSystemMetrics(int nIndex)
 {
   //FIXME("Global Server Data -> %x\n",gpsi);
-  if (nIndex < 0 || nIndex >= SM_CMETRICS) return 0;
+  if (nIndex < 0 || nIndex >= SM_CMETRICS || !gpsi) return 0;
   return gpsi->aiSysMet[nIndex];
 }
 

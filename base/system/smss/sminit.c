@@ -538,6 +538,11 @@ SmpConfigureSubSystems(IN PWSTR ValueName,
     PSMP_REGISTRY_VALUE RegEntry;
     PWCHAR SubsystemName;
 
+    /* Debug: log what we receive from registry */
+    DPRINT1("SmpConfigureSubSystems: ValueName='%S' ValueType=%lu ValueLength=%lu ValueData='%S'\n",
+            ValueName, ValueType, ValueLength,
+            (ValueType == REG_SZ || ValueType == REG_EXPAND_SZ) ? (PWCHAR)ValueData : L"(non-string)");
+
     /* Is this a required or optional subsystem? */
     if ((_wcsicmp(ValueName, L"Required") != 0) &&
         (_wcsicmp(ValueName, L"Optional") != 0))
@@ -2558,6 +2563,15 @@ SmpInit(IN PUNICODE_STRING InitialCommand,
     {
         /* Autochk should've run now. Set the event and save the CSRSS handle */
         *ProcessHandle = SmpWindowsSubSysProcess;
+
+        /* If no Windows subsystem was started (e.g. ARM64 without Win32k/CSRSS),
+         * create a dummy unsignaled event so NtWaitForMultipleObjects doesn't
+         * fail with STATUS_INVALID_HANDLE on the CSRSS handle slot. */
+        if (!*ProcessHandle)
+        {
+            NtCreateEvent(ProcessHandle, EVENT_ALL_ACCESS, NULL, NotificationEvent, FALSE);
+        }
+
         NtSetEvent(EventHandle, NULL);
         NtClose(EventHandle);
     }

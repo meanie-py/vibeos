@@ -591,7 +591,8 @@ static void grab_locinfo(pthreadlocinfo locinfo)
     InterlockedIncrement((LONG *)&locinfo->refcount);
     for(i=LC_MIN+1; i<=LC_MAX; i++)
     {
-        InterlockedIncrement((LONG *)locinfo->lc_category[i].refcount);
+        if(locinfo->lc_category[i].refcount)
+            InterlockedIncrement((LONG *)locinfo->lc_category[i].refcount);
         if(locinfo->lc_category[i].wrefcount)
             InterlockedIncrement((LONG *)locinfo->lc_category[i].wrefcount);
     }
@@ -603,11 +604,65 @@ static void grab_locinfo(pthreadlocinfo locinfo)
         InterlockedIncrement((LONG *)locinfo->lconv_mon_refcount);
     if(locinfo->ctype1_refcount)
         InterlockedIncrement((LONG *)locinfo->ctype1_refcount);
-    InterlockedIncrement(&locinfo->lc_time_curr->refcount);
+    if(locinfo->lc_time_curr)
+        InterlockedIncrement(&locinfo->lc_time_curr->refcount);
+}
+
+/*
+ * Static C-locale fallbacks for processes where DllMain was never called
+ * (e.g. DLL mapped via SEC_IMAGE but not initialized by the PE loader).
+ * These provide safe defaults so get_locinfo()/get_mbcinfo() never return NULL.
+ */
+static threadlocinfo cloc_static_locinfo = {
+    0x7FFFFFFF, /* refcount — pinned, never freed */
+    0,          /* lc_codepage */
+    0,          /* lc_collate_cp */
+    {0},        /* lc_handle */
+    {{0}},      /* lc_id */
+    {{0}},      /* lc_category — locale strings are NULL but that's OK for basic ops */
+    1,          /* lc_clike */
+    1,          /* mb_cur_max */
+    NULL,       /* lconv_intl_refcount */
+    NULL,       /* lconv_num_refcount */
+    NULL,       /* lconv_mon_refcount */
+    NULL,       /* lconv — set at runtime to &cloc_lconv */
+    NULL,       /* ctype1_refcount */
+    NULL,       /* ctype1 */
+    NULL,       /* pctype — set at runtime to MSVCRT__ctype+1 */
+    NULL,       /* pclmap — set at runtime to cloc_clmap */
+    NULL,       /* pcumap — set at runtime to cloc_cumap */
+    NULL,       /* lc_time_curr — set at runtime to &cloc_time_data */
+};
+
+static threadmbcinfo cloc_static_mbcinfo = {
+    0x7FFFFFFF, /* refcount — pinned, never freed */
+    0,          /* mbcodepage — C locale */
+    0,          /* ismbcodepage */
+    0,          /* mblcid */
+    {0},        /* mbulinfo */
+    {0},        /* mbctype */
+    {0},        /* mbcasemap */
+};
+
+static LONG cloc_static_initialized = 0;
+
+static void ensure_cloc_static_init(void)
+{
+    if(InterlockedCompareExchange(&cloc_static_initialized, 1, 0) == 0)
+    {
+        cloc_static_locinfo.lconv = &cloc_lconv;
+        cloc_static_locinfo.pctype = MSVCRT__ctype + 1;
+        cloc_static_locinfo.pclmap = cloc_clmap;
+        cloc_static_locinfo.pcumap = cloc_cumap;
+        cloc_static_locinfo.lc_time_curr = &cloc_time_data;
+    }
 }
 
 static void update_thread_locale(thread_data_t *data)
 {
+    if(!MSVCRT_locale)
+        return;
+
     if((data->locale_flags & LOCALE_FREE) && ((data->locale_flags & LOCALE_THREAD) ||
                 (data->locinfo == MSVCRT_locale->locinfo && data->mbcinfo == MSVCRT_locale->mbcinfo)))
         return;
@@ -635,6 +690,10 @@ static void update_thread_locale(thread_data_t *data)
 pthreadlocinfo CDECL get_locinfo(void) {
     thread_data_t *data = msvcrt_get_thread_data();
     update_thread_locale(data);
+    if(!data->locinfo) {
+        ensure_cloc_static_init();
+        return &cloc_static_locinfo;
+    }
     return data->locinfo;
 }
 
@@ -642,6 +701,10 @@ pthreadlocinfo CDECL get_locinfo(void) {
 pthreadmbcinfo CDECL get_mbcinfo(void) {
     thread_data_t *data = msvcrt_get_thread_data();
     update_thread_locale(data);
+    if(!data->mbcinfo) {
+        ensure_cloc_static_init();
+        return &cloc_static_mbcinfo;
+    }
     return data->mbcinfo;
 }
 
@@ -1153,6 +1216,15 @@ _locale_t CDECL get_current_locale_noalloc(_locale_t locale)
     update_thread_locale(data);
     locale->locinfo = data->locinfo;
     locale->mbcinfo = data->mbcinfo;
+
+    if(!locale->locinfo) {
+        ensure_cloc_static_init();
+        locale->locinfo = &cloc_static_locinfo;
+    }
+    if(!locale->mbcinfo) {
+        ensure_cloc_static_init();
+        locale->mbcinfo = &cloc_static_mbcinfo;
+    }
 
     grab_locinfo(locale->locinfo);
     InterlockedIncrement(&locale->mbcinfo->refcount);

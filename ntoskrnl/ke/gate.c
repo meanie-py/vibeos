@@ -37,6 +37,13 @@ KeWaitForGate(IN PKGATE Gate,
     PKWAIT_BLOCK GateWaitBlock;
     LONG_PTR Status;
     PKQUEUE Queue;
+    if (!(((Gate)->Header.Type & KOBJECT_TYPE_MASK) == GateObject) &&
+        !(((Gate)->Header.Type & KOBJECT_TYPE_MASK) == EventSynchronizationObject))
+    {
+        DbgPrint("KeWaitForGate: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p caller2=%p\n",
+                 Gate, (unsigned)Gate->Header.Type, (unsigned)Gate->Header.Size,
+                 Gate->Header.SignalState, __builtin_return_address(0), __builtin_return_address(1));
+    }
     ASSERT_GATE(Gate);
     ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
 
@@ -138,6 +145,13 @@ KeSignalGateBoostPriority(IN PKGATE Gate)
     PKTHREAD WaitThread;
     PKWAIT_BLOCK WaitBlock;
     KIRQL OldIrql;
+    if (!(((Gate)->Header.Type & KOBJECT_TYPE_MASK) == GateObject) &&
+        !(((Gate)->Header.Type & KOBJECT_TYPE_MASK) == EventSynchronizationObject))
+    {
+        DbgPrint("KeSignalGateBoostPriority: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p\n",
+                 Gate, (unsigned)Gate->Header.Type, (unsigned)Gate->Header.Size,
+                 Gate->Header.SignalState, __builtin_return_address(0));
+    }
     ASSERT_GATE(Gate);
     ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
 

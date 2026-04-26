@@ -389,10 +389,17 @@ private:
 };
 
 #ifdef __REACTOS__
-inline wstring to_wstring(uint8_t a) { WCHAR buffer[16]; swprintf(buffer, L"%d", a); return wstring(buffer); } 
+#ifndef _LIBCPP_VERSION
+/* Provide to_wstring overloads when the C++ standard library doesn't have them */
+inline wstring to_wstring(uint8_t a) { WCHAR buffer[16]; swprintf(buffer, L"%d", a); return wstring(buffer); }
 inline wstring to_wstring(uint16_t a) { WCHAR buffer[16]; swprintf(buffer, L"%d", a); return wstring(buffer); }
 inline wstring to_wstring(uint32_t a) { WCHAR buffer[32]; swprintf(buffer, L"%ld", a); return wstring(buffer); }
 inline wstring to_wstring(uint64_t a) { WCHAR buffer[64]; swprintf(buffer, L"%I64d", a); return wstring(buffer); }
+#else
+/* libc++ provides to_wstring but not for uint8_t/uint16_t which are smaller than int */
+inline wstring to_wstring(uint8_t a) { return to_wstring(static_cast<unsigned>(a)); }
+inline wstring to_wstring(uint16_t a) { return to_wstring(static_cast<unsigned>(a)); }
+#endif
 #endif
 
 extern HMODULE module;

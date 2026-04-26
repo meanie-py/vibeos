@@ -52,50 +52,28 @@ PUBLIC @ExInterlockedAddLargeStatistic@8
     ret
 
 
+/*
+ * SList forwarder stubs — the actual implementations are in the Rust SList
+ * crate (sdk/lib/rust/slist), linked via librtl. These stubs convert from
+ * fastcall calling convention to stdcall (Rtl* functions).
+ * The fault labels (ExpInterlockedPopEntrySList{Resume,Fault,End}) are
+ * provided by the Rust SList crate.
+ */
 
 /*PSINGLE_LIST_ENTRY
  *FASTCALL
  *ExInterlockedPopEntrySList(IN PSINGLE_LIST_ENTRY ListHead,
  *                           IN PKSPIN_LOCK Lock)
+ *
+ * Forwards to RtlInterlockedPopEntrySList(ListHead) — stdcall, 1 arg.
+ * Lock (edx) is ignored (same as original implementation).
  */
 PUBLIC @ExInterlockedPopEntrySList@8
 PUBLIC @InterlockedPopEntrySList@4
-PUBLIC _ExpInterlockedPopEntrySListResume@0
-PUBLIC _ExpInterlockedPopEntrySListFault@0
-PUBLIC _ExpInterlockedPopEntrySListEnd@0
 @ExInterlockedPopEntrySList@8:
 @InterlockedPopEntrySList@4:
-
-    /* Save registers */
-    push ebx
-    push ebp
-
-    /* Pointer to list */
-    mov ebp, ecx
-
-    /* Get sequence number and link pointer */
-_ExpInterlockedPopEntrySListResume@0:
-    mov edx, [ebp+4]
-    mov eax, [ebp]
-
-    /* Check if the list is empty */
-    or eax, eax
-    jz .l7
-
-    /* Copy depth and adjust it */
-    lea ecx, [edx-1]
-
-    /* Get next pointer and do the exchange */
-_ExpInterlockedPopEntrySListFault@0:
-    mov ebx, [eax]
-_ExpInterlockedPopEntrySListEnd@0:
-    LOCK cmpxchg8b qword ptr [ebp]
-    jnz _ExpInterlockedPopEntrySListResume@0
-
-    /* Restore registers and return */
-.l7:
-    pop ebp
-    pop ebx
+    push ecx
+    call _RtlInterlockedPopEntrySList@4
     ret
 
 /*PSINGLE_LIST_ENTRY
@@ -103,82 +81,43 @@ _ExpInterlockedPopEntrySListEnd@0:
  *ExInterlockedPushEntrySList(IN PSINGLE_LIST_ENTRY ListHead,
  *                            IN PSINGLE_LIST_ENTRY ListEntry,
  *                            IN PKSPIN_LOCK Lock)
+ *
+ * Forwards to RtlInterlockedPushEntrySList(ListHead, ListEntry, Lock) — stdcall, 3 args.
+ * fastcall: ecx=ListHead, edx=ListEntry, [esp+4]=Lock
  */
 PUBLIC @ExInterlockedPushEntrySList@12
 @ExInterlockedPushEntrySList@12:
+    push edx
+    push ecx
+    call _RtlInterlockedPushEntrySList@8
+    ret 4
 
-    /* So we can fall through below */
-    pop [esp]
-
+/*PSINGLE_LIST_ENTRY
+ *FASTCALL
+ *InterlockedPushEntrySList(IN PSINGLE_LIST_ENTRY ListHead,
+ *                          IN PSINGLE_LIST_ENTRY ListEntry)
+ *
+ * Forwards to RtlInterlockedPushEntrySList(ListHead, ListEntry) — stdcall, 2 args.
+ * fastcall: ecx=ListHead, edx=ListEntry
+ */
 PUBLIC @InterlockedPushEntrySList@8
 @InterlockedPushEntrySList@8:
-
-    /* Save registers */
-    push ebx
-    push ebp
-
-    /* Pointer to list */
-    mov ebp, ecx
-    mov ebx, edx
-
-    /* Get sequence number and link pointer */
-    mov edx, [ebp+4]
-    mov eax, [ebp]
-
-.l8:
-    /* Set link pointer */
-    mov [ebx], eax
-
-    /* Copy sequence number and adjust it */
-    lea ecx, [edx + HEX(10001)]
-
-    /* Do the exchange */
-    LOCK cmpxchg8b qword ptr [ebp]
-    jnz .l8
-
-    /* Restore registers and return */
-    pop ebp
-    pop ebx
+    push edx
+    push ecx
+    call _RtlInterlockedPushEntrySList@8
     ret
 
 /*PSINGLE_LIST_ENTRY
  *FASTCALL
  *ExInterlockedFlushSList(IN PSINGLE_LIST_ENTRY ListHead)
+ *
+ * Forwards to RtlInterlockedFlushSList(ListHead) — stdcall, 1 arg.
+ * fastcall: ecx=ListHead
  */
 PUBLIC @ExInterlockedFlushSList@4
 @ExInterlockedFlushSList@4:
-
-    /* Save registers */
-    push ebx
-    push ebp
-
-    /* Clear ebx */
-    xor ebx, ebx
-
-    /* Pointer to list */
-    mov ebp, ecx
-
-    /* Get sequence number and link pointer */
-    mov edx, [ebp+4]
-    mov eax, [ebp]
-
-.l9:
-    /* Check if the list is empty */
-    or eax, eax
-    jz .l10
-
-    /* Clear depth and pointer */
-    mov ecx, edx
-    mov cx, bx
-
-    /* Do the exchange */
-    LOCK cmpxchg8b qword ptr [ebp]
-    jnz .l9
-
-    /* Restore registers and return */
-.l10:
-    pop ebp
-    pop ebx
+    push ecx
+    call _RtlInterlockedFlushSList@4
     ret
 
 END

@@ -893,6 +893,54 @@ KiDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
     }
     else
     {
+        if (ExceptionRecord->ExceptionCode != STATUS_BREAKPOINT)
+        {
+            DbgPrint("[UEXCEPT] PID=%lu Code=0x%lX Addr=%p EIP=0x%lX ESP=0x%lX P0=0x%lX P1=0x%lX\n",
+                     (ULONG)(ULONG_PTR)PsGetCurrentProcessId(),
+                     ExceptionRecord->ExceptionCode,
+                     ExceptionRecord->ExceptionAddress,
+                     Context.Eip,
+                     Context.Esp,
+                     ExceptionRecord->NumberParameters >= 1 ? ExceptionRecord->ExceptionInformation[0] : 0,
+                     ExceptionRecord->NumberParameters >= 2 ? ExceptionRecord->ExceptionInformation[1] : 0);
+            /* Print stack frame to help diagnose call chain */
+            if (MmIsAddressValid((PVOID)Context.Esp))
+            {
+                PULONG Stack = (PULONG)Context.Esp;
+                DbgPrint("[UEXCEPT] Stack: [ESP]=%08lX [ESP+4]=%08lX [ESP+8]=%08lX [ESP+C]=%08lX EBP=%08lX\n",
+                         MmIsAddressValid(&Stack[0]) ? Stack[0] : 0,
+                         MmIsAddressValid(&Stack[1]) ? Stack[1] : 0,
+                         MmIsAddressValid(&Stack[2]) ? Stack[2] : 0,
+                         MmIsAddressValid(&Stack[3]) ? Stack[3] : 0,
+                         Context.Ebp);
+            }
+            /* Try to identify the module containing the faulting address */
+            {
+                PPEB Peb = PsGetCurrentProcess()->Peb;
+                if (Peb && MmIsAddressValid(Peb) && Peb->Ldr && MmIsAddressValid(Peb->Ldr))
+                {
+                    PPEB_LDR_DATA Ldr = Peb->Ldr;
+                    PLIST_ENTRY Head = &Ldr->InMemoryOrderModuleList;
+                    PLIST_ENTRY Entry;
+                    if (MmIsAddressValid(Head) && MmIsAddressValid(Head->Flink))
+                    {
+                        for (Entry = Head->Flink; Entry != Head && MmIsAddressValid(Entry); Entry = Entry->Flink)
+                        {
+                            PLDR_DATA_TABLE_ENTRY LdrEntry = CONTAINING_RECORD(Entry, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+                            if (MmIsAddressValid(LdrEntry) &&
+                                (ULONG_PTR)ExceptionRecord->ExceptionAddress >= (ULONG_PTR)LdrEntry->DllBase &&
+                                (ULONG_PTR)ExceptionRecord->ExceptionAddress < (ULONG_PTR)LdrEntry->DllBase + LdrEntry->SizeOfImage)
+                            {
+                                DbgPrint("[UEXCEPT] Module: %wZ Base=%p Size=0x%lX\n",
+                                         &LdrEntry->BaseDllName, LdrEntry->DllBase, LdrEntry->SizeOfImage);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         /* User mode exception, was it first-chance? */
         if (FirstChance)
         {

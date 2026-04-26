@@ -2128,6 +2128,12 @@ ScsiPortIsr(
 
     DeviceExtension = (PSCSI_PORT_DEVICE_EXTENSION)ServiceContext;
 
+#ifdef _M_IX86
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, 'I');
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+#endif
+
     /* If interrupts are disabled - we don't expect any */
     if (DeviceExtension->InterruptData.Flags & SCSI_PORT_DISABLE_INTERRUPTS)
         return FALSE;
@@ -2136,8 +2142,19 @@ ScsiPortIsr(
     if (DeviceExtension->HwInterrupt(&DeviceExtension->MiniPortDeviceExtension) == FALSE)
     {
         /* This interrupt doesn't belong to us */
+#ifdef _M_IX86
+        WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+        WRITE_PORT_UCHAR((PUCHAR)0xE9, 'i');
+        WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+#endif
         return FALSE;
     }
+
+#ifdef _M_IX86
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, 'J');
+    WRITE_PORT_UCHAR((PUCHAR)0xE9, '#');
+#endif
 
     /* If flag of notification is set - queue a DPC */
     if (DeviceExtension->InterruptData.Flags & SCSI_PORT_NOTIFICATION_NEEDED)

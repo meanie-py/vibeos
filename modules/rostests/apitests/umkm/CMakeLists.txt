@@ -30,7 +30,10 @@ add_executable(umkm_apitest
     ${PCH_SKIP_SOURCE})
 
 if(NOT MSVC)
-    target_compile_options(umkm_apitest PRIVATE -mxsave)
+    # -mxsave is x86/AMD64 only
+    if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+        target_compile_options(umkm_apitest PRIVATE -mxsave)
+    endif()
 endif()
 
 target_link_libraries(umkm_apitest wine uuid ${PSEH_LIB})

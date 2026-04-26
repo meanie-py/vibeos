@@ -1124,6 +1124,13 @@ SkipCheck:
             /* We couldn't resolve the name, is this a static load? */
             if (Static)
             {
+#ifdef _M_ARM64
+                /* ARM64: Don't raise hard error for missing DLLs.
+                 * Delay imports become regular imports on ARM64 (llvm-dlltool
+                 * limitation), so many DLLs appear as hard imports but are
+                 * never actually called. Let the caller skip them. */
+                DPRINT1("LDR: ARM64 DLL not found: %S (static load, skipping hard error)\n", DllName);
+#else
                 /*
                  * This is BAD! Static loads are CRITICAL. Bugcheck!
                  * Initialize the strings for the error
@@ -1146,6 +1153,7 @@ SkipCheck:
 
                 /* We're back, where we initializing? */
                 if (LdrpInLdrInit) LdrpFatalHardErrorCount++;
+#endif
             }
 
             /* Return failure */

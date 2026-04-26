@@ -17,6 +17,10 @@
 /* GLOBALS *******************************************************************/
 
 PBASE_STATIC_SERVER_DATA BaseStaticServerData;
+#ifdef _M_ARM64
+static BASE_STATIC_SERVER_DATA BaseStaticServerDataFallback;
+BOOLEAN BaseCsrConnectionEstablished = FALSE;
+#endif
 BOOLEAN BaseRunningInServerProcess = FALSE;
 
 WCHAR BaseDefaultPathBuffer[6140];
@@ -104,6 +108,7 @@ DllMain(HANDLE hDll,
     {
         case DLL_PROCESS_ATTACH:
         {
+            DbgPrint("[kernel32] DllMain PROCESS_ATTACH PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             /* Set no filter initially */
             GlobalTopLevelExceptionFilter = RtlEncodePointer(NULL);
 
@@ -143,15 +148,45 @@ DllMain(HANDLE hDll,
                                               &BaseRunningInServerProcess);
             if (!NT_SUCCESS(Status))
             {
-                DPRINT1("Failed to connect to CSR (Status %lx)\n", Status);
+                DbgPrint("[kernel32] CsrClientConnectToServer FAILED Status=0x%lx PID=%lu\n", Status, (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
+#ifdef _M_ARM64
+                DPRINT1("ARM64: Continuing without CSRSS connection\n");
+#else
                 NtTerminateProcess(NtCurrentProcess(), Status);
                 return FALSE;
+#endif
             }
+#ifdef _M_ARM64
+            else
+            {
+                BaseCsrConnectionEstablished = TRUE;
+            }
+#endif
 
             /* Get the server data */
+#ifdef _M_ARM64
+            if (Peb->ReadOnlyStaticServerData)
+            {
+                BaseStaticServerData = Peb->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX];
+            }
+            if (!BaseStaticServerData)
+            {
+                DPRINT1("ARM64: ReadOnlyStaticServerData not available, using fallback\n");
+                RtlZeroMemory(&BaseStaticServerDataFallback, sizeof(BaseStaticServerDataFallback));
+                NtQuerySystemInformation(SystemBasicInformation,
+                                         &BaseStaticServerDataFallback.SysInfo,
+                                         sizeof(SYSTEM_BASIC_INFORMATION),
+                                         NULL);
+                RtlInitUnicodeString(&BaseStaticServerDataFallback.WindowsDirectory, L"\\reactos");
+                RtlInitUnicodeString(&BaseStaticServerDataFallback.WindowsSystemDirectory, L"\\reactos\\system32");
+                BaseStaticServerDataFallback.TermsrvClientTimeZoneId = TIME_ZONE_ID_INVALID;
+                BaseStaticServerData = &BaseStaticServerDataFallback;
+            }
+#else
             ASSERT(Peb->ReadOnlyStaticServerData);
             BaseStaticServerData = Peb->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX];
             ASSERT(BaseStaticServerData);
+#endif
 
             /* Check if we are running a CSR Server */
             if (!BaseRunningInServerProcess)
@@ -219,6 +254,7 @@ DllMain(HANDLE hDll,
 
             /* Insert more dll attach stuff here! */
             DllInitialized = TRUE;
+            DbgPrint("[kernel32] DllMain PROCESS_ATTACH done OK PID=%lu\n", (ULONG)(ULONG_PTR)NtCurrentTeb()->ClientId.UniqueProcess);
             break;
         }
 

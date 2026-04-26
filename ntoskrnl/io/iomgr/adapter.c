@@ -13,6 +13,16 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Forward declaration for HAL function (may not be visible via DMA macro guards) */
+NTHALAPI
+NTSTATUS
+NTAPI
+HalAllocateAdapterChannel(
+    _In_ PADAPTER_OBJECT AdapterObject,
+    _In_ PWAIT_CONTEXT_BLOCK Wcb,
+    _In_ ULONG NumberOfMapRegisters,
+    _In_ PDRIVER_CONTROL ExecutionRoutine);
+
 /* DATA **********************************************************************/
 
 POBJECT_TYPE IoAdapterObjectType;

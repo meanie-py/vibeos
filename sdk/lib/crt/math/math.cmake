@@ -142,26 +142,50 @@ elseif(ARCH STREQUAL "amd64")
         math/libm_sse2/two_to_jby64_head_tail_table.c
         math/libm_sse2/two_to_jby64_table.c
     )
-    list(APPEND LIBCNTPR_MATH_ASM_SOURCE
-        math/libm_sse2/fm.inc
-        math/libm_sse2/cos.asm
-        math/libm_sse2/cosf.asm
-        math/libm_sse2/exp.asm
-        math/libm_sse2/expf.asm
-        math/amd64/fabs.S
-        math/amd64/fabsf.S
-        math/libm_sse2/fmod.asm
-        math/libm_sse2/fmodf.asm
-        math/libm_sse2/log.asm
-        math/libm_sse2/log10.asm
-        math/libm_sse2/pow.asm
-        math/libm_sse2/remainder_piby2_forAsm.asm
-        math/libm_sse2/remainder_piby2_forFMA3.asm
-        math/libm_sse2/remainder_piby2f_forAsm.asm
-        math/libm_sse2/remainder_piby2f_forC.asm
-        math/libm_sse2/sin.asm
-        math/libm_sse2/sinf.asm
-    )
+    if(USE_LLVM_MINGW)
+        # llvm-mingw's Clang cannot assemble MASM-format .asm files.
+        # Use generic C implementations instead of optimized SSE2 assembly.
+        list(APPEND LIBCNTPR_MATH_SOURCE
+            math/cos.c
+            math/sin.c
+            math/arm64/exp.c
+            math/arm64/fmod.c
+            math/arm64/log.c
+            math/arm64/log10.c
+            math/arm64/pow.c
+        )
+        list(APPEND LIBCNTPR_MATH_ASM_SOURCE
+            math/amd64/fabs.S
+            math/amd64/fabsf.S
+        )
+        list(APPEND CRT_MATH_SOURCE
+            math/sinf.c
+            math/cosf.c
+            math/expf.c
+            math/fmodf.c
+        )
+    else()
+        list(APPEND LIBCNTPR_MATH_ASM_SOURCE
+            math/libm_sse2/fm.inc
+            math/libm_sse2/cos.asm
+            math/libm_sse2/cosf.asm
+            math/libm_sse2/exp.asm
+            math/libm_sse2/expf.asm
+            math/amd64/fabs.S
+            math/amd64/fabsf.S
+            math/libm_sse2/fmod.asm
+            math/libm_sse2/fmodf.asm
+            math/libm_sse2/log.asm
+            math/libm_sse2/log10.asm
+            math/libm_sse2/pow.asm
+            math/libm_sse2/remainder_piby2_forAsm.asm
+            math/libm_sse2/remainder_piby2_forFMA3.asm
+            math/libm_sse2/remainder_piby2f_forAsm.asm
+            math/libm_sse2/remainder_piby2f_forC.asm
+            math/libm_sse2/sin.asm
+            math/libm_sse2/sinf.asm
+        )
+    endif()
 elseif(ARCH STREQUAL "arm")
     list(APPEND LIBCNTPR_MATH_SOURCE
         math/cos.c
@@ -223,6 +247,45 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND CRT_MATH_ASM_SOURCE
         math/arm/_logb.s
     )
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND LIBCNTPR_MATH_SOURCE
+        math/cos.c
+        math/ceilf.c
+        math/fabs.c
+        math/fabsf.c
+        math/floorf.c
+        math/sin.c
+        math/sqrt.c
+        math/sqrtf.c
+        math/arm64/atan.c
+        math/arm64/atan2.c
+        math/arm64/ceil.c
+        math/arm64/exp.c
+        math/arm64/floor.c
+        math/arm64/fmod.c
+        math/arm64/ldexp.c
+        math/arm64/log.c
+        math/arm64/log10.c
+        math/arm64/logb.c
+        math/arm64/pow.c
+        math/arm64/tan.c
+    )
+    list(APPEND CRT_MATH_SOURCE
+        math/_hypotf.c
+        math/arm64/fma3_available.c
+        math/acosf.c
+        math/asinf.c
+        math/atan2f.c
+        math/atanf.c
+        math/coshf.c
+        math/expf.c
+        math/fmodf.c
+        math/modff.c
+        math/sinf.c
+        math/sinhf.c
+        math/tanf.c
+        math/tanhf.c
+    )
 endif()
 
 if(NOT ARCH STREQUAL "i386")
@@ -277,7 +340,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm")
     list(APPEND ATAN2_ASM_SOURCE math/arm/atan2.s)
 elseif(ARCH STREQUAL "arm64")
-    list(APPEND ATAN2_ASM_SOURCE math/arm64/atan2.s)
+    list(APPEND ATAN2_SOURCE math/arm64/atan2.c math/arm64/atan.c)
 endif()
 
 add_asm_files(atan2_asm ${ATAN2_ASM_SOURCE})

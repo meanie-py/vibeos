@@ -484,7 +484,7 @@ MiSessionInitializeWorkingSetList(VOID)
     if (PointerPde->u.Hard.Valid == 1)
     {
         /* Nope, we'll have to do it */
-#ifndef _M_ARM
+#if !defined(_M_ARM) && !defined(_M_ARM64)
         ASSERT(PointerPde->u.Hard.Global == 0);
 #endif
         AllocatedPageTable = FALSE;
@@ -528,7 +528,7 @@ MiSessionInitializeWorkingSetList(VOID)
 
         /* Add this into the list */
         Index = ((ULONG_PTR)WorkingSetList - (ULONG_PTR)MmSessionBase) >> 22;
-#ifndef _M_AMD64
+#if (_MI_PAGING_LEVELS < 3)
         MmSessionSpace->PageTables[Index] = TempPde;
 #endif
         /* Initialize the page directory page, and now zero the working set list itself */
@@ -785,7 +785,7 @@ MiSessionCreateInternal(OUT PULONG SessionId)
     MmSessionSpace->Color = Color;
     MmSessionSpace->NonPageablePages = MiSessionCreateCharge;
     MmSessionSpace->CommittedPages = MiSessionCreateCharge;
-#ifndef _M_AMD64
+#if (_MI_PAGING_LEVELS < 3)
     MmSessionSpace->PageTables = PageTables;
     MmSessionSpace->PageTables[PointerPde - MiAddressToPde(MmSessionBase)] = *PointerPde;
 #endif

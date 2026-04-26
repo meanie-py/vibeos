@@ -232,6 +232,22 @@ KiExitDispatcher(IN KIRQL OldIrql)
     NextThread = Prcb->NextThread;
     Thread = Prcb->CurrentThread;
 
+#ifdef _M_ARM64
+    /* ARM64: Same preemption bypass fix — ensure a higher-priority thread
+     * in the ready list is not starved by Prcb->NextThread. */
+    if (Prcb->ReadySummary)
+    {
+        ULONG HighBit;
+        BitScanReverse((PULONG)&HighBit, Prcb->ReadySummary);
+        if ((SCHAR)HighBit > NextThread->Priority)
+        {
+            NextThread->Preempted = FALSE;
+            KxQueueReadyThread(NextThread, Prcb);
+            NextThread = KiSelectReadyThread(0, Prcb);
+        }
+    }
+#endif
+
     /* Set current thread's swap busy to true */
     KiSetThreadSwapBusy(Thread);
 
@@ -292,6 +308,14 @@ KeDelayExecutionThread(IN KPROCESSOR_MODE WaitMode,
     PLARGE_INTEGER OriginalDueTime;
     LARGE_INTEGER DueTime, NewDueTime, InterruptTime;
     ULONG Hand = 0;
+
+#ifdef _M_ARM64
+    /* ARM64 has no HAL timer interrupt yet — KeDelayExecutionThread would
+     * sleep forever because no clock tick fires to expire the timer.
+     * Yield to other ready threads so cooperative scheduling works. */
+    NtYieldExecution();
+    return STATUS_SUCCESS;
+#endif
 
     if (Thread->WaitNext)
         ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);

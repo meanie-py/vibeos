@@ -42,8 +42,14 @@ thread_data_t *msvcrt_get_thread_data(void)
         ptr->handle = INVALID_HANDLE_VALUE;
         ptr->random_seed = 1;
 #ifndef __UCRTSUPPORT__
-        ptr->locinfo = MSVCRT_locale->locinfo;
-        ptr->mbcinfo = MSVCRT_locale->mbcinfo;
+        {
+            MSVCRT__locale_t loc = MSVCRT_locale;
+            if (loc)
+            {
+                ptr->locinfo = loc->locinfo;
+                ptr->mbcinfo = loc->mbcinfo;
+            }
+        }
 #endif /* !__UCRTSUPPORT__ */
     }
     SetLastError( err );

@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "arch": "amd64",
+  "trace_points": [
+    {"char": "I", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 147, "description": "entry"},
+    {"char": "i", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 150, "description": "after KeLoaderBlock read"},
+    {"char": "j", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 152, "description": "after Prcb read"},
+    {"char": "k", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 154, "description": "after Thread read"},
+    {"char": "l", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 156, "description": "after Process read"},
+    {"char": "m", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 158, "description": "after KernelStack read"},
+    {"char": "J", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 165, "description": "before PoInitializePrcb"},
+    {"char": "K", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 170, "description": "before KiGetCacheInformation"},
+    {"char": "L", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 173, "description": "before KiInitSpinLocks"},
+    {"char": "M", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 180, "description": "before ExInitPoolLookasidePointers"},
+    {"char": "N", "function": "KiSystemStartupBootStack", "file": "ke/amd64/krnlinit.rs", "line": 185, "description": "before KiInitializeKernel/KiInitializeHandBuiltThread"},
+    {"char": "O", "function": "KiInitializeKernel", "file": "ke/amd64/krnlinit.rs", "line": 293, "description": "before KiInitializeHandBuiltThread"},
+    {"char": "o", "function": "KiInitializeHandBuiltThread", "file": "ke/amd64/krnlinit.rs", "line": 117, "description": "entry"},
+    {"char": "p", "function": "KiInitializeHandBuiltThread", "file": "ke/amd64/krnlinit.rs", "line": 120, "description": "after KeInitializeThread"},
+    {"char": "q", "function": "KiInitializeHandBuiltThread", "file": "ke/amd64/krnlinit.rs", "line": 132, "description": "after NextProcessor"},
+    {"char": "r", "function": "KiInitializeHandBuiltThread", "file": "ke/amd64/krnlinit.rs", "line": 140, "description": "done"},
+    {"char": "P", "function": "KiInitializeKernel", "file": "ke/amd64/krnlinit.rs", "line": 296, "description": "before ExpInitializeExecutive"},
+    {"char": "Q", "function": "KiInitializeKernel", "file": "ke/amd64/krnlinit.rs", "line": 299, "description": "before KiComputeReciprocal"}
+  ],
+  "hex_dump_delimiters": []
+}

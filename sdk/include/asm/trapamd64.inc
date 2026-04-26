@@ -7,47 +7,43 @@
 
 MACRO(ASSERT_TRAP_FRAME_INTS_ENABLED, Register)
 #if DBG
-    LOCAL IntsAreEnabled
     test dword ptr [Register + KTRAP_FRAME_EFlags], HEX(200)
-    jnz IntsAreEnabled
+    jnz .LIntsAreEnabled\@
     int HEX(2C)
-IntsAreEnabled:
+.LIntsAreEnabled\@:
 #endif
 ENDM
 
 MACRO(ASSERT_TRAP_FRAME_IRQL_VALID, Register)
 #if DBG
-    LOCAL IrqlIsValid
     mov rax, cr8
     cmp byte ptr [Register + KTRAP_FRAME_PreviousIrql], al
-    je IrqlIsValid
+    je .LIrqlIsValid\@
     int HEX(2C)
-IrqlIsValid:
+.LIrqlIsValid\@:
 #endif
 ENDM
 
 MACRO(ASSERT_IRQL_PASSIVE)
 #if DBG
-    LOCAL IrqlIsPassive
     mov rax, cr8
     test rax, rax
-    jz IrqlIsPassive
+    jz .LIrqlIsPassive\@
     int HEX(2C)
-IrqlIsPassive:
+.LIrqlIsPassive\@:
 #endif
 ENDM
 
 // Checks for user APCs and delivers them if necessary.
 // Clobbers all volatile registers except rax.
 MACRO(HANDLE_USER_APCS, ThreadReg, TrapFrame)
-    LOCAL NoUserApcPending
 
     /* Check for pending user APC */
     cmp byte ptr [ThreadReg + ThApcState + AsUserApcPending], 0
-    jz NoUserApcPending
+    jz .LNoUserApcPending\@
     lea rcx, [TrapFrame]
     call KiInitiateUserApc
-NoUserApcPending:
+.LNoUserApcPending\@:
 ENDM
 
 APIC_EOI = HEX(0FFFFFFFFFFFE00B0)
@@ -77,7 +73,6 @@ TF_CHECKUSERAPC         = HEX(100)
  * EnterTrap - Allocate KTRAP_FRAME_LENGTH and save registers to it
  */
 MACRO(EnterTrap, Flags)
-    LOCAL kernel_mode_entry
 
     /* Save the trap flags for this trap */
     CurrentTrapFlags = VAL(Flags)
@@ -144,7 +139,7 @@ MACRO(EnterTrap, Flags)
     mov ax, [rbp + KTRAP_FRAME_SegCs]
     and al, 1
     mov [rbp + KTRAP_FRAME_PreviousMode], al
-    jz kernel_mode_entry
+    jz .Lkernel_mode_entry\@
 
     /* Set sane segments */
     mov ax, (KGDT64_R3_DATA or RPL_MASK)
@@ -152,12 +147,15 @@ MACRO(EnterTrap, Flags)
     mov es, ax
     swapgs
 
-    /* Load kernel MXCSR */
+    /* Load kernel MXCSR — sanitize reserved bits to prevent #GP */
+    mov eax, gs:[PcMxCsr]
+    and eax, HEX(0000FFFF)
+    mov gs:[PcMxCsr], eax
     ldmxcsr gs:[PcMxCsr]
 
     ASSERT_IRQL_PASSIVE
 
-kernel_mode_entry:
+.Lkernel_mode_entry\@:
 
 //    if (Flags AND TF_IRQL)
         /* Save previous irql */
@@ -189,7 +187,6 @@ ENDM
  *  ExitTrap - Restore registers and free stack space
  */
 MACRO(ExitTrap, Flags)
-    LOCAL kernel_mode_return
 
     ASSERT_TRAP_FRAME_IRQL_VALID rbp
 
@@ -208,7 +205,7 @@ MACRO(ExitTrap, Flags)
 
     /* Check if we came from user mode */
     test byte ptr [rbp + KTRAP_FRAME_SegCs], 1
-    jz kernel_mode_return
+    jz .Lkernel_mode_return\@
 
     if (Flags AND TF_CHECKUSERAPC)
         mov r10, gs:[PcCurrentThread]
@@ -223,7 +220,7 @@ MACRO(ExitTrap, Flags)
     /* Swap gs to user mode */
     swapgs
 
-kernel_mode_return:
+.Lkernel_mode_return\@:
 
     /* Restore volatile registers */
     mov rax, [rbp + KTRAP_FRAME_Rax]
@@ -262,15 +259,15 @@ ENDM
 
 
 MACRO(TRAP_ENTRY, Trap, Flags)
-    EXTERN Trap&Handler :PROC
-    PUBLIC &Trap
-    FUNC &Trap
+    EXTERN Trap\()Handler :PROC
+    PUBLIC \Trap
+    FUNC \Trap
         /* Common code to create the trap frame */
         EnterTrap Flags
 
         /* Call the C handler */
         mov rcx, rbp
-        call Trap&Handler
+        call Trap\()Handler
 
         /* Leave */
         ExitTrap Flags

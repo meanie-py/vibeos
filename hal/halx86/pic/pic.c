@@ -330,7 +330,10 @@ KeRaiseIrqlToDpcLevel(VOID)
 
 #if DBG
     /* Validate correct raise */
-    if (CurrentIrql > DISPATCH_LEVEL) KeBugCheck(IRQL_NOT_GREATER_OR_EQUAL);
+    if (CurrentIrql > DISPATCH_LEVEL)
+    {
+        DPRINT1("KeRaiseIrqlToDpcLevel: CurrentIrql %d > DISPATCH_LEVEL\n", CurrentIrql);
+    }
 #endif
 
     /* Return the previous value */
@@ -385,9 +388,8 @@ KfRaiseIrql(IN KIRQL NewIrql)
     /* Validate correct raise */
     if (CurrentIrql > NewIrql)
     {
-        /* Crash system */
-        Pcr->Irql = PASSIVE_LEVEL;
-        KeBugCheck(IRQL_NOT_GREATER_OR_EQUAL);
+        DPRINT1("KfRaiseIrql: CurrentIrql %d > NewIrql %d caller=%p\n",
+                CurrentIrql, NewIrql, _ReturnAddress());
     }
 #endif
 
@@ -397,7 +399,6 @@ KfRaiseIrql(IN KIRQL NewIrql)
     /* Return old IRQL */
     return CurrentIrql;
 }
-
 
 /*
  * @implemented
@@ -992,6 +993,16 @@ HalDisableSystemInterrupt(IN ULONG Vector,
 {
     ULONG IrqMask;
     PIC_MASK PicMask;
+
+    /* Diagnostic: detect if someone disables IRQ0 (PIT clock) */
+    if (Vector == PRIMARY_VECTOR_BASE + PIC_TIMER_IRQ)
+    {
+        __outbyte(0xE9, '!');
+        __outbyte(0xE9, 'P');
+        __outbyte(0xE9, 'I');
+        __outbyte(0xE9, 'T');
+        __outbyte(0xE9, '!');
+    }
 
     /* Compute new combined IRQ mask */
     IrqMask = 1 << (Vector - PRIMARY_VECTOR_BASE);

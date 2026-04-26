@@ -13,17 +13,17 @@
 .const
 
 MACRO(START_VTABLE, shortname, cxxname)
-EXTERN shortname&_rtti:PROC
-    .quad shortname&_rtti
-PUBLIC &shortname&_vtable
-&shortname&_vtable:
-PUBLIC &cxxname
-&cxxname:
+EXTERN \shortname\()_rtti:PROC
+    .quad \shortname\()_rtti
+PUBLIC \shortname\()_vtable
+\shortname\()_vtable:
+PUBLIC \cxxname
+\cxxname\():
 ENDM
 
 MACRO(VTABLE_ADD_FUNC_MACRO, name)
-    EXTERN &name:PROC
-    .quad &name
+    EXTERN \name:PROC
+    .quad \name
 ENDM
 #define VTABLE_ADD_FUNC(x) VTABLE_ADD_FUNC_MACRO x
 

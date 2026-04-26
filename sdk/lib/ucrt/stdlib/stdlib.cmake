@@ -24,8 +24,11 @@ list(APPEND UCRT_STDLIB_SOURCES
 )
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_asm_files(UCRT_STDLIB_ASM stdlib/clang-hacks.s)
-    list(APPEND UCRT_STDLIB_SOURCES
-        ${UCRT_STDLIB_ASM}
-    )
+    # clang-hacks.s uses x86 jmp instruction - only include for x86/x64
+    if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+        add_asm_files(UCRT_STDLIB_ASM stdlib/clang-hacks.s)
+        list(APPEND UCRT_STDLIB_SOURCES
+            ${UCRT_STDLIB_ASM}
+        )
+    endif()
 endif()

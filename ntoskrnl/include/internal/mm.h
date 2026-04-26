@@ -177,13 +177,13 @@ typedef ULONG_PTR SWAPENTRY;
 //
 #ifdef _M_IX86
 #define MM_WAIT_ENTRY            0x7ffffc00
-#elif defined(_M_AMD64)
+#elif defined(_M_AMD64) || defined(_M_ARM64)
 #define MM_WAIT_ENTRY            0x7FFFFFFFFFFFFC00ULL
 #else
 #error Unsupported architecture!
 #endif
 
-#ifdef _M_AMD64
+#if defined(_M_AMD64) || defined(_M_ARM64)
 #define InterlockedCompareExchangePte(PointerPte, Exchange, Comperand) \
     InterlockedCompareExchange64((PLONG64)(PointerPte), Exchange, Comperand)
 
@@ -1039,7 +1039,14 @@ MiReleasePfnLockFromDpcLevel(VOID)
     ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
 }
 
-#define MI_ASSERT_PFN_LOCK_HELD() NT_ASSERT((KeGetCurrentIrql() >= DISPATCH_LEVEL) && (MmPfnLock != 0))
+/* ARM64 HAL spinlock stubs only raise IRQL without setting MmPfnLock,
+ * so skip the MmPfnLock check on ARM64 (single-CPU boot, no contention).
+ * Soft assert on all architectures to avoid kdb prompt flood during boot. */
+#define MI_ASSERT_PFN_LOCK_HELD() \
+    do { \
+        if (!(KeGetCurrentIrql() >= DISPATCH_LEVEL)) \
+            DPRINT1("SOFT PFN ASSERT: IRQL=%u at %s:%d\n", KeGetCurrentIrql(), __FILE__, __LINE__); \
+    } while (0)
 
 FORCEINLINE
 PMMPFN

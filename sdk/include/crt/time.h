@@ -78,6 +78,14 @@ extern "C" {
   };
 #endif
 
+#ifndef _TIMESPEC_DEFINED
+#define _TIMESPEC_DEFINED
+  struct timespec {
+    time_t tv_sec;
+    long   tv_nsec;
+  };
+#endif
+
 #define CLOCKS_PER_SEC 1000
 
   _CRTDATA(extern int _daylight);

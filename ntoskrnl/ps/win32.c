@@ -33,8 +33,10 @@ NTSTATUS
 NTAPI
 PsConvertToGuiThread(VOID)
 {
+#ifndef _M_ARM64
     ULONG_PTR NewStack;
     PVOID OldStack;
+#endif
     PETHREAD Thread = PsGetCurrentThread();
     PEPROCESS Process = PsGetCurrentProcess();
     NTSTATUS Status;
@@ -42,9 +44,6 @@ PsConvertToGuiThread(VOID)
 
     /* Validate the previous mode */
     if (KeGetPreviousMode() == KernelMode) return STATUS_INVALID_PARAMETER;
-
-    /* If no win32k, crashes later */
-    ASSERT(PspW32ProcessCallout != NULL);
 
     /* Make sure win32k is here */
     if (!PspW32ProcessCallout) return STATUS_ACCESS_DENIED;
@@ -59,6 +58,13 @@ PsConvertToGuiThread(VOID)
     /* Check if we don't already have a kernel-mode stack */
     if (!Thread->Tcb.LargeStack)
     {
+#ifdef _M_ARM64
+        /* ARM64: KeSwitchKernelStack not yet implemented (needs asm to
+         * safely switch SP). MmCreateKernelStack always allocates large
+         * stacks on ARM64, so this path should not normally be reached.
+         * Mark as LargeStack just in case. */
+        Thread->Tcb.LargeStack = TRUE;
+#else
         /* We don't create one */
         NewStack = (ULONG_PTR)MmCreateKernelStack(TRUE, 0);
         if (!NewStack)
@@ -80,6 +86,7 @@ PsConvertToGuiThread(VOID)
 
         /* Delete the old stack */
         MmDeleteKernelStack(OldStack, FALSE);
+#endif
     }
 
     /* Always do the process callout! */

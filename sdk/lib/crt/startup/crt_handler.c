@@ -42,7 +42,16 @@ PBYTE _GetPEImageBase (void);
 int __mingw_init_ehandler (void);
 extern void __cdecl _fpreset (void);
 
-#if defined(_WIN64) && !defined(_MSC_VER)
+#if defined(_M_ARM64)
+/* ARM64 uses a different exception handling mechanism built into the ABI.
+   The SEH-style handler registration used for x64 is not needed. */
+int
+__mingw_init_ehandler (void)
+{
+    /* Nothing to do for ARM64 */
+    return 1;
+}
+#elif defined(_WIN64) && !defined(_MSC_VER)
 EXCEPTION_DISPOSITION __mingw_SEH_error_handler(struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *, void *);
 
 #define MAX_PDATA_ENTRIES 32

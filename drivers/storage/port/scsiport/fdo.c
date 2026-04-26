@@ -119,8 +119,6 @@ FdoSendInquiry(
             Status = IoStatusBlock.Status;
         }
 
-        DPRINT("FdoSendInquiry(): Request processed by driver, status = 0x%08X\n", Status);
-
         if (SRB_STATUS(Srb.SrbStatus) == SRB_STATUS_SUCCESS)
         {
             /* All fine, copy data over */
@@ -224,8 +222,6 @@ FdoScanAdapter(
 {
     NTSTATUS status;
     UINT32 totalLUNs = PortExtension->TotalLUCount;
-
-    DPRINT("FdoScanAdapter() called\n");
 
     /* Scan all buses */
     for (UINT8 pathId = 0; pathId < PortExtension->NumberOfBuses; pathId++)

@@ -5,7 +5,7 @@
  * PURPOSE:         Logon
  * PROGRAMMERS:     Thomas Weidenmueller (w3seek@users.sourceforge.net)
  *                  Filip Navara
- *                  Herv� Poussineau (hpoussin@reactos.org)
+ *                  Herv� Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -13,6 +13,7 @@
 #include "winlogon.h"
 
 #include <ndk/cmfuncs.h>
+#include <ndk/obfuncs.h>
 
 /* GLOBALS ******************************************************************/
 
@@ -61,7 +62,7 @@ StartServicesManager(VOID)
     StartupInfo.cbReserved2 = 0;
     StartupInfo.lpReserved2 = 0;
 
-    TRACE("WL: Creating new process - %S\n", ServiceString);
+    DbgPrint("[WINLOGON] StartServicesManager: calling CreateProcessW(services.exe)\n");
 
     res = CreateProcessW(ServiceString,
                          NULL,
@@ -75,11 +76,12 @@ StartServicesManager(VOID)
                          &ProcessInformation);
     if (!res)
     {
-        ERR("WL: Failed to execute services (error %lu)\n", GetLastError());
+        DbgPrint("[WINLOGON] StartServicesManager: CreateProcessW FAILED (error %lu)\n", GetLastError());
         return FALSE;
     }
 
-    TRACE("WL: Created new process - %S\n", ServiceString);
+    DbgPrint("[WINLOGON] StartServicesManager: CreateProcessW OK (PID=%lu)\n",
+             ProcessInformation.dwProcessId);
 
     CloseHandle(ProcessInformation.hThread);
     CloseHandle(ProcessInformation.hProcess);
@@ -109,7 +111,7 @@ StartLsass(VOID)
     StartupInfo.cbReserved2 = 0;
     StartupInfo.lpReserved2 = 0;
 
-    TRACE("WL: Creating new process - %S\n", ServiceString);
+    DbgPrint("[WINLOGON] StartLsass: calling CreateProcessW(lsass.exe)\n");
 
     res = CreateProcessW(ServiceString,
                          NULL,
@@ -122,7 +124,12 @@ StartLsass(VOID)
                          &StartupInfo,
                          &ProcessInformation);
 
-    TRACE("WL: Created new process - %S\n", ServiceString);
+    if (res)
+        DbgPrint("[WINLOGON] StartLsass: CreateProcessW OK (PID=%lu)\n",
+                 ProcessInformation.dwProcessId);
+    else
+        DbgPrint("[WINLOGON] StartLsass: CreateProcessW FAILED (error %lu)\n",
+                 GetLastError());
 
     CloseHandle(ProcessInformation.hThread);
     CloseHandle(ProcessInformation.hProcess);
@@ -448,6 +455,45 @@ GinaLoadFailedWindowProc(
 }
 
 
+static DWORD WINAPI
+FontLoadThread(LPVOID lpParam)
+{
+    static LPCWSTR FontNames[] = {
+        L"\\Fonts\\tahoma.ttf",
+        L"\\Fonts\\tahomabd.ttf",
+        L"\\Fonts\\Marlett.ttf",
+        L"\\Fonts\\arial.ttf",
+        L"\\Fonts\\arialbd.ttf",
+        L"\\Fonts\\cour.ttf",
+        L"\\Fonts\\times.ttf",
+        L"\\Fonts\\symbol.ttf",
+    };
+    WCHAR WinDir[MAX_PATH];
+    WCHAR FontPath[MAX_PATH];
+    DWORD i, Len;
+    UNREFERENCED_PARAMETER(lpParam);
+
+    Len = GetWindowsDirectoryW(WinDir, MAX_PATH);
+    DbgPrint("[WINLOGON] FontLoadThread: WindowsDirectory=%S len=%lu\n", WinDir, Len);
+    if (Len == 0 || Len >= MAX_PATH - 40)
+    {
+        DbgPrint("[WINLOGON] FontLoadThread: GetWindowsDirectoryW failed\n");
+        return 1;
+    }
+    for (i = 0; i < sizeof(FontNames)/sizeof(FontNames[0]); i++)
+    {
+        wcscpy(FontPath, WinDir);
+        wcscat(FontPath, FontNames[i]);
+        if (AddFontResourceW(FontPath))
+            DbgPrint("[WINLOGON] Loaded font: %S\n", FontPath);
+        else
+            DbgPrint("[WINLOGON] Failed to load font: %S (err %lu)\n", FontPath, GetLastError());
+    }
+    DbgPrint("[WINLOGON] Font loading complete (%d fonts)\n",
+             (int)(sizeof(FontNames)/sizeof(FontNames[0])));
+    return 0;
+}
+
 int
 WINAPI
 WinMain(
@@ -465,13 +511,20 @@ WinMain(
     NTSTATUS Status;
 #endif
     ULONG HardErrorResponse;
+#ifndef _M_ARM64
     MSG Msg;
+#endif
 
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nShowCmd);
 
     hAppInstance = hInstance;
+
+#ifdef _M_ARM64
+    DbgPrint("[WINLOGON] ARM64: WinMain entered\n");
+#endif
+    DbgPrint("[WINLOGON] WinMain entered (PID=%lu)\n", GetCurrentProcessId());
 
     /* Make us critical */
     RtlSetProcessIsCritical(TRUE, NULL, FALSE);
@@ -480,16 +533,26 @@ WinMain(
     /* Update the cached TCP/IP Information in the registry */
     UpdateTcpIpInformation();
 
+    DbgPrint("[WINLOGON] Calling RegisterLogonProcess(%lu)\n", GetCurrentProcessId());
     if (!RegisterLogonProcess(GetCurrentProcessId(), TRUE))
     {
-        ERR("WL: Could not register logon process\n");
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: RegisterLogonProcess failed (error %lu), continuing\n", GetLastError());
+#elif defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+        DbgPrint("[WINLOGON] RegisterLogonProcess failed (error %lu), continuing\n", GetLastError());
+#else
+        ERR("WL: Could not register logon process (error %lu)\n", GetLastError());
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
+#endif
     }
 
     WLSession = (PWLSESSION)HeapAlloc(GetProcessHeap(), 0, sizeof(WLSESSION));
     if (!WLSession)
     {
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: HeapAlloc failed\n");
+#endif
         ERR("WL: Could not allocate memory for winlogon instance\n");
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
@@ -501,15 +564,107 @@ WinMain(
     /* Initialize the dialog tracking list */
     InitDialogListHead();
 
+#ifdef _M_ARM64
+    /*
+     * Create \Windows\WindowStations directory if it doesn't exist.
+     * Normally created by NtUserInitialize (via winsrv in csrss),
+     * but we skip winsrv on ARM64. CreateWindowStationW needs this
+     * directory to exist before it can call NtUserCreateWindowStation.
+     */
+    {
+        OBJECT_ATTRIBUTES DirOa;
+        UNICODE_STRING DirName;
+        HANDLE hWinStaDir;
+        NTSTATUS DirStatus;
+
+        RtlInitUnicodeString(&DirName, L"\\Windows\\WindowStations");
+        InitializeObjectAttributes(&DirOa, &DirName, OBJ_CASE_INSENSITIVE, NULL, NULL);
+        DirStatus = NtCreateDirectoryObject(&hWinStaDir, DIRECTORY_ALL_ACCESS, &DirOa);
+        DbgPrint("[WINLOGON] ARM64: NtCreateDirectoryObject(\\Windows\\WindowStations) = 0x%lx\n", DirStatus);
+        /* Keep hWinStaDir open — directory must persist */
+    }
+
+    DbgPrint("[WINLOGON] ARM64: calling CreateWindowStationAndDesktops\n");
+#endif
+
+    DbgPrint("[WINLOGON] Calling CreateWindowStationAndDesktops\n");
     if (!CreateWindowStationAndDesktops(WLSession))
     {
-        ERR("WL: Could not create window station and desktops\n");
+#ifdef _M_ARM64
+        DbgPrint("[WINLOGON] ARM64: CreateWindowStationAndDesktops FAILED (error %lu), continuing without desktops\n", GetLastError());
+#elif defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+        DbgPrint("[WINLOGON] CreateWindowStationAndDesktops FAILED (error %lu), continuing\n", GetLastError());
+#else
+        ERR("WL: Could not create window station and desktops (error %lu)\n", GetLastError());
         NtRaiseHardError(STATUS_SYSTEM_PROCESS_TERMINATED, 0, 0, NULL, OptionOk, &HardErrorResponse);
         ExitProcess(1);
+#endif
     }
 
     LockWorkstation(WLSession);
 
+#ifdef _M_ARM64
+    /* Load keyboard layout on ARM64 (required for RIT→WM_KEYDOWN delivery) */
+    if (!InitKeyboardLayouts())
+    {
+        DbgPrint("[WINLOGON] ARM64: InitKeyboardLayouts failed (non-fatal)\n");
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] ARM64: Keyboard layout loaded\n");
+    }
+    DbgPrint("[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n");
+#else
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Load default keyboard layouts — DISABLED: NtCreateSection deadlock in Rust MM
+     * for file-backed SEC_IMAGE sections causes winlogon to hang then BUGCHECK 0xF4.
+     * Keyboard layout loading calls NtUserLoadKeyboardLayoutEx which does NtCreateSection
+     * on the layout DLL. The desktop still works without keyboard layouts. */
+#if 0
+    DbgPrint("[WINLOGON] Calling InitKeyboardLayouts\n");
+    if (!InitKeyboardLayouts())
+    {
+        DbgPrint("[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n");
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] InitKeyboardLayouts OK\n");
+    }
+#endif
+
+    DbgPrint("[WINLOGON] Calling StartRpcServer\n");
+    if (!StartRpcServer())
+    {
+        DbgPrint("[WINLOGON] StartRpcServer failed (non-fatal)\n");
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] StartRpcServer OK\n");
+    }
+
+    DbgPrint("[WINLOGON] Calling StartServicesManager\n");
+    if (!StartServicesManager())
+    {
+        DbgPrint("[WINLOGON] StartServicesManager failed (non-fatal)\n");
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] StartServicesManager OK\n");
+    }
+
+    DbgPrint("[WINLOGON] Calling StartLsass\n");
+    if (!StartLsass())
+    {
+        DbgPrint("[WINLOGON] StartLsass failed (error %lu, non-fatal)\n", GetLastError());
+    }
+    else
+    {
+        DbgPrint("[WINLOGON] StartLsass OK, calling WaitForLsass\n");
+        /* Wait for the LSA server */
+        WaitForLsass();
+        DbgPrint("[WINLOGON] WaitForLsass returned\n");
+    }
+#else
     /* Load default keyboard layouts */
     if (!InitKeyboardLayouts())
     {
@@ -541,22 +696,30 @@ WinMain(
 
     /* Wait for the LSA server */
     WaitForLsass();
+#endif
 
     /* Init Notifications */
+    DbgPrint("[WINLOGON] Calling InitNotifications\n");
     InitNotifications();
+    DbgPrint("[WINLOGON] InitNotifications done, calling GinaInit\n");
 
     /* Load and initialize gina */
     if (!GinaInit(WLSession))
     {
+#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+        DbgPrint("[WINLOGON] GinaInit failed (non-fatal)\n");
+#else
         ERR("WL: Failed to initialize Gina\n");
         // FIXME: Retrieve the real name of the GINA DLL we were trying to load.
         // It is known only inside the GinaInit function...
         DialogBoxParam(hAppInstance, MAKEINTRESOURCE(IDD_GINALOADFAILED), GetDesktopWindow(), GinaLoadFailedWindowProc, (LPARAM)L"msgina.dll");
         HandleShutdown(WLSession, WLX_SAS_ACTION_SHUTDOWN_REBOOT);
         ExitProcess(1);
+#endif
     }
 
     DisplayStatusMessage(WLSession, WLSession->WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
+#endif
 
 #if 0
     /* Connect to NetLogon service (lsass.exe) */
@@ -592,6 +755,192 @@ WinMain(
     }
 #endif
 
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+    /* Tell kernel that CurrentControlSet is good */
+    NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
+
+    /* Create minimal HKCU registry keys needed by explorer.exe.
+     * Normally done by userinit/profile loading, which we skip. */
+    {
+        HKEY hKey;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
+                            0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKey);
+            DbgPrint("[WINLOGON] Created HKCU\\...\\Explorer key\n");
+        }
+        /* Shell Folders — explorer checks this for desktop/start menu paths */
+        if (RegCreateKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
+                            0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKey);
+        }
+    }
+
+    /* Check for pending setup */
+    if (GetSetupType() != 0)
+    {
+        DbgPrint("[WINLOGON] Setup mode detected, launching setup...\n");
+        RunSetup();
+    }
+
+    DbgPrint("[WINLOGON] Init complete. Spawning explorer.exe...\n");
+
+    /* Spawn explorer.exe (shell — creates desktop, taskbar) */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        WCHAR ExplorerPath[MAX_PATH];
+        WCHAR ExplorerLine[] = L"explorer.exe";
+
+        /* Build full path: %SystemRoot%\explorer.exe */
+        GetWindowsDirectoryW(ExplorerPath, MAX_PATH);
+        wcscat(ExplorerPath, L"\\explorer.exe");
+        DbgPrint("[WINLOGON] Trying explorer path: %S\n", ExplorerPath);
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+        Si.lpDesktop = L"WinSta0\\Default";
+
+        bResult = CreateProcessW(
+            ExplorerPath,
+            ExplorerLine,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] explorer.exe created (PID %lu, TID %lu)\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] CreateProcessW(explorer.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    /* Load system fonts on a background thread to avoid blocking winlogon
+     * while CD I/O completes for each font file. */
+    {
+        HANDLE hThread;
+        hThread = CreateThread(NULL, 0, FontLoadThread, NULL, 0, NULL);
+        if (hThread)
+        {
+            DbgPrint("[WINLOGON] Font loading thread started\n");
+            CloseHandle(hThread);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] Failed to create font loading thread\n");
+        }
+    }
+
+#ifdef _M_ARM64
+    /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        WCHAR NoteLine[] = L"notepad.exe";
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+        Si.lpDesktop = L"WinSta0\\Default";
+
+        bResult = CreateProcessW(
+            L"notepad.exe",
+            NoteLine,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] ARM64: notepad.exe created (PID %lu, TID %lu)\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(notepad.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    /* Spawn interactive cmd.exe with console (CONSRV available) */
+    {
+        STARTUPINFOW Si;
+        PROCESS_INFORMATION Pi;
+        BOOL bResult;
+        DWORD ExitCode;
+        WCHAR CmdLine[] = L"cmd.exe";
+
+        ZeroMemory(&Si, sizeof(Si));
+        Si.cb = sizeof(Si);
+
+        bResult = CreateProcessW(
+            L"cmd.exe",
+            CmdLine,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &Si,
+            &Pi);
+
+        if (bResult)
+        {
+            DbgPrint("[WINLOGON] ARM64: cmd.exe created (PID %lu, TID %lu). Waiting...\n",
+                     Pi.dwProcessId, Pi.dwThreadId);
+            WaitForSingleObject(Pi.hProcess, INFINITE);
+            ExitCode = 0xDEAD;
+            GetExitCodeProcess(Pi.hProcess, &ExitCode);
+            DbgPrint("[WINLOGON] ARM64: cmd.exe exited, exit code = 0x%lx\n", ExitCode);
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        }
+        else
+        {
+            DbgPrint("[WINLOGON] ARM64: CreateProcessW(cmd.exe) FAILED (error %lu)\n",
+                     GetLastError());
+        }
+    }
+
+    DbgPrint("[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n");
+#endif /* _M_ARM64 */
+
+    /* No SAS window, no GINA — just sleep forever.
+     * Block on a never-signaled event to properly enter WAIT state
+     * and leave the CPU for other threads. */
+    {
+        HANDLE hSleepEvent;
+        OBJECT_ATTRIBUTES oa;
+        InitializeObjectAttributes(&oa, NULL, 0, NULL, NULL);
+        NtCreateEvent(&hSleepEvent, EVENT_ALL_ACCESS, &oa, NotificationEvent, FALSE);
+        NtWaitForSingleObject(hSleepEvent, FALSE, NULL);
+        /* Never reaches here */
+    }
+#else
     CallNotificationDlls(WLSession, StartupHandler);
 
     /* Create a hidden window to get SAS notifications */
@@ -632,6 +981,7 @@ WinMain(
     }
 
     CleanupNotifications();
+#endif
 
     /* We never go there */
     // TODO: Shutdown if we are in session 0, otherwise let the process terminate.

@@ -81,8 +81,8 @@ _HalpCalibrateStallExecution@0:
     push [ecx+4]
     push ecx
 
-    /* Now load our new handler */
-    mov eax, offset OnlyOnePersonCanWriteHalCode
+    /* Now load our new handler (lea to get address, not mov which does a memory load in GAS) */
+    lea eax, [OnlyOnePersonCanWriteHalCode]
     mov [ecx], ax
     mov word ptr [ecx+2], KGDT_R0_CODE
     mov word ptr [ecx+4], HEX(08E00)
@@ -98,17 +98,17 @@ _HalpCalibrateStallExecution@0:
     /* Now initialize register A on the CMOS */
     mov ax, HEX(2D00) OR CMOS_REGISTER_A
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register B */
     mov ax, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Don't touch the LastKnownGoodConfig hack */
     and al, 1
@@ -120,24 +120,24 @@ _HalpCalibrateStallExecution@0:
     /* Now write the register B */
     mov al, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register C */
     mov al, CMOS_REGISTER_C
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register D */
     mov al, CMOS_REGISTER_D
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Release CMOS lock */
     mov dword ptr [ebp-12], 0
@@ -178,7 +178,8 @@ OnlyOnePersonCanWriteHalCode:
      * Get rid of the old return address and push the new one in (our looper)
      */
     pop eax
-    push offset Looper
+    lea eax, [Looper]
+    push eax
 
     /* Acquire CMOS lock */
     call _HalpAcquireCmosSpinLock@0
@@ -186,17 +187,17 @@ OnlyOnePersonCanWriteHalCode:
     /* Now initialize register A on the CMOS */
     mov ax, HEX(2D00) OR CMOS_REGISTER_A
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register B */
     mov ax, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Don't touch the LastKnownGoodConfig hack */
     and al, 1
@@ -208,24 +209,24 @@ OnlyOnePersonCanWriteHalCode:
     /* Now write the register B */
     mov al, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register C */
     mov al, CMOS_REGISTER_C
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register D */
     mov al, CMOS_REGISTER_D
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Release CMOS lock */
     call _HalpReleaseCmosSpinLock@0
@@ -262,7 +263,8 @@ FoundFactor:
 
     /* Prepare for interrupt return */
     pop eax
-    push offset AndItsNotYou
+    lea eax, [AndItsNotYou]
+    push eax
     mov eax, HEX(13)
 
     /* Acquire CMOS lock */
@@ -271,17 +273,17 @@ FoundFactor:
     /* Now initialize register A on the CMOS */
     mov ax, HEX(2D00) OR CMOS_REGISTER_A
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register B */
     mov ax, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Don't touch the LastKnownGoodConfig hack */
     and al, 1
@@ -293,17 +295,17 @@ FoundFactor:
     /* Now write the register B */
     mov al, CMOS_REGISTER_B
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     mov al, ah
     out CMOS_DATA, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Read register C */
     mov al, CMOS_REGISTER_C
     out CMOS_ADDR, al
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
     in al, CMOS_DATA
-    jmp $+2
+    .byte 0xEB, 0x00 /* jmp $+2 (I/O delay) */
 
     /* Release CMOS lock */
     call _HalpReleaseCmosSpinLock@0
@@ -323,8 +325,8 @@ AndItsNotYou:
 
     /* Restore the IDT */
     pop ecx
-    pop [ecx+4]
-    pop [ecx]
+    pop dword ptr [ecx+4]
+    pop dword ptr [ecx]
 
     /* Restore the mask */
     pop eax

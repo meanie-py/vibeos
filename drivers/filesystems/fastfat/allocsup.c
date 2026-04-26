@@ -1677,6 +1677,7 @@ Return Value:
 
         DebugTrace(-1, Dbg, "FatTruncateFileAllocation -> (VOID)\n", 0);
     } _SEH2_END;
+
 }
 
 
@@ -4805,6 +4806,7 @@ Return Value:
 
     PAGED_CODE();
 
+
     //
     //  Now assert correct usage.
     //
@@ -4919,6 +4921,7 @@ Return Value:
 
     NT_ASSERT( StartIndex >= 2 );
 
+
     _SEH2_TRY {
 
         //
@@ -4972,6 +4975,7 @@ Return Value:
                               PrefetchPages );
 #endif
 
+
             FatReadVolumeFile( IrpContext,
                                Vcb,
                                Offset,
@@ -5005,7 +5009,9 @@ Return Value:
 
         StartIndexOfThisRun = StartIndex;
 
+
         for (FatIndex = StartIndex; FatIndex <= EndIndex; FatIndex++) {
+
 
             if (FatIndexBitSize == 12) {
 
@@ -5085,6 +5091,7 @@ Return Value:
                                           PrefetchPages );
                     }
 #endif
+
 
                     FatReadVolumeFile( IrpContext,
                                        Vcb,
@@ -5186,6 +5193,8 @@ Return Value:
                 BadClusterVbo += ClusterSize;
             }
         }
+
+
 
         //
         //  If we finished the scan, then we know about all the possible bad clusters.

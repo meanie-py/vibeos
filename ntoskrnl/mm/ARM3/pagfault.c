@@ -1761,6 +1761,9 @@ MmArmAccessFault(IN ULONG FaultCode,
                 DbgPrint("MM:***PC %p\n", TrapFrame->Pc);
                 DbgPrint("MM:***R0 %p, R1 %p R2 %p, R3 %p\n", TrapFrame->R0, TrapFrame->R1, TrapFrame->R2, TrapFrame->R3);
                 DbgPrint("MM:***R11 %p, R12 %p SP %p, LR %p\n", TrapFrame->R11, TrapFrame->R12, TrapFrame->Sp, TrapFrame->Lr);
+#elif defined(_M_ARM64)
+                DbgPrint("MM:***PC %p, LR %p, SP %p\n", (PVOID)TrapFrame->Pc, (PVOID)TrapFrame->Lr, (PVOID)TrapFrame->Sp);
+                DbgPrint("MM:***X0 %p, X1 %p, X2 %p, X3 %p\n", (PVOID)TrapFrame->X[0], (PVOID)TrapFrame->X[1], (PVOID)TrapFrame->X[2], (PVOID)TrapFrame->X[3]);
 #endif
             }
 
@@ -1803,6 +1806,173 @@ MmArmAccessFault(IN ULONG FaultCode,
 #if (_MI_PAGING_LEVELS == 2)
         if (MI_IS_SYSTEM_PAGE_TABLE_ADDRESS(Address)) MiSynchronizeSystemPde((PMMPDE)PointerPte);
         MiCheckPdeForPagedPool(Address);
+#endif
+
+        /* Trace ALL kernel page faults for hang debugging */
+#ifdef _M_ARM64
+        ARM64_UART_TRACE_HEX("[KPF] ", (ULONG_PTR)Address);
+#endif
+
+        /* ARM64 4-level self-map fault handling.
+         *
+         * When kernel code reads a PDE/PPE/PTE through the self-map for a user
+         * VA whose PXE or PPE is zero, the hardware page table walk for the
+         * self-map address fails. The self-map walk uses PXE[0x1ED] as a
+         * recursive entry, so a PDE self-map access walks:
+         *   PML4[0x1ED] -> PML4[0x1ED] -> PML4[user_pxe] -> PPE[user_ppe] -> PDE
+         * If PML4[user_pxe] = 0, the walk faults here.
+         *
+         * We resolve this by directly allocating the missing page table page(s)
+         * and populating the PXE/PPE entry. This is safe without the WS lock
+         * because we only create the page table structure — no PTE/data pages. */
+#if (_MI_PAGING_LEVELS == 4)
+        if (MI_IS_PAGE_TABLE_OR_HYPER_ADDRESS(Address))
+        {
+            PVOID UnderlyingVa;
+            PMMPTE UserPxe, UserPpe;
+            PFN_NUMBER NewPage;
+            MMPTE NewPte;
+            KIRQL PfnIrql;
+
+            /* Decode self-map address to underlying VA.
+             * IMPORTANT: check innermost ranges first — they overlap
+             * (PDE_TOP > PPE_BASE > PXE_BASE). */
+            ARM64_UART_TRACE_HEX("[SMAP] ", (ULONG_PTR)Address);
+            if ((ULONG_PTR)Address >= PXE_BASE && (ULONG_PTR)Address <= PXE_TOP)
+            {
+                /* PXE range is the PML4 page itself — this should never fault
+                 * because the PML4 is always mapped via the self-map self-reference.
+                 * If we get here, something is seriously wrong. */
+                KeBugCheckEx(PAGE_FAULT_IN_NONPAGED_AREA,
+                             (ULONG_PTR)Address, FaultCode,
+                             (ULONG_PTR)TrapInformation, 0xAA64);
+            }
+            else if ((ULONG_PTR)Address >= PPE_BASE)
+            {
+                UnderlyingVa = MiPpeToAddress((PMMPTE)Address);
+            }
+            else if ((ULONG_PTR)Address >= PDE_BASE)
+            {
+                UnderlyingVa = MiPdeToAddress((PMMPTE)Address);
+            }
+            else
+            {
+                UnderlyingVa = MiPteToAddress((PMMPTE)Address);
+            }
+
+            /* Directly allocate missing page table page(s) for the underlying VA.
+             * This handles BOTH user and kernel VAs without the working set lock,
+             * which may already be held by the caller (e.g., during MiBuildPfnDatabase).
+             * This is a simplified version of what UserFault does for PXE/PPE
+             * allocation, but without requiring the working set lock (which may
+             * already be held by the caller). PFN entries are minimally
+             * initialized — proper tracking will be added later. */
+
+            /* PXE is always readable (PXE_BASE = PML4 page, 4x self-ref) */
+            UserPxe = MiAddressToPxe(UnderlyingVa);
+            if (UserPxe->u.Hard.Valid == 0)
+            {
+                ARM64_UART_TRACE("[SMAP] +PXE\r\n");
+                /* Allocate a zeroed page for the PPE table */
+                PfnIrql = MiAcquirePfnLock();
+                NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
+                if (NewPage == 0)
+                {
+                    MiReleasePfnLock(PfnIrql);
+                    return STATUS_NO_MEMORY;
+                }
+                /* Minimal PFN setup so the page isn't reused */
+                MiInitializePfn(NewPage, UserPxe, TRUE);
+                MiReleasePfnLock(PfnIrql);
+
+                /* Build PXE entry: kernel PTE with RW for page table page */
+                MI_MAKE_HARDWARE_PTE(&NewPte, UserPxe,
+                                     MM_EXECUTE_READWRITE, NewPage);
+                if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
+                MI_WRITE_VALID_PTE(UserPxe, NewPte);
+
+                /* Force-zero the PPE page through the self-map.
+                 * MiRemoveZeroPage SHOULD return zeroed pages, but on amd64
+                 * we've observed stale PTE data in supposedly-zeroed page
+                 * table pages. Belt-and-suspenders. */
+                RtlZeroMemory((PVOID)MiPxeToAddress(UserPxe), PAGE_SIZE);
+            }
+
+            /* Now PXE is valid — PPE self-map walk succeeds */
+            UserPpe = MiAddressToPpe(UnderlyingVa);
+            if (UserPpe->u.Hard.Valid == 0)
+            {
+                ARM64_UART_TRACE("[SMAP] +PPE\r\n");
+                /* Allocate a zeroed page for the PDE table */
+                PfnIrql = MiAcquirePfnLock();
+                NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
+                if (NewPage == 0)
+                {
+                    MiReleasePfnLock(PfnIrql);
+                    return STATUS_NO_MEMORY;
+                }
+                MiInitializePfn(NewPage, UserPpe, TRUE);
+
+                /* Increment L1 page (PXE table) refcount — this PPE entry
+                 * occupies a slot in the PXE-pointed L1 page. MiDeletePde's
+                 * cascade calls MiDecrementPageTableReferences(PointerPde)
+                 * which decrements this same refcount. */
+                {
+                    PMMPFN L1Pfn = MiGetPfnEntry(PFN_FROM_PXE(UserPxe));
+                    L1Pfn->OriginalPte.u.Soft.UsedPageTableEntries++;
+                }
+                MiReleasePfnLock(PfnIrql);
+
+                MI_MAKE_HARDWARE_PTE(&NewPte, UserPpe,
+                                     MM_EXECUTE_READWRITE, NewPage);
+                if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
+                MI_WRITE_VALID_PTE(UserPpe, NewPte);
+
+                /* Force-zero the PDE page through the self-map */
+                RtlZeroMemory((PVOID)MiPpeToAddress(UserPpe), PAGE_SIZE);
+            }
+
+            /* Now PXE and PPE are valid — PDE self-map walk succeeds.
+             * For PTE-range faults, we also need the PDE (PTE page). */
+            {
+                PMMPTE UserPde = MiAddressToPde(UnderlyingVa);
+                if (UserPde->u.Hard.Valid == 0)
+                {
+                    ARM64_UART_TRACE("[SMAP] +PDE\r\n");
+                    /* Allocate a zeroed page for the PTE table */
+                    PfnIrql = MiAcquirePfnLock();
+                    NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
+                    if (NewPage == 0)
+                    {
+                        MiReleasePfnLock(PfnIrql);
+                        return STATUS_NO_MEMORY;
+                    }
+                    MiInitializePfn(NewPage, UserPde, TRUE);
+
+                    /* Increment L2 page (PPE table) refcount — this PDE entry
+                     * occupies a slot in the PPE-pointed L2 page. MiDeletePde's
+                     * cascade calls MiDecrementPageTableReferences(MiPdeToPte(PDE))
+                     * which decrements this same refcount through the self-map. */
+                    {
+                        PMMPFN L2Pfn = MiGetPfnEntry(PFN_FROM_PPE(UserPpe));
+                        L2Pfn->OriginalPte.u.Soft.UsedPageTableEntries++;
+                    }
+                    MiReleasePfnLock(PfnIrql);
+
+                    MI_MAKE_HARDWARE_PTE(&NewPte, UserPde,
+                                         MM_EXECUTE_READWRITE, NewPage);
+                    if (MI_IS_PAGE_WRITEABLE(&NewPte)) MI_MAKE_DIRTY_PAGE(&NewPte);
+                    MI_WRITE_VALID_PTE(UserPde, NewPte);
+
+                    /* Force-zero the PTE page through the self-map */
+                    RtlZeroMemory((PVOID)MiPdeToAddress(UserPde), PAGE_SIZE);
+                }
+            }
+
+            /* Self-map address should now be accessible */
+            ARM64_UART_TRACE("[SMAP] OK\r\n");
+            return STATUS_SUCCESS;
+        }
 #endif
 
         /* Check if the higher page table entries are invalid */
@@ -2146,8 +2316,15 @@ UserFault:
         MiCheckVirtualAddress(Address, &ProtectionCode, &Vad);
         if (ProtectionCode == MM_NOACCESS)
         {
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return STATUS_ACCESS_VIOLATION;
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0,
+             * pages committed individually). Create page table if a VAD exists;
+             * the PTE-level check handles uncommitted pages correctly. */
+            if (!MiLocateAddress(Address))
+            {
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return STATUS_ACCESS_VIOLATION;
+            }
+            ProtectionCode = MM_EXECUTE_READWRITE;
         }
 
         /* Resolve a demand zero fault */
@@ -2184,8 +2361,14 @@ UserFault:
 
         if (ProtectionCode == MM_NOACCESS)
         {
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return STATUS_ACCESS_VIOLATION;
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0).
+             * Create page table if a VAD exists. */
+            if (!MiLocateAddress(Address))
+            {
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return STATUS_ACCESS_VIOLATION;
+            }
+            ProtectionCode = MM_EXECUTE_READWRITE;
         }
 
         /* Resolve a demand zero fault */
@@ -2223,16 +2406,27 @@ UserFault:
 
         if (ProtectionCode == MM_NOACCESS)
         {
-#if (_MI_PAGING_LEVELS == 2)
-            /* Could be a page table for paged pool */
-            MiCheckPdeForPagedPool(Address);
+#if (_MI_PAGING_LEVELS >= 3)
+            /* MM_NOACCESS may indicate a partially committed VAD (MemCommit=0).
+             * Create page table if a VAD exists. */
+            if (MiLocateAddress(Address))
+            {
+                ProtectionCode = MM_EXECUTE_READWRITE;
+            }
+            else
 #endif
-            /* Has the code above changed anything -- is this now a valid PTE? */
-            Status = (PointerPde->u.Hard.Valid == 1) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
+            {
+#if (_MI_PAGING_LEVELS == 2)
+                /* Could be a page table for paged pool */
+                MiCheckPdeForPagedPool(Address);
+#endif
+                /* Has the code above changed anything -- is this now a valid PTE? */
+                Status = (PointerPde->u.Hard.Valid == 1) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
 
-            /* Either this was a bogus VA or we've fixed up a paged pool PDE */
-            MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
-            return Status;
+                /* Either this was a bogus VA or we've fixed up a paged pool PDE */
+                MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
+                return Status;
+            }
         }
 
         /* Resolve a demand zero fault */
@@ -2312,7 +2506,12 @@ UserFault:
                 /* And make a new shiny one with our page */
                 MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
                 TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+#ifdef _M_ARM64
+                TempPte.u.Hard.Writable = 1;
+                TempPte.u.Hard.NotDirty = 0;  /* Make hardware-writable */
+#else
                 TempPte.u.Hard.Write = 1;
+#endif
                 TempPte.u.Hard.CopyOnWrite = 0;
 
                 MI_WRITE_VALID_PTE(PointerPte, TempPte);
@@ -2342,7 +2541,11 @@ UserFault:
             if (CurrentProcess->Pcb.Flags.ExecuteEnable)
             {
                 /* Fix up the PTE to be executable */
+#ifdef _M_ARM64
+                TempPte.u.Hard.UserNoExecute = 0;
+#else
                 TempPte.u.Hard.NoExecute = 0;
+#endif
                 MI_UPDATE_VALID_PTE(PointerPte, TempPte);
                 MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
                 return STATUS_SUCCESS;

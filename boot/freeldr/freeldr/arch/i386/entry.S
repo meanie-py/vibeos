@@ -76,13 +76,41 @@ _FrldrStartup:
     mov eax, dword ptr ds:[BSS_RealModeEntry]
     mov dword ptr ds:[SwitchToReal16Address], eax
 
-    /* Clean out BSS */
+    /* Clean out BSS by scanning PE section headers for VirtualSize > RawDataSize gaps.
+     * This is necessary because LLD merges .bss into .data, and the __bss_start__/__bss_end__
+     * markers don't bracket the BSS correctly in PE section $ suffix ordering.
+     * Note: LLD defines ___ImageBase (triple underscore) for i386. */
+    mov ebx, offset ___ImageBase
+    mov eax, dword ptr [ebx + 60]          /* e_lfanew */
+    add ebx, eax                            /* NT headers */
+    movzx ecx, word ptr [ebx + 6]          /* FileHeader.NumberOfSections */
+    movzx eax, word ptr [ebx + 20]         /* FileHeader.SizeOfOptionalHeader */
+    lea esi, [ebx + eax + 24]              /* First IMAGE_SECTION_HEADER */
+.LBssZeroLoop:
+    test ecx, ecx
+    jz .LBssZeroDone
+    mov edx, dword ptr [esi + 8]           /* VirtualSize */
+    cmp edx, dword ptr [esi + 16]          /* SizeOfRawData */
+    jbe .LBssNextSection
+    /* Zero from (ImageBase + VirtualAddress + SizeOfRawData) to
+     *           (ImageBase + VirtualAddress + VirtualSize) */
+    push ecx
+    push esi
+    mov edi, offset ___ImageBase
+    add edi, dword ptr [esi + 12]          /* + VirtualAddress */
+    mov ecx, dword ptr [esi + 16]          /* SizeOfRawData */
+    add edi, ecx                            /* + SizeOfRawData */
+    sub edx, ecx                            /* VirtualSize - SizeOfRawData */
+    mov ecx, edx                            /* byte count */
     xor eax, eax
-    mov edi, offset __bss_start__
-    mov ecx, offset __bss_end__ + 3
-    sub ecx, edi
-    shr ecx, 2
-    rep stosd
+    rep stosb                              /* Zero byte-by-byte for simplicity */
+    pop esi
+    pop ecx
+.LBssNextSection:
+    add esi, 40                            /* sizeof(IMAGE_SECTION_HEADER) */
+    dec ecx
+    jmp .LBssZeroLoop
+.LBssZeroDone:
 
     /* Initialize the idt */
     call _InitIdt

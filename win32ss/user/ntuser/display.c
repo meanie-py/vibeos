@@ -153,7 +153,7 @@ InitVideo(VOID)
     NTSTATUS Status;
     HKEY hkey;
 
-    TRACE("----------------------------- InitVideo() -------------------------------\n");
+    ERR("InitVideo() called\n");
 
     /* Check if VGA mode is requested, by finding the special volatile key created by VIDEOPRT */
     Status = RegOpenKey(L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\GraphicsDrivers\\BaseVideo", &hkey);
@@ -161,10 +161,11 @@ InitVideo(VOID)
         ZwClose(hkey);
     gbBaseVideo = NT_SUCCESS(Status);
     if (gbBaseVideo)
-        ERR("VGA mode requested.\n");
+        ERR("InitVideo: VGA mode requested.\n");
 
     /* Initialize all display devices */
     Status = EngpUpdateGraphicsDeviceList();
+    ERR("InitVideo: EngpUpdateGraphicsDeviceList returned 0x%lx\n", Status);
     if (!NT_SUCCESS(Status))
         return Status;
 

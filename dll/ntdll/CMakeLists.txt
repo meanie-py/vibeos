@@ -43,6 +43,9 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE dispatch/amd64/dispatch.S)
 elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE dispatch/arm/stubs_asm.s)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE dispatch/arm64/dispatch.S)
+    list(APPEND SOURCE dispatch/dispatch.c)
 else()
     list(APPEND SOURCE dispatch/dispatch.c)
 endif()
@@ -60,6 +63,7 @@ add_library(ntdll MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/ntdll.def)
 
 set_module_type(ntdll win32dll ENTRYPOINT 0)
+set_target_properties(ntdll PROPERTIES C_STANDARD 23)
 #############################################
 ## HACK FOR MSVC COMPILATION WITH win32dll ##
 set_subsystem(ntdll console)

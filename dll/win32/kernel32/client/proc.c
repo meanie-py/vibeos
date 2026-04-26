@@ -4254,6 +4254,9 @@ StartScan:
         case IMAGE_FILE_MACHINE_AMD64:
             CreateProcessMsg->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_AMD64;
             break;
+        case IMAGE_FILE_MACHINE_ARM64:
+            CreateProcessMsg->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+            break;
 
         /* Anything else results in image unknown -- but no failure */
         default:
@@ -4327,6 +4330,11 @@ StartScan:
     }
 
     /* We are finally ready to call CSRSS to tell it about our new process! */
+#ifdef _M_ARM64
+    /* ARM64: Skip CSRSS notification if not connected (native process) */
+    if (BaseCsrConnectionEstablished)
+    {
+#endif
     CsrClientCallServer((PCSR_API_MESSAGE)&CsrMsg[0],
                         CaptureBuffer,
                         CSR_CREATE_API_NUMBER(BASESRV_SERVERDLL_INDEX,
@@ -4350,6 +4358,19 @@ StartScan:
         Result = FALSE;
         goto Quickie;
     }
+#ifdef _M_ARM64
+    }
+    else
+    {
+        /* No CSRSS connection — free capture buffer and continue */
+        if (CaptureBuffer)
+        {
+            CsrFreeCaptureBuffer(CaptureBuffer);
+            CaptureBuffer = NULL;
+        }
+        DPRINT1("ARM64: Skipping CSRSS notification for child process\n");
+    }
+#endif
 
     /* Check if we have a token due to Authz/Safer, not passed by the user */
     if ((TokenHandle) && !(hUserToken))

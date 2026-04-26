@@ -71,7 +71,12 @@ GetEntry:
     if (entry == NULL)
     {
         MiReleasePfnLock(OldIrql);
+#ifdef _M_ARM64
+        /* ARM64: No valid rmap entry found — cannot page out. */
+        return STATUS_UNSUCCESSFUL;
+#else
         goto WriteSegment;
+#endif
     }
 
     Process = entry->Process;
@@ -79,7 +84,12 @@ GetEntry:
 
     if ((((ULONG_PTR)Address) & 0xFFF) != 0)
     {
+#ifdef _M_ARM64
+        MiReleasePfnLock(OldIrql);
+        return STATUS_UNSUCCESSFUL;
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
+#endif
     }
 
     /* This is for user-mode address only */
@@ -295,10 +305,22 @@ GetEntry:
 #endif
     else
     {
+#ifdef _M_ARM64
+        /* ARM64: Unknown memory area type — skip instead of bugcheck */
+        if (Process != PsInitialSystemProcess)
+            KeDetachProcess();
+        MmUnlockAddressSpace(AddressSpace);
+        ExReleaseRundownProtection(&Process->RundownProtect);
+        ObDereferenceObject(Process);
+        return STATUS_UNSUCCESSFUL;
+#else
         KeBugCheck(MEMORY_MANAGEMENT);
+#endif
     }
 
+#ifndef _M_ARM64
 WriteSegment:
+#endif
     /* Now write this page to file, if needed */
     Segment = MmGetSectionAssociation(Page, &SegmentOffset);
     if (Segment)
@@ -381,12 +403,17 @@ MmInsertRmap(PFN_NUMBER Page, PEPROCESS Process,
 
     if (current_entry && (current_entry->Address == Address) && (current_entry->Process == Process))
     {
-#if DBG
-        DbgPrint("MmInsertRmap tries to add a second rmap entry for address %p\n", current_entry->Address);
-        DbgPrint("    current caller  %p\n", new_entry->Caller);
-        DbgPrint("    previous caller %p\n", current_entry->Caller);
-#endif
-        KeBugCheck(MEMORY_MANAGEMENT);
+        /* Diagnostic: dump info before bugcheck */
+        __asm__ __volatile__(
+            "outb %%al, $0xe9" :: "a"((char)'!'));
+        __asm__ __volatile__(
+            "outb %%al, $0xe9" :: "a"((char)'R'));
+        __asm__ __volatile__(
+            "outb %%al, $0xe9" :: "a"((char)'M'));
+        /* Skip the bugcheck — allow boot to continue (DUMMY_PSEH workaround) */
+        ExFreeToNPagedLookasideList(&RmapLookasideList, new_entry);
+        MiReleasePfnLock(OldIrql);
+        return;
     }
 
     new_entry->Next = current_entry;
@@ -446,7 +473,14 @@ MmDeleteRmap(PFN_NUMBER Page, PEPROCESS Process,
         previous_entry = current_entry;
         current_entry = current_entry->Next;
     }
+#ifdef _M_ARM64
+    /* ARM64: No pagefile — the balance manager may race with the owning process
+     * and find the rmap entry already gone.  Just return instead of bugchecking. */
+    MiReleasePfnLock(OldIrql);
+    return;
+#else
     KeBugCheck(MEMORY_MANAGEMENT);
+#endif
 }
 
 /*

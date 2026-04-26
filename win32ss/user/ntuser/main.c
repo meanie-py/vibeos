@@ -696,15 +696,45 @@ InitThreadCallback(PETHREAD Thread)
     /* Last things to do only if we are not a SYSTEM or CSRSS thread */
     if (!(ptiCurrent->TIF_flags & (TIF_SYSTEMTHREAD | TIF_CSRSSTHREAD)))
     {
+#if defined(_USE_DUMMY_PSEH)
+        /* On DUMMY_PSEH builds (amd64, ARM64), skip co_IntClientThreadSetup
+         * entirely. The KeUserModeCallback to User32CallClientThreadSetupFromKernel
+         * can raise exceptions in user-mode that are unrecoverable without SEH.
+         * User32 DllMain already calls ClientThreadSetupHelper() after
+         * NtUserProcessConnect returns, making this kernel-side callback redundant.
+         * On i386 (PSEH_CLANG), setjmp/longjmp catches the exception so it's safe. */
+        goto skip_client_thread_setup;
+#elif defined(_M_ARM64) || defined(_USE_PSEH_CLANG)
+        /* Check if PEB->KernelCallbackTable is set up (by user32 DllMain).
+         * If not, skip co_IntClientThreadSetup — KeUserModeCallback would
+         * crash in user-mode trying to call through a NULL table.
+         * This happens when a non-user32 DLL (e.g., comctl32) triggers GUI
+         * thread conversion from its DllMain before user32 DllMain runs.
+         * The thread will be set up later when user32 DllMain calls
+         * ClientThreadSetupHelper. */
+        if (!Process->Peb || !MmIsAddressValid(Process->Peb) ||
+            !Process->Peb->KernelCallbackTable)
+        {
+            goto skip_client_thread_setup;
+        }
+#endif
         /* Callback to User32 Client Thread Setup */
         TRACE_CH(UserThread, "Call co_IntClientThreadSetup...\n");
         Status = co_IntClientThreadSetup();
         if (!NT_SUCCESS(Status))
         {
+#if defined(_M_ARM64) || defined(_USE_PSEH_CLANG)
+            ERR_CH(UserThread, "ClientThreadSetup failed 0x%08lx (non-fatal)\n", Status);
+#else
             ERR_CH(UserThread, "ClientThreadSetup failed with Status 0x%08lx\n", Status);
             goto error;
+#endif
         }
         TRACE_CH(UserThread, "co_IntClientThreadSetup succeeded!\n");
+#if defined(_M_ARM64) || defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
+skip_client_thread_setup:
+        ;
+#endif
     }
     else
     {
@@ -1004,73 +1034,51 @@ DriverEntry(
     }
 
     hModuleWin = MmPageEntireDriver(DriverEntry);
-    DPRINT("Win32k hInstance 0x%p!\n", hModuleWin);
 
     DriverObject->DriverUnload = DriverUnload;
-
-    /* Register Object Manager Callbacks */
     CalloutData.ProcessCallout = Win32kProcessCallback;
     CalloutData.ThreadCallout = Win32kThreadCallback;
-    // CalloutData.GlobalAtomTableCallout = NULL;
     CalloutData.PowerEventCallout = IntHandlePowerEvent;
     CalloutData.PowerStateCallout = IntHandlePowerState;
-    // CalloutData.JobCallout = NULL;
     CalloutData.BatchFlushRoutine = NtGdiFlushUserBatch;
     CalloutData.DesktopOpenProcedure = IntDesktopObjectOpen;
     CalloutData.DesktopOkToCloseProcedure = IntDesktopOkToClose;
     CalloutData.DesktopCloseProcedure = IntDesktopObjectClose;
     CalloutData.DesktopDeleteProcedure = IntDesktopObjectDelete;
     CalloutData.WindowStationOkToCloseProcedure = IntWinStaOkToClose;
-    // CalloutData.WindowStationCloseProcedure = NULL;
     CalloutData.WindowStationDeleteProcedure = IntWinStaObjectDelete;
     CalloutData.WindowStationParseProcedure = IntWinStaObjectParse;
-    // CalloutData.WindowStationOpenProcedure = NULL;
-
-    /* Register our per-process and per-thread structures. */
     PsEstablishWin32Callouts(&CalloutData);
 
-    /* Register service hook callbacks */
 #if DBG && defined(KDBG)
     KdSystemDebugControl('CsoR', DbgPreServiceHook, ID_Win32PreServiceHook, 0, 0, 0, 0);
     KdSystemDebugControl('CsoR', DbgPostServiceHook, ID_Win32PostServiceHook, 0, 0, 0, 0);
 #endif
 
-    /* Create the global USER heap */
     GlobalUserHeap = UserCreateHeap(&GlobalUserHeapSection,
                                     &GlobalUserHeapBase,
-                                    1 * 1024 * 1024); /* FIXME: 1 MB for now... */
+                                    1 * 1024 * 1024);
     if (GlobalUserHeap == NULL)
     {
-        DPRINT1("Failed to initialize the global heap!\n");
+        DPRINT1("Failed to create the global user heap!\n");
         return STATUS_UNSUCCESSFUL;
     }
 
-    /* Init the global user lock */
     ExInitializeResourceLite(&UserLock);
-
-    /* Lock while we use the heap (UserHeapAlloc asserts on this) */
     UserEnterExclusive();
-
-    /* Allocate global server info structure */
     gpsi = UserHeapAlloc(sizeof(*gpsi));
     UserLeave();
     if (!gpsi)
     {
-        DPRINT1("Failed allocate server info structure!\n");
+        DPRINT1("Failed to allocate gpsi!\n");
         return STATUS_UNSUCCESSFUL;
     }
-
     RtlZeroMemory(gpsi, sizeof(*gpsi));
-    DPRINT("Global Server Data -> %p\n", gpsi);
 
     NT_ROF(InitGdiHandleTable());
     NT_ROF(InitPaletteImpl());
-
-    /* Create stock objects, ie. precreated objects commonly
-       used by win32 applications */
     CreateStockObjects();
     CreateSysColorObjects();
-
     NT_ROF(InitBrushImpl());
     NT_ROF(InitPDEVImpl());
     NT_ROF(InitLDEVImpl());
@@ -1084,7 +1092,6 @@ DriverEntry(
     NT_ROF(MsqInitializeImpl());
     NT_ROF(InitTimerImpl());
     NT_ROF(InitDCEImpl());
-
     return STATUS_SUCCESS;
 }
 

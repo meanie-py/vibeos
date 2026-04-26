@@ -16,6 +16,17 @@
 #define MODULE_INVOLVED_IN_ARM3
 #include <mm/ARM3/miarm.h>
 
+#ifdef _M_ARM64
+/* Declaration for direct file reading (declared in cache/section/newmm.h) */
+NTSTATUS NTAPI
+MiSimpleRead(PFILE_OBJECT FileObject,
+             PLARGE_INTEGER FileOffset,
+             PVOID Buffer,
+             ULONG Length,
+             BOOLEAN Paging,
+             PIO_STATUS_BLOCK ReadStatus);
+#endif
+
 /* GLOBALS ********************************************************************/
 
 LIST_ENTRY PsLoadedModuleList;
@@ -83,18 +94,20 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
 {
     PSECTION Section = *SectionPtr;
     NTSTATUS Status;
-    PEPROCESS Process;
-    PVOID Base = NULL;
-    SIZE_T ViewSize = 0;
-    KAPC_STATE ApcState;
-    LARGE_INTEGER SectionOffset = {{0, 0}};
-    BOOLEAN LoadSymbols = FALSE;
     PFN_COUNT PteCount;
     PMMPTE PointerPte, LastPte;
     PVOID DriverBase;
     MMPTE TempPte;
     KIRQL OldIrql;
     PFN_NUMBER PageFrameIndex;
+#ifndef _M_ARM64
+    PEPROCESS Process;
+    PVOID Base = NULL;
+    SIZE_T ViewSize = 0;
+    KAPC_STATE ApcState;
+    LARGE_INTEGER SectionOffset = {{0, 0}};
+    BOOLEAN LoadSymbols = FALSE;
+#endif
     PAGED_CODE();
 
     /* Detect session load */
@@ -108,13 +121,148 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
     /* Not session load, shouldn't have an entry */
     ASSERT(LdrEntry == NULL);
 
+    /* Reserve system PTEs needed */
+    PteCount = ROUND_TO_PAGES(((PMM_IMAGE_SECTION_OBJECT)Section->Segment)->ImageInformation.ImageFileSize) >> PAGE_SHIFT;
+    PointerPte = MiReserveSystemPtes(PteCount, SystemPteSpace);
+    if (!PointerPte)
+    {
+        DPRINT1("MiReserveSystemPtes failed\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    /* New driver base */
+    LastPte = PointerPte + PteCount;
+    DriverBase = MiPteToAddress(PointerPte);
+    *ImageBase = DriverBase;
+
+#ifdef ARM64_UART_TRACE_ENABLE
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        if (_u)
+        {
+            const char *_s; ULONG_PTR _v; int _i;
+            _s = "[SYSMOD] base=0x"; while (*_s) *_u = (ULONG)*_s++;
+            _v = (ULONG_PTR)DriverBase;
+            for (_i = 60; _i >= 0; _i -= 4) {
+                ULONG _n = (_v >> _i) & 0xF;
+                *_u = _n < 10 ? '0' + _n : 'A' + _n - 10;
+            }
+            _s = " pages="; while (*_s) *_u = (ULONG)*_s++;
+            _v = (ULONG_PTR)PteCount;
+            for (_i = 12; _i >= 0; _i -= 4) {
+                ULONG _n = (_v >> _i) & 0xF;
+                *_u = _n < 10 ? '0' + _n : 'A' + _n - 10;
+            }
+            _s = " name="; while (*_s) *_u = (ULONG)*_s++;
+            if (FileName && FileName->Buffer) {
+                USHORT _j;
+                for (_j = 0; _j < FileName->Length / sizeof(WCHAR) && _j < 60; _j++)
+                    *_u = (ULONG)(FileName->Buffer[_j] & 0x7F);
+            }
+            *_u = '\n';
+        }
+    }
+#endif
+
+    /* Lock the PFN database */
+    OldIrql = MiAcquirePfnLock();
+
+    /* Loop the new driver PTEs */
+    TempPte = ValidKernelPte;
+    while (PointerPte < LastPte)
+    {
+        ASSERT(PointerPte->u.Hard.Valid == 0);
+        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
+#if MI_TRACE_PFNS
+        MI_SET_PROCESS_USTR(FileName);
+#endif
+        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
+        MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
+        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
+        MI_WRITE_VALID_PTE(PointerPte, TempPte);
+        PointerPte++;
+    }
+
+    MiReleasePfnLock(OldIrql);
+
+#ifdef _M_ARM64
+    /*
+     * ARM64: Read PE segments directly from the file into kernel memory.
+     * This bypasses SEC_IMAGE user-space mapping which has two bugs on ARM64:
+     * 1) Relocated SEC_IMAGE mappings return corrupted page data
+     * 2) MmUnmapViewOfSection hangs for large SEC_IMAGE mappings
+     */
+    {
+        PMM_IMAGE_SECTION_OBJECT ImageSectionObject =
+            (PMM_IMAGE_SECTION_OBJECT)Section->Segment;
+        PFILE_OBJECT FileObject = ImageSectionObject->FileObject;
+        ULONG i;
+        IO_STATUS_BLOCK IoStatusBlock;
+        LARGE_INTEGER FileOffset;
+        SIZE_T ImageSize = (SIZE_T)PteCount << PAGE_SHIFT;
+
+        /* Zero the entire image area first (handles BSS and gaps) */
+        RtlZeroMemory(DriverBase, ImageSize);
+
+        /* Read each segment from the file */
+        for (i = 0; i < ImageSectionObject->NrSegments; i++)
+        {
+            PMM_SECTION_SEGMENT Seg = &ImageSectionObject->Segments[i];
+            ULONG_PTR DestVA = Seg->Image.VirtualAddress;
+            ULONGLONG SrcFileOffset = Seg->Image.FileOffset;
+            SIZE_T RawLen = (SIZE_T)Seg->RawLength.QuadPart;
+
+            /* Skip segments with no file data */
+            if (RawLen == 0 || SrcFileOffset == 0)
+            {
+                /* Segment 0 (PE header) may have FileOffset=0, still read it */
+                if (i != 0 || RawLen == 0) continue;
+            }
+
+            /* Clamp to image bounds */
+            if (DestVA + RawLen > ImageSize)
+                RawLen = ImageSize - DestVA;
+            if (DestVA >= ImageSize) continue;
+
+            /* Read in page-sized chunks to avoid MDL size limits */
+            {
+                SIZE_T BytesRemaining = RawLen;
+                SIZE_T DestOffset = DestVA;
+                ULONGLONG SrcOffset = SrcFileOffset;
+
+                while (BytesRemaining > 0)
+                {
+                    ULONG ChunkSize = (BytesRemaining > PAGE_SIZE) ? PAGE_SIZE : (ULONG)BytesRemaining;
+
+                    FileOffset.QuadPart = SrcOffset;
+                    Status = MiSimpleRead(FileObject,
+                                          &FileOffset,
+                                          (PVOID)((ULONG_PTR)DriverBase + DestOffset),
+                                          ChunkSize,
+                                          TRUE,
+                                          &IoStatusBlock);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        break;
+                    }
+
+                    BytesRemaining -= ChunkSize;
+                    DestOffset += ChunkSize;
+                    SrcOffset += ChunkSize;
+                }
+            }
+        }
+
+        Status = STATUS_SUCCESS;
+    }
+#else
     /* Attach to the system process */
     KeStackAttachProcess(&PsInitialSystemProcess->Pcb, &ApcState);
 
     /* Check if we need to load symbols */
     if (NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD)
     {
-        /* Yes we do */
         LoadSymbols = TRUE;
         NtGlobalFlag &= ~FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
     }
@@ -138,69 +286,15 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
     /* Check if we failed with distinguished status code */
     if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
     {
-        /* Change it to something more generic */
         Status = STATUS_INVALID_IMAGE_FORMAT;
     }
 
-    /* Now check if we failed */
     if (!NT_SUCCESS(Status))
     {
-        /* Detach and return */
         DPRINT1("MmMapViewOfSection failed with status 0x%x\n", Status);
         KeUnstackDetachProcess(&ApcState);
         return Status;
     }
-
-    /* Reserve system PTEs needed */
-    PteCount = ROUND_TO_PAGES(((PMM_IMAGE_SECTION_OBJECT)Section->Segment)->ImageInformation.ImageFileSize) >> PAGE_SHIFT;
-    PointerPte = MiReserveSystemPtes(PteCount, SystemPteSpace);
-    if (!PointerPte)
-    {
-        DPRINT1("MiReserveSystemPtes failed\n");
-        KeUnstackDetachProcess(&ApcState);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    /* New driver base */
-    LastPte = PointerPte + PteCount;
-    DriverBase = MiPteToAddress(PointerPte);
-
-    /* The driver is here */
-    *ImageBase = DriverBase;
-    DPRINT1("Loading: %wZ at %p with %lx pages\n", FileName, DriverBase, PteCount);
-
-    /* Lock the PFN database */
-    OldIrql = MiAcquirePfnLock();
-
-    /* Loop the new driver PTEs */
-    TempPte = ValidKernelPte;
-    while (PointerPte < LastPte)
-    {
-        /* Make sure the PTE is not valid for whatever reason */
-        ASSERT(PointerPte->u.Hard.Valid == 0);
-
-        /* Some debug stuff */
-        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
-#if MI_TRACE_PFNS
-        MI_SET_PROCESS_USTR(FileName);
-#endif
-
-        /* Grab a page */
-        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-
-        /* Initialize its PFN entry */
-        MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
-
-        /* Write the PTE */
-        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
-        MI_WRITE_VALID_PTE(PointerPte, TempPte);
-
-        /* Move on */
-        PointerPte++;
-    }
-
-    /* Release the PFN lock */
-    MiReleasePfnLock(OldIrql);
 
     /* Copy the image */
     RtlCopyMemory(DriverBase, Base, PteCount << PAGE_SHIFT);
@@ -211,6 +305,8 @@ MiLoadImageSection(_Inout_ PSECTION *SectionPtr,
 
     /* Detach and return status */
     KeUnstackDetachProcess(&ApcState);
+#endif
+
     return Status;
 }
 
@@ -857,6 +953,13 @@ MiSnapThunk(IN PVOID DllBase,
 
             /* Build the forwarder name */
             DllName.Buffer = (PCHAR)Address->u1.Function;
+
+            /* lld (llvm linker) prepends '_' to forwarded export DLL names
+             * on i386 (e.g. "_HAL.WRITE_PORT_UCHAR" instead of
+             * "HAL.WRITE_PORT_UCHAR"). Strip it so module lookup succeeds. */
+            if (DllName.Buffer[0] == '_' && strchr(DllName.Buffer + 1, '.'))
+                DllName.Buffer++;
+
             DllName.Length = (USHORT)(strchr(DllName.Buffer, '.') -
                                       DllName.Buffer) +
                                       sizeof(ANSI_NULL);
@@ -1931,6 +2034,32 @@ MiBuildImportsForBootDrivers(VOID)
     ULONG Modules = 0, i, j = 0;
     PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor;
 
+#ifdef _M_ARM64
+    extern volatile PVOID Arm64UartKernelBase;
+#define _DBG_TRACE(s) do { \
+        volatile ULONG *__u = (volatile ULONG *)Arm64UartKernelBase; \
+        const char *__p = (s); \
+        if (__u) { while (*__p) *__u = (ULONG)*__p++; } \
+    } while(0)
+#define _DBG_HEX(prefix, val) do { \
+        volatile ULONG *__u = (volatile ULONG *)Arm64UartKernelBase; \
+        const char *__p = (prefix); int __i; ULONG_PTR __v = (ULONG_PTR)(val); \
+        if (__u) { \
+            while (*__p) *__u = (ULONG)*__p++; \
+            *__u = (ULONG)'0'; *__u = (ULONG)'x'; \
+            for (__i = 60; __i >= 0; __i -= 4) { \
+                int __d = (__v >> __i) & 0xF; \
+                *__u = (ULONG)(__d < 10 ? '0' + __d : 'A' + __d - 10); \
+            } \
+            *__u = (ULONG)'\r'; *__u = (ULONG)'\n'; \
+        } \
+    } while(0)
+#else
+#define _DBG_TRACE(s) ((void)0)
+#define _DBG_HEX(prefix, val) ((void)0)
+#endif
+
+    _DBG_TRACE("[IMPORT] MiBuildImportsForBootDrivers enter\r\n");
     /* Initialize variables */
     KernelEntry = HalEntry = LastEntry = NULL;
 
@@ -1984,12 +2113,14 @@ MiBuildImportsForBootDrivers(VOID)
         Modules++;
     }
 
+    _DBG_HEX("[IMPORT] modules=", Modules);
     /* We must have at least found the kernel and HAL */
     if (!(HalEntry) || (!KernelEntry)) return STATUS_NOT_FOUND;
 
     /* Allocate the list */
     EntryArray = ExAllocatePoolWithTag(PagedPool, Modules * sizeof(PVOID), TAG_LDR_IMPORTS);
     if (!EntryArray) return STATUS_INSUFFICIENT_RESOURCES;
+    _DBG_HEX("[IMPORT] EntryArray=", (ULONG_PTR)EntryArray);
 
     /* Loop the loaded module list again */
     NextEntry = PsLoadedModuleList.Flink;
@@ -2008,6 +2139,7 @@ MiBuildImportsForBootDrivers(VOID)
         if (!ImageThunk)
 #else
         /* Get its imports */
+        _DBG_HEX("[IMPORT] DllBase=", (ULONG_PTR)LdrEntry->DllBase);
         ImportDescriptor = RtlImageDirectoryEntryToData(LdrEntry->DllBase,
                                                         TRUE,
                                                         IMAGE_DIRECTORY_ENTRY_IMPORT,
@@ -2017,6 +2149,7 @@ MiBuildImportsForBootDrivers(VOID)
         {
             /* None present */
             LdrEntry->LoadedImports = MM_SYSLDR_NO_IMPORTS;
+            _DBG_TRACE("[IMPORT] no imports\r\n");
             NextEntry = NextEntry->Flink;
             continue;
         }
@@ -2030,6 +2163,7 @@ MiBuildImportsForBootDrivers(VOID)
         for (i = 0, DllBase = 0, DllEnd = 0; i < ImportSize; i++, ImageThunk++)
 #else
         DllBase = DllEnd = i = 0;
+        _DBG_TRACE("[IMPORT] processing imports\r\n");
         while ((ImportDescriptor->Name) &&
                (ImportDescriptor->OriginalFirstThunk))
         {
@@ -2167,16 +2301,21 @@ MiBuildImportsForBootDrivers(VOID)
     }
 
     /* Free the initial array */
+    _DBG_TRACE("[IMPORT] loop done, freeing array\r\n");
     ExFreePoolWithTag(EntryArray, TAG_LDR_IMPORTS);
+    _DBG_TRACE("[IMPORT] ExFreePoolWithTag done\r\n");
 
     /* FIXME: Might not need to keep the HAL/Kernel imports around */
 
     /* Kernel and HAL are loaded at boot */
     KernelEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
     HalEntry->LoadedImports = MM_SYSLDR_BOOT_LOADED;
+    _DBG_TRACE("[IMPORT] MiBuildImportsForBootDrivers returning\r\n");
 
     /* All worked well */
     return STATUS_SUCCESS;
+#undef _DBG_TRACE
+#undef _DBG_HEX
 }
 
 CODE_SEG("INIT")
@@ -2316,11 +2455,37 @@ MiInitializeLoadedModuleList(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
         /* Insert the entry into the list */
         InsertTailList(&PsLoadedModuleList, &NewEntry->InLoadOrderLinks);
+#ifdef _M_ARM64
+        /* Trace module base addresses for crash symbolication */
+        ARM64_UART_TRACE_HEX("[MOD] base=", (ULONG_PTR)NewEntry->DllBase);
+        ARM64_UART_TRACE_HEX("[MOD] size=", NewEntry->SizeOfImage);
+        /* Print base name (WCHAR) as ASCII */
+        {
+            volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+            if (_u) {
+                PWCHAR _n = NewEntry->BaseDllName.Buffer;
+                USHORT _l = NewEntry->BaseDllName.Length / sizeof(WCHAR);
+                const char *_p = "[MOD] name=";
+                while (*_p) *_u = (ULONG)*_p++;
+                for (USHORT _i = 0; _i < _l && _n[_i]; _i++)
+                    *_u = (ULONG)(char)_n[_i];
+                *_u = '\r'; *_u = '\n';
+            }
+        }
+#endif
         NextEntry = NextEntry->Flink;
     }
 
     /* Build the import lists for the boot drivers */
     MiBuildImportsForBootDrivers();
+#ifdef _M_ARM64
+    {
+        extern volatile PVOID Arm64UartKernelBase;
+        volatile ULONG *_u = (volatile ULONG *)Arm64UartKernelBase;
+        const char *_s = "[IMPORT] MiBuildImports returned\r\n";
+        if (_u) { while (*_s) *_u = (ULONG)*_s++; }
+    }
+#endif
 
     /* We're done */
     return TRUE;
@@ -2464,9 +2629,17 @@ MiSetSystemCodeProtection(
         }
 
         /* Update the protection */
+#ifdef _M_ARM64
+        TempPte.u.Hard.Writable = BooleanFlagOn(Protection, IMAGE_SCN_MEM_WRITE);
+#else
         TempPte.u.Hard.Write = BooleanFlagOn(Protection, IMAGE_SCN_MEM_WRITE);
+#endif
 #if _MI_HAS_NO_EXECUTE
+#ifdef _M_ARM64
+        TempPte.u.Hard.UserNoExecute = !BooleanFlagOn(Protection, IMAGE_SCN_MEM_EXECUTE);
+#else
         TempPte.u.Hard.NoExecute = !BooleanFlagOn(Protection, IMAGE_SCN_MEM_EXECUTE);
+#endif
 #endif
 
         MI_UPDATE_VALID_PTE(PointerPte, TempPte);
@@ -3182,6 +3355,14 @@ LoaderScan:
         }
 
         /* Validate it */
+#ifdef _M_ARM64
+        /*
+         * Skip MmCheckSystemImage on ARM64: it maps via SEC_IMAGE into user
+         * space which returns corrupted data for large images (>1MB), and
+         * ZwUnmapViewOfSection hangs for the resulting ~17MB mapping.
+         * The actual loading via MiLoadImageSection uses kernel-space mapping.
+         */
+#else
         Status = MmCheckSystemImage(FileHandle);
         if ((Status == STATUS_IMAGE_CHECKSUM_MISMATCH) ||
             (Status == STATUS_IMAGE_MP_UP_MISMATCH) ||
@@ -3190,6 +3371,7 @@ LoaderScan:
             /* Fail loading */
             goto Quickie;
         }
+#endif
 
         /* Check if this is a session-load */
         if (Flags)

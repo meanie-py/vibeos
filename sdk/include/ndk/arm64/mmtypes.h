@@ -15,7 +15,17 @@ extern "C" {
 #define PAGE_SHIFT                        12L
 #define MM_ALLOCATION_GRANULARITY         0x10000
 #define MM_ALLOCATION_GRANULARITY_SHIFT   16L
-#define MM_PAGE_FRAME_NUMBER_SIZE         20
+#define MM_PAGE_FRAME_NUMBER_SIZE         36
+
+//
+// User space range limit
+//
+#define MI_HIGHEST_USER_ADDRESS         (PVOID)0x00007FFFFFFFF000ULL
+
+//
+// Address of the shared user page
+//
+#define MM_SHARED_USER_DATA_VA 0x7FFE0000ULL
 
 /* Following structs are based on WoA symbols */
 typedef struct _HARDWARE_PTE
@@ -88,7 +98,7 @@ typedef struct _MMPTE_PROTOTYPE
     ULONG64 Prototype:1;
     ULONG64 DemandFillProto:1;
     ULONG64 RsvdZ1:4;
-    ULONG64 ProtoAddress:48;
+    LONG64 ProtoAddress:48;
 } MMPTE_PROTOTYPE;
 
 typedef struct _MMPTE_SUBSECTION
@@ -101,7 +111,7 @@ typedef struct _MMPTE_SUBSECTION
     ULONG64 Prototype:1;
     ULONG64 ColdPage:1;
     ULONG64 RsvdZ2:4;
-    ULONG64 SubsectionAddress:48;
+    LONG64 SubsectionAddress:48;
 } MMPTE_SUBSECTION;
 
 typedef struct _MMPTE_TIMESTAMP
@@ -142,7 +152,10 @@ typedef struct _MMPTE
         MMPTE_SUBSECTION Subsect;
         MMPTE_LIST List;
     } u;
-} MMPTE, *PMMPTE;
+} MMPTE, *PMMPTE,
+  MMPDE, *PMMPDE,
+  MMPPE, *PMMPPE,
+  MMPXE, *PMMPXE;
 
 #ifdef __cplusplus
 }; // extern "C"

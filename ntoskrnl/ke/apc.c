@@ -12,6 +12,9 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 verbose APC traces removed — APC delivery confirmed working */
+#define _APC_TRACE(s) ((void)0)
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 /*++
@@ -743,8 +746,10 @@ KeInsertQueueApc(IN PKAPC Apc,
     ASSERT_APC(Apc);
     ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
 
+    _APC_TRACE("[APC] AcquireApcLock\r\n");
     /* Get the APC lock */
     KiAcquireApcLockRaiseToSynch(Thread, &ApcLock);
+    _APC_TRACE("[APC] ApcLock acquired\r\n");
 
     /* Make sure we can Queue APCs and that this one isn't already inserted */
     if (!(Thread->ApcQueueable) || (Apc->Inserted))
@@ -760,12 +765,17 @@ KeInsertQueueApc(IN PKAPC Apc,
         Apc->Inserted = TRUE;
 
         /* Call the Internal Function */
+        _APC_TRACE("[APC] KiInsertQueueApc\r\n");
         KiInsertQueueApc(Apc, PriorityBoost);
+        _APC_TRACE("[APC] KiInsertQueueApc done\r\n");
     }
 
     /* Release the APC lock and return success */
+    _APC_TRACE("[APC] ReleaseApcLock\r\n");
     KiReleaseApcLockFromSynchLevel(&ApcLock);
+    _APC_TRACE("[APC] KiExitDispatcher\r\n");
     KiExitDispatcher(ApcLock.OldIrql);
+    _APC_TRACE("[APC] KeInsertQueueApc done\r\n");
     return State;
 }
 
