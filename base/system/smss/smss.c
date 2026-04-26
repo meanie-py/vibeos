@@ -443,6 +443,9 @@ _main(IN INT argc,
     PROCESS_BASIC_INFORMATION ProcessInfo;
     UNICODE_STRING DbgString, InitialCommand;
 
+    /* Boot marker — proves SMSS user-mode code is running */
+    DbgPrint("[SMSS] _main entered\n");
+
     /* Make us critical */
     RtlSetProcessIsCritical(TRUE, NULL, FALSE);
     RtlSetThreadIsCritical(TRUE, NULL, FALSE);

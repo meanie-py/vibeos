@@ -125,6 +125,34 @@ def test_boot_and_serial(vm: QemuVM, arch: str) -> None:
             )
 
 
+def test_milestones(vm: QemuVM, arch: str) -> None:
+    """Verify all required boot milestones appear in serial output.
+
+    Each arch declares a list of substrings that must appear in the boot log
+    (e.g., '[SMSS] _main entered', 'shell ready'). This catches regressions
+    where the kernel boots silently or stops short of user mode without
+    triggering an explicit BUGCHECK.
+
+    Reports per-milestone reached/missed status — useful for tracking how far
+    a regressed boot makes it before going silent.
+    """
+    milestones = vm.config.required_milestones
+    if not milestones:
+        pytest.skip(f"no milestones configured for {arch}")
+
+    output = vm._boot_output or ""
+    missing = [m for m in milestones if m not in output]
+    reached = [m for m in milestones if m in output]
+
+    if missing:
+        report = ["Missing required boot milestones:"]
+        for m in milestones:
+            mark = "✓" if m in reached else "✗"
+            report.append(f"  {mark} {m}")
+        report.append(f"\nLast 500 chars of serial: {output[-500:]!r}")
+        pytest.fail("\n".join(report))
+
+
 def test_qmp_status(vm: QemuVM) -> None:
     """Verify QMP reports VM as running."""
     status = vm.qmp.execute("query-status")

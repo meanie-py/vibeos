@@ -415,15 +415,23 @@ impl MMPTE {
     // MMPTE_SOFTWARE accessors (soft/invalid PTE fields)
     // ========================================================================
 
-    /// Protection — bits [9:5] on all architectures
+    /// Protection field bit layout in MMPTE_SOFTWARE differs by architecture.
+    /// amd64/i386: bits 5..=9 (Valid:1, PageFileLow:4, Protection:5)
+    /// arm64: bits 1..=5 (Valid:1, Protection:5, PageFileLow:4) — see ndk/arm64/mmtypes.h
+    #[cfg(target_arch = "aarch64")]
+    const SOFT_PROTECTION_SHIFT: u32 = 1;
+    #[cfg(not(target_arch = "aarch64"))]
+    const SOFT_PROTECTION_SHIFT: u32 = 5;
+
     #[inline]
     pub fn soft_protection(&self) -> ULONG {
-        ((self.Long >> 5) & 0x1F) as ULONG
+        ((self.Long >> Self::SOFT_PROTECTION_SHIFT) & 0x1F) as ULONG
     }
 
     #[inline]
     pub fn set_soft_protection(&mut self, val: ULONG) {
-        self.Long = (self.Long & !(0x1F << 5)) | (((val as ULONG_PTR) & 0x1F) << 5);
+        let shift = Self::SOFT_PROTECTION_SHIFT;
+        self.Long = (self.Long & !(0x1F << shift)) | (((val as ULONG_PTR) & 0x1F) << shift);
     }
 
     /// PageFileHigh — bits [31:12] on i386, bits [63:32] on 64-bit
@@ -785,10 +793,12 @@ pub unsafe fn MI_ERASE_PTE(pte: PMMPTE) {
 }
 
 /// MI_MAKE_SOFTWARE_PTE — create a demand-zero PTE with given protection.
+/// Uses arch-aware shift since ARM64's MMPTE_SOFTWARE puts Protection at bit 1
+/// while amd64/i386 put it at bit 5.
 #[inline]
 pub fn MI_MAKE_SOFTWARE_PTE(pte: &mut MMPTE, protection: ULONG) {
-    // MM_PTE_SOFTWARE_PROTECTION_BITS is 5 on all architectures
-    pte.Long = (protection as usize) << 5;
+    pte.Long = 0;
+    pte.set_soft_protection(protection);
 }
 
 /// PTE_PER_PAGE
@@ -1016,6 +1026,14 @@ impl MMPFN {
 
 /// MiGetPfnEntry — returns PMMPFN from PFN number.
 /// Matches C version in mm.h: checks MmHighestPhysicalPage and MiPfnBitMap.
+///
+/// NOTE on ARM64: The MiPfnBitMap NULL-return path was disabled because callers
+/// (e.g., MiAllocatePoolPages) don't NULL-check and the QEMU virt physical
+/// memory map has gaps (firmware-reserved regions) where bitmap bits are clear
+/// but the PFN database entry exists. The C original has the same code but the
+/// gap PFNs apparently never reach this path on amd64/i386. Returning the
+/// `MmPfnDatabase[pfn]` pointer is safe because the database is sized for all
+/// PFNs 0..MmHighestPhysicalPage; gap entries are just zero-initialized.
 #[inline]
 pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
     extern "C" {
@@ -1024,10 +1042,13 @@ pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
     if pfn > MmHighestPhysicalPage {
         return core::ptr::null_mut();
     }
-    if !MiPfnBitMap.Buffer.is_null()
-        && crate::rtl::RtlTestBit(core::ptr::addr_of_mut!(MiPfnBitMap), pfn as ULONG) == 0
+    #[cfg(not(target_arch = "aarch64"))]
     {
-        return core::ptr::null_mut();
+        if !MiPfnBitMap.Buffer.is_null()
+            && crate::rtl::RtlTestBit(core::ptr::addr_of_mut!(MiPfnBitMap), pfn as ULONG) == 0
+        {
+            return core::ptr::null_mut();
+        }
     }
     MmPfnDatabase.add(pfn)
 }

@@ -1966,9 +1966,17 @@ pub unsafe extern "system" fn MmArmAccessFault(
         return STATUS_SUCCESS;
     }
 
-    // MM_PTE_SOFTWARE_PROTECTION_BITS = 5 on all architectures
-    if (TempPte.Long == ((MM_READWRITE as ULONG_PTR) << 5)) || (TempPte.Long == ((MM_EXECUTE_READWRITE as ULONG_PTR) << 5)) {
-        Status = MiResolveDemandZeroFault(Address, PointerPte, TempPte.soft_protection(), CurrentProcess, MM_NOIRQL);
+    // Demand-zero soft PTE check: only Valid bit clear and only Protection field set.
+    // We compare via the bitfield accessor to avoid hardcoding a per-arch shift —
+    // ARM64's struct puts Protection at bit 1 while amd64/i386 put it at bit 5.
+    {
+        let prot = TempPte.soft_protection() as ULONG;
+        let mut bare = MMPTE { Long: 0 };
+        bare.set_soft_protection(prot);
+        let is_demand_zero = TempPte.Long == bare.Long
+            && (prot == MM_READWRITE || prot == MM_EXECUTE_READWRITE);
+        if is_demand_zero {
+        Status = MiResolveDemandZeroFault(Address, PointerPte, prot, CurrentProcess, MM_NOIRQL);
         if Status < 0 {
             break 'exit_user;
         }
@@ -1983,6 +1991,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
         return STATUS_PAGE_FAULT_DEMAND_ZERO;
+        }
     }
 
     if TempPte.Long == 0 {

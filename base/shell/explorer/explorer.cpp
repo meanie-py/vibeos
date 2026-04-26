@@ -263,6 +263,9 @@ _tWinMain(IN HINSTANCE hInstance,
           IN LPTSTR lpCmdLine,
           IN INT nCmdShow)
 {
+    /* Boot marker — proves EXPLORER user-mode code is running */
+    OutputDebugStringA("[EXPLORER] _tWinMain entered\n");
+
     /*
     * Set our shutdown parameters: we want to shutdown the very last,
     * but before any TaskMgr instance (which has a shutdown level of 1).

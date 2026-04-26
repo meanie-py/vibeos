@@ -49,7 +49,8 @@ _main(int argc,
     UNREFERENCED_PARAMETER(envp);
     UNREFERENCED_PARAMETER(DebugFlag);
 
-    DPRINT1("CSRSS: _main() entered, argc=%d\n", argc);
+    /* Boot marker — proves CSRSS user-mode code is running */
+    DbgPrint("[CSRSS] _main entered (argc=%d)\n", argc);
 
     /* Set the base priority */
     NtSetInformationProcess(NtCurrentProcess(),

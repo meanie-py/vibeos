@@ -34,6 +34,10 @@ class ArchConfig:
     # The boot marker proves the kernel booted; this extra time lets
     # user-mode processes (SMSS, csrss, winlogon, explorer) finish.
     desktop_settle_seconds: float = 0.0
+    # Milestones expected to appear in the boot output (substring match).
+    # Validated by test_milestones after wait_for_boot completes.
+    # Order is informational — we report which milestones were reached / missed.
+    required_milestones: list[str] = field(default_factory=list)
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -49,11 +53,28 @@ class Arm64Config(ArchConfig):
         "-accel", "tcg,thread=multi",
     ])
     memory: str = "1G"
-    boot_marker: str = ""  # idle detection
+    # Wait for SMSS user-mode dispatch to be set up. This proves the kernel
+    # got to user-mode entry — currently the highest reliably-reached point
+    # on ARM64. SMSS doesn't currently reach its _main (LdrInitializeThunk
+    # appears to fail silently). Idle detection alone is too weak — every
+    # silent kernel passes.
+    boot_marker: str = "[PS] PspUserThreadStartup: returning"
     boot_timeout: float = 300.0
     min_boot_bytes: int = 5000
     qmp_timeout: float = 10.0
     desktop_settle_seconds: float = 30.0
+    # Aspirational chain — test_milestones reports each as reached/missed.
+    # Currently the [SMSS]+ markers do not fire on ARM64; that's the bug.
+    required_milestones: list[str] = field(default_factory=lambda: [
+        "[KERNEL] KiSystemStartup entered",
+        "IoInitSystem returning TRUE",
+        "[PS] PspUserThreadStartup: returning",
+        "[SMSS] _main entered",
+        "[CSRSS] _main entered",
+        "[WINLOGON] WinMain entered",
+        "[EXPLORER] _tWinMain entered",
+        "shell ready",
+    ])
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         boot_img = QEMU_DIR / "boot.img"
@@ -90,6 +111,13 @@ class I386Config(ArchConfig):
     boot_timeout: float = 360.0
     min_boot_bytes: int = 500
     desktop_settle_seconds: float = 5.0
+    required_milestones: list[str] = field(default_factory=lambda: [
+        "[SMSS] _main entered",
+        "[CSRSS] _main entered",
+        "[WINLOGON] WinMain entered",
+        "[EXPLORER] _tWinMain entered",
+        "shell ready",
+    ])
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-i386" / "livecd.iso"
@@ -113,6 +141,13 @@ class Amd64Config(ArchConfig):
     boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
     desktop_settle_seconds: float = 5.0
+    required_milestones: list[str] = field(default_factory=lambda: [
+        "[SMSS] _main entered",
+        "[CSRSS] _main entered",
+        "[WINLOGON] WinMain entered",
+        "[EXPLORER] _tWinMain entered",
+        "shell ready",
+    ])
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
