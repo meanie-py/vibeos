@@ -1,130 +1,96 @@
-<p align=center>
-  <a href="https://reactos.org/">
-    <img alt="ReactOS" src="https://reactos.org/wiki/images/0/02/ReactOS_logo.png">
-  </a>
-</p>
+# vibeos
+
+> *An operating system for nobody.*
+
+An AI-vibecoded fork of [ReactOS](https://reactos.org/) that ports the kernel to ARM64 and rewrites most of it in Rust — for fun, for science, and for absolutely no practical purpose.
+
+> [!CAUTION]
+> **Do not use this for anything. Ever.**
+>
+> This is an experimental research toy generated largely by LLMs (Claude, Codex, Gemini) running automated translation pipelines against the ReactOS C source. The kernel is held together by static analyzers, smoke tests, and `#[no_mangle]` incantations. **It is significantly less production-ready than upstream ReactOS, which is itself alpha-quality and explicitly warns against use on real hardware with real data.**
+>
+> If ReactOS says "may corrupt your hard disk," vibeos says "will absolutely brick your VM, eat your data, summon undefined behavior, and generate ud2 instructions in functions LLVM has decided are unreachable." Run it in a throwaway QEMU and nowhere else.
 
 ---
 
-<p align=center>
-  <a href="https://reactos.org/project-news/reactos-0415-released/">
-    <img alt="ReactOS 0.4.15 Release" src="https://img.shields.io/badge/release-0.4.15-0688CB.svg"></a>
-  <a href="https://reactos.org/download/">
-    <img alt="Download ReactOS" src="https://img.shields.io/badge/download-latest-0688CB.svg"></a>
-  <a href="https://sourceforge.net/projects/reactos/">
-    <img alt="SourceForge Download" src="https://img.shields.io/sourceforge/dm/reactos.svg?colorB=0688CB"></a>
-  <a href="https://github.com/reactos/reactos/blob/master/COPYING">
-    <img alt="License" src="https://img.shields.io/badge/license-GNU_GPL_2.0-0688CB.svg"></a>
-  <a href="https://reactos.org/donate/">
-    <img alt="Donate" src="https://img.shields.io/badge/%24-donate-E44E4A.svg"></a>
-  <a href="https://twitter.com/reactos">
-    <img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/reactos.svg?style=social&label=Follow%20%40reactos"></a>
-</p>
+## Screenshots
 
-## Quick Links
-[Website](https://reactos.org/) &bull;
-[Official chat](https://chat.reactos.org/) &bull;
-[Wiki](https://reactos.org/wiki/) &bull;
-[Forum](https://reactos.org/forum/) &bull;
-[Community Discord](https://discord.gg/7knjvhT) &bull;
-[JIRA Bug Tracker](https://jira.reactos.org/issues/) &bull;
-[ReactOS Git mirror](https://git.reactos.org/) &bull;
-[Testman](https://reactos.org/testman/)
+| i386 LiveCD desktop | amd64 LiveCD desktop |
+|---|---|
+| ![i386 desktop](docs/screenshots/i386_desktop.png) | ![amd64 desktop](docs/screenshots/amd64_desktop.png) |
 
-## What is ReactOS?
+| ARM64 desktop (virtio mouse) | ARM64 Notepad (serial keyboard) |
+|---|---|
+| ![ARM64 desktop](docs/screenshots/arm64_desktop.png) | ![ARM64 notepad](docs/screenshots/arm64_notepad.png) |
 
-ReactOS™ is an Open Source effort to develop a quality operating system that is compatible with applications and drivers written for the Microsoft® Windows™ NT family of operating systems (NT4, 2000, XP, 2003, Vista, 7).
+All three architectures boot to a graphical desktop in QEMU. ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. The Notepad screenshot is from milestone M29 (interactive input over serial); the desktop screenshot is from M31 (real virtio-input devices via `qemu --gui`).
 
-The ReactOS project, although currently focused on Windows Server 2003 compatibility, is always keeping an eye toward compatibility with Windows Vista and future Windows NT releases.
+---
 
-The code of ReactOS is licensed under [GNU GPL 2.0](https://github.com/reactos/reactos/blob/master/COPYING).
+## What this is
 
-### Product quality warning
+A multi-architecture port of ReactOS — an open-source Windows-compatible operating system — with two parallel goals:
 
-**ReactOS is currently an Alpha quality operating system.** This means that ReactOS is under heavy development and you have to be ready to encounter some problems. Different things may not work well and it can corrupt the data present on your hard disk. It is HIGHLY recommended to test ReactOS on a virtual machine or on a computer with no sensitive or critical data!
+1. **ARM64 port.** Cross-compile the entire NT-compatible kernel and userspace to AArch64 PE-COFF using `llvm-mingw`. Boot under QEMU `virt` to a Win32 desktop with virtio mouse/keyboard. Also retains amd64 and i386 builds; all three target zero build failures and pass smoke tests independently.
+2. **Rust in the kernel.** Translate the C source of `ntoskrnl` to Rust subsystem-by-subsystem using an automated LLM pipeline (`tools/rustconv/`), then link the result into the kernel as a static library. Currently around **80% of the kernel** (~344K lines) is Rust — including the full `ob`, `se`, `ps`, `ex`, `ke`, `mm`, `cc`, `fsrtl`, `lpc`, `dbgk`, `po`, `wmi`, `vdm`, `vf`, and `rtl` subsystems, plus the pool allocator and the SLIST / bitmap primitives.
 
-## Building
+The translation pipeline produces transliterated Rust that mostly preserves the original C structure, with subsequent passes for probe migration, RAII guards, and idiomatic NTSTATUS handling. It is held together by:
 
-![Build](https://github.com/reactos/reactos/workflows/Build/badge.svg) [![rosbewin.badge]][rosbewin.link] [![rosbeunix.badge]][rosbeunix.link] [![coverity.badge]][coverity.link]
+- ~1,500 compile-time struct layout assertions per architecture (bindgen-generated).
+- A custom static-analysis suite (`scan_ud2.py`, `lint_kernel.py`, `verify_constants.py`, `verify_ffi.py`, `verify_abi.py`) for catching LLVM miscompilations and FFI mismatches.
+- QEMU smoke tests (`tests/qemu/test_smoke.py`) that boot each arch end-to-end and require a graphical desktop to count as passing.
 
-To build the system it is strongly advised to use the _ReactOS Build Environment (RosBE)._
-Up-to-date versions for Windows and for Unix/GNU-Linux are available from our download page at: ["Build Environment"](https://reactos.org/wiki/Build_Environment).
+## What this is *not*
 
-Alternatively one can use Microsoft Visual C++ (MSVC) version 2019+. Building with MSVC is covered here: ["Visual Studio or Microsoft Visual C++"](https://reactos.org/wiki/CMake#Visual_Studio_or_Microsoft_Visual_C.2B.2B).
+- A usable operating system.
+- A drop-in replacement for ReactOS — most of the value here is in the experimental scaffolding (translation pipeline, multi-arch toolchain, smoke harness), not the resulting binaries.
+- An attempt to compete with, replace, or upstream into ReactOS. Branding, donation links, and project infrastructure from upstream have been stripped because none of it applies to this fork. The original code is GPL-2.0; see [`COPYING`](COPYING).
+- Affiliated with or endorsed by ReactOS, the ReactOS Foundation, Microsoft, or anyone else with a legal department.
 
-See ["Building ReactOS"](https://reactos.org/wiki/Building_ReactOS) article for more details.
+## Status
 
-### Binaries
+> [!NOTE]
+> **Active development is currently paused.** The repo is in a known-good state (all three architectures pass smoke tests; the most recent work re-enabled the Rust `iofunc.rs` and `arcname.rs` translations in the IO manager). It may resume eventually if I get bored of having free time.
 
-To build ReactOS you must run the `configure` script in the directory you want to have your build files. Choose `configure.cmd` or `configure.sh` depending on your system. Then run `ninja <modulename>` to build a module you want or just `ninja` to build all modules.
+Current snapshot:
 
-### Bootable images
+- **Architectures:** ARM64, amd64, i386 — all three build cleanly from Linux/WSL2 with the unified `llvm-mingw` toolchain.
+- **Boot status:** All three boot to a graphical desktop in QEMU. ARM64 has interactive input via virtio. amd64 has a known regression where the explorer taskbar doesn't render (desktop paints, but shell UI is missing). i386 boots fully.
+- **Smoke tests:** 6/6 passing on i386 and amd64. ARM64 has a stale-ramdisk pre-existing failure unrelated to current work.
+- **Rust coverage:** ~80% of `ntoskrnl` translated. Remaining C: `config/` (registry CM, ~19K lines — last major holdout), `fstub/` (disk partitioning, ~6K), `kd64/` (translated but disabled due to a recursive-exception bug on amd64), and a few KDBG/KD debug helpers.
+- **Known active bugs:** LLVM `captures(none)` interaction with kernel volatile semantics is the single largest source of bugs, mitigated by `opaque_ptr` barriers on ~2,500 `#[no_mangle]` functions and `codegen-units=16`. CGU=1 still produces ~15 unexpected `ud2` instructions due to interprocedural noreturn contagion; the workaround is documented but not yet fixed at the root.
 
-To build a bootable CD image run `ninja bootcd` from the build directory. This will create a CD image with a filename `bootcd.iso`.
+For a deeper look, see:
 
-You can always download fresh binary builds of bootable images from the ["Daily builds"](https://reactos.org/getbuilds/) page.
+- [`docs/product/status-update.md`](docs/product/status-update.md) — IO subsystem status board
+- [`docs/product/vibeos-roadmap.md`](docs/product/vibeos-roadmap.md) — what this could become
+- [`docs/product/vibeos-roadmap-complete.md`](docs/product/vibeos-roadmap-complete.md) — what's already shipped
+- [`docs/engineering/`](docs/engineering/) — debug briefs, translation audits, kernel-Rust patterns
+- [`AGENTS.md`](AGENTS.md) — the long-form context document used by AI agents working on this repo (also the best single-page summary of how everything fits together)
 
-## Installing
+## Building (for the curious)
 
-By default, ReactOS currently can only be installed on a machine that has a FAT16 or FAT32 partition as the active (bootable) partition.
-The partition on which ReactOS is to be installed (which may or may not be the bootable partition) must also be formatted as FAT16 or FAT32.
-ReactOS Setup can format the partitions if needed.
+Requires `llvm-mingw` (Clang 19+), `windmc` from Homebrew `mingw-w64`, `cargo` with the `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu`, and `i686-pc-windows-gnu` targets, plus `qemu-system-{aarch64,x86_64,i386}`. See [`AGENTS.md`](AGENTS.md) for the full setup.
 
-Starting with 0.4.10, ReactOS can be installed using the BtrFS file system. But consider this as an experimental feature and thus regressions not triggered on FAT setup may be observed.
+```bash
+# ARM64 (UEFI ramdisk boot)
+cd build-arm64 && ninja
+bash qemu/run.sh --arch arm64 --gui
 
-To install ReactOS from the bootable CD distribution, extract the archive contents. Then burn the CD image, boot from it, and follow the instructions.
+# amd64 (LiveCD ISO)
+cd build-amd64 && ninja livecd
+bash qemu/run.sh --arch amd64
 
-See ["Installing ReactOS"](https://reactos.org/wiki/Installing_ReactOS) Wiki page or [INSTALL](INSTALL) for more details.
+# i386 (LiveCD ISO)
+cd build-i386 && ninja livecd
+bash qemu/run.sh --arch i386
 
-## Testing
+# Smoke tests (requires Python venv)
+pytest tests/qemu/test_smoke.py -v --arch i386
+```
 
-If you discover a bug in ReactOS search on JIRA first - it might be reported already. If not report the bug providing logs and as much information as possible.
+## License
 
-See ["File Bugs"](https://reactos.org/wiki/File_Bugs) for a guide.
+The original ReactOS code is licensed under [GNU GPL 2.0](COPYING). All modifications in this fork inherit that license.
 
-__NOTE:__ The bug tracker is _not_ for discussions. Please use our [official chat](https://chat.reactos.org/) or our [forum](https://reactos.org/forum/).
-
-## Contributing  [![prwelcome.badge]](https://reactos.org/wiki/Commiting_Changes)
-
-We are always looking for developers! Check [how to contribute](CONTRIBUTING.md) if you are willing to participate.
-
-__Legal notice__: If you have seen proprietary Microsoft Windows source code (including but not limited to the leaked Windows NT 3.5, NT 4, 2000 source code and the Windows Research Kernel), your contribution won't be accepted because of potential copyright violation.
-
-Try out cloud-based ReactOS development using Gitpod and Docker:
-
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/reactos/reactos)
-
-You can also support ReactOS by [donating](https://reactos.org/donate/)! We rely on our backers to maintain our servers and accelerate development by [hiring full-time devs](https://reactos.org/contributing/#paid-jobs).
-
-## More information
-
-ReactOS is a Free and Open Source operating system based on the Windows architecture,
-providing support for existing applications and drivers, and an alternative to the current dominant consumer operating system.
-
-It is not another wrapper built on Linux, like WINE. It does not attempt or plan to compete with WINE; in fact, the user-mode part of ReactOS is almost entirely WINE-based and our two teams have cooperated closely in the past.
-
-ReactOS is also not "yet another OS". It does not attempt to be a third player like any other alternative OS out there. People are not meant to uninstall Linux and use ReactOS instead; ReactOS is a replacement for Windows users who want a Windows replacement that behaves just like Windows.
-
-More information is available at: [reactos.org](https://reactos.org/).
-
-Also see the [media/doc](/media/doc/) subdirectory for some sparse notes.
-
-## Who is responsible
-
-Active devs are listed as members of [GitHub organization](https://github.com/orgs/reactos/people).
-See also the [CREDITS](CREDITS) file for others.
-
-## Code mirrors
-
-The main development is done on [GitHub](https://github.com/reactos/reactos). We have an [alternative mirror](https://git.reactos.org/?p=reactos.git) in case GitHub is down.
-
-There is also an obsolete [SVN archive repository](https://svn.reactos.org/reactos/) that is kept for historical purposes.
-
-[coverity.badge]:   https://scan.coverity.com/projects/205/badge.svg?flat=1
-[rosbewin.badge]:   https://img.shields.io/badge/RosBE_Windows-2.2.1-0688CB.svg
-[rosbeunix.badge]:  https://img.shields.io/badge/RosBE_Unix-2.2.1-0688CB.svg
-[prwelcome.badge]:  https://img.shields.io/badge/PR-welcome-0688CB.svg
-
-[coverity.link]:    https://scan.coverity.com/projects/205
-[rosbewin.link]:    https://sourceforge.net/projects/reactos/files/RosBE-Windows/i386/2.2.1/
-[rosbeunix.link]:   https://sourceforge.net/projects/reactos/files/RosBE-Unix/2.2.1/
+The vibecoded slop is provided as-is, with no warranty of any kind, and in particular no warranty that the code does what its function names suggest.
