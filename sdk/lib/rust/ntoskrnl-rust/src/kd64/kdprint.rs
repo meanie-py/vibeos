@@ -65,7 +65,15 @@ const STATUS_BREAKPOINT: NTSTATUS = 0x80000003u32 as NTSTATUS;
 pub unsafe extern "system" fn KdpMoveMemory(dst: PVOID, src: PVOID, len: usize) {
     let dst = opaque_ptr(dst);
     let src = opaque_ptr(src);
-    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
+    let mut dst = dst as *mut u8;
+    let mut src = src as *const u8;
+    let mut len = len;
+    while len > 0 {
+        *dst = *src;
+        dst = dst.add(1);
+        src = src.add(1);
+        len -= 1;
+    }
 }
 
 fn min(a: usize, b: usize) -> usize {

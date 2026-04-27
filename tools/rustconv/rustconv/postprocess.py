@@ -671,6 +671,40 @@ def fix_self_imports(code: str) -> str:
 # Callback calling convention fixes
 # ============================================================================
 
+def _split_extern_decls(inner_lines: list[str]) -> list[tuple[str, str]]:
+    """Split the inner lines of an `extern "..." { ... }` block into a list of
+    (kind, text) entries, where kind is 'comment' or 'decl'.
+
+    Standalone `//` line comments (i.e. comments that sit between declarations,
+    not interleaved inside a multi-line declaration) are preserved as their own
+    'comment' entries so callers can pass them through dedup unchanged.
+    Multi-line declarations split across newlines for formatting are joined
+    back into a single `decl` entry, terminated by `;`.
+
+    Note: comments interleaved inside a multi-line declaration (between the
+    opening `(` and the trailing `;`) are still folded into the joined text —
+    that case is rare in extern blocks and not the target of this helper.
+    """
+    out: list[tuple[str, str]] = []
+    current = ""
+    for line in inner_lines:
+        s = line.strip()
+        if not s:
+            continue
+        # A `//` line that appears between declarations (i.e. not while we are
+        # mid-way through accumulating a declaration) is a standalone comment.
+        if s.startswith('//') and not current:
+            out.append(('comment', s))
+            continue
+        current = (current + " " + s).strip() if current else s
+        if current.endswith(';'):
+            out.append(('decl', current))
+            current = ""
+    if current:
+        out.append(('decl', current))
+    return out
+
+
 def fix_extern_vs_local_dups(code: str) -> str:
     """Remove extern block declarations for functions also defined locally.
 
@@ -736,36 +770,26 @@ def fix_extern_vs_local_dups(code: str) -> str:
             return block
 
         decls_text = inner.group(1)
-        # Join multi-line declarations
-        joined = []
-        current = ""
-        for line in decls_text.splitlines():
-            s = line.strip()
-            if not s:
-                continue
-            current = (current + " " + s).strip() if current else s
-            if current.endswith(';'):
-                joined.append(current)
-                current = ""
-        if current:
-            joined.append(current)
+        entries = _split_extern_decls(decls_text.splitlines())
 
-        # Filter out declarations matching local function names
-        filtered = []
-        for decl in joined:
-            fn_m = re.match(r'fn\s+(\w+)\s*\(', decl.strip())
-            if fn_m and fn_m.group(1) in local_fn_names:
-                continue  # Remove this extern decl — defined locally
-            filtered.append(decl)
+        # Filter out declarations matching local function names; keep comments.
+        filtered: list[tuple[str, str]] = []
+        for kind, text in entries:
+            if kind == 'decl':
+                fn_m = re.match(r'fn\s+(\w+)\s*\(', text)
+                if fn_m and fn_m.group(1) in local_fn_names:
+                    continue  # Remove this extern decl — defined locally
+            filtered.append((kind, text))
 
-        if not filtered:
-            return ""  # Remove entire empty extern block
-        if len(filtered) == len(joined):
+        # Drop the block entirely if nothing but comments would remain.
+        if not any(k == 'decl' for k, _ in filtered):
+            return ""
+        if len(filtered) == len(entries):
             return block  # Nothing changed
 
         result = header + "\n"
-        for decl in filtered:
-            result += f"    {decl}\n"
+        for _, text in filtered:
+            result += f"    {text}\n"
         result += "}"
         return result
 
@@ -953,43 +977,34 @@ def fix_duplicate_extern_decls(code: str) -> str:
             footer = block_lines[-1] if len(block_lines) > 1 else ""
             inner_lines = block_lines[1:-1] if len(block_lines) > 2 else []
 
-            # Join multi-line declarations
-            joined_decls = []
-            current = ""
-            for inner_line in inner_lines:
-                s = inner_line.strip()
-                if not s:
-                    continue
-                current = (current + " " + s).strip() if current else s
-                if current.endswith(';'):
-                    joined_decls.append(current)
-                    current = ""
-            if current:
-                joined_decls.append(current)
+            entries = _split_extern_decls(inner_lines)
 
-            # Filter duplicates by symbol name
-            deduped = []
-            for decl in joined_decls:
-                fn_m = re.match(r'fn\s+(\w+)\s*\(', decl.strip())
-                static_m = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', decl.strip())
-                if fn_m:
-                    name = fn_m.group(1)
-                    if name in seen_extern_fns:
-                        continue  # skip duplicate
-                    seen_extern_fns[name] = len(result)
-                elif static_m:
-                    name = static_m.group(1)
-                    if name in seen_extern_statics:
-                        continue
-                    seen_extern_statics[name] = len(result)
-                deduped.append(decl)
+            # Filter duplicates by symbol name; pass comments through unchanged.
+            deduped: list[tuple[str, str]] = []
+            for kind, text in entries:
+                if kind == 'decl':
+                    fn_m = re.match(r'fn\s+(\w+)\s*\(', text)
+                    static_m = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', text)
+                    if fn_m:
+                        name = fn_m.group(1)
+                        if name in seen_extern_fns:
+                            continue  # skip duplicate
+                        seen_extern_fns[name] = len(result)
+                    elif static_m:
+                        name = static_m.group(1)
+                        if name in seen_extern_statics:
+                            continue
+                        seen_extern_statics[name] = len(result)
+                deduped.append((kind, text))
 
-            if deduped:
+            # Emit only if there is at least one real declaration left;
+            # an extern block of just comments would be useless and odd.
+            if any(k == 'decl' for k, _ in deduped):
                 result.append(header)
-                for decl in deduped:
-                    result.append(f"    {decl}")
+                for _, text in deduped:
+                    result.append(f"    {text}")
                 result.append("}")
-            # else: skip empty extern block entirely
+            # else: skip the block entirely
         else:
             result.append(line)
             i += 1

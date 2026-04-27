@@ -1,14 +1,16 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use ntkrnl_sys::globals::KD_BREAKPOINT_TYPE;
 use ntkrnl_sys::ke::*;
 use crate::ke::clock::KeTimeIncrement;
 use crate::ke::krnlinit::{KiProcessorBlock, KeLoaderBlock};
 
 use ntkrnl_sys::ddk::{
     _CONTEXT, _EPROCESS, _ETHREAD, _KAPC_STATE, _KPRCB,
-    BREAKPOINT_ENTRY, DBGKD_GET_VERSION64, DBGKD_SIMULATION_NONE, HANDLE,
-    KD_CONTEXT, KPCR, KPROCESS, KPROCESSOR_MODE, KPROCESSOR_STATE, KTHREAD, KTIMER,
-    LARGE_INTEGER, LIST_ENTRY, LUID, PCONTEXT, PEXCEPTION_RECORD,
+    BREAKPOINT_ENTRY, DBGKD_DEBUG_DATA_HEADER64, DBGKD_GET_VERSION64,
+    DBGKD_SIMULATION_NONE, KD_CONTEXT, KPCR, KPROCESS, KPROCESSOR_MODE,
+    KPROCESSOR_STATE, KTHREAD, KTIMER, LARGE_INTEGER, LIST_ENTRY, LUID,
+    PCONTEXT, PEXCEPTION_RECORD,
     PKDEBUG_ROUTINE, PKEXCEPTION_FRAME, PKEVENT, PKTRAP_FRAME, ULONG64,
     WORK_QUEUE_ITEM, KCALLOUT_FRAME,
     _DEVICE_POWER_STATE_PowerDeviceD0, _DEVICE_POWER_STATE_PowerDeviceD1,
@@ -232,9 +234,10 @@ struct KDDEBUGGER_DATA64 {
 
 const PAGE_SIZE: ULONG = 4096;
 
-const KD_BREAKPOINT_VALUE: u8 = 0xCC;
-
-type KD_BREAKPOINT_TYPE = u8;
+#[cfg(target_arch = "aarch64")]
+const KD_BREAKPOINT_VALUE: KD_BREAKPOINT_TYPE = 0xD4200000;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+const KD_BREAKPOINT_VALUE: KD_BREAKPOINT_TYPE = 0xCC;
 
 #[no_mangle]
 pub static mut KdpContext: KD_CONTEXT = unsafe { core::mem::zeroed() };
@@ -1037,7 +1040,7 @@ pub static mut KdVersionBlock: DBGKD_GET_VERSION64 = DBGKD_GET_VERSION64 {
 #[repr(C)]
 #[allow(non_snake_case)]
 struct KDDEBUGGER_DATA64_FULL {
-    Header: [u64; 4],
+    Header: DBGKD_DEBUG_DATA_HEADER64,
     KernBase: u64,
     BreakpointWithStatus: u64,
     SavedContext: u64,

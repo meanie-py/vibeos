@@ -50,7 +50,8 @@ qemu/reactos_*.qcow2
 # Claude Code runtime state (lock files, agent scratch, project memory)
 .claude/
 
-# OpenAI Codex runtime state
+# OpenAI Codex runtime state (codex creates both .codex/ dir and .codex file)
+.codex
 .codex/
 
 # Host tools cmake artifacts (from in-tree configure)

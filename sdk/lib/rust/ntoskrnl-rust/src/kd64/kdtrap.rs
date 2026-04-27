@@ -66,6 +66,30 @@ unsafe fn KdpGetParameterFour(context: PCONTEXT) -> u64 {
     (*context).__bindgen_anon_1.__bindgen_anon_1.X3
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+unsafe fn KdpReadPortUchar(port: u16) -> UCHAR {
+    let value: UCHAR;
+    core::arch::asm!(
+        "in al, dx",
+        in("dx") port,
+        out("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
+    value
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+unsafe fn KdpWritePortUchar(port: u16, value: UCHAR) {
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") port,
+        in("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
+}
+
 extern "system" {
     static NtGlobalFlag: ULONG;
     static mut KdpControlCPressed: BOOLEAN;
@@ -102,6 +126,32 @@ pub unsafe extern "system" fn KdpReport(
     let exception_code: NTSTATUS;
 
     exception_code = (*ExceptionRecord).ExceptionCode;
+
+    if exception_code == STATUS_ASSERTION_FAILURE && SecondChanceException == 0 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            KeSetContextPc(ContextRecord, KeGetContextPc(ContextRecord).wrapping_add(2));
+            return 1;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            KeSetContextPc(ContextRecord, KeGetContextPc(ContextRecord).wrapping_add(4));
+            return 1;
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if exception_code == STATUS_BREAKPOINT && SecondChanceException == 0 {
+        let ip = KeGetContextPc(ContextRecord) as *const UCHAR;
+        if core::ptr::read(ip) == 0xCC
+            && core::ptr::read(ip.add(1)) == 0xCD
+            && core::ptr::read(ip.add(2)) == 0x2C
+        {
+            KeSetContextPc(ContextRecord, KeGetContextPc(ContextRecord).wrapping_add(1));
+            return 1;
+        }
+    }
+
     if (exception_code == STATUS_BREAKPOINT)
         || (exception_code == STATUS_SINGLE_STEP)
         || (exception_code == STATUS_ASSERTION_FAILURE)
@@ -277,6 +327,21 @@ pub unsafe extern "system" fn KdpStub(
             || (exception_command == BREAKPOINT_COMMAND_STRING)
             || (exception_command == BREAKPOINT_PRINT))
     {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if exception_command == BREAKPOINT_PRINT {
+            let buffer = (*ExceptionRecord).ExceptionInformation[1] as *const UCHAR;
+            let length = (*ExceptionRecord).ExceptionInformation[2] as USHORT;
+            let lcr = KdpReadPortUchar(0x3FB);
+            if (lcr & 0x80) != 0 {
+                KdpWritePortUchar(0x3FB, lcr & 0x7F);
+            }
+            let mut i: USHORT = 0;
+            while i < length {
+                KdpWritePortUchar(0x3F8, *buffer.add(i as usize));
+                i += 1;
+            }
+        }
+
         KeSetContextPc(
             ContextRecord,
             KeGetContextPc(ContextRecord) + KD_BREAKPOINT_SIZE as ULONG_PTR,

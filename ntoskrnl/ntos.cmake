@@ -46,8 +46,9 @@ else()
 endif()
 
 list(APPEND SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/io.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/sptab.c
+    # cache/section/io.c + sptab.c — replaced by Rust mm/section_io.rs + mm/section_table.rs.
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/io.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/sptab.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmalloc.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmapi.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c

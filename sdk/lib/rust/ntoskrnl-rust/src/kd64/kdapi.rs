@@ -12,6 +12,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::processor::KeNumberProcessors;
 use crate::ke::krnlinit::KiProcessorBlock;
+use crate::kd64::kdtrap::KdpStub;
 
 use ntkrnl_sys::ddk::{
     CONTEXT,
@@ -62,6 +63,8 @@ use ntkrnl_sys::ddk::{
     PDBGKD_WRITE_MEMORY64,
     PEXCEPTION_RECORD,
     PKDPC,
+    PKDEBUG_ROUTINE,
+    PKD_SYMBOLS_INFO,
     PKPRCB,
     PMDL,
     PSTRING,
@@ -75,6 +78,12 @@ use ntkrnl_sys::ddk::{
     DEVICE_POWER_STATE,
     _FIRMWARE_REENTRY_HalRebootRoutine,
     SYSDBG_COMMAND,
+    SYSDBG_BUS_DATA,
+    SYSDBG_CONTROL_SPACE,
+    SYSDBG_IO_SPACE,
+    SYSDBG_MSR,
+    SYSDBG_PHYSICAL,
+    SYSDBG_VIRTUAL,
     PSYSDBG_VIRTUAL,
     PSYSDBG_PHYSICAL,
     PSYSDBG_CONTROL_SPACE,
@@ -89,7 +98,6 @@ use ntkrnl_sys::ddk::{
     PCHAR,
     ULONG_PTR,
     SIZE_T,
-    HANDLE,
     KTIMER,
     LUID,
     ULONG64,
@@ -98,12 +106,13 @@ use ntkrnl_sys::ddk::{
     KPROCESSOR_STATE,
     LIST_ENTRY,
     KDPC,
+    KD_CONTEXT,
     PKTRAP_FRAME,
     PKEXCEPTION_FRAME,
 };
 
 extern "C" {
-    static mut KdpContext: PVOID;
+    static mut KdpContext: KD_CONTEXT;
     static mut KdpMessageBuffer: [u8; 0];
     static mut KdpPathBuffer: [u8; 0];
     static mut KdDebuggerNotPresent: BOOLEAN;
@@ -115,8 +124,8 @@ extern "C" {
     static mut KdDebuggerEnabled: BOOLEAN;
     static mut SharedUserData: *mut PVOID;
     static mut KdPitchDebugger: BOOLEAN;
-    static mut KdBlockEnable: ULONG;
-    static mut KiDebugRoutine: PVOID;
+    static mut KdBlockEnable: BOOLEAN;
+    static mut KiDebugRoutine: PKDEBUG_ROUTINE;
     static mut KdpDebuggerLock: KSPIN_LOCK;
     static mut KdpPortLocked: BOOLEAN;
     static mut KdEnteredDebugger: BOOLEAN;
@@ -131,7 +140,7 @@ extern "C" {
     static mut KdpTimeSlipDpc: KDPC;
     static mut KdpTimeSlipWorkItem: WORK_QUEUE_ITEM;
     static mut KdComponentTableSize: ULONG;
-    static mut KdComponentTable: *mut PULONG;
+    static mut KdComponentTable: [PULONG; 0];
     static mut Kd_WIN2000_Mask: ULONG;
     static mut Kd_DEFAULT_Mask: ULONG;
     static mut KdpNumInternalBreakpoints: ULONG;
@@ -143,13 +152,13 @@ extern "C" {
 }
 
 extern "system" {
-    fn KdSendPacket(packet_type: ULONG, header: PSTRING, data: PSTRING, context: *mut PVOID);
-    fn KdReceivePacket(packet_type: ULONG, header: PSTRING, data: PSTRING, length: *mut ULONG, context: *mut PVOID) -> KDSTATUS;
-    fn KdpAddBreakpoint(address: PVOID) -> HANDLE;
-    fn KdpDeleteBreakpoint(handle: HANDLE) -> BOOLEAN;
+    fn KdSendPacket(packet_type: ULONG, header: PSTRING, data: PSTRING, context: *mut KD_CONTEXT);
+    fn KdReceivePacket(packet_type: ULONG, header: PSTRING, data: PSTRING, length: *mut ULONG, context: *mut KD_CONTEXT) -> KDSTATUS;
+    fn KdpAddBreakpoint(address: PVOID) -> ULONG;
+    fn KdpDeleteBreakpoint(handle: ULONG) -> BOOLEAN;
     fn KdpDeleteBreakpointRange(start: PVOID, end: PVOID) -> BOOLEAN;
-    fn KdpSysReadControlSpace(processor: USHORT, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
-    fn KdpSysWriteControlSpace(processor: USHORT, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysReadControlSpace(processor: ULONG, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
+    fn KdpSysWriteControlSpace(processor: ULONG, address: ULONG64, buffer: PVOID, size: ULONG, actual: *mut ULONG) -> NTSTATUS;
     fn KdpSysReadMsr(msr: ULONG, value: *mut ULONGLONG) -> NTSTATUS;
     fn KdpSysWriteMsr(msr: ULONG, value: *mut ULONGLONG) -> NTSTATUS;
     fn KdpSysReadBusData(bus_type: ULONG, bus_number: ULONG, slot_number: ULONG, offset: ULONG, buffer: PVOID, length: ULONG, actual: *mut ULONG) -> NTSTATUS;
@@ -166,10 +175,9 @@ extern "system" {
     fn KdpRestoreAllBreakpoints();
     fn KdpAllowDisable() -> NTSTATUS;
     fn KdpSuspendAllBreakPoints();
-    fn KdpStub();
     fn KdD0Transition();
     fn KdD3Transition();
-    fn KxSwitchKdProcessor(index: USHORT) -> ULONG;
+    fn KxSwitchKdProcessor(index: ULONG) -> ULONG;
     fn KeGetCurrentThread() -> PVOID;
     fn KdpPortLock();
 }
@@ -290,7 +298,10 @@ const SysDbgReadBusData: ULONG = 18;
 const SysDbgWriteBusData: ULONG = 19;
 const SysDbgCheckLowMemory: ULONG = 20;
 
-const KD_OPTION_SET_BLOCK_ENABLE: ULONG = 1;
+const ROS_INTERNAL_COMMAND: ULONG = u32::from_be_bytes(*b" soR");
+const ROS_DUMP_STACK_FRAMES_COMMAND: ULONG = u32::from_be_bytes(*b"DsoR");
+
+const KD_OPTION_SET_BLOCK_ENABLE: ULONG = 0;
 
 const Isa: ULONG = 1;
 
@@ -449,7 +460,7 @@ unsafe fn KdpWriteBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _c
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    (*breakpoint).BreakPointHandle = KdpAddBreakpoint((*breakpoint).BreakPointAddress as PVOID) as ULONG;
+    (*breakpoint).BreakPointHandle = KdpAddBreakpoint((*breakpoint).BreakPointAddress as PVOID);
     if (*breakpoint).BreakPointHandle == 0 {
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     } else {
@@ -470,7 +481,7 @@ unsafe fn KdpRestoreBreakpoint(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
     header.Buffer = state as PCHAR;
 
-    if KdpDeleteBreakpoint((*restore_bp).BreakPointHandle as HANDLE) != 0 {
+    if KdpDeleteBreakpoint((*restore_bp).BreakPointHandle) != 0 {
         (*state).ReturnStatus = STATUS_SUCCESS;
     } else {
         (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
@@ -562,7 +573,7 @@ unsafe fn KdpSetCommonState(
         MMDBG_COPY_UNSAFE,
         &mut instruction_count,
     );
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     { (*wait_state_change).__bindgen_anon_1.ControlReport.InstructionCount = instruction_count as u16; }
     #[cfg(target_arch = "aarch64")]
     { (*wait_state_change).__bindgen_anon_1.ControlReport.InstructionCount = instruction_count; }
@@ -1169,7 +1180,7 @@ unsafe fn KdpSwitchProcessor(processor_index: USHORT) -> ULONG {
         return ContinueProcessorReselected;
     }
 
-    KxSwitchKdProcessor(processor_index)
+    KxSwitchKdProcessor(processor_index as ULONG)
 }
 
 unsafe fn KdpSendWaitContinue(
@@ -1195,7 +1206,7 @@ unsafe fn KdpSendWaitContinue(
 
     KdpContextSent = 0u8;
 
-    loop {
+    'send_packet: loop {
         KdSendPacket(packet_type, send_header, send_data, &mut KdpContext);
 
         if KdDebuggerNotPresent != 0 {
@@ -1219,7 +1230,7 @@ unsafe fn KdpSendWaitContinue(
             );
 
             if recv_code == KdPacketNeedsResend {
-                continue;
+                continue 'send_packet;
             }
             if recv_code != KdPacketTimedOut {
                 break;
@@ -1373,7 +1384,7 @@ unsafe fn KdpSendWaitContinue(
 #[no_mangle]
 pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
     path_name: PSTRING,
-    symbol_info: *mut PVOID,
+    symbol_info: PKD_SYMBOLS_INFO,
     unload: BOOLEAN,
     context: PCONTEXT,
 ) {
@@ -1399,10 +1410,10 @@ pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
         KdpSetContextState(&mut wait_state_change, context);
 
         wait_state_change.u.LoadSymbols.UnloadSymbols = unload;
-        wait_state_change.u.LoadSymbols.BaseOfDll = (*(symbol_info as *mut u64));
-        wait_state_change.u.LoadSymbols.ProcessId = (*(symbol_info.add(1) as *mut u64));
-        wait_state_change.u.LoadSymbols.CheckSum = (*(symbol_info.add(2) as *mut u32));
-        wait_state_change.u.LoadSymbols.SizeOfImage = (*(symbol_info.add(3) as *mut u32));
+        wait_state_change.u.LoadSymbols.BaseOfDll = (*symbol_info).BaseOfDll as ULONG_PTR as ULONG64;
+        wait_state_change.u.LoadSymbols.ProcessId = (*symbol_info).ProcessId as ULONG64;
+        wait_state_change.u.LoadSymbols.CheckSum = (*symbol_info).CheckSum;
+        wait_state_change.u.LoadSymbols.SizeOfImage = (*symbol_info).SizeOfImage;
 
         if !path_name.is_null() {
             KdpCopyMemoryChunks(
@@ -1611,9 +1622,10 @@ pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
     let _system_argument1 = opaque_ptr(_system_argument1);
     let _system_argument2 = opaque_ptr(_system_argument2);
     let mut pending_slip = KdpTimeSlipPending;
+    let mut new_slip: LONG = 0;
     loop {
         let old_slip = pending_slip;
-        let new_slip = if old_slip > 1 { 1 } else { 0 };
+        new_slip = if old_slip > 1 { 1 } else { 0 };
 
         let result = InterlockedCompareExchange(
             core::ptr::addr_of_mut!(KdpTimeSlipPending),
@@ -1626,7 +1638,7 @@ pub unsafe extern "system" fn KdpTimeSlipDpcRoutine(
         pending_slip = result;
     }
 
-    if pending_slip == 1 {
+    if new_slip != 0 {
         ExQueueWorkItem(core::ptr::addr_of_mut!(KdpTimeSlipWorkItem), _WORK_QUEUE_TYPE_DelayedWorkQueue);
     }
 }
@@ -1738,15 +1750,14 @@ pub unsafe extern "system" fn KdEnableDebuggerWithLock(need_lock: BOOLEAN) -> NT
     }
 
     if need_lock != 0 {
-        // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
-        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
+        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
         KdpPortLock();
     }
 
     if KdDisableCount == 0 {
         if need_lock != 0 {
             KdpPortUnlock();
-            // [guard-drop] KeLowerIrql(old_irql);
+            KeLowerIrql(old_irql);
 
             return STATUS_INVALID_PARAMETER;
         } else {
@@ -1766,7 +1777,7 @@ pub unsafe extern "system" fn KdEnableDebuggerWithLock(need_lock: BOOLEAN) -> NT
 
     if need_lock != 0 {
         KdpPortUnlock();
-        // [guard-drop] KeLowerIrql(old_irql);
+        KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS
@@ -1781,8 +1792,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
     }
 
     if need_lock != 0 {
-        // [guard] KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
-        let irql_guard = unsafe { ntkrnl_sys::guards::IrqlGuard::raise(DISPATCH_LEVEL) };
+        KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
         KdpPortLock();
     }
 
@@ -1797,14 +1807,14 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
             let status = KdpAllowDisable();
             if status < 0 {
                 KdpPortUnlock();
-                // [guard-drop] KeLowerIrql(old_irql);
+                KeLowerIrql(old_irql);
                 return status;
             }
         }
 
         if KdDebuggerEnabled != 0 {
             KdpSuspendAllBreakPoints();
-            KiDebugRoutine = KdpStub as PVOID;
+            KiDebugRoutine = Some(KdpStub);
 
             KdDebuggerEnabled = 0u8;
             *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
@@ -1815,7 +1825,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
 
     if need_lock != 0 {
         KdpPortUnlock();
-        // [guard-drop] KeLowerIrql(old_irql);
+        KeLowerIrql(old_irql);
     }
 
     STATUS_SUCCESS
@@ -1848,7 +1858,7 @@ pub unsafe extern "system" fn KdSystemDebugControl(
     let mut length = 0u32;
 
     match command as u32 {
-        0x21 => {
+        ROS_INTERNAL_COMMAND => {
             match input_buffer as ULONG_PTR {
                 0x21 => PspDumpThreads(1u8),
                 0x22 => PspDumpThreads(0u8),
@@ -1856,6 +1866,9 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 _ => {}
             }
             return STATUS_SUCCESS;
+        }
+        ROS_DUMP_STACK_FRAMES_COMMAND => {
+            KeRosDumpStackFrames(input_buffer as PULONG_PTR, input_buffer_length);
         }
         _ => {}
     }
@@ -1870,19 +1883,16 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgReadVirtual | SysDbgWriteVirtual => {
-            if input_buffer_length != 24 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_VIRTUAL>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u64;
-                let address = *request_ptr;
-                let buffer = *request_ptr.add(1) as PVOID;
-                let request = *request_ptr.add(2) as u32;
+                let request = *(input_buffer as PSYSDBG_VIRTUAL);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     if command as u32 == SysDbgReadVirtual {
                         _LOCK_OPERATION_IoWriteAccess
@@ -1894,9 +1904,9 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpCopyMemoryChunks(
-                        address,
-                        buffer,
-                        request,
+                        request.Address as ULONG_PTR as ULONG64,
+                        request.Buffer,
+                        request.Request,
                         0,
                         if command as u32 == SysDbgReadVirtual {
                             0
@@ -1910,19 +1920,16 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgReadPhysical | SysDbgWritePhysical => {
-            if input_buffer_length != 32 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_PHYSICAL>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u64;
-                let address = *request_ptr;
-                let buffer = *request_ptr.add(2) as PVOID;
-                let request = *request_ptr.add(3) as u32;
+                let request = *(input_buffer as PSYSDBG_PHYSICAL);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     if command as u32 == SysDbgReadVirtual {
                         _LOCK_OPERATION_IoWriteAccess
@@ -1934,9 +1941,9 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpCopyMemoryChunks(
-                        address,
-                        buffer,
-                        request,
+                        request.Address.QuadPart as ULONG64,
+                        request.Buffer,
+                        request.Request,
                         0,
                         MMDBG_COPY_PHYSICAL
                             | if command as u32 == SysDbgReadVirtual {
@@ -1951,74 +1958,72 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgReadControlSpace => {
-            if input_buffer_length != 24 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let processor = *request_ptr;
-                let address = *(request_ptr.add(2) as *mut u64);
-                let buffer = *(request_ptr.add(4) as *mut PVOID);
-                let request = *request_ptr.add(6);
+                let request = *(input_buffer as PSYSDBG_CONTROL_SPACE);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoWriteAccess,
                     &mut locked_buffer,
                     &mut lock_variable,
                 );
                 if status >= 0 {
-                    status = KdpSysReadControlSpace(processor as u16, address, locked_buffer, request, &mut length);
+                    status = KdpSysReadControlSpace(
+                        request.Processor,
+                        request.Address,
+                        locked_buffer,
+                        request.Request,
+                        &mut length,
+                    );
                     ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
         SysDbgWriteControlSpace => {
-            if input_buffer_length != 24 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let processor = *request_ptr;
-                let address = *(request_ptr.add(2) as *mut u64);
-                let buffer = *(request_ptr.add(4) as *mut PVOID);
-                let request = *request_ptr.add(6);
+                let request = *(input_buffer as PSYSDBG_CONTROL_SPACE);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoReadAccess,
                     &mut locked_buffer,
                     &mut lock_variable,
                 );
                 if status >= 0 {
-                    status = KdpSysWriteControlSpace(processor as u16, address, locked_buffer, request, &mut length);
+                    status = KdpSysWriteControlSpace(
+                        request.Processor,
+                        request.Address,
+                        locked_buffer,
+                        request.Request,
+                        &mut length,
+                    );
                     ExUnlockUserBuffer(lock_variable);
                 }
             }
         }
         SysDbgReadIoSpace => {
-            if input_buffer_length != 32 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_IO_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let interface_type = *request_ptr;
-                let bus_number = *request_ptr.add(1);
-                let address_space = *request_ptr.add(2);
-                let address = *(request_ptr.add(4) as *mut u64);
-                let buffer = *(request_ptr.add(6) as *mut PVOID);
-                let request = *request_ptr.add(8);
+                let request = *(input_buffer as PSYSDBG_IO_SPACE);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoWriteAccess,
                     &mut locked_buffer,
@@ -2026,12 +2031,12 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpSysReadIoSpace(
-                        interface_type,
-                        bus_number,
-                        address_space,
-                        address,
+                        request.InterfaceType as ULONG,
+                        request.BusNumber,
+                        request.AddressSpace,
+                        request.Address,
                         locked_buffer,
-                        request,
+                        request.Request,
                         &mut length,
                     );
                     ExUnlockUserBuffer(lock_variable);
@@ -2039,22 +2044,16 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgWriteIoSpace => {
-            if input_buffer_length != 32 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_IO_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let interface_type = *request_ptr;
-                let bus_number = *request_ptr.add(1);
-                let address_space = *request_ptr.add(2);
-                let address = *(request_ptr.add(4) as *mut u64);
-                let buffer = *(request_ptr.add(6) as *mut PVOID);
-                let request = *request_ptr.add(8);
+                let request = *(input_buffer as PSYSDBG_IO_SPACE);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoReadAccess,
                     &mut locked_buffer,
@@ -2062,12 +2061,12 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpSysWriteIoSpace(
-                        interface_type,
-                        bus_number,
-                        address_space,
-                        address,
+                        request.InterfaceType as ULONG,
+                        request.BusNumber,
+                        request.AddressSpace,
+                        request.Address,
                         locked_buffer,
-                        request,
+                        request.Request,
                         &mut length,
                     );
                     ExUnlockUserBuffer(lock_variable);
@@ -2075,38 +2074,38 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgReadMsr => {
-            if input_buffer_length != 16 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_MSR>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = input_buffer as *mut u32;
-                status = KdpSysReadMsr(*request, (request.add(2) as *mut u64));
+                let request = input_buffer as PSYSDBG_MSR;
+                status = KdpSysReadMsr(
+                    (*request).Address,
+                    core::ptr::addr_of_mut!((*request).Data),
+                );
             }
         }
         SysDbgWriteMsr => {
-            if input_buffer_length != 16 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_MSR>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = input_buffer as *mut u32;
-                status = KdpSysWriteMsr(*request, (request.add(2) as *mut u64));
+                let request = input_buffer as PSYSDBG_MSR;
+                status = KdpSysWriteMsr(
+                    (*request).Address,
+                    core::ptr::addr_of_mut!((*request).Data),
+                );
             }
         }
         SysDbgReadBusData => {
-            if input_buffer_length != 32 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_BUS_DATA>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let bus_data_type = *request_ptr;
-                let bus_number = *request_ptr.add(1);
-                let slot_number = *request_ptr.add(2);
-                let offset = *request_ptr.add(3);
-                let buffer = *(request_ptr.add(4) as *mut PVOID);
-                let request = *request_ptr.add(6);
+                let request = *(input_buffer as PSYSDBG_BUS_DATA);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoWriteAccess,
                     &mut locked_buffer,
@@ -2114,12 +2113,12 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpSysReadBusData(
-                        bus_data_type,
-                        bus_number,
-                        slot_number,
-                        offset,
+                        request.BusDataType as ULONG,
+                        request.BusNumber,
+                        request.SlotNumber,
+                        request.Address,
                         locked_buffer,
-                        request,
+                        request.Request,
                         &mut length,
                     );
                     ExUnlockUserBuffer(lock_variable);
@@ -2127,22 +2126,16 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             }
         }
         SysDbgWriteBusData => {
-            if input_buffer_length != 32 {
+            if input_buffer_length != core::mem::size_of::<SYSDBG_BUS_DATA>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request_ptr = input_buffer as *mut u32;
-                let bus_data_type = *request_ptr;
-                let bus_number = *request_ptr.add(1);
-                let slot_number = *request_ptr.add(2);
-                let offset = *request_ptr.add(3);
-                let buffer = *(request_ptr.add(4) as *mut PVOID);
-                let request = *request_ptr.add(6);
+                let request = *(input_buffer as PSYSDBG_BUS_DATA);
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
                 status = ExLockUserBuffer(
-                    buffer,
-                    request,
+                    request.Buffer,
+                    request.Request,
                     previous_mode,
                     _LOCK_OPERATION_IoReadAccess,
                     &mut locked_buffer,
@@ -2150,12 +2143,12 @@ pub unsafe extern "system" fn KdSystemDebugControl(
                 );
                 if status >= 0 {
                     status = KdpSysWriteBusData(
-                        bus_data_type,
-                        bus_number,
-                        slot_number,
-                        offset,
+                        request.BusDataType as ULONG,
+                        request.BusNumber,
+                        request.SlotNumber,
+                        request.Address,
                         locked_buffer,
-                        request,
+                        request.Request,
                         &mut length,
                     );
                     ExUnlockUserBuffer(lock_variable);
@@ -2208,7 +2201,7 @@ pub unsafe extern "system" fn KdChangeOption(
         return STATUS_ACCESS_VIOLATION;
     }
 
-    KdBlockEnable = *(in_buffer as *mut u8) as u32;
+    KdBlockEnable = *(in_buffer as *mut u8);
 
     if !out_buffer_needed.is_null() {
         *out_buffer_needed = 0;
@@ -2238,7 +2231,7 @@ pub unsafe extern "system" fn KdRefreshDebuggerNotPresent() -> BOOLEAN {
 
     let enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
 
-    // KdpDprintf(b"KDTARGET: Refreshing KD connection\n\0".as_ptr() as PCHAR);
+    KdpDprintf(b"KDTARGET: Refreshing KD connection\n\0".as_ptr() as PCHAR);
 
     let debugger_not_present = KdDebuggerNotPresent;
 
@@ -2260,7 +2253,7 @@ pub unsafe extern "system" fn NtQueryDebugFilterState(
     /* Check if the ID fits in the component table */
     if ComponentId < KdComponentTableSize {
         /* It does, so get the mask from there */
-        mask = *(KdComponentTable as *mut PULONG).add(ComponentId as usize);
+        mask = *(core::ptr::addr_of!(KdComponentTable) as *const PULONG).add(ComponentId as usize);
     } else if ComponentId == MAXULONG {
         /* Internal ID used for DbgPrint messages without ID and Level */
         mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
@@ -2301,7 +2294,7 @@ pub unsafe extern "system" fn NtSetDebugFilterState(
 
     /* Check if the ID fits in the component table */
     if ComponentId < KdComponentTableSize {
-        mask = *(KdComponentTable as *mut PULONG).add(ComponentId as usize);
+        mask = *(core::ptr::addr_of!(KdComponentTable) as *const PULONG).add(ComponentId as usize);
     } else if ComponentId == MAXULONG {
         mask = core::ptr::addr_of_mut!(Kd_WIN2000_Mask);
     } else {

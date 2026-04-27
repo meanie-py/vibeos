@@ -1497,3 +1497,16 @@ VOID NTAPI MmDbgCheckIrql(PCSTR label)
     MmUartHex(" irql=", irql);
 }
 #endif
+
+/* MiAcquirePfnLock / MiReleasePfnLock — FORCEINLINE wrappers in mm.h
+ * (KeAcquireQueuedSpinLock/KeReleaseQueuedSpinLock with LockQueuePfnLock).
+ * Outline shims for the Rust mm/section_table.rs callers (cdecl). */
+KIRQL MiAcquirePfnLock(VOID)
+{
+    return KeAcquireQueuedSpinLock(LockQueuePfnLock);
+}
+
+VOID MiReleasePfnLock(KIRQL OldIrql)
+{
+    KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
+}

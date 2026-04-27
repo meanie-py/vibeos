@@ -4,6 +4,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use crate::ke::krnlinit::KeLoaderBlock;
 use crate::ke::processor::KeNumberProcessors;
+use crate::kd64::kdtrap::{KdpStub, KdpTrap};
 
 use ntkrnl_sys::ddk::{
     _DBGKD_DEBUG_DATA_HEADER64,
@@ -13,11 +14,13 @@ use ntkrnl_sys::ddk::{
     _KTIMER,
     _KUSER_SHARED_DATA,
     _WORK_QUEUE_ITEM,
+    BREAKPOINT_ENTRY,
     DBGKD_DEBUG_DATA_HEADER64,
     DBGKD_GET_VERSION64,
     KDDEBUGGER_DATA64,
     KD_CONTEXT,
     PDBGKD_DEBUG_DATA_HEADER64,
+    PKDEBUG_ROUTINE,
     PLDR_DATA_TABLE_ENTRY,
     PLOADER_PARAMETER_BLOCK,
     PMEMORY_ALLOCATION_DESCRIPTOR,
@@ -47,7 +50,7 @@ unsafe fn KeGetPcr() -> PKPCR {
 
 extern "C" {
     static mut KdDebuggerEnabled: BOOLEAN;
-    static mut KiDebugRoutine: Option<unsafe extern "system" fn()>;
+    static mut KiDebugRoutine: PKDEBUG_ROUTINE;
     static mut KdBreakAfterSymbolLoad: BOOLEAN;
     static mut KdpDebuggerDataListHead: LIST_ENTRY;
     static mut KdpDataSpinLock: ULONG_PTR; // KSPIN_LOCK
@@ -60,7 +63,7 @@ extern "C" {
     static mut KdPerformanceCounterRate: LARGE_INTEGER;
     static mut KdpContext: KD_CONTEXT;
     static mut KdpOweBreakpoint: BOOLEAN;
-    static mut KdpBreakpointTable: [u8; 32 * 32]; // KD_BREAKPOINT_ENTRY array
+    static mut KdpBreakpointTable: [BREAKPOINT_ENTRY; KD_BREAKPOINT_MAX];
     static mut KdpTimeSlipDpc: _KDPC;
     static mut KdpTimeSlipTimer: _KTIMER;
     static mut KdpTimeSlipWorkItem: _WORK_QUEUE_ITEM;
@@ -79,10 +82,8 @@ extern "C" {
 }
 
 extern "system" {
-    fn KdpStub();
-    fn KdpTrap();
     fn KdDebuggerInitialize0(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
-    fn KdDisableDebuggerWithLock(BlockEnable: BOOLEAN);
+    fn KdDisableDebuggerWithLock(BlockEnable: BOOLEAN) -> NTSTATUS;
     fn KdPollBreakIn() -> BOOLEAN;
     fn DbgLoadImageSymbols(ImageName: *mut STRING, Base: PVOID, ProcessId: ULONG_PTR);
 }
@@ -219,7 +220,7 @@ pub unsafe extern "system" fn KdInitSystem(
         return 1u8;
     }
 
-    KiDebugRoutine = Some(KdpStub as unsafe extern "system" fn());
+    KiDebugRoutine = Some(KdpStub);
     KdBreakAfterSymbolLoad = 0u8;
 
     if (*core::ptr::addr_of!(KdpDebuggerDataListHead)).Flink.is_null() {
@@ -333,8 +334,13 @@ pub unsafe extern "system" fn KdInitSystem(
 
     KdDebuggerDataBlock.KernBase = KdVersionBlock.KernBase;
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        enable_kd = 0u8;
+    }
+
     if enable_kd != 0 && KdDebuggerInitialize0(loader_block) >= 0 {
-        KiDebugRoutine = Some(KdpTrap as unsafe extern "system" fn());
+        KiDebugRoutine = Some(KdpTrap);
 
         if KdpDebuggerStructuresInitialized == 0 {
             KdpContext.KdpDefaultRetries = 20;
@@ -370,7 +376,7 @@ pub unsafe extern "system" fn KdInitSystem(
         KdpPrintBanner();
 
         if disable_kd_after_init != 0 {
-            KdDisableDebuggerWithLock(0u8);
+            let _ = KdDisableDebuggerWithLock(0u8);
             KdBlockEnable = block_enable;
             return 1u8;
         }
@@ -395,13 +401,16 @@ pub unsafe extern "system" fn KdInitSystem(
                 }
                 name_buffer[j] = 0;
 
-                let mut image_name: STRING = core::mem::zeroed();
-                RtlInitString(core::ptr::addr_of_mut!(image_name), name_buffer.as_ptr() as PSTR);
-                DbgLoadImageSymbols(
-                    core::ptr::addr_of_mut!(image_name),
-                    (*ldr_entry).DllBase,
-                    PsGetCurrentProcessId() as ULONG_PTR
-                );
+                #[cfg(target_arch = "aarch64")]
+                {
+                    let mut image_name: STRING = core::mem::zeroed();
+                    RtlInitString(core::ptr::addr_of_mut!(image_name), name_buffer.as_ptr() as PSTR);
+                    DbgLoadImageSymbols(
+                        core::ptr::addr_of_mut!(image_name),
+                        (*ldr_entry).DllBase,
+                        PsGetCurrentProcessId() as ULONG_PTR
+                    );
+                }
 
                 next_entry = (*next_entry).Flink;
                 i += 1;

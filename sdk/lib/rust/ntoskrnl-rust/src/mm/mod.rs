@@ -12,3 +12,6 @@ pub mod rmap;
 pub mod shutdown;
 // Tier 3b
 pub mod section;
+// Section I/O + page-table — translated from cache/section/{io,sptab}.c.
+pub mod section_io;
+pub mod section_table;

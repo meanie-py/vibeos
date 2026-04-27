@@ -3,6 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{
+    KD_CONTEXT,
     KeTryToAcquireSpinLockAtDpcLevel,
 };
 
@@ -36,11 +37,6 @@ extern "fastcall" {
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn KiReleaseSpinLock(lock: *mut KSPIN_LOCK);
-}
-
-#[repr(C)]
-struct KD_CONTEXT {
-    KdpControlCPending: BOOLEAN,
 }
 
 const PACKET_TYPE_KD_POLL_BREAKIN: ULONG = 8;

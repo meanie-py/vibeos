@@ -1,5 +1,7 @@
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::KD_BREAKPOINT_SIZE;
 use ntkrnl_sys::ddk::PKTHREAD;
+use ntkrnl_sys::globals::KD_BREAKPOINT_TYPE;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 // External declarations from other KD modules
@@ -20,15 +22,12 @@ extern "system" {
 
 // Constants
 const KD_BREAKPOINT_MAX: usize = 32;
-const KD_BREAKPOINT_SIZE: ULONG = 1;
 const KD_BREAKPOINT_ACTIVE: ULONG = 0x01;
 const KD_BREAKPOINT_PENDING: ULONG = 0x02;
 const KD_BREAKPOINT_SUSPENDED: ULONG = 0x04;
 const KD_BREAKPOINT_EXPIRED: ULONG = 0x08;
 const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
 const MMDBG_COPY_WRITE: ULONG = 0x00000002;
-
-type KD_BREAKPOINT_TYPE = UCHAR;
 
 // Breakpoint table entry structure
 #[repr(C)]
