@@ -494,21 +494,25 @@ if(NOT _WINKD_)
     endif()
 
     if(ARCH STREQUAL "i386")
-        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
+        # kd/i386/kdserial.c — replaced by Rust (ntoskrnl-rust/src/i386/kdserial.rs)
+        #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
         if(KDBG)
             list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/kdb_help.S)
             list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/i386-dis.c)
         endif()
     elseif(ARCH STREQUAL "amd64")
-        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
+        # amd64 still uses i386 kdserial.c — also replaced by Rust (i386/kdserial.rs)
+        #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
         if(KDBG)
             list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/amd64/kdb_help.S)
             list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/i386-dis.c)
         endif()
     elseif(ARCH STREQUAL "arm")
-        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm/kdserial.c)
+        # kd/arm/kdserial.c — replaced by Rust (arm/kdserial.rs)
+        #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm/kdserial.c)
     elseif(ARCH STREQUAL "arm64")
-        list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm64/kdserial.c)
+        # kd/arm64/kdserial.c — replaced by Rust (arm64/kdserial.rs)
+        #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm64/kdserial.c)
     endif()
 
     if(KDBG AND NOT ARCH STREQUAL "arm64")
@@ -522,13 +526,18 @@ if(NOT _WINKD_)
             ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_symbols.c)
     endif()
 
+    # kd/ generic — replaced by Rust (ntoskrnl-rust/src/kd/)
+    #list(APPEND SOURCE
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdio.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdmain.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdprompt.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdps2kbd.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdserial.c
+    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdterminal.c)
+
+    # kd_rust_shims.c — outline shims for HAL dllimports (KdComPortInUse).
     list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdio.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdmain.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdprompt.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdps2kbd.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdserial.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdterminal.c)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kd_rust_shims.c)
 
 else()
     add_definitions(-D_WINKD_)

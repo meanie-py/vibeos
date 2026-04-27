@@ -1,4 +1,4 @@
-# ntoskrnl C→Rust Translation Audit
+# ntoskrnl C→Rust Translation Audit (updated 2026-04-27)
 
 ## Already Translated (Active in Rust)
 
@@ -12,18 +12,21 @@
 | PNPMGR (PnP) | 18 | 25,755 | amd64/arm64 Rust, i386 C (devaction stays C) |
 | OB (object) | 11 | 22,332 | All arches |
 | PS (process) | 13 | 22,604 | All arches |
+| FSTUB (file stubs) | 4 | 12,060 | All arches (this session) |
 | MM (memory) | 11 | 11,221 | All arches |
 | FSRTL (fs runtime) | 17 | 20,785 | All arches |
 | CC (cache) | 7 | 6,112 | All arches |
 | DBGK (debug) | 2 | 5,061 | All arches |
 | PO (power) | 4 | 4,961 | All arches |
+| KD (low-level debugger) | 9 | 3,914 | All arches (this session) |
 | LPC (local proc) | 8 | 3,876 | All arches |
 | INBV (boot video) | 3 | 3,611 | All arches |
 | WMI | 4 | 3,588 | All arches |
 | RTL (runtime) | 2 | 2,157 | All arches |
 | VDM (virtual DOS) | 2 | 1,221 | All arches |
 | VF (verifier) | 1 | 140 | All arches |
-| **TOTAL** | **266** | **~344,000** | |
+| MM section I/O+page-table | 2 | 533 | All arches (replaces cache/section/{io,sptab}.c) |
+| **TOTAL** | **281** | **~360,500** | |
 
 ## NOT YET TRANSLATED
 
@@ -118,45 +121,49 @@ ReactOS-specific interactive debugger (not WinDbg protocol). Development tool on
 **Complexity**: LOW-MEDIUM — mostly string parsing and display, but large
 **Note**: Not critical for boot or runtime. Only active when debugging.
 
-### 5. KD — Low-Level Debugger Support
-**9 files, 2,242 lines — PRIORITY: LOW**
+### 5. KD — Low-Level Debugger Support — DONE (this session)
+**~~9 files, 2,242 lines — PRIORITY: LOW~~ COMPLETE**
 
-Serial port, PS/2 keyboard, and terminal I/O for the kernel debugger.
+Serial port, PS/2 keyboard, and terminal I/O for the kernel debugger. All 9 files
+translated to Rust this session. ~3,914 LOC of new Rust + 1 shim file
+(`kd_rust_shims.c` for HAL `KdComPortInUse` cross-DLL bridge).
 
-| File | Lines | Description |
-|------|-------|-------------|
-| kdmain.c | 563 | Main KD initialization |
-| kdterminal.c | 443 | Terminal emulation |
-| kdio.c | 355 | I/O operations |
-| kdserial.c | 256 | Serial port (generic) |
-| kdprompt.c | 182 | Debugger prompt |
-| kdps2kbd.c | 128 | PS/2 keyboard |
-| i386/kdserial.c | 115 | i386 serial |
-| arm64/kdserial.c | 100 | ARM64 serial |
-| arm/kdserial.c | 100 | ARM serial |
+| File | C lines | Rust file | Notes |
+|------|--------:|-----------|-------|
+| kdio.c | 355 | kd/kdio.rs (1,525) | Owns globals KdpDebugMode/KdProviders/DispatchTable/InitRoutines |
+| kdmain.c | 563 | kd/kdmain.rs (795) | Defensive `InitializeListHead(&KdProviders)` for null Rust static-init |
+| kdterminal.c | 443 | kd/kdterminal.rs (488) | Owns KdbDebugState; cdecl ABI (matches C) |
+| kdprompt.c | 182 | kd/kdprompt.rs (243) | |
+| kdps2kbd.c | 128 | kd/kdps2kbd.rs (250) | x86 in/out via inline asm |
+| kdserial.c | 256 | kd/kdserial.rs (80) | Generic wrapper |
+| i386/kdserial.c | 115 | i386/kdserial.rs | Used by BOTH i386 + amd64 (cfg `any(x86, x86_64)`) |
+| arm64/kdserial.c | 100 | arm64/kdserial.rs | PL011 |
+| arm/kdserial.c | 100 | arm/kdserial.rs | PL011 |
 
-### 6. CACHE — Legacy NewCC Cache Manager
+### 6. CACHE — Legacy NewCC Cache Manager — PARTIALLY HANDLED
 **13 files, 5,986 lines — PRIORITY: VERY LOW**
 
 Alternative cache manager implementation, only compiled when `NEWCC=ON`. The active cache manager (CC subsystem) is already translated to Rust.
 
-| File | Lines | Description |
-|------|-------|-------------|
-| copysup.c | 1,085 | Copy support |
-| pinsup.c | 1,019 | Pin support |
-| fssup.c | 886 | FS support |
-| section/fault.c | 750 | Section fault handling |
-| section/data.c | 496 | Section data |
-| cachesub.c | 418 | Cache subsystem |
-| section/swapout.c | 367 | Swap out |
-| mdlsup.c | 285 | MDL support |
-| lazyrite.c | 198 | Lazy write |
-| section/io.c | 167 | Section I/O |
-| section/reqtools.c | 155 | Request tools |
-| section/sptab.c | 94 | Section page table |
-| logsup.c | 66 | Log support |
+**Status as of 2026-04-27:**
+- `cache/section/io.c` + `cache/section/sptab.c` — the two unconditionally-compiled files — translated to Rust as `mm/section_io.rs` + `mm/section_table.rs` (533 LOC).
+- The 11 NEWCC-only files (cachesub.c, copysup.c, fssup.c, lazyrite.c, logsup.c, mdlsup.c, pinsup.c, section/{data,fault,reqtools,swapout}.c) have been line-comment-out as dead code, retained as reference. To delete in bulk when ready.
 
-**Note**: Two cache/section files (io.c, sptab.c) are compiled unconditionally. The rest are NEWCC-only.
+| File | Lines | Status |
+|------|-------|--------|
+| section/io.c | 167 | → mm/section_io.rs |
+| section/sptab.c | 94 | → mm/section_table.rs |
+| copysup.c | 1,085 | NEWCC dead — line-commented |
+| pinsup.c | 1,019 | NEWCC dead — line-commented |
+| fssup.c | 886 | NEWCC dead — line-commented |
+| section/fault.c | 750 | NEWCC dead — line-commented |
+| section/data.c | 496 | NEWCC dead — line-commented |
+| cachesub.c | 418 | NEWCC dead — line-commented |
+| section/swapout.c | 367 | NEWCC dead — line-commented |
+| mdlsup.c | 285 | NEWCC dead — line-commented |
+| lazyrite.c | 198 | NEWCC dead — line-commented |
+| section/reqtools.c | 155 | NEWCC dead — line-commented |
+| logsup.c | 66 | NEWCC dead — line-commented |
 
 ### 7. Misc Root-Level Files
 **3 files, ~1,500 lines — already accounted for**
@@ -173,24 +180,32 @@ Alternative cache manager implementation, only compiled when `NEWCC=ON`. The act
 
 Kernel test harness, stays in C.
 
-## Summary
+## Summary (updated 2026-04-27)
 
-| Subsystem | Files | Lines | Priority | Effort |
+| Subsystem | Files | Lines | Priority | Status |
 |-----------|-------|-------|----------|--------|
-| **config/** | 24 | 18,827 | HIGH | ~$0.50 via rustconv batch |
-| **fstub/** | 4 | 5,817 | MEDIUM | ~$0.15 |
-| **kd64/** | 11 | 6,846 | DEFERRED | Already translated, needs debug |
-| **kdbg/** | 9 | 12,328 | LOW | ~$0.35 |
-| **kd/** | 9 | 2,242 | LOW | ~$0.08 |
-| **cache/** | 13 | 5,986 | VERY LOW | NEWCC-only, skip |
-| **TOTAL** | 70 | 52,046 | | ~$1.10 |
+| **config/** | 24 | 18,827 | HIGH | ~$0.50; first attempt translated all 22 .c files but i386 BSODs early in boot — stashed, awaiting Codex token reset for fresh-eyes debugging |
+| ~~**fstub/**~~ | 4 | 5,817 | DONE | All 4 files Rust on all 3 arches |
+| **kd64/** | 11 | 6,846 | DEFERRED | Already translated, needs debug (recursive exception flood on amd64) |
+| **kdbg/** | 9 | 12,328 | LOW | ~$0.35; i386-dis.c (binutils) stays in C |
+| ~~**kd/**~~ | 9 | 2,242 | DONE | All 9 files Rust on all 3 arches (this session) |
+| **cache/** | 13 | 5,986 | PARTIALLY DONE | section/{io,sptab}.c → Rust; rest is NEWCC dead code, line-commented |
+| **TOTAL remaining** | ~33 | ~37,001 | | ~$0.85 |
 
 ## Translation Priority Recommendation
 
-1. **CONFIG (18.8K lines)** — Highest impact. Registry is core infrastructure used by every subsystem. Would bring the kernel to ~95% Rust.
-2. **FSTUB (5.8K lines)** — Medium effort, needed for disk/partition support.
-3. **KD64 (6.8K lines)** — Already translated, just needs the recursive exception bug debugged. No API cost.
-4. **KD + KDBG (14.6K lines)** — Low priority, debugger-only code. Can defer.
-5. **CACHE (6K lines)** — Skip, NEWCC is not the active code path.
+1. **CONFIG bisection** — translation done but boot-broken; needs root-cause debugging (Codex / fresh eyes when tokens available). 21 files (~30K Rust) sit in `git stash@{0}`.
+2. **kd64/ debug** — already translated, needs recursive exception flood on amd64 debugged. No API cost.
+3. **KDBG (12K lines)** — Low priority, debugger-only code. The i386-dis.c (binutils-derived disassembler) stays in C; everything else is straightforward.
+4. **Misc root files** — guid.c, kernel_c_helpers.c, tier1_rust_shims.c, KrnlFun.c — small (~1.5K lines).
 
-After CONFIG + FSTUB, the kernel would be **~98% Rust** by line count (344K Rust + 25K remaining C for debuggers/tests/shims).
+After config bisection lands and kdbg follows, the kernel would be **~98% Rust** by line count.
+
+## What's Still C (and intentionally so)
+
+- **cmdata.c** (config) — pure globals, no functions. Tree-sitter can't extract anything; either keep or hand-translate as `pub static mut` block.
+- **i386-dis.c** (kdbg) — binutils-derived i386 disassembler, ~4453 lines. Not our code.
+- **kdb_help.S** (kdbg) — assembly trampolines, two arch variants (~30 lines each).
+- **guid.c** — auto-generated GUID definitions.
+- **kernel_c_helpers.c** + various `_rust_shims.c` files — outline trampolines for FORCEINLINE/macro/dllimport bridging. Stays in C by design.
+- **tests/** — kernel test harness. Not for translation.

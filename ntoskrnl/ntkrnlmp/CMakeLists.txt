@@ -25,6 +25,7 @@ add_asm_files(ntkrnlmp_asm ${NTKRNLMP_ASM_SOURCE})
 list(APPEND NTKRNLMP_PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/guid.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kd_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
 

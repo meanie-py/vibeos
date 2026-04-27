@@ -8,3 +8,8 @@ pub mod page;
 pub mod procsup;
 #[cfg(target_arch = "x86")]
 pub mod init;
+
+// kd/i386/kdserial.c — used by BOTH i386 and amd64 (per ntos.cmake which fed
+// the same .c file into both arches). Shared x86 COM-port glue.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod kdserial;

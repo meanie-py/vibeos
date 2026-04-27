@@ -45,6 +45,7 @@ pub mod fstub;
 pub mod i386;
 pub mod inbv;
 pub mod iomgr;
+pub mod kd;
 pub mod ke;
 pub mod lpc;
 pub mod mm;
