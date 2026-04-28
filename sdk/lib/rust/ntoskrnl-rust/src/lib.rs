@@ -47,6 +47,10 @@ pub mod i386;
 pub mod inbv;
 pub mod iomgr;
 pub mod kd;
+// kdbg/ — Rust port of the integrated kernel debugger. Compiled on i386 +
+// amd64 only (KDBG is disabled on ARM64). See docs/engineering/kdbg-port-status.md.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod kdbg;
 pub mod ke;
 pub mod lpc;
 pub mod mm;

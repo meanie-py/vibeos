@@ -474,6 +474,12 @@ unsafe extern "stdcall" fn KdpInitDriver_extern_c() -> NTSTATUS {
     KdpInitDriver()
 }
 
+// Public KD-protocol entry points. When KDBG is enabled, callers hit
+// KdbgD0Transition / KdbgSendPacket / etc. (because <ntoskrnl.h> redefines
+// `KdSendPacket` -> `KdbgSendPacket` and so on). The KDBG-side wrappers
+// (kdbg/kdbg.rs) export the Kdbg* names and delegate back to these
+// "underlying" names via plain function calls. So the names defined here
+// are always present and always the real implementation.
 #[no_mangle]
 pub unsafe extern "system" fn KdD0Transition() -> NTSTATUS {
     STATUS_SUCCESS
