@@ -1126,6 +1126,9 @@ pub unsafe extern "C" fn KdIoPrintf(Format: PCSTR) {
     KdIoPuts(Format);
 }
 
+// `KdSendPacket` is the underlying KD-IO sender. When KDBG is enabled the
+// callers go through `KdbgSendPacket` (kdbg/kdbg.rs), which delegates here
+// for PACKET_TYPE_KD_DEBUG_IO. Same pattern as the C build (see kdbg.c).
 #[no_mangle]
 pub unsafe extern "system" fn KdSendPacket(
     PacketType: ULONG,

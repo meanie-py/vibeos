@@ -25,7 +25,7 @@
 | RTL (runtime) | 2 | 2,157 | All arches |
 | VDM (virtual DOS) | 2 | 1,221 | All arches |
 | VF (verifier) | 1 | 140 | All arches |
-| MM section I/O+page-table | 2 | 533 | All arches (replaces cache/section/{io,sptab}.c) |
+| MM section I/O+page-table | 2 | 540 | All arches; wired in mm/mod.rs, replaces cache/section/{io,sptab}.c |
 | **TOTAL** | **281** | **~360,500** | |
 
 ## NOT YET TRANSLATED
@@ -33,7 +33,13 @@
 ### 1. CONFIG — Registry/Configuration Manager (CM)
 **24 files, 18,827 lines — PRIORITY: HIGH**
 
-The Windows Registry implementation. Used on every boot and throughout runtime. Zero Rust translations exist.
+The Windows Registry implementation. Used on every boot and throughout runtime.
+
+Current status as of 2026-04-27:
+- Rust translations are active in `sdk/lib/rust/ntoskrnl-rust/src/config` and currently compile clean for `kernel-rust` on `x86_64-pc-windows-gnu`.
+- Recent parity fixes landed in `ntapi.rs`, `cmsysini.rs`, `cmconfig.rs`, `cmparse.rs`, `cmhvlist.rs`, `cmvalche.rs`, `cminit.rs`, and `cmcontrl.rs`.
+- Small support files `cmquota.rs`, `cmsecach.rs`, `cmhook.rs`, `cmmapvw.rs`, and `cmnotify.rs` have been rechecked against C and are currently aligned or stubbed at the same level as C.
+- Highest remaining audit risk is concentrated in `cmapi.rs`, `cmboot.rs`, and `cmkcbncb.rs`, where translation-era local stubs and large control-flow surfaces still need deeper line-by-line verification.
 
 | File | Lines | Description |
 |------|-------|-------------|
@@ -65,20 +71,23 @@ The Windows Registry implementation. Used on every boot and throughout runtime. 
 **Dependencies**: cmlib (sdk/lib/cmlib/), registry hives, SE subsystem
 **Complexity**: HIGH — complex data structures (hives, KCBs, bins), extensive locking, lazy flush
 
-### 2. FSTUB — File System Stubs
-**4 files, 5,817 lines — PRIORITY: MEDIUM**
+### 2. FSTUB — File System Stubs — DONE (commit `d171f628`, 2026-04-26)
+**4 files, 5,817 LOC C → 12,060 LOC Rust on all 3 arches.**
 
 Disk partition support and HAL stubs. Used during boot for disk enumeration.
+Wired in `lib.rs:44` (`pub mod fstub;`); C versions commented out at
+`ntos.cmake:135-138`. All 4 arches green; the amd64 explorer/taskbar
+regression that had been chased for weeks turned out to be a translation
+bug here (`L"\\Device\\Harddisk%d\\Partition0"` translated as bytes cast
+to `*const u16` produced garbage paths every other character) — fixed in
+the same commit and caught by the new boot-milestone harness.
 
-| File | Lines | Description |
-|------|-------|-------------|
-| disksup.c | 2,596 | Disk partitioning, MBR/GPT support |
-| fstubex.c | 2,136 | Extended partition support |
-| translate.c | 652 | ARC name translation |
-| halstub.c | 433 | HAL dispatch stubs |
-
-**Dependencies**: Disk drivers, HAL, IO manager
-**Complexity**: MEDIUM — straightforward partition parsing, some arch-specific
+| C file | C lines | Rust file | Rust lines |
+|--------|---------|-----------|------------|
+| disksup.c | 2,596 | fstub/disksup.rs | 6,020 |
+| fstubex.c | 2,136 | fstub/fstubex.rs | 4,641 |
+| translate.c | 652 | fstub/translate.rs | 430 |
+| halstub.c | 433 | fstub/halstub.rs | 969 |
 
 ### 3. KD64 — WinDbg Kernel Debugger Protocol
 **11 files (7 generic + 3 arch), 6,846 lines — PRIORITY: DEFERRED**
@@ -101,25 +110,26 @@ Rust translations exist (8 .rs files) but are **disabled** due to recursive exce
 
 **Status**: Translated but disabled. Needs debugging of recursive exception issue, not retranslation.
 
-### 4. KDBG — Interactive Kernel Debugger (KDB)
-**9 files, 12,328 lines — PRIORITY: LOW**
+### 4. KDBG — Interactive Kernel Debugger (KDB) — DONE (2026-04-28)
+**7 generic files, 7,653 LOC C → 9,991 LOC Rust on i386 + amd64.**
 
-ReactOS-specific interactive debugger (not WinDbg protocol). Development tool only.
+ReactOS-specific interactive debugger (not WinDbg protocol). Wired in
+`lib.rs` (`pub mod kdbg;`), C versions commented out at `ntos.cmake:518-525`.
+Smoke 7/7 on both arches. See `docs/engineering/kdbg-port-status.md`.
 
-| File | Lines | Description |
-|------|-------|-------------|
-| kdb_cli.c | 4,826 | Command-line interface |
-| kdb.c | 2,718 | Main debugger logic |
-| kdb_expr.c | 1,693 | Expression evaluator |
-| i386/i386-dis.c | 1,173 | i386 disassembler |
-| kdbg.c | 644 | KDB glue |
-| kdb_symbols.c | 587 | Symbol lookup |
-| kdb_print.c | 281 | Print support |
-| kdb_cmdhist.c | 226 | Command history |
-| i386/kdmemsup.c | 180 | Memory support |
+| C file | C lines | Rust file | Rust lines |
+|--------|---------|-----------|------------|
+| kdb_cli.c | 3,711 | kdbg/kdb_cli.rs | 3,656 |
+| kdb.c | 1,682 | kdbg/kdb.rs | 1,784 |
+| kdb_expr.c | 1,216 | kdbg/kdb_expr.rs | 2,283 |
+| kdb_symbols.c | 469 | kdbg/kdb_symbols.rs | 1,026 |
+| kdbg.c | 212 | kdbg/kdbg.rs | 429 |
+| kdb_print.c | 201 | kdbg/kdb_print.rs | 413 |
+| kdb_cmdhist.c | 162 | kdbg/kdb_cmdhist.rs | 310 |
 
-**Complexity**: LOW-MEDIUM — mostly string parsing and display, but large
-**Note**: Not critical for boot or runtime. Only active when debugging.
+The variadic `KdbPrintf` / `KdbpPrint` plus ~25 file-private statics from
+the original `kdb_cli.c` live in `ntoskrnl/kdbg/kdbg_rust_shims.c` (539 LOC).
+i386-dis.c (binutils, 4,453 LOC) and kdb_help.S (asm trampolines) stay in C.
 
 ### 5. KD — Low-Level Debugger Support — DONE (this session)
 **~~9 files, 2,242 lines — PRIORITY: LOW~~ COMPLETE**
@@ -140,30 +150,31 @@ translated to Rust this session. ~3,914 LOC of new Rust + 1 shim file
 | arm64/kdserial.c | 100 | arm64/kdserial.rs | PL011 |
 | arm/kdserial.c | 100 | arm/kdserial.rs | PL011 |
 
-### 6. CACHE — Legacy NewCC Cache Manager — PARTIALLY HANDLED
-**13 files, 5,986 lines — PRIORITY: VERY LOW**
+### 6. CACHE — Legacy NewCC Cache Manager — DONE
+**13 files, ~7,500 lines — PRIORITY: VERY LOW**
 
 Alternative cache manager implementation, only compiled when `NEWCC=ON`. The active cache manager (CC subsystem) is already translated to Rust.
 
-**Status as of 2026-04-27:**
-- `cache/section/io.c` + `cache/section/sptab.c` — the two unconditionally-compiled files — translated to Rust as `mm/section_io.rs` + `mm/section_table.rs` (533 LOC).
+**Status as of 2026-04-27 — fully resolved:**
+- `cache/section/io.c` (338 LOC) + `cache/section/sptab.c` (429 LOC) — the two unconditionally-compiled files — translated to Rust as `mm/section_io.rs` (173 LOC) + `mm/section_table.rs` (367 LOC). **Wired in `mm/mod.rs:16-17`; C versions commented out at `ntos.cmake:50-51`. Active in build, smoke green on all 3 arches.**
 - The 11 NEWCC-only files (cachesub.c, copysup.c, fssup.c, lazyrite.c, logsup.c, mdlsup.c, pinsup.c, section/{data,fault,reqtools,swapout}.c) have been line-comment-out as dead code, retained as reference. To delete in bulk when ready.
+- `mm_rust_shims.c` gained `MiAcquirePfnLock` / `MiReleasePfnLock` cdecl outline trampolines — these were FORCEINLINE in `mm.h` with no real symbol; the new Rust callers need linkable functions.
 
 | File | Lines | Status |
 |------|-------|--------|
-| section/io.c | 167 | → mm/section_io.rs |
-| section/sptab.c | 94 | → mm/section_table.rs |
-| copysup.c | 1,085 | NEWCC dead — line-commented |
-| pinsup.c | 1,019 | NEWCC dead — line-commented |
-| fssup.c | 886 | NEWCC dead — line-commented |
-| section/fault.c | 750 | NEWCC dead — line-commented |
-| section/data.c | 496 | NEWCC dead — line-commented |
-| cachesub.c | 418 | NEWCC dead — line-commented |
-| section/swapout.c | 367 | NEWCC dead — line-commented |
-| mdlsup.c | 285 | NEWCC dead — line-commented |
-| lazyrite.c | 198 | NEWCC dead — line-commented |
-| section/reqtools.c | 155 | NEWCC dead — line-commented |
-| logsup.c | 66 | NEWCC dead — line-commented |
+| section/io.c | 338 | → mm/section_io.rs (active) |
+| section/sptab.c | 429 | → mm/section_table.rs (active) |
+| pinsup.c | 997 | NEWCC dead — line-commented |
+| section/fault.c | 968 | NEWCC dead — line-commented |
+| section/data.c | 847 | NEWCC dead — line-commented |
+| section/swapout.c | 660 | NEWCC dead — line-commented |
+| fssup.c | 632 | NEWCC dead — line-commented |
+| cachesub.c | 363 | NEWCC dead — line-commented |
+| section/reqtools.c | 283 | NEWCC dead — line-commented |
+| copysup.c | 235 | NEWCC dead — line-commented |
+| mdlsup.c | 127 | NEWCC dead — line-commented |
+| logsup.c | 71 | NEWCC dead — line-commented |
+| lazyrite.c | 36 | NEWCC dead — line-commented |
 
 ### 7. Misc Root-Level Files
 **3 files, ~1,500 lines — already accounted for**
@@ -184,12 +195,12 @@ Kernel test harness, stays in C.
 
 | Subsystem | Files | Lines | Priority | Status |
 |-----------|-------|-------|----------|--------|
-| **config/** | 24 | 18,827 | HIGH | ~$0.50; first attempt translated all 22 .c files but i386 BSODs early in boot — stashed, awaiting Codex token reset for fresh-eyes debugging |
+| **config/** | 24 | 18,827 | HIGH | Rust translations active; compile-clean on x86_64, parity audit/fixup in progress with remaining highest-risk review in cmapi/cmboot/cmkcbncb |
 | ~~**fstub/**~~ | 4 | 5,817 | DONE | All 4 files Rust on all 3 arches |
 | **kd64/** | 11 | 6,846 | DEFERRED | Already translated, needs debug (recursive exception flood on amd64) |
 | **kdbg/** | 9 | 12,328 | LOW | ~$0.35; i386-dis.c (binutils) stays in C |
 | ~~**kd/**~~ | 9 | 2,242 | DONE | All 9 files Rust on all 3 arches (this session) |
-| **cache/** | 13 | 5,986 | PARTIALLY DONE | section/{io,sptab}.c → Rust; rest is NEWCC dead code, line-commented |
+| ~~**cache/**~~ | 13 | 7,486 | DONE | section/{io,sptab}.c → Rust (wired, active); 11 NEWCC files line-commented dead code |
 | **TOTAL remaining** | ~33 | ~37,001 | | ~$0.85 |
 
 ## Translation Priority Recommendation
@@ -209,3 +220,4 @@ After config bisection lands and kdbg follows, the kernel would be **~98% Rust**
 - **guid.c** — auto-generated GUID definitions.
 - **kernel_c_helpers.c** + various `_rust_shims.c` files — outline trampolines for FORCEINLINE/macro/dllimport bridging. Stays in C by design.
 - **tests/** — kernel test harness. Not for translation.
+ 

@@ -516,14 +516,12 @@ if(NOT _WINKD_)
     endif()
 
     if(KDBG AND NOT ARCH STREQUAL "arm64")
+        # kdbg generic — replaced by Rust (ntoskrnl-rust/src/kdbg/)
+        # kdbg_rust_shims.c provides variadic KdbPrintf/KdbpPrint that
+        # Rust can't define on stable, plus file-private statics from
+        # the C kdb_cli.c that Rust references via extern decls.
         list(APPEND SOURCE
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_cli.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_cmdhist.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_expr.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_print.c
-            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdb_symbols.c)
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg_rust_shims.c)
     endif()
 
     # kd/ generic — replaced by Rust (ntoskrnl-rust/src/kd/)
