@@ -3,11 +3,7 @@
 //! Synchronous paging-or-buffered read used by the legacy MM section/sysldr
 //! during PE image load. The `#ifdef NEWCC` writeback tail of the original
 //! (`_MiSimpleWrite`, `_MiWriteBackPage`) is intentionally omitted — NewCC
-//! is dead code in this tree (see `cache/CMakeLists` gate).
-//!
-//! NOT WIRED INTO `mm/mod.rs` yet — kept as a translation candidate while
-//! other agents work on `config/`. Adding `pub mod section_io;` would create
-//! duplicate-symbol link errors against the still-compiled C version.
+//! is dead code in this tree (see `ntos.cmake` `NEWCC` gate).
 
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;

@@ -37,6 +37,7 @@ macro_rules! abi_cast {
 
 pub mod ARM3;
 pub mod cc;
+pub mod config;
 pub mod dbgk;
 pub mod ex;
 pub mod fsrtl;

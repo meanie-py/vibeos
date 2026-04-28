@@ -49,28 +49,31 @@ list(APPEND SOURCE
     # cache/section/io.c + sptab.c — replaced by Rust mm/section_io.rs + mm/section_table.rs.
     #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/io.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/sptab.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmalloc.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmapi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmconfig.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmcontrl.c
+    # config/ — registry CM, replaced by Rust (ntoskrnl-rust/src/config/).
+    # cmdata.c kept in C: pure globals, no functions for tree-sitter to extract.
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmalloc.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmapi.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmconfig.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmcontrl.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmdata.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmdelay.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhook.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhvlist.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cminit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmkcbncb.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmlazy.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmmapvw.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmnotify.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmparse.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmquota.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmse.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmsecach.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmsysini.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmvalche.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmwraprs.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/ntapi.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cm_rust_shims.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmdelay.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhook.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhvlist.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cminit.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmkcbncb.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmlazy.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmmapvw.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmnotify.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmparse.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmquota.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmse.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmsecach.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmsysini.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmvalche.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmwraprs.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/config/ntapi.c
     # dbgk/ — replaced by Rust (ntoskrnl-rust/src/dbgk/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkobj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/dbgk/dbgkutil.c

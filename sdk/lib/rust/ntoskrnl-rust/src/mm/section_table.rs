@@ -7,10 +7,6 @@
 //!
 //! Calls to `_MmSet/GetPageEntrySectionSegment` must be serialised by holding
 //! the segment lock — assertion in the original C is preserved.
-//!
-//! NOT WIRED INTO `mm/mod.rs` yet — kept as a translation candidate while
-//! other agents work on `config/`. Adding `pub mod section_table;` would
-//! create duplicate-symbol link errors against the still-compiled C version.
 
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;

@@ -22,6 +22,7 @@ __pycache__/
 *.egg-info/
 sdk/lib/rust/rust-kernel-target/
 sdk/lib/rust/target/
+ntoskrnl/rust-kernel-target/
 CMakeCache.txt
 CMakeFiles/
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction_codex.rs.bak

@@ -31,7 +31,7 @@ ARM64 reaches `[PS] PspUserThreadStartup: returning` reliably (kernel + user-mod
 
 ### MM section/{io,sptab} — Rust on all 3 arches (this session)
 
-`cache/section/io.c` (167 LOC) + `cache/section/sptab.c` (94 LOC) translated to `mm/section_io.rs` + `mm/section_table.rs` (533 LOC). These were the two unconditionally-compiled cache/ files; the rest is NEWCC dead code.
+`cache/section/io.c` (338 LOC) + `cache/section/sptab.c` (429 LOC) translated to `mm/section_io.rs` (173 LOC) + `mm/section_table.rs` (367 LOC). These were the two unconditionally-compiled cache/ files; the rest is NEWCC dead code. **Wired in `mm/mod.rs:16-17`; C versions commented out at `ntos.cmake:50-51`. Active in build.** `mm_rust_shims.c` gained cdecl outline trampolines for `MiAcquirePfnLock` / `MiReleasePfnLock` (they were FORCEINLINE in `mm.h` with no real symbol — needed for the Rust callers to link).
 
 ### kd64 serial passthrough + cache/ NEWCC line-commented (earlier this session)
 

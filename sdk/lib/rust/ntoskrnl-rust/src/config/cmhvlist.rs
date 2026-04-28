@@ -1,0 +1,614 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::ex::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{CmpCompressedNameSize, CmpCopyCompressedName, HCELL_INDEX, _OBJECT_ATTRIBUTES, OBJECT_NAME_INFORMATION, ObCloseHandle, PCELL_DATA, PCMHIVE, POBJECT_NAME_INFORMATION, PUNICODE_STRING, _UNICODE_STRING, ZwCreateKey, ZwDeleteValueKey, ZwOpenKey, ZwQueryObject, ZwSetValueKey};
+use core::ffi::c_void;
+
+const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
+const KEY_READ: u32 = 0x00020019;
+const KEY_WRITE: u32 = 0x00020006;
+
+extern "C" {
+    pub static mut CmiVolatileHive: PCMHIVE;
+}
+
+static HIVELIST_NAME_BUF: [u16; 60] = [
+    0x005C, 0x0052, 0x0045, 0x0047, 0x0049, 0x0053, 0x0054, 0x0052, 0x0059, 0x005C,
+    0x004D, 0x0041, 0x0043, 0x0048, 0x0049, 0x004E, 0x0045, 0x005C, 0x0053, 0x0059,
+    0x0053, 0x0054, 0x0045, 0x004D, 0x005C, 0x0043, 0x0075, 0x0072, 0x0072, 0x0065,
+    0x006E, 0x0074, 0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C, 0x0053,
+    0x0065, 0x0074, 0x005C, 0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C,
+    0x005C, 0x0068, 0x0069, 0x0076, 0x0065, 0x006C, 0x0069, 0x0073, 0x0074, 0x0000,
+];
+
+#[no_mangle]
+pub static mut HiveListValueName: _UNICODE_STRING = _UNICODE_STRING {
+    Length: 118,
+    MaximumLength: 120,
+    Buffer: HIVELIST_NAME_BUF.as_ptr() as *mut u16,
+};
+
+extern "system" {
+    fn HvGetCell(Hive: *mut core::ffi::c_void, Cell: HCELL_INDEX) -> PCELL_DATA;
+    fn HvReleaseCell(Hive: *mut core::ffi::c_void, Cell: HCELL_INDEX);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CmpGetHiveName(
+    Hive: PCMHIVE,
+    HiveName: PUNICODE_STRING,
+) -> u8 {
+    let mut RootCell: HCELL_INDEX;
+    let mut LinkCell: HCELL_INDEX;
+    let mut RootData: PCELL_DATA;
+    let mut LinkData: PCELL_DATA;
+    let mut ParentData: PCELL_DATA;
+    let mut ParentNameSize: u32;
+    let mut LinkNameSize: u32;
+    let NameSize: usize;
+    let mut p: *mut u16;
+    let mut RegistryName: _UNICODE_STRING = _UNICODE_STRING {
+        Length: 20,
+        MaximumLength: 22,
+        Buffer: b"\\REGISTRY\\\0".as_ptr() as *mut u16,
+    };
+
+    RootCell = (*(*Hive).Hive.BaseBlock).RootCell;
+    RootData = HvGetCell(core::ptr::addr_of_mut!((*Hive).Hive) as *mut _, RootCell);
+    if RootData.is_null() {
+        return 0u8;
+    }
+
+    LinkCell = (*RootData).u.KeyNode.Parent;
+    HvReleaseCell(core::ptr::addr_of_mut!((*Hive).Hive) as *mut _, RootCell);
+
+    LinkData = HvGetCell(core::ptr::addr_of_mut!((*CmiVolatileHive).Hive) as *mut _, LinkCell);
+    if LinkData.is_null() {
+        return 0u8;
+    }
+    ParentData = HvGetCell(
+        core::ptr::addr_of_mut!((*CmiVolatileHive).Hive) as *mut _,
+        (*LinkData).u.KeyNode.Parent,
+    );
+    if ParentData.is_null() {
+        return 0u8;
+    }
+
+    if (*ParentData).u.KeyNode.Flags & 0x0001 != 0 {
+        ParentNameSize = CmpCompressedNameSize(
+            core::ptr::addr_of!((*ParentData).u.KeyNode.Name) as *mut u16,
+            (*ParentData).u.KeyNode.NameLength as u32,
+        ) as u32;
+    } else {
+        ParentNameSize = (*ParentData).u.KeyNode.NameLength as u32;
+    }
+
+    if (*LinkData).u.KeyNode.Flags & 0x0001 != 0 {
+        LinkNameSize = CmpCompressedNameSize(
+            core::ptr::addr_of!((*LinkData).u.KeyNode.Name) as *mut u16,
+            (*LinkData).u.KeyNode.NameLength as u32,
+        ) as u32;
+    } else {
+        LinkNameSize = (*LinkData).u.KeyNode.NameLength as u32;
+    }
+
+    NameSize = RegistryName.Length as usize + ParentNameSize as usize + 2 + LinkNameSize as usize;
+
+    (*HiveName).Buffer = ExAllocatePoolWithTag(PagedPool, NameSize, 0x20436d43u32) as *mut u16;
+    if (*HiveName).Buffer.is_null() {
+        return 0u8;
+    }
+
+    (*HiveName).Length = NameSize as u16;
+    (*HiveName).MaximumLength = NameSize as u16;
+    p = (*HiveName).Buffer;
+
+    core::ptr::copy_nonoverlapping(
+        RegistryName.Buffer,
+        p,
+        RegistryName.Length as usize / 2,
+    );
+    p = p.add(RegistryName.Length as usize / 2);
+    if (*ParentData).u.KeyNode.Flags & 0x0001 != 0 {
+        CmpCopyCompressedName(
+            p,
+            ParentNameSize,
+            core::ptr::addr_of!((*ParentData).u.KeyNode.Name) as *mut u16,
+            (*ParentData).u.KeyNode.NameLength as u32,
+        );
+    } else {
+        core::ptr::copy_nonoverlapping(
+            core::ptr::addr_of!((*ParentData).u.KeyNode.Name) as *const u16,
+            p,
+            ParentNameSize as usize / 2,
+        );
+    }
+
+    p = p.add(ParentNameSize as usize / 2);
+    *p = b'\\' as u16;
+    p = p.add(1);
+
+    if (*LinkData).u.KeyNode.Flags & 0x0001 != 0 {
+        CmpCopyCompressedName(
+            p,
+            LinkNameSize,
+            core::ptr::addr_of!((*LinkData).u.KeyNode.Name) as *mut u16,
+            (*LinkData).u.KeyNode.NameLength as u32,
+        );
+    } else {
+        core::ptr::copy_nonoverlapping(
+            core::ptr::addr_of!((*LinkData).u.KeyNode.Name) as *const u16,
+            p,
+            LinkNameSize as usize / 2,
+        );
+    }
+
+    return 1u8;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
+    let mut Status: i32;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut HivePath: _UNICODE_STRING = core::mem::zeroed();
+    let mut FilePath: *mut u16;
+    let mut Length: u32 = 0;
+    let mut DummyNameInfo: OBJECT_NAME_INFORMATION = core::mem::zeroed();
+    let mut FileNameInfo: POBJECT_NAME_INFORMATION = core::ptr::null_mut();
+
+    HivePath.Buffer = core::ptr::null_mut();
+
+    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
+    ObjectAttributes.RootDirectory = core::ptr::null_mut();
+    ObjectAttributes.Attributes = 0x00000040u32 | 0x00000200u32;
+    ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(HiveListValueName);
+    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
+    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+
+    Status = ZwCreateKey(
+        core::ptr::addr_of_mut!(KeyHandle),
+        KEY_READ | KEY_WRITE,
+        core::ptr::addr_of_mut!(ObjectAttributes),
+        0,
+        core::ptr::null_mut(),
+        0x00000001u32,
+        core::ptr::null_mut(),
+    );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    if CmpGetHiveName(Hive, core::ptr::addr_of_mut!(HivePath)) == 0 {
+        Status = STATUS_NO_MEMORY;
+        'Quickie: loop {
+            if !HivePath.Buffer.is_null() {
+                ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
+            }
+            if !FileNameInfo.is_null() {
+                ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
+            }
+            ObCloseHandle(KeyHandle, 0i8);
+            return Status;
+        }
+    }
+
+    if ((*Hive).Hive.HiveFlags & 0x00000001u32) == 0 {
+        Status = ZwQueryObject(
+            (*Hive).FileHandles[0],
+            1u32,
+            core::ptr::addr_of_mut!(DummyNameInfo) as *mut core::ffi::c_void,
+            core::mem::size_of_val(&DummyNameInfo) as u32,
+            core::ptr::addr_of_mut!(Length),
+        );
+        if Status != 0x80000005u32 as i32 {
+            'Quickie: loop {
+                if !HivePath.Buffer.is_null() {
+                    ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
+                }
+                if !FileNameInfo.is_null() {
+                    ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
+                }
+                ObCloseHandle(KeyHandle, 0i8);
+                return Status;
+            }
+        }
+
+        FileNameInfo = ExAllocatePoolWithTag(
+            PagedPool,
+            (Length as usize) + core::mem::size_of::<u16>(),
+            TAG_CM,
+        ) as POBJECT_NAME_INFORMATION;
+        if FileNameInfo.is_null() {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            'Quickie: loop {
+                if !HivePath.Buffer.is_null() {
+                    ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
+                }
+                if !FileNameInfo.is_null() {
+                    ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
+                }
+                ObCloseHandle(KeyHandle, 0i8);
+                return Status;
+            }
+        }
+
+        Status = ZwQueryObject(
+            (*Hive).FileHandles[0],
+            1u32,
+            FileNameInfo as *mut core::ffi::c_void,
+            Length,
+            core::ptr::addr_of_mut!(Length),
+        );
+        if NT_SUCCESS(Status) {
+            Length -= core::mem::size_of::<OBJECT_NAME_INFORMATION>() as u32;
+            FilePath = (*FileNameInfo).Name.Buffer;
+            *FilePath.offset((Length / core::mem::size_of::<u16>() as u32) as isize) = 0u16;
+            Length += core::mem::size_of::<u16>() as u32;
+        } else {
+            'Quickie: loop {
+                if !HivePath.Buffer.is_null() {
+                    ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
+                }
+                if !FileNameInfo.is_null() {
+                    ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
+                }
+                ObCloseHandle(KeyHandle, 0i8);
+                return Status;
+            }
+        }
+    } else {
+        FilePath = b"\0\0".as_ptr() as *mut u16;
+        Length = core::mem::size_of::<u16>() as u32;
+    }
+
+    Status = ZwSetValueKey(
+        KeyHandle,
+        core::ptr::addr_of_mut!(HivePath),
+        0,
+        1u32,
+        FilePath as *mut core::ffi::c_void,
+        Length,
+    );
+
+    if !HivePath.Buffer.is_null() {
+        ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
+    }
+    if !FileNameInfo.is_null() {
+        ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
+    }
+    ObCloseHandle(KeyHandle, 0i8);
+    Status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
+    let mut Status: i32;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut HivePath: _UNICODE_STRING = core::mem::zeroed();
+
+    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
+    ObjectAttributes.RootDirectory = core::ptr::null_mut();
+    ObjectAttributes.Attributes = 0x00000040 | 0x00000200;
+    ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(HiveListValueName);
+    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
+    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
+
+    Status = ZwOpenKey(
+        core::ptr::addr_of_mut!(KeyHandle),
+        KEY_READ | KEY_WRITE,
+        core::ptr::addr_of_mut!(ObjectAttributes),
+    );
+    if !NT_SUCCESS(Status) {
+        return;
+    }
+
+    CmpGetHiveName(Hive, core::ptr::addr_of_mut!(HivePath));
+
+    ZwDeleteValueKey(KeyHandle, core::ptr::addr_of_mut!(HivePath));
+
+    ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, 0x20204D43);
+    ObCloseHandle(KeyHandle, 0);
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * PROJECT:         ReactOS Kernel
+//  * LICENSE:         GPL - See COPYING in the top level directory
+//  * FILE:            ntoskrnl/config/cmhvlist.c
+//  * PURPOSE:         Configuration Manager - Hives file list management
+//  * PROGRAMMERS:     Hermes BELUSCA - MAITO
+//  */
+//
+// /* INCLUDES *******************************************************************/
+//
+// #include "ntoskrnl.h"
+// #define NDEBUG
+// #include "debug.h"
+//
+// /* GLOBALS ********************************************************************/
+//
+// UNICODE_STRING HiveListValueName = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\hivelist");
+//
+// /* FUNCTIONS ******************************************************************/
+//
+// /* Note: the caller is expected to free the HiveName string buffer */
+// BOOLEAN
+// NTAPI
+// CmpGetHiveName(IN PCMHIVE Hive,
+//                OUT PUNICODE_STRING HiveName)
+// {
+//     HCELL_INDEX RootCell, LinkCell;
+//     PCELL_DATA RootData, LinkData, ParentData;
+//     ULONG ParentNameSize, LinkNameSize;
+//     SIZE_T NameSize;
+//     PWCHAR p;
+//     UNICODE_STRING RegistryName = RTL_CONSTANT_STRING(L"\\REGISTRY\\");
+//
+//     /* Get the root cell of this hive */
+//     RootCell = Hive->Hive.BaseBlock->RootCell;
+//     RootData = HvGetCell(&Hive->Hive, RootCell);
+//     if (!RootData) return FALSE;
+//
+//     /* Get the cell index at which this hive is linked to, and its parent */
+//     LinkCell = RootData->u.KeyNode.Parent;
+//     HvReleaseCell(&Hive->Hive, RootCell);
+//
+//     /* Sanity check */
+//     ASSERT((&CmiVolatileHive->Hive)->ReleaseCellRoutine == NULL);
+//
+//     /* Get the cell data for link and parent */
+//     LinkData = HvGetCell(&CmiVolatileHive->Hive, LinkCell);
+//     if (!LinkData) return FALSE;
+//     ParentData = HvGetCell(&CmiVolatileHive->Hive, LinkData->u.KeyNode.Parent);
+//     if (!ParentData) return FALSE;
+//
+//     /* Get the size of the parent name */
+//     if (ParentData->u.KeyNode.Flags & KEY_COMP_NAME)
+//     {
+//         ParentNameSize = CmpCompressedNameSize(ParentData->u.KeyNode.Name,
+//                                                ParentData->u.KeyNode.NameLength);
+//     }
+//     else
+//     {
+//         ParentNameSize = ParentData->u.KeyNode.NameLength;
+//     }
+//
+//     /* Get the size of the link name */
+//     if (LinkData->u.KeyNode.Flags & KEY_COMP_NAME)
+//     {
+//         LinkNameSize = CmpCompressedNameSize(LinkData->u.KeyNode.Name,
+//                                              LinkData->u.KeyNode.NameLength);
+//     }
+//     else
+//     {
+//         LinkNameSize = LinkData->u.KeyNode.NameLength;
+//     }
+//
+//     /* No need to account for terminal NULL character since we deal with counted UNICODE strings */
+//     NameSize = RegistryName.Length + ParentNameSize + sizeof(WCHAR) + LinkNameSize;
+//
+//     /* Allocate the memory */
+//     HiveName->Buffer = ExAllocatePoolWithTag(PagedPool, NameSize, TAG_CM);
+//     if (!HiveName->Buffer)
+//     {
+//         /* Fail */
+//         DPRINT1("CmpGetHiveName: Unable to allocate memory\n");
+//         return FALSE;
+//     }
+//
+//     /* Build the string for it */
+//     HiveName->Length = HiveName->MaximumLength = (USHORT)NameSize;
+//     p = HiveName->Buffer;
+//
+//     /* Copy the parent name */
+//     RtlCopyMemory(p, RegistryName.Buffer, RegistryName.Length);
+//     p += RegistryName.Length / sizeof(WCHAR);
+//     if (ParentData->u.KeyNode.Flags & KEY_COMP_NAME)
+//     {
+//         CmpCopyCompressedName(p,
+//                               ParentNameSize,
+//                               ParentData->u.KeyNode.Name,
+//                               ParentData->u.KeyNode.NameLength);
+//     }
+//     else
+//     {
+//         RtlCopyMemory(p, ParentData->u.KeyNode.Name, ParentNameSize);
+//     }
+//
+//     /* Add a path separator between parent and link */
+//     p += ParentNameSize / sizeof(WCHAR);
+//     *p = OBJ_NAME_PATH_SEPARATOR;
+//     ++p;
+//
+//     /* Now copy the link name */
+//     if (LinkData->u.KeyNode.Flags & KEY_COMP_NAME)
+//     {
+//         CmpCopyCompressedName(p,
+//                               LinkNameSize,
+//                               LinkData->u.KeyNode.Name,
+//                               LinkData->u.KeyNode.NameLength);
+//
+//     }
+//     else
+//     {
+//         RtlCopyMemory(p, LinkData->u.KeyNode.Name, LinkNameSize);
+//     }
+//
+//     /* All done */
+//     return TRUE;
+// }
+//
+// NTSTATUS
+// NTAPI
+// CmpAddToHiveFileList(IN PCMHIVE Hive)
+// {
+//     NTSTATUS Status;
+//     OBJECT_ATTRIBUTES ObjectAttributes;
+//     HANDLE KeyHandle;
+//     UNICODE_STRING HivePath;
+//     PWCHAR FilePath;
+//     ULONG Length;
+//     OBJECT_NAME_INFORMATION DummyNameInfo;
+//     POBJECT_NAME_INFORMATION FileNameInfo;
+//
+//     HivePath.Buffer = NULL;
+//     FileNameInfo = NULL;
+//
+//     /* Create or open the hive list key */
+//     InitializeObjectAttributes(&ObjectAttributes,
+//                                &HiveListValueName,
+//                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+//                                NULL,
+//                                NULL);
+//     Status = ZwCreateKey(&KeyHandle,
+//                          KEY_READ | KEY_WRITE,
+//                          &ObjectAttributes,
+//                          0,
+//                          NULL,
+//                          REG_OPTION_VOLATILE,
+//                          NULL);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         /* Fail */
+//         DPRINT1("CmpAddToHiveFileList: Creation or opening of the hive list failed, status = 0x%08lx\n", Status);
+//         return Status;
+//     }
+//
+//     /* Retrieve the name of the hive */
+//     if (!CmpGetHiveName(Hive, &HivePath))
+//     {
+//         /* Fail */
+//         DPRINT1("CmpAddToHiveFileList: Unable to retrieve the hive name\n");
+//         Status = STATUS_NO_MEMORY;
+//         goto Quickie;
+//     }
+//
+//     /* Get the name of the corresponding file */
+//     if (!(Hive->Hive.HiveFlags & HIVE_VOLATILE))
+//     {
+//         /* Determine the right buffer size and allocate */
+//         Status = ZwQueryObject(Hive->FileHandles[HFILE_TYPE_PRIMARY],
+//                                ObjectNameInformation,
+//                                &DummyNameInfo,
+//                                sizeof(DummyNameInfo),
+//                                &Length);
+//         if (Status != STATUS_BUFFER_OVERFLOW)
+//         {
+//             DPRINT1("CmpAddToHiveFileList: Hive file name size query failed, status = 0x%08lx\n", Status);
+//             goto Quickie;
+//         }
+//
+//         FileNameInfo = ExAllocatePoolWithTag(PagedPool,
+//                                              Length + sizeof(UNICODE_NULL),
+//                                              TAG_CM);
+//         if (FileNameInfo == NULL)
+//         {
+//             Status = STATUS_INSUFFICIENT_RESOURCES;
+//             goto Quickie;
+//         }
+//
+//         /* Try to get the value */
+//         Status = ZwQueryObject(Hive->FileHandles[HFILE_TYPE_PRIMARY],
+//                                ObjectNameInformation,
+//                                FileNameInfo,
+//                                Length,
+//                                &Length);
+//         if (NT_SUCCESS(Status))
+//         {
+//             /* Null-terminate and add the length of the terminator */
+//             Length -= sizeof(OBJECT_NAME_INFORMATION);
+//             FilePath = FileNameInfo->Name.Buffer;
+//             FilePath[Length / sizeof(WCHAR)] = UNICODE_NULL;
+//             Length += sizeof(UNICODE_NULL);
+//         }
+//         else
+//         {
+//             /* Fail */
+//             DPRINT1("CmpAddToHiveFileList: Hive file name query failed, status = 0x%08lx\n", Status);
+//             goto Quickie;
+//         }
+//     }
+//     else
+//     {
+//         /* No name */
+//         FilePath = L"";
+//         Length = sizeof(UNICODE_NULL);
+//     }
+//
+//     /* Set the entry in the hive list */
+//     Status = ZwSetValueKey(KeyHandle,
+//                            &HivePath,
+//                            0,
+//                            REG_SZ,
+//                            FilePath,
+//                            Length);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         /* Fail */
+//         DPRINT1("CmpAddToHiveFileList: Setting of entry in the hive list failed, status = 0x%08lx\n", Status);
+//     }
+//
+// Quickie:
+//     /* Cleanup and return status */
+//     if (HivePath.Buffer)
+//     {
+//         ExFreePoolWithTag(HivePath.Buffer, TAG_CM);
+//     }
+//     if (FileNameInfo)
+//     {
+//         ExFreePoolWithTag(FileNameInfo, TAG_CM);
+//     }
+//     ObCloseHandle(KeyHandle, KernelMode);
+//     return Status;
+// }
+//
+// VOID
+// NTAPI
+// CmpRemoveFromHiveFileList(IN PCMHIVE Hive)
+// {
+//     NTSTATUS Status;
+//     OBJECT_ATTRIBUTES ObjectAttributes;
+//     HANDLE KeyHandle;
+//     UNICODE_STRING HivePath;
+//
+//     /* Open the hive list key */
+//     InitializeObjectAttributes(&ObjectAttributes,
+//                                &HiveListValueName,
+//                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+//                                NULL,
+//                                NULL);
+//     Status = ZwOpenKey(&KeyHandle,
+//                        KEY_READ | KEY_WRITE,
+//                        &ObjectAttributes);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         /* Fail */
+//         DPRINT1("CmpRemoveFromHiveFileList: Opening of the hive list failed, status = 0x%08lx\n", Status);
+//         return;
+//     }
+//
+//     /* Get the hive path name */
+//     CmpGetHiveName(Hive, &HivePath);
+//
+//     /* Delete the hive path name from the list */
+//     ZwDeleteValueKey(KeyHandle, &HivePath);
+//
+//     /* Cleanup allocation and handle */
+//     ExFreePoolWithTag(HivePath.Buffer, TAG_CM);
+//     ObCloseHandle(KeyHandle, KernelMode);
+// }
+//
+// /* EOF */
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

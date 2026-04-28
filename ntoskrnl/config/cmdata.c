@@ -38,6 +38,15 @@ PCM_FULL_RESOURCE_DESCRIPTOR CmpConfigurationData;
 
 EX_PUSH_LOCK CmpHiveListHeadLock, CmpLoadHiveLock;
 
+/* Moved from cmalloc.c (now translated to Rust). Kept in C so that */
+/* the Rust translation can declare them via `extern "C"`. */
+BOOLEAN CmpAllocInited;
+KGUARDED_MUTEX CmpAllocBucketLock;
+LIST_ENTRY CmpFreeKCBListHead;
+
+KGUARDED_MUTEX CmpDelayAllocBucketLock;
+LIST_ENTRY CmpFreeDelayItemsListHead;
+
 HIVE_LIST_ENTRY CmpMachineHiveList[] =
 {
     { L"HARDWARE", L"MACHINE\\", NULL, HIVE_VOLATILE    , 0 ,   NULL,   FALSE,  FALSE,  FALSE},
