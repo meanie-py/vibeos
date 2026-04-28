@@ -1,4 +1,4 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-04-27)
+# ntoskrnl C→Rust Translation Audit (updated 2026-04-28)
 
 ## Already Translated (Active in Rust)
 
@@ -18,7 +18,8 @@
 | CC (cache) | 7 | 6,112 | All arches |
 | DBGK (debug) | 2 | 5,061 | All arches |
 | PO (power) | 4 | 4,961 | All arches |
-| KD (low-level debugger) | 9 | 3,914 | All arches (this session) |
+| KD (low-level debugger) | 9 | 3,914 | All arches |
+| KDBG (interactive debugger) | 7 | 9,991 | i386 + amd64 (off on ARM64) |
 | LPC (local proc) | 8 | 3,876 | All arches |
 | INBV (boot video) | 3 | 3,611 | All arches |
 | WMI | 4 | 3,588 | All arches |
@@ -35,10 +36,10 @@
 
 The Windows Registry implementation. Used on every boot and throughout runtime.
 
-Current status as of 2026-04-27:
-- Rust translations are active in `sdk/lib/rust/ntoskrnl-rust/src/config` and currently compile clean for `kernel-rust` on `x86_64-pc-windows-gnu`.
-- Recent parity fixes landed in `ntapi.rs`, `cmsysini.rs`, `cmconfig.rs`, `cmparse.rs`, `cmhvlist.rs`, `cmvalche.rs`, `cminit.rs`, and `cmcontrl.rs`.
-- Small support files `cmquota.rs`, `cmsecach.rs`, `cmhook.rs`, `cmmapvw.rs`, and `cmnotify.rs` have been rechecked against C and are currently aligned or stubbed at the same level as C.
+Current status as of 2026-04-28:
+- Translation lives on branch `wip-config-rust-port` (tip: `2668b739 WIP: config/ Rust translation — boots-broken, bisected to LLVM CGU regression`). Not merged into `continue-rust-port`; the C config/ files are still active in this branch's build.
+- On the WIP branch: 21 .rs files in `sdk/lib/rust/ntoskrnl-rust/src/config`, compile-clean on `x86_64-pc-windows-gnu`, but boot is broken and bisected to the LLVM CGU/captures(none) regression (see `feedback_cgu1.md`).
+- Parity fixes already landed there: `ntapi.rs`, `cmsysini.rs`, `cmconfig.rs`, `cmparse.rs`, `cmhvlist.rs`, `cmvalche.rs`, `cminit.rs`, `cmcontrl.rs`. Small files (`cmquota.rs`, `cmsecach.rs`, `cmhook.rs`, `cmmapvw.rs`, `cmnotify.rs`) are aligned/stubbed at C parity.
 - Highest remaining audit risk is concentrated in `cmapi.rs`, `cmboot.rs`, and `cmkcbncb.rs`, where translation-era local stubs and large control-flow surfaces still need deeper line-by-line verification.
 
 | File | Lines | Description |
@@ -191,26 +192,25 @@ Alternative cache manager implementation, only compiled when `NEWCC=ON`. The act
 
 Kernel test harness, stays in C.
 
-## Summary (updated 2026-04-27)
+## Summary (updated 2026-04-28)
 
 | Subsystem | Files | Lines | Priority | Status |
 |-----------|-------|-------|----------|--------|
 | **config/** | 24 | 18,827 | HIGH | Rust translations active; compile-clean on x86_64, parity audit/fixup in progress with remaining highest-risk review in cmapi/cmboot/cmkcbncb |
 | ~~**fstub/**~~ | 4 | 5,817 | DONE | All 4 files Rust on all 3 arches |
 | **kd64/** | 11 | 6,846 | DEFERRED | Already translated, needs debug (recursive exception flood on amd64) |
-| **kdbg/** | 9 | 12,328 | LOW | ~$0.35; i386-dis.c (binutils) stays in C |
-| ~~**kd/**~~ | 9 | 2,242 | DONE | All 9 files Rust on all 3 arches (this session) |
+| ~~**kdbg/**~~ | 7 + shim | 7,653 | DONE | 7 generic files Rust on i386 + amd64 (2026-04-28). i386-dis.c + kdb_help.S stay in C |
+| ~~**kd/**~~ | 9 | 2,242 | DONE | All 9 files Rust on all 3 arches |
 | ~~**cache/**~~ | 13 | 7,486 | DONE | section/{io,sptab}.c → Rust (wired, active); 11 NEWCC files line-commented dead code |
-| **TOTAL remaining** | ~33 | ~37,001 | | ~$0.85 |
+| **TOTAL remaining** | ~24 | ~24,673 | | (config + kd64 only) |
 
 ## Translation Priority Recommendation
 
-1. **CONFIG bisection** — translation done but boot-broken; needs root-cause debugging (Codex / fresh eyes when tokens available). 21 files (~30K Rust) sit in `git stash@{0}`.
+1. **CONFIG bisection** — translation done but boot-broken; needs root-cause debugging (Codex / fresh eyes when tokens available). 21 files (~30K Rust) live on branch `wip-config-rust-port`.
 2. **kd64/ debug** — already translated, needs recursive exception flood on amd64 debugged. No API cost.
-3. **KDBG (12K lines)** — Low priority, debugger-only code. The i386-dis.c (binutils-derived disassembler) stays in C; everything else is straightforward.
-4. **Misc root files** — guid.c, kernel_c_helpers.c, tier1_rust_shims.c, KrnlFun.c — small (~1.5K lines).
+3. **Misc root files** — guid.c, kernel_c_helpers.c, tier1_rust_shims.c, KrnlFun.c — small (~1.5K lines).
 
-After config bisection lands and kdbg follows, the kernel would be **~98% Rust** by line count.
+After config bisection lands, the kernel would be **~98% Rust** by line count.
 
 ## What's Still C (and intentionally so)
 
