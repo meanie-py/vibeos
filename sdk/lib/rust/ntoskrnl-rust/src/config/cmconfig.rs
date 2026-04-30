@@ -80,7 +80,13 @@ extern "C" {
     // `OBJECT_ATTRIBUTES.ObjectName` pointer type (`*mut _UNICODE_STRING`).
     static mut CmTypeName: [_UNICODE_STRING; 42];
     // CmpMultifunctionTypes: CMP_MF_TYPE[] — null-terminated array.
-    static mut CmpMultifunctionTypes: [CMP_MF_TYPE; 0];
+    // Length unknown to Rust; access via raw pointer arithmetic only.
+    static mut CmpMultifunctionTypes: CMP_MF_TYPE;
+}
+
+#[inline(always)]
+unsafe fn cmp_mf_types() -> *mut CMP_MF_TYPE {
+    core::ptr::addr_of_mut!(CmpMultifunctionTypes)
 }
 
 #[no_mangle]
@@ -317,15 +323,16 @@ pub unsafe extern "system" fn CmpSetupConfigurationTree(
                 _CONFIGURATION_TYPE_MultiFunctionAdapter => {
                     if !(*Component).Identifier.is_null() {
                         i = 0;
-                        while !CmpMultifunctionTypes[i as usize].Identifier.is_null() {
-                            if _stricmp(CmpMultifunctionTypes[i as usize].Identifier, (*Component).Identifier) == 0 {
+                        let base = cmp_mf_types();
+                        while !(*base.add(i as usize)).Identifier.is_null() {
+                            if _stricmp((*base.add(i as usize)).Identifier, (*Component).Identifier) == 0 {
                                 break;
                             }
                             i += 1;
                         }
-                        Interface = CmpMultifunctionTypes[i as usize].InterfaceType as INTERFACE_TYPE;
-                        Bus = CmpMultifunctionTypes[i as usize].Count as ULONG;
-                        CmpMultifunctionTypes[i as usize].Count += 1;
+                        Interface = (*base.add(i as usize)).InterfaceType as INTERFACE_TYPE;
+                        Bus = (*base.add(i as usize)).Count as ULONG;
+                        (*base.add(i as usize)).Count += 1;
                     }
                 }
                 _CONFIGURATION_TYPE_ScsiAdapter => {

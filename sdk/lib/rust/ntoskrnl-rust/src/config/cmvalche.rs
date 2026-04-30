@@ -141,7 +141,7 @@ pub unsafe extern "system" fn CmpGetValueKeyFromCache(
         ASSERT_VALUE_CACHE();
         *ValueIsCached = 1u8;
     } else {
-        Cell = (*CellData).u.KeyList[Index as usize];
+        Cell = *(core::ptr::addr_of!((*CellData).u.KeyList) as *const HCELL_INDEX).add(Index as usize);
         KeyValue = HvGetCell(Hive, Cell) as PCM_KEY_VALUE;
         if KeyValue.is_null() {
             return SearchFail;

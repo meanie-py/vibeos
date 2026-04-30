@@ -695,7 +695,7 @@ unsafe fn CmpDoOpen(
                     CmpCleanUpKcbValueCache(*CachedKcb);
                     *KcbsLocked.offset(0) = 1;
                     *KcbsLocked.offset(1) = GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
-                    return 0x00000021u32 as i32;
+                    return 0x00000104u32 as i32; // STATUS_REPARSE
                 }
 
                 CmpUnLockKcbArray(KcbsLocked);
@@ -703,7 +703,7 @@ unsafe fn CmpDoOpen(
                 *KcbsLocked.offset(0) = 1;
                 *KcbsLocked.offset(1) = GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
             } else {
-                return 0x00000021u32 as i32;
+                return 0x00000104u32 as i32; // STATUS_REPARSE
             }
         } else {
             Kcb = *CachedKcb;
@@ -727,7 +727,7 @@ unsafe fn CmpDoOpen(
             }
 
             *CachedKcb = Kcb;
-            return 0x00000021u32 as i32;
+            return 0x00000104u32 as i32; // STATUS_REPARSE
         }
 
         Kcb = CmpCreateKeyControlBlock(
