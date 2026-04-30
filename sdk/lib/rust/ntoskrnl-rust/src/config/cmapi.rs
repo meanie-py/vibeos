@@ -245,7 +245,7 @@ unsafe fn CmpSetValueKeyNew(
             panic!("ASSERT: Parent->ValueList.List != HCELL_NIL");
         }
         if HvMarkCellDirty(Hive, (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.List, 0u8) == 0 {
-            return 0xC00001D5u32 as i32;
+            return STATUS_NO_LOG_SPACE;
         }
     }
 
@@ -451,7 +451,7 @@ unsafe fn CmpQueryKeyData(
             Status = STATUS_SUCCESS;
 
             if Length < MinimumSize {
-                Status = 0x8000000Du32 as i32;
+                Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 (*Info).__bindgen_anon_1.KeyBasicInformation.LastWriteTime = (*Node).LastWriteTime;
                 (*Info).__bindgen_anon_1.KeyBasicInformation.TitleIndex = 0;
@@ -490,7 +490,7 @@ unsafe fn CmpQueryKeyData(
             Status = STATUS_SUCCESS;
 
             if Length < MinimumSize {
-                Status = 0x8000000Du32 as i32;
+                Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 (*Info).__bindgen_anon_1.KeyNodeInformation.LastWriteTime = (*Node).LastWriteTime;
                 (*Info).__bindgen_anon_1.KeyNodeInformation.TitleIndex = 0;
@@ -561,7 +561,7 @@ unsafe fn CmpQueryKeyData(
             Status = STATUS_SUCCESS;
 
             if Length < MinimumSize {
-                Status = 0x8000000Du32 as i32;
+                Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 (*Info).__bindgen_anon_1.KeyFullInformation.LastWriteTime = (*Node).LastWriteTime;
                 (*Info).__bindgen_anon_1.KeyFullInformation.TitleIndex = 0;
@@ -747,7 +747,7 @@ pub unsafe extern "system" fn CmSetValueKey(
         CMP_ASSERT_KCB_LOCK(Kcb);
 
         if HvMarkCellDirty(Hive, Cell, 0) == 0 {
-            Status = 0xC00001D5u32 as i32;
+            Status = STATUS_NO_LOG_SPACE;
             break 'Quickie;
         }
 
@@ -1076,7 +1076,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
         if (*Kcb).__bindgen_anon_1.Delete() != 0 {
             CmpReleaseKcbLock(Kcb);
             CmpUnlockRegistry();
-            return 0xC0000017u32 as i32;
+            return STATUS_KEY_DELETED;
         }
 
         Hive = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
@@ -1557,7 +1557,7 @@ pub unsafe extern "system" fn CmFlushKey(
         }
 
         if HvSyncHive(Hive) == 0 {
-            Status = 0xC000010Cu32 as i32;
+            Status = 0xC000014Du32 as i32; // STATUS_REGISTRY_IO_FAILED
         }
 
         CmpUnlockHiveFlusher(CmHive);

@@ -1,152 +1,126 @@
-# config/ Rust port debug status (2026-04-30)
+# config/ Rust port debug status (2026-04-30 — session 2)
 
 ## Where we are
 
-Branch `wip-config-rust-port` at `e3c3cd4f` (4 fixes committed). Build clean
-both arches, 0 unexpected ud2. Boot reaches PsLocateSystemDll on i386, then
-fails with BUGCHECK 0x6B (`PROCESS1_INITIALIZATION_FAILED, 0xC000003A,
-0x2`) because `\SystemRoot\System32\ntdll.dll` cannot be opened.
+Branch `wip-config-rust-port`. **5 commits shipped** advancing boot from
+- `BSOD 0x67 (config init step 13)` →
+- `BSOD 0x6B (PsLocateSystemDll: ntdll.dll path not found)` →
+- **i386: hangs at mountmgr.sys PnP enum (ASSERT in ExReleasePushLock)**
+- **amd64: hangs at uniata.sys PnP enum (PCI Slot Resource Assignment FOOBAR + same pushlock ASSERT)**
 
-## Fixes shipped (this session)
+Smoke tests still **not** passing — but PnP enumeration is now functional;
+drivers actually bind to devices (pci.sys, isapnp.sys, partmgr.sys, uniata.sys
+all get `AddDevice` called) instead of silently failing at the very first
+device.
 
-Four registry/translation bugs were committed:
+## Fixes shipped (session 1, prior)
 
-1. **`cmvalche.rs:144` — bindgen flexible-array indexing panic**
-   `(*CellData).u.KeyList[Index]` panicked because bindgen typed `KeyList`
-   as `[HCELL_INDEX; 1]` (it's a flexible array in C). Replaced with raw
-   pointer arithmetic. (Commit `a4c169b6`.)
+1. `cmvalche.rs:144` — bindgen flexible-array indexing panic. (`a4c169b6`)
+2. `cmconfig.rs` — `CmpMultifunctionTypes` zero-length array indexing. (`a4c169b6`)
+3. `cmparse.rs::CmpDoOpen` — wrong `STATUS_REPARSE` constant. (`a4c169b6`)
+4. `cmapi.rs::CmEnumerateKey` — registry-lock recursion leak (Quickie pattern). (`e3c3cd4f`)
+5. `fstub`/`kdbg` — pool tag big-endian + STATUS_NO_MEDIA constant. (`d0efbaf8`)
 
-2. **`cmconfig.rs` — `CmpMultifunctionTypes` zero-length array indexing**
-   Declared as `[CMP_MF_TYPE; 0]` and indexed at runtime, panicking on
-   bounds check. Switched to single-element `static mut` + raw pointer
-   `.add(i)` arithmetic. (Commit `a4c169b6`.)
+## Fixes shipped (session 2, this commit)
 
-3. **`cmparse.rs::CmpDoOpen` — wrong `STATUS_REPARSE` constant**
-   Three returns used `0x00000021` instead of `0x00000104`. This silently
-   masked symbolic-link reparse, so opening
-   `\Registry\Machine\System\CurrentControlSet` returned the volatile
-   master-hive symlink itself instead of following to ControlSet001 in
-   the SYSTEM hive. Downstream `Control` etc. creates under that handle
-   then hit the volatile-master-hive create-rejection path
-   → STATUS_INVALID_PARAMETER → BUGCHECK 0x67/0x6E. (Commit `a4c169b6`.)
+**`cmapi.rs` — five wrong NTSTATUS hex literals from rustconv translation.**
 
-4. **`cmapi.rs::CmEnumerateKey` — registry-lock recursion leak**
-   The C uses `goto Quickie;` to consolidate cleanup
-   (`HvReleaseFreeCellRefArray + CmpReleaseKcbLock + CmpUnlockRegistry`).
-   The Rust translation inlined every `goto Quickie;` as a bare
-   `return Status;` and forgot the trailing Quickie cleanup block. Every
-   path leaked one shared registry-lock acquire. Boot driver init iterates
-   this function many times during ServiceGroupOrder + per-driver subkey
-   walks, accumulating ~88 unreleased shared acquires before
-   `CmGetSystemDriverList → CmpLockRegistryExclusive` deadlocked the boot
-   thread against itself. Wrapped body in `'Quickie: loop` matching
-   cmapi.c:1811-1817. (Commit `e3c3cd4f`.)
+The LLM that translated C → Rust transcribed status constants as raw hex
+literals and got several WRONG (digits transposed or wrong constant
+identity). All occurred in `CmpQueryKeyData` and related registry
+read/write paths:
 
-## After these fixes — boot timeline on i386
+| Site | Wrong value | Correct C constant | Correct value |
+|------|-------------|-------------------|----------------|
+| `cmapi.rs:454` (`CmpQueryKeyData KeyBasicInformation`) | `0x8000000D` STATUS_PARTIAL_COPY | STATUS_BUFFER_TOO_SMALL | `0xC0000023` |
+| `cmapi.rs:493` (`CmpQueryKeyData KeyNodeInformation`) | `0x8000000D` | STATUS_BUFFER_TOO_SMALL | `0xC0000023` |
+| `cmapi.rs:564` (`CmpQueryKeyData KeyFullInformation`) | `0x8000000D` | STATUS_BUFFER_TOO_SMALL | `0xC0000023` |
+| `cmapi.rs:248` (`CmpSetValueKeyNew` HvMarkCellDirty fail) | `0xC00001D5` (undefined) | STATUS_NO_LOG_SPACE | `0xC000017D` |
+| `cmapi.rs:750` (`CmSetValueKey` Quickie HvMarkCellDirty fail) | `0xC00001D5` (undefined) | STATUS_NO_LOG_SPACE | `0xC000017D` |
+| `cmapi.rs:1079` (`CmEnumerateValueKey` deleted check) | `0xC0000017` STATUS_NO_MEMORY | STATUS_KEY_DELETED | `0xC000017C` |
+| `cmapi.rs:1560` (`CmFlushKey` HvSyncHive fail) | `0xC000010C` STATUS_NO_GUID_TRANSLATION | STATUS_REGISTRY_IO_FAILED | `0xC000014D` |
 
-Now reaches:
-- All registry init (CmInitSystem1, CmpInitializeHardwareConfiguration)
-- IopInitializePlugPlayServices (creates Control / Enum / Root keys)
-- IopInitializeBootDrivers + per-builtin DriverEntry (24 drivers:
-  sacdrv, wdf01000, acpi, pci, isapnp, partmgr, usb*, mountmgr, uniata,
-  buslogic, usbstor, disk, cdrom, ksecdd, cdfs, ndis, swenum, ramdisk, mup)
-- IopReinitializeBootDrivers (done)
-- IopCreateArcNames → IopCreateArcNamesDisk (C) + IopCreateArcNamesCd (Rust)
-- IopMarkBootPartition (failed — tolerated for WinPE)
-- IopInitializeSystemDrivers — system drivers attempted to load via
-  `\SystemRoot\…` but all fail with `STATUS_OBJECT_PATH_NOT_FOUND`
-- IopReassignSystemRoot — runs but `\ArcName\multi(0)disk(0)cdrom(96)`
-  symlink doesn't exist → returns "FALSE-as-NTSTATUS" (which the caller
-  treats as success — quirk shared with C)
-- IoAssignDriveLetters
-- PsLocateSystemDll — `\SystemRoot\System32\ntdll.dll` open fails
-- BUGCHECK 0x6B
+### How the bugs blocked PnP enumeration
 
-## Current symptom — CDROM not detected → no ARC name → no SystemRoot
+The critical one was `CmpQueryKeyData`'s wrong `STATUS_BUFFER_TOO_SMALL`.
+`ZwEnumerateKey(handle, idx, KeyBasicInformation, NULL, 0, &len)` is the
+canonical "size query" pattern: caller passes 0-byte buffer, expects
+`STATUS_BUFFER_TOO_SMALL` (0xC0000023) plus the required size. Then
+caller allocates and re-queries.
 
-`IopCreateArcNamesCd` (in `arcname.rs`) finds the matching
-`ArcDiskSignature` for `multi(0)disk(0)cdrom(96)` in the loader block, but
-when querying `IoGetConfigurationInformation()->CdRomCount` it gets **0**
-— the IO subsystem doesn't see any CDROM device. With `CdRomCount=0` and
-`EnabledDisks=0`, the function returns success without creating any
-`\ArcName\multi(0)disk(0)cdrom(96)` symlink.
+With the wrong return value `STATUS_PARTIAL_COPY` (0x8000000D), all
+callers hitting this path in PnP — specifically `IopInstallCriticalDevice`
+in `pnpmgr.rs:386-598` enumerating the CriticalDeviceDatabase — fall
+through to a `Index += 1; continue;` loop that never matches. Result: no
+device ever finds its CriticalDeviceDatabase entry → no Service value
+written to its Enum subkey → `PiCallDriverAddDevice` later returns
+`STATUS_OBJECT_NAME_NOT_FOUND` from `RtlQueryRegistryValues(Service)` →
+no driver bound → no AddDevice → no child PDOs enumerated.
 
-`IopReassignSystemRoot` then opens that ARC symlink → fails with
-`STATUS_OBJECT_NAME_NOT_FOUND` → returns "FALSE" → caller treats as
-success (because the function's NTSTATUS-returning-BOOLEAN convention
-makes 0 = success).
+This cascades all the way down: ROOT not bound to PCI → no PCI children
+→ no IDE controller → no CDROM PDO → cdrom.sys's AddDevice never called
+→ `IoGetConfigurationInformation()->CdRomCount = 0` → ARC name not
+created → `\SystemRoot` doesn't resolve → ntdll.dll lookup fails →
+BUGCHECK 0x6B.
 
-`\SystemRoot` is never created with the boot device path. All subsequent
-file opens via `\SystemRoot\…` fail with `STATUS_OBJECT_PATH_NOT_FOUND`.
+### After these fixes — boot timeline
 
-## Why CDROM is not detected — open question
+**i386:**
+- All registry init ✓
+- PnP root device tree creation ✓
+- All 24 boot driver `DriverEntry` calls ✓
+- `IopInstallCriticalDevice` finds matches in CriticalDeviceDatabase ✓
+- `PiCallDriverAddDevice` calls `AddDevice` for PCI bus, ISAPNP bridge,
+  partmgr, mountmgr, etc. ✓
+- **NEW BLOCKER**: during `mountmgr.sys` PnP enum, an `ExReleasePushLock`
+  is called when the lock isn't held → `ASSERT FAILED: OldValue.Locked`
+  at `ex.h:1305`. Boot hangs (silently — confirmed by patching out the
+  assert: hang persists).
 
-The CDROM driver `cdrom.sys` was loaded (DriverEntry ran) per the BLT
-trace. But somehow no CDROM device shows up in
-`IoGetConfigurationInformation()`.
+**amd64:**
+- Same progress through mountmgr ✓
+- Resource conflict warnings (IRQ 0x9 0x9, ACPI bus number) — non-fatal
+- `uniata.sys` `DriverEntry` ✓
+- During PnP enum: `WARNING: PCI Slot Resource Assignment is FOOBAR`
+  (`pcibus.c:816`)
+- Then same `ASSERT FAILED: OldValue.Locked` → hang.
 
-`continue-rust-port` (no Rust config) boots the same LiveCD ISO and
-detects CDROMs correctly. So one of the recent Rust translations broke
-PnP enumeration of the CDROM, or broke the registry-driven matching that
-hooks cdrom.sys onto the IDE device.
+## Open question — pushlock release without acquire
 
-Likely candidates:
-- A registry value lookup during PnP that returns wrong data due to a
-  translation bug we haven't found yet.
-- The STATUS_REPARSE fix changed control flow somewhere that's now
-  reading the wrong subkey.
-- A call into `IopGetRegistryValue` from PnP that returns success but
-  with garbage data (LLM-translation-bug class).
+The pushlock at the i386 hang point is at pool address `0xE100B880`.
+The path: `mountmgr.sys` returns from `IopInitializeBuiltinDriver` with
+`deviceAdded=1`, then `PiQueueDeviceAction(EnumRoot)` runs synchronously,
+processes the queued boot devices, hits `HalpNoAdjustResourceList` (stub
+returning STATUS_UNSUCCESSFUL), and somewhere downstream of that an
+`ExReleasePushLock` fires the assert.
 
-## Next steps
-
-1. **Audit `IopFetchConfigurationInformation`** + the registry walk that
-   PnP uses to discover devices. Specifically the path from the IDE
-   controller PDO → cdrom.sys binding.
-
-2. **Check `cdrom.sys` DriverEntry on this build** — does it actually
-   create a `\Device\CdRom0` device object? Trace the AddDevice / bus
-   notification path.
-
-3. **Once CDROM detection works**, the chain unblocks:
-   IopCreateArcNamesCd creates the symlink → IopReassignSystemRoot
-   succeeds → \SystemRoot resolves → ntdll.dll opens → smss/csrss/winlogon
-   start → smoke marker `shell ready`.
-
-4. **Audit the IopReassignSystemRoot return convention** — both C and
-   Rust return `FALSE = 0` on failure, which is treated as
-   `NT_SUCCESS()`. This is a long-standing C bug. Probably outside the
-   scope of this branch but should be flagged: failures here go silently
-   undetected.
+A targeted subagent investigation pointed at residual Quickie-style
+cleanup-skip bugs in cmapi.rs (specifically `CmpDoFlushAll` /
+`CmpHiveListHeadLock`) but a manual audit of `cmapi.rs` `goto Quickie`
+patterns by the previous session was clean. The leak source is more
+likely in PnP/IO subsystem Rust code (see `pnpres.rs`, `iorsrce.rs`,
+`devaction.rs` resource-handling paths).
 
 ## Diagnostic state currently in tree (uncommitted)
 
-The following files have debug-only traces. Do not commit; revert once
-root cause is found:
+The following diagnostic traces were committed in `52be9e92` for the
+prior debugging session and are still in the tree. They should be
+removed once the next blocker is resolved:
 
-- `sdk/lib/rust/ntoskrnl-rust/src/iomgr/iomgr.rs` — `io_trace()` helper +
-  `[IO]` traces around each step of `IopInitSystem` / `IopFinishIoInitSystem`.
-- `sdk/lib/rust/ntoskrnl-rust/src/iomgr/driver.rs` — `[SYSDRV]` traces
-  in `IopInitializeSystemDrivers`, `[BLT]` per-builtin-driver trace.
-- `sdk/lib/rust/ntoskrnl-rust/src/iomgr/arcname.rs` — `[CDARC]` and
-  `[REASSIGN]` traces.
-- `sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpinit.rs` — `[PNP]` traces.
-- `sdk/lib/rust/ntoskrnl-rust/src/config/cmsysini.rs` — `[CMGSDL]`
-  traces in `CmGetSystemDriverList`, plus per-call `[LOCK]` / `[UNLK]`
-  counter with `RtlGetCallersAddress` decoding (no longer needed since
-  the lock leak was found).
+- `iomgr/iomgr.rs` — `io_trace()` + `[IO]` traces.
+- `iomgr/driver.rs` — `[BLT]` per-builtin-driver trace (the leading
+  `[BLT2]` traces I added this session were reverted before commit).
+- `iomgr/arcname.rs` — `[CDARC]` and `[REASSIGN]`.
+- `pnpmgr/pnpinit.rs` — `[PNP]`.
+- `config/cmsysini.rs` — `[CMGSDL]`, `[LOCK]`/`[UNLK]`.
 
-Remove these once the CDROM-detection bug is identified. Some of them
-(especially the per-builtin-driver trace in driver.rs and the [PNP]
-traces) are useful diagnostic surface to keep in some form for the next
-PnP-related debugging session.
+The `[BLT]` per-driver trace and `[PNP]` traces remain useful for the
+next blocker investigation; consider keeping them.
 
 ## Memory notes consulted
 
-- `feedback_cgu1.md` — LLVM captures(none) regression.
-- `feedback_extern_c_abi.md` — extern "C" vs "system" ABI; perennial.
 - `feedback_translation_philosophy.md` — never revert .rs to C; never
   delete .rs without approval.
 - `feedback_flexible_array.md` — bindgen flexible arrays must use pointer
-  arithmetic, not indexing (newly relevant for this session — three of
-  the four committed bugs were of this class).
+  arithmetic (still relevant, no new bugs in this session).
+- `feedback_no_blind_revert.md` — don't `git checkout` to discard work.
