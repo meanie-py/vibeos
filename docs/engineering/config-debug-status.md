@@ -2,18 +2,21 @@
 
 ## Where we are
 
-Branch `wip-config-rust-port`. **6 commits shipped** advancing boot from
+Branch `wip-config-rust-port`. **7 commits shipped** advancing boot from
 - `BSOD 0x67 (config init step 13)` →
 - `BSOD 0x6B (PsLocateSystemDll: ntdll.dll path not found)` →
 - `i386: hangs at mountmgr.sys PnP enum (ASSERT in ExReleasePushLock)` →
 - `amd64: hangs at uniata.sys PnP enum (same pushlock ASSERT)` →
-- **i386 + amd64: BSOD 0x6B — cdrom.sys DriverEntry fails because wdf01000.sys
-  was unloaded after its own DriverEntry returned STATUS_OBJECT_PATH_SYNTAX_BAD**
+- `BSOD 0x6B — cdrom.sys DriverEntry fails because wdf01000.sys's
+  DriverEntry got a 0-length RegistryPath` →
+- **BSOD 0x4C (FATAL_UNHANDLED_HARD_ERROR / STATUS_REGISTRY_CORRUPT)
+  during SMSS user-mode hive load**
 
 Smoke tests still **not** passing, but the kernel now runs **all 24 boot
-driver DriverEntries**, completes PnP enumeration without hangs, and reaches
-`IopReassignSystemRoot` / `PsLocateSystemDll`. The remaining gap is a single
-WDF dependency chain.
+driver DriverEntries**, completes PnP enumeration, creates ARC/SystemRoot
+symlinks, and reaches **user mode** — ntdll loads, SMSS starts, parses
+its config. The remaining failure is a registry hive whose on-disk header
+reads as all zeros (signature 0x0 expected 0x66676572 'regf').
 
 ## Fixes shipped (session 1, prior)
 
@@ -112,42 +115,67 @@ After the fix, all 24 boot drivers complete `IopInitializeBuiltinDriver`,
 PnP enum runs without ASSERTs, and boot reaches
 `IopInitializeSystemDrivers` / `IopReassignSystemRoot`.
 
-## Open: cdrom.sys DriverEntry fails → BSOD 0x6B
+## cdrom.sys DriverEntry → wdf01000.sys path bug — **FIXED** (commit `09b47bb4`)
 
-After the fix above, the next blocker is:
+Root cause was a **truncated translation** of `CmpQueryNameInformation`
+in `cmapi.rs:1255`. Sonnet generated the size-query / overflow check
+prologue and stopped, never emitting the second pass that copies the
+parent KCB chain into the output buffer. Result: every
+`ZwQueryKey(KeyHandle, KeyNameInformation, ...)` returned a buffer with
+`NameLength=0` and an uninitialized Name array.
 
-- `wdf01000.sys` is loaded as a builtin and present in PsLoadedModuleList.
-- Its `DriverEntry` (KMDF library DriverEntry in
-  `sdk/lib/drivers/wdf/kmdf/src/dynamic/version/version.cpp:318`) returns
-  `STATUS_OBJECT_PATH_SYNTAX_BAD` (0xC000003B) — likely from
-  `FxLibraryCreateDevice` or `WdfRegisterLibrary`.
-- `IopInitializeDriverModule` treats this as failure, calls
-  `ObMakeTemporaryObject` + `ObDereferenceObject` on the driver object,
-  and the LDR module entry gets unlinked from `PsLoadedModuleList`.
-- Subsequently `cdrom.sys`'s DriverEntry calls `WdfVersionBind`
-  (via `wdfdriverentry.c:FxDriverEntry`), which loads
-  `\SystemRoot\system32\drivers\wdf01000.sys` via `MmLoadSystemImage`.
-  The path-scan loop misses it (because `wdfldr.sys` is in the list with
-  ARC-path naming, not `wdf01000.sys`), falls through to `ZwOpenFile`,
-  which returns `STATUS_OBJECT_PATH_NOT_FOUND` because `\SystemRoot`
-  doesn't resolve yet.
-- `cdrom.sys` DriverEntry returns failure → no AddDevice → CdRomCount=0
-  → `IopCreateArcNames` doesn't create `\ArcName\multi(0)disk(0)cdrom(96)`
-  → `\SystemRoot` symlink resolution fails → `PsLocateSystemDll` fails
-  with `STATUS_OBJECT_PATH_NOT_FOUND` → BUGCHECK 0x6B.
+Most drivers ignore `RegistryPath` in `DriverEntry` and were unaffected.
+`wdf01000.sys` was the first driver to actually use the path — its
+`DriverEntry` calls `WdfRegisterLibrary -> LibraryCreate -> GetImageName`
+which uses `RegistryPath` as input to `ZwOpenKey`, and a 0-length
+`UNICODE_STRING` produced `STATUS_OBJECT_PATH_SYNTAX_BAD` (0xC000003B).
+The driver object cleanup unlinked wdf01000 from PsLoadedModuleList, so
+cdrom.sys's later `WdfVersionBind` couldn't find it via the module list,
+fell through to `MmLoadSystemImage`'s ZwOpenFile path, and failed
+because `\SystemRoot` wasn't yet resolvable. The chain cascaded all the
+way to BUGCHECK 0x6B.
 
-**Two paths forward:**
+Fix: ported the missing copy loop from `cmapi.c:1560-1601`, with
+`CmpCopyCompressedName` for compressed names and `core::ptr::copy_nonoverlapping`
+for raw names; appends `\\` between segments and writes the final
+`NameLength` to the caller's structure.
 
-1. Fix the actual reason `wdf01000.sys`'s DriverEntry returns
-   `STATUS_OBJECT_PATH_SYNTAX_BAD`. Add tracing to `FxLibraryCreateDevice`
-   / `WdfRegisterLibrary` to identify which UNICODE_STRING is malformed.
-2. Modify `IopInitializeDriverModule` to NOT unload the LDR module entry
-   when DriverEntry fails (only drop the driver object). This would let
-   cdrom.sys find wdf01000.sys later. This is closer to NT behavior but
-   diverges from the existing `ObDereferenceObject` semantics.
+Diagnostic path: instrumented `IopInitializeDriverModule` to print the
+`RegistryPath` being passed to each `DriverInit`. Output was
+`Length=0 Buffer=...` for every driver, immediately revealing the bug
+class (every ZwQueryKey for KeyNameInformation was broken).
 
-This blocker is **pre-existing** — it was always there, but masked by
-the earlier ASSERT hang. With the ASSERT fixed, it now surfaces.
+After the fix, boot now reaches **user mode** — ntdll loads, SMSS
+starts, parses its command line, and tries to load registry hives.
+
+## Open: BUGCHECK 0x4C in SMSS hive load
+
+```
+(\sdk\lib\cmlib\hiveinit.c:62) Verify Hive Header failed:
+    Signature: 0x0, expected 0x66676572; Major: 0x0, expected 0x1
+    Minor: 0x0 expected to be >= 0x3; Type: 0x0, expected 0x0
+    Format: 0x0, expected 0x1; Cluster: 0x0, expected 1
+    Sequence: 0x0, expected 0x0; Checksum: 0x1, expected 0x0
+The hive base header block needs to be RECOVERED
+The hive has no log for header recovery
+Registry hive couldn't be initialized, it's corrupt (hive 0xB11C7008)
+*** BUGCHECK: 0x0000004C (0xC0000218, 0xF752AB94, 0x00000000, 0x00000000)
+```
+
+Hive header is all zeroes. This is **not** a config/cmapi.rs class of
+bug — it's either a registry IO bug (ZwReadFile returning zero-filled
+buffer instead of file content) or a livecd image issue (SAM /
+SECURITY / DEFAULT hives missing or empty on the CD).
+
+Likely investigation directions:
+
+1. Identify which hive SMSS is loading via `CmLoadKey` (probably SAM,
+   SECURITY, or a per-user hive).
+2. Check whether the file exists in the livecd image and is non-empty.
+3. If the file exists, instrument `CmpInitHiveFromFile` /
+   `CmpFileRead` to confirm the data being read.
+4. If the read is correct but verification fails, check
+   `HvpVerifyHiveHeader` for translation issues (signature constant?).
 
 ## Diagnostic state currently in tree (uncommitted)
 
