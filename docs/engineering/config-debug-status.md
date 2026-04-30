@@ -1,22 +1,32 @@
-# config/ Rust port debug status (2026-04-30 — session 3)
+# config/ Rust port debug status (2026-04-30 — session 3 final)
 
 ## Where we are
 
-Branch `wip-config-rust-port`. **7 commits shipped** advancing boot from
+Branch `wip-config-rust-port`. **9 commits shipped** advancing boot from
 - `BSOD 0x67 (config init step 13)` →
-- `BSOD 0x6B (PsLocateSystemDll: ntdll.dll path not found)` →
+- `BSOD 0x6B (PsLocateSystemDll)` →
 - `i386: hangs at mountmgr.sys PnP enum (ASSERT in ExReleasePushLock)` →
-- `amd64: hangs at uniata.sys PnP enum (same pushlock ASSERT)` →
-- `BSOD 0x6B — cdrom.sys DriverEntry fails because wdf01000.sys's
-  DriverEntry got a 0-length RegistryPath` →
-- **BSOD 0x4C (FATAL_UNHANDLED_HARD_ERROR / STATUS_REGISTRY_CORRUPT)
-  during SMSS user-mode hive load**
+- `amd64: hangs at uniata.sys PnP enum` →
+- `BSOD 0x6B — cdrom.sys DriverEntry fails because wdf01000.sys
+  DriverEntry got 0-length RegistryPath` →
+- `BSOD 0x4C — SMSS hive load reads all-zero header` →
+- `BSOD 0x1E — strlen(0x30393733) crash at NtBuildLab pointer mistype` →
+- **boot stalls in SMSS drive-letter assignment + KCB-lock ASSERTs** —
+  no longer BSODs, the kernel runs through DUMMY_PSEH ASSERT prints.
 
-Smoke tests still **not** passing, but the kernel now runs **all 24 boot
-driver DriverEntries**, completes PnP enumeration, creates ARC/SystemRoot
-symlinks, and reaches **user mode** — ntdll loads, SMSS starts, parses
-its config. The remaining failure is a registry hive whose on-disk header
-reads as all zeros (signature 0x0 expected 0x66676572 'regf').
+Smoke tests still **not** passing, but the boot now reaches:
+- ✅ All 24 boot driver `DriverEntry`s
+- ✅ PnP enum complete, all critical drivers bind devices
+- ✅ ARC/SystemRoot symlinks resolve to `\Device\CdRom0\reactos`
+- ✅ ntdll loads, SMSS reaches user mode
+- ✅ SMSS reads SECURITY/SOFTWARE/DEFAULT/SAM hives
+- ✅ SmpConfigureSubSystems iterates all subsystem entries
+- ✅ Pagefile init, version-data write
+- ❌ Drive-letter assignment hangs with KCB-lock recursion ASSERTs
+  (`cm_x.h:120 Owner != KeGetCurrentThread()`) and pushlock-not-held
+  ASSERTs (`ex.h:1305 OldValue.Locked`).
+
+Both i386 and amd64 reach this same point.
 
 ## Fixes shipped (session 1, prior)
 
@@ -148,34 +158,89 @@ class (every ZwQueryKey for KeyNameInformation was broken).
 After the fix, boot now reaches **user mode** — ntdll loads, SMSS
 starts, parses its command line, and tries to load registry hives.
 
-## Open: BUGCHECK 0x4C in SMSS hive load
+## BUGCHECK 0x4C in SMSS hive load — **FIXED** (commit `7b371043`)
+
+The Rust translation passed `0x00000002` (FILE_WRITE_THROUGH) to
+`ZwCreateFile` in `CmpOpenHiveFiles` where the C source uses
+`FILE_SYNCHRONOUS_IO_NONALERT` (`0x00000020`). Without the synchronous
+flag, `ZwReadFile` returned `STATUS_PENDING` and CmpFileRead's
+`NT_SUCCESS(STATUS_PENDING) == TRUE` check returned without waiting,
+leaving the buffer all-zero — which `HvpVerifyHiveHeader` then
+rejected.
+
+Diagnostic path: traced `CmpFileRead` to see Status=0x103
+(STATUS_PENDING), info=0, first8=0 — instantly identifying the
+async-vs-sync IO bug. Fixed both ZwCreateFile call sites
+(cminit.rs:423 and :583).
+
+After this fix, SMSS hive loads succeed, all subsystem config is
+read, and the boot proceeds into the next stage where it hits
+`BUGCHECK 0x1E` from `strlen(NtBuildLab)`.
+
+## strlen on bad NtBuildLab pointer — **FIXED** (commit `c5d7debb`)
+
+`CmpSetVersionData` calls `RtlInitAnsiString(&TempString, NtBuildLab)`
+to convert the build-lab string to a UNICODE_STRING. The C source
+declares `extern CHAR NtBuildLab[];` (an array — name decays to
+pointer). The Rust translation declared
+`pub static mut NtBuildLab: *const i8;` (a pointer — Rust loads the
+first 4 bytes of NtBuildLab as the pointer value).
+
+The compiler then passed `0x30393733` (ASCII "0973" — the first 4
+bytes of the build version string) as the SourceString, leading to
+`strlen` accessing a non-canonical kernel address and BUGCHECK 0x1E.
+
+Diagnostic path: instrumented `RtlInitAnsiString` to print
+SourceString and `__builtin_return_address(0)`. Output showed
+`SourceString=30393733 caller=804492F2`. Symbolicated to
+`CmpSetVersionData+0x262` and the disassembly clearly showed
+`pushl $0x30393733` as an immediate — confirming the array-vs-pointer
+type mistake.
+
+Fix: declare `pub static NtBuildLab: i8;` (matching the C-array
+semantics — we just need the symbol's address) and pass
+`core::ptr::addr_of!(NtBuildLab) as *const i8`.
+
+## Open: KCB-lock recursion + pushlock-not-held ASSERTs late in SMSS init
 
 ```
-(\sdk\lib\cmlib\hiveinit.c:62) Verify Hive Header failed:
-    Signature: 0x0, expected 0x66676572; Major: 0x0, expected 0x1
-    Minor: 0x0 expected to be >= 0x3; Type: 0x0, expected 0x0
-    Format: 0x0, expected 0x1; Cluster: 0x0, expected 1
-    Sequence: 0x0, expected 0x0; Checksum: 0x1, expected 0x0
-The hive base header block needs to be RECOVERED
-The hive has no log for header recovery
-Registry hive couldn't be initialized, it's corrupt (hive 0xB11C7008)
-*** BUGCHECK: 0x0000004C (0xC0000218, 0xF752AB94, 0x00000000, 0x00000000)
+*** ASSERT FAILED: OldValue.Locked at \ntoskrnl\include\internal\ex.h:1305
+*** ASSERT FAILED: CmpCacheTable[Index].Owner != KeGetCurrentThread()
+                   at \ntoskrnl\include\internal\cm_x.h:120
+(\sdk\lib\cmlib\hivewrt.c:360) Failed to write the base block header
+                              to primary hive (primary sequence)
+(\sdk\lib\cmlib\hivewrt.c:522) Failed to write the primary hive
+... (repeats — boot stalls)
 ```
 
-Hive header is all zeroes. This is **not** a config/cmapi.rs class of
-bug — it's either a registry IO bug (ZwReadFile returning zero-filled
-buffer instead of file content) or a livecd image issue (SAM /
-SECURITY / DEFAULT hives missing or empty on the CD).
+After SMSS reads its config and reaches "Cannot find drive letter for
+system partition" the kernel fires two distinct registry-locking
+ASSERTs:
 
-Likely investigation directions:
+1. `cm_x.h:120` — `CmpAcquireKcbLockExclusiveByIndex` is called but
+   the same thread already owns that KCB lock. This is a recursion /
+   double-acquire bug somewhere in the registry path that's exercised
+   only after `CmpQueryNameInformation` was fixed. Possibly a
+   path that called `CmpQueryNameInformation` with a lock held but
+   used to short-circuit (returning STATUS_SUCCESS without doing the
+   walk) is now actually doing the walk.
+2. `ex.h:1305` — second instance of the pushlock-not-held ASSERT,
+   different call site than the previously-fixed `cmparse.rs`. With
+   DUMMY_PSEH the ASSERT prints and returns; the underlying double-
+   free of the lock corrupts state.
 
-1. Identify which hive SMSS is loading via `CmLoadKey` (probably SAM,
-   SECURITY, or a per-user hive).
-2. Check whether the file exists in the livecd image and is non-empty.
-3. If the file exists, instrument `CmpInitHiveFromFile` /
-   `CmpFileRead` to confirm the data being read.
-4. If the read is correct but verification fails, check
-   `HvpVerifyHiveHeader` for translation issues (signature constant?).
+The hivewrt.c failures are expected on read-only LiveCD media (the
+hives can't be flushed) but the lock-state corruption from the
+ASSERTs may be preventing forward progress.
+
+**Investigation directions:**
+- Add `__builtin_return_address(0)` instrumentation to
+  `CmpAcquireKcbLockExclusiveByIndex` and the second
+  `ExReleasePushLock` callsite to symbolicate the bad callers.
+- Check whether the `CmpQueryNameInformation` fix introduced a
+  regression — perhaps callers were relying on its no-op behavior.
+- Review the CmpConvertKcbSharedToExclusive path — that release+
+  reacquire pattern is a candidate.
 
 ## Diagnostic state currently in tree (uncommitted)
 
