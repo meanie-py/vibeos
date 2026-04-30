@@ -1,17 +1,19 @@
-# config/ Rust port debug status (2026-04-30 — session 2)
+# config/ Rust port debug status (2026-04-30 — session 3)
 
 ## Where we are
 
-Branch `wip-config-rust-port`. **5 commits shipped** advancing boot from
+Branch `wip-config-rust-port`. **6 commits shipped** advancing boot from
 - `BSOD 0x67 (config init step 13)` →
 - `BSOD 0x6B (PsLocateSystemDll: ntdll.dll path not found)` →
-- **i386: hangs at mountmgr.sys PnP enum (ASSERT in ExReleasePushLock)**
-- **amd64: hangs at uniata.sys PnP enum (PCI Slot Resource Assignment FOOBAR + same pushlock ASSERT)**
+- `i386: hangs at mountmgr.sys PnP enum (ASSERT in ExReleasePushLock)` →
+- `amd64: hangs at uniata.sys PnP enum (same pushlock ASSERT)` →
+- **i386 + amd64: BSOD 0x6B — cdrom.sys DriverEntry fails because wdf01000.sys
+  was unloaded after its own DriverEntry returned STATUS_OBJECT_PATH_SYNTAX_BAD**
 
-Smoke tests still **not** passing — but PnP enumeration is now functional;
-drivers actually bind to devices (pci.sys, isapnp.sys, partmgr.sys, uniata.sys
-all get `AddDevice` called) instead of silently failing at the very first
-device.
+Smoke tests still **not** passing, but the kernel now runs **all 24 boot
+driver DriverEntries**, completes PnP enumeration without hangs, and reaches
+`IopReassignSystemRoot` / `PsLocateSystemDll`. The remaining gap is a single
+WDF dependency chain.
 
 ## Fixes shipped (session 1, prior)
 
@@ -85,21 +87,67 @@ BUGCHECK 0x6B.
   (`pcibus.c:816`)
 - Then same `ASSERT FAILED: OldValue.Locked` → hang.
 
-## Open question — pushlock release without acquire
+## Pushlock release without acquire — **FIXED** (commit `c2b7d938`)
 
-The pushlock at the i386 hang point is at pool address `0xE100B880`.
-The path: `mountmgr.sys` returns from `IopInitializeBuiltinDriver` with
-`deviceAdded=1`, then `PiQueueDeviceAction(EnumRoot)` runs synchronously,
-processes the queued boot devices, hits `HalpNoAdjustResourceList` (stub
-returning STATUS_UNSUCCESSFUL), and somewhere downstream of that an
-`ExReleasePushLock` fires the assert.
+The mountmgr/uniata pushlock-not-held ASSERT at `ex.h:1305` traced to
+`EnlistKeyBodyWithKCB` calling `CmpReleaseKcbLock` on the SHARED-flag
+branch when the caller had passed *EXCLUSIVE*. Two LLM-translation
+typos in `cmparse.rs` had inverted the values of
+`CMP_ENLIST_KCB_LOCKED_SHARED` (0x1) and `CMP_ENLIST_KCB_LOCKED_EXCLUSIVE`
+(0x2):
 
-A targeted subagent investigation pointed at residual Quickie-style
-cleanup-skip bugs in cmapi.rs (specifically `CmpDoFlushAll` /
-`CmpHiveListHeadLock`) but a manual audit of `cmapi.rs` `goto Quickie`
-patterns by the previous session was clean. The leak source is more
-likely in PnP/IO subsystem Rust code (see `pnpres.rs`, `iorsrce.rs`,
-`devaction.rs` resource-handling paths).
+| Site | Bug | Fix |
+|------|-----|-----|
+| `cmparse.rs:299` (`CmpDoCreateChild` local const) | `CMP_ENLIST_KCB_LOCKED_EXCLUSIVE = 0x1` | `= 0x2` |
+| `cmparse.rs:771` (`CmpDoOpen` ternary) | `IsLockShared ? 0x2 : 0x1` (inverted) | `IsLockShared ? 0x1 : 0x2` |
+
+Diagnosis path: instrumented `ExReleasePushLock` to print
+`__builtin_return_address(0)` when `OldValue.Locked == 0`. Caller PC
+0x8047D404 symbolicated to `EnlistKeyBodyWithKCB+0x54`, which is the
+return site after the `if (Flags & CMP_ENLIST_KCB_LOCKED_SHARED)`
+release path. The C source matches the Rust source semantically; the
+mismatch was in the constant values themselves.
+
+After the fix, all 24 boot drivers complete `IopInitializeBuiltinDriver`,
+PnP enum runs without ASSERTs, and boot reaches
+`IopInitializeSystemDrivers` / `IopReassignSystemRoot`.
+
+## Open: cdrom.sys DriverEntry fails → BSOD 0x6B
+
+After the fix above, the next blocker is:
+
+- `wdf01000.sys` is loaded as a builtin and present in PsLoadedModuleList.
+- Its `DriverEntry` (KMDF library DriverEntry in
+  `sdk/lib/drivers/wdf/kmdf/src/dynamic/version/version.cpp:318`) returns
+  `STATUS_OBJECT_PATH_SYNTAX_BAD` (0xC000003B) — likely from
+  `FxLibraryCreateDevice` or `WdfRegisterLibrary`.
+- `IopInitializeDriverModule` treats this as failure, calls
+  `ObMakeTemporaryObject` + `ObDereferenceObject` on the driver object,
+  and the LDR module entry gets unlinked from `PsLoadedModuleList`.
+- Subsequently `cdrom.sys`'s DriverEntry calls `WdfVersionBind`
+  (via `wdfdriverentry.c:FxDriverEntry`), which loads
+  `\SystemRoot\system32\drivers\wdf01000.sys` via `MmLoadSystemImage`.
+  The path-scan loop misses it (because `wdfldr.sys` is in the list with
+  ARC-path naming, not `wdf01000.sys`), falls through to `ZwOpenFile`,
+  which returns `STATUS_OBJECT_PATH_NOT_FOUND` because `\SystemRoot`
+  doesn't resolve yet.
+- `cdrom.sys` DriverEntry returns failure → no AddDevice → CdRomCount=0
+  → `IopCreateArcNames` doesn't create `\ArcName\multi(0)disk(0)cdrom(96)`
+  → `\SystemRoot` symlink resolution fails → `PsLocateSystemDll` fails
+  with `STATUS_OBJECT_PATH_NOT_FOUND` → BUGCHECK 0x6B.
+
+**Two paths forward:**
+
+1. Fix the actual reason `wdf01000.sys`'s DriverEntry returns
+   `STATUS_OBJECT_PATH_SYNTAX_BAD`. Add tracing to `FxLibraryCreateDevice`
+   / `WdfRegisterLibrary` to identify which UNICODE_STRING is malformed.
+2. Modify `IopInitializeDriverModule` to NOT unload the LDR module entry
+   when DriverEntry fails (only drop the driver object). This would let
+   cdrom.sys find wdf01000.sys later. This is closer to NT behavior but
+   diverges from the existing `ObDereferenceObject` semantics.
+
+This blocker is **pre-existing** — it was always there, but masked by
+the earlier ASSERT hang. With the ASSERT fixed, it now surfaces.
 
 ## Diagnostic state currently in tree (uncommitted)
 
