@@ -116,7 +116,7 @@ const PARTITION_ENTRY_SIZE: ULONG = 128;
 const EFI_HEADER_SIGNATURE: ULONGLONG = 0x5452415020494645;
 const EFI_HEADER_REVISION_1: ULONG = 0x00010000;
 const EFI_PMBR_OSTYPE_EFI: UCHAR = 0xEE;
-const TAG_FSTUB: ULONG = u32::from_le_bytes(*b"BtsF");
+const TAG_FSTUB: ULONG = u32::from_be_bytes(*b"BtsF");
 
 // From ntoskrnl/include/internal/hal.h
 const DISK_SIGNATURE_OFFSET: usize = 0x1B8;

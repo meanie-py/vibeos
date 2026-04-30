@@ -163,7 +163,7 @@ type HAL_DISPATCH = _HAL_DISPATCH_BindgenAlias;
 
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
 const FILE_REMOVABLE_MEDIA: u32 = 0x00000001;
-const STATUS_NO_MEDIA: i32 = 0xC0000013u32 as i32;
+const STATUS_NO_MEDIA: i32 = 0xC0000178u32 as i32;
 const STATUS_PENDING: i32 = 0x00000103u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023u32 as i32;
 const STATUS_DEVICE_NOT_READY: i32 = 0xC00000A3u32 as i32;
@@ -179,8 +179,8 @@ const IOCTL_MOUNTMGR_CREATE_POINT: u32 = 0x006DC000;
 const IOCTL_MOUNTMGR_DELETE_POINTS: u32 = 0x006DC004;
 const IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER: u32 = 0x006DC010;
 const IOCTL_MOUNTDEV_QUERY_DEVICE_NAME: u32 = 0x004D0008;
-const TAG_FSTUB: u32 = u32::from_le_bytes(*b"BtsF");
-const TAG_FILE_SYSTEM: u32 = u32::from_le_bytes(*b"SYSF");
+const TAG_FSTUB: u32 = u32::from_be_bytes(*b"BtsF");
+const TAG_FILE_SYSTEM: u32 = u32::from_be_bytes(*b"SYSF");
 const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x00000020;
 const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;
 const PARTITION_TABLE_OFFSET: usize = 0x1BE;
@@ -1749,7 +1749,7 @@ pub unsafe extern "fastcall" fn xHalIoReadPartitionTable(
     const PARTITION_ENTRY_UNUSED: u8 = 0x00;
     const EFI_PMBR_OSTYPE_EFI: u8 = 0xEE;
     const PARTITION_FAT_16: u8 = 0x06;
-    const TAG_FILE_SYSTEM: u32 = u32::from_le_bytes(*b"SYSF");
+    const TAG_FILE_SYSTEM: u32 = u32::from_be_bytes(*b"SYSF");
     const IRP_MJ_READ: u8 = 0x03;
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;
     const NotificationEvent: u32 = 0;
@@ -2110,7 +2110,7 @@ pub unsafe extern "C" fn xHalIoReadPartitionTable(
     const PARTITION_ENTRY_UNUSED: u8 = 0x00;
     const EFI_PMBR_OSTYPE_EFI: u8 = 0xEE;
     const PARTITION_FAT_16: u8 = 0x06;
-    const TAG_FILE_SYSTEM: u32 = u32::from_le_bytes(*b"SYSF");
+    const TAG_FILE_SYSTEM: u32 = u32::from_be_bytes(*b"SYSF");
     const IRP_MJ_READ: u8 = 0x03;
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;
     const NotificationEvent: u32 = 0;
