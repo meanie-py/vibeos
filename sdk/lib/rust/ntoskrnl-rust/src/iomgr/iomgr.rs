@@ -9,6 +9,20 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> i32;
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+#[inline(never)]
+unsafe fn io_trace(s: &[u8]) {
+    DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn io_trace(_s: &[u8]) {}
+
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
     CONTROLLER_OBJECT,
@@ -667,11 +681,15 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopInitializePlugPlayServices\r\n\0");
     Status = IopInitializePlugPlayServices_shim();
     if Status < 0 {
+        io_trace(b"[IO] IopInitializePlugPlayServices FAILED\r\n\0");
         return 0u8;
     }
+    io_trace(b"[IO] ApphelpCacheInitialize\r\n\0");
     ApphelpCacheInitialize();
+    io_trace(b"[IO] WmiInitialize\r\n\0");
     WmiInitialize();
 
     #[cfg(target_arch = "aarch64")]
@@ -685,7 +703,9 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] HalInitPnpDriver\r\n\0");
     HalInitPnpDriver();
+    io_trace(b"[IO] HalInitPnpDriver done\r\n\0");
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -698,12 +718,14 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] PiQueueDeviceAction\r\n\0");
     PiQueueDeviceAction(
         (*(IopRootDeviceNode as *mut ntkrnl_sys::ddk::_DEVICE_NODE)).PhysicalDeviceObject,
         _DEVICE_ACTION_PiActionEnumRootDevices,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    io_trace(b"[IO] PiQueueDeviceAction done\r\n\0");
 
     IopLoaderBlock = LoaderBlock;
 
@@ -718,7 +740,9 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopInitializeBootDrivers\r\n\0");
     IopInitializeBootDrivers();
+    io_trace(b"[IO] IopInitializeBootDrivers done\r\n\0");
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -731,7 +755,9 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopReinitializeBootDrivers\r\n\0");
     IopReinitializeBootDrivers();
+    io_trace(b"[IO] IopReinitializeBootDrivers done\r\n\0");
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -857,14 +883,19 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopCreateArcNames\r\n\0");
     Status = IopCreateArcNames(LoaderBlock);
     if Status < 0 {
+        io_trace(b"[IO] IopCreateArcNames FAILED\r\n\0");
         #[cfg(not(target_arch = "aarch64"))]
         {
             if InitIsWinPEMode == 0 {
+                io_trace(b"[IO] returning 0 from IopCreateArcNames fail\r\n\0");
                 return 0u8;
             }
         }
+    } else {
+        io_trace(b"[IO] IopCreateArcNames done\r\n\0");
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -878,7 +909,9 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopMarkBootPartition\r\n\0");
     if IopMarkBootPartition(LoaderBlock) == 0 {
+        io_trace(b"[IO] IopMarkBootPartition FAILED\r\n\0");
         #[cfg(target_arch = "aarch64")]
         {
             if !Arm64UartKernelBase.is_null() {
@@ -892,10 +925,12 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         #[cfg(not(target_arch = "aarch64"))]
         {
             if InitIsWinPEMode == 0 {
+                io_trace(b"[IO] returning 0 from IopMarkBootPartition fail\r\n\0");
                 return 0u8;
             }
         }
     } else {
+        io_trace(b"[IO] IopMarkBootPartition done\r\n\0");
         #[cfg(target_arch = "aarch64")]
         {
             if !Arm64UartKernelBase.is_null() {
@@ -921,7 +956,9 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopInitializeSystemDrivers\r\n\0");
     IopInitializeSystemDrivers();
+    io_trace(b"[IO] IopInitializeSystemDrivers done\r\n\0");
     PnpSystemInit = 1u8;
 
     #[cfg(target_arch = "aarch64")]
@@ -948,8 +985,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] IopReassignSystemRoot\r\n\0");
     Status = IopReassignSystemRoot(LoaderBlock, core::ptr::addr_of_mut!(NtBootPath));
     if Status < 0 {
+        io_trace(b"[IO] IopReassignSystemRoot FAILED\r\n\0");
         #[cfg(target_arch = "aarch64")]
         {
             if !Arm64UartKernelBase.is_null() {
@@ -986,8 +1025,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         TAG_IO,
     ) as *mut i8;
 
+    io_trace(b"[IO] RtlUnicodeStringToAnsiString\r\n\0");
     Status = RtlUnicodeStringToAnsiString_shim(core::ptr::addr_of_mut!(RootString), core::ptr::addr_of_mut!(NtSystemRoot), 0u8);
     if Status < 0 {
+        io_trace(b"[IO] RtlUnicodeStringToAnsiString FAILED\r\n\0");
         return 0u8;
     }
 
@@ -1020,8 +1061,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] RtlAnsiStringToUnicodeString\r\n\0");
     Status = RtlAnsiStringToUnicodeString_shim(core::ptr::addr_of_mut!(NtSystemRoot), core::ptr::addr_of_mut!(RootString), 0u8);
     if Status < 0 {
+        io_trace(b"[IO] RtlAnsiStringToUnicodeString FAILED\r\n\0");
         return 0u8;
     }
 
@@ -1036,8 +1079,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    io_trace(b"[IO] PsLocateSystemDll\r\n\0");
     Status = PsLocateSystemDll();
     if Status < 0 {
+        io_trace(b"[IO] PsLocateSystemDll FAILED\r\n\0");
         #[cfg(target_arch = "aarch64")]
         {
             if !Arm64UartKernelBase.is_null() {
@@ -1053,6 +1098,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             return 0u8;
         }
     }
+    io_trace(b"[IO] IoInitSystem returning TRUE\r\n\0");
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -1108,7 +1154,9 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
 
     PiInitializeNotifications();
 
+    io_trace(b"[IO] IopInitializeReserveIrp\r\n\0");
     if IopInitializeReserveIrp(core::ptr::addr_of_mut!(IopReserveIrpAllocator) as _) == 0 {
+        io_trace(b"[IO] IopInitializeReserveIrp FAILED\r\n\0");
         return 0u8;
     }
 
@@ -1131,7 +1179,9 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         }
     }
 
+    io_trace(b"[IO] IopCreateObjectTypes\r\n\0");
     if IopCreateObjectTypes() == 0 {
+        io_trace(b"[IO] IopCreateObjectTypes FAILED\r\n\0");
         return 0u8;
     }
 
@@ -1146,9 +1196,12 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
         }
     }
 
+    io_trace(b"[IO] IopCreateRootDirectories\r\n\0");
     if IopCreateRootDirectories() == 0 {
+        io_trace(b"[IO] IopCreateRootDirectories FAILED\r\n\0");
         return 0u8;
     }
+    io_trace(b"[IO] entering IopFinishIoInitSystem\r\n\0");
 
     // Keep the post-PnP phase out of the large entry function on i386; LLVM has
     // previously collapsed the continuation after PnP init into a `ud2`.

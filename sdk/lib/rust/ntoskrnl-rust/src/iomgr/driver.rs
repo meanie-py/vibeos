@@ -827,12 +827,14 @@ unsafe extern "system" fn LdrProcessDriverModule(
 }
 
 unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOOLEAN {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
     let mut DriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS = 0;
     let mut Buffer: PWCHAR;
     let mut FileNameWithoutPath: PWCHAR;
     let FileExtension: PWSTR;
     let ModuleName = &mut (*BootLdrEntry).BaseDllName as *mut _UNICODE_STRING;
+    DbgPrint(b"[BLT] IopInitializeBuiltinDriver: %wZ\r\n\0".as_ptr() as *const i8, ModuleName);
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut NextEntry: PLIST_ENTRY;
     let mut ServiceName = _UNICODE_STRING {
@@ -1168,13 +1170,20 @@ pub unsafe extern "fastcall" fn IopInitializeBootDrivers() {
 
 #[no_mangle]
 pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
+    #[inline(never)]
+    unsafe fn sd_trace(s: &[u8]) {
+        DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+    }
     let mut DriverList: *mut PUNICODE_STRING;
     let mut SavedList: *mut PUNICODE_STRING;
 
+    sd_trace(b"[SYSDRV] PiPerformSyncDeviceAction\r\n\0");
     PiPerformSyncDeviceAction(
         (*(IopRootDeviceNode as *mut _DEVICE_NODE)).PhysicalDeviceObject,
         PiActionEnumDeviceTree,
     );
+    sd_trace(b"[SYSDRV] PiPerformSyncDeviceAction done\r\n\0");
 
     let setup_ldr = (*(KeLoaderBlock as *mut _LOADER_PARAMETER_BLOCK)).SetupLdrBlock;
     if !setup_ldr.is_null() {
@@ -1186,8 +1195,10 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
         return;
     }
 
+    sd_trace(b"[SYSDRV] CmGetSystemDriverList\r\n\0");
     SavedList = CmGetSystemDriverList();
     DriverList = SavedList;
+    sd_trace(b"[SYSDRV] CmGetSystemDriverList done\r\n\0");
 
     ARM64_UART_TRACE!("[SYSDRV] Loading system drivers...\r\n");
 
@@ -1195,6 +1206,7 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
 
     while !(*DriverList).is_null() {
         sys_drv_count += 1;
+        DbgPrint(b"[SYSDRV] loading #%d: %wZ\r\n\0".as_ptr() as *const i8, sys_drv_count, *DriverList);
 
         #[cfg(all(target_arch = "aarch64", feature = "arm64_uart_trace"))]
         {

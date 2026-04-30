@@ -348,6 +348,15 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
 
 #[no_mangle]
 pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
+    #[inline(never)]
+    unsafe fn pnp_trace(s: &[u8]) {
+        DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+    }
+    #[inline(never)]
+    unsafe fn pnp_trace_s(s: &[u8], v: i32) {
+        DbgPrint(s.as_ptr() as *const i8, v);
+    }
     let mut Status: NTSTATUS;
     let mut Disposition: ULONG = 0;
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
@@ -366,13 +375,17 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
+    pnp_trace(b"[PNP] IopInitializeArbiters\r\n\0");
     Status = IopInitializeArbiters();
     if Status < 0 {
+        pnp_trace_s(b"[PNP] IopInitializeArbiters FAIL %x\r\n\0", Status);
         return Status;
     }
 
+    pnp_trace(b"[PNP] PiInitCacheGroupInformation\r\n\0");
     Status = PiInitCacheGroupInformation_shim();
     if Status < 0 {
+        pnp_trace_s(b"[PNP] PiInitCacheGroupInformation FAIL %x\r\n\0", Status);
         return Status;
     }
 
@@ -380,12 +393,15 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         &mut KeyName,
         b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\0\0".as_ptr() as *mut u16,
     );
+    pnp_trace(b"[PNP] open CurrentControlSet\r\n\0");
     Status = IopOpenRegistryKeyEx_shim(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status < 0 {
+        pnp_trace_s(b"[PNP] open CCS FAIL %x\r\n\0", Status);
         return Status;
     }
 
     RtlInitUnicodeString(&mut KeyName, b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *mut u16);
+    pnp_trace(b"[PNP] create Control\r\n\0");
     Status = IopCreateRegistryKeyEx_shim(
         &mut ControlHandle,
         KeyHandle,
@@ -395,6 +411,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         &mut Disposition,
     );
     if Status < 0 {
+        pnp_trace_s(b"[PNP] create Control FAIL %x\r\n\0", Status);
         return Status;
     }
 
@@ -420,6 +437,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     ZwClose(ControlHandle);
 
     RtlInitUnicodeString(&mut KeyName, REGSTR_KEY_ENUM.as_ptr() as *mut u16);
+    pnp_trace(b"[PNP] create Enum\r\n\0");
     Status = IopCreateRegistryKeyEx_shim(
         &mut EnumHandle,
         KeyHandle,
@@ -429,11 +447,13 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         &mut Disposition,
     );
     if Status < 0 {
+        pnp_trace_s(b"[PNP] create Enum FAIL %x\r\n\0", Status);
         return Status;
     }
 
     ParentHandle = EnumHandle;
     RtlInitUnicodeString(&mut KeyName, REGSTR_KEY_ROOTENUM.as_ptr() as *mut u16);
+    pnp_trace(b"[PNP] create Root\r\n\0");
     Status = IopCreateRegistryKeyEx_shim(
         &mut EnumHandle,
         ParentHandle,
@@ -444,6 +464,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     );
     NtClose(ParentHandle);
     if Status < 0 {
+        pnp_trace_s(b"[PNP] create Root FAIL %x\r\n\0", Status);
         return Status;
     }
     NtClose(EnumHandle);

@@ -126,7 +126,9 @@ const UNICODE_NULL: u16 = 0;
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
     let LoaderBlock = opaque_ptr(LoaderBlock);
+    DbgPrint(b"[CDARC] enter ArcBootDeviceName=%s\r\n\0".as_ptr() as *const i8, (*LoaderBlock).ArcBootDeviceName);
     let mut Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -181,6 +183,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
     }
 
     if ArcDiskSignature.is_null() {
+        DbgPrint(b"[CDARC] no matching ArcDiskSignature, returning\r\n\0".as_ptr() as *const i8);
         Status = STATUS_SUCCESS;
         core::mem::forget(Status);
         if !PartitionBuffer.is_null() {
@@ -191,6 +194,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
         }
         return Status;
     }
+    DbgPrint(b"[CDARC] matched signature, CdRomCount=%d EnabledDisks=%d\r\n\0".as_ptr() as *const i8, CdRomCount, EnabledDisks);
 
     PartitionBuffer = ExAllocatePoolWithTag(NonPagedPoolCacheAligned, 2048, TAG_IO) as *mut ULONG;
     if PartitionBuffer.is_null() {
@@ -390,7 +394,9 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
 
         ObDereferenceObject(FileObject as PVOID);
 
+        DbgPrint(b"[CDARC] disk %d checksum=%x expected=%x\r\n\0".as_ptr() as *const i8, DiskNumber, CheckSum, (*ArcDiskSignature).CheckSum);
         if CheckSum.wrapping_add((*ArcDiskSignature).CheckSum) == 0 {
+            DbgPrint(b"[CDARC] checksum match, creating ArcName\r\n\0".as_ptr() as *const i8);
             sprintf(
                 ArcBuffer.as_mut_ptr(),
                 b"\\ArcName\\%s\0".as_ptr() as *const i8,
@@ -399,6 +405,7 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
             RtlInitAnsiString(core::ptr::addr_of_mut!(ArcNameStringA), ArcBuffer.as_ptr());
             Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(ArcNameStringW), core::ptr::addr_of_mut!(ArcNameStringA), 1u8);
             if Status >= 0 {
+                DbgPrint(b"[CDARC] IoAssignArcName(%s) -> ...\r\n\0".as_ptr() as *const i8, ArcBuffer.as_ptr());
                 IoAssignArcName(core::ptr::addr_of_mut!(ArcNameStringW), core::ptr::addr_of_mut!(DeviceStringW));
                 RtlFreeUnicodeString(core::ptr::addr_of_mut!(ArcNameStringW));
             }
@@ -437,8 +444,11 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     NtBootPath: PANSI_STRING,
 ) -> NTSTATUS {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
     let LoaderBlock = opaque_ptr(LoaderBlock);
     let NtBootPath = opaque_ptr(NtBootPath);
+    DbgPrint(b"[REASSIGN] enter, ArcBootDeviceName=%s NtBootPathName=%s\r\n\0".as_ptr() as *const i8,
+        (*LoaderBlock).ArcBootDeviceName, (*LoaderBlock).NtBootPathName);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut Buffer: [i8; 256] = core::mem::zeroed();
@@ -472,11 +482,13 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    DbgPrint(b"[REASSIGN] NtOpenSymbolicLinkObject(\\ArcName\\<boot>) ...\r\n\0".as_ptr() as *const i8);
     Status = NtOpenSymbolicLinkObject(
         &mut LinkHandle,
         SYMBOLIC_LINK_ALL_ACCESS,
         &mut ObjectAttributes,
     );
+    DbgPrint(b"[REASSIGN] open ArcName status=%x handle=%p\r\n\0".as_ptr() as *const i8, Status, LinkHandle);
     if !NT_SUCCESS(Status) {
         // We failed, free the string
         RtlFreeUnicodeString(&mut TargetName);
@@ -488,6 +500,7 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
     ArcName.Length = 0;
     ArcName.MaximumLength = core::mem::size_of_val(&ArcNameBuffer) as u16;
     Status = NtQuerySymbolicLinkObject(LinkHandle, &mut ArcName, core::ptr::null_mut());
+    DbgPrint(b"[REASSIGN] query ArcName status=%x len=%d\r\n\0".as_ptr() as *const i8, Status, ArcName.Length as u32);
     if !NT_SUCCESS(Status) {
         // We failed, free the string
         RtlFreeUnicodeString(&mut TargetName);
@@ -548,6 +561,7 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
 
     // Setup the Unicode-name for the new symbolic link value
     RtlInitAnsiString(&mut TargetString, Buffer.as_ptr());
+    DbgPrint(b"[REASSIGN] new \\SystemRoot target = %s\r\n\0".as_ptr() as *const i8, Buffer.as_ptr());
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut LinkName,
@@ -567,6 +581,7 @@ pub unsafe extern "system" fn IopReassignSystemRoot(
         &mut ObjectAttributes,
         &mut ArcName,
     );
+    DbgPrint(b"[REASSIGN] NtCreateSymbolicLinkObject status=%x handle=%p\r\n\0".as_ptr() as *const i8, Status, LinkHandle);
 
     // Free all the strings and close the handle and return success
     RtlFreeUnicodeString(&mut ArcName);

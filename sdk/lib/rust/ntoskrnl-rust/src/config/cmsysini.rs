@@ -45,6 +45,9 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "system" {
     fn RtlGetCallersAddress(CallersAddress: *mut PVOID, CallersCaller: *mut PVOID);
 }
+extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> i32;
+}
 use core::ffi::c_void;
 
 const CM_NUMBER_OF_MACHINE_HIVES: usize = 6;
@@ -60,6 +63,11 @@ const CM_NUMBER_OF_MACHINE_HIVES: usize = 6;
 // ============================================================================
 #[no_mangle]
 pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
+    #[inline(never)]
+    unsafe fn cmgsdl_trace(s: &[u8]) {
+        DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+    }
     use ntkrnl_sys::ddk::{
         BOOT_DRIVER_LIST_ENTRY, CmpFindControlSet, CmpFindDrivers,
         CmpFreeDriverList, CmpResolveDriverDependencies, CmpSortDriverList,
@@ -101,12 +109,15 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
+    cmgsdl_trace(b"[CMGSDL] NtOpenKey System\r\n\0");
     Status = NtOpenKey(&mut KeyHandle, KEY_READ, &mut ObjectAttributes);
     if !NT_SUCCESS(Status) {
+        DbgPrint(b"[CMGSDL] NtOpenKey System FAIL %x\r\n\0".as_ptr() as *const i8, Status);
         return core::ptr::null_mut();
     }
 
     // Reference the key object to get the root hive/cell to access directly.
+    cmgsdl_trace(b"[CMGSDL] ObReferenceObjectByHandle\r\n\0");
     Status = ObReferenceObjectByHandle(
         KeyHandle,
         KEY_QUERY_VALUE,
@@ -116,16 +127,24 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
+        DbgPrint(b"[CMGSDL] ObRef FAIL %x\r\n\0".as_ptr() as *const i8, Status);
         NtClose(KeyHandle);
         return core::ptr::null_mut();
     }
 
     // Do all this under the registry lock.
+    DbgPrint(b"[CMGSDL] CmpLockReg pre: shared=%d excl=%d\r\n\0".as_ptr() as *const i8,
+        ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!(CmpRegistryLock)) as u32,
+        ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(CmpRegistryLock)) as u32,
+    );
+    cmgsdl_trace(b"[CMGSDL] CmpLockRegistryExclusive\r\n\0");
     CmpLockRegistryExclusive();
+    cmgsdl_trace(b"[CMGSDL] CmpLockRegistryExclusive done\r\n\0");
 
     // Get the hive and key cell.
     Hive = (*(*KeyBody).KeyControlBlock).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
     RootCell = (*(*KeyBody).KeyControlBlock).__bindgen_anon_2.__bindgen_anon_1.KeyCell;
+    DbgPrint(b"[CMGSDL] Hive=%p RootCell=%x\r\n\0".as_ptr() as *const i8, Hive, RootCell);
 
     // Open the current control set key. RtlInitUnicodeString of L"Current".
     RtlInitUnicodeString(
@@ -135,6 +154,7 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
 
     // EndPath label is implemented via a single-iteration loop with `break`s.
     'EndPath: loop {
+        cmgsdl_trace(b"[CMGSDL] CmpFindControlSet\r\n\0");
         ControlCell = CmpFindControlSet(
             Hive,
             RootCell,
@@ -142,10 +162,12 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
             core::ptr::addr_of_mut!(AutoSelect),
         );
         if ControlCell == HCELL_NIL {
+            cmgsdl_trace(b"[CMGSDL] FindControlSet returned NIL\r\n\0");
             break 'EndPath;
         }
 
         // Find all system drivers.
+        cmgsdl_trace(b"[CMGSDL] CmpFindDrivers\r\n\0");
         Success = CmpFindDrivers(
             Hive,
             ControlCell,
@@ -153,17 +175,23 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(DriverList),
         );
+        cmgsdl_trace(b"[CMGSDL] CmpFindDrivers done\r\n\0");
         if Success == 0 {
+            cmgsdl_trace(b"[CMGSDL] FindDrivers FAIL\r\n\0");
             break 'EndPath;
         }
 
         // Sort by group/tag.
+        cmgsdl_trace(b"[CMGSDL] CmpSortDriverList\r\n\0");
         if CmpSortDriverList(Hive, ControlCell, core::ptr::addr_of_mut!(DriverList)) == 0 {
+            cmgsdl_trace(b"[CMGSDL] SortDriverList FAIL\r\n\0");
             break 'EndPath;
         }
 
         // Remove circular dependencies (cycles) and sort.
+        cmgsdl_trace(b"[CMGSDL] CmpResolveDriverDependencies\r\n\0");
         if CmpResolveDriverDependencies(core::ptr::addr_of_mut!(DriverList)) == 0 {
+            cmgsdl_trace(b"[CMGSDL] ResolveDriverDependencies FAIL\r\n\0");
             break 'EndPath;
         }
 
@@ -2294,6 +2322,14 @@ pub unsafe extern "system" fn CmpLockRegistry() {
     } else {
         ExAcquireResourceSharedLite(core::ptr::addr_of_mut!(CmpRegistryLock), 1u8);
     }
+    static mut LOCK_COUNT: u32 = 0;
+    LOCK_COUNT += 1;
+    if LOCK_COUNT < 100 {
+        let mut caller: PVOID = core::ptr::null_mut();
+        let mut caller2: PVOID = core::ptr::null_mut();
+        RtlGetCallersAddress(&mut caller, &mut caller2);
+        DbgPrint(b"[LOCK] Lock #%d caller=%p\r\n\0".as_ptr() as *const i8, LOCK_COUNT, caller);
+    }
 }
 
 #[no_mangle]
@@ -2365,9 +2401,17 @@ pub unsafe extern "system" fn CmpUnlockRegistry() {
 
     if CmpFlushOnLockRelease != 0 {
         CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();
-        
+
         CmpDoFlushAll(1u8);
         CmpFlushOnLockRelease = 0u8;
+    }
+    static mut UNLOCK_COUNT: u32 = 0;
+    UNLOCK_COUNT += 1;
+    if UNLOCK_COUNT < 100 {
+        let mut caller: PVOID = core::ptr::null_mut();
+        let mut caller2: PVOID = core::ptr::null_mut();
+        RtlGetCallersAddress(&mut caller, &mut caller2);
+        DbgPrint(b"[UNLK] Unlock #%d caller=%p\r\n\0".as_ptr() as *const i8, UNLOCK_COUNT, caller);
     }
 
     ExReleaseResourceLite(core::ptr::addr_of_mut!(CmpRegistryLock));
