@@ -254,8 +254,9 @@ pub static mut KdpControlCPressed: BOOLEAN = 0;
 #[no_mangle]
 pub static mut KdpContextSent: BOOLEAN = 0;
 
+// Initialized to KdpStub at runtime by KdInitSystem (abi_cast! can't run in const).
 #[no_mangle]
-pub static mut KiDebugRoutine: PKDEBUG_ROUTINE = Some(KdpStub);
+pub static mut KiDebugRoutine: PKDEBUG_ROUTINE = None;
 
 #[no_mangle]
 pub static mut KdBreakAfterSymbolLoad: BOOLEAN = 0;
@@ -1039,7 +1040,7 @@ pub static mut KdVersionBlock: DBGKD_GET_VERSION64 = DBGKD_GET_VERSION64 {
 
 #[repr(C)]
 #[allow(non_snake_case)]
-struct KDDEBUGGER_DATA64_FULL {
+pub struct KDDEBUGGER_DATA64_FULL {
     Header: DBGKD_DEBUG_DATA_HEADER64,
     KernBase: u64,
     BreakpointWithStatus: u64,

@@ -12,8 +12,14 @@ add_definitions(
     -D_NTOSKRNL_
     -D_NTSYSTEM_
     -DNTDDI_VERSION=0x05020400
-    -DKD64_USE_C
     )
+
+# KD64: Rust on all 3 arches (i386/amd64/arm64). C is no longer needed.
+# Verified 2026-04-30: arm64 with Rust kd64 fails identically to arm64 with C kd64
+# (same 13,449 bytes serial, same hang at PspUserThreadStartup) — the arm64
+# baseline regression is somewhere else, not in kd64.
+# (The historical "recursive exception flood on amd64" turned out to be stale —
+# fixed silently by CGU=256 + opaque_ptr sweep + RAII guards in 2026 Q1.)
 
 if(NOT DEFINED NEWCC)
     set(NEWCC FALSE)
@@ -189,14 +195,14 @@ list(APPEND SOURCE
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnproot.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c  # Replaced by Rust pnputil.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/debug.c  # Replaced by Rust debug.rs
-    # KD64 subsystem: using C (Rust KD64 causes recursive exception flood on amd64)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdapi.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdbreak.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kddata.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdinit.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdlock.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdprint.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdtrap.c
+    # KD64 generic subsystem: Rust on all 3 arches (kd64/{arch}/kd*.c stays in C).
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdapi.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdbreak.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kddata.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdinit.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdlock.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdprint.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/kdtrap.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
     # ke/ — replaced by Rust (ntoskrnl-rust/src/ke/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/apc.c

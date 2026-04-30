@@ -220,7 +220,7 @@ pub unsafe extern "system" fn KdInitSystem(
         return 1u8;
     }
 
-    KiDebugRoutine = Some(KdpStub);
+    KiDebugRoutine = Some(abi_cast!(KdpStub));
     KdBreakAfterSymbolLoad = 0u8;
 
     if (*core::ptr::addr_of!(KdpDebuggerDataListHead)).Flink.is_null() {
@@ -340,7 +340,7 @@ pub unsafe extern "system" fn KdInitSystem(
     }
 
     if enable_kd != 0 && KdDebuggerInitialize0(loader_block) >= 0 {
-        KiDebugRoutine = Some(KdpTrap);
+        KiDebugRoutine = Some(abi_cast!(KdpTrap));
 
         if KdpDebuggerStructuresInitialized == 0 {
             KdpContext.KdpDefaultRetries = 20;
@@ -355,12 +355,12 @@ pub unsafe extern "system" fn KdInitSystem(
 
             KeInitializeDpc(
                 core::ptr::addr_of_mut!(KdpTimeSlipDpc) as *mut ntkrnl_sys::ddk::_KDPC,
-                Some(KdpTimeSlipDpcRoutine),
+                Some(abi_cast!(KdpTimeSlipDpcRoutine)),
                 core::ptr::null_mut()
             );
             KeInitializeTimer(core::ptr::addr_of_mut!(KdpTimeSlipTimer) as *mut ntkrnl_sys::ddk::_KTIMER);
             // ExInitializeWorkItem(&KdpTimeSlipWorkItem, KdpTimeSlipWork, NULL)
-            KdpTimeSlipWorkItem.WorkerRoutine = Some(KdpTimeSlipWork);
+            KdpTimeSlipWorkItem.WorkerRoutine = Some(abi_cast!(KdpTimeSlipWork));
             KdpTimeSlipWorkItem.Parameter = core::ptr::null_mut();
 
             KdpDebuggerStructuresInitialized = 1u8;

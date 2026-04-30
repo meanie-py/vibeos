@@ -767,7 +767,7 @@ unsafe fn KdpReadControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, _
     }
 
     (*state).ReturnStatus = KdpSysReadControlSpace(
-        (*state).Processor,
+        (*state).Processor as ULONG,
         (*read_memory).TargetBaseAddress,
         (*data).Buffer as PVOID,
         length,
@@ -792,7 +792,7 @@ unsafe fn KdpWriteControlSpace(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
     header.Buffer = state as PCHAR;
 
     (*state).ReturnStatus = KdpSysWriteControlSpace(
-        (*state).Processor,
+        (*state).Processor as ULONG,
         (*write_memory).TargetBaseAddress,
         (*data).Buffer as PVOID,
         (*data).Length as u32,
@@ -1814,7 +1814,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
 
         if KdDebuggerEnabled != 0 {
             KdpSuspendAllBreakPoints();
-            KiDebugRoutine = Some(KdpStub);
+            KiDebugRoutine = Some(abi_cast!(KdpStub));
 
             KdDebuggerEnabled = 0u8;
             *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
