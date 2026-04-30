@@ -420,7 +420,7 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
         AttributeFlags,
         ShareMode,
         CreateDisposition,
-        0x00000002 | IoFlags,
+        0x00000020 | IoFlags, // FILE_SYNCHRONOUS_IO_NONALERT
         core::ptr::null_mut(),
         0,
     );
@@ -580,7 +580,7 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
         AttributeFlags,
         ShareMode,
         CreateDisposition,
-        0x00000002 | IoFlags,
+        0x00000020 | IoFlags, // FILE_SYNCHRONOUS_IO_NONALERT
         core::ptr::null_mut(),
         0,
     );
