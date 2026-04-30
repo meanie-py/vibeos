@@ -1,223 +1,153 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-04-28)
+# ntoskrnl C→Rust Translation Audit (updated 2026-04-30)
 
-## Already Translated (Active in Rust)
+## Headline
 
-| Subsystem | Files | Rust Lines | Status |
-|-----------|-------|------------|--------|
-| KE (kernel) | 63 | 53,461 | All arches, i386/arm64 smoke pass |
-| ARM3 (mm internals) | 25 | 43,638 | All arches |
-| IOMGR (IO manager) | 26 | 40,508 | All arches (arcname re-enabled, iofunc complete) |
-| EX (executive) | 31 | 38,613 | All arches |
-| SE (security) | 18 | 34,868 | All arches |
-| PNPMGR (PnP) | 18 | 25,755 | amd64/arm64 Rust, i386 C (devaction stays C) |
-| OB (object) | 11 | 22,332 | All arches |
-| PS (process) | 13 | 22,604 | All arches |
-| FSTUB (file stubs) | 4 | 12,060 | All arches (this session) |
-| MM (memory) | 11 | 11,221 | All arches |
-| FSRTL (fs runtime) | 17 | 20,785 | All arches |
-| CC (cache) | 7 | 6,112 | All arches |
-| DBGK (debug) | 2 | 5,061 | All arches |
-| PO (power) | 4 | 4,961 | All arches |
-| KD (low-level debugger) | 9 | 3,914 | All arches |
-| KDBG (interactive debugger) | 7 | 9,991 | i386 + amd64 (off on ARM64) |
-| LPC (local proc) | 8 | 3,876 | All arches |
-| INBV (boot video) | 3 | 3,611 | All arches |
-| WMI | 4 | 3,588 | All arches |
-| RTL (runtime) | 2 | 2,157 | All arches |
-| VDM (virtual DOS) | 2 | 1,221 | All arches |
-| VF (verifier) | 1 | 140 | All arches |
-| MM section I/O+page-table | 2 | 540 | All arches; wired in mm/mod.rs, replaces cache/section/{io,sptab}.c |
-| **TOTAL** | **281** | **~360,500** | |
+- **~93% translated by C-line count.** ~278K LOC translatable C body of work; ~18K LOC of translatable C still active in the default build.
+- **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged this branch (`continue-rust-port`); last fix `ddba7c05` — `cmparse.rs::COMPUTE_HASH_CHAR` was missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
+- **Smoke status:** i386 7/7 PASS · amd64 6/7 (only `[EXPLORER] _tWinMain entered` missing — pre-existing taskbar regression, unrelated to translation) · arm64 baseline failure stands (no serial output, pre-existing 0x6A BSOD).
 
-## NOT YET TRANSLATED
+## Active in Rust (default build)
 
-### 1. CONFIG — Registry/Configuration Manager (CM)
-**24 files, 18,827 lines — PRIORITY: HIGH**
+Counts are *active modules*. Files on disk that exist but aren't wired into `mod.rs` (or are gated off per-arch) are tracked in the "Parked" section below.
 
-The Windows Registry implementation. Used on every boot and throughout runtime.
+| Subsystem | Active mods | LOC active | Notes |
+|-----------|------------:|-----------:|-------|
+| KE (kernel) | 67 | 54,113 | Includes per-arch `ke/{i386,amd64,arm64}/*` |
+| ARM3 (mm internals) | 24 | 40,768 | `virtual.rs` parked |
+| iomgr | 26 (arm64: 24) | 41,047 / 39,429 | `iomgr.rs` + `ramdisk.rs` arm64-gated |
+| EX (executive) | 30 | 35,201 | `sysinfo.rs` parked |
+| SE (security) | 18 | 35,200 | |
+| **config (registry CM)** | **21** | **33,196** | **NEW — all 3 arches active** |
+| ps (process) | 13 | 23,085 | |
+| ob (object) | 11 | 22,532 | |
+| fsrtl | 17 | 20,963 | |
+| pnpmgr | 13 (+arb subdir) | 22,709 | `pnpres.rs` parked |
+| fstub | 4 | 12,264 | |
+| mm | 12 | 11,893 | |
+| kdbg (KDB) | 8 | 9,979 | i386 + amd64 only (KDBG off on arm64) |
+| cc (cache) | 7 | 6,221 | |
+| dbgk | 2 | 5,104 | |
+| po (power) | 4 | 5,050 | |
+| inbv (boot video) | 3 | 3,633 | |
+| lpc | 7 | 3,206 | `connect.rs` parked |
+| kd (low-level) | 6 | 3,808 | |
+| wmi | 4 | 3,697 | |
+| i386 (arch shared) | 7 | 2,797 | Used by i386 + amd64 |
+| rtl | 2 | 2,183 | |
+| vdm | 4 | 1,228 | |
+| arm64 (arch) | 2 | 1,045 | |
+| amd64 (arch) | 2 | 981 | |
+| vf | 1 | 152 | |
+| **TOTAL active (i386/amd64)** | **~313** | **~400K LOC** | |
 
-Current status as of 2026-04-28 (on `wip-config-rust-port`, post-merge from `continue-rust-port`):
-- 21 .rs files active in `sdk/lib/rust/ntoskrnl-rust/src/config`; compile-clean for `kernel-rust` on `x86_64-pc-windows-gnu`.
-- Boot is broken on this branch, bisected to the LLVM CGU/captures(none) regression (see `feedback_cgu1.md`). Compile-clean ≠ boot-clean.
-- Parity fixes landed: `ntapi.rs`, `cmsysini.rs`, `cmconfig.rs`, `cmparse.rs`, `cmhvlist.rs`, `cmvalche.rs`, `cminit.rs`, `cmcontrl.rs`. Small files (`cmquota.rs`, `cmsecach.rs`, `cmhook.rs`, `cmmapvw.rs`, `cmnotify.rs`) are aligned/stubbed at C parity.
-- Highest remaining audit risk is concentrated in `cmapi.rs`, `cmboot.rs`, and `cmkcbncb.rs`, where translation-era local stubs and large control-flow surfaces still need deeper line-by-line verification.
+## Parked translations (Rust on disk, C version active in build)
 
-| File | Lines | Description |
-|------|-------|-------------|
-| cmapi.c | 2,846 | Registry API (NtCreateKey, NtSetValueKey, etc.) |
-| cmsysini.c | 2,418 | System initialization, hive loading |
-| cmparse.c | 2,311 | Key path parsing, create/open |
-| ntapi.c | 1,953 | Nt* syscall entry points for registry |
-| cmkcbncb.c | 1,423 | Key control block / name cache block |
-| cmboot.c | 1,260 | Boot hive processing |
-| cmdata.c | 985 | Static data, type info |
-| i386/cmhardwr.c | 897 | Hardware detection (arch-specific) |
-| cmvalche.c | 836 | Value cache |
-| cminit.c | 689 | CM initialization |
-| cmdelay.c | 474 | Delayed operations |
-| cmlazy.c | 452 | Lazy flush |
-| cmconfig.c | 430 | Configuration tree |
-| cmse.c | 355 | Security descriptors for registry |
-| cmalloc.c | 303 | Memory allocation |
-| cmhvlist.c | 288 | Hive list management |
-| cmcontrl.c | 271 | Control set |
-| cmwraprs.c | 217 | Wrapper functions |
-| cmhook.c | 198 | Registry callbacks |
-| cmmapvw.c | 80 | Mapped views |
-| cmsecach.c | 52 | Security cache |
-| cmnotify.c | 36 | Change notifications |
-| cmquota.c | 26 | Quota |
-| arm/cmhardwr.c | 27 | ARM hardware detection |
+These cost real API money to produce. Stay in the tree until the regression is debugged. **Do not delete.**
 
-**Dependencies**: cmlib (sdk/lib/cmlib/), registry hives, SE subsystem
-**Complexity**: HIGH — complex data structures (hives, KCBs, bins), extensive locking, lazy flush
+| Rust file | Rust LOC | C still active | LOC | Reason parked |
+|-----------|---------:|----------------|----:|---------------|
+| kd64/* (8 files) | 11,100 | kd64/*.c (7 files) | 5,535 | Recursive exception flood on amd64 (INT3 → KdpTrap → KdpReport → ...). Compiled out via `-DKD64_USE_C`. Root cause unknown. |
+| ARM3/virtual.rs | 3,286 | mm/ARM3/virtual.c | 5,815 | NtAllocateVirtualMemory/NtFreeVirtualMemory stubs, heavy SEH. Disabled in `ARM3/mod.rs:29-30`. |
+| ex/sysinfo.rs | 3,744 | ex/sysinfo.c | 3,080 | NtQuerySystemInformation has 70+ class handlers; not all translated. Disabled in `ex/mod.rs:26`. |
+| pnpmgr/pnpres.rs | 3,264 | io/pnpmgr/pnpres.c | 1,498 | Translated, never wired into `pnpmgr/mod.rs`. |
+| iomgr/iomgr.rs (arm64) | 1,215 | io/iomgr/iomgr.c (arm64) | 765 | PE layout issue on arm64. `#[cfg(not(target_arch = "aarch64"))]`. |
+| iomgr/ramdisk.rs (arm64) | 403 | io/iomgr/ramdisk.c (arm64) | 307 | Same arm64 PE layout issue → 0x6B crash. |
+| lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; never re-enabled. |
+| ke/arm64/trap.rs | dead | ke/arm64/trap.c | 526 | Rust version breaks boot. **Edit the C file** — the .rs is dead. |
+| ke/amd64/usercall.rs | dead | ke/amd64/usercall.c | 404 | Undiagnosed return-address corruption in Rust version. |
+| **Parked total** | **~28K Rust** | | **~18.7K C** | |
 
-### 2. FSTUB — File System Stubs — DONE (commit `d171f628`, 2026-04-26)
-**4 files, 5,817 LOC C → 12,060 LOC Rust on all 3 arches.**
+## Still in C — intentional (no Rust translation planned)
 
-Disk partition support and HAL stubs. Used during boot for disk enumeration.
-Wired in `lib.rs:44` (`pub mod fstub;`); C versions commented out at
-`ntos.cmake:135-138`. All 4 arches green; the amd64 explorer/taskbar
-regression that had been chased for weeks turned out to be a translation
-bug here (`L"\\Device\\Harddisk%d\\Partition0"` translated as bytes cast
-to `*const u16` produced garbage paths every other character) — fixed in
-the same commit and caught by the new boot-milestone harness.
+| File | LOC | Why C |
+|------|----:|-------|
+| mm/section_pe.c | 661 | PE format parser; not worth the translation surface. |
+| config/cmdata.c | 994 | Pure globals; no functions for tree-sitter to extract. |
+| config/i386/cmhardwr.c | 897 | i386/amd64 hardware detection (CMOS, FX bytes, MSRs). |
+| config/arm/cmhardwr.c | 27 | ARM hardware detection (legacy, not built). |
+| kdbg/i386/i386-dis.c | 4,453 | Binutils-derived i386 disassembler; not our code. |
+| kdbg/{i386,amd64}/kdb_help.S | ~30 each | Asm trampolines. |
+| ntoskrnl/guid.c | 9 | Auto-generated. |
+| ntoskrnl/KrnlFun.c | 48 | Dead (not in cmake). |
+| `*_rust_shims.c` (~12 files) | 9,237 | FORCEINLINE/macro/dllimport bridges for Rust FFI. By design. |
+| tests/*.c | 5,859 | Kernel test harness. Not for translation. |
 
-| C file | C lines | Rust file | Rust lines |
-|--------|---------|-----------|------------|
-| disksup.c | 2,596 | fstub/disksup.rs | 6,020 |
-| fstubex.c | 2,136 | fstub/fstubex.rs | 4,641 |
-| translate.c | 652 | fstub/translate.rs | 430 |
-| halstub.c | 433 | fstub/halstub.rs | 969 |
+## Still in C — translation candidates (NOT yet translated)
 
-### 3. KD64 — WinDbg Kernel Debugger Protocol
-**11 files (7 generic + 3 arch), 6,846 lines — PRIORITY: DEFERRED**
+The real backlog. Roughly 2K LOC of small per-arch glue.
 
-Rust translations exist (8 .rs files) but are **disabled** due to recursive exception flooding on amd64 (INT3 → KdpTrap → KdpReport → KdSendPacket → infinite nesting). Root cause unknown.
+| File | LOC | Per-arch? | Notes |
+|------|----:|-----------|-------|
+| io/iomgr/arcname.c | 998 | generic | Hybrid — `iomgr/arcname.rs` (1,633 LOC) covers some paths; C still owns `IopCreateArcNames` + `IopCreateArcNamesDisk`. Finish split. |
+| kd64/i386/kdx86.c | 446 | i386 | Coupled to the parked kd64 work. |
+| kd64/amd64/kdx64.c | 391 | amd64 | Coupled to the parked kd64 work. |
+| kd64/arm/kdarm.c | 156 | arm (not built) | |
+| ps/i386/psctx.c | 91 | i386 | Context save/restore. |
+| ps/i386/psldt.c | 113 | i386 | LDT setup. |
+| ps/amd64/psctx.c | 69 | amd64 | |
+| ps/arm/psctx.c | 47 | arm (not built) | |
+| arm32 misc | ~2,500 | arm (not built) | `ke/arm/*.c` (7 files), `mm/arm/page.c`, `mm/ARM3/arm/init.c`, `rtl/arm/rtlexcpt.c`. ARM32 is dead in this fork. |
 
-| File | Lines | Rust? | Description |
-|------|-------|-------|-------------|
-| kdapi.c | 2,236 | kdapi.rs exists | Debugger API |
-| kddata.c | 1,368 | kddata.rs exists | Static data |
-| kdtrap.c | 777 | kdtrap.rs exists | Trap handling |
-| kdprint.c | 633 | kdprint.rs exists | Print/output |
-| kdinit.c | 576 | kdinit.rs exists | Initialization |
-| kdlock.c | 418 | kdlock.rs exists | Locking |
-| kdbreak.c | 302 | kdbreak.rs exists | Breakpoints |
-| kd64_rust_shims.c | 260 | — | C shims |
-| amd64/kdx64.c | 153 | — | amd64-specific |
-| i386/kdx86.c | 90 | — | i386-specific |
-| arm/kdarm.c | 33 | — | ARM-specific |
+## Active C in default build, summed
 
-**Status**: Translated but disabled. Needs debugging of recursive exception issue, not retranslation.
+| Bucket | LOC |
+|--------|----:|
+| Generic active C | ~19,400 |
+| i386-only active C (worst arch) | ~1,550 |
+| **Active C in default build (worst case = i386)** | **~20,950** |
+| of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
+| **Translatable C still active** | **~18,400** |
 
-### 4. KDBG — Interactive Kernel Debugger (KDB) — DONE (2026-04-28)
-**7 generic files, 7,653 LOC C → 9,991 LOC Rust on i386 + amd64.**
+## Percentage
 
-ReactOS-specific interactive debugger (not WinDbg protocol). Wired in
-`lib.rs` (`pub mod kdbg;`), C versions commented out at `ntos.cmake:518-525`.
-Smoke 7/7 on both arches. See `docs/engineering/kdbg-port-status.md`.
+Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
+- ~277,750 LOC C total
+- ~18,400 LOC C still active and translatable
+- **(277,750 − 18,400) / 277,750 ≈ 93.4% translated**
 
-| C file | C lines | Rust file | Rust lines |
-|--------|---------|-----------|------------|
-| kdb_cli.c | 3,711 | kdbg/kdb_cli.rs | 3,656 |
-| kdb.c | 1,682 | kdbg/kdb.rs | 1,784 |
-| kdb_expr.c | 1,216 | kdbg/kdb_expr.rs | 2,283 |
-| kdb_symbols.c | 469 | kdbg/kdb_symbols.rs | 1,026 |
-| kdbg.c | 212 | kdbg/kdbg.rs | 429 |
-| kdb_print.c | 201 | kdbg/kdb_print.rs | 413 |
-| kdb_cmdhist.c | 162 | kdbg/kdb_cmdhist.rs | 310 |
+If you also count the parked translations as "done" (translation already paid for, just not enabled):
+- Parked Rust: ~28K LOC
+- Add ~12K LOC of C they replace if/when wired
+- **~98% has a Rust translation in tree** (active or parked)
 
-The variadic `KdbPrintf` / `KdbpPrint` plus ~25 file-private statics from
-the original `kdb_cli.c` live in `ntoskrnl/kdbg/kdbg_rust_shims.c` (539 LOC).
-i386-dis.c (binutils, 4,453 LOC) and kdb_help.S (asm trampolines) stay in C.
+## What it would take to push toward 100%
 
-### 5. KD — Low-Level Debugger Support — DONE (this session)
-**~~9 files, 2,242 lines — PRIORITY: LOW~~ COMPLETE**
+In rough priority order (yield vs. cost):
 
-Serial port, PS/2 keyboard, and terminal I/O for the kernel debugger. All 9 files
-translated to Rust this session. ~3,914 LOC of new Rust + 1 shim file
-(`kd_rust_shims.c` for HAL `KdComPortInUse` cross-DLL bridge).
+1. **kd64 recursive-exception debug** — 11,100 LOC parked Rust + ~6,500 LOC of active C unblocks at once. No API spend; pure debugging.
+2. **mm/ARM3/virtual.c** — 5,815 LOC of active C → re-enable `virtual.rs` (3,286 LOC parked). Needs SEH cleanup + missing-function fill-in.
+3. **ex/sysinfo.c** — 3,080 LOC. `sysinfo.rs` parked at 3,744 LOC; finish the missing NtQuerySystemInformation classes.
+4. **pnpres** — 1,498 LOC. Wire `pnpres.rs` into `pnpmgr/mod.rs` and shake out compile/link.
+5. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the original LLVM codegen issue (or confirm CGU=256 fix already covers it).
+6. **arch-specific glue** — `ke/amd64/usercall.c`, `ke/arm64/trap.c`, `io/iomgr/iomgr.c` (arm64), `ps/{i386,amd64}/psctx.c`, `ps/i386/psldt.c`. Mostly small, mostly arch-dependent debugging.
+7. **arcname** — finish the remaining `IopCreateArcNames*` paths in Rust; delete the C hybrid.
 
-| File | C lines | Rust file | Notes |
-|------|--------:|-----------|-------|
-| kdio.c | 355 | kd/kdio.rs (1,525) | Owns globals KdpDebugMode/KdProviders/DispatchTable/InitRoutines |
-| kdmain.c | 563 | kd/kdmain.rs (795) | Defensive `InitializeListHead(&KdProviders)` for null Rust static-init |
-| kdterminal.c | 443 | kd/kdterminal.rs (488) | Owns KdbDebugState; cdecl ABI (matches C) |
-| kdprompt.c | 182 | kd/kdprompt.rs (243) | |
-| kdps2kbd.c | 128 | kd/kdps2kbd.rs (250) | x86 in/out via inline asm |
-| kdserial.c | 256 | kd/kdserial.rs (80) | Generic wrapper |
-| i386/kdserial.c | 115 | i386/kdserial.rs | Used by BOTH i386 + amd64 (cfg `any(x86, x86_64)`) |
-| arm64/kdserial.c | 100 | arm64/kdserial.rs | PL011 |
-| arm/kdserial.c | 100 | arm/kdserial.rs | PL011 |
+After 1–4 land, translatable-C-still-active drops below ~5K LOC and we're ≥98% by the strict metric.
 
-### 6. CACHE — Legacy NewCC Cache Manager — DONE
-**13 files, ~7,500 lines — PRIORITY: VERY LOW**
+## What the audit doesn't measure
 
-Alternative cache manager implementation, only compiled when `NEWCC=ON`. The active cache manager (CC subsystem) is already translated to Rust.
+- **Boot correctness.** A line-count metric says nothing about whether the Rust version actually works under load. The smoke harness is the source of truth on that — current verdict: i386 7/7, amd64 6/7 (taskbar regression unrelated to translation), arm64 0/7 (pre-existing baseline issue).
+- **API debt.** ~28K LOC of paid translations are parked. Some need debugging, some need wiring. None of that needs new API spend.
+- **Per-arch differentials.** i386 and amd64 are mostly aligned; arm64 has its own set of parked files (iomgr/ramdisk PE layout, ke/arm64/trap, KDBG fully off). The numbers above use i386/amd64 as the reference because that's where the build is at parity.
 
-**Status as of 2026-04-27 — fully resolved:**
-- `cache/section/io.c` (338 LOC) + `cache/section/sptab.c` (429 LOC) — the two unconditionally-compiled files — translated to Rust as `mm/section_io.rs` (173 LOC) + `mm/section_table.rs` (367 LOC). **Wired in `mm/mod.rs:16-17`; C versions commented out at `ntos.cmake:50-51`. Active in build, smoke green on all 3 arches.**
-- The 11 NEWCC-only files (cachesub.c, copysup.c, fssup.c, lazyrite.c, logsup.c, mdlsup.c, pinsup.c, section/{data,fault,reqtools,swapout}.c) have been line-comment-out as dead code, retained as reference. To delete in bulk when ready.
-- `mm_rust_shims.c` gained `MiAcquirePfnLock` / `MiReleasePfnLock` cdecl outline trampolines — these were FORCEINLINE in `mm.h` with no real symbol; the new Rust callers need linkable functions.
+## How these numbers were computed
 
-| File | Lines | Status |
-|------|-------|--------|
-| section/io.c | 338 | → mm/section_io.rs (active) |
-| section/sptab.c | 429 | → mm/section_table.rs (active) |
-| pinsup.c | 997 | NEWCC dead — line-commented |
-| section/fault.c | 968 | NEWCC dead — line-commented |
-| section/data.c | 847 | NEWCC dead — line-commented |
-| section/swapout.c | 660 | NEWCC dead — line-commented |
-| fssup.c | 632 | NEWCC dead — line-commented |
-| cachesub.c | 363 | NEWCC dead — line-commented |
-| section/reqtools.c | 283 | NEWCC dead — line-commented |
-| copysup.c | 235 | NEWCC dead — line-commented |
-| mdlsup.c | 127 | NEWCC dead — line-commented |
-| logsup.c | 71 | NEWCC dead — line-commented |
-| lazyrite.c | 36 | NEWCC dead — line-commented |
+```bash
+# Total C in ntoskrnl/ (excluding tests + shim/helper bridges):
+find ntoskrnl -name "*.c" \
+  | grep -v -E '/tests/|_rust_shims\.c|kernel_c_helpers\.c' \
+  | xargs wc -l   # → 282,469
 
-### 7. Misc Root-Level Files
-**3 files, ~1,500 lines — already accounted for**
+# Active C in default build (NEWCC=OFF; KD64_USE_C=ON; KDBG=ON):
+grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
+  | grep -v '^\s*#' \
+  | grep -v 'tests/' \
+  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c' \
+  | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
+  | sort -u | xargs wc -l   # → 33,692, minus 5,296 NEWCC = 28,396
 
-| File | Description |
-|------|-------------|
-| guid.c | GUID definitions (auto-generated, stays in C) |
-| kernel_c_helpers.c | Misc C helpers for Rust FFI |
-| tier1_rust_shims.c | Shims for tier 1 Rust subsystems |
-| KrnlFun.c | Kernel function stubs |
+# Rust LOC across ntoskrnl-rust/:
+find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 429,437
+```
 
-### 8. Tests
-**36 files, 5,859 lines — NOT FOR TRANSLATION**
-
-Kernel test harness, stays in C.
-
-## Summary (updated 2026-04-28)
-
-| Subsystem | Files | Lines | Priority | Status |
-|-----------|-------|-------|----------|--------|
-| **config/** | 24 | 18,827 | HIGH | Rust translations active; compile-clean on x86_64, parity audit/fixup in progress with remaining highest-risk review in cmapi/cmboot/cmkcbncb |
-| ~~**fstub/**~~ | 4 | 5,817 | DONE | All 4 files Rust on all 3 arches |
-| **kd64/** | 11 | 6,846 | DEFERRED | Already translated, needs debug (recursive exception flood on amd64) |
-| ~~**kdbg/**~~ | 7 + shim | 7,653 | DONE | 7 generic files Rust on i386 + amd64 (2026-04-28). i386-dis.c + kdb_help.S stay in C |
-| ~~**kd/**~~ | 9 | 2,242 | DONE | All 9 files Rust on all 3 arches |
-| ~~**cache/**~~ | 13 | 7,486 | DONE | section/{io,sptab}.c → Rust (wired, active); 11 NEWCC files line-commented dead code |
-| **TOTAL remaining** | ~24 | ~24,673 | | (config + kd64 only) |
-
-## Translation Priority Recommendation
-
-1. **CONFIG bisection** — translation done but boot-broken; needs root-cause debugging (Codex / fresh eyes when tokens available). 21 files (~30K Rust) live on branch `wip-config-rust-port`.
-2. **kd64/ debug** — already translated, needs recursive exception flood on amd64 debugged. No API cost.
-3. **Misc root files** — guid.c, kernel_c_helpers.c, tier1_rust_shims.c, KrnlFun.c — small (~1.5K lines).
-
-After config bisection lands, the kernel would be **~98% Rust** by line count.
-
-## What's Still C (and intentionally so)
-
-- **cmdata.c** (config) — pure globals, no functions. Tree-sitter can't extract anything; either keep or hand-translate as `pub static mut` block.
-- **i386-dis.c** (kdbg) — binutils-derived i386 disassembler, ~4453 lines. Not our code.
-- **kdb_help.S** (kdbg) — assembly trampolines, two arch variants (~30 lines each).
-- **guid.c** — auto-generated GUID definitions.
-- **kernel_c_helpers.c** + various `_rust_shims.c` files — outline trampolines for FORCEINLINE/macro/dllimport bridging. Stays in C by design.
-- **tests/** — kernel test harness. Not for translation.
- 
+Numbers above use these scripts as the source of truth. Re-run them after any subsystem flip; the audit text is just a snapshot of what they output on 2026-04-30.
