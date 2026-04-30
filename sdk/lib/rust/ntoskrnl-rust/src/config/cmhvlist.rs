@@ -7,6 +7,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CmpCompressedNameSize, CmpCopyCompressedName, HCELL_INDEX, _OBJECT_ATTRIBUTES, OBJECT_NAME_INFORMATION, ObCloseHandle, PCELL_DATA, PCMHIVE, POBJECT_NAME_INFORMATION, PUNICODE_STRING, _UNICODE_STRING, ZwCreateKey, ZwDeleteValueKey, ZwOpenKey, ZwQueryObject, ZwSetValueKey};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
 const KEY_READ: u32 = 0x00020019;
 const KEY_WRITE: u32 = 0x00020006;
@@ -41,6 +42,8 @@ pub unsafe extern "system" fn CmpGetHiveName(
     Hive: PCMHIVE,
     HiveName: PUNICODE_STRING,
 ) -> u8 {
+    let Hive = opaque_ptr(Hive);
+    let HiveName = opaque_ptr(HiveName);
     let mut RootCell: HCELL_INDEX;
     let mut LinkCell: HCELL_INDEX;
     let mut RootData: PCELL_DATA;
@@ -151,6 +154,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
+    let Hive = opaque_ptr(Hive);
     let mut Status: i32;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -286,6 +290,7 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     let mut Status: i32;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();

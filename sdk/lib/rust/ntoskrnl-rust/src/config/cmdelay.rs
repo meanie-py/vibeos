@@ -15,6 +15,7 @@ use ntkrnl_sys::ddk::{
 };
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 // ============================================================================
 // Globals — translated from cmdelay.c (cmdelay.c is excluded from C build).
 // ============================================================================
@@ -37,14 +38,17 @@ use core::ffi::c_void;
 #[no_mangle] pub static mut CmpDelayDerefKCBDpc: _KDPC = unsafe { core::mem::zeroed() };
 #[no_mangle] pub static mut CmpDelayDerefKCBTimer: _KTIMER = unsafe { core::mem::zeroed() };
 
-// ExInitializeWorkItem is a macro in C — here as PVOID-routine extern.
-extern "C" {
-    fn ExInitializeWorkItem(Item: PWORK_QUEUE_ITEM, Routine: PVOID, Context: PVOID);
-}
-
 // CMP_ASSERT_KCB_LOCK is a macro in C. With NDEBUG it's a no-op.
 #[inline]
 unsafe fn CMP_ASSERT_KCB_LOCK(_Kcb: PCM_KEY_CONTROL_BLOCK) {}
+
+extern "system" {
+    fn ExInitializeWorkItem(
+        Item: PWORK_QUEUE_ITEM,
+        Routine: Option<unsafe extern "system" fn(PVOID)>,
+        Context: PVOID,
+    );
+}
 
 // InterlockedCompareExchange — stable atomic CAS replacement for
 // `core::intrinsics::atomic_cxchg_acqrel_acquire`.  Returns OLD value.
@@ -75,7 +79,8 @@ unsafe extern "system" fn CmpDelayCloseDpcRoutine(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CmpDelayCloseWorker(Context: PVOID) {
+pub unsafe extern "system" fn CmpDelayCloseWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     let mut ListEntry: PCM_DELAYED_CLOSE_ENTRY;
     let mut i: ULONG;
     let mut ConvKey: ULONG;
@@ -172,7 +177,7 @@ pub unsafe extern "system" fn CmpInitializeDelayedCloseTable() {
     
     ExInitializeWorkItem(
         core::ptr::addr_of_mut!(CmpDelayCloseWorkItem),
-        CmpDelayCloseWorker as PVOID,
+        Some(CmpDelayCloseWorker),
         core::ptr::null_mut(),
     );
 
@@ -199,7 +204,8 @@ pub unsafe extern "system" fn CmpDelayDerefKCBDpcRoutine(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CmpDelayDerefKCBWorker(Context: PVOID) {
+pub unsafe extern "system" fn CmpDelayDerefKCBWorker(Context: PVOID) {
+    let Context = opaque_ptr(Context);
     CmpLockRegistry();
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(CmpDelayDerefKCBLock));
 
@@ -230,7 +236,7 @@ pub unsafe extern "system" fn CmpInitDelayDerefKCBEngine() {
 
     ExInitializeWorkItem(
         core::ptr::addr_of_mut!(CmpDelayDerefKCBWorkItem),
-        CmpDelayDerefKCBWorker as PVOID,
+        Some(CmpDelayDerefKCBWorker),
         core::ptr::null_mut(),
     );
 
@@ -244,6 +250,7 @@ pub unsafe extern "system" fn CmpInitDelayDerefKCBEngine() {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDelayDerefKeyControlBlock(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     let mut OldRefCount: i32;
     let mut NewRefCount: i32;
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
@@ -308,6 +315,7 @@ pub unsafe extern "system" fn CmpAddToDelayedClose(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     LockHeldExclusively: u8,
 ) {
+    let Kcb = opaque_ptr(Kcb);
     let mut i: u32;
     let mut OldRefCount: u32;
     let NewRefCount: u32;
@@ -373,6 +381,7 @@ pub unsafe extern "system" fn CmpAddToDelayedClose(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpRemoveFromDelayedClose(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     let Entry: PCM_DELAYED_CLOSE_ENTRY;
     let NewRefCount: u32;
     let OldRefCount: u32;

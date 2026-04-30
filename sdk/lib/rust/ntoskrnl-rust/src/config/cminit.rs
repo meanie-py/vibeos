@@ -1,6 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
-use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
+use ntkrnl_sys::mm::{KeGetCurrentThread, NonPagedPool, PagedPool};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::ddk::{
     CMHIVE, CM_CHECK_REGISTRY_STATUS, CmCheckRegistry, CmpAllocate, CmpCreateEvent,
@@ -19,6 +19,7 @@ use ntkrnl_sys::ddk::{
     _KGUARDED_MUTEX,
 };
 
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // TAG constants (from sdk/lib/cmlib/cmlib.h). C uses big-endian char literals;
 // 'vHMC' → bytes 'C','M','H','v' in memory → little-endian u32.
 const TAG_CMHIVE: u32 = u32::from_le_bytes(*b"CMHv");
@@ -26,11 +27,6 @@ const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
 // HFILE_TYPE_MAX from hivedata.h
 const HFILE_TYPE_MAX: u32 = 4;
 const FILE_SUPERSEDE: u32 = 0;
-
-// KeGetCurrentThread shim — returns PVOID; cast to PKTHREAD at call site.
-extern "C" {
-    fn KeGetCurrentThread() -> PVOID;
-}
 
 // ARM64_UART_TRACE — no-op shim provided by C side (and inline-asm on ARM64).
 extern "C" {
@@ -55,8 +51,12 @@ extern "system" {
     ) -> i32;
     fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unpin: u8) -> u8;
-    fn CM_CHECK_REGISTRY_SUCCESS(Status: CM_CHECK_REGISTRY_STATUS) -> u8;
     fn HvFree(Hive: PHHIVE);
+}
+
+#[inline(always)]
+unsafe fn CM_CHECK_REGISTRY_SUCCESS(Status: CM_CHECK_REGISTRY_STATUS) -> u8 {
+    (Status == 0) as u8
 }
 
 extern "C" {
@@ -80,11 +80,18 @@ pub unsafe extern "system" fn CmpInitializeHive(
     FileName: PCUNICODE_STRING,
     CheckFlags: u32,
 ) -> i32 {
+    let CmHive = opaque_ptr(CmHive);
+    let HiveData = opaque_ptr(HiveData);
+    let Primary = opaque_ptr(Primary);
+    let Log = opaque_ptr(Log);
+    let External = opaque_ptr(External);
+    let Alternate = opaque_ptr(Alternate);
+    let FileName = opaque_ptr_const(FileName);
 
-    const HINIT_MEMORY: u32 = 0;
-    const HINIT_FILE: u32 = 1;
-    const HINIT_MEMORY_INPLACE: u32 = 2;
-    const HINIT_MAPFILE: u32 = 3;
+    const HINIT_MEMORY: u32 = 1;
+    const HINIT_FILE: u32 = 2;
+    const HINIT_MEMORY_INPLACE: u32 = 3;
+    const HINIT_MAPFILE: u32 = 5;
     const HFILE_TYPE_PRIMARY: usize = 0;
     const HFILE_TYPE_LOG: usize = 1;
     const HFILE_TYPE_EXTERNAL: usize = 2;
@@ -294,6 +301,7 @@ pub unsafe extern "system" fn CmpInitializeHive(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDestroyHive(CmHive: PCMHIVE) -> NTSTATUS {
+    let CmHive = opaque_ptr(CmHive);
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!(CmpHiveListHeadLock));
     RemoveEntryList(core::ptr::addr_of_mut!((*CmHive).HiveList));
     ExReleasePushLock(core::ptr::addr_of_mut!(CmpHiveListHeadLock));
@@ -327,6 +335,13 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
     NoBuffering: u8,
     ClusterSize: *mut u32,
 ) -> i32 {
+    let BaseName = opaque_ptr_const(BaseName);
+    let Extension = opaque_ptr_const(Extension);
+    let Primary = opaque_ptr(Primary);
+    let Log = opaque_ptr(Log);
+    let PrimaryDisposition = opaque_ptr(PrimaryDisposition);
+    let LogDisposition = opaque_ptr(LogDisposition);
+    let ClusterSize = opaque_ptr(ClusterSize);
     let mut EventHandle: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut Event: PKEVENT = core::ptr::null_mut();
     let mut Status: i32;
@@ -669,6 +684,7 @@ unsafe fn max(a: u32, b: u32) -> u32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpCloseHiveFiles(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     for i in 0..HFILE_TYPE_MAX {
         if (*Hive).FileHandles[i as usize] != core::ptr::null_mut() {
             ZwClose((*Hive).FileHandles[i as usize]);

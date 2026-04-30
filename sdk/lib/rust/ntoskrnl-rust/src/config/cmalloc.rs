@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     _CM_ALLOC_PAGE, _CM_DELAY_ALLOC,
 };
 
+use ntkrnl_sys::opaque_ptr;
 // Pool tags from sdk/lib/cmlib/cmlib.h:
 //   #define TAG_CM   '  MC'   (big-endian multi-char literal -> bytes "CM  ")
 //   #define TAG_KCB  'bkMC'   (bytes "CMkb")
@@ -62,6 +63,7 @@ pub unsafe extern "system" fn CmpInitCmPrivateDelayAlloc() {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpFreeKeyControlBlock(mut Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let mut Kcb = opaque_ptr(Kcb);
     let mut i: u32;
     let mut AllocPage: PCM_ALLOC_PAGE;
 
@@ -219,6 +221,7 @@ pub unsafe extern "system" fn CmpAllocateDelayItem() -> *mut core::ffi::c_void {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpFreeDelayItem(Entry: PVOID) {
+    let Entry = opaque_ptr(Entry);
     let mut AllocEntry: PCM_DELAY_ALLOC = Entry as PCM_DELAY_ALLOC;
     let mut AllocPage: PCM_ALLOC_PAGE;
     let mut i: ULONG;

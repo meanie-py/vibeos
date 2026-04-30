@@ -23,6 +23,7 @@ use ntkrnl_sys::ddk::{
 };
 use core::ffi::c_void;
 
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // C macros / constants used by this module — defined locally because they are
 // not part of the bindgen surface (cmdata.h / hivedata.h).
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
@@ -72,6 +73,10 @@ pub unsafe extern "system" fn CmpGetValueListFromCache(
     IndexIsCached: *mut u8,
     ValueListToRelease: PHCELL_INDEX
 ) -> VALUE_SEARCH_RETURN_TYPE {
+    let Kcb = opaque_ptr(Kcb);
+    let CellData = opaque_ptr(CellData);
+    let IndexIsCached = opaque_ptr(IndexIsCached);
+    let ValueListToRelease = opaque_ptr(ValueListToRelease);
     let Hive: PHHIVE;
     let ChildList: PCACHED_CHILD_LIST;
     let CellToRelease: HCELL_INDEX;
@@ -115,6 +120,12 @@ pub unsafe extern "system" fn CmpGetValueKeyFromCache(
     ValueIsCached: *mut u8,
     CellToRelease: PHCELL_INDEX,
 ) -> VALUE_SEARCH_RETURN_TYPE {
+    let Kcb = opaque_ptr(Kcb);
+    let CellData = opaque_ptr(CellData);
+    let CachedValue = opaque_ptr(CachedValue);
+    let Value = opaque_ptr(Value);
+    let ValueIsCached = opaque_ptr(ValueIsCached);
+    let CellToRelease = opaque_ptr(CellToRelease);
 
     let Hive: PHHIVE;
     let KeyValue: PCM_KEY_VALUE;
@@ -189,6 +200,13 @@ pub unsafe extern "system" fn CmpFindValueByNameFromCache(
     ValueIsCached: *mut u8,
     CellToRelease: PHCELL_INDEX,
 ) -> VALUE_SEARCH_RETURN_TYPE {
+    let Kcb = opaque_ptr(Kcb);
+    let Name = opaque_ptr_const(Name);
+    let CachedValue = opaque_ptr(CachedValue);
+    let Index = opaque_ptr(Index);
+    let Value = opaque_ptr(Value);
+    let ValueIsCached = opaque_ptr(ValueIsCached);
+    let CellToRelease = opaque_ptr(CellToRelease);
 
     let Hive: PHHIVE;
     let mut SearchResult: VALUE_SEARCH_RETURN_TYPE = SearchFail;
@@ -297,6 +315,12 @@ pub unsafe extern "system" fn CmpQueryKeyValueData(
     ResultLength: PULONG,
     Status: PNTSTATUS
 ) -> VALUE_SEARCH_RETURN_TYPE {
+    let Kcb = opaque_ptr(Kcb);
+    let CachedValue = opaque_ptr(CachedValue);
+    let ValueKey = opaque_ptr(ValueKey);
+    let KeyValueInformation = opaque_ptr(KeyValueInformation);
+    let ResultLength = opaque_ptr(ResultLength);
+    let Status = opaque_ptr(Status);
     let Info: PKEY_VALUE_INFORMATION = KeyValueInformation as PKEY_VALUE_INFORMATION;
     let CellData: PCELL_DATA;
     let mut NameSize: USHORT;
@@ -574,6 +598,9 @@ pub unsafe extern "system" fn CmpCompareNewValueDataAgainstKCBCache(
     Data: *mut core::ffi::c_void,
     DataSize: u32,
 ) -> VALUE_SEARCH_RETURN_TYPE {
+    let Kcb = opaque_ptr(Kcb);
+    let ValueName = opaque_ptr(ValueName);
+    let Data = opaque_ptr(Data);
 
     let mut SearchResult: VALUE_SEARCH_RETURN_TYPE;
     let KeyNode: PCM_KEY_NODE;

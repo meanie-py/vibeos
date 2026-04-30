@@ -20,6 +20,24 @@ use ntkrnl_sys::ddk::{
 };
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
+
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // ARM64_UART_TRACE: C macro that expands to no-op on non-ARM64 (and to a UART
 // write on ARM64). Keep as no-op here — it's only useful for early kernel
 // debug tracing.
@@ -74,6 +92,10 @@ pub unsafe extern "system" fn CmpInitializeRegistryNode(
     BusNumber: ULONG,
     DeviceIndexTable: PUSHORT,
 ) -> NTSTATUS {
+    let CurrentEntry = opaque_ptr(CurrentEntry);
+    let NodeHandle = opaque_ptr(NodeHandle);
+    let NewHandle = opaque_ptr(NewHandle);
+    let DeviceIndexTable = opaque_ptr(DeviceIndexTable);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -170,7 +192,7 @@ pub unsafe extern "system" fn CmpInitializeRegistryNode(
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(ValueName),
-        b"C\0o\0m\0p\0o\0n\0e\0n\0t\0 \0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+        w!("Component Information").as_ptr(),
     );
     Status = NtSetValueKey(
         KeyHandle,
@@ -189,7 +211,7 @@ pub unsafe extern "system" fn CmpInitializeRegistryNode(
     if (*Component).IdentifierLength != 0 {
         RtlInitUnicodeString(
             core::ptr::addr_of_mut!(ValueName),
-            b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as *const u16,
+            w!("Identifier").as_ptr(),
         );
         RtlInitAnsiString(core::ptr::addr_of_mut!(TempString), (*Component).Identifier);
         Status = RtlAnsiStringToUnicodeString(
@@ -217,7 +239,7 @@ pub unsafe extern "system" fn CmpInitializeRegistryNode(
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(ValueName),
-        b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0".as_ptr() as *const u16,
+        w!("Configuration Data").as_ptr(),
     );
 
     if !(*CurrentEntry).ConfigurationData.is_null() {
@@ -266,6 +288,8 @@ pub unsafe extern "system" fn CmpSetupConfigurationTree(
     InterfaceType: INTERFACE_TYPE,
     BusNumber: ULONG,
 ) -> NTSTATUS {
+    let mut CurrentEntry = opaque_ptr(CurrentEntry);
+    let ParentHandle = opaque_ptr(ParentHandle);
     let mut DeviceIndexTable: [USHORT; CM_MAXIMUM_TYPE_COUNT] = [0; CM_MAXIMUM_TYPE_COUNT];
     let mut Interface: INTERFACE_TYPE = InterfaceType;
     let mut Bus: ULONG = BusNumber;
@@ -353,6 +377,7 @@ pub unsafe extern "system" fn CmpSetupConfigurationTree(
 pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
@@ -361,7 +386,7 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\Registry\\Machine\\Hardware\\DeviceMap\0".as_ptr() as *mut u16,
+        w!("\\Registry\\Machine\\Hardware\\DeviceMap").as_ptr(),
     );
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -389,7 +414,7 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\Registry\\Machine\\Hardware\\Description\0".as_ptr() as *mut u16,
+        w!("\\Registry\\Machine\\Hardware\\Description").as_ptr(),
     );
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;

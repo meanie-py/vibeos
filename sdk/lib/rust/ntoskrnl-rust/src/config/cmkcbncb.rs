@@ -29,6 +29,7 @@ use ntkrnl_sys::ddk::{
 };
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 // Type alias: bindgen renames the hash-table entry struct, but the C source
 // uses an internal alias `CmpHashTableEntry` for the same type.
 pub type CmpHashTableEntry = CM_KEY_HASH_TABLE_ENTRY;
@@ -44,6 +45,10 @@ pub const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: ULONG = 0x2;
 pub const CMP_LOCK_KCB_ARRAY_EXCLUSIVE: ULONG = 0x1;
 pub const CMP_LOCK_KCB_ARRAY_SHARED: ULONG = 0x2;
 pub const CM_KEY_BODY_TYPE: u32 = 0x6B793032;
+const CMP_HASH_IRRATIONAL: ULONG = 314159269;
+const CMP_HASH_PRIME: ULONG = 1000000007;
+const CMP_CREATE_FAKE_KCB: ULONG = 0x1;
+const CMP_LOCK_HASHES_FOR_KCB: ULONG = 0x2;
 
 // Globals owned by this file (cmkcbncb.c is excluded from C build).
 #[no_mangle] pub static mut CmpHashTableSize: ULONG = 2048;
@@ -54,7 +59,6 @@ pub const CM_KEY_BODY_TYPE: u32 = 0x6B793032;
 extern "C" {
     pub static mut CmpDelayedCloseSize: ULONG;
     pub static mut CmpHoldLazyFlush: BOOLEAN;
-    pub fn KeBugCheck(Code: ULONG);
     pub fn CmpAcquireKcbLockShared(Kcb: PCM_KEY_CONTROL_BLOCK);
     pub fn CmpAcquireKcbLockSharedByIndex(Index: ULONG);
     pub fn CmpAcquireNcbLockExclusiveByKey(ConvKey: ULONG);
@@ -77,12 +81,15 @@ unsafe fn FIELD_OFFSET(_size: u32, offset: u32) -> u32 {
 // COMPUTE_HASH_CHAR / GET_HASH_INDEX / GET_HASH_ENTRY mirror the cm_x.h macros.
 #[inline(always)]
 unsafe fn COMPUTE_HASH_CHAR(key: ULONG, c: u16) -> ULONG {
-    key.wrapping_mul(37).wrapping_add(c as ULONG)
+    key.wrapping_mul(37).wrapping_add(RtlUpcaseUnicodeChar(c) as ULONG)
 }
 
 #[inline(always)]
 unsafe fn GET_HASH_INDEX(conv_key: ULONG) -> ULONG {
-    conv_key % CmpHashTableSize
+    conv_key
+        .wrapping_mul(CMP_HASH_IRRATIONAL)
+        .wrapping_rem(CMP_HASH_PRIME)
+        .wrapping_rem(CmpHashTableSize)
 }
 
 #[inline(always)]
@@ -116,7 +123,7 @@ unsafe fn CMTRACE(_flags: ULONG, _fmt: *const u8, _arg1: *const u8, _arg2: PCM_K
 // Cell-cache helpers.
 #[inline(always)]
 unsafe fn CMP_IS_CELL_CACHED(cell: ULONG) -> BOOLEAN {
-    if (cell & 1) != 0 { 1 } else { 0 }
+    if (cell & 1) != 0 && cell != HCELL_NIL { 1 } else { 0 }
 }
 #[inline(always)]
 unsafe fn CMP_GET_CACHED_DATA(cell: ULONG) -> usize {
@@ -209,6 +216,7 @@ pub unsafe extern "system" fn CmpInsertKeyHash(
     KeyHash: PCM_KEY_HASH,
     IsFake: BOOLEAN,
 ) -> PCM_KEY_CONTROL_BLOCK {
+    let KeyHash = opaque_ptr(KeyHash);
     let mut i: ULONG;
     let mut Entry: PCM_KEY_HASH;
 
@@ -241,6 +249,7 @@ pub unsafe extern "system" fn CmpInsertKeyHash(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpGetNameControlBlock(NodeName: PUNICODE_STRING) -> PCM_NAME_CONTROL_BLOCK {
+    let NodeName = opaque_ptr(NodeName);
     let mut Ncb: PCM_NAME_CONTROL_BLOCK = core::ptr::null_mut();
     let mut ConvKey: u32 = 0;
     let mut p: *mut u16;
@@ -364,6 +373,7 @@ pub unsafe extern "system" fn CmpGetNameControlBlock(NodeName: PUNICODE_STRING) 
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpRemoveKeyControlBlock(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     
     CMP_ASSERT_KCB_LOCK(Kcb);
     
@@ -372,6 +382,7 @@ pub unsafe extern "system" fn CmpRemoveKeyControlBlock(Kcb: PCM_KEY_CONTROL_BLOC
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDereferenceNameControlBlockWithLock(Ncb: PCM_NAME_CONTROL_BLOCK) {
+    let Ncb = opaque_ptr(Ncb);
     let mut Current: PCM_NAME_HASH;
     let mut Next: *mut PCM_NAME_HASH;
     let ConvKey: u32 = (*Ncb).__bindgen_anon_1.__bindgen_anon_1.ConvKey;
@@ -399,6 +410,7 @@ pub unsafe extern "system" fn CmpDereferenceNameControlBlockWithLock(Ncb: PCM_NA
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpReferenceKeyControlBlock(Kcb: PCM_KEY_CONTROL_BLOCK) -> BOOLEAN {
+    let Kcb = opaque_ptr(Kcb);
 
     CMTRACE(0x20u32, b"%s - Referencing KCB: %p\n\0".as_ptr() as *const u8,
             b"CmpReferenceKeyControlBlock\0".as_ptr() as *const u8, Kcb);
@@ -443,6 +455,7 @@ pub unsafe extern "system" fn CmpReferenceKeyControlBlock(Kcb: PCM_KEY_CONTROL_B
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpCleanUpKcbValueCache(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     let mut CachedList: PULONG_PTR;
     let mut i: u32;
 
@@ -460,17 +473,17 @@ pub unsafe extern "system" fn CmpCleanUpKcbValueCache(Kcb: PCM_KEY_CONTROL_BLOCK
 
         CmpFree(CMP_GET_CACHED_CELL((*Kcb).ValueCache.__bindgen_anon_1.ValueList as usize) as *mut core::ffi::c_void, 0);
         (*Kcb).ValueCache.__bindgen_anon_1.ValueList = 0xFFFFFFFF;
-    } else if ((*Kcb).__bindgen_anon_1.ExtFlags() & 0x20) != 0 {
+    } else if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) != 0 {
         let real_kcb = (*Kcb).ValueCache.__bindgen_anon_1.RealKcb;
         if ((*real_kcb).RefCount == 1) &&
             ((*real_kcb).__bindgen_anon_1.Delete() == 0) {
             let cur = (*real_kcb).__bindgen_anon_1.ExtFlags();
-            (*real_kcb).__bindgen_anon_1.set_ExtFlags(cur | 0x8000);
+            (*real_kcb).__bindgen_anon_1.set_ExtFlags(cur | CM_KCB_NO_DELAY_CLOSE);
         }
 
         CmpDelayDerefKeyControlBlock((*Kcb).ValueCache.__bindgen_anon_1.RealKcb);
         let cur = (*Kcb).__bindgen_anon_1.ExtFlags();
-        (*Kcb).__bindgen_anon_1.set_ExtFlags(cur & !0x20);
+        (*Kcb).__bindgen_anon_1.set_ExtFlags(cur & !CM_KCB_SYM_LINK_FOUND);
     }
 }
 
@@ -479,6 +492,7 @@ pub unsafe extern "system" fn CmpCleanUpKcbCacheWithLock(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     LockHeldExclusively: u8,
 ) {
+    let Kcb = opaque_ptr(Kcb);
     let Parent: PCM_KEY_CONTROL_BLOCK;
 
     CMP_ASSERT_KCB_LOCK(Kcb);
@@ -487,7 +501,7 @@ pub unsafe extern "system" fn CmpCleanUpKcbCacheWithLock(
 
     CmpDereferenceNameControlBlockWithLock((*Kcb).NameBlock);
 
-    if ((*Kcb).__bindgen_anon_1.ExtFlags() & 0x0040) != 0 {
+    if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SUBKEY_HINT) != 0 {
         CmpFree((*Kcb).__bindgen_anon_3.IndexHint as *mut core::ffi::c_void, 0);
     }
 
@@ -511,6 +525,7 @@ pub unsafe extern "system" fn CmpCleanUpKcbCacheWithLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpCleanUpSubKeyInfo(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     let KeyNode: PCM_KEY_NODE;
 
     CMP_ASSERT_KCB_LOCK(Kcb);
@@ -553,6 +568,9 @@ pub unsafe extern "system" fn CmpCleanUpSubKeyInfo(Kcb: PCM_KEY_CONTROL_BLOCK) {
 const CM_KCB_NO_SUBKEY: u32 = 0x00000001;
 const CM_KCB_SUBKEY_ONE: u32 = 0x00000002;
 const CM_KCB_SUBKEY_HINT: u32 = 0x00000004;
+const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
+const CM_KCB_KEY_NON_EXIST: u32 = 0x00000010;
+const CM_KCB_NO_DELAY_CLOSE: u32 = 0x00000020;
 const CM_KCB_INVALID_CACHED_INFO: u32 = 0x00000040;
 const HCELL_NIL: u32 = 0xFFFFFFFF;
 const Stable: u32 = 0;
@@ -560,6 +578,7 @@ const Volatile: u32 = 1;
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDereferenceKeyControlBlock(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     let mut OldRefCount: i32;
     let mut NewRefCount: i32;
     let ConvKey: u32;
@@ -592,6 +611,7 @@ pub unsafe extern "system" fn CmpDereferenceKeyControlBlockWithLock(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     LockHeldExclusively: u8,
 ) {
+    let Kcb = opaque_ptr(Kcb);
 
     CMTRACE(
         0x00000008,
@@ -606,9 +626,9 @@ pub unsafe extern "system" fn CmpDereferenceKeyControlBlockWithLock(
         CMP_ASSERT_KCB_LOCK(Kcb);
 
         if (CmpHoldLazyFlush != 0
-            && ((*Kcb).__bindgen_anon_1.ExtFlags() & 0x00000040) == 0
+            && ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) == 0
             && ((*Kcb).__bindgen_anon_5.Flags() & 0x0010) == 0)
-            || ((*Kcb).__bindgen_anon_1.ExtFlags() & 0x00000004) != 0
+            || ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_NO_DELAY_CLOSE) != 0
             || (*Kcb).__bindgen_anon_1.Delete() != 0
         {
             CmpCleanUpKcbCacheWithLock(Kcb, LockHeldExclusively);
@@ -620,6 +640,7 @@ pub unsafe extern "system" fn CmpDereferenceKeyControlBlockWithLock(
 
 #[no_mangle]
 pub unsafe extern "system" fn InitializeKCBKeyBodyList(Kcb: PCM_KEY_CONTROL_BLOCK) {
+    let Kcb = opaque_ptr(Kcb);
     InitializeListHead(core::ptr::addr_of_mut!((*Kcb).__bindgen_anon_4.KeyBodyListHead));
 
     (*Kcb).KeyBodyArray[0] = core::ptr::null_mut();
@@ -637,6 +658,10 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     Flags: u32,
     KeyName: PUNICODE_STRING,
 ) -> PCM_KEY_CONTROL_BLOCK {
+    let Hive = opaque_ptr(Hive);
+    let Node = opaque_ptr(Node);
+    let Parent = opaque_ptr(Parent);
+    let KeyName = opaque_ptr(KeyName);
 
     let mut Kcb: PCM_KEY_CONTROL_BLOCK;
     let mut FoundKcb: PCM_KEY_CONTROL_BLOCK = core::ptr::null_mut();
@@ -653,7 +678,7 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
         return core::ptr::null_mut();
     }
 
-    IsFake = if (Flags & 0x4) != 0 { 1u8 } else { 0u8 };
+    IsFake = if (Flags & CMP_CREATE_FAKE_KCB) != 0 { 1u8 } else { 0u8 };
 
     if !Parent.is_null() {
         ConvKey = (*Parent).__bindgen_anon_2.__bindgen_anon_1.ConvKey;
@@ -693,7 +718,7 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     (*Kcb).InDelayClose = 0;
     ASSERT_KCB_VALID(Kcb);
 
-    HashLock = if (Flags & 0x8) != 0 { 1u8 } else { 0u8 };
+    HashLock = if (Flags & CMP_LOCK_HASHES_FOR_KCB) != 0 { 1u8 } else { 0u8 };
     if HashLock == 0 {
         if !Parent.is_null() {
             CmpAcquireTwoKcbLocksExclusiveByKey(ConvKey, (*Parent).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
@@ -712,20 +737,20 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
         if CmpReferenceKeyControlBlock(Kcb) == 0 {
             Kcb = core::ptr::null_mut();
         } else {
-            if (((*Kcb).__bindgen_anon_1.ExtFlags() & 0x0001) != 0) && (IsFake == 0) {
+            if (((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_KEY_NON_EXIST) != 0) && (IsFake == 0) {
                 (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive = Hive;
                 (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell = Index;
 
-                (*Kcb).__bindgen_anon_1.set_ExtFlags(0x0100);
+                (*Kcb).__bindgen_anon_1.set_ExtFlags(CM_KCB_INVALID_CACHED_INFO);
             }
 
-            if ((*Kcb).__bindgen_anon_1.ExtFlags() & (0x0008 | 0x0010 | 0x0020)) == 0 {
+            if ((*Kcb).__bindgen_anon_1.ExtFlags() & (CM_KCB_NO_SUBKEY | CM_KCB_SUBKEY_ONE | CM_KCB_SUBKEY_HINT)) == 0 {
                 (*Kcb).__bindgen_anon_3.SubKeyCount = (*Node).SubKeyCounts[0].wrapping_add(
                     (*Node).SubKeyCounts[1]
                 );
 
                 let cur = (*Kcb).__bindgen_anon_1.ExtFlags();
-                (*Kcb).__bindgen_anon_1.set_ExtFlags(cur & !0x0100);
+                (*Kcb).__bindgen_anon_1.set_ExtFlags(cur & !CM_KCB_INVALID_CACHED_INFO);
             }
 
             (*Kcb).KcbLastWriteTime = (*Node).LastWriteTime;
@@ -762,7 +787,7 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
 
                 if IsFake != 0 {
                     let cur = (*Kcb).__bindgen_anon_1.ExtFlags();
-                    (*Kcb).__bindgen_anon_1.set_ExtFlags(cur | 0x0001);
+                    (*Kcb).__bindgen_anon_1.set_ExtFlags(cur | CM_KCB_KEY_NON_EXIST);
                 }
 
                 (*Kcb).__bindgen_anon_3.SubKeyCount = (*Node).SubKeyCounts[0].wrapping_add(
@@ -785,7 +810,7 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
 
     if !Kcb.is_null() && ((*(Hive as PCMHIVE)).Frozen != 0) && (((*Kcb).__bindgen_anon_5.Flags() & 0x0010) == 0) {
         let cur = (*Kcb).__bindgen_anon_1.ExtFlags();
-        (*Kcb).__bindgen_anon_1.set_ExtFlags(cur | 0x0002);
+        (*Kcb).__bindgen_anon_1.set_ExtFlags(cur | CM_KCB_NO_DELAY_CLOSE);
     }
 
     if HashLock == 0 {
@@ -801,6 +826,7 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpConstructName(Kcb: PCM_KEY_CONTROL_BLOCK) -> PUNICODE_STRING {
+    let Kcb = opaque_ptr(Kcb);
 
     let mut NameLength: u16;
     let mut MyKcb: PCM_KEY_CONTROL_BLOCK;
@@ -850,7 +876,7 @@ pub unsafe extern "system" fn CmpConstructName(Kcb: PCM_KEY_CONTROL_BLOCK) -> PU
     while !MyKcb.is_null() {
         if ((*MyKcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell == 0 && (*MyKcb).__bindgen_anon_1.Delete() == 0)
             || (*MyKcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive.is_null()
-            || ((*MyKcb).__bindgen_anon_1.ExtFlags() & 0x00000001) != 0
+            || ((*MyKcb).__bindgen_anon_1.ExtFlags() & CM_KCB_KEY_NON_EXIST) != 0
         {
             CmpFree(KeyName as *mut core::ffi::c_void, 0);
             return core::ptr::null_mut();
@@ -938,6 +964,7 @@ pub unsafe extern "system" fn EnlistKeyBodyWithKCB(
     KeyBody: PCM_KEY_BODY,
     Flags: ULONG,
 ) {
+    let KeyBody = opaque_ptr(KeyBody);
     let mut i: ULONG;
 
     InitializeListHead(core::ptr::addr_of_mut!((*KeyBody).KeyBodyList));
@@ -978,6 +1005,7 @@ pub unsafe extern "system" fn DelistKeyBodyFromKCB(
     KeyBody: PCM_KEY_BODY,
     LockHeld: u8,
 ) {
+    let KeyBody = opaque_ptr(KeyBody);
     let mut i: u32;
 
     i = 0;
@@ -1007,6 +1035,7 @@ pub unsafe extern "system" fn DelistKeyBodyFromKCB(
 // CmpUnLockKcbArray — bindgen declares as cdecl extern "C" (no NTAPI in C source).
 #[no_mangle]
 pub unsafe extern "C" fn CmpUnLockKcbArray(KcbArray: *mut u32) {
+    let KcbArray = opaque_ptr(KcbArray);
     let mut i: u32 = *KcbArray.offset(0);
     while i > 0 {
         CmpReleaseKcbLockByIndex(*KcbArray.offset(i as isize));
@@ -1086,6 +1115,9 @@ pub unsafe extern "system" fn CmpBuildAndLockKcbArray(
     TotalRemainingSubkeys: ULONG,
     MatchRemainSubkeyLevel: ULONG) -> PULONG
 {
+    let HashCacheStack = opaque_ptr(HashCacheStack);
+    let Kcb = opaque_ptr(Kcb);
+    let OuterStackArray = opaque_ptr(OuterStackArray);
     let mut KcbIndex: ULONG = 1;
     let mut HashStackIndex: ULONG;
     let mut TotalRemaining: ULONG;
@@ -1126,6 +1158,7 @@ pub unsafe extern "system" fn CmpFlushNotifiesOnKeyBodyList(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     LockHeld: u8,
 ) {
+    let Kcb = opaque_ptr(Kcb);
     let mut NextEntry: PLIST_ENTRY;
     let ListHead: PLIST_ENTRY;
     let mut KeyBody: PCM_KEY_BODY;

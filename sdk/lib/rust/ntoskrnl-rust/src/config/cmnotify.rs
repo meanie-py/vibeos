@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{HCELL_INDEX, PCM_KEY_BODY, PCM_KEY_CONTROL_BLOCK, PHHIVE};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 #[no_mangle]
 pub unsafe extern "system" fn CmpReportNotify(
     Kcb: PCM_KEY_CONTROL_BLOCK,
@@ -11,6 +12,8 @@ pub unsafe extern "system" fn CmpReportNotify(
     Cell: HCELL_INDEX,
     Filter: u32,
 ) {
+    let Kcb = opaque_ptr(Kcb);
+    let Hive = opaque_ptr(Hive);
     return;
 }
 
@@ -19,6 +22,7 @@ pub unsafe extern "system" fn CmpFlushNotify(
     KeyBody: PCM_KEY_BODY,
     LockHeld: u8,
 ) {
+    let KeyBody = opaque_ptr(KeyBody);
     return;
 }
 

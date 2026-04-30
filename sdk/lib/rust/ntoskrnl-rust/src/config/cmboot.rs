@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{BOOT_DRIVER_NODE, CmpCompressedNameSize, CmpCopyCompressed
 use core::ffi::c_void;
 use crate::ex::init::InitSafeBootMode;
 
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // Local constants — values match cmtypes.h / ntoskrnl C definitions.
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 const SERVICE_ERROR_CRITICAL: u32 = 0x00000003;
@@ -39,6 +40,9 @@ pub unsafe extern "system" fn CmpFindControlSet(
     SelectKeyName: PCUNICODE_STRING,
     AutoSelect: PBOOLEAN
 ) -> HCELL_INDEX {
+    let SystemHive = opaque_ptr(SystemHive);
+    let SelectKeyName = opaque_ptr_const(SelectKeyName);
+    let AutoSelect = opaque_ptr(AutoSelect);
     let mut Name: _UNICODE_STRING = core::mem::zeroed();
     let mut Node: PCM_KEY_NODE;
     let SelectCell: HCELL_INDEX;
@@ -939,6 +943,9 @@ pub unsafe extern "system" fn CmpFindDrivers(
     BootFileSystem: PCWSTR,
     DriverListHead: PLIST_ENTRY,
 ) -> u8 {
+    let Hive = opaque_ptr(Hive);
+    let BootFileSystem = opaque_ptr_const(BootFileSystem);
+    let DriverListHead = opaque_ptr(DriverListHead);
     let mut ServicesCell: HCELL_INDEX;
     let mut ControlCell: HCELL_INDEX;
     let mut GroupOrderCell: HCELL_INDEX;
@@ -1099,6 +1106,8 @@ pub unsafe extern "system" fn CmpSortDriverList(
     ControlSet: HCELL_INDEX,
     DriverListHead: PLIST_ENTRY
 ) -> u8 {
+    let Hive = opaque_ptr(Hive);
+    let DriverListHead = opaque_ptr(DriverListHead);
     let mut Node: PCM_KEY_NODE;
     let mut ListValue: PCM_KEY_VALUE;
     let mut ControlCell: HCELL_INDEX;
@@ -1222,6 +1231,7 @@ unsafe fn CmpOrderGroup(
 pub unsafe extern "system" fn CmpResolveDriverDependencies(
     DriverListHead: PLIST_ENTRY,
 ) -> u8 {
+    let DriverListHead = opaque_ptr(DriverListHead);
     let mut NextEntry: PLIST_ENTRY;
     let mut StartNode: PBOOT_DRIVER_NODE;
     let mut EndNode: PBOOT_DRIVER_NODE;
@@ -1409,6 +1419,8 @@ pub unsafe extern "system" fn CmpFreeDriverList(
     Hive: PHHIVE,
     DriverListHead: PLIST_ENTRY,
 ) {
+    let Hive = opaque_ptr(Hive);
+    let DriverListHead = opaque_ptr(DriverListHead);
     let mut Entry: PLIST_ENTRY;
     let mut DriverNode: PBOOT_DRIVER_NODE;
 

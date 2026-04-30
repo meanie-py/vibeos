@@ -4,8 +4,10 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{PCMHIVE};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 #[no_mangle]
 pub unsafe extern "system" fn CmpInitSecurityCache(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     let mut i: u32;
 
     (*Hive).SecurityCount = 0;
@@ -22,6 +24,7 @@ pub unsafe extern "system" fn CmpInitSecurityCache(Hive: PCMHIVE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDestroySecurityCache(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     (*Hive).SecurityCount = 0;
     (*Hive).SecurityCacheSize = 0;
     (*Hive).SecurityHitHint = -1i32;

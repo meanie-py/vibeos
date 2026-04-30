@@ -10,6 +10,7 @@ use ntkrnl_sys::ddk::{CMHIVE, CM_CHECK_REGISTRY_STATUS, CM_KEY_CONTROL_BLOCK, CM
 use ntkrnl_sys::ddk::{KEY_VALUE_INFORMATION_CLASS, KEY_CACHED_INFORMATION, _CELL_DATA, _CM_CACHED_VALUE, _CM_KEY_CONTROL_BLOCK, _KEY_USER_FLAGS_INFORMATION, _LARGE_INTEGER, _UNICODE_STRING as DDK_UNICODE_STRING};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 // ----- Local stubs for missing symbols (FIXME: stubs added during translation cleanup) -----
 // These should be moved to ntkrnl-sys when proper bindings are added.
 
@@ -40,7 +41,7 @@ pub const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000004;
 pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 
 // Hive init types
-pub const HINIT_CREATE: u32 = 1;
+pub const HINIT_CREATE: u32 = 0;
 pub const HIVE_VOLATILE: u32 = 1;
 pub const HFILE_TYPE_PRIMARY: u32 = 0;
 
@@ -51,6 +52,7 @@ pub const Volatile: u32 = 1;
 // Search results
 pub const SearchSuccess: u32 = 0;
 pub const SearchNeedExclusiveLock: u32 = 1;
+pub const SearchFail: u32 = 2;
 
 // SECURITY_IMPERSONATION_LEVEL value (from base SecurityImpersonation = 2)
 #[allow(non_upper_case_globals)]
@@ -83,7 +85,6 @@ unsafe fn UNIMPLEMENTED_DBGBREAK(_msg: *const i8) {}
 
 extern "C" {
     fn CmpAcquireKcbLockShared(Kcb: PCM_KEY_CONTROL_BLOCK);
-    fn CM_CHECK_REGISTRY_SUCCESS(Status: CM_CHECK_REGISTRY_STATUS) -> u8;
     static mut CmpNoWrite: u8;
     static mut CmiVolatileHive: PCMHIVE;
     static mut CmpSpecialBootCondition: u8;
@@ -92,7 +93,6 @@ extern "C" {
 }
 // Hv* are CMAPI = NTAPI = stdcall; must be extern "system".
 extern "system" {
-    fn CMP_IS_CELL_CACHED(value: HCELL_INDEX) -> BOOLEAN;
     fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> PVOID;
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Shared: BOOLEAN) -> BOOLEAN;
     fn HvIsCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX) -> BOOLEAN;
@@ -125,6 +125,9 @@ pub unsafe extern "system" fn CmpIsHiveAlreadyLoaded(
     SourceFile: POBJECT_ATTRIBUTES,
     CmHive: *mut PCMHIVE,
 ) -> BOOLEAN {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let SourceFile = opaque_ptr(SourceFile);
+    let CmHive = opaque_ptr(CmHive);
     let mut Status: NTSTATUS;
     let mut KeyBody: PCM_KEY_BODY = core::ptr::null_mut();
     let mut Hive: PCMHIVE;
@@ -333,6 +336,9 @@ pub unsafe extern "system" fn CmpSetValueKeyExisting(
     StorageType: u32,
     TempData: u32,
 ) -> i32 {
+    let Hive = opaque_ptr(Hive);
+    let Value = opaque_ptr(Value);
+    let Data = opaque_ptr(Data);
     let mut DataCell: HCELL_INDEX;
     let mut NewCell: HCELL_INDEX;
     let mut CellData: PCELL_DATA;
@@ -408,6 +414,11 @@ const STATUS_NO_LOG_SPACE: i32 = -1073741670i32;
 const CM_KEY_VALUE_SMALL: u32 = 4;
 const CM_KEY_VALUE_SPECIAL_SIZE: u32 = 0x80000000;
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
+
+#[inline(always)]
+unsafe fn CMP_IS_CELL_CACHED(value: HCELL_INDEX) -> BOOLEAN {
+    if (value & 1) != 0 && value != HCELL_NIL { 1 } else { 0 }
+}
 
 unsafe fn CmpQueryKeyData(
     Hive: PHHIVE,
@@ -609,6 +620,9 @@ pub unsafe extern "system" fn CmSetValueKey(
     Data: *mut core::ffi::c_void,
     DataLength: u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let ValueName = opaque_ptr(ValueName);
+    let Data = opaque_ptr(Data);
     let mut Hive: PHHIVE = core::ptr::null_mut();
     let mut Parent: PCM_KEY_NODE;
     let mut Value: PCM_KEY_VALUE = core::ptr::null_mut();
@@ -666,10 +680,10 @@ pub unsafe extern "system" fn CmSetValueKey(
                     Data,
                     DataLength
                 );
-                if SearchResult == 2 {
+                if SearchResult == SearchNeedExclusiveLock {
                     CmpConvertKcbSharedToExclusive(Kcb);
                     continue 'DoAgain;
-                } else if SearchResult == 0 {
+                } else if SearchResult == SearchSuccess {
                     Status = STATUS_SUCCESS;
                     break 'Quickie;
                 }
@@ -822,6 +836,7 @@ pub unsafe extern "system" fn CmDeleteValueKey(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     ValueName: _UNICODE_STRING,
 ) -> NTSTATUS {
+    let Kcb = opaque_ptr(Kcb);
 
     let mut Status: NTSTATUS = STATUS_OBJECT_NAME_NOT_FOUND;
     let mut Hive: PHHIVE;
@@ -946,6 +961,9 @@ pub unsafe extern "system" fn CmQueryValueKey(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let Kcb = opaque_ptr(Kcb);
+    let KeyValueInformation = opaque_ptr(KeyValueInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: NTSTATUS = STATUS_OBJECT_NAME_NOT_FOUND;
     let mut ValueData: PCM_KEY_VALUE = core::ptr::null_mut();
     let mut Index: ULONG = 0;
@@ -1036,6 +1054,9 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
     Length: u32,
     ResultLength: *mut u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let KeyValueInformation = opaque_ptr(KeyValueInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: i32 = STATUS_SUCCESS;
     let mut Hive: PHHIVE = core::ptr::null_mut();
     let mut Parent: PCM_KEY_NODE = core::ptr::null_mut();
@@ -1081,11 +1102,11 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
             core::ptr::addr_of_mut!(CellToRelease),
         );
 
-        if Result == 2 {
+        if Result == SearchNeedExclusiveLock {
             HvReleaseCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell);
             CmpConvertKcbSharedToExclusive(Kcb);
             continue 'DoAgain;
-        } else if Result != 0 {
+        } else if Result != SearchSuccess {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             break 'DoAgain;
         }
@@ -1101,7 +1122,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
             core::ptr::addr_of_mut!(CellToRelease2),
         );
 
-        if Result == 2 {
+        if Result == SearchNeedExclusiveLock {
             if CellToRelease != 0xFFFFFFFF {
                 HvReleaseCell(Hive, CellToRelease);
                 CellToRelease = 0xFFFFFFFF;
@@ -1109,7 +1130,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
             HvReleaseCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell);
             CmpConvertKcbSharedToExclusive(Kcb);
             continue 'DoAgain;
-        } else if Result != 0 {
+        } else if Result != SearchSuccess {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             break 'DoAgain;
         }
@@ -1126,7 +1147,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
             core::ptr::addr_of_mut!(Status),
         );
 
-        if Result == 2 {
+        if Result == SearchNeedExclusiveLock {
             if CellToRelease2 != 0xFFFFFFFF {
                 HvReleaseCell(Hive, CellToRelease2);
             }
@@ -1278,6 +1299,9 @@ pub unsafe extern "system" fn CmQueryKey(
     Length: u32,
     ResultLength: *mut u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let KeyInformation = opaque_ptr(KeyInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: i32;
     let Hive: PHHIVE;
     let Parent: PCM_KEY_NODE;
@@ -1362,6 +1386,9 @@ pub unsafe extern "system" fn CmEnumerateKey(
     Length: u32,
     ResultLength: *mut u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let KeyInformation = opaque_ptr(KeyInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: i32;
     let Hive: PHHIVE;
     let Parent: PCM_KEY_NODE;
@@ -1411,6 +1438,7 @@ pub unsafe extern "system" fn CmEnumerateKey(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmDeleteKey(KeyBody: PCM_KEY_BODY) -> NTSTATUS {
+    let KeyBody = opaque_ptr(KeyBody);
     let mut Status: NTSTATUS;
     let Hive: PHHIVE;
     let mut Node: PCM_KEY_NODE;
@@ -1489,6 +1517,7 @@ pub unsafe extern "system" fn CmFlushKey(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     ExclusiveLock: u8,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
     let mut CmHive: PCMHIVE;
     let mut Status: i32 = STATUS_SUCCESS;
     let mut Hive: PHHIVE;
@@ -1536,6 +1565,9 @@ pub unsafe extern "system" fn CmLoadKey(
     Flags: ULONG,
     KeyBody: PCM_KEY_BODY,
 ) -> NTSTATUS {
+    let TargetKey = opaque_ptr(TargetKey);
+    let SourceFile = opaque_ptr(SourceFile);
+    let KeyBody = opaque_ptr(KeyBody);
     let mut ServiceQos: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
     let mut ClientSecurityContext: SECURITY_CLIENT_CONTEXT = core::mem::zeroed();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
@@ -1700,6 +1732,7 @@ pub unsafe extern "system" fn CmUnloadKey(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     Flags: u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
     let mut Hive: PHHIVE;
     let mut CmHive: PCMHIVE;
     let mut Cell: HCELL_INDEX;
@@ -1790,6 +1823,7 @@ pub unsafe extern "system" fn CmpEnumerateOpenSubKeys(
     RemoveEmptyCacheEntries: BOOLEAN,
     DereferenceOpenedEntries: BOOLEAN,
 ) -> ULONG {
+    let RootKcb = opaque_ptr(RootKcb);
     let mut Entry: PCM_KEY_HASH;
     let mut CachedKcb: PCM_KEY_CONTROL_BLOCK;
     let mut ParentKcb: PCM_KEY_CONTROL_BLOCK;
@@ -2172,6 +2206,9 @@ pub unsafe extern "system" fn CmpDeepCopyKey(
     StorageType: HSTORAGE_TYPE,
     DestKeyCell: PHCELL_INDEX,
 ) -> NTSTATUS {
+    let SourceHive = opaque_ptr(SourceHive);
+    let DestinationHive = opaque_ptr(DestinationHive);
+    let DestKeyCell = opaque_ptr(DestKeyCell);
     CmpDeepCopyKeyInternal(
         SourceHive,
         SrcKeyCell,
@@ -2188,6 +2225,8 @@ pub unsafe extern "system" fn CmSaveKey(
     FileHandle: HANDLE,
     Flags: ULONG,
 ) -> NTSTATUS {
+    let Kcb = opaque_ptr(Kcb);
+    let FileHandle = opaque_ptr(FileHandle);
 
     #[cfg(debug_assertions)]
     let mut CheckStatus: CM_CHECK_REGISTRY_STATUS = 0;
@@ -2285,6 +2324,9 @@ pub unsafe extern "system" fn CmSaveMergedKeys(
     LowKcb: PCM_KEY_CONTROL_BLOCK,
     FileHandle: HANDLE,
 ) -> NTSTATUS {
+    let HighKcb = opaque_ptr(HighKcb);
+    let LowKcb = opaque_ptr(LowKcb);
+    let FileHandle = opaque_ptr(FileHandle);
 
     let mut KeyHive: PCMHIVE = core::ptr::null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;

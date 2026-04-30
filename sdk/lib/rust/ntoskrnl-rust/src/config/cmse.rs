@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     _SECURITY_OPERATION_CODE_SetSecurityDescriptor,
 };
 
+use ntkrnl_sys::opaque_ptr;
 // SECURITY_SYSTEM bugcheck code (bugcodes.mc: 0x29)
 const SECURITY_SYSTEM: u32 = 0x29;
 
@@ -147,6 +148,9 @@ pub unsafe extern "system" fn CmpQuerySecurityDescriptor(
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
     BufferLength: *mut u32,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let BufferLength = opaque_ptr(BufferLength);
     let mut RelSd: PISECURITY_DESCRIPTOR_RELATIVE;
     let mut SidSize: u32;
     let mut AclSize: u32 = 0;
@@ -249,6 +253,10 @@ pub unsafe extern "system" fn CmpSetSecurityDescriptor(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> i32 {
+    let Kcb = opaque_ptr(Kcb);
+    let SecurityInformation = opaque_ptr(SecurityInformation);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     STATUS_SUCCESS
 }
 
@@ -257,6 +265,8 @@ pub unsafe extern "system" fn CmpAssignSecurityDescriptor(
     Kcb: PCM_KEY_CONTROL_BLOCK,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let Kcb = opaque_ptr(Kcb);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     STATUS_SUCCESS
 }
 
@@ -271,6 +281,12 @@ pub unsafe extern "system" fn CmpSecurityMethod(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> i32 {
+    let ObjectBody = opaque_ptr(ObjectBody);
+    let SecurityInformation = opaque_ptr(SecurityInformation);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
+    let BufferLength = opaque_ptr(BufferLength);
+    let OldSecurityDescriptor = opaque_ptr(OldSecurityDescriptor);
+    let GenericMapping = opaque_ptr(GenericMapping);
     let Kcb: PCM_KEY_CONTROL_BLOCK;
     let mut Status: i32 = STATUS_SUCCESS;
 

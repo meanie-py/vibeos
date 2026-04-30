@@ -4,6 +4,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{ExFreePool, EVENT_TYPE, FILE_ALLOCATION_INFORMATION, FILE_END_OF_FILE_INFORMATION, _IO_STATUS_BLOCK, IoSetThreadHardErrorMode, LARGE_INTEGER, _OBJECT_ATTRIBUTES, ObReferenceObjectByHandle, PCMHIVE, PHANDLE, PHHIVE, PKEVENT, PLARGE_INTEGER, ZwClose, ZwCreateEvent, ZwFlushBuffersFile, ZwReadFile, ZwSetInformationFile, ZwWriteFile, _FILE_INFORMATION_CLASS_FileAllocationInformation, _FILE_INFORMATION_CLASS_FileEndOfFileInformation};
 
+use ntkrnl_sys::opaque_ptr;
 // EVENT_ALL_ACCESS is defined in xdk/ketypes.h
 const EVENT_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3;
 const FileEndOfFileInformation: u32 = _FILE_INFORMATION_CLASS_FileEndOfFileInformation;
@@ -19,6 +20,8 @@ pub unsafe extern "system" fn CmpCreateEvent(
     EventHandle: PHANDLE,
     Event: *mut PKEVENT,
 ) -> NTSTATUS {
+    let EventHandle = opaque_ptr(EventHandle);
+    let Event = opaque_ptr(Event);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
@@ -73,6 +76,7 @@ pub unsafe extern "system" fn CmpFree(
     Ptr: PVOID,
     Quota: ULONG,
 ) {
+    let Ptr = opaque_ptr(Ptr);
     ExFreePool(Ptr);
 }
 
@@ -84,6 +88,9 @@ pub unsafe extern "system" fn CmpFileRead(
     Buffer: *mut core::ffi::c_void,
     BufferLength: usize,
 ) -> u8 {
+    let RegistryHive = opaque_ptr(RegistryHive);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Buffer = opaque_ptr(Buffer);
     let CmHive = RegistryHive as PCMHIVE;
     let HiveHandle = (*CmHive).FileHandles[FileType as usize];
     let mut _FileOffset: LARGE_INTEGER = core::mem::zeroed();
@@ -118,6 +125,9 @@ pub unsafe extern "system" fn CmpFileWrite(
     Buffer: PVOID,
     BufferLength: SIZE_T,
 ) -> BOOLEAN {
+    let RegistryHive = opaque_ptr(RegistryHive);
+    let FileOffset = opaque_ptr(FileOffset);
+    let Buffer = opaque_ptr(Buffer);
     let CmHive = RegistryHive as PCMHIVE;
     let HiveHandle = (*CmHive).FileHandles[FileType as usize];
     let mut _FileOffset: LARGE_INTEGER = core::mem::zeroed();
@@ -155,6 +165,7 @@ pub unsafe extern "system" fn CmpFileSetSize(
     FileSize: ULONG,
     OldFileSize: ULONG,
 ) -> BOOLEAN {
+    let RegistryHive = opaque_ptr(RegistryHive);
     let CmHive = RegistryHive as PCMHIVE;
     let HiveHandle = (*CmHive).FileHandles[FileType as usize];
     let mut EndOfFileInfo: FILE_END_OF_FILE_INFORMATION = core::mem::zeroed();
@@ -206,6 +217,8 @@ pub unsafe extern "system" fn CmpFileFlush(
     FileOffset: PLARGE_INTEGER,
     Length: u32,
 ) -> u8 {
+    let RegistryHive = opaque_ptr(RegistryHive);
+    let FileOffset = opaque_ptr(FileOffset);
     let CmHive = RegistryHive as PCMHIVE;
     let HiveHandle = (*CmHive).FileHandles[FileType as usize];
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();

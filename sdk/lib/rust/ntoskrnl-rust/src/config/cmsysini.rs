@@ -41,6 +41,7 @@ use ntkrnl_sys::ddk::{
     _KWAIT_REASON_Executive, _MODE_KernelMode,
 };
 
+use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "system" {
     fn RtlGetCallersAddress(CallersAddress: *mut PVOID, CallersCaller: *mut PVOID);
 }
@@ -409,12 +410,12 @@ pub const CM_KEY_BODY_TYPE: u32 = 0x6B793032;              // "ky02"
 // CM key-control-block flags / counts
 pub const CM_KCBS_PER_PAGE: u32 = 16;
 pub const CM_DELAYS_PER_PAGE: u32 = 16;
-pub const CM_KCB_NO_SUBKEY: u32 = 0;
-pub const CM_KCB_SUBKEY_ONE: u32 = 1;
-pub const CM_KCB_SUBKEY_HINT: u32 = 2;
-pub const CM_KCB_INVALID_CACHED_INFO: u32 = 0x40000000;
+pub const CM_KCB_NO_SUBKEY: u32 = 0x01;
+pub const CM_KCB_SUBKEY_ONE: u32 = 0x02;
+pub const CM_KCB_SUBKEY_HINT: u32 = 0x04;
+pub const CM_KCB_INVALID_CACHED_INFO: u32 = 0x40;
 pub const CM_KCB_READ_ONLY_KEY: u32 = 0x80;
-pub const CM_KCB_SYM_LINK_FOUND: u32 = 0x100;
+pub const CM_KCB_SYM_LINK_FOUND: u32 = 0x08;
 pub const KEY_HIVE_ENTRY: u32 = 0x04;
 pub const KEY_NO_DELETE: u32 = 0x08;
 pub const KEY_COMP_NAME: u32 = 0x20;
@@ -444,7 +445,8 @@ pub const _SECURITY_IMPERSONATION_LEVEL_SecurityImpersonation: u32 = 2;
 
 // SearchSuccess / SearchNeedExclusiveLock (VALUE_SEARCH_RETURN_TYPE)
 pub const SearchSuccess: u32 = 0;
-pub const SearchNeedExclusiveLock: u32 = 2;
+pub const SearchNeedExclusiveLock: u32 = 1;
+pub const SearchFail: u32 = 2;
 
 // Bugcheck codes
 pub const BAD_SYSTEM_CONFIG_INFO: u32 = 0x00000074;
@@ -566,6 +568,8 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
     LinkKeyName: PCWSTR,
     TargetKeyName: PCWSTR,
 ) -> u8 {
+    let LinkKeyName = opaque_ptr_const(LinkKeyName);
+    let TargetKeyName = opaque_ptr_const(TargetKeyName);
     let mut Status: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -621,6 +625,7 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDeleteKeyObject(DeletedObject: PVOID) {
+    let DeletedObject = opaque_ptr(DeletedObject);
     let KeyBody: PCM_KEY_BODY = DeletedObject as PCM_KEY_BODY;
     let mut Kcb: PCM_KEY_CONTROL_BLOCK;
     let mut KeyHandleCloseInfo: REG_KEY_HANDLE_CLOSE_INFORMATION = core::mem::zeroed();
@@ -670,6 +675,8 @@ pub unsafe extern "system" fn CmpCloseKeyObject(
     ProcessHandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
+    let Process = opaque_ptr(Process);
+    let Object = opaque_ptr(Object);
     let KeyBody = Object as PCM_KEY_BODY;
 
     if SystemHandleCount > 1 {
@@ -694,6 +701,9 @@ pub unsafe extern "system" fn CmpQueryKeyName(
     ReturnLength: *mut u32,
     PreviousMode: KPROCESSOR_MODE,
 ) -> i32 {
+    let ObjectBody = opaque_ptr(ObjectBody);
+    let ObjectNameInfo = opaque_ptr(ObjectNameInfo);
+    let ReturnLength = opaque_ptr(ReturnLength);
     let KeyBody = ObjectBody as PCM_KEY_BODY;
     let Kcb = (*KeyBody).KeyControlBlock;
 
@@ -752,6 +762,62 @@ pub unsafe extern "system" fn CmpQueryKeyName(
     Status
 }
 
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
+    CmpDeleteKeyObject(Object);
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
+    CmpDeleteKeyObject(Object);
+}
+
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn CmpCloseKeyObjectCallback(
+    Process: ntkrnl_sys::ddk::PEPROCESS,
+    Object: PVOID,
+    GrantedAccess: ACCESS_MASK,
+    ProcessHandleCount: ULONG,
+    SystemHandleCount: ULONG,
+) {
+    CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn CmpCloseKeyObjectCallback(
+    Process: ntkrnl_sys::ddk::PEPROCESS,
+    Object: PVOID,
+    GrantedAccess: ACCESS_MASK,
+    ProcessHandleCount: ULONG,
+    SystemHandleCount: ULONG,
+) {
+    CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
+}
+
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn CmpQueryKeyNameCallback(
+    Object: PVOID,
+    HasObjectName: BOOLEAN,
+    ObjectNameInfo: POBJECT_NAME_INFORMATION,
+    Length: ULONG,
+    ReturnLength: PULONG,
+    AccessMode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    CmpQueryKeyName(Object, HasObjectName, ObjectNameInfo, Length, ReturnLength, AccessMode)
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn CmpQueryKeyNameCallback(
+    Object: PVOID,
+    HasObjectName: BOOLEAN,
+    ObjectNameInfo: POBJECT_NAME_INFORMATION,
+    Length: ULONG,
+    ReturnLength: PULONG,
+    AccessMode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    CmpQueryKeyName(Object, HasObjectName, ObjectNameInfo, Length, ReturnLength, AccessMode)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CmpInitHiveFromFile(
     HiveName: PCUNICODE_STRING,
@@ -760,6 +826,9 @@ pub unsafe extern "system" fn CmpInitHiveFromFile(
     New: PBOOLEAN,
     CheckFlags: u32,
 ) -> i32 {
+    let HiveName = opaque_ptr_const(HiveName);
+    let Hive = opaque_ptr(Hive);
+    let New = opaque_ptr(New);
     let mut HiveDisposition: u32 = 0;
     let mut LogDisposition: u32 = 0;
     let mut FileHandle: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -871,8 +940,7 @@ unsafe fn CmpSetSystemValues(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\0"
-            .as_ptr() as *const u16,
+        w!("\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control").as_ptr(),
     );
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -887,7 +955,7 @@ unsafe fn CmpSetSystemValues(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
         return Status;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"SystemStartOptions\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("SystemStartOptions").as_ptr());
     Status = NtSetValueKey(
         KeyHandle,
         &mut KeyName,
@@ -901,7 +969,7 @@ unsafe fn CmpSetSystemValues(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
         return Status;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"SystemBootDevice\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("SystemBootDevice").as_ptr());
     RtlCreateUnicodeStringFromAsciiz(&mut ValueName, (*LoaderBlock).ArcBootDeviceName);
     Status = NtSetValueKey(
         KeyHandle,
@@ -926,7 +994,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
     let mut Disposition: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut KeyName, b"H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("Hardware Profiles").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = ControlSetHandle;
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -955,7 +1023,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
         return Status;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"0\0\0\0\0\0\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("0000").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = ProfilesHandle;
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -993,16 +1061,8 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
 }
 
 unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
-    let mut ConfigName: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 36,
-        MaximumLength: 38,
-        Buffer: b"C\0o\0n\0t\0r\0o\0l\0\\\0I\0D\0C\0o\0n\0f\0i\0g\0D\0B\0\0".as_ptr() as *mut u16,
-    };
-    let mut SelectName: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 74,
-        MaximumLength: 76,
-        Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0S\0e\0l\0e\0c\0t\0\0".as_ptr() as *mut u16,
-    };
+    let mut ConfigName: _UNICODE_STRING = core::mem::zeroed();
+    let mut SelectName: _UNICODE_STRING = core::mem::zeroed();
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut ValueInfoBuffer: [CHAR; 128] = [0; 128];
@@ -1019,6 +1079,9 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
     let mut ResultLength: ULONG = 0;
     let mut Disposition: ULONG = 0;
     let LoaderExtension: PLOADER_PARAMETER_EXTENSION;
+
+    RtlInitUnicodeString(&mut ConfigName, w!("Control\\IDConfigDB").as_ptr());
+    RtlInitUnicodeString(&mut SelectName, w!("\\Registry\\Machine\\System\\Select").as_ptr());
 
     if (*LoaderBlock).RegistryBase == core::ptr::null_mut() {
         RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\ControlSet001").as_ptr());
@@ -1075,7 +1138,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
             }
         }
 
-        RtlInitUnicodeString(&mut KeyName, b"C\0u\0r\0r\0e\0n\0t\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut KeyName, w!("Current").as_ptr());
         Status = NtQueryValueKey(SelectHandle, &mut KeyName, KeyValueFullInformation, ValueInfoBuffer.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of_val(&ValueInfoBuffer) as ULONG, &mut ResultLength);
         if !NT_SUCCESS(Status) {
             'Cleanup: loop {
@@ -1092,7 +1155,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         ControlSet = *(ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG);
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\CurrentControlSet").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -1162,7 +1225,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
     let HwProfile: ULONG = if (*LoaderBlock).RegistryBase == core::ptr::null_mut() {
         0
     } else {
-        RtlInitUnicodeString(&mut KeyName, b"C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0f\0i\0g\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut KeyName, w!("CurrentConfig").as_ptr());
         Status = NtQueryValueKey(ConfigHandle, &mut KeyName, KeyValueFullInformation, ValueInfoBuffer.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of_val(&ValueInfoBuffer) as ULONG, &mut ResultLength);
 
         ValueInfo = ValueInfoBuffer.as_mut_ptr() as PKEY_VALUE_FULL_INFORMATION;
@@ -1182,7 +1245,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         *(ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG)
     };
 
-    RtlInitUnicodeString(&mut KeyName, b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -1230,7 +1293,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
     if !LoaderExtension.is_null() {
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\Current").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -1239,7 +1302,12 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
     Status = NtCreateKey(&mut KeyHandle, KEY_CREATE_LINK, &mut ObjectAttributes, 0, core::ptr::null_mut(), REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &mut Disposition);
     if NT_SUCCESS(Status) {
-        RtlStringCbPrintfW(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\\\0%\0\0\x000\0\x004\0l\0d\0\0".as_ptr() as *const u16, HwProfile);
+        RtlStringCbPrintfW(
+            UnicodeBuffer.as_mut_ptr(),
+            core::mem::size_of_val(&UnicodeBuffer),
+            w!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\%04ld").as_ptr(),
+            HwProfile,
+        );
         RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
 
         Status = NtSetValueKey(KeyHandle, &mut CmSymbolicLinkValueName, 0, REG_LINK, KeyName.Buffer as *mut core::ffi::c_void, KeyName.Length as ULONG);
@@ -1264,6 +1332,10 @@ pub unsafe extern "system" fn CmpLinkHiveToMaster(
     Allocate: BOOLEAN,
     SecurityDescriptor: PSECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
+    let LinkName = opaque_ptr(LinkName);
+    let RootDirectory = opaque_ptr(RootDirectory);
+    let RegistryHive = opaque_ptr(RegistryHive);
+    let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut ParseContext: CM_PARSE_CONTEXT = core::mem::zeroed();
@@ -1319,6 +1391,7 @@ pub unsafe extern "system" fn CmpLinkHiveToMaster(
 pub unsafe extern "system" fn CmpInitializeSystemHive(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> BOOLEAN {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
     static mut HIVE_NAME: _UNICODE_STRING = _UNICODE_STRING {
         Length: 14,
         MaximumLength: 16,
@@ -1409,7 +1482,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
 
     if RtlCreateUnicodeString(
         core::ptr::addr_of_mut!((*SystemHive).FileFullPath),
-        b"\\SystemRoot\\System32\\Config\\SYSTEM\0".as_ptr() as *const u16,
+        w!("\\SystemRoot\\System32\\Config\\SYSTEM").as_ptr(),
     ) == 0
     {
         return 0u8;
@@ -1439,7 +1512,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
     ARM64_UART_TRACE(b"[CM] SysHive: CmpLinkHiveToMaster\r\n\0".as_ptr());
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(KeyName),
-        b"\\Registry\\Machine\\SYSTEM\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\SYSTEM").as_ptr(),
     );
     Status = CmpLinkHiveToMaster(
         core::ptr::addr_of_mut!(KeyName),
@@ -1474,20 +1547,18 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
         &mut ObjectTypeInitializer as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<OBJECT_TYPE_INITIALIZER>(),
     );
-    RtlInitUnicodeString(&mut Name, [
-        'K' as u16, 'e' as u16, 'y' as u16, 0u16
-    ].as_ptr());
+    RtlInitUnicodeString(&mut Name, w!("Key").as_ptr());
     ObjectTypeInitializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
     ObjectTypeInitializer.DefaultPagedPoolCharge = core::mem::size_of::<CM_KEY_BODY>() as u32;
     ObjectTypeInitializer.GenericMapping = CmpKeyMapping;
     ObjectTypeInitializer.PoolType = PagedPool;
     ObjectTypeInitializer.ValidAccessMask = KEY_ALL_ACCESS;
     ObjectTypeInitializer.UseDefaultObject = 1u8;
-    ObjectTypeInitializer.DeleteProcedure = Some(core::mem::transmute(CmpDeleteKeyObject as *const ()));
-    ObjectTypeInitializer.ParseProcedure = Some(core::mem::transmute(CmpParseKey as *const ()));
-    ObjectTypeInitializer.SecurityProcedure = Some(core::mem::transmute(CmpSecurityMethod as *const ()));
-    ObjectTypeInitializer.QueryNameProcedure = Some(core::mem::transmute(CmpQueryKeyName as *const ()));
-    ObjectTypeInitializer.CloseProcedure = Some(core::mem::transmute(CmpCloseKeyObject as *const ()));
+    ObjectTypeInitializer.DeleteProcedure = Some(CmpDeleteKeyObjectCallback);
+    ObjectTypeInitializer.ParseProcedure = Some(CmpParseKey);
+    ObjectTypeInitializer.SecurityProcedure = Some(CmpSecurityMethod);
+    ObjectTypeInitializer.QueryNameProcedure = Some(CmpQueryKeyNameCallback);
+    ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObjectCallback);
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_EXCLUSIVE | OBJ_PERMANENT;
 
@@ -1500,13 +1571,16 @@ pub unsafe extern "system" fn CmpCreateRootNode(
     Name: PCWSTR,
     Index: PHCELL_INDEX,
 ) -> u8 {
+    let Hive = opaque_ptr(Hive);
+    let Name = opaque_ptr_const(Name);
+    let Index = opaque_ptr(Index);
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let KeyCell: PCM_KEY_NODE;
 
     RtlInitUnicodeString(&mut KeyName, Name);
     *Index = HvAllocateCell(
         Hive,
-        FIELD_OFFSET(core::mem::size_of::<CM_KEY_NODE>(), 32) + CmpNameSize(Hive, &KeyName) as u32,
+        core::mem::offset_of!(CM_KEY_NODE, Name) as u32 + CmpNameSize(Hive, &KeyName) as u32,
         0,
         0xFFFFFFFF,
     );
@@ -1521,7 +1595,7 @@ pub unsafe extern "system" fn CmpCreateRootNode(
     }
 
     (*KeyCell).Signature = 0x6B6E;
-    (*KeyCell).Flags = 0x00000004 | 0x00000010;
+    (*KeyCell).Flags = (KEY_HIVE_ENTRY | KEY_NO_DELETE) as u16;
     
     let mut system_time: i64 = 0;
     core::ptr::copy_nonoverlapping(
@@ -1554,15 +1628,11 @@ pub unsafe extern "system" fn CmpCreateRootNode(
     (*KeyCell).NameLength = CmpCopyName(Hive, core::ptr::addr_of_mut!((*KeyCell).Name) as *mut u16, &KeyName);
 
     if (*KeyCell).NameLength < KeyName.Length {
-        (*KeyCell).Flags |= 0x00000020;
+        (*KeyCell).Flags |= KEY_COMP_NAME as u16;
     }
 
     HvReleaseCell(Hive, *Index);
     return 1u8;
-}
-
-fn FIELD_OFFSET(size: usize, offset: usize) -> u32 {
-    offset as u32
 }
 
 #[no_mangle]
@@ -1578,14 +1648,14 @@ pub unsafe extern "system" fn CmpCreateRegistryRoot() -> u8 {
 
     if CmpCreateRootNode(
         &mut (*CmiVolatileHive).Hive,
-        b"R\0E\0G\0I\0S\0T\0R\0Y\0\0\0".as_ptr() as PCWSTR,
+        w!("REGISTRY").as_ptr(),
         &mut RootIndex,
     ) == 0
     {
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY").as_ptr());
     SecurityDescriptor = CmpHiveRootSecurityDescriptor();
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -1617,7 +1687,7 @@ pub unsafe extern "system" fn CmpCreateRegistryRoot() -> u8 {
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY").as_ptr());
     Kcb = CmpCreateKeyControlBlock(
         &mut (*CmiVolatileHive).Hive,
         RootIndex,
@@ -1634,7 +1704,10 @@ pub unsafe extern "system" fn CmpCreateRegistryRoot() -> u8 {
     (*RootKey).KeyControlBlock = Kcb;
     (*RootKey).Type = CM_KEY_BODY_TYPE;
     (*RootKey).NotifyBlock = core::ptr::null_mut();
-    (*RootKey).ProcessID = PsGetCurrentProcessId();
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*RootKey).ProcessID),
+        opaque_ptr(PsGetCurrentProcessId()),
+    );
     (*RootKey).KcbLocked = 0u8;
 
     EnlistKeyBodyWithKCB(RootKey, 0);
@@ -1671,9 +1744,9 @@ unsafe fn CmpGetRegistryPath() -> PCWSTR {
     let ConfigPath: PCWSTR;
 
     if ExpInTextModeSetup == 0 {
-        ConfigPath = b"\\SystemRoot\\System32\\Config\\\0".as_ptr() as PCWSTR;
+        ConfigPath = w!("\\SystemRoot\\System32\\Config\\").as_ptr();
     } else {
-        ConfigPath = b"\\SystemRoot\\\0".as_ptr() as PCWSTR;
+        ConfigPath = w!("\\SystemRoot\\").as_ptr();
     }
 
     ConfigPath
@@ -1722,6 +1795,7 @@ unsafe fn CmpHasAlternateHiveDiverged(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_void) {
+    let StartContext = opaque_ptr(StartContext);
     let mut FileBuffer: [u16; 64] = [0; 64];
     let mut RegBuffer: [u16; 64] = [0; 64];
     let ConfigPath: PCWSTR;
@@ -1755,7 +1829,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
     RtlAppendUnicodeStringToString(&mut FileName, &mut TempName);
     FileStart = FileName.Length;
 
-    RtlInitUnicodeString(&mut TempName, b"\\REGISTRY\\\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut TempName, w!("\\REGISTRY\\").as_ptr());
     RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
 
     RtlInitUnicodeString(&mut TempName, (*CmpMachineHiveList.as_ptr().add(i as usize)).BaseName);
@@ -1801,7 +1875,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
         if ((*CmHive).Hive.HiveFlags & 0x00000001) == 0 {
             Status = CmpOpenHiveFiles(
                 &FileName,
-                b".ALT\0".as_ptr() as PCWSTR,
+                w!(".ALT").as_ptr(),
                 &mut PrimaryHandle,
                 &mut AlternateHandle,
                 &mut PrimaryDisposition,
@@ -1873,6 +1947,16 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
     PsTerminateSystemThread(Status);
 }
 
+#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
+    CmpLoadHiveThread(StartContext);
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
+    CmpLoadHiveThread(StartContext);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CmpInitializeHiveList() {
     let mut FileBuffer: [u16; 64] = [0; 64];
@@ -1904,7 +1988,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
     RtlInitUnicodeString(&mut TempName, ConfigPath);
     RtlAppendUnicodeStringToString(&mut FileName, &mut TempName);
 
-    RtlInitUnicodeString(&mut TempName, b"\\REGISTRY\\\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut TempName, w!("\\REGISTRY\\").as_ptr());
     RtlAppendUnicodeStringToString(&mut RegName, &mut TempName);
     RegStart = RegName.Length;
 
@@ -1926,7 +2010,7 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
             core::ptr::null_mut(),
             0 as HANDLE,
             core::ptr::null_mut(),
-            Some(core::mem::transmute(CmpLoadHiveThread as *const ())),
+            Some(CmpLoadHiveThreadStart),
             i as PVOID,
         );
         if NT_SUCCESS(status) {
@@ -1991,14 +2075,14 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
     ExFreePoolWithTag(SecurityDescriptor as PVOID, 0x53646D43);
 
     CmpLinkKeyToHive(
-        b"\\Registry\\Machine\\Security\\SAM\0".as_ptr() as PCWSTR,
-        b"\\Registry\\Machine\\SAM\\SAM\0".as_ptr() as PCWSTR,
+        w!("\\Registry\\Machine\\Security\\SAM").as_ptr(),
+        w!("\\Registry\\Machine\\SAM\\SAM").as_ptr(),
     );
 
     CmpNoVolatileCreates = 0u8;
     CmpLinkKeyToHive(
-        b"\\Registry\\User\\S-1-5-18\0".as_ptr() as PCWSTR,
-        b"\\Registry\\User\\.Default\0".as_ptr() as PCWSTR,
+        w!("\\Registry\\User\\S-1-5-18").as_ptr(),
+        w!("\\Registry\\User\\.Default").as_ptr(),
     );
     CmpNoVolatileCreates = 1u8;
 }
@@ -2072,7 +2156,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
     SecurityDescriptor = CmpHiveRootSecurityDescriptor();
 
     ARM64_UART_TRACE(b"[CM] NtCreateKey MACHINE\r\n\0".as_ptr());
-    RtlInitUnicodeString(&mut KeyName, b"\\REGISTRY\\MACHINE\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY\\MACHINE").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -2095,7 +2179,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
     NtClose(KeyHandle);
 
     ARM64_UART_TRACE(b"[CM] NtCreateKey USER\r\n\0".as_ptr());
-    RtlInitUnicodeString(&mut KeyName, b"\\REGISTRY\\USER\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY\\USER").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -2150,7 +2234,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     (*CmpMachineHiveList.as_mut_ptr().add(0)).CmHive = HardwareHive;
 
-    RtlInitUnicodeString(&mut KeyName, b"\\Registry\\Machine\\HARDWARE\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\HARDWARE").as_ptr());
     Status = CmpLinkHiveToMaster(
         &mut KeyName,
         core::ptr::null_mut(),
@@ -2232,6 +2316,7 @@ pub unsafe extern "system" fn CmpTestRegistryLockExclusive() -> u8 {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpLockHiveFlusherExclusive(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     
     CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(Hive);
     ExAcquireResourceExclusiveLite((*Hive).FlusherLock, 1u8);
@@ -2239,12 +2324,14 @@ pub unsafe extern "system" fn CmpLockHiveFlusherExclusive(Hive: PCMHIVE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpLockHiveFlusherShared(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(Hive);
     ExAcquireResourceSharedLite((*Hive).FlusherLock, 1u8);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpUnlockHiveFlusher(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
 
     CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(Hive);
     CMP_ASSERT_FLUSH_LOCK(Hive);
@@ -2254,6 +2341,7 @@ pub unsafe extern "system" fn CmpUnlockHiveFlusher(Hive: PCMHIVE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpTestHiveFlusherLockShared(Hive: PCMHIVE) -> u8 {
+    let Hive = opaque_ptr(Hive);
     if ExIsResourceAcquiredSharedLite((*Hive).FlusherLock) == 0 {
         0u8
     } else {
@@ -2263,6 +2351,7 @@ pub unsafe extern "system" fn CmpTestHiveFlusherLockShared(Hive: PCMHIVE) -> u8 
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpTestHiveFlusherLockExclusive(Hive: PCMHIVE) -> u8 {
+    let Hive = opaque_ptr(Hive);
     if ExIsResourceAcquiredExclusiveLite((*Hive).FlusherLock) == 0 {
         0u8
     } else {

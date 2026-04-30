@@ -6,6 +6,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CmpFindControlSet, CmpFindSubKeyByName, CmpFindValueByName, CmpGetNextName, CmpInitHiveViewList, CmpInitSecurityCache, HCELL_INDEX, LANGID, LCID, LPWSTR, PCMHIVE, PCM_KEY_NODE, PCM_KEY_VALUE, PCM_SYSTEM_CONTROL_VECTOR, PHBASE_BLOCK, PHHIVE, RtlInitUnicodeString, _UNICODE_STRING, _HHIVE};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 
 extern "system" {
@@ -89,8 +90,10 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
     SystemHiveData: *mut core::ffi::c_void,
     ControlVector: PCM_SYSTEM_CONTROL_VECTOR,
 ) {
+    let SystemHiveData = opaque_ptr(SystemHiveData);
+    let ControlVector = opaque_ptr(ControlVector);
     
-    const HINIT_FLAT: u32 = 0;
+    const HINIT_FLAT: u32 = 4;
     const HIVE_VOLATILE: u32 = 1;
     const HFILE_TYPE_PRIMARY: u32 = 0;
     const BAD_SYSTEM_CONFIG_INFO: u32 = 0x74;

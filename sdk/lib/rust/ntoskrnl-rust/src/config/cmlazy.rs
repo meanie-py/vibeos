@@ -6,6 +6,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ddk::{CMHIVE, CmpInitHiveFromFile, CmpInitializeHiveList, CmpLockRegistry, CmpLockRegistryExclusive, CmpUnlockRegistry, ExAcquirePushLockShared, ExQueueWorkItem, ExReleasePushLock, KTIMER, KeCancelTimer, KeInitializeDpc, KeInitializeTimer, KeSetTimer, LARGE_INTEGER, OBJECT_NAME_INFORMATION, PCMHIVE, POBJECT_ATTRIBUTES, POBJECT_NAME_INFORMATION, PSECURITY_CLIENT_CONTEXT, PsRevertToSelf, RtlAppendUnicodeStringToString, RtlCopyUnicodeString, RtlInitEmptyUnicodeString, SeImpersonateClientEx, WORK_QUEUE_ITEM, ZwQueryObject, _EX_PUSH_LOCK, _KDPC, _OBJECT_INFORMATION_CLASS_ObjectNameInformation, _UNICODE_STRING, _WORK_QUEUE_TYPE_DelayedWorkQueue};
 
+use ntkrnl_sys::opaque_ptr;
 // Constants not in ntkrnl_sys::constants
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
 const HIVE_VOLATILE: u32 = 1;
@@ -64,6 +65,8 @@ pub unsafe extern "system" fn CmpDoFlushNextHive(
     Error: PBOOLEAN,
     DirtyCount: *mut ULONG,
 ) -> BOOLEAN {
+    let Error = opaque_ptr(Error);
+    let DirtyCount = opaque_ptr(DirtyCount);
     let mut Status: NTSTATUS;
     let mut NextEntry: PLIST_ENTRY;
     let mut CmHive: PCMHIVE;
@@ -131,6 +134,10 @@ pub unsafe extern "system" fn CmpEnableLazyFlushDpcRoutine(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     CmpHoldLazyFlush = 0u8;
 }
 
@@ -141,6 +148,10 @@ pub unsafe extern "system" fn CmpLazyFlushDpcRoutine(
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
+    let Dpc = opaque_ptr(Dpc);
+    let DeferredContext = opaque_ptr(DeferredContext);
+    let SystemArgument1 = opaque_ptr(SystemArgument1);
+    let SystemArgument2 = opaque_ptr(SystemArgument2);
     if CmpLazyFlushPending == 0 && CmpHoldLazyFlush == 0 {
         CmpLazyFlushPending = 1u8;
         ExQueueWorkItem(
@@ -166,6 +177,7 @@ pub unsafe extern "system" fn CmpLazyFlush() {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpLazyFlushWorker(Parameter: PVOID) {
+    let Parameter = opaque_ptr(Parameter);
     let mut ForceFlush: BOOLEAN = 0u8;
     let mut Result: BOOLEAN = 0u8;
     let mut MoreWork: BOOLEAN = 0u8;
@@ -247,6 +259,10 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
     NewHive: *mut PCMHIVE,
     CheckFlags: u32,
 ) -> i32 {
+    let FileAttributes = opaque_ptr(FileAttributes);
+    let ImpersonationContext = opaque_ptr(ImpersonationContext);
+    let Allocate = opaque_ptr(Allocate);
+    let NewHive = opaque_ptr(NewHive);
     let mut Status: i32;
     let mut FileName: _UNICODE_STRING = core::mem::zeroed();
     let mut FilePath: *mut u16;

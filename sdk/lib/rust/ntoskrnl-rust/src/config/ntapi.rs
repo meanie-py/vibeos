@@ -7,6 +7,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, CM_PARSE_CONTEXT, CmDeleteKey, CmDeleteValueKey, CmFlushKey, CmSaveKey, CmSaveMergedKeys, CmiCallRegisteredCallbacks, CmpCmdInit, CmpLazyFlush, CmpLockRegistry, CmpLockRegistryExclusive, CmpReleaseKcbLock, CmpSaveBootControlSet, CmpSetVersionData, CmpUnlockRegistry, ExGetPreviousMode, KPROCESSOR_MODE, KeEnterCriticalRegion, KeLeaveCriticalRegion, _OBJECT_ATTRIBUTES, _OBJECT_HANDLE_INFORMATION, ObCloseHandle, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, ObpValidateAttributes, PCM_KEY_BODY, PHANDLE, PIO_APC_ROUTINE, PIO_STATUS_BLOCK, PKEY_VALUE_ENTRY, POBJECT_ATTRIBUTES, POBJECT_TYPE, PSECURITY_DESCRIPTOR, PUNICODE_STRING, REG_DELETE_KEY_INFORMATION, REG_DELETE_VALUE_KEY_INFORMATION, REG_ENUMERATE_KEY_INFORMATION, REG_ENUMERATE_VALUE_KEY_INFORMATION, REG_POST_OPERATION_INFORMATION, REG_QUERY_KEY_INFORMATION, REG_QUERY_VALUE_KEY_INFORMATION, REG_SET_VALUE_KEY_INFORMATION, RtlInitEmptyUnicodeString, SeCaptureSecurityDescriptor, SeReleaseSecurityDescriptor, SeSinglePrivilegeCheck, ZwInitializeRegistry};
 use ntkrnl_sys::ddk::{KEY_INFORMATION_CLASS, KEY_VALUE_INFORMATION_CLASS, KEY_SET_INFORMATION_CLASS, _UNICODE_STRING, LUID, _GENERIC_MAPPING};
+use ntkrnl_sys::opaque_ptr;
 // `_KPROCESSOR_MODE_KernelMode` and `_MODE_KernelMode` aren't usable from ddk for
 // our comparisons (KPROCESSOR_MODE = i8; the bindgen enum variants are u32). Define
 // local i8 constants — KernelMode == 0.
@@ -233,6 +234,9 @@ pub unsafe extern "system" fn ProbeAndCaptureObjectAttributes(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     CaptureSecurity: u8,
 ) -> NTSTATUS {
+    let CapturedObjectAttributes = opaque_ptr(CapturedObjectAttributes);
+    let ObjectName = opaque_ptr(ObjectName);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut SecurityDescriptor: PSECURITY_DESCRIPTOR;
     let mut LocalObjectName: PUNICODE_STRING = core::ptr::null_mut();
@@ -351,6 +355,10 @@ pub unsafe extern "system" fn NtCreateKey(
     CreateOptions: ULONG,
     Disposition: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let Class = opaque_ptr(Class);
+    let Disposition = opaque_ptr(Disposition);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut ParseContext: CM_PARSE_CONTEXT = core::mem::zeroed();
@@ -416,6 +424,8 @@ pub unsafe extern "system" fn NtOpenKey(
     DesiredAccess: ACCESS_MASK,
     ObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
     let mut ParseContext: CM_PARSE_CONTEXT = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -461,6 +471,7 @@ pub unsafe extern "system" fn NtOpenKey(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtDeleteKey(KeyHandle: HANDLE) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut DeleteKeyInfo: REG_DELETE_KEY_INFORMATION = core::mem::zeroed();
@@ -507,6 +518,9 @@ pub unsafe extern "system" fn NtEnumerateKey(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let KeyInformation = opaque_ptr(KeyInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -585,6 +599,9 @@ pub unsafe extern "system" fn NtEnumerateValueKey(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let KeyValueInformation = opaque_ptr(KeyValueInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut Status: NTSTATUS;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -668,6 +685,9 @@ pub unsafe extern "system" fn NtQueryKey(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let KeyInformation = opaque_ptr(KeyInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let PreviousMode = ExGetPreviousMode();
     let mut Status: NTSTATUS;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -773,6 +793,10 @@ pub unsafe extern "system" fn NtQueryValueKey(
     Length: ULONG,
     ResultLength: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ValueName = opaque_ptr(ValueName);
+    let KeyValueInformation = opaque_ptr(KeyValueInformation);
+    let ResultLength = opaque_ptr(ResultLength);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -876,6 +900,9 @@ pub unsafe extern "system" fn NtSetValueKey(
     Data: PVOID,
     DataSize: ULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ValueName = opaque_ptr(ValueName);
+    let Data = opaque_ptr(Data);
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let PreviousMode: KPROCESSOR_MODE;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -1002,6 +1029,8 @@ pub unsafe extern "system" fn NtDeleteValueKey(
     KeyHandle: HANDLE,
     ValueName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ValueName = opaque_ptr(ValueName);
     let mut Status: NTSTATUS;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
     let mut DeleteValueKeyInfo: REG_DELETE_VALUE_KEY_INFORMATION = core::mem::zeroed();
@@ -1067,6 +1096,7 @@ pub unsafe extern "system" fn NtDeleteValueKey(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtFlushKey(KeyHandle: HANDLE) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
     let mut Status: NTSTATUS;
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
 
@@ -1104,6 +1134,8 @@ pub unsafe extern "system" fn NtLoadKey(
     KeyObjectAttributes: POBJECT_ATTRIBUTES,
     FileObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let KeyObjectAttributes = opaque_ptr(KeyObjectAttributes);
+    let FileObjectAttributes = opaque_ptr(FileObjectAttributes);
     NtLoadKeyEx(KeyObjectAttributes, FileObjectAttributes, 0, core::ptr::null_mut())
 }
 
@@ -1113,6 +1145,8 @@ pub unsafe extern "system" fn NtLoadKey2(
     FileObjectAttributes: POBJECT_ATTRIBUTES,
     Flags: u32,
 ) -> NTSTATUS {
+    let KeyObjectAttributes = opaque_ptr(KeyObjectAttributes);
+    let FileObjectAttributes = opaque_ptr(FileObjectAttributes);
     NtLoadKeyEx(KeyObjectAttributes, FileObjectAttributes, Flags, core::ptr::null_mut())
 }
 
@@ -1123,6 +1157,9 @@ pub unsafe extern "system" fn NtLoadKeyEx(
     Flags: u32,
     TrustClassKey: HANDLE,
 ) -> NTSTATUS {
+    let TargetKey = opaque_ptr(TargetKey);
+    let SourceFile = opaque_ptr(SourceFile);
+    let TrustClassKey = opaque_ptr(TrustClassKey);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut CapturedTargetKey: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -1251,6 +1288,11 @@ pub unsafe extern "system" fn NtNotifyChangeKey(
     Length: ULONG,
     Asynchronous: BOOLEAN,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let Event = opaque_ptr(Event);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
     NtNotifyChangeMultipleKeys(
         KeyHandle,
         0,
@@ -1320,11 +1362,13 @@ pub unsafe extern "system" fn NtCompactKeys(
     Count: u32,
     KeyArray: PHANDLE,
 ) -> i32 {
+    let KeyArray = opaque_ptr(KeyArray);
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn NtCompressKey(Key: HANDLE) -> NTSTATUS {
+    let Key = opaque_ptr(Key);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1333,6 +1377,8 @@ pub unsafe extern "system" fn NtLockProductActivationKeys(
     pPrivateVer: *mut ULONG,
     pSafeMode: *mut ULONG,
 ) -> NTSTATUS {
+    let pPrivateVer = opaque_ptr(pPrivateVer);
+    let pSafeMode = opaque_ptr(pSafeMode);
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if !pPrivateVer.is_null() {
@@ -1354,6 +1400,7 @@ pub unsafe extern "system" fn NtLockProductActivationKeys(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtLockRegistryKey(KeyHandle: HANDLE) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1372,6 +1419,12 @@ pub unsafe extern "system" fn NtNotifyChangeMultipleKeys(
     Length: ULONG,
     Asynchronous: BOOLEAN,
 ) -> NTSTATUS {
+    let MasterKeyHandle = opaque_ptr(MasterKeyHandle);
+    let SlaveObjects = opaque_ptr(SlaveObjects);
+    let Event = opaque_ptr(Event);
+    let ApcContext = opaque_ptr(ApcContext);
+    let IoStatusBlock = opaque_ptr(IoStatusBlock);
+    let Buffer = opaque_ptr(Buffer);
     UNIMPLEMENTED_ONCE!();
     STATUS_NOT_IMPLEMENTED
 }
@@ -1385,6 +1438,11 @@ pub unsafe extern "system" fn NtQueryMultipleValueKey(
     Length: PULONG,
     ReturnLength: PULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ValueList = opaque_ptr(ValueList);
+    let Buffer = opaque_ptr(Buffer);
+    let Length = opaque_ptr(Length);
+    let ReturnLength = opaque_ptr(ReturnLength);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1393,6 +1451,8 @@ pub unsafe extern "system" fn NtQueryOpenSubKeys(
     TargetKey: POBJECT_ATTRIBUTES,
     HandleCount: *mut ULONG,
 ) -> NTSTATUS {
+    let TargetKey = opaque_ptr(TargetKey);
+    let HandleCount = opaque_ptr(HandleCount);
     let mut KeyBody: PCM_KEY_BODY = core::ptr::null_mut();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -1473,6 +1533,9 @@ pub unsafe extern "system" fn NtQueryOpenSubKeysEx(
     Buffer: PVOID,
     RequiredSize: PULONG,
 ) -> NTSTATUS {
+    let TargetKey = opaque_ptr(TargetKey);
+    let Buffer = opaque_ptr(Buffer);
+    let RequiredSize = opaque_ptr(RequiredSize);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1481,6 +1544,8 @@ pub unsafe extern "system" fn NtRenameKey(
     KeyHandle: HANDLE,
     ReplacementName: PUNICODE_STRING,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let ReplacementName = opaque_ptr(ReplacementName);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1490,6 +1555,9 @@ pub unsafe extern "system" fn NtReplaceKey(
     Key: HANDLE,
     ReplacedObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> NTSTATUS {
+    let ObjectAttributes = opaque_ptr(ObjectAttributes);
+    let Key = opaque_ptr(Key);
+    let ReplacedObjectAttributes = opaque_ptr(ReplacedObjectAttributes);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1499,6 +1567,8 @@ pub unsafe extern "system" fn NtRestoreKey(
     FileHandle: HANDLE,
     RestoreFlags: ULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let FileHandle = opaque_ptr(FileHandle);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1507,6 +1577,8 @@ pub unsafe extern "system" fn NtSaveKey(
     KeyHandle: HANDLE,
     FileHandle: HANDLE,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let FileHandle = opaque_ptr(FileHandle);
     NtSaveKeyEx(KeyHandle, FileHandle, REG_STANDARD_FORMAT)
 }
 
@@ -1516,6 +1588,8 @@ pub unsafe extern "system" fn NtSaveKeyEx(
     FileHandle: HANDLE,
     Flags: ULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let FileHandle = opaque_ptr(FileHandle);
     let mut Status: NTSTATUS;
     let mut KmFileHandle: HANDLE = core::ptr::null_mut();
     let mut KeyObject: PCM_KEY_BODY = core::ptr::null_mut();
@@ -1582,6 +1656,9 @@ pub unsafe extern "system" fn NtSaveMergedKeys(
     LowPrecedenceKeyHandle: HANDLE,
     FileHandle: HANDLE,
 ) -> NTSTATUS {
+    let HighPrecedenceKeyHandle = opaque_ptr(HighPrecedenceKeyHandle);
+    let LowPrecedenceKeyHandle = opaque_ptr(LowPrecedenceKeyHandle);
+    let FileHandle = opaque_ptr(FileHandle);
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE;
     let mut KmFileHandle: HANDLE = core::ptr::null_mut();
@@ -1657,6 +1734,8 @@ pub unsafe extern "system" fn NtSetInformationKey(
     KeyInformation: PVOID,
     KeyInformationLength: ULONG,
 ) -> NTSTATUS {
+    let KeyHandle = opaque_ptr(KeyHandle);
+    let KeyInformation = opaque_ptr(KeyInformation);
     STATUS_NOT_IMPLEMENTED
 }
 
@@ -1664,6 +1743,7 @@ pub unsafe extern "system" fn NtSetInformationKey(
 pub unsafe extern "system" fn NtUnloadKey(
     KeyObjectAttributes: POBJECT_ATTRIBUTES,
 ) -> i32 {
+    let KeyObjectAttributes = opaque_ptr(KeyObjectAttributes);
     NtUnloadKey2(KeyObjectAttributes, 0)
 }
 
@@ -1672,6 +1752,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     TargetKey: POBJECT_ATTRIBUTES,
     Flags: u32,
 ) -> i32 {
+    let TargetKey = opaque_ptr(TargetKey);
     let mut Status: i32;
     let mut CapturedTargetKey: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
@@ -1779,6 +1860,8 @@ pub unsafe extern "system" fn NtUnloadKeyEx(
     TargetKey: POBJECT_ATTRIBUTES,
     Event: HANDLE,
 ) -> NTSTATUS {
+    let TargetKey = opaque_ptr(TargetKey);
+    let Event = opaque_ptr(Event);
     STATUS_NOT_IMPLEMENTED
 }
 

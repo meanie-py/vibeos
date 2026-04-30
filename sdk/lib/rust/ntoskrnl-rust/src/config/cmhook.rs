@@ -11,6 +11,7 @@ use ntkrnl_sys::ddk::{
     ExReleaseRundownProtection, ExWaitForRundownProtectionRelease,
 };
 
+use ntkrnl_sys::opaque_ptr;
 // CMP_MAX_CALLBACKS — from ntoskrnl/include/internal/cm.h:72
 const CMP_MAX_CALLBACKS: ULONG = 100;
 
@@ -59,6 +60,7 @@ pub unsafe extern "C" fn CmiCallRegisteredCallbacks(
     Argument1: REG_NOTIFY_CLASS,
     Argument2: PVOID,
 ) -> NTSTATUS {
+    let Argument2 = opaque_ptr(Argument2);
     let mut CurrentEntry: PLIST_ENTRY;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut CurrentCallback: PREGISTRY_CALLBACK;
@@ -105,6 +107,8 @@ pub unsafe extern "system" fn CmRegisterCallback(
     Context: PVOID,
     Cookie: PLARGE_INTEGER,
 ) -> NTSTATUS {
+    let Context = opaque_ptr(Context);
+    let Cookie = opaque_ptr(Cookie);
     let Callback: PREGISTRY_CALLBACK = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<REGISTRY_CALLBACK>() as SIZE_T,

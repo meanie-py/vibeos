@@ -4,6 +4,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::opaque_ptr;
 #[cfg(not(target_arch = "x86"))]
 use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 #[cfg(target_arch = "x86")]
@@ -40,11 +41,14 @@ extern "C" {
     pub static CmpKeyObjectType: POBJECT_TYPE;
     pub static mut CmSymbolicLinkValueName: _UNICODE_STRING;
     fn CmpIsKcbLockedExclusive(Kcb: PCM_KEY_CONTROL_BLOCK) -> u8;
-    fn EnlistKeyBodyWithKCB(KeyBody: PCM_KEY_BODY, Flags: u32);
     fn GET_HASH_INDEX(ConvKey: u32) -> u32;
     fn CmpAcquireKcbLockSharedByIndex(index: ULONG);
     static mut CmpCacheTable: *mut core::ffi::c_void;
     static mut CmpHashTableSize: u32;
+}
+
+extern "system" {
+    fn EnlistKeyBodyWithKCB(KeyBody: PCM_KEY_BODY, Flags: u32);
 }
 
 // Macros from cm_x.h — implement inline so the LLM-translated call sites work.
@@ -86,6 +90,9 @@ pub unsafe extern "system" fn CmpGetNextName(
     NextName: PUNICODE_STRING,
     LastName: PBOOLEAN,
 ) -> u8 {
+    let RemainingName = opaque_ptr(RemainingName);
+    let NextName = opaque_ptr(NextName);
+    let LastName = opaque_ptr(LastName);
     let mut NameValid: u8 = 1u8;
 
     if (*RemainingName).Buffer.is_null()
@@ -132,6 +139,10 @@ pub unsafe extern "system" fn CmpGetSymbolicLink(
     SymbolicKcb: PCM_KEY_CONTROL_BLOCK,
     RemainingName: PUNICODE_STRING,
 ) -> u8 {
+    let Hive = opaque_ptr(Hive);
+    let ObjectName = opaque_ptr(ObjectName);
+    let SymbolicKcb = opaque_ptr(SymbolicKcb);
+    let RemainingName = opaque_ptr(RemainingName);
 
     let mut LinkCell: HCELL_INDEX = HCELL_NIL;
     let mut LinkValue: PCM_KEY_VALUE = core::ptr::null_mut();
@@ -268,6 +279,14 @@ unsafe fn CmpDoCreateChild(
     KeyCell: PHCELL_INDEX,
     Object: *mut *mut core::ffi::c_void,
 ) -> i32 {
+    let Hive = opaque_ptr(Hive);
+    let ParentDescriptor = opaque_ptr(ParentDescriptor);
+    let AccessState = opaque_ptr(AccessState);
+    let Name = opaque_ptr(Name);
+    let ParseContext = opaque_ptr(ParseContext);
+    let ParentKcb = opaque_ptr(ParentKcb);
+    let KeyCell = opaque_ptr(KeyCell);
+    let Object = opaque_ptr(Object);
 
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
     const Stable: u32 = 0;
@@ -276,7 +295,7 @@ unsafe fn CmpDoCreateChild(
     const CM_KEY_BODY_TYPE: u32 = 0x6B793032;
     const CM_KEY_NODE_SIGNATURE: u16 = 0x6B6E;
     const KEY_COMP_NAME: u16 = 0x0020;
-    const CMP_LOCK_HASHES_FOR_KCB: u32 = 0x00000001;
+    const CMP_LOCK_HASHES_FOR_KCB: u32 = 0x00000002;
     const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: u32 = 0x00000001;
     const REG_NOTIFY_CHANGE_NAME: u32 = 0x00000001;
 
@@ -411,7 +430,10 @@ unsafe fn CmpDoCreateChild(
         }
 
         (*KeyBody).NotifyBlock = core::ptr::null_mut();
-        (*KeyBody).ProcessID = PsGetCurrentProcessId();
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*KeyBody).ProcessID),
+            opaque_ptr(PsGetCurrentProcessId()),
+        );
         (*KeyBody).KeyControlBlock = Kcb;
 
         EnlistKeyBodyWithKCB(KeyBody, CMP_ENLIST_KCB_LOCKED_EXCLUSIVE);
@@ -440,7 +462,7 @@ unsafe fn CmpDoCreateChild(
             );
         }
 
-        break 'Quickie;
+        return Status;
     }
 
     if !NT_SUCCESS(Status) {
@@ -464,6 +486,12 @@ pub unsafe extern "system" fn CmpDoCreate(
     ParentKcb: PCM_KEY_CONTROL_BLOCK,
     Object: *mut *mut core::ffi::c_void,
 ) -> i32 {
+    let Hive = opaque_ptr(Hive);
+    let AccessState = opaque_ptr(AccessState);
+    let Name = opaque_ptr(Name);
+    let ParseContext = opaque_ptr(ParseContext);
+    let ParentKcb = opaque_ptr(ParentKcb);
+    let Object = opaque_ptr(Object);
 
     const Volatile: u32 = 1;
     const REG_OPTION_VOLATILE: u32 = 0x00000001;
@@ -619,6 +647,14 @@ unsafe fn CmpDoOpen(
     KeyName: PUNICODE_STRING,
     Object: *mut *mut core::ffi::c_void,
 ) -> i32 {
+    let Hive = opaque_ptr(Hive);
+    let Node = opaque_ptr(Node);
+    let AccessState = opaque_ptr(AccessState);
+    let Context = opaque_ptr(Context);
+    let CachedKcb = opaque_ptr(CachedKcb);
+    let KcbsLocked = opaque_ptr(KcbsLocked);
+    let KeyName = opaque_ptr(KeyName);
+    let Object = opaque_ptr(Object);
     let mut Status: i32;
     let mut LockKcb: u8 = 0u8;
     let mut IsLockShared: u8 = 0u8;
@@ -643,11 +679,11 @@ unsafe fn CmpDoOpen(
         (*Context).Disposition = 0x00000001;
     }
 
-    if (ControlFlags & 0x00000001) != 0 {
+    if (ControlFlags & 0x00000002) != 0 {
         LockKcb = 1u8;
     }
 
-    if (ControlFlags & 0x00000040) != 0 {
+    if (ControlFlags & 0x00000004) != 0 {
         IsLockShared = 1u8;
 
         if (((**CachedKcb).__bindgen_anon_5.Flags() & 0x00000010) != 0) && ((Attributes & 0x00000100) == 0) {
@@ -683,7 +719,7 @@ unsafe fn CmpDoOpen(
                 Cell,
                 Node,
                 *CachedKcb,
-                if LockKcb != 0 { 0x00000001 } else { 0 },
+                if LockKcb != 0 { 0x00000002 } else { 0 },
                 KeyName,
             );
             if Kcb.is_null() {
@@ -699,7 +735,7 @@ unsafe fn CmpDoOpen(
             Cell,
             Node,
             *CachedKcb,
-            if LockKcb != 0 { 0x00000001 } else { 0 },
+            if LockKcb != 0 { 0x00000002 } else { 0 },
             KeyName,
         );
         if Kcb.is_null() {
@@ -724,7 +760,10 @@ unsafe fn CmpDoOpen(
         KeyBody = *Object as PCM_KEY_BODY;
         (*KeyBody).KeyControlBlock = Kcb;
         (*KeyBody).Type = 0x6b793032;
-        (*KeyBody).ProcessID = PsGetCurrentProcessId();
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*KeyBody).ProcessID),
+            opaque_ptr(PsGetCurrentProcessId()),
+        );
         (*KeyBody).NotifyBlock = core::ptr::null_mut();
 
         EnlistKeyBodyWithKCB(
@@ -766,6 +805,12 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
     KcbsLocked: *mut u32,
     Object: *mut *mut core::ffi::c_void,
 ) -> i32 {
+    let Hive = opaque_ptr(Hive);
+    let AccessState = opaque_ptr(AccessState);
+    let Context = opaque_ptr(Context);
+    let ParentKcb = opaque_ptr(ParentKcb);
+    let KcbsLocked = opaque_ptr(KcbsLocked);
+    let Object = opaque_ptr(Object);
 
     const CM_KCB_READ_ONLY_KEY: u32 = 0x00000080;
     const KEY_HIVE_ENTRY: u32 = 0x0004;
@@ -773,7 +818,7 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
     const KEY_NO_DELETE: u32 = 0x0008;
     const KEY_COMP_NAME: u16 = 0x0020;
     const CM_LINK_NODE_SIGNATURE: u16 = 0x6b6c;
-    const CMP_CREATE_KCB_KCB_LOCKED: u32 = 0x00000004;
+    const CMP_CREATE_KCB_KCB_LOCKED: u32 = 0x00000002;
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
     const Stable: u32 = 0;
     const Volatile: u32 = 1;
@@ -1186,7 +1231,7 @@ unsafe fn CmpLookInCache(
 
     LockedKcbs = CmpBuildAndLockKcbArray(
         HashCacheStack,
-        if LockKcbsExclusive != 0 { 1 } else { 0 },
+        if LockKcbsExclusive != 0 { 1 } else { 2 },
         *Kcb,
         OuterStackArray,
         TotalRemainingSubkeys,
@@ -1295,6 +1340,16 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
     OuterStackArray: *mut ULONG,
     LockedKcbs: *mut *mut ULONG,
 ) -> NTSTATUS {
+    let ParseObject = opaque_ptr(ParseObject);
+    let Kcb = opaque_ptr(Kcb);
+    let Current = opaque_ptr(Current);
+    let Hive = opaque_ptr(Hive);
+    let Cell = opaque_ptr(Cell);
+    let TotalRemainingSubkeys = opaque_ptr(TotalRemainingSubkeys);
+    let MatchRemainSubkeyLevel = opaque_ptr(MatchRemainSubkeyLevel);
+    let TotalSubkeys = opaque_ptr(TotalSubkeys);
+    let OuterStackArray = opaque_ptr(OuterStackArray);
+    let LockedKcbs = opaque_ptr(LockedKcbs);
 
     let mut Status: NTSTATUS;
     let mut ConvKey: ULONG;
@@ -3250,11 +3305,7 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
 // CmpParseKey — full translation from cmparse.c lines 1847-2311.
 // Used as ObjectTypeInitializer.ParseProcedure for the registry key object type.
 //
-// Local flag values: match the existing CmpDoOpen translation in this file
-// (LockKcb=0x1, IsLockShared=0x40 for cached path, CMP_CREATE_KCB_KCB_LOCKED=0x4).
-// The bit numbering differs from upstream cm.h but is internally consistent
-// across the already-translated CmpDoOpen / CmpDoCreate / CmpCreateLinkNode
-// callers and callees in this file.
+// Local flag values mirror ntoskrnl/include/internal/cm.h.
 #[no_mangle]
 pub unsafe extern "system" fn CmpParseKey(
     ParseObject: PVOID,
@@ -3268,10 +3319,17 @@ pub unsafe extern "system" fn CmpParseKey(
     _SecurityQos: PVOID,
     Object: *mut PVOID,
 ) -> NTSTATUS {
-    // Local copies of cm.h flag values (matches existing CmpDoOpen path checks).
-    const CMP_OPEN_KCB_NO_CREATE_LOCAL: u32 = 0x00000040;
-    const CMP_CREATE_KCB_KCB_LOCKED_LOCAL: u32 = 0x00000004;
-    const CMP_LOCK_HASHES_FOR_KCB_LOCAL: u32 = 0x00000001;
+    let ParseObject = opaque_ptr(ParseObject);
+    let ObjectType = opaque_ptr(ObjectType);
+    let AccessState = opaque_ptr(AccessState);
+    let CompleteName = opaque_ptr(CompleteName);
+    let RemainingName = opaque_ptr(RemainingName);
+    let Context = opaque_ptr(Context);
+    let _SecurityQos = opaque_ptr(_SecurityQos);
+    let Object = opaque_ptr(Object);
+    const CMP_OPEN_KCB_NO_CREATE_LOCAL: u32 = 0x00000004;
+    const CMP_CREATE_KCB_KCB_LOCKED_LOCAL: u32 = 0x00000002;
+    const CMP_LOCK_HASHES_FOR_KCB_LOCAL: u32 = 0x00000002;
     const KEY_SYM_LINK_LOCAL: u32 = 0x0010;
     const KEY_HIVE_EXIT_LOCAL: u16 = 0x0002;
     const MAXUSHORT_LOCAL: u32 = 0xFFFF;

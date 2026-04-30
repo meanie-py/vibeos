@@ -4,8 +4,10 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CM_VIEW_OF_FILE, ExFreePool, PCMHIVE, PCM_VIEW_OF_FILE};
 use core::ffi::c_void;
 
+use ntkrnl_sys::opaque_ptr;
 #[no_mangle]
 pub unsafe extern "system" fn CmpInitHiveViewList(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     InitializeListHead(core::ptr::addr_of_mut!((*Hive).LRUViewListHead));
     InitializeListHead(core::ptr::addr_of_mut!((*Hive).PinViewListHead));
 
@@ -16,6 +18,7 @@ pub unsafe extern "system" fn CmpInitHiveViewList(Hive: PCMHIVE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpDestroyHiveViewList(Hive: PCMHIVE) {
+    let Hive = opaque_ptr(Hive);
     let mut CmView: PCM_VIEW_OF_FILE;
     let mut EntryList: PLIST_ENTRY;
 
