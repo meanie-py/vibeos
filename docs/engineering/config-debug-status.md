@@ -201,46 +201,73 @@ Fix: declare `pub static NtBuildLab: i8;` (matching the C-array
 semantics — we just need the symbol's address) and pass
 `core::ptr::addr_of!(NtBuildLab) as *const i8`.
 
-## Open: KCB-lock recursion + pushlock-not-held ASSERTs late in SMSS init
+## KCB-lock recursion + pushlock-not-held ASSERTs — **FIXED** (commit pending)
 
+The two ASSERTs were both downstream symptoms of one root cause: the
+LLM that translated `cmparse.rs` produced a stub `COMPUTE_HASH_CHAR`
+that omitted the `RtlUpcaseUnicodeChar` call required by the C macro
+at `cm_x.h:31-32`:
+
+```c
+#define COMPUTE_HASH_CHAR(ConvKey, Char)                            \
+    (37 * ConvKey + RtlUpcaseUnicodeChar(Char))
 ```
-*** ASSERT FAILED: OldValue.Locked at \ntoskrnl\include\internal\ex.h:1305
-*** ASSERT FAILED: CmpCacheTable[Index].Owner != KeGetCurrentThread()
-                   at \ntoskrnl\include\internal\cm_x.h:120
-(\sdk\lib\cmlib\hivewrt.c:360) Failed to write the base block header
-                              to primary hive (primary sequence)
-(\sdk\lib\cmlib\hivewrt.c:522) Failed to write the primary hive
-... (repeats — boot stalls)
+
+The buggy Rust:
+
+```rust
+unsafe fn COMPUTE_HASH_CHAR(key: ULONG, ch: WCHAR) -> ULONG {
+    key.wrapping_mul(37).wrapping_add(ch as ULONG)   // <-- missing upcase
+}
 ```
 
-After SMSS reads its config and reaches "Cannot find drive letter for
-system partition" the kernel fires two distinct registry-locking
-ASSERTs:
+`cmkcbncb.rs` got the same macro right (uses `RtlUpcaseUnicodeChar`).
+The two implementations therefore disagreed for every name with at
+least one ASCII letter that case-folded — i.e. essentially every
+registry path. `CmpComputeHashValue` (in `cmparse.rs`) populated the
+HashCacheStack with the lower-case-derived ConvKeys, so
+`CmpBuildAndLockKcbArray` locked the WRONG hash indices.
+`CmpCreateKeyControlBlock` (in `cmkcbncb.rs`) then derived the CORRECT
+upper-case ConvKey, hashed it to the right index, found that nothing
+held that index's lock, and the `CMP_LOCK_HASHES_FOR_KCB` contract
+violation cascaded:
 
-1. `cm_x.h:120` — `CmpAcquireKcbLockExclusiveByIndex` is called but
-   the same thread already owns that KCB lock. This is a recursion /
-   double-acquire bug somewhere in the registry path that's exercised
-   only after `CmpQueryNameInformation` was fixed. Possibly a
-   path that called `CmpQueryNameInformation` with a lock held but
-   used to short-circuit (returning STATUS_SUCCESS without doing the
-   walk) is now actually doing the walk.
-2. `ex.h:1305` — second instance of the pushlock-not-held ASSERT,
-   different call site than the previously-fixed `cmparse.rs`. With
-   DUMMY_PSEH the ASSERT prints and returns; the underlying double-
-   free of the lock corrupts state.
+1. `CmpReferenceKeyControlBlock(FoundKcb)` saw `RefCount==0` (the
+   delayed-close case) and `Owner != current` (because the wrong
+   index was the one we'd locked, not this one).
+2. Fell through to `CmpConvertKcbSharedToExclusive`, which
+   `CmpReleaseKcbLock`s a lock no one holds → `ex.h:1305`
+   `OldValue.Locked` ASSERT.
+3. With DUMMY_PSEH the ASSERT just prints and returns. The release
+   was a no-op because the lock was already 0; the subsequent
+   `CmpAcquireKcbLockExclusive` then succeeded and *did* set
+   `Owner = current`.
+4. Later, `CmpDereferenceKeyControlBlock` for that same KCB called
+   `CmpAcquireKcbLockExclusive` again → Owner already us → `cm_x.h:120`
+   ASSERT.
 
-The hivewrt.c failures are expected on read-only LiveCD media (the
-hives can't be flushed) but the lock-state corruption from the
-ASSERTs may be preventing forward progress.
+Diagnostic path: instrumented both ASSERTs to print
+`__builtin_return_address(0/1)` to find the call sites
+(`CmpReferenceKeyControlBlock+0x53` from `CmpCreateKeyControlBlock`,
+`CmpDereferenceKeyControlBlock` from `CmpParseKey`). Then instrumented
+`CmpReferenceKeyControlBlock`'s convert path to dump the lock value
+and Owner pointer at the moment of entry — `lock_val=00000000
+owner=00000000` confirmed nobody held the lock. Adding `[CrtKcb]` to
+`CmpCreateKeyControlBlock` showed `Flags=2` (CMP_LOCK_HASHES_FOR_KCB)
+and `RtlGetCallersAddress` resolved the chain to
+`ObpLookupObjectName -> CmpParseKey -> CmpCreateKeyControlBlock`.
+Comparing the two `COMPUTE_HASH_CHAR` definitions (`cmparse.rs:65`
+versus `cmkcbncb.rs:89`) made the disagreement obvious.
 
-**Investigation directions:**
-- Add `__builtin_return_address(0)` instrumentation to
-  `CmpAcquireKcbLockExclusiveByIndex` and the second
-  `ExReleasePushLock` callsite to symbolicate the bad callers.
-- Check whether the `CmpQueryNameInformation` fix introduced a
-  regression — perhaps callers were relying on its no-op behavior.
-- Review the CmpConvertKcbSharedToExclusive path — that release+
-  reacquire pattern is a candidate.
+Fix: align `cmparse.rs::COMPUTE_HASH_CHAR` with `cmkcbncb.rs` and the
+C macro, calling `ntkrnl_sys::ddk::RtlUpcaseUnicodeChar` on the input
+character.
+
+After this one-line fix, **i386 boots to the desktop and all 7 i386
+smoke tests pass**. amd64 also reaches `shell ready` with this fix in
+place; its `[EXPLORER] _tWinMain entered` milestone failure is the
+pre-existing taskbar regression documented in MEMORY.md (not related
+to config/). ARM64's pre-existing baseline failure also stands.
 
 ## Diagnostic state currently in tree (uncommitted)
 

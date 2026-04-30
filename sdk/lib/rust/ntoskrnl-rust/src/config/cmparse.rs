@@ -63,7 +63,15 @@ unsafe fn GET_HASH_ENTRY(table: *mut core::ffi::c_void, conv_key: u32) -> PCM_KE
 
 #[inline(always)]
 unsafe fn COMPUTE_HASH_CHAR(key: ULONG, ch: WCHAR) -> ULONG {
-    key.wrapping_mul(37).wrapping_add(ch as ULONG)
+    /* Mirror the C macro at cm_x.h:31-32:
+     *   #define COMPUTE_HASH_CHAR(ConvKey, Char)
+     *       (37 * ConvKey + RtlUpcaseUnicodeChar(Char))
+     * The LLM-generated translation omitted the RtlUpcaseUnicodeChar call,
+     * which produced ConvKeys that disagreed with cmkcbncb.rs's correct
+     * implementation. The mismatch left lookup-cache hash indexes unlocked
+     * when CmpCreateKeyControlBlock was called with CMP_LOCK_HASHES_FOR_KCB,
+     * leading to the cm_x.h:120 / ex.h:1305 ASSERT cascade in SMSS init. */
+    key.wrapping_mul(37).wrapping_add(ntkrnl_sys::ddk::RtlUpcaseUnicodeChar(ch) as ULONG)
 }
 
 #[inline(always)]
