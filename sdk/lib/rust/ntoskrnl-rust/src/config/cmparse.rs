@@ -296,7 +296,7 @@ unsafe fn CmpDoCreateChild(
     const CM_KEY_NODE_SIGNATURE: u16 = 0x6B6E;
     const KEY_COMP_NAME: u16 = 0x0020;
     const CMP_LOCK_HASHES_FOR_KCB: u32 = 0x00000002;
-    const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: u32 = 0x00000001;
+    const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: u32 = 0x00000002;
     const REG_NOTIFY_CHANGE_NAME: u32 = 0x00000001;
 
     let mut Status: i32 = STATUS_SUCCESS;
@@ -768,7 +768,7 @@ unsafe fn CmpDoOpen(
 
         EnlistKeyBodyWithKCB(
             KeyBody,
-            if IsLockShared != 0 { 0x00000002 } else { 0x00000001 },
+            if IsLockShared != 0 { 0x00000001 } else { 0x00000002 },
         );
 
         (*KeyBody).KcbLocked = 1u8;
