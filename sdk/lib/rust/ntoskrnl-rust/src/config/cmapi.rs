@@ -1389,50 +1389,58 @@ pub unsafe extern "system" fn CmEnumerateKey(
     let Kcb = opaque_ptr(Kcb);
     let KeyInformation = opaque_ptr(KeyInformation);
     let ResultLength = opaque_ptr(ResultLength);
-    let mut Status: i32;
-    let Hive: PHHIVE;
-    let Parent: PCM_KEY_NODE;
-    let Child: PCM_KEY_NODE;
-    let ChildCell: HCELL_INDEX;
+    let mut Status: i32 = STATUS_SUCCESS;
+    let mut Hive: PHHIVE;
+    let mut Parent: PCM_KEY_NODE;
+    let mut Child: PCM_KEY_NODE;
+    let mut ChildCell: HCELL_INDEX;
     let mut CellReferences: HV_TRACK_CELL_REF = core::mem::zeroed();
 
     CmpLockRegistry();
 
     CmpAcquireKcbLockShared(Kcb);
 
-    if (*Kcb).__bindgen_anon_1.Delete() != 0 {
-        Status = STATUS_KEY_DELETED;
-        return Status;
+    'Quickie: loop {
+        if (*Kcb).__bindgen_anon_1.Delete() != 0 {
+            Status = STATUS_KEY_DELETED;
+            break 'Quickie;
+        }
+
+        Hive = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
+        Parent = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell) as PCM_KEY_NODE;
+
+        ChildCell = CmpFindSubKeyByNumber(Hive, Parent, Index);
+
+        HvReleaseCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell);
+
+        if ChildCell == HCELL_NIL {
+            Status = STATUS_NO_MORE_ENTRIES;
+            break 'Quickie;
+        }
+
+        Child = HvGetCell(Hive, ChildCell) as PCM_KEY_NODE;
+
+        if HvTrackCellRef(core::ptr::addr_of_mut!(CellReferences), Hive, ChildCell) == 0 {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'Quickie;
+        }
+
+        Status = CmpQueryKeyData(
+            Hive,
+            Child,
+            KeyInformationClass,
+            KeyInformation,
+            Length,
+            ResultLength,
+        );
+
+        break 'Quickie;
     }
 
-    Hive = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
-    Parent = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell) as PCM_KEY_NODE;
-
-    ChildCell = CmpFindSubKeyByNumber(Hive, Parent, Index);
-
-    HvReleaseCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell);
-
-    if ChildCell == HCELL_NIL {
-        Status = STATUS_NO_MORE_ENTRIES;
-        return Status;
-    }
-
-    Child = HvGetCell(Hive, ChildCell) as PCM_KEY_NODE;
-
-    if HvTrackCellRef(core::ptr::addr_of_mut!(CellReferences), Hive, ChildCell) == 0 {
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        return Status;
-    }
-
-    Status = CmpQueryKeyData(
-        Hive,
-        Child,
-        KeyInformationClass,
-        KeyInformation,
-        Length,
-        ResultLength,
-    );
-
+    // Quickie: release tracked cell refs and locks (matches C cmapi.c:1811-1817).
+    HvReleaseFreeCellRefArray(core::ptr::addr_of_mut!(CellReferences));
+    CmpReleaseKcbLock(Kcb);
+    CmpUnlockRegistry();
     Status
 }
 
