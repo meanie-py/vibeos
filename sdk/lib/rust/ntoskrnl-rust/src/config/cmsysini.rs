@@ -316,7 +316,7 @@ extern "C" {
     pub static mut ExpInTextModeSetup: u8;
     pub static mut InitIsWinPEMode: u8;
     pub static mut InitSafeBootMode: u32;
-    pub static mut NtBuildLab: *const i8;
+    pub static NtBuildLab: i8; // C: extern CHAR NtBuildLab[]; — take addr_of
     pub static mut NtSystemRoot: _UNICODE_STRING;
 }
 
@@ -2619,7 +2619,7 @@ pub unsafe extern "system" fn CmpSetVersionData() {
     );
 
     RtlInitUnicodeString(&mut ValueName, w!("BuildLab").as_ptr());
-    RtlInitAnsiString(&mut TempString, NtBuildLab);
+    RtlInitAnsiString(&mut TempString, core::ptr::addr_of!(NtBuildLab) as *const i8);
     Status = RtlAnsiStringToUnicodeString(&mut ValueData, &mut TempString, 0u8);
     if NT_SUCCESS(Status) {
         NtSetValueKey(
