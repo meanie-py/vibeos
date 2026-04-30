@@ -1288,6 +1288,44 @@ unsafe fn CmpQueryNameInformation(
         return STATUS_BUFFER_OVERFLOW;
     }
 
+    /* Do the real copy: walk parents from leaf up, filling the buffer from
+     * tail toward head. C source: ntoskrnl/config/cmapi.c:1560-1601. */
+    (*KeyNameInfo).NameLength = 0;
+    CurrentKcb = Kcb;
+    let NameBuf = (*KeyNameInfo).Name.as_mut_ptr();
+    const WCHAR_SIZE: u32 = core::mem::size_of::<u16>() as u32;
+    const PATH_SEP: u16 = b'\\' as u16;
+
+    while !CurrentKcb.is_null() {
+        let NameLength: u32;
+        if (*(*CurrentKcb).NameBlock).Compressed != 0 {
+            NameLength = CmpCompressedNameSize(
+                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
+                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
+            ) as u32;
+            CmpCopyCompressedName(
+                NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize),
+                NameLength,
+                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
+                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
+            );
+        } else {
+            NameLength = (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32;
+            core::ptr::copy_nonoverlapping(
+                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *const u8,
+                NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize) as *mut u8,
+                NameLength as usize,
+            );
+        }
+
+        NeededLength -= NameLength;
+        NeededLength -= WCHAR_SIZE;
+        *NameBuf.add((NeededLength / WCHAR_SIZE) as usize) = PATH_SEP;
+        (*KeyNameInfo).NameLength += NameLength + WCHAR_SIZE;
+
+        CurrentKcb = (*CurrentKcb).ParentKcb;
+    }
+
     STATUS_SUCCESS
 }
 
