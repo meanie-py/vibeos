@@ -1,8 +1,9 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-iomgr-arm64)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-i386-dis)
 
 ## Headline
 
-- **~99.1% translated by C-line count.** ~278K LOC translatable C body of work; ~2.4K LOC of translatable C still active in the default build. **arm64 caught up to i386 this session** — arm64 used to be ~1.1K LOC behind because of `iomgr.c` + `ramdisk.c`; both are now Rust on all 3 arches.
+- **~99.1% translated by C-line count.** ~282K LOC translatable C body of work; ~2.4K LOC of translatable C still active in the default build (worst arch). The body-of-work denominator grew this session because `kdbg/i386/i386-dis.c` (4,453 LOC) moved out of the "intentional stay" bucket — we now have a Rust translation of it.
+- **i386-dis.rs landed.** The 4,453-LOC binutils-derived i386/amd64 disassembler used by KDBG is now Rust on i386 + amd64 (arm64 has KDBG off). Translated by **Gemini 3 Pro** in one shot via the prompt drafted earlier this session. Output was architecturally sound (enum-tag dispatch instead of C function-pointer table, `Result<_, NTSTATUS>` instead of setjmp/longjmp, all major opcode tables intact at correct cardinality, license preserved). Required two small post-translation fixes by hand: a wrong import path (`ntkrnl_sys::PCSTR` → `ntkrnl_sys::ddk::PCSTR`) and one missing `unsafe` block around `ptr::copy_nonoverlapping`. Gemini's "compiles successfully" claim was wrong — useful data point: treat its build/test claims as guidance, not ground truth. **Verdict: a useful translation collaborator at this scale, but verify everything.**
 - **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged via `ddba7c05` — last fix was `cmparse.rs::COMPUTE_HASH_CHAR` missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
 - **kd64/ landed.** WinDbg KD protocol stack now Rust on all 3 arches. The "recursive exception flood on amd64" that parked it in Feb 2026 was silently fixed by the CGU=256 + opaque_ptr + RAII guard work; nobody re-tested. ~6.8K LOC of C dropped, ~11.1K LOC of parked Rust now active. Required 5 small translation-bug fixes.
 - **ARM3/virtual landed.** `mm/ARM3/virtual.c` is no longer active; `ARM3/virtual.rs` is wired for all 3 arches. The i386 stack-commit regression was a bad local `TableFoundNode = 0` constant; bindgen/C have `TableFoundNode = 1`.
@@ -30,7 +31,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | fstub | 4 | 12,264 | |
 | mm | 12 | 11,893 | |
 | **kd64 (WinDbg KD protocol)** | **7** | **11,100** | **NEW — all 3 arches active** |
-| kdbg (KDB) | 8 | 9,979 | i386 + amd64 only (KDBG off on arm64) |
+| kdbg (KDB) | 9 | 13,485 | i386 + amd64 only (KDBG off on arm64); includes `i386_dis.rs` (Gemini 3 Pro translation) |
 | cc (cache) | 7 | 6,221 | |
 | dbgk | 2 | 5,104 | |
 | po (power) | 4 | 5,050 | |
@@ -65,7 +66,6 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | config/cmdata.c | 994 | Pure globals; no functions for tree-sitter to extract. |
 | config/i386/cmhardwr.c | 897 | i386/amd64 hardware detection (CMOS, FX bytes, MSRs). |
 | config/arm/cmhardwr.c | 27 | ARM hardware detection (legacy, not built). |
-| kdbg/i386/i386-dis.c | 4,453 | Binutils-derived i386 disassembler; not our code. |
 | kdbg/{i386,amd64}/kdb_help.S | ~30 each | Asm trampolines. |
 | ntoskrnl/guid.c | 9 | Auto-generated. |
 | ntoskrnl/KrnlFun.c | 48 | Dead (not in cmake). |
