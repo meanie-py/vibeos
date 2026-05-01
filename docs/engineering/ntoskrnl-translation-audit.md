@@ -1,8 +1,9 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-i386-dis)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-arcname)
 
 ## Headline
 
-- **~99.1% translated by C-line count.** ~282K LOC translatable C body of work; ~2.4K LOC of translatable C still active in the default build (worst arch). The body-of-work denominator grew this session because `kdbg/i386/i386-dis.c` (4,453 LOC) moved out of the "intentional stay" bucket — we now have a Rust translation of it.
+- **~99.5% translated by C-line count.** ~282K LOC translatable C body of work; ~1.5K LOC of translatable C still active in the default build (worst arch). The body-of-work denominator grew last session because `kdbg/i386/i386-dis.c` (4,453 LOC) moved out of the "intentional stay" bucket. arcname dropped this session — closes the long-standing C/Rust hybrid.
+- **arcname landed.** `io/iomgr/arcname.c` is no longer active on any arch. `IopCreateArcNames` + `IopCreateArcNamesDisk` (~700 LOC of C, the boot-critical disk-enumeration + ARC-symlink-creation path) hand-translated this session into the existing `iomgr/arcname.rs`. Pattern reuse: the two new functions share IRP/IOCTL/symlink-creation idioms with the already-Rust `IopCreateArcNamesCd` next door, so most of the work was structural copy-and-adapt. i386 7/7, amd64 7/7. **Reflection:** identical flake observed as the iomgr session — first cold-boot after a clean Rust rebuild can fail on amd64 with HAL/VGA early-init looping; second boot through the snapshot path passes. Pre-existing, not introduced by this change.
 - **i386-dis.rs landed.** The 4,453-LOC binutils-derived i386/amd64 disassembler used by KDBG is now Rust on i386 + amd64 (arm64 has KDBG off). Translated by **Gemini 3 Pro** in one shot via the prompt drafted earlier this session. Output was architecturally sound (enum-tag dispatch instead of C function-pointer table, `Result<_, NTSTATUS>` instead of setjmp/longjmp, all major opcode tables intact at correct cardinality, license preserved). Required two small post-translation fixes by hand: a wrong import path (`ntkrnl_sys::PCSTR` → `ntkrnl_sys::ddk::PCSTR`) and one missing `unsafe` block around `ptr::copy_nonoverlapping`. Gemini's "compiles successfully" claim was wrong — useful data point: treat its build/test claims as guidance, not ground truth. **Verdict: a useful translation collaborator at this scale, but verify everything.**
 - **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged via `ddba7c05` — last fix was `cmparse.rs::COMPUTE_HASH_CHAR` missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
 - **kd64/ landed.** WinDbg KD protocol stack now Rust on all 3 arches. The "recursive exception flood on amd64" that parked it in Feb 2026 was silently fixed by the CGU=256 + opaque_ptr + RAII guard work; nobody re-tested. ~6.8K LOC of C dropped, ~11.1K LOC of parked Rust now active. Required 5 small translation-bug fixes.
@@ -20,7 +21,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 |-----------|------------:|-----------:|-------|
 | KE (kernel) | 67 | 54,113 | Includes per-arch `ke/{i386,amd64,arm64}/*` |
 | ARM3 (mm internals) | 25 | 44,054 | `virtual.rs` active all 3 arches |
-| iomgr | 26 | 41,047 | `iomgr.rs` + `ramdisk.rs` active on all 3 arches |
+| iomgr | 26 | 41,800 | `iomgr.rs` + `ramdisk.rs` + full `arcname.rs` (no C hybrid) active on all 3 arches |
 | EX (executive) | 31 | 38,781 | `sysinfo.rs` active all 3 arches |
 | SE (security) | 18 | 35,200 | |
 | **config (registry CM)** | **21** | **33,196** | **NEW — all 3 arches active** |
@@ -78,7 +79,6 @@ The real backlog. Roughly 2K LOC of small per-arch glue.
 
 | File | LOC | Per-arch? | Notes |
 |------|----:|-----------|-------|
-| io/iomgr/arcname.c | 998 | generic | Hybrid — `iomgr/arcname.rs` (1,633 LOC) covers some paths; C still owns `IopCreateArcNames` + `IopCreateArcNamesDisk`. Finish split. |
 | kd64/i386/kdx86.c | 446 | i386 | Per-arch helpers called by Rust kdapi.rs (KdpSysReadMsr/WriteMsr/IoSpace, KdpGetStateChange, KdpSetContextState). Small, callable by Rust as-is — translate only when convenient. |
 | kd64/amd64/kdx64.c | 391 | amd64 | Same role for amd64. |
 | kd64/arm/kdarm.c | 156 | arm (not built) | |
@@ -92,25 +92,23 @@ The real backlog. Roughly 2K LOC of small per-arch glue.
 
 | Bucket | LOC |
 |--------|----:|
-| Generic active C | ~3,460 |
+| Generic active C | ~2,460 |
 | i386-only active C (worst arch) | ~1,550 |
-| **Active C in default build (worst case = i386)** | **~5,010** |
+| **Active C in default build (worst case = i386)** | **~4,010** |
 | of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~2,460** |
-
-(Note: arm64 used to carry an extra ~1.1K LOC of active C — `iomgr.c` + `ramdisk.c` — over i386. As of this session that gap is gone; arm64 ≤ i386 by translatable-C-active count.)
+| **Translatable C still active** | **~1,460** |
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
-- ~277,750 LOC C total
-- ~2,460 LOC C still active and translatable
-- **(277,750 − 2,460) / 277,750 ≈ 99.1% translated**
+- ~282,200 LOC C total (includes i386-dis.c which left the intentional-stay bucket last session)
+- ~1,460 LOC C still active and translatable
+- **(282,200 − 1,460) / 282,200 ≈ 99.5% translated**
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
 - Parked Rust: ~5.1K LOC
 - Add ~1.7K LOC of C they replace if/when wired
-- **>99% has a Rust translation in tree** (active or parked)
+- **>99.5% has a Rust translation in tree** (active or parked)
 
 ## What it would take to push toward 100%
 

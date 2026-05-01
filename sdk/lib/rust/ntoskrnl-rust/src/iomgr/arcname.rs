@@ -9,6 +9,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
     ExFreePool,
+    HalExamineMBR,
     _IO_STATUS_BLOCK,
     _OBJECT_ATTRIBUTES,
     _UNICODE_STRING,
@@ -20,6 +21,7 @@ use ntkrnl_sys::ddk::{
     IofCallDriver,
     IopFetchConfigurationInformation,
     IopStoreSystemPartitionInformation,
+    IoReadPartitionTableEx,
     KEVENT,
     KeInitializeEvent,
     KeWaitForSingleObject,
@@ -40,6 +42,7 @@ use ntkrnl_sys::ddk::{
     NtQuerySymbolicLinkObject,
     ObCloseHandle,
     RtlCopyString,
+    RtlEqualString,
     RtlFreeUnicodeString,
     RtlInitAnsiString,
     RtlInitUnicodeString,
@@ -105,6 +108,13 @@ const GUID_DEVINTERFACE_CDROM: GUID = GUID {
     Data4: [0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b],
 };
 
+const GUID_DEVINTERFACE_DISK: GUID = GUID {
+    Data1: 0x53f56307,
+    Data2: 0xb6bf,
+    Data3: 0x11d0,
+    Data4: [0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b],
+};
+
 const TAG_IO: ULONG = 0x20206F49;
 const FILE_READ_ATTRIBUTES: ULONG = 0x0080;
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: ULONG = 0x002D1080;
@@ -116,12 +126,7 @@ const SYMBOLIC_LINK_ALL_ACCESS: ULONG = 0x000F0001;
 const ANSI_NULL: i8 = 0;
 const UNICODE_NULL: u16 = 0;
 
-// IopCreateArcNamesDisk is not translated — the C version in arcname.c is used.
-// IopCreateArcNames is also in C — it calls IopCreateArcNamesDisk (C) and
-// IopCreateArcNamesCd (Rust, below).
-
-// IopCreateArcNames is in C (arcname.c). It calls IopCreateArcNamesDisk (C)
-// and IopCreateArcNamesCd (Rust, below).
+// IopCreateArcNames + IopCreateArcNamesDisk are below.
 
 // CODE_SEG("INIT")
 #[no_mangle]
@@ -436,7 +441,672 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
     Status
 }
 
-// IopCreateArcNamesDisk is not translated — C version in arcname.c is used.
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn IopCreateArcNames(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
+    let mut Length: usize;
+    let mut Status: NTSTATUS;
+    let mut Buffer: [i8; 128] = [0; 128];
+    let mut SingleDisk: BOOLEAN;
+    let mut FoundBoot: BOOLEAN = 0u8;
+    let mut SystemDevice: _UNICODE_STRING = core::mem::zeroed();
+    let mut LoaderPathNameW: _UNICODE_STRING = core::mem::zeroed();
+    let mut BootDeviceName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ArcSystemString: ANSI_STRING = core::mem::zeroed();
+    let mut ArcString: ANSI_STRING = core::mem::zeroed();
+    let mut LanmanRedirector: ANSI_STRING = core::mem::zeroed();
+    let mut LoaderPathNameA: ANSI_STRING = core::mem::zeroed();
+    let ArcDiskInfo: PARC_DISK_INFORMATION = (*LoaderBlock).ArcDiskInformation;
+
+    // Check if we only have one disk on the machine
+    SingleDisk = ((*(*ArcDiskInfo).DiskSignatureListHead.Flink).Flink
+        == core::ptr::addr_of_mut!((*ArcDiskInfo).DiskSignatureListHead) as *mut _) as BOOLEAN;
+
+    // Create the global HAL partition name
+    sprintf(
+        Buffer.as_mut_ptr(),
+        b"\\ArcName\\%s\0".as_ptr() as *const i8,
+        (*LoaderBlock).ArcHalDeviceName,
+    );
+    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
+    Status = RtlAnsiStringToUnicodeString(
+        core::ptr::addr_of_mut!(IoArcHalDeviceName),
+        core::ptr::addr_of_mut!(ArcString),
+        1u8,
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    // Create the global system partition name
+    sprintf(
+        Buffer.as_mut_ptr(),
+        b"\\ArcName\\%s\0".as_ptr() as *const i8,
+        (*LoaderBlock).ArcBootDeviceName,
+    );
+    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
+    Status = RtlAnsiStringToUnicodeString(
+        core::ptr::addr_of_mut!(IoArcBootDeviceName),
+        core::ptr::addr_of_mut!(ArcString),
+        1u8,
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    // Allocate memory for the loader ARC boot device name copy
+    Length = strlen((*LoaderBlock).ArcBootDeviceName) + 1;
+    IoLoaderArcBootDeviceName =
+        ExAllocatePoolWithTag(PagedPool, Length, TAG_IO) as *mut i8;
+    if !IoLoaderArcBootDeviceName.is_null() {
+        core::ptr::copy_nonoverlapping(
+            (*LoaderBlock).ArcBootDeviceName as *const u8,
+            IoLoaderArcBootDeviceName as *mut u8,
+            Length,
+        );
+    }
+
+    // Check if we only found a disk, but we're booting from CD-ROM
+    if SingleDisk != 0
+        && !strstr(
+            (*LoaderBlock).ArcBootDeviceName,
+            b"cdrom\0".as_ptr() as *const i8,
+        )
+        .is_null()
+    {
+        SingleDisk = 0u8;
+    }
+
+    // Build the boot strings
+    RtlInitAnsiString(
+        core::ptr::addr_of_mut!(ArcSystemString),
+        (*LoaderBlock).ArcHalDeviceName,
+    );
+
+    // If we are doing remote booting
+    if IoRemoteBootClient != 0 {
+        FoundBoot = 1u8;
+
+        RtlInitAnsiString(
+            core::ptr::addr_of_mut!(LanmanRedirector),
+            b"\\Device\\LanmanRedirector\0".as_ptr() as *const i8,
+        );
+        Status = RtlAnsiStringToUnicodeString(
+            core::ptr::addr_of_mut!(SystemDevice),
+            core::ptr::addr_of_mut!(LanmanRedirector),
+            1u8,
+        );
+        if Status < 0 {
+            return Status;
+        }
+
+        sprintf(
+            Buffer.as_mut_ptr(),
+            b"\\ArcName\\%s\0".as_ptr() as *const i8,
+            (*LoaderBlock).ArcBootDeviceName,
+        );
+        RtlInitAnsiString(core::ptr::addr_of_mut!(ArcString), Buffer.as_ptr());
+        Status = RtlAnsiStringToUnicodeString(
+            core::ptr::addr_of_mut!(BootDeviceName),
+            core::ptr::addr_of_mut!(ArcString),
+            1u8,
+        );
+        if Status >= 0 {
+            IoAssignArcName(
+                core::ptr::addr_of_mut!(BootDeviceName),
+                core::ptr::addr_of_mut!(SystemDevice),
+            );
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(BootDeviceName));
+
+            RtlInitAnsiString(
+                core::ptr::addr_of_mut!(LoaderPathNameA),
+                (*LoaderBlock).NtHalPathName,
+            );
+            Status = RtlAnsiStringToUnicodeString(
+                core::ptr::addr_of_mut!(LoaderPathNameW),
+                core::ptr::addr_of_mut!(LoaderPathNameA),
+                1u8,
+            );
+            if Status < 0 {
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(SystemDevice));
+                return Status;
+            }
+
+            IopStoreSystemPartitionInformation(
+                core::ptr::addr_of_mut!(SystemDevice),
+                core::ptr::addr_of_mut!(LoaderPathNameW),
+            );
+        }
+
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(SystemDevice));
+
+        // Don't quit even if everything went fine — IopCreateArcNamesDisk
+        // still needs to map devices with symlinks. It returns success if
+        // mapping went fine even if it didn't find the boot device, and
+        // it won't reset boot-device-finding status either.
+    }
+
+    // Loop every disk and try to find boot disk
+    Status = IopCreateArcNamesDisk(
+        LoaderBlock,
+        SingleDisk,
+        core::ptr::addr_of_mut!(FoundBoot),
+    );
+    // If it succeeded but we didn't find boot device, try to browse CDs
+    if Status >= 0 && FoundBoot == 0 {
+        Status = IopCreateArcNamesCd(LoaderBlock);
+    }
+
+    Status
+}
+
+// CODE_SEG("INIT")
+#[no_mangle]
+pub unsafe extern "system" fn IopCreateArcNamesDisk(
+    LoaderBlock: PLOADER_PARAMETER_BLOCK,
+    SingleDisk: BOOLEAN,
+    FoundBoot: *mut BOOLEAN,
+) -> NTSTATUS {
+    let LoaderBlock = opaque_ptr(LoaderBlock);
+    let FoundBoot = opaque_ptr(FoundBoot);
+    let mut Irp: PIRP;
+    let mut Data: PVOID = core::ptr::null_mut();
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut NextEntry: ntkrnl_sys::base::PLIST_ENTRY;
+    let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
+    let mut DiskGeometry: ntkrnl_sys::ddk::DISK_GEOMETRY = core::mem::zeroed();
+    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut StartingOffset: LARGE_INTEGER = core::mem::zeroed();
+    let mut PartitionBuffer: *mut ULONG = core::ptr::null_mut();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Buffer: [i8; 128] = [0; 128];
+    let mut ArcBuffer: [i8; 128] = [0; 128];
+    let mut NotEnabledPresent: BOOLEAN = 0u8;
+    let mut DeviceNumber: STORAGE_DEVICE_NUMBER = core::mem::zeroed();
+    let mut ArcDiskSignature: PARC_DISK_SIGNATURE;
+    let mut SymbolicLinkList: *mut u16 = core::ptr::null_mut();
+    let mut lSymbolicLinkList: *mut u16;
+    let mut DriveLayout: PDRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
+    let mut DeviceStringW: _UNICODE_STRING = core::mem::zeroed();
+    let mut ArcNameStringW: _UNICODE_STRING = core::mem::zeroed();
+    let mut HalPathStringW: _UNICODE_STRING = core::mem::zeroed();
+    let mut DiskNumber: ULONG;
+    let mut DiskCount: ULONG;
+    let mut CheckSum: ULONG;
+    let mut i: ULONG;
+    let mut Signature: ULONG = 0;
+    let mut EnabledDisks: ULONG = 0;
+    let ArcDiskInformation: PARC_DISK_INFORMATION = (*LoaderBlock).ArcDiskInformation;
+    let mut ArcBootString: ANSI_STRING = core::mem::zeroed();
+    let mut ArcSystemString: ANSI_STRING = core::mem::zeroed();
+    let mut DeviceStringA: ANSI_STRING = core::mem::zeroed();
+    let mut ArcNameStringA: ANSI_STRING = core::mem::zeroed();
+    let mut HalPathStringA: ANSI_STRING = core::mem::zeroed();
+
+    DeviceNumber.DeviceNumber = ULONG::MAX;
+    DiskCount = (*IoGetConfigurationInformation()).DiskCount;
+
+    Status = IopFetchConfigurationInformation(
+        core::ptr::addr_of_mut!(SymbolicLinkList),
+        GUID_DEVINTERFACE_DISK,
+        DiskCount,
+        core::ptr::addr_of_mut!(EnabledDisks),
+    );
+    if Status < 0 {
+        NotEnabledPresent = 1u8;
+    }
+
+    lSymbolicLinkList = SymbolicLinkList;
+
+    RtlInitAnsiString(
+        core::ptr::addr_of_mut!(ArcBootString),
+        (*LoaderBlock).ArcBootDeviceName,
+    );
+    RtlInitAnsiString(
+        core::ptr::addr_of_mut!(ArcSystemString),
+        (*LoaderBlock).ArcHalDeviceName,
+    );
+
+    if EnabledDisks > DiskCount {
+        DiskCount = EnabledDisks;
+    }
+
+    if NotEnabledPresent != 0 && EnabledDisks == 0 {
+        DiskCount = DiskCount.wrapping_add(20);
+    }
+
+    if DiskCount == 0 {
+        // Cleanup path
+        if !DriveLayout.is_null() {
+            ExFreePool(DriveLayout as PVOID);
+        }
+        if !SymbolicLinkList.is_null() {
+            ExFreePool(SymbolicLinkList as PVOID);
+        }
+        return STATUS_SUCCESS;
+    }
+
+    // Browse all disks
+    DiskNumber = 0;
+    'disk_loop: while DiskNumber < DiskCount {
+        // ASSERT(DriveLayout == NULL); — invariant from cleanup-after-each-iteration
+        if !lSymbolicLinkList.is_null() && *lSymbolicLinkList != UNICODE_NULL {
+            // Build device name from first symbolic link
+            RtlInitUnicodeString(core::ptr::addr_of_mut!(DeviceStringW), lSymbolicLinkList);
+            // Advance symlink list pointer past this entry's NUL
+            lSymbolicLinkList = lSymbolicLinkList.add(wcslen(lSymbolicLinkList) + 1);
+
+            // Get its device + file object
+            Status = IoGetDeviceObjectPointer(
+                core::ptr::addr_of_mut!(DeviceStringW),
+                FILE_READ_ATTRIBUTES,
+                core::ptr::addr_of_mut!(FileObject),
+                core::ptr::addr_of_mut!(DeviceObject),
+            );
+            if Status >= 0 {
+                // Ask the device for its device number
+                Irp = IoBuildDeviceIoControlRequest(
+                    IOCTL_STORAGE_GET_DEVICE_NUMBER,
+                    DeviceObject,
+                    core::ptr::null_mut(),
+                    0,
+                    core::ptr::addr_of_mut!(DeviceNumber) as PVOID,
+                    core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG,
+                    0u8,
+                    core::ptr::addr_of_mut!(Event),
+                    core::ptr::addr_of_mut!(IoStatusBlock),
+                );
+                if Irp.is_null() {
+                    ObDereferenceObject(FileObject as PVOID);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    break 'disk_loop;
+                }
+
+                KeInitializeEvent(
+                    core::ptr::addr_of_mut!(Event),
+                    _EVENT_TYPE_NotificationEvent,
+                    0u8,
+                );
+                Status = IoCallDriver(DeviceObject, Irp);
+                if Status == STATUS_PENDING {
+                    KeWaitForSingleObject(
+                        core::ptr::addr_of_mut!(Event) as PVOID,
+                        _KWAIT_REASON_Executive,
+                        0i8,
+                        0u8,
+                        core::ptr::null_mut(),
+                    );
+                    Status = IoStatusBlock.__bindgen_anon_1.Status;
+                }
+
+                if Status < 0 {
+                    ObDereferenceObject(FileObject as PVOID);
+                    DiskNumber = DiskNumber.wrapping_add(1);
+                    continue;
+                }
+            }
+
+            // End of enabled-disks enumeration
+            if NotEnabledPresent != 0 && *lSymbolicLinkList == UNICODE_NULL {
+                if DeviceNumber.DeviceNumber == ULONG::MAX {
+                    DeviceNumber.DeviceNumber = 0;
+                }
+                if DeviceNumber.DeviceNumber > DiskNumber {
+                    DiskNumber = DeviceNumber.DeviceNumber;
+                }
+                DiskCount = DiskNumber.wrapping_add(20);
+            }
+        } else {
+            // Build device name "\Device\Harddisk%lu\Partition0"
+            sprintf(
+                Buffer.as_mut_ptr(),
+                b"\\Device\\Harddisk%lu\\Partition0\0".as_ptr() as *const i8,
+                DiskNumber,
+            );
+            RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
+            Status = RtlAnsiStringToUnicodeString(
+                core::ptr::addr_of_mut!(DeviceStringW),
+                core::ptr::addr_of_mut!(DeviceStringA),
+                1u8,
+            );
+            if Status < 0 {
+                break 'disk_loop;
+            }
+
+            Status = IoGetDeviceObjectPointer(
+                core::ptr::addr_of_mut!(DeviceStringW),
+                FILE_READ_ATTRIBUTES,
+                core::ptr::addr_of_mut!(FileObject),
+                core::ptr::addr_of_mut!(DeviceObject),
+            );
+
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+            // Force DiskNumber-based naming for the rest of this iteration
+            DeviceNumber.DeviceNumber = ULONG::MAX;
+        }
+
+        if Status < 0 {
+            DiskNumber = DiskNumber.wrapping_add(1);
+            continue;
+        }
+
+        // Ask disk for geometry
+        Irp = IoBuildDeviceIoControlRequest(
+            IOCTL_DISK_GET_DRIVE_GEOMETRY,
+            DeviceObject,
+            core::ptr::null_mut(),
+            0,
+            core::ptr::addr_of_mut!(DiskGeometry) as PVOID,
+            core::mem::size_of::<ntkrnl_sys::ddk::DISK_GEOMETRY>() as ULONG,
+            0u8,
+            core::ptr::addr_of_mut!(Event),
+            core::ptr::addr_of_mut!(IoStatusBlock),
+        );
+        if Irp.is_null() {
+            ObDereferenceObject(FileObject as PVOID);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'disk_loop;
+        }
+
+        KeInitializeEvent(
+            core::ptr::addr_of_mut!(Event),
+            _EVENT_TYPE_NotificationEvent,
+            0u8,
+        );
+        Status = IoCallDriver(DeviceObject, Irp);
+        if Status == STATUS_PENDING {
+            KeWaitForSingleObject(
+                core::ptr::addr_of_mut!(Event) as PVOID,
+                _KWAIT_REASON_Executive,
+                0i8,
+                0u8,
+                core::ptr::null_mut(),
+            );
+            Status = IoStatusBlock.__bindgen_anon_1.Status;
+        }
+        if Status < 0 {
+            ObDereferenceObject(FileObject as PVOID);
+            DiskNumber = DiskNumber.wrapping_add(1);
+            continue;
+        }
+
+        // Read the partition table
+        Status = IoReadPartitionTableEx(DeviceObject, core::ptr::addr_of_mut!(DriveLayout));
+        if Status < 0 {
+            ObDereferenceObject(FileObject as PVOID);
+            DiskNumber = DiskNumber.wrapping_add(1);
+            continue;
+        }
+
+        // Ensure at least 512 bytes per sector
+        if DiskGeometry.BytesPerSector < 512 {
+            DiskGeometry.BytesPerSector = 512;
+        }
+
+        // Check MBR type against EZ Drive type
+        StartingOffset.QuadPart = 0;
+        Data = core::ptr::null_mut();
+        HalExamineMBR(
+            DeviceObject,
+            DiskGeometry.BytesPerSector,
+            0x55,
+            core::ptr::addr_of_mut!(Data),
+        );
+        if !Data.is_null() {
+            // EZ Drive — start reading after it
+            StartingOffset.QuadPart = DiskGeometry.BytesPerSector as i64;
+            ExFreePool(Data);
+        }
+
+        // Allocate buffer for checksum read
+        PartitionBuffer = ExAllocatePoolWithTag(
+            NonPagedPoolCacheAligned,
+            DiskGeometry.BytesPerSector as usize,
+            TAG_IO,
+        ) as *mut ULONG;
+        if PartitionBuffer.is_null() {
+            ObDereferenceObject(FileObject as PVOID);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'disk_loop;
+        }
+
+        // Read first sector
+        Irp = IoBuildSynchronousFsdRequest(
+            IRP_MJ_READ,
+            DeviceObject,
+            PartitionBuffer as PVOID,
+            DiskGeometry.BytesPerSector,
+            core::ptr::addr_of_mut!(StartingOffset),
+            core::ptr::addr_of_mut!(Event),
+            core::ptr::addr_of_mut!(IoStatusBlock),
+        );
+        if Irp.is_null() {
+            ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+            PartitionBuffer = core::ptr::null_mut();
+            ObDereferenceObject(FileObject as PVOID);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'disk_loop;
+        }
+
+        KeInitializeEvent(
+            core::ptr::addr_of_mut!(Event),
+            _EVENT_TYPE_NotificationEvent,
+            0u8,
+        );
+        Status = IoCallDriver(DeviceObject, Irp);
+        if Status == STATUS_PENDING {
+            KeWaitForSingleObject(
+                core::ptr::addr_of_mut!(Event) as PVOID,
+                _KWAIT_REASON_Executive,
+                0i8,
+                0u8,
+                core::ptr::null_mut(),
+            );
+            Status = IoStatusBlock.__bindgen_anon_1.Status;
+        }
+
+        // Compute checksum if read succeeded
+        CheckSum = 0;
+        if Status >= 0 {
+            i = 0;
+            while i < (512 / core::mem::size_of::<ULONG>() as ULONG) {
+                CheckSum = CheckSum.wrapping_add(*PartitionBuffer.add(i as usize));
+                i = i.wrapping_add(1);
+            }
+        }
+
+        ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
+        PartitionBuffer = core::ptr::null_mut();
+        ObDereferenceObject(FileObject as PVOID);
+
+        if Status < 0 {
+            ExFreePool(DriveLayout as PVOID);
+            DriveLayout = core::ptr::null_mut();
+            DiskNumber = DiskNumber.wrapping_add(1);
+            continue;
+        }
+
+        // Browse each ARC disk signature
+        NextEntry = (*ArcDiskInformation).DiskSignatureListHead.Flink as ntkrnl_sys::base::PLIST_ENTRY;
+        while NextEntry as PVOID
+            != core::ptr::addr_of_mut!((*ArcDiskInformation).DiskSignatureListHead) as PVOID
+        {
+            // ARC_DISK_SIGNATURE.ListEntry is the first field; cast directly
+            ArcDiskSignature = NextEntry as PARC_DISK_SIGNATURE;
+
+            let single_mbr = SingleDisk != 0
+                && DiskCount == 1
+                && (*DriveLayout).PartitionStyle == PARTITION_STYLE_MBR as ULONG;
+            let signature_match = IopVerifyDiskSignature(
+                DriveLayout,
+                ArcDiskSignature,
+                core::ptr::addr_of_mut!(Signature),
+            ) != 0
+                && (*ArcDiskSignature).CheckSum.wrapping_add(CheckSum) == 0;
+
+            if single_mbr || signature_match {
+                let RealDiskNumber = if DeviceNumber.DeviceNumber != ULONG::MAX {
+                    DeviceNumber.DeviceNumber
+                } else {
+                    DiskNumber
+                };
+
+                // Whole-disk device + ArcName
+                sprintf(
+                    Buffer.as_mut_ptr(),
+                    b"\\Device\\Harddisk%lu\\Partition0\0".as_ptr() as *const i8,
+                    RealDiskNumber,
+                );
+                RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
+                Status = RtlAnsiStringToUnicodeString(
+                    core::ptr::addr_of_mut!(DeviceStringW),
+                    core::ptr::addr_of_mut!(DeviceStringA),
+                    1u8,
+                );
+                if Status < 0 {
+                    break 'disk_loop;
+                }
+
+                sprintf(
+                    ArcBuffer.as_mut_ptr(),
+                    b"\\ArcName\\%s\0".as_ptr() as *const i8,
+                    (*ArcDiskSignature).ArcName,
+                );
+                RtlInitAnsiString(core::ptr::addr_of_mut!(ArcNameStringA), ArcBuffer.as_ptr());
+                Status = RtlAnsiStringToUnicodeString(
+                    core::ptr::addr_of_mut!(ArcNameStringW),
+                    core::ptr::addr_of_mut!(ArcNameStringA),
+                    1u8,
+                );
+                if Status < 0 {
+                    RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+                    break 'disk_loop;
+                }
+
+                IoAssignArcName(
+                    core::ptr::addr_of_mut!(ArcNameStringW),
+                    core::ptr::addr_of_mut!(DeviceStringW),
+                );
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(ArcNameStringW));
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+
+                // Per-partition device + ArcName
+                i = 1;
+                while i <= (*DriveLayout).PartitionCount {
+                    sprintf(
+                        Buffer.as_mut_ptr(),
+                        b"\\Device\\Harddisk%lu\\Partition%lu\0".as_ptr() as *const i8,
+                        RealDiskNumber,
+                        i,
+                    );
+                    RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceStringA), Buffer.as_ptr());
+                    Status = RtlAnsiStringToUnicodeString(
+                        core::ptr::addr_of_mut!(DeviceStringW),
+                        core::ptr::addr_of_mut!(DeviceStringA),
+                        1u8,
+                    );
+                    if Status < 0 {
+                        break 'disk_loop;
+                    }
+
+                    // Partial ARC name (no \ArcName\ prefix) — used for boot/system match
+                    sprintf(
+                        ArcBuffer.as_mut_ptr(),
+                        b"%spartition(%lu)\0".as_ptr() as *const i8,
+                        (*ArcDiskSignature).ArcName,
+                        i,
+                    );
+                    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcNameStringA), ArcBuffer.as_ptr());
+
+                    if RtlEqualString(
+                        core::ptr::addr_of_mut!(ArcNameStringA),
+                        core::ptr::addr_of_mut!(ArcBootString),
+                        1u8,
+                    ) != 0
+                    {
+                        *FoundBoot = 1u8;
+                    }
+
+                    if RtlEqualString(
+                        core::ptr::addr_of_mut!(ArcNameStringA),
+                        core::ptr::addr_of_mut!(ArcSystemString),
+                        1u8,
+                    ) != 0
+                    {
+                        RtlInitAnsiString(
+                            core::ptr::addr_of_mut!(HalPathStringA),
+                            (*LoaderBlock).NtHalPathName,
+                        );
+                        Status = RtlAnsiStringToUnicodeString(
+                            core::ptr::addr_of_mut!(HalPathStringW),
+                            core::ptr::addr_of_mut!(HalPathStringA),
+                            1u8,
+                        );
+                        if Status < 0 {
+                            RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+                            break 'disk_loop;
+                        }
+
+                        IopStoreSystemPartitionInformation(
+                            core::ptr::addr_of_mut!(DeviceStringW),
+                            core::ptr::addr_of_mut!(HalPathStringW),
+                        );
+                        RtlFreeUnicodeString(core::ptr::addr_of_mut!(HalPathStringW));
+                    }
+
+                    // Full ARC name with prefix
+                    sprintf(
+                        ArcBuffer.as_mut_ptr(),
+                        b"\\ArcName\\%spartition(%lu)\0".as_ptr() as *const i8,
+                        (*ArcDiskSignature).ArcName,
+                        i,
+                    );
+                    RtlInitAnsiString(core::ptr::addr_of_mut!(ArcNameStringA), ArcBuffer.as_ptr());
+                    Status = RtlAnsiStringToUnicodeString(
+                        core::ptr::addr_of_mut!(ArcNameStringW),
+                        core::ptr::addr_of_mut!(ArcNameStringA),
+                        1u8,
+                    );
+                    if Status < 0 {
+                        RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+                        break 'disk_loop;
+                    }
+
+                    IoAssignArcName(
+                        core::ptr::addr_of_mut!(ArcNameStringW),
+                        core::ptr::addr_of_mut!(DeviceStringW),
+                    );
+                    RtlFreeUnicodeString(core::ptr::addr_of_mut!(ArcNameStringW));
+                    RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceStringW));
+
+                    i = i.wrapping_add(1);
+                }
+            }
+            // else: duplicate signature / virus warning omitted (debug-only)
+
+            NextEntry = (*NextEntry).Flink as ntkrnl_sys::base::PLIST_ENTRY;
+        }
+
+        // Release drive layout before next disk
+        ExFreePool(DriveLayout as PVOID);
+        DriveLayout = core::ptr::null_mut();
+
+        DiskNumber = DiskNumber.wrapping_add(1);
+    }
+
+    Status = STATUS_SUCCESS;
+
+    if !DriveLayout.is_null() {
+        ExFreePool(DriveLayout as PVOID);
+    }
+    if !SymbolicLinkList.is_null() {
+        ExFreePool(SymbolicLinkList as PVOID);
+    }
+
+    Status
+}
 
 // CODE_SEG("INIT")
 #[no_mangle]
