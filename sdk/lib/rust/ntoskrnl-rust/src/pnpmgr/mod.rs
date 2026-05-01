@@ -9,5 +9,6 @@ pub mod pnpreport;
 pub mod pnproot;
 pub mod pnpinit;
 pub mod pnpmgr;
+pub mod pnpres;
 pub mod devaction;
 pub mod arb;

@@ -50,9 +50,6 @@ use ntkrnl_sys::ddk::{
     _IO_RESOURCE_LIST,
     _UNICODE_STRING,
 };
-extern "C" {
-}
-
 #[inline(always)]
 unsafe fn InitializeObjectAttributes(
     p: *mut _OBJECT_ATTRIBUTES,
@@ -69,7 +66,9 @@ unsafe fn InitializeObjectAttributes(
     (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
+extern "C" {
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, State: ULONG) -> ULONG;
+    fn DbgPrint(fmt: *const u8, ...) -> i32;
 }
 extern "system" {
     fn PnpDetermineResourceListSize(ResourceList: PCM_RESOURCE_LIST) -> ULONG;

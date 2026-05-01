@@ -174,7 +174,7 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/symlink.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/util.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/volume.c  # Replaced by Rust volume.rs
-    # pnpmgr/ — Rust on all arches (pnpres stays in C)
+    # pnpmgr/ — Rust on all arches
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c>
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbdma.c>
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbirq.c>
@@ -191,7 +191,7 @@ list(APPEND SOURCE
     # pnpnotify.c: Rust version on all arches
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpnotify.c>
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpreport.c>
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpres.c
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpres.c  # Replaced by Rust pnpres.rs
     #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnproot.c>
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnputil.c  # Replaced by Rust pnputil.rs
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/debug.c  # Replaced by Rust debug.rs

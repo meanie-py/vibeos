@@ -395,3 +395,19 @@ mod _force_virtual_symbols {
         SyncPtr(crate::ARM3::r#virtual::NtWriteVirtualMemory as *const ()),
     ];
 }
+
+// Force inclusion of io/pnpmgr/pnpres.rs symbols. Same pattern as virtual above.
+mod _force_pnpres_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 5] = [
+        SyncPtr(crate::pnpmgr::pnpres::IopAssignDeviceResources as *const ()),
+        SyncPtr(crate::pnpmgr::pnpres::IopDetectResourceConflict as *const ()),
+        SyncPtr(crate::pnpmgr::pnpres::IopFixupResourceListWithRequirements as *const ()),
+        SyncPtr(crate::pnpmgr::pnpres::IopUpdateResourceMap as *const ()),
+        SyncPtr(crate::pnpmgr::pnpres::IopUpdateResourceMapForPnPDevice as *const ()),
+    ];
+}
