@@ -430,3 +430,40 @@ mod _force_sysinfo_symbols {
         SyncPtr(crate::ex::sysinfo::ExUnlockUserBuffer as *const ()),
     ];
 }
+
+// Force inclusion of iomgr/iomgr.rs and iomgr/ramdisk.rs symbols on all arches.
+// Without this, the CGUs containing the io statics (PnpSystemInit, IoFileObjectType,
+// IoReadOperationCount, etc.) are not pulled from the staticlib archive on arm64,
+// because the C-side iomgr.c was previously providing them. References below force
+// the linker to pull the CGUs that define both the entry-point functions and the
+// statics they share a CGU with.
+mod _force_iomgr_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 3] = [
+        SyncPtr(crate::iomgr::iomgr::IoInitSystem as *const ()),
+        SyncPtr(crate::iomgr::iomgr::IoInitializeCrashDump as *const ()),
+        SyncPtr(crate::iomgr::ramdisk::IopStartRamdisk as *const ()),
+    ];
+
+    // Statics live in different CGUs than the functions; force them too.
+    #[used]
+    static STATIC_REFS: [SyncPtr; 13] = [
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::PnpSystemInit) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoFileObjectType) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoDeviceObjectType) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoCountOperations) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadOperationCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadTransferCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteOperationCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteTransferCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherOperationCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherTransferCount) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopFileMapping) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopSecurityResource) as *const ()),
+        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopLoaderBlock) as *const ()),
+    ];
+}

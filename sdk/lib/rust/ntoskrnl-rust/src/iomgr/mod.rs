@@ -12,15 +12,13 @@ pub mod iocomp;
 pub mod ioevent;
 pub mod iofunc;  // Constants fixed, truncated (missing NtSetInformationFile+), C provides missing functions
 pub mod iomdl;
-#[cfg(not(target_arch = "aarch64"))]
-pub mod iomgr;  // ARM64: PE layout issue (same as ramdisk.rs)
+pub mod iomgr;
 pub mod iorsrce;
 pub mod iotimer;
 pub mod iowork;
 pub mod irp;
 pub mod irq;
-#[cfg(not(target_arch = "aarch64"))]
-pub mod ramdisk;  // ARM64: binary layout change causes 0x6B crash (not a translation bug)
+pub mod ramdisk;
 pub mod rawfs;
 pub mod remlock;
 pub mod symlink;
