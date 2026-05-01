@@ -1,9 +1,12 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-arcname)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-cleanup)
 
 ## Headline
 
-- **~99.5% translated by C-line count.** ~282K LOC translatable C body of work; ~1.5K LOC of translatable C still active in the default build (worst arch). The body-of-work denominator grew last session because `kdbg/i386/i386-dis.c` (4,453 LOC) moved out of the "intentional stay" bucket. arcname dropped this session — closes the long-standing C/Rust hybrid.
-- **arcname landed.** `io/iomgr/arcname.c` is no longer active on any arch. `IopCreateArcNames` + `IopCreateArcNamesDisk` (~700 LOC of C, the boot-critical disk-enumeration + ARC-symlink-creation path) hand-translated this session into the existing `iomgr/arcname.rs`. Pattern reuse: the two new functions share IRP/IOCTL/symlink-creation idioms with the already-Rust `IopCreateArcNamesCd` next door, so most of the work was structural copy-and-adapt. i386 7/7, amd64 7/7. **Reflection:** identical flake observed as the iomgr session — first cold-boot after a clean Rust rebuild can fail on amd64 with HAL/VGA early-init looping; second boot through the snapshot path passes. Pre-existing, not introduced by this change.
+- **~99.5% translated by C-line count.** ~282K LOC translatable C body of work; ~1.5K LOC of translatable C still active in the default build (worst arch). Same as last session in % terms; what changed is a tree-cleanup pass.
+- **guid.rs landed.** `ntoskrnl/guid.c` (10 LOC of preprocessor-emitted GUID storage from `<initguid.h>` + `batclass.h`/`poclass.h`/`diskguid.h`) replaced by `sdk/lib/rust/ntoskrnl-rust/src/guid.rs` (23 GUIDs as `#[no_mangle] pub static`). C side disabled in `ntoskrnl/CMakeLists.txt`. Existing `extern { static GUID_DEVICE_BATTERY: GUID; }` blocks in Rust kernel modules now resolve to the new Rust storage. Co-existence with `sdk/lib/poguid` library (which also emits poclass GUIDs) tolerated via the existing `--allow-multiple-definition` link flag.
+- **Dead arm32 deleted.** Removed `ntoskrnl/{kd64,ke,mm,mm/ARM3,ps,rtl}/arm/` directories (~2.5K LOC of ARMv7 leftovers from upstream ReactOS — different ISA than this fork's ARM64 port; not in any reachable cmake; no references from outside their own dirs). Plus `ntoskrnl/KrnlFun.c` (48 LOC of a 2005-vintage Alex Ionescu joke comment). 19 files removed total.
+- **arcname landed last session.** `io/iomgr/arcname.c` no longer active on any arch. Hand-translated the two boot-critical functions into the existing `iomgr/arcname.rs`.
+- **cmdata.c stays in C** despite being on the translation menu. Investigated — it's 994 LOC dominated by `CmControlVector[]`, ~150 entries each referencing an external variable spread across many subsystems. Mechanical to translate but every entry needs a correct `extern "C" { static mut ...: T; }` declaration with the right type for that variable. ~1-2 hours of fiddly work for zero functional change. Deferred. The audit's "intentional stay" classification is still right.
 - **i386-dis.rs landed.** The 4,453-LOC binutils-derived i386/amd64 disassembler used by KDBG is now Rust on i386 + amd64 (arm64 has KDBG off). Translated by **Gemini 3 Pro** in one shot via the prompt drafted earlier this session. Output was architecturally sound (enum-tag dispatch instead of C function-pointer table, `Result<_, NTSTATUS>` instead of setjmp/longjmp, all major opcode tables intact at correct cardinality, license preserved). Required two small post-translation fixes by hand: a wrong import path (`ntkrnl_sys::PCSTR` → `ntkrnl_sys::ddk::PCSTR`) and one missing `unsafe` block around `ptr::copy_nonoverlapping`. Gemini's "compiles successfully" claim was wrong — useful data point: treat its build/test claims as guidance, not ground truth. **Verdict: a useful translation collaborator at this scale, but verify everything.**
 - **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged via `ddba7c05` — last fix was `cmparse.rs::COMPUTE_HASH_CHAR` missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
 - **kd64/ landed.** WinDbg KD protocol stack now Rust on all 3 arches. The "recursive exception flood on amd64" that parked it in Feb 2026 was silently fixed by the CGU=256 + opaque_ptr + RAII guard work; nobody re-tested. ~6.8K LOC of C dropped, ~11.1K LOC of parked Rust now active. Required 5 small translation-bug fixes.
@@ -68,8 +71,6 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | config/i386/cmhardwr.c | 897 | i386/amd64 hardware detection (CMOS, FX bytes, MSRs). |
 | config/arm/cmhardwr.c | 27 | ARM hardware detection (legacy, not built). |
 | kdbg/{i386,amd64}/kdb_help.S | ~30 each | Asm trampolines. |
-| ntoskrnl/guid.c | 9 | Auto-generated. |
-| ntoskrnl/KrnlFun.c | 48 | Dead (not in cmake). |
 | `*_rust_shims.c` (~12 files) | 9,237 | FORCEINLINE/macro/dllimport bridges for Rust FFI. By design. |
 | tests/*.c | 5,859 | Kernel test harness. Not for translation. |
 
@@ -81,12 +82,9 @@ The real backlog. Roughly 2K LOC of small per-arch glue.
 |------|----:|-----------|-------|
 | kd64/i386/kdx86.c | 446 | i386 | Per-arch helpers called by Rust kdapi.rs (KdpSysReadMsr/WriteMsr/IoSpace, KdpGetStateChange, KdpSetContextState). Small, callable by Rust as-is — translate only when convenient. |
 | kd64/amd64/kdx64.c | 391 | amd64 | Same role for amd64. |
-| kd64/arm/kdarm.c | 156 | arm (not built) | |
 | ps/i386/psctx.c | 91 | i386 | Context save/restore. |
 | ps/i386/psldt.c | 113 | i386 | LDT setup. |
 | ps/amd64/psctx.c | 69 | amd64 | |
-| ps/arm/psctx.c | 47 | arm (not built) | |
-| arm32 misc | ~2,500 | arm (not built) | `ke/arm/*.c` (7 files), `mm/arm/page.c`, `mm/ARM3/arm/init.c`, `rtl/arm/rtlexcpt.c`. ARM32 is dead in this fork. |
 
 ## Active C in default build, summed
 

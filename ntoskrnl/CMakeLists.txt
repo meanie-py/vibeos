@@ -40,8 +40,9 @@ endif()
 #     add_definitions(-DARM64_UART_TRACE_ENABLE)
 # endif()
 
-list(APPEND PCH_SKIP_SOURCE
-    guid.c)
+# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)
+#list(APPEND PCH_SKIP_SOURCE
+#    guid.c)
 
 list(APPEND PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
