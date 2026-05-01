@@ -1,5 +1,6 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::base::NT_SUCCESS;
 use ntkrnl_sys::constants::*;
 #[allow(unused_imports)]
 use ntkrnl_sys::macros::*;
@@ -103,7 +104,7 @@ const VadLargePages: u32 = 3;
 const VadImageMap: u32 = 2;
 const VadRotatePhysical: u32 = 6;
 const VadLargePageSection: u32 = 7;
-const TableFoundNode: TABLE_SEARCH_RESULT = 0;
+const TableFoundNode: TABLE_SEARCH_RESULT = ntkrnl_sys::ddk::_TABLE_SEARCH_RESULT_TableFoundNode;
 const HighPagePriority: u32 = 2;
 const IoReadAccess: u32 = 0;
 
@@ -166,9 +167,11 @@ extern "C" {
     fn MiLockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
     fn MiUnlockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
     fn ExAllocatePoolZero(PoolType: u32, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
-    fn ExFreePool(P: PVOID);
     static MmUserProbeAddress: ULONG_PTR;
 }
+
+// ExFreePool is NTAPI (stdcall on i386) — pull from bindgen.
+use ntkrnl_sys::ddk::ExFreePool;
 
 // ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.
 // Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.
@@ -398,7 +401,7 @@ pub unsafe extern "system" fn MiDeleteSystemPageableVm(
     _Flags: ULONG,
     ValidPages: *mut PFN_NUMBER,
 ) -> PFN_COUNT {
-    let PointerPte = opaque_ptr(PointerPte);
+    let mut PointerPte = opaque_ptr(PointerPte);
     let ValidPages = opaque_ptr(ValidPages);
     let mut ActualPages: PFN_COUNT = 0;
     let CurrentThread = PsGetCurrentThread() as PETHREAD;
@@ -1478,7 +1481,7 @@ pub unsafe extern "system" fn MiDecommitPages(
     Process: PEPROCESS,
     Vad: PMMVAD,
 ) -> ULONG {
-    let StartingAddress = opaque_ptr(StartingAddress);
+    let mut StartingAddress = opaque_ptr(StartingAddress);
     let EndingPte = opaque_ptr(EndingPte);
     let Process = opaque_ptr(Process);
     let Vad = opaque_ptr(Vad);
@@ -1644,7 +1647,7 @@ pub unsafe extern "system" fn MmFlushVirtualMemory(
 pub unsafe extern "system" fn MiGetPageProtection(
     mut PointerPte: PMMPTE,
 ) -> ULONG {
-    let PointerPte = opaque_ptr(PointerPte);
+    let mut PointerPte = opaque_ptr(PointerPte);
     let mut TempPte: MMPTE;
     let Pfn: PMMPFN;
     let CurrentProcess: PEPROCESS;
@@ -2037,30 +2040,894 @@ pub unsafe extern "system" fn MmUnsecureVirtualMemory(
 
 #[no_mangle]
 pub unsafe extern "system" fn NtAllocateVirtualMemory(
-    _ProcessHandle: HANDLE,
-    _UBaseAddress: *mut PVOID,
-    _ZeroBits: ULONG_PTR,
-    _URegionSize: *mut SIZE_T,
-    _AllocationType: ULONG,
-    _Protect: ULONG,
+    ProcessHandle: HANDLE,
+    UBaseAddress: *mut PVOID,
+    ZeroBits: ULONG_PTR,
+    URegionSize: *mut SIZE_T,
+    AllocationType: ULONG,
+    Protect: ULONG,
 ) -> NTSTATUS {
-    let _ProcessHandle = opaque_ptr(_ProcessHandle);
-    let _UBaseAddress = opaque_ptr(_UBaseAddress);
-    let _URegionSize = opaque_ptr(_URegionSize);
-    STATUS_NOT_IMPLEMENTED
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let UBaseAddress = opaque_ptr(UBaseAddress);
+    let URegionSize = opaque_ptr(URegionSize);
+
+    let mut Process: PEPROCESS = core::ptr::null_mut();
+    let mut Vad: PMMVAD = core::ptr::null_mut();
+    let mut FoundVad: PMMVAD = core::ptr::null_mut();
+    let mut Status: NTSTATUS;
+    let AddressSpace: PMMSUPPORT;
+    let PBaseAddress: PVOID;
+    let mut PRegionSize: ULONG_PTR;
+    let mut StartingAddress: ULONG_PTR;
+    let mut EndingAddress: ULONG_PTR;
+    let mut HighestAddress: ULONG_PTR = MM_HIGHEST_VAD_ADDRESS;
+    let CurrentProcess: PEPROCESS = PsGetCurrentProcess() as PEPROCESS;
+    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+    let CurrentThread: PETHREAD = PsGetCurrentThread();
+    let mut ApcState: _KAPC_STATE = core::mem::zeroed();
+    let ProtectionMask: ULONG;
+    let mut QuotaCharge: ULONG = 0;
+    let mut QuotaFree: ULONG = 0;
+    let mut Attached: BOOLEAN = 0;
+    let mut ChangeProtection: BOOLEAN = 0;
+    let mut QuotaCharged: BOOLEAN = 0;
+    let mut TempPte: MMPTE = core::mem::zeroed();
+    let mut PointerPte: PMMPTE;
+    let mut LastPte: PMMPTE;
+    let mut PointerPde: PMMPDE;
+    let Result: TABLE_SEARCH_RESULT;
+
+    /* Check for valid Zero bits */
+    if ZeroBits > MI_MAX_ZERO_BITS as ULONG_PTR {
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Check for valid Allocation Types */
+    if (AllocationType
+        & !(MEM_COMMIT | MEM_RESERVE | MEM_RESET | MEM_PHYSICAL
+            | (MEM_TOP_DOWN as ULONG) | MEM_WRITE_WATCH | MEM_LARGE_PAGES))
+        != 0
+    {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* Check for at least one of these Allocation Types to be set */
+    if (AllocationType & (MEM_COMMIT | MEM_RESERVE | MEM_RESET)) == 0 {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* MEM_RESET is an exclusive flag, make sure that is valid too */
+    if (AllocationType & MEM_RESET) != 0 && AllocationType != MEM_RESET {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* Check if large pages are being used */
+    if (AllocationType & MEM_LARGE_PAGES) != 0 {
+        if (AllocationType & MEM_COMMIT) == 0 {
+            return STATUS_INVALID_PARAMETER_5;
+        }
+        if (AllocationType & (MEM_PHYSICAL | MEM_RESET | MEM_WRITE_WATCH)) != 0 {
+            return STATUS_INVALID_PARAMETER_5;
+        }
+    }
+
+    /* MEM_WRITE_WATCH can only be used if MEM_RESERVE is also used */
+    if (AllocationType & MEM_WRITE_WATCH) != 0 && (AllocationType & MEM_RESERVE) == 0 {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+
+    /* Check for valid MEM_PHYSICAL usage */
+    if (AllocationType & MEM_PHYSICAL) != 0 {
+        if (AllocationType & MEM_RESERVE) == 0 {
+            return STATUS_INVALID_PARAMETER_5;
+        }
+        if (AllocationType & !(MEM_RESERVE | (MEM_TOP_DOWN as ULONG) | MEM_PHYSICAL)) != 0 {
+            return STATUS_INVALID_PARAMETER_5;
+        }
+        if Protect != PAGE_READWRITE {
+            return STATUS_INVALID_PARAMETER_6;
+        }
+    }
+
+    /* Calculate the protection mask and make sure it's valid */
+    ProtectionMask = MiMakeProtectionMask(Protect);
+    if ProtectionMask == MM_INVALID_PROTECTION {
+        return STATUS_INVALID_PAGE_PROTECTION;
+    }
+
+    /* Probe + capture user pointers (DUMMY_PSEH: no SEH wrap) */
+    if PreviousMode != 0i32 as i8 {
+        ProbeForWritePointer(UBaseAddress);
+        ProbeForWriteSize_t(URegionSize);
+    }
+    PBaseAddress = *UBaseAddress;
+    PRegionSize = *URegionSize as ULONG_PTR;
+
+    /* Make sure the allocation isn't past the VAD area */
+    if (PBaseAddress as ULONG_PTR) > MM_HIGHEST_VAD_ADDRESS {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+
+    /* Make sure the allocation wouldn't overflow past the VAD area */
+    if (MM_HIGHEST_VAD_ADDRESS + 1 - (PBaseAddress as ULONG_PTR)) < PRegionSize {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Make sure there's a size specified */
+    if PRegionSize == 0 {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* If this is for the current process, just use PsGetCurrentProcess */
+    if ProcessHandle == NtCurrentProcess() as HANDLE {
+        Process = CurrentProcess;
+    } else {
+        Status = ObReferenceObjectByHandle(
+            ProcessHandle,
+            PROCESS_VM_OPERATION,
+            PsProcessType,
+            PreviousMode,
+            core::ptr::addr_of_mut!(Process) as *mut PVOID,
+            core::ptr::null_mut(),
+        );
+        if Status < 0 {
+            return Status;
+        }
+        if CurrentProcess != Process {
+            KeStackAttachProcess(
+                core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb),
+                core::ptr::addr_of_mut!(ApcState),
+            );
+            Attached = 1;
+        }
+    }
+
+    /* MEM_LARGE_PAGES requires SeLockMemoryPrivilege */
+    if (AllocationType & MEM_LARGE_PAGES) != 0
+        && SeSinglePrivilegeCheck(SeLockMemoryPrivilege, PreviousMode) == 0
+    {
+        Status = STATUS_PRIVILEGE_NOT_HELD;
+        // jump to FailPathNoLock
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return Status;
+    }
+
+    /* Reject things we don't yet support */
+    if (AllocationType & MEM_LARGE_PAGES) == MEM_LARGE_PAGES
+        || (AllocationType & MEM_PHYSICAL) == MEM_PHYSICAL
+        || (AllocationType & MEM_WRITE_WATCH) == MEM_WRITE_WATCH
+    {
+        Status = STATUS_INVALID_PARAMETER;
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return Status;
+    }
+
+    /* Reservation / blind-commit path */
+    if PBaseAddress.is_null() || (AllocationType & MEM_RESERVE) != 0 {
+        if (Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY)) != 0 {
+            Status = STATUS_INVALID_PAGE_PROTECTION;
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }
+
+        if PBaseAddress.is_null() {
+            /* Blind commit — kernel picks address */
+            PRegionSize = ROUND_TO_PAGES(PRegionSize as usize) as ULONG_PTR;
+            EndingAddress = 0;
+            StartingAddress = 0;
+
+            if ZeroBits != 0 {
+                HighestAddress = (ULONG_PTR::MAX) >> ZeroBits;
+                if HighestAddress > MM_HIGHEST_VAD_ADDRESS {
+                    Status = STATUS_INVALID_PARAMETER_3;
+                    if Attached != 0 {
+                        KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                    }
+                    if ProcessHandle != NtCurrentProcess() as HANDLE {
+                        ObDereferenceObject(Process as PVOID);
+                    }
+                    return Status;
+                }
+            }
+        } else {
+            /* Reservation at a specific address — align to 64 KB granularity */
+            EndingAddress =
+                ((PBaseAddress as ULONG_PTR) + PRegionSize - 1) | (PAGE_SIZE - 1) as ULONG_PTR;
+            PRegionSize = EndingAddress + 1
+                - ((PBaseAddress as ULONG_PTR) & !((_64K as ULONG_PTR) - 1));
+            StartingAddress = PBaseAddress as ULONG_PTR;
+        }
+
+        /* Charge quotas for the VAD */
+        Status = PsChargeProcessNonPagedPoolQuota(
+            Process,
+            core::mem::size_of::<MMVAD_LONG>() as _,
+        );
+        if Status < 0 {
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }
+
+        QuotaCharged = 1;
+
+        /* Allocate and initialize the VAD */
+        Vad = ExAllocatePoolWithTag(
+            NonPagedPool,
+            core::mem::size_of::<MMVAD_LONG>() as _,
+            u32::from_le_bytes(*b"VadS"),
+        ) as PMMVAD;
+        if Vad.is_null() {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            if QuotaCharged != 0 {
+                PsReturnProcessNonPagedPoolQuota(
+                    Process,
+                    core::mem::size_of::<MMVAD_LONG>() as _,
+                );
+            }
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }
+
+        core::ptr::write_bytes(Vad as *mut u8, 0, core::mem::size_of::<MMVAD_LONG>());
+        if (AllocationType & MEM_COMMIT) != 0 {
+            (*Vad).u.VadFlags.set_MemCommit(1);
+        }
+        (*Vad).u.VadFlags.set_Protection(ProtectionMask as _);
+        (*Vad).u.VadFlags.set_PrivateMemory(1);
+        (*Vad).ControlArea = core::ptr::null_mut();
+
+        /* Insert the VAD */
+        Status = MiInsertVadEx(
+            Vad,
+            core::ptr::addr_of_mut!(StartingAddress) as _,
+            PRegionSize as _,
+            HighestAddress as _,
+            MM_VIRTMEM_GRANULARITY as _,
+            AllocationType,
+        );
+        if Status < 0 {
+            ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+            if QuotaCharged != 0 {
+                PsReturnProcessNonPagedPoolQuota(
+                    Process,
+                    core::mem::size_of::<MMVAD_LONG>() as _,
+                );
+            }
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }
+
+        // NOTE: C version had an ARM64-only block here that cleared stale
+        // FreeLDR identity-mapping PTEs over the new range. Skipped in this
+        // Rust port — arm64 boot currently fails before user-mode allocation,
+        // so this path isn't exercised. Restore from virtual.c:4819-4869 once
+        // arm64 boot is fixed past CmCheckRegistry.
+
+        /* Detach from target if needed and return success */
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+
+        /* Write back base + size (DUMMY_PSEH: no SEH wrap; ignore failure) */
+        *URegionSize = PRegionSize as SIZE_T;
+        *UBaseAddress = StartingAddress as PVOID;
+        return STATUS_SUCCESS;
+    }
+
+    /* MEM_COMMIT on top of an existing reservation. */
+    EndingAddress =
+        ((PBaseAddress as ULONG_PTR) + PRegionSize - 1) | (PAGE_SIZE - 1) as ULONG_PTR;
+    StartingAddress = PAGE_ALIGN(PBaseAddress as usize) as ULONG_PTR;
+    PRegionSize = EndingAddress - StartingAddress + 1;
+
+    /* Lock the address space and verify the process isn't dying */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace as PVOID);
+    if (*(Process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.VmDeleted() != 0 {
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        // jump to FailPath
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        if Vad.is_null() == false { /* unreachable here */ }
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return Status;
+    }
+
+    /* Find the VAD */
+    Result = MiCheckForConflictingNode(
+        (StartingAddress >> PAGE_SHIFT) as _,
+        (EndingAddress >> PAGE_SHIFT) as _,
+        core::ptr::addr_of_mut!((*Process).VadRoot),
+        core::ptr::addr_of_mut!(FoundVad) as *mut PMMADDRESS_NODE,
+    );
+
+    /* Unified failure tail (mirrors the C `FailPath` / `FailPathNoLock` convergence). */
+    macro_rules! fail_path {
+        ($status:expr) => {{
+            Status = $status;
+            MmUnlockAddressSpace(AddressSpace as PVOID);
+            if !Vad.is_null() {
+                ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+            }
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }};
+    }
+
+    if Result != TableFoundNode {
+        fail_path!(STATUS_CONFLICTING_ADDRESSES);
+    }
+
+    if (AllocationType & MEM_RESET) == MEM_RESET {
+        // HACK: pretend success
+        Status = STATUS_SUCCESS;
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        if !Vad.is_null() {
+            ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+        }
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return Status;
+    }
+
+    /* Reject AWE / DevicePhysical / LargePages VADs */
+    let vad_type = (*FoundVad).u.VadFlags.VadType();
+    if vad_type == VadAwe as _
+        || vad_type == VadDevicePhysicalMemory as _
+        || vad_type == VadLargePages as _
+    {
+        fail_path!(STATUS_CONFLICTING_ADDRESSES);
+    }
+
+    /* Range must fit inside the VAD */
+    if ((StartingAddress >> PAGE_SHIFT) < (*FoundVad).StartingVpn as ULONG_PTR)
+        || ((EndingAddress >> PAGE_SHIFT) > (*FoundVad).EndingVpn as ULONG_PTR)
+    {
+        fail_path!(STATUS_CONFLICTING_ADDRESSES);
+    }
+
+    /* Reject ROSMM (non-ARM3) sections */
+    if MI_IS_ROSMM_VAD(FoundVad as PVOID) {
+        fail_path!(STATUS_ALREADY_COMMITTED);
+    }
+
+    /* Section-backed (PrivateMemory == 0) commit path */
+    if (*FoundVad).u.VadFlags.PrivateMemory() == 0 {
+        if (*FoundVad).u.VadFlags.VadType() == VadLargePageSection as _ {
+            fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+        }
+
+        if (Protect & (PAGE_NOCACHE | PAGE_WRITECOMBINE)) != 0
+            && (*FoundVad).u.VadFlags.VadType() != VadRotatePhysical as _
+        {
+            fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+        }
+
+        /* Secured VAD check */
+        if (*FoundVad).u.VadFlags.NoChange() != 0 {
+            Status = MiCheckSecuredVad(
+                FoundVad,
+                PBaseAddress,
+                PRegionSize as _,
+                ProtectionMask,
+            );
+            if Status < 0 {
+                fail_path!(Status);
+            }
+        }
+
+        /* ARM3 only handles shared-memory sections (no file backing) */
+        // ASSERT((*(*FoundVad).ControlArea).FilePointer.is_null());
+
+        if (*FoundVad).u.VadFlags.VadType() == VadRotatePhysical as _
+            && (Protect
+                & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY | PAGE_NOACCESS | PAGE_GUARD))
+                != 0
+        {
+            fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+        }
+
+        /* Compute prototype-PTE range and quota */
+        PointerPte =
+            MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, StartingAddress >> PAGE_SHIFT);
+        LastPte =
+            MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, EndingAddress >> PAGE_SHIFT);
+        QuotaCharge = (LastPte.offset_from(PointerPte) + 1) as ULONG;
+        KeAcquireGuardedMutexUnsafe(core::ptr::addr_of_mut!(MmSectionCommitMutex));
+
+        /* Get the segment template PTE and walk pages */
+        TempPte = *(core::ptr::addr_of!(
+            (*(*(*FoundVad).ControlArea).Segment).SegmentPteTemplate
+        ) as *const MMPTE);
+        while PointerPte <= LastPte {
+            if (*PointerPte).Long == 0 {
+                MI_WRITE_INVALID_PTE(PointerPte, TempPte);
+            } else {
+                QuotaFree += 1;
+            }
+            PointerPte = PointerPte.add(1);
+        }
+
+        // ASSERT(QuotaCharge >= QuotaFree);
+        QuotaCharge -= QuotaFree;
+        (*(*(*FoundVad).ControlArea).Segment).NumberOfCommittedPages += QuotaCharge;
+        KeReleaseGuardedMutexUnsafe(core::ptr::addr_of_mut!(MmSectionCommitMutex));
+
+        Status = STATUS_SUCCESS;
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        if !Vad.is_null() {
+            ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+        }
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        if NT_SUCCESS(Status) {
+            *URegionSize = PRegionSize as SIZE_T;
+            *UBaseAddress = StartingAddress as PVOID;
+        }
+        return Status;
+    }
+
+    /* Demand-zero commit for normal private VAD */
+    // ASSERT(VadType == VadNone)
+
+    if (Protect & PAGE_WRITECOPY) != 0 || (Protect & PAGE_EXECUTE_WRITECOPY) != 0 {
+        fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+    }
+
+    /* Build a demand-zero invalid PTE */
+    TempPte = core::mem::zeroed();
+    TempPte.set_soft_protection(ProtectionMask);
+
+    /* Compute PTE/PDE range */
+    PointerPde = MiAddressToPde(StartingAddress as PVOID);
+    PointerPte = MiAddressToPte(StartingAddress as PVOID);
+    LastPte = MiAddressToPte(EndingAddress as PVOID);
+
+    /* Update commit charges */
+    let pages = LastPte.offset_from(PointerPte) as ULONG_PTR + 1;
+    let new_commit_charge =
+        (*FoundVad).u.VadFlags.CommitCharge() as ULONG_PTR + pages;
+    (*FoundVad).u.VadFlags.set_CommitCharge(new_commit_charge as _);
+    (*Process).CommitCharge += pages as ntkrnl_sys::ddk::SIZE_T;
+    if (*Process).CommitCharge > (*Process).CommitChargePeak {
+        (*Process).CommitChargePeak = (*Process).CommitCharge;
+    }
+
+    /* Lock the working set */
+    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+
+    /* Make the first PDE valid and walk PTEs */
+    MiMakePdeExistAndMakeValid(PointerPde, Process, MM_NOIRQL);
+    while PointerPte <= LastPte {
+        if MiIsPteOnPdeBoundary(PointerPte) {
+            PointerPde = MiPteToPde(PointerPte);
+            MiMakePdeExistAndMakeValid(PointerPde, Process, MM_NOIRQL);
+        }
+
+        if (*PointerPte).Long == 0 {
+            MiIncrementPageTableReferences(MiPteToAddress(PointerPte));
+            MI_WRITE_INVALID_PTE(PointerPte, TempPte);
+        } else if (*PointerPte).Long == MmDecommittedPte.Long {
+            MI_WRITE_INVALID_PTE(PointerPte, TempPte);
+        } else if ChangeProtection == 0 && Protect != MiGetPageProtection(PointerPte) {
+            ChangeProtection = 1;
+        }
+
+        PointerPte = PointerPte.add(1);
+    }
+
+    MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+    Status = STATUS_SUCCESS;
+
+    MmUnlockAddressSpace(AddressSpace as PVOID);
+
+    if !NT_SUCCESS(Status) {
+        if !Vad.is_null() {
+            ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+        }
+    }
+
+    if ChangeProtection != 0 {
+        let mut ProtectBaseAddress: PVOID = StartingAddress as PVOID;
+        let mut ProtectSize: SIZE_T = PRegionSize as SIZE_T;
+        let mut OldProtection: ULONG = 0;
+        MiProtectVirtualMemory(
+            Process,
+            core::ptr::addr_of_mut!(ProtectBaseAddress),
+            core::ptr::addr_of_mut!(ProtectSize),
+            Protect,
+            core::ptr::addr_of_mut!(OldProtection),
+        );
+    }
+
+    if Attached != 0 {
+        KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+    }
+    if ProcessHandle != NtCurrentProcess() as HANDLE {
+        ObDereferenceObject(Process as PVOID);
+    }
+
+    if NT_SUCCESS(Status) {
+        *URegionSize = PRegionSize as SIZE_T;
+        *UBaseAddress = StartingAddress as PVOID;
+    } else if QuotaCharged != 0 {
+        PsReturnProcessNonPagedPoolQuota(
+            Process,
+            core::mem::size_of::<MMVAD_LONG>() as _,
+        );
+    }
+
+    Status
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn NtFreeVirtualMemory(
-    _ProcessHandle: HANDLE,
-    _UBaseAddress: *mut PVOID,
-    _URegionSize: *mut SIZE_T,
-    _FreeType: ULONG,
+    ProcessHandle: HANDLE,
+    UBaseAddress: *mut PVOID,
+    URegionSize: *mut SIZE_T,
+    FreeType: ULONG,
 ) -> NTSTATUS {
-    let _ProcessHandle = opaque_ptr(_ProcessHandle);
-    let _UBaseAddress = opaque_ptr(_UBaseAddress);
-    let _URegionSize = opaque_ptr(_URegionSize);
-    STATUS_NOT_IMPLEMENTED
+    let ProcessHandle = opaque_ptr(ProcessHandle);
+    let UBaseAddress = opaque_ptr(UBaseAddress);
+    let URegionSize = opaque_ptr(URegionSize);
+
+    let mut PRegionSize: SIZE_T;
+    let PBaseAddress: PVOID;
+    let mut AlreadyDecommitted: LONG_PTR;
+    let mut CommitReduction: LONG_PTR = 0;
+    let mut FirstCommit: LONG_PTR;
+    let mut StartingAddress: ULONG_PTR;
+    let mut EndingAddress: ULONG_PTR;
+    let mut Vad: PMMVAD;
+    let mut NewVad: PMMVAD;
+    let mut Status: NTSTATUS;
+    let mut Process: PEPROCESS = core::ptr::null_mut();
+    let AddressSpace: PMMSUPPORT;
+    let CurrentThread: PETHREAD = PsGetCurrentThread();
+    let CurrentProcess: PEPROCESS = PsGetCurrentProcess() as PEPROCESS;
+    let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
+    let mut ApcState: _KAPC_STATE = core::mem::zeroed();
+    let mut Attached: BOOLEAN = 0;
+
+    /* Only two flags are supported, exclusively. */
+    if FreeType != MEM_RELEASE && FreeType != MEM_DECOMMIT {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+
+    /* Probe + capture (DUMMY_PSEH: no SEH wrap) */
+    if PreviousMode != 0i32 as i8 {
+        ProbeForWritePointer(UBaseAddress);
+        ProbeForWriteUlong(URegionSize as *mut ULONG);
+    }
+    PBaseAddress = *UBaseAddress;
+    PRegionSize = *URegionSize;
+
+    /* Ensure base + size sit inside user space */
+    if (PBaseAddress as ULONG_PTR) >= MM_HIGHEST_USER_ADDRESS {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    if (MM_HIGHEST_USER_ADDRESS - (PBaseAddress as ULONG_PTR)) < PRegionSize as ULONG_PTR {
+        return STATUS_INVALID_PARAMETER_3;
+    }
+
+    /* Resolve target process */
+    if ProcessHandle == NtCurrentProcess() as HANDLE {
+        Process = CurrentProcess;
+    } else {
+        Status = ObReferenceObjectByHandle(
+            ProcessHandle,
+            PROCESS_VM_OPERATION,
+            PsProcessType,
+            PreviousMode,
+            core::ptr::addr_of_mut!(Process) as *mut PVOID,
+            core::ptr::null_mut(),
+        );
+        if Status < 0 {
+            return Status;
+        }
+        if CurrentProcess != Process {
+            KeStackAttachProcess(
+                core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb),
+                core::ptr::addr_of_mut!(ApcState),
+            );
+            Attached = 1;
+        }
+    }
+
+    /* Lock address space */
+    AddressSpace = MmGetCurrentAddressSpace();
+    MmLockAddressSpace(AddressSpace as PVOID);
+    if (*(Process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.VmDeleted() != 0 {
+        Status = STATUS_PROCESS_IS_TERMINATING;
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return Status;
+    }
+
+    /* Compute aligned start/end and locate VAD */
+    StartingAddress = PAGE_ALIGN(PBaseAddress as usize) as ULONG_PTR;
+    EndingAddress =
+        ((PBaseAddress as ULONG_PTR) + PRegionSize as ULONG_PTR - 1) | (PAGE_SIZE - 1) as ULONG_PTR;
+    Vad = MiLocateAddress(StartingAddress as PVOID);
+
+    macro_rules! fail_path {
+        ($status:expr) => {{
+            Status = $status;
+            MmUnlockAddressSpace(AddressSpace as PVOID);
+            if Attached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            if ProcessHandle != NtCurrentProcess() as HANDLE {
+                ObDereferenceObject(Process as PVOID);
+            }
+            return Status;
+        }};
+    }
+
+    if Vad.is_null() {
+        fail_path!(STATUS_MEMORY_NOT_ALLOCATED);
+    }
+
+    if ((*Vad).EndingVpn as ULONG_PTR) < (EndingAddress >> PAGE_SHIFT) {
+        fail_path!(STATUS_UNABLE_TO_FREE_VM);
+    }
+
+    /* Only private memory (or rotate VADs) can be freed here, and not DevicePhysical */
+    if ((*Vad).u.VadFlags.PrivateMemory() == 0
+        && (*Vad).u.VadFlags.VadType() != VadRotatePhysical as _)
+        || (*Vad).u.VadFlags.VadType() == VadDevicePhysicalMemory as _
+    {
+        fail_path!(STATUS_UNABLE_TO_DELETE_SECTION);
+    }
+
+    // ASSERT(NoChange == 0)
+
+    if (FreeType & MEM_RELEASE) != 0 {
+        // ASSERT(VadType == VadNone)
+        if PRegionSize == 0 {
+            /* Whole-VAD release */
+            if ((PBaseAddress as ULONG_PTR) >> PAGE_SHIFT) != (*Vad).StartingVpn as ULONG_PTR {
+                fail_path!(STATUS_FREE_VM_NOT_AT_BASE);
+            }
+            StartingAddress = ((*Vad).StartingVpn as ULONG_PTR) << PAGE_SHIFT;
+            EndingAddress = (((*Vad).EndingVpn as ULONG_PTR) << PAGE_SHIFT)
+                | (PAGE_SIZE - 1) as ULONG_PTR;
+
+            MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+            MiRemoveNode(
+                Vad as PMMADDRESS_NODE,
+                core::ptr::addr_of_mut!((*Process).VadRoot),
+            );
+            PsReturnProcessNonPagedPoolQuota(
+                Process,
+                core::mem::size_of::<MMVAD_LONG>() as _,
+            );
+        } else {
+            /* Partial release: cases A/B/C/D */
+            let starting_vpn = StartingAddress >> PAGE_SHIFT;
+            let ending_vpn = EndingAddress >> PAGE_SHIFT;
+            if starting_vpn == (*Vad).StartingVpn as ULONG_PTR {
+                if ending_vpn == (*Vad).EndingVpn as ULONG_PTR {
+                    /* Case D — whole VAD */
+                    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                    MiRemoveNode(
+                        Vad as PMMADDRESS_NODE,
+                        core::ptr::addr_of_mut!((*Process).VadRoot),
+                    );
+                    PsReturnProcessNonPagedPoolQuota(
+                        Process,
+                        core::mem::size_of::<MMVAD_LONG>() as _,
+                    );
+                } else {
+                    /* Case A — release prefix */
+                    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                    CommitReduction = MiCalculatePageCommitment(
+                        StartingAddress,
+                        EndingAddress,
+                        Vad,
+                        Process,
+                    ) as LONG_PTR;
+                    let new_cc = (*Vad).u.VadFlags.CommitCharge() as LONG_PTR - CommitReduction;
+                    (*Vad).u.VadFlags.set_CommitCharge(new_cc as _);
+                    (*Vad).StartingVpn = ((EndingAddress + 1) >> PAGE_SHIFT) as _;
+                    Vad = core::ptr::null_mut();
+                }
+            } else if ending_vpn == (*Vad).EndingVpn as ULONG_PTR {
+                /* Case C — release suffix */
+                MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                CommitReduction = MiCalculatePageCommitment(
+                    StartingAddress,
+                    EndingAddress,
+                    Vad,
+                    Process,
+                ) as LONG_PTR;
+                let new_cc = (*Vad).u.VadFlags.CommitCharge() as LONG_PTR - CommitReduction;
+                (*Vad).u.VadFlags.set_CommitCharge(new_cc as _);
+                (*Vad).EndingVpn = ((StartingAddress - 1) >> PAGE_SHIFT) as _;
+                Vad = core::ptr::null_mut();
+            } else {
+                /* Case B — release middle, must split */
+                NewVad = ExAllocatePoolZero(
+                    NonPagedPool as u32,
+                    core::mem::size_of::<MMVAD_LONG>() as _,
+                    u32::from_le_bytes(*b"VadS"),
+                ) as PMMVAD;
+                if NewVad.is_null() {
+                    fail_path!(STATUS_INSUFFICIENT_RESOURCES);
+                }
+
+                Status = PsChargeProcessNonPagedPoolQuota(
+                    Process,
+                    core::mem::size_of::<MMVAD_LONG>() as _,
+                );
+                if Status < 0 {
+                    ExFreePoolWithTag(NewVad as PVOID, u32::from_le_bytes(*b"VadS"));
+                    fail_path!(STATUS_QUOTA_EXCEEDED);
+                }
+
+                (*NewVad).StartingVpn = ((EndingAddress + 1) >> PAGE_SHIFT) as _;
+                (*NewVad).EndingVpn = (*Vad).EndingVpn;
+                (*NewVad).u.LongFlags = (*Vad).u.LongFlags;
+                (*NewVad).u.VadFlags.set_CommitCharge(0);
+
+                MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                CommitReduction = MiCalculatePageCommitment(
+                    StartingAddress,
+                    EndingAddress,
+                    Vad,
+                    Process,
+                ) as LONG_PTR;
+
+                (*Vad).EndingVpn = ((StartingAddress - 1) >> PAGE_SHIFT) as _;
+
+                MiInsertVad(NewVad, core::ptr::addr_of_mut!((*Process).VadRoot));
+
+                FirstCommit = MiCalculatePageCommitment(
+                    ((*Vad).StartingVpn as ULONG_PTR) << PAGE_SHIFT,
+                    StartingAddress - 1,
+                    Vad,
+                    Process,
+                ) as LONG_PTR;
+                let cc = (*Vad).u.VadFlags.CommitCharge() as LONG_PTR;
+                (*NewVad)
+                    .u
+                    .VadFlags
+                    .set_CommitCharge((cc - CommitReduction - FirstCommit) as _);
+                (*Vad).u.VadFlags.set_CommitCharge(FirstCommit as _);
+                Vad = core::ptr::null_mut();
+            }
+        }
+
+        /* Drop the page range and release the working set */
+        MiDeleteVirtualAddresses(StartingAddress, EndingAddress, core::ptr::null_mut());
+        MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
+        Status = STATUS_SUCCESS;
+
+        // FinalPath: update process counters, unlock, optional free VAD, detach, write back
+        PRegionSize = (EndingAddress - StartingAddress + 1) as SIZE_T;
+        let cr_unsigned: ntkrnl_sys::ddk::SIZE_T = CommitReduction as ntkrnl_sys::ddk::SIZE_T;
+        (*Process).CommitCharge -= cr_unsigned;
+        if (FreeType & MEM_RELEASE) != 0 {
+            (*Process).VirtualSize -= PRegionSize as ntkrnl_sys::ddk::SIZE_T;
+        }
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        if !Vad.is_null() {
+            ExFreePool(Vad as PVOID);
+        }
+        if Attached != 0 {
+            KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+        }
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        *URegionSize = PRegionSize;
+        *UBaseAddress = StartingAddress as PVOID;
+        return Status;
+    }
+
+    /* DECOMMIT path */
+    if (*Vad).u.VadFlags.VadType() == VadAwe as _
+        || (*Vad).u.VadFlags.VadType() == VadLargePages as _
+        || (*Vad).u.VadFlags.VadType() == VadRotatePhysical as _
+    {
+        fail_path!(STATUS_MEMORY_NOT_ALLOCATED);
+    }
+
+    if PRegionSize == 0 {
+        if ((PBaseAddress as ULONG_PTR) >> PAGE_SHIFT) != (*Vad).StartingVpn as ULONG_PTR {
+            fail_path!(STATUS_FREE_VM_NOT_AT_BASE);
+        }
+        EndingAddress =
+            (((*Vad).EndingVpn as ULONG_PTR) << PAGE_SHIFT) | (PAGE_SIZE - 1) as ULONG_PTR;
+    }
+
+    AlreadyDecommitted = MiDecommitPages(
+        StartingAddress as PVOID,
+        MiAddressToPte(EndingAddress as PVOID),
+        Process,
+        Vad,
+    ) as LONG_PTR;
+    let pte_count = MiAddressToPte(EndingAddress as PVOID)
+        .offset_from(MiAddressToPte(StartingAddress as PVOID)) as LONG_PTR
+        + 1;
+    CommitReduction = pte_count - AlreadyDecommitted;
+    let new_cc = (*Vad).u.VadFlags.CommitCharge() as LONG_PTR - CommitReduction;
+    (*Vad).u.VadFlags.set_CommitCharge(new_cc as _);
+
+    /* FinalPath shared with above (Vad is intentionally NOT freed for decommit) */
+    let _ = Vad; // keep Vad alive — decommit must not free the VAD
+    Status = STATUS_SUCCESS;
+    PRegionSize = (EndingAddress - StartingAddress + 1) as SIZE_T;
+    let cr_unsigned: ntkrnl_sys::ddk::SIZE_T = CommitReduction as ntkrnl_sys::ddk::SIZE_T;
+    (*Process).CommitCharge -= cr_unsigned;
+    if (FreeType & MEM_RELEASE) != 0 {
+        (*Process).VirtualSize -= PRegionSize as ntkrnl_sys::ddk::SIZE_T;
+    }
+    MmUnlockAddressSpace(AddressSpace as PVOID);
+    if Attached != 0 {
+        KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+    }
+    if ProcessHandle != NtCurrentProcess() as HANDLE {
+        ObDereferenceObject(Process as PVOID);
+    }
+    *URegionSize = PRegionSize;
+    *UBaseAddress = StartingAddress as PVOID;
+    Status
 }
 
 #[no_mangle]

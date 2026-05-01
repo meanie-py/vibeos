@@ -26,7 +26,8 @@ pub mod procsup;
 pub mod section;
 pub mod session;
 pub mod sysldr;
-// #[path = "virtual.rs"]
-// pub mod r#virtual; // Reverted to C: NtAllocateVirtualMemory/NtFreeVirtualMemory stubs, heavy SEH
+// virtual.rs — enabled on all 3 arches.
+#[path = "virtual.rs"]
+pub mod r#virtual;
 // Tier 4
 pub mod wslist;

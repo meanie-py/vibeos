@@ -348,3 +348,50 @@ mod _force_kd64_symbols {
         SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::TraceDataBufferPosition) as *const ()),
     ];
 }
+
+// Force inclusion of mm/ARM3/virtual.rs symbols. Same pattern as kd64 above —
+// these are called from C ntoskrnl (SSDT entries, sdk/lib/rtl/env.c, etc.) but
+// not from Rust, so the rlib→staticlib link drops them without a forced ref.
+mod _force_virtual_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 34] = [
+        SyncPtr(crate::ARM3::r#virtual::MiCalculatePageCommitment as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDecommitPages as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDeletePte as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDeleteSystemPageableVm as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDeleteVirtualAddresses as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDoMappedCopy as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiDoPoolCopy as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiGetPageProtection as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiIsEntireRangeCommitted as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiMakePdeExistAndMakeValid as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiMakeSystemAddressValid as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiMakeSystemAddressValidPfn as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiProcessValidPteList as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiProtectVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiQueryAddressState as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MiQueryMemoryBasicInformation as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmCopyVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmFlushVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmGetPhysicalAddress as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmGetVirtualForPhysical as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmSecureVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::MmUnsecureVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtAllocateVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtFlushInstructionCache as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtFlushVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtFreeVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtGetWriteWatch as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtLockVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtProtectVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtQueryVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtReadVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtResetWriteWatch as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtUnlockVirtualMemory as *const ()),
+        SyncPtr(crate::ARM3::r#virtual::NtWriteVirtualMemory as *const ()),
+    ];
+}

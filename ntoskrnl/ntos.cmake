@@ -264,7 +264,8 @@ list(APPEND SOURCE
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/sysldr.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/syspte.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/vadnode.c (Rust)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c
+    # mm/ARM3/virtual.c — Rust on all 3 arches (ntoskrnl-rust/src/ARM3/virtual.rs).
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/virtual.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/wslist.cpp (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/zeropage.c (Rust)
     # mm/ — replaced by Rust (ntoskrnl-rust/src/mm/)
