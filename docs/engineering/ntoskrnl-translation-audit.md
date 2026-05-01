@@ -1,13 +1,14 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-pnpres)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-sysinfo)
 
 ## Headline
 
-- **~97.5% translated by C-line count.** ~278K LOC translatable C body of work; ~5.5K LOC of translatable C still active in the default build.
+- **~98.5% translated by C-line count.** ~278K LOC translatable C body of work; ~4.0K LOC of translatable C still active in the default build.
 - **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged via `ddba7c05` — last fix was `cmparse.rs::COMPUTE_HASH_CHAR` missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
 - **kd64/ landed.** WinDbg KD protocol stack now Rust on all 3 arches. The "recursive exception flood on amd64" that parked it in Feb 2026 was silently fixed by the CGU=256 + opaque_ptr + RAII guard work; nobody re-tested. ~6.8K LOC of C dropped, ~11.1K LOC of parked Rust now active. Required 5 small translation-bug fixes.
 - **ARM3/virtual landed.** `mm/ARM3/virtual.c` is no longer active; `ARM3/virtual.rs` is wired for all 3 arches. The i386 stack-commit regression was a bad local `TableFoundNode = 0` constant; bindgen/C have `TableFoundNode = 1`.
-- **pnpres landed (this session).** `io/pnpmgr/pnpres.c` is no longer active; `pnpmgr/pnpres.rs` (3,264 LOC) is wired for all 3 arches. Same playbook as kd64/virtual.rs — the parked excuse ("translated, never wired") was stale. Required 2 small fixes: a malformed extern block (`PiSetDevNodeState` was dangling outside any `extern "C" {}`) and a missing `DbgPrint` extern decl. ~1.5K LOC of C dropped.
-- **Smoke status:** i386 7/7 PASS · amd64 6/7 (only `[EXPLORER] _tWinMain entered` missing — pre-existing taskbar regression, unrelated to translation) · arm64 0/7 baseline failure — reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Verified identical with C and Rust kd64 (same 13,449 bytes serial), so the arm64 issue is elsewhere, not in kd64. The previous audit's "no serial output, 0x6A BSOD" claim was stale.
+- **pnpres landed.** `io/pnpmgr/pnpres.c` is no longer active; `pnpmgr/pnpres.rs` (3,264 LOC) is wired for all 3 arches. Same playbook as kd64/virtual.rs — the parked excuse ("translated, never wired") was stale.
+- **sysinfo hand-translated and landed (this session).** `ex/sysinfo.c` is no longer active; `ex/sysinfo.rs` is wired for all 3 arches. Unlike previous landings this was real translation debt — the parked file was a Potemkin stub (full `NtQuerySystemInformation` returning `STATUS_NOT_IMPLEMENTED`, 74 handlers as commented C source). Hand-translated all the boot-critical handlers + `CallQS[]` dispatch table. Complex bindgen-archaeology handlers (process/handle enumeration with `_KTHREAD` union access) stubbed for now — boot doesn't depend on them. **Bonus**: revealed five flexible-array-indexing bugs in `pnpres.rs` (`Descriptors[ii as usize]` etc.) that crashed when the new dispatch let boot run further. ~3.1K LOC of C dropped.
+- **Smoke status:** i386 7/7 PASS · amd64 7/7 PASS (the previous taskbar regression is gone — boot reaches `shell ready`) · arm64 0/7 baseline failure — reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Verified identical with C and Rust kd64 (same 13,449 bytes serial), so the arm64 issue is elsewhere, not in kd64.
 
 ## Active in Rust (default build)
 
@@ -18,7 +19,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | KE (kernel) | 67 | 54,113 | Includes per-arch `ke/{i386,amd64,arm64}/*` |
 | ARM3 (mm internals) | 25 | 44,054 | `virtual.rs` active all 3 arches |
 | iomgr | 26 (arm64: 24) | 41,047 / 39,429 | `iomgr.rs` + `ramdisk.rs` arm64-gated |
-| EX (executive) | 30 | 35,201 | `sysinfo.rs` parked |
+| EX (executive) | 31 | 38,781 | `sysinfo.rs` active all 3 arches |
 | SE (security) | 18 | 35,200 | |
 | **config (registry CM)** | **21** | **33,196** | **NEW — all 3 arches active** |
 | ps (process) | 13 | 23,085 | |
@@ -50,13 +51,12 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 | Rust file | Rust LOC | C still active | LOC | Reason parked |
 |-----------|---------:|----------------|----:|---------------|
-| ex/sysinfo.rs | 3,744 | ex/sysinfo.c | 3,080 | NtQuerySystemInformation has 70+ class handlers; not all translated. Disabled in `ex/mod.rs:26`. |
 | iomgr/iomgr.rs (arm64) | 1,215 | io/iomgr/iomgr.c (arm64) | 765 | PE layout issue on arm64. `#[cfg(not(target_arch = "aarch64"))]`. |
 | iomgr/ramdisk.rs (arm64) | 403 | io/iomgr/ramdisk.c (arm64) | 307 | Same arm64 PE layout issue → 0x6B crash. |
-| lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; never re-enabled. |
+| lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival. |
 | ke/arm64/trap.rs | dead | ke/arm64/trap.c | 526 | Rust version breaks boot. **Edit the C file** — the .rs is dead. |
 | ke/amd64/usercall.rs | dead | ke/amd64/usercall.c | 404 | Undiagnosed return-address corruption in Rust version. |
-| **Parked total** | **~10.4K Rust** | | **~5.9K C** | |
+| **Parked total** | **~6.7K Rust** | | **~2.8K C** | |
 
 ## Still in C — intentional (no Rust translation planned)
 
@@ -93,35 +93,33 @@ The real backlog. Roughly 2K LOC of small per-arch glue.
 
 | Bucket | LOC |
 |--------|----:|
-| Generic active C | ~6,540 |
+| Generic active C | ~3,460 |
 | i386-only active C (worst arch) | ~1,550 |
-| **Active C in default build (worst case = i386)** | **~8,090** |
+| **Active C in default build (worst case = i386)** | **~5,010** |
 | of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~5,540** |
+| **Translatable C still active** | **~2,460** |
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
 - ~277,750 LOC C total
-- ~5,540 LOC C still active and translatable
-- **(277,750 − 5,540) / 277,750 ≈ 98.0% translated**
+- ~2,460 LOC C still active and translatable
+- **(277,750 − 2,460) / 277,750 ≈ 99.1% translated**
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
-- Parked Rust: ~10.4K LOC
-- Add ~5.9K LOC of C they replace if/when wired
-- **~99% has a Rust translation in tree** (active or parked)
+- Parked Rust: ~6.7K LOC
+- Add ~2.8K LOC of C they replace if/when wired
+- **>99% has a Rust translation in tree** (active or parked)
 
 ## What it would take to push toward 100%
 
 In rough priority order (yield vs. cost):
 
-1. **ex/sysinfo.c** — 3,080 LOC. `sysinfo.rs` parked at 3,744 LOC; finish the missing NtQuerySystemInformation classes. Biggest single fish remaining.
-2. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the original LLVM codegen issue (or confirm CGU=256 fix already covers it — same story as kd64/virtual/pnpres may apply).
-3. **arch-specific glue** — `ke/amd64/usercall.c`, `ke/arm64/trap.c`, `io/iomgr/iomgr.c` (arm64), `ps/{i386,amd64}/psctx.c`, `ps/i386/psldt.c`. Mostly small, mostly arch-dependent debugging.
-4. **arcname** — finish the remaining `IopCreateArcNames*` paths in Rust; delete the C hybrid.
-5. **kd64/{i386,amd64}/kdx{86,64}.c** — small per-arch helpers (~840 LOC combined). Easy translation candidates now that the generic kd64 stack is Rust.
-
-After sysinfo lands, translatable-C-still-active drops below ~2.5K LOC and we're ≥99% by the strict metric.
+1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
+2. **arch-specific glue** — `ke/amd64/usercall.c`, `ke/arm64/trap.c`, `io/iomgr/iomgr.c` (arm64), `ps/{i386,amd64}/psctx.c`, `ps/i386/psldt.c`. Mostly small, mostly arch-dependent debugging.
+3. **arcname** — finish the remaining `IopCreateArcNames*` paths in Rust; delete the C hybrid.
+4. **kd64/{i386,amd64}/kdx{86,64}.c** — small per-arch helpers (~840 LOC combined). Easy translation candidates now that the generic kd64 stack is Rust.
+5. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
 
 ## Stale-claim watch
 
@@ -130,14 +128,15 @@ The previous audit's notes on parked subsystems were several months out of date.
 - **kd64**: claimed "recursive exception flood on amd64, root cause unknown." Actually fixed silently months ago; just needed wiring + 5 small translation-bug fixes.
 - **arm64 baseline**: claimed "no serial output, pre-existing 0x6A BSOD." Actually reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Different failure mode, deeper into boot.
 - **ARM3/virtual**: the first regression looked like an LLVM `ud2` cascade, but the boot-blocking i386 crash was a real translation bug: local `TableFoundNode` was `0` instead of the C/bindgen value `1`.
-- **pnpres**: claimed "translated, never wired." Actually wires cleanly with two small fixes (malformed extern block, missing DbgPrint extern decl). 7/7 i386, 6/7 amd64 (matches baseline), 0/7 arm64 (matches baseline).
+- **pnpres**: claimed "translated, never wired." Actually wires cleanly with two small fixes (malformed extern block, missing DbgPrint extern decl). 7/7 i386, 7/7 amd64, 0/7 arm64 (matches baseline).
+- **sysinfo**: claimed "70+ class handlers; not all translated." This one was actually accurate — the parked file was a stub. Hand-translated this session.
 
 When picking a parked file to revive, the cheapest first step is often: re-enable it on whichever arch is greenest, build, smoke. The bug may already be gone.
 
 ## What the audit doesn't measure
 
-- **Boot correctness.** A line-count metric says nothing about whether the Rust version actually works under load. The smoke harness is the source of truth on that — current verdict: i386 7/7, amd64 6/7 (taskbar regression unrelated to translation), arm64 0/7 (pre-existing baseline issue, not in kd64).
-- **API debt.** ~13.7K LOC of paid translations are parked. Some need debugging, some need wiring. None of that needs new API spend.
+- **Boot correctness.** A line-count metric says nothing about whether the Rust version actually works under load. The smoke harness is the source of truth on that — current verdict: i386 7/7, amd64 7/7, arm64 0/7 (pre-existing baseline issue, not in kd64).
+- **API debt.** ~6.7K LOC of paid translations are parked. Some need debugging, some need wiring. None of that needs new API spend.
 - **Per-arch differentials.** i386 and amd64 are mostly aligned; arm64 has its own set of parked files (iomgr/ramdisk PE layout, ke/arm64/trap, KDBG fully off). The numbers above use i386/amd64 as the reference because that's where the build is at parity.
 
 ## How these numbers were computed

@@ -411,3 +411,22 @@ mod _force_pnpres_symbols {
         SyncPtr(crate::pnpmgr::pnpres::IopUpdateResourceMapForPnPDevice as *const ()),
     ];
 }
+
+// Force inclusion of ex/sysinfo.rs symbols. Same pattern as virtual / pnpres above.
+mod _force_sysinfo_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 8] = [
+        SyncPtr(crate::ex::sysinfo::NtQuerySystemInformation as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtSetSystemInformation as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtGetCurrentProcessorNumber as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtQuerySystemEnvironmentValue as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtSetSystemEnvironmentValue as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExGetCurrentProcessorCpuUsage as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExLockUserBuffer as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExUnlockUserBuffer as *const ()),
+    ];
+}

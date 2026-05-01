@@ -78,7 +78,7 @@ const STATUS_CONFLICTING_ADDRESSES: NTSTATUS = 0xC0000018u32 as NTSTATUS;
 
 unsafe fn IopGetNextResourceList(ResourceList: *const IO_RESOURCE_LIST) -> PIO_RESOURCE_LIST {
     debug_assert!((*ResourceList).Count > 0 && (*ResourceList).Count < 1000);
-    (core::ptr::addr_of!((*ResourceList).Descriptors[(*ResourceList).Count as usize])
+    (core::ptr::addr_of!((*ResourceList).Descriptors[0]).add((*ResourceList).Count as usize)
         as *const u8) as PIO_RESOURCE_LIST
 }
 
@@ -310,7 +310,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                 core::ptr::null_mut()
             };
             let IoDesc: PIO_RESOURCE_DESCRIPTOR =
-                core::ptr::addr_of_mut!((*ResList).Descriptors[ii as usize]);
+                core::ptr::addr_of_mut!((*ResList).Descriptors[0]).add(ii as usize);
             let mut Matched: BOOLEAN = 0u8;
 
             if AlternateRequired == 0 && ((*IoDesc).Option & 0x08) != 0 {
@@ -325,7 +325,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
             iii = 0;
             while !PartialList.is_null() && iii < (*PartialList).Count && Matched == 0 {
                 let CmDesc: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
-                    core::ptr::addr_of_mut!((*PartialList).PartialDescriptors[iii as usize]);
+                    core::ptr::addr_of_mut!((*PartialList).PartialDescriptors[0]).add(iii as usize);
 
                 if (*IoDesc).Type != (*CmDesc).Type {
                     iii += 1;
@@ -462,11 +462,8 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                     );
 
                     DescPtr = core::ptr::addr_of_mut!(
-                        (*NewList).List[0]
-                            .PartialResourceList
-                            .PartialDescriptors[(*NewList).List[0].PartialResourceList.Count
-                            as usize]
-                    );
+                        (*NewList).List[0].PartialResourceList.PartialDescriptors[0]
+                    ).add((*NewList).List[0].PartialResourceList.Count as usize);
 
                     (*NewList).List[0].PartialResourceList.Count += 1;
 
@@ -526,7 +523,7 @@ unsafe fn IopCheckResourceDescriptor(
         ii = 0;
         while ii < (*ResList).Count {
             let ResDesc2: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
-                core::ptr::addr_of_mut!((*ResList).PartialDescriptors[ii as usize]);
+                core::ptr::addr_of_mut!((*ResList).PartialDescriptors[0]).add(ii as usize);
 
             if (*ResDesc).ShareDisposition == 3 && (*ResDesc2).ShareDisposition == 3 { // CmResourceShareShared
                 ii += 1;
@@ -961,7 +958,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
         j = 0;
         while j < (*pPartialResourceList).Count {
             DescriptorRaw =
-                core::ptr::addr_of_mut!((*pPartialResourceList).PartialDescriptors[j as usize]);
+                core::ptr::addr_of_mut!((*pPartialResourceList).PartialDescriptors[0]).add(j as usize);
 
             DescriptorTranslated = (((*DeviceNode).ResourceListTranslated as *mut u8).add(
                 (DescriptorRaw as *const u8)
@@ -973,8 +970,8 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                 1 => { // CmResourceTypePort
                     let mut AddressSpace: ULONG = 1;
                     if HalTranslateBusAddress(
-                        (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
-                        (*(*DeviceNode).ResourceList).List[i as usize].BusNumber,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).InterfaceType,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).BusNumber,
                         (*DescriptorRaw).u.Port.Start,
                         &mut AddressSpace,
                         core::ptr::addr_of_mut!((*DescriptorTranslated).u.Port.Start),
@@ -998,8 +995,8 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                 2 => { // CmResourceTypeInterrupt
                     let mut Irql: KIRQL = 0;
                     (*DescriptorTranslated).u.Interrupt.Vector = HalGetInterruptVector(
-                        (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
-                        (*(*DeviceNode).ResourceList).List[i as usize].BusNumber,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).InterfaceType,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).BusNumber,
                         (*DescriptorRaw).u.Interrupt.Level,
                         (*DescriptorRaw).u.Interrupt.Vector,
                         &mut Irql,
@@ -1020,8 +1017,8 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                 3 => { // CmResourceTypeMemory
                     let mut AddressSpace: ULONG = 0;
                     if HalTranslateBusAddress(
-                        (*(*DeviceNode).ResourceList).List[i as usize].InterfaceType,
-                        (*(*DeviceNode).ResourceList).List[i as usize].BusNumber,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).InterfaceType,
+                        (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).BusNumber,
                         (*DescriptorRaw).u.Memory.Start,
                         &mut AddressSpace,
                         core::ptr::addr_of_mut!((*DescriptorTranslated).u.Memory.Start),
@@ -1238,7 +1235,7 @@ unsafe fn IopCheckForResourceConflict(
         ii = 0;
         while ii < (*ResList).Count {
             let ResDesc: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
-                core::ptr::addr_of_mut!((*ResList).PartialDescriptors[ii as usize]);
+                core::ptr::addr_of_mut!((*ResList).PartialDescriptors[0]).add(ii as usize);
 
             Result = IopCheckResourceDescriptor(ResDesc, ResourceList2, Silent, ConflictingDescriptor);
             if Result != 0 {

@@ -23,7 +23,7 @@ pub mod resource;
 pub mod rundown;
 pub mod sem;
 pub mod shutdown;
-// pub mod sysinfo; // kept in C — NtQuerySystemInformation has 70+ handlers not translated
+pub mod sysinfo;
 pub mod time;
 pub mod timer;
 pub mod uuid;
