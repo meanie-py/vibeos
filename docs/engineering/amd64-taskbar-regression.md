@@ -21,47 +21,84 @@ i386 is rock solid (5/5 reliable in same probe).
 ## Failure Trace (BUGCHECK Variant)
 
 ```
-[WINLOGON] CreateWindowStationW(WinSta0)
-(winsta.c:661) err: Initializing input window station
-*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at miarm.h:1206
-*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at miarm.h:1283
-*** BUGCHECK: 0x0000001E (0xC0000006, 0xFFFFF800004XXXX, <fault VA>, 0)
+*** BUGCHECK: 0x0000001E (0xFFFFFFFFC0000006, 0xFFFFF8000047E8D3, 0xFFFFF8000060F940, 0x0000000000000000)
 ```
 
 - `0xC0000006` = `STATUS_IN_PAGE_ERROR`.
-- PC = `KiUnwaitThread + 0x20` (the inlined `KiUnlinkThreadImpl`).
-- The faulting instruction is `movq (%rax), %rcx` where `%rax = Thread->WaitBlockList`.
+- PC = `KiUnwaitThread + 0x23` (NOT inlined `KiUnlinkThreadImpl` — that runs and returns first).
+- Param3 (`0xFFFFF8000060F940`) is the **KTRAP_FRAME** for the fault.
 
-### What the bad Thread looks like (instrumented capture)
+### Actual fault site (gdb-toolkit capture, 2026-05-02)
 
-When `KiUnlinkThreadImpl` is hit with the bad value, `Thread` points at a pool
-address (`FFFFFA80015C92F0` in one capture) that **is not a valid KTHREAD**:
+Disassembly of `KiUnwaitThread` on amd64:
 
 ```
-[KIUNLINK] BAD Thread=FFFFFA80015C92F0 WBL=0x1 expected_WB0=FFFFFA80015C93E8 WaitStatus=0x1 State=160
-[KIUNLINK] KT[0x80..0xa0]: 0x1 0x1 0x00000C0D00000000 0x000000053A000000
+KiUnwaitThread:
+  +0x00: push %rsi / push %rdi / sub $0x28,%rsp
+  +0x09: mov %rcx,%rdi          ; rdi = Thread (saved)
+  +0x0c: mov %rdi,%rcx
+  +0x0f: call KiUnlinkThread    ; <-- runs, doesn't crash
+  +0x14: mov %sil,0x77(%rdi)    ; Thread->AdjustIncrement
+  +0x18: movb $0x3,0x76(%rdi)   ; Thread->AdjustReason = AdjustUnwait
+  +0x1c: mov %rdi,%rcx          ; pass Thread to inlined KiReadyThread
+  +0x1f: mov 0x68(%rcx),%rax    ; rax = Thread->ApcState.Process  (offset 0x68)
+  +0x23: cmpb $0x0,0x96(%rax)   ; *** FAULT: rax = 0, faulting VA = 0x96 ***
 ```
 
-Notes:
-- `State=160` (0xA0) — not a valid KTHREAD `State` enum value (max ~8).
-- `WaitBlockList=1`, `WaitStatus=1` — neither field looks like a real value.
-- `expected_WB0` (Thread+0xF8) is where `WaitBlockList` should point if Thread were valid.
+Trap frame at fault time:
 
-So the kernel call path is dispatching `KiUnwaitThread` on **a non-KTHREAD pool block**.
-`Thread` came from `WaitBlock->Thread` in `KiWaitTest`, which came from
-`Object->WaitListHead.Flink` of the event being signaled. This means a stale or
-corrupted KWAIT_BLOCK is in some object's wait list, pointing at a freed/reused
-KTHREAD slot.
+| Field | Value | Meaning |
+|------|------|---------|
+| Rax | `0x0` | `Thread->ApcState.Process` was NULL |
+| Rcx | `0xFFFFFA80015C01F0` | the bogus "Thread" pointer |
+| FaultAddress | `0x96` | the deref VA (0 + 0x96) |
+| Rip | `0xFFFFF8000047E8D3` | KiUnwaitThread+0x23 |
 
-### Likely culprit chain
+### What the bad Thread actually IS
 
-1. A thread terminates without removing its KWAIT_BLOCK from some object's wait list.
-2. The KTHREAD memory is reused (by another pool allocation).
-3. Later, that object is signaled. `KiWaitTest` reads `WaitBlock->Thread` (now garbage), passes it to `KiUnwaitThread`, fault.
+The bogus `0xFFFFFA80015C01F0` is **the body of an EPROCESS pool block**, not a
+KTHREAD. Verified by:
 
-Where to investigate: `KeRundownThread` / thread-exit cleanup paths, and any
-place where a thread can be unblocked from a wait without going through the
-proper unwait mechanism.
+- 16 bytes earlier (`0xFFFFFA80015C01B0`) we find a POOL_HEADER with tag
+  `'corP'` (= "Proc" — the EPROCESS pool tag).
+- `Header.Type = 0x03` = `ProcessObject` (NOT `ThreadObject = 0x06`).
+- At offset `+0x260` from the body start, ASCII `csrss.exe` — this is the
+  csrss.exe process EPROCESS.
+
+`KiUnlinkThread` survived the call because its bounds check
+(`WaitBlockList ∈ [Thread+0xF8, Thread+0x1B8)`) caught the bad value (which
+was `0x1` here) and skipped the unlink loop. The crash happened in the
+*inlined* `KiReadyThread` reading `Thread->ApcState.Process` at offset `+0x68`
+— which on a KPROCESS is `VdmTrapcHandler` (typically NULL), giving us
+`rax = 0`, then the next instruction faults on `[0x96]`.
+
+### Revised culprit chain
+
+Some wait-block setup path is putting an **EPROCESS pointer** into
+`KWAIT_BLOCK.Thread`. Then when that wait list is processed by
+`KiWaitTest`, the EPROCESS gets passed to `KiUnwaitThread` as if it were a
+KTHREAD.
+
+The previously hypothesized "stale KWAIT_BLOCK pointing at a freed KTHREAD
+slot" is partially right (the pointer is non-thread) but more specific: the
+target is consistently a **live EPROCESS** (csrss.exe in this capture). So
+the bug is more likely a **type confusion** at wait-block setup than a
+use-after-free.
+
+Where to investigate:
+- `KeWaitForSingleObject(processHandle, ...)` paths that set up the wait
+  block — verify `WaitBlock.Thread = current_thread`, NOT `= Object`.
+- Process-as-dispatcher-object signaling paths (`KeSetProcess`, process
+  exit signaling) where wait blocks of waiters are populated.
+- The Rust `KiSatisfyObjectWait`/`KiInsertObjectWaitList` translation
+  layers — check if anything is swapping `Thread`/`Object` arguments.
+
+The wait block at `0xFFFFFA800176ECC8` (the only entry in csrss EPROCESS's
+`Header.WaitListHead` at inspection time) had `Thread = 0xFFFFFA800176EBD0`
+(a real thread address) and `Object = 0xFFFFFA80015C01F0` (csrss). That
+suggests the wait block being processed at fault time may have been a
+*different* one, or the fields are correct but the asm path is wrong (i.e.,
+something passed `&object` instead of `WaitBlock->Thread`).
 
 ## Failure Trace (Hang Variant — most common)
 
@@ -109,12 +146,18 @@ This triages the BUGCHECK variant in one tool call (validated against the
    `dump-thread` helper makes after-the-fact inspection cheap.
 
 2. **BUGCHECK-variant**: now reproducible end-to-end via the standard recipe.
-   For root-causing the stale KWAIT_BLOCK origin, add asserts in
-   `KeRundownThread` / wait-list cleanup that verify all of a thread's
-   KWAIT_BLOCKs are unlinked before the KTHREAD memory is freed; also
-   instrument pool-free for KTHREAD-sized blocks. With breakpoints in those
-   paths plus `dump-thread`, the bad-thread origin should fall out within a
-   few boots.
+   With the 2026-05-02 toolkit-driven analysis, root-causing should focus on
+   where an EPROCESS pointer ends up in `KWAIT_BLOCK.Thread`. Concrete next
+   steps:
+   - Add an assertion at `KiUnwaitThread` entry: `Thread->Header.Type ==
+     ThreadObject` (= 6). Bugcheck early with the bad pointer + caller saved
+     so we can see who set up the bad wait block.
+   - Audit Rust translations of `KeWaitForSingleObject`,
+     `KiSatisfyObjectWait`, and any process-wait paths for
+     `WaitBlock.Thread` vs `WaitBlock.Object` swaps.
+   - Audit `KeSetProcess` and the EPROCESS exit signal path — these are
+     plausible places where a process body could be passed where a thread
+     is expected.
 
 3. **WinDbg / kd64 protocol**: deferred indefinitely. The DWARF/PDB gap and
    Windows-host requirement eat most of the value; the GDB-based toolkit

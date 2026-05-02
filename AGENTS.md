@@ -172,11 +172,14 @@ qemu/status.sh $RUN --json              # JSON: alive, gdb_reachable, serial_byt
 qemu/inspect.sh $RUN --command bt 30
 qemu/inspect.sh $RUN --command symbolicate-pc 0xfffff8000047e8d3
 qemu/inspect.sh $RUN --command dump-thread 0xfffffa80015c92f0
+qemu/inspect.sh $RUN --command dump-trapframe 0xfffff8000060f940
+qemu/inspect.sh $RUN --command pool-tag 0xfffffa80015bdc20
+qemu/inspect.sh $RUN --command identify-object 0xfffffa80015bdc20
+qemu/inspect.sh $RUN --command triage-bugcheck       # only valid AT a KeBugCheckEx halt
 
 # Bounded execution: break + continue + chained inspect, all in one batch.
 # Always cleans up breakpoints on hit AND on timeout.
-qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 \
-  --then "bt 30" --then decode-bugcheck
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 --then triage-bugcheck
 
 qemu/stop.sh $RUN                       # idempotent; preserves artifacts under qemu/runs/$RUN/
 
@@ -190,10 +193,12 @@ qemu/addr2sym.sh amd64 --reloc 0xfffff80000000000 0xfffff8000047e8d3
 ```
 RUN=$(qemu/start.sh amd64 --gdb)
 qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
-qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 \
-  --then "bt 30" --then decode-bugcheck
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
-On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code (`0x1E KMODE_EXCEPTION_NOT_HANDLED`), `STATUS_IN_PAGE_ERROR`, faulting PC, and fault VA in one tool call — replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
+On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception
+code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus
+pointer (e.g. "ProcessObject named csrss.exe") — all in one tool call,
+replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
 
 **Rules:**
 - Run `qemu/build-index.sh <arch>` after each kernel build (or before relying on offline sym lookup).

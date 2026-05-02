@@ -12,7 +12,17 @@
 #                     -- print symbol+offset+source for a single address
 #   dump-thread [addr]
 #                     -- pretty-print _KTHREAD (current thread by default)
+#   dump-trapframe <addr>
+#                     -- pretty-print KTRAP_FRAME at addr (per-arch layout)
+#   pool-tag <addr>   -- find enclosing POOL_HEADER, decode tag/size/type
+#   identify-object <addr>
+#                     -- "what is this kernel pointer?" (process/thread/etc)
 #   decode-bugcheck   -- read KeBugCheckEx args at the bugcheck frame
+#   triage-bugcheck   -- decode-bugcheck + dump-trapframe + identify-object
+#                        in one shot (amd64 0x1E only for now)
+#   walk-waitlist <addr>
+#                     -- walk the WaitListHead of a dispatcher object,
+#                        printing every wait block (Thread / Object / state)
 #   find-kbase        -- scan for runtime kernel base, store in $kbase
 #   raw <gdb-cmd>     -- run a raw GDB command (escape hatch)
 #
@@ -69,6 +79,11 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/bt-tagged.py"
     -ex "source $GDB_HELPERS_DIR/decode-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/dump-thread.py"
+    -ex "source $GDB_HELPERS_DIR/dump-trapframe.py"
+    -ex "source $GDB_HELPERS_DIR/pool-tag.py"
+    -ex "source $GDB_HELPERS_DIR/identify-object.py"
+    -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
+    -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
 )
 
 # Auto-resolve kbase + relocate symbols. If we already cached it in the
@@ -103,8 +118,31 @@ case "$COMMAND" in
     dump-thread)
         EX_ARGS+=(-ex "dump-thread ${ARGS[*]:-}")
         ;;
+    dump-trapframe)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "dump-trapframe requires an address"
+        EX_ARGS+=(-ex "dump-trapframe $ADDR")
+        ;;
+    pool-tag)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "pool-tag requires an address"
+        EX_ARGS+=(-ex "pool-tag $ADDR")
+        ;;
+    identify-object)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "identify-object requires an address"
+        EX_ARGS+=(-ex "identify-object $ADDR")
+        ;;
     decode-bugcheck)
         EX_ARGS+=(-ex "decode-bugcheck")
+        ;;
+    triage-bugcheck)
+        EX_ARGS+=(-ex "triage-bugcheck")
+        ;;
+    walk-waitlist)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "walk-waitlist requires an object address"
+        EX_ARGS+=(-ex "walk-waitlist $ADDR")
         ;;
     find-kbase)
         EX_ARGS+=(-ex "find-kbase")

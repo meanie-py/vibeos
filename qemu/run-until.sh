@@ -67,7 +67,12 @@ expand_then() {
         bt|bt-all-cpus)   echo "bt-tagged${rest:- 30}" ;;
         regs)             echo "info registers" ;;
         decode-bugcheck)  echo "decode-bugcheck" ;;
+        triage-bugcheck)  echo "triage-bugcheck" ;;
+        walk-waitlist)    echo "walk-waitlist${rest}" ;;
         dump-thread)      echo "dump-thread${rest}" ;;
+        dump-trapframe)   echo "dump-trapframe${rest}" ;;
+        pool-tag)         echo "pool-tag${rest}" ;;
+        identify-object)  echo "identify-object${rest}" ;;
         symbolicate-pc)   echo "info symbol${rest}" ;;
         raw)              echo "${raw#raw }" ;;
         *) die "unknown --then command: $cmd" ;;
@@ -92,6 +97,11 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/bt-tagged.py"
     -ex "source $GDB_HELPERS_DIR/decode-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/dump-thread.py"
+    -ex "source $GDB_HELPERS_DIR/dump-trapframe.py"
+    -ex "source $GDB_HELPERS_DIR/pool-tag.py"
+    -ex "source $GDB_HELPERS_DIR/identify-object.py"
+    -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
+    -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
 )
 
 if [ -n "$CACHED_KBASE" ] && [ "$CACHED_KBASE" != "null" ]; then

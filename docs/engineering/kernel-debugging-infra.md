@@ -141,8 +141,14 @@ Initial inspect commands (Phase 2):
 - `bt-all-cpus` — same, across all vCPUs (we run 1 vCPU today, but the abstraction is right)
 - `regs` — register dump
 - `decode-bugcheck` — symbolicate bugcheck args (status code, fault VA, PC → function+offset)
-- `dump-thread [addr]` — pretty-print `_KTHREAD` with named fields; defaults to current thread
+- `dump-thread [addr]` — pretty-print `_KTHREAD` with named fields; defaults to current thread. Uses DWARF type info when available, falls back to a per-arch table of hardcoded offsets when ntoskrnl's bindgen DWO CUs are missing (the common case today). Means `dump-thread` works even on freshly-built kernels with sparse DWO output.
 - `symbolicate-pc [addr]` — single address → symbol+offset+source-line
+
+Phase 2.5 inspect commands (added 2026-05-02 from the amd64 KiUnwaitThread session):
+- `dump-trapframe <addr>` — pretty-print KTRAP_FRAME at addr using a per-arch hardcoded layout table. Replaces 30+ lines of manual offset arithmetic on a `x/64gx` raw dump. Currently surfaces the registers and segment selectors you actually want for a kernel #PF/#GP/etc. — not every Dr*/Xmm*. Layout mirrors `sdk/include/ndk/<arch>/ketypes.h` and must be bumped if that struct changes.
+- `pool-tag <addr>` — walk backwards from a kernel pointer to find the enclosing POOL_HEADER, decode tag (4-byte ASCII), block size, pool type. Tries multiple back-offsets (raw pool body / pool+OBJECT_HEADER / pool+OBJECT_HEADER+CreatorInfo) so it works whether the user pointed at a pool body or an object body.
+- `identify-object <addr>` — best-effort "what is this kernel pointer?" Combines DISPATCHER_HEADER.Type @ +0x00 with the pool-tag scan, and for `ProcessObject` reads `ImageFileName` at the body-relative offset (amd64=0x260). One-shot answer to questions like "is `0xfffffa80015c01f0` a thread, a process, or an event?" — replaces the manual chain of byte-reads, ASCII decode, and bindgen-offset lookups.
+- `triage-bugcheck` — headline command for the "kernel BUGCHECK in some flake" loop. Decodes KeBugCheckEx args, drills into the trap frame at Param3 (when stop code is `0x1E KMODE_EXCEPTION_NOT_HANDLED`), and runs `identify-object` on the pointer in `Rcx` (the asm operand at the fault site for KiReadyThread-style sites). One tool call, structured output, identifies the bogus pointer end-to-end.
 
 Phase 5+ inspect commands (incremental as bugs ask for them):
 - `dump-process`, `walk-event-waiters`, `find-pool`, `dump-irql`, `dump-cpu`
