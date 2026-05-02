@@ -398,7 +398,8 @@ if(ARCH STREQUAL "i386")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/i386/prefetch.S)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
+        # kd64/i386/kdx86.c — replaced by Rust (ntoskrnl-rust/src/kd64/i386/kdx86.rs)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
         # ke/i386/ — replaced by Rust (ntoskrnl-rust/src/ke/i386/)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/abios.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/cpu.c
@@ -434,7 +435,8 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust - shared in i386/page.rs)
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
+        # kd64/amd64/kdx64.c — replaced by Rust (ntoskrnl-rust/src/kd64/amd64/kdx64.rs)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
         # ke/amd64/ — replaced by Rust (ntoskrnl-rust/src/ke/amd64/)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/cpu.c

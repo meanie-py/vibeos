@@ -497,3 +497,49 @@ mod _force_ps_amd64_symbols {
         SyncPtr(crate::ps::amd64::psctx::PspGetOrSetContextKernelRoutine as *const ()),
     ];
 }
+
+#[cfg(target_arch = "x86")]
+mod _force_kd64_i386_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 12] = [
+        SyncPtr(crate::kd64::i386::kdx86::KdpGetStateChange as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSetContextState as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadMsr as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteMsr as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadBusData as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteBusData as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadControlSpace as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteControlSpace as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadIoSpace as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteIoSpace as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpSysCheckLowMemory as *const ()),
+        SyncPtr(crate::kd64::i386::kdx86::KdpAllowDisable as *const ()),
+    ];
+}
+
+#[cfg(target_arch = "x86_64")]
+mod _force_kd64_amd64_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 12] = [
+        SyncPtr(crate::kd64::amd64::kdx64::KdpGetStateChange as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSetContextState as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadMsr as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteMsr as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadBusData as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteBusData as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadControlSpace as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteControlSpace as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadIoSpace as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteIoSpace as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpSysCheckLowMemory as *const ()),
+        SyncPtr(crate::kd64::amd64::kdx64::KdpAllowDisable as *const ()),
+    ];
+}

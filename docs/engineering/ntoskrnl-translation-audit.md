@@ -1,8 +1,14 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-ps-arch)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-kd64-arch)
 
 ## Headline
 
-- **~99.78% translated by C-line count.** ~282K LOC translatable C body of work; ~660 LOC of translatable C still active in the default build (worst arch). Per-arch ps glue (`ps/i386/psctx.c` + `ps/i386/psldt.c` + `ps/amd64/psctx.c`) flipped to Rust this round, ~273 LOC of C dropped.
+- **~99.92% translated by C-line count.** ~282K LOC translatable C body of work; ~225 LOC of translatable C still active in the default build (worst arch). Per-arch kd64 glue (`kd64/i386/kdx86.c` + `kd64/amd64/kdx64.c`) flipped to Rust this round, ~837 LOC of C dropped — the last large per-arch kd64 backlog.
+- **kd64 arch glue landed.** Two files hand-translated and wired:
+  - `kd64/i386/kdx86.rs` — KdpGetStateChange/KdpSetContextState + the eight KdpSys* helpers (ReadMsr/WriteMsr/Read+WriteBusData/Read+WriteControlSpace/Read+WriteIoSpace) + KdpSysCheckLowMemory + KdpAllowDisable (~360 LOC).
+  - `kd64/amd64/kdx64.rs` — same function set adapted to amd64 conventions: `AMD64_DEBUG_CONTROL_SPACE_*` keyed dispatch in ReadControlSpace/WriteControlSpace; ReadBusData/WriteBusData stubbed (matches C `UNIMPLEMENTED`); `KGDT64_R0_CODE` instead of `KGDT_R0_CODE` (~330 LOC).
+  - i386 needed inline-asm `rdmsr`/`wrmsr` wrappers (i386 doesn't export `__readmsr`/`__writemsr` from the shim layer, only amd64 does). Both files wrap port I/O with `in/out al/ax/eax, dx` inline asm. SEH around `__readmsr`/`__writemsr` was dead under DUMMY_PSEH on the C side too, so the Rust translation drops the wrap; bad MSRs would BSOD in either case, and these helpers only run when WinDbg sends a packet.
+  - Per-arch modules `kd64/i386/` and `kd64/amd64/` added with `#[cfg(target_arch = ...)]` gates; `_force_kd64_{i386,amd64}_symbols` blocks reference all twelve fns to ensure the staticlib pulls the CGUs.
+- **ps arch glue landed (last session).** Three small files hand-translated and wired:
 - **ps arch glue landed.** Three small files hand-translated and wired:
   - `ps/i386/psctx.rs` — `PspGetContext`, `PspSetContext`, `PspGetOrSetContextKernelRoutine` (90 LOC).
   - `ps/i386/psldt.rs` — `PspDeleteLdt`, `PspDeleteVdmObjects`, `PspQueryDescriptorThread` (80 LOC; SEH wrappers around `RtlCopyMemory` translated as direct `read_unaligned`/`write_unaligned`, since DUMMY_PSEH makes the `_SEH2_EXCEPT` dead code on both sides anyway and the upstream `DefaultQueryInfoBufferCheck` already validates user buffers).
@@ -41,7 +47,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | pnpmgr | 14 (+arb subdir) | 25,973 | `pnpres.rs` active all 3 arches |
 | fstub | 4 | 12,264 | |
 | mm | 12 | 11,893 | |
-| **kd64 (WinDbg KD protocol)** | **7** | **11,100** | **NEW — all 3 arches active** |
+| **kd64 (WinDbg KD protocol)** | **7 + per-arch** | **11,100 + 837** | All 3 arches active; per-arch kd64/i386 (kdx86) + kd64/amd64 (kdx64) Rust |
 | kdbg (KDB) | 9 | 13,485 | i386 + amd64 only (KDBG off on arm64); includes `i386_dis.rs` (Gemini 3 Pro translation) |
 | cc (cache) | 7 | 6,221 | |
 | dbgk | 2 | 5,104 | |
@@ -82,29 +88,24 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 ## Still in C — translation candidates (NOT yet translated)
 
-The real backlog. Roughly 0.8K LOC of small per-arch glue.
-
-| File | LOC | Per-arch? | Notes |
-|------|----:|-----------|-------|
-| kd64/i386/kdx86.c | 446 | i386 | Per-arch helpers called by Rust kdapi.rs (KdpSysReadMsr/WriteMsr/IoSpace, KdpGetStateChange, KdpSetContextState). Small, callable by Rust as-is — translate only when convenient. |
-| kd64/amd64/kdx64.c | 391 | amd64 | Same role for amd64. |
+Effectively empty. The remaining active translatable C is the per-arch ke i386 mtrr/abios pieces (already gated off in many configs) and a handful of small helpers that each tag along inside parents already on the list.
 
 ## Active C in default build, summed
 
 | Bucket | LOC |
 |--------|----:|
 | Generic active C | ~2,460 |
-| i386-only active C (worst arch) | ~750 |
-| **Active C in default build (worst case = i386)** | **~3,210** |
+| i386-only active C (worst arch) | ~313 |
+| **Active C in default build (worst case = i386)** | **~2,773** |
 | of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~660** |
+| **Translatable C still active** | **~225** |
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
 - ~282,200 LOC C total
-- ~660 LOC C still active and translatable
-- **(282,200 − 660) / 282,200 ≈ 99.77% translated**
+- ~225 LOC C still active and translatable
+- **(282,200 − 225) / 282,200 ≈ 99.92% translated**
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
 - Parked Rust: ~1.5K LOC (just lpc/connect.rs + ke/amd64/usercall.rs now; trap.rs and others landed)
@@ -115,10 +116,9 @@ If you also count the parked translations as "done" (translation already paid fo
 
 In rough priority order (yield vs. cost):
 
-1. **kd64/{i386,amd64}/kdx{86,64}.c** — small per-arch helpers (~840 LOC combined). Easy translation candidates now that the generic kd64 stack is Rust.
-2. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
-3. **ke/amd64/usercall** — 404 LOC. Verified-current BSOD on re-enable; needs symbolicated crash analysis at RVA 0x5F5C78.
-4. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
+1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
+2. **ke/amd64/usercall** — 404 LOC. Verified-current BSOD on re-enable; needs symbolicated crash analysis at RVA 0x5F5C78.
+3. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
 
 ## Stale-claim watch
 
