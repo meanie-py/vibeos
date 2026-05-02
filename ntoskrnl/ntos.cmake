@@ -279,7 +279,8 @@ list(APPEND SOURCE
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/rmap.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section.c (Rust)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/shutdown.c (Rust)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section_pe.c
+    # mm/section_pe.c — replaced by Rust (ntoskrnl-rust/src/mm/section_pe.rs)
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section_pe.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_sysldr_shims.c
     # OB subsystem -- replaced by Rust (ntoskrnl-rust/src/ob/)

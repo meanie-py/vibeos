@@ -536,6 +536,18 @@ mod _force_cmhardwr_symbols {
     ];
 }
 
+// Force inclusion of mm/section_pe.rs symbols on all arches.
+mod _force_section_pe_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 1] = [
+        SyncPtr(crate::mm::section_pe::PeFmtCreateSection as *const ()),
+    ];
+}
+
 #[cfg(target_arch = "x86_64")]
 mod _force_kd64_amd64_symbols {
     #[repr(transparent)]

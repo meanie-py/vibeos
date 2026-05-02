@@ -1,8 +1,9 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-cmhardwr+kdb_help)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-02, post-section_pe)
 
 ## Headline
 
 - **Translation backlog is empty.** Every translatable C file that the default i386/amd64 build actually links in either has its Rust replacement active, or has a Rust translation parked in tree waiting on a real-bug fix. The remaining "active translatable C" is just two parked files: `lpc/connect.c` (LLVM captures(none) cascade) and `ke/amd64/usercall.c` (verified-current BSOD); both have full Rust translations in tree.
+- **section_pe landed (this round).** `mm/section_pe.rs` — Codex-translated, ~1,290 LOC. `PeFmtCreateSection` plus the `SectionCharacteristicsToProtect[16]` table and ~15 `Intsafe_*`/`AlignUp`/`IsAligned` helpers. C source disabled in `ntos.cmake`. i386 + amd64 7/7 smoke pass after wiring; arm64 builds clean. Codex's report claimed amd64 0/7 due to `KiSystemStartup` ud2 — that was the documented cold-boot flake (and the ud2 is on the scanner's known-CGU allow-list; pre-existing, not caused by this work). Codex also drive-by-formatted 337 unrelated files via `cargo fmt`; reverted.
 - **cmhardwr + kdb_help + arm32 cleanup landed (this round).**
   - **`config/i386/cmhardwr.rs`** — Codex-translated, 1,131 LOC. Three functions: `CmpGetBiosDate`, `CmpGetBiosVersion`, `CmpInitializeMachineDependentConfiguration`. Active on both i386 and amd64. Codex correctly used `#[cfg(target_arch=...)]` for the `_M_IX86`/`_M_AMD64` branches, leaned on `ntkrnl_sys::ddk::SIZE_T` for the registry/section APIs, and emitted ~30 `RtlInitUnicodeString` + `NtSetValueKey` registry calls cleanly. Two small fixes by hand: `RtlCompareMemory` `Length` arg cast (base::SIZE_T = usize ≠ ddk::SIZE_T = ULONG_PTR nominally), and overrode bindgen's `extern "C" KiCpuId` with `extern "system"` because the actual i386 kernel symbol is the stdcall `_KiCpuId@8`. Gotcha confirmed: bindgen's calling-convention metadata is not always right for kernel internals — always verify against the actual `objdump -t` of `libntoskrnl.a`.
   - **`kdbg/kdb_help.rs`** — global_asm! translation of `kdbg/{i386,amd64}/kdb_help.S` (each ~25 lines). Single function `KdbpStackSwitchAndCall` per arch, just `core::arch::global_asm!` block with the original assembler instructions, `.globl` directive, and decoration matching i386 stdcall (`_KdbpStackSwitchAndCall@8`) and amd64 plain (`KdbpStackSwitchAndCall`). Two .S files deleted.
@@ -82,22 +83,21 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 | File | LOC | Why C |
 |------|----:|-------|
-| mm/section_pe.c | 661 | PE format parser; user is planning to send to Codex next session. |
 | config/cmdata.c | 994 | Pure globals; no functions for tree-sitter to extract. ~150 `extern T name;` declarations across many subsystems. Mechanical but tedious to translate, no functional benefit. |
 | `*_rust_shims.c` (~12 files) | 9,237 | FORCEINLINE/macro/dllimport bridges for Rust FFI. By design. |
 | tests/*.c | 5,859 | Kernel test harness. Not for translation. |
 
 ## Still in C — translation candidates (NOT yet translated)
 
-**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just the two parked translations (`lpc/connect.c` on both arches, `ke/amd64/usercall.c` on amd64), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmhardwr`, `cmdata`, `section_pe`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
+**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just the two parked translations (`lpc/connect.c` on both arches, `ke/amd64/usercall.c` on amd64), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmdata`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
 
 ## Active C in default build, summed
 
 | Bucket | LOC |
 |--------|----:|
-| Generic active C (excluding shims + tests) | ~1,650 |
-| **Active C in default build (worst case = i386)** | **~1,650** |
-| of which intentional-stay (cmdata + section_pe + sysldr shims) | ~1,650 |
+| Generic active C (excluding shims + tests) | ~990 |
+| **Active C in default build (worst case = i386)** | **~990** |
+| of which intentional-stay (cmdata + sysldr shims) | ~990 |
 | of which parked Rust translation (lpc/connect.c on i386; +usercall.c on amd64) | 802 (i386) / 1,206 (amd64) |
 | **Active translatable C with no Rust translation in tree** | **0** |
 
