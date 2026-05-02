@@ -14,5 +14,6 @@ pub mod spinlock;
 pub mod stubs;
 pub mod thrdini;
 pub mod traphandler;
-// pub mod usercall; // Using C version — Rust version has undiagnosed return-address corruption bug
+// pub mod usercall; // Using C version — Rust version BSODs amd64 boot (verified 2026-05-01).
+                       // Audit's "return-address corruption" excuse is current, not stale.
 pub mod xstate;

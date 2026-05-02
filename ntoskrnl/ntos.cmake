@@ -451,7 +451,7 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c  # Rust usercall.rs BSODs amd64 (verified 2026-05-01); audit excuse is current
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
         )
 elseif(ARCH STREQUAL "arm")
@@ -488,7 +488,7 @@ elseif(ARCH STREQUAL "arm64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/kiinit.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c    # Keep in C (Rust version breaks boot)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.c   # Probing Rust trap.rs (audit's "breaks boot" predates CGU/opaque_ptr)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c (Rust)

@@ -1,8 +1,10 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-cleanup)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-trap-probe)
 
 ## Headline
 
-- **~99.5% translated by C-line count.** ~282K LOC translatable C body of work; ~1.5K LOC of translatable C still active in the default build (worst arch). Same as last session in % terms; what changed is a tree-cleanup pass.
+- **~99.7% translated by C-line count.** ~282K LOC translatable C body of work; ~1.0K LOC of translatable C still active in the default build (worst arch). arm64 trap.c (526 LOC) flipped to Rust this round.
+- **arm64 trap.rs landed.** Audit's parked excuse ("Rust version breaks boot") was stale, like kd64 before it. `ntoskrnl/ke/arm64/trap.c` no longer in cmake; `ntoskrnl-rust/src/ke/arm64/trap.rs` was already compiled in the staticlib but symbol-shadowed by the C version under `--allow-multiple-definition`. Now picks up the Rust symbols. arm64 baseline failure unchanged — same identical 13,449 bytes serial → same hang at `[HIVE] CmCheckRegistry done`. So trap.rs handles the boot path as well as trap.c does, and the arm64 baseline regression is somewhere else.
+- **amd64 usercall.rs stays parked, but the audit excuse is now confirmed current.** Probed this session — re-enabling causes a real BSOD at boot (BugCheck at RVA 0x5F5C78). Reverted. Unlike trap, the "return-address corruption" excuse is real, not stale. Needs symbolicated crash analysis to debug, not just the LLVM defense work that fixed the kd64-class issues.
 - **guid.rs landed.** `ntoskrnl/guid.c` (10 LOC of preprocessor-emitted GUID storage from `<initguid.h>` + `batclass.h`/`poclass.h`/`diskguid.h`) replaced by `sdk/lib/rust/ntoskrnl-rust/src/guid.rs` (23 GUIDs as `#[no_mangle] pub static`). C side disabled in `ntoskrnl/CMakeLists.txt`. Existing `extern { static GUID_DEVICE_BATTERY: GUID; }` blocks in Rust kernel modules now resolve to the new Rust storage. Co-existence with `sdk/lib/poguid` library (which also emits poclass GUIDs) tolerated via the existing `--allow-multiple-definition` link flag.
 - **Dead arm32 deleted.** Removed `ntoskrnl/{kd64,ke,mm,mm/ARM3,ps,rtl}/arm/` directories (~2.5K LOC of ARMv7 leftovers from upstream ReactOS — different ISA than this fork's ARM64 port; not in any reachable cmake; no references from outside their own dirs). Plus `ntoskrnl/KrnlFun.c` (48 LOC of a 2005-vintage Alex Ionescu joke comment). 19 files removed total.
 - **arcname landed last session.** `io/iomgr/arcname.c` no longer active on any arch. Hand-translated the two boot-critical functions into the existing `iomgr/arcname.rs`.
@@ -58,9 +60,8 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | Rust file | Rust LOC | C still active | LOC | Reason parked |
 |-----------|---------:|----------------|----:|---------------|
 | lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival. |
-| ke/arm64/trap.rs | dead | ke/arm64/trap.c | 526 | Rust version breaks boot. **Edit the C file** — the .rs is dead. |
-| ke/amd64/usercall.rs | dead | ke/amd64/usercall.c | 404 | Undiagnosed return-address corruption in Rust version. |
-| **Parked total** | **~5.1K Rust** | | **~1.7K C** | |
+| ke/amd64/usercall.rs | 786 | ke/amd64/usercall.c | 404 | Verified 2026-05-01: re-enabling causes a real BSOD on amd64 boot (BugCheck at RVA 0x5F5C78). The audit excuse ("undiagnosed return-address corruption") is current, not stale. Needs symbolicated crash analysis — not just CGU/opaque_ptr work. |
+| **Parked total** | **~1.5K Rust** | | **~1.2K C** | |
 
 ## Still in C — intentional (no Rust translation planned)
 
@@ -91,22 +92,22 @@ The real backlog. Roughly 2K LOC of small per-arch glue.
 | Bucket | LOC |
 |--------|----:|
 | Generic active C | ~2,460 |
-| i386-only active C (worst arch) | ~1,550 |
-| **Active C in default build (worst case = i386)** | **~4,010** |
+| i386-only active C (worst arch) | ~1,024 |
+| **Active C in default build (worst case = i386)** | **~3,484** |
 | of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~1,460** |
+| **Translatable C still active** | **~934** |
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
-- ~282,200 LOC C total (includes i386-dis.c which left the intentional-stay bucket last session)
-- ~1,460 LOC C still active and translatable
-- **(282,200 − 1,460) / 282,200 ≈ 99.5% translated**
+- ~282,200 LOC C total
+- ~934 LOC C still active and translatable
+- **(282,200 − 934) / 282,200 ≈ 99.67% translated**
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
-- Parked Rust: ~5.1K LOC
-- Add ~1.7K LOC of C they replace if/when wired
-- **>99.5% has a Rust translation in tree** (active or parked)
+- Parked Rust: ~1.5K LOC (just lpc/connect.rs + ke/amd64/usercall.rs now; trap.rs and others landed)
+- Add ~1.2K LOC of C they replace if/when wired
+- **>99.7% has a Rust translation in tree** (active or parked)
 
 ## What it would take to push toward 100%
 
