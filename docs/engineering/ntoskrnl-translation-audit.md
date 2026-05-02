@@ -2,7 +2,7 @@
 
 ## Headline
 
-- **~99.92% translated by C-line count.** ~282K LOC translatable C body of work; ~225 LOC of translatable C still active in the default build (worst arch). Per-arch kd64 glue (`kd64/i386/kdx86.c` + `kd64/amd64/kdx64.c`) flipped to Rust this round, ~837 LOC of C dropped — the last large per-arch kd64 backlog.
+- **Translation backlog is empty.** Every translatable C file that the default i386/amd64 build actually links in either has its Rust replacement active, or has a Rust translation parked in tree waiting on a real-bug fix. Per-arch kd64 glue (`kd64/i386/kdx86.c` + `kd64/amd64/kdx64.c`) flipped to Rust this round, ~837 LOC of C dropped — the last large per-arch kd64 work. The remaining "active translatable C" is just two parked files: `lpc/connect.c` (LLVM captures(none) cascade) and `ke/amd64/usercall.c` (verified-current BSOD); both have full Rust translations in tree.
 - **kd64 arch glue landed.** Two files hand-translated and wired:
   - `kd64/i386/kdx86.rs` — KdpGetStateChange/KdpSetContextState + the eight KdpSys* helpers (ReadMsr/WriteMsr/Read+WriteBusData/Read+WriteControlSpace/Read+WriteIoSpace) + KdpSysCheckLowMemory + KdpAllowDisable (~360 LOC).
   - `kd64/amd64/kdx64.rs` — same function set adapted to amd64 conventions: `AMD64_DEBUG_CONTROL_SPACE_*` keyed dispatch in ReadControlSpace/WriteControlSpace; ReadBusData/WriteBusData stubbed (matches C `UNIMPLEMENTED`); `KGDT64_R0_CODE` instead of `KGDT_R0_CODE` (~330 LOC).
@@ -88,24 +88,29 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 ## Still in C — translation candidates (NOT yet translated)
 
-Effectively empty. The remaining active translatable C is the per-arch ke i386 mtrr/abios pieces (already gated off in many configs) and a handful of small helpers that each tag along inside parents already on the list.
+**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just the two parked translations (`lpc/connect.c` on both arches, `ke/amd64/usercall.c` on amd64), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmhardwr`, `cmdata`, `section_pe`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
 
 ## Active C in default build, summed
 
 | Bucket | LOC |
 |--------|----:|
-| Generic active C | ~2,460 |
-| i386-only active C (worst arch) | ~313 |
-| **Active C in default build (worst case = i386)** | **~2,773** |
-| of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~225** |
+| Generic active C (excluding shims + tests) | ~1,650 |
+| i386-only active C (cmhardwr) | 897 |
+| **Active C in default build (worst case = i386)** | **~2,547** |
+| of which intentional-stay (cmdata + section_pe + cmhardwr + sysldr shims) | ~2,547 |
+| of which parked Rust translation (lpc/connect.c on i386; +usercall.c on amd64) | 802 (i386) / 1,206 (amd64) |
+| **Active translatable C with no Rust translation in tree** | **0** |
+
+(Counts exclude entries inside the `elseif(ARCH STREQUAL "arm")` dead branch — those files are listed in `ntos.cmake` but the build never selects that arch.)
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
 - ~282,200 LOC C total
-- ~225 LOC C still active and translatable
-- **(282,200 − 225) / 282,200 ≈ 99.92% translated**
+- 0 LOC C still active that doesn't already have a Rust translation in tree
+- **All translatable C either has a Rust replacement active in the build, or has a Rust translation parked in tree pending a real-bug fix.**
+
+The remaining "% to 100%" is now entirely about debugging the two parked translations — no new translation work is needed.
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
 - Parked Rust: ~1.5K LOC (just lpc/connect.rs + ke/amd64/usercall.rs now; trap.rs and others landed)
