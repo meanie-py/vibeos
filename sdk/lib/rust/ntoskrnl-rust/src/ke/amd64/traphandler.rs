@@ -9,7 +9,7 @@ use ntkrnl_sys::interlocked::*;
 
 use ntkrnl_sys::ddk::{
     PKTHREAD, PKTRAP_FRAME, PKEXCEPTION_FRAME, PKSERVICE_TABLE_DESCRIPTOR,
-    PULONG64, PKPRCB, KIPCR,
+    PULONG64, PKPRCB, KIPCR, PGDI_BATCHFLUSH_ROUTINE,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
@@ -19,7 +19,7 @@ extern "system" {
     fn KiQuantumEnd();
     fn KiSwapContext(WaitIrql: KIRQL, OldThread: PKTHREAD);
     fn KiHandleNmi();
-    fn KeGdiFlushUserBatch();
+    static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
     fn KiConvertToGuiThread() -> NTSTATUS;
     fn _enable();
     fn _disable();
@@ -184,7 +184,9 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         };
 
         if GdiBatchCount != 0 {
-            KeGdiFlushUserBatch();
+            // GdiBatchCount > 0 implies win32k has registered the flush routine.
+            // Matches C: ke/amd64/usercall.c:322 also calls without NULL-check.
+            (KeGdiFlushUserBatch.unwrap())();
         }
     }
 

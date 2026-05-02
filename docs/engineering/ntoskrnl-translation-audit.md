@@ -1,9 +1,10 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-02, post-section_pe)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-02, post-usercall)
 
 ## Headline
 
-- **Translation backlog is empty.** Every translatable C file that the default i386/amd64 build actually links in either has its Rust replacement active, or has a Rust translation parked in tree waiting on a real-bug fix. The remaining "active translatable C" is just two parked files: `lpc/connect.c` (LLVM captures(none) cascade) and `ke/amd64/usercall.c` (verified-current BSOD); both have full Rust translations in tree.
-- **section_pe landed (this round).** `mm/section_pe.rs` — Codex-translated, ~1,290 LOC. `PeFmtCreateSection` plus the `SectionCharacteristicsToProtect[16]` table and ~15 `Intsafe_*`/`AlignUp`/`IsAligned` helpers. C source disabled in `ntos.cmake`. i386 + amd64 7/7 smoke pass after wiring; arm64 builds clean. Codex's report claimed amd64 0/7 due to `KiSystemStartup` ud2 — that was the documented cold-boot flake (and the ud2 is on the scanner's known-CGU allow-list; pre-existing, not caused by this work). Codex also drive-by-formatted 337 unrelated files via `cargo fmt`; reverted.
+- **Translation backlog is empty AND only one parked file remains.** Every translatable C file that the default i386/amd64 build links in either has its Rust replacement active, or (for `lpc/connect.c`) has a Rust translation parked in tree waiting on a real-bug fix. `ke/amd64/usercall.rs` was the other parked translation; it landed this round.
+- **ke/amd64/usercall.rs landed (this round).** Codex re-enabled the parked Rust translation and root-caused the long-standing "return-address corruption" BSOD. Real bug: the Rust file imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, but the C side defines it as a global `PGDI_BATCHFLUSH_ROUTINE` *function pointer* (`ntoskrnl/ps/win32.c:20`), filled in at runtime when win32k registers itself. The Rust `fn` import emitted a direct call to the data symbol's address (linker-laid at PE 0x5F5C78), causing `STATUS_ILLEGAL_INSTRUCTION` on first GDI batch flush at boot. Fix: import as `static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;` and call via `(KeGdiFlushUserBatch.unwrap())()`. Same mistake existed (latent) in already-active `ke/amd64/traphandler.rs`'s `KiSystemCallHandler` — fixed there too. Codex also corrected three i386-carry-over constants in usercall.rs (`CONTEXT_FULL` 0x10007 → 0x10000B, `CONTEXT_DEBUG_REGISTERS` 0x10 → 0x100010, `KERNEL_STACK_SIZE` 0x6000 → 0xC000) — wrong but masked by the BSOD landing earlier. amd64 7/7 + i386 7/7 smoke pass.
+- **section_pe landed (last round).** `mm/section_pe.rs` — Codex-translated, ~1,290 LOC. `PeFmtCreateSection` plus the `SectionCharacteristicsToProtect[16]` table and ~15 `Intsafe_*`/`AlignUp`/`IsAligned` helpers. C source disabled in `ntos.cmake`. i386 + amd64 7/7 smoke pass after wiring; arm64 builds clean. Codex's report claimed amd64 0/7 due to `KiSystemStartup` ud2 — that was the documented cold-boot flake (and the ud2 is on the scanner's known-CGU allow-list; pre-existing, not caused by this work). Codex also drive-by-formatted 337 unrelated files via `cargo fmt`; reverted.
 - **cmhardwr + kdb_help + arm32 cleanup landed (this round).**
   - **`config/i386/cmhardwr.rs`** — Codex-translated, 1,131 LOC. Three functions: `CmpGetBiosDate`, `CmpGetBiosVersion`, `CmpInitializeMachineDependentConfiguration`. Active on both i386 and amd64. Codex correctly used `#[cfg(target_arch=...)]` for the `_M_IX86`/`_M_AMD64` branches, leaned on `ntkrnl_sys::ddk::SIZE_T` for the registry/section APIs, and emitted ~30 `RtlInitUnicodeString` + `NtSetValueKey` registry calls cleanly. Two small fixes by hand: `RtlCompareMemory` `Length` arg cast (base::SIZE_T = usize ≠ ddk::SIZE_T = ULONG_PTR nominally), and overrode bindgen's `extern "C" KiCpuId` with `extern "system"` because the actual i386 kernel symbol is the stdcall `_KiCpuId@8`. Gotcha confirmed: bindgen's calling-convention metadata is not always right for kernel internals — always verify against the actual `objdump -t` of `libntoskrnl.a`.
   - **`kdbg/kdb_help.rs`** — global_asm! translation of `kdbg/{i386,amd64}/kdb_help.S` (each ~25 lines). Single function `KdbpStackSwitchAndCall` per arch, just `core::arch::global_asm!` block with the original assembler instructions, `.globl` directive, and decoration matching i386 stdcall (`_KdbpStackSwitchAndCall@8`) and amd64 plain (`KdbpStackSwitchAndCall`). Two .S files deleted.
@@ -20,7 +21,7 @@
   - `ps/amd64/psctx.rs` — `PspGetOrSetContextKernelRoutine` using `KiSetTrapContext`/`KiGetTrapContext` (50 LOC).
   Per-arch modules `ps/i386/` and `ps/amd64/` added under `ntoskrnl-rust/src/ps/` with `#[cfg(target_arch=...)]` gates; corresponding `_force_ps_*_symbols` blocks in `lib.rs` ensure the staticlib pulls the CGUs. ABI gotcha: i386 `ExFreePoolWithTag` is `extern "stdcall"` and a hand-rolled `extern "system" fn ExFreePoolWithTag` block somehow generates the cdecl `_ExFreePoolWithTag` reference (no `@8`); fix is to import the canonical `ntkrnl_sys::ex::ExFreePoolWithTag` instead. amd64 cold-boot flake reproduced again — first run after rebuild can land 6/7 or 0/7 with HAL/x86bios noise; second run from snapshot path hits 7/7 cleanly.
 - **arm64 trap.rs landed.** Audit's parked excuse ("Rust version breaks boot") was stale, like kd64 before it. `ntoskrnl/ke/arm64/trap.c` no longer in cmake; `ntoskrnl-rust/src/ke/arm64/trap.rs` was already compiled in the staticlib but symbol-shadowed by the C version under `--allow-multiple-definition`. Now picks up the Rust symbols. arm64 baseline failure unchanged — same identical 13,449 bytes serial → same hang at `[HIVE] CmCheckRegistry done`. So trap.rs handles the boot path as well as trap.c does, and the arm64 baseline regression is somewhere else.
-- **amd64 usercall.rs stays parked, but the audit excuse is now confirmed current.** Probed this session — re-enabling causes a real BSOD at boot (BugCheck at RVA 0x5F5C78). Reverted. Unlike trap, the "return-address corruption" excuse is real, not stale. Needs symbolicated crash analysis to debug, not just the LLVM defense work that fixed the kd64-class issues.
+- **amd64 usercall.rs LANDED next session — see headline.** The "real BSOD at RVA 0x5F5C78" probed in this session WAS real, but the diagnosis ("return-address corruption") was wrong. Actual cause: data-symbol-as-function calling-convention mismatch on `KeGdiFlushUserBatch`. Fixed in the post-section_pe round.
 - **guid.rs landed.** `ntoskrnl/guid.c` (10 LOC of preprocessor-emitted GUID storage from `<initguid.h>` + `batclass.h`/`poclass.h`/`diskguid.h`) replaced by `sdk/lib/rust/ntoskrnl-rust/src/guid.rs` (23 GUIDs as `#[no_mangle] pub static`). C side disabled in `ntoskrnl/CMakeLists.txt`. Existing `extern { static GUID_DEVICE_BATTERY: GUID; }` blocks in Rust kernel modules now resolve to the new Rust storage. Co-existence with `sdk/lib/poguid` library (which also emits poclass GUIDs) tolerated via the existing `--allow-multiple-definition` link flag.
 - **Dead arm32 deleted.** Removed `ntoskrnl/{kd64,ke,mm,mm/ARM3,ps,rtl}/arm/` directories (~2.5K LOC of ARMv7 leftovers from upstream ReactOS — different ISA than this fork's ARM64 port; not in any reachable cmake; no references from outside their own dirs). Plus `ntoskrnl/KrnlFun.c` (48 LOC of a 2005-vintage Alex Ionescu joke comment). 19 files removed total.
 - **arcname landed last session.** `io/iomgr/arcname.c` no longer active on any arch. Hand-translated the two boot-critical functions into the existing `iomgr/arcname.rs`.
@@ -40,7 +41,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 
 | Subsystem | Active mods | LOC active | Notes |
 |-----------|------------:|-----------:|-------|
-| KE (kernel) | 67 | 54,113 | Includes per-arch `ke/{i386,amd64,arm64}/*` |
+| KE (kernel) | 68 | 54,899 | Includes per-arch `ke/{i386,amd64,arm64}/*`. `ke/amd64/usercall.rs` newly active. |
 | ARM3 (mm internals) | 25 | 44,054 | `virtual.rs` active all 3 arches |
 | iomgr | 26 | 41,800 | `iomgr.rs` + `ramdisk.rs` + full `arcname.rs` (no C hybrid) active on all 3 arches |
 | EX (executive) | 31 | 38,781 | `sysinfo.rs` active all 3 arches |
@@ -67,7 +68,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | arm64 (arch) | 2 | 1,045 | |
 | amd64 (arch) | 2 | 981 | |
 | vf | 1 | 152 | |
-| **TOTAL active (i386/amd64)** | **~321** | **~414K LOC** | |
+| **TOTAL active (i386/amd64)** | **~322** | **~415K LOC** | |
 
 ## Parked translations (Rust on disk, C version active in build)
 
@@ -76,8 +77,7 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | Rust file | Rust LOC | C still active | LOC | Reason parked |
 |-----------|---------:|----------------|----:|---------------|
 | lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival. |
-| ke/amd64/usercall.rs | 786 | ke/amd64/usercall.c | 404 | Verified 2026-05-01: re-enabling causes a real BSOD on amd64 boot (BugCheck at RVA 0x5F5C78). The audit excuse ("undiagnosed return-address corruption") is current, not stale. Needs symbolicated crash analysis — not just CGU/opaque_ptr work. |
-| **Parked total** | **~1.5K Rust** | | **~1.2K C** | |
+| **Parked total** | **~736 Rust** | | **~802 C** | |
 
 ## Still in C — intentional (no Rust translation planned)
 
@@ -89,7 +89,7 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 ## Still in C — translation candidates (NOT yet translated)
 
-**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just the two parked translations (`lpc/connect.c` on both arches, `ke/amd64/usercall.c` on amd64), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmdata`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
+**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just one parked translation (`lpc/connect.c` on both arches), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmdata`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
 
 ## Active C in default build, summed
 
@@ -98,7 +98,7 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | Generic active C (excluding shims + tests) | ~990 |
 | **Active C in default build (worst case = i386)** | **~990** |
 | of which intentional-stay (cmdata + sysldr shims) | ~990 |
-| of which parked Rust translation (lpc/connect.c on i386; +usercall.c on amd64) | 802 (i386) / 1,206 (amd64) |
+| of which parked Rust translation (lpc/connect.c on both arches) | 802 |
 | **Active translatable C with no Rust translation in tree** | **0** |
 
 (The dead `elseif(ARCH STREQUAL "arm")` branch + its arm32 directories were deleted this round.)
@@ -112,18 +112,17 @@ Translatable C body of work (excluding tests, shims, intentional stays, dead arm
 
 The remaining "% to 100%" is now entirely about debugging the two parked translations — no new translation work is needed.
 
-If you also count the parked translations as "done" (translation already paid for, just not enabled):
-- Parked Rust: ~1.5K LOC (just lpc/connect.rs + ke/amd64/usercall.rs now; trap.rs and others landed)
-- Add ~1.2K LOC of C they replace if/when wired
+If you also count the parked translation as "done" (translation already paid for, just not enabled):
+- Parked Rust: ~736 LOC (just lpc/connect.rs; usercall, trap, and others landed)
+- Add ~802 LOC of C it replaces if/when wired
 - **>99.7% has a Rust translation in tree** (active or parked)
 
 ## What it would take to push toward 100%
 
 In rough priority order (yield vs. cost):
 
-1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
-2. **ke/amd64/usercall** — 404 LOC. Verified-current BSOD on re-enable; needs symbolicated crash analysis at RVA 0x5F5C78.
-3. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
+1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Probed earlier; confirmed real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging. Worth probing again with the same skepticism that paid off for `usercall.rs` (the "return-address corruption" excuse was wrong; the real bug was a one-line ABI fix). Captures(none) excuses tend to be wrong too.
+2. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
 
 ## Stale-claim watch
 
@@ -135,6 +134,7 @@ The previous audit's notes on parked subsystems were several months out of date.
 - **pnpres**: claimed "translated, never wired." Actually wires cleanly with two small fixes (malformed extern block, missing DbgPrint extern decl). 7/7 i386, 7/7 amd64, 0/7 arm64 (matches baseline).
 - **sysinfo**: claimed "70+ class handlers; not all translated." This one was actually accurate — the parked file was a stub. Hand-translated last session.
 - **iomgr/ramdisk on arm64**: claimed "PE layout issue → 0x6B crash." Half-stale: the cfg gate in `mod.rs` had to come off, but the build then failed not from a runtime PE problem — from a link-time problem. Statics like `IoFileObjectType` weren't being pulled from the kernel-rust archive because the C `iomgr.c` had been satisfying those refs. `_force_iomgr_symbols` block fixed it. arm64 baseline failure is unchanged (so the historical 0x6B crash, if it was ever real, is gone or different now).
+- **ke/amd64/usercall**: BSOD at `0x5F5C78` was real (not stale) — but the diagnosis ("return-address corruption") was wrong. Real bug: Rust imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, C defines it as a global `PGDI_BATCHFLUSH_ROUTINE` function pointer initialized at win32k bringup. The `fn` import emitted a direct call to the data symbol, which decoded as illegal instructions. Lesson: even when the parked-file excuse is current, the *diagnosis* in the excuse can still be wrong. Re-probe with fresh eyes; the audit's "needs symbolicated crash analysis" turned out to be exactly right and exactly cheap once done. ~10-line fix, 4-file diff. Same data-symbol-as-fn bug also existed (latent) in already-active `traphandler.rs` — found via the same fix.
 
 When picking a parked file to revive, the cheapest first step is often: re-enable it on whichever arch is greenest, build, smoke. The bug may already be gone.
 

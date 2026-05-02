@@ -458,7 +458,7 @@ elseif(ARCH STREQUAL "amd64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c  # Rust usercall.rs BSODs amd64 (verified 2026-05-01); audit excuse is current
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
         )
 elseif(ARCH STREQUAL "arm64")

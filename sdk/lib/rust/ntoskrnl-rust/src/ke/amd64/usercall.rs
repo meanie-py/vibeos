@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
     _KTRAP_FRAME, PKTRAP_FRAME, PKEXCEPTION_FRAME, PKNORMAL_ROUTINE, PCONTEXT,
     PTEB, PKTHREAD, PKCALLOUT_FRAME, PEXCEPTION_REGISTRATION_RECORD,
     PKIPCR, EXCEPTION_RECORD,
+    PGDI_BATCHFLUSH_ROUTINE,
     KeTrapFrameToContext, KiDispatchException, MmGrowKernelStack,
     KiGetUserModeStackAddress, KeGetPcr,
     KiCallUserMode, KiCallbackReturn,
@@ -21,7 +22,7 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn KiUserCallbackExit(TrapFrame: PKTRAP_FRAME) -> !;
-    fn KeGdiFlushUserBatch();
+    static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
 }
 
 #[repr(C, align(16))]
@@ -66,8 +67,8 @@ struct UCALLOUT_FRAME {
 
 type PUCALLOUT_FRAME = *mut UCALLOUT_FRAME;
 
-const CONTEXT_FULL: ULONG = 0x10007;
-const CONTEXT_DEBUG_REGISTERS: ULONG = 0x10;
+const CONTEXT_FULL: ULONG = 0x0010_000B;
+const CONTEXT_DEBUG_REGISTERS: ULONG = 0x0010_0010;
 const MODE_MASK: u16 = 1;
 const KGDT64_R3_CODE: u16 = 0x0030;
 const KGDT64_R3_CMTEB: u16 = 0x0050;
@@ -75,7 +76,7 @@ const KGDT64_R3_DATA: u16 = 0x0028;
 const RPL_MASK: u16 = 3;
 const EFLAGS_USER_SANITIZE: u32 = 0x003F4DD7;
 const EFLAGS_INTERRUPT_MASK: u32 = 0x200;
-const KERNEL_STACK_SIZE: usize = 0x6000;
+const KERNEL_STACK_SIZE: usize = 0xC000;
 
 #[no_mangle]
 pub unsafe extern "system" fn KiInitializeUserApc(
@@ -307,7 +308,10 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
     if GdiBatchCount != 0 {
         *UserStackPointer = (*UserStackPointer).wrapping_sub(256);
-        KeGdiFlushUserBatch();
+        // unwrap() will BSOD on NULL — matches the C usercall.c:322 path which also
+        // doesn't NULL-check. Reaching here implies win32k registered the pointer
+        // (GdiBatchCount > 0 is set by win32k batching).
+        (KeGdiFlushUserBatch.unwrap())();
     }
 
     *UserStackPointer = OldStack as u64;
