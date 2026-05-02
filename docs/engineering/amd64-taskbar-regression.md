@@ -9,12 +9,31 @@ never reached, and on a fraction of boots the kernel BUGCHECKs.
 **i386 renders the full desktop correctly** (Start button, taskbar, clock).
 ARM64 has separate boot path issues.
 
-## Failure Distribution (commit c1f9350f, May 2 2026)
+## Status (2026-05-02)
+
+**BUGCHECK variant: FIXED.** Root-caused with the new gdb toolkit
+(`triage-bugcheck`, `walk-waitlist`, `identify-object`) — the Rust port of
+`KxMultiThreadWait` (`sdk/lib/rust/ntkrnl-sys/src/inline/ke.rs:1772-1778`)
+omitted the `WaitBlock->Thread = Thread` line that the C macro at
+`ntoskrnl/include/internal/ke_x.h:1122` performs per wait block. Custom
+WaitBlockArrays (e.g., Win32k's KeWaitForMultipleObjects on a
+TimerNotificationObject with `'Ussy'` pool tag) inherited stale memory and
+the wait blocks ended up with `Thread = csrss EPROCESS body` from a prior
+allocation. KxUnwaitThread later passed that bogus pointer to KiUnwaitThread,
+which dereferenced `Thread->ApcState.Process` (offset 0x68) — really
+`KPROCESS->VdmTrapcHandler` — got NULL, and faulted on `[NULL+0x96]`.
+One-line fix.
+
+**Hang variant: still open.** With the BUGCHECK gone, the dominant remaining
+failure is the SetThreadDesktop/SwitchDesktop syscall return-path hang
+described below.
+
+## Failure Distribution (commit c1f9350f, May 2 2026 — pre-fix)
 
 Across 10+ amd64 boots:
 - **~10%**: full 7/7 boot — `[EXPLORER] _tWinMain entered` fires, taskbar may or may not render.
 - **~70%**: 6/7 — boot reaches `[WIN32K] shell ready` but **winlogon hangs** between "Switching to Winlogon desktop" (wlx.c:1154) and the next winlogon log line. `[EXPLORER] _tWinMain entered` never fires (explorer is never launched).
-- **~20%**: BUGCHECK 0x1E (KMODE_EXCEPTION_NOT_HANDLED) inside `KiUnlinkThread`/`KiUnwaitThread`, plus `KeGetCurrentIrql() <= APC_LEVEL` MM asserts.
+- **~20%**: BUGCHECK 0x1E (KMODE_EXCEPTION_NOT_HANDLED) inside `KiUnlinkThread`/`KiUnwaitThread`, plus `KeGetCurrentIrql() <= APC_LEVEL` MM asserts. **(fixed — see Status above)**
 
 i386 is rock solid (5/5 reliable in same probe).
 

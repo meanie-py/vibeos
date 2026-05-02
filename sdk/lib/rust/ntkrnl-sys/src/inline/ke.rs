@@ -1774,6 +1774,7 @@ pub unsafe fn KxMultiThreadWait(
         (*wb).Object = *objects.add(i);
         (*wb).WaitKey = i as u16;
         (*wb).WaitType = wait_type as u8;
+        (*wb).Thread = thread;
         (*wb).NextWaitBlock = wait_block_array.add(i + 1);
     }
 

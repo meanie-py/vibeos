@@ -26,6 +26,8 @@ BUGCHECK_NAMES = {
     0x000000C2: "BAD_POOL_CALLER",
     0x000000C5: "DRIVER_CORRUPTED_EXPOOL",
     0x000000D1: "DRIVER_IRQL_NOT_LESS_OR_EQUAL",
+    # Synthetic codes used by in-tree assertions:
+    0xBADBED1E: "WAIT_BLOCK_TYPE_CONFUSION (synthetic, KiUnwaitThread entry)",
 }
 
 
