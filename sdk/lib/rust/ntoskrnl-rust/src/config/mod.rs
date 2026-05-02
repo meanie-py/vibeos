@@ -24,3 +24,6 @@ pub mod cmsysini;
 pub mod cmvalche;
 pub mod cmwraprs;
 pub mod ntapi;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod i386;

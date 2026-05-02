@@ -521,6 +521,21 @@ mod _force_kd64_i386_symbols {
     ];
 }
 
+// Force inclusion of config/i386/cmhardwr.rs symbols on i386 + amd64.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod _force_cmhardwr_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 3] = [
+        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosDate as *const ()),
+        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosVersion as *const ()),
+        SyncPtr(crate::config::i386::cmhardwr::CmpInitializeMachineDependentConfiguration as *const ()),
+    ];
+}
+
 #[cfg(target_arch = "x86_64")]
 mod _force_kd64_amd64_symbols {
     #[repr(transparent)]

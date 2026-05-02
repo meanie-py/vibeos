@@ -397,7 +397,8 @@ if(ARCH STREQUAL "i386")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/i386/zeropage.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/i386/prefetch.S)
     list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
+        # config/i386/cmhardwr.c — replaced by Rust (ntoskrnl-rust/src/config/i386/cmhardwr.rs)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
         # kd64/i386/kdx86.c — replaced by Rust (ntoskrnl-rust/src/kd64/i386/kdx86.rs)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/i386/kdx86.c
         # ke/i386/ — replaced by Rust (ntoskrnl-rust/src/ke/i386/)
@@ -433,7 +434,8 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/zeropage.S)
     list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
+        # config/i386/cmhardwr.c — replaced by Rust (ntoskrnl-rust/src/config/i386/cmhardwr.rs)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust - shared in i386/page.rs)
         # kd64/amd64/kdx64.c — replaced by Rust (ntoskrnl-rust/src/kd64/amd64/kdx64.rs)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
@@ -458,27 +460,6 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c  # Rust usercall.rs BSODs amd64 (verified 2026-05-01); audit excuse is current
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
         )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND ASM_SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/boot.s
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/stubs_asm.s
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trap.s)
-    list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/config/arm/cmhardwr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/arm/kdarm.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/cpu.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/exp.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/interrupt.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kiinit.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/thrdini.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapc.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm/page.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm/init.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm/psctx.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/arm/rtlexcpt.c)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs_asm.S
@@ -511,19 +492,18 @@ if(NOT _WINKD_)
         # kd/i386/kdserial.c — replaced by Rust (ntoskrnl-rust/src/i386/kdserial.rs)
         #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
         if(KDBG)
-            list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/kdb_help.S)
+            # kdbg/i386/kdb_help.S — replaced by Rust global_asm! (kdbg/kdb_help.rs)
+            #list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/kdb_help.S)
             #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/i386-dis.c)
         endif()
     elseif(ARCH STREQUAL "amd64")
         # amd64 still uses i386 kdserial.c — also replaced by Rust (i386/kdserial.rs)
         #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/i386/kdserial.c)
         if(KDBG)
-            list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/amd64/kdb_help.S)
+            # kdbg/amd64/kdb_help.S — replaced by Rust global_asm! (kdbg/kdb_help.rs)
+            #list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/amd64/kdb_help.S)
             #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i386/i386-dis.c)
         endif()
-    elseif(ARCH STREQUAL "arm")
-        # kd/arm/kdserial.c — replaced by Rust (arm/kdserial.rs)
-        #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm/kdserial.c)
     elseif(ARCH STREQUAL "arm64")
         # kd/arm64/kdserial.c — replaced by Rust (arm64/kdserial.rs)
         #list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/arm64/kdserial.c)
