@@ -468,3 +468,32 @@ mod _force_iomgr_symbols {
         SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopLoaderBlock) as *const ()),
     ];
 }
+
+// Force inclusion of ps/{i386,amd64}/* symbols on the right arch.
+#[cfg(target_arch = "x86")]
+mod _force_ps_i386_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 5] = [
+        SyncPtr(crate::ps::i386::psctx::PspGetContext as *const ()),
+        SyncPtr(crate::ps::i386::psctx::PspSetContext as *const ()),
+        SyncPtr(crate::ps::i386::psctx::PspGetOrSetContextKernelRoutine as *const ()),
+        SyncPtr(crate::ps::i386::psldt::PspDeleteLdt as *const ()),
+        SyncPtr(crate::ps::i386::psldt::PspQueryDescriptorThread as *const ()),
+    ];
+}
+
+#[cfg(target_arch = "x86_64")]
+mod _force_ps_amd64_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 1] = [
+        SyncPtr(crate::ps::amd64::psctx::PspGetOrSetContextKernelRoutine as *const ()),
+    ];
+}

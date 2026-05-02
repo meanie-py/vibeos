@@ -1,8 +1,13 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-trap-probe)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-01, post-ps-arch)
 
 ## Headline
 
-- **~99.7% translated by C-line count.** ~282K LOC translatable C body of work; ~1.0K LOC of translatable C still active in the default build (worst arch). arm64 trap.c (526 LOC) flipped to Rust this round.
+- **~99.78% translated by C-line count.** ~282K LOC translatable C body of work; ~660 LOC of translatable C still active in the default build (worst arch). Per-arch ps glue (`ps/i386/psctx.c` + `ps/i386/psldt.c` + `ps/amd64/psctx.c`) flipped to Rust this round, ~273 LOC of C dropped.
+- **ps arch glue landed.** Three small files hand-translated and wired:
+  - `ps/i386/psctx.rs` — `PspGetContext`, `PspSetContext`, `PspGetOrSetContextKernelRoutine` (90 LOC).
+  - `ps/i386/psldt.rs` — `PspDeleteLdt`, `PspDeleteVdmObjects`, `PspQueryDescriptorThread` (80 LOC; SEH wrappers around `RtlCopyMemory` translated as direct `read_unaligned`/`write_unaligned`, since DUMMY_PSEH makes the `_SEH2_EXCEPT` dead code on both sides anyway and the upstream `DefaultQueryInfoBufferCheck` already validates user buffers).
+  - `ps/amd64/psctx.rs` — `PspGetOrSetContextKernelRoutine` using `KiSetTrapContext`/`KiGetTrapContext` (50 LOC).
+  Per-arch modules `ps/i386/` and `ps/amd64/` added under `ntoskrnl-rust/src/ps/` with `#[cfg(target_arch=...)]` gates; corresponding `_force_ps_*_symbols` blocks in `lib.rs` ensure the staticlib pulls the CGUs. ABI gotcha: i386 `ExFreePoolWithTag` is `extern "stdcall"` and a hand-rolled `extern "system" fn ExFreePoolWithTag` block somehow generates the cdecl `_ExFreePoolWithTag` reference (no `@8`); fix is to import the canonical `ntkrnl_sys::ex::ExFreePoolWithTag` instead. amd64 cold-boot flake reproduced again — first run after rebuild can land 6/7 or 0/7 with HAL/x86bios noise; second run from snapshot path hits 7/7 cleanly.
 - **arm64 trap.rs landed.** Audit's parked excuse ("Rust version breaks boot") was stale, like kd64 before it. `ntoskrnl/ke/arm64/trap.c` no longer in cmake; `ntoskrnl-rust/src/ke/arm64/trap.rs` was already compiled in the staticlib but symbol-shadowed by the C version under `--allow-multiple-definition`. Now picks up the Rust symbols. arm64 baseline failure unchanged — same identical 13,449 bytes serial → same hang at `[HIVE] CmCheckRegistry done`. So trap.rs handles the boot path as well as trap.c does, and the arm64 baseline regression is somewhere else.
 - **amd64 usercall.rs stays parked, but the audit excuse is now confirmed current.** Probed this session — re-enabling causes a real BSOD at boot (BugCheck at RVA 0x5F5C78). Reverted. Unlike trap, the "return-address corruption" excuse is real, not stale. Needs symbolicated crash analysis to debug, not just the LLVM defense work that fixed the kd64-class issues.
 - **guid.rs landed.** `ntoskrnl/guid.c` (10 LOC of preprocessor-emitted GUID storage from `<initguid.h>` + `batclass.h`/`poclass.h`/`diskguid.h`) replaced by `sdk/lib/rust/ntoskrnl-rust/src/guid.rs` (23 GUIDs as `#[no_mangle] pub static`). C side disabled in `ntoskrnl/CMakeLists.txt`. Existing `extern { static GUID_DEVICE_BATTERY: GUID; }` blocks in Rust kernel modules now resolve to the new Rust storage. Co-existence with `sdk/lib/poguid` library (which also emits poclass GUIDs) tolerated via the existing `--allow-multiple-definition` link flag.
@@ -30,7 +35,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | EX (executive) | 31 | 38,781 | `sysinfo.rs` active all 3 arches |
 | SE (security) | 18 | 35,200 | |
 | **config (registry CM)** | **21** | **33,196** | **NEW — all 3 arches active** |
-| ps (process) | 13 | 23,085 | |
+| ps (process) | 13 + per-arch | 23,085 + 273 | per-arch ps/i386 (psctx, psldt) and ps/amd64 (psctx) active |
 | ob (object) | 11 | 22,532 | |
 | fsrtl | 17 | 20,963 | |
 | pnpmgr | 14 (+arb subdir) | 25,973 | `pnpres.rs` active all 3 arches |
@@ -77,32 +82,29 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 ## Still in C — translation candidates (NOT yet translated)
 
-The real backlog. Roughly 2K LOC of small per-arch glue.
+The real backlog. Roughly 0.8K LOC of small per-arch glue.
 
 | File | LOC | Per-arch? | Notes |
 |------|----:|-----------|-------|
 | kd64/i386/kdx86.c | 446 | i386 | Per-arch helpers called by Rust kdapi.rs (KdpSysReadMsr/WriteMsr/IoSpace, KdpGetStateChange, KdpSetContextState). Small, callable by Rust as-is — translate only when convenient. |
 | kd64/amd64/kdx64.c | 391 | amd64 | Same role for amd64. |
-| ps/i386/psctx.c | 91 | i386 | Context save/restore. |
-| ps/i386/psldt.c | 113 | i386 | LDT setup. |
-| ps/amd64/psctx.c | 69 | amd64 | |
 
 ## Active C in default build, summed
 
 | Bucket | LOC |
 |--------|----:|
 | Generic active C | ~2,460 |
-| i386-only active C (worst arch) | ~1,024 |
-| **Active C in default build (worst case = i386)** | **~3,484** |
+| i386-only active C (worst arch) | ~750 |
+| **Active C in default build (worst case = i386)** | **~3,210** |
 | of which intentional-stay (cmdata + section_pe + cmhardwr) | ~2,550 |
-| **Translatable C still active** | **~934** |
+| **Translatable C still active** | **~660** |
 
 ## Percentage
 
 Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
 - ~282,200 LOC C total
-- ~934 LOC C still active and translatable
-- **(282,200 − 934) / 282,200 ≈ 99.67% translated**
+- ~660 LOC C still active and translatable
+- **(282,200 − 660) / 282,200 ≈ 99.77% translated**
 
 If you also count the parked translations as "done" (translation already paid for, just not enabled):
 - Parked Rust: ~1.5K LOC (just lpc/connect.rs + ke/amd64/usercall.rs now; trap.rs and others landed)
@@ -113,11 +115,10 @@ If you also count the parked translations as "done" (translation already paid fo
 
 In rough priority order (yield vs. cost):
 
-1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
-2. **arch-specific glue** — `ke/amd64/usercall.c`, `ke/arm64/trap.c`, `ps/{i386,amd64}/psctx.c`, `ps/i386/psldt.c`. Mostly small, mostly arch-dependent debugging.
-3. **arcname** — finish the remaining `IopCreateArcNames*` paths in Rust; delete the C hybrid.
-4. **kd64/{i386,amd64}/kdx{86,64}.c** — small per-arch helpers (~840 LOC combined). Easy translation candidates now that the generic kd64 stack is Rust.
-5. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
+1. **kd64/{i386,amd64}/kdx{86,64}.c** — small per-arch helpers (~840 LOC combined). Easy translation candidates now that the generic kd64 stack is Rust.
+2. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Last session's probe confirmed it's a real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging.
+3. **ke/amd64/usercall** — 404 LOC. Verified-current BSOD on re-enable; needs symbolicated crash analysis at RVA 0x5F5C78.
+4. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
 
 ## Stale-claim watch
 

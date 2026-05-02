@@ -417,8 +417,9 @@ if(ARCH STREQUAL "i386")
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/procsup.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/i386/init.c (Rust)
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psctx.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psldt.c
+        # ps/i386/ — replaced by Rust (ntoskrnl-rust/src/ps/i386/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psctx.c
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/i386/psldt.c
         # vdm/ — replaced by Rust (ntoskrnl-rust/src/vdm/)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmmain.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmexec.c
@@ -448,7 +449,8 @@ elseif(ARCH STREQUAL "amd64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c (Rust)
         # ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/procsup.c (Rust)
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
+        # ps/amd64/ — replaced by Rust (ntoskrnl-rust/src/ps/amd64/)
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c  # Rust usercall.rs BSODs amd64 (verified 2026-05-01); audit excuse is current
