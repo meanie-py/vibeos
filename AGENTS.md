@@ -147,9 +147,59 @@ mcopy -o -i qemu/boot.img qemu/ramdisk.img ::/ramdisk.img
 
 ### Symbolication
 ```bash
-bash qemu/sym.sh 0xC804 0x50FC    # Look up offsets from crash dumps
+bash qemu/sym.sh 0xC804 0x50FC    # Look up offsets from UEFI bootloader (uefildr) crash dumps
 # Formula: runtime_addr - module_base + PE_ImageBase = PE VA
 ```
+
+(For ntoskrnl symbol lookups use the kernel debug toolkit's `addr2sym.sh`/`sym2addr.sh` — see next section.)
+
+## Kernel Debugging Infrastructure (qemu/start.sh, inspect.sh, run-until.sh)
+
+**For triaging kernel bugs (BUGCHECKs, hangs, regressions), prefer this toolkit over `qemu/run.sh` + ad-hoc DbgPrint instrumentation.** Design doc: `docs/engineering/kernel-debugging-infra.md`.
+
+The toolkit is agent-driven: every operation is a single batch command in, structured result out. No interactive GDB sessions to babysit.
+
+```bash
+# Boot a kernel with gdbstub enabled (preflight runs automatically)
+RUN=$(qemu/start.sh amd64 --gdb)        # prints run-id
+
+# Wait for boot markers (sanitized output, rich timeout response)
+qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
+qemu/tail.sh $RUN --lines 50            # sanitized read of serial.log
+qemu/status.sh $RUN --json              # JSON: alive, gdb_reachable, serial_bytes
+
+# Single-shot inspection (auto-relocates symbols; [Rust]/[C]/[ASM]/[???] tags)
+qemu/inspect.sh $RUN --command bt 30
+qemu/inspect.sh $RUN --command symbolicate-pc 0xfffff8000047e8d3
+qemu/inspect.sh $RUN --command dump-thread 0xfffffa80015c92f0
+
+# Bounded execution: break + continue + chained inspect, all in one batch.
+# Always cleans up breakpoints on hit AND on timeout.
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 \
+  --then "bt 30" --then decode-bugcheck
+
+qemu/stop.sh $RUN                       # idempotent; preserves artifacts under qemu/runs/$RUN/
+
+# Offline sym lookup (no QEMU needed, after build-index.sh once per build)
+qemu/build-index.sh amd64               # writes qemu/symbols-amd64.tsv
+qemu/sym2addr.sh amd64 KiUnwaitThread   # handles i386 PE decoration too
+qemu/addr2sym.sh amd64 --reloc 0xfffff80000000000 0xfffff8000047e8d3
+```
+
+**Standard recipe (validated end-to-end):**
+```
+RUN=$(qemu/start.sh amd64 --gdb)
+qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 \
+  --then "bt 30" --then decode-bugcheck
+```
+On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code (`0x1E KMODE_EXCEPTION_NOT_HANDLED`), `STATUS_IN_PAGE_ERROR`, faulting PC, and fault VA in one tool call — replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
+
+**Rules:**
+- Run `qemu/build-index.sh <arch>` after each kernel build (or before relying on offline sym lookup).
+- Per-run artifacts live at `qemu/runs/<run-id>/` — manifest.json, serial.log (raw bytes), gdb.log. Cleaned up only by explicit `rm`; the dir is gitignored.
+- `qemu/preflight.sh [arch]` runs automatically inside `start.sh`; on failure it prints the exact apt/cmake/cargo command to fix the issue (gdb-multiarch, llvm-dwarfdump, DWARF richness per axis, KdDebuggerDataBlock symbol presence).
+- The kernel takes ~15–20s of cold-cache boot before producing any serial output. `wait-for.sh --timeout 60` is the right starting budget; bump higher for deep markers like "shell ready".
 
 ## Test Suite
 

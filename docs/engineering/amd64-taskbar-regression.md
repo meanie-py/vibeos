@@ -2,69 +2,134 @@
 
 ## Problem
 
-On amd64, the kernel boots successfully and explorer.exe starts, but the shell UI (taskbar, desktop icons, LiveCD wizard) does not render. The screenshot shows only a blue wallpaper with no interactive elements.
+On amd64, the kernel does NOT successfully boot to a desktop. The "no taskbar"
+symptom is the visible end of a deeper kernel-level failure: explorer.exe is
+never reached, and on a fraction of boots the kernel BUGCHECKs.
 
-**i386 renders the full desktop correctly** (Start button, taskbar, clock). ARM64 is not testable for this (ramdisk boot, separate display pipeline).
+**i386 renders the full desktop correctly** (Start button, taskbar, clock).
+ARM64 has separate boot path issues.
 
-## Evidence
+## Failure Distribution (commit c1f9350f, May 2 2026)
 
-- `qemu/amd64_smoke.png` — blue wallpaper only, no taskbar
-- `qemu/i386_smoke.png` — full desktop with Start button, taskbar, clock at 12:00 AM
-- `qemu/amd64_desktop.png` (Feb 18, 2026) — old known-good: full desktop with taskbar, icons, LiveCD wizard
+Across 10+ amd64 boots:
+- **~10%**: full 7/7 boot — `[EXPLORER] _tWinMain entered` fires, taskbar may or may not render.
+- **~70%**: 6/7 — boot reaches `[WIN32K] shell ready` but **winlogon hangs** between "Switching to Winlogon desktop" (wlx.c:1154) and the next winlogon log line. `[EXPLORER] _tWinMain entered` never fires (explorer is never launched).
+- **~20%**: BUGCHECK 0x1E (KMODE_EXCEPTION_NOT_HANDLED) inside `KiUnlinkThread`/`KiUnwaitThread`, plus `KeGetCurrentIrql() <= APC_LEVEL` MM asserts.
 
-## What Works
+i386 is rock solid (5/5 reliable in same probe).
 
-- Kernel boots fully (MM, PS, IO, PnP all initialize)
-- `"explorer.exe created"` serial marker fires (winlogon successfully launches explorer.exe)
-- `"[WIN32K] shell ready"` serial marker fires (co_IntShowDesktop renders the desktop window)
-- The blue wallpaper IS painted (GDI/display pipeline works)
+## Failure Trace (BUGCHECK Variant)
 
-## What's Broken
+```
+[WINLOGON] CreateWindowStationW(WinSta0)
+(winsta.c:661) err: Initializing input window station
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at miarm.h:1206
+*** ASSERT FAILED: KeGetCurrentIrql() <= APC_LEVEL at miarm.h:1283
+*** BUGCHECK: 0x0000001E (0xC0000006, 0xFFFFF800004XXXX, <fault VA>, 0)
+```
 
-- No taskbar (explorer.exe's tray window doesn't render or isn't visible)
-- No desktop icons (My Computer, Network Places, etc.)
-- No LiveCD setup wizard
-- User-mode DbgPrint doesn't work (DUMMY_PSEH eats the debug exception), so we can't trace explorer.exe internally via serial
+- `0xC0000006` = `STATUS_IN_PAGE_ERROR`.
+- PC = `KiUnwaitThread + 0x20` (the inlined `KiUnlinkThreadImpl`).
+- The faulting instruction is `movq (%rax), %rcx` where `%rax = Thread->WaitBlockList`.
 
-## Timeline
+### What the bad Thread looks like (instrumented capture)
 
-The regression was introduced sometime between:
-- **Last known good:** commit `5802b15e` (Feb 18, 2026) — "fix amd64+ARM64 desktop boot: all 3 arches pass smoke tests 4/4"
-- **First known bad:** the IO subsystem Rust translation work (March 2026 sessions)
+When `KiUnlinkThreadImpl` is hit with the bad value, `Thread` points at a pool
+address (`FFFFFA80015C92F0` in one capture) that **is not a valid KTHREAD**:
 
-The `"explorer.exe created"` boot marker was hiding this regression because it only proves the process was launched, not that the shell rendered.
+```
+[KIUNLINK] BAD Thread=FFFFFA80015C92F0 WBL=0x1 expected_WB0=FFFFFA80015C93E8 WaitStatus=0x1 State=160
+[KIUNLINK] KT[0x80..0xa0]: 0x1 0x1 0x00000C0D00000000 0x000000053A000000
+```
 
-## Theories
+Notes:
+- `State=160` (0xA0) — not a valid KTHREAD `State` enum value (max ~8).
+- `WaitBlockList=1`, `WaitStatus=1` — neither field looks like a real value.
+- `expected_WB0` (Thread+0xF8) is where `WaitBlockList` should point if Thread were valid.
 
-### A. IO subsystem Rust translation broke a syscall explorer.exe depends on
-Explorer.exe calls Nt* syscalls (NtCreateFile, NtQueryDirectoryFile, etc.) to enumerate desktop items and load shell extensions. If any of these return wrong results or fail silently on amd64, the shell initialization would fail without a visible error.
+So the kernel call path is dispatching `KiUnwaitThread` on **a non-KTHREAD pool block**.
+`Thread` came from `WaitBlock->Thread` in `KiWaitTest`, which came from
+`Object->WaitListHead.Flink` of the event being signaled. This means a stale or
+corrupted KWAIT_BLOCK is in some object's wait list, pointing at a freed/reused
+KTHREAD slot.
 
-### B. File object or IRP handling regression
-The IO translation changed file.rs, iofunc.rs, irp.rs, device.rs etc. A subtle difference in IRP completion, file object handling, or device IO control could cause explorer.exe's shell COM objects to fail initialization.
+### Likely culprit chain
 
-### C. PnP/device enumeration difference
-With devaction.rs and pnpmgr now in Rust on amd64, device enumeration might produce different results that affect the shell (e.g., shell service objects that depend on device notifications).
+1. A thread terminates without removing its KWAIT_BLOCK from some object's wait list.
+2. The KTHREAD memory is reused (by another pool allocation).
+3. Later, that object is signaled. `KiWaitTest` reads `WaitBlock->Thread` (now garbage), passes it to `KiUnwaitThread`, fault.
 
-### D. Win32k/user-mode callback issue
-The amd64 Rust usercall.c workaround (Rust usercall.rs has undiagnosed return-address corruption) might have side effects on KeUserModeCallback dispatching, which explorer.exe uses heavily for shell window creation.
+Where to investigate: `KeRundownThread` / thread-exit cleanup paths, and any
+place where a thread can be unblocked from a wait without going through the
+proper unwait mechanism.
 
-## Suggested Debug Approach
+## Failure Trace (Hang Variant — most common)
 
-1. **Git bisect** between commit `5802b15e` (last known good) and current HEAD to find the exact commit that broke the taskbar
-2. **Compare serial output** between i386 (working) and amd64 (broken) after `explorer.exe created` — look for error messages or missing initialization steps
-3. **Try reverting specific IO modules** to C on amd64 one at a time to isolate which Rust translation caused the regression
-4. **Check if the LiveCD wizard process starts** — look for `reactos.exe` or `setup` in the serial output
+```
+[WINLOGON] Switching to Winlogon desktop                    <- wlx.c:1154
+(desktop.c:3401) err: ...didn't have an assigned startup desktop...
+(desktop.c:3339) err: Attempted to change thread desktop although the thread has windows!
+[WIN32K] shell ready                                        <- desktop.c:1644 (co_IntShowDesktop)
+<HANG — no further serial output>
+```
+
+The next expected line on i386 is `[WINLOGON] SwitchDesktop OK` (wlx.c:1161),
+which never prints. Therefore the `SetThreadDesktop`/`SwitchDesktop` syscall
+sequence does not return to user mode, OR returns and immediately hangs.
+
+`co_IntShowDesktop` returns `STATUS_SUCCESS` after `co_WinPosSetWindowPos`. The
+hang is between that return and winlogon's user-mode resumption — a syscall
+return path bug, possibly the user-mode KiCallback exit on amd64.
+
+## What This Isn't
+
+- **Not** the originally documented "explorer.exe started but didn't render the
+  taskbar." Explorer is never launched. The previous version of this doc was
+  written from screenshots without correlating to serial logs.
+
+## Suggested Next Steps
+
+The kernel debugging infrastructure (`docs/engineering/kernel-debugging-infra.md`)
+is now the preferred entry point for both variants. The standard recipe:
+
+```bash
+RUN=$(qemu/start.sh amd64 --gdb)
+qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 \
+  --then "bt 30" --then decode-bugcheck
+```
+
+This triages the BUGCHECK variant in one tool call (validated against the
+`KiUnwaitThread+0x23` fault site documented above). Per-variant guidance:
+
+1. **Hang-variant**: set a breakpoint on `KiServiceExit2` or the user-mode
+   return path on amd64. Use `qemu/run-until.sh ... --break KiServiceExit2
+   --then "bt 20" --then regs` to capture state at the (non-)return.
+   Alternatively keep instrumenting `usercall.rs` directly — the
+   `dump-thread` helper makes after-the-fact inspection cheap.
+
+2. **BUGCHECK-variant**: now reproducible end-to-end via the standard recipe.
+   For root-causing the stale KWAIT_BLOCK origin, add asserts in
+   `KeRundownThread` / wait-list cleanup that verify all of a thread's
+   KWAIT_BLOCKs are unlinked before the KTHREAD memory is freed; also
+   instrument pool-free for KTHREAD-sized blocks. With breakpoints in those
+   paths plus `dump-thread`, the bad-thread origin should fall out within a
+   few boots.
+
+3. **WinDbg / kd64 protocol**: deferred indefinitely. The DWARF/PDB gap and
+   Windows-host requirement eat most of the value; the GDB-based toolkit
+   gives us symbol-aware inspection across all 3 arches with no extra deps.
 
 ## Reference Files
 
 | File | Description |
 |------|-------------|
-| `/home/curi/Projects/os-playground/reactos/CLAUDE.md` | Project instructions |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/MEMORY.md` | Memory index |
-| `/home/curi/Projects/os-playground/qemu/amd64_smoke.png` | Current broken screenshot |
-| `/home/curi/Projects/os-playground/qemu/amd64_desktop.png` | Old known-good screenshot (Feb 18) |
-| `/home/curi/Projects/os-playground/qemu/i386_smoke.png` | Working i386 reference |
-| `/home/curi/Projects/os-playground/reactos/win32ss/user/ntuser/desktop.c` | co_IntShowDesktop (shell ready marker) |
-| `/home/curi/Projects/os-playground/reactos/base/system/winlogon/winlogon.c` | explorer.exe launch (line 822) |
-| `/home/curi/Projects/os-playground/reactos/base/shell/explorer/explorer.cpp` | Explorer shell init (CreateTrayWindow, DesktopCreateWindow) |
-| `/home/curi/Projects/os-playground/reactos/tests/qemu/vm.py` | Smoke test boot markers |
+| `tests/qemu/vm.py` | Smoke test boot markers |
+| `win32ss/user/ntuser/winsta.c:661` | "Initializing input window station" — start of fault path |
+| `win32ss/user/ntuser/desktop.c:1644` | `co_IntShowDesktop` — `[WIN32K] shell ready` print |
+| `win32ss/user/ntuser/desktop.c:1572` | DesktopThread signals `gpDesktopThreadStartedEvent` |
+| `base/system/winlogon/wlx.c:1154` | "Switching to Winlogon desktop" — last user-mode log before hang |
+| `base/system/winlogon/wlx.c:1155` | `SetThreadDesktop` / `SwitchDesktop` syscall pair |
+| `sdk/lib/rust/ntoskrnl-rust/src/ke/wait.rs:148` | `KiUnlinkThreadImpl` (where BUGCHECK happens) |
+| `sdk/lib/rust/ntoskrnl-rust/src/ke/wait.rs:108` | `KiWaitTestImpl` — caller of `KiUnwaitThread` with bad Thread |
+| `sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/usercall.rs` | User-mode return path (suspect for hang variant) |

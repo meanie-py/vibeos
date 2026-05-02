@@ -1,5 +1,7 @@
 compile_commands.json
 build-*/
+qemu/runs/
+qemu/symbols-*.tsv
 output-*
 modules/optional
 modules/bootcd_extras
