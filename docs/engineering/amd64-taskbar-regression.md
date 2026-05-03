@@ -101,6 +101,59 @@ Investigation paths:
   and exists on both i386 (4 spam) and amd64 (135 spam). Worth a
   dedicated session.
 
+### Status (2026-05-03 evening — second blocker localized to win32k EndDeferWindowPos)
+
+**Bisected via OutputDebugStringA markers in CTrayWindow::Open / OnCreate /
+AlignControls and DbgPrint markers in win32k IntEndDeferWindowPosEx.** The
+wedge is reproducible in plain `qemu/start.sh amd64` (no smoke-test fixtures).
+
+What we see in serial.log right after explorer's _tWinMain:
+
+```
+[TRAY] OnCreate returning TRUE
+[TRAY] OnSize entered                     <- co_WinPosSendSizeMove
+[TRAY] OnSize entered                     <- second WM_SIZE
+[TRAY] AlignControls entered
+[TRAY] AlignControls: StartButton.UpdateSize done
+[TRAY] AlignControls: before TNWM_GETMINIMUMSIZE
+[TRAY] AlignControls: TNWM_GETMINIMUMSIZE done
+[TRAY] AlignControls: before EndDeferWindowPos
+[EDWP] hdwp=...0040104 ccvr=3 bAsync=0
+[EDWP] iter 0 hwnd=...0200BE flags=0x14 bAsync=0   <- StartButton
+[EDWP] iter 0 done res=1
+[EDWP] iter 1 hwnd=...0300EA flags=0x14 bAsync=0   <- m_TrayNotify (CTrayNotifyWnd)
+                                                       *** WEDGES HERE ***
+```
+
+So `co_WinPosSetWindowPos(m_TrayNotify, x, y, cx, cy, SWP_NOZORDER|SWP_NOACTIVATE)`
+never returns. Flags 0x14 = SWP_NOZORDER (0x4) | SWP_NOACTIVATE (0x10). The
+batch contains 3 entries (StartButton, TrayNotify, Rebar) — only StartButton
+finishes. TrayNotify is the second iteration, and its
+co_WinPosSetWindowPos is what hangs.
+
+When repositioning m_TrayNotify, win32k sends WM_WINDOWPOSCHANGING /
+WM_NCCALCSIZE / WM_SIZE / WM_MOVE / WM_WINDOWPOSCHANGED. CTrayNotifyWnd's
+WM_SIZE handler calls `Size()` → `AlignControls()` which calls
+`::SetWindowPos(m_hwndShowDesktop, ...)` then ditto for clock and pager —
+each of which is a *recursive* SetWindowPos that re-enters
+co_WinPosSetWindowPos.
+
+Hypothesis paths to investigate next:
+1. CTrayNotifyWnd::AlignControls calls SetWindowPos on m_hwndShowDesktop /
+   m_hwndClock / m_hwndPager. Add markers there to see how deep the nest
+   goes before wedging.
+2. If wedge is inside win32k VisRgn calculations or paint synchronization,
+   dropping SWP_FRAMECHANGED handling (or skipping invisible windows) might
+   help. Look at `co_WinPosDoWinPosChanging`, `co_WinPosFixupOffset`, and
+   the paint cleanup at the bottom of `co_WinPosSetWindowPos`.
+3. Cross-thread SendMessage in this path: m_TrayNotify is owned by the
+   same thread as the tray, but if any of the children (Clock/Pager) ends
+   up cross-thread, SendMessage could block indefinitely on amd64.
+4. **Workaround candidate**: replace `BeginDeferWindowPos`/`EndDeferWindowPos`
+   in `CTrayWindow::AlignControls` with direct `SetWindowPos` calls. This
+   avoids the batched commit. If it unblocks the taskbar, the bug is in
+   `IntEndDeferWindowPosEx`'s loop interacting with recursive child SWPs.
+
 ### Status (2026-05-03 — GetLocalTime hang fixed; taskbar still doesn't render)
 
 **Fix shipped:** zero TimeZoneBias in `ExpInitializeExecutive` right after
