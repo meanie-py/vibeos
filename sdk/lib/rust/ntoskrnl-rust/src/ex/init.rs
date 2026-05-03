@@ -894,6 +894,15 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     #[cfg(target_arch = "x86")]
     core::arch::asm!("sti");
 
+    // amd64 freeldr leaves TimeZoneBias with garbage where High1Time !=
+    // High2Time (e.g. High1=0x01010101, High2=0x101). That makes user-mode
+    // GetLocalTime spin forever in its do-while consistency check, which
+    // hangs CTrayClockWnd::CalculateDueTime and blocks the explorer
+    // taskbar. Zero TimeZoneBias here so the page is consistent before
+    // ExRefreshTimeZoneInformation runs in Phase1Initialization.
+    // See docs/engineering/amd64-taskbar-regression.md.
+    (*SharedUserData).TimeZoneBias = core::mem::zeroed();
+
     (*SharedUserData).CryptoExponent = 0;
 
     #[cfg(debug_assertions)]

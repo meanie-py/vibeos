@@ -41,21 +41,127 @@ With that fixed, winlogon and explorer launch normally.
 
 **Remaining open: amd64 taskbar still doesn't render** (blue desktop only).
 Explorer enters `_tWinMain` and continues (3000+ lines of post-explorer
-serial), but the screen stays blue with no Start button or clock. Win32k
-emits a sustained spam of `err: Sending to Suspended Thread Msg 121` from
-`win32ss/user/ntuser/msgqueue.c:1096`. Msg 0x121 is `WM_ENTERIDLE`. So a
-modal/menu loop keeps trying to deliver WM_ENTERIDLE to a thread whose
-`KTHREAD->SuspendCount` or `FreezeCount` is non-zero.
+serial), but the screen stays blue with no Start button or clock.
 
-Likely investigation paths:
-- Find which thread (probably explorer's main thread) is wrongly marked
-  suspended — dump-thread on it, check Tcb.SuspendCount and FreezeCount.
-- Audit Rust translations of `KeSuspendThread`/`KeResumeThread` and
-  `PsSuspendProcess`/`PsResumeProcess` — likely a count drift between
-  suspend/resume on amd64.
-- The bindgen anonymous-union accessor for SuspendCount on amd64
-  (`Tcb.__bindgen_anon_6.__bindgen_anon_1.SuspendCount`) reads byte 44 of
-  the union; verify against actual KTHREAD layout.
+### Status (2026-05-02 evening — narrowed-down hang)
+
+Added per-step `OutputDebugStringA` markers to `StartWithDesktop` →
+`CTrayWindow::Open` → `OnCreate` → `CTrayNotifyWnd::OnCreate` →
+`CTrayClockWnd::Initialize`/`OnCreate`/`ResetTime`. **Hang point:**
+`CTrayClockWnd::CalculateDueTime` — specifically the call to
+`GetLocalTime(&LocalTime)` in `dll/win32/kernel32/client/time.c:286`.
+
+`GetLocalTime` reads `SharedUserData->TimeZoneBias` in a do-while that
+spins until `High1Time == High2Time`. Inspecting the live amd64 kernel
+at `0xFFFFF78000000020` (kernel-side mapping of KUSER_SHARED_DATA):
+
+```
+0x14 SystemTime:    LowPart=0x2c6c12fd  High1=0       High2=0       (consistent, but never updates)
+0x08 InterruptTime: LowPart=0x2b6c13fd  High1=0x10101 High2=0x10101 (consistent but garbage)
+0x20 TimeZoneBias:  LowPart=0x1         High1=0x01010101 High2=0x101 (INCONSISTENT — TimeZoneBias.High1 != High2)
+```
+
+The kernel-side KUSER_SHARED_DATA page contains uninitialized garbage on
+amd64. `TimeZoneBias.High1 != TimeZoneBias.High2` causes GetLocalTime to
+spin forever — that's what blocks `CTrayClockWnd::OnCreate` and
+therefore the entire taskbar.
+
+**Bypassing IsThreadSuspended (FreezeCount=1 leak) does NOT fix the
+hang** — confirmed by hard-coding `IsThreadSuspended` to return FALSE.
+The FreezeCount leak (csrss main thread is reported frozen on both i386
+and amd64; doc above) is a real but separate bug.
+
+**Likely root cause of taskbar hang:** the SharedUserData mapping setup
+in `mm/mminit.rs` (`MiCreateArm3StaticMemoryArea(KI_USER_SHARED_DATA)`
+at line 188 + the PFN mapping at line 263-281) maps the page but never
+zeroes it. On i386 the page might be zero-initialized by free-page
+zeroing; on amd64 the freeldr mapping path may differ. Check whether
+amd64's freeldr/MM init actually puts a zero page at
+`KI_USER_SHARED_DATA = 0xFFFFF780_00000000`, or whether it's just
+mapped over arbitrary RAM contents.
+
+Investigation paths:
+- ~~Add `RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, PAGE_SIZE)` early in
+  `MmArmInitSystem`~~ — **tried this 2026-05-02**, both before and right
+  after the PTE setup at line 281. Either way the write triggers a page
+  fault that the WS-lock-held context can't service, producing
+  `MmAccessFault with OwnsExcl=1!` and a cascade of WS-lock asserts.
+  The kernel-side mapping VA (0xFFFFF780_00000000) is established but
+  the page isn't faulted in yet, and the early init paths can't tolerate
+  the fault. Need a later init point (post MM init complete, IRQL <
+  APC_LEVEL, no WS lock) — possibly in `Phase1Initialization` before any
+  user-mode runs — or fault the page in explicitly before writing.
+- Audit `ExpInitializeTimeZoneInformation` / `ExRefreshTimeZoneInformation`
+  call order during boot — verify it actually runs and writes
+  TimeZoneBias on amd64.
+- Compare i386 vs amd64 KUSER_SHARED_DATA bytes at boot — same kernel
+  init path should produce same bytes.
+- The FreezeCount=1 csrss thread is a separate bug (likely a
+  KeFreezeAllThreads/KeThawAllThreads count mismatch via DbgkpSuspendProcess)
+  and exists on both i386 (4 spam) and amd64 (135 spam). Worth a
+  dedicated session.
+
+### Status (2026-05-03 — GetLocalTime hang fixed; taskbar still doesn't render)
+
+**Fix shipped:** zero TimeZoneBias in `ExpInitializeExecutive` right after
+`sti` (before `(*SharedUserData).CryptoExponent = 0`). One line:
+
+```rust
+(*SharedUserData).TimeZoneBias = core::mem::zeroed();
+```
+
+**Confirmed via debug-print bisection:**
+- Pre-fix hang point: `CTrayClockWnd::CalculateDueTime` →
+  `GetLocalTime(&LocalTime)` in `dll/win32/kernel32/client/time.c:286`,
+  spinning on `do { ... } while (Time.High1 != Time.High2)` because
+  amd64 freeldr leaves TimeZoneBias with `High1=0x01010101 != High2=0x101`.
+- Post-fix: `[CLK] ResetTime: CalculateDueTime done` fires, then
+  `[CLK] OnCreate: ResetTime done`, then `[CLK] Initialize done`, then
+  `[TNW] OnCreate: pager GetWindow done`. The entire tray notification
+  + clock + sys-pager construction completes.
+
+**Earlier "BUGCHECK 0x7F" reading was wrong.** Several screenshots
+showed a `*** STOP: 0x0000007F (0x08, 0, 0, 0)` paint on the framebuffer
+in 640x480 text mode, which I misread as a real kernel bugcheck. It is
+not — `qemu/run-until.sh --break KeBugCheckEx --timeout 180` never hits
+the breakpoint, and QMP `query-status` returns `running`. The text on
+screen is the cirrus VGA falling back to text mode and exposing whatever
+was last written to the legacy 0xB8000 framebuffer (likely a FreeLdr or
+early-INBV diagnostic paint that never gets cleared once cirrus enters
+graphics mode). Whether that fallback happens is a screenshot-timing
+race: smoke runs and 60s/180s probes that catch cirrus in graphics mode
+show blue desktop; ones that catch the brief text-mode window show the
+stale BSOD-styled bytes. The kernel itself is fine in both cases.
+
+**Smoke status with fix:**
+- amd64: 7/7 PASS in ~100s. Screenshot: blue desktop (no taskbar still).
+- i386: 7/7 PASS in ~43s. Screenshot: full taskbar with Start + 12:00 AM.
+- arm64: untested this session (still 0/7 baseline).
+
+**Remaining: amd64 taskbar still doesn't paint** despite trayclock
+construction completing. Explorer makes much more progress than before
+(post-fix logs show CTrayClockWnd, CTrayNotifyWnd, CSysPagerWnd all
+finishing OnCreate), but the desktop stays blue. There must be a second
+blocker after tray construction:
+
+- Possibly `CTrayWindow::ShowWindow` / `SetWindowPos(SWP_SHOWWINDOW)`
+  hangs or no-ops. Look at `[TRAY] OnCreate: ...` markers between
+  CSysPagerWnd done and the SetWindowPos call.
+- The `(\win32ss\user\ntuser\winpos.c:796) err: FIXME: Parent is Desktop,
+  Min off screen!` warning that fires shortly after pager init may be
+  related — taskbar may be getting placed off-screen.
+- `(\win32ss\user\ntuser\msgqueue.c:1096) err: Sending to Suspended
+  Thread Msg 121` spam (FreezeCount=1 leak on csrss main thread, present
+  on both arches but 135x more frequent on amd64) may also play a role.
+  The taskbar paints via SendMessage; if the desktop thread is reported
+  as suspended, paint messages get dropped. Worth re-testing the
+  `IsThreadSuspended → FALSE` bypass with this fix in place to see if
+  the taskbar appears.
+
+Real fix for the underlying TimeZoneBias garbage is still to make
+`RtlQueryTimeZoneInformation` succeed (so `ExRefreshTimeZoneInformation`
+writes a real bias and we never need this hack). Audit the registry path
+`SYSTEM\\CurrentControlSet\\Control\\TimeZoneInformation` setup on amd64.
 
 ## Failure Distribution (commit c1f9350f, May 2 2026 — pre-fix)
 
