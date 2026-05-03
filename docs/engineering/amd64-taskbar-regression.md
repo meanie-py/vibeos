@@ -9,24 +9,53 @@ never reached, and on a fraction of boots the kernel BUGCHECKs.
 **i386 renders the full desktop correctly** (Start button, taskbar, clock).
 ARM64 has separate boot path issues.
 
-## Status (2026-05-02)
+## Status (2026-05-02 — late session)
 
-**BUGCHECK variant: FIXED.** Root-caused with the new gdb toolkit
-(`triage-bugcheck`, `walk-waitlist`, `identify-object`) — the Rust port of
-`KxMultiThreadWait` (`sdk/lib/rust/ntkrnl-sys/src/inline/ke.rs:1772-1778`)
-omitted the `WaitBlock->Thread = Thread` line that the C macro at
-`ntoskrnl/include/internal/ke_x.h:1122` performs per wait block. Custom
-WaitBlockArrays (e.g., Win32k's KeWaitForMultipleObjects on a
-TimerNotificationObject with `'Ussy'` pool tag) inherited stale memory and
-the wait blocks ended up with `Thread = csrss EPROCESS body` from a prior
-allocation. KxUnwaitThread later passed that bogus pointer to KiUnwaitThread,
-which dereferenced `Thread->ApcState.Process` (offset 0x68) — really
-`KPROCESS->VdmTrapcHandler` — got NULL, and faulted on `[NULL+0x96]`.
-One-line fix.
+**amd64 7/7 smoke tests PASS in 130s.** Three fixes shipped this session:
 
-**Hang variant: still open.** With the BUGCHECK gone, the dominant remaining
-failure is the SetThreadDesktop/SwitchDesktop syscall return-path hang
-described below.
+1. **BUGCHECK 0x1E variant: FIXED** in commit `4ec06ba4`. Same root cause as
+   below (missed `WaitBlock->Thread = Thread`), but the actual hot symbol on
+   amd64 was the C shim `KxMultiThreadWait` in
+   `ntoskrnl/ke/ke_rust_shims.c:985-991`, not the Rust inline at
+   `sdk/lib/rust/ntkrnl-sys/src/inline/ke.rs` (which was dead code — the
+   linker resolves to the C shim). The earlier afba7bd7 fix landed in the
+   wrong file.
+
+2. **conftest clean-build false-passes: FIXED** in same commit. The smoke
+   harness was nuking `build-{arch}/sdk/lib/rust/rust-kernel-target/` but the
+   actual cargo target dir is `build-{arch}/ntoskrnl/rust-kernel-target/`.
+   Stale Rust artifacts went undetected for an unknown number of sessions.
+
+3. **BalanceSet 40% CPU spin: FIXED** in commit `fe4ffb36`.
+   `KeBalanceSetManager` (`sdk/lib/rust/ntoskrnl-rust/src/ke/balmgr.rs:164`)
+   initialized PeriodTimer with `NotificationTimer (0)` instead of
+   `SynchronizationTimer (1)` from the C original. NotificationTimer stays
+   signaled forever; the wait loop returned immediately every iteration,
+   burning ~40% of one CPU. amd64 boots dropped from 15+ minutes (or hang)
+   to ~130s. Found via backtrace sampling — KxMultiThreadWait+KeRaiseIrql
+   showed up in 3/4 samples.
+
+**Hang variant: also resolved.** The earlier "winlogon hangs after Switching
+to Winlogon desktop" was actually the BalanceSet spin starving the kernel.
+With that fixed, winlogon and explorer launch normally.
+
+**Remaining open: amd64 taskbar still doesn't render** (blue desktop only).
+Explorer enters `_tWinMain` and continues (3000+ lines of post-explorer
+serial), but the screen stays blue with no Start button or clock. Win32k
+emits a sustained spam of `err: Sending to Suspended Thread Msg 121` from
+`win32ss/user/ntuser/msgqueue.c:1096`. Msg 0x121 is `WM_ENTERIDLE`. So a
+modal/menu loop keeps trying to deliver WM_ENTERIDLE to a thread whose
+`KTHREAD->SuspendCount` or `FreezeCount` is non-zero.
+
+Likely investigation paths:
+- Find which thread (probably explorer's main thread) is wrongly marked
+  suspended — dump-thread on it, check Tcb.SuspendCount and FreezeCount.
+- Audit Rust translations of `KeSuspendThread`/`KeResumeThread` and
+  `PsSuspendProcess`/`PsResumeProcess` — likely a count drift between
+  suspend/resume on amd64.
+- The bindgen anonymous-union accessor for SuspendCount on amd64
+  (`Tcb.__bindgen_anon_6.__bindgen_anon_1.SuspendCount`) reads byte 44 of
+  the union; verify against actual KTHREAD layout.
 
 ## Failure Distribution (commit c1f9350f, May 2 2026 — pre-fix)
 
