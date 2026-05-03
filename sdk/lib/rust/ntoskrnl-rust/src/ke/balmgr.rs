@@ -161,7 +161,11 @@ pub unsafe extern "system" fn KeBalanceSetManager(Context: PVOID) {
 
     KeSetPriorityThread(PsGetCurrentThread(), LOW_REALTIME_PRIORITY as KPRIORITY);
 
-    KeInitializeTimerEx(&mut PeriodTimer as *mut KTIMER, 0);
+    // SynchronizationTimer (1) — auto-reset on wait satisfaction. Using
+    // NotificationTimer (0) makes this loop spin: the timer stays signaled
+    // after the first fire and KeWaitForMultipleObjects returns immediately
+    // forever, burning ~40% CPU.
+    KeInitializeTimerEx(&mut PeriodTimer as *mut KTIMER, 1);
     KeInitializeDpc(
         &mut ScanDpc as *mut KDPC as *mut _,
         core::mem::transmute(KiScanReadyQueues as usize),

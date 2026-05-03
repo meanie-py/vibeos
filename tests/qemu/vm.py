@@ -107,7 +107,7 @@ class I386Config(ArchConfig):
     qemu_bin: str = "qemu-system-i386"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    boot_marker: str = "shell ready"
+    boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 500
     desktop_settle_seconds: float = 5.0
@@ -137,7 +137,7 @@ class Amd64Config(ArchConfig):
     qemu_bin: str = "qemu-system-x86_64"
     machine_args: list[str] = field(default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"])
     memory: str = "512M"
-    boot_marker: str = "shell ready"
+    boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
     desktop_settle_seconds: float = 5.0
