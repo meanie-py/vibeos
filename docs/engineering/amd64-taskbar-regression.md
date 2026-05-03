@@ -179,23 +179,50 @@ window or amd64-specific lock-ordering issue.
 **Smoke status:** unchanged — 7/7 PASS in 108.68s. Smoke saves snapshot at
 "shell ready" (kernel-side marker, fires before explorer wedges).
 
+**Heisenbug warning:** Adding kernel-side `DbgPrint` markers in
+`NtOpenKey` is enough to PERTURB the wedge — with kernel-side markers
+in place, `NtOpenKey` returns successfully and the wedge moves to
+`ResizeWorkArea` (i.e., `SystemParametersInfoW(SPI_SETWORKAREA, ...,
+SPIF_SENDCHANGE)` — synchronous WM_SETTINGCHANGE broadcast).
+
+This means the underlying bug is a **timing-sensitive synchronization
+issue specific to amd64**, not a single deterministic call site. Sites
+observed wedging across runs (with varying instrumentation):
+
+- `NtOpenKey` from inside EDWP commit (registry parse / KCB)
+- `SystemParametersInfoW(SPI_SETWORKAREA, SPIF_SENDCHANGE)` (window
+  message broadcast through `co_HwndBroadcastMessage`)
+- `SetWindowRgn` inside `ApplyClipping` (window region update)
+
+Common pattern: **synchronous cross-thread or cross-process call from a
+thread holding a win32k user-lock**. Each "fix" displaces the wedge to
+the next such site. User-mode workarounds confirmed band-aid only
+(IsThemeActive hardcode → wedge moves to next registry caller).
+
 **Next steps (in order of cost/value):**
-1. **Identify Thread B.** `qemu/start.sh amd64 --gdb`, hit the wedge, then
-   walk `KiProcessListHead` / `KiThreadListHead` to find every kernel
-   thread's stack. Look for one parked in `ExWaitForRundownProtectionRelease`
-   or `KeWaitForSingleObject` on a KCB or hash-table lock with a callstack
-   that includes win32k. That's our deadlock peer.
-2. **Add markers in `CmpParseKey`** (Rust at
-   `sdk/lib/rust/ntoskrnl-rust/src/config/cmparse.rs:3318`) and `CmpDoOpen`
-   to confirm the wedge is in KCB lock acquisition vs. somewhere else
-   in the open path.
-3. **Compare i386 vs amd64 behavior** at the same instrumentation level.
-   On i386, `NtOpenKey` from inside EDWP commit must be returning quickly.
-   What's different about amd64 KCB locking that makes Thread B park?
-4. **Real fix** is almost certainly in the kernel (Cm subsystem or
-   KCB locking). User-mode workarounds in explorer would be band-aids that
-   move the wedge to other registry consumers (services, theme broadcasts,
-   etc.) — confirmed empirically with the IsThemeActive hardcode test.
+
+1. **Non-disturbing observation.** Stop adding `DbgPrint` and
+   `OutputDebugStringA` markers — they perturb timing and move the
+   wedge. Use `qemu/start.sh amd64 --gdb` and inspect via `info
+   threads` / kernel ETHREAD walking. To find Thread B, walk the kernel
+   process/thread lists from `PsActiveProcessHead` and dump each
+   thread's stack — look for one stuck on a win32k lock or KCB lock with
+   a callstack that crosses subsystems.
+2. **Compare i386 vs amd64.** On i386, the same code path runs with no
+   wedge. Diff: thread scheduling, lock acquisition primitives,
+   FreezeCount/SuspendCount semantics, IRQL handling. A few candidates
+   that already exist as differences:
+    - `KeFreezeAllThreads` / `KeThawAllThreads` mismatch on csrss main
+      thread (see `feedback_kuser_shared_data_garbage` — high frequency on
+      amd64 vs. i386). The `Sending to Suspended Thread Msg 121` log
+      lines (WM_GETHOTKEY) accumulate during the wedge — possibly a
+      symptom of this leak. Note: bypassing `IsThreadSuspended` did NOT
+      fix the taskbar in earlier testing, so FreezeCount is not THE
+      cause but may be A contributor.
+    - amd64-specific `co_IntSendMessageWithCallBack` or `xxxSendMessageEx`
+      timeouts. Look for SendMessageTimeout / SMTO_BLOCK paths that
+      might behave differently on amd64.
+3. **Real fix** is in the kernel. User-mode workarounds will not stick.
 
 ### Status (2026-05-03 evening — second blocker localized to win32k EndDeferWindowPos) [SUPERSEDED]
 
