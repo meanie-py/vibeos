@@ -101,7 +101,103 @@ Investigation paths:
   and exists on both i386 (4 spam) and amd64 (135 spam). Worth a
   dedicated session.
 
-### Status (2026-05-03 evening — second blocker localized to win32k EndDeferWindowPos)
+### Status (2026-05-03 late — third blocker localized to NtOpenKey called from inside EDWP commit)
+
+**Continued bisection past EDWP into the recursive WM dispatch chain.** Earlier I
+suspected `IntEndDeferWindowPosEx`'s loop itself; that was wrong. The real wedge
+is one frame deeper, in user-mode → kernel-mode reentrancy.
+
+Path to the wedge (instrumented with `OutputDebugStringA` markers in
+`base/shell/explorer/{traywnd.cpp, trayntfy.cpp, traydeskbtn.cpp}` and
+`dll/win32/{advapi32/reg/reg.c, uxtheme/system.c}`; markers stashed at
+`stash@{0}: amd64 taskbar debug instrumentation`):
+
+```
+[TW] Open: before Create
+[TW] OnCreate (full sequence completes — StartButton, TrayBandSite,
+                CTrayNotifyWnd_CreateInstance, TNWM_GETSHOWDESKTOPBUTTON,
+                UpdateFonts, InitShellServices, returning TRUE)
+[TW] OnSize entered (post-WM_CREATE WM_SIZE — wParam=SIZE_RESTORED)
+[TW] OnSize: RESTORED branch
+[TW] OnSize: before/after ResizeWorkArea
+   ↓ (ApplyClipping → SetWindowRgn → recursive WM dispatch)
+[TW] OnWindowPosChanging entered/done
+[TW] OnNcCalcSize entered
+[TW] OnSize entered (recursive — non-RESTORED branch)
+[TW] AlignControls entered
+   ↓ (TNWM_GETMINIMUMSIZE inside parent's BeginDeferWindowPos batch)
+[TNW] AlignControls (1st nested call — succeeds, all 3 SWPs commit)
+[TW] AlignControls: before EndDeferWindowPos
+   ↓ (EDWP iter 1 commits m_TrayNotify position → WM_SIZE → recursive)
+[TNW] AlignControls (2nd nested call)
+[TNW] AC: before WidthOrHeight
+[BTN] WidthOrHeight: before IsThemeActive
+[UXT] IsThemeActive: before RegOpenKeyW
+[REG] RegOpenKeyExW: before MapDefaultKey / after MapDefaultKey
+[REG] RegOpenKeyExW: before NtOpenKey
+   ⚠️ HANG — no "after NtOpenKey" marker
+```
+
+The wedge is **`NtOpenKey` called from user-mode while win32k holds
+`UserEnterExclusive` for an `EndDeferWindowPos` commit**. Earlier `NtOpenKey`
+calls in this same explorer process succeed (`[REG] RegOpenKeyExW: after
+NtOpenKey` fires N times before the hang). The bug only manifests when
+`NtOpenKey` is reached *via the EDWP-commit recursive WM_SIZE handler* —
+i.e., the kernel call stack is:
+
+```
+NtUserEndDeferWindowPosEx
+  → IntEndDeferWindowPosEx (UserEnterExclusive held)
+    → co_WinPosSetWindowPos (m_TrayNotify, iter 1 of 3)
+      → SendMessage(WM_SIZE) to user-mode
+        → CTrayNotifyWnd::OnSize → AlignControls → WidthOrHeight
+          → IsThemeActive (uxtheme) → RegOpenKeyW (advapi32)
+            → NtOpenKey  ⚠️ NEVER RETURNS
+```
+
+**Rules out:**
+- The kernel is alive and idle, not bugchecked. `qemu/inspect.sh bt` shows
+  CPU0 in HLT (sti/hlt at `0xfffff80000865701`) with stale `KeBugCheckWithTf`
+  in the unwound trace — that's the previous frame, not a current bugcheck.
+  `run-until.sh --break KeBugCheckEx --timeout 240` does NOT hit, confirming
+  no real bugcheck.
+- A workaround that hardcodes `IsThemeActive() = FALSE` in
+  `CTrayShowDesktopButton::WidthOrHeight` does NOT fix the taskbar — the
+  wedge just *moves* to the next IsThemeActive site (e.g., during
+  `SetWindowPos(m_hwndShowDesktop)`'s theme query). Multiple call sites in
+  the cascade hit registry; the deeper bug is in `NtOpenKey`, not in any
+  one explorer caller.
+
+**Hypothesis (most likely):** Cross-thread KCB-lock vs. win32k user-lock
+deadlock specific to amd64 timing. Thread A (explorer GUI) holds win32k
+`UserEnterExclusive` and wants a KCB; Thread B (Themes service? Service
+Control Manager? something doing notifications across processes) holds the
+KCB and is parked waiting on either the user lock or some cross-process
+ALPC. The same code path is hit on i386 with no wedge, so it's a timing
+window or amd64-specific lock-ordering issue.
+
+**Smoke status:** unchanged — 7/7 PASS in 108.68s. Smoke saves snapshot at
+"shell ready" (kernel-side marker, fires before explorer wedges).
+
+**Next steps (in order of cost/value):**
+1. **Identify Thread B.** `qemu/start.sh amd64 --gdb`, hit the wedge, then
+   walk `KiProcessListHead` / `KiThreadListHead` to find every kernel
+   thread's stack. Look for one parked in `ExWaitForRundownProtectionRelease`
+   or `KeWaitForSingleObject` on a KCB or hash-table lock with a callstack
+   that includes win32k. That's our deadlock peer.
+2. **Add markers in `CmpParseKey`** (Rust at
+   `sdk/lib/rust/ntoskrnl-rust/src/config/cmparse.rs:3318`) and `CmpDoOpen`
+   to confirm the wedge is in KCB lock acquisition vs. somewhere else
+   in the open path.
+3. **Compare i386 vs amd64 behavior** at the same instrumentation level.
+   On i386, `NtOpenKey` from inside EDWP commit must be returning quickly.
+   What's different about amd64 KCB locking that makes Thread B park?
+4. **Real fix** is almost certainly in the kernel (Cm subsystem or
+   KCB locking). User-mode workarounds in explorer would be band-aids that
+   move the wedge to other registry consumers (services, theme broadcasts,
+   etc.) — confirmed empirically with the IsThemeActive hardcode test.
+
+### Status (2026-05-03 evening — second blocker localized to win32k EndDeferWindowPos) [SUPERSEDED]
 
 **Bisected via OutputDebugStringA markers in CTrayWindow::Open / OnCreate /
 AlignControls and DbgPrint markers in win32k IntEndDeferWindowPosEx.** The
