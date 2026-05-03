@@ -9,6 +9,58 @@ never reached, and on a fraction of boots the kernel BUGCHECKs.
 **i386 renders the full desktop correctly** (Start button, taskbar, clock).
 ARM64 has separate boot path issues.
 
+## Status (2026-05-04 — RESOLVED)
+
+**amd64 taskbar renders.** Root cause was wrong `KERNEL_LARGE_STACK_COMMIT`
+(and friends) in `sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs`:
+
+```
+                                       BEFORE (Rust)        AFTER (Rust = C header)
+KERNEL_STACK_SIZE        amd64         48KB ✓                48KB ✓
+KERNEL_LARGE_STACK_SIZE  amd64         256KB ✗               72KB
+KERNEL_LARGE_STACK_COMMIT amd64        16KB ✗                48KB
+```
+
+The 16KB GUI commit on amd64 meant `MmCreateKernelStack(GuiStack=TRUE)` only
+mapped the top 4 pages of the reserved 64-page region. When a thread became
+a GUI thread (PsConvertToGuiThread → KeSwitchKernelStack) and then made a
+deep call (e.g. `RtlWalkFrameChain` → `RtlVirtualUnwind`'s ~1.4KB stack
+frame), the next page was unmapped → page fault → page-fault delivery itself
+faulted on the same guard page → `BUGCHECK 0x7F (UNEXPECTED_KERNEL_MODE_TRAP)
+Param1=8 (DOUBLE FAULT)`.
+
+The on-screen "STOP: 0x0000007F" text was a real bugcheck, not the
+screenshot-timing artifact previously suspected — `KeBugCheckActive=1` in
+the post-bugcheck halt loop, and the DF stack contained the original trap
+frame at `RtlVirtualUnwind+56` with `cr2 = RSP-8` (classic stack-overflow
+during exception delivery).
+
+i386 needed a 4KB margin: the C value of 12KB GUI commit triggered the
+same wedge in user-mode painting (Rust kernel stack frames are deeper than
+C-port equivalents). i386 uses `KERNEL_LARGE_STACK_COMMIT = 16KB` (which
+is what the previous buggy generic constant happened to land on). amd64
+matches the C header at 48KB.
+
+Verified via interactive QMP screenshots — both i386 and amd64 render full
+taskbar with Start button + clock. Fix in `sdk/lib/rust/ntoskrnl-rust/src/
+ARM3/helpers.rs` (per-arch `KERNEL_STACK_SIZE` / `KERNEL_LARGE_STACK_SIZE`
+/ `KERNEL_LARGE_STACK_COMMIT`) and `sdk/lib/rust/ntoskrnl-rust/src/ke/
+thrdobj.rs` (drop the shadow `const KERNEL_STACK_SIZE = 12288` that
+understated `StackLimit` on amd64; pull from `helpers` instead).
+
+Note: the smoke-test screenshot (taken right at the kernel "shell ready"
+marker) often catches the desktop before explorer's user-mode paint
+completes (~30-60s), so the smoke .png may show blue-only even when the
+taskbar will render shortly after. Smoke remains 7/7 PASS — its check is
+that the kernel reached the marker, not that explorer painted.
+
+The earlier doc analysis (2026-05-03) suspected a kernel CPU storm in
+KiTimerExpiration → KxUnwaitThread → KiUnwaitThread. That storm IS still
+present in the current kernel (visible via `qemu/inspect.sh ... bt`), but
+the taskbar renders DESPITE the storm — so the storm is not the gating
+issue for the taskbar regression. It remains a separate optimization
+opportunity (40%+ CPU overhead).
+
 ## Status (2026-05-02 — late session)
 
 **amd64 7/7 smoke tests PASS in 130s.** Three fixes shipped this session:
@@ -101,7 +153,114 @@ Investigation paths:
   and exists on both i386 (4 spam) and amd64 (135 spam). Worth a
   dedicated session.
 
-### Status (2026-05-03 late — third blocker localized to NtOpenKey called from inside EDWP commit)
+### Status (2026-05-03 late evening — gdb thread-walking reveals: kernel CPU storm in KiTimerExpiration → KxUnwaitThread → KiUnwaitThread)
+
+**The Heisenbug-y "registry deadlock" was a misdiagnosis.** Switched to
+non-disturbing observation (gdb thread-walk + PC sampling) and found the
+real picture:
+
+**1. The wedge is a kernel CPU storm, not a deadlock.** PC sampling at
+the wedge (script `/tmp/walk_threads.py`, walks `PsActiveProcessHead` →
+each EPROCESS → ThreadListHead) showed:
+
+```
+20 PC samples while wedged:
+   14× KiUnwaitThread (offsets 0x482ac7-0x482b52, all inside the
+                       wait-block iteration loop)
+    4× KxUnwaitThread (ke_rust_shims.c:597, the `do { ... } while`
+                       over Object.WaitListHead)
+    2× KiDeferredReadyThreadImpl (Rust scheduler ready-queue insert)
+```
+
+The CPU is ~100% inside the kernel wait-completion path. No HLT idle.
+
+**2. The full chain is:**
+
+```
+clock interrupt
+  → KiTimerExpiration+387             [ke/dpc.rs:161, the periodic
+                                       timer-table sweep at IRQL=DISPATCH]
+    → KxUnwaitThread                  [ke_rust_shims.c:597, walks the
+                                       expiring timer's WaitListHead and
+                                       calls KiUnwaitThread per waiter]
+      → KiUnwaitThread                [Rust ke/wait.rs:186 → 191]
+        → KiUnlinkThreadImpl loop     [ke/wait.rs:155-161, walks the
+                                       thread's WaitBlockList circular
+                                       chain via NextWaitBlock,
+                                       RemoveEntryList on each]
+```
+
+**3. The thread being unwaited (every iteration) is `EXPLORER.EXE` tid=276:**
+
+```
+ETHREAD 0xfffffa8001275ad0  state=Ready  WaitStatus=0x102 (STATUS_TIMEOUT)
+  WaitBlock chain (4-element cycle, structurally valid):
+    WB[0] @ 0xfffffa8001275bc8  Object=0xfffff8a000280e10 (paged-pool obj)
+    WB[1] @ 0xfffffa8001275bf8  Object=0xfffffa80011b9310 (kernel obj)
+    WB[2] @ 0xfffffa8001275c28  Object=0xfffffa8001146410 (rundll32's ETHREAD)
+    WB[3] @ 0xfffffa8001275c58  Object=0xfffffa8001275b88 (own Thread.Timer)
+  NextWaitBlock chain forms a proper cycle WB[0]→WB[1]→WB[2]→WB[3]→WB[0]
+  KTHREAD State byte=0x1 (Ready); SuspendCount=0; FreezeCount=0
+```
+
+So this is a multi-object wait (4 objects + a timeout) in user-mode
+explorer — almost certainly `WaitForMultipleObjectsEx` or the inner
+ATL message pump waiting on shell-services event handles + a
+DispatchMessage timeout. Explorer is `Ready` (queued for scheduling)
+but never gets a CPU because the CPU is being chewed up by
+KiTimerExpiration→KxUnwaitThread→KiUnwaitThread.
+
+**4. A Standby thread (`csrss.exe` tid=152, state=Standby=3) also
+exists and never gets switched in** — confirming the scheduler is
+starved. Most other threads are in `Waiting` (state=5).
+
+**5. Why does this storm not happen on i386?** Two hypotheses:
+
+(a) **Periodic timer with Period=1ms (or very small) is auto-rearming.**
+KiTimerExpiration re-inserts periodic timers via
+`while KiInsertTreeTimer(Timer, Interval) == 0 {}` (ke/dpc.rs:256).
+If a periodic timer's Period is misconfigured to be ~tick-rate or
+smaller, the timer keeps re-firing on every clock interrupt. This is
+the same pattern as the previously-fixed BalanceSet timer
+(commit `fe4ffb36` — NotificationTimer→SynchronizationTimer fix
+saved 40% CPU). There may be a sibling bug in another timer.
+
+(b) **The KiUnlinkThread loop has a subtle amd64-specific
+correctness issue** (alignment, atomicity, or ABI) that makes it
+perform many extra iterations. Less likely — sampling shows the loop
+DOES advance through the chain (PC values 0x482ae0/0x482ae3/0x482aea/
+0x482aee/0x482af2/0x482af9 are all distinct, suggesting forward
+progress per iteration).
+
+**Right next steps:**
+
+1. **Identify which timer is firing.** The current sample's parent
+   stack frame had `KiTimerTableListHead+0x7400` (timer slot 232 of
+   256, since each entry is 32 bytes on amd64) and a candidate timer
+   pointer at `0xfffffa80018619d0`. Setting a one-shot gdb breakpoint
+   at `KiTimerExpiration+387` (immediately after `KxUnwaitThread`
+   returns) and reading the local `Timer` variable / `(*Timer).Period`
+   over a few hits will name the offending timer.
+2. **Audit periodic timer initializations in Rust.** Same pattern as
+   `KeBalanceSetManager` (`balmgr.rs`). Grep for all `KeInitializeTimer`
+   without the `Ex` suffix or all `KeSetTimerEx` calls and check the
+   Period vs. timer Type. The `cmlazy.rs` lazy-flush timers and the
+   `iomgr.rs` IopTimer are top suspects (both touched recently in the
+   Rust port).
+3. **Compare i386 vs amd64 runtime timer state.** On i386 (which
+   boots fully), do the same gdb walk: which timers are in the timer
+   table? Same set as amd64 minus one? That one's the buggy timer.
+
+**Old hypothesis ([SUPERSEDED 2026-05-03 late evening]):** the wedge was
+a registry/win32k deadlock when explorer called RegOpenKeyW from inside
+an EndDeferWindowPos commit. That was the user-mode-visible symptom —
+explorer's RegOpenKeyW never returns — but the actual cause is that the
+syscall thread can't run because the kernel CPU is consumed by the
+timer-expiration storm. The "Heisenbug" effect (instrumentation moving
+the wedge) was just the explorer thread getting scheduled
+opportunistically when the storm briefly relented.
+
+### Status (2026-05-03 late — third blocker localized to NtOpenKey called from inside EDWP commit) [SUPERSEDED — see above]
 
 **Continued bisection past EDWP into the recursive WM dispatch chain.** Earlier I
 suspected `IntEndDeferWindowPosEx`'s loop itself; that was wrong. The real wedge

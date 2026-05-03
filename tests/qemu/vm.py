@@ -140,7 +140,13 @@ class Amd64Config(ArchConfig):
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
-    desktop_settle_seconds: float = 5.0
+    # amd64 explorer paints the taskbar 90+ seconds after the kernel-side
+    # "shell ready" marker — slower than i386 because of a known KiUnwaitThread
+    # CPU storm that competes with explorer's user-mode paint thread (the storm
+    # doesn't gate the taskbar but does delay it). Without enough settle the
+    # smoke screenshot saves a bare blue desktop; with 120s we capture the
+    # rendered Start button + clock.
+    desktop_settle_seconds: float = 120.0
     required_milestones: list[str] = field(default_factory=lambda: [
         "[SMSS] _main entered",
         "[CSRSS] _main entered",

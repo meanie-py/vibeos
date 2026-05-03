@@ -353,12 +353,38 @@ pub const MDL_WRITE_OPERATION: ULONG = 0x0080;
 // Miscellaneous constants
 // ============================================================================
 
+// Per-arch kernel stack sizes — must match sdk/include/xdk/<arch>/ke.h.
+// GUI threads transition from KERNEL_STACK_SIZE to a large stack via
+// KeSwitchKernelStack; KERNEL_LARGE_STACK_COMMIT is the *committed* size of
+// that large stack, and must be >= KERNEL_STACK_SIZE — otherwise switching to
+// GUI shrinks the committed stack and a deep call (e.g. RtlVirtualUnwind chain
+// from RtlWalkFrameChain) page-faults on a guard page → DOUBLE FAULT (0x7F/8).
 #[cfg(target_arch = "x86_64")]
-pub const KERNEL_STACK_SIZE: usize = 48 * 1024; // 0xC000 — increased for deep Rust+C call chains
-#[cfg(not(target_arch = "x86_64"))]
-pub const KERNEL_STACK_SIZE: usize = 12 * 1024;
-pub const KERNEL_LARGE_STACK_SIZE: usize = 256 * 1024;
-pub const KERNEL_LARGE_STACK_COMMIT: usize = 16 * 1024;
+pub const KERNEL_STACK_SIZE: usize = 0xC000; // 48KB — matches xdk/amd64/ke.h
+#[cfg(target_arch = "x86_64")]
+pub const KERNEL_LARGE_STACK_SIZE: usize = 0x12000; // 72KB — matches xdk/amd64/ke.h
+#[cfg(target_arch = "x86_64")]
+pub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE; // 48KB — matches xdk/amd64/ke.h
+
+#[cfg(target_arch = "x86")]
+pub const KERNEL_STACK_SIZE: usize = 12 * 1024; // 12KB — matches xdk/x86/ke.h
+#[cfg(target_arch = "x86")]
+pub const KERNEL_LARGE_STACK_SIZE: usize = 60 * 1024; // 60KB — matches xdk/x86/ke.h
+// i386 LARGE_COMMIT intentionally exceeds the C value (xdk/x86/ke.h sets it to
+// KERNEL_STACK_SIZE = 12KB). The Rust port has deeper kernel call stacks than
+// the C original (Rust frames + extra inlining), so 12KB GUI commit causes
+// taskbar render to wedge in user-mode painting paths. 16KB matches what the
+// previous (buggy-on-amd64) Rust constant happened to produce on i386 and
+// what shipped working in test_smoke for i386 prior to the amd64 fix.
+#[cfg(target_arch = "x86")]
+pub const KERNEL_LARGE_STACK_COMMIT: usize = 16 * 1024; // 16KB — Rust-port margin
+
+#[cfg(target_arch = "aarch64")]
+pub const KERNEL_STACK_SIZE: usize = 12 * 1024; // 12KB — matches xdk/arm64/ke.h
+#[cfg(target_arch = "aarch64")]
+pub const KERNEL_LARGE_STACK_SIZE: usize = 60 * 1024; // 60KB — matches xdk/arm64/ke.h
+#[cfg(target_arch = "aarch64")]
+pub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE; // 12KB — matches xdk/arm64/ke.h
 pub const EXCEPTION_CHAIN_END: ULONG_PTR = ULONG_PTR::MAX;
 pub const EVENT_MODIFY_STATE: ULONG = 0x0002;
 pub const IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG: usize = 10;

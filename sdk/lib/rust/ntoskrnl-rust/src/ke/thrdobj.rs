@@ -85,7 +85,11 @@ extern "system" {
 extern "system" {
     static mut MmLargeStackSize: ULONG;
 }
-const KERNEL_STACK_SIZE: usize = 12288;
+// Per-arch kernel stack size — sourced from sdk/include/xdk/<arch>/ke.h
+// via the canonical constant in ARM3/helpers.rs (amd64=0xC000, x86/arm64=0x3000).
+// Hardcoding 12288 here understated StackLimit on amd64 by 36KB and is one of
+// the conditions that allowed the GUI-stack BUGCHECK 0x7F (8) regression.
+use crate::ARM3::helpers::KERNEL_STACK_SIZE;
 const MAXIMUM_SUSPEND_COUNT: i8 = 127;
 const THREAD_WAIT_OBJECTS: usize = 3;
 const TIMER_WAIT_BLOCK: usize = 3;
