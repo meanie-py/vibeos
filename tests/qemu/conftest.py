@@ -51,8 +51,8 @@ def _ensure_clean_rust_build(arch: str) -> None:
     breaks boot may pass smoke tests if stale object files are linked.
     """
     build_dir = PROJECT_DIR / f"build-{arch}"
-    target_dir = build_dir / "sdk" / "lib" / "rust" / "rust-kernel-target"
-    lib_file = build_dir / "sdk" / "lib" / "rust" / "libkernel_rust.a"
+    target_dir = build_dir / "ntoskrnl" / "rust-kernel-target"
+    lib_file = build_dir / "ntoskrnl" / "libkernel_rust.a"
 
     if target_dir.exists():
         shutil.rmtree(target_dir, ignore_errors=True)

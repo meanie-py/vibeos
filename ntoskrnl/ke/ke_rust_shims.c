@@ -987,6 +987,7 @@ void KxMultiThreadWait(
         WaitBlockArray[Index].Object = Objects[Index];
         WaitBlockArray[Index].WaitKey = (USHORT)Index;
         WaitBlockArray[Index].WaitType = WaitType;
+        WaitBlockArray[Index].Thread = Thread;
         WaitBlockArray[Index].NextWaitBlock = &WaitBlockArray[Index + 1];
     }
     Thread->WaitStatus = STATUS_SUCCESS;
