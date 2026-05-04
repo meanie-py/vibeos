@@ -1,13 +1,15 @@
 //! config subsystem (registry CM) — translated from C via per-function rustconv pipeline.
 //!
-//! cmdata.c remains in C — it's pure globals (no functions for tree-sitter
-//! to extract). To-be hand-translated as `pub static mut` declarations later.
+//! cmdata.rs (Phase A): verbatim translation of cmdata.c — globals + tables.
+//! Phase B (planned) splits CmControlVector by subsystem ownership; see
+//! docs/engineering/cmdata-chopping-plan.md.
 
 pub mod cmalloc;
 pub mod cmapi;
 pub mod cmboot;
 pub mod cmconfig;
 pub mod cmcontrl;
+pub mod cmdata;
 pub mod cmdelay;
 pub mod cmhook;
 pub mod cmhvlist;

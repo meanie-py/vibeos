@@ -93,7 +93,8 @@ extern "system" {
     static mut ExpEnvironmentLock: FAST_MUTEX;
     static mut ExpFirmwareTableProviderListHead: LIST_ENTRY;
     static mut ExpFirmwareTableResource: ERESOURCE;
-    static mut CmControlVector: _CM_SYSTEM_CONTROL_VECTOR;
+    // CmControlVector is now defined in crate::config::cmdata as
+    // [_CM_SYSTEM_CONTROL_VECTOR; 211]. Imported below via path.
 }
 extern "C" {
     fn RtlStringCbCopyA(pszDest: *mut i8, cbDest: usize, pszSrc: *const i8) -> NTSTATUS;
@@ -937,7 +938,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     KiInitializeBugCheck();
-    CmGetSystemControlValues((*LoaderBlock).RegistryBase, &mut CmControlVector);
+    CmGetSystemControlValues(
+        (*LoaderBlock).RegistryBase,
+        core::ptr::addr_of_mut!(crate::config::cmdata::CmControlVector) as *mut _CM_SYSTEM_CONTROL_VECTOR,
+    );
 
     CmNtSpBuildNumber = 0;
     if ((CmNtCSDVersion & 0xFFFF0000) == 0) && (CmNtCSDReleaseType == 1) {

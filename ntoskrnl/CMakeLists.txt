@@ -129,6 +129,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/state.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/thread.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/win32.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/config/cmdata.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/mod.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/close.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/lpc/complete.rs
