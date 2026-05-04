@@ -120,6 +120,14 @@ pub static mut MmPagingFile: [PVOID; MAX_PAGING_FILES] = [core::ptr::null_mut();
 #[no_mangle]
 pub static mut MmZeroPageFile: BOOLEAN = 0;
 
+// Registry-controlled values owned by mm/pagefile. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static PAGEFILE_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Memory Management", "ClearPageFileAtShutdown",
+            core::ptr::addr_of_mut!(MmZeroPageFile)),
+    ] });
+
 const MM_PAGEFILE_COMMIT_RATIO: usize = 1;
 const MM_PAGEFILE_COMMIT_GRACE: usize = 256;
 

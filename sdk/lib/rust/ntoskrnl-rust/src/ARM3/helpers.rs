@@ -457,6 +457,21 @@ extern "C" {
     // MmSecondaryColorMask moved to ntkrnl-sys/mm.rs
 }
 
+// Registry-controlled values owned by ARM3/helpers.
+pub static HELPERS_CONTROL_VECTOR: crate::config::cmdata::SubVector<5> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Memory Management", "LargeStackSize",
+            core::ptr::addr_of_mut!(MmLargeStackSize)),
+        crate::cv!("Session Manager\\Memory Management", "HighMemoryThreshold",
+            core::ptr::addr_of_mut!(MmHighMemoryThreshold)),
+        crate::cv!("Session Manager\\Memory Management", "ProtectNonPagedPool",
+            core::ptr::addr_of_mut!(MmProtectFreedNonPagedPool)),
+        crate::cv!("Session Manager", "HeapSegmentReserve",
+            core::ptr::addr_of_mut!(MmHeapSegmentReserve)),
+        crate::cv!("Session Manager", "HeapSegmentCommit",
+            core::ptr::addr_of_mut!(MmHeapSegmentCommit)),
+    ] });
+
 // ============================================================================
 // PFN_FROM_PPE / PFN_FROM_PXE (PFN_FROM_PTE and PFN_FROM_PDE are in mm.rs)
 // ============================================================================

@@ -294,6 +294,36 @@ pub static mut MmThrottleTop: ULONG = 0;
 #[no_mangle]
 pub static mut MmThrottleBottom: ULONG = 0;
 
+// Registry-controlled values owned by ARM3/mminit. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static MMINIT_CONTROL_VECTOR: crate::config::cmdata::SubVector<12> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Memory Management", "MapAllocationFragment",
+            core::ptr::addr_of_mut!(MmAllocationFragment)),
+        crate::cv!("Session Manager\\Memory Management", "PagedPoolSize",
+            core::ptr::addr_of_mut!(MmSizeOfPagedPoolInBytes)),
+        crate::cv!("Session Manager\\Memory Management", "NonPagedPoolSize",
+            core::ptr::addr_of_mut!(MmSizeOfNonPagedPoolInBytes)),
+        crate::cv!("Session Manager\\Memory Management", "LargeSystemCache",
+            core::ptr::addr_of_mut!(MmLargeSystemCache)),
+        crate::cv!("Session Manager\\Memory Management", "SystemPages",
+            core::ptr::addr_of_mut!(MmNumberOfSystemPtes)),
+        crate::cv!("Session Manager\\Memory Management", "LowMemoryThreshold",
+            core::ptr::addr_of_mut!(MmLowMemoryThreshold)),
+        crate::cv!("Session Manager\\Memory Management", "SecondLevelDataCache",
+            core::ptr::addr_of_mut!(MmSecondaryColors)),
+        crate::cv!("Session Manager\\Memory Management", "MinimumStackCommitInBytes",
+            core::ptr::addr_of_mut!(MmMinimumStackCommitInBytes)),
+        crate::cv!("Session Manager", "CriticalSectionTimeout",
+            core::ptr::addr_of_mut!(MmCritsectTimeoutSeconds)),
+        crate::cv!("Session Manager", "HeapDeCommitTotalFreeThreshold",
+            core::ptr::addr_of_mut!(MmHeapDeCommitTotalFreeThreshold)),
+        crate::cv!("Session Manager", "HeapDeCommitFreeBlockThreshold",
+            core::ptr::addr_of_mut!(MmHeapDeCommitFreeBlockThreshold)),
+        crate::cv!("ProductOptions", "ProductType",
+            core::ptr::addr_of_mut!(MmProductType)),
+    ] });
+
 unsafe fn MiScanMemoryDescriptors(loader_block: PLOADER_PARAMETER_BLOCK) {
     let mut list_entry: PLIST_ENTRY;
     let mut descriptor: PMEMORY_ALLOCATION_DESCRIPTOR;

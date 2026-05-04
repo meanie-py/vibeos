@@ -22,6 +22,16 @@ use super::helpers::*;
 pub static mut MmDynamicPfn: BOOLEAN = 0;
 #[no_mangle]
 pub static mut MmMirroring: BOOLEAN = 0;
+
+// Registry-controlled values owned by ARM3/pfnlist. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static PFNLIST_CONTROL_VECTOR: crate::config::cmdata::SubVector<2> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Memory Management", "DynamicMemory",
+            core::ptr::addr_of_mut!(MmDynamicPfn)),
+        crate::cv!("Session Manager\\Memory Management", "Mirroring",
+            core::ptr::addr_of_mut!(MmMirroring)),
+    ] });
 #[no_mangle]
 pub static mut MmSystemPageColor: ULONG = 0;
 

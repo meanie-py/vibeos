@@ -63,6 +63,15 @@ pub static mut Mm64BitPhysicalAddress: BOOLEAN = 0u8;
 pub static mut MmReadClusterSize: ULONG = 0;
 #[no_mangle]
 pub static mut MmDisablePagingExecutive: u8 = 1; // Forced to off
+
+// Registry-controlled values owned by mm/mminit. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static MMINIT_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Memory Management", "DisablePagingExecutive",
+            core::ptr::addr_of_mut!(MmDisablePagingExecutive)),
+    ] });
+
 #[no_mangle]
 pub static mut MmSharedUserDataPte: PMMPTE = core::ptr::null_mut();
 #[no_mangle]
