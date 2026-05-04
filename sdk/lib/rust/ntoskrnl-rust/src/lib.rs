@@ -64,6 +64,7 @@ pub mod ps;
 pub mod rtl;
 pub mod se;
 pub mod shim_exports;
+pub mod tests;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;
@@ -466,6 +467,50 @@ mod _force_iomgr_symbols {
         SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopFileMapping) as *const ()),
         SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopSecurityResource) as *const ()),
         SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopLoaderBlock) as *const ()),
+    ];
+}
+
+// Force inclusion of tests/ symbols. The C ntoskrnl/ex/init.c references
+// NtTestKernelDispatchLoop via an `extern` decl gated on REACTOS_TEST_KERNEL.
+// Even without that gate, the 28 NtTestX stubs are tiny and harmless when
+// unreached, and pulling them unconditionally keeps the build path simple
+// (no Cargo feature flag needed).
+mod _force_test_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 29] = [
+        SyncPtr(crate::tests::dispatch::NtTestKernelDispatchLoop as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestMmPool as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestObHandle as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestKeEvent as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestDpc as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestTimer as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestVmem as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestRegistry as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestWorkItem as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestIrql as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestThread as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestMutex as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestSemaphore as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestMultiWait as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestObRef as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestRtlStr as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestSList as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestMdl as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestFileIo as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestLookaside as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestFastMutex as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestBitmap as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestCapture as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestMemOps as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestSysTime as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestProcInfo as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestObjDir as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestSymLink as *const ()),
+        SyncPtr(crate::tests::stubs::NtTestInterlockedList as *const ()),
     ];
 }
 

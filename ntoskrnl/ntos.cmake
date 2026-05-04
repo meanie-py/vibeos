@@ -354,36 +354,9 @@ endif()
 
 if(REACTOS_TEST_KERNEL)
     add_definitions(-DREACTOS_TEST_KERNEL)
-    list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/dispatch.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_mmpool.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_obhandle.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_kevent.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_dpc.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_timer.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_vmem.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_registry.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_workitem.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_irql.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_thread.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_mutex.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_semaphore.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_multiwait.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_obref.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_rtlstr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_slist.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_mdl.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_fileio.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_lookaside.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_fastmutex.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_bitmap.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_capture.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_memops.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_systime.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_procinfo.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_objdir.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_symlink.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/tests/test_interlocked.c)
+    # All 29 test files (dispatch + 28 NtTestX bodies) translated to Rust at
+    # ntoskrnl-rust/src/tests/. Stubs only — bodies need real translation, see
+    # tests/mod.rs doc-comment. Per-test TODO list in stubs.rs.
 endif()
 
 list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
