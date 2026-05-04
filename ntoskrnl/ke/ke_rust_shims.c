@@ -146,7 +146,6 @@
 
 #if defined(_M_IX86) || defined(_M_AMD64)
 #define KiCpuId                         _saved_KiCpuId
-#define KiCpuIdEx                       _saved_KiCpuIdEx
 #endif
 
 /* amd64 intrinsics + FORCEINLINE functions used by Rust cpu.rs / interrupt.rs */
@@ -305,7 +304,6 @@
 #endif
 #if defined(_M_IX86) || defined(_M_AMD64)
 #undef KiCpuId
-#undef KiCpuIdEx
 #endif
 
 #ifdef _M_AMD64
@@ -766,11 +764,6 @@ KIRQL KeRaiseIrqlToSynchLevel(VOID)
 VOID NTAPI KiCpuId(PCPU_INFO CpuInfo, ULONG Function)
 {
     _saved_KiCpuId(CpuInfo, Function);
-}
-
-VOID NTAPI KiCpuIdEx(PCPU_INFO CpuInfo, ULONG Function, ULONG SubFunction)
-{
-    _saved_KiCpuIdEx(CpuInfo, Function, SubFunction);
 }
 
 #endif /* _M_IX86 || _M_AMD64 */
@@ -2084,21 +2077,6 @@ void NTAPI KeGdiFlushUserBatch_call(void)
     if (KeGdiFlushUserBatch) KeGdiFlushUserBatch();
 }
 #endif
-
-/* ========================================================================
- * Debug trace utility — callable from Rust via extern "C"
- * Writes directly to COM1 (0x3F8) to avoid KD spinlock dependencies.
- * ======================================================================== */
-void ke_trace_char(char c)
-{
-#if defined(_M_IX86) || defined(_M_AMD64)
-    /* Wait until transmit holding register is empty */
-    while ((__inbyte(0x3F8 + 5) & 0x20) == 0);
-    __outbyte(0x3F8, (UCHAR)c);
-#else
-    (void)c; /* No-op on ARM64 */
-#endif
-}
 
 /* Stub for KiReportCpuFeatures — original is in cpu.c (now cpu.rs, which
  * has it commented out). Only needed when C kiinit.c is used for hybrid

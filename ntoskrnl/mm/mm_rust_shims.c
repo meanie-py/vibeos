@@ -468,19 +468,9 @@ LONG_PTR MiInterlockedExchangePte(
  * extern "C" expects the cdecl symbol _Name. We provide cdecl wrappers here.
  * The headers define InterlockedExchange/_CompareExchange as macros, so undef first.
  */
-#if defined(_M_IX86)
-#undef InterlockedExchange
-#undef InterlockedCompareExchange
+/* InterlockedExchange / InterlockedCompareExchange (i386 cdecl wrappers)
+ * are now canonical in kernel_c_helpers.c. */
 
-LONG InterlockedExchange(volatile LONG *Target, LONG Value)
-{ return _InterlockedExchange(Target, Value); }
-
-LONG InterlockedCompareExchange(
-    volatile LONG *Destination, LONG Exchange, LONG Comparand)
-{ return _InterlockedCompareExchange(Destination, Exchange, Comparand); }
-#endif /* _M_IX86 */
-
-/* InterlockedDecrementUL — already in ps_rust_shims.c */
 /* InterlockedIncrementUL — not in any other shim file, provide here */
 #undef InterlockedIncrementUL
 ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
@@ -519,18 +509,8 @@ void KeInvalidateTlbEntry(IN PVOID Address)
 #endif
 }
 
-/*
- * Section segment lock/unlock — macros wrapping underscored versions
- */
-void NTAPI MmLockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
-{ _MmLockSectionSegment(Segment, __FILE__, __LINE__); }
-
-void NTAPI MmUnlockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
-{ _MmUnlockSectionSegment(Segment, __FILE__, __LINE__); }
-
-ULONG_PTR NTAPI MmGetPageEntrySectionSegment(
-    IN PMM_SECTION_SEGMENT Segment, IN PLARGE_INTEGER Offset)
-{ return _MmGetPageEntrySectionSegment(Segment, Offset, __FILE__, __LINE__); }
+/* MmLockSectionSegment / MmUnlockSectionSegment / MmGetPageEntrySectionSegment
+ * are now canonical in kernel_c_helpers.c (need __FILE__/__LINE__ macros). */
 
 /*
  * MmDereferenceSegment — FORCEINLINE in mm.h (covered by PCH, can't rename)
@@ -951,46 +931,11 @@ void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
  * - ARM64: HAL exports as cdecl. Rust's extern "C" works directly.
  *   But we provide a wrapper anyway for uniformity (compiler will inline it).
  */
-#if defined(_M_AMD64)
-KIRQL KfRaiseIrql(IN KIRQL NewIrql)
-{
-    KIRQL OldIrql = (KIRQL)__readcr8();
-    __writecr8(NewIrql);
-    return OldIrql;
-}
+/* KfRaiseIrql / KfLowerIrql / RustShimKfRaiseIrql / RustShimKfLowerIrql
+ * are now canonical in kernel_c_helpers.c. */
 
-void KfLowerIrql(IN KIRQL NewIrql)
-{
-    __writecr8(NewIrql);
-}
-#elif defined(_M_IX86)
-/* On i386, KfRaiseIrql/KfLowerIrql are __fastcall HAL imports (declared in
- * xdk/x86/ke.h). The Rust side calls cdecl wrappers named RustShimKf*.
- * We can't redefine the same name with a different calling convention,
- * so provide differently-named cdecl wrappers. */
-KIRQL RustShimKfRaiseIrql(IN KIRQL NewIrql)
-{
-    return KfRaiseIrql(NewIrql);
-}
-
-void RustShimKfLowerIrql(IN KIRQL NewIrql)
-{
-    KfLowerIrql(NewIrql);
-}
-#endif
-
-/* RtlFindSetBits cdecl wrapper for Rust (NTAPI→cdecl calling convention) */
-ULONG RustShimRtlFindSetBits(PRTL_BITMAP BitMapHeader, ULONG NumberToFind, ULONG HintIndex)
-{
-    return RtlFindSetBits(BitMapHeader, NumberToFind, HintIndex);
-}
-
-/* KdbpGetHexNumber cdecl wrapper for Rust (NTAPI→cdecl calling convention) */
-BOOLEAN NTAPI KdbpGetHexNumber(IN PCHAR pszNum, OUT ULONG_PTR *pulValue);
-BOOLEAN RustShimKdbpGetHexNumber(PCHAR Arg, ULONG_PTR *Number)
-{
-    return KdbpGetHexNumber(Arg, Number);
-}
+/* RustShimRtlFindSetBits / RustShimKdbpGetHexNumber are now canonical
+ * in kernel_c_helpers.c. */
 
 /* =====================================================================
  * MmFixupImageSectionSegments — called from Rust ExeFmtpCreateImageSection
@@ -1418,71 +1363,6 @@ NtCreateSection_removed(OUT PHANDLE SectionHandle,
     }
 
     return Status;
-}
-#endif
-
-/* ARM64 IRQL debugging for SMSS creation path */
-#ifdef _M_ARM64
-BOOLEAN MiArchCreateProcessAddressSpace(PEPROCESS Process, PULONG_PTR DirectoryTableBase);
-
-BOOLEAN MiArchCreateProcessAddressSpace_checked(PEPROCESS Process, PULONG_PTR DirectoryTableBase)
-{
-    KIRQL before, after;
-    BOOLEAN result;
-    
-    before = KeGetCurrentIrql();
-    result = MiArchCreateProcessAddressSpace(Process, DirectoryTableBase);
-    after = KeGetCurrentIrql();
-    
-    if (before != after) {
-        MmUartPuts("[MM] IRQL CHANGED in MiArchCreateProcessAddressSpace!\r\n");
-        MmUartHex("  before=", before);
-        MmUartHex("  after=", after);
-    }
-    return result;
-}
-#endif
-
-#ifdef _M_ARM64
-/* KeAttachProcess IRQL tracing shim */
-void KeAttachProcess_irql_check(PKPROCESS Process)
-{
-    KIRQL before = KeGetCurrentIrql();
-    KeAttachProcess(Process);
-    KIRQL after = KeGetCurrentIrql();
-    if (after > APC_LEVEL) {
-        MmUartPuts("[MM] KeAttachProcess left IRQL elevated!\r\n");
-        MmUartHex("  before=", before);
-        MmUartHex("  after=", after);
-    }
-}
-#endif
-
-#ifdef _M_ARM64
-/* KeDetachProcess IRQL diagnostic wrapper */
-VOID NTAPI KeDetachProcess(VOID);
-VOID NTAPI KeDetachProcess_irql_checked(VOID)
-{
-    KIRQL before = KeGetCurrentIrql();
-    KeDetachProcess();
-    KIRQL after = KeGetCurrentIrql();
-    if (after > APC_LEVEL) {
-        MmUartPuts("[MM] KeDetachProcess IRQL leak!\r\n");
-        MmUartHex("  before=", before);
-        MmUartHex("  after=", after);
-    }
-}
-#endif
-
-#ifdef _M_ARM64
-/* Track IRQL for ARM64 debugging */
-void MmCheckIrqlAfterCall(const char *label)
-{
-    KIRQL irql = KeGetCurrentIrql();
-    if (irql > APC_LEVEL) {
-        MmUartPuts(label);
-        MmUartHex(" IRQL=", irql);
-    }
 }
 #endif
 

@@ -20,9 +20,3 @@ KdpRustSetComPortInUse(PUCHAR Port)
 {
     KdComPortInUse = Port;
 }
-
-PUCHAR NTAPI
-KdpRustGetComPortInUse(VOID)
-{
-    return KdComPortInUse;
-}

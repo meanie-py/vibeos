@@ -22,7 +22,6 @@
 #define CmpAcquireKcbLockExclusive          _fi_CmpAcquireKcbLockExclusive
 #define CmpAcquireKcbLockExclusiveByIndex   _fi_CmpAcquireKcbLockExclusiveByIndex
 #define CmpAcquireKcbLockExclusiveByKey     _fi_CmpAcquireKcbLockExclusiveByKey
-#define CmpAcquireKcbLockSharedByKey        _fi_CmpAcquireKcbLockSharedByKey
 #define CmpReleaseKcbLockByIndex            _fi_CmpReleaseKcbLockByIndex
 #define CmpReleaseKcbLock                   _fi_CmpReleaseKcbLock
 #define CmpReleaseKcbLockByKey              _fi_CmpReleaseKcbLockByKey
@@ -53,7 +52,6 @@
 #undef CmpAcquireKcbLockExclusive
 #undef CmpAcquireKcbLockExclusiveByIndex
 #undef CmpAcquireKcbLockExclusiveByKey
-#undef CmpAcquireKcbLockSharedByKey
 #undef CmpReleaseKcbLockByIndex
 #undef CmpReleaseKcbLock
 #undef CmpReleaseKcbLockByKey
@@ -73,10 +71,6 @@ VOID CmpAcquireKcbLockExclusiveByIndex(IN ULONG Index)
 VOID CmpAcquireKcbLockExclusiveByKey(IN ULONG ConvKey)
 {
     _fi_CmpAcquireKcbLockExclusiveByKey(ConvKey);
-}
-VOID CmpAcquireKcbLockSharedByKey(IN ULONG ConvKey)
-{
-    _fi_CmpAcquireKcbLockSharedByKey(ConvKey);
 }
 VOID CmpReleaseKcbLockByIndex(IN ULONG Index)
 {

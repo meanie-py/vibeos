@@ -1,246 +1,198 @@
-# Shim Elimination Plan
+# Shim Elimination Plan (rewritten 2026-05-04)
 
-## Overview
+## Status snapshot
 
-There are ~340 C shim functions across 10 `*_rust_shims.c` files in the kernel. These exist because Rust can't directly call C FORCEINLINE functions, macros, or certain ABI-incompatible functions. The north star is pure Rust — every shim is a C dependency we want to eliminate.
+The kernel currently has **~552 active C shim functions** (plus ~50 globals, ~17 LLVM-workaround functions, and ~7 vararg trampolines) spread across **13 `*_rust_shims.c` / `kernel_c_helpers.c` files**, totaling ~9,238 LOC. They exist because Rust can't link directly to certain C constructs:
 
-## Current Shim Files
+- C `FORCEINLINE` / `static __inline` functions (no exported linker symbol)
+- C macros (no symbol at all)
+- C vararg functions (Rust can't safely emit C `va_list` calls)
+- i386 calling-convention bridges (`fastcall` ↔ `extern "system"`)
+- LLVM LTO miscompilation workarounds (a few specific functions)
 
-| File | ~Functions | Primary purpose |
-|------|-----------|-----------------|
-| `ntoskrnl/ke/ke_rust_shims.c` | 97 | FORCEINLINE functions from ke_x.h |
-| `ntoskrnl/io/iomgr/io_rust_shims.c` | 62 | IO macros, Ob* shims, devaction shims, RTL shims |
-| `ntoskrnl/ps/ps_rust_shims.c` | 48 | PS FORCEINLINE functions |
-| `ntoskrnl/mm/mm_rust_shims.c` | 42 | MM FORCEINLINE functions |
-| `ntoskrnl/kd64/kd64_rust_shims.c` | 26 | KD64 FORCEINLINE functions |
-| `ntoskrnl/ex/ex_rust_shims.c` | 18 | EX FORCEINLINE/macro functions |
-| `ntoskrnl/tier1_rust_shims.c` | 18 | Tier 1 subsystem macros (LPC, HAL dispatch, etc.) |
-| `ntoskrnl/ob/ob_rust_shims.c` | 13 | OB FORCEINLINE functions |
-| `ntoskrnl/se/se_rust_shims.c` | 10 | SE FORCEINLINE functions |
-| `ntoskrnl/mm/mm_sysldr_shims.c` | 6 | System loader helpers |
+**This is the second pass on this doc.** The March 2026 version is preserved in git history (`docs/engineering/shim-elimination.md@a~`); it's now stale on counts (340 → 552), file list (missed kernel_c_helpers.c, kdbg, kd, cm), and category retirement (claimed captures(none) was solved by CGU=1, but project chose CGU=256+opaque_ptr instead, which contracted but didn't eliminate the category).
 
-## Shim Categories
+## Current shim inventory
 
-### Category 1: FORCEINLINE Wrappers (~150 shims)
+| File | LOC | Active fns | Primary purpose |
+|------|----:|-----------:|-----------------|
+| `ntoskrnl/ke/ke_rust_shims.c` | 2,115 | ~155 | KE_x.h FORCEINLINEs + i386 register/V86/FXSAVE shims |
+| `ntoskrnl/mm/mm_rust_shims.c` | 1,512 | ~85 | MM PTE accessors, AVL helpers, working-set lock wrappers |
+| `ntoskrnl/io/iomgr/io_rust_shims.c` | 1,465 | ~44 | IO macros, captures(none) workarounds, complex delegations |
+| `ntoskrnl/kernel_c_helpers.c` | 635 | ~16 | **Canonical "must-stay" home** — varargs, LTO workarounds, AVL include trick |
+| `ntoskrnl/ps/ps_rust_shims.c` | 583 | ~50 + globals | PS FORCEINLINEs + globals block |
+| `ntoskrnl/kdbg/kdbg_rust_shims.c` | 539 | ~16 + 2 large data tables | Mostly data (ComponentTable, KdbDebuggerCommands) |
+| `ntoskrnl/ex/ex_rust_shims.c` | 529 | ~20 | EX FORCEINLINEs + macros |
+| `ntoskrnl/tier1_rust_shims.c` | 470 | ~38 | LPC, HAL dispatch, IRP stack location |
+| `ntoskrnl/ob/ob_rust_shims.c` | 457 | ~44 | **Cleanest file** — 42/44 are FORCEINLINE_RENAME |
+| `ntoskrnl/config/cm_rust_shims.c` | 342 | ~37 | KCB lock wrappers + i386 dual-decoration scheme |
+| `ntoskrnl/kd64/kd64_rust_shims.c` | 318 | ~24 | KD64 FORCEINLINEs + KdpDprintf vararg |
+| `ntoskrnl/se/se_rust_shims.c` | 245 | 23 | SE FORCEINLINEs + SepInitTokensShim LTO workaround |
+| `ntoskrnl/kd/kd_rust_shims.c` | 28 | 2 | HAL `KdComPortInUse` getter/setter (dllimport) |
+| **TOTAL** | **9,238** | **~552** | |
 
-**What:** Functions defined as `FORCEINLINE` (or `static __inline`) in C headers like `ke_x.h`, `io_x.h`, `ob_x.h`, `ps_x.h`. They have no exported linker symbol — the C compiler inlines them at each call site. Rust can't include C headers, so it calls through non-inline C wrapper functions.
+Not in this list: `mm/mm_sysldr_shims.c` from the March doc was merged into `mm_rust_shims.c`.
 
-**Examples:**
-- `KiAcquireDispatcherLock`, `KiReleaseDispatcherLock` (dispatcher locking)
-- `KxUnwaitThread`, `KxQueueReadyThread` (scheduler internals)
-- `KiComputeTimerTableIndex`, `KxInsertTimer` (timer management)
-- `IopLockFileObject`, `IopUnlockFileObject` (IO file object locking)
-- `IopUpdateOperationCount`, `IopUpdateTransferCount` (IO statistics)
+## Categories (current taxonomy)
 
-**Shim pattern:** The C shim file uses a "Phase 1 rename" trick:
-```c
-// Before including headers: rename the FORCEINLINE so it becomes _saved_Name
-#define KiAcquireDispatcherLock _saved_KiAcquireDispatcherLock
-#include <ntoskrnl.h>
-#undef KiAcquireDispatcherLock
+| Category | Count | Cost to eliminate | Notes |
+|----------|------:|-------------------|-------|
+| **FORCEINLINE_RENAME** | ~210 | Mechanical (LLM batch) | Largest bucket. The Phase 1 `_saved_*` rename + thin wrapper pattern. Concentrated in ke_x.h, miarm.h, ob_x.h, ps_x.h. |
+| **MACRO_MATERIALIZATION** | ~180 | Per-file incremental | C macros manually re-implemented. Mix of trivial (InitializeObjectAttributes) and structural (HAL dispatch, KxMultiThreadWait). |
+| **GLOBAL_ACCESSOR** | ~50 | Move global to Rust | Cheap. Each is just `return Global;` or `Global = X;`. Eliminate by giving the global a Rust home. |
+| **OTHER (i386 register/V86/seg)** | ~50 | **Stay (mostly)** | i386-only. `Ke386Set*/Get*Reg`, `KiEnterTrap`/`KiEnterV86Trap`, `Ki386InitializeTss`, FXSAVE+MXCSR sanitization. Some moveable to Rust `core::arch::asm!`, but the trap-entry ones are intertwined with PSEH and may need to stay. |
+| **FASTCALL_BRIDGE** | ~28 | Mechanical (`extern "fastcall"` works on stable) | i386 fastcall↔cdecl bridges + cm dual-decoration scheme. |
+| **LLVM_WORKAROUND** | ~13 | **Stay** | SepInitTokensShim (i386 fat-LTO ud2), 9× io captures(none), IopInitializePlugPlayServices_shim (black_box mis-fold), amd64 KiSaveXState/KiRestoreXState (KVM bug, not LLVM). |
+| **COMPLEX_DELEGATION** | ~14 | Per-function review | IopInitializeDriverModule (240 LOC), PiQueueDeviceAction_c, KiAttachProcess, MmFixupImageSectionSegments, ExpKdbgExt* family. |
+| **VARARG** | ~7 | **Stay** | KdpDprintf, KdbpPrint, RtlStringCbPrintfA/W. Need C `va_list`. |
 
-// After headers: define a real non-inline function that calls the saved version
-KIRQL KiAcquireDispatcherLock(VOID) {
-    return _saved_KiAcquireDispatcherLock();
-}
-```
+**Total stay-bucket: ~70 functions** (vararg + LLVM + most i386 register/V86 + kdbg data tables). Everything else (~482 functions) is in principle eliminable.
 
-**Elimination path:** Translate the inline function bodies from C to Rust. These are self-contained — they only call other kernel functions and do register/memory manipulation. A tool could:
-1. Extract FORCEINLINE function bodies from C headers (tree-sitter parse `ke_x.h` etc.)
-2. Translate to Rust (LLM or manual)
-3. Add as `#[inline(always)]` Rust functions in a shared module
+## What's changed since March
 
-**Effort:** Large but mechanical. ~150 functions averaging ~10-20 lines each. Good candidate for LLM batch translation via rustconv or Codex. The ke_x.h functions are the most complex (scheduler/dispatcher internals with spinlock manipulation).
+### 1. Captures(none) workarounds: contracted, not eliminated
 
-**Risk:** Some FORCEINLINE functions use compiler intrinsics (`_InterlockedCompareExchange`, `__readcr3`, `_BitScanForward`) that would need `core::arch::asm!` equivalents.
+The March doc's Category 3 claimed ~15 functions and proposed a one-line `codegen-units = 1` fix. The project chose CGU=256 + `opaque_ptr` laundering + `read/write_volatile` + `#[inline(never)]` splits instead, which solved most cases. **But 9 io_rust_shims captures(none) workarounds remain alive** with explicit comments documenting the bug:
 
----
+- `ObCreateObject_shim`, `ObCreateObjectAddress_shim`, `ObInsertObject_shim`, `ObReferenceObjectByHandle_shim`
+- `IopGetRegistryValue_shim`, `IopOpenRegistryKeyEx_shim`, `IopCreateRegistryKeyEx_shim`, `IopLoadDriver_shim`
+- `PiInitCacheGroupInformation_shim` — comment notes "even with volatile reads", i.e. the opaque_ptr/volatile barrier doesn't save it.
 
-### Category 2: C Macro Wrappers (~40 shims)
+Plus `IopInitializePlugPlayServices_shim` (a different LLVM bug — `core::hint::black_box` mis-folds to ud2 on i386) and `KiSaveXState`/`KiRestoreXState` on amd64 (KVM/hypervisor-level bug, not LLVM).
 
-**What:** C preprocessor macros that expand to expressions or statements. No function exists at all — the preprocessor substitutes the body inline. Rust can't use the C preprocessor.
+These need per-function investigation before they can be eliminated. They're not free wins.
 
-**Examples:**
-- `InitializeObjectAttributes` — struct initialization macro
-- `CONTAINING_RECORD` — pointer arithmetic macro for linked lists
-- `InsertTailList`, `RemoveHeadList`, `IsListEmpty`, `InitializeListHead` — linked list macros
-- `ObReferenceObject` → expands to `ObfReferenceObject(Object)` (fastcall wrapper)
-- `ObDereferenceObject` → expands to `ObfDereferenceObject(Object)`
-- `ExRaiseStatus` → expands to `RtlRaiseStatus(Status)`
-- `HalInitPnpDriver` → expands to `HALDISPATCH->HalInitPnpDriver()`
-- `ExInitializeWorkItem` — struct initialization macro
-- `IoGetCurrentIrpStackLocation` — field access macro
+### 2. `kernel_c_helpers.c` is the new canonical "must-stay" home
 
-**Detection:** `verify_ffi.py` flags these as `[C_MACRO]` — currently finds 62 instances across the codebase.
+Header comment: *"Residual C helper functions that cannot be implemented in Rust (variadic, LTO workarounds, macro-generated tables, globals)."* This file collects:
 
-**Elimination path:** Inline as Rust helper functions. Most are trivial:
-```rust
-#[inline(always)]
-unsafe fn InitializeObjectAttributes(
-    p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING,
-    a: ULONG, r: HANDLE, s: PVOID,
-) {
-    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-    (*p).RootDirectory = r;
-    (*p).Attributes = a;
-    (*p).ObjectName = n;
-    (*p).SecurityDescriptor = s;
-    (*p).SecurityQualityOfService = core::ptr::null_mut();
-}
-```
+- All variadic functions (KdpDprintf, RtlStringCbPrintfA)
+- The fat-LTO ud2 workaround (SepInitTokensShim)
+- AVL tree algorithms that depend on `#include <sdk/lib/rtl/avlsupp.c>`
+- MM macros that need `__FILE__`/`__LINE__` C preprocessor info
+- amd64/i386 KfRaiseIrql/KfLowerIrql calling-convention bridges
 
-**Status:** Already being done file-by-file. `iomgr.rs` and `arcname.rs` already have inline `InitializeObjectAttributes`. Several files still declare these as `extern "C" fn` — verify_ffi.py tracks them.
+But **the consolidation is incomplete** — see #3.
 
-**Effort:** Small. Most macros are 1-5 lines. Can be done incrementally as each file is touched.
+### 3. Source-level duplication between shim files
 
----
+~20 functions are defined in two files at once. The build presumably picks one via subsystem-active conditional compilation, but the duplication is fragile. Examples:
 
-### Category 3: LLVM `captures(none)` Workarounds (~15 shims)
+- `MmVerifyImageIsOkForMpUse` — mm_rust_shims AND kernel_c_helpers
+- `SepInitTokensShim` — se AND kernel_c_helpers
+- `KdpDprintf` — kd64 AND kernel_c_helpers
+- `RtlStringCbPrintfA` — ex AND kernel_c_helpers
+- `ExpKdbgExtFileCache`, `ExpKdbgExtDefWrites` — kd64 AND kernel_c_helpers
+- `ExpKdbgExtHandle` — ex AND kernel_c_helpers
+- `ARM64_UART_TRACE`, `ARM64_UART_TRACE_HEX` — ps AND kernel_c_helpers
+- The full PS globals block (PsNtDllPathName, PspProcessMapping, PspThreadMapping, SharedUserData, …) — ps AND kernel_c_helpers
+- `MmLockSectionSegment`, `MmUnlockSectionSegment`, `MmGetPageEntrySectionSegment` — mm AND kernel_c_helpers
+- The AVL `Rtl*Avl` family + `Rtlp*AvlTreeNode` — mm AND kernel_c_helpers (both `#include <sdk/lib/rtl/avlsupp.c>`)
+- `InterlockedExchange`/`InterlockedCompareExchange` (i386) — mm AND kernel_c_helpers
+- `KfRaiseIrql`/`KfLowerIrql` (amd64 + i386 RustShim variants) — mm AND kernel_c_helpers
+- `RustShimRtlFindSetBits`, `RustShimKdbpGetHexNumber` — mm AND kernel_c_helpers
 
-**What:** Functions that write through output pointers (`OUT PVOID *Object`). When called cross-CGU from Rust, LLVM propagates `captures(none)` to the declaration and then incorrectly concludes the output pointer is never written — eliminating the entire success path as dead code.
+This needs canonicalization (probably "kernel_c_helpers wins for must-stay; subsystem file wins for in-flight") before any elimination work, otherwise we'll be deleting one copy and leaving the other.
 
-**Root cause confirmed in LLVM IR:**
-```llvm
-; Cross-CGU declaration gets captures(none) on output pointer:
-declare x86_stdcallcc i32 @ObCreateObject(
-    ..., ptr noundef captures(none))  ; ← LLVM thinks this ptr isn't written
+### 4. Vestigial shims confirmed (deletion candidates)
 
-; Caller sees captures(none) → concludes write is dead → eliminates success path → ud2
-```
+Verified by grepping all `.rs` files in `ntoskrnl-rust/src/` (and decoration variants `_Name`, `_Name@N`, `@Name@N`) — nine functions have **zero Rust callers**:
 
-**Examples:**
-- `ObCreateObject_shim` / `ObCreateObjectAddress_shim` — object creation
-- `ObInsertObject_shim` — object handle insertion
-- `ObReferenceObjectByHandle_shim` — handle-to-object lookup
-- `IopGetRegistryValue_shim` — registry value read
-- `IopOpenRegistryKeyEx_shim` — registry key open
-- `IopCreateRegistryKeyEx_shim` — registry key create
-- `IopLoadDriver_shim` — driver loading
-- `IopInitializePlugPlayServices_shim` — PnP init
-- `RtlAnsiStringToUnicodeString_shim` — string conversion
-- `RtlUnicodeStringToAnsiString_shim` — string conversion
-- `RtlInitAnsiString_shim` — string init
-- `RtlFreeUnicodeString_shim` — string free
+| File | Function | Why deletable |
+|------|----------|---------------|
+| `cm_rust_shims.c:78` | `CmpAcquireKcbLockSharedByKey` | Rust uses `*ByIndex` variant only |
+| `kd_rust_shims.c:26` | `KdpRustGetComPortInUse` | Setter is called; getter never |
+| `kdbg_rust_shims.c:422` | `Ke386GetTr_Shim` | Cdecl alias dead; stdcall variant satisfied by ke_rust_shims |
+| `ke_rust_shims.c:772` | `KiCpuIdEx` | Rust uses `KiCpuId` only |
+| `ke_rust_shims.c:2093` | `ke_trace_char` | Leftover debug helper |
+| `mm_rust_shims.c:1429` | `MiArchCreateProcessAddressSpace_checked` | Leftover ARM64 IRQL instrumentation |
+| `mm_rust_shims.c:1449` | `KeAttachProcess_irql_check` | Leftover ARM64 IRQL instrumentation |
+| `mm_rust_shims.c:1465` | `KeDetachProcess_irql_checked` | Leftover ARM64 IRQL instrumentation |
+| `mm_rust_shims.c:1480` | `MmCheckIrqlAfterCall` | Leftover ARM64 IRQL instrumentation |
 
-**Elimination path: `codegen-units = 1` in Cargo.toml.**
+## Phased elimination plan
 
-This is a **one-line fix** that completely eliminates the issue:
-```toml
-[profile.release]
-codegen-units = 1   # was 16
-```
+### Phase 0 — Free wins (~1 day)
 
-**Why it works:** With CGU=1, all Rust code is in a single LLVM module. `ObCreateObject` is a *definition* (not a cross-CGU declaration), so LLVM sees the full function body and knows the output pointer IS written. No `captures(none)` on cross-CGU declarations because there are no cross-CGU declarations.
+1. **Delete the 9 vestigial functions.** Build all 3 arches; smoke i386 + amd64.
+2. **Resolve the ~20 source-level duplications.** Pick canonical home per function (default rule: must-stay → kernel_c_helpers.c; everything else → subsystem file). Remove the duplicate; verify build still picks correct symbol.
+3. **Document the must-stay set explicitly.** Add a top-level comment in each subsystem shim file listing which functions are intentional-stay vs in-flight, so future audits don't have to re-discover this.
 
-**Verified:** LLVM IR with CGU=1 shows `ObCreateObject` as `define` (0 declares) vs CGU=16 which shows it as `declare ... captures(none)`.
+Net result: ~30 functions eliminated, codebase clarity improved, no risk.
 
-**Build time impact:** 6s → 10s wall time (CGU=16 parallelizes across cores; CGU=1 is sequential but does less total work). Negligible for a kernel build.
+### Phase 1 — FORCEINLINE batch (rustconv) (~1 week)
 
-**Additional benefit:** Would also eliminate the `#[inline(never)]` helper splits that Codex added to device.rs (`IopFinishCreatedDeviceObject`) and iomgr.rs (`IopFinishIoInitSystem`) to work around the same optimizer issue. Those structural workarounds could be reverted, simplifying the code.
+The ~210 FORCEINLINE_RENAME functions are uniform pattern: a `#define Name _saved_Name` rename, an include of the relevant header, then a thin wrapper that calls `_saved_Name(...)`. The body of the inline lives in `ke_x.h` / `ob_x.h` / `ps_x.h` / `miarm.h` / etc.
 
-**May also fix ARM64 baseline:** The ARM64 BUGCHECK 0x6B regression could be the same class of bug manifesting differently. If CGU=1 fixes ARM64 too, that's a major bonus. (Codex is currently investigating ARM64 and found it's "codegen-sensitive" — consistent with this theory.)
+**Pilot: ob_rust_shims.c** — the cleanest file (42/44 are this exact pattern). Process:
+1. Extract each FORCEINLINE body from `ob_x.h` (tree-sitter parse — already a rustconv capability).
+2. Translate to Rust as `#[inline]` (or `pub fn` with `#[no_mangle]` to satisfy any remaining C callers) in a new `ob/inlines.rs` module.
+3. Remove the corresponding outline wrapper from `ob_rust_shims.c`.
+4. Verify Rust callers resolve correctly (they used `extern { fn Name(...) }` blocks; with the new `pub fn Name`, the link is direct).
+5. Smoke i386 + amd64.
 
----
+If pilot succeeds, replicate for ke (~80 candidates), ps (~30), mm (~30), se (~10), cm (~9), ex (~10). Total: ~210 functions across 6 subsystems. Cost: ~$5-10 in Sonnet API; ~2-3 days integration per subsystem.
 
-### Category 4: Calling Convention Bridges (~19 shims)
+**Risk:** some FORCEINLINE bodies use compiler intrinsics (`_InterlockedCompareExchange`, `__readcr3`, `_BitScanForward`) needing `core::arch::asm!` equivalents. Most have Rust intrinsic equivalents in `core::sync::atomic` or `core::arch::x86`/`x86_64` already.
 
-**What:** Functions where the real kernel export uses `fastcall` (first two params in ECX/EDX registers on i386) but Rust declares them as `extern "C"` (all params on stack). The shim converts between calling conventions.
+### Phase 2 — Macro materializations (~1 week)
 
-**The 7 unique fastcall functions (19 total instances):**
+~180 functions, mix of trivial and structural. Two passes:
+1. **Trivial macros** (~80): `InitializeObjectAttributes`, `CONTAINING_RECORD`, `IsListEmpty`, `ObReferenceObject`, etc. Mostly 1-5 lines each. Inline as Rust helpers in subsystem modules; already partially done (`iomgr.rs` has its own `InitializeObjectAttributes`).
+2. **Structural macros** (~100): HAL dispatch (`HalInitPnpDriver` → `HALDISPATCH->HalInitPnpDriver()`), wait macros (`KxMultiThreadWait`), IRP stack helpers. Per-subsystem; some need new Rust APIs (e.g. a `HalDispatch` accessor crate).
 
-| Function | Instances | What it does |
-|----------|-----------|-------------|
-| `InterlockedCompareExchange` | 8 | Atomic compare-and-swap |
-| `InterlockedExchange` | 3 | Atomic exchange |
-| `KiAcquireSpinLock` | 2 | Spinlock acquire (KE internal) |
-| `KiReleaseSpinLock` | 2 | Spinlock release (KE internal) |
-| `KiEoiHelper` | 2 | End-of-interrupt (KE internal) |
-| `ObfDereferenceObject` | 1 | Object dereference (the real function behind ObDereferenceObject macro) |
-| `ExfInterlockedInsertTailList` | 1 | Interlocked list insert |
+Cost: case-by-case, but well-bounded.
 
-**Elimination path: `extern "fastcall"` works on stable Rust for i686-pc-windows-gnu!**
+### Phase 3 — Calling conventions (~3 days)
 
-Verified:
-```rust
-extern "fastcall" { fn TestFastcall(x: i32, y: i32) -> i32; }
-// Generates correct symbol: @TestFastcall@8
-```
+~28 functions. `extern "fastcall"` works on stable Rust for `i686-pc-windows-gnu` (verified in March doc); just hasn't been adopted everywhere. Mechanical work:
+- Replace `extern "system" fn KfRaiseIrql(...)` declarations with `#[cfg(target_arch="x86")] extern "fastcall" fn KfRaiseIrql(...)` + amd64/arm64 fallback.
+- Remove the fastcall→cdecl bridge from the shim file.
+- Resolve cm_rust_shims.c's dual-decoration scheme (the ~17 `__asm__("_Name@N")` symbol-renames) by aligning the bindgen-generated callers and hand-written `extern "system"` callers on a single decoration.
 
-The fix is arch-gated extern blocks:
-```rust
-#[cfg(target_arch = "x86")]
-extern "fastcall" {
-    fn InterlockedCompareExchange(Target: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-    fn ObfDereferenceObject(Object: PVOID) -> LONG;
-}
+### Phase 4 — Per-function review (~2 weeks)
 
-#[cfg(not(target_arch = "x86"))]
-extern "system" {
-    fn InterlockedCompareExchange(Target: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
-    // On amd64/arm64, these are stdcall/cdecl (same thing), not fastcall
-}
-```
+- **9 captures(none) workarounds**: investigate per function whether a Rust-side `opaque_ptr` + `write_volatile` + `#[inline(never)]` triple is sufficient (it was for most of the originals), or whether a structural change is needed (e.g. return `Result<(T, NTSTATUS), NTSTATUS>` instead of output pointer).
+- **~14 complex delegations**: per-function judgment. Some (PiQueueDeviceAction_c, IopInitializeDriverModule) might warrant Rust translation; others (HAL dispatch wrappers) might stay.
+- **~50 GLOBAL_ACCESSOR functions**: each gets eliminated by moving the underlying global to Rust. Coordinate with other translation work — these come for free as subsystems get translated.
 
-**Note:** `KeAcquireSpinLock` / `KeReleaseSpinLock` are actually C macros wrapping `KeAcquireSpinLockRaiseToDpc` (stdcall) — they fall into Category 2, not Category 4. Only the `Ki*` internal spinlock functions are truly fastcall.
+### Phase 5 — Document the must-stay set (~1 day)
 
-**Effort:** Small. 7 unique functions, mechanical cfg-gated declarations.
+Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit comments in subsystem files). Each documented with its reason:
+- 7 varargs (need C va_list)
+- 5 LLVM/KVM workarounds (compiler/hypervisor bugs)
+- ~50 i386 register/V86/segment shims (need Rust `core::arch::asm!` audit; some may move, some stay)
+- ~5 kdbg data tables (macro-generated; could be `const fn` arrays in Rust but low priority)
 
----
+## Effort summary
 
-### Category 5: Complex Delegations (~10 shims)
+| Phase | Functions removed | Effort | Risk |
+|-------|------------------:|--------|------|
+| 0. Free wins | ~30 | 1 day | None |
+| 1. FORCEINLINE batch | ~210 | 1 week + ~$10 API | Low (pilot first) |
+| 2. Macro materializations | ~180 | 1 week | Low-medium (per-file) |
+| 3. Calling conventions | ~28 | 3 days | Low (mechanical) |
+| 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) |
+| 5. Document must-stays | ~0 | 1 day | None |
+| **Total reduction** | **~498 / ~552 (90%)** | **~5 weeks** | |
 
-**What:** Functions where the C shim does significant work that's hard to replicate in Rust, or where the delegation pattern is intentional.
+End state: ~70 must-stay functions in kernel_c_helpers.c. ~9,238 LOC of shim C code → roughly ~1,500 LOC.
 
-**Examples:**
-- `PiQueueDeviceAction_c` — spinlock + list insertion + work queue dispatch (devaction.rs)
-- `IoRequestDeviceEject_c` — complex eject logic with many internal calls (devaction.rs)
-- `PiPerformSyncDeviceAction_c` — event wait wrapper (devaction.rs)
-- `PiSetDevNodeText_c` — registry string operations (devaction.rs)
-
-**Elimination path:** Case-by-case. Some can be translated to Rust (especially with CGU=1 fixing the output-pointer issue). Others may stay as C for pragmatic reasons (complex callback patterns, HAL dispatch table interaction).
-
-**Effort:** Medium. Requires careful per-function analysis.
-
----
-
-## Priority Order for Elimination
-
-| Priority | Category | Shims | Fix | Effort |
-|----------|----------|-------|-----|--------|
-| **1** | captures(none) | ~15 | `codegen-units = 1` | One line in Cargo.toml |
-| **2** | Calling convention | ~19 | `extern "fastcall"` | Mechanical, per-file |
-| **3** | C macros | ~40 | Inline Rust helpers | Incremental, per-file |
-| **4** | FORCEINLINE | ~150 | Translate C → Rust | LLM batch (rustconv/Codex) |
-| **5** | Complex delegations | ~10 | Case-by-case | Manual analysis |
-
-## Verification Tools
+## Verification tools (current)
 
 | Tool | What it checks | Location |
 |------|---------------|----------|
 | `verify_constants.py` | Constant values vs C headers | `tools/rustconv/rustconv/verify_constants.py` |
 | `verify_abi.py` | extern "C" vs extern "system" ABI | `tools/rustconv/rustconv/verify_abi.py` |
 | `verify_ffi.py` | Combined: ABI + params + C macros + flexible arrays | `tools/rustconv/rustconv/verify_ffi.py` |
+| `lint_kernel.py` | Unprotected output pointer writes (captures(none) target) | `tools/lint_kernel.py` |
+| `scan_ud2.py` | LLVM miscompilation (ud2 in named functions) | `tools/scan_ud2.py` |
 
-Run all checks:
-```bash
-cd reactos
-.venv/bin/python tools/rustconv/rustconv/verify_constants.py   # 0 mismatches (all fixed)
-.venv/bin/python tools/rustconv/rustconv/verify_abi.py          # 61 ABI mismatches
-.venv/bin/python tools/rustconv/rustconv/verify_ffi.py          # 152 total issues
-```
+Smoke after each phase: `pytest tests/qemu/test_smoke.py -v --arch i386 --arch amd64` (without `--skip-clean-build` for final verification — see project rule about cargo's incremental cache producing corrupt staticlibs).
 
-## Reference Files
+## Open questions before starting
 
-| File | Description |
-|------|-------------|
-| `/home/curi/Projects/os-playground/reactos/CLAUDE.md` | Project instructions and architecture |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/MEMORY.md` | Memory index |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/feedback_extern_c_abi.md` | extern "C" vs "system" learnings |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/feedback_llvm_workarounds.md` | LLVM i386 workaround patterns |
-| `/home/curi/.claude/projects/-home-curi-Projects-os-playground/memory/feedback_flexible_array.md` | Flexible array bug pattern |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/Cargo.toml` | Workspace config (codegen-units setting) |
-| `/home/curi/Projects/os-playground/reactos/sdk/lib/rust/ntoskrnl-rust/src/` | Rust kernel source |
-| `/home/curi/Projects/os-playground/reactos/ntoskrnl/ke/ke_rust_shims.c` | Largest shim file (97 functions) |
-| `/home/curi/Projects/os-playground/reactos/sdk/include/ndk/ketypes.h` | FORCEINLINE function definitions |
-| `/home/curi/Projects/os-playground/reactos/ntoskrnl/include/internal/ke_x.h` | KE FORCEINLINE functions |
+1. **Pilot subsystem confirmation.** ob_rust_shims.c is the cleanest target on paper (42/44 FORCEINLINE_RENAME) — agree to start there?
+2. **Duplication resolution rule.** Default proposed: must-stay → kernel_c_helpers.c; in-flight → subsystem file. Are there cases where this is wrong?
+3. **Phase ordering.** Is the Phase 0 → 1 → 2 → 3 → 4 → 5 sequence right, or do we want to interleave (e.g. Phase 1 + Phase 3 in parallel since they touch disjoint files)?
+4. **Acceptance bar.** Does each phase need a smoke pass, or only at end-of-phase boundaries? (Recommendation: smoke at end of each subsystem-batch, not each function.)
