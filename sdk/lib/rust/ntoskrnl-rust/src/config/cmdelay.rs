@@ -22,6 +22,14 @@ use ntkrnl_sys::opaque_ptr;
 
 #[no_mangle] pub static mut CmpDelayDerefKCBWorkItem: _WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
 #[no_mangle] pub static mut CmpDelayedCloseSize: ULONG = 2048;
+
+// Registry-controlled values owned by config/cmdelay. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static CMDELAY_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager\\Configuration Manager", "DelayCloseSize",
+            core::ptr::addr_of_mut!(CmpDelayedCloseSize)),
+    ] });
 #[no_mangle] pub static mut CmpDelayedCloseElements: ULONG = 0;
 #[no_mangle] pub static mut CmpDelayedCloseTableLock: _KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
 #[no_mangle] pub static mut CmpDelayCloseWorkItemActive: BOOLEAN = 0;

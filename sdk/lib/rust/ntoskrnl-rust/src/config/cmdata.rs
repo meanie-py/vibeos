@@ -402,7 +402,7 @@ extern "C" {
 // Local entries — entries that reference cmdata-owned globals or are still
 // awaiting Phase B chop. Excludes the NULL terminator (added separately by
 // the assembler below).
-const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 60] = unsafe { [
+const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 51] = unsafe { [
     cv!("LSA", "AuditBaseDirectories", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA", "AuditBaseObjects", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA\\audit", "ProcessAccessesToAudit", core::ptr::addr_of_mut!(DummyData)),
@@ -471,8 +471,7 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 60] = unsafe { [
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\I/O System", "IoVerifierLevel",
         core::ptr::addr_of_mut!(DummyData)),
-    cv!("Session Manager", "ResourceTimeoutCount",
-        core::ptr::addr_of_mut!(crate::ex::resource::ExpResourceTimeoutCount)),
+    // ResourceTimeoutCount moved to ex/resource.rs::RESOURCE_CONTROL_VECTOR
     // CriticalSectionTimeout, HeapSegment*, HeapDeCommit* moved to ARM3/{mminit,helpers}.rs
     // ProductType moved to ARM3/mminit.rs::MMINIT_CONTROL_VECTOR
     cv!("Terminal Server", "TSEnabled", core::ptr::addr_of_mut!(DummyData)),
@@ -481,10 +480,7 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 60] = unsafe { [
         core::ptr::addr_of_mut!(CmSuiteBuffer),
         core::ptr::addr_of_mut!(CmSuiteBufferLength),
         core::ptr::addr_of_mut!(CmSuiteBufferType)),
-    cv!("Windows", "CSDVersion",
-        core::ptr::addr_of_mut!(crate::ex::init::CmNtCSDVersion)),
-    cv!("Windows", "CSDReleaseType",
-        core::ptr::addr_of_mut!(crate::ex::init::CmNtCSDReleaseType)),
+    // CSDVersion + CSDReleaseType moved to ex/init.rs::INIT_CONTROL_VECTOR
     cv!("Nls\\Language", "Default",
         core::ptr::addr_of_mut!(CmDefaultLanguageId),
         core::ptr::addr_of_mut!(CmDefaultLanguageIdLength),
@@ -499,12 +495,8 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 60] = unsafe { [
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Configuration Manager", "SelfHealingEnabled",
         core::ptr::addr_of_mut!(CmSelfHeal)),
-    cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushInterval",
-        core::ptr::addr_of_mut!(crate::config::cmlazy::CmpLazyFlushIntervalInSeconds)),
-    cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushHiveCount",
-        core::ptr::addr_of_mut!(crate::config::cmlazy::CmpLazyFlushHiveCount)),
-    cv!("Session Manager\\Configuration Manager", "DelayCloseSize",
-        core::ptr::addr_of_mut!(crate::config::cmdelay::CmpDelayedCloseSize)),
+    // RegistryLazyFlush* moved to config/cmlazy.rs::CMLAZY_CONTROL_VECTOR
+    // DelayCloseSize moved to config/cmdelay.rs::CMDELAY_CONTROL_VECTOR
     cv!("Session Manager\\Configuration Manager", "VolatileBoot",
         core::ptr::addr_of_mut!(CmpVolatileBoot)),
     cv!("Session Manager", "ForceNpxEmulation", core::ptr::addr_of_mut!(DummyData)),
@@ -514,18 +506,15 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 60] = unsafe { [
     cv!("Windows", "ShutdownTime",
         core::ptr::addr_of_mut!(DummyData),
         core::ptr::addr_of_mut!(DummyData)),
-    cv!("PriorityControl", "Win32PrioritySeparation",
-        core::ptr::addr_of_mut!(crate::ps::process::PsRawPrioritySeparation)),
+    // Win32PrioritySeparation moved to ps/process.rs::PROCESS_CONTROL_VECTOR
     cv!("Session Manager", "EnableTimerWatchdog", core::ptr::addr_of_mut!(DummyData)),
-    cv!("Session Manager", "Debugger Retries",
-        core::ptr::addr_of_mut!(crate::kd64::kddata::KdpContext.KdpDefaultRetries)),
+    // Debugger Retries moved to kd64/kddata.rs::KDDATA_TUNABLES_CV
 
     // === Trailing entries (after the debug-print block) ===
     cv!("WMI", "MaxEventSize", core::ptr::addr_of_mut!(DummyData)),
     cv!("WMI\\Trace", "UsePerformanceClock", core::ptr::addr_of_mut!(DummyData)),
     cv!("WMI\\Trace", "TraceAlignment", core::ptr::addr_of_mut!(DummyData)),
-    cv!("CrashControl", "AutoReboot",
-        core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopAutoReboot)),
+    // CrashControl/AutoReboot moved to iomgr/iomgr.rs::IOMGR_CONTROL_VECTOR
 ] };
 
 // ============================================================================
@@ -557,6 +546,7 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::ob::devicemap::DEVICEMAP_CONTROL_VECTOR.0,
     &crate::ob::obname::OBNAME_CONTROL_VECTOR.0,
     &crate::kd64::kddata::KD_FILTER_CONTROL_VECTOR.0,
+    &crate::kd64::kddata::KDDATA_TUNABLES_CV.0,
     &crate::ARM3::pfnlist::PFNLIST_CONTROL_VECTOR.0,
     &crate::ARM3::mminit::MMINIT_CONTROL_VECTOR.0,
     &crate::ARM3::helpers::HELPERS_CONTROL_VECTOR.0,
@@ -565,6 +555,12 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::ARM3::sysldr::SYSLDR_CONTROL_VECTOR.0,
     &crate::mm::mminit::MMINIT_CONTROL_VECTOR.0,
     &crate::mm::pagefile::PAGEFILE_CONTROL_VECTOR.0,
+    &crate::ex::init::INIT_CONTROL_VECTOR.0,
+    &crate::ex::resource::RESOURCE_CONTROL_VECTOR.0,
+    &crate::ps::process::PROCESS_CONTROL_VECTOR.0,
+    &crate::iomgr::iomgr::IOMGR_CONTROL_VECTOR.0,
+    &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
+    &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
     &CMDATA_LOCAL_CV,
     &TERMINATOR,
 ];

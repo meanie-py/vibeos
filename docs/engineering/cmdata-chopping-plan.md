@@ -1,8 +1,10 @@
-# cmdata.c Chopping Plan (Phase B)
+# cmdata.c Chopping Plan (Phase B) — DONE
 
-**Status:** Phase A landed (verbatim translation `cmdata.c` → `cmdata.rs`). Phase B is the actual chop — moving `CmControlVector[]` entries into the subsystem files that own the variables they point at.
+**Status (2026-05-04):** Phase A and all four Phase B steps landed. Every cross-subsystem CmControlVector entry now lives in the file that owns its variable. cmdata.rs is down to ~593 LOC (from 994 LOC of original C / ~750 LOC of Phase A Rust); only entries pointing at cmdata-owned globals (`DummyData`, language IDs, suite buffer, the `Cm*` config vars, `MmConsumedPoolPercentage` extern) plus the 4 inherent registry-structure tables (`CmpMachineHiveList`, `CmClassName`, `CmTypeName`, `CmpMultifunctionTypes`) remain.
 
-**Why this exists:** This file captures the chopping plan that previously lived only in chat history. The original cmalloc/cmdelay/cmlazy/cmkcbncb chops applied the same pattern when those files were translated; cmdata is the last and biggest holdout.
+This file is preserved as the historical record of how the chop was designed and executed; future readers wanting to understand the const-concat scheme should still find it useful.
+
+**Original framing:** This file captured the chopping plan that previously lived only in chat history. The original cmalloc/cmdelay/cmlazy/cmkcbncb chops applied the same pattern when those files were translated; cmdata was the last and biggest holdout.
 
 ## Phase A — done
 
@@ -62,28 +64,29 @@ This keeps:
 
 The `cv!` macro from cmdata.rs needs to be exported (or re-defined per-subsystem). Easiest: lift it into `config/cmdata.rs` as `pub macro_rules!` and `use` it at the call site.
 
-### Migration order — risk-ranked
+### Migration order — what actually shipped
 
-Smallest, lowest-risk subsystems first so the mechanism is proven before bigger chunks.
+Done in 4 commits, smallest to biggest, smallest-risk first. The const-concat scheme handled every step the same way: each owning file declares `pub static FOO_CONTROL_VECTOR: SubVector<N>`, cmdata.rs's `SLICES` list grows by one entry, `CMDATA_LOCAL_CV` shrinks by N. CV_TOTAL recomputes from `SLICES`.
 
-| Order | Subsystem | Entries | Owning files | Notes |
-|------:|-----------|--------:|--------------|-------|
-| 1 | **ob** | 5 | `ob/obinit.rs` (3), `ob/devicemap.rs` (1), `ob/obname.rs` (3 — buffer, length, case-insensitive) | Smallest non-trivial chop. Validates the const concat scheme. |
-| 2 | **kd64 debug filters** | 156 | `kd64/kddata.rs` (already owns `Kd_*_Mask` statics) | Big mechanical chunk. Builds a `KD_FILTER_CONTROL_VECTOR` slice next to the masks. After this, `cmdata.rs` shrinks dramatically. |
-| 3 | **mm/ARM3** | ~28 | `ARM3/{mminit,helpers,pfnlist,sysldr,mdlsup,drvmgmt}.rs` + `mm/{mminit,pagefile}.rs` | Biggest by file count. Probably one slice per file or one per directory. |
-| 4 | **ex** | 1 | `ex/resource.rs` (`ExpResourceTimeoutCount`) | Trivial single-entry chop. |
-| 5 | **ps** | 1 | `ps/process.rs` (`PsRawPrioritySeparation`) | Trivial. |
-| 6 | **iomgr** | 1 | `iomgr/iomgr.rs` (`IopAutoReboot`) | Trivial. |
-| 7 | **cmlazy/cmdelay** | 3 | `config/{cmlazy,cmdelay}.rs` (already own the variables) | Trivial. |
-| 8 | **kd64 KdpContext** | 1 | `kd64/kddata.rs` (`KdpContext.KdpDefaultRetries`) | Field-of-struct chop; should fold in with #2. |
+| Step | Commit | Entries | Subsystems chopped | New SubVectors |
+|-----:|--------|--------:|--------------------|----------------|
+| 1 | `06156c2b` | 5 | **ob** | `ob/{obinit,devicemap,obname}::{OBINIT,DEVICEMAP,OBNAME}_CONTROL_VECTOR` |
+| 2 | `2609d390` | 156 | **kd64 debug filters** | `kd64/kddata::KD_FILTER_CONTROL_VECTOR` (also moved the local `kd_filter!` macro) |
+| 3 | `c372ecd8` | 27 | **mm/ARM3** (8 files) | `ARM3/{pfnlist,mminit,helpers,mdlsup,drvmgmt,sysldr}::*_CONTROL_VECTOR` + `mm/{mminit,pagefile}::*_CONTROL_VECTOR` |
+| 4 | (this commit) | 9 | **ex (3), ps (1), iomgr (1), cmlazy (2), cmdelay (1), kd64 tunables (1)** | `ex/{resource,init}::*_CONTROL_VECTOR`, `ps/process::PROCESS_CONTROL_VECTOR`, `iomgr/iomgr::IOMGR_CONTROL_VECTOR`, `config/{cmlazy,cmdelay}::*_CONTROL_VECTOR`, `kd64/kddata::KDDATA_TUNABLES_CV` |
+| **Total** | | **197** | 19 sub-vectors across 18 files | |
 
-What's *left* in `cmdata.rs` after all 8 are done:
+**One entry held back:** `MmConsumedPoolPercentage` (Session Manager\Memory Management / PoolUsageMaximum) stays in `cmdata.rs` because the variable itself is still C-side (no Rust home). When pool.c is fully translated to Rust and that global gets a Rust definition, this entry can move.
+
+**One step bisect lesson** (step 3): the first attempt with `--skip-clean-build` showed an i386 boot failure (FreeLdr loop, 0 milestones). Bisect-by-revert proved the chop was sound — cargo's incremental cache produced a corrupt staticlib for i386 only; full clean rebuild was 7/7 PASS. AGENTS.md already calls out the rule: **always run smoke without `--skip-clean-build` for final verification.**
+
+What's left in `cmdata.rs` after all four steps:
 - The simple cmdata-owned globals (`DummyData`, `CmNtGlobalFlag`, language IDs, suite buffer, `CmControlHive`, push locks, `CmpVolatileBoot`, `CmSelfHeal`, etc.).
 - `CmpMachineHiveList`, `CmClassName`, `CmTypeName`, `CmpMultifunctionTypes` (these are inherently cmdata's because they describe registry structure, not subsystem-specific data).
 - `CMDATA_LOCAL_CONTROL_VECTOR` — entries that reference cmdata-owned globals (`DummyData` placeholders, language IDs, suite buffer entries, `CmpVolatileBoot`, `CmSelfHeal` settings, `CmpLazyFlush*`, `CmpDelayedCloseSize`, the WMI/CrashControl trailing entries — most of which use `&DummyData`).
 - The const concat assembler.
 
-Estimated final cmdata.rs size: ~250 LOC (down from 994 LOC of C / ~750 LOC of Phase-A Rust).
+Final cmdata.rs size: ~593 LOC (down from 994 LOC of C / ~750 LOC of Phase-A Rust). The estimate was lower because the cmdata-local table still has ~50 entries pointing at DummyData (registry slots reserved but not actually wired to anything functional), plus the four inherent registry-structure tables (CmpMachineHiveList, CmClassName, CmTypeName, CmpMultifunctionTypes) which weigh ~150 LOC.
 
 ### Mechanism details
 

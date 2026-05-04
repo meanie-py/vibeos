@@ -242,6 +242,16 @@ const KD_BREAKPOINT_VALUE: KD_BREAKPOINT_TYPE = 0xCC;
 #[no_mangle]
 pub static mut KdpContext: KD_CONTEXT = unsafe { core::mem::zeroed() };
 
+// Registry-controlled value owned by kd64/kddata. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+// (KD_FILTER_CONTROL_VECTOR for debug-print masks lives further down with the
+// Kd_*_Mask statics.)
+pub static KDDATA_TUNABLES_CV: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager", "Debugger Retries",
+            core::ptr::addr_of_mut!(KdpContext.KdpDefaultRetries)),
+    ] });
+
 #[no_mangle]
 pub static mut KdpPortLocked: BOOLEAN = 0;
 

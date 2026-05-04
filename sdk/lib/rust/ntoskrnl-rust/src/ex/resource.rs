@@ -114,6 +114,14 @@ static mut ExpTimeout: LARGE_INTEGER = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub static mut ExpResourceTimeoutCount: ULONG = 90 * 3600 / 2;
 
+// Registry-controlled values owned by ex/resource. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static RESOURCE_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager", "ResourceTimeoutCount",
+            core::ptr::addr_of_mut!(ExpResourceTimeoutCount)),
+    ] });
+
 // KSPIN_LOCK — must match ddk ULONG_PTR: u64 on amd64/arm64, u32 on i386
 #[cfg(target_pointer_width = "64")]
 static mut ExpResourceSpinLock: u64 = 0;

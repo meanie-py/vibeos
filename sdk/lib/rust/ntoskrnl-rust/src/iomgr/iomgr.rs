@@ -204,6 +204,14 @@ pub static mut IoStatisticsLock: KSPIN_LOCK = 0;
 #[no_mangle]
 pub static mut IopAutoReboot: ULONG = 0;
 
+// Registry-controlled values owned by iomgr. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static IOMGR_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("CrashControl", "AutoReboot",
+            core::ptr::addr_of_mut!(IopAutoReboot)),
+    ] });
+
 #[no_mangle]
 pub static mut IopNumTriageDumpDataBlocks: ULONG = 0;
 

@@ -153,6 +153,17 @@ pub static mut CmNtSpBuildNumber: ULONG = 0;
 pub static mut CmNtCSDVersion: ULONG = 0;
 #[no_mangle]
 pub static mut CmNtCSDReleaseType: ULONG = 0;
+
+// Registry-controlled values owned by ex/init. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static INIT_CONTROL_VECTOR: crate::config::cmdata::SubVector<2> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Windows", "CSDVersion",
+            core::ptr::addr_of_mut!(CmNtCSDVersion)),
+        crate::cv!("Windows", "CSDReleaseType",
+            core::ptr::addr_of_mut!(CmNtCSDReleaseType)),
+    ] });
+
 #[no_mangle]
 pub static mut CmVersionString: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 #[no_mangle]

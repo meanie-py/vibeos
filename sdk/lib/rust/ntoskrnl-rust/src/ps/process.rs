@@ -167,6 +167,14 @@ pub static mut ShortPsLockDelay: LARGE_INTEGER = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub static mut PsRawPrioritySeparation: ULONG = 0;
 
+// Registry-controlled values owned by ps/process. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static PROCESS_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("PriorityControl", "Win32PrioritySeparation",
+            core::ptr::addr_of_mut!(PsRawPrioritySeparation)),
+    ] });
+
 #[no_mangle]
 pub static mut PsPrioritySeparation: ULONG = 0;
 
