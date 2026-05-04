@@ -120,20 +120,36 @@ Verified by grepping all `.rs` files in `ntoskrnl-rust/src/` (and decoration var
 
 Net result: ~30 functions eliminated, codebase clarity improved, no risk.
 
-### Phase 1 — FORCEINLINE batch (rustconv) (~1 week)
+### Phase 1 — FORCEINLINE batch — **PILOT FAILED, plan blocked** (2026-05-04)
 
-The ~210 FORCEINLINE_RENAME functions are uniform pattern: a `#define Name _saved_Name` rename, an include of the relevant header, then a thin wrapper that calls `_saved_Name(...)`. The body of the inline lives in `ke_x.h` / `ob_x.h` / `ps_x.h` / `miarm.h` / etc.
+The original Phase 1 plan was: pull the FORCEINLINE bodies out of headers like `cm_x.h`, write Rust equivalents as `#[no_mangle] pub unsafe extern "C" fn Foo(...)`, and remove the C-side outline wrapper from `*_rust_shims.c`. This **does not work** as designed; pilot crashed boot.
 
-**Pilot: ob_rust_shims.c** — the cleanest file (42/44 are this exact pattern). Process:
-1. Extract each FORCEINLINE body from `ob_x.h` (tree-sitter parse — already a rustconv capability).
-2. Translate to Rust as `#[inline]` (or `pub fn` with `#[no_mangle]` to satisfy any remaining C callers) in a new `ob/inlines.rs` module.
-3. Remove the corresponding outline wrapper from `ob_rust_shims.c`.
-4. Verify Rust callers resolve correctly (they used `extern { fn Name(...) }` blocks; with the new `pub fn Name`, the link is direct).
-5. Smoke i386 + amd64.
+**Pilot scope.** Ob shims got deleted in Phase 0 so the new pilot was `cm_rust_shims.c` — 8 KCB-lock FORCEINLINE outlines (`CmpAcquireKcbLockExclusive`, …, `CmpConvertKcbSharedToExclusive`). Source bodies in `ntoskrnl/include/internal/cm_x.h` (304 LOC); each inline is 3-7 lines calling well-known primitives. Hand translation into a new `sdk/lib/rust/ntoskrnl-rust/src/config/cm_inlines.rs` + `_force_cm_inlines_symbols` block in `lib.rs` + outline removal from `cm_rust_shims.c`.
 
-If pilot succeeds, replicate for ke (~80 candidates), ps (~30), mm (~30), se (~10), cm (~9), ex (~10). Total: ~210 functions across 6 subsystems. Cost: ~$5-10 in Sonnet API; ~2-3 days integration per subsystem.
+**Result.** All 3 arches built clean. amd64 smoke 7/7 PASS. **i386 boot BSOD** at boot: `STOP 0x1E (KMODE_EXCEPTION_NOT_HANDLED), 0xC000001D STATUS_ILLEGAL_INSTRUCTION` at `0x8045C00F` — which symbolicates to `CmpCreateKeyControlBlock+0x...`, a function I never touched.
 
-**Risk:** some FORCEINLINE bodies use compiler intrinsics (`_InterlockedCompareExchange`, `__readcr3`, `_BitScanForward`) needing `core::arch::asm!` equivalents. Most have Rust intrinsic equivalents in `core::sync::atomic` or `core::arch::x86`/`x86_64` already.
+`scan_ud2` confirmed the cause: **23 unexpected ud2** instructions, only 4 in the new Rust functions; 19 in pre-existing config code (`CmpCreateKeyControlBlock`, `CmpParseKey`, `CmpReferenceKeyControlBlock`, `CmpDelayCloseWorker`, `CmDeleteValueKey`, `CmEnumerateValueKey`, `CmQueryValueKey`, `CmSetValueKey`, `CmpDoOpen`, `CmpLookInCache`, …). Pre-Phase-1 baseline: **0 unexpected ud2**.
+
+**Why the cascade.** This is the LLVM `captures(none)` cross-CGU contagion documented in `feedback_cgu1.md`: when a `#[no_mangle] extern "C" fn` is added to a Rust crate, LLVM re-evaluates cross-CGU declarations for the whole subsystem, infers `captures(none)` more aggressively on the affected pointers, and proves "success path is dead → emit ud2" in unrelated functions. Same family of bug as the late-March `write_volatile` sweep; the project chose `CGU=256 + opaque_ptr + read_volatile + #[inline(never)]` instead of `CGU=1` to handle it.
+
+**Defenses I tried (all insufficient):**
+1. `opaque_ptr(Kcb)` laundering at every public-fn entry. → still 23 ud2.
+2. Direct access to `crate::config::cmkcbncb::CmpCacheTable` via `read_volatile(addr_of!(...))` instead of an `extern "C" { static mut ... }` block. → still 23 ud2.
+3. `extern "C"` (cdecl, what bindgen expects) confirmed correct via decoration check.
+
+The cascade triggers at the **CGU partitioning level** — any `#[no_mangle] extern "C"` Rust function added to a CGU adjacent to existing config code re-shuffles the optimizer's cross-CGU inference, and the captures(none) annotations can't be locally suppressed. opaque_ptr at the *new* function's boundary doesn't help because the ud2 lands in the *neighboring* old code.
+
+**Current state.** Pilot fully reverted. Build clean, smoke green, 0 unexpected ud2. cm_inlines.rs deleted. cm_rust_shims.c restored to its post-Phase-0 state. **The Phase 1 approach as written needs to be redesigned before any further functions can be moved.**
+
+**Possible Phase 1 redesigns** (none validated; all are guesses):
+1. **Add opaque_ptr / write_volatile defenses to the *affected* config functions** before moving any FORCEINLINE. Touch ~19 functions in `cmparse.rs` / `cmkcbncb.rs` / `cmvalche.rs` / `cmapi.rs` to make them captures(none)-resistant first. Then attempt the move. Cost: significantly higher than estimated.
+2. **Keep the Rust replacements in a separate isolated CGU** by giving them their own crate (`cm-inlines` sibling to `ntoskrnl-rust` in the workspace). Crate boundaries should make captures(none) cross-CGU inference impossible since LLVM only sees declarations across crate boundaries.
+3. **Don't replace, augment.** Leave the C-side `_rust_shims.c` outline in place and add the Rust version with a different mangled name; pivot Rust callers to use the Rust version. The C side becomes dead but stays linked. Bigger code, no churn for cross-CGU.
+4. **Accept the cascade and add ud2-tolerance**. Use `#[inline(never)]` + `core::hint::black_box` chains on neighbors. Brittle and would need wide application.
+
+Option 2 (isolated crate) feels cleanest in principle but requires Cargo.toml workspace work; option 1 is most direct but the cost is a lot higher than the original plan implied.
+
+**Lesson for the rest of the elimination plan.** Moving any single `_rust_shims.c` function to Rust may cascade ud2 across its subsystem. Phases 2-4 below need the same caveat; they were estimated assuming the move-and-replace pattern works.
 
 ### Phase 2 — Macro materializations (~1 week)
 
