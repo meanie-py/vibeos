@@ -38,6 +38,14 @@ pub static mut ObpLUIDDeviceMapsDisabled: ULONG = 0;
 #[no_mangle]
 pub static mut ObpLUIDDeviceMapsEnabled: ULONG = 0;
 
+// Registry-controlled values owned by ob/devicemap. Concatenated into
+// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+pub static DEVICEMAP_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
+    crate::config::cmdata::SubVector(unsafe { [
+        crate::cv!("Session Manager", "LUIDDeviceMapsDisabled",
+            core::ptr::addr_of_mut!(ObpLUIDDeviceMapsDisabled)),
+    ] });
+
 #[no_mangle]
 pub unsafe extern "system" fn ObSetDeviceMap(
     Process: PEPROCESS,

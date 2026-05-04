@@ -29,8 +29,19 @@ use ntkrnl_sys::ddk::{
 const MaximumType: usize = 41;
 const MaximumClass: usize = 7;
 
+// `_CM_SYSTEM_CONTROL_VECTOR` contains raw `*mut` pointers, so it isn't `Sync`.
+// All access goes through `CmGetSystemControlValues` which is single-threaded
+// at boot, so a manual Sync impl is sound. Subsystem files declare
+// `pub static FOO_CONTROL_VECTOR: SubVector<N> = SubVector(unsafe { [...] });`
+// using this wrapper.
+#[repr(transparent)]
+pub struct SubVector<const N: usize>(pub [_CM_SYSTEM_CONTROL_VECTOR; N]);
+unsafe impl<const N: usize> Sync for SubVector<N> {}
+
 // Wide-string literal helper. Returns &'static [u16] terminated with a NUL.
-// Pattern lifted from config/cmconfig.rs.
+// Pattern lifted from config/cmconfig.rs. Exported so subsystem files can
+// build their own CONTROL_VECTOR slices (see Phase B).
+#[macro_export]
 macro_rules! w {
     ($s:literal) => {{
         const __W: &[u16] = &{
@@ -50,32 +61,35 @@ macro_rules! w {
 // CM_SYSTEM_CONTROL_VECTOR entry constructor — covers the common 3-arg form
 // (NULL length+type) plus the full 5-arg form. `$buf`/`$len`/`$ty` are raw
 // pointer expressions (e.g. `core::ptr::addr_of_mut!(crate::ob::obinit::Foo)`).
+// Exported so subsystem files can build their own CONTROL_VECTOR slices.
+// Uses absolute paths for type names so callers don't need extra `use`s.
+#[macro_export]
 macro_rules! cv {
     ($key:literal, $val:literal, $buf:expr) => {
-        _CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: w!($key).as_ptr() as PWCHAR,
-            ValueName: w!($val).as_ptr() as PWCHAR,
-            Buffer: $buf as PVOID,
+        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
+            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
             BufferLength: core::ptr::null_mut(),
             Type: core::ptr::null_mut(),
         }
     };
     ($key:literal, $val:literal, $buf:expr, $len:expr) => {
-        _CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: w!($key).as_ptr() as PWCHAR,
-            ValueName: w!($val).as_ptr() as PWCHAR,
-            Buffer: $buf as PVOID,
-            BufferLength: $len as PULONG,
+        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
+            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
+            BufferLength: $len as ntkrnl_sys::ddk::PULONG,
             Type: core::ptr::null_mut(),
         }
     };
     ($key:literal, $val:literal, $buf:expr, $len:expr, $ty:expr $(,)?) => {
-        _CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: w!($key).as_ptr() as PWCHAR,
-            ValueName: w!($val).as_ptr() as PWCHAR,
-            Buffer: $buf as PVOID,
-            BufferLength: $len as PULONG,
-            Type: $ty as PULONG,
+        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
+            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
+            BufferLength: $len as ntkrnl_sys::ddk::PULONG,
+            Type: $ty as ntkrnl_sys::ddk::PULONG,
         }
     };
 }
@@ -392,22 +406,15 @@ extern "C" {
 // ============================================================================
 // CmControlVector — registry-key → variable-pointer dispatch table.
 //
-// Entry count: 88 hand-coded + 156 KD debug filters + 4 trailing + NULL = 249.
-// All pointer-typed entries use addr_of_mut! on the canonical Rust home of the
-// variable; one entry uses extern "C" (MmConsumedPoolPercentage, still in C).
-//
-// PHASE B: split this table into per-subsystem slices owned by ob/, mm/, io/,
-// ke/, etc. — see docs/engineering/cmdata-chopping-plan.md.
+// Phase B in progress: ob entries (5) live in ob/{obinit,devicemap,obname}.rs
+// and are concatenated below. Remaining entries (244) are still local. As more
+// subsystems get chopped, more entries will move out and SLICES grows.
 // ============================================================================
 
-#[no_mangle]
-pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; 249] = unsafe { [
-    cv!("Session Manager", "ProtectionMode",
-        core::ptr::addr_of_mut!(crate::ob::obinit::ObpProtectionMode)),
-    cv!("Session Manager", "ObjectSecurityMode",
-        core::ptr::addr_of_mut!(crate::ob::obinit::ObpObjectSecurityMode)),
-    cv!("Session Manager", "LUIDDeviceMapsDisabled",
-        core::ptr::addr_of_mut!(crate::ob::devicemap::ObpLUIDDeviceMapsDisabled)),
+// Local entries — entries that reference cmdata-owned globals or are still
+// awaiting Phase B chop. Excludes the NULL terminator (added separately by
+// the assembler below).
+const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 243] = unsafe { [
     cv!("LSA", "AuditBaseDirectories", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA", "AuditBaseObjects", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA\\audit", "ProcessAccessesToAudit", core::ptr::addr_of_mut!(DummyData)),
@@ -510,11 +517,7 @@ pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; 249] = unsafe { [
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Kernel", "IdealDpcRate",
         core::ptr::addr_of_mut!(DummyData)),
-    cv!("Session Manager\\Kernel", "ObUnsecureGlobalNames",
-        core::ptr::addr_of_mut!(crate::ob::obname::ObpUnsecureGlobalNamesBuffer),
-        core::ptr::addr_of_mut!(crate::ob::obname::ObpUnsecureGlobalNamesLength)),
-    cv!("Session Manager\\Kernel", "ObCaseInsensitive",
-        core::ptr::addr_of_mut!(crate::ob::obname::ObpCaseInsensitive)),
+    // ObUnsecureGlobalNames + ObCaseInsensitive moved to ob/obname.rs::OBNAME_CONTROL_VECTOR
     cv!("Session Manager\\I/O System", "CountOperations",
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\I/O System", "LargeIrpStackLocations",
@@ -744,13 +747,63 @@ pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; 249] = unsafe { [
     cv!("WMI\\Trace", "TraceAlignment", core::ptr::addr_of_mut!(DummyData)),
     cv!("CrashControl", "AutoReboot",
         core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopAutoReboot)),
-
-    // === NULL terminator ===
-    _CM_SYSTEM_CONTROL_VECTOR {
-        KeyPath: core::ptr::null_mut(),
-        ValueName: core::ptr::null_mut(),
-        Buffer: core::ptr::null_mut(),
-        BufferLength: core::ptr::null_mut(),
-        Type: core::ptr::null_mut(),
-    },
 ] };
+
+// ============================================================================
+// CmControlVector — assembled at compile time from sub-vectors + cmdata-local.
+//
+// Each subsystem owns its own `pub static FOO_CONTROL_VECTOR` slice (Phase B
+// chop). cmdata.rs assembles them all + its remaining local entries + a NULL
+// terminator into the single `CmControlVector` symbol that
+// `CmGetSystemControlValues` consumes.
+//
+// To add a subsystem: define `pub static FOO_CONTROL_VECTOR: [_CM_..; N]` in
+// the owning file (using `crate::cv!` macro), add `&FOO_CONTROL_VECTOR` to
+// SLICES below, and remove the entries from CMDATA_LOCAL_CV. Adjust
+// CMDATA_LOCAL_CV's array size accordingly. CV_TOTAL recomputes automatically.
+// ============================================================================
+
+const NULL_ENTRY: _CM_SYSTEM_CONTROL_VECTOR = _CM_SYSTEM_CONTROL_VECTOR {
+    KeyPath: core::ptr::null_mut(),
+    ValueName: core::ptr::null_mut(),
+    Buffer: core::ptr::null_mut(),
+    BufferLength: core::ptr::null_mut(),
+    Type: core::ptr::null_mut(),
+};
+
+const TERMINATOR: [_CM_SYSTEM_CONTROL_VECTOR; 1] = [NULL_ENTRY];
+
+const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
+    &crate::ob::obinit::OBINIT_CONTROL_VECTOR.0,
+    &crate::ob::devicemap::DEVICEMAP_CONTROL_VECTOR.0,
+    &crate::ob::obname::OBNAME_CONTROL_VECTOR.0,
+    &CMDATA_LOCAL_CV,
+    &TERMINATOR,
+];
+
+const CV_TOTAL: usize = {
+    let mut t = 0;
+    let mut i = 0;
+    while i < SLICES.len() {
+        t += SLICES[i].len();
+        i += 1;
+    }
+    t
+};
+
+#[no_mangle]
+pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; CV_TOTAL] = {
+    let mut out = [NULL_ENTRY; CV_TOTAL];
+    let mut dst = 0;
+    let mut s = 0;
+    while s < SLICES.len() {
+        let mut i = 0;
+        while i < SLICES[s].len() {
+            out[dst] = SLICES[s][i];
+            i += 1;
+            dst += 1;
+        }
+        s += 1;
+    }
+    out
+};
