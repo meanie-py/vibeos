@@ -86,12 +86,12 @@ pub static mut ObpUnsecureGlobalNamesLength: ULONG = 256;
 
 // Registry-controlled values owned by ob/obname. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static OBNAME_CONTROL_VECTOR: crate::config::cmdata::SubVector<2> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Session Manager\\Kernel", "ObUnsecureGlobalNames",
+pub static OBNAME_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager\\Kernel", "ObUnsecureGlobalNames",
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesBuffer),
             core::ptr::addr_of_mut!(ObpUnsecureGlobalNamesLength)),
-        crate::cv!("Session Manager\\Kernel", "ObCaseInsensitive",
+        ntkrnl_sys::cv!("Session Manager\\Kernel", "ObCaseInsensitive",
             core::ptr::addr_of_mut!(ObpCaseInsensitive)),
     ] });
 

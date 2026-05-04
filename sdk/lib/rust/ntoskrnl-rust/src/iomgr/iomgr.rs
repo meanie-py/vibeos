@@ -206,9 +206,9 @@ pub static mut IopAutoReboot: ULONG = 0;
 
 // Registry-controlled values owned by iomgr. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static IOMGR_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("CrashControl", "AutoReboot",
+pub static IOMGR_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("CrashControl", "AutoReboot",
             core::ptr::addr_of_mut!(IopAutoReboot)),
     ] });
 

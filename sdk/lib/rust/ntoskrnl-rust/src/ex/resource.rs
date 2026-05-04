@@ -116,9 +116,9 @@ pub static mut ExpResourceTimeoutCount: ULONG = 90 * 3600 / 2;
 
 // Registry-controlled values owned by ex/resource. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static RESOURCE_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Session Manager", "ResourceTimeoutCount",
+pub static RESOURCE_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager", "ResourceTimeoutCount",
             core::ptr::addr_of_mut!(ExpResourceTimeoutCount)),
     ] });
 

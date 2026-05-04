@@ -127,3 +127,12 @@ pub static mut MiPagedPoolSListHead: SLIST_HEADER = SLIST_HEADER::zeroed();
 
 #[no_mangle]
 pub static mut MiPagedPoolSListMaximum: ULONG = 8;
+
+// Registry-controlled values owned by the pool crate. Concatenated into
+// CmControlVector by ntoskrnl-rust::config::cmdata. See
+// docs/engineering/cmdata-chopping-plan.md.
+pub static POOL_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager\\Memory Management", "PoolUsageMaximum",
+            core::ptr::addr_of_mut!(MmConsumedPoolPercentage)),
+    ] });

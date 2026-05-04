@@ -29,6 +29,7 @@
 // ============================================================================
 
 pub mod base;
+pub mod cm_control;
 pub mod constants;
 pub mod ex;
 pub mod globals;
@@ -45,6 +46,7 @@ pub mod rtl;
 
 // Re-export commonly used types at crate root
 pub use base::*;
+pub use cm_control::SubVector;
 pub use probe::*;
 
 /// Make a mutable pointer opaque to LLVM's interprocedural analysis.

@@ -121,6 +121,7 @@ version = "0.1.0"
 dependencies = [
  "iced-x86",
  "ntkrnl-sys",
+ "reactos-pool",
 ]
 
 [[package]]

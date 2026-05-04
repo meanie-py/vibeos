@@ -169,9 +169,9 @@ pub static mut PsRawPrioritySeparation: ULONG = 0;
 
 // Registry-controlled values owned by ps/process. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static PROCESS_CONTROL_VECTOR: crate::config::cmdata::SubVector<1> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("PriorityControl", "Win32PrioritySeparation",
+pub static PROCESS_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("PriorityControl", "Win32PrioritySeparation",
             core::ptr::addr_of_mut!(PsRawPrioritySeparation)),
     ] });
 

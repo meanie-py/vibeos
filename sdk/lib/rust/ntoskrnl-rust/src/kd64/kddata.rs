@@ -246,9 +246,9 @@ pub static mut KdpContext: KD_CONTEXT = unsafe { core::mem::zeroed() };
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 // (KD_FILTER_CONTROL_VECTOR for debug-print masks lives further down with the
 // Kd_*_Mask statics.)
-pub static KDDATA_TUNABLES_CV: crate::config::cmdata::SubVector<1> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Session Manager", "Debugger Retries",
+pub static KDDATA_TUNABLES_CV: ntkrnl_sys::SubVector<1> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager", "Debugger Retries",
             core::ptr::addr_of_mut!(KdpContext.KdpDefaultRetries)),
     ] });
 
@@ -868,9 +868,9 @@ pub static mut Kd_ENDOFTABLE_Mask: ULONG = 0;
 macro_rules! kd_filter {
     ($name:literal, $sym:ident) => {
         ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: $crate::w!("Session Manager\\Debug Print Filter").as_ptr()
+            KeyPath: ntkrnl_sys::w!("Session Manager\\Debug Print Filter").as_ptr()
                 as ntkrnl_sys::ddk::PWCHAR,
-            ValueName: $crate::w!($name).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
+            ValueName: ntkrnl_sys::w!($name).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
             Buffer: core::ptr::addr_of_mut!($sym) as ntkrnl_sys::ddk::PVOID,
             BufferLength: core::ptr::null_mut(),
             Type: core::ptr::null_mut(),
@@ -878,8 +878,8 @@ macro_rules! kd_filter {
     };
 }
 
-pub static KD_FILTER_CONTROL_VECTOR: crate::config::cmdata::SubVector<156> =
-    crate::config::cmdata::SubVector(unsafe { [
+pub static KD_FILTER_CONTROL_VECTOR: ntkrnl_sys::SubVector<156> =
+    ntkrnl_sys::SubVector(unsafe { [
     kd_filter!("WIN2000", Kd_WIN2000_Mask),
     kd_filter!("SYSTEM", Kd_SYSTEM_Mask),
     kd_filter!("SMSS", Kd_SMSS_Mask),

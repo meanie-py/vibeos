@@ -156,11 +156,11 @@ pub static mut CmNtCSDReleaseType: ULONG = 0;
 
 // Registry-controlled values owned by ex/init. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static INIT_CONTROL_VECTOR: crate::config::cmdata::SubVector<2> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Windows", "CSDVersion",
+pub static INIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Windows", "CSDVersion",
             core::ptr::addr_of_mut!(CmNtCSDVersion)),
-        crate::cv!("Windows", "CSDReleaseType",
+        ntkrnl_sys::cv!("Windows", "CSDReleaseType",
             core::ptr::addr_of_mut!(CmNtCSDReleaseType)),
     ] });
 

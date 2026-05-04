@@ -29,70 +29,10 @@ use ntkrnl_sys::ddk::{
 const MaximumType: usize = 41;
 const MaximumClass: usize = 7;
 
-// `_CM_SYSTEM_CONTROL_VECTOR` contains raw `*mut` pointers, so it isn't `Sync`.
-// All access goes through `CmGetSystemControlValues` which is single-threaded
-// at boot, so a manual Sync impl is sound. Subsystem files declare
-// `pub static FOO_CONTROL_VECTOR: SubVector<N> = SubVector(unsafe { [...] });`
-// using this wrapper.
-#[repr(transparent)]
-pub struct SubVector<const N: usize>(pub [_CM_SYSTEM_CONTROL_VECTOR; N]);
-unsafe impl<const N: usize> Sync for SubVector<N> {}
-
-// Wide-string literal helper. Returns &'static [u16] terminated with a NUL.
-// Pattern lifted from config/cmconfig.rs. Exported so subsystem files can
-// build their own CONTROL_VECTOR slices (see Phase B).
-#[macro_export]
-macro_rules! w {
-    ($s:literal) => {{
-        const __W: &[u16] = &{
-            const BYTES: &[u8] = $s.as_bytes();
-            let mut out = [0u16; { BYTES.len() + 1 }];
-            let mut i = 0;
-            while i < BYTES.len() {
-                out[i] = BYTES[i] as u16;
-                i += 1;
-            }
-            out
-        };
-        __W
-    }};
-}
-
-// CM_SYSTEM_CONTROL_VECTOR entry constructor — covers the common 3-arg form
-// (NULL length+type) plus the full 5-arg form. `$buf`/`$len`/`$ty` are raw
-// pointer expressions (e.g. `core::ptr::addr_of_mut!(crate::ob::obinit::Foo)`).
-// Exported so subsystem files can build their own CONTROL_VECTOR slices.
-// Uses absolute paths for type names so callers don't need extra `use`s.
-#[macro_export]
-macro_rules! cv {
-    ($key:literal, $val:literal, $buf:expr) => {
-        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
-            BufferLength: core::ptr::null_mut(),
-            Type: core::ptr::null_mut(),
-        }
-    };
-    ($key:literal, $val:literal, $buf:expr, $len:expr) => {
-        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
-            BufferLength: $len as ntkrnl_sys::ddk::PULONG,
-            Type: core::ptr::null_mut(),
-        }
-    };
-    ($key:literal, $val:literal, $buf:expr, $len:expr, $ty:expr $(,)?) => {
-        ntkrnl_sys::ddk::_CM_SYSTEM_CONTROL_VECTOR {
-            KeyPath: $crate::w!($key).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            ValueName: $crate::w!($val).as_ptr() as ntkrnl_sys::ddk::PWCHAR,
-            Buffer: $buf as ntkrnl_sys::ddk::PVOID,
-            BufferLength: $len as ntkrnl_sys::ddk::PULONG,
-            Type: $ty as ntkrnl_sys::ddk::PULONG,
-        }
-    };
-}
+// `SubVector`, `cv!`, and `w!` live in `ntkrnl-sys::cm_control` so other crates
+// (e.g. the pool crate) can declare their own `FOO_CONTROL_VECTOR` slices
+// without depending on ntoskrnl-rust. See cm_control.rs.
+use ntkrnl_sys::{cv, w, SubVector};
 
 // (CM_DEBUG_PRINT_FILTER entries moved to kd64::kddata::KD_FILTER_CONTROL_VECTOR)
 
@@ -384,13 +324,10 @@ pub static mut CmpMultifunctionTypes: [_CMP_MF_TYPE; 9] = [
 ];
 
 // ============================================================================
-// extern declarations for variables NOT in Rust (still C-side)
-// ============================================================================
-
-extern "C" {
-    static mut MmConsumedPoolPercentage: ULONG;
-}
-
+// (No remaining extern "C" blocks — every variable referenced by CmControlVector
+// is now owned by a Rust module. MmConsumedPoolPercentage moved to the pool
+// crate; its CmControlVector entry lives in pool/src/globals.rs as
+// POOL_CONTROL_VECTOR and is concatenated into SLICES below.)
 // ============================================================================
 // CmControlVector — registry-key → variable-pointer dispatch table.
 //
@@ -402,7 +339,7 @@ extern "C" {
 // Local entries — entries that reference cmdata-owned globals or are still
 // awaiting Phase B chop. Excludes the NULL terminator (added separately by
 // the assembler below).
-const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 51] = unsafe { [
+const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 50] = unsafe { [
     cv!("LSA", "AuditBaseDirectories", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA", "AuditBaseObjects", core::ptr::addr_of_mut!(DummyData)),
     cv!("LSA\\audit", "ProcessAccessesToAudit", core::ptr::addr_of_mut!(DummyData)),
@@ -419,16 +356,14 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 51] = unsafe { [
     cv!("Session Manager\\Memory Management", "AllocationPreference",
         core::ptr::addr_of_mut!(DummyData)),
     // Mm-owned entries moved to ARM3/{pfnlist,mminit,helpers,mdlsup,drvmgmt,sysldr}.rs
-    // and mm/{mminit,pagefile}.rs. MmConsumedPoolPercentage stays here because it's
-    // still defined C-side (extern above).
+    // and mm/{mminit,pagefile}.rs. PoolUsageMaximum -> MmConsumedPoolPercentage moved
+    // to pool::globals::POOL_CONTROL_VECTOR.
     cv!("Session Manager\\Memory Management", "SystemViewSize",
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Memory Management", "SessionImageSize",
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Memory Management", "SessionPoolSize",
         core::ptr::addr_of_mut!(DummyData)),
-    cv!("Session Manager\\Memory Management", "PoolUsageMaximum",
-        core::ptr::addr_of_mut!(MmConsumedPoolPercentage)),
     cv!("Session Manager\\Memory Management", "NonPagedPoolMaximumPercent",
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Memory Management", "ModifiedPageLife",
@@ -526,7 +461,7 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 51] = unsafe { [
 // `CmGetSystemControlValues` consumes.
 //
 // To add a subsystem: define `pub static FOO_CONTROL_VECTOR: [_CM_..; N]` in
-// the owning file (using `crate::cv!` macro), add `&FOO_CONTROL_VECTOR` to
+// the owning file (using `ntkrnl_sys::cv!` macro), add `&FOO_CONTROL_VECTOR` to
 // SLICES below, and remove the entries from CMDATA_LOCAL_CV. Adjust
 // CMDATA_LOCAL_CV's array size accordingly. CV_TOTAL recomputes automatically.
 // ============================================================================
@@ -561,6 +496,7 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::iomgr::iomgr::IOMGR_CONTROL_VECTOR.0,
     &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
     &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
+    &reactos_pool::globals::POOL_CONTROL_VECTOR.0,
     &CMDATA_LOCAL_CV,
     &TERMINATOR,
 ];

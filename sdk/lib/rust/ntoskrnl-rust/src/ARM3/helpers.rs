@@ -458,17 +458,17 @@ extern "C" {
 }
 
 // Registry-controlled values owned by ARM3/helpers.
-pub static HELPERS_CONTROL_VECTOR: crate::config::cmdata::SubVector<5> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Session Manager\\Memory Management", "LargeStackSize",
+pub static HELPERS_CONTROL_VECTOR: ntkrnl_sys::SubVector<5> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager\\Memory Management", "LargeStackSize",
             core::ptr::addr_of_mut!(MmLargeStackSize)),
-        crate::cv!("Session Manager\\Memory Management", "HighMemoryThreshold",
+        ntkrnl_sys::cv!("Session Manager\\Memory Management", "HighMemoryThreshold",
             core::ptr::addr_of_mut!(MmHighMemoryThreshold)),
-        crate::cv!("Session Manager\\Memory Management", "ProtectNonPagedPool",
+        ntkrnl_sys::cv!("Session Manager\\Memory Management", "ProtectNonPagedPool",
             core::ptr::addr_of_mut!(MmProtectFreedNonPagedPool)),
-        crate::cv!("Session Manager", "HeapSegmentReserve",
+        ntkrnl_sys::cv!("Session Manager", "HeapSegmentReserve",
             core::ptr::addr_of_mut!(MmHeapSegmentReserve)),
-        crate::cv!("Session Manager", "HeapSegmentCommit",
+        ntkrnl_sys::cv!("Session Manager", "HeapSegmentCommit",
             core::ptr::addr_of_mut!(MmHeapSegmentCommit)),
     ] });
 

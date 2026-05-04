@@ -49,11 +49,11 @@ extern "system" {
 
 // Registry-controlled values owned by config/cmlazy. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static CMLAZY_CONTROL_VECTOR: crate::config::cmdata::SubVector<2> =
-    crate::config::cmdata::SubVector(unsafe { [
-        crate::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushInterval",
+pub static CMLAZY_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
+    ntkrnl_sys::SubVector(unsafe { [
+        ntkrnl_sys::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushInterval",
             core::ptr::addr_of_mut!(CmpLazyFlushIntervalInSeconds)),
-        crate::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushHiveCount",
+        ntkrnl_sys::cv!("Session Manager\\Configuration Manager", "RegistryLazyFlushHiveCount",
             core::ptr::addr_of_mut!(CmpLazyFlushHiveCount)),
     ] });
 #[no_mangle] pub static mut CmpLazyFlushCount: ULONG = 1;
