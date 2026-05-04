@@ -393,6 +393,53 @@ unsafe fn idle_thread_user_time(_prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
     0
 }
 
+// KTHREAD field accessors — fields buried in WaitBlock/SuspendApc overlay unions on
+// amd64/arm64 are direct on i386. Mirrors the ps/query.rs pattern.
+#[inline]
+unsafe fn kthread_kernel_time(t: *mut _ETHREAD) -> ULONG {
+    #[cfg(target_arch = "x86")]
+    { (*t).Tcb.__bindgen_anon_9.__bindgen_anon_3.KernelTime }
+    #[cfg(not(target_arch = "x86"))]
+    { (*t).Tcb.__bindgen_anon_7.__bindgen_anon_3.KernelTime }
+}
+
+#[inline]
+unsafe fn kthread_user_time(t: *mut _ETHREAD) -> ULONG {
+    #[cfg(target_arch = "x86")]
+    { (*t).Tcb.UserTime }
+    #[cfg(not(target_arch = "x86"))]
+    { (*t).Tcb.__bindgen_anon_7.__bindgen_anon_6.UserTime }
+}
+
+#[inline]
+unsafe fn kthread_wait_time(t: *mut _ETHREAD) -> ULONG {
+    #[cfg(target_arch = "x86")]
+    { (*t).Tcb.WaitTime }
+    #[cfg(not(target_arch = "x86"))]
+    { (*t).Tcb.__bindgen_anon_5.__bindgen_anon_7.WaitTime }
+}
+
+#[inline]
+unsafe fn kthread_state(t: *mut _ETHREAD) -> UCHAR {
+    #[cfg(target_arch = "x86")]
+    { (*t).Tcb.State }
+    #[cfg(not(target_arch = "x86"))]
+    { (*t).Tcb.__bindgen_anon_5.__bindgen_anon_6.State }
+}
+
+#[inline]
+unsafe fn kthread_context_switches(t: *mut _ETHREAD) -> ULONG {
+    #[cfg(target_arch = "x86")]
+    { (*t).Tcb.ContextSwitches }
+    #[cfg(not(target_arch = "x86"))]
+    { (*t).Tcb.__bindgen_anon_5.__bindgen_anon_5.ContextSwitches }
+}
+
+#[inline]
+unsafe fn ethread_start_address(t: *mut _ETHREAD) -> PVOID {
+    core::mem::transmute((*t).__bindgen_anon_6.StartAddress)
+}
+
 // =============================================================================
 // Helpers — ExpConvertLdrModuleToRtlModule / ExpQueryModuleInformation /
 //          ExpGetRawSMBiosTable / ExpCopyLookasideInformation
@@ -1048,17 +1095,207 @@ unsafe extern "C" fn QSI_SystemPathInformation(_Buffer: PVOID, _Size: ULONG, _Re
 }
 
 
-// Class 5 — simplified entry point used by the dispatch table.
+// Class 5 — full process+thread enumeration. Walks PsGetNextProcess(), per-process
+// walks Pcb.ThreadListHead. Original C body is wrapped in _SEH2_TRY/_SEH2_EXCEPT
+// (caller-supplied buffer); under DUMMY_PSEH the handler is dead so we omit it.
 unsafe extern "C" fn QSI_SystemProcessInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    *ReqSize = core::mem::size_of::<_SYSTEM_PROCESS_INFORMATION>() as ULONG;
-    if Size < core::mem::size_of::<_SYSTEM_PROCESS_INFORMATION>() as ULONG {
-        return STATUS_INFO_LENGTH_MISMATCH;
+    let proc_size = core::mem::size_of::<_SYSTEM_PROCESS_INFORMATION>() as ULONG;
+    let thread_size = core::mem::size_of::<_SYSTEM_THREAD_INFORMATION>() as ULONG;
+
+    *ReqSize = proc_size;
+    let mut Overflow: BOOLEAN = (Size < proc_size) as BOOLEAN;
+    if Overflow == 0u8 {
+        core::ptr::write_bytes(Buffer as *mut u8, 0, Size as usize);
     }
-    core::ptr::write_bytes(Buffer as *mut u8, 0, core::mem::size_of::<_SYSTEM_PROCESS_INFORMATION>());
-    let sc = &mut *(Buffer as PSYSTEM_PROCESS_INFORMATION);
-    sc.NextEntryOffset = 0;
-    sc.NumberOfThreads = 0;
-    STATUS_SUCCESS
+
+    let SystemProcess = PsIdleProcess;
+    let mut Process = SystemProcess;
+    let mut Current = Buffer as *mut UCHAR;
+    let mut TotalSize: ULONG = 0;
+    let mut SpiCurrent: PSYSTEM_PROCESS_INFORMATION;
+    let mut CurrentSize: ULONG = 0;
+    let mut ImageNameMaximumLength: USHORT = 0;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    loop {
+        SpiCurrent = Current as PSYSTEM_PROCESS_INFORMATION;
+
+        KeEnterCriticalRegion();
+        ExAcquirePushLockShared(core::ptr::addr_of_mut!((*Process).ProcessLock) as *mut _);
+
+        let pcb_thread_list_head = core::ptr::addr_of_mut!((*Process).Pcb.ThreadListHead);
+        let zombie = (*Process).__bindgen_anon_2.__bindgen_anon_1.ProcessExiting() != 0
+            && (*Process).Pcb.Header.SignalState != 0
+            && (*Process).ActiveThreads == 0
+            && (*pcb_thread_list_head).Flink == pcb_thread_list_head;
+        let mut ProcessImageName: PUNICODE_STRING = core::ptr::null_mut();
+
+        if zombie {
+            CurrentSize = 0;
+            ImageNameMaximumLength = 0;
+            ExReleasePushLockShared(core::ptr::addr_of_mut!((*Process).ProcessLock) as *mut _);
+            KeLeaveCriticalRegion();
+        } else {
+            let mut ThreadsCount: ULONG = 0;
+            let mut entry = (*pcb_thread_list_head).Flink;
+            while entry != pcb_thread_list_head {
+                ThreadsCount += 1;
+                entry = (*entry).Flink;
+            }
+
+            CurrentSize = proc_size + thread_size * ThreadsCount;
+            let mut ImageNameLength: USHORT = 0;
+            let mut TempProcessImageName: PUNICODE_STRING = core::ptr::null_mut();
+            let name_status = SeLocateProcessImageName(Process, &mut TempProcessImageName);
+            ProcessImageName = TempProcessImageName;
+            let mut szSrc: PWCHAR = core::ptr::null_mut();
+            if NT_SUCCESS(name_status) && !ProcessImageName.is_null() && (*ProcessImageName).Length > 0 {
+                szSrc = ((*ProcessImageName).Buffer as *mut u8)
+                    .add((*ProcessImageName).Length as usize) as PWCHAR;
+                while szSrc > (*ProcessImageName).Buffer {
+                    szSrc = szSrc.sub(1);
+                    if *szSrc == OBJ_NAME_PATH_SEPARATOR as u16 {
+                        szSrc = szSrc.add(1);
+                        break;
+                    } else {
+                        ImageNameLength += core::mem::size_of::<u16>() as USHORT;
+                    }
+                }
+            }
+            if ImageNameLength == 0 && Process != PsIdleProcess {
+                let mut n: USHORT = 0;
+                let name = (*Process).ImageFileName.as_ptr();
+                while n < (*Process).ImageFileName.len() as USHORT && *name.add(n as usize) != 0 {
+                    n += 1;
+                }
+                ImageNameLength = n * core::mem::size_of::<u16>() as USHORT;
+            }
+
+            ImageNameMaximumLength = if ImageNameLength > 0 {
+                ((ImageNameLength + core::mem::size_of::<u16>() as USHORT + 7) & !7) as USHORT
+            } else {
+                0
+            };
+
+            TotalSize += CurrentSize + ImageNameMaximumLength as ULONG;
+            if TotalSize > Size {
+                Overflow = 1u8;
+            }
+
+            if Overflow == 0u8 {
+                (*SpiCurrent).NextEntryOffset = CurrentSize + ImageNameMaximumLength as ULONG;
+                (*SpiCurrent).NumberOfThreads = ThreadsCount;
+                (*SpiCurrent).CreateTime = (*Process).CreateTime;
+                (*SpiCurrent).ImageName.Length = ImageNameLength;
+                (*SpiCurrent).ImageName.MaximumLength = ImageNameMaximumLength;
+                (*SpiCurrent).ImageName.Buffer = Current.add(CurrentSize as usize) as *mut u16;
+
+                if Process != PsIdleProcess {
+                    if !szSrc.is_null() {
+                        core::ptr::copy_nonoverlapping(
+                            szSrc as *const u8,
+                            (*SpiCurrent).ImageName.Buffer as *mut u8,
+                            (*SpiCurrent).ImageName.Length as usize,
+                        );
+                    } else {
+                        let mut ImageName: ANSI_STRING = core::mem::zeroed();
+                        RtlInitAnsiString(&mut ImageName, (*Process).ImageFileName.as_ptr() as PCHAR);
+                        let s = RtlAnsiStringToUnicodeString(&mut (*SpiCurrent).ImageName, &ImageName, 0u8);
+                        if !NT_SUCCESS(s) {
+                            (*SpiCurrent).ImageName.Length = 0;
+                        }
+                    }
+                } else {
+                    RtlInitUnicodeString(&mut (*SpiCurrent).ImageName, core::ptr::null_mut());
+                }
+
+                (*SpiCurrent).BasePriority = (*Process).Pcb.BasePriority as LONG;
+                (*SpiCurrent).UniqueProcessId = (*Process).UniqueProcessId;
+                (*SpiCurrent).InheritedFromUniqueProcessId =
+                    (*Process).InheritedFromUniqueProcessId as HANDLE;
+                (*SpiCurrent).HandleCount = if Process == PsIdleProcess {
+                    0
+                } else {
+                    ObGetProcessHandleCount(Process)
+                };
+                (*SpiCurrent).PeakVirtualSize = (*Process).PeakVirtualSize;
+                (*SpiCurrent).VirtualSize = (*Process).VirtualSize;
+                (*SpiCurrent).PageFaultCount = (*Process).Vm.PageFaultCount;
+                (*SpiCurrent).PeakWorkingSetSize = (*Process).Vm.PeakWorkingSetSize as _;
+                (*SpiCurrent).WorkingSetSize = (*Process).Vm.WorkingSetSize as _;
+                (*SpiCurrent).QuotaPeakPagedPoolUsage = (*Process).QuotaPeak[PsPagedPool];
+                (*SpiCurrent).QuotaPagedPoolUsage = (*Process).QuotaUsage[PsPagedPool];
+                (*SpiCurrent).QuotaPeakNonPagedPoolUsage = (*Process).QuotaPeak[PsNonPagedPool];
+                (*SpiCurrent).QuotaNonPagedPoolUsage = (*Process).QuotaUsage[PsNonPagedPool];
+                (*SpiCurrent).PagefileUsage = (*Process).QuotaUsage[PsPageFile];
+                (*SpiCurrent).PeakPagefileUsage = (*Process).QuotaPeak[PsPageFile];
+                (*SpiCurrent).PrivatePageCount = (*Process).CommitCharge;
+
+                let mut ThreadInfo = SpiCurrent.add(1) as PSYSTEM_THREAD_INFORMATION;
+                let mut entry = (*pcb_thread_list_head).Flink;
+                while entry != pcb_thread_list_head {
+                    let CurrentThread = (entry as *mut u8)
+                        .sub(core::mem::offset_of!(_ETHREAD, Tcb)
+                            + core::mem::offset_of!(ntkrnl_sys::ddk::_KTHREAD, ThreadListEntry))
+                        as *mut _ETHREAD;
+
+                    (*ThreadInfo).KernelTime.QuadPart =
+                        UInt32x32To64(kthread_kernel_time(CurrentThread), KeMaximumIncrement) as i64;
+                    (*ThreadInfo).UserTime.QuadPart =
+                        UInt32x32To64(kthread_user_time(CurrentThread), KeMaximumIncrement) as i64;
+                    (*ThreadInfo).CreateTime.QuadPart = (*CurrentThread).CreateTime.QuadPart;
+                    (*ThreadInfo).WaitTime = kthread_wait_time(CurrentThread);
+                    (*ThreadInfo).StartAddress = ethread_start_address(CurrentThread);
+                    (*ThreadInfo).ClientId = (*CurrentThread).Cid;
+                    (*ThreadInfo).Priority = (*CurrentThread).Tcb.Priority as LONG;
+                    (*ThreadInfo).BasePriority = (*CurrentThread).Tcb.BasePriority as LONG;
+                    (*ThreadInfo).ContextSwitches = kthread_context_switches(CurrentThread);
+                    (*ThreadInfo).ThreadState = kthread_state(CurrentThread) as ULONG;
+                    (*ThreadInfo).WaitReason = (*CurrentThread).Tcb.WaitReason as ULONG;
+
+                    ThreadInfo = ThreadInfo.add(1);
+                    entry = (*entry).Flink;
+                }
+
+                let mut TotalUser: ULONG = 0;
+                let TotalKernel = KeQueryRuntimeProcess(&mut (*Process).Pcb, &mut TotalUser);
+                (*SpiCurrent).UserTime.QuadPart =
+                    UInt32x32To64(TotalUser, KeMaximumIncrement) as i64;
+                (*SpiCurrent).KernelTime.QuadPart =
+                    UInt32x32To64(TotalKernel, KeMaximumIncrement) as i64;
+            }
+
+            if !ProcessImageName.is_null() {
+                ExFreePoolWithTag(ProcessImageName as PVOID, TAG_SEPA);
+            }
+
+            ExReleasePushLockShared(core::ptr::addr_of_mut!((*Process).ProcessLock) as *mut _);
+            KeLeaveCriticalRegion();
+        }
+
+        // Skip:
+        if Process == PsIdleProcess {
+            Process = core::ptr::null_mut();
+        }
+        Process = PsGetNextProcess(Process);
+        if Process == SystemProcess || Process.is_null() {
+            if Overflow == 0u8 {
+                (*SpiCurrent).NextEntryOffset = 0;
+            }
+            break;
+        } else {
+            Current = Current.add((CurrentSize + ImageNameMaximumLength as ULONG) as usize);
+        }
+    }
+
+    if !Process.is_null() {
+        ObDereferenceObject(Process as PVOID);
+    }
+    if Overflow != 0u8 {
+        Status = STATUS_INFO_LENGTH_MISMATCH;
+    }
+    *ReqSize = TotalSize;
+    Status
 }
 
 
@@ -1168,15 +1405,89 @@ unsafe extern "C" fn QSI_SystemNonPagedPoolInformation(_Buffer: PVOID, _Size: UL
     STATUS_NOT_IMPLEMENTED
 }
 
-// Class 16 — handle table walk requires bindgen archaeology of HANDLE_TABLE_ENTRY unions; stub.
+// Class 16 — full system handle table enumeration.
 unsafe extern "C" fn QSI_SystemHandleInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    *ReqSize = field_offset_system_handle_information_handles() as ULONG;
-    if Size < *ReqSize {
+    let header_size = field_offset_system_handle_information_handles() as ULONG;
+    *ReqSize = header_size;
+    if Size < header_size {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
-    let HandleInformation = Buffer as PSYSTEM_HANDLE_INFORMATION;
+
+    let mut HandleInformation: PSYSTEM_HANDLE_INFORMATION = core::ptr::null_mut();
+    let mut Mdl: PMDL = core::ptr::null_mut();
+    let mut Status = ExLockUserBuffer(
+        Buffer,
+        Size,
+        ExGetPreviousMode(),
+        1, // IoWriteAccess
+        &mut HandleInformation as *mut _ as *mut PVOID,
+        &mut Mdl,
+    );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
     (*HandleInformation).NumberOfHandles = 0;
-    STATUS_SUCCESS
+    let mut Index: ULONG = 0;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(core::ptr::addr_of_mut!(HandleTableListLock) as *mut _);
+
+    let head = core::ptr::addr_of_mut!(HandleTableListHead);
+    let mut next = (*head).Flink;
+    while next != head {
+        // CONTAINING_RECORD(next, HANDLE_TABLE, HandleTableList)
+        let HandleTable = (next as *mut u8)
+            .sub(core::mem::offset_of!(_HANDLE_TABLE, HandleTableList))
+            as *mut _HANDLE_TABLE;
+
+        let mut Handle: EXHANDLE = core::mem::zeroed();
+        loop {
+            let Entry = ExpLookupHandleTableEntry(HandleTable, Handle);
+            if Entry.is_null() {
+                break;
+            }
+
+            let Object = (*Entry).__bindgen_anon_1.Object;
+            let NextFreeTableEntry = (*Entry).__bindgen_anon_2.NextFreeTableEntry;
+            if !Object.is_null() && NextFreeTableEntry != -2 {
+                (*HandleInformation).NumberOfHandles += 1;
+
+                if ExpLockHandleTableEntry(HandleTable, Entry) != 0 {
+                    *ReqSize += core::mem::size_of::<_SYSTEM_HANDLE_TABLE_ENTRY_INFO>() as ULONG;
+                    if *ReqSize > Size {
+                        Status = STATUS_INFO_LENGTH_MISMATCH;
+                    } else {
+                        let Hdr = ObpGetHandleObject(Entry);
+                        let entry_ptr =
+                            core::ptr::addr_of_mut!((*HandleInformation).Handles[0]).add(Index as usize);
+                        (*entry_ptr).UniqueProcessId = (*HandleTable).UniqueProcessId as ULONG_PTR as USHORT;
+                        (*entry_ptr).CreatorBackTraceIndex = 0;
+                        // FIXME: ObjectHeader->Type->Index — Type field corrupted; mirrors C #if 0.
+                        (*entry_ptr).ObjectTypeIndex = 0;
+                        (*entry_ptr).HandleAttributes =
+                            ((*Entry).__bindgen_anon_1.ObAttributes as ULONG_PTR & OBJ_HANDLE_ATTRIBUTES as ULONG_PTR) as UCHAR;
+                        (*entry_ptr).HandleValue = Handle.GenericHandleOverlay as ULONG_PTR as USHORT;
+                        (*entry_ptr).Object = core::ptr::addr_of_mut!((*Hdr).Body) as PVOID;
+                        (*entry_ptr).GrantedAccess = (*Entry).__bindgen_anon_2.GrantedAccess;
+                        Index += 1;
+                    }
+
+                    ExUnlockHandleTableEntry(HandleTable, Entry);
+                }
+            }
+
+            Handle.Value = (Handle.Value as ULONG_PTR + core::mem::size_of::<HANDLE>()) as _;
+        }
+
+        next = (*next).Flink;
+    }
+
+    ExReleasePushLockShared(core::ptr::addr_of_mut!(HandleTableListLock) as *mut _);
+    KeLeaveCriticalRegion();
+    ExUnlockUserBuffer(Mdl);
+
+    Status
 }
 
 // Class 17
@@ -1833,15 +2144,90 @@ unsafe extern "C" fn QSI_SystemNumaAvailableMemory(Buffer: PVOID, Size: ULONG, R
     STATUS_SUCCESS
 }
 
-// Class 64 — extended handle table walk; same archaeology issue as Class 16.
+// Class 64 — extended system handle table enumeration. Same walk as Class 16,
+// fills SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX records (wider Object/HandleValue, adds Reserved).
 unsafe extern "C" fn QSI_SystemExtendedHandleInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    *ReqSize = field_offset_system_handle_information_ex_handles() as ULONG;
-    if Size < *ReqSize {
+    let header_size = field_offset_system_handle_information_ex_handles() as ULONG;
+    *ReqSize = header_size;
+    if Size < header_size {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
-    let HandleInformation = Buffer as PSYSTEM_HANDLE_INFORMATION_EX;
+
+    let mut HandleInformation: PSYSTEM_HANDLE_INFORMATION_EX = core::ptr::null_mut();
+    let mut Mdl: PMDL = core::ptr::null_mut();
+    let mut Status = ExLockUserBuffer(
+        Buffer,
+        Size,
+        ExGetPreviousMode(),
+        1, // IoWriteAccess
+        &mut HandleInformation as *mut _ as *mut PVOID,
+        &mut Mdl,
+    );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
     (*HandleInformation).NumberOfHandles = 0;
-    STATUS_SUCCESS
+    let mut Index: ULONG = 0;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(core::ptr::addr_of_mut!(HandleTableListLock) as *mut _);
+
+    let head = core::ptr::addr_of_mut!(HandleTableListHead);
+    let mut next = (*head).Flink;
+    while next != head {
+        let HandleTable = (next as *mut u8)
+            .sub(core::mem::offset_of!(_HANDLE_TABLE, HandleTableList))
+            as *mut _HANDLE_TABLE;
+
+        let mut Handle: EXHANDLE = core::mem::zeroed();
+        loop {
+            let Entry = ExpLookupHandleTableEntry(HandleTable, Handle);
+            if Entry.is_null() {
+                break;
+            }
+
+            let Object = (*Entry).__bindgen_anon_1.Object;
+            let NextFreeTableEntry = (*Entry).__bindgen_anon_2.NextFreeTableEntry;
+            if !Object.is_null() && NextFreeTableEntry != -2 {
+                (*HandleInformation).NumberOfHandles += 1;
+
+                if ExpLockHandleTableEntry(HandleTable, Entry) != 0 {
+                    *ReqSize += core::mem::size_of::<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>() as ULONG;
+                    if *ReqSize > Size {
+                        Status = STATUS_INFO_LENGTH_MISMATCH;
+                    } else {
+                        let Hdr = ObpGetHandleObject(Entry);
+                        let entry_ptr =
+                            core::ptr::addr_of_mut!((*HandleInformation).Handles[0]).add(Index as usize);
+                        (*entry_ptr).UniqueProcessId = (*HandleTable).UniqueProcessId as ULONG_PTR;
+                        (*entry_ptr).CreatorBackTraceIndex = 0;
+                        // FIXME: ObjectHeader->Type->Index — Type field corrupted; mirrors C #if 0.
+                        (*entry_ptr).ObjectTypeIndex = 0;
+                        (*entry_ptr).HandleAttributes =
+                            ((*Entry).__bindgen_anon_1.ObAttributes as ULONG_PTR & OBJ_HANDLE_ATTRIBUTES as ULONG_PTR) as ULONG;
+                        (*entry_ptr).HandleValue = Handle.GenericHandleOverlay as ULONG_PTR;
+                        (*entry_ptr).Object = core::ptr::addr_of_mut!((*Hdr).Body) as PVOID;
+                        (*entry_ptr).GrantedAccess = (*Entry).__bindgen_anon_2.GrantedAccess;
+                        (*entry_ptr).Reserved = 0;
+                        Index += 1;
+                    }
+
+                    ExUnlockHandleTableEntry(HandleTable, Entry);
+                }
+            }
+
+            Handle.Value = (Handle.Value as ULONG_PTR + core::mem::size_of::<HANDLE>()) as _;
+        }
+
+        next = (*next).Flink;
+    }
+
+    ExReleasePushLockShared(core::ptr::addr_of_mut!(HandleTableListLock) as *mut _);
+    KeLeaveCriticalRegion();
+    ExUnlockUserBuffer(Mdl);
+
+    Status
 }
 
 // Class 70
@@ -1853,18 +2239,64 @@ unsafe extern "C" fn QSI_SystemObjectSecurityMode(Buffer: PVOID, Size: ULONG, _R
     STATUS_SUCCESS
 }
 
-// Class 73 — single processor-core entry; full enumeration needs PRCB MultiThread* fields.
+// Class 73 — full enumeration. One entry per main processor core (HT/MC master),
+// plus one entry per NUMA node.
 unsafe extern "C" fn QSI_SystemLogicalProcessorInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    let need = core::mem::size_of::<_SYSTEM_LOGICAL_PROCESSOR_INFORMATION>() as ULONG;
-    *ReqSize = need;
-    if Size < need {
-        return STATUS_INFO_LENGTH_MISMATCH;
+    let entry_size = core::mem::size_of::<_SYSTEM_LOGICAL_PROCESSOR_INFORMATION>() as ULONG;
+    let mut Status = STATUS_SUCCESS;
+    let mut DataSize: ULONG = 0;
+    let mut CurrentInfo = Buffer as PSYSTEM_LOGICAL_PROCESSOR_INFORMATION;
+
+    // Walk active processors, emit core entries for each HT/MC master.
+    let mut CurrentProc = KeActiveProcessors;
+    let mut i: usize = 0;
+    loop {
+        let Prcb = KiProcessorBlock[i];
+        if (CurrentProc & 1) != 0 && !Prcb.is_null() && Prcb == (*Prcb).MultiThreadSetMaster {
+            // Single-core if PRCB.SetMember matches its own multithread set.
+            let ProcessorFlags: u8 =
+                if (*Prcb).SetMember as u64 == (*Prcb).MultiThreadProcessorSet as u64 {
+                    0
+                } else {
+                    1
+                };
+
+            DataSize += entry_size;
+            if DataSize > Size {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+            } else {
+                core::ptr::write_bytes(CurrentInfo as *mut u8, 0, entry_size as usize);
+                (*CurrentInfo).ProcessorMask =
+                    (*Prcb).MultiThreadProcessorSet as ntkrnl_sys::ddk::ULONG_PTR;
+                (*CurrentInfo).Relationship = RelationProcessorCore;
+                (*CurrentInfo).__bindgen_anon_1.ProcessorCore.Flags = ProcessorFlags;
+                CurrentInfo = CurrentInfo.add(1);
+            }
+        }
+
+        CurrentProc >>= 1;
+        i += 1;
+        if CurrentProc == 0 {
+            break;
+        }
     }
-    core::ptr::write_bytes(Buffer as *mut u8, 0, need as usize);
-    let info = Buffer as PSYSTEM_LOGICAL_PROCESSOR_INFORMATION;
-    (*info).ProcessorMask = KeActiveProcessors as ntkrnl_sys::ddk::ULONG_PTR;
-    (*info).Relationship = RelationProcessorCore;
-    STATUS_SUCCESS
+
+    // Then one entry per NUMA node.
+    for node in 0..KeNumberNodes as ULONG {
+        DataSize += entry_size;
+        if DataSize > Size {
+            Status = STATUS_INFO_LENGTH_MISMATCH;
+        } else {
+            core::ptr::write_bytes(CurrentInfo as *mut u8, 0, entry_size as usize);
+            (*CurrentInfo).ProcessorMask = KeActiveProcessors as ntkrnl_sys::ddk::ULONG_PTR;
+            (*CurrentInfo).Relationship = RelationNumaNode;
+            (*CurrentInfo).__bindgen_anon_1.NumaNode.NodeNumber = node;
+            CurrentInfo = CurrentInfo.add(1);
+        }
+    }
+
+    *ReqSize = DataSize;
+    Status
 }
 
 // Class 76
