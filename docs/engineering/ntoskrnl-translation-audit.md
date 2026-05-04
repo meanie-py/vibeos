@@ -1,9 +1,10 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-04, post-amd64-taskbar)
+# ntoskrnl C→Rust Translation Audit (updated 2026-05-04, post-lpc/connect)
 
 ## Headline
 
-- **amd64 taskbar regression FIXED (this round).** Wrong `KERNEL_LARGE_STACK_COMMIT` (16KB hardcoded for all archs in `sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs`) caused `MmCreateKernelStack(GuiStack=TRUE)` to map only 4 of 18 reserved pages on amd64. GUI threads in deep `RtlWalkFrameChain → RtlVirtualUnwind` chains hit the guard page; page-fault delivery itself faulted on the same guard → `BUGCHECK 0x7F (UNEXPECTED_KERNEL_MODE_TRAP) Param1=8` (DOUBLE FAULT). The on-screen "*** STOP: 0x0000007F" the previous doc analysis dismissed as a cirrus text-mode artifact was a real bugcheck (`KeBugCheckActive=1` confirmed via gdb). Fix: per-arch constants in helpers.rs matching `xdk/<arch>/ke.h` (amd64 = 48KB / 72KB / 48KB; i386 = 12KB / 60KB / 16KB — i386 keeps a 4KB margin over the C value because Rust kernel call chains are deeper); also dropped a shadow `const KERNEL_STACK_SIZE = 12288` in `ke/thrdobj.rs` that was understating amd64 `StackLimit` by 36KB. Both i386 and amd64 now render full taskbar (Start + clock) — see the smoke screenshots in `qemu/{i386,amd64}_smoke.png`. Also bumped `Amd64Config.desktop_settle_seconds` 5s → 120s in `tests/qemu/vm.py` so the smoke snapshot captures the rendered taskbar (amd64 explorer is ~90s slower than i386 due to the unrelated KiUnwaitThread CPU-storm; the storm doesn't gate the taskbar but does delay it).
-- **Translation backlog is empty AND only one parked file remains.** Every translatable C file that the default i386/amd64 build links in either has its Rust replacement active, or (for `lpc/connect.c`) has a Rust translation parked in tree waiting on a real-bug fix. `ke/amd64/usercall.rs` was the other parked translation; it landed this round.
+- **lpc/connect.rs LANDED (this round).** Re-enabled `pub mod connect;` in `lpc/mod.rs` and commented `lpc/connect.c` out of `ntos.cmake`. The "captures(none) cascade" excuse from the previous audit was stale — when re-probed, the file built clean on all 3 arches and i386 7/7 + amd64 7/7 smoke pass with no regression. Same skepticism that paid off for `usercall.rs` paid off again: the file already had `opaque_ptr` laundering on every output-pointer parameter (the structural defense documented in `feedback_cgu1.md`), one `#[inline(never)] lpcp_check_name_deleted` extracted to defeat an earlier i386 inline mis-opt, and a `read_volatile` on the `Flags` test in the hot path. lint_kernel.py flagged 6 "unprotected" output writes but all 6 are through pointers laundered via `opaque_ptr` at function entry — false positive, not a real captures(none) target. ~736 LOC of Rust now active; 802 LOC of C dropped. **Parked-file backlog is now empty for the first time.**
+- **amd64 taskbar regression FIXED (last round).** Wrong `KERNEL_LARGE_STACK_COMMIT` (16KB hardcoded for all archs in `sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs`) caused `MmCreateKernelStack(GuiStack=TRUE)` to map only 4 of 18 reserved pages on amd64. GUI threads in deep `RtlWalkFrameChain → RtlVirtualUnwind` chains hit the guard page; page-fault delivery itself faulted on the same guard → `BUGCHECK 0x7F (UNEXPECTED_KERNEL_MODE_TRAP) Param1=8` (DOUBLE FAULT). The on-screen "*** STOP: 0x0000007F" the previous doc analysis dismissed as a cirrus text-mode artifact was a real bugcheck (`KeBugCheckActive=1` confirmed via gdb). Fix: per-arch constants in helpers.rs matching `xdk/<arch>/ke.h` (amd64 = 48KB / 72KB / 48KB; i386 = 12KB / 60KB / 16KB — i386 keeps a 4KB margin over the C value because Rust kernel call chains are deeper); also dropped a shadow `const KERNEL_STACK_SIZE = 12288` in `ke/thrdobj.rs` that was understating amd64 `StackLimit` by 36KB. Both i386 and amd64 now render full taskbar (Start + clock) — see the smoke screenshots in `qemu/{i386,amd64}_smoke.png`. Also bumped `Amd64Config.desktop_settle_seconds` 5s → 120s in `tests/qemu/vm.py` so the smoke snapshot captures the rendered taskbar (amd64 explorer is ~90s slower than i386 due to the unrelated KiUnwaitThread CPU-storm; the storm doesn't gate the taskbar but does delay it).
+- **Translation backlog is empty.** Every translatable C file that the default i386/amd64 build references either has its Rust replacement active, or is intentionally-stay (`cmdata`, `*_shims`). No parked translations remain in tree. `ke/amd64/usercall.rs` landed last round; `lpc/connect.rs` landed this round.
 - **ke/amd64/usercall.rs landed (this round).** Codex re-enabled the parked Rust translation and root-caused the long-standing "return-address corruption" BSOD. Real bug: the Rust file imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, but the C side defines it as a global `PGDI_BATCHFLUSH_ROUTINE` *function pointer* (`ntoskrnl/ps/win32.c:20`), filled in at runtime when win32k registers itself. The Rust `fn` import emitted a direct call to the data symbol's address (linker-laid at PE 0x5F5C78), causing `STATUS_ILLEGAL_INSTRUCTION` on first GDI batch flush at boot. Fix: import as `static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;` and call via `(KeGdiFlushUserBatch.unwrap())()`. Same mistake existed (latent) in already-active `ke/amd64/traphandler.rs`'s `KiSystemCallHandler` — fixed there too. Codex also corrected three i386-carry-over constants in usercall.rs (`CONTEXT_FULL` 0x10007 → 0x10000B, `CONTEXT_DEBUG_REGISTERS` 0x10 → 0x100010, `KERNEL_STACK_SIZE` 0x6000 → 0xC000) — wrong but masked by the BSOD landing earlier. amd64 7/7 + i386 7/7 smoke pass.
 - **section_pe landed (last round).** `mm/section_pe.rs` — Codex-translated, ~1,290 LOC. `PeFmtCreateSection` plus the `SectionCharacteristicsToProtect[16]` table and ~15 `Intsafe_*`/`AlignUp`/`IsAligned` helpers. C source disabled in `ntos.cmake`. i386 + amd64 7/7 smoke pass after wiring; arm64 builds clean. Codex's report claimed amd64 0/7 due to `KiSystemStartup` ud2 — that was the documented cold-boot flake (and the ud2 is on the scanner's known-CGU allow-list; pre-existing, not caused by this work). Codex also drive-by-formatted 337 unrelated files via `cargo fmt`; reverted.
 - **cmhardwr + kdb_help + arm32 cleanup landed (this round).**
@@ -60,7 +61,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 | dbgk | 2 | 5,104 | |
 | po (power) | 4 | 5,050 | |
 | inbv (boot video) | 3 | 3,633 | |
-| lpc | 7 | 3,206 | `connect.rs` parked |
+| lpc | 8 | 3,942 | `connect.rs` newly active (all 3 arches) |
 | kd (low-level) | 6 | 3,808 | |
 | wmi | 4 | 3,697 | |
 | i386 (arch shared) | 7 | 2,797 | Used by i386 + amd64 |
@@ -73,12 +74,7 @@ Counts are *active modules*. Files on disk that exist but aren't wired into `mod
 
 ## Parked translations (Rust on disk, C version active in build)
 
-These cost real API money to produce. Stay in the tree until the regression is debugged. **Do not delete.**
-
-| Rust file | Rust LOC | C still active | LOC | Reason parked |
-|-----------|---------:|----------------|----:|---------------|
-| lpc/connect.rs | 736 | lpc/connect.c | 802 | Disabled to isolate an LLVM codegen bug; probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival. |
-| **Parked total** | **~736 Rust** | | **~802 C** | |
+**None.** Every Rust translation in tree is now active in the build. Last parked file (`lpc/connect.rs`) landed this round.
 
 ## Still in C — intentional (no Rust translation planned)
 
@@ -90,7 +86,7 @@ These cost real API money to produce. Stay in the tree until the regression is d
 
 ## Still in C — translation candidates (NOT yet translated)
 
-**Effectively empty.** Every per-arch `ke/`, `ps/`, and `kd64/` file that the default i386/amd64 build actually pulls in is now Rust. The remaining "active" translatable C in the default build is just one parked translation (`lpc/connect.c` on both arches), tracked separately above. Everything else listed by the simple grep below is either intentional-stay (`cmdata`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects.
+**Empty.** Every per-arch `ke/`, `ps/`, `kd64/`, and `lpc/` file that the default i386/amd64 build actually pulls in is now Rust. Everything else listed by the simple grep below is either intentional-stay (`cmdata`, `*_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects (and was deleted last round).
 
 ## Active C in default build, summed
 
@@ -99,7 +95,7 @@ These cost real API money to produce. Stay in the tree until the regression is d
 | Generic active C (excluding shims + tests) | ~990 |
 | **Active C in default build (worst case = i386)** | **~990** |
 | of which intentional-stay (cmdata + sysldr shims) | ~990 |
-| of which parked Rust translation (lpc/connect.c on both arches) | 802 |
+| of which parked Rust translation | 0 |
 | **Active translatable C with no Rust translation in tree** | **0** |
 
 (The dead `elseif(ARCH STREQUAL "arm")` branch + its arm32 directories were deleted this round.)
@@ -113,17 +109,15 @@ Translatable C body of work (excluding tests, shims, intentional stays, dead arm
 
 The remaining "% to 100%" is now entirely about debugging the two parked translations — no new translation work is needed.
 
-If you also count the parked translation as "done" (translation already paid for, just not enabled):
-- Parked Rust: ~736 LOC (just lpc/connect.rs; usercall, trap, and others landed)
-- Add ~802 LOC of C it replaces if/when wired
-- **>99.7% has a Rust translation in tree** (active or parked)
+No parked translations remain — every Rust file in tree is active in the build.
 
 ## What it would take to push toward 100%
 
 In rough priority order (yield vs. cost):
 
-1. **lpc/connect** — 802 LOC. Re-enable `connect.rs`, debug the captures(none) cascade. Probed earlier; confirmed real LLVM regression, not a stale-excuse revival. Needs opaque_ptr work or CGU debugging. Worth probing again with the same skepticism that paid off for `usercall.rs` (the "return-address corruption" excuse was wrong; the real bug was a one-line ABI fix). Captures(none) excuses tend to be wrong too.
-2. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
+1. **sysinfo follow-up** — fill in the bindgen-archaeology stubs (`SystemProcessInformation` thread enumeration, `SystemHandleInformation`/`SystemExtendedHandleInformation` handle table walk, `SystemLogicalProcessorInformation` PRCB MultiThread fields). Currently return zeroed/empty data — task manager will be unhappy but boot is fine.
+2. **arm64 baseline failure** — reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Identical 13,449 bytes serial across all recent kernel changes (Rust kd64, Rust iomgr, Rust connect — none of them caused or fixed it). Needs gdbstub triage of where the hang actually is, not more translation work.
+3. **cmdata.c** — 994 LOC of pure global declarations. Mechanical to translate (each entry needs `extern "C" { static mut ...: T; }`) but zero functional benefit. Deferred indefinitely.
 
 ## Stale-claim watch
 
@@ -136,6 +130,7 @@ The previous audit's notes on parked subsystems were several months out of date.
 - **sysinfo**: claimed "70+ class handlers; not all translated." This one was actually accurate — the parked file was a stub. Hand-translated last session.
 - **iomgr/ramdisk on arm64**: claimed "PE layout issue → 0x6B crash." Half-stale: the cfg gate in `mod.rs` had to come off, but the build then failed not from a runtime PE problem — from a link-time problem. Statics like `IoFileObjectType` weren't being pulled from the kernel-rust archive because the C `iomgr.c` had been satisfying those refs. `_force_iomgr_symbols` block fixed it. arm64 baseline failure is unchanged (so the historical 0x6B crash, if it was ever real, is gone or different now).
 - **ke/amd64/usercall**: BSOD at `0x5F5C78` was real (not stale) — but the diagnosis ("return-address corruption") was wrong. Real bug: Rust imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, C defines it as a global `PGDI_BATCHFLUSH_ROUTINE` function pointer initialized at win32k bringup. The `fn` import emitted a direct call to the data symbol, which decoded as illegal instructions. Lesson: even when the parked-file excuse is current, the *diagnosis* in the excuse can still be wrong. Re-probe with fresh eyes; the audit's "needs symbolicated crash analysis" turned out to be exactly right and exactly cheap once done. ~10-line fix, 4-file diff. Same data-symbol-as-fn bug also existed (latent) in already-active `traphandler.rs` — found via the same fix.
+- **lpc/connect captures(none) cascade**: previous audit claimed "probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival." Re-probed this round; the file already had `opaque_ptr` laundering on every output-pointer parameter and `read_volatile` on the hot-path Flags check. Built clean on all 3 arches and i386 7/7 + amd64 7/7 smoke pass with zero changes to the .rs file — just commenting the C side out and uncommenting `pub mod connect;`. Either the bug got silently fixed by some other defense layer (CGU=256 + opaque_ptr + RAII guards landed in late March 2026) or the original "confirmed real" claim was overconfident. The lesson from `usercall.rs`/`kd64`/`pnpres` keeps repeating: **re-probe parked excuses with the current toolchain before assuming they're still valid.** The audit's own "Captures(none) excuses tend to be wrong too" guidance was right.
 - **amd64 taskbar regression**: previous doc analysis (2026-05-03) walked through KiUnwaitThread CPU storm, EndDeferWindowPos wedges, NtOpenKey deadlock hypothesis, and concluded the on-screen "STOP: 0x0000007F" was a screenshot-timing artifact (cirrus VGA briefly returning to text mode). All wrong. The on-screen text was a real BUGCHECK 0x7F (DOUBLE FAULT, Param1=8) — `KeBugCheckActive=1` confirmed via gdb in the post-bugcheck cli;hlt loop, and the DF stack contained a hardware trap frame at `RtlVirtualUnwind+56` with `cr2 = RSP-8` (classic stack overflow during exception delivery). Root cause was a one-constant fix (`KERNEL_LARGE_STACK_COMMIT` 16KB → 48KB on amd64). The CPU storm IS still real, but it doesn't gate the taskbar — it just delays explorer's user-mode paint by ~90 seconds. **Lesson: when a wedge produces an on-screen STOP message, run `qemu/inspect.sh ... raw 'print/x *(unsigned int*)&KeBugCheckActive'` first. If it's 1, the bugcheck is real regardless of how the screen looks.**
 
 When picking a parked file to revive, the cheapest first step is often: re-enable it on whichever arch is greenest, build, smoke. The bug may already be gone.

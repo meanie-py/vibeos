@@ -234,7 +234,7 @@ list(APPEND SOURCE
     # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/create.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/listen.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/port.c
