@@ -403,6 +403,22 @@ pub unsafe fn MiIsUserPde(address: PVOID) -> BOOLEAN {
 // MiDetermineUserGlobalPteMask (FORCEINLINE from miarm.h)
 // ============================================================================
 
+/// MiIsUserPxe — top-level (PML4) entry check, 4-level paging only.
+/// Mirrors `((ULONG_PTR)Address >> 11) == 0x1FFFFEDF6FB7DAULL` from miarm.h.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn MiIsUserPxe(address: PVOID) -> BOOLEAN {
+    if ((address as u64) >> 11) == 0x1FFFFEDF6FB7DAu64 { 1 } else { 0 }
+}
+
+/// MiIsUserPpe — PDPT entry check, 3+-level paging only.
+/// Mirrors `((ULONG_PTR)Address >> 20) == 0xFFFFF6FB7DAULL` from miarm.h.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn MiIsUserPpe(address: PVOID) -> BOOLEAN {
+    if ((address as u64) >> 20) == 0xFFFFF6FB7DAu64 { 1 } else { 0 }
+}
+
 /// MiDetermineUserGlobalPteMask — compute the PTE mask for user/global pages.
 /// Returns a PTE.u.Long value with Valid=1, Accessed=1, and Owner=1 for user PTEs.
 #[inline]
@@ -412,7 +428,24 @@ pub unsafe fn MiDetermineUserGlobalPteMask(pointer_pte: ddk::PMMPTE) -> ULONG_PT
     pte.u.Hard.set_Valid(1);
     pte.u.Hard.set_Accessed(1);
 
-    if MiIsUserPde(pointer_pte as PVOID) != 0 || MiIsUserPte(pointer_pte as PVOID) != 0 {
+    // Mirror the C predicate in `mm/ARM3/miarm.h:MiDetermineUserGlobalPteMask`.
+    // On amd64/arm64 (4-level paging) the upper paging-structure entries
+    // (PXE, PPE) are also user-mode mappings and must get Owner=1, otherwise
+    // user-mode access through that hierarchy faults.
+    let is_user;
+    #[cfg(target_arch = "x86")]
+    {
+        is_user = MiIsUserPde(pointer_pte as PVOID) != 0
+            || MiIsUserPte(pointer_pte as PVOID) != 0;
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        is_user = MiIsUserPxe(pointer_pte as PVOID) != 0
+            || MiIsUserPpe(pointer_pte as PVOID) != 0
+            || MiIsUserPde(pointer_pte as PVOID) != 0
+            || MiIsUserPte(pointer_pte as PVOID) != 0;
+    }
+    if is_user {
         pte.u.Hard.set_Owner(1);
     }
 
