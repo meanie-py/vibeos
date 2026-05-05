@@ -121,9 +121,15 @@ mod _force_ke_inlines_symbols {
         fn _rs_KxUnwaitThread();
         fn _rs_KxUnwaitThreadForEvent();
         fn _rs_KxQueueReadyThread();
+        fn _rs__KeInitializeGuardedMutex();
+        fn _rs__KeAcquireGuardedMutexUnsafe();
+        fn _rs__KeReleaseGuardedMutexUnsafe();
+        fn _rs__KeAcquireGuardedMutex();
+        fn _rs__KeReleaseGuardedMutex();
+        fn _rs__KeTryToAcquireGuardedMutex();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 38] = [
+    static REFS: [unsafe extern "C" fn(); 44] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -162,6 +168,12 @@ mod _force_ke_inlines_symbols {
         _rs_KxUnwaitThread,
         _rs_KxUnwaitThreadForEvent,
         _rs_KxQueueReadyThread,
+        _rs__KeInitializeGuardedMutex,
+        _rs__KeAcquireGuardedMutexUnsafe,
+        _rs__KeReleaseGuardedMutexUnsafe,
+        _rs__KeAcquireGuardedMutex,
+        _rs__KeReleaseGuardedMutex,
+        _rs__KeTryToAcquireGuardedMutex,
     ];
 }
 

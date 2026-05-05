@@ -50,6 +50,14 @@
 //!     ReadySummary bit if the bucket is now empty. The second is the dynamic-
 //!     priority decay math (Priority -= PriorityDecrement + Adjustment, clamped
 //!     to BasePriority).
+//!   - Guarded mutex (6): `_KeInitializeGuardedMutex`,
+//!     `_KeAcquire/ReleaseGuardedMutexUnsafe`, `_KeAcquire/ReleaseGuardedMutex`,
+//!     `_KeTryToAcquireGuardedMutex`. Lock-bit fast path via `AtomicI32`
+//!     fetch_and / fetch_add / compare_exchange; contested path delegates to
+//!     `KiAcquireGuardedMutex` and `KeSignalGateBoostPriority` exports.
+//!     `KeEnterGuardedRegionThread` macro is inlined as a `SpecialApcDisable--`
+//!     write; the matching Leave macro increments and (on transition to 0)
+//!     calls `KiCheckForKernelApcDelivery` if a kernel APC is queued.
 //!   - Unwait + queue-ready helpers (3): `KxUnwaitThread`,
 //!     `KxUnwaitThreadForEvent`, `KxQueueReadyThread`. The first two walk
 //!     `Object->WaitListHead`, pull each KWAIT_BLOCK and wake its thread via
@@ -79,9 +87,9 @@ use ntkrnl_sys::base::{
     UCHAR, ULONG, ULONG_PTR,
 };
 use ntkrnl_sys::ddk::{
-    KPROCESSOR_MODE, PKDEVICE_QUEUE, PKEVENT, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE,
-    PKTHREAD, PKWAIT_BLOCK, _DISPATCHER_HEADER, _KPCR, _KSYSTEM_TIME, _KTHREAD, _KWAIT_BLOCK,
-    _LIST_ENTRY,
+    KPROCESSOR_MODE, PKDEVICE_QUEUE, PKEVENT, PKGATE, PKGUARDED_MUTEX, PKLOCK_QUEUE_HANDLE,
+    PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD, PKWAIT_BLOCK, _DISPATCHER_HEADER, _KPCR, _KSYSTEM_TIME,
+    _KTHREAD, _KWAIT_BLOCK, _LIST_ENTRY,
 };
 use ntkrnl_sys::CONTAINING_RECORD;
 
@@ -111,6 +119,14 @@ const WAIT_ANY: u8 = 1;
 
 /// `KTHREAD_STATE_Ready` (`_KTHREAD_STATE_Ready` = 1).
 const KTHREAD_STATE_READY: u8 = 1;
+
+/// Guarded mutex bits from `ketypes.h`: `GM_LOCK_BIT` (the "lock available"
+/// bit) at position 0; `GM_LOCK_WAITER_WOKEN` at bit 1; and the per-waiter
+/// increment in the upper bits.
+const GM_LOCK_BIT: LONG = 0x1;
+const GM_LOCK_BIT_V: u32 = 0; // bit position
+const GM_LOCK_WAITER_WOKEN: LONG = 0x2;
+const GM_LOCK_WAITER_INC: LONG = 0x4;
 
 extern "C" {
     /// `KeMaximumIncrement` — clock tick increment (100ns units), set at boot
@@ -172,6 +188,19 @@ extern "fastcall" {
     fn KiExitDispatcher(old_irql: KIRQL);
     fn KiDeferredReadyThread(thread: PKTHREAD);
     fn KiUnwaitThread(thread: PKTHREAD, wait_status: LONG_PTR, increment: LONG);
+    fn KeInitializeGate(gate: PKGATE);
+    fn KiAcquireGuardedMutex(gm: PKGUARDED_MUTEX);
+    fn KeSignalGateBoostPriority(gate: PKGATE);
+}
+
+// `KiCheckForKernelApcDelivery` is stdcall on i386 (no args), cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn KiCheckForKernelApcDelivery();
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KiCheckForKernelApcDelivery();
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -194,6 +223,9 @@ extern "C" {
     fn KiExitDispatcher(old_irql: KIRQL);
     fn KiDeferredReadyThread(thread: PKTHREAD);
     fn KiUnwaitThread(thread: PKTHREAD, wait_status: LONG_PTR, increment: LONG);
+    fn KeInitializeGate(gate: PKGATE);
+    fn KiAcquireGuardedMutex(gm: PKGUARDED_MUTEX);
+    fn KeSignalGateBoostPriority(gate: PKGATE);
 }
 
 // ============================================================================
@@ -243,6 +275,32 @@ unsafe fn ke_get_current_prcb() -> PKPRCB {
     #[cfg(not(target_arch = "x86"))]
     {
         (*ke_get_pcr()).__bindgen_anon_1.__bindgen_anon_1.CurrentPrcb
+    }
+}
+
+#[inline(always)]
+unsafe fn ke_get_current_thread() -> PKTHREAD {
+    (*ke_get_current_prcb()).CurrentThread as PKTHREAD
+}
+
+/// Pointer to KTHREAD.SpecialApcDisable (i16). Path differs per arch:
+/// - i386: `__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable`
+/// - amd64/arm64: `__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable`
+#[inline(always)]
+unsafe fn kt_special_apc_disable_ptr(t: PKTHREAD) -> *mut i16 {
+    #[cfg(target_arch = "x86")]
+    {
+        core::ptr::addr_of_mut!((*t).__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable)
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        core::ptr::addr_of_mut!(
+            (*t).__bindgen_anon_5
+                .__bindgen_anon_8
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .SpecialApcDisable
+        )
     }
 }
 
@@ -786,4 +844,157 @@ pub unsafe extern "C" fn _rs_KxQueueReadyThread(thread: PKTHREAD, prcb: PKPRCB) 
     }
     (*prcb).ReadySummary |= 1u32 << (priority as u32);
     // KiReleasePrcbLock — UP no-op; nothing to do.
+}
+
+// ============================================================================
+// Guarded mutex (ke_x.h)
+//
+// The Count field is a packed encoding: bit 0 = "lock available" (`GM_LOCK_BIT`),
+// bit 1 = "wakeup pending" (`GM_LOCK_WAITER_WOKEN`), bits ≥ 2 = waiter count
+// (each waiter contributes `GM_LOCK_WAITER_INC` = 4). The fast path on acquire
+// is `InterlockedBitTestAndReset(Count, 0)` — succeed iff bit 0 was set; on
+// failure, fall through to `KiAcquireGuardedMutex` which contests via
+// the embedded KGATE. Release: add GM_LOCK_BIT atomically; if there were
+// waiters (OldValue != 0) and no wake is in flight (`!(OldValue & WAITER_WOKEN)`),
+// CAS the count to mark wake pending and pop one waiter, then signal the gate.
+//
+// `KeEnterGuardedRegionThread`/`Leave...` are macros that decrement/increment
+// `Thread->SpecialApcDisable`. Inlined locally — see helpers below.
+//
+// `KiCheckForKernelApcDelivery` calling convention is stdcall on i386 (no
+// args), cdecl elsewhere; both are declared in the per-arch extern blocks
+// above.
+// ============================================================================
+
+#[inline(always)]
+unsafe fn count_atomic(gm: PKGUARDED_MUTEX) -> &'static core::sync::atomic::AtomicI32 {
+    core::sync::atomic::AtomicI32::from_ptr(core::ptr::addr_of_mut!((*gm).Count))
+}
+
+/// `KeEnterGuardedRegionThread` macro: disable special APCs.
+#[inline(always)]
+unsafe fn enter_guarded_region_thread(thread: PKTHREAD) {
+    let p = kt_special_apc_disable_ptr(thread);
+    *p = (*p).wrapping_sub(1);
+}
+
+/// `KeLeaveGuardedRegionThread` macro: re-enable special APCs; if the count
+/// reached 0 and a kernel-mode APC is queued, drain it.
+#[inline(always)]
+unsafe fn leave_guarded_region_thread(thread: PKTHREAD) {
+    let p = kt_special_apc_disable_ptr(thread);
+    *p = (*p).wrapping_add(1);
+    if *p == 0 {
+        // ApcListHead[KernelMode=0] under ApcState (anon union @ index 0).
+        let kernel_apc_head =
+            core::ptr::addr_of!((*thread).__bindgen_anon_1.ApcState.ApcListHead[0]);
+        if !is_list_empty(kernel_apc_head) {
+            KiCheckForKernelApcDelivery();
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn gm_special_apc_disable_ptr(gm: PKGUARDED_MUTEX) -> *mut i16 {
+    core::ptr::addr_of_mut!((*gm).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeInitializeGuardedMutex(gm: PKGUARDED_MUTEX) {
+    (*gm).Count = GM_LOCK_BIT;
+    (*gm).Owner = core::ptr::null_mut();
+    (*gm).Contention = 0;
+    KeInitializeGate(core::ptr::addr_of_mut!((*gm).Gate));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeAcquireGuardedMutexUnsafe(gm: PKGUARDED_MUTEX) {
+    let thread = ke_get_current_thread();
+    // InterlockedBitTestAndReset(Count, GM_LOCK_BIT_V): atomically clear bit 0,
+    // return TRUE iff old bit was set.
+    let mask = !(1i32 << GM_LOCK_BIT_V);
+    let old = count_atomic(gm).fetch_and(mask, core::sync::atomic::Ordering::SeqCst);
+    if old & (1 << GM_LOCK_BIT_V) == 0 {
+        // Lock was held — contested path
+        KiAcquireGuardedMutex(gm);
+    }
+    (*gm).Owner = thread;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeReleaseGuardedMutexUnsafe(gm: PKGUARDED_MUTEX) {
+    (*gm).Owner = core::ptr::null_mut();
+    let old = count_atomic(gm)
+        .fetch_add(GM_LOCK_BIT, core::sync::atomic::Ordering::SeqCst);
+    if old != 0 && (old & GM_LOCK_WAITER_WOKEN) == 0 {
+        // Reflect the just-applied add into our local copy and try to CAS
+        // it to "wake pending, one fewer waiter".
+        let old_after_add = old + GM_LOCK_BIT;
+        let new_value = old_after_add + GM_LOCK_WAITER_WOKEN - GM_LOCK_WAITER_INC;
+        if count_atomic(gm)
+            .compare_exchange(
+                old_after_add,
+                new_value,
+                core::sync::atomic::Ordering::SeqCst,
+                core::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            KeSignalGateBoostPriority(core::ptr::addr_of_mut!((*gm).Gate));
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeAcquireGuardedMutex(gm: PKGUARDED_MUTEX) {
+    let thread = ke_get_current_thread();
+    enter_guarded_region_thread(thread);
+    let mask = !(1i32 << GM_LOCK_BIT_V);
+    let old = count_atomic(gm).fetch_and(mask, core::sync::atomic::Ordering::SeqCst);
+    if old & (1 << GM_LOCK_BIT_V) == 0 {
+        KiAcquireGuardedMutex(gm);
+    }
+    (*gm).Owner = thread;
+    *gm_special_apc_disable_ptr(gm) = *kt_special_apc_disable_ptr(thread);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeReleaseGuardedMutex(gm: PKGUARDED_MUTEX) {
+    let thread = ke_get_current_thread();
+    (*gm).Owner = core::ptr::null_mut();
+    let old = count_atomic(gm)
+        .fetch_add(GM_LOCK_BIT, core::sync::atomic::Ordering::SeqCst);
+    if old != 0 && (old & GM_LOCK_WAITER_WOKEN) == 0 {
+        let old_after_add = old + GM_LOCK_BIT;
+        let new_value = old_after_add + GM_LOCK_WAITER_WOKEN - GM_LOCK_WAITER_INC;
+        if count_atomic(gm)
+            .compare_exchange(
+                old_after_add,
+                new_value,
+                core::sync::atomic::Ordering::SeqCst,
+                core::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            KeSignalGateBoostPriority(core::ptr::addr_of_mut!((*gm).Gate));
+        }
+    }
+    leave_guarded_region_thread(thread);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs__KeTryToAcquireGuardedMutex(gm: PKGUARDED_MUTEX) -> BOOLEAN {
+    let thread = ke_get_current_thread();
+    enter_guarded_region_thread(thread);
+    let mask = !(1i32 << GM_LOCK_BIT_V);
+    let old = count_atomic(gm).fetch_and(mask, core::sync::atomic::Ordering::SeqCst);
+    if old & (1 << GM_LOCK_BIT_V) == 0 {
+        // Couldn't grab the bit — undo the guarded region.
+        leave_guarded_region_thread(thread);
+        core::hint::spin_loop();
+        return 0;
+    }
+    (*gm).Owner = thread;
+    *gm_special_apc_disable_ptr(gm) = *kt_special_apc_disable_ptr(thread);
+    1
 }

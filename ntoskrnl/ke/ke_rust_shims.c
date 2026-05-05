@@ -700,36 +700,43 @@ SCHAR KiComputeNewPriority(IN PKTHREAD Thread, IN SCHAR Adjustment)
     return _rs_KiComputeNewPriority(Thread, Adjustment);
 }
 
-/* --- Guarded mutex (ke_x.h) --- */
+/* --- Guarded mutex (ke_x.h) ---
+ * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 8). */
+extern VOID _rs__KeInitializeGuardedMutex(PKGUARDED_MUTEX GuardedMutex);
+extern VOID _rs__KeAcquireGuardedMutexUnsafe(PKGUARDED_MUTEX GuardedMutex);
+extern VOID _rs__KeReleaseGuardedMutexUnsafe(PKGUARDED_MUTEX GuardedMutex);
+extern VOID _rs__KeAcquireGuardedMutex(PKGUARDED_MUTEX GuardedMutex);
+extern VOID _rs__KeReleaseGuardedMutex(PKGUARDED_MUTEX GuardedMutex);
+extern BOOLEAN _rs__KeTryToAcquireGuardedMutex(PKGUARDED_MUTEX GuardedMutex);
 
 VOID _KeInitializeGuardedMutex(OUT PKGUARDED_MUTEX GuardedMutex)
 {
-    _saved__KeInitializeGuardedMutex(GuardedMutex);
+    _rs__KeInitializeGuardedMutex(GuardedMutex);
 }
 
 VOID _KeAcquireGuardedMutexUnsafe(IN OUT PKGUARDED_MUTEX GuardedMutex)
 {
-    _saved__KeAcquireGuardedMutexUnsafe(GuardedMutex);
+    _rs__KeAcquireGuardedMutexUnsafe(GuardedMutex);
 }
 
 VOID _KeReleaseGuardedMutexUnsafe(IN OUT PKGUARDED_MUTEX GuardedMutex)
 {
-    _saved__KeReleaseGuardedMutexUnsafe(GuardedMutex);
+    _rs__KeReleaseGuardedMutexUnsafe(GuardedMutex);
 }
 
 VOID _KeAcquireGuardedMutex(IN PKGUARDED_MUTEX GuardedMutex)
 {
-    _saved__KeAcquireGuardedMutex(GuardedMutex);
+    _rs__KeAcquireGuardedMutex(GuardedMutex);
 }
 
 VOID _KeReleaseGuardedMutex(IN OUT PKGUARDED_MUTEX GuardedMutex)
 {
-    _saved__KeReleaseGuardedMutex(GuardedMutex);
+    _rs__KeReleaseGuardedMutex(GuardedMutex);
 }
 
 BOOLEAN _KeTryToAcquireGuardedMutex(IN OUT PKGUARDED_MUTEX GuardedMutex)
 {
-    return _saved__KeTryToAcquireGuardedMutex(GuardedMutex);
+    return _rs__KeTryToAcquireGuardedMutex(GuardedMutex);
 }
 
 /* --- NMI list lock (ke_x.h) ---
