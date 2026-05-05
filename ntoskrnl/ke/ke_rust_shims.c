@@ -931,74 +931,45 @@ void KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
 
 /* ProbeForReadLargeInteger is provided by se_rust_shims.c — not duplicated here */
 
-/* Statement macro wrappers — the macros reference caller-local variables, so
- * we expose parameterized C functions. Rust callers must pass all locals.
- * These are #define KxSingleThreadWait() etc. in ke_x.h — must #undef first. */
+/* `Kx{Single,Delay,Multi}ThreadWait` — Phase 2 wait-setup batch, bodies in
+ * sibling rlib `ke-macros`. Trampolines stay as ABI anchors that delegate to
+ * the Rust impls. The 2026-05-05 wait-block-corruption fix lives in the
+ * Rust side now (KxMultiThreadWait calls InitializeListHead instead of the
+ * half-init Flink/Blink pre-set; KxSingle/KxDelay keep the defensive full-
+ * init shape). #undef the macros so the function definitions don't get
+ * rewritten by them. */
 #undef KxSingleThreadWait
 #undef KxDelayThreadWait
 #undef KxMultiThreadWait
+
+extern void _rs_KxSingleThreadWait(
+    PVOID Object, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
+    UCHAR WaitReason, BOOLEAN Alertable,
+    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
+extern void _rs_KxDelayThreadWait(
+    PLARGE_INTEGER Interval, KPROCESSOR_MODE WaitMode,
+    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
+extern void _rs_KxMultiThreadWait(
+    PKWAIT_BLOCK WaitBlockArray, PVOID *Objects, ULONG Count,
+    PLARGE_INTEGER Timeout, UCHAR WaitType,
+    KPROCESSOR_MODE WaitMode, UCHAR WaitReason,
+    BOOLEAN Alertable, BOOLEAN *Swappable,
+    PLARGE_INTEGER DueTime, PULONG Hand);
+
 void KxSingleThreadWait(
     PVOID Object, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
     KWAIT_REASON WaitReason, BOOLEAN Alertable,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
 {
-    PKTHREAD Thread = KeGetCurrentThread();
-    PKWAIT_BLOCK WaitBlock = &Thread->WaitBlock[0];
-    PKTIMER Timer = &Thread->Timer;
-    PKWAIT_BLOCK TimerBlock = &Thread->WaitBlock[TIMER_WAIT_BLOCK];
-
-    Thread->WaitBlockList = WaitBlock;
-    WaitBlock->WaitKey = STATUS_SUCCESS;
-    WaitBlock->Object = Object;
-    WaitBlock->WaitType = WaitAny;
-    Thread->WaitStatus = STATUS_SUCCESS;
-    if (Timeout)
-    {
-        _saved_KxSetTimerForThreadWait(Timer, *Timeout, Hand);
-        DueTime->QuadPart = Timer->DueTime.QuadPart;
-        WaitBlock->NextWaitBlock = TimerBlock;
-        TimerBlock->NextWaitBlock = WaitBlock;
-        /* Defensive: see KxMultiThreadWait above for full rationale. */
-        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
-        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
-        Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
-        Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
-    }
-    else
-    {
-        WaitBlock->NextWaitBlock = WaitBlock;
-    }
-    Thread->Alertable = Alertable;
-    Thread->WaitMode = WaitMode;
-    Thread->WaitReason = WaitReason;
-    Thread->WaitListEntry.Flink = NULL;
-    *Swappable = _saved_KiCheckThreadStackSwap(Thread, WaitMode);
-    Thread->WaitTime = KeTickCount.LowPart;
+    _rs_KxSingleThreadWait(Object, Timeout, WaitMode, (UCHAR)WaitReason,
+                           Alertable, Swappable, DueTime, Hand);
 }
 
 void KxDelayThreadWait(
     PLARGE_INTEGER Interval, KPROCESSOR_MODE WaitMode,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
 {
-    PKTHREAD Thread = KeGetCurrentThread();
-    PKTIMER Timer = &Thread->Timer;
-    PKWAIT_BLOCK TimerBlock = &Thread->WaitBlock[TIMER_WAIT_BLOCK];
-
-    Thread->WaitBlockList = TimerBlock;
-    TimerBlock->NextWaitBlock = TimerBlock;
-    _saved_KxSetTimerForThreadWait(Timer, *Interval, Hand);
-    DueTime->QuadPart = Timer->DueTime.QuadPart;
-    /* Defensive: see KxMultiThreadWait for full rationale. */
-    TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
-    TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
-    Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
-    Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
-    Thread->Alertable = (WaitMode == UserMode) ? TRUE : FALSE;
-    Thread->WaitMode = WaitMode;
-    Thread->WaitReason = DelayExecution;
-    Thread->WaitListEntry.Flink = NULL;
-    *Swappable = _saved_KiCheckThreadStackSwap(Thread, WaitMode);
-    Thread->WaitTime = KeTickCount.LowPart;
+    _rs_KxDelayThreadWait(Interval, WaitMode, Swappable, DueTime, Hand);
 }
 
 void KxMultiThreadWait(
@@ -1008,53 +979,9 @@ void KxMultiThreadWait(
     BOOLEAN Alertable, BOOLEAN *Swappable,
     PLARGE_INTEGER DueTime, PULONG Hand)
 {
-    PKTHREAD Thread = KeGetCurrentThread();
-    PKTIMER Timer = &Thread->Timer;
-    PKWAIT_BLOCK TimerBlock = &Thread->WaitBlock[TIMER_WAIT_BLOCK];
-    ULONG Index;
-
-    Thread->WaitBlockList = WaitBlockArray;
-    for (Index = 0; Index < Count; Index++)
-    {
-        WaitBlockArray[Index].Object = Objects[Index];
-        WaitBlockArray[Index].WaitKey = (USHORT)Index;
-        WaitBlockArray[Index].WaitType = WaitType;
-        WaitBlockArray[Index].Thread = Thread;
-        WaitBlockArray[Index].NextWaitBlock = &WaitBlockArray[Index + 1];
-    }
-    Thread->WaitStatus = STATUS_SUCCESS;
-    if (Timeout)
-    {
-        _saved_KxSetTimerForThreadWait(Timer, *Timeout, Hand);
-        DueTime->QuadPart = Timer->DueTime.QuadPart;
-        WaitBlockArray[Count - 1].NextWaitBlock = TimerBlock;
-        TimerBlock->NextWaitBlock = WaitBlockArray;
-        /* Match the original ReactOS macro KxMultiThreadWait
-         * (ntoskrnl/include/internal/ke_x.h: InitializeListHead at the end of
-         * the timeout setup). KeWaitForMultipleObjects loops over the
-         * WaitBlock chain (which now includes TimerBlock) and calls
-         * InsertTailList for each — INCLUDING TimerBlock — which properly
-         * inserts it into Timer.WaitListHead. The earlier broken version
-         * here pre-set Timer.WaitListHead.Flink/Blink to &TimerBlock,
-         * which caused the subsequent InsertTailList(Head, TimerBlock) to
-         * compute `Entry.Blink = OldBlink = &TimerBlock` — i.e. a self-
-         * reference — corrupting TimerBlock.WaitListEntry and making
-         * RemoveEntryList a no-op so KiTimerExpiration → KxUnwaitThread →
-         * KiUnwaitThread span forever (the amd64 taskbar wedge).
-         * Restoring InitializeListHead matches the macro and lets the
-         * proper insertion happen below. */
-        InitializeListHead(&Timer->Header.WaitListHead);
-    }
-    else
-    {
-        WaitBlockArray[Count - 1].NextWaitBlock = WaitBlockArray;
-    }
-    Thread->Alertable = Alertable;
-    Thread->WaitMode = WaitMode;
-    Thread->WaitReason = WaitReason;
-    Thread->WaitListEntry.Flink = NULL;
-    *Swappable = _saved_KiCheckThreadStackSwap(Thread, WaitMode);
-    Thread->WaitTime = KeTickCount.LowPart;
+    _rs_KxMultiThreadWait(WaitBlockArray, Objects, Count, Timeout,
+                          (UCHAR)WaitType, WaitMode, (UCHAR)WaitReason,
+                          Alertable, Swappable, DueTime, Hand);
 }
 
 /* --- YieldProcessor ---
@@ -1133,47 +1060,17 @@ PULONG_PTR KiGetUserModeStackAddress(void)
 }
 
 /* --- KxQueueThreadWait ---
- * Statement macro in ke_x.h. References caller locals: Thread, WaitBlock,
- * Timer, TimerBlock, Queue, Timeout, WaitMode, DueTime, Hand, Swappable.
- * We provide a parameterized wrapper. */
+ * Phase 2 wait-setup batch — body in `ke-macros::_rs_KxQueueThreadWait`. */
 #undef KxQueueThreadWait
+extern void _rs_KxQueueThreadWait(
+    PVOID Queue, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
+    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
+
 void KxQueueThreadWait(
     PVOID Queue, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
     BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
 {
-    PKTHREAD Thread = KeGetCurrentThread();
-    PKWAIT_BLOCK WaitBlock = &Thread->WaitBlock[0];
-    PKTIMER Timer = &Thread->Timer;
-    PKWAIT_BLOCK TimerBlock = &Thread->WaitBlock[TIMER_WAIT_BLOCK];
-
-    Thread->WaitBlockList = WaitBlock;
-    WaitBlock->WaitKey = STATUS_SUCCESS;
-    WaitBlock->Object = Queue;
-    WaitBlock->WaitType = WaitAny;
-    WaitBlock->Thread = Thread;
-    Thread->WaitStatus = STATUS_SUCCESS;
-    if (Timeout)
-    {
-        _saved_KxSetTimerForThreadWait(Timer, *Timeout, Hand);
-        DueTime->QuadPart = Timer->DueTime.QuadPart;
-        WaitBlock->NextWaitBlock = TimerBlock;
-        TimerBlock->NextWaitBlock = WaitBlock;
-        /* Defensive: see KxMultiThreadWait for full rationale. */
-        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
-        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
-        Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
-        Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
-    }
-    else
-    {
-        WaitBlock->NextWaitBlock = WaitBlock;
-    }
-    Thread->Alertable = FALSE;
-    Thread->WaitMode = WaitMode;
-    Thread->WaitReason = WrQueue;
-    Thread->WaitListEntry.Flink = NULL;
-    *Swappable = _saved_KiCheckThreadStackSwap(Thread, WaitMode);
-    Thread->WaitTime = KeTickCount.LowPart;
+    _rs_KxQueueThreadWait(Queue, Timeout, WaitMode, Swappable, DueTime, Hand);
 }
 
 /* --- KxUnwaitThread_impl ---

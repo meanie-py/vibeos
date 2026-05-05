@@ -243,21 +243,30 @@ mod _force_ke_inlines_symbols {
     ];
 }
 
-// Defensive pull for ke-macros (Phase 2 pilot — 4 wait-list satisfy/add
-// macros from ke_x.h). Same `[used]` pattern as `_force_ke_inlines_symbols`.
+// Defensive pull for ke-macros (Phase 2). Pilot batch (4 satisfy/add macros)
+// + wait-setup batch (4 Kx*ThreadWait macros). Same `[used]` pattern as
+// `_force_ke_inlines_symbols`.
 mod _force_ke_macros_symbols {
     extern "C" {
         fn _rs_KiSatisfyMutantWait();
         fn _rs_KiSatisfyNonMutantWait();
         fn _rs_KiSatisfyObjectWait();
         fn _rs_KiAddThreadToWaitList();
+        fn _rs_KxSingleThreadWait();
+        fn _rs_KxDelayThreadWait();
+        fn _rs_KxMultiThreadWait();
+        fn _rs_KxQueueThreadWait();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 4] = [
+    static REFS: [unsafe extern "C" fn(); 8] = [
         _rs_KiSatisfyMutantWait,
         _rs_KiSatisfyNonMutantWait,
         _rs_KiSatisfyObjectWait,
         _rs_KiAddThreadToWaitList,
+        _rs_KxSingleThreadWait,
+        _rs_KxDelayThreadWait,
+        _rs_KxMultiThreadWait,
+        _rs_KxQueueThreadWait,
     ];
 }
 
