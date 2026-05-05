@@ -1784,10 +1784,19 @@ pub unsafe fn KxMultiThreadWait(
         (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
         (*wait_block_array.add(count as usize - 1)).NextWaitBlock = timer_block;
         (*timer_block).NextWaitBlock = wait_block_array;
-        (*timer).Header.WaitListHead.Flink =
-            core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
-        (*timer).Header.WaitListHead.Blink =
-            core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
+        // Match the original ReactOS macro KxMultiThreadWait
+        // (ntoskrnl/include/internal/ke_x.h): InitializeListHead at the end
+        // of the timeout setup. KeWaitForMultipleObjects loops over the
+        // WaitBlock chain (which now includes timer_block) and calls
+        // InsertTailList for each — INCLUDING timer_block — which properly
+        // inserts it into Timer.WaitListHead. Setting Header.WaitListHead.
+        // Flink/Blink to &timer_block.WaitListEntry here would corrupt
+        // timer_block on the subsequent InsertTailList (Entry.Blink =
+        // OldBlink = &timer_block → self-reference) and cause the
+        // KiTimerExpiration → KxUnwaitThread → KiUnwaitThread spin loop.
+        InitializeListHead(
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead) as *mut LIST_ENTRY,
+        );
     } else {
         (*wait_block_array.add(count as usize - 1)).NextWaitBlock = wait_block_array;
     }

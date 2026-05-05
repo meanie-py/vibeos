@@ -1086,6 +1086,16 @@ KxSetTimerForThreadWait(IN PKTIMER Timer,
                                                                             \
     /* Link the timer to this Wait Block */                                 \
     TimerBlock->NextWaitBlock = TimerBlock;                                 \
+    /* Defensive: fully initialize TimerBlock<->Timer.WaitListHead linkage. \
+     * Original macro relies on TimerBlock->WaitListEntry being pre-linked  \
+     * at thread init and preserved across waits, but on amd64 we observe  \
+     * it in self-referencing state for some threads, which causes the    \
+     * KiTimerExpiration → KxUnwaitThread → KiUnwaitThread spin loop     \
+     * (RemoveEntryList on a self-ref entry is a no-op, so the timer     \
+     * WaitListHead Flink never advances). Setting both ends here is     \
+     * idempotent regardless of prior state. */                          \
+    TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;          \
+    TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;          \
     Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;          \
     Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;          \
                                                                             \
@@ -1183,7 +1193,10 @@ KxSetTimerForThreadWait(IN PKTIMER Timer,
         WaitBlock->NextWaitBlock = TimerBlock;                              \
         TimerBlock->NextWaitBlock = WaitBlock;                              \
                                                                             \
-        /* Link the timer to this Wait Block */                             \
+        /* Defensive full-init of TimerBlock<->Timer linkage; see          \
+         * KiTimerInit-style macro above for full rationale. */            \
+        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;      \
+        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;      \
         Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;      \
         Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;      \
     }                                                                       \
@@ -1229,7 +1242,10 @@ KxSetTimerForThreadWait(IN PKTIMER Timer,
         WaitBlock->NextWaitBlock = TimerBlock;                              \
         TimerBlock->NextWaitBlock = WaitBlock;                              \
                                                                             \
-        /* Link the timer to this Wait Block */                             \
+        /* Defensive full-init of TimerBlock<->Timer linkage; see          \
+         * KiTimerInit-style macro above for full rationale. */            \
+        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;      \
+        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;      \
         Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;      \
         Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;      \
     }                                                                       \

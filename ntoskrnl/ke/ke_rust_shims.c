@@ -979,6 +979,9 @@ void KxSingleThreadWait(
         DueTime->QuadPart = Timer->DueTime.QuadPart;
         WaitBlock->NextWaitBlock = TimerBlock;
         TimerBlock->NextWaitBlock = WaitBlock;
+        /* Defensive: see KxMultiThreadWait above for full rationale. */
+        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
+        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
         Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
         Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
     }
@@ -1006,6 +1009,9 @@ void KxDelayThreadWait(
     TimerBlock->NextWaitBlock = TimerBlock;
     _saved_KxSetTimerForThreadWait(Timer, *Interval, Hand);
     DueTime->QuadPart = Timer->DueTime.QuadPart;
+    /* Defensive: see KxMultiThreadWait for full rationale. */
+    TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
+    TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
     Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
     Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
     Thread->Alertable = (WaitMode == UserMode) ? TRUE : FALSE;
@@ -1044,8 +1050,21 @@ void KxMultiThreadWait(
         DueTime->QuadPart = Timer->DueTime.QuadPart;
         WaitBlockArray[Count - 1].NextWaitBlock = TimerBlock;
         TimerBlock->NextWaitBlock = WaitBlockArray;
-        Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
-        Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
+        /* Match the original ReactOS macro KxMultiThreadWait
+         * (ntoskrnl/include/internal/ke_x.h: InitializeListHead at the end of
+         * the timeout setup). KeWaitForMultipleObjects loops over the
+         * WaitBlock chain (which now includes TimerBlock) and calls
+         * InsertTailList for each — INCLUDING TimerBlock — which properly
+         * inserts it into Timer.WaitListHead. The earlier broken version
+         * here pre-set Timer.WaitListHead.Flink/Blink to &TimerBlock,
+         * which caused the subsequent InsertTailList(Head, TimerBlock) to
+         * compute `Entry.Blink = OldBlink = &TimerBlock` — i.e. a self-
+         * reference — corrupting TimerBlock.WaitListEntry and making
+         * RemoveEntryList a no-op so KiTimerExpiration → KxUnwaitThread →
+         * KiUnwaitThread span forever (the amd64 taskbar wedge).
+         * Restoring InitializeListHead matches the macro and lets the
+         * proper insertion happen below. */
+        InitializeListHead(&Timer->Header.WaitListHead);
     }
     else
     {
@@ -1160,6 +1179,9 @@ void KxQueueThreadWait(
         DueTime->QuadPart = Timer->DueTime.QuadPart;
         WaitBlock->NextWaitBlock = TimerBlock;
         TimerBlock->NextWaitBlock = WaitBlock;
+        /* Defensive: see KxMultiThreadWait for full rationale. */
+        TimerBlock->WaitListEntry.Flink = &Timer->Header.WaitListHead;
+        TimerBlock->WaitListEntry.Blink = &Timer->Header.WaitListHead;
         Timer->Header.WaitListHead.Flink = &TimerBlock->WaitListEntry;
         Timer->Header.WaitListHead.Blink = &TimerBlock->WaitListEntry;
     }
