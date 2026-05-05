@@ -19,3 +19,4 @@ ps-inlines = { path = "../ps-inlines" }
 se-inlines = { path = "../se-inlines" }
 mm-pte-class-inlines = { path = "../mm-pte-class-inlines" }
 mm-pte-mut-inlines = { path = "../mm-pte-mut-inlines" }
+mm-util-inlines = { path = "../mm-util-inlines" }

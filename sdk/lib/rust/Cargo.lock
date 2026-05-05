@@ -87,6 +87,7 @@ dependencies = [
  "ke-inlines",
  "mm-pte-class-inlines",
  "mm-pte-mut-inlines",
+ "mm-util-inlines",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
@@ -151,6 +152,13 @@ dependencies = [
 
 [[package]]
 name = "mm-pte-mut-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mm-util-inlines"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",

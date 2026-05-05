@@ -481,10 +481,12 @@ LONG_PTR MiInterlockedExchangePte(
 /* InterlockedExchange / InterlockedCompareExchange (i386 cdecl wrappers)
  * are now canonical in kernel_c_helpers.c. */
 
-/* InterlockedIncrementUL — not in any other shim file, provide here */
+/* InterlockedIncrementUL — body delegates to Rust impl in
+ * `mm-util-inlines` rlib (Phase 1 batch M3). */
 #undef InterlockedIncrementUL
+extern ULONG _rs_InterlockedIncrementUL(PULONG Addend);
 ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
-{ return (ULONG)_InterlockedIncrement((volatile LONG *)Addend); }
+{ return _rs_InterlockedIncrementUL(Addend); }
 
 /*
  * UpdateTotalCommittedPages — FORCEINLINE in mm.h (covered by PCH, can't rename)
@@ -530,9 +532,11 @@ void MmDereferenceSegment(IN PMM_SECTION_SEGMENT Segment)
 { MmDereferenceSegmentWithLock(Segment, MM_NOIRQL); }
 
 /*
- * ExAllocatePoolZero — FORCEINLINE in exfuncs.h (covered by PCH, can't rename)
- * Calls ExAllocatePoolWithTag + RtlZeroMemory.
+ * ExAllocatePoolZero — body delegates to Rust impl in `mm-util-inlines`
+ * (Phase 1 batch M3). The Rust side calls ExAllocatePoolWithTag +
+ * RtlZeroMemory just like the previous C implementation.
  */
+extern PVOID _rs_ExAllocatePoolZero(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag);
 PVOID
 NTAPI
 ExAllocatePoolZero(
@@ -540,11 +544,7 @@ ExAllocatePoolZero(
     IN SIZE_T NumberOfBytes,
     IN ULONG Tag)
 {
-    PVOID Allocation = ExAllocatePoolWithTag(PoolType, NumberOfBytes, Tag);
-    if (Allocation != NULL) {
-        RtlZeroMemory(Allocation, NumberOfBytes);
-    }
-    return Allocation;
+    return _rs_ExAllocatePoolZero(PoolType, NumberOfBytes, Tag);
 }
 
 /*
@@ -582,14 +582,15 @@ void MmUnlockAddressSpace(IN PMMSUPPORT AddressSpace)
 }
 
 /*
- * InterlockedExchangeAddUL — macro in ex.h (undeffed in Phase 3)
- * Wraps InterlockedExchangeAdd.
+ * InterlockedExchangeAddUL — body delegates to Rust impl in
+ * `mm-util-inlines` (Phase 1 batch M3).
  */
+extern ULONG _rs_InterlockedExchangeAddUL(PULONG Addend, ULONG Value);
 ULONG
 NTAPI
 InterlockedExchangeAddUL(IN PULONG Addend, IN ULONG Value)
 {
-    return (ULONG)InterlockedExchangeAdd((volatile LONG *)Addend, (LONG)Value);
+    return _rs_InterlockedExchangeAddUL(Addend, Value);
 }
 
 /*
@@ -633,13 +634,15 @@ MM_IS_WAIT_PTE(IN ULONG_PTR Entry)
 }
 
 /*
- * MmSetDirtyPage — macro in mm.h: MmSetDirtyBit(P, A, TRUE)
+ * MmSetDirtyPage — body delegates to Rust impl in `mm-util-inlines`
+ * (Phase 1 batch M3).
  */
+extern void _rs_MmSetDirtyPage(PEPROCESS Process, PVOID Address);
 VOID
 NTAPI
 MmSetDirtyPage(IN PEPROCESS Process, IN PVOID Address)
 {
-    MmSetDirtyBit(Process, Address, TRUE);
+    _rs_MmSetDirtyPage(Process, Address);
 }
 
 /*
@@ -920,17 +923,17 @@ BOOLEAN MiIsRosSectionObject(IN PSECTION Section)
  * in tier1_rust_shims.c — do not duplicate here.
  */
 #undef ProbeForWriteSize_t
+extern void _rs_ProbeForWriteSize_t(SIZE_T *Ptr);
 void ProbeForWriteSize_t(IN SIZE_T *Ptr)
 {
-    volatile SIZE_T *p = (volatile SIZE_T *)Ptr;
-    *p = *p;
+    _rs_ProbeForWriteSize_t(Ptr);
 }
 
 #undef ProbeForWriteIoStatusBlock
+extern void _rs_ProbeForWriteIoStatusBlock(PIO_STATUS_BLOCK Ptr);
 void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
 {
-    volatile IO_STATUS_BLOCK *p = (volatile IO_STATUS_BLOCK *)Ptr;
-    *p = *p;
+    _rs_ProbeForWriteIoStatusBlock(Ptr);
 }
 
 /*

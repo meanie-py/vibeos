@@ -54,6 +54,9 @@ extern crate mm_pte_class_inlines;
 // M2 sibling: PTE bitfield-write FORCEINLINEs (MiMake{Dirty,Clean,Accessed,
 // Owner,Write}Page, MiPage{DisableCache,WriteThrough,WriteCombined}).
 extern crate mm_pte_mut_inlines;
+// M3 sibling: mm utility helpers (Interlocked{Increment,ExchangeAdd}UL,
+// MmSetDirtyPage, ProbeForWrite{Size_t,IoStatusBlock}, ExAllocatePoolZero).
+extern crate mm_util_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -463,6 +466,28 @@ mod _force_mm_pte_class_inlines_symbols {
         _rs_MiIsUserPte,
         _rs_MiDetermineUserGlobalPteMask,
         _rs_MiIsPdeForAddressValid,
+    ];
+}
+
+// Defensive pull for mm-util-inlines (Phase 1 batch M3). Six utility
+// wrappers — interlocked, dirty-page setter, two probes, pool-zero alloc.
+mod _force_mm_util_inlines_symbols {
+    extern "C" {
+        fn _rs_InterlockedIncrementUL();
+        fn _rs_InterlockedExchangeAddUL();
+        fn _rs_MmSetDirtyPage();
+        fn _rs_ProbeForWriteSize_t();
+        fn _rs_ProbeForWriteIoStatusBlock();
+        fn _rs_ExAllocatePoolZero();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 6] = [
+        _rs_InterlockedIncrementUL,
+        _rs_InterlockedExchangeAddUL,
+        _rs_MmSetDirtyPage,
+        _rs_ProbeForWriteSize_t,
+        _rs_ProbeForWriteIoStatusBlock,
+        _rs_ExAllocatePoolZero,
     ];
 }
 

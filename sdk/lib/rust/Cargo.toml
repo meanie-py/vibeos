@@ -19,6 +19,7 @@ members = [
     "mem",
     "mm-pte-class-inlines",
     "mm-pte-mut-inlines",
+    "mm-util-inlines",
     "ntkrnl-sys",
     "ntoskrnl-rust",
     "ob-inlines",
