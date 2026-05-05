@@ -20,6 +20,10 @@ extern crate ntprintf_w;
 // to them. Isolated crate to dodge cross-CGU captures(none) cascades —
 // see docs/engineering/shim-elimination.md § "Phase 1" for context.
 extern crate cm_inlines;
+// Same pattern, second batch: ke-inlines holds the `_rs_Ki{Acquire,Release}*`
+// impls for the in-stack-queued-spinlock FORCEINLINEs from `ke_x.h`. C-side
+// trampolines in `ke_rust_shims.c` delegate to them.
+extern crate ke_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -70,6 +74,35 @@ mod _force_cm_inlines_symbols {
     #[used]
     static REF_TRY: unsafe extern "C" fn(*mut c_void) -> u8 =
         _rs_CmpTryToConvertKcbSharedToExclusive;
+}
+
+// Defensive symbol pull for the ke-inlines APC/Process/DeviceQueue lock
+// Rust impls. C-side `ke_rust_shims.c` trampolines call these by name;
+// without `[used]` rustc/lld may strip them from the staticlib. Same
+// no-arg-extern-decl trick as `_force_shim_symbols` — the array element
+// type is a *symbol reference*, not a real signature.
+mod _force_ke_inlines_symbols {
+    extern "C" {
+        fn _rs_KiAcquireApcLockRaiseToSynch();
+        fn _rs_KiAcquireApcLockAtSynchLevel();
+        fn _rs_KiAcquireApcLockRaiseToDpc();
+        fn _rs_KiReleaseApcLock();
+        fn _rs_KiReleaseApcLockFromSynchLevel();
+        fn _rs_KiReleaseProcessLockFromSynchLevel();
+        fn _rs_KiAcquireDeviceQueueLock();
+        fn _rs_KiReleaseDeviceQueueLock();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 8] = [
+        _rs_KiAcquireApcLockRaiseToSynch,
+        _rs_KiAcquireApcLockAtSynchLevel,
+        _rs_KiAcquireApcLockRaiseToDpc,
+        _rs_KiReleaseApcLock,
+        _rs_KiReleaseApcLockFromSynchLevel,
+        _rs_KiReleaseProcessLockFromSynchLevel,
+        _rs_KiAcquireDeviceQueueLock,
+        _rs_KiReleaseDeviceQueueLock,
+    ];
 }
 
 // Same defensive pull for the wide-format ntprintf_w FFI entries.

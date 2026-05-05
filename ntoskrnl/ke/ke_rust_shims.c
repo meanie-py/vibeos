@@ -493,52 +493,69 @@ VOID KiReleaseTimerLock(IN PKSPIN_LOCK_QUEUE LockQueue)
     _saved_KiReleaseTimerLock(LockQueue);
 }
 
-/* --- APC lock (ke_x.h) --- */
+/* --- APC / Process / DeviceQueue locks (ke_x.h) ---
+ *
+ * Phase 1 augment pattern (cm-inlines pilot 2 — see
+ * docs/engineering/shim-elimination.md): each C symbol stays as the ABI
+ * anchor; body collapses to a one-line delegating call into the matching
+ * `_rs_Ki*` Rust impl in the isolated `sdk/lib/rust/ke-inlines/` rlib.
+ * Existing Rust callers (in ntoskrnl-rust + ntkrnl-sys bindgen) keep
+ * resolving `Ki{Acquire,Release}*` to the C symbol below — no source
+ * change in ntoskrnl-rust for this batch. The `_saved_*` FORCEINLINE
+ * outlines (Phase 1 rename macros at the top of this file) are kept in
+ * scope as a documented fallback path if the ke-inlines crate is ever
+ * unwired. Process lock note: `KiAcquireProcessLockRaiseToSynch` and
+ * `KiReleaseProcessLock` are PCH-covered and live in mm_rust_shims.c —
+ * only the FromSynchLevel half lives here.
+ */
+
+extern void _rs_KiAcquireApcLockRaiseToSynch(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiAcquireApcLockAtSynchLevel(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiAcquireApcLockRaiseToDpc(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiReleaseApcLock(PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiReleaseApcLockFromSynchLevel(PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiReleaseProcessLockFromSynchLevel(PKLOCK_QUEUE_HANDLE Handle);
+extern void _rs_KiAcquireDeviceQueueLock(PKDEVICE_QUEUE DeviceQueue, PKLOCK_QUEUE_HANDLE DeviceLock);
+extern void _rs_KiReleaseDeviceQueueLock(PKLOCK_QUEUE_HANDLE DeviceLock);
 
 VOID KiAcquireApcLockRaiseToSynch(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiAcquireApcLockRaiseToSynch(Thread, Handle);
+    _rs_KiAcquireApcLockRaiseToSynch(Thread, Handle);
 }
 
 VOID KiAcquireApcLockAtSynchLevel(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiAcquireApcLockAtSynchLevel(Thread, Handle);
+    _rs_KiAcquireApcLockAtSynchLevel(Thread, Handle);
 }
 
 VOID KiAcquireApcLockRaiseToDpc(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiAcquireApcLockRaiseToDpc(Thread, Handle);
+    _rs_KiAcquireApcLockRaiseToDpc(Thread, Handle);
 }
 
 VOID KiReleaseApcLock(IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiReleaseApcLock(Handle);
+    _rs_KiReleaseApcLock(Handle);
 }
 
 VOID KiReleaseApcLockFromSynchLevel(IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiReleaseApcLockFromSynchLevel(Handle);
+    _rs_KiReleaseApcLockFromSynchLevel(Handle);
 }
-
-/* --- Process lock (ke_x.h) --- */
-/* KiAcquireProcessLockRaiseToSynch and KiReleaseProcessLock are already
- * provided by mm_rust_shims.c — only provide KiReleaseProcessLockFromSynchLevel here. */
 
 VOID KiReleaseProcessLockFromSynchLevel(IN PKLOCK_QUEUE_HANDLE Handle)
 {
-    _saved_KiReleaseProcessLockFromSynchLevel(Handle);
+    _rs_KiReleaseProcessLockFromSynchLevel(Handle);
 }
-
-/* --- Device queue lock (ke_x.h) --- */
 
 VOID KiAcquireDeviceQueueLock(IN PKDEVICE_QUEUE DeviceQueue, IN PKLOCK_QUEUE_HANDLE DeviceLock)
 {
-    _saved_KiAcquireDeviceQueueLock(DeviceQueue, DeviceLock);
+    _rs_KiAcquireDeviceQueueLock(DeviceQueue, DeviceLock);
 }
 
 VOID KiReleaseDeviceQueueLock(IN PKLOCK_QUEUE_HANDLE DeviceLock)
 {
-    _saved_KiReleaseDeviceQueueLock(DeviceLock);
+    _rs_KiReleaseDeviceQueueLock(DeviceLock);
 }
 
 /* --- Timer/wait helpers (ke_x.h) --- */

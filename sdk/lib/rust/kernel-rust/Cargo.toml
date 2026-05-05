@@ -12,3 +12,4 @@ ntoskrnl-rust = { path = "../ntoskrnl-rust" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }
 cm-inlines = { path = "../cm-inlines" }
+ke-inlines = { path = "../ke-inlines" }

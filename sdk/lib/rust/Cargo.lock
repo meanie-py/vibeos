@@ -65,10 +65,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ke-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
  "cm-inlines",
+ "ke-inlines",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
