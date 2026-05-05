@@ -50,6 +50,14 @@
 //!     ReadySummary bit if the bucket is now empty. The second is the dynamic-
 //!     priority decay math (Priority -= PriorityDecrement + Adjustment, clamped
 //!     to BasePriority).
+//!   - Timer helpers (5): `KiRecalculateDueTime`, `KxInsertTimer`,
+//!     `KiComputeDueTime`, `KxRemoveTreeTimer`, `KxSetTimerForThreadWait`.
+//!     Drive the timer-table wheel rooted at `KiTimerTableListHead[Hand]`.
+//!     Bitfield writes on `DISPATCHER_HEADER` (Absolute, Inserted, Hand) go
+//!     through bindgen's deeply-nested setter accessors. `KeQueryInterruptTime`
+//!     and `KeQuerySystemTime` are read directly from `SharedUserData` on
+//!     amd64/arm64 (where they're macros, no exported symbol); i386 has a
+//!     real `KeQuerySystemTime` export which we call via stdcall.
 //!   - Guarded mutex (6): `_KeInitializeGuardedMutex`,
 //!     `_KeAcquire/ReleaseGuardedMutexUnsafe`, `_KeAcquire/ReleaseGuardedMutex`,
 //!     `_KeTryToAcquireGuardedMutex`. Lock-bit fast path via `AtomicI32`
@@ -88,8 +96,9 @@ use ntkrnl_sys::base::{
 };
 use ntkrnl_sys::ddk::{
     KPROCESSOR_MODE, PKDEVICE_QUEUE, PKEVENT, PKGATE, PKGUARDED_MUTEX, PKLOCK_QUEUE_HANDLE,
-    PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD, PKWAIT_BLOCK, _DISPATCHER_HEADER, _KPCR, _KSYSTEM_TIME,
-    _KTHREAD, _KWAIT_BLOCK, _LIST_ENTRY,
+    PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD, PKTIMER, PKWAIT_BLOCK, _DISPATCHER_HEADER, _KPCR,
+    _KSYSTEM_TIME, _KTHREAD, _KTIMER_TABLE_ENTRY, _KUSER_SHARED_DATA, _KWAIT_BLOCK, _LARGE_INTEGER,
+    _LIST_ENTRY,
 };
 use ntkrnl_sys::CONTAINING_RECORD;
 
@@ -141,6 +150,16 @@ extern "C" {
     /// `KeTickCount` — system tick count as `KSYSTEM_TIME`. Defined in
     /// `ntoskrnl-rust::ke::clock`. We only read the LowPart in `KxQueueReadyThread`.
     static KeTickCount: _KSYSTEM_TIME;
+
+    /// `KiTimerTableListHead` — global array of `KTIMER_TABLE_ENTRY`. The
+    /// `K7` timer-helpers (KxInsertTimer, KxRemoveTreeTimer, KiRemoveEntryTimer)
+    /// look up entries indexed by Hand to find/empty a timer bucket.
+    static mut KiTimerTableListHead: [_KTIMER_TABLE_ENTRY; 512];
+
+    /// `SharedUserData` — kernel pointer to the read-only KUSER_SHARED_DATA
+    /// page. Used in lieu of `KeQueryInterruptTime` / `KeQuerySystemTime`
+    /// macros (the former is a real export on i386 but a macro on amd64/arm64).
+    static SharedUserData: *mut _KUSER_SHARED_DATA;
 }
 
 // Spinlock primitives backing KiAcquire/ReleaseNmiListLock. amd64/arm64 use
@@ -191,6 +210,8 @@ extern "fastcall" {
     fn KeInitializeGate(gate: PKGATE);
     fn KiAcquireGuardedMutex(gm: PKGUARDED_MUTEX);
     fn KeSignalGateBoostPriority(gate: PKGATE);
+    fn KiInsertTimerTable(timer: PKTIMER, hand: ULONG) -> BOOLEAN;
+    fn KiCompleteTimer(timer: PKTIMER, lock_queue: PKSPIN_LOCK_QUEUE);
 }
 
 // `KiCheckForKernelApcDelivery` is stdcall on i386 (no args), cdecl elsewhere.
@@ -226,6 +247,16 @@ extern "C" {
     fn KeInitializeGate(gate: PKGATE);
     fn KiAcquireGuardedMutex(gm: PKGUARDED_MUTEX);
     fn KeSignalGateBoostPriority(gate: PKGATE);
+    fn KiInsertTimerTable(timer: PKTIMER, hand: ULONG) -> BOOLEAN;
+    fn KiCompleteTimer(timer: PKTIMER, lock_queue: PKSPIN_LOCK_QUEUE);
+}
+
+// On i386 `KeQuerySystemTime` is a real export (stdcall, no return value).
+// On amd64/arm64 it's a macro that loops over `SharedUserData->SystemTime` —
+// inlined locally below.
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn KeQuerySystemTime(current_time: *mut _LARGE_INTEGER);
 }
 
 // ============================================================================
@@ -997,4 +1028,219 @@ pub unsafe extern "C" fn _rs__KeTryToAcquireGuardedMutex(gm: PKGUARDED_MUTEX) ->
     (*gm).Owner = thread;
     *gm_special_apc_disable_ptr(gm) = *kt_special_apc_disable_ptr(thread);
     1
+}
+
+// ============================================================================
+// Timer helpers (ke_x.h)
+//
+// `KiRecalculateDueTime` is the relative-due-time path of any wait: returns
+// the original DueTime unchanged if the caller passed an absolute one (high
+// bit clear → it's already a system-time stamp), or recomputes a new
+// relative due-time from KeQueryInterruptTime() otherwise.
+//
+// `KiComputeDueTime` is the harder cousin used by KeSetTimerEx. It
+// converts an absolute due-time to a relative one by subtracting
+// SystemTime, marks the timer Absolute, and computes the timer-table Hand.
+// If the absolute deadline is already in the past it short-circuits with
+// SignalState=1.
+//
+// `KxInsertTimer` and `KxRemoveTreeTimer` walk `KiTimerTableListHead[Hand]`,
+// the chained-list timer wheel, and call out to `KiInsertTimerTable` /
+// `KiCompleteTimer` (real C exports) for the actual table mutation.
+//
+// `KxSetTimerForThreadWait` is a sibling of `KiComputeDueTime` used for
+// thread-wait timers — same absolute/relative branch, but doesn't mark
+// SignalState (the wait machinery handles that).
+//
+// `dh_set_*` helpers below mirror `inline::ke::dh_set_*` — the
+// DISPATCHER_HEADER union nesting is identical on all 3 arches, so no cfg
+// is needed for these accessors.
+// ============================================================================
+
+#[inline(always)]
+unsafe fn dh_set_absolute(header: *mut _DISPATCHER_HEADER, val: u8) {
+    (*header)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .set_Absolute(val);
+}
+
+#[inline(always)]
+unsafe fn dh_set_inserted(header: *mut _DISPATCHER_HEADER, val: u8) {
+    (*header)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .__bindgen_anon_3
+        .Inserted = val;
+}
+
+#[inline(always)]
+unsafe fn dh_set_hand(header: *mut _DISPATCHER_HEADER, val: u8) {
+    (*header).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Hand = val;
+}
+
+#[inline(always)]
+unsafe fn dh_get_hand(header: *const _DISPATCHER_HEADER) -> u8 {
+    (*header).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Hand
+}
+
+/// Read the high1/low/high2 system-time triple from `SharedUserData` and
+/// reconstruct the 64-bit value. Loop until high1 == high2 to defeat torn
+/// reads. Used as `KeQuerySystemTime` on amd64/arm64 (it's a macro on those
+/// arches; i386 has a real export).
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)]
+unsafe fn ke_query_system_time_inline(out: *mut _LARGE_INTEGER) {
+    loop {
+        let high1 = (*SharedUserData).SystemTime.High1Time;
+        let low = (*SharedUserData).SystemTime.LowPart;
+        let high2 = (*SharedUserData).SystemTime.High2Time;
+        if high1 == high2 {
+            (*out).QuadPart = ((high1 as i64) << 32) | (low as u32 as i64);
+            break;
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn ke_query_system_time_inline(out: *mut _LARGE_INTEGER) {
+    KeQuerySystemTime(out);
+}
+
+/// `KeQueryInterruptTime` is a macro on amd64/arm64 (read InterruptTime from
+/// SharedUserData). On i386 it's a real export; either way, reading the
+/// SharedUserData InterruptTime fields directly works on all 3 arches.
+#[inline(always)]
+unsafe fn ke_query_interrupt_time_inline() -> u64 {
+    loop {
+        let high1 = (*SharedUserData).InterruptTime.High1Time;
+        let low = (*SharedUserData).InterruptTime.LowPart;
+        let high2 = (*SharedUserData).InterruptTime.High2Time;
+        if high1 == high2 {
+            return ((high1 as u64) << 32) | (low as u32 as u64);
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiRecalculateDueTime(
+    original_due_time: *mut _LARGE_INTEGER,
+    due_time: *mut _LARGE_INTEGER,
+    new_due_time: *mut _LARGE_INTEGER,
+) -> *mut _LARGE_INTEGER {
+    if (*original_due_time).QuadPart >= 0 {
+        return original_due_time;
+    }
+    (*new_due_time).QuadPart = ke_query_interrupt_time_inline() as i64;
+    (*new_due_time).QuadPart -= (*due_time).QuadPart;
+    new_due_time
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxInsertTimer(timer: PKTIMER, hand: ULONG) {
+    let header = core::ptr::addr_of_mut!((*timer).Header);
+    // ASSERT(KeGetCurrentIrql() >= SYNCH_LEVEL) — skip in retail
+    let _ = header; // keep the addr_of_mut! to mirror inline::ke shape
+    // Acquire timer lock + release dispatcher lock (UP: both no-ops, but the
+    // K3/K6 trampolines are wired up to point at our `_rs_*` impls).
+    let lock_queue = _rs_KiAcquireTimerLock(hand);
+    _rs_KiReleaseDispatcherLockFromSynchLevel();
+    if KiInsertTimerTable(timer, hand) != 0 {
+        KiCompleteTimer(timer, lock_queue);
+    } else {
+        _rs_KiReleaseTimerLock(lock_queue);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiComputeDueTime(
+    timer: PKTIMER,
+    due_time: _LARGE_INTEGER,
+    hand: *mut ULONG,
+) -> BOOLEAN {
+    let header = core::ptr::addr_of_mut!((*timer).Header);
+    dh_set_absolute(header, 0);
+
+    let mut effective = due_time;
+    if due_time.QuadPart >= 0 {
+        // Absolute time — convert to relative.
+        let mut system_time: _LARGE_INTEGER = core::mem::zeroed();
+        ke_query_system_time_inline(core::ptr::addr_of_mut!(system_time));
+        let diff = system_time.QuadPart - due_time.QuadPart;
+        dh_set_absolute(header, 1);
+        if diff >= 0 {
+            // Already expired.
+            (*header).SignalState = 1;
+            dh_set_hand(header, 0);
+            (*timer).DueTime.QuadPart = 0;
+            *hand = 0;
+            return 0;
+        }
+        effective.QuadPart = diff;
+    }
+
+    let interrupt_time = ke_query_interrupt_time_inline() as i64;
+    (*timer).DueTime.QuadPart = (interrupt_time - effective.QuadPart) as u64;
+    *hand = ((((*timer).DueTime.QuadPart) / read_max_increment()) as ULONG)
+        & (TIMER_TABLE_SIZE - 1);
+    dh_set_hand(header, *hand as u8);
+    dh_set_inserted(header, 1);
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxRemoveTreeTimer(timer: PKTIMER) {
+    let header = core::ptr::addr_of_mut!((*timer).Header);
+    let hand: ULONG = dh_get_hand(header) as ULONG & (TIMER_TABLE_SIZE - 1);
+    let lock_queue = _rs_KiAcquireTimerLock(hand);
+    dh_set_inserted(header, 0);
+    if RemoveEntryList(core::ptr::addr_of_mut!((*timer).TimerListEntry)) {
+        let timer_entry =
+            core::ptr::addr_of_mut!(KiTimerTableListHead[hand as usize]);
+        let entry_head = core::ptr::addr_of_mut!((*timer_entry).Entry);
+        if is_list_empty(entry_head) {
+            (*timer_entry).Time.u.HighPart = 0xFFFFFFFFu32;
+        }
+    }
+    _rs_KiReleaseTimerLock(lock_queue);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxSetTimerForThreadWait(
+    timer: PKTIMER,
+    interval: _LARGE_INTEGER,
+    hand: *mut ULONG,
+) {
+    let header = core::ptr::addr_of_mut!((*timer).Header);
+    dh_set_absolute(header, 0);
+
+    let mut effective = interval;
+    if interval.QuadPart >= 0 {
+        let mut system_time: _LARGE_INTEGER = core::mem::zeroed();
+        ke_query_system_time_inline(core::ptr::addr_of_mut!(system_time));
+        let diff = system_time.QuadPart - interval.QuadPart;
+        dh_set_absolute(header, 1);
+        if diff >= 0 {
+            (*timer).DueTime.QuadPart = 0;
+            *hand = 0;
+            dh_set_hand(header, 0);
+            return;
+        }
+        effective.QuadPart = diff;
+    }
+
+    let interrupt_time = ke_query_interrupt_time_inline() as i64;
+    let due = (interrupt_time - effective.QuadPart) as u64;
+    (*timer).DueTime.QuadPart = due;
+    *hand = ((due / read_max_increment()) as ULONG) & (TIMER_TABLE_SIZE - 1);
+    dh_set_hand(header, *hand as u8);
+}
+
+#[inline(always)]
+unsafe fn read_max_increment() -> u64 {
+    core::ptr::read_volatile(core::ptr::addr_of!(KeMaximumIncrement)) as u64
 }

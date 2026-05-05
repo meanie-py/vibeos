@@ -606,13 +606,21 @@ VOID KiReleaseDeviceQueueLock(IN PKLOCK_QUEUE_HANDLE DeviceLock)
     _rs_KiReleaseDeviceQueueLock(DeviceLock);
 }
 
-/* --- Timer/wait helpers (ke_x.h) --- */
+/* --- Timer/wait helpers (ke_x.h) ---
+ * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 7). */
+extern PLARGE_INTEGER _rs_KiRecalculateDueTime(PLARGE_INTEGER OriginalDueTime,
+                                               PLARGE_INTEGER DueTime,
+                                               PLARGE_INTEGER NewDueTime);
+extern VOID    _rs_KxInsertTimer(PKTIMER Timer, ULONG Hand);
+extern BOOLEAN _rs_KiComputeDueTime(PKTIMER Timer, LARGE_INTEGER DueTime, PULONG Hand);
+extern VOID    _rs_KxRemoveTreeTimer(PKTIMER Timer);
+extern VOID    _rs_KxSetTimerForThreadWait(PKTIMER Timer, LARGE_INTEGER Interval, PULONG Hand);
 
 PLARGE_INTEGER KiRecalculateDueTime(IN PLARGE_INTEGER OriginalDueTime,
                                      IN PLARGE_INTEGER DueTime,
                                      IN OUT PLARGE_INTEGER NewDueTime)
 {
-    return _saved_KiRecalculateDueTime(OriginalDueTime, DueTime, NewDueTime);
+    return _rs_KiRecalculateDueTime(OriginalDueTime, DueTime, NewDueTime);
 }
 
 /* --- Stack-swap eligibility + alertability dispatch (ke_x.h) ---
@@ -644,22 +652,22 @@ VOID KiRemoveEntryTimer(IN PKTIMER Timer)
 
 VOID KxInsertTimer(IN PKTIMER Timer, IN ULONG Hand)
 {
-    _saved_KxInsertTimer(Timer, Hand);
+    _rs_KxInsertTimer(Timer, Hand);
 }
 
 BOOLEAN KiComputeDueTime(IN PKTIMER Timer, IN LARGE_INTEGER DueTime, OUT PULONG Hand)
 {
-    return _saved_KiComputeDueTime(Timer, DueTime, Hand);
+    return _rs_KiComputeDueTime(Timer, DueTime, Hand);
 }
 
 VOID KxRemoveTreeTimer(IN PKTIMER Timer)
 {
-    _saved_KxRemoveTreeTimer(Timer);
+    _rs_KxRemoveTreeTimer(Timer);
 }
 
 VOID KxSetTimerForThreadWait(IN PKTIMER Timer, IN LARGE_INTEGER Interval, OUT PULONG Hand)
 {
-    _saved_KxSetTimerForThreadWait(Timer, Interval, Hand);
+    _rs_KxSetTimerForThreadWait(Timer, Interval, Hand);
 }
 
 /* --- Unwait + queue-ready (ke_x.h) ---

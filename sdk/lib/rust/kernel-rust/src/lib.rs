@@ -127,9 +127,14 @@ mod _force_ke_inlines_symbols {
         fn _rs__KeAcquireGuardedMutex();
         fn _rs__KeReleaseGuardedMutex();
         fn _rs__KeTryToAcquireGuardedMutex();
+        fn _rs_KiRecalculateDueTime();
+        fn _rs_KxInsertTimer();
+        fn _rs_KiComputeDueTime();
+        fn _rs_KxRemoveTreeTimer();
+        fn _rs_KxSetTimerForThreadWait();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 44] = [
+    static REFS: [unsafe extern "C" fn(); 49] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -174,6 +179,11 @@ mod _force_ke_inlines_symbols {
         _rs__KeAcquireGuardedMutex,
         _rs__KeReleaseGuardedMutex,
         _rs__KeTryToAcquireGuardedMutex,
+        _rs_KiRecalculateDueTime,
+        _rs_KxInsertTimer,
+        _rs_KiComputeDueTime,
+        _rs_KxRemoveTreeTimer,
+        _rs_KxSetTimerForThreadWait,
     ];
 }
 
