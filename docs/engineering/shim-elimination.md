@@ -216,6 +216,62 @@ The cascade triggers at the **CGU partitioning level** — any `#[no_mangle] ext
 
 **Lesson for the rest of the elimination plan.** *Moving* any single `_rust_shims.c` function out of C and adding it to `ntoskrnl-rust` cascades ud2 across the subsystem. *Augmenting* (C symbol stays as an ABI anchor; Rust impl in a sibling rlib; C body delegates) does not. Phases 2-4 below should default to the augment+isolated-crate pattern unless there's a specific reason to move-and-replace.
 
+### Phase 1 — remaining batch backlog (scoped 2026-05-04 by parallel Explore agents)
+
+Captured here for re-pickup; ranking subject to revision once the next 1-2 batches land and we observe whether the augment pattern keeps holding at scale. Effort estimates assume ~30 min per Easy batch, ~60-90 min per Medium batch (cm/ke pilot baseline), modulo cargo build-from-cold.
+
+**Big finding from the survey:** `ob_x.h` and `ps_x.h` are **already done at the shim-elimination level** — both `ob_rust_shims.c` and `ps_rust_shims.c` were deleted in Phase 0, all 22 ob FORCEINLINEs and all 19 ps FORCEINLINEs already live as private `pub fn` in `ntkrnl_sys::inline::{ob,ps}` and are exported via `#[no_mangle] extern "C"` wrappers in `ntoskrnl-rust::shim_exports`. That's a *different* mechanism than the augment+isolated-rlib pattern — `shim_exports` wraps an inline impl with no C trampoline standing between — but the end state is functionally equivalent (Rust body owns the symbol, C side has nothing to delete). No Phase 1 work needed for ob or ps; the only reframing would be cosmetic (extracting shim_exports's ob/ps wrappers into a sibling rlib for taxonomic consistency). **Redirect remaining Phase 1 effort to ke + mm.**
+
+#### ke_x.h backlog (~92 `_saved_*` renames left in `ke_rust_shims.c`)
+
+| # | Batch | Functions | Complex | LOC | Notes / Risk |
+|---|-------|-----------|---------|----:|--------------|
+| K1 | dispatcher-locks (fold into ke-inlines) | KiAcquireDispatcherLock, KiReleaseDispatcherLock, KiAcquire/ReleaseDispatcherLockAtSynchLevel, KiAcquire/ReleaseDispatcherObject | Easy | 40 | 6 fns. UP: KfRaiseIrql + KiExitDispatcher; SMP: same +Object lock spin |
+| K2 | thread-prcb-locks (fold into ke-inlines) | KiAcquire/ReleaseThreadLock, KiTryThreadLock, KiAcquire/ReleasePrcbLock | Easy | 25 | 5 fns. UP no-ops; SMP spin |
+| K3 | timer-lock-mgmt | KiAcquire/ReleaseTimerLock, KiComputeTimerTableIndex | Easy | 30 | 3 fns. KeAcquireQueuedSpinLock + bit math |
+| K4 | nmi-list-lock (fold into ke-inlines) | KiAcquire/ReleaseNmiListLock | Easy | 5 | 2 fns. KeAcquire/ReleaseSpinLock thin wrappers |
+| K5 | sched-helpers | KiInsertDeferredReadyList, KiRescheduleThread, KiSetThreadSwapBusy, KiCheckDeferredReadyList, KiRequestApcInterrupt | Easy | 60 | 5 fns. UP no-ops; SMP IPI/DPC |
+| K6 | spinlock-primitives | KxAcquireSpinLock, KxReleaseSpinLock | Medium | 45 | 2 fns. SMP spin-loop + interlocked + debug ownership checks |
+| K7 | timer-helpers | KiComputeDueTime, KxSetTimerForThreadWait, KxInsertTimer, KxRemoveTreeTimer, KiRecalculateDueTime | Medium | 150 | 5 fns. KfRaiseIrql + KeQuery{System,Interrupt}Time + references KiTimerTableListHead global |
+| K8 | guarded-mutex | _KeInitializeGuardedMutex, _KeAcquire/ReleaseGuardedMutex, _KeAcquire/ReleaseGuardedMutexUnsafe, _KeTryToAcquireGuardedMutex | Medium | 120 | 6 fns. Interlocked + KeWaitForSingleObject(KGATE) + APC disable counters |
+| K9 | unwait-helpers | KxUnwaitThread, KxUnwaitThreadForEvent, KxQueueReadyThread | Medium | 100 | 3 fns. List walks via CONTAINING_RECORD, calls KiUnwaitThread + KiDeferredReadyThread |
+| K10 | ready-select | KiSelectReadyThread, KiComputeNewPriority | Medium | 80 | 2 fns. BitScanReverse + ready-list insertion |
+| K11 | stack-alert | KiCheckThreadStackSwap, KiCheckAlertability | Medium | 50 | 2 fns. Conditional KTHREAD swap/alertable field reads |
+| **skip** | wait-setup macros | KxDelayThreadWait, KxMultiThreadWait, KxSingleThreadWait, KxQueueThreadWait | — | — | These are `#define` blocks not FORCEINLINEs — Phase 2 macro-materialization, not Phase 1 |
+
+**Suggested order**: K1 → K2 → K4 → K3 → K5 → K6 → K10 → K8 → K9 → K11 → K7. Lock primitives first to unblock K3/K7's `KeAcquireQueuedSpinLock` dependency. `KiTimerTableListHead` (K7 only dependency on a non-Rust global) needs an extern decl pull before K7.
+
+#### miarm.h backlog (~70 outlined fns in `mm_rust_shims.c`)
+
+`mm_rust_shims.c` uses `_orig_*` rename for some + direct outline impl for others (no uniform `_saved_*` pattern). Header comment at `mm_rust_shims.c:840` documents that PCH-covered FORCEINLINEs *can't* be `_saved_`-renamed from this file — those need a different strategy or stay in C. The MM batches will likely each get their own isolated rlib (mm-pte-inlines, mm-ws-inlines, etc.) since the bodies are fatter than ke's locks.
+
+| # | Batch (rlib) | Functions | Complex | LOC | Notes / Risk |
+|---|--------------|-----------|---------|----:|--------------|
+| M1 | mm-pte-class-inlines | MiIsMappedPte, MiIsPageWriteable, MiIsPageDirty, MiIsUserPde, MiIsUserPte, MiIsPdeForAddressValid, MiDetermineUserGlobalPteMask | Easy | 80-100 | 7 read-only PTE classifications. Per-arch MMPTE bitfield unions; MiDetermineUserGlobalPteMask has arch-conditional MiIsUserPxe/Ppe path |
+| M2 | mm-pte-mut-inlines | MiMakeDirtyPage, MiMakeCleanPage, MiMakeAccessedPage, MiMakeOwnerPage, MiMakeWritePage, MiPageDisableCache, MiPageWriteThrough, MiPageWriteCombined | Easy | 60-80 | 8 PTE bitfield writes. Arch-conditional (x86 NotDirty inverse vs ARM64) |
+| M3 | mm-util-inlines | InterlockedIncrementUL, InterlockedExchangeAddUL, MmSetDirtyPage, ProbeForWriteSize_t, ProbeForWriteIoStatusBlock, ExAllocatePoolZero | Easy | 50-70 | 6 generic utility wrappers; no arch divergence |
+| M4 | mm-ws-lock-inlines | MiLock/UnlockWorkingSet, MiLock/UnlockWorkingSetShared, MiLock/UnlockProcessWorkingSet, MiLock/UnlockProcessWorkingSetUnsafe, MiLock/UnlockProcessWorkingSetShared, MM_ANY_WS_LOCK_HELD | Medium | 120-150 | 11 fns. ExAcquirePushLockExclusive/Shared (already exported); ARM64 IRQL UART tracing; debug instrumentation for OwnsProcessWorkingSetExclusive race |
+| M5 | mm-addr-space-inlines | MmGetCurrentAddressSpace, MmGetKernelAddressSpace, MmGetAddressSpaceOwner, MmLockAddressSpace, MmUnlockAddressSpace | Medium | 60-80 | 5 fns. Reads KeGetCurrentThread→ApcState→Process→Vm; calls KeAcquireGuardedMutex |
+| M6 | mm-pte-atomic-inlines | MiInterlockedExchangePte, MiInterlockedCompareExchangePte | Medium | 40-50 | 2 fns. Per-arch inline asm — replicate locally |
+| M7 | mm-lock-inlines | MiAcquire/ReleaseExpansionLock, MiAcquire/ReleasePfnLock | Medium | 40-60 | 4 fns. KeAcquire/ReleaseQueuedSpinLock; ARM64 IRQL tracing |
+| M8 | mm-pfn-ref-inlines | MiReferenceProbedPageAndBumpLockCount, MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount, MiDropLockCount, MiRemoveZeroPageSafe | **Hard — defer to Phase 4** | 100-140 | 5 fns. Touches MmPfnDatabase global, PfnLock, SMP-specific; per-arch PFN struct |
+| **skip** | AVL trees | Rtl*Avl*, Rtlp*AvlTreeNode | — | — | `#include <sdk/lib/rtl/avlsupp.c>` — must stay in C |
+| **skip** | __FILE__/__LINE__ macros | MmLockSectionSegment, MmUnlockSectionSegment, MmGetPageEntrySectionSegment | — | — | Need C preprocessor; must stay |
+
+**Suggested order**: M1 → M2 → M3 → M4 → M5 → M6 → M7. M1+M2+M3 unblock the rest; M8 deferred to Phase 4 (PFN database design needs its own thinking).
+
+#### ob_x.h / ps_x.h status — done
+
+- **ob_x.h**: 22 FORCEINLINEs all in `ntkrnl_sys::inline::ob` + `shim_exports.rs` wrappers. `ob_rust_shims.c` deleted in Phase 0. Verified via `_force_shim_symbols` + scan_ud2 clean. **No Phase 1 batches needed.**
+- **ps_x.h**: 19 FORCEINLINEs all in `ntkrnl_sys::inline::ps` + `shim_exports.rs` wrappers. `ps_rust_shims.c` deleted in Phase 0. **No Phase 1 batches needed.** Cosmetic extraction into a `ps-inlines` rlib would only standardize the layout — functionally equivalent.
+
+#### Aggregate Phase 1 backlog after this batch
+
+- **ke**: 11 batches (~750 LOC), bias toward Easy
+- **mm**: 7 batches (~550-650 LOC), one Hard deferred to Phase 4
+- **ob/ps**: 0 batches (done via shim_exports route)
+- **Total remaining**: ~18 batches, ~1300 LOC Rust impls. At cm+ke baseline of ~30 min per Easy batch and ~60-90 min per Medium batch, full Phase 1 is roughly 1-1.5 weeks of focused work.
+
 ### Phase 2 — Macro materializations (~1 week)
 
 ~180 functions, mix of trivial and structural. Two passes:

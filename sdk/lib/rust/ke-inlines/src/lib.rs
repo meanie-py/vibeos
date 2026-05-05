@@ -1,7 +1,14 @@
-//! Rust impls of the in-stack-queued-spinlock FORCEINLINEs from `ke_x.h`:
-//! the APC lock family (5), the device queue lock pair (2), and
-//! `KiReleaseProcessLockFromSynchLevel` (the only ProcessLock fn whose C
-//! trampoline lives in `ke_rust_shims.c` rather than `mm_rust_shims.c`).
+//! Rust impls of `ke_x.h` FORCEINLINEs whose C trampolines live in
+//! `ke_rust_shims.c`. Batches landed so far:
+//!   - In-stack-queued spinlocks (8): APC lock family ×5, device queue ×2,
+//!     `KiReleaseProcessLockFromSynchLevel` ×1.
+//!   - Dispatcher locks (6): `KiAcquireDispatcherLock` +
+//!     `KiReleaseDispatcherLock`, `KiAcquire/ReleaseDispatcherLockAtSynchLevel/
+//!     FromSynchLevel`, `KiAcquire/ReleaseDispatcherObject`. Bodies match the
+//!     `#ifndef CONFIG_SMP` paths in `ke_x.h` (kernel runs UP — `CONFIG_SMP`
+//!     is undefined). UP semantics: dispatcher object lock is a no-op (single
+//!     CPU acquires it implicitly), dispatcher lock raises to SYNCH_LEVEL via
+//!     `KfRaiseIrql` and exits via `KiExitDispatcher`.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -17,8 +24,15 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::ULONG_PTR;
-use ntkrnl_sys::ddk::{PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKTHREAD, _KPCR};
+use ntkrnl_sys::base::{KIRQL, ULONG_PTR};
+use ntkrnl_sys::ddk::{
+    PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKTHREAD, _DISPATCHER_HEADER, _KPCR,
+};
+
+/// SYNCH_LEVEL on UP kernel = DISPATCH_LEVEL = 2 (matches
+/// `ntkrnl_sys::inline::ke::SYNCH_LEVEL`; replicated locally to avoid pulling
+/// the whole `inline::ke` module into this crate).
+const SYNCH_LEVEL: KIRQL = 2;
 
 // ============================================================================
 // Underlying primitives — extern decls (i386 fastcall, others cdecl). These
@@ -42,6 +56,8 @@ extern "fastcall" {
     );
     fn KeReleaseInStackQueuedSpinLock(lock_handle: PKLOCK_QUEUE_HANDLE);
     fn KeReleaseInStackQueuedSpinLockFromDpcLevel(lock_handle: PKLOCK_QUEUE_HANDLE);
+    fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
+    fn KiExitDispatcher(old_irql: KIRQL);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -60,6 +76,8 @@ extern "C" {
     );
     fn KeReleaseInStackQueuedSpinLock(lock_handle: PKLOCK_QUEUE_HANDLE);
     fn KeReleaseInStackQueuedSpinLockFromDpcLevel(lock_handle: PKLOCK_QUEUE_HANDLE);
+    fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
+    fn KiExitDispatcher(old_irql: KIRQL);
 }
 
 // ============================================================================
@@ -213,3 +231,45 @@ pub unsafe extern "C" fn _rs_KiReleaseDeviceQueueLock(device_lock: PKLOCK_QUEUE_
         KeReleaseInStackQueuedSpinLockFromDpcLevel(device_lock);
     }
 }
+
+// ============================================================================
+// Dispatcher locks (ke_x.h, #ifndef CONFIG_SMP — the kernel runs UP)
+//
+// On UP the dispatcher object lock is meaningless (single CPU implies the
+// caller already holds it), the dispatcher lock proper just raises to
+// SYNCH_LEVEL via KfRaiseIrql, the release pair runs KiExitDispatcher (which
+// drains the deferred-ready list and lowers IRQL).
+// ============================================================================
+
+/// Per-object dispatcher lock acquire — UP no-op. SMP version would spin on
+/// `Object->Lock & KOBJECT_LOCK_BIT` and CAS-set the bit; not present here.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireDispatcherObject(_object: *mut _DISPATCHER_HEADER) {}
+
+/// Per-object dispatcher lock release — UP no-op. SMP version would
+/// `InterlockedAnd(&Object->Lock, ~KOBJECT_LOCK_BIT)`.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseDispatcherObject(_object: *mut _DISPATCHER_HEADER) {}
+
+/// Acquire dispatcher lock by raising to SYNCH_LEVEL; returns previous IRQL.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireDispatcherLock() -> KIRQL {
+    KfRaiseIrql(SYNCH_LEVEL)
+}
+
+/// Release dispatcher lock by exiting through the dispatcher (which lowers
+/// IRQL to OldIrql after draining deferred-ready / pending APCs).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseDispatcherLock(old_irql: KIRQL) {
+    KiExitDispatcher(old_irql)
+}
+
+/// Acquire dispatcher lock when already at SYNCH_LEVEL — UP no-op (SMP would
+/// `KeAcquireQueuedSpinLockAtDpcLevel(LockQueueDispatcherLock)`).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireDispatcherLockAtSynchLevel() {}
+
+/// Release dispatcher lock from SYNCH_LEVEL without lowering IRQL — UP no-op
+/// (SMP would `KeReleaseQueuedSpinLockFromDpcLevel`).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseDispatcherLockFromSynchLevel() {}

@@ -91,9 +91,15 @@ mod _force_ke_inlines_symbols {
         fn _rs_KiReleaseProcessLockFromSynchLevel();
         fn _rs_KiAcquireDeviceQueueLock();
         fn _rs_KiReleaseDeviceQueueLock();
+        fn _rs_KiAcquireDispatcherObject();
+        fn _rs_KiReleaseDispatcherObject();
+        fn _rs_KiAcquireDispatcherLock();
+        fn _rs_KiReleaseDispatcherLock();
+        fn _rs_KiAcquireDispatcherLockAtSynchLevel();
+        fn _rs_KiReleaseDispatcherLockFromSynchLevel();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 8] = [
+    static REFS: [unsafe extern "C" fn(); 14] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -102,6 +108,12 @@ mod _force_ke_inlines_symbols {
         _rs_KiReleaseProcessLockFromSynchLevel,
         _rs_KiAcquireDeviceQueueLock,
         _rs_KiReleaseDeviceQueueLock,
+        _rs_KiAcquireDispatcherObject,
+        _rs_KiReleaseDispatcherObject,
+        _rs_KiAcquireDispatcherLock,
+        _rs_KiReleaseDispatcherLock,
+        _rs_KiAcquireDispatcherLockAtSynchLevel,
+        _rs_KiReleaseDispatcherLockFromSynchLevel,
     ];
 }
 

@@ -366,7 +366,22 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
 
 #if 1 /* Generic Phase 4 — TEMPORARILY RESTORED for debugging */
 
-/* --- Dispatcher/thread lock (ke_x.h) — shared with EX subsystem --- */
+/* --- Dispatcher/thread lock (ke_x.h) — shared with EX subsystem ---
+ *
+ * Phase 1 batch 3: dispatcher lock family bodies live in
+ * `sdk/lib/rust/ke-inlines/src/lib.rs` as `_rs_KiAcquireDispatcherLock` etc.
+ * The C trampoline keeps the IRQL-debug instrumentation (was added during
+ * boot triage and is too useful to drop yet) before delegating. The
+ * `_saved_KiAcquireDispatcherLock` outline is no longer called by any
+ * surviving C body — kept in scope as a documented fallback path.
+ */
+
+extern KIRQL _rs_KiAcquireDispatcherLock(VOID);
+extern void  _rs_KiReleaseDispatcherLock(KIRQL OldIrql);
+extern void  _rs_KiAcquireDispatcherObject(DISPATCHER_HEADER *Object);
+extern void  _rs_KiReleaseDispatcherObject(DISPATCHER_HEADER *Object);
+extern void  _rs_KiAcquireDispatcherLockAtSynchLevel(VOID);
+extern void  _rs_KiReleaseDispatcherLockFromSynchLevel(VOID);
 
 KIRQL KiAcquireDispatcherLock(VOID)
 {
@@ -375,12 +390,12 @@ KIRQL KiAcquireDispatcherLock(VOID)
         DPRINT1("KiAcquireDispatcherLock at IRQL %d! caller=%p\n",
                 cur, _ReturnAddress());
     }
-    return _saved_KiAcquireDispatcherLock();
+    return _rs_KiAcquireDispatcherLock();
 }
 
 VOID KiReleaseDispatcherLock(IN KIRQL OldIrql)
 {
-    _saved_KiReleaseDispatcherLock(OldIrql);
+    _rs_KiReleaseDispatcherLock(OldIrql);
 }
 
 VOID KiAcquireThreadLock(IN PKTHREAD Thread)
@@ -407,26 +422,29 @@ VOID KxReleaseSpinLock(IN PKSPIN_LOCK SpinLock)
     KeMemoryBarrierWithoutFence();
 }
 
-/* --- Dispatcher object lock (ke_x.h) --- */
+/* --- Dispatcher object lock + dispatcher-lock at-synch pair (ke_x.h) ---
+ * Bodies in ke-inlines (Phase 1 batch 3). All four are UP no-ops; the
+ * SMP implementations (CONFIG_SMP path of ke_x.h) would matter on real MP.
+ */
 
 VOID KiAcquireDispatcherObject(IN DISPATCHER_HEADER *Object)
 {
-    _saved_KiAcquireDispatcherObject(Object);
+    _rs_KiAcquireDispatcherObject(Object);
 }
 
 VOID KiReleaseDispatcherObject(IN DISPATCHER_HEADER *Object)
 {
-    _saved_KiReleaseDispatcherObject(Object);
+    _rs_KiReleaseDispatcherObject(Object);
 }
 
 VOID KiAcquireDispatcherLockAtSynchLevel(VOID)
 {
-    _saved_KiAcquireDispatcherLockAtSynchLevel();
+    _rs_KiAcquireDispatcherLockAtSynchLevel();
 }
 
 VOID KiReleaseDispatcherLockFromSynchLevel(VOID)
 {
-    _saved_KiReleaseDispatcherLockFromSynchLevel();
+    _rs_KiReleaseDispatcherLockFromSynchLevel();
 }
 
 /* --- Deferred ready list (ke_x.h) --- */
