@@ -894,60 +894,39 @@ PKPCR KeGetPcr(VOID)
 #if 1 /* Macro trampolines — TEMPORARILY RESTORED for debugging */
 
 /* --- Function-like macro shims ---
- * These are #define macros in ke_x.h that need to be captured as trampolines
- * BEFORE the #undef, then provided as real functions. Since they're macros
- * (not FORCEINLINE), Phase 1 rename doesn't work. Instead, we capture them
- * in static inline trampolines above the #undef section. */
-
-/* Capture the macro expansions into static inlines */
-static __inline void _tramp_KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread)
-{
-    KiSatisfyObjectWait(Object, Thread);
-}
-
-static __inline void _tramp_KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread)
-{
-    KiSatisfyMutantWait(Object, Thread);
-}
-
-static __inline void _tramp_KiSatisfyNonMutantWait(PKMUTANT Object)
-{
-    KiSatisfyNonMutantWait(Object);
-}
-
-static __inline void _tramp_KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
-{
-    KiAddThreadToWaitList(Thread, Swappable);
-}
-
-/* Statement macros — these reference caller locals.
- * We provide simplified wrappers that derive Thread, WaitBlock, TimerBlock, Timer
- * from KeGetCurrentThread() and take only the truly external parameters. */
-
-/* Now #undef the macros and define real functions */
+ * These are #define macros in ke_x.h. Phase 2 (sibling rlib `ke-macros`)
+ * provides the bodies; this file keeps the C symbols alive as ABI anchors
+ * that delegate to the Rust impls. Same augment shape as the Phase 1
+ * `_rs_*` pattern (cm-inlines / ke-inlines etc.). #undef the macros so the
+ * function definitions below don't get rewritten by them. */
 #undef KiSatisfyObjectWait
 #undef KiSatisfyMutantWait
 #undef KiSatisfyNonMutantWait
 #undef KiAddThreadToWaitList
 
+extern void _rs_KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread);
+extern void _rs_KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread);
+extern void _rs_KiSatisfyNonMutantWait(PKMUTANT Object);
+extern void _rs_KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable);
+
 void KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread)
 {
-    _tramp_KiSatisfyObjectWait(Object, Thread);
+    _rs_KiSatisfyObjectWait(Object, Thread);
 }
 
 void KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread)
 {
-    _tramp_KiSatisfyMutantWait(Object, Thread);
+    _rs_KiSatisfyMutantWait(Object, Thread);
 }
 
 void KiSatisfyNonMutantWait(PKMUTANT Object)
 {
-    _tramp_KiSatisfyNonMutantWait(Object);
+    _rs_KiSatisfyNonMutantWait(Object);
 }
 
 void KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
 {
-    _tramp_KiAddThreadToWaitList(Thread, Swappable);
+    _rs_KiAddThreadToWaitList(Thread, Swappable);
 }
 
 /* ProbeForReadLargeInteger is provided by se_rust_shims.c — not duplicated here */

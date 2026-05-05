@@ -24,6 +24,12 @@ extern crate cm_inlines;
 // impls for the in-stack-queued-spinlock FORCEINLINEs from `ke_x.h`. C-side
 // trampolines in `ke_rust_shims.c` delegate to them.
 extern crate ke_inlines;
+// Phase 2 sibling rlib (separate from ke-inlines, which is Phase 1 / FORCEINLINE):
+// `ke-macros` holds Rust impls for `#define` MACROS that the C trampolines in
+// `ke_rust_shims.c` previously materialised inline. Pilot batch (4 fns):
+// KiSatisfyMutantWait, KiSatisfyNonMutantWait, KiSatisfyObjectWait,
+// KiAddThreadToWaitList. Same isolated-rlib augment pattern.
+extern crate ke_macros;
 // Same pattern, third batch: ob-inlines and ps-inlines hold the wrappers
 // for `ob_x.h` and `ps_x.h` FORCEINLINEs that previously lived in
 // `ntoskrnl-rust::shim_exports` — extracted into sibling rlibs to defuse the
@@ -234,6 +240,24 @@ mod _force_ke_inlines_symbols {
         _rs_KiComputeDueTime,
         _rs_KxRemoveTreeTimer,
         _rs_KxSetTimerForThreadWait,
+    ];
+}
+
+// Defensive pull for ke-macros (Phase 2 pilot — 4 wait-list satisfy/add
+// macros from ke_x.h). Same `[used]` pattern as `_force_ke_inlines_symbols`.
+mod _force_ke_macros_symbols {
+    extern "C" {
+        fn _rs_KiSatisfyMutantWait();
+        fn _rs_KiSatisfyNonMutantWait();
+        fn _rs_KiSatisfyObjectWait();
+        fn _rs_KiAddThreadToWaitList();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 4] = [
+        _rs_KiSatisfyMutantWait,
+        _rs_KiSatisfyNonMutantWait,
+        _rs_KiSatisfyObjectWait,
+        _rs_KiAddThreadToWaitList,
     ];
 }
 

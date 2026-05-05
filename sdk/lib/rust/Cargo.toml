@@ -13,6 +13,7 @@ members = [
     "handle",
     "interlck",
     "ke-inlines",
+    "ke-macros",
     "kernel-rust",
     "largeint",
     "luid",
