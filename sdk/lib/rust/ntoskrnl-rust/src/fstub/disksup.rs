@@ -58,7 +58,6 @@ pub const PARTITION_STYLE_GPT: u32 = 1;
 pub const PARTITION_STYLE_RAW: u32 = 2;
 
 extern "C" {
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn strcpy(dst: *mut i8, src: *const i8) -> *mut i8;
     fn strlen(s: *const i8) -> usize;
@@ -450,10 +449,16 @@ unsafe fn IopComputeHarddiskDerangements(DiskCount: ULONG) -> PULONG {
 
     i = 0;
     while i < DiskCount {
-        swprintf(
+        crate::swprintf!(
+
             Buffer.as_mut_ptr(),
-            W_ARC_RDISK_FMT.as_ptr(),
+
+            Buffer.len(),
+
+            &W_ARC_RDISK_FMT,
+
             i,
+
         );
         RtlInitUnicodeString(core::ptr::addr_of_mut!(ArcName), Buffer.as_ptr());
         if NT_SUCCESS(IoGetDeviceObjectPointer(
@@ -621,7 +626,7 @@ unsafe fn HalpSetMountLetter(DeviceName: PUNICODE_STRING, DriveLetter: u8) -> NT
     let mut MountMgr: _UNICODE_STRING = core::mem::zeroed();
     let InputBuffer: PMOUNTMGR_CREATE_POINT_INPUT;
 
-    swprintf(Buffer.as_mut_ptr(), W_DOS_DEVICE_DRIVE_FMT.as_ptr(), DriveLetter as u32);
+    crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_DOS_DEVICE_DRIVE_FMT, DriveLetter as u32);
     RtlInitUnicodeString(core::ptr::addr_of_mut!(DosDevice), Buffer.as_ptr());
 
     InputBufferLength = DosDevice.Length as u32 + (*DeviceName).Length as u32 + core::mem::size_of::<MOUNTMGR_CREATE_POINT_INPUT>() as u32;
@@ -732,7 +737,7 @@ unsafe fn HalpNextDriveLetter(
 
     i = DriveLetter;
     while i <= b'Z' {
-        swprintf(Buffer.as_mut_ptr(), W_DOS_DEVICE_DRIVE_FMT.as_ptr(), i as u32);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_DOS_DEVICE_DRIVE_FMT, i as u32);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(DosDevice), Buffer.as_ptr());
 
         if NT_SUCCESS(IoCreateSymbolicLink(core::ptr::addr_of_mut!(DosDevice), DeviceName)) {
@@ -815,10 +820,21 @@ pub unsafe extern "system" fn HalpDeleteMountLetter(DriveLetter: u8) -> NTSTATUS
     let mut MountMgr: _UNICODE_STRING = core::mem::zeroed();
     let OutputBuffer: PMOUNTMGR_MOUNT_POINTS;
 
-    swprintf(
+    crate::swprintf!(
+
+
         Buffer.as_mut_ptr(),
-        W_DOS_DEVICE_DRIVE_FMT.as_ptr(),
+
+
+        Buffer.len(),
+
+
+        &W_DOS_DEVICE_DRIVE_FMT,
+
+
         DriveLetter as u32,
+
+
     );
     RtlInitUnicodeString(&mut DosDevice, Buffer.as_ptr());
 
@@ -1120,19 +1136,19 @@ unsafe fn xHalIoAssignDriveLetters_impl(
             HarddiskCount = *Devices.offset(i as isize);
         }
 
-        swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION0_FMT.as_ptr(), HarddiskCount);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION0_FMT, HarddiskCount);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         if !NT_SUCCESS(HalpQueryDriveLayout(core::ptr::addr_of_mut!(StringU1), core::ptr::addr_of_mut!(LayoutInfo))) {
             LayoutInfo = core::ptr::null_mut();
         }
 
         SystemFound = 0;
-        swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, 1);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, 1);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
             PartitionCount = 1;
             loop {
-                swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, PartitionCount);
+                crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, PartitionCount);
                 RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
                 if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                     break;
@@ -1157,13 +1173,13 @@ unsafe fn xHalIoAssignDriveLetters_impl(
                     }
                 }
 
-                swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, PartitionCount);
+                crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, PartitionCount);
                 RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
                 if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                     if SystemFound == 0 {
                         let mut inner_partition_count = 1;
                         loop {
-                            swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, inner_partition_count);
+                            crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, inner_partition_count);
                             RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
                             if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                                 break;
@@ -1201,7 +1217,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
             HarddiskCount = i as u32;
         }
 
-        swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION0_FMT.as_ptr(), HarddiskCount);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION0_FMT, HarddiskCount);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         if !NT_SUCCESS(HalpQueryDriveLayout(core::ptr::addr_of_mut!(StringU1), core::ptr::addr_of_mut!(LayoutInfo))) {
             LayoutInfo = core::ptr::null_mut();
@@ -1209,7 +1225,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
 
         PartitionCount = 1;
         loop {
-            swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, PartitionCount);
+            crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, PartitionCount);
             RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
             if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                 break;
@@ -1237,7 +1253,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
             HarddiskCount = i as u32;
         }
 
-        swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION0_FMT.as_ptr(), HarddiskCount);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION0_FMT, HarddiskCount);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         if !NT_SUCCESS(HalpQueryDriveLayout(core::ptr::addr_of_mut!(StringU1), core::ptr::addr_of_mut!(LayoutInfo))) {
             LayoutInfo = core::ptr::null_mut();
@@ -1246,7 +1262,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
         SystemPartition = 0;
         PartitionCount = 1;
         loop {
-            swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, PartitionCount);
+            crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, PartitionCount);
             RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
             if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                 break;
@@ -1262,7 +1278,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
         PartitionCount = 1;
         loop {
             if PartitionCount != SystemPartition {
-                swprintf(Buffer.as_mut_ptr(), W_HARDDISK_PARTITION_FMT.as_ptr(), HarddiskCount, PartitionCount);
+                crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_HARDDISK_PARTITION_FMT, HarddiskCount, PartitionCount);
                 RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
                 if !NT_SUCCESS(HalpQueryPartitionType(core::ptr::addr_of_mut!(StringU1), LayoutInfo, core::ptr::addr_of_mut!(PartitionType))) {
                     if LayoutInfo != core::ptr::null_mut() {
@@ -1289,7 +1305,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
 
     i = 0;
     while i < (*ConfigInfo).FloppyCount as u16 {
-        swprintf(Buffer.as_mut_ptr(), W_DEVICE_FLOPPY_FMT.as_ptr(), i as u32);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_DEVICE_FLOPPY_FMT, i as u32);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         if HalpIsOldStyleFloppy(core::ptr::addr_of_mut!(StringU1)) != 0 {
             HalpNextDriveLetter(core::ptr::addr_of_mut!(StringU1), NtDeviceName, NtSystemPath, 1);
@@ -1300,7 +1316,7 @@ unsafe fn xHalIoAssignDriveLetters_impl(
 
     i = 0;
     while i < (*ConfigInfo).CdRomCount as u16 {
-        swprintf(Buffer.as_mut_ptr(), W_DEVICE_CDROM_FMT.as_ptr(), i as u32);
+        crate::swprintf!(Buffer.as_mut_ptr(), Buffer.len(), &W_DEVICE_CDROM_FMT, i as u32);
         RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU1), Buffer.as_ptr());
         HalpNextDriveLetter(core::ptr::addr_of_mut!(StringU1), NtDeviceName, NtSystemPath, 1);
 

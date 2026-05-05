@@ -305,15 +305,42 @@ BOOLEAN NTAPI _shim_CMP_IS_CELL_CACHED(IN ULONG c) { return ((c & 1) != 0); }
 
 /* === Common cdecl outlines for static-inline shadowing (all arches) === */
 
-/* RtlStringCbPrintfW outline — bypasses the static __inline rename above. */
+/* RtlStringCbPrintfW outline — bypasses the static __inline rename above.
+ * Routes through Rust ntprintf_w (no _vsnwprintf, no legacy printf core).
+ * `cbDest` is byte count → divide by sizeof(WCHAR) for the wchar-counted
+ * Rust formatter. Return status mirrors ntstrsafe semantics:
+ *   STATUS_SUCCESS                  formatted output fit
+ *   STATUS_BUFFER_OVERFLOW          truncated
+ *   STATUS_INVALID_PARAMETER        cbDest == 0 or odd
+ */
+extern size_t ntprintf_va_format_w(unsigned short *dst, size_t cap_chars,
+                                   const unsigned short *fmt, va_list ap);
+
 NTSTATUS __cdecl RtlStringCbPrintfW(WCHAR *dst, size_t cbDest, const WCHAR *fmt, ...)
 {
-    NTSTATUS s;
+    size_t cap_chars;
+    size_t written_chars;
     va_list args;
+
+    if (dst == NULL || cbDest < sizeof(WCHAR))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    cap_chars = cbDest / sizeof(WCHAR);
+
     va_start(args, fmt);
-    s = _saved_RtlStringCbVPrintfW(dst, cbDest, fmt, args);
+    written_chars = ntprintf_va_format_w((unsigned short *)dst, cap_chars,
+                                         (const unsigned short *)fmt, args);
     va_end(args);
-    return s;
+
+    /* ntprintf_w_format reserves one wchar for the terminator and returns
+     * the count that *would* have been written excluding the NUL. So
+     * truncation is `written_chars + 1 > cap_chars`. */
+    if (written_chars + 1 > cap_chars)
+    {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    return STATUS_SUCCESS;
 }
 
 /* CmpIsKeyValueSmall — cdecl outline that calls the renamed inline body. */

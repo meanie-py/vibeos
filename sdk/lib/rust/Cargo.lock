@@ -63,6 +63,7 @@ version = "0.1.0"
 dependencies = [
  "ntoskrnl-rust",
  "ntprintf",
+ "ntprintf_w",
  "reactos-pool",
 ]
 
@@ -123,11 +124,19 @@ dependencies = [
  "iced-x86",
  "ntkrnl-sys",
  "ntprintf",
+ "ntprintf_w",
  "reactos-pool",
 ]
 
 [[package]]
 name = "ntprintf"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "ntprintf_w"
 version = "0.1.0"
 dependencies = [
  "libc",

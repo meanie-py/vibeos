@@ -63,7 +63,6 @@ extern "system" {
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
     fn RtlComputeCrc32(InitialCrc: ULONG, Buffer: *const UCHAR, Length: ULONG) -> ULONG;
     fn RtlCompareMemory(Source1: PVOID, Source2: PVOID, Length: SIZE_T) -> SIZE_T;
-    fn RtlStringCbPrintfW_2lx(pszDest: PWSTR, cbDest: SIZE_T, Value1: ULONG, Value2: ULONG) -> NTSTATUS;
     fn RtlInitializeGenericTableAvl( Table: PRTL_AVL_TABLE, CompareRoutine: PVOID, AllocateRoutine: PVOID, FreeRoutine: PVOID, TableContext: PVOID, );
 }
 extern "C" {
@@ -1013,9 +1012,10 @@ pub unsafe extern "C" fn IopGetParentIdPrefix(
         (*(*DeviceNode).Parent).InstancePath.Length as ULONG,
     );
 
-    RtlStringCbPrintfW_2lx(
-        core::ptr::addr_of_mut!((*ParentIdPrefixInformation).Data) as PWSTR,
-        KeyNameBufferLength as SIZE_T,
+    crate::rtl_string_cb_printf_w!(
+        core::ptr::addr_of_mut!((*ParentIdPrefixInformation).Data) as *mut u16,
+        KeyNameBufferLength as usize,
+        crate::wstr!("%lx&%lx"),
         (*(*DeviceNode).Parent).Level,
         crc32,
     );

@@ -27,7 +27,6 @@ extern "C" {
 }
 extern "C" {
     fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
-    fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn IS_NULL_TERMINATED(Buffer: *const u16, Length: u32) -> u8;
     fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     fn wcslen(s: *const u16) -> usize;
@@ -113,10 +112,10 @@ pub unsafe extern "system" fn CmpFindControlSet(
         return 0xffffffff;
     }
 
-    Status = RtlStringCbPrintfW(
+    Status = crate::rtl_string_cb_printf_w!(
         Buffer.as_mut_ptr(),
         core::mem::size_of_val(&Buffer),
-        b"C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0%\x000\x003\0l\0u\0\0\0".as_ptr() as *const u16,
+        crate::wstr!("ControlSet%03lu"),
         *ControlSetId
     );
     if !NT_SUCCESS(Status) {

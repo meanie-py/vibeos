@@ -44,7 +44,7 @@ Phase 0 (2026-05-04) deleted six dead-on-disk shim files (ex, ob, ps, tier1, se,
 | **FASTCALL_BRIDGE** | ~28 | Mechanical (`extern "fastcall"` works on stable) | i386 fastcall↔cdecl bridges + cm dual-decoration scheme. |
 | **LLVM_WORKAROUND** | ~13 | **Stay** | SepInitTokensShim (i386 fat-LTO ud2), 9× io captures(none), IopInitializePlugPlayServices_shim (black_box mis-fold), amd64 KiSaveXState/KiRestoreXState (KVM bug, not LLVM). |
 | **COMPLEX_DELEGATION** | ~14 | Per-function review | IopInitializeDriverModule (240 LOC), PiQueueDeviceAction_c, KiAttachProcess, MmFixupImageSectionSegments, ExpKdbgExt* family. |
-| **VARARG** | ~5 | **Stay (thin)** | KdbPrintf, KdbpPrint, KdpDprintf, RtlStringCbPrintfA — all converted to ~6-line `va_arg` pulls that hand off to Rust `ntprintf_format_a` (no `_vsnprintf`). Plus `vDbgPrintExWithPrefixInternal` (`sdk/lib/rtl/debug.c`, weak-symbol Rust path) and the brand-new non-variadic `DbgPrintEmitPreformatted`. **Holdouts:** `RtlStringCbPrintfW` and `swprintf` (wide-char) still call legacy `_vsnwprintf` — needs a `ntprintf_w` UTF-16 sibling crate. |
+| **VARARG** | ~5 | **Stay (thin)** | KdbPrintf, KdbpPrint, KdpDprintf, RtlStringCbPrintfA, RtlStringCbPrintfW — all converted to ~6-line `va_arg` pulls that hand off to Rust `ntprintf_format_a` / `ntprintf_w_format` (no `_vsnprintf`/`_vsnwprintf` anywhere in the active kernel). Plus `vDbgPrintExWithPrefixInternal` (`sdk/lib/rtl/debug.c`, weak-symbol Rust path that falls back to `_vsnprintf` only in user-mode `ntdll.dll`) and the non-variadic `DbgPrintEmitPreformatted`. **No remaining holdouts.** |
 
 **Total stay-bucket: ~70 functions** (vararg + LLVM + most i386 register/V86 + kdbg data tables). Everything else (~482 functions) is in principle eliminable.
 
@@ -136,8 +136,32 @@ The only legacy `_vsnprintf`/`_vsnwprintf` callers that remain in the active ker
 **Footprint impact.** No net reduction in shim function count (the C `va_arg` pull is the function), but the implementation surface inside each trampoline collapsed from ~30-line `_vsnprintf`-and-emit blocks to ~6-line `va_arg`-pull-and-Rust-format blocks, and the entire Rust-side `extern "C" { fn KdbPrintf(...) -> ULONG; }` family (~33 extern decls across 33 files) is gone. Smoke: i386 7/7 in 55s, amd64 7/7 in 3:56.
 
 **Open follow-ups.**
-- `RtlStringCbPrintfW` + ~20 `swprintf` callers — needs the wide (UTF-16) sibling `ntprintf_w` crate, plus a `_vsnwprintf` replacement in `kernel_c_helpers.c`.
-- Kani/Loom proofs on `format_into` truncation safety + `scanner` bounds (the printf core is hand-rolled; bug surface is bounded but worth pinning down).
+- ~~`RtlStringCbPrintfW` + ~20 `swprintf` callers~~ — landed 2026-05-04 (see #6 below).
+- Kani proofs on `format_into` truncation safety + `scanner` bounds — passed on; the libc-diff harness is more pragmatic and bug surface is bounded.
+
+### 6. Vararg trampolines: wide (UTF-16) round
+
+Status: 2026-05-04 evening. Closes the ANSI/wide split. New `sdk/lib/rust/ntprintf_w/` crate (~700 LOC) — UTF-16 sibling of `ntprintf` with the same two-call FFI shape. Specifier semantics flip per Microsoft's rule: in W-fmt `%s`/`%c` mean wide, `%hs`/`%hc` mean narrow, `%S` means narrow (the inverse of A-fmt's `%S`=wide). Slot ABI is identical (`u64`), so the C trampoline reuses one `va_arg` pull loop; only the scanner differs (`scan_format(&[u16], …)` instead of `&[u8]`).
+
+**Trampolines wired:**
+- `RtlStringCbPrintfW` (`cm_rust_shims.c`): body collapsed from `_saved_RtlStringCbVPrintfW` hop to `va_start; ntprintf_va_format_w(...); va_end` + NTSTATUS truncation check. Ships in `ntoskrnl/ntprintf_trampoline.c` next to its ANSI sibling (`ntprintf_va_format_a`). `cb` is byte count → divided by `sizeof(WCHAR)` for the wchar-counted Rust formatter.
+- `RtlStringCbPrintfW_2lx` (custom shim from `io_rust_shims.c` for the single `IopGetParentIdPrefix` `"%lx&%lx"` callsite) deleted; replaced by `crate::rtl_string_cb_printf_w!(...)` macro at the call site.
+
+**Rust side:**
+- `dbgprint.rs`: new `RawSinkW` (raw-pointer wide sink with same `opaque_ptr` laundering as ANSI), `rust_rtl_string_cb_printf_w(dst: *mut u16, cb: usize, fmt: &[u16], slots: &[u64]) -> i32`, `rust_swprintf(dst, cap_chars, fmt, slots) -> i32`.
+- `lib.rs`: 3 new macros at crate root — `rtl_string_cb_printf_w!`, `swprintf!`, plus `wstr!("…")` ASCII-widening compile-time literal helper that returns `&'static [u16]` (no trailing NUL — the formatter strips it anyway).
+
+**Sweep tally (~30 call sites):**
+- 5 `RtlStringCbPrintfW` (cmsysini ×4, cmboot ×1) → `rtl_string_cb_printf_w!`
+- 1 `RtlStringCbPrintfW_2lx` (pnpmgr) → `rtl_string_cb_printf_w!` + delete the C shim
+- 17 `swprintf` (fstub/disksup ×13, ex/locale ×4, iomgr/{device,bootlog} ×4, pnpmgr/devaction ×1) → `swprintf!`
+- 6 orphan `extern "C" { fn swprintf(…)/RtlStringCbPrintfW(…) }` decls dropped
+
+**Validation:** new `tests/libc_diff_w.rs` (~9 byte-identity tests against host libc snprintf for numeric specifiers — the wide ASCII output is downcast to bytes for comparison; string specifiers covered by unit tests since W-vs-libc string semantics differ enough that direct diff isn't useful). 19 unit tests + 9 libc-diff tests all green.
+
+**Footprint impact.** Same pattern as the ANSI round: no net reduction in shim function count (the `va_arg` pull is the function), but the W trampolines collapsed from `_saved_*` chain hops to ~6-line va_arg-pull-and-Rust-format blocks. The custom `RtlStringCbPrintfW_2lx` shim is deleted outright. Smoke: i386 7/7 in 57s, amd64 7/7 in 3:53.
+
+**End state for the vararg theme:** zero `_vsnprintf`/`_vsnwprintf` callers in the active kernel build. The only remaining legacy printf core call is the user-mode fallback in `sdk/lib/rtl/debug.c::vDbgPrintExWithPrefixInternal` (weak-symbol gated; only fires when `ntdll.dll` links `librtl.a` without the Rust `ntprintf` crate).
 
 ## Phased elimination plan
 

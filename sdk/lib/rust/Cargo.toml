@@ -17,6 +17,7 @@ members = [
     "ntkrnl-sys",
     "ntoskrnl-rust",
     "ntprintf",
+    "ntprintf_w",
     "pool",
     "prefix",
     "random",

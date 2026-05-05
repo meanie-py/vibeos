@@ -11,6 +11,10 @@ extern crate ntoskrnl_rust;
 // Re-export ntprintf so its FFI symbols (ntprintf_scan_arg_types,
 // ntprintf_format_a) are linked in for the C variadic trampolines.
 extern crate ntprintf;
+// Re-export ntprintf_w (UTF-16 sibling) so its FFI symbols
+// (ntprintf_w_scan_arg_types, ntprintf_w_format) are linked in for the
+// wide variadic trampolines (RtlStringCbPrintfW, swprintf).
+extern crate ntprintf_w;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -26,6 +30,21 @@ mod _force_ntprintf_symbols {
     #[used]
     static REF_FORMAT: unsafe extern "C" fn(*mut u8, usize, *const u8, *const u64, usize) -> usize =
         ntprintf_format_a;
+}
+
+// Same defensive pull for the wide-format ntprintf_w FFI entries.
+mod _force_ntprintf_w_symbols {
+    extern "C" {
+        fn ntprintf_w_scan_arg_types(fmt: *const u16, out: *mut u8, max: usize) -> i32;
+        fn ntprintf_w_format(dst: *mut u16, cap_chars: usize, fmt: *const u16,
+                             slots: *const u64, n: usize) -> usize;
+    }
+    #[used]
+    static REF_SCAN_W: unsafe extern "C" fn(*const u16, *mut u8, usize) -> i32 =
+        ntprintf_w_scan_arg_types;
+    #[used]
+    static REF_FORMAT_W: unsafe extern "C" fn(*mut u16, usize, *const u16, *const u64, usize) -> usize =
+        ntprintf_w_format;
 }
 
 // Force inclusion of KDBG extension symbols (called from C kdb_cli.c, not from Rust).

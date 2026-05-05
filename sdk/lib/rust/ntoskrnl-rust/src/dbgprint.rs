@@ -20,6 +20,7 @@
 use core::ffi::c_void;
 
 use ntprintf::{format_into, Writer};
+use ntprintf_w::{format_into as format_into_w, WriterW};
 use ntkrnl_sys::opaque_ptr;
 
 // ---------------------------------------------------------------------------
@@ -267,6 +268,82 @@ pub fn rust_rtl_string_cb_printf_a(dst: *mut u8, cb: usize, fmt: &[u8], slots: &
     let term = sink.pos.min(cb - 1);
     unsafe { *dst.add(term) = 0; }
     if total + 1 > cb { STATUS_BUFFER_OVERFLOW } else { STATUS_SUCCESS }
+}
+
+// ---------------------------------------------------------------------------
+// Wide (UTF-16) sinks + entry points. Mirrors the ANSI side via ntprintf_w.
+
+/// Wide raw-pointer sink — mirrors `RawSink` for `&mut [u16]`.
+struct RawSinkW {
+    dst: *mut u16,
+    cap_chars: usize,
+    pos: usize,
+    total: usize,
+}
+impl RawSinkW {
+    fn new(dst: *mut u16, cap_chars: usize) -> Self {
+        let dst = unsafe { opaque_ptr(dst as *mut u8) } as *mut u16;
+        Self { dst, cap_chars, pos: 0, total: 0 }
+    }
+}
+impl WriterW for RawSinkW {
+    fn write_chars(&mut self, chars: &[u16]) {
+        self.total += chars.len();
+        let mut i = 0;
+        while i < chars.len() && self.pos < self.cap_chars {
+            unsafe { *self.dst.add(self.pos) = chars[i]; }
+            self.pos += 1;
+            i += 1;
+        }
+    }
+    fn written(&self) -> usize { self.total }
+}
+
+/// Strip a single trailing NUL `u16` from a wide format-string literal, so
+/// both `wstr!("...")` (no NUL) and the older `w!("...")` (with NUL) shapes
+/// work as input.
+#[inline]
+fn strip_trailing_wnul(fmt: &[u16]) -> &[u16] {
+    match fmt.split_last() {
+        Some((&0, rest)) => rest,
+        _ => fmt,
+    }
+}
+
+/// Wide-format equivalent of `rust_rtl_string_cb_printf_a`. `cb` is **bytes**
+/// (matches the `RtlStringCbPrintfW` signature); divided by `sizeof(WCHAR)`
+/// internally for the wchar-counted formatter.
+pub fn rust_rtl_string_cb_printf_w(dst: *mut u16, cb: usize, fmt: &[u16], slots: &[u64]) -> i32 {
+    const STATUS_SUCCESS: i32 = 0;
+    const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005u32 as i32;
+    const STATUS_INVALID_PARAMETER: i32 = 0xC000000Du32 as i32;
+
+    if dst.is_null() || cb < 2 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let cap_chars = cb / 2;
+    let fmt = strip_trailing_wnul(fmt);
+    let mut sink = RawSinkW::new(dst, cap_chars);
+    let total = format_into_w(&mut sink, fmt, slots);
+    let term = sink.pos.min(cap_chars - 1);
+    unsafe { *dst.add(term) = 0; }
+    if total + 1 > cap_chars { STATUS_BUFFER_OVERFLOW } else { STATUS_SUCCESS }
+}
+
+/// Replacement for the CRT `swprintf(dst, fmt, ...)`. Caller supplies
+/// `cap_chars` (wchar count); we always NUL-terminate at the truncation
+/// boundary. Returns wchar count written (excluding NUL), or `-1` on
+/// truncation, matching CRT swprintf's quirky overflow semantics.
+pub fn rust_swprintf(dst: *mut u16, cap_chars: usize, fmt: &[u16], slots: &[u64]) -> i32 {
+    if dst.is_null() || cap_chars == 0 {
+        return -1;
+    }
+    let fmt = strip_trailing_wnul(fmt);
+    let mut sink = RawSinkW::new(dst, cap_chars);
+    let total = format_into_w(&mut sink, fmt, slots);
+    let term = sink.pos.min(cap_chars - 1);
+    unsafe { *dst.add(term) = 0; }
+    if total + 1 > cap_chars { -1 } else { total as i32 }
 }
 
 // Silence unused-warning when KdbOutputAborted_get isn't linked in some

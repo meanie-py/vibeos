@@ -292,10 +292,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-}
-
-extern "C" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PnpSystemInit: BOOLEAN;
 }
@@ -1429,7 +1425,7 @@ unsafe fn IopSetServiceEnumData(
             KeyValueInformation = core::ptr::null_mut();
         }
 
-        swprintf(ValueBuffer.as_mut_ptr(), b"%\0l\0u\0\0\0" as *const u8 as *const u16, NextInstance);
+        crate::swprintf!(ValueBuffer.as_mut_ptr(), ValueBuffer.len(), crate::wstr!("%lu"), NextInstance);
         RtlInitUnicodeString(&mut ValueName as *mut _, ValueBuffer.as_ptr());
         Status = ZwSetValueKey(
             ServiceEnumKey,

@@ -33,7 +33,6 @@ const KEY_WRITE: u32 = 0x00020006;
 
 extern "C" {
     fn ProbeForWriteLangId(Address: *mut LANGID);
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -131,9 +130,10 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
         SecurityQualityOfService: core::ptr::null_mut(),
     };
 
-    swprintf(
+    crate::swprintf!(
         LocaleIdBuffer.as_mut_ptr(),
-        b"%\00\08\0l\0x\0\0\0".as_ptr() as *const u16,
+        LocaleIdBuffer.len(),
+        crate::wstr!("%08lx"),
         LocaleId as ULONG,
     );
 
@@ -336,9 +336,10 @@ unsafe fn ExpSetCurrentUserUILanguage(
     if Status >= 0 {
         Status = ZwOpenKey(&mut KeyHandle, KEY_SET_VALUE, &mut ObjectAttributes);
         if Status >= 0 {
-            ValueLength = swprintf(
+            ValueLength = crate::swprintf!(
                 ValueBuffer.as_mut_ptr(),
-                b"%\00\04\0l\0X\0\0\0".as_ptr() as *const u16,
+                ValueBuffer.len(),
+                crate::wstr!("%04lX"),
                 LanguageId as ULONG,
             ) as ULONG;
 
@@ -498,15 +499,17 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
             Status = ZwOpenKey(&mut KeyHandle, KEY_SET_VALUE, &mut ObjectAttributes);
             if Status >= 0 {
                 if UserProfile != 0 {
-                    ValueLength = swprintf(
+                    ValueLength = crate::swprintf!(
                         ValueBuffer.as_mut_ptr(),
-                        b"%\00\08\0l\0x\0\0\0".as_ptr() as *const u16,
+                        ValueBuffer.len(),
+                        crate::wstr!("%08lx"),
                         LocalDefaultLocaleId as ULONG,
                     ) as ULONG;
                 } else {
-                    ValueLength = swprintf(
+                    ValueLength = crate::swprintf!(
                         ValueBuffer.as_mut_ptr(),
-                        b"%\00\04\0l\0x\0\0\0".as_ptr() as *const u16,
+                        ValueBuffer.len(),
+                        crate::wstr!("%04lx"),
                         (LocalDefaultLocaleId as ULONG) & 0xFFFF,
                     ) as ULONG;
                 }

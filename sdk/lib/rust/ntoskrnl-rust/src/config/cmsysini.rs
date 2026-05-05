@@ -564,10 +564,6 @@ extern "system" {
     fn DelistKeyBodyFromKCB(KeyBody: PCM_KEY_BODY, Locked: u8);
 }
 
-extern "C" {
-    fn RtlStringCbPrintfW(dest: *mut u16, cb: usize, fmt: *const u16, ...) -> i32;
-}
-
 // ExInitializeWorkItem (deprecated WDM macro replaced by ExInitializeWorkItem
 // inline). Provide a tiny shim — not all paths exercise this code.
 #[inline(always)]
@@ -1199,7 +1195,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         }
     }
 
-    Status = RtlStringCbPrintfW(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), w!("\\Registry\\Machine\\System\\ControlSet%03ld").as_ptr(), ControlSet);
+    Status = crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("\\Registry\\Machine\\System\\ControlSet%03ld"), ControlSet);
     if !NT_SUCCESS(Status) {
         'Cleanup: loop {
             if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1290,7 +1286,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         }
     }
 
-    RtlStringCbPrintfW(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), w!("%04ld").as_ptr(), HwProfile);
+    crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("%04ld"), HwProfile);
     RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -1326,10 +1322,10 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
     Status = NtCreateKey(&mut KeyHandle, KEY_CREATE_LINK, &mut ObjectAttributes, 0, core::ptr::null_mut(), REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &mut Disposition);
     if NT_SUCCESS(Status) {
-        RtlStringCbPrintfW(
+        crate::rtl_string_cb_printf_w!(
             UnicodeBuffer.as_mut_ptr(),
             core::mem::size_of_val(&UnicodeBuffer),
-            w!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\%04ld").as_ptr(),
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\%04ld"),
             HwProfile,
         );
         RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
@@ -2629,18 +2625,20 @@ pub unsafe extern "system" fn CmpSetVersionData() {
     }
 
     RtlInitUnicodeString(&mut ValueName, w!("CurrentType").as_ptr());
-    RtlStringCbPrintfW(
+    let cpu_kind: *const u16 = {
+        #[cfg(CONFIG_SMP)] { w!("Multiprocessor").as_ptr() }
+        #[cfg(not(CONFIG_SMP))] { w!("Uniprocessor").as_ptr() }
+    };
+    let build_kind: *const u16 = {
+        #[cfg(DBG)] { w!("Checked").as_ptr() }
+        #[cfg(not(DBG))] { w!("Free").as_ptr() }
+    };
+    crate::rtl_string_cb_printf_w!(
         Buffer.as_mut_ptr(),
         core::mem::size_of_val(&Buffer),
-        w!("%s %s").as_ptr(),
-        #[cfg(CONFIG_SMP)]
-        w!("Multiprocessor").as_ptr(),
-        #[cfg(not(CONFIG_SMP))]
-        w!("Uniprocessor").as_ptr(),
-        #[cfg(DBG)]
-        w!("Checked").as_ptr(),
-        #[cfg(not(DBG))]
-        w!("Free").as_ptr()
+        crate::wstr!("%s %s"),
+        cpu_kind,
+        build_kind,
     );
     RtlInitUnicodeString(&mut ValueData, Buffer.as_ptr());
     NtSetValueKey(

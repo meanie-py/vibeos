@@ -25,7 +25,6 @@ const FILE_SUPERSEDE: ULONG = 0x00000000;
 extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn wcslen(s: *const u16) -> usize;
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
 
 static mut IopBootLogCreate: BOOLEAN = 0u8;
@@ -73,20 +72,22 @@ pub unsafe extern "system" fn IopBootLog(DriverName: PUNICODE_STRING, Success: B
 
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(IopBootLogResource), 1u8);
 
-    swprintf(
+    crate::swprintf!(
         Buffer.as_mut_ptr(),
-        b"%\0w\0s\0 \0%\0w\0Z\0\0\0".as_ptr() as *const u16,
+        Buffer.len(),
+        crate::wstr!("%ws %wZ"),
         if Success != 0 {
-            b"L\0o\0a\0d\0e\0d\0 \0d\0r\0i\0v\0e\0r\0\0\0".as_ptr() as *const u16
+            crate::wstr!("Loaded driver\0").as_ptr()
         } else {
-            b"D\0i\0d\0 \0n\0o\0t\0 \0l\0o\0a\0d\0 \0d\0r\0i\0v\0e\0r\0\0\0".as_ptr() as *const u16
+            crate::wstr!("Did not load driver\0").as_ptr()
         },
         DriverName,
     );
 
-    swprintf(
+    crate::swprintf!(
         ValueNameBuffer.as_mut_ptr(),
-        b"%\0l\0u\0\0\0".as_ptr() as *const u16,
+        ValueNameBuffer.len(),
+        crate::wstr!("%lu"),
         IopLogEntryCount,
     );
 
@@ -353,9 +354,10 @@ pub unsafe extern "system" fn IopSaveBootLogToFile() {
 
     i = 0;
     loop {
-        swprintf(
+        crate::swprintf!(
             ValueNameBuffer.as_mut_ptr(),
-            b"%\0l\0u\0\0\0".as_ptr() as *const u16,
+            ValueNameBuffer.len(),
+            crate::wstr!("%lu"),
             i,
         );
 

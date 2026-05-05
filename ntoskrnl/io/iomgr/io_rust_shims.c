@@ -732,22 +732,6 @@ CmiGetNextResourceDescriptor(
             : 0));
 }
 
-/*
- * RtlStringCbPrintfW — FORCEINLINE variadic in ntstrsafe.h.
- * Rust can't call variadic inlines. This shim handles the specific
- * "%lx&%lx" format used in IopGetParentIdPrefix.
- */
-NTSTATUS
-NTAPI
-RtlStringCbPrintfW_2lx(
-    IN OUT PWSTR pszDest,
-    IN SIZE_T cbDest,
-    IN ULONG Value1,
-    IN ULONG Value2)
-{
-    return RtlStringCbPrintfW(pszDest, cbDest, L"%lx&%lx", Value1, Value2);
-}
-
 /* ========================================================================
  * IopInitializeDriverModule — from driver.c
  * Creates a driver object, initializes it, and calls DriverEntry.

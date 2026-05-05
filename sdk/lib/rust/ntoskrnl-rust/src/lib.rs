@@ -79,6 +79,30 @@ macro_rules! dbg_print_ex {
     }};
 }
 
+/// Compile-time `&[u16]` literal — widens an ASCII string literal to UTF-16
+/// without a trailing NUL. Use as `wstr!("Hello %d")`. Pair with
+/// `rtl_string_cb_printf_w!` / `swprintf!` macros which `strip_trailing_wnul`
+/// the format anyway, so a NUL-suffixed legacy `w!(...)` slice also works.
+///
+/// For NUL-terminated wide literals (e.g. `RtlInitUnicodeString`), keep
+/// using the per-file `w!(...)` macro that retains the trailing zero.
+#[macro_export]
+macro_rules! wstr {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; BYTES.len()];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 /// Format into a caller-supplied buffer — `RtlStringCbPrintfA(dst, cb, fmt, …)`.
 /// Returns NTSTATUS (`STATUS_SUCCESS`, `STATUS_BUFFER_OVERFLOW`,
 /// `STATUS_INVALID_PARAMETER`). `$dst` is freely castable between `*mut u8`
@@ -91,6 +115,34 @@ macro_rules! rtl_string_cb_printf_a {
     ($dst:expr, $cb:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
         let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
         $crate::dbgprint::rust_rtl_string_cb_printf_a($dst as *mut u8, $cb, $fmt, slots)
+    }};
+}
+
+/// Wide format into a caller-supplied buffer — `RtlStringCbPrintfW(dst, cb, fmt, …)`.
+/// `$dst: *mut u16`, `$cb: usize` is **byte count** (not wchar count).
+/// `$fmt: &[u16]` (use `wstr!("…")` literal helper).
+#[macro_export]
+macro_rules! rtl_string_cb_printf_w {
+    ($dst:expr, $cb:expr, $fmt:expr $(,)?) => {
+        $crate::dbgprint::rust_rtl_string_cb_printf_w($dst as *mut u16, $cb, $fmt, &[])
+    };
+    ($dst:expr, $cb:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_rtl_string_cb_printf_w($dst as *mut u16, $cb, $fmt, slots)
+    }};
+}
+
+/// CRT `swprintf(dst, fmt, …)` replacement. `$dst: *mut u16`, `$cap_chars: usize`
+/// is **wide-character count** (not bytes). `$fmt: &[u16]` (use `wstr!`).
+/// Returns wchar count written (excluding NUL), or `-1` on truncation.
+#[macro_export]
+macro_rules! swprintf {
+    ($dst:expr, $cap_chars:expr, $fmt:expr $(,)?) => {
+        $crate::dbgprint::rust_swprintf($dst as *mut u16, $cap_chars, $fmt, &[])
+    };
+    ($dst:expr, $cap_chars:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_swprintf($dst as *mut u16, $cap_chars, $fmt, slots)
     }};
 }
 

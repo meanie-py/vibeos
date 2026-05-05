@@ -10,6 +10,7 @@ crate-type = ["rlib"]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 reactos-pool = { path = "../pool" }
 ntprintf = { path = "../ntprintf" }
+ntprintf_w = { path = "../ntprintf_w" }
 
 [dev-dependencies]
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "intel", "gas"] }
