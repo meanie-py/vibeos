@@ -25,6 +25,14 @@
 //!     `(DueTime / KeMaximumIncrement) & (TIMER_TABLE_SIZE - 1)` bit math;
 //!     `KeMaximumIncrement` is a `pub static ULONG` and `TIMER_TABLE_SIZE`
 //!     is a compile-time constant 512.
+//!   - Spinlock primitives (2): `KxAcquire/ReleaseSpinLock`. With our
+//!     `USE_DUMMY_PSEH` + UP kernel combo, `spinlock.h`'s FORCEINLINE bodies
+//!     collapse to just `KeMemoryBarrierWithoutFence()` — a compiler
+//!     reordering barrier with no machine-code emission. The C trampoline
+//!     at `ke_rust_shims.c` already chose to skip the `#if DBG` owner
+//!     tracking (inconsistent Rust/C paths produced false SPIN_LOCK_NOT_OWNED
+//!     bugchecks on i386); the Rust impl matches by emitting just a
+//!     `compiler_fence(SeqCst)`.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -401,4 +409,29 @@ pub unsafe extern "C" fn _rs_KiReleaseTimerLock(_lock_queue: PKSPIN_LOCK_QUEUE) 
 pub unsafe extern "C" fn _rs_KiComputeTimerTableIndex(due_time: u64) -> ULONG {
     let max_inc = core::ptr::read_volatile(core::ptr::addr_of!(KeMaximumIncrement)) as u64;
     ((due_time / max_inc) as ULONG) & (TIMER_TABLE_SIZE - 1)
+}
+
+// ============================================================================
+// Spinlock primitives (spinlock.h FORCEINLINEs — KxAcquire/ReleaseSpinLock)
+//
+// The full `spinlock.h` body has three optional sections:
+//   1. DBG-only `KeBugCheckEx` if the same thread already owns the lock
+//   2. CONFIG_SMP-only spin-loop on InterlockedBitTestAndSet + YieldProcessor
+//   3. Always: `KeMemoryBarrierWithoutFence()` — compiler reordering barrier
+//
+// We don't define CONFIG_SMP, and our DBG owner-tracking was disabled by
+// the existing C trampoline (kept inconsistent Rust/C tracking paths from
+// false-bugchecking on i386 — see the comment in `ke_rust_shims.c`). So
+// the Rust impl is just the compiler fence. `compiler_fence(SeqCst)`
+// emits no machine code; it only constrains the compiler's reordering.
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxAcquireSpinLock(_spin_lock: *mut ULONG_PTR) {
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxReleaseSpinLock(_spin_lock: *mut ULONG_PTR) {
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }

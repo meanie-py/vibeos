@@ -418,18 +418,24 @@ VOID KiReleaseThreadLock(IN PKTHREAD Thread)
     _rs_KiReleaseThreadLock(Thread);
 }
 
-/* --- Spinlock acquire/release (spinlock.h) --- */
+/* --- Spinlock acquire/release (spinlock.h) ---
+ * Phase 1 batch 7 — bodies in ke-inlines (compiler_fence(SeqCst), same
+ * semantics as KeMemoryBarrierWithoutFence: no machine-code emission,
+ * just a reordering barrier). DBG owner tracking stays disabled — see
+ * ke-inlines for the reason.
+ */
+
+extern void _rs_KxAcquireSpinLock(PKSPIN_LOCK SpinLock);
+extern void _rs_KxReleaseSpinLock(PKSPIN_LOCK SpinLock);
 
 VOID KxAcquireSpinLock(IN PKSPIN_LOCK SpinLock)
 {
-    /* DBG owner tracking disabled: inconsistent Rust/C paths cause false
-       SPIN_LOCK_NOT_OWNED on i386.  UP kernel — just need a compiler barrier. */
-    KeMemoryBarrierWithoutFence();
+    _rs_KxAcquireSpinLock(SpinLock);
 }
 
 VOID KxReleaseSpinLock(IN PKSPIN_LOCK SpinLock)
 {
-    KeMemoryBarrierWithoutFence();
+    _rs_KxReleaseSpinLock(SpinLock);
 }
 
 /* --- Dispatcher object lock + dispatcher-lock at-synch pair (ke_x.h) ---

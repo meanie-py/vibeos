@@ -110,9 +110,11 @@ mod _force_ke_inlines_symbols {
         fn _rs_KiAcquireTimerLock();
         fn _rs_KiReleaseTimerLock();
         fn _rs_KiComputeTimerTableIndex();
+        fn _rs_KxAcquireSpinLock();
+        fn _rs_KxReleaseSpinLock();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 27] = [
+    static REFS: [unsafe extern "C" fn(); 29] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -140,6 +142,8 @@ mod _force_ke_inlines_symbols {
         _rs_KiAcquireTimerLock,
         _rs_KiReleaseTimerLock,
         _rs_KiComputeTimerTableIndex,
+        _rs_KxAcquireSpinLock,
+        _rs_KxReleaseSpinLock,
     ];
 }
 
