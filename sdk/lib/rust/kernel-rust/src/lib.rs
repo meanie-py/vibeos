@@ -116,9 +116,11 @@ mod _force_ke_inlines_symbols {
         fn _rs_KiReleaseNmiListLock();
         fn _rs_KiCheckThreadStackSwap();
         fn _rs_KiCheckAlertability();
+        fn _rs_KiSelectReadyThread();
+        fn _rs_KiComputeNewPriority();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 33] = [
+    static REFS: [unsafe extern "C" fn(); 35] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -152,6 +154,8 @@ mod _force_ke_inlines_symbols {
         _rs_KiReleaseNmiListLock,
         _rs_KiCheckThreadStackSwap,
         _rs_KiCheckAlertability,
+        _rs_KiSelectReadyThread,
+        _rs_KiComputeNewPriority,
     ];
 }
 

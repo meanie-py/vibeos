@@ -43,6 +43,13 @@
 //!     Read-only KTHREAD field walks: stack-swap eligibility (priority +
 //!     EnableStackSwap + WaitMode) and alertability dispatch (Alerted[mode],
 //!     UserApcPending, ApcState.ApcListHead[UserMode]).
+//!   - Ready-queue select / new-priority (2): `KiSelectReadyThread`,
+//!     `KiComputeNewPriority`. The first scans `Prcb->ReadySummary` for the
+//!     highest priority bit at-or-above the requested floor, pulls the head
+//!     thread off `DispatcherReadyListHead[Priority]`, and clears the
+//!     ReadySummary bit if the bucket is now empty. The second is the dynamic-
+//!     priority decay math (Priority -= PriorityDecrement + Adjustment, clamped
+//!     to BasePriority).
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -58,11 +65,12 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::{BOOLEAN, KIRQL, NTSTATUS, UCHAR, ULONG, ULONG_PTR};
+use ntkrnl_sys::base::{RemoveEntryList, BOOLEAN, KIRQL, LONG, NTSTATUS, UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::ddk::{
     KPROCESSOR_MODE, PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD,
-    _DISPATCHER_HEADER, _KPCR, _LIST_ENTRY,
+    _DISPATCHER_HEADER, _KPCR, _KTHREAD, _LIST_ENTRY,
 };
+use ntkrnl_sys::CONTAINING_RECORD;
 
 /// `_KTHREAD_STATE_DeferredReady` — same value (= 7) on all 3 archs per bindgen
 /// (`bindgen_{i386,amd64,arm64}.rs`). Replicated as a u8 so we don't pull in
@@ -567,4 +575,58 @@ pub unsafe extern "C" fn _rs_KiCheckAlertability(
         return STATUS_USER_APC;
     }
     STATUS_WAIT_0
+}
+
+// ============================================================================
+// Ready-queue select / new-priority (ke_x.h)
+//
+// `KiSelectReadyThread` finds the highest-priority ready thread for a CPU at
+// or above a floor. Bit math mirrors the BitScanReverse in the C body:
+// `31 - leading_zeros(PrioritySet)` gives the position of the highest set
+// bit (BitScanReverse's output). The KTHREAD pointer is recovered from
+// the LIST_ENTRY via CONTAINING_RECORD on `__bindgen_anon_3` — the union
+// containing WaitListEntry is at the same offset on all 3 arches.
+//
+// `KiComputeNewPriority` is the dynamic-priority decay path from the C body:
+// Priority -= PriorityDecrement + Adjustment, then clamped up to BasePriority.
+// Realtime threads (Priority >= LOW_REALTIME_PRIORITY = 16) are not decayed.
+// Wrapping arithmetic mirrors the C (priorities are bounded 0..16 here, so
+// signed overflow shouldn't occur in practice — but `wrapping_*` keeps the
+// translation literal regardless).
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiSelectReadyThread(priority: LONG, prcb: PKPRCB) -> PKTHREAD {
+    let priority_set: ULONG = (*prcb).ReadySummary >> priority;
+    if priority_set == 0 {
+        return core::ptr::null_mut();
+    }
+    let high_priority: u32 = 31 - priority_set.leading_zeros() + priority as u32;
+    let list_head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[high_priority as usize]);
+    let list_entry = (*list_head).Flink;
+    let thread = CONTAINING_RECORD!(list_entry, _KTHREAD, __bindgen_anon_3);
+    let wait_list_entry =
+        core::ptr::addr_of_mut!((*thread).__bindgen_anon_3.WaitListEntry);
+    if RemoveEntryList(wait_list_entry) {
+        (*prcb).ReadySummary ^= 1u32 << high_priority;
+    }
+    thread
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiComputeNewPriority(
+    thread: PKTHREAD,
+    adjustment: i8,
+) -> i8 {
+    let mut priority: i8 = (*thread).Priority;
+    if priority < LOW_REALTIME_PRIORITY {
+        priority = priority
+            .wrapping_sub((*thread).PriorityDecrement.wrapping_add(adjustment));
+        if priority < (*thread).BasePriority {
+            priority = (*thread).BasePriority;
+        }
+        (*thread).PriorityDecrement = 0;
+    }
+    priority
 }

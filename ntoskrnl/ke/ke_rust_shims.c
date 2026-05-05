@@ -729,14 +729,19 @@ VOID KxQueueReadyThread(IN PKTHREAD Thread, IN PKPRCB Prcb)
     _saved_KxQueueReadyThread(Thread, Prcb);
 }
 
+/* Rust impls for KiSelectReadyThread + KiComputeNewPriority live in
+ * sdk/lib/rust/ke-inlines/src/lib.rs — Phase 1 batch 10. */
+extern PKTHREAD _rs_KiSelectReadyThread(KPRIORITY Priority, PKPRCB Prcb);
+extern SCHAR _rs_KiComputeNewPriority(PKTHREAD Thread, SCHAR Adjustment);
+
 PKTHREAD KiSelectReadyThread(IN KPRIORITY Priority, IN PKPRCB Prcb)
 {
-    return _saved_KiSelectReadyThread(Priority, Prcb);
+    return _rs_KiSelectReadyThread(Priority, Prcb);
 }
 
 SCHAR KiComputeNewPriority(IN PKTHREAD Thread, IN SCHAR Adjustment)
 {
-    return _saved_KiComputeNewPriority(Thread, Adjustment);
+    return _rs_KiComputeNewPriority(Thread, Adjustment);
 }
 
 /* --- Guarded mutex (ke_x.h) --- */
