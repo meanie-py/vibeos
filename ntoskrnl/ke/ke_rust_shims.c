@@ -764,16 +764,22 @@ BOOLEAN _KeTryToAcquireGuardedMutex(IN OUT PKGUARDED_MUTEX GuardedMutex)
     return _saved__KeTryToAcquireGuardedMutex(GuardedMutex);
 }
 
-/* --- NMI list lock (ke_x.h) --- */
+/* --- NMI list lock (ke_x.h) ---
+ * Phase 1 batch 8 — bodies in ke-inlines (KeAcquire/ReleaseSpinLock arch
+ * dispatch over the global KiNmiCallbackListLock).
+ */
+
+extern void _rs_KiAcquireNmiListLock(PKIRQL OldIrql);
+extern void _rs_KiReleaseNmiListLock(KIRQL OldIrql);
 
 VOID KiAcquireNmiListLock(OUT PKIRQL OldIrql)
 {
-    _saved_KiAcquireNmiListLock(OldIrql);
+    _rs_KiAcquireNmiListLock(OldIrql);
 }
 
 VOID KiReleaseNmiListLock(IN KIRQL OldIrql)
 {
-    _saved_KiReleaseNmiListLock(OldIrql);
+    _rs_KiReleaseNmiListLock(OldIrql);
 }
 
 #endif /* Generic Phase 4 — now in Rust */

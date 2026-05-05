@@ -33,6 +33,12 @@
 //!     tracking (inconsistent Rust/C paths produced false SPIN_LOCK_NOT_OWNED
 //!     bugchecks on i386); the Rust impl matches by emitting just a
 //!     `compiler_fence(SeqCst)`.
+//!   - NMI list lock (2): `KiAcquire/ReleaseNmiListLock`. Wraps
+//!     `KeAcquireSpinLock` / `KeReleaseSpinLock` over the global
+//!     `KiNmiCallbackListLock` (defined in `ntoskrnl-rust::ke::bug`). The
+//!     spinlock primitive is arch-conditional: i386 uses HAL `KfAcquire/
+//!     KfReleaseSpinLock` (fastcall), amd64/arm64 use `KeAcquireSpinLock-
+//!     RaiseToDpc` + `KeReleaseSpinLock` (cdecl).
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -66,6 +72,25 @@ extern "C" {
     /// `KeMaximumIncrement` — clock tick increment (100ns units), set at boot
     /// from the HAL. Used as the divisor in the timer table index computation.
     static KeMaximumIncrement: ULONG;
+
+    /// `KiNmiCallbackListLock` — global spinlock guarding the NMI callback
+    /// list. Defined in `ntoskrnl-rust::ke::bug` as a `pub static mut
+    /// KSPIN_LOCK = 0` (== `ULONG_PTR`).
+    static mut KiNmiCallbackListLock: ULONG_PTR;
+}
+
+// Spinlock primitives backing KiAcquire/ReleaseNmiListLock. amd64/arm64 use
+// the cdecl `KeAcquireSpinLockRaiseToDpc` + `KeReleaseSpinLock` exports;
+// i386 uses HAL's fastcall `KfAcquireSpinLock` / `KfReleaseSpinLock`.
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn KeAcquireSpinLockRaiseToDpc(spin_lock: *mut ULONG_PTR) -> KIRQL;
+    fn KeReleaseSpinLock(spin_lock: *mut ULONG_PTR, new_irql: KIRQL);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KfAcquireSpinLock(spin_lock: *mut ULONG_PTR) -> KIRQL;
+    fn KfReleaseSpinLock(spin_lock: *mut ULONG_PTR, new_irql: KIRQL);
 }
 
 /// SYNCH_LEVEL on UP kernel = DISPATCH_LEVEL = 2 (matches
@@ -434,4 +459,36 @@ pub unsafe extern "C" fn _rs_KxAcquireSpinLock(_spin_lock: *mut ULONG_PTR) {
 #[no_mangle]
 pub unsafe extern "C" fn _rs_KxReleaseSpinLock(_spin_lock: *mut ULONG_PTR) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
+// ============================================================================
+// NMI list lock (ke_x.h — wraps KeAcquire/ReleaseSpinLock over the global
+// KiNmiCallbackListLock; arch-conditional dispatch matches `KeAcquireSpinLock`
+// macro: i386 → HAL fastcall, amd64/arm64 → cdecl Ke* primitives).
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireNmiListLock(old_irql: *mut KIRQL) {
+    let lock = core::ptr::addr_of_mut!(KiNmiCallbackListLock);
+    #[cfg(target_arch = "x86")]
+    {
+        *old_irql = KfAcquireSpinLock(lock);
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        *old_irql = KeAcquireSpinLockRaiseToDpc(lock);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseNmiListLock(old_irql: KIRQL) {
+    let lock = core::ptr::addr_of_mut!(KiNmiCallbackListLock);
+    #[cfg(target_arch = "x86")]
+    {
+        KfReleaseSpinLock(lock, old_irql);
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        KeReleaseSpinLock(lock, old_irql);
+    }
 }
