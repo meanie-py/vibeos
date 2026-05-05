@@ -57,6 +57,23 @@ extern crate mm_pte_mut_inlines;
 // M3 sibling: mm utility helpers (Interlocked{Increment,ExchangeAdd}UL,
 // MmSetDirtyPage, ProbeForWrite{Size_t,IoStatusBlock}, ExAllocatePoolZero).
 extern crate mm_util_inlines;
+// M4 sibling: working-set lock FORCEINLINEs from miarm.h
+// (MiLock/UnlockWorkingSet[Shared], MiLock/UnlockProcessWorkingSet[Unsafe/
+// Shared/ForFault], MM_ANY_WS_LOCK_HELD). C trampolines retain the ARM64
+// IRQL UART tracing + MmDbgLast{Safe,Excl}* debug instrumentation; the
+// lock-acquisition body itself collapses to a `_rs_*` delegation.
+extern crate mm_ws_lock_inlines;
+// M5 sibling: address-space accessors and AddressCreationLock guarded
+// mutex (MmGet{Current,Kernel}AddressSpace, MmGetAddressSpaceOwner,
+// MmLock/UnlockAddressSpace).
+extern crate mm_addr_space_inlines;
+// M6 sibling: PTE atomic-update wrappers (MiInterlockedCompareExchangePte,
+// MiInterlockedExchangePte). 64-bit on amd64/arm64, 32-bit on i386.
+extern crate mm_pte_atomic_inlines;
+// M7 sibling: expansion + PFN locks. MiAcquire/ReleaseExpansionLock use
+// the regular spinlock; MiAcquire/ReleasePfnLock use the per-CPU queued
+// spinlock at LockQueuePfnLock = 2.
+extern crate mm_lock_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -515,6 +532,97 @@ mod _force_mm_pte_mut_inlines_symbols {
         _rs_MiPageDisableCache,
         _rs_MiPageWriteThrough,
         _rs_MiPageWriteCombined,
+    ];
+}
+
+// Defensive pull for mm-ws-lock-inlines (Phase 1 batch M4). 13 working-set
+// lock wrappers — uniform shape (no arch divergence at the rlib layer).
+mod _force_mm_ws_lock_inlines_symbols {
+    extern "C" {
+        fn _rs_MiLockWorkingSet();
+        fn _rs_MiUnlockWorkingSet();
+        fn _rs_MiLockWorkingSetShared();
+        fn _rs_MiUnlockWorkingSetShared();
+        fn _rs_MiLockProcessWorkingSet();
+        fn _rs_MiUnlockProcessWorkingSet();
+        fn _rs_MiLockProcessWorkingSetUnsafe();
+        fn _rs_MiUnlockProcessWorkingSetUnsafe();
+        fn _rs_MiLockProcessWorkingSetShared();
+        fn _rs_MiUnlockProcessWorkingSetShared();
+        fn _rs_MiLockProcessWorkingSetForFault();
+        fn _rs_MiUnlockProcessWorkingSetForFault();
+        fn _rs_MM_ANY_WS_LOCK_HELD();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 13] = [
+        _rs_MiLockWorkingSet,
+        _rs_MiUnlockWorkingSet,
+        _rs_MiLockWorkingSetShared,
+        _rs_MiUnlockWorkingSetShared,
+        _rs_MiLockProcessWorkingSet,
+        _rs_MiUnlockProcessWorkingSet,
+        _rs_MiLockProcessWorkingSetUnsafe,
+        _rs_MiUnlockProcessWorkingSetUnsafe,
+        _rs_MiLockProcessWorkingSetShared,
+        _rs_MiUnlockProcessWorkingSetShared,
+        _rs_MiLockProcessWorkingSetForFault,
+        _rs_MiUnlockProcessWorkingSetForFault,
+        _rs_MM_ANY_WS_LOCK_HELD,
+    ];
+}
+
+// Defensive pull for mm-addr-space-inlines (Phase 1 batch M5). Five
+// wrappers — no arch divergence. The MmGetCurrent/Kernel/AddressSpaceOwner
+// trio plus the AddressCreationLock guarded mutex pair.
+mod _force_mm_addr_space_inlines_symbols {
+    extern "C" {
+        fn _rs_MmGetCurrentAddressSpace();
+        fn _rs_MmGetKernelAddressSpace();
+        fn _rs_MmGetAddressSpaceOwner();
+        fn _rs_MmLockAddressSpace();
+        fn _rs_MmUnlockAddressSpace();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 5] = [
+        _rs_MmGetCurrentAddressSpace,
+        _rs_MmGetKernelAddressSpace,
+        _rs_MmGetAddressSpaceOwner,
+        _rs_MmLockAddressSpace,
+        _rs_MmUnlockAddressSpace,
+    ];
+}
+
+// Defensive pull for mm-pte-atomic-inlines (Phase 1 batch M6). Two PTE
+// atomic-update wrappers backed by core::sync::atomic.
+mod _force_mm_pte_atomic_inlines_symbols {
+    extern "C" {
+        fn _rs_MiInterlockedCompareExchangePte();
+        fn _rs_MiInterlockedExchangePte();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 2] = [
+        _rs_MiInterlockedCompareExchangePte,
+        _rs_MiInterlockedExchangePte,
+    ];
+}
+
+// Defensive pull for mm-lock-inlines (Phase 1 batch M7). Expansion +
+// PFN locks. The C trampolines retain MiExpansionLockOwner tracking
+// (debug-only) and the ARM64 IRQL UART trace; the lock primitives
+// themselves are in this rlib.
+mod _force_mm_lock_inlines_symbols {
+    extern "C" {
+        fn _rs_MiAcquireExpansionLock();
+        fn _rs_MiReleaseExpansionLock();
+        fn _rs_MiAcquirePfnLock();
+        fn _rs_MiReleasePfnLock();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 4] = [
+        _rs_MiAcquireExpansionLock,
+        _rs_MiReleaseExpansionLock,
+        _rs_MiAcquirePfnLock,
+        _rs_MiReleasePfnLock,
     ];
 }
 

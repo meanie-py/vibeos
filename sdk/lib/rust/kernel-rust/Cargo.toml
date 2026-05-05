@@ -20,3 +20,7 @@ se-inlines = { path = "../se-inlines" }
 mm-pte-class-inlines = { path = "../mm-pte-class-inlines" }
 mm-pte-mut-inlines = { path = "../mm-pte-mut-inlines" }
 mm-util-inlines = { path = "../mm-util-inlines" }
+mm-ws-lock-inlines = { path = "../mm-ws-lock-inlines" }
+mm-addr-space-inlines = { path = "../mm-addr-space-inlines" }
+mm-pte-atomic-inlines = { path = "../mm-pte-atomic-inlines" }
+mm-lock-inlines = { path = "../mm-lock-inlines" }

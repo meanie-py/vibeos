@@ -85,9 +85,13 @@ dependencies = [
  "cm-inlines",
  "common-inlines",
  "ke-inlines",
+ "mm-addr-space-inlines",
+ "mm-lock-inlines",
+ "mm-pte-atomic-inlines",
  "mm-pte-class-inlines",
  "mm-pte-mut-inlines",
  "mm-util-inlines",
+ "mm-ws-lock-inlines",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
@@ -144,6 +148,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "mm-addr-space-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mm-lock-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mm-pte-atomic-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "mm-pte-class-inlines"
 version = "0.1.0"
 dependencies = [
@@ -159,6 +184,13 @@ dependencies = [
 
 [[package]]
 name = "mm-util-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mm-ws-lock-inlines"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",

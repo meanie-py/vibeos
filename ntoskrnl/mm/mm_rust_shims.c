@@ -286,6 +286,15 @@ static void MmUartHex(const char *prefix, ULONG_PTR val) {
 }
 #endif
 
+/*
+ * Working-set lock family (Phase 1 batch M4 — bodies delegate to Rust
+ * impls in the `mm-ws-lock-inlines` rlib).
+ * The trampoline retains the ARM64 IRQL UART tracing and the
+ * MmDbgLast{Safe,Excl}{Locker,Unlocker} debug instrumentation —
+ * `__builtin_return_address(0)` is meaningful only here in the C frame.
+ * The lock-acquisition itself is `_rs_Mi*WorkingSet*`.
+ */
+extern void _rs_MiLockProcessWorkingSet(PEPROCESS Process, PETHREAD Thread);
 void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastSafeLocker = __builtin_return_address(0);
@@ -299,13 +308,14 @@ void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
         }
     }
 #endif
-    _orig_MiLockProcessWorkingSet(Process, Thread);
+    _rs_MiLockProcessWorkingSet(Process, Thread);
 }
 
+extern void _rs_MiUnlockProcessWorkingSet(PEPROCESS Process, PETHREAD Thread);
 void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastSafeUnlocker = __builtin_return_address(0);
-    _orig_MiUnlockProcessWorkingSet(Process, Thread);
+    _rs_MiUnlockProcessWorkingSet(Process, Thread);
 #ifdef _M_ARM64
     {
         KIRQL irql = KeGetCurrentIrql();
@@ -318,24 +328,29 @@ void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
 #endif
 }
 
+extern void _rs_MiLockProcessWorkingSetUnsafe(PEPROCESS Process, PETHREAD Thread);
 void MiLockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastExclLocker = __builtin_return_address(0);
-    _orig_MiLockProcessWorkingSetUnsafe(Process, Thread);
+    _rs_MiLockProcessWorkingSetUnsafe(Process, Thread);
 }
 
+extern void _rs_MiUnlockProcessWorkingSetUnsafe(PEPROCESS Process, PETHREAD Thread);
 void MiUnlockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
 {
     MmDbgLastExclUnlocker = __builtin_return_address(0);
-    _orig_MiUnlockProcessWorkingSetUnsafe(Process, Thread);
+    _rs_MiUnlockProcessWorkingSetUnsafe(Process, Thread);
 }
 
+extern void _rs_MiLockWorkingSet(PETHREAD Thread, PMMSUPPORT WorkingSet);
 void MiLockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _orig_MiLockWorkingSet(Thread, WorkingSet); }
+{ _rs_MiLockWorkingSet(Thread, WorkingSet); }
 
+extern void _rs_MiUnlockWorkingSet(PETHREAD Thread, PMMSUPPORT WorkingSet);
 void MiUnlockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _orig_MiUnlockWorkingSet(Thread, WorkingSet); }
+{ _rs_MiUnlockWorkingSet(Thread, WorkingSet); }
 
+extern void _rs_MiLockProcessWorkingSetShared(PEPROCESS Process, PETHREAD Thread);
 void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
 {
 #ifdef _M_ARM64
@@ -360,30 +375,43 @@ void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
                 MmDbgLastExclLocker, MmDbgLastExclUnlocker,
                 MmDbgLastSafeLocker, MmDbgLastSafeUnlocker);
     }
-    _orig_MiLockProcessWorkingSetShared(Process, Thread);
+    _rs_MiLockProcessWorkingSetShared(Process, Thread);
 }
 
+extern void _rs_MiUnlockProcessWorkingSetShared(PEPROCESS Process, PETHREAD Thread);
 void MiUnlockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
 {
-    _orig_MiUnlockProcessWorkingSetShared(Process, Thread);
+    _rs_MiUnlockProcessWorkingSetShared(Process, Thread);
 }
 
+extern void _rs_MiLockWorkingSetShared(PETHREAD Thread, PMMSUPPORT WorkingSet);
 void MiLockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _orig_MiLockWorkingSetShared(Thread, WorkingSet); }
+{ _rs_MiLockWorkingSetShared(Thread, WorkingSet); }
 
+extern void _rs_MiUnlockWorkingSetShared(PETHREAD Thread, PMMSUPPORT WorkingSet);
 void MiUnlockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _orig_MiUnlockWorkingSetShared(Thread, WorkingSet); }
+{ _rs_MiUnlockWorkingSetShared(Thread, WorkingSet); }
 
 /*
- * Expansion lock
- * Bindgen says extern "C" (FORCEINLINE with no calling convention) — no NTAPI.
+ * Expansion lock (Phase 1 batch M7 — body delegates to Rust impl in
+ * `mm-lock-inlines`). The C trampoline retains the debug-only
+ * `MiExpansionLockOwner` tracking — it lives here, not in Rust, since
+ * the FORCEINLINE in miarm.h ASSERTs around it. ARM64 IRQL UART trace
+ * also stays in C.
  */
+extern KIRQL _rs_MiAcquireExpansionLock(VOID);
 KIRQL MiAcquireExpansionLock(VOID)
-{ return _orig_MiAcquireExpansionLock(); }
+{
+    KIRQL OldIrql = _rs_MiAcquireExpansionLock();
+    MiExpansionLockOwner = PsGetCurrentThread();
+    return OldIrql;
+}
 
+extern void _rs_MiReleaseExpansionLock(KIRQL OldIrql);
 void MiReleaseExpansionLock(IN KIRQL OldIrql)
 {
-    _orig_MiReleaseExpansionLock(OldIrql);
+    MiExpansionLockOwner = NULL;
+    _rs_MiReleaseExpansionLock(OldIrql);
 #ifdef _M_ARM64
     {
         KIRQL irql = KeGetCurrentIrql();
@@ -413,8 +441,9 @@ ULONG_PTR MiDetermineUserGlobalPteMask(IN PMMPTE PointerPte)
 /*
  * Working set lock check (FORCEINLINE in miarm.h — no NTAPI, no calling convention)
  */
+extern BOOLEAN _rs_MM_ANY_WS_LOCK_HELD(PETHREAD Thread);
 BOOLEAN MM_ANY_WS_LOCK_HELD(IN PETHREAD Thread)
-{ return _orig_MM_ANY_WS_LOCK_HELD(Thread); }
+{ return _rs_MM_ANY_WS_LOCK_HELD(Thread); }
 
 /*
  * PDE hierarchy validity check (4-level paging on amd64/arm64).
@@ -455,16 +484,22 @@ extern void _rs_MiMakeWritePage(PMMPTE Pte);
 void MiMakeWritePage(IN PMMPTE Pte)    { _rs_MiMakeWritePage(Pte); }
 
 /*
- * InterlockedCompareExchangePte / InterlockedExchangePte — arch-specific PTE atomic update.
- * Not NTAPI, no calling convention in C — no NTAPI.
+ * MiInterlockedCompareExchangePte / MiInterlockedExchangePte
+ * (Phase 1 batch M6 — bodies delegate to Rust impls in
+ * `mm-pte-atomic-inlines`). The C macros from mm.h expand to
+ * InterlockedCompareExchange[64] / InterlockedExchange[64] — Rust uses
+ * the equivalent core::sync::atomic ops.
  */
+extern LONG_PTR _rs_MiInterlockedCompareExchangePte(
+    PMMPTE PointerPte, LONG_PTR Exchange, LONG_PTR Comperand);
 LONG_PTR MiInterlockedCompareExchangePte(
     IN volatile PMMPTE PointerPte, IN LONG_PTR Exchange, IN LONG_PTR Comperand)
-{ return InterlockedCompareExchangePte(PointerPte, Exchange, Comperand); }
+{ return _rs_MiInterlockedCompareExchangePte((PMMPTE)PointerPte, Exchange, Comperand); }
 
+extern LONG_PTR _rs_MiInterlockedExchangePte(PMMPTE PointerPte, LONG_PTR Value);
 LONG_PTR MiInterlockedExchangePte(
     IN volatile PMMPTE PointerPte, IN LONG_PTR Value)
-{ return InterlockedExchangePte(PointerPte, Value); }
+{ return _rs_MiInterlockedExchangePte((PMMPTE)PointerPte, Value); }
 
 /*
  * InterlockedExchange / InterlockedCompareExchange — used by Rust balance.rs as
@@ -548,38 +583,27 @@ ExAllocatePoolZero(
 }
 
 /*
- * MmGetAddressSpaceOwner — FORCEINLINE in mm.h (covered by PCH, can't rename)
+ * Address-space accessors and AddressCreationLock guarded mutex
+ * (Phase 1 batch M5 — bodies delegate to Rust impls in
+ * `mm-addr-space-inlines`). These are PCH-covered FORCEINLINEs and
+ * can't be `_orig_*`-renamed; the Mm* C symbol stays as the ABI anchor
+ * with a one-line `_rs_*` body.
  */
+extern PEPROCESS _rs_MmGetAddressSpaceOwner(PMMSUPPORT AddressSpace);
 PEPROCESS MmGetAddressSpaceOwner(IN PMMSUPPORT AddressSpace)
-{
-    if (AddressSpace == MmKernelAddressSpace) return NULL;
-    return CONTAINING_RECORD(AddressSpace, EPROCESS, Vm);
-}
+{ return _rs_MmGetAddressSpaceOwner(AddressSpace); }
 
-/*
- * MmGetKernelAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
- */
+extern PMMSUPPORT _rs_MmGetKernelAddressSpace(VOID);
 PMMSUPPORT MmGetKernelAddressSpace(VOID)
-{
-    return MmKernelAddressSpace;
-}
+{ return _rs_MmGetKernelAddressSpace(); }
 
-/*
- * MmLockAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
- */
+extern void _rs_MmLockAddressSpace(PMMSUPPORT AddressSpace);
 void MmLockAddressSpace(IN PMMSUPPORT AddressSpace)
-{
-    PKGUARDED_MUTEX Mtx = &CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock;
-    KeAcquireGuardedMutex(Mtx);
-}
+{ _rs_MmLockAddressSpace(AddressSpace); }
 
-/*
- * MmUnlockAddressSpace — FORCEINLINE in mm.h (covered by PCH, can't rename)
- */
+extern void _rs_MmUnlockAddressSpace(PMMSUPPORT AddressSpace);
 void MmUnlockAddressSpace(IN PMMSUPPORT AddressSpace)
-{
-    KeReleaseGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
-}
+{ _rs_MmUnlockAddressSpace(AddressSpace); }
 
 /*
  * InterlockedExchangeAddUL — body delegates to Rust impl in
@@ -884,27 +908,30 @@ void KiReleaseProcessLock(IN PKLOCK_QUEUE_HANDLE Handle)
  * Tier 3b FORCEINLINE shims (ARM3/section.c, ARM3/virtual.c)
  * =================================================================== */
 
+extern void _rs_MiLockProcessWorkingSetForFault(PEPROCESS Process, PETHREAD Thread,
+                                                 BOOLEAN Safe, BOOLEAN Shared);
 void MiLockProcessWorkingSetForFault(IN PEPROCESS Process,
                                       IN PETHREAD Thread,
                                       IN BOOLEAN Safe,
                                       IN BOOLEAN Shared)
 {
-    _orig_MiLockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
+    _rs_MiLockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
 }
 
+extern void _rs_MiUnlockProcessWorkingSetForFault(PEPROCESS Process, PETHREAD Thread,
+                                                   PBOOLEAN Safe, PBOOLEAN Shared);
 void MiUnlockProcessWorkingSetForFault(IN PEPROCESS Process,
                                         IN PETHREAD Thread,
                                         OUT PBOOLEAN Safe,
                                         OUT PBOOLEAN Shared)
 {
-    _orig_MiUnlockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
+    _rs_MiUnlockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
 }
 
 #undef MmGetCurrentAddressSpace
+extern PMMSUPPORT _rs_MmGetCurrentAddressSpace(VOID);
 PMMSUPPORT MmGetCurrentAddressSpace(VOID)
-{
-    return &((PEPROCESS)KeGetCurrentThread()->ApcState.Process)->Vm;
-}
+{ return _rs_MmGetCurrentAddressSpace(); }
 
 /* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim */
 
@@ -1395,13 +1422,11 @@ VOID NTAPI MmDbgCheckIrql(PCSTR label)
 
 /* MiAcquirePfnLock / MiReleasePfnLock — FORCEINLINE wrappers in mm.h
  * (KeAcquireQueuedSpinLock/KeReleaseQueuedSpinLock with LockQueuePfnLock).
- * Outline shims for the Rust mm/section_table.rs callers (cdecl). */
+ * Phase 1 batch M7 — bodies delegate to Rust impls in `mm-lock-inlines`. */
+extern KIRQL _rs_MiAcquirePfnLock(VOID);
 KIRQL MiAcquirePfnLock(VOID)
-{
-    return KeAcquireQueuedSpinLock(LockQueuePfnLock);
-}
+{ return _rs_MiAcquirePfnLock(); }
 
+extern VOID _rs_MiReleasePfnLock(KIRQL OldIrql);
 VOID MiReleasePfnLock(KIRQL OldIrql)
-{
-    KeReleaseQueuedSpinLock(LockQueuePfnLock, OldIrql);
-}
+{ _rs_MiReleasePfnLock(OldIrql); }
