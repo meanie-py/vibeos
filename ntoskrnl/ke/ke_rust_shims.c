@@ -398,14 +398,24 @@ VOID KiReleaseDispatcherLock(IN KIRQL OldIrql)
     _rs_KiReleaseDispatcherLock(OldIrql);
 }
 
+/* --- Thread / PRCB lock (ke_x.h, UP no-ops) ---
+ * Phase 1 batch 4 — bodies in ke-inlines.
+ */
+
+extern void    _rs_KiAcquireThreadLock(PKTHREAD Thread);
+extern void    _rs_KiReleaseThreadLock(PKTHREAD Thread);
+extern BOOLEAN _rs_KiTryThreadLock(PKTHREAD Thread);
+extern void    _rs_KiAcquirePrcbLock(PKPRCB Prcb);
+extern void    _rs_KiReleasePrcbLock(PKPRCB Prcb);
+
 VOID KiAcquireThreadLock(IN PKTHREAD Thread)
 {
-    _saved_KiAcquireThreadLock(Thread);
+    _rs_KiAcquireThreadLock(Thread);
 }
 
 VOID KiReleaseThreadLock(IN PKTHREAD Thread)
 {
-    _saved_KiReleaseThreadLock(Thread);
+    _rs_KiReleaseThreadLock(Thread);
 }
 
 /* --- Spinlock acquire/release (spinlock.h) --- */
@@ -466,23 +476,23 @@ VOID KiSetThreadSwapBusy(IN PKTHREAD Thread)
     _saved_KiSetThreadSwapBusy(Thread);
 }
 
-/* --- PRCB lock (ke_x.h) --- */
+/* --- PRCB lock + KiTryThreadLock (ke_x.h, UP no-ops) ---
+ * Phase 1 batch 4 — bodies in ke-inlines (declared near KiAcquireThreadLock).
+ */
 
 VOID KiAcquirePrcbLock(IN PKPRCB Prcb)
 {
-    _saved_KiAcquirePrcbLock(Prcb);
+    _rs_KiAcquirePrcbLock(Prcb);
 }
 
 VOID KiReleasePrcbLock(IN PKPRCB Prcb)
 {
-    _saved_KiReleasePrcbLock(Prcb);
+    _rs_KiReleasePrcbLock(Prcb);
 }
-
-/* --- Thread lock (ke_x.h) --- */
 
 BOOLEAN KiTryThreadLock(IN PKTHREAD Thread)
 {
-    return _saved_KiTryThreadLock(Thread);
+    return _rs_KiTryThreadLock(Thread);
 }
 
 /* --- Deferred ready list check (ke_x.h) --- */

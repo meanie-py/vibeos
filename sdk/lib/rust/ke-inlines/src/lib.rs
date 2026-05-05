@@ -9,6 +9,10 @@
 //!     is undefined). UP semantics: dispatcher object lock is a no-op (single
 //!     CPU acquires it implicitly), dispatcher lock raises to SYNCH_LEVEL via
 //!     `KfRaiseIrql` and exits via `KiExitDispatcher`.
+//!   - Thread / PRCB locks (5): `KiAcquire/ReleaseThreadLock`,
+//!     `KiTryThreadLock`, `KiAcquire/ReleasePrcbLock`. UP-only: per-thread
+//!     and per-PRCB locks are no-ops (single CPU implies the caller already
+//!     owns them); `KiTryThreadLock` returns FALSE.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -24,7 +28,7 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::{KIRQL, ULONG_PTR};
+use ntkrnl_sys::base::{BOOLEAN, KIRQL, ULONG_PTR};
 use ntkrnl_sys::ddk::{
     PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKTHREAD, _DISPATCHER_HEADER, _KPCR,
 };
@@ -273,3 +277,28 @@ pub unsafe extern "C" fn _rs_KiAcquireDispatcherLockAtSynchLevel() {}
 /// (SMP would `KeReleaseQueuedSpinLockFromDpcLevel`).
 #[no_mangle]
 pub unsafe extern "C" fn _rs_KiReleaseDispatcherLockFromSynchLevel() {}
+
+// ============================================================================
+// Thread / PRCB locks (ke_x.h, #ifndef CONFIG_SMP)
+//
+// All UP no-ops — the kernel only runs on one CPU, so per-thread and
+// per-PRCB locks are implicit. KiTryThreadLock returns FALSE on UP
+// (matches the C body: `UNREFERENCED_PARAMETER(Thread); return FALSE;`).
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireThreadLock(_thread: PKTHREAD) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseThreadLock(_thread: PKTHREAD) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiTryThreadLock(_thread: PKTHREAD) -> BOOLEAN {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquirePrcbLock(_prcb: PKPRCB) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleasePrcbLock(_prcb: PKPRCB) {}
