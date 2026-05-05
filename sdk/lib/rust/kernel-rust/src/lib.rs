@@ -24,6 +24,12 @@ extern crate cm_inlines;
 // impls for the in-stack-queued-spinlock FORCEINLINEs from `ke_x.h`. C-side
 // trampolines in `ke_rust_shims.c` delegate to them.
 extern crate ke_inlines;
+// Same pattern, third batch: ob-inlines and ps-inlines hold the wrappers
+// for `ob_x.h` and `ps_x.h` FORCEINLINEs that previously lived in
+// `ntoskrnl-rust::shim_exports` — extracted into sibling rlibs to defuse the
+// cross-CGU captures(none) contagion risk that killed the original cm Pilot 1.
+extern crate ob_inlines;
+extern crate ps_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -184,6 +190,107 @@ mod _force_ke_inlines_symbols {
         _rs_KiComputeDueTime,
         _rs_KxRemoveTreeTimer,
         _rs_KxSetTimerForThreadWait,
+    ];
+}
+
+// Defensive pull for ob-inlines (ob_x.h FORCEINLINE wrappers, extracted from
+// ntoskrnl-rust::shim_exports into a sibling rlib to defuse the cross-CGU
+// captures(none) contagion that killed the original cm Pilot 1).
+mod _force_ob_inlines_symbols {
+    extern "C" {
+        fn ObpAcquireDirectoryLockExclusive();
+        fn ObpAcquireDirectoryLockShared();
+        fn ObpAcquireLookupContextLock();
+        fn ObpAcquireObjectLock();
+        fn ObpAcquireObjectLockShared();
+        fn ObpAllocateObjectCreateInfoBuffer();
+        fn ObpCalloutEnd();
+        fn ObpCalloutStart();
+        fn ObpDereferenceNameInfo();
+        fn ObpEnterObjectTypeMutex();
+        fn ObpFreeCapturedAttributes();
+        fn ObpFreeObjectCreateInformation();
+        fn ObpInitializeLookupContext();
+        fn ObpLeaveObjectTypeMutex();
+        fn ObpReferenceNameInfo();
+        fn ObpReleaseDirectoryLock();
+        fn ObpReleaseLookupContext();
+        fn ObpReleaseLookupContextObject();
+        fn ObpReleaseObjectCreateInformation();
+        fn ObpReleaseObjectLock();
+        fn ObpSelectObjectLockSlot();
+        fn ObpValidateAttributes();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 22] = [
+        ObpAcquireDirectoryLockExclusive,
+        ObpAcquireDirectoryLockShared,
+        ObpAcquireLookupContextLock,
+        ObpAcquireObjectLock,
+        ObpAcquireObjectLockShared,
+        ObpAllocateObjectCreateInfoBuffer,
+        ObpCalloutEnd,
+        ObpCalloutStart,
+        ObpDereferenceNameInfo,
+        ObpEnterObjectTypeMutex,
+        ObpFreeCapturedAttributes,
+        ObpFreeObjectCreateInformation,
+        ObpInitializeLookupContext,
+        ObpLeaveObjectTypeMutex,
+        ObpReferenceNameInfo,
+        ObpReleaseDirectoryLock,
+        ObpReleaseLookupContext,
+        ObpReleaseLookupContextObject,
+        ObpReleaseObjectCreateInformation,
+        ObpReleaseObjectLock,
+        ObpSelectObjectLockSlot,
+        ObpValidateAttributes,
+    ];
+}
+
+// Defensive pull for ps-inlines (ps_x.h FORCEINLINE wrappers, extracted from
+// ntoskrnl-rust::shim_exports — sibling rlib pattern).
+mod _force_ps_inlines_symbols {
+    extern "C" {
+        fn PspClearProcessFlag();
+        fn PspLockProcessSecurityExclusive();
+        fn PspLockProcessSecurityShared();
+        fn PspLockThreadSecurityExclusive();
+        fn PspLockThreadSecurityShared();
+        fn PspPrioritySeparationFromMask();
+        fn PspQuantumLengthFromMask();
+        fn PspQuantumTypeFromMask();
+        fn PspRunCreateProcessNotifyRoutines();
+        fn PspRunCreateThreadNotifyRoutines();
+        fn PspRunLegoRoutine();
+        fn PspRunLoadImageNotifyRoutines();
+        fn PspSetCrossThreadFlag();
+        fn PspSetProcessFlag();
+        fn PspUnlockProcessSecurityExclusive();
+        fn PspUnlockProcessSecurityShared();
+        fn PspUnlockThreadSecurityExclusive();
+        fn PspUnlockThreadSecurityShared();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 18] = [
+        PspClearProcessFlag,
+        PspLockProcessSecurityExclusive,
+        PspLockProcessSecurityShared,
+        PspLockThreadSecurityExclusive,
+        PspLockThreadSecurityShared,
+        PspPrioritySeparationFromMask,
+        PspQuantumLengthFromMask,
+        PspQuantumTypeFromMask,
+        PspRunCreateProcessNotifyRoutines,
+        PspRunCreateThreadNotifyRoutines,
+        PspRunLegoRoutine,
+        PspRunLoadImageNotifyRoutines,
+        PspSetCrossThreadFlag,
+        PspSetProcessFlag,
+        PspUnlockProcessSecurityExclusive,
+        PspUnlockProcessSecurityShared,
+        PspUnlockThreadSecurityExclusive,
+        PspUnlockThreadSecurityShared,
     ];
 }
 
@@ -423,29 +530,9 @@ mod _force_shim_symbols {
         fn NtCurrentProcess();
         fn NtCurrentTeb();
         fn ObReferenceObject();
-        fn ObpAcquireDirectoryLockExclusive();
-        fn ObpAcquireDirectoryLockShared();
-        fn ObpAcquireLookupContextLock();
-        fn ObpAcquireObjectLock();
-        fn ObpAcquireObjectLockShared();
-        fn ObpAllocateObjectCreateInfoBuffer();
-        fn ObpCalloutEnd();
-        fn ObpCalloutStart();
-        fn ObpDereferenceNameInfo();
-        fn ObpEnterObjectTypeMutex();
-        fn ObpFreeCapturedAttributes();
-        fn ObpFreeObjectCreateInformation();
         fn ObpGetHandleObject();
-        fn ObpInitializeLookupContext();
-        fn ObpLeaveObjectTypeMutex();
-        fn ObpReferenceNameInfo();
-        fn ObpReleaseDirectoryLock();
-        fn ObpReleaseLookupContext();
-        fn ObpReleaseLookupContextObject();
-        fn ObpReleaseObjectCreateInformation();
-        fn ObpReleaseObjectLock();
-        fn ObpSelectObjectLockSlot();
-        fn ObpValidateAttributes();
+        // Other Obp* wrappers extracted into the ob-inlines rlib (see
+        // _force_ob_inlines_symbols above).
         fn PAGE_ROUND_DOWN();
         fn PFN_FROM_SSE();
         fn PopEntryList();
@@ -462,24 +549,8 @@ mod _force_shim_symbols {
         fn ProbeForWriteUlong();
         fn PsGetCurrentProcess();
         fn PspClearCrossThreadFlag();
-        fn PspClearProcessFlag();
-        fn PspLockProcessSecurityExclusive();
-        fn PspLockProcessSecurityShared();
-        fn PspLockThreadSecurityExclusive();
-        fn PspLockThreadSecurityShared();
-        fn PspPrioritySeparationFromMask();
-        fn PspQuantumLengthFromMask();
-        fn PspQuantumTypeFromMask();
-        fn PspRunCreateProcessNotifyRoutines();
-        fn PspRunCreateThreadNotifyRoutines();
-        fn PspRunLegoRoutine();
-        fn PspRunLoadImageNotifyRoutines();
-        fn PspSetCrossThreadFlag();
-        fn PspSetProcessFlag();
-        fn PspUnlockProcessSecurityExclusive();
-        fn PspUnlockProcessSecurityShared();
-        fn PspUnlockThreadSecurityExclusive();
-        fn PspUnlockThreadSecurityShared();
+        // Other Psp* wrappers extracted into the ps-inlines rlib (see
+        // _force_ps_inlines_symbols above).
         fn RMAP_IS_SEGMENT();
         fn ReleaseCapturedUnicodeString();
         fn RtlAcquireSRWLockExclusive();
@@ -518,7 +589,7 @@ mod _force_shim_symbols {
         fn _ExTryToAcquireFastMutex();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 292] = [
+    static REFS: [unsafe extern "C" fn(); 252] = [
         ARM64_UART_TRACE, ARM64_UART_TRACE_HEX,
         CONTAINING_RECORD, CcBugCheck, DefaultQueryInfoBufferCheck,
         DefaultSetInfoBufferCheck, ExAcquireFastReference, ExAcquirePushLockExclusive,
@@ -590,30 +661,13 @@ mod _force_shim_symbols {
         MmGetKernelAddressSpace, MmGetMdlPfnArray, MmGetSystemAddressForMdl,
         MmGetSystemAddressForMdlSafe, MmInitializeMdl, MmLockAddressSpace,
         MmSetDirtyPage, MmUnlockAddressSpace, NtCurrentProcess, NtCurrentTeb,
-        ObReferenceObject, ObpAcquireDirectoryLockExclusive,
-        ObpAcquireDirectoryLockShared, ObpAcquireLookupContextLock,
-        ObpAcquireObjectLock, ObpAcquireObjectLockShared,
-        ObpAllocateObjectCreateInfoBuffer, ObpCalloutEnd, ObpCalloutStart,
-        ObpDereferenceNameInfo, ObpEnterObjectTypeMutex, ObpFreeCapturedAttributes,
-        ObpFreeObjectCreateInformation, ObpGetHandleObject, ObpInitializeLookupContext,
-        ObpLeaveObjectTypeMutex, ObpReferenceNameInfo, ObpReleaseDirectoryLock,
-        ObpReleaseLookupContext, ObpReleaseLookupContextObject,
-        ObpReleaseObjectCreateInformation, ObpReleaseObjectLock,
-        ObpSelectObjectLockSlot, ObpValidateAttributes, PAGE_ROUND_DOWN, PFN_FROM_SSE,
+        ObReferenceObject, ObpGetHandleObject, PAGE_ROUND_DOWN, PFN_FROM_SSE,
         PopEntryList, ProbeAndCaptureUnicodeString, ProbeForReadLargeInteger,
         ProbeForReadUchar, ProbeForReadUshort, ProbeForWriteBoolean,
         ProbeForWriteHandle, ProbeForWriteIoStatusBlock, ProbeForWriteLangId,
         ProbeForWritePointer, ProbeForWriteSize_t, ProbeForWriteUlong,
         PsGetCurrentProcess, PspClearCrossThreadFlag,
-        PspClearProcessFlag, PspLockProcessSecurityExclusive,
-        PspLockProcessSecurityShared, PspLockThreadSecurityExclusive,
-        PspLockThreadSecurityShared, PspPrioritySeparationFromMask,
-        PspQuantumLengthFromMask, PspQuantumTypeFromMask,
-        PspRunCreateProcessNotifyRoutines, PspRunCreateThreadNotifyRoutines,
-        PspRunLegoRoutine, PspRunLoadImageNotifyRoutines, PspSetCrossThreadFlag,
-        PspSetProcessFlag, PspUnlockProcessSecurityExclusive,
-        PspUnlockProcessSecurityShared, PspUnlockThreadSecurityExclusive,
-        PspUnlockThreadSecurityShared, RMAP_IS_SEGMENT, ReleaseCapturedUnicodeString,
+        RMAP_IS_SEGMENT, ReleaseCapturedUnicodeString,
         RtlAcquireSRWLockExclusive, RtlAcquireSRWLockShared, RtlInitEmptyAnsiString,
         RtlInitEmptyUnicodeString, RtlInitializeSplayLinks, RtlInsertAsLeftChild,
         RtlInsertAsRightChild, RtlIsLeftChild, RtlLongLongAdd, RtlParent,

@@ -18,6 +18,8 @@ members = [
     "mem",
     "ntkrnl-sys",
     "ntoskrnl-rust",
+    "ob-inlines",
+    "ps-inlines",
     "ntprintf",
     "ntprintf_w",
     "pool",
