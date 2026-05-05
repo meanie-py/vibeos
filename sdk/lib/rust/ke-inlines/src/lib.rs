@@ -19,6 +19,12 @@
 //!     `KiInsertDeferredReadyList` does real work — sets the thread's State
 //!     to DeferredReady, DeferredProcessor to 0 (boot CPU), and calls
 //!     `KiDeferredReadyThread`.
+//!   - Timer-lock management (3): `KiAcquireTimerLock`, `KiReleaseTimerLock`,
+//!     `KiComputeTimerTableIndex`. UP: lock pair is no-op (acquire returns
+//!     NULL). `KiComputeTimerTableIndex` is the
+//!     `(DueTime / KeMaximumIncrement) & (TIMER_TABLE_SIZE - 1)` bit math;
+//!     `KeMaximumIncrement` is a `pub static ULONG` and `TIMER_TABLE_SIZE`
+//!     is a compile-time constant 512.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -36,13 +42,23 @@
 
 use ntkrnl_sys::base::{BOOLEAN, KIRQL, UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::ddk::{
-    PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKTHREAD, _DISPATCHER_HEADER, _KPCR,
+    PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD,
+    _DISPATCHER_HEADER, _KPCR,
 };
 
 /// `_KTHREAD_STATE_DeferredReady` — same value (= 7) on all 3 archs per bindgen
 /// (`bindgen_{i386,amd64,arm64}.rs`). Replicated as a u8 so we don't pull in
 /// the `_KTHREAD_STATE` enum just for this constant.
 const KTHREAD_STATE_DEFERRED_READY: u8 = 7;
+
+/// `TIMER_TABLE_SIZE` from `sdk/include/xdk/ketypes.h` — fixed 512.
+const TIMER_TABLE_SIZE: u32 = 512;
+
+extern "C" {
+    /// `KeMaximumIncrement` — clock tick increment (100ns units), set at boot
+    /// from the HAL. Used as the divisor in the timer table index computation.
+    static KeMaximumIncrement: ULONG;
+}
 
 /// SYNCH_LEVEL on UP kernel = DISPATCH_LEVEL = 2 (matches
 /// `ntkrnl_sys::inline::ke::SYNCH_LEVEL`; replicated locally to avoid pulling
@@ -362,3 +378,27 @@ pub unsafe extern "C" fn _rs_KiCheckDeferredReadyList(_prcb: PKPRCB) {}
 
 #[no_mangle]
 pub unsafe extern "C" fn _rs_KiRequestApcInterrupt(_need_apc: BOOLEAN, _processor: UCHAR) {}
+
+// ============================================================================
+// Timer-lock management (ke_x.h, #ifndef CONFIG_SMP)
+// ============================================================================
+
+/// `KiAcquireTimerLock` — UP returns NULL (no real spinlock to take). SMP
+/// would `KeAcquireQueuedSpinLockAtDpcLevel(&KiTimerTableLock[Hand])`.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiAcquireTimerLock(_hand: ULONG) -> PKSPIN_LOCK_QUEUE {
+    core::ptr::null_mut()
+}
+
+/// `KiReleaseTimerLock` — UP no-op.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiReleaseTimerLock(_lock_queue: PKSPIN_LOCK_QUEUE) {}
+
+/// `KiComputeTimerTableIndex` — `(DueTime / KeMaximumIncrement) & 0x1FF`.
+/// Reading `KeMaximumIncrement` via `read_volatile` matches the C semantics
+/// (the global is set once at boot but the compiler doesn't know that).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiComputeTimerTableIndex(due_time: u64) -> ULONG {
+    let max_inc = core::ptr::read_volatile(core::ptr::addr_of!(KeMaximumIncrement)) as u64;
+    ((due_time / max_inc) as ULONG) & (TIMER_TABLE_SIZE - 1)
+}

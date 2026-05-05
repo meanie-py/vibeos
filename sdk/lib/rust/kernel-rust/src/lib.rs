@@ -107,9 +107,12 @@ mod _force_ke_inlines_symbols {
         fn _rs_KiSetThreadSwapBusy();
         fn _rs_KiCheckDeferredReadyList();
         fn _rs_KiRequestApcInterrupt();
+        fn _rs_KiAcquireTimerLock();
+        fn _rs_KiReleaseTimerLock();
+        fn _rs_KiComputeTimerTableIndex();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 24] = [
+    static REFS: [unsafe extern "C" fn(); 27] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -134,6 +137,9 @@ mod _force_ke_inlines_symbols {
         _rs_KiSetThreadSwapBusy,
         _rs_KiCheckDeferredReadyList,
         _rs_KiRequestApcInterrupt,
+        _rs_KiAcquireTimerLock,
+        _rs_KiReleaseTimerLock,
+        _rs_KiComputeTimerTableIndex,
     ];
 }
 

@@ -515,16 +515,24 @@ VOID KiRequestApcInterrupt(IN BOOLEAN NeedApc, IN UCHAR Processor)
     _rs_KiRequestApcInterrupt(NeedApc, Processor);
 }
 
-/* --- Timer lock (ke_x.h) --- */
+/* --- Timer lock + table index (ke_x.h) ---
+ * Phase 1 batch 6 — bodies in ke-inlines.
+ * UP: lock acquire returns NULL, release no-op. Table-index is
+ * `(DueTime / KeMaximumIncrement) & (TIMER_TABLE_SIZE - 1)`.
+ */
+
+extern PKSPIN_LOCK_QUEUE _rs_KiAcquireTimerLock(ULONG Hand);
+extern void              _rs_KiReleaseTimerLock(PKSPIN_LOCK_QUEUE LockQueue);
+extern ULONG             _rs_KiComputeTimerTableIndex(ULONGLONG DueTime);
 
 PKSPIN_LOCK_QUEUE KiAcquireTimerLock(IN ULONG Hand)
 {
-    return _saved_KiAcquireTimerLock(Hand);
+    return _rs_KiAcquireTimerLock(Hand);
 }
 
 VOID KiReleaseTimerLock(IN PKSPIN_LOCK_QUEUE LockQueue)
 {
-    _saved_KiReleaseTimerLock(LockQueue);
+    _rs_KiReleaseTimerLock(LockQueue);
 }
 
 /* --- APC / Process / DeviceQueue locks (ke_x.h) ---
@@ -613,7 +621,7 @@ NTSTATUS KiCheckAlertability(IN PKTHREAD Thread, IN BOOLEAN Alertable, IN KPROCE
 
 ULONG KiComputeTimerTableIndex(IN ULONGLONG DueTime)
 {
-    return _saved_KiComputeTimerTableIndex(DueTime);
+    return _rs_KiComputeTimerTableIndex(DueTime);
 }
 
 VOID KiRemoveEntryTimer(IN PKTIMER Timer)
