@@ -44,6 +44,13 @@ extern crate se_inlines;
 // is highest, defusing it with the rlib boundary has the highest expected
 // payoff.
 extern crate common_inlines;
+// Same pattern, sixth batch — first MM batch. mm-pte-class-inlines holds
+// the read-only PTE classification FORCEINLINEs from `miarm.h`
+// (MiIsMappedPte, MiIsPageWriteable/Dirty, MiIsUserPde/Pte,
+// MiIsPdeForAddressValid (64-bit only), MiDetermineUserGlobalPteMask).
+// C trampolines in `mm_rust_shims.c` collapse to one-line `_rs_Mi*`
+// delegations.
+extern crate mm_pte_class_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -415,6 +422,44 @@ mod _force_common_inlines_symbols {
         RtlLongLongAdd,
         RtlParent,
         RtlStringCbCopyA,
+    ];
+}
+
+// Defensive pull for mm-pte-class-inlines (Phase 1 batch M1). Six wrappers
+// on all arches plus one (_rs_MiIsPdeForAddressValid) on amd64/arm64 only.
+mod _force_mm_pte_class_inlines_symbols {
+    extern "C" {
+        fn _rs_MiIsMappedPte();
+        fn _rs_MiIsPageWriteable();
+        fn _rs_MiIsPageDirty();
+        fn _rs_MiIsUserPde();
+        fn _rs_MiIsUserPte();
+        fn _rs_MiDetermineUserGlobalPteMask();
+        #[cfg(not(target_arch = "x86"))]
+        fn _rs_MiIsPdeForAddressValid();
+    }
+
+    #[cfg(target_arch = "x86")]
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 6] = [
+        _rs_MiIsMappedPte,
+        _rs_MiIsPageWriteable,
+        _rs_MiIsPageDirty,
+        _rs_MiIsUserPde,
+        _rs_MiIsUserPte,
+        _rs_MiDetermineUserGlobalPteMask,
+    ];
+
+    #[cfg(not(target_arch = "x86"))]
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 7] = [
+        _rs_MiIsMappedPte,
+        _rs_MiIsPageWriteable,
+        _rs_MiIsPageDirty,
+        _rs_MiIsUserPde,
+        _rs_MiIsUserPte,
+        _rs_MiDetermineUserGlobalPteMask,
+        _rs_MiIsPdeForAddressValid,
     ];
 }
 

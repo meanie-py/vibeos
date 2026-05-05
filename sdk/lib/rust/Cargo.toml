@@ -17,6 +17,7 @@ members = [
     "largeint",
     "luid",
     "mem",
+    "mm-pte-class-inlines",
     "ntkrnl-sys",
     "ntoskrnl-rust",
     "ob-inlines",

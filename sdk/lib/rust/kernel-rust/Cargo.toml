@@ -17,3 +17,4 @@ ke-inlines = { path = "../ke-inlines" }
 ob-inlines = { path = "../ob-inlines" }
 ps-inlines = { path = "../ps-inlines" }
 se-inlines = { path = "../se-inlines" }
+mm-pte-class-inlines = { path = "../mm-pte-class-inlines" }

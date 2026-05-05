@@ -397,18 +397,18 @@ void MiReleaseExpansionLock(IN KIRQL OldIrql)
 }
 
 /*
- * PTE mapping check — arch-specific, accesses hardware PTE bitfields
- * Bindgen says extern "C" — no NTAPI.
+ * Phase 1 batch M1: bodies delegate to Rust impls in the
+ * `mm-pte-class-inlines` rlib (sdk/lib/rust/mm-pte-class-inlines/).
+ * The C symbol stays here as the ABI anchor; the body collapses to a
+ * one-line `_rs_*` call into Rust.
  */
+extern BOOLEAN _rs_MiIsMappedPte(PMMPTE PointerPte);
 BOOLEAN MiIsMappedPte(IN PMMPTE PointerPte)
-{ return MI_IS_MAPPED_PTE(PointerPte); }
+{ return _rs_MiIsMappedPte(PointerPte); }
 
-/*
- * User/global PTE mask determination
- * Bindgen says extern "C" — no NTAPI.
- */
+extern ULONG_PTR _rs_MiDetermineUserGlobalPteMask(PMMPTE PointerPte);
 ULONG_PTR MiDetermineUserGlobalPteMask(IN PMMPTE PointerPte)
-{ return _orig_MiDetermineUserGlobalPteMask(PointerPte); }
+{ return _rs_MiDetermineUserGlobalPteMask(PointerPte); }
 
 /*
  * Working set lock check (FORCEINLINE in miarm.h — no NTAPI, no calling convention)
@@ -417,16 +417,13 @@ BOOLEAN MM_ANY_WS_LOCK_HELD(IN PETHREAD Thread)
 { return _orig_MM_ANY_WS_LOCK_HELD(Thread); }
 
 /*
- * PDE hierarchy validity check (4-level paging on amd64/arm64)
- * No NTAPI — bindgen would say extern "C" for FORCEINLINE.
+ * PDE hierarchy validity check (4-level paging on amd64/arm64).
+ * Phase 1 batch M1: body delegates to Rust impl.
  */
 #if defined(_M_AMD64) || defined(_M_ARM64)
+extern BOOLEAN _rs_MiIsPdeForAddressValid(PVOID Address);
 BOOLEAN MiIsPdeForAddressValid(IN PVOID Address)
-{
-    return ((MiAddressToPxe(Address)->u.Hard.Valid) &&
-            (MiAddressToPpe(Address)->u.Hard.Valid) &&
-            (MiAddressToPde(Address)->u.Hard.Valid));
-}
+{ return _rs_MiIsPdeForAddressValid(Address); }
 #endif
 
 /*
@@ -439,8 +436,10 @@ void MiMakeAccessedPage(IN PMMPTE Pte) { MI_MAKE_ACCESSED_PAGE(Pte); }
 void MiPageDisableCache(IN PMMPTE Pte) { MI_PAGE_DISABLE_CACHE(Pte); }
 void MiPageWriteThrough(IN PMMPTE Pte) { MI_PAGE_WRITE_THROUGH(Pte); }
 void MiPageWriteCombined(IN PMMPTE Pte){ MI_PAGE_WRITE_COMBINED(Pte); }
-BOOLEAN MiIsPageWriteable(IN PMMPTE Pte) { return MI_IS_PAGE_WRITEABLE(Pte); }
-BOOLEAN MiIsPageDirty(IN PMMPTE Pte)     { return MI_IS_PAGE_DIRTY(Pte); }
+extern BOOLEAN _rs_MiIsPageWriteable(PMMPTE Pte);
+BOOLEAN MiIsPageWriteable(IN PMMPTE Pte) { return _rs_MiIsPageWriteable(Pte); }
+extern BOOLEAN _rs_MiIsPageDirty(PMMPTE Pte);
+BOOLEAN MiIsPageDirty(IN PMMPTE Pte)     { return _rs_MiIsPageDirty(Pte); }
 void MiMakeOwnerPage(IN PMMPTE Pte)    { MI_MAKE_OWNER_PAGE(Pte); }
 void MiMakeWritePage(IN PMMPTE Pte)    { MI_MAKE_WRITE_PAGE(Pte); }
 
@@ -815,11 +814,13 @@ void MiReferenceUnusedPageAndBumpLockCount(IN PMMPFN Pfn1)
 void MiReferenceUsedPageAndBumpLockCount(IN PMMPFN Pfn1)
 { _orig_MiReferenceUsedPageAndBumpLockCount(Pfn1); }
 
+extern BOOLEAN _rs_MiIsUserPde(PVOID Address);
 BOOLEAN MiIsUserPde(PVOID Address)
-{ return _orig_MiIsUserPde(Address); }
+{ return _rs_MiIsUserPde(Address); }
 
+extern BOOLEAN _rs_MiIsUserPte(PVOID Address);
 BOOLEAN MiIsUserPte(PVOID Address)
-{ return _orig_MiIsUserPte(Address); }
+{ return _rs_MiIsUserPte(Address); }
 
 PFN_NUMBER MiRemoveZeroPageSafe(IN ULONG Color)
 { return _orig_MiRemoveZeroPageSafe(Color); }
