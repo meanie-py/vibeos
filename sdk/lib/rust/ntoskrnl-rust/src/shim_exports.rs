@@ -13,154 +13,12 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // ============================================================================
 
 // ============================================================================
-// Common exports used by SE (and shared across subsystems)
+// Common shim_exports wrappers were extracted to the `common-inlines` sibling
+// rlib (see sdk/lib/rust/common-inlines/) to defuse cross-CGU captures(none)
+// contagion. 34 functions in total — see common-inlines for the canonical
+// list (Probe* family, splay-link, list-ops, RTL string helpers,
+// interlocked, FsRtl region, init helpers, PsGetCurrentThread).
 // ============================================================================
-
-// --- DefaultQueryInfoBufferCheck (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn DefaultQueryInfoBufferCheck(
-    class: ULONG,
-    class_list: *const _INFORMATION_CLASS_INFO,
-    class_list_entries: ULONG,
-    flags: ULONG,
-    buffer: PVOID,
-    buffer_length: ULONG,
-    return_length: *mut ULONG,
-    return_length_ptr: *mut ULONG_PTR,
-    previous_mode: KPROCESSOR_MODE,
-) -> NTSTATUS {
-    let buffer = opaque_ptr(buffer);
-    let return_length = opaque_ptr(return_length);
-    let return_length_ptr = opaque_ptr(return_length_ptr);
-    ntkrnl_sys::inline::common::DefaultQueryInfoBufferCheck(
-        class,
-        class_list,
-        class_list_entries,
-        flags,
-        buffer,
-        buffer_length,
-        return_length,
-        return_length_ptr as *mut usize,
-        previous_mode,
-    )
-}
-
-// --- DefaultSetInfoBufferCheck (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn DefaultSetInfoBufferCheck(
-    class: ULONG,
-    class_list: *const _INFORMATION_CLASS_INFO,
-    class_list_entries: ULONG,
-    buffer: PVOID,
-    buffer_length: ULONG,
-    previous_mode: KPROCESSOR_MODE,
-) -> NTSTATUS {
-    let buffer = opaque_ptr(buffer);
-    ntkrnl_sys::inline::common::DefaultSetInfoBufferCheck(
-        class,
-        class_list,
-        class_list_entries,
-        buffer,
-        buffer_length,
-        previous_mode,
-    )
-}
-
-// --- Probe functions (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForReadLargeInteger(
-    addr: PLARGE_INTEGER,
-) -> _LARGE_INTEGER {
-    let addr = opaque_ptr(addr);
-    ntkrnl_sys::inline::common::ProbeForReadLargeInteger(addr)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForReadUchar(addr: *const u8) -> u8 {
-    ntkrnl_sys::inline::common::ProbeForReadUchar(addr)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForReadUshort(addr: *const u16) -> u16 {
-    ntkrnl_sys::inline::common::ProbeForReadUshort(addr)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForWriteHandle(ptr: *mut HANDLE) {
-    let ptr = opaque_ptr(ptr);
-    ntkrnl_sys::inline::common::ProbeForWriteHandle(ptr)
-}
-
-// --- ProbeAndCaptureUnicodeString (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeAndCaptureUnicodeString(
-    dest: PUNICODE_STRING,
-    mode: KPROCESSOR_MODE,
-    src: *const _UNICODE_STRING,
-) -> NTSTATUS {
-    let dest = opaque_ptr(dest);
-    ntkrnl_sys::inline::common::ProbeAndCaptureUnicodeString(dest, mode, src)
-}
-
-// --- ReleaseCapturedUnicodeString (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ReleaseCapturedUnicodeString(
-    str: PUNICODE_STRING,
-    mode: KPROCESSOR_MODE,
-) {
-    let str = opaque_ptr(str);
-    ntkrnl_sys::inline::common::ReleaseCapturedUnicodeString(str, mode)
-}
-
-// --- InitializeObjectAttributes (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn InitializeObjectAttributes(
-    p: *mut _OBJECT_ATTRIBUTES,
-    n: PUNICODE_STRING,
-    a: ULONG,
-    r: HANDLE,
-    s: PVOID,
-) {
-    let p = opaque_ptr(p);
-    let n = opaque_ptr(n);
-    let r = opaque_ptr(r);
-    let s = opaque_ptr(s);
-    ntkrnl_sys::inline::common::InitializeObjectAttributes(p, n, a, r, s)
-}
-
-// --- ExInitializeResource (NTAPI) ---
-// Maps to ExInitializeResourceLite. C shim returned void, but the underlying
-// function returns NTSTATUS. We return void to match the C shim ABI.
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ExInitializeResource(resource: PERESOURCE) {
-    ntkrnl_sys::inline::common::ExInitializeResource(resource);
-}
-
-// --- PspClearCrossThreadFlag (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn PspClearCrossThreadFlag(thread: PETHREAD, flag: ULONG) {
-    let thread = opaque_ptr(thread);
-    ntkrnl_sys::inline::common::PspClearCrossThreadFlag(thread, flag)
-}
 
 // ============================================================================
 // KD64 subsystem exports (was: kd64/kd64_rust_shims.c)
@@ -297,97 +155,9 @@ pub unsafe extern "C" fn ExInitializeWorkItem(
     ntkrnl_sys::inline::ex::ExInitializeWorkItem(item, routine, context)
 }
 
-// --- FSRTL functions (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn FsRtlEnterFileSystem() {
-    ntkrnl_sys::inline::common::FsRtlEnterFileSystem()
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn FsRtlExitFileSystem() {
-    ntkrnl_sys::inline::common::FsRtlExitFileSystem()
-}
-
-// --- CC functions (cdecl) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn CcBugCheck(a: ULONG, b: ULONG, c: ULONG) {
-    ntkrnl_sys::inline::common::CcBugCheck(a, b, c)
-}
-
-// --- RTL splay link functions (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlInitializeSplayLinks(links: PRTL_SPLAY_LINKS) {
-    let links = opaque_ptr(links);
-    ntkrnl_sys::inline::common::RtlInitializeSplayLinks(links)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlInsertAsLeftChild(
-    parent: PRTL_SPLAY_LINKS,
-    child: PRTL_SPLAY_LINKS,
-) {
-    let parent = opaque_ptr(parent);
-    let child = opaque_ptr(child);
-    ntkrnl_sys::inline::common::RtlInsertAsLeftChild(parent, child)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlInsertAsRightChild(
-    parent: PRTL_SPLAY_LINKS,
-    child: PRTL_SPLAY_LINKS,
-) {
-    let parent = opaque_ptr(parent);
-    let child = opaque_ptr(child);
-    ntkrnl_sys::inline::common::RtlInsertAsRightChild(parent, child)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlIsLeftChild(links: PRTL_SPLAY_LINKS) -> BOOLEAN {
-    let links = opaque_ptr(links);
-    ntkrnl_sys::inline::common::RtlIsLeftChild(links)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlParent(links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS {
-    let links = opaque_ptr(links);
-    ntkrnl_sys::inline::common::RtlParent(links)
-}
-
-// --- RTL intsafe (cdecl) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlLongLongAdd(
-    augend: i64,
-    addend: i64,
-    result: *mut i64,
-) -> NTSTATUS {
-    let result = opaque_ptr(result);
-    ntkrnl_sys::inline::common::RtlLongLongAdd(augend, addend, result)
-}
-
-// --- Exception record conversion (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ExceptionRecord32To64(
-    ex32: *const _EXCEPTION_RECORD32,
-    ex64: *mut _EXCEPTION_RECORD64,
-) {
-    let ex64 = opaque_ptr(ex64);
-    ntkrnl_sys::inline::common::ExceptionRecord32To64(ex32, ex64)
-}
+// FsRtlEnterFileSystem/FsRtlExitFileSystem, CcBugCheck, splay-link helpers,
+// RtlLongLongAdd, ExceptionRecord32To64 → moved to the `common-inlines`
+// sibling rlib.
 
 // ============================================================================
 // Tier 1 subsystem exports (was: tier1_rust_shims.c)
@@ -406,23 +176,7 @@ pub unsafe extern "C" fn CONTAINING_RECORD(
     ntkrnl_sys::inline::tier1::CONTAINING_RECORD(address, type_size, field_offset)
 }
 
-// --- ProbeForWritePointer (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForWritePointer(address: *mut PVOID) {
-    let address = opaque_ptr(address);
-    ntkrnl_sys::inline::common::ProbeForWritePointer(address)
-}
-
-// --- ProbeForWriteUlong (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
-    let address = opaque_ptr(address);
-    ntkrnl_sys::inline::common::ProbeForWriteUlong(address)
-}
+// ProbeForWritePointer / ProbeForWriteUlong → moved to `common-inlines`.
 
 // --- IoGetDevObjExtension (NTAPI) ---
 
@@ -472,32 +226,7 @@ pub unsafe extern "C" fn RtlUnicodeStringToOemSize(
     ntkrnl_sys::inline::tier1::RtlUnicodeStringToOemSize(unicode_string)
 }
 
-// --- RtlInitEmptyAnsiString (cdecl — no NTAPI in C shim) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlInitEmptyAnsiString(
-    ansi_string: PANSI_STRING,
-    buffer: *mut i8,
-    maximum_length: u16,
-) {
-    let ansi_string = opaque_ptr(ansi_string);
-    let buffer = opaque_ptr(buffer);
-    ntkrnl_sys::inline::common::RtlInitEmptyAnsiString(ansi_string, buffer, maximum_length)
-}
-
-// --- InsertTailList (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn InsertTailList(
-    list_head: PLIST_ENTRY,
-    entry: PLIST_ENTRY,
-) {
-    let list_head = opaque_ptr(list_head);
-    let entry = opaque_ptr(entry);
-    ntkrnl_sys::inline::common::InsertTailList(list_head, entry)
-}
+// RtlInitEmptyAnsiString / InsertTailList → moved to `common-inlines`.
 
 // --- ExFreeToPagedLookasideList (NTAPI) ---
 
@@ -779,43 +508,8 @@ pub unsafe extern "C" fn ObpGetHandleObject(entry: PHANDLE_TABLE_ENTRY) -> POBJE
     ntkrnl_sys::macros::ObpGetHandleObject(entry)
 }
 
-// --- ProbeForWriteBoolean (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForWriteBoolean(address: *mut BOOLEAN) {
-    let address = opaque_ptr(address);
-    ntkrnl_sys::inline::common::ProbeForWriteBoolean(address)
-}
-
-// --- ProbeForWriteLangId (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ProbeForWriteLangId(address: *mut u16) {
-    let address = opaque_ptr(address);
-    ntkrnl_sys::inline::common::ProbeForWriteLangId(address)
-}
-
-// --- InterlockedExchangeAdd64 (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn InterlockedExchangeAdd64(addend: *mut i64, value: i64) -> i64 {
-    let addend = opaque_ptr(addend);
-    ntkrnl_sys::inline::common::InterlockedExchangeAdd64(addend, value)
-}
-
-// --- PopEntryList (cdecl) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn PopEntryList(
-    list_head: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY,
-) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY {
-    let list_head = opaque_ptr(list_head);
-    ntkrnl_sys::inline::common::PopEntryList(list_head)
-}
+// ProbeForWriteBoolean / ProbeForWriteLangId / InterlockedExchangeAdd64 /
+// PopEntryList → moved to `common-inlines`.
 
 // --- Fast Mutex functions (cdecl — no NTAPI in C shim) ---
 
@@ -880,18 +574,7 @@ pub unsafe extern "C" fn ExWaitOnPushLock(push_lock: PEX_PUSH_LOCK) {
     ntkrnl_sys::inline::ex::ExWaitOnPushLock(push_lock)
 }
 
-// --- RtlStringCbCopyA (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlStringCbCopyA(
-    psz_dest: *mut u8,
-    cb_dest: usize,
-    psz_src: *const u8,
-) -> NTSTATUS {
-    let psz_dest = opaque_ptr(psz_dest);
-    ntkrnl_sys::inline::common::RtlStringCbCopyA(psz_dest, cb_dest, psz_src)
-}
+// RtlStringCbCopyA → moved to `common-inlines`.
 
 // --- KxAcquireSpinLock / KxReleaseSpinLock (cdecl) ---
 
@@ -945,32 +628,8 @@ pub unsafe extern "C" fn KeQueryInterruptTime() -> ULONGLONG {
     ntkrnl_sys::inline::ke::KeQueryInterruptTime()
 }
 
-// --- PS PsGetCurrentThread (NTAPI = stdcall on i386) ---
-// Must be extern "system" to match calling convention of ntkrnl-sys extern declarations.
-// Mismatch (cdecl def vs stdcall call) within the same LLVM CGU is UB → noreturn cascade.
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "system" fn PsGetCurrentThread() -> PETHREAD {
-    ntkrnl_sys::inline::common::PsGetCurrentThread()
-}
-
-// --- RTL RtlInitEmptyUnicodeString (cdecl — FORCEINLINE, not NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlInitEmptyUnicodeString(
-    unicode_string: PUNICODE_STRING,
-    buffer: *mut u16,
-    buffer_size: u16,
-) {
-    let buffer = opaque_ptr(buffer);
-    ntkrnl_sys::inline::common::RtlInitEmptyUnicodeString(
-        unicode_string,
-        buffer,
-        buffer_size,
-    )
-}
+// PsGetCurrentThread (extern "system" = NTAPI) and RtlInitEmptyUnicodeString
+// → moved to `common-inlines`.
 
 // --- EX Rundown protection (FASTCALL = fastcall on i386, cdecl on 64-bit) ---
 
@@ -1214,8 +873,9 @@ pub unsafe extern "C" fn ExCompareSwapFastReference(
 // ============================================================================
 
 // --- PS ps_x.h FORCEINLINE wrappers (macro trampolines + lock helpers) ---
-// Extracted into the `ps-inlines` rlib (sibling pattern). `PspClearCrossThreadFlag`
-// stays in shim_exports — its body is in `inline::common`, not `inline::ps`.
+// Extracted into the `ps-inlines` rlib (sibling pattern).
+// `PspClearCrossThreadFlag` lives in `common-inlines` (its body is in
+// `inline::common`, not `inline::ps`).
 
 // --- KeGetContextPc / KeGetContextReturnRegister (cdecl — no NTAPI) ---
 // Note: KeGetContextPc is also exported from KD64 section for i386.
@@ -1236,14 +896,7 @@ pub unsafe extern "C" fn KeGetContextReturnRegister(
     ntkrnl_sys::inline::ke::KeGetContextReturnRegister(ctx) as ULONG_PTR
 }
 
-// --- InterlockedDecrementUL (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn InterlockedDecrementUL(addend: *mut ULONG) -> ULONG {
-    let addend = opaque_ptr(addend);
-    ntkrnl_sys::inline::common::InterlockedDecrementUL(addend)
-}
+// InterlockedDecrementUL → moved to `common-inlines`.
 
 // --- KeQuerySystemTime (NTAPI, amd64/arm64 only — i386 has real HAL function) ---
 
@@ -1317,23 +970,8 @@ pub unsafe extern "system" fn ExRaiseStatus(status: NTSTATUS) -> ! {
     ntkrnl_sys::inline::ke::ExRaiseStatus(status)
 }
 
-// --- InterlockedCompareExchangePointer (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn InterlockedCompareExchangePointer(
-    destination: *mut PVOID,
-    exchange: PVOID,
-    comparand: PVOID,
-) -> PVOID {
-    let destination = opaque_ptr(destination);
-    let exchange = opaque_ptr(exchange);
-    let comparand = opaque_ptr(comparand);
-    ntkrnl_sys::inline::common::InterlockedCompareExchangePointer(
-        destination, exchange, comparand,
-    )
-}
-
+// InterlockedCompareExchangePointer → moved to `common-inlines`.
+//
 // InterlockedCompareExchange — already provided by ex/exintrin.rs with correct
 // calling conventions (fastcall on i386, cdecl on 64-bit).
 
@@ -2738,10 +2376,8 @@ core::arch::global_asm!(
     ".globl _KeLeaveCriticalRegion",
     ".set _KeLeaveCriticalRegion, _KeLeaveCriticalRegion@0",
 
-    // PsGetCurrentThread: now extern "system" = stdcall = _PsGetCurrentThread@0 (primary)
-    // Alias cdecl name for any C code that uses cdecl calling convention
-    ".globl _PsGetCurrentThread",
-    ".set _PsGetCurrentThread, _PsGetCurrentThread@0",
+    // PsGetCurrentThread alias moved to common-inlines crate (target symbol
+    // _PsGetCurrentThread@0 is now defined there, not in this rlib).
 
     // KeEnterGuardedRegion: stdcall = _KeEnterGuardedRegion@0 (definition), cdecl = _KeEnterGuardedRegion (alias)
     ".globl _KeEnterGuardedRegion",

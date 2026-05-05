@@ -35,6 +35,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -76,6 +83,7 @@ name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
  "cm-inlines",
+ "common-inlines",
  "ke-inlines",
  "ntoskrnl-rust",
  "ntprintf",

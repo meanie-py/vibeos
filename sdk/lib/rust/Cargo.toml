@@ -5,6 +5,7 @@ members = [
     "bitmap",
     "byteswap",
     "cm-inlines",
+    "common-inlines",
     "compress",
     "crc32",
     "encode",

@@ -36,6 +36,14 @@ extern crate ps_inlines;
 // `ntoskrnl-rust::shim_exports`. Sibling rlib for the same captures(none)
 // containment reason as ob/ps-inlines.
 extern crate se_inlines;
+// Same pattern, fifth batch: common-inlines holds 34 cross-subsystem helper
+// wrappers (Probe* family, splay-link, list-ops, RTL string helpers,
+// interlocked, FsRtl region, init helpers, PsGetCurrentThread) extracted
+// from `ntoskrnl-rust::shim_exports`. Sibling rlib for the same
+// captures(none) containment reason — and because the wrapper count there
+// is highest, defusing it with the rlib boundary has the highest expected
+// payoff.
+extern crate common_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -327,6 +335,86 @@ mod _force_se_inlines_symbols {
         SepGetOwnerFromDescriptor,
         SepGetSaclFromDescriptor,
         SepReleaseTokenLock,
+    ];
+}
+
+// Defensive pull for common-inlines (cross-subsystem wrappers extracted from
+// ntoskrnl-rust::shim_exports — sibling rlib pattern). 34 functions; one
+// uses extern "system" (PsGetCurrentThread) but the REFS array stores the
+// raw fn pointer either way.
+mod _force_common_inlines_symbols {
+    extern "C" {
+        fn CcBugCheck();
+        fn DefaultQueryInfoBufferCheck();
+        fn DefaultSetInfoBufferCheck();
+        fn ExInitializeResource();
+        fn ExceptionRecord32To64();
+        fn FsRtlEnterFileSystem();
+        fn FsRtlExitFileSystem();
+        fn InitializeObjectAttributes();
+        fn InsertTailList();
+        fn InterlockedCompareExchangePointer();
+        fn InterlockedDecrementUL();
+        fn InterlockedExchangeAdd64();
+        fn PopEntryList();
+        fn ProbeAndCaptureUnicodeString();
+        fn ProbeForReadLargeInteger();
+        fn ProbeForReadUchar();
+        fn ProbeForReadUshort();
+        fn ProbeForWriteBoolean();
+        fn ProbeForWriteHandle();
+        fn ProbeForWriteLangId();
+        fn ProbeForWritePointer();
+        fn ProbeForWriteUlong();
+        fn PsGetCurrentThread();
+        fn PspClearCrossThreadFlag();
+        fn ReleaseCapturedUnicodeString();
+        fn RtlInitEmptyAnsiString();
+        fn RtlInitEmptyUnicodeString();
+        fn RtlInitializeSplayLinks();
+        fn RtlInsertAsLeftChild();
+        fn RtlInsertAsRightChild();
+        fn RtlIsLeftChild();
+        fn RtlLongLongAdd();
+        fn RtlParent();
+        fn RtlStringCbCopyA();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 34] = [
+        CcBugCheck,
+        DefaultQueryInfoBufferCheck,
+        DefaultSetInfoBufferCheck,
+        ExInitializeResource,
+        ExceptionRecord32To64,
+        FsRtlEnterFileSystem,
+        FsRtlExitFileSystem,
+        InitializeObjectAttributes,
+        InsertTailList,
+        InterlockedCompareExchangePointer,
+        InterlockedDecrementUL,
+        InterlockedExchangeAdd64,
+        PopEntryList,
+        ProbeAndCaptureUnicodeString,
+        ProbeForReadLargeInteger,
+        ProbeForReadUchar,
+        ProbeForReadUshort,
+        ProbeForWriteBoolean,
+        ProbeForWriteHandle,
+        ProbeForWriteLangId,
+        ProbeForWritePointer,
+        ProbeForWriteUlong,
+        PsGetCurrentThread,
+        PspClearCrossThreadFlag,
+        ReleaseCapturedUnicodeString,
+        RtlInitEmptyAnsiString,
+        RtlInitEmptyUnicodeString,
+        RtlInitializeSplayLinks,
+        RtlInsertAsLeftChild,
+        RtlInsertAsRightChild,
+        RtlIsLeftChild,
+        RtlLongLongAdd,
+        RtlParent,
+        RtlStringCbCopyA,
     ];
 }
 
