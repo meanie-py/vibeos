@@ -13,6 +13,12 @@
 //!     `KiTryThreadLock`, `KiAcquire/ReleasePrcbLock`. UP-only: per-thread
 //!     and per-PRCB locks are no-ops (single CPU implies the caller already
 //!     owns them); `KiTryThreadLock` returns FALSE.
+//!   - Scheduler helpers (5): `KiInsertDeferredReadyList`,
+//!     `KiRescheduleThread`, `KiSetThreadSwapBusy`, `KiCheckDeferredReadyList`,
+//!     `KiRequestApcInterrupt`. Four are UP no-ops; only
+//!     `KiInsertDeferredReadyList` does real work — sets the thread's State
+//!     to DeferredReady, DeferredProcessor to 0 (boot CPU), and calls
+//!     `KiDeferredReadyThread`.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -28,10 +34,15 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::{BOOLEAN, KIRQL, ULONG_PTR};
+use ntkrnl_sys::base::{BOOLEAN, KIRQL, UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::ddk::{
     PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKTHREAD, _DISPATCHER_HEADER, _KPCR,
 };
+
+/// `_KTHREAD_STATE_DeferredReady` — same value (= 7) on all 3 archs per bindgen
+/// (`bindgen_{i386,amd64,arm64}.rs`). Replicated as a u8 so we don't pull in
+/// the `_KTHREAD_STATE` enum just for this constant.
+const KTHREAD_STATE_DEFERRED_READY: u8 = 7;
 
 /// SYNCH_LEVEL on UP kernel = DISPATCH_LEVEL = 2 (matches
 /// `ntkrnl_sys::inline::ke::SYNCH_LEVEL`; replicated locally to avoid pulling
@@ -62,6 +73,7 @@ extern "fastcall" {
     fn KeReleaseInStackQueuedSpinLockFromDpcLevel(lock_handle: PKLOCK_QUEUE_HANDLE);
     fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
     fn KiExitDispatcher(old_irql: KIRQL);
+    fn KiDeferredReadyThread(thread: PKTHREAD);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -82,6 +94,7 @@ extern "C" {
     fn KeReleaseInStackQueuedSpinLockFromDpcLevel(lock_handle: PKLOCK_QUEUE_HANDLE);
     fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
     fn KiExitDispatcher(old_irql: KIRQL);
+    fn KiDeferredReadyThread(thread: PKTHREAD);
 }
 
 // ============================================================================
@@ -302,3 +315,50 @@ pub unsafe extern "C" fn _rs_KiAcquirePrcbLock(_prcb: PKPRCB) {}
 
 #[no_mangle]
 pub unsafe extern "C" fn _rs_KiReleasePrcbLock(_prcb: PKPRCB) {}
+
+// ============================================================================
+// Scheduler helpers (ke_x.h, #ifndef CONFIG_SMP)
+//
+// All UP no-ops except KiInsertDeferredReadyList, which sets the thread's
+// scheduling state and hands off to KiDeferredReadyThread. The KTHREAD
+// field nesting differs per arch — bindgen unions for State (i386 direct,
+// amd64/arm64 nested two anon unions deep) and DeferredProcessor (all
+// arches nested under __bindgen_anon_1.__bindgen_anon_1). Replicated
+// locally to avoid pulling ntkrnl_sys::inline::ke's private accessors.
+// ============================================================================
+
+#[inline(always)]
+unsafe fn kt_set_state(thread: PKTHREAD, val: u8) {
+    #[cfg(target_arch = "x86")]
+    {
+        (*thread).State = val;
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        (*thread).__bindgen_anon_5.__bindgen_anon_6.State = val;
+    }
+}
+
+#[inline(always)]
+unsafe fn kt_set_deferred_processor(thread: PKTHREAD, val: u8) {
+    (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor = val;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiInsertDeferredReadyList(thread: PKTHREAD) {
+    kt_set_state(thread, KTHREAD_STATE_DEFERRED_READY);
+    kt_set_deferred_processor(thread, 0);
+    KiDeferredReadyThread(thread);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiRescheduleThread(_new_thread: BOOLEAN, _cpu: ULONG) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiSetThreadSwapBusy(_thread: PKTHREAD) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiCheckDeferredReadyList(_prcb: PKPRCB) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiRequestApcInterrupt(_need_apc: BOOLEAN, _processor: UCHAR) {}

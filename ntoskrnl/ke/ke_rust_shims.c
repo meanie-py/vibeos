@@ -457,23 +457,33 @@ VOID KiReleaseDispatcherLockFromSynchLevel(VOID)
     _rs_KiReleaseDispatcherLockFromSynchLevel();
 }
 
-/* --- Deferred ready list (ke_x.h) --- */
+/* --- Deferred ready / sched helpers (ke_x.h) ---
+ * Phase 1 batch 5 — bodies in ke-inlines.
+ * KiInsertDeferredReadyList: KTHREAD State + DeferredProcessor write +
+ *                            KiDeferredReadyThread call (only non-no-op).
+ * KiRescheduleThread / KiSetThreadSwapBusy / KiCheckDeferredReadyList /
+ * KiRequestApcInterrupt: UP no-ops.
+ */
+
+extern void _rs_KiInsertDeferredReadyList(PKTHREAD Thread);
+extern void _rs_KiRescheduleThread(BOOLEAN NewThread, ULONG Cpu);
+extern void _rs_KiSetThreadSwapBusy(PKTHREAD Thread);
+extern void _rs_KiCheckDeferredReadyList(PKPRCB Prcb);
+extern void _rs_KiRequestApcInterrupt(BOOLEAN NeedApc, UCHAR Processor);
 
 VOID KiInsertDeferredReadyList(IN PKTHREAD Thread)
 {
-    _saved_KiInsertDeferredReadyList(Thread);
+    _rs_KiInsertDeferredReadyList(Thread);
 }
 
 VOID KiRescheduleThread(IN BOOLEAN NewThread, IN ULONG Cpu)
 {
-    _saved_KiRescheduleThread(NewThread, Cpu);
+    _rs_KiRescheduleThread(NewThread, Cpu);
 }
-
-/* --- Thread swap (ke_x.h) --- */
 
 VOID KiSetThreadSwapBusy(IN PKTHREAD Thread)
 {
-    _saved_KiSetThreadSwapBusy(Thread);
+    _rs_KiSetThreadSwapBusy(Thread);
 }
 
 /* --- PRCB lock + KiTryThreadLock (ke_x.h, UP no-ops) ---
@@ -495,18 +505,14 @@ BOOLEAN KiTryThreadLock(IN PKTHREAD Thread)
     return _rs_KiTryThreadLock(Thread);
 }
 
-/* --- Deferred ready list check (ke_x.h) --- */
-
 VOID KiCheckDeferredReadyList(IN PKPRCB Prcb)
 {
-    _saved_KiCheckDeferredReadyList(Prcb);
+    _rs_KiCheckDeferredReadyList(Prcb);
 }
-
-/* --- APC interrupt (ke_x.h) --- */
 
 VOID KiRequestApcInterrupt(IN BOOLEAN NeedApc, IN UCHAR Processor)
 {
-    _saved_KiRequestApcInterrupt(NeedApc, Processor);
+    _rs_KiRequestApcInterrupt(NeedApc, Processor);
 }
 
 /* --- Timer lock (ke_x.h) --- */
