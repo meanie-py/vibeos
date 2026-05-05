@@ -427,21 +427,32 @@ BOOLEAN MiIsPdeForAddressValid(IN PVOID Address)
 #endif
 
 /*
- * PTE portable macros — access hardware PTE bitfields that differ per arch.
- * These wrap C macros (no calling convention) — no NTAPI.
+ * PTE portable bitfield-write macros (Phase 1 batch M2 — bodies delegate
+ * to Rust impls in the `mm-pte-mut-inlines` rlib).
+ *
+ * MiIsPageWriteable / MiIsPageDirty (read paths) live in the M1 rlib
+ * `mm-pte-class-inlines`; they're the matching read-side bitfield queries.
  */
-void MiMakeDirtyPage(IN PMMPTE Pte)    { MI_MAKE_DIRTY_PAGE(Pte); }
-void MiMakeCleanPage(IN PMMPTE Pte)    { MI_MAKE_CLEAN_PAGE(Pte); }
-void MiMakeAccessedPage(IN PMMPTE Pte) { MI_MAKE_ACCESSED_PAGE(Pte); }
-void MiPageDisableCache(IN PMMPTE Pte) { MI_PAGE_DISABLE_CACHE(Pte); }
-void MiPageWriteThrough(IN PMMPTE Pte) { MI_PAGE_WRITE_THROUGH(Pte); }
-void MiPageWriteCombined(IN PMMPTE Pte){ MI_PAGE_WRITE_COMBINED(Pte); }
+extern void _rs_MiMakeDirtyPage(PMMPTE Pte);
+void MiMakeDirtyPage(IN PMMPTE Pte)    { _rs_MiMakeDirtyPage(Pte); }
+extern void _rs_MiMakeCleanPage(PMMPTE Pte);
+void MiMakeCleanPage(IN PMMPTE Pte)    { _rs_MiMakeCleanPage(Pte); }
+extern void _rs_MiMakeAccessedPage(PMMPTE Pte);
+void MiMakeAccessedPage(IN PMMPTE Pte) { _rs_MiMakeAccessedPage(Pte); }
+extern void _rs_MiPageDisableCache(PMMPTE Pte);
+void MiPageDisableCache(IN PMMPTE Pte) { _rs_MiPageDisableCache(Pte); }
+extern void _rs_MiPageWriteThrough(PMMPTE Pte);
+void MiPageWriteThrough(IN PMMPTE Pte) { _rs_MiPageWriteThrough(Pte); }
+extern void _rs_MiPageWriteCombined(PMMPTE Pte);
+void MiPageWriteCombined(IN PMMPTE Pte){ _rs_MiPageWriteCombined(Pte); }
 extern BOOLEAN _rs_MiIsPageWriteable(PMMPTE Pte);
 BOOLEAN MiIsPageWriteable(IN PMMPTE Pte) { return _rs_MiIsPageWriteable(Pte); }
 extern BOOLEAN _rs_MiIsPageDirty(PMMPTE Pte);
 BOOLEAN MiIsPageDirty(IN PMMPTE Pte)     { return _rs_MiIsPageDirty(Pte); }
-void MiMakeOwnerPage(IN PMMPTE Pte)    { MI_MAKE_OWNER_PAGE(Pte); }
-void MiMakeWritePage(IN PMMPTE Pte)    { MI_MAKE_WRITE_PAGE(Pte); }
+extern void _rs_MiMakeOwnerPage(PMMPTE Pte);
+void MiMakeOwnerPage(IN PMMPTE Pte)    { _rs_MiMakeOwnerPage(Pte); }
+extern void _rs_MiMakeWritePage(PMMPTE Pte);
+void MiMakeWritePage(IN PMMPTE Pte)    { _rs_MiMakeWritePage(Pte); }
 
 /*
  * InterlockedCompareExchangePte / InterlockedExchangePte — arch-specific PTE atomic update.

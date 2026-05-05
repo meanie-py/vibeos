@@ -51,6 +51,9 @@ extern crate common_inlines;
 // C trampolines in `mm_rust_shims.c` collapse to one-line `_rs_Mi*`
 // delegations.
 extern crate mm_pte_class_inlines;
+// M2 sibling: PTE bitfield-write FORCEINLINEs (MiMake{Dirty,Clean,Accessed,
+// Owner,Write}Page, MiPage{DisableCache,WriteThrough,WriteCombined}).
+extern crate mm_pte_mut_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -460,6 +463,33 @@ mod _force_mm_pte_class_inlines_symbols {
         _rs_MiIsUserPte,
         _rs_MiDetermineUserGlobalPteMask,
         _rs_MiIsPdeForAddressValid,
+    ];
+}
+
+// Defensive pull for mm-pte-mut-inlines (Phase 1 batch M2). Eight bitfield
+// writes against MMPTE — uniform shape across arches at the rlib layer
+// (per-arch divergence handled inside `inline::mm`).
+mod _force_mm_pte_mut_inlines_symbols {
+    extern "C" {
+        fn _rs_MiMakeDirtyPage();
+        fn _rs_MiMakeCleanPage();
+        fn _rs_MiMakeAccessedPage();
+        fn _rs_MiMakeOwnerPage();
+        fn _rs_MiMakeWritePage();
+        fn _rs_MiPageDisableCache();
+        fn _rs_MiPageWriteThrough();
+        fn _rs_MiPageWriteCombined();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 8] = [
+        _rs_MiMakeDirtyPage,
+        _rs_MiMakeCleanPage,
+        _rs_MiMakeAccessedPage,
+        _rs_MiMakeOwnerPage,
+        _rs_MiMakeWritePage,
+        _rs_MiPageDisableCache,
+        _rs_MiPageWriteThrough,
+        _rs_MiPageWriteCombined,
     ];
 }
 
