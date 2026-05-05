@@ -58,39 +58,58 @@
 #undef CmpTryToConvertKcbSharedToExclusive
 #undef CmpConvertKcbSharedToExclusive
 
-/* === Phase 4: outline wrappers for renamed FORCEINLINEs === */
+/* === Phase 4: outline wrappers for renamed FORCEINLINEs ===
+ *
+ * Each body delegates to the Rust impl in `sdk/lib/rust/cm-inlines/`. The
+ * `_fi_*` macros remain available (defined by the Phase 1 rename + system
+ * header include) and would still produce correct C-side inlining if the
+ * cm-inlines crate is ever unwired — kept as the fallback path documented
+ * in shim-elimination.md § "Phase 1 redesigns / Option 3".
+ *
+ * The Rust impls live in their own rlib (compiled with `lto = false`,
+ * `codegen-units = 256`) so the captures(none) cross-CGU contagion that
+ * killed the first pilot can't reach into ntoskrnl-rust's config code.
+ */
+extern void _rs_CmpAcquireKcbLockExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
+extern void _rs_CmpAcquireKcbLockExclusiveByIndex(ULONG Index);
+extern void _rs_CmpAcquireKcbLockExclusiveByKey(ULONG ConvKey);
+extern void _rs_CmpReleaseKcbLock(PCM_KEY_CONTROL_BLOCK Kcb);
+extern void _rs_CmpReleaseKcbLockByIndex(ULONG Index);
+extern void _rs_CmpReleaseKcbLockByKey(ULONG ConvKey);
+extern unsigned char _rs_CmpTryToConvertKcbSharedToExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
+extern void _rs_CmpConvertKcbSharedToExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
 
 VOID CmpAcquireKcbLockExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
 {
-    _fi_CmpAcquireKcbLockExclusive(Kcb);
+    _rs_CmpAcquireKcbLockExclusive(Kcb);
 }
 VOID CmpAcquireKcbLockExclusiveByIndex(IN ULONG Index)
 {
-    _fi_CmpAcquireKcbLockExclusiveByIndex(Index);
+    _rs_CmpAcquireKcbLockExclusiveByIndex(Index);
 }
 VOID CmpAcquireKcbLockExclusiveByKey(IN ULONG ConvKey)
 {
-    _fi_CmpAcquireKcbLockExclusiveByKey(ConvKey);
+    _rs_CmpAcquireKcbLockExclusiveByKey(ConvKey);
 }
 VOID CmpReleaseKcbLockByIndex(IN ULONG Index)
 {
-    _fi_CmpReleaseKcbLockByIndex(Index);
+    _rs_CmpReleaseKcbLockByIndex(Index);
 }
 VOID CmpReleaseKcbLock(IN PCM_KEY_CONTROL_BLOCK Kcb)
 {
-    _fi_CmpReleaseKcbLock(Kcb);
+    _rs_CmpReleaseKcbLock(Kcb);
 }
 VOID CmpReleaseKcbLockByKey(IN ULONG ConvKey)
 {
-    _fi_CmpReleaseKcbLockByKey(ConvKey);
+    _rs_CmpReleaseKcbLockByKey(ConvKey);
 }
 BOOLEAN CmpTryToConvertKcbSharedToExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
 {
-    return _fi_CmpTryToConvertKcbSharedToExclusive(Kcb);
+    return (BOOLEAN)_rs_CmpTryToConvertKcbSharedToExclusive(Kcb);
 }
 VOID CmpConvertKcbSharedToExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
 {
-    _fi_CmpConvertKcbSharedToExclusive(Kcb);
+    _rs_CmpConvertKcbSharedToExclusive(Kcb);
 }
 
 /* === Phase 4: outline wrappers for cm_x.h macros (KCB/NCB shared lock helpers,

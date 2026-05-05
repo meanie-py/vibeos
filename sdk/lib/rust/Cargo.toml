@@ -4,6 +4,7 @@ members = [
     "avltable",
     "bitmap",
     "byteswap",
+    "cm-inlines",
     "compress",
     "crc32",
     "encode",

@@ -61,6 +61,12 @@ impl<T> IntoSlot for &mut T   { #[inline(always)] fn into_slot(self) -> u64 { se
 // ---------------------------------------------------------------------------
 // FFI to the kernel sinks.
 
+// KDBG sinks live in `ntoskrnl-rust::kdbg` (i386/amd64 only) and the
+// supporting C shim (`kdbg_rust_shims.c`, also i386/amd64 only — arm64
+// disables KDBG, see ntos.cmake `if(KDBG AND NOT ARCH STREQUAL "arm64")`).
+// Don't reference the symbols on arm64 — the rust_kdb_*/rust_kdbp_*
+// entry points become no-ops there (see below).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe extern "C" {
     /// Defined in Rust kdbg/kdb_print.rs (extern "C").
     fn KdbPutsN(string: *const u8, length: u16);
@@ -144,13 +150,19 @@ fn strip_trailing_nul(fmt: &[u8]) -> &[u8] {
 }
 
 /// Format and send to KdbPutsN — replacement for `KdbPrintf(fmt, ...)`.
+/// arm64: no-op stub (KDBG is disabled on arm64 — see ntos.cmake).
 pub fn rust_kdb_printf(fmt: &[u8], slots: &[u64]) {
-    let fmt = strip_trailing_nul(fmt);
-    let mut buf = [0u8; 1024];
-    let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
-    format_into(&mut sink, fmt, slots);
-    let len = sink.pos.min(u16::MAX as usize - 1);
-    unsafe { KdbPutsN(buf.as_ptr(), len as u16); }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        let fmt = strip_trailing_nul(fmt);
+        let mut buf = [0u8; 1024];
+        let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
+        format_into(&mut sink, fmt, slots);
+        let len = sink.pos.min(u16::MAX as usize - 1);
+        unsafe { KdbPutsN(buf.as_ptr(), len as u16); }
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    { let _ = (fmt, slots); }
 }
 
 /// Send a NUL-terminated C string straight through KdbpPagerInternal with
@@ -161,36 +173,49 @@ pub fn rust_kdb_printf(fmt: &[u8], slots: &[u64]) {
 /// `cstr` must point at a NUL-terminated byte sequence. Null pointers are
 /// silently ignored (matches C printf-of-null-pointer-as-fmt being UB —
 /// callers already check `.is_null()` before calling).
+///
+/// arm64: no-op stub.
 pub fn rust_kdbp_print_cstr(cstr: *const u8) {
-    if cstr.is_null() { return; }
-    if unsafe { KdbOutputAborted } != 0 { return; }
-    // Walk to the NUL (cap at 4 KiB to match the buffered emit path).
-    let mut len = 0usize;
-    while len < 4096 && unsafe { *cstr.add(len) } != 0 { len += 1; }
-    let mut buf = [0u8; 4096];
-    unsafe { core::ptr::copy_nonoverlapping(cstr, buf.as_mut_ptr(), len); }
-    buf[len] = 0;
-    unsafe { KdbpPagerInternal(buf.as_mut_ptr(), len as u32, 0); }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if cstr.is_null() { return; }
+        if unsafe { KdbOutputAborted } != 0 { return; }
+        // Walk to the NUL (cap at 4 KiB to match the buffered emit path).
+        let mut len = 0usize;
+        while len < 4096 && unsafe { *cstr.add(len) } != 0 { len += 1; }
+        let mut buf = [0u8; 4096];
+        unsafe { core::ptr::copy_nonoverlapping(cstr, buf.as_mut_ptr(), len); }
+        buf[len] = 0;
+        unsafe { KdbpPagerInternal(buf.as_mut_ptr(), len as u32, 0); }
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    { let _ = cstr; }
 }
 
 /// Format and send to KdbpPagerInternal — replacement for `KdbpPrint(fmt, ...)`.
+/// arm64: no-op stub.
 pub fn rust_kdbp_print(fmt: &[u8], slots: &[u64]) {
-    // Mirror the C version's KdbOutputAborted check so paged-output
-    // suppression still works for Rust callers.
-    if unsafe { KdbOutputAborted } != 0 {
-        return;
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        // Mirror the C version's KdbOutputAborted check so paged-output
+        // suppression still works for Rust callers.
+        if unsafe { KdbOutputAborted } != 0 {
+            return;
+        }
+        let fmt = strip_trailing_nul(fmt);
+        // 4 KiB matches the original C buffer; anything bigger gets clipped (and
+        // the pager handles its own newline-by-newline emission anyway).
+        let mut buf = [0u8; 4096];
+        let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
+        format_into(&mut sink, fmt, slots);
+        let len = sink.pos.min(buf.len() - 1);
+        unsafe {
+            *buf.as_mut_ptr().add(len) = 0;
+            KdbpPagerInternal(buf.as_mut_ptr(), len as u32, 0);
+        }
     }
-    let fmt = strip_trailing_nul(fmt);
-    // 4 KiB matches the original C buffer; anything bigger gets clipped (and
-    // the pager handles its own newline-by-newline emission anyway).
-    let mut buf = [0u8; 4096];
-    let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
-    format_into(&mut sink, fmt, slots);
-    let len = sink.pos.min(buf.len() - 1);
-    unsafe {
-        *buf.as_mut_ptr().add(len) = 0;
-        KdbpPagerInternal(buf.as_mut_ptr(), len as u32, 0);
-    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    { let _ = (fmt, slots); }
 }
 
 /// Format and send through DbgPrintEmitPreformatted — replacement for

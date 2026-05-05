@@ -173,7 +173,19 @@ Status: 2026-05-04 evening. Closes the ANSI/wide split. New `sdk/lib/rust/ntprin
 
 Net result: ~30 functions eliminated, codebase clarity improved, no risk.
 
-### Phase 1 — FORCEINLINE batch — **PILOT FAILED, plan blocked** (2026-05-04)
+### Phase 1 — FORCEINLINE batch — **PILOT 2 LANDED** (2026-05-04 evening)
+
+**TL;DR.** Pilot 1 (early 2026-05-04) added `cm_inlines.rs` to `ntoskrnl-rust`; cascade lit up 23 unexpected ud2 in pre-existing config code (cmparse / cmkcbncb / cmvalche / …) and i386 BSOD'd at boot. Reverted same day. Pilot 2 (evening) put the same eight KCB-lock translations in a brand-new isolated `sdk/lib/rust/cm-inlines/` rlib, kept the C outlines alive in `cm_rust_shims.c` as one-line trampolines that delegate to the Rust impls (vararg-style "augment, don't replace" — same shape as `RtlStringCbPrintfA`'s `va_start; ntprintf_va_format_a; va_end` body). i386 7/7 PASS in 59s. amd64 7/7 PASS in 4:02. **Zero unexpected ud2** on either arch — the cascade did not return.
+
+**Why isolation worked where in-crate didn't.** Workspace `lto = false`, `codegen-units = 256`. The cascade-trigger is rustc-side cross-CGU attribute deduction: when a new `#[no_mangle] extern "C"` Rust fn appears in a CGU adjacent to existing config code in the *same* crate, attribute inference re-shuffles and lands ud2 in the neighbours. A separate rlib compiles in its own rustc invocation with no source visibility into ntoskrnl-rust's bodies, so the inference can never fire across the boundary. The C `Cmp*KcbLock*` symbols staying alive (now thin trampolines instead of FORCEINLINE outlines) means ntoskrnl-rust's existing `extern "C" { fn CmpAcquireKcbLockExclusive(...) }` decls are unchanged — zero source touches in `ntoskrnl-rust` for this round.
+
+**One incidental gotcha.** `ntkrnl_sys::mm::KeGetCurrentThread` is `#[inline(always)]` over `core::arch::asm!`, but cross-crate `#[inline(always)]` for inline-asm fns doesn't inline reliably at our `opt-level = 1`. cm-inlines emitted a `_KeGetCurrentThread` symbol reference with no definition (the C-side equivalent is itself a FORCEINLINE in `ke_x.h` — no exported symbol). Replicated the asm directly into cm-inlines.
+
+**End state for the eight KCB-lock outlines.** Body lives in Rust (`sdk/lib/rust/cm-inlines/src/lib.rs`). C symbol still exists in `cm_rust_shims.c` and is what every Rust + C caller still resolves to. Each C body is one delegating line: `_rs_CmpAcquireKcbLockExclusive(Kcb)` etc. The `_fi_*` FORCEINLINE-rename macros are kept in scope as a documented fallback path (if the cm-inlines crate is ever unwired).
+
+---
+
+### Phase 1 — original PILOT 1 retro (preserved for context)
 
 The original Phase 1 plan was: pull the FORCEINLINE bodies out of headers like `cm_x.h`, write Rust equivalents as `#[no_mangle] pub unsafe extern "C" fn Foo(...)`, and remove the C-side outline wrapper from `*_rust_shims.c`. This **does not work** as designed; pilot crashed boot.
 
@@ -194,15 +206,13 @@ The cascade triggers at the **CGU partitioning level** — any `#[no_mangle] ext
 
 **Current state.** Pilot fully reverted. Build clean, smoke green, 0 unexpected ud2. cm_inlines.rs deleted. cm_rust_shims.c restored to its post-Phase-0 state. **The Phase 1 approach as written needs to be redesigned before any further functions can be moved.**
 
-**Possible Phase 1 redesigns** (none validated; all are guesses):
-1. **Add opaque_ptr / write_volatile defenses to the *affected* config functions** before moving any FORCEINLINE. Touch ~19 functions in `cmparse.rs` / `cmkcbncb.rs` / `cmvalche.rs` / `cmapi.rs` to make them captures(none)-resistant first. Then attempt the move. Cost: significantly higher than estimated.
-2. **Keep the Rust replacements in a separate isolated CGU** by giving them their own crate (`cm-inlines` sibling to `ntoskrnl-rust` in the workspace). Crate boundaries should make captures(none) cross-CGU inference impossible since LLVM only sees declarations across crate boundaries.
-3. **Don't replace, augment.** Leave the C-side `_rust_shims.c` outline in place and add the Rust version with a different mangled name; pivot Rust callers to use the Rust version. The C side becomes dead but stays linked. Bigger code, no churn for cross-CGU.
-4. **Accept the cascade and add ud2-tolerance**. Use `#[inline(never)]` + `core::hint::black_box` chains on neighbors. Brittle and would need wide application.
+**Possible Phase 1 redesigns** (originally listed as guesses; status updated):
+1. **Pre-harden affected config functions** with opaque_ptr / write_volatile before moving any FORCEINLINE. Touch ~19 functions in `cmparse.rs` / `cmkcbncb.rs` / `cmvalche.rs` / `cmapi.rs`. — Not attempted; superseded by 2+3.
+2. **Isolated crate** (`cm-inlines` sibling to `ntoskrnl-rust`). Crate boundary should make cross-CGU inference impossible. — **Validated by Pilot 2 (see retro above).**
+3. **Don't replace, augment.** Keep the C `_rust_shims.c` outline alive as a thin trampoline that delegates to a Rust impl with a different mangled name. — **Combined with #2 in Pilot 2.** The augment pattern means existing Rust callers' `extern "C"` decls are unchanged; only the C body collapses to one delegating line. Mirrors the `ntprintf` vararg trampolines (`RtlStringCbPrintfA::body = va_start; ntprintf_va_format_a; va_end`).
+4. **Accept the cascade and add ud2-tolerance** with `#[inline(never)]` + `core::hint::black_box` chains. — Not attempted (combination of 2+3 sufficed).
 
-Option 2 (isolated crate) feels cleanest in principle but requires Cargo.toml workspace work; option 1 is most direct but the cost is a lot higher than the original plan implied.
-
-**Lesson for the rest of the elimination plan.** Moving any single `_rust_shims.c` function to Rust may cascade ud2 across its subsystem. Phases 2-4 below need the same caveat; they were estimated assuming the move-and-replace pattern works.
+**Lesson for the rest of the elimination plan.** *Moving* any single `_rust_shims.c` function out of C and adding it to `ntoskrnl-rust` cascades ud2 across the subsystem. *Augmenting* (C symbol stays as an ABI anchor; Rust impl in a sibling rlib; C body delegates) does not. Phases 2-4 below should default to the augment+isolated-crate pattern unless there's a specific reason to move-and-replace.
 
 ### Phase 2 — Macro materializations (~1 week)
 

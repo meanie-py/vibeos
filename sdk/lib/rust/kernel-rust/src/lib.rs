@@ -15,6 +15,11 @@ extern crate ntprintf;
 // (ntprintf_w_scan_arg_types, ntprintf_w_format) are linked in for the
 // wide variadic trampolines (RtlStringCbPrintfW, swprintf).
 extern crate ntprintf_w;
+// Re-export cm-inlines so its `_rs_Cmp{Acquire,Release,…}KcbLock*` impls
+// are linked in for the C-side `cm_rust_shims.c` outlines that delegate
+// to them. Isolated crate to dodge cross-CGU captures(none) cascades —
+// see docs/engineering/shim-elimination.md § "Phase 1" for context.
+extern crate cm_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -30,6 +35,41 @@ mod _force_ntprintf_symbols {
     #[used]
     static REF_FORMAT: unsafe extern "C" fn(*mut u8, usize, *const u8, *const u64, usize) -> usize =
         ntprintf_format_a;
+}
+
+// Defensive symbol pull for the cm-inlines KCB-lock Rust impls. The C-side
+// `cm_rust_shims.c` outlines call these by name; without this `[used]` block
+// rustc/lld may strip the rlib's contribution from the final staticlib.
+mod _force_cm_inlines_symbols {
+    use core::ffi::c_void;
+    extern "C" {
+        fn _rs_CmpAcquireKcbLockExclusive(kcb: *mut c_void);
+        fn _rs_CmpAcquireKcbLockExclusiveByIndex(index: u32);
+        fn _rs_CmpAcquireKcbLockExclusiveByKey(conv_key: u32);
+        fn _rs_CmpReleaseKcbLock(kcb: *mut c_void);
+        fn _rs_CmpReleaseKcbLockByIndex(index: u32);
+        fn _rs_CmpReleaseKcbLockByKey(conv_key: u32);
+        fn _rs_CmpTryToConvertKcbSharedToExclusive(kcb: *mut c_void) -> u8;
+        fn _rs_CmpConvertKcbSharedToExclusive(kcb: *mut c_void);
+    }
+    #[used]
+    static REFS_PTR: [unsafe extern "C" fn(*mut c_void); 4] = [
+        _rs_CmpAcquireKcbLockExclusive,
+        _rs_CmpReleaseKcbLock,
+        _rs_CmpConvertKcbSharedToExclusive,
+        // _rs_CmpTryToConvertKcbSharedToExclusive returns u8 — typed below
+        _rs_CmpReleaseKcbLock, // padding to keep the array uniform
+    ];
+    #[used]
+    static REFS_INDEX: [unsafe extern "C" fn(u32); 4] = [
+        _rs_CmpAcquireKcbLockExclusiveByIndex,
+        _rs_CmpAcquireKcbLockExclusiveByKey,
+        _rs_CmpReleaseKcbLockByIndex,
+        _rs_CmpReleaseKcbLockByKey,
+    ];
+    #[used]
+    static REF_TRY: unsafe extern "C" fn(*mut c_void) -> u8 =
+        _rs_CmpTryToConvertKcbSharedToExclusive;
 }
 
 // Same defensive pull for the wide-format ntprintf_w FFI entries.
