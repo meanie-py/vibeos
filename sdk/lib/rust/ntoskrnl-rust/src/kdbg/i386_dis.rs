@@ -17,7 +17,6 @@ use ntkrnl_sys::ddk::PCSTR;
 extern "C" {
     fn KdbpSafeReadMemory(dest: *mut c_void, src: *const c_void, size: usize) -> NTSTATUS;
     fn KdbPuts(s: PCSTR);
-    fn KdbPrintf(fmt: PCSTR, ...);
     fn KdbSymPrintAddress(addr: *mut c_void, frame: *mut c_void) -> u8;
 }
 
@@ -44,12 +43,6 @@ static mut TEST_OUTPUT: String = String::new();
 unsafe extern "C" fn KdbPuts(s: PCSTR) {
     let cstr = core::ffi::CStr::from_ptr(s as *const c_char);
     TEST_OUTPUT.push_str(cstr.to_str().unwrap_or(""));
-}
-
-#[cfg(test)]
-unsafe extern "C" fn KdbPrintf(_fmt: PCSTR, ...) {
-    // Stub out printf for tests to avoid libc dependency.
-    // Most disassembly output goes through KdbPuts.
 }
 
 #[cfg(test)]
@@ -3250,7 +3243,7 @@ impl Disassembler {
                         if !name.is_empty() {
                             unsafe { KdbPuts(name.as_ptr() as PCSTR); }
                         } else {
-                            unsafe { KdbPrintf(".byte 0x%x\0".as_ptr() as PCSTR, self.the_buffer[0] as u32); }
+                            unsafe { crate::kdb_printf!(b".byte 0x%x\0", self.the_buffer[0] as u32); }
                         }
                     }
                     return 1;
@@ -3376,7 +3369,7 @@ impl Disassembler {
             }
             if self.rex & !self.rex_used != 0 {
                 let name = self.prefix_name(self.rex | 0x40).unwrap_or("<internal disassembler error>");
-                unsafe { KdbPrintf("%s \0".as_ptr() as PCSTR, name.as_ptr() as PCSTR); }
+                unsafe { crate::kdb_printf!(b"%s \0", name.as_ptr() as PCSTR); }
             }
 
             // Output padding

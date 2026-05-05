@@ -78,7 +78,6 @@ extern "C" {
     fn _strupr(s: PSTR) -> PSTR;
     fn strstr(s1: PSTR, s2: PSTR) -> PSTR;
     fn strncmp(s1: PSTR, s2: PSTR, n: usize) -> i32;
-    fn KdpDprintf(fmt: PSTR, ...);
 }
 
 extern "system" {
@@ -144,12 +143,12 @@ unsafe fn KdpGetMemorySizeInMBs(loader_block: PLOADER_PARAMETER_BLOCK) -> SIZE_T
 unsafe fn KdpPrintBanner() {
     let mem_size_mbs = KdpGetMemorySizeInMBs(KeLoaderBlock);
 
-    // KdpDprintf(b"-----------------------------------------------------\n\0".as_ptr() as PSTR);
-    // KdpDprintf(b"ReactOS (Build)\n\0".as_ptr() as PSTR);
-    // KdpDprintf(b"%u System Processor [%u MB Memory]\n\0".as_ptr() as PSTR, KeNumberProcessors, mem_size_mbs);
+    // crate::kdp_dprintf!(b"-----------------------------------------------------\n\0");
+    // crate::kdp_dprintf!(b"ReactOS (Build)\n\0");
+    // crate::kdp_dprintf!(b"%u System Processor [%u MB Memory]\n\0", KeNumberProcessors, mem_size_mbs);
 
     if !KeLoaderBlock.is_null() {
-        // KdpDprintf(b"Command Line: %s\n\0".as_ptr() as PSTR, (*KeLoaderBlock).LoadOptions);
+        // crate::kdp_dprintf!(b"Command Line: %s\n\0", (*KeLoaderBlock).LoadOptions);
         // KdpDprintf(
             // b"ARC Paths: %s %s %s %s\n\0".as_ptr() as PSTR,
             // (*KeLoaderBlock).ArcBootDeviceName,

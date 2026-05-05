@@ -291,9 +291,7 @@ unsafe fn _disable() {
 // =============================================================================
 
 extern "C" {
-    fn KdbPrintf(Format: PCSTR, ...);
     fn KdbPuts(String: PCSTR);
-    fn KdbpPrint(Format: PCHAR, ...);
     fn KdbpGetInstLength(Address: ULONG_PTR) -> LONG;
     // KdbpStackSwitchAndCall is declared in kdb.h as `VOID NTAPI`. Defined in
     // i386/kdb_help.S and amd64/kdb_help.S — both export `_*@8`.
@@ -456,7 +454,7 @@ unsafe fn KdbpShouldStepOverInstruction(
         core::mem::size_of_val(&Mem) as ULONG,
     ))
     {
-        KdbPrintf(b"Couldn't access memory at 0x%p\n\0".as_ptr() as PCSTR, Eip);
+        crate::kdb_printf!(b"Couldn't access memory at 0x%p\n\0", Eip);
         return 0u8;
     }
 
@@ -682,8 +680,7 @@ pub unsafe extern "C" fn KdbpInsertBreakPoint(
 
     if Type == KdbBreakPointHardware {
         if (Address % Size as ULONG_PTR) != 0 {
-            KdbPrintf(
-                b"Address (0x%p) must be aligned to a multiple of the size (%d)\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"Address (0x%p) must be aligned to a multiple of the size (%d)\n\0",
                 Address,
                 Size as i32,
             );
@@ -708,14 +705,12 @@ pub unsafe extern "C" fn KdbpInsertBreakPoint(
         );
         if Condition.is_null() {
             if ErrOffset >= 0 {
-                KdbPrintf(
-                    b"Couldn't parse expression: %s at character %d\n\0".as_ptr() as PCSTR,
+                crate::kdb_printf!(b"Couldn't parse expression: %s at character %d\n\0",
                     ErrMsg.as_ptr(),
                     ErrOffset,
                 );
             } else {
-                KdbPrintf(
-                    b"Couldn't parse expression: %s\0".as_ptr() as PCSTR,
+                crate::kdb_printf!(b"Couldn't parse expression: %s\0",
                     ErrMsg.as_ptr(),
                 );
             }
@@ -766,7 +761,7 @@ pub unsafe extern "C" fn KdbpInsertBreakPoint(
     KdbBreakPointCount += 1;
 
     if Type != KdbBreakPointTemporary {
-        KdbPrintf(b"Breakpoint %d inserted.\n\0".as_ptr() as PCSTR, i as i32);
+        crate::kdb_printf!(b"Breakpoint %d inserted.\n\0", i as i32);
     }
 
     KdbpEnableBreakPoint(i as LONG, core::ptr::null_mut());
@@ -827,7 +822,7 @@ pub unsafe extern "C" fn KdbpDisableBreakPoint(
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG
     {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
@@ -838,13 +833,13 @@ pub unsafe extern "C" fn KdbpDisableBreakPoint(
 
     if (*BreakPoint).Type == KdbBreakPointNone
     {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
     if (*BreakPoint).Enabled == 0u8
     {
-        KdbPrintf(b"Breakpoint %d is not enabled.\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Breakpoint %d is not enabled.\n\0", BreakPointNr);
         return 1u8;
     }
 
@@ -906,7 +901,7 @@ pub unsafe extern "C" fn KdbpDisableBreakPoint(
     (*BreakPoint).Enabled = 0u8;
     if (*BreakPoint).Type != KdbBreakPointTemporary
     {
-        KdbPrintf(b"Breakpoint %d disabled.\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Breakpoint %d disabled.\n\0", BreakPointNr);
     }
 
     1u8
@@ -967,14 +962,14 @@ pub unsafe extern "C" fn KdbpAttachToThread(
 
     if !NT_SUCCESS(PsLookupThreadByThreadId(ThreadId, &mut Thread))
     {
-        KdbpPrint(b"Invalid thread id: 0x%08x\n\0".as_ptr() as PCHAR, ThreadId as ULONG_PTR);
+        crate::kdbp_print!(b"Invalid thread id: 0x%08x\n\0", ThreadId as ULONG_PTR);
         return 0u8;
     }
     Process = (*Thread).ThreadsProcess;
 
     if KeIsExecutingDpc() != 0 && Process != KdbCurrentProcess
     {
-        KdbpPrint(b"Cannot attach to thread within another process while executing a DPC.\n\0".as_ptr() as PCHAR);
+        crate::kdbp_print!(b"Cannot attach to thread within another process while executing a DPC.\n\0");
         ObDereferenceObject(Thread as PVOID);
         return 0u8;
     }
@@ -1032,7 +1027,7 @@ pub unsafe extern "C" fn KdbpAttachToProcess(
 
     if !NT_SUCCESS(PsLookupProcessByProcessId(ProcessId, &mut Process))
     {
-        KdbpPrint(b"Invalid process id: 0x%08x\n\0".as_ptr() as PCHAR, ProcessId as ULONG_PTR);
+        crate::kdbp_print!(b"Invalid process id: 0x%08x\n\0", ProcessId as ULONG_PTR);
         return 0u8;
     }
 
@@ -1040,7 +1035,7 @@ pub unsafe extern "C" fn KdbpAttachToProcess(
     ObDereferenceObject(Process as PVOID);
     if Entry == core::ptr::addr_of_mut!((*KdbCurrentProcess).ThreadListHead)
     {
-        KdbpPrint(b"No threads in process 0x%p, cannot attach to process!\n\0".as_ptr() as PCHAR, ProcessId);
+        crate::kdbp_print!(b"No threads in process 0x%p, cannot attach to process!\n\0", ProcessId);
         return 0u8;
     }
 
@@ -1302,15 +1297,13 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
             }
 
             if (*BreakPoint).Type == KdbBreakPointSoftware {
-                KdbPrintf(
-                    b"\nEntered debugger on breakpoint #%d: EXEC 0x%04x:0x%p\n\0".as_ptr() as PCSTR,
+                crate::kdb_printf!(b"\nEntered debugger on breakpoint #%d: EXEC 0x%04x:0x%p\n\0",
                     KdbLastBreakPointNr,
                     ((*Context).SegCs & 0xffff) as ULONG,
                     KeGetContextPc(Context),
                 );
             } else if (*BreakPoint).Type == KdbBreakPointHardware {
-                KdbPrintf(
-                    b"\nEntered debugger on breakpoint #%d: %s 0x%08x\n\0".as_ptr() as PCSTR,
+                crate::kdb_printf!(b"\nEntered debugger on breakpoint #%d: %s 0x%08x\n\0",
                     KdbLastBreakPointNr,
                     if (*BreakPoint).Data.Hw.AccessType == KdbAccessRead {
                         b"READ\0".as_ptr() as PCSTR
@@ -1336,8 +1329,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
                 0xCC,
                 core::ptr::addr_of_mut!((*BreakPoint).Data.SavedInstruction),
             )) {
-                KdbPrintf(
-                    b"Warning: Couldn't reenable breakpoint %d\n\0".as_ptr() as PCSTR,
+                crate::kdb_printf!(b"Warning: Couldn't reenable breakpoint %d\n\0",
                     BreakPoint.offset_from(KdbBreakPoints.as_ptr()),
                 );
             }
@@ -1412,8 +1404,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
                 return kdHandleException;
             }
 
-            KdbPrintf(
-                b"\nEntered debugger on embedded INT3 at 0x%04x:0x%p.\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"\nEntered debugger on embedded INT3 at 0x%04x:0x%p.\n\0",
                 ((*Context).SegCs & 0xffff) as ULONG,
                 KeGetContextPc(Context),
             );
@@ -1429,8 +1420,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
             return ContinueType;
         }
 
-        KdbPrintf(
-            b"\nEntered debugger on %s-chance exception (Exception Code: 0x%x) (%s)\n\0".as_ptr() as PCSTR,
+        crate::kdb_printf!(b"\nEntered debugger on %s-chance exception (Exception Code: 0x%x) (%s)\n\0",
             if FirstChance != 0 {
                 b"first\0".as_ptr() as PCSTR
             } else {
@@ -1445,8 +1435,7 @@ pub unsafe extern "C" fn KdbEnterDebuggerException(
             && (*ExceptionRecord).NumberParameters != 0
         {
             let TrapCr2: ULONG_PTR = __readcr2();
-            KdbPrintf(
-                b"Memory at 0x%p could not be accessed\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"Memory at 0x%p could not be accessed\n\0",
                 TrapCr2,
             );
         }
@@ -1594,7 +1583,7 @@ pub unsafe extern "C" fn KdbpDeleteBreakPoint(
     }
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
@@ -1603,7 +1592,7 @@ pub unsafe extern "C" fn KdbpDeleteBreakPoint(
     }
 
     if (*BreakPoint).Type == KdbBreakPointNone {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
@@ -1614,7 +1603,7 @@ pub unsafe extern "C" fn KdbpDeleteBreakPoint(
     }
 
     if (*BreakPoint).Type != KdbBreakPointTemporary {
-        KdbPrintf(b"Breakpoint %d deleted.\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Breakpoint %d deleted.\n\0", BreakPointNr);
     }
 
     (*BreakPoint).Type = KdbBreakPointNone;
@@ -1639,7 +1628,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
     }
 
     if BreakPointNr < 0 || BreakPointNr >= KDB_MAXIMUM_BREAKPOINT_COUNT as LONG {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
@@ -1648,12 +1637,12 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
     }
 
     if (*BreakPoint).Type == KdbBreakPointNone {
-        KdbPrintf(b"Invalid breakpoint: %d\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Invalid breakpoint: %d\n\0", BreakPointNr);
         return 0u8;
     }
 
     if (*BreakPoint).Enabled != 0 {
-        KdbPrintf(b"Breakpoint %d is already enabled.\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Breakpoint %d is already enabled.\n\0", BreakPointNr);
         return 1u8;
     }
 
@@ -1661,8 +1650,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
         || (*BreakPoint).Type == KdbBreakPointTemporary
     {
         if KdbSwBreakPointCount as usize >= KDB_MAXIMUM_SW_BREAKPOINT_COUNT {
-            KdbPrintf(
-                b"Maximum number of SW breakpoints (%d) used. Disable another breakpoint in order to enable this one.\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"Maximum number of SW breakpoints (%d) used. Disable another breakpoint in order to enable this one.\n\0",
                 KDB_MAXIMUM_SW_BREAKPOINT_COUNT as ULONG,
             );
             return 0u8;
@@ -1675,8 +1663,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
             core::ptr::addr_of_mut!((*BreakPoint).Data.SavedInstruction),
         );
         if !NT_SUCCESS(Status) {
-            KdbPrintf(
-                b"Couldn't access memory at 0x%p\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"Couldn't access memory at 0x%p\n\0",
                 (*BreakPoint).Address,
             );
             return 0u8;
@@ -1691,8 +1678,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
         // (BreakPoint->Address % BreakPoint->Data.Hw.Size) == 0 (asserted in C)
 
         if KdbHwBreakPointCount as usize >= KDB_MAXIMUM_HW_BREAKPOINT_COUNT {
-            KdbPrintf(
-                b"Maximum number of HW breakpoints (%d) already used. Disable another breakpoint in order to enable this one.\n\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"Maximum number of HW breakpoints (%d) already used. Disable another breakpoint in order to enable this one.\n\0",
                 KDB_MAXIMUM_HW_BREAKPOINT_COUNT as ULONG,
             );
             return 0u8;
@@ -1764,7 +1750,7 @@ pub unsafe extern "C" fn KdbpEnableBreakPoint(
 
     (*BreakPoint).Enabled = 1u8;
     if (*BreakPoint).Type != KdbBreakPointTemporary {
-        KdbPrintf(b"Breakpoint %d enabled.\n\0".as_ptr() as PCSTR, BreakPointNr);
+        crate::kdb_printf!(b"Breakpoint %d enabled.\n\0", BreakPointNr);
     }
 
     1u8

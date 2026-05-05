@@ -10,7 +10,6 @@ extern "C" {
     static mut KdpBreakpointInstruction: KD_BREAKPOINT_TYPE;
     static mut KdpOweBreakpoint: BOOLEAN;
     static mut BreakpointsSuspended: BOOLEAN;
-    fn KdpDprintf(Format: PCHAR, ...);
 }
 
 extern "system" {
@@ -122,7 +121,7 @@ pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {
         
         if status < 0 {
             // This should never happen
-            // KdpDprintf(b"Unable to write breakpoint to address 0x%p\n\0".as_ptr() as PCHAR, Address);
+            // crate::kdp_dprintf!(b"Unable to write breakpoint to address 0x%p\n\0", Address);
         }
     } else {
         // Memory is inaccessible now, setting breakpoint is deferred

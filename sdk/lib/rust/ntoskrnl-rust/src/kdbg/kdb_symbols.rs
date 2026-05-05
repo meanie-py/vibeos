@@ -58,7 +58,6 @@ extern "C" {
     fn RosSymDelete(info: PVOID);
     fn RosSymCreateFromMem(base: PVOID, size: ULONG, info: *mut PVOID) -> BOOLEAN;
     fn RosSymInitKernelMode();
-    fn KdbPrintf(format: PSTR, ...);
     fn _strnicmp(s1: PSTR, s2: PSTR, n: usize) -> i32;
     fn isspace(c: i32) -> i32;
     fn toupper(c: i32) -> i32;
@@ -211,8 +210,7 @@ pub unsafe extern "C" fn KdbSymPrintAddress(
             FunctionName.as_mut_ptr(),
         ) != 0
         {
-            KdbPrintf(
-                b"<%s:%x (%s:%d (%s))>\0".as_ptr() as PSTR,
+            crate::kdb_printf!(b"<%s:%x (%s:%d (%s))>\0",
                 ModuleNameAnsi.as_ptr(),
                 RelativeAddress,
                 FileName.as_ptr(),
@@ -224,8 +222,7 @@ pub unsafe extern "C" fn KdbSymPrintAddress(
     }
 
     if Printed == 0 {
-        KdbPrintf(
-            b"<%s:%x>\0".as_ptr() as PSTR,
+        crate::kdb_printf!(b"<%s:%x>\0",
             ModuleNameAnsi.as_ptr(),
             RelativeAddress,
         );

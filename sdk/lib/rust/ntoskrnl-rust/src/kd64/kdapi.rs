@@ -148,7 +148,6 @@ extern "C" {
     static mut TraceDataBufferPosition: ULONG;
     static mut MmHighestUserAddress: PVOID;
     static mut SeDebugPrivilege: LUID;
-    fn KdpDprintf(format: PCHAR, ...);
 }
 
 extern "system" {
@@ -426,7 +425,7 @@ unsafe fn KdpSearchMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _con
         Buffer: core::ptr::null_mut(),
     };
 
-    // KdpDprintf(b"Memory Search support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // crate::kdp_dprintf!(b"Memory Search support is unimplemented!\n\0");
 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
@@ -441,7 +440,7 @@ unsafe fn KdpFillMemory(state: PDBGKD_MANIPULATE_STATE64, _data: PSTRING, _conte
         Buffer: core::ptr::null_mut(),
     };
 
-    // KdpDprintf(b"Memory Fill support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // crate::kdp_dprintf!(b"Memory Fill support is unimplemented!\n\0");
 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
@@ -497,7 +496,7 @@ unsafe fn KdpWriteBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING, 
         Buffer: core::ptr::null_mut(),
     };
 
-    // KdpDprintf(b"Extended Breakpoint Write support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // crate::kdp_dprintf!(b"Extended Breakpoint Write support is unimplemented!\n\0");
 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
@@ -513,7 +512,7 @@ unsafe fn KdpRestoreBreakPointEx(state: PDBGKD_MANIPULATE_STATE64, data: PSTRING
         Buffer: core::ptr::null_mut(),
     };
 
-    // KdpDprintf(b"Extended Breakpoint Restore support is unimplemented!\n\0".as_ptr() as PCHAR);
+    // crate::kdp_dprintf!(b"Extended Breakpoint Restore support is unimplemented!\n\0");
 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
@@ -528,7 +527,7 @@ unsafe fn KdpWriteCustomBreakpoint(state: PDBGKD_MANIPULATE_STATE64, _data: PSTR
         Buffer: core::ptr::null_mut(),
     };
 
-    // KdpDprintf(b"Custom Breakpoint Write is unimplemented\n\0".as_ptr() as PCHAR);
+    // crate::kdp_dprintf!(b"Custom Breakpoint Write is unimplemented\n\0");
 
     (*state).ReturnStatus = STATUS_UNSUCCESSFUL;
     header.Length = core::mem::size_of::<DBGKD_MANIPULATE_STATE64>() as u16;
@@ -1172,7 +1171,7 @@ unsafe fn KdpNotSupported(state: PDBGKD_MANIPULATE_STATE64) {
 
 unsafe fn KdpSwitchProcessor(processor_index: USHORT) -> ULONG {
     if processor_index as u32 >= KeNumberProcessors as u32 {
-        // KdpDprintf(b"%u is not a valid processor number\n\0".as_ptr() as PCHAR);
+        // crate::kdp_dprintf!(b"%u is not a valid processor number\n\0");
         return ContinueProcessorReselected;
     }
 
@@ -1295,11 +1294,11 @@ unsafe fn KdpSendWaitContinue(
                 KdpWritePhysicalMemory(&mut manipulate_state, &mut data, context);
             }
             DbgKdQuerySpecialCallsApi | DbgKdSetSpecialCallApi | DbgKdClearSpecialCallsApi => {
-                // KdpDprintf(b"Special Call support is unimplemented!\n\0".as_ptr() as PCHAR);
+                // crate::kdp_dprintf!(b"Special Call support is unimplemented!\n\0");
                 KdpNotSupported(&mut manipulate_state);
             }
             DbgKdSetInternalBreakPointApi | DbgKdGetInternalBreakPointApi => {
-                // KdpDprintf(b"Internal Breakpoint support is unimplemented!\n\0".as_ptr() as PCHAR);
+                // crate::kdp_dprintf!(b"Internal Breakpoint support is unimplemented!\n\0");
                 KdpNotSupported(&mut manipulate_state);
             }
             DbgKdReadIoSpaceExtendedApi => {
@@ -1326,7 +1325,7 @@ unsafe fn KdpSendWaitContinue(
                 return KdpSwitchProcessor(manipulate_state.Processor);
             }
             DbgKdPageInApi => {
-                // KdpDprintf(b"DbgKdPageInApi is obsolete!\n\0".as_ptr() as PCHAR);
+                // crate::kdp_dprintf!(b"DbgKdPageInApi is obsolete!\n\0");
                 KdpNotSupported(&mut manipulate_state);
             }
             DbgKdReadMachineSpecificRegister => {
@@ -1357,7 +1356,7 @@ unsafe fn KdpSendWaitContinue(
                 KdpQueryMemory(&mut manipulate_state, context);
             }
             DbgKdSwitchPartition => {
-                // KdpDprintf(b"Partition Switch support is unimplemented!\n\0".as_ptr() as PCHAR);
+                // crate::kdp_dprintf!(b"Partition Switch support is unimplemented!\n\0");
                 KdpNotSupported(&mut manipulate_state);
             }
             DbgKdWriteCustomBreakpointApi => {
@@ -1370,7 +1369,7 @@ unsafe fn KdpSendWaitContinue(
                 KdpSetContextEx(&mut manipulate_state, &mut data, context);
             }
             _ => {
-                // KdpDprintf(b"Received Unrecognized API 0x%lx\n\0".as_ptr() as PCHAR);
+                // crate::kdp_dprintf!(b"Received Unrecognized API 0x%lx\n\0");
 
                 data.Length = 0;
                 manipulate_state.ReturnStatus = STATUS_UNSUCCESSFUL;
@@ -1700,15 +1699,15 @@ pub unsafe extern "system" fn KdEnterDebugger(trap_frame: *mut PVOID, exception_
     KdEnteredDebugger = 1u8;
 
     if (KiFreezeFlag & 1) != 0 {
-        // KdpDprintf(b"FreezeLock was jammed!  Backup SpinLock was used!\n\0".as_ptr() as PCHAR);
+        // crate::kdp_dprintf!(b"FreezeLock was jammed!  Backup SpinLock was used!\n\0");
     }
 
     if (KiFreezeFlag & 2) != 0 {
-        // KdpDprintf(b"Some processors not frozen in debugger!\n\0".as_ptr() as PCHAR);
+        // crate::kdp_dprintf!(b"Some processors not frozen in debugger!\n\0");
     }
 
     if KdpPortLocked == 0 {
-        // KdpDprintf(b"Port lock was not acquired!\n\0".as_ptr() as PCHAR);
+        // crate::kdp_dprintf!(b"Port lock was not acquired!\n\0");
     }
 
     enable
@@ -2231,7 +2230,7 @@ pub unsafe extern "system" fn KdRefreshDebuggerNotPresent() -> BOOLEAN {
 
     let enable = KdEnterDebugger(core::ptr::null_mut(), core::ptr::null_mut());
 
-    KdpDprintf(b"KDTARGET: Refreshing KD connection\n\0".as_ptr() as PCHAR);
+    crate::kdp_dprintf!(b"KDTARGET: Refreshing KD connection\n\0");
 
     let debugger_not_present = KdDebuggerNotPresent;
 

@@ -289,8 +289,6 @@ extern "C" {
     fn KeSetContextFrameRegister(ctx: PCONTEXT, frame: ULONG_PTR);
 
     // KdbpPrint and KdbPrintf are C variadics — defined in kdbg_rust_shims.c.
-    fn KdbpPrint(format: PSTR, ...);
-    fn KdbPrintf(format: PCSTR, ...);
     fn KdbPuts(s: PCSTR);
     fn KdbpInsertBreakPoint(
         Address: ULONG_PTR,
@@ -414,7 +412,7 @@ unsafe fn KdbpEvaluateExpression(
             ErrMsg = ErrMsg.offset(2);
         }
 
-        KdbpPrint(b"%*s%s\n\0".as_ptr() as PSTR, ExpressionErrOffset, b"\0".as_ptr() as PSTR, ErrMsg);
+        crate::kdbp_print!(b"%*s%s\n\0", ExpressionErrOffset, b"\0".as_ptr() as PSTR, ErrMsg);
     }
 
     IsOk
@@ -453,7 +451,7 @@ pub unsafe extern "C" fn KdbpCmdEvalExpression(
     let IsOk: BOOLEAN;
 
     if Argc < 2 {
-        KdbpPrint(b"?: Argument required\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"?: Argument required\n\0");
         return 1u8;
     }
 
@@ -474,9 +472,9 @@ pub unsafe extern "C" fn KdbpCmdEvalExpression(
     if IsOk != 0 {
         if Result > 0x00000000ffffffffu64 {
             if (Result & 0x8000000000000000u64) != 0 {
-                KdbpPrint(b"0x%016I64x  %20I64u  %20I64d\n\0".as_ptr() as PSTR, Result, Result, Result);
+                crate::kdbp_print!(b"0x%016I64x  %20I64u  %20I64d\n\0", Result, Result, Result);
             } else {
-                KdbpPrint(b"0x%016I64x  %20I64u\n\0".as_ptr() as PSTR, Result, Result);
+                crate::kdbp_print!(b"0x%016I64x  %20I64u\n\0", Result, Result);
             }
         } else {
             ul = Result as ULONG;
@@ -490,9 +488,9 @@ pub unsafe extern "C" fn KdbpCmdEvalExpression(
             }
 
             if l < 0 {
-                KdbpPrint(b"0x%08lx  %10lu  %10ld\n\0".as_ptr() as PSTR, ul, ul, l);
+                crate::kdbp_print!(b"0x%08lx  %10lu  %10ld\n\0", ul, ul, l);
             } else {
-                KdbpPrint(b"0x%08lx  %10lu\n\0".as_ptr() as PSTR, ul, ul);
+                crate::kdbp_print!(b"0x%08lx  %10lu\n\0", ul, ul);
             }
         }
     }
@@ -523,8 +521,7 @@ unsafe fn KdbpPrintStructInternal(
     i = 0;
     while i < (*Aggregate).NumElements {
         Member = (*Aggregate).Elements.add(i as usize);
-        KdbpPrint(
-            b"%s%p+%x: %s\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"%s%p+%x: %s\0",
             Indent,
             (BaseAddress as PCHAR).offset((*Member).BaseOffset as isize),
             (*Member).Size,
@@ -536,17 +533,17 @@ unsafe fn KdbpPrintStructInternal(
         );
         if DoRead != 0 {
             if strcmp((*Member).Type as *const i8, b"_UNICODE_STRING\0".as_ptr() as *const i8) == 0 {
-                KdbpPrint(b"\"\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\"\0");
                 KdbpPrintUnicodeString((BaseAddress as PCHAR).offset((*Member).BaseOffset as isize) as PCUNICODE_STRING);
-                KdbpPrint(b"\"\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\"\n\0");
                 i += 1;
                 continue;
             } else if strcmp((*Member).Type as *const i8, b"PUNICODE_STRING\0".as_ptr() as *const i8) == 0 {
-                KdbpPrint(b"\"\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\"\0");
                 KdbpPrintUnicodeString(
                     *(((BaseAddress as PCHAR).offset((*Member).BaseOffset as isize)) as *mut PUNICODE_STRING),
                 );
-                KdbpPrint(b"\"\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\"\n\0");
                 i += 1;
                 continue;
             }
@@ -562,13 +559,12 @@ unsafe fn KdbpPrintStructInternal(
                             Result >>= (*Member).FirstBit;
                             Result &= ((1u64 << (*Member).Bits) - 1);
                         }
-                        KdbpPrint(b" %lx\n\0".as_ptr() as PSTR, Result);
+                        crate::kdbp_print!(b" %lx\n\0", Result);
                     } else {
                         if (*Member).Size <= 8 {
-                            KdbpPrint(b" ??\n\0".as_ptr() as PCHAR);
+                            crate::kdbp_print!(b" ??\n\0");
                         } else {
-                            KdbpPrint(
-                                b" %s @ %x {\n\0".as_ptr() as PCHAR,
+                            crate::kdbp_print!(b" %s @ %x {\n\0",
                                 (*Member).Type,
                                 (*Member).BaseOffset,
                             );
@@ -584,7 +580,7 @@ unsafe fn KdbpPrintStructInternal(
                                 RosSymFreeAggregate(core::ptr::addr_of_mut!(MemberAggregate));
                             }
                             *Indent.offset(IndentLen as isize) = 0;
-                            KdbpPrint(b"%s}\n\0".as_ptr() as PCHAR, Indent);
+                            crate::kdbp_print!(b"%s}\n\0", Indent);
                         }
                         i += 1;
                         continue;
@@ -600,16 +596,15 @@ unsafe fn KdbpPrintStructInternal(
                         )) {
                             let mut j: ULONG = 0;
                             while j < (*Member).Size {
-                                KdbpPrint(b" %02x\0".as_ptr() as PCHAR, (Result & 0xff) as INT);
+                                crate::kdbp_print!(b" %02x\0", (Result & 0xff) as INT);
                                 Result >>= 8;
                                 j += 1;
                             }
                         } else {
                             if (*Member).Size <= 8 {
-                                KdbpPrint(b" ??\n\0".as_ptr() as PCHAR);
+                                crate::kdbp_print!(b" ??\n\0");
                             } else {
-                                KdbpPrint(
-                                    b" %s @ %x {\n\0".as_ptr() as PCHAR,
+                                crate::kdbp_print!(b" %s @ %x {\n\0",
                                     (*Member).Type,
                                     (*Member).BaseOffset,
                                 );
@@ -625,14 +620,13 @@ unsafe fn KdbpPrintStructInternal(
                                     RosSymFreeAggregate(core::ptr::addr_of_mut!(MemberAggregate));
                                 }
                                 *Indent.offset(IndentLen as isize) = 0;
-                                KdbpPrint(b"%s}\n\0".as_ptr() as PCHAR, Indent);
+                                crate::kdbp_print!(b"%s}\n\0", Indent);
                             }
                             i += 1;
                             continue;
                         }
                     } else {
-                        KdbpPrint(
-                            b" %s @ %p {\n\0".as_ptr() as PCHAR,
+                        crate::kdbp_print!(b" %s @ %p {\n\0",
                             (*Member).Type,
                             (BaseAddress as PCHAR).offset((*Member).BaseOffset as isize),
                         );
@@ -648,16 +642,15 @@ unsafe fn KdbpPrintStructInternal(
                             RosSymFreeAggregate(core::ptr::addr_of_mut!(MemberAggregate));
                         }
                         *Indent.offset(IndentLen as isize) = 0;
-                        KdbpPrint(b"%s}\n\0".as_ptr() as PCHAR, Indent);
+                        crate::kdbp_print!(b"%s}\n\0", Indent);
                     }
                 }
             }
         } else {
             if (*Member).Size <= 8 {
-                KdbpPrint(b" ??\n\0".as_ptr() as PCHAR);
+                crate::kdbp_print!(b" ??\n\0");
             } else {
-                KdbpPrint(
-                    b" %s @ %x {\n\0".as_ptr() as PCHAR,
+                crate::kdbp_print!(b" %s @ %x {\n\0",
                     (*Member).Type,
                     (*Member).BaseOffset,
                 );
@@ -673,7 +666,7 @@ unsafe fn KdbpPrintStructInternal(
                     RosSymFreeAggregate(core::ptr::addr_of_mut!(MemberAggregate));
                 }
                 *Indent.offset(IndentLen as isize) = 0;
-                KdbpPrint(b"%s}\n\0".as_ptr() as PCHAR, Indent);
+                crate::kdbp_print!(b"%s}\n\0", Indent);
             }
         }
         i += 1;
@@ -686,7 +679,7 @@ pub unsafe extern "C" fn KdbpCmdPrintStruct(
     _Argc: ULONG,
     _Argv: *mut PCHAR,
 ) -> BOOLEAN {
-    KdbpPrint(b"Command 'dt' requires building ntoskrnl with __ROS_DWARF__.\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"Command 'dt' requires building ntoskrnl with __ROS_DWARF__.\n\0");
     1u8
 }
 
@@ -788,19 +781,15 @@ pub unsafe extern "C" fn KdbpCmdFilter(
     let mut p: PCSTR;
 
     if Argc <= 1 {
-        KdbpPrint(
-            b"REMARKS:\n- The 'WIN2000' system-wide debug filter component is used for DbgPrint()\n  messages without Component ID and Level.\n- The 'DEFAULT' debug filter component is used for DbgPrint() messages with\n  an unknown Component ID.\n\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"REMARKS:\n- The 'WIN2000' system-wide debug filter component is used for DbgPrint()\n  messages without Component ID and Level.\n- The 'DEFAULT' debug filter component is used for DbgPrint() messages with\n  an unknown Component ID.\n\n\0",
         );
-        KdbpPrint(
-            b"The list of debug filter components currently available on your system is:\n\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"The list of debug filter components currently available on your system is:\n\n\0",
         );
-        KdbpPrint(
-            b"    Component Name         Component ID\n  ==================     ================\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"    Component Name         Component ID\n  ==================     ================\n\0",
         );
         i = 0;
         while i < ComponentTableCount {
-            KdbpPrint(
-                b"%20s        0x%08lx\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"%20s        0x%08lx\n\0",
                 ComponentTable[i as usize].Name,
                 ComponentTable[i as usize].Id,
             );
@@ -838,8 +827,7 @@ pub unsafe extern "C" fn KdbpCmdFilter(
             if j == debug_classes.len() as u32 {
                 Level = strtoul(opt as *const i8, &mut pend, 0);
                 if pend != p as *mut i8 {
-                    KdbpPrint(
-                        b"filter: bad class name '%.*s'\n\0".as_ptr() as PSTR,
+                    crate::kdbp_print!(b"filter: bad class name '%.*s'\n\0",
                         (p as usize - opt as usize) as i32,
                         opt,
                     );
@@ -864,8 +852,7 @@ pub unsafe extern "C" fn KdbpCmdFilter(
         }
 
         if KdbpGetComponentId(p, &mut ComponentId) == 0 {
-            KdbpPrint(
-                b"filter: '%s' is not a valid component name!\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"filter: '%s' is not a valid component name!\n\0",
                 p,
             );
             return 1u8;
@@ -937,12 +924,12 @@ pub unsafe extern "C" fn KdbpCmdDisassembleX(
         }
 
         if Result > (!0usize) as ULONGLONG {
-            KdbpPrint(b"Warning: Address %I64x is beeing truncated\n\0".as_ptr() as PSTR, Result);
+            crate::kdbp_print!(b"Warning: Address %I64x is beeing truncated\n\0", Result);
         }
 
         Address = Result as ULONG_PTR;
     } else if *(*Argv.offset(0)).offset(0) == b'x' as i8 {
-        KdbpPrint(b"x: Address argument required.\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"x: Address argument required.\n\0");
         return 1u8;
     }
 
@@ -951,9 +938,9 @@ pub unsafe extern "C" fn KdbpCmdDisassembleX(
 
         while Count > 0 {
             if KdbSymPrintAddress(Address as PVOID, core::ptr::null_mut()) == 0 {
-                KdbpPrint(b"<%p>:\0".as_ptr() as PSTR, Address as PVOID);
+                crate::kdbp_print!(b"<%p>:\0", Address as PVOID);
             } else {
-                KdbpPrint(b":\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b":\0");
             }
 
             i = core::cmp::min(4u32, Count) as INT;
@@ -970,15 +957,15 @@ pub unsafe extern "C" fn KdbpCmdDisassembleX(
                     Address as PVOID,
                     core::mem::size_of::<ULONG>(),
                 )) {
-                    KdbpPrint(b" ????????\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b" ????????\0");
                 } else {
-                    KdbpPrint(b" %08x\0".as_ptr() as PSTR, ul);
+                    crate::kdbp_print!(b" %08x\0", ul);
                 }
 
                 Address += core::mem::size_of::<ULONG>() as ULONG_PTR;
             }
 
-            KdbpPrint(b"\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"\n\0");
         }
     } else {
         loop {
@@ -989,18 +976,18 @@ pub unsafe extern "C" fn KdbpCmdDisassembleX(
             }
 
             if KdbSymPrintAddress(Address as PVOID, core::ptr::null_mut()) == 0 {
-                KdbpPrint(b"<%08x>: \0".as_ptr() as PSTR, Address);
+                crate::kdbp_print!(b"<%08x>: \0", Address);
             } else {
-                KdbpPrint(b": \0".as_ptr() as PSTR);
+                crate::kdbp_print!(b": \0");
             }
 
             let InstLen = KdbpDisassemble(Address, KdbUseIntelSyntax as ULONG);
             if InstLen < 0 {
-                KdbpPrint(b"<INVALID>\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"<INVALID>\n\0");
                 return 1u8;
             }
 
-            KdbpPrint(b"\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"\n\0");
             Address += InstLen as ULONG_PTR;
         }
     }
@@ -1027,8 +1014,7 @@ pub unsafe extern "C" fn KdbpCmdRegs(
 
     if *(*Argv.offset(0)).offset(0) == b'r' as i8 {
         #[cfg(target_arch = "x86")]
-        KdbpPrint(
-            b"CS:EIP  0x%04x:0x%08x\nSS:ESP  0x%04x:0x%08x\n   EAX  0x%08x   EBX  0x%08x\n   ECX  0x%08x   EDX  0x%08x\n   ESI  0x%08x   EDI  0x%08x\n   EBP  0x%08x\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"CS:EIP  0x%04x:0x%08x\nSS:ESP  0x%04x:0x%08x\n   EAX  0x%08x   EBX  0x%08x\n   ECX  0x%08x   EDX  0x%08x\n   ESI  0x%08x   EDI  0x%08x\n   EBP  0x%08x\n\0",
             (*Context).SegCs & 0xFFFF, (*Context).Eip,
             (*Context).SegSs, (*Context).Esp,
             (*Context).Eax, (*Context).Ebx,
@@ -1037,8 +1023,7 @@ pub unsafe extern "C" fn KdbpCmdRegs(
             (*Context).Ebp,
         );
         #[cfg(not(target_arch = "x86"))]
-        KdbpPrint(
-            b"CS:RIP  0x%04x:0x%p\nSS:RSP  0x%04x:0x%p\n   RAX  0x%p     RBX  0x%p\n   RCX  0x%p     RDX  0x%p\n   RSI  0x%p     RDI  0x%p\n   RBP  0x%p\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"CS:RIP  0x%04x:0x%p\nSS:RSP  0x%04x:0x%p\n   RAX  0x%p     RBX  0x%p\n   RCX  0x%p     RDX  0x%p\n   RSI  0x%p     RDI  0x%p\n   RBP  0x%p\n\0",
             ((*Context).SegCs & 0xFFFF) as u32, (*Context).Rip,
             ((*Context).SegSs) as u32, (*Context).Rsp,
             (*Context).Rax, (*Context).Rbx,
@@ -1047,22 +1032,22 @@ pub unsafe extern "C" fn KdbpCmdRegs(
             (*Context).Rbp,
         );
 
-        KdbpPrint(b"EFLAGS  0x%08x \0".as_ptr() as PSTR, (*Context).EFlags);
+        crate::kdbp_print!(b"EFLAGS  0x%08x \0", (*Context).EFlags);
         i = 0;
         while i < 32 {
             if i == 1 {
                 if ((*Context).EFlags & (1 << 1)) == 0 {
-                    KdbpPrint(b" !BIT1\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b" !BIT1\0");
                 }
             } else if i == 12 {
-                KdbpPrint(b" IOPL%d\0".as_ptr() as PSTR, ((*Context).EFlags >> 12) & 3);
+                crate::kdbp_print!(b" IOPL%d\0", ((*Context).EFlags >> 12) & 3);
             } else if i == 13 {
             } else if ((*Context).EFlags & (1 << i)) != 0 {
-                KdbpPrint(EflagsBits[i as usize]);
+                crate::dbgprint::rust_kdbp_print_cstr(EflagsBits[i as usize] as *const u8);
             }
             i += 1;
         }
-        KdbpPrint(b"\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"\n\0");
     } else if *(*Argv.offset(0)).offset(0) == b'c' as i8 {
         let mut Cr0: ULONG;
         let mut Cr2: ULONG;
@@ -1102,7 +1087,7 @@ pub unsafe extern "C" fn KdbpCmdRegs(
             core::ptr::null_mut(), 0i32,
         );
         if !NT_SUCCESS(Status) {
-            KdbpPrint(b"Failed to get registers: status 0x%08x\n\0".as_ptr() as PSTR, Status);
+            crate::kdbp_print!(b"Failed to get registers: status 0x%08x\n\0", Status);
             return 1u8;
         }
         Cr0 = SpecialRegisters.Cr0 as ULONG;
@@ -1117,7 +1102,7 @@ pub unsafe extern "C" fn KdbpCmdRegs(
         Idtr = core::mem::transmute_copy(&SpecialRegisters.Idtr);
         Tr = SpecialRegisters.Tr;
 
-        KdbpPrint(b"CR0  0x%08x \0".as_ptr() as PSTR, Cr0);
+        crate::kdbp_print!(b"CR0  0x%08x \0", Cr0);
         i = 0;
         while i < 32 {
             if Cr0Bits[i as usize].is_null() {
@@ -1126,19 +1111,18 @@ pub unsafe extern "C" fn KdbpCmdRegs(
             }
 
             if (Cr0 & (1 << i)) != 0 {
-                KdbpPrint(Cr0Bits[i as usize]);
+                crate::dbgprint::rust_kdbp_print_cstr(Cr0Bits[i as usize] as *const u8);
             }
             i += 1;
         }
-        KdbpPrint(b"\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"\n\0");
 
-        KdbpPrint(b"CR2  0x%08x\n\0".as_ptr() as PSTR, Cr2);
-        KdbpPrint(
-            b"CR3  0x%08x  Pagedir-Base 0x%08x %s%s\n\0".as_ptr() as PSTR, Cr3, (Cr3 & 0xfffff000),
+        crate::kdbp_print!(b"CR2  0x%08x\n\0", Cr2);
+        crate::kdbp_print!(b"CR3  0x%08x  Pagedir-Base 0x%08x %s%s\n\0", Cr3, (Cr3 & 0xfffff000),
             if (Cr3 & (1 << 3)) != 0 { b" PWT\0".as_ptr() as PSTR } else { b"\0".as_ptr() as PSTR },
             if (Cr3 & (1 << 4)) != 0 { b" PCD\0".as_ptr() as PSTR } else { b"\0".as_ptr() as PSTR }
         );
-        KdbpPrint(b"CR4  0x%08x \0".as_ptr() as PSTR, Cr4);
+        crate::kdbp_print!(b"CR4  0x%08x \0", Cr4);
         i = 0;
         while i < 32 {
             if Cr4Bits[i as usize].is_null() {
@@ -1147,16 +1131,16 @@ pub unsafe extern "C" fn KdbpCmdRegs(
             }
 
             if (Cr4 & (1 << i)) != 0 {
-                KdbpPrint(Cr4Bits[i as usize]);
+                crate::dbgprint::rust_kdbp_print_cstr(Cr4Bits[i as usize] as *const u8);
             }
             i += 1;
         }
-        KdbpPrint(b"\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"\n\0");
 
-        KdbpPrint(b"GDTR Base 0x%08x  Size 0x%04x\n\0".as_ptr() as PSTR, Gdtr.Base, Gdtr.Limit as u32);
-        KdbpPrint(b"LDTR 0x%04x\n\0".as_ptr() as PSTR, Ldtr as u32);
-        KdbpPrint(b"IDTR Base 0x%08x  Size 0x%04x\n\0".as_ptr() as PSTR, Idtr.Base, Idtr.Limit as u32);
-        KdbpPrint(b"TR   0x%04x\n\0".as_ptr() as PSTR, Tr as u32);
+        crate::kdbp_print!(b"GDTR Base 0x%08x  Size 0x%04x\n\0", Gdtr.Base, Gdtr.Limit as u32);
+        crate::kdbp_print!(b"LDTR 0x%04x\n\0", Ldtr as u32);
+        crate::kdbp_print!(b"IDTR Base 0x%08x  Size 0x%04x\n\0", Idtr.Base, Idtr.Limit as u32);
+        crate::kdbp_print!(b"TR   0x%04x\n\0", Tr as u32);
     } else if *(*Argv.offset(0)).offset(0) == b's' as i8 {
         let seg_cs = (*Context).SegCs as u32;
         let seg_ds = (*Context).SegDs as u32;
@@ -1164,34 +1148,27 @@ pub unsafe extern "C" fn KdbpCmdRegs(
         let seg_fs = (*Context).SegFs as u32;
         let seg_gs = (*Context).SegGs as u32;
         let seg_ss = (*Context).SegSs as u32;
-        KdbpPrint(
-            b"CS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"CS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_cs & 0xffff, (seg_cs & 0xffff) >> 3,
             if (seg_cs & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_cs & 3,
         );
-        KdbpPrint(
-            b"DS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"DS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_ds, seg_ds >> 3, if (seg_ds & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_ds & 3,
         );
-        KdbpPrint(
-            b"ES  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"ES  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_es, seg_es >> 3, if (seg_es & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_es & 3,
         );
-        KdbpPrint(
-            b"FS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"FS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_fs, seg_fs >> 3, if (seg_fs & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_fs & 3,
         );
-        KdbpPrint(
-            b"GS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"GS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_gs, seg_gs >> 3, if (seg_gs & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_gs & 3,
         );
-        KdbpPrint(
-            b"SS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"SS  0x%04x  Index 0x%04x  %cDT RPL%d\n\0",
             seg_ss, seg_ss >> 3, if (seg_ss & (1 << 2)) != 0 { b'L' as i32 } else { b'G' as i32 }, seg_ss & 3,
         );
     } else {
-        KdbpPrint(
-            b"DR0  0x%08x\nDR1  0x%08x\nDR2  0x%08x\nDR3  0x%08x\nDR6  0x%08x\nDR7  0x%08x\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"DR0  0x%08x\nDR1  0x%08x\nDR2  0x%08x\nDR3  0x%08x\nDR6  0x%08x\nDR7  0x%08x\n\0",
             (*Context).Dr0, (*Context).Dr1, (*Context).Dr2, (*Context).Dr3,
             (*Context).Dr6, (*Context).Dr7,
         );
@@ -1436,12 +1413,12 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
             }
 
             if Result > (!0usize as ULONGLONG) {
-                KdbpPrint(b"Warning: Address %I64x is beeing truncated\n\0".as_ptr() as PSTR, Result);
+                crate::kdbp_print!(b"Warning: Address %I64x is beeing truncated\n\0", Result);
             }
 
             Frame = Result as ULONG_PTR;
         } else {
-            KdbpPrint(b"Thread backtrace not supported yet!\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"Thread backtrace not supported yet!\n\0");
             return 1u8;
         }
     }
@@ -1460,23 +1437,23 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
         TssSelector = Ke386GetTr();
         Tss = KdbpRetrieveTss(TssSelector, core::ptr::null_mut(), core::ptr::addr_of_mut!(Gdtr));
         if KdbpIsNestedTss(TssSelector, Tss) != 0 {
-            KdbpPrint(b"[Active TSS 0x%04x @ 0x%p]\n\0".as_ptr() as PSTR, (TssSelector) as u32, Tss);
+            crate::kdbp_print!(b"[Active TSS 0x%04x @ 0x%p]\n\0", (TssSelector) as u32, Tss);
         }
     }
 
     if Argc <= 1 {
-        KdbpPrint(b"Eip:\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"Eip:\n\0");
         if KdbSymPrintAddress(
             KeGetContextPc(core::ptr::addr_of_mut!(Context)) as PVOID,
             core::ptr::addr_of_mut!(Context),
         ) == 0 {
-            KdbpPrint(b"<%p>\n\0".as_ptr() as PSTR, KeGetContextPc(core::ptr::addr_of_mut!(Context)));
+            crate::kdbp_print!(b"<%p>\n\0", KeGetContextPc(core::ptr::addr_of_mut!(Context)));
         } else {
-            KdbpPrint(b"\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"\n\0");
         }
     }
 
-    KdbpPrint(b"Frames:\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"Frames:\n\0");
     loop {
         let GotNextFrame: BOOLEAN;
 
@@ -1494,19 +1471,19 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
                     core::ptr::addr_of_mut!(Gdtr),
                 );
                 if got == 0 {
-                    KdbpPrint(b"Couldn't access parent TSS 0x%04x\n\0".as_ptr() as PSTR, ((*Tss).Backlink) as u32);
+                    crate::kdbp_print!(b"Couldn't access parent TSS 0x%04x\n\0", ((*Tss).Backlink) as u32);
                     break;
                 }
 
                 Address = Context.Eip as ULONG_PTR;
                 Frame = Context.Ebp as ULONG_PTR;
 
-                KdbpPrint(b"[Parent TSS 0x%04x @ 0x%p]\n\0".as_ptr() as PSTR, (TssSelector) as u32, Tss);
+                crate::kdbp_print!(b"[Parent TSS 0x%04x @ 0x%p]\n\0", (TssSelector) as u32, Tss);
 
                 if KdbSymPrintAddress(Address as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
-                    KdbpPrint(b"<%08x>\n\0".as_ptr() as PSTR, Address);
+                    crate::kdbp_print!(b"<%08x>\n\0", Address);
                 } else {
-                    KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"\n\0");
                 }
                 continue;
             }
@@ -1520,8 +1497,7 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
             (Frame + core::mem::size_of::<ULONG_PTR>()) as PVOID,
             core::mem::size_of::<ULONG_PTR>(),
         )) {
-            KdbpPrint(
-                b"Couldn't access memory at 0x%p!\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"Couldn't access memory at 0x%p!\n\0",
                 Frame + core::mem::size_of::<ULONG_PTR>(),
             );
             #[cfg(target_arch = "x86")]
@@ -1537,19 +1513,19 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
                     core::ptr::addr_of_mut!(Gdtr),
                 );
                 if got == 0 {
-                    KdbpPrint(b"Couldn't access parent TSS 0x%04x\n\0".as_ptr() as PSTR, ((*Tss).Backlink) as u32);
+                    crate::kdbp_print!(b"Couldn't access parent TSS 0x%04x\n\0", ((*Tss).Backlink) as u32);
                     break;
                 }
 
                 Address = Context.Eip as ULONG_PTR;
                 Frame = Context.Ebp as ULONG_PTR;
 
-                KdbpPrint(b"[Parent TSS 0x%04x @ 0x%p]\n\0".as_ptr() as PSTR, (TssSelector) as u32, Tss);
+                crate::kdbp_print!(b"[Parent TSS 0x%04x @ 0x%p]\n\0", (TssSelector) as u32, Tss);
 
                 if KdbSymPrintAddress(Address as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
-                    KdbpPrint(b"<%08x>\n\0".as_ptr() as PSTR, Address);
+                    crate::kdbp_print!(b"<%08x>\n\0", Address);
                 } else {
-                    KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"\n\0");
                 }
                 continue;
             }
@@ -1571,19 +1547,19 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
                     core::ptr::addr_of_mut!(Gdtr),
                 );
                 if got == 0 {
-                    KdbpPrint(b"Couldn't access parent TSS 0x%04x\n\0".as_ptr() as PSTR, ((*Tss).Backlink) as u32);
+                    crate::kdbp_print!(b"Couldn't access parent TSS 0x%04x\n\0", ((*Tss).Backlink) as u32);
                     break;
                 }
 
                 Address = Context.Eip as ULONG_PTR;
                 Frame = Context.Ebp as ULONG_PTR;
 
-                KdbpPrint(b"[Parent TSS 0x%04x @ 0x%p]\n\0".as_ptr() as PSTR, (TssSelector) as u32, Tss);
+                crate::kdbp_print!(b"[Parent TSS 0x%04x @ 0x%p]\n\0", (TssSelector) as u32, Tss);
 
                 if KdbSymPrintAddress(Address as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
-                    KdbpPrint(b"<%08x>\n\0".as_ptr() as PSTR, Address);
+                    crate::kdbp_print!(b"<%08x>\n\0", Address);
                 } else {
-                    KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"\n\0");
                 }
                 continue;
             }
@@ -1601,9 +1577,9 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
         }
 
         if KdbSymPrintAddress((Address - 5) as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
-            KdbpPrint(b"<%08x>\n\0".as_ptr() as PSTR, Address);
+            crate::kdbp_print!(b"<%08x>\n\0", Address);
         } else {
-            KdbpPrint(b"\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"\n\0");
         }
 
         if KdbOutputAborted != 0 {
@@ -1611,7 +1587,7 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
         }
 
         if GotNextFrame == 0 {
-            KdbpPrint(b"Couldn't access memory at 0x%p!\n\0".as_ptr() as PSTR, Frame);
+            crate::kdbp_print!(b"Couldn't access memory at 0x%p!\n\0", Frame);
             #[cfg(target_arch = "x86")]
             {
                 if KdbpIsNestedTss(TssSelector, Tss) == 0 {
@@ -1625,19 +1601,19 @@ pub unsafe extern "C" fn KdbpCmdBackTrace(
                     core::ptr::addr_of_mut!(Gdtr),
                 );
                 if got == 0 {
-                    KdbpPrint(b"Couldn't access parent TSS 0x%04x\n\0".as_ptr() as PSTR, ((*Tss).Backlink) as u32);
+                    crate::kdbp_print!(b"Couldn't access parent TSS 0x%04x\n\0", ((*Tss).Backlink) as u32);
                     break;
                 }
 
                 Address = Context.Eip as ULONG_PTR;
                 Frame = Context.Ebp as ULONG_PTR;
 
-                KdbpPrint(b"[Parent TSS 0x%04x @ 0x%p]\n\0".as_ptr() as PSTR, (TssSelector) as u32, Tss);
+                crate::kdbp_print!(b"[Parent TSS 0x%04x @ 0x%p]\n\0", (TssSelector) as u32, Tss);
 
                 if KdbSymPrintAddress(Address as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
-                    KdbpPrint(b"<%08x>\n\0".as_ptr() as PSTR, Address);
+                    crate::kdbp_print!(b"<%08x>\n\0", Address);
                 } else {
-                    KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"\n\0");
                 }
                 continue;
             }
@@ -1668,7 +1644,7 @@ pub unsafe extern "C" fn KdbpCmdStep(
     if Argc > 1 {
         Count = strtoul(*Argv.offset(1), core::ptr::null_mut(), 0);
         if Count == 0 {
-            KdbpPrint(b"%s: Integer argument required\n\0".as_ptr() as PSTR, *Argv.offset(0));
+            crate::kdbp_print!(b"%s: Integer argument required\n\0", *Argv.offset(0));
             return 1u8;
         }
     }
@@ -1707,11 +1683,11 @@ pub unsafe extern "C" fn KdbpCmdBreakPointList(
 
     l = KdbpGetNextBreakPointNr(0);
     if l < 0 {
-        KdbpPrint(b"No breakpoints.\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"No breakpoints.\n\0");
         return 1u8;
     }
 
-    KdbpPrint(b"Breakpoints:\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"Breakpoints:\n\0");
     loop {
         if KdbpGetBreakPointInfo(
             l as ULONG,
@@ -1757,8 +1733,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPointList(
         }
 
         if Type == KdbBreakPointSoftware || Type == KdbBreakPointTemporary {
-            KdbpPrint(
-                b" %s%03d  BPX  0x%08x%s%s%s%s%s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b" %s%03d  BPX  0x%08x%s%s%s%s%s\n\0",
                 str1,
                 l,
                 Address,
@@ -1770,8 +1745,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPointList(
             );
         } else if Type == KdbBreakPointHardware {
             if Enabled == 0 {
-                KdbpPrint(
-                    b" %s%03d  BPM  0x%08x  %-5s %-5s  disabled%s%s%s%s\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b" %s%03d  BPM  0x%08x  %-5s %-5s  disabled%s%s%s%s\n\0",
                     str1,
                     l,
                     Address,
@@ -1783,8 +1757,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPointList(
                     str2,
                 );
             } else {
-                KdbpPrint(
-                    b" %s%03d  BPM  0x%08x  %-5s %-5s  DR%d%s%s%s%s\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b" %s%03d  BPM  0x%08x  %-5s %-5s  DR%d%s%s%s%s\n\0",
                     str1,
                     l,
                     Address,
@@ -1818,14 +1791,14 @@ pub unsafe extern "C" fn KdbpCmdEnableDisableClearBreakPoint(
     let BreakPointNr: ULONG;
 
     if Argc < 2 {
-        KdbpPrint(b"%s: argument required\n\0".as_ptr() as PSTR, *Argv.offset(0));
+        crate::kdbp_print!(b"%s: argument required\n\0", *Argv.offset(0));
         return 1u8;
     }
 
     pend = *Argv.offset(1);
     BreakPointNr = strtoul(*Argv.offset(1), &mut pend, 0);
     if pend == *Argv.offset(1) || *pend != 0 {
-        KdbpPrint(b"%s: integer argument required\n\0".as_ptr() as PSTR, *Argv.offset(0));
+        crate::kdbp_print!(b"%s: integer argument required\n\0", *Argv.offset(0));
         return 1u8;
     }
 
@@ -1854,7 +1827,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
 
     if *(*Argv.offset(0)).offset(2) == b'x' as i8 {
         if Argc < 2 {
-            KdbpPrint(b"bpx: Address argument required.\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"bpx: Address argument required.\n\0");
             return 1u8;
         }
 
@@ -1862,7 +1835,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
         Type = KdbBreakPointSoftware;
     } else {
         if Argc < 2 {
-            KdbpPrint(b"bpm: Access type argument required (one of r, w, rw, x)\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"bpm: Access type argument required (one of r, w, rw, x)\n\0");
             return 1u8;
         }
 
@@ -1875,13 +1848,12 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
         } else if _stricmp(*Argv.offset(1), b"rw\0".as_ptr() as *const i8) == 0 {
             AccessType = KdbAccessReadWrite;
         } else {
-            KdbpPrint(b"bpm: Unknown access type '%s'\n\0".as_ptr() as PSTR, *Argv.offset(1));
+            crate::kdbp_print!(b"bpm: Unknown access type '%s'\n\0", *Argv.offset(1));
             return 1u8;
         }
 
         if Argc < 3 {
-            KdbpPrint(
-                b"bpm: %s argument required.\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"bpm: %s argument required.\n\0",
                 if AccessType == KdbAccessExec {
                     b"Address\0".as_ptr() as PSTR
                 } else {
@@ -1902,12 +1874,12 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
             Size = 1;
             AddressArgIndex = AddressArgIndex.wrapping_sub(1);
         } else {
-            KdbpPrint(b"bpm: Unknown memory size '%s'\n\0".as_ptr() as PSTR, *Argv.offset(2));
+            crate::kdbp_print!(b"bpm: Unknown memory size '%s'\n\0", *Argv.offset(2));
             return 1u8;
         }
 
         if Argc <= AddressArgIndex {
-            KdbpPrint(b"bpm: Address argument required.\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"bpm: Address argument required.\n\0");
             return 1u8;
         }
 
@@ -1920,7 +1892,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
         if strcmp(*Argv.offset((i + 1) as isize), b"IF\0".as_ptr() as *const i8) == 0 {
             ConditionArgIndex = (i + 2) as LONG;
             if (ConditionArgIndex as ULONG) >= Argc {
-                KdbpPrint(b"%s: IF requires condition expression.\n\0".as_ptr() as PSTR, *Argv.offset(0));
+                crate::kdbp_print!(b"%s: IF requires condition expression.\n\0", *Argv.offset(0));
                 return 1u8;
             }
 
@@ -1950,7 +1922,7 @@ pub unsafe extern "C" fn KdbpCmdBreakPoint(Argc: ULONG, Argv: *mut PCHAR) -> BOO
     }
 
     if Result > (!0usize) as ULONGLONG {
-        KdbpPrint(b"%s: Warning: Address %I64x is beeing truncated\n\0".as_ptr() as PSTR, *Argv.offset(0), Result);
+        crate::kdbp_print!(b"%s: Warning: Address %I64x is beeing truncated\n\0", *Argv.offset(0), Result);
     }
 
     Address = Result as ULONG_PTR;
@@ -2008,12 +1980,12 @@ pub unsafe extern "C" fn KdbpCmdThread(
         if Argc >= 3 {
             ul = strtoulptr(*Argv.offset(2), &mut pend, 0);
             if *Argv.offset(2) == pend {
-                KdbpPrint(b"thread: '%s' is not a valid process id!\n\0".as_ptr() as PSTR, *Argv.offset(2));
+                crate::kdbp_print!(b"thread: '%s' is not a valid process id!\n\0", *Argv.offset(2));
                 return 1u8;
             }
 
             if !NT_SUCCESS(PsLookupProcessByProcessId(ul as PVOID, &mut Process)) {
-                KdbpPrint(b"thread: Invalid process id!\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"thread: Invalid process id!\n\0");
                 return 1u8;
             }
 
@@ -2023,9 +1995,9 @@ pub unsafe extern "C" fn KdbpCmdThread(
         Entry = (*Process).ThreadListHead.Flink;
         if Entry == core::ptr::addr_of_mut!((*Process).ThreadListHead) {
             if Argc >= 3 {
-                KdbpPrint(b"No threads in process 0x%px!\n\0".as_ptr() as PSTR, ul as PVOID);
+                crate::kdbp_print!(b"No threads in process 0x%px!\n\0", ul as PVOID);
             } else {
-                KdbpPrint(b"No threads in current process!\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"No threads in current process!\n\0");
             }
 
             if ReferencedProcess != 0 {
@@ -2035,7 +2007,7 @@ pub unsafe extern "C" fn KdbpCmdThread(
             return 1u8;
         }
 
-        KdbpPrint(b"  TID         State        Prior.  Affinity    EBP         EIP\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"  TID         State        Prior.  Affinity    EBP         EIP\n\0");
         loop {
             Thread = (Entry as usize - core::mem::offset_of!(_ETHREAD, ThreadListEntry)) as PETHREAD;
 
@@ -2071,7 +2043,7 @@ pub unsafe extern "C" fn KdbpCmdThread(
                 State = b"Unknown\0".as_ptr() as PCHAR;
             }
 
-            KdbpPrint(b" %s0x%08x  %-11s  %3d     0x%08x  0x%08x  0x%08x%s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b" %s0x%08x  %-11s  %3d     0x%08x  0x%08x  0x%08x%s\n\0",
                       str1,
                       (*Thread).Cid.UniqueThread,
                       State,
@@ -2092,13 +2064,13 @@ pub unsafe extern "C" fn KdbpCmdThread(
         }
     } else if Argc >= 2 && _stricmp(*Argv.offset(1), b"attach\0".as_ptr() as PCHAR) == 0 {
         if Argc < 3 {
-            KdbpPrint(b"thread attach: thread id argument required!\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"thread attach: thread id argument required!\n\0");
             return 1u8;
         }
 
         ul = strtoulptr(*Argv.offset(2), &mut pend, 0);
         if *Argv.offset(2) == pend {
-            KdbpPrint(b"thread attach: '%s' is not a valid thread id!\n\0".as_ptr() as PSTR, *Argv.offset(2));
+            crate::kdbp_print!(b"thread attach: '%s' is not a valid thread id!\n\0", *Argv.offset(2));
             return 1u8;
         }
 
@@ -2106,19 +2078,19 @@ pub unsafe extern "C" fn KdbpCmdThread(
             return 1u8;
         }
 
-        KdbpPrint(b"Attached to thread 0x%08x.\n\0".as_ptr() as PSTR, ul);
+        crate::kdbp_print!(b"Attached to thread 0x%08x.\n\0", ul);
     } else {
         Thread = KdbCurrentThread;
 
         if Argc >= 2 {
             ul = strtoulptr(*Argv.offset(1), &mut pend, 0);
             if *Argv.offset(1) == pend {
-                KdbpPrint(b"thread: '%s' is not a valid thread id!\n\0".as_ptr() as PSTR, *Argv.offset(1));
+                crate::kdbp_print!(b"thread: '%s' is not a valid thread id!\n\0", *Argv.offset(1));
                 return 1u8;
             }
 
             if !NT_SUCCESS(PsLookupThreadByThreadId(ul as PVOID, &mut Thread)) {
-                KdbpPrint(b"thread: Invalid thread id!\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"thread: Invalid thread id!\n\0");
                 return 1u8;
             }
 
@@ -2133,7 +2105,7 @@ pub unsafe extern "C" fn KdbpCmdThread(
 
         #[cfg(not(target_arch = "x86_64"))]
         {
-            KdbpPrint(b"%s  TID:            0x%08x\n  State:          %s (0x%x)\n  Priority:       %d\n  Affinity:       0x%08x\n  Initial Stack:  0x%08x\n  Stack Limit:    0x%08x\n  Stack Base:     0x%08x\n  Kernel Stack:   0x%08x\n  Trap Frame:     0x%08x\n  NPX State:      %s (0x%x)\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"%s  TID:            0x%08x\n  State:          %s (0x%x)\n  Priority:       %d\n  Affinity:       0x%08x\n  Initial Stack:  0x%08x\n  Stack Limit:    0x%08x\n  Stack Base:     0x%08x\n  Kernel Stack:   0x%08x\n  Trap Frame:     0x%08x\n  NPX State:      %s (0x%x)\n\0",
                       if Argc < 2 { b"Current Thread:\n\0".as_ptr() as PCHAR } else { b"\0".as_ptr() as PCHAR },
                       (*Thread).Cid.UniqueThread,
                       State, (kthread_state(&(*Thread).Tcb)) as u32,
@@ -2148,7 +2120,7 @@ pub unsafe extern "C" fn KdbpCmdThread(
         }
         #[cfg(target_arch = "x86_64")]
         {
-            KdbpPrint(b"%s  TID:            0x%08x\n  State:          %s (0x%x)\n  Priority:       %d\n  Affinity:       0x%08x\n  Initial Stack:  0x%08x\n  Stack Limit:    0x%08x\n  Stack Base:     0x%08x\n  Kernel Stack:   0x%08x\n  Trap Frame:     0x%08x\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"%s  TID:            0x%08x\n  State:          %s (0x%x)\n  Priority:       %d\n  Affinity:       0x%08x\n  Initial Stack:  0x%08x\n  Stack Limit:    0x%08x\n  Stack Base:     0x%08x\n  Kernel Stack:   0x%08x\n  Trap Frame:     0x%08x\n\0",
                       if Argc < 2 { b"Current Thread:\n\0".as_ptr() as PCHAR } else { b"\0".as_ptr() as PCHAR },
                       (*Thread).Cid.UniqueThread,
                       State, kthread_state(&(*Thread).Tcb) as u32,
@@ -2186,11 +2158,11 @@ pub unsafe extern "C" fn KdbpCmdProc(
     if Argc >= 2 && _stricmp(*Argv.offset(1), b"list\0".as_ptr() as PCHAR) == 0 {
         Entry = PsActiveProcessHead.Flink;
         if Entry.is_null() || Entry == core::ptr::addr_of_mut!(PsActiveProcessHead) as PLIST_ENTRY {
-            KdbpPrint(b"No processes in the system!\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"No processes in the system!\n\0");
             return 1u8;
         }
 
-        KdbpPrint(b"  PID         State       Filename\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"  PID         State       Filename\n\0");
         loop {
             Process = (Entry as *mut u8).offset(-(core::mem::offset_of!(_EPROCESS, ActiveProcessLinks) as isize)) as PEPROCESS;
 
@@ -2210,8 +2182,7 @@ pub unsafe extern "C" fn KdbpCmdProc(
                 b"In Transition\0".as_ptr() as PCHAR
             };
 
-            KdbpPrint(
-                b" %s0x%08x  %-10s  %s%s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b" %s0x%08x  %-10s  %s%s\n\0",
                 str1,
                 (*Process).UniqueProcessId,
                 State,
@@ -2226,14 +2197,13 @@ pub unsafe extern "C" fn KdbpCmdProc(
         }
     } else if Argc >= 2 && _stricmp(*Argv.offset(1), b"attach\0".as_ptr() as PCHAR) == 0 {
         if Argc < 3 {
-            KdbpPrint(b"process attach: process id argument required!\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"process attach: process id argument required!\n\0");
             return 1u8;
         }
 
         ul = strtoulptr(*Argv.offset(2), core::ptr::addr_of_mut!(pend), 0);
         if *Argv.offset(2) == pend {
-            KdbpPrint(
-                b"process attach: '%s' is not a valid process id!\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"process attach: '%s' is not a valid process id!\n\0",
                 *Argv.offset(2),
             );
             return 1u8;
@@ -2243,8 +2213,7 @@ pub unsafe extern "C" fn KdbpCmdProc(
             return 1u8;
         }
 
-        KdbpPrint(
-            b"Attached to process 0x%p, thread 0x%p.\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"Attached to process 0x%p, thread 0x%p.\n\0",
             ul as PVOID,
             (*KdbCurrentThread).Cid.UniqueThread,
         );
@@ -2254,15 +2223,14 @@ pub unsafe extern "C" fn KdbpCmdProc(
         if Argc >= 2 {
             ul = strtoulptr(*Argv.offset(1), core::ptr::addr_of_mut!(pend), 0);
             if *Argv.offset(1) == pend {
-                KdbpPrint(
-                    b"proc: '%s' is not a valid process id!\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"proc: '%s' is not a valid process id!\n\0",
                     *Argv.offset(1),
                 );
                 return 1u8;
             }
 
             if !NT_SUCCESS(PsLookupProcessByProcessId(ul as PVOID, core::ptr::addr_of_mut!(Process))) {
-                KdbpPrint(b"proc: Invalid process id!\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"proc: Invalid process id!\n\0");
                 return 1u8;
             }
 
@@ -2276,8 +2244,7 @@ pub unsafe extern "C" fn KdbpCmdProc(
         } else {
             b"In Transition\0".as_ptr() as PCHAR
         };
-        KdbpPrint(
-            b"%s  PID:             0x%08x\n  State:           %s (0x%x)\n  Image Filename:  %s\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"%s  PID:             0x%08x\n  State:           %s (0x%x)\n  Image Filename:  %s\n\0",
             if Argc < 2 { b"Current process:\n\0".as_ptr() as PCHAR } else { b"\0".as_ptr() as PCHAR },
             (*Process).UniqueProcessId,
             State,
@@ -2324,8 +2291,7 @@ pub unsafe extern "C" fn KdbpCmdMod(
         }
 
         if Result > !(0 as ULONG_PTR) as ULONGLONG {
-            KdbpPrint(
-                b"%s: Warning: Address %I64x is beeing truncated\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"%s: Warning: Address %I64x is beeing truncated\n\0",
                 *Argv.offset(0),
                 Result,
             );
@@ -2334,8 +2300,7 @@ pub unsafe extern "C" fn KdbpCmdMod(
         Address = Result as ULONG_PTR;
 
         if KdbpSymFindModule(Address as PVOID, -1, &mut LdrEntry) == 0 {
-            KdbpPrint(
-                b"No module containing address 0x%p found!\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"No module containing address 0x%p found!\n\0",
                 Address,
             );
             return 1;
@@ -2345,9 +2310,8 @@ pub unsafe extern "C" fn KdbpCmdMod(
     } else {
         if KdbpSymFindModule(core::ptr::null_mut(), 0, &mut LdrEntry) == 0 {
             let ntoskrnlBase: ULONG_PTR = __ImageBase as ULONG_PTR;
-            KdbpPrint(b"  Base      Size      Name\n\0".as_ptr() as PSTR);
-            KdbpPrint(
-                b"  %p  %08x  %s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"  Base      Size      Name\n\0");
+            crate::kdbp_print!(b"  %p  %08x  %s\n\0",
                 ntoskrnlBase as PVOID,
                 0,
                 b"ntoskrnl.exe\0".as_ptr() as PSTR,
@@ -2358,15 +2322,14 @@ pub unsafe extern "C" fn KdbpCmdMod(
         i = 1;
     }
 
-    KdbpPrint(b"  Base      Size      Name\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"  Base      Size      Name\n\0");
     loop {
-        KdbpPrint(
-            b"  %p  %08x  \0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"  %p  %08x  \0",
             (*LdrEntry).DllBase,
             (*LdrEntry).SizeOfImage,
         );
         KdbpPrintUnicodeString(&(*LdrEntry).BaseDllName);
-        KdbpPrint(b"\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"\n\0");
 
         if DisplayOnlyOneModule != 0 || KdbpSymFindModule(core::ptr::null_mut(), i, &mut LdrEntry) == 0 {
             break;
@@ -2399,17 +2362,17 @@ pub unsafe extern "C" fn KdbpCmdGdtLdtIdt(
         __sidt(core::ptr::addr_of_mut!(Reg.Limit) as PVOID);
 
         if Reg.Limit < 7 {
-            KdbpPrint(b"Interrupt descriptor table is empty.\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"Interrupt descriptor table is empty.\n\0");
             return 1u8;
         }
 
-        KdbpPrint(b"IDT Base: 0x%08x  Limit: 0x%04x\n\0".as_ptr() as PSTR, Reg.Base, (Reg.Limit) as u32);
-        KdbpPrint(b"  Idx  Type        Seg. Sel.  Offset      DPL\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"IDT Base: 0x%08x  Limit: 0x%04x\n\0", Reg.Base, (Reg.Limit) as u32);
+        crate::kdbp_print!(b"  Idx  Type        Seg. Sel.  Offset      DPL\n\0");
 
         i = 0;
         while (i + core::mem::size_of::<[ULONG; 2]>() as INT - 1) <= Reg.Limit as INT {
             if !NT_SUCCESS(KdbpSafeReadMemory(SegDesc.as_mut_ptr() as PVOID, (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID, core::mem::size_of::<[ULONG; 2]>())) {
-                KdbpPrint(b"Couldn't access memory at 0x%p!\n\0".as_ptr() as PSTR, (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID);
+                crate::kdbp_print!(b"Couldn't access memory at 0x%p!\n\0", (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID);
                 return 1u8;
             }
 
@@ -2429,16 +2392,16 @@ pub unsafe extern "C" fn KdbpCmdGdtLdtIdt(
             }
 
             if (SegDesc[1] & (1 << 15)) == 0 {
-                KdbpPrint(b"  %03d  %-10s  [NP]       [NP]        %02d\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  %03d  %-10s  [NP]       [NP]        %02d\n\0",
                           i / 8, SegType, (Dpl) as u32);
             } else if (SegDesc[1] & 0x1f00) == 0x0500 {
                 SegSel = (SegDesc[0] >> 16) as USHORT;
-                KdbpPrint(b"  %03d  %-10s  0x%04x                 %02d\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  %03d  %-10s  0x%04x                 %02d\n\0",
                           i / 8, SegType, (SegSel) as u32, (Dpl) as u32);
             } else {
                 SegSel = (SegDesc[0] >> 16) as USHORT;
                 SegBase = (SegDesc[1] & 0xffff0000) | (SegDesc[0] & 0x0000ffff);
-                KdbpPrint(b"  %03d  %-10s  0x%04x     0x%08x  %02d\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  %03d  %-10s  0x%04x     0x%08x  %02d\n\0",
                           i / 8, SegType, (SegSel) as u32, SegBase, (Dpl) as u32);
             }
 
@@ -2458,18 +2421,18 @@ pub unsafe extern "C" fn KdbpCmdGdtLdtIdt(
         }
 
         if Reg.Limit < 7 {
-            KdbpPrint(b"%s descriptor table is empty.\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"%s descriptor table is empty.\n\0",
                       if *(*Argv.offset(0)).offset(0) == b'g' as i8 { b"Global\0".as_ptr() } else { b"Local\0".as_ptr() });
             return 1u8;
         }
 
-        KdbpPrint(b"%cDT Base: 0x%08x  Limit: 0x%04x\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"%cDT Base: 0x%08x  Limit: 0x%04x\n\0",
                   (if *(*Argv.offset(0)).offset(0) == b'g' as i8 { b'G' as i8 } else { b'L' as i8 }) as i32, Reg.Base, (Reg.Limit) as u32);
-        KdbpPrint(b"  Idx  Sel.    Type         Base        Limit       DPL  Attribs\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"  Idx  Sel.    Type         Base        Limit       DPL  Attribs\n\0");
 
         while (i + core::mem::size_of::<[ULONG; 2]>() as INT - 1) <= Reg.Limit as INT {
             if !NT_SUCCESS(KdbpSafeReadMemory(SegDesc.as_mut_ptr() as PVOID, (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID, core::mem::size_of::<[ULONG; 2]>())) {
-                KdbpPrint(b"Couldn't access memory at 0x%p!\n\0".as_ptr() as PSTR, (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID);
+                crate::kdbp_print!(b"Couldn't access memory at 0x%p!\n\0", (Reg.Base as ULONG_PTR + i as ULONG_PTR) as PVOID);
                 return 1u8;
             }
 
@@ -2525,40 +2488,44 @@ pub unsafe extern "C" fn KdbpCmdGdtLdtIdt(
             }
 
             if (SegDesc[1] & (1 << 15)) == 0 {
-                KdbpPrint(b"  %03d  0x%04x  %-11s  [NP]        [NP]        %02d   NP\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  %03d  0x%04x  %-11s  [NP]        [NP]        %02d   NP\n\0",
                           i / 8, i | Dpl as INT | ul as INT, SegType, (Dpl) as u32);
             } else {
-                KdbpPrint(b"  %03d  0x%04x  %-11s  0x%08x  0x%08x  %02d  \0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  %03d  0x%04x  %-11s  0x%08x  0x%08x  %02d  \0",
                           i / 8, i | Dpl as INT | ul as INT, SegType, SegBase, SegLimit, (Dpl) as u32);
 
                 if (SegDesc[1] & (1 << 12)) == 0 {
                 } else if (SegDesc[1] & (1 << 11)) == 0 {
                     if (SegDesc[1] & (1 << 10)) != 0 {
-                        KdbpPrint(b" E\0".as_ptr() as PSTR);
+                        crate::kdbp_print!(b" E\0");
                     }
 
-                    KdbpPrint(if (SegDesc[1] & (1 << 9)) != 0 { b" R/W\0".as_ptr() } else { b" R\0".as_ptr() } as PSTR);
+                    crate::dbgprint::rust_kdbp_print_cstr(
+                        if (SegDesc[1] & (1 << 9)) != 0 { b" R/W\0".as_ptr() } else { b" R\0".as_ptr() }
+                    );
 
                     if (SegDesc[1] & (1 << 8)) != 0 {
-                        KdbpPrint(b" A\0".as_ptr() as PSTR);
+                        crate::kdbp_print!(b" A\0");
                     }
                 } else {
                     if (SegDesc[1] & (1 << 10)) != 0 {
-                        KdbpPrint(b" C\0".as_ptr() as PSTR);
+                        crate::kdbp_print!(b" C\0");
                     }
 
-                    KdbpPrint(if (SegDesc[1] & (1 << 9)) != 0 { b" R/X\0".as_ptr() } else { b" X\0".as_ptr() } as PSTR);
+                    crate::dbgprint::rust_kdbp_print_cstr(
+                        if (SegDesc[1] & (1 << 9)) != 0 { b" R/X\0".as_ptr() } else { b" X\0".as_ptr() }
+                    );
 
                     if (SegDesc[1] & (1 << 8)) != 0 {
-                        KdbpPrint(b" A\0".as_ptr() as PSTR);
+                        crate::kdbp_print!(b" A\0");
                     }
                 }
 
                 if (SegDesc[1] & (1 << 20)) != 0 {
-                    KdbpPrint(b" AVL\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b" AVL\0");
                 }
 
-                KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\n\0");
             }
 
             i += 8;
@@ -2575,11 +2542,10 @@ pub unsafe extern "C" fn KdbpCmdPcr(
 ) -> BOOLEAN {
     let Pcr: PKIPCR = KeGetPcr() as PKIPCR;
 
-    KdbpPrint(b"Current PCR is at 0x%p.\n\0".as_ptr() as PSTR, Pcr);
+    crate::kdbp_print!(b"Current PCR is at 0x%p.\n\0", Pcr);
     #[cfg(target_arch = "x86")]
     {
-        KdbpPrint(
-            b"  Tib.ExceptionList:         0x%08x\n  Tib.StackBase:             0x%08x\n  Tib.StackLimit:            0x%08x\n  Tib.SubSystemTib:          0x%08x\n  Tib.FiberData/Version:     0x%08x\n  Tib.ArbitraryUserPointer:  0x%08x\n  Tib.Self:                  0x%08x\n  SelfPcr:                   0x%08x\n  PCRCB:                     0x%08x\n  Irql:                      0x%02x\n  IRR:                       0x%08x\n  IrrActive:                 0x%08x\n  IDR:                       0x%08x\n  KdVersionBlock:            0x%08x\n  IDT:                       0x%08x\n  GDT:                       0x%08x\n  TSS:                       0x%08x\n  MajorVersion:              0x%04x\n  MinorVersion:              0x%04x\n  SetMember:                 0x%08x\n  StallScaleFactor:          0x%08x\n  Number:                    0x%02x\n  L2CacheAssociativity:      0x%02x\n  VdmAlert:                  0x%08x\n  L2CacheSize:               0x%08x\n  InterruptMode:             0x%08x\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"  Tib.ExceptionList:         0x%08x\n  Tib.StackBase:             0x%08x\n  Tib.StackLimit:            0x%08x\n  Tib.SubSystemTib:          0x%08x\n  Tib.FiberData/Version:     0x%08x\n  Tib.ArbitraryUserPointer:  0x%08x\n  Tib.Self:                  0x%08x\n  SelfPcr:                   0x%08x\n  PCRCB:                     0x%08x\n  Irql:                      0x%02x\n  IRR:                       0x%08x\n  IrrActive:                 0x%08x\n  IDR:                       0x%08x\n  KdVersionBlock:            0x%08x\n  IDT:                       0x%08x\n  GDT:                       0x%08x\n  TSS:                       0x%08x\n  MajorVersion:              0x%04x\n  MinorVersion:              0x%04x\n  SetMember:                 0x%08x\n  StallScaleFactor:          0x%08x\n  Number:                    0x%02x\n  L2CacheAssociativity:      0x%02x\n  VdmAlert:                  0x%08x\n  L2CacheSize:               0x%08x\n  InterruptMode:             0x%08x\n\0",
             (*Pcr).__bindgen_anon_1.NtTib.ExceptionList,
             (*Pcr).__bindgen_anon_1.NtTib.StackBase,
             (*Pcr).__bindgen_anon_1.NtTib.StackLimit,
@@ -2611,22 +2577,22 @@ pub unsafe extern "C" fn KdbpCmdPcr(
     #[cfg(not(target_arch = "x86"))]
     {
         let inner = &(*Pcr).__bindgen_anon_1.__bindgen_anon_1;
-        KdbpPrint(b"  GdtBase:                       0x%p\n\0".as_ptr() as PSTR, inner.GdtBase);
-        KdbpPrint(b"  TssBase:                       0x%p\n\0".as_ptr() as PSTR, inner.TssBase);
-        KdbpPrint(b"  UserRsp:                       0x%p\n\0".as_ptr() as PSTR, inner.UserRsp as PVOID);
-        KdbpPrint(b"  Self:                          0x%p\n\0".as_ptr() as PSTR, inner.Self_);
-        KdbpPrint(b"  CurrentPrcb:                   0x%p\n\0".as_ptr() as PSTR, inner.CurrentPrcb);
-        KdbpPrint(b"  LockArray:                     0x%p\n\0".as_ptr() as PSTR, inner.LockArray);
-        KdbpPrint(b"  Used_Self:                     0x%p\n\0".as_ptr() as PSTR, inner.Used_Self);
-        KdbpPrint(b"  IdtBase:                       0x%p\n\0".as_ptr() as PSTR, (*Pcr).IdtBase);
-        KdbpPrint(b"  Irql:                          %u\n\0".as_ptr() as PSTR, (*Pcr).Irql as u32);
-        KdbpPrint(b"  SecondLevelCacheAssociativity: 0x%u\n\0".as_ptr() as PSTR, (*Pcr).SecondLevelCacheAssociativity as u32);
-        KdbpPrint(b"  ObsoleteNumber:                %u\n\0".as_ptr() as PSTR, (*Pcr).ObsoleteNumber as u32);
-        KdbpPrint(b"  MajorVersion:                  0x%x\n\0".as_ptr() as PSTR, (*Pcr).MajorVersion as u32);
-        KdbpPrint(b"  MinorVersion:                  0x%x\n\0".as_ptr() as PSTR, (*Pcr).MinorVersion as u32);
-        KdbpPrint(b"  StallScaleFactor:              0x%lx\n\0".as_ptr() as PSTR, (*Pcr).StallScaleFactor);
-        KdbpPrint(b"  SecondLevelCacheSize:          0x%lx\n\0".as_ptr() as PSTR, (*Pcr).SecondLevelCacheSize);
-        KdbpPrint(b"  KdVersionBlock:                0x%p\n\0".as_ptr() as PSTR, (*Pcr).KdVersionBlock);
+        crate::kdbp_print!(b"  GdtBase:                       0x%p\n\0", inner.GdtBase);
+        crate::kdbp_print!(b"  TssBase:                       0x%p\n\0", inner.TssBase);
+        crate::kdbp_print!(b"  UserRsp:                       0x%p\n\0", inner.UserRsp as PVOID);
+        crate::kdbp_print!(b"  Self:                          0x%p\n\0", inner.Self_);
+        crate::kdbp_print!(b"  CurrentPrcb:                   0x%p\n\0", inner.CurrentPrcb);
+        crate::kdbp_print!(b"  LockArray:                     0x%p\n\0", inner.LockArray);
+        crate::kdbp_print!(b"  Used_Self:                     0x%p\n\0", inner.Used_Self);
+        crate::kdbp_print!(b"  IdtBase:                       0x%p\n\0", (*Pcr).IdtBase);
+        crate::kdbp_print!(b"  Irql:                          %u\n\0", (*Pcr).Irql as u32);
+        crate::kdbp_print!(b"  SecondLevelCacheAssociativity: 0x%u\n\0", (*Pcr).SecondLevelCacheAssociativity as u32);
+        crate::kdbp_print!(b"  ObsoleteNumber:                %u\n\0", (*Pcr).ObsoleteNumber as u32);
+        crate::kdbp_print!(b"  MajorVersion:                  0x%x\n\0", (*Pcr).MajorVersion as u32);
+        crate::kdbp_print!(b"  MinorVersion:                  0x%x\n\0", (*Pcr).MinorVersion as u32);
+        crate::kdbp_print!(b"  StallScaleFactor:              0x%lx\n\0", (*Pcr).StallScaleFactor);
+        crate::kdbp_print!(b"  SecondLevelCacheSize:          0x%lx\n\0", (*Pcr).SecondLevelCacheSize);
+        crate::kdbp_print!(b"  KdVersionBlock:                0x%p\n\0", (*Pcr).KdVersionBlock);
     }
 
     1u8
@@ -2638,7 +2604,7 @@ pub unsafe extern "C" fn KdbpCmdTss(
     _Argc: ULONG,
     _Argv: *mut PCHAR,
 ) -> BOOLEAN {
-    KdbpPrint(b"TSS introspection is only supported on i386.\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"TSS introspection is only supported on i386.\n\0");
     1u8
 }
 #[cfg(target_arch = "x86")]
@@ -2663,7 +2629,7 @@ pub unsafe extern "C" fn KdbpCmdTss(
 
         ulValue = strtoul(Param, core::ptr::addr_of_mut!(pszNext), 0);
         if !pszNext.is_null() && *pszNext != 0 {
-            KdbpPrint(b"Invalid TSS specification.\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"Invalid TSS specification.\n\0");
             return 1u8;
         }
 
@@ -2671,14 +2637,14 @@ pub unsafe extern "C" fn KdbpCmdTss(
             TssSelector = 0;
             Tss = ulValue as ULONG_PTR as PKTSS;
             if Tss.is_null() {
-                KdbpPrint(b"Invalid 32-bit TSS descriptor.\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"Invalid 32-bit TSS descriptor.\n\0");
                 return 1u8;
             }
         } else {
             TssSelector = ulValue as USHORT;
             Tss = KdbpRetrieveTss(TssSelector, core::ptr::null_mut(), core::ptr::null_mut());
             if Tss.is_null() {
-                KdbpPrint(b"Invalid 32-bit TSS selector.\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"Invalid 32-bit TSS selector.\n\0");
                 return 1u8;
             }
         }
@@ -2689,14 +2655,12 @@ pub unsafe extern "C" fn KdbpCmdTss(
         Tss = (*KeGetPcr()).TSS;
     }
 
-    KdbpPrint(
-        b"%s TSS 0x%04x is at 0x%p.\n\0".as_ptr() as PSTR,
+    crate::kdbp_print!(b"%s TSS 0x%04x is at 0x%p.\n\0",
         if Tss == (*KeGetPcr()).TSS { b"Current\0".as_ptr() as PSTR } else { b"Specified\0".as_ptr() as PSTR },
         TssSelector as u32,
         Tss
     );
-    KdbpPrint(
-        b"  Backlink:  0x%04x\n  Ss0:Esp0:  0x%04x:0x%08x\n  CR3:       0x%08x\n  EFlags:    0x%08x\n  Eax:       0x%08x\n  Ebx:       0x%08x\n  Ecx:       0x%08x\n  Edx:       0x%08x\n  Esi:       0x%08x\n  Edi:       0x%08x\n  Eip:       0x%08x\n  Esp:       0x%08x\n  Ebp:       0x%08x\n  Cs:        0x%04x\n  Ss:        0x%04x\n  Ds:        0x%04x\n  Es:        0x%04x\n  Fs:        0x%04x\n  Gs:        0x%04x\n  LDT:       0x%04x\n  Flags:     0x%04x\n  IoMapBase: 0x%04x\n\0".as_ptr() as PSTR,
+    crate::kdbp_print!(b"  Backlink:  0x%04x\n  Ss0:Esp0:  0x%04x:0x%08x\n  CR3:       0x%08x\n  EFlags:    0x%08x\n  Eax:       0x%08x\n  Ebx:       0x%08x\n  Ecx:       0x%08x\n  Edx:       0x%08x\n  Esi:       0x%08x\n  Edi:       0x%08x\n  Eip:       0x%08x\n  Esp:       0x%08x\n  Ebp:       0x%08x\n  Cs:        0x%04x\n  Ss:        0x%04x\n  Ds:        0x%04x\n  Es:        0x%04x\n  Fs:        0x%04x\n  Gs:        0x%04x\n  LDT:       0x%04x\n  Flags:     0x%04x\n  IoMapBase: 0x%04x\n\0",
         (*Tss).Backlink as u32, (*Tss).Ss0 as u32, (*Tss).Esp0, (*Tss).CR3, (*Tss).EFlags,
         (*Tss).Eax, (*Tss).Ebx, (*Tss).Ecx, (*Tss).Edx, (*Tss).Esi, (*Tss).Edi,
         (*Tss).Eip, (*Tss).Esp, (*Tss).Ebp,
@@ -2735,11 +2699,11 @@ pub unsafe extern "C" fn KdbpCmdDmesg(
 
     KdbpIsInDmesgMode = 1u8;
     if KdpDmesgBuffer.is_null() {
-        KdbpPrint(b"Dmesg: error, buffer is not allocated! /DEBUGPORT=SCREEN kernel param required for dmesg.\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"Dmesg: error, buffer is not allocated! /DEBUGPORT=SCREEN kernel param required for dmesg.\n\0");
         return 1u8;
     }
 
-    KdbpPrint(b"*** Dmesg *** TotalWritten=%lu, BufferSize=%lu, CurrentPosition=%lu\n\0".as_ptr() as PSTR,
+    crate::kdbp_print!(b"*** Dmesg *** TotalWritten=%lu, BufferSize=%lu, CurrentPosition=%lu\n\0",
               KdbDmesgTotalWritten, KdpDmesgBufferSize, KdpDmesgCurrentPosition);
 
     end = KdpDmesgCurrentPosition;
@@ -2749,10 +2713,10 @@ pub unsafe extern "C" fn KdbpCmdDmesg(
         KdbpPager(KdpDmesgBuffer, KdpDmesgCurrentPosition);
     } else {
         KdbpPager(KdpDmesgBuffer.add(beg as usize), KdpDmesgBufferSize - beg);
-        KdbpPrint(b"*** Dmesg: buffer rollup ***\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"*** Dmesg: buffer rollup ***\n\0");
         KdbpPager(KdpDmesgBuffer, end);
     }
-    KdbpPrint(b"*** Dmesg: end of output ***\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"*** Dmesg: end of output ***\n\0");
 
     KdbpIsInDmesgMode = 0u8;
 
@@ -2796,14 +2760,13 @@ pub unsafe extern "C" fn KdbpCmdSet(
     ];
 
     if Argc == 1 {
-        KdbpPrint(b"Available settings:\n\0".as_ptr() as PSTR);
-        KdbpPrint(b"  syntax [intel|at&t]\n\0".as_ptr() as PSTR);
-        KdbpPrint(b"  condition [exception|*] [first|last] [never|always|kmode|umode]\n\0".as_ptr() as PSTR);
-        KdbpPrint(b"  break_on_module_load [true|false]\n\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"Available settings:\n\0");
+        crate::kdbp_print!(b"  syntax [intel|at&t]\n\0");
+        crate::kdbp_print!(b"  condition [exception|*] [first|last] [never|always|kmode|umode]\n\0");
+        crate::kdbp_print!(b"  break_on_module_load [true|false]\n\0");
     } else if strcmp(*Argv.offset(1), b"syntax\0".as_ptr() as PCHAR) == 0 {
         if Argc == 2 {
-            KdbpPrint(
-                b"syntax = %s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"syntax = %s\n\0",
                 if KdbUseIntelSyntax != 0 { b"intel\0".as_ptr() } else { b"at&t\0".as_ptr() } as PCHAR,
             );
         } else if Argc >= 3 {
@@ -2812,12 +2775,12 @@ pub unsafe extern "C" fn KdbpCmdSet(
             } else if _stricmp(*Argv.offset(2), b"at&t\0".as_ptr() as PCHAR) == 0 {
                 KdbUseIntelSyntax = 0u8;
             } else {
-                KdbpPrint(b"Unknown syntax '%s'.\n\0".as_ptr() as PSTR, *Argv.offset(2));
+                crate::kdbp_print!(b"Unknown syntax '%s'.\n\0", *Argv.offset(2));
             }
         }
     } else if strcmp(*Argv.offset(1), b"condition\0".as_ptr() as PCHAR) == 0 {
         if Argc == 2 {
-            KdbpPrint(b"Conditions:                 (First)  (Last)\n\0".as_ptr() as PSTR);
+            crate::kdbp_print!(b"Conditions:                 (First)  (Last)\n\0");
             l = 0;
             while l < (21 - 1) {
                 if ExceptionNames[l as usize].is_null() {
@@ -2833,8 +2796,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
                     debug_assert!(false);
                 }
 
-                KdbpPrint(
-                    b"  #%02d  %-20s %-8s %-8s\n\0".as_ptr() as PSTR,
+                crate::kdbp_print!(b"  #%02d  %-20s %-8s %-8s\n\0",
                     l,
                     ExceptionNames[l as usize],
                     KDB_ENTER_CONDITION_TO_STRING(ConditionFirst),
@@ -2844,8 +2806,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
             }
 
             debug_assert!(l == (21 - 1));
-            KdbpPrint(
-                b"       %-20s %-8s %-8s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"       %-20s %-8s %-8s\n\0",
                 ExceptionNames[l as usize],
                 KDB_ENTER_CONDITION_TO_STRING(ConditionFirst),
                 KDB_ENTER_CONDITION_TO_STRING(ConditionLast),
@@ -2872,7 +2833,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 }
 
                 if l >= 21 {
-                    KdbpPrint(b"Unknown exception '%s'.\n\0".as_ptr() as PSTR, *Argv.offset(2));
+                    crate::kdbp_print!(b"Unknown exception '%s'.\n\0", *Argv.offset(2));
                     return 1u8;
                 }
             }
@@ -2883,7 +2844,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 } else if _stricmp(*Argv.offset(3), b"last\0".as_ptr() as PCHAR) == 0 {
                     First = 0u8;
                 } else {
-                    KdbpPrint(b"set condition: second argument must be 'first' or 'last'\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"set condition: second argument must be 'first' or 'last'\n\0");
                     return 1u8;
                 }
 
@@ -2896,15 +2857,15 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 } else if _stricmp(*Argv.offset(4), b"kmode\0".as_ptr() as PCHAR) == 0 {
                     ConditionFirst = KdbEnterFromKmode;
                 } else {
-                    KdbpPrint(b"set condition: third argument must be 'never', 'always', 'umode' or 'kmode'\n\0".as_ptr() as PSTR);
+                    crate::kdbp_print!(b"set condition: third argument must be 'never', 'always', 'umode' or 'kmode'\n\0");
                     return 1u8;
                 }
 
                 if KdbpSetEnterCondition(l, First, ConditionFirst) == 0 {
                     if l >= 0 {
-                        KdbpPrint(b"Couldn't change condition for exception #%02d\n\0".as_ptr() as PSTR, l);
+                        crate::kdbp_print!(b"Couldn't change condition for exception #%02d\n\0", l);
                     } else {
-                        KdbpPrint(b"Couldn't change condition for all exceptions\n\0".as_ptr() as PSTR);
+                        crate::kdbp_print!(b"Couldn't change condition for all exceptions\n\0");
                     }
                 }
             } else {
@@ -2917,16 +2878,14 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 }
 
                 if l < (21 - 1) {
-                    KdbpPrint(
-                        b"Condition for exception #%02d (%s): FirstChance %s  LastChance %s\n\0".as_ptr() as PSTR,
+                    crate::kdbp_print!(b"Condition for exception #%02d (%s): FirstChance %s  LastChance %s\n\0",
                         l,
                         ExceptionNames[l as usize],
                         KDB_ENTER_CONDITION_TO_STRING(ConditionFirst),
                         KDB_ENTER_CONDITION_TO_STRING(ConditionLast),
                     );
                 } else {
-                    KdbpPrint(
-                        b"Condition for all other exceptions: FirstChance %s  LastChance %s\n\0".as_ptr() as PSTR,
+                    crate::kdbp_print!(b"Condition for all other exceptions: FirstChance %s  LastChance %s\n\0",
                         KDB_ENTER_CONDITION_TO_STRING(ConditionFirst),
                         KDB_ENTER_CONDITION_TO_STRING(ConditionLast),
                     );
@@ -2935,8 +2894,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
         }
     } else if strcmp(*Argv.offset(1), b"break_on_module_load\0".as_ptr() as PCHAR) == 0 {
         if Argc == 2 {
-            KdbpPrint(
-                b"break_on_module_load = %s\n\0".as_ptr() as PSTR,
+            crate::kdbp_print!(b"break_on_module_load = %s\n\0",
                 if KdbBreakOnModuleLoad != 0 { b"enabled\0".as_ptr() } else { b"disabled\0".as_ptr() } as PCHAR,
             );
         } else if Argc >= 3 {
@@ -2951,11 +2909,11 @@ pub unsafe extern "C" fn KdbpCmdSet(
             {
                 KdbBreakOnModuleLoad = 0u8;
             } else {
-                KdbpPrint(b"Unknown setting '%s'.\n\0".as_ptr() as PSTR, *Argv.offset(2));
+                crate::kdbp_print!(b"Unknown setting '%s'.\n\0", *Argv.offset(2));
             }
         }
     } else {
-        KdbpPrint(b"Unknown setting '%s'.\n\0".as_ptr() as PSTR, *Argv.offset(1));
+        crate::kdbp_print!(b"Unknown setting '%s'.\n\0", *Argv.offset(1));
     }
 
     1u8
@@ -2968,20 +2926,20 @@ pub unsafe extern "C" fn KdbpCmdHelp(
 ) -> BOOLEAN {
     let mut i: ULONG;
 
-    KdbpPrint(b"Kernel debugger commands:\n\0".as_ptr() as PSTR);
+    crate::kdbp_print!(b"Kernel debugger commands:\n\0");
     i = 0;
     while i < KdbDebuggerCommandsCount {
         if KdbDebuggerCommands[i as usize].Syntax.is_null() {
             if i > 0 {
-                KdbpPrint(b"\n\0".as_ptr() as PSTR);
+                crate::kdbp_print!(b"\n\0");
             }
 
-            KdbpPrint(b"\x1b[7m* %s:\x1b[0m\n\0".as_ptr() as PSTR, KdbDebuggerCommands[i as usize].Help);
+            crate::kdbp_print!(b"\x1b[7m* %s:\x1b[0m\n\0", KdbDebuggerCommands[i as usize].Help);
             i += 1;
             continue;
         }
 
-        KdbpPrint(b"  %-20s - %s\n\0".as_ptr() as PSTR,
+        crate::kdbp_print!(b"  %-20s - %s\n\0",
                   KdbDebuggerCommands[i as usize].Syntax,
                   KdbDebuggerCommands[i as usize].Help);
         i += 1;
@@ -3116,7 +3074,7 @@ pub unsafe extern "C" fn KdbpPagerInternal(
     while *p != 0 {
         if DoPage != 0 {
             if p > Buffer.offset(BufLength as isize) {
-                KdbPrintf(b"Dmesg: error, p > Buffer+BufLength,d=%d\0".as_ptr() as PCSTR, p.offset_from(Buffer.offset(BufLength as isize)));
+                crate::kdb_printf!(b"Dmesg: error, p > Buffer+BufLength,d=%d\0", p.offset_from(Buffer.offset(BufLength as isize)));
                 return;
             }
         }
@@ -3158,7 +3116,7 @@ pub unsafe extern "C" fn KdbpPagerInternal(
             KdbPuts(Prompt);
             c = KdpReadTermKey(core::ptr::addr_of_mut!(ScanCode));
             if DoPage != 0 {
-                KdbPrintf(b" '%c'/scan=%04x\n\0".as_ptr() as PCSTR, c as i32, ScanCode);
+                crate::kdb_printf!(b" '%c'/scan=%04x\n\0", c as i32, ScanCode);
             } else {
                 KdbPuts(b"\n\0".as_ptr() as PCSTR);
             }
@@ -3249,14 +3207,14 @@ unsafe fn KdbpPrintUnicodeString(
 
     if String.is_null() || (*String).Buffer.is_null()
     {
-        KdbpPrint(b"<NULL>\0".as_ptr() as PSTR);
+        crate::kdbp_print!(b"<NULL>\0");
         return;
     }
 
     i = 0;
     while i < (*String).Length as ULONG / core::mem::size_of::<WCHAR>() as ULONG
     {
-        KdbpPrint(b"%c\0".as_ptr() as PSTR, ((*(*String).Buffer.offset(i as isize)) as CHAR) as i32);
+        crate::kdbp_print!(b"%c\0", ((*(*String).Buffer.offset(i as isize)) as CHAR) as i32);
         i += 1;
     }
 }
@@ -3375,7 +3333,7 @@ unsafe fn KdbpDoCommand(
         return Continue;
     }
 
-    KdbPrintf(b"Command '%s' is unknown.\n\0".as_ptr() as PCSTR, OrigCommand.as_ptr());
+    crate::kdb_printf!(b"Command '%s' is unknown.\n\0", OrigCommand.as_ptr());
 
     KdbOutputAborted = 0u8;
     return Continue;
@@ -3397,8 +3355,7 @@ pub unsafe extern "C" fn KdbpCliMainLoop(
             KdbCurrentTrapFrame,
         ) == 0
         {
-            KdbPrintf(
-                b"<%p>\0".as_ptr() as PCSTR,
+            crate::kdb_printf!(b"<%p>\0",
                 KeGetContextPc(KdbCurrentTrapFrame),
             );
         }

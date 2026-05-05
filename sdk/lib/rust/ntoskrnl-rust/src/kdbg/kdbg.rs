@@ -26,7 +26,6 @@ extern "C" {
     fn KdbEnterDebuggerException( ExceptionRecord: *mut EXCEPTION_RECORD64, PreviousMode: BOOLEAN, Context: *mut CONTEXT, FirstChance: BOOLEAN, ) -> KD_CONTINUE_TYPE;
     fn KeSetContextPc(Context: *mut CONTEXT, Pc: ULONG_PTR);
     fn KeGetContextPc(Context: *const CONTEXT) -> ULONG_PTR;
-    fn KdbPrintf(Format: PCHAR, ...);
 }
 
 // Constants
@@ -142,8 +141,7 @@ pub unsafe extern "system" fn KdbgSendPacket(
         }
     }
 
-    KdbPrintf(
-        b"%s: PacketType %d is UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
+    crate::kdb_printf!(b"%s: PacketType %d is UNIMPLEMENTED\n\0",
         b"KdSendPacket\0".as_ptr() as PCHAR,
         PacketType,
     );
@@ -183,8 +181,7 @@ pub unsafe extern "system" fn KdbgReceivePacket(
             (*MessageData).Buffer = &mut KdbgContext as *mut CONTEXT as PCHAR;
             return KdPacketReceived;
         } else if KdbgNextApiNumber != DbgKdContinueApi {
-            KdbPrintf(
-                b"%s:%d is UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
+            crate::kdb_printf!(b"%s:%d is UNIMPLEMENTED\n\0",
                 b"KdReceivePacket\0".as_ptr() as PCHAR,
                 447,
             );
@@ -198,8 +195,7 @@ pub unsafe extern "system" fn KdbgReceivePacket(
         return KdPacketReceived;
     }
 
-    KdbPrintf(
-        b"%s: PacketType %d is UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
+    crate::kdb_printf!(b"%s: PacketType %d is UNIMPLEMENTED\n\0",
         b"KdReceivePacket\0".as_ptr() as PCHAR,
         PacketType,
     );

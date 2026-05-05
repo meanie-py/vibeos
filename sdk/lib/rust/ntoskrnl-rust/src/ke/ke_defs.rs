@@ -59,7 +59,6 @@ extern "C" {
     pub fn KiUnlinkThread(Thread: *mut ntkrnl_sys::ddk::_KTHREAD, WaitStatus: ntkrnl_sys::base::LONG_PTR);
 }
 extern "C" {
-    pub fn KdpDprintf(fmt: *const u8, ...);
 }
 extern "system" {
     pub fn KdReportProcessorChange() -> u32;

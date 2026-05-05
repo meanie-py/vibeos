@@ -51,7 +51,6 @@ extern "C" {
 }
 // KdbpPrint is variadic (cdecl even on i386), strtoul/strcmp/strlen are CRT (cdecl)
 extern "C" {
-    fn KdbpPrint(Format: PCHAR, ...);
     fn strtoul(nptr: PCHAR, endptr: *mut PCHAR, base: i32) -> ULONG;
     fn strcmp(s1: PCHAR, s2: PCHAR) -> i32;
     fn strlen(s: PCHAR) -> SIZE_T;
@@ -72,14 +71,14 @@ extern "C" {
 
         if Argc > 1 {
             if RustShimKdbpGetHexNumber(*Argv.add(1), &mut Address) == 0 {
-                KdbpPrint(b"Invalid parameter: %s\n\0".as_ptr() as PCHAR, *Argv.add(1));
+                crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(1));
                 return 1u8;
             }
         }
 
         if Argc > 2 {
             if RustShimKdbpGetHexNumber(*Argv.add(2), &mut Flags) == 0 {
-                KdbpPrint(b"Invalid parameter: %s\n\0".as_ptr() as PCHAR, *Argv.add(2));
+                crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(2));
                 return 1u8;
             }
         }
@@ -87,21 +86,21 @@ extern "C" {
         if Address != 0 {
             PoolPage = PAGE_ALIGN(Address as usize) as PVOID;
         } else {
-            KdbpPrint(b"Heap is unimplemented\n\0".as_ptr() as PCHAR);
+            crate::kdbp_print!(b"Heap is unimplemented\n\0");
             return 1u8;
         }
 
         if MmIsAddressValid(PoolPage) == 0 {
-            KdbpPrint(b"Address not accessible!\n\0".as_ptr() as PCHAR);
+            crate::kdbp_print!(b"Address not accessible!\n\0");
             return 1u8;
         }
 
         if (Address >= (MmPagedPoolStart as ULONG_PTR)) && (Address <= (MmPagedPoolEnd as ULONG_PTR)) {
-            KdbpPrint(b"Allocation is from PagedPool region\n\0".as_ptr() as PCHAR);
+            crate::kdbp_print!(b"Allocation is from PagedPool region\n\0");
         } else if (Address >= (MmNonPagedPoolStart as ULONG_PTR)) && (Address <= (MmNonPagedPoolEnd as ULONG_PTR)) {
-            KdbpPrint(b"Allocation is from NonPagedPool region\n\0".as_ptr() as PCHAR);
+            crate::kdbp_print!(b"Allocation is from NonPagedPool region\n\0");
         } else {
-            KdbpPrint(b"Address 0x%p is not within any pool!\n\0".as_ptr() as PCHAR, Address as PVOID);
+            crate::kdbp_print!(b"Address 0x%p is not within any pool!\n\0", Address as PVOID);
             return 1u8;
         }
 
@@ -111,8 +110,7 @@ extern "C" {
                        (Address < ((Entry as ULONG_PTR) + ((*Entry).BlockSize() as ULONG_PTR * POOL_BLOCK_SIZE)))) as BOOLEAN;
 
             if (Flags & 1) == 0 || ThisOne != 0 {
-                KdbpPrint(
-                    b"%c%p size: %4d previous size: %4d  %s  %.4s\n\0".as_ptr() as PCHAR,
+                crate::kdbp_print!(b"%c%p size: %4d previous size: %4d  %s  %.4s\n\0",
                     if ThisOne != 0 { b'*' as i32 } else { b' ' as i32 },
                     Entry,
                     (*Entry).BlockSize() as i32,
@@ -134,8 +132,7 @@ extern "C" {
 
             if (Flags & 1) != 0 {
                 Data = (Entry.add(1)) as *mut ULONG;
-                KdbpPrint(
-                    b"    %p  %08lx %08lx %08lx %08lx\n    %p  %08lx %08lx %08lx %08lx\n\0".as_ptr() as PCHAR,
+                crate::kdbp_print!(b"    %p  %08lx %08lx %08lx %08lx\n    %p  %08lx %08lx %08lx %08lx\n\0",
                     Data,
                     *Data.add(0), *Data.add(1), *Data.add(2), *Data.add(3),
                     Data.add(4),
@@ -187,7 +184,7 @@ extern "C" {
             if Argc > 2 {
                 ExpKdbgExtPoolUsedGetTag(*Argv.add(2), &mut Tag, &mut Mask);
                 if RustShimKdbpGetHexNumber(*Argv.add(1), &mut Flags) == 0 {
-                    KdbpPrint(b"Invalid parameter: %s\n\0".as_ptr() as PCHAR, *Argv.add(1));
+                    crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(1));
                 }
             } else {
                 if strlen(*Argv.add(1)) == 1 ||
@@ -216,8 +213,7 @@ extern "C" {
     ) {
         let mut i: ULONG;
 
-        KdbpPrint(
-            b"Scanning large pool allocation table for Tag: %.4s (%p : %p)\n\0".as_ptr() as PCHAR,
+        crate::kdbp_print!(b"Scanning large pool allocation table for Tag: %.4s (%p : %p)\n\0",
             core::ptr::addr_of!(Tag) as PCHAR,
             PoolBigPageTable,
             PoolBigPageTable.add(PoolBigPageTableSize - 1),
@@ -232,8 +228,7 @@ extern "C" {
                 if let Some(callback) = FoundCallback {
                     callback(PoolBigPageTable.add(i as usize), CallbackContext);
                 } else {
-                    KdbpPrint(
-                        b"%p: tag %.4s, size: %I64x\n\0".as_ptr() as PCHAR,
+                    crate::kdbp_print!(b"%p: tag %.4s, size: %I64x\n\0",
                         (*PoolBigPageTable.add(i as usize)).Va,
                         core::ptr::addr_of!((*PoolBigPageTable.add(i as usize)).Key) as PCHAR,
                         ((*PoolBigPageTable.add(i as usize)).NumberOfPages as u64) << PAGE_SHIFT,
@@ -284,8 +279,7 @@ extern "C" {
         let mut BaseVa: PVOID;
         let mut PointerPde: PMMPDE;
 
-        KdbpPrint(
-            b"Searching Paged pool (%p : %p) for Tag: %.4s\n\0".as_ptr() as PCHAR,
+        crate::kdbp_print!(b"Searching Paged pool (%p : %p) for Tag: %.4s\n\0",
             MmPagedPoolStart,
             MmPagedPoolEnd,
             core::ptr::addr_of!(Tag) as PCHAR,
@@ -319,8 +313,7 @@ extern "C" {
                         if let Some(callback) = FoundCallback {
                             callback(Entry, CallbackContext);
                         } else {
-                            KdbpPrint(
-                                b"%p size: %4d previous size: %4d  %s  %.4s\n\0".as_ptr() as PCHAR,
+                            crate::kdbp_print!(b"%p size: %4d previous size: %4d  %s  %.4s\n\0",
                                 Entry,
                                 (*Entry).BlockSize() as i32,
                                 (*Entry).PreviousSize() as i32,
@@ -351,8 +344,7 @@ extern "C" {
         let mut Entry: PPOOL_HEADER;
         let mut BaseVa: PVOID;
 
-        KdbpPrint(
-            b"Searching NonPaged pool (%p : %p) for Tag: %.4s\n\0".as_ptr() as PCHAR,
+        crate::kdbp_print!(b"Searching NonPaged pool (%p : %p) for Tag: %.4s\n\0",
             MmNonPagedPoolStart,
             MmNonPagedPoolEnd0,
             core::ptr::addr_of!(Tag) as PCHAR,
@@ -380,8 +372,7 @@ extern "C" {
                     if let Some(callback) = FoundCallback {
                         callback(Entry, CallbackContext);
                     } else {
-                        KdbpPrint(
-                            b"%p size: %4d previous size: %4d  %s  %.4s\n\0".as_ptr() as PCHAR,
+                        crate::kdbp_print!(b"%p size: %4d previous size: %4d  %s  %.4s\n\0",
                             Entry,
                             (*Entry).BlockSize() as i32,
                             (*Entry).PreviousSize() as i32,
@@ -413,7 +404,7 @@ extern "C" {
         let mut PoolType: ULONG = NonPagedPool;
 
         if Argc == 1 {
-            KdbpPrint(b"Specify a tag string\n\0".as_ptr() as PCHAR);
+            crate::kdbp_print!(b"Specify a tag string\n\0");
             return 1u8;
         }
 
@@ -425,7 +416,7 @@ extern "C" {
             PoolType = strtoul(*Argv.add(2), core::ptr::null_mut(), 0);
 
             if PoolType > 1 {
-                KdbpPrint(b"Only (non) paged pool are supported\n\0".as_ptr() as PCHAR);
+                crate::kdbp_print!(b"Only (non) paged pool are supported\n\0");
                 return 1u8;
             }
         }
@@ -484,8 +475,7 @@ extern "C" {
            (Criteria & 0x10 != 0 && SData == (*Irp).UserEvent as ULONG_PTR)
         {
             if IsComplete == 0 {
-                KdbpPrint(
-                    b"%p Thread %p current stack (%x, %x) belongs to %wZ\n\0".as_ptr() as PCHAR,
+                crate::kdbp_print!(b"%p Thread %p current stack (%x, %x) belongs to %wZ\n\0",
                     Irp,
                     (*Irp).Tail.Overlay.Thread,
                     (*IoStack).MajorFunction as i32,
@@ -493,8 +483,7 @@ extern "C" {
                     DriverName,
                 );
             } else {
-                KdbpPrint(
-                    b"%p Thread %p is complete (CurrentLocation %d > StackCount %d)\n\0".as_ptr() as PCHAR,
+                crate::kdbp_print!(b"%p Thread %p is complete (CurrentLocation %d > StackCount %d)\n\0",
                     Irp,
                     (*Irp).Tail.Overlay.Thread,
                     (*Irp).CurrentLocation as i32,
@@ -517,7 +506,7 @@ extern "C" {
             PoolType = strtoul(*Argv.add(1), core::ptr::null_mut(), 0);
 
             if PoolType > 1 {
-                KdbpPrint(b"Only (non) paged pool are supported\n\0".as_ptr() as PCHAR);
+                crate::kdbp_print!(b"Only (non) paged pool are supported\n\0");
                 return 1u8;
             }
         }
@@ -529,7 +518,7 @@ extern "C" {
 
         if Argc > 2 {
             if RustShimKdbpGetHexNumber(*Argv.add(2), &mut FindCtxt.RestartAddress) == 0 {
-                KdbpPrint(b"Invalid parameter: %s\n\0".as_ptr() as PCHAR, *Argv.add(2));
+                crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(2));
                 FindCtxt.RestartAddress = 0;
             }
         }

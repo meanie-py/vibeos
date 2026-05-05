@@ -141,8 +141,7 @@ pub unsafe extern "system" fn KxSwitchKdProcessor(ProcessorIndex: ULONG) -> KCON
     }
 
     if (*CurrentPrcb).IpiFrozen == IPI_FROZEN_STATE_THAW {
-        KdpDprintf(
-            b"[%u] KxSwitchKdProcessor: ContinueSuccess\n\0".as_ptr(),
+        crate::kdp_dprintf!(b"[%u] KxSwitchKdProcessor: ContinueSuccess\n\0",
             KeGetCurrentProcessorNumber(),
         );
         (*CurrentPrcb).IpiFrozen = IPI_FROZEN_STATE_OWNER | IPI_FROZEN_FLAG_ACTIVE;

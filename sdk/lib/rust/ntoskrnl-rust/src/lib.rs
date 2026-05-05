@@ -20,6 +20,41 @@ macro_rules! ASSERT {
     };
 }
 
+/// Format-and-emit macros that bypass the C variadic trampolines and call
+/// directly into the Rust ntprintf crate. See `dbgprint.rs` for the rationale
+/// and migration cookbook.
+///
+/// `kdb_printf!`  → KdbPutsN          (replacement for `KdbPrintf(fmt, …)`)
+/// `kdbp_print!`  → KdbpPagerInternal (replacement for `KdbpPrint(fmt, …)`)
+/// `kdp_dprintf!` → KdpPrintString    (replacement for `KdpDprintf(fmt, …)`)
+///
+/// Each accepts a byte-slice format string (trailing `\0` is stripped if
+/// present, so old `b"...\0"` and new `b"..."` shapes both work).
+#[macro_export]
+macro_rules! kdb_printf {
+    ($fmt:expr $(,)?) => { $crate::dbgprint::rust_kdb_printf($fmt, &[]) };
+    ($fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_kdb_printf($fmt, slots)
+    }};
+}
+#[macro_export]
+macro_rules! kdbp_print {
+    ($fmt:expr $(,)?) => { $crate::dbgprint::rust_kdbp_print($fmt, &[]) };
+    ($fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_kdbp_print($fmt, slots)
+    }};
+}
+#[macro_export]
+macro_rules! kdp_dprintf {
+    ($fmt:expr $(,)?) => { $crate::dbgprint::rust_kdp_dprintf($fmt, &[]) };
+    ($fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_kdp_dprintf($fmt, slots)
+    }};
+}
+
 /// Cast an `extern "system"` function to the target callback ABI.
 ///
 /// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64
@@ -39,6 +74,7 @@ pub mod ARM3;
 pub mod cc;
 pub mod config;
 pub mod dbgk;
+pub mod dbgprint;
 pub mod ex;
 pub mod fsrtl;
 pub mod fstub;
