@@ -348,14 +348,13 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
 
 #[no_mangle]
 pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
-    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
     #[inline(never)]
     unsafe fn pnp_trace(s: &[u8]) {
-        DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+        crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
     }
     #[inline(never)]
     unsafe fn pnp_trace_s(s: &[u8], v: i32) {
-        DbgPrint(s.as_ptr() as *const i8, v);
+        crate::dbg_print!(s, v);
     }
     let mut Status: NTSTATUS;
     let mut Disposition: ULONG = 0;

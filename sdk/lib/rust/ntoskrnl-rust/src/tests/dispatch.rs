@@ -5,11 +5,6 @@
 
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{KeStallExecutionProcessor, CPPORT};
-
-unsafe extern "C" {
-    fn DbgPrint(fmt: *const u8, ...) -> i32;
-}
-
 unsafe extern "system" {
     fn KdPortGetByteEx(PortInformation: *mut CPPORT, Byte: *mut u8) -> BOOLEAN;
     static mut SerialPortInfo: CPPORT;
@@ -133,27 +128,26 @@ unsafe fn find_test(name: &[u8], len: usize) -> Option<usize> {
 
 unsafe fn run_one(idx: usize) {
     let entry = &TEST_TABLE[idx];
-    DbgPrint(b"[TEST START] %s\n\0".as_ptr(), entry.name.as_ptr());
+    crate::dbg_print!(b"[TEST START] %s\n\0", entry.name.as_ptr());
     let result = (entry.func)();
     if result != 0 {
-        DbgPrint(b"[TEST PASS] %s\n\0".as_ptr(), entry.name.as_ptr());
+        crate::dbg_print!(b"[TEST PASS] %s\n\0", entry.name.as_ptr());
     } else {
-        DbgPrint(
-            b"[TEST FAIL] %s: test returned FALSE\n\0".as_ptr(),
+        crate::dbg_print!(b"[TEST FAIL] %s: test returned FALSE\n\0",
             entry.name.as_ptr(),
         );
     }
 }
 
 unsafe fn print_list() {
-    DbgPrint(b"[TEST LIST] \0".as_ptr());
+    crate::dbg_print!(b"[TEST LIST] \0");
     for (i, entry) in TEST_TABLE.iter().enumerate() {
         if i > 0 {
-            DbgPrint(b",\0".as_ptr());
+            crate::dbg_print!(b",\0");
         }
-        DbgPrint(b"%s\0".as_ptr(), entry.name.as_ptr());
+        crate::dbg_print!(b"%s\0", entry.name.as_ptr());
     }
-    DbgPrint(b"\n\0".as_ptr());
+    crate::dbg_print!(b"\n\0");
 }
 
 /// Main entry point for the test kernel — formerly NtTestKernelDispatchLoop in
@@ -168,7 +162,7 @@ unsafe fn print_list() {
 pub unsafe extern "system" fn NtTestKernelDispatchLoop() {
     let mut line = [0u8; 256];
 
-    DbgPrint(b"TESTKERNEL READY\n\0".as_ptr());
+    crate::dbg_print!(b"TESTKERNEL READY\n\0");
 
     loop {
         let len = read_line(&mut line);
@@ -177,7 +171,7 @@ pub unsafe extern "system" fn NtTestKernelDispatchLoop() {
         }
 
         if cstr_eq(&line, len, b"QUIT\0") {
-            DbgPrint(b"[TEST QUIT]\n\0".as_ptr());
+            crate::dbg_print!(b"[TEST QUIT]\n\0");
             break;
         }
 
@@ -200,8 +194,7 @@ pub unsafe extern "system" fn NtTestKernelDispatchLoop() {
             match find_test(&name_buf, copy_len) {
                 Some(idx) => run_one(idx),
                 None => {
-                    DbgPrint(
-                        b"[TEST FAIL] %s: unknown test\n\0".as_ptr(),
+                    crate::dbg_print!(b"[TEST FAIL] %s: unknown test\n\0",
                         name_buf.as_ptr(),
                     );
                 }
@@ -209,6 +202,6 @@ pub unsafe extern "system" fn NtTestKernelDispatchLoop() {
             continue;
         }
 
-        DbgPrint(b"[TEST ERROR] Unknown command: %s\n\0".as_ptr(), line.as_ptr());
+        crate::dbg_print!(b"[TEST ERROR] Unknown command: %s\n\0", line.as_ptr());
     }
 }

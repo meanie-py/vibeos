@@ -2,7 +2,7 @@
 
 ## Status snapshot
 
-The kernel currently has **~552 active C shim functions** (plus ~50 globals, ~17 LLVM-workaround functions, and ~7 vararg trampolines) spread across **13 `*_rust_shims.c` / `kernel_c_helpers.c` files**, totaling ~9,238 LOC. They exist because Rust can't link directly to certain C constructs:
+The kernel currently has **~480 active C shim functions** (plus ~50 globals, ~17 LLVM-workaround functions, and ~5 vararg trampolines whose ANSI-format-parsing now runs in Rust) spread across **7 `*_rust_shims.c` / `kernel_c_helpers.c` files**, totaling ~6,400 LOC. They exist because Rust can't link directly to certain C constructs:
 
 - C `FORCEINLINE` / `static __inline` functions (no exported linker symbol)
 - C macros (no symbol at all)
@@ -12,7 +12,7 @@ The kernel currently has **~552 active C shim functions** (plus ~50 globals, ~17
 
 **This is the second pass on this doc.** The March 2026 version is preserved in git history (`docs/engineering/shim-elimination.md@a~`); it's now stale on counts (340 → 552), file list (missed kernel_c_helpers.c, kdbg, kd, cm), and category retirement (claimed captures(none) was solved by CGU=1, but project chose CGU=256+opaque_ptr instead, which contracted but didn't eliminate the category).
 
-## Current shim inventory
+## Current shim inventory (post-Phase 0)
 
 | File | LOC | Active fns | Primary purpose |
 |------|----:|-----------:|-----------------|
@@ -20,18 +20,18 @@ The kernel currently has **~552 active C shim functions** (plus ~50 globals, ~17
 | `ntoskrnl/mm/mm_rust_shims.c` | 1,512 | ~85 | MM PTE accessors, AVL helpers, working-set lock wrappers |
 | `ntoskrnl/io/iomgr/io_rust_shims.c` | 1,465 | ~44 | IO macros, captures(none) workarounds, complex delegations |
 | `ntoskrnl/kernel_c_helpers.c` | 635 | ~16 | **Canonical "must-stay" home** — varargs, LTO workarounds, AVL include trick |
-| `ntoskrnl/ps/ps_rust_shims.c` | 583 | ~50 + globals | PS FORCEINLINEs + globals block |
 | `ntoskrnl/kdbg/kdbg_rust_shims.c` | 539 | ~16 + 2 large data tables | Mostly data (ComponentTable, KdbDebuggerCommands) |
-| `ntoskrnl/ex/ex_rust_shims.c` | 529 | ~20 | EX FORCEINLINEs + macros |
-| `ntoskrnl/tier1_rust_shims.c` | 470 | ~38 | LPC, HAL dispatch, IRP stack location |
-| `ntoskrnl/ob/ob_rust_shims.c` | 457 | ~44 | **Cleanest file** — 42/44 are FORCEINLINE_RENAME |
 | `ntoskrnl/config/cm_rust_shims.c` | 342 | ~37 | KCB lock wrappers + i386 dual-decoration scheme |
-| `ntoskrnl/kd64/kd64_rust_shims.c` | 318 | ~24 | KD64 FORCEINLINEs + KdpDprintf vararg |
-| `ntoskrnl/se/se_rust_shims.c` | 245 | 23 | SE FORCEINLINEs + SepInitTokensShim LTO workaround |
 | `ntoskrnl/kd/kd_rust_shims.c` | 28 | 2 | HAL `KdComPortInUse` getter/setter (dllimport) |
-| **TOTAL** | **9,238** | **~552** | |
+| **TOTAL** | **~6,640** | **~395** | (counts include the data-table LOC, not "active fns") |
 
-Not in this list: `mm/mm_sysldr_shims.c` from the March doc was merged into `mm_rust_shims.c`.
+Plus the new shared C-side vararg adapter:
+
+| File | LOC | Active fns | Primary purpose |
+|------|----:|-----------:|-----------------|
+| `ntoskrnl/ntprintf_trampoline.c` | ~100 | 1 public + 1 static | va_list → typed-slot pull → Rust `ntprintf_format_a` |
+
+Phase 0 (2026-05-04) deleted six dead-on-disk shim files (ex, ob, ps, tier1, se, kd64 — −2,602 LOC, 245 functions) and resolved 12 duplications between mm and kernel_c_helpers. Eight vestigial functions inside the surviving files were also deleted. See the audit doc for the full retro.
 
 ## Categories (current taxonomy)
 
@@ -44,7 +44,7 @@ Not in this list: `mm/mm_sysldr_shims.c` from the March doc was merged into `mm_
 | **FASTCALL_BRIDGE** | ~28 | Mechanical (`extern "fastcall"` works on stable) | i386 fastcall↔cdecl bridges + cm dual-decoration scheme. |
 | **LLVM_WORKAROUND** | ~13 | **Stay** | SepInitTokensShim (i386 fat-LTO ud2), 9× io captures(none), IopInitializePlugPlayServices_shim (black_box mis-fold), amd64 KiSaveXState/KiRestoreXState (KVM bug, not LLVM). |
 | **COMPLEX_DELEGATION** | ~14 | Per-function review | IopInitializeDriverModule (240 LOC), PiQueueDeviceAction_c, KiAttachProcess, MmFixupImageSectionSegments, ExpKdbgExt* family. |
-| **VARARG** | ~7 | **Stay** | KdpDprintf, KdbpPrint, RtlStringCbPrintfA/W. Need C `va_list`. |
+| **VARARG** | ~5 | **Stay (thin)** | KdbPrintf, KdbpPrint, KdpDprintf, RtlStringCbPrintfA — all converted to ~6-line `va_arg` pulls that hand off to Rust `ntprintf_format_a` (no `_vsnprintf`). Plus `vDbgPrintExWithPrefixInternal` (`sdk/lib/rtl/debug.c`, weak-symbol Rust path) and the brand-new non-variadic `DbgPrintEmitPreformatted`. **Holdouts:** `RtlStringCbPrintfW` and `swprintf` (wide-char) still call legacy `_vsnwprintf` — needs a `ntprintf_w` UTF-16 sibling crate. |
 
 **Total stay-bucket: ~70 functions** (vararg + LLVM + most i386 register/V86 + kdbg data tables). Everything else (~482 functions) is in principle eliminable.
 
@@ -109,6 +109,35 @@ Verified by grepping all `.rs` files in `ntoskrnl-rust/src/` (and decoration var
 | `mm_rust_shims.c:1449` | `KeAttachProcess_irql_check` | Leftover ARM64 IRQL instrumentation |
 | `mm_rust_shims.c:1465` | `KeDetachProcess_irql_checked` | Leftover ARM64 IRQL instrumentation |
 | `mm_rust_shims.c:1480` | `MmCheckIrqlAfterCall` | Leftover ARM64 IRQL instrumentation |
+
+### 5. Vararg trampolines: format-parsing now Rust, callers bypass C entirely
+
+Status as of 2026-05-04 mid-day. All of the ANSI-format kernel `printf`-shaped functions either no longer exist as a Rust↔C variadic FFI hop, or have a thin `va_arg`-pull wrapper that hands a typed slot array to Rust for actual format-string parsing. The only thing that stays in C is the `va_arg(ap, …)` pull itself (Rust can't safely cross that boundary).
+
+**Architecture.** Two-pass design:
+1. Rust **`ntprintf` crate** (`sdk/lib/rust/ntprintf/`, no_std, ~700 LOC) implements a Windows-flavored printf core: `scanner.rs` walks the format string and emits a tag byte per `%`-specifier; `formatter.rs` consumes a slot array and renders into a caller-supplied `&mut [u8]` via a `Writer` trait. FFI entries: `ntprintf_scan_arg_types(fmt, out_tags, max)` and `ntprintf_format_a(dst, cap, fmt, slots, n)`. Validated against host libc by a per-spec `tests/libc_diff.rs` harness that rewrites Windows specifiers (`%I64x`, `%p`, `%ld`) into libc-compatible ones and renders both via `snprintf` for byte-identity.
+2. **C-side trampoline** (`ntoskrnl/ntprintf_trampoline.c`): one shared `ntprintf_pull_va(fmt, slots, ap)` static that calls the scanner, walks `ap` once at the right primitive width per tag, and a public `ntprintf_va_format_a(dst, cap, fmt, ap)` that wraps it for `_vsnprintf`-shaped callers.
+
+**Variadic shims migrated.** Each one's body collapsed to `va_start; ntprintf_va_format_a(...); va_end; sink(buffer)`:
+- `KdbPrintf` (`kdbg_rust_shims.c`)
+- `KdbpPrint` (`kdbg_rust_shims.c`; ARM64 stub remains a no-op)
+- `KdpDprintf` (`kernel_c_helpers.c`)
+- `RtlStringCbPrintfA` (`kernel_c_helpers.c`)
+- `vDbgPrintExWithPrefixInternal` (`sdk/lib/rtl/debug.c` — backbone of `DbgPrint`/`DbgPrintEx`/`DbgPrintReturnControlC`/`vDbgPrintEx*`). The `ntprintf_va_format_a` reference is `__attribute__((weak))` so user-mode `ntdll.dll` (which also pulls `librtl.a`) falls back to legacy `_vsnprintf` when the Rust crate isn't linked. New non-variadic entry `DbgPrintEmitPreformatted(body, len, comp, level)` for Rust callers that want to skip the va_list hop entirely.
+
+The only legacy `_vsnprintf`/`_vsnwprintf` callers that remain in the active kernel build are wide-format paths (`RtlStringCbPrintfW` in `cm_rust_shims.c`, plus `swprintf` callers in `pnpmgr/devaction.rs`, `ex/locale.rs`, `iomgr/{device,bootlog}.rs`, `fstub/disksup.rs`).
+
+**Rust callers.** ~445 call sites swept off the variadic FFI hop and onto Rust-native macros at `ntoskrnl-rust` crate root:
+- `kdb_printf!`, `kdbp_print!`, `kdp_dprintf!`, `rtl_string_cb_printf_a!`, `dbg_print!`, `dbg_print_ex!` — each takes `($fmt:expr $(,)? | $fmt:expr, $($arg:expr),+ $(,)?)` and routes through `dbgprint::IntoSlot::into_slot` which packs every primitive integer / pointer / `bool` into a `u64` slot at the call site.
+- The supporting machinery (`sdk/lib/rust/ntoskrnl-rust/src/dbgprint.rs`, ~270 LOC) owns one `RawSink` (raw-pointer sink with `opaque_ptr` laundering — the slice variant of this trips i386 captures(none) → ud2; the comment in the file documents why), the per-target Rust shims (`rust_kdb_printf`/`rust_kdbp_print`/`rust_kdp_dprintf`/`rust_dbg_print[_ex]`/`rust_rtl_string_cb_printf_a`), and a `rust_dbg_print_cstr`/`rust_kdbp_print_cstr` pair for call sites whose format pointer is resolved at runtime (e.g. `EflagsBits[i]`, `DbgPrint(message, …)` where `message: PCHAR`).
+
+**Migration tooling.** `tools/migrate_dbgprint.py` does the mechanical sweep — regex matches `\b{fname}\(\s*(b?"…")\s*\.as_ptr\(\)(?:\s+as\s+CAST)?\s*[,)]` and rewrites to `crate::{macro}!(b"…", …args)`, then drops the matching `extern "C" { fn X(...) -> ...; }` decl when no active call sites remain. Three patterns of irregular call shape (variable format pointer, format pointer pulled out of an array, `extern "C"` extern decl inside `extern "C" { … }` block on a single line) were handled either by hand or via a complementary one-shot Python script.
+
+**Footprint impact.** No net reduction in shim function count (the C `va_arg` pull is the function), but the implementation surface inside each trampoline collapsed from ~30-line `_vsnprintf`-and-emit blocks to ~6-line `va_arg`-pull-and-Rust-format blocks, and the entire Rust-side `extern "C" { fn KdbPrintf(...) -> ULONG; }` family (~33 extern decls across 33 files) is gone. Smoke: i386 7/7 in 55s, amd64 7/7 in 3:56.
+
+**Open follow-ups.**
+- `RtlStringCbPrintfW` + ~20 `swprintf` callers — needs the wide (UTF-16) sibling `ntprintf_w` crate, plus a `_vsnwprintf` replacement in `kernel_c_helpers.c`.
+- Kani/Loom proofs on `format_into` truncation safety + `scanner` bounds (the printf core is hand-rolled; bug surface is bounded but worth pinning down).
 
 ## Phased elimination plan
 

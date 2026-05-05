@@ -40,14 +40,9 @@
 //!  - InterlockedList: InterlockedPushEntryList + InterlockedPopEntryList.
 
 use ntkrnl_sys::base::*;
-
-unsafe extern "C" {
-    fn DbgPrint(fmt: *const u8, ...) -> i32;
-}
-
 #[inline(never)]
 unsafe fn stub_log(name: *const u8) {
-    DbgPrint(b"[TEST STUB] %s -- needs translation\n\0".as_ptr(), name);
+    crate::dbg_print!(b"[TEST STUB] %s -- needs translation\n\0", name);
 }
 
 macro_rules! test_stub {

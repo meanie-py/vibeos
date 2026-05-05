@@ -9,7 +9,6 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
-    fn DbgPrint(Format: PCHAR, ...) -> ULONG;
     fn strstr(s1: PCHAR, s2: PCHAR) -> PCHAR;
 }
 
@@ -67,8 +66,7 @@ pub unsafe extern "system" fn XIPInit(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     XipVerbose = strstr(CommandLine, b"XIPVERBOSE\0".as_ptr() as PCHAR);
 
     if !XipVerbose.is_null() {
-        DbgPrint(
-            b"\n\nXIP: debug timestamp at line %d in %s:   <<<%s %s>>>\n\n\0".as_ptr() as PCHAR,
+        crate::dbg_print!(b"\n\nXIP: debug timestamp at line %d in %s:   <<<%s %s>>>\n\n\0",
             line!() as i32,
             file!().as_ptr(),
             b"__DATE__\0".as_ptr(),

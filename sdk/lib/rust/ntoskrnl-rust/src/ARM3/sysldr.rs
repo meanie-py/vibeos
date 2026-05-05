@@ -959,7 +959,7 @@ pub unsafe extern "system" fn MmGetSystemRoutineAddress(system_routine_name: *mu
     KeLeaveCriticalRegion();
 
     if proc_address.is_null() {
-        DbgPrint(b"MmGetSystemRoutineAddress: '%s' NOT FOUND (checked %lu modules, matched %lu)\n\0".as_ptr() as *const i8, ansi_routine_name.Buffer, total_modules as u32, modules as u32);
+        crate::dbg_print!(b"MmGetSystemRoutineAddress: '%s' NOT FOUND (checked %lu modules, matched %lu)\n\0", ansi_routine_name.Buffer, total_modules as u32, modules as u32);
     }
 
     RtlFreeAnsiString(core::ptr::addr_of_mut!(ansi_routine_name));
@@ -1021,11 +1021,6 @@ unsafe fn find_export_stripping_decoration(image_base: PVOID, name: *const i8) -
     }
     core::ptr::null_mut()
 }
-
-extern "C" {
-    fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
-}
-
 extern "system" {
     fn RtlImageDirectoryEntryToData(base: PVOID, mapped: u32, dir: u16, size: *mut ULONG) -> PVOID;
     fn RtlUnicodeStringToAnsiString(dest: *mut ANSI_STRING, src: *mut _UNICODE_STRING, alloc: u32) -> NTSTATUS;

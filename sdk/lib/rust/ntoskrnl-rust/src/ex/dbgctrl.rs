@@ -30,8 +30,6 @@ extern "C" {
     static mut KdIgnoreUmExceptions: BOOLEAN;
     static mut KdBlockEnable: BOOLEAN;
     static mut InitIsWinPEMode: BOOLEAN;
-    // DbgPrintEx is variadic — must stay extern "C" (cdecl)
-    fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCHAR, ...) -> NTSTATUS;
 }
 
 // These are NTAPI (stdcall on i386) — must use extern "system"
@@ -151,10 +149,10 @@ pub unsafe extern "system" fn ExpDebuggerWorker(Context: PVOID) {
         }
 
         if Process.is_null() {
-            DbgPrintEx(
+            crate::dbg_print_ex!(
                 DPFLTR_SYSTEM_ID,
                 DPFLTR_ERROR_LEVEL,
-                b"EX debug work: Unable to find process %p\n\0".as_ptr() as PCHAR,
+                b"EX debug work: Unable to find process %p\n",
                 if !ProcessToAttach.is_null() { ProcessToAttach } else { ProcessToKill },
             );
         }
@@ -169,10 +167,10 @@ pub unsafe extern "system" fn ExpDebuggerWorker(Context: PVOID) {
         );
         
         if let Err(status) = result {
-            DbgPrintEx(
+            crate::dbg_print_ex!(
                 DPFLTR_SYSTEM_ID,
                 DPFLTR_ERROR_LEVEL,
-                b"EX page in: Failed to page-in address 0x%p, Status 0x%08lx\n\0".as_ptr() as PCHAR,
+                b"EX page in: Failed to page-in address 0x%p, Status 0x%08lx\n",
                 PageInAddress,
                 status,
             );

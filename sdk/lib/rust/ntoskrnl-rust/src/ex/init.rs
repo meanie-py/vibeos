@@ -102,11 +102,6 @@ extern "C" {
     fn strstr(haystack: *const i8, needle: *const i8) -> *const i8;
 }
 
-// Variadic C functions — must use extern "C" (not "system")
-extern "C" {
-    fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
-}
-
 // NtCurrentProcess is a macro: ((HANDLE)(LONG_PTR)-1)
 #[allow(non_snake_case)]
 #[inline(always)]
@@ -1035,10 +1030,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);
     }
 
-    Status = RtlStringCbPrintfA(
-        VersionBuffer.as_mut_ptr() as *mut i8,
+    Status = crate::rtl_string_cb_printf_a!(
+        VersionBuffer.as_mut_ptr(),
         VersionBuffer.len(),
-        b"5.2\0".as_ptr() as *mut i8,
+        b"5.2",
     );
     if Status < 0 {
         KeBugCheckEx(0x31, Status as ULONG_PTR, 0, 0, 0);

@@ -63,7 +63,6 @@ const TAG_SYMLINK_TARGET: ULONG = u32::from_le_bytes(*b"SYMT");
 
 extern "C" {
     static mut IoDeviceObjectType: POBJECT_TYPE;
-    fn DbgPrint(Format: PCHAR, ...) -> ULONG;
 }
 
 // KeQuerySystemTime: real function on i386, macro on amd64/arm64.
@@ -623,8 +622,7 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
         || (CapturedLinkTarget.MaximumLength < CapturedLinkTarget.Length)
         || CapturedLinkTarget.MaximumLength == 0
     {
-        DbgPrint(
-            b"OB: Invalid symbolic link target - %wZ\n\0".as_ptr() as PCHAR,
+        crate::dbg_print!(b"OB: Invalid symbolic link target - %wZ\n\0",
             &CapturedLinkTarget,
         );
         return STATUS_INVALID_PARAMETER;

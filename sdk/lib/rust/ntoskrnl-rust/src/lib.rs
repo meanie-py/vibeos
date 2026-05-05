@@ -55,6 +55,45 @@ macro_rules! kdp_dprintf {
     }};
 }
 
+/// `DbgPrint(fmt, …)` — routes through the kernel debug filter via
+/// `DbgPrintEmitPreformatted` (no variadic FFI hop). Component bypasses the
+/// filter (`MAXULONG`) at DPFLTR_ERROR_LEVEL.
+#[macro_export]
+macro_rules! dbg_print {
+    ($fmt:expr $(,)?) => { $crate::dbgprint::rust_dbg_print($fmt, &[]) };
+    ($fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_dbg_print($fmt, slots)
+    }};
+}
+
+/// `DbgPrintEx(component, level, fmt, …)` — caller picks the component / level.
+#[macro_export]
+macro_rules! dbg_print_ex {
+    ($comp:expr, $level:expr, $fmt:expr $(,)?) => {
+        $crate::dbgprint::rust_dbg_print_ex($comp, $level, $fmt, &[])
+    };
+    ($comp:expr, $level:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_dbg_print_ex($comp, $level, $fmt, slots)
+    }};
+}
+
+/// Format into a caller-supplied buffer — `RtlStringCbPrintfA(dst, cb, fmt, …)`.
+/// Returns NTSTATUS (`STATUS_SUCCESS`, `STATUS_BUFFER_OVERFLOW`,
+/// `STATUS_INVALID_PARAMETER`). `$dst` is freely castable between `*mut u8`
+/// and `*mut i8`; `$fmt` is a byte-slice (`b"…"` literal or `&[u8]` static).
+#[macro_export]
+macro_rules! rtl_string_cb_printf_a {
+    ($dst:expr, $cb:expr, $fmt:expr $(,)?) => {
+        $crate::dbgprint::rust_rtl_string_cb_printf_a($dst as *mut u8, $cb, $fmt, &[])
+    };
+    ($dst:expr, $cb:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
+        let slots: &[u64] = &[$($crate::dbgprint::IntoSlot::into_slot($arg)),+];
+        $crate::dbgprint::rust_rtl_string_cb_printf_a($dst as *mut u8, $cb, $fmt, slots)
+    }};
+}
+
 /// Cast an `extern "system"` function to the target callback ABI.
 ///
 /// On i386, DDK callback types use `extern "stdcall"`, while on amd64/arm64

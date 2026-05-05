@@ -1347,7 +1347,6 @@ pub unsafe extern "system" fn CcInitView() {
 }
 
 extern "C" {
-    fn DbgPrint(format: *const i8, ...) -> ULONG;
     fn DbgBreakPoint();
 }
 #[cfg(target_arch = "x86")]

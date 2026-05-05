@@ -34,7 +34,6 @@ extern "C" {
     static mut LazyWriter: LAZY_WRITER;
     static mut CcTwilightLookasideList: _NPAGED_LOOKASIDE_LIST;
     static mut ExCriticalWorkerThreads: ULONG;
-    fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCHAR, ...) -> NTSTATUS;
     fn CcBugCheck(a: ULONG, b: ULONG, c: ULONG);
     fn ExInitializeWorkItem(Item: PWORK_QUEUE_ITEM, Routine: PVOID, Context: PVOID);
 }
@@ -114,10 +113,10 @@ unsafe fn InterlockedAnd(target: *mut i32, value: i32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn CcPfInitializePrefetcher() {
-    DbgPrintEx(
+    crate::dbg_print_ex!(
         DPFLTR_PREFETCHER_ID,
         DPFLTR_TRACE_LEVEL,
-        b"CCPF: InitializePrefetecher()\n\0".as_ptr() as PCHAR,
+        b"CCPF: InitializePrefetecher()\n",
     );
 
     InitializeListHead(core::ptr::addr_of_mut!(CcPfGlobals.ActiveTraces));

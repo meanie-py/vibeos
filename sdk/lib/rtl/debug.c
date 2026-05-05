@@ -16,6 +16,15 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Rust ntprintf path — kernel-mode replacement for `_vsnprintf`. The symbol
+ * is `weak` so user-mode link (ntdll.dll, which also pulls librtl.a) doesn't
+ * complain when the kernel-only ntprintf crate isn't on the link line. At
+ * runtime the pointer is non-NULL only in ntoskrnl. See
+ * sdk/lib/rust/ntprintf/ + ntoskrnl/ntprintf_trampoline.c. */
+__attribute__((weak)) extern size_t ntprintf_va_format_a(char *dst, size_t cap,
+                                                          const char *fmt,
+                                                          va_list ap);
+
 /* PRIVATE FUNCTIONS ********************************************************/
 
 #if (defined(_M_IX86) || defined(_M_AMD64)) && defined(_NTOSKRNL_) && !defined(__NTDLL__)
@@ -135,11 +144,22 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
         /* Copy it */
         strncpy(Buffer, Prefix, PrefixLength);
 
-        /* Do the printf */
-        Length = _vsnprintf(Buffer + PrefixLength,
-                            sizeof(Buffer) - PrefixLength,
-                            Format,
-                            ap);
+        /* Do the printf — kernel uses Rust ntprintf, user mode falls through
+         * to legacy _vsnprintf when the weak symbol is unresolved (NULL). */
+        if (ntprintf_va_format_a)
+        {
+            Length = ntprintf_va_format_a(Buffer + PrefixLength,
+                                          sizeof(Buffer) - PrefixLength,
+                                          Format,
+                                          ap);
+        }
+        else
+        {
+            Length = _vsnprintf(Buffer + PrefixLength,
+                                sizeof(Buffer) - PrefixLength,
+                                Format,
+                                ap);
+        }
     }
     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -228,6 +248,46 @@ vDbgPrintExWithPrefixInternal(IN PCCH Prefix,
     /* Return */
     return Status;
 }
+
+#if defined(_NTOSKRNL_) && !defined(__NTDLL__)
+/*
+ * Non-variadic emit path for callers (Rust) that have already rendered the
+ * body via `ntprintf_format_a`. Mirrors the post-format part of
+ * `vDbgPrintExWithPrefixInternal` (filter check + STRING wrap + DebugPrint),
+ * minus the `_vsnprintf` step. Skips the user-mode debugger exception path —
+ * it's gated by `_USE_DUMMY_PSEH` in kernel mode anyway.
+ */
+ULONG
+NTAPI
+DbgPrintEmitPreformatted(IN PCCH Body,
+                         IN USHORT BodyLength,
+                         IN ULONG ComponentId,
+                         IN ULONG Level)
+{
+    NTSTATUS Status;
+    STRING DebugString;
+
+    /* Filter check */
+    if ((ComponentId != MAXULONG) &&
+        (NtQueryDebugFilterState(ComponentId, Level)) != (NTSTATUS)TRUE)
+    {
+        return STATUS_SUCCESS;
+    }
+
+    /* Recursion guard */
+    if (RtlpSetInDbgPrint()) return STATUS_SUCCESS;
+
+    /* Wrap the pre-formatted bytes */
+    DebugString.Length = BodyLength;
+    DebugString.Buffer = (PCHAR)Body;
+
+    /* Emit */
+    Status = DebugPrint(&DebugString, ComponentId, Level);
+
+    RtlpClearInDbgPrint();
+    return Status;
+}
+#endif /* _NTOSKRNL_ && !__NTDLL__ */
 
 /*
  * @implemented

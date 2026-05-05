@@ -200,10 +200,6 @@ extern "C" {
     /// Defined in shim_exports.rs as `extern "C"` (cdecl).
     fn RtlStringCbCopyA(pszDest: PSTR, cbDest: usize, pszSrc: PCSTR) -> NTSTATUS;
 }
-extern "C" {
-    fn RtlStringCbPrintfA(pszDest: PSTR, cbDest: usize, pszFormat: PCSTR, ...) -> NTSTATUS;
-}
-
 // SysDbgReadControlSpace constant (sysdbgmsg.h).
 const SysDbgReadControlSpace: ULONG = 1;
 
@@ -3586,10 +3582,10 @@ pub unsafe extern "system" fn KdbInitialize(
 
     if BootPhase == 1 {
         let mut buffer: [CHAR; 60] = [0; 60];
-        RtlStringCbPrintfA(
+        crate::rtl_string_cb_printf_a!(
             buffer.as_mut_ptr(),
             60,
-            b"   KDBG debugger enabled - %s\r\n\0".as_ptr() as PCHAR,
+            b"   KDBG debugger enabled - %s\r\n",
             if (LoadSymbols & 0x2) == 0 {
                 b"No symbols loaded\0".as_ptr() as PCHAR
             } else if (LoadSymbols & 0x1) == 0 {

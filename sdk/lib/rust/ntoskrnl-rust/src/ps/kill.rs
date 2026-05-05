@@ -71,8 +71,6 @@ extern "C" {
     static LpcPortObjectType: POBJECT_TYPE;
     static KdDebuggerEnabled: BOOLEAN;
     static KdDebuggerNotPresent: BOOLEAN;
-
-    fn DbgPrint(fmt: PCHAR, ...) -> ULONG;
 }
 
 extern "system" {
@@ -181,7 +179,9 @@ unsafe fn PspCatchCriticalBreak(
     let mut handled = 0u8;
 
     if KdDebuggerEnabled != 0 {
-        DbgPrint(message, process_or_thread, image_name);
+        crate::dbgprint::rust_dbg_print_cstr(message,
+            &[crate::dbgprint::IntoSlot::into_slot(process_or_thread),
+              crate::dbgprint::IntoSlot::into_slot(image_name)]);
         loop {
             if KdDebuggerNotPresent != 0 {
                 break;
@@ -211,8 +211,7 @@ unsafe fn PspCatchCriticalBreak(
         // Debug: print process name before bugcheck
         #[cfg(target_arch = "x86_64")]
         {
-            DbgPrint(
-                b"[CRIT-TERM] Process=%p ImageName=%s\n\0".as_ptr() as PCHAR,
+            crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s\n\0",
                 process_or_thread,
                 image_name,
             );
@@ -234,8 +233,7 @@ unsafe fn PspTerminateProcess(process: PEPROCESS, exit_status: NTSTATUS) -> NTST
     if (*(process as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination() != 0 {
         #[cfg(target_arch = "x86_64")]
         {
-            DbgPrint(
-                b"[CRIT-TERM] PspTerminateProcess: process=%p image=%s exit_status=0x%lx\n\0".as_ptr() as PCHAR,
+            crate::dbg_print!(b"[CRIT-TERM] PspTerminateProcess: process=%p image=%s exit_status=0x%lx\n\0",
                 process as PVOID,
                 (*(process as *mut _EPROCESS)).ImageFileName.as_ptr() as PCHAR,
                 exit_status as ULONG_PTR,
@@ -472,8 +470,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
         let _proc = ntkrnl_sys::ps::PsGetCurrentProcess();
         let _img = (*((_proc) as *mut _EPROCESS)).ImageFileName.as_ptr();
         let _crit = (*(_proc as *mut _EPROCESS)).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination();
-        DbgPrint(
-            b"[EXIT-THR] image=%s exit_status=0x%lx crit=%d\n\0".as_ptr() as PCHAR,
+        crate::dbg_print!(b"[EXIT-THR] image=%s exit_status=0x%lx crit=%d\n\0",
             _img as PCHAR,
             exit_status as ULONG_PTR,
             _crit as u32,

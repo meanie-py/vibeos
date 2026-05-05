@@ -99,10 +99,6 @@ extern "C" {
     static mut KeRosVideoBiosVersion: _UNICODE_STRING;
 }
 
-extern "C" {
-    fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
-}
-
 #[inline(always)]
 unsafe fn InitializeObjectAttributes(
     ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
@@ -211,19 +207,19 @@ unsafe fn bios_write_char(Destination: PCHAR, Value: CHAR) {
 #[cfg(target_arch = "x86")]
 unsafe fn build_processor_identifier(Buffer: *mut CHAR, Prcb: PKPRCB) {
     if (*Prcb).CpuID == 0 {
-        RtlStringCbPrintfA(
+        crate::rtl_string_cb_printf_a!(
             Buffer,
             128,
-            b"80%u86-%c%x\0".as_ptr() as *const i8,
+            b"80%u86-%c%x",
             (*Prcb).CpuType as ULONG,
             (((*Prcb).CpuStep >> 8) as ULONG + b'A' as ULONG) as i32,
             ((*Prcb).CpuStep & 0xff) as ULONG,
         );
     } else {
-        RtlStringCbPrintfA(
+        crate::rtl_string_cb_printf_a!(
             Buffer,
             128,
-            CmpFullCpuID.as_ptr() as *const i8,
+            CmpFullCpuID,
             b"x86\0".as_ptr() as *const i8,
             (*Prcb).CpuType as ULONG,
             ((*Prcb).CpuStep >> 8) as ULONG,
@@ -244,10 +240,10 @@ unsafe fn build_processor_identifier(Buffer: *mut CHAR, Prcb: PKPRCB) {
         FamilyId = b"EM64T\0".as_ptr() as *const i8;
     }
 
-    RtlStringCbPrintfA(
+    crate::rtl_string_cb_printf_a!(
         Buffer,
         128,
-        CmpFullCpuID.as_ptr() as *const i8,
+        CmpFullCpuID,
         FamilyId,
         (*Prcb).CpuType as ULONG,
         ((*Prcb).CpuStep >> 8) as ULONG,

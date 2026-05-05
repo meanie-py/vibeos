@@ -33,10 +33,6 @@ const HeadlessSerialPort: u32 = 1;
 const SerialPortUndefined: u32 = 0;
 const PCI_INVALID_VENDORID: u16 = 0xFFFF;
 
-extern "C" {
-    fn RtlStringCbPrintfA(pszDest: PCHAR, cbDest: usize, pszFormat: PCHAR, ...) -> NTSTATUS;
-}
-
 // Note: HeadlessSerialPort and SerialPortUndefined are defined above as local constants
 
 const HeadlessCmdEnableTerminal: HEADLESS_CMD = _HEADLESS_CMD_HeadlessCmdEnableTerminal;
@@ -337,10 +333,10 @@ unsafe fn HdlspDispatch(
                         Status = STATUS_INVALID_PARAMETER;
                     } else {
                         SetColor = InputBuffer as PHEADLESS_CMD_SET_COLOR;
-                        Status = RtlStringCbPrintfA(
-                            DataBuffer.as_mut_ptr() as PCHAR,
+                        Status = crate::rtl_string_cb_printf_a!(
+                            DataBuffer.as_mut_ptr(),
                             core::mem::size_of_val(&DataBuffer),
-                            b"\x1B[%d;%dm\0".as_ptr() as PCHAR,
+                            b"\x1B[%d;%dm",
                             (*SetColor).BkgdColor,
                             (*SetColor).TextColor,
                         );
@@ -358,10 +354,10 @@ unsafe fn HdlspDispatch(
                         Status = STATUS_INVALID_PARAMETER;
                     } else {
                         CursorPos = InputBuffer as PHEADLESS_CMD_POSITION_CURSOR;
-                        Status = RtlStringCbPrintfA(
-                            DataBuffer.as_mut_ptr() as PCHAR,
+                        Status = crate::rtl_string_cb_printf_a!(
+                            DataBuffer.as_mut_ptr(),
                             core::mem::size_of_val(&DataBuffer),
-                            b"\x1B[%d;%dH\0".as_ptr() as PCHAR,
+                            b"\x1B[%d;%dH",
                             (*CursorPos).CursorRow + 1,
                             (*CursorPos).CursorCol + 1,
                         );

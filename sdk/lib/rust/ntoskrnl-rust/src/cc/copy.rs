@@ -44,7 +44,6 @@ extern "C" {
 
 extern "C" {
     fn RtlLongLongAdd(a: LONGLONG, b: LONGLONG, result: *mut LONGLONG) -> NTSTATUS;
-    fn DbgPrint(Format: *const i8, ...) -> NTSTATUS;
 }
 
 static mut CcZeroPage: PFN_NUMBER = 0;
@@ -98,7 +97,7 @@ pub unsafe extern "system" fn CcInitCacheZeroPage() {
     let status = MmRequestPageMemoryConsumer(MC_SYSTEM, 1u8, core::ptr::addr_of_mut!(page));
     CcZeroPage = page;
     if status < 0 {
-        // DbgPrint(b"Can't allocate CcZeroPage.\n\0".as_ptr() as *const i8);
+        // crate::dbg_print!(b"Can't allocate CcZeroPage.\n\0");
         KeBugCheck(CACHE_MANAGER);
     }
     MiZeroPhysicalPage(CcZeroPage);

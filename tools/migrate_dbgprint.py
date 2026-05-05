@@ -28,6 +28,7 @@ TARGETS = {
     "KdbpPrint":  ("crate::kdbp_print",  ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
     "KdbPrintf":  ("crate::kdb_printf",  ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
     "KdpDprintf": ("crate::kdp_dprintf", ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8"]),
+    "DbgPrint":   ("crate::dbg_print",   ["PCHAR", "PSTR", "PCSTR", "*const i8", "*mut i8", "*const u8", "*mut u8"]),
 }
 
 # Skip files that *implement* the migration (their docstrings show old patterns).

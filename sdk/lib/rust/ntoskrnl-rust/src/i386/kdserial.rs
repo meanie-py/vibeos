@@ -1,10 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{HalDisplayString, PCPPORT};
 
-extern "C" {
-    fn snprintf(s: *mut CHAR, n: usize, format: *const CHAR, ...) -> i32;
-}
-
 extern "system" {
     fn CpPutByte(PortInformation: PCPPORT, ByteToSend: u8);
 }
@@ -53,20 +49,16 @@ pub unsafe extern "system" fn KdPortInitializeEx(
     } else {
         #[cfg(debug_assertions)]
         {
-            let mut Length: i32;
             let mut Buffer: [CHAR; 82] = [0; 82];
 
-            Length = snprintf(
+            crate::rtl_string_cb_printf_a!(
                 Buffer.as_mut_ptr(),
                 core::mem::size_of_val(&Buffer),
-                b"\r\nKernel Debugger: Serial port found: COM%ld (Port 0x%p) BaudRate %ld\r\n\r\n\0".as_ptr() as *const CHAR,
+                b"\r\nKernel Debugger: Serial port found: COM%ld (Port 0x%p) BaudRate %ld\r\n\r\n",
                 ComPortNumber,
                 (*PortInformation).Address,
                 (*PortInformation).BaudRate,
             );
-            if Length == -1 {
-                Buffer[core::mem::size_of_val(&Buffer) - 1] = 0;
-            }
 
             HalDisplayString(Buffer.as_ptr());
         }

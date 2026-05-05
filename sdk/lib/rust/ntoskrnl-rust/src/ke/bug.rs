@@ -92,7 +92,6 @@ extern "system" {
 }
 extern "C" {
     fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
-    fn DbgPrint(Format: *const i8, ...) -> ULONG;
 }
 extern "system" {
     fn RtlImageNtHeader(Base: PVOID) -> PIMAGE_NT_HEADERS;
@@ -104,7 +103,6 @@ extern "system" {
     #[cfg(target_arch = "x86_64")] fn KxFreezeExecution();
 }
 extern "C" {
-    fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: SIZE_T, pszFormat: *const i8, ...) -> NTSTATUS;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn strlen(s: *const i8) -> SIZE_T;
 }
@@ -343,12 +341,12 @@ unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
             let mut AnsiName: [i8; 64] = [0; 64];
             KeBugCheckUnicodeToAnsi(&(*LdrEntry).BaseDllName as *const _ as PUNICODE_STRING, AnsiName.as_mut_ptr(), 64);
             let Addr = Addr - ((*LdrEntry).DllBase as ULONG_PTR);
-            DbgPrint(b"<%s: %p>\0".as_ptr() as *const i8, AnsiName.as_ptr(), Addr as PVOID);
+            crate::dbg_print!(b"<%s: %p>\0", AnsiName.as_ptr(), Addr as PVOID);
         } else {
-            DbgPrint(b"<%p>\0".as_ptr() as *const i8, Addr as PVOID);
+            crate::dbg_print!(b"<%p>\0", Addr as PVOID);
         }
 
-        DbgPrint(b"\n\0".as_ptr() as *const i8);
+        crate::dbg_print!(b"\n\0");
         i += 1;
     }
 }
@@ -693,10 +691,10 @@ unsafe fn KiDisplayBlueScreen(
 
     KeGetBugMessageText(BUGCHECK_TECH_INFO, core::ptr::null_mut());
 
-    RtlStringCbPrintfA(
+    crate::rtl_string_cb_printf_a!(
         AnsiName.as_mut_ptr(),
         core::mem::size_of_val(&AnsiName),
-        b"\r\n\r\n*** STOP: 0x%08lX (0x%p,0x%p,0x%p,0x%p)\r\n\r\n\0".as_ptr() as *const i8,
+        b"\r\n\r\n*** STOP: 0x%08lX (0x%p,0x%p,0x%p,0x%p)\r\n\r\n",
         BugCheckCode,
         KiBugCheckData[1] as PVOID,
         KiBugCheckData[2] as PVOID,
@@ -905,8 +903,7 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     }
 
     if (BugCheckCode != MANUALLY_INITIATED_CRASH) && (KdDebuggerEnabled != 0) {
-        DbgPrint(
-            b"\n*** Fatal System Error: 0x%08lX\n                       (0x%p,0x%p,0x%p,0x%p)\n\n\0".as_ptr() as *const i8,
+        crate::dbg_print!(b"\n*** Fatal System Error: 0x%08lX\n                       (0x%p,0x%p,0x%p,0x%p)\n\n\0",
             KiBugCheckData[0],
             KiBugCheckData[1] as PVOID,
             KiBugCheckData[2] as PVOID,
@@ -916,15 +913,15 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
 
         if KdDebuggerNotPresent == 0 {
             if !KiBugCheckDriver.is_null() {
-                DbgPrint(b"Driver at fault: %s.\n\0".as_ptr() as *const i8, AnsiName.as_ptr());
+                crate::dbg_print!(b"Driver at fault: %s.\n\0", AnsiName.as_ptr());
             }
 
             if IsHardError != 0 {
                 if !HardErrCaption.is_null() {
-                    DbgPrint(HardErrCaption);
+                    crate::dbgprint::rust_dbg_print_cstr(HardErrCaption, &[]);
                 }
                 if !HardErrMessage.is_null() {
-                    DbgPrint(HardErrMessage);
+                    crate::dbgprint::rust_dbg_print_cstr(HardErrMessage, &[]);
                 }
             }
 
@@ -1168,8 +1165,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
     BugCheckParameter3: ULONG_PTR,
     BugCheckParameter4: ULONG_PTR,
 ) -> ! {
-    DbgPrint(
-        b"\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n\0".as_ptr() as *const i8,
+    crate::dbg_print!(b"\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p)\n\0",
         BugCheckCode,
         BugCheckParameter1 as PVOID,
         BugCheckParameter2 as PVOID,
@@ -1289,7 +1285,7 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
             shift -= 4;
         }
     }
-    DbgPrint(b"\n*** BUGCHECK: 0x%08lX\n\0".as_ptr() as *const i8, BugCheckCode);
+    crate::dbg_print!(b"\n*** BUGCHECK: 0x%08lX\n\0", BugCheckCode);
     #[cfg(target_arch = "aarch64")]
     {
         let u = Arm64UartKernelBase as *mut ULONG;

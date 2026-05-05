@@ -77,6 +77,12 @@ unsafe extern "system" {
     /// the post-call code path was UB → ud2. (#1 i386 crash cause per
     /// feedback_extern_c_abi.md.)
     fn KdpPrintString(output: *mut StringSlim) -> u8;
+    /// Defined in C (sdk/lib/rtl/debug.c, `_NTOSKRNL_`-only). Takes a
+    /// pre-rendered ANSI body and routes it through the kernel debug
+    /// filter + DebugPrint sink. Replaces the Rust path that would
+    /// otherwise re-enter the variadic `DbgPrint` trampoline.
+    fn DbgPrintEmitPreformatted(body: *const u8, body_length: u16,
+                                component_id: u32, level: u32) -> u32;
 }
 
 /// Mirror of the kernel STRING (ANSI) layout used by KdpPrintString.
@@ -184,6 +190,48 @@ pub fn rust_kdbp_print(fmt: &[u8], slots: &[u64]) {
         *buf.as_mut_ptr().add(len) = 0;
         KdbpPagerInternal(buf.as_mut_ptr(), len as u32, 0);
     }
+}
+
+/// Format and send through DbgPrintEmitPreformatted — replacement for
+/// `DbgPrint(fmt, ...)`. Routes through the kernel debug filter (component =
+/// MAXULONG = bypass filter) at error level (DPFLTR_ERROR_LEVEL = 3).
+pub fn rust_dbg_print(fmt: &[u8], slots: &[u64]) -> u32 {
+    let fmt = strip_trailing_nul(fmt);
+    let mut buf = [0u8; 512];
+    let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
+    format_into(&mut sink, fmt, slots);
+    let len = sink.pos.min(u16::MAX as usize);
+    unsafe { DbgPrintEmitPreformatted(buf.as_ptr(), len as u16, u32::MAX, 3) }
+}
+
+/// `DbgPrint`-style emit for call sites that already hold the format-string
+/// pointer at runtime (e.g. `DbgPrint(message, …)` where `message: *const i8`).
+/// Walks the NUL-terminated `cstr` to learn its length, then runs ntprintf
+/// the same as `rust_dbg_print`. Caps the format string at 4 KiB.
+/// Null pointers are silently ignored.
+pub fn rust_dbg_print_cstr(cstr: *const i8, slots: &[u64]) -> u32 {
+    if cstr.is_null() { return 0; }
+    let cstr = cstr as *const u8;
+    let mut len = 0usize;
+    while len < 4096 && unsafe { *cstr.add(len) } != 0 { len += 1; }
+    let fmt = unsafe { core::slice::from_raw_parts(cstr, len) };
+    let mut buf = [0u8; 512];
+    let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
+    format_into(&mut sink, fmt, slots);
+    let len = sink.pos.min(u16::MAX as usize);
+    unsafe { DbgPrintEmitPreformatted(buf.as_ptr(), len as u16, u32::MAX, 3) }
+}
+
+/// Format and send through DbgPrintEmitPreformatted with a caller-supplied
+/// component_id + level — replacement for `DbgPrintEx(comp, level, fmt, ...)`.
+pub fn rust_dbg_print_ex(component_id: u32, level: u32,
+                         fmt: &[u8], slots: &[u64]) -> u32 {
+    let fmt = strip_trailing_nul(fmt);
+    let mut buf = [0u8; 512];
+    let mut sink = RawSink::new(buf.as_mut_ptr(), buf.len());
+    format_into(&mut sink, fmt, slots);
+    let len = sink.pos.min(u16::MAX as usize);
+    unsafe { DbgPrintEmitPreformatted(buf.as_ptr(), len as u16, component_id, level) }
 }
 
 /// Format and send to KdpPrintString — replacement for `KdpDprintf(fmt, ...)`.

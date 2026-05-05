@@ -28,11 +28,6 @@ use ntkrnl_sys::ddk::{
     PKTHREAD,
     PKWAIT_BLOCK,
 };
-
-extern "C" {
-    fn DbgPrint(format: *const u8, ...) -> LONG;
-}
-
 // Dispatcher object type constants
 const GateObject: u32 = 7;
 const EventSynchronizationObject: u32 = 1;
@@ -94,8 +89,7 @@ unsafe fn KeWaitForGateImpl(
     if !(((*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type & KOBJECT_TYPE_MASK) == GateObject as u8) &&
        !(((*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type & KOBJECT_TYPE_MASK) == EventSynchronizationObject as u8)
     {
-        DbgPrint(
-            b"KeWaitForGate: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p caller2=%p\n\0".as_ptr(),
+        crate::dbg_print!(b"KeWaitForGate: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p caller2=%p\n\0",
             Gate,
             (*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type as u32,
             (*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Size as u32,
@@ -196,8 +190,7 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
     if !(((*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type & KOBJECT_TYPE_MASK) == GateObject as u8) &&
        !(((*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type & KOBJECT_TYPE_MASK) == EventSynchronizationObject as u8)
     {
-        DbgPrint(
-            b"KeSignalGateBoostPriority: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p\n\0".as_ptr(),
+        crate::dbg_print!(b"KeSignalGateBoostPriority: BAD gate %p Type=%u Size=%u SignalState=%d caller=%p\n\0",
             Gate,
             (*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.Type as u32,
             (*Gate).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_2.Size as u32,

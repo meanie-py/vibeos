@@ -22,7 +22,6 @@ pub static mut KiTimeAdjustmentEnabled: BOOLEAN = 0u8;
 extern "C" {
     static SharedUserData: *mut u8;
     static KdDebuggerEnabled: BOOLEAN;
-    fn DbgPrint(format: *const i8, ...) -> ULONG;
 }
 // Use actual definitions from sibling modules, not extern declarations (lto=false splits them)
 // KiTimerTableListHead, KiAdjustDpcThreshold, KiMaximumDpcQueueDepth come via ke_defs re-exports
@@ -209,7 +208,7 @@ pub unsafe extern "system" fn KeUpdateRunTime(
                 (*Prcb).DebugDpcTime += 1;
 
                 if (*Prcb).DebugDpcTime == KiDPCTimeout {
-                    DbgPrint(b"*** DPC routine > 1 sec --- This is not a break in KeUpdateSystemTime\n\0".as_ptr() as *const i8);
+                    crate::dbg_print!(b"*** DPC routine > 1 sec --- This is not a break in KeUpdateSystemTime\n\0");
 
                     if KdDebuggerEnabled != 0 {
                         DbgBreakPoint();

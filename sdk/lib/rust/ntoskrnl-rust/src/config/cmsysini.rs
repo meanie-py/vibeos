@@ -45,9 +45,6 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "system" {
     fn RtlGetCallersAddress(CallersAddress: *mut PVOID, CallersCaller: *mut PVOID);
 }
-extern "C" {
-    fn DbgPrint(fmt: *const i8, ...) -> i32;
-}
 use core::ffi::c_void;
 
 const CM_NUMBER_OF_MACHINE_HIVES: usize = 6;
@@ -63,10 +60,9 @@ const CM_NUMBER_OF_MACHINE_HIVES: usize = 6;
 // ============================================================================
 #[no_mangle]
 pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
-    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> i32; }
     #[inline(never)]
     unsafe fn cmgsdl_trace(s: &[u8]) {
-        DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+        crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
     }
     use ntkrnl_sys::ddk::{
         BOOT_DRIVER_LIST_ENTRY, CmpFindControlSet, CmpFindDrivers,
@@ -112,7 +108,7 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
     cmgsdl_trace(b"[CMGSDL] NtOpenKey System\r\n\0");
     Status = NtOpenKey(&mut KeyHandle, KEY_READ, &mut ObjectAttributes);
     if !NT_SUCCESS(Status) {
-        DbgPrint(b"[CMGSDL] NtOpenKey System FAIL %x\r\n\0".as_ptr() as *const i8, Status);
+        crate::dbg_print!(b"[CMGSDL] NtOpenKey System FAIL %x\r\n\0", Status);
         return core::ptr::null_mut();
     }
 
@@ -127,13 +123,13 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
-        DbgPrint(b"[CMGSDL] ObRef FAIL %x\r\n\0".as_ptr() as *const i8, Status);
+        crate::dbg_print!(b"[CMGSDL] ObRef FAIL %x\r\n\0", Status);
         NtClose(KeyHandle);
         return core::ptr::null_mut();
     }
 
     // Do all this under the registry lock.
-    DbgPrint(b"[CMGSDL] CmpLockReg pre: shared=%d excl=%d\r\n\0".as_ptr() as *const i8,
+    crate::dbg_print!(b"[CMGSDL] CmpLockReg pre: shared=%d excl=%d\r\n\0",
         ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!(CmpRegistryLock)) as u32,
         ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(CmpRegistryLock)) as u32,
     );
@@ -144,7 +140,7 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
     // Get the hive and key cell.
     Hive = (*(*KeyBody).KeyControlBlock).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
     RootCell = (*(*KeyBody).KeyControlBlock).__bindgen_anon_2.__bindgen_anon_1.KeyCell;
-    DbgPrint(b"[CMGSDL] Hive=%p RootCell=%x\r\n\0".as_ptr() as *const i8, Hive, RootCell);
+    crate::dbg_print!(b"[CMGSDL] Hive=%p RootCell=%x\r\n\0", Hive, RootCell);
 
     // Open the current control set key. RtlInitUnicodeString of L"Current".
     RtlInitUnicodeString(
@@ -2328,7 +2324,7 @@ pub unsafe extern "system" fn CmpLockRegistry() {
         let mut caller: PVOID = core::ptr::null_mut();
         let mut caller2: PVOID = core::ptr::null_mut();
         RtlGetCallersAddress(&mut caller, &mut caller2);
-        DbgPrint(b"[LOCK] Lock #%d caller=%p\r\n\0".as_ptr() as *const i8, LOCK_COUNT, caller);
+        crate::dbg_print!(b"[LOCK] Lock #%d caller=%p\r\n\0", LOCK_COUNT, caller);
     }
 }
 
@@ -2411,7 +2407,7 @@ pub unsafe extern "system" fn CmpUnlockRegistry() {
         let mut caller: PVOID = core::ptr::null_mut();
         let mut caller2: PVOID = core::ptr::null_mut();
         RtlGetCallersAddress(&mut caller, &mut caller2);
-        DbgPrint(b"[UNLK] Unlock #%d caller=%p\r\n\0".as_ptr() as *const i8, UNLOCK_COUNT, caller);
+        crate::dbg_print!(b"[UNLK] Unlock #%d caller=%p\r\n\0", UNLOCK_COUNT, caller);
     }
 
     ExReleaseResourceLite(core::ptr::addr_of_mut!(CmpRegistryLock));

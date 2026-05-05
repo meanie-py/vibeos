@@ -69,7 +69,6 @@ extern "system" {
 }
 extern "C" {
     fn __lidt(descriptor: *const u16);
-    fn DbgPrint(fmt: *const i8, ...) -> u32;
 }
 
 const KGDT64_R0_CODE: u16 = 0x10;

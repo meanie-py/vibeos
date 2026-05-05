@@ -66,7 +66,6 @@ use crate::ARM3::hypermap::{MmFirstReservedMappingPte, MmLastReservedMappingPte,
 
 extern "C" {
     fn CONTAINING_RECORD( address: PVOID, type_size: usize, field_offset: usize, ) -> PVOID;
-    fn DbgPrint(format: *const i8, ...) -> i32;
 }
 
 // ============================================================================

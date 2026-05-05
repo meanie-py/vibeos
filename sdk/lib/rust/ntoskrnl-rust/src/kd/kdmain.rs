@@ -105,10 +105,6 @@ unsafe fn UlongToPtr(value: ULONG) -> PVOID {
     value as usize as PVOID
 }
 
-// DPRINT/DPRINT1/DbgPrint stubs — debug logging is no-op here (NDEBUG build).
-#[inline]
-unsafe fn DbgPrint(_fmt: PCSTR, _arg: NTSTATUS) {}
-
 // _InterlockedCompareExchange8 — atomic CAS on a single byte. Returns OLD value.
 #[inline]
 unsafe fn _InterlockedCompareExchange8(dest: *mut i8, exchange: i8, comparand: i8) -> i8 {
@@ -382,7 +378,7 @@ unsafe fn KdpInitDriver() -> NTSTATUS {
 
     Status = IoCreateDriver(core::ptr::addr_of_mut!(DriverName), Some(KdpDriverEntry));
     if !NT_SUCCESS(Status) {
-        DbgPrint(b"IoCreateDriver failed: 0x%08lx\n\0".as_ptr() as PCSTR, Status);
+        crate::dbg_print!(b"IoCreateDriver failed: 0x%08lx\n\0", Status);
     }
 
     InterlockedExchangePointer(

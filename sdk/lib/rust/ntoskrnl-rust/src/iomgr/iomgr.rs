@@ -8,15 +8,10 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-
-extern "C" {
-    fn DbgPrint(fmt: *const i8, ...) -> i32;
-}
-
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(never)]
 unsafe fn io_trace(s: &[u8]) {
-    DbgPrint(b"%s\0".as_ptr() as *const i8, s.as_ptr() as *const i8);
+    crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
 }
 
 #[cfg(target_arch = "aarch64")]

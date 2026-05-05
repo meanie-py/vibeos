@@ -5,10 +5,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, TRUE, FALSE};
 // DbgPrint is a no-op stub - the real DbgPrint is a variadic C function.
 // We declare it as an extern to avoid the unstable c_variadic feature.
 // Since debug functions are #[cfg(debug_assertions)], they are dead code in release builds.
-extern "C" {
-    fn DbgPrint(fmt: *const i8, ...) -> i32;
-}
-
 #[cfg(debug_assertions)]
 unsafe fn SepGetAceTypeString(ace_type: u8) -> PCSTR {
     static ACE_TYPE_STRS: [&[u8]; 18] = [
@@ -44,19 +40,19 @@ unsafe fn SepDumpAceFlags(ace_flags: u8) {
     use ntkrnl_sys::constants::*;
 
     if ace_flags & OBJECT_INHERIT_ACE != 0 {
-        DbgPrint(b"OBJECT_INHERIT_ACE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"OBJECT_INHERIT_ACE\n\0");
     }
     if ace_flags & CONTAINER_INHERIT_ACE != 0 {
-        DbgPrint(b"CONTAINER_INHERIT_ACE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"CONTAINER_INHERIT_ACE\n\0");
     }
     if ace_flags & NO_PROPAGATE_INHERIT_ACE != 0 {
-        DbgPrint(b"NO_PROPAGATE_INHERIT_ACE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"NO_PROPAGATE_INHERIT_ACE\n\0");
     }
     if ace_flags & INHERIT_ONLY_ACE != 0 {
-        DbgPrint(b"INHERIT_ONLY_ACE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"INHERIT_ONLY_ACE\n\0");
     }
     if ace_flags & INHERITED_ACE != 0 {
-        DbgPrint(b"INHERITED_ACE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"INHERITED_ACE\n\0");
     }
 }
 
@@ -69,25 +65,25 @@ unsafe fn SepDumpAces(acl: PACL) {
         let mut ace: PACE = core::ptr::null_mut();
         let status = RtlGetAce(acl, ace_index, &mut ace as *mut _ as *mut PVOID);
         if status < 0 {
-            DbgPrint(b"SepDumpAces(): Failed to find the next ACE, stop dumping info...\n\0".as_ptr() as PCSTR);
+            crate::dbg_print!(b"SepDumpAces(): Failed to find the next ACE, stop dumping info...\n\0");
             return;
         }
 
-        DbgPrint(b"================== %lu# ACE DUMP INFO ==================\n\0".as_ptr() as PCSTR, ace_index);
-        DbgPrint(b"Ace -> 0x%p\n\0".as_ptr() as PCSTR, ace);
-        DbgPrint(b"Ace->Header -> 0x%p\n\0".as_ptr() as PCSTR, core::ptr::addr_of!((*ace).Header));
-        DbgPrint(b"Ace->Header.AceType -> %s\n\0".as_ptr() as PCSTR, SepGetAceTypeString((*ace).Header.AceType));
-        DbgPrint(b"Ace->AccessMask -> 0x%08lx\n\0".as_ptr() as PCSTR, (*ace).AccessMask);
+        crate::dbg_print!(b"================== %lu# ACE DUMP INFO ==================\n\0", ace_index);
+        crate::dbg_print!(b"Ace -> 0x%p\n\0", ace);
+        crate::dbg_print!(b"Ace->Header -> 0x%p\n\0", core::ptr::addr_of!((*ace).Header));
+        crate::dbg_print!(b"Ace->Header.AceType -> %s\n\0", SepGetAceTypeString((*ace).Header.AceType));
+        crate::dbg_print!(b"Ace->AccessMask -> 0x%08lx\n\0", (*ace).AccessMask);
 
         let sid = SepGetSidFromAce(ace);
         debug_assert!(!sid.is_null());
         let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
         RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, sid, 1u8);
-        DbgPrint(b"Ace SID -> %wZ\n\0".as_ptr() as PCSTR, &sid_string as *const _UNICODE_STRING);
+        crate::dbg_print!(b"Ace SID -> %wZ\n\0", &sid_string as *const _UNICODE_STRING);
         RtlFreeUnicodeString(&mut sid_string as *mut _UNICODE_STRING);
 
-        DbgPrint(b"Ace->Header.AceSize -> %u\n\0".as_ptr() as PCSTR, (*ace).Header.AceSize as u32);
-        DbgPrint(b"Ace->Header.AceFlags:\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"Ace->Header.AceSize -> %u\n\0", (*ace).Header.AceSize as u32);
+        crate::dbg_print!(b"Ace->Header.AceFlags:\n\0");
         SepDumpAceFlags((*ace).Header.AceFlags);
 
         ace_index += 1;
@@ -96,13 +92,12 @@ unsafe fn SepDumpAces(acl: PACL) {
 
 #[cfg(debug_assertions)]
 unsafe fn SepDumpAclInfo(acl: PACL, is_sacl: BOOLEAN) {
-    DbgPrint(
-        b"================== %s DUMP INFO ==================\n\0".as_ptr() as PCSTR,
+    crate::dbg_print!(b"================== %s DUMP INFO ==================\n\0",
         if is_sacl != 0 { b"SACL\0".as_ptr() as PCSTR } else { b"DACL\0".as_ptr() as PCSTR }
     );
-    DbgPrint(b"Acl->AclRevision -> %u\n\0".as_ptr() as PCSTR, (*acl).AclRevision as u32);
-    DbgPrint(b"Acl->AclSize -> %u\n\0".as_ptr() as PCSTR, (*acl).AclSize as u32);
-    DbgPrint(b"Acl->AceCount -> %u\n\0".as_ptr() as PCSTR, (*acl).AceCount as u32);
+    crate::dbg_print!(b"Acl->AclRevision -> %u\n\0", (*acl).AclRevision as u32);
+    crate::dbg_print!(b"Acl->AclSize -> %u\n\0", (*acl).AclSize as u32);
+    crate::dbg_print!(b"Acl->AceCount -> %u\n\0", (*acl).AceCount as u32);
 
     SepDumpAces(acl);
 }
@@ -112,52 +107,52 @@ unsafe fn SepDumpSdControlInfo(sd_control: SECURITY_DESCRIPTOR_CONTROL) {
     use ntkrnl_sys::constants::*;
 
     if sd_control & SE_OWNER_DEFAULTED != 0 {
-        DbgPrint(b"SE_OWNER_DEFAULTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_OWNER_DEFAULTED\n\0");
     }
     if sd_control & SE_GROUP_DEFAULTED != 0 {
-        DbgPrint(b"SE_GROUP_DEFAULTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_GROUP_DEFAULTED\n\0");
     }
     if sd_control & SE_DACL_PRESENT != 0 {
-        DbgPrint(b"SE_DACL_PRESENT\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_PRESENT\n\0");
     }
     if sd_control & SE_DACL_DEFAULTED != 0 {
-        DbgPrint(b"SE_DACL_DEFAULTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_DEFAULTED\n\0");
     }
     if sd_control & SE_SACL_PRESENT != 0 {
-        DbgPrint(b"SE_SACL_PRESENT\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SACL_PRESENT\n\0");
     }
     if sd_control & SE_SACL_DEFAULTED != 0 {
-        DbgPrint(b"SE_SACL_DEFAULTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SACL_DEFAULTED\n\0");
     }
     if sd_control & SE_DACL_UNTRUSTED != 0 {
-        DbgPrint(b"SE_DACL_UNTRUSTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_UNTRUSTED\n\0");
     }
     if sd_control & SE_SERVER_SECURITY != 0 {
-        DbgPrint(b"SE_SERVER_SECURITY\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SERVER_SECURITY\n\0");
     }
     if sd_control & SE_DACL_AUTO_INHERIT_REQ != 0 {
-        DbgPrint(b"SE_DACL_AUTO_INHERIT_REQ\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_AUTO_INHERIT_REQ\n\0");
     }
     if sd_control & SE_SACL_AUTO_INHERIT_REQ != 0 {
-        DbgPrint(b"SE_SACL_AUTO_INHERIT_REQ\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SACL_AUTO_INHERIT_REQ\n\0");
     }
     if sd_control & SE_DACL_AUTO_INHERITED != 0 {
-        DbgPrint(b"SE_DACL_AUTO_INHERITED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_AUTO_INHERITED\n\0");
     }
     if sd_control & SE_SACL_AUTO_INHERITED != 0 {
-        DbgPrint(b"SE_SACL_AUTO_INHERITED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SACL_AUTO_INHERITED\n\0");
     }
     if sd_control & SE_DACL_PROTECTED != 0 {
-        DbgPrint(b"SE_DACL_PROTECTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_DACL_PROTECTED\n\0");
     }
     if sd_control & SE_SACL_PROTECTED != 0 {
-        DbgPrint(b"SE_SACL_PROTECTED\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SACL_PROTECTED\n\0");
     }
     if sd_control & SE_RM_CONTROL_VALID != 0 {
-        DbgPrint(b"SE_RM_CONTROL_VALID\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_RM_CONTROL_VALID\n\0");
     }
     if sd_control & SE_SELF_RELATIVE != 0 {
-        DbgPrint(b"SE_SELF_RELATIVE\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"SE_SELF_RELATIVE\n\0");
     }
 }
 
@@ -167,7 +162,7 @@ unsafe fn SepDumpSidsOfToken(sids: PSID_AND_ATTRIBUTES, sid_count: ULONG) {
     while sid_index < sid_count {
         let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
         RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, (*sids.offset(sid_index as isize)).Sid, 1u8);
-        DbgPrint(b"%lu# %wZ\n\0".as_ptr() as PCSTR, sid_index, &sid_string as *const _UNICODE_STRING);
+        crate::dbg_print!(b"%lu# %wZ\n\0", sid_index, &sid_string as *const _UNICODE_STRING);
         RtlFreeUnicodeString(&mut sid_string as *mut _UNICODE_STRING);
         sid_index += 1;
     }
@@ -186,23 +181,23 @@ pub unsafe extern "system" fn SepDumpSdDebugInfo(security_descriptor: PISECURITY
         let sacl = SepGetSaclFromDescriptor(security_descriptor as PVOID);
         let dacl = SepGetDaclFromDescriptor(security_descriptor as PVOID);
 
-        DbgPrint(b"================== SECURITY DESCRIPTOR DUMP INFO ==================\n\0".as_ptr() as PCSTR);
-        DbgPrint(b"SecurityDescriptor -> 0x%p\n\0".as_ptr() as PCSTR, security_descriptor as PVOID);
-        DbgPrint(b"SecurityDescriptor->Revision -> %u\n\0".as_ptr() as PCSTR, (*security_descriptor).Revision as u32);
-        DbgPrint(b"SecurityDescriptor->Control:\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"================== SECURITY DESCRIPTOR DUMP INFO ==================\n\0");
+        crate::dbg_print!(b"SecurityDescriptor -> 0x%p\n\0", security_descriptor as PVOID);
+        crate::dbg_print!(b"SecurityDescriptor->Revision -> %u\n\0", (*security_descriptor).Revision as u32);
+        crate::dbg_print!(b"SecurityDescriptor->Control:\n\0");
         SepDumpSdControlInfo((*security_descriptor).Control);
 
         if !owner_sid.is_null() {
             let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
             RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, owner_sid, 1u8);
-            DbgPrint(b"SD Owner SID -> %wZ\n\0".as_ptr() as PCSTR, &sid_string as *const _UNICODE_STRING);
+            crate::dbg_print!(b"SD Owner SID -> %wZ\n\0", &sid_string as *const _UNICODE_STRING);
             RtlFreeUnicodeString(&mut sid_string as *mut _UNICODE_STRING);
         }
 
         if !group_sid.is_null() {
             let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
             RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, group_sid, 1u8);
-            DbgPrint(b"SD Group SID -> %wZ\n\0".as_ptr() as PCSTR, &sid_string as *const _UNICODE_STRING);
+            crate::dbg_print!(b"SD Group SID -> %wZ\n\0", &sid_string as *const _UNICODE_STRING);
             RtlFreeUnicodeString(&mut sid_string as *mut _UNICODE_STRING);
         }
 
@@ -225,30 +220,28 @@ pub unsafe extern "system" fn SepDumpTokenDebugInfo(token: PTOKEN) {
 
     #[cfg(debug_assertions)]
     {
-        DbgPrint(b"================== ACCESS TOKEN DUMP INFO ==================\n\0".as_ptr() as PCSTR);
-        DbgPrint(b"Token -> 0x%p\n\0".as_ptr() as PCSTR, token);
-        DbgPrint(b"Token->ImageFileName -> %s\n\0".as_ptr() as PCSTR, (*token).ImageFileName.as_ptr());
-        DbgPrint(
-            b"Token->TokenSource.SourceName -> \"%-.*s\"\n\0".as_ptr() as PCSTR,
+        crate::dbg_print!(b"================== ACCESS TOKEN DUMP INFO ==================\n\0");
+        crate::dbg_print!(b"Token -> 0x%p\n\0", token);
+        crate::dbg_print!(b"Token->ImageFileName -> %s\n\0", (*token).ImageFileName.as_ptr());
+        crate::dbg_print!(b"Token->TokenSource.SourceName -> \"%-.*s\"\n\0",
             (*token).TokenSource.SourceName.len(),
             (*token).TokenSource.SourceName.as_ptr()
         );
-        DbgPrint(
-            b"Token->TokenSource.SourceIdentifier -> %lu.%lu\n\0".as_ptr() as PCSTR,
+        crate::dbg_print!(b"Token->TokenSource.SourceIdentifier -> %lu.%lu\n\0",
             (*token).TokenSource.SourceIdentifier.HighPart,
             (*token).TokenSource.SourceIdentifier.LowPart
         );
 
         let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
         RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, (*token).PrimaryGroup, 1u8);
-        DbgPrint(b"Token primary group SID -> %wZ\n\0".as_ptr() as PCSTR, &sid_string as *const _UNICODE_STRING);
+        crate::dbg_print!(b"Token primary group SID -> %wZ\n\0", &sid_string as *const _UNICODE_STRING);
         RtlFreeUnicodeString(&mut sid_string as *mut _UNICODE_STRING);
 
-        DbgPrint(b"Token user and groups SIDs:\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"Token user and groups SIDs:\n\0");
         SepDumpSidsOfToken((*token).UserAndGroups, (*token).UserAndGroupCount);
 
         if SeTokenIsRestricted(token as PVOID) != 0 {
-            DbgPrint(b"Token restricted SIDs:\n\0".as_ptr() as PCSTR);
+            crate::dbg_print!(b"Token restricted SIDs:\n\0");
             SepDumpSidsOfToken((*token).RestrictedSids, (*token).RestrictedSidCount);
         }
     }
@@ -262,10 +255,10 @@ pub unsafe extern "system" fn SepDumpAccessRightsStats(access_rights: PACCESS_CH
 
     #[cfg(debug_assertions)]
     {
-        DbgPrint(b"================== ACCESS CHECK RIGHTS STATISTICS ==================\n\0".as_ptr() as PCSTR);
-        DbgPrint(b"Remaining access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, (*access_rights).RemainingAccessRights);
-        DbgPrint(b"Granted access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, (*access_rights).GrantedAccessRights);
-        DbgPrint(b"Denied access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, (*access_rights).DeniedAccessRights);
+        crate::dbg_print!(b"================== ACCESS CHECK RIGHTS STATISTICS ==================\n\0");
+        crate::dbg_print!(b"Remaining access rights -> 0x%08lx\n\0", (*access_rights).RemainingAccessRights);
+        crate::dbg_print!(b"Granted access rights -> 0x%08lx\n\0", (*access_rights).GrantedAccessRights);
+        crate::dbg_print!(b"Denied access rights -> 0x%08lx\n\0", (*access_rights).DeniedAccessRights);
     }
 }
 
@@ -280,12 +273,11 @@ pub unsafe extern "system" fn SepDumpAccessAndStatusList(
     let access_status_list = opaque_ptr(access_status_list);
     #[cfg(debug_assertions)]
     {
-        DbgPrint(b"================== ACCESS & STATUS OBJECT TYPE LIST STATISTICS ==================\n\0".as_ptr() as PCSTR);
+        crate::dbg_print!(b"================== ACCESS & STATUS OBJECT TYPE LIST STATISTICS ==================\n\0");
         let result_list_length = if is_result_list != 0 { object_type_list_length } else { 1 };
         let mut result_list_index: ULONG = 0;
         while result_list_index < result_list_length {
-            DbgPrint(
-                b"Result Index #%lu, Granted access rights -> 0x%08lx, Access status -> 0x%08lx\n\0".as_ptr() as PCSTR,
+            crate::dbg_print!(b"Result Index #%lu, Granted access rights -> 0x%08lx, Access status -> 0x%08lx\n\0",
                 result_list_index,
                 *granted_access_list.offset(result_list_index as isize),
                 *access_status_list.offset(result_list_index as isize)
@@ -295,11 +287,11 @@ pub unsafe extern "system" fn SepDumpAccessAndStatusList(
 
         let mut object_type_index: ULONG = 0;
         while object_type_index < object_type_list_length {
-            DbgPrint(b"================== #%lu OBJECT ACCESS RIGHTS ==================\n\0".as_ptr() as PCSTR, object_type_index);
+            crate::dbg_print!(b"================== #%lu OBJECT ACCESS RIGHTS ==================\n\0", object_type_index);
             let obj = &*object_type_list.offset(object_type_index as isize);
-            DbgPrint(b"Remaining access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, obj.ObjectAccessRights.RemainingAccessRights);
-            DbgPrint(b"Granted access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, obj.ObjectAccessRights.GrantedAccessRights);
-            DbgPrint(b"Denied access rights -> 0x%08lx\n\0".as_ptr() as PCSTR, obj.ObjectAccessRights.DeniedAccessRights);
+            crate::dbg_print!(b"Remaining access rights -> 0x%08lx\n\0", obj.ObjectAccessRights.RemainingAccessRights);
+            crate::dbg_print!(b"Granted access rights -> 0x%08lx\n\0", obj.ObjectAccessRights.GrantedAccessRights);
+            crate::dbg_print!(b"Denied access rights -> 0x%08lx\n\0", obj.ObjectAccessRights.DeniedAccessRights);
             object_type_index += 1;
         }
     }

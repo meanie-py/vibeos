@@ -142,10 +142,6 @@ extern "C" {
     fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);
     fn KeLowerIrql(new_irql: KIRQL);
 }
-
-extern "C" {
-    fn DbgPrint(format: PCHAR, ...) -> ULONG;
-}
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn InterlockedCompareExchange(dest: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
