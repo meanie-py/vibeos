@@ -39,6 +39,10 @@
 //!     spinlock primitive is arch-conditional: i386 uses HAL `KfAcquire/
 //!     KfReleaseSpinLock` (fastcall), amd64/arm64 use `KeAcquireSpinLock-
 //!     RaiseToDpc` + `KeReleaseSpinLock` (cdecl).
+//!   - Stack/alert checks (2): `KiCheckThreadStackSwap`, `KiCheckAlertability`.
+//!     Read-only KTHREAD field walks: stack-swap eligibility (priority +
+//!     EnableStackSwap + WaitMode) and alertability dispatch (Alerted[mode],
+//!     UserApcPending, ApcState.ApcListHead[UserMode]).
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -54,10 +58,10 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::{BOOLEAN, KIRQL, UCHAR, ULONG, ULONG_PTR};
+use ntkrnl_sys::base::{BOOLEAN, KIRQL, NTSTATUS, UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::ddk::{
-    PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD,
-    _DISPATCHER_HEADER, _KPCR,
+    KPROCESSOR_MODE, PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD,
+    _DISPATCHER_HEADER, _KPCR, _LIST_ENTRY,
 };
 
 /// `_KTHREAD_STATE_DeferredReady` — same value (= 7) on all 3 archs per bindgen
@@ -67,6 +71,15 @@ const KTHREAD_STATE_DEFERRED_READY: u8 = 7;
 
 /// `TIMER_TABLE_SIZE` from `sdk/include/xdk/ketypes.h` — fixed 512.
 const TIMER_TABLE_SIZE: u32 = 512;
+
+/// `LOW_REALTIME_PRIORITY` — base priority of the realtime range. From
+/// `ntkrnl_sys::constants` (= 16). Replicated to keep ke-inlines isolated.
+const LOW_REALTIME_PRIORITY: i8 = 16;
+
+/// NTSTATUS values used by `KiCheckAlertability`.
+const STATUS_ALERTED: NTSTATUS = 0x00000101u32 as NTSTATUS;
+const STATUS_USER_APC: NTSTATUS = 0x000000C0u32 as NTSTATUS;
+const STATUS_WAIT_0: NTSTATUS = 0;
 
 extern "C" {
     /// `KeMaximumIncrement` — clock tick increment (100ns units), set at boot
@@ -491,4 +504,67 @@ pub unsafe extern "C" fn _rs_KiReleaseNmiListLock(old_irql: KIRQL) {
     {
         KeReleaseSpinLock(lock, old_irql);
     }
+}
+
+// ============================================================================
+// Stack-swap eligibility + alertability checks (ke_x.h)
+//
+// `KPROCESSOR_MODE` is a CCHAR enum: KernelMode = 0, UserMode = 1. The
+// `Alerted` field is `[BOOLEAN; 2]` indexed by mode. ApcState lives inside
+// `_KTHREAD__bindgen_ty_1` union (anonymous), accessed through
+// `__bindgen_anon_1.ApcState` on all 3 arches.
+// ============================================================================
+
+/// `IsListEmpty` — head->Flink == head. Local replica of the macro.
+#[inline(always)]
+unsafe fn is_list_empty(head: *const _LIST_ENTRY) -> bool {
+    (*head).Flink as *const _LIST_ENTRY == head
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiCheckThreadStackSwap(
+    thread: PKTHREAD,
+    wait_mode: KPROCESSOR_MODE,
+) -> BOOLEAN {
+    if wait_mode != 0 /* KernelMode */
+        && (*thread).EnableStackSwap != 0
+        && (*thread).Priority >= (LOW_REALTIME_PRIORITY + 9)
+    {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiCheckAlertability(
+    thread: PKTHREAD,
+    alertable: BOOLEAN,
+    wait_mode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    if alertable != 0 {
+        if (*thread).Alerted[wait_mode as usize] != 0 {
+            (*thread).Alerted[wait_mode as usize] = 0;
+            return STATUS_ALERTED;
+        }
+        if wait_mode != 0 /* KernelMode */ {
+            // ApcListHead is `[LIST_ENTRY; 2]`; index 1 == UserMode.
+            let user_apc_list = core::ptr::addr_of!(
+                (*thread).__bindgen_anon_1.ApcState.ApcListHead[1]
+            );
+            if !is_list_empty(user_apc_list) {
+                (*thread).__bindgen_anon_1.ApcState.UserApcPending = 1;
+                return STATUS_USER_APC;
+            }
+        }
+        if (*thread).Alerted[0] != 0 {
+            (*thread).Alerted[0] = 0;
+            return STATUS_ALERTED;
+        }
+    } else if wait_mode != 0 /* KernelMode */
+        && (*thread).__bindgen_anon_1.ApcState.UserApcPending != 0
+    {
+        return STATUS_USER_APC;
+    }
+    STATUS_WAIT_0
 }

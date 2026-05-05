@@ -615,14 +615,21 @@ PLARGE_INTEGER KiRecalculateDueTime(IN PLARGE_INTEGER OriginalDueTime,
     return _saved_KiRecalculateDueTime(OriginalDueTime, DueTime, NewDueTime);
 }
 
+/* --- Stack-swap eligibility + alertability dispatch (ke_x.h) ---
+ * Phase 1 batch 9 — bodies in ke-inlines.
+ */
+
+extern BOOLEAN  _rs_KiCheckThreadStackSwap(PKTHREAD Thread, KPROCESSOR_MODE WaitMode);
+extern NTSTATUS _rs_KiCheckAlertability(PKTHREAD Thread, BOOLEAN Alertable, KPROCESSOR_MODE WaitMode);
+
 BOOLEAN KiCheckThreadStackSwap(IN PKTHREAD Thread, IN KPROCESSOR_MODE WaitMode)
 {
-    return _saved_KiCheckThreadStackSwap(Thread, WaitMode);
+    return _rs_KiCheckThreadStackSwap(Thread, WaitMode);
 }
 
 NTSTATUS KiCheckAlertability(IN PKTHREAD Thread, IN BOOLEAN Alertable, IN KPROCESSOR_MODE WaitMode)
 {
-    return _saved_KiCheckAlertability(Thread, Alertable, WaitMode);
+    return _rs_KiCheckAlertability(Thread, Alertable, WaitMode);
 }
 
 ULONG KiComputeTimerTableIndex(IN ULONGLONG DueTime)
