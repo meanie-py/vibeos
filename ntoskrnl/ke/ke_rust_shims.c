@@ -662,71 +662,27 @@ VOID KxSetTimerForThreadWait(IN PKTIMER Timer, IN LARGE_INTEGER Interval, OUT PU
     _saved_KxSetTimerForThreadWait(Timer, Interval, Hand);
 }
 
-/* --- Unwait (ke_x.h) --- */
+/* --- Unwait + queue-ready (ke_x.h) ---
+ * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 9).
+ * The Rust port preserves the defensive WaitThread null-check that was added
+ * to the original FORCEINLINE to handle corrupt WaitBlocks. */
+extern VOID _rs_KxUnwaitThread(DISPATCHER_HEADER *Object, KPRIORITY Increment);
+extern VOID _rs_KxUnwaitThreadForEvent(PKEVENT Event, KPRIORITY Increment);
+extern VOID _rs_KxQueueReadyThread(PKTHREAD Thread, PKPRCB Prcb);
 
 VOID KxUnwaitThread(IN DISPATCHER_HEADER *Object, IN KPRIORITY Increment)
 {
-    PLIST_ENTRY WaitEntry, WaitList;
-    PKWAIT_BLOCK WaitBlock;
-    PKTHREAD WaitThread;
-    ULONG WaitKey;
-
-    WaitList = &Object->WaitListHead;
-    WaitEntry = WaitList->Flink;
-    do
-    {
-        WaitBlock = CONTAINING_RECORD(WaitEntry, KWAIT_BLOCK, WaitListEntry);
-        WaitThread = WaitBlock->Thread;
-        if (!WaitThread)
-        {
-            /* Corrupt WaitBlock — remove it from the list and skip */
-            RemoveEntryList(WaitEntry);
-            WaitEntry = WaitList->Flink;
-            continue;
-        }
-        if (WaitBlock->WaitType == WaitAny)
-            WaitKey = WaitBlock->WaitKey;
-        else
-            WaitKey = STATUS_KERNEL_APC;
-        KiUnwaitThread(WaitThread, WaitKey, Increment);
-        WaitEntry = WaitList->Flink;
-    } while (WaitEntry != WaitList);
+    _rs_KxUnwaitThread(Object, Increment);
 }
 
 VOID KxUnwaitThreadForEvent(IN PKEVENT Event, IN KPRIORITY Increment)
 {
-    PLIST_ENTRY WaitEntry, WaitList;
-    PKWAIT_BLOCK WaitBlock;
-    PKTHREAD WaitThread;
-
-    WaitList = &Event->Header.WaitListHead;
-    WaitEntry = WaitList->Flink;
-    do
-    {
-        WaitBlock = CONTAINING_RECORD(WaitEntry, KWAIT_BLOCK, WaitListEntry);
-        WaitThread = WaitBlock->Thread;
-        if (!WaitThread)
-        {
-            RemoveEntryList(WaitEntry);
-            WaitEntry = WaitList->Flink;
-            continue;
-        }
-        if (WaitBlock->WaitType == WaitAny)
-        {
-            Event->Header.SignalState = 0;
-            KiUnwaitThread(WaitThread, WaitBlock->WaitKey, Increment);
-            break;
-        }
-        KiUnwaitThread(WaitThread, STATUS_KERNEL_APC, Increment);
-        WaitEntry = WaitList->Flink;
-    } while (WaitEntry != WaitList);
+    _rs_KxUnwaitThreadForEvent(Event, Increment);
 }
-
-/* --- Ready queue (ke_x.h) --- */
 
 VOID KxQueueReadyThread(IN PKTHREAD Thread, IN PKPRCB Prcb)
 {
-    _saved_KxQueueReadyThread(Thread, Prcb);
+    _rs_KxQueueReadyThread(Thread, Prcb);
 }
 
 /* Rust impls for KiSelectReadyThread + KiComputeNewPriority live in

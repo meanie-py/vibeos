@@ -50,6 +50,15 @@
 //!     ReadySummary bit if the bucket is now empty. The second is the dynamic-
 //!     priority decay math (Priority -= PriorityDecrement + Adjustment, clamped
 //!     to BasePriority).
+//!   - Unwait + queue-ready helpers (3): `KxUnwaitThread`,
+//!     `KxUnwaitThreadForEvent`, `KxQueueReadyThread`. The first two walk
+//!     `Object->WaitListHead`, pull each KWAIT_BLOCK and wake its thread via
+//!     `KiUnwaitThread` (with the existing C trampoline's defensive null-thread
+//!     guard preserved). `KxUnwaitThreadForEvent` early-outs on the first
+//!     `WaitAny` block (un-signaling the event). `KxQueueReadyThread` runs the
+//!     UP fast-path: sets State=Ready, stamps `KeTickCount.LowPart` into
+//!     WaitTime, head/tail-inserts on `DispatcherReadyListHead[Priority]`,
+//!     OR-sets the ReadySummary bit.
 //!
 //! Architecturally this crate exists in **isolation** from `ntoskrnl-rust`
 //! to dodge the LLVM captures(none) cross-CGU contagion that killed the
@@ -65,10 +74,14 @@
 
 #![no_std]
 
-use ntkrnl_sys::base::{RemoveEntryList, BOOLEAN, KIRQL, LONG, NTSTATUS, UCHAR, ULONG, ULONG_PTR};
+use ntkrnl_sys::base::{
+    InsertHeadList, InsertTailList, RemoveEntryList, BOOLEAN, KIRQL, LONG, LONG_PTR, NTSTATUS,
+    UCHAR, ULONG, ULONG_PTR,
+};
 use ntkrnl_sys::ddk::{
-    KPROCESSOR_MODE, PKDEVICE_QUEUE, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE, PKTHREAD,
-    _DISPATCHER_HEADER, _KPCR, _KTHREAD, _LIST_ENTRY,
+    KPROCESSOR_MODE, PKDEVICE_QUEUE, PKEVENT, PKLOCK_QUEUE_HANDLE, PKPRCB, PKSPIN_LOCK_QUEUE,
+    PKTHREAD, PKWAIT_BLOCK, _DISPATCHER_HEADER, _KPCR, _KSYSTEM_TIME, _KTHREAD, _KWAIT_BLOCK,
+    _LIST_ENTRY,
 };
 use ntkrnl_sys::CONTAINING_RECORD;
 
@@ -89,6 +102,16 @@ const STATUS_ALERTED: NTSTATUS = 0x00000101u32 as NTSTATUS;
 const STATUS_USER_APC: NTSTATUS = 0x000000C0u32 as NTSTATUS;
 const STATUS_WAIT_0: NTSTATUS = 0;
 
+/// `STATUS_KERNEL_APC` from `ntstatus.h` — used by Kx{Unwait}* to wake threads
+/// that should re-enter the wait after a kernel APC is delivered.
+const STATUS_KERNEL_APC: LONG_PTR = 0x00000100;
+
+/// `WaitAny` enum value (`_WAIT_TYPE_WaitAny`). Same on all 3 arches.
+const WAIT_ANY: u8 = 1;
+
+/// `KTHREAD_STATE_Ready` (`_KTHREAD_STATE_Ready` = 1).
+const KTHREAD_STATE_READY: u8 = 1;
+
 extern "C" {
     /// `KeMaximumIncrement` — clock tick increment (100ns units), set at boot
     /// from the HAL. Used as the divisor in the timer table index computation.
@@ -98,6 +121,10 @@ extern "C" {
     /// list. Defined in `ntoskrnl-rust::ke::bug` as a `pub static mut
     /// KSPIN_LOCK = 0` (== `ULONG_PTR`).
     static mut KiNmiCallbackListLock: ULONG_PTR;
+
+    /// `KeTickCount` — system tick count as `KSYSTEM_TIME`. Defined in
+    /// `ntoskrnl-rust::ke::clock`. We only read the LowPart in `KxQueueReadyThread`.
+    static KeTickCount: _KSYSTEM_TIME;
 }
 
 // Spinlock primitives backing KiAcquire/ReleaseNmiListLock. amd64/arm64 use
@@ -144,6 +171,7 @@ extern "fastcall" {
     fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
     fn KiExitDispatcher(old_irql: KIRQL);
     fn KiDeferredReadyThread(thread: PKTHREAD);
+    fn KiUnwaitThread(thread: PKTHREAD, wait_status: LONG_PTR, increment: LONG);
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -165,6 +193,7 @@ extern "C" {
     fn KfRaiseIrql(new_irql: KIRQL) -> KIRQL;
     fn KiExitDispatcher(old_irql: KIRQL);
     fn KiDeferredReadyThread(thread: PKTHREAD);
+    fn KiUnwaitThread(thread: PKTHREAD, wait_status: LONG_PTR, increment: LONG);
 }
 
 // ============================================================================
@@ -629,4 +658,132 @@ pub unsafe extern "C" fn _rs_KiComputeNewPriority(
         (*thread).PriorityDecrement = 0;
     }
     priority
+}
+
+// ============================================================================
+// Unwait + queue-ready helpers (ke_x.h)
+//
+// `KxUnwaitThread` walks the wait list rooted at `Object->WaitListHead`,
+// pulling each KWAIT_BLOCK and waking its thread via `KiUnwaitThread`. The
+// list-empty exit condition matches the C `do { ... } while (Flink != head)`
+// loop — `KiUnwaitThread` removes the wait blocks as it goes.
+//
+// `KxUnwaitThreadForEvent` is the early-out variant for KEVENT: the first
+// `WaitAny` block consumes the signal (un-signals the event) and breaks;
+// remaining blocks are woken with STATUS_KERNEL_APC.
+//
+// `KxQueueReadyThread` is the UP-only path of the C body (`#ifdef CONFIG_SMP`
+// affinity check folded away — UP always takes the THIS-CPU branch). Sets
+// State=Ready, captures Preempted, clears Preempted, stamps WaitTime from
+// `KeTickCount.LowPart`, head/tail-inserts on the priority bucket, OR-sets
+// the corresponding ReadySummary bit, and releases the (UP no-op) PRCB lock.
+// ============================================================================
+
+#[inline(always)]
+unsafe fn kt_set_wait_time(thread: PKTHREAD, val: ULONG) {
+    #[cfg(target_arch = "x86")]
+    {
+        (*thread).WaitTime = val;
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        (*thread).__bindgen_anon_5.__bindgen_anon_7.WaitTime = val;
+    }
+}
+
+// The C trampolines for `KxUnwaitThread`/`KxUnwaitThreadForEvent` carry an
+// added defensive null-check on `WaitBlock->Thread` (not present in the
+// original ke_x.h FORCEINLINE) — a corrupt WaitBlock with a NULL thread is
+// removed from the list and skipped instead of dereferenced. Preserve the
+// guard in the Rust translation so this round is a strict no-op behaviorally.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxUnwaitThread(
+    object: *mut _DISPATCHER_HEADER,
+    increment: LONG,
+) {
+    let wait_list = core::ptr::addr_of_mut!((*object).WaitListHead);
+    let mut wait_entry = (*wait_list).Flink;
+    loop {
+        let wait_block: PKWAIT_BLOCK =
+            CONTAINING_RECORD!(wait_entry, _KWAIT_BLOCK, WaitListEntry);
+        let wait_thread = (*wait_block).Thread;
+        if wait_thread.is_null() {
+            RemoveEntryList(wait_entry);
+            wait_entry = (*wait_list).Flink;
+            if wait_entry as *const _LIST_ENTRY == wait_list as *const _LIST_ENTRY {
+                break;
+            }
+            continue;
+        }
+        let wait_key: LONG_PTR = if (*wait_block).WaitType == WAIT_ANY {
+            (*wait_block).WaitKey as LONG_PTR
+        } else {
+            STATUS_KERNEL_APC
+        };
+        KiUnwaitThread(wait_thread, wait_key, increment);
+        wait_entry = (*wait_list).Flink;
+        if wait_entry as *const _LIST_ENTRY == wait_list as *const _LIST_ENTRY {
+            break;
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxUnwaitThreadForEvent(event: PKEVENT, increment: LONG) {
+    let header = core::ptr::addr_of_mut!((*event).Header);
+    let wait_list = core::ptr::addr_of_mut!((*header).WaitListHead);
+    let mut wait_entry = (*wait_list).Flink;
+    loop {
+        let wait_block: PKWAIT_BLOCK =
+            CONTAINING_RECORD!(wait_entry, _KWAIT_BLOCK, WaitListEntry);
+        let wait_thread = (*wait_block).Thread;
+        if wait_thread.is_null() {
+            RemoveEntryList(wait_entry);
+            wait_entry = (*wait_list).Flink;
+            if wait_entry as *const _LIST_ENTRY == wait_list as *const _LIST_ENTRY {
+                break;
+            }
+            continue;
+        }
+        if (*wait_block).WaitType == WAIT_ANY {
+            // Un-signal the event and unwait this one thread, then bail.
+            (*header).SignalState = 0;
+            KiUnwaitThread(
+                wait_thread,
+                (*wait_block).WaitKey as LONG_PTR,
+                increment,
+            );
+            break;
+        }
+        KiUnwaitThread(wait_thread, STATUS_KERNEL_APC, increment);
+        wait_entry = (*wait_list).Flink;
+        if wait_entry as *const _LIST_ENTRY == wait_list as *const _LIST_ENTRY {
+            break;
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KxQueueReadyThread(thread: PKTHREAD, prcb: PKPRCB) {
+    // UP: the SMP affinity gate `Thread->Affinity & Prcb->SetMember` is
+    // unconditionally true (`#else if (TRUE)` in ke_x.h) — single CPU.
+    kt_set_state(thread, KTHREAD_STATE_READY);
+    let priority = (*thread).Priority;
+    let preempted = (*thread).Preempted != 0;
+    (*thread).Preempted = 0;
+    kt_set_wait_time(
+        thread,
+        core::ptr::read_volatile(core::ptr::addr_of!(KeTickCount.LowPart)),
+    );
+    let list_head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[priority as usize]);
+    let wait_list_entry =
+        core::ptr::addr_of_mut!((*thread).__bindgen_anon_3.WaitListEntry);
+    if preempted {
+        InsertHeadList(list_head, wait_list_entry);
+    } else {
+        InsertTailList(list_head, wait_list_entry);
+    }
+    (*prcb).ReadySummary |= 1u32 << (priority as u32);
+    // KiReleasePrcbLock — UP no-op; nothing to do.
 }

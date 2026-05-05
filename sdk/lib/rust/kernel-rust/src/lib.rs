@@ -118,9 +118,12 @@ mod _force_ke_inlines_symbols {
         fn _rs_KiCheckAlertability();
         fn _rs_KiSelectReadyThread();
         fn _rs_KiComputeNewPriority();
+        fn _rs_KxUnwaitThread();
+        fn _rs_KxUnwaitThreadForEvent();
+        fn _rs_KxQueueReadyThread();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 35] = [
+    static REFS: [unsafe extern "C" fn(); 38] = [
         _rs_KiAcquireApcLockRaiseToSynch,
         _rs_KiAcquireApcLockAtSynchLevel,
         _rs_KiAcquireApcLockRaiseToDpc,
@@ -156,6 +159,9 @@ mod _force_ke_inlines_symbols {
         _rs_KiCheckAlertability,
         _rs_KiSelectReadyThread,
         _rs_KiComputeNewPriority,
+        _rs_KxUnwaitThread,
+        _rs_KxUnwaitThreadForEvent,
+        _rs_KxQueueReadyThread,
     ];
 }
 
