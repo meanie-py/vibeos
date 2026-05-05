@@ -30,6 +30,12 @@ extern crate ke_inlines;
 // cross-CGU captures(none) contagion risk that killed the original cm Pilot 1.
 extern crate ob_inlines;
 extern crate ps_inlines;
+// Same pattern, fourth batch: se-inlines holds the Se*/Sep* helper wrappers
+// (security-descriptor accessors, token locks, SeQuerySubjectContextToken,
+// SeLengthSid, SeDeleteClientSecurity) that previously lived in
+// `ntoskrnl-rust::shim_exports`. Sibling rlib for the same captures(none)
+// containment reason as ob/ps-inlines.
+extern crate se_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -291,6 +297,36 @@ mod _force_ps_inlines_symbols {
         PspUnlockProcessSecurityShared,
         PspUnlockThreadSecurityExclusive,
         PspUnlockThreadSecurityShared,
+    ];
+}
+
+// Defensive pull for se-inlines (Se*/Sep* wrappers, extracted from
+// ntoskrnl-rust::shim_exports — sibling rlib pattern).
+mod _force_se_inlines_symbols {
+    extern "C" {
+        fn SeDeleteClientSecurity();
+        fn SeLengthSid();
+        fn SeQuerySubjectContextToken();
+        fn SepAcquireTokenLockExclusive();
+        fn SepAcquireTokenLockShared();
+        fn SepGetDaclFromDescriptor();
+        fn SepGetGroupFromDescriptor();
+        fn SepGetOwnerFromDescriptor();
+        fn SepGetSaclFromDescriptor();
+        fn SepReleaseTokenLock();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 10] = [
+        SeDeleteClientSecurity,
+        SeLengthSid,
+        SeQuerySubjectContextToken,
+        SepAcquireTokenLockExclusive,
+        SepAcquireTokenLockShared,
+        SepGetDaclFromDescriptor,
+        SepGetGroupFromDescriptor,
+        SepGetOwnerFromDescriptor,
+        SepGetSaclFromDescriptor,
+        SepReleaseTokenLock,
     ];
 }
 

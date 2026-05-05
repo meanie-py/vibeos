@@ -20,6 +20,7 @@ members = [
     "ntoskrnl-rust",
     "ob-inlines",
     "ps-inlines",
+    "se-inlines",
     "ntprintf",
     "ntprintf_w",
     "pool",
