@@ -68,22 +68,28 @@ SepInitTokensShim(VOID)
 /*
  * KdpDprintf — variadic debug printf for KD64 subsystem.
  *
- * Cannot be in Rust because it uses C va_list.
+ * The va_arg pull stays in C; format-string parsing + emission live in the
+ * Rust ntprintf crate via ntprintf_va_format_a.
  * Only needed when KD64 is Rust (C kdprint.c provides its own when KD64_USE_C).
  */
+extern size_t ntprintf_va_format_a(char *dst, size_t cap,
+                                   const char *fmt, va_list ap);
+
 #ifndef KD64_USE_C
 VOID __cdecl
 KdpDprintf(_In_ PCSTR Format, ...)
 {
     STRING String;
-    USHORT Length;
+    SIZE_T Length;
     va_list ap;
     CHAR Buffer[512];
     va_start(ap, Format);
-    Length = (USHORT)_vsnprintf(Buffer, sizeof(Buffer), Format, ap);
+    Length = ntprintf_va_format_a(Buffer, sizeof(Buffer), Format, ap);
     va_end(ap);
+    if (Length > MAXUSHORT)
+        Length = MAXUSHORT;
     String.Buffer = Buffer;
-    String.Length = String.MaximumLength = Length;
+    String.Length = String.MaximumLength = (USHORT)Length;
     KdpPrintString(&String);
 }
 #endif
@@ -91,8 +97,9 @@ KdpDprintf(_In_ PCSTR Format, ...)
 /*
  * RtlStringCbPrintfA — variadic safe string printf.
  *
- * Cannot be in Rust because it uses C va_list.
- * Previously in ex_rust_shims.c.
+ * va_arg pull stays in C; format-string parsing + emission via Rust ntprintf.
+ * Returns STATUS_BUFFER_OVERFLOW on truncation, STATUS_SUCCESS otherwise,
+ * matching the contract of the original RtlStringVPrintfWorkerA helper.
  */
 NTSTATUS __cdecl RtlStringCbPrintfA(
     char *pszDest,
@@ -100,8 +107,8 @@ NTSTATUS __cdecl RtlStringCbPrintfA(
     const char *pszFormat,
     ...)
 {
-    NTSTATUS Status;
     va_list argList;
+    SIZE_T written;
 
     if (cbDest > NTSTRSAFE_MAX_CCH)
     {
@@ -109,12 +116,16 @@ NTSTATUS __cdecl RtlStringCbPrintfA(
             *pszDest = '\0';
         return STATUS_INVALID_PARAMETER;
     }
+    if (cbDest == 0)
+        return STATUS_SUCCESS;
 
     va_start(argList, pszFormat);
-    Status = RtlStringVPrintfWorkerA(pszDest, cbDest, pszFormat, argList);
+    written = ntprintf_va_format_a(pszDest, cbDest, pszFormat, argList);
     va_end(argList);
 
-    return Status;
+    /* ntprintf_va_format_a returns the byte count that would have been
+     * written excluding NUL. Truncation when written + 1 > cbDest. */
+    return (written + 1 > cbDest) ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 }
 
 /*

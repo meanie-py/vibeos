@@ -16,6 +16,7 @@ members = [
     "mem",
     "ntkrnl-sys",
     "ntoskrnl-rust",
+    "ntprintf",
     "pool",
     "prefix",
     "random",

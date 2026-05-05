@@ -493,12 +493,16 @@ KeGetTrapFrameStackRegister(PKTRAP_FRAME TrapFrame)
 #endif /* _M_AMD64 */
 
 /* -------------------------------------------------------------------------
- * Variadic functions. Stable Rust can't define C-variadic exported fns,
- * so they live here. Both delegate to Rust-side helpers (KdbPutsN /
- * KdbpPagerInternal) for the actual output.
+ * Variadic functions. Stable Rust can't define C-variadic exported fns, so
+ * the va_arg pull stays here, but format-string parsing and byte emission
+ * live in the Rust ntprintf crate via ntprintf_va_format_a (declared in
+ * ntprintf_trampoline.c).
  * ------------------------------------------------------------------------- */
 
 VOID KdbpPagerInternal(IN PCHAR Buffer, IN ULONG BufLength, IN BOOLEAN DoPage);
+
+extern size_t ntprintf_va_format_a(char *dst, size_t cap,
+                                   const char *fmt, va_list ap);
 
 VOID
 __cdecl
@@ -511,9 +515,11 @@ KdbPrintf(
     CHAR Buffer[1024];
 
     va_start(ap, Format);
-    Length = _vsnprintf(Buffer, sizeof(Buffer), Format, ap);
-    Length = min(Length, MAXUSHORT - sizeof(ANSI_NULL));
+    Length = ntprintf_va_format_a(Buffer, sizeof(Buffer), Format, ap);
     va_end(ap);
+
+    if (Length > MAXUSHORT - sizeof(ANSI_NULL))
+        Length = MAXUSHORT - sizeof(ANSI_NULL);
 
     KdbPutsN(Buffer, (USHORT)Length);
 }
@@ -524,16 +530,18 @@ KdbpPrint(
     _In_ ...)
 {
     static CHAR Buffer[4096];
-    ULONG Length;
+    SIZE_T Length;
     va_list ap;
 
     if (KdbOutputAborted)
         return;
 
     va_start(ap, Format);
-    Length = _vsnprintf(Buffer, sizeof(Buffer) - 1, Format, ap);
-    Buffer[Length] = '\0';
+    Length = ntprintf_va_format_a(Buffer, sizeof(Buffer), Format, ap);
     va_end(ap);
 
-    KdbpPagerInternal(Buffer, Length, FALSE);
+    if (Length >= sizeof(Buffer))
+        Length = sizeof(Buffer) - 1;
+
+    KdbpPagerInternal(Buffer, (ULONG)Length, FALSE);
 }

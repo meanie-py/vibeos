@@ -8,6 +8,25 @@
 extern crate reactos_pool;
 // Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.
 extern crate ntoskrnl_rust;
+// Re-export ntprintf so its FFI symbols (ntprintf_scan_arg_types,
+// ntprintf_format_a) are linked in for the C variadic trampolines.
+extern crate ntprintf;
+
+// Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
+// entries. Same pattern as `_force_kdbg_symbols`.
+mod _force_ntprintf_symbols {
+    extern "C" {
+        fn ntprintf_scan_arg_types(fmt: *const u8, out: *mut u8, max: usize) -> i32;
+        fn ntprintf_format_a(dst: *mut u8, cap: usize, fmt: *const u8,
+                             slots: *const u64, n: usize) -> usize;
+    }
+    #[used]
+    static REF_SCAN: unsafe extern "C" fn(*const u8, *mut u8, usize) -> i32 =
+        ntprintf_scan_arg_types;
+    #[used]
+    static REF_FORMAT: unsafe extern "C" fn(*mut u8, usize, *const u8, *const u64, usize) -> usize =
+        ntprintf_format_a;
+}
 
 // Force inclusion of KDBG extension symbols (called from C kdb_cli.c, not from Rust).
 // Without this, rustc dead-code elimination strips them from the staticlib.

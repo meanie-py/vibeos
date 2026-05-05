@@ -62,6 +62,7 @@ name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
  "ntoskrnl-rust",
+ "ntprintf",
  "reactos-pool",
 ]
 
@@ -122,6 +123,13 @@ dependencies = [
  "iced-x86",
  "ntkrnl-sys",
  "reactos-pool",
+]
+
+[[package]]
+name = "ntprintf"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

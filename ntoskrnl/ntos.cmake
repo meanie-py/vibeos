@@ -338,6 +338,9 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
+    # Shared C trampoline for variadic shims — calls into Rust ntprintf crate
+    # for format-string parsing + emission. See ntprintf_trampoline.c header.
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ntprintf_trampoline.c
     # vf/ — replaced by Rust (ntoskrnl-rust/src/vf/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/vf/driver.c
     # wmi/ — replaced by Rust (ntoskrnl-rust/src/wmi/)

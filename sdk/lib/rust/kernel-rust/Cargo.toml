@@ -9,3 +9,4 @@ crate-type = ["staticlib"]
 [dependencies]
 reactos-pool = { path = "../pool" }
 ntoskrnl-rust = { path = "../ntoskrnl-rust" }
+ntprintf = { path = "../ntprintf" }
