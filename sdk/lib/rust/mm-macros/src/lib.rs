@@ -141,3 +141,43 @@ pub unsafe extern "C" fn _rs_MI_UPDATE_VALID_PTE(pte: PMMPTE, temp_pte: MMPTE) {
     let pte = opaque_ptr(pte);
     ntkrnl_sys::inline::mm::MI_UPDATE_VALID_PTE(pte, temp_pte);
 }
+
+// ============================================================================
+// Batch 2 — MmInitializeMdl
+//
+// `#define`-ish macro from `sdk/include/xdk/mmfuncs.h` (PCH-covered, so the
+// C trampoline can't `_orig_*`-rename it). Sets up the MDL header for a VA
+// range: zero Next, compute size from PFN count via
+// `ADDRESS_AND_SIZE_TO_SPAN_PAGES`, zero flags, page-align StartVa, set
+// ByteOffset/ByteCount.
+// ============================================================================
+
+use ntkrnl_sys::ddk::{PMDL, _MDL};
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_MmInitializeMdl(
+    mdl: PMDL,
+    base_va: *mut core::ffi::c_void,
+    length: u32,
+) {
+    let mdl = opaque_ptr(mdl);
+    // ADDRESS_AND_SIZE_TO_SPAN_PAGES(base_va, length):
+    //   ((base_va & (PAGE_SIZE - 1)) + length + (PAGE_SIZE - 1)) >> PAGE_SHIFT
+    let span_pages: u32 = ((((base_va as usize) & (PAGE_SIZE - 1))
+        + length as usize
+        + (PAGE_SIZE - 1))
+        >> PAGE_SHIFT) as u32;
+    // size = sizeof(MDL) + sizeof(PFN_NUMBER) * span_pages, narrowed to CSHORT (i16).
+    let pfn_size = core::mem::size_of::<usize>() as u32; // PFN_NUMBER == ULONG_PTR
+    let size = (core::mem::size_of::<_MDL>() as u32 + pfn_size * span_pages) as i16;
+
+    (*mdl).Next = core::ptr::null_mut();
+    (*mdl).Size = size;
+    (*mdl).MdlFlags = 0;
+    // PAGE_ALIGN(base_va) = base_va & ~(PAGE_SIZE - 1)
+    (*mdl).StartVa = ((base_va as usize) & !(PAGE_SIZE - 1)) as *mut core::ffi::c_void;
+    // BYTE_OFFSET(base_va) = base_va & (PAGE_SIZE - 1)
+    (*mdl).ByteOffset = ((base_va as usize) & (PAGE_SIZE - 1)) as u32;
+    (*mdl).ByteCount = length;
+}

@@ -313,9 +313,10 @@ mod _force_mm_macros_symbols {
         fn _rs_MI_MAKE_HARDWARE_PTE_USER();
         fn _rs_MI_MAKE_HARDWARE_PTE();
         fn _rs_MI_UPDATE_VALID_PTE();
+        fn _rs_MmInitializeMdl();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 8] = [
+    static REFS: [unsafe extern "C" fn(); 9] = [
         _rs_RMAP_IS_SEGMENT,
         _rs_PAGE_ROUND_DOWN,
         _rs_PFN_FROM_SSE,
@@ -324,6 +325,7 @@ mod _force_mm_macros_symbols {
         _rs_MI_MAKE_HARDWARE_PTE_USER,
         _rs_MI_MAKE_HARDWARE_PTE,
         _rs_MI_UPDATE_VALID_PTE,
+        _rs_MmInitializeMdl,
     ];
 }
 

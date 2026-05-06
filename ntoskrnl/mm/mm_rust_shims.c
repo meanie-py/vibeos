@@ -703,8 +703,10 @@ void KeFlushProcessTb(VOID)
 
 /*
  * MmInitializeMdl — macro in xdk/mmfuncs.h (covered by PCH).
- * The Rust side declares this as extern "system" (stdcall on i386).
+ * Body in Rust at sdk/lib/rust/mm-macros/src/lib.rs::_rs_MmInitializeMdl.
  */
+extern void _rs_MmInitializeMdl(PMDL Mdl, PVOID BaseVa, ULONG Length);
+
 void
 NTAPI
 MmInitializeMdl(
@@ -712,13 +714,7 @@ MmInitializeMdl(
     IN PVOID BaseVa,
     IN ULONG Length)
 {
-    Mdl->Next = (PMDL)NULL;
-    Mdl->Size = (CSHORT)(sizeof(MDL) +
-        (sizeof(PFN_NUMBER) * ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseVa, Length)));
-    Mdl->MdlFlags = 0;
-    Mdl->StartVa = (PVOID)PAGE_ALIGN(BaseVa);
-    Mdl->ByteOffset = BYTE_OFFSET(BaseVa);
-    Mdl->ByteCount = Length;
+    _rs_MmInitializeMdl(Mdl, BaseVa, Length);
 }
 
 /* ===================================================================
