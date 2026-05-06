@@ -25,9 +25,9 @@ The settled must-stay categories are short:
   `Ki386InitializeTss`, FXSAVE+MXCSR sanitization. Probably some of these
   could move to `core::arch::asm!`, but trap-entry ones are intertwined
   with PSEH and may be cheaper to leave alone.
-- **C `#include <avlsupp.c>` AVL bridges** — until we either generic-ize
-  the Rtl `avltable` rlib or write a separate `mm-avl` rlib for the
-  layout-incompatible `MMADDRESS_NODE` flavor.
+- ~~**C `#include <avlsupp.c>` AVL bridges**~~ — CLOSED 2026-05-06.
+  `mm-avl` rlib (sdk/lib/rust/mm-avl) handles the MMADDRESS_NODE flavor;
+  the avlsupp.c-include trick is gone.
 - **KDBG enum-name-to-string lookup tables** — pure debugger output
   formatting, no Rust value-add.
 
@@ -56,9 +56,11 @@ The 13 sibling rlibs that landed in Phase 1: `cm-inlines` (8 KCB-locks),
 `ke-inlines` (49 ke_x.h FORCEINLINEs), `ob-inlines` (22), `ps-inlines`
 (18), `se-inlines` (10), `common-inlines` (34), `mm-{pte-class, pte-mut,
 util, ws-lock, addr-space, pte-atomic, lock}-inlines` (45 total across 7
-mm rlibs). Phase 2 added `ke-macros`, `io-inlines`, `mm-macros`. ~165 fns
-total of Rust impl across the rlib zoo; ~3340 → ~2700 LOC reduction in
-`ntoskrnl-rust::shim_exports.rs` from the extractions.
+mm rlibs). Phase 2 added `ke-macros`, `io-inlines`, `mm-macros`. Phase 4
+added `mm-avl` (8 fns: Find/Insert/Delete + 5 accessors, ~330 LOC of
+algorithm). ~173 fns total of Rust impl across the rlib zoo; ~3340 →
+~2700 LOC reduction in `ntoskrnl-rust::shim_exports.rs` from the
+extractions.
 
 ## Where the file count stands
 
@@ -172,9 +174,9 @@ holds:
 - The `~50 i386 register/V86/segment shims` in `ke_rust_shims.c` are the
   single biggest LOC item. Most are intentional-stay, but a focused audit
   with `core::arch::asm!` would probably move 10-20 of them.
-- The mm AVL refactor (generic-ize `avltable::tree` over a `BalancedLinks`
-  trait) is real design work that would unblock ~5 fns. ~half-day to one
-  day.
+- ~~The mm AVL refactor~~ — CLOSED 2026-05-06. Took the standalone-rlib
+  path (mm-avl) rather than the generic-trait refactor of avltable, since
+  it's lower-risk and matches the existing augment+isolated-rlib pattern.
 - M8 (PFN ref-counting, 5 fns deferred from Phase 1) is structural — the
   PFN database design needs its own thinking.
 - GLOBAL_ACCESSOR fns (~50) come for free as subsystems get translated;

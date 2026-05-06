@@ -4,21 +4,20 @@ Last updated 2026-05-06.
 
 ## Where we are
 
-**~98% of the original ntoskrnl C body of work is now Rust.** The remaining
-~6.7K LOC of active C is split between (a) the NEWCC cache subsystem (~5.3K
-LOC, gated off in the default build) and (b) C shim files that exist as ABI
-anchors / FORCEINLINE bridges / vararg trampolines for the Rust impls that
-replaced their bodies.
+**~99% of the original ntoskrnl C body of work is now Rust.** The only
+active C in the default i386/amd64 build is the shim layer — ABI anchors,
+FORCEINLINE/macro bridges, and vararg trampolines that augment the Rust
+impls that replaced the original bodies. Every other ntoskrnl C file is
+either inactive (commented out in `ntos.cmake`) or a Rust replacement.
 
 Counts (from `find … | xargs wc -l`):
 
 | Bucket | LOC |
 |---|---:|
-| Original ntoskrnl C body of work (excl. tests + shims) | ~279,300 |
-| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | ~439,200 |
+| Original ntoskrnl C body of work (excl. shims) | ~272,000 |
+| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | ~439,400 |
 | Active C in default i386/amd64 build (excl. shims) | 0 |
-| C shim layer (`*_rust_shims.c` + `kernel_c_helpers.c` + trampoline) | ~7,200 |
-| NEWCC cache C (gated off in default build, ~5.3K LOC) | not counted |
+| C shim layer (`*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c`) | ~7,200 |
 
 The Rust LOC is higher than the original C because (a) bindgen unions need
 explicit accessor paths, (b) every output-pointer write goes through
@@ -34,14 +33,18 @@ kernel changes — not in any specific subsystem).
 
 | Bucket | LOC | Notes |
 |---|---:|---|
-| `*_rust_shims.c` + `kernel_c_helpers.c` + `ntprintf_trampoline.c` | ~7,200 | Bridge layer. See `shim-elimination.md` for status — most are tractable, the "must-stay" set is small and shrinking. |
-| NEWCC cache (`cache/*.c`) | ~5,300 | Gated off in default build. Translation not blocked, just not prioritized. |
-| Tests (`tests/*.c`) | ~5,900 | Test harness; not for translation. |
+| `*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c` | ~7,200 | Bridge layer. See `shim-elimination.md` for status — most are tractable, the "must-stay" set is small and shrinking. |
 | `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
 
 **Translation candidates with no Rust translation in tree: zero.** Every C
 file the default i386/amd64 build pulls in either has its Rust replacement
 active, or is a shim that augments the Rust impl living in a sibling rlib.
+
+The `cache/` directory (the historical NEWCC alternate cache subsystem)
+is gone as of 2026-05-06. The existing Rust CC subsystem
+(`ntoskrnl-rust/src/cc/`) is the only cache implementation; if it needs
+work, the fix lands directly in Rust, not via porting a parallel C
+version.
 
 ## What's still C — and what we used to think had to be
 
@@ -87,8 +90,8 @@ re-probing**, not a settled answer. The current must-stay set, conservatively:
 - A handful of LLVM/KVM workarounds with documented evidence
   (`KiSaveXState`/`KiRestoreXState` on amd64, `SepInitTokensShim` i386
   fat-LTO ud2)
-- C `#include <avlsupp.c>` AVL bridges (until we either generic-ize the
-  Rtl `avltable` rlib or write a separate `mm-avl` rlib)
+- ~~C `#include <avlsupp.c>` AVL bridges~~ — closed 2026-05-06; the
+  Mm AVL flavor lives in the `mm-avl` rlib now.
 - `__FILE__`/`__LINE__` macros that need the C preprocessor
 - KDBG enum-name-to-string lookup tables (debugger-only, no Rust value-add)
 
@@ -176,18 +179,19 @@ often: re-enable it, build, smoke. The bug may already be gone.
 ## How these numbers are computed
 
 ```bash
-# Total ntoskrnl C body of work (excludes tests + shims):
+# Total ntoskrnl C body of work (excludes shims; ntoskrnl/tests/ + ntoskrnl/cache/
+# both deleted — tests migrated to Rust kernel-test harness, NEWCC retired):
 find ntoskrnl -name "*.c" \
-  | grep -v -E '/tests/|_rust_shims\.c|kernel_c_helpers\.c|trampoline\.c' \
-  | xargs wc -l   # → ~279,300
+  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|mm_sysldr_shims\.c|ntprintf_trampoline\.c' \
+  | xargs wc -l   # → ~272,000
 
 # Active C in default build (excludes shims):
 grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
-  | grep -v '^\s*#' | grep -v 'tests/' \
-  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|trampoline\.c' \
+  | grep -v '^\s*#' \
+  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|mm_sysldr_shims\.c|ntprintf_trampoline\.c' \
   | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
-  | sort -u | xargs wc -l   # → ~6,700 (cache/* gated off, mm_sysldr_shims is a shim)
+  | sort -u | xargs wc -l   # → 0
 
 # Rust LOC across ntoskrnl-rust/:
-find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → ~439,200
+find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → ~439,400
 ```

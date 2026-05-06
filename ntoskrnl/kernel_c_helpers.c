@@ -461,9 +461,7 @@ VOID NTAPI ARM64_UART_TRACE_HEX(PCSTR prefix, ULONG_PTR val)
 
 /* --- Globals from section.c (Rust provides no C definition) --- */
 #if !defined(MM_SECTION_C_ACTIVE)
-#ifndef NEWCC
 KEVENT MmWaitPageEvent;
-#endif
 ULONG_PTR MmSubsectionBase;
 #endif
 

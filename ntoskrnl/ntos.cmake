@@ -21,40 +21,12 @@ add_definitions(
 # (The historical "recursive exception flood on amd64" turned out to be stale —
 # fixed silently by CGU=256 + opaque_ptr sweep + RAII guards in 2026 Q1.)
 
-if(NOT DEFINED NEWCC)
-    set(NEWCC FALSE)
-endif()
-
-if(NEWCC)
-    add_definitions(-DNEWCC)
-    list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/cachesub.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/copysup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/fssup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/lazyrite.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/logsup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/mdlsup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/pinsup.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/fault.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/swapout.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/data.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/reqtools.c)
-else()
-    # CC subsystem: replaced by Rust (ntoskrnl-rust/src/cc/)
-    #list(APPEND SOURCE
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/cacheman.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/copy.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/fs.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/lazywrite.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/mdl.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/pin.c
-    #    ${REACTOS_SOURCE_DIR}/ntoskrnl/cc/view.c)
-endif()
+# CC subsystem: Rust (ntoskrnl-rust/src/cc/). The ntoskrnl/cc/*.c sources
+# and the NEWCC alternate cache (ntoskrnl/cache/*.c) are gone — the existing
+# Rust CC is the only implementation. If the cache subsystem needs work, the
+# fix lands in Rust directly, not via porting a parallel C version.
 
 list(APPEND SOURCE
-    # cache/section/io.c + sptab.c — replaced by Rust mm/section_io.rs + mm/section_table.rs.
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/io.c
-    #${REACTOS_SOURCE_DIR}/ntoskrnl/cache/section/sptab.c
     # config/ — registry CM, replaced by Rust (ntoskrnl-rust/src/config/).
     # cmdata.c kept in C: pure globals, no functions for tree-sitter to extract.
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmalloc.c

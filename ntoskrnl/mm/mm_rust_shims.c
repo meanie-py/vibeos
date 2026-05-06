@@ -129,9 +129,7 @@
 /* === Globals that were previously in section.c === */
 /* Guarded: section.c provides these when compiled as C */
 #if !defined(MM_SECTION_C_ACTIVE)
-#ifndef NEWCC
 KEVENT MmWaitPageEvent;
-#endif
 ULONG_PTR MmSubsectionBase;
 #endif
 
@@ -1019,7 +1017,6 @@ void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
  * ===================================================================== */
 
 #include <reactos/exeformat.h>
-#include <cache/section/newmm.h>
 
 /* ========================================================================
  * MmFixupImageSectionSegments and its 4 helpers — translated to Rust 2026-05-06.
