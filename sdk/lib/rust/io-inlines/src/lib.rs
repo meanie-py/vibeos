@@ -19,12 +19,12 @@
 #![no_std]
 
 use core::ptr;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use ntkrnl_sys::base::{InitializeListHead, InsertHeadList, IsListEmpty, RemoveEntryList};
 use ntkrnl_sys::ddk::{
-    KPROCESSOR_MODE, NTSTATUS, PDEVICE_OBJECT, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PFILE_OBJECT,
-    PIRP, POPEN_PACKET, PRKEVENT, _IO_STACK_LOCATION, _OPEN_PACKET,
+    KPROCESSOR_MODE, NTSTATUS, PDEVICE_OBJECT, PEPROCESS, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION,
+    PFILE_OBJECT, PIRP, POPEN_PACKET, PRKEVENT, _IO_STACK_LOCATION, _OPEN_PACKET,
 };
 
 /// `IO_TYPE_OPEN_PACKET` from `sdk/include/xdk/iotypes.h`.
@@ -241,4 +241,139 @@ pub unsafe extern "C" fn _rs_IopUnlockFileObject(file_object: PFILE_OBJECT) {
         KeSetEvent(core::ptr::addr_of_mut!((*file_object).Lock), 0, 0);
     }
     ObfDereferenceObject(file_object as *mut core::ffi::c_void);
+}
+
+// ============================================================================
+// Batch 3 — operation/transfer counters
+//
+// IopUpdateOperationCount / IopUpdateTransferCount (`static __inline` in
+// `io_x.h`). When the global `IoCountOperations` is non-zero, increment the
+// per-CPU/global counter and the per-process counter (Read/Write/Other slot
+// keyed off `IOP_TRANSFER_TYPE`). Per-process counters are bumped via the
+// `ExInterlockedAddLargeStatistic` macro: on amd64/arm64 it's
+// `InterlockedAdd64(&Addend->QuadPart, Increment)`; on i386 it's a custom
+// `lock addl` + `lock adcl` pair that we render as `AtomicI64::fetch_add`
+// which lowers to `lock cmpxchg8b` on i386 (semantically equivalent).
+// ============================================================================
+
+/// `IOP_TRANSFER_TYPE` from bindgen — IopReadTransfer = 0, IopWriteTransfer = 1,
+/// IopOtherTransfer = 2.
+const IOP_READ_TRANSFER: u32 = 0;
+const IOP_WRITE_TRANSFER: u32 = 1;
+
+extern "C" {
+    static mut IoCountOperations: u8; // BOOLEAN
+    static mut IoReadOperationCount: u32;
+    static mut IoWriteOperationCount: u32;
+    static mut IoOtherOperationCount: u32;
+    static mut IoReadTransferCount: i64; // LARGE_INTEGER (QuadPart-equivalent)
+    static mut IoWriteTransferCount: i64;
+    static mut IoOtherTransferCount: i64;
+}
+
+/// PsGetCurrentProcess replicated locally — same cross-crate inline-asm dodge
+/// as `ke-macros::ke_get_current_thread` (see
+/// `feedback_cross_crate_inline_asm.md`). Walks PCR → PRCB → KTHREAD →
+/// ApcState.Process to land on the current EPROCESS.
+#[inline(always)]
+unsafe fn ps_get_current_process() -> PEPROCESS {
+    let pcr: *mut ntkrnl_sys::ddk::_KPCR;
+    #[cfg(target_arch = "x86_64")]
+    {
+        core::arch::asm!(
+            "mov {}, gs:[0x18]",
+            out(reg) pcr,
+            options(nostack, nomem, preserves_flags),
+        );
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let raw: u32;
+        core::arch::asm!(
+            "mov {:e}, dword ptr fs:[0x1C]",
+            out(reg) raw,
+            options(nostack, nomem, preserves_flags),
+        );
+        pcr = raw as *mut ntkrnl_sys::ddk::_KPCR;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        core::arch::asm!(
+            "mrs {}, tpidr_el1",
+            out(reg) pcr,
+            options(nostack, nomem, preserves_flags),
+        );
+    }
+    let prcb = {
+        #[cfg(target_arch = "x86")]
+        {
+            (*pcr).Prcb
+        }
+        #[cfg(not(target_arch = "x86"))]
+        {
+            (*pcr).__bindgen_anon_1.__bindgen_anon_1.CurrentPrcb
+        }
+    };
+    let thread = (*prcb).CurrentThread as *mut ntkrnl_sys::ddk::_KTHREAD;
+    (*thread).__bindgen_anon_1.ApcState.Process as PEPROCESS
+}
+
+/// Atomic add 1/N to a `LARGE_INTEGER::QuadPart`. Equivalent to
+/// `ExInterlockedAddLargeStatistic` on all 3 arches (cmpxchg8b on i386,
+/// lock xaddq on amd64, ldxr/stxr on arm64).
+#[inline(always)]
+unsafe fn add_large_statistic(addend: *mut i64, increment: i32) {
+    AtomicI64::from_ptr(addend).fetch_add(increment as i64, Ordering::SeqCst);
+}
+
+/// IopUpdateOperationCount — `static __inline` in `io_x.h`. When operation
+/// counting is enabled, bump the global Read/Write/Other counter (32-bit,
+/// non-atomic — matches the C body) and the per-process LARGE_INTEGER
+/// counter atomically.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopUpdateOperationCount(transfer_type: u32) {
+    if IoCountOperations == 0 {
+        return;
+    }
+    let process = ps_get_current_process();
+    let count_to_change: *mut i64 = if transfer_type == IOP_READ_TRANSFER {
+        IoReadOperationCount = IoReadOperationCount.wrapping_add(1);
+        core::ptr::addr_of_mut!((*process).ReadOperationCount.QuadPart)
+    } else if transfer_type == IOP_WRITE_TRANSFER {
+        IoWriteOperationCount = IoWriteOperationCount.wrapping_add(1);
+        core::ptr::addr_of_mut!((*process).WriteOperationCount.QuadPart)
+    } else {
+        IoOtherOperationCount = IoOtherOperationCount.wrapping_add(1);
+        core::ptr::addr_of_mut!((*process).OtherOperationCount.QuadPart)
+    };
+    add_large_statistic(count_to_change, 1);
+}
+
+/// IopUpdateTransferCount — `static __inline` in `io_x.h`. Bumps both the
+/// per-process and global LARGE_INTEGER counters by `transfer_count` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopUpdateTransferCount(transfer_type: u32, transfer_count: u32) {
+    if IoCountOperations == 0 {
+        return;
+    }
+    let process = ps_get_current_process();
+    let (count_to_change, transfer_to_change): (*mut i64, *mut i64) =
+        if transfer_type == IOP_READ_TRANSFER {
+            (
+                core::ptr::addr_of_mut!((*process).ReadTransferCount.QuadPart),
+                core::ptr::addr_of_mut!(IoReadTransferCount),
+            )
+        } else if transfer_type == IOP_WRITE_TRANSFER {
+            (
+                core::ptr::addr_of_mut!((*process).WriteTransferCount.QuadPart),
+                core::ptr::addr_of_mut!(IoWriteTransferCount),
+            )
+        } else {
+            (
+                core::ptr::addr_of_mut!((*process).OtherTransferCount.QuadPart),
+                core::ptr::addr_of_mut!(IoOtherTransferCount),
+            )
+        };
+    add_large_statistic(count_to_change, transfer_count as i32);
+    add_large_statistic(transfer_to_change, transfer_count as i32);
 }

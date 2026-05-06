@@ -91,13 +91,15 @@ IopUnlockFileObject_shim(IN PFILE_OBJECT FileObject)
 
 /*
  * IopUpdateTransferCount — static __inline in io_x.h.
- * Updates per-process and global I/O transfer counters.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUpdateTransferCount.
  */
+extern void _rs_IopUpdateTransferCount(IOP_TRANSFER_TYPE Type, ULONG TransferCount);
+
 VOID
 NTAPI
 IopUpdateTransferCount_shim(IN IOP_TRANSFER_TYPE Type, IN ULONG TransferCount)
 {
-    IopUpdateTransferCount(Type, TransferCount);
+    _rs_IopUpdateTransferCount(Type, TransferCount);
 }
 
 
@@ -116,13 +118,15 @@ IopLockFileObject_shim(IN PFILE_OBJECT FileObject, IN KPROCESSOR_MODE WaitMode)
 
 /*
  * IopUpdateOperationCount — static __inline in io_x.h.
- * Updates per-process I/O operation counts.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUpdateOperationCount.
  */
+extern void _rs_IopUpdateOperationCount(IOP_TRANSFER_TYPE Type);
+
 VOID
 NTAPI
 IopUpdateOperationCount_shim(IN IOP_TRANSFER_TYPE Type)
 {
-    IopUpdateOperationCount(Type);
+    _rs_IopUpdateOperationCount(Type);
 }
 
 /*

@@ -307,9 +307,11 @@ mod _force_io_inlines_symbols {
         fn _rs_IopUnQueueIrpFromThread();
         fn _rs_IopLockFileObject();
         fn _rs_IopUnlockFileObject();
+        fn _rs_IopUpdateOperationCount();
+        fn _rs_IopUpdateTransferCount();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 7] = [
+    static REFS: [unsafe extern "C" fn(); 9] = [
         _rs_IopValidateOpenPacket,
         _rs_IoGetDevObjExtension,
         _rs_IoCopyCurrentIrpStackLocationToNext,
@@ -317,6 +319,8 @@ mod _force_io_inlines_symbols {
         _rs_IopUnQueueIrpFromThread,
         _rs_IopLockFileObject,
         _rs_IopUnlockFileObject,
+        _rs_IopUpdateOperationCount,
+        _rs_IopUpdateTransferCount,
     ];
 }
 
