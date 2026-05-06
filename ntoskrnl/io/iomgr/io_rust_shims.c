@@ -58,28 +58,14 @@ ObReferenceObject(IN PVOID Object)
     ObfReferenceObject(Object);
 }
 
-/*
- * ObDereferenceObject — C macro that calls ObfDereferenceObject (FASTCALL).
- */
-#undef ObDereferenceObject
-VOID
-NTAPI
-ObDereferenceObject(IN PVOID Object)
-{
-    ObfDereferenceObject(Object);
-}
-
-/*
- * ExRaiseStatus — C macro that expands to RtlRaiseStatus.
- * Rust extern "system" needs stdcall (NTAPI) wrapper.
- */
-#undef ExRaiseStatus
-VOID
-NTAPI
-ExRaiseStatus(IN NTSTATUS Status)
-{
-    RtlRaiseStatus(Status);
-}
+/* ObDereferenceObject + ExRaiseStatus C trampolines REMOVED — both
+ * duplicated by Rust `extern "system"` exports (ob/obref.rs:468 +
+ * shim_exports.rs:969 respectively); both decorate as `_X@4` on i386,
+ * so the linker picks the Rust archive's exports.
+ *
+ * ObReferenceObject keeps its NTAPI C trampoline because shim_exports.rs
+ * exports it as `extern "C"` (cdecl `_ObReferenceObject`); both
+ * decorations are needed to satisfy different callers. */
 
 /*
  * Probe helper macros from probe.h — Rust extern "system" needs function wrappers.
@@ -92,13 +78,9 @@ ProbeForWriteHandle(IN PHANDLE Ptr)
     ProbeForWrite(Ptr, sizeof(HANDLE), sizeof(HANDLE));
 }
 
-#undef ProbeForWriteIoStatusBlock
-VOID
-NTAPI
-ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
-{
-    ProbeForWrite(Ptr, sizeof(IO_STATUS_BLOCK), sizeof(ULONG));
-}
+/* ProbeForWriteIoStatusBlock C trampoline REMOVED — duplicated by
+ * shim_exports.rs (cdecl). The mm_rust_shims.c definition was
+ * already removed in Round 8; this one is the io-side dup. */
 
 #undef ProbeForReadLargeInteger
 LARGE_INTEGER

@@ -397,37 +397,15 @@ extern void _rs_MiUnlockWorkingSetShared(PETHREAD Thread, PMMSUPPORT WorkingSet)
 void MiUnlockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 { _rs_MiUnlockWorkingSetShared(Thread, WorkingSet); }
 
-/*
- * Expansion lock (Phase 1 batch M7 — body delegates to Rust impl in
- * `mm-lock-inlines`). The C trampoline retains the debug-only
- * `MiExpansionLockOwner` tracking — it lives here, not in Rust, since
- * the FORCEINLINE in miarm.h ASSERTs around it. ARM64 IRQL UART trace
- * also stays in C.
- */
-extern KIRQL _rs_MiAcquireExpansionLock(VOID);
-KIRQL MiAcquireExpansionLock(VOID)
-{
-    KIRQL OldIrql = _rs_MiAcquireExpansionLock();
-    MiExpansionLockOwner = PsGetCurrentThread();
-    return OldIrql;
-}
-
-extern void _rs_MiReleaseExpansionLock(KIRQL OldIrql);
-void MiReleaseExpansionLock(IN KIRQL OldIrql)
-{
-    MiExpansionLockOwner = NULL;
-    _rs_MiReleaseExpansionLock(OldIrql);
-#ifdef _M_ARM64
-    {
-        KIRQL irql = KeGetCurrentIrql();
-        if (irql > APC_LEVEL) {
-            MmUartPuts("[MM] IRQL after MiReleaseExpansionLock=");
-            MmUartHex("", irql);
-            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
-        }
-    }
-#endif
-}
+/* MiAcquireExpansionLock / MiReleaseExpansionLock trampolines REMOVED
+ * — duplicated by ntoskrnl-rust::shim_exports `extern "C"` exports
+ * (cdecl on all 3 arches, matching what was here). The C trampolines
+ * also carried `MiExpansionLockOwner = PsGetCurrentThread()` tracking
+ * + an ARM64 IRQL UART trace; these were already dead because the Rust
+ * archive wins the link under --allow-multiple-definition. The miarm.h
+ * FORCEINLINE ASSERTs that referenced MiExpansionLockOwner sat inside
+ * the renamed `_orig_*` paths and were unreachable from the live link
+ * order. Tracking is a planned follow-up. */
 
 /*
  * Phase 1 batches M1/M2/M6 PTE-classification + bitfield-write +
@@ -468,48 +446,14 @@ extern ULONG _rs_InterlockedIncrementUL(PULONG Addend);
 ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
 { return _rs_InterlockedIncrementUL(Addend); }
 
-/*
- * UpdateTotalCommittedPages — FORCEINLINE in mm.h (covered by PCH, can't rename)
- * Manually inline the implementation.
- */
-void UpdateTotalCommittedPages(IN LONG Delta)
-{
-    SIZE_T TotalCommittedPages = InterlockedExchangeAddSizeT(&MmTotalCommittedPages, Delta) + Delta;
-    SIZE_T PeakCommitment = MmPeakCommitment;
-    while (TotalCommittedPages > PeakCommitment &&
-           InterlockedCompareExchangeSizeT(&MmPeakCommitment, TotalCommittedPages, PeakCommitment) != PeakCommitment)
-    {
-        PeakCommitment = MmPeakCommitment;
-    }
-}
-
-/*
- * KeInvalidateTlbEntry — FORCEINLINE per-arch in ke.h (covered by PCH, can't rename)
- * Manually inline the arch-specific implementation.
- */
-void KeInvalidateTlbEntry(IN PVOID Address)
-{
-#if defined(_M_AMD64) || defined(_M_IX86)
-    __invlpg(Address);
-#elif defined(_M_ARM64)
-    ULONG64 TlbiArg = (ULONG64)Address >> 12;
-    __asm__ __volatile__("tlbi vale1is, %0" : : "r"(TlbiArg) : "memory");
-    __asm__ __volatile__("dsb ish" ::: "memory");
-    __asm__ __volatile__("isb" ::: "memory");
-#else
-#error "Unsupported architecture"
-#endif
-}
+/* UpdateTotalCommittedPages / KeInvalidateTlbEntry trampolines REMOVED
+ * — duplicated by ntoskrnl-rust::shim_exports `extern "C"` exports
+ * (cdecl on all 3 arches). */
 
 /* MmLockSectionSegment / MmUnlockSectionSegment / MmGetPageEntrySectionSegment
  * are now canonical in kernel_c_helpers.c (need __FILE__/__LINE__ macros). */
 
-/*
- * MmDereferenceSegment — FORCEINLINE in mm.h (covered by PCH, can't rename)
- * Calls MmDereferenceSegmentWithLock with MM_NOIRQL.
- */
-void MmDereferenceSegment(IN PMM_SECTION_SEGMENT Segment)
-{ MmDereferenceSegmentWithLock(Segment, MM_NOIRQL); }
+/* MmDereferenceSegment trampoline REMOVED — duplicated by shim_exports. */
 
 /*
  * ExAllocatePoolZero — body delegates to Rust impl in `mm-util-inlines`
@@ -527,28 +471,9 @@ ExAllocatePoolZero(
     return _rs_ExAllocatePoolZero(PoolType, NumberOfBytes, Tag);
 }
 
-/*
- * Address-space accessors and AddressCreationLock guarded mutex
- * (Phase 1 batch M5 — bodies delegate to Rust impls in
- * `mm-addr-space-inlines`). These are PCH-covered FORCEINLINEs and
- * can't be `_orig_*`-renamed; the Mm* C symbol stays as the ABI anchor
- * with a one-line `_rs_*` body.
- */
-extern PEPROCESS _rs_MmGetAddressSpaceOwner(PMMSUPPORT AddressSpace);
-PEPROCESS MmGetAddressSpaceOwner(IN PMMSUPPORT AddressSpace)
-{ return _rs_MmGetAddressSpaceOwner(AddressSpace); }
-
-extern PMMSUPPORT _rs_MmGetKernelAddressSpace(VOID);
-PMMSUPPORT MmGetKernelAddressSpace(VOID)
-{ return _rs_MmGetKernelAddressSpace(); }
-
-extern void _rs_MmLockAddressSpace(PMMSUPPORT AddressSpace);
-void MmLockAddressSpace(IN PMMSUPPORT AddressSpace)
-{ _rs_MmLockAddressSpace(AddressSpace); }
-
-extern void _rs_MmUnlockAddressSpace(PMMSUPPORT AddressSpace);
-void MmUnlockAddressSpace(IN PMMSUPPORT AddressSpace)
-{ _rs_MmUnlockAddressSpace(AddressSpace); }
+/* MmGetAddressSpaceOwner / MmGetKernelAddressSpace / MmLockAddressSpace
+ * / MmUnlockAddressSpace trampolines REMOVED — duplicated by
+ * shim_exports `extern "C"` exports (cdecl on all 3 arches). */
 
 /*
  * InterlockedExchangeAddUL — body delegates to Rust impl in
@@ -622,22 +547,7 @@ MmSetDirtyPage(IN PEPROCESS Process, IN PVOID Address)
     _rs_MmSetDirtyPage(Process, Address);
 }
 
-/*
- * KeFlushProcessTb — FORCEINLINE per-arch in ke.h (covered by PCH, can't rename)
- * Manually inline the arch-specific TLB flush.
- */
-void KeFlushProcessTb(VOID)
-{
-#if defined(_M_AMD64) || defined(_M_IX86)
-    __writecr3(__readcr3());
-#elif defined(_M_ARM64)
-    __asm__ __volatile__("tlbi vmalle1is" ::: "memory");
-    __asm__ __volatile__("dsb ish" ::: "memory");
-    __asm__ __volatile__("isb" ::: "memory");
-#else
-#error "Unsupported architecture"
-#endif
-}
+/* KeFlushProcessTb trampoline REMOVED — duplicated by shim_exports. */
 
 /*
  * MmInitializeMdl — macro in xdk/mmfuncs.h (covered by PCH).
@@ -788,29 +698,15 @@ RtlIsLeftChildAvl_C(IN PMMADDRESS_NODE Node)
 BOOLEAN MiConvertSharedWorkingSetLockToExclusive(PETHREAD Thread, PMMSUPPORT Vm)
 { return _orig_MiConvertSharedWorkingSetLockToExclusive(Thread, Vm); }
 
-/*
- * KiAcquireProcessLockRaiseToSynch / KiReleaseProcessLock —
- * FORCEINLINE in ke_x.h (covered by PCH, can't rename).
- * Manually inline the implementation.
+/* KiAcquireProcessLockRaiseToSynch trampoline REMOVED — duplicated by
+ * shim_exports.rs.
  *
- * On i386, KeReleaseInStackQueuedSpinLock is declared DECLSPEC_IMPORT (HAL import)
- * in the SDK headers, so the compiler generates an indirect call through the IAT.
- * However, the Rust shim_exports.rs provides its own local UP implementation of
- * KeAcquireInStackQueuedSpinLock* / KeReleaseInStackQueuedSpinLock with fastcall
- * convention.  The Rust acquire does NOT store (KeGetCurrentThread()|1) into the
- * spinlock, but the HAL's release checks for that value and bugchecks on mismatch.
- * To avoid the acquire/release mismatch, re-declare without __declspec(dllimport)
- * so the linker resolves to the Rust-provided version (matching acquire semantics).
- */
+ * KiReleaseProcessLock keeps its C trampoline — shim_exports.rs only
+ * has the FromSynchLevel variant; the bindgen-generated cdecl decl
+ * for plain KiReleaseProcessLock has no Rust definition yet. */
 #ifdef _X86_
 VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
 #endif
-
-void KiAcquireProcessLockRaiseToSynch(IN PKPROCESS Process,
-                                       IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    KeAcquireInStackQueuedSpinLockRaiseToSynch(&Process->ProcessLock, Handle);
-}
 
 void KiReleaseProcessLock(IN PKLOCK_QUEUE_HANDLE Handle)
 {
@@ -841,36 +737,10 @@ void MiUnlockProcessWorkingSetForFault(IN PEPROCESS Process,
     _rs_MiUnlockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
 }
 
-#undef MmGetCurrentAddressSpace
-extern PMMSUPPORT _rs_MmGetCurrentAddressSpace(VOID);
-PMMSUPPORT MmGetCurrentAddressSpace(VOID)
-{ return _rs_MmGetCurrentAddressSpace(); }
-
-/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim
- * MiIsRosSectionObject: provided by ntoskrnl-rust::shim_exports — no C shim */
-
-/*
- * ProbeForWriteSize_t — macro in probe.h
- * ProbeForWriteIoStatusBlock — macro in probe.h
- * Must #undef the macros before defining outline functions.
- * These are cdecl (no NTAPI) — Rust imports via extern "C".
- *
- * ProbeForWriteUlong / ProbeForWritePointer are already provided as NTAPI
- * in tier1_rust_shims.c — do not duplicate here.
- */
-#undef ProbeForWriteSize_t
-extern void _rs_ProbeForWriteSize_t(SIZE_T *Ptr);
-void ProbeForWriteSize_t(IN SIZE_T *Ptr)
-{
-    _rs_ProbeForWriteSize_t(Ptr);
-}
-
-#undef ProbeForWriteIoStatusBlock
-extern void _rs_ProbeForWriteIoStatusBlock(PIO_STATUS_BLOCK Ptr);
-void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
-{
-    _rs_ProbeForWriteIoStatusBlock(Ptr);
-}
+/* MmGetCurrentAddressSpace / ProbeForWriteSize_t / ProbeForWriteIoStatusBlock
+ * trampolines REMOVED — duplicated by shim_exports.
+ * MiDereferencePfnAndDropLockCount: provided by Rust (section.rs).
+ * MiIsRosSectionObject: provided by shim_exports. */
 
 /*
  * KfRaiseIrql / KfLowerIrql wrappers for Rust (extern "C" / cdecl).
