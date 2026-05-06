@@ -254,27 +254,27 @@ unsafe fn rebalance_node(node: PMMADDRESS_NODE) -> bool {
 // to these. ===
 
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlRightChildAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
+pub unsafe extern "system" fn RtlRightChildAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
     right_child(node)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlLeftChildAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
+pub unsafe extern "system" fn RtlLeftChildAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
     left_child(node)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlParentAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
+pub unsafe extern "system" fn RtlParentAvl(node: PMMADDRESS_NODE) -> PMMADDRESS_NODE {
     parent(node)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlIsRightChildAvl(node: PMMADDRESS_NODE) -> u8 {
+pub unsafe extern "system" fn RtlIsRightChildAvl(node: PMMADDRESS_NODE) -> u8 {
     if is_right_child(node) { 1 } else { 0 }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlIsLeftChildAvl(node: PMMADDRESS_NODE) -> u8 {
+pub unsafe extern "system" fn RtlIsLeftChildAvl(node: PMMADDRESS_NODE) -> u8 {
     if is_left_child(node) { 1 } else { 0 }
 }
 
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn _rs_RtlIsLeftChildAvl(node: PMMADDRESS_NODE) -> u8
 ///
 /// `*node_or_parent` receives the found/parent node on non-empty results.
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlpFindAvlTableNodeOrParent(
+pub unsafe extern "system" fn RtlpFindAvlTableNodeOrParent(
     table: PMM_AVL_TABLE,
     buffer: *mut core::ffi::c_void,
     node_or_parent: *mut PMMADDRESS_NODE,
@@ -402,7 +402,7 @@ pub unsafe extern "system" fn _rs_RtlpInsertAvlTreeNode(
 /// if `node` has two children, and walking back up to update balance
 /// factors / decrement `DepthOfTree` if the tree shrank.
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlpDeleteAvlTreeNode(
+pub unsafe extern "system" fn RtlpDeleteAvlTreeNode(
     table: PMM_AVL_TABLE,
     node: PMMADDRESS_NODE,
 ) {

@@ -312,27 +312,31 @@ mod _force_ke_macros_symbols {
 }
 
 // Defensive pull for mm-avl: AVL tree algorithms + 5 accessors.
+// 7 of 8 are exported under the bare Rtl* / Rtlp* names directly (no C
+// trampoline). RtlpInsertAvlTreeNode keeps a C trampoline for the
+// duplicate-insertion DPRINT1 guard, so the rlib still exports
+// `_rs_RtlpInsertAvlTreeNode` for that one case.
 mod _force_mm_avl_symbols {
     extern "C" {
-        fn _rs_RtlRightChildAvl();
-        fn _rs_RtlLeftChildAvl();
-        fn _rs_RtlParentAvl();
-        fn _rs_RtlIsRightChildAvl();
-        fn _rs_RtlIsLeftChildAvl();
-        fn _rs_RtlpFindAvlTableNodeOrParent();
+        fn RtlRightChildAvl();
+        fn RtlLeftChildAvl();
+        fn RtlParentAvl();
+        fn RtlIsRightChildAvl();
+        fn RtlIsLeftChildAvl();
+        fn RtlpFindAvlTableNodeOrParent();
         fn _rs_RtlpInsertAvlTreeNode();
-        fn _rs_RtlpDeleteAvlTreeNode();
+        fn RtlpDeleteAvlTreeNode();
     }
     #[used]
     static REFS: [unsafe extern "C" fn(); 8] = [
-        _rs_RtlRightChildAvl,
-        _rs_RtlLeftChildAvl,
-        _rs_RtlParentAvl,
-        _rs_RtlIsRightChildAvl,
-        _rs_RtlIsLeftChildAvl,
-        _rs_RtlpFindAvlTableNodeOrParent,
+        RtlRightChildAvl,
+        RtlLeftChildAvl,
+        RtlParentAvl,
+        RtlIsRightChildAvl,
+        RtlIsLeftChildAvl,
+        RtlpFindAvlTableNodeOrParent,
         _rs_RtlpInsertAvlTreeNode,
-        _rs_RtlpDeleteAvlTreeNode,
+        RtlpDeleteAvlTreeNode,
     ];
 }
 

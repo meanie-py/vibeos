@@ -730,43 +730,18 @@ MmInitializeMdl(
  * `#if 0` block below for side-by-side debug.
  * =================================================================== */
 
-extern PMMADDRESS_NODE NTAPI _rs_RtlRightChildAvl(IN PMMADDRESS_NODE Node);
-extern PMMADDRESS_NODE NTAPI _rs_RtlLeftChildAvl(IN PMMADDRESS_NODE Node);
-extern PMMADDRESS_NODE NTAPI _rs_RtlParentAvl(IN PMMADDRESS_NODE Node);
-extern BOOLEAN NTAPI _rs_RtlIsRightChildAvl(IN PMMADDRESS_NODE Node);
-extern BOOLEAN NTAPI _rs_RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node);
-extern TABLE_SEARCH_RESULT NTAPI _rs_RtlpFindAvlTableNodeOrParent(
-    IN PMM_AVL_TABLE Table, IN PVOID Buffer, OUT PMMADDRESS_NODE *NodeOrParent);
+/* The 7 pure-delegation AVL fns (RtlRightChildAvl / RtlLeftChildAvl /
+ * RtlParentAvl / RtlIsRightChildAvl / RtlIsLeftChildAvl /
+ * RtlpFindAvlTableNodeOrParent / RtlpDeleteAvlTreeNode) are exported
+ * directly by the mm-avl rlib (sdk/lib/rust/mm-avl/) under the bare
+ * Rtl* / Rtlp* names — no C trampoline.
+ *
+ * RtlpInsertAvlTreeNode keeps a C trampoline for the duplicate-insertion
+ * DPRINT1 guard; the Rust impl has only a debug_assert which is a no-op
+ * in release builds. */
 extern void NTAPI _rs_RtlpInsertAvlTreeNode(
     IN PMM_AVL_TABLE Table, IN PMMADDRESS_NODE NewNode,
     IN PMMADDRESS_NODE Parent, IN TABLE_SEARCH_RESULT SearchResult);
-extern void NTAPI _rs_RtlpDeleteAvlTreeNode(
-    IN PMM_AVL_TABLE Table, IN PMMADDRESS_NODE Node);
-
-PMMADDRESS_NODE NTAPI RtlRightChildAvl(IN PMMADDRESS_NODE Node)
-{ return _rs_RtlRightChildAvl(Node); }
-
-PMMADDRESS_NODE NTAPI RtlLeftChildAvl(IN PMMADDRESS_NODE Node)
-{ return _rs_RtlLeftChildAvl(Node); }
-
-PMMADDRESS_NODE NTAPI RtlParentAvl(IN PMMADDRESS_NODE Node)
-{ return _rs_RtlParentAvl(Node); }
-
-BOOLEAN NTAPI RtlIsRightChildAvl(IN PMMADDRESS_NODE Node)
-{ return _rs_RtlIsRightChildAvl(Node); }
-
-BOOLEAN NTAPI RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
-{ return _rs_RtlIsLeftChildAvl(Node); }
-
-TABLE_SEARCH_RESULT
-NTAPI
-RtlpFindAvlTableNodeOrParent(
-    IN PMM_AVL_TABLE Table,
-    IN PVOID Buffer,
-    OUT PMMADDRESS_NODE *NodeOrParent)
-{
-    return _rs_RtlpFindAvlTableNodeOrParent(Table, Buffer, NodeOrParent);
-}
 
 void
 NTAPI
@@ -790,15 +765,6 @@ RtlpInsertAvlTreeNode(
         return;
     }
     _rs_RtlpInsertAvlTreeNode(Table, NewNode, Parent, SearchResult);
-}
-
-void
-NTAPI
-RtlpDeleteAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE Node)
-{
-    _rs_RtlpDeleteAvlTreeNode(Table, Node);
 }
 
 #if 0  /* Original C body — preserved for side-by-side debug. */
