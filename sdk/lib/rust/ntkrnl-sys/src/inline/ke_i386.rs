@@ -442,6 +442,74 @@ core::arch::global_asm!(
     "  call _KiHandleDebugRegistersOnTrapEntry@4",
     "1:",
     "  ret",                                // FASTCALL: no stack args
+
+    // KiDispatchException{0,1,2}Args — DECLSPEC_NORETURN FASTCALL helpers
+    // that delegate to KiDispatchExceptionFromTrapFrame (NTAPI, 8 args).
+    // Per FORCEINLINE in internal/i386/ke.h:
+    //   0Args: KiDEFTF(Code, 0, Address, 0,        0,  0,  0, TrapFrame)
+    //   1Args: KiDEFTF(Code, 0, Address, 1,        P1, 0,  0, TrapFrame)
+    //   2Args: KiDEFTF(Code, 0, Address, 2,        P1, P2, 0, TrapFrame)
+    //
+    // Fastcall: ecx=Code, edx=Address, [esp+4]=P1/TrapFrame depending on N.
+    // Stdcall callee KiDispatchExceptionFromTrapFrame@32 cleans 32 bytes.
+    // None of these return (NORETURN), so no caller-side cleanup matters.
+    ".globl @KiDispatchException0Args@12",
+    "@KiDispatchException0Args@12:",
+    "  push dword ptr [esp+4]",   // TrapFrame
+    "  push 0",                    // P3
+    "  push 0",                    // P2
+    "  push 0",                    // P1
+    "  push 0",                    // NumberParameters
+    "  push edx",                  // Address
+    "  push 0",                    // ExceptionRecord
+    "  push ecx",                  // ExceptionCode
+    "  call _KiDispatchExceptionFromTrapFrame@32",
+
+    ".globl @KiDispatchException1Args@16",
+    "@KiDispatchException1Args@16:",
+    "  push dword ptr [esp+8]",   // TrapFrame (orig [esp+8])
+    "  push 0",                    // P3
+    "  push 0",                    // P2
+    "  push dword ptr [esp+16]",  // P1 (orig [esp+4], 3 pushes done = +12)
+    "  push 1",                    // NumberParameters
+    "  push edx",                  // Address
+    "  push 0",                    // ExceptionRecord
+    "  push ecx",                  // ExceptionCode
+    "  call _KiDispatchExceptionFromTrapFrame@32",
+
+    ".globl @KiDispatchException2Args@20",
+    "@KiDispatchException2Args@20:",
+    "  push dword ptr [esp+12]",  // TrapFrame (orig [esp+12])
+    "  push 0",                    // P3
+    "  push dword ptr [esp+16]",  // P2 (orig [esp+8], 2 pushes done = +8 → +16)
+    "  push dword ptr [esp+16]",  // P1 (orig [esp+4], 3 pushes done = +12 → +16)
+    "  push 2",                    // NumberParameters
+    "  push edx",                  // Address
+    "  push 0",                    // ExceptionRecord
+    "  push ecx",                  // ExceptionCode
+    "  call _KiDispatchExceptionFromTrapFrame@32",
+
+    // KiExceptionExit(TrapFrame, ExceptionFrame) — cdecl, NORETURN. On i386
+    // ExceptionFrame is unused; body just tail-calls KiServiceExit2.
+    ".globl _KiExceptionExit",
+    "_KiExceptionExit:",
+    "  mov ecx, [esp+4]",          // TrapFrame → ecx (fastcall arg)
+    "  jmp @KiServiceExit2@4",
+
+    // KiSwitchToBootStack(InitialStack) — NTAPI/stdcall. Switches ESP and
+    // jumps into KiSystemStartupBootStack. Body from internal/i386/ke.h:
+    //   esp = InitialStack;
+    //   esp -= NPX_FRAME_LENGTH + KTRAP_FRAME_ALIGN + KTRAP_FRAME_LENGTH;
+    //   push CR0_EM | CR0_TS | CR0_MP;
+    //   jmp KiSystemStartupBootStack;
+    //
+    // Constants: 0x210 + 0x4 + 0x8C = 0x2A0 ; 0x4|0x8|0x2 = 0xE
+    ".globl _KiSwitchToBootStack@4",
+    "_KiSwitchToBootStack@4:",
+    "  mov esp, [esp+4]",
+    "  sub esp, 0x2A0",
+    "  push 0xE",
+    "  jmp _KiSystemStartupBootStack@0",
 );
 
 // Compile-time guards: if bindgen layout drifts away from the hardcoded
@@ -523,6 +591,39 @@ pub unsafe extern "system" fn KiSetTebBase(
     (*Pcr).__bindgen_anon_1.NtTib.Self_ = TebAddress;
     let gdt_entry = (*Pcr).GDT.add(7); // 0x38 / sizeof(KGDTENTRY)=8
     KiSetGdtDescriptorBase(gdt_entry, TebAddress as ULONG_PTR);
+}
+
+extern "C" {
+    fn KeGetPcr() -> *mut ddk::_KPCR;
+}
+
+extern "system" {
+    fn HalVectorToIDTEntry(Vector: ULONG) -> u8;
+}
+
+/// Read the registered interrupt handler for an IDT vector. Was a
+/// FORCEINLINE in internal/i386/ke.h. The PCR.IDT entry at index
+/// `HalVectorToIDTEntry(Vector)` stores a 32-bit address split across
+/// two 16-bit fields (`Offset` low, `ExtendedOffset` high).
+#[no_mangle]
+pub unsafe extern "system" fn KeQueryInterruptHandler(Vector: ULONG) -> PVOID {
+    let pcr = KeGetPcr() as *mut ddk::_KIPCR;
+    let entry = HalVectorToIDTEntry(Vector) as usize;
+    let e = &*((*pcr).IDT).add(entry);
+    let addr = ((e.ExtendedOffset as u32) << 16) | (e.Offset as u32);
+    addr as PVOID
+}
+
+/// Patch the IDT entry for a given vector to dispatch to a new handler.
+/// Was a FORCEINLINE in internal/i386/ke.h.
+#[no_mangle]
+pub unsafe extern "system" fn KeRegisterInterruptHandler(Vector: ULONG, Handler: PVOID) {
+    let pcr = KeGetPcr() as *mut ddk::_KIPCR;
+    let entry = HalVectorToIDTEntry(Vector) as usize;
+    let e = &mut *((*pcr).IDT).add(entry);
+    let addr = Handler as usize;
+    e.ExtendedOffset = (addr >> 16) as u16;
+    e.Offset = addr as u16;
 }
 
 /// Stamp the trap frame's debug fields. Was a FORCEINLINE in trap_x.h.

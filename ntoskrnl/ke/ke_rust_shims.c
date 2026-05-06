@@ -39,17 +39,10 @@
 /* i386 FORCEINLINE functions from internal/i386/ke.h, intrin_i.h, trap_x.h
  * and ke.h. */
 #ifdef _M_IX86
-#define KeQueryInterruptHandler         _saved_KeQueryInterruptHandler
-#define KeRegisterInterruptHandler      _saved_KeRegisterInterruptHandler
-#define KiSwitchToBootStack             _saved_KiSwitchToBootStack
 #define KiCheckForApcDelivery           _saved_KiCheckForApcDelivery
-#define KiDispatchException0Args        _saved_KiDispatchException0Args
-#define KiDispatchException1Args        _saved_KiDispatchException1Args
-#define KiDispatchException2Args        _saved_KiDispatchException2Args
 #define KiExitV86Trap                   _saved_KiExitV86Trap
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
 #define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
-#define KiExceptionExit                 _saved_KiExceptionExit
 #endif
 
 /* ========================================================================
@@ -75,18 +68,11 @@
 #undef KiRemoveEntryTimer
 
 #ifdef _M_IX86
-#undef KeQueryInterruptHandler
-#undef KeRegisterInterruptHandler
-#undef KiSwitchToBootStack
 #undef KiCheckForApcDelivery
 #undef KiEndInterrupt
-#undef KiDispatchException0Args
-#undef KiDispatchException1Args
-#undef KiDispatchException2Args
 #undef KiExitV86Trap
 #undef KiExitTrapDebugChecks
 #undef KiExitSystemCallDebugChecks
-#undef KiExceptionExit
 #endif
 
 /*
@@ -947,17 +933,8 @@ UCHAR NTAPI HalVectorToIDTEntry(IN ULONG Vector)
     return _rs_HalVectorToIDTEntry(Vector);
 }
 
-/* --- KeQueryInterruptHandler / KeRegisterInterruptHandler ---
- * FORCEINLINE in internal/i386/ke.h. */
-PVOID NTAPI KeQueryInterruptHandler(IN ULONG Vector)
-{
-    return _saved_KeQueryInterruptHandler(Vector);
-}
-
-VOID NTAPI KeRegisterInterruptHandler(IN ULONG Vector, IN PVOID Handler)
-{
-    _saved_KeRegisterInterruptHandler(Vector, Handler);
-}
+/* KeQueryInterruptHandler / KeRegisterInterruptHandler live in Rust now —
+ * ntkrnl-sys/inline/ke_i386.rs (PCR.IDT entry mux). */
 
 /* --- KfRaiseIrql ---
  * FASTCALL HAL function on i386. Rust declares it as extern "system" (stdcall)
@@ -1197,51 +1174,10 @@ void __cdecl KiEndInterrupt(IN KIRQL Irql, IN PKTRAP_FRAME TrapFrame)
     KiEoiHelper(TrapFrame);
 }
 
-/* --- KiDispatchException0Args ---
- * FORCEINLINE DECLSPEC_NORETURN in ke.h. Wraps KiDispatchExceptionFromTrapFrame.
- * Declared as extern "fastcall" in Rust → @KiDispatchException0Args@12 */
-DECLSPEC_NORETURN
-void FASTCALL KiDispatchException0Args(IN NTSTATUS Code,
-                                        IN ULONG_PTR Address,
-                                        IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiDispatchException0Args(Code, Address, TrapFrame);
-}
-
-/* --- KiDispatchException1Args ---
- * FORCEINLINE DECLSPEC_NORETURN in ke.h.
- * Declared as extern "fastcall" in Rust → @KiDispatchException1Args@16 */
-DECLSPEC_NORETURN
-void FASTCALL KiDispatchException1Args(IN NTSTATUS Code,
-                                        IN ULONG_PTR Address,
-                                        IN ULONG P1,
-                                        IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiDispatchException1Args(Code, Address, P1, TrapFrame);
-}
-
-/* --- KiDispatchException2Args ---
- * FORCEINLINE DECLSPEC_NORETURN in ke.h.
- * Declared as extern "fastcall" in Rust → @KiDispatchException2Args@20 */
-DECLSPEC_NORETURN
-void FASTCALL KiDispatchException2Args(IN NTSTATUS Code,
-                                        IN ULONG_PTR Address,
-                                        IN ULONG P1,
-                                        IN ULONG P2,
-                                        IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiDispatchException2Args(Code, Address, P1, P2, TrapFrame);
-}
-
-/* --- KiSwitchToBootStack ---
- * FORCEINLINE DECLSPEC_NORETURN in ke.h. Manipulates ESP and jumps to
- * KiSystemStartupBootStack. Cannot be trivially shimmed as a C call — use asm. */
-CODE_SEG("INIT")
-DECLSPEC_NORETURN
-void NTAPI KiSwitchToBootStack(IN ULONG_PTR InitialStack)
-{
-    _saved_KiSwitchToBootStack(InitialStack);
-}
+/* KiDispatchException{0,1,2}Args + KiSwitchToBootStack live in Rust now
+ * (ntkrnl-sys/inline/ke_i386.rs global_asm!). Each is DECLSPEC_NORETURN
+ * and just delegates to KiDispatchExceptionFromTrapFrame /
+ * KiSystemStartupBootStack. */
 
 /* Ke386FnSave / Ke386FxSave / Ke386FxStore (x87 + SSE state save/restore),
  * Ke386SetCr2, Ke386Set{Ds,Es,Fs,Gs}, Ke386SetGlobalDescriptorTable,
@@ -1262,16 +1198,8 @@ void FASTCALL KiExitV86Trap(IN PKTRAP_FRAME TrapFrame)
 
 /* KiFillTrapFrameDebug lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
-/* --- KiExceptionExit ---
- * FORCEINLINE on i386: calls KiServiceExit2(TrapFrame).
- * Declared as extern "C" in DDK bindgen → _KiExceptionExit (cdecl)
- * Note: ExceptionFrame is unused on i386 (i386 has no KEXCEPTION_FRAME). */
-DECLSPEC_NORETURN
-void __cdecl KiExceptionExit(IN PKTRAP_FRAME TrapFrame,
-                              IN PKEXCEPTION_FRAME ExceptionFrame)
-{
-    _saved_KiExceptionExit(TrapFrame, ExceptionFrame);
-}
+/* KiExceptionExit lives in Rust now (ntkrnl-sys/inline/ke_i386.rs).
+ * On i386 ExceptionFrame is unused; body just tail-calls KiServiceExit2. */
 
 /* KiHandleDebugRegistersOnTrap{Entry,Exit} live in Rust now —
  * pure global_asm! in ntkrnl-sys/inline/ke_i386.rs with hardcoded
