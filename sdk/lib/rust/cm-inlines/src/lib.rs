@@ -107,7 +107,7 @@ unsafe fn lock_ptr(index: u32) -> PEX_PUSH_LOCK {
 // ============================================================================
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpAcquireKcbLockExclusiveByIndex(index: u32) {
+pub unsafe extern "C" fn CmpAcquireKcbLockExclusiveByIndex(index: u32) {
     ExAcquirePushLockExclusive(lock_ptr(index));
     let entry = entry_ptr(index);
     core::ptr::write_volatile(
@@ -117,17 +117,17 @@ pub unsafe extern "C" fn _rs_CmpAcquireKcbLockExclusiveByIndex(index: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpAcquireKcbLockExclusive(kcb: *mut CM_KEY_CONTROL_BLOCK) {
+pub unsafe extern "C" fn CmpAcquireKcbLockExclusive(kcb: *mut CM_KEY_CONTROL_BLOCK) {
     let kcb = opaque_ptr(kcb);
     let conv_key = core::ptr::read_volatile(core::ptr::addr_of!(
         (*kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey
     ));
-    _rs_CmpAcquireKcbLockExclusiveByIndex(get_hash_index(conv_key));
+    CmpAcquireKcbLockExclusiveByIndex(get_hash_index(conv_key));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpAcquireKcbLockExclusiveByKey(conv_key: u32) {
-    _rs_CmpAcquireKcbLockExclusiveByIndex(get_hash_index(conv_key));
+pub unsafe extern "C" fn CmpAcquireKcbLockExclusiveByKey(conv_key: u32) {
+    CmpAcquireKcbLockExclusiveByIndex(get_hash_index(conv_key));
 }
 
 // ============================================================================
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn _rs_CmpAcquireKcbLockExclusiveByKey(conv_key: u32) {
 // ============================================================================
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpReleaseKcbLockByIndex(index: u32) {
+pub unsafe extern "C" fn CmpReleaseKcbLockByIndex(index: u32) {
     let entry = entry_ptr(index);
     core::ptr::write_volatile(
         core::ptr::addr_of_mut!((*entry).Owner),
@@ -145,17 +145,17 @@ pub unsafe extern "C" fn _rs_CmpReleaseKcbLockByIndex(index: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpReleaseKcbLock(kcb: *mut CM_KEY_CONTROL_BLOCK) {
+pub unsafe extern "C" fn CmpReleaseKcbLock(kcb: *mut CM_KEY_CONTROL_BLOCK) {
     let kcb = opaque_ptr(kcb);
     let conv_key = core::ptr::read_volatile(core::ptr::addr_of!(
         (*kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey
     ));
-    _rs_CmpReleaseKcbLockByIndex(get_hash_index(conv_key));
+    CmpReleaseKcbLockByIndex(get_hash_index(conv_key));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpReleaseKcbLockByKey(conv_key: u32) {
-    _rs_CmpReleaseKcbLockByIndex(get_hash_index(conv_key));
+pub unsafe extern "C" fn CmpReleaseKcbLockByKey(conv_key: u32) {
+    CmpReleaseKcbLockByIndex(get_hash_index(conv_key));
 }
 
 // ============================================================================
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn _rs_CmpReleaseKcbLockByKey(conv_key: u32) {
 // ============================================================================
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpTryToConvertKcbSharedToExclusive(
+pub unsafe extern "C" fn CmpTryToConvertKcbSharedToExclusive(
     kcb: *mut CM_KEY_CONTROL_BLOCK,
 ) -> u8 {
     let kcb = opaque_ptr(kcb);
@@ -184,9 +184,9 @@ pub unsafe extern "C" fn _rs_CmpTryToConvertKcbSharedToExclusive(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rs_CmpConvertKcbSharedToExclusive(
+pub unsafe extern "C" fn CmpConvertKcbSharedToExclusive(
     kcb: *mut CM_KEY_CONTROL_BLOCK,
 ) {
-    _rs_CmpReleaseKcbLock(kcb);
-    _rs_CmpAcquireKcbLockExclusive(kcb);
+    CmpReleaseKcbLock(kcb);
+    CmpAcquireKcbLockExclusive(kcb);
 }

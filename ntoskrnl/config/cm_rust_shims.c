@@ -70,47 +70,11 @@
  * `codegen-units = 256`) so the captures(none) cross-CGU contagion that
  * killed the first pilot can't reach into ntoskrnl-rust's config code.
  */
-extern void _rs_CmpAcquireKcbLockExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
-extern void _rs_CmpAcquireKcbLockExclusiveByIndex(ULONG Index);
-extern void _rs_CmpAcquireKcbLockExclusiveByKey(ULONG ConvKey);
-extern void _rs_CmpReleaseKcbLock(PCM_KEY_CONTROL_BLOCK Kcb);
-extern void _rs_CmpReleaseKcbLockByIndex(ULONG Index);
-extern void _rs_CmpReleaseKcbLockByKey(ULONG ConvKey);
-extern unsigned char _rs_CmpTryToConvertKcbSharedToExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
-extern void _rs_CmpConvertKcbSharedToExclusive(PCM_KEY_CONTROL_BLOCK Kcb);
-
-VOID CmpAcquireKcbLockExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
-{
-    _rs_CmpAcquireKcbLockExclusive(Kcb);
-}
-VOID CmpAcquireKcbLockExclusiveByIndex(IN ULONG Index)
-{
-    _rs_CmpAcquireKcbLockExclusiveByIndex(Index);
-}
-VOID CmpAcquireKcbLockExclusiveByKey(IN ULONG ConvKey)
-{
-    _rs_CmpAcquireKcbLockExclusiveByKey(ConvKey);
-}
-VOID CmpReleaseKcbLockByIndex(IN ULONG Index)
-{
-    _rs_CmpReleaseKcbLockByIndex(Index);
-}
-VOID CmpReleaseKcbLock(IN PCM_KEY_CONTROL_BLOCK Kcb)
-{
-    _rs_CmpReleaseKcbLock(Kcb);
-}
-VOID CmpReleaseKcbLockByKey(IN ULONG ConvKey)
-{
-    _rs_CmpReleaseKcbLockByKey(ConvKey);
-}
-BOOLEAN CmpTryToConvertKcbSharedToExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
-{
-    return (BOOLEAN)_rs_CmpTryToConvertKcbSharedToExclusive(Kcb);
-}
-VOID CmpConvertKcbSharedToExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb)
-{
-    _rs_CmpConvertKcbSharedToExclusive(Kcb);
-}
+/* Cmp* exclusive-acquire / release / shared→exclusive convert trampolines —
+ * REMOVED. The cm-inlines rlib (sdk/lib/rust/cm-inlines/src/lib.rs) now
+ * exports the bare `Cmp*` symbol names directly with `extern "C"` (cdecl);
+ * Rust callers in `config/cmkcbncb.rs` resolve via bindgen-emitted
+ * `extern "C" { fn Cmp*(...) }` decls. */
 
 /* === Phase 4: outline wrappers for cm_x.h macros (KCB/NCB shared lock helpers,
  *      CmpIsKcbLockedExclusive). Body re-implements the macro inline. ===

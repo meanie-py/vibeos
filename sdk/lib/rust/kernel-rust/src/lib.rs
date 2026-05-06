@@ -118,39 +118,40 @@ mod _force_ntprintf_symbols {
         ntprintf_format_a;
 }
 
-// Defensive symbol pull for the cm-inlines KCB-lock Rust impls. The C-side
-// `cm_rust_shims.c` outlines call these by name; without this `[used]` block
-// rustc/lld may strip the rlib's contribution from the final staticlib.
+// Defensive symbol pull for the cm-inlines KCB-lock Rust impls. cm-inlines
+// now exports the bare `Cmp*` names directly (no `_rs_` prefix, no C
+// trampoline) — Rust callers in `config/cmkcbncb.rs` resolve via the
+// bindgen-emitted `extern "C" { fn Cmp*(...) }` decls.
 mod _force_cm_inlines_symbols {
     use core::ffi::c_void;
     extern "C" {
-        fn _rs_CmpAcquireKcbLockExclusive(kcb: *mut c_void);
-        fn _rs_CmpAcquireKcbLockExclusiveByIndex(index: u32);
-        fn _rs_CmpAcquireKcbLockExclusiveByKey(conv_key: u32);
-        fn _rs_CmpReleaseKcbLock(kcb: *mut c_void);
-        fn _rs_CmpReleaseKcbLockByIndex(index: u32);
-        fn _rs_CmpReleaseKcbLockByKey(conv_key: u32);
-        fn _rs_CmpTryToConvertKcbSharedToExclusive(kcb: *mut c_void) -> u8;
-        fn _rs_CmpConvertKcbSharedToExclusive(kcb: *mut c_void);
+        fn CmpAcquireKcbLockExclusive(kcb: *mut c_void);
+        fn CmpAcquireKcbLockExclusiveByIndex(index: u32);
+        fn CmpAcquireKcbLockExclusiveByKey(conv_key: u32);
+        fn CmpReleaseKcbLock(kcb: *mut c_void);
+        fn CmpReleaseKcbLockByIndex(index: u32);
+        fn CmpReleaseKcbLockByKey(conv_key: u32);
+        fn CmpTryToConvertKcbSharedToExclusive(kcb: *mut c_void) -> u8;
+        fn CmpConvertKcbSharedToExclusive(kcb: *mut c_void);
     }
     #[used]
     static REFS_PTR: [unsafe extern "C" fn(*mut c_void); 4] = [
-        _rs_CmpAcquireKcbLockExclusive,
-        _rs_CmpReleaseKcbLock,
-        _rs_CmpConvertKcbSharedToExclusive,
-        // _rs_CmpTryToConvertKcbSharedToExclusive returns u8 — typed below
-        _rs_CmpReleaseKcbLock, // padding to keep the array uniform
+        CmpAcquireKcbLockExclusive,
+        CmpReleaseKcbLock,
+        CmpConvertKcbSharedToExclusive,
+        // CmpTryToConvertKcbSharedToExclusive returns u8 — typed below
+        CmpReleaseKcbLock, // padding to keep the array uniform
     ];
     #[used]
     static REFS_INDEX: [unsafe extern "C" fn(u32); 4] = [
-        _rs_CmpAcquireKcbLockExclusiveByIndex,
-        _rs_CmpAcquireKcbLockExclusiveByKey,
-        _rs_CmpReleaseKcbLockByIndex,
-        _rs_CmpReleaseKcbLockByKey,
+        CmpAcquireKcbLockExclusiveByIndex,
+        CmpAcquireKcbLockExclusiveByKey,
+        CmpReleaseKcbLockByIndex,
+        CmpReleaseKcbLockByKey,
     ];
     #[used]
     static REF_TRY: unsafe extern "C" fn(*mut c_void) -> u8 =
-        _rs_CmpTryToConvertKcbSharedToExclusive;
+        CmpTryToConvertKcbSharedToExclusive;
 }
 
 // Defensive symbol pull for the ke-inlines APC/Process/DeviceQueue lock
