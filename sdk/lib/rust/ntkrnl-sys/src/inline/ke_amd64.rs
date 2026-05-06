@@ -367,6 +367,22 @@ core::arch::global_asm!(
     "  pop rbx",
     "  ret",
 
+    // KiCpuId(CpuInfo*, Function) — identical body to __cpuid, this is the
+    // NTAPI export the kernel uses (was a FORCEINLINE in internal/amd64/ke.h)
+    ".globl KiCpuId",
+    "KiCpuId:",
+    "  push rbx",
+    "  mov r9, rcx",
+    "  mov eax, edx",
+    "  xor ecx, ecx",
+    "  cpuid",
+    "  mov [r9], eax",
+    "  mov [r9+4], ebx",
+    "  mov [r9+8], ecx",
+    "  mov [r9+12], edx",
+    "  pop rbx",
+    "  ret",
+
     // __cpuidex(CPUInfo*, InfoType, ECXValue)
     // MS x64 ABI: rcx=CPUInfo, edx=InfoType, r8d=ECXValue
     ".globl __cpuidex",

@@ -17,116 +17,40 @@
  * headers, we #undef and define real non-inline functions with original names.
  * ======================================================================== */
 
-/* ke_x.h FORCEINLINE functions */
-#define KiAcquireDispatcherLock         _saved_KiAcquireDispatcherLock
-#define KiReleaseDispatcherLock         _saved_KiReleaseDispatcherLock
-#define KiAcquireThreadLock             _saved_KiAcquireThreadLock
-#define KiReleaseThreadLock             _saved_KiReleaseThreadLock
-#define KiAcquireDispatcherObject       _saved_KiAcquireDispatcherObject
-#define KiReleaseDispatcherObject       _saved_KiReleaseDispatcherObject
-#define KiAcquireDispatcherLockAtSynchLevel _saved_KiAcquireDispatcherLockAtSynchLevel
+/* Phase 1 rename: capture FORCEINLINE bodies as `_saved_<Name>` so the
+ * non-inline definitions later in this file can reuse the original symbol
+ * names. Only the functions still consumed below need this — fns whose C
+ * body is now a one-line `_rs_*` delegation into a sibling rlib do NOT
+ * need the rename and are not listed.
+ *
+ * KeRaiseIrqlToSynchLevel is NTHALAPI (dllimport) on i386 — uses a direct
+ * IAT call below, not the rename pattern.
+ * KeQuerySystemTime is a function-like macro (not FORCEINLINE), provided
+ * by ps_rust_shims.c.
+ * KeGetPcr is a macro (i386 __readfsdword) — a static __inline trampoline
+ * captures the value at the function definition site, see below. */
+
+/* Generic ke_x.h FORCEINLINE outlines used by KiAttachProcess +
+ * KiRemoveEntryTimer. */
 #define KiReleaseDispatcherLockFromSynchLevel _saved_KiReleaseDispatcherLockFromSynchLevel
-#define KiInsertDeferredReadyList       _saved_KiInsertDeferredReadyList
-#define KiRescheduleThread              _saved_KiRescheduleThread
-#define KiSetThreadSwapBusy             _saved_KiSetThreadSwapBusy
-#define KiAcquirePrcbLock               _saved_KiAcquirePrcbLock
-#define KiReleasePrcbLock               _saved_KiReleasePrcbLock
-#define KiTryThreadLock                 _saved_KiTryThreadLock
-#define KiCheckDeferredReadyList        _saved_KiCheckDeferredReadyList
-#define KiRequestApcInterrupt           _saved_KiRequestApcInterrupt
-#define KiAcquireTimerLock              _saved_KiAcquireTimerLock
-#define KiReleaseTimerLock              _saved_KiReleaseTimerLock
-#define KiAcquireApcLockRaiseToSynch    _saved_KiAcquireApcLockRaiseToSynch
-#define KiAcquireApcLockAtSynchLevel    _saved_KiAcquireApcLockAtSynchLevel
-#define KiAcquireApcLockRaiseToDpc      _saved_KiAcquireApcLockRaiseToDpc
-#define KiReleaseApcLock                _saved_KiReleaseApcLock
 #define KiReleaseApcLockFromSynchLevel  _saved_KiReleaseApcLockFromSynchLevel
-#define KiAcquireProcessLockRaiseToSynch _saved_KiAcquireProcessLockRaiseToSynch
-#define KiReleaseProcessLock            _saved_KiReleaseProcessLock
-#define KiReleaseProcessLockFromSynchLevel _saved_KiReleaseProcessLockFromSynchLevel
-#define KiAcquireDeviceQueueLock        _saved_KiAcquireDeviceQueueLock
-#define KiReleaseDeviceQueueLock        _saved_KiReleaseDeviceQueueLock
-#define KiRecalculateDueTime            _saved_KiRecalculateDueTime
-#define KiCheckThreadStackSwap          _saved_KiCheckThreadStackSwap
-#define KiCheckAlertability             _saved_KiCheckAlertability
-#define KiComputeTimerTableIndex        _saved_KiComputeTimerTableIndex
 #define KiRemoveEntryTimer              _saved_KiRemoveEntryTimer
-#define KxInsertTimer                   _saved_KxInsertTimer
-#define KiComputeDueTime                _saved_KiComputeDueTime
-#define KxRemoveTreeTimer               _saved_KxRemoveTreeTimer
-#define KxSetTimerForThreadWait         _saved_KxSetTimerForThreadWait
-#define KxUnwaitThread                  _saved_KxUnwaitThread
-#define KxUnwaitThreadForEvent          _saved_KxUnwaitThreadForEvent
-#define KxQueueReadyThread              _saved_KxQueueReadyThread
-#define KiSelectReadyThread             _saved_KiSelectReadyThread
-#define KiComputeNewPriority            _saved_KiComputeNewPriority
-#define _KeInitializeGuardedMutex       _saved__KeInitializeGuardedMutex
-#define _KeAcquireGuardedMutexUnsafe    _saved__KeAcquireGuardedMutexUnsafe
-#define _KeReleaseGuardedMutexUnsafe    _saved__KeReleaseGuardedMutexUnsafe
-#define _KeAcquireGuardedMutex          _saved__KeAcquireGuardedMutex
-#define _KeReleaseGuardedMutex          _saved__KeReleaseGuardedMutex
-#define _KeTryToAcquireGuardedMutex     _saved__KeTryToAcquireGuardedMutex
-#define KiAcquireNmiListLock            _saved_KiAcquireNmiListLock
-#define KiReleaseNmiListLock            _saved_KiReleaseNmiListLock
 
-/* spinlock.h FORCEINLINE functions */
-#define KxAcquireSpinLock               _saved_KxAcquireSpinLock
-#define KxReleaseSpinLock               _saved_KxReleaseSpinLock
-
-/* ke.h / arch-specific FORCEINLINE functions */
-/* KeQuerySystemTime is a function-like macro, not FORCEINLINE.
- * Phase 1 rename doesn't work — we implement it directly below. */
-/* KeRaiseIrqlToSynchLevel is NTHALAPI (dllimport) on i386 — Phase 1 rename
- * doesn't work because _saved_ makes the compiler look for a nonexistent import.
- * Use trampoline pattern instead — capture before undef. */
-
-/* intrinsics */
-/* KfRaiseIrql/KfLowerIrql are NOT FORCEINLINE on all arches — do NOT rename.
- * On amd64 they are plain extern HAL imports.  On ARM64 they are HAL dllimport.
- * On i386 they may be FORCEINLINE or extern depending on DDK version. */
-
-/* i386 FORCEINLINE functions from internal/i386/ke.h and intrin_i.h */
+/* i386 FORCEINLINE functions from internal/i386/ke.h, intrin_i.h, trap_x.h
+ * and ke.h. */
 #ifdef _M_IX86
-#define Ke386GetTr                      _saved_Ke386GetTr
-#define Ke386SanitizeSeg                _saved_Ke386SanitizeSeg
-#define Ke386SanitizeFlags              _saved_Ke386SanitizeFlags
-/* KiFlushNPXState is a real function (not FORCEINLINE) — now in Rust cpu.rs.
- * Do NOT Phase 1 rename it. */
-#define KiUserTrap                      _saved_KiUserTrap
 #define KeQueryInterruptHandler         _saved_KeQueryInterruptHandler
 #define KeRegisterInterruptHandler      _saved_KeRegisterInterruptHandler
-/* Note: Ke386FnInit, Ke386SaveFpuState, Ke386RestoreFpuState,
- * Ke386ClearFpExceptions are function-like macros (#define Name(...))
- * in intrin_i.h — cannot be Phase 1 renamed. Will use inline asm shims instead. */
 #define KiGetThreadNpxArea              _saved_KiGetThreadNpxArea
-#define KiSwitchToBootStack              _saved_KiSwitchToBootStack
-#define KeInvalidateTlbEntry            _saved_KeInvalidateTlbEntry
+#define KiSwitchToBootStack             _saved_KiSwitchToBootStack
 #define KiCheckForApcDelivery           _saved_KiCheckForApcDelivery
 #define KiGetGdtEntry                   _saved_KiGetGdtEntry
 #define KiSetGdtDescriptorBase          _saved_KiSetGdtDescriptorBase
-#define InterlockedBitTestAndSet        _saved_InterlockedBitTestAndSet
-#define InterlockedBitTestAndReset      _saved_InterlockedBitTestAndReset
-/* trap_x.h FORCEINLINE functions */
 #define KiEnterTrap                     _saved_KiEnterTrap
 #define KiEnterInterruptTrap            _saved_KiEnterInterruptTrap
-#define KiEndInterrupt                  _saved_KiEndInterrupt
-/* ke.h FORCEINLINE KiDispatchException helpers */
 #define KiDispatchException0Args        _saved_KiDispatchException0Args
 #define KiDispatchException1Args        _saved_KiDispatchException1Args
 #define KiDispatchException2Args        _saved_KiDispatchException2Args
-/* intrin_i.h FORCEINLINE / macros for segment/CR registers */
-#define Ke386FnSave                     _saved_Ke386FnSave
-#define Ke386FxSave                     _saved_Ke386FxSave
-#define Ke386FxStore                    _saved_Ke386FxStore
-#define Ke386GetFs                      _saved_Ke386GetFs
-#define Ke386SetCr2                     _saved_Ke386SetCr2
-#define Ke386SetDs                      _saved_Ke386SetDs
-#define Ke386SetEs                      _saved_Ke386SetEs
-#define Ke386SetFs                      _saved_Ke386SetFs
-#define Ke386SetGlobalDescriptorTable   _saved_Ke386SetGlobalDescriptorTable
-#define Ke386SetLocalDescriptorTable    _saved_Ke386SetLocalDescriptorTable
-#define Ke386SetTr                      _saved_Ke386SetTr
-/* trap_x.h additional FORCEINLINE functions */
 #define KiEnterV86Trap                  _saved_KiEnterV86Trap
 #define KiExitV86Trap                   _saved_KiExitV86Trap
 #define KiFillTrapFrameDebug            _saved_KiFillTrapFrameDebug
@@ -134,53 +58,8 @@
 #define KiHandleDebugRegistersOnTrapExit  _saved_KiHandleDebugRegistersOnTrapExit
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
 #define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
-/* ke.h FORCEINLINE functions */
-#define KiGetLinkedTrapFrame            _saved_KiGetLinkedTrapFrame
 #define KiExceptionExit                 _saved_KiExceptionExit
-#define Ki386AdjustEsp0                 _saved_Ki386AdjustEsp0
-/* intrin_i.h — Ke386SetGs is a macro, handled below */
-/* internal/i386/ke.h — KiSetTebBase is FORCEINLINE */
 #define KiSetTebBase                    _saved_KiSetTebBase
-#define Ke386SetGdtEntryBase            _saved_Ke386SetGdtEntryBase
-#endif
-
-#if defined(_M_IX86) || defined(_M_AMD64)
-#define KiCpuId                         _saved_KiCpuId
-#endif
-
-/* amd64 intrinsics + FORCEINLINE functions used by Rust cpu.rs / interrupt.rs */
-#ifdef _M_AMD64
-#define __readcr0                       _saved___readcr0
-#define __readcr2                       _saved___readcr2
-#define __readcr3                       _saved___readcr3
-#define __readcr4                       _saved___readcr4
-#define __readcr8                       _saved___readcr8
-#define __writecr0                      _saved___writecr0
-#define __writecr3                      _saved___writecr3
-#define __writecr4                      _saved___writecr4
-#define __writecr8                      _saved___writecr8
-#define __readdr                        _saved___readdr
-#define __writedr                       _saved___writedr
-#define __readmsr                       _saved___readmsr
-#define __writemsr                      _saved___writemsr
-#define __lidt                          _saved___lidt
-#define __lgdt                          _saved___lgdt
-#define __sidt                          _saved___sidt
-#define __sgdt                          _saved___sgdt
-#define __sldt                          _saved___sldt
-#define __str                           _saved___str
-#define __wbinvd                        _saved___wbinvd
-#define __swapgs                        _saved___swapgs
-#define KeQueryInterruptHandler         _saved_KeQueryInterruptHandler
-#define KeRegisterInterruptHandler      _saved_KeRegisterInterruptHandler
-#define KiSendEOI                       _saved_KiSendEOI
-#define KiGetGdtEntry                   _saved_KiGetGdtEntry
-#define KiInitGdtEntry                  _saved_KiInitGdtEntry
-#define KiGetGdtDescriptorBase          _saved_KiGetGdtDescriptorBase
-#define KiSetGdtDescriptorBase          _saved_KiSetGdtDescriptorBase
-#define KiSetGdtDescriptorLimit         _saved_KiSetGdtDescriptorLimit
-#define KiSaveXState                    _saved_KiSaveXState
-#define KiRestoreXState                 _saved_KiRestoreXState
 #endif
 
 /* ========================================================================
@@ -201,94 +80,24 @@
  * Phase 3: Undef Phase 1 renames
  * ======================================================================== */
 
-#undef KiAcquireDispatcherLock
-#undef KiReleaseDispatcherLock
-#undef KiAcquireThreadLock
-#undef KiReleaseThreadLock
-#undef KiAcquireDispatcherObject
-#undef KiReleaseDispatcherObject
-#undef KiAcquireDispatcherLockAtSynchLevel
 #undef KiReleaseDispatcherLockFromSynchLevel
-#undef KiInsertDeferredReadyList
-#undef KiRescheduleThread
-#undef KiSetThreadSwapBusy
-#undef KiAcquirePrcbLock
-#undef KiReleasePrcbLock
-#undef KiTryThreadLock
-#undef KiCheckDeferredReadyList
-#undef KiRequestApcInterrupt
-#undef KiAcquireTimerLock
-#undef KiReleaseTimerLock
-#undef KiAcquireApcLockRaiseToSynch
-#undef KiAcquireApcLockAtSynchLevel
-#undef KiAcquireApcLockRaiseToDpc
-#undef KiReleaseApcLock
 #undef KiReleaseApcLockFromSynchLevel
-#undef KiAcquireProcessLockRaiseToSynch
-#undef KiReleaseProcessLock
-#undef KiReleaseProcessLockFromSynchLevel
-#undef KiAcquireDeviceQueueLock
-#undef KiReleaseDeviceQueueLock
-#undef KiRecalculateDueTime
-#undef KiCheckThreadStackSwap
-#undef KiCheckAlertability
-#undef KiComputeTimerTableIndex
 #undef KiRemoveEntryTimer
-#undef KxInsertTimer
-#undef KiComputeDueTime
-#undef KxRemoveTreeTimer
-#undef KxSetTimerForThreadWait
-#undef KxUnwaitThread
-#undef KxUnwaitThreadForEvent
-#undef KxQueueReadyThread
-#undef KiSelectReadyThread
-#undef KiComputeNewPriority
-#undef _KeInitializeGuardedMutex
-#undef _KeAcquireGuardedMutexUnsafe
-#undef _KeReleaseGuardedMutexUnsafe
-#undef _KeAcquireGuardedMutex
-#undef _KeReleaseGuardedMutex
-#undef _KeTryToAcquireGuardedMutex
-#undef KiAcquireNmiListLock
-#undef KiReleaseNmiListLock
-#undef KxAcquireSpinLock
-#undef KxReleaseSpinLock
-/* KeQuerySystemTime #undef moved to its function definition below */
-/* KeRaiseIrqlToSynchLevel — not Phase 1 renamed, uses trampoline pattern */
-/* KfRaiseIrql/KfLowerIrql were not renamed — no undef needed */
+
 #ifdef _M_IX86
-#undef Ke386GetTr
-#undef Ke386SanitizeSeg
-#undef Ke386SanitizeFlags
-/* KiFlushNPXState — not Phase 1 renamed, no undef needed */
-#undef KiUserTrap
 #undef KeQueryInterruptHandler
 #undef KeRegisterInterruptHandler
 #undef KiGetThreadNpxArea
 #undef KiSwitchToBootStack
-#undef KeInvalidateTlbEntry
 #undef KiCheckForApcDelivery
 #undef KiGetGdtEntry
 #undef KiSetGdtDescriptorBase
-#undef InterlockedBitTestAndSet
-#undef InterlockedBitTestAndReset
 #undef KiEnterTrap
 #undef KiEnterInterruptTrap
 #undef KiEndInterrupt
 #undef KiDispatchException0Args
 #undef KiDispatchException1Args
 #undef KiDispatchException2Args
-#undef Ke386FnSave
-#undef Ke386FxSave
-#undef Ke386FxStore
-#undef Ke386GetFs
-#undef Ke386SetCr2
-#undef Ke386SetDs
-#undef Ke386SetEs
-#undef Ke386SetFs
-#undef Ke386SetGlobalDescriptorTable
-#undef Ke386SetLocalDescriptorTable
-#undef Ke386SetTr
 #undef KiEnterV86Trap
 #undef KiExitV86Trap
 #undef KiFillTrapFrameDebug
@@ -296,48 +105,8 @@
 #undef KiHandleDebugRegistersOnTrapExit
 #undef KiExitTrapDebugChecks
 #undef KiExitSystemCallDebugChecks
-#undef KiGetLinkedTrapFrame
 #undef KiExceptionExit
-#undef Ki386AdjustEsp0
 #undef KiSetTebBase
-#undef Ke386SetGdtEntryBase
-#endif
-#if defined(_M_IX86) || defined(_M_AMD64)
-#undef KiCpuId
-#endif
-
-#ifdef _M_AMD64
-#undef __readcr0
-#undef __readcr2
-#undef __readcr3
-#undef __readcr4
-#undef __readcr8
-#undef __writecr0
-#undef __writecr3
-#undef __writecr4
-#undef __writecr8
-#undef __readdr
-#undef __writedr
-#undef __readmsr
-#undef __writemsr
-#undef __lidt
-#undef __lgdt
-#undef __sidt
-#undef __sgdt
-#undef __sldt
-#undef __str
-#undef __wbinvd
-#undef __swapgs
-#undef KeQueryInterruptHandler
-#undef KeRegisterInterruptHandler
-#undef KiSendEOI
-#undef KiGetGdtEntry
-#undef KiInitGdtEntry
-#undef KiGetGdtDescriptorBase
-#undef KiSetGdtDescriptorBase
-#undef KiSetGdtDescriptorLimit
-#undef KiSaveXState
-#undef KiRestoreXState
 #endif
 
 /*
@@ -363,8 +132,6 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
  * NOTE: Generic ke_x.h functions are now implemented in Rust
  * (ntkrnl-sys/src/inline/ke.rs) with export wrappers in shim_exports.rs.
  * ======================================================================== */
-
-#if 1 /* Generic Phase 4 — TEMPORARILY RESTORED for debugging */
 
 /* --- Dispatcher/thread lock (ke_x.h) — shared with EX subsystem ---
  *
@@ -765,8 +532,6 @@ VOID KiReleaseNmiListLock(IN KIRQL OldIrql)
     _rs_KiReleaseNmiListLock(OldIrql);
 }
 
-#endif /* Generic Phase 4 — now in Rust */
-
 /* KeRaiseIrql/KeLowerIrql — already provided by tier1_rust_shims.c (i386)
  * and ps_rust_shims.c (amd64/arm64). Do not duplicate here. */
 
@@ -812,15 +577,8 @@ KIRQL KeRaiseIrqlToSynchLevel(VOID)
 
 /* KeQuerySystemTime is already provided by ps_rust_shims.c — do not duplicate here. */
 
-/* --- CPUID (x86/amd64 only) --- */
-#if defined(_M_IX86) || defined(_M_AMD64)
-
-VOID NTAPI KiCpuId(PCPU_INFO CpuInfo, ULONG Function)
-{
-    _saved_KiCpuId(CpuInfo, Function);
-}
-
-#endif /* _M_IX86 || _M_AMD64 */
+/* KiCpuId lives in Rust now — sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs
+ * (i386 NTAPI/stdcall) and ke_amd64.rs (Microsoft x64 ABI). */
 
 /* --- MSR read/write (x86/amd64 only) ---
  * Rust code calls these as extern "C" functions. On x86/amd64, the compiler
@@ -840,23 +598,8 @@ VOID _wrmsr(ULONG Register, ULONGLONG Value)
 
 #endif /* _M_IX86 */
 
-#if 0 /* InterlockedBitTestAndSet/Reset cdecl — now in Rust inline/ke.rs */
-/* --- InterlockedBitTestAndSet / InterlockedBitTestAndReset ---
- * These are compiler intrinsics mapped to macros in wdm.h.
- * Provide linker symbols for Rust. */
-#undef InterlockedBitTestAndSet
-#undef InterlockedBitTestAndReset
-
-BOOLEAN InterlockedBitTestAndSet(volatile LONG *Base, LONG Bit)
-{
-    return _interlockedbittestandset(Base, Bit);
-}
-
-BOOLEAN InterlockedBitTestAndReset(volatile LONG *Base, LONG Bit)
-{
-    return _interlockedbittestandreset(Base, Bit);
-}
-#endif /* InterlockedBitTestAndSet/Reset cdecl */
+/* InterlockedBitTestAndSet / InterlockedBitTestAndReset live in Rust
+ * inline/ke.rs (with shim_exports providing the linker symbols). */
 
 /* KeEnterCriticalRegion / KeLeaveCriticalRegion are already provided by
  * ob_rust_shims.c — do not duplicate here. */
@@ -890,8 +633,6 @@ PKPCR KeGetPcr(VOID)
     return _saved_KeGetPcr();
 }
 #endif
-
-#if 1 /* Macro trampolines — TEMPORARILY RESTORED for debugging */
 
 /* --- Function-like macro shims ---
  * These are #define macros in ke_x.h. Phase 2 (sibling rlib `ke-macros`)
@@ -1046,8 +787,6 @@ void KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
     KxUnwaitThread(Header, Increment);
 }
 
-#endif /* Macro trampolines + statement macros + utilities — now in Rust */
-
 /* --- HalQuerySystemInformation / HalSetSystemInformation ---
  * Phase 2 HAL-dispatch batch — bodies in `ke-macros::_rs_HalQuery/Set*`.
  * These are NTAPI (stdcall on i386), so the trampoline keeps the NTAPI
@@ -1161,232 +900,14 @@ KiAttachProcess(IN PKTHREAD Thread,
     }
 }
 
-#if 0 /* amd64 intrinsics — now in Rust inline/ke_amd64.rs + shim_exports.rs */
-/* ========================================================================
- * amd64 compiler intrinsic wrappers
- *
- * These are __INTRIN_INLINE (static inline) in the C headers but Rust
- * needs callable linker symbols. Phase 1 renamed them to _saved_* above,
- * so we can define real functions here that forward to the saved inlines.
- * ======================================================================== */
-#ifdef _M_AMD64
-
-ULONG_PTR __readcr0(VOID)    { return _saved___readcr0(); }
-ULONG_PTR __readcr2(VOID)    { return _saved___readcr2(); }
-ULONG_PTR __readcr3(VOID)    { return _saved___readcr3(); }
-ULONG_PTR __readcr4(VOID)    { return _saved___readcr4(); }
-ULONG_PTR __readcr8(VOID)    { return _saved___readcr8(); }
-
-void __writecr0(ULONG_PTR v) { _saved___writecr0(v); }
-void __writecr3(ULONG_PTR v) { _saved___writecr3(v); }
-void __writecr4(ULONG_PTR v) { _saved___writecr4(v); }
-void __writecr8(ULONG_PTR v) { _saved___writecr8(v); }
-
-ULONG_PTR __readdr(ULONG reg)              { return _saved___readdr(reg); }
-void __writedr(ULONG reg, ULONG_PTR val)   { _saved___writedr(reg, val); }
-
-ULONGLONG __readmsr(ULONG reg)               { return _saved___readmsr(reg); }
-void __writemsr(ULONG reg, ULONGLONG val)    { _saved___writemsr(reg, val); }
-
-void __lidt(void *Source) { _saved___lidt(Source); }
-void __lgdt(void *Source) { _saved___lgdt(Source); }
-void __sidt(void *Dest)   { _saved___sidt(Dest); }
-void __sgdt(void *Dest)   { _saved___sgdt(Dest); }
-void __sldt(USHORT *Ldtr)  { _saved___sldt(Ldtr); }
-void __str(USHORT *Tr)     { _saved___str(Tr); }
-
-void __wbinvd(VOID)
-{
-    _saved___wbinvd();
-}
-
-void KeMemoryBarrier(VOID)
-{
-    __asm__ __volatile__("mfence" : : : "memory");
-}
-
-/* --- KeQueryInterruptHandler / KeRegisterInterruptHandler ---
- * FORCEINLINE in internal/amd64/ke.h. The Rust interrupt.rs declares them
- * as extern "system" imports. Provide callable symbols via Phase 1 rename. */
-PVOID NTAPI KeQueryInterruptHandler(IN ULONG Vector)
-{
-    return _saved_KeQueryInterruptHandler(Vector);
-}
-
-VOID NTAPI KeRegisterInterruptHandler(IN ULONG Vector, IN PVOID Handler)
-{
-    _saved_KeRegisterInterruptHandler(Vector, Handler);
-}
-
-/* --- Clang builtin wrappers ---
- * __cpuid, __cpuidex, _mm_getcsr, _mm_setcsr are Clang builtins.
- * Can't redefine as C functions. Use file-scope asm to provide linker symbols. */
-/* Microsoft x64 ABI: args in rcx, rdx, r8, r9 */
-__asm__(
-    ".globl __cpuid\n"
-    "__cpuid:\n"
-    "  pushq %rbx\n"
-    "  movq  %rcx, %r9\n"          /* r9 = CPUInfo ptr (save rcx) */
-    "  movl  %edx, %eax\n"         /* eax = InfoType */
-    "  xorl  %ecx, %ecx\n"         /* ecx = 0 (default subleaf) */
-    "  cpuid\n"
-    "  movl  %eax,  (%r9)\n"
-    "  movl  %ebx, 4(%r9)\n"
-    "  movl  %ecx, 8(%r9)\n"
-    "  movl  %edx,12(%r9)\n"
-    "  popq  %rbx\n"
-    "  retq\n"
-    "\n"
-    ".globl __cpuidex\n"
-    "__cpuidex:\n"
-    "  pushq %rbx\n"
-    "  movq  %rcx, %r9\n"          /* r9 = CPUInfo ptr */
-    "  movl  %edx, %eax\n"         /* eax = InfoType */
-    "  movl  %r8d, %ecx\n"         /* ecx = ECXValue */
-    "  cpuid\n"
-    "  movl  %eax,  (%r9)\n"
-    "  movl  %ebx, 4(%r9)\n"
-    "  movl  %ecx, 8(%r9)\n"
-    "  movl  %edx,12(%r9)\n"
-    "  popq  %rbx\n"
-    "  retq\n"
-    "\n"
-    ".globl _mm_getcsr\n"
-    "_mm_getcsr:\n"
-    "  subq  $4, %rsp\n"
-    "  stmxcsr (%rsp)\n"
-    "  movl  (%rsp), %eax\n"
-    "  addq  $4, %rsp\n"
-    "  retq\n"
-    "\n"
-    ".globl _mm_setcsr\n"
-    "_mm_setcsr:\n"
-    "  subq  $4, %rsp\n"
-    "  movl  %ecx, (%rsp)\n"       /* ecx = first arg (MS ABI) */
-    "  ldmxcsr (%rsp)\n"
-    "  addq  $4, %rsp\n"
-    "  retq\n"
-);
-
-/* --- RtlFillMemoryUlong ---
- * ntoskrnl.h does: #define RtlFillMemoryUlong _RtlFillMemoryUlong
- * Rust code declares: fn RtlFillMemoryUlong(...) — no underscore prefix.
- * Provide a symbol with the unmangled name that forwards to the real one. */
-#undef RtlFillMemoryUlong
-VOID RtlFillMemoryUlong(PVOID Destination, SIZE_T Length, ULONG Pattern)
-{
-    _RtlFillMemoryUlong(Destination, Length, Pattern);
-}
-
-/* --- KiSendEOI ---
- * FORCEINLINE in internal/amd64/ke.h. Writes 0 to APIC EOI register. */
-VOID KiSendEOI(VOID)
-{
-    _saved_KiSendEOI();
-}
-
-/* --- __swapgs ---
- * static inline in intrin_i.h. swapgs instruction. */
-void __swapgs(void)
-{
-    _saved___swapgs();
-}
-
-/* --- GDT helpers (intrin_i.h FORCEINLINE) --- */
-PKGDTENTRY64 KiGetGdtEntry(PVOID pGdt, USHORT Selector)
-{
-    return _saved_KiGetGdtEntry(pGdt, Selector);
-}
-
-PVOID KiGetGdtDescriptorBase(PKGDTENTRY Entry)
-{
-    return _saved_KiGetGdtDescriptorBase(Entry);
-}
-
-VOID KiInitGdtEntry(PKGDTENTRY64 Entry, ULONG64 Base, ULONG Size, UCHAR Type, UCHAR Dpl)
-{
-    _saved_KiInitGdtEntry(Entry, Base, Size, Type, Dpl);
-}
-
-/* --- KiSaveXState / KiRestoreXState (intrin_i.h FORCEINLINE) --- */
-VOID KiSaveXState(PVOID Buffer, ULONG64 ComponentMask)
-{
-    _saved_KiSaveXState(Buffer, ComponentMask);
-}
-
-VOID KiRestoreXState(PVOID Buffer, ULONG64 ComponentMask)
-{
-    _saved_KiRestoreXState(Buffer, ComponentMask);
-}
-
-/* --- _enable / _disable ---
- * Compiler intrinsics: sti / cli. Use file-scope asm since they are builtins. */
-__asm__(
-    ".globl _enable\n"
-    "_enable:\n"
-    "  sti\n"
-    "  retq\n"
-    "\n"
-    ".globl _disable\n"
-    "_disable:\n"
-    "  cli\n"
-    "  retq\n"
-    "\n"
-    ".globl __debugbreak\n"
-    "__debugbreak:\n"
-    "  int $3\n"
-    "  retq\n"
-    "\n"
-    /* __addgsdword(offset, value): add value to gs:[offset]
-     * MS x64 ABI: ecx = offset, edx = value */
-    ".globl __addgsdword\n"
-    "__addgsdword:\n"
-    "  addl %edx, %gs:(%ecx)\n"
-    "  retq\n"
-    "\n"
-    /* _xsetbv(xcr, value): MS x64 ABI: ecx = xcr, rdx = value
-     * xsetbv takes ecx = xcr, edx:eax = value */
-    ".globl _xsetbv\n"
-    "_xsetbv:\n"
-    "  movq %rdx, %rax\n"           /* rax = value (low 32 bits) */
-    "  shrq $32, %rdx\n"            /* edx = value >> 32 (high 32 bits) */
-    "  xsetbv\n"
-    "  retq\n"
-    "\n"
-    /* InterlockedBitTestAndSet64(Base, Bit):
-     * MS x64 ABI: rcx = Base ptr, rdx = Bit
-     * Returns old bit value in al */
-    ".globl InterlockedBitTestAndSet64\n"
-    "InterlockedBitTestAndSet64:\n"
-    "  xorl %eax, %eax\n"
-    "  lock btsq %rdx, (%rcx)\n"
-    "  setc %al\n"
-    "  retq\n"
-    "\n"
-    /* InterlockedAnd64(Destination, Value):
-     * MS x64 ABI: rcx = Destination ptr, rdx = Value
-     * Returns original value */
-    ".globl InterlockedAnd64\n"
-    "InterlockedAnd64:\n"
-    "  movq (%rcx), %rax\n"
-    "1:\n"
-    "  movq %rax, %r8\n"
-    "  andq %rdx, %r8\n"
-    "  lock cmpxchgq %r8, (%rcx)\n"
-    "  jnz 1b\n"
-    "  retq\n"
-    "\n"
-    /* __rdtsc: returns 64-bit TSC in rax (edx:eax combined) */
-    ".globl __rdtsc\n"
-    "__rdtsc:\n"
-    "  rdtsc\n"
-    "  shlq $32, %rdx\n"
-    "  orq  %rdx, %rax\n"
-    "  retq\n"
-);
-
-#endif /* _M_AMD64 */
-#endif /* amd64 intrinsics — now in Rust */
+/* amd64 compiler intrinsic wrappers (__readcr*, __writecr*, __readdr,
+ * __writedr, __readmsr, __writemsr, __lidt, __lgdt, __sidt, __sgdt, __sldt,
+ * __str, __wbinvd, __swapgs, KeMemoryBarrier, __cpuid, __cpuidex,
+ * _mm_getcsr/setcsr, RtlFillMemoryUlong, KiSendEOI, KiGetGdtEntry,
+ * KiGetGdtDescriptorBase, KiInitGdtEntry, _enable, _disable, __debugbreak,
+ * __addgsdword, _xsetbv, InterlockedBitTestAndSet64, InterlockedAnd64,
+ * __rdtsc, KeQueryInterruptHandler, KeRegisterInterruptHandler) all live in
+ * Rust now (inline/ke_amd64.rs + shim_exports.rs / global_asm!). */
 
 /* KiSaveXState / KiRestoreXState — force fxsave64/fxrstor64 to avoid
  * STATUS_IN_PAGE_ERROR crash with xsaves64/xrstors64 on KVM.
@@ -1422,10 +943,9 @@ PKDBG_POSTSERVICEHOOK KeWin32PostServiceHook = NULL;
 
 /* --- i386 FORCEINLINE function shims (Phase 4) --- */
 
-USHORT NTAPI Ke386GetTr(VOID)
-{
-    return _saved_Ke386GetTr();
-}
+/* Ke386GetTr, Ke386SanitizeSeg, Ke386SanitizeFlags, KeInvalidateTlbEntry
+ * live in Rust now (sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs).
+ * KiFlushNPXState is in Rust cpu.rs. */
 
 /* Ke386GetGlobalDescriptorTable and Ke386GetLocalDescriptorTable are
  * macros (#define to __sgdt / __sldt). Capture via trampoline. */
@@ -1446,23 +966,6 @@ VOID NTAPI Ke386GetGlobalDescriptorTable(PVOID Limit)
 VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
 {
     _tramp_Ke386GetLocalDescriptorTable(Selector);
-}
-
-ULONG NTAPI Ke386SanitizeSeg(IN ULONG Cs, IN KPROCESSOR_MODE Mode)
-{
-    return _saved_Ke386SanitizeSeg(Cs, Mode);
-}
-
-ULONG NTAPI Ke386SanitizeFlags(IN ULONG Eflags, IN KPROCESSOR_MODE Mode)
-{
-    return _saved_Ke386SanitizeFlags(Eflags, Mode);
-}
-
-/* KiFlushNPXState is now in Rust cpu.rs — no C shim needed */
-
-BOOLEAN NTAPI KiUserTrap(IN PKTRAP_FRAME TrapFrame)
-{
-    return _saved_KiUserTrap(TrapFrame);
 }
 
 /* --- HalVectorToIDTEntry ---
@@ -1579,12 +1082,6 @@ USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
  * __debugbreak, __readcr0-4, __writecr0: now in Rust ke_i386.rs global_asm! */
 /* __writecr3, __sgdt, __sidt, __invlpg, __readfsdword, __writefsdword:
  * Now in Rust ke_i386.rs global_asm! */
-
-/* --- KeInvalidateTlbEntry --- FORCEINLINE in internal/i386/ke.h */
-VOID KeInvalidateTlbEntry(IN PVOID Address)
-{
-    _saved_KeInvalidateTlbEntry(Address);
-}
 
 /* --- KiCheckForApcDelivery --- FORCEINLINE in internal/i386/ke.h */
 VOID NTAPI KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
@@ -1798,89 +1295,11 @@ void NTAPI KiSwitchToBootStack(IN ULONG_PTR InitialStack)
     _saved_KiSwitchToBootStack(InitialStack);
 }
 
-/* --- Ke386FnSave ---
- * FORCEINLINE with inline asm: fnsave + wait. */
-void NTAPI Ke386FnSave(IN PVOID SaveArea)
-{
-    __asm__ __volatile__("fnsave (%0); wait" : : "r"(SaveArea) : "memory");
-}
-
-/* --- Ke386FxSave ---
- * FORCEINLINE with inline asm: fxsave. */
-void NTAPI Ke386FxSave(IN PVOID SaveArea)
-{
-    __asm__ __volatile__("fxsave (%0)" : : "r"(SaveArea) : "memory");
-}
-
-/* --- Ke386FxStore ---
- * FORCEINLINE with inline asm: fxrstor (misnamed "Store" = restore).
- * Sanitize MXCSR before FXRSTOR to prevent #GP from reserved bits. */
-void NTAPI Ke386FxStore(IN PVOID SaveArea)
-{
-    ULONG *mxcsr = (ULONG *)((UCHAR *)SaveArea + 24);
-    ULONG *mxcsr_mask = (ULONG *)((UCHAR *)SaveArea + 28);
-    ULONG mask = *mxcsr_mask ? *mxcsr_mask : 0xFFBF;
-    *mxcsr &= mask;
-    __asm__ __volatile__("fxrstor (%0)" : : "r"(SaveArea) : "memory");
-}
-
-/* --- Ke386GetFs ---
- * Macro with inline asm: movl %fs, reg. Returns USHORT. */
-USHORT Ke386GetFs(void)
-{
-    unsigned int __d;
-    __asm__("movl %%fs,%0\n\t" :"=r" (__d));
-    return (USHORT)__d;
-}
-
-/* --- Ke386SetCr2 ---
- * Macro with inline asm: movl val, %cr2. */
-void NTAPI Ke386SetCr2(IN ULONG Value)
-{
-    __asm__ __volatile__("movl %0,%%cr2" : :"r" (Value));
-}
-
-/* --- Ke386SetDs ---
- * Macro with inline asm: movl val, %ds. */
-void NTAPI Ke386SetDs(IN ULONG Value)
-{
-    __asm__ __volatile__("movl %0,%%ds" : :"r" (Value));
-}
-
-/* --- Ke386SetEs ---
- * Macro with inline asm: movl val, %es. */
-void NTAPI Ke386SetEs(IN ULONG Value)
-{
-    __asm__ __volatile__("movl %0,%%es" : :"r" (Value));
-}
-
-/* --- Ke386SetFs ---
- * Macro with inline asm: movl val, %fs. */
-void NTAPI Ke386SetFs(IN ULONG Value)
-{
-    __asm__ __volatile__("movl %0,%%fs" : :"r" (Value));
-}
-
-/* --- Ke386SetGlobalDescriptorTable ---
- * Macro: lgdt. Takes pointer to KDESCRIPTOR. */
-void NTAPI Ke386SetGlobalDescriptorTable(IN PVOID Descriptor)
-{
-    __asm__ __volatile__("lgdt (%0)" : : "r"(Descriptor) : "memory");
-}
-
-/* --- Ke386SetLocalDescriptorTable ---
- * Macro: lldt. Takes USHORT selector. */
-void NTAPI Ke386SetLocalDescriptorTable(IN USHORT Selector)
-{
-    __asm__ __volatile__("lldt %w0" : : "q"(Selector));
-}
-
-/* --- Ke386SetTr ---
- * Macro: ltr. Takes USHORT selector. */
-void NTAPI Ke386SetTr(IN USHORT Selector)
-{
-    __asm__ __volatile__("ltr %%ax" : :"a" (Selector));
-}
+/* Ke386FnSave / Ke386FxSave / Ke386FxStore (x87 + SSE state save/restore),
+ * Ke386SetCr2, Ke386Set{Ds,Es,Fs,Gs}, Ke386SetGlobalDescriptorTable,
+ * Ke386SetLocalDescriptorTable, Ke386SetTr live in Rust now
+ * (sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs global_asm! block).
+ * Ke386GetFs has no surviving callers — dropped. */
 
 /* --- KiEnterV86Trap ---
  * FORCEINLINE in trap_x.h. Saves exception list and sets V86 mode state.
@@ -1948,15 +1367,6 @@ void NTAPI KiExitTrapDebugChecks(IN PKTRAP_FRAME TrapFrame, IN BOOLEAN SkipPrevi
 void NTAPI KiExitSystemCallDebugChecks(IN ULONG SystemCall, IN PKTRAP_FRAME TrapFrame)
 {
     _saved_KiExitSystemCallDebugChecks(SystemCall, TrapFrame);
-}
-
-/* --- Ke386SetGs ---
- * Macro/FORCEINLINE in intrin_i.h: sets GS segment register.
- * Cannot Phase 1 rename (it's a #define macro), so undef and implement directly. */
-#undef Ke386SetGs
-void NTAPI Ke386SetGs(IN USHORT Value)
-{
-    __asm__ __volatile__("movw %0, %%gs" :: "r"(Value));
 }
 
 /* --- KiSetTebBase ---

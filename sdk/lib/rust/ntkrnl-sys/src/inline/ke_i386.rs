@@ -184,7 +184,159 @@ core::arch::global_asm!(
     "_KfLowerIrql@4:",
     "  mov ecx, [esp+4]",
     "  jmp @KfLowerIrql@4",
+
+    // x87 FPU save (FNSAVE then WAIT) — Ke386FnSave(SaveArea)
+    ".globl _Ke386FnSave@4",
+    "_Ke386FnSave@4:",
+    "  mov eax, [esp+4]",
+    "  fnsave [eax]",
+    "  fwait",
+    "  ret 4",
+
+    // x87 + SSE save (FXSAVE) — Ke386FxSave(SaveArea)
+    ".globl _Ke386FxSave@4",
+    "_Ke386FxSave@4:",
+    "  mov eax, [esp+4]",
+    "  fxsave [eax]",
+    "  ret 4",
+
+    // x87 + SSE restore with MXCSR sanitization (FXRSTOR) — Ke386FxStore(SaveArea)
+    // Mirrors C: mask = mxcsr_mask ? mxcsr_mask : 0xFFBF; *mxcsr &= mask
+    ".globl _Ke386FxStore@4",
+    "_Ke386FxStore@4:",
+    "  mov eax, [esp+4]",
+    "  mov edx, [eax+28]",
+    "  test edx, edx",
+    "  jnz 1f",
+    "  mov edx, 0xFFBF",
+    "1:",
+    "  and [eax+24], edx",
+    "  fxrstor [eax]",
+    "  ret 4",
+
+    // Control register write — Ke386SetCr2(Value)
+    ".globl _Ke386SetCr2@4",
+    "_Ke386SetCr2@4:",
+    "  mov eax, [esp+4]",
+    "  mov cr2, eax",
+    "  ret 4",
+
+    // Segment register loads (DS / ES / FS / GS) — full 32-bit slot, low 16 used
+    ".globl _Ke386SetDs@4",
+    "_Ke386SetDs@4:",
+    "  mov eax, [esp+4]",
+    "  mov ds, ax",
+    "  ret 4",
+
+    ".globl _Ke386SetEs@4",
+    "_Ke386SetEs@4:",
+    "  mov eax, [esp+4]",
+    "  mov es, ax",
+    "  ret 4",
+
+    ".globl _Ke386SetFs@4",
+    "_Ke386SetFs@4:",
+    "  mov eax, [esp+4]",
+    "  mov fs, ax",
+    "  ret 4",
+
+    ".globl _Ke386SetGs@4",
+    "_Ke386SetGs@4:",
+    "  mov eax, [esp+4]",
+    "  mov gs, ax",
+    "  ret 4",
+
+    // GDT/LDT/TR loads
+    ".globl _Ke386SetGlobalDescriptorTable@4",
+    "_Ke386SetGlobalDescriptorTable@4:",
+    "  mov eax, [esp+4]",
+    "  lgdt [eax]",
+    "  ret 4",
+
+    ".globl _Ke386SetLocalDescriptorTable@4",
+    "_Ke386SetLocalDescriptorTable@4:",
+    "  mov eax, [esp+4]",
+    "  lldt ax",
+    "  ret 4",
+
+    ".globl _Ke386SetTr@4",
+    "_Ke386SetTr@4:",
+    "  mov eax, [esp+4]",
+    "  ltr ax",
+    "  ret 4",
+
+    // Get TR register — Ke386GetTr() -> USHORT
+    ".globl _Ke386GetTr@0",
+    "_Ke386GetTr@0:",
+    "  xor eax, eax",
+    "  str ax",
+    "  ret",
+
+    // TLB entry invalidate — KeInvalidateTlbEntry(Address) (cdecl, used as
+    // extern "C" by the Rust ARM3 paths)
+    ".globl _KeInvalidateTlbEntry",
+    "_KeInvalidateTlbEntry:",
+    "  mov eax, [esp+4]",
+    "  invlpg [eax]",
+    "  ret",
+
+    // KiCpuId(CpuInfo*, Function) — i386 NTAPI/stdcall, fills 4-ULONG buffer
+    ".globl _KiCpuId@8",
+    "_KiCpuId@8:",
+    "  push edi",
+    "  push ebx",
+    "  mov edi, [esp+12]",
+    "  mov eax, [esp+16]",
+    "  xor ecx, ecx",
+    "  cpuid",
+    "  mov [edi], eax",
+    "  mov [edi+4], ebx",
+    "  mov [edi+8], ecx",
+    "  mov [edi+12], edx",
+    "  pop ebx",
+    "  pop edi",
+    "  ret 8",
 );
+
+// ============================================================================
+// Pure-logic FORCEINLINEs from internal/i386/ke.h
+// ============================================================================
+
+/// Sanitize a segment register selector for the given processor mode.
+/// Mirrors the FORCEINLINE in internal/i386/ke.h. KernelMode forces CPL 0,
+/// UserMode forces CPL 3.
+#[no_mangle]
+pub unsafe extern "system" fn Ke386SanitizeSeg(Cs: ULONG, Mode: u8) -> ULONG {
+    const RPL_MASK: ULONG = 0x3;
+    const KERNEL_MODE: u8 = 0;
+    if Mode == KERNEL_MODE {
+        Cs & (0xFFFF & !RPL_MASK)
+    } else {
+        RPL_MASK | (Cs & 0xFFFF)
+    }
+}
+
+/// `(TrapFrame->SegCs & MODE_MASK) != 0` — was a FORCEINLINE in trap_x.h.
+/// Anything but Ring 0 is treated as user mode.
+#[no_mangle]
+pub unsafe extern "system" fn KiUserTrap(TrapFrame: *const ddk::_KTRAP_FRAME) -> u8 {
+    if ((*TrapFrame).SegCs & 1) != 0 { 1 } else { 0 }
+}
+
+/// Sanitize EFLAGS for the given processor mode. KernelMode keeps the
+/// permitted user bits + interrupt mask; UserMode forces interrupts on
+/// and clamps to user-permitted bits.
+#[no_mangle]
+pub unsafe extern "system" fn Ke386SanitizeFlags(Eflags: ULONG, Mode: u8) -> ULONG {
+    const EFLAGS_USER_SANITIZE: ULONG = 0x3F4DD7;
+    const EFLAGS_INTERRUPT_MASK: ULONG = 0x200;
+    const KERNEL_MODE: u8 = 0;
+    if Mode == KERNEL_MODE {
+        Eflags & (EFLAGS_USER_SANITIZE | EFLAGS_INTERRUPT_MASK)
+    } else {
+        EFLAGS_INTERRUPT_MASK | (Eflags & EFLAGS_USER_SANITIZE)
+    }
+}
 
 // ============================================================================
 // cdecl versions of intrinsics (used by Rust callers via extern "C")
