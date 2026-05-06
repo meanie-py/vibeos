@@ -25,7 +25,6 @@ extern "C" {
 }
 extern "system" {
     fn IopGetRegistryValue(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
-    fn PiInitCacheGroupInformation_shim() -> NTSTATUS;
     fn IopOpenRegistryKeyEx(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
     fn IopCreateRegistryKeyEx(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
 }
@@ -382,7 +381,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     }
 
     pnp_trace(b"[PNP] PiInitCacheGroupInformation\r\n\0");
-    Status = PiInitCacheGroupInformation_shim();
+    Status = PiInitCacheGroupInformation();
     if Status < 0 {
         pnp_trace_s(b"[PNP] PiInitCacheGroupInformation FAIL %x\r\n\0", Status);
         return Status;

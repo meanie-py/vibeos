@@ -323,59 +323,17 @@ void __cdecl pnp_trace_ulong(const char *msg, ULONG val)
  * ======================================================================== */
 
 /* ========================================================================
- * PiInitCacheGroupInformation shim
+ * PiInitCacheGroupInformation_shim — DELETED 2026-05-06.
  *
- * The entire function must be in C because LLVM's cross-CGU captures(none)
- * optimization eliminates the success path for IopGetRegistryValue output
- * pointers in the Rust version, even with volatile reads. The compiler
- * hard-codes the else branch despite runtime values being correct.
+ * Was a captures(none) workaround documented as "even with volatile reads"
+ * needing the entire body in C. Re-probed after the registry+driver shim
+ * round above eliminated the underlying IopGetRegistryValue/_OpenRegistryKey
+ * shims that this function transitively depended on: the cgu=256 + lto=false
+ * workspace firewall is sufficient. pnpinit.rs::PiInitCacheGroupInformation
+ * (the Rust impl already living next to the call site, with volatile reads)
+ * is now the linked symbol; the call site at pnpinit.rs:385 was switched
+ * over from the `_shim` variant. Smoke 7/7 PASS on i386 + amd64.
  * ======================================================================== */
-extern PUNICODE_STRING PiInitGroupOrderTable;
-extern USHORT PiInitGroupOrderTableCount;
-NTSTATUS PnpRegMultiSzToUnicodeStrings(
-    IN PKEY_VALUE_FULL_INFORMATION KeyValueInformation,
-    OUT PUNICODE_STRING *UnicodeStringList,
-    OUT PULONG Count);
-
-CODE_SEG("INIT")
-NTSTATUS NTAPI
-PiInitCacheGroupInformation_shim(VOID)
-{
-    HANDLE KeyHandle;
-    NTSTATUS Status;
-    PKEY_VALUE_FULL_INFORMATION KeyValueInformation;
-    PUNICODE_STRING GroupTable;
-    ULONG Count;
-    UNICODE_STRING GroupString =
-        RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet"
-                            L"\\Control\\ServiceGroupOrder");
-
-    Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &GroupString, KEY_READ);
-    if (NT_SUCCESS(Status))
-    {
-        Status = IopGetRegistryValue(KeyHandle, L"List", &KeyValueInformation);
-        ZwClose(KeyHandle);
-
-        if (NT_SUCCESS(Status))
-        {
-            if ((KeyValueInformation->Type == REG_MULTI_SZ) &&
-                (KeyValueInformation->DataLength))
-            {
-                Status = PnpRegMultiSzToUnicodeStrings(KeyValueInformation,
-                                                        &GroupTable,
-                                                        &Count);
-                PiInitGroupOrderTable = GroupTable;
-                PiInitGroupOrderTableCount = (USHORT)Count;
-            }
-            else
-            {
-                Status = STATUS_UNSUCCESSFUL;
-            }
-            ExFreePool(KeyValueInformation);
-        }
-    }
-    return Status;
-}
 
 /* ========================================================================
  * PnP manager macro/FORCEINLINE shims for Rust pnpmgr
