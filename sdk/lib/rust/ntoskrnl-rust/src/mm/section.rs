@@ -232,7 +232,6 @@ extern "system" {
     fn _MmSetPageEntrySectionSegment( Segment: PMM_SECTION_SEGMENT, Offset: PLARGE_INTEGER, Entry: ULONG_PTR, file: *const i8, line: i32 ) -> NTSTATUS;
     fn MmCreateArm3Section( SectionObject: *mut PVOID, DesiredAccess: ACCESS_MASK, ObjectAttributes: POBJECT_ATTRIBUTES, InputMaximumSize: PLARGE_INTEGER, SectionPageProtection: ULONG, AllocationAttributes: ULONG, FileHandle: HANDLE, FileObject: PFILE_OBJECT ) -> NTSTATUS;
     fn MmMapViewOfArm3Section( SectionObject: PVOID, Process: PEPROCESS, BaseAddress: *mut PVOID, ZeroBits: ULONG_PTR, CommitSize: SIZE_T, SectionOffset: PLARGE_INTEGER, ViewSize: PSIZE_T, InheritDisposition: SECTION_INHERIT, AllocationType: ULONG, Protect: ULONG ) -> NTSTATUS;
-    fn MmFixupImageSectionSegments( ImageSectionObject: PMM_IMAGE_SECTION_OBJECT, Flags: ULONG, FileObject: PFILE_OBJECT ) -> NTSTATUS;
     static mut MmSession: MMSESSION;
     static mut MmSectionBasedRoot: RTL_AVL_TABLE;
     static mut MmSubsectionBase: ULONG_PTR;
@@ -242,6 +241,230 @@ extern "system" {
 }
 extern "C" {
     fn MiMapViewInSystemSpace( Section: PVOID, Session: PVOID, MappedBase: *mut PVOID, ViewSize: PSIZE_T, SectionOffset: PLARGE_INTEGER ) -> NTSTATUS;
+}
+
+// === MmFixupImageSectionSegments and helpers — Phase 4 mm batch (translated 2026-05-06) ===
+//
+// Pure-logic translation of the four `_Shim` helpers + MmFixupImageSectionSegments
+// that previously lived in `ntoskrnl/mm/mm_rust_shims.c`. Sorts segments by VA,
+// validates bounds, page-aligns them (merging when adjacent segments share a
+// page), trims the segment array if the merge phase reduced count, then
+// initializes the per-segment fast mutex, refcount, flags, page-table, and
+// FileObject pointers. Called from MmCreateImageFileMap (line 2725).
+
+const EXEFMT_LOAD_ASSUME_SEGMENTS_SORTED: ULONG = 1 << 0;
+const EXEFMT_LOAD_ASSUME_SEGMENTS_NO_OVERLAP: ULONG = 1 << 1;
+const EXEFMT_LOAD_ASSUME_SEGMENTS_PAGE_ALIGNED: ULONG = 1 << 2;
+
+const PAGE_IS_READABLE_FIXUP: ULONG = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY
+    | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+
+const STATUS_INVALID_IMAGE_FORMAT_FIXUP: NTSTATUS = 0xC000007Bu32 as NTSTATUS;
+
+unsafe fn MmspSortSegments(ImageSectionObject: PMM_IMAGE_SECTION_OBJECT, Flags: ULONG) {
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_SORTED) != 0 { return; }
+    let count = (*ImageSectionObject).NrSegments as usize;
+    if count < 2 { return; }
+    let base = (*ImageSectionObject).Segments;
+    // Insertion sort by VirtualAddress. Avoids pulling in core's pdqsort
+    // (which contains unreachable_unchecked → ud2 that scan_ud2 flags).
+    // PE images have ≤16 sections in practice, so O(n²) is fine.
+    for i in 1..count {
+        let mut j = i;
+        while j > 0 {
+            let prev = base.add(j - 1);
+            let cur = base.add(j);
+            if (*prev).Image.VirtualAddress <= (*cur).Image.VirtualAddress {
+                break;
+            }
+            // Swap: use a stack temporary; struct is bindgen Copy so this is fine.
+            let tmp = *prev;
+            *prev = *cur;
+            *cur = tmp;
+            j -= 1;
+        }
+    }
+}
+
+unsafe fn MmspCheckSegmentBounds(
+    ImageSectionObject: PMM_IMAGE_SECTION_OBJECT,
+    Flags: ULONG,
+) -> BOOLEAN {
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_NO_OVERLAP) != 0 { return 1; }
+    let segs = (*ImageSectionObject).Segments;
+    let nr = (*ImageSectionObject).NrSegments as usize;
+    debug_assert!(nr >= 1);
+
+    for i in 0..nr {
+        let s = segs.add(i);
+        if (*s).Length.QuadPart == 0 { return 0; }
+        if i > 0 {
+            let prev = segs.add(i - 1);
+            let prev_end = ((*prev).Image.VirtualAddress as u64)
+                .wrapping_add((*prev).Length.QuadPart as u64);
+            if prev_end != (*s).Image.VirtualAddress as u64 {
+                return 0;
+            }
+        }
+    }
+    1
+}
+
+unsafe fn MmspPageAlignSegments(
+    ImageSectionObject: PMM_IMAGE_SECTION_OBJECT,
+    Flags: ULONG,
+) -> BOOLEAN {
+    static FLAGS_TO_PROTECTION: [ULONG; 16] = [
+        PAGE_NOACCESS,
+        PAGE_READONLY,
+        PAGE_READWRITE,
+        PAGE_READWRITE,
+        PAGE_EXECUTE_READ,
+        PAGE_EXECUTE_READ,
+        PAGE_EXECUTE_READWRITE,
+        PAGE_EXECUTE_READWRITE,
+        PAGE_WRITECOPY,
+        PAGE_WRITECOPY,
+        PAGE_WRITECOPY,
+        PAGE_WRITECOPY,
+        PAGE_EXECUTE_WRITECOPY,
+        PAGE_EXECUTE_WRITECOPY,
+        PAGE_EXECUTE_WRITECOPY,
+        PAGE_EXECUTE_WRITECOPY,
+    ];
+
+    if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_PAGE_ALIGNED) != 0 { return 1; }
+
+    let segs = (*ImageSectionObject).Segments;
+    let nr = (*ImageSectionObject).NrSegments as usize;
+    let mut last_segment: usize = 0;
+    let page_mask: u64 = PAGE_SIZE as u64 - 1;
+
+    for i in 0..nr {
+        if i == 0 {
+            let eff = segs;
+            let virtual_address = (*eff).Image.VirtualAddress as u64;
+            let new_va = virtual_address & !page_mask;
+            // `as _` lets the compiler pick u32 (i386) or u64 (amd64/arm64) — bindgen
+            // names the field's type ULONG_PTR but its concrete arch-side alias differs
+            // from the hand-written ntkrnl_sys::base::ULONG_PTR (always usize).
+            (*eff).Image.VirtualAddress = new_va as _;
+            let end = virtual_address.wrapping_add((*eff).Length.QuadPart as u64);
+            let end_rounded = (end + page_mask) & !page_mask;
+            (*eff).Length.QuadPart = (end_rounded - new_va) as i64;
+
+            let virtual_offset = virtual_address - new_va;
+            if (*eff).Image.FileOffset < virtual_offset {
+                return 0;
+            }
+            (*eff).Image.FileOffset -= virtual_offset;
+            (*eff).RawLength.QuadPart += virtual_offset as i64;
+        } else {
+            let cur = segs.add(i);
+            let eff = segs.add(last_segment);
+
+            let end_of_eff = ((*eff).Image.VirtualAddress as u64)
+                + ((*eff).Length.QuadPart as u64);
+            debug_assert!((end_of_eff & page_mask) == 0);
+
+            if end_of_eff == (*cur).Image.VirtualAddress as u64 {
+                last_segment += 1;
+                debug_assert!(last_segment <= i);
+                debug_assert!(last_segment < nr);
+
+                let next_eff = segs.add(last_segment);
+                if last_segment != i {
+                    *next_eff = *cur;
+                }
+                debug_assert!(((*next_eff).Image.VirtualAddress as u64 & page_mask) == 0);
+                let len = (*next_eff).Length.QuadPart as u64;
+                let len_rounded = (len + page_mask) & !page_mask;
+                (*next_eff).Length.QuadPart = len_rounded as i64;
+            } else if end_of_eff > (*cur).Image.VirtualAddress as u64 {
+                if (*cur).Image.FileOffset
+                    != (*eff).Image.FileOffset + (*eff).RawLength.QuadPart as u64 {
+                    return 0;
+                }
+                (*eff).RawLength.QuadPart += (*cur).RawLength.QuadPart;
+
+                let cur_end_rounded = ((*cur).Image.VirtualAddress as u64
+                    + (*cur).Length.QuadPart as u64
+                    + page_mask) & !page_mask;
+                debug_assert!(cur_end_rounded >= end_of_eff);
+                (*eff).Length.QuadPart =
+                    (cur_end_rounded - (*eff).Image.VirtualAddress as u64) as i64;
+
+                (*eff).Protection |= (*cur).Protection;
+
+                let mut protection_flags: u32 = 0;
+                if ((*eff).Protection & PAGE_IS_READABLE_FIXUP) != 0 { protection_flags |= 1 << 0; }
+                if ((*eff).Protection & PAGE_IS_WRITABLE)       != 0 { protection_flags |= 1 << 1; }
+                if ((*eff).Protection & PAGE_IS_EXECUTABLE)     != 0 { protection_flags |= 1 << 2; }
+                if ((*eff).Protection & PAGE_IS_WRITECOPY)      != 0 { protection_flags |= 1 << 3; }
+                debug_assert!(protection_flags < 16);
+                (*eff).Protection = FLAGS_TO_PROTECTION[protection_flags as usize];
+
+                if ((*cur).Protection & PAGE_IS_WRITECOPY) == 0
+                    && ((*eff).Protection & PAGE_IS_WRITECOPY) != 0 {
+                    return 0;
+                }
+            } else {
+                KeBugCheck(MEMORY_MANAGEMENT);
+            }
+        }
+    }
+    (*ImageSectionObject).NrSegments = (last_segment + 1) as ULONG;
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MmFixupImageSectionSegments(
+    ImageSectionObject: PMM_IMAGE_SECTION_OBJECT,
+    Flags: ULONG,
+    FileObject: PFILE_OBJECT,
+) -> NTSTATUS {
+    MmspSortSegments(ImageSectionObject, Flags);
+
+    if MmspCheckSegmentBounds(ImageSectionObject, Flags) == 0 {
+        return STATUS_INVALID_IMAGE_FORMAT_FIXUP;
+    }
+
+    let old_nr = (*ImageSectionObject).NrSegments;
+
+    if MmspPageAlignSegments(ImageSectionObject, Flags) == 0 {
+        return STATUS_INVALID_IMAGE_FORMAT_FIXUP;
+    }
+
+    if (*ImageSectionObject).NrSegments < old_nr {
+        let count = (*ImageSectionObject).NrSegments as usize;
+        let size = core::mem::size_of::<MM_SECTION_SEGMENT>() * count;
+        let new_segs = ExAllocatePoolWithTag(
+            PagedPool,
+            size as SIZE_T,
+            TAG_MM_SECTION_SEGMENT,
+        ) as PMM_SECTION_SEGMENT;
+        if new_segs.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        core::ptr::copy_nonoverlapping((*ImageSectionObject).Segments, new_segs, count);
+        ExFreePool((*ImageSectionObject).Segments as PVOID);
+        (*ImageSectionObject).Segments = new_segs;
+    }
+
+    let nr = (*ImageSectionObject).NrSegments as usize;
+    for i in 0..nr {
+        let seg = (*ImageSectionObject).Segments.add(i);
+        ExInitializeFastMutex(core::ptr::addr_of_mut!((*seg).Lock));
+        (*seg).ReferenceCount = core::ptr::addr_of_mut!((*ImageSectionObject).RefCount);
+        (*seg).Flags = core::ptr::addr_of_mut!((*ImageSectionObject).SegFlags);
+        MiInitializeSectionPageTable(seg);
+        (*seg).FileObject = FileObject;
+    }
+
+    debug_assert!((*ImageSectionObject).RefCount > 0);
+    (*ImageSectionObject).FileObject = FileObject;
+
+    STATUS_SUCCESS
 }
 
 const _64K: usize = 64 * 1024;

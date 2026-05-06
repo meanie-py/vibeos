@@ -1000,6 +1000,19 @@ void ProbeForWriteIoStatusBlock(IN PIO_STATUS_BLOCK Ptr)
 #include <reactos/exeformat.h>
 #include <cache/section/newmm.h>
 
+/* ========================================================================
+ * MmFixupImageSectionSegments and its 4 helpers — translated to Rust 2026-05-06.
+ *
+ * Direct port to `mm/section.rs::{MmspSortSegments, MmspCheckSegmentBounds,
+ * MmspPageAlignSegments, MmFixupImageSectionSegments}`. Pure-logic image
+ * segment fixup: sort by VA, validate bounds, page-align with merge, trim,
+ * initialize per-segment locks/refcount/flags/pagetable/FileObject.
+ *
+ * The original C body is preserved below in `#if 0` so future debug sessions
+ * can compare the two side-by-side without a git checkout.
+ * ======================================================================== */
+
+#if 0
 static
 int
 __cdecl
@@ -1265,6 +1278,7 @@ MmFixupImageSectionSegments(
 
     return STATUS_SUCCESS;
 }
+#endif /* 0 — MmFixupImageSectionSegments + helpers now in mm/section.rs */
 
 /* Debug trace helper callable from Rust (stdcall on i386) */
 VOID NTAPI MmDebugTrace(ULONG Code, ULONG_PTR Param1, ULONG_PTR Param2)
