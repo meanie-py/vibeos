@@ -123,15 +123,23 @@ extern "C" {
     fn HalInitPnpDriver();
     fn IopInitializePlugPlayServices_shim() -> NTSTATUS;
     fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
-    fn RtlAnsiStringToUnicodeString_shim(DestinationString: *mut _UNICODE_STRING, SourceString: *mut ANSI_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
-    fn RtlUnicodeStringToAnsiString_shim(DestinationString: *mut ANSI_STRING, SourceString: *mut _UNICODE_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
-    fn RtlInitAnsiString_shim(DestinationString: *mut ANSI_STRING, SourceString: *const i8);
     fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: *mut i8, BufferSize: USHORT);
-    fn RtlFreeUnicodeString_shim(UnicodeString: *mut _UNICODE_STRING);
     static mut IoDriverObjectType: POBJECT_TYPE;
     static mut IoCompletionType: POBJECT_TYPE;
     static mut IopCompletionMapping: _GENERIC_MAPPING;
     static mut IopReserveIrpAllocator: PVOID;
+}
+
+// `extern "system"` maps to stdcall on i386 (with `@N` decoration) and
+// cdecl on amd64/arm64.
+extern "system" {
+    fn RtlAnsiStringToUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *mut ANSI_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
+    fn RtlUnicodeStringToAnsiString(DestinationString: *mut ANSI_STRING, SourceString: *mut _UNICODE_STRING, AllocateDestinationString: BOOLEAN) -> NTSTATUS;
+    fn RtlInitAnsiString(DestinationString: *mut ANSI_STRING, SourceString: *const i8);
+    fn RtlFreeUnicodeString(UnicodeString: *mut _UNICODE_STRING);
+}
+
+extern "C" {
     static mut ExSystemLookasideListHead: LIST_ENTRY;
     static mut KeNumberProcessors: ULONG;
     static KiProcessorBlock: [*mut _KPRCB; 0];
@@ -593,8 +601,8 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
         b"\\ArcName\\%s\0".as_ptr() as *const i8,
         (*LoaderBlock).ArcBootDeviceName,
     );
-    RtlInitAnsiString_shim(core::ptr::addr_of_mut!(DeviceString), Buffer.as_ptr() as *const i8);
-    Status = RtlAnsiStringToUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName), core::ptr::addr_of_mut!(DeviceString), 1u8);
+    RtlInitAnsiString(core::ptr::addr_of_mut!(DeviceString), Buffer.as_ptr() as *const i8);
+    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(DeviceName), core::ptr::addr_of_mut!(DeviceString), 1u8);
     if Status < 0 {
         return 0u8;
     }
@@ -617,13 +625,13 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
     if Status < 0 {
         #[cfg(target_arch = "aarch64")]
         {
-            RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
             return 0u8;
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
             if InitIsWinPEMode != 0 {
-                RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
                 return 0u8;
             }
             KeBugCheckEx(
@@ -645,7 +653,7 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
         core::ptr::null_mut(),
     );
     if Status < 0 {
-        RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
         return 0u8;
     }
 
@@ -654,7 +662,7 @@ unsafe fn IopMarkBootPartition(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN 
     ObReferenceObject((*FileObject).DeviceObject as PVOID);
     IopErrorLogObject = (*FileObject).DeviceObject;
 
-    RtlFreeUnicodeString_shim(core::ptr::addr_of_mut!(DeviceName));
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(DeviceName));
     NtClose(FileHandle);
     ObDereferenceObject(FileObject as PVOID);
     1u8
@@ -1029,7 +1037,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
     ) as *mut i8;
 
     io_trace(b"[IO] RtlUnicodeStringToAnsiString\r\n\0");
-    Status = RtlUnicodeStringToAnsiString_shim(core::ptr::addr_of_mut!(RootString), core::ptr::addr_of_mut!(NtSystemRoot), 0u8);
+    Status = RtlUnicodeStringToAnsiString(core::ptr::addr_of_mut!(RootString), core::ptr::addr_of_mut!(NtSystemRoot), 0u8);
     if Status < 0 {
         io_trace(b"[IO] RtlUnicodeStringToAnsiString FAILED\r\n\0");
         return 0u8;
@@ -1065,7 +1073,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
     }
 
     io_trace(b"[IO] RtlAnsiStringToUnicodeString\r\n\0");
-    Status = RtlAnsiStringToUnicodeString_shim(core::ptr::addr_of_mut!(NtSystemRoot), core::ptr::addr_of_mut!(RootString), 0u8);
+    Status = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(NtSystemRoot), core::ptr::addr_of_mut!(RootString), 0u8);
     if Status < 0 {
         io_trace(b"[IO] RtlAnsiStringToUnicodeString FAILED\r\n\0");
         return 0u8;

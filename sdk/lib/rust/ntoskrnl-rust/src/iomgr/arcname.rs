@@ -51,18 +51,15 @@ use ntkrnl_sys::ddk::{
     IoCreateSymbolicLink,
 };
 
-// RtlAnsiStringToUnicodeString: On i386, the ddk extern "stdcall" declaration
-// generates _RtlAnsiStringToUnicodeString (without @12 decoration) on i686-pc-windows-gnu
-// for unknown reasons. Use a cdecl C shim to avoid the decoration mismatch.
-extern "C" {
-    #[link_name = "RtlAnsiStringToUnicodeString_shim"]
+// `extern "system"` maps to stdcall on i386 (with `@N` decoration) and
+// cdecl on amd64/arm64. Both functions are NTAPI in `ntdll/rtl`.
+extern "system" {
     fn RtlAnsiStringToUnicodeString(
         DestinationString: *mut _UNICODE_STRING,
         SourceString: PANSI_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 
-    #[link_name = "RtlUnicodeStringToAnsiString_shim"]
     fn RtlUnicodeStringToAnsiString(
         DestinationString: *mut ANSI_STRING,
         SourceString: *mut _UNICODE_STRING,

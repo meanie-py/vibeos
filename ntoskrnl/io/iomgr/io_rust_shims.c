@@ -258,50 +258,12 @@ IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
 
 
 /*
- * RtlAnsiStringToUnicodeString — NTAPI (stdcall) in ntdll/rtl.
- * Rust extern "stdcall" on i686-pc-windows-gnu doesn't generate @12 decoration
- * for this function. Use a cdecl shim to avoid symbol mismatch.
+ * RtlAnsiStringToUnicodeString_shim / RtlUnicodeStringToAnsiString_shim /
+ * RtlInitAnsiString_shim / RtlFreeUnicodeString_shim removed (Phase 3) —
+ * Rust callers in `iomgr.rs` / `arcname.rs` / `fstub/disksup.rs` now
+ * declare these as `extern "system"` directly, which generates the
+ * right `_Name@N` stdcall decoration on i386 and cdecl on amd64/arm64.
  */
-NTSTATUS
-__cdecl
-RtlAnsiStringToUnicodeString_shim(
-    PUNICODE_STRING DestinationString,
-    PANSI_STRING SourceString,
-    BOOLEAN AllocateDestinationString)
-{
-    return RtlAnsiStringToUnicodeString(DestinationString, SourceString, AllocateDestinationString);
-}
-
-/*
- * Additional RTL string helpers for i386 Rust callers.
- * Keep them cdecl for consistent linkage from extern "C" declarations.
- */
-NTSTATUS
-__cdecl
-RtlUnicodeStringToAnsiString_shim(
-    PANSI_STRING DestinationString,
-    PUNICODE_STRING SourceString,
-    BOOLEAN AllocateDestinationString)
-{
-    return RtlUnicodeStringToAnsiString(DestinationString, SourceString, AllocateDestinationString);
-}
-
-VOID
-__cdecl
-RtlInitAnsiString_shim(
-    PANSI_STRING DestinationString,
-    PCSZ SourceString)
-{
-    RtlInitAnsiString(DestinationString, SourceString);
-}
-
-VOID
-__cdecl
-RtlFreeUnicodeString_shim(
-    PUNICODE_STRING UnicodeString)
-{
-    RtlFreeUnicodeString(UnicodeString);
-}
 
 /* ========================================================================
  * ObCreateObject/ObInsertObject/ObReferenceObjectByHandle shims for device.rs

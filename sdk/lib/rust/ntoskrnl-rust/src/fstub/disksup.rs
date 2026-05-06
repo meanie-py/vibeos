@@ -115,12 +115,6 @@ unsafe fn SET_PARTITION_LENGTH(p: PPARTITION_DESCRIPTOR, length: u32) {
 
 extern "system" {
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
-    // arcname.rs declares RtlAnsiStringToUnicodeString with a shim link_name; reuse
-    // the same shim below to dodge the i386 stdcall decoration mismatch.
-}
-
-extern "C" {
-    #[link_name = "RtlAnsiStringToUnicodeString_shim"]
     fn RtlAnsiStringToUnicodeString(
         DestinationString: *mut _UNICODE_STRING,
         SourceString: *mut ANSI_STRING,
