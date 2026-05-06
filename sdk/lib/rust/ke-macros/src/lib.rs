@@ -684,6 +684,75 @@ pub unsafe extern "C" fn _rs_KiGetUserModeStackAddress() -> *mut ULONG_PTR {
     }
 }
 
+// ============================================================================
+// HAL dispatch batch — 3 macros that expand to `HALDISPATCH->Foo(...)` /
+// `HALPRIVATEDISPATCH->Foo(...)`. The C trampolines wrap NTAPI (stdcall on
+// i386) functions that profobj.rs / I/O paths call via `extern "system"`
+// decls. Bodies fetch the Option<fn> slot from the global dispatch table
+// and call it; if NULL (HAL not yet initialised), return STATUS_NOT_IMPLEMENTED
+// — same semantics as the underlying macro on a freshly-booted system.
+// ============================================================================
+
+use ntkrnl_sys::base::{NTSTATUS, PVOID, ULONG};
+use ntkrnl_sys::ddk::{
+    HAL_DISPATCH, HAL_QUERY_INFORMATION_CLASS, HAL_SET_INFORMATION_CLASS,
+    PULONG, UCHAR, _HAL_PRIVATE_DISPATCH,
+};
+
+/// `STATUS_NOT_IMPLEMENTED` — dispatch slot was NULL (HAL hasn't published
+/// the table entry yet). Same fallback the C body would have hit by
+/// dereferencing a null function pointer (with a guaranteed crash).
+const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
+
+extern "C" {
+    static HalDispatchTable: HAL_DISPATCH;
+    static HalPrivateDispatchTable: _HAL_PRIVATE_DISPATCH;
+}
+
+/// `HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength)`
+/// — `HALDISPATCH->HalQuerySystemInformation(...)`.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_HalQuerySystemInformation(
+    information_class: HAL_QUERY_INFORMATION_CLASS,
+    buffer_size: ULONG,
+    buffer: PVOID,
+    returned_length: PULONG,
+) -> NTSTATUS {
+    if let Some(f) = HalDispatchTable.HalQuerySystemInformation {
+        f(information_class, buffer_size, buffer, returned_length)
+    } else {
+        STATUS_NOT_IMPLEMENTED
+    }
+}
+
+/// `HalSetSystemInformation(InformationClass, BufferSize, Buffer)`
+/// — `HALDISPATCH->HalSetSystemInformation(...)`.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_HalSetSystemInformation(
+    information_class: HAL_SET_INFORMATION_CLASS,
+    buffer_size: ULONG,
+    buffer: PVOID,
+) -> NTSTATUS {
+    if let Some(f) = HalDispatchTable.HalSetSystemInformation {
+        f(information_class, buffer_size, buffer)
+    } else {
+        STATUS_NOT_IMPLEMENTED
+    }
+}
+
+/// `HalVectorToIDTEntry(Vector)` — `HALPRIVATEDISPATCH->HalVectorToIDTEntry(...)`.
+/// Returns the IDT slot index for an interrupt vector; falls back to the
+/// vector itself (lower 8 bits) which is the historical i386 mapping the
+/// HAL would have applied if the dispatch table were missing.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_HalVectorToIDTEntry(vector: ULONG) -> UCHAR {
+    if let Some(f) = HalPrivateDispatchTable.HalVectorToIDTEntry {
+        f(vector)
+    } else {
+        (vector & 0xff) as UCHAR
+    }
+}
+
 // `_KMUTANT` and `_KWAIT_BLOCK` are referenced via the C trampolines only as
 // `*mut` opaque handles — silence the unused-import lint when the type
 // alias didn't end up referenced because of arch-cfg paths.

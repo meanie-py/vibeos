@@ -1049,28 +1049,18 @@ void KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
 #endif /* Macro trampolines + statement macros + utilities — now in Rust */
 
 /* --- HalQuerySystemInformation / HalSetSystemInformation ---
- * These are macros: HALDISPATCH->HalQuerySystemInformation etc.
- * Rust profobj.rs declares them as extern "system" functions.
- * Capture macro expansion in trampolines, then undef and provide real functions. */
-static __inline NTSTATUS _tramp_HalQuerySystemInformation(
-    IN HAL_QUERY_INFORMATION_CLASS InformationClass,
-    IN ULONG BufferSize,
-    IN OUT PVOID Buffer,
-    OUT PULONG ReturnedLength)
-{
-    return HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength);
-}
-
-static __inline NTSTATUS _tramp_HalSetSystemInformation(
-    IN HAL_SET_INFORMATION_CLASS InformationClass,
-    IN ULONG BufferSize,
-    IN PVOID Buffer)
-{
-    return HalSetSystemInformation(InformationClass, BufferSize, Buffer);
-}
-
+ * Phase 2 HAL-dispatch batch — bodies in `ke-macros::_rs_HalQuery/Set*`.
+ * These are NTAPI (stdcall on i386), so the trampoline keeps the NTAPI
+ * decoration; the Rust impl is `extern "C"` (cdecl) and the trampoline
+ * bridges. */
 #undef HalQuerySystemInformation
 #undef HalSetSystemInformation
+
+extern NTSTATUS _rs_HalQuerySystemInformation(
+    HAL_QUERY_INFORMATION_CLASS InformationClass, ULONG BufferSize,
+    PVOID Buffer, PULONG ReturnedLength);
+extern NTSTATUS _rs_HalSetSystemInformation(
+    HAL_SET_INFORMATION_CLASS InformationClass, ULONG BufferSize, PVOID Buffer);
 
 NTSTATUS NTAPI HalQuerySystemInformation(
     IN HAL_QUERY_INFORMATION_CLASS InformationClass,
@@ -1078,7 +1068,7 @@ NTSTATUS NTAPI HalQuerySystemInformation(
     IN OUT PVOID Buffer,
     OUT PULONG ReturnedLength)
 {
-    return _tramp_HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength);
+    return _rs_HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength);
 }
 
 NTSTATUS NTAPI HalSetSystemInformation(
@@ -1086,7 +1076,7 @@ NTSTATUS NTAPI HalSetSystemInformation(
     IN ULONG BufferSize,
     IN PVOID Buffer)
 {
-    return _tramp_HalSetSystemInformation(InformationClass, BufferSize, Buffer);
+    return _rs_HalSetSystemInformation(InformationClass, BufferSize, Buffer);
 }
 
 /* --- KDBG stubs for ARM64 ---
@@ -1476,15 +1466,12 @@ BOOLEAN NTAPI KiUserTrap(IN PKTRAP_FRAME TrapFrame)
 }
 
 /* --- HalVectorToIDTEntry ---
- * Macro expanding to HALPRIVATEDISPATCH->HalVectorToIDTEntry. */
-static __inline UCHAR _tramp_HalVectorToIDTEntry(IN ULONG Vector)
-{
-    return HalVectorToIDTEntry(Vector);
-}
+ * Phase 2 HAL-dispatch batch — body in `ke-macros::_rs_HalVectorToIDTEntry`. */
 #undef HalVectorToIDTEntry
+extern UCHAR _rs_HalVectorToIDTEntry(ULONG Vector);
 UCHAR NTAPI HalVectorToIDTEntry(IN ULONG Vector)
 {
-    return _tramp_HalVectorToIDTEntry(Vector);
+    return _rs_HalVectorToIDTEntry(Vector);
 }
 
 /* --- KeQueryInterruptHandler / KeRegisterInterruptHandler ---

@@ -246,8 +246,9 @@ mod _force_ke_inlines_symbols {
 // Defensive pull for ke-macros (Phase 2). Pilot batch (4 satisfy/add macros)
 // + wait-setup batch (4 Kx*ThreadWait macros) + trap-frame/intrinsic batch
 // (5 fns: YieldProcessor, KeGetTrapFramePc, KiRundownThread,
-// KiGetLinkedTrapFrame, KiGetUserModeStackAddress). Same `[used]` pattern
-// as `_force_ke_inlines_symbols`.
+// KiGetLinkedTrapFrame, KiGetUserModeStackAddress) + HAL-dispatch batch
+// (3 fns: HalQuerySystemInformation, HalSetSystemInformation,
+// HalVectorToIDTEntry). Same `[used]` pattern as `_force_ke_inlines_symbols`.
 mod _force_ke_macros_symbols {
     extern "C" {
         fn _rs_KiSatisfyMutantWait();
@@ -263,9 +264,12 @@ mod _force_ke_macros_symbols {
         fn _rs_KiRundownThread();
         fn _rs_KiGetLinkedTrapFrame();
         fn _rs_KiGetUserModeStackAddress();
+        fn _rs_HalQuerySystemInformation();
+        fn _rs_HalSetSystemInformation();
+        fn _rs_HalVectorToIDTEntry();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 13] = [
+    static REFS: [unsafe extern "C" fn(); 16] = [
         _rs_KiSatisfyMutantWait,
         _rs_KiSatisfyNonMutantWait,
         _rs_KiSatisfyObjectWait,
@@ -279,6 +283,9 @@ mod _force_ke_macros_symbols {
         _rs_KiRundownThread,
         _rs_KiGetLinkedTrapFrame,
         _rs_KiGetUserModeStackAddress,
+        _rs_HalQuerySystemInformation,
+        _rs_HalSetSystemInformation,
+        _rs_HalVectorToIDTEntry,
     ];
 }
 
