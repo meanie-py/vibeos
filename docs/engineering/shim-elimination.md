@@ -1,8 +1,8 @@
-# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-mm-macros)
+# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-3-direct-cc)
 
 ## Status snapshot
 
-**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io + mm** — 16 ke fns (across pilot/2/B/A in `ke-macros`), 9 io fns (across pilot/1/2/3 in `io-inlines`), and 9 mm fns (across pilot/1/2 in a brand-new sibling `mm-macros` rlib). Surfaces closed: ke (`ke_rust_shims.c` macro/intrinsic), io (`io_rust_shims.c` `static __inline`/FORCEINLINE/`#define` from `io_x.h` + `iofuncs.h` + `io.h`), and the 4 trivial bit-twiddle macros + MI_MAKE_HARDWARE_PTE family + MI_UPDATE_VALID_PTE + MmInitializeMdl block in mm. Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
+**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io + mm.** Phase 3 has KICKED OFF: 8 calling-convention bridges deleted across kernel_c_helpers.c + io_rust_shims.c (KfRaiseIrql/KfLowerIrql i386 fastcall, RtlFindSetBits + KdbpGetHexNumber NTAPI, four RTL string i386 stdcall bridges) — Rust callers now declare the right `extern "fastcall"` / `extern "system"` directly. Same augment+isolated-rlib pattern continues for Phase 1/2: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
 
 **Phase 1 final state (≈165 fns).** All wrappers live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned work is more Phase 2 (~165 macros remaining across mm, io, kdbg, common subsystems) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
 
@@ -396,12 +396,19 @@ The canonical "must-stay" home. Categories per Phase 5:
 - ~2 fastcall→cdecl bridges (Phase 3 batch 1)
 - 2 stdcall→cdecl bridges (Phase 3 batch 2)
 
-### Phase 3 — Calling conventions (~3 days)
+### Phase 3 — Calling conventions (started 2026-05-05; first 8 fns landed)
 
-~28 functions. `extern "fastcall"` works on stable Rust for `i686-pc-windows-gnu` (verified in March doc); just hasn't been adopted everywhere. Mechanical work:
-- Replace `extern "system" fn KfRaiseIrql(...)` declarations with `#[cfg(target_arch="x86")] extern "fastcall" fn KfRaiseIrql(...)` + amd64/arm64 fallback.
-- Remove the fastcall→cdecl bridge from the shim file.
-- Resolve cm_rust_shims.c's dual-decoration scheme (the ~17 `__asm__("_Name@N")` symbol-renames) by aligning the bindgen-generated callers and hand-written `extern "system"` callers on a single decoration.
+~28 functions total. `extern "fastcall"` and `extern "system"` work on stable Rust for `i686-pc-windows-gnu` (verified in March doc); the legacy bridges existed because of stale assumptions about decoration generation that no longer hold. Mechanical work that lands per-batch:
+
+| # | Batch | Functions removed | Commit |
+|---|-------|-------------------|--------|
+| 3-1 | i386 fastcall direct | RustShimKfRaiseIrql, RustShimKfLowerIrql — `ARM3/helpers.rs` now declares `extern "fastcall" fn KfRaiseIrql(...)` on i386. The amd64 inline body (`__readcr8`/`__writecr8`) stays in `kernel_c_helpers.c` because there's no HAL symbol on amd64. ARM64 unchanged (HAL exports cdecl). | `fbad986e` |
+| 3-2 | NTAPI direct (kdbg) | RustShimRtlFindSetBits, RustShimKdbpGetHexNumber — `ARM3/kdbg.rs` now declares both as `extern "system"`, which produces the right `_Name@N` decoration on i386. The in-source comment claiming `extern "system"` couldn't match `_Name@N` was stale. | `6ac0817e` |
+| 3-3 | i386 stdcall direct (RTL string) | RtlAnsiStringToUnicodeString_shim, RtlUnicodeStringToAnsiString_shim, RtlInitAnsiString_shim, RtlFreeUnicodeString_shim — `iomgr/iomgr.rs`, `iomgr/arcname.rs`, `fstub/disksup.rs` now declare these as `extern "system"`. Same stale-comment pattern as 3-2. | `89efe188` |
+
+Remaining Phase 3 surface (~20 fns):
+- **cm_rust_shims.c dual-decoration scheme** (~14 `_shim_*` fns with `__asm__("_Name@N")` symbol-renames). Each KCB-lock / hive-cell / utility function has BOTH a bare cdecl symbol (for bindgen-generated callers) AND a stdcall variant (for hand-written `extern "system"` callers). Right resolution: align all hand-written callers on bindgen (`use ntkrnl_sys::ddk::*;`) and drop the `_shim_*` family. Larger batch — defer until smaller bridges done.
+- Per-function audit of remaining `extern "C"` declarations across the kernel — look for ones that should be `extern "system"` or `extern "fastcall"` based on the bindgen reference.
 
 ### Phase 4 — Per-function review (~2 weeks)
 
@@ -424,7 +431,7 @@ Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit
 | 0. Free wins | ~30 | 1 day | None | **DONE** (2026-05-04) |
 | 1. FORCEINLINE batch | ~165 augmented | ~3 days actual | Low | **DONE except M8** (2026-05-04 → 2026-05-05) — M8 (5 fns) deferred to Phase 4 |
 | 2. Macro materializations | ~180 augmented (34 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke + io + mm-trivial surfaces CLOSED (16 ke fns in `ke-macros`, 9 io fns in `io-inlines`, 9 mm fns in `mm-macros`); ~146 fns left in mm-AVL/io-cnone-workarounds/kdbg/cm/common (many will stay — see notes above) |
-| 3. Calling conventions | ~28 | 3 days | Low (mechanical) | Pending |
+| 3. Calling conventions | ~28 (8 landed) | ~2 days remaining | Low (mechanical) | **Partial** — i386 fastcall direct + NTAPI direct + i386 stdcall direct landed (8 bridges deleted in 3 batches); ~20 fns left including the cm_rust_shims.c dual-decoration scheme |
 | 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) | Pending; M8 (5 fns) folded in |
 | 5. Document must-stays | ~0 | 1 day | None | Pending |
 | **Total reduction (planned)** | **~498 / ~552 (90%)** | **~5 weeks** | | |
