@@ -244,8 +244,10 @@ mod _force_ke_inlines_symbols {
 }
 
 // Defensive pull for ke-macros (Phase 2). Pilot batch (4 satisfy/add macros)
-// + wait-setup batch (4 Kx*ThreadWait macros). Same `[used]` pattern as
-// `_force_ke_inlines_symbols`.
+// + wait-setup batch (4 Kx*ThreadWait macros) + trap-frame/intrinsic batch
+// (5 fns: YieldProcessor, KeGetTrapFramePc, KiRundownThread,
+// KiGetLinkedTrapFrame, KiGetUserModeStackAddress). Same `[used]` pattern
+// as `_force_ke_inlines_symbols`.
 mod _force_ke_macros_symbols {
     extern "C" {
         fn _rs_KiSatisfyMutantWait();
@@ -256,9 +258,14 @@ mod _force_ke_macros_symbols {
         fn _rs_KxDelayThreadWait();
         fn _rs_KxMultiThreadWait();
         fn _rs_KxQueueThreadWait();
+        fn _rs_YieldProcessor();
+        fn _rs_KeGetTrapFramePc();
+        fn _rs_KiRundownThread();
+        fn _rs_KiGetLinkedTrapFrame();
+        fn _rs_KiGetUserModeStackAddress();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 8] = [
+    static REFS: [unsafe extern "C" fn(); 13] = [
         _rs_KiSatisfyMutantWait,
         _rs_KiSatisfyNonMutantWait,
         _rs_KiSatisfyObjectWait,
@@ -267,6 +274,11 @@ mod _force_ke_macros_symbols {
         _rs_KxDelayThreadWait,
         _rs_KxMultiThreadWait,
         _rs_KxQueueThreadWait,
+        _rs_YieldProcessor,
+        _rs_KeGetTrapFramePc,
+        _rs_KiRundownThread,
+        _rs_KiGetLinkedTrapFrame,
+        _rs_KiGetUserModeStackAddress,
     ];
 }
 

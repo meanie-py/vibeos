@@ -984,79 +984,44 @@ void KxMultiThreadWait(
                           Alertable, Swappable, DueTime, Hand);
 }
 
-/* --- YieldProcessor ---
- * Compiler intrinsic/macro, architecture-dependent. Provide a callable symbol. */
+/* `YieldProcessor`, `KeGetTrapFramePc`, `KiRundownThread`,
+ * `KiGetLinkedTrapFrame`, `KiGetUserModeStackAddress` — Phase 2 trap-frame /
+ * intrinsic batch, bodies in sibling rlib `ke-macros`. Trampolines stay as
+ * ABI anchors that delegate to the Rust impls. KiSystemStartup for ARM64 is
+ * provided by Rust (arm64/kiinit.rs). */
 #undef YieldProcessor
+#undef KeGetTrapFramePc
+#undef KiGetLinkedTrapFrame
+
+extern void _rs_YieldProcessor(void);
+extern ULONG_PTR _rs_KeGetTrapFramePc(PKTRAP_FRAME TrapFrame);
+extern VOID _rs_KiRundownThread(PKTHREAD Thread);
+extern PKTRAP_FRAME _rs_KiGetLinkedTrapFrame(PKTRAP_FRAME TrapFrame);
+extern PULONG_PTR _rs_KiGetUserModeStackAddress(void);
+
 void YieldProcessor(void)
 {
-#if defined(_M_IX86) || defined(_M_AMD64)
-    _mm_pause();
-#elif defined(_M_ARM64)
-    __yield();
-#endif
+    _rs_YieldProcessor();
 }
 
-/* --- KeGetTrapFramePc ---
- * Inline function or macro, architecture-dependent.
- * On ARM64 it's a #define macro — must undef first. */
-#undef KeGetTrapFramePc
 ULONG_PTR KeGetTrapFramePc(IN PKTRAP_FRAME TrapFrame)
 {
-#if defined(_M_IX86)
-    return TrapFrame->Eip;
-#elif defined(_M_AMD64)
-    return TrapFrame->Rip;
-#elif defined(_M_ARM64)
-    return TrapFrame->Pc;
-#endif
+    return _rs_KeGetTrapFramePc(TrapFrame);
 }
 
-/* KiSystemStartup for ARM64 is now provided by Rust (arm64/kiinit.rs) */
-
-/* --- KiRundownThread ---
- * FORCEINLINE in arch-specific ke.h headers. No-op on ARM64, may have
- * FPU state cleanup on other arches. Provide callable wrapper. */
 VOID KiRundownThread(IN PKTHREAD Thread)
 {
-    /* On ARM64: no-op. On x86/amd64: inline body handles FPU state.
-     * Use the saved inline from headers. */
-#if defined(_M_IX86)
-    /* i386 may need NpxThread cleanup */
-    PKPRCB Prcb = KeGetCurrentPrcb();
-    if (Prcb->NpxThread == Thread)
-    {
-        Prcb->NpxThread = NULL;
-    }
-#elif defined(_M_AMD64) || defined(_M_ARM64)
-    UNREFERENCED_PARAMETER(Thread);
-#endif
+    _rs_KiRundownThread(Thread);
 }
 
-/* --- KiGetLinkedTrapFrame ---
- * Macro on ARM64, FORCEINLINE on others. Returns previous TrapFrame. */
-#undef KiGetLinkedTrapFrame
 PKTRAP_FRAME KiGetLinkedTrapFrame(IN PKTRAP_FRAME TrapFrame)
 {
-#if defined(_M_ARM64)
-    return (PKTRAP_FRAME)(TrapFrame->TrapFrame);
-#elif defined(_M_AMD64)
-    return (PKTRAP_FRAME)(TrapFrame->TrapFrame);
-#elif defined(_M_IX86)
-    return (PKTRAP_FRAME)(TrapFrame->Edx);
-#endif
+    return _rs_KiGetLinkedTrapFrame(TrapFrame);
 }
 
-/* --- KiGetUserModeStackAddress ---
- * FORCEINLINE in arch-specific ke.h. Returns pointer to user-mode stack in TrapFrame. */
 PULONG_PTR KiGetUserModeStackAddress(void)
 {
-#if defined(_M_ARM64)
-    return &PsGetCurrentThread()->Tcb.TrapFrame->Sp;
-#elif defined(_M_AMD64)
-    return &PsGetCurrentThread()->Tcb.TrapFrame->Rsp;
-#elif defined(_M_IX86)
-    return (PULONG_PTR)&PsGetCurrentThread()->Tcb.TrapFrame->HardwareEsp;
-#endif
+    return _rs_KiGetUserModeStackAddress();
 }
 
 /* --- KxQueueThreadWait ---

@@ -576,6 +576,114 @@ pub unsafe extern "C" fn _rs_KxQueueThreadWait(
     kt_set_wait_time(thread, core::ptr::read_volatile(core::ptr::addr_of!(KeTickCount.LowPart)));
 }
 
+// ============================================================================
+// Trap-frame & arch-intrinsic batch — `YieldProcessor`, `KeGetTrapFramePc`,
+// `KiRundownThread`, `KiGetLinkedTrapFrame`, `KiGetUserModeStackAddress`.
+// All five are per-arch `cfg` bodies (originally `#define` / FORCEINLINE in
+// arch-specific headers, materialised in `ke_rust_shims.c`). Closes out the
+// macro/intrinsic surface of `ke_rust_shims.c`.
+// ============================================================================
+
+use ntkrnl_sys::ddk::{PKTRAP_FRAME, ULONG_PTR, _KTRAP_FRAME};
+
+/// `YieldProcessor()` — compiler intrinsic. `pause` on x86, `yield` on ARM64.
+/// On i386 + amd64 we want `pause` directly; on ARM64 use the WFE-derived
+/// `yield`. No SSE/SSE2 dependency despite `_mm_pause` historically being
+/// `SSE2`-named — the encoding (rep nop / `f3 90`) decodes as a regular nop
+/// on pre-SSE2 chips.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_YieldProcessor() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        core::arch::asm!("pause", options(nostack, nomem, preserves_flags));
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        core::arch::asm!("yield", options(nostack, nomem, preserves_flags));
+    }
+}
+
+/// `KeGetTrapFramePc(TrapFrame)` — returns the instruction pointer captured
+/// in the trap frame. Direct field on all three arches (`Eip`/`Rip`/`Pc`).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KeGetTrapFramePc(trap_frame: PKTRAP_FRAME) -> ULONG_PTR {
+    #[cfg(target_arch = "x86")]
+    {
+        (*trap_frame).Eip as ULONG_PTR
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*trap_frame).Rip as ULONG_PTR
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*trap_frame).Pc as ULONG_PTR
+    }
+}
+
+/// `KiRundownThread(Thread)` — clears any per-PRCB state pinned to the
+/// terminating thread. On i386: clears `Prcb->NpxThread` if it points at us
+/// (otherwise the FPU context restore would race against the freed KTHREAD).
+/// On amd64/arm64: no-op (FPU context lives elsewhere).
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiRundownThread(thread: PKTHREAD) {
+    #[cfg(target_arch = "x86")]
+    {
+        let prcb = ke_get_current_prcb();
+        if (*prcb).NpxThread == thread as *mut _KTHREAD {
+            (*prcb).NpxThread = core::ptr::null_mut();
+        }
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = thread;
+    }
+}
+
+/// `KiGetLinkedTrapFrame(TrapFrame)` — returns the previous (caller's) trap
+/// frame. On amd64: direct `TrapFrame: UINT64` field cast to PKTRAP_FRAME.
+/// On arm64: `__bindgen_anon_2.__bindgen_anon_1.TrapFrame`. On i386: there
+/// is no real "linked trap frame" pointer — the macro reuses the saved Edx
+/// register slot, where the prior dispatcher stashed the previous frame.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiGetLinkedTrapFrame(trap_frame: PKTRAP_FRAME) -> PKTRAP_FRAME {
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*trap_frame).TrapFrame as PKTRAP_FRAME
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*trap_frame).__bindgen_anon_2.__bindgen_anon_1.TrapFrame as PKTRAP_FRAME
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (*trap_frame).Edx as PKTRAP_FRAME
+    }
+}
+
+/// `KiGetUserModeStackAddress()` — returns a pointer (mutable u32/u64) to the
+/// user-mode stack pointer field inside the current thread's trap frame.
+/// `Rsp`/`Sp`/`HardwareEsp` per arch. Used by `KiUserModeCallout` and by
+/// some PSEH unwind paths to patch the user-mode RSP before delivering a
+/// software exception.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KiGetUserModeStackAddress() -> *mut ULONG_PTR {
+    let thread = ke_get_current_thread();
+    let trap_frame = (*thread).TrapFrame;
+    #[cfg(target_arch = "x86")]
+    {
+        core::ptr::addr_of_mut!((*trap_frame).HardwareEsp) as *mut ULONG_PTR
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        core::ptr::addr_of_mut!((*trap_frame).Rsp) as *mut ULONG_PTR
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        core::ptr::addr_of_mut!((*trap_frame).Sp) as *mut ULONG_PTR
+    }
+}
+
 // `_KMUTANT` and `_KWAIT_BLOCK` are referenced via the C trampolines only as
 // `*mut` opaque handles — silence the unused-import lint when the type
 // alias didn't end up referenced because of arch-cfg paths.
@@ -583,3 +691,5 @@ pub unsafe extern "C" fn _rs_KxQueueThreadWait(
 const _ASSERT_KMUTANT: usize = core::mem::size_of::<_KMUTANT>();
 #[allow(dead_code)]
 const _ASSERT_KWAIT_BLOCK: usize = core::mem::size_of::<_KWAIT_BLOCK>();
+#[allow(dead_code)]
+const _ASSERT_KTRAP_FRAME: usize = core::mem::size_of::<_KTRAP_FRAME>();
