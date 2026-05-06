@@ -41,13 +41,16 @@ extern "C" {
     fn MiDumpPoolConsumers(CalledFromDbg: BOOLEAN, Tag: ULONG, Mask: ULONG, Flags: ULONG);
 }
 
-// KDBG functions — use cdecl C shims to avoid i386 stdcall decoration mismatch
-// (KdbpGetHexNumber is NTAPI=stdcall on i386 → _KdbpGetHexNumber@8, but Rust
-// extern "system" imports as _KdbpGetHexNumber without @N; --disable-stdcall-fixup
-// prevents auto-matching. Same issue for RtlFindSetBits.)
-extern "C" {
-    fn RustShimKdbpGetHexNumber(Arg: PCHAR, Number: *mut ULONG_PTR) -> BOOLEAN;
-    fn RustShimRtlFindSetBits(BitMapHeader: PRTL_BITMAP, NumberToFind: ULONG, HintIndex: ULONG) -> ULONG;
+// KDBG functions — `extern "system"` maps to stdcall on i386 (with the
+// expected `@N` decoration) and cdecl on amd64/arm64. KdbpGetHexNumber
+// is NTAPI in `kdb.h`; RtlFindSetBits is NTAPI in bindgen.
+extern "system" {
+    fn KdbpGetHexNumber(Arg: PCHAR, Number: *mut ULONG_PTR) -> BOOLEAN;
+    fn RtlFindSetBits(
+        BitMapHeader: PRTL_BITMAP,
+        NumberToFind: ULONG,
+        HintIndex: ULONG,
+    ) -> ULONG;
 }
 // KdbpPrint is variadic (cdecl even on i386), strtoul/strcmp/strlen are CRT (cdecl)
 extern "C" {
@@ -70,14 +73,14 @@ extern "C" {
         let mut Data: *mut ULONG;
 
         if Argc > 1 {
-            if RustShimKdbpGetHexNumber(*Argv.add(1), &mut Address) == 0 {
+            if KdbpGetHexNumber(*Argv.add(1), &mut Address) == 0 {
                 crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(1));
                 return 1u8;
             }
         }
 
         if Argc > 2 {
-            if RustShimKdbpGetHexNumber(*Argv.add(2), &mut Flags) == 0 {
+            if KdbpGetHexNumber(*Argv.add(2), &mut Flags) == 0 {
                 crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(2));
                 return 1u8;
             }
@@ -183,7 +186,7 @@ extern "C" {
         if Argc > 1 {
             if Argc > 2 {
                 ExpKdbgExtPoolUsedGetTag(*Argv.add(2), &mut Tag, &mut Mask);
-                if RustShimKdbpGetHexNumber(*Argv.add(1), &mut Flags) == 0 {
+                if KdbpGetHexNumber(*Argv.add(1), &mut Flags) == 0 {
                     crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(1));
                 }
             } else {
@@ -191,7 +194,7 @@ extern "C" {
                    (strlen(*Argv.add(1)) == 3 && *(*Argv.add(1)) == b'0' as i8 &&
                     (*(*Argv.add(1)).add(1) == b'x' as i8 || *(*Argv.add(1)).add(1) == b'X' as i8))
                 {
-                    if RustShimKdbpGetHexNumber(*Argv.add(1), &mut Flags) == 0 {
+                    if KdbpGetHexNumber(*Argv.add(1), &mut Flags) == 0 {
                         ExpKdbgExtPoolUsedGetTag(*Argv.add(1), &mut Tag, &mut Mask);
                     }
                 } else {
@@ -285,7 +288,7 @@ extern "C" {
             core::ptr::addr_of!(Tag) as PCHAR,
         );
 
-        i = RustShimRtlFindSetBits(MmPagedPoolInfo.PagedPoolAllocationMap, 1, 0);
+        i = RtlFindSetBits(MmPagedPoolInfo.PagedPoolAllocationMap, 1, 0);
         while i != 0xFFFFFFFF {
             BaseVa = ((MmPagedPoolStart as ULONG_PTR) + ((i as ULONG_PTR) << PAGE_SHIFT)) as PVOID;
             Entry = BaseVa as PPOOL_HEADER;
@@ -331,7 +334,7 @@ extern "C" {
                 }
             }
 
-            i = RustShimRtlFindSetBits(MmPagedPoolInfo.PagedPoolAllocationMap, 1, i + 1);
+            i = RtlFindSetBits(MmPagedPoolInfo.PagedPoolAllocationMap, 1, i + 1);
         }
     }
 
@@ -517,14 +520,14 @@ extern "C" {
         );
 
         if Argc > 2 {
-            if RustShimKdbpGetHexNumber(*Argv.add(2), &mut FindCtxt.RestartAddress) == 0 {
+            if KdbpGetHexNumber(*Argv.add(2), &mut FindCtxt.RestartAddress) == 0 {
                 crate::kdbp_print!(b"Invalid parameter: %s\n\0", *Argv.add(2));
                 FindCtxt.RestartAddress = 0;
             }
         }
 
         if Argc > 4 {
-            if RustShimKdbpGetHexNumber(*Argv.add(4), &mut FindCtxt.SData) == 0 {
+            if KdbpGetHexNumber(*Argv.add(4), &mut FindCtxt.SData) == 0 {
                 FindCtxt.SData = 0;
             } else {
                 if strcmp(*Argv.add(3), b"device\0".as_ptr() as PCHAR) == 0 {
@@ -629,7 +632,7 @@ extern "C" {
 //     if (Argc > 1)
 //     {
 //         /* Get address */
-//         if (!RustShimKdbpGetHexNumber(Argv[1], &Address))
+//         if (!KdbpGetHexNumber(Argv[1], &Address))
 //         {
 //             KdbpPrint("Invalid parameter: %s\n", Argv[1]);
 //             return TRUE;
@@ -639,7 +642,7 @@ extern "C" {
 //     if (Argc > 2)
 //     {
 //         /* Get flags */
-//         if (!RustShimKdbpGetHexNumber(Argv[2], &Flags))
+//         if (!KdbpGetHexNumber(Argv[2], &Flags))
 //         {
 //             KdbpPrint("Invalid parameter: %s\n", Argv[2]);
 //             return TRUE;
@@ -754,7 +757,7 @@ extern "C" {
 //         if (Argc > 2)
 //         {
 //             ExpKdbgExtPoolUsedGetTag(Argv[2], &Tag, &Mask);
-//             if (!RustShimKdbpGetHexNumber(Argv[1], &Flags))
+//             if (!KdbpGetHexNumber(Argv[1], &Flags))
 //             {
 //                 KdbpPrint("Invalid parameter: %s\n", Argv[1]);
 //             }
@@ -766,7 +769,7 @@ extern "C" {
 //                 (strlen(Argv[1]) == 3 && Argv[1][0] == '0' && (Argv[1][1] == 'x' || Argv[1][1] == 'X')))
 //             {
 //                 /* Fallback: if reading flags failed, assume it's a tag */
-//                 if (!RustShimKdbpGetHexNumber(Argv[1], &Flags))
+//                 if (!KdbpGetHexNumber(Argv[1], &Flags))
 //                 {
 //                     ExpKdbgExtPoolUsedGetTag(Argv[1], &Tag, &Mask);
 //                 }
@@ -1137,7 +1140,7 @@ extern "C" {
 //     /* Restart address */
 //     if (Argc > 2)
 //     {
-//         if (!RustShimKdbpGetHexNumber(Argv[2], &FindCtxt.RestartAddress))
+//         if (!KdbpGetHexNumber(Argv[2], &FindCtxt.RestartAddress))
 //         {
 //             KdbpPrint("Invalid parameter: %s\n", Argv[2]);
 //             FindCtxt.RestartAddress = 0;
@@ -1146,7 +1149,7 @@ extern "C" {
 //
 //     if (Argc > 4)
 //     {
-//         if (!RustShimKdbpGetHexNumber(Argv[4], &FindCtxt.SData))
+//         if (!KdbpGetHexNumber(Argv[4], &FindCtxt.SData))
 //         {
 //             FindCtxt.SData = 0;
 //         }

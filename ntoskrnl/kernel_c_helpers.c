@@ -631,11 +631,8 @@ void KfLowerIrql(IN KIRQL NewIrql)
 { __writecr8(NewIrql); }
 #endif
 
-/* --- Calling convention wrappers --- */
-ULONG RustShimRtlFindSetBits(PRTL_BITMAP BitMapHeader, ULONG NumberToFind, ULONG HintIndex)
-{ return RtlFindSetBits(BitMapHeader, NumberToFind, HintIndex); }
-
-BOOLEAN NTAPI KdbpGetHexNumber(IN PCHAR pszNum, OUT ULONG_PTR *pulValue);
-BOOLEAN RustShimKdbpGetHexNumber(PCHAR Arg, ULONG_PTR *Number)
-{ return KdbpGetHexNumber(Arg, Number); }
+/* RustShimRtlFindSetBits / RustShimKdbpGetHexNumber removed (Phase 3) —
+ * Rust callers in `ARM3/kdbg.rs` now declare these as `extern "system"`
+ * directly, which generates the right `_Name@N` stdcall decoration on
+ * i386 and cdecl on amd64/arm64. */
 
