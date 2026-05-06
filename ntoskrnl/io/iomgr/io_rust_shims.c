@@ -741,126 +741,13 @@ IopDeviceNodeSetFlag(IN PDEVICE_NODE DeviceNode, IN ULONG Flag)
  * devaction.rs C shims
  * ======================================================================== */
 
-/* GUIDs needed by IoRequestDeviceEject_c */
-#define INITGUID
-#include <reactos/libs/umpnpmgr/sysguid.h>
-#undef INITGUID
-
-/* DEVICE_ACTION_REQUEST struct — needed by PiQueueDeviceAction_c */
-typedef struct _DEVICE_ACTION_REQUEST
-{
-    LIST_ENTRY RequestListEntry;
-    PDEVICE_OBJECT DeviceObject;
-    PKEVENT CompletionEvent;
-    NTSTATUS *CompletionStatus;
-    DEVICE_ACTION Action;
-} DEVICE_ACTION_REQUEST, *PDEVICE_ACTION_REQUEST;
-
-/* Forward declarations for functions called by IoRequestDeviceEject_c */
-NTSTATUS NTAPI IopQueryDeviceCapabilities(PDEVICE_NODE DeviceNode, PDEVICE_CAPABILITIES DeviceCaps);
-NTSTATUS IopQueryRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations, BOOLEAN Force);
-NTSTATUS IopQueryRemoveChildDevices(PDEVICE_NODE ParentDeviceNode, BOOLEAN Force);
-NTSTATUS IopPrepareDeviceForRemoval(PDEVICE_OBJECT DeviceObject, BOOLEAN Force);
-VOID IopCancelRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations);
-VOID IopCancelRemoveChildDevices(PDEVICE_NODE ParentDeviceNode);
-VOID IopSendRemoveDeviceRelations(PDEVICE_RELATIONS DeviceRelations);
-VOID IopSendRemoveChildDevices(PDEVICE_NODE ParentDeviceNode);
-NTSTATUS NTAPI IopSendEject(PDEVICE_OBJECT DeviceObject);
-NTSTATUS PiIrpQueryDeviceText(PDEVICE_NODE DeviceNode, LCID LocaleId,
-    DEVICE_TEXT_TYPE TextType, PWSTR *Text);
-
 /* `PiSetDevNodeText_c` deleted 2026-05-06 — Rust impl in
  * `pnpmgr/devaction.rs::PiSetDevNodeText` replaces it. Another
  * captures(none) ghost. */
 
-/*
- * IoRequestDeviceEject_c — Eject a device.
- * Delegated from Rust to C to avoid potential cross-CGU issues.
- */
-VOID
-NTAPI
-IoRequestDeviceEject_c(IN PDEVICE_OBJECT PhysicalDeviceObject)
-{
-    PDEVICE_NODE DeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
-    PDEVICE_RELATIONS DeviceRelations;
-    IO_STATUS_BLOCK IoStatusBlock;
-    IO_STACK_LOCATION Stack;
-    DEVICE_CAPABILITIES Capabilities;
-    NTSTATUS Status;
-
-    IopQueueTargetDeviceEvent(&GUID_DEVICE_KERNEL_INITIATED_EJECT,
-                              &DeviceNode->InstancePath);
-
-    if (IopQueryDeviceCapabilities(DeviceNode, &Capabilities) != STATUS_SUCCESS)
-    {
-        goto cleanup;
-    }
-
-    Stack.Parameters.QueryDeviceRelations.Type = EjectionRelations;
-
-    Status = IopInitiatePnpIrp(PhysicalDeviceObject,
-                               &IoStatusBlock,
-                               IRP_MN_QUERY_DEVICE_RELATIONS,
-                               &Stack);
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT("IopInitiatePnpIrp() failed with status 0x%08lx\n", Status);
-        DeviceRelations = NULL;
-    }
-    else
-    {
-        DeviceRelations = (PDEVICE_RELATIONS)IoStatusBlock.Information;
-    }
-
-    if (DeviceRelations)
-    {
-        Status = IopQueryRemoveDeviceRelations(DeviceRelations, FALSE);
-        if (!NT_SUCCESS(Status))
-            goto cleanup;
-    }
-
-    Status = IopQueryRemoveChildDevices(DeviceNode, FALSE);
-    if (!NT_SUCCESS(Status))
-    {
-        if (DeviceRelations)
-            IopCancelRemoveDeviceRelations(DeviceRelations);
-        goto cleanup;
-    }
-
-    if (IopPrepareDeviceForRemoval(PhysicalDeviceObject, FALSE) != STATUS_SUCCESS)
-    {
-        if (DeviceRelations)
-            IopCancelRemoveDeviceRelations(DeviceRelations);
-        IopCancelRemoveChildDevices(DeviceNode);
-        goto cleanup;
-    }
-
-    if (DeviceRelations)
-        IopSendRemoveDeviceRelations(DeviceRelations);
-    IopSendRemoveChildDevices(DeviceNode);
-
-    DeviceNode->Problem = CM_PROB_HELD_FOR_EJECT;
-    if (Capabilities.EjectSupported)
-    {
-        if (IopSendEject(PhysicalDeviceObject) != STATUS_SUCCESS)
-        {
-            goto cleanup;
-        }
-    }
-    else
-    {
-        // DeviceNode->Flags |= DNF_DISABLED;
-    }
-
-    IopQueueTargetDeviceEvent(&GUID_DEVICE_EJECT,
-                              &DeviceNode->InstancePath);
-
-    return;
-
-cleanup:
-    IopQueueTargetDeviceEvent(&GUID_DEVICE_EJECT_VETOED,
-                              &DeviceNode->InstancePath);
-}
+/* `IoRequestDeviceEject_c` deleted 2026-05-06 — Rust impl in
+ * `pnpmgr/devaction.rs::IoRequestDeviceEject` replaces it. Final
+ * captures(none) ghost from the `_c`-suffixed PnP shim family. */
 
 /* `PiQueueDeviceAction_c` and `PiPerformSyncDeviceAction_c` deleted
  * 2026-05-06 — Rust impls in `pnpmgr/devaction.rs::PiQueueDeviceAction` /

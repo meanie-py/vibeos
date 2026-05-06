@@ -277,8 +277,8 @@ extern "C" {
 unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usize) -> *mut T {
     (ptr as usize - field_offset) as *mut T
 }
+// `IoRequestDeviceEject_c` deleted 2026-05-06 — Rust impl below replaces it.
 extern "system" {
-    fn IoRequestDeviceEject_c(PhysicalDeviceObject: PDEVICE_OBJECT);
     fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
     fn IopOpenRegistryKeyEx_shim(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
     fn IopCreateRegistryKeyEx_shim(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
@@ -2245,11 +2245,107 @@ pub unsafe extern "system" fn IopSendEject(DeviceObject: PDEVICE_OBJECT) -> NTST
     IopSynchronousCall(DeviceObject, &mut Stack as *mut _, &mut Dummy as *mut _)
 }
 
+/// `IoRequestDeviceEject` — request safe removal/ejection of a PDO.
+///
+/// Direct port of `IoRequestDeviceEject_c` from `io_rust_shims.c` (another
+/// captures(none) ghost). The flow:
+///   1. Notify subscribers via GUID_DEVICE_KERNEL_INITIATED_EJECT.
+///   2. Query device capabilities.
+///   3. Issue IRP_MN_QUERY_DEVICE_RELATIONS / EjectionRelations to gather
+///      siblings that must be removed together.
+///   4. Walk the relations + child devices and run query-remove on each;
+///      bail to the veto path on any failure (cancelling already-prepared
+///      devices in reverse order).
+///   5. Send remove IRPs to all the devices, mark the PDO as
+///      CM_PROB_HELD_FOR_EJECT, and (if `EjectSupported`) issue the
+///      hardware-eject IRP.
+///   6. On success: GUID_DEVICE_EJECT. On any failure: GUID_DEVICE_EJECT_VETOED.
 #[no_mangle]
 pub unsafe extern "system" fn IoRequestDeviceEject(PhysicalDeviceObject: PDEVICE_OBJECT) {
     let PhysicalDeviceObject = opaque_ptr(PhysicalDeviceObject);
-    // Delegate to C implementation
-    IoRequestDeviceEject_c(PhysicalDeviceObject)
+
+    let DeviceNode = IopGetDeviceNode(PhysicalDeviceObject);
+    let mut DeviceRelations: PDEVICE_RELATIONS;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
+    let mut Capabilities: _DEVICE_CAPABILITIES = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+
+    IopQueueTargetDeviceEvent(
+        &GUID_DEVICE_KERNEL_INITIATED_EJECT as *const _ as *mut _,
+        core::ptr::addr_of_mut!((*DeviceNode).InstancePath),
+    );
+
+    // GOTO target: cleanup
+    'cleanup: {
+        if IopQueryDeviceCapabilities(DeviceNode, &mut Capabilities) != 0 {
+            break 'cleanup;
+        }
+
+        Stack.Parameters.QueryDeviceRelations.Type = EjectionRelations;
+
+        Status = IopInitiatePnpIrp(
+            PhysicalDeviceObject,
+            &mut IoStatusBlock as PIO_STATUS_BLOCK,
+            IRP_MN_QUERY_DEVICE_RELATIONS,
+            &mut Stack as PIO_STACK_LOCATION,
+        );
+        if Status < 0 {
+            DeviceRelations = core::ptr::null_mut();
+        } else {
+            DeviceRelations = IoStatusBlock.Information as PDEVICE_RELATIONS;
+        }
+
+        if !DeviceRelations.is_null() {
+            Status = IopQueryRemoveDeviceRelations(DeviceRelations, 0);
+            if Status < 0 {
+                break 'cleanup;
+            }
+        }
+
+        Status = IopQueryRemoveChildDevices(DeviceNode, 0);
+        if Status < 0 {
+            if !DeviceRelations.is_null() {
+                IopCancelRemoveDeviceRelations(DeviceRelations);
+            }
+            break 'cleanup;
+        }
+
+        if IopPrepareDeviceForRemoval(PhysicalDeviceObject, 0) != 0 {
+            if !DeviceRelations.is_null() {
+                IopCancelRemoveDeviceRelations(DeviceRelations);
+            }
+            IopCancelRemoveChildDevices(DeviceNode);
+            break 'cleanup;
+        }
+
+        if !DeviceRelations.is_null() {
+            IopSendRemoveDeviceRelations(DeviceRelations);
+        }
+        IopSendRemoveChildDevices(DeviceNode);
+
+        (*DeviceNode).Problem = CM_PROB_HELD_FOR_EJECT;
+        if Capabilities.EjectSupported() != 0 {
+            if IopSendEject(PhysicalDeviceObject) != 0 {
+                break 'cleanup;
+            }
+        } else {
+            // (*DeviceNode).Flags |= DNF_DISABLED;  // intentionally commented in C
+        }
+
+        IopQueueTargetDeviceEvent(
+            &GUID_DEVICE_EJECT as *const _ as *mut _,
+            core::ptr::addr_of_mut!((*DeviceNode).InstancePath),
+        );
+
+        return;
+    }
+
+    // cleanup:
+    IopQueueTargetDeviceEvent(
+        &GUID_DEVICE_EJECT_VETOED as *const _ as *mut _,
+        core::ptr::addr_of_mut!((*DeviceNode).InstancePath),
+    );
 }
 
 unsafe fn PiFakeResourceRebalance(
