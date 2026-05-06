@@ -19,11 +19,12 @@
 #![no_std]
 
 use core::ptr;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use ntkrnl_sys::base::{InitializeListHead, InsertHeadList, IsListEmpty, RemoveEntryList};
 use ntkrnl_sys::ddk::{
-    PDEVICE_OBJECT, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PIRP, POPEN_PACKET, _IO_STACK_LOCATION,
-    _OPEN_PACKET,
+    KPROCESSOR_MODE, NTSTATUS, PDEVICE_OBJECT, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PFILE_OBJECT,
+    PIRP, POPEN_PACKET, PRKEVENT, _IO_STACK_LOCATION, _OPEN_PACKET,
 };
 
 /// `IO_TYPE_OPEN_PACKET` from `sdk/include/xdk/iotypes.h`.
@@ -90,6 +91,25 @@ pub unsafe extern "C" fn _rs_IoCopyCurrentIrpStackLocationToNext(irp: PIRP) {
 extern "C" {
     fn KiCheckForKernelApcDelivery();
     fn KeAreAllApcsDisabled() -> u8;
+    fn KeSetEvent(event: PRKEVENT, increment: i32, wait: u8) -> i32;
+    fn IopAcquireFileObjectLock(
+        file_object: PFILE_OBJECT,
+        access_mode: KPROCESSOR_MODE,
+        alertable: u8,
+        lock_failed: *mut u8,
+    ) -> NTSTATUS;
+}
+
+// `Obf{Reference,Dereference}Object` is `__fastcall` on i386, default elsewhere.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ObfReferenceObject(object: *mut core::ffi::c_void) -> isize;
+    fn ObfDereferenceObject(object: *mut core::ffi::c_void) -> isize;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ObfReferenceObject(object: *mut core::ffi::c_void) -> isize;
+    fn ObfDereferenceObject(object: *mut core::ffi::c_void) -> isize;
 }
 
 /// `KeEnterGuardedRegionThread(_Thread)` — disables special APCs by
@@ -170,4 +190,55 @@ pub unsafe extern "C" fn _rs_IopUnQueueIrpFromThread(irp: PIRP) {
     }
     RemoveEntryList(entry);
     InitializeListHead(entry);
+}
+
+// ============================================================================
+// Batch 2 — file-object lock pair
+//
+// IopLockFileObject / IopUnlockFileObject (`static __inline` in io_x.h). Used
+// for synchronous I/O: the FILE_OBJECT exposes a `Busy` byte that
+// InterlockedExchange flips between 0 and 1; on contention we fall through to
+// `IopAcquireFileObjectLock` which blocks on the FO's KEVENT. Unlock is
+// symmetric: flip Busy back to 0 and signal any waiters.
+// ============================================================================
+
+/// `FO_ALERTABLE_IO` from `iotypes.h` — 0x4 in `FILE_OBJECT::Flags`.
+const FO_ALERTABLE_IO: u32 = 0x00000004;
+
+/// IopLockFileObject — `static __inline` in `io_x.h`. Fast path: claim
+/// `FO->Busy` via `InterlockedExchange(.., TRUE)`; if the previous value was
+/// FALSE we won unconditionally and just take a reference. Slow path: call
+/// `IopAcquireFileObjectLock` which blocks on the FO's KEVENT.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopLockFileObject(
+    file_object: PFILE_OBJECT,
+    wait_mode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    let busy = AtomicU32::from_ptr(core::ptr::addr_of_mut!((*file_object).Busy));
+    if busy.swap(1, Ordering::SeqCst) == 0 {
+        ObfReferenceObject(file_object as *mut core::ffi::c_void);
+        return 0; // STATUS_SUCCESS
+    }
+    let mut lock_failed: u8 = 0;
+    let alertable: u8 = if ((*file_object).Flags & FO_ALERTABLE_IO) != 0 {
+        1
+    } else {
+        0
+    };
+    IopAcquireFileObjectLock(file_object, wait_mode, alertable, &mut lock_failed)
+}
+
+/// IopUnlockFileObject — `static __inline` in `io_x.h`. Releases the FO lock
+/// taken by `IopLockFileObject`: flip `Busy` back to FALSE (verifying the
+/// caller really held it), wake any waiters via `KeSetEvent`, and drop the
+/// reference taken on lock acquire.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopUnlockFileObject(file_object: PFILE_OBJECT) {
+    let busy = AtomicU32::from_ptr(core::ptr::addr_of_mut!((*file_object).Busy));
+    let prev = busy.swap(0, Ordering::SeqCst);
+    debug_assert!(prev == 1);
+    if (*file_object).Waiters != 0 {
+        KeSetEvent(core::ptr::addr_of_mut!((*file_object).Lock), 0, 0);
+    }
+    ObfDereferenceObject(file_object as *mut core::ffi::c_void);
 }

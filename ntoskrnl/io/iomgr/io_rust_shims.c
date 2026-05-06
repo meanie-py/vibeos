@@ -78,13 +78,15 @@ IoGetDevObjExtension_shim(IN PDEVICE_OBJECT DeviceObject)
 
 /*
  * IopUnlockFileObject — static __inline in io_x.h.
- * Wraps InterlockedExchange(Busy,FALSE) + event signal + ObDereferenceObject.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUnlockFileObject.
  */
+extern void _rs_IopUnlockFileObject(PFILE_OBJECT FileObject);
+
 VOID
 NTAPI
 IopUnlockFileObject_shim(IN PFILE_OBJECT FileObject)
 {
-    IopUnlockFileObject(FileObject);
+    _rs_IopUnlockFileObject(FileObject);
 }
 
 /*
@@ -101,13 +103,15 @@ IopUpdateTransferCount_shim(IN IOP_TRANSFER_TYPE Type, IN ULONG TransferCount)
 
 /*
  * IopLockFileObject — static __inline in io_x.h.
- * Acquires the file object lock for synchronous I/O.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopLockFileObject.
  */
+extern NTSTATUS _rs_IopLockFileObject(PFILE_OBJECT FileObject, KPROCESSOR_MODE WaitMode);
+
 NTSTATUS
 NTAPI
 IopLockFileObject_shim(IN PFILE_OBJECT FileObject, IN KPROCESSOR_MODE WaitMode)
 {
-    return IopLockFileObject(FileObject, WaitMode);
+    return _rs_IopLockFileObject(FileObject, WaitMode);
 }
 
 /*

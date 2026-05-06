@@ -305,14 +305,18 @@ mod _force_io_inlines_symbols {
         fn _rs_IoCopyCurrentIrpStackLocationToNext();
         fn _rs_IopQueueIrpToThread();
         fn _rs_IopUnQueueIrpFromThread();
+        fn _rs_IopLockFileObject();
+        fn _rs_IopUnlockFileObject();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 5] = [
+    static REFS: [unsafe extern "C" fn(); 7] = [
         _rs_IopValidateOpenPacket,
         _rs_IoGetDevObjExtension,
         _rs_IoCopyCurrentIrpStackLocationToNext,
         _rs_IopQueueIrpToThread,
         _rs_IopUnQueueIrpFromThread,
+        _rs_IopLockFileObject,
+        _rs_IopUnlockFileObject,
     ];
 }
 
