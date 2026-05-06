@@ -1,164 +1,105 @@
 # IO Manager — Disabled Rust Translations
 
-Files that have Rust translations but remain in C due to bugs. Each entry documents
-the known issues and what's needed to fix them.
+Rust translations that exist on disk but aren't wired into the build, with
+the diagnosed cause for each. **Re-probe with current toolchain before
+treating any entry as a settled answer** — many siblings of these have
+turned out to be tractable on re-test (most recently: 10 io captures(none)
+workarounds, the `_c`-suffixed PnP shim family, `IopInitializeDriverModule`).
 
-## irp.rs (irp.c — 2027 lines)
+## Pattern
 
-**Status:** 3 bugs found and fixed, still hangs on amd64. More bugs in IopCompleteRequest.
+Every "Rust crashes / hangs" excuse documented here predates the workspace
+`lto = false` + `codegen-units = 256` firewall, the `opaque_ptr` laundering
+discipline, and `verify_abi.py`. Several siblings of these files were
+re-probed recently and turned out to either (a) build clean with zero
+source changes, or (b) have one underlying real bug (often an ABI
+mismatch) that was being hidden by a C shim. Don't trust the historical
+"category: translation bug" classifications below — they're best-guesses
+from when the file was parked, not current diagnoses.
 
-**Bugs found (all fixed in source):**
-1. **`NT_ERROR` macro wrong** — Defined as `status < 0` which catches both warnings
-   (0x80xxxxxx) AND errors (0xC0xxxxxx). The correct definition is
-   `((status as u32) >> 30) == 3` which only catches errors (severity 3).
-   This changes IRP completion control flow: warning status codes like
-   STATUS_BUFFER_OVERFLOW take the error path, silently dropping IRP completions.
+## Files
 
-2. **KTHREAD offset in KeInitializeApc** (lines 608, 1315, 1333) —
-   `Tcb.__bindgen_anon_1` gives ApcState (offset 72 on amd64), not KTHREAD start.
-   Fixed to `&mut (*Thread).Tcb as *mut _`.
+### `iomgr.rs` / `device.rs` — ENABLED
 
-3. **PacketType constant wrong** (line 624) — `IoPagingPriorityHigh` (2) instead of
-   `IopCompletionPacketIrp` (0). Affects IO completion port packet identification.
+Both ship on all 3 arches. Smoke 7/7 on i386 + amd64; arm64 ntoskrnl
+builds clean. The "LLVM captures(none) success-path elimination" pattern
+that originally parked `device.rs` was fully resolved 2026-05-06 — see
+shim-elimination doc for the chain of evidence.
 
-**Remaining issue:** IopCompleteRequest (~300 lines) has additional bugs causing
-amd64 hang at mountmgr.sys. The function handles buffered IO copy-back, file object
-dereferencing, completion port posting, user APC insertion, and MDL cleanup — all
-with complex struct field accesses through bindgen unions. Needs careful line-by-line
-retranslation or a C shim.
+### `irp.rs` (irp.c — 2027 lines)
 
-**Category:** Translation bugs (not compiler/LLVM issues).
+Hangs on amd64 at last test. Three translation bugs were found and fixed
+in the source (NT_ERROR macro defined as `status < 0` instead of
+`(status >> 30) == 3`; KTHREAD offset error in KeInitializeApc;
+PacketType constant wrong). `IopCompleteRequest` (~300 lines) likely has
+more bugs. Worth a fresh re-probe given how many sibling files turned
+out to need only ABI fixes. Status: parked, not actively investigated.
 
----
+### `file.rs` (file.c — 4202 lines)
 
-## iomgr.rs (iomgr.c — 765 lines) — ENABLED, ships on all 3 arches
+Crashes on at least one arch. Last investigated months ago. Large file
+with complex SEH patterns and user-mode pointer validation. Could be a
+real translation bug, could be ABI / captures(none) / latent flexible-array
+indexing — hasn't been bisected with current tooling.
 
-**Status:** Active in the build. Smoke 7/7 PASS on i386 + amd64; arm64 ntoskrnl
-builds clean.
+### `iofunc.rs` (iofunc.c — 4646 lines)
 
-**Historical bugs (all fixed):**
-1. ~~**LLVM `ud2` after IopInitializePlugPlayServices**~~ — Fixed 2026-05-06.
-   Routed through `IopInitializePlugPlayServices_shim` originally; the workspace
-   `lto = false` + `codegen-units = 256` firewall is now sufficient and the
-   call goes direct via `extern "system"` in iomgr.rs.
-2. **Missing `#[no_mangle]` on globals** — IopFileMapping, IopSecurityResource,
-   IopLoaderBlock needed `#[no_mangle] pub`.
-3. **InitializeObjectAttributes as extern** — This is a C macro, not a function.
-   Fixed by inlining the struct initialization.
+SMSS crash. Last investigated months ago. Largest IO file. Same
+caveats as `file.rs`.
 
-**Category:** RESOLVED.
+### `ramdisk.rs` (ramdisk.c — 307 lines)
 
----
+Bugcheck 0x6B on ARM64; works on i386/amd64 (where it's effectively
+never called). Two translation bugs already fixed
+(`InitializeObjectAttributes`, `sprintf` format string null). The
+remaining issue could be PE layout sensitivity (the historical hypothesis)
+or could be something the pattern-suite would catch on re-probe.
 
-## device.rs (device.c — 1973 lines) — ENABLED, ships on all 3 arches
+### `driver.rs` (driver.c — 2314 lines)
 
-**Status:** Active in the build. Smoke 7/7 PASS on i386 + amd64; arm64 ntoskrnl
-builds clean. Boot to `shell ready` exercises IoCreateDevice through the
-keyboard/video/disk drivers, so device-creation is covered indirectly.
+Mostly Rust now (the file is huge and has many functions). One known
+remaining piece: ARM64 Phase0 crash. amd64 + i386 work. Recent additions
+include the `IopInitializeDriverModule` translation (2026-05-06).
 
-**Historical bugs (all fixed):**
-1. ~~**LLVM captures(none) success-path elimination after ObCreateObject /
-   ObInsertObject / ObReferenceObjectByHandle output-pointer pattern**~~ —
-   Fixed 2026-05-06. The 4 `Ob*_shim` C trampolines (with their `ULONG_PTR`
-   repackaging) were eliminated; device.rs now calls the original Ob* fns
-   directly with `*mut PVOID` output. The cross-CGU firewall (cgu=256 +
-   lto=false) keeps the callee body in a different codegen unit.
+### `arcname.rs` (arcname.c — 994 lines)
 
-**Category:** RESOLVED.
+Two functions are Rust, two are C. Crashes on i386 if all 4 go Rust.
+Historically attributed to "i386 PE section layout sensitivity" — but
+that was the captures(none) era; worth re-probing.
 
----
+### `devaction.rs` (devaction.c — 2750 lines)
 
-## file.rs (file.c — 4202 lines)
+Stays in C as a whole. Multiple historical attempts (delegating exported
+fns to C shims, etc.) didn't fix it because C shims call back into Rust
+internal functions. The "deep bugs in internal static function graph"
+diagnosis is plausible but pre-dates the current debugging tools.
 
-**Status:** Crashes both arches. Not recently investigated.
+## Common bug patterns we've seen
 
-**Known issue:** NtCreateFile and related Nt* syscalls have translation bugs.
-Large file with complex SEH patterns and user-mode pointer validation.
+These are the *families* of bugs that have shown up across the IO
+translations. Note none of them are "LLVM is broken" — that excuse retired
+in 2026-05.
 
-**Category:** Translation bugs. Likely needs retranslation with improved prompt.
-
----
-
-## iofunc.rs (iofunc.c — 4646 lines)
-
-**Status:** SMSS crash. Not recently investigated.
-
-**Known issue:** Nt* syscalls (NtReadFile, NtWriteFile, NtDeviceIoControlFile, etc.)
-have translation bugs causing SMSS to crash during session initialization.
-
-**Category:** Translation bugs. Largest IO file, will need careful work.
-
----
-
-## ramdisk.rs (ramdisk.c — 307 lines)
-
-**Status:** Retranslated. Works on i386/amd64 (never called). Crashes on ARM64.
-
-**Bugs found (fixed in source):**
-1. **`InitializeObjectAttributes` as extern** — Called a C shim that had calling
-   convention mismatch on ARM64. Fixed by inlining the struct initialization.
-2. **`sprintf` format string missing null** — `[b'X', b':', b'%', b's']` had no `\0`,
-   causing `sprintf` to read past the buffer. Fixed by adding null terminator.
-
-**Remaining issue:** After fixing the above, bugcheck changes from 0x9C
-(RAMDISK_BOOT_INITIALIZATION_FAILED) to 0x6B (PROCESS1_INITIALIZATION_FAILED).
-The ramdisk init now succeeds but something in the subsequent SystemRoot/drive
-letter setup is wrong. Needs further investigation.
-
-**Category:** PE binary layout issue (compiler), NOT a translation bug. Even with
-both C and Rust compiled (C wins), ARM64 crashes — the extra Rust code in the
-binary changes PE layout enough to trigger 0x6B. Same pattern as i386 PE sensitivity.
-Translation bugs (InitializeObjectAttributes, sprintf null, SharedUserData) are
-all fixed but won't help until the layout issue is resolved.
-
----
-
-## driver.rs (driver.c — 2314 lines)
-
-**Status:** Active on amd64 (cfg(not(aarch64))). Crashes on ARM64 Phase0.
-
-**Known issue:** Phase0 crash on ARM64 only. Works on amd64. Needs ARM64 debugging.
-
-**Category:** Unknown — could be translation or ARM64-specific.
-
----
-
-## arcname.rs (arcname.c — 994 lines)
-
-**Status:** Partially split (2 functions Rust, 2 functions C). Crashes on i386.
-
-**Known issue:** The i386 crash is likely the PE section layout sensitivity issue
-that affects all i386 Rust modules. May work if the i386 layout issue is resolved.
-
-**Category:** Likely i386 PE layout issue (compiler), not translation bug.
-
----
-
-## devaction.rs (devaction.c — 2750 lines)
-
-**Status:** Stays in C on all arches.
-
-**Known issue:** Deep bugs in internal static function graph (PipDeviceActionWorker
-and callees). Even with ALL exported functions delegated to C shims, the hang
-persists because C shims call Rust internal functions. The entire file's internal
-logic has undiagnosed bugs.
-
-**Category:** Translation bugs (many interacting static functions).
-
----
-
-## Common bug patterns found across all files
-
-1. **NT_ERROR vs NT_SUCCESS** — `NT_ERROR(x)` is `(x >> 30) == 3`, NOT `x < 0`.
-   `x < 0` is `!NT_SUCCESS(x)` which includes warnings.
-2. **Bindgen anonymous union offsets** — `__bindgen_anon_1` can point to the wrong
-   union member, adding unexpected offsets (e.g., KTHREAD.ApcState at offset 72).
-3. **Wrong enum constants** — Match arms using sequential ordinals instead of actual
-   enum values. DeviceProperty, KeyValueInformationClass both hit this.
-4. ~~**LLVM captures(none)**~~ — Was: output pointer writes eliminated across
-   codegen units; workaround was C shim wrappers. CLOSED 2026-05-06: the
-   workspace `lto = false` + `codegen-units = 256` firewall keeps the callee
-   body in a different CGU within the same crate, so the propagation no
-   longer happens. All 5 io captures(none) shims have been deleted.
-5. **Wide string encoding** — `b"..."` byte strings used as UTF-16. Must be `[u16; N]`.
-6. **Static lifetime** — Inline `[u16; N]` arrays as temporaries → dangling pointers.
+1. **NT_ERROR vs NT_SUCCESS.** `NT_ERROR(x)` is `(x >> 30) == 3`, NOT
+   `x < 0` (which is `!NT_SUCCESS(x)` and includes warnings).
+2. **Bindgen anonymous union offsets.** `__bindgen_anon_1` can point to
+   the wrong union member. KTHREAD::ApcState lives inside an anon union
+   on every arch.
+3. **Wrong enum constants.** Match arms using sequential ordinals instead
+   of actual enum values (DeviceProperty, KeyValueInformationClass).
+4. **Bindgen flexible-array indexing.** Bindgen renders trailing
+   `Foo[]` as `Foo: [T; 1]`; indexing past 0 panics on bounds-check.
+   Take the array base via `addr_of!` once, use `.add(i)` from there.
+5. **`extern "C"` vs `extern "system"` ABI mismatch.** On i386, NTAPI
+   functions are stdcall; declaring them `extern "C"` produces a cdecl
+   call-site that blows the stack frame. amd64+arm64 link silently
+   because NTAPI=cdecl there. Run `verify_abi.py` or `nm` first when ud2
+   shows up after a function call.
+6. **Wide string encoding.** `b"..."` byte strings used as UTF-16. Must
+   be `[u16; N]` or use the `wstr!` macro.
+7. **Static lifetime on inline arrays.** Inline `[u16; N]` arrays as
+   temporaries → dangling pointers; declare as `static`.
+8. ~~**LLVM captures(none).**~~ — CLOSED 2026-05-06. The workspace
+   `lto = false` + `codegen-units = 256` firewall is sufficient. Every
+   io captures(none) workaround we re-probed turned out to need no
+   structural change.

@@ -1,188 +1,193 @@
-# ntoskrnl C→Rust Translation Audit (updated 2026-05-05, post-Phase-3-direct-cc)
+# ntoskrnl C→Rust Translation Audit
 
-## Headline
+Last updated 2026-05-06.
 
-- **Shim Phase 3 KICKED OFF — 8 calling-convention bridges deleted (this round).** Three batches across `kernel_c_helpers.c` and `io_rust_shims.c`: **(3-1, `fbad986e`)** KfRaiseIrql/KfLowerIrql i386 fastcall — `RustShimKfRaiseIrql` / `RustShimKfLowerIrql` cdecl bridges deleted; `ARM3/helpers.rs` declares `extern "fastcall"` directly on i386 (Rust supports it on `i686-pc-windows-gnu`). **(3-2, `6ac0817e`)** RtlFindSetBits + KdbpGetHexNumber NTAPI — `RustShimRtlFindSetBits` / `RustShimKdbpGetHexNumber` cdecl bridges deleted; `ARM3/kdbg.rs` declares both as `extern "system"`, which produces the right `_Name@N` stdcall decoration on i386 and cdecl on amd64/arm64. **(3-3, `89efe188`)** RTL string i386 stdcall — `RtlAnsiStringToUnicodeString_shim`, `RtlUnicodeStringToAnsiString_shim`, `RtlInitAnsiString_shim`, `RtlFreeUnicodeString_shim` cdecl bridges deleted; `iomgr/iomgr.rs`, `iomgr/arcname.rs`, `fstub/disksup.rs` declare these as `extern "system"` directly. **The pattern across all 3 batches:** in-source comments claimed `extern "system"`/`extern "fastcall"` couldn't generate the required decoration on `i686-pc-windows-gnu`. That's stale — mingw lld DOES emit the right decoration. Bridges existed because of an old assumption that no longer holds. End state: i386 7/7 PASS in ~55s, amd64 7/7 PASS in ~232s, arm64 ntoskrnl builds clean (3.91 MB), 0 unexpected ud2 across all three batches. Remaining Phase 3 surface (~20 fns): the cm_rust_shims.c dual-decoration scheme (`_shim_*` family with `__asm__("_Name@N")` symbol-renames — bigger batch, deferred). Phase 2 backlog explicitly enumerated in `docs/engineering/shim-elimination.md` § "Phase 2 backlog (explicitly deferred)" — every remaining function in mm/io/kdbg/cm/kernel_c_helpers shim files now categorized as Phase 3 / Phase 4 / intentional-stay / already-done.
+## Where we are
 
-- **Shim Phase 2 mm surface (trivial macros + PTE construction) CLOSED (prior round).** 9 `#define` / FORCEINLINE shims from `mm.h` + `mmtypes.h` + `miarm.h` + `mmfuncs.h` translated to Rust impls in a brand-new sibling `sdk/lib/rust/mm-macros/` rlib (mirror of `ke-macros` for ke; same augment+isolated-rlib pattern). Three batches, three commits: **(mm-pilot, `8d442a97`)** trivial bit-twiddles — RMAP_IS_SEGMENT (high-bits sentinel `(addr & ~0xff) == ~0xff`), PAGE_ROUND_DOWN (`addr & ~(PAGE_SIZE-1)`), PFN_FROM_SSE (`entry >> PAGE_SHIFT`), MM_IS_WAIT_PTE (`(entry & 1) && (entry >> 1 == MM_WAIT_ENTRY)` with cfg-gated 64-bit `0x7FFFFFFFFFFFFC00` vs 32-bit `0x7ffffc00` sentinel). **(mm-1, `6beac1fc`)** MI_MAKE_HARDWARE_PTE family — KERNEL/USER/generic + MI_UPDATE_VALID_PTE. Rust impls already lived in `ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE*`/`MI_UPDATE_VALID_PTE`; the rlib exposes them as `_rs_*` no-mangle symbols using the same `opaque_ptr` laundering pattern as `mm-pte-mut-inlines` from Phase 1 batch M2 — pointer-launder defeats LLVM captures(none) attribute deduction across the rlib boundary. **(mm-2, `5a95fb86`)** MmInitializeMdl — MDL header init with the three PCH-covered macro helpers (`PAGE_ALIGN`, `BYTE_OFFSET`, `ADDRESS_AND_SIZE_TO_SPAN_PAGES`) inlined directly from PAGE_SIZE/PAGE_SHIFT constants. **`InterlockedExchangeAddUL` and `MmSetDirtyPage` already lived in `mm-util-inlines` from Phase 1 batch M3** — not duplicated. End state: i386 7/7 PASS in ~55s, amd64 7/7 PASS in ~233s, arm64 ntoskrnl builds clean (3.91 MB), 0 unexpected ud2 across all three batches. Plan + retro: `docs/engineering/shim-elimination.md` § "Phase 2 — Macro materializations (started 2026-05-05; ke + io + mm-trivial surfaces CLOSED)". **MM AVL refactor explicitly deferred** to Phase 4: the `RtlpFindAvlTableNodeOrParent` / `RtlpInsertAvlTreeNode` / `RtlpDeleteAvlTreeNode` shims in `mm_rust_shims.c` `#include <sdk/lib/rtl/avlsupp.c>` because the existing `avltable` rlib uses the Rtl flavor (`RtlBalancedLinks: parent + left + right + balance:i8`) which is layout-incompatible with MM's `MMADDRESS_NODE` (Balance:2 packed into Parent low bits + StartingVpn/EndingVpn embedded). Resolution path: generic-ize `avltable::tree` over a `BalancedLinks` trait, or duplicate as `mm-avl` rlib.
+**~98% of the original ntoskrnl C body of work is now Rust.** The remaining
+~6.7K LOC of active C is split between (a) the NEWCC cache subsystem (~5.3K
+LOC, gated off in the default build) and (b) C shim files that exist as ABI
+anchors / FORCEINLINE bridges / vararg trampolines for the Rust impls that
+replaced their bodies.
 
-- **Shim Phase 2 io surface CLOSED (prior round).** 9 `static __inline` / FORCEINLINE / `#define` macro shims from `io_x.h` + `iofuncs.h` + `io.h` translated to Rust impls in a brand-new sibling `sdk/lib/rust/io-inlines/` rlib (third Phase 2 sibling alongside `ke-macros` and the Phase 1 `ke-inlines`; same augment+isolated-rlib pattern). Four batches, four commits: **(io-pilot, `6b6ea901`)** trivial inlines (IopValidateOpenPacket type/size sanity, IoGetDevObjExtension `DEVICE_OBJECT → EXTENDED_DEVOBJ_EXTENSION` cast, IoCopyCurrentIrpStackLocationToNext using `core::mem::offset_of!(_IO_STACK_LOCATION, CompletionRoutine)` for the IRP-stack memcpy length and walking the bindgen anonymous-union path `Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation`). **(io-1, `36123f11`)** IRP/thread queueing (IopQueueIrpToThread, IopUnQueueIrpFromThread); `KeEnterGuardedRegionThread` / `KeLeaveGuardedRegionThread` macros inlined locally — `SpecialApcDisable` decrement/increment with kernel-APC delivery check (`KiCheckForKernelApcDelivery`) on transition to zero. KTHREAD::ApcState lives inside `__bindgen_anon_1` on all 3 arches, accessed via `__bindgen_anon_1.ApcState.ApcListHead[KernelMode=0]`. **(io-2, `6a8c0453`)** file-object lock pair (IopLockFileObject + IopUnlockFileObject); fast-path uses `AtomicU32::swap(SeqCst)` on `FILE_OBJECT::Busy`, slow-path falls through to `IopAcquireFileObjectLock` with `Alertable` derived from `Flags & FO_ALERTABLE_IO`. `Obf{Reference,Dereference}Object` declared `extern "fastcall"` on i386, `extern "C"` elsewhere — same per-arch pattern as `ke-inlines::KiCheckForKernelApcDelivery`. **(io-3, `78bc204f`)** IO counters (IopUpdateOperationCount + IopUpdateTransferCount); `ExInterlockedAddLargeStatistic` macro rendered as `AtomicI64::fetch_add(SeqCst)` — semantically identical to the C macro on all 3 arches (lock cmpxchg8b on i386 vs the C macro's lock addl + lock adcl pair; lock xaddq on amd64; ldaddal on arm64). `PsGetCurrentProcess` replicated locally with PCR/PRCB/KTHREAD walk to dodge the cross-crate inline-asm-non-inline gotcha (`feedback_cross_crate_inline_asm.md`) — same trick `ke-macros::ke_get_current_thread` already uses. **The macro/inline FORCEINLINE surface of `ntoskrnl/io/iomgr/io_rust_shims.c` is now CLOSED** — every `static __inline` from `io_x.h` (7 fns) plus the `IoCopyCurrentIrpStackLocationToNext` FORCEINLINE from `iofuncs.h` and the `IoGetDevObjExtension` `#define` from `io.h` have Rust bodies. Remaining io shims are captures(none) workarounds (Phase 4: `ObCreateObject_shim`, `ObInsertObject_shim`, etc.), the i386 `_shim`-suffixed cdecl→stdcall string bridges (Phase 3), `IopInitializeDriverModule` (Phase 4 complex delegation), and the PnP request paths (`IopQueryDeviceCapabilities_c`, `IopInitiatePnpIrp_c`, `IopCompleteRequest_c`, `PiQueueDeviceAction_c`, `PiPerformSyncDeviceAction_c`, `IoRequestDeviceEject_c`, `PiSetDevNodeText_c`). End state: i386 7/7 PASS in ~55s, amd64 7/7 PASS in ~240s, arm64 ntoskrnl builds clean (3.91 MB), 0 unexpected ud2 across all four batches. Plan + retro: `docs/engineering/shim-elimination.md` § "Phase 2 — Macro materializations (started 2026-05-05; ke + io surfaces CLOSED)".
+Counts (from `find … | xargs wc -l`):
 
-- **Shim Phase 2 ke surface closed (prior round).** 16 C-macro / arch-intrinsic / HAL-dispatch shims translated to Rust impls in a brand-new sibling `sdk/lib/rust/ke-macros/` rlib (separate from `ke-inlines`, which is Phase 1 / FORCEINLINE; same augment+isolated-rlib pattern). Four batches, four commits: **(2-pilot, `f77b9c18`)** wait-list satisfy/add macros (KiSatisfyMutantWait, KiSatisfyNonMutantWait, KiSatisfyObjectWait, KiAddThreadToWaitList) — validates the augment pattern carries from FORCEINLINE bodies to `#define` macros. **(2, `bdf21228`)** wait-setup macros (KxSingleThreadWait, KxDelayThreadWait, KxMultiThreadWait, KxQueueThreadWait); the 2026-05-05 amd64 taskbar wait-block-corruption fix migrates from C trampoline + ke_x.h macro into Rust source (uses `InitializeListHead` for the multi-wait path so `KeWaitForMultipleObjects`'s subsequent `InsertTailList(Head, TimerBlock)` lands cleanly; defensive full-init for single/delay/queue paths that don't go through the multi-wait double-insert loop). **(B, `c87d114c`)** trap-frame / arch intrinsics (YieldProcessor pause/yield asm, KeGetTrapFramePc Eip/Rip/Pc, KiRundownThread i386 NpxThread cleanup, KiGetLinkedTrapFrame per-arch path to previous frame, KiGetUserModeStackAddress pointer to Rsp/Sp/HardwareEsp). **(A, `36802240`)** HAL dispatch (HalQuerySystemInformation, HalSetSystemInformation, HalVectorToIDTEntry — pull `Option<fn>` slot from `HalDispatchTable`/`HalPrivateDispatchTable`, return `STATUS_NOT_IMPLEMENTED` on `None` instead of the original NULL-fn-ptr crash). **The macro/intrinsic surface of `ntoskrnl/ke/ke_rust_shims.c` is now empty** — only the Phase 1 FORCEINLINE trampolines (delegating to `ke-inlines`) and the larger i386 register/V86/segment/FXSAVE shims (~50 fns, mostly intentional-stay) remain in that file. **i386-regression mid-batch:** declared `_rs_KxSetTimerForThreadWait` extern with `interval: i64` instead of `interval: _LARGE_INTEGER`. amd64 7/7 PASS, i386 booted to WinLogon→GinaInit then hung the kernel in tight win32k message-retry loops (`Sending to Suspended Thread Msg 121` spam). Root cause: i386 cdecl lowers union-aggregate args differently from scalar i64 args even when both are 8 bytes; amd64 Windows x64 ABI tolerates the mismatch (both go in the same RDX register slot). Captured in `feedback_i64_vs_largeinteger_abi.md`. End state: i386 7/7 PASS in ~55s, amd64 7/7 PASS in ~235s, arm64 ntoskrnl builds clean (3.92 MB), 0 unexpected ud2 across all four batches. Plan + retro: `docs/engineering/shim-elimination.md` § "Phase 2 — Macro materializations (started 2026-05-05; ke + io surfaces CLOSED)".
+| Bucket | LOC |
+|---|---:|
+| Original ntoskrnl C body of work (excl. tests + shims) | ~279,300 |
+| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | ~439,200 |
+| Active C in default i386/amd64 build (excl. shims) | 0 |
+| C shim layer (`*_rust_shims.c` + `kernel_c_helpers.c` + trampoline) | ~7,200 |
+| NEWCC cache C (gated off in default build, ~5.3K LOC) | not counted |
 
-- **amd64 taskbar RESOLVED (truly, this round).** Two real bugs in the wait-block / paging-PTE plumbing that had been masking themselves as the "amd64 CPU storm" + "fresh-build SMSS 0xc0000005" symptoms for weeks. **(a) `MiDetermineUserGlobalPteMask` 4-level paging fix** — the Rust port in `ntkrnl_sys::inline::mm` only checked `MiIsUserPde || MiIsUserPte` on every arch, missing the upper-level `MiIsUserPxe` and `MiIsUserPpe` checks the C version (`mm/ARM3/miarm.h:777`) performs under `_MI_PAGING_LEVELS == 4`/`>= 3`. On amd64, that meant when the function computed the PTE mask for a PXE/PPE entry mapping user space, it returned a PTE with `Owner=0` (kernel-only). The user-mode CPU then faulted with `0xc0000005` the first time it walked through the affected paging hierarchy — exactly the SMSS crash that bisect pinned to `c442d718` (M1 wired up the C trampoline to delegate to this Rust impl; bug had been latent in `inline::mm` itself since M1 was authored). Added `MiIsUserPxe` + `MiIsUserPpe` ports cfg-gated to non-x86 and brought the user-mode predicate to feature parity. Commit `5857abfc`. **(b) `KxMultiThreadWait` wait-block linkage fix** — the C trampoline `KxMultiThreadWait` in `ntoskrnl/ke/ke_rust_shims.c` pre-set `Timer.WaitListHead.Flink/Blink = TimerBlock` manually, but `KeWaitForMultipleObjects` then ALSO called `InsertTailList(Head, TimerBlock)`. With Head's Blink already pointing to TimerBlock, `InsertTailList` computed `Entry.Blink = OldBlink = &TimerBlock` — a self-reference — corrupting `TimerBlock.WaitListEntry.Flink/Blink` to self. Subsequent `RemoveEntryList` on the self-referencing entry was a no-op (PrevEntry/NextEntry both = TimerBlock; setting `*PrevEntry.Flink = NextEntry` writes TimerBlock → TimerBlock with no actual neighbor update), so when `KiTimerExpiration` walked the timer's WaitListHead it kept finding the same wait block on every iteration → `KiTimerExpiration → KxUnwaitThread → KiUnwaitThread` spinning forever. Latent for ~5 weeks: presented as "amd64 CPU storm" gating the taskbar paint, blamed initially on a periodic timer with too-short Period (none existed; the suspect periodic timers had Period 1000-2000ms). Fix matches the original ReactOS ke_x.h macro: replace the half-init with `InitializeListHead(&Timer->Header.WaitListHead)` so the subsequent loop's `InsertTailList` is a clean insertion. Also added defensive full-init to `Kx{Single,Delay,Queue}ThreadWait` (different shape — those don't go through the multi-wait `InsertTailList` loop, so the original half-init pattern was wrong in a different way) in both `ke_rust_shims.c` and the original `ntoskrnl/include/internal/ke_x.h` macro definitions used by `ntoskrnl/ke/wait.c`. **End state: amd64 taskbar renders with Start button + clock; PC sampling shows 8/8 idle in HLT loop after `shell ready`**, where pre-fix it was 18/20 in `KiUnwaitThread`/`KxUnwaitThread`/`KiDeferredReadyThreadImpl`. Smoke i386 7/7 in 56s, amd64 7/7 in 3:57.
+The Rust LOC is higher than the original C because (a) bindgen unions need
+explicit accessor paths, (b) every output-pointer write goes through
+`write_volatile` or an `opaque_ptr` launder, (c) the augment+isolated-rlib
+pattern means C trampolines + Rust impls coexist for ~165 fns. Net work-done
+metric is closer to 1:1.
 
-- **Shim Phase 1 COMPLETE for cm + ke + ob + ps + se + common + mm (this round).** All eight Phase 1 sibling rlibs now exist under `sdk/lib/rust/`: `cm-inlines` (8 KCB-lock fns), `ke-inlines` (49 ke_x.h FORCEINLINEs across K1-K11), `ob-inlines` (22 ob_x.h fns extracted from `ntoskrnl-rust::shim_exports`), `ps-inlines` (18 ps_x.h fns), `se-inlines` (10 Se*/Sep* helpers), `common-inlines` (34 cross-subsystem helpers), `mm-pte-class-inlines` (M1, 7 read-only PTE classifiers), `mm-pte-mut-inlines` (M2, 8 PTE bitfield writes), `mm-util-inlines` (M3, 6 utility wrappers), `mm-ws-lock-inlines` (M4, 13 working-set locks), `mm-addr-space-inlines` (M5, 5 address-space accessors), `mm-pte-atomic-inlines` (M6, 2 PTE atomics), `mm-lock-inlines` (M7, 4 expansion+PFN locks). **All 13 sibling rlibs follow the augment+isolated-rlib pattern** validated in cm-inlines Pilot 2: C trampolines remain as ABI anchors, bodies collapse to one-line `_rs_*` delegations, and the rlib boundary insulates against the cross-CGU captures(none) cascade that killed the original Pilot 1. `ntoskrnl-rust::shim_exports.rs` line count dropped ~3340 → ~2700 LOC across the extractions. M8 (PFN ref-counting, 5 fns) explicitly deferred to Phase 4 per the inventory in `docs/engineering/shim-elimination.md` (PFN database design needs its own thinking). Commits in chronological order: `646af953` (cm), `174d80c1`/`a7541562`/`14c9f654`/`d70e331f`/`b033d52d`/`4af9fa5b`/`4e8cc70f`/`b9f5c4db`/`b502bdd9`/`720e226c`/`3f2028d1`/`7ecf997f` (ke K1-K11), `10c78458` (ob+ps), `3cec747a` (se), `c2c34899` (common), `c442d718`/`867aa6c4`/`2d80d672` (mm M1-M3), `37a490e5` (mm M4-M7).
+Smoke status: i386 7/7, amd64 7/7, arm64 0/7 (pre-existing baseline hang at
+`[HIVE] CmCheckRegistry done`, identical 13,449 bytes serial across recent
+kernel changes — not in any specific subsystem).
 
-- **Shim Phase 1 PILOT 2 LANDED + arm64 baseline build restored.** Two pieces of work in one commit. **(a)** Eight KCB-lock FORCEINLINEs from `cm_x.h` translated to Rust as `_rs_Cmp{Acquire,Release,…}KcbLock*` in a brand-new isolated `sdk/lib/rust/cm-inlines/` rlib (~160 LOC). The C outlines in `cm_rust_shims.c` stay alive but their bodies collapse from `_fi_*` (FORCEINLINE outline) to one delegating call into the Rust impl — vararg-style "augment, don't replace" pattern (same shape as `RtlStringCbPrintfA::body = va_start; ntprintf_va_format_a; va_end`). The isolated-crate strategy was the redesign required after Pilot 1 (early 2026-05-04) cascaded 23 unexpected ud2 across pre-existing config code by adding `cm_inlines.rs` directly to `ntoskrnl-rust`; workspace `lto = false` + crate boundary cuts the rustc cross-CGU attribute-deduction wire that the cascade rides on. ntoskrnl-rust source unchanged for this round. Pilot 2 result: i386 7/7 PASS in 59s, amd64 7/7 PASS in 4:02, **0 unexpected ud2 on either arch**. Plan + retro: `docs/engineering/shim-elimination.md` § "Phase 1 — PILOT 2 LANDED". **(b)** arm64 baseline ntoskrnl link fix in `dbgprint.rs` — the recent vararg-sweep round added unconditional extern decls of `KdbPutsN` / `KdbpPagerInternal` / `KdbOutputAborted` (KDBG sinks that only exist on i386/amd64; ntos.cmake `if(KDBG AND NOT ARCH STREQUAL "arm64")` excludes the C shims, and `ntoskrnl-rust::kdbg` is `cfg(any(x86, x86_64))`-gated). Wrapped the externs and the bodies of `rust_kdb_printf` / `rust_kdbp_print` / `rust_kdbp_print_cstr` in `cfg(any(x86, x86_64))`; arm64 bodies become no-op stubs. arm64 ntoskrnl now builds (4 MB exe). Smoke status unchanged (arm64 still 0/7 baseline — pre-existing hang at `[HIVE] CmCheckRegistry done`).
+## What's still C
 
-- **Vararg wide-format round — all `_vsnwprintf` callers eliminated, ~30 wide Rust call sites swept off variadic FFI (last round).** Closes the ANSI/wide split. New `sdk/lib/rust/ntprintf_w/` crate (~700 LOC) — UTF-16 sibling of `ntprintf` with the same FFI shape and slot ABI. Specifier semantics flip per Microsoft's rule (W-fmt `%s` = wide, `%hs` = narrow, `%S` = narrow inverse of A-fmt). New `ntprintf_va_format_w` trampoline in `ntoskrnl/ntprintf_trampoline.c` (reuses the ANSI `va_arg` pull loop since tag bytes are width-independent). `RtlStringCbPrintfW` body in `cm_rust_shims.c` collapsed from `_saved_RtlStringCbVPrintfW` hop to `va_start; ntprintf_va_format_w(...); va_end` + NTSTATUS truncation check. Custom `RtlStringCbPrintfW_2lx` shim (`io_rust_shims.c`) deleted. Rust side: `dbgprint.rs` adds `RawSinkW`, `rust_rtl_string_cb_printf_w`, `rust_swprintf`; `lib.rs` adds `rtl_string_cb_printf_w!`/`swprintf!` macros + `wstr!("…")` ASCII-widening compile-time literal helper. Sweep: 17 `swprintf` (fstub/disksup ×13, ex/locale ×4, iomgr/{device,bootlog} ×4, pnpmgr/devaction ×1) + 5 `RtlStringCbPrintfW` (cmsysini ×4, cmboot ×1) + 1 `RtlStringCbPrintfW_2lx` (pnpmgr) + 6 orphan extern decls. Validation: new `tests/libc_diff_w.rs` byte-identity harness (9 tests, downcasts wide ASCII output for libc snprintf comparison) + 19 unit tests. **Zero `_vsnprintf`/`_vsnwprintf` callers remain in the active kernel build** — only the user-mode fallback in `sdk/lib/rtl/debug.c` (weak-symbol gated for ntdll.dll). Plan/retro: `docs/engineering/shim-elimination.md` (new "since 2026-05-04, wide round" subsection). Smoke: i386 7/7 PASS in 57s, amd64 7/7 PASS in 3:53.
-- **Vararg shim sweep (ANSI round) — all ANSI `printf`-shaped trampolines now bypass `_vsnprintf`, ~445 Rust call sites moved off variadic FFI (this round).** Two sub-steps. **(a)** New `sdk/lib/rust/ntprintf/` no_std crate (~700 LOC) implementing a Windows-flavored printf core (scanner emits one tag byte per `%`-specifier, formatter consumes a slot array via `Writer` trait). FFI: `ntprintf_scan_arg_types` + `ntprintf_format_a`. Validated against host libc by a per-spec `tests/libc_diff.rs` byte-identity harness. New `ntoskrnl/ntprintf_trampoline.c` provides the shared `va_arg`-pull adapter (`ntprintf_va_format_a`) for `_vsnprintf`-shaped C callers. **(b)** Five trampolines collapsed from ~30-line `_vsnprintf` blocks to ~6-line va_arg-pull-and-Rust-format blocks: `KdbPrintf`/`KdbpPrint`/`KdpDprintf`/`RtlStringCbPrintfA` (in shim files) and `vDbgPrintExWithPrefixInternal` (in `sdk/lib/rtl/debug.c`, weak-symbol so user-mode `ntdll.dll` falls back to legacy `_vsnprintf`). Brand-new non-variadic `DbgPrintEmitPreformatted` entry lets Rust callers skip the va_list hop entirely. Rust side: 6 macros at `ntoskrnl-rust` crate root (`kdb_printf!`, `kdbp_print!`, `kdp_dprintf!`, `dbg_print!`, `dbg_print_ex!`, `rtl_string_cb_printf_a!`) + `dbgprint.rs` (~270 LOC: `IntoSlot` trait packing every primitive into a `u64` slot, `RawSink` with `opaque_ptr` laundering against the i386 captures(none) cascade, per-target shims, plus `rust_dbg_print_cstr`/`rust_kdbp_print_cstr` for runtime-resolved format pointers). ~445 Rust call sites swept (KdbpPrint 237, kdb_printf 36, dbg_print/ex 131, kdp_dprintf 21, rtl_string_cb_printf_a 8, snprintf 1, plus 6+5 cstr/manual). Mechanical migrator `tools/migrate_dbgprint.py` did 414 of them; ~30 manual fixes for variable-format-pointer / array-element / inline-extern shapes. The only legacy `_vsnprintf`/`_vsnwprintf` callers remaining in the active build are wide-format paths (`RtlStringCbPrintfW` + `swprintf` callers in `pnpmgr/devaction.rs`, `ex/locale.rs`, `iomgr/{device,bootlog}.rs`, `fstub/disksup.rs`) — needs a `ntprintf_w` UTF-16 sibling crate. Plan/retro: `docs/engineering/shim-elimination.md` (new "since 2026-05-04" subsection). Smoke: i386 7/7 PASS in 55s, amd64 7/7 PASS in 3:56.
-- **`ntoskrnl/tests/` translated + dead C deleted (last round).** All 29 in-build files (`dispatch.c` + 28 `test_*.c`) plus 6 dead-on-disk old-framework files (`fsrtl.c`, `symtest.c`, `TestDebug.c`, `TestTimer.c`, `setup.c`, `test_section.c`) plus the `tests/tests/VirtualMemory.c` subdir are gone. Replaced by `sdk/lib/rust/ntoskrnl-rust/src/tests/{mod,dispatch,stubs}.rs`. `dispatch.rs` is a real translation of the serial command loop (~150 LOC). `stubs.rs` has 28 `NtTestX` stubs that print `[TEST STUB] X — needs translation` and return TRUE — the test bodies (~5K LOC) are deferred per-test TODOs in stubs.rs. **The harness is currently a build-only artifact** for two reasons: (1) bodies don't exercise anything, (2) `Phase1InitializationDiscard` was ported to Rust without the `#ifdef REACTOS_TEST_KERNEL` hook to call the dispatch loop. Both are documented in `tests/mod.rs`. Verified clean i386 + amd64 build with `-DREACTOS_TEST_KERNEL=ON`. Smoke (default REACTOS_TEST_KERNEL=OFF) i386 7/7 PASS in 53s, amd64 7/7 PASS in 227s.
-- **sysinfo bindgen-archaeology stubs LANDED (last round).** Hand-translated the four priority handlers from `ex/sysinfo.rs` that the previous Potemkin-stub pass parked: `SystemProcessInformation` (Class 5, ~250 LOC C, walks PsGetNextProcess + per-process Pcb.ThreadListHead), `SystemHandleInformation`/`SystemExtendedHandleInformation` (Classes 16+64, ~250 LOC combined, walks the global handle-table list via ExpLookupHandleTableEntry), and `SystemLogicalProcessorInformation` (Class 73, ~80 LOC, walks active-processor map for HT/MC masters + KeNumberNodes for NUMA). Six new private accessors (`kthread_kernel_time`/`user_time`/`wait_time`/`state`/`context_switches` + `ethread_start_address`) hide the per-arch `__bindgen_anon_N` walk for KTHREAD timing fields buried in WaitBlock/SuspendApc overlay unions on amd64/arm64 (direct on i386). Same accessor pattern as ps/query.rs. Task manager now sees real process+thread+handle data instead of empty shells. ~30 simpler stubs (Class 4/6/10/12-15/17/19-20 etc.) still return STATUS_NOT_IMPLEMENTED — none of them gate boot or task manager. Commit: `5a6f78e8`. Smoke i386 7/7 PASS in 54s, amd64 7/7 PASS in 227s.
-- **MmConsumedPoolPercentage final chop COMPLETE (this round).** The last cross-subsystem `extern "C"` block in `cmdata.rs` is gone. Promoted `SubVector<N>` + `cv!`/`w!` macros from `ntoskrnl-rust::config::cmdata` down into `ntkrnl-sys::cm_control` so any crate (not just ntoskrnl-rust) can declare its own `FOO_CONTROL_VECTOR` slice. Added `POOL_CONTROL_VECTOR` (1 entry: PoolUsageMaximum → MmConsumedPoolPercentage) in `pool/src/globals.rs`. Added `reactos-pool` as a dep of `ntoskrnl-rust`, wired the slice into the `SLICES` array in cmdata.rs alongside the 19 existing chops. Updated all 19 in-tree callers (`crate::config::cmdata::SubVector` → `ntkrnl_sys::SubVector`; `crate::cv!`/`crate::w!` → `ntkrnl_sys::cv!`/`ntkrnl_sys::w!`). cmdata.rs now has zero `extern "C"` blocks for variables that own data — every CmControlVector entry points at a Rust-side `pub static mut` reachable via path or via a sibling crate's slice. The audit's "MmConsumedPoolPercentage final chop" milestone is closed.
-- **Shim Phase 0 COMPLETE (last round, 1 commit).** Cleaned up the `*_rust_shims.c` / `kernel_c_helpers.c` surface in three sub-passes. **(0a)** Deleted 8 vestigial shim functions (`KdpRustGetComPortInUse`, `CmpAcquireKcbLockSharedByKey`, `KiCpuIdEx`, `ke_trace_char`, 4× ARM64 IRQL diagnostics in mm). The agent's 9th candidate (`Ke386GetTr`) turned out to be needed — it has Rust callers under both `_Ke386GetTr` (cdecl) and `_Ke386GetTr@0` (stdcall) decorations; agent's grep only checked the cdecl name. **(0b/c)** Deleted 6 dead-on-disk shim files that the cmake stopped including months ago when they were "replaced by Rust" (`ex_rust_shims.c`, `ob_rust_shims.c`, `ps_rust_shims.c`, `tier1_rust_shims.c`, `se_rust_shims.c`, `kd64_rust_shims.c` — total 2,602 LOC, 245 functions). **(0c)** Resolved 12 active source-level duplications between `mm_rust_shims.c` and `kernel_c_helpers.c` (`MmLockSectionSegment`/`MmUnlockSectionSegment`/`MmGetPageEntrySectionSegment`, `InterlockedExchange`/`InterlockedCompareExchange` i386 cdecl wrappers, `KfRaiseIrql`/`KfLowerIrql`/`RustShimKf*`, `RustShimRtlFindSetBits`/`RustShimKdbpGetHexNumber`) — canonicalized to `kernel_c_helpers.c` per the rule "must-stay → kernel_c_helpers.c; in-flight → subsystem file". The `ExpKdbgExt{FileCache,DefWrites,Handle}` "duplicates" the agent flagged were forward declarations in kdbg, not duplicate definitions — false positive. Net: shim files 13 → 7, active functions ~552 → ~480, shim LOC ~9,238 → ~6,400 (−2,804 LOC). Plan + retro: `docs/engineering/shim-elimination.md`. Smoke i386 7/7 PASS in 53s, amd64 7/7 PASS in 227s.
-- **cmdata Phase B COMPLETE (last round, 4 commits).** All 197 cross-subsystem `CmControlVector` entries are now declared in the file that owns the variable they reference, via `pub static FOO_CONTROL_VECTOR: SubVector<N>` slices that `cmdata.rs` const-concats into the single `CmControlVector` symbol consumers see. cmdata.rs went from 750 → 593 LOC (a clean ~20% reduction; further reduction is bounded by ~150 LOC of inherent registry-structure arrays plus ~50 entries pointing at `DummyData` placeholders that aren't really anyone's "owned" data); only entries pointing at cmdata-owned globals (`DummyData`, language IDs, suite buffer, `Cm*` config vars) and the four inherent registry-structure tables (`CmpMachineHiveList`, `CmClassName`, `CmTypeName`, `CmpMultifunctionTypes`) remain. **One holdout:** `MmConsumedPoolPercentage` (PoolUsageMaximum) — still C-side, no Rust home, so its CmControlVector entry stays in cmdata with an `extern "C"` decl. Step commits: `06156c2b` (ob), `2609d390` (kd64 debug filters, 156 entries), `c372ecd8` (mm/ARM3, 27 entries), this commit (ex/ps/iomgr/cmlazy/cmdelay/kd64-tunables, 9 entries). Plan + retro: `docs/engineering/cmdata-chopping-plan.md`. Smoke: i386 7/7 PASS in 53s, amd64 7/7 PASS in 227s.
-- **cmdata.rs LANDED (Phase A — verbatim translation, last round).** `ntoskrnl/config/cmdata.c` (994 LOC of registry-config globals + arrays + the 249-entry `CmControlVector[]` dispatch table) is now `sdk/lib/rust/ntoskrnl-rust/src/config/cmdata.rs` (~755 LOC of Rust). All globals as `#[no_mangle] pub static mut`; arrays as const initializers using a small `cv!`/`kd_filter!` macro pair plus a `w!` wide-string helper (lifted from `cmconfig.rs`). Cross-subsystem variable references use `core::ptr::addr_of_mut!(crate::xxx::yyy::Var)` paths instead of extern blocks (28 Mm globals, 5 Ob globals, plus ex/ps/io/kd entries — all already `pub static mut` in their owning Rust files). Only one `extern "C"` block remains: `MmConsumedPoolPercentage` (still C-side). `ex/init.rs` extern decl + call site updated to use the path import. `cmdata.c` commented out of `ntos.cmake`. **Phase B (chopping `CmControlVector` by subsystem ownership) is the planned follow-up — see `docs/engineering/cmdata-chopping-plan.md` for the const-concat scheme + risk-ranked migration order.** Smoke: i386 7/7 PASS in 43s, amd64 7/7 PASS in 217s. The audit's "intentional stay" classification on cmdata is now retired.
-- **lpc/connect.rs LANDED (last round).** Re-enabled `pub mod connect;` in `lpc/mod.rs` and commented `lpc/connect.c` out of `ntos.cmake`. The "captures(none) cascade" excuse from the previous audit was stale — when re-probed, the file built clean on all 3 arches and i386 7/7 + amd64 7/7 smoke pass with no regression. Same skepticism that paid off for `usercall.rs` paid off again: the file already had `opaque_ptr` laundering on every output-pointer parameter (the structural defense documented in `feedback_cgu1.md`), one `#[inline(never)] lpcp_check_name_deleted` extracted to defeat an earlier i386 inline mis-opt, and a `read_volatile` on the `Flags` test in the hot path. lint_kernel.py flagged 6 "unprotected" output writes but all 6 are through pointers laundered via `opaque_ptr` at function entry — false positive, not a real captures(none) target. ~736 LOC of Rust now active; 802 LOC of C dropped. **Parked-file backlog is now empty for the first time.**
-- **amd64 taskbar regression FIXED (last round).** Wrong `KERNEL_LARGE_STACK_COMMIT` (16KB hardcoded for all archs in `sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs`) caused `MmCreateKernelStack(GuiStack=TRUE)` to map only 4 of 18 reserved pages on amd64. GUI threads in deep `RtlWalkFrameChain → RtlVirtualUnwind` chains hit the guard page; page-fault delivery itself faulted on the same guard → `BUGCHECK 0x7F (UNEXPECTED_KERNEL_MODE_TRAP) Param1=8` (DOUBLE FAULT). The on-screen "*** STOP: 0x0000007F" the previous doc analysis dismissed as a cirrus text-mode artifact was a real bugcheck (`KeBugCheckActive=1` confirmed via gdb). Fix: per-arch constants in helpers.rs matching `xdk/<arch>/ke.h` (amd64 = 48KB / 72KB / 48KB; i386 = 12KB / 60KB / 16KB — i386 keeps a 4KB margin over the C value because Rust kernel call chains are deeper); also dropped a shadow `const KERNEL_STACK_SIZE = 12288` in `ke/thrdobj.rs` that was understating amd64 `StackLimit` by 36KB. Both i386 and amd64 now render full taskbar (Start + clock) — see the smoke screenshots in `qemu/{i386,amd64}_smoke.png`. Also bumped `Amd64Config.desktop_settle_seconds` 5s → 120s in `tests/qemu/vm.py` so the smoke snapshot captures the rendered taskbar (amd64 explorer is ~90s slower than i386 due to the unrelated KiUnwaitThread CPU-storm; the storm doesn't gate the taskbar but does delay it).
-- **Translation backlog is empty.** Every translatable C file that the default i386/amd64 build references either has its Rust replacement active, or is intentionally-stay (`cmdata`, `*_shims`). No parked translations remain in tree. `ke/amd64/usercall.rs` landed last round; `lpc/connect.rs` landed this round.
-- **ke/amd64/usercall.rs landed (this round).** Codex re-enabled the parked Rust translation and root-caused the long-standing "return-address corruption" BSOD. Real bug: the Rust file imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, but the C side defines it as a global `PGDI_BATCHFLUSH_ROUTINE` *function pointer* (`ntoskrnl/ps/win32.c:20`), filled in at runtime when win32k registers itself. The Rust `fn` import emitted a direct call to the data symbol's address (linker-laid at PE 0x5F5C78), causing `STATUS_ILLEGAL_INSTRUCTION` on first GDI batch flush at boot. Fix: import as `static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;` and call via `(KeGdiFlushUserBatch.unwrap())()`. Same mistake existed (latent) in already-active `ke/amd64/traphandler.rs`'s `KiSystemCallHandler` — fixed there too. Codex also corrected three i386-carry-over constants in usercall.rs (`CONTEXT_FULL` 0x10007 → 0x10000B, `CONTEXT_DEBUG_REGISTERS` 0x10 → 0x100010, `KERNEL_STACK_SIZE` 0x6000 → 0xC000) — wrong but masked by the BSOD landing earlier. amd64 7/7 + i386 7/7 smoke pass.
-- **section_pe landed (last round).** `mm/section_pe.rs` — Codex-translated, ~1,290 LOC. `PeFmtCreateSection` plus the `SectionCharacteristicsToProtect[16]` table and ~15 `Intsafe_*`/`AlignUp`/`IsAligned` helpers. C source disabled in `ntos.cmake`. i386 + amd64 7/7 smoke pass after wiring; arm64 builds clean. Codex's report claimed amd64 0/7 due to `KiSystemStartup` ud2 — that was the documented cold-boot flake (and the ud2 is on the scanner's known-CGU allow-list; pre-existing, not caused by this work). Codex also drive-by-formatted 337 unrelated files via `cargo fmt`; reverted.
-- **cmhardwr + kdb_help + arm32 cleanup landed (this round).**
-  - **`config/i386/cmhardwr.rs`** — Codex-translated, 1,131 LOC. Three functions: `CmpGetBiosDate`, `CmpGetBiosVersion`, `CmpInitializeMachineDependentConfiguration`. Active on both i386 and amd64. Codex correctly used `#[cfg(target_arch=...)]` for the `_M_IX86`/`_M_AMD64` branches, leaned on `ntkrnl_sys::ddk::SIZE_T` for the registry/section APIs, and emitted ~30 `RtlInitUnicodeString` + `NtSetValueKey` registry calls cleanly. Two small fixes by hand: `RtlCompareMemory` `Length` arg cast (base::SIZE_T = usize ≠ ddk::SIZE_T = ULONG_PTR nominally), and overrode bindgen's `extern "C" KiCpuId` with `extern "system"` because the actual i386 kernel symbol is the stdcall `_KiCpuId@8`. Gotcha confirmed: bindgen's calling-convention metadata is not always right for kernel internals — always verify against the actual `objdump -t` of `libntoskrnl.a`.
-  - **`kdbg/kdb_help.rs`** — global_asm! translation of `kdbg/{i386,amd64}/kdb_help.S` (each ~25 lines). Single function `KdbpStackSwitchAndCall` per arch, just `core::arch::global_asm!` block with the original assembler instructions, `.globl` directive, and decoration matching i386 stdcall (`_KdbpStackSwitchAndCall@8`) and amd64 plain (`KdbpStackSwitchAndCall`). Two .S files deleted.
-  - **arm32 cleanup.** Deleted the dead `elseif(ARCH STREQUAL "arm")` branch in `ntos.cmake` plus the four remaining arm32 dirs (`ntoskrnl/{config,ex,kd,include/internal}/arm/`) — all referenced files had been deleted last session, leaving the cmake branch and orphan headers as cruft. The build never selected `arm` (the arm64 port is a separate branch), so this was pure deletion.
-- **kd64 arch glue landed.** Two files hand-translated and wired:
-  - `kd64/i386/kdx86.rs` — KdpGetStateChange/KdpSetContextState + the eight KdpSys* helpers (ReadMsr/WriteMsr/Read+WriteBusData/Read+WriteControlSpace/Read+WriteIoSpace) + KdpSysCheckLowMemory + KdpAllowDisable (~360 LOC).
-  - `kd64/amd64/kdx64.rs` — same function set adapted to amd64 conventions: `AMD64_DEBUG_CONTROL_SPACE_*` keyed dispatch in ReadControlSpace/WriteControlSpace; ReadBusData/WriteBusData stubbed (matches C `UNIMPLEMENTED`); `KGDT64_R0_CODE` instead of `KGDT_R0_CODE` (~330 LOC).
-  - i386 needed inline-asm `rdmsr`/`wrmsr` wrappers (i386 doesn't export `__readmsr`/`__writemsr` from the shim layer, only amd64 does). Both files wrap port I/O with `in/out al/ax/eax, dx` inline asm. SEH around `__readmsr`/`__writemsr` was dead under DUMMY_PSEH on the C side too, so the Rust translation drops the wrap; bad MSRs would BSOD in either case, and these helpers only run when WinDbg sends a packet.
-  - Per-arch modules `kd64/i386/` and `kd64/amd64/` added with `#[cfg(target_arch = ...)]` gates; `_force_kd64_{i386,amd64}_symbols` blocks reference all twelve fns to ensure the staticlib pulls the CGUs.
-- **ps arch glue landed (last session).** Three small files hand-translated and wired:
-- **ps arch glue landed.** Three small files hand-translated and wired:
-  - `ps/i386/psctx.rs` — `PspGetContext`, `PspSetContext`, `PspGetOrSetContextKernelRoutine` (90 LOC).
-  - `ps/i386/psldt.rs` — `PspDeleteLdt`, `PspDeleteVdmObjects`, `PspQueryDescriptorThread` (80 LOC; SEH wrappers around `RtlCopyMemory` translated as direct `read_unaligned`/`write_unaligned`, since DUMMY_PSEH makes the `_SEH2_EXCEPT` dead code on both sides anyway and the upstream `DefaultQueryInfoBufferCheck` already validates user buffers).
-  - `ps/amd64/psctx.rs` — `PspGetOrSetContextKernelRoutine` using `KiSetTrapContext`/`KiGetTrapContext` (50 LOC).
-  Per-arch modules `ps/i386/` and `ps/amd64/` added under `ntoskrnl-rust/src/ps/` with `#[cfg(target_arch=...)]` gates; corresponding `_force_ps_*_symbols` blocks in `lib.rs` ensure the staticlib pulls the CGUs. ABI gotcha: i386 `ExFreePoolWithTag` is `extern "stdcall"` and a hand-rolled `extern "system" fn ExFreePoolWithTag` block somehow generates the cdecl `_ExFreePoolWithTag` reference (no `@8`); fix is to import the canonical `ntkrnl_sys::ex::ExFreePoolWithTag` instead. amd64 cold-boot flake reproduced again — first run after rebuild can land 6/7 or 0/7 with HAL/x86bios noise; second run from snapshot path hits 7/7 cleanly.
-- **arm64 trap.rs landed.** Audit's parked excuse ("Rust version breaks boot") was stale, like kd64 before it. `ntoskrnl/ke/arm64/trap.c` no longer in cmake; `ntoskrnl-rust/src/ke/arm64/trap.rs` was already compiled in the staticlib but symbol-shadowed by the C version under `--allow-multiple-definition`. Now picks up the Rust symbols. arm64 baseline failure unchanged — same identical 13,449 bytes serial → same hang at `[HIVE] CmCheckRegistry done`. So trap.rs handles the boot path as well as trap.c does, and the arm64 baseline regression is somewhere else.
-- **amd64 usercall.rs LANDED next session — see headline.** The "real BSOD at RVA 0x5F5C78" probed in this session WAS real, but the diagnosis ("return-address corruption") was wrong. Actual cause: data-symbol-as-function calling-convention mismatch on `KeGdiFlushUserBatch`. Fixed in the post-section_pe round.
-- **guid.rs landed.** `ntoskrnl/guid.c` (10 LOC of preprocessor-emitted GUID storage from `<initguid.h>` + `batclass.h`/`poclass.h`/`diskguid.h`) replaced by `sdk/lib/rust/ntoskrnl-rust/src/guid.rs` (23 GUIDs as `#[no_mangle] pub static`). C side disabled in `ntoskrnl/CMakeLists.txt`. Existing `extern { static GUID_DEVICE_BATTERY: GUID; }` blocks in Rust kernel modules now resolve to the new Rust storage. Co-existence with `sdk/lib/poguid` library (which also emits poclass GUIDs) tolerated via the existing `--allow-multiple-definition` link flag.
-- **Dead arm32 deleted.** Removed `ntoskrnl/{kd64,ke,mm,mm/ARM3,ps,rtl}/arm/` directories (~2.5K LOC of ARMv7 leftovers from upstream ReactOS — different ISA than this fork's ARM64 port; not in any reachable cmake; no references from outside their own dirs). Plus `ntoskrnl/KrnlFun.c` (48 LOC of a 2005-vintage Alex Ionescu joke comment). 19 files removed total.
-- **arcname landed last session.** `io/iomgr/arcname.c` no longer active on any arch. Hand-translated the two boot-critical functions into the existing `iomgr/arcname.rs`.
-- **cmdata.c — Phase A landed (this round, see headline).** The "intentional stay" classification turned out to be wrong-but-tractable: most variables `CmControlVector[]` references are already Rust-side `pub static mut`, so cross-subsystem references became `addr_of_mut!` paths instead of fresh extern blocks. Phase B (per-subsystem chop) is the planned follow-up.
-- **i386-dis.rs landed.** The 4,453-LOC binutils-derived i386/amd64 disassembler used by KDBG is now Rust on i386 + amd64 (arm64 has KDBG off). Translated by **Gemini 3 Pro** in one shot via the prompt drafted earlier this session. Output was architecturally sound (enum-tag dispatch instead of C function-pointer table, `Result<_, NTSTATUS>` instead of setjmp/longjmp, all major opcode tables intact at correct cardinality, license preserved). Required two small post-translation fixes by hand: a wrong import path (`ntkrnl_sys::PCSTR` → `ntkrnl_sys::ddk::PCSTR`) and one missing `unsafe` block around `ptr::copy_nonoverlapping`. Gemini's "compiles successfully" claim was wrong — useful data point: treat its build/test claims as guidance, not ground truth. **Verdict: a useful translation collaborator at this scale, but verify everything.**
-- **config/ landed.** All 21 functional config files are Rust-active on i386, amd64, and arm64. The 7-fix `wip-config-rust-port` series merged via `ddba7c05` — last fix was `cmparse.rs::COMPUTE_HASH_CHAR` missing the `RtlUpcaseUnicodeChar` call, silently disagreeing with `cmkcbncb.rs` and cascading into the `cm_x.h:120` / `ex.h:1305` ASSERT pair late in SMSS init.
-- **kd64/ landed.** WinDbg KD protocol stack now Rust on all 3 arches. The "recursive exception flood on amd64" that parked it in Feb 2026 was silently fixed by the CGU=256 + opaque_ptr + RAII guard work; nobody re-tested. ~6.8K LOC of C dropped, ~11.1K LOC of parked Rust now active. Required 5 small translation-bug fixes.
-- **ARM3/virtual landed.** `mm/ARM3/virtual.c` is no longer active; `ARM3/virtual.rs` is wired for all 3 arches. The i386 stack-commit regression was a bad local `TableFoundNode = 0` constant; bindgen/C have `TableFoundNode = 1`.
-- **pnpres landed.** `io/pnpmgr/pnpres.c` is no longer active; `pnpmgr/pnpres.rs` (3,264 LOC) is wired for all 3 arches. Same playbook as kd64/virtual.rs — the parked excuse ("translated, never wired") was stale.
-- **sysinfo hand-translated and landed.** `ex/sysinfo.c` is no longer active; `ex/sysinfo.rs` is wired for all 3 arches. Unlike previous landings this was real translation debt — the parked file was a Potemkin stub (full `NtQuerySystemInformation` returning `STATUS_NOT_IMPLEMENTED`, 74 handlers as commented C source). Hand-translated all the boot-critical handlers + `CallQS[]` dispatch table. Complex bindgen-archaeology handlers (process/handle enumeration with `_KTHREAD` union access) stubbed for now — boot doesn't depend on them. **Bonus**: revealed five flexible-array-indexing bugs in `pnpres.rs` (`Descriptors[ii as usize]` etc.) that crashed when the new dispatch let boot run further. ~3.1K LOC of C dropped.
-- **iomgr + ramdisk landed on arm64 (this session).** `io/iomgr/iomgr.c` and `io/iomgr/ramdisk.c` are no longer active on any arch; the parked Rust versions (`iomgr/iomgr.rs` 1,215 LOC + `iomgr/ramdisk.rs` 403 LOC) are now wired on all 3 arches. The "PE layout issue on arm64" excuse was partly stale, partly a missing piece of plumbing: removing the `#[cfg(not(target_arch = "aarch64"))]` gates in `iomgr/mod.rs` was step one, but the link then failed because the static-defining CGUs (`PnpSystemInit`, `IoFileObjectType`, `Io{Read,Write,Other}{Operation,Transfer}Count`, `IopFileMapping`, `IopSecurityResource`, `IopLoaderBlock`) weren't being pulled out of the staticlib archive — the C `iomgr.c` had been satisfying those refs. Fix: `_force_iomgr_symbols` block in `lib.rs` referencing 3 fns + 13 statics. i386/amd64 still 7/7, arm64 still 0/7 (identical 13,449 bytes serial → same baseline hang at `[HIVE] CmCheckRegistry done`), no regression. ~1.1K LOC of C dropped on arm64.
-- **Smoke status:** i386 7/7 PASS (taskbar rendered, 56s) · amd64 7/7 PASS (taskbar rendered post-wait-block-fix, 3:57; pre-fix kept showing blue desktop because explorer never got CPU through the storm) · arm64 0/7 baseline failure — reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Verified identical with C and Rust kd64 (same 13,449 bytes serial), so the arm64 issue is elsewhere, not in kd64. Same baseline holds with Rust iomgr/ramdisk active.
+| Bucket | LOC | Notes |
+|---|---:|---|
+| `*_rust_shims.c` + `kernel_c_helpers.c` + `ntprintf_trampoline.c` | ~7,200 | Bridge layer. See `shim-elimination.md` for status — most are tractable, the "must-stay" set is small and shrinking. |
+| NEWCC cache (`cache/*.c`) | ~5,300 | Gated off in default build. Translation not blocked, just not prioritized. |
+| Tests (`tests/*.c`) | ~5,900 | Test harness; not for translation. |
+| `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
+
+**Translation candidates with no Rust translation in tree: zero.** Every C
+file the default i386/amd64 build pulls in either has its Rust replacement
+active, or is a shim that augments the Rust impl living in a sibling rlib.
+
+## What's still C — and what we used to think had to be
+
+The previous version of this doc had a long list of "intentional-stay"
+classifications (captures(none) workarounds, complex-delegation Iop fns,
+calling-convention bridges, AVL trees with `#include <avlsupp.c>`, vararg
+trampolines, etc.). **Most of them turned out to be tractable.** As of
+2026-05-06:
+
+- All 10 io captures(none) workarounds: eliminated. The "LLVM cross-CGU
+  attribute propagation" excuses on every one of them turned out to be
+  defeated by the workspace `lto = false` + `codegen-units = 256` firewall
+  (which has been the default for months — the shim comments were just
+  stale). Re-probing them was cheap, and not one of the 10 needed
+  structural changes.
+- 8 `_c`-suffixed PnP shims: all eliminated, mix of direct translations and
+  dead-code deletions. Each had a "Rust hangs on amd64" comment which
+  turned out to be a captures(none) ghost.
+- `IopInitializeDriverModule` (240 LOC, the last "complex delegation"
+  on the io ledger): translated. The bug that surfaced during the port
+  wasn't a translation bug — it was an `extern "C"` vs `extern "system"`
+  ABI mismatch on `IopReadyDeviceObjects` that had been latent in
+  driver.rs for months, working on amd64+arm64 (where NTAPI = cdecl) and
+  blowing up on i386. The shim had been hiding it.
+- ~28 calling-convention bridges (`extern "fastcall"` / NTAPI / cm
+  dual-decoration `_shim_*`): all eliminated. The "Rust can't generate
+  the right decoration on i686-pc-windows-gnu" excuse was stale; mingw
+  lld emits the right `_Name@N` / `@Name@N` for `extern "system"` /
+  `extern "fastcall"` directly.
+
+**Pattern.** Many shim categories that were classified "must stay in C"
+turned out to be hiding real bugs in the Rust caller (ABI mismatch,
+captures(none) workaround left over from before the firewall, latent
+flexible-array indexing bug, etc.). The shim wraps the symptom; the
+underlying Rust bug only surfaces when the shim is removed and the call
+flow goes direct.
+
+So **assume any "intentional-stay" classification is a candidate for
+re-probing**, not a settled answer. The current must-stay set, conservatively:
+
+- Variadic trampolines (the `va_arg` pull is the function — Rust can't
+  cross that boundary safely)
+- A handful of LLVM/KVM workarounds with documented evidence
+  (`KiSaveXState`/`KiRestoreXState` on amd64, `SepInitTokensShim` i386
+  fat-LTO ud2)
+- C `#include <avlsupp.c>` AVL bridges (until we either generic-ize the
+  Rtl `avltable` rlib or write a separate `mm-avl` rlib)
+- `__FILE__`/`__LINE__` macros that need the C preprocessor
+- KDBG enum-name-to-string lookup tables (debugger-only, no Rust value-add)
+
+Everything else is in principle eliminable. The audit's job is to track
+which are actually worth eliminating, not to bless the current state.
 
 ## Active in Rust (default build)
 
-Counts are *active modules*. Files on disk that exist but aren't wired into `mod.rs` (or are gated off per-arch) are tracked in the "Parked" section below.
+Counts are *active modules*. Files on disk that exist but aren't wired into
+`mod.rs` (or are gated off per-arch) live in the parked-translation list,
+which is currently empty.
 
-| Subsystem | Active mods | LOC active | Notes |
-|-----------|------------:|-----------:|-------|
-| KE (kernel) | 68 | 54,899 | Includes per-arch `ke/{i386,amd64,arm64}/*`. `ke/amd64/usercall.rs` newly active. |
-| ARM3 (mm internals) | 25 | 44,054 | `virtual.rs` active all 3 arches |
-| iomgr | 26 | 41,800 | `iomgr.rs` + `ramdisk.rs` + full `arcname.rs` (no C hybrid) active on all 3 arches |
-| EX (executive) | 31 | 38,781 | `sysinfo.rs` active all 3 arches |
-| SE (security) | 18 | 35,200 | |
-| **config (registry CM)** | **22** | **~33,950** | All 3 arches; `cmdata.rs` (Phase A) newly active — Phase B chop pending |
-| ps (process) | 13 + per-arch | 23,085 + 273 | per-arch ps/i386 (psctx, psldt) and ps/amd64 (psctx) active |
-| ob (object) | 11 | 22,532 | |
-| fsrtl | 17 | 20,963 | |
-| pnpmgr | 14 (+arb subdir) | 25,973 | `pnpres.rs` active all 3 arches |
-| fstub | 4 | 12,264 | |
-| mm | 12 | 11,893 | |
-| **kd64 (WinDbg KD protocol)** | **7 + per-arch** | **11,100 + 837** | All 3 arches active; per-arch kd64/i386 (kdx86) + kd64/amd64 (kdx64) Rust |
-| kdbg (KDB) | 9 | 13,485 | i386 + amd64 only (KDBG off on arm64); includes `i386_dis.rs` (Gemini 3 Pro translation) |
-| cc (cache) | 7 | 6,221 | |
-| dbgk | 2 | 5,104 | |
-| po (power) | 4 | 5,050 | |
-| inbv (boot video) | 3 | 3,633 | |
-| lpc | 8 | 3,942 | `connect.rs` newly active (all 3 arches) |
-| kd (low-level) | 6 | 3,808 | |
-| wmi | 4 | 3,697 | |
-| i386 (arch shared) | 7 | 2,797 | Used by i386 + amd64 |
-| rtl | 2 | 2,183 | |
-| vdm | 4 | 1,228 | |
-| arm64 (arch) | 2 | 1,045 | |
-| amd64 (arch) | 2 | 981 | |
-| vf | 1 | 152 | |
-| **TOTAL active (i386/amd64)** | **~322** | **~415K LOC** | |
+| Subsystem | Active mods | LOC active |
+|---|---:|---:|
+| KE (kernel) | 68 | ~54,900 |
+| ARM3 (mm internals) | 25 | ~44,100 |
+| iomgr | 26 | ~42,100 |
+| EX (executive) | 31 | ~38,800 |
+| SE (security) | 18 | ~35,200 |
+| config (registry CM) | 22 | ~33,950 |
+| pnpmgr | 14 (+arb) | ~26,000 |
+| ps (process) | 13 + per-arch | ~23,400 |
+| ob (object) | 11 | ~22,500 |
+| fsrtl | 17 | ~21,000 |
+| kdbg (KDB) | 9 | ~13,500 |
+| fstub | 4 | ~12,300 |
+| mm | 12 | ~11,900 |
+| kd64 | 7 + per-arch | ~12,000 |
+| cc (cache) | 7 | ~6,200 |
+| dbgk / po / inbv / lpc / kd / wmi / vdm / arch / vf | 38 | ~25,200 |
+| **TOTAL active (i386/amd64)** | **~322** | **~439K LOC** |
 
-## Parked translations (Rust on disk, C version active in build)
+Parked translations: **none.** Every Rust file in tree is wired in.
 
-**None.** Every Rust translation in tree is now active in the build. Last parked file (`lpc/connect.rs`) landed this round.
+## Stale-claim watch (worth keeping for the next session)
 
-## Still in C — intentional (no Rust translation planned)
+The previous audit's notes on parked subsystems were several months out of
+date. **Confirm before working from them.** The general lesson, repeated
+across many sessions:
 
-| File | LOC | Why C |
-|------|----:|-------|
-| `*_rust_shims.c` + `kernel_c_helpers.c` (7 files) | ~6,400 | FORCEINLINE/macro/dllimport bridges for Rust FFI. Phase 0 cleanup landed; further reduction tracked in `docs/engineering/shim-elimination.md` (Phases 1-5). |
-| tests/*.c | 5,859 | Kernel test harness. Not for translation. |
+> When you see ud2 + folded success path on i386, run `nm` on the binary
+> and check `verify_abi.py` BEFORE going down the captures(none) rabbit
+> hole. Both produce the same disasm pattern; ABI is a 1-second check.
 
-## Still in C — translation candidates (NOT yet translated)
+Specific examples worth remembering:
 
-**Empty.** Every per-arch `ke/`, `ps/`, `kd64/`, `lpc/`, and `config/` file that the default i386/amd64 build actually pulls in is now Rust. Everything else listed by the simple grep below is either intentional-stay (`*_rust_shims`), or in the `elseif(ARCH STREQUAL "arm")` dead branch that the build never selects (and was deleted last round).
+- **kd64** ("recursive exception flood on amd64"): silently fixed months
+  before re-test. Just needed wiring.
+- **lpc/connect** ("captures(none) cascade — confirmed"): file already had
+  the right `opaque_ptr` defenses. Built clean on all arches with zero
+  source changes.
+- **pnpres** ("translated, never wired"): 2 small fixes, builds + 7/7 on
+  i386 and amd64.
+- **iomgr/ramdisk on arm64** ("PE layout issue → 0x6B crash"): half-stale.
+  Cfg gate had to come off, but the actual fix was wiring `_force_iomgr_symbols`
+  to pull statics out of the staticlib archive.
+- **ke/amd64/usercall** ("return-address corruption BSOD"): actual bug was
+  importing `KeGdiFlushUserBatch` as `extern "system" fn ...` when it's a
+  global `PGDI_BATCHFLUSH_ROUTINE` data symbol (function pointer filled in
+  at win32k bringup). Fix: import as `static mut` and call via
+  `(KeGdiFlushUserBatch.unwrap())()`.
+- **`IopInitializeDriverModule` "complex delegation"** (the 2026-05-06
+  case): real bug was an `extern "C"` vs `extern "system"` ABI mismatch on
+  `IopReadyDeviceObjects` in driver.rs predating this commit. amd64+arm64
+  linked silently because NTAPI=cdecl on those arches; i386 stdcall callee
+  + cdecl call-site folded the success-path tail to ud2.
+- **All 10 io captures(none) workarounds**: every comment claiming "LLVM
+  miscompiles cross-CGU captures(none)" turned out to be solvable by the
+  workspace firewall. Not one needed structural changes.
 
-## Active C in default build, summed
+When picking a parked file or shim to revive, the cheapest first step is
+often: re-enable it, build, smoke. The bug may already be gone.
 
-| Bucket | LOC |
-|--------|----:|
-| Generic active C (excluding shims + tests) | ~0 |
-| **Active C in default build (worst case = i386)** | **~0** |
-| of which intentional-stay | 0 |
-| of which parked Rust translation | 0 |
-| **Active translatable C with no Rust translation in tree** | **0** |
+## What this audit doesn't measure
 
-(The dead `elseif(ARCH STREQUAL "arm")` branch + its arm32 directories were deleted this round.)
+- **Boot correctness.** A line-count metric says nothing about whether the
+  Rust version actually works under load. Smoke is the source of truth.
+- **Per-arch differentials.** i386 and amd64 are at parity; arm64 has its
+  own baseline issue.
+- **Implicit shim debt.** The ~7.2K LOC of `*_rust_shims.c` is technically
+  "C in the build", but most of it is one-line `_rs_*` delegations to a
+  Rust impl in a sibling rlib. The shim-elimination plan tracks this in
+  detail.
 
-## Percentage
-
-Translatable C body of work (excluding tests, shims, intentional stays, dead arm32, KrnlFun, guid):
-- ~282,200 LOC C total
-- 0 LOC C still active that doesn't already have a Rust translation in tree
-- **All translatable C either has a Rust replacement active in the build, or has a Rust translation parked in tree pending a real-bug fix.**
-
-The remaining "% to 100%" is now entirely about debugging the two parked translations — no new translation work is needed.
-
-No parked translations remain — every Rust file in tree is active in the build.
-
-## What it would take to push toward 100%
-
-In rough priority order (yield vs. cost):
-
-1. **arm64 baseline failure** — reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Identical 13,449 bytes serial across all recent kernel changes (Rust kd64, Rust iomgr, Rust connect, Rust cmdata, Rust sysinfo — none of them caused or fixed it). Needs gdbstub triage of where the hang actually is, not more translation work.
-2. **Remaining sysinfo stubs (~30 simple handlers)** — Class 4 (SystemPathInformation), Class 6 (SystemCallCountInformation), Class 10 (SystemCallTimeInformation), Class 12-15, 17, 19-20, 29-32, 34, 37, 40-41, 43, 46, 49, 51-53, 56-58, etc. None gate boot or task manager; each is small. Could be batch-translated but yields are low.
-3. ~~**Shim Phase 1+ continuation**~~ — landed 2026-05-05. All cm + ke + ob + ps + se + common + mm Phase 1 batches now live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. Only M8 (PFN ref-counting) remains, deferred to Phase 4 (PFN database design needs its own thinking). The next moves are Phase 2 macro materializations (~180 functions, especially `Kx*ThreadWait` / HAL dispatch / IRP stack helpers) and Phase 4 captures(none) per-function review.
-4. ~~`ntprintf_w` (UTF-16) sibling crate~~ — landed 2026-05-04. See headline + `shim-elimination.md` "since 2026-05-04, wide round". The vararg theme is now closed.
-
-## Stale-claim watch
-
-The previous audit's notes on parked subsystems were several months out of date. **Confirm before working from them.** Examples uncovered this session:
-
-- **kd64**: claimed "recursive exception flood on amd64, root cause unknown." Actually fixed silently months ago; just needed wiring + 5 small translation-bug fixes.
-- **arm64 baseline**: claimed "no serial output, pre-existing 0x6A BSOD." Actually reaches `[HIVE] CmCheckRegistry done` and hangs before `[PS] PspUserThreadStartup`. Different failure mode, deeper into boot.
-- **ARM3/virtual**: the first regression looked like an LLVM `ud2` cascade, but the boot-blocking i386 crash was a real translation bug: local `TableFoundNode` was `0` instead of the C/bindgen value `1`.
-- **pnpres**: claimed "translated, never wired." Actually wires cleanly with two small fixes (malformed extern block, missing DbgPrint extern decl). 7/7 i386, 7/7 amd64, 0/7 arm64 (matches baseline).
-- **sysinfo**: claimed "70+ class handlers; not all translated." This one was actually accurate — the parked file was a stub. Hand-translated last session.
-- **iomgr/ramdisk on arm64**: claimed "PE layout issue → 0x6B crash." Half-stale: the cfg gate in `mod.rs` had to come off, but the build then failed not from a runtime PE problem — from a link-time problem. Statics like `IoFileObjectType` weren't being pulled from the kernel-rust archive because the C `iomgr.c` had been satisfying those refs. `_force_iomgr_symbols` block fixed it. arm64 baseline failure is unchanged (so the historical 0x6B crash, if it was ever real, is gone or different now).
-- **ke/amd64/usercall**: BSOD at `0x5F5C78` was real (not stale) — but the diagnosis ("return-address corruption") was wrong. Real bug: Rust imported `KeGdiFlushUserBatch` as `extern "system" { fn ... }`, C defines it as a global `PGDI_BATCHFLUSH_ROUTINE` function pointer initialized at win32k bringup. The `fn` import emitted a direct call to the data symbol, which decoded as illegal instructions. Lesson: even when the parked-file excuse is current, the *diagnosis* in the excuse can still be wrong. Re-probe with fresh eyes; the audit's "needs symbolicated crash analysis" turned out to be exactly right and exactly cheap once done. ~10-line fix, 4-file diff. Same data-symbol-as-fn bug also existed (latent) in already-active `traphandler.rs` — found via the same fix.
-- **lpc/connect captures(none) cascade**: previous audit claimed "probed last session and confirmed real captures(none) cascade — needs opaque_ptr investigation, not stale-excuse revival." Re-probed this round; the file already had `opaque_ptr` laundering on every output-pointer parameter and `read_volatile` on the hot-path Flags check. Built clean on all 3 arches and i386 7/7 + amd64 7/7 smoke pass with zero changes to the .rs file — just commenting the C side out and uncommenting `pub mod connect;`. Either the bug got silently fixed by some other defense layer (CGU=256 + opaque_ptr + RAII guards landed in late March 2026) or the original "confirmed real" claim was overconfident. The lesson from `usercall.rs`/`kd64`/`pnpres` keeps repeating: **re-probe parked excuses with the current toolchain before assuming they're still valid.** The audit's own "Captures(none) excuses tend to be wrong too" guidance was right.
-- **shim audit caller-scan**: when an automated agent reports "function X has zero Rust callers", remember that on i386 the same C symbol can be referenced under three different decorations (`_X` cdecl, `_X@N` stdcall, `@X@N` fastcall), and the same Rust source can produce any of those depending on whether the `extern { fn X }` block is in `extern "C"`, `extern "system"`, or `extern "fastcall"`. The shim Phase 0a agent reported `Ke386GetTr` as vestigial because it grepped for the cdecl name, but the symbol was *also* needed under `_Ke386GetTr@0` (stdcall) by `KeBugCheckWithTf`/`KeSaveStateForHibernate`/`KiSaveProcessorControlState`. Build broke on first try; reverted that one deletion. **Lesson: when validating an agent's vestigial-shim report, sanity-check the build before committing — and for any function still flagged after that, manually grep all three i386 decoration variants in the Rust workspace.**
-- **amd64 taskbar regression**: previous doc analysis (2026-05-03) walked through KiUnwaitThread CPU storm, EndDeferWindowPos wedges, NtOpenKey deadlock hypothesis, and concluded the on-screen "STOP: 0x0000007F" was a screenshot-timing artifact (cirrus VGA briefly returning to text mode). All wrong. The on-screen text was a real BUGCHECK 0x7F (DOUBLE FAULT, Param1=8) — `KeBugCheckActive=1` confirmed via gdb in the post-bugcheck cli;hlt loop, and the DF stack contained a hardware trap frame at `RtlVirtualUnwind+56` with `cr2 = RSP-8` (classic stack overflow during exception delivery). Root cause was a one-constant fix (`KERNEL_LARGE_STACK_COMMIT` 16KB → 48KB on amd64). The CPU storm IS still real, but it doesn't gate the taskbar — it just delays explorer's user-mode paint by ~90 seconds. **Lesson: when a wedge produces an on-screen STOP message, run `qemu/inspect.sh ... raw 'print/x *(unsigned int*)&KeBugCheckActive'` first. If it's 1, the bugcheck is real regardless of how the screen looks.**
-- **amd64 "kernel CPU storm" gating taskbar paint** (2026-05-05 update): the late-April hypothesis ("periodic timer with too-short Period auto-rearming, similar to KeBalanceSetManager") was wrong. The storm was not a misconfigured periodic timer — it was a corrupt `TimerBlock.WaitListEntry` self-reference produced by the `KxMultiThreadWait` C trampoline pre-setting `Timer.WaitListHead.Flink/Blink = TimerBlock` AND the subsequent `KeWaitForMultipleObjects` `InsertTailList` loop double-inserting it. With `Entry.Blink = OldBlink = &TimerBlock` (self), `RemoveEntryList` was a no-op, so the timer fire chain spun forever finding the same waiter. Walking `KiTimerTableListHead` showed all periodic timers had Period 1000-2000ms (sane). gdb sampling found rcx (Thread arg to KiUnwaitThread) consistently = explorer's KTHREAD; rdi at function entry = TimerBlock pointer; the rendezvous between Object and Wait Block then revealed the self-reference. **Lesson: when a "CPU storm" hypothesis points at "wrong timer Period," sanity-check by walking `KiTimerTableListHead` for actual Period values. If they're sane, the storm is a wait-list corruption, not a timer rate problem. Read TimerBlock.WaitListEntry.Flink/Blink directly — if they equal TimerBlock's own address, the `InsertTailList` chose itself as OldBlink.**
-
-When picking a parked file to revive, the cheapest first step is often: re-enable it on whichever arch is greenest, build, smoke. The bug may already be gone.
-
-## What the audit doesn't measure
-
-- **Boot correctness.** A line-count metric says nothing about whether the Rust version actually works under load. The smoke harness is the source of truth on that — current verdict: i386 7/7, amd64 7/7, arm64 0/7 (pre-existing baseline issue, not in kd64).
-- **API debt.** ~6.7K LOC of paid translations are parked. Some need debugging, some need wiring. None of that needs new API spend.
-- **Per-arch differentials.** i386 and amd64 are mostly aligned; arm64 has its own set of parked files (iomgr/ramdisk PE layout, ke/arm64/trap, KDBG fully off). The numbers above use i386/amd64 as the reference because that's where the build is at parity.
-
-## How these numbers were computed
+## How these numbers are computed
 
 ```bash
-# Total C in ntoskrnl/ (excluding tests + shim/helper bridges):
+# Total ntoskrnl C body of work (excludes tests + shims):
 find ntoskrnl -name "*.c" \
-  | grep -v -E '/tests/|_rust_shims\.c|kernel_c_helpers\.c' \
-  | xargs wc -l   # → 283,846
+  | grep -v -E '/tests/|_rust_shims\.c|kernel_c_helpers\.c|trampoline\.c' \
+  | xargs wc -l   # → ~279,300
 
-# Active C in default build (NEWCC=OFF; KD64_USE_C=ON; KDBG=ON):
+# Active C in default build (excludes shims):
 grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
-  | grep -v '^\s*#' \
-  | grep -v 'tests/' \
-  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c' \
+  | grep -v '^\s*#' | grep -v 'tests/' \
+  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|trampoline\.c' \
   | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
-  | sort -u | xargs wc -l   # → 22,342, minus 5,296 NEWCC = 17,046
+  | sort -u | xargs wc -l   # → ~6,700 (cache/* gated off, mm_sysldr_shims is a shim)
 
 # Rust LOC across ntoskrnl-rust/:
-find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 430,641
+find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → ~439,200
 ```
-
-Numbers above use these scripts as the source of truth. Re-run them after any subsystem flip; the audit text is just a snapshot of what they output on 2026-04-30.
