@@ -337,6 +337,65 @@ Remaining Phase 2 surface (~146 fns) is concentrated in:
 
 Cost: case-by-case, but well-bounded. Per-batch wall-clock in the io-inlines sweep was ~25–40 minutes scope-pick → smoke-green for the four batches; the IO counter batch (most novel work, including local `PsGetCurrentProcess` replication and the `AtomicI64::fetch_add` rendering of `ExInterlockedAddLargeStatistic`) was the longest at ~40 minutes.
 
+#### Phase 2 backlog (explicitly deferred)
+
+The following Phase 2 candidates have been identified but are *not* being translated in the current sweep. Each entry has a category and a one-line reason; the rationale here is "what's left and why we're not touching it yet" so future contributors don't re-derive the analysis.
+
+**mm_rust_shims.c (~14 fns left):**
+
+| Function(s) | Category | Reason for deferral |
+|---|---|---|
+| `RtlpFindAvlTableNodeOrParent`, `RtlpInsertAvlTreeNode`, `RtlpDeleteAvlTreeNode` | **Phase 4 — AVL refactor** | The Mm flavor (`MMADDRESS_NODE`, `MM_AVL_TABLE`) is layout-incompatible with the existing `avltable` rlib's Rtl flavor (`RtlBalancedLinks`): Mm packs `Balance:2` into the low bits of `Parent` and embeds `StartingVpn`/`EndingVpn` directly in the node. C uses `#include <sdk/lib/rtl/avlsupp.c>` with `#define Rtl* → Mi*` rename in `miavl.h` for textual reuse. Rust resolution path: generic-ize `avltable::tree` over a `BalancedLinks` trait + add a second instantiation, OR write a separate `mm-avl` rlib (~400 LOC duplicate). Estimated half-day to one day. |
+| `RtlRightChildAvl`, `RtlLeftChildAvl`, `RtlParentAvl`, `RtlIsRightChildAvl`, `RtlIsLeftChildAvl` | **Phase 4 — AVL refactor (5 trivial accessors)** | Field accessors / Balance-from-Parent low-bit mask. Each is 1-3 lines and individually trivial, but pulling them into Rust makes sense only after the AVL flavor split lands (otherwise we'd be duplicating `MMADDRESS_NODE` field paths). Tackle as a follow-on to the AVL refactor. |
+| `MmspCompareSegments_Shim`, `MmspSortSegments_Shim`, `MmspCheckSegmentBounds_Shim`, `MmspPageAlignSegments_Shim` | **Phase 4 — complex delegation** | qsort callbacks with global state over `MM_IMAGE_SECTION_OBJECT`. Touch image-section parsing, which is itself only partially Rust-translated. Best handled as part of broader image-section work. |
+| `MmFixupImageSectionSegments` | **Phase 4 — complex delegation** | Same family as the `Mmsp*` helpers; full image-section fixup pass. |
+| `MmVerifyImageIsOkForMpUse` | **Phase 4 — captures(none) workaround OR complex delegation** | Currently a stub returning TRUE; not yet analyzed. Could be a free win if it stays a stub, but worth a per-function look first. |
+| `Arm64DumpPte` | **Intentional-stay** | Debug helper that calls `MiAddressToPte` + `ARM64_UART_TRACE_HEX` macros. Pure printf-shaped tracing; no value in moving to Rust. |
+| `ExAllocatePoolZero` | **Intentional-stay (LLVM workaround)** | Already delegates to `_rs_ExAllocatePoolZero`; trampoline stays as the captures(none) firewall. |
+| `KeFlushProcessTb` | **Intentional-stay** | Per-arch TLB flush primitives (`__writecr3` / `tlbi vmalle1is`). Tiny inline asm; lives where the rest of the per-arch shim asm lives. |
+
+**io_rust_shims.c (~30 fns left):**
+
+| Function(s) | Category | Reason for deferral |
+|---|---|---|
+| `ObCreateObject_shim`, `ObCreateObjectAddress_shim`, `ObInsertObject_shim`, `ObReferenceObjectByHandle_shim` | **Phase 4 — captures(none) workaround** | Documented in-file: "LLVM cross-CGU `captures(none)` attribute propagation bug — when Ob* functions land in a different codegen unit, LLVM concludes the output pointer is never written → eliminates the success path." Re-probe each individually (per the lpc/connect precedent — some old captures(none) excuses are now stale). |
+| `IopInitializePlugPlayServices_shim` | **Phase 4 — captures(none) workaround** | "Calling it through `core::hint::black_box()` in iomgr.rs miscompiles on i386 into an immediate `ud2`. Route through a C shim so LLVM can't fold the continuation in IoInitSystem away." Re-probe. |
+| `RtlAnsiStringToUnicodeString_shim`, `RtlUnicodeStringToAnsiString_shim`, `RtlInitAnsiString_shim`, `RtlFreeUnicodeString_shim` | **Phase 3 — calling convention bridge** | i386 cdecl→stdcall bridges. Targeted by Phase 3 batch 3. |
+| `IopQueryDeviceCapabilities_c`, `IopGetBusTypeGuidIndex_c`, `IopInitiatePnpIrp_c`, `IopCompleteRequest_c`, `PiSetDevNodeText_c`, `IoRequestDeviceEject_c`, `PiQueueDeviceAction_c`, `PiPerformSyncDeviceAction_c` | **Phase 4 — complex delegation** | The `_c`-suffixed PnP request paths. Each is a real algorithm (dozens of LOC each, calls into PnP subsystem). The `_c` suffix marks them as "C version preserved while Rust port lands" — they should eventually become Rust translations, not shim wrappers. |
+| `IopInitializeDriverModule` | **Phase 4 — complex delegation** | Documented in-file: "complex function that was not translated in the IO Tier 1 batch". Real translation work. |
+| `PiInitCacheGroupInformation_shim`, `IopIsValidPhysicalDeviceObject`, `HalGetDmaAdapter`, `CmiGetNextResourceDescriptor`, `IopDeviceNodeSetFlag` | **Mixed — needs per-fn analysis** | Some are macros (small), some are real calls into other subsystems. Triage when the captures(none) re-probe happens. |
+| `RtlUnicodeStringPrintf_4wZ_shim` | **Intentional-stay** | Variadic `RtlUnicodeStringPrintf` wrapper with a 4-arg specialization (`"%wZ%wZ#%wZ%wZ"`). The `RtlUnicodeStringPrintf` call site is a single hot path in `iomgr/deviface.rs`; routing it through Rust ntprintf_w is more work than the savings justify. |
+| `ProbeForReadLargeInteger`, `ProbeForWriteHandle`, `ProbeForWriteIoStatusBlock`, `ObReferenceObject`, `ObDereferenceObject`, `ExRaiseStatus` | **Already done (Phase 1 — `common-inlines`)** | These C definitions are dead weight — the `common-inlines` rlib's Rust impls win at link time. Cleanup deferred (cosmetic only). |
+
+**kdbg_rust_shims.c (~16 fns + 2 large data tables):**
+
+| Function(s) | Category | Reason for deferral |
+|---|---|---|
+| `KDB_ACCESS_TYPE_TO_STRING`, `KDB_ENTER_CONDITION_TO_STRING`, `NPX_STATE_TO_STRING` | **Intentional-stay** | Enum-name-to-string lookup tables for KDBG output formatting. Pure string interpolation; no Rust value-add. |
+| `Ke386GetGlobalDescriptorTable`, `Ke386GetLocalDescriptorTable`, `Ke386GetTr_Shim` | **Intentional-stay (i386 inline asm)** | Direct `sgdt`/`sldt`/`str` instruction wrappers used only by KDBG-mode register dumps. Same family as the `~50 i386 register/V86/segment shims` documented in Phase 5. |
+| `KeGetContextFrameRegister`, `KeSetContextFrameRegister`, `KeGetTrapFrameFrameRegister`, `KeGetTrapFrameStackRegister` | **Intentional-stay (per-arch CONTEXT/KTRAP_FRAME field accessors)** | Per-arch accessors duplicated for 32-bit and 64-bit CONTEXT layouts. Pure field reads; debugger-only. |
+| `KdbPrintf`, `KdbpPrint` | **Intentional-stay (vararg trampolines)** | Variadic format-string entry points used by KDBG-mode dumps; routed through ntprintf already. Keeping the C trampoline as the va_list anchor is the documented vararg pattern. |
+
+**cm_rust_shims.c (~25 fns left after Phase 1 KCB-lock extraction):**
+
+| Function(s) | Category | Reason for deferral |
+|---|---|---|
+| `_shim_*` family with `__asm__("_Name@N")` symbol-renames (~14 fns: `_shim_CmpAcquireKcbLockShared` through `_shim_CmpIsKeyValueSmall`) | **Phase 3 follow-up — dual-decoration scheme** | Each KCB-lock / hive-cell / utility function has BOTH a bare cdecl symbol (`_Name`) for bindgen-generated callers AND an `_Name@N` stdcall variant for hand-written `extern "system"` callers. The right resolution is to align all hand-written callers on bindgen (`use ntkrnl_sys::ddk::*;`) and drop the `_shim_*` family. Larger Phase 3 batch — defer until the simple fastcall/stdcall bridges land. |
+| Stub macros (`CMP_ASSERT_REGISTRY_LOCK`, `CMP_ASSERT_FLUSH_LOCK`, `CMP_ASSERT_KCB_LOCK`, `CMP_ASSERT_REGISTRY_LOCK_OR_LOADING`, `ASSERT_VALUE_BIG`, `CMTRACE`, `IS_NULL_TERMINATED`) | **Intentional-stay** | Empty-body assertion stubs and trace macros. ~1-2 lines each; no Rust value-add. |
+| `CmpIsKcbLockedExclusive_outline`, `_outline_GET_HASH_INDEX` | **Phase 4 follow-up** | These are PCH-extracted FORCEINLINE outlines with `__attribute__((alias))` aliases. Better to fold into the cm_x.h Phase 1 work whenever cm-inlines gets its second sweep. |
+| `RtlStringCbPrintfW`, `CmpIsKeyValueSmall`, `HvGetCellType`, `CM_CHECK_REGISTRY_SUCCESS`, `LANGIDFROMLCID`, `PtrToUlong`, `_saved_PtrToUlong` | **Mixed — Phase 2 candidates that overlap with vararg/macro work already done** | The vararg-overhaul round (May 4) put `RtlStringCbPrintfW` body in Rust ntprintf_w; the C trampoline here is the va_list anchor and stays. The others are tiny utility macros that could land in a future cm-macros rlib if a sweep is justified. |
+
+**kernel_c_helpers.c (~70 fns):**
+
+The canonical "must-stay" home. Categories per Phase 5:
+- 7 vararg trampolines (need C va_list)
+- 5 LLVM/KVM workarounds (compiler/hypervisor bugs)
+- ~50 i386 register/V86/segment shims (Phase 5 audit; `core::arch::asm!` in Rust could move some)
+- ~5 kdbg data tables (macro-generated; could be `const fn` arrays in Rust but low priority)
+- 2-3 RtlpAvl/MiAvl bridges (move with the AVL refactor)
+- ~2 fastcall→cdecl bridges (Phase 3 batch 1)
+- 2 stdcall→cdecl bridges (Phase 3 batch 2)
+
 ### Phase 3 — Calling conventions (~3 days)
 
 ~28 functions. `extern "fastcall"` works on stable Rust for `i686-pc-windows-gnu` (verified in March doc); just hasn't been adopted everywhere. Mechanical work:
