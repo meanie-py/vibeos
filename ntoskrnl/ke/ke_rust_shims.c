@@ -30,16 +30,13 @@
  * KeGetPcr is a macro (i386 __readfsdword) — a static __inline trampoline
  * captures the value at the function definition site, see below. */
 
-/* Generic ke_x.h FORCEINLINE outlines used by KiAttachProcess +
- * KiRemoveEntryTimer. */
+/* Generic ke_x.h FORCEINLINE outlines used by KiAttachProcess. */
 #define KiReleaseDispatcherLockFromSynchLevel _saved_KiReleaseDispatcherLockFromSynchLevel
 #define KiReleaseApcLockFromSynchLevel  _saved_KiReleaseApcLockFromSynchLevel
-#define KiRemoveEntryTimer              _saved_KiRemoveEntryTimer
 
 /* i386 FORCEINLINE functions from internal/i386/ke.h, intrin_i.h, trap_x.h
  * and ke.h. */
 #ifdef _M_IX86
-#define KiCheckForApcDelivery           _saved_KiCheckForApcDelivery
 #define KiExitV86Trap                   _saved_KiExitV86Trap
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
 #define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
@@ -65,10 +62,8 @@
 
 #undef KiReleaseDispatcherLockFromSynchLevel
 #undef KiReleaseApcLockFromSynchLevel
-#undef KiRemoveEntryTimer
 
 #ifdef _M_IX86
-#undef KiCheckForApcDelivery
 #undef KiEndInterrupt
 #undef KiExitV86Trap
 #undef KiExitTrapDebugChecks
@@ -378,10 +373,8 @@ ULONG KiComputeTimerTableIndex(IN ULONGLONG DueTime)
     return _rs_KiComputeTimerTableIndex(DueTime);
 }
 
-VOID KiRemoveEntryTimer(IN PKTIMER Timer)
-{
-    _saved_KiRemoveEntryTimer(Timer);
-}
+/* KiRemoveEntryTimer lives in Rust now — ntkrnl-sys::inline::ke +
+ * #[no_mangle] re-export in shim_exports.rs. */
 
 VOID KxInsertTimer(IN PKTIMER Timer, IN ULONG Hand)
 {
@@ -1027,11 +1020,8 @@ USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
 /* __writecr3, __sgdt, __sidt, __invlpg, __readfsdword, __writefsdword:
  * Now in Rust ke_i386.rs global_asm! */
 
-/* --- KiCheckForApcDelivery --- FORCEINLINE in internal/i386/ke.h */
-VOID NTAPI KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiCheckForApcDelivery(TrapFrame);
-}
+/* KiCheckForApcDelivery lives in Rust now (ntkrnl-sys/inline/ke_i386.rs
+ * global_asm! — APC delivery loop with KfRaiseIrql/KfLowerIrql + sti/cli). */
 
 /* KiGetGdtEntry / KiSetGdtDescriptorBase live in Rust now —
  * sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs (the inline impls), with

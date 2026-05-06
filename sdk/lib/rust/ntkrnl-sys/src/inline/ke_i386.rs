@@ -510,6 +510,61 @@ core::arch::global_asm!(
     "  sub esp, 0x2A0",
     "  push 0xE",
     "  jmp _KiSystemStartupBootStack@0",
+
+    // KiCheckForApcDelivery(TrapFrame) — was a FORCEINLINE in
+    // internal/i386/ke.h. NTAPI/stdcall. Body:
+    //   if ((TrapFrame->EFlags & EFLAGS_V86_MASK) || KiUserTrap(TrapFrame))
+    //     while (1) {
+    //       Thread->Alerted[KernelMode] = 0;
+    //       if (!Thread->ApcState.UserApcPending) break;
+    //       OldIrql = KfRaiseIrql(APC_LEVEL);  // APC_LEVEL = 1
+    //       sti;
+    //       KiDeliverApc(UserMode, NULL, TrapFrame);  // UserMode = 1
+    //       KfLowerIrql(OldIrql);
+    //       cli;
+    //     }
+    //
+    // Field offsets: TrapFrame.SegCs=0x6C, EFlags=0x70; KTHREAD.Alerted[0]=0x5E,
+    // KTHREAD.ApcState.UserApcPending = ThApcState(0x28) + AsUserApcPending(0x16)
+    // = 0x3E. KPCR.CurrentThread = fs:[0x124].
+    //
+    // Stack layout in the loop: we save TrapFrame in esi (callee-saved),
+    // and OldIrql in ebx (callee-saved).
+    ".globl _KiCheckForApcDelivery@4",
+    "_KiCheckForApcDelivery@4:",
+    "  mov ecx, [esp+4]",                  // ecx = TrapFrame
+    "  test byte ptr [ecx+0x6C], 1",       // user mode?
+    "  jnz 1f",
+    "  test dword ptr [ecx+0x70], 0x20000", // V86?
+    "  jz 9f",                              // neither → return
+    "1:",
+    "  push esi",
+    "  push edi",
+    "  push ebx",
+    "  mov esi, ecx",                      // esi = TrapFrame (preserved)
+    "2:",                                   // top of loop
+    "  mov edi, fs:[0x124]",                // edi = current thread
+    "  mov byte ptr [edi+0x5E], 0",         // Thread.Alerted[KernelMode] = FALSE
+    "  cmp byte ptr [edi+0x3E], 0",         // Thread.ApcState.UserApcPending
+    "  je 8f",                              // 0 → break
+    "  push 1",                             // APC_LEVEL = 1
+    "  call _KfRaiseIrql@4",
+    "  mov ebx, eax",                      // ebx = OldIrql (preserved across KiDeliverApc)
+    "  sti",
+    "  push esi",                          // TrapFrame
+    "  push 0",                            // ExceptionFrame = NULL
+    "  push 1",                            // UserMode = 1
+    "  call _KiDeliverApc@12",
+    "  push ebx",                          // OldIrql
+    "  call _KfLowerIrql@4",
+    "  cli",
+    "  jmp 2b",
+    "8:",
+    "  pop ebx",
+    "  pop edi",
+    "  pop esi",
+    "9:",
+    "  ret 4",
 );
 
 // Compile-time guards: if bindgen layout drifts away from the hardcoded
