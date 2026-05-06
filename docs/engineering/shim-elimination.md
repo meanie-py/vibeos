@@ -1,8 +1,8 @@
-# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-io-inlines)
+# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-mm-macros)
 
 ## Status snapshot
 
-**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io** — 16 ke fns (across pilot/2/B/A in `ke-macros`) plus 9 io fns (across pilot/1/2/3 in a brand-new sibling `io-inlines` rlib). The macro/inline surface of `ke_rust_shims.c` is closed (all wait-list satisfy/add macros, all four `Kx*ThreadWait` wait-setup macros, all per-arch trap-frame/intrinsic helpers, all three HAL dispatch macros have Rust bodies), and the macro/inline surface of `io_rust_shims.c` is now closed too (all seven `static __inline` / FORCEINLINE bodies from `io_x.h` plus `IoCopyCurrentIrpStackLocationToNext` from `iofuncs.h` and the `IoGetDevObjExtension` `#define` from `io.h`). Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
+**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io + mm** — 16 ke fns (across pilot/2/B/A in `ke-macros`), 9 io fns (across pilot/1/2/3 in `io-inlines`), and 9 mm fns (across pilot/1/2 in a brand-new sibling `mm-macros` rlib). Surfaces closed: ke (`ke_rust_shims.c` macro/intrinsic), io (`io_rust_shims.c` `static __inline`/FORCEINLINE/`#define` from `io_x.h` + `iofuncs.h` + `io.h`), and the 4 trivial bit-twiddle macros + MI_MAKE_HARDWARE_PTE family + MI_UPDATE_VALID_PTE + MmInitializeMdl block in mm. Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
 
 **Phase 1 final state (≈165 fns).** All wrappers live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned work is more Phase 2 (~165 macros remaining across mm, io, kdbg, common subsystems) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
 
@@ -286,7 +286,7 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 - **Total landed**: ~165 fns of Rust impl across 13 sibling rlibs. Per-batch wall-clock matched the cm/ke pilot baseline (~30 min Easy, ~60-90 min Medium scope-pick → smoke-green).
 - **Remaining Phase 1 surface**: M8 only — PFN ref-counting fns deferred to Phase 4.
 
-### Phase 2 — Macro materializations (started 2026-05-05; ke + io surfaces CLOSED)
+### Phase 2 — Macro materializations (started 2026-05-05; ke + io + mm-trivial surfaces CLOSED)
 
 ~180 functions total, mix of trivial and structural. Two passes:
 1. **Trivial macros** (~80): `InitializeObjectAttributes`, `CONTAINING_RECORD`, `IsListEmpty`, `ObReferenceObject`, etc. Mostly 1-5 lines each. Inline as Rust helpers in subsystem modules; already partially done (`iomgr.rs` has its own `InitializeObjectAttributes`).
@@ -310,6 +310,16 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 | io-2 | file-object lock pair | IopLockFileObject (fast path: `AtomicU32::swap(SeqCst)` on `FILE_OBJECT::Busy`; slow path: `IopAcquireFileObjectLock` with Alertable derived from `Flags & FO_ALERTABLE_IO`), IopUnlockFileObject (fires `KeSetEvent(&Lock, 0, FALSE)` if `Waiters != 0`). `Obf{Reference,Dereference}Object` declared `extern "fastcall"` on i386, `extern "C"` elsewhere. | `6a8c0453` |
 | io-3 | IO counters | IopUpdateOperationCount, IopUpdateTransferCount. `ExInterlockedAddLargeStatistic` rendered as `AtomicI64::fetch_add(SeqCst)` — same observable semantics on all 3 arches (lock cmpxchg8b on i386 vs the C macro's lock addl + lock adcl pair). `PsGetCurrentProcess` replicated locally to dodge cross-crate inline-asm-non-inline gotcha. | `78bc204f` |
 
+**mm trivial macros + PTE construction LANDED (2026-05-05).** 9 fns translated to a brand-new sibling `sdk/lib/rust/mm-macros/` rlib (mirror of `ke-macros` for ke; same augment+isolated-rlib pattern). Three batches:
+
+| # | Batch | Functions | Commit |
+|---|-------|-----------|--------|
+| mm-pilot | trivial bit-twiddles | RMAP_IS_SEGMENT (high-bits sentinel), PAGE_ROUND_DOWN (`& ~(PAGE_SIZE-1)`), PFN_FROM_SSE (`>> PAGE_SHIFT`), MM_IS_WAIT_PTE (low-bit + sentinel match; `MM_WAIT_ENTRY` is `0x7FFFFFFFFFFFFC00` on 64-bit, `0x7ffffc00` on 32-bit, cfg-gated). | `8d442a97` |
+| mm-1 | MI_MAKE_HARDWARE_PTE family + MI_UPDATE_VALID_PTE | MI_MAKE_HARDWARE_PTE_KERNEL, MI_MAKE_HARDWARE_PTE_USER, MI_MAKE_HARDWARE_PTE, MI_UPDATE_VALID_PTE. Rust impls already lived in `ntkrnl_sys::inline::mm`; rlib exposes them as `_rs_*` no-mangle symbols with `opaque_ptr` laundering (same shape as `mm-pte-mut-inlines` from Phase 1 batch M2). | `6beac1fc` |
+| mm-2 | MmInitializeMdl | MDL header init: zero Next, compute Size from PFN count via inlined `ADDRESS_AND_SIZE_TO_SPAN_PAGES`, zero MdlFlags, page-align StartVa via inlined `PAGE_ALIGN`, set ByteOffset via inlined `BYTE_OFFSET`. The 3 macro helpers are inlined directly using PAGE_SIZE/PAGE_SHIFT from the pilot. | `5a95fb86` |
+
+`InterlockedExchangeAddUL` and `MmSetDirtyPage` already lived in `mm-util-inlines` (Phase 1 batch M3) — not re-translated.
+
 **The 2026-05-05 `KxMultiThreadWait` half-init bug fix (the amd64 taskbar wedge)** is now in Rust source; the C trampoline + ke_x.h macro defensive variants are still there (the macros are still instantiated in C from `ntoskrnl/ke/wait.c::KeDelayExecutionThread` etc., which haven't been ported yet) but the Rust impl in `ke-macros::_rs_KxMultiThreadWait` matches it bit-for-bit (uses `InitializeListHead` for the multi-wait path so `KeWaitForMultipleObjects`'s `InsertTailList` loop appends cleanly; uses defensive full-init for the single/delay/queue paths that don't go through the multi-wait loop).
 
 **Lessons captured during the ke-macros + io-inlines sweeps:**
@@ -318,8 +328,8 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 - **`KTHREAD::ApcState` is wrapped in an anonymous union on every arch.** Path is `__bindgen_anon_1.ApcState.ApcListHead[KernelMode]`, not bare `ApcState.ApcListHead[KernelMode]`. Easy to miss because `KTHREAD::ApcStateIndex` IS a direct field; the union is for the `ApcStateFill[]` overlay that `ETHREAD::SavedApcState` mirrors.
 - **`PsGetCurrentProcess` cross-crate gotcha.** The `ntkrnl-sys::inline::tier1::PsGetCurrentProcess` inline ultimately reaches an inline-asm-bodied `KeGetCurrentThread`. At opt-level=1 a sibling rlib that calls it doesn't reliably inline the chain — emits `_KeGetCurrentThread` undefined ref. Workaround (now used in `ke-macros`, `ke-inlines`, and `io-inlines`): replicate the PCR/PRCB/KTHREAD walk locally with `core::arch::asm!`. Same root cause as `feedback_cross_crate_inline_asm.md`.
 
-Remaining Phase 2 surface (~155 fns) is concentrated in:
-- `mm_rust_shims.c` (~85 fns) — but many are AVL trees (`#include <sdk/lib/rtl/avlsupp.c>`) or `__FILE__/__LINE__` macros that must stay in C.
+Remaining Phase 2 surface (~146 fns) is concentrated in:
+- `mm_rust_shims.c` (~76 fns left) — pilot/1/2 closed the trivial macro + PTE construction surface; remaining shims are AVL trees (`#include <sdk/lib/rtl/avlsupp.c>` from `Rtlp{Find,Insert,Delete}AvlTreeNode` — Phase 4 complex delegation, see "AVL refactor" note below), `Mmsp*` segment helpers (qsort callbacks with global state), `MmVerifyImageIsOkForMpUse` (complex), `Arm64DumpPte` (debug helper, intentional-stay), and `__FILE__/__LINE__`-flavored macros that must stay in C. The MM AVL flavor (`MMADDRESS_NODE` / `MM_AVL_TABLE`) has incompatible layout with the Rtl flavor (`avltable` rlib): the Mm node packs Balance:2 into the low bits of Parent and embeds StartingVpn/EndingVpn directly. Two paths to address: (a) generic-ize `avltable::tree` over a `BalancedLinks` trait + add a second instantiation, or (b) write a separate `mm-avl` rlib. Either way Phase 4 work — current `#include <sdk/lib/rtl/avlsupp.c>` arrangement is the cheapest correct option until then.
 - `io_rust_shims.c` (~35 fns left) — macro/inline surface CLOSED; remaining shims are captures(none) workarounds (`ObCreateObject_shim`, `ObInsertObject_shim`, `ObReferenceObjectByHandle_shim`, `IopInitializePlugPlayServices_shim`), the i386 `_shim`-suffixed cdecl→stdcall string bridges (`RtlAnsiStringToUnicodeString_shim`, etc.), `IopInitializeDriverModule` (Phase 4 complex delegation), and the PnP request paths (`IopQueryDeviceCapabilities_c`, `IopInitiatePnpIrp_c`, `IopCompleteRequest_c`, `PiQueueDeviceAction_c`, `PiPerformSyncDeviceAction_c`, `IoRequestDeviceEject_c`, `PiSetDevNodeText_c`).
 - `kdbg_rust_shims.c` (~16 fns + 2 large data tables) — KDBG extension entry points, mostly stay.
 - `cm_rust_shims.c` (~37 fns) — mostly KCB-lock variants (Phase 1 already covered the main ones) + i386 dual-decoration scheme.
@@ -354,7 +364,7 @@ Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit
 |-------|------------------:|--------|------|--------|
 | 0. Free wins | ~30 | 1 day | None | **DONE** (2026-05-04) |
 | 1. FORCEINLINE batch | ~165 augmented | ~3 days actual | Low | **DONE except M8** (2026-05-04 → 2026-05-05) — M8 (5 fns) deferred to Phase 4 |
-| 2. Macro materializations | ~180 augmented (25 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke + io macro/inline surfaces CLOSED (16 ke fns in `ke-macros`, 9 io fns in `io-inlines`); ~155 fns left in mm/io-cnone-workarounds/kdbg/cm/common (many will stay — see notes above) |
+| 2. Macro materializations | ~180 augmented (34 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke + io + mm-trivial surfaces CLOSED (16 ke fns in `ke-macros`, 9 io fns in `io-inlines`, 9 mm fns in `mm-macros`); ~146 fns left in mm-AVL/io-cnone-workarounds/kdbg/cm/common (many will stay — see notes above) |
 | 3. Calling conventions | ~28 | 3 days | Low (mechanical) | Pending |
 | 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) | Pending; M8 (5 fns) folded in |
 | 5. Document must-stays | ~0 | 1 day | None | Pending |
