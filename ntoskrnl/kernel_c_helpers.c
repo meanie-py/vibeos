@@ -614,10 +614,11 @@ RtlpDeleteAvlTreeNode(
     IN PMMADDRESS_NODE Node)
 { MiDeleteAvlTreeNode(Table, Node); }
 
-/* --- KfRaiseIrql/KfLowerIrql calling convention wrappers ---
- * i386: HAL exports as __fastcall, Rust needs cdecl.
+/* --- KfRaiseIrql/KfLowerIrql ---
+ * i386: HAL exports as __fastcall — Rust callers now declare
+ *       `extern "fastcall"` directly (Phase 3, no cdecl bridge needed).
  * amd64: FORCEINLINE (__readcr8/__writecr8), no HAL symbol — inline here.
- * ARM64: HAL cdecl — Rust's extern "C" works directly. */
+ * ARM64: HAL cdecl — Rust's `extern "C"` works directly. */
 #if defined(_M_AMD64)
 KIRQL KfRaiseIrql(IN KIRQL NewIrql)
 {
@@ -628,12 +629,6 @@ KIRQL KfRaiseIrql(IN KIRQL NewIrql)
 
 void KfLowerIrql(IN KIRQL NewIrql)
 { __writecr8(NewIrql); }
-#elif defined(_M_IX86)
-KIRQL RustShimKfRaiseIrql(IN KIRQL NewIrql)
-{ return KfRaiseIrql(NewIrql); }
-
-void RustShimKfLowerIrql(IN KIRQL NewIrql)
-{ KfLowerIrql(NewIrql); }
 #endif
 
 /* --- Calling convention wrappers --- */

@@ -849,7 +849,8 @@ pub unsafe fn InterlockedIncrement16(addend: *mut i16) -> i16 {
 pub unsafe fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL) {
     // On amd64: C shim provides cdecl KfRaiseIrql (FORCEINLINE in SDK header).
     // On ARM64: HAL exports cdecl KfRaiseIrql.
-    // On i386: HAL exports __fastcall KfRaiseIrql — C shim provides cdecl RustShimKfRaiseIrql.
+    // On i386: HAL exports __fastcall KfRaiseIrql — declare as `extern "fastcall"`
+    //   (Rust supports it on i686-pc-windows-gnu).
     #[cfg(not(target_arch = "x86"))]
     {
         extern "C" { fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL; }
@@ -857,8 +858,8 @@ pub unsafe fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL) {
     }
     #[cfg(target_arch = "x86")]
     {
-        extern "C" { fn RustShimKfRaiseIrql(NewIrql: KIRQL) -> KIRQL; }
-        *old_irql = RustShimKfRaiseIrql(new_irql);
+        extern "fastcall" { fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL; }
+        *old_irql = KfRaiseIrql(new_irql);
     }
 }
 
@@ -871,8 +872,8 @@ pub unsafe fn KeLowerIrql(new_irql: KIRQL) {
     }
     #[cfg(target_arch = "x86")]
     {
-        extern "C" { fn RustShimKfLowerIrql(NewIrql: KIRQL); }
-        RustShimKfLowerIrql(new_irql);
+        extern "fastcall" { fn KfLowerIrql(NewIrql: KIRQL); }
+        KfLowerIrql(new_irql);
     }
 }
 
