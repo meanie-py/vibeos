@@ -278,7 +278,6 @@ unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usiz
     (ptr as usize - field_offset) as *mut T
 }
 extern "system" {
-    fn IopQueryDeviceCapabilities_c(DeviceNode: PDEVICE_NODE, DeviceCaps: PDEVICE_CAPABILITIES) -> NTSTATUS;
     fn IoRequestDeviceEject_c(PhysicalDeviceObject: PDEVICE_OBJECT);
     fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
     fn IopOpenRegistryKeyEx_shim(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
@@ -1062,13 +1061,128 @@ unsafe fn PiCallDriverAddDevice(
     Status
 }
 
+/// `IopQueryDeviceCapabilities` — issue an `IRP_MN_QUERY_CAPABILITIES` to the
+/// PDO, copy a curated subset of the result into `DEVICE_NODE::CapabilityFlags`,
+/// and persist `Capabilities` + `UINumber` into the device's registry instance
+/// key. Direct port of `IopQueryDeviceCapabilities_c` from `io_rust_shims.c` —
+/// the historical "amd64-specific hang" was a captures(none) ghost (same family
+/// as `Ob*_shim` / `IopGetBusTypeGuidIndex` / `Pi*DeviceAction`).
 #[no_mangle]
 pub unsafe extern "system" fn IopQueryDeviceCapabilities(
     DeviceNode: PDEVICE_NODE,
     DeviceCaps: PDEVICE_CAPABILITIES,
 ) -> NTSTATUS {
-    // Delegate to C implementation — Rust version causes amd64-specific hang
-    IopQueryDeviceCapabilities_c(DeviceNode, DeviceCaps)
+    let DeviceNode = opaque_ptr(DeviceNode);
+    let DeviceCaps = opaque_ptr(DeviceCaps);
+
+    let mut StatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut InstanceKey: HANDLE = core::ptr::null_mut();
+    let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
+
+    core::ptr::write_bytes(
+        DeviceCaps as *mut u8,
+        0,
+        core::mem::size_of::<_DEVICE_CAPABILITIES>(),
+    );
+    (*DeviceCaps).Size = core::mem::size_of::<_DEVICE_CAPABILITIES>() as USHORT;
+    (*DeviceCaps).Version = 1;
+    (*DeviceCaps).Address = 0xFFFFFFFF;
+    (*DeviceCaps).UINumber = 0xFFFFFFFF;
+
+    Stack.Parameters.DeviceCapabilities.Capabilities = DeviceCaps;
+
+    Status = IopInitiatePnpIrp(
+        (*DeviceNode).PhysicalDeviceObject,
+        &mut StatusBlock as PIO_STATUS_BLOCK,
+        IRP_MN_QUERY_CAPABILITIES,
+        &mut Stack as PIO_STACK_LOCATION,
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    (*DeviceNode).CapabilityFlags = 0;
+    if (*DeviceCaps).LockSupported() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000001;
+    }
+    if (*DeviceCaps).EjectSupported() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000002;
+    }
+    if (*DeviceCaps).Removable() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000004;
+    }
+    if (*DeviceCaps).DockDevice() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000008;
+    }
+    if (*DeviceCaps).UniqueID() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000010;
+    }
+    if (*DeviceCaps).SilentInstall() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000020;
+    }
+    if (*DeviceCaps).RawDeviceOK() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000040;
+    }
+    if (*DeviceCaps).SurpriseRemovalOK() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000080;
+    }
+    if (*DeviceCaps).HardwareDisabled() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000100;
+    }
+    if (*DeviceCaps).NonDynamic() != 0 {
+        (*DeviceNode).CapabilityFlags |= 0x00000200;
+    }
+
+    if (*DeviceCaps).NoDisplayInUI() != 0 {
+        (*DeviceNode).UserFlags |= DNUF_DONT_SHOW_IN_UI;
+    } else {
+        (*DeviceNode).UserFlags &= !DNUF_DONT_SHOW_IN_UI;
+    }
+
+    Status = IopCreateDeviceKeyPath(
+        core::ptr::addr_of_mut!((*DeviceNode).InstancePath),
+        REG_OPTION_NON_VOLATILE,
+        &mut InstanceKey,
+    );
+    if Status >= 0 {
+        // L"Capabilities"
+        static CAPABILITIES_NAME: [u16; 13] = [
+            b'C' as u16, b'a' as u16, b'p' as u16, b'a' as u16, b'b' as u16,
+            b'i' as u16, b'l' as u16, b'i' as u16, b't' as u16, b'i' as u16,
+            b'e' as u16, b's' as u16, 0,
+        ];
+        // L"UINumber"
+        static UINUMBER_NAME: [u16; 9] = [
+            b'U' as u16, b'I' as u16, b'N' as u16, b'u' as u16, b'm' as u16,
+            b'b' as u16, b'e' as u16, b'r' as u16, 0,
+        ];
+
+        RtlInitUnicodeString(&mut ValueName, CAPABILITIES_NAME.as_ptr());
+        Status = ZwSetValueKey(
+            InstanceKey,
+            &mut ValueName,
+            0,
+            REG_DWORD,
+            core::ptr::addr_of_mut!((*DeviceNode).CapabilityFlags) as PVOID,
+            core::mem::size_of::<ULONG>() as ULONG,
+        );
+        if (*DeviceCaps).UINumber != 0xFFFFFFFF {
+            RtlInitUnicodeString(&mut ValueName, UINUMBER_NAME.as_ptr());
+            Status = ZwSetValueKey(
+                InstanceKey,
+                &mut ValueName,
+                0,
+                REG_DWORD,
+                core::ptr::addr_of_mut!((*DeviceCaps).UINumber) as PVOID,
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
+        }
+        ZwClose(InstanceKey);
+    }
+
+    Status
 }
 
 unsafe fn IopQueryHardwareIds(

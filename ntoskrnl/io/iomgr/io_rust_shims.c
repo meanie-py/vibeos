@@ -282,83 +282,13 @@ void __cdecl pnp_trace_ulong(const char *msg, ULONG val)
 
 
 /* ========================================================================
- * IopQueryDeviceCapabilities C implementation
+ * IopQueryDeviceCapabilities — DELETED 2026-05-06.
  *
- * The Rust version causes an amd64-specific hang during PnP enumeration.
+ * Rust impl in `pnpmgr/devaction.rs::IopQueryDeviceCapabilities` replaces
+ * the C version. The historical "Rust version causes amd64-specific hang"
+ * was a captures(none) ghost (same family as Ob*_shim / IopGetBusTypeGuidIndex
+ * / Pi*DeviceAction).
  * ======================================================================== */
-NTSTATUS
-NTAPI
-IopQueryDeviceCapabilities_c(PDEVICE_NODE DeviceNode,
-                             PDEVICE_CAPABILITIES DeviceCaps)
-{
-    IO_STATUS_BLOCK StatusBlock;
-    IO_STACK_LOCATION Stack;
-    NTSTATUS Status;
-    HANDLE InstanceKey;
-    UNICODE_STRING ValueName;
-
-    RtlZeroMemory(DeviceCaps, sizeof(DEVICE_CAPABILITIES));
-    DeviceCaps->Size = sizeof(DEVICE_CAPABILITIES);
-    DeviceCaps->Version = 1;
-    DeviceCaps->Address = -1;
-    DeviceCaps->UINumber = -1;
-
-    RtlZeroMemory(&Stack, sizeof(IO_STACK_LOCATION));
-    Stack.Parameters.DeviceCapabilities.Capabilities = DeviceCaps;
-
-    Status = IopInitiatePnpIrp(DeviceNode->PhysicalDeviceObject,
-                               &StatusBlock,
-                               IRP_MN_QUERY_CAPABILITIES,
-                               &Stack);
-    if (!NT_SUCCESS(Status))
-    {
-        return Status;
-    }
-
-    DeviceNode->CapabilityFlags = 0;
-    if (DeviceCaps->LockSupported)
-        DeviceNode->CapabilityFlags |= 0x00000001;
-    if (DeviceCaps->EjectSupported)
-        DeviceNode->CapabilityFlags |= 0x00000002;
-    if (DeviceCaps->Removable)
-        DeviceNode->CapabilityFlags |= 0x00000004;
-    if (DeviceCaps->DockDevice)
-        DeviceNode->CapabilityFlags |= 0x00000008;
-    if (DeviceCaps->UniqueID)
-        DeviceNode->CapabilityFlags |= 0x00000010;
-    if (DeviceCaps->SilentInstall)
-        DeviceNode->CapabilityFlags |= 0x00000020;
-    if (DeviceCaps->RawDeviceOK)
-        DeviceNode->CapabilityFlags |= 0x00000040;
-    if (DeviceCaps->SurpriseRemovalOK)
-        DeviceNode->CapabilityFlags |= 0x00000080;
-    if (DeviceCaps->HardwareDisabled)
-        DeviceNode->CapabilityFlags |= 0x00000100;
-    if (DeviceCaps->NonDynamic)
-        DeviceNode->CapabilityFlags |= 0x00000200;
-
-    if (DeviceCaps->NoDisplayInUI)
-        DeviceNode->UserFlags |= DNUF_DONT_SHOW_IN_UI;
-    else
-        DeviceNode->UserFlags &= ~DNUF_DONT_SHOW_IN_UI;
-
-    Status = IopCreateDeviceKeyPath(&DeviceNode->InstancePath, REG_OPTION_NON_VOLATILE, &InstanceKey);
-    if (NT_SUCCESS(Status))
-    {
-        RtlInitUnicodeString(&ValueName, L"Capabilities");
-        Status = ZwSetValueKey(InstanceKey, &ValueName, 0, REG_DWORD,
-                               &DeviceNode->CapabilityFlags, sizeof(ULONG));
-        if (DeviceCaps->UINumber != MAXULONG)
-        {
-            RtlInitUnicodeString(&ValueName, L"UINumber");
-            Status = ZwSetValueKey(InstanceKey, &ValueName, 0, REG_DWORD,
-                                   &DeviceCaps->UINumber, sizeof(ULONG));
-        }
-        ZwClose(InstanceKey);
-    }
-
-    return Status;
-}
 
 /* `IopGetBusTypeGuidIndex_c` deleted 2026-05-06 — Rust impl in
  * `pnpmgr.rs::IopGetBusTypeGuidIndex` replaces it. The historical
@@ -367,37 +297,14 @@ IopQueryDeviceCapabilities_c(PDEVICE_NODE DeviceNode,
  * `codegen-units = 256` firewall (commit 2ba8dab4) eliminates it. */
 
 /* ========================================================================
- * IopInitiatePnpIrp C implementation
+ * IopInitiatePnpIrp_c — DELETED 2026-05-06.
  *
- * The Rust version in pnpmgr.rs causes an amd64-specific hang during PnP
- * device enumeration. The exact cause is unknown but likely related to
- * IO_STACK_LOCATION stack alignment or volatile semantics differences.
- * Using the C version avoids the issue.
+ * Was dead code: the Rust impl in `pnpmgr.rs::IopInitiatePnpIrp` (line 704)
+ * already exists and is the linked symbol; this C trampoline had no
+ * remaining callers. The historical "Rust version causes an amd64-specific
+ * hang" comment turned out to be moot — the Rust version had already been
+ * promoted past the trampoline and works fine.
  * ======================================================================== */
-NTSTATUS
-NTAPI
-IopInitiatePnpIrp_c(IN PDEVICE_OBJECT DeviceObject,
-                     IN OUT PIO_STATUS_BLOCK IoStatusBlock,
-                     IN UCHAR MinorFunction,
-                     IN PIO_STACK_LOCATION Stack OPTIONAL)
-{
-    IO_STACK_LOCATION IoStackLocation;
-
-    RtlZeroMemory(&IoStackLocation, sizeof(IO_STACK_LOCATION));
-    IoStackLocation.MajorFunction = IRP_MJ_PNP;
-    IoStackLocation.MinorFunction = MinorFunction;
-    if (Stack)
-    {
-        RtlCopyMemory(&IoStackLocation.Parameters,
-                      &Stack->Parameters,
-                      sizeof(Stack->Parameters));
-    }
-
-    IoStatusBlock->Status = IopSynchronousCall(DeviceObject,
-                                               &IoStackLocation,
-                                               (PVOID)&IoStatusBlock->Information);
-    return IoStatusBlock->Status;
-}
 
 /* ========================================================================
  * IopGetRegistryValue shim
@@ -829,160 +736,6 @@ IopDeviceNodeSetFlag(IN PDEVICE_NODE DeviceNode, IN ULONG Flag)
     DeviceNode->Flags |= Flag;
 }
 
-/* IopCompleteRequest: kept in C (irp.c) — Rust version has APC bugs */
-
-#if 0 /* IopCompleteRequest_c — disabled, using irp.c version */
-VOID
-NTAPI
-IopCompleteRequest_c(IN PKAPC Apc,
-                     IN PKNORMAL_ROUTINE* NormalRoutine,
-                     IN PVOID* NormalContext,
-                     IN PVOID* SystemArgument1,
-                     IN PVOID* SystemArgument2)
-{
-    PFILE_OBJECT FileObject;
-    PIRP Irp;
-    PMDL Mdl, NextMdl;
-    PVOID Port, Key;
-    BOOLEAN SignalCompletion;
-
-    Irp = CONTAINING_RECORD(Apc, IRP, Tail.Apc);
-
-    DPRINT("IopCompleteRequest(Irp %p)\n", Irp);
-
-    FileObject = (PFILE_OBJECT)*SystemArgument1;
-    SignalCompletion = (Irp->UserIosb != NULL && Irp->AssociatedIrp.SystemBuffer != NULL);
-
-    if ((Irp->Flags & IRP_BUFFERED_IO) && (Irp->Flags & IRP_DEALLOCATE_BUFFER))
-    {
-        if ((Irp->Flags & IRP_INPUT_OPERATION) && NT_SUCCESS(Irp->IoStatus.Status))
-        {
-            _SEH2_TRY
-            {
-                RtlCopyMemory(Irp->UserBuffer,
-                              Irp->AssociatedIrp.SystemBuffer,
-                              Irp->IoStatus.Information);
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                Irp->IoStatus.Status = _SEH2_GetExceptionCode();
-            }
-            _SEH2_END;
-        }
-
-        ExFreePool(Irp->AssociatedIrp.SystemBuffer);
-    }
-
-    Irp->Flags &= ~(IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION);
-
-    if (Irp->UserIosb)
-    {
-        _SEH2_TRY
-        {
-            *Irp->UserIosb = Irp->IoStatus;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            DPRINT1("IopCompleteRequest: UserIosb write failed\n");
-        }
-        _SEH2_END;
-    }
-
-    if ((Irp->Flags & IRP_CREATE_OPERATION) && FileObject)
-    {
-        if (!NT_SUCCESS(Irp->IoStatus.Status))
-        {
-            DPRINT("IopCompleteRequest: failed create\n");
-            FileObject->Flags |= FO_FILE_OPEN_CANCELLED;
-        }
-    }
-
-    if (Irp->UserEvent)
-    {
-        KeSetEvent(Irp->UserEvent, 0, FALSE);
-    }
-    else if (FileObject)
-    {
-        KeSetEvent(&FileObject->Event, 0, FALSE);
-    }
-
-    Port = (Irp->Flags & IRP_CREATE_OPERATION) ? NULL : Irp->Tail.Overlay.OriginalFileObject;
-    Key = NULL;
-    if (Port && FileObject)
-    {
-        Port = FileObject->CompletionContext;
-        if (Port)
-        {
-            Key = FileObject->CompletionContext->Key;
-            Port = FileObject->CompletionContext->Port;
-        }
-    }
-
-    if (FileObject)
-    {
-        if (!(Irp->Flags & IRP_CREATE_OPERATION))
-        {
-            ObDereferenceObjectDeferDelete(FileObject);
-        }
-    }
-
-    Irp->Tail.Overlay.PacketType = IopCompletionPacketIrp;
-    if (Port && Irp->Overlay.AsynchronousParameters.UserApcRoutine == NULL)
-    {
-        if (NT_SUCCESS(IoSetIoCompletion(Port,
-                                          Key,
-                                          Irp->Overlay.AsynchronousParameters.UserApcContext,
-                                          Irp->IoStatus.Status,
-                                          Irp->IoStatus.Information,
-                                          TRUE)))
-        {
-            Mdl = Irp->MdlAddress;
-            while (Mdl)
-            {
-                NextMdl = Mdl->Next;
-                IoFreeMdl(Mdl);
-                Mdl = NextMdl;
-            }
-            IoFreeIrp(Irp);
-            return;
-        }
-    }
-
-    if (Irp->Overlay.AsynchronousParameters.UserApcRoutine)
-    {
-        KeInitializeApc(&Irp->Tail.Apc,
-                        KeGetCurrentThread(),
-                        CurrentApcEnvironment,
-                        IopAbortIrpKernelApc,
-                        NULL,
-                        (PKNORMAL_ROUTINE)Irp->Overlay.AsynchronousParameters.UserApcRoutine,
-                        Irp->RequestorMode,
-                        Irp->Overlay.AsynchronousParameters.UserApcContext);
-        KeInsertQueueApc(&Irp->Tail.Apc,
-                          Irp->UserIosb,
-                          NULL,
-                          2);
-    }
-    else
-    {
-        Mdl = Irp->MdlAddress;
-        while (Mdl)
-        {
-            NextMdl = Mdl->Next;
-            IoFreeMdl(Mdl);
-            Mdl = NextMdl;
-        }
-        if (Irp == IopReserveIrpAllocator.ReserveIrp)
-        {
-            IopFreeReserveIrp(0);
-        }
-        else
-        {
-            IoFreeIrp(Irp);
-        }
-    }
-}
-#endif /* IopCompleteRequest_c */
 
 /* ========================================================================
  * devaction.rs C shims
