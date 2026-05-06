@@ -164,8 +164,12 @@ MmVerifyImageIsOkForMpUse(
 /* === Phase 4: Export implementations === */
 
 /*
- * Hardware PTE creation
+ * Hardware PTE creation — bodies in Rust at sdk/lib/rust/mm-macros/src/lib.rs.
  */
+extern void _rs_MI_MAKE_HARDWARE_PTE_KERNEL(PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
+extern void _rs_MI_MAKE_HARDWARE_PTE_USER  (PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
+extern void _rs_MI_MAKE_HARDWARE_PTE       (PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
+
 void
 NTAPI
 MI_MAKE_HARDWARE_PTE_KERNEL(
@@ -174,7 +178,7 @@ MI_MAKE_HARDWARE_PTE_KERNEL(
     IN ULONG_PTR ProtectionMask,
     IN PFN_NUMBER PageFrameNumber)
 {
-    _orig_MI_MAKE_HARDWARE_PTE_KERNEL(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+    _rs_MI_MAKE_HARDWARE_PTE_KERNEL(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
 }
 
 void
@@ -185,7 +189,7 @@ MI_MAKE_HARDWARE_PTE_USER(
     IN ULONG_PTR ProtectionMask,
     IN PFN_NUMBER PageFrameNumber)
 {
-    _orig_MI_MAKE_HARDWARE_PTE_USER(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+    _rs_MI_MAKE_HARDWARE_PTE_USER(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
 }
 
 void
@@ -196,7 +200,7 @@ MI_MAKE_HARDWARE_PTE(
     IN ULONG_PTR ProtectionMask,
     IN PFN_NUMBER PageFrameNumber)
 {
-    _orig_MI_MAKE_HARDWARE_PTE(NewPte, MappingPte, ProtectionMask, PageFrameNumber);
+    _rs_MI_MAKE_HARDWARE_PTE(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
 }
 
 #ifdef _M_ARM64
@@ -223,15 +227,18 @@ Arm64DumpPte(
 #endif
 
 /*
- * PTE update (volatile write with assertion checks)
+ * PTE update (volatile write with assertion checks) — body in Rust at
+ * sdk/lib/rust/mm-macros/src/lib.rs::_rs_MI_UPDATE_VALID_PTE.
  */
+extern void _rs_MI_UPDATE_VALID_PTE(PMMPTE PointerPte, MMPTE TempPte);
+
 void
 NTAPI
 MI_UPDATE_VALID_PTE(
     IN PMMPTE PointerPte,
     IN MMPTE TempPte)
 {
-    _orig_MI_UPDATE_VALID_PTE(PointerPte, TempPte);
+    _rs_MI_UPDATE_VALID_PTE(PointerPte, TempPte);
 }
 
 /*

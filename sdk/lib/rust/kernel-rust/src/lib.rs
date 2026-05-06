@@ -309,13 +309,21 @@ mod _force_mm_macros_symbols {
         fn _rs_PAGE_ROUND_DOWN();
         fn _rs_PFN_FROM_SSE();
         fn _rs_MM_IS_WAIT_PTE();
+        fn _rs_MI_MAKE_HARDWARE_PTE_KERNEL();
+        fn _rs_MI_MAKE_HARDWARE_PTE_USER();
+        fn _rs_MI_MAKE_HARDWARE_PTE();
+        fn _rs_MI_UPDATE_VALID_PTE();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 4] = [
+    static REFS: [unsafe extern "C" fn(); 8] = [
         _rs_RMAP_IS_SEGMENT,
         _rs_PAGE_ROUND_DOWN,
         _rs_PFN_FROM_SSE,
         _rs_MM_IS_WAIT_PTE,
+        _rs_MI_MAKE_HARDWARE_PTE_KERNEL,
+        _rs_MI_MAKE_HARDWARE_PTE_USER,
+        _rs_MI_MAKE_HARDWARE_PTE,
+        _rs_MI_UPDATE_VALID_PTE,
     ];
 }
 

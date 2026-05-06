@@ -65,3 +65,79 @@ pub unsafe extern "C" fn _rs_MM_IS_WAIT_PTE(entry: usize) -> u8 {
         0
     }
 }
+
+// ============================================================================
+// Batch 1 — MI_MAKE_HARDWARE_PTE family + MI_UPDATE_VALID_PTE
+//
+// FORCEINLINE bodies in `ntoskrnl/mm/ARM3/miarm.h`. The Rust impls already
+// live in `ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE*` /
+// `MI_UPDATE_VALID_PTE`; this rlib just exposes them as `_rs_*` no-mangle
+// symbols. Same shape as `mm-pte-mut-inlines` and `mm-pte-class-inlines`.
+//
+// `opaque_ptr` laundering on the input pointer defeats LLVM
+// captures(none) attribute deduction across the rlib boundary.
+// ============================================================================
+
+use ntkrnl_sys::ddk::{MMPTE, PMMPTE};
+use ntkrnl_sys::opaque_ptr;
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_MI_MAKE_HARDWARE_PTE_KERNEL(
+    new_pte: PMMPTE,
+    mapping_pte: PMMPTE,
+    protection_mask: usize,
+    page_frame_number: usize,
+) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
+    ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE_KERNEL(
+        new_pte,
+        mapping_pte,
+        protection_mask,
+        page_frame_number,
+    );
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_MI_MAKE_HARDWARE_PTE_USER(
+    new_pte: PMMPTE,
+    mapping_pte: PMMPTE,
+    protection_mask: usize,
+    page_frame_number: usize,
+) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
+    ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE_USER(
+        new_pte,
+        mapping_pte,
+        protection_mask,
+        page_frame_number,
+    );
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_MI_MAKE_HARDWARE_PTE(
+    new_pte: PMMPTE,
+    mapping_pte: PMMPTE,
+    protection_mask: usize,
+    page_frame_number: usize,
+) {
+    let new_pte = opaque_ptr(new_pte);
+    let mapping_pte = opaque_ptr(mapping_pte);
+    ntkrnl_sys::inline::mm::MI_MAKE_HARDWARE_PTE(
+        new_pte,
+        mapping_pte,
+        protection_mask,
+        page_frame_number,
+    );
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_MI_UPDATE_VALID_PTE(pte: PMMPTE, temp_pte: MMPTE) {
+    let pte = opaque_ptr(pte);
+    ntkrnl_sys::inline::mm::MI_UPDATE_VALID_PTE(pte, temp_pte);
+}
