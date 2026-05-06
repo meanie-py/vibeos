@@ -521,96 +521,10 @@ ULONG_PTR NTAPI MmGetPageEntrySectionSegment(
     IN PMM_SECTION_SEGMENT Segment, IN PLARGE_INTEGER Offset)
 { return _MmGetPageEntrySectionSegment(Segment, Offset, __FILE__, __LINE__); }
 
-/* ===================================================================
- * AVL Tree support for vadnode.rs
- *
- * vadnode.c used to #include "miavl.h" + avlsupp.c. The Rust vadnode.rs
- * calls the Rtl* / Rtlp* names. We provide outline wrappers here.
- * =================================================================== */
-
-PMMADDRESS_NODE
-NTAPI
-RtlRightChildAvl(IN PMMADDRESS_NODE Node)
-{ return Node->RightChild; }
-
-PMMADDRESS_NODE
-NTAPI
-RtlLeftChildAvl(IN PMMADDRESS_NODE Node)
-{ return Node->LeftChild; }
-
-PMMADDRESS_NODE
-NTAPI
-RtlParentAvl(IN PMMADDRESS_NODE Node)
-{ return (PMMADDRESS_NODE)((ULONG_PTR)Node->u1.Parent & ~(ULONG_PTR)3); }
-
-BOOLEAN
-NTAPI
-RtlIsRightChildAvl(IN PMMADDRESS_NODE Node)
-{ return (RtlRightChildAvl(RtlParentAvl(Node)) == Node); }
-
-BOOLEAN
-NTAPI
-RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
-{ return (RtlLeftChildAvl(RtlParentAvl(Node)) == Node); }
-
-/* Heavyweight AVL algorithms from avlsupp.c (Mi-flavored) */
-#include "mm/ARM3/miavl.h"
-#include <sdk/lib/rtl/avlsupp.c>
-
-/* Undef miavl.h renames so we can define our own Rtlp* symbols */
-#undef RtlpFindAvlTableNodeOrParent
-#undef RtlpPromoteAvlTreeNode
-#undef RtlpRebalanceAvlTreeNode
-#undef RtlpInsertAvlTreeNode
-#undef RtlpDeleteAvlTreeNode
-#undef RtlpCopyAvlNodeData
-#undef RtlpAvlCompareRoutine
-#undef RtlSetParent
-#undef RtlSetBalance
-#undef RtlBalance
-#undef RtlRightChildAvl
-#undef RtlLeftChildAvl
-#undef RtlParentAvl
-#undef RtlIsLeftChildAvl
-#undef RtlIsRightChildAvl
-#undef RtlInsertAsLeftChildAvl
-#undef RtlInsertAsRightChildAvl
-#undef PRTL_AVL_TABLE
-#undef PRTL_BALANCED_LINKS
-#undef MI_ASSERT
-
-TABLE_SEARCH_RESULT
-NTAPI
-RtlpFindAvlTableNodeOrParent(
-    IN PMM_AVL_TABLE Table,
-    IN PVOID Buffer,
-    OUT PMMADDRESS_NODE *NodeOrParent)
-{ return MiFindAvlTableNodeOrParent(Table, Buffer, NodeOrParent); }
-
-void
-NTAPI
-RtlpInsertAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE NewNode,
-    IN PMMADDRESS_NODE Parent,
-    IN TABLE_SEARCH_RESULT SearchResult)
-{
-    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks */
-    if (SearchResult == TableFoundNode)
-    {
-        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate VPN=[%lx-%lx]\n",
-                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn);
-        return;
-    }
-    MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult);
-}
-
-void
-NTAPI
-RtlpDeleteAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE Node)
-{ MiDeleteAvlTreeNode(Table, Node); }
+/* AVL Tree support — moved to mm-avl rlib (`sdk/lib/rust/mm-avl/`).
+ * Trampolines (`RtlRightChildAvl` / `RtlpFindAvlTableNodeOrParent` / etc.)
+ * live in mm/mm_rust_shims.c and one-line-delegate to `_rs_*` exports.
+ * The historical `#include <avlsupp.c>` path used to live here. */
 
 /* --- KfRaiseIrql/KfLowerIrql ---
  * i386: HAL exports as __fastcall — Rust callers now declare
