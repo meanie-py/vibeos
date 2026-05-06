@@ -104,92 +104,12 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
  * surviving C body — kept in scope as a documented fallback path.
  */
 
-extern KIRQL _rs_KiAcquireDispatcherLock(VOID);
-extern void  _rs_KiReleaseDispatcherLock(KIRQL OldIrql);
-extern void  _rs_KiAcquireDispatcherObject(DISPATCHER_HEADER *Object);
-extern void  _rs_KiReleaseDispatcherObject(DISPATCHER_HEADER *Object);
-extern void  _rs_KiAcquireDispatcherLockAtSynchLevel(VOID);
-extern void  _rs_KiReleaseDispatcherLockFromSynchLevel(VOID);
-
-KIRQL KiAcquireDispatcherLock(VOID)
-{
-    KIRQL cur = KeGetCurrentIrql();
-    if (cur > DISPATCH_LEVEL) {
-        DPRINT1("KiAcquireDispatcherLock at IRQL %d! caller=%p\n",
-                cur, _ReturnAddress());
-    }
-    return _rs_KiAcquireDispatcherLock();
-}
-
-VOID KiReleaseDispatcherLock(IN KIRQL OldIrql)
-{
-    _rs_KiReleaseDispatcherLock(OldIrql);
-}
-
-/* --- Thread / PRCB lock (ke_x.h, UP no-ops) ---
- * Phase 1 batch 4 — bodies in ke-inlines.
- */
-
-extern void    _rs_KiAcquireThreadLock(PKTHREAD Thread);
-extern void    _rs_KiReleaseThreadLock(PKTHREAD Thread);
-extern BOOLEAN _rs_KiTryThreadLock(PKTHREAD Thread);
-extern void    _rs_KiAcquirePrcbLock(PKPRCB Prcb);
-extern void    _rs_KiReleasePrcbLock(PKPRCB Prcb);
-
-VOID KiAcquireThreadLock(IN PKTHREAD Thread)
-{
-    _rs_KiAcquireThreadLock(Thread);
-}
-
-VOID KiReleaseThreadLock(IN PKTHREAD Thread)
-{
-    _rs_KiReleaseThreadLock(Thread);
-}
-
-/* --- Spinlock acquire/release (spinlock.h) ---
- * Phase 1 batch 7 — bodies in ke-inlines (compiler_fence(SeqCst), same
- * semantics as KeMemoryBarrierWithoutFence: no machine-code emission,
- * just a reordering barrier). DBG owner tracking stays disabled — see
- * ke-inlines for the reason.
- */
-
-extern void _rs_KxAcquireSpinLock(PKSPIN_LOCK SpinLock);
-extern void _rs_KxReleaseSpinLock(PKSPIN_LOCK SpinLock);
-
-VOID KxAcquireSpinLock(IN PKSPIN_LOCK SpinLock)
-{
-    _rs_KxAcquireSpinLock(SpinLock);
-}
-
-VOID KxReleaseSpinLock(IN PKSPIN_LOCK SpinLock)
-{
-    _rs_KxReleaseSpinLock(SpinLock);
-}
-
-/* --- Dispatcher object lock + dispatcher-lock at-synch pair (ke_x.h) ---
- * Bodies in ke-inlines (Phase 1 batch 3). All four are UP no-ops; the
- * SMP implementations (CONFIG_SMP path of ke_x.h) would matter on real MP.
- */
-
-VOID KiAcquireDispatcherObject(IN DISPATCHER_HEADER *Object)
-{
-    _rs_KiAcquireDispatcherObject(Object);
-}
-
-VOID KiReleaseDispatcherObject(IN DISPATCHER_HEADER *Object)
-{
-    _rs_KiReleaseDispatcherObject(Object);
-}
-
-VOID KiAcquireDispatcherLockAtSynchLevel(VOID)
-{
-    _rs_KiAcquireDispatcherLockAtSynchLevel();
-}
-
-VOID KiReleaseDispatcherLockFromSynchLevel(VOID)
-{
-    _rs_KiReleaseDispatcherLockFromSynchLevel();
-}
+/* Dispatcher lock + thread/PRCB lock + spinlock + dispatcher-object lock
+ * trampolines REMOVED — all duplicated by ntoskrnl-rust::shim_exports
+ * `#[no_mangle] Ki*` / `Kx*` exports. With --allow-multiple-definition
+ * the Rust archive wins the link and the C trampolines are unreachable.
+ * KiAcquireDispatcherLock's DPRINT1 IRQL guard was already dead because
+ * shim_exports.rs version (a plain delegation, no IRQL check) wins. */
 
 /* --- Deferred ready / sched helpers (ke_x.h) ---
  * Phase 1 batch 5 — bodies in ke-inlines.
@@ -199,55 +119,8 @@ VOID KiReleaseDispatcherLockFromSynchLevel(VOID)
  * KiRequestApcInterrupt: UP no-ops.
  */
 
-extern void _rs_KiInsertDeferredReadyList(PKTHREAD Thread);
-extern void _rs_KiRescheduleThread(BOOLEAN NewThread, ULONG Cpu);
-extern void _rs_KiSetThreadSwapBusy(PKTHREAD Thread);
-extern void _rs_KiCheckDeferredReadyList(PKPRCB Prcb);
-extern void _rs_KiRequestApcInterrupt(BOOLEAN NeedApc, UCHAR Processor);
-
-VOID KiInsertDeferredReadyList(IN PKTHREAD Thread)
-{
-    _rs_KiInsertDeferredReadyList(Thread);
-}
-
-VOID KiRescheduleThread(IN BOOLEAN NewThread, IN ULONG Cpu)
-{
-    _rs_KiRescheduleThread(NewThread, Cpu);
-}
-
-VOID KiSetThreadSwapBusy(IN PKTHREAD Thread)
-{
-    _rs_KiSetThreadSwapBusy(Thread);
-}
-
-/* --- PRCB lock + KiTryThreadLock (ke_x.h, UP no-ops) ---
- * Phase 1 batch 4 — bodies in ke-inlines (declared near KiAcquireThreadLock).
- */
-
-VOID KiAcquirePrcbLock(IN PKPRCB Prcb)
-{
-    _rs_KiAcquirePrcbLock(Prcb);
-}
-
-VOID KiReleasePrcbLock(IN PKPRCB Prcb)
-{
-    _rs_KiReleasePrcbLock(Prcb);
-}
-
-BOOLEAN KiTryThreadLock(IN PKTHREAD Thread)
-{
-    return _rs_KiTryThreadLock(Thread);
-}
-
-VOID KiCheckDeferredReadyList(IN PKPRCB Prcb)
-{
-    _rs_KiCheckDeferredReadyList(Prcb);
-}
-
-VOID KiRequestApcInterrupt(IN BOOLEAN NeedApc, IN UCHAR Processor)
-{
-    _rs_KiRequestApcInterrupt(NeedApc, Processor);
-}
+/* Deferred-ready / sched / PRCB-try / APC-interrupt trampolines REMOVED —
+ * all duplicated by shim_exports Ki* exports. */
 
 /* --- Timer lock + table index (ke_x.h) ---
  * Phase 1 batch 6 — bodies in ke-inlines.
@@ -255,19 +128,8 @@ VOID KiRequestApcInterrupt(IN BOOLEAN NeedApc, IN UCHAR Processor)
  * `(DueTime / KeMaximumIncrement) & (TIMER_TABLE_SIZE - 1)`.
  */
 
-extern PKSPIN_LOCK_QUEUE _rs_KiAcquireTimerLock(ULONG Hand);
-extern void              _rs_KiReleaseTimerLock(PKSPIN_LOCK_QUEUE LockQueue);
-extern ULONG             _rs_KiComputeTimerTableIndex(ULONGLONG DueTime);
-
-PKSPIN_LOCK_QUEUE KiAcquireTimerLock(IN ULONG Hand)
-{
-    return _rs_KiAcquireTimerLock(Hand);
-}
-
-VOID KiReleaseTimerLock(IN PKSPIN_LOCK_QUEUE LockQueue)
-{
-    _rs_KiReleaseTimerLock(LockQueue);
-}
+/* KiAcquireTimerLock / KiReleaseTimerLock / KiComputeTimerTableIndex
+ * trampolines REMOVED — all duplicated by shim_exports Ki* exports. */
 
 /* --- APC / Process / DeviceQueue locks (ke_x.h) ---
  *
@@ -285,154 +147,14 @@ VOID KiReleaseTimerLock(IN PKSPIN_LOCK_QUEUE LockQueue)
  * only the FromSynchLevel half lives here.
  */
 
-extern void _rs_KiAcquireApcLockRaiseToSynch(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiAcquireApcLockAtSynchLevel(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiAcquireApcLockRaiseToDpc(PKTHREAD Thread, PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiReleaseApcLock(PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiReleaseApcLockFromSynchLevel(PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiReleaseProcessLockFromSynchLevel(PKLOCK_QUEUE_HANDLE Handle);
-extern void _rs_KiAcquireDeviceQueueLock(PKDEVICE_QUEUE DeviceQueue, PKLOCK_QUEUE_HANDLE DeviceLock);
-extern void _rs_KiReleaseDeviceQueueLock(PKLOCK_QUEUE_HANDLE DeviceLock);
-
-VOID KiAcquireApcLockRaiseToSynch(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiAcquireApcLockRaiseToSynch(Thread, Handle);
-}
-
-VOID KiAcquireApcLockAtSynchLevel(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiAcquireApcLockAtSynchLevel(Thread, Handle);
-}
-
-VOID KiAcquireApcLockRaiseToDpc(IN PKTHREAD Thread, IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiAcquireApcLockRaiseToDpc(Thread, Handle);
-}
-
-VOID KiReleaseApcLock(IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiReleaseApcLock(Handle);
-}
-
-VOID KiReleaseApcLockFromSynchLevel(IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiReleaseApcLockFromSynchLevel(Handle);
-}
-
-VOID KiReleaseProcessLockFromSynchLevel(IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    _rs_KiReleaseProcessLockFromSynchLevel(Handle);
-}
-
-VOID KiAcquireDeviceQueueLock(IN PKDEVICE_QUEUE DeviceQueue, IN PKLOCK_QUEUE_HANDLE DeviceLock)
-{
-    _rs_KiAcquireDeviceQueueLock(DeviceQueue, DeviceLock);
-}
-
-VOID KiReleaseDeviceQueueLock(IN PKLOCK_QUEUE_HANDLE DeviceLock)
-{
-    _rs_KiReleaseDeviceQueueLock(DeviceLock);
-}
+/* APC / Process / DeviceQueue lock trampolines REMOVED — all duplicated
+ * by shim_exports Ki* exports. */
 
 /* --- Timer/wait helpers (ke_x.h) ---
  * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 7). */
-extern PLARGE_INTEGER _rs_KiRecalculateDueTime(PLARGE_INTEGER OriginalDueTime,
-                                               PLARGE_INTEGER DueTime,
-                                               PLARGE_INTEGER NewDueTime);
-extern VOID    _rs_KxInsertTimer(PKTIMER Timer, ULONG Hand);
-extern BOOLEAN _rs_KiComputeDueTime(PKTIMER Timer, LARGE_INTEGER DueTime, PULONG Hand);
-extern VOID    _rs_KxRemoveTreeTimer(PKTIMER Timer);
-extern VOID    _rs_KxSetTimerForThreadWait(PKTIMER Timer, LARGE_INTEGER Interval, PULONG Hand);
-
-PLARGE_INTEGER KiRecalculateDueTime(IN PLARGE_INTEGER OriginalDueTime,
-                                     IN PLARGE_INTEGER DueTime,
-                                     IN OUT PLARGE_INTEGER NewDueTime)
-{
-    return _rs_KiRecalculateDueTime(OriginalDueTime, DueTime, NewDueTime);
-}
-
-/* --- Stack-swap eligibility + alertability dispatch (ke_x.h) ---
- * Phase 1 batch 9 — bodies in ke-inlines.
- */
-
-extern BOOLEAN  _rs_KiCheckThreadStackSwap(PKTHREAD Thread, KPROCESSOR_MODE WaitMode);
-extern NTSTATUS _rs_KiCheckAlertability(PKTHREAD Thread, BOOLEAN Alertable, KPROCESSOR_MODE WaitMode);
-
-BOOLEAN KiCheckThreadStackSwap(IN PKTHREAD Thread, IN KPROCESSOR_MODE WaitMode)
-{
-    return _rs_KiCheckThreadStackSwap(Thread, WaitMode);
-}
-
-NTSTATUS KiCheckAlertability(IN PKTHREAD Thread, IN BOOLEAN Alertable, IN KPROCESSOR_MODE WaitMode)
-{
-    return _rs_KiCheckAlertability(Thread, Alertable, WaitMode);
-}
-
-ULONG KiComputeTimerTableIndex(IN ULONGLONG DueTime)
-{
-    return _rs_KiComputeTimerTableIndex(DueTime);
-}
-
-/* KiRemoveEntryTimer lives in Rust now — ntkrnl-sys::inline::ke +
- * #[no_mangle] re-export in shim_exports.rs. */
-
-VOID KxInsertTimer(IN PKTIMER Timer, IN ULONG Hand)
-{
-    _rs_KxInsertTimer(Timer, Hand);
-}
-
-BOOLEAN KiComputeDueTime(IN PKTIMER Timer, IN LARGE_INTEGER DueTime, OUT PULONG Hand)
-{
-    return _rs_KiComputeDueTime(Timer, DueTime, Hand);
-}
-
-VOID KxRemoveTreeTimer(IN PKTIMER Timer)
-{
-    _rs_KxRemoveTreeTimer(Timer);
-}
-
-VOID KxSetTimerForThreadWait(IN PKTIMER Timer, IN LARGE_INTEGER Interval, OUT PULONG Hand)
-{
-    _rs_KxSetTimerForThreadWait(Timer, Interval, Hand);
-}
-
-/* --- Unwait + queue-ready (ke_x.h) ---
- * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 9).
- * The Rust port preserves the defensive WaitThread null-check that was added
- * to the original FORCEINLINE to handle corrupt WaitBlocks. */
-extern VOID _rs_KxUnwaitThread(DISPATCHER_HEADER *Object, KPRIORITY Increment);
-extern VOID _rs_KxUnwaitThreadForEvent(PKEVENT Event, KPRIORITY Increment);
-extern VOID _rs_KxQueueReadyThread(PKTHREAD Thread, PKPRCB Prcb);
-
-VOID KxUnwaitThread(IN DISPATCHER_HEADER *Object, IN KPRIORITY Increment)
-{
-    _rs_KxUnwaitThread(Object, Increment);
-}
-
-VOID KxUnwaitThreadForEvent(IN PKEVENT Event, IN KPRIORITY Increment)
-{
-    _rs_KxUnwaitThreadForEvent(Event, Increment);
-}
-
-VOID KxQueueReadyThread(IN PKTHREAD Thread, IN PKPRCB Prcb)
-{
-    _rs_KxQueueReadyThread(Thread, Prcb);
-}
-
-/* Rust impls for KiSelectReadyThread + KiComputeNewPriority live in
- * sdk/lib/rust/ke-inlines/src/lib.rs — Phase 1 batch 10. */
-extern PKTHREAD _rs_KiSelectReadyThread(KPRIORITY Priority, PKPRCB Prcb);
-extern SCHAR _rs_KiComputeNewPriority(PKTHREAD Thread, SCHAR Adjustment);
-
-PKTHREAD KiSelectReadyThread(IN KPRIORITY Priority, IN PKPRCB Prcb)
-{
-    return _rs_KiSelectReadyThread(Priority, Prcb);
-}
-
-SCHAR KiComputeNewPriority(IN PKTHREAD Thread, IN SCHAR Adjustment)
-{
-    return _rs_KiComputeNewPriority(Thread, Adjustment);
-}
+/* Timer / due-time / stack-swap / alertability / unwait / queue-ready /
+ * select-ready / compute-priority trampolines REMOVED — all duplicated
+ * by shim_exports Ki* / Kx* exports. */
 
 /* --- Guarded mutex (ke_x.h) ---
  * Rust impls live in sdk/lib/rust/ke-inlines/src/lib.rs (Phase 1 batch 8). */
@@ -478,18 +200,8 @@ BOOLEAN _KeTryToAcquireGuardedMutex(IN OUT PKGUARDED_MUTEX GuardedMutex)
  * dispatch over the global KiNmiCallbackListLock).
  */
 
-extern void _rs_KiAcquireNmiListLock(PKIRQL OldIrql);
-extern void _rs_KiReleaseNmiListLock(KIRQL OldIrql);
-
-VOID KiAcquireNmiListLock(OUT PKIRQL OldIrql)
-{
-    _rs_KiAcquireNmiListLock(OldIrql);
-}
-
-VOID KiReleaseNmiListLock(IN KIRQL OldIrql)
-{
-    _rs_KiReleaseNmiListLock(OldIrql);
-}
+/* KiAcquireNmiListLock / KiReleaseNmiListLock trampolines REMOVED —
+ * duplicated by shim_exports. */
 
 /* KeRaiseIrql/KeLowerIrql — already provided by tier1_rust_shims.c (i386)
  * and ps_rust_shims.c (amd64/arm64). Do not duplicate here. */
@@ -594,30 +306,8 @@ VOID _wrmsr(ULONG Register, ULONGLONG Value)
 #undef KiSatisfyNonMutantWait
 #undef KiAddThreadToWaitList
 
-extern void _rs_KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread);
-extern void _rs_KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread);
-extern void _rs_KiSatisfyNonMutantWait(PKMUTANT Object);
-extern void _rs_KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable);
-
-void KiSatisfyObjectWait(PKMUTANT Object, PKTHREAD Thread)
-{
-    _rs_KiSatisfyObjectWait(Object, Thread);
-}
-
-void KiSatisfyMutantWait(PKMUTANT Object, PKTHREAD Thread)
-{
-    _rs_KiSatisfyMutantWait(Object, Thread);
-}
-
-void KiSatisfyNonMutantWait(PKMUTANT Object)
-{
-    _rs_KiSatisfyNonMutantWait(Object);
-}
-
-void KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
-{
-    _rs_KiAddThreadToWaitList(Thread, Swappable);
-}
+/* KiSatisfy{Object,Mutant,NonMutant}Wait + KiAddThreadToWaitList trampolines
+ * REMOVED — duplicated by shim_exports. */
 
 /* ProbeForReadLargeInteger is provided by se_rust_shims.c — not duplicated here */
 
@@ -632,47 +322,8 @@ void KiAddThreadToWaitList(PKTHREAD Thread, BOOLEAN Swappable)
 #undef KxDelayThreadWait
 #undef KxMultiThreadWait
 
-extern void _rs_KxSingleThreadWait(
-    PVOID Object, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
-    UCHAR WaitReason, BOOLEAN Alertable,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
-extern void _rs_KxDelayThreadWait(
-    PLARGE_INTEGER Interval, KPROCESSOR_MODE WaitMode,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
-extern void _rs_KxMultiThreadWait(
-    PKWAIT_BLOCK WaitBlockArray, PVOID *Objects, ULONG Count,
-    PLARGE_INTEGER Timeout, UCHAR WaitType,
-    KPROCESSOR_MODE WaitMode, UCHAR WaitReason,
-    BOOLEAN Alertable, BOOLEAN *Swappable,
-    PLARGE_INTEGER DueTime, PULONG Hand);
-
-void KxSingleThreadWait(
-    PVOID Object, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
-    KWAIT_REASON WaitReason, BOOLEAN Alertable,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
-{
-    _rs_KxSingleThreadWait(Object, Timeout, WaitMode, (UCHAR)WaitReason,
-                           Alertable, Swappable, DueTime, Hand);
-}
-
-void KxDelayThreadWait(
-    PLARGE_INTEGER Interval, KPROCESSOR_MODE WaitMode,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
-{
-    _rs_KxDelayThreadWait(Interval, WaitMode, Swappable, DueTime, Hand);
-}
-
-void KxMultiThreadWait(
-    PKWAIT_BLOCK WaitBlockArray, PVOID *Objects, ULONG Count,
-    PLARGE_INTEGER Timeout, WAIT_TYPE WaitType,
-    KPROCESSOR_MODE WaitMode, KWAIT_REASON WaitReason,
-    BOOLEAN Alertable, BOOLEAN *Swappable,
-    PLARGE_INTEGER DueTime, PULONG Hand)
-{
-    _rs_KxMultiThreadWait(WaitBlockArray, Objects, Count, Timeout,
-                          (UCHAR)WaitType, WaitMode, (UCHAR)WaitReason,
-                          Alertable, Swappable, DueTime, Hand);
-}
+/* Kx{Single,Delay,Multi}ThreadWait trampolines REMOVED — duplicated by
+ * shim_exports. */
 
 /* `YieldProcessor`, `KeGetTrapFramePc`, `KiRundownThread`,
  * `KiGetLinkedTrapFrame`, `KiGetUserModeStackAddress` — Phase 2 trap-frame /
@@ -683,57 +334,19 @@ void KxMultiThreadWait(
 #undef KeGetTrapFramePc
 #undef KiGetLinkedTrapFrame
 
-extern void _rs_YieldProcessor(void);
+/* YieldProcessor / KiRundownThread / KiGetLinkedTrapFrame /
+ * KiGetUserModeStackAddress / KxQueueThreadWait / KxUnwaitThread_impl
+ * trampolines REMOVED — duplicated by shim_exports.
+ *
+ * KeGetTrapFramePc keeps a cdecl C trampoline because shim_exports.rs
+ * exports `extern "system"` (i386 stdcall: `_KeGetTrapFramePc@4`) but
+ * bindgen i386 emits the prototype as `extern "C"` (cdecl:
+ * `_KeGetTrapFramePc`); both ABIs need a definition. The Rust impl in
+ * ke-macros / inline::ke is what runs either way. */
 extern ULONG_PTR _rs_KeGetTrapFramePc(PKTRAP_FRAME TrapFrame);
-extern VOID _rs_KiRundownThread(PKTHREAD Thread);
-extern PKTRAP_FRAME _rs_KiGetLinkedTrapFrame(PKTRAP_FRAME TrapFrame);
-extern PULONG_PTR _rs_KiGetUserModeStackAddress(void);
-
-void YieldProcessor(void)
-{
-    _rs_YieldProcessor();
-}
-
 ULONG_PTR KeGetTrapFramePc(IN PKTRAP_FRAME TrapFrame)
 {
     return _rs_KeGetTrapFramePc(TrapFrame);
-}
-
-VOID KiRundownThread(IN PKTHREAD Thread)
-{
-    _rs_KiRundownThread(Thread);
-}
-
-PKTRAP_FRAME KiGetLinkedTrapFrame(IN PKTRAP_FRAME TrapFrame)
-{
-    return _rs_KiGetLinkedTrapFrame(TrapFrame);
-}
-
-PULONG_PTR KiGetUserModeStackAddress(void)
-{
-    return _rs_KiGetUserModeStackAddress();
-}
-
-/* --- KxQueueThreadWait ---
- * Phase 2 wait-setup batch — body in `ke-macros::_rs_KxQueueThreadWait`. */
-#undef KxQueueThreadWait
-extern void _rs_KxQueueThreadWait(
-    PVOID Queue, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand);
-
-void KxQueueThreadWait(
-    PVOID Queue, PLARGE_INTEGER Timeout, KPROCESSOR_MODE WaitMode,
-    BOOLEAN *Swappable, PLARGE_INTEGER DueTime, PULONG Hand)
-{
-    _rs_KxQueueThreadWait(Queue, Timeout, WaitMode, Swappable, DueTime, Hand);
-}
-
-/* --- KxUnwaitThread_impl ---
- * Rust thrdobj.rs references this name to avoid collision with the ddk import.
- * Just forward to the existing KxUnwaitThread shim. */
-void KxUnwaitThread_impl(DISPATCHER_HEADER *Header, KPRIORITY Increment)
-{
-    KxUnwaitThread(Header, Increment);
 }
 
 /* --- HalQuerySystemInformation / HalSetSystemInformation ---
