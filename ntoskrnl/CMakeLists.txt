@@ -85,6 +85,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/pool/src/globals.rs
             ${RUST_WORKSPACE_DIR}/pool/src/types.rs
             ${RUST_WORKSPACE_DIR}/pool/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/mm-avl/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/mm-avl/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/shim_exports.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mod.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/se.rs

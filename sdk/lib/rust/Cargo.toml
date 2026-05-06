@@ -20,6 +20,7 @@ members = [
     "luid",
     "mem",
     "mm-addr-space-inlines",
+    "mm-avl",
     "mm-lock-inlines",
     "mm-macros",
     "mm-pte-atomic-inlines",

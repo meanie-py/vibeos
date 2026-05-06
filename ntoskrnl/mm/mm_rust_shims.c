@@ -718,46 +718,125 @@ MmInitializeMdl(
 }
 
 /* ===================================================================
- * AVL Tree support for vadnode.rs
+ * AVL Tree support for vadnode.rs — translated to Rust 2026-05-06.
  *
  * vadnode.c used to #include "miavl.h" + avlsupp.c to get MM-flavored
- * AVL routines (Mi* names).  The Rust vadnode.rs calls the Rtl* / Rtlp*
- * names from extern "system".  We provide outline wrappers here.
+ * AVL routines (Mi* names). The C trampolines that re-exposed those
+ * under the Rtl* / Rtlp* names that Rust vadnode.rs links against are
+ * now thin delegations into the `mm-avl` sibling rlib (see
+ * `sdk/lib/rust/mm-avl/src/lib.rs`).
+ *
+ * The 5 trivial accessors (Right/Left/Parent/IsLeft/IsRight) and the 3
+ * heavyweight algorithms (Find/Insert/Delete) all live in the rlib now.
+ * The original C avlsupp.c-include trick is preserved in the
+ * `#if 0` block below for side-by-side debug.
  * =================================================================== */
 
+extern PMMADDRESS_NODE NTAPI _rs_RtlRightChildAvl(IN PMMADDRESS_NODE Node);
+extern PMMADDRESS_NODE NTAPI _rs_RtlLeftChildAvl(IN PMMADDRESS_NODE Node);
+extern PMMADDRESS_NODE NTAPI _rs_RtlParentAvl(IN PMMADDRESS_NODE Node);
+extern BOOLEAN NTAPI _rs_RtlIsRightChildAvl(IN PMMADDRESS_NODE Node);
+extern BOOLEAN NTAPI _rs_RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node);
+extern TABLE_SEARCH_RESULT NTAPI _rs_RtlpFindAvlTableNodeOrParent(
+    IN PMM_AVL_TABLE Table, IN PVOID Buffer, OUT PMMADDRESS_NODE *NodeOrParent);
+extern void NTAPI _rs_RtlpInsertAvlTreeNode(
+    IN PMM_AVL_TABLE Table, IN PMMADDRESS_NODE NewNode,
+    IN PMMADDRESS_NODE Parent, IN TABLE_SEARCH_RESULT SearchResult);
+extern void NTAPI _rs_RtlpDeleteAvlTreeNode(
+    IN PMM_AVL_TABLE Table, IN PMMADDRESS_NODE Node);
+
+PMMADDRESS_NODE NTAPI RtlRightChildAvl(IN PMMADDRESS_NODE Node)
+{ return _rs_RtlRightChildAvl(Node); }
+
+PMMADDRESS_NODE NTAPI RtlLeftChildAvl(IN PMMADDRESS_NODE Node)
+{ return _rs_RtlLeftChildAvl(Node); }
+
+PMMADDRESS_NODE NTAPI RtlParentAvl(IN PMMADDRESS_NODE Node)
+{ return _rs_RtlParentAvl(Node); }
+
+BOOLEAN NTAPI RtlIsRightChildAvl(IN PMMADDRESS_NODE Node)
+{ return _rs_RtlIsRightChildAvl(Node); }
+
+BOOLEAN NTAPI RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
+{ return _rs_RtlIsLeftChildAvl(Node); }
+
+TABLE_SEARCH_RESULT
+NTAPI
+RtlpFindAvlTableNodeOrParent(
+    IN PMM_AVL_TABLE Table,
+    IN PVOID Buffer,
+    OUT PMMADDRESS_NODE *NodeOrParent)
+{
+    return _rs_RtlpFindAvlTableNodeOrParent(Table, Buffer, NodeOrParent);
+}
+
+void
+NTAPI
+RtlpInsertAvlTreeNode(
+    IN PMM_AVL_TABLE Table,
+    IN PMMADDRESS_NODE NewNode,
+    IN PMMADDRESS_NODE Parent,
+    IN TABLE_SEARCH_RESULT SearchResult)
+{
+    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks.
+     * This stays in C — the DPRINT1 with detailed VPN context is more useful
+     * here than at the Rust layer (vadnode.rs callers pass typed pointers, but
+     * the diagnostic value is in seeing the field values). */
+    if (SearchResult == TableFoundNode)
+    {
+        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate insertion! NewNode=%p Parent=%p "
+                "VPN=[%lx-%lx] ParentVPN=[%lx-%lx]\n",
+                NewNode, Parent,
+                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn,
+                (ULONG)Parent->StartingVpn, (ULONG)Parent->EndingVpn);
+        return;
+    }
+    _rs_RtlpInsertAvlTreeNode(Table, NewNode, Parent, SearchResult);
+}
+
+void
+NTAPI
+RtlpDeleteAvlTreeNode(
+    IN PMM_AVL_TABLE Table,
+    IN PMMADDRESS_NODE Node)
+{
+    _rs_RtlpDeleteAvlTreeNode(Table, Node);
+}
+
+#if 0  /* Original C body — preserved for side-by-side debug. */
 /* --- Simple FORCEINLINE helpers (miavl.h MiXxx equivalents) --- */
 
 PMMADDRESS_NODE
 NTAPI
-RtlRightChildAvl(IN PMMADDRESS_NODE Node)
+RtlRightChildAvl_C(IN PMMADDRESS_NODE Node)
 {
     return Node->RightChild;
 }
 
 PMMADDRESS_NODE
 NTAPI
-RtlLeftChildAvl(IN PMMADDRESS_NODE Node)
+RtlLeftChildAvl_C(IN PMMADDRESS_NODE Node)
 {
     return Node->LeftChild;
 }
 
 PMMADDRESS_NODE
 NTAPI
-RtlParentAvl(IN PMMADDRESS_NODE Node)
+RtlParentAvl_C(IN PMMADDRESS_NODE Node)
 {
     return (PMMADDRESS_NODE)((ULONG_PTR)Node->u1.Parent & ~(ULONG_PTR)3);
 }
 
 BOOLEAN
 NTAPI
-RtlIsRightChildAvl(IN PMMADDRESS_NODE Node)
+RtlIsRightChildAvl_C(IN PMMADDRESS_NODE Node)
 {
     return (RtlRightChildAvl(RtlParentAvl(Node)) == Node);
 }
 
 BOOLEAN
 NTAPI
-RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
+RtlIsLeftChildAvl_C(IN PMMADDRESS_NODE Node)
 {
     return (RtlLeftChildAvl(RtlParentAvl(Node)) == Node);
 }
@@ -777,67 +856,9 @@ RtlIsLeftChildAvl(IN PMMADDRESS_NODE Node)
 #include "ARM3/miavl.h"
 #include <sdk/lib/rtl/avlsupp.c>
 
-/* Undef miavl.h renames so we can define our own Rtlp* symbols */
-#undef RtlpFindAvlTableNodeOrParent
-#undef RtlpPromoteAvlTreeNode
-#undef RtlpRebalanceAvlTreeNode
-#undef RtlpInsertAvlTreeNode
-#undef RtlpDeleteAvlTreeNode
-#undef RtlpCopyAvlNodeData
-#undef RtlpAvlCompareRoutine
-#undef RtlSetParent
-#undef RtlSetBalance
-#undef RtlBalance
-#undef RtlRightChildAvl
-#undef RtlLeftChildAvl
-#undef RtlParentAvl
-#undef RtlIsLeftChildAvl
-#undef RtlIsRightChildAvl
-#undef RtlInsertAsLeftChildAvl
-#undef RtlInsertAsRightChildAvl
-#undef PRTL_AVL_TABLE
-#undef PRTL_BALANCED_LINKS
-#undef MI_ASSERT
-
-TABLE_SEARCH_RESULT
-NTAPI
-RtlpFindAvlTableNodeOrParent(
-    IN PMM_AVL_TABLE Table,
-    IN PVOID Buffer,
-    OUT PMMADDRESS_NODE *NodeOrParent)
-{
-    return MiFindAvlTableNodeOrParent(Table, Buffer, NodeOrParent);
-}
-
-void
-NTAPI
-RtlpInsertAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE NewNode,
-    IN PMMADDRESS_NODE Parent,
-    IN TABLE_SEARCH_RESULT SearchResult)
-{
-    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks */
-    if (SearchResult == TableFoundNode)
-    {
-        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate insertion! NewNode=%p Parent=%p "
-                "VPN=[%lx-%lx] ParentVPN=[%lx-%lx]\n",
-                NewNode, Parent,
-                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn,
-                (ULONG)Parent->StartingVpn, (ULONG)Parent->EndingVpn);
-        return;
-    }
-    MiInsertAvlTreeNode(Table, NewNode, (PVOID)Parent, SearchResult);
-}
-
-void
-NTAPI
-RtlpDeleteAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE Node)
-{
-    MiDeleteAvlTreeNode(Table, Node);
-}
+/* (#undef block + Rtlp* trampoline wrappers — ~50 lines elided in this debug
+ * snapshot, see git history before commit b20f8cf1 for the full original.) */
+#endif /* 0 — AVL bodies now in mm-avl rlib */
 
 /* ===================================================================
  * FORCEINLINE shims for Tier 3a Rust integration

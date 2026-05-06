@@ -86,6 +86,14 @@ extern crate mm_lock_inlines;
 // `mm.h`/`mmtypes.h`/`miarm.h`. Mirror of `ke-macros` for ke. C trampolines
 // in `mm_rust_shims.c` collapse to one-line `_rs_*` delegations.
 extern crate mm_macros;
+// MM Phase 4 sibling: mm-avl holds Rust impls of the Mm-flavor AVL tree
+// algorithms (RtlpFindAvlTableNodeOrParent / RtlpInsertAvlTreeNode /
+// RtlpDeleteAvlTreeNode) plus the 5 trivial accessors (Right/Left/Parent/
+// IsRight/IsLeft). Replaces the historical `#include <sdk/lib/rtl/avlsupp.c>`
+// trick in `mm_rust_shims.c` that compiled the Rtl algorithms with all
+// helpers `#define`-renamed to `Mi*` flavors that knew how to pack the
+// 2-bit Balance into the low bits of `MMADDRESS_NODE.u1.Parent`.
+extern crate mm_avl;
 // I0 sibling: io-inlines holds Rust impls of `static __inline` and
 // FORCEINLINE bodies from `io_x.h` / `iofuncs.h` (IopValidateOpenPacket,
 // IoGetDevObjExtension, IoCopyCurrentIrpStackLocationToNext to start). Same
@@ -299,6 +307,31 @@ mod _force_ke_macros_symbols {
         _rs_HalQuerySystemInformation,
         _rs_HalSetSystemInformation,
         _rs_HalVectorToIDTEntry,
+    ];
+}
+
+// Defensive pull for mm-avl: AVL tree algorithms + 5 accessors.
+mod _force_mm_avl_symbols {
+    extern "C" {
+        fn _rs_RtlRightChildAvl();
+        fn _rs_RtlLeftChildAvl();
+        fn _rs_RtlParentAvl();
+        fn _rs_RtlIsRightChildAvl();
+        fn _rs_RtlIsLeftChildAvl();
+        fn _rs_RtlpFindAvlTableNodeOrParent();
+        fn _rs_RtlpInsertAvlTreeNode();
+        fn _rs_RtlpDeleteAvlTreeNode();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 8] = [
+        _rs_RtlRightChildAvl,
+        _rs_RtlLeftChildAvl,
+        _rs_RtlParentAvl,
+        _rs_RtlIsRightChildAvl,
+        _rs_RtlIsLeftChildAvl,
+        _rs_RtlpFindAvlTableNodeOrParent,
+        _rs_RtlpInsertAvlTreeNode,
+        _rs_RtlpDeleteAvlTreeNode,
     ];
 }
 
