@@ -296,6 +296,14 @@ core::arch::global_asm!(
     "  pop ebx",
     "  pop edi",
     "  ret 8",
+
+    // KeGetPcr — read PCR self-pointer at fs:[0x1C]. Was a #define macro
+    // expanding to (PKPCR)__readfsdword(FIELD_OFFSET(KPCR, SelfPcr)).
+    // i386 cdecl, 0 args.
+    ".globl _KeGetPcr",
+    "_KeGetPcr:",
+    "  mov eax, fs:[0x1C]",
+    "  ret",
 );
 
 // ============================================================================
@@ -336,6 +344,35 @@ pub unsafe extern "system" fn Ke386SanitizeFlags(Eflags: ULONG, Mode: u8) -> ULO
     } else {
         EFLAGS_INTERRUPT_MASK | (Eflags & EFLAGS_USER_SANITIZE)
     }
+}
+
+/// `Thread->InitialStack - sizeof(FX_SAVE_AREA)` — was a FORCEINLINE in
+/// internal/i386/ke.h. Returns the FxSaveArea pointer, which lives just
+/// below InitialStack on the kernel stack.
+#[no_mangle]
+pub unsafe extern "system" fn KiGetThreadNpxArea(
+    Thread: *const ddk::_KTHREAD,
+) -> *mut ddk::_FX_SAVE_AREA {
+    ((*Thread).InitialStack as *mut u8).sub(core::mem::size_of::<ddk::_FX_SAVE_AREA>())
+        as *mut ddk::_FX_SAVE_AREA
+}
+
+/// Update the per-CPU PCR's self-TEB pointer and patch the GDT TEB entry's
+/// base address. Was a FORCEINLINE in internal/i386/ke.h.
+///
+/// `Pcr->NtTib.Self = TebAddress;`
+/// `Ke386SetGdtEntryBase(&Pcr->GDT[KGDT_R3_TEB / sizeof(KGDTENTRY)], TebAddress);`
+///
+/// The GDT R3 TEB descriptor is at selector 0x38; sizeof(KGDTENTRY)=8 on
+/// i386, so the descriptor index is 7.
+#[no_mangle]
+pub unsafe extern "system" fn KiSetTebBase(
+    Pcr: *mut ddk::_KPCR,
+    TebAddress: *mut ddk::_NT_TIB,
+) {
+    (*Pcr).__bindgen_anon_1.NtTib.Self_ = TebAddress;
+    let gdt_entry = (*Pcr).GDT.add(7); // 0x38 / sizeof(KGDTENTRY)=8
+    KiSetGdtDescriptorBase(gdt_entry, TebAddress as ULONG_PTR);
 }
 
 // ============================================================================

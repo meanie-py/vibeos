@@ -41,11 +41,8 @@
 #ifdef _M_IX86
 #define KeQueryInterruptHandler         _saved_KeQueryInterruptHandler
 #define KeRegisterInterruptHandler      _saved_KeRegisterInterruptHandler
-#define KiGetThreadNpxArea              _saved_KiGetThreadNpxArea
 #define KiSwitchToBootStack             _saved_KiSwitchToBootStack
 #define KiCheckForApcDelivery           _saved_KiCheckForApcDelivery
-#define KiGetGdtEntry                   _saved_KiGetGdtEntry
-#define KiSetGdtDescriptorBase          _saved_KiSetGdtDescriptorBase
 #define KiEnterTrap                     _saved_KiEnterTrap
 #define KiEnterInterruptTrap            _saved_KiEnterInterruptTrap
 #define KiDispatchException0Args        _saved_KiDispatchException0Args
@@ -59,7 +56,6 @@
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
 #define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
 #define KiExceptionExit                 _saved_KiExceptionExit
-#define KiSetTebBase                    _saved_KiSetTebBase
 #endif
 
 /* ========================================================================
@@ -87,11 +83,8 @@
 #ifdef _M_IX86
 #undef KeQueryInterruptHandler
 #undef KeRegisterInterruptHandler
-#undef KiGetThreadNpxArea
 #undef KiSwitchToBootStack
 #undef KiCheckForApcDelivery
-#undef KiGetGdtEntry
-#undef KiSetGdtDescriptorBase
 #undef KiEnterTrap
 #undef KiEnterInterruptTrap
 #undef KiEndInterrupt
@@ -106,7 +99,6 @@
 #undef KiExitTrapDebugChecks
 #undef KiExitSystemCallDebugChecks
 #undef KiExceptionExit
-#undef KiSetTebBase
 #endif
 
 /*
@@ -620,19 +612,9 @@ VOID _wrmsr(ULONG Register, ULONGLONG Value)
  * should use the fastcall_export! macro pattern from EX subsystem.
  * ======================================================================== */
 
-/* ========================================================================
- * KeGetPcr — macro on i386 (__readfsdword), needs callable wrapper for Rust.
- * On amd64/arm64 it's already a real function in bindgen.
- * ======================================================================== */
-#ifdef _M_IX86
-/* Save the macro result, then undef and define a real function */
-static __inline PKPCR _saved_KeGetPcr(VOID) { return KeGetPcr(); }
-#undef KeGetPcr
-PKPCR KeGetPcr(VOID)
-{
-    return _saved_KeGetPcr();
-}
-#endif
+/* KeGetPcr (i386) lives in Rust now — global_asm! in ntkrnl-sys/inline/ke_i386.rs
+ * (single `mov eax, fs:[0x1C]; ret`). On amd64/arm64 it's a real function
+ * already provided by bindgen / shim_exports.rs. */
 
 /* --- Function-like macro shims ---
  * These are #define macros in ke_x.h. Phase 2 (sibling rlib `ke-macros`)
@@ -1062,10 +1044,7 @@ KiThreadStartup(VOID)
  * Now in Rust ke_i386.rs global_asm! */
 
 /* --- KiGetThreadNpxArea --- FORCEINLINE in internal/i386/ke.h */
-PFX_SAVE_AREA NTAPI KiGetThreadNpxArea(IN PKTHREAD Thread)
-{
-    return _saved_KiGetThreadNpxArea(Thread);
-}
+/* KiGetThreadNpxArea lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
 /* --- KiComputeIopmOffset --- macro in ndk/i386/ketypes.h */
 static __inline USHORT _tramp_KiComputeIopmOffset(USHORT MapNumber)
@@ -1089,17 +1068,10 @@ VOID NTAPI KiCheckForApcDelivery(IN PKTRAP_FRAME TrapFrame)
     _saved_KiCheckForApcDelivery(TrapFrame);
 }
 
-/* --- KiGetGdtEntry --- FORCEINLINE in internal/i386/intrin_i.h */
-PKGDTENTRY KiGetGdtEntry(IN PVOID pGdt, IN USHORT Selector)
-{
-    return _saved_KiGetGdtEntry(pGdt, Selector);
-}
-
-/* --- KiSetGdtDescriptorBase --- FORCEINLINE in internal/i386/intrin_i.h */
-VOID KiSetGdtDescriptorBase(IN PKGDTENTRY Entry, IN ULONG Base)
-{
-    _saved_KiSetGdtDescriptorBase(Entry, Base);
-}
+/* KiGetGdtEntry / KiSetGdtDescriptorBase live in Rust now —
+ * sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs (the inline impls), with
+ * #[no_mangle] export wrappers in sdk/lib/rust/ntoskrnl-rust/src/shim_exports.rs
+ * (mod ke_i386_exports). */
 
 /* InterlockedBitTestAndSet@8, InterlockedBitTestAndReset@8, KeMemoryBarrier:
  * Now in Rust ke_i386.rs global_asm! + shim_exports.rs */
@@ -1369,13 +1341,7 @@ void NTAPI KiExitSystemCallDebugChecks(IN ULONG SystemCall, IN PKTRAP_FRAME Trap
     _saved_KiExitSystemCallDebugChecks(SystemCall, TrapFrame);
 }
 
-/* --- KiSetTebBase ---
- * FORCEINLINE in internal/i386/ke.h: updates PCR NtTib.Self and GDT TEB entry.
- * Declared as extern "system" in Rust thrdini.rs → _KiSetTebBase@8 */
-void NTAPI KiSetTebBase(PKPCR Pcr, PNT_TIB TebAddress)
-{
-    _saved_KiSetTebBase(Pcr, TebAddress);
-}
+/* KiSetTebBase lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
 #endif /* _M_IX86 (i386-specific shims) */
 
