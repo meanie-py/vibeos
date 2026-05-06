@@ -304,7 +304,157 @@ core::arch::global_asm!(
     "_KeGetPcr:",
     "  mov eax, fs:[0x1C]",
     "  ret",
+
+    // KiHandleDebugRegistersOnTrapEntry(TrapFrame) — was a FORCEINLINE in
+    // trap_x.h. Saves DR0–7 into the trap frame, disables active debugging,
+    // then loads the kernel DR values from the PRCB. NTAPI/stdcall.
+    //
+    // Field offsets (from sdk/include/asm/ks386.inc):
+    //   KTRAP_FRAME.Dr0..Dr7   = 0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C
+    //   KPCR.Prcb              = 0x20  (i.e. fs:[0x20] is the PRCB pointer)
+    //   PRCB.ProcessorState    = 0x1C
+    //   KPROCESSOR_STATE.SpecialRegisters = 0x2CC
+    //   KSPECIAL_REGISTERS.KernelDr0..7 = 0x10, 0x14, 0x18, 0x1C, 0x20, 0x24
+    //   ⇒ PRCB.KernelDr0 lives at 0x1C + 0x2CC + 0x10 = 0x2F8
+    ".globl _KiHandleDebugRegistersOnTrapEntry@4",
+    "_KiHandleDebugRegistersOnTrapEntry@4:",
+    "  mov ecx, [esp+4]",        // ecx = TrapFrame
+    "  mov eax, dr0",
+    "  mov [ecx+0x18], eax",
+    "  mov eax, dr1",
+    "  mov [ecx+0x1C], eax",
+    "  mov eax, dr2",
+    "  mov [ecx+0x20], eax",
+    "  mov eax, dr3",
+    "  mov [ecx+0x24], eax",
+    "  mov eax, dr6",
+    "  mov [ecx+0x28], eax",
+    "  mov eax, dr7",
+    "  mov [ecx+0x2C], eax",
+    "  xor eax, eax",
+    "  mov dr7, eax",            // disable all active debugging first
+    "  mov eax, fs:[0x20]",      // eax = current PRCB
+    "  mov edx, [eax+0x2F8]",    // KernelDr0
+    "  mov dr0, edx",
+    "  mov edx, [eax+0x2FC]",    // KernelDr1
+    "  mov dr1, edx",
+    "  mov edx, [eax+0x300]",    // KernelDr2
+    "  mov dr2, edx",
+    "  mov edx, [eax+0x304]",    // KernelDr3
+    "  mov dr3, edx",
+    "  mov edx, [eax+0x308]",    // KernelDr6
+    "  mov dr6, edx",
+    "  mov edx, [eax+0x30C]",    // KernelDr7 (last so it can re-arm BPs)
+    "  mov dr7, edx",
+    "  ret 4",
+
+    // KiHandleDebugRegistersOnTrapExit(TrapFrame) — disable then restore
+    // DR0–7 from the trap frame.
+    ".globl _KiHandleDebugRegistersOnTrapExit@4",
+    "_KiHandleDebugRegistersOnTrapExit@4:",
+    "  mov ecx, [esp+4]",        // ecx = TrapFrame
+    "  xor eax, eax",
+    "  mov dr7, eax",            // disable first
+    "  mov eax, [ecx+0x18]",
+    "  mov dr0, eax",
+    "  mov eax, [ecx+0x1C]",
+    "  mov dr1, eax",
+    "  mov eax, [ecx+0x20]",
+    "  mov dr2, eax",
+    "  mov eax, [ecx+0x24]",
+    "  mov dr3, eax",
+    "  mov eax, [ecx+0x28]",
+    "  mov dr6, eax",
+    "  mov eax, [ecx+0x2C]",
+    "  mov dr7, eax",
+    "  ret 4",
+
+    // KiEnterTrap(TrapFrame) — was a FORCEINLINE in trap_x.h. FASTCALL, so
+    // arg is in ECX. Body:
+    //   TrapFrame->Dr7 = 0;
+    //   if (KiUserTrap(TrapFrame) || (EFlags & V86_MASK))
+    //       if (CurrentThread->Header.DebugActive)
+    //           KiHandleDebugRegistersOnTrapEntry(TrapFrame);
+    //   KiFillTrapFrameDebug(TrapFrame);
+    //
+    // Field offsets: SegCs=0x6C, EFlags=0x70, Dr7=0x2C, KPCR.CurrentThread=0x124,
+    // KTHREAD.Header.DebugActive=0x3.
+    ".globl @KiEnterTrap@4",
+    "@KiEnterTrap@4:",
+    "  mov dword ptr [ecx+0x2C], 0",
+    "  push esi",
+    "  mov esi, ecx",
+    "  test byte ptr [esi+0x6C], 1",
+    "  jnz 1f",
+    "  test dword ptr [esi+0x70], 0x20000",
+    "  jz 2f",
+    "1:",
+    "  mov eax, fs:[0x124]",
+    "  test byte ptr [eax+3], 0xFF",
+    "  jz 2f",
+    "  push esi",
+    "  call _KiHandleDebugRegistersOnTrapEntry@4",
+    "2:",
+    "  push esi",
+    "  call _KiFillTrapFrameDebug@4",
+    "  pop esi",
+    "  ret",
+
+    // KiEnterInterruptTrap(TrapFrame) — was a FORCEINLINE in trap_x.h.
+    // Same shape as KiEnterTrap, but additionally terminates the SEH
+    // exception list (PCR.NtTib.ExceptionList = EXCEPTION_CHAIN_END = -1).
+    // cdecl on i386 (extern "C" in irqobj.rs).
+    ".globl _KiEnterInterruptTrap",
+    "_KiEnterInterruptTrap:",
+    "  mov ecx, [esp+4]",
+    "  mov dword ptr fs:[0], 0xFFFFFFFF",  // ExceptionList = EXCEPTION_CHAIN_END
+    "  mov dword ptr [ecx+0x2C], 0",       // Dr7 = 0
+    "  push esi",
+    "  mov esi, ecx",
+    "  test byte ptr [esi+0x6C], 1",
+    "  jnz 1f",
+    "  test dword ptr [esi+0x70], 0x20000",
+    "  jz 2f",
+    "1:",
+    "  mov eax, fs:[0x124]",
+    "  test byte ptr [eax+3], 0xFF",
+    "  jz 2f",
+    "  push esi",
+    "  call _KiHandleDebugRegistersOnTrapEntry@4",
+    "2:",
+    "  push esi",
+    "  call _KiFillTrapFrameDebug@4",
+    "  pop esi",
+    "  ret",                                // cdecl: caller cleans
+
+    // KiEnterV86Trap(TrapFrame) — was a FORCEINLINE in trap_x.h. FASTCALL.
+    //   TrapFrame->Dr7 = __readdr(7);
+    //   if (Dr7 & ~DR7_RESERVED_MASK)  // any non-reserved bit set
+    //       KiHandleDebugRegistersOnTrapEntry(TrapFrame);
+    // DR7_RESERVED_MASK = 0xDC00, so the inverse mask is 0xFFFF23FF.
+    ".globl @KiEnterV86Trap@4",
+    "@KiEnterV86Trap@4:",
+    "  mov eax, dr7",
+    "  mov [ecx+0x2C], eax",
+    "  test eax, 0xFFFF23FF",
+    "  jz 1f",
+    "  push ecx",
+    "  call _KiHandleDebugRegistersOnTrapEntry@4",
+    "1:",
+    "  ret",                                // FASTCALL: no stack args
 );
+
+// Compile-time guards: if bindgen layout drifts away from the hardcoded
+// offsets above, fail the build instead of silently corrupting registers.
+const _: () = assert!(core::mem::offset_of!(ddk::_KTRAP_FRAME, Dr0) == 0x18);
+const _: () = assert!(core::mem::offset_of!(ddk::_KTRAP_FRAME, Dr7) == 0x2C);
+const _: () = assert!(core::mem::offset_of!(ddk::_KPCR, Prcb) == 0x20);
+const _: () = assert!(core::mem::offset_of!(ddk::_KPRCB, ProcessorState) == 0x1C);
+const _: () = assert!(core::mem::offset_of!(ddk::_KPROCESSOR_STATE, SpecialRegisters) == 0x2CC);
+const _: () = assert!(core::mem::offset_of!(ddk::_KSPECIAL_REGISTERS, KernelDr0) == 0x10);
+const _: () = assert!(core::mem::offset_of!(ddk::_KSPECIAL_REGISTERS, KernelDr7) == 0x24);
+const _: () = assert!(core::mem::offset_of!(ddk::_KTRAP_FRAME, SegCs) == 0x6C);
+const _: () = assert!(core::mem::offset_of!(ddk::_KTRAP_FRAME, EFlags) == 0x70);
 
 // ============================================================================
 // Pure-logic FORCEINLINEs from internal/i386/ke.h

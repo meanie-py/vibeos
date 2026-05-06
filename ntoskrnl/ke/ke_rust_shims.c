@@ -43,15 +43,10 @@
 #define KeRegisterInterruptHandler      _saved_KeRegisterInterruptHandler
 #define KiSwitchToBootStack             _saved_KiSwitchToBootStack
 #define KiCheckForApcDelivery           _saved_KiCheckForApcDelivery
-#define KiEnterTrap                     _saved_KiEnterTrap
-#define KiEnterInterruptTrap            _saved_KiEnterInterruptTrap
 #define KiDispatchException0Args        _saved_KiDispatchException0Args
 #define KiDispatchException1Args        _saved_KiDispatchException1Args
 #define KiDispatchException2Args        _saved_KiDispatchException2Args
-#define KiEnterV86Trap                  _saved_KiEnterV86Trap
 #define KiExitV86Trap                   _saved_KiExitV86Trap
-#define KiHandleDebugRegistersOnTrapEntry _saved_KiHandleDebugRegistersOnTrapEntry
-#define KiHandleDebugRegistersOnTrapExit  _saved_KiHandleDebugRegistersOnTrapExit
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
 #define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
 #define KiExceptionExit                 _saved_KiExceptionExit
@@ -84,16 +79,11 @@
 #undef KeRegisterInterruptHandler
 #undef KiSwitchToBootStack
 #undef KiCheckForApcDelivery
-#undef KiEnterTrap
-#undef KiEnterInterruptTrap
 #undef KiEndInterrupt
 #undef KiDispatchException0Args
 #undef KiDispatchException1Args
 #undef KiDispatchException2Args
-#undef KiEnterV86Trap
 #undef KiExitV86Trap
-#undef KiHandleDebugRegistersOnTrapEntry
-#undef KiHandleDebugRegistersOnTrapExit
 #undef KiExitTrapDebugChecks
 #undef KiExitSystemCallDebugChecks
 #undef KiExceptionExit
@@ -1193,21 +1183,9 @@ Ki386InitializeTss(IN PKTSS Tss,
 
 }
 
-/* --- KiEnterTrap ---
- * FORCEINLINE in trap_x.h. Sets up trap frame debug state.
- * Declared as extern "fastcall" in Rust traphdlr.rs → @KiEnterTrap@4 */
-void FASTCALL KiEnterTrap(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiEnterTrap(TrapFrame);
-}
+/* KiEnterTrap lives in Rust now (ntkrnl-sys/inline/ke_i386.rs global_asm!). */
 
-/* --- KiEnterInterruptTrap ---
- * FORCEINLINE in trap_x.h. Sets up interrupt trap frame.
- * Declared as extern "C" in Rust irqobj.rs → _KiEnterInterruptTrap */
-void __cdecl KiEnterInterruptTrap(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiEnterInterruptTrap(TrapFrame);
-}
+/* KiEnterInterruptTrap lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
 /* --- KiEndInterrupt ---
  * FORCEINLINE in ke.h. Ends interrupt via HAL and exits trap.
@@ -1271,13 +1249,7 @@ void NTAPI KiSwitchToBootStack(IN ULONG_PTR InitialStack)
  * (sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs global_asm! block).
  * Ke386GetFs has no surviving callers — dropped. */
 
-/* --- KiEnterV86Trap ---
- * FORCEINLINE in trap_x.h. Saves exception list and sets V86 mode state.
- * Declared as extern "fastcall" in Rust traphdlr.rs → @KiEnterV86Trap@4 */
-void FASTCALL KiEnterV86Trap(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiEnterV86Trap(TrapFrame);
-}
+/* KiEnterV86Trap lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
 /* --- KiExitV86Trap ---
  * FORCEINLINE DECLSPEC_NORETURN in trap_x.h. Exits V86 mode trap.
@@ -1301,21 +1273,10 @@ void __cdecl KiExceptionExit(IN PKTRAP_FRAME TrapFrame,
     _saved_KiExceptionExit(TrapFrame, ExceptionFrame);
 }
 
-/* --- KiHandleDebugRegistersOnTrapEntry ---
- * FORCEINLINE in trap_x.h: saves debug registers into TrapFrame and disables DR7.
- * Declared as extern "system" in Rust traphdlr.rs → _KiHandleDebugRegistersOnTrapEntry@4 */
-void NTAPI KiHandleDebugRegistersOnTrapEntry(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiHandleDebugRegistersOnTrapEntry(TrapFrame);
-}
-
-/* --- KiHandleDebugRegistersOnTrapExit ---
- * FORCEINLINE in trap_x.h: restores debug registers from TrapFrame/Prcb.
- * Declared as extern "system" in Rust traphdlr.rs → _KiHandleDebugRegistersOnTrapExit@4 */
-void NTAPI KiHandleDebugRegistersOnTrapExit(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiHandleDebugRegistersOnTrapExit(TrapFrame);
-}
+/* KiHandleDebugRegistersOnTrap{Entry,Exit} live in Rust now —
+ * pure global_asm! in ntkrnl-sys/inline/ke_i386.rs with hardcoded
+ * KTRAP_FRAME / PRCB / KSPECIAL_REGISTERS offsets guarded by
+ * compile-time offset_of! asserts. */
 
 /* --- KiExitTrapDebugChecks ---
  * FORCEINLINE in trap_x.h: debug checks on trap exit (IRQL, APC state).
