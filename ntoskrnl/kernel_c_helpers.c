@@ -488,20 +488,10 @@ MmVerifyImageIsOkForMpUse(
 }
 #endif
 
-/* --- i386 InterlockedExchange/InterlockedCompareExchange cdecl wrappers ---
- * On i386, exintrin.c provides these as __fastcall (@Name@N), but Rust's
- * extern "C" expects cdecl symbols (_Name). Provide cdecl wrappers. */
-#if defined(_M_IX86)
-#undef InterlockedExchange
-#undef InterlockedCompareExchange
-
-LONG InterlockedExchange(volatile LONG *Target, LONG Value)
-{ return _InterlockedExchange(Target, Value); }
-
-LONG InterlockedCompareExchange(
-    volatile LONG *Destination, LONG Exchange, LONG Comparand)
-{ return _InterlockedCompareExchange(Destination, Exchange, Comparand); }
-#endif /* _M_IX86 */
+/* i386 cdecl InterlockedExchange/InterlockedCompareExchange wrappers — removed.
+ * All Rust callers now declare these as `extern "fastcall"` (i386) or
+ * `extern "C"` (amd64/arm64) and link against the Rust impls in exintrin.rs.
+ * No remaining caller asks for the cdecl `_Name` decoration on i386. */
 
 /* --- Section segment lock/unlock — uses __FILE__/__LINE__ C macros --- */
 #include <mm/ARM3/miarm.h>
@@ -526,22 +516,12 @@ ULONG_PTR NTAPI MmGetPageEntrySectionSegment(
  * live in mm/mm_rust_shims.c and one-line-delegate to `_rs_*` exports.
  * The historical `#include <avlsupp.c>` path used to live here. */
 
-/* --- KfRaiseIrql/KfLowerIrql ---
- * i386: HAL exports as __fastcall — Rust callers now declare
- *       `extern "fastcall"` directly (Phase 3, no cdecl bridge needed).
- * amd64: FORCEINLINE (__readcr8/__writecr8), no HAL symbol — inline here.
- * ARM64: HAL cdecl — Rust's `extern "C"` works directly. */
-#if defined(_M_AMD64)
-KIRQL KfRaiseIrql(IN KIRQL NewIrql)
-{
-    KIRQL OldIrql = (KIRQL)__readcr8();
-    __writecr8(NewIrql);
-    return OldIrql;
-}
-
-void KfLowerIrql(IN KIRQL NewIrql)
-{ __writecr8(NewIrql); }
-#endif
+/* KfRaiseIrql/KfLowerIrql — moved to Rust on amd64.
+ * `shim_exports.rs::KfRaiseIrql/KfLowerIrql` (#[cfg(target_arch = "x86_64")])
+ * delegate to `ntkrnl_sys::inline::mm::KfRaiseIrql/KfLowerIrql` which uses
+ * the inline `mov cr8, ...` asm in `inline/ke.rs::KfRaiseIrql_amd64`.
+ * i386: HAL exports as __fastcall — Rust callers declare `extern "fastcall"`.
+ * ARM64: HAL cdecl — Rust callers declare `extern "C"`. */
 
 /* RustShimRtlFindSetBits / RustShimKdbpGetHexNumber removed (Phase 3) —
  * Rust callers in `ARM3/kdbg.rs` now declare these as `extern "system"`
