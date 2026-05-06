@@ -360,62 +360,11 @@ IopQueryDeviceCapabilities_c(PDEVICE_NODE DeviceNode,
     return Status;
 }
 
-/* ========================================================================
- * IopGetBusTypeGuidIndex C implementation
- *
- * The Rust version in pnpmgr.rs causes an amd64-specific hang. The root cause
- * is unclear (code logic appears identical). Using C version avoids the issue.
- * ======================================================================== */
-extern PIO_BUS_TYPE_GUID_LIST PnpBusTypeGuidList;
-
-USHORT
-NTAPI
-IopGetBusTypeGuidIndex_c(LPGUID BusTypeGuid)
-{
-    USHORT i = 0, FoundIndex = 0xFFFF;
-    ULONG NewSize;
-    PVOID NewList;
-
-    ExAcquireFastMutex(&PnpBusTypeGuidList->Lock);
-
-    while (i < PnpBusTypeGuidList->GuidCount)
-    {
-         if (RtlCompareMemory(BusTypeGuid,
-                              &PnpBusTypeGuidList->Guids[i],
-                              sizeof(GUID)) == sizeof(GUID))
-         {
-              FoundIndex = i;
-              goto Quickie;
-         }
-         i++;
-    }
-
-    if (PnpBusTypeGuidList->GuidCount)
-    {
-        NewSize = sizeof(IO_BUS_TYPE_GUID_LIST) +
-                 (sizeof(GUID) * PnpBusTypeGuidList->GuidCount);
-        NewList = ExAllocatePool(PagedPool, NewSize);
-        if (!NewList)
-        {
-            ExFreePool(PnpBusTypeGuidList);
-            goto Quickie;
-        }
-        NewSize -= sizeof(GUID);
-        RtlCopyMemory(NewList, PnpBusTypeGuidList, NewSize);
-        ExFreePool(PnpBusTypeGuidList);
-        PnpBusTypeGuidList = NewList;
-    }
-
-    RtlCopyMemory(&PnpBusTypeGuidList->Guids[PnpBusTypeGuidList->GuidCount],
-                  BusTypeGuid,
-                  sizeof(GUID));
-    FoundIndex = (USHORT)PnpBusTypeGuidList->GuidCount;
-    PnpBusTypeGuidList->GuidCount++;
-
-Quickie:
-    ExReleaseFastMutex(&PnpBusTypeGuidList->Lock);
-    return FoundIndex;
-}
+/* `IopGetBusTypeGuidIndex_c` deleted 2026-05-06 — Rust impl in
+ * `pnpmgr.rs::IopGetBusTypeGuidIndex` replaces it. The historical
+ * "amd64-specific hang" was almost certainly the same captures(none)
+ * pattern that bit `device.rs`; the workspace `lto = false` +
+ * `codegen-units = 256` firewall (commit 2ba8dab4) eliminates it. */
 
 /* ========================================================================
  * IopInitiatePnpIrp C implementation

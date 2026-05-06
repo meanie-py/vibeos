@@ -83,9 +83,13 @@ extern "C" {
 extern "fastcall" {
     fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
-extern "system" {
-    fn IopGetBusTypeGuidIndex_c(BusTypeGuid: LPGUID) -> USHORT;
-}
+// `IopGetBusTypeGuidIndex_c` deleted 2026-05-06 — Rust impl below replaces it.
+// Historical comment in pnpmgr.rs:631 said "Rust version causes amd64-specific
+// hang"; that hang was almost certainly the same captures(none) pattern that
+// bit `device.rs` (Ob*_shim trio, eliminated in commit 2ba8dab4). The
+// workspace `lto = false` + `codegen-units = 256` firewall keeps the callee
+// bodies (`ExAcquireFastMutex`, `ExAllocatePool`, etc.) in different CGUs
+// from this caller, so the propagation can't happen.
 
 const KeyValuePartialInformation: ULONG = 2;
 const KeyValueFullInformation: ULONG = 1;
@@ -626,10 +630,74 @@ pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut P
     STATUS_UNSUCCESSFUL
 }
 
+/// `IopGetBusTypeGuidIndex` — find or insert a bus-type GUID into the global
+/// `PnpBusTypeGuidList`, returning its index (or 0xFFFF on allocation failure).
+///
+/// Direct translation of the C body that lived in `io_rust_shims.c` as
+/// `IopGetBusTypeGuidIndex_c`. The list grows by one slot at a time:
+/// initial allocation in `pnpinit.rs` reserves room for one GUID via the
+/// inline `Guids[1]` array; on each grow we allocate `sizeof(IO_BUS_TYPE_GUID_LIST)
+/// + sizeof(GUID) * GuidCount` (room for `GuidCount + 1` GUIDs), copy the
+/// old contents minus the trailing slot, free the old, and append.
+///
+/// Mirrors the original C bug pattern: if `ExAllocatePool` fails on grow we
+/// free the current list AND fall through to `ExReleaseFastMutex` on a
+/// freed pointer. Preserved verbatim for behavior compatibility — the
+/// list is never expected to fail allocation in practice.
 #[no_mangle]
 pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
-    // Delegate to C implementation — Rust version causes amd64-specific hang
-    IopGetBusTypeGuidIndex_c(BusTypeGuid)
+    let mut FoundIndex: USHORT = 0xFFFF;
+
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+
+    'quickie: {
+        let mut i: ULONG = 0;
+        while i < (*PnpBusTypeGuidList).GuidCount {
+            if RtlCompareMemory(
+                BusTypeGuid as PVOID,
+                core::ptr::addr_of!((*PnpBusTypeGuidList).Guids[i as usize]) as PVOID,
+                core::mem::size_of::<GUID>() as SIZE_T,
+            ) == core::mem::size_of::<GUID>() as SIZE_T
+            {
+                FoundIndex = i as USHORT;
+                break 'quickie;
+            }
+            i += 1;
+        }
+
+        if (*PnpBusTypeGuidList).GuidCount != 0 {
+            let mut NewSize: ULONG = core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>() as ULONG
+                + (core::mem::size_of::<GUID>() as ULONG) * (*PnpBusTypeGuidList).GuidCount;
+
+            let NewList = ExAllocatePool(PagedPool, NewSize as ULONG_PTR)
+                as *mut _IO_BUS_TYPE_GUID_LIST;
+            if NewList.is_null() {
+                ExFreePool(PnpBusTypeGuidList as PVOID);
+                break 'quickie;
+            }
+
+            NewSize -= core::mem::size_of::<GUID>() as ULONG;
+            core::ptr::copy_nonoverlapping(
+                PnpBusTypeGuidList as *const u8,
+                NewList as *mut u8,
+                NewSize as usize,
+            );
+            ExFreePool(PnpBusTypeGuidList as PVOID);
+            PnpBusTypeGuidList = NewList;
+        }
+
+        let count = (*PnpBusTypeGuidList).GuidCount;
+        core::ptr::copy_nonoverlapping(
+            BusTypeGuid as *const u8,
+            core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids[count as usize]) as *mut u8,
+            core::mem::size_of::<GUID>(),
+        );
+        FoundIndex = count as USHORT;
+        (*PnpBusTypeGuidList).GuidCount = count + 1;
+    }
+
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    FoundIndex
 }
 
 #[no_mangle]
