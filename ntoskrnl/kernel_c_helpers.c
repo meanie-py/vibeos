@@ -459,34 +459,11 @@ VOID NTAPI ARM64_UART_TRACE_HEX(PCSTR prefix, ULONG_PTR val)
  * - Define globals with C-specific initializers
  * =================================================================== */
 
-/* --- Globals from section.c (Rust provides no C definition) --- */
-#if !defined(MM_SECTION_C_ACTIVE)
-KEVENT MmWaitPageEvent;
-ULONG_PTR MmSubsectionBase;
-#endif
-
-/* MmVerifyImageIsOkForMpUse — CONFIG_SMP only, was in sysldr.c */
-#if !defined(MM_SYSLDR_C_ACTIVE) && defined(CONFIG_SMP)
-BOOLEAN
-NTAPI
-MmVerifyImageIsOkForMpUse(
-    _In_ PVOID BaseAddress)
-{
-    PIMAGE_NT_HEADERS NtHeaders;
-    PAGED_CODE();
-
-    NtHeaders = RtlImageNtHeader(BaseAddress);
-    if (!NtHeaders)
-        return TRUE;
-
-    if ((KeNumberProcessors > 1) &&
-        (NtHeaders->FileHeader.Characteristics & IMAGE_FILE_UP_SYSTEM_ONLY))
-    {
-        return FALSE;
-    }
-    return TRUE;
-}
-#endif
+/* MmWaitPageEvent / MmSubsectionBase / MmVerifyImageIsOkForMpUse —
+ * REMOVED. All three are duplicated in mm/mm_rust_shims.c (the
+ * domain-appropriate location). The MM_SECTION_C_ACTIVE /
+ * MM_SYSLDR_C_ACTIVE guards never fire in the active build, so
+ * keeping them here just produced lld duplicate-symbol warnings. */
 
 /* i386 cdecl InterlockedExchange/InterlockedCompareExchange wrappers — removed.
  * All Rust callers now declare these as `extern "fastcall"` (i386) or

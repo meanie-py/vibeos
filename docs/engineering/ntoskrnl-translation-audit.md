@@ -17,7 +17,7 @@ Counts (from `find … | xargs wc -l`):
 | Original ntoskrnl C body of work (excl. shims) | ~272,000 |
 | Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | ~439,400 |
 | Active C in default i386/amd64 build (excl. shims) | 0 |
-| C shim layer (`*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c`) | ~7,200 |
+| C shim layer (`*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c`) | ~5,500 |
 
 The Rust LOC is higher than the original C because (a) bindgen unions need
 explicit accessor paths, (b) every output-pointer write goes through
@@ -33,7 +33,7 @@ kernel changes — not in any specific subsystem).
 
 | Bucket | LOC | Notes |
 |---|---:|---|
-| `*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c` | ~7,200 | Bridge layer. See `shim-elimination.md` for status — most are tractable, the "must-stay" set is small and shrinking. |
+| `*_rust_shims.c` + `kernel_c_helpers.c` + `mm_sysldr_shims.c` + `ntprintf_trampoline.c` | ~5,500 | Bridge layer. See `shim-elimination.md` for status — most are tractable, the "must-stay" set is small and shrinking. Down from ~7,200 after the 2026-05-06 dead-trampoline sweep (Rounds 1–9). |
 | `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
 
 **Translation candidates with no Rust translation in tree: zero.** Every C
@@ -81,6 +81,38 @@ captures(none) workaround left over from before the firewall, latent
 flexible-array indexing bug, etc.). The shim wraps the symptom; the
 underlying Rust bug only surfaces when the shim is removed and the call
 flow goes direct.
+
+**2026-05-06 sweep result (Rounds 1–9).** A second-pass audit over the
+shim layer dropped ~925 LOC (-14.4%) from `*_rust_shims.c` +
+`kernel_c_helpers.c` by collapsing trampolines that fell into one of
+two patterns:
+
+1. **3-layer trampoline collapse** — `Rust caller → C trampoline X →
+   Rust impl _rs_X` where the C trampoline did nothing but ABI bridge.
+   Rename the rlib export from `_rs_X` to `X` (or `X_shim`) directly;
+   delete the C trampoline. Done for io-inlines, cm-inlines, mm-avl
+   (7 of 8 — `RtlpInsertAvlTreeNode` keeps a guard).
+2. **Linker-confirmed duplicate delete** — both `*_rust_shims.c` and
+   `ntoskrnl-rust::shim_exports` were exporting the same `Mi*` /
+   `Ki*` / `Kx*` / `Mm*` name with the same i386 decoration; lld's
+   `--allow-multiple-definition` let the link succeed but the C
+   trampoline was unreachable. Done for ~25 Mi* (mm), ~50 Ki/Kx (ke),
+   ~16 cross-cutting (mm + io). Dropped `kernel_c_helpers.c` AVL
+   block + amd64 KfRaiseIrql + i386 cdecl InterlockedExchange wrappers
+   + Mm globals along the way.
+
+Failure modes encountered:
+- `KeGetTrapFramePc` and `KiReleaseProcessLock`: shim_exports.rs only
+  provides one ABI variant (stdcall via `extern "system"`) but bindgen
+  emits the call as cdecl `extern "C"`; both decorations need a
+  definition on i386. Caught at link time; restored just those two
+  trampolines.
+- `MiAcquireExpansionLock` / `MiReleaseExpansionLock` debug tracking
+  (`MiExpansionLockOwner = …`) was dropped during the sweep; it was
+  already dead in the linked binary because shim_exports.rs's
+  no-tracking version won the link under
+  `--allow-multiple-definition`. Re-adding tracking on the Rust side
+  is a planned follow-up.
 
 So **assume any "intentional-stay" classification is a candidate for
 re-probing**, not a settled answer. The current must-stay set, conservatively:
