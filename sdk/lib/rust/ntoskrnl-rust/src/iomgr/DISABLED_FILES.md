@@ -31,34 +31,40 @@ retranslation or a C shim.
 
 ---
 
-## iomgr.rs (iomgr.c — 765 lines)
+## iomgr.rs (iomgr.c — 765 lines) — ENABLED, ships on all 3 arches
 
-**Status:** Retranslated with improved prompt. Hangs on amd64, untested elsewhere.
+**Status:** Active in the build. Smoke 7/7 PASS on i386 + amd64; arm64 ntoskrnl
+builds clean.
 
-**Bugs found:**
-1. **LLVM `ud2` after IopInitializePlugPlayServices** — LLVM eliminates code after
-   the call because the return value is discarded. Fixed with `core::hint::black_box()`.
+**Historical bugs (all fixed):**
+1. ~~**LLVM `ud2` after IopInitializePlugPlayServices**~~ — Fixed 2026-05-06.
+   Routed through `IopInitializePlugPlayServices_shim` originally; the workspace
+   `lto = false` + `codegen-units = 256` firewall is now sufficient and the
+   call goes direct via `extern "system"` in iomgr.rs.
 2. **Missing `#[no_mangle]` on globals** — IopFileMapping, IopSecurityResource,
    IopLoaderBlock needed `#[no_mangle] pub`.
 3. **InitializeObjectAttributes as extern** — This is a C macro, not a function.
    Fixed by inlining the struct initialization.
 
-**Remaining issue:** Still hangs on amd64 after all fixes. Likely more LLVM
-cross-CGU optimization issues or additional translation bugs in IoInitSystem
-(the main IO initialization function).
-
-**Category:** Mix of LLVM issues and translation bugs.
+**Category:** RESOLVED.
 
 ---
 
-## device.rs (device.c — 1973 lines)
+## device.rs (device.c — 1973 lines) — ENABLED, ships on all 3 arches
 
-**Status:** Not recently tested. Known "LLVM optimizer bug" from previous sessions.
+**Status:** Active in the build. Smoke 7/7 PASS on i386 + amd64; arm64 ntoskrnl
+builds clean. Boot to `shell ready` exercises IoCreateDevice through the
+keyboard/video/disk drivers, so device-creation is covered indirectly.
 
-**Known issue:** LLVM eliminates success path after ObCreateObject output-pointer
-pattern (same captures(none) issue as IopGetBusTypeGuidIndex).
+**Historical bugs (all fixed):**
+1. ~~**LLVM captures(none) success-path elimination after ObCreateObject /
+   ObInsertObject / ObReferenceObjectByHandle output-pointer pattern**~~ —
+   Fixed 2026-05-06. The 4 `Ob*_shim` C trampolines (with their `ULONG_PTR`
+   repackaging) were eliminated; device.rs now calls the original Ob* fns
+   directly with `*mut PVOID` output. The cross-CGU firewall (cgu=256 +
+   lto=false) keeps the callee body in a different codegen unit.
 
-**Category:** LLVM compiler issue. Needs C shim for affected functions.
+**Category:** RESOLVED.
 
 ---
 
@@ -149,7 +155,10 @@ logic has undiagnosed bugs.
    union member, adding unexpected offsets (e.g., KTHREAD.ApcState at offset 72).
 3. **Wrong enum constants** — Match arms using sequential ordinals instead of actual
    enum values. DeviceProperty, KeyValueInformationClass both hit this.
-4. **LLVM captures(none)** — Output pointer writes eliminated across codegen units.
-   Workaround: C shim wrappers.
+4. ~~**LLVM captures(none)**~~ — Was: output pointer writes eliminated across
+   codegen units; workaround was C shim wrappers. CLOSED 2026-05-06: the
+   workspace `lto = false` + `codegen-units = 256` firewall keeps the callee
+   body in a different CGU within the same crate, so the propagation no
+   longer happens. All 5 io captures(none) shims have been deleted.
 5. **Wide string encoding** — `b"..."` byte strings used as UTF-16. Must be `[u16; N]`.
 6. **Static lifetime** — Inline `[u16; N]` arrays as temporaries → dangling pointers.
