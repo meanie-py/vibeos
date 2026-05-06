@@ -121,13 +121,25 @@ extern "C" {
     fn PiInitializeNotifications();
     #[link_name = "HalInitPnpDriver_shim"]
     fn HalInitPnpDriver();
-    fn IopInitializePlugPlayServices_shim() -> NTSTATUS;
     fn PiQueueDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
     fn RtlInitEmptyAnsiString(AnsiString: *mut ANSI_STRING, Buffer: *mut i8, BufferSize: USHORT);
     static mut IoDriverObjectType: POBJECT_TYPE;
     static mut IoCompletionType: POBJECT_TYPE;
     static mut IopCompletionMapping: _GENERIC_MAPPING;
     static mut IopReserveIrpAllocator: PVOID;
+}
+
+// `IopInitializePlugPlayServices` is `extern "system"` in `pnpmgr/pnpinit.rs`
+// (NTAPI = stdcall on i386, cdecl on amd64/arm64). Call directly — the
+// historical C trampoline at `io_rust_shims.c::IopInitializePlugPlayServices_shim`
+// existed because of an LLVM `ud2` after the call when routed through
+// `core::hint::black_box`; the workspace `lto = false` + `codegen-units = 256`
+// firewall (plus the call landing in a different CGU than the callee within
+// the same crate, given the per-fn CGU split) should now be sufficient. If
+// the ud2 reappears on any arch, route the call through a sibling rlib (the
+// same pattern as `*-inlines` / `*-macros`) instead of resurrecting the C shim.
+extern "system" {
+    fn IopInitializePlugPlayServices() -> NTSTATUS;
 }
 
 // `extern "system"` maps to stdcall on i386 (with `@N` decoration) and
@@ -693,7 +705,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
     }
 
     io_trace(b"[IO] IopInitializePlugPlayServices\r\n\0");
-    Status = IopInitializePlugPlayServices_shim();
+    Status = IopInitializePlugPlayServices();
     if Status < 0 {
         io_trace(b"[IO] IopInitializePlugPlayServices FAILED\r\n\0");
         return 0u8;

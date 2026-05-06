@@ -38,18 +38,6 @@ HalInitPnpDriver_shim(VOID)
 }
 
 /*
- * IopInitializePlugPlayServices — Rust-defined stdcall entry point.
- * Calling it through core::hint::black_box() in iomgr.rs miscompiles on i386
- * into an immediate `ud2`. Route through a C shim so LLVM can't fold the
- * continuation in IoInitSystem away.
- */
-NTSTATUS
-IopInitializePlugPlayServices_shim(VOID)
-{
-    return IopInitializePlugPlayServices();
-}
-
-/*
  * IopValidateOpenPacket — static __inline in io_x.h.
  * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopValidateOpenPacket;
  * trampoline keeps the `_shim`-suffixed ABI anchor symbol.
@@ -266,32 +254,23 @@ IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
  */
 
 /* ========================================================================
- * ObCreateObject/ObInsertObject/ObReferenceObjectByHandle shims for device.rs
+ * ObCreateObjectAddress/ObInsertObject/ObReferenceObjectByHandle shims for
+ * device.rs
  *
  * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
  * when Ob* functions (defined in ob/*.rs, same crate) land in a different
  * codegen unit, LLVM propagates `captures(none)` to the declaration, then
  * concludes the output pointer is never written → eliminates the success path.
  * Calling through C shims avoids this.
+ *
+ * (`ObCreateObject_shim` was a passthrough trampoline with no Rust callers;
+ * deleted after the Phase 4 captures(none) re-probe of
+ * `IopInitializePlugPlayServices_shim` showed the workspace `lto = false` +
+ * `codegen-units = 256` firewall is sufficient for the simple delegation
+ * case. The three remaining shims here keep their `ULONG_PTR` repackaging
+ * because their Rust callers in `device.rs` rely on the integer-handle
+ * idiom; re-probing those is a Phase 4 follow-up.)
  * ======================================================================== */
-
-NTSTATUS
-NTAPI
-ObCreateObject_shim(
-    IN KPROCESSOR_MODE ProbeMode,
-    IN POBJECT_TYPE ObjectType,
-    IN POBJECT_ATTRIBUTES ObjectAttributes,
-    IN KPROCESSOR_MODE OwnershipMode,
-    IN OUT PVOID ParseContext,
-    IN ULONG ObjectBodySize,
-    IN ULONG PagedPoolCharge,
-    IN ULONG NonPagedPoolCharge,
-    OUT PVOID *Object)
-{
-    return ObCreateObject(ProbeMode, ObjectType, ObjectAttributes,
-                          OwnershipMode, ParseContext, ObjectBodySize,
-                          PagedPoolCharge, NonPagedPoolCharge, Object);
-}
 
 /*
  * i386-specific LLVM workaround for Rust IoCreateDevice:
