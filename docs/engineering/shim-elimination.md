@@ -1,8 +1,10 @@
-# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05)
+# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-ke-macros)
 
 ## Status snapshot
 
-**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm.** All ~165 in-scope FORCEINLINE / shim_exports wrappers now live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`, each following the validated augment+isolated-rlib pattern (C trampoline retains the ABI symbol, body collapses to a one-line `_rs_*` delegation, sibling rlib boundary insulates against the cross-CGU captures(none) cascade). M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned phases are Phase 2 (macro materializations, ~180 fns) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
+**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has STARTED on ke** — 16 fns landed across 4 batches (pilot + batch 2 + batch B + batch A) in a brand-new sibling `ke-macros` rlib (separate from `ke-inlines`, which is Phase 1 / FORCEINLINE). The macro/intrinsic surface of `ke_rust_shims.c` is essentially closed: all wait-list satisfy/add macros, all four `Kx*ThreadWait` wait-setup macros, all per-arch trap-frame/intrinsic helpers, and the three HAL dispatch macros now have Rust bodies. Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
+
+**Phase 1 final state (≈165 fns).** All wrappers live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned work is more Phase 2 (~165 macros remaining across mm, io, kdbg, common subsystems) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
 
 The kernel still has **~480 active C shim functions** (plus ~50 globals, ~17 LLVM-workaround functions, and ~5 vararg trampolines whose ANSI/wide-format-parsing now runs in Rust) spread across **7 `*_rust_shims.c` / `kernel_c_helpers.c` files**, totaling ~6,400 LOC. The function count hasn't dropped because Phase 1 *augments* — the C symbols stay alive as ABI anchors with one-line delegating bodies; only the FORCEINLINE outline LOC inside them collapsed. Phase 2+ is where the actual count drops. The shims exist because Rust can't link directly to certain C constructs:
 
@@ -284,15 +286,35 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 - **Total landed**: ~165 fns of Rust impl across 13 sibling rlibs. Per-batch wall-clock matched the cm/ke pilot baseline (~30 min Easy, ~60-90 min Medium scope-pick → smoke-green).
 - **Remaining Phase 1 surface**: M8 only — PFN ref-counting fns deferred to Phase 4.
 
-### Phase 2 — Macro materializations (~1 week)
+### Phase 2 — Macro materializations (started 2026-05-05; ke surface CLOSED)
 
-~180 functions, mix of trivial and structural. Two passes:
+~180 functions total, mix of trivial and structural. Two passes:
 1. **Trivial macros** (~80): `InitializeObjectAttributes`, `CONTAINING_RECORD`, `IsListEmpty`, `ObReferenceObject`, etc. Mostly 1-5 lines each. Inline as Rust helpers in subsystem modules; already partially done (`iomgr.rs` has its own `InitializeObjectAttributes`).
 2. **Structural macros** (~100): HAL dispatch (`HalInitPnpDriver` → `HALDISPATCH->HalInitPnpDriver()`), wait macros (`KxMultiThreadWait`), IRP stack helpers. Per-subsystem; some need new Rust APIs (e.g. a `HalDispatch` accessor crate).
 
-**Note (2026-05-05): partial progress on the wait macros — `Kx{Multi,Single,Delay,Queue}ThreadWait` C trampolines in `ke_rust_shims.c` and the original `ke_x.h` macros all had a half-init bug for `Timer.WaitListHead`/`TimerBlock.WaitListEntry` that produced self-referencing wait blocks under `KeWaitForMultipleObjects` (the `InsertTailList` loop double-inserts TimerBlock against the already-pre-set `Timer.WaitListHead.Blink`, computing `Entry.Blink = OldBlink = &TimerBlock` → self). Fix landed: `KxMultiThreadWait` trampoline now uses `InitializeListHead` matching the original macro semantics (so the subsequent loop's `InsertTailList` is a clean insertion); `Kx{Single,Delay,Queue}ThreadWait` trampolines + macros got defensive full-init of TimerBlock<->Timer linkage (different shape — these don't go through the multi-wait `InsertTailList` loop). End result: amd64 taskbar paints (was the `KiTimerExpiration → KxUnwaitThread → KiUnwaitThread` storm). Still on Phase 2 backlog: full Rust translation of the wait setup macros (currently they're macros instantiated in C, not Rust impls).**
+**ke macros LANDED (2026-05-05).** 16 fns translated to a brand-new sibling `sdk/lib/rust/ke-macros/` rlib (separate from `ke-inlines` for Phase 1 / FORCEINLINE; same augment+isolated-rlib pattern as Phase 1). The macro/intrinsic surface of `ke_rust_shims.c` is now empty:
 
-Cost: case-by-case, but well-bounded.
+| # | Batch | Functions | Commit |
+|---|-------|-----------|--------|
+| 2-pilot | wait-list satisfy/add | KiSatisfyMutantWait, KiSatisfyNonMutantWait, KiSatisfyObjectWait, KiAddThreadToWaitList | `f77b9c18` |
+| 2 | wait-setup | KxSingleThreadWait, KxDelayThreadWait, KxMultiThreadWait, KxQueueThreadWait | `bdf21228` |
+| B | trap-frame / arch intrinsics | YieldProcessor (pause/yield asm), KeGetTrapFramePc (Eip/Rip/Pc field), KiRundownThread (i386 NpxThread cleanup; no-op elsewhere), KiGetLinkedTrapFrame (per-arch path to previous trap frame), KiGetUserModeStackAddress (pointer to Rsp/Sp/HardwareEsp on current trap frame) | `c87d114c` |
+| A | HAL dispatch | HalQuerySystemInformation, HalSetSystemInformation, HalVectorToIDTEntry. Bodies pull `Option<fn>` slot from `HalDispatchTable` / `HalPrivateDispatchTable`, call if `Some`, return `STATUS_NOT_IMPLEMENTED` on `None` (safer than the original NULL-fn-ptr crash). | `36802240` |
+
+**The 2026-05-05 `KxMultiThreadWait` half-init bug fix (the amd64 taskbar wedge)** is now in Rust source; the C trampoline + ke_x.h macro defensive variants are still there (the macros are still instantiated in C from `ntoskrnl/ke/wait.c::KeDelayExecutionThread` etc., which haven't been ported yet) but the Rust impl in `ke-macros::_rs_KxMultiThreadWait` matches it bit-for-bit (uses `InitializeListHead` for the multi-wait path so `KeWaitForMultipleObjects`'s `InsertTailList` loop appends cleanly; uses defensive full-init for the single/delay/queue paths that don't go through the multi-wait loop).
+
+**Lessons captured during the ke-macros sweep:**
+- **`extern "C"` ABI for 8-byte aggregate union args is NOT interchangeable with `i64` on i386.** Declared `_rs_KxSetTimerForThreadWait` extern with `interval: i64` instead of `interval: _LARGE_INTEGER`. amd64 7/7 PASS, i386 booted to WinLogon → GinaInit then hung the kernel in a tight win32k message-retry loop (`(\\win32ss\\user\\ntuser\\msgqueue.c:1096) err: Sending to Suspended Thread Msg 121` spamming forever). Root cause: i386 cdecl lowers union-aggregate args differently from scalar i64 args even when both are 8 bytes; the receiver read garbage off the stack. amd64 Windows x64 ABI tolerates the mismatch (both go in the same RDX register slot for the second arg). Captured in `feedback_i64_vs_largeinteger_abi.md`. Rule: **mirror the receiver's exact type at the FFI boundary; pass `*ptr` as the dereferenced struct, not `(*ptr).QuadPart`**.
+- **NTAPI trampoline + `extern "C"` Rust impl works cleanly.** HAL dispatch macros are NTAPI (stdcall on i386, default elsewhere) but the Rust `_rs_*` impls are uniformly `extern "C"` (cdecl). The C trampoline keeps the NTAPI decoration and bridges the call — same pattern that worked for the wait-setup batch. No need to mark `_rs_*` as `extern "system"`.
+
+Remaining Phase 2 surface (~165 fns) is concentrated in:
+- `mm_rust_shims.c` (~85 fns) — but many are AVL trees (`#include <sdk/lib/rtl/avlsupp.c>`) or `__FILE__/__LINE__` macros that must stay in C.
+- `io_rust_shims.c` (~44 fns) — mix of macros (IRP stack helpers — some already done in `common-inlines`) and captures(none) workarounds (Phase 4).
+- `kdbg_rust_shims.c` (~16 fns + 2 large data tables) — KDBG extension entry points, mostly stay.
+- `cm_rust_shims.c` (~37 fns) — mostly KCB-lock variants (Phase 1 already covered the main ones) + i386 dual-decoration scheme.
+- `kernel_c_helpers.c` (~16 fns) — the canonical "must-stay" home; very little here can move to Rust.
+
+Cost: case-by-case, but well-bounded. Per-batch wall-clock in the ke-macros sweep was ~30 minutes scope-pick → smoke-green for trivial batches (pilot, B, A) and ~2 hours for the structural wait-setup batch (which included the i64→`_LARGE_INTEGER` ABI debug session).
 
 ### Phase 3 — Calling conventions (~3 days)
 
@@ -321,7 +343,7 @@ Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit
 |-------|------------------:|--------|------|--------|
 | 0. Free wins | ~30 | 1 day | None | **DONE** (2026-05-04) |
 | 1. FORCEINLINE batch | ~165 augmented | ~3 days actual | Low | **DONE except M8** (2026-05-04 → 2026-05-05) — M8 (5 fns) deferred to Phase 4 |
-| 2. Macro materializations | ~180 | 1 week | Low-medium (per-file) | Partial — `Kx*ThreadWait` half-init bug fixed (taskbar unblocked); macro-to-Rust translation pending |
+| 2. Macro materializations | ~180 augmented (16 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke surface CLOSED (16 fns across pilot/2/B/A in `ke-macros` rlib); ~165 fns left in mm/io/kdbg/cm/common (many will stay — see notes above) |
 | 3. Calling conventions | ~28 | 3 days | Low (mechanical) | Pending |
 | 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) | Pending; M8 (5 fns) folded in |
 | 5. Document must-stays | ~0 | 1 day | None | Pending |
