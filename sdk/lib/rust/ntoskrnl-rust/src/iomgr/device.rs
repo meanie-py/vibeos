@@ -94,32 +94,32 @@ extern "system" {
     fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT);
 }
 
-// C shim wrappers for ObCreateObject/ObInsertObject/ObReferenceObjectByHandle.
-// Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
-// when these Ob* functions (defined in ob/*.rs, same crate) land in a different
-// codegen unit, LLVM propagates `captures(none)` to the declaration, then
-// concludes the output pointer is never written → eliminates the success path.
-// On i386, raw-pointer results crossing this boundary also get folded back to
-// null, so the shims traffic object identities as ULONG_PTR instead.
+// `ObCreateObject` / `ObInsertObject` / `ObReferenceObjectByHandle` are
+// `extern "system"` in `ob/oblife.rs`, `ob/obhandle.rs`, `ob/obref.rs` and
+// already work with their original `*mut PVOID` output-parameter shape from
+// other call sites (`ex/timer.rs`, `ex/sem.rs`, `ex/mutant.rs`, `ex/evtpair.rs`,
+// `lpc/{connect,send,complete}.rs`). The historical `ObCreateObjectAddress_shim`
+// / `ObInsertObject_shim` / `ObReferenceObjectByHandle_shim` C trampolines in
+// `io_rust_shims.c` repackaged the output as `ULONG_PTR` to dodge an LLVM
+// cross-CGU captures(none) attribute propagation bug; the workspace
+// `lto = false` + `codegen-units = 256` firewall now keeps the callee body
+// in a different CGU than the caller, so the propagation can't happen.
+// Re-probed and verified clean 2026-05-06.
 extern "system" {
-    fn ObCreateObjectAddress_shim(
-        ProbeMode: i8, ObjectType: POBJECT_TYPE, ObjectAttributes: POBJECT_ATTRIBUTES,
-        OwnershipMode: i8, ParseContext: PVOID, ObjectBodySize: ULONG,
-        PagedPoolCharge: ULONG, NonPagedPoolCharge: ULONG, Status: *mut NTSTATUS,
-    ) -> ULONG_PTR;
-    fn ObInsertObject_shim(
+    fn ObCreateObject(
+        ProbeMode: KPROCESSOR_MODE, ObjectType: POBJECT_TYPE,
+        ObjectAttributes: POBJECT_ATTRIBUTES, OwnershipMode: KPROCESSOR_MODE,
+        ParseContext: PVOID, ObjectBodySize: ULONG, PagedPoolCharge: ULONG,
+        NonPagedPoolCharge: ULONG, Object: *mut PVOID,
+    ) -> NTSTATUS;
+    fn ObInsertObject(
         Object: PVOID, AccessState: PVOID, DesiredAccess: ACCESS_MASK,
-        ObjectPointerBias: ULONG, NewObject: *mut ULONG_PTR, Handle: *mut HANDLE,
+        ObjectPointerBias: ULONG, NewObject: *mut PVOID, Handle: *mut HANDLE,
     ) -> NTSTATUS;
-    fn ObReferenceObjectByHandle_shim(
+    fn ObReferenceObjectByHandle(
         Handle: HANDLE, DesiredAccess: ACCESS_MASK, ObjectType: POBJECT_TYPE,
-        AccessMode: i8, Object: *mut ULONG_PTR, HandleInformation: PVOID,
+        AccessMode: KPROCESSOR_MODE, Object: *mut PVOID, HandleInformation: PVOID,
     ) -> NTSTATUS;
-}
-
-#[inline(always)]
-fn ptr_from_exposed_addr_mut<T>(addr: ULONG_PTR) -> *mut T {
-    core::ptr::with_exposed_provenance_mut::<T>(addr as usize)
 }
 
 #[inline(always)]
@@ -446,16 +446,16 @@ unsafe fn IopGetDeviceObjectPointer(
         return Status;
     }
 
-    let mut LocalFileObject: ULONG_PTR = 0;
-    Status = ObReferenceObjectByHandle_shim(
+    let mut LocalFileObject: PVOID = core::ptr::null_mut();
+    Status = ObReferenceObjectByHandle(
         FileHandle,
         0,
         IoFileObjectType,
-        0i32 as i8,
+        0i32 as KPROCESSOR_MODE,
         &mut LocalFileObject,
         core::ptr::null_mut(),
     );
-    let LocalFileObject = ptr_from_exposed_addr_mut::<_FILE_OBJECT>(LocalFileObject);
+    let LocalFileObject = LocalFileObject as *mut _FILE_OBJECT;
     if Status >= 0 {
         *DeviceObject = IoGetRelatedDeviceObject(LocalFileObject);
         *FileObject = LocalFileObject;
@@ -935,7 +935,7 @@ pub unsafe extern "system" fn IoAttachDeviceToDeviceStackSafe(
 
 #[inline(never)]
 unsafe fn IopFinishCreatedDeviceObject(
-    CreatedDeviceObject: ULONG_PTR,
+    mut CreatedDeviceObject: *mut _DEVICE_OBJECT,
     TotalSize: usize,
     DriverObject: PDRIVER_OBJECT,
     DeviceExtensionSize: ULONG,
@@ -948,11 +948,10 @@ unsafe fn IopFinishCreatedDeviceObject(
 ) -> NTSTATUS {
     // Keep the post-ObCreateObject path in a separate function: on i386 LLVM
     // otherwise folds the caller's success path into the null-object cleanup.
-    if CreatedDeviceObject == 0 {
+    if CreatedDeviceObject.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     let mut Status: NTSTATUS;
-    let mut CreatedDeviceObject = ptr_from_exposed_addr_mut::<_DEVICE_OBJECT>(CreatedDeviceObject);
     core::ptr::write_bytes(CreatedDeviceObject.cast::<u8>(), 0, TotalSize);
 
     (*CreatedDeviceObject).Type = IO_TYPE_DEVICE as i16;
@@ -1031,8 +1030,8 @@ unsafe fn IopFinishCreatedDeviceObject(
     }
 
     let mut TempHandle: HANDLE = core::ptr::null_mut();
-    let mut InsertedDeviceObject: ULONG_PTR = 0;
-    Status = ObInsertObject_shim(
+    let mut InsertedDeviceObject: PVOID = core::ptr::null_mut();
+    Status = ObInsertObject(
         CreatedDeviceObject as PVOID,
         core::ptr::null_mut(),
         FILE_READ_DATA | FILE_WRITE_DATA,
@@ -1043,7 +1042,7 @@ unsafe fn IopFinishCreatedDeviceObject(
     if Status < 0 {
         return Status;
     }
-    CreatedDeviceObject = ptr_from_exposed_addr_mut::<_DEVICE_OBJECT>(InsertedDeviceObject);
+    CreatedDeviceObject = InsertedDeviceObject as *mut _DEVICE_OBJECT;
 
     ObReferenceObject(DriverObject as PVOID);
     (*CreatedDeviceObject).DriverObject = DriverObject;
@@ -1119,20 +1118,19 @@ pub unsafe extern "system" fn IoCreateDevice(
         + core::mem::size_of::<_EXTENDED_DEVOBJ_EXTENSION>();
 
     *DeviceObject = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    // Carry the object address back as an integer; on i386 LLVM keeps folding
-    // raw-pointer results from this boundary to null.
-    let CreatedDeviceObject = ObCreateObjectAddress_shim(
-        0i32 as i8,
+    let mut CreatedDeviceObject: PVOID = core::ptr::null_mut();
+    let mut Status: NTSTATUS = ObCreateObject(
+        0i32 as KPROCESSOR_MODE,
         IoDeviceObjectType,
         &mut ObjectAttributes,
-        0i32 as i8,
+        0i32 as KPROCESSOR_MODE,
         core::ptr::null_mut(),
         TotalSize as ULONG,
         0,
         0,
-        &mut Status,
+        &mut CreatedDeviceObject,
     );
+    let CreatedDeviceObject = CreatedDeviceObject as *mut _DEVICE_OBJECT;
     if Status < 0 {
         if !Dacl.is_null() {
             ExFreePoolWithTag(Dacl as PVOID, TAG_SHUTDOWN_ENTRY);

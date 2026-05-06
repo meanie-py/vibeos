@@ -254,89 +254,19 @@ IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
  */
 
 /* ========================================================================
- * ObCreateObjectAddress/ObInsertObject/ObReferenceObjectByHandle shims for
- * device.rs
+ * Ob*_shim wrappers for device.rs — DELETED 2026-05-06 (Phase 4 re-probe).
  *
- * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
- * when Ob* functions (defined in ob/*.rs, same crate) land in a different
- * codegen unit, LLVM propagates `captures(none)` to the declaration, then
- * concludes the output pointer is never written → eliminates the success path.
- * Calling through C shims avoids this.
- *
- * (`ObCreateObject_shim` was a passthrough trampoline with no Rust callers;
- * deleted after the Phase 4 captures(none) re-probe of
- * `IopInitializePlugPlayServices_shim` showed the workspace `lto = false` +
- * `codegen-units = 256` firewall is sufficient for the simple delegation
- * case. The three remaining shims here keep their `ULONG_PTR` repackaging
- * because their Rust callers in `device.rs` rely on the integer-handle
- * idiom; re-probing those is a Phase 4 follow-up.)
+ * `ObCreateObjectAddress_shim`, `ObInsertObject_shim`, and
+ * `ObReferenceObjectByHandle_shim` repackaged the output object as `ULONG_PTR`
+ * to dodge an LLVM cross-CGU captures(none) attribute propagation bug. The
+ * workspace `lto = false` + `codegen-units = 256` firewall now keeps the
+ * callee body in a different CGU than the caller, so the propagation can't
+ * happen — `device.rs` calls `ObCreateObject` / `ObInsertObject` /
+ * `ObReferenceObjectByHandle` directly with `*mut PVOID` output, the same
+ * shape the rest of the kernel (ex/timer.rs, ex/sem.rs, ex/mutant.rs,
+ * ex/evtpair.rs, lpc/{connect,send,complete}.rs) uses. `ObCreateObject_shim`
+ * (passthrough trampoline with no callers) was also deleted.
  * ======================================================================== */
-
-/*
- * i386-specific LLVM workaround for Rust IoCreateDevice:
- * return the created object address as ULONG_PTR rather than PVOID because the
- * i386 Rust codegen keeps folding raw-pointer shim results back to NULL.
- * The Rust side performs the visible zero-init after the non-zero check so
- * later field reads are seen as initialized by the optimizer.
- */
-ULONG_PTR
-NTAPI
-ObCreateObjectAddress_shim(
-    IN KPROCESSOR_MODE ProbeMode,
-    IN POBJECT_TYPE ObjectType,
-    IN POBJECT_ATTRIBUTES ObjectAttributes,
-    IN KPROCESSOR_MODE OwnershipMode,
-    IN OUT PVOID ParseContext,
-    IN ULONG ObjectBodySize,
-    IN ULONG PagedPoolCharge,
-    IN ULONG NonPagedPoolCharge,
-    OUT NTSTATUS *Status)
-{
-    PVOID Object = NULL;
-
-    *Status = ObCreateObject(ProbeMode, ObjectType, ObjectAttributes,
-                             OwnershipMode, ParseContext, ObjectBodySize,
-                             PagedPoolCharge, NonPagedPoolCharge, &Object);
-    return (ULONG_PTR)Object;
-}
-
-NTSTATUS
-NTAPI
-ObInsertObject_shim(
-    IN PVOID Object,
-    IN PACCESS_STATE AccessState,
-    IN ACCESS_MASK DesiredAccess,
-    IN ULONG ObjectPointerBias,
-    OUT PULONG_PTR NewObject,
-    OUT PHANDLE Handle)
-{
-    PVOID LocalNewObject = NULL;
-    NTSTATUS Status;
-
-    Status = ObInsertObject(Object, AccessState, DesiredAccess,
-                            ObjectPointerBias, &LocalNewObject, Handle);
-    *NewObject = (ULONG_PTR)LocalNewObject;
-    return Status;
-}
-
-NTSTATUS
-NTAPI
-ObReferenceObjectByHandle_shim(
-    IN HANDLE Handle,
-    IN ACCESS_MASK DesiredAccess,
-    IN POBJECT_TYPE ObjectType,
-    IN KPROCESSOR_MODE AccessMode,
-    OUT PULONG_PTR Object,
-    OUT POBJECT_HANDLE_INFORMATION HandleInformation)
-{
-    PVOID LocalObject = NULL;
-    NTSTATUS Status;
-
-    Status = ObReferenceObjectByHandle(Handle, DesiredAccess, ObjectType,
-                                       AccessMode, &LocalObject, HandleInformation);
-    *Object = (ULONG_PTR)LocalObject;
-    return Status;
-}
 
 /* ========================================================================
  * Debug tracing for Rust pnpmgr (temporary)
