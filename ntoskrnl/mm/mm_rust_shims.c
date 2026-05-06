@@ -618,43 +618,51 @@ InterlockedExchangeAddUL(IN PULONG Addend, IN ULONG Value)
 }
 
 /*
- * RMAP_IS_SEGMENT — macro in mm.h (undeffed in Phase 3)
+ * RMAP_IS_SEGMENT — macro in mm.h. Body in Rust at
+ * sdk/lib/rust/mm-macros/src/lib.rs::_rs_RMAP_IS_SEGMENT.
  */
+extern BOOLEAN _rs_RMAP_IS_SEGMENT(PVOID Address);
 BOOLEAN
 NTAPI
 RMAP_IS_SEGMENT(IN PVOID Address)
 {
-    return (((ULONG_PTR)(Address) & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK);
+    return _rs_RMAP_IS_SEGMENT(Address);
 }
 
 /*
- * PAGE_ROUND_DOWN — macro in mmtypes.h (undeffed in Phase 3)
+ * PAGE_ROUND_DOWN — macro in mmtypes.h. Body in Rust at
+ * sdk/lib/rust/mm-macros/src/lib.rs::_rs_PAGE_ROUND_DOWN.
  */
+extern ULONG_PTR _rs_PAGE_ROUND_DOWN(PVOID Address);
 ULONG_PTR
 NTAPI
 PAGE_ROUND_DOWN(IN PVOID Address)
 {
-    return (((ULONG_PTR)(Address)) & ~((ULONG_PTR)(PAGE_SIZE - 1)));
+    return _rs_PAGE_ROUND_DOWN(Address);
 }
 
 /*
- * PFN_FROM_SSE — macro in mm.h (undeffed in Phase 3)
+ * PFN_FROM_SSE — macro in mm.h. Body in Rust at
+ * sdk/lib/rust/mm-macros/src/lib.rs::_rs_PFN_FROM_SSE.
  */
+extern ULONG_PTR _rs_PFN_FROM_SSE(ULONG_PTR Entry);
 PFN_NUMBER
 NTAPI
 PFN_FROM_SSE(IN ULONG_PTR Entry)
 {
-    return (PFN_NUMBER)(Entry >> PAGE_SHIFT);
+    return (PFN_NUMBER)_rs_PFN_FROM_SSE(Entry);
 }
 
 /*
- * MM_IS_WAIT_PTE — macro in mm.h (undeffed in Phase 3)
+ * MM_IS_WAIT_PTE — macro in mm.h. Body in Rust at
+ * sdk/lib/rust/mm-macros/src/lib.rs::_rs_MM_IS_WAIT_PTE.
  */
+extern BOOLEAN _rs_MM_IS_WAIT_PTE(ULONG_PTR Entry);
 BOOLEAN
 NTAPI
 MM_IS_WAIT_PTE(IN ULONG_PTR Entry)
 {
-    return ((Entry & 0x1) && ((Entry >> 1) == MM_WAIT_ENTRY));
+    return _rs_MM_IS_WAIT_PTE(Entry);
 }
 
 /*

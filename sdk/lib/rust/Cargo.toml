@@ -21,6 +21,7 @@ members = [
     "mem",
     "mm-addr-space-inlines",
     "mm-lock-inlines",
+    "mm-macros",
     "mm-pte-atomic-inlines",
     "mm-pte-class-inlines",
     "mm-pte-mut-inlines",

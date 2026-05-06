@@ -103,6 +103,7 @@ dependencies = [
  "ke-macros",
  "mm-addr-space-inlines",
  "mm-lock-inlines",
+ "mm-macros",
  "mm-pte-atomic-inlines",
  "mm-pte-class-inlines",
  "mm-pte-mut-inlines",
@@ -172,6 +173,13 @@ dependencies = [
 
 [[package]]
 name = "mm-lock-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "mm-macros"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",

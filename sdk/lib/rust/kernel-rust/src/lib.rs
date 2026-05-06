@@ -80,6 +80,12 @@ extern crate mm_pte_atomic_inlines;
 // the regular spinlock; MiAcquire/ReleasePfnLock use the per-CPU queued
 // spinlock at LockQueuePfnLock = 2.
 extern crate mm_lock_inlines;
+// MM Phase 2 sibling: mm-macros holds Rust impls of bit-twiddle `#define`
+// macros (RMAP_IS_SEGMENT, PAGE_ROUND_DOWN, PFN_FROM_SSE, MM_IS_WAIT_PTE)
+// and structural FORCEINLINE bodies (MI_MAKE_HARDWARE_PTE_*) from
+// `mm.h`/`mmtypes.h`/`miarm.h`. Mirror of `ke-macros` for ke. C trampolines
+// in `mm_rust_shims.c` collapse to one-line `_rs_*` delegations.
+extern crate mm_macros;
 // I0 sibling: io-inlines holds Rust impls of `static __inline` and
 // FORCEINLINE bodies from `io_x.h` / `iofuncs.h` (IopValidateOpenPacket,
 // IoGetDevObjExtension, IoCopyCurrentIrpStackLocationToNext to start). Same
@@ -293,6 +299,23 @@ mod _force_ke_macros_symbols {
         _rs_HalQuerySystemInformation,
         _rs_HalSetSystemInformation,
         _rs_HalVectorToIDTEntry,
+    ];
+}
+
+// Defensive pull for mm-macros (mm.h / mmtypes.h / miarm.h #define macros).
+mod _force_mm_macros_symbols {
+    extern "C" {
+        fn _rs_RMAP_IS_SEGMENT();
+        fn _rs_PAGE_ROUND_DOWN();
+        fn _rs_PFN_FROM_SSE();
+        fn _rs_MM_IS_WAIT_PTE();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 4] = [
+        _rs_RMAP_IS_SEGMENT,
+        _rs_PAGE_ROUND_DOWN,
+        _rs_PFN_FROM_SSE,
+        _rs_MM_IS_WAIT_PTE,
     ];
 }
 

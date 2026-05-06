@@ -26,3 +26,4 @@ mm-ws-lock-inlines = { path = "../mm-ws-lock-inlines" }
 mm-addr-space-inlines = { path = "../mm-addr-space-inlines" }
 mm-pte-atomic-inlines = { path = "../mm-pte-atomic-inlines" }
 mm-lock-inlines = { path = "../mm-lock-inlines" }
+mm-macros = { path = "../mm-macros" }
