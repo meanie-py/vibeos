@@ -184,6 +184,10 @@ extern "system" {
         Length: ULONG,
         ResultLength: PULONG,
     ) -> NTSTATUS;
+}
+
+// CmpAcquireKcbLockShared is exported as cdecl by cm_rust_shims.c.
+extern "C" {
     fn CmpAcquireKcbLockShared(Kcb: *mut ntkrnl_sys::ddk::_CM_KEY_CONTROL_BLOCK);
 }
 

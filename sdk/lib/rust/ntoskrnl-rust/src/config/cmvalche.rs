@@ -40,7 +40,7 @@ fn ALIGN_UP(value: ULONG, align: ULONG) -> ULONG {
     (value + align - 1) & !(align - 1)
 }
 
-extern "system" {
+extern "C" {
     fn CmpIsKeyValueSmall(KeySize: *mut ULONG, DataLength: ULONG) -> BOOLEAN;
     fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
     fn CmpIsKcbLockedExclusive(Kcb: PCM_KEY_CONTROL_BLOCK) -> u8;

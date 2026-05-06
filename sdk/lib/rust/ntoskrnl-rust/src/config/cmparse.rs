@@ -77,15 +77,17 @@ unsafe fn COMPUTE_HASH_CHAR(key: ULONG, ch: WCHAR) -> ULONG {
 #[inline(always)]
 unsafe fn NT_ASSERT(_expr: u8) {}
 extern "system" {
-    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
-    fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
     fn HvAllocateCell( Hive: PHHIVE, Size: u32, StorageType: u32, Flink: HCELL_INDEX, ) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
-    fn CMP_ASSERT_KCB_LOCK(Kcb: PCM_KEY_CONTROL_BLOCK);
-    fn HvGetCellType(Cell: HCELL_INDEX) -> u32;
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Shared: u8) -> u8;
     static mut CmiVolatileHive: PCMHIVE;
     fn CmpUnlockRegistry();
+}
+extern "C" {
+    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
+    fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
+    fn CMP_ASSERT_KCB_LOCK(Kcb: PCM_KEY_CONTROL_BLOCK);
+    fn HvGetCellType(Cell: HCELL_INDEX) -> u32;
 }
 
 extern "C" {

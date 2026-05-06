@@ -49,9 +49,11 @@ extern "system" {
         Cluster: u32,
         FileName: PCUNICODE_STRING,
     ) -> i32;
-    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unpin: u8) -> u8;
     fn HvFree(Hive: PHHIVE);
+}
+extern "C" {
+    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
 }
 
 #[inline(always)]

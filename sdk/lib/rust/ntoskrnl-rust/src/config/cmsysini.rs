@@ -536,7 +536,7 @@ unsafe fn RTL_CONSTANT_STRING(_s: *const u16) -> _UNICODE_STRING {
 
 // CmpAcquireKcbLockShared shim: in upstream this is a macro that ultimately
 // calls CmpAcquireKcbLockSharedByIndex.
-extern "system" {
+extern "C" {
     fn CmpAcquireKcbLockSharedByIndex(Index: u32);
 }
 
@@ -571,16 +571,18 @@ unsafe fn ExInitializeWorkItem(_item: PVOID, _routine: PVOID, _ctx: PVOID) {}
 
 extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, Type: u32, Nil: u32) -> u32;
+    fn ExIsResourceAcquiredShared(Resource: *mut core::ffi::c_void) -> u32;
+    fn HvSyncHive(Hive: PHHIVE);
+    fn HvWriteAlternateHive(Hive: PHHIVE) -> u8;
+}
+extern "C" {
     fn HvGetCell(Hive: PHHIVE, Cell: u32) -> *mut core::ffi::c_void;
     fn HvReleaseCell(Hive: PHHIVE, Cell: u32);
     fn CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(Hive: PCMHIVE);
-    fn ExIsResourceAcquiredShared(Resource: *mut core::ffi::c_void) -> u32;
     fn CMP_ASSERT_FLUSH_LOCK(Hive: PCMHIVE);
     fn CMP_ASSERT_REGISTRY_LOCK();
     fn GET_HASH_INDEX(key: ULONG) -> ULONG;
     fn PtrToUlong(ptr: *mut core::ffi::c_void) -> u32;
-    fn HvSyncHive(Hive: PHHIVE);
-    fn HvWriteAlternateHive(Hive: PHHIVE) -> u8;
 }
 
 #[no_mangle]

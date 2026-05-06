@@ -27,6 +27,8 @@ fn Int32x32To64(a: i32, b: i32) -> i64 {
 // existing NT_SUCCESS check (mirrors original C: implicit BOOLEAN→NTSTATUS).
 extern "system" {
     fn HvSyncHive(Hive: ntkrnl_sys::ddk::PHHIVE) -> i32;
+}
+extern "C" {
     fn ExInitializeWorkItem(
         Item: *mut WORK_QUEUE_ITEM,
         Routine: Option<unsafe extern "system" fn(PVOID)>,

@@ -50,7 +50,7 @@ pub static CMDELAY_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
 #[inline]
 unsafe fn CMP_ASSERT_KCB_LOCK(_Kcb: PCM_KEY_CONTROL_BLOCK) {}
 
-extern "system" {
+extern "C" {
     fn ExInitializeWorkItem(
         Item: PWORK_QUEUE_ITEM,
         Routine: Option<unsafe extern "system" fn(PVOID)>,

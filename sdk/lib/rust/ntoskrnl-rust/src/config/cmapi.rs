@@ -92,11 +92,14 @@ extern "C" {
     static mut CmpLoadHiveLock: u64;
 }
 // Hv* are CMAPI = NTAPI = stdcall; must be extern "system".
+// Exception: the dual-decoration cm shims (HvGetCell, HvReleaseCell,
+// HvGetCellType, ASSERT_VALUE_BIG, CMP_ASSERT_FLUSH_LOCK,
+// CmpIsKeyValueSmall, CMP_ASSERT_KCB_LOCK, CmpIsKcbLockedExclusive)
+// are exported as cdecl by cm_rust_shims.c — declared in the extern "C"
+// block below.
 extern "system" {
-    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> PVOID;
     fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Shared: BOOLEAN) -> BOOLEAN;
     fn HvIsCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX) -> BOOLEAN;
-    fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
     fn HvHiveWillShrink(Hive: PHHIVE) -> u8;
     fn HvSyncHive(Hive: PHHIVE) -> u8;
     fn HvTrackCellRef(CellReferences: *mut HV_TRACK_CELL_REF, Hive: PHHIVE, Cell: u32) -> u8;
@@ -106,17 +109,21 @@ extern "system" {
 extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, StorageType: u32, Flink: HCELL_INDEX) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
-    fn ASSERT_VALUE_BIG(Hive: PHHIVE, Length: u32);
-    fn CMP_ASSERT_FLUSH_LOCK(Hive: PHHIVE);
-    fn CmpIsKeyValueSmall(Length: *mut u32, DataLength: u32) -> u8;
     fn HvGetCellSize(Hive: PHHIVE, CellData: PCELL_DATA) -> i32;
     fn HvReallocateCell(Hive: PHHIVE, Cell: HCELL_INDEX, Size: u32) -> HCELL_INDEX;
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
+    fn HvWriteHive(Hive: PHHIVE);
+}
+extern "C" {
+    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> PVOID;
+    fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
+    fn HvGetCellType(Cell: HCELL_INDEX) -> u32;
+    fn ASSERT_VALUE_BIG(Hive: PHHIVE, Length: u32);
+    fn CMP_ASSERT_FLUSH_LOCK(Hive: PHHIVE);
+    fn CmpIsKeyValueSmall(Length: *mut u32, DataLength: u32) -> u8;
     fn CMP_ASSERT_KCB_LOCK(Kcb: PCM_KEY_CONTROL_BLOCK);
     fn CmpIsKcbLockedExclusive(Kcb: PCM_KEY_CONTROL_BLOCK) -> u8;
-    fn HvGetCellType(Cell: HCELL_INDEX) -> u32;
-    fn HvWriteHive(Hive: PHHIVE);
 }
 
 #[no_mangle]

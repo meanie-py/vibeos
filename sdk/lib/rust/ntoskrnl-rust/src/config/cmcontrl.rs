@@ -10,10 +10,7 @@ use ntkrnl_sys::opaque_ptr;
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 
 extern "system" {
-    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
     fn HvInitialize( RegistryHive: PHHIVE, OperationType: u32, HiveFlags: u32, FileType: u32, HiveData: *mut core::ffi::c_void, Allocate: *mut core::ffi::c_void, Free: *mut core::ffi::c_void, FileSetSize: *mut core::ffi::c_void, FileWrite: *mut core::ffi::c_void, FileRead: *mut core::ffi::c_void, FileFlush: *mut core::ffi::c_void, Cluster: u32, FileName: *mut core::ffi::c_void, ) -> u32;
-    fn CmpIsKeyValueSmall(Length: *mut u32, DataLength: u32) -> u8;
-    fn LANGIDFROMLCID(lcid: LCID) -> u16;
     static mut CmControlHive: [u8; 4096];
     static mut CmDefaultLanguageIdType: u32;
     static mut CmDefaultLanguageId: [u16; 12];
@@ -25,6 +22,11 @@ extern "system" {
     static mut PsInstallUILanguageId: u16;
     static mut PsDefaultThreadLocaleId: LCID;
     static mut PsDefaultUILanguageId: u16;
+}
+extern "C" {
+    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
+    fn CmpIsKeyValueSmall(Length: *mut u32, DataLength: u32) -> u8;
+    fn LANGIDFROMLCID(lcid: LCID) -> u16;
 }
 
 unsafe fn CmpConvertLangId(Name: LPWSTR, NameLength: u32) -> LANGID {

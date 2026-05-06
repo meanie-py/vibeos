@@ -32,7 +32,7 @@ pub static mut HiveListValueName: _UNICODE_STRING = _UNICODE_STRING {
     Buffer: HIVELIST_NAME_BUF.as_ptr() as *mut u16,
 };
 
-extern "system" {
+extern "C" {
     fn HvGetCell(Hive: *mut core::ffi::c_void, Cell: HCELL_INDEX) -> PCELL_DATA;
     fn HvReleaseCell(Hive: *mut core::ffi::c_void, Cell: HCELL_INDEX);
 }

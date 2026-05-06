@@ -1,8 +1,8 @@
-# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-3-direct-cc)
+# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-3-cm-dual-decoration)
 
 ## Status snapshot
 
-**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io + mm.** Phase 3 has KICKED OFF: 8 calling-convention bridges deleted across kernel_c_helpers.c + io_rust_shims.c (KfRaiseIrql/KfLowerIrql i386 fastcall, RtlFindSetBits + KdbpGetHexNumber NTAPI, four RTL string i386 stdcall bridges) — Rust callers now declare the right `extern "fastcall"` / `extern "system"` directly. Same augment+isolated-rlib pattern continues for Phase 1/2: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
+**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io + mm. Phase 3 has 25 of ~28 calling-convention bridges deleted across 4 batches.** The cm dual-decoration scheme (17 i386 NTAPI `_shim_*` variants in `cm_rust_shims.c`) was removed in batch 3-4 by migrating all hand-written Rust callers from `extern "system"` to `extern "C"` (bindgen-aligned), resolving against the cdecl outlines that already existed on all 3 arches. The earlier 8 bridges came from kernel_c_helpers.c + io_rust_shims.c (KfRaiseIrql/KfLowerIrql i386 fastcall, RtlFindSetBits + KdbpGetHexNumber NTAPI, four RTL string i386 stdcall bridges). Same augment+isolated-rlib pattern continues for Phase 1/2: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
 
 **Phase 1 final state (≈165 fns).** All wrappers live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned work is more Phase 2 (~165 macros remaining across mm, io, kdbg, common subsystems) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
 
@@ -380,7 +380,7 @@ The following Phase 2 candidates have been identified but are *not* being transl
 
 | Function(s) | Category | Reason for deferral |
 |---|---|---|
-| `_shim_*` family with `__asm__("_Name@N")` symbol-renames (~14 fns: `_shim_CmpAcquireKcbLockShared` through `_shim_CmpIsKeyValueSmall`) | **Phase 3 follow-up — dual-decoration scheme** | Each KCB-lock / hive-cell / utility function has BOTH a bare cdecl symbol (`_Name`) for bindgen-generated callers AND an `_Name@N` stdcall variant for hand-written `extern "system"` callers. The right resolution is to align all hand-written callers on bindgen (`use ntkrnl_sys::ddk::*;`) and drop the `_shim_*` family. Larger Phase 3 batch — defer until the simple fastcall/stdcall bridges land. |
+| ~~`_shim_*` family with `__asm__("_Name@N")` symbol-renames (~14 fns: `_shim_CmpAcquireKcbLockShared` through `_shim_CmpIsKeyValueSmall`)~~ | **DONE — Phase 3 batch 3-4 (2026-05-05)** | All 17 `_shim_*` NTAPI variants deleted from `cm_rust_shims.c`. Hand-written Rust callers in 10 cm files migrated from `extern "system"` to `extern "C"`, matching bindgen-generated decls and resolving against the cdecl outlines that already existed for all 3 arches. |
 | Stub macros (`CMP_ASSERT_REGISTRY_LOCK`, `CMP_ASSERT_FLUSH_LOCK`, `CMP_ASSERT_KCB_LOCK`, `CMP_ASSERT_REGISTRY_LOCK_OR_LOADING`, `ASSERT_VALUE_BIG`, `CMTRACE`, `IS_NULL_TERMINATED`) | **Intentional-stay** | Empty-body assertion stubs and trace macros. ~1-2 lines each; no Rust value-add. |
 | `CmpIsKcbLockedExclusive_outline`, `_outline_GET_HASH_INDEX` | **Phase 4 follow-up** | These are PCH-extracted FORCEINLINE outlines with `__attribute__((alias))` aliases. Better to fold into the cm_x.h Phase 1 work whenever cm-inlines gets its second sweep. |
 | `RtlStringCbPrintfW`, `CmpIsKeyValueSmall`, `HvGetCellType`, `CM_CHECK_REGISTRY_SUCCESS`, `LANGIDFROMLCID`, `PtrToUlong`, `_saved_PtrToUlong` | **Mixed — Phase 2 candidates that overlap with vararg/macro work already done** | The vararg-overhaul round (May 4) put `RtlStringCbPrintfW` body in Rust ntprintf_w; the C trampoline here is the va_list anchor and stays. The others are tiny utility macros that could land in a future cm-macros rlib if a sweep is justified. |
@@ -396,7 +396,7 @@ The canonical "must-stay" home. Categories per Phase 5:
 - ~2 fastcall→cdecl bridges (Phase 3 batch 1)
 - 2 stdcall→cdecl bridges (Phase 3 batch 2)
 
-### Phase 3 — Calling conventions (started 2026-05-05; first 8 fns landed)
+### Phase 3 — Calling conventions (started 2026-05-05; 25 fns landed across 4 batches)
 
 ~28 functions total. `extern "fastcall"` and `extern "system"` work on stable Rust for `i686-pc-windows-gnu` (verified in March doc); the legacy bridges existed because of stale assumptions about decoration generation that no longer hold. Mechanical work that lands per-batch:
 
@@ -405,10 +405,10 @@ The canonical "must-stay" home. Categories per Phase 5:
 | 3-1 | i386 fastcall direct | RustShimKfRaiseIrql, RustShimKfLowerIrql — `ARM3/helpers.rs` now declares `extern "fastcall" fn KfRaiseIrql(...)` on i386. The amd64 inline body (`__readcr8`/`__writecr8`) stays in `kernel_c_helpers.c` because there's no HAL symbol on amd64. ARM64 unchanged (HAL exports cdecl). | `fbad986e` |
 | 3-2 | NTAPI direct (kdbg) | RustShimRtlFindSetBits, RustShimKdbpGetHexNumber — `ARM3/kdbg.rs` now declares both as `extern "system"`, which produces the right `_Name@N` decoration on i386. The in-source comment claiming `extern "system"` couldn't match `_Name@N` was stale. | `6ac0817e` |
 | 3-3 | i386 stdcall direct (RTL string) | RtlAnsiStringToUnicodeString_shim, RtlUnicodeStringToAnsiString_shim, RtlInitAnsiString_shim, RtlFreeUnicodeString_shim — `iomgr/iomgr.rs`, `iomgr/arcname.rs`, `fstub/disksup.rs` now declare these as `extern "system"`. Same stale-comment pattern as 3-2. | `89efe188` |
+| 3-4 | cm dual-decoration cleanup | 17 i386 NTAPI `_shim_*` fns deleted from `cm_rust_shims.c`: `_shim_CmpAcquireKcbLockShared{ByIndex}`, `_shim_CmpIsKcbLockedExclusive`, `_shim_HvGetCell`, `_shim_HvReleaseCell`, `_shim_HvGetCellType`, `_shim_ExInitializeWorkItem`, `_shim_CMP_ASSERT_{REGISTRY,FLUSH,KCB}_LOCK`, `_shim_CMP_ASSERT_REGISTRY_LOCK_OR_LOADING`, `_shim_GET_HASH_INDEX`, `_shim_ASSERT_VALUE_BIG`, `_shim_LANGIDFROMLCID`, `_shim_PtrToUlong`, `_shim_CmpIsKeyValueSmall`, `_shim_CMP_IS_CELL_CACHED`. Rust callers in `cmapi.rs` / `cmcontrl.rs` / `cmdelay.rs` / `cmhvlist.rs` / `cminit.rs` / `cmlazy.rs` / `cmparse.rs` / `cmsysini.rs` / `cmvalche.rs` / `ntapi.rs` migrated from `extern "system"` to `extern "C"` (bindgen-aligned), resolving against the cdecl outlines that already existed for all 3 arches. The dual-decoration scheme was a workaround for hand-written `extern "system"` callers; aligning on `extern "C"` matches bindgen-generated decls and eliminates the i386-only NTAPI variant block (~106 LOC deleted from cm_rust_shims.c). | `0965a48a` (io-inlines NTAPI fix prereq) + this batch |
 
-Remaining Phase 3 surface (~20 fns):
-- **cm_rust_shims.c dual-decoration scheme** (~14 `_shim_*` fns with `__asm__("_Name@N")` symbol-renames). Each KCB-lock / hive-cell / utility function has BOTH a bare cdecl symbol (for bindgen-generated callers) AND a stdcall variant (for hand-written `extern "system"` callers). Right resolution: align all hand-written callers on bindgen (`use ntkrnl_sys::ddk::*;`) and drop the `_shim_*` family. Larger batch — defer until smaller bridges done.
-- Per-function audit of remaining `extern "C"` declarations across the kernel — look for ones that should be `extern "system"` or `extern "fastcall"` based on the bindgen reference.
+Remaining Phase 3 surface (~3 fns + an open audit):
+- Per-function audit of remaining `extern "C"` declarations across the kernel — look for ones that should be `extern "system"` or `extern "fastcall"` based on the bindgen reference. The io-inlines NTAPI prereq commit (`0965a48a`) caught one such bug (`KiCheckForKernelApcDelivery`/`KeAreAllApcsDisabled`/`KeSetEvent`/`IopAcquireFileObjectLock` declared `extern "C"` instead of `extern "system"` — i386 link broke once the symbols were actually referenced); future audits should grep for the same pattern in the other sibling rlibs.
 
 ### Phase 4 — Per-function review (~2 weeks)
 
@@ -431,7 +431,7 @@ Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit
 | 0. Free wins | ~30 | 1 day | None | **DONE** (2026-05-04) |
 | 1. FORCEINLINE batch | ~165 augmented | ~3 days actual | Low | **DONE except M8** (2026-05-04 → 2026-05-05) — M8 (5 fns) deferred to Phase 4 |
 | 2. Macro materializations | ~180 augmented (34 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke + io + mm-trivial surfaces CLOSED (16 ke fns in `ke-macros`, 9 io fns in `io-inlines`, 9 mm fns in `mm-macros`); ~146 fns left in mm-AVL/io-cnone-workarounds/kdbg/cm/common (many will stay — see notes above) |
-| 3. Calling conventions | ~28 (8 landed) | ~2 days remaining | Low (mechanical) | **Partial** — i386 fastcall direct + NTAPI direct + i386 stdcall direct landed (8 bridges deleted in 3 batches); ~20 fns left including the cm_rust_shims.c dual-decoration scheme |
+| 3. Calling conventions | ~28 (25 landed) | ~0.5 days remaining | Low (mechanical) | **Partial** — batches 3-1/3-2/3-3/3-4 landed (8 calling-convention bridges + 17 cm dual-decoration NTAPI shims deleted across 4 batches); only an open `extern "C"` → `extern "system"` audit across sibling rlibs left (caught one io-inlines bug in `0965a48a`) |
 | 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) | Pending; M8 (5 fns) folded in |
 | 5. Document must-stays | ~0 | 1 day | None | Pending |
 | **Total reduction (planned)** | **~498 / ~552 (90%)** | **~5 weeks** | | |
