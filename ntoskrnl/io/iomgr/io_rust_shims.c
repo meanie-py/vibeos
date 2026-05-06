@@ -1205,84 +1205,11 @@ cleanup:
                               &DeviceNode->InstancePath);
 }
 
-/*
- * PiQueueDeviceAction_c — Queue a device operation to a worker thread.
- * Delegated from Rust to C to avoid potential cross-CGU issues.
- */
-extern BOOLEAN PnPBootDriversLoaded;
-extern LIST_ENTRY IopDeviceActionRequestList;
-extern KSPIN_LOCK IopDeviceActionLock;
-extern KEVENT PiEnumerationFinished;
-extern WORK_QUEUE_ITEM IopDeviceActionWorkItem;
-extern BOOLEAN IopDeviceActionInProgress;
-
-VOID NTAPI PipDeviceActionWorker(PVOID Context);
-
-VOID
-PiQueueDeviceAction_c(
-    _In_ PDEVICE_OBJECT DeviceObject,
-    _In_ DEVICE_ACTION Action,
-    _In_opt_ PKEVENT CompletionEvent,
-    _Out_opt_ NTSTATUS *CompletionStatus)
-{
-    PDEVICE_ACTION_REQUEST Request;
-    KIRQL OldIrql;
-
-    Request = ExAllocatePoolWithTag(NonPagedPoolMustSucceed, sizeof(*Request), TAG_IO);
-
-    DPRINT("PiQueueDeviceAction: DeviceObject - %p, Request - %p\n",
-        DeviceObject, Request);
-
-    ObReferenceObject(DeviceObject);
-
-    Request->DeviceObject = DeviceObject;
-    Request->Action = Action;
-    Request->CompletionEvent = CompletionEvent;
-    Request->CompletionStatus = CompletionStatus;
-
-    KeAcquireSpinLock(&IopDeviceActionLock, &OldIrql);
-    InsertTailList(&IopDeviceActionRequestList, &Request->RequestListEntry);
-
-    if (Action == PiActionEnumRootDevices || Action == PiActionAddBootDevices)
-    {
-        ASSERT(!IopDeviceActionInProgress);
-
-        IopDeviceActionInProgress = TRUE;
-        KeClearEvent(&PiEnumerationFinished);
-        KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
-
-        PipDeviceActionWorker(NULL);
-        return;
-    }
-
-    if (IopDeviceActionInProgress || !PnPBootDriversLoaded)
-    {
-        KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
-        return;
-    }
-    IopDeviceActionInProgress = TRUE;
-    KeClearEvent(&PiEnumerationFinished);
-    KeReleaseSpinLock(&IopDeviceActionLock, OldIrql);
-
-    ExInitializeWorkItem(&IopDeviceActionWorkItem, PipDeviceActionWorker, NULL);
-    ExQueueWorkItem(&IopDeviceActionWorkItem, DelayedWorkQueue);
-}
-
-/*
- * PiPerformSyncDeviceAction_c — Perform a device operation synchronously.
- * Delegated from Rust to C to avoid potential cross-CGU issues.
- */
-NTSTATUS
-PiPerformSyncDeviceAction_c(
-    _In_ PDEVICE_OBJECT DeviceObject,
-    _In_ DEVICE_ACTION Action)
-{
-    KEVENT opFinished;
-    NTSTATUS status;
-
-    KeInitializeEvent(&opFinished, SynchronizationEvent, FALSE);
-    PiQueueDeviceAction_c(DeviceObject, Action, &opFinished, &status);
-    KeWaitForSingleObject(&opFinished, Executive, KernelMode, FALSE, NULL);
-
-    return status;
-}
+/* `PiQueueDeviceAction_c` and `PiPerformSyncDeviceAction_c` deleted
+ * 2026-05-06 — Rust impls in `pnpmgr/devaction.rs::PiQueueDeviceAction` /
+ * `PiPerformSyncDeviceAction` replace them. The historical "Delegated to C
+ * to avoid potential cross-CGU issues" comment was a captures(none) ghost
+ * (same family as the Ob*_shim trio in commit 2ba8dab4 and
+ * IopGetBusTypeGuidIndex in commit 280782e5). The workspace `lto = false` +
+ * `codegen-units = 256` firewall keeps the Rust callees in different CGUs
+ * from the caller. */

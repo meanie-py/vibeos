@@ -287,9 +287,10 @@ extern "system" {
 }
 extern "C" {
     fn PiSetDevNodeText_c(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
-    fn PiQueueDeviceAction_c(DeviceObject: PDEVICE_OBJECT, Action: _DEVICE_ACTION, CompletionEvent: PKEVENT, CompletionStatus: *mut NTSTATUS);
-    fn PiPerformSyncDeviceAction_c(DeviceObject: PDEVICE_OBJECT, Action: _DEVICE_ACTION) -> NTSTATUS;
 }
+// `PiQueueDeviceAction_c` and `PiPerformSyncDeviceAction_c` deleted 2026-05-06
+// — Rust impls below replace them. Same captures(none)-ghost re-probe pattern
+// as `IopGetBusTypeGuidIndex` (commit 280782e5).
 
 extern "C" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
@@ -2287,6 +2288,17 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
     KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
 }
 
+/// `PiQueueDeviceAction` — enqueue a device action onto `IopDeviceActionRequestList`,
+/// kicking off a worker if not already running. For `PiActionEnumRootDevices` and
+/// `PiActionAddBootDevices` the worker runs synchronously on the caller's thread;
+/// for everything else we queue an `ExWorkItem` to fire `PipDeviceActionWorker`
+/// in the delayed work queue.
+///
+/// Direct port of the C body that lived in `io_rust_shims.c::PiQueueDeviceAction_c`.
+/// The historical "Delegate to C implementation" comment was a captures(none)
+/// ghost (same family as `Ob*_shim` and `IopGetBusTypeGuidIndex`); the workspace
+/// `lto = false` + `codegen-units = 256` firewall keeps the callees in
+/// different CGUs.
 #[no_mangle]
 pub unsafe extern "C" fn PiQueueDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
@@ -2297,18 +2309,87 @@ pub unsafe extern "C" fn PiQueueDeviceAction(
     let DeviceObject = opaque_ptr(DeviceObject);
     let CompletionEvent = opaque_ptr(CompletionEvent);
     let CompletionStatus = opaque_ptr(CompletionStatus);
-    // Delegate to C implementation
-    PiQueueDeviceAction_c(DeviceObject, Action, CompletionEvent, CompletionStatus)
+
+    let Request = ExAllocatePoolWithTag(
+        NonPagedPoolMustSucceed,
+        core::mem::size_of::<DEVICE_ACTION_REQUEST>() as ULONG_PTR,
+        TAG_IO,
+    ) as PDEVICE_ACTION_REQUEST;
+
+    ObReferenceObject(DeviceObject as PVOID);
+
+    (*Request).DeviceObject = DeviceObject;
+    (*Request).Action = Action;
+    (*Request).CompletionEvent = CompletionEvent;
+    (*Request).CompletionStatus = CompletionStatus;
+
+    let mut OldIrql: KIRQL = 0;
+    KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql);
+    InsertTailList(
+        device_action_request_list_ptr(),
+        core::ptr::addr_of_mut!((*Request).RequestListEntry) as PLIST_ENTRY,
+    );
+
+    if Action == PiActionEnumRootDevices || Action == PiActionAddBootDevices {
+        IopDeviceActionInProgress = 1;
+        KeClearEvent(enumeration_finished_ptr());
+        KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
+
+        PipDeviceActionWorker(core::ptr::null_mut());
+        return;
+    }
+
+    if IopDeviceActionInProgress != 0 || PnPBootDriversLoaded == 0 {
+        KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
+        return;
+    }
+    IopDeviceActionInProgress = 1;
+    KeClearEvent(enumeration_finished_ptr());
+    KeReleaseSpinLock(device_action_lock_ptr(), OldIrql);
+
+    ExInitializeWorkItem(
+        core::ptr::addr_of_mut!(IopDeviceActionWorkItem) as PWORK_QUEUE_ITEM,
+        PipDeviceActionWorker,
+        core::ptr::null_mut(),
+    );
+    ExQueueWorkItem(
+        core::ptr::addr_of_mut!(IopDeviceActionWorkItem) as PWORK_QUEUE_ITEM,
+        DelayedWorkQueue,
+    );
 }
 
+/// `PiPerformSyncDeviceAction` — synchronous variant: enqueue + wait on a
+/// stack-local KEVENT. Direct port of `PiPerformSyncDeviceAction_c`.
 #[no_mangle]
 pub unsafe extern "C" fn PiPerformSyncDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
 ) -> NTSTATUS {
     let DeviceObject = opaque_ptr(DeviceObject);
-    // Delegate to C implementation
-    PiPerformSyncDeviceAction_c(DeviceObject, Action)
+
+    let mut opFinished: _KEVENT = core::mem::zeroed();
+    let mut status: NTSTATUS = 0;
+
+    KeInitializeEvent(
+        &mut opFinished as PKEVENT,
+        _EVENT_TYPE_SynchronizationEvent,
+        0,
+    );
+    PiQueueDeviceAction(
+        DeviceObject,
+        Action,
+        &mut opFinished as PKEVENT,
+        &mut status,
+    );
+    KeWaitForSingleObject(
+        &mut opFinished as *mut _ as PVOID,
+        _KWAIT_REASON_Executive,
+        0i8,
+        0,
+        core::ptr::null_mut(),
+    );
+
+    status
 }
 
 
