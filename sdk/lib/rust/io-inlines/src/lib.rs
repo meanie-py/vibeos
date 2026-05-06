@@ -35,7 +35,7 @@ const IO_TYPE_OPEN_PACKET: i16 = 8;
 /// Validates an OPEN_PACKET pointer + Type + Size. The C body uses an explicit
 /// NULL check before dereferencing; preserved here as a pointer-null guard.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopValidateOpenPacket(open_packet: POPEN_PACKET) -> u8 {
+pub unsafe extern "system" fn IopValidateOpenPacket_shim(open_packet: POPEN_PACKET) -> u8 {
     if open_packet.is_null() {
         return 0;
     }
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn _rs_IopValidateOpenPacket(open_packet: POPEN_PACKET) ->
 /// IoGetDevObjExtension — `#define` macro from `ntoskrnl/include/internal/io.h`:
 /// `((PEXTENDED_DEVOBJ_EXTENSION)(DeviceObject->DeviceObjectExtension))`.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IoGetDevObjExtension(
+pub unsafe extern "system" fn IoGetDevObjExtension_shim(
     device_object: PDEVICE_OBJECT,
 ) -> PEXTENDED_DEVOBJ_EXTENSION {
     (*device_object).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn _rs_IoGetDevObjExtension(
 /// CompletionRoutine field (`FIELD_OFFSET(IO_STACK_LOCATION, CompletionRoutine)`),
 /// then zeroes the next slot's Control byte.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IoCopyCurrentIrpStackLocationToNext(irp: PIRP) {
+pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext_shim(irp: PIRP) {
     // IoGetCurrentIrpStackLocation: Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation
     let cur = (*irp)
         .Tail
@@ -167,7 +167,7 @@ unsafe fn leave_guarded_region_thread(tcb: *mut ntkrnl_sys::ddk::_KTHREAD) {
 /// must be the current thread; we disable special APCs against that thread,
 /// link the IRP onto its `IrpList`, and re-enable.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopQueueIrpToThread(irp: PIRP) {
+pub unsafe extern "system" fn IopQueueIrpToThread_shim(irp: PIRP) {
     let thread: PETHREAD = (*irp).Tail.Overlay.Thread;
     let tcb = core::ptr::addr_of_mut!((*thread).Tcb);
     enter_guarded_region_thread(tcb);
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn _rs_IopQueueIrpToThread(irp: PIRP) {
 /// (skipping the case where it's already been re-initialized to a self-link),
 /// then re-initializes it.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopUnQueueIrpFromThread(irp: PIRP) {
+pub unsafe extern "system" fn IopUnQueueIrpFromThread_shim(irp: PIRP) {
     debug_assert!(KeAreAllApcsDisabled() != 0);
     let entry = core::ptr::addr_of_mut!((*irp).ThreadListEntry);
     if IsListEmpty(entry) {
@@ -212,7 +212,7 @@ const FO_ALERTABLE_IO: u32 = 0x00000004;
 /// FALSE we won unconditionally and just take a reference. Slow path: call
 /// `IopAcquireFileObjectLock` which blocks on the FO's KEVENT.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopLockFileObject(
+pub unsafe extern "system" fn IopLockFileObject_shim(
     file_object: PFILE_OBJECT,
     wait_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn _rs_IopLockFileObject(
 /// caller really held it), wake any waiters via `KeSetEvent`, and drop the
 /// reference taken on lock acquire.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopUnlockFileObject(file_object: PFILE_OBJECT) {
+pub unsafe extern "system" fn IopUnlockFileObject_shim(file_object: PFILE_OBJECT) {
     let busy = AtomicU32::from_ptr(core::ptr::addr_of_mut!((*file_object).Busy));
     let prev = busy.swap(0, Ordering::SeqCst);
     debug_assert!(prev == 1);
@@ -333,7 +333,7 @@ unsafe fn add_large_statistic(addend: *mut i64, increment: i32) {
 /// non-atomic — matches the C body) and the per-process LARGE_INTEGER
 /// counter atomically.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopUpdateOperationCount(transfer_type: u32) {
+pub unsafe extern "system" fn IopUpdateOperationCount_shim(transfer_type: u32) {
     if IoCountOperations == 0 {
         return;
     }
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn _rs_IopUpdateOperationCount(transfer_type: u32) {
 /// IopUpdateTransferCount — `static __inline` in `io_x.h`. Bumps both the
 /// per-process and global LARGE_INTEGER counters by `transfer_count` bytes.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_IopUpdateTransferCount(transfer_type: u32, transfer_count: u32) {
+pub unsafe extern "system" fn IopUpdateTransferCount_shim(transfer_type: u32, transfer_count: u32) {
     if IoCountOperations == 0 {
         return;
     }

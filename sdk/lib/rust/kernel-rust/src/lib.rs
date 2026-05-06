@@ -364,29 +364,33 @@ mod _force_mm_macros_symbols {
 
 // Defensive pull for io-inlines (io_x.h / iofuncs.h FORCEINLINE bodies).
 // Same `[used]` pattern as `_force_ke_macros_symbols`.
+//
+// io-inlines exports the `_shim`-suffixed symbols directly (no C trampoline);
+// the Rust callers in iomgr/{file,iofunc,irp,volume,rawfs}.rs declare these
+// via `#[link_name = "X_shim"]`.
 mod _force_io_inlines_symbols {
     extern "C" {
-        fn _rs_IopValidateOpenPacket();
-        fn _rs_IoGetDevObjExtension();
-        fn _rs_IoCopyCurrentIrpStackLocationToNext();
-        fn _rs_IopQueueIrpToThread();
-        fn _rs_IopUnQueueIrpFromThread();
-        fn _rs_IopLockFileObject();
-        fn _rs_IopUnlockFileObject();
-        fn _rs_IopUpdateOperationCount();
-        fn _rs_IopUpdateTransferCount();
+        fn IopValidateOpenPacket_shim();
+        fn IoGetDevObjExtension_shim();
+        fn IoCopyCurrentIrpStackLocationToNext_shim();
+        fn IopQueueIrpToThread_shim();
+        fn IopUnQueueIrpFromThread_shim();
+        fn IopLockFileObject_shim();
+        fn IopUnlockFileObject_shim();
+        fn IopUpdateOperationCount_shim();
+        fn IopUpdateTransferCount_shim();
     }
     #[used]
     static REFS: [unsafe extern "C" fn(); 9] = [
-        _rs_IopValidateOpenPacket,
-        _rs_IoGetDevObjExtension,
-        _rs_IoCopyCurrentIrpStackLocationToNext,
-        _rs_IopQueueIrpToThread,
-        _rs_IopUnQueueIrpFromThread,
-        _rs_IopLockFileObject,
-        _rs_IopUnlockFileObject,
-        _rs_IopUpdateOperationCount,
-        _rs_IopUpdateTransferCount,
+        IopValidateOpenPacket_shim,
+        IoGetDevObjExtension_shim,
+        IoCopyCurrentIrpStackLocationToNext_shim,
+        IopQueueIrpToThread_shim,
+        IopUnQueueIrpFromThread_shim,
+        IopLockFileObject_shim,
+        IopUnlockFileObject_shim,
+        IopUpdateOperationCount_shim,
+        IopUpdateTransferCount_shim,
     ];
 }
 

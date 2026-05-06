@@ -38,84 +38,13 @@ HalInitPnpDriver_shim(VOID)
 }
 
 /*
- * IopValidateOpenPacket — static __inline in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopValidateOpenPacket;
- * trampoline keeps the `_shim`-suffixed ABI anchor symbol.
+ * io-inlines FORCEINLINE shims (IopValidateOpenPacket, IoGetDevObjExtension,
+ * IopUnlockFileObject, IopUpdateTransferCount, IopLockFileObject,
+ * IopUpdateOperationCount) — REMOVED. The io-inlines rlib
+ * (sdk/lib/rust/io-inlines/src/lib.rs) now exports the `X_shim` symbols
+ * directly with the right ABI (`extern "system"` = NTAPI), so the C
+ * trampolines that delegated to `_rs_X` are pure dead weight.
  */
-extern BOOLEAN _rs_IopValidateOpenPacket(POPEN_PACKET OpenPacket);
-
-BOOLEAN
-NTAPI
-IopValidateOpenPacket_shim(IN POPEN_PACKET OpenPacket)
-{
-    return _rs_IopValidateOpenPacket(OpenPacket);
-}
-
-/*
- * IoGetDevObjExtension — C macro in io.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IoGetDevObjExtension.
- */
-extern PEXTENDED_DEVOBJ_EXTENSION _rs_IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject);
-
-PEXTENDED_DEVOBJ_EXTENSION
-NTAPI
-IoGetDevObjExtension_shim(IN PDEVICE_OBJECT DeviceObject)
-{
-    return _rs_IoGetDevObjExtension(DeviceObject);
-}
-
-/*
- * IopUnlockFileObject — static __inline in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUnlockFileObject.
- */
-extern void _rs_IopUnlockFileObject(PFILE_OBJECT FileObject);
-
-VOID
-NTAPI
-IopUnlockFileObject_shim(IN PFILE_OBJECT FileObject)
-{
-    _rs_IopUnlockFileObject(FileObject);
-}
-
-/*
- * IopUpdateTransferCount — static __inline in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUpdateTransferCount.
- */
-extern void _rs_IopUpdateTransferCount(IOP_TRANSFER_TYPE Type, ULONG TransferCount);
-
-VOID
-NTAPI
-IopUpdateTransferCount_shim(IN IOP_TRANSFER_TYPE Type, IN ULONG TransferCount)
-{
-    _rs_IopUpdateTransferCount(Type, TransferCount);
-}
-
-
-/*
- * IopLockFileObject — static __inline in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopLockFileObject.
- */
-extern NTSTATUS _rs_IopLockFileObject(PFILE_OBJECT FileObject, KPROCESSOR_MODE WaitMode);
-
-NTSTATUS
-NTAPI
-IopLockFileObject_shim(IN PFILE_OBJECT FileObject, IN KPROCESSOR_MODE WaitMode)
-{
-    return _rs_IopLockFileObject(FileObject, WaitMode);
-}
-
-/*
- * IopUpdateOperationCount — static __inline in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUpdateOperationCount.
- */
-extern void _rs_IopUpdateOperationCount(IOP_TRANSFER_TYPE Type);
-
-VOID
-NTAPI
-IopUpdateOperationCount_shim(IN IOP_TRANSFER_TYPE Type)
-{
-    _rs_IopUpdateOperationCount(Type);
-}
 
 /*
  * ObReferenceObject — C macro that calls ObfReferenceObject (FASTCALL).
@@ -205,44 +134,11 @@ RtlUnicodeStringPrintf_4wZ_shim(
 }
 
 /*
- * IopQueueIrpToThread — FORCEINLINE in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopQueueIrpToThread.
+ * IopQueueIrpToThread / IopUnQueueIrpFromThread / IoCopyCurrentIrpStackLocationToNext
+ * — REMOVED. io-inlines rlib exports the `_shim`-suffixed symbols directly
+ * (NTAPI for the IRP-thread ones, cdecl for IoCopyCurrentIrpStackLocationToNext
+ * which Rust callers in rawfs.rs declare via `extern "C"`).
  */
-extern void _rs_IopQueueIrpToThread(PIRP Irp);
-
-VOID
-NTAPI
-IopQueueIrpToThread_shim(IN PIRP Irp)
-{
-    _rs_IopQueueIrpToThread(Irp);
-}
-
-/*
- * IopUnQueueIrpFromThread — FORCEINLINE in io_x.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUnQueueIrpFromThread.
- */
-extern void _rs_IopUnQueueIrpFromThread(PIRP Irp);
-
-VOID
-NTAPI
-IopUnQueueIrpFromThread_shim(IN PIRP Irp)
-{
-    _rs_IopUnQueueIrpFromThread(Irp);
-}
-
-/*
- * IoCopyCurrentIrpStackLocationToNext — FORCEINLINE in iofuncs.h.
- * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IoCopyCurrentIrpStackLocationToNext.
- * Uses CDECL (not NTAPI) so Rust can link with extern "C".
- */
-extern void _rs_IoCopyCurrentIrpStackLocationToNext(PIRP Irp);
-
-VOID
-__cdecl
-IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
-{
-    _rs_IoCopyCurrentIrpStackLocationToNext(Irp);
-}
 
 
 /*
