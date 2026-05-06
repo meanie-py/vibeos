@@ -397,10 +397,19 @@ CmiGetNextResourceDescriptor(
 }
 
 /* ========================================================================
- * IopInitializeDriverModule — from driver.c
- * Creates a driver object, initializes it, and calls DriverEntry.
+ * IopInitializeDriverModule — translated to Rust 2026-05-06.
+ *
+ * Direct port to `iomgr/driver.rs::IopInitializeDriverModule` (`#[no_mangle]
+ * pub unsafe extern "C"`). Was the last "complex delegation" entry on the
+ * io_rust_shims.c ledger. Mirrors the C cleanup paths bit-for-bit, including
+ * the major-function fixup loop (Windows compatibility) and the legacy-flag
+ * clear-on-no-device-objects HACK.
+ *
+ * The original C body is preserved below in `#if 0` so future debug sessions
+ * can compare the two side-by-side without a git checkout.
  * ======================================================================== */
 
+#if 0
 NTSTATUS
 IopInitializeDriverModule(
     _In_ PLDR_DATA_TABLE_ENTRY ModuleObject,
@@ -642,6 +651,7 @@ IopInitializeDriverModule(
 
     return STATUS_SUCCESS;
 }
+#endif /* 0 — IopInitializeDriverModule body now in iomgr/driver.rs */
 
 /*
  * IopDeviceNodeSetFlag — C macro in io.h → real function for Rust.

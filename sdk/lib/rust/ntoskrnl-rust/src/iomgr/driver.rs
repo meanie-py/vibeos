@@ -54,6 +54,7 @@ use ntkrnl_sys::ddk::{
     PEXTENDED_DRIVER_EXTENSION,
     PIO_CLIENT_EXTENSION,
     PIRP,
+    PKEY_NAME_INFORMATION,
     PLDR_DATA_TABLE_ENTRY,
     PLIST_ENTRY,
     POBJECT_ATTRIBUTES,
@@ -79,7 +80,6 @@ use ntkrnl_sys::ddk::{
     HalDisplayString,
     InbvIndicateProgress,
     IopGetRegistryValue,
-    IopInitializeDriverModule,
     IopOpenRegistryKeyEx,
     KeEnterCriticalRegion,
     KeInitializeEvent,
@@ -169,13 +169,20 @@ unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8) {
 
 extern "C" {
     fn IopGetDeviceObjectFromDeviceInstance(DeviceInstance: PUNICODE_STRING) -> *mut DEVICE_OBJECT;
-    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
     fn PiPerformSyncDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG);
     fn PiQueueDeviceAction(DeviceObject: *mut DEVICE_OBJECT, Action: ULONG, Callback: PVOID, Context: PVOID);
     fn _snprintf(buf: PCHAR, count: usize, format: PCHAR, ...) -> i32;
     fn _snwprintf(buf: PWCHAR, count: usize, format: *const u16, ...) -> i32;
     fn ExInitializeWorkItem(Item: *mut _WORK_QUEUE_ITEM, Routine: Option<unsafe extern "system" fn(PVOID)>, Context: PVOID);
     fn CONTAINING_RECORD(ptr: PVOID, ty: PVOID, field: PVOID) -> PVOID;
+}
+extern "system" {
+    // IopReadyDeviceObjects is defined in iomgr/device.rs as `extern "system"`
+    // (NTAPI/stdcall on i386). Declaring it `extern "C"` linked silently on
+    // amd64+arm64 (where NTAPI=cdecl) but produced a stdcall callee + cdecl
+    // call-site mismatch on i386 — LLVM detected the ABI UB and folded the
+    // post-call instructions to ud2.
+    fn IopReadyDeviceObjects(DriverObject: PDRIVER_OBJECT);
 }
 
 extern "system" {
@@ -190,6 +197,7 @@ const TAG_LDR_WSTR: ULONG = u32::from_le_bytes(*b"swdL");
 const TAG_RTLREGISTRY: ULONG = 0x76727152;
 const UNICODE_STRING_MAX_BYTES: ULONG = 65534;
 const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as i32;
+const STATUS_FAILED_DRIVER_ENTRY: NTSTATUS = 0xC0000365_u32 as i32;
 const SERVICE_RECOGNIZER_DRIVER: ULONG = 8;
 const SERVICE_FILE_SYSTEM_DRIVER: ULONG = 2;
 const DRVO_UNLOAD_INVOKED: ULONG = 0x00000001;
@@ -1774,6 +1782,346 @@ pub unsafe extern "system" fn IoGetDriverObjectExtension(
         return core::ptr::null_mut();
     }
     (DriverExtensions as usize + core::mem::size_of::<IO_CLIENT_EXTENSION>()) as PVOID
+}
+
+/// `IopInitializeDriverModule` — Direct port of the C body that lived in
+/// `io_rust_shims.c` from 2024 onward. Was the last `_rust_shims.c` "complex
+/// delegation" entry on the io ledger.
+///
+/// Creates the DRIVER_OBJECT for a loaded module, fills in its fields,
+/// inserts it into the object namespace under the driver name, and calls
+/// the module's DriverEntry. Returns the in-out DriverObject and the
+/// driver-entry status separately (DriverEntry's NTSTATUS goes through
+/// `*DriverEntryStatus`; the function's own status is the load+init
+/// pipeline's status).
+///
+/// Mirrors the C cleanup paths bit-for-bit. The major-function fixup loop
+/// is preserved (Windows compatibility), and the legacy-flag clear when no
+/// device objects were created is preserved as the same HACK comment.
+///
+/// `#[inline(never)]` is load-bearing — without it, LLVM's IPO folds the
+/// success-path tail (the `MmFreeDriverInitialization → IopReadyDeviceObjects
+/// → IopReinitializeDrivers` chain) into ud2 because it deduces the call to
+/// the indirect DriverInit function pointer can't return successfully (a
+/// captures(none)-shaped propagation that even write_volatile + opaque_ptr
+/// laundering at the field level can't defeat).
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn IopInitializeDriverModule(
+    ModuleObject: PLDR_DATA_TABLE_ENTRY,
+    ServiceHandle: HANDLE,
+    OutDriverObject: *mut PDRIVER_OBJECT,
+    DriverEntryStatus: *mut NTSTATUS,
+) -> NTSTATUS {
+    const KeyNameInformation: ULONG = 3;
+    const IMAGE_DLLCHARACTERISTICS_WDM_DRIVER: USHORT = 0x2000;
+
+    let ModuleObject = opaque_ptr(ModuleObject);
+    let ServiceHandle = opaque_ptr(ServiceHandle);
+    let OutDriverObject = opaque_ptr(OutDriverObject);
+    let DriverEntryStatus = opaque_ptr(DriverEntryStatus);
+
+    let mut DriverName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ServiceName: _UNICODE_STRING = core::mem::zeroed();
+    let mut RegistryPath: _UNICODE_STRING = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+
+    Status = IopGetDriverNames(ServiceHandle, &mut DriverName, &mut ServiceName);
+    if Status < 0 {
+        MmUnloadSystemImage(ModuleObject as PVOID);
+        return Status;
+    }
+
+    let NtHeaders = RtlImageNtHeader((*ModuleObject).DllBase);
+
+    // Obtain the registry path for the DriverInit routine
+    let mut nameInfo: PKEY_NAME_INFORMATION = core::ptr::null_mut();
+    let mut infoLength: ULONG = 0;
+    Status = ZwQueryKey(
+        ServiceHandle,
+        KeyNameInformation,
+        core::ptr::null_mut(),
+        0,
+        &mut infoLength,
+    );
+    if Status == STATUS_BUFFER_TOO_SMALL {
+        nameInfo = ExAllocatePoolWithTag(NonPagedPool, infoLength as usize, TAG_IO)
+            as PKEY_NAME_INFORMATION;
+        if !nameInfo.is_null() {
+            Status = ZwQueryKey(
+                ServiceHandle,
+                KeyNameInformation,
+                nameInfo as PVOID,
+                infoLength,
+                &mut infoLength,
+            );
+            if Status >= 0 {
+                RegistryPath.Length = (*nameInfo).NameLength as USHORT;
+                RegistryPath.MaximumLength = (*nameInfo).NameLength as USHORT;
+                // Bindgen renders Name as `[WCHAR; 1]`. Take the address of the
+                // base of the array (not an indexed slot) so we don't trip the
+                // bounds-check that fires when index >= 1.
+                RegistryPath.Buffer = core::ptr::addr_of_mut!((*nameInfo).Name) as *mut u16;
+            } else {
+                ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+                nameInfo = core::ptr::null_mut();
+            }
+        } else {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+    } else {
+        Status = if Status >= 0 { STATUS_UNSUCCESSFUL } else { Status };
+    }
+
+    if Status < 0 {
+        RtlFreeUnicodeString(&mut ServiceName);
+        RtlFreeUnicodeString(&mut DriverName);
+        MmUnloadSystemImage(ModuleObject as PVOID);
+        return Status;
+    }
+
+    // Create the driver object
+    let ObjectSize = (core::mem::size_of::<DRIVER_OBJECT>()
+        + core::mem::size_of::<EXTENDED_DRIVER_EXTENSION>()) as ULONG;
+    let mut objAttrs = _OBJECT_ATTRIBUTES {
+        Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG,
+        RootDirectory: core::ptr::null_mut(),
+        ObjectName: &mut DriverName,
+        Attributes: OBJ_PERMANENT | OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+        SecurityDescriptor: core::ptr::null_mut(),
+        SecurityQualityOfService: core::ptr::null_mut(),
+    };
+    let mut driverObject: PDRIVER_OBJECT = core::ptr::null_mut();
+
+    Status = ObCreateObject(
+        KernelMode,
+        IoDriverObjectType,
+        &mut objAttrs,
+        KernelMode,
+        core::ptr::null_mut(),
+        ObjectSize,
+        0,
+        0,
+        &mut driverObject as *mut PDRIVER_OBJECT as *mut PVOID,
+    );
+    if Status < 0 {
+        ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+        RtlFreeUnicodeString(&mut ServiceName);
+        RtlFreeUnicodeString(&mut DriverName);
+        MmUnloadSystemImage(ModuleObject as PVOID);
+        return Status;
+    }
+    // Launder through opaque_ptr so LLVM can't propagate captures(none) from
+    // the bindgen ObCreateObject decl back to the &mut driverObject slot —
+    // without this, later (*driverObject).field accesses fold to a NULL
+    // base and LLVM emits ud2 in MmFreeDriverInitialization at function tail.
+    let driverObject: PDRIVER_OBJECT = opaque_ptr(driverObject);
+
+    core::ptr::write_bytes(driverObject as *mut u8, 0, ObjectSize as usize);
+    // Use write_volatile for every field assignment so LLVM can't deduce
+    // captures(none)-shaped "the field is still in its post-zero-init state"
+    // — without this, the later `(*driverObject).DriverInit.unwrap()` folds
+    // to the unwrap_failed (panic) branch + ud2.
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*driverObject).Type), IO_TYPE_DRIVER as i16);
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).Size),
+        core::mem::size_of::<DRIVER_OBJECT>() as CSHORT,
+    );
+
+    // Set the legacy flag if this is not a WDM driver
+    if ((*NtHeaders).OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_WDM_DRIVER) == 0 {
+        let cur = core::ptr::read_volatile(core::ptr::addr_of!((*driverObject).Flags));
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*driverObject).Flags),
+            cur | DRVO_LEGACY_DRIVER,
+        );
+    }
+
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).DriverSection),
+        ModuleObject as PVOID,
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).DriverStart),
+        (*ModuleObject).DllBase,
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).DriverSize),
+        (*ModuleObject).SizeOfImage,
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).DriverInit),
+        core::mem::transmute((*ModuleObject).EntryPoint),
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).HardwareDatabase),
+        core::ptr::addr_of_mut!(IopHardwareDatabaseKey),
+    );
+    let driverExt =
+        (driverObject as usize + core::mem::size_of::<DRIVER_OBJECT>()) as *mut _DRIVER_EXTENSION;
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverObject).DriverExtension),
+        driverExt,
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*driverExt).DriverObject),
+        driverObject,
+    );
+
+    // Loop all Major Functions
+    let invalid_dispatch: ntkrnl_sys::ddk::PDRIVER_DISPATCH = core::mem::transmute(Some(
+        IopInvalidDeviceRequest
+            as unsafe extern "system" fn(*mut DEVICE_OBJECT, PIRP) -> NTSTATUS,
+    ));
+    for j in 0..=IRP_MJ_MAXIMUM_FUNCTION {
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*driverObject).MajorFunction[j as usize]),
+            invalid_dispatch,
+        );
+    }
+
+    // Add the Object and get its handle
+    let mut hDriver: HANDLE = core::ptr::null_mut();
+    Status = ObInsertObject(
+        driverObject as PVOID,
+        core::ptr::null_mut(),
+        FILE_READ_DATA,
+        0,
+        core::ptr::null_mut(),
+        &mut hDriver,
+    );
+    if Status < 0 {
+        ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+        RtlFreeUnicodeString(&mut ServiceName);
+        RtlFreeUnicodeString(&mut DriverName);
+        return Status;
+    }
+
+    // Now reference it. Use a fresh slot for the output so opaque_ptr can
+    // launder its result without mutating the already-laundered driverObject
+    // immutable shadow above.
+    let mut refDriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
+    Status = ObReferenceObjectByHandle(
+        hDriver,
+        0,
+        IoDriverObjectType,
+        KernelMode,
+        &mut refDriverObject as *mut PDRIVER_OBJECT as *mut PVOID,
+        core::ptr::null_mut(),
+    );
+
+    // Close the extra handle
+    ZwClose(hDriver);
+
+    if Status < 0 {
+        ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+        RtlFreeUnicodeString(&mut ServiceName);
+        RtlFreeUnicodeString(&mut DriverName);
+        return Status;
+    }
+    // Launder the freshly-referenced driverObject. (The C original re-uses
+    // the same local; here we keep the post-ObCreate laundered shadow valid
+    // while taking the new ObReferenceObjectByHandle result through its own
+    // captures(none) firewall.)
+    let driverObject: PDRIVER_OBJECT = opaque_ptr(refDriverObject);
+
+    // Set up the service key name buffer
+    let mut serviceKeyName: _UNICODE_STRING = core::mem::zeroed();
+    serviceKeyName.Length = 0;
+    serviceKeyName.MaximumLength = ServiceName.MaximumLength + core::mem::size_of::<u16>() as USHORT;
+    serviceKeyName.Buffer =
+        ExAllocatePoolWithTag(NonPagedPool, serviceKeyName.MaximumLength as usize, TAG_IO)
+            as *mut u16;
+    if serviceKeyName.Buffer.is_null() {
+        ObMakeTemporaryObject(driverObject as PVOID);
+        ObDereferenceObject(driverObject as PVOID);
+        ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+        RtlFreeUnicodeString(&mut ServiceName);
+        RtlFreeUnicodeString(&mut DriverName);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // Copy the name and set it in the driver extension
+    RtlCopyUnicodeString(&mut serviceKeyName, &mut ServiceName);
+    RtlFreeUnicodeString(&mut ServiceName);
+    (*(*driverObject).DriverExtension).ServiceKeyName = serviceKeyName;
+
+    // Make a copy of the driver name to store in the driver object
+    let mut driverNamePaged: _UNICODE_STRING = core::mem::zeroed();
+    driverNamePaged.Length = 0;
+    driverNamePaged.MaximumLength = DriverName.MaximumLength + core::mem::size_of::<u16>() as USHORT;
+    driverNamePaged.Buffer =
+        ExAllocatePoolWithTag(PagedPool, driverNamePaged.MaximumLength as usize, TAG_IO)
+            as *mut u16;
+    if driverNamePaged.Buffer.is_null() {
+        ObMakeTemporaryObject(driverObject as PVOID);
+        ObDereferenceObject(driverObject as PVOID);
+        ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+        RtlFreeUnicodeString(&mut DriverName);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyUnicodeString(&mut driverNamePaged, &mut DriverName);
+    (*driverObject).DriverName = driverNamePaged;
+
+    // Finally, call its init function. Read DriverInit through read_volatile
+    // so LLVM doesn't fold the unwrap to the panic branch (captures(none)-driven
+    // "field is still in its zero-init state, so .unwrap() panics" deduction).
+    let driverInit: ntkrnl_sys::ddk::PDRIVER_INITIALIZE =
+        core::ptr::read_volatile(core::ptr::addr_of!((*driverObject).DriverInit));
+    Status = (driverInit.unwrap_unchecked())(driverObject, &mut RegistryPath);
+    core::ptr::write_volatile(DriverEntryStatus, Status);
+    if Status < 0 {
+        Status = STATUS_FAILED_DRIVER_ENTRY;
+    }
+
+    // HACK: We're going to say if we don't have any DOs from DriverEntry, then we're not legacy.
+    if (*driverObject).DeviceObject.is_null() {
+        (*driverObject).Flags &= !DRVO_LEGACY_DRIVER;
+    }
+
+    // Windows does this fixup, keep it for compatibility
+    for j in 0..=IRP_MJ_MAXIMUM_FUNCTION {
+        if (*driverObject).MajorFunction[j as usize].is_none() {
+            (*driverObject).MajorFunction[j as usize] = core::mem::transmute(Some(
+                IopInvalidDeviceRequest
+                    as unsafe extern "system" fn(*mut DEVICE_OBJECT, PIRP) -> NTSTATUS,
+            ));
+        }
+    }
+
+    ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
+    RtlFreeUnicodeString(&mut DriverName);
+
+    if Status < 0 {
+        ObMakeTemporaryObject(driverObject as PVOID);
+        ObDereferenceObject(driverObject as PVOID);
+        return Status;
+    }
+
+    core::ptr::write_volatile(OutDriverObject, driverObject);
+
+    // The success-path tail calls (MmFreeDriverInitialization →
+    // IopReadyDeviceObjects → IopReinitializeDrivers → return STATUS_SUCCESS)
+    // get folded into ud2 by an LLVM IPO chain that even write_volatile +
+    // opaque_ptr at every field site can't defeat. Pull the tail out into a
+    // separate function so the call boundary breaks the analysis chain.
+    iop_initialize_driver_module_tail(opaque_ptr(driverObject), ModuleObject)
+}
+
+#[inline(never)]
+unsafe fn iop_initialize_driver_module_tail(
+    driverObject: PDRIVER_OBJECT,
+    moduleObject: PLDR_DATA_TABLE_ENTRY,
+) -> NTSTATUS {
+    let driverObject = opaque_ptr(driverObject);
+    let moduleObject = opaque_ptr(moduleObject);
+    MmFreeDriverInitialization(moduleObject);
+    IopReadyDeviceObjects(driverObject);
+    if PnpSystemInit != 0 {
+        IopReinitializeDrivers();
+    }
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
