@@ -430,81 +430,21 @@ void MiReleaseExpansionLock(IN KIRQL OldIrql)
 }
 
 /*
- * Phase 1 batch M1: bodies delegate to Rust impls in the
- * `mm-pte-class-inlines` rlib (sdk/lib/rust/mm-pte-class-inlines/).
- * The C symbol stays here as the ABI anchor; the body collapses to a
- * one-line `_rs_*` call into Rust.
+ * Phase 1 batches M1/M2/M6 PTE-classification + bitfield-write +
+ * atomic-exchange trampolines REMOVED. The C trampolines here were pure
+ * 1-line delegations to mm-pte-class-inlines / mm-pte-mut-inlines /
+ * mm-pte-atomic-inlines `_rs_*` impls, AND ntoskrnl-rust::shim_exports
+ * already exports the same unprefixed `Mi*` names with identical bodies
+ * (delegate to ntkrnl_sys::inline::mm::*). With
+ * `--allow-multiple-definition` the Rust archive's exports win the link;
+ * the C trampolines were unreachable. Names covered:
+ *  MiIsMappedPte / MiDetermineUserGlobalPteMask / MM_ANY_WS_LOCK_HELD /
+ *  MiIsPdeForAddressValid / MiMakeDirtyPage / MiMakeCleanPage /
+ *  MiMakeAccessedPage / MiPageDisableCache / MiPageWriteThrough /
+ *  MiPageWriteCombined / MiIsPageWriteable / MiIsPageDirty /
+ *  MiMakeOwnerPage / MiMakeWritePage / MiInterlockedCompareExchangePte /
+ *  MiInterlockedExchangePte.
  */
-extern BOOLEAN _rs_MiIsMappedPte(PMMPTE PointerPte);
-BOOLEAN MiIsMappedPte(IN PMMPTE PointerPte)
-{ return _rs_MiIsMappedPte(PointerPte); }
-
-extern ULONG_PTR _rs_MiDetermineUserGlobalPteMask(PMMPTE PointerPte);
-ULONG_PTR MiDetermineUserGlobalPteMask(IN PMMPTE PointerPte)
-{ return _rs_MiDetermineUserGlobalPteMask(PointerPte); }
-
-/*
- * Working set lock check (FORCEINLINE in miarm.h — no NTAPI, no calling convention)
- */
-extern BOOLEAN _rs_MM_ANY_WS_LOCK_HELD(PETHREAD Thread);
-BOOLEAN MM_ANY_WS_LOCK_HELD(IN PETHREAD Thread)
-{ return _rs_MM_ANY_WS_LOCK_HELD(Thread); }
-
-/*
- * PDE hierarchy validity check (4-level paging on amd64/arm64).
- * Phase 1 batch M1: body delegates to Rust impl.
- */
-#if defined(_M_AMD64) || defined(_M_ARM64)
-extern BOOLEAN _rs_MiIsPdeForAddressValid(PVOID Address);
-BOOLEAN MiIsPdeForAddressValid(IN PVOID Address)
-{ return _rs_MiIsPdeForAddressValid(Address); }
-#endif
-
-/*
- * PTE portable bitfield-write macros (Phase 1 batch M2 — bodies delegate
- * to Rust impls in the `mm-pte-mut-inlines` rlib).
- *
- * MiIsPageWriteable / MiIsPageDirty (read paths) live in the M1 rlib
- * `mm-pte-class-inlines`; they're the matching read-side bitfield queries.
- */
-extern void _rs_MiMakeDirtyPage(PMMPTE Pte);
-void MiMakeDirtyPage(IN PMMPTE Pte)    { _rs_MiMakeDirtyPage(Pte); }
-extern void _rs_MiMakeCleanPage(PMMPTE Pte);
-void MiMakeCleanPage(IN PMMPTE Pte)    { _rs_MiMakeCleanPage(Pte); }
-extern void _rs_MiMakeAccessedPage(PMMPTE Pte);
-void MiMakeAccessedPage(IN PMMPTE Pte) { _rs_MiMakeAccessedPage(Pte); }
-extern void _rs_MiPageDisableCache(PMMPTE Pte);
-void MiPageDisableCache(IN PMMPTE Pte) { _rs_MiPageDisableCache(Pte); }
-extern void _rs_MiPageWriteThrough(PMMPTE Pte);
-void MiPageWriteThrough(IN PMMPTE Pte) { _rs_MiPageWriteThrough(Pte); }
-extern void _rs_MiPageWriteCombined(PMMPTE Pte);
-void MiPageWriteCombined(IN PMMPTE Pte){ _rs_MiPageWriteCombined(Pte); }
-extern BOOLEAN _rs_MiIsPageWriteable(PMMPTE Pte);
-BOOLEAN MiIsPageWriteable(IN PMMPTE Pte) { return _rs_MiIsPageWriteable(Pte); }
-extern BOOLEAN _rs_MiIsPageDirty(PMMPTE Pte);
-BOOLEAN MiIsPageDirty(IN PMMPTE Pte)     { return _rs_MiIsPageDirty(Pte); }
-extern void _rs_MiMakeOwnerPage(PMMPTE Pte);
-void MiMakeOwnerPage(IN PMMPTE Pte)    { _rs_MiMakeOwnerPage(Pte); }
-extern void _rs_MiMakeWritePage(PMMPTE Pte);
-void MiMakeWritePage(IN PMMPTE Pte)    { _rs_MiMakeWritePage(Pte); }
-
-/*
- * MiInterlockedCompareExchangePte / MiInterlockedExchangePte
- * (Phase 1 batch M6 — bodies delegate to Rust impls in
- * `mm-pte-atomic-inlines`). The C macros from mm.h expand to
- * InterlockedCompareExchange[64] / InterlockedExchange[64] — Rust uses
- * the equivalent core::sync::atomic ops.
- */
-extern LONG_PTR _rs_MiInterlockedCompareExchangePte(
-    PMMPTE PointerPte, LONG_PTR Exchange, LONG_PTR Comperand);
-LONG_PTR MiInterlockedCompareExchangePte(
-    IN volatile PMMPTE PointerPte, IN LONG_PTR Exchange, IN LONG_PTR Comperand)
-{ return _rs_MiInterlockedCompareExchangePte((PMMPTE)PointerPte, Exchange, Comperand); }
-
-extern LONG_PTR _rs_MiInterlockedExchangePte(PMMPTE PointerPte, LONG_PTR Value);
-LONG_PTR MiInterlockedExchangePte(
-    IN volatile PMMPTE PointerPte, IN LONG_PTR Value)
-{ return _rs_MiInterlockedExchangePte((PMMPTE)PointerPte, Value); }
 
 /*
  * InterlockedExchange / InterlockedCompareExchange — used by Rust balance.rs as
@@ -836,37 +776,14 @@ RtlIsLeftChildAvl_C(IN PMMADDRESS_NODE Node)
  * to ensure it uses the same UsedPageTableEntries accessor as
  * MiDecrementPageTableReferences and MiIsPageTablePresent. */
 
-void MiDropLockCount(IN PMMPFN Pfn1)
-{ _orig_MiDropLockCount(Pfn1); }
-
-void MiReferenceProbedPageAndBumpLockCount(IN PMMPFN Pfn1)
-{ _orig_MiReferenceProbedPageAndBumpLockCount(Pfn1); }
-
-void MiReferenceUnusedPageAndBumpLockCount(IN PMMPFN Pfn1)
-{ _orig_MiReferenceUnusedPageAndBumpLockCount(Pfn1); }
-
-void MiReferenceUsedPageAndBumpLockCount(IN PMMPFN Pfn1)
-{ _orig_MiReferenceUsedPageAndBumpLockCount(Pfn1); }
-
-extern BOOLEAN _rs_MiIsUserPde(PVOID Address);
-BOOLEAN MiIsUserPde(PVOID Address)
-{ return _rs_MiIsUserPde(Address); }
-
-extern BOOLEAN _rs_MiIsUserPte(PVOID Address);
-BOOLEAN MiIsUserPte(PVOID Address)
-{ return _rs_MiIsUserPte(Address); }
-
-PFN_NUMBER MiRemoveZeroPageSafe(IN ULONG Color)
-{ return _orig_MiRemoveZeroPageSafe(Color); }
-
-BOOLEAN MiIsMemoryTypeFree(TYPE_OF_MEMORY MemoryType)
-{ return _orig_MiIsMemoryTypeFree(MemoryType); }
-
-/* Tier 4 FORCEINLINE shim implementations */
-#if (_MI_PAGING_LEVELS == 2)
-BOOLEAN MiSynchronizeSystemPde(PMMPDE PointerPde)
-{ return _orig_MiSynchronizeSystemPde(PointerPde); }
-#endif
+/* Tier 3a/4 FORCEINLINE trampolines REMOVED. The C `_orig_*` paths were
+ * shadowed by ntoskrnl-rust::shim_exports `#[no_mangle] Mi*` exports
+ * (delegating to ntkrnl_sys::inline::mm::*) — link-time
+ * `--allow-multiple-definition` picks the Rust archive. Names covered:
+ *  MiDropLockCount, MiReferenceProbedPageAndBumpLockCount,
+ *  MiReferenceUnusedPageAndBumpLockCount, MiReferenceUsedPageAndBumpLockCount,
+ *  MiIsUserPde, MiIsUserPte, MiRemoveZeroPageSafe, MiIsMemoryTypeFree,
+ *  MiSynchronizeSystemPde. */
 
 BOOLEAN MiConvertSharedWorkingSetLockToExclusive(PETHREAD Thread, PMMSUPPORT Vm)
 { return _orig_MiConvertSharedWorkingSetLockToExclusive(Thread, Vm); }
@@ -929,12 +846,8 @@ extern PMMSUPPORT _rs_MmGetCurrentAddressSpace(VOID);
 PMMSUPPORT MmGetCurrentAddressSpace(VOID)
 { return _rs_MmGetCurrentAddressSpace(); }
 
-/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim */
-
-BOOLEAN MiIsRosSectionObject(IN PSECTION Section)
-{
-    return _orig_MiIsRosSectionObject(Section);
-}
+/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim
+ * MiIsRosSectionObject: provided by ntoskrnl-rust::shim_exports — no C shim */
 
 /*
  * ProbeForWriteSize_t — macro in probe.h
