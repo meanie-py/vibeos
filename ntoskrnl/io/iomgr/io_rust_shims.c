@@ -51,24 +51,29 @@ IopInitializePlugPlayServices_shim(VOID)
 
 /*
  * IopValidateOpenPacket — static __inline in io_x.h.
- * Validates that an OPEN_PACKET structure is properly formed.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopValidateOpenPacket;
+ * trampoline keeps the `_shim`-suffixed ABI anchor symbol.
  */
+extern BOOLEAN _rs_IopValidateOpenPacket(POPEN_PACKET OpenPacket);
+
 BOOLEAN
 NTAPI
 IopValidateOpenPacket_shim(IN POPEN_PACKET OpenPacket)
 {
-    return IopValidateOpenPacket(OpenPacket);
+    return _rs_IopValidateOpenPacket(OpenPacket);
 }
 
 /*
  * IoGetDevObjExtension — C macro in io.h.
- * Returns the device object extension pointer.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IoGetDevObjExtension.
  */
+extern PEXTENDED_DEVOBJ_EXTENSION _rs_IoGetDevObjExtension(PDEVICE_OBJECT DeviceObject);
+
 PEXTENDED_DEVOBJ_EXTENSION
 NTAPI
 IoGetDevObjExtension_shim(IN PDEVICE_OBJECT DeviceObject)
 {
-    return IoGetDevObjExtension(DeviceObject);
+    return _rs_IoGetDevObjExtension(DeviceObject);
 }
 
 /*
@@ -227,14 +232,16 @@ IopUnQueueIrpFromThread_shim(IN PIRP Irp)
 
 /*
  * IoCopyCurrentIrpStackLocationToNext — FORCEINLINE in iofuncs.h.
- * Copies the current IRP stack location to the next one.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IoCopyCurrentIrpStackLocationToNext.
  * Uses CDECL (not NTAPI) so Rust can link with extern "C".
  */
+extern void _rs_IoCopyCurrentIrpStackLocationToNext(PIRP Irp);
+
 VOID
 __cdecl
 IoCopyCurrentIrpStackLocationToNext_shim(IN PIRP Irp)
 {
-    IoCopyCurrentIrpStackLocationToNext(Irp);
+    _rs_IoCopyCurrentIrpStackLocationToNext(Irp);
 }
 
 

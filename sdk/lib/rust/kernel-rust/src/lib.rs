@@ -80,6 +80,13 @@ extern crate mm_pte_atomic_inlines;
 // the regular spinlock; MiAcquire/ReleasePfnLock use the per-CPU queued
 // spinlock at LockQueuePfnLock = 2.
 extern crate mm_lock_inlines;
+// I0 sibling: io-inlines holds Rust impls of `static __inline` and
+// FORCEINLINE bodies from `io_x.h` / `iofuncs.h` (IopValidateOpenPacket,
+// IoGetDevObjExtension, IoCopyCurrentIrpStackLocationToNext to start). Same
+// augment+isolated-rlib pattern: `io_rust_shims.c` C trampolines keep their
+// `_shim`-suffixed symbols (the ABI anchor Rust callers link against) and
+// collapse to one-line `_rs_*` delegations.
+extern crate io_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
@@ -286,6 +293,22 @@ mod _force_ke_macros_symbols {
         _rs_HalQuerySystemInformation,
         _rs_HalSetSystemInformation,
         _rs_HalVectorToIDTEntry,
+    ];
+}
+
+// Defensive pull for io-inlines (io_x.h / iofuncs.h FORCEINLINE bodies).
+// Same `[used]` pattern as `_force_ke_macros_symbols`.
+mod _force_io_inlines_symbols {
+    extern "C" {
+        fn _rs_IopValidateOpenPacket();
+        fn _rs_IoGetDevObjExtension();
+        fn _rs_IoCopyCurrentIrpStackLocationToNext();
+    }
+    #[used]
+    static REFS: [unsafe extern "C" fn(); 3] = [
+        _rs_IopValidateOpenPacket,
+        _rs_IoGetDevObjExtension,
+        _rs_IoCopyCurrentIrpStackLocationToNext,
     ];
 }
 

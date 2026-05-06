@@ -72,6 +72,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-inlines"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ke-inlines"
 version = "0.1.0"
 dependencies = [
@@ -91,6 +98,7 @@ version = "0.1.0"
 dependencies = [
  "cm-inlines",
  "common-inlines",
+ "io-inlines",
  "ke-inlines",
  "ke-macros",
  "mm-addr-space-inlines",

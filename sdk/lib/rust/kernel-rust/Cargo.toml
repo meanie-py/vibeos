@@ -13,6 +13,7 @@ ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }
 cm-inlines = { path = "../cm-inlines" }
 common-inlines = { path = "../common-inlines" }
+io-inlines = { path = "../io-inlines" }
 ke-inlines = { path = "../ke-inlines" }
 ke-macros = { path = "../ke-macros" }
 ob-inlines = { path = "../ob-inlines" }

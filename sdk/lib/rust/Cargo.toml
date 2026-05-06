@@ -12,6 +12,7 @@ members = [
     "generictable",
     "handle",
     "interlck",
+    "io-inlines",
     "ke-inlines",
     "ke-macros",
     "kernel-rust",
