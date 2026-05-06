@@ -1,8 +1,8 @@
-# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-ke-macros)
+# Shim Elimination Plan (rewritten 2026-05-04, status updated 2026-05-05 post-Phase-2-io-inlines)
 
 ## Status snapshot
 
-**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has STARTED on ke** — 16 fns landed across 4 batches (pilot + batch 2 + batch B + batch A) in a brand-new sibling `ke-macros` rlib (separate from `ke-inlines`, which is Phase 1 / FORCEINLINE). The macro/intrinsic surface of `ke_rust_shims.c` is essentially closed: all wait-list satisfy/add macros, all four `Kx*ThreadWait` wait-setup macros, all per-arch trap-frame/intrinsic helpers, and the three HAL dispatch macros now have Rust bodies. Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
+**Phase 1 is COMPLETE for cm + ke + ob + ps + se + common + mm. Phase 2 has LANDED on ke + io** — 16 ke fns (across pilot/2/B/A in `ke-macros`) plus 9 io fns (across pilot/1/2/3 in a brand-new sibling `io-inlines` rlib). The macro/inline surface of `ke_rust_shims.c` is closed (all wait-list satisfy/add macros, all four `Kx*ThreadWait` wait-setup macros, all per-arch trap-frame/intrinsic helpers, all three HAL dispatch macros have Rust bodies), and the macro/inline surface of `io_rust_shims.c` is now closed too (all seven `static __inline` / FORCEINLINE bodies from `io_x.h` plus `IoCopyCurrentIrpStackLocationToNext` from `iofuncs.h` and the `IoGetDevObjExtension` `#define` from `io.h`). Same augment+isolated-rlib pattern as Phase 1: C trampolines stay as ABI anchors (NTAPI on i386 where applicable), bodies collapse to one-line `_rs_*` delegations, the rlib boundary cuts the cross-CGU captures(none) wire.
 
 **Phase 1 final state (≈165 fns).** All wrappers live in 13 sibling `*-inlines` rlibs under `sdk/lib/rust/`. M8 (PFN ref-counting, 5 fns) is the only remaining Phase 1 batch and is intentionally deferred to Phase 4. **The next planned work is more Phase 2 (~165 macros remaining across mm, io, kdbg, common subsystems) and Phase 4 (per-function captures(none) review, 9 fns + complex delegations).**
 
@@ -286,7 +286,7 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 - **Total landed**: ~165 fns of Rust impl across 13 sibling rlibs. Per-batch wall-clock matched the cm/ke pilot baseline (~30 min Easy, ~60-90 min Medium scope-pick → smoke-green).
 - **Remaining Phase 1 surface**: M8 only — PFN ref-counting fns deferred to Phase 4.
 
-### Phase 2 — Macro materializations (started 2026-05-05; ke surface CLOSED)
+### Phase 2 — Macro materializations (started 2026-05-05; ke + io surfaces CLOSED)
 
 ~180 functions total, mix of trivial and structural. Two passes:
 1. **Trivial macros** (~80): `InitializeObjectAttributes`, `CONTAINING_RECORD`, `IsListEmpty`, `ObReferenceObject`, etc. Mostly 1-5 lines each. Inline as Rust helpers in subsystem modules; already partially done (`iomgr.rs` has its own `InitializeObjectAttributes`).
@@ -301,20 +301,31 @@ Captured here for historical retro. Augment pattern held at scale across all 13 
 | B | trap-frame / arch intrinsics | YieldProcessor (pause/yield asm), KeGetTrapFramePc (Eip/Rip/Pc field), KiRundownThread (i386 NpxThread cleanup; no-op elsewhere), KiGetLinkedTrapFrame (per-arch path to previous trap frame), KiGetUserModeStackAddress (pointer to Rsp/Sp/HardwareEsp on current trap frame) | `c87d114c` |
 | A | HAL dispatch | HalQuerySystemInformation, HalSetSystemInformation, HalVectorToIDTEntry. Bodies pull `Option<fn>` slot from `HalDispatchTable` / `HalPrivateDispatchTable`, call if `Some`, return `STATUS_NOT_IMPLEMENTED` on `None` (safer than the original NULL-fn-ptr crash). | `36802240` |
 
+**io macros + inlines LANDED (2026-05-05).** 9 fns translated to a brand-new sibling `sdk/lib/rust/io-inlines/` rlib (third Phase 2 sibling alongside `ke-inlines` Phase 1 and `ke-macros` Phase 2; same augment+isolated-rlib pattern). The macro/inline FORCEINLINE surface of `io_rust_shims.c` is now CLOSED — every `static __inline` from `io_x.h`, the `IoCopyCurrentIrpStackLocationToNext` FORCEINLINE from `iofuncs.h`, and the `IoGetDevObjExtension` `#define` from `io.h` have Rust bodies:
+
+| # | Batch | Functions | Commit |
+|---|-------|-----------|--------|
+| io-pilot | trivial inlines | IopValidateOpenPacket (type/size sanity), IoGetDevObjExtension (DEVICE_OBJECT → EXTENDED_DEVOBJ_EXTENSION cast), IoCopyCurrentIrpStackLocationToNext (`offset_of!(_IO_STACK_LOCATION, CompletionRoutine)` for the IRP stack memcpy length) | `6b6ea901` |
+| io-1 | IRP/thread queueing | IopQueueIrpToThread, IopUnQueueIrpFromThread. `KeEnterGuardedRegionThread` / `KeLeaveGuardedRegionThread` macros inlined locally — `SpecialApcDisable` decrement/increment with kernel-APC delivery check on transition to zero. KTHREAD::ApcState lives inside `__bindgen_anon_1` on all 3 arches. | `36123f11` |
+| io-2 | file-object lock pair | IopLockFileObject (fast path: `AtomicU32::swap(SeqCst)` on `FILE_OBJECT::Busy`; slow path: `IopAcquireFileObjectLock` with Alertable derived from `Flags & FO_ALERTABLE_IO`), IopUnlockFileObject (fires `KeSetEvent(&Lock, 0, FALSE)` if `Waiters != 0`). `Obf{Reference,Dereference}Object` declared `extern "fastcall"` on i386, `extern "C"` elsewhere. | `6a8c0453` |
+| io-3 | IO counters | IopUpdateOperationCount, IopUpdateTransferCount. `ExInterlockedAddLargeStatistic` rendered as `AtomicI64::fetch_add(SeqCst)` — same observable semantics on all 3 arches (lock cmpxchg8b on i386 vs the C macro's lock addl + lock adcl pair). `PsGetCurrentProcess` replicated locally to dodge cross-crate inline-asm-non-inline gotcha. | `78bc204f` |
+
 **The 2026-05-05 `KxMultiThreadWait` half-init bug fix (the amd64 taskbar wedge)** is now in Rust source; the C trampoline + ke_x.h macro defensive variants are still there (the macros are still instantiated in C from `ntoskrnl/ke/wait.c::KeDelayExecutionThread` etc., which haven't been ported yet) but the Rust impl in `ke-macros::_rs_KxMultiThreadWait` matches it bit-for-bit (uses `InitializeListHead` for the multi-wait path so `KeWaitForMultipleObjects`'s `InsertTailList` loop appends cleanly; uses defensive full-init for the single/delay/queue paths that don't go through the multi-wait loop).
 
-**Lessons captured during the ke-macros sweep:**
+**Lessons captured during the ke-macros + io-inlines sweeps:**
 - **`extern "C"` ABI for 8-byte aggregate union args is NOT interchangeable with `i64` on i386.** Declared `_rs_KxSetTimerForThreadWait` extern with `interval: i64` instead of `interval: _LARGE_INTEGER`. amd64 7/7 PASS, i386 booted to WinLogon → GinaInit then hung the kernel in a tight win32k message-retry loop (`(\\win32ss\\user\\ntuser\\msgqueue.c:1096) err: Sending to Suspended Thread Msg 121` spamming forever). Root cause: i386 cdecl lowers union-aggregate args differently from scalar i64 args even when both are 8 bytes; the receiver read garbage off the stack. amd64 Windows x64 ABI tolerates the mismatch (both go in the same RDX register slot for the second arg). Captured in `feedback_i64_vs_largeinteger_abi.md`. Rule: **mirror the receiver's exact type at the FFI boundary; pass `*ptr` as the dereferenced struct, not `(*ptr).QuadPart`**.
 - **NTAPI trampoline + `extern "C"` Rust impl works cleanly.** HAL dispatch macros are NTAPI (stdcall on i386, default elsewhere) but the Rust `_rs_*` impls are uniformly `extern "C"` (cdecl). The C trampoline keeps the NTAPI decoration and bridges the call — same pattern that worked for the wait-setup batch. No need to mark `_rs_*` as `extern "system"`.
+- **`KTHREAD::ApcState` is wrapped in an anonymous union on every arch.** Path is `__bindgen_anon_1.ApcState.ApcListHead[KernelMode]`, not bare `ApcState.ApcListHead[KernelMode]`. Easy to miss because `KTHREAD::ApcStateIndex` IS a direct field; the union is for the `ApcStateFill[]` overlay that `ETHREAD::SavedApcState` mirrors.
+- **`PsGetCurrentProcess` cross-crate gotcha.** The `ntkrnl-sys::inline::tier1::PsGetCurrentProcess` inline ultimately reaches an inline-asm-bodied `KeGetCurrentThread`. At opt-level=1 a sibling rlib that calls it doesn't reliably inline the chain — emits `_KeGetCurrentThread` undefined ref. Workaround (now used in `ke-macros`, `ke-inlines`, and `io-inlines`): replicate the PCR/PRCB/KTHREAD walk locally with `core::arch::asm!`. Same root cause as `feedback_cross_crate_inline_asm.md`.
 
-Remaining Phase 2 surface (~165 fns) is concentrated in:
+Remaining Phase 2 surface (~155 fns) is concentrated in:
 - `mm_rust_shims.c` (~85 fns) — but many are AVL trees (`#include <sdk/lib/rtl/avlsupp.c>`) or `__FILE__/__LINE__` macros that must stay in C.
-- `io_rust_shims.c` (~44 fns) — mix of macros (IRP stack helpers — some already done in `common-inlines`) and captures(none) workarounds (Phase 4).
+- `io_rust_shims.c` (~35 fns left) — macro/inline surface CLOSED; remaining shims are captures(none) workarounds (`ObCreateObject_shim`, `ObInsertObject_shim`, `ObReferenceObjectByHandle_shim`, `IopInitializePlugPlayServices_shim`), the i386 `_shim`-suffixed cdecl→stdcall string bridges (`RtlAnsiStringToUnicodeString_shim`, etc.), `IopInitializeDriverModule` (Phase 4 complex delegation), and the PnP request paths (`IopQueryDeviceCapabilities_c`, `IopInitiatePnpIrp_c`, `IopCompleteRequest_c`, `PiQueueDeviceAction_c`, `PiPerformSyncDeviceAction_c`, `IoRequestDeviceEject_c`, `PiSetDevNodeText_c`).
 - `kdbg_rust_shims.c` (~16 fns + 2 large data tables) — KDBG extension entry points, mostly stay.
 - `cm_rust_shims.c` (~37 fns) — mostly KCB-lock variants (Phase 1 already covered the main ones) + i386 dual-decoration scheme.
 - `kernel_c_helpers.c` (~16 fns) — the canonical "must-stay" home; very little here can move to Rust.
 
-Cost: case-by-case, but well-bounded. Per-batch wall-clock in the ke-macros sweep was ~30 minutes scope-pick → smoke-green for trivial batches (pilot, B, A) and ~2 hours for the structural wait-setup batch (which included the i64→`_LARGE_INTEGER` ABI debug session).
+Cost: case-by-case, but well-bounded. Per-batch wall-clock in the io-inlines sweep was ~25–40 minutes scope-pick → smoke-green for the four batches; the IO counter batch (most novel work, including local `PsGetCurrentProcess` replication and the `AtomicI64::fetch_add` rendering of `ExInterlockedAddLargeStatistic`) was the longest at ~40 minutes.
 
 ### Phase 3 — Calling conventions (~3 days)
 
@@ -343,7 +354,7 @@ Final state: ~70 functions remain, all in `kernel_c_helpers.c` (or with explicit
 |-------|------------------:|--------|------|--------|
 | 0. Free wins | ~30 | 1 day | None | **DONE** (2026-05-04) |
 | 1. FORCEINLINE batch | ~165 augmented | ~3 days actual | Low | **DONE except M8** (2026-05-04 → 2026-05-05) — M8 (5 fns) deferred to Phase 4 |
-| 2. Macro materializations | ~180 augmented (16 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke surface CLOSED (16 fns across pilot/2/B/A in `ke-macros` rlib); ~165 fns left in mm/io/kdbg/cm/common (many will stay — see notes above) |
+| 2. Macro materializations | ~180 augmented (25 landed) | ~1 week remaining | Low-medium (per-file) | **Partial** — ke + io macro/inline surfaces CLOSED (16 ke fns in `ke-macros`, 9 io fns in `io-inlines`); ~155 fns left in mm/io-cnone-workarounds/kdbg/cm/common (many will stay — see notes above) |
 | 3. Calling conventions | ~28 | 3 days | Low (mechanical) | Pending |
 | 4. Per-function review | ~50 | 2 weeks | Medium (each captures(none) is its own debug session) | Pending; M8 (5 fns) folded in |
 | 5. Document must-stays | ~0 | 1 day | None | Pending |
