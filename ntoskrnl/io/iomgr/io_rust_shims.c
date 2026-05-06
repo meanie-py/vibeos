@@ -210,24 +210,28 @@ RtlUnicodeStringPrintf_4wZ_shim(
 
 /*
  * IopQueueIrpToThread — FORCEINLINE in io_x.h.
- * Queues an IRP to the current thread's IRP list.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopQueueIrpToThread.
  */
+extern void _rs_IopQueueIrpToThread(PIRP Irp);
+
 VOID
 NTAPI
 IopQueueIrpToThread_shim(IN PIRP Irp)
 {
-    IopQueueIrpToThread(Irp);
+    _rs_IopQueueIrpToThread(Irp);
 }
 
 /*
  * IopUnQueueIrpFromThread — FORCEINLINE in io_x.h.
- * Removes an IRP from its thread's IRP list.
+ * Body in Rust at sdk/lib/rust/io-inlines/src/lib.rs::_rs_IopUnQueueIrpFromThread.
  */
+extern void _rs_IopUnQueueIrpFromThread(PIRP Irp);
+
 VOID
 NTAPI
 IopUnQueueIrpFromThread_shim(IN PIRP Irp)
 {
-    IopUnQueueIrpFromThread(Irp);
+    _rs_IopUnQueueIrpFromThread(Irp);
 }
 
 /*

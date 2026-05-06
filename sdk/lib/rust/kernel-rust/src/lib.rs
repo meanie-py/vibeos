@@ -303,12 +303,16 @@ mod _force_io_inlines_symbols {
         fn _rs_IopValidateOpenPacket();
         fn _rs_IoGetDevObjExtension();
         fn _rs_IoCopyCurrentIrpStackLocationToNext();
+        fn _rs_IopQueueIrpToThread();
+        fn _rs_IopUnQueueIrpFromThread();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 3] = [
+    static REFS: [unsafe extern "C" fn(); 5] = [
         _rs_IopValidateOpenPacket,
         _rs_IoGetDevObjExtension,
         _rs_IoCopyCurrentIrpStackLocationToNext,
+        _rs_IopQueueIrpToThread,
+        _rs_IopUnQueueIrpFromThread,
     ];
 }
 

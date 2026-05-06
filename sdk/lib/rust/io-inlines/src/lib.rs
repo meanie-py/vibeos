@@ -20,8 +20,9 @@
 
 use core::ptr;
 
+use ntkrnl_sys::base::{InitializeListHead, InsertHeadList, IsListEmpty, RemoveEntryList};
 use ntkrnl_sys::ddk::{
-    PDEVICE_OBJECT, PEXTENDED_DEVOBJ_EXTENSION, PIRP, POPEN_PACKET, _IO_STACK_LOCATION,
+    PDEVICE_OBJECT, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PIRP, POPEN_PACKET, _IO_STACK_LOCATION,
     _OPEN_PACKET,
 };
 
@@ -73,4 +74,100 @@ pub unsafe extern "C" fn _rs_IoCopyCurrentIrpStackLocationToNext(irp: PIRP) {
     let copy_len = core::mem::offset_of!(_IO_STACK_LOCATION, CompletionRoutine);
     ptr::copy_nonoverlapping(cur as *const u8, next as *mut u8, copy_len);
     (*next).Control = 0;
+}
+
+// ============================================================================
+// Batch 1 — IRP / thread queueing
+//
+// IopQueueIrpToThread / IopUnQueueIrpFromThread (FORCEINLINE in `io_x.h`).
+// IopQueueIrpToThread enters a guarded region on the IRP's owning thread,
+// inserts the IRP at the head of its IrpList, then leaves the guarded region.
+// IopUnQueueIrpFromThread is called from `IopCompleteRequest` (and similar)
+// where APCs are already disabled; it removes the IRP from its list and
+// re-initializes the entry to a self-link.
+// ============================================================================
+
+extern "C" {
+    fn KiCheckForKernelApcDelivery();
+    fn KeAreAllApcsDisabled() -> u8;
+}
+
+/// `KeEnterGuardedRegionThread(_Thread)` — disables special APCs by
+/// decrementing `KTHREAD::SpecialApcDisable`.
+///
+/// Path differs per arch:
+/// - i386: `__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable`
+/// - amd64/arm64: `__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable`
+#[inline(always)]
+unsafe fn special_apc_disable_ptr(
+    tcb: *mut ntkrnl_sys::ddk::_KTHREAD,
+) -> *mut i16 {
+    #[cfg(target_arch = "x86")]
+    {
+        core::ptr::addr_of_mut!((*tcb).__bindgen_anon_4.__bindgen_anon_1.SpecialApcDisable)
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        core::ptr::addr_of_mut!(
+            (*tcb)
+                .__bindgen_anon_5
+                .__bindgen_anon_8
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .SpecialApcDisable
+        )
+    }
+}
+
+#[inline(always)]
+unsafe fn enter_guarded_region_thread(tcb: *mut ntkrnl_sys::ddk::_KTHREAD) {
+    let p = special_apc_disable_ptr(tcb);
+    *p = (*p).wrapping_sub(1);
+}
+
+#[inline(always)]
+unsafe fn leave_guarded_region_thread(tcb: *mut ntkrnl_sys::ddk::_KTHREAD) {
+    let p = special_apc_disable_ptr(tcb);
+    *p = (*p).wrapping_add(1);
+    if *p == 0 {
+        // KernelMode = 0 — check kernel APC queue
+        // KTHREAD::ApcState lives inside `__bindgen_anon_1` (an anonymous
+        // union with `ApcStateFill`) on all 3 arches; KernelMode = 0.
+        let kernel_apc_head =
+            core::ptr::addr_of_mut!((*tcb).__bindgen_anon_1.ApcState.ApcListHead[0]);
+        if !IsListEmpty(kernel_apc_head) {
+            KiCheckForKernelApcDelivery();
+        }
+    }
+}
+
+/// IopQueueIrpToThread — FORCEINLINE in `io_x.h`. The IRP's `Tail.Overlay.Thread`
+/// must be the current thread; we disable special APCs against that thread,
+/// link the IRP onto its `IrpList`, and re-enable.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopQueueIrpToThread(irp: PIRP) {
+    let thread: PETHREAD = (*irp).Tail.Overlay.Thread;
+    let tcb = core::ptr::addr_of_mut!((*thread).Tcb);
+    enter_guarded_region_thread(tcb);
+    InsertHeadList(
+        core::ptr::addr_of_mut!((*thread).IrpList),
+        core::ptr::addr_of_mut!((*irp).ThreadListEntry),
+    );
+    leave_guarded_region_thread(tcb);
+}
+
+/// IopUnQueueIrpFromThread — FORCEINLINE in `io_x.h`. Caller has APCs disabled
+/// (called from IopCompleteRequest or with KeEnterCriticalRegion already
+/// active). Removes the IRP's `ThreadListEntry` from whatever list it's on
+/// (skipping the case where it's already been re-initialized to a self-link),
+/// then re-initializes it.
+#[no_mangle]
+pub unsafe extern "C" fn _rs_IopUnQueueIrpFromThread(irp: PIRP) {
+    debug_assert!(KeAreAllApcsDisabled() != 0);
+    let entry = core::ptr::addr_of_mut!((*irp).ThreadListEntry);
+    if IsListEmpty(entry) {
+        return;
+    }
+    RemoveEntryList(entry);
+    InitializeListHead(entry);
 }
