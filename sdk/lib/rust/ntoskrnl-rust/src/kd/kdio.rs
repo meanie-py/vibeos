@@ -127,11 +127,52 @@ pub use super::kdmain::{
 // Cross-file extern decls — globals owned by kdmain.rs / kdterminal.rs / HAL
 // ============================================================================
 
-// HAL exports KdComPortInUse via __declspec(dllimport). Cross-DLL imports
-// can't be resolved by Rust extern decls on i386 (need __imp_ thunks), so we
-// route through ntoskrnl/kd/kd_rust_shims.c which uses the dllimport mechanism.
-extern "system" {
-    fn KdpRustSetComPortInUse(Port: PUCHAR);
+// HAL exports `KdComPortInUse` via `__declspec(dllimport)`. PE
+// cross-DLL imports go through the IAT — `__imp_<name>` is a slot
+// holding the address of the imported symbol. Set the imported value
+// by loading the IAT pointer and dereferencing it.
+//
+// The C header trick (`__declspec(dllimport)` + assignment) compiles
+// to exactly that. Rust `extern "C" { static X }` with `#[link_name]`
+// can't be used for the IAT entry on i386 because rustc auto-prefixes
+// `_` to the symbol name (gives `___imp__X` instead of `__imp__X`).
+// Inline asm references the IAT slot literally and dodges the rustc
+// name-mangling rule — same pattern as `_KeRaiseIrqlToSynchLevel@0`
+// in ke_rust_shims.c.
+#[inline]
+unsafe fn KdpRustSetComPortInUse(port: PUCHAR) {
+    #[cfg(target_arch = "x86")]
+    {
+        core::arch::asm!(
+            "mov eax, dword ptr [__imp__KdComPortInUse]",
+            "mov dword ptr [eax], {port}",
+            port = in(reg) port,
+            out("eax") _,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        core::arch::asm!(
+            "mov rax, qword ptr [rip + __imp_KdComPortInUse]",
+            "mov qword ptr [rax], {port}",
+            port = in(reg) port,
+            out("rax") _,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let iat: *mut *mut u8;
+        core::arch::asm!(
+            "adrp {iat}, __imp_KdComPortInUse",
+            "add  {iat}, {iat}, :lo12:__imp_KdComPortInUse",
+            "ldr  {iat}, [{iat}]",
+            iat = out(reg) iat,
+            options(nostack, preserves_flags),
+        );
+        *iat = port;
+    }
 }
 
 extern "C" {

@@ -476,9 +476,8 @@ if(NOT _WINKD_)
     #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdserial.c
     #    ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kdterminal.c)
 
-    # kd_rust_shims.c — outline shims for HAL dllimports (KdComPortInUse).
-    list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd/kd_rust_shims.c)
+    # kd_rust_shims.c removed — KdComPortInUse is now set directly from
+    # kd/kdio.rs via the `__imp_KdComPortInUse` IAT pointer.
 
 else()
     add_definitions(-D_WINKD_)
