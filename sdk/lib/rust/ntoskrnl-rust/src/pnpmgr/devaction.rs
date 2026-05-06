@@ -279,10 +279,12 @@ unsafe fn CONTAINING_RECORD<T>(ptr: PVOID, _type_size: usize, field_offset: usiz
 }
 // `IoRequestDeviceEject_c` deleted 2026-05-06 — Rust impl below replaces it.
 extern "system" {
-    fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
-    fn IopOpenRegistryKeyEx_shim(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
-    fn IopCreateRegistryKeyEx_shim(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
-    fn IopLoadDriver_shim(ServiceHandle: HANDLE, DriverObject: *mut PDRIVER_OBJECT) -> NTSTATUS;
+    fn IopGetRegistryValue(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
+    fn IopOpenRegistryKeyEx(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
+    fn IopCreateRegistryKeyEx(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
+}
+extern "C" {
+    fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut PDRIVER_OBJECT) -> NTSTATUS;
 }
 // `PiSetDevNodeText_c` deleted 2026-05-06 — Rust impl below replaces it.
 // `PiQueueDeviceAction_c` and `PiPerformSyncDeviceAction_c` deleted 2026-05-06
@@ -656,7 +658,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     let mut ccsServicesHandle: HANDLE = core::ptr::null_mut();
     let mut serviceHandle: HANDLE = core::ptr::null_mut();
 
-    Status = IopOpenRegistryKeyEx_shim(
+    Status = IopOpenRegistryKeyEx(
         &mut ccsServicesHandle as *mut _,
         core::ptr::null_mut(),
         &mut servicesKeyName as *mut _,
@@ -666,7 +668,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
         return Status;
     }
 
-    Status = IopOpenRegistryKeyEx_shim(
+    Status = IopOpenRegistryKeyEx(
         &mut serviceHandle as *mut _,
         ccsServicesHandle,
         &mut serviceName as *mut _,
@@ -691,7 +693,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     let mut kvInfo: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
     let mut startType: SERVICE_LOAD_TYPE = DisableLoad;
 
-    Status = IopGetRegistryValue_shim(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
+    Status = IopGetRegistryValue(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if (*kvInfo).Type == REG_DWORD {
             core::ptr::copy_nonoverlapping(
@@ -741,7 +743,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
 
     if Status < 0 {
         if loadDrivers != 0 {
-            Status = IopLoadDriver_shim(serviceHandle, &mut DriverObject as *mut _);
+            Status = IopLoadDriver(serviceHandle, &mut DriverObject as *mut _);
         } else {
             Status = STATUS_UNSUCCESSFUL;
             ExFreePoolWithTag(driverEntry as PVOID, TAG_PNP_DEVACTION);
@@ -868,18 +870,18 @@ unsafe fn PiCallDriverAddDevice(
 
     RtlInitUnicodeString(&mut EnumRoot as *mut _, ENUM_ROOT.as_ptr());
 
-    Status = IopOpenRegistryKeyEx_shim(&mut EnumRootKey as *mut _, core::ptr::null_mut(), &mut EnumRoot as *mut _, KEY_READ);
+    Status = IopOpenRegistryKeyEx(&mut EnumRootKey as *mut _, core::ptr::null_mut(), &mut EnumRoot as *mut _, KEY_READ);
     if Status < 0 {
         return Status;
     }
 
-    Status = IopOpenRegistryKeyEx_shim(&mut SubKey as *mut _, EnumRootKey, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
+    Status = IopOpenRegistryKeyEx(&mut SubKey as *mut _, EnumRootKey, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
     ZwClose(EnumRootKey);
     if Status < 0 {
         return Status;
     }
 
-    Status = IopGetRegistryValue_shim(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
+    Status = IopGetRegistryValue(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if ((*kvInfo).Type == REG_SZ)
             && ((*kvInfo).DataLength > core::mem::size_of::<u16>() as ULONG)
@@ -893,9 +895,9 @@ unsafe fn PiCallDriverAddDevice(
             };
             let mut ccsControlHandle: HANDLE = core::ptr::null_mut();
 
-            Status = IopOpenRegistryKeyEx_shim(&mut ccsControlHandle as *mut _, core::ptr::null_mut(), &ccsControlClass as *const _ as *mut _, KEY_READ);
+            Status = IopOpenRegistryKeyEx(&mut ccsControlHandle as *mut _, core::ptr::null_mut(), &ccsControlClass as *const _ as *mut _, KEY_READ);
             if Status >= 0 {
-                Status = IopOpenRegistryKeyEx_shim(&mut ClassKey as *mut _, ccsControlHandle, &classGUID as *const _ as *mut _, KEY_READ);
+                Status = IopOpenRegistryKeyEx(&mut ClassKey as *mut _, ccsControlHandle, &classGUID as *const _ as *mut _, KEY_READ);
                 ZwClose(ccsControlHandle);
             }
 
@@ -904,7 +906,7 @@ unsafe fn PiCallDriverAddDevice(
                 RtlInitUnicodeString(&mut properties as *mut _, REGSTR_KEY_DEVICE_PROPERTIES.as_ptr());
                 let mut propertiesHandle: HANDLE = core::ptr::null_mut();
 
-                Status = IopOpenRegistryKeyEx_shim(&mut propertiesHandle as *mut _, ClassKey, &mut properties as *mut _, KEY_READ);
+                Status = IopOpenRegistryKeyEx(&mut propertiesHandle as *mut _, ClassKey, &mut properties as *mut _, KEY_READ);
                 if Status >= 0 {
                     ZwClose(propertiesHandle);
                 }
@@ -1543,7 +1545,7 @@ unsafe fn IopSetServiceEnumData(
     let mut ValueBuffer: [WCHAR; 6] = [0; 6];
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    Status = IopGetRegistryValue_shim(InstanceHandle, b"S\0e\0r\0v\0i\0c\0e\0\0\0" as *const u8 as PWSTR, &mut kvInfo2 as *mut _);
+    Status = IopGetRegistryValue(InstanceHandle, b"S\0e\0r\0v\0i\0c\0e\0\0\0" as *const u8 as PWSTR, &mut kvInfo2 as *mut _);
     if Status < 0 {
         return Status;
     }
@@ -1571,7 +1573,7 @@ unsafe fn IopSetServiceEnumData(
     RtlAppendUnicodeStringToString(&mut ServiceKeyName as *mut _, &ServicesKeyPath as *const _ as *mut _);
     RtlAppendUnicodeStringToString(&mut ServiceKeyName as *mut _, &mut ServiceName as *mut _);
 
-    Status = IopOpenRegistryKeyEx_shim(&mut ServiceKey as *mut _, core::ptr::null_mut(), &mut ServiceKeyName as *mut _, KEY_CREATE_SUB_KEY);
+    Status = IopOpenRegistryKeyEx(&mut ServiceKey as *mut _, core::ptr::null_mut(), &mut ServiceKeyName as *mut _, KEY_CREATE_SUB_KEY);
     if Status < 0 {
         ExFreePool(ServiceKeyName.Buffer as PVOID);
         ExFreePool(kvInfo2 as PVOID);
@@ -1596,7 +1598,7 @@ unsafe fn IopSetServiceEnumData(
     }
 
     RtlInitUnicodeString(&mut EnumKeyName as *mut _, b"E\0n\0u\0m\0\0\0" as *const u8 as *const u16);
-    Status = IopCreateRegistryKeyEx_shim(
+    Status = IopCreateRegistryKeyEx(
         &mut ServiceEnumKey as *mut _,
         ServiceKey,
         &mut EnumKeyName as *mut _,
@@ -1606,7 +1608,7 @@ unsafe fn IopSetServiceEnumData(
     );
     if Status >= 0 {
         if Disposition == REG_OPENED_EXISTING_KEY {
-            Status = IopGetRegistryValue_shim(ServiceEnumKey, b"C\0o\0u\0n\0t\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
+            Status = IopGetRegistryValue(ServiceEnumKey, b"C\0o\0u\0n\0t\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
             if Status < 0 {
                 if !ServiceEnumKey.is_null() {
                     ZwClose(ServiceEnumKey);
@@ -1626,7 +1628,7 @@ unsafe fn IopSetServiceEnumData(
             ExFreePool(KeyValueInformation as PVOID);
             KeyValueInformation = core::ptr::null_mut();
 
-            Status = IopGetRegistryValue_shim(ServiceEnumKey, b"N\0e\0x\0t\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
+            Status = IopGetRegistryValue(ServiceEnumKey, b"N\0e\0x\0t\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0" as *const u8 as PWSTR, &mut KeyValueInformation as *mut _);
             if Status < 0 {
                 if !ServiceEnumKey.is_null() {
                     ZwClose(ServiceEnumKey);
@@ -1785,12 +1787,12 @@ unsafe fn PiStartDeviceFinal(
         let mut enumRootHandle: HANDLE = core::ptr::null_mut();
         let mut instanceHandle: HANDLE = core::ptr::null_mut();
 
-        Status = IopOpenRegistryKeyEx_shim(&mut enumRootHandle as *mut _, core::ptr::null_mut(), &mut enumRoot as *mut _, KEY_READ);
+        Status = IopOpenRegistryKeyEx(&mut enumRootHandle as *mut _, core::ptr::null_mut(), &mut enumRoot as *mut _, KEY_READ);
         if Status < 0 {
             return Status;
         }
 
-        Status = IopOpenRegistryKeyEx_shim(&mut instanceHandle as *mut _, enumRootHandle, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
+        Status = IopOpenRegistryKeyEx(&mut instanceHandle as *mut _, enumRootHandle, &mut (*DeviceNode).InstancePath as *mut _, KEY_READ);
         ZwClose(enumRootHandle);
         if Status < 0 {
             return Status;

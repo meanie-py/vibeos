@@ -307,60 +307,20 @@ void __cdecl pnp_trace_ulong(const char *msg, ULONG val)
  * ======================================================================== */
 
 /* ========================================================================
- * IopGetRegistryValue shim
+ * IopGetRegistryValue / IopOpenRegistryKeyEx / IopCreateRegistryKeyEx /
+ * IopLoadDriver — all four `_shim` trampolines DELETED 2026-05-06.
  *
- * Workaround for LLVM cross-CGU `captures(none)` attribute propagation bug:
- * when IopGetRegistryValue (defined in pnpmgr.rs) is called from pnpinit.rs
- * (different codegen unit), LLVM propagates `captures(none)` to the
- * declaration, then concludes the output pointer (Information) is never
- * written → eliminates the success path. Calling through a C shim avoids this.
+ * Were captures(none) workarounds ("LLVM cross-CGU captures(none) attribute
+ * propagation bug" — output pointer writes elided). Re-probed: the workspace
+ * `lto = false` + `codegen-units = 256` firewall is sufficient. pnpinit.rs and
+ * devaction.rs now declare and call the underlying NTAPI / cdecl Rust impls
+ * directly. Same captures(none)-ghost re-probe pattern as the Ob*_shim trio,
+ * IopInitializePlugPlayServices_shim, and the entire `_c`-suffixed PnP family
+ * eliminated earlier on 2026-05-06. PiInitCacheGroupInformation is the last
+ * remaining io captures(none) holdout — see below — and needs its own probe
+ * because its in-source comment claims "even with volatile reads" the original
+ * Rust version saw the success path elided.
  * ======================================================================== */
-NTSTATUS NTAPI IopGetRegistryValue(IN HANDLE Handle, IN PWSTR ValueName,
-    OUT PKEY_VALUE_FULL_INFORMATION *Information);
-NTSTATUS NTAPI IopGetRegistryValue_shim(IN HANDLE Handle, IN PWSTR ValueName,
-    OUT PKEY_VALUE_FULL_INFORMATION *Information)
-{
-    return IopGetRegistryValue(Handle, ValueName, Information);
-}
-
-/* ========================================================================
- * IopOpenRegistryKeyEx / IopCreateRegistryKeyEx shims
- *
- * Same captures(none) workaround as IopGetRegistryValue_shim: these functions
- * write to output pointer parameters (*KeyHandle / *Handle). When called from
- * a different Rust CGU, LLVM may eliminate the write.
- * ======================================================================== */
-NTSTATUS NTAPI IopOpenRegistryKeyEx(IN PHANDLE KeyHandle, IN HANDLE ParentKey,
-    IN PUNICODE_STRING Name, IN ACCESS_MASK DesiredAccess);
-NTSTATUS NTAPI IopOpenRegistryKeyEx_shim(IN PHANDLE KeyHandle, IN HANDLE ParentKey,
-    IN PUNICODE_STRING Name, IN ACCESS_MASK DesiredAccess)
-{
-    return IopOpenRegistryKeyEx(KeyHandle, ParentKey, Name, DesiredAccess);
-}
-
-NTSTATUS NTAPI IopCreateRegistryKeyEx(OUT PHANDLE Handle, IN HANDLE RootHandle,
-    IN PUNICODE_STRING KeyName, IN ACCESS_MASK DesiredAccess,
-    IN ULONG CreateOptions, OUT PULONG Disposition);
-NTSTATUS NTAPI IopCreateRegistryKeyEx_shim(OUT PHANDLE Handle, IN HANDLE RootHandle,
-    IN PUNICODE_STRING KeyName, IN ACCESS_MASK DesiredAccess,
-    IN ULONG CreateOptions, OUT PULONG Disposition)
-{
-    return IopCreateRegistryKeyEx(Handle, RootHandle, KeyName, DesiredAccess,
-                                  CreateOptions, Disposition);
-}
-
-/* ========================================================================
- * IopLoadDriver shim
- *
- * This helper also writes through an output pointer (DriverObject). Keep the
- * same C boundary workaround as the registry helpers on the early PnP path.
- * ======================================================================== */
-NTSTATUS IopLoadDriver(IN HANDLE ServiceHandle, OUT PDRIVER_OBJECT *DriverObject);
-NTSTATUS NTAPI IopLoadDriver_shim(IN HANDLE ServiceHandle,
-    OUT PDRIVER_OBJECT *DriverObject)
-{
-    return IopLoadDriver(ServiceHandle, DriverObject);
-}
 
 /* ========================================================================
  * PiInitCacheGroupInformation shim

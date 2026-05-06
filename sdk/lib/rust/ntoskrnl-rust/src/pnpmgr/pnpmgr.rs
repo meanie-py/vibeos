@@ -650,12 +650,17 @@ pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USH
 
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
 
+    // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`. Indexing past
+    // [0] panics on bounds-check, so use pointer arithmetic from the array
+    // base for every access (including i==0).
+    let guids_base = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
+
     'quickie: {
         let mut i: ULONG = 0;
         while i < (*PnpBusTypeGuidList).GuidCount {
             if RtlCompareMemory(
                 BusTypeGuid as PVOID,
-                core::ptr::addr_of!((*PnpBusTypeGuidList).Guids[i as usize]) as PVOID,
+                guids_base.add(i as usize) as PVOID,
                 core::mem::size_of::<GUID>() as SIZE_T,
             ) == core::mem::size_of::<GUID>() as SIZE_T
             {
@@ -687,9 +692,10 @@ pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USH
         }
 
         let count = (*PnpBusTypeGuidList).GuidCount;
+        let dst = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
         core::ptr::copy_nonoverlapping(
             BusTypeGuid as *const u8,
-            core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids[count as usize]) as *mut u8,
+            dst.add(count as usize) as *mut u8,
             core::mem::size_of::<GUID>(),
         );
         FoundIndex = count as USHORT;
@@ -1367,8 +1373,11 @@ pub unsafe extern "system" fn PnpBusTypeGuidGet(
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
 
     if (Index as ULONG) < (*PnpBusTypeGuidList).GuidCount {
+        // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`; indexing
+        // past [0] panics on bounds-check, so use pointer arithmetic.
+        let src = core::ptr::addr_of!((*PnpBusTypeGuidList).Guids) as *const GUID;
         core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!((*PnpBusTypeGuidList).Guids[Index as usize]) as *const u8,
+            src.add(Index as usize) as *const u8,
             BusTypeGuid as *mut u8,
             core::mem::size_of::<GUID>(),
         );

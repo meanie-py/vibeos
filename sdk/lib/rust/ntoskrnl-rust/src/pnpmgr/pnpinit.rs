@@ -24,10 +24,10 @@ extern "C" {
     fn IopInitPlugPlayEvents() -> NTSTATUS;
 }
 extern "system" {
-    fn IopGetRegistryValue_shim(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
+    fn IopGetRegistryValue(Handle: HANDLE, ValueName: PWSTR, Information: *mut PKEY_VALUE_FULL_INFORMATION) -> NTSTATUS;
     fn PiInitCacheGroupInformation_shim() -> NTSTATUS;
-    fn IopOpenRegistryKeyEx_shim(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
-    fn IopCreateRegistryKeyEx_shim(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
+    fn IopOpenRegistryKeyEx(KeyHandle: *mut HANDLE, ParentKey: HANDLE, Name: PUNICODE_STRING, DesiredAccess: u32) -> NTSTATUS;
+    fn IopCreateRegistryKeyEx(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
 }
 
 const Isa: INTERFACE_TYPE = 1;
@@ -175,9 +175,9 @@ pub unsafe extern "system" fn PiInitCacheGroupInformation() -> NTSTATUS {
             .as_ptr() as *mut u16,
     );
 
-    Status = IopOpenRegistryKeyEx_shim(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
+    Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
     if Status >= 0 {
-        Status = IopGetRegistryValue_shim(KeyHandle, b"L\0i\0s\0t\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+        Status = IopGetRegistryValue(KeyHandle, b"L\0i\0s\0t\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
         ZwClose(KeyHandle);
 
         if Status >= 0 {
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) ->
         return PiInitGroupOrderTableCount + 1;
     }
 
-    Status = IopGetRegistryValue_shim(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         return PiInitGroupOrderTableCount;
     }
@@ -271,12 +271,12 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
             .as_ptr() as *mut u16,
     );
 
-    Status = IopOpenRegistryKeyEx_shim(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
+    Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
     if Status < 0 {
         return u16::MAX;
     }
 
-    Status = IopGetRegistryValue_shim(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         if !KeyHandle.is_null() {
             NtClose(KeyHandle);
@@ -291,7 +291,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
         Group.Buffer = Buffer as *mut u16;
     }
 
-    Status = IopGetRegistryValue_shim(ServiceHandle, b"T\0a\0g\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformationTag);
+    Status = IopGetRegistryValue(ServiceHandle, b"T\0a\0g\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformationTag);
     if Status < 0 {
         if !KeyValueInformation.is_null() {
             ExFreePool(KeyValueInformation as PVOID);
@@ -309,7 +309,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
 
     ExFreePool(KeyValueInformationTag as PVOID);
 
-    Status = IopGetRegistryValue_shim(KeyHandle, Group.Buffer, &mut KeyValueInformationGroupOrderList);
+    Status = IopGetRegistryValue(KeyHandle, Group.Buffer, &mut KeyValueInformationGroupOrderList);
 
     if !KeyValueInformation.is_null() {
         ExFreePool(KeyValueInformation as PVOID);
@@ -393,7 +393,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\0\0".as_ptr() as *mut u16,
     );
     pnp_trace(b"[PNP] open CurrentControlSet\r\n\0");
-    Status = IopOpenRegistryKeyEx_shim(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
+    Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status < 0 {
         pnp_trace_s(b"[PNP] open CCS FAIL %x\r\n\0", Status);
         return Status;
@@ -401,7 +401,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     RtlInitUnicodeString(&mut KeyName, b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *mut u16);
     pnp_trace(b"[PNP] create Control\r\n\0");
-    Status = IopCreateRegistryKeyEx_shim(
+    Status = IopCreateRegistryKeyEx(
         &mut ControlHandle,
         KeyHandle,
         &mut KeyName,
@@ -418,7 +418,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         let mut DeviceClassesHandle: HANDLE = core::ptr::null_mut();
 
         RtlInitUnicodeString(&mut KeyName, b"D\0e\0v\0i\0c\0e\0C\0l\0a\0s\0s\0e\0s\0\0\0".as_ptr() as *mut u16);
-        Status = IopCreateRegistryKeyEx_shim(
+        Status = IopCreateRegistryKeyEx(
             &mut DeviceClassesHandle,
             ControlHandle,
             &mut KeyName,
@@ -437,7 +437,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     RtlInitUnicodeString(&mut KeyName, REGSTR_KEY_ENUM.as_ptr() as *mut u16);
     pnp_trace(b"[PNP] create Enum\r\n\0");
-    Status = IopCreateRegistryKeyEx_shim(
+    Status = IopCreateRegistryKeyEx(
         &mut EnumHandle,
         KeyHandle,
         &mut KeyName,
@@ -453,7 +453,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     ParentHandle = EnumHandle;
     RtlInitUnicodeString(&mut KeyName, REGSTR_KEY_ROOTENUM.as_ptr() as *mut u16);
     pnp_trace(b"[PNP] create Root\r\n\0");
-    Status = IopCreateRegistryKeyEx_shim(
+    Status = IopCreateRegistryKeyEx(
         &mut EnumHandle,
         ParentHandle,
         &mut KeyName,
@@ -472,10 +472,10 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         &mut KeyName,
         b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\\\0E\0N\0U\0M\0\0\0".as_ptr() as *mut u16,
     );
-    Status = IopOpenRegistryKeyEx_shim(&mut EnumHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
+    Status = IopOpenRegistryKeyEx(&mut EnumHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status >= 0 {
         RtlInitUnicodeString(&mut KeyName, REGSTR_VAL_ROOT_DEVNODE.as_ptr() as *mut u16);
-        Status = IopCreateRegistryKeyEx_shim(
+        Status = IopCreateRegistryKeyEx(
             &mut TreeHandle,
             EnumHandle,
             &mut KeyName,
@@ -673,7 +673,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //                             L"\\Control\\ServiceGroupOrder");
 //
 //     /* Open the registry key */
-//     Status = IopOpenRegistryKeyEx_shim(&KeyHandle,
+//     Status = IopOpenRegistryKeyEx(&KeyHandle,
 //                                   NULL,
 //                                   &GroupString,
 //                                   KEY_READ);
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     if (!ServiceHandle) return PiInitGroupOrderTableCount + 1;
 //
 //     /* Otherwise, get the group value */
-//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Group", &KeyValueInformation);
+//     Status = IopGetRegistryValue(ServiceHandle, L"Group", &KeyValueInformation);
 //     if (!NT_SUCCESS(Status)) return PiInitGroupOrderTableCount;
 //
 //     /* Make sure we have a valid string */
@@ -776,11 +776,11 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //                         L"\\Control\\ServiceGroupOrder");
 //
 //     /* Open the key */
-//     Status = IopOpenRegistryKeyEx_shim(&KeyHandle, NULL, &GroupString, KEY_READ);
+//     Status = IopOpenRegistryKeyEx(&KeyHandle, NULL, &GroupString, KEY_READ);
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Read the group */
-//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Group", &KeyValueInformation);
+//     Status = IopGetRegistryValue(ServiceHandle, L"Group", &KeyValueInformation);
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Make sure we have a group */
@@ -795,7 +795,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     }
 //
 //     /* Now read the tag */
-//     Status = IopGetRegistryValue_shim(ServiceHandle, L"Tag", &KeyValueInformationTag);
+//     Status = IopGetRegistryValue(ServiceHandle, L"Tag", &KeyValueInformationTag);
 //     if (!NT_SUCCESS(Status)) goto Quickie;
 //
 //     /* Make sure we have a tag */
@@ -886,7 +886,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //
 //     /* Open the current control set */
 //     ARM64_UART_TRACE("[PNP] open CurrentControlSet\r\n");
-//     Status = IopOpenRegistryKeyEx_shim(&KeyHandle,
+//     Status = IopOpenRegistryKeyEx(&KeyHandle,
 //                                   NULL,
 //                                   &KeyName,
 //                                   KEY_ALL_ACCESS);
@@ -894,7 +894,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //
 //     /* Create the control key */
 //     RtlInitUnicodeString(&KeyName, L"Control");
-//     Status = IopCreateRegistryKeyEx_shim(&ControlHandle,
+//     Status = IopCreateRegistryKeyEx(&ControlHandle,
 //                                     KeyHandle,
 //                                     &KeyName,
 //                                     KEY_ALL_ACCESS,
@@ -909,7 +909,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //
 //         /* Create the device classes key */
 //         RtlInitUnicodeString(&KeyName, L"DeviceClasses");
-//         Status = IopCreateRegistryKeyEx_shim(&DeviceClassesHandle,
+//         Status = IopCreateRegistryKeyEx(&DeviceClassesHandle,
 //                                         ControlHandle,
 //                                         &KeyName,
 //                                         KEY_ALL_ACCESS,
@@ -924,7 +924,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //
 //     /* Create the enum key */
 //     RtlInitUnicodeString(&KeyName, REGSTR_KEY_ENUM);
-//     Status = IopCreateRegistryKeyEx_shim(&EnumHandle,
+//     Status = IopCreateRegistryKeyEx(&EnumHandle,
 //                                     KeyHandle,
 //                                     &KeyName,
 //                                     KEY_ALL_ACCESS,
@@ -941,7 +941,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     /* Create the root key */
 //     ParentHandle = EnumHandle;
 //     RtlInitUnicodeString(&KeyName, REGSTR_KEY_ROOTENUM);
-//     Status = IopCreateRegistryKeyEx_shim(&EnumHandle,
+//     Status = IopCreateRegistryKeyEx(&EnumHandle,
 //                                     ParentHandle,
 //                                     &KeyName,
 //                                     KEY_ALL_ACCESS,
@@ -953,7 +953,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //
 //     /* Open the root key now */
 //     RtlInitUnicodeString(&KeyName, L"\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM");
-//     Status = IopOpenRegistryKeyEx_shim(&EnumHandle,
+//     Status = IopOpenRegistryKeyEx(&EnumHandle,
 //                                   NULL,
 //                                   &KeyName,
 //                                   KEY_ALL_ACCESS);
@@ -961,7 +961,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 //     {
 //         /* Create the root dev node */
 //         RtlInitUnicodeString(&KeyName, REGSTR_VAL_ROOT_DEVNODE);
-//         Status = IopCreateRegistryKeyEx_shim(&TreeHandle,
+//         Status = IopCreateRegistryKeyEx(&TreeHandle,
 //                                         EnumHandle,
 //                                         &KeyName,
 //                                         KEY_ALL_ACCESS,
