@@ -50,7 +50,6 @@
 #define KiDispatchException2Args        _saved_KiDispatchException2Args
 #define KiEnterV86Trap                  _saved_KiEnterV86Trap
 #define KiExitV86Trap                   _saved_KiExitV86Trap
-#define KiFillTrapFrameDebug            _saved_KiFillTrapFrameDebug
 #define KiHandleDebugRegistersOnTrapEntry _saved_KiHandleDebugRegistersOnTrapEntry
 #define KiHandleDebugRegistersOnTrapExit  _saved_KiHandleDebugRegistersOnTrapExit
 #define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
@@ -93,7 +92,6 @@
 #undef KiDispatchException2Args
 #undef KiEnterV86Trap
 #undef KiExitV86Trap
-#undef KiFillTrapFrameDebug
 #undef KiHandleDebugRegistersOnTrapEntry
 #undef KiHandleDebugRegistersOnTrapExit
 #undef KiExitTrapDebugChecks
@@ -1290,13 +1288,7 @@ void FASTCALL KiExitV86Trap(IN PKTRAP_FRAME TrapFrame)
     _saved_KiExitV86Trap(TrapFrame);
 }
 
-/* --- KiFillTrapFrameDebug ---
- * FORCEINLINE in trap_x.h (DBG only, otherwise empty macro).
- * Declared as extern "system" in Rust v86vdm.rs/traphdlr.rs → _KiFillTrapFrameDebug@4 */
-void NTAPI KiFillTrapFrameDebug(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiFillTrapFrameDebug(TrapFrame);
-}
+/* KiFillTrapFrameDebug lives in Rust now (ntkrnl-sys/inline/ke_i386.rs). */
 
 /* --- KiExceptionExit ---
  * FORCEINLINE on i386: calls KiServiceExit2(TrapFrame).

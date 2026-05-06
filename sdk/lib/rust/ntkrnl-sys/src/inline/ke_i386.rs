@@ -375,6 +375,19 @@ pub unsafe extern "system" fn KiSetTebBase(
     KiSetGdtDescriptorBase(gdt_entry, TebAddress as ULONG_PTR);
 }
 
+/// Stamp the trap frame's debug fields. Was a FORCEINLINE in trap_x.h.
+/// `DbgArgMark = 0xBADB0D00` is the magic that KiExitTrapDebugChecks
+/// later validates to confirm the trap frame is real.
+#[no_mangle]
+pub unsafe extern "system" fn KiFillTrapFrameDebug(TrapFrame: *mut ddk::_KTRAP_FRAME) {
+    (*TrapFrame).DbgArgPointer = (*TrapFrame).Edx;
+    (*TrapFrame).DbgArgMark = 0xBADB0D00;
+    (*TrapFrame).DbgEip = (*TrapFrame).Eip;
+    (*TrapFrame).DbgEbp = (*TrapFrame).Ebp;
+    (*TrapFrame).PreviousPreviousMode = 0xFFFFFFFF; // (ULONG)-1
+}
+
+
 // ============================================================================
 // cdecl versions of intrinsics (used by Rust callers via extern "C")
 // The stdcall versions above are kept for any C code using @N decoration.
