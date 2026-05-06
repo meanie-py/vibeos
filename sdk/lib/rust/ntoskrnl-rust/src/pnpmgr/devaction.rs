@@ -284,9 +284,7 @@ extern "system" {
     fn IopCreateRegistryKeyEx_shim(Handle: *mut HANDLE, RootHandle: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, CreateOptions: ULONG, Disposition: *mut ULONG) -> NTSTATUS;
     fn IopLoadDriver_shim(ServiceHandle: HANDLE, DriverObject: *mut PDRIVER_OBJECT) -> NTSTATUS;
 }
-extern "C" {
-    fn PiSetDevNodeText_c(DeviceNode: PDEVICE_NODE, InstanceKey: HANDLE);
-}
+// `PiSetDevNodeText_c` deleted 2026-05-06 — Rust impl below replaces it.
 // `PiQueueDeviceAction_c` and `PiPerformSyncDeviceAction_c` deleted 2026-05-06
 // — Rust impls below replace them. Same captures(none)-ghost re-probe pattern
 // as `IopGetBusTypeGuidIndex` (commit 280782e5).
@@ -1293,14 +1291,123 @@ unsafe fn IopQueryCompatibleIds(
     Status
 }
 
+/// `PiSetDevNodeText` — populate `DeviceDesc` and `LocationInformation`
+/// registry values for a device's instance key. Direct port of the C body
+/// `PiSetDevNodeText_c` (another captures(none) ghost).
+///
+/// `DeviceDesc` is only written if the value doesn't already exist (so user
+/// edits are preserved across reboots); `LocationInformation` is overwritten
+/// unconditionally on every call. If the driver doesn't return a description
+/// the value gets the literal "Unknown device".
 #[no_mangle]
 pub unsafe extern "C" fn PiSetDevNodeText(
     DeviceNode: PDEVICE_NODE,
     InstanceKey: HANDLE,
 ) {
+    let DeviceNode = opaque_ptr(DeviceNode);
     let InstanceKey = opaque_ptr(InstanceKey);
-    // Delegate to C implementation
-    PiSetDevNodeText_c(DeviceNode, InstanceKey)
+
+    let mut localeId: LCID = 0;
+    let mut status: NTSTATUS = ZwQueryDefaultLocale(0, &mut localeId);
+    if status < 0 {
+        return;
+    }
+
+    // L"DeviceDesc"
+    static DEVICE_DESC_NAME: [u16; 11] = [
+        b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
+        b'e' as u16, b'D' as u16, b'e' as u16, b's' as u16, b'c' as u16, 0,
+    ];
+    // L"LocationInformation"
+    static LOCATION_INFO_NAME: [u16; 20] = [
+        b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b't' as u16,
+        b'i' as u16, b'o' as u16, b'n' as u16, b'I' as u16, b'n' as u16,
+        b'f' as u16, b'o' as u16, b'r' as u16, b'm' as u16, b'a' as u16,
+        b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+    ];
+    // L"Unknown device"
+    static UNKNOWN_DEVICE: [u16; 15] = [
+        b'U' as u16, b'n' as u16, b'k' as u16, b'n' as u16, b'o' as u16,
+        b'w' as u16, b'n' as u16, b' ' as u16, b'd' as u16, b'e' as u16,
+        b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, 0,
+    ];
+
+    let mut valDeviceDesc = _UNICODE_STRING {
+        Length: ((DEVICE_DESC_NAME.len() - 1) * 2) as USHORT,
+        MaximumLength: (DEVICE_DESC_NAME.len() * 2) as USHORT,
+        Buffer: DEVICE_DESC_NAME.as_ptr() as *mut u16,
+    };
+
+    // Step 1: Write DeviceDesc only if it doesn't already exist.
+    let mut len: ULONG = 0;
+    status = ZwQueryValueKey(
+        InstanceKey,
+        &mut valDeviceDesc,
+        KeyValueBasicInformation,
+        core::ptr::null_mut(),
+        0,
+        &mut len,
+    );
+    if status == STATUS_OBJECT_NAME_NOT_FOUND {
+        let mut deviceDesc: PWSTR = core::ptr::null_mut();
+        status = PiIrpQueryDeviceText(DeviceNode, localeId, DeviceTextDescription, &mut deviceDesc);
+
+        if !deviceDesc.is_null() && *deviceDesc != 0 {
+            let bytes = ((wcslen(deviceDesc) + 1) * 2) as ULONG;
+            ZwSetValueKey(
+                InstanceKey,
+                &mut valDeviceDesc,
+                0,
+                REG_SZ,
+                deviceDesc as PVOID,
+                bytes,
+            );
+        } else {
+            ZwSetValueKey(
+                InstanceKey,
+                &mut valDeviceDesc,
+                0,
+                REG_SZ,
+                UNKNOWN_DEVICE.as_ptr() as PVOID,
+                (UNKNOWN_DEVICE.len() * 2) as ULONG,
+            );
+        }
+
+        if !deviceDesc.is_null() {
+            ExFreePoolWithTag(deviceDesc as PVOID, 0);
+        }
+    }
+
+    // Step 2: LocationInformation — overwrite unconditionally.
+    let mut deviceLocationInfo: PWSTR = core::ptr::null_mut();
+    status = PiIrpQueryDeviceText(
+        DeviceNode,
+        localeId,
+        DeviceTextLocationInformation,
+        &mut deviceLocationInfo,
+    );
+    let _ = status; // C original ignores the return value here too
+
+    if !deviceLocationInfo.is_null() && *deviceLocationInfo != 0 {
+        let mut valLocationInfo = _UNICODE_STRING {
+            Length: ((LOCATION_INFO_NAME.len() - 1) * 2) as USHORT,
+            MaximumLength: (LOCATION_INFO_NAME.len() * 2) as USHORT,
+            Buffer: LOCATION_INFO_NAME.as_ptr() as *mut u16,
+        };
+        let bytes = ((wcslen(deviceLocationInfo) + 1) * 2) as ULONG;
+        ZwSetValueKey(
+            InstanceKey,
+            &mut valLocationInfo,
+            0,
+            REG_SZ,
+            deviceLocationInfo as PVOID,
+            bytes,
+        );
+    }
+
+    if !deviceLocationInfo.is_null() {
+        ExFreePoolWithTag(deviceLocationInfo as PVOID, 0);
+    }
 }
 
 unsafe fn PiInitializeDevNode(
