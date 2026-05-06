@@ -88,7 +88,9 @@ pub unsafe extern "C" fn _rs_IoCopyCurrentIrpStackLocationToNext(irp: PIRP) {
 // re-initializes the entry to a self-link.
 // ============================================================================
 
-extern "C" {
+// All four are NTAPI (stdcall on i386 → `_Name@N` decoration; cdecl on amd64/arm64).
+// Must be `extern "system"` so the i386 link picks up the `_Name@N` symbol.
+extern "system" {
     fn KiCheckForKernelApcDelivery();
     fn KeAreAllApcsDisabled() -> u8;
     fn KeSetEvent(event: PRKEVENT, increment: i32, wait: u8) -> i32;
