@@ -254,7 +254,8 @@ list(APPEND SOURCE
     # mm/section_pe.c — replaced by Rust (ntoskrnl-rust/src/mm/section_pe.rs)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/mm/section_pe.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_sysldr_shims.c
+    # mm/mm_sysldr_shims.c eliminated — fully translated to Rust
+    # (ntoskrnl-rust/src/ARM3/sysldr.rs).
     # OB subsystem -- replaced by Rust (ntoskrnl-rust/src/ob/)
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/devicemap.c
     # ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obdir.c
