@@ -478,9 +478,12 @@ mod _force_io_inlines_symbols {
         fn IopUnlockFileObject_shim();
         fn IopUpdateOperationCount_shim();
         fn IopUpdateTransferCount_shim();
+        fn HalInitPnpDriver_shim();
+        fn IopIsValidPhysicalDeviceObject();
+        fn CmiGetNextResourceDescriptor();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 9] = [
+    static REFS: [unsafe extern "C" fn(); 12] = [
         IopValidateOpenPacket_shim,
         IoGetDevObjExtension_shim,
         IoCopyCurrentIrpStackLocationToNext_shim,
@@ -490,6 +493,9 @@ mod _force_io_inlines_symbols {
         IopUnlockFileObject_shim,
         IopUpdateOperationCount_shim,
         IopUpdateTransferCount_shim,
+        HalInitPnpDriver_shim,
+        IopIsValidPhysicalDeviceObject,
+        CmiGetNextResourceDescriptor,
     ];
 }
 

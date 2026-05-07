@@ -23,8 +23,9 @@ use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use ntkrnl_sys::base::{InitializeListHead, InsertHeadList, IsListEmpty, RemoveEntryList};
 use ntkrnl_sys::ddk::{
-    KPROCESSOR_MODE, NTSTATUS, PDEVICE_OBJECT, PEPROCESS, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION,
-    PFILE_OBJECT, PIRP, POPEN_PACKET, PRKEVENT, _IO_STACK_LOCATION, _OPEN_PACKET,
+    BOOLEAN, HAL_DISPATCH, KPROCESSOR_MODE, NTSTATUS, PCM_FULL_RESOURCE_DESCRIPTOR,
+    PDEVICE_OBJECT, PEPROCESS, PETHREAD, PEXTENDED_DEVOBJ_EXTENSION, PFILE_OBJECT, PIRP,
+    POPEN_PACKET, PRKEVENT, _CM_FULL_RESOURCE_DESCRIPTOR, _IO_STACK_LOCATION, _OPEN_PACKET,
 };
 
 /// `IO_TYPE_OPEN_PACKET` from `sdk/include/xdk/iotypes.h`.
@@ -378,4 +379,79 @@ pub unsafe extern "system" fn IopUpdateTransferCount_shim(transfer_type: u32, tr
         };
     add_large_statistic(count_to_change, transfer_count as i32);
     add_large_statistic(transfer_to_change, transfer_count as i32);
+}
+
+// ============================================================================
+// Batch 4 — surviving `io_rust_shims.c` non-variadic helpers
+//
+// HAL dispatch trampolines, the `IopIsValidPhysicalDeviceObject` macro
+// (`io.h`), and the `CmiGetNextResourceDescriptor` FORCEINLINE
+// (`cmreslist.h`). Replaces hand-written C trampolines.
+// ============================================================================
+
+extern "C" {
+    static mut HalDispatchTable: HAL_DISPATCH;
+}
+
+/// `HalInitPnpDriver_shim` — `HALDISPATCH->HalInitPnpDriver()`. The macro
+/// `HALDISPATCH` (in `haltypes.h`) expands to a dispatch-table pointer
+/// indirection; iomgr.rs links to this via `#[link_name]`.
+#[no_mangle]
+pub unsafe extern "C" fn HalInitPnpDriver_shim() -> NTSTATUS {
+    (HalDispatchTable.HalInitPnpDriver.unwrap())()
+}
+
+/// `DNF_ENUMERATED` from `sdk/include/ndk/iotypes.h`.
+const DNF_ENUMERATED: u32 = 0x00000010;
+
+/// `IopIsValidPhysicalDeviceObject` — macro in `internal/io.h`. Walks
+/// PDO → EXTENDED_DEVOBJ_EXTENSION → DEVICE_NODE and tests the
+/// DNF_ENUMERATED flag. NTAPI on i386 — callers in `pnpmgr.rs` and
+/// `pnpreport.rs` declare `extern "system"`.
+#[no_mangle]
+pub unsafe extern "system" fn IopIsValidPhysicalDeviceObject(
+    physical_device_object: PDEVICE_OBJECT,
+) -> BOOLEAN {
+    if physical_device_object.is_null() {
+        return 0;
+    }
+    let ext: PEXTENDED_DEVOBJ_EXTENSION =
+        (*physical_device_object).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION;
+    if ext.is_null() {
+        return 0;
+    }
+    let device_node = (*ext).DeviceNode;
+    if device_node.is_null() {
+        return 0;
+    }
+    if ((*device_node).Flags & DNF_ENUMERATED) != 0 { 1 } else { 0 }
+}
+
+/// `CmResourceTypeDeviceSpecific` from `sdk/include/xdk/cmtypes.h`.
+const CM_RESOURCE_TYPE_DEVICE_SPECIFIC: u8 = 5;
+
+/// `CmiGetNextResourceDescriptor` — `FORCEINLINE` in `cmreslist.h`. Bindgen
+/// emits an `extern "C"` declaration but no symbol exists since it's inline;
+/// `pnpres.rs` resolves the call against this implementation.
+#[no_mangle]
+pub unsafe extern "C" fn CmiGetNextResourceDescriptor(
+    resource_descriptor: *const _CM_FULL_RESOURCE_DESCRIPTOR,
+) -> PCM_FULL_RESOURCE_DESCRIPTOR {
+    let count = (*resource_descriptor).PartialResourceList.Count as usize;
+    // Last partial descriptor — note Count >= 1 by construction (the
+    // FORCEINLINE in `cmreslist.h` indexes [Count - 1] without a bound check).
+    let last_partial = (*resource_descriptor)
+        .PartialResourceList
+        .PartialDescriptors
+        .as_ptr()
+        .add(count - 1);
+    let extra = if (*last_partial).Type == CM_RESOURCE_TYPE_DEVICE_SPECIFIC {
+        (*last_partial).u.DeviceSpecificData.DataSize as usize
+    } else {
+        0
+    };
+    let next = (last_partial as *const u8)
+        .add(core::mem::size_of::<ntkrnl_sys::ddk::CM_PARTIAL_RESOURCE_DESCRIPTOR>())
+        .add(extra);
+    next as PCM_FULL_RESOURCE_DESCRIPTOR
 }
