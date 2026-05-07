@@ -268,13 +268,17 @@ unsafe fn SepInitializationPhase0() -> BOOLEAN {
     _se_trace(b"[SE] after clear impersonation\n");
 
     // WORKAROUND: Token initialization is in a C helper (SepInitTokensShim in
-    // se_rust_shims.c) to work around an LLVM i386 fat LTO bug. During LTO,
+    // kernel_c_helpers.c) to work around an LLVM i386 fat LTO bug. During LTO,
     // LLVM inlines SepInitializationPhase0 into SeInitSystem and incorrectly
-    // inserts unreachable/ud2 after the ExInitializeFastReference call that
-    // sets up the process token. This drops all subsequent code (anonymous
-    // logon token creation, return TRUE). The bug only affects i386, not
-    // amd64 or arm64. By performing the token init in C (outside Rust LTO),
-    // we prevent the misoptimization.
+    // inserts unreachable/ud2 after the call to `@ObInitializeFastReference@8`
+    // that sets up the process token. This drops all subsequent code (anonymous
+    // logon token creation, return TRUE).
+    //
+    // Re-probed 2026-05-07 by inlining the body into Rust. The bug is real and
+    // NOT a captures(none) ghost — `test_no_unexpected_ud2` flagged it. None
+    // of `opaque_ptr`, `compiler_fence(SeqCst)`, `core::hint::black_box`
+    // defeat the miscompilation. The C trampoline genuinely has to stay
+    // (it's the only way to put the call sequence outside the Rust LTO scope).
     extern "C" {
         fn SepInitTokensShim() -> BOOLEAN;
     }

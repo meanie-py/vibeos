@@ -1,8 +1,22 @@
 /*
- * kernel_c_helpers.c — Residual C helper functions that cannot be implemented
- * in Rust (variadic, LTO workarounds, macro-generated tables, globals).
+ * kernel_c_helpers.c — residual C helpers that cannot be implemented in
+ * Rust. See `docs/engineering/shim-elimination.md` and
+ * `git log --oneline -- ntoskrnl/kernel_c_helpers.c` for audit trail.
  *
- * These functions were previously scattered across *_rust_shims.c files.
+ * Survivors:
+ *   - C-variadic functions (Rust can't define C-variadic exports on
+ *     stable): KdpDprintf, RtlStringCbPrintfA, the KDBG ExpKdbgExt*
+ *     extensions that call KdbpPrint.
+ *   - SepInitTokensShim: documented LLVM i386 fat-LTO ud2 workaround.
+ *     Re-probed 2026-05-07; opaque_ptr/compiler_fence/black_box don't
+ *     defeat it. Putting token init outside Rust LTO scope is required.
+ *   - PS-subsystem C globals (PspSystemDllBase, PsInitialSystemProcess,
+ *     Psp{Process,Thread}Mapping, SharedUserData, ...). Rust imports
+ *     them as `extern "C" { static mut ... }`.
+ *   - ARM64 UART debug helpers (UART pokes from bringup-path Rust).
+ *   - MM section-segment lock outlines that need C `__FILE__`/`__LINE__`.
+ *   - Header-rename machinery (Phase 1/3) for FORCEINLINE outlines and
+ *     file-scope-static array re-export.
  */
 
 /* Phase 1: Rename FORCEINLINE/macro functions BEFORE including headers.
@@ -36,12 +50,15 @@
  * SepInitTokensShim — C helper to work around LLVM i386 LTO bug.
  *
  * During fat LTO on i386, LLVM incorrectly inserts unreachable/ud2 after the
- * ExInitializeFastReference call that sets up the system process token. This
- * drops all subsequent code (anonymous logon token creation, return TRUE).
+ * `@ObInitializeFastReference@8` call that sets up the system process token.
+ * This drops all subsequent code (anonymous logon token creation, return TRUE).
  * The bug does not affect amd64 or arm64.
  *
- * By performing the token initialization in C code (which is not part of the
- * Rust LTO link), we prevent LLVM from applying the misoptimization.
+ * Re-probed 2026-05-07 by inlining the body into se/semgr.rs. The bug is
+ * confirmed real — `test_no_unexpected_ud2` catches it after each rebuild.
+ * None of `opaque_ptr`, `compiler_fence(SeqCst)`, `core::hint::black_box`
+ * defeat the miscompilation. Performing token init in C (outside Rust LTO
+ * scope) is the only working workaround.
  */
 BOOLEAN
 SepInitTokensShim(VOID)
@@ -450,30 +467,13 @@ VOID NTAPI ARM64_UART_TRACE_HEX(PCSTR prefix, ULONG_PTR val)
 }
 
 /* ===================================================================
- * MM subsystem C-only helpers — previously in mm_rust_shims.c.
- *
- * These functions cannot be implemented in Rust because they:
- * - Use C macros (__FILE__, __LINE__)
- * - Require #include of avlsupp.c for AVL tree algorithms
- * - Bridge calling conventions (i386 fastcall → cdecl)
- * - Define globals with C-specific initializers
+ * MM section-segment lock/unlock — uses __FILE__/__LINE__ C macros so
+ * the underlying _Mm* primitives can record where the lock was taken.
+ * Rust can't expand these macros, hence the C outlines.
  * =================================================================== */
 
-/* MmWaitPageEvent / MmSubsectionBase / MmVerifyImageIsOkForMpUse —
- * REMOVED. All three are duplicated in mm/mm_rust_shims.c (the
- * domain-appropriate location). The MM_SECTION_C_ACTIVE /
- * MM_SYSLDR_C_ACTIVE guards never fire in the active build, so
- * keeping them here just produced lld duplicate-symbol warnings. */
-
-/* i386 cdecl InterlockedExchange/InterlockedCompareExchange wrappers — removed.
- * All Rust callers now declare these as `extern "fastcall"` (i386) or
- * `extern "C"` (amd64/arm64) and link against the Rust impls in exintrin.rs.
- * No remaining caller asks for the cdecl `_Name` decoration on i386. */
-
-/* --- Section segment lock/unlock — uses __FILE__/__LINE__ C macros --- */
 #include <mm/ARM3/miarm.h>
 
-/* Undef the macros from mm.h so we can define outline functions */
 #undef MmLockSectionSegment
 #undef MmUnlockSectionSegment
 #undef MmGetPageEntrySectionSegment
@@ -487,21 +487,4 @@ void NTAPI MmUnlockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
 ULONG_PTR NTAPI MmGetPageEntrySectionSegment(
     IN PMM_SECTION_SEGMENT Segment, IN PLARGE_INTEGER Offset)
 { return _MmGetPageEntrySectionSegment(Segment, Offset, __FILE__, __LINE__); }
-
-/* AVL Tree support — moved to mm-avl rlib (`sdk/lib/rust/mm-avl/`).
- * Trampolines (`RtlRightChildAvl` / `RtlpFindAvlTableNodeOrParent` / etc.)
- * live in mm/mm_rust_shims.c and one-line-delegate to `_rs_*` exports.
- * The historical `#include <avlsupp.c>` path used to live here. */
-
-/* KfRaiseIrql/KfLowerIrql — moved to Rust on amd64.
- * `shim_exports.rs::KfRaiseIrql/KfLowerIrql` (#[cfg(target_arch = "x86_64")])
- * delegate to `ntkrnl_sys::inline::mm::KfRaiseIrql/KfLowerIrql` which uses
- * the inline `mov cr8, ...` asm in `inline/ke.rs::KfRaiseIrql_amd64`.
- * i386: HAL exports as __fastcall — Rust callers declare `extern "fastcall"`.
- * ARM64: HAL cdecl — Rust callers declare `extern "C"`. */
-
-/* RustShimRtlFindSetBits / RustShimKdbpGetHexNumber removed (Phase 3) —
- * Rust callers in `ARM3/kdbg.rs` now declare these as `extern "system"`
- * directly, which generates the right `_Name@N` stdcall decoration on
- * i386 and cdecl on amd64/arm64. */
 
