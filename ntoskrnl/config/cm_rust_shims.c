@@ -1,80 +1,33 @@
 /*
- * cm_rust_shims.c — Non-inline ("outline") implementations of FORCEINLINE/macro
- * functions in the Configuration Manager (cm_x.h, cmlib.h, exfuncs.h) that the
- * Rust ntoskrnl-rust::config crate calls via extern declarations.
+ * cm_rust_shims.c — Outline functions for the Configuration Manager Rust
+ * port. Provides cdecl outlines for cm_x.h / cmlib.h FORCEINLINEs and
+ * function-style macros that bindgen would otherwise leave undefined.
  *
- * Mirrors the pattern from se_rust_shims.c / ke_rust_shims.c.
- *
- * For i386 the Rust callers are split: bindgen-generated code uses
- * extern "C" (=> bare `_Name` cdecl symbol) while hand-written extern
- * "system" blocks expect `_Name@N` stdcall symbols. We emit BOTH variants
- * by using __asm__() symbol renaming on a duplicate NTAPI definition.
+ * KCB-lock exclusive-acquire / release / shared→exclusive convert
+ * (8 fns) live in the cm-inlines rlib (sdk/lib/rust/cm-inlines/) and
+ * are exported under the bare Cmp* names directly — no C trampoline.
  *
  * Note: cmdata.c is still in the C build, so globals it owns (CmFirstTime,
- * CmpVolatileBoot, etc.) are NOT defined here. Globals owned by excluded
- * files (cmsysini.c, cmlazy.c, cmkcbncb.c, cmdelay.c) are defined in their
- * corresponding .rs files.
+ * CmpVolatileBoot, etc.) are NOT defined here.
  */
 
-/* === Phase 1: shadow FORCEINLINE/macro identifiers before include === */
-
-/* cm_x.h FORCEINLINEs */
-#define CmpAcquireKcbLockExclusive          _fi_CmpAcquireKcbLockExclusive
-#define CmpAcquireKcbLockExclusiveByIndex   _fi_CmpAcquireKcbLockExclusiveByIndex
-#define CmpAcquireKcbLockExclusiveByKey     _fi_CmpAcquireKcbLockExclusiveByKey
-#define CmpReleaseKcbLockByIndex            _fi_CmpReleaseKcbLockByIndex
-#define CmpReleaseKcbLock                   _fi_CmpReleaseKcbLock
-#define CmpReleaseKcbLockByKey              _fi_CmpReleaseKcbLockByKey
-#define CmpTryToConvertKcbSharedToExclusive _fi_CmpTryToConvertKcbSharedToExclusive
-#define CmpConvertKcbSharedToExclusive      _fi_CmpConvertKcbSharedToExclusive
-
-/* ntstrsafe.h static inlines (need to provide outline RtlStringCbPrintfW) */
-#define RtlStringCbPrintfW                  _saved_RtlStringCbPrintfW
-#define RtlStringCbVPrintfW                 _saved_RtlStringCbVPrintfW
-
-/* basetsd.h `static inline unsigned long PtrToUlong(const void*)` on amd64.
- * On i386 this is a macro and does NOT define a static-inline. Renaming
- * here is harmless on i386 (no-op). */
-#define PtrToUlong                          _saved_PtrToUlong
-
-/* cmlib.h `static inline BOOLEAN CmpIsKeyValueSmall(...)` */
+/* === Phase 1: shadow FORCEINLINE/macro identifiers before include ===
+ *
+ * Renames make the original FORCEINLINE / static-inline body compile
+ * under `_saved_*` so we can define our own outline under the real name.
+ * Only the ones whose outline body actually calls `_saved_*` need the
+ * rename; the Cmp*KcbLock family (cm-inlines covers it) doesn't.
+ *
+ * basetsd.h `static inline unsigned long PtrToUlong(const void*)` on
+ * amd64. On i386 this is a macro and the rename is a harmless no-op. */
 #define CmpIsKeyValueSmall                  _saved_CmpIsKeyValueSmall
+#define PtrToUlong                          _saved_PtrToUlong
 
 /* === Phase 2: include headers === */
 
 #include "ntoskrnl.h"
 #define NDEBUG
 #include "debug.h"
-
-/* === Phase 3: undef the Phase 1 renames so we can declare outlines under
- *      the original names (the renamed `_fi_*` versions remain available). === */
-
-#undef CmpAcquireKcbLockExclusive
-#undef CmpAcquireKcbLockExclusiveByIndex
-#undef CmpAcquireKcbLockExclusiveByKey
-#undef CmpReleaseKcbLockByIndex
-#undef CmpReleaseKcbLock
-#undef CmpReleaseKcbLockByKey
-#undef CmpTryToConvertKcbSharedToExclusive
-#undef CmpConvertKcbSharedToExclusive
-
-/* === Phase 4: outline wrappers for renamed FORCEINLINEs ===
- *
- * Each body delegates to the Rust impl in `sdk/lib/rust/cm-inlines/`. The
- * `_fi_*` macros remain available (defined by the Phase 1 rename + system
- * header include) and would still produce correct C-side inlining if the
- * cm-inlines crate is ever unwired — kept as the fallback path documented
- * in shim-elimination.md § "Phase 1 redesigns / Option 3".
- *
- * The Rust impls live in their own rlib (compiled with `lto = false`,
- * `codegen-units = 256`) so the captures(none) cross-CGU contagion that
- * killed the first pilot can't reach into ntoskrnl-rust's config code.
- */
-/* Cmp* exclusive-acquire / release / shared→exclusive convert trampolines —
- * REMOVED. The cm-inlines rlib (sdk/lib/rust/cm-inlines/src/lib.rs) now
- * exports the bare `Cmp*` symbol names directly with `extern "C"` (cdecl);
- * Rust callers in `config/cmkcbncb.rs` resolve via bindgen-emitted
- * `extern "C" { fn Cmp*(...) }` decls. */
 
 /* === Phase 4: outline wrappers for cm_x.h macros (KCB/NCB shared lock helpers,
  *      CmpIsKcbLockedExclusive). Body re-implements the macro inline. ===
@@ -131,44 +84,37 @@ VOID HvReleaseCell(IN PHHIVE Hive, IN HCELL_INDEX Cell)
         Hive->ReleaseCellRoutine(Hive, Cell);
 }
 
-/* === Phase 5: undef the assertion / helper macros so we can declare
- *      same-named outline functions for them === */
+/* === Phase 5: undef function-style macros so we can declare same-named
+ *      outline functions === */
 
 #undef CMP_ASSERT_REGISTRY_LOCK
 #undef CMP_ASSERT_FLUSH_LOCK
 #undef CMP_ASSERT_KCB_LOCK
 #undef CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK
 #undef CMP_ASSERT_REGISTRY_LOCK_OR_LOADING
-#undef CMP_IS_CELL_CACHED
 #undef GET_HASH_INDEX
 #undef ASSERT_VALUE_BIG
 #undef IS_NULL_TERMINATED
 #undef LANGIDFROMLCID
-#undef PtrToUlong
 #undef CMTRACE
-#undef RtlStringCbPrintfW
-#undef RtlStringCbVPrintfW
 #undef PtrToUlong
 #undef CmpIsKeyValueSmall
-#undef CM_CHECK_REGISTRY_SUCCESS
 #undef HvGetCellType
 
-/* === Phase 6: cdecl exports for the LLM-as-function macros and the
- *      CmpIsKcbLockedExclusive name. === */
+/* === Phase 6: cdecl exports for the macro-as-function names === */
 
 VOID CMP_ASSERT_REGISTRY_LOCK(VOID) { }
 VOID CMP_ASSERT_FLUSH_LOCK(IN PVOID h) { (void)h; }
 VOID CMP_ASSERT_KCB_LOCK(IN PVOID k) { (void)k; }
 VOID CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK(VOID) { }
 VOID CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(IN PVOID h) { (void)h; }
-ULONG CMP_IS_CELL_CACHED(IN ULONG c) { return ((c & 1) != 0); }
 VOID CMTRACE(IN ULONG f, IN PCSTR s, IN PCSTR a1, IN PVOID a2)
 { (void)f; (void)s; (void)a1; (void)a2; }
 VOID ASSERT_VALUE_BIG(IN PVOID h, IN ULONG l) { (void)h; (void)l; }
 BOOLEAN IS_NULL_TERMINATED(IN PWSTR s, IN ULONG l)
 { (void)s; (void)l; return TRUE; }
 
-/* GET_HASH_INDEX / LANGIDFROMLCID / PtrToUlong — alias to the outline body */
+/* GET_HASH_INDEX — alias to the outline body */
 __attribute__((alias("_outline_GET_HASH_INDEX")))
 ULONG GET_HASH_INDEX(IN ULONG k);
 
@@ -179,46 +125,6 @@ ULONG PtrToUlong(IN PVOID p) { return (ULONG)(ULONG_PTR)p; }
 /* CmpIsKcbLockedExclusive cdecl alias to the outline */
 __attribute__((alias("CmpIsKcbLockedExclusive_outline")))
 BOOLEAN CmpIsKcbLockedExclusive(IN PCM_KEY_CONTROL_BLOCK Kcb);
-
-/* === Common cdecl outlines for static-inline shadowing (all arches) === */
-
-/* RtlStringCbPrintfW outline — bypasses the static __inline rename above.
- * Routes through Rust ntprintf_w (no _vsnwprintf, no legacy printf core).
- * `cbDest` is byte count → divide by sizeof(WCHAR) for the wchar-counted
- * Rust formatter. Return status mirrors ntstrsafe semantics:
- *   STATUS_SUCCESS                  formatted output fit
- *   STATUS_BUFFER_OVERFLOW          truncated
- *   STATUS_INVALID_PARAMETER        cbDest == 0 or odd
- */
-extern size_t ntprintf_va_format_w(unsigned short *dst, size_t cap_chars,
-                                   const unsigned short *fmt, va_list ap);
-
-NTSTATUS __cdecl RtlStringCbPrintfW(WCHAR *dst, size_t cbDest, const WCHAR *fmt, ...)
-{
-    size_t cap_chars;
-    size_t written_chars;
-    va_list args;
-
-    if (dst == NULL || cbDest < sizeof(WCHAR))
-    {
-        return STATUS_INVALID_PARAMETER;
-    }
-    cap_chars = cbDest / sizeof(WCHAR);
-
-    va_start(args, fmt);
-    written_chars = ntprintf_va_format_w((unsigned short *)dst, cap_chars,
-                                         (const unsigned short *)fmt, args);
-    va_end(args);
-
-    /* ntprintf_w_format reserves one wchar for the terminator and returns
-     * the count that *would* have been written excluding the NUL. So
-     * truncation is `written_chars + 1 > cap_chars`. */
-    if (written_chars + 1 > cap_chars)
-    {
-        return STATUS_BUFFER_OVERFLOW;
-    }
-    return STATUS_SUCCESS;
-}
 
 /* CmpIsKeyValueSmall — cdecl outline that calls the renamed inline body. */
 BOOLEAN CmpIsKeyValueSmall(OUT PULONG RealLength, IN ULONG Length)
@@ -232,9 +138,7 @@ ULONG HvGetCellType(IN HCELL_INDEX Cell)
     return ((Cell & HCELL_TYPE_MASK) >> HCELL_TYPE_SHIFT);
 }
 
-/* CM_CHECK_REGISTRY_SUCCESS — function-style macro on cmlib.h. */
-BOOLEAN CM_CHECK_REGISTRY_SUCCESS(IN ULONG Status)
-{
-    /* Returns TRUE iff Status == CM_CHECK_REGISTRY_GOOD (0). */
-    return Status == 0;
-}
+/* CMP_IS_CELL_CACHED, CM_CHECK_REGISTRY_SUCCESS, RtlStringCbPrintfW —
+ * REMOVED. Verified zero `U` references across the entire i386 build
+ * (every consumer either inlines locally via the static-inline body
+ * in headers or doesn't use the symbol at all). */
