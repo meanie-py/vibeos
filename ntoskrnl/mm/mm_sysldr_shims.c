@@ -81,11 +81,9 @@ MiUseLargeDriverPage_shim(ULONG NumberOfPtes,
     return FALSE;
 }
 
-static VOID
-MiWriteProtectSystemImage_shim(PVOID ImageBase)
-{
-    /* Not implemented — write protection */
-}
+/* MiWriteProtectSystemImage_shim deleted — Rust impl
+ * (sysldr.rs::MiWriteProtectSystemImage) is exported and called directly. */
+VOID NTAPI MiWriteProtectSystemImage(PVOID ImageBase);
 
 static PVOID
 LdrpFetchAddressOfSecurityCookie_shim(PVOID BaseAddress, ULONG SizeOfImage)
@@ -1272,7 +1270,7 @@ LoaderScan:
     LdrEntry->LoadedImports = LoadedImports;
 
     /* Write-protect the system image */
-    MiWriteProtectSystemImage_shim(LdrEntry->DllBase);
+    MiWriteProtectSystemImage(LdrEntry->DllBase);
 
     /* Initialize the security cookie */
     LdrpInitSecurityCookie_shim(LdrEntry);
@@ -1347,31 +1345,5 @@ Quickie:
     return Status;
 }
 
-/* ========== MiLookupDataTableEntry ========== */
-
-PLDR_DATA_TABLE_ENTRY
-NTAPI
-MiLookupDataTableEntry(IN PVOID Address)
-{
-    PLDR_DATA_TABLE_ENTRY LdrEntry, FoundEntry = NULL;
-    PLIST_ENTRY NextEntry;
-    PAGED_CODE();
-
-    NextEntry = PsLoadedModuleList.Flink;
-    do
-    {
-        LdrEntry = CONTAINING_RECORD(NextEntry,
-                                     LDR_DATA_TABLE_ENTRY,
-                                     InLoadOrderLinks);
-        if ((Address >= LdrEntry->DllBase) &&
-            (Address < (PVOID)((ULONG_PTR)LdrEntry->DllBase +
-                               LdrEntry->SizeOfImage)))
-        {
-            FoundEntry = LdrEntry;
-            break;
-        }
-        NextEntry = NextEntry->Flink;
-    } while(NextEntry != &PsLoadedModuleList);
-
-    return FoundEntry;
-}
+/* MiLookupDataTableEntry — translated to Rust (sysldr.rs::MiLookupDataTableEntry)
+ * and exported under the same name; C body deleted. */

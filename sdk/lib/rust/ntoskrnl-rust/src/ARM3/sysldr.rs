@@ -843,9 +843,10 @@ unsafe fn LdrpInitSecurityCookie(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) -> PVOID
 // MmLoadSystemImage: provided by C shim (mm_sysldr_shims.c)
 // Rust stub removed to avoid symbol conflict.
 
-// MiLookupDataTableEntry: real C implementation in mm_sysldr_shims.c
-// Keep a Rust-internal version for MmPageEntireDriver to call.
-unsafe fn MiLookupDataTableEntry(address: PVOID) -> *mut LDR_DATA_TABLE_ENTRY {
+// MiLookupDataTableEntry: pure-logic linear scan of PsLoadedModuleList.
+// Exported as the canonical impl; C version deleted from mm_sysldr_shims.c.
+#[no_mangle]
+pub unsafe extern "system" fn MiLookupDataTableEntry(address: PVOID) -> *mut LDR_DATA_TABLE_ENTRY {
     let mut next_entry = PsLoadedModuleList.Flink;
     let list_head = core::ptr::addr_of_mut!(PsLoadedModuleList);
     loop {
