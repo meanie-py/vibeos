@@ -66,7 +66,7 @@ extractions.
 
 | File | LOC | Notes |
 |---|---:|---|
-| `ntoskrnl/ke/ke_rust_shims.c` | ~2,100 | Mostly Phase 1 trampolines; large i386 register/V86/FXSAVE block (~50 fns) is the bulk. |
+| `ntoskrnl/ke/ke_rust_shims.c` | ~522 | Down from ~2,100 (and 857 entering this round). Surviving: `KeRaiseIrqlToSynchLevel` (i386 IAT, amd64 CR8), stdcall-on-i386 ABI bridges (`Hal{Query,Set}SystemInformation`, `HalVectorToIDTEntry`, `Ke386Get{GDT,LDT}`, `KiComputeIopmOffset`, `KeGetTrapFramePc`), i386 trap-exit `_saved_*` outlines, i386 init (`Ki386InitializeTss`, `KiThreadStartup`, `KiAttachProcess`, `KiEndInterrupt`), amd64 `KiSaveXState`/`KiRestoreXState` KVM workaround, `KeGdiFlushUserBatch_call`, ARM64 `KdbpPrint` variadic stub, SSDT include. |
 | `ntoskrnl/mm/mm_rust_shims.c` | ~335 | Down from ~1,500. WS-lock family + 13 macro/util trampolines + AVL insert-guard collapsed; 3 large `#if 0` debug-preservation blocks deleted (git history has them). What's left: ExAllocatePoolZero (i386 stdcall), Arm64DumpPte, ARM64 UART helpers, MmVerifyImageIsOkForMpUse (CONFIG_SMP), MmWait/Subsection globals, MmDbgCheckIrql. |
 | `ntoskrnl/io/iomgr/io_rust_shims.c` | ~750 | Down from ~1,465. captures(none) and `_c` PnP families fully eliminated 2026-05-06. |
 | `ntoskrnl/kernel_c_helpers.c` | ~635 | Canonical "must-stay" home — varargs, LTO workarounds, AVL include trick, fastcall→cdecl bridges. |
