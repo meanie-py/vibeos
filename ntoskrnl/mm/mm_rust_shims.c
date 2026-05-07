@@ -10,56 +10,18 @@
 
 /* === Phase 1: Rename only the functions we're shimming === */
 
-/* FORCEINLINE functions (from miarm.h, mm.h, ke.h) */
-#define MI_MAKE_HARDWARE_PTE_KERNEL _orig_MI_MAKE_HARDWARE_PTE_KERNEL
-#define MI_MAKE_HARDWARE_PTE_USER   _orig_MI_MAKE_HARDWARE_PTE_USER
-#define MI_MAKE_HARDWARE_PTE        _orig_MI_MAKE_HARDWARE_PTE
-#define MI_UPDATE_VALID_PTE         _orig_MI_UPDATE_VALID_PTE
-#define MiLockProcessWorkingSet     _orig_MiLockProcessWorkingSet
-#define MiUnlockProcessWorkingSet   _orig_MiUnlockProcessWorkingSet
-#define MiLockProcessWorkingSetShared   _orig_MiLockProcessWorkingSetShared
-#define MiUnlockProcessWorkingSetShared _orig_MiUnlockProcessWorkingSetShared
-#define MiLockProcessWorkingSetUnsafe   _orig_MiLockProcessWorkingSetUnsafe
-#define MiUnlockProcessWorkingSetUnsafe _orig_MiUnlockProcessWorkingSetUnsafe
-#define MiLockWorkingSet            _orig_MiLockWorkingSet
-#define MiUnlockWorkingSet          _orig_MiUnlockWorkingSet
-#define MiLockWorkingSetShared      _orig_MiLockWorkingSetShared
-#define MiUnlockWorkingSetShared    _orig_MiUnlockWorkingSetShared
-#define MiAcquireExpansionLock      _orig_MiAcquireExpansionLock
-#define MiReleaseExpansionLock      _orig_MiReleaseExpansionLock
-#define MiDetermineUserGlobalPteMask _orig_MiDetermineUserGlobalPteMask
-#define MM_ANY_WS_LOCK_HELD         _orig_MM_ANY_WS_LOCK_HELD
-/* Tier 3b FORCEINLINE shims (miarm.h, mm.h) */
-#define MiLockProcessWorkingSetForFault  _orig_MiLockProcessWorkingSetForFault
-#define MiUnlockProcessWorkingSetForFault _orig_MiUnlockProcessWorkingSetForFault
-/* MmGetCurrentAddressSpace: PCH-covered FORCEINLINE, can't rename — manually inlined below */
-/* MiDereferencePfnAndDropLockCount: provided by Rust (section.rs) — no C shim needed */
-#define MiIsRosSectionObject _orig_MiIsRosSectionObject
-/* Tier 3a FORCEINLINE shims (miarm.h, ke_x.h) */
-#define MiIncrementPageTableReferences  _orig_MiIncrementPageTableReferences
-#define MiDropLockCount                 _orig_MiDropLockCount
-#define MiReferenceProbedPageAndBumpLockCount  _orig_MiReferenceProbedPageAndBumpLockCount
-#define MiReferenceUnusedPageAndBumpLockCount  _orig_MiReferenceUnusedPageAndBumpLockCount
-#define MiReferenceUsedPageAndBumpLockCount    _orig_MiReferenceUsedPageAndBumpLockCount
-#define MiIsUserPde                     _orig_MiIsUserPde
-#define MiIsUserPte                     _orig_MiIsUserPte
-#define MiRemoveZeroPageSafe            _orig_MiRemoveZeroPageSafe
-#define MiIsMemoryTypeFree              _orig_MiIsMemoryTypeFree
-/* Tier 4 FORCEINLINE shims (miarm.h) */
-#define MiSynchronizeSystemPde          _orig_MiSynchronizeSystemPde
-#define MiConvertSharedWorkingSetLockToExclusive _orig_MiConvertSharedWorkingSetLockToExclusive
-#define MiIsPdeForAddressValid          _orig_MiIsPdeForAddressValid
+/* All `_orig_*` renames have been retired — every former trampoline that
+ * delegated to `_orig_*` is now bare-name `extern "C"` exported from
+ * shim_exports.rs (delegating to ntkrnl_sys::inline::mm). */
 /* KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock are FORCEINLINE in
  * ke_x.h (PCH-covered) — can't rename, manually inlined below.
  * UpdateTotalCommittedPages, KeInvalidateTlbEntry, MmDereferenceSegment are
  * FORCEINLINE in PCH-covered headers — can't rename, manually inlined below */
 /* KfRaiseIrql/KfLowerIrql: see Phase 4 for i386/amd64 wrappers */
 
-/* #define macros (from ex.h, mm.h) — rename to prevent expansion */
-/* InterlockedIncrementUL/DecrementUL already shimmed in ps_rust_shims.c */
-#define MmLockSectionSegment        _orig_MmLockSectionSegment
-#define MmUnlockSectionSegment      _orig_MmUnlockSectionSegment
-#define MmGetPageEntrySectionSegment _orig_MmGetPageEntrySectionSegment
+/* MmLockSectionSegment / MmUnlockSectionSegment / MmGetPageEntrySectionSegment
+ * renames retired — those outlines are canonical in kernel_c_helpers.c
+ * (they need __FILE__/__LINE__ macro expansion). */
 
 /* === Phase 2: Include headers === */
 #include <ntoskrnl.h>
@@ -69,62 +31,7 @@
 /* Include arch-specific mm.h for FORCEINLINE functions like MiIsPdeForAddressValid */
 #include <internal/arch/mm.h>
 
-/* === Phase 3: Undef renamed functions === */
-#undef MI_MAKE_HARDWARE_PTE_KERNEL
-#undef MI_MAKE_HARDWARE_PTE_USER
-#undef MI_MAKE_HARDWARE_PTE
-#undef MI_UPDATE_VALID_PTE
-#undef MiLockProcessWorkingSet
-#undef MiUnlockProcessWorkingSet
-#undef MiLockProcessWorkingSetShared
-#undef MiUnlockProcessWorkingSetShared
-#undef MiLockProcessWorkingSetUnsafe
-#undef MiUnlockProcessWorkingSetUnsafe
-#undef MiLockWorkingSet
-#undef MiUnlockWorkingSet
-#undef MiLockWorkingSetShared
-#undef MiUnlockWorkingSetShared
-#undef MiAcquireExpansionLock
-#undef MiReleaseExpansionLock
-#undef MiDetermineUserGlobalPteMask
-#undef MM_ANY_WS_LOCK_HELD
-/* Tier 3b FORCEINLINE undefs */
-#undef MiLockProcessWorkingSetForFault
-#undef MiUnlockProcessWorkingSetForFault
-/* MmGetCurrentAddressSpace: PCH-covered, no rename — undef before Phase 4 implementation */
-/* MiDereferencePfnAndDropLockCount: provided by Rust — no undef needed */
-#undef MiIsRosSectionObject
-/* Tier 3a FORCEINLINE undefs */
-#undef MiIncrementPageTableReferences
-#undef MiDropLockCount
-#undef MiReferenceProbedPageAndBumpLockCount
-#undef MiReferenceUnusedPageAndBumpLockCount
-#undef MiReferenceUsedPageAndBumpLockCount
-#undef MiIsUserPde
-#undef MiIsUserPte
-#undef MiRemoveZeroPageSafe
-#undef MiIsMemoryTypeFree
-/* Tier 4 FORCEINLINE undefs */
-#undef MiSynchronizeSystemPde
-#undef MiConvertSharedWorkingSetLockToExclusive
-#undef MiIsPdeForAddressValid
-/* KiAcquireProcessLockRaiseToSynch, KiReleaseProcessLock: PCH-covered, no rename */
-/* (UpdateTotalCommittedPages, KeInvalidateTlbEntry, MmDereferenceSegment: no rename) */
-/* KfRaiseIrql/KfLowerIrql: see Phase 4 for i386/amd64 wrappers */
-/* MmInitializeMdl is a #define macro — undef so we can define an outline function */
-#undef MmInitializeMdl
-/* Additional macros that need outline wrappers */
-#undef RMAP_IS_SEGMENT
-#undef PAGE_ROUND_DOWN
-#undef InterlockedExchangeAddUL
-#undef MmSetDirtyPage
-#undef PFN_FROM_SSE
-#undef MM_IS_WAIT_PTE
-#undef IS_SWAP_FROM_SSE
-#undef SWAPENTRY_FROM_SSE
-#undef MmLockSectionSegment
-#undef MmUnlockSectionSegment
-#undef MmGetPageEntrySectionSegment
+/* All Phase 3 undefs retired alongside the Phase 1 renames. */
 
 /* === Globals that were previously in section.c === */
 /* Guarded: section.c provides these when compiled as C */
@@ -162,44 +69,12 @@ MmVerifyImageIsOkForMpUse(
 /* === Phase 4: Export implementations === */
 
 /*
- * Hardware PTE creation — bodies in Rust at sdk/lib/rust/mm-macros/src/lib.rs.
+ * Hardware PTE creation trampolines REMOVED — duplicated by
+ * ntoskrnl-rust::shim_exports `extern "C"` exports (cdecl on all 3
+ * arches), which delegate into mm-macros / ntkrnl_sys::inline::mm.
+ * No C-side stdcall caller imports `_MI_MAKE_HARDWARE_PTE*@N` (verified
+ * via nm scan of all .obj files), so the C trampolines were dead.
  */
-extern void _rs_MI_MAKE_HARDWARE_PTE_KERNEL(PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
-extern void _rs_MI_MAKE_HARDWARE_PTE_USER  (PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
-extern void _rs_MI_MAKE_HARDWARE_PTE       (PMMPTE, PMMPTE, ULONG_PTR, ULONG_PTR);
-
-void
-NTAPI
-MI_MAKE_HARDWARE_PTE_KERNEL(
-    IN PMMPTE NewPte,
-    IN PMMPTE MappingPte,
-    IN ULONG_PTR ProtectionMask,
-    IN PFN_NUMBER PageFrameNumber)
-{
-    _rs_MI_MAKE_HARDWARE_PTE_KERNEL(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
-}
-
-void
-NTAPI
-MI_MAKE_HARDWARE_PTE_USER(
-    IN PMMPTE NewPte,
-    IN PMMPTE MappingPte,
-    IN ULONG_PTR ProtectionMask,
-    IN PFN_NUMBER PageFrameNumber)
-{
-    _rs_MI_MAKE_HARDWARE_PTE_USER(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
-}
-
-void
-NTAPI
-MI_MAKE_HARDWARE_PTE(
-    IN PMMPTE NewPte,
-    IN PMMPTE MappingPte,
-    IN ULONG_PTR ProtectionMask,
-    IN PFN_NUMBER PageFrameNumber)
-{
-    _rs_MI_MAKE_HARDWARE_PTE(NewPte, MappingPte, ProtectionMask, (ULONG_PTR)PageFrameNumber);
-}
 
 #ifdef _M_ARM64
 VOID
@@ -225,55 +100,12 @@ Arm64DumpPte(
 #endif
 
 /*
- * PTE update (volatile write with assertion checks) — body in Rust at
- * sdk/lib/rust/mm-macros/src/lib.rs::_rs_MI_UPDATE_VALID_PTE.
+ * MI_UPDATE_VALID_PTE trampoline REMOVED — duplicated by shim_exports.
  */
-extern void _rs_MI_UPDATE_VALID_PTE(PMMPTE PointerPte, MMPTE TempPte);
 
-void
-NTAPI
-MI_UPDATE_VALID_PTE(
-    IN PMMPTE PointerPte,
-    IN MMPTE TempPte)
-{
-    _rs_MI_UPDATE_VALID_PTE(PointerPte, TempPte);
-}
-
-/*
- * Working set locks
- * Bindgen says extern "C" (FORCEINLINE with no calling convention) — no NTAPI.
- */
-/* Lightweight caller tracking — just a pointer store, no serial I/O overhead.
- * When MiLockProcessWorkingSetShared fires with OwnsExcl==1, we print these. */
-volatile PVOID MmDbgLastExclLocker = NULL;   /* last MiLockProcessWorkingSetUnsafe caller */
-volatile PVOID MmDbgLastExclUnlocker = NULL; /* last MiUnlockProcessWorkingSetUnsafe caller */
-/* Called from MmAccessFault entry when OwnsExcl is set — print faulting address + EIP */
-void MmDebugWsFaultCheck(PVOID Address, PVOID TrapInfo)
-{
-    PETHREAD Thread = PsGetCurrentThread();
-    if (Thread->OwnsProcessWorkingSetExclusive) {
-        ULONG_PTR Eip = 0;
-#ifdef _M_IX86
-        if (TrapInfo) {
-            /* KTRAP_FRAME.Eip is at offset 0x68 on i386 */
-            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x68);
-        }
-#elif defined(_M_AMD64)
-        if (TrapInfo) {
-            /* KTRAP_FRAME.Rip is at offset 0x168 on amd64 */
-            Eip = *(ULONG_PTR *)((ULONG_PTR)TrapInfo + 0x168);
-        }
-#endif
-        DPRINT1("[WS-FAULT] MmAccessFault with OwnsExcl=1! FaultAddr=%p, EIP=%p\n"
-                "  LastExclLocker=%p, LastExclUnlocker=%p\n",
-                Address, (PVOID)Eip,
-                MmDbgLastExclLocker, MmDbgLastExclUnlocker);
-    }
-}
-volatile PVOID MmDbgLastSafeLocker = NULL;   /* last MiLockProcessWorkingSet caller */
-volatile PVOID MmDbgLastSafeUnlocker = NULL; /* last MiUnlockProcessWorkingSet caller */
-
-/* ARM64 direct UART for tracing (DbgPrint doesn't reach serial on ARM64) */
+/* ARM64 direct UART for tracing (DbgPrint doesn't reach serial on ARM64).
+ * Used by `MmDbgCheckIrql` (called from procsup.rs / ps/process.rs) — kept
+ * even after the WS-lock trampolines were dropped. */
 #ifdef _M_ARM64
 extern volatile PVOID Arm64UartKernelBase;
 static void MmUartPuts(const char *s) {
@@ -292,110 +124,24 @@ static void MmUartHex(const char *prefix, ULONG_PTR val) {
 #endif
 
 /*
- * Working-set lock family (Phase 1 batch M4 — bodies delegate to Rust
- * impls in the `mm-ws-lock-inlines` rlib).
- * The trampoline retains the ARM64 IRQL UART tracing and the
- * MmDbgLast{Safe,Excl}{Locker,Unlocker} debug instrumentation —
- * `__builtin_return_address(0)` is meaningful only here in the C frame.
- * The lock-acquisition itself is `_rs_Mi*WorkingSet*`.
+ * Working-set lock family + dead debug instrumentation REMOVED —
+ * 10 trampolines (MiLock/UnlockProcessWorkingSet{,Shared,Unsafe},
+ * MiLock/UnlockWorkingSet{,Shared}) are now bare-name `extern "C"`
+ * exports in `ntoskrnl-rust::shim_exports`, delegating into
+ * `ntkrnl_sys::inline::mm::*`.
+ *
+ * The C trampolines carried two pieces of debug instrumentation:
+ *   - `MmDbgLast{Safe,Excl}{Locker,Unlocker}` global pointer stores
+ *     captured `__builtin_return_address(0)` of the last lock/unlock.
+ *     Only consumer was `MmDebugWsFaultCheck`, which had no callers —
+ *     the entire chain was dead code.
+ *   - ARM64 IRQL UART traces flagged IRQL > APC_LEVEL at lock/unlock.
+ *     These caught a fixed-since IRQL bug; if needed again they belong
+ *     in `ntkrnl_sys::inline::mm` (with the per-arch UART helpers).
+ *
+ * `MmDebugTrace` (declared but never called from any caller) deleted
+ * here too, plus its `extern fn` decl in `mm/mmfault.rs`.
  */
-extern void _rs_MiLockProcessWorkingSet(PEPROCESS Process, PETHREAD Thread);
-void MiLockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-    MmDbgLastSafeLocker = __builtin_return_address(0);
-#ifdef _M_ARM64
-    {
-        KIRQL irql = KeGetCurrentIrql();
-        if (irql > APC_LEVEL) {
-            MmUartPuts("[MM] BUG: MiLockProcessWorkingSet IRQL=");
-            MmUartHex("", irql);
-            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
-        }
-    }
-#endif
-    _rs_MiLockProcessWorkingSet(Process, Thread);
-}
-
-extern void _rs_MiUnlockProcessWorkingSet(PEPROCESS Process, PETHREAD Thread);
-void MiUnlockProcessWorkingSet(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-    MmDbgLastSafeUnlocker = __builtin_return_address(0);
-    _rs_MiUnlockProcessWorkingSet(Process, Thread);
-#ifdef _M_ARM64
-    {
-        KIRQL irql = KeGetCurrentIrql();
-        if (irql > APC_LEVEL) {
-            MmUartPuts("[MM] IRQL after MiUnlockProcessWorkingSet=");
-            MmUartHex("", irql);
-            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
-        }
-    }
-#endif
-}
-
-extern void _rs_MiLockProcessWorkingSetUnsafe(PEPROCESS Process, PETHREAD Thread);
-void MiLockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-    MmDbgLastExclLocker = __builtin_return_address(0);
-    _rs_MiLockProcessWorkingSetUnsafe(Process, Thread);
-}
-
-extern void _rs_MiUnlockProcessWorkingSetUnsafe(PEPROCESS Process, PETHREAD Thread);
-void MiUnlockProcessWorkingSetUnsafe(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-    MmDbgLastExclUnlocker = __builtin_return_address(0);
-    _rs_MiUnlockProcessWorkingSetUnsafe(Process, Thread);
-}
-
-extern void _rs_MiLockWorkingSet(PETHREAD Thread, PMMSUPPORT WorkingSet);
-void MiLockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _rs_MiLockWorkingSet(Thread, WorkingSet); }
-
-extern void _rs_MiUnlockWorkingSet(PETHREAD Thread, PMMSUPPORT WorkingSet);
-void MiUnlockWorkingSet(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _rs_MiUnlockWorkingSet(Thread, WorkingSet); }
-
-extern void _rs_MiLockProcessWorkingSetShared(PEPROCESS Process, PETHREAD Thread);
-void MiLockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-#ifdef _M_ARM64
-    {
-        KIRQL irql = KeGetCurrentIrql();
-        if (irql > APC_LEVEL) {
-            MmUartPuts("[MM] BUG: MiLockProcessWorkingSetShared IRQL=");
-            MmUartHex("", irql);
-            MmUartHex("  caller=", (ULONG_PTR)__builtin_return_address(0));
-            MmUartHex("  caller2=", (ULONG_PTR)__builtin_return_address(1));
-            MmUartHex("  caller3=", (ULONG_PTR)__builtin_return_address(2));
-        }
-    }
-#endif
-    if (Thread->OwnsProcessWorkingSetExclusive) {
-        DPRINT1("[WS-BUG] MiLockProcessWorkingSetShared: OwnsExcl=%u, Flags=0x%x, caller=%p\n"
-                "  LastExclLocker=%p, LastExclUnlocker=%p\n"
-                "  LastSafeLocker=%p, LastSafeUnlocker=%p\n",
-                Thread->OwnsProcessWorkingSetExclusive,
-                Thread->SameThreadApcFlags,
-                __builtin_return_address(0),
-                MmDbgLastExclLocker, MmDbgLastExclUnlocker,
-                MmDbgLastSafeLocker, MmDbgLastSafeUnlocker);
-    }
-    _rs_MiLockProcessWorkingSetShared(Process, Thread);
-}
-
-extern void _rs_MiUnlockProcessWorkingSetShared(PEPROCESS Process, PETHREAD Thread);
-void MiUnlockProcessWorkingSetShared(IN PEPROCESS Process, IN PETHREAD Thread)
-{
-    _rs_MiUnlockProcessWorkingSetShared(Process, Thread);
-}
-
-extern void _rs_MiLockWorkingSetShared(PETHREAD Thread, PMMSUPPORT WorkingSet);
-void MiLockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _rs_MiLockWorkingSetShared(Thread, WorkingSet); }
-
-extern void _rs_MiUnlockWorkingSetShared(PETHREAD Thread, PMMSUPPORT WorkingSet);
-void MiUnlockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
-{ _rs_MiUnlockWorkingSetShared(Thread, WorkingSet); }
 
 /* MiAcquireExpansionLock / MiReleaseExpansionLock trampolines REMOVED
  * — duplicated by ntoskrnl-rust::shim_exports `extern "C"` exports
@@ -439,12 +185,9 @@ void MiUnlockWorkingSetShared(IN PETHREAD Thread, IN PMMSUPPORT WorkingSet)
 /* InterlockedExchange / InterlockedCompareExchange (i386 cdecl wrappers)
  * are now canonical in kernel_c_helpers.c. */
 
-/* InterlockedIncrementUL — body delegates to Rust impl in
- * `mm-util-inlines` rlib (Phase 1 batch M3). */
-#undef InterlockedIncrementUL
-extern ULONG _rs_InterlockedIncrementUL(PULONG Addend);
-ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
-{ return _rs_InterlockedIncrementUL(Addend); }
+/* InterlockedIncrementUL trampoline REMOVED — duplicated by shim_exports
+ * (delegates into mm-util-inlines / ntkrnl_sys::inline::mm).
+ * No C-side stdcall caller imports `_InterlockedIncrementUL@4`. */
 
 /* UpdateTotalCommittedPages / KeInvalidateTlbEntry trampolines REMOVED
  * — duplicated by ntoskrnl-rust::shim_exports `extern "C"` exports
@@ -456,9 +199,13 @@ ULONG NTAPI InterlockedIncrementUL(IN PULONG Addend)
 /* MmDereferenceSegment trampoline REMOVED — duplicated by shim_exports. */
 
 /*
- * ExAllocatePoolZero — body delegates to Rust impl in `mm-util-inlines`
- * (Phase 1 batch M3). The Rust side calls ExAllocatePoolWithTag +
- * RtlZeroMemory just like the previous C implementation.
+ * ExAllocatePoolZero — bindgen declares this as `extern "stdcall"` on
+ * i386, so callers want `_ExAllocatePoolZero@12`. shim_exports.rs only
+ * provides the cdecl `_ExAllocatePoolZero`. The trampoline below
+ * supplies the stdcall variant; body delegates to mm-util-inlines.
+ * Safe to drop on amd64/arm64 (only one symbol per name there) but
+ * keeping it uniform across arches keeps the .c smaller than wrapping
+ * the body in an arch ifdef.
  */
 extern PVOID _rs_ExAllocatePoolZero(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag);
 PVOID
@@ -475,95 +222,11 @@ ExAllocatePoolZero(
  * / MmUnlockAddressSpace trampolines REMOVED — duplicated by
  * shim_exports `extern "C"` exports (cdecl on all 3 arches). */
 
-/*
- * InterlockedExchangeAddUL — body delegates to Rust impl in
- * `mm-util-inlines` (Phase 1 batch M3).
- */
-extern ULONG _rs_InterlockedExchangeAddUL(PULONG Addend, ULONG Value);
-ULONG
-NTAPI
-InterlockedExchangeAddUL(IN PULONG Addend, IN ULONG Value)
-{
-    return _rs_InterlockedExchangeAddUL(Addend, Value);
-}
-
-/*
- * RMAP_IS_SEGMENT — macro in mm.h. Body in Rust at
- * sdk/lib/rust/mm-macros/src/lib.rs::_rs_RMAP_IS_SEGMENT.
- */
-extern BOOLEAN _rs_RMAP_IS_SEGMENT(PVOID Address);
-BOOLEAN
-NTAPI
-RMAP_IS_SEGMENT(IN PVOID Address)
-{
-    return _rs_RMAP_IS_SEGMENT(Address);
-}
-
-/*
- * PAGE_ROUND_DOWN — macro in mmtypes.h. Body in Rust at
- * sdk/lib/rust/mm-macros/src/lib.rs::_rs_PAGE_ROUND_DOWN.
- */
-extern ULONG_PTR _rs_PAGE_ROUND_DOWN(PVOID Address);
-ULONG_PTR
-NTAPI
-PAGE_ROUND_DOWN(IN PVOID Address)
-{
-    return _rs_PAGE_ROUND_DOWN(Address);
-}
-
-/*
- * PFN_FROM_SSE — macro in mm.h. Body in Rust at
- * sdk/lib/rust/mm-macros/src/lib.rs::_rs_PFN_FROM_SSE.
- */
-extern ULONG_PTR _rs_PFN_FROM_SSE(ULONG_PTR Entry);
-PFN_NUMBER
-NTAPI
-PFN_FROM_SSE(IN ULONG_PTR Entry)
-{
-    return (PFN_NUMBER)_rs_PFN_FROM_SSE(Entry);
-}
-
-/*
- * MM_IS_WAIT_PTE — macro in mm.h. Body in Rust at
- * sdk/lib/rust/mm-macros/src/lib.rs::_rs_MM_IS_WAIT_PTE.
- */
-extern BOOLEAN _rs_MM_IS_WAIT_PTE(ULONG_PTR Entry);
-BOOLEAN
-NTAPI
-MM_IS_WAIT_PTE(IN ULONG_PTR Entry)
-{
-    return _rs_MM_IS_WAIT_PTE(Entry);
-}
-
-/*
- * MmSetDirtyPage — body delegates to Rust impl in `mm-util-inlines`
- * (Phase 1 batch M3).
- */
-extern void _rs_MmSetDirtyPage(PEPROCESS Process, PVOID Address);
-VOID
-NTAPI
-MmSetDirtyPage(IN PEPROCESS Process, IN PVOID Address)
-{
-    _rs_MmSetDirtyPage(Process, Address);
-}
-
-/* KeFlushProcessTb trampoline REMOVED — duplicated by shim_exports. */
-
-/*
- * MmInitializeMdl — macro in xdk/mmfuncs.h (covered by PCH).
- * Body in Rust at sdk/lib/rust/mm-macros/src/lib.rs::_rs_MmInitializeMdl.
- */
-extern void _rs_MmInitializeMdl(PMDL Mdl, PVOID BaseVa, ULONG Length);
-
-void
-NTAPI
-MmInitializeMdl(
-    IN PMDL Mdl,
-    IN PVOID BaseVa,
-    IN ULONG Length)
-{
-    _rs_MmInitializeMdl(Mdl, BaseVa, Length);
-}
+/* InterlockedExchangeAddUL / RMAP_IS_SEGMENT / PAGE_ROUND_DOWN /
+ * PFN_FROM_SSE / MM_IS_WAIT_PTE / MmSetDirtyPage / MmInitializeMdl
+ * trampolines REMOVED — all duplicated by shim_exports `extern "C"`
+ * exports (cdecl), delegating into mm-macros / mm-util-inlines /
+ * ntkrnl_sys::inline::mm. No C-side stdcall callers in any .obj. */
 
 /* ===================================================================
  * AVL Tree support for vadnode.rs — translated to Rust 2026-05-06.
@@ -580,42 +243,12 @@ MmInitializeMdl(
  * `#if 0` block below for side-by-side debug.
  * =================================================================== */
 
-/* The 7 pure-delegation AVL fns (RtlRightChildAvl / RtlLeftChildAvl /
- * RtlParentAvl / RtlIsRightChildAvl / RtlIsLeftChildAvl /
- * RtlpFindAvlTableNodeOrParent / RtlpDeleteAvlTreeNode) are exported
- * directly by the mm-avl rlib (sdk/lib/rust/mm-avl/) under the bare
- * Rtl* / Rtlp* names — no C trampoline.
- *
- * RtlpInsertAvlTreeNode keeps a C trampoline for the duplicate-insertion
- * DPRINT1 guard; the Rust impl has only a debug_assert which is a no-op
- * in release builds. */
-extern void NTAPI _rs_RtlpInsertAvlTreeNode(
-    IN PMM_AVL_TABLE Table, IN PMMADDRESS_NODE NewNode,
-    IN PMMADDRESS_NODE Parent, IN TABLE_SEARCH_RESULT SearchResult);
-
-void
-NTAPI
-RtlpInsertAvlTreeNode(
-    IN PMM_AVL_TABLE Table,
-    IN PMMADDRESS_NODE NewNode,
-    IN PMMADDRESS_NODE Parent,
-    IN TABLE_SEARCH_RESULT SearchResult)
-{
-    /* Guard: duplicate insertion would corrupt the AVL tree and cause deadlocks.
-     * This stays in C — the DPRINT1 with detailed VPN context is more useful
-     * here than at the Rust layer (vadnode.rs callers pass typed pointers, but
-     * the diagnostic value is in seeing the field values). */
-    if (SearchResult == TableFoundNode)
-    {
-        DPRINT1("RtlpInsertAvlTreeNode: BLOCKED duplicate insertion! NewNode=%p Parent=%p "
-                "VPN=[%lx-%lx] ParentVPN=[%lx-%lx]\n",
-                NewNode, Parent,
-                (ULONG)NewNode->StartingVpn, (ULONG)NewNode->EndingVpn,
-                (ULONG)Parent->StartingVpn, (ULONG)Parent->EndingVpn);
-        return;
-    }
-    _rs_RtlpInsertAvlTreeNode(Table, NewNode, Parent, SearchResult);
-}
+/* All 8 mm-avl fns (RtlRightChildAvl / RtlLeftChildAvl / RtlParentAvl /
+ * RtlIsRightChildAvl / RtlIsLeftChildAvl / RtlpFindAvlTableNodeOrParent /
+ * RtlpInsertAvlTreeNode / RtlpDeleteAvlTreeNode) are bare-name exports
+ * from the `mm-avl` rlib — no C trampoline. The duplicate-insertion
+ * guard that lived here is now an early-return inside the rlib's
+ * `RtlpInsertAvlTreeNode` body. */
 
 #if 0  /* Original C body — preserved for side-by-side debug. */
 /* --- Simple FORCEINLINE helpers (miavl.h MiXxx equivalents) --- */
@@ -695,47 +328,22 @@ RtlIsLeftChildAvl_C(IN PMMADDRESS_NODE Node)
  *  MiIsUserPde, MiIsUserPte, MiRemoveZeroPageSafe, MiIsMemoryTypeFree,
  *  MiSynchronizeSystemPde. */
 
-BOOLEAN MiConvertSharedWorkingSetLockToExclusive(PETHREAD Thread, PMMSUPPORT Vm)
-{ return _orig_MiConvertSharedWorkingSetLockToExclusive(Thread, Vm); }
+/* MiConvertSharedWorkingSetLockToExclusive trampoline REMOVED — bare-name
+ * `extern "C"` export now in shim_exports.rs (delegates into
+ * `ntkrnl_sys::inline::mm::MiConvertSharedWorkingSetLockToExclusive`). */
 
-/* KiAcquireProcessLockRaiseToSynch trampoline REMOVED — duplicated by
- * shim_exports.rs.
- *
- * KiReleaseProcessLock keeps its C trampoline — shim_exports.rs only
- * has the FromSynchLevel variant; the bindgen-generated cdecl decl
- * for plain KiReleaseProcessLock has no Rust definition yet. */
-#ifdef _X86_
-VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
-#endif
-
-void KiReleaseProcessLock(IN PKLOCK_QUEUE_HANDLE Handle)
-{
-    KeReleaseInStackQueuedSpinLock(Handle);
-}
+/* KiAcquireProcessLockRaiseToSynch / KiReleaseProcessLock trampolines
+ * REMOVED — both are now bare-name `extern "C"` exports in
+ * shim_exports.rs. The plain `KiReleaseProcessLock` calls
+ * `KeReleaseInStackQueuedSpinLock` directly from Rust (the bindgen decl
+ * is `extern "fastcall"` on i386, picked up automatically). */
 
 /* ===================================================================
  * Tier 3b FORCEINLINE shims (ARM3/section.c, ARM3/virtual.c)
  * =================================================================== */
 
-extern void _rs_MiLockProcessWorkingSetForFault(PEPROCESS Process, PETHREAD Thread,
-                                                 BOOLEAN Safe, BOOLEAN Shared);
-void MiLockProcessWorkingSetForFault(IN PEPROCESS Process,
-                                      IN PETHREAD Thread,
-                                      IN BOOLEAN Safe,
-                                      IN BOOLEAN Shared)
-{
-    _rs_MiLockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
-}
-
-extern void _rs_MiUnlockProcessWorkingSetForFault(PEPROCESS Process, PETHREAD Thread,
-                                                   PBOOLEAN Safe, PBOOLEAN Shared);
-void MiUnlockProcessWorkingSetForFault(IN PEPROCESS Process,
-                                        IN PETHREAD Thread,
-                                        OUT PBOOLEAN Safe,
-                                        OUT PBOOLEAN Shared)
-{
-    _rs_MiUnlockProcessWorkingSetForFault(Process, Thread, Safe, Shared);
-}
+/* MiLockProcessWorkingSetForFault / MiUnlockProcessWorkingSetForFault
+ * trampolines REMOVED — bare-name exports now in shim_exports.rs. */
 
 /* MmGetCurrentAddressSpace / ProbeForWriteSize_t / ProbeForWriteIoStatusBlock
  * trampolines REMOVED — duplicated by shim_exports.
@@ -1047,31 +655,9 @@ MmFixupImageSectionSegments(
 }
 #endif /* 0 — MmFixupImageSectionSegments + helpers now in mm/section.rs */
 
-/* Debug trace helper callable from Rust (stdcall on i386) */
-VOID NTAPI MmDebugTrace(ULONG Code, ULONG_PTR Param1, ULONG_PTR Param2)
-{
-    DPRINT1("MmDebugTrace: code=%lu p1=0x%lx p2=0x%lx IRQL=%u\n",
-            Code, Param1, Param2, (ULONG)KeGetCurrentIrql());
-
-    /* When code==100, Param1 is FileObject — dump resource state */
-    if (Code == 100 && Param1 != 0)
-    {
-        PFILE_OBJECT fo = (PFILE_OBJECT)Param1;
-        PFSRTL_COMMON_FCB_HEADER fcb = (PFSRTL_COMMON_FCB_HEADER)(fo->FsContext);
-        if (fcb && fcb->Resource) {
-            PERESOURCE res = fcb->Resource;
-            DPRINT1("  FileObj=%p FsContext=%p Resource=%p ActiveEntries=%d "
-                    "NumberOfExclusiveWaiters=%u NumberOfSharedWaiters=%u "
-                    "OwnerEntry.OwnerThread=%p Flag=0x%x\n",
-                    fo, fcb, res, res->ActiveEntries,
-                    res->NumberOfExclusiveWaiters, res->NumberOfSharedWaiters,
-                    (PVOID)res->OwnerEntry.OwnerThread, res->Flag);
-        } else {
-            DPRINT1("  FileObj=%p FsContext=%p Resource=%p (NULL resource)\n",
-                    fo, fcb, fcb ? fcb->Resource : NULL);
-        }
-    }
-}
+/* MmDebugTrace REMOVED — declared in mm/mmfault.rs but never actually
+ * called from any caller. The extern decl in mmfault.rs was removed in
+ * the same commit. */
 
 /* Removed: Temporary C NtCreateSection — Rust version re-enabled */
 #if 0
@@ -1212,13 +798,5 @@ VOID NTAPI MmDbgCheckIrql(PCSTR label)
 }
 #endif
 
-/* MiAcquirePfnLock / MiReleasePfnLock — FORCEINLINE wrappers in mm.h
- * (KeAcquireQueuedSpinLock/KeReleaseQueuedSpinLock with LockQueuePfnLock).
- * Phase 1 batch M7 — bodies delegate to Rust impls in `mm-lock-inlines`. */
-extern KIRQL _rs_MiAcquirePfnLock(VOID);
-KIRQL MiAcquirePfnLock(VOID)
-{ return _rs_MiAcquirePfnLock(); }
-
-extern VOID _rs_MiReleasePfnLock(KIRQL OldIrql);
-VOID MiReleasePfnLock(KIRQL OldIrql)
-{ _rs_MiReleasePfnLock(OldIrql); }
+/* MiAcquirePfnLock / MiReleasePfnLock trampolines REMOVED — bare-name
+ * exports now in shim_exports.rs (delegating into ntkrnl_sys::mm). */

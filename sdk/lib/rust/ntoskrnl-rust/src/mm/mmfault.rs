@@ -38,12 +38,11 @@ extern "system" {
 extern "system" {
     fn MmRebalanceMemoryConsumersAndWait();
 }
-extern "system" {
-    fn MmDebugTrace(Code: ULONG, Param1: ULONG_PTR, Param2: ULONG_PTR);
-}
-extern "C" {
-    fn MmDebugWsFaultCheck(Address: PVOID, TrapInfo: PVOID);
-}
+// MmDebugTrace + MmDebugWsFaultCheck removed — both were diagnostic-only
+// helpers (MmDbgLast{Safe,Excl}{Locker,Unlocker} caller tracking + the
+// fault-time DPRINT1) that lived in mm_rust_shims.c. The locker tracking
+// was eliminated when the WS-lock trampolines were promoted to bare-name
+// Rust exports, which made the tracking always-NULL anyway.
 
 unsafe fn MmpAccessFault(
     Mode: KPROCESSOR_MODE,
@@ -199,9 +198,6 @@ pub unsafe extern "system" fn MmAccessFault(
     let mut Vad: PMMVAD = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut IsArm3Fault = 0u8;
-
-    // Lightweight WS lock diagnostic: log faulting address + EIP when WS excl lock is held
-    MmDebugWsFaultCheck(Address, TrapInformation);
 
     if (Address as ULONG_PTR) >= MmSystemRangeStart as ULONG_PTR {
         #[cfg(target_arch = "x86")]

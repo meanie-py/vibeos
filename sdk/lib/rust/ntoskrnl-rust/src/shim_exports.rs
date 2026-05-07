@@ -1196,10 +1196,151 @@ pub unsafe extern "C" fn MiIsPdeForAddressValid(address: PVOID) -> BOOLEAN {
     ntkrnl_sys::inline::mm::MiIsPdeForAddressValid(address)
 }
 
-// --- Working set locks ---
-// REMOVED: These duplicate the C shims in mm_rust_shims.c.
-// Having both caused potential symbol resolution ambiguity.
-// All WS lock calls now go exclusively through C shims (which have tracing).
+// --- Working set locks (cdecl) ---
+// Replaces the C trampolines in mm_rust_shims.c. The historical
+// `MmDbgLast{Safe,Excl}{Locker,Unlocker}` debug instrumentation
+// (volatile pointer stores tracking the last `__builtin_return_address`)
+// was dead — its only consumer was `MmDebugWsFaultCheck` which has no
+// callers. ARM64 IRQL UART traces in the C trampolines were
+// debugging-only for a fixed-since IRQL violation; if needed again
+// they can be re-added inside `ntkrnl_sys::inline::mm`.
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockProcessWorkingSet(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiLockProcessWorkingSet(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockProcessWorkingSet(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSet(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockProcessWorkingSetUnsafe(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetUnsafe(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockProcessWorkingSetUnsafe(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetUnsafe(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockProcessWorkingSetShared(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetShared(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockProcessWorkingSetShared(process: PEPROCESS, thread: PETHREAD) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetShared(process, thread)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockWorkingSet(thread: PETHREAD, ws: PMMSUPPORT) {
+    let thread = opaque_ptr(thread);
+    let ws = opaque_ptr(ws);
+    ntkrnl_sys::inline::mm::MiLockWorkingSet(thread, ws)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockWorkingSet(thread: PETHREAD, ws: PMMSUPPORT) {
+    let thread = opaque_ptr(thread);
+    let ws = opaque_ptr(ws);
+    ntkrnl_sys::inline::mm::MiUnlockWorkingSet(thread, ws)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockWorkingSetShared(thread: PETHREAD, ws: PMMSUPPORT) {
+    let thread = opaque_ptr(thread);
+    let ws = opaque_ptr(ws);
+    ntkrnl_sys::inline::mm::MiLockWorkingSetShared(thread, ws)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockWorkingSetShared(thread: PETHREAD, ws: PMMSUPPORT) {
+    let thread = opaque_ptr(thread);
+    let ws = opaque_ptr(ws);
+    ntkrnl_sys::inline::mm::MiUnlockWorkingSetShared(thread, ws)
+}
+
+// --- Working set lock (fault path) ---
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiLockProcessWorkingSetForFault(
+    process: PEPROCESS,
+    thread: PETHREAD,
+    safe: BOOLEAN,
+    shared: BOOLEAN,
+) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    ntkrnl_sys::inline::mm::MiLockProcessWorkingSetForFault(process, thread, safe, shared)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiUnlockProcessWorkingSetForFault(
+    process: PEPROCESS,
+    thread: PETHREAD,
+    safe: *mut BOOLEAN,
+    shared: *mut BOOLEAN,
+) {
+    let process = opaque_ptr(process);
+    let thread = opaque_ptr(thread);
+    let safe = opaque_ptr(safe);
+    let shared = opaque_ptr(shared);
+    ntkrnl_sys::inline::mm::MiUnlockProcessWorkingSetForFault(process, thread, safe, shared)
+}
+
+// --- Shared→exclusive conversion ---
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiConvertSharedWorkingSetLockToExclusive(
+    thread: PETHREAD,
+    vm: PMMSUPPORT,
+) -> BOOLEAN {
+    let thread = opaque_ptr(thread);
+    let vm = opaque_ptr(vm);
+    ntkrnl_sys::inline::mm::MiConvertSharedWorkingSetLockToExclusive(thread, vm)
+}
+
+// --- PFN lock (cdecl) ---
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiAcquirePfnLock() -> ntkrnl_sys::base::KIRQL {
+    ntkrnl_sys::mm::MiAcquirePfnLock()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn MiReleasePfnLock(old_irql: ntkrnl_sys::base::KIRQL) {
+    ntkrnl_sys::mm::MiReleasePfnLock(old_irql)
+}
 
 // --- Expansion lock (cdecl) ---
 
@@ -1735,6 +1876,12 @@ pub unsafe extern "C" fn KiReleaseApcLockFromSynchLevel(handle: PKLOCK_QUEUE_HAN
 #[inline(never)]
 pub unsafe extern "C" fn KiReleaseProcessLockFromSynchLevel(handle: PKLOCK_QUEUE_HANDLE) {
     ntkrnl_sys::inline::ke::KiReleaseProcessLockFromSynchLevel(handle)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn KiReleaseProcessLock(handle: PKLOCK_QUEUE_HANDLE) {
+    ntkrnl_sys::ddk::KeReleaseInStackQueuedSpinLock(handle)
 }
 
 // --- Device queue lock ---

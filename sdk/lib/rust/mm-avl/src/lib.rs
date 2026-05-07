@@ -330,20 +330,28 @@ pub unsafe extern "system" fn RtlpFindAvlTableNodeOrParent(
 /// Inserts `new_node` into the tree at the position discovered by a prior
 /// `Find` call. `node_or_parent` is the parent returned by `Find`;
 /// `search_result` is the disposition (`TABLE_INSERT_AS_LEFT`,
-/// `TABLE_INSERT_AS_RIGHT`, or `TABLE_EMPTY_TREE`). Caller must guarantee
-/// `search_result != TABLE_FOUND_NODE` — duplicate insertion would corrupt
-/// the tree.
+/// `TABLE_INSERT_AS_RIGHT`, or `TABLE_EMPTY_TREE`).
+///
+/// If `search_result == TABLE_FOUND_NODE`, the call returns early with no
+/// tree mutation — duplicate insertion would corrupt the AVL tree and
+/// cause deadlocks. (The duplicate-insertion guard moved here from the
+/// historical C trampoline in `mm_rust_shims.c`; the original DPRINT1 was
+/// the diagnostic value, but `debug_assert!` here covers the same hot
+/// path in debug builds.)
 ///
 /// Walks back up the tree updating balance factors, rebalancing where
 /// needed, and increments `DepthOfTree` if the insert grew the tree.
 #[no_mangle]
-pub unsafe extern "system" fn _rs_RtlpInsertAvlTreeNode(
+pub unsafe extern "system" fn RtlpInsertAvlTreeNode(
     table: PMM_AVL_TABLE,
     new_node: PMMADDRESS_NODE,
     mut node_or_parent: PMMADDRESS_NODE,
     search_result: u32,
 ) {
-    debug_assert_ne!(search_result, TABLE_FOUND_NODE);
+    if search_result == TABLE_FOUND_NODE {
+        debug_assert!(false, "RtlpInsertAvlTreeNode: duplicate insertion blocked");
+        return;
+    }
 
     (*new_node).LeftChild = core::ptr::null_mut();
     (*new_node).RightChild = core::ptr::null_mut();
