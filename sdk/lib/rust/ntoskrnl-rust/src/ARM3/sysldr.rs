@@ -77,13 +77,16 @@ unsafe fn MiCacheImageSymbols(base_address: PVOID) -> PVOID {
     debug_directory
 }
 
-unsafe fn MiLoadImageSection(
+#[no_mangle]
+pub unsafe extern "system" fn MiLoadImageSection(
     section_ptr: *mut PSECTION,
     image_base: *mut PVOID,
     file_name: *mut _UNICODE_STRING,
     session_load: BOOLEAN,
     ldr_entry: *mut LDR_DATA_TABLE_ENTRY,
 ) -> NTSTATUS {
+    let _ = file_name;
+    let _ = ldr_entry; // ASSERT(LdrEntry == NULL) — non-session load
     let section = *section_ptr;
     let mut status: NTSTATUS;
     let pte_count: PFN_COUNT;
@@ -185,6 +188,8 @@ unsafe fn MiLoadImageSection(
 
     #[cfg(not(target_arch = "aarch64"))]
     {
+        const FLG_ENABLE_KDEBUG_SYMBOL_LOAD: ULONG = 0x00040000;
+
         let mut apc_state: _KAPC_STATE = core::mem::zeroed();
         let mut base: PVOID = core::ptr::null_mut();
         let mut view_size: usize = 0;
@@ -194,6 +199,12 @@ unsafe fn MiLoadImageSection(
             core::ptr::addr_of_mut!((*(PsInitialSystemProcess as *mut _EPROCESS)).Pcb),
             core::ptr::addr_of_mut!(apc_state),
         );
+
+        // The image-section probe path can re-enter DbgLoadImageSymbols and
+        // recursively trip MiLoadImageSection again. Suppress the global flag
+        // around the map and restore it after.
+        let load_symbols = (NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD) != 0;
+        if load_symbols { NtGlobalFlag &= !FLG_ENABLE_KDEBUG_SYMBOL_LOAD; }
 
         let process = PsGetCurrentProcess() as *mut _EPROCESS;
         status = MmMapViewOfSection(
@@ -209,6 +220,8 @@ unsafe fn MiLoadImageSection(
             PAGE_EXECUTE,
         );
 
+        if load_symbols { NtGlobalFlag |= FLG_ENABLE_KDEBUG_SYMBOL_LOAD; }
+
         if status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH {
             status = STATUS_INVALID_IMAGE_FORMAT;
         }
@@ -216,6 +229,41 @@ unsafe fn MiLoadImageSection(
         if status < 0 {
             KeUnstackDetachProcess(core::ptr::addr_of_mut!(apc_state));
             return status;
+        }
+
+        // amd64-only: clear stale PTEs in the section view range before
+        // reading. FreeLDR's identity-mapped page table pages can be reused
+        // for user-space PTs with stale Valid PTEs (e.g., PFN=0).
+        // MmUnmapViewOfSection also doesn't always clear PTEs from previous
+        // section views. The stale PTEs prevent page faults from firing, so
+        // the section data never gets demand-paged in. Zero them and fix up
+        // UsedPageTableEntries on the parent PDE.
+        #[cfg(target_arch = "x86_64")]
+        {
+            let start_pte = MiAddressToPte(base);
+            let end_pte = MiAddressToPte(((base as ULONG_PTR) + ((pte_count as ULONG_PTR) << PAGE_SHIFT) - 1) as PVOID);
+            let mut pte = start_pte;
+            let mut cleared: ULONG = 0;
+            while pte <= end_pte {
+                if (*pte).Long != 0 {
+                    (*pte).Long = 0;
+                    let va = MiPteToAddress(pte);
+                    core::arch::asm!("invlpg [{}]", in(reg) va, options(nostack, preserves_flags));
+                    cleared += 1;
+                }
+                pte = pte.add(1);
+            }
+            if cleared > 0 {
+                let pde = MiAddressToPde(base);
+                if (*pde).valid() {
+                    let pt_page_pfn = MiGetPfnEntry((*pde).page_frame_number());
+                    if !pt_page_pfn.is_null() {
+                        let old_count = mmpfn_used_page_table_entries(pt_page_pfn);
+                        let new_count = if old_count >= cleared { old_count - cleared } else { 0 };
+                        mmpfn_set_used_page_table_entries(pt_page_pfn, new_count);
+                    }
+                }
+            }
         }
 
         core::ptr::copy_nonoverlapping(base as *const u8, driver_base as *mut u8, (pte_count << PAGE_SHIFT) as usize);

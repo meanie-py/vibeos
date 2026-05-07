@@ -111,168 +111,11 @@ MiDereferenceImports_shim(PLOAD_IMPORTS ImportList)
     return STATUS_SUCCESS;
 }
 
-/* ========== MiLoadImageSection ========== */
-
-static NTSTATUS
-NTAPI
-MiLoadImageSection_shim(_Inout_ PSECTION *SectionPtr,
-                        _Out_ PVOID *ImageBase,
-                        _In_ PUNICODE_STRING FileName,
-                        _In_ BOOLEAN SessionLoad,
-                        _In_ PLDR_DATA_TABLE_ENTRY LdrEntry)
-{
-    PSECTION Section = *SectionPtr;
-    NTSTATUS Status;
-    PFN_COUNT PteCount;
-    PMMPTE PointerPte, LastPte;
-    PVOID DriverBase;
-    MMPTE TempPte;
-    KIRQL OldIrql;
-    PFN_NUMBER PageFrameIndex;
-    PEPROCESS Process;
-    PVOID Base = NULL;
-    SIZE_T ViewSize = 0;
-    KAPC_STATE ApcState;
-    LARGE_INTEGER SectionOffset = {{0, 0}};
-    BOOLEAN LoadSymbols = FALSE;
-    PAGED_CODE();
-
-    /* Detect session load */
-    if (SessionLoad)
-    {
-        return STATUS_NOT_IMPLEMENTED;
-    }
-
-    /* Not session load, shouldn't have an entry */
-    ASSERT(LdrEntry == NULL);
-
-    /* Reserve system PTEs needed */
-    PteCount = ROUND_TO_PAGES(((PMM_IMAGE_SECTION_OBJECT)Section->Segment)->ImageInformation.ImageFileSize) >> PAGE_SHIFT;
-    PointerPte = MiReserveSystemPtes(PteCount, SystemPteSpace);
-    if (!PointerPte)
-    {
-        DPRINT1("MiReserveSystemPtes failed\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    /* New driver base */
-    LastPte = PointerPte + PteCount;
-    DriverBase = MiPteToAddress(PointerPte);
-    *ImageBase = DriverBase;
-
-    /* Lock the PFN database */
-    OldIrql = MiAcquirePfnLock();
-
-    /* Loop the new driver PTEs */
-    TempPte = ValidKernelPte;
-    while (PointerPte < LastPte)
-    {
-        ASSERT(PointerPte->u.Hard.Valid == 0);
-        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
-        PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-        MiInitializePfn(PageFrameIndex, PointerPte, TRUE);
-        TempPte.u.Hard.PageFrameNumber = PageFrameIndex;
-        MI_WRITE_VALID_PTE(PointerPte, TempPte);
-        PointerPte++;
-    }
-
-    MiReleasePfnLock(OldIrql);
-
-    /* Attach to the system process */
-    KeStackAttachProcess(&PsInitialSystemProcess->Pcb, &ApcState);
-
-    /* Check if we need to load symbols */
-    if (NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD)
-    {
-        LoadSymbols = TRUE;
-        NtGlobalFlag &= ~FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
-    }
-
-    /* Map the driver */
-    Process = PsGetCurrentProcess();
-    Status = MmMapViewOfSection(Section,
-                                Process,
-                                &Base,
-                                0,
-                                0,
-                                &SectionOffset,
-                                &ViewSize,
-                                ViewUnmap,
-                                0,
-                                PAGE_EXECUTE);
-
-    /* Re-enable the flag */
-    if (LoadSymbols) NtGlobalFlag |= FLG_ENABLE_KDEBUG_SYMBOL_LOAD;
-
-    /* Check if we failed with distinguished status code */
-    if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
-    {
-        Status = STATUS_INVALID_IMAGE_FORMAT;
-    }
-
-    if (!NT_SUCCESS(Status))
-    {
-        DPRINT1("MmMapViewOfSection failed with status 0x%x\n", Status);
-        KeUnstackDetachProcess(&ApcState);
-        return Status;
-    }
-
-    /* Clear stale PTEs in the section view range before reading.
-     * On amd64, FreeLDR's identity-mapped page table pages can be reused
-     * for user-space page tables with stale Valid PTEs (e.g., PFN=0).
-     * Additionally, MmUnmapViewOfSection doesn't always clear PTEs from
-     * previous section views. These stale PTEs prevent page faults from
-     * firing, so the section data never gets demand-paged in. Zeroing them
-     * forces proper fault resolution from the section. */
-#ifdef _M_AMD64
-    {
-        PMMPTE StartPte = MiAddressToPte(Base);
-        PMMPTE EndPte = MiAddressToPte((PVOID)((ULONG_PTR)Base + (PteCount << PAGE_SHIFT) - 1));
-        PMMPTE Pte;
-        ULONG Cleared = 0;
-        for (Pte = StartPte; Pte <= EndPte; Pte++)
-        {
-            if (Pte->u.Long != 0)
-            {
-                Pte->u.Long = 0;
-                __invlpg(MiPteToAddress(Pte));
-                Cleared++;
-            }
-        }
-        if (Cleared > 0)
-        {
-            /* Fix up UsedPageTableEntries to match the cleared count.
-             * The fault handler incremented this counter when it populated
-             * PTEs during previous section loads, but MmUnmapViewOfSection
-             * didn't decrement it when unmapping. Correct it now. */
-            PMMPDE Pde = MiAddressToPde(Base);
-            if (Pde->u.Hard.Valid)
-            {
-                PMMPFN PtPagePfn = MiGetPfnEntry(Pde->u.Hard.PageFrameNumber);
-                USHORT OldCount = PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries;
-                if (OldCount >= Cleared)
-                    PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries = (USHORT)(OldCount - Cleared);
-                else
-                    PtPagePfn->OriginalPte.u.Soft.UsedPageTableEntries = 0;
-            }
-        }
-    }
-#endif
-
-    /* Copy image from section view to kernel address */
-    RtlCopyMemory(DriverBase, Base, PteCount << PAGE_SHIFT);
-
-    /* Now unmap the view */
-    Status = MmUnmapViewOfSection(Process, Base);
-    ASSERT(NT_SUCCESS(Status));
-
-    /* Detach and return status */
-    KeUnstackDetachProcess(&ApcState);
-
-    return Status;
-}
-
-/* NameToOrdinal + MiSnapThunk translated to Rust (sysldr.rs); externs at top. */
+/* MiLoadImageSection: translated to Rust (sysldr.rs); exported under the
+ * unsuffixed name. NameToOrdinal + MiSnapThunk also live in Rust. */
+NTSTATUS NTAPI MiLoadImageSection(PSECTION *SectionPtr, PVOID *ImageBase,
+                                  PUNICODE_STRING FileName, BOOLEAN SessionLoad,
+                                  PLDR_DATA_TABLE_ENTRY LdrEntry);
 
 /* ========== MiResolveImageReferences ========== */
 
@@ -887,7 +730,7 @@ LoaderScan:
     }
 
     /* Load the image */
-    Status = MiLoadImageSection_shim(&Section,
+    Status = MiLoadImageSection(&Section,
                                      &ModuleLoadBase,
                                      FileName,
                                      FALSE,
