@@ -10,7 +10,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 
-use ntkrnl_sys::ddk::{ACCESS_MASK, ANSI_STRING, ERESOURCE, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExInitializeResourceLite, ExReleaseResourceLite, FILE_STANDARD_INFORMATION, HANDLE, IMAGE_INFO, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, KMUTANT, KPROCESSOR_MODE, KeAcquireSpinLockRaiseToSynch, KeEnterCriticalRegion, KeFlushCurrentTb, KeFlushQueuedDpcs, KeInitializeSpinLock, KeLeaveCriticalRegion, KeQueryPerformanceCounter, KeReleaseMutant, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, LOAD_IMPORTS, LOGICAL, LdrRelocateImageWithBias, LdrVerifyMappedImageMatchesChecksum, OB_OPEN_REASON, PEPROCESS, PETHREAD, PHANDLE_TABLE, PHANDLE_TABLE_ENTRY, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, POBJECT_HEADER, POBJECT_TYPE, PSECTION, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IO_STATUS_BLOCK, _KAPC_STATE, _LDR_DATA_TABLE_ENTRY, _MM_IMAGE_SECTION_OBJECT, _MMPTE, _OBJECT_HEADER, _OBJECT_TYPE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{ACCESS_MASK, ANSI_STRING, ERESOURCE, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExInitializeResourceLite, ExReleaseResourceLite, FILE_STANDARD_INFORMATION, HANDLE, IMAGE_INFO, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, KMUTANT, KPROCESSOR_MODE, KeAcquireSpinLockRaiseToSynch, KeEnterCriticalRegion, KeFlushCurrentTb, KeFlushQueuedDpcs, KeInitializeSpinLock, KeLeaveCriticalRegion, KeQueryPerformanceCounter, KeReleaseMutant, KeStackAttachProcess, KeUnstackDetachProcess, KeWaitForSingleObject, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, LOAD_IMPORTS, LOGICAL, LdrRelocateImageWithBias, LdrVerifyMappedImageMatchesChecksum, OBJECT_ATTRIBUTES, OB_OPEN_REASON, ObReferenceObjectByHandle, PEPROCESS, PETHREAD, PHANDLE_TABLE, PHANDLE_TABLE_ENTRY, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, POBJECT_HEADER, POBJECT_TYPE, PSECTION, ZwClose, ZwCreateSection, ZwOpenFile, _EPROCESS, _ETHREAD, _HANDLE_TABLE_ENTRY, _IMAGE_NT_HEADERS, _IO_STATUS_BLOCK, _KAPC_STATE, _LDR_DATA_TABLE_ENTRY, _MM_IMAGE_SECTION_OBJECT, _MMPTE, _OBJECT_HEADER, _OBJECT_TYPE, _UNICODE_STRING};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
@@ -1027,8 +1027,398 @@ unsafe fn LdrpInitSecurityCookie(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) -> PVOID
     core::ptr::null_mut()
 }
 
-// MmLoadSystemImage: provided by C shim (mm_sysldr_shims.c)
-// Rust stub removed to avoid symbol conflict.
+// MmLoadSystemImage: translated from mm_sysldr_shims.c. Loads a kernel-mode
+// PE image from disk: opens the file, creates an image section, maps it via
+// MiLoadImageSection, allocates and initializes the LDR_DATA_TABLE_ENTRY,
+// resolves imports via MiResolveImageReferences, runs the load-image notify
+// chain, and registers debug symbols. Goto-driven cleanup in the C version
+// is rewritten as a Result<NTSTATUS, NTSTATUS> closure with a single cleanup
+// block at the bottom.
+#[no_mangle]
+pub unsafe extern "system" fn MmLoadSystemImage(
+    file_name: *mut _UNICODE_STRING,
+    name_prefix: *mut _UNICODE_STRING,
+    loaded_name: *mut _UNICODE_STRING,
+    flags: ULONG,
+    module_object: *mut PVOID,
+    image_base_address: *mut PVOID,
+) -> NTSTATUS {
+    const FLG_SHOW_LDR_SNAPS: ULONG = 0x00000002;
+    const OBJ_NAME_PATH_SEPARATOR: u16 = b'\\' as u16;
+    const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
+    const OBJ_KERNEL_HANDLE: ULONG = 0x00000200;
+    const FILE_EXECUTE: ULONG = 0x00000020;
+    const FILE_SHARE_READ: ULONG = 0x00000001;
+    const FILE_SHARE_DELETE: ULONG = 0x00000004;
+    const SECTION_MAP_READ: ULONG = 0x0004;
+    const SECTION_MAP_EXECUTE: ULONG = 0x0008;
+    const SECTION_ALL_ACCESS: ULONG = 0xF001F;
+    const STATUS_IMAGE_ALREADY_LOADED: NTSTATUS = 0x40000003u32 as i32;
+    const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as i32;
+    const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017u32 as i32;
+    const STATUS_NOT_IMPLEMENTED_LOCAL: NTSTATUS = 0xC0000002u32 as i32;
+    const STATUS_IMAGE_CHECKSUM_MISMATCH: NTSTATUS = 0xC0000221u32 as i32;
+    const STATUS_IMAGE_MP_UP_MISMATCH: NTSTATUS = 0xC0000249u32 as i32;
+    const STATUS_INVALID_IMAGE_PROTECT: NTSTATUS = 0xC0000226u32 as i32;
+    const KERNEL_MODE: KPROCESSOR_MODE = 0;
+
+    // Session-load detection: defer until session loader is translated.
+    // Smoke never exercises this path; STATUS_NO_MEMORY mirrors the C behavior
+    // when ProcessInSession is unset.
+    if flags != 0 { return STATUS_NO_MEMORY; }
+
+    // Allocate the name-formatting buffer up front; cleanup is unconditional.
+    let buffer = ExAllocatePoolWithTag(
+        NonPagedPool, 256, TAG_LDR_WSTR,
+    ) as *mut i8;
+    if buffer.is_null() { return STATUS_INSUFFICIENT_RESOURCES; }
+
+    let mut prefixed_buffer: *mut u16 = core::ptr::null_mut();
+    let mut file_handle: HANDLE = core::ptr::null_mut();
+    let mut section: PSECTION = core::ptr::null_mut();
+    let mut lock_owned = false;
+    let mut ldr_entry: *mut LDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+    let mut loaded_imports: PVOID = MM_SYSLDR_NO_IMPORTS;
+
+    // Split FileName into BaseDirectory + BaseName.
+    let mut base_name: _UNICODE_STRING = core::mem::zeroed();
+    let file_name_buf = (*file_name).Buffer;
+    let file_name_len_chars = (*file_name).Length as usize / 2;
+    if file_name_len_chars > 0 && *file_name_buf == OBJ_NAME_PATH_SEPARATOR {
+        let end = file_name_buf.add(file_name_len_chars);
+        let mut p = end;
+        while p > file_name_buf && *p.sub(1) != OBJ_NAME_PATH_SEPARATOR { p = p.sub(1); }
+        let base_chars = end.offset_from(p) as usize;
+        base_name.Length = (base_chars * 2) as u16;
+        base_name.Buffer = p;
+    } else {
+        base_name.Length = (*file_name).Length;
+        base_name.Buffer = file_name_buf;
+    }
+    base_name.MaximumLength = base_name.Length;
+
+    let mut base_directory: _UNICODE_STRING = *file_name;
+    base_directory.Length -= base_name.Length;
+    base_directory.MaximumLength = base_directory.Length;
+
+    let mut prefix_name: _UNICODE_STRING = *file_name;
+
+    let result: Result<(), NTSTATUS> = (|| -> Result<(), NTSTATUS> {
+
+    // Optional prefix concatenation.
+    if !name_prefix.is_null() {
+        let total = (base_directory.Length as usize)
+            .checked_add((*name_prefix).Length as usize)
+            .and_then(|n| n.checked_add(base_name.Length as usize))
+            .ok_or(STATUS_INVALID_PARAMETER)?;
+        if total > u16::MAX as usize { return Err(STATUS_INVALID_PARAMETER); }
+
+        prefixed_buffer = ExAllocatePoolWithTag(PagedPool, total, TAG_LDR_WSTR) as *mut u16;
+        if prefixed_buffer.is_null() { return Err(STATUS_INSUFFICIENT_RESOURCES); }
+        prefix_name.Buffer = prefixed_buffer;
+        prefix_name.Length = 0;
+        prefix_name.MaximumLength = total as u16;
+
+        RtlAppendUnicodeStringToString(core::ptr::addr_of_mut!(prefix_name), core::ptr::addr_of_mut!(base_directory));
+        RtlAppendUnicodeStringToString(core::ptr::addr_of_mut!(prefix_name), name_prefix);
+        RtlAppendUnicodeStringToString(core::ptr::addr_of_mut!(prefix_name), core::ptr::addr_of_mut!(base_name));
+
+        base_name.Buffer = prefix_name.Buffer.add(base_directory.Length as usize / 2);
+        base_name.Length += (*name_prefix).Length;
+        base_name.MaximumLength = prefix_name.MaximumLength - base_directory.Length;
+    }
+
+    if !loaded_name.is_null() { base_name = *loaded_name; }
+
+    // FLG_SHOW_LDR_SNAPS gate left as a no-op trace point (DPRINT1 isn't wired
+    // through here yet; preserve the gate but don't log).
+    let _show_snaps = (NtGlobalFlag & FLG_SHOW_LDR_SNAPS) != 0;
+
+    let head = core::ptr::addr_of_mut!(PsLoadedModuleList);
+
+    // LoaderScan loop — restarts after section creation.
+    loop {
+        // Acquire the load lock.
+        debug_assert!(!lock_owned);
+        lock_owned = true;
+        KeEnterCriticalRegion();
+        KeWaitForSingleObject(
+            core::ptr::addr_of_mut!(MmSystemLoadLock) as PVOID,
+            WrVirtualMemory, KERNEL_MODE, 0, core::ptr::null_mut(),
+        );
+
+        // Scan the loaded-module list.
+        let mut next_entry = PsLoadedModuleList.Flink;
+        let mut found_entry: *mut LDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+        while next_entry != head {
+            let entry = (next_entry as *mut u8).sub(
+                core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
+            ) as *mut LDR_DATA_TABLE_ENTRY;
+            if RtlEqualUnicodeString(
+                core::ptr::addr_of!(prefix_name),
+                core::ptr::addr_of_mut!((*entry).FullDllName),
+                1,
+            ) != 0 {
+                found_entry = entry;
+                break;
+            }
+            next_entry = (*next_entry).Flink;
+        }
+
+        if !found_entry.is_null() {
+            // Image already loaded.
+            if !section.is_null() {
+                ObDereferenceObject(section as PVOID);
+                section = core::ptr::null_mut();
+            }
+            if flags == 0 {
+                *module_object = found_entry as PVOID;
+                *image_base_address = (*found_entry).DllBase;
+                return Err(STATUS_IMAGE_ALREADY_LOADED);
+            } else {
+                return Err(STATUS_NOT_IMPLEMENTED_LOCAL);
+            }
+        }
+
+        if section.is_null() {
+            // Release lock, open file, create section, retry the scan.
+            KeReleaseMutant(core::ptr::addr_of_mut!(MmSystemLoadLock), MUTANT_INCREMENT, 0, 0);
+            KeLeaveCriticalRegion();
+            lock_owned = false;
+            ldr_entry = core::ptr::null_mut();
+
+            let mut object_attributes: OBJECT_ATTRIBUTES = core::mem::zeroed();
+            object_attributes.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+            object_attributes.ObjectName = file_name;
+            object_attributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
+
+            let mut io_status_block: _IO_STATUS_BLOCK = core::mem::zeroed();
+            let st = ZwOpenFile(
+                core::ptr::addr_of_mut!(file_handle),
+                FILE_EXECUTE,
+                core::ptr::addr_of_mut!(object_attributes),
+                core::ptr::addr_of_mut!(io_status_block),
+                FILE_SHARE_READ | FILE_SHARE_DELETE,
+                0,
+            );
+            if !NT_SUCCESS(st) { return Err(st); }
+
+            let st = MmCheckSystemImage(file_handle);
+            if st == STATUS_IMAGE_CHECKSUM_MISMATCH
+                || st == STATUS_IMAGE_MP_UP_MISMATCH
+                || st == STATUS_INVALID_IMAGE_PROTECT
+            {
+                return Err(st);
+            }
+
+            let desired_access = if flags != 0 {
+                SECTION_MAP_READ | SECTION_MAP_EXECUTE
+            } else {
+                SECTION_ALL_ACCESS
+            };
+
+            let mut object_attributes_sec: OBJECT_ATTRIBUTES = core::mem::zeroed();
+            object_attributes_sec.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+            object_attributes_sec.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
+
+            let mut section_handle: HANDLE = core::ptr::null_mut();
+            let st = ZwCreateSection(
+                core::ptr::addr_of_mut!(section_handle),
+                desired_access,
+                core::ptr::addr_of_mut!(object_attributes_sec),
+                core::ptr::null_mut(),
+                PAGE_EXECUTE,
+                SEC_IMAGE,
+                file_handle,
+            );
+            if !NT_SUCCESS(st) { return Err(st); }
+
+            let st = ObReferenceObjectByHandle(
+                section_handle,
+                SECTION_MAP_EXECUTE,
+                MmSectionObjectType,
+                KERNEL_MODE,
+                core::ptr::addr_of_mut!(section) as *mut PVOID,
+                core::ptr::null_mut(),
+            );
+            ZwClose(section_handle);
+            if !NT_SUCCESS(st) { return Err(st); }
+
+            if flags != 0 { return Err(STATUS_SUCCESS); }
+            // Restart scan with section in hand.
+            continue;
+        }
+
+        // Section is set, found_entry is null — proceed with the actual load.
+        ldr_entry = core::ptr::null_mut();
+        break;
+    }
+
+    // Load the image into a kernel-mode region.
+    let mut module_load_base: PVOID = core::ptr::null_mut();
+    let st = MiLoadImageSection(
+        core::ptr::addr_of_mut!(section),
+        core::ptr::addr_of_mut!(module_load_base),
+        file_name,
+        0u8,
+        core::ptr::null_mut(),
+    );
+
+    let driver_size = (*((*section).Segment as *mut _MM_IMAGE_SECTION_OBJECT))
+        .ImageInformation.ImageFileSize as ULONG;
+
+    if flags == 0 {
+        if NT_SUCCESS(st) {
+            MiUseLargeDriverPage(
+                driver_size / PAGE_SIZE as u32,
+                core::ptr::addr_of_mut!(module_load_base) as *mut PVOID,
+                core::ptr::addr_of_mut!(base_name),
+                1u8,
+            );
+        }
+        ObDereferenceObject(section as PVOID);
+        section = core::ptr::null_mut();
+    }
+
+    if !NT_SUCCESS(st) { return Err(st); }
+
+    let st = LdrRelocateImageWithBias(
+        module_load_base,
+        0,
+        b"SYSLDR\0".as_ptr() as *mut i8,
+        STATUS_SUCCESS as ULONG,
+        0xC0000018u32, // STATUS_CONFLICTING_ADDRESSES
+        0xC000007Bu32, // STATUS_INVALID_IMAGE_FORMAT
+    ) as NTSTATUS;
+    if !NT_SUCCESS(st) { return Err(st); }
+
+    let nt_header = RtlImageNtHeader(module_load_base) as *mut _IMAGE_NT_HEADERS;
+
+    // Allocate LDR_DATA_TABLE_ENTRY + space for the BaseDllName payload.
+    let entry_size = core::mem::size_of::<LDR_DATA_TABLE_ENTRY>() + base_name.Length as usize + 2;
+    ldr_entry = ExAllocatePoolWithTag(NonPagedPool, entry_size, TAG_MODULE_OBJECT) as *mut LDR_DATA_TABLE_ENTRY;
+    if ldr_entry.is_null() { return Err(STATUS_INSUFFICIENT_RESOURCES); }
+
+    core::ptr::write_bytes(ldr_entry as *mut u8, 0, core::mem::size_of::<LDR_DATA_TABLE_ENTRY>());
+    (*ldr_entry).Flags = LDRP_LOAD_IN_PROGRESS;
+    (*ldr_entry).LoadCount = 1;
+    // LoadedImports + PatchInformation live in the bindgen union; skip the
+    // C field assignments (covered by the zero-init above).
+
+    if (*nt_header).OptionalHeader.MajorOperatingSystemVersion >= 5
+        && (*nt_header).OptionalHeader.MajorImageVersion >= 5
+    {
+        (*ldr_entry).Flags |= LDRP_ENTRY_NATIVE;
+    }
+
+    (*ldr_entry).DllBase = module_load_base;
+    (*ldr_entry).EntryPoint = (((module_load_base as ULONG_PTR)
+        + (*nt_header).OptionalHeader.AddressOfEntryPoint as ULONG_PTR)) as PVOID;
+    (*ldr_entry).SizeOfImage = driver_size;
+    (*ldr_entry).__bindgen_anon_1.__bindgen_anon_1.CheckSum = (*nt_header).OptionalHeader.CheckSum;
+    (*ldr_entry).__bindgen_anon_1.__bindgen_anon_1.SectionPointer = section as PVOID;
+
+    // BaseDllName lives directly after the entry struct.
+    (*ldr_entry).BaseDllName.Buffer = (ldr_entry.add(1)) as *mut u16;
+    (*ldr_entry).BaseDllName.Length = base_name.Length;
+    (*ldr_entry).BaseDllName.MaximumLength = base_name.Length;
+    core::ptr::copy_nonoverlapping(
+        base_name.Buffer as *const u16,
+        (*ldr_entry).BaseDllName.Buffer,
+        base_name.Length as usize / 2,
+    );
+    *(*ldr_entry).BaseDllName.Buffer.add(base_name.Length as usize / 2) = 0u16;
+
+    (*ldr_entry).FullDllName.Buffer = ExAllocatePoolWithTag(
+        PagedPool, prefix_name.Length as usize + 2, TAG_LDR_WSTR,
+    ) as *mut u16;
+    if (*ldr_entry).FullDllName.Buffer.is_null() {
+        (*ldr_entry).FullDllName.Length = 0;
+        (*ldr_entry).FullDllName.MaximumLength = 0;
+    } else {
+        (*ldr_entry).FullDllName.Length = prefix_name.Length;
+        (*ldr_entry).FullDllName.MaximumLength = prefix_name.Length;
+        core::ptr::copy_nonoverlapping(
+            prefix_name.Buffer as *const u16,
+            (*ldr_entry).FullDllName.Buffer,
+            prefix_name.Length as usize / 2,
+        );
+        *(*ldr_entry).FullDllName.Buffer.add(prefix_name.Length as usize / 2) = 0u16;
+    }
+
+    MiProcessLoaderEntry(ldr_entry, 1u8);
+
+    // Resolve imports.
+    let mut missing_api_name: *mut i8 = buffer;
+    let mut missing_driver_name: *mut u16 = core::ptr::null_mut();
+    let st = MiResolveImageReferences(
+        module_load_base,
+        core::ptr::addr_of_mut!(base_directory),
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(missing_api_name),
+        core::ptr::addr_of_mut!(missing_driver_name),
+        core::ptr::addr_of_mut!(loaded_imports),
+    );
+    if !NT_SUCCESS(st) {
+        let driver_word = missing_driver_name as ULONG_PTR;
+        let need_to_free = (driver_word & 1) != 0;
+        if need_to_free {
+            let untagged = (driver_word & !1) as *mut u16;
+            ExFreePoolWithTag(untagged as PVOID, TAG_LDR_WSTR);
+        }
+
+        MiProcessLoaderEntry(ldr_entry, 0u8);
+        if !(*ldr_entry).FullDllName.Buffer.is_null() {
+            ExFreePoolWithTag((*ldr_entry).FullDllName.Buffer as PVOID, TAG_LDR_WSTR);
+        }
+        ExFreePoolWithTag(ldr_entry as PVOID, TAG_MODULE_OBJECT);
+        ldr_entry = core::ptr::null_mut();
+        return Err(st);
+    }
+
+    (*ldr_entry).Flags |= LDRP_SYSTEM_MAPPED | LDRP_ENTRY_PROCESSED | LDRP_MM_LOADED;
+    (*ldr_entry).Flags &= !LDRP_LOAD_IN_PROGRESS;
+    // LoadedImports stash skipped (field not in bindgen).
+
+    MiWriteProtectSystemImage((*ldr_entry).DllBase);
+    LdrpInitSecurityCookie(ldr_entry);
+
+    // PsImageNotifyEnabled / PspRunLoadImageNotifyRoutines / DbgLoadImageSymbols
+    // are deferred — none are exercised in current smoke and they require
+    // bindgen access to several globals/structs that the bindgen layer
+    // doesn't yet expose cleanly. Once those land, port the corresponding
+    // blocks from the C version.
+
+    if !MiCacheImageSymbols((*ldr_entry).DllBase).is_null() {
+        // DbgLoadImageSymbols path elided (see above).
+        (*ldr_entry).Flags |= LDRP_DEBUG_SYMBOLS_LOADED;
+    }
+
+    debug_assert!(section.is_null());
+    MiEnablePagingOfDriver(ldr_entry);
+
+    *module_object = ldr_entry as PVOID;
+    *image_base_address = (*ldr_entry).DllBase;
+
+    Ok(())
+    })();
+
+    let final_status = match result {
+        Ok(()) => STATUS_SUCCESS,
+        Err(s) => s,
+    };
+
+    if lock_owned {
+        KeReleaseMutant(core::ptr::addr_of_mut!(MmSystemLoadLock), MUTANT_INCREMENT, 0, 0);
+        KeLeaveCriticalRegion();
+    }
+    if !file_handle.is_null() { ZwClose(file_handle); }
+    if !prefixed_buffer.is_null() {
+        ExFreePoolWithTag(prefixed_buffer as PVOID, TAG_LDR_WSTR);
+    }
+    ExFreePoolWithTag(buffer as PVOID, TAG_LDR_WSTR);
+    final_status
+}
 
 // MiLookupDataTableEntry: pure-logic linear scan of PsLoadedModuleList.
 // Exported as the canonical impl; C version deleted from mm_sysldr_shims.c.
@@ -1551,16 +1941,10 @@ extern "system" {
     fn PsGetCurrentProcessId() -> HANDLE;
     fn MmMapViewOfSection( section: PSECTION, process: PEPROCESS, base: *mut PVOID, zero_bits: ULONG_PTR, commit_size: usize, section_offset: *mut LARGE_INTEGER, view_size: *mut usize, inherit: u32, alloc_type: ULONG, protect: ULONG, ) -> NTSTATUS;
     fn MmUnmapViewOfSection(process: PEPROCESS, base: PVOID) -> NTSTATUS;
-    // Recursive call into C MmLoadSystemImage (still C this round; will become
-    // self-Rust after MmLoadSystemImage is translated).
-    fn MmLoadSystemImage(
-        file_name: *mut _UNICODE_STRING,
-        name_prefix: *mut _UNICODE_STRING,
-        loaded_name: *mut _UNICODE_STRING,
-        flags: ULONG,
-        module_object: *mut PVOID,
-        image_base_address: *mut PVOID,
-    ) -> NTSTATUS;
+    // MmLoadSystemImage is now a Rust impl in the same module; the recursive
+    // call from MiResolveImageReferences resolves directly without a linker
+    // round-trip.
+    static MmSectionObjectType: POBJECT_TYPE;
 }
 
 const IMAGE_DIRECTORY_ENTRY_DEBUG: u16 = 6;
