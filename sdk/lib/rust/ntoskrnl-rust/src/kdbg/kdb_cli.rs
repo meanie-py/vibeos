@@ -29,6 +29,7 @@ use core::ffi::c_void;
 // Bring in shared kdbg types (KDB_BREAKPOINT, KDB_BREAKPOINT_TYPE, KDB_ENTER_CONDITION,
 // KDB_ACCESS_TYPE, KD_CONTINUE_TYPE, etc.)
 use super::types::*;
+use super::tables::{KDB_ACCESS_TYPE_TO_STRING, KDB_ENTER_CONDITION_TO_STRING, NPX_STATE_TO_STRING};
 
 // PRUNTIME_FUNCTION is amd64-only.
 #[cfg(target_arch = "x86_64")]
@@ -118,17 +119,18 @@ pub struct _KDB_DEBUGGER_COMMAND {
     pub Fn: Option<unsafe extern "C" fn(Argc: ULONG, Argv: *mut PCHAR) -> BOOLEAN>,
 }
 
+// `KdbDebuggerCommands` and `ComponentTable` (and the corresponding
+// `_Count` constants) used to be declared here as `extern "C" [T; 0]`
+// pointing at C definitions in `kdbg_rust_shims.c`. The zero-length decl
+// made any indexing fold to a panic. They now live in
+// `super::tables::{KdbDebuggerCommands, ComponentTable}` as properly-sized
+// Rust statics; consumers use `.len()` instead of the count constants.
+pub use super::tables::{ComponentTable, KdbDebuggerCommands};
+
 // CSTRING-based prompt string descriptor (opaque to Rust here).
 extern "C" {
     pub static KdbPromptStr: CSTRING;
-    pub static mut KdbDebuggerCommands: [_KDB_DEBUGGER_COMMAND; 0];
     pub static mut KdbCliCallbacks: [PVOID; 10];
-    pub static mut ComponentTable: [KDB_NAMED_OBJECT; 0];
-    /// Counts of the two file-scope arrays — Rust's `[T; 0]` extern decls
-    /// would make `size_of_val` return 0, so we expose explicit lengths
-    /// from the C shim (kdbg_rust_shims.c).
-    pub static KdbDebuggerCommandsCount: ULONG;
-    pub static ComponentTableCount: ULONG;
     pub static mut KdbUseIntelSyntax: BOOLEAN;
     pub static mut KdbBreakOnModuleLoad: BOOLEAN;
     pub static mut KdbNumberOfRowsPrinted: ULONG;
@@ -264,7 +266,8 @@ extern "C" {
     fn isspace(c: i32) -> i32;
     fn strncmp(s1: *const u8, s2: *const u8, n: usize) -> i32;
     fn _strnicmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
-    fn KDB_ACCESS_TYPE_TO_STRING(AccessType: KDB_ACCESS_TYPE) -> PCHAR;
+    // KDB_ACCESS_TYPE_TO_STRING / NPX_STATE_TO_STRING / KDB_ENTER_CONDITION_TO_STRING
+    // moved to super::tables (translated 2026-05-07); imported below.
     fn KdbpGetNextBreakPointNr(StartNr: ULONG) -> LONG;
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn KdbpEnableBreakPoint(BreakPointNr: ULONG, CanBeChanged: *mut BOOLEAN) -> BOOLEAN;
@@ -273,11 +276,11 @@ extern "C" {
     fn KdbpAttachToThread(ThreadId: PVOID) -> BOOLEAN;
     fn KeGetTrapFrameFrameRegister(TrapFrame: PVOID) -> ULONG_PTR;
     fn KeGetTrapFrameStackRegister(TrapFrame: PVOID) -> ULONG_PTR;
-    fn NPX_STATE_TO_STRING(state: u32) -> PSTR;
+    // NPX_STATE_TO_STRING — moved to super::tables.
     static mut PsActiveProcessHead: LIST_ENTRY;
     fn KdbpAttachToProcess(ul: PVOID) -> BOOLEAN;
     fn Ke386GetTr() -> USHORT;
-    fn KDB_ENTER_CONDITION_TO_STRING(cond: KDB_ENTER_CONDITION) -> PCHAR;
+    // KDB_ENTER_CONDITION_TO_STRING — moved to super::tables.
     fn KdbpGetEnterCondition(exc: LONG, first: BOOLEAN, cond: *mut KDB_ENTER_CONDITION) -> BOOLEAN;
     fn KdbpSetEnterCondition(exc: LONG, first: BOOLEAN, cond: KDB_ENTER_CONDITION) -> BOOLEAN;
     fn KdbpDisassemble(Address: ULONG_PTR, IntelSyntax: ULONG) -> LONG;
@@ -737,7 +740,7 @@ unsafe fn KdbpGetComponentId(
 ) -> u8 {
 
     let mut i: u32 = 0;
-    while i < ComponentTableCount {
+    while (i as usize) < ComponentTable.len() {
         if _stricmp(ComponentName as *const i8, ComponentTable[i as usize].Name as *const i8) == 0 {
             *ComponentId = ComponentTable[i as usize].Id;
             return 1u8;
@@ -784,7 +787,7 @@ pub unsafe extern "C" fn KdbpCmdFilter(
         crate::kdbp_print!(b"    Component Name         Component ID\n  ==================     ================\n\0",
         );
         i = 0;
-        while i < ComponentTableCount {
+        while (i as usize) < ComponentTable.len() {
             crate::kdbp_print!(b"%20s        0x%08lx\n\0",
                 ComponentTable[i as usize].Name,
                 ComponentTable[i as usize].Id,
@@ -2924,7 +2927,7 @@ pub unsafe extern "C" fn KdbpCmdHelp(
 
     crate::kdbp_print!(b"Kernel debugger commands:\n\0");
     i = 0;
-    while i < KdbDebuggerCommandsCount {
+    while (i as usize) < KdbDebuggerCommands.len() {
         if KdbDebuggerCommands[i as usize].Syntax.is_null() {
             if i > 0 {
                 crate::kdbp_print!(b"\n\0");
@@ -3310,7 +3313,7 @@ unsafe fn KdbpDoCommand(
     KdbOutputAborted = 0u8;
 
     i = 0;
-    while (i as ULONG) < KdbDebuggerCommandsCount {
+    while i < KdbDebuggerCommands.len() {
         if KdbDebuggerCommands[i].Name.is_null() {
             i += 1;
             continue;
