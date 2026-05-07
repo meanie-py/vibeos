@@ -762,3 +762,52 @@ const _ASSERT_KMUTANT: usize = core::mem::size_of::<_KMUTANT>();
 const _ASSERT_KWAIT_BLOCK: usize = core::mem::size_of::<_KWAIT_BLOCK>();
 #[allow(dead_code)]
 const _ASSERT_KTRAP_FRAME: usize = core::mem::size_of::<_KTRAP_FRAME>();
+
+// ============================================================================
+// 2026-05-07: more ke_rust_shims.c translations (i386 + amd64).
+// Covers Ke386Get{Global,Local}DescriptorTable, KiEndInterrupt,
+// KeGdiFlushUserBatch_call, ARM64 KdbpPrint stub.
+// ============================================================================
+
+use ntkrnl_sys::base::KIRQL;
+
+/// `Ke386GetGlobalDescriptorTable(Limit)` — macro from intrin_i.h that
+/// expands to `__sgdt(Limit)`. i386 only.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn _rs_Ke386GetGlobalDescriptorTable(limit: PVOID) {
+    core::arch::asm!("sgdt [{}]", in(reg) limit, options(nostack));
+}
+
+/// `Ke386GetLocalDescriptorTable(Selector)` — macro expanding to `__sldt(Selector)`.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn _rs_Ke386GetLocalDescriptorTable(selector: *mut u16) {
+    core::arch::asm!("sldt [{}]", in(reg) selector, options(nostack));
+}
+
+// `KiEndInterrupt` — NOT translated. rustc 1.92 emits cdecl call sequences
+// for `HalEndSystemInterrupt` (stdcall) and `KiEoiHelper` (fastcall) despite
+// bindgen's correct extern "stdcall" / extern "fastcall" declarations,
+// causing link errors against `_HalEndSystemInterrupt` (cdecl) and
+// `_KiEoiHelper` (cdecl). Inline-asm workaround possible but the C
+// trampoline in ke_rust_shims.c works without ceremony — kept there.
+
+/// `KeGdiFlushUserBatch_call()` — dispatches through the global function-pointer
+/// `KeGdiFlushUserBatch` (PGDI_BATCHFLUSH_ROUTINE). On a freshly-booted system
+/// the slot is NULL; only after win32k loads does it get populated. ARM64
+/// doesn't have win32k GDI batching.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn _rs_KeGdiFlushUserBatch_call() {
+    use ntkrnl_sys::ddk::PGDI_BATCHFLUSH_ROUTINE;
+    extern "C" {
+        static KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
+    }
+    if let Some(f) = KeGdiFlushUserBatch {
+        f();
+    }
+}
+
+// ARM64 KdbpPrint: stays in C — Rust can't define C-variadic exports on
+// stable, even when the body is empty.

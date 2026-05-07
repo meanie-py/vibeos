@@ -348,6 +348,13 @@ mod _force_ke_macros_symbols {
         fn _rs_HalQuerySystemInformation();
         fn _rs_HalSetSystemInformation();
         fn _rs_HalVectorToIDTEntry();
+        // 2026-05-07 ke_rust_shims.c additions:
+        #[cfg(target_arch = "x86")]
+        fn _rs_Ke386GetGlobalDescriptorTable();
+        #[cfg(target_arch = "x86")]
+        fn _rs_Ke386GetLocalDescriptorTable();
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        fn _rs_KeGdiFlushUserBatch_call();
     }
     #[used]
     static REFS: [unsafe extern "C" fn(); 16] = [
@@ -367,6 +374,18 @@ mod _force_ke_macros_symbols {
         _rs_HalQuerySystemInformation,
         _rs_HalSetSystemInformation,
         _rs_HalVectorToIDTEntry,
+    ];
+    #[cfg(target_arch = "x86")]
+    #[used]
+    static REFS_I386: [unsafe extern "C" fn(); 3] = [
+        _rs_Ke386GetGlobalDescriptorTable,
+        _rs_Ke386GetLocalDescriptorTable,
+        _rs_KeGdiFlushUserBatch_call,
+    ];
+    #[cfg(target_arch = "x86_64")]
+    #[used]
+    static REFS_AMD64: [unsafe extern "C" fn(); 1] = [
+        _rs_KeGdiFlushUserBatch_call,
     ];
 }
 

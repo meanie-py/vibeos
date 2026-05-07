@@ -267,28 +267,18 @@ PKDBG_PRESERVICEHOOK KeWin32PreServiceHook = NULL;
 PKDBG_POSTSERVICEHOOK KeWin32PostServiceHook = NULL;
 #endif
 
-/* `Ke386GetGlobalDescriptorTable` / `Ke386GetLocalDescriptorTable` are
- * macros (#define to __sgdt / __sldt). The trampoline captures the
- * macro expansion at the call-site under the same name. (cdecl variant
- * lives in kdbg/kdbg_rust_shims.c.) */
-static __inline void _tramp_Ke386GetGlobalDescriptorTable(PVOID Limit)
-{
-    Ke386GetGlobalDescriptorTable(Limit);
-}
-static __inline void _tramp_Ke386GetLocalDescriptorTable(PUSHORT Selector)
-{
-    Ke386GetLocalDescriptorTable(Selector);
-}
+/* `Ke386GetGlobalDescriptorTable` / `Ke386GetLocalDescriptorTable` —
+ * translated to ke-macros rlib (`_rs_Ke386Get{Global,Local}DescriptorTable`,
+ * 2026-05-07). The C trampolines collapse to one-line delegations under
+ * the NTAPI ABI that bindgen-i386 callers want. */
 #undef Ke386GetGlobalDescriptorTable
 #undef Ke386GetLocalDescriptorTable
+extern void _rs_Ke386GetGlobalDescriptorTable(PVOID Limit);
+extern void _rs_Ke386GetLocalDescriptorTable(PUSHORT Selector);
 VOID NTAPI Ke386GetGlobalDescriptorTable(PVOID Limit)
-{
-    _tramp_Ke386GetGlobalDescriptorTable(Limit);
-}
+{ _rs_Ke386GetGlobalDescriptorTable(Limit); }
 VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
-{
-    _tramp_Ke386GetLocalDescriptorTable(Selector);
-}
+{ _rs_Ke386GetLocalDescriptorTable(Selector); }
 
 #undef HalVectorToIDTEntry
 extern UCHAR _rs_HalVectorToIDTEntry(ULONG Vector);
@@ -478,8 +468,11 @@ Ki386InitializeTss(IN PKTSS Tss,
 
 }
 
-/* `KiEndInterrupt` — FORCEINLINE in ke.h. Ends interrupt via HAL EOI
- * and tail-jumps into KiEoiHelper (which is NORETURN). */
+/* `KiEndInterrupt` — FORCEINLINE in ke.h. Ends interrupt via HAL EOI and
+ * tail-jumps into KiEoiHelper (NORETURN). Stays in C: rustc 1.92 emits
+ * cdecl call sequences for HalEndSystemInterrupt (stdcall) and KiEoiHelper
+ * (fastcall) despite bindgen's correct extern decls, breaking the link.
+ * Re-probed 2026-05-07. */
 void __cdecl KiEndInterrupt(IN KIRQL Irql, IN PKTRAP_FRAME TrapFrame)
 {
     _disable();
@@ -510,13 +503,11 @@ void NTAPI KiExitSystemCallDebugChecks(IN ULONG SystemCall, IN PKTRAP_FRAME Trap
 
 #endif /* _M_IX86 */
 
-/* `KeGdiFlushUserBatch` is a function pointer (PGDI_BATCHFLUSH_ROUTINE),
- * not a real function. Rust imports `KeGdiFlushUserBatch_call` and we
- * dispatch through the pointer. ARM64 doesn't have win32k GDI batching. */
+/* `KeGdiFlushUserBatch_call` — translated to ke-macros rlib
+ * (`_rs_KeGdiFlushUserBatch_call`, 2026-05-07). ARM64 doesn't have win32k
+ * GDI batching so the symbol is x86/amd64 only. */
 #if defined(_M_IX86) || defined(_M_AMD64)
+extern void _rs_KeGdiFlushUserBatch_call(void);
 void NTAPI KeGdiFlushUserBatch_call(void)
-{
-    extern PGDI_BATCHFLUSH_ROUTINE KeGdiFlushUserBatch;
-    if (KeGdiFlushUserBatch) KeGdiFlushUserBatch();
-}
+{ _rs_KeGdiFlushUserBatch_call(); }
 #endif
