@@ -67,7 +67,7 @@ extractions.
 | File | LOC | Notes |
 |---|---:|---|
 | `ntoskrnl/ke/ke_rust_shims.c` | ~2,100 | Mostly Phase 1 trampolines; large i386 register/V86/FXSAVE block (~50 fns) is the bulk. |
-| `ntoskrnl/mm/mm_rust_shims.c` | ~1,500 | PTE accessors, AVL bridges, working-set lock wrappers. |
+| `ntoskrnl/mm/mm_rust_shims.c` | ~335 | Down from ~1,500. WS-lock family + 13 macro/util trampolines + AVL insert-guard collapsed; 3 large `#if 0` debug-preservation blocks deleted (git history has them). What's left: ExAllocatePoolZero (i386 stdcall), Arm64DumpPte, ARM64 UART helpers, MmVerifyImageIsOkForMpUse (CONFIG_SMP), MmWait/Subsection globals, MmDbgCheckIrql. |
 | `ntoskrnl/io/iomgr/io_rust_shims.c` | ~750 | Down from ~1,465. captures(none) and `_c` PnP families fully eliminated 2026-05-06. |
 | `ntoskrnl/kernel_c_helpers.c` | ~635 | Canonical "must-stay" home — varargs, LTO workarounds, AVL include trick, fastcall→cdecl bridges. |
 | `ntoskrnl/kdbg/kdbg_rust_shims.c` | ~540 | Mostly KDBG-only debugger code (lookup tables, register dumps). |
