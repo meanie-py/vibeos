@@ -80,6 +80,15 @@ const CSTRING KdbPromptStr = RTL_CONSTANT_STRING("kdb:> ");
 
 /* -------------------------------------------------------------------------
  * Component table (debug filter components). Used by KdbpCmdFilter.
+ *
+ * NB (2026-05-06): Rust kdb_cli.rs declares this as
+ * `extern "C" { static mut ComponentTable: [T; 0]; }` (zero-length).
+ * The Rust optimizer folds any `ComponentTable[i]` access into an
+ * unconditional bounds-check panic — so KdbpGetComponentId currently
+ * panics on first call. The C definition is link-dead from nm's
+ * perspective, but DON'T DELETE: the right fix is to declare the
+ * Rust array with the actual length (153 for ComponentTable, 39 for
+ * KdbDebuggerCommands) or to access via raw pointer arithmetic.
  * ------------------------------------------------------------------------- */
 
 const struct
@@ -416,17 +425,16 @@ Ke386GetLocalDescriptorTable(_Out_ PUSHORT Limit)
 
 #ifdef _M_IX86
 
+/* Real Ke386GetTr() is a FORCEINLINE in intrin_i.h. Rust calls it via
+ * `Ke386GetTr` — provide the outline directly under that name. */
 USHORT
 __cdecl
-Ke386GetTr_Shim(VOID)
+Ke386GetTr(VOID)
 {
     USHORT Tr;
     __asm__("str %0\n\t" : "=m"(Tr));
     return Tr;
 }
-/* Real Ke386GetTr() is a FORCEINLINE in intrin_i.h. Rust calls it via
- * `Ke386GetTr` - alias the shim under that name. */
-USHORT __cdecl __attribute__((alias("Ke386GetTr_Shim"))) Ke386GetTr(VOID);
 
 /* FORCEINLINE accessors from internal/i386/ke.h. Rust calls these via
  * extern "C" — provide out-of-line wrappers. */
@@ -504,25 +512,11 @@ VOID KdbpPagerInternal(IN PCHAR Buffer, IN ULONG BufLength, IN BOOLEAN DoPage);
 extern size_t ntprintf_va_format_a(char *dst, size_t cap,
                                    const char *fmt, va_list ap);
 
-VOID
-__cdecl
-KdbPrintf(
-    _In_ PCSTR Format,
-    ...)
-{
-    va_list ap;
-    SIZE_T Length;
-    CHAR Buffer[1024];
-
-    va_start(ap, Format);
-    Length = ntprintf_va_format_a(Buffer, sizeof(Buffer), Format, ap);
-    va_end(ap);
-
-    if (Length > MAXUSHORT - sizeof(ANSI_NULL))
-        Length = MAXUSHORT - sizeof(ANSI_NULL);
-
-    KdbPutsN(Buffer, (USHORT)Length);
-}
+/* KdbPrintf removed — variadic outline that ran the message through
+ * KdbPutsN. Verified zero `U` references across the entire active
+ * link (every kdb*.c that referenced it was excluded from the build
+ * when the kdbg subsystem moved to Rust). KdbpPrint below is the
+ * variadic that's actually still used (kernel_c_helpers.c calls it). */
 
 VOID
 KdbpPrint(
