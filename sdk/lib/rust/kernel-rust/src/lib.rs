@@ -387,6 +387,23 @@ mod _force_ke_macros_symbols {
     static REFS_AMD64: [unsafe extern "C" fn(); 1] = [
         _rs_KeGdiFlushUserBatch_call,
     ];
+
+    // 2026-05-07: ARM64 global_asm! stubs translated from ntoskrnl/ke/arm64/{boot,stubs_asm}.S.
+    // global_asm! symbols don't get pulled into the staticlib unless something
+    // references them; force-pull to keep them in libkernel_rust.a.
+    #[cfg(target_arch = "aarch64")]
+    extern "C" {
+        fn KiSwitchToBootStack();
+        fn _enable();
+        fn _disable();
+    }
+    #[cfg(target_arch = "aarch64")]
+    #[used]
+    static REFS_ARM64: [unsafe extern "C" fn(); 3] = [
+        KiSwitchToBootStack,
+        _enable,
+        _disable,
+    ];
 }
 
 // Defensive pull for mm-avl: AVL tree algorithms + 5 accessors.

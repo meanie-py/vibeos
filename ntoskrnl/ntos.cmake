@@ -413,8 +413,9 @@ elseif(ARCH STREQUAL "amd64")
         )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/stubs_asm.S
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/boot.S
+        # ke/arm64/stubs_asm.S + boot.S — REMOVED 2026-05-07. Translated to
+        # global_asm! in sdk/lib/rust/ke-macros/src/lib.rs (KiSwitchToBootStack,
+        # _enable, _disable).
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/ctxswitch.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/zwdispatch.S

@@ -811,3 +811,34 @@ pub unsafe extern "C" fn _rs_KeGdiFlushUserBatch_call() {
 
 // ARM64 KdbpPrint: stays in C — Rust can't define C-variadic exports on
 // stable, even when the body is empty.
+
+// ============================================================================
+// ARM64 boot-stack trampoline + interrupt enable/disable stubs.
+// Translated from ntoskrnl/ke/arm64/{boot,stubs_asm}.S to Rust global_asm!
+// 2026-05-07. Same instructions, hosted in this crate.
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(r#"
+    .text
+
+    // VOID NTAPI KiSwitchToBootStack(ULONG_PTR InitialStack)
+    // Switches to the kernel boot stack and tail-calls KiSystemStartupBootStack.
+    // x0 = new stack pointer (top of stack, 16-byte aligned).
+    .globl KiSwitchToBootStack
+    KiSwitchToBootStack:
+        mov sp, x0
+        b KiSystemStartupBootStack
+
+    // void _enable(void) — unmask DAIF (interrupt enable on ARM64).
+    .globl _enable
+    _enable:
+        msr daifclr, #0xF
+        ret
+
+    // void _disable(void) — mask DAIF (interrupt disable on ARM64).
+    .globl _disable
+    _disable:
+        msr daifset, #0xF
+        ret
+"#);
