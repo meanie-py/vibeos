@@ -77,8 +77,16 @@ pub static mut MmSharedUserDataPte: PMMPTE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut MmKernelAddressSpace: PMMSUPPORT = core::ptr::null_mut();
 
+// Promoted from `mm_rust_shims.c` — owned here now that section.c is
+// translated to Rust. `MmWaitPageEvent` is a KEVENT zero-initialized
+// at module load and KeInitializeEvent'd in MmInitSystem; section.rs
+// also imports this via `extern "system" { static mut ... }`.
+#[no_mangle]
+pub static mut MmWaitPageEvent: KEVENT = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut MmSubsectionBase: ULONG_PTR = 0;
+
 extern "system" {
-    static mut MmWaitPageEvent: KEVENT;
     static mut MiGlobalPageOperation: FAST_MUTEX;
     static mut MiSegmentList: LIST_ENTRY;
     fn MiRosTrimCache(Target: ULONG, Priority: ULONG, NrFreed: *mut ULONG) -> NTSTATUS;

@@ -72,3 +72,17 @@ pub unsafe extern "C" fn _rs_ExAllocatePoolZero(
 ) -> PVOID {
     ntkrnl_sys::inline::mm::ExAllocatePoolZero(pool_type, number_of_bytes as _, tag)
 }
+
+/// `ExAllocatePoolZero` stdcall variant for i386 — bindgen on i386 declares
+/// this as `extern "stdcall"` (NTAPI = stdcall there), producing
+/// `_ExAllocatePoolZero@12` which is distinct from the cdecl symbol that
+/// `ntoskrnl-rust::shim_exports` provides. Replaces the C trampoline that
+/// previously lived in `ntoskrnl/mm/mm_rust_shims.c`.
+#[no_mangle]
+pub unsafe extern "system" fn ExAllocatePoolZero(
+    pool_type: POOL_TYPE,
+    number_of_bytes: ULONG_PTR,
+    tag: ULONG,
+) -> PVOID {
+    _rs_ExAllocatePoolZero(pool_type, number_of_bytes, tag)
+}

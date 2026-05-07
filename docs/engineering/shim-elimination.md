@@ -35,10 +35,17 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 |------|----:|----------:|-----:|-------:|-----------:|
 | `ntprintf_trampoline.c` | 170 | 0 | 0 | 0 | 0 |
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
-| `mm_rust_shims.c` | 119 | 0 | 11 | 2 | 0 |
+| `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 162 | 0 | 10 | 1 | 2 |
 | `kernel_c_helpers.c` | 490 | 1 | 42 | 6 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
+
+\* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
+(everything outside `#ifdef _M_ARM64` is gone). The remaining `->`
+and macro are entirely inside the ARM64-only `Arm64DumpPte` PTE
+bitfield dump — a pure debug helper that pokes the UART. Translating
+it to Rust requires routing through bindgen's `__bindgen_anon_*`
+union accessors; punted as a focused ARM64-only follow-up.
 
 `ntprintf_trampoline.c` is already minimal. Every other file pulls
 `<ntoskrnl.h>` and uses substantial logic from it.
@@ -76,25 +83,27 @@ proof-of-concept that the cc-rs path works for non-variadic shims.
 
 ## Per-file path to minimal trampolines
 
-### `mm_rust_shims.c` — moderate (~1-2 sessions)
+### `mm_rust_shims.c` — DONE on i386/amd64 (audit-target reached)
 
-What needs translating:
-- `Arm64DumpPte` + `MmUartPuts` + `MmUartHex` + `MmDbgCheckIrql`:
-  pure ARM64 UART pokes. Pointer arithmetic only. Move to a Rust crate
-  with `core::arch::global_asm!` or simple `volatile` writes.
-- `MmVerifyImageIsOkForMpUse` (CONFIG_SMP only): calls `RtlImageNtHeader`,
-  reads `KeNumberProcessors`, checks `IMAGE_FILE_UP_SYSTEM_ONLY` flag.
-  Pure header-walk; trivial Rust port.
+Reduced from 119→69 LOC. On i386/amd64 the file post-preprocessing is
+empty (the surviving body is entirely under `#ifdef _M_ARM64`).
 
-What stays:
-- `ExAllocatePoolZero` stdcall trampoline for i386 (bindgen wants
-  stdcall there but `shim_exports.rs` only supplies cdecl).
-- `MmWaitPageEvent` / `MmSubsectionBase` globals — could move to a Rust
-  `pub static mut KEVENT` if `KEVENT` is replicable from `ntdef.h`.
-  Otherwise stays here as a minimal global definition.
+Promoted in this pass:
+- `MmWaitPageEvent` / `MmSubsectionBase` globals → `mminit.rs` as
+  `#[no_mangle] pub static mut`.
+- `ExAllocatePoolZero` stdcall variant → `mm-util-inlines` rlib as
+  `pub unsafe extern "system" fn ExAllocatePoolZero`. Coexists with
+  the cdecl `_ExAllocatePoolZero` from `shim_exports.rs` as a
+  separate i386 decoration.
+- `MmVerifyImageIsOkForMpUse` — deleted entirely. The Rust caller
+  (`ex/init.rs`) has the `CONFIG_SMP` block commented out, so the
+  function was unreachable in any current build.
 
-After: file should need only `<ntdef.h>` for `ULONG_PTR` + a small
-`KEVENT` layout (or replicate locally).
+Followup (ARM64-only): translate `Arm64DumpPte` / `MmDbgCheckIrql` /
+`MmUartPuts` / `MmUartHex` to Rust. `MMPTE.u.Hard.X` bitfield reads
+go through bindgen `__bindgen_anon_*` accessors. Pure debug code
+(direct UART pokes — `DbgPrint` doesn't reach serial on ARM64), so
+no boot-path implications.
 
 ### `io_rust_shims.c` — DONE (audit-target reached)
 

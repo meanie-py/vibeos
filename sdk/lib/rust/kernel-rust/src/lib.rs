@@ -758,15 +758,17 @@ mod _force_mm_util_inlines_symbols {
         fn _rs_ProbeForWriteSize_t();
         fn _rs_ProbeForWriteIoStatusBlock();
         fn _rs_ExAllocatePoolZero();
+        fn ExAllocatePoolZero();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 6] = [
+    static REFS: [unsafe extern "C" fn(); 7] = [
         _rs_InterlockedIncrementUL,
         _rs_InterlockedExchangeAddUL,
         _rs_MmSetDirtyPage,
         _rs_ProbeForWriteSize_t,
         _rs_ProbeForWriteIoStatusBlock,
         _rs_ExAllocatePoolZero,
+        ExAllocatePoolZero,
     ];
 }
 

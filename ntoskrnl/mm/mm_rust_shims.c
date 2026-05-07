@@ -1,26 +1,19 @@
 /*
  * mm_rust_shims.c — surviving C-side helpers for the Rust MM crate.
  *
- * Most of what used to live here (PTE accessors, working-set locks,
- * AVL bridges, macros, allocator wrappers) has been promoted to bare-
- * name `#[no_mangle] extern "C" fn` exports in
+ * Most of what used to live here has been promoted to bare-name
+ * `#[no_mangle] extern "C" fn` exports in
  * `sdk/lib/rust/ntoskrnl-rust/src/shim_exports.rs` or to sibling
- * `*-inlines` / `*-macros` rlibs. See `docs/engineering/shim-elimination.md`
- * for the audit trail; `git log --oneline -- ntoskrnl/mm/mm_rust_shims.c`
- * has the per-trampoline removal commits.
+ * `*-inlines` / `*-macros` rlibs (see `docs/engineering/shim-elimination.md`).
  *
  * What's left in this file:
- *   - `MmWaitPageEvent` / `MmSubsectionBase` globals (when section.c is
- *     compiled out).
- *   - `MmVerifyImageIsOkForMpUse` (ntkrnlmp/CONFIG_SMP build only).
- *   - ARM64 debug helpers: `Arm64DumpPte`, `MmUartPuts`/`MmUartHex`,
- *     `MmDbgCheckIrql`. Called from procsup.rs / ps/process.rs and the
- *     ke/arm64/stubs.rs APC + fault paths. `DbgPrint` doesn't reach
- *     serial on ARM64, hence the direct UART pokes.
- *   - `ExAllocatePoolZero` stdcall trampoline. bindgen declares this
- *     `extern "stdcall"` on i386, producing `_ExAllocatePoolZero@12`;
- *     `shim_exports.rs` only supplies the cdecl `_ExAllocatePoolZero`,
- *     so the stdcall variant has to come from a C trampoline.
+ *   - ARM64 debug helpers: `Arm64DumpPte`, `MmDbgCheckIrql`. Called
+ *     from procsup.rs / ps/process.rs and the ke/arm64/stubs.rs APC +
+ *     fault paths. `DbgPrint` doesn't reach serial on ARM64, hence the
+ *     direct UART pokes. The `Arm64DumpPte` body uses `MMPTE.u.Hard.X`
+ *     bitfield accessors that bindgen renders as `__bindgen_anon_1`
+ *     unions — translatable to Rust but verbose; left here pending a
+ *     focused ARM64 PTE-dump migration pass.
  */
 
 #include <ntoskrnl.h>
@@ -29,37 +22,6 @@
 #include <mm/ARM3/miarm.h>
 #include <internal/arch/mm.h>
 
-/* === Globals previously owned by section.c (when section.c is the
- * canonical owner — `MM_SECTION_C_ACTIVE` is set by the build) === */
-#if !defined(MM_SECTION_C_ACTIVE)
-KEVENT MmWaitPageEvent;
-ULONG_PTR MmSubsectionBase;
-#endif
-
-/* === MmVerifyImageIsOkForMpUse — CONFIG_SMP-only path from sysldr.c === */
-#if !defined(MM_SYSLDR_C_ACTIVE) && defined(CONFIG_SMP)
-BOOLEAN
-NTAPI
-MmVerifyImageIsOkForMpUse(_In_ PVOID BaseAddress)
-{
-    PIMAGE_NT_HEADERS NtHeaders;
-    PAGED_CODE();
-
-    NtHeaders = RtlImageNtHeader(BaseAddress);
-    if (!NtHeaders)
-        return TRUE;
-
-    /* Fail if we have more than one CPU but the image is UP-only. */
-    if ((KeNumberProcessors > 1) &&
-        (NtHeaders->FileHeader.Characteristics & IMAGE_FILE_UP_SYSTEM_ONLY))
-    {
-        return FALSE;
-    }
-    return TRUE;
-}
-#endif
-
-/* === ARM64 debug helpers === */
 #ifdef _M_ARM64
 extern volatile PVOID Arm64UartKernelBase;
 
@@ -105,15 +67,3 @@ VOID NTAPI MmDbgCheckIrql(PCSTR label)
     MmUartHex(" irql=", irql);
 }
 #endif
-
-/* === ExAllocatePoolZero stdcall variant for i386 ===
- * shim_exports.rs supplies cdecl `_ExAllocatePoolZero`; bindgen on
- * i386 wants stdcall `_ExAllocatePoolZero@12`. */
-extern PVOID _rs_ExAllocatePoolZero(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag);
-
-PVOID
-NTAPI
-ExAllocatePoolZero(IN POOL_TYPE PoolType, IN SIZE_T NumberOfBytes, IN ULONG Tag)
-{
-    return _rs_ExAllocatePoolZero(PoolType, NumberOfBytes, Tag);
-}
