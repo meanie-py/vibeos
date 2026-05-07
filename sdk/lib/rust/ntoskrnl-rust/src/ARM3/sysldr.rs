@@ -228,7 +228,8 @@ unsafe fn MiLoadImageSection(
     status
 }
 
-unsafe fn NameToOrdinal(
+#[no_mangle]
+pub unsafe extern "system" fn NameToOrdinal(
     export_name: *const i8,
     image_base: PVOID,
     number_of_names: ULONG,
@@ -495,7 +496,38 @@ unsafe fn MiUpdateThunks(
 ) {
 }
 
-unsafe fn MiSnapThunk(
+extern "system" {
+    fn RtlAnsiStringToUnicodeString(
+        dest: *mut _UNICODE_STRING,
+        src: *mut ANSI_STRING,
+        alloc: BOOLEAN,
+    ) -> NTSTATUS;
+    fn RtlPrefixUnicodeString(
+        s1: *const _UNICODE_STRING,
+        s2: *const _UNICODE_STRING,
+        case_insensitive: BOOLEAN,
+    ) -> BOOLEAN;
+    fn RtlFreeUnicodeString(s: *mut _UNICODE_STRING);
+}
+
+unsafe fn strchr(s: *const i8, c: i8) -> *const i8 {
+    let mut p = s;
+    loop {
+        let v = *p;
+        if v == c { return p; }
+        if v == 0 { return core::ptr::null(); }
+        p = p.add(1);
+    }
+}
+
+unsafe fn strlen_(s: *const i8) -> usize {
+    let mut n = 0;
+    while *s.add(n) != 0 { n += 1; }
+    n
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn MiSnapThunk(
     dll_base: PVOID,
     image_base: PVOID,
     name: *mut IMAGE_THUNK_DATA,
@@ -516,6 +548,17 @@ unsafe fn MiSnapThunk(
             (*name).u1.AddressOfData = ((*name).u1.AddressOfData as usize + image_base as usize) as _;
         }
         let name_import = (*name).u1.AddressOfData as *mut IMAGE_IMPORT_BY_NAME;
+
+        // Copy the procedure name into the missing-api buffer (mirrors C
+        // RtlStringCbCopyA into MAXIMUM_FILENAME_LENGTH-sized buffer).
+        if !missing_api.is_null() && !(*missing_api).is_null() {
+            let dst = *missing_api;
+            let src = (*name_import).Name.as_ptr() as *const i8;
+            let len = strlen_(src);
+            let copy = core::cmp::min(len, 255);
+            core::ptr::copy_nonoverlapping(src, dst, copy);
+            *dst.add(copy) = 0;
+        }
 
         let name_table = ((dll_base as ULONG_PTR) + ((*export_directory).AddressOfNames as ULONG_PTR)) as *mut ULONG;
         let ordinal_table = ((dll_base as ULONG_PTR) + ((*export_directory).AddressOfNameOrdinals as ULONG_PTR)) as *mut u16;
@@ -561,10 +604,106 @@ unsafe fn MiSnapThunk(
 
     let mut status = STATUS_SUCCESS;
 
-    if ((*address).u1.Function > ((export_directory as ULONG_PTR)) as _) &&
-       ((*address).u1.Function < ((export_directory as ULONG_PTR) + (export_size as ULONG_PTR)) as _)
+    // Forwarder check: function pointer falls inside the export directory range.
+    if ((*address).u1.Function as ULONG_PTR) > (export_directory as ULONG_PTR)
+        && ((*address).u1.Function as ULONG_PTR) < (export_directory as ULONG_PTR) + (export_size as ULONG_PTR)
     {
         status = STATUS_DRIVER_ENTRYPOINT_NOT_FOUND;
+
+        // Build the forwarder DLL name as an ANSI_STRING up to (and including) '.'
+        let mut dll_buffer = (*address).u1.Function as *mut i8;
+
+        // lld prepends '_' to forwarded export DLL names on i386. Strip it
+        // when the rest of the buffer still contains a '.'.
+        if *dll_buffer == b'_' as i8 && !strchr(dll_buffer.add(1), b'.' as i8).is_null() {
+            dll_buffer = dll_buffer.add(1);
+        }
+
+        let dot = strchr(dll_buffer, b'.' as i8);
+        if dot.is_null() {
+            return status;
+        }
+        let dll_len = (dot.offset_from(dll_buffer) as usize) + 1; // include the '.'
+
+        let mut dll_ansi = ANSI_STRING {
+            Length: dll_len as u16,
+            MaximumLength: dll_len as u16,
+            Buffer: dll_buffer,
+        };
+        let mut forwarder_unicode: _UNICODE_STRING = core::mem::zeroed();
+        if !NT_SUCCESS(RtlAnsiStringToUnicodeString(
+            core::ptr::addr_of_mut!(forwarder_unicode),
+            core::ptr::addr_of_mut!(dll_ansi),
+            1u8,
+        )) {
+            return status;
+        }
+
+        // Walk PsLoadedModuleList for the target DLL.
+        let head = core::ptr::addr_of_mut!(PsLoadedModuleList);
+        let mut next = PsLoadedModuleList.Flink;
+        while next != head {
+            let ldr_entry = (next as *mut u8).sub(
+                core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
+            ) as *mut LDR_DATA_TABLE_ENTRY;
+
+            if RtlPrefixUnicodeString(
+                core::ptr::addr_of!(forwarder_unicode),
+                core::ptr::addr_of!((*ldr_entry).BaseDllName) as *const _UNICODE_STRING,
+                1u8,
+            ) != 0 {
+                let mut fwd_export_size: ULONG = 0;
+                let fwd_export_dir = RtlImageDirectoryEntryToData(
+                    (*ldr_entry).DllBase,
+                    1,
+                    IMAGE_DIRECTORY_ENTRY_EXPORT,
+                    core::ptr::addr_of_mut!(fwd_export_size),
+                ) as PIMAGE_EXPORT_DIRECTORY;
+                if fwd_export_dir.is_null() { break; }
+
+                let fn_name_ptr = dll_buffer.add(dll_len);
+                let fn_name_len = strlen_(fn_name_ptr) + 1;
+                let alloc_size = core::mem::size_of::<IMAGE_IMPORT_BY_NAME>() + fn_name_len;
+                let fwd_name = ExAllocatePoolWithTag(
+                    PagedPool, alloc_size, TAG_LDR_WSTR,
+                ) as *mut IMAGE_IMPORT_BY_NAME;
+                if fwd_name.is_null() { break; }
+
+                core::ptr::copy_nonoverlapping(
+                    fn_name_ptr,
+                    core::ptr::addr_of_mut!((*fwd_name).Name) as *mut i8,
+                    fn_name_len,
+                );
+                (*fwd_name).Hint = 0;
+
+                let mut forward_thunk: IMAGE_THUNK_DATA = core::mem::zeroed();
+                forward_thunk.u1.AddressOfData = fwd_name as ULONG_PTR as _;
+
+                // Recursive call uses a stack-local "missing forwarder" buffer
+                // so we don't clobber the caller's missing_api on success.
+                let mut missing_buf: [i8; 256] = [0; 256];
+                let mut missing_ptr: *mut i8 = missing_buf.as_mut_ptr();
+
+                status = MiSnapThunk(
+                    (*ldr_entry).DllBase,
+                    image_base,
+                    core::ptr::addr_of_mut!(forward_thunk),
+                    core::ptr::addr_of_mut!(forward_thunk),
+                    fwd_export_dir,
+                    fwd_export_size,
+                    1u8,
+                    core::ptr::addr_of_mut!(missing_ptr),
+                );
+
+                ExFreePoolWithTag(fwd_name as PVOID, TAG_LDR_WSTR);
+                (*address).u1 = forward_thunk.u1;
+                break;
+            }
+
+            next = (*next).Flink;
+        }
+
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(forwarder_unicode));
     }
 
     status
