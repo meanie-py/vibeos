@@ -122,6 +122,10 @@ mod _force_ntprintf_symbols {
 // now exports the bare `Cmp*` names directly (no `_rs_` prefix, no C
 // trampoline) — Rust callers in `config/cmkcbncb.rs` resolve via the
 // bindgen-emitted `extern "C" { fn Cmp*(...) }` decls.
+//
+// 2026-05-07: extended to include all of cm_rust_shims.c (shared KCB locks,
+// NCB locks, HHIVE function-pointer dispatch, empty-stub assertions, trivial
+// returns, CmpIsKeyValueSmall). The C file is gone from the build.
 mod _force_cm_inlines_symbols {
     use core::ffi::c_void;
     extern "C" {
@@ -133,25 +137,80 @@ mod _force_cm_inlines_symbols {
         fn CmpReleaseKcbLockByKey(conv_key: u32);
         fn CmpTryToConvertKcbSharedToExclusive(kcb: *mut c_void) -> u8;
         fn CmpConvertKcbSharedToExclusive(kcb: *mut c_void);
+        // 2026-05-07 additions (former cm_rust_shims.c):
+        fn CmpAcquireKcbLockShared(kcb: *mut c_void);
+        fn CmpAcquireKcbLockSharedByIndex(index: u32);
+        fn CmpAcquireNcbLockExclusiveByKey(conv_key: u32);
+        fn CmpReleaseNcbLockByKey(conv_key: u32);
+        fn CmpIsKcbLockedExclusive(kcb: *mut c_void) -> u8;
+        fn CmpIsKeyValueSmall(real_length: *mut u32, length: u32) -> u8;
+        fn HvGetCell(hive: *mut c_void, cell: u32) -> *mut c_void;
+        fn HvReleaseCell(hive: *mut c_void, cell: u32);
+        fn HvGetCellType(cell: u32) -> u32;
+        fn CMP_ASSERT_REGISTRY_LOCK();
+        fn CMP_ASSERT_FLUSH_LOCK(h: *mut c_void);
+        fn CMP_ASSERT_KCB_LOCK(k: *mut c_void);
+        fn CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();
+        fn CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(h: *mut c_void);
+        fn ASSERT_VALUE_BIG(h: *mut c_void, l: u32);
+        fn CMTRACE(filter: u32, format: *const i8, arg1: *const i8, arg2: *mut c_void);
+        fn IS_NULL_TERMINATED(s: *mut u16, l: u32) -> u8;
+        fn LANGIDFROMLCID(lcid: u32) -> u32;
+        fn PtrToUlong(p: *mut c_void) -> u32;
+        fn GET_HASH_INDEX(conv_key: u32) -> u32;
     }
     #[used]
-    static REFS_PTR: [unsafe extern "C" fn(*mut c_void); 4] = [
+    static REFS_PTR: [unsafe extern "C" fn(*mut c_void); 6] = [
         CmpAcquireKcbLockExclusive,
         CmpReleaseKcbLock,
         CmpConvertKcbSharedToExclusive,
-        // CmpTryToConvertKcbSharedToExclusive returns u8 — typed below
-        CmpReleaseKcbLock, // padding to keep the array uniform
+        CmpAcquireKcbLockShared,
+        CMP_ASSERT_FLUSH_LOCK,
+        CMP_ASSERT_KCB_LOCK,
     ];
     #[used]
-    static REFS_INDEX: [unsafe extern "C" fn(u32); 4] = [
+    static REFS_INDEX: [unsafe extern "C" fn(u32); 6] = [
         CmpAcquireKcbLockExclusiveByIndex,
         CmpAcquireKcbLockExclusiveByKey,
         CmpReleaseKcbLockByIndex,
         CmpReleaseKcbLockByKey,
+        CmpAcquireKcbLockSharedByIndex,
+        CmpAcquireNcbLockExclusiveByKey,
     ];
     #[used]
     static REF_TRY: unsafe extern "C" fn(*mut c_void) -> u8 =
         CmpTryToConvertKcbSharedToExclusive;
+    #[used]
+    static REFS_NOARG: [unsafe extern "C" fn(); 2] = [
+        CMP_ASSERT_REGISTRY_LOCK,
+        CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK,
+    ];
+    #[used]
+    static REF_HV_GET: unsafe extern "C" fn(*mut c_void, u32) -> *mut c_void = HvGetCell;
+    #[used]
+    static REF_HV_RELEASE: unsafe extern "C" fn(*mut c_void, u32) = HvReleaseCell;
+    #[used]
+    static REF_HV_TYPE: unsafe extern "C" fn(u32) -> u32 = HvGetCellType;
+    #[used]
+    static REF_KCB_LOCKED: unsafe extern "C" fn(*mut c_void) -> u8 = CmpIsKcbLockedExclusive;
+    #[used]
+    static REF_KEYVAL_SMALL: unsafe extern "C" fn(*mut u32, u32) -> u8 = CmpIsKeyValueSmall;
+    #[used]
+    static REF_RELEASE_NCB: unsafe extern "C" fn(u32) = CmpReleaseNcbLockByKey;
+    #[used]
+    static REF_LANGID: unsafe extern "C" fn(u32) -> u32 = LANGIDFROMLCID;
+    #[used]
+    static REF_GET_HASH: unsafe extern "C" fn(u32) -> u32 = GET_HASH_INDEX;
+    #[used]
+    static REF_PTR_TO_ULONG: unsafe extern "C" fn(*mut c_void) -> u32 = PtrToUlong;
+    #[used]
+    static REF_IS_NULL_TERM: unsafe extern "C" fn(*mut u16, u32) -> u8 = IS_NULL_TERMINATED;
+    #[used]
+    static REF_REG_LOCK_LOAD: unsafe extern "C" fn(*mut c_void) = CMP_ASSERT_REGISTRY_LOCK_OR_LOADING;
+    #[used]
+    static REF_VAL_BIG: unsafe extern "C" fn(*mut c_void, u32) = ASSERT_VALUE_BIG;
+    #[used]
+    static REF_CMTRACE: unsafe extern "C" fn(u32, *const i8, *const i8, *mut c_void) = CMTRACE;
 }
 
 // Defensive symbol pull for the ke-inlines APC/Process/DeviceQueue lock

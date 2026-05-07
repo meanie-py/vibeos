@@ -190,3 +190,150 @@ pub unsafe extern "C" fn CmpConvertKcbSharedToExclusive(
     CmpReleaseKcbLock(kcb);
     CmpAcquireKcbLockExclusive(kcb);
 }
+
+// ============================================================================
+// Shared KCB lock acquire (translated from cm_rust_shims.c on 2026-05-07)
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpAcquireKcbLockSharedByIndex(index: u32) {
+    ExAcquirePushLockShared(lock_ptr(index));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpAcquireKcbLockShared(kcb: *mut CM_KEY_CONTROL_BLOCK) {
+    let kcb = opaque_ptr(kcb);
+    let conv_key = core::ptr::read_volatile(core::ptr::addr_of!(
+        (*kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey
+    ));
+    CmpAcquireKcbLockSharedByIndex(get_hash_index(conv_key));
+}
+
+// ============================================================================
+// NCB locks — name-cache hash table parallel to KCB
+// ============================================================================
+
+use ntkrnl_sys::ddk::{CM_NAME_HASH_TABLE_ENTRY, PCM_NAME_HASH_TABLE_ENTRY};
+
+extern "C" {
+    static mut CmpNameCacheTable: PCM_NAME_HASH_TABLE_ENTRY;
+}
+
+#[inline(always)]
+unsafe fn ncb_lock_ptr(index: u32) -> PEX_PUSH_LOCK {
+    let base = opaque_ptr(core::ptr::read_volatile(core::ptr::addr_of!(CmpNameCacheTable)));
+    core::ptr::addr_of_mut!((*base.add(index as usize)).Lock) as PEX_PUSH_LOCK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpAcquireNcbLockExclusiveByKey(conv_key: u32) {
+    ExAcquirePushLockExclusive(ncb_lock_ptr(get_hash_index(conv_key)));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpReleaseNcbLockByKey(conv_key: u32) {
+    ExReleasePushLock(ncb_lock_ptr(get_hash_index(conv_key)));
+}
+
+// ============================================================================
+// CmpIsKcbLockedExclusive — checks Owner == current thread
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpIsKcbLockedExclusive(kcb: *mut CM_KEY_CONTROL_BLOCK) -> u8 {
+    let kcb = opaque_ptr(kcb);
+    let conv_key = core::ptr::read_volatile(core::ptr::addr_of!(
+        (*kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey
+    ));
+    let entry = entry_ptr(get_hash_index(conv_key));
+    let owner = core::ptr::read_volatile(core::ptr::addr_of!((*entry).Owner));
+    if owner as *mut c_void == ke_get_current_thread() { 1 } else { 0 }
+}
+
+// ============================================================================
+// HHIVE function-pointer dispatch (HvGetCell / HvReleaseCell / HvGetCellType)
+// ============================================================================
+
+use ntkrnl_sys::ddk::{_HHIVE, HCELL_INDEX};
+
+#[no_mangle]
+pub unsafe extern "C" fn HvGetCell(hive: *mut _HHIVE, cell: HCELL_INDEX) -> *mut c_void {
+    if let Some(get) = (*hive).GetCellRoutine {
+        get(hive, cell) as *mut c_void
+    } else {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn HvReleaseCell(hive: *mut _HHIVE, cell: HCELL_INDEX) {
+    if let Some(release) = (*hive).ReleaseCellRoutine {
+        release(hive, cell);
+    }
+}
+
+const HCELL_TYPE_MASK: u32 = 0x80000000;
+const HCELL_TYPE_SHIFT: u32 = 31;
+
+#[no_mangle]
+pub unsafe extern "C" fn HvGetCellType(cell: HCELL_INDEX) -> u32 {
+    (cell & HCELL_TYPE_MASK) >> HCELL_TYPE_SHIFT
+}
+
+// ============================================================================
+// Empty assertion / trace stubs (NDEBUG build) — bodies are deliberately empty
+// ============================================================================
+
+#[no_mangle] pub unsafe extern "C" fn CMP_ASSERT_REGISTRY_LOCK() {}
+#[no_mangle] pub unsafe extern "C" fn CMP_ASSERT_FLUSH_LOCK(_h: *mut _HHIVE) {}
+#[no_mangle] pub unsafe extern "C" fn CMP_ASSERT_KCB_LOCK(_k: *mut CM_KEY_CONTROL_BLOCK) {}
+#[no_mangle] pub unsafe extern "C" fn CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK() {}
+#[no_mangle] pub unsafe extern "C" fn CMP_ASSERT_REGISTRY_LOCK_OR_LOADING(_h: *mut _HHIVE) {}
+#[no_mangle] pub unsafe extern "C" fn ASSERT_VALUE_BIG(_h: *mut _HHIVE, _l: u32) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn CMTRACE(
+    _filter: u32,
+    _format: *const i8,
+    _arg1: *const i8,
+    _arg2: *mut c_void,
+) {}
+
+// ============================================================================
+// Trivial returns (always-true / bitfield-extract / pointer cast)
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn IS_NULL_TERMINATED(_s: *mut u16, _l: u32) -> u8 { 1 }
+
+#[no_mangle]
+pub unsafe extern "C" fn LANGIDFROMLCID(lcid: u32) -> u32 {
+    lcid & 0xFFFF
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PtrToUlong(p: *mut c_void) -> u32 {
+    p as usize as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn GET_HASH_INDEX(conv_key: u32) -> u32 {
+    get_hash_index(conv_key)
+}
+
+// ============================================================================
+// CmpIsKeyValueSmall — translated from cmlib.h FORCEINLINE
+// ============================================================================
+
+const CM_KEY_VALUE_SPECIAL_SIZE: u32 = 0x80000000;
+
+#[no_mangle]
+pub unsafe extern "C" fn CmpIsKeyValueSmall(real_length: *mut u32, length: u32) -> u8 {
+    if length >= CM_KEY_VALUE_SPECIAL_SIZE {
+        core::ptr::write_volatile(real_length, length - CM_KEY_VALUE_SPECIAL_SIZE);
+        1
+    } else {
+        core::ptr::write_volatile(real_length, length);
+        0
+    }
+}

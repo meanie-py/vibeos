@@ -35,7 +35,8 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmconfig.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmcontrl.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmdata.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cm_rust_shims.c
+    # config/cm_rust_shims.c — REMOVED 2026-05-07. All 18 wrappers translated
+    # to sdk/lib/rust/cm-inlines/src/lib.rs.
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmdelay.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhook.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmhvlist.c
