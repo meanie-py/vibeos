@@ -1053,6 +1053,336 @@ pub unsafe extern "system" fn MiLookupDataTableEntry(address: PVOID) -> *mut LDR
     core::ptr::null_mut()
 }
 
+// Case-insensitive ASCII compare-N. Returns 0 on match (matches C semantics).
+unsafe fn strnicmp_ascii(a: *const i8, b: &[u8], n: usize) -> i32 {
+    for i in 0..n {
+        let av = (*a.add(i)) as u8;
+        let bv = b[i];
+        let alc = if av.is_ascii_uppercase() { av | 0x20 } else { av };
+        let blc = if bv.is_ascii_uppercase() { bv | 0x20 } else { bv };
+        if alc != blc { return (alc as i32) - (blc as i32); }
+    }
+    0
+}
+
+// Translated from C MiResolveImageReferences in mm_sysldr_shims.c.
+// Walks the PE import descriptors, lazily loads each referenced DLL via
+// MmLoadSystemImage (still C this round; will be Rust after the next round),
+// then per-import calls Rust MiSnapThunk to resolve every IAT entry. Builds a
+// deduplicated LOAD_IMPORTS array for the caller to track refcounts, with the
+// single-entry MM_SYSLDR_SINGLE_ENTRY pointer-LSB encoding to save an
+// allocation when only one import remains.
+#[no_mangle]
+pub unsafe extern "system" fn MiResolveImageReferences(
+    image_base: PVOID,
+    image_file_directory: *mut _UNICODE_STRING,
+    name_prefix: *mut _UNICODE_STRING,
+    missing_api: *mut *mut i8,
+    missing_driver: *mut *mut u16,
+    load_imports: *mut PVOID,
+) -> NTSTATUS {
+    static DRIVERS_FOLDER_BUF: [u16; 8] = [b'd' as u16, b'r' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'\\' as u16];
+    let mut drivers_folder_name = _UNICODE_STRING {
+        Length: 16,
+        MaximumLength: 16,
+        Buffer: DRIVERS_FOLDER_BUF.as_ptr() as *mut u16,
+    };
+
+    let missing_api_buffer = *missing_api;
+    let mut import_size: ULONG = 0;
+    *load_imports = MM_SYSLDR_NO_IMPORTS;
+
+    let import_descriptor = RtlImageDirectoryEntryToData(
+        image_base, 1, IMAGE_DIRECTORY_ENTRY_IMPORT,
+        core::ptr::addr_of_mut!(import_size),
+    ) as PIMAGE_IMPORT_DESCRIPTOR;
+    if import_descriptor.is_null() { return STATUS_SUCCESS; }
+
+    let mut import_count: usize = 0;
+    let mut cur = import_descriptor;
+    while (*cur).Name != 0 && (*cur).__bindgen_anon_1.OriginalFirstThunk != 0 {
+        import_count += 1;
+        cur = cur.add(1);
+    }
+
+    let loaded_imports: *mut LOAD_IMPORTS = if import_count > 0 {
+        let size = import_count * core::mem::size_of::<*mut _LDR_DATA_TABLE_ENTRY>()
+                 + core::mem::size_of::<usize>();
+        let p = ExAllocatePoolWithTag(PagedPool, size, TAG_LDR_IMPORTS) as *mut LOAD_IMPORTS;
+        if !p.is_null() {
+            core::ptr::write_bytes(p as *mut u8, 0, size);
+            (*p).Count = import_count as _;
+        }
+        p
+    } else {
+        core::ptr::null_mut()
+    };
+
+    // Inner closure-style helper does the import walk and returns a Result so
+    // the failure path is uniform.
+    let mut name_string: _UNICODE_STRING = core::mem::zeroed();
+    let mut import_count_built: usize = 0;
+
+    let result: Result<(), NTSTATUS> = (|| -> Result<(), NTSTATUS> {
+        let head = core::ptr::addr_of_mut!(PsLoadedModuleList);
+        let mut gdi_link = false;
+        let mut normal_link = false;
+        let mut current_descriptor = import_descriptor;
+
+        while (*current_descriptor).Name != 0 && (*current_descriptor).__bindgen_anon_1.OriginalFirstThunk != 0 {
+            let import_name = ((image_base as ULONG_PTR) + (*current_descriptor).Name as ULONG_PTR) as *const i8;
+            let imp_len = strlen_(import_name);
+
+            let is_win32k = imp_len >= 6 && strnicmp_ascii(import_name, b"win32k", 6) == 0;
+            gdi_link = gdi_link || is_win32k;
+            normal_link = normal_link || (
+                !is_win32k &&
+                !(imp_len >= 5 && strnicmp_ascii(import_name, b"dxapi", 5) == 0) &&
+                !(imp_len >= 8 && strnicmp_ascii(import_name, b"coverage", 8) == 0) &&
+                !(imp_len >= 3 && strnicmp_ascii(import_name, b"irt", 3) == 0)
+            );
+            if gdi_link && normal_link { return Err(STATUS_PROCEDURE_NOT_FOUND); }
+
+            // User-mode driver imports forbidden.
+            if (imp_len >= 5 && strnicmp_ascii(import_name, b"ntdll", 5) == 0)
+                || (imp_len >= 6 && strnicmp_ascii(import_name, b"winsrv", 6) == 0)
+                || (imp_len >= 8 && strnicmp_ascii(import_name, b"advapi32", 8) == 0)
+                || (imp_len >= 8 && strnicmp_ascii(import_name, b"kernel32", 8) == 0)
+                || (imp_len >= 6 && strnicmp_ascii(import_name, b"user32", 6) == 0)
+                || (imp_len >= 5 && strnicmp_ascii(import_name, b"gdi32", 5) == 0)
+            {
+                return Err(STATUS_PROCEDURE_NOT_FOUND);
+            }
+
+            let reference_needed = !(
+                (imp_len >= 8 && strnicmp_ascii(import_name, b"ntoskrnl", 8) == 0)
+                || is_win32k
+                || (imp_len >= 3 && strnicmp_ascii(import_name, b"hal", 3) == 0)
+            );
+
+            let mut temp_string: ANSI_STRING = core::mem::zeroed();
+            RtlInitAnsiString(core::ptr::addr_of_mut!(temp_string), import_name);
+            let st = RtlAnsiStringToUnicodeString(
+                core::ptr::addr_of_mut!(name_string),
+                core::ptr::addr_of_mut!(temp_string),
+                1u8,
+            );
+            if !NT_SUCCESS(st) { return Err(st); }
+
+            let import_base: PVOID;
+            let mut ldr_entry: *mut LDR_DATA_TABLE_ENTRY;
+
+            // CheckDllState loop — re-scan after each lazy-load.
+            loop {
+                let mut found: PVOID = core::ptr::null_mut();
+                let mut next = PsLoadedModuleList.Flink;
+                ldr_entry = core::ptr::null_mut();
+                while next != head {
+                    let entry = (next as *mut u8).sub(
+                        core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
+                    ) as *mut LDR_DATA_TABLE_ENTRY;
+                    if RtlEqualUnicodeString(
+                        core::ptr::addr_of!(name_string),
+                        core::ptr::addr_of_mut!((*entry).BaseDllName),
+                        1,
+                    ) != 0 {
+                        found = (*entry).DllBase;
+                        ldr_entry = entry;
+                        if reference_needed && ((*entry).Flags & LDRP_LOAD_IN_PROGRESS) == 0 {
+                            (*entry).LoadCount += 1;
+                        }
+                        break;
+                    }
+                    next = (*next).Flink;
+                }
+                if !found.is_null() {
+                    import_base = found;
+                    break;
+                }
+
+                // Lazy-load the missing DLL.
+                let mut dll_name = _UNICODE_STRING {
+                    Length: 0,
+                    MaximumLength: name_string.Length + (*image_file_directory).Length + 2,
+                    Buffer: core::ptr::null_mut(),
+                };
+                dll_name.Buffer = ExAllocatePoolWithTag(
+                    NonPagedPool, dll_name.MaximumLength as usize, TAG_LDR_WSTR,
+                ) as *mut u16;
+                if dll_name.Buffer.is_null() {
+                    return Err(STATUS_INSUFFICIENT_RESOURCES);
+                }
+                RtlCopyUnicodeString(core::ptr::addr_of_mut!(dll_name), image_file_directory);
+                RtlAppendUnicodeStringToString(
+                    core::ptr::addr_of_mut!(dll_name),
+                    core::ptr::addr_of_mut!(name_string),
+                );
+
+                let mut dll_entry: *mut LDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut dll_base: PVOID = core::ptr::null_mut();
+                let mut load_status = MmLoadSystemImage(
+                    core::ptr::addr_of_mut!(dll_name),
+                    name_prefix,
+                    core::ptr::null_mut(),
+                    0,
+                    core::ptr::addr_of_mut!(dll_entry) as *mut PVOID,
+                    core::ptr::addr_of_mut!(dll_base),
+                );
+
+                // win32k / GDI drivers can also import from drivers\ subdir.
+                // C does `(MI_IS_SESSION_ADDRESS(ImageBase) || 1)` — always true.
+                if load_status == STATUS_OBJECT_NAME_NOT_FOUND {
+                    ExFreePoolWithTag(dll_name.Buffer as PVOID, TAG_LDR_WSTR);
+                    dll_name.MaximumLength += drivers_folder_name.Length;
+                    dll_name.Buffer = ExAllocatePoolWithTag(
+                        NonPagedPool, dll_name.MaximumLength as usize, TAG_LDR_WSTR,
+                    ) as *mut u16;
+                    if dll_name.Buffer.is_null() {
+                        return Err(STATUS_INSUFFICIENT_RESOURCES);
+                    }
+                    dll_name.Length = 0;
+                    RtlCopyUnicodeString(core::ptr::addr_of_mut!(dll_name), image_file_directory);
+                    RtlAppendUnicodeStringToString(
+                        core::ptr::addr_of_mut!(dll_name),
+                        core::ptr::addr_of_mut!(drivers_folder_name),
+                    );
+                    RtlAppendUnicodeStringToString(
+                        core::ptr::addr_of_mut!(dll_name),
+                        core::ptr::addr_of_mut!(name_string),
+                    );
+
+                    load_status = MmLoadSystemImage(
+                        core::ptr::addr_of_mut!(dll_name),
+                        name_prefix,
+                        core::ptr::null_mut(),
+                        0,
+                        core::ptr::addr_of_mut!(dll_entry) as *mut PVOID,
+                        core::ptr::addr_of_mut!(dll_base),
+                    );
+                }
+
+                if !NT_SUCCESS(load_status) {
+                    *missing_driver = dll_name.Buffer;
+                    *(missing_driver as *mut ULONG_PTR) |= 1;
+                    *missing_api = core::ptr::null_mut();
+                    return Err(load_status);
+                }
+
+                ExFreePoolWithTag(dll_name.Buffer as PVOID, TAG_LDR_WSTR);
+
+                let init_status = MmCallDllInitialize(dll_entry, head);
+                if !NT_SUCCESS(init_status) {
+                    MmUnloadSystemImage(dll_entry as PVOID);
+                }
+                // Loop back: re-scan the module list (CheckDllState).
+            }
+
+            if reference_needed && !loaded_imports.is_null()
+                && ((*ldr_entry).Flags & LDRP_LOAD_IN_PROGRESS) == 0
+            {
+                let slot = (*loaded_imports).Entry.as_mut_ptr().add(import_count_built);
+                *slot = ldr_entry;
+                import_count_built += 1;
+            }
+
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(name_string));
+            name_string.Buffer = core::ptr::null_mut();
+
+            *missing_driver = (*ldr_entry).BaseDllName.Buffer;
+
+            let mut export_size: ULONG = 0;
+            let export_directory = RtlImageDirectoryEntryToData(
+                import_base, 1, IMAGE_DIRECTORY_ENTRY_EXPORT,
+                core::ptr::addr_of_mut!(export_size),
+            ) as PIMAGE_EXPORT_DIRECTORY;
+            if export_directory.is_null() {
+                return Err(STATUS_DRIVER_ENTRYPOINT_NOT_FOUND);
+            }
+
+            let oft = (*current_descriptor).__bindgen_anon_1.OriginalFirstThunk;
+            if oft != 0 {
+                let mut orig_thunk = ((image_base as ULONG_PTR) + oft as ULONG_PTR) as *mut IMAGE_THUNK_DATA;
+                let mut first_thunk = ((image_base as ULONG_PTR) + (*current_descriptor).FirstThunk as ULONG_PTR) as *mut IMAGE_THUNK_DATA;
+                while (*orig_thunk).u1.AddressOfData != 0 {
+                    let snap_status = MiSnapThunk(
+                        import_base, image_base,
+                        orig_thunk, first_thunk,
+                        export_directory, export_size,
+                        0u8, missing_api,
+                    );
+                    orig_thunk = orig_thunk.add(1);
+                    first_thunk = first_thunk.add(1);
+                    if !NT_SUCCESS(snap_status) { return Err(snap_status); }
+                    *missing_api = missing_api_buffer;
+                }
+            }
+
+            current_descriptor = current_descriptor.add(1);
+        }
+        Ok(())
+    })();
+
+    // Free name_string if still allocated (failure path).
+    if !name_string.Buffer.is_null() {
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(name_string));
+    }
+
+    if let Err(status) = result {
+        // MiDereferenceImports is a no-op in the C shim; just free the array.
+        if !loaded_imports.is_null() {
+            ExFreePoolWithTag(loaded_imports as PVOID, TAG_LDR_IMPORTS);
+        }
+        return status;
+    }
+
+    // Compress LoadedImports (drop NULL entries; encode single in pointer LSB).
+    if !loaded_imports.is_null() {
+        let total = (*loaded_imports).Count as usize;
+        let mut single_entry: *mut _LDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+        let mut nonzero: usize = 0;
+        for i in 0..total {
+            let slot = *(*loaded_imports).Entry.as_ptr().add(i);
+            if !slot.is_null() {
+                single_entry = ((slot as ULONG_PTR) | MM_SYSLDR_SINGLE_ENTRY) as *mut _LDR_DATA_TABLE_ENTRY;
+                nonzero += 1;
+            }
+        }
+
+        if nonzero == 0 {
+            ExFreePoolWithTag(loaded_imports as PVOID, TAG_LDR_IMPORTS);
+            *load_imports = MM_SYSLDR_NO_IMPORTS;
+        } else if nonzero == 1 {
+            ExFreePoolWithTag(loaded_imports as PVOID, TAG_LDR_IMPORTS);
+            *load_imports = single_entry as PVOID;
+        } else if nonzero != total {
+            let new_size = nonzero * core::mem::size_of::<*mut _LDR_DATA_TABLE_ENTRY>()
+                         + core::mem::size_of::<usize>();
+            let new_imports = ExAllocatePoolWithTag(PagedPool, new_size, TAG_LDR_IMPORTS) as *mut LOAD_IMPORTS;
+            if !new_imports.is_null() {
+                (*new_imports).Count = 0;
+                let mut written: usize = 0;
+                for i in 0..total {
+                    let slot = *(*loaded_imports).Entry.as_ptr().add(i);
+                    if !slot.is_null() {
+                        let dst = (*new_imports).Entry.as_mut_ptr().add(written);
+                        *dst = slot;
+                        written += 1;
+                    }
+                }
+                (*new_imports).Count = written as _;
+                ExFreePoolWithTag(loaded_imports as PVOID, TAG_LDR_IMPORTS);
+                *load_imports = new_imports as PVOID;
+            } else {
+                *load_imports = loaded_imports as PVOID;
+            }
+        } else {
+            *load_imports = loaded_imports as PVOID;
+        }
+    }
+
+    STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MmPageEntireDriver(address_within_section: PVOID) -> PVOID {
     let address_within_section = opaque_ptr(address_within_section);
@@ -1215,10 +1545,22 @@ extern "system" {
     fn RtlFreeAnsiString(s: *mut ANSI_STRING);
     fn RtlEqualUnicodeString(s1: *const _UNICODE_STRING, s2: *mut _UNICODE_STRING, case_insensitive: u32) -> u32;
     fn RtlAppendUnicodeStringToString(dest: *mut _UNICODE_STRING, src: *mut _UNICODE_STRING) -> NTSTATUS;
+    fn RtlInitAnsiString(dest: *mut ANSI_STRING, src: *const i8);
+    fn RtlCopyUnicodeString(dest: *mut _UNICODE_STRING, src: *const _UNICODE_STRING);
     fn DbgUnLoadImageSymbols(name: *mut ANSI_STRING, base: PVOID, pid: ULONG_PTR);
     fn PsGetCurrentProcessId() -> HANDLE;
     fn MmMapViewOfSection( section: PSECTION, process: PEPROCESS, base: *mut PVOID, zero_bits: ULONG_PTR, commit_size: usize, section_offset: *mut LARGE_INTEGER, view_size: *mut usize, inherit: u32, alloc_type: ULONG, protect: ULONG, ) -> NTSTATUS;
     fn MmUnmapViewOfSection(process: PEPROCESS, base: PVOID) -> NTSTATUS;
+    // Recursive call into C MmLoadSystemImage (still C this round; will become
+    // self-Rust after MmLoadSystemImage is translated).
+    fn MmLoadSystemImage(
+        file_name: *mut _UNICODE_STRING,
+        name_prefix: *mut _UNICODE_STRING,
+        loaded_name: *mut _UNICODE_STRING,
+        flags: ULONG,
+        module_object: *mut PVOID,
+        image_base_address: *mut PVOID,
+    ) -> NTSTATUS;
 }
 
 const IMAGE_DIRECTORY_ENTRY_DEBUG: u16 = 6;
