@@ -322,6 +322,7 @@ extern "C" {
 
 extern "system" {
     fn CmCheckRegistry(CmHive: PCMHIVE, Flags: u32) -> u32;
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     fn HvInitialize(
         Hive: PHHIVE,
         Operation: u32,
@@ -1618,20 +1619,7 @@ pub unsafe extern "system" fn CmpCreateRootNode(
 
     (*KeyCell).Signature = 0x6B6E;
     (*KeyCell).Flags = (KEY_HIVE_ENTRY | KEY_NO_DELETE) as u16;
-    
-    let mut system_time: i64 = 0;
-    core::ptr::copy_nonoverlapping(
-        &mut system_time as *mut i64 as *const u8,
-        core::ptr::addr_of_mut!((*KeyCell).LastWriteTime) as *mut u8,
-        8,
-    );
-    {
-        let tick_count_ptr = 0x7FFE0000u32 as *const u32;
-        let tick_count = core::ptr::read_volatile(tick_count_ptr);
-        system_time = (tick_count as i64) * 10000i64;
-        (*KeyCell).LastWriteTime.QuadPart = system_time;
-    }
-    
+    KeQuerySystemTime(core::ptr::addr_of_mut!((*KeyCell).LastWriteTime) as *mut LARGE_INTEGER);
     (*KeyCell).Parent = 0xFFFFFFFF;
     (*KeyCell).SubKeyCounts[0] = 0;
     (*KeyCell).SubKeyCounts[1] = 0;
