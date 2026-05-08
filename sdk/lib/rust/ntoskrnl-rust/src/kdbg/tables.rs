@@ -321,3 +321,61 @@ pub unsafe extern "C" fn NPX_STATE_TO_STRING(state: u32) -> PSTR {
     };
     s.as_ptr() as PSTR
 }
+
+// ============================================================================
+// kdbg globals — ownership moved from kdbg_rust_shims.c. kdb_cli.rs declares
+// each via `extern "C" { static mut X: T; }` so storage has to live on this
+// side; bool/u32/PCHAR types are layout-trivial across all 3 arches.
+// ============================================================================
+
+/// `PKDBG_CLI_ROUTINE` — file-private typedef in the original C source.
+/// Re-rendered as a function pointer; the slot table is fixed-size 10.
+type PKDBG_CLI_ROUTINE = Option<
+    unsafe extern "system" fn(
+        Command: *mut core::ffi::c_char,
+        Argc: ntkrnl_sys::base::ULONG,
+        Argv: *mut *mut core::ffi::c_char,
+    ) -> ntkrnl_sys::base::BOOLEAN,
+>;
+
+/// CLI callback slots — fixed-size 10, registered at runtime.
+#[no_mangle]
+pub static mut KdbCliCallbacks: [PKDBG_CLI_ROUTINE; 10] = [None; 10];
+
+#[no_mangle]
+pub static mut KdbUseIntelSyntax: ntkrnl_sys::base::BOOLEAN = 1; // TRUE
+#[no_mangle]
+pub static mut KdbBreakOnModuleLoad: ntkrnl_sys::base::BOOLEAN = 0;
+#[no_mangle]
+pub static mut KdbNumberOfRowsPrinted: ntkrnl_sys::base::ULONG = 0;
+#[no_mangle]
+pub static mut KdbNumberOfColsPrinted: ntkrnl_sys::base::ULONG = 0;
+#[no_mangle]
+pub static mut KdbOutputAborted: ntkrnl_sys::base::BOOLEAN = 0;
+#[no_mangle]
+pub static mut KdbRepeatLastCommand: ntkrnl_sys::base::BOOLEAN = 0;
+
+/// `KdbInitFileBuffer` and `KdbpBugCheckRequested` — defined here in Rust
+/// since the original C kdb_cli.c is excluded from the build.
+#[no_mangle]
+pub static mut KdbInitFileBuffer: *mut core::ffi::c_char = core::ptr::null_mut();
+#[no_mangle]
+pub static mut KdbpBugCheckRequested: ntkrnl_sys::base::BOOLEAN = 0;
+
+/// Dmesg ring buffer state — read+written from kdb_cli.rs serial-output paths.
+#[no_mangle]
+pub static KdpDmesgBufferSize: ntkrnl_sys::base::ULONG = 128 * 1024;
+#[no_mangle]
+pub static mut KdpDmesgBuffer: *mut core::ffi::c_char = core::ptr::null_mut();
+#[no_mangle]
+pub static mut KdpDmesgCurrentPosition: ntkrnl_sys::base::ULONG = 0;
+#[no_mangle]
+pub static mut KdpDmesgFreeBytes: ntkrnl_sys::base::ULONG = 0;
+#[no_mangle]
+pub static mut KdbDmesgTotalWritten: ntkrnl_sys::base::ULONG = 0;
+#[no_mangle]
+pub static mut KdbpIsInDmesgMode: ntkrnl_sys::base::BOOLEAN = 0;
+
+/// `KSPIN_LOCK` is a single ULONG_PTR on all 3 arches; zero-init by convention.
+#[no_mangle]
+pub static mut KdpDmesgLogSpinLock: ntkrnl_sys::base::ULONG_PTR = 0;

@@ -842,3 +842,105 @@ core::arch::global_asm!(r#"
         msr daifset, #0xF
         ret
 "#);
+
+// ============================================================================
+// kdbg cdecl macro/inline wrappers (was kdbg_rust_shims.c batch)
+//
+// `Ke386Get{Global,Local}DescriptorTable` cdecl variant — distinct
+// from the stdcall `_X@4` variant in `ke_rust_shims.c`. `Ke386GetTr`
+// (i386 `str` asm). `KeGet/SetContextFrameRegister` and the trap-frame
+// register helpers — plain CONTEXT/KTRAP_FRAME field accessors that
+// kdb_cli.rs declares as `extern "C"`.
+// ============================================================================
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn Ke386GetGlobalDescriptorTable(limit: *mut u16) {
+    core::arch::asm!("sgdt [{}]", in(reg) limit, options(nostack));
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn Ke386GetLocalDescriptorTable(selector: *mut u16) {
+    core::arch::asm!("sldt [{}]", in(reg) selector, options(nostack));
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn Ke386GetTr() -> u16 {
+    let tr: u16;
+    core::arch::asm!("str {0:x}", out(reg) tr, options(nostack, nomem, preserves_flags));
+    tr
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetContextFrameRegister(
+    context: *mut ntkrnl_sys::ddk::_CONTEXT,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    (*context).Ebp as ntkrnl_sys::base::ULONG_PTR
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KeSetContextFrameRegister(
+    context: *mut ntkrnl_sys::ddk::_CONTEXT,
+    frame: ntkrnl_sys::base::ULONG_PTR,
+) {
+    (*context).Ebp = frame as u32;
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetTrapFrameFrameRegister(
+    trap_frame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    (*trap_frame).Ebp as ntkrnl_sys::base::ULONG_PTR
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetTrapFrameStackRegister(
+    trap_frame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    // KernelMode = 0; PreviousPreviousMode is byte-sized in some headers but
+    // bindgen renders the i386 KTRAP_FRAME field as `ULONG`.
+    if (*trap_frame).PreviousPreviousMode == 0 {
+        (*trap_frame).TempEsp as ntkrnl_sys::base::ULONG_PTR
+    } else {
+        (*trap_frame).HardwareEsp as ntkrnl_sys::base::ULONG_PTR
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetContextFrameRegister(
+    context: *mut ntkrnl_sys::ddk::_CONTEXT,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    (*context).Rbp as ntkrnl_sys::base::ULONG_PTR
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn KeSetContextFrameRegister(
+    context: *mut ntkrnl_sys::ddk::_CONTEXT,
+    frame: ntkrnl_sys::base::ULONG_PTR,
+) {
+    (*context).Rbp = frame as u64;
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetTrapFrameFrameRegister(
+    trap_frame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    (*trap_frame).Rbp as ntkrnl_sys::base::ULONG_PTR
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn KeGetTrapFrameStackRegister(
+    trap_frame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) -> ntkrnl_sys::base::ULONG_PTR {
+    (*trap_frame).Rsp as ntkrnl_sys::base::ULONG_PTR
+}

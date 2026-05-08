@@ -375,17 +375,44 @@ mod _force_ke_macros_symbols {
         _rs_HalSetSystemInformation,
         _rs_HalVectorToIDTEntry,
     ];
+    // 2026-05-07: kdbg cdecl wrappers translated from kdbg_rust_shims.c.
+    // Both arches need them — kdb_cli.rs's `KdbpCmdGdtLdtIdt` is exported
+    // unconditionally and references the descriptor-table + TR helpers.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    extern "C" {
+        fn KeGetContextFrameRegister();
+        fn KeSetContextFrameRegister();
+        fn KeGetTrapFrameFrameRegister();
+        fn KeGetTrapFrameStackRegister();
+        fn Ke386GetGlobalDescriptorTable();
+        fn Ke386GetLocalDescriptorTable();
+        fn Ke386GetTr();
+    }
     #[cfg(target_arch = "x86")]
     #[used]
-    static REFS_I386: [unsafe extern "C" fn(); 3] = [
+    static REFS_I386: [unsafe extern "C" fn(); 10] = [
         _rs_Ke386GetGlobalDescriptorTable,
         _rs_Ke386GetLocalDescriptorTable,
         _rs_KeGdiFlushUserBatch_call,
+        Ke386GetGlobalDescriptorTable,
+        Ke386GetLocalDescriptorTable,
+        Ke386GetTr,
+        KeGetContextFrameRegister,
+        KeSetContextFrameRegister,
+        KeGetTrapFrameFrameRegister,
+        KeGetTrapFrameStackRegister,
     ];
     #[cfg(target_arch = "x86_64")]
     #[used]
-    static REFS_AMD64: [unsafe extern "C" fn(); 1] = [
+    static REFS_AMD64: [unsafe extern "C" fn(); 8] = [
         _rs_KeGdiFlushUserBatch_call,
+        Ke386GetGlobalDescriptorTable,
+        Ke386GetLocalDescriptorTable,
+        Ke386GetTr,
+        KeGetContextFrameRegister,
+        KeSetContextFrameRegister,
+        KeGetTrapFrameFrameRegister,
+        KeGetTrapFrameStackRegister,
     ];
 
     // 2026-05-07: ARM64 global_asm! stubs translated from ntoskrnl/ke/arm64/{boot,stubs_asm}.S.

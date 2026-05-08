@@ -36,7 +36,7 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | `ntprintf_trampoline.c` | 170 | 0 | 0 | 0 | 0 |
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
-| `kdbg_rust_shims.c` | 162 | 0 | 10 | 1 | 2 |
+| `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
 | `kernel_c_helpers.c` | 490 | 1 | 42 | 6 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
 
@@ -46,6 +46,11 @@ and macro are entirely inside the ARM64-only `Arm64DumpPte` PTE
 bitfield dump — a pure debug helper that pokes the UART. Translating
 it to Rust requires routing through bindgen's `__bindgen_anon_*`
 union accessors; punted as a focused ARM64-only follow-up.
+
+\*\* `kdbg_rust_shims.c`'s remaining macro is `RTL_CONSTANT_STRING`
+used to const-init `KdbPromptStr: CSTRING`. Trivially translatable
+to Rust (compile-time `pub static`) but low-priority since the file
+only also contains the `KdbpPrint` variadic adapter (must stay).
 
 `ntprintf_trampoline.c` is already minimal. Every other file pulls
 `<ntoskrnl.h>` and uses substantial logic from it.
@@ -131,20 +136,32 @@ declare `MmUserProbeAddress` / `ExRaiseAccessViolation` /
 `ProbeForWrite` directly. Currently still `#include <ntoskrnl.h>`
 because the cargo-driven build hasn't been wired yet.
 
-### `kdbg_rust_shims.c` — moderate (~1-2 sessions)
+### `kdbg_rust_shims.c` — DONE (audit-target reached)
 
-What needs translating:
-- `KeGet*ContextFrameRegister` / `KeGet*TrapFrameStackRegister` — 4
-  one-liners that read CONTEXT::Ebp / Rbp / Sp etc. Trivial; main risk
-  is the rustc 1.92 stdcall ABI bug if NTAPI signature is needed.
-- `Ke386GetTr` (i386 inline `str` asm) — `core::arch::asm!`.
-- `KdbCliCallbacks`, mode flags, dmesg state, `KdbPromptStr` — globals;
-  move to Rust `pub static mut` (PCSTR layout fits in `<ntdef.h>`).
+Reduced from 162→62 LOC; audit proxies are 0/0/1/0 (the lone macro
+is `RTL_CONSTANT_STRING`, used to const-init the kdb prompt string).
+
+Promoted in this pass:
+- Globals (KdbCliCallbacks, mode flags, dmesg state, KSPIN_LOCK,
+  bug-check requested, init file buffer) → `kdbg::tables` as
+  `#[no_mangle] pub static mut`. ~17 storage-only definitions,
+  layout-trivial across all 3 arches.
+- `Ke386Get{Global,Local}DescriptorTable` (cdecl variants),
+  `Ke386GetTr` → `ke-macros` rlib via `core::arch::asm!`. The
+  stdcall variants (`_X@N`) already lived there from prior work;
+  on i386 the cdecl + stdcall decorations coexist as separate
+  symbols. amd64 versions added too: `KdbpCmdGdtLdtIdt` is exported
+  unconditionally and references these.
+- `KeGet/SetContextFrameRegister`,
+  `KeGetTrapFrame{Frame,Stack}Register` → `ke-macros`. Plain
+  `CONTEXT::{Ebp,Rbp}` / `KTRAP_FRAME::{Ebp,Rbp,TempEsp,HardwareEsp,
+  Rsp}` field reads, both arches.
 
 What stays:
-- `KdbpPrint` — variadic. Stays.
-
-After: file needs only `<ntdef.h>` + `<stdarg.h>` for the variadic.
+- `KdbpPrint` — variadic.
+- `KdbPromptStr` — `CSTRING` const-init via `RTL_CONSTANT_STRING`.
+  Translatable but the const-init dance is low-value relative to
+  the variadic constraint (file already has to stay for `KdbpPrint`).
 
 ### `kernel_c_helpers.c` — heavy (~3-5 sessions)
 
