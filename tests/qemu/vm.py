@@ -58,16 +58,25 @@ class Arm64Config(ArchConfig):
     # on ARM64. SMSS doesn't currently reach its _main (LdrInitializeThunk
     # appears to fail silently). Idle detection alone is too weak — every
     # silent kernel passes.
-    boot_marker: str = "[PS] PspUserThreadStartup: returning"
-    boot_timeout: float = 300.0
+    # On arm64 we emulate via TCG (no KVM in WSL2 for aarch64), so user-mode
+    # boot is much slower than on i386/amd64. Wait for explorer.exe to enter
+    # _tWinMain — that proves the entire user-mode chain (smss → csrss →
+    # winlogon → explorer) is up. Boot takes ~5 min cold-cache TCG.
+    boot_marker: str = "[EXPLORER] _tWinMain entered"
+    boot_timeout: float = 540.0
     min_boot_bytes: int = 5000
-    qmp_timeout: float = 10.0
-    desktop_settle_seconds: float = 30.0
-    # Aspirational chain — test_milestones reports each as reached/missed.
-    # Currently the [SMSS]+ markers do not fire on ARM64; that's the bug.
+    # QMP can be slow to respond when the kernel is in tight context-switch
+    # loops on TCG — give it more headroom than i386/amd64.
+    qmp_timeout: float = 60.0
+    # Brief settle after _tWinMain to let the taskbar/desktop draw before
+    # screenshot/snapshot tests run.
+    desktop_settle_seconds: float = 15.0
+    # Boot milestones for test_milestones. "IoInitSystem returning TRUE" is
+    # silenced on arm64 (iomgr.rs::io_trace is a no-op for aarch64) so we
+    # don't gate on it; the surrounding [SMSS]/[CSRSS] entries already prove
+    # IO subsystem init completed.
     required_milestones: list[str] = field(default_factory=lambda: [
         "[KERNEL] KiSystemStartup entered",
-        "IoInitSystem returning TRUE",
         "[PS] PspUserThreadStartup: returning",
         "[SMSS] _main entered",
         "[CSRSS] _main entered",

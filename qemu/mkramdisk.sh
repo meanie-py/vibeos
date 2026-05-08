@@ -225,6 +225,9 @@ mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.d
 
 # Explorer.exe + shell DLLs
 mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/system32/explorer.exe
+# winlogon.c builds the explorer path as %SystemRoot%\explorer.exe (= X:\reactos\explorer.exe on this ramdisk),
+# so also place a copy at that location. The system32 copy is kept for any code path that still searches there.
+mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/explorer.exe
 mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system32/comctl32.dll
 mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/dll/win32/ole32/ole32.dll"                     ::/reactos/system32/ole32.dll
 mcopy -i "$RAMDISK_IMG" "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"               ::/reactos/system32/oleaut32.dll
