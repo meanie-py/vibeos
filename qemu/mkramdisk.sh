@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build-arm64"
 QEMU_DIR="$SCRIPT_DIR"
-SOURCE_DIR="$PROJECT_DIR/reactos"
+SOURCE_DIR="$PROJECT_DIR"
 
 RAMDISK_IMG="$QEMU_DIR/ramdisk.img"
 BOOT_IMG="$QEMU_DIR/boot.img"
