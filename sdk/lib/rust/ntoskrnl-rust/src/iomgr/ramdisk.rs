@@ -109,10 +109,22 @@ static RAMDISK_BOOTDISK_GUID: _GUID = _GUID {
     Data4: [0xA0, 0xC4, 0x08, 0x00, 0x2B, 0xE1, 0x0D, 0x8E],
 };
 
+// In ntddrdsk.h this is a 6-field bitfield: Readonly:1 | Fixed:1 | NoDriveLetter:1
+// | NoDosDevice:1 | Hidden:1 | ExportAsCd:1. Storing it as a single u32 here is
+// fine — but the bit positions matter when writing into it. Bit 0 is Readonly,
+// bit 1 is Fixed; mixing them up creates a read-only ramdisk that fails every
+// fastfat write with STATUS_MEDIA_WRITE_PROTECTED.
 #[repr(C)]
 struct RAMDISK_CREATE_OPTIONS {
-    Fixed: ULONG,
+    Bits: ULONG,
 }
+
+const RAMDISK_OPTION_READONLY: ULONG = 1 << 0;
+const RAMDISK_OPTION_FIXED: ULONG = 1 << 1;
+const RAMDISK_OPTION_NO_DRIVE_LETTER: ULONG = 1 << 2;
+const RAMDISK_OPTION_NO_DOS_DEVICE: ULONG = 1 << 3;
+const RAMDISK_OPTION_HIDDEN: ULONG = 1 << 4;
+const RAMDISK_OPTION_EXPORT_AS_CD: ULONG = 1 << 5;
 
 /// Must match C layout from ntddrdsk.h exactly.
 /// We use the {BasePage, DriveLetter} variant + padding.
@@ -207,7 +219,7 @@ pub unsafe extern "system" fn IopStartRamdisk(
         ((*MemoryDescriptor).PageCount << PAGE_SHIFT) as u64;
     RamdiskCreate.DiskGuid = RAMDISK_BOOTDISK_GUID;
     RamdiskCreate.DriveLetter = b'C' as u16;
-    RamdiskCreate.Options.Fixed = 1;
+    RamdiskCreate.Options.Bits = RAMDISK_OPTION_FIXED;
 
     CommandLine = (*LoaderBlock).LoadOptions as *mut i8;
     if !CommandLine.is_null() {
