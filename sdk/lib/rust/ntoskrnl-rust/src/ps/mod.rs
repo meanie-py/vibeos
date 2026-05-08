@@ -7,6 +7,7 @@ pub mod amd64;
 
 pub mod apphelp;
 pub mod debug;
+pub mod info_class;
 pub mod job;
 pub mod kill;
 pub mod process;

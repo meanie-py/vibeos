@@ -123,6 +123,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/debug.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/job.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/kill.rs
+            ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/info_class.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/process.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psmgr.rs
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/ps/psnotify.rs

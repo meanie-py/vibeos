@@ -254,9 +254,20 @@ the LTO workaround is at audit-target 0/0/0/0.
 
 What still remains as future work (not blocking minimal-trampoline
 status, but nice-to-haves):
-- Translate `PsProcessInfoClass` / `PsThreadInfoClass` arrays to
-  Rust (~250 entries each, mechanical). Eliminates the last C file
-  with the `#define static` rename pattern.
+- `PsProcessInfoClass` / `PsThreadInfoClass` arrays — a byte-equal
+  parallel Rust translation now lives at `ntoskrnl-rust/src/ps/info_class.rs`
+  under `_rs_*` symbol names (47 + 28 entries respectively, much
+  smaller than the original ~250 estimate once the `#if 0` Win7+ tail
+  is excluded). Renaming the Rust statics to drop the `_rs_` prefix
+  (so they replace the C-side definition and `kernel_c_helpers.c`
+  can be retired) reproducibly bugchecks i386 with
+  STATUS_DATATYPE_MISALIGNMENT at `[WINLOGON] Calling StartRpcServer`
+  even though the Rust and C array bytes are identical (verified by
+  `cmp` of the .rdata regions). The failure is purely positional —
+  Rust statics land at a different .rdata offset than the C ones.
+  Further investigation needed before the swap can land; the
+  parallel `_rs_*` translation captures the work for that future
+  follow-up. See `info_class.rs` end-of-file note for details.
 
 What stays:
 - `KdpDprintf`, `RtlStringCbPrintfA` — variadic.
