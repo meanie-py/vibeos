@@ -1149,8 +1149,32 @@ pub const TableFoundNode: ULONG = 1;
 
 pub const VadDevicePhysicalMemory: ULONG = 5;
 
-// PrototypePte — used as a flag (1) in pagfault
-pub const PrototypePte: ULONG_PTR = 1;
+// PrototypePte — soft PTE template used in MmArmAccessFault when constructing
+// a prototype PTE for an address whose VAD has FirstPrototypePte set
+// (e.g. the user-mode mirror of KUSER_SHARED_DATA at 0x7FFE0000).
+//
+// Layout mirrors the per-arch C globals in ntoskrnl/mm/{i386,amd64}/init.c:
+//     PrototypePte = (Protection << SOFT_PROTECTION_SHIFT)
+//                  | PTE_PROTOTYPE
+//                  | (MI_PTE_LOOKUP_NEEDED << SoftPageFileHighShift)
+// The protection bits are overwritten at use time via set_soft_protection,
+// so we only need PTE_PROTOTYPE (bit 10) and PageFileHigh = MI_PTE_LOOKUP_NEEDED
+// (which lives at bits [63:32] on 64-bit, [31:12] on 32-bit). Bit 0 must NOT
+// be set — that's the hardware Valid bit; this is an INVALID (software) PTE.
+//
+// NOTE: was incorrectly defined as `1` for a long time, which on every arch
+// produced a soft PTE with bit 0 (Valid) set and PTE_PROTOTYPE clear. amd64
+// happened to dispatch it through MiDispatchFault before re-faulting, but on
+// arm64 the next access re-faulted on the same address forever, hanging smss
+// during ntdll::LdrpInit's first read of SharedUserData->ProcessorFeatures.
+#[cfg(target_pointer_width = "64")]
+pub const PrototypePte: ULONG_PTR =
+    /* PTE_PROTOTYPE */ 0x400
+    | /* MI_PTE_LOOKUP_NEEDED << 32 */ 0xFFFFFFFF_00000000;
+#[cfg(target_pointer_width = "32")]
+pub const PrototypePte: ULONG_PTR =
+    /* PTE_PROTOTYPE */ 0x400
+    | /* MI_PTE_LOOKUP_NEEDED << 12 */ 0xFFFFF000;
 
 // ============================================================================
 // Security / Event / ACL constants for mminit.rs
