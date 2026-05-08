@@ -26,6 +26,10 @@ list(APPEND NTKRNLMP_PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/guid.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ke_rust_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/arm64_uart.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
 
 add_executable(ntkrnlmp

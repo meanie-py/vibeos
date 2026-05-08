@@ -34,10 +34,14 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | File | LOC | `_saved_` | `->` | macros | intrinsics |
 |------|----:|----------:|-----:|-------:|-----------:|
 | `ntprintf_trampoline.c` | 170 | 0 | 0 | 0 | 0 |
+| `variadic_shims.c` | 77 | 0 | 0 | 0 | 0 |
+| `mm_lock_outlines.c` | 36 | 0 | 0 | 0 | 0 |
+| `kernel_c_helpers.c` | 41 | 0 | 0 | 0 | 0 |
+| `arm64_uart.c` | 47 | 0 | 0 | 0\*\*\* | 0 |
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
+| `lto_workaround.c` | 45 | 0 | 2 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
-| `kernel_c_helpers.c` | 225 | 1 | 2 | 3 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
 
 \* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
@@ -51,6 +55,17 @@ union accessors; punted as a focused ARM64-only follow-up.
 used to const-init `KdbPromptStr: CSTRING`. Trivially translatable
 to Rust (compile-time `pub static`) but low-priority since the file
 only also contains the `KdbpPrint` variadic adapter (must stay).
+
+\*\*\* `arm64_uart.c` audit reports `macros=0` after stripping the
+function-definition self-references the regex picks up. Genuinely
+zero macro expansions in the body (no kernel headers pulled —
+just `<ntdef.h>`).
+
+`lto_workaround.c` deliberately retains its `<ntoskrnl.h>` chain —
+the file IS the isolation boundary for the LLVM i386 fat-LTO bug.
+The two `->` accesses are `PsGetCurrentProcess()->Token`. Future
+cargo-driven build wires this through a separate `cc::Build`
+invocation in `build.rs` so it lives outside Rust's LTO scope.
 
 `ntprintf_trampoline.c` is already minimal. Every other file pulls
 `<ntoskrnl.h>` and uses substantial logic from it.
@@ -163,7 +178,7 @@ What stays:
   Translatable but the const-init dance is low-value relative to
   the variadic constraint (file already has to stay for `KdbpPrint`).
 
-### `kernel_c_helpers.c` — Pass 3 done (~1-2 sessions remaining)
+### `kernel_c_helpers.c` — DONE (split into focused trampolines)
 
 PS globals + SharedUserData + GENERIC_MAPPING tables + PsNtDllPathName
 moved to `ntoskrnl-rust::ps::ps_globals` (`#[no_mangle] pub static mut`,
@@ -200,23 +215,41 @@ hang is presumably the rustc 1.92 ABI bug propagating attributes
 through cross-CGU optimisations even when the offending function
 isn't on the live path.
 
-Pass 3 (this round): `ExpKdbgExtFileCache` and `ExpKdbgExtDefWrites`
-ported to Rust alongside `ExpKdbgExtHandle`. Same `kdbp_print!` macro
-pattern; the Cc/Mm global accesses (CcTotalDirtyPages, MmAvailablePages,
-MmThrottleTop/Bottom, MmModifiedPageListHead.Total) all already had
-Rust homes — `ntoskrnl-rust::cc::view`, `ntoskrnl-rust::mm::freelist`,
-`ntkrnl-sys::globals` — so the translation was just type plumbing
-(`PFN_NUMBER` → `ULONG` casts, `wrapping_mul` for the page-size scale).
+Pass 4 (this round): split into 5 focused trampolines, one per
+distinct must-stay reason. Original `kernel_c_helpers.c` is now 41
+LOC and only houses the `ps_i.h` re-include trick. Resulting layout:
 
-Audit proxies are now `1/2/3/0`. The remaining 2 `->` are both inside
-`SepInitTokensShim` (`PsGetCurrentProcess()->Token` — LLVM fat-LTO
-workaround, must stay).
+- `variadic_shims.c` (77 LOC, 0/0/0/0) — `KdpDprintf` and
+  `RtlStringCbPrintfA`. Headers limited to `<ntdef.h>` + `<stdarg.h>`
+  with hand-defined `STATUS_*` constants. cc-rs in a future
+  cargo-driven build can compile this standalone.
+- `lto_workaround.c` (45 LOC, 2 `->`) — `SepInitTokensShim` only.
+  Pulls full `<ntoskrnl.h>` deliberately; the file IS the isolation
+  boundary for the LLVM i386 fat-LTO ud2 bug, kept in its own
+  compile-unit so future cargo-driven builds can route it through a
+  separate `cc::Build` outside Rust LTO scope.
+- `mm_lock_outlines.c` (36 LOC, 0/0/0/0) — the
+  `MmLockSectionSegment` trio that needs C `__FILE__`/`__LINE__`.
+- `arm64_uart.c` (47 LOC, 0/0/0/0) — ARM64-only UART pokes (no-op
+  stubs on i386/amd64). Pulls only `<ntdef.h>`.
+- `kernel_c_helpers.c` (41 LOC, 0/0/0/0) — only the `ps_i.h`
+  re-include trick. The `_static_*` rename + `#pragma push/pop` of
+  `static` create the externally-linkable `PsProcessInfoClass` /
+  `PsThreadInfoClass` arrays that Rust query-info dispatchers
+  extern-link against.
 
-What still needs translating:
-- ARM64 `ARM64_UART_TRACE` / `ARM64_UART_TRACE_HEX` — translatable
-  but not blocking i386/amd64 minimal-trampoline status.
-- `PsProcessInfoClass` / `PsThreadInfoClass` re-include trick — the
-  `#define static` rename pattern needs careful translation.
+Combined session-cumulative reduction (Pass 1 + 2 + 3 + 4):
+490 LOC of one file → 246 LOC across 5 files, each with a single
+narrow reason for its survival. Every trampoline that's not the LTO
+workaround is at audit-target 0/0/0/0.
+
+What still remains as future work (not blocking minimal-trampoline
+status, but nice-to-haves):
+- Translate `PsProcessInfoClass` / `PsThreadInfoClass` arrays to
+  Rust (~250 entries each, mechanical). Eliminates the last C file
+  with the `#define static` rename pattern.
+- Translate ARM64 UART helpers to Rust `core::arch::asm!` — would
+  let `arm64_uart.c` go away.
 
 What stays:
 - `KdpDprintf`, `RtlStringCbPrintfA` — variadic.

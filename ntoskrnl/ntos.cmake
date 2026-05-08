@@ -312,6 +312,13 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
+    # Split-out minimal trampolines — see docs/engineering/shim-elimination.md.
+    # Each has narrowly-scoped headers and survives the future cargo-driven
+    # cc-rs build path.
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/arm64_uart.c
     # Shared C trampoline for variadic shims — calls into Rust ntprintf crate
     # for format-string parsing + emission. See ntprintf_trampoline.c header.
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ntprintf_trampoline.c
