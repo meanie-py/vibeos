@@ -37,7 +37,7 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
-| `kernel_c_helpers.c` | 435 | 1 | 42 | 5 | 0 |
+| `kernel_c_helpers.c` | 270 | 1 | 2 | 3 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
 
 \* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
@@ -163,7 +163,7 @@ What stays:
   Translatable but the const-init dance is low-value relative to
   the variadic constraint (file already has to stay for `KdbpPrint`).
 
-### `kernel_c_helpers.c` — Pass 1 done (~3-5 sessions remaining)
+### `kernel_c_helpers.c` — Pass 2 done (~2-3 sessions remaining)
 
 PS globals + SharedUserData + GENERIC_MAPPING tables + PsNtDllPathName
 moved to `ntoskrnl-rust::ps::ps_globals` (`#[no_mangle] pub static mut`,
@@ -181,13 +181,29 @@ fail and i386 hangs in the SAM/LSA wait loop. Worked around by
 hard-coding the NT 5.x mask in `ps_globals.rs`. The constant in
 `ntkrnl-sys` should be fixed at the source — separate task.
 
+Pass 2 (this round): `ExpKdbgExtHandle` ported to Rust
+(`ntoskrnl-rust::ex::handle::ExpKdbgExtHandle`, ~200 LOC). Replaces
+all 11 distinct `KdbpPrint(fmt, ...)` call shapes with the Rust
+`kdbp_print!` macro routing through ntprintf — the format-string
+parser already supports `%wZ` (UNICODE_STRING) and `%S` (wide
+string). The handle-table walk + OBJECT_HEADER decode + KCB-chain
+key-path reconstruction are bit-for-bit translations. The function
+is i386/amd64-only (cfg-gated) since arm64 has no KDBG path.
+
+**Bug surfaced and fixed mid-port.** First build had `extern "C"`
+declarations of `PsGetCurrentProcessId` and `PsGetProcessId`, but
+those are NTAPI (stdcall on i386). i386 boot hung in the same
+SMSS-spawn loop the PROCESS_ALL_ACCESS bug caused. Switched the
+extern block to `extern "system"` per `feedback_extern_c_abi.md`;
+boot recovered. Note: ExpKdbgExtHandle isn't called at boot — the
+hang is presumably the rustc 1.92 ABI bug propagating attributes
+through cross-CGU optimisations even when the offending function
+isn't on the live path.
+
 What still needs translating:
 - `ExpKdbgExtFileCache` / `ExpKdbgExtDefWrites` — variadic; can be
   isolated to a minimal trampoline file when other prerequisites are
   ready.
-- `ExpKdbgExtHandle` (140 LOC) — substantial port: walks
-  `HandleTableListHead`, dereferences `OBJECT_HEADER`, branches on
-  `IoFileObjectType` / `CmpKeyObjectType`. ~1 session.
 - ARM64 `ARM64_UART_TRACE` / `ARM64_UART_TRACE_HEX` — translatable
   but not blocking i386/amd64 minimal-trampoline status.
 - `PsProcessInfoClass` / `PsThreadInfoClass` re-include trick — the

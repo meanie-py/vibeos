@@ -2774,3 +2774,233 @@ pub unsafe extern "system" fn ExEnumHandleTable(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// ============================================================================
+// ExpKdbgExtHandle — KDBG `!handle` extension. Walks HandleTableListHead and
+// dumps every entry of the matching process's handle table. Translated from
+// `ntoskrnl/kernel_c_helpers.c` 2026-05-07.
+//
+// Uses `kdbp_print!` macro instead of variadic KdbpPrint; format-string
+// parsing happens in Rust ntprintf via rust_kdbp_print → KdbpPagerInternal.
+// ============================================================================
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+extern "system" {
+    fn KdbpGetHexNumber(s: *mut core::ffi::c_char, out: *mut core::ffi::c_void)
+        -> ntkrnl_sys::base::ULONG;
+    static mut IoFileObjectType: ntkrnl_sys::ddk::POBJECT_TYPE;
+    static CmpKeyObjectType: ntkrnl_sys::ddk::POBJECT_TYPE;
+    // NTAPI on i386 (stdcall) — wrong ABI here breaks i386 boot via the
+    // rustc 1.92 cdecl-emit-for-stdcall path documented in
+    // `feedback_extern_c_abi.md`. amd64 / arm64 have NTAPI = cdecl so the
+    // bug is invisible there.
+    fn PsGetCurrentProcessId() -> ntkrnl_sys::ddk::HANDLE;
+    fn PsGetProcessId(Process: ntkrnl_sys::ddk::PEPROCESS) -> ntkrnl_sys::ddk::HANDLE;
+}
+
+/// Parses a NUL-terminated decimal C string. Mirrors strtoul/strtoull behaviour:
+/// stops at the first non-digit; sets `endptr_offset` to that position. Returns
+/// (parsed_value, all_chars_consumed).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn parse_decimal_pid(s: *const core::ffi::c_char) -> Option<usize> {
+    let mut p = s;
+    let mut acc: usize = 0;
+    if *p == 0 {
+        return None;
+    }
+    while *p != 0 {
+        let c = *p as u8;
+        if !(b'0'..=b'9').contains(&c) {
+            return None;
+        }
+        acc = acc.wrapping_mul(10).wrapping_add((c - b'0') as usize);
+        p = p.add(1);
+    }
+    Some(acc)
+}
+
+/// `ExpKdbgExtHandle(Argc, Argv)` — i386/amd64 KDBG extension. ARM64 has no
+/// KDBG path here so we don't compile this on aarch64.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn ExpKdbgExtHandle(
+    argc: ntkrnl_sys::base::ULONG,
+    argv: *mut *mut core::ffi::c_char,
+) -> ntkrnl_sys::base::BOOLEAN {
+    use ntkrnl_sys::base::*;
+    use ntkrnl_sys::constants::OBJ_HANDLE_ATTRIBUTES;
+    use ntkrnl_sys::ddk::{
+        PCM_KEY_BODY, PCM_KEY_CONTROL_BLOCK, PFILE_OBJECT, _HANDLE_TABLE, _HANDLE_TABLE_ENTRY,
+        _LIST_ENTRY, _OBJECT_HEADER,
+    };
+
+    // Resolve target ProcessId. If user passed an argument it's either a
+    // hex pointer to an EPROCESS (then PsGetProcessId) or a decimal PID.
+    let process_id: ntkrnl_sys::ddk::HANDLE = if argc > 1 {
+        let arg = *argv.add(1);
+        match parse_decimal_pid(arg) {
+            Some(pid) => pid as ntkrnl_sys::ddk::HANDLE,
+            None => {
+                let mut process: ntkrnl_sys::ddk::PEPROCESS = core::ptr::null_mut();
+                if KdbpGetHexNumber(arg, &mut process as *mut _ as *mut core::ffi::c_void) == 0 {
+                    crate::kdbp_print!(b"Invalid parameter: %s\n\0", arg);
+                    return 1;
+                }
+                PsGetProcessId(process)
+            }
+        }
+    } else {
+        PsGetCurrentProcessId()
+    };
+
+    // Walk HandleTableListHead — circular doubly-linked list of HANDLE_TABLEs.
+    let head = core::ptr::addr_of_mut!(HandleTableListHead) as *mut _LIST_ENTRY;
+    let mut entry = (*head).Flink;
+    let table_list_offset = core::mem::offset_of!(_HANDLE_TABLE, HandleTableList);
+    while entry != head {
+        let handle_table =
+            (entry as *mut u8).sub(table_list_offset).cast::<_HANDLE_TABLE>();
+        if !process_id.is_null()
+            && (*handle_table).UniqueProcessId != process_id as *mut core::ffi::c_void
+        {
+            entry = (*entry).Flink;
+            continue;
+        }
+        crate::kdbp_print!(b"\n\0");
+        crate::kdbp_print!(
+            b"Handle table at %p with %d entries in use\n\0",
+            handle_table,
+            (*handle_table).HandleCount
+        );
+
+        let mut ex_handle: ntkrnl_sys::ddk::EXHANDLE = core::mem::zeroed();
+        ex_handle.Value = 0;
+
+        loop {
+            let table_entry: *mut _HANDLE_TABLE_ENTRY =
+                ExpLookupHandleTableEntry(handle_table, ex_handle);
+            if table_entry.is_null() {
+                break;
+            }
+            let object_raw = (*table_entry).__bindgen_anon_1.Object;
+            let next_free = (*table_entry).__bindgen_anon_2.NextFreeTableEntry;
+            if !object_raw.is_null() && next_free != -2 {
+                let object_header = ((object_raw as ULONG_PTR)
+                    & !(OBJ_HANDLE_ATTRIBUTES as ULONG_PTR))
+                    as *mut _OBJECT_HEADER;
+                let granted_access = (*table_entry).__bindgen_anon_2.GrantedAccess;
+                let body_ptr = core::ptr::addr_of_mut!((*object_header).Body);
+
+                crate::kdbp_print!(
+                    b"%p: Object: %p GrantedAccess: %x Entry: %p\n\0",
+                    ex_handle.Value,
+                    body_ptr,
+                    granted_access,
+                    table_entry
+                );
+
+                let object_type = (*object_header).Type;
+                crate::kdbp_print!(
+                    b"Object: %p Type: (%x) %wZ\n\0",
+                    body_ptr,
+                    object_type,
+                    core::ptr::addr_of_mut!((*object_type).Name)
+                );
+                crate::kdbp_print!(b"\tObjectHeader: %p\n\0", object_header);
+                // PointerCount is a top-level field; HandleCount lives inside
+                // the anon union `__bindgen_anon_1` (sharing storage with NextToFree).
+                crate::kdbp_print!(
+                    b"\t\tHandleCount: %u PointerCount: %u\n\0",
+                    (*object_header).__bindgen_anon_1.HandleCount,
+                    (*object_header).PointerCount
+                );
+
+                if object_type == IoFileObjectType {
+                    let file_object = body_ptr as PFILE_OBJECT;
+                    crate::kdbp_print!(
+                        b"\t\tName: %wZ\n\0",
+                        core::ptr::addr_of_mut!((*file_object).FileName)
+                    );
+                } else if object_type == CmpKeyObjectType {
+                    let mut key_path: [WCHAR; 256] = [0; 256];
+                    let kcb = (*(body_ptr as PCM_KEY_BODY)).KeyControlBlock
+                        as PCM_KEY_CONTROL_BLOCK;
+
+                    // Pass 1: compute total length needed (one byte for each
+                    // key path component plus a leading separator).
+                    let mut needed_length: ULONG = 0;
+                    let mut current_kcb = kcb;
+                    while !current_kcb.is_null() {
+                        let name_block = (*current_kcb).NameBlock;
+                        // Both union arms (NameHash / __bindgen_anon_1) have
+                        // NameLength at the same offset; pick NameHash.
+                        let name_length =
+                            (*name_block).__bindgen_anon_1.NameHash.NameLength as ULONG;
+                        if (*name_block).Compressed != 0 {
+                            needed_length += name_length + 1;
+                        } else {
+                            needed_length += name_length / core::mem::size_of::<WCHAR>() as ULONG
+                                + 1;
+                        }
+                        current_kcb = (*current_kcb).ParentKcb;
+                    }
+
+                    // Pass 2: walk again writing components into key_path
+                    // back-to-front (the C version mutates `needed_length` as
+                    // a write cursor).
+                    if needed_length < 256 {
+                        let mut cursor = needed_length as usize;
+                        key_path[cursor] = 0; // UNICODE_NULL
+                        let mut current_kcb = kcb;
+                        while !current_kcb.is_null() {
+                            let name_block = (*current_kcb).NameBlock;
+                            // `Name` is a flexible array — use pointer arithmetic.
+                            let name_ptr = core::ptr::addr_of!(
+                                (*name_block).__bindgen_anon_1.NameHash.Name
+                            ) as *const WCHAR;
+                            let raw_name_length =
+                                (*name_block).__bindgen_anon_1.NameHash.NameLength as ULONG;
+                            let name_length = if (*name_block).Compressed != 0 {
+                                raw_name_length as usize
+                            } else {
+                                (raw_name_length / core::mem::size_of::<WCHAR>() as ULONG)
+                                    as usize
+                            };
+                            cursor = cursor.saturating_sub(name_length + 1);
+                            for i in 0..name_length {
+                                let ch = if (*name_block).Compressed != 0 {
+                                    *(name_ptr as *const u8).add(i) as WCHAR
+                                } else {
+                                    *name_ptr.add(i)
+                                };
+                                key_path[cursor + 1 + i] = ch;
+                            }
+                            key_path[cursor] = b'\\' as WCHAR; // OBJ_NAME_PATH_SEPARATOR
+                            current_kcb = (*current_kcb).ParentKcb;
+                        }
+                        crate::kdbp_print!(b"\t\tName: %S\n\0", key_path.as_ptr());
+                    }
+                }
+
+                let object_name_info =
+                    ntkrnl_sys::macros::OBJECT_HEADER_TO_NAME_INFO(object_header);
+                if !object_name_info.is_null()
+                    && !(*object_name_info).Name.Buffer.is_null()
+                {
+                    crate::kdbp_print!(
+                        b"\t\tName: %wZ\n\0",
+                        core::ptr::addr_of_mut!((*object_name_info).Name)
+                    );
+                }
+            }
+            // SizeOfHandle(1) — handle values are encoded as `sizeof(HANDLE) * index`.
+            // EXHANDLE.Value is bindgen's ULONG_PTR (= c_ulong on i386 / c_ulonglong on
+            // amd64), distinct from base::ULONG_PTR (= usize). Cast through usize.
+            ex_handle.Value = ex_handle.Value.wrapping_add(
+                core::mem::size_of::<ntkrnl_sys::ddk::HANDLE>() as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+        }
+        entry = (*entry).Flink;
+    }
+    1 // TRUE
+}
