@@ -39,9 +39,8 @@ use crate::ke::krnlinit::KeNodeBlock;
 use crate::ARM3::sysldr::PsLoadedModuleList;
 use super::stubs::Arm64UartKernelBase;
 
+use crate::ke::ssdt::{MainSSDT, MainSSPT};
 extern "system" {
-    static mut MainSSDT: [ULONG_PTR; 0];
-    static mut MainSSPT: [UCHAR; 0];
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     static KiArm64VectorTable: [u64; 0];
     fn KiSwitchToBootStack(InitialStack: ULONG_PTR) -> !;

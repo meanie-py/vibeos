@@ -16,6 +16,7 @@ pub mod gmutex;
 pub mod ipi;
 pub mod krnlinit;
 pub mod mutex;
+pub mod ssdt;
 pub mod processor;
 pub mod procobj;
 pub mod profobj;

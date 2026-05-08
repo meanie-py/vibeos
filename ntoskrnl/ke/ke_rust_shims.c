@@ -5,12 +5,14 @@
  * device-queue/NMI locks, deferred-ready, sched, wait setup, satisfy-wait,
  * Yield/Rundown/GetLinkedTrapFrame, FORCEINLINE intrinsic wrappers,
  * MSR/CR/DR/EOI/cpuid/xsetbv/InterlockedBitTest, KiCpuId, KiGetGdtEntry,
- * KiCheckForApcDelivery, KiEnterTrap, KiHandleDebugRegisters*, etc.) has
- * been promoted to bare-name `#[no_mangle] extern "C" fn` exports in
- * `sdk/lib/rust/ntoskrnl-rust/src/shim_exports.rs` or to sibling
- * `ke-inlines` / `ke-macros` rlibs. See `docs/engineering/shim-elimination.md`
- * for the audit trail; `git log --oneline -- ntoskrnl/ke/ke_rust_shims.c`
- * has the per-trampoline removal commits.
+ * KiCheckForApcDelivery, KiEnterTrap, KiHandleDebugRegisters*, KiAttachProcess,
+ * KiThreadStartup, Ki386InitializeTss, the trap-exit FORCEINLINE chain, and
+ * the SSDT generation tables) has been promoted to bare-name `#[no_mangle]`
+ * exports in `sdk/lib/rust/ntoskrnl-rust/src/shim_exports.rs`, sibling
+ * `ke-inlines` / `ke-macros` rlibs, or direct Rust translations. See
+ * `docs/engineering/ntoskrnl-translation-audit.md` for the audit trail;
+ * `git log --oneline -- ntoskrnl/ke/ke_rust_shims.c` has the per-trampoline
+ * removal commits.
  *
  * What survives in this file falls into a few buckets:
  *   1. **HAL-IAT / CR8 IRQL plumbing** — `KeRaiseIrqlToSynchLevel` (IAT
@@ -18,39 +20,80 @@
  *      override decls for `KeAcquire/ReleaseInStackQueuedSpinLock` (the
  *      HAL UP version vs. our Rust UP version diverges on
  *      `(KeGetCurrentThread()|1)` storage; Rust wins via local re-decl).
- *   2. **Stdcall-on-i386 ABI bridges** — bindgen on i386 emits these as
- *      `extern "system"`, and `shim_exports.rs` only provides the cdecl
- *      counterpart, so the stdcall variant has to come from a C
- *      trampoline. Affects HalQuery/SetSystemInformation,
- *      HalVectorToIDTEntry, Ke386Get{Global,Local}DescriptorTable,
- *      KiComputeIopmOffset, KeGetTrapFramePc.
- *   3. **i386 DBG-only globals** — `KeWin32Pre/PostServiceHook` globals
- *      (kd64/kdapi.c Win32k service hooks).
+ *   2. **i386 stdcall ABI bridges** — `Ke386Get{Global,Local}DescriptorTable`
+ *      (dual-decoration constraint), `KiComputeIopmOffset` (macro capture).
+ *   3. **i386 DBG-only globals** — `KeWin32Pre/PostServiceHook` (kd64/kdapi.c
+ *      Win32k service hooks).
  *   4. **amd64 KVM workaround** — `KiSaveXState`/`KiRestoreXState` force
- *      `fxsave64`/`fxrstor64` to dodge an `xrstors64` page fault that
- *      KVM exposes via mis-reported `KF_XSAVES`.
+ *      `fxsave64`/`fxrstor64` to dodge an `xrstors64` page fault that KVM
+ *      exposes via mis-reported `KF_XSAVES`.
  *   5. **Tiny dispatch wrappers** — `KeGdiFlushUserBatch_call`
  *      (function-pointer dispatch).
  *   6. **ARM64 KDBG variadic stub** — `KdbpPrint` (variadic, must stay C).
- *   7. **SSDT generation include** — `<internal/napi.h>` materializes
- *      `MainSSDT[]` / `MainSSPT[]` via the `SVC_` macro for Rust to
- *      reference as extern symbols.
+ *
+ * As of 2026-05-08 this file pulls *no* kernel headers — every type and
+ * decoration it needs is hand-rolled below so the file compiles cleanly
+ * under cc-rs in the cargo-driven build PoC. If you need to add a new
+ * trampoline that uses a kernel type or macro, prefer translating it to
+ * Rust over reintroducing `<ntoskrnl.h>`.
  */
 
-/* All 3 i386 trap-exit FORCEINLINE outlines (KiExitV86Trap +
- * KiExitTrapDebugChecks + KiExitSystemCallDebugChecks), the
- * KiDumpTrapFrame debug helper, and KiAttachProcess all moved to Rust
- * (2026-05-08). The `_saved_*` rename trick that captured FORCEINLINE
- * bodies is no longer needed. */
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#ifndef DPRINT
-#define DPRINT(...) do {} while(0)
-#endif
-#ifndef DPRINT1
-#define DPRINT1(...) do {} while(0)
+/* Minimal Windows kernel typedefs — keep this block in sync with the
+ * usage below. Anything new needs to come from this block, not from
+ * `<ntdef.h>` / `<ntoskrnl.h>`. */
+typedef void                 VOID;
+typedef unsigned char        BOOLEAN;
+typedef unsigned char        UCHAR;
+typedef unsigned short       USHORT;
+typedef unsigned long        ULONG;
+typedef unsigned long long   ULONG64;
+typedef char *               PSTR;
+typedef VOID *               PVOID;
+typedef USHORT *             PUSHORT;
+typedef UCHAR                KIRQL;
+#ifdef _M_IX86
+typedef unsigned int         ULONG_PTR;
+#else
+typedef unsigned long long   ULONG_PTR;
 #endif
 
-#include <ntoskrnl.h>
+/* Calling conventions — clang silently ignores `__stdcall` / `__fastcall`
+ * on amd64/arm64, so these expand to the right thing on every arch. */
+#define NTAPI                __stdcall
+#define FASTCALL             __fastcall
+
+/* SAL annotations — empty in the kernel build. */
+#define IN
+#define OUT
+#define _In_
+
+/* Opaque kernel types we only ever pass by pointer. */
+typedef VOID *               PKSPIN_LOCK;
+typedef VOID *               PKLOCK_QUEUE_HANDLE;
+typedef VOID *               PKDBG_PRESERVICEHOOK;
+typedef VOID *               PKDBG_POSTSERVICEHOOK;
+
+/* Constants */
+#define DISPATCH_LEVEL       2
+
+/* Inline asm helpers — `_fxsave64` / `_fxrstor64` would normally come
+ * from `<intrin.h>`, but inlining the asm directly avoids the header
+ * dependency entirely. */
+#ifdef _M_AMD64
+static inline void _shim_fxsave64(void *Buffer)
+{
+    __asm__ __volatile__("fxsave64 (%0)" : : "r"(Buffer) : "memory");
+}
+
+static inline void _shim_fxrstor64(void *Buffer)
+{
+    __asm__ __volatile__("fxrstor64 (%0)" : : "r"(Buffer) : "memory");
+}
+#endif
 
 /*
  * On i386, `KeReleaseInStackQueuedSpinLock` / `KeAcquireInStackQueuedSpinLock`
@@ -60,7 +103,9 @@
  * `(KeGetCurrentThread()|1)` into the spin lock (KxAcquireSpinLock is a
  * no-op on UP), and the HAL version bugchecks on mismatch. Re-declare
  * without `dllimport` so the linker resolves to the Rust-provided
- * version with matching UP semantics.
+ * version with matching UP semantics. (We don't include the headers
+ * any more, so there's nothing left to override — these decls just
+ * publish the FASTCALL signature for the linker.)
  */
 #ifdef _M_IX86
 VOID FASTCALL KeReleaseInStackQueuedSpinLock(IN PKLOCK_QUEUE_HANDLE LockHandle);
@@ -73,9 +118,10 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
  * i386: NTHALAPI dllimport — call directly through the HAL IAT. Trampoline /
  *   function pointer / local definition all collide with the dllimport in
  *   the same TU, so the inline asm is the only way that resolves.
- * amd64: FORCEINLINE over CR8. Inlined-trampoline pattern can fail (no
- *   inline → infinite recursion → `jmp $`), so reimplement with CR8
- *   intrinsics. Without CONFIG_SMP, SYNCH_LEVEL == DISPATCH_LEVEL == 2.
+ * amd64: FORCEINLINE over CR8 in `xdk/amd64/ke.h`. We don't include that
+ *   header any more, so no `#undef` needed; we just provide our own
+ *   out-of-line CR8 implementation. Without CONFIG_SMP, SYNCH_LEVEL ==
+ *   DISPATCH_LEVEL == 2.
  * ============================================================ */
 #if defined(_M_IX86)
 KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
@@ -89,33 +135,17 @@ KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
     return result;
 }
 #elif defined(_M_AMD64)
-#undef KeRaiseIrqlToSynchLevel
 KIRQL KeRaiseIrqlToSynchLevel(VOID)
 {
     unsigned long long cr8;
     __asm__ __volatile__("mov %%cr8, %0" : "=r"(cr8));
-#ifdef CONFIG_SMP
-    { unsigned long long new_irql = 12; /* SYNCH_LEVEL = IPI_LEVEL - 2 */
-    __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql)); }
-#else
-    { unsigned long long new_irql = DISPATCH_LEVEL;
-    __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql)); }
-#endif
+    {
+        unsigned long long new_irql = DISPATCH_LEVEL;
+        __asm__ __volatile__("mov %0, %%cr8" : : "r"(new_irql));
+    }
     return (KIRQL)cr8;
 }
 #endif
-
-/* ============================================================
- * Stdcall-on-i386 ABI bridges (cdecl shim_exports + stdcall here).
- * Each `_rs_*` impl lives in `ke-macros` rlib; the trampoline supplies
- * the NTAPI/stdcall decoration that bindgen i386 callers want.
- * ============================================================ */
-/* KeGetTrapFramePc — promoted to bare-name `extern "system"` export in
- * ke-macros rlib (2026-05-08); trampoline retired. */
-
-/* HalQuerySystemInformation / HalSetSystemInformation — promoted to
- * bare-name `extern "system"` exports in ke-macros rlib (2026-05-08);
- * trampolines retired. */
 
 /* ============================================================
  * ARM64 KDBG variadic stub.
@@ -125,23 +155,10 @@ KIRQL KeRaiseIrqlToSynchLevel(VOID)
 VOID KdbpPrint(_In_ PSTR Format, ...)
 {
     /* Nothing to do */
+    (void)Format;
 }
 #endif
 #endif
-
-/* ============================================================
- * SSDT tables (MainSSDT[] / MainSSPT[]) — generated by the SVC_
- * macro in <internal/napi.h>. Originally in krnlinit.c (now Rust);
- * Rust references the tables as extern symbols.
- * ============================================================ */
-#include <internal/napi.h>
-
-/* KiAttachProcess — translated to Rust (`ke/procobj.rs`, 2026-05-08).
- * The original C body lived here because it called the FORCEINLINE pair
- * `KiReleaseDispatcherLockFromSynchLevel` / `KiReleaseApcLockFromSynchLevel`
- * via `_saved_*` capture. Both now exist as `_rs_*` exports in `ke-inlines`
- * with bare-name `extern "C"` trampolines in `shim_exports.rs`, so the Rust
- * impl calls them directly. */
 
 /* ============================================================
  * amd64 KVM XState workaround.
@@ -153,12 +170,14 @@ VOID KdbpPrint(_In_ PSTR Format, ...)
 #ifdef _M_AMD64
 VOID KiSaveXState(PVOID Buffer, ULONG64 ComponentMask)
 {
-    _fxsave64(Buffer);
+    (void)ComponentMask;
+    _shim_fxsave64(Buffer);
 }
 
 VOID KiRestoreXState(PVOID Buffer, ULONG64 ComponentMask)
 {
-    _fxrstor64(Buffer);
+    (void)ComponentMask;
+    _shim_fxrstor64(Buffer);
 }
 #endif /* _M_AMD64 */
 
@@ -178,56 +197,45 @@ PKDBG_POSTSERVICEHOOK KeWin32PostServiceHook = NULL;
  * dual-decoration constraint: i386 has both extern "C" (cdecl) and
  * extern "system" (stdcall) Rust callers referencing the same name.
  * Rust forbids two source-level fn defs with the same name. The cdecl
- * variant lives bare-name in ke-macros (`extern "C"` impl at ~L860);
- * this trampoline supplies the stdcall `_X@4` symbol via a one-line
- * delegate to the cdecl `_rs_*` variant. Re-probed 2026-05-08. */
-#undef Ke386GetGlobalDescriptorTable
-#undef Ke386GetLocalDescriptorTable
+ * variant lives bare-name in ke-macros (`extern "C"` impl); this
+ * trampoline supplies the stdcall `_X@4` symbol via a one-line delegate
+ * to the cdecl `_rs_*` variant. Without `<ntoskrnl.h>` we don't have
+ * the `__sgdt`/`__sldt` macros from `intrin_i.h`, so no `#undef`
+ * needed. */
 extern void _rs_Ke386GetGlobalDescriptorTable(PVOID Limit);
 extern void _rs_Ke386GetLocalDescriptorTable(PUSHORT Selector);
+
 VOID NTAPI Ke386GetGlobalDescriptorTable(PVOID Limit)
-{ _rs_Ke386GetGlobalDescriptorTable(Limit); }
-VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
-{ _rs_Ke386GetLocalDescriptorTable(Selector); }
-
-/* HalVectorToIDTEntry — promoted to bare-name `extern "system"` export
- * in ke-macros rlib (2026-05-08); trampoline retired. */
-
-/* `KiThreadStartup` — translated to Rust (`ke/i386/thrdini.rs`,
- * 2026-05-08). Context-switch return target; the KUINIT_FRAME layout
- * lives in thrdini.rs alongside KiInitializeContextThread which builds
- * the frame, so the shim's parallel KUINIT_FRAME_SHIM struct is no
- * longer needed. */
-
-/* `KiComputeIopmOffset` — macro in ndk/i386/ketypes.h. Trampoline
- * captures the macro expansion. */
-static __inline USHORT _tramp_KiComputeIopmOffset(USHORT MapNumber)
 {
-    return (USHORT)KiComputeIopmOffset(MapNumber);
+    _rs_Ke386GetGlobalDescriptorTable(Limit);
 }
-#undef KiComputeIopmOffset
+
+VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
+{
+    _rs_Ke386GetLocalDescriptorTable(Selector);
+}
+
+/* `KiComputeIopmOffset` — originally a macro in `ndk/i386/ketypes.h`.
+ * We reproduce it inline so the file doesn't need ketypes.h:
+ *   (MapNumber == IO_ACCESS_MAP_NONE)
+ *      ? sizeof(KTSS)
+ *      : offsetof(KTSS, IoMaps[MapNumber-1].IoMap)
+ * Constants (verified by `ntkrnl-sys/size_check_i386.rs`):
+ *   sizeof(KTSS)           = 8364
+ *   offsetof(KTSS, IoMaps) = 0x68 (104)
+ *   sizeof(KIIO_ACCESS_MAP)= IOPM_DIRECTION_MAP_SIZE (32) +
+ *                            IOPM_FULL_SIZE (8196) = 8228
+ *   offsetof(KIIO_ACCESS_MAP, IoMap) = 32
+ * In practice every active caller passes IO_ACCESS_MAP_NONE (=0), so
+ * the second branch is dead today — we still implement it generally
+ * so behaviour matches the macro bit-for-bit. */
 USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
 {
-    return _tramp_KiComputeIopmOffset(MapNumber);
+    if (MapNumber == 0 /* IO_ACCESS_MAP_NONE */) {
+        return (USHORT)8364; /* sizeof(KTSS) */
+    }
+    return (USHORT)(0x68 + (MapNumber - 1) * 8228 + 32);
 }
-
-/* `Ki386InitializeTss` translated to Rust (`ke/i386/cpu.rs`,
- * 2026-05-08). The KiInitializeTSS / KiInitializeTSS2 private helpers
- * already lived alongside it in cpu.rs; the shim's `Shim_*` copies were
- * just trampolines for the FORCEINLINE captures. The Rust impl uses
- * direct inline asm for `ltr ax` and `mov %ss,...` instead. */
-
-/* KiEndInterrupt — promoted to direct Rust impl in ke-macros rlib
- * (2026-05-08). The audit's "rustc 1.92 stdcall/fastcall ABI bug"
- * re-probe came back negative on rustc 1.92.0 — disasm of the
- * KiExitV86Trap pilot showed correct fastcall arg-passing for the same
- * @KfRaiseIrql@4 / @KiEoiHelper@4 calls KiEndInterrupt makes. */
-
-/* All i386 trap-exit FORCEINLINE outlines now live in `ke-macros` rlib
- * (2026-05-08). The block below was the last to land — `KiExitV86Trap`
- * (NORETURN) drains pending user APCs in a loop, optionally restores DR
- * registers, and tail-calls `KiTrapReturnNoSegments` (asm in
- * `i386/trap.s`). */
 
 #endif /* _M_IX86 */
 
@@ -237,5 +245,7 @@ USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
 #if defined(_M_IX86) || defined(_M_AMD64)
 extern void _rs_KeGdiFlushUserBatch_call(void);
 void NTAPI KeGdiFlushUserBatch_call(void)
-{ _rs_KeGdiFlushUserBatch_call(); }
+{
+    _rs_KeGdiFlushUserBatch_call();
+}
 #endif

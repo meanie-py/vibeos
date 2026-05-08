@@ -139,13 +139,9 @@ pub use super::procobj::{KiSwapEvent, KiProcessInSwapListHead, KiProcessOutSwapL
 // Processor globals (from processor.rs)
 pub use super::processor::KeActiveProcessors;
 
-// C-defined symbols (assembly/linker) — these must stay as extern
-extern "C" {
-    // MainSSDT is `ULONG_PTR MainSSDT[]` — use first-element trick for extern incomplete array
-    pub static mut MainSSDT: ntkrnl_sys::base::ULONG_PTR;
-    // MainSSPT is `UCHAR MainSSPT[]`
-    pub static mut MainSSPT: u8;
-}
+// MainSSDT / MainSSPT live in `super::ssdt` (generated from sysfuncs.h);
+// re-export here so existing consumers (`use ke_defs::*`) keep working.
+pub use super::ssdt::{MainSSDT, MainSSPT};
 extern "system" {
     pub fn KeQuerySystemTime(CurrentTime: *mut i64);
 }

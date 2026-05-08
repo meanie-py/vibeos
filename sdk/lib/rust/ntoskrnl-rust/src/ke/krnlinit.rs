@@ -154,7 +154,7 @@ pub unsafe extern "system" fn KiInitSystem() {
     KeServiceDescriptorTable[0].Count = core::ptr::null_mut();
     KeServiceDescriptorTable[0].Limit = KiServiceLimit;
     KeServiceDescriptorTable[1].Limit = 0;
-    KeServiceDescriptorTable[0].Number = core::ptr::addr_of_mut!(MainSSPT);
+    KeServiceDescriptorTable[0].Number = core::ptr::addr_of_mut!(MainSSPT) as *mut u8;
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!(KeServiceDescriptorTableShadow) as PVOID,

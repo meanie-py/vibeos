@@ -27,9 +27,8 @@ use crate::ke::krnlinit::{KiServiceLimit, KeFeatureBits};
 use crate::ke::thrdschd::KiIdleSummary;
 use crate::ke::bug::{KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead, BugCheckCallbackLock};
 use crate::ke::krnlinit::{KeLoaderBlock, KeNodeBlock};
+use crate::ke::ssdt::{MainSSDT, MainSSPT};
 extern "C" {
-    static mut MainSSDT: [usize; 0];
-    static mut MainSSPT: [u8; 0];
     static mut RtlpUse16ByteSLists: BOOLEAN;
     fn KiCpuId(CpuInfo: *mut CPU_INFO, function: ULONG);
     fn __rdtsc() -> u64;
