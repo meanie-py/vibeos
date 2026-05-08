@@ -67,7 +67,6 @@ struct FXSAVE_FORMAT {
 
 extern "system" {
     static mut KeI386FxsrPresent: BOOLEAN;
-    fn KiThreadStartup();
     fn _enable();
     fn _disable();
     fn Ke386SetLocalDescriptorTable(selector: u16);
@@ -88,6 +87,31 @@ extern "C" {
 }
 extern "fastcall" {
     fn KiServiceExit2(TrapFrame: PKTRAP_FRAME);
+}
+
+/// Context-switch return target installed by `KiInitializeContextThread`.
+/// The thread's switch frame at `KernelStack` puts the thread on a
+/// `KUINIT_FRAME` whose `StartFrame.SystemRoutine` is invoked once the
+/// trampoline lowers IRQL to APC_LEVEL. `KiServiceExit2` is the stdcall
+/// asm tail at `i386/trap.s` that returns to user-mode if the thread is
+/// a user thread; non-user threads bugcheck.
+#[no_mangle]
+pub unsafe extern "system" fn KiThreadStartup() {
+    let init_frame =
+        (*(ntkrnl_sys::mm::KeGetCurrentThread() as PKTHREAD)).KernelStack as *mut KUINIT_FRAME;
+    let start_frame = core::ptr::addr_of_mut!((*init_frame).StartFrame);
+    let trap_frame = core::ptr::addr_of_mut!((*init_frame).TrapFrame);
+
+    KeLowerIrql(APC_LEVEL);
+
+    let routine = (*start_frame).SystemRoutine.unwrap_unchecked();
+    routine((*start_frame).StartRoutine, (*start_frame).StartContext);
+
+    if (*start_frame).UserThread == 0 {
+        KeBugCheck(NO_USER_MODE_CONTEXT);
+    }
+
+    KiServiceExit2(trap_frame);
 }
 
 extern "fastcall" {

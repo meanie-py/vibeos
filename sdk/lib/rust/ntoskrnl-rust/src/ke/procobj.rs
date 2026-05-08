@@ -13,7 +13,7 @@ use ntkrnl_sys::ddk::{
     KeBugCheck,
     KiAcquireApcLockRaiseToSynch, KiAcquireDispatcherLock,
     KiAcquireDispatcherLockAtSynchLevel, KiAcquireProcessLockRaiseToSynch,
-    KiAcquireThreadLock, KiAttachProcess, KiExitDispatcher,
+    KiAcquireThreadLock, KiExitDispatcher,
     KiMoveApcState, KiReleaseApcLock,
     KiReleaseApcLockFromSynchLevel, KiReleaseDispatcherLock,
     KiReleaseDispatcherLockFromSynchLevel, KiReleaseProcessLock,
@@ -552,6 +552,61 @@ pub unsafe extern "system" fn KeQueryValuesProcess(
 
     (*Values).TotalKernelTime.QuadPart = TotalKernel as i64 * KeMaximumIncrement as i64;
     (*Values).TotalUserTime.QuadPart = TotalUser as i64 * KeMaximumIncrement as i64;
+}
+
+/// Originally NTAPI in procobj.c. Splices a new process into the calling
+/// thread's APC environment after the caller has acquired the thread's APC
+/// lock and the dispatcher lock at SYNCH_LEVEL. The release pair runs as
+/// part of the swap so callers see the dispatcher already lowered when we
+/// return.
+#[no_mangle]
+pub unsafe extern "system" fn KiAttachProcess(
+    Thread: PKTHREAD,
+    Process: PKPROCESS,
+    ApcLock: PKLOCK_QUEUE_HANDLE,
+    SavedApcState: PRKAPC_STATE,
+) {
+    const KernelMode: usize = 0;
+    const UserMode: usize = 1;
+    const OriginalApcEnvironment: UCHAR = 0;
+    const AttachedApcEnvironment: UCHAR = 1;
+    const ProcessInMemory: UCHAR = 0;
+
+    (*Process).StackCount = (*Process).StackCount.wrapping_add(1);
+
+    KiMoveApcState(
+        core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.ApcState),
+        SavedApcState,
+    );
+
+    InitializeListHead(core::ptr::addr_of_mut!(
+        (*Thread).__bindgen_anon_1.ApcState.ApcListHead[KernelMode]
+    ));
+    InitializeListHead(core::ptr::addr_of_mut!(
+        (*Thread).__bindgen_anon_1.ApcState.ApcListHead[UserMode]
+    ));
+    (*Thread).__bindgen_anon_1.ApcState.Process = Process;
+    (*Thread).__bindgen_anon_1.ApcState.KernelApcInProgress = 0;
+    (*Thread).__bindgen_anon_1.ApcState.KernelApcPending = 0;
+    (*Thread).__bindgen_anon_1.ApcState.UserApcPending = 0;
+
+    if SavedApcState == kthread_saved_apc_state_ptr(Thread) {
+        (*Thread).ApcStatePointer[OriginalApcEnvironment as usize] =
+            kthread_saved_apc_state_ptr(Thread);
+        (*Thread).ApcStatePointer[AttachedApcEnvironment as usize] =
+            core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.ApcState);
+        (*Thread).ApcStateIndex = AttachedApcEnvironment;
+    }
+
+    if (*Process).State == ProcessInMemory {
+        KiReleaseDispatcherLockFromSynchLevel();
+        KiReleaseApcLockFromSynchLevel(ApcLock);
+        KiSwapProcess(Process, (*SavedApcState).Process);
+        KiExitDispatcher(core::ptr::read_volatile(&(*ApcLock).OldIrql));
+    } else {
+        // ReactOS doesn't support paging out processes yet — match the C ASSERT(FALSE).
+        KeBugCheck(INVALID_PROCESS_ATTACH_ATTEMPT);
+    }
 }
 
 #[no_mangle]

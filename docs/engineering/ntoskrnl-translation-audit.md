@@ -1,15 +1,16 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08 (afternoon — trap-exit chain + HAL bridges
-re-probe). Treat any prior version of this document as suspect — the
-shim layer changed significantly between 2026-05-06 and 2026-05-08,
-and the arm64 baseline was unblocked.
+Last updated 2026-05-08 (evening — Phase 1 substantive translations:
+KiAttachProcess + KiThreadStartup + Ki386InitializeTss). Treat any
+prior version of this document as suspect — the shim layer changed
+significantly between 2026-05-06 and 2026-05-08, and the arm64
+baseline was unblocked.
 
 ## Where we are
 
-**~99.6% of the original ntoskrnl C body of work is now Rust.** The
+**~99.7% of the original ntoskrnl C body of work is now Rust.** The
 active C in the default i386/amd64 build is down to **9 narrow shim
-files totalling 1,023 LOC**, the smallest the surface has ever been.
+files totalling 803 LOC**, the smallest the surface has ever been.
 Five entire shim files were retired between the last audit and now:
 `mm_sysldr_shims.c`, `arm64_uart.c`, `kd_rust_shims.c`,
 `cm_rust_shims.c`, and `kernel_c_helpers.c`'s legacy bulk
@@ -22,13 +23,13 @@ Counts (from `find … | xargs wc -l`):
 | Original ntoskrnl C body of work (excl. shims) | ~268,600 |
 | Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | ~440,200 |
 | Active C in default i386/amd64 build (excl. shims) | 0 |
-| C shim layer (9 files in `ntos.cmake`) | **1,023** |
+| C shim layer (9 files in `ntos.cmake`) | **803** |
 
 Shim layer files (LOC):
 
 | File | LOC | Status |
 |---|---:|---|
-| `ke/ke_rust_shims.c` | 461 | residual "big trampoline" — TSS init + KiAttachProcess + KiThreadStartup + must-stays |
+| `ke/ke_rust_shims.c` | 241 | residual "big trampoline" — verified must-stays only |
 | `ntprintf_trampoline.c` | 170 | minimal-trampoline (variadic `va_arg` pull) |
 | `variadic_shims.c` | 77 | minimal-trampoline (variadic) |
 | `io/iomgr/io_rust_shims.c` | 70 | minimal-trampoline reached |
@@ -66,7 +67,7 @@ Smoke status:
 
 | Bucket | LOC | Notes |
 |---|---:|---|
-| 9 shim files in `ntos.cmake` | 1,075 | Detailed table above. The "must-stay" subset is small and verified — most of the residual LOC is in `ke_rust_shims.c`. |
+| 9 shim files in `ntos.cmake` | 803 | Detailed table above. After this round only verified must-stays remain in `ke_rust_shims.c`. |
 | `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
 
 **Translation candidates with no Rust translation in tree: zero.** Every
@@ -119,6 +120,25 @@ The shim layer collapsed in two phases:
    to bare-name `extern "system"` exports. One latent ABI bug
    surfaced and fixed (`kdb_cli.rs:188` had `KeGetTrapFramePc` in an
    `extern "C"` block — mismatch was hidden by the cdecl trampoline).
+
+4. **Phase 1 substantive translations (2026-05-08, evening)** — the
+   three "real implementation" survivors all landed:
+   - `KiAttachProcess` → `ke/procobj.rs` (~50 LOC). Calls
+     `KiReleaseDispatcherLockFromSynchLevel` /
+     `KiReleaseApcLockFromSynchLevel` directly — both already exist
+     as `_rs_*` exports in `ke-inlines` with bare-name trampolines in
+     `shim_exports.rs`, so the `_saved_*` FORCEINLINE-capture trick
+     was unnecessary all along.
+   - `KiThreadStartup` → `ke/i386/thrdini.rs` (~25 LOC). The
+     `KUINIT_FRAME` layout already lived in `thrdini.rs` next to
+     `KiInitializeContextThread` (which builds the frame), so the
+     shim's parallel `KUINIT_FRAME_SHIM` struct could just be deleted.
+   - `Ki386InitializeTss` → `ke/i386/cpu.rs` (~95 LOC). The helpers
+     `KiInitializeTSS` / `KiInitializeTSS2` had been sitting next to
+     it as private `unsafe fn`s for ages. Inline asm replaces `ltr`,
+     `mov ss`, and `__readcr3()`. Verified `@Ki386InitializeTss@12`
+     (fastcall, 12-byte args) decoration matches the original.
+   `ke_rust_shims.c` 461 → 241 LOC; only verified must-stays remain.
 
 The "intentional-stay" classifications listed in earlier audits all
 turned out to be tractable. As of this audit the only categories that
@@ -177,18 +197,20 @@ What this requires from the shim layer:
   (`KdbpPrint`, `KdpDprintf`, `RtlStringCbPrintfA`, KDBG ext printers,
   `RtlUnicodeStringPrintf_4wZ_shim`). cc-rs handles them fine — we
   just need them in their own minimal `.c` files. Done.
-- **`ke_rust_shims.c` is the residual blocker.** Pulls full ddk for
-  TSS+GDT+IDT init (`Ki386InitializeTss` + helpers, ~120 LOC),
-  `KiAttachProcess` (~45 LOC, calls 2 FORCEINLINE dispatcher/APC
-  release helpers via `_saved_*`), `KiThreadStartup` (~35 LOC,
-  layout-sensitive context-switch return), KVM `KiSaveXState` /
-  `KiRestoreXState` workaround (must-stay), and a few small must-stay
-  trampolines (`Ke386Get{Global,Local}DescriptorTable` dual-decoration,
-  `KiComputeIopmOffset` macro capture, ARM64 `KdbpPrint` variadic
-  stub). The trap-exit chain port (2026-05-08) was the big residual —
-  it's done. What's left is the substantive Phase 1 batch
-  (KiAttachProcess + KiThreadStartup + Ki386InitializeTss) plus
-  documented must-stays.
+- **`ke_rust_shims.c` is the residual blocker.** After the 2026-05-08
+  evening Phase 1 batch (KiAttachProcess + KiThreadStartup +
+  Ki386InitializeTss, all translated), the file pulls `<ntoskrnl.h>`
+  only for verified must-stays: KVM `KiSaveXState`/`KiRestoreXState`
+  workaround, the small dual-decoration / macro-capture / IAT-redirect
+  trampolines (`Ke386Get{Global,Local}DescriptorTable`,
+  `KiComputeIopmOffset`, `KeRaiseIrqlToSynchLevel`,
+  `HalQuery/Set/VectorToIDTEntry` cdecl-vs-stdcall bridges,
+  `KeAcquire/ReleaseInStackQueuedSpinLock` dllimport overrides), the
+  ARM64 `KdbpPrint` variadic stub, the SSDT generation include, and
+  the i386 DBG-only `KeWin32Pre/PostServiceHook` globals. The
+  KiSaveXState / KdbpPrint / SSDT / DBG-globals subset is provably
+  must-stay; the small trampolines are tractable in subsequent passes
+  but not blockers for boot or smoke.
 - **Resource compilation.** `.rc` files (versioninfo, message tables)
   via the `embed-resource` cargo crate.
 - **PE-COFF link flags.** cargo `[profile.X]` + `-Clink-arg=` covers
@@ -404,12 +426,12 @@ decoration, that's the bug.
   (e.g. `mm_rust_shims.c`'s `Arm64DumpPte` debug helper) and one open
   downstream issue (post-boot fastfat BUGCHECK) that aren't reflected
   in LOC counts.
-- **Implicit shim debt.** Even at 1,023 LOC, much of
-  `ke_rust_shims.c` pulls `<ntoskrnl.h>` for the substantive bodies
-  (KiAttachProcess, KiThreadStartup, Ki386InitializeTss). Header-
-  weight matters more than line-count for the cargo-driven build —
-  trampolines that delegate to `_rs_*` impls in sibling rlibs are
-  cheap to keep; the substantive bodies aren't.
+- **Implicit shim debt.** At 803 LOC, the shim layer is mostly small
+  trampolines plus `KiSaveXState`/`KiRestoreXState` (must-stay) and
+  the `KeRaiseIrqlToSynchLevel` IAT redirect. Header-weight matters
+  more than line-count for the cargo-driven build — trampolines that
+  delegate to `_rs_*` impls in sibling rlibs are cheap to keep, and
+  the substantive bodies all moved out in 2026-05-08.
 
 ## How these numbers are computed
 
@@ -431,7 +453,7 @@ grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
 grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
   | grep -v '^\s*#' \
   | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
-  | sort -u | xargs wc -l   # → 1,023
+  | sort -u | xargs wc -l   # → 803
 
 # Rust LOC across ntoskrnl-rust/:
 find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → ~440,200

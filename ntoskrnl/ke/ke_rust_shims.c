@@ -24,37 +24,25 @@
  *      trampoline. Affects HalQuery/SetSystemInformation,
  *      HalVectorToIDTEntry, Ke386Get{Global,Local}DescriptorTable,
  *      KiComputeIopmOffset, KeGetTrapFramePc.
- *   3. **i386 trap-exit FORCEINLINE outlines** — `KiExitV86Trap`,
- *      `KiExitTrapDebugChecks`, `KiExitSystemCallDebugChecks` capture the
- *      header bodies via the `_saved_*` rename trick. Translating them
- *      to Rust is multi-hour PSEH-intertwined work; deferred.
- *   4. **i386 init / startup** — `Ki386InitializeTss`, `KiThreadStartup`,
- *      `KiAttachProcess` are real implementations that haven't been
- *      ported to Rust yet. `KeWin32Pre/PostServiceHook` globals.
- *   5. **amd64 KVM workaround** — `KiSaveXState`/`KiRestoreXState` force
+ *   3. **i386 DBG-only globals** — `KeWin32Pre/PostServiceHook` globals
+ *      (kd64/kdapi.c Win32k service hooks).
+ *   4. **amd64 KVM workaround** — `KiSaveXState`/`KiRestoreXState` force
  *      `fxsave64`/`fxrstor64` to dodge an `xrstors64` page fault that
  *      KVM exposes via mis-reported `KF_XSAVES`.
- *   6. **Tiny dispatch wrappers** — `KiEndInterrupt` (i386 cli + HAL EOI
- *      + KiEoiHelper tail), `KeGdiFlushUserBatch_call` (function-pointer
- *      dispatch).
- *   7. **ARM64 KDBG variadic stub** — `KdbpPrint` (variadic, must stay C).
- *   8. **SSDT generation include** — `<internal/napi.h>` materializes
+ *   5. **Tiny dispatch wrappers** — `KeGdiFlushUserBatch_call`
+ *      (function-pointer dispatch).
+ *   6. **ARM64 KDBG variadic stub** — `KdbpPrint` (variadic, must stay C).
+ *   7. **SSDT generation include** — `<internal/napi.h>` materializes
  *      `MainSSDT[]` / `MainSSPT[]` via the `SVC_` macro for Rust to
  *      reference as extern symbols.
  */
 
-/* === Phase 1: capture FORCEINLINE bodies as `_saved_<Name>` so the
- * non-inline definitions later in this file can reuse the original
- * symbol names. */
-#define KiReleaseDispatcherLockFromSynchLevel _saved_KiReleaseDispatcherLockFromSynchLevel
-#define KiReleaseApcLockFromSynchLevel        _saved_KiReleaseApcLockFromSynchLevel
-
 /* All 3 i386 trap-exit FORCEINLINE outlines (KiExitV86Trap +
- * KiExitTrapDebugChecks + KiExitSystemCallDebugChecks) and the
- * KiDumpTrapFrame debug helper moved to ke-macros rlib (2026-05-08).
- * The `_saved_*` rename trick is no longer needed. */
+ * KiExitTrapDebugChecks + KiExitSystemCallDebugChecks), the
+ * KiDumpTrapFrame debug helper, and KiAttachProcess all moved to Rust
+ * (2026-05-08). The `_saved_*` rename trick that captured FORCEINLINE
+ * bodies is no longer needed. */
 
-/* === Phase 2: include headers (PCH-skipped, so DPRINT must be stubbed). */
 #ifndef DPRINT
 #define DPRINT(...) do {} while(0)
 #endif
@@ -63,13 +51,6 @@
 #endif
 
 #include <ntoskrnl.h>
-
-/* === Phase 3: undef the renames so we can define real outlines below. */
-#undef KiReleaseDispatcherLockFromSynchLevel
-#undef KiReleaseApcLockFromSynchLevel
-
-/* No remaining KiExit / KiEndInterrupt #undefs — all body-rename
- * trampolines retired (2026-05-08). */
 
 /*
  * On i386, `KeReleaseInStackQueuedSpinLock` / `KeAcquireInStackQueuedSpinLock`
@@ -155,56 +136,12 @@ VOID KdbpPrint(_In_ PSTR Format, ...)
  * ============================================================ */
 #include <internal/napi.h>
 
-/* ============================================================
- * KiAttachProcess — originally in procobj.c (now procobj.rs).
- * Calls 2 FORCEINLINE dispatcher/APC release helpers via `_saved_*`.
- * ============================================================ */
-VOID
-NTAPI
-KiAttachProcess(IN PKTHREAD Thread,
-                IN PKPROCESS Process,
-                IN PKLOCK_QUEUE_HANDLE ApcLock,
-                IN PRKAPC_STATE SavedApcState)
-{
-    ASSERT(Process != Thread->ApcState.Process);
-
-    /* Increase Stack Count */
-    ASSERT(Process->StackCount != MAXULONG_PTR);
-    Process->StackCount++;
-
-    /* Swap the APC Environment */
-    KiMoveApcState(&Thread->ApcState, SavedApcState);
-
-    /* Reinitialize Apc State */
-    InitializeListHead(&Thread->ApcState.ApcListHead[KernelMode]);
-    InitializeListHead(&Thread->ApcState.ApcListHead[UserMode]);
-    Thread->ApcState.Process = Process;
-    Thread->ApcState.KernelApcInProgress = FALSE;
-    Thread->ApcState.KernelApcPending = FALSE;
-    Thread->ApcState.UserApcPending = FALSE;
-
-    /* Update Environment Pointers if needed */
-    if (SavedApcState == &Thread->SavedApcState)
-    {
-        Thread->ApcStatePointer[OriginalApcEnvironment] = &Thread->SavedApcState;
-        Thread->ApcStatePointer[AttachedApcEnvironment] = &Thread->ApcState;
-        Thread->ApcStateIndex = AttachedApcEnvironment;
-    }
-
-    /* Check if the process is paged in */
-    if (Process->State == ProcessInMemory)
-    {
-        _saved_KiReleaseDispatcherLockFromSynchLevel();
-        _saved_KiReleaseApcLockFromSynchLevel(ApcLock);
-        KiSwapProcess(Process, SavedApcState->Process);
-        KiExitDispatcher(ApcLock->OldIrql);
-    }
-    else
-    {
-        DPRINT1("Errr. ReactOS doesn't support paging out processes yet...\n");
-        ASSERT(FALSE);
-    }
-}
+/* KiAttachProcess — translated to Rust (`ke/procobj.rs`, 2026-05-08).
+ * The original C body lived here because it called the FORCEINLINE pair
+ * `KiReleaseDispatcherLockFromSynchLevel` / `KiReleaseApcLockFromSynchLevel`
+ * via `_saved_*` capture. Both now exist as `_rs_*` exports in `ke-inlines`
+ * with bare-name `extern "C"` trampolines in `shim_exports.rs`, so the Rust
+ * impl calls them directly. */
 
 /* ============================================================
  * amd64 KVM XState workaround.
@@ -256,55 +193,11 @@ VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
 /* HalVectorToIDTEntry — promoted to bare-name `extern "system"` export
  * in ke-macros rlib (2026-05-08); trampoline retired. */
 
-/* `KiThreadStartup` — context-switch return target. The kernel stack
- * holds a `KUINIT_FRAME` at `KernelStack` on entry; we cast through
- * shim structs because the canonical `KUINIT_FRAME` layout is internal
- * to thrdini.c (now thrdini.rs). */
-DECLSPEC_NORETURN VOID FASTCALL KiServiceExit2(IN PKTRAP_FRAME TrapFrame);
-
-typedef struct _KSWITCHFRAME_SHIM {
-    PVOID ExceptionList;
-    BOOLEAN ApcBypassDisable;
-    PVOID RetAddr;
-} KSWITCHFRAME_SHIM;
-
-typedef struct _KSTART_FRAME_SHIM {
-    PKSYSTEM_ROUTINE SystemRoutine;
-    PKSTART_ROUTINE StartRoutine;
-    PVOID StartContext;
-    BOOLEAN UserThread;
-} KSTART_FRAME_SHIM;
-
-typedef struct _KUINIT_FRAME_SHIM {
-    KSWITCHFRAME_SHIM CtxSwitchFrame;
-    KSTART_FRAME_SHIM StartFrame;
-    KTRAP_FRAME TrapFrame;
-    FX_SAVE_AREA FxSaveArea;
-} KUINIT_FRAME_SHIM;
-
-VOID
-NTAPI
-KiThreadStartup(VOID)
-{
-    PKTRAP_FRAME TrapFrame;
-    KSTART_FRAME_SHIM *StartFrame;
-    KUINIT_FRAME_SHIM *InitFrame;
-
-    InitFrame = (KUINIT_FRAME_SHIM *)KeGetCurrentThread()->KernelStack;
-    StartFrame = &InitFrame->StartFrame;
-    TrapFrame = &InitFrame->TrapFrame;
-
-    KeLowerIrql(APC_LEVEL);
-
-    StartFrame->SystemRoutine(StartFrame->StartRoutine, StartFrame->StartContext);
-
-    if (!StartFrame->UserThread)
-    {
-        KeBugCheck(NO_USER_MODE_CONTEXT);
-    }
-
-    KiServiceExit2(TrapFrame);
-}
+/* `KiThreadStartup` — translated to Rust (`ke/i386/thrdini.rs`,
+ * 2026-05-08). Context-switch return target; the KUINIT_FRAME layout
+ * lives in thrdini.rs alongside KiInitializeContextThread which builds
+ * the frame, so the shim's parallel KUINIT_FRAME_SHIM struct is no
+ * longer needed. */
 
 /* `KiComputeIopmOffset` — macro in ndk/i386/ketypes.h. Trampoline
  * captures the macro expansion. */
@@ -318,124 +211,11 @@ USHORT NTAPI KiComputeIopmOffset(USHORT MapNumber)
     return _tramp_KiComputeIopmOffset(MapNumber);
 }
 
-/* `Ki386InitializeTss` + 2 helpers — INIT-time TSS setup. Calls many
- * FORCEINLINE/macros (KiInitializeTSS, Ke386SetTr, Ke386GetSs etc.)
- * so kept in C. KiInitializeTSS/TSS2 originally lived in cpu.c
- * (now cpu.rs). */
-extern ULONG_PTR KiDoubleFaultTSS;
-extern ULONG_PTR KiNMITSS;
-extern ULONG KiDoubleFaultStack;
-
-CODE_SEG("INIT")
-static VOID
-NTAPI
-Shim_KiInitializeTSS2(IN PKTSS Tss, IN PKGDTENTRY TssEntry OPTIONAL)
-{
-    PUCHAR p;
-
-    if (TssEntry) {
-        TssEntry->LimitLow = sizeof(KTSS) - 1;
-        TssEntry->HighWord.Bits.LimitHi = 0;
-    }
-
-    ASSERT(IOPM_COUNT == 1);
-    RtlFillMemory(Tss->IoMaps[0].IoMap, IOPM_FULL_SIZE, 0xFF);
-
-    p = (PUCHAR)(Tss->IoMaps[0].DirectionMap);
-    RtlZeroMemory(p, IOPM_DIRECTION_MAP_SIZE);
-    p[0] = 4; p[3] = 0x18; p[4] = 0x18;
-
-    p = Tss->IntDirectionMap;
-    RtlZeroMemory(Tss->IntDirectionMap, IOPM_DIRECTION_MAP_SIZE);
-    p[0] = 4; p[3] = 0x18; p[4] = 0x18;
-}
-
-CODE_SEG("INIT")
-static VOID
-NTAPI
-Shim_KiInitializeTSS(IN PKTSS Tss)
-{
-    Tss->IoMapBase = _tramp_KiComputeIopmOffset(IO_ACCESS_MAP_NONE);
-    Tss->Flags = 0;
-    Tss->LDT = 0;
-    Tss->Ss0 = KGDT_R0_DATA;
-}
-
-CODE_SEG("INIT")
-VOID
-FASTCALL
-Ki386InitializeTss(IN PKTSS Tss,
-                   IN PKIDTENTRY Idt,
-                   IN PKGDTENTRY Gdt)
-{
-    PKGDTENTRY TssEntry, TaskGateEntry;
-
-    TssEntry = &Gdt[KGDT_TSS / sizeof(KGDTENTRY)];
-    TssEntry->HighWord.Bits.Type = I386_TSS;
-    TssEntry->HighWord.Bits.Pres = 1;
-    TssEntry->HighWord.Bits.Dpl = 0;
-
-    Shim_KiInitializeTSS2(Tss, TssEntry);
-
-    Shim_KiInitializeTSS(Tss);
-
-    __asm__ __volatile__("ltr %%ax" : :"a" ((USHORT)KGDT_TSS));
-
-    TaskGateEntry = (PKGDTENTRY)&Idt[8];
-    TaskGateEntry->HighWord.Bits.Type = I386_TASK_GATE;
-    TaskGateEntry->HighWord.Bits.Pres = 1;
-    TaskGateEntry->HighWord.Bits.Dpl = 0;
-    ((PKIDTENTRY)TaskGateEntry)->Selector = KGDT_DF_TSS;
-
-    Tss = (PKTSS)KiDoubleFaultTSS;
-    Shim_KiInitializeTSS(Tss);
-    Tss->CR3 = __readcr3();
-    Tss->Esp0 = KiDoubleFaultStack;
-    Tss->Esp = KiDoubleFaultStack;
-    Tss->Eip = PtrToUlong(KiTrap08);
-    Tss->Cs = KGDT_R0_CODE;
-    Tss->Fs = KGDT_R0_PCR;
-    { unsigned int __ss; __asm__("movl %%ss,%0" :"=r"(__ss)); Tss->Ss = (USHORT)__ss; }
-    Tss->Es = KGDT_R3_DATA | RPL_MASK;
-    Tss->Ds = KGDT_R3_DATA | RPL_MASK;
-
-    TssEntry = &Gdt[KGDT_DF_TSS / sizeof(KGDTENTRY)];
-    TssEntry->HighWord.Bits.Type = I386_TSS;
-    TssEntry->HighWord.Bits.Pres = 1;
-    TssEntry->HighWord.Bits.Dpl = 0;
-    TssEntry->BaseLow = (USHORT)((ULONG_PTR)Tss & 0xFFFF);
-    TssEntry->HighWord.Bytes.BaseMid = (UCHAR)((ULONG_PTR)Tss >> 16);
-    TssEntry->HighWord.Bytes.BaseHi = (UCHAR)((ULONG_PTR)Tss >> 24);
-    TssEntry->LimitLow = KTSS_IO_MAPS;
-
-    TaskGateEntry = (PKGDTENTRY)&Idt[2];
-    TaskGateEntry->HighWord.Bits.Type = I386_TASK_GATE;
-    TaskGateEntry->HighWord.Bits.Pres = 1;
-    TaskGateEntry->HighWord.Bits.Dpl = 0;
-    ((PKIDTENTRY)TaskGateEntry)->Selector = KGDT_NMI_TSS;
-
-    Tss = (PKTSS)KiNMITSS;
-    Shim_KiInitializeTSS(Tss);
-    Tss->CR3 = __readcr3();
-    Tss->Esp0 = KiDoubleFaultStack;
-    Tss->Esp = KiDoubleFaultStack;
-    Tss->Eip = PtrToUlong(KiTrap02);
-    Tss->Cs = KGDT_R0_CODE;
-    Tss->Fs = KGDT_R0_PCR;
-    { unsigned int __ss; __asm__("movl %%ss,%0" :"=r"(__ss)); Tss->Ss = (USHORT)__ss; }
-    Tss->Es = KGDT_R3_DATA | RPL_MASK;
-    Tss->Ds = KGDT_R3_DATA | RPL_MASK;
-
-    TssEntry = &Gdt[KGDT_NMI_TSS / sizeof(KGDTENTRY)];
-    TssEntry->HighWord.Bits.Type = I386_TSS;
-    TssEntry->HighWord.Bits.Pres = 1;
-    TssEntry->HighWord.Bits.Dpl = 0;
-    TssEntry->BaseLow = (USHORT)((ULONG_PTR)Tss & 0xFFFF);
-    TssEntry->HighWord.Bytes.BaseMid = (UCHAR)((ULONG_PTR)Tss >> 16);
-    TssEntry->HighWord.Bytes.BaseHi = (UCHAR)((ULONG_PTR)Tss >> 24);
-    TssEntry->LimitLow = KTSS_IO_MAPS;
-
-}
+/* `Ki386InitializeTss` translated to Rust (`ke/i386/cpu.rs`,
+ * 2026-05-08). The KiInitializeTSS / KiInitializeTSS2 private helpers
+ * already lived alongside it in cpu.rs; the shim's `Shim_*` copies were
+ * just trampolines for the FORCEINLINE captures. The Rust impl uses
+ * direct inline asm for `ltr ax` and `mov %ss,...` instead. */
 
 /* KiEndInterrupt — promoted to direct Rust impl in ke-macros rlib
  * (2026-05-08). The audit's "rustc 1.92 stdcall/fastcall ABI bug"

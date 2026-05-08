@@ -856,10 +856,102 @@ unsafe fn KiInitializeTSS(Tss: PKTSS) {
     (*Tss).Ss0 = KGDT_R0_DATA;
 }
 
-// CODE_SEG("INIT")
-// Ki386InitializeTss is FASTCALL on i386 — implementation in ke_rust_shims.c
-// (calls many FORCEINLINE/macro functions that can't be easily translated)
-// This Rust declaration is removed; the C shim provides the real implementation.
+/// CODE_SEG("INIT") — INIT-time TSS+GDT+IDT setup.
+/// Configures the main TSS, the double-fault TSS, and the NMI TSS, then
+/// loads the task register with the main TSS selector. Originally lived
+/// in `ke/i386/cpu.c`; the helpers `KiInitializeTSS`/`KiInitializeTSS2`
+/// are right above this fn.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn Ki386InitializeTss(
+    Tss: PKTSS,
+    Idt: PKIDTENTRY,
+    Gdt: PKGDTENTRY,
+) {
+    // --- main TSS GDT entry ----------------------------------------------
+    let TssEntry = Gdt.add(KGDT_TSS as usize / core::mem::size_of::<_KGDTENTRY>());
+    (*TssEntry).HighWord.Bits.set_Type(I386_TSS as ULONG);
+    (*TssEntry).HighWord.Bits.set_Pres(1);
+    (*TssEntry).HighWord.Bits.set_Dpl(0);
+
+    KiInitializeTSS2(Tss, TssEntry);
+    KiInitializeTSS(Tss);
+
+    // Load task register with the main TSS selector.
+    core::arch::asm!("ltr ax", in("ax") KGDT_TSS, options(nostack, preserves_flags));
+
+    // --- double-fault: IDT[8] → task gate to KGDT_DF_TSS -----------------
+    let TaskGate8 = Idt.add(8) as *mut _KGDTENTRY;
+    (*TaskGate8).HighWord.Bits.set_Type(I386_TASK_GATE as ULONG);
+    (*TaskGate8).HighWord.Bits.set_Pres(1);
+    (*TaskGate8).HighWord.Bits.set_Dpl(0);
+    (*(TaskGate8 as PKIDTENTRY)).Selector = KGDT_DF_TSS;
+
+    let DfTss = core::ptr::addr_of_mut!(KiDoubleFaultTSS) as PKTSS;
+    KiInitializeTSS(DfTss);
+    (*DfTss).CR3 = {
+        let cr3: ULONG;
+        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+        cr3
+    };
+    (*DfTss).Esp0 = KiDoubleFaultStack as ULONG;
+    (*DfTss).Esp = KiDoubleFaultStack as ULONG;
+    (*DfTss).Eip = KiTrap08 as ULONG;
+    (*DfTss).Cs = KGDT_R0_CODE;
+    (*DfTss).Fs = KGDT_R0_PCR;
+    (*DfTss).Ss = {
+        let ss: u32;
+        core::arch::asm!("mov {}, ss", out(reg) ss, options(nostack, preserves_flags));
+        ss as USHORT
+    };
+    (*DfTss).Es = KGDT_R3_DATA | RPL_MASK;
+    (*DfTss).Ds = KGDT_R3_DATA | RPL_MASK;
+
+    let DfTssEntry = Gdt.add(KGDT_DF_TSS as usize / core::mem::size_of::<_KGDTENTRY>());
+    (*DfTssEntry).HighWord.Bits.set_Type(I386_TSS as ULONG);
+    (*DfTssEntry).HighWord.Bits.set_Pres(1);
+    (*DfTssEntry).HighWord.Bits.set_Dpl(0);
+    (*DfTssEntry).BaseLow = (DfTss as ULONG_PTR & 0xFFFF) as USHORT;
+    (*DfTssEntry).HighWord.Bytes.BaseMid = ((DfTss as ULONG_PTR >> 16) & 0xFF) as UCHAR;
+    (*DfTssEntry).HighWord.Bytes.BaseHi = ((DfTss as ULONG_PTR >> 24) & 0xFF) as UCHAR;
+    (*DfTssEntry).LimitLow = KTSS_IO_MAPS as USHORT;
+
+    // --- NMI: IDT[2] → task gate to KGDT_NMI_TSS -------------------------
+    let TaskGate2 = Idt.add(2) as *mut _KGDTENTRY;
+    (*TaskGate2).HighWord.Bits.set_Type(I386_TASK_GATE as ULONG);
+    (*TaskGate2).HighWord.Bits.set_Pres(1);
+    (*TaskGate2).HighWord.Bits.set_Dpl(0);
+    (*(TaskGate2 as PKIDTENTRY)).Selector = KGDT_NMI_TSS;
+
+    let NmiTss = core::ptr::addr_of_mut!(KiNMITSS) as PKTSS;
+    KiInitializeTSS(NmiTss);
+    (*NmiTss).CR3 = {
+        let cr3: ULONG;
+        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+        cr3
+    };
+    (*NmiTss).Esp0 = KiDoubleFaultStack as ULONG;
+    (*NmiTss).Esp = KiDoubleFaultStack as ULONG;
+    (*NmiTss).Eip = KiTrap02 as ULONG;
+    (*NmiTss).Cs = KGDT_R0_CODE;
+    (*NmiTss).Fs = KGDT_R0_PCR;
+    (*NmiTss).Ss = {
+        let ss: USHORT;
+        core::arch::asm!("mov {0:x}, ss", out(reg) ss, options(nostack, preserves_flags));
+        ss
+    };
+    (*NmiTss).Es = KGDT_R3_DATA | RPL_MASK;
+    (*NmiTss).Ds = KGDT_R3_DATA | RPL_MASK;
+
+    let NmiTssEntry = Gdt.add(KGDT_NMI_TSS as usize / core::mem::size_of::<_KGDTENTRY>());
+    (*NmiTssEntry).HighWord.Bits.set_Type(I386_TSS as ULONG);
+    (*NmiTssEntry).HighWord.Bits.set_Pres(1);
+    (*NmiTssEntry).HighWord.Bits.set_Dpl(0);
+    (*NmiTssEntry).BaseLow = (NmiTss as ULONG_PTR & 0xFFFF) as USHORT;
+    (*NmiTssEntry).HighWord.Bytes.BaseMid = ((NmiTss as ULONG_PTR >> 16) & 0xFF) as UCHAR;
+    (*NmiTssEntry).HighWord.Bytes.BaseHi = ((NmiTss as ULONG_PTR >> 24) & 0xFF) as UCHAR;
+    (*NmiTssEntry).LimitLow = KTSS_IO_MAPS as USHORT;
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushCurrentTb() {
