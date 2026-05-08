@@ -28,7 +28,7 @@ unsafe fn KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
 
 extern "system" {
     static KeActiveProcessors: KAFFINITY;
-    static KeNumberProcessors: ULONG;
+    static KeNumberProcessors: i8;
     fn KeInitializeInterrupt( Interrupt: PKINTERRUPT, ServiceRoutine: PKSERVICE_ROUTINE, ServiceContext: PVOID, SpinLock: PKSPIN_LOCK, Vector: ULONG, Irql: KIRQL, SynchronizeIrql: KIRQL, InterruptMode: KINTERRUPT_MODE, ShareVector: BOOLEAN, ProcessorNumber: CCHAR, FloatingSave: BOOLEAN, );
     fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN;
     fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT);

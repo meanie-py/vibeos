@@ -153,7 +153,7 @@ extern "system" {
 
 extern "C" {
     static mut ExSystemLookasideListHead: LIST_ENTRY;
-    static mut KeNumberProcessors: ULONG;
+    static mut KeNumberProcessors: i8;
     static KiProcessorBlock: [*mut _KPRCB; 0];
     static mut IopRootDeviceNode: *mut PVOID;
     static mut NtSystemRoot: _UNICODE_STRING;
