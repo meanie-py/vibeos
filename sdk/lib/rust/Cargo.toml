@@ -29,6 +29,7 @@ members = [
     "mm-util-inlines",
     "mm-ws-lock-inlines",
     "ntkrnl-sys",
+    "ntoskrnl-cargo",
     "ntoskrnl-rust",
     "ob-inlines",
     "ps-inlines",

@@ -1,20 +1,22 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08 (late evening — `ke_rust_shims.c` no longer
-pulls `<ntoskrnl.h>`; SSDT materialized in Rust). Treat any prior
-version of this document as suspect — the shim layer changed
-significantly between 2026-05-06 and 2026-05-08, and the arm64
-baseline was unblocked.
+Last updated 2026-05-08 (night — cargo-driven build PoC for i386 boots
+to desktop and passes 7/7 smoke). Treat any prior version of this
+document as suspect — the shim layer changed significantly between
+2026-05-06 and 2026-05-08, and the arm64 baseline was unblocked.
 
 ## Where we are
 
 **~99.7% of the original ntoskrnl C body of work is now Rust.** The
 active C in the default i386/amd64 build is down to **9 narrow shim
-files totalling 813 LOC** — and as of 2026-05-08 (late evening) **none
-of them pull `<ntoskrnl.h>` any more.** Every surviving shim file
-compiles with `<stdarg.h>` + `<stddef.h>` + `<stdint.h>` plus a small
-local typedef block, which is the cc-rs prerequisite for the
-cargo-driven build PoC.
+files totalling 813 LOC.** As of 2026-05-08 (late evening) **3 of the
+9 shims are fully header-free** (compile with only
+`<stdarg.h>`/`<stddef.h>`/`<stdint.h>` + a local typedef block):
+`ke_rust_shims.c`, `ntprintf_trampoline.c`, `variadic_shims.c`. The
+remaining 6 still pull `<ntoskrnl.h>` and a handful of internal
+headers — that's not a blocker for the cargo-driven build PoC (cc-rs
+can drive those headers via `-I` flags), but cleaning them up the
+same way is documented as a follow-up below.
 Five entire shim files were retired between the last audit and now:
 `mm_sysldr_shims.c`, `arm64_uart.c`, `kd_rust_shims.c`,
 `cm_rust_shims.c`, and `kernel_c_helpers.c`'s legacy bulk
@@ -210,13 +212,64 @@ audit confirmed every function it exported was already live in
 
 Parked translations: **0**. Every Rust file in tree is wired in.
 
-## Forward path: cargo-driven build PoC
+## Forward path: cargo-driven build PoC ✅
 
-The strategic goal motivating shim minimization isn't the LOC count
-itself — it's switching ntoskrnl from cmake to cargo as the build
-driver. Cargo already produces the kernel staticlib
-(`libkernel_rust.a`); we want cargo to also drive the final link,
-eliminating the cmake step.
+**Landed 2026-05-08.** The PoC at `sdk/lib/rust/ntoskrnl-cargo/`
+produces a working `ntoskrnl.exe` for i386 driven entirely by cargo.
+7/7 smoke tests pass on the cargo-built binary. End-to-end build
+script at `sdk/lib/rust/ntoskrnl-cargo/build-and-test.sh` (use
+`RUN_SMOKE=1 build-and-test.sh` to swap into livecd + run smoke).
+
+Key shape of the PoC:
+
+- **Custom target spec** at `ntoskrnl-cargo/i686-kernel.json` —
+  forked from the standard `i686-pc-windows-gnu` target, but with
+  `late-link-args` (`-lmsvcrt`, `-lgcc_eh`, `-lmingwex`, …),
+  `pre-link-objects` (`rsbegin.o`/`rsend.o`), and `crt-objects-fallback`
+  stripped. The `rustc-abi` is set to `x86-softfloat` so build-std's
+  compiler_builtins doesn't insist on SSE.
+- **`build.rs` drives the link.** Invokes `cargo build -p kernel-rust`
+  as a sub-step (kernel-rust is `crate-type = ["staticlib"]`, which
+  cargo can't use as a Rust dep), then emits the absolute path of the
+  resulting `libkernel_rust.a` plus all the cmake-built `.obj` files
+  (8 asm + 9 C shims + 1 resource), the `.def` file, and the ~30
+  cmake-built static libs (`libntoskrnl_vista.a`, `libcmlib.a`,
+  `librtl.a`, `libhal.a`, etc.) as link args. Adds the kernel-mode PE-COFF
+  link flags (`-nostdlib`, `-fuse-ld=lld`, image base 0x00400000,
+  subsystem `native:5.01`, entry `_KiSystemStartup@4`,
+  file/section alignment 0x1000, etc.).
+- **`main.rs` is empty** except for an empty `#[panic_handler]` and a
+  `#[used]` anchor referencing `KiSystemStartup` so `--gc-sections`
+  doesn't drop the entry point.
+- **Nightly toolchain required** for `-Z build-std=core,alloc,compiler_builtins`.
+  cmake-driven build keeps using stable. The build.rs sets
+  `RUSTUP_TOOLCHAIN=nightly` for its sub-cargo invocation so the rest
+  of the workspace stays stable-compatible.
+- **Cargo-built binary is 3.1 MB** vs. cmake's 4.6 MB — same boot,
+  smaller binary because cargo's `--gc-sections` runs more aggressively
+  without the cmake-side intermediate static libs accumulating
+  unreferenced helpers. Boots to desktop in QEMU, 7/7 smoke pass.
+
+What this PoC **doesn't** do yet (intentionally):
+
+1. **Compile the C shims and asm via `cc-rs`.** Reuses cmake's `.obj`
+   files. `cc-rs` integration is the obvious next step now that the
+   shim layer compiles with `<stdarg.h>` + `<stddef.h>` + `<stdint.h>`
+   for 3 of the 9 shims; the other 6 still need `<ntoskrnl.h>` and
+   would need `cc::Build::include()` calls that mirror cmake's `-I`
+   flags.
+2. **Compile the resource file.** Reuses cmake's `.rc.res`.
+   `embed-resource` crate does this for cargo.
+3. **Run post-link tools** (`pefixup`, `fix_lld_forwarding.py`).
+   The smoke-passing PoC binary skipped both — a sign that with the
+   modern linker/Rust setup, neither is strictly required for boot.
+   Probably worth investigating which (if either) is still needed
+   before formally switching builds over.
+4. **amd64 / arm64.** The custom target spec is i386-only so far.
+   Forward path: clone `i686-kernel.json` per arch; the rest of the
+   PoC structure is arch-agnostic.
+
+Original strategic motivation, now mostly addressed:
 
 What this requires from the shim layer:
 

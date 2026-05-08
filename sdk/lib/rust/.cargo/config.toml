@@ -3,3 +3,19 @@
 # but pool init runs in Phase 0 (MmArmInitSystem).
 [target.i686-pc-windows-gnu]
 rustflags = ["-C", "target-feature=-sse,-sse2"]
+
+# Custom kernel target for the cargo-driven build PoC. Uses
+# i686-pc-windows-gnu's underlying ABI but strips the late-link-args
+# (`-lmsvcrt`, `-lgcc_eh`, …) and pre-link-objects (`rsbegin.o` /
+# `rsend.o`) that pull in the user-mode mingw CRT, plus pins the
+# linker to llvm-mingw's clang to match the cmake build.
+#
+# Note: the linker path here is ABSOLUTE because cargo doesn't
+# expand env vars or relative paths in config.toml. Override via
+# `CARGO_TARGET_I686_KERNEL_LINKER` env var if you have llvm-mingw
+# installed somewhere else.
+[target.i686-kernel]
+linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+rustflags = [
+    "-C", "target-feature=-sse,-sse2",
+]
