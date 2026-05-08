@@ -2480,20 +2480,67 @@ mod ke_i386_exports {
 }
 
 // ============================================================================
-// ARM64_UART_TRACE stubs (C macros → no-op functions for Rust callers)
+// ARM64_UART_TRACE / ARM64_UART_TRACE_HEX
+//
+// Direct UART pokes used at bringup-path callsites where DbgPrint isn't wired
+// up yet (PsCreateProcess, config init, etc.). Real implementation on ARM64;
+// no-op stub on i386/amd64 so cross-arch Rust callers (cminit.rs, kill.rs,
+// process.rs, psmgr.rs, …) can declare them unconditionally.
+//
+// Was: ntoskrnl/arm64_uart.c (now retired).
 // ============================================================================
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn ARM64_UART_TRACE(_msg: *const u8) {
-    // No-op: ARM64_UART_TRACE is a C macro that expands to no-op on non-ARM64.
-    // On ARM64, actual UART tracing is done via volatile MMIO in C.
+pub unsafe extern "C" fn ARM64_UART_TRACE(msg: *const u8) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let u = core::ptr::read_volatile(
+            core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
+        ) as *mut u32;
+        if u.is_null() { return; }
+        let mut p = msg;
+        while *p != 0 {
+            core::ptr::write_volatile(u, *p as u32);
+            p = p.add(1);
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = msg;
+    }
 }
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(_prefix: *const u8, _val: ntkrnl_sys::base::ULONG_PTR) {
-    // No-op stub.
+pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::base::ULONG_PTR) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        let u = core::ptr::read_volatile(
+            core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
+        ) as *mut u32;
+        if u.is_null() { return; }
+        let mut p = prefix;
+        while *p != 0 {
+            core::ptr::write_volatile(u, *p as u32);
+            p = p.add(1);
+        }
+        core::ptr::write_volatile(u, b'0' as u32);
+        core::ptr::write_volatile(u, b'x' as u32);
+        let nibbles = (core::mem::size_of::<ntkrnl_sys::base::ULONG_PTR>() * 2) as i32;
+        let mut i = nibbles - 1;
+        while i >= 0 {
+            let nib = ((val >> (i * 4)) & 0xF) as usize;
+            core::ptr::write_volatile(u, HEX[nib] as u32);
+            i -= 1;
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = prefix;
+        let _ = val;
+    }
 }
 
 // ============================================================================

@@ -318,7 +318,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/arm64_uart.c
+    # arm64_uart.c retired — ARM64_UART_TRACE / _HEX now in shim_exports.rs.
     # Shared C trampoline for variadic shims — calls into Rust ntprintf crate
     # for format-string parsing + emission. See ntprintf_trampoline.c header.
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ntprintf_trampoline.c

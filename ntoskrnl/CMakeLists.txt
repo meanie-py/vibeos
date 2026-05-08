@@ -50,7 +50,6 @@ list(APPEND PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/arm64_uart.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)

@@ -37,12 +37,18 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | `variadic_shims.c` | 77 | 0 | 0 | 0 | 0 |
 | `mm_lock_outlines.c` | 36 | 0 | 0 | 0 | 0 |
 | `kernel_c_helpers.c` | 41 | 0 | 0 | 0 | 0 |
-| `arm64_uart.c` | 47 | 0 | 0 | 0\*\*\* | 0 |
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
 | `lto_workaround.c` | 45 | 0 | 2 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
+| ~~`arm64_uart.c`~~ | — | — | — | — | — |
+
+`arm64_uart.c` was retired 2026-05-07. `ARM64_UART_TRACE` and
+`ARM64_UART_TRACE_HEX` are now real Rust implementations in
+`ntoskrnl-rust/src/shim_exports.rs`, gated by `cfg(target_arch =
+"aarch64")` for the actual UART pokes via volatile MMIO into
+`Arm64UartKernelBase`; no-op stub on i386/amd64.
 
 \* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
 (everything outside `#ifdef _M_ARM64` is gone). The remaining `->`
@@ -55,11 +61,6 @@ union accessors; punted as a focused ARM64-only follow-up.
 used to const-init `KdbPromptStr: CSTRING`. Trivially translatable
 to Rust (compile-time `pub static`) but low-priority since the file
 only also contains the `KdbpPrint` variadic adapter (must stay).
-
-\*\*\* `arm64_uart.c` audit reports `macros=0` after stripping the
-function-definition self-references the regex picks up. Genuinely
-zero macro expansions in the body (no kernel headers pulled —
-just `<ntdef.h>`).
 
 `lto_workaround.c` deliberately retains its `<ntoskrnl.h>` chain —
 the file IS the isolation boundary for the LLVM i386 fat-LTO bug.
@@ -230,26 +231,32 @@ LOC and only houses the `ps_i.h` re-include trick. Resulting layout:
   separate `cc::Build` outside Rust LTO scope.
 - `mm_lock_outlines.c` (36 LOC, 0/0/0/0) — the
   `MmLockSectionSegment` trio that needs C `__FILE__`/`__LINE__`.
-- `arm64_uart.c` (47 LOC, 0/0/0/0) — ARM64-only UART pokes (no-op
-  stubs on i386/amd64). Pulls only `<ntdef.h>`.
 - `kernel_c_helpers.c` (41 LOC, 0/0/0/0) — only the `ps_i.h`
   re-include trick. The `_static_*` rename + `#pragma push/pop` of
   `static` create the externally-linkable `PsProcessInfoClass` /
   `PsThreadInfoClass` arrays that Rust query-info dispatchers
   extern-link against.
 
-Combined session-cumulative reduction (Pass 1 + 2 + 3 + 4):
-490 LOC of one file → 246 LOC across 5 files, each with a single
-narrow reason for its survival. Every trampoline that's not the LTO
-workaround is at audit-target 0/0/0/0.
+Pass 5 (2026-05-07) retired `arm64_uart.c` entirely. Both
+`ARM64_UART_TRACE` and `ARM64_UART_TRACE_HEX` now live in
+`ntoskrnl-rust/src/shim_exports.rs` as real Rust implementations:
+the bodies are `cfg(target_arch = "aarch64")`-gated `volatile_write`
+loops poking `Arm64UartKernelBase` (the existing `#[no_mangle]`
+ARM64-only static at `ke::arm64::stubs::Arm64UartKernelBase`); on
+i386/amd64 the bodies collapse to `let _ = msg;`. C callers in
+`ex/init.c`, `se/*.c`, `ob/obinit.c` continue to resolve to the same
+`extern "C"` symbols — they don't notice the swap.
+
+Combined session-cumulative reduction (Pass 1 + 2 + 3 + 4 + 5):
+490 LOC of one C file → 199 LOC across 4 C files, each with a
+single narrow reason for its survival. Every trampoline that's not
+the LTO workaround is at audit-target 0/0/0/0.
 
 What still remains as future work (not blocking minimal-trampoline
 status, but nice-to-haves):
 - Translate `PsProcessInfoClass` / `PsThreadInfoClass` arrays to
   Rust (~250 entries each, mechanical). Eliminates the last C file
   with the `#define static` rename pattern.
-- Translate ARM64 UART helpers to Rust `core::arch::asm!` — would
-  let `arm64_uart.c` go away.
 
 What stays:
 - `KdpDprintf`, `RtlStringCbPrintfA` — variadic.
