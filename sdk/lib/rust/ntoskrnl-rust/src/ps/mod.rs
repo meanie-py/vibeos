@@ -10,6 +10,7 @@ pub mod debug;
 pub mod job;
 pub mod kill;
 pub mod process;
+pub mod ps_globals;
 pub mod psmgr;
 pub mod psnotify;
 pub mod query;

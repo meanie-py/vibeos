@@ -37,7 +37,7 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
-| `kernel_c_helpers.c` | 490 | 1 | 42 | 6 | 0 |
+| `kernel_c_helpers.c` | 435 | 1 | 42 | 5 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
 
 \* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
@@ -163,39 +163,43 @@ What stays:
   Translatable but the const-init dance is low-value relative to
   the variadic constraint (file already has to stay for `KdbpPrint`).
 
-### `kernel_c_helpers.c` — heavy (~3-5 sessions)
+### `kernel_c_helpers.c` — Pass 1 done (~3-5 sessions remaining)
 
-What needs translating:
-- PS globals (`PspSystemDllBase`, `PsInitialSystemProcess`,
-  `Psp{Process,Thread}Mapping`, `PsNtDllPathName`, `SharedUserData`,
-  ARM64 `_Pcr*` etc.) — ~50 LOC of `pub static mut` in Rust.
-- `ARM64_UART_TRACE` / `ARM64_UART_TRACE_HEX` — pointer pokes; trivial.
-- `ExpKdbgExtFileCache` / `ExpKdbgExtDefWrites` — variadic, but they
-  could be split into a separate minimal `.c` file (variadic shell)
-  that calls a Rust core (the way `ntprintf_trampoline.c` does).
+PS globals + SharedUserData + GENERIC_MAPPING tables + PsNtDllPathName
+moved to `ntoskrnl-rust::ps::ps_globals` (`#[no_mangle] pub static mut`,
+~140 LOC of new Rust). Net file reduction was modest (490→435 LOC,
+-55) because the heavy `->` and macro counts live in the variadic
+functions, which stay in C.
+
+**Latent bug surfaced.** `ntkrnl_sys::constants::PROCESS_ALL_ACCESS`
+is the Vista+ value `... | 0xFFFF` = 0x001FFFFF, but the C kernel
+build is NT 5.x where the macro evaluates to `... | 0xFFF` =
+0x001F0FFF. While the C definition shadowed the Rust one (linker
+chose first; `--allow-multiple-definition`), the bug was masked.
+Direct Rust ownership exposes it: SMSS process-create access checks
+fail and i386 hangs in the SAM/LSA wait loop. Worked around by
+hard-coding the NT 5.x mask in `ps_globals.rs`. The constant in
+`ntkrnl-sys` should be fixed at the source — separate task.
+
+What still needs translating:
+- `ExpKdbgExtFileCache` / `ExpKdbgExtDefWrites` — variadic; can be
+  isolated to a minimal trampoline file when other prerequisites are
+  ready.
 - `ExpKdbgExtHandle` (140 LOC) — substantial port: walks
   `HandleTableListHead`, dereferences `OBJECT_HEADER`, branches on
-  `IoFileObjectType` / `CmpKeyObjectType`, walks `KeyControlBlock`
-  parents. ~1 session of careful translation.
+  `IoFileObjectType` / `CmpKeyObjectType`. ~1 session.
+- ARM64 `ARM64_UART_TRACE` / `ARM64_UART_TRACE_HEX` — translatable
+  but not blocking i386/amd64 minimal-trampoline status.
+- `PsProcessInfoClass` / `PsThreadInfoClass` re-include trick — the
+  `#define static` rename pattern needs careful translation.
 
 What stays:
 - `KdpDprintf`, `RtlStringCbPrintfA` — variadic.
-- `SepInitTokensShim` — verified LLVM i386 fat-LTO bug. Stays in C
-  with full `<ntoskrnl.h>` (re-probed 2026-05-07; opaque_ptr,
-  compiler_fence, black_box defenses do NOT defeat the bug).
-- `MmLockSectionSegment` / `MmUnlockSectionSegment` /
-  `MmGetPageEntrySectionSegment` — need `__FILE__`/`__LINE__`. Could
-  isolate in a minimal trampoline file.
-- `PsProcessInfoClass` / `PsThreadInfoClass` re-include trick — needs
-  the `#define static` rename; isolate or translate the 2 arrays.
+- `SepInitTokensShim` — verified LLVM i386 fat-LTO bug.
+- `MmLockSectionSegment` trio — `__FILE__`/`__LINE__`.
 
-After translation: split this file into 2-3 minimal trampolines:
-- `variadic_shims.c` — `KdpDprintf`, `RtlStringCbPrintfA`, KDBG ext
-  variadics. Headers: `<ntdef.h>` + `<stdarg.h>`.
-- `lto_workaround.c` — `SepInitTokensShim` only. Full `<ntoskrnl.h>`
-  required, but isolated.
-- `mm_lock_outlines.c` — `MmLockSectionSegment` trio. Headers: as
-  minimal as `__FILE__`/`__LINE__` use allows.
+After all of the above: split into 2-3 minimal trampolines per the
+prior plan (variadic_shims.c, lto_workaround.c, mm_lock_outlines.c).
 
 ### `ke_rust_shims.c` — heaviest (~5+ sessions)
 

@@ -8,34 +8,26 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::krnlinit::KeFeatureBits;
 
+// PS-subsystem storage moved to ps/ps_globals.rs (was in
+// kernel_c_helpers.c). Pull the new defs into scope so this file's
+// callers don't need to qualify them.
+pub use crate::ps::ps_globals::{
+    KeUserPopEntrySListEnd, KeUserPopEntrySListFault, KeUserPopEntrySListResume,
+    PsInitialSystemProcess, PsIdleProcess, PsMaximumWorkingSet, PsMinimumWorkingSet,
+    PsNtDllPathName, PspBootAccessToken, PspCidTable, PspDefaultNonPagedLimit,
+    PspDefaultPagedLimit, PspDefaultPagefileLimit, PspDoingGiveBacks,
+    PspInitialSystemProcessHandle, PspProcessMapping, PspSystemDllBase,
+    PspSystemDllEntryPoint, PspSystemDllSection, PspThreadMapping,
+};
+
 extern "system" {
     static mut ExpInitializationPhase: ULONG;
-    static mut KeUserPopEntrySListEnd: PVOID;
-    static mut KeUserPopEntrySListFault: PVOID;
-    static mut KeUserPopEntrySListResume: PVOID;
-    static mut PspSystemDllBase: PVOID;
-    static mut PspSystemDllSection: PVOID;
-    static mut PspSystemDllEntryPoint: PVOID;
-    static mut PsNtDllPathName: _UNICODE_STRING;
-    static mut PspCidTable: PHANDLE_TABLE;
-    static mut PsInitialSystemProcess: PEPROCESS;
-    static mut PsIdleProcess: PEPROCESS;
-    static mut PspInitialSystemProcessHandle: HANDLE;
-    static mut PsMinimumWorkingSet: ULONG;
-    static mut PsMaximumWorkingSet: ULONG;
-    static mut PspDefaultPagedLimit: ULONG;
-    static mut PspDefaultNonPagedLimit: ULONG;
-    static mut PspDefaultPagefileLimit: ULONG;
-    static mut PspDoingGiveBacks: BOOLEAN;
     static mut PsActiveProcessHead: LIST_ENTRY;
     static mut PspActiveProcessMutex: KGUARDED_MUTEX;
     static mut PspReaperWorkItem: _WORK_QUEUE_ITEM;
-    static mut PspBootAccessToken: PTOKEN;
     static mut PsProcessType: *mut _OBJECT_TYPE;
     static mut PsThreadType: *mut _OBJECT_TYPE;
     static mut PsJobType: *mut _OBJECT_TYPE;
-    static mut PspProcessMapping: _GENERIC_MAPPING;
-    static mut PspThreadMapping: _GENERIC_MAPPING;
     static mut PspJobMapping: _GENERIC_MAPPING;
     static mut PspThreadNotifyRoutine: [_EX_CALLBACK; 64];
     static mut PspProcessNotifyRoutine: [_EX_CALLBACK; 64];

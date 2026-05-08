@@ -371,63 +371,8 @@ BOOLEAN ExpKdbgExtHandle(ULONG Argc, PCHAR Argv[])
 #include "internal/ps_i.h"
 #pragma pop_macro("static")
 
-/* ===================================================================
- * Global variables — previously defined in ps/ps_rust_shims.c.
- * Needed because the PS C files are replaced by Rust (ntoskrnl-rust/src/ps/).
- *
- * Globals that are defined in Rust with #[no_mangle] are NOT here.
- * Only globals that Rust imports via extern "C" { static mut ... }
- * and are not provided by any other compiled C file.
- * =================================================================== */
-
-/* --- From psmgr.c --- */
-PVOID PspSystemDllBase;
-PVOID PspSystemDllSection;
-PVOID PspSystemDllEntryPoint;
-
-UNICODE_STRING PsNtDllPathName =
-    RTL_CONSTANT_STRING(L"\\SystemRoot\\System32\\ntdll.dll");
-
-PHANDLE_TABLE PspCidTable;
-
-PEPROCESS PsInitialSystemProcess = NULL;
-PEPROCESS PsIdleProcess = NULL;
-HANDLE PspInitialSystemProcessHandle = NULL;
-
-ULONG PsMinimumWorkingSet, PsMaximumWorkingSet;
-ULONG PspDefaultPagedLimit, PspDefaultNonPagedLimit, PspDefaultPagefileLimit;
-BOOLEAN PspDoingGiveBacks;
-
-PVOID KeUserPopEntrySListEnd;
-PVOID KeUserPopEntrySListFault;
-PVOID KeUserPopEntrySListResume;
-
-GENERIC_MAPPING PspProcessMapping =
-{
-    STANDARD_RIGHTS_READ    | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-    STANDARD_RIGHTS_WRITE   | PROCESS_CREATE_PROCESS    | PROCESS_CREATE_THREAD   |
-    PROCESS_VM_OPERATION    | PROCESS_VM_WRITE          | PROCESS_DUP_HANDLE      |
-    PROCESS_TERMINATE       | PROCESS_SET_QUOTA         | PROCESS_SET_INFORMATION |
-    PROCESS_SUSPEND_RESUME,
-    STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    PROCESS_ALL_ACCESS
-};
-
-GENERIC_MAPPING PspThreadMapping =
-{
-    STANDARD_RIGHTS_READ    | THREAD_GET_CONTEXT      | THREAD_QUERY_INFORMATION,
-    STANDARD_RIGHTS_WRITE   | THREAD_TERMINATE        | THREAD_SUSPEND_RESUME    |
-    THREAD_ALERT            | THREAD_SET_INFORMATION  | THREAD_SET_CONTEXT,
-    STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
-    THREAD_ALL_ACCESS
-};
-
-/* --- From security.c --- */
-PTOKEN PspBootAccessToken;
-
-/* SharedUserData is a C macro: (KUSER_SHARED_DATA * const)KI_USER_SHARED_DATA.
- * Rust code declares it as extern static. Provide a real global. */
-PKUSER_SHARED_DATA SharedUserData = (PKUSER_SHARED_DATA)KI_USER_SHARED_DATA;
+/* PS-subsystem globals + SharedUserData — moved to Rust
+ * (ntoskrnl-rust::ps::ps_globals). */
 
 /* ===================================================================
  * ARM64_UART_TRACE / ARM64_UART_TRACE_HEX — UART debug output functions.
