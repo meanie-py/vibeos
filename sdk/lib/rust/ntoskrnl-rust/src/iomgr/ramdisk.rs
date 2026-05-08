@@ -98,7 +98,7 @@ const RD_GUID_CONVERT_FAILED: ULONG = 4;
 const RD_SYMLINK_CREATE_FAILED: ULONG = 5;
 const RD_SYSROOT_INIT_FAILED: ULONG = 6;
 
-const LoaderXIPRom: u32 = 0x10;
+const LoaderXIPRom: u32 = 25;
 
 const RAMDISK_BOOT_DISK: ULONG = 0x03;
 
