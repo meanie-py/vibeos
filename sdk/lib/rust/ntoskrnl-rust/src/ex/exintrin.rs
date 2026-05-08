@@ -131,7 +131,31 @@ pub unsafe extern "system" fn ProbeForRead(
                 || Alignment == 16
         );
 
-        if (Current & (Alignment as ULONG_PTR - 1)) != 0 {
+        // FIXME(amd64-misalign-231): some kernel call path is reaching this
+        // function with `Alignment` set to a non-power-of-2 junk value
+        // (consistently 231 = 0xE7 from a 16-byte UNICODE_STRING-style probe
+        // post-shell-ready on amd64). The C-side `PsProcessInfoClass[]` /
+        // `PsThreadInfoClass[]` indexing has been audited (counts now match
+        // the actual NT 5.x array length, see `ps/query.rs`), so this is a
+        // separate bug not yet root-caused. Without DUMMY_PSEH the SEH
+        // handler in the syscall dispatcher would catch the exception and
+        // return STATUS_DATATYPE_MISALIGNMENT to user-mode; with DUMMY_PSEH
+        // the exception is unhandled and bugchecks. As a temporary
+        // unblocker, treat any non-{1,2,4,8,16} alignment as 1 and log it,
+        // so the boot reaches the desktop. Replace this with a proper
+        // root-cause fix once the caller is identified.
+        let mut EffectiveAlignment = Alignment;
+        if Alignment != 1 && Alignment != 2 && Alignment != 4 && Alignment != 8 && Alignment != 16 {
+            crate::dbg_print!(
+                b"[PROBE-R-BAD-ALIGN] Addr=%p Len=%Iu Align=%lu (treating as 1)\n\0",
+                Current as PVOID,
+                Length,
+                Alignment,
+            );
+            EffectiveAlignment = 1;
+        }
+
+        if (Current & (EffectiveAlignment as ULONG_PTR - 1)) != 0 {
             ExRaiseDatatypeMisalignment();
         }
 
