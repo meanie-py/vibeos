@@ -3004,3 +3004,86 @@ pub unsafe extern "C" fn ExpKdbgExtHandle(
     }
     1 // TRUE
 }
+
+// ============================================================================
+// ExpKdbgExtFileCache / ExpKdbgExtDefWrites — smaller KDBG `!filecache` and
+// `!defwrites` extensions. Same `kdbp_print!` macro pattern as
+// ExpKdbgExtHandle. Both are i386/amd64 only.
+// ============================================================================
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+extern "C" {
+    static mut CcTotalDirtyPages: ntkrnl_sys::base::ULONG;
+    static mut CcDirtyPageThreshold: ntkrnl_sys::base::ULONG;
+    static mut MmAvailablePages: ntkrnl_sys::ddk::PFN_NUMBER;
+    static mut MmThrottleTop: ntkrnl_sys::base::ULONG;
+    static mut MmThrottleBottom: ntkrnl_sys::base::ULONG;
+    static mut MmModifiedPageListHead: ntkrnl_sys::ddk::_MMPFNLIST;
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn ExpKdbgExtFileCache(
+    _argc: ntkrnl_sys::base::ULONG,
+    _argv: *mut *mut core::ffi::c_char,
+) -> ntkrnl_sys::base::BOOLEAN {
+    crate::kdbp_print!(b"  File cache display not available (CC subsystem is in Rust)\n\0");
+    1
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn ExpKdbgExtDefWrites(
+    _argc: ntkrnl_sys::base::ULONG,
+    _argv: *mut *mut core::ffi::c_char,
+) -> ntkrnl_sys::base::BOOLEAN {
+    use ntkrnl_sys::base::{PAGE_SIZE, ULONG};
+    let page_size = PAGE_SIZE as ULONG;
+
+    crate::kdbp_print!(
+        b"CcTotalDirtyPages:\t%lu (%lu Kb)\n\0",
+        CcTotalDirtyPages,
+        (CcTotalDirtyPages.wrapping_mul(page_size)) / 1024
+    );
+    crate::kdbp_print!(
+        b"CcDirtyPageThreshold:\t%lu (%lu Kb)\n\0",
+        CcDirtyPageThreshold,
+        (CcDirtyPageThreshold.wrapping_mul(page_size)) / 1024
+    );
+    crate::kdbp_print!(
+        b"MmAvailablePages:\t%lu (%lu Kb)\n\0",
+        MmAvailablePages as ULONG,
+        ((MmAvailablePages as ULONG).wrapping_mul(page_size)) / 1024
+    );
+    crate::kdbp_print!(
+        b"MmThrottleTop:\t\t%lu (%lu Kb)\n\0",
+        MmThrottleTop,
+        (MmThrottleTop.wrapping_mul(page_size)) / 1024
+    );
+    crate::kdbp_print!(
+        b"MmThrottleBottom:\t%lu (%lu Kb)\n\0",
+        MmThrottleBottom,
+        (MmThrottleBottom.wrapping_mul(page_size)) / 1024
+    );
+    let modified_total = MmModifiedPageListHead.Total as ULONG;
+    crate::kdbp_print!(
+        b"MmModifiedPageListHead.Total:\t%lu (%lu Kb)\n\0",
+        modified_total,
+        (modified_total.wrapping_mul(page_size)) / 1024
+    );
+
+    if CcTotalDirtyPages >= CcDirtyPageThreshold {
+        crate::kdbp_print!(
+            b"CcTotalDirtyPages above the threshold, writes should be throttled\n\0"
+        );
+    } else if CcTotalDirtyPages.wrapping_add(64) >= CcDirtyPageThreshold {
+        crate::kdbp_print!(
+            b"CcTotalDirtyPages within 64 pages of threshold, writes may be throttled\n\0"
+        );
+    } else {
+        crate::kdbp_print!(
+            b"CcTotalDirtyPages below the threshold, writes should not be throttled\n\0"
+        );
+    }
+    1
+}

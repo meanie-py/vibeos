@@ -145,54 +145,9 @@ NTSTATUS __cdecl RtlStringCbPrintfA(
     return (written + 1 > cbDest) ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 }
 
-/*
- * ExpKdbgExtFileCache / ExpKdbgExtDefWrites — KDBG debug extensions.
- *
- * These call variadic KdbpPrint which cannot be done from Rust.
- * Only needed when CC subsystem is in Rust (C view.c provides the real versions
- * when CC_USE_C is defined).
- */
-#if DBG && defined(KDBG) && !defined(CC_USE_C)
-#include <kdbg/kdb.h>
-
-extern ULONG CcTotalDirtyPages;
-extern ULONG CcDirtyPageThreshold;
-
-BOOLEAN ExpKdbgExtFileCache(ULONG Argc, PCHAR Argv[])
-{
-    KdbpPrint("  File cache display not available (CC subsystem is in Rust)\n");
-    return TRUE;
-}
-
-BOOLEAN ExpKdbgExtDefWrites(ULONG Argc, PCHAR Argv[])
-{
-    KdbpPrint("CcTotalDirtyPages:\t%lu (%lu Kb)\n", CcTotalDirtyPages,
-              (CcTotalDirtyPages * PAGE_SIZE) / 1024);
-    KdbpPrint("CcDirtyPageThreshold:\t%lu (%lu Kb)\n", CcDirtyPageThreshold,
-              (CcDirtyPageThreshold * PAGE_SIZE) / 1024);
-    KdbpPrint("MmAvailablePages:\t%lu (%lu Kb)\n", (ULONG)MmAvailablePages,
-              (ULONG)((MmAvailablePages * PAGE_SIZE) / 1024));
-    KdbpPrint("MmThrottleTop:\t\t%lu (%lu Kb)\n", MmThrottleTop,
-              (MmThrottleTop * PAGE_SIZE) / 1024);
-    KdbpPrint("MmThrottleBottom:\t%lu (%lu Kb)\n", MmThrottleBottom,
-              (MmThrottleBottom * PAGE_SIZE) / 1024);
-    KdbpPrint("MmModifiedPageListHead.Total:\t%lu (%lu Kb)\n",
-              (ULONG)MmModifiedPageListHead.Total,
-              (ULONG)((MmModifiedPageListHead.Total * PAGE_SIZE) / 1024));
-
-    if (CcTotalDirtyPages >= CcDirtyPageThreshold)
-        KdbpPrint("CcTotalDirtyPages above the threshold, writes should be throttled\n");
-    else if (CcTotalDirtyPages + 64 >= CcDirtyPageThreshold)
-        KdbpPrint("CcTotalDirtyPages within 64 pages of threshold, writes may be throttled\n");
-    else
-        KdbpPrint("CcTotalDirtyPages below the threshold, writes should not be throttled\n");
-
-    return TRUE;
-}
-#endif
-
-/* ExpKdbgExtHandle moved to ntoskrnl-rust::ex::handle (Rust kdbp_print!
- * macro replaces variadic KdbpPrint). */
+/* ExpKdbgExtFileCache / ExpKdbgExtDefWrites / ExpKdbgExtHandle moved to
+ * ntoskrnl-rust::ex::handle. The Rust `kdbp_print!` macro replaces variadic
+ * KdbpPrint and routes through ntprintf which already handles `%wZ` / `%S`. */
 
 /* ===================================================================
  * PsProcessInfoClass / PsThreadInfoClass — re-include ps_i.h with

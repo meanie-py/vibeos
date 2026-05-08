@@ -942,6 +942,10 @@ mod _force_kdbg_symbols {
         fn ExpKdbgExtIrpFind(argc: u32, argv: *mut *mut i8) -> u8;
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         fn ExpKdbgExtHandle(argc: u32, argv: *mut *mut i8) -> u8;
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        fn ExpKdbgExtFileCache(argc: u32, argv: *mut *mut i8) -> u8;
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        fn ExpKdbgExtDefWrites(argc: u32, argv: *mut *mut i8) -> u8;
     }
     #[used]
     static KDBG_REFS: [unsafe extern "C" fn(u32, *mut *mut i8) -> u8; 4] = [
@@ -952,8 +956,10 @@ mod _force_kdbg_symbols {
     ];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[used]
-    static KDBG_REFS_X86: [unsafe extern "C" fn(u32, *mut *mut i8) -> u8; 1] = [
+    static KDBG_REFS_X86: [unsafe extern "C" fn(u32, *mut *mut i8) -> u8; 3] = [
         ExpKdbgExtHandle,
+        ExpKdbgExtFileCache,
+        ExpKdbgExtDefWrites,
     ];
 }
 

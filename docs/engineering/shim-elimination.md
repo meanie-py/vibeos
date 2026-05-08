@@ -37,7 +37,7 @@ casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
 | `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
 | `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
 | `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
-| `kernel_c_helpers.c` | 270 | 1 | 2 | 3 | 0 |
+| `kernel_c_helpers.c` | 225 | 1 | 2 | 3 | 0 |
 | `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
 
 \* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
@@ -163,7 +163,7 @@ What stays:
   Translatable but the const-init dance is low-value relative to
   the variadic constraint (file already has to stay for `KdbpPrint`).
 
-### `kernel_c_helpers.c` — Pass 2 done (~2-3 sessions remaining)
+### `kernel_c_helpers.c` — Pass 3 done (~1-2 sessions remaining)
 
 PS globals + SharedUserData + GENERIC_MAPPING tables + PsNtDllPathName
 moved to `ntoskrnl-rust::ps::ps_globals` (`#[no_mangle] pub static mut`,
@@ -200,10 +200,19 @@ hang is presumably the rustc 1.92 ABI bug propagating attributes
 through cross-CGU optimisations even when the offending function
 isn't on the live path.
 
+Pass 3 (this round): `ExpKdbgExtFileCache` and `ExpKdbgExtDefWrites`
+ported to Rust alongside `ExpKdbgExtHandle`. Same `kdbp_print!` macro
+pattern; the Cc/Mm global accesses (CcTotalDirtyPages, MmAvailablePages,
+MmThrottleTop/Bottom, MmModifiedPageListHead.Total) all already had
+Rust homes — `ntoskrnl-rust::cc::view`, `ntoskrnl-rust::mm::freelist`,
+`ntkrnl-sys::globals` — so the translation was just type plumbing
+(`PFN_NUMBER` → `ULONG` casts, `wrapping_mul` for the page-size scale).
+
+Audit proxies are now `1/2/3/0`. The remaining 2 `->` are both inside
+`SepInitTokensShim` (`PsGetCurrentProcess()->Token` — LLVM fat-LTO
+workaround, must stay).
+
 What still needs translating:
-- `ExpKdbgExtFileCache` / `ExpKdbgExtDefWrites` — variadic; can be
-  isolated to a minimal trampoline file when other prerequisites are
-  ready.
 - ARM64 `ARM64_UART_TRACE` / `ARM64_UART_TRACE_HEX` — translatable
   but not blocking i386/amd64 minimal-trampoline status.
 - `PsProcessInfoClass` / `PsThreadInfoClass` re-include trick — the
