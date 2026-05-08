@@ -185,9 +185,14 @@ extern "C" {
     fn KdpInitTerminal();
     fn KdpUpdateTerminalSize(Size: *mut SIZE);
     fn KdpReadTermKey(ScanCode: *mut ULONG) -> CHAR;
-    fn KeGetTrapFramePc(TrapFrame: *mut core::ffi::c_void) -> ULONG_PTR;
 }
 extern "system" {
+    // KeGetTrapFramePc is NTAPI (stdcall on i386). Was declared in the
+    // preceding extern "C" block until 2026-05-08 and only worked because
+    // ke_rust_shims.c supplied a cdecl alias trampoline; promotion of the
+    // bare-name `KeGetTrapFramePc` to a stdcall Rust impl in ke-macros
+    // surfaced the mismatch.
+    fn KeGetTrapFramePc(TrapFrame: *mut core::ffi::c_void) -> ULONG_PTR;
     fn KdSystemDebugControl(
         Command: ULONG,
         InputBuffer: PVOID,

@@ -341,13 +341,14 @@ mod _force_ke_macros_symbols {
         fn _rs_KxMultiThreadWait();
         fn _rs_KxQueueThreadWait();
         fn _rs_YieldProcessor();
-        fn _rs_KeGetTrapFramePc();
+        // _rs_KeGetTrapFramePc retired 2026-05-08; bare `KeGetTrapFramePc`
+        // is now an `extern "system"` export in ke-macros, force-pulled by
+        // existing kernel callers.
         fn _rs_KiRundownThread();
         fn _rs_KiGetLinkedTrapFrame();
         fn _rs_KiGetUserModeStackAddress();
-        fn _rs_HalQuerySystemInformation();
-        fn _rs_HalSetSystemInformation();
-        fn _rs_HalVectorToIDTEntry();
+        // HAL bridges promoted to bare-name `extern "system"` exports
+        // 2026-05-08; existing C/Rust callers force-pull them.
         // 2026-05-07 ke_rust_shims.c additions:
         #[cfg(target_arch = "x86")]
         fn _rs_Ke386GetGlobalDescriptorTable();
@@ -357,7 +358,7 @@ mod _force_ke_macros_symbols {
         fn _rs_KeGdiFlushUserBatch_call();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 16] = [
+    static REFS: [unsafe extern "C" fn(); 12] = [
         _rs_KiSatisfyMutantWait,
         _rs_KiSatisfyNonMutantWait,
         _rs_KiSatisfyObjectWait,
@@ -367,13 +368,9 @@ mod _force_ke_macros_symbols {
         _rs_KxMultiThreadWait,
         _rs_KxQueueThreadWait,
         _rs_YieldProcessor,
-        _rs_KeGetTrapFramePc,
         _rs_KiRundownThread,
         _rs_KiGetLinkedTrapFrame,
         _rs_KiGetUserModeStackAddress,
-        _rs_HalQuerySystemInformation,
-        _rs_HalSetSystemInformation,
-        _rs_HalVectorToIDTEntry,
     ];
     // 2026-05-07: kdbg cdecl wrappers translated from kdbg_rust_shims.c.
     // Both arches need them — kdb_cli.rs's `KdbpCmdGdtLdtIdt` is exported
@@ -388,6 +385,11 @@ mod _force_ke_macros_symbols {
         fn Ke386GetLocalDescriptorTable();
         fn Ke386GetTr();
     }
+    // 2026-05-08: `KiExitSystemCallDebugChecks` translated from
+    // `ke_rust_shims.c` `_saved_*` outline to a direct Rust impl in
+    // `ke-macros` (i386-only — FORCEINLINE in `trap_x.h`). No force-pull
+    // needed: the existing caller in `ke/i386/traphdlr.rs` already
+    // references the bare stdcall name (`_KiExitSystemCallDebugChecks@8`).
     #[cfg(target_arch = "x86")]
     #[used]
     static REFS_I386: [unsafe extern "C" fn(); 10] = [

@@ -69,7 +69,6 @@ Active C files with `_SEH2_TRY`:
 | config/ntapi.c | 16 | Registry Nt* syscall probing |
 | config/cmapi.c | 8 | Registry CM API probing |
 | ex/sysinfo.c | 7 | NtQuerySystemInformation probing |
-| mm/section_missing_funcs.c | 4 | Section object user probing |
 | lpc/connect.c | 4 | LPC port connection probing |
 | kd64/kdprint.c | 3 | Debugger print probing |
 | ps/i386/psldt.c | 2 | LDT descriptor probing (i386 only) |

@@ -2197,13 +2197,8 @@ pub unsafe extern "C" fn YieldProcessor() {
     ntkrnl_sys::inline::ke::YieldProcessor()
 }
 
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "system" fn KeGetTrapFramePc(
-    trap_frame: PKTRAP_FRAME,
-) -> ntkrnl_sys::base::ULONG_PTR {
-    ntkrnl_sys::inline::ke::KeGetTrapFramePc(trap_frame)
-}
+// KeGetTrapFramePc moved to ke-macros (2026-05-08 — promoted from the
+// _rs_* trampoline pattern to a bare-name `extern "system"` export).
 
 #[no_mangle]
 #[inline(never)]

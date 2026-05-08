@@ -605,8 +605,12 @@ pub unsafe extern "C" fn _rs_YieldProcessor() {
 
 /// `KeGetTrapFramePc(TrapFrame)` — returns the instruction pointer captured
 /// in the trap frame. Direct field on all three arches (`Eip`/`Rip`/`Pc`).
+/// NTAPI on i386 (stdcall — `_KeGetTrapFramePc@4`); cdecl elsewhere. The
+/// rustc 1.92 stdcall ABI bug only affects call-sites declaring extern
+/// stdcall, not function definitions, so promoting from `_rs_X` cdecl-via-
+/// trampoline to the bare stdcall export is safe (re-probed 2026-05-08).
 #[no_mangle]
-pub unsafe extern "C" fn _rs_KeGetTrapFramePc(trap_frame: PKTRAP_FRAME) -> ULONG_PTR {
+pub unsafe extern "system" fn KeGetTrapFramePc(trap_frame: PKTRAP_FRAME) -> ULONG_PTR {
     #[cfg(target_arch = "x86")]
     {
         (*trap_frame).Eip as ULONG_PTR
@@ -709,10 +713,16 @@ extern "C" {
     static HalPrivateDispatchTable: _HAL_PRIVATE_DISPATCH;
 }
 
+// HAL dispatch bridges — promoted from `_rs_*` cdecl-via-C-trampoline to
+// bare-name `extern "system"` exports (2026-05-08). NTAPI = stdcall on
+// i386, cdecl on amd64/arm64. The function-pointer dispatch into
+// HalDispatchTable / HalPrivateDispatchTable inherits its ABI from the
+// pointer's type, so the rustc 1.92 stdcall ABI bug doesn't apply here.
+
 /// `HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength)`
 /// — `HALDISPATCH->HalQuerySystemInformation(...)`.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_HalQuerySystemInformation(
+pub unsafe extern "system" fn HalQuerySystemInformation(
     information_class: HAL_QUERY_INFORMATION_CLASS,
     buffer_size: ULONG,
     buffer: PVOID,
@@ -728,7 +738,7 @@ pub unsafe extern "C" fn _rs_HalQuerySystemInformation(
 /// `HalSetSystemInformation(InformationClass, BufferSize, Buffer)`
 /// — `HALDISPATCH->HalSetSystemInformation(...)`.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_HalSetSystemInformation(
+pub unsafe extern "system" fn HalSetSystemInformation(
     information_class: HAL_SET_INFORMATION_CLASS,
     buffer_size: ULONG,
     buffer: PVOID,
@@ -745,7 +755,7 @@ pub unsafe extern "C" fn _rs_HalSetSystemInformation(
 /// vector itself (lower 8 bits) which is the historical i386 mapping the
 /// HAL would have applied if the dispatch table were missing.
 #[no_mangle]
-pub unsafe extern "C" fn _rs_HalVectorToIDTEntry(vector: ULONG) -> UCHAR {
+pub unsafe extern "system" fn HalVectorToIDTEntry(vector: ULONG) -> UCHAR {
     if let Some(f) = HalPrivateDispatchTable.HalVectorToIDTEntry {
         f(vector)
     } else {
@@ -772,26 +782,28 @@ const _ASSERT_KTRAP_FRAME: usize = core::mem::size_of::<_KTRAP_FRAME>();
 use ntkrnl_sys::base::KIRQL;
 
 /// `Ke386GetGlobalDescriptorTable(Limit)` — macro from intrin_i.h that
-/// expands to `__sgdt(Limit)`. i386 only.
+/// expands to `__sgdt(Limit)`. The `_rs_*` prefix is preserved because
+/// of a dual-decoration constraint on i386: this fn has both
+/// `extern "C"` cdecl callers (kdbg/kdb_cli.rs — uses the bare-name
+/// `extern "C"` impl below at ~line 863) AND `extern "system"` stdcall
+/// callers (ke/i386/cpu.rs — uses the `_X@4` symbol that the C
+/// trampoline in `ke_rust_shims.c` supplies by delegating to this body).
+/// Rust forbids two source-level definitions of the same name, so the
+/// dual-decoration is split across crates.
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "C" fn _rs_Ke386GetGlobalDescriptorTable(limit: PVOID) {
     core::arch::asm!("sgdt [{}]", in(reg) limit, options(nostack));
 }
 
-/// `Ke386GetLocalDescriptorTable(Selector)` — macro expanding to `__sldt(Selector)`.
+/// `Ke386GetLocalDescriptorTable(Selector)` — macro expanding to
+/// `__sldt(Selector)`. Same dual-decoration story as
+/// `_rs_Ke386GetGlobalDescriptorTable` above.
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "C" fn _rs_Ke386GetLocalDescriptorTable(selector: *mut u16) {
     core::arch::asm!("sldt [{}]", in(reg) selector, options(nostack));
 }
-
-// `KiEndInterrupt` — NOT translated. rustc 1.92 emits cdecl call sequences
-// for `HalEndSystemInterrupt` (stdcall) and `KiEoiHelper` (fastcall) despite
-// bindgen's correct extern "stdcall" / extern "fastcall" declarations,
-// causing link errors against `_HalEndSystemInterrupt` (cdecl) and
-// `_KiEoiHelper` (cdecl). Inline-asm workaround possible but the C
-// trampoline in ke_rust_shims.c works without ceremony — kept there.
 
 /// `KeGdiFlushUserBatch_call()` — dispatches through the global function-pointer
 /// `KeGdiFlushUserBatch` (PGDI_BATCHFLUSH_ROUTINE). On a freshly-booted system
@@ -943,4 +955,357 @@ pub unsafe extern "C" fn KeGetTrapFrameStackRegister(
     trap_frame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
 ) -> ntkrnl_sys::base::ULONG_PTR {
     (*trap_frame).Rsp as ntkrnl_sys::base::ULONG_PTR
+}
+
+// ============================================================================
+// i386 trap-exit FORCEINLINE outlines (`trap_x.h`). Pilot of the trap-exit
+// chain port; was previously captured in `ke_rust_shims.c` via the
+// `_saved_*` rename trick. Direct Rust impls here resolve the bare
+// stdcall-decorated symbol (`_KiExitSystemCallDebugChecks@8`), so the
+// Rust caller in `ke/i386/traphdlr.rs` and (defunct) C `traphdlr.c` link
+// against this body directly. amd64 and arm64 don't have these — i386-only.
+// ============================================================================
+
+/// Trap-exit consistency check (DBG builds only — the C macro is
+/// `#define KiExitTrapDebugChecks(x,y)` in retail). Validates: interrupts
+/// disabled, trap-frame magic, FS = PCR, exception lists non-NULL,
+/// SkipPreviousMode contract. Recursion-guarded via the existing global
+/// `StopChecking` (defined in `shim_exports.rs`). The KDBG-gated DR-reg
+/// validation block in the original FORCEINLINE is omitted here because
+/// the active i386 build defines KDBG, so the captured `_saved_*` body
+/// never included it either.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn KiExitTrapDebugChecks(
+    TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+    SkipPreviousMode: ntkrnl_sys::base::BOOLEAN,
+) {
+    extern "C" {
+        static mut StopChecking: ntkrnl_sys::base::BOOLEAN;
+        // DbgPrint is C-variadic; declare per-shape aliases through the same
+        // symbol so each call site can pass the right number of args under
+        // i386 cdecl (caller pushes right-to-left + cleans, so fixed-arg
+        // ABI matches variadic ABI).
+        #[link_name = "DbgPrint"]
+        fn DbgPrint_0(fmt: *const u8) -> ntkrnl_sys::base::ULONG;
+        #[link_name = "DbgPrint"]
+        fn DbgPrint_u(fmt: *const u8, a: ntkrnl_sys::base::ULONG) -> ntkrnl_sys::base::ULONG;
+        #[link_name = "DbgPrint"]
+        fn DbgPrint_p(
+            fmt: *const u8,
+            a: *const core::ffi::c_void,
+        ) -> ntkrnl_sys::base::ULONG;
+    }
+    extern "C" {
+        fn KiDumpTrapFrame(TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME);
+    }
+
+    const EFLAGS_INTERRUPT_MASK: ntkrnl_sys::base::ULONG = 0x200;
+    const KGDT_R0_PCR: u16 = 0x30;
+    const TRAP_FRAME_MAGIC: ntkrnl_sys::base::ULONG = 0xBADB0D00;
+
+    #[inline(always)]
+    unsafe fn read_eflags() -> ntkrnl_sys::base::ULONG {
+        let v: ntkrnl_sys::base::ULONG;
+        core::arch::asm!("pushfd; pop {0:e}", out(reg) v, options(nomem, preserves_flags));
+        v
+    }
+    #[inline(always)]
+    unsafe fn read_fs() -> u16 {
+        let v: u16;
+        core::arch::asm!("mov {0:x}, fs", out(reg) v, options(nomem, nostack, preserves_flags));
+        v
+    }
+    #[inline(always)]
+    unsafe fn debugbreak() {
+        core::arch::asm!("int 3", options(nomem, nostack));
+    }
+
+    /* Don't check recursively */
+    if StopChecking != 0 {
+        return;
+    }
+    StopChecking = 1;
+
+    /* Make sure interrupts are disabled */
+    let eflags = read_eflags();
+    if (eflags & EFLAGS_INTERRUPT_MASK) != 0 {
+        DbgPrint_u(b"Exiting with interrupts enabled: %lx\n\0".as_ptr(), eflags);
+        debugbreak();
+    }
+
+    /* Make sure this is a real trap frame */
+    if (*TrapFrame).DbgArgMark != TRAP_FRAME_MAGIC {
+        DbgPrint_0(
+            b"Exiting with an invalid trap frame? (No MAGIC in trap frame)\n\0".as_ptr(),
+        );
+        KiDumpTrapFrame(TrapFrame);
+        debugbreak();
+    }
+
+    /* Make sure we're not in user-mode or something */
+    let fs = read_fs();
+    if fs != KGDT_R0_PCR {
+        DbgPrint_u(
+            b"Exiting with an invalid FS: %lx\n\0".as_ptr(),
+            fs as ntkrnl_sys::base::ULONG,
+        );
+        debugbreak();
+    }
+
+    /* Make sure we have a valid SEH chain */
+    let pcr_excl = (*ke_get_pcr()).__bindgen_anon_1.NtTib.ExceptionList;
+    if pcr_excl.is_null() {
+        DbgPrint_p(
+            b"Exiting with NULL exception chain: %p\n\0".as_ptr(),
+            pcr_excl as *const core::ffi::c_void,
+        );
+        debugbreak();
+    }
+
+    /* Make sure we're restoring a valid SEH chain */
+    let tf_excl = (*TrapFrame).ExceptionList;
+    if tf_excl.is_null() {
+        DbgPrint_p(
+            b"Entered a trap with a NULL exception chain: %p\n\0".as_ptr(),
+            tf_excl as *const core::ffi::c_void,
+        );
+        debugbreak();
+    }
+
+    /* If we're ignoring previous mode, make sure caller doesn't actually want it */
+    if SkipPreviousMode != 0 && (*TrapFrame).PreviousPreviousMode != !0u32 {
+        DbgPrint_u(
+            b"Exiting a trap witout restoring previous mode, yet previous mode seems valid: %lx\n\0".as_ptr(),
+            (*TrapFrame).PreviousPreviousMode,
+        );
+        debugbreak();
+    }
+
+    StopChecking = 0;
+}
+
+/// V86-mode trap exit (NORETURN). Drains pending user APCs in a loop,
+/// optionally restores debug registers, then tail-calls
+/// `KiTrapReturnNoSegments` (asm in `i386/trap.s`). Tail callees:
+/// `KiEoiHelper` (Rust, fastcall, NORETURN — taken when EFLAGS.V86 is
+/// already cleared) and `KiTrapReturnNoSegments` (asm fastcall NORETURN).
+/// The C trampoline declared this `FASTCALL` so the linked symbol is
+/// `@KiExitV86Trap@4` — match that here.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KiExitV86Trap(
+    TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) -> ! {
+    extern "fastcall" {
+        fn KiEoiHelper(TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME) -> !;
+        fn KfRaiseIrql(NewIrql: ntkrnl_sys::base::KIRQL) -> ntkrnl_sys::base::KIRQL;
+        fn KfLowerIrql(NewIrql: ntkrnl_sys::base::KIRQL);
+        fn KiTrapReturnNoSegments(TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME) -> !;
+    }
+    extern "system" {
+        fn KiDeliverApc(
+            DeliveryMode: i8, // KPROCESSOR_MODE = CCHAR
+            ExceptionFrame: *mut core::ffi::c_void,
+            TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+        );
+        fn KiHandleDebugRegistersOnTrapExit(
+            TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+        );
+    }
+
+    const EFLAGS_V86_MASK: ntkrnl_sys::base::ULONG = 0x00020000;
+    const APC_LEVEL: ntkrnl_sys::base::KIRQL = 1;
+    const KERNEL_MODE: usize = 0;
+    const USER_MODE: i8 = 1;
+    // DR7: bits we care about for "active debugging". Matches
+    // `~DR7_RESERVED_MASK` in trap_x.h — DR7_RESERVED_MASK = 0xDC00 from
+    // sdk/include/ndk/i386/asm.h.
+    const DR7_RESERVED_MASK: ntkrnl_sys::base::ULONG = 0xDC00;
+
+    let thread = ke_get_current_thread();
+    loop {
+        // Return if this isn't V86 mode anymore (NORETURN tail).
+        if ((*TrapFrame).EFlags & EFLAGS_V86_MASK) == 0 {
+            KiEoiHelper(TrapFrame);
+        }
+
+        // Turn off the alerted state for kernel mode.
+        (*thread).Alerted[KERNEL_MODE] = 0;
+
+        // Are there pending user APCs? (the `__builtin_expect(..., 1)` in
+        // C marks the no-pending path as the hot one — Rust has no stable
+        // equivalent, so we just rely on the natural branch layout.)
+        if (*thread).__bindgen_anon_1.ApcState.UserApcPending == 0 {
+            break;
+        }
+
+        // Raise to APC level and enable interrupts.
+        let old_irql = KfRaiseIrql(APC_LEVEL);
+        core::arch::asm!("sti", options(nomem, nostack));
+
+        // Deliver APCs.
+        KiDeliverApc(USER_MODE, core::ptr::null_mut(), TrapFrame);
+
+        // Restore IRQL and disable interrupts again.
+        KfLowerIrql(old_irql);
+        core::arch::asm!("cli", options(nomem, nostack));
+    }
+
+    // If we got here, we're still in a valid V8086 context, so quit it.
+    if ((*TrapFrame).Dr7 & !DR7_RESERVED_MASK) != 0 {
+        KiHandleDebugRegistersOnTrapExit(TrapFrame);
+    }
+
+    // Return from interrupt (NORETURN asm tail).
+    KiTrapReturnNoSegments(TrapFrame)
+}
+
+/// `KiEndInterrupt(Irql, TrapFrame)` — FORCEINLINE in `ke.h`. Disables
+/// interrupts, calls HAL EOI, then tail-jumps into `KiEoiHelper`
+/// (NORETURN). The audit's "rustc 1.92 stdcall/fastcall ABI bug"
+/// re-probe came back negative on rustc 1.92.0 (ded5c06cf, 2025-12-08):
+/// disasm of `KiExitV86Trap` shows correct fastcall arg-passing for
+/// `@KfRaiseIrql@4` / `@KiEoiHelper@4` calls, so this no longer needs
+/// a C trampoline. i386 cdecl signature matches the original
+/// `void __cdecl KiEndInterrupt(...)`.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KiEndInterrupt(
+    irql: ntkrnl_sys::base::KIRQL,
+    trap_frame: PKTRAP_FRAME,
+) -> ! {
+    extern "system" {
+        fn HalEndSystemInterrupt(Irql: ntkrnl_sys::base::KIRQL, TrapFrame: PKTRAP_FRAME);
+    }
+    extern "fastcall" {
+        fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
+    }
+
+    core::arch::asm!("cli", options(nomem, nostack));
+    HalEndSystemInterrupt(irql, trap_frame);
+    KiEoiHelper(trap_frame)
+}
+
+/// Pure debug helper: dump every KTRAP_FRAME field via DbgPrint. The C
+/// FORCEINLINE has no NTAPI annotation so the calling convention is cdecl
+/// — match that here so call-sites can declare it `extern "C"`. Called only
+/// from `KiExitTrapDebugChecks` on the trap-frame-magic-failure path; not
+/// hot.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "C" fn KiDumpTrapFrame(TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME) {
+    extern "C" {
+        #[link_name = "DbgPrint"]
+        fn DbgPrint_u(fmt: *const u8, a: ntkrnl_sys::base::ULONG) -> ntkrnl_sys::base::ULONG;
+        #[link_name = "DbgPrint"]
+        fn DbgPrint_p(
+            fmt: *const u8,
+            a: *const core::ffi::c_void,
+        ) -> ntkrnl_sys::base::ULONG;
+    }
+    let tf = &*TrapFrame;
+    DbgPrint_u(b"DbgEbp: %x\n\0".as_ptr(), tf.DbgEbp);
+    DbgPrint_u(b"DbgEip: %x\n\0".as_ptr(), tf.DbgEip);
+    DbgPrint_u(b"DbgArgMark: %x\n\0".as_ptr(), tf.DbgArgMark);
+    DbgPrint_u(b"DbgArgPointer: %x\n\0".as_ptr(), tf.DbgArgPointer);
+    DbgPrint_u(b"TempSegCs: %x\n\0".as_ptr(), tf.TempSegCs);
+    DbgPrint_u(b"TempEsp: %x\n\0".as_ptr(), tf.TempEsp);
+    DbgPrint_u(b"Dr0: %x\n\0".as_ptr(), tf.Dr0);
+    DbgPrint_u(b"Dr1: %x\n\0".as_ptr(), tf.Dr1);
+    DbgPrint_u(b"Dr2: %x\n\0".as_ptr(), tf.Dr2);
+    DbgPrint_u(b"Dr3: %x\n\0".as_ptr(), tf.Dr3);
+    DbgPrint_u(b"Dr6: %x\n\0".as_ptr(), tf.Dr6);
+    DbgPrint_u(b"Dr7: %x\n\0".as_ptr(), tf.Dr7);
+    DbgPrint_u(b"SegGs: %x\n\0".as_ptr(), tf.SegGs);
+    DbgPrint_u(b"SegEs: %x\n\0".as_ptr(), tf.SegEs);
+    DbgPrint_u(b"SegDs: %x\n\0".as_ptr(), tf.SegDs);
+    DbgPrint_u(b"Edx: %x\n\0".as_ptr(), tf.Edx);
+    DbgPrint_u(b"Ecx: %x\n\0".as_ptr(), tf.Ecx);
+    DbgPrint_u(b"Eax: %x\n\0".as_ptr(), tf.Eax);
+    DbgPrint_u(b"PreviousPreviousMode: %x\n\0".as_ptr(), tf.PreviousPreviousMode);
+    DbgPrint_p(
+        b"ExceptionList: %p\n\0".as_ptr(),
+        tf.ExceptionList as *const core::ffi::c_void,
+    );
+    DbgPrint_u(b"SegFs: %x\n\0".as_ptr(), tf.SegFs);
+    DbgPrint_u(b"Edi: %x\n\0".as_ptr(), tf.Edi);
+    DbgPrint_u(b"Esi: %x\n\0".as_ptr(), tf.Esi);
+    DbgPrint_u(b"Ebx: %x\n\0".as_ptr(), tf.Ebx);
+    DbgPrint_u(b"Ebp: %x\n\0".as_ptr(), tf.Ebp);
+    DbgPrint_u(b"ErrCode: %x\n\0".as_ptr(), tf.ErrCode);
+    DbgPrint_u(b"Eip: %x\n\0".as_ptr(), tf.Eip);
+    DbgPrint_u(b"SegCs: %x\n\0".as_ptr(), tf.SegCs);
+    DbgPrint_u(b"EFlags: %x\n\0".as_ptr(), tf.EFlags);
+    DbgPrint_u(b"HardwareEsp: %x\n\0".as_ptr(), tf.HardwareEsp);
+    DbgPrint_u(b"HardwareSegSs: %x\n\0".as_ptr(), tf.HardwareSegSs);
+    DbgPrint_u(b"V86Es: %x\n\0".as_ptr(), tf.V86Es);
+    DbgPrint_u(b"V86Ds: %x\n\0".as_ptr(), tf.V86Ds);
+    DbgPrint_u(b"V86Fs: %x\n\0".as_ptr(), tf.V86Fs);
+    DbgPrint_u(b"V86Gs: %x\n\0".as_ptr(), tf.V86Gs);
+}
+
+/// Syscall-exit consistency check. On user-mode return: bugcheck if IRQL is
+/// non-PASSIVE; if APCs are disabled or the thread is attached, log + reset
+/// CombinedApcDisable instead of bugchecking (PSEH_CLANG longjmp can leak
+/// critical regions when exceptions skip KeLeaveCriticalRegion).
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn KiExitSystemCallDebugChecks(
+    SystemCall: ntkrnl_sys::base::ULONG,
+    TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME,
+) {
+    extern "system" {
+        fn KiUserTrap(TrapFrame: *mut ntkrnl_sys::ddk::_KTRAP_FRAME) -> ntkrnl_sys::base::BOOLEAN;
+        fn KeBugCheckEx(
+            BugCheckCode: ntkrnl_sys::base::ULONG,
+            BugCheckParameter1: ntkrnl_sys::base::ULONG_PTR,
+            BugCheckParameter2: ntkrnl_sys::base::ULONG_PTR,
+            BugCheckParameter3: ntkrnl_sys::base::ULONG_PTR,
+            BugCheckParameter4: ntkrnl_sys::base::ULONG_PTR,
+        ) -> !;
+    }
+    // DbgPrint is C-variadic; on i386 cdecl, calling with a fixed arg list
+    // matches the variadic ABI (caller pushes right-to-left, caller cleans up).
+    extern "C" {
+        fn DbgPrint(
+            fmt: *const u8,
+            syscall: ntkrnl_sys::base::ULONG,
+            apc_state_index: u8,
+            combined_apc_disable: ntkrnl_sys::base::ULONG,
+        ) -> ntkrnl_sys::base::ULONG;
+    }
+
+    const PASSIVE_LEVEL: u8 = 0;
+    const IRQL_GT_ZERO_AT_SYSTEM_SERVICE: ntkrnl_sys::base::ULONG = 0x4A;
+    const ORIGINAL_APC_ENVIRONMENT: u8 = 0;
+
+    if KiUserTrap(TrapFrame) == 0 {
+        return;
+    }
+
+    let pcr = ke_get_pcr();
+    let old_irql = (*pcr).Irql;
+    if old_irql != PASSIVE_LEVEL {
+        // Forcibly put us in a sane state.
+        (*pcr).Irql = PASSIVE_LEVEL;
+        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        KeBugCheckEx(
+            IRQL_GT_ZERO_AT_SYSTEM_SERVICE,
+            SystemCall as ntkrnl_sys::base::ULONG_PTR,
+            old_irql as ntkrnl_sys::base::ULONG_PTR,
+            0,
+            0,
+        );
+    }
+
+    let thread = ke_get_current_thread();
+    let apc_state_index = (*thread).ApcStateIndex;
+    let combined = (*thread).__bindgen_anon_4.CombinedApcDisable;
+    if apc_state_index != ORIGINAL_APC_ENVIRONMENT || combined != 0 {
+        const FMT: &[u8] =
+            b"APC_INDEX_MISMATCH: syscall=%lx ApcStateIndex=%d CombinedApcDisable=%lx\n\0";
+        DbgPrint(FMT.as_ptr(), SystemCall, apc_state_index, combined);
+        (*thread).__bindgen_anon_4.CombinedApcDisable = 0;
+    }
 }

@@ -49,11 +49,10 @@
 #define KiReleaseDispatcherLockFromSynchLevel _saved_KiReleaseDispatcherLockFromSynchLevel
 #define KiReleaseApcLockFromSynchLevel        _saved_KiReleaseApcLockFromSynchLevel
 
-#ifdef _M_IX86
-#define KiExitV86Trap                   _saved_KiExitV86Trap
-#define KiExitTrapDebugChecks           _saved_KiExitTrapDebugChecks
-#define KiExitSystemCallDebugChecks     _saved_KiExitSystemCallDebugChecks
-#endif
+/* All 3 i386 trap-exit FORCEINLINE outlines (KiExitV86Trap +
+ * KiExitTrapDebugChecks + KiExitSystemCallDebugChecks) and the
+ * KiDumpTrapFrame debug helper moved to ke-macros rlib (2026-05-08).
+ * The `_saved_*` rename trick is no longer needed. */
 
 /* === Phase 2: include headers (PCH-skipped, so DPRINT must be stubbed). */
 #ifndef DPRINT
@@ -69,12 +68,8 @@
 #undef KiReleaseDispatcherLockFromSynchLevel
 #undef KiReleaseApcLockFromSynchLevel
 
-#ifdef _M_IX86
-#undef KiEndInterrupt
-#undef KiExitV86Trap
-#undef KiExitTrapDebugChecks
-#undef KiExitSystemCallDebugChecks
-#endif
+/* No remaining KiExit / KiEndInterrupt #undefs — all body-rename
+ * trampolines retired (2026-05-08). */
 
 /*
  * On i386, `KeReleaseInStackQueuedSpinLock` / `KeAcquireInStackQueuedSpinLock`
@@ -134,37 +129,12 @@ KIRQL KeRaiseIrqlToSynchLevel(VOID)
  * Each `_rs_*` impl lives in `ke-macros` rlib; the trampoline supplies
  * the NTAPI/stdcall decoration that bindgen i386 callers want.
  * ============================================================ */
-#undef KeGetTrapFramePc
-extern ULONG_PTR _rs_KeGetTrapFramePc(PKTRAP_FRAME TrapFrame);
-ULONG_PTR KeGetTrapFramePc(IN PKTRAP_FRAME TrapFrame)
-{
-    return _rs_KeGetTrapFramePc(TrapFrame);
-}
+/* KeGetTrapFramePc — promoted to bare-name `extern "system"` export in
+ * ke-macros rlib (2026-05-08); trampoline retired. */
 
-#undef HalQuerySystemInformation
-#undef HalSetSystemInformation
-extern NTSTATUS _rs_HalQuerySystemInformation(
-    HAL_QUERY_INFORMATION_CLASS InformationClass, ULONG BufferSize,
-    PVOID Buffer, PULONG ReturnedLength);
-extern NTSTATUS _rs_HalSetSystemInformation(
-    HAL_SET_INFORMATION_CLASS InformationClass, ULONG BufferSize, PVOID Buffer);
-
-NTSTATUS NTAPI HalQuerySystemInformation(
-    IN HAL_QUERY_INFORMATION_CLASS InformationClass,
-    IN ULONG BufferSize,
-    IN OUT PVOID Buffer,
-    OUT PULONG ReturnedLength)
-{
-    return _rs_HalQuerySystemInformation(InformationClass, BufferSize, Buffer, ReturnedLength);
-}
-
-NTSTATUS NTAPI HalSetSystemInformation(
-    IN HAL_SET_INFORMATION_CLASS InformationClass,
-    IN ULONG BufferSize,
-    IN PVOID Buffer)
-{
-    return _rs_HalSetSystemInformation(InformationClass, BufferSize, Buffer);
-}
+/* HalQuerySystemInformation / HalSetSystemInformation — promoted to
+ * bare-name `extern "system"` exports in ke-macros rlib (2026-05-08);
+ * trampolines retired. */
 
 /* ============================================================
  * ARM64 KDBG variadic stub.
@@ -268,9 +238,12 @@ PKDBG_POSTSERVICEHOOK KeWin32PostServiceHook = NULL;
 #endif
 
 /* `Ke386GetGlobalDescriptorTable` / `Ke386GetLocalDescriptorTable` —
- * translated to ke-macros rlib (`_rs_Ke386Get{Global,Local}DescriptorTable`,
- * 2026-05-07). The C trampolines collapse to one-line delegations under
- * the NTAPI ABI that bindgen-i386 callers want. */
+ * dual-decoration constraint: i386 has both extern "C" (cdecl) and
+ * extern "system" (stdcall) Rust callers referencing the same name.
+ * Rust forbids two source-level fn defs with the same name. The cdecl
+ * variant lives bare-name in ke-macros (`extern "C"` impl at ~L860);
+ * this trampoline supplies the stdcall `_X@4` symbol via a one-line
+ * delegate to the cdecl `_rs_*` variant. Re-probed 2026-05-08. */
 #undef Ke386GetGlobalDescriptorTable
 #undef Ke386GetLocalDescriptorTable
 extern void _rs_Ke386GetGlobalDescriptorTable(PVOID Limit);
@@ -280,12 +253,8 @@ VOID NTAPI Ke386GetGlobalDescriptorTable(PVOID Limit)
 VOID NTAPI Ke386GetLocalDescriptorTable(PUSHORT Selector)
 { _rs_Ke386GetLocalDescriptorTable(Selector); }
 
-#undef HalVectorToIDTEntry
-extern UCHAR _rs_HalVectorToIDTEntry(ULONG Vector);
-UCHAR NTAPI HalVectorToIDTEntry(IN ULONG Vector)
-{
-    return _rs_HalVectorToIDTEntry(Vector);
-}
+/* HalVectorToIDTEntry — promoted to bare-name `extern "system"` export
+ * in ke-macros rlib (2026-05-08); trampoline retired. */
 
 /* `KiThreadStartup` — context-switch return target. The kernel stack
  * holds a `KUINIT_FRAME` at `KernelStack` on entry; we cast through
@@ -468,38 +437,17 @@ Ki386InitializeTss(IN PKTSS Tss,
 
 }
 
-/* `KiEndInterrupt` — FORCEINLINE in ke.h. Ends interrupt via HAL EOI and
- * tail-jumps into KiEoiHelper (NORETURN). Stays in C: rustc 1.92 emits
- * cdecl call sequences for HalEndSystemInterrupt (stdcall) and KiEoiHelper
- * (fastcall) despite bindgen's correct extern decls, breaking the link.
- * Re-probed 2026-05-07. */
-void __cdecl KiEndInterrupt(IN KIRQL Irql, IN PKTRAP_FRAME TrapFrame)
-{
-    _disable();
-    HalEndSystemInterrupt(Irql, TrapFrame);
-    KiEoiHelper(TrapFrame);
-}
+/* KiEndInterrupt — promoted to direct Rust impl in ke-macros rlib
+ * (2026-05-08). The audit's "rustc 1.92 stdcall/fastcall ABI bug"
+ * re-probe came back negative on rustc 1.92.0 — disasm of the
+ * KiExitV86Trap pilot showed correct fastcall arg-passing for the same
+ * @KfRaiseIrql@4 / @KiEoiHelper@4 calls KiEndInterrupt makes. */
 
-/* i386 trap-exit FORCEINLINE outlines — bodies live in trap_x.h.
- * `_saved_*` (Phase 1 rename) holds the inline expansion. Translating
- * to Rust would require porting 3 substantive trap-exit blocks
- * (KiEoiHelper / KiDeliverApc / KfRaiseIrql / KiDumpTrapFrame /
- * KeBugCheckEx interactions) — deferred. */
-DECLSPEC_NORETURN
-void FASTCALL KiExitV86Trap(IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiExitV86Trap(TrapFrame);
-}
-
-void NTAPI KiExitTrapDebugChecks(IN PKTRAP_FRAME TrapFrame, IN BOOLEAN SkipPreviousMode)
-{
-    _saved_KiExitTrapDebugChecks(TrapFrame, SkipPreviousMode);
-}
-
-void NTAPI KiExitSystemCallDebugChecks(IN ULONG SystemCall, IN PKTRAP_FRAME TrapFrame)
-{
-    _saved_KiExitSystemCallDebugChecks(SystemCall, TrapFrame);
-}
+/* All i386 trap-exit FORCEINLINE outlines now live in `ke-macros` rlib
+ * (2026-05-08). The block below was the last to land — `KiExitV86Trap`
+ * (NORETURN) drains pending user APCs in a loop, optionally restores DR
+ * registers, and tail-calls `KiTrapReturnNoSegments` (asm in
+ * `i386/trap.s`). */
 
 #endif /* _M_IX86 */
 
