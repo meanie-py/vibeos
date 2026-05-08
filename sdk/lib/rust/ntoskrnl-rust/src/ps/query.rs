@@ -103,9 +103,18 @@ extern "C" {
     static PsThreadInfoClass: INFORMATION_CLASS_INFO;
 }
 
-// Info class table sizes (matching RTL_NUMBER_OF in C)
-const PS_PROCESS_INFO_CLASS_COUNT: ULONG = _PROCESSINFOCLASS_MaxProcessInfoClass;
-const PS_THREAD_INFO_CLASS_COUNT: ULONG = _THREADINFOCLASS_MaxThreadInfoClass;
+// Info class table sizes — must match the actual C array length in
+// ntoskrnl/include/internal/ps_i.h (`PsProcessInfoClass[]` /
+// `PsThreadInfoClass[]`). DO NOT use the bindgen `Max*InfoClass` enum
+// values: those follow the Vista+ NTDDI definition (51 / 56) but the
+// re-include in `kernel_c_helpers.c` only emits NT 5.x entries (48 / 57).
+// Passing the bigger Vista count to `DefaultQueryInfoBufferCheck` skips
+// the bounds check for classes 48..51 and indexes off the end of the
+// table, reading garbage `AlignmentQUERY` bytes that then trip
+// `ProbeForRead`'s misalign check and bugcheck (with DUMMY_PSEH the
+// resulting STATUS_DATATYPE_MISALIGNMENT is unhandled).
+const PS_PROCESS_INFO_CLASS_COUNT: ULONG = 48;
+const PS_THREAD_INFO_CLASS_COUNT: ULONG = 57;
 
 // Functions not in bindgen (FORCEINLINE/macros in C)
 extern "system" {
