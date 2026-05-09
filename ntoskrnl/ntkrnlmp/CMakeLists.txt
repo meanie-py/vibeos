@@ -28,7 +28,14 @@ list(APPEND NTKRNLMP_PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c)
+# kdbg_rust_shims.c is only built on i386/amd64 (KDBG is disabled on ARM64).
+# Mirror the conditional gating in ntoskrnl/CMakeLists.txt.
+if(KDBG AND NOT ARCH STREQUAL "arm64")
+    list(APPEND NTKRNLMP_PCH_SKIP_SOURCE
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg_rust_shims.c)
+endif()
 
 add_executable(ntkrnlmp
     ${ntkrnlmp_asm}

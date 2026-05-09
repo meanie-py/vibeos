@@ -1,6 +1,6 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Three milestones landed this session:
+Last updated 2026-05-08. Four milestones landed this session:
 
 1. **The header-drop arc completed.** All 8 active C shim files are now
    header-free (no `<ntoskrnl.h>`, no internal kernel headers). Only
@@ -14,6 +14,14 @@ Last updated 2026-05-08. Three milestones landed this session:
    and passes 7/7 smoke.** Cargo can now drive the final link without
    cmake; the remaining 30+ static libs are still cmake-built but
    that's the next thread of work, not a blocker.
+4. **The cargo PoC compiles its own C shim layer via `cc-rs`.** All 9
+   shim translation units (8 header-free + `io_tables.c`) are now
+   produced by cc-rs from `build.rs`, not pulled from cmake's `.obj`
+   directory. Boot-equivalent: same 3.1 MB binary, same 7/7 smoke pass.
+   Pre-existing latent bug surfaced and fixed: `ntkrnlmp/CMakeLists.txt`
+   was missing `io_rust_shims.c` and `kdbg_rust_shims.c` from
+   `NTKRNLMP_PCH_SKIP_SOURCE` — only mattered once livecd actually
+   tried to rebuild ntkrnlmp.
 
 Treat any prior version of this document as suspect.
 
@@ -105,47 +113,41 @@ is the only cache implementation now.
 
 The strategic goal motivating shim minimization isn't the LOC count
 itself — it's switching ntoskrnl from cmake to cargo as the build
-driver. With the header-drop arc complete, the next phase is cargo
-PoC follow-ups.
+driver. With the header-drop arc complete and the C shim compile
+moved to cc-rs, the remaining items are: replace the asm + .res +
+.def cmake outputs, and replace the ~30 static libs.
 
-### 1. Compile the 8 shims via `cc-rs` (newly unblocked, top priority)
-
-Now that every shim is header-free, this is mechanical: replace the
-hardcoded `cmake_obj_dir.join("…/X.c.obj")` paths in
-`sdk/lib/rust/ntoskrnl-cargo/build.rs` with `cc::Build::new().file(…
-).compile()` calls. No `cc::Build::include()` needed — every shim only
-needs `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` plus its own local
-typedef block.
-
-`io_tables.c` is the one file that genuinely needs `cc::Build::include()`
-(for the `<ntoskrnl.h>` chain), or alternatively has its 8 arrays
-translated to Rust. Translation is the cleaner long-term move (each
-array is just `[u8; N]` with `sizeof(STRUCT)` values that can be
-computed from `ntkrnl-sys` bindgen types) but requires wiring up the
-~40 distinct `FILE_*_INFORMATION` / `FILE_FS_*_INFORMATION` size
-references through Rust. Either path works for the cargo PoC; pick
-whichever needs less plumbing first.
-
-### 2. Cargo PoC follow-ups
+### 1. Cargo PoC follow-ups
 
 In rough priority order:
 
-1. **Resource compilation.** `embed-resource` cargo crate, or shell out
-   to `windres` from `build.rs`.
-2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
+1. **Asm objects via cc-rs / `naked_function!` / global_asm!.** The 8
+   `.S` files (zw, fastinterlck_asm, ioport, ctxswitch, trap,
+   usercall_asm, zeropage, prefetch) are still pulled from cmake's
+   `.obj` dir. cc-rs can compile them directly — they don't need the
+   PCH, so the include surface is small.
+2. **Resource compilation.** `embed-resource` cargo crate, or shell out
+   to `windres` from `build.rs`. Currently still pulled from cmake.
+3. **Translate `io_tables.c` to Rust.** Drops the last shim that needs
+   `cc::Build::include()` (the kernel header chain). Each table is
+   `[u8; N]` of `core::mem::size_of::<>()` against ntkrnl-sys bindgen
+   types — ~40 `FILE_*_INFORMATION` / `FILE_FS_*_INFORMATION` lookups.
+   Removes the cargo PoC's dependency on `build-i386/sdk/include` etc.
+   for generated headers.
+4. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
    and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
-3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
+5. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
    PoC binary skipped both — strong sign that with the modern
    linker/Rust setup neither is strictly required for boot, but worth
    a careful audit (especially: does pefixup adjust the export table
    in ways that user-mode DLLs depend on?).
-4. **Replace cmake-built static libs with cargo-built equivalents.**
+6. **Replace cmake-built static libs with cargo-built equivalents.**
    The PoC still links ~30 cmake-produced `.a` files (libcmlib,
    librtl, libhal, etc.). Each is its own subdirectory build; moving
    them to cargo crates would let us drop the cmake step entirely.
    Big lift; not blocking.
 
-### 3. Re-probe the FIXME(amd64-misalign-231) workaround
+### 2. Re-probe the FIXME(amd64-misalign-231) workaround
 
 `ex/exintrin.rs::ProbeForRead` carries a workaround that treats
 non-{1,2,4,8,16} `Alignment` values as 1, citing a "consistent 0xE7
@@ -184,11 +186,16 @@ Components:
   `crt-objects-fallback` removed. `rustc-abi` set to `x86-softfloat`
   so build-std's compiler_builtins doesn't insist on SSE.
 - **`build.rs`** — invokes `cargo build -p kernel-rust` as a sub-step
-  (with the same custom target), then emits `cargo:rustc-link-arg=`
-  directives for: the resulting `libkernel_rust.a`, the cmake-built
-  `.obj` files (8 asm + 8 C shims + `io_tables.c.obj` + 1 resource),
-  the `.def` file, the ~30 cmake-built static libs, the clang
-  builtins archive, and the kernel-mode PE-COFF link flags.
+  (with the same custom target), compiles the 9 C shim translation
+  units via `cc-rs` (8 header-free + `io_tables.c` with kernel
+  includes), and emits `cargo:rustc-link-arg=` directives for: the
+  resulting `libkernel_rust.a`, the per-shim `.o` files cc-rs
+  produced, the cmake-built asm `.obj` files + `.res` resource, the
+  `.def` file, the ~30 cmake-built static libs, the clang builtins
+  archive, and the kernel-mode PE-COFF link flags. The cc-rs
+  `compile_shim()` helper mirrors cmake's `DEFINES = …` and `FLAGS =
+  …` lines exactly so the cargo-compiled shims match cmake-compiled
+  ones byte-for-byte (modulo path-dependent debug strings).
 - **`src/main.rs`** — `#![no_main]` shell with a stub
   `#[panic_handler]` and a `#[used]` anchor referencing `KiSystemStartup`.
 - **`build-and-test.sh`** — wrapper script that refreshes cmake

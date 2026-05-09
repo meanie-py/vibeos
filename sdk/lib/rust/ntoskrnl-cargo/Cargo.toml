@@ -31,4 +31,6 @@ path = "src/main.rs"
 # as a link arg.
 
 [build-dependencies]
-# Run cargo from build.rs. (No external crate — std::process::Command works.)
+# Run cargo from build.rs (std::process::Command), and compile the C shim
+# layer ourselves via cc-rs.
+cc = "1"

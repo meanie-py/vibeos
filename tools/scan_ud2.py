@@ -30,6 +30,11 @@ EXPECTED_UD2 = {
     "panic_nounwind",
     "abort",
     "rust_begin_unwind",
+    # `core::slice::copy_from_slice_impl` is a length-checked memcpy; the ud2
+    # is the unreachable "lengths don't match" assertion at the function tail.
+    # Only appears in `-Z build-std` cargo binaries because rustup's pre-built
+    # compiler_builtins inlines this monomorphization away.
+    "copy_from_slice_impl",
 }
 
 # Functions with known ud2 from rustc CGU partitioning bug (codegen-units=16).

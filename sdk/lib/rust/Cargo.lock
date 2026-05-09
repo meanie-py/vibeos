@@ -235,6 +235,9 @@ version = "0.1.0"
 [[package]]
 name = "ntoskrnl-cargo"
 version = "0.1.0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "ntoskrnl-rust"

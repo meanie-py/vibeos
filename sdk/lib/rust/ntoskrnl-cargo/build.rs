@@ -1,11 +1,13 @@
-//! Drive the cargo-side link of `ntoskrnl.exe` using the cmake-produced
-//! .obj files and static libs. The plan is intentionally minimal for the
-//! PoC: cmake still builds every input, and we just feed those inputs to
-//! cargo's linker invocation along with the kernel-mode link flags.
+//! Drive the cargo-side link of `ntoskrnl.exe`.
 //!
-//! Inputs come from `build-<arch>/`. The user must run `ninja` (or at
-//! least `ninja ntoskrnl`) once before `cargo build` so the .obj files
-//! exist. Future iterations will compile the C shims via cc-rs directly.
+//! cmake still owns the asm objects, the .res resource, the .def file, and
+//! the ~30 sibling static libs (rtl, cmlib, hal, etc.). cargo owns the C
+//! shim compile (via cc-rs), the kernel-rust staticlib build, and the
+//! final link.
+//!
+//! The user must run `ninja ntoskrnl` once before `cargo build` so the
+//! cmake-side artifacts exist. Future iterations will subsume the asm and
+//! the static libs as well.
 //!
 //! `kernel-rust` is `crate-type = ["staticlib"]` — cargo can't link
 //! staticlibs as Rust deps, so build.rs invokes `cargo build -p kernel-rust`
@@ -13,7 +15,7 @@
 //! `libkernel_rust.a` as an absolute-path link arg.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -82,7 +84,37 @@ fn main() {
     println!("cargo:rerun-if-changed={}", cmake_obj_dir.display());
     println!("cargo:rerun-if-changed={}", build_dir.join("ntoskrnl/ntoskrnl.def").display());
 
-    // Object files: 8 asm + 9 C shims + 1 resource.
+    // ---- C shim compile (cc-rs) ---------------------------------------------
+    // 8 header-free shims compile with no -I (clang's own stdarg/stddef/stdint
+    // is enough). io_tables.c is the lone shim that still pulls
+    // <ntoskrnl.h> + internal/io_i.h to materialize the 8 Iop*Operation*
+    // tables consumed by Rust iofunc.rs — give it the kernel include chain.
+    let header_free_shims: &[&str] = &[
+        "ntoskrnl/io/iomgr/io_rust_shims.c",
+        "ntoskrnl/ke/ke_rust_shims.c",
+        "ntoskrnl/mm/mm_rust_shims.c",   // body is _M_ARM64-gated; empty .o on i386
+        "ntoskrnl/variadic_shims.c",
+        "ntoskrnl/lto_workaround.c",
+        "ntoskrnl/mm_lock_outlines.c",
+        "ntoskrnl/ntprintf_trampoline.c",
+        "ntoskrnl/kdbg/kdbg_rust_shims.c",
+    ];
+    for relpath in header_free_shims {
+        let abs = repo_root.join(relpath);
+        if !abs.exists() {
+            panic!("missing shim source: {}", abs.display());
+        }
+        compile_shim(&repo_root, &abs, /*kernel_includes=*/ false);
+        println!("cargo:rerun-if-changed={}", abs.display());
+    }
+    let io_tables = repo_root.join("ntoskrnl/io/iomgr/io_tables.c");
+    if !io_tables.exists() {
+        panic!("missing shim source: {}", io_tables.display());
+    }
+    compile_shim(&repo_root, &io_tables, /*kernel_includes=*/ true);
+    println!("cargo:rerun-if-changed={}", io_tables.display());
+
+    // ---- Asm objects (still cmake-owned) ------------------------------------
     let asm_objs = [
         "ex/zw.S.obj",
         "ex/i386/fastinterlck_asm.S.obj",
@@ -93,18 +125,7 @@ fn main() {
         "ke/i386/zeropage.S.obj",
         "rtl/i386/prefetch.S.obj",
     ];
-    let shim_objs = [
-        "io/iomgr/io_rust_shims.c.obj",
-        "io/iomgr/io_tables.c.obj",  // IopQueryOperationLength + 7 sister tables (consumed by Rust iofunc.rs)
-        "ke/ke_rust_shims.c.obj",
-        "mm/mm_rust_shims.c.obj",
-        "variadic_shims.c.obj",
-        "lto_workaround.c.obj",
-        "mm_lock_outlines.c.obj",
-        "ntprintf_trampoline.c.obj",
-        "kdbg/kdbg_rust_shims.c.obj",
-    ];
-    for o in asm_objs.iter().chain(shim_objs.iter()) {
+    for o in asm_objs.iter() {
         let full = cmake_obj_dir.join(o);
         if !full.exists() {
             panic!("missing input: {}\n(run ninja in build-{arch} first)", full.display());
@@ -199,5 +220,154 @@ fn main() {
     ];
     for f in link_flags.iter() {
         println!("cargo:rustc-link-arg={f}");
+    }
+}
+
+/// Compile one C shim with the same kernel-mode flags + DEFINES cmake uses,
+/// emit it as a `.o`, and add it to the rustc link line. Set
+/// `kernel_includes` true for the one shim (`io_tables.c`) that still needs
+/// `<ntoskrnl.h>` + `internal/io_i.h`; false (no `-I`) for the rest, which
+/// only need `<stdarg.h>`/`<stddef.h>`/`<stdint.h>` from clang's own
+/// resource directory.
+fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+
+    // Per-file output path under OUT_DIR. cc-rs would auto-name, but we use
+    // its raw `.compile_intermediates()` mode below for finer control.
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("shim");
+    let obj_dir = out_dir.join("shims");
+    std::fs::create_dir_all(&obj_dir).expect("mkdir OUT_DIR/shims");
+
+    let mut build = cc::Build::new();
+    build
+        .compiler(&clang)
+        .file(source)
+        .out_dir(&obj_dir)
+        .warnings(false)
+        .extra_warnings(false)
+        // Match cmake's C compile flags exactly. The set below mirrors the
+        // `FLAGS = …` line ninja prints for any ntoskrnl C source.
+        .flag("--target=i686-w64-mingw32")
+        .flag("-pipe")
+        .flag("-fms-extensions")
+        .flag("-fno-strict-aliasing")
+        .flag("-fno-common")
+        .flag("-mlong-double-64")
+        .flag("-Wno-microsoft")
+        .flag("-Wno-pragma-pack")
+        .flag("-fno-associative-math")
+        .flag("-fno-builtin-stpcpy")
+        .flag("-gdwarf-2")
+        .flag("-gstrict-dwarf")
+        .flag("-march=pentium")
+        .flag("-mtune=generic")
+        .flag("-O1")
+        .flag("-fno-optimize-sibling-calls")
+        .flag("-fno-omit-frame-pointer")
+        .flag("-mstackrealign")
+        .flag("-mxsave")
+        .flag("-std=gnu2x")
+        .flag("-Wno-unknown-warning-option")
+        // Kernel-mode + ReactOS-build DEFINES. Mirrors the `DEFINES = …`
+        // line cmake emits.
+        .define("D3D_UMD_INTERFACE_VERSION", "0x000C")
+        .define("DBG", "1")
+        .define("DLL_EXPORT_VERSION", "0x502")
+        .define("DXGKDDI_INTERFACE_VERSION", "0x1052")
+        .define("KDBG", None)
+        .define("MINGW_HAS_SECURE_API", "1")
+        .define("NTDDI_VERSION", "0x05020400")
+        .define("NTKRNLVISTA", None)
+        .define("USE_COMPILER_EXCEPTIONS", None)
+        .define("WINVER", "0x502")
+        .define("_CRT_NON_CONFORMING_SWPRINTFS", None)
+        .define("_CRT_SUPPRESS_RESTRICT", None)
+        .define("_GLIBCXX_HAVE_BROKEN_VSWPRINTF", None)
+        .define("_M_IX86", None)
+        .define("_NEW_DELETE_OPERATORS_", None)
+        .define("_NTOSKRNL_", None)
+        .define("_NTSYSTEM_", None)
+        .define("_SEH_ENABLE_TRACE", None)
+        .define("_SETUPAPI_VER", "0x502")
+        .define("_USE_32BIT_TIME_T", None)
+        .define("_USE_DUMMY_PSEH", "1")
+        .define("_WIN32_IE", "0x603")
+        .define("_WIN32_WINDOWS", "0x502")
+        .define("_WIN32_WINNT", "0x502")
+        .define("_X86_", None)
+        .define("__REACTOS__", None)
+        .define("__ROS_ROSSYM__", None)
+        .define("__i386__", None)
+        .define("i386", None);
+
+    if kernel_includes {
+        // Mirror cmake's `INCLUDES = …` for ntoskrnl C sources. Only the one
+        // remaining shim that drags `<ntoskrnl.h>` in (`io_tables.c`) needs
+        // these. The other 8 shims are header-free and don't.
+        let build_dir = repo_root.join("build-i386");
+        for inc in [
+            "build-i386/ntoskrnl",
+            "ntoskrnl",
+            "sdk/include",
+            "sdk/include/crt",
+            "sdk/include/ddk",
+            "sdk/include/ndk",
+            "sdk/include/psdk",
+            "sdk/include/reactos",
+            "sdk/include/reactos/libs",
+            "sdk/include/vcruntime",
+            "sdk/include/winrt",
+            "build-i386/sdk/include",
+            "build-i386/sdk/include/psdk",
+            "build-i386/sdk/include/ddk",
+            "build-i386/sdk/include/dxsdk",
+            "build-i386/sdk/include/reactos",
+            "build-i386/sdk/include/reactos/mc",
+            "sdk/include/dxsdk",
+            "sdk/lib/pseh/include",
+            "",
+            "sdk/lib/drivers/arbiter",
+            "sdk/lib/cmlib",
+            "ntoskrnl/include",
+            "build-i386/ntoskrnl/include",
+            "build-i386/ntoskrnl/include/internal",
+            "sdk/include/reactos/drivers",
+        ] {
+            build.include(repo_root.join(inc));
+        }
+        // Required to suppress the user-mode CRT search path. Matches the
+        // `-nostdinc -isystem<crt> -isystem<clang>` triplet cmake passes.
+        build
+            .flag("-nostdinc")
+            .flag("-isystem")
+            .flag(repo_root.join("sdk/include/crt").to_str().unwrap())
+            .flag("-isystem")
+            .flag(
+                llvm_mingw
+                    .join("lib/clang/19/include")
+                    .to_str()
+                    .unwrap(),
+            );
+        // Sanity-check the build dir exists when this code path runs.
+        assert!(
+            build_dir.exists(),
+            "kernel_includes path needs build-i386/ to exist for generated headers"
+        );
+    }
+
+    // Drive cc-rs ourselves: cc::Build::compile() emits a static archive,
+    // but we want raw .o files we can pass on the rustc link line.
+    let objs = build.compile_intermediates();
+    if objs.is_empty() {
+        panic!("cc-rs produced no objects for {}", source.display());
+    }
+    let _ = stem; // currently unused but kept for future per-shim diagnostics
+    for obj in objs {
+        println!("cargo:rustc-link-arg={}", obj.display());
     }
 }
