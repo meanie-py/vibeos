@@ -326,8 +326,14 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
 /// directory holds windmc-generated headers (`bugcodes.h`, `bugcodes.rc`)
 /// which we now produce in-process via `generate_bugcodes_mc()` and pass
 /// as an extra `-I` to all three consumers.
+/// Kernel `-I` paths the cargo PoC's compile inputs (asm + RC +
+/// genincdata.c) actually pull headers from. Survey 2026-05-08 (`clang -H`)
+/// pruned 10 dead-weight entries from cmake's original list — see audit
+/// doc § "Survey of remaining build-i386 deps". The two remaining
+/// `build-i386/sdk/include/{ddk,psdk}` paths hold the hpp-generated kernel
+/// headers (ntddk.h, ntifs.h, wdm.h, ntdef.h); generating those in-process
+/// is the next step toward dropping cmake configure entirely.
 const KERNEL_INCLUDES: &[&str] = &[
-    "build-i386/ntoskrnl",
     "ntoskrnl",
     "sdk/include",
     "sdk/include/crt",
@@ -335,23 +341,11 @@ const KERNEL_INCLUDES: &[&str] = &[
     "sdk/include/ndk",
     "sdk/include/psdk",
     "sdk/include/reactos",
-    "sdk/include/reactos/libs",
     "sdk/include/vcruntime",
-    "sdk/include/winrt",
-    "build-i386/sdk/include",
-    "build-i386/sdk/include/psdk",
-    "build-i386/sdk/include/ddk",
-    "build-i386/sdk/include/dxsdk",
-    "build-i386/sdk/include/reactos",
-    "sdk/include/dxsdk",
+    "build-i386/sdk/include/psdk", // hpp-generated ntdef.h (only)
+    "build-i386/sdk/include/ddk",  // hpp-generated ntddk.h, ntifs.h, wdm.h
     "sdk/lib/pseh/include",
-    "",
-    "sdk/lib/drivers/arbiter",
-    "sdk/lib/cmlib",
     "ntoskrnl/include",
-    "build-i386/ntoskrnl/include",
-    "build-i386/ntoskrnl/include/internal",
-    "sdk/include/reactos/drivers",
 ];
 
 /// Adds the full kernel `-I` chain (KERNEL_INCLUDES + `mc_gen_dir` for

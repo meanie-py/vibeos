@@ -1,6 +1,6 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Nine milestones landed this session:
+Last updated 2026-05-08. Ten milestones landed this session:
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
    shim files are now header-free (no `<ntoskrnl.h>`, no internal
@@ -67,6 +67,20 @@ Last updated 2026-05-08. Nine milestones landed this session:
    take a `mc_gen_dir: &Path` parameter; `KERNEL_INCLUDES` no
    longer contains `build-i386/sdk/include/reactos/mc`. Drops
    another cmake-generated dep.
+10. **Surveyed `KERNEL_INCLUDES` and pruned 10 dead-weight paths.**
+    Used `clang -H` on the cargo PoC's only three live compile
+    inputs (asm, RC, `genincdata.c`) to dump the actual include
+    hierarchy and cross-reference vs the path list. Dropped 3
+    obviously-dead `build-i386/...` paths (`ntoskrnl`,
+    `ntoskrnl/include`, `ntoskrnl/include/internal` — the latter two
+    don't even exist on disk), 3 more empirically-dead `build-i386/...`
+    paths (`sdk/include`, `sdk/include/dxsdk`,
+    `sdk/include/reactos`), and 4 dead source-tree paths
+    (`sdk/include/reactos/libs`, `sdk/include/winrt`,
+    `sdk/include/dxsdk`, `sdk/include/reactos/drivers`,
+    `sdk/lib/drivers/arbiter`, `sdk/lib/cmlib`, `""`). Kept the 12
+    paths actually pulled. `ks386.inc` and `bugcodes.h` still
+    byte-identical to cmake's after the trim; smoke 7/7 PASS.
 
 Treat any prior version of this document as suspect.
 
@@ -133,6 +147,57 @@ Smoke status:
   post-boot fastfat BUGCHECK with `STATUS_INSUFFICIENT_RESOURCES` —
   is tracked separately and does not block smoke.
 
+## Survey of remaining `build-i386/` deps (2026-05-08)
+
+Methodology: ran `clang -H` on the cargo PoC's three live compile
+inputs (asm `trap.s`, RC `ntoskrnl.rc`, `genincdata.c`), unioned
+the resulting include hierarchy, and cross-referenced vs the
+`KERNEL_INCLUDES` list. After the survey:
+
+| `KERNEL_INCLUDES` entry | Verdict | Notes |
+|---|---|---|
+| `ntoskrnl` | LIVE | RC's `#include "inbv/bootanim.rc"` resolves through here |
+| `ntoskrnl/include` | LIVE | trap.s pulls `<internal/i386/asmmacro.S>` etc. |
+| `sdk/include` | LIVE | genincdata.c's `<psdk/ntverp.h>` etc. |
+| `sdk/include/crt` | LIVE | also `-isystem` of mingw user-mode CRT replacement |
+| `sdk/include/ddk` | LIVE | `<ifssupp.h>` etc. (source-tree ddk) |
+| `sdk/include/ndk` | LIVE | `<ntndk.h>` and arch-specific NDK headers |
+| `sdk/include/psdk` | LIVE | source-tree psdk (winnt.h etc.) |
+| `sdk/include/reactos` | LIVE | `<arc/arc.h>` chain |
+| `sdk/include/vcruntime` | LIVE | `<excpt.h>`, `<setjmp.h>`, mingw32 headers |
+| `sdk/lib/pseh/include` | LIVE | `<pseh/pseh2.h>` chain |
+| `build-i386/sdk/include/psdk` | LIVE | `ntdef.h` only (1 file, hpp-generated) |
+| `build-i386/sdk/include/ddk` | LIVE | `ntddk.h`, `ntifs.h`, `wdm.h` (3 files, hpp-generated) |
+| ~~`build-i386/ntoskrnl`~~ | DROPPED | only build artifacts (`.a`, `.def`), no headers |
+| ~~`build-i386/ntoskrnl/include`~~ | DROPPED | dir doesn't exist on disk |
+| ~~`build-i386/ntoskrnl/include/internal`~~ | DROPPED | dir doesn't exist on disk |
+| ~~`build-i386/sdk/include`~~ | DROPPED | no direct hits (subdirs hit) |
+| ~~`build-i386/sdk/include/dxsdk`~~ | DROPPED | no hits |
+| ~~`build-i386/sdk/include/reactos`~~ | DROPPED | no hits |
+| ~~`build-i386/sdk/include/reactos/mc`~~ | DROPPED | replaced by in-process `mc-gen/` (milestone 9) |
+| ~~`sdk/include/dxsdk`~~ | DROPPED | no hits |
+| ~~`sdk/include/winrt`~~ | DROPPED | no hits |
+| ~~`sdk/include/reactos/libs`~~ | DROPPED | no hits |
+| ~~`sdk/include/reactos/drivers`~~ | DROPPED | no hits |
+| ~~`sdk/lib/drivers/arbiter`~~ | DROPPED | no hits |
+| ~~`sdk/lib/cmlib`~~ | DROPPED | no hits |
+| ~~`""` (project root)~~ | DROPPED | no hits |
+
+**The remaining cmake-generated dep is exactly 4 hpp-generated files
+in 2 dirs.** All come from `sdk/include/xdk/*.template.h` processed
+by the `hpp` host tool (sdk/tools/hpp, 631 LOC C). Reproducing this
+in `build.rs` needs either (a) shelling out to a cmake-built `hpp`
+binary, or (b) compile + run hpp ourselves via cc-rs (host build).
+Either step would bring the cargo PoC's build-time directories from
+`build-i386/` to zero — the PoC would need only the source tree +
+its own `OUT_DIR/` to fully build. That's the next forward-path item.
+
+Live cargo-PoC-generated dirs (live but self-owned):
+- `OUT_DIR/asm-gen` — `ks386.inc`
+- `OUT_DIR/mc-gen` — `bugcodes.{h,rc,bin}`
+- `OUT_DIR/shims` — per-shim/per-asm `.o` files
+- `OUT_DIR/geninc-obj` — intermediate `genincdata.c.obj`
+
 ## What's still C
 
 | Bucket | LOC | Notes |
@@ -161,15 +226,14 @@ moved to cc-rs, the remaining items are: replace the asm + .res +
 
 In rough priority order:
 
-1. **Survey the remaining `build-i386/sdk/include/...` deps.** With
-   `bugcodes.h` and `ks386.inc` self-generated, the remaining
-   `build-i386/...` paths in `KERNEL_INCLUDES` (notably
-   `build-i386/sdk/include`, `…/psdk`, `…/ddk`, `…/reactos`,
-   `build-i386/ntoskrnl/include[/internal]`) need to be audited:
-   what generated headers do they hold, which generators produce
-   them, and which are *actually* referenced by the cargo PoC's
-   compile inputs. Some may be dead weight; the live ones get the
-   same windmc/genincdata-style treatment.
+1. **Generate the 4 hpp-driven kernel headers ourselves.** After the
+   survey above, the remaining `build-i386/` deps are 4 specific
+   files in 2 dirs (ntddk.h, ntifs.h, wdm.h, ntdef.h). All come
+   from `sdk/include/xdk/*.template.h` processed by
+   `sdk/tools/hpp/hpp.c` (631 LOC). Two paths: shell out to a
+   cmake-built `hpp` binary from build.rs, or compile + run hpp
+   ourselves via cc-rs. Either drops the cargo PoC's last cmake
+   configure/build dep (modulo the static libs).
 2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
    and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
 3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
