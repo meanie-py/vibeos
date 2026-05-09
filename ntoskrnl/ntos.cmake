@@ -134,7 +134,8 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iocomp.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/ioevent.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iofunc.c  # Replaced by Rust iofunc.rs
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_tables.c  # IopQueryOperationLength etc. — extracted from io_rust_shims.c so that file can stay header-free
+    # io_tables.c retired 2026-05-08, replaced by Rust iomgr/io_tables.rs.
+    # Was the last source file in the active build that pulled <ntoskrnl.h>.
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomdl.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iomgr.c  # amd64/i386 uses Rust; ARM64 uses C (in arm64 section below)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/iorsrce.c  # Replaced by Rust iorsrce.rs

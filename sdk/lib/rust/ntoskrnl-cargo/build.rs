@@ -107,12 +107,10 @@ fn main() {
         compile_shim(&repo_root, &abs, /*kernel_includes=*/ false);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
-    let io_tables = repo_root.join("ntoskrnl/io/iomgr/io_tables.c");
-    if !io_tables.exists() {
-        panic!("missing shim source: {}", io_tables.display());
-    }
-    compile_shim(&repo_root, &io_tables, /*kernel_includes=*/ true);
-    println!("cargo:rerun-if-changed={}", io_tables.display());
+    // io_tables.c retired 2026-05-08; replaced by Rust iomgr/io_tables.rs.
+    // The 8 Iop*Operation* tables are now `#[no_mangle] pub static` arrays
+    // in kernel-rust, computed from `core::mem::size_of::<>()` against
+    // ntkrnl-sys bindgen types.
 
     // ---- Asm compile (cc-rs) ------------------------------------------------
     // The 8 .S/.s files all `#include <asm.inc>` + `<ks386.inc>` + an
@@ -357,10 +355,10 @@ fn shim_obj_dir() -> PathBuf {
 }
 
 /// Compile one C shim with kernel-mode flags + DEFINES, emit it as a `.o`,
-/// and add it to the rustc link line. Set `kernel_includes` true for the
-/// one shim (`io_tables.c`) that still needs `<ntoskrnl.h>` +
-/// `internal/io_i.h`; false (no `-I`) for the rest, which only need
-/// `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` from clang's resource dir.
+/// and add it to the rustc link line. All current shims pass
+/// `kernel_includes=false` and only need `<stdarg.h>` / `<stddef.h>` /
+/// `<stdint.h>` from clang's resource dir; the parameter is kept as an
+/// escape hatch for future shims that may need to pull `<ntoskrnl.h>`.
 fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");

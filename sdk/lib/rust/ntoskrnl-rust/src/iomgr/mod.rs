@@ -9,6 +9,7 @@ pub mod driver;
 pub mod error;
 pub mod file;
 pub mod iocomp;
+pub mod io_tables;  // 8 Iop*Operation* lookup tables (replaces io_tables.c)
 pub mod ioevent;
 pub mod iofunc;  // Constants fixed, truncated (missing NtSetInformationFile+), C provides missing functions
 pub mod iomdl;
