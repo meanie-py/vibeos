@@ -1,53 +1,73 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Two strategic milestones landed this round:
-the substantive Phase 1 translations (`KiAttachProcess`,
-`KiThreadStartup`, `Ki386InitializeTss`) emptied the "haven't been
-ported yet" column from `ke_rust_shims.c`, and the cargo-driven
-`ntoskrnl.exe` build PoC for i386 boots to desktop and passes 7/7
-smoke. Treat any prior version of this document as suspect.
+Last updated 2026-05-08. Three milestones landed this session:
+
+1. **The header-drop arc completed.** All 8 active C shim files are now
+   header-free (no `<ntoskrnl.h>`, no internal kernel headers). Only
+   one tiny sister file — `io/iomgr/io_tables.c` (19 LOC) — deliberately
+   keeps `<ntoskrnl.h>` to host data-table re-includes; it's PCH-included
+   like a regular C file, not PCH-skipped like the shims.
+2. **`kernel_c_helpers.c` retired.** Rust now supplies the canonical
+   `PsProcessInfoClass` / `PsThreadInfoClass` symbols, replacing the
+   `ps_i.h` re-include trick that lived in C since the start of the port.
+3. **The cargo-driven `ntoskrnl.exe` build PoC for i386 boots to desktop
+   and passes 7/7 smoke.** Cargo can now drive the final link without
+   cmake; the remaining 30+ static libs are still cmake-built but
+   that's the next thread of work, not a blocker.
+
+Treat any prior version of this document as suspect.
 
 ## Where we are
 
 **~99.7% of the original ntoskrnl C body of work is now Rust.** The
-active C in the default i386/amd64 build is **9 narrow shim files
-totalling 813 LOC** — the smallest the surface has ever been. Of
-those 9, **3 are fully header-free** (compile with only
-`<stdarg.h>`/`<stddef.h>`/`<stdint.h>` + a small local typedef block):
-`ke/ke_rust_shims.c`, `ntprintf_trampoline.c`, `variadic_shims.c`.
-The other 6 still pull `<ntoskrnl.h>` and a few internal headers.
-Cleaning them up the same way is the next milestone — see "Forward
-path" below.
+active C in the default i386/amd64 build is **8 narrow shim files +
+1 data-table sister file totalling 1,056 LOC** — and **all 8 shims
+compile with only `<stdarg.h>`/`<stddef.h>`/`<stdint.h>` + a small
+local typedef block** (no `<ntoskrnl.h>` chain). That's the smallest
+header surface the shim layer has ever had.
 
 **Cargo-driven build for i386 works end-to-end.** `cargo +nightly
 build -p ntoskrnl-cargo --target ntoskrnl-cargo/i686-kernel.json -Z
-build-std=…` produces a 3.1 MB `ntoskrnl.exe` (vs. cmake's 4.6 MB)
-that boots in QEMU and passes 7/7 smoke. The PoC reuses cmake's `.obj`
-files for now; future iterations will compile shims via cc-rs once
-the remaining 6 shims drop their kernel-header dependencies.
+build-std=…` produces a 3.1 MB `ntoskrnl.exe` (vs. cmake's 4.5 MB)
+that boots in QEMU and passes 7/7 smoke. The PoC reuses cmake's
+`.obj` files for now; with the header drop complete, every shim is
+ready to be compiled by `cc::Build::file()` from `build.rs` without
+any `-I` machinery.
 
 Counts (verified by `wc -l`):
 
 | Bucket | LOC |
 |---|---:|
-| Original ntoskrnl C body of work (excl. shims) | 268,436 |
-| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | 441,262 |
-| Active C in default i386/amd64 build (excl. shims) | 0 |
-| C shim layer (9 files in `ntos.cmake`) | **813** |
+| Original ntoskrnl C body of work (excl. shims + sisters) | 268,436 |
+| Rust under `sdk/lib/rust/ntoskrnl-rust/src/` | 441,282 |
+| Active C in default i386/amd64 build (excl. shims + sisters) | 0 |
+| C shim layer (8 files in `PCH_SKIP_SOURCE`) | 1,037 |
+| C data-table sister files (1 file in regular SOURCE) | 19 |
 
-Shim layer files (LOC, header status):
+Shim layer files (LOC, header status). All shims are now header-free
+on every architecture they're compiled for:
 
-| File | LOC | Headers | Status |
+| File | LOC | Headers | Role |
 |---|---:|---|---|
-| `ke/ke_rust_shims.c` | 251 | header-free ✓ | minimal-trampoline |
+| `ke/ke_rust_shims.c` | 251 | header-free ✓ | minimal trampoline |
 | `ntprintf_trampoline.c` | 170 | header-free ✓ | variadic `va_arg` pull |
-| `variadic_shims.c` | 77 | header-free ✓ | variadic |
-| `io/iomgr/io_rust_shims.c` | 70 | `<ntoskrnl.h>` + `<ntstrsafe.h>` + `<debug.h>` + `internal/io_i.h` | minimal-trampoline |
-| `mm/mm_rust_shims.c` | 69 | `<ntoskrnl.h>` + `<debug.h>` + `mm/ARM3/miarm.h` + `internal/arch/mm.h` | minimal-trampoline |
-| `kdbg/kdbg_rust_shims.c` | 62 | `<ntoskrnl.h>` + `kdb.h` + `kd/kdterminal.h` | minimal-trampoline |
-| `lto_workaround.c` | 45 | `<ntoskrnl.h>` + `<debug.h>` | LLVM i386 fat-LTO isolation |
-| `mm_lock_outlines.c` | 36 | `<ntoskrnl.h>` + `<debug.h>` + `mm/ARM3/miarm.h` | C `__FILE__`/`__LINE__` capture |
-| `kernel_c_helpers.c` | 33 | `<ntoskrnl.h>` + `<debug.h>` + `internal/ps_i.h` | `ps_i.h` re-include only |
+| `io/iomgr/io_rust_shims.c` | 154 | header-free ✓ | probes + variadic |
+| `mm/mm_rust_shims.c` | 152 | header-free ✓ | ARM64-only PTE/IRQL debug |
+| `kdbg/kdbg_rust_shims.c` | 91 | header-free ✓ | `KdbpPrint` + `KdbPromptStr` |
+| `lto_workaround.c` | 87 | header-free ✓ | LLVM i386 fat-LTO isolation |
+| `variadic_shims.c` | 77 | header-free ✓ | `KdpDprintf` + `RtlStringCbPrintfA` |
+| `mm_lock_outlines.c` | 55 | header-free ✓ | C `__FILE__`/`__LINE__` capture |
+
+Sister data-table file (PCH-included, not PCH-skipped):
+
+| File | LOC | Headers | Role |
+|---|---:|---|---|
+| `io/iomgr/io_tables.c` | 19 | `<ntoskrnl.h>` + `internal/io_i.h` | hosts 8 `Iop*Operation{Length,Access}` arrays for Rust `iofunc.rs` |
+
+The `io_tables.c` pattern (small file, keeps `<ntoskrnl.h>`, PCH-included)
+is what we reach for when a shim needs to externalize C-side data tables
+without dragging the kernel headers into a `cc-rs`-compilable shim. It's
+the sister-file counterpart to a header-free shim.
 
 Rust LOC is higher than original C because (a) bindgen unions need
 explicit accessor paths, (b) every output-pointer write goes through
@@ -68,7 +88,8 @@ Smoke status:
 
 | Bucket | LOC | Notes |
 |---|---:|---|
-| 9 shim files in `ntos.cmake` | 813 | Detailed table above. |
+| 8 shim files in `PCH_SKIP_SOURCE` | 1,037 | All header-free. See table above. |
+| `io_tables.c` data-table sister | 19 | Externalizes 8 `Iop*Operation*` arrays for Rust `iofunc.rs`. |
 | `cmdata.c` Phase B holdouts | ~150 | `MmConsumedPoolPercentage` and a handful of inherent registry-structure tables. |
 
 **Translation candidates with no Rust translation in tree: zero.**
@@ -84,61 +105,56 @@ is the only cache implementation now.
 
 The strategic goal motivating shim minimization isn't the LOC count
 itself — it's switching ntoskrnl from cmake to cargo as the build
-driver. The cargo PoC has landed; the remaining work splits into two
-threads.
+driver. With the header-drop arc complete, the next phase is cargo
+PoC follow-ups.
 
-### 1. Drop `<ntoskrnl.h>` and the heavy internal headers from the remaining 6 shims (next)
+### 1. Compile the 8 shims via `cc-rs` (newly unblocked, top priority)
 
-This is the prerequisite for "compile shims via cc-rs cleanly." We
-explicitly **don't** want to pile cmake-equivalent `cc::Build::include()`
-calls into the build.rs — the right move is to make the shims
-header-free in the same way `ke_rust_shims.c` was made header-free
-(local typedef block + inlined small constants/macros). `cc::Build::
-include()` should be a last resort, used only when a header pull is
-genuinely small (`<stdarg.h>`, `<stddef.h>`, etc.).
+Now that every shim is header-free, this is mechanical: replace the
+hardcoded `cmake_obj_dir.join("…/X.c.obj")` paths in
+`sdk/lib/rust/ntoskrnl-cargo/build.rs` with `cc::Build::new().file(…
+).compile()` calls. No `cc::Build::include()` needed — every shim only
+needs `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` plus its own local
+typedef block.
 
-Per-file plan, in rough order of how big the dependency surface is:
-
-- **`io/iomgr/io_rust_shims.c`** (70 LOC, 4 includes). Real deps to
-  audit: which Iop* / file-object / IRP types and macros are touched.
-  May need a minimal local mirror of a few struct accessors.
-- **`mm/mm_rust_shims.c`** (69 LOC, 4 includes). Pulls `miarm.h`
-  (Mi macros) and `arch/mm.h`. Heaviest internal-header pull.
-- **`kdbg/kdbg_rust_shims.c`** (62 LOC, 3 includes). KDB-specific
-  types. Probably tractable.
-- **`lto_workaround.c`** (45 LOC, 2 includes). Just pulls
-  `<ntoskrnl.h>` for `SepInitTokensShim`'s declared signature. Small.
-- **`mm_lock_outlines.c`** (36 LOC, 3 includes). `__FILE__`/`__LINE__`
-  capture for MM lock instrumentation. Small surface.
-- **`kernel_c_helpers.c`** (33 LOC, 3 includes). The `ps_i.h`
-  re-include trick to externalise `PsProcessInfoClass[]` /
-  `PsThreadInfoClass[]`. May need to be replaced with a Rust-side
-  table generator (similar pattern to `gen_ssdt.py` for SSDT).
-
-Once these 6 are header-free, every shim file can be compiled by
-`cc::Build::file()` without any `-I` machinery, and we can move shim
-compilation into the cargo build.
+`io_tables.c` is the one file that genuinely needs `cc::Build::include()`
+(for the `<ntoskrnl.h>` chain), or alternatively has its 8 arrays
+translated to Rust. Translation is the cleaner long-term move (each
+array is just `[u8; N]` with `sizeof(STRUCT)` values that can be
+computed from `ntkrnl-sys` bindgen types) but requires wiring up the
+~40 distinct `FILE_*_INFORMATION` / `FILE_FS_*_INFORMATION` size
+references through Rust. Either path works for the cargo PoC; pick
+whichever needs less plumbing first.
 
 ### 2. Cargo PoC follow-ups
 
 In rough priority order:
 
-1. **Compile C shims via cc-rs** in `build.rs`. Trivial for the 3 already
-   header-free; gated on threads (1) for the other 6.
-2. **Resource compilation.** `embed-resource` cargo crate, or shell
-   out to `windres` from build.rs.
-3. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
+1. **Resource compilation.** `embed-resource` cargo crate, or shell out
+   to `windres` from `build.rs`.
+2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
    and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
-4. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
+3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
    PoC binary skipped both — strong sign that with the modern
    linker/Rust setup neither is strictly required for boot, but worth
    a careful audit (especially: does pefixup adjust the export table
    in ways that user-mode DLLs depend on?).
-5. **Replace cmake-built static libs with cargo-built equivalents.**
+4. **Replace cmake-built static libs with cargo-built equivalents.**
    The PoC still links ~30 cmake-produced `.a` files (libcmlib,
    librtl, libhal, etc.). Each is its own subdirectory build; moving
    them to cargo crates would let us drop the cmake step entirely.
    Big lift; not blocking.
+
+### 3. Re-probe the FIXME(amd64-misalign-231) workaround
+
+`ex/exintrin.rs::ProbeForRead` carries a workaround that treats
+non-{1,2,4,8,16} `Alignment` values as 1, citing a "consistent 0xE7
+from a 16-byte UNICODE_STRING-style probe post-shell-ready on amd64."
+This has the exact same root-cause smell as the just-fixed info-class
+COUNT bug — past-end array reads producing junk Alignment values.
+Worth re-probing whether the workaround is still load-bearing now
+that `PS_PROCESS_INFO_CLASS_COUNT` and `PS_THREAD_INFO_CLASS_COUNT`
+match the actual array sizes.
 
 ### Definition of done
 
@@ -169,10 +185,10 @@ Components:
   so build-std's compiler_builtins doesn't insist on SSE.
 - **`build.rs`** — invokes `cargo build -p kernel-rust` as a sub-step
   (with the same custom target), then emits `cargo:rustc-link-arg=`
-  directives for: the resulting `libkernel_rust.a`, the 18 cmake-
-  built `.obj` files (8 asm + 9 C shims + 1 resource), the `.def`
-  file, the ~30 cmake-built static libs, the clang builtins archive,
-  and the kernel-mode PE-COFF link flags.
+  directives for: the resulting `libkernel_rust.a`, the cmake-built
+  `.obj` files (8 asm + 8 C shims + `io_tables.c.obj` + 1 resource),
+  the `.def` file, the ~30 cmake-built static libs, the clang
+  builtins archive, and the kernel-mode PE-COFF link flags.
 - **`src/main.rs`** — `#![no_main]` shell with a stub
   `#[panic_handler]` and a `#[used]` anchor referencing `KiSystemStartup`.
 - **`build-and-test.sh`** — wrapper script that refreshes cmake
@@ -182,7 +198,7 @@ Components:
   build still uses stable; `build.rs` sets `RUSTUP_TOOLCHAIN=nightly`
   for its sub-cargo invocation only.
 
-Notable: the cargo binary is **smaller** (3.1 MB vs. cmake's 4.6 MB)
+Notable: the cargo binary is **smaller** (3.1 MB vs. cmake's 4.5 MB)
 because `--gc-sections` runs more aggressively without the cmake-side
 intermediate static libs accumulating unreferenced helpers.
 
@@ -209,13 +225,13 @@ Rust file in the tree is wired in — parked translations: **0**.
 | fstub | 5 | ~12,300 |
 | cc (cache) | 8 | ~6,200 |
 | dbgk / po / inbv / lpc / kd / wmi / vdm / arch dirs / rtl / vf / top-level | ~50 | ~30,000 |
-| **TOTAL active (i386/amd64)** | **~325** | **~441,200** |
+| **TOTAL active (i386/amd64)** | **~325** | **~441,300** |
 
 ## Verified must-stay set
 
-These have been re-probed and **proven** to require the full kernel
-header chain or a C compile. Not candidates for further elimination
-until the underlying constraint moves.
+These have been re-probed and **proven** to require either C-side
+execution or a separate compile unit. Not candidates for further
+elimination until the underlying constraint moves.
 
 - **Variadic exports** (`KdbpPrint`, `KdpDprintf`, `RtlStringCbPrintfA`,
   KDBG ext printers, `RtlUnicodeStringPrintf_4wZ_shim`,
@@ -241,15 +257,6 @@ until the underlying constraint moves.
   the cdecl impl lives bare-name in `ke-macros` and the stdcall
   `_X@4` decoration is supplied by a one-line C trampoline calling
   the cdecl `_rs_*` variant.
-- **`ps_i.h` re-include trick** in `kernel_c_helpers.c`. The C file
-  re-includes `ps_i.h` with a `#pragma push/pop` of `static` and
-  `_static_*` rename to externalise `PsProcessInfoClass[]` /
-  `PsThreadInfoClass[]`. A parallel Rust translation exists at
-  `ps/info_class.rs` (under `_rs_*` symbols), byte-equal to the C
-  arrays — but renaming the Rust statics to drop the prefix
-  reproducibly bugchecks i386 with `STATUS_DATATYPE_MISALIGNMENT`
-  even though the bytes are identical (purely positional, .rdata
-  offset-dependent). Not blocking; worth re-investigation.
 
 ## Re-probing pattern (carry forward)
 
@@ -263,14 +270,20 @@ classification to revive, the cheapest first step is often: re-enable
 it, build, smoke. The bug may already be gone. Recent examples that
 fell to a re-probe: every io captures(none) workaround, the trap-exit
 chain ("multi-month" estimate that took hours), the `KiEndInterrupt`
-"rustc 1.92 ABI bug," the four HAL stdcall bridges, and most recently
-the three Phase 1 substantive translations
-(`KiAttachProcess`/`KiThreadStartup`/`Ki386InitializeTss`).
+"rustc 1.92 ABI bug," the four HAL stdcall bridges, the three Phase 1
+substantive translations
+(`KiAttachProcess`/`KiThreadStartup`/`Ki386InitializeTss`), and most
+recently the `kernel_c_helpers.c` "alignment regression" — which
+turned out not to be a Rust-translation issue at all but a pre-existing
+latent count bug in `ps/query.rs` that the C-side trick was
+accidentally masking.
 
 The pattern: the heavy lifting (callees in Rust, layout structs already
 defined, helpers as private fns next to the consumer) is usually
 already done in earlier passes, leaving the actual port as a
-one-session task.
+one-session task. And: the "Rust regression" framing is sometimes
+itself wrong — the C trick may have been hiding an upstream bug that
+only surfaces after the swap.
 
 ## Common bug patterns
 
@@ -293,6 +306,13 @@ Track these — they keep recurring across translations.
 6. **Bindgen enum max ≠ C array length.** When bindgen emits a Vista+
    `MaxXxxInfoClass` and the C array uses an NT 5.x-only re-include,
    they diverge. Hard-code the count to match the C array.
+   Recent surface: `PS_{PROCESS,THREAD}_INFO_CLASS_COUNT` in
+   `ps/query.rs` were transcribed from the Vista enum maxes (51/56)
+   instead of NT 5.x values (47/28). The off-by-many indexed past
+   the table end, reading garbage `AlignmentQUERY` bytes that tripped
+   `ProbeForRead`'s misalign check. Bug was masked by C-side trailing
+   bytes happening to be safe; surfaced when swapping the symbol
+   supplier to Rust.
 7. **Wide string encoding.** `b"..."` byte strings used as UTF-16. Must
    be `[u16; N]` or use the `wstr!` macro.
 8. **Static lifetime on inline arrays.** Inline `[u16; N]` arrays as
@@ -307,6 +327,15 @@ Track these — they keep recurring across translations.
     `captures(none)` AND `extern "C"` / `extern "system"` ABI
     mismatch on i386. Check ABI first via `nm` or `verify_abi.py` —
     1-second check vs. minutes of captures(none) defenses.
+12. **PCH-skipped `static` re-include trick.** A C file that
+    `#define static` + re-includes a header to externalize a `static`
+    array (the original `kernel_c_helpers.c` pattern) only works when
+    the file is PCH-SKIPPED. PCH-included siblings already pulled the
+    header with the `static` qualifier, so the re-include creates a
+    `static` vs non-static redefinition. The sister-file pattern
+    (e.g. `io_tables.c`) is for symbols that DON'T need the trick;
+    for ones that do, either keep the file PCH-skipped (with
+    `<ntoskrnl.h>` retained) or translate to Rust.
 
 ## Recipe for re-probing a shim
 
@@ -350,33 +379,37 @@ decoration, that's the bug.
 - **Per-arch differentials.** i386 and amd64 are at parity. arm64 is
   green at boot smoke; one open downstream issue (post-boot fastfat
   BUGCHECK).
-- **The remaining 6 header-pulling shims.** They compile and link
-  fine — the "header debt" is a property of the cargo-driven build
-  PoC's prerequisites, not of correctness. See "Forward path" §1.
 
 ## How these numbers are computed
 
 ```bash
-# Total ntoskrnl C body of work (excludes shims):
+# Total ntoskrnl C body of work (excludes shims + sister files):
 find ntoskrnl -name "*.c" \
-  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|variadic_shims\.c|lto_workaround\.c|mm_lock_outlines\.c|ntprintf_trampoline\.c' \
+  | grep -v -E '_rust_shims\.c|variadic_shims\.c|lto_workaround\.c|mm_lock_outlines\.c|ntprintf_trampoline\.c|io_tables\.c' \
   | xargs wc -l   # → 268,436
 
-# Active C in default build (excludes shims):
+# Active C in default build (excludes shims + sister files):
 grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
   | grep -v '^\s*#' \
-  | grep -v -E '_rust_shims\.c|kernel_c_helpers\.c|variadic_shims\.c|lto_workaround\.c|mm_lock_outlines\.c|ntprintf_trampoline\.c' \
+  | grep -v -E '_rust_shims\.c|variadic_shims\.c|lto_workaround\.c|mm_lock_outlines\.c|ntprintf_trampoline\.c|io_tables\.c' \
   | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
   | sort -u | xargs wc -l   # → 0
 
-# Shim layer (active in build):
-grep -E '^\s+\$\{REACTOS_SOURCE_DIR\}/ntoskrnl/.*\.c' ntoskrnl/ntos.cmake \
-  | grep -v '^\s*#' \
-  | sed 's|^\s*\${REACTOS_SOURCE_DIR}/||; s|).*||; s| .*||' \
-  | sort -u | xargs wc -l   # → 813
+# Shim layer (8 files, all PCH-skipped):
+wc -l ntoskrnl/ke/ke_rust_shims.c \
+      ntoskrnl/ntprintf_trampoline.c \
+      ntoskrnl/io/iomgr/io_rust_shims.c \
+      ntoskrnl/mm/mm_rust_shims.c \
+      ntoskrnl/kdbg/kdbg_rust_shims.c \
+      ntoskrnl/lto_workaround.c \
+      ntoskrnl/variadic_shims.c \
+      ntoskrnl/mm_lock_outlines.c   # → 1,037
+
+# Sister data-table file (PCH-included):
+wc -l ntoskrnl/io/iomgr/io_tables.c   # → 19
 
 # Rust LOC across ntoskrnl-rust/:
-find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 441,262
+find sdk/lib/rust/ntoskrnl-rust/src -name "*.rs" | xargs wc -l   # → 441,282
 
 # Sibling rlib count:
 find sdk/lib/rust -maxdepth 2 -name "Cargo.toml" | wc -l   # → 45

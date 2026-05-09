@@ -1,356 +1,203 @@
 # Shim Elimination — Path to Cargo-Driven ntoskrnl
 
+## Status (2026-05-08)
+
+**The shim layer is ready for `cc-rs` compilation.** As of the
+2026-05-08 round:
+
+- All 8 active shim files are header-free. Compile with only
+  `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` plus a small local typedef
+  block. No `<ntoskrnl.h>`, no internal kernel headers.
+- `kernel_c_helpers.c` retired entirely. Rust supplies the canonical
+  `PsProcessInfoClass` / `PsThreadInfoClass` linker symbols from
+  `ntoskrnl-rust/src/ps/info_class.rs`.
+- `arm64_uart.c` retired in 2026-05-07 (UART trace helpers moved to
+  Rust under `cfg(target_arch = "aarch64")`).
+- New sister-file pattern: `io/iomgr/io_tables.c` (19 LOC). Tiny
+  PCH-included data-tables file that hosts `IopQueryOperationLength`
+  + 7 sister arrays. Sister files are NOT shims — they're the safety
+  valve for cases where data tables need `<ntoskrnl.h>` for `sizeof()`
+  evaluation but the shims can't.
+
+The cargo-driven `ntoskrnl.exe` build PoC for i386 boots to desktop
+and passes 7/7 smoke. See `docs/engineering/ntoskrnl-translation-audit.md`
+for current LOC ledger and forward path.
+
 ## Goal
 
 Switch `ntoskrnl` from cmake to cargo as the build driver. cargo already
-produces the kernel staticlib (`libkernel_rust.a`); we want cargo to
-also drive the final link, eliminating the cmake step entirely.
+produces the kernel staticlib (`libkernel_rust.a`) and drives the final
+link in the i386 PoC; we want cargo to also compile the shims (via
+`cc-rs`) so the whole ntoskrnl build is one cargo invocation per arch.
 
-## Required intermediate state: "minimal trampolines"
+## Required intermediate state — REACHED for all 8 shims
 
 Cargo can compile C via `cc-rs` from a `build.rs` script, but only
-cleanly when the C files have **minimal header dependencies**. The
-target shape:
+cleanly when the C files have **minimal header dependencies**. Target
+shape:
 
-- Headers limited to `<ntdef.h>` + `<stdarg.h>` + `<stddef.h>` + `<stdint.h>`.
+- Headers limited to `<stdarg.h>` + `<stddef.h>` + `<stdint.h>` + an
+  in-file local typedef block for NT primitive types.
 - No `#include <ntoskrnl.h>` (and no transitive ddk pulls).
 - No FORCEINLINE bodies imported into the trampoline.
 - No macro expansions that contain logic (HALDISPATCH dispatch, KGDT
-  selectors, `KiComputeIopmOffset`, etc.).
+  selectors, `KiComputeIopmOffset`, etc.) — inline the formula instead.
 - No struct field accesses requiring full kernel type definitions.
+  Where layout knowledge is needed, hide it behind a `_rs_*` Rust
+  helper that returns a raw pointer (e.g. `_rs_PsCurrentProcessTokenAddr()`
+  → `&CurrentProcess->Token`).
 - Body is either pure `va_arg` pull or pure delegation: `_rs_X(args);`.
 
-`ntoskrnl/ntprintf_trampoline.c` is the gold standard — pure `va_arg`
-pull into the Rust ntprintf core, no kernel types, no struct fields,
-no macros.
+## Per-file status (2026-05-08)
 
-## Current state — per-file dependency audit
+All 8 shim files have reached header-free status. The dependency-proxy
+table from earlier rounds (counting `_saved_*`, `->`, function-like
+macros, intrinsics) is now uniformly `0/0/0/0` for every shim — they
+no longer pull `<ntoskrnl.h>` so there's nothing to count.
 
-Header dependency proxies: `_saved_*` uses (FORCEINLINE captures via
-Phase 1 rename trick), `->` field accesses (require full struct type),
-unique uppercase function-like macros (logic macros, ignoring type
-casts), intrinsics (`__sgdt`, `_fxsave64`, etc.).
+| File | LOC | Status |
+|------|----:|--------|
+| `ntprintf_trampoline.c` | 170 | header-free since the earliest pass (gold-standard variadic adapter) |
+| `variadic_shims.c` | 77 | header-free since 2026-05-07 |
+| `mm_lock_outlines.c` | 55 | header-free 2026-05-08 (round 3) |
+| `kdbg_rust_shims.c` | 91 | header-free 2026-05-08 (round 2) |
+| `io_rust_shims.c` | 154 | header-free 2026-05-08 (round 2) |
+| `mm_rust_shims.c` | 152 | header-free 2026-05-08 (round 2) |
+| `lto_workaround.c` | 87 | header-free 2026-05-08 (round 3) |
+| `ke_rust_shims.c` | 251 | header-free 2026-05-07 (round 1) |
+| ~~`kernel_c_helpers.c`~~ | — | **RETIRED 2026-05-08**. Rust supplies `PsProcessInfoClass` / `PsThreadInfoClass` |
+| ~~`arm64_uart.c`~~ | — | retired 2026-05-07 (Rust takes the UART traces) |
 
-| File | LOC | `_saved_` | `->` | macros | intrinsics |
-|------|----:|----------:|-----:|-------:|-----------:|
-| `ntprintf_trampoline.c` | 170 | 0 | 0 | 0 | 0 |
-| `variadic_shims.c` | 77 | 0 | 0 | 0 | 0 |
-| `mm_lock_outlines.c` | 36 | 0 | 0 | 0 | 0 |
-| `kernel_c_helpers.c` | 41 | 0 | 0 | 0 | 0 |
-| `io_rust_shims.c` | 70 | 0 | 0 | 0 | 0 |
-| `lto_workaround.c` | 45 | 0 | 2 | 0 | 0 |
-| `mm_rust_shims.c` | 69 | 0 | 10\* | 1\* | 0 |
-| `kdbg_rust_shims.c` | 62 | 0 | 0 | 1\*\* | 0 |
-| `ke_rust_shims.c` | 513 | 10 | 79 | 4 | 3 |
-| ~~`arm64_uart.c`~~ | — | — | — | — | — |
+Sister data-table files (PCH-included, NOT in PCH_SKIP_SOURCE):
 
-`arm64_uart.c` was retired 2026-05-07. `ARM64_UART_TRACE` and
-`ARM64_UART_TRACE_HEX` are now real Rust implementations in
-`ntoskrnl-rust/src/shim_exports.rs`, gated by `cfg(target_arch =
-"aarch64")` for the actual UART pokes via volatile MMIO into
-`Arm64UartKernelBase`; no-op stub on i386/amd64.
+| File | LOC | Notes |
+|------|----:|-------|
+| `io/iomgr/io_tables.c` | 19 | Hosts 8 `Iop*Operation{Length,Access}` arrays via `#include <ntoskrnl.h>` + `#include "internal/io_i.h"`. Externalises symbols for Rust `iofunc.rs`. Created 2026-05-08 when extracting data tables out of `io_rust_shims.c` so the latter could go header-free. |
 
-\* `mm_rust_shims.c` is at minimal-trampoline status on i386/amd64
-(everything outside `#ifdef _M_ARM64` is gone). The remaining `->`
-and macro are entirely inside the ARM64-only `Arm64DumpPte` PTE
-bitfield dump — a pure debug helper that pokes the UART. Translating
-it to Rust requires routing through bindgen's `__bindgen_anon_*`
-union accessors; punted as a focused ARM64-only follow-up.
+Sister files are not "shims" and don't need to be header-free —
+they're tiny adapters that exist precisely BECAUSE we want the shims
+header-free, by absorbing the kernel-header dependency in a separate
+PCH-included compile unit.
 
-\*\* `kdbg_rust_shims.c`'s remaining macro is `RTL_CONSTANT_STRING`
-used to const-init `KdbPromptStr: CSTRING`. Trivially translatable
-to Rust (compile-time `pub static`) but low-priority since the file
-only also contains the `KdbpPrint` variadic adapter (must stay).
+## Round-by-round history
 
-`lto_workaround.c` deliberately retains its `<ntoskrnl.h>` chain —
-the file IS the isolation boundary for the LLVM i386 fat-LTO bug.
-The two `->` accesses are `PsGetCurrentProcess()->Token`. Future
-cargo-driven build wires this through a separate `cc::Build`
-invocation in `build.rs` so it lives outside Rust's LTO scope.
+The header-drop arc completed in 4 rounds:
 
-`ntprintf_trampoline.c` is already minimal. Every other file pulls
-`<ntoskrnl.h>` and uses substantial logic from it.
+- **Round 1 (2026-05-07):** `ke_rust_shims.c`. Local NT typedefs +
+  inlined `KiComputeIopmOffset` formula (`offsetof(KTSS, IoMaps) =
+  0x68`, `sizeof(KTSS) = 8364`). Plus the substantive Phase 1
+  translations (`KiAttachProcess`, `KiThreadStartup`, `Ki386InitializeTss`)
+  that finished off the file's "haven't been ported" column.
+- **Round 2 (2026-05-08):** `mm_rust_shims.c`, `io_rust_shims.c`,
+  `kdbg_rust_shims.c`. Plus extracted `io_tables.c` (the
+  `IopQueryOperationLength` etc. arrays were sneaking in through the
+  io shim's old `internal/io_i.h` include).
+- **Round 3 (2026-05-08):** `lto_workaround.c`, `mm_lock_outlines.c`.
+  New `_rs_PsCurrentProcessTokenAddr` Rust helper hides EPROCESS
+  layout from the C trampoline.
+- **Round 4 (2026-05-08):** `kernel_c_helpers.c` retired. Discovered
+  the "alignment regression" was actually a pre-existing latent bug
+  in `ps/query.rs` — `PS_PROCESS_INFO_CLASS_COUNT` and
+  `PS_THREAD_INFO_CLASS_COUNT` had been transcribed from Vista+
+  enum maxes (51/56) instead of NT 5.x array sizes (47/28). Fixed
+  the constants, renamed `_rs_PsProcessInfoClass` →
+  `PsProcessInfoClass` (and same for thread), deleted the C file.
 
-To reproduce the audit, comment-strip via `gcc -fpreprocessed -dD -E
--P -x c <file>` then count `_saved_`, `->`, and unique uppercase
-function-like calls (filtering type-cast-style names like `ULONG(`,
-`PVOID(`, `NULL(`).
+## Patterns and tactics that worked
 
-## Attack order
+These came up repeatedly. Useful for future header-drop work on any
+new C surface that creeps in:
 
-Recommended sequence for reaching minimal-trampoline state:
+### Local NT typedef block
 
-1. **`io_rust_shims.c`** — already at 0 macros / 0 intrinsics.
-   Fewest blockers; reaching minimal here is mostly probe-helper +
-   small-body translations. Best file to validate the full
-   minimal-trampoline → cargo-driven workflow on.
-2. **`mm_rust_shims.c`** — 2 macros, both isolatable (`PAGED_CODE`,
-   `ARM64_UART_TRACE_HEX`). 119 LOC; quick win.
-3. **`kdbg_rust_shims.c`** — 2 intrinsics (`Ke386GetTr` `str` asm) +
-   1 macro. KDBG traffic isn't on the smoke path, so regressions are
-   only caught by manual KDBG verification.
-4. **`kernel_c_helpers.c`** — 42 `->` accesses, 6 macros, 1 `_saved_`.
-   Substantive — split into 3 minimal trampolines (variadics, LTO
-   workaround, lock outlines) rather than one minimal file.
-5. **`ke_rust_shims.c`** — 79 `->`, 10 `_saved_`, intrinsics, TSS init,
-   trap-exit chain. Will not reach minimal-trampoline status without
-   porting `KiExitV86Trap` + the trap-entry chain (a separate
-   multi-month project). Treat as the residual "big trampoline" once
-   the others are minimal.
+Replaces `<ntoskrnl.h>` for files that just need primitive NT types.
+Example from a header-free shim:
 
-Files 1-3 unblock the cargo-driven build PoC because they're cheap
-enough to attempt in parallel; if all three reach minimal, that's
-proof-of-concept that the cc-rs path works for non-variadic shims.
+```c
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
-## Per-file path to minimal trampolines
+typedef void              VOID;
+typedef void             *PVOID;
+typedef long              LONG;
+typedef unsigned long     ULONG;
+typedef unsigned char     UCHAR;
+typedef UCHAR             BOOLEAN;
+typedef UCHAR             KIRQL;
+typedef long              NTSTATUS;
+typedef uintptr_t         ULONG_PTR;  /* uintptr_t — NOT uint64_t. Width matters on i386. */
 
-### `mm_rust_shims.c` — DONE on i386/amd64 (audit-target reached)
+#define IN
+#if defined(_M_IX86)
+# define NTAPI    __attribute__((stdcall))
+# define FASTCALL __attribute__((fastcall))
+#else
+# define NTAPI
+# define FASTCALL
+#endif
 
-Reduced from 119→69 LOC. On i386/amd64 the file post-preprocessing is
-empty (the surviving body is entirely under `#ifdef _M_ARM64`).
+#define STATUS_SUCCESS              ((NTSTATUS)0x00000000L)
+#define STATUS_INVALID_PARAMETER    ((NTSTATUS)0xC000000DL)
+/* etc. */
+```
 
-Promoted in this pass:
-- `MmWaitPageEvent` / `MmSubsectionBase` globals → `mminit.rs` as
-  `#[no_mangle] pub static mut`.
-- `ExAllocatePoolZero` stdcall variant → `mm-util-inlines` rlib as
-  `pub unsafe extern "system" fn ExAllocatePoolZero`. Coexists with
-  the cdecl `_ExAllocatePoolZero` from `shim_exports.rs` as a
-  separate i386 decoration.
-- `MmVerifyImageIsOkForMpUse` — deleted entirely. The Rust caller
-  (`ex/init.rs`) has the `CONFIG_SMP` block commented out, so the
-  function was unreachable in any current build.
+The `ULONG_PTR = uintptr_t` distinction matters: `uint64_t` is wrong
+on i386 (would make NTAPI signatures balloon to wrong stdcall
+decoration — `_X@16` instead of `_X@12` for a typical 3-arg fn).
 
-Followup (ARM64-only): translate `Arm64DumpPte` / `MmDbgCheckIrql` /
-`MmUartPuts` / `MmUartHex` to Rust. `MMPTE.u.Hard.X` bitfield reads
-go through bindgen `__bindgen_anon_*` accessors. Pure debug code
-(direct UART pokes — `DbgPrint` doesn't reach serial on ARM64), so
-no boot-path implications.
+### Rust helper for layout-dependent C accesses
 
-### `io_rust_shims.c` — DONE (audit-target reached)
+Where a shim needs the address of an EPROCESS / KTHREAD field (the
+classic case is `&CurrentProcess->Token`), don't pull the kernel
+struct definitions into C — add a tiny Rust helper that returns the
+raw pointer. Example: `_rs_PsCurrentProcessTokenAddr()` in
+`shim_exports.rs` returns `&CurrentProcess->Token` as `*mut PVOID`,
+keeping the EPROCESS layout entirely in Rust where it belongs.
 
-Reduced from 172→70 LOC; audit proxies are 0/0/0/0. The 8
-non-variadic trampolines have been promoted: 3 translated to
-`io-inlines` rlib (`HalInitPnpDriver_shim`,
-`IopIsValidPhysicalDeviceObject`, `CmiGetNextResourceDescriptor`),
-5 deleted as dead code (`HalGetDmaAdapter` — Rust callers go
-through `HalDispatchTable` directly; `IopDeviceNodeSetFlag`,
-`ObReferenceObject` — Rust impls already existed at the cdecl
-decoration with identical bodies; the NTAPI/stdcall trampoline
-variant on i386 was unused).
+### Sister-file pattern for data tables
 
-What stays:
-- `RtlUnicodeStringPrintf_4wZ_shim` — variadic; can't be a Rust
-  export on stable.
-- `ProbeForWriteHandle` / `ProbeForReadLargeInteger` — kept here
-  until the corresponding `common-inlines` impls grow the same
-  `MmUserProbeAddress` overflow/upper-bound check (the C bodies
-  raise `ExRaiseAccessViolation` on bad input; the Rust impls
-  silently `core::ptr::read_volatile`).
+When a shim was the accidental host of externally-needed data tables
+(the `io_rust_shims.c` case with the 8 `Iop*Operation*` arrays from
+`internal/io_i.h`), extract the tables to a tiny dedicated file
+(`io_tables.c`, 19 LOC). The new file keeps `<ntoskrnl.h>` and is
+PCH-included like a regular ntoskrnl source — NOT in
+`PCH_SKIP_SOURCE`. This separates the "header-free shim" concern
+from the "needs kernel struct sizes for `sizeof()`" concern.
 
-Followup to reach truly minimal headers: drop `<ntoskrnl.h>` and
-declare `MmUserProbeAddress` / `ExRaiseAccessViolation` /
-`ProbeForWrite` directly. Currently still `#include <ntoskrnl.h>`
-because the cargo-driven build hasn't been wired yet.
+The file count grows by one but the shim becomes header-free.
 
-### `kdbg_rust_shims.c` — DONE (audit-target reached)
+### Failed pattern: PCH-included `static` re-include
 
-Reduced from 162→62 LOC; audit proxies are 0/0/1/0 (the lone macro
-is `RTL_CONSTANT_STRING`, used to const-init the kdb prompt string).
+Tried this for `kernel_c_helpers.c` → `ps_tables.c` rename in round 4
+and it didn't work. The trick is:
 
-Promoted in this pass:
-- Globals (KdbCliCallbacks, mode flags, dmesg state, KSPIN_LOCK,
-  bug-check requested, init file buffer) → `kdbg::tables` as
-  `#[no_mangle] pub static mut`. ~17 storage-only definitions,
-  layout-trivial across all 3 arches.
-- `Ke386Get{Global,Local}DescriptorTable` (cdecl variants),
-  `Ke386GetTr` → `ke-macros` rlib via `core::arch::asm!`. The
-  stdcall variants (`_X@N`) already lived there from prior work;
-  on i386 the cdecl + stdcall decorations coexist as separate
-  symbols. amd64 versions added too: `KdbpCmdGdtLdtIdt` is exported
-  unconditionally and references these.
-- `KeGet/SetContextFrameRegister`,
-  `KeGetTrapFrame{Frame,Stack}Register` → `ke-macros`. Plain
-  `CONTEXT::{Ebp,Rbp}` / `KTRAP_FRAME::{Ebp,Rbp,TempEsp,HardwareEsp,
-  Rsp}` field reads, both arches.
+```c
+#define PsProcessInfoClass _static_PsProcessInfoClass
+#include <ntoskrnl.h>     /* pulls ps_i.h with `static const ... _static_PsProcessInfoClass[]` */
+#undef PsProcessInfoClass
+#pragma push_macro("static")
+#define static
+#include "internal/ps_i.h"  /* now WITHOUT static, externalising the symbol */
+#pragma pop_macro("static")
+```
 
-What stays:
-- `KdbpPrint` — variadic.
-- `KdbPromptStr` — `CSTRING` const-init via `RTL_CONSTANT_STRING`.
-  Translatable but the const-init dance is low-value relative to
-  the variadic constraint (file already has to stay for `KdbpPrint`).
+This requires the file to be PCH-SKIPPED. PCH-included siblings have
+already pulled `ps_i.h` (transitively via the precompiled
+`<ntoskrnl.h>`) with the `static` qualifier intact, so the unconditional
+re-include creates a static-vs-non-static redefinition. The PCH machinery
+runs at PCH-build time, not at file-compile time, so there's no way to
+redefine `static` early enough to affect the PCH-pulled inclusion.
 
-### `kernel_c_helpers.c` — DONE (split into focused trampolines)
+Lesson: the `static` re-include trick is fundamentally tied to
+PCH-skipping. If you want a tiny `<ntoskrnl.h>`-pulling adapter to live
+alongside header-free shims, the data has to come through a non-trick
+path (regular global definition in the file, which only works for
+data that's NOT already declared `static` in a kernel header).
 
-PS globals + SharedUserData + GENERIC_MAPPING tables + PsNtDllPathName
-moved to `ntoskrnl-rust::ps::ps_globals` (`#[no_mangle] pub static mut`,
-~140 LOC of new Rust). Net file reduction was modest (490→435 LOC,
--55) because the heavy `->` and macro counts live in the variadic
-functions, which stay in C.
-
-**Latent bug surfaced.** `ntkrnl_sys::constants::PROCESS_ALL_ACCESS`
-is the Vista+ value `... | 0xFFFF` = 0x001FFFFF, but the C kernel
-build is NT 5.x where the macro evaluates to `... | 0xFFF` =
-0x001F0FFF. While the C definition shadowed the Rust one (linker
-chose first; `--allow-multiple-definition`), the bug was masked.
-Direct Rust ownership exposes it: SMSS process-create access checks
-fail and i386 hangs in the SAM/LSA wait loop. Worked around by
-hard-coding the NT 5.x mask in `ps_globals.rs`. The constant in
-`ntkrnl-sys` should be fixed at the source — separate task.
-
-Pass 2 (this round): `ExpKdbgExtHandle` ported to Rust
-(`ntoskrnl-rust::ex::handle::ExpKdbgExtHandle`, ~200 LOC). Replaces
-all 11 distinct `KdbpPrint(fmt, ...)` call shapes with the Rust
-`kdbp_print!` macro routing through ntprintf — the format-string
-parser already supports `%wZ` (UNICODE_STRING) and `%S` (wide
-string). The handle-table walk + OBJECT_HEADER decode + KCB-chain
-key-path reconstruction are bit-for-bit translations. The function
-is i386/amd64-only (cfg-gated) since arm64 has no KDBG path.
-
-**Bug surfaced and fixed mid-port.** First build had `extern "C"`
-declarations of `PsGetCurrentProcessId` and `PsGetProcessId`, but
-those are NTAPI (stdcall on i386). i386 boot hung in the same
-SMSS-spawn loop the PROCESS_ALL_ACCESS bug caused. Switched the
-extern block to `extern "system"` per `feedback_extern_c_abi.md`;
-boot recovered. Note: ExpKdbgExtHandle isn't called at boot — the
-hang is presumably the rustc 1.92 ABI bug propagating attributes
-through cross-CGU optimisations even when the offending function
-isn't on the live path.
-
-Pass 4 (this round): split into 5 focused trampolines, one per
-distinct must-stay reason. Original `kernel_c_helpers.c` is now 41
-LOC and only houses the `ps_i.h` re-include trick. Resulting layout:
-
-- `variadic_shims.c` (77 LOC, 0/0/0/0) — `KdpDprintf` and
-  `RtlStringCbPrintfA`. Headers limited to `<ntdef.h>` + `<stdarg.h>`
-  with hand-defined `STATUS_*` constants. cc-rs in a future
-  cargo-driven build can compile this standalone.
-- `lto_workaround.c` (45 LOC, 2 `->`) — `SepInitTokensShim` only.
-  Pulls full `<ntoskrnl.h>` deliberately; the file IS the isolation
-  boundary for the LLVM i386 fat-LTO ud2 bug, kept in its own
-  compile-unit so future cargo-driven builds can route it through a
-  separate `cc::Build` outside Rust LTO scope.
-- `mm_lock_outlines.c` (36 LOC, 0/0/0/0) — the
-  `MmLockSectionSegment` trio that needs C `__FILE__`/`__LINE__`.
-- `kernel_c_helpers.c` (41 LOC, 0/0/0/0) — only the `ps_i.h`
-  re-include trick. The `_static_*` rename + `#pragma push/pop` of
-  `static` create the externally-linkable `PsProcessInfoClass` /
-  `PsThreadInfoClass` arrays that Rust query-info dispatchers
-  extern-link against.
-
-Pass 5 (2026-05-07) retired `arm64_uart.c` entirely. Both
-`ARM64_UART_TRACE` and `ARM64_UART_TRACE_HEX` now live in
-`ntoskrnl-rust/src/shim_exports.rs` as real Rust implementations:
-the bodies are `cfg(target_arch = "aarch64")`-gated `volatile_write`
-loops poking `Arm64UartKernelBase` (the existing `#[no_mangle]`
-ARM64-only static at `ke::arm64::stubs::Arm64UartKernelBase`); on
-i386/amd64 the bodies collapse to `let _ = msg;`. C callers in
-`ex/init.c`, `se/*.c`, `ob/obinit.c` continue to resolve to the same
-`extern "C"` symbols — they don't notice the swap.
-
-Combined session-cumulative reduction (Pass 1 + 2 + 3 + 4 + 5):
-490 LOC of one C file → 199 LOC across 4 C files, each with a
-single narrow reason for its survival. Every trampoline that's not
-the LTO workaround is at audit-target 0/0/0/0.
-
-What still remains as future work (not blocking minimal-trampoline
-status, but nice-to-haves):
-- `PsProcessInfoClass` / `PsThreadInfoClass` arrays — a byte-equal
-  parallel Rust translation now lives at `ntoskrnl-rust/src/ps/info_class.rs`
-  under `_rs_*` symbol names (47 + 28 entries respectively, much
-  smaller than the original ~250 estimate once the `#if 0` Win7+ tail
-  is excluded). Renaming the Rust statics to drop the `_rs_` prefix
-  (so they replace the C-side definition and `kernel_c_helpers.c`
-  can be retired) reproducibly bugchecks i386 with
-  STATUS_DATATYPE_MISALIGNMENT at `[WINLOGON] Calling StartRpcServer`
-  even though the Rust and C array bytes are identical (verified by
-  `cmp` of the .rdata regions). The failure is purely positional —
-  Rust statics land at a different .rdata offset than the C ones.
-  Further investigation needed before the swap can land; the
-  parallel `_rs_*` translation captures the work for that future
-  follow-up. See `info_class.rs` end-of-file note for details.
-
-What stays:
-- `KdpDprintf`, `RtlStringCbPrintfA` — variadic.
-- `SepInitTokensShim` — verified LLVM i386 fat-LTO bug.
-- `MmLockSectionSegment` trio — `__FILE__`/`__LINE__`.
-
-After all of the above: split into 2-3 minimal trampolines per the
-prior plan (variadic_shims.c, lto_workaround.c, mm_lock_outlines.c).
-
-### `ke_rust_shims.c` — heaviest (~5+ sessions)
-
-The single hardest file. The 14 `_saved_*` FORCEINLINE captures, 75
-struct field accesses, 5 intrinsic uses, and 3 substantive bodies
-(`KiAttachProcess`, `KiThreadStartup`, `Ki386InitializeTss`) all
-require the full ddk header chain.
-
-What needs translating:
-- 4 stdcall-on-i386 ABI bridges (`Hal{Query,Set}SystemInformation`,
-  `HalVectorToIDTEntry`, `KeGetTrapFramePc`) — already have `_rs_*`
-  bodies in `ke-macros`; could be promoted to bare names with
-  `#[no_mangle] pub unsafe extern "system" fn` IF the rustc 1.92
-  stdcall ABI bug can be worked around. Currently bug-blocked.
-- `KiAttachProcess` (~45 LOC) — accesses `KAPC_STATE`, calls
-  `KiMoveApcState`, `KiSwapProcess`, `KiExitDispatcher`. 2 of those
-  callees are FORCEINLINE (`KiReleaseDispatcherLockFromSynchLevel` +
-  `KiReleaseApcLockFromSynchLevel`). Substantial port.
-- `KiThreadStartup` — uses internal `KSWITCHFRAME_SHIM` /
-  `KSTART_FRAME_SHIM` / `KUINIT_FRAME_SHIM` stack-frame layouts.
-  Layout-sensitive.
-- `Ki386InitializeTss` + 2 helpers (~117 LOC) — TSS+GDT+IDT init,
-  inline asm (`ltr`, `movl ss`), many constants (`KGDT_TSS`,
-  `I386_TSS`, `RPL_MASK`, `KGDT_DF_TSS`, `KGDT_NMI_TSS`).
-- `KeRaiseIrqlToSynchLevel` — i386 `__imp__@0` IAT call (dllimport
-  thunk). `extern "system" fn IMP_X` declaration in Rust should work.
-- `KiComputeIopmOffset` — KTSS layout-dependent; `offset_of!` in Rust
-  doesn't support runtime array indexing, so requires manual offset
-  computation.
-
-What stays:
-- 3 trap-exit `_saved_*` outlines (`KiExitV86Trap`,
-  `KiExitTrapDebugChecks`, `KiExitSystemCallDebugChecks`) — substantively
-  intertwined with PSEH and KiEoiHelper / KiDeliverApc / KfRaiseIrql /
-  KiDumpTrapFrame / KeBugCheckEx. Translation would require porting
-  those callees first.
-- `KiSaveXState` / `KiRestoreXState` — KVM xrstors64 workaround on
-  amd64. Stays.
-- `KiEndInterrupt` — re-probed 2026-05-07; rustc 1.92 emits cdecl call
-  sequences for `extern "stdcall"` (`HalEndSystemInterrupt`) and
-  `extern "fastcall"` (`KiEoiHelper`) declarations, breaking the link.
-  C trampoline kept.
-- ARM64 `KdbpPrint` empty stub — variadic.
-- SSDT include — `napi.h` generates the syscall table. Stays.
-
-After translation: file would still need full ddk for the trap-exit
-outlines and TSS init. Probably never reaches "minimal trampoline"
-unless the trap-exit chain itself is ported to Rust (which is its
-own multi-month project).
-
-## Cargo-driven build prerequisites
-
-After all shim files reach minimal-trampoline status:
-
-1. **C compilation**: use `cc-rs` in a `build.rs` script. Each .c file
-   with minimal headers compiles standalone.
-2. **Variadics**: ~5-10 minimal .c files will always remain (variadic
-   exports aren't possible from stable Rust). cc-rs handles them fine.
-3. **Resource compilation**: `.rc` files (versioninfo, message tables)
-   currently use `windres` / `llvm-rc`. The `embed-resource` cargo
-   crate handles this.
-4. **Multi-arch dispatch**: cargo `--target i686-pc-windows-gnu` /
-   `x86_64-pc-windows-gnu` / `aarch64-pc-windows-gnullvm` already
-   works.
-5. **PE-COFF link flags**: cargo `[profile.X]` + `-Clink-arg=` can pass
-   `-nostdlib`, `-fuse-ld=lld`, `--image-base=...`, `-entry=...`,
-   `--subsystem=native:5.01`, etc. Doable.
-6. **Host build tools**: `pefixup`, `fix_lld_forwarding.py`, etc. —
-   build.rs scripts can compile/run these as a pre-link step.
-7. **`SepInitTokensShim` LLVM workaround**: must be compiled outside
-   Rust LTO scope. Easy via separate `cc::Build` invocation in
-   build.rs that produces an isolated static lib.
-8. **`--allow-multiple-definition` link flag**: currently used to
-   handle the ABI-anchor-vs-Rust-impl symbol conflict. Should be
-   eliminable once trampolines are fully delegating.
+For `kernel_c_helpers.c`'s case, the answer was to translate the trick
+to Rust and supply the symbols from there — which works because Rust
+doesn't have C's TU-private vs externally-linkable wars.
 
 ## Definition of done
 
@@ -366,25 +213,28 @@ The cargo-driven build is "done" when:
 - Variadic trampolines remain (~5-10 minimal `.c` files compiled by
   `cc-rs`) — that's expected, not a regression.
 
-## Verified must-stay set
+## What still has to stay C
 
-These have been re-probed and **proven** to require the full kernel
-header chain. Not candidates for further elimination.
+These have been re-probed and **proven** to require C-side execution
+or a separate compile unit. Not candidates for further elimination
+until the underlying constraint moves.
 
 - **Variadic exports** (`KdbpPrint`, `KdpDprintf`, `RtlStringCbPrintfA`,
   KDBG ext printers, `RtlUnicodeStringPrintf_4wZ_shim`) — Rust can't
   define C-variadic exports on stable. Variadic functions can be
   isolated to minimal trampolines (see `ntprintf_trampoline.c`).
-- **`SepInitTokensShim`** (i386) — LLVM fat-LTO miscompilation:
-  `ud2` inserted after `@ObInitializeFastReference@8` call. None of
-  `opaque_ptr`, `compiler_fence(SeqCst)`, `core::hint::black_box`
-  defeat it. C-side execution outside the Rust LTO scope is the only
-  working workaround. Re-probed 2026-05-07.
+- **`SepInitTokensShim`** (i386, in `lto_workaround.c`) — LLVM fat-LTO
+  miscompilation: `ud2` inserted after `@ObInitializeFastReference@8`
+  call. None of `opaque_ptr`, `compiler_fence(SeqCst)`,
+  `core::hint::black_box` defeat it. C-side execution outside the
+  Rust LTO scope is the only working workaround. Re-probed 2026-05-07.
 - **`KiSaveXState` / `KiRestoreXState`** (amd64) — KVM bug: `xrstors64`
   faults on StateSaveArea pages that look valid via PTE
   self-referencing. Force `fxsave64`/`fxrstor64` instead.
 - **`MmLockSectionSegment` trio** — uses `__FILE__`/`__LINE__` for
-  call-site recording in the underlying `_Mm*` primitives.
+  call-site recording in the underlying `_Mm*` primitives. Rust's
+  `core::file!()` / `core::line!()` would produce Rust source paths,
+  not the C-side paths the diagnostics want.
 - **3 i386 trap-exit `_saved_*` outlines** (`KiExitV86Trap`,
   `KiExitTrapDebugChecks`, `KiExitSystemCallDebugChecks`) — PSEH-
   intertwined with the trap-entry chain.
@@ -394,6 +244,37 @@ header chain. Not candidates for further elimination.
   symbols (`_X@N` / `@X@N`). Affects `KiEndInterrupt` translation.
   Workaround: keep C trampoline, OR use inline-asm to force the right
   calling convention.
+
+## Cargo-driven build prerequisites
+
+After all shim files reached header-free status (now done):
+
+1. **C compilation**: use `cc-rs` in a `build.rs` script. Each shim
+   compiles standalone — no `cc::Build::include()` needed.
+2. **Variadics**: ~5-10 minimal `.c` files will always remain (variadic
+   exports aren't possible from stable Rust). cc-rs handles them fine.
+3. **`io_tables.c` (sister file)**: needs `cc::Build::include()` for
+   `<ntoskrnl.h>`, OR translation to Rust. Pick whichever needs less
+   plumbing for the cargo PoC.
+4. **Resource compilation**: `.rc` files (versioninfo, message tables)
+   currently use `windres` / `llvm-rc`. The `embed-resource` cargo
+   crate handles this.
+5. **Multi-arch dispatch**: cargo `--target i686-pc-windows-gnu` /
+   `x86_64-pc-windows-gnu` / `aarch64-pc-windows-gnullvm` already
+   works.
+6. **PE-COFF link flags**: cargo `[profile.X]` + `-Clink-arg=` can pass
+   `-nostdlib`, `-fuse-ld=lld`, `--image-base=...`, `-entry=...`,
+   `--subsystem=native:5.01`, etc. Doable.
+7. **Host build tools**: `pefixup`, `fix_lld_forwarding.py`, etc. The
+   smoke-passing PoC binary skipped both — strong sign that with the
+   modern linker/Rust setup neither is strictly required for boot, but
+   worth a careful audit.
+8. **`SepInitTokensShim` LLVM workaround**: must be compiled outside
+   Rust LTO scope. Easy via separate `cc::Build` invocation in
+   build.rs that produces an isolated static lib.
+9. **`--allow-multiple-definition` link flag**: currently used to
+   handle the ABI-anchor-vs-Rust-impl symbol conflict. Should be
+   eliminable once trampolines are fully delegating.
 
 ## Verification tools
 
@@ -415,7 +296,7 @@ i686-w64-mingw32-nm build-i386/ntoskrnl/ntoskrnl.exe | grep <FunctionName>
 extern decl produces a different decoration than the symbol's actual
 decoration, that's the bug.
 
-## Lessons from prior translations
+## Lessons from the header-drop arc
 
 These keep recurring; track them.
 
@@ -433,6 +314,10 @@ These keep recurring; track them.
   `IopReadyDeviceObjects` had an `extern "C"`/`extern "system"` ABI
   mismatch in Rust that linked silently for months until
   `IopInitializeDriverModule` translation removed the C trampoline.
+  More recently: the `kernel_c_helpers.c` "alignment regression" was
+  a pre-existing `PS_*_INFO_CLASS_COUNT` off-by-many in `ps/query.rs`
+  that the C `ps_i.h` re-include happened to mask via favorable
+  trailing `.rdata` bytes.
 - **Empty extern decls don't preserve the symbol.** The historical
   `extern "C" { static mut FOO: [T; 0]; }` pattern (kdbg ComponentTable
   / KdbDebuggerCommands) makes the optimizer fold all indexing to
@@ -445,6 +330,22 @@ These keep recurring; track them.
   `libkernel_rust.a` unless something references them. The
   `_force_<crate>_symbols` pattern in `kernel-rust/src/lib.rs` keeps
   them alive.
+- **PCH-skipped vs PCH-included is load-bearing.** A C file that
+  uses the `#define static` re-include trick to externalise a
+  `static` array (the `kernel_c_helpers.c` pattern) ONLY works when
+  the file is PCH-skipped. Trying to make it a PCH-included
+  sister file fails with a static-vs-non-static redefinition error
+  because the PCH already pulled the header. For PCH-included
+  sister files, only data that's NOT already `static` in the
+  upstream header can be externalised cleanly.
+- **`uintptr_t` not `uint64_t` for `ULONG_PTR`.** Width matters on
+  i386 — getting it wrong changes stdcall decoration (`_X@16` vs
+  `_X@12` for a typical 3-arg fn) and breaks the link.
+- **The "Rust translation regression" framing is sometimes wrong.**
+  When a Rust translation that's "byte-identical" to a C
+  predecessor crashes after a symbol-supplier swap, look upstream
+  before blaming the translation. The C trick may have been
+  accidentally masking a latent caller-side bug.
 
 ## Recipe for re-probing a shim
 
@@ -459,3 +360,35 @@ These keep recurring; track them.
 5. Run smoke. Green on i386 + amd64 = ghost. Failure = either a real
    bug surfaced (ABI mismatch, missing volatile, etc.) or a genuine
    workaround that has to stay.
+
+## Recipe for dropping `<ntoskrnl.h>` from a new C shim
+
+For when a fresh shim creeps in and needs the header-drop treatment:
+
+1. **Audit the symbol surface.** What types, functions, and globals
+   does the file actually use? Grep callers, look at the function
+   bodies. Most files use a tiny fraction of `<ntoskrnl.h>`.
+2. **Add to `PCH_SKIP_SOURCE`** in both `ntoskrnl/CMakeLists.txt` and
+   `ntoskrnl/ntkrnlmp/CMakeLists.txt`. Without this the PCH still
+   forcibly injects `<ntoskrnl.h>` regardless of what the file's
+   own `#include` lines say.
+3. **Replace `<ntoskrnl.h>` with local typedefs.** Use `<stdarg.h>` /
+   `<stddef.h>` / `<stdint.h>` plus a hand-written NT primitive types
+   block (see "Local NT typedef block" above).
+4. **Replace function-pulling macros with `extern` decls.** The
+   underlying functions are usually exported by ntoskrnl-rust or live
+   in a sibling rlib. Check decoration via `nm`.
+5. **Replace `&Process->Field` with a `_rs_*` Rust helper.** Don't
+   pull EPROCESS / KTHREAD layout into C.
+6. **Watch for "secret" data dependencies.** A `#include
+   "internal/foo_i.h"` may be silently providing data tables that
+   Rust callers extern-link against. Extract those to a sister file
+   (see `io_tables.c`).
+7. **Build all 3 arches + run all 3 smokes.** A change here can blow
+   up just one arch (e.g. i386 ABI decoration mismatches that amd64
+   tolerates).
+
+If all that succeeds you've got a `cc-rs`-compileable shim. If you
+hit the `static` redefinition error from the previous section, the
+file's data can't move to a sister file — translate the data to Rust
+instead.
