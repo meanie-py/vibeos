@@ -15,3 +15,4 @@ pub mod thrdini;
 pub mod traphdlr;
 pub mod usercall;
 pub mod v86vdm;
+pub mod zeropage_asm;

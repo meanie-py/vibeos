@@ -1,6 +1,6 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Eleven milestones landed this session.
+Last updated 2026-05-09. Fifteen milestones landed this session.
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
    shim files are now header-free (no `<ntoskrnl.h>`, no internal
@@ -99,9 +99,69 @@ Last updated 2026-05-08. Eleven milestones landed this session.
     + final link). All generated files came out byte-identical to
     cmake's; smoke 7/7 PASS on the proof binary. The cargo PoC's
     only remaining cmake-built inputs are the ~30 sibling static
-    libs (rtl, hal, cmlib, etc.) and the `.def` file — no headers,
-    no .obj files, nothing under `build-i386/sdk/include/...` or
-    `build-i386/ntoskrnl/CMakeFiles/`.
+    libs (rtl, hal, cmlib, etc.) and the `.def` file (later retired
+    in milestone 12) — no headers, no .obj files, nothing under
+    `build-i386/sdk/include/...` or `build-i386/ntoskrnl/CMakeFiles/`.
+15. **`ntoskrnl.rc` compile moved out-of-band; 3 RC-only source-tree
+    `KERNEL_INCLUDES` paths dropped.** New helper script
+    `tools/gen_ntoskrnl_res.py` (~150 LOC) runs `i686-w64-mingw32-windres`
+    on `ntoskrnl/ntoskrnl.rc` with the kernel `-I` chain (using
+    cmake-built `bugcodes.rc` from `build-i386`), and emits
+    `sdk/lib/rust/ntoskrnl-cargo/data/ntoskrnl-i386.rc.res`
+    byte-identical to cmake's (61,116 bytes). The cargo PoC's `build.rs`
+    now reads that checked-in file via the new `stage_ntoskrnl_res()`
+    helper — `compile_resource()` and the 136-entry `LANGUAGES` const
+    are both deleted. Drops 3 `KERNEL_INCLUDES` entries: `ntoskrnl`
+    (root, only RC pulled it for `inbv/bootanim.rc`),
+    `sdk/include/psdk` (only RC after milestone 13), and
+    `sdk/include/vcruntime` (same). `KERNEL_INCLUDES` shrinks 5 → 2
+    (only `sdk/include/crt` and `ntoskrnl/include` remain). End-to-end
+    proof: with `sdk/include/{psdk,vcruntime}` and `ntoskrnl/inbv`
+    renamed away and the cargo cache nuked, the cargo PoC rebuilt
+    cleanly; same 3.08 MB binary; smoke 7/7 PASS in 52s. Re-run the
+    python script when version blocks (`common.ver`, `ntverp.h`) or
+    bootanim resources change.
+14. **`zeropage.S` + `prefetch.S` translated to `global_asm!`.** The two
+    smallest of the 8 i386 asm files (32 + 44 LOC, neither `#include`s
+    `<ks386.inc>` heavily) ported to `core::arch::global_asm!` blocks
+    in `ntoskrnl-rust/src/ke/i386/zeropage_asm.rs` and
+    `src/rtl/prefetch_asm.rs`. Symbol decoration preserved (fastcall
+    `@KeZeroPages@8`, `@RtlPrefetchMemoryNonTemporal@8`); force-pull via
+    `#[used]` static fn-pointers. Drops 2 of 8 entries from `build.rs`'s
+    `asm_sources` list. Binary shrunk 3,117,056 → 3,080,192 bytes
+    (-36 KB, more `--gc-sections` reach without the per-asm `.o` linkage).
+    Smoke 7/7 PASS. Pattern proven for the remaining 6 asm files.
+13. **`genincdata.c` regen moved out-of-band; 5 source-tree
+    `KERNEL_INCLUDES` paths dropped.** New helper script
+    `tools/gen_ks386_inc.py` (~200 LOC) compiles `genincdata.c` once
+    via clang (using cmake-built `xdk-gen` headers as input), parses
+    the `.asmdef` COFF section, and emits
+    `sdk/lib/rust/ntoskrnl-cargo/data/ks386-i386.inc` byte-identical
+    to cmake's. The cargo PoC's `build.rs` now reads that checked-in
+    file via the new `stage_ks386_inc()` helper — `genincdata.c` is no
+    longer compiled at build time. Drops 5 `KERNEL_INCLUDES` entries
+    only `genincdata.c` was pulling: `sdk/include` (root),
+    `sdk/include/ddk`, `sdk/include/ndk`, `sdk/include/reactos`,
+    `sdk/lib/pseh/include`. `KERNEL_INCLUDES` shrinks 10 → 5.
+    End-to-end proof: with `sdk/include/{ddk,ndk}` and
+    `sdk/lib/pseh/include` renamed away and the cargo cache nuked,
+    the cargo PoC rebuilt cleanly; same 3.1 MB binary; smoke 7/7 PASS.
+    Re-run the python script when kernel struct layouts or the
+    `ks{386,x}.template.h` files change (validate with
+    `python3 tools/gen_ks386_inc.py --check`).
+12. **`spec2def` self-hosted; `.def` file generated in-process.**
+    The 1,585-line `ntoskrnl.def` (export table for the PE link) is
+    now produced by `build.rs`: `compile_spec2def_host()` builds
+    `sdk/tools/spec2def/spec2def.c` (1,784 LOC C) with the host
+    compiler via `cc::Build::host()` (same pattern as the milestone-11
+    `hpp` self-host), and `generate_def_file()` runs the binary on
+    `ntoskrnl/ntoskrnl.spec` with cmake's exact flags
+    (`--version=0x502 --dbg`). Output is **byte-identical** to
+    cmake's (`cmp` exit 0, 1,585 lines). End-to-end proof: with
+    `build-i386/ntoskrnl/ntoskrnl.def` renamed away and the cargo
+    build cache nuked, the cargo PoC rebuilt cleanly; same 3.1 MB
+    binary; smoke 7/7 PASS in 52s. The cargo PoC's only remaining
+    cmake-built inputs are now the ~30 sibling static libs.
 
 Treat any prior version of this document as suspect.
 
@@ -177,16 +237,16 @@ the resulting include hierarchy, and cross-referenced vs the
 
 | `KERNEL_INCLUDES` entry | Verdict | Notes |
 |---|---|---|
-| `ntoskrnl` | LIVE | RC's `#include "inbv/bootanim.rc"` resolves through here |
 | `ntoskrnl/include` | LIVE | trap.s pulls `<internal/i386/asmmacro.S>` etc. |
-| `sdk/include` | LIVE | genincdata.c's `<psdk/ntverp.h>` etc. |
-| `sdk/include/crt` | LIVE | also `-isystem` of mingw user-mode CRT replacement |
-| `sdk/include/ddk` | LIVE | `<ifssupp.h>` etc. (source-tree ddk) |
-| `sdk/include/ndk` | LIVE | `<ntndk.h>` and arch-specific NDK headers |
-| `sdk/include/psdk` | LIVE | source-tree psdk (winnt.h etc.) |
-| `sdk/include/reactos` | LIVE | `<arc/arc.h>` chain |
-| `sdk/include/vcruntime` | LIVE | `<excpt.h>`, `<setjmp.h>`, mingw32 headers |
-| `sdk/lib/pseh/include` | LIVE | `<pseh/pseh2.h>` chain |
+| `sdk/include/crt` | LIVE | `-isystem` of mingw user-mode CRT replacement |
+| ~~`ntoskrnl`~~ | DROPPED | only RC pulled it; gone in milestone 15 |
+| ~~`sdk/include/psdk`~~ | DROPPED | only RC pulled it; gone in milestone 15 |
+| ~~`sdk/include/vcruntime`~~ | DROPPED | only RC pulled it; gone in milestone 15 |
+| ~~`sdk/include`~~ | DROPPED | only `genincdata.c` pulled it; gone in milestone 13 |
+| ~~`sdk/include/ddk`~~ | DROPPED | only `genincdata.c` pulled it; gone in milestone 13 |
+| ~~`sdk/include/ndk`~~ | DROPPED | only `genincdata.c` pulled it; gone in milestone 13 |
+| ~~`sdk/include/reactos`~~ | DROPPED | only `genincdata.c` pulled it; gone in milestone 13 |
+| ~~`sdk/lib/pseh/include`~~ | DROPPED | only `genincdata.c` pulled it; gone in milestone 13 |
 | ~~`build-i386/sdk/include/psdk`~~ | DROPPED | replaced by in-process `xdk-gen/psdk` (milestone 11) |
 | ~~`build-i386/sdk/include/ddk`~~ | DROPPED | replaced by in-process `xdk-gen/ddk` (milestone 11) |
 | ~~`build-i386/ntoskrnl`~~ | DROPPED | only build artifacts (`.a`, `.def`), no headers |
@@ -212,56 +272,44 @@ identical to cmake's. Empirically validated: the cargo PoC builds
 clean with `build-i386/sdk/include/{ddk,psdk}` renamed away.
 
 Live cargo-PoC-generated dirs (live but self-owned, all under OUT_DIR):
-- `OUT_DIR/host-tools/hpp` — host-built `hpp` binary
+- `OUT_DIR/host-tools/{hpp,spec2def}` — host-built tools
 - `OUT_DIR/xdk-gen/{ddk,psdk}` — 4 hpp-generated kernel headers
-- `OUT_DIR/asm-gen` — `ks386.inc`
+- `OUT_DIR/asm-gen` — `ks386.inc` (staged from checked-in
+  `data/ks386-i386.inc`; regenerate with `tools/gen_ks386_inc.py`)
 - `OUT_DIR/mc-gen` — `bugcodes.{h,rc,bin}`
+- `OUT_DIR/spec-gen` — `ntoskrnl.def` + `ntoskrnl_stubs.c`
 - `OUT_DIR/shims` — per-shim/per-asm `.o` files
-- `OUT_DIR/geninc-obj` — intermediate `genincdata.c.obj`
 
 ### Source-tree kernel includes — consumer breakdown
 
-The 12 source-tree paths above survived the prune because something
-in the cargo PoC's compile inputs (asm, RC, or `genincdata.c`)
-actually pulls headers from them. Eliminating each path requires
-eliminating its consumer — see Forward path § 1 for the plan.
+After milestones 13, 14, and 15 (genincdata.c moved out-of-band, 2
+asm files translated, RC compile moved out-of-band), only **2
+source-tree paths** remain in `KERNEL_INCLUDES`. There are no more RC
+consumers (the `.res` is checked in); the only remaining live
+consumer is the 6 still-cmake-built asm files plus `cc-rs`'s
+universal CRT shim.
 
-Mapping live paths to consumers:
-
-| Path | Asm | RC | genincdata.c | Notes |
-|---|:--:|:--:|:--:|---|
-| `ntoskrnl` | | ✓ | | RC's `#include "inbv/bootanim.rc"` |
-| `ntoskrnl/include` | ✓ | | | trap.s pulls `<internal/i386/asmmacro.S>` etc. |
-| `sdk/include` | ✓ | ✓ | ✓ | `<psdk/ntverp.h>`, `<reactos/buildno.h>`, `<asm/asm.inc>`-style refs |
-| `sdk/include/crt` | ✓ | ✓ | ✓ | also `-isystem` for mingw user-mode CRT replacement |
-| `sdk/include/ddk` | | | ✓ | source-tree ddk fragments alongside hpp-generated headers |
-| `sdk/include/ndk` | ✓ | | ✓ | `<ntndk.h>` + arch-specific NDK |
-| `sdk/include/psdk` | | ✓ | ✓ | source-tree psdk (`winnt.h`, `windbgkd.h`, `common.ver`) |
-| `sdk/include/reactos` | | | ✓ | `<arc/arc.h>` chain |
-| `sdk/include/vcruntime` | | ✓ | ✓ | `<excpt.h>`, `<setjmp.h>`, mingw32 stubs |
-| `sdk/lib/pseh/include` | | | ✓ | `<pseh/pseh2.h>` chain |
-| `sdk/include/asm` | ✓ | | | `<asm.inc>` (added per-asm-source via `compile_asm()`) |
+| Path | Pulled by | Notes |
+|---|:--:|---|
+| `ntoskrnl/include` | asm | `<internal/i386/asmmacro.S>`, `<sysfuncs.h>` (used by 6 remaining asm files) |
+| `sdk/include/crt` | all | `-isystem` mingw user-mode CRT replacement (universal) |
+| `sdk/include/asm` | asm | added per-asm-source via `compile_asm()`, not via `KERNEL_INCLUDES` |
 
 Consumer-by-consumer breakdown of what would have to translate to
-drop each path:
+drop each remaining path:
 
-- **`genincdata.c`** is the deepest puller (touches 9 of 11 paths
-  including the entire ddk/ndk/psdk/arc chain). Translating its
-  job into Rust `core::mem::offset_of!` directly would also
-  eliminate `ks386.inc` and the asm-side `<ks386.inc>` dependency
-  — the kernel struct offsets would inline into Rust-emitted
-  `global_asm!` literals.
-- **The 8 asm files** are the primary pullers of
-  `ntoskrnl/include`, `sdk/include/asm`, and (via templates)
-  `sdk/include/ndk`. Translating them to `global_asm!` requires
-  the `core::mem::offset_of!` work above (so the offsets are
-  available); after that, the asm pieces become inline in Rust.
-- **`ntoskrnl.rc`** is the lone consumer of `ntoskrnl`,
-  `sdk/include/psdk`'s `winver.h`/`common.ver`, and a chunk of
-  `sdk/include/vcruntime`. Translating to Rust
-  `#[link_section] static` blobs + `include_bytes!` for the
-  bootanim fragments removes `compile_resource()` and frees those
-  paths.
+- **The 6 remaining asm files** (`zw.S`, `fastinterlck_asm.S`,
+  `ioport.S`, `ctxswitch.S`, `usercall_asm.S`, `trap.s`) are the
+  only consumer of `ntoskrnl/include` (`<internal/i386/asmmacro.S>`,
+  `<sysfuncs.h>`) and `sdk/include/asm` (`<asm.inc>`,
+  `<syscalls.inc>`). Milestone 14 proved the `global_asm!` pattern
+  with the 2 smallest files; the remaining 6 add up to ~1,000 LOC
+  but most of it is the asmmacro chain in trap.s. Once translated,
+  `compile_asm()` goes away entirely and both paths drop.
+- **`sdk/include/crt`** is the universal `-isystem` replacement for
+  mingw's user-mode CRT — every C/asm compile passes through it.
+  It comes for free with `cc-rs`'s `-nostdinc` setup and isn't
+  part of the kernel header surface; it stays as long as we use clang.
 
 ## What's still C
 
@@ -348,19 +396,15 @@ through `ntkrnl-sys` bindgen.
 
 In rough priority order:
 
-1. **Generate the `.def` file ourselves.** Last cmake-built input
-   the cargo PoC consumes outside the static libs. cmake produces
-   it via `spec2def.py` from `ntoskrnl.spec`. Trivial
-   `Command::new("python3")` shell-out from `build.rs`.
-2. **Replicate per-arch.** Clone `i686-kernel.json` to
+1. **Replicate per-arch.** Clone `i686-kernel.json` to
    `amd64-kernel.json` and `arm64-kernel.json`; the rest of the PoC
    structure is arch-agnostic.
-3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
+2. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
    PoC binary skipped both — strong sign that with the modern
    linker/Rust setup neither is strictly required for boot, but
    worth a careful audit (especially: does pefixup adjust the
    export table in ways that user-mode DLLs depend on?).
-4. **Replace cmake-built static libs with cargo-built equivalents.**
+3. **Replace cmake-built static libs with cargo-built equivalents.**
    The PoC still links ~30 cmake-produced `.a` files (libcmlib,
    librtl, libhal, etc.). Each is its own subdirectory build;
    moving them to cargo crates would let us drop the cmake step

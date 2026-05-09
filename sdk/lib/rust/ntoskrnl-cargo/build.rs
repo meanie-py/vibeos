@@ -130,18 +130,22 @@ fn main() {
     let mc_gen_dir = generate_bugcodes_mc(&repo_root);
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/reactos/mc/bugcodes.mc").display());
 
-    // ---- Generate ks386.inc ourselves --------------------------------------
-    // The 8 asm sources all `#include <ks386.inc>`, which cmake produces by
-    // compiling `sdk/include/asm/genincdata.c` to a custom `.asmdef`-section
-    // PE blob and walking that section with the `geninc` host tool. We do
-    // both steps in-process: cc-rs compiles `genincdata.c` to a `.obj`, and
-    // a small Rust COFF parser walks the `.asmdef` section and emits
-    // `ks386.inc` to OUT_DIR. genincdata.c needs <bugcodes.h> + the xdk
-    // kernel headers, so this runs after both prior generators.
-    let ks386_inc_dir = generate_ks386_inc(&repo_root, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
-    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/genincdata.c").display());
-    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ks386.template.h").display());
-    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ksx.template.h").display());
+    // ---- Stage checked-in ks386.inc into OUT_DIR ---------------------------
+    // The 8 asm sources all `#include <ks386.inc>` (constants + struct
+    // offsets for the i386 trap/context-switch chain). Historically this
+    // file was generated at build time by compiling
+    // `sdk/include/asm/genincdata.c` and walking its `.asmdef` PE section
+    // — that pulled the entire `<ntoskrnl.h>` chain (`<ntndk.h>`,
+    // `<arc/arc.h>`, the full ddk/ndk tree) just to compute a static list
+    // of offsets. We've moved that regeneration out-of-band to
+    // `tools/gen_ks386_inc.py`; the resulting `ks386-i386.inc` is checked
+    // in to `data/`. Re-run that script when kernel layouts change
+    // (`python3 tools/gen_ks386_inc.py --check` validates the checked-in
+    // copy against a fresh regen). Drops 5 `KERNEL_INCLUDES` paths
+    // (`sdk/include`, `sdk/include/ddk`, `sdk/include/ndk`,
+    // `sdk/include/reactos`, `sdk/lib/pseh/include`) from every cargo build.
+    let ks386_inc_dir = stage_ks386_inc(&manifest_dir);
+    println!("cargo:rerun-if-changed={}", manifest_dir.join("data/ks386-i386.inc").display());
 
     // ---- Asm compile (cc-rs) ------------------------------------------------
     // The 8 .S/.s files all `#include <asm.inc>` + `<ks386.inc>` + an
@@ -155,8 +159,10 @@ fn main() {
         "ntoskrnl/ke/i386/ctxswitch.S",
         "ntoskrnl/ke/i386/trap.s",
         "ntoskrnl/ke/i386/usercall_asm.S",
-        "ntoskrnl/ke/i386/zeropage.S",
-        "ntoskrnl/rtl/i386/prefetch.S",
+        // zeropage.S — translated to global_asm! in
+        // ntoskrnl-rust/src/ke/i386/zeropage_asm.rs (2026-05-09).
+        // prefetch.S — translated to global_asm! in
+        // ntoskrnl-rust/src/rtl/prefetch_asm.rs (2026-05-09).
     ];
     for relpath in asm_sources {
         let abs = repo_root.join(relpath);
@@ -166,18 +172,33 @@ fn main() {
         compile_asm(&repo_root, &abs, &ks386_inc_dir, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
-    // ---- Resource (.res) — cc-rs-style windres invocation -------------------
-    let rc_source = repo_root.join("ntoskrnl/ntoskrnl.rc");
-    let res_out = compile_resource(&repo_root, &rc_source, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
+    // ---- Resource (.res) — checked-in, regen via tools/gen_ntoskrnl_res.py
+    // ntoskrnl.rc.res (PE-COFF resource section: VS_VERSION_INFO with 136
+    // per-language StringFileInfo blocks + bugcodes RC + bootanim BITMAPs)
+    // is regenerated out-of-band by `python3 tools/gen_ntoskrnl_res.py` and
+    // checked in to `data/ntoskrnl-i386.rc.res`. Same pattern as
+    // `data/ks386-i386.inc` — keeps the kernel header chain
+    // (`<winver.h>`, `<ntverp.h>`, `common.ver`) out of every cargo build.
+    // Re-run the script when version info or bootanim resources change.
+    // Drops 3 source-tree `KERNEL_INCLUDES` paths (`ntoskrnl` root,
+    // `sdk/include/psdk`, `sdk/include/vcruntime`) plus the in-process
+    // `compile_resource()` helper + 136-entry `LANGUAGES` const.
+    let res_out = stage_ntoskrnl_res(&manifest_dir);
     println!("cargo:rustc-link-arg={}", res_out.display());
-    println!("cargo:rerun-if-changed={}", rc_source.display());
+    println!("cargo:rerun-if-changed={}", manifest_dir.join("data/ntoskrnl-i386.rc.res").display());
     let _ = cmake_obj_dir;
 
-    // Export def file (drives the PE export table).
-    let def_file = build_dir.join("ntoskrnl/ntoskrnl.def");
-    if !def_file.exists() {
-        panic!("missing def file: {}", def_file.display());
-    }
+    // ---- Self-host spec2def + generate ntoskrnl.def -----------------------
+    // cmake builds spec2def as a host C tool, then runs it on
+    // `ntoskrnl/ntoskrnl.spec` to produce `ntoskrnl.def` (drives the PE
+    // export table) and `ntoskrnl_stubs.c` (empty for ntoskrnl — the spec
+    // has no unimplemented stubs). We compile spec2def with the host cc
+    // (same pattern as compile_hpp_host), run it ourselves, and use the
+    // resulting `.def` in the link line. Drops the LAST cmake-built file
+    // the cargo PoC consumes outside the ~30 sibling static libs.
+    let def_file = generate_def_file(&repo_root);
+    println!("cargo:rerun-if-changed={}", repo_root.join("ntoskrnl/ntoskrnl.spec").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/tools/spec2def/spec2def.c").display());
     println!("cargo:rustc-link-arg={}", def_file.display());
 
     // Static libs (in cmake link order). libkernel_rust.a goes first inside
@@ -336,23 +357,21 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
 /// directory holds windmc-generated headers (`bugcodes.h`, `bugcodes.rc`)
 /// which we now produce in-process via `generate_bugcodes_mc()` and pass
 /// as an extra `-I` to all three consumers.
-/// Kernel `-I` paths the cargo PoC's compile inputs (asm + RC +
-/// genincdata.c) actually pull headers from. Survey 2026-05-08 (`clang -H`)
-/// pruned 10 dead-weight entries from cmake's original list and dropped
-/// `build-i386/sdk/include/{ddk,psdk}` once `generate_xdk_headers()` self-
-/// hosted hpp — see audit doc § "Survey of remaining build-i386 deps".
-/// Result: ZERO `build-i386/...` paths remain. The cargo PoC needs only
-/// the source tree + its own `OUT_DIR/`.
+/// Kernel `-I` paths the cargo PoC's compile inputs (asm + RC) actually
+/// pull headers from. Survey 2026-05-08 (`clang -H`) pruned 10 dead-weight
+/// entries from cmake's original list and dropped `build-i386/...`
+/// once `generate_xdk_headers()` self-hosted hpp. The 2026-05-09 ks386
+/// out-of-band move (`tools/gen_ks386_inc.py` + checked-in
+/// `data/ks386-i386.inc`) eliminated `genincdata.c` from the cargo build
+/// entirely, dropping the 5 paths only it was pulling: `sdk/include`
+/// (root), `sdk/include/ddk`, `sdk/include/ndk`, `sdk/include/reactos`,
+/// `sdk/lib/pseh/include`. The remaining 5 source-tree paths are split
+/// between asm (`ntoskrnl/include` + the per-asm `sdk/include/asm`),
+/// RC (`ntoskrnl`, `sdk/include/psdk`, `sdk/include/vcruntime`), and
+/// the universal `-isystem sdk/include/crt` mingw user-mode CRT
+/// replacement.
 const KERNEL_INCLUDES: &[&str] = &[
-    "ntoskrnl",
-    "sdk/include",
     "sdk/include/crt",
-    "sdk/include/ddk",
-    "sdk/include/ndk",
-    "sdk/include/psdk",
-    "sdk/include/reactos",
-    "sdk/include/vcruntime",
-    "sdk/lib/pseh/include",
     "ntoskrnl/include",
 ];
 
@@ -457,248 +476,51 @@ fn emit_objects(build: &cc::Build, source: &Path) {
     }
 }
 
-/// 136 LANGUAGE_* defines the cmake RC rule passes to windres. Lifted
-/// verbatim from `RC_COMPILER__ntoskrnl_Debug` in `build.ninja`.
-const LANGUAGES: &[&str] = &[
-    "LANGUAGE_AF_ZA", "LANGUAGE_AR_AE", "LANGUAGE_AR_BH", "LANGUAGE_AR_DZ",
-    "LANGUAGE_AR_EG", "LANGUAGE_AR_IQ", "LANGUAGE_AR_JO", "LANGUAGE_AR_KW",
-    "LANGUAGE_AR_LB", "LANGUAGE_AR_LY", "LANGUAGE_AR_MA", "LANGUAGE_AR_OM",
-    "LANGUAGE_AR_QA", "LANGUAGE_AR_SA", "LANGUAGE_AR_SY", "LANGUAGE_AR_TN",
-    "LANGUAGE_AR_YE", "LANGUAGE_AZ_AZ", "LANGUAGE_BE_BY", "LANGUAGE_BG_BG",
-    "LANGUAGE_BN_BD", "LANGUAGE_BN_IN", "LANGUAGE_CA_ES", "LANGUAGE_CS_CZ",
-    "LANGUAGE_DA_DK", "LANGUAGE_DE_AT", "LANGUAGE_DE_CH", "LANGUAGE_DE_DE",
-    "LANGUAGE_DE_LI", "LANGUAGE_DE_LU", "LANGUAGE_DV_MV", "LANGUAGE_EL_GR",
-    "LANGUAGE_EN_AU", "LANGUAGE_EN_BZ", "LANGUAGE_EN_CA", "LANGUAGE_EN_CB",
-    "LANGUAGE_EN_GB", "LANGUAGE_EN_IE", "LANGUAGE_EN_JM", "LANGUAGE_EN_NZ",
-    "LANGUAGE_EN_PH", "LANGUAGE_EN_TT", "LANGUAGE_EN_US", "LANGUAGE_EN_ZA",
-    "LANGUAGE_EN_ZW", "LANGUAGE_EO_AA", "LANGUAGE_ES_AR", "LANGUAGE_ES_BO",
-    "LANGUAGE_ES_CL", "LANGUAGE_ES_CO", "LANGUAGE_ES_CR", "LANGUAGE_ES_DO",
-    "LANGUAGE_ES_EC", "LANGUAGE_ES_ES", "LANGUAGE_ES_GT", "LANGUAGE_ES_HN",
-    "LANGUAGE_ES_MX", "LANGUAGE_ES_NI", "LANGUAGE_ES_PA", "LANGUAGE_ES_PE",
-    "LANGUAGE_ES_PR", "LANGUAGE_ES_PY", "LANGUAGE_ES_SV", "LANGUAGE_ES_UY",
-    "LANGUAGE_ES_VE", "LANGUAGE_ET_EE", "LANGUAGE_EU_ES", "LANGUAGE_FA_IR",
-    "LANGUAGE_FI_FI", "LANGUAGE_FO_FO", "LANGUAGE_FR_BE", "LANGUAGE_FR_CA",
-    "LANGUAGE_FR_CH", "LANGUAGE_FR_FR", "LANGUAGE_FR_LU", "LANGUAGE_FR_MC",
-    "LANGUAGE_GL_ES", "LANGUAGE_GU_IN", "LANGUAGE_HE_IL", "LANGUAGE_HI_IN",
-    "LANGUAGE_HR_HR", "LANGUAGE_HU_HU", "LANGUAGE_HY_AM", "LANGUAGE_ID_ID",
-    "LANGUAGE_IS_IS", "LANGUAGE_IT_CH", "LANGUAGE_IT_IT", "LANGUAGE_JA_JP",
-    "LANGUAGE_KA_GE", "LANGUAGE_KK_KZ", "LANGUAGE_KN_IN", "LANGUAGE_KOK_IN",
-    "LANGUAGE_KO_KR", "LANGUAGE_KY_KG", "LANGUAGE_LT_LT", "LANGUAGE_LV_LV",
-    "LANGUAGE_MK_MK", "LANGUAGE_MN_MN", "LANGUAGE_MR_IN", "LANGUAGE_MS_BN",
-    "LANGUAGE_MS_MY", "LANGUAGE_MY_MM", "LANGUAGE_NL_BE", "LANGUAGE_NL_NL",
-    "LANGUAGE_NN_NO", "LANGUAGE_PA_IN", "LANGUAGE_PL_PL", "LANGUAGE_PT_BR",
-    "LANGUAGE_PT_PT", "LANGUAGE_RM_CH", "LANGUAGE_RO_RO", "LANGUAGE_RU_RU",
-    "LANGUAGE_SA_IN", "LANGUAGE_SK_SK", "LANGUAGE_SL_SI", "LANGUAGE_SQ_AL",
-    "LANGUAGE_SR_SP", "LANGUAGE_SV_FI", "LANGUAGE_SV_SE", "LANGUAGE_SW_KE",
-    "LANGUAGE_SYR_SY", "LANGUAGE_TA_IN", "LANGUAGE_TE_IN", "LANGUAGE_TH_TH",
-    "LANGUAGE_TR_TR", "LANGUAGE_TT_TA", "LANGUAGE_UK_UA", "LANGUAGE_UR_PK",
-    "LANGUAGE_UZ_UZ", "LANGUAGE_VI_VN", "LANGUAGE_WA_BE", "LANGUAGE_ZH_CN",
-    "LANGUAGE_ZH_HK", "LANGUAGE_ZH_MO", "LANGUAGE_ZH_SG", "LANGUAGE_ZH_TW",
-];
-
-/// Compile `ntoskrnl.rc` to a PE-COFF resource file via llvm-mingw's
-/// `i686-w64-mingw32-windres`, mirroring the cmake RC rule. Returns the
-/// path to the resulting `.res` for `cargo:rustc-link-arg=`.
-fn compile_resource(
-    repo_root: &Path,
-    source: &Path,
-    mc_gen_dir: &Path,
-    xdk_ddk_dir: &Path,
-    xdk_psdk_dir: &Path,
-) -> PathBuf {
-    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
-    let windres = llvm_mingw.join("bin/i686-w64-mingw32-windres");
-    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
-
-    let out_dir = shim_obj_dir();
-    let out_path = out_dir.join("ntoskrnl.rc.res");
-    let dep_path = out_dir.join("ntoskrnl.rc.res.d");
-
-    let mut cmd = Command::new(&windres);
-    cmd.arg("-O").arg("coff");
-
-    // INCLUDES — full kernel chain + xdk gen dirs + the windmc-generated
-    // mc dir (for <bugcodes.rc> + its .bin sidecars).
-    cmd.arg("-I").arg(xdk_ddk_dir);
-    cmd.arg("-I").arg(xdk_psdk_dir);
-    for inc in KERNEL_INCLUDES {
-        cmd.arg("-I").arg(repo_root.join(inc));
-    }
-    cmd.arg("-I").arg(mc_gen_dir);
-
-    // Preprocessor: clang in -E mode with ms-extensions disabled.
-    let out_str = out_path.to_str().expect("utf8 OUT path");
-    let dep_str = dep_path.to_str().expect("utf8 DEP path");
-    cmd.arg(format!("--preprocessor={}", clang.display()))
-        .arg("--preprocessor-arg=--target=i686-w64-mingw32")
-        .arg("--preprocessor-arg=-E")
-        .arg("--preprocessor-arg=-nostdinc")
-        .arg("--preprocessor-arg=-xc-header")
-        .arg("--preprocessor-arg=-MMD")
-        .arg("--preprocessor-arg=-MF")
-        .arg(format!("--preprocessor-arg={dep_str}"))
-        .arg("--preprocessor-arg=-MT")
-        .arg(format!("--preprocessor-arg={out_str}"));
-
-    // RC-specific defines.
-    cmd.arg("-DRC_INVOKED")
-        .arg("-D__WIN32__=1")
-        .arg("-D__FLAT__=1");
-
-    // 136 LANGUAGE_* defines — required for common.ver to emit every
-    // language's StringFileInfo block.
-    for lang in LANGUAGES {
-        cmd.arg(format!("-D{lang}"));
-    }
-
-    // Standard ntoskrnl C-side defines (KERNEL_DEFINES).
-    for (name, value) in KERNEL_DEFINES {
-        match value {
-            Some(v) => cmd.arg(format!("-D{name}={v}")),
-            None => cmd.arg(format!("-D{name}")),
-        };
-    }
-
-    cmd.arg(source).arg(&out_path);
-
-    let status = cmd.status().expect("failed to invoke windres");
-    if !status.success() {
+/// Stage the checked-in `data/ntoskrnl-i386.rc.res` into `OUT_DIR/shims/`
+/// for the link line. Out-of-band regen: `python3 tools/gen_ntoskrnl_res.py`
+/// runs windres on `ntoskrnl/ntoskrnl.rc` with the kernel `-I` chain (from
+/// cmake's `build-i386/sdk/include/`); the byte-identical-to-cmake `.res`
+/// is checked in to `data/`. Same pattern as `stage_ks386_inc()`.
+fn stage_ntoskrnl_res(manifest_dir: &Path) -> PathBuf {
+    let src = manifest_dir.join("data/ntoskrnl-i386.rc.res");
+    if !src.exists() {
         panic!(
-            "windres failed for {} (exit {:?})",
-            source.display(),
-            status.code()
+            "missing {} — regenerate via `python3 tools/gen_ntoskrnl_res.py`",
+            src.display()
         );
     }
-    if !out_path.exists() {
-        panic!("windres ran but produced no output at {}", out_path.display());
-    }
-    out_path
+    let dst = shim_obj_dir().join("ntoskrnl.rc.res");
+    std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("stage ntoskrnl.rc.res: {e}"));
+    dst
 }
 
-// ---- ks386.inc generation (replaces cmake's geninc + genincdata.dll) -------
+// ---- ks386.inc staging (out-of-band regen via tools/gen_ks386_inc.py) ------
 
-/// Compile `sdk/include/asm/genincdata.c` to a PE-COFF `.obj`, parse its
-/// `.asmdef` section, and emit `ks386.inc` to `OUT_DIR/asm-gen/`. Returns
-/// the include-path directory the asm sources should add via `-I`.
+/// Stage the checked-in `data/ks386-i386.inc` into
+/// `OUT_DIR/asm-gen/ks386.inc` so the asm sources can pick it up via
+/// `-I OUT_DIR/asm-gen` and the canonical name `<ks386.inc>`. Returns the
+/// include-path dir.
 ///
-/// `genincdata.c` materializes an `ASMGENDATA Table[]` into a custom
-/// `.asmdef` PE section by `__attribute__((section(".asmdef")))`. Each
-/// record is 64 bytes:
-///   - byte 0:    Type (0=END, 1=RAW, 2=CONSTANT, 3=HEADER)
-///   - bytes 1–55: Name (null-terminated, padded)
-///   - bytes 56–63: Value (uint64 little-endian)
-///
-/// cmake builds this as a DLL via the `genincdata` target and runs the
-/// `geninc` host tool to walk the section. We skip the DLL link and parse
-/// the `.obj` directly — the section data is identical (it's all
-/// compile-time constants from `<ks386.template.h>` + `<ksx.template.h>`,
-/// no relocations needed).
-fn generate_ks386_inc(
-    repo_root: &Path,
-    mc_gen_dir: &Path,
-    xdk_ddk_dir: &Path,
-    xdk_psdk_dir: &Path,
-) -> PathBuf {
-    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
-    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
-    let src = repo_root.join("sdk/include/asm/genincdata.c");
+/// Out-of-band regen: `python3 tools/gen_ks386_inc.py` (compiles
+/// `sdk/include/asm/genincdata.c` once, walks its `.asmdef` COFF section,
+/// emits `data/ks386-i386.inc` byte-identical to cmake's). Re-run that
+/// script when kernel struct layouts or the templates
+/// (`ks386.template.h` / `ksx.template.h`) change. Day-to-day cargo builds
+/// just read the checked-in file — no kernel `-I` chain, no `genincdata.c`
+/// compile, no `.obj` parsing.
+fn stage_ks386_inc(manifest_dir: &Path) -> PathBuf {
+    let src = manifest_dir.join("data/ks386-i386.inc");
     if !src.exists() {
-        panic!("missing genincdata.c at {}", src.display());
+        panic!(
+            "missing {} — regenerate via `python3 tools/gen_ks386_inc.py`",
+            src.display()
+        );
     }
-
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let gen_dir = out_dir.join("asm-gen");
-    let obj_subdir = out_dir.join("geninc-obj");
-    std::fs::create_dir_all(&gen_dir).expect("mkdir asm-gen");
-    std::fs::create_dir_all(&obj_subdir).expect("mkdir geninc-obj");
-
-    // Compile genincdata.c to a .obj — kernel-mode flags + DEFINES + the
-    // full kernel `-I` chain (it pulls <ntdef.h> / <ntndk.h> / <bugcodes.h>,
-    // all coming from our in-process gen dirs: xdk-gen for ntdef/ntddk/...,
-    // mc-gen for bugcodes).
-    // No PE link needed; we read the .obj directly.
-    let mut build = cc::Build::new();
-    apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir, xdk_ddk_dir, xdk_psdk_dir);
-    build.file(&src).out_dir(&obj_subdir).flag("-std=gnu2x");
-    let objs = build.compile_intermediates();
-    let obj = objs.into_iter().next().expect("genincdata.c produced no object");
-
-    // Parse the .obj's `.asmdef` section.
-    let asmdef = read_coff_section(&obj, ".asmdef");
-
-    // Walk ASMGENDATA records and emit ks386.inc.
-    let inc_path = gen_dir.join("ks386.inc");
-    let mut text = String::new();
-    for chunk in asmdef.chunks_exact(64) {
-        let ty = chunk[0];
-        let name = {
-            let nb = &chunk[1..56];
-            let end = nb.iter().position(|&b| b == 0).unwrap_or(55);
-            std::str::from_utf8(&nb[..end])
-                .unwrap_or_else(|e| panic!("non-utf8 in .asmdef name: {e}"))
-        };
-        let value = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
-        match ty {
-            0 => break,                                              // TYPE_END
-            1 => text.push_str(&format!("{name}\n")),                // TYPE_RAW
-            2 => text.push_str(&format!("{name} = 0x{value:x}\n")), // TYPE_CONSTANT
-            3 => text.push_str(&format!("\n/* {name} */\n")),        // TYPE_HEADER
-            other => panic!("unknown ASMGENDATA type {other} in .asmdef"),
-        }
-    }
-    std::fs::write(&inc_path, &text).expect("write ks386.inc");
-    println!(
-        "cargo:warning=ntoskrnl-cargo: generated {} ({} bytes)",
-        inc_path.display(),
-        text.len()
-    );
-    gen_dir
-}
-
-/// Minimal PE-COFF object parser: read a named section's raw bytes from a
-/// `.obj` file (no DOS header, no PE signature — the COFF File Header lives
-/// at offset 0).
-fn read_coff_section(obj: &Path, section_name: &str) -> Vec<u8> {
-    let bytes = std::fs::read(obj).unwrap_or_else(|e| panic!("read {}: {e}", obj.display()));
-    if bytes.len() < 20 {
-        panic!("{} is too small to be a COFF object", obj.display());
-    }
-    // COFF File Header: Machine(2) NumSections(2) TimeDateStamp(4)
-    // PtrToSymTable(4) NumSymbols(4) SizeOfOptionalHeader(2) Characteristics(2)
-    let num_sections = u16::from_le_bytes([bytes[2], bytes[3]]) as usize;
-    let opt_header_size = u16::from_le_bytes([bytes[16], bytes[17]]) as usize;
-    let sec_table = 20 + opt_header_size;
-
-    for i in 0..num_sections {
-        let off = sec_table + i * 40;
-        if off + 40 > bytes.len() {
-            panic!("section table {i} out of bounds in {}", obj.display());
-        }
-        // Section name is 8 bytes, null-padded. Long names use a `/N` slot
-        // pointing into the string table — not used for `.asmdef`.
-        let name_bytes = &bytes[off..off + 8];
-        let nul = name_bytes.iter().position(|&b| b == 0).unwrap_or(8);
-        let name = std::str::from_utf8(&name_bytes[..nul]).unwrap_or("");
-        if name == section_name {
-            let raw_size = u32::from_le_bytes(bytes[off + 16..off + 20].try_into().unwrap()) as usize;
-            let raw_addr = u32::from_le_bytes(bytes[off + 20..off + 24].try_into().unwrap()) as usize;
-            if raw_addr == 0 || raw_size == 0 {
-                panic!("section '{section_name}' has no raw data in {}", obj.display());
-            }
-            if raw_addr + raw_size > bytes.len() {
-                panic!(
-                    "section '{section_name}' extends past EOF in {}",
-                    obj.display()
-                );
-            }
-            return bytes[raw_addr..raw_addr + raw_size].to_vec();
-        }
-    }
-    panic!(
-        "section '{section_name}' not found in {} (had {num_sections} sections)",
-        obj.display()
-    );
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("asm-gen");
+    std::fs::create_dir_all(&out_dir).expect("mkdir asm-gen");
+    let dst = out_dir.join("ks386.inc");
+    std::fs::copy(&src, &dst).unwrap_or_else(|e| panic!("stage ks386.inc: {e}"));
+    out_dir
 }
 
 // ---- bugcodes.h/.rc generation (replaces cmake's mc + utf16le step) --------
@@ -805,6 +627,77 @@ fn compile_hpp_host(repo_root: &Path) -> PathBuf {
         panic!("hpp build produced no executable at {}", exe.display());
     }
     exe
+}
+
+// ---- spec2def host build + ntoskrnl.def generation ------------------------
+
+/// Compile `sdk/tools/spec2def/spec2def.c` with the host C compiler. Returns
+/// the path to the resulting host binary in `OUT_DIR/host-tools/`. Mirrors
+/// `compile_hpp_host()` exactly (single .c file, no special deps).
+fn compile_spec2def_host(repo_root: &Path) -> PathBuf {
+    let host = env::var("HOST").expect("HOST env var");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("host-tools");
+    std::fs::create_dir_all(&out_dir).expect("mkdir host-tools");
+    let exe = out_dir.join(if cfg!(windows) { "spec2def.exe" } else { "spec2def" });
+
+    let cc_tool = cc::Build::new()
+        .target(&host)
+        .host(&host)
+        .opt_level(2)
+        .get_compiler();
+
+    let src = repo_root.join("sdk/tools/spec2def/spec2def.c");
+    let mut cmd = Command::new(cc_tool.path());
+    cmd.args(cc_tool.args());
+    cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
+    let status = cmd.status().unwrap_or_else(|e| {
+        panic!("failed to invoke host cc ({}): {e}", cc_tool.path().display())
+    });
+    if !status.success() {
+        panic!("host cc failed to compile spec2def.c (exit {:?})", status.code());
+    }
+    if !exe.exists() {
+        panic!("spec2def build produced no executable at {}", exe.display());
+    }
+    exe
+}
+
+/// Run our self-built `spec2def` on `ntoskrnl/ntoskrnl.spec` to produce
+/// `ntoskrnl.def` (export table) and `ntoskrnl_stubs.c` (empty for ntoskrnl
+/// — the spec has no `-stub` exports). Returns the path to the .def file
+/// for the link line. Mirrors cmake's exact ninja invocation:
+///
+///   spec2def -n=ntoskrnl.exe -a=i386 -d=...ntoskrnl.def
+///            -s=...ntoskrnl_stubs.c --version=0x502 --dbg ntoskrnl.spec
+fn generate_def_file(repo_root: &Path) -> PathBuf {
+    let spec2def = compile_spec2def_host(repo_root);
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("spec-gen");
+    std::fs::create_dir_all(&out_dir).expect("mkdir spec-gen");
+
+    let spec = repo_root.join("ntoskrnl/ntoskrnl.spec");
+    if !spec.exists() {
+        panic!("missing ntoskrnl.spec at {}", spec.display());
+    }
+    let def = out_dir.join("ntoskrnl.def");
+    let stubs = out_dir.join("ntoskrnl_stubs.c");
+
+    let status = Command::new(&spec2def)
+        .arg("-n=ntoskrnl.exe")
+        .arg("-a=i386")
+        .arg(format!("-d={}", def.display()))
+        .arg(format!("-s={}", stubs.display()))
+        .arg("--version=0x502")
+        .arg("--dbg")
+        .arg(&spec)
+        .status()
+        .unwrap_or_else(|e| panic!("failed to invoke {}: {e}", spec2def.display()));
+    if !status.success() {
+        panic!("spec2def failed for ntoskrnl.spec (exit {:?})", status.code());
+    }
+    if !def.exists() {
+        panic!("spec2def ran but produced no .def at {}", def.display());
+    }
+    def
 }
 
 /// Run our self-built `hpp` host tool on the 4 kernel-header templates
