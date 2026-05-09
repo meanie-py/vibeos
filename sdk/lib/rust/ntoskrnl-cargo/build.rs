@@ -112,12 +112,23 @@ fn main() {
     // in kernel-rust, computed from `core::mem::size_of::<>()` against
     // ntkrnl-sys bindgen types.
 
+    // ---- Generate ks386.inc ourselves --------------------------------------
+    // The 8 asm sources all `#include <ks386.inc>`, which cmake produces by
+    // compiling `sdk/include/asm/genincdata.c` to a custom `.asmdef`-section
+    // PE blob and walking that section with the `geninc` host tool. We do
+    // both steps in-process: cc-rs compiles `genincdata.c` to a `.obj`, and
+    // a small Rust COFF parser walks the `.asmdef` section and emits
+    // `ks386.inc` to OUT_DIR.
+    let ks386_inc_dir = generate_ks386_inc(&repo_root);
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/genincdata.c").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ks386.template.h").display());
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ksx.template.h").display());
+
     // ---- Asm compile (cc-rs) ------------------------------------------------
     // The 8 .S/.s files all `#include <asm.inc>` + `<ks386.inc>` + an
     // `internal/i386/asmmacro.S` shim — they need the asm-specific include
-    // dirs (`sdk/include/asm` + the cmake-generated `build-i386/sdk/include/asm`
-    // for `ks386.inc`) plus the full kernel `-I` chain. cmake-generated
-    // headers must already exist (cmake configure step is a prerequisite).
+    // dir (`sdk/include/asm`) + our generated `OUT_DIR/asm-gen` (for the
+    // freshly-emitted `ks386.inc`) + the full kernel `-I` chain.
     let asm_sources: &[&str] = &[
         "ntoskrnl/ex/zw.S",
         "ntoskrnl/ex/i386/fastinterlck_asm.S",
@@ -133,7 +144,7 @@ fn main() {
         if !abs.exists() {
             panic!("missing asm source: {}", abs.display());
         }
-        compile_asm(&repo_root, &abs);
+        compile_asm(&repo_root, &abs, &ks386_inc_dir);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
     // ---- Resource (.res) — cc-rs-style windres invocation -------------------
@@ -381,11 +392,11 @@ fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
 }
 
 /// Compile one .S/.s file with kernel-mode flags + DEFINES. Asm files all
-/// `#include <asm.inc>` + `<ks386.inc>` (the latter is cmake-generated under
-/// `build-i386/sdk/include/asm/`), so they need the full kernel `-I` chain
-/// plus 2 asm-specific include dirs and `-D__ASM__`. cmake-generated headers
-/// must already exist (`cmake .` was run in `build-i386/`).
-fn compile_asm(repo_root: &Path, source: &Path) {
+/// `#include <asm.inc>` + `<ks386.inc>` + `internal/i386/asmmacro.S`. They
+/// need the asm-specific include dir (`sdk/include/asm`) + the generated
+/// `ks386.inc` dir (`generated_inc_dir`, which build.rs produces fresh via
+/// `generate_ks386_inc()`) + the full kernel `-I` chain + `-D__ASM__`.
+fn compile_asm(repo_root: &Path, source: &Path, generated_inc_dir: &Path) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
 
@@ -399,18 +410,11 @@ fn compile_asm(repo_root: &Path, source: &Path) {
         // Asm-specific include dirs (cmake adds these as the first two -I
         // before the C-side INCLUDES).
         .include(repo_root.join("sdk/include/asm"))
-        .include(repo_root.join("build-i386/sdk/include/asm"))
+        .include(generated_inc_dir)
         // Lowercase .s files don't get `-x assembler-with-cpp` from cc-rs's
         // extension sniffing; force it for parity with cmake's rule.
         .flag("-x")
         .flag("assembler-with-cpp");
-
-    let asm_inc = repo_root.join("build-i386/sdk/include/asm/ks386.inc");
-    assert!(
-        asm_inc.exists(),
-        "missing cmake-generated asm header: {} — run `cmake .` in build-i386/ first",
-        asm_inc.display()
-    );
 
     emit_objects(&build, source);
 }
@@ -533,4 +537,123 @@ fn compile_resource(repo_root: &Path, source: &Path) -> PathBuf {
         panic!("windres ran but produced no output at {}", out_path.display());
     }
     out_path
+}
+
+// ---- ks386.inc generation (replaces cmake's geninc + genincdata.dll) -------
+
+/// Compile `sdk/include/asm/genincdata.c` to a PE-COFF `.obj`, parse its
+/// `.asmdef` section, and emit `ks386.inc` to `OUT_DIR/asm-gen/`. Returns
+/// the include-path directory the asm sources should add via `-I`.
+///
+/// `genincdata.c` materializes an `ASMGENDATA Table[]` into a custom
+/// `.asmdef` PE section by `__attribute__((section(".asmdef")))`. Each
+/// record is 64 bytes:
+///   - byte 0:    Type (0=END, 1=RAW, 2=CONSTANT, 3=HEADER)
+///   - bytes 1–55: Name (null-terminated, padded)
+///   - bytes 56–63: Value (uint64 little-endian)
+///
+/// cmake builds this as a DLL via the `genincdata` target and runs the
+/// `geninc` host tool to walk the section. We skip the DLL link and parse
+/// the `.obj` directly — the section data is identical (it's all
+/// compile-time constants from `<ks386.template.h>` + `<ksx.template.h>`,
+/// no relocations needed).
+fn generate_ks386_inc(repo_root: &Path) -> PathBuf {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+    let src = repo_root.join("sdk/include/asm/genincdata.c");
+    if !src.exists() {
+        panic!("missing genincdata.c at {}", src.display());
+    }
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let gen_dir = out_dir.join("asm-gen");
+    let obj_subdir = out_dir.join("geninc-obj");
+    std::fs::create_dir_all(&gen_dir).expect("mkdir asm-gen");
+    std::fs::create_dir_all(&obj_subdir).expect("mkdir geninc-obj");
+
+    // Compile genincdata.c to a .obj — kernel-mode flags + DEFINES + the
+    // full kernel `-I` chain (it pulls <ntdef.h> / <ntndk.h> / <bugcodes.h>).
+    // No PE link needed; we read the .obj directly.
+    let mut build = cc::Build::new();
+    apply_kernel_base(&mut build, &clang);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
+    build.file(&src).out_dir(&obj_subdir).flag("-std=gnu2x");
+    let objs = build.compile_intermediates();
+    let obj = objs.into_iter().next().expect("genincdata.c produced no object");
+
+    // Parse the .obj's `.asmdef` section.
+    let asmdef = read_coff_section(&obj, ".asmdef");
+
+    // Walk ASMGENDATA records and emit ks386.inc.
+    let inc_path = gen_dir.join("ks386.inc");
+    let mut text = String::new();
+    for chunk in asmdef.chunks_exact(64) {
+        let ty = chunk[0];
+        let name = {
+            let nb = &chunk[1..56];
+            let end = nb.iter().position(|&b| b == 0).unwrap_or(55);
+            std::str::from_utf8(&nb[..end])
+                .unwrap_or_else(|e| panic!("non-utf8 in .asmdef name: {e}"))
+        };
+        let value = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
+        match ty {
+            0 => break,                                              // TYPE_END
+            1 => text.push_str(&format!("{name}\n")),                // TYPE_RAW
+            2 => text.push_str(&format!("{name} = 0x{value:x}\n")), // TYPE_CONSTANT
+            3 => text.push_str(&format!("\n/* {name} */\n")),        // TYPE_HEADER
+            other => panic!("unknown ASMGENDATA type {other} in .asmdef"),
+        }
+    }
+    std::fs::write(&inc_path, &text).expect("write ks386.inc");
+    println!(
+        "cargo:warning=ntoskrnl-cargo: generated {} ({} bytes)",
+        inc_path.display(),
+        text.len()
+    );
+    gen_dir
+}
+
+/// Minimal PE-COFF object parser: read a named section's raw bytes from a
+/// `.obj` file (no DOS header, no PE signature — the COFF File Header lives
+/// at offset 0).
+fn read_coff_section(obj: &Path, section_name: &str) -> Vec<u8> {
+    let bytes = std::fs::read(obj).unwrap_or_else(|e| panic!("read {}: {e}", obj.display()));
+    if bytes.len() < 20 {
+        panic!("{} is too small to be a COFF object", obj.display());
+    }
+    // COFF File Header: Machine(2) NumSections(2) TimeDateStamp(4)
+    // PtrToSymTable(4) NumSymbols(4) SizeOfOptionalHeader(2) Characteristics(2)
+    let num_sections = u16::from_le_bytes([bytes[2], bytes[3]]) as usize;
+    let opt_header_size = u16::from_le_bytes([bytes[16], bytes[17]]) as usize;
+    let sec_table = 20 + opt_header_size;
+
+    for i in 0..num_sections {
+        let off = sec_table + i * 40;
+        if off + 40 > bytes.len() {
+            panic!("section table {i} out of bounds in {}", obj.display());
+        }
+        // Section name is 8 bytes, null-padded. Long names use a `/N` slot
+        // pointing into the string table — not used for `.asmdef`.
+        let name_bytes = &bytes[off..off + 8];
+        let nul = name_bytes.iter().position(|&b| b == 0).unwrap_or(8);
+        let name = std::str::from_utf8(&name_bytes[..nul]).unwrap_or("");
+        if name == section_name {
+            let raw_size = u32::from_le_bytes(bytes[off + 16..off + 20].try_into().unwrap()) as usize;
+            let raw_addr = u32::from_le_bytes(bytes[off + 20..off + 24].try_into().unwrap()) as usize;
+            if raw_addr == 0 || raw_size == 0 {
+                panic!("section '{section_name}' has no raw data in {}", obj.display());
+            }
+            if raw_addr + raw_size > bytes.len() {
+                panic!(
+                    "section '{section_name}' extends past EOF in {}",
+                    obj.display()
+                );
+            }
+            return bytes[raw_addr..raw_addr + raw_size].to_vec();
+        }
+    }
+    panic!(
+        "section '{section_name}' not found in {} (had {num_sections} sections)",
+        obj.display()
+    );
 }
