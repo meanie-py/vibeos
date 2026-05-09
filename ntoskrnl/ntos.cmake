@@ -312,7 +312,6 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenadj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokencls.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/se/tokenlif.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/kernel_c_helpers.c
     # Split-out minimal trampolines — see docs/engineering/shim-elimination.md.
     # Each has narrowly-scoped headers and survives the future cargo-driven
     # cc-rs build path.

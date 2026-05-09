@@ -98,7 +98,6 @@ fn main() {
         "io/iomgr/io_tables.c.obj",  // IopQueryOperationLength + 7 sister tables (consumed by Rust iofunc.rs)
         "ke/ke_rust_shims.c.obj",
         "mm/mm_rust_shims.c.obj",
-        "kernel_c_helpers.c.obj",
         "variadic_shims.c.obj",
         "lto_workaround.c.obj",
         "mm_lock_outlines.c.obj",

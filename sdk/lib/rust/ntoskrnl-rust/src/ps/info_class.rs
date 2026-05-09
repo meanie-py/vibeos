@@ -99,9 +99,8 @@ type C_BOOLEAN = BOOLEAN;
 // PsProcessInfoClass — 47 entries.
 // ---------------------------------------------------------------------------
 
-// _rs_ prefix until the i386 boot regression is diagnosed (see end of file).
 #[no_mangle]
-pub static _rs_PsProcessInfoClass: [INFORMATION_CLASS_INFO; 47] = [
+pub static PsProcessInfoClass: [INFORMATION_CLASS_INFO; 47] = [
     /*  0 ProcessBasicInformation              */ iqs_same::<PROCESS_BASIC_INFORMATION, ULONG>(ICIF_QUERY),
     /*  1 ProcessQuotaLimits                   */ iqs_same::<QUOTA_LIMITS, ULONG>(ICIF_QUERY | ICIF_SET | ICIF_SIZE_VARIABLE),
     /*  2 ProcessIoCounters                    */ iqs_same::<IO_COUNTERS, ULONG>(ICIF_QUERY),
@@ -165,7 +164,7 @@ pub static _rs_PsProcessInfoClass: [INFORMATION_CLASS_INFO; 47] = [
 use ntkrnl_sys::ddk::_DESCRIPTOR_TABLE_ENTRY as DESCRIPTOR_TABLE_ENTRY;
 
 #[no_mangle]
-pub static _rs_PsThreadInfoClass: [INFORMATION_CLASS_INFO; 28] = [
+pub static PsThreadInfoClass: [INFORMATION_CLASS_INFO; 28] = [
     /*  0 ThreadBasicInformation               */ iqs_same::<THREAD_BASIC_INFORMATION, ULONG>(ICIF_QUERY),
     /*  1 ThreadTimes                          */ iqs_same::<KERNEL_USER_TIMES, ULONG>(ICIF_QUERY),
     /*  2 ThreadPriority                       */ iqs_same::<KPRIORITY, ULONG>(ICIF_SET),
@@ -201,21 +200,22 @@ pub static _rs_PsThreadInfoClass: [INFORMATION_CLASS_INFO; 28] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Status (2026-05-07)
+// Status (2026-05-08)
 // ---------------------------------------------------------------------------
 //
-// Translation values are byte-identical to the C arrays (verified at link
-// time by `cmp` of the .rdata regions of `_PsProcessInfoClass` /
-// `_PsThreadInfoClass` from `kernel_c_helpers.c` against `_rs_*` here).
+// Rust supplies the canonical `PsProcessInfoClass` / `PsThreadInfoClass`
+// linker symbols. The C-side `kernel_c_helpers.c` ps_i.h re-include trick
+// is retired.
 //
-// Renaming `_rs_PsProcessInfoClass` → `PsProcessInfoClass` (so Rust's static
-// supplies the linker symbol and `kernel_c_helpers.c` can be retired) makes
-// i386 BUGCHECK 0x1E (KMODE_EXCEPTION_NOT_HANDLED, STATUS_DATATYPE_MISALIGNMENT)
-// at `[WINLOGON] Calling StartRpcServer`, after `[WIN32K] shell ready`. The
-// faulting address lands inside `_ExRaiseDatatypeMisalignment+13`. The Rust
-// array values are correct; the regression appears to be a layout / placement
-// issue (Rust statics land at `0x581464`, C statics land at `0x57b3b8`).
-// Further investigation needed to swap in the Rust-side as the canonical
-// supplier; until then the C-side `kernel_c_helpers.c` re-include trick stays
-// and the Rust arrays are exposed under a `_rs_` prefix as a future-ready
-// parallel translation.
+// The earlier "i386 BUGCHECK 0x1E STATUS_DATATYPE_MISALIGNMENT at WINLOGON"
+// regression turned out to be a pre-existing latent bug in `ps/query.rs`,
+// not in the translation: the `PS_{PROCESS,THREAD}_INFO_CLASS_COUNT`
+// constants were transcribed from the Vista+ `Max*InfoClass` enums (51 / 56
+// minus 0 / 1 → 48 / 57) instead of the actual NT 5.x array entry counts
+// (47 / 28). Passing the larger counts to `DefaultQueryInfoBufferCheck`
+// skipped the bounds check for past-end indices, reading garbage
+// `AlignmentQUERY` bytes from whatever followed the array in `.rdata`.
+// The C-side `kernel_c_helpers.c` re-include happened to leave "safe"
+// power-of-2 trailing bytes; the Rust translation didn't, surfacing the
+// bug only after the symbol-supplier swap. Fix landed in `ps/query.rs`
+// alongside this rename — see the comment block above the constants.
