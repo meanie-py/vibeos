@@ -95,6 +95,7 @@ fn main() {
     ];
     let shim_objs = [
         "io/iomgr/io_rust_shims.c.obj",
+        "io/iomgr/io_tables.c.obj",  // IopQueryOperationLength + 7 sister tables (consumed by Rust iofunc.rs)
         "ke/ke_rust_shims.c.obj",
         "mm/mm_rust_shims.c.obj",
         "kernel_c_helpers.c.obj",

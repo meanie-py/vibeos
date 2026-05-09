@@ -50,7 +50,15 @@ list(APPEND PCH_SKIP_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/variadic_shims.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lto_workaround.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/mm_lock_outlines.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/mm_rust_shims.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/io_rust_shims.c)
+# kdbg_rust_shims.c is only built on i386/amd64 (KDBG is disabled on ARM64).
+# Add to PCH_SKIP_SOURCE conditionally to mirror the SOURCE-list gating in
+# ntos.cmake.
+if(KDBG AND NOT ARCH STREQUAL "arm64")
+    list(APPEND PCH_SKIP_SOURCE
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg_rust_shims.c)
+endif()
 
 # Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")

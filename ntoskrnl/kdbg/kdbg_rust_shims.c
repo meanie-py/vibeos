@@ -13,18 +13,47 @@
  *   - `KdbpPrint` C-variadic — Rust can't define C-variadic exports on
  *     stable. Format parsing and emission live in the Rust ntprintf crate
  *     via `ntprintf_va_format_a`; this is just the va_list adapter.
- *   - `KdbPromptStr` — a `CSTRING` initialised via `RTL_CONSTANT_STRING`.
- *     Trivially translatable to Rust but the const-init pattern is
- *     low-priority; kept here pending the same minimal-headers reduction
- *     that `mm_rust_shims.c` got on i386/amd64.
+ *   - `KdbPromptStr` — a `CSTRING` initialised via the equivalent of
+ *     `RTL_CONSTANT_STRING("kdb:> ")`.
+ *
+ * Header-free since the cargo-driven build PoC: no `<ntoskrnl.h>`, no
+ * `<kdb.h>`, no `<../kd/kdterminal.h>`. Local typedefs + extern decls of
+ * the few functions/globals we need cover everything.
  */
 
-#include <ntoskrnl.h>
-#include "kdb.h"
-#include "../kd/kdterminal.h"
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
-/* Prompt string referenced from kdb_cli.rs. */
-const CSTRING KdbPromptStr = RTL_CONSTANT_STRING("kdb:> ");
+/* --- Local NT type aliases (replaces <ntoskrnl.h>) ------------------ */
+typedef void              VOID;
+typedef char              CHAR;
+typedef unsigned char     UCHAR;
+typedef UCHAR             BOOLEAN;
+typedef CHAR             *PCHAR;
+typedef CHAR             *PSTR;
+typedef unsigned short    USHORT;
+typedef unsigned long     ULONG;
+typedef size_t            SIZE_T;
+
+#define IN
+#ifndef _In_
+# define _In_
+#endif
+#define FALSE 0
+
+/* Mirror of CSTRING from sdk/include/psdk/ntdef.h. */
+typedef struct _CSTRING
+{
+    USHORT Length;
+    USHORT MaximumLength;
+    const CHAR *Buffer;
+} CSTRING;
+
+/* Open-coded RTL_CONSTANT_STRING("kdb:> "): the macro expands to
+ * { sizeof(s) - sizeof(s[0]), sizeof(s), s }, i.e. (Length, MaximumLength,
+ * Buffer) where the literal "kdb:> " is 7 bytes including the terminator. */
+const CSTRING KdbPromptStr = { 6, 7, "kdb:> " };
 
 /* -------------------------------------------------------------------------
  * KdbpPrint — C-variadic. Stable Rust can't define C-variadic exports, so
@@ -32,7 +61,7 @@ const CSTRING KdbPromptStr = RTL_CONSTANT_STRING("kdb:> ");
  * Rust ntprintf crate via ntprintf_va_format_a.
  * ------------------------------------------------------------------------- */
 
-VOID KdbpPagerInternal(IN PCHAR Buffer, IN ULONG BufLength, IN BOOLEAN DoPage);
+extern VOID KdbpPagerInternal(IN PCHAR Buffer, IN ULONG BufLength, IN BOOLEAN DoPage);
 
 extern size_t ntprintf_va_format_a(char *dst, size_t cap,
                                    const char *fmt, va_list ap);
