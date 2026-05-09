@@ -9,21 +9,40 @@
  * macro_rules level (and even then the resulting strings would be Rust
  * source paths, not the C-side paths the diagnostics want to see).
  *
- * Headers: needs `<ntoskrnl.h>` for `PMM_SECTION_SEGMENT` /
- * `PLARGE_INTEGER` and the underscored primitives' declarations.
- * Pulling miarm.h directly via the ARM3 path because the prototypes
- * for `_MmLockSectionSegment` etc. are nested in the kernel-private
- * MM internals.
+ * Header-free since the cargo-driven build PoC: no `<ntoskrnl.h>`, no
+ * `<debug.h>`, no `<mm/ARM3/miarm.h>`. The MM_SECTION_SEGMENT and
+ * LARGE_INTEGER types appear only as opaque pointers — we never
+ * dereference them — so a tiny local typedef suffices.
  */
 
-#include <ntoskrnl.h>
-#define NDEBUG
-#include <debug.h>
-#include <mm/ARM3/miarm.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#undef MmLockSectionSegment
-#undef MmUnlockSectionSegment
-#undef MmGetPageEntrySectionSegment
+/* --- Local NT type aliases (replaces <ntoskrnl.h>) ------------------ */
+typedef uintptr_t         ULONG_PTR;
+
+/* Opaque pointers — we never dereference these. */
+struct _MM_SECTION_SEGMENT;
+typedef struct _MM_SECTION_SEGMENT *PMM_SECTION_SEGMENT;
+
+struct _LARGE_INTEGER;
+typedef struct _LARGE_INTEGER *PLARGE_INTEGER;
+
+#define IN
+#if defined(_M_IX86)
+# define NTAPI __attribute__((stdcall))
+#else
+# define NTAPI
+#endif
+
+/* --- Externs from ntoskrnl-rust mm crate ---------------------------- */
+extern void NTAPI _MmLockSectionSegment(PMM_SECTION_SEGMENT Segment,
+                                        const char *file, int line);
+extern void NTAPI _MmUnlockSectionSegment(PMM_SECTION_SEGMENT Segment,
+                                          const char *file, int line);
+extern ULONG_PTR NTAPI _MmGetPageEntrySectionSegment(
+    PMM_SECTION_SEGMENT Segment, PLARGE_INTEGER Offset,
+    const char *file, int line);
 
 void NTAPI MmLockSectionSegment(IN PMM_SECTION_SEGMENT Segment)
 { _MmLockSectionSegment(Segment, __FILE__, __LINE__); }

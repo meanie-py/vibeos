@@ -216,6 +216,19 @@ pub unsafe extern "C" fn PsGetCurrentProcess() -> PEPROCESS {
     ntkrnl_sys::inline::tier1::PsGetCurrentProcess()
 }
 
+// --- _rs_PsCurrentProcessTokenAddr ---
+// Returns &CurrentProcess->Token as a *mut PVOID. Lets header-free C
+// trampolines (e.g. ntoskrnl/lto_workaround.c) initialise the process
+// token without needing the EPROCESS layout in C.
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _rs_PsCurrentProcessTokenAddr() -> *mut PVOID {
+    use ntkrnl_sys::ddk::_EPROCESS;
+    core::ptr::addr_of_mut!(
+        (*(PsGetCurrentProcess() as *mut _EPROCESS)).Token
+    ) as *mut PVOID
+}
+
 // --- RtlUnicodeStringToOemSize (NTAPI) ---
 
 #[no_mangle]
