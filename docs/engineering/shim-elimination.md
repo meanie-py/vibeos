@@ -1,43 +1,46 @@
 # Shim Elimination — Status and Forward Path
 
-## TL;DR (2026-05-09)
+## TL;DR (2026-05-09, post-milestone-16)
 
-The shim-elimination arc and the cargo-driven build arc are **both
-substantially done**. The cargo PoC has **zero `build-i386/*`
-build-time dependencies** for headers/objects/.res/.def — every
-shim, every asm file, the resource, every generated header, AND
-the `.def` file (milestone 12, 2026-05-08) is produced in-process
-from `build.rs`. The only remaining cmake outputs the cargo PoC
-consumes are the ~30 sibling static libs (`librtl.a`, `libhal.a`,
-etc.). Those are a separate arc.
+The shim-elimination arc and the cargo-driven build arc for the
+**ntoskrnl source body** are **DONE**:
 
-The source-tree kernel includes are now down to **2 paths** (from
-12 → 5 → 2 across three rounds on 2026-05-09):
-- `ntoskrnl/include` — pulled only by 6 remaining asm files
-- `sdk/include/crt` — universal `-isystem` mingw CRT replacement
+1. **All 8 C shims are header-free** (only `<stdarg.h>`/`<stddef.h>`/`<stdint.h>`).
+2. **`KERNEL_INCLUDES` is deleted entirely** — every cargo-build
+   compile input is self-contained or staged from a checked-in
+   artifact. cargo PoC's only `-I` chain is `-isystem sdk/include/crt`
+   (mingw user-mode CRT replacement) + clang's resource dir.
+3. **Zero `build-i386/*` deps** for headers, objects, .res, or .def —
+   every artifact comes from one of:
+   - 3 in-process generators (`hpp`, `windmc`, `spec2def` — host C
+     tools build.rs builds via `cc::Build::host()`)
+   - 3 out-of-band Python scripts (`tools/gen_ks386_inc.py`,
+     `tools/gen_ntoskrnl_res.py`, `tools/gen_preprocessed_asm.py`)
+     producing checked-in artifacts under
+     `sdk/lib/rust/ntoskrnl-cargo/data/`
+   - cc-rs compiling 8 header-free C shims + 6 pre-processed
+     `.s` files
 
-`KERNEL_INCLUDES` was 25 entries when this arc started; survey-prune,
-genincdata out-of-band, RC out-of-band, and 2 asm-→-`global_asm!`
-translations took it to 2. The remaining gap (the 6 still-cmake-built
-asm files) is covered by Forward Path § 1 — translate the rest of
-the asm to `global_asm!` and `compile_asm()` goes away entirely.
+The remaining cmake outputs the cargo PoC consumes are the ~30
+**cmake-built static libs** (`librtl.a`, `libhal.a`, `libcmlib.a`,
+…). That's its own translation arc — see
+[`static-libs-translation-audit.md`](static-libs-translation-audit.md).
 
-## The cargo PoC's compile inputs (2026-05-08)
+## The cargo PoC's compile inputs (2026-05-09)
 
-- **9 C shims** (`ntprintf_trampoline.c`, `variadic_shims.c`,
+- **8 C shims** (`ntprintf_trampoline.c`, `variadic_shims.c`,
   `mm_lock_outlines.c`, `kdbg_rust_shims.c`, `io_rust_shims.c`,
   `mm_rust_shims.c`, `lto_workaround.c`, `ke_rust_shims.c`) —
   all header-free, only need `<stdarg.h>` / `<stddef.h>` /
   `<stdint.h>` + a small local NT typedef block. Compile via
-  `cc-rs` from `build.rs` with no `-I` chain.
-- **6 asm files** (`zw.S`, `fastinterlck_asm.S`, `ioport.S`,
-  `ctxswitch.S`, `trap.s`, `usercall_asm.S`) — `#include
-  <ks386.inc>` (staged from `data/ks386-i386.inc`) + `<asm.inc>`
-  + `<internal/i386/asmmacro.S>` from the source tree. Compile
-  via `cc-rs` with `-x assembler-with-cpp`. The 2 smallest of
-  the original 8 (`zeropage.S`, `prefetch.S`) were translated to
-  `core::arch::global_asm!` in milestone 14 (see
-  `ntoskrnl-rust/src/{ke/i386/zeropage_asm.rs,rtl/prefetch_asm.rs}`).
+  `cc-rs` from `build.rs` with no kernel `-I` chain.
+- **6 pre-processed asm files** at `data/asm/*-i386.s` —
+  fully self-contained (every `#include` expanded by
+  `tools/gen_preprocessed_asm.py`); `compile_asm()` invokes cc-rs
+  with NO kernel `-I` chain. The 2 smallest of the original 8
+  (`zeropage.S`, `prefetch.S`) became `core::arch::global_asm!`
+  blocks in `ntoskrnl-rust/src/{ke/i386/zeropage_asm.rs,rtl/prefetch_asm.rs}`
+  (milestone 14).
 - **`ntoskrnl.rc`** — checked in to `data/ntoskrnl-i386.rc.res`,
   regen out-of-band via `python3 tools/gen_ntoskrnl_res.py`. Build-
   time `build.rs` just stages the file. **`compile_resource()` and
@@ -103,117 +106,66 @@ What still comes from cmake (not in scope for this arc):
 
 ## What still pulls the kernel `-I` chain
 
-The cargo PoC's `KERNEL_INCLUDES` const is now **2 source-tree
-paths** (down from 25 → 12 → 5 → 2 across four surveys/refactors).
+**Nothing.** `KERNEL_INCLUDES` was deleted in milestone 16. The cargo
+PoC's only `-I` chain is `-isystem sdk/include/crt` (mingw user-mode
+CRT replacement) + clang's resource dir, applied directly inside each
+cc-rs caller.
 
-| Path | Pulled by | What for |
-|------|-----------|----------|
-| `ntoskrnl/include` | asm | `<internal/i386/asmmacro.S>`, `<sysfuncs.h>` (6 still-cmake-built asm files) |
-| `sdk/include/crt` | all | `-isystem` of mingw user-mode CRT replacement |
-| `sdk/include/asm` | asm | `<asm.inc>`, `<syscalls.inc>` (added per-asm-source via `compile_asm()`) |
+Cmake originally needed 25 source-tree paths. Removal history:
+- ~~10 dead-weight build-i386/* paths~~ (milestone 10 survey)
+- ~~`build-i386/sdk/include/{ddk,psdk}`~~ (milestone 11: hpp self-host)
+- ~~`build-i386/sdk/include/reactos/mc`~~ (milestone 9: windmc in-process)
+- ~~`sdk/include`, `sdk/include/ddk`, `sdk/include/ndk`, `sdk/include/reactos`, `sdk/lib/pseh/include`~~ (milestone 13: genincdata out-of-band)
+- ~~`ntoskrnl`, `sdk/include/psdk`, `sdk/include/vcruntime`~~ (milestone 15: RC out-of-band)
+- ~~`ntoskrnl/include`, `sdk/include/asm`~~ (milestone 16: 6 asm files pre-processed out-of-band)
 
-Plus the in-process gen dirs (`xdk-gen/{ddk,psdk}`, `mc-gen`,
-`asm-gen`, `spec-gen`).
+Net: every source-tree kernel header has been eliminated from the
+cargo PoC's compile surface.
 
-8 paths used to be in this list and were dropped on 2026-05-09:
-- ~~`sdk/include`~~, ~~`sdk/include/ddk`~~, ~~`sdk/include/ndk`~~,
-  ~~`sdk/include/reactos`~~, ~~`sdk/lib/pseh/include`~~ (only
-  `genincdata.c` pulled them; gone with milestone 13)
-- ~~`ntoskrnl`~~, ~~`sdk/include/psdk`~~, ~~`sdk/include/vcruntime`~~
-  (only RC pulled them; gone with milestone 15)
+## Forward path: out of scope for this doc
 
-The remaining 2 source-tree kernel paths are pulled by the asm
-files only. Translating the 6 remaining asm files to `global_asm!`
-(see Forward Path § 1) eliminates `compile_asm()` entirely and drops
-both `ntoskrnl/include` and `sdk/include/asm`.
+Every source-tree kernel header is gone from the cargo PoC's compile
+surface (milestones 9-16). What remains:
 
-## Forward path: eliminate the source-tree kernel includes
+- **The ~30 cmake-built static libs** (`librtl.a`, `libhal.a`,
+  `libcmlib.a`, …) — collectively ~165K LOC of C/asm. Tracked in
+  [`static-libs-translation-audit.md`](static-libs-translation-audit.md).
+  The 17 already-Rust sibling rlibs in that list are mechanical
+  build-system work; the 18 cmake-built C/asm libs are real
+  translation arcs.
+- **Per-arch replication** of the i386 cargo PoC for amd64 + arm64.
+  The structure is arch-agnostic; mostly cloning
+  `i686-kernel.json` and verifying the `.s` regen produces
+  per-arch artifacts.
+- **`pefixup` / `fix_lld_forwarding.py` audit** — the cargo PoC
+  skips both and smoke passes; worth a careful audit before
+  declaring the cmake path retirable.
 
-These are the next layers of "what's still C and asm." Each is a
-real translation arc, not a build-system tweak.
+**Out-of-band scripts to re-run when source changes:**
+- `python3 tools/gen_ks386_inc.py` — regen `data/ks386-i386.inc`
+  when kernel struct layouts or `ks{386,x}.template.h` change
+- `python3 tools/gen_ntoskrnl_res.py` — regen
+  `data/ntoskrnl-i386.rc.res` when version blocks or bootanim
+  resources change
+- `python3 tools/gen_preprocessed_asm.py` — regen `data/asm/*.s`
+  when an asm source or its includes (`asm.inc`, `ks386.inc`,
+  `asmmacro.S`, `syscalls.inc`, `sysfuncs.h`) change
 
-### 1. Translate the remaining 6 asm files to Rust `global_asm!`
+Each script supports `--check` to verify the checked-in artifact
+matches a fresh regen (useful as a CI gate).
 
-2 of 8 done (milestone 14: `zeropage.S`, `prefetch.S`). 6 remaining:
-`zw.S` (30 LOC), `fastinterlck_asm.S` (124), `ioport.S` (210),
-`ctxswitch.S` (244), `usercall_asm.S` (202), `trap.s` (257) — total
-~1,070 LOC. All `#include <ks386.inc>` for kernel struct offsets
-and most pull `<internal/i386/asmmacro.S>` for entry/exit macros.
-
-Translating to `core::arch::global_asm!` is mechanical but
-substantial:
-- Each `#include <ks386.inc>` becomes inline `.equ` definitions
-  emitted by Rust (probably const-evaluated from `ntkrnl-sys`
-  bindgen offsets — same trick `io_tables.rs` uses).
-- The asmmacro.S entry/exit chains are 200+ lines of complex
-  preprocessor macros. They'd become Rust `macro_rules!` that
-  expand to `global_asm!` literals.
-- Some files (e.g. `trap.s`) interact tightly with `_SEH2_TRY`
-  preamble fragments; those would need a Rust analog.
-
-Once done, this drops 6 of the 11 source-tree paths
-(`ntoskrnl/include`, `sdk/include/asm`, plus `sdk/include/ndk` if
-the templates can be expressed without the full NDK pull) and
-removes the cargo PoC's `compile_asm()` call entirely.
-
-Smaller files first (`zeropage.S` is 14 bytes of `.text`,
-`prefetch.S` is 16); `trap.s` last (the trap dispatch is the
-deepest tie-in to the kernel layout).
-
-### 2. ~~Translate `ntoskrnl.rc` to embedded Rust resources~~ (DONE out-of-band 2026-05-09)
-
-`ntoskrnl.rc` is no longer compiled by the cargo PoC at all. Regen
-moved out-of-band to `tools/gen_ntoskrnl_res.py`; the resulting
-`data/ntoskrnl-i386.rc.res` (61,116 bytes, byte-identical to
-cmake's) is checked in. Build-time `build.rs` just stages the
-file. This dropped 3 source-tree paths from `KERNEL_INCLUDES`
-(`ntoskrnl` root, `sdk/include/psdk`, `sdk/include/vcruntime`).
-
-Re-run `python3 tools/gen_ntoskrnl_res.py` (or `--check`) when
-version blocks (`common.ver`, `ntverp.h`) or bootanim resources
-change. The script needs cmake-built `bugcodes.rc` from a prior
-`ninja ntoskrnl`.
-
-A future "fully-pure-Rust" version would translate the version
-blocks to `#[link_section]` statics and `include_bytes!` the
-bootanim BMPs, eliminating the cmake-build dep at script-runtime.
-Only matters if version info or bootanim change often (they don't).
-
-### 3. ~~Replace `genincdata.c` with a pure-Rust constant emitter~~ (PARTIAL — done out-of-band 2026-05-09)
-
-`genincdata.c` is no longer compiled by the cargo PoC at all.
-Regen moved out-of-band to `tools/gen_ks386_inc.py`; the resulting
-`data/ks386-i386.inc` is checked in. Build-time `build.rs` just
-stages the file. This dropped 5 source-tree paths from
-`KERNEL_INCLUDES` (the deepest puller: `<ntndk.h>`,
-`<arc/arc.h>`, the full ddk/ndk/pseh tree).
-
-Re-run `python3 tools/gen_ks386_inc.py` (or `--check` to verify)
-when kernel struct layouts or the templates change. The script
-needs `build-i386/sdk/include/{ddk,psdk}` + `bugcodes.h` from a
-prior `ninja ntoskrnl`.
-
-A future "fully-pure-Rust" version of this would inline kernel-
-struct offsets via `core::mem::offset_of!` against `ntkrnl-sys`
-bindgen types directly (eliminating the cmake-build dependency
-even at script-runtime). That requires either a host-buildable
-view of `ntkrnl-sys` or const-evaluable struct introspection —
-and only matters if the templates change often (they don't).
-For now, the script is run on demand.
-
-### What's left after items 1, 2, and the residual of 3
-
-If items 1+2 land, the cargo PoC's `KERNEL_INCLUDES` would shrink
-from 5 source-tree paths to 1 (`sdk/include/crt` — universal
-mingw user-mode CRT replacement, comes for free with `-nostdinc`).
-The PoC would compile and link the kernel with **only the source
-tree under `sdk/lib/rust/`** plus the CRT shim — no
-`sdk/include/{psdk,vcruntime}`, no `ntoskrnl/include/...`. Every
-kernel struct offset would route through `ntkrnl-sys` bindgen.
-
-That's the absolute minimum the C codebase can reach without
-removing the C / asm / RC consumers entirely (which is a separate,
-even bigger, "translate the kernel ENTIRELY to Rust" arc).
+**Possible future "fully-pure-Rust" refinements** (not blocking):
+- Translate the `data/asm/*.s` pre-processed blobs to inline
+  `core::arch::global_asm!(include_str!())` blocks (requires
+  resolving GAS macro-redefinition conflicts in the integrated
+  assembler, OR hand-translating asm.inc + asmmacro.S as Rust
+  `macro_rules!`).
+- Translate `ntoskrnl.rc`'s version blocks to `#[link_section]`
+  Rust statics + `include_bytes!` the bootanim BMPs (eliminates
+  cmake-built `bugcodes.rc` dep at script-runtime).
+- Translate `genincdata.c` to `core::mem::offset_of!` against
+  `ntkrnl-sys` bindgen types directly (eliminates cmake-built
+  xdk-gen dep at script-runtime).
 
 ## What still has to stay C — verified must-stay set
 

@@ -148,30 +148,32 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest_dir.join("data/ks386-i386.inc").display());
 
     // ---- Asm compile (cc-rs) ------------------------------------------------
-    // The 8 .S/.s files all `#include <asm.inc>` + `<ks386.inc>` + an
-    // `internal/i386/asmmacro.S` shim — they need the asm-specific include
-    // dir (`sdk/include/asm`) + our generated `OUT_DIR/asm-gen` (for the
-    // freshly-emitted `ks386.inc`) + the full kernel `-I` chain.
+    // 6 of the 8 historical asm files now live as pre-processed `.s` blobs
+    // under `data/asm/` (regenerate via `python3 tools/gen_preprocessed_asm.py`).
+    // Each is fully self-contained — every `#include` (`asm.inc`,
+    // `ks386.inc`, `asmmacro.S`, `syscalls.inc`, `sysfuncs.h`) is expanded
+    // — so cc-rs compiles them with NO kernel `-I` chain (only the
+    // `-isystem sdk/include/crt` shim from `apply_kernel_includes_asmonly`).
+    // The remaining 2 (`zeropage.S`, `prefetch.S`) became `global_asm!`
+    // blocks in `ntoskrnl-rust/src/{ke/i386/zeropage_asm,rtl/prefetch_asm}.rs`
+    // (milestone 14).
     let asm_sources: &[&str] = &[
-        "ntoskrnl/ex/zw.S",
-        "ntoskrnl/ex/i386/fastinterlck_asm.S",
-        "ntoskrnl/ex/i386/ioport.S",
-        "ntoskrnl/ke/i386/ctxswitch.S",
-        "ntoskrnl/ke/i386/trap.s",
-        "ntoskrnl/ke/i386/usercall_asm.S",
-        // zeropage.S — translated to global_asm! in
-        // ntoskrnl-rust/src/ke/i386/zeropage_asm.rs (2026-05-09).
-        // prefetch.S — translated to global_asm! in
-        // ntoskrnl-rust/src/rtl/prefetch_asm.rs (2026-05-09).
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/zw-i386.s",
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/fastinterlck-i386.s",
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/ioport-i386.s",
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/ctxswitch-i386.s",
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/trap-i386.s",
+        "sdk/lib/rust/ntoskrnl-cargo/data/asm/usercall-i386.s",
     ];
     for relpath in asm_sources {
         let abs = repo_root.join(relpath);
         if !abs.exists() {
-            panic!("missing asm source: {}", abs.display());
+            panic!("missing pre-processed asm source: {} — regenerate via `python3 tools/gen_preprocessed_asm.py`", abs.display());
         }
-        compile_asm(&repo_root, &abs, &ks386_inc_dir, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
+        compile_asm(&repo_root, &abs);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
+    let _ = ks386_inc_dir;
     // ---- Resource (.res) — checked-in, regen via tools/gen_ntoskrnl_res.py
     // ntoskrnl.rc.res (PE-COFF resource section: VS_VERSION_INFO with 136
     // per-language StringFileInfo blocks + bugcodes RC + bootanim BITMAPs)
@@ -357,54 +359,13 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
 /// directory holds windmc-generated headers (`bugcodes.h`, `bugcodes.rc`)
 /// which we now produce in-process via `generate_bugcodes_mc()` and pass
 /// as an extra `-I` to all three consumers.
-/// Kernel `-I` paths the cargo PoC's compile inputs (asm + RC) actually
-/// pull headers from. Survey 2026-05-08 (`clang -H`) pruned 10 dead-weight
-/// entries from cmake's original list and dropped `build-i386/...`
-/// once `generate_xdk_headers()` self-hosted hpp. The 2026-05-09 ks386
-/// out-of-band move (`tools/gen_ks386_inc.py` + checked-in
-/// `data/ks386-i386.inc`) eliminated `genincdata.c` from the cargo build
-/// entirely, dropping the 5 paths only it was pulling: `sdk/include`
-/// (root), `sdk/include/ddk`, `sdk/include/ndk`, `sdk/include/reactos`,
-/// `sdk/lib/pseh/include`. The remaining 5 source-tree paths are split
-/// between asm (`ntoskrnl/include` + the per-asm `sdk/include/asm`),
-/// RC (`ntoskrnl`, `sdk/include/psdk`, `sdk/include/vcruntime`), and
-/// the universal `-isystem sdk/include/crt` mingw user-mode CRT
-/// replacement.
-const KERNEL_INCLUDES: &[&str] = &[
-    "sdk/include/crt",
-    "ntoskrnl/include",
-];
-
-/// Adds the full kernel `-I` chain (KERNEL_INCLUDES + the in-process
-/// gen dirs: `mc_gen_dir` for windmc-generated `bugcodes.h`, and the
-/// hpp-generated `xdk_ddk_dir` / `xdk_psdk_dir` for the kernel header
-/// stubs) + the `-nostdinc -isystem<crt> -isystem<clang>` triplet that
-/// suppresses mingw's user-mode CRT search. Required by every asm source
-/// (which `#include <asm.inc>` + `<ks386.inc>`) and by
-/// `generate_ks386_inc()` itself.
-fn apply_kernel_includes(
-    build: &mut cc::Build,
-    repo_root: &Path,
-    llvm_mingw: &Path,
-    mc_gen_dir: &Path,
-    xdk_ddk_dir: &Path,
-    xdk_psdk_dir: &Path,
-) {
-    // hpp-generated kernel headers go FIRST so they shadow any
-    // accidentally-still-checked-in copies of the same names.
-    build.include(xdk_ddk_dir);
-    build.include(xdk_psdk_dir);
-    for inc in KERNEL_INCLUDES {
-        build.include(repo_root.join(inc));
-    }
-    build.include(mc_gen_dir);
-    build
-        .flag("-nostdinc")
-        .flag("-isystem")
-        .flag(repo_root.join("sdk/include/crt").to_str().unwrap())
-        .flag("-isystem")
-        .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
-}
+// `KERNEL_INCLUDES` and `apply_kernel_includes()` are gone — every cargo
+// PoC compile input (8 header-free C shims + 6 pre-processed `.s` files +
+// the checked-in `.rc.res` resource) is now self-contained and needs at
+// most `-isystem sdk/include/crt` plus clang's own resource dir. The
+// last source-tree kernel header path (`ntoskrnl/include`) was dropped
+// in milestone 16 (2026-05-09) when the remaining 6 asm files moved to
+// pre-processed-via-cc-rs.
 
 fn shim_obj_dir() -> PathBuf {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -432,34 +393,27 @@ fn compile_shim(repo_root: &Path, source: &Path) {
 }
 
 /// Compile one .S/.s file with kernel-mode flags + DEFINES. Asm files all
-/// `#include <asm.inc>` + `<ks386.inc>` + `internal/i386/asmmacro.S`. They
-/// need the asm-specific include dir (`sdk/include/asm`) + the generated
-/// `ks386.inc` dir (`generated_inc_dir`, which build.rs produces fresh via
-/// `generate_ks386_inc()`) + the full kernel `-I` chain + `-D__ASM__`.
-fn compile_asm(
-    repo_root: &Path,
-    source: &Path,
-    generated_inc_dir: &Path,
-    mc_gen_dir: &Path,
-    xdk_ddk_dir: &Path,
-    xdk_psdk_dir: &Path,
-) {
+/// Compile a fully-pre-processed `.s` file with kernel-mode flags. The
+/// asm sources under `data/asm/` have all `#include`s expanded out-of-band
+/// (`tools/gen_preprocessed_asm.py`), so cc-rs needs no kernel `-I` chain
+/// — just the universal `-isystem sdk/include/crt` mingw shim and clang's
+/// own resource dir. `-x assembler-with-cpp` keeps `.macro`/`.equ` etc.
+/// happy under cc-rs's extension sniffing for lowercase `.s`.
+fn compile_asm(repo_root: &Path, source: &Path) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
 
     let mut build = cc::Build::new();
     apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir, xdk_ddk_dir, xdk_psdk_dir);
     build
         .file(source)
         .out_dir(shim_obj_dir())
         .define("__ASM__", None)
-        // Asm-specific include dirs (cmake adds these as the first two -I
-        // before the C-side INCLUDES).
-        .include(repo_root.join("sdk/include/asm"))
-        .include(generated_inc_dir)
-        // Lowercase .s files don't get `-x assembler-with-cpp` from cc-rs's
-        // extension sniffing; force it for parity with cmake's rule.
+        .flag("-nostdinc")
+        .flag("-isystem")
+        .flag(repo_root.join("sdk/include/crt").to_str().unwrap())
+        .flag("-isystem")
+        .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
         .flag("-x")
         .flag("assembler-with-cpp");
 
