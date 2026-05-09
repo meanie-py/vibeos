@@ -114,24 +114,31 @@ fn main() {
     compile_shim(&repo_root, &io_tables, /*kernel_includes=*/ true);
     println!("cargo:rerun-if-changed={}", io_tables.display());
 
-    // ---- Asm objects (still cmake-owned) ------------------------------------
-    let asm_objs = [
-        "ex/zw.S.obj",
-        "ex/i386/fastinterlck_asm.S.obj",
-        "ex/i386/ioport.S.obj",
-        "ke/i386/ctxswitch.S.obj",
-        "ke/i386/trap.s.obj",
-        "ke/i386/usercall_asm.S.obj",
-        "ke/i386/zeropage.S.obj",
-        "rtl/i386/prefetch.S.obj",
+    // ---- Asm compile (cc-rs) ------------------------------------------------
+    // The 8 .S/.s files all `#include <asm.inc>` + `<ks386.inc>` + an
+    // `internal/i386/asmmacro.S` shim — they need the asm-specific include
+    // dirs (`sdk/include/asm` + the cmake-generated `build-i386/sdk/include/asm`
+    // for `ks386.inc`) plus the full kernel `-I` chain. cmake-generated
+    // headers must already exist (cmake configure step is a prerequisite).
+    let asm_sources: &[&str] = &[
+        "ntoskrnl/ex/zw.S",
+        "ntoskrnl/ex/i386/fastinterlck_asm.S",
+        "ntoskrnl/ex/i386/ioport.S",
+        "ntoskrnl/ke/i386/ctxswitch.S",
+        "ntoskrnl/ke/i386/trap.s",
+        "ntoskrnl/ke/i386/usercall_asm.S",
+        "ntoskrnl/ke/i386/zeropage.S",
+        "ntoskrnl/rtl/i386/prefetch.S",
     ];
-    for o in asm_objs.iter() {
-        let full = cmake_obj_dir.join(o);
-        if !full.exists() {
-            panic!("missing input: {}\n(run ninja in build-{arch} first)", full.display());
+    for relpath in asm_sources {
+        let abs = repo_root.join(relpath);
+        if !abs.exists() {
+            panic!("missing asm source: {}", abs.display());
         }
-        println!("cargo:rustc-link-arg={}", full.display());
+        compile_asm(&repo_root, &abs);
+        println!("cargo:rerun-if-changed={}", abs.display());
     }
+    // ---- Resource (.res) — still cmake-owned --------------------------------
     let res_full = cmake_obj_dir.join("ntoskrnl.rc.res");
     if !res_full.exists() {
         panic!("missing resource file: {}", res_full.display());
@@ -223,35 +230,14 @@ fn main() {
     }
 }
 
-/// Compile one C shim with the same kernel-mode flags + DEFINES cmake uses,
-/// emit it as a `.o`, and add it to the rustc link line. Set
-/// `kernel_includes` true for the one shim (`io_tables.c`) that still needs
-/// `<ntoskrnl.h>` + `internal/io_i.h`; false (no `-I`) for the rest, which
-/// only need `<stdarg.h>`/`<stddef.h>`/`<stdint.h>` from clang's own
-/// resource directory.
-fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
-    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
-    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
-
-    // Per-file output path under OUT_DIR. cc-rs would auto-name, but we use
-    // its raw `.compile_intermediates()` mode below for finer control.
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let stem = source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("shim");
-    let obj_dir = out_dir.join("shims");
-    std::fs::create_dir_all(&obj_dir).expect("mkdir OUT_DIR/shims");
-
-    let mut build = cc::Build::new();
+/// Common kernel-mode flags + DEFINES applied to every ntoskrnl C/asm
+/// translation unit. Mirrors the `FLAGS = …` and `DEFINES = …` lines ninja
+/// emits for any ntoskrnl source.
+fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
     build
-        .compiler(&clang)
-        .file(source)
-        .out_dir(&obj_dir)
+        .compiler(clang)
         .warnings(false)
         .extra_warnings(false)
-        // Match cmake's C compile flags exactly. The set below mirrors the
-        // `FLAGS = …` line ninja prints for any ntoskrnl C source.
         .flag("--target=i686-w64-mingw32")
         .flag("-pipe")
         .flag("-fms-extensions")
@@ -271,10 +257,7 @@ fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
         .flag("-fno-omit-frame-pointer")
         .flag("-mstackrealign")
         .flag("-mxsave")
-        .flag("-std=gnu2x")
         .flag("-Wno-unknown-warning-option")
-        // Kernel-mode + ReactOS-build DEFINES. Mirrors the `DEFINES = …`
-        // line cmake emits.
         .define("D3D_UMD_INTERFACE_VERSION", "0x000C")
         .define("DBG", "1")
         .define("DLL_EXPORT_VERSION", "0x502")
@@ -304,69 +287,125 @@ fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
         .define("__ROS_ROSSYM__", None)
         .define("__i386__", None)
         .define("i386", None);
+}
 
+/// Adds the full kernel `-I` chain + the `-nostdinc -isystem<crt>
+/// -isystem<clang>` triplet that suppresses mingw's user-mode CRT search.
+/// Mirrors cmake's `INCLUDES = …` for ntoskrnl C sources. Required by the
+/// one C shim that still drags `<ntoskrnl.h>` in (`io_tables.c`) and by
+/// every asm source (which `#include <asm.inc>` + `<ks386.inc>`).
+fn apply_kernel_includes(build: &mut cc::Build, repo_root: &Path, llvm_mingw: &Path) {
+    for inc in [
+        "build-i386/ntoskrnl",
+        "ntoskrnl",
+        "sdk/include",
+        "sdk/include/crt",
+        "sdk/include/ddk",
+        "sdk/include/ndk",
+        "sdk/include/psdk",
+        "sdk/include/reactos",
+        "sdk/include/reactos/libs",
+        "sdk/include/vcruntime",
+        "sdk/include/winrt",
+        "build-i386/sdk/include",
+        "build-i386/sdk/include/psdk",
+        "build-i386/sdk/include/ddk",
+        "build-i386/sdk/include/dxsdk",
+        "build-i386/sdk/include/reactos",
+        "build-i386/sdk/include/reactos/mc",
+        "sdk/include/dxsdk",
+        "sdk/lib/pseh/include",
+        "",
+        "sdk/lib/drivers/arbiter",
+        "sdk/lib/cmlib",
+        "ntoskrnl/include",
+        "build-i386/ntoskrnl/include",
+        "build-i386/ntoskrnl/include/internal",
+        "sdk/include/reactos/drivers",
+    ] {
+        build.include(repo_root.join(inc));
+    }
+    build
+        .flag("-nostdinc")
+        .flag("-isystem")
+        .flag(repo_root.join("sdk/include/crt").to_str().unwrap())
+        .flag("-isystem")
+        .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+}
+
+fn shim_obj_dir() -> PathBuf {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let dir = out_dir.join("shims");
+    std::fs::create_dir_all(&dir).expect("mkdir OUT_DIR/shims");
+    dir
+}
+
+/// Compile one C shim with kernel-mode flags + DEFINES, emit it as a `.o`,
+/// and add it to the rustc link line. Set `kernel_includes` true for the
+/// one shim (`io_tables.c`) that still needs `<ntoskrnl.h>` +
+/// `internal/io_i.h`; false (no `-I`) for the rest, which only need
+/// `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` from clang's resource dir.
+fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+
+    let mut build = cc::Build::new();
+    apply_kernel_base(&mut build, &clang);
+    build
+        .file(source)
+        .out_dir(shim_obj_dir())
+        .flag("-std=gnu2x");
     if kernel_includes {
-        // Mirror cmake's `INCLUDES = …` for ntoskrnl C sources. Only the one
-        // remaining shim that drags `<ntoskrnl.h>` in (`io_tables.c`) needs
-        // these. The other 8 shims are header-free and don't.
-        let build_dir = repo_root.join("build-i386");
-        for inc in [
-            "build-i386/ntoskrnl",
-            "ntoskrnl",
-            "sdk/include",
-            "sdk/include/crt",
-            "sdk/include/ddk",
-            "sdk/include/ndk",
-            "sdk/include/psdk",
-            "sdk/include/reactos",
-            "sdk/include/reactos/libs",
-            "sdk/include/vcruntime",
-            "sdk/include/winrt",
-            "build-i386/sdk/include",
-            "build-i386/sdk/include/psdk",
-            "build-i386/sdk/include/ddk",
-            "build-i386/sdk/include/dxsdk",
-            "build-i386/sdk/include/reactos",
-            "build-i386/sdk/include/reactos/mc",
-            "sdk/include/dxsdk",
-            "sdk/lib/pseh/include",
-            "",
-            "sdk/lib/drivers/arbiter",
-            "sdk/lib/cmlib",
-            "ntoskrnl/include",
-            "build-i386/ntoskrnl/include",
-            "build-i386/ntoskrnl/include/internal",
-            "sdk/include/reactos/drivers",
-        ] {
-            build.include(repo_root.join(inc));
-        }
-        // Required to suppress the user-mode CRT search path. Matches the
-        // `-nostdinc -isystem<crt> -isystem<clang>` triplet cmake passes.
-        build
-            .flag("-nostdinc")
-            .flag("-isystem")
-            .flag(repo_root.join("sdk/include/crt").to_str().unwrap())
-            .flag("-isystem")
-            .flag(
-                llvm_mingw
-                    .join("lib/clang/19/include")
-                    .to_str()
-                    .unwrap(),
-            );
-        // Sanity-check the build dir exists when this code path runs.
+        apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
         assert!(
-            build_dir.exists(),
+            repo_root.join("build-i386").exists(),
             "kernel_includes path needs build-i386/ to exist for generated headers"
         );
     }
 
-    // Drive cc-rs ourselves: cc::Build::compile() emits a static archive,
-    // but we want raw .o files we can pass on the rustc link line.
+    emit_objects(&build, source);
+}
+
+/// Compile one .S/.s file with kernel-mode flags + DEFINES. Asm files all
+/// `#include <asm.inc>` + `<ks386.inc>` (the latter is cmake-generated under
+/// `build-i386/sdk/include/asm/`), so they need the full kernel `-I` chain
+/// plus 2 asm-specific include dirs and `-D__ASM__`. cmake-generated headers
+/// must already exist (`cmake .` was run in `build-i386/`).
+fn compile_asm(repo_root: &Path, source: &Path) {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+
+    let mut build = cc::Build::new();
+    apply_kernel_base(&mut build, &clang);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
+    build
+        .file(source)
+        .out_dir(shim_obj_dir())
+        .define("__ASM__", None)
+        // Asm-specific include dirs (cmake adds these as the first two -I
+        // before the C-side INCLUDES).
+        .include(repo_root.join("sdk/include/asm"))
+        .include(repo_root.join("build-i386/sdk/include/asm"))
+        // Lowercase .s files don't get `-x assembler-with-cpp` from cc-rs's
+        // extension sniffing; force it for parity with cmake's rule.
+        .flag("-x")
+        .flag("assembler-with-cpp");
+
+    let asm_inc = repo_root.join("build-i386/sdk/include/asm/ks386.inc");
+    assert!(
+        asm_inc.exists(),
+        "missing cmake-generated asm header: {} — run `cmake .` in build-i386/ first",
+        asm_inc.display()
+    );
+
+    emit_objects(&build, source);
+}
+
+fn emit_objects(build: &cc::Build, source: &Path) {
     let objs = build.compile_intermediates();
     if objs.is_empty() {
         panic!("cc-rs produced no objects for {}", source.display());
     }
-    let _ = stem; // currently unused but kept for future per-shim diagnostics
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
