@@ -1,6 +1,6 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Eight milestones landed this session:
+Last updated 2026-05-08. Nine milestones landed this session:
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
    shim files are now header-free (no `<ntoskrnl.h>`, no internal
@@ -54,9 +54,19 @@ Last updated 2026-05-08. Eight milestones landed this session:
    value) and emits `ks386.inc` to `OUT_DIR/asm-gen/`. Output is
    **byte-identical** to cmake's `ks386.inc` (27,151 bytes,
    `diff` exit 0). Drops the cargo PoC's hardcoded reference to
-   `build-i386/sdk/include/asm/`. The other `build-i386/sdk/include/...`
-   paths still required (mc-generated `bugcodes.h`, etc.) are now
-   the next layer to peel.
+   `build-i386/sdk/include/asm/`.
+9. **`bugcodes.h` / `bugcodes.rc` / `bugcodes_MSG*.bin` generated
+   in-process by `build.rs`.** `generate_bugcodes_mc()` does the
+   ASCII → UTF-16LE conversion in pure Rust (8 LOC, byte-validated
+   vs cmake's `native-utf16le` host tool), then shells out to
+   `i686-w64-mingw32-windmc -u -A -b -h … -r …` to produce the
+   header + .rc + .bin sidecars in `OUT_DIR/mc-gen/`. All three
+   outputs are **byte-identical** to cmake's (h: 20,118 bytes; rc:
+   210 bytes; bin: identical, all `cmp`/`diff` exit 0). The
+   `apply_kernel_includes()` and `compile_resource()` helpers
+   take a `mc_gen_dir: &Path` parameter; `KERNEL_INCLUDES` no
+   longer contains `build-i386/sdk/include/reactos/mc`. Drops
+   another cmake-generated dep.
 
 Treat any prior version of this document as suspect.
 
@@ -151,14 +161,15 @@ moved to cc-rs, the remaining items are: replace the asm + .res +
 
 In rough priority order:
 
-1. **Generate `bugcodes.h` ourselves.** Used by the asm layer
-   (transitively via genincdata.c), the RC layer, and any future
-   shim that needs bugcheck constants. cmake produces it via
-   `windmc` from `sdk/include/reactos/mc/bugcodes.mc`. Pattern
-   already established for ks386.inc in milestone 8 — shell out to
-   `windmc` from `build.rs`, target an `OUT_DIR/mc-gen/`. After
-   this, the next layer of `build-i386/sdk/include/...` deps
-   becomes visible.
+1. **Survey the remaining `build-i386/sdk/include/...` deps.** With
+   `bugcodes.h` and `ks386.inc` self-generated, the remaining
+   `build-i386/...` paths in `KERNEL_INCLUDES` (notably
+   `build-i386/sdk/include`, `…/psdk`, `…/ddk`, `…/reactos`,
+   `build-i386/ntoskrnl/include[/internal]`) need to be audited:
+   what generated headers do they hold, which generators produce
+   them, and which are *actually* referenced by the cargo PoC's
+   compile inputs. Some may be dead weight; the live ones get the
+   same windmc/genincdata-style treatment.
 2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
    and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
 3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
@@ -210,11 +221,13 @@ Components:
   `pre-link-objects` and `post-link-objects` (no `rsbegin.o`/`rsend.o`),
   `crt-objects-fallback` removed. `rustc-abi` set to `x86-softfloat`
   so build-std's compiler_builtins doesn't insist on SSE.
-- **`build.rs`** — invokes `cargo build -p kernel-rust` as a sub-step
-  (with the same custom target), generates `ks386.inc` via
-  `generate_ks386_inc()` (compiles `genincdata.c` + parses `.asmdef`
-  COFF section in-process), compiles the 8 header-free C shim
-  translation units and the 8 asm files (zw, fastinterlck_asm,
+- **`build.rs`** — invokes `cargo build -p kernel-rust` as a
+  sub-step (with the same custom target), generates `bugcodes.h` /
+  `bugcodes.rc` / `bugcodes_MSG*.bin` via `generate_bugcodes_mc()`
+  (UTF-16LE conversion + `windmc`), generates `ks386.inc` via
+  `generate_ks386_inc()` (compiles `genincdata.c` + parses
+  `.asmdef` COFF section in-process), compiles the 8 header-free C
+  shim translation units and the 8 asm files (zw, fastinterlck_asm,
   ioport, ctxswitch, trap, usercall_asm, zeropage, prefetch) via
   `cc-rs`, builds `ntoskrnl.rc.res` via `windres`
   (`compile_resource()`), and emits `cargo:rustc-link-arg=`
@@ -224,11 +237,11 @@ Components:
   archive, and the kernel-mode PE-COFF link flags. The
   `apply_kernel_base()` helper mirrors cmake's `DEFINES = …` and
   `FLAGS = …` lines exactly, `apply_kernel_includes()` mirrors
-  `INCLUDES = …`, and the resulting `.text`/`.data` sections of every
-  cc-rs-built `.o` (and the entire `.rc.res` blob, and the entire
-  `ks386.inc`) match cmake's byte-for-byte (only `.debug_info`
-  strings differ in the C/asm objects, since they encode `__FILE__`
-  paths).
+  `INCLUDES = …` plus the in-process `mc-gen/` dir, and the
+  resulting `.text`/`.data` sections of every cc-rs-built `.o` (and
+  the entire `.rc.res`, `ks386.inc`, and `bugcodes.{h,rc,bin}`)
+  match cmake's byte-for-byte (only `.debug_info` strings differ in
+  the C/asm objects, since they encode `__FILE__` paths).
 - **`src/main.rs`** — `#![no_main]` shell with a stub
   `#[panic_handler]` and a `#[used]` anchor referencing `KiSystemStartup`.
 - **`build-and-test.sh`** — wrapper script that refreshes cmake

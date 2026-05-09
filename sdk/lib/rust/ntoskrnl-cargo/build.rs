@@ -104,7 +104,7 @@ fn main() {
         if !abs.exists() {
             panic!("missing shim source: {}", abs.display());
         }
-        compile_shim(&repo_root, &abs, /*kernel_includes=*/ false);
+        compile_shim(&repo_root, &abs);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
     // io_tables.c retired 2026-05-08; replaced by Rust iomgr/io_tables.rs.
@@ -112,14 +112,23 @@ fn main() {
     // in kernel-rust, computed from `core::mem::size_of::<>()` against
     // ntkrnl-sys bindgen types.
 
+    // ---- Generate bugcodes.h/rc via windmc ---------------------------------
+    // cmake produces these by converting bugcodes.mc to UTF-16LE then
+    // running windmc on it; we do both steps from build.rs and emit into
+    // OUT_DIR/mc-gen/. The .h is consumed by genincdata.c's compile, the
+    // .rc by ntoskrnl.rc, and the .bin sidecars by the .rc → .res step.
+    let mc_gen_dir = generate_bugcodes_mc(&repo_root);
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/reactos/mc/bugcodes.mc").display());
+
     // ---- Generate ks386.inc ourselves --------------------------------------
     // The 8 asm sources all `#include <ks386.inc>`, which cmake produces by
     // compiling `sdk/include/asm/genincdata.c` to a custom `.asmdef`-section
     // PE blob and walking that section with the `geninc` host tool. We do
     // both steps in-process: cc-rs compiles `genincdata.c` to a `.obj`, and
     // a small Rust COFF parser walks the `.asmdef` section and emits
-    // `ks386.inc` to OUT_DIR.
-    let ks386_inc_dir = generate_ks386_inc(&repo_root);
+    // `ks386.inc` to OUT_DIR. genincdata.c needs <bugcodes.h>, so this runs
+    // after generate_bugcodes_mc.
+    let ks386_inc_dir = generate_ks386_inc(&repo_root, &mc_gen_dir);
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/genincdata.c").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ks386.template.h").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ksx.template.h").display());
@@ -144,12 +153,12 @@ fn main() {
         if !abs.exists() {
             panic!("missing asm source: {}", abs.display());
         }
-        compile_asm(&repo_root, &abs, &ks386_inc_dir);
+        compile_asm(&repo_root, &abs, &ks386_inc_dir, &mc_gen_dir);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
     // ---- Resource (.res) — cc-rs-style windres invocation -------------------
     let rc_source = repo_root.join("ntoskrnl/ntoskrnl.rc");
-    let res_out = compile_resource(&repo_root, &rc_source);
+    let res_out = compile_resource(&repo_root, &rc_source, &mc_gen_dir);
     println!("cargo:rustc-link-arg={}", res_out.display());
     println!("cargo:rerun-if-changed={}", rc_source.display());
     let _ = cmake_obj_dir;
@@ -312,6 +321,11 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
 /// unit. Mirrors cmake's `INCLUDES = …` line; consumed by both the C/asm
 /// path (`apply_kernel_includes` via `cc::Build::include`) and the RC path
 /// (`compile_resource` via raw `-I` args).
+///
+/// `build-i386/sdk/include/reactos/mc` is intentionally NOT here — that
+/// directory holds windmc-generated headers (`bugcodes.h`, `bugcodes.rc`)
+/// which we now produce in-process via `generate_bugcodes_mc()` and pass
+/// as an extra `-I` to all three consumers.
 const KERNEL_INCLUDES: &[&str] = &[
     "build-i386/ntoskrnl",
     "ntoskrnl",
@@ -329,7 +343,6 @@ const KERNEL_INCLUDES: &[&str] = &[
     "build-i386/sdk/include/ddk",
     "build-i386/sdk/include/dxsdk",
     "build-i386/sdk/include/reactos",
-    "build-i386/sdk/include/reactos/mc",
     "sdk/include/dxsdk",
     "sdk/lib/pseh/include",
     "",
@@ -341,15 +354,21 @@ const KERNEL_INCLUDES: &[&str] = &[
     "sdk/include/reactos/drivers",
 ];
 
-/// Adds the full kernel `-I` chain + the `-nostdinc -isystem<crt>
+/// Adds the full kernel `-I` chain (KERNEL_INCLUDES + `mc_gen_dir` for
+/// our windmc-generated `bugcodes.h`) + the `-nostdinc -isystem<crt>
 /// -isystem<clang>` triplet that suppresses mingw's user-mode CRT search.
-/// Required by the one C shim that still drags `<ntoskrnl.h>` in
-/// (`io_tables.c`) and by every asm source (which `#include <asm.inc>` +
-/// `<ks386.inc>`).
-fn apply_kernel_includes(build: &mut cc::Build, repo_root: &Path, llvm_mingw: &Path) {
+/// Required by every asm source (which `#include <asm.inc>` +
+/// `<ks386.inc>`) and by `generate_ks386_inc()` itself.
+fn apply_kernel_includes(
+    build: &mut cc::Build,
+    repo_root: &Path,
+    llvm_mingw: &Path,
+    mc_gen_dir: &Path,
+) {
     for inc in KERNEL_INCLUDES {
         build.include(repo_root.join(inc));
     }
+    build.include(mc_gen_dir);
     build
         .flag("-nostdinc")
         .flag("-isystem")
@@ -366,11 +385,10 @@ fn shim_obj_dir() -> PathBuf {
 }
 
 /// Compile one C shim with kernel-mode flags + DEFINES, emit it as a `.o`,
-/// and add it to the rustc link line. All current shims pass
-/// `kernel_includes=false` and only need `<stdarg.h>` / `<stddef.h>` /
-/// `<stdint.h>` from clang's resource dir; the parameter is kept as an
-/// escape hatch for future shims that may need to pull `<ntoskrnl.h>`.
-fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
+/// and add it to the rustc link line. All current shims are header-free —
+/// they only need `<stdarg.h>` / `<stddef.h>` / `<stdint.h>` from clang's
+/// resource dir.
+fn compile_shim(repo_root: &Path, source: &Path) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
 
@@ -380,13 +398,6 @@ fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
         .file(source)
         .out_dir(shim_obj_dir())
         .flag("-std=gnu2x");
-    if kernel_includes {
-        apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
-        assert!(
-            repo_root.join("build-i386").exists(),
-            "kernel_includes path needs build-i386/ to exist for generated headers"
-        );
-    }
 
     emit_objects(&build, source);
 }
@@ -396,13 +407,13 @@ fn compile_shim(repo_root: &Path, source: &Path, kernel_includes: bool) {
 /// need the asm-specific include dir (`sdk/include/asm`) + the generated
 /// `ks386.inc` dir (`generated_inc_dir`, which build.rs produces fresh via
 /// `generate_ks386_inc()`) + the full kernel `-I` chain + `-D__ASM__`.
-fn compile_asm(repo_root: &Path, source: &Path, generated_inc_dir: &Path) {
+fn compile_asm(repo_root: &Path, source: &Path, generated_inc_dir: &Path, mc_gen_dir: &Path) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
 
     let mut build = cc::Build::new();
     apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir);
     build
         .file(source)
         .out_dir(shim_obj_dir())
@@ -471,7 +482,7 @@ const LANGUAGES: &[&str] = &[
 /// Compile `ntoskrnl.rc` to a PE-COFF resource file via llvm-mingw's
 /// `i686-w64-mingw32-windres`, mirroring the cmake RC rule. Returns the
 /// path to the resulting `.res` for `cargo:rustc-link-arg=`.
-fn compile_resource(repo_root: &Path, source: &Path) -> PathBuf {
+fn compile_resource(repo_root: &Path, source: &Path, mc_gen_dir: &Path) -> PathBuf {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let windres = llvm_mingw.join("bin/i686-w64-mingw32-windres");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
@@ -483,12 +494,12 @@ fn compile_resource(repo_root: &Path, source: &Path) -> PathBuf {
     let mut cmd = Command::new(&windres);
     cmd.arg("-O").arg("coff");
 
-    // INCLUDES — full kernel chain (cmake's RC FLAGS line is just an extra
-    // `-I sdk/include/crt`, but `sdk/include/crt` is already in
-    // `KERNEL_INCLUDES`, so the chain is sufficient).
+    // INCLUDES — full kernel chain + the windmc-generated mc dir (for
+    // <bugcodes.rc> + its .bin sidecars).
     for inc in KERNEL_INCLUDES {
         cmd.arg("-I").arg(repo_root.join(inc));
     }
+    cmd.arg("-I").arg(mc_gen_dir);
 
     // Preprocessor: clang in -E mode with ms-extensions disabled.
     let out_str = out_path.to_str().expect("utf8 OUT path");
@@ -557,7 +568,7 @@ fn compile_resource(repo_root: &Path, source: &Path) -> PathBuf {
 /// the `.obj` directly — the section data is identical (it's all
 /// compile-time constants from `<ks386.template.h>` + `<ksx.template.h>`,
 /// no relocations needed).
-fn generate_ks386_inc(repo_root: &Path) -> PathBuf {
+fn generate_ks386_inc(repo_root: &Path, mc_gen_dir: &Path) -> PathBuf {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
     let src = repo_root.join("sdk/include/asm/genincdata.c");
@@ -572,11 +583,12 @@ fn generate_ks386_inc(repo_root: &Path) -> PathBuf {
     std::fs::create_dir_all(&obj_subdir).expect("mkdir geninc-obj");
 
     // Compile genincdata.c to a .obj — kernel-mode flags + DEFINES + the
-    // full kernel `-I` chain (it pulls <ntdef.h> / <ntndk.h> / <bugcodes.h>).
+    // full kernel `-I` chain (it pulls <ntdef.h> / <ntndk.h> / <bugcodes.h>,
+    // the latter coming from our windmc-generated mc dir).
     // No PE link needed; we read the .obj directly.
     let mut build = cc::Build::new();
     apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir);
     build.file(&src).out_dir(&obj_subdir).flag("-std=gnu2x");
     let objs = build.compile_intermediates();
     let obj = objs.into_iter().next().expect("genincdata.c produced no object");
@@ -656,4 +668,74 @@ fn read_coff_section(obj: &Path, section_name: &str) -> Vec<u8> {
         "section '{section_name}' not found in {} (had {num_sections} sections)",
         obj.display()
     );
+}
+
+// ---- bugcodes.h/.rc generation (replaces cmake's mc + utf16le step) --------
+
+/// Run `windmc` on `bugcodes.mc` to produce `bugcodes.h` + `bugcodes.rc` +
+/// the per-language `.bin` sidecars in `OUT_DIR/mc-gen/`. Returns the gen
+/// dir path so other consumers (`apply_kernel_includes`, `compile_resource`)
+/// can `-I` it for `<bugcodes.h>` / `<bugcodes.rc>` resolution.
+///
+/// `windmc -u` requires UTF-16LE input (no BOM). cmake stages this via the
+/// `native-utf16le` host tool; we do the same conversion in pure Rust
+/// (bugcodes.mc is ASCII, so each byte zero-extends to one little-endian
+/// u16 — verified vs cmake's converted file byte-for-byte during dev).
+fn generate_bugcodes_mc(repo_root: &Path) -> PathBuf {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let windmc = llvm_mingw.join("bin/i686-w64-mingw32-windmc");
+    if !windmc.exists() {
+        // Fall back to PATH (Homebrew mingw / system mingw).
+        // Same fallback cmake uses via find_program in toolchain-llvm-mingw.cmake.
+    }
+    let windmc_exe = if windmc.exists() {
+        windmc
+    } else {
+        PathBuf::from("i686-w64-mingw32-windmc")
+    };
+
+    let src = repo_root.join("sdk/include/reactos/mc/bugcodes.mc");
+    if !src.exists() {
+        panic!("missing bugcodes.mc at {}", src.display());
+    }
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let gen_dir = out_dir.join("mc-gen");
+    std::fs::create_dir_all(&gen_dir).expect("mkdir mc-gen");
+
+    // ASCII → UTF-16LE conversion (no BOM, matches cmake's `nobom` arg).
+    let ascii = std::fs::read(&src).unwrap_or_else(|e| panic!("read {}: {e}", src.display()));
+    let mut utf16: Vec<u8> = Vec::with_capacity(ascii.len() * 2);
+    for &b in &ascii {
+        utf16.push(b);
+        utf16.push(0);
+    }
+    let utf16_path = gen_dir.join("bugcodes.mc");
+    std::fs::write(&utf16_path, &utf16).expect("write utf16 bugcodes.mc");
+
+    // Run windmc — same flags as cmake's macro_mc:
+    //   windmc -u -A -b -h <gen_dir>/ -r <gen_dir>/ <utf16_input>
+    let gen_dir_with_slash = format!("{}/", gen_dir.display());
+    let status = Command::new(&windmc_exe)
+        .arg("-u") // input is UTF-16LE
+        .arg("-A") // ANSI output (matches cmake's ANSI_SOURCE for bugcodes.mc)
+        .arg("-b") // .bin filename prefixed with .mc filename for uniqueness
+        .arg("-h").arg(&gen_dir_with_slash)
+        .arg("-r").arg(&gen_dir_with_slash)
+        .arg(&utf16_path)
+        .status()
+        .unwrap_or_else(|e| panic!("failed to invoke {}: {e}", windmc_exe.display()));
+    if !status.success() {
+        panic!("windmc failed for bugcodes.mc (exit {:?})", status.code());
+    }
+
+    let h = gen_dir.join("bugcodes.h");
+    let rc = gen_dir.join("bugcodes.rc");
+    if !h.exists() || !rc.exists() {
+        panic!(
+            "windmc ran but produced no bugcodes.h/.rc in {}",
+            gen_dir.display()
+        );
+    }
+    gen_dir
 }
