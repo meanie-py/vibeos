@@ -1,6 +1,6 @@
 # ntoskrnl C→Rust Translation Audit
 
-Last updated 2026-05-08. Ten milestones landed this session:
+Last updated 2026-05-08. Eleven milestones landed this session.
 
 1. **The header-drop arc completed for the 8 shims.** All 8 active C
    shim files are now header-free (no `<ntoskrnl.h>`, no internal
@@ -81,6 +81,27 @@ Last updated 2026-05-08. Ten milestones landed this session:
     `sdk/lib/drivers/arbiter`, `sdk/lib/cmlib`, `""`). Kept the 12
     paths actually pulled. `ks386.inc` and `bugcodes.h` still
     byte-identical to cmake's after the trim; smoke 7/7 PASS.
+11. **`hpp` self-hosted; the cargo PoC has ZERO `build-i386/*`
+    build-time dependencies.** The 4 hpp-generated kernel headers
+    (`ddk/ntddk.h`, `ddk/ntifs.h`, `ddk/wdm.h`, `psdk/ntdef.h`) are
+    now produced in-process: `compile_hpp_host()` builds
+    `sdk/tools/hpp/hpp.c` (631 LOC C) with the host compiler via
+    `cc::Build::host()`, then `generate_xdk_headers()` runs the
+    binary on the 4 `*.template.h` files (CWD set to
+    `sdk/include/xdk/` so fragment includes resolve). All 4 outputs
+    byte-identical to cmake's; `KERNEL_INCLUDES` no longer
+    references any `build-i386/...` path.
+
+    **End-to-end proof:** with `build-i386/sdk/include/{ddk,psdk}`
+    renamed away and the cargo build cache nuked, the cargo PoC
+    rebuilt the full 3.1 MB `ntoskrnl.exe` cleanly (host hpp +
+    in-process xdk gen + windmc + genincdata + cc-rs C/asm + windres
+    + final link). All generated files came out byte-identical to
+    cmake's; smoke 7/7 PASS on the proof binary. The cargo PoC's
+    only remaining cmake-built inputs are the ~30 sibling static
+    libs (rtl, hal, cmlib, etc.) and the `.def` file — no headers,
+    no .obj files, nothing under `build-i386/sdk/include/...` or
+    `build-i386/ntoskrnl/CMakeFiles/`.
 
 Treat any prior version of this document as suspect.
 
@@ -166,8 +187,8 @@ the resulting include hierarchy, and cross-referenced vs the
 | `sdk/include/reactos` | LIVE | `<arc/arc.h>` chain |
 | `sdk/include/vcruntime` | LIVE | `<excpt.h>`, `<setjmp.h>`, mingw32 headers |
 | `sdk/lib/pseh/include` | LIVE | `<pseh/pseh2.h>` chain |
-| `build-i386/sdk/include/psdk` | LIVE | `ntdef.h` only (1 file, hpp-generated) |
-| `build-i386/sdk/include/ddk` | LIVE | `ntddk.h`, `ntifs.h`, `wdm.h` (3 files, hpp-generated) |
+| ~~`build-i386/sdk/include/psdk`~~ | DROPPED | replaced by in-process `xdk-gen/psdk` (milestone 11) |
+| ~~`build-i386/sdk/include/ddk`~~ | DROPPED | replaced by in-process `xdk-gen/ddk` (milestone 11) |
 | ~~`build-i386/ntoskrnl`~~ | DROPPED | only build artifacts (`.a`, `.def`), no headers |
 | ~~`build-i386/ntoskrnl/include`~~ | DROPPED | dir doesn't exist on disk |
 | ~~`build-i386/ntoskrnl/include/internal`~~ | DROPPED | dir doesn't exist on disk |
@@ -183,16 +204,16 @@ the resulting include hierarchy, and cross-referenced vs the
 | ~~`sdk/lib/cmlib`~~ | DROPPED | no hits |
 | ~~`""` (project root)~~ | DROPPED | no hits |
 
-**The remaining cmake-generated dep is exactly 4 hpp-generated files
-in 2 dirs.** All come from `sdk/include/xdk/*.template.h` processed
-by the `hpp` host tool (sdk/tools/hpp, 631 LOC C). Reproducing this
-in `build.rs` needs either (a) shelling out to a cmake-built `hpp`
-binary, or (b) compile + run hpp ourselves via cc-rs (host build).
-Either step would bring the cargo PoC's build-time directories from
-`build-i386/` to zero — the PoC would need only the source tree +
-its own `OUT_DIR/` to fully build. That's the next forward-path item.
+**Zero `build-i386/...` paths remain in `KERNEL_INCLUDES`** as of
+milestone 11. The hpp host tool (`sdk/tools/hpp/hpp.c`, 631 LOC C)
+is now self-built from `build.rs` via `cc::Build::host()` and run
+on the 4 templates to produce `xdk-gen/{ddk,psdk}/*.h` byte-
+identical to cmake's. Empirically validated: the cargo PoC builds
+clean with `build-i386/sdk/include/{ddk,psdk}` renamed away.
 
-Live cargo-PoC-generated dirs (live but self-owned):
+Live cargo-PoC-generated dirs (live but self-owned, all under OUT_DIR):
+- `OUT_DIR/host-tools/hpp` — host-built `hpp` binary
+- `OUT_DIR/xdk-gen/{ddk,psdk}` — 4 hpp-generated kernel headers
 - `OUT_DIR/asm-gen` — `ks386.inc`
 - `OUT_DIR/mc-gen` — `bugcodes.{h,rc,bin}`
 - `OUT_DIR/shims` — per-shim/per-asm `.o` files
@@ -226,14 +247,10 @@ moved to cc-rs, the remaining items are: replace the asm + .res +
 
 In rough priority order:
 
-1. **Generate the 4 hpp-driven kernel headers ourselves.** After the
-   survey above, the remaining `build-i386/` deps are 4 specific
-   files in 2 dirs (ntddk.h, ntifs.h, wdm.h, ntdef.h). All come
-   from `sdk/include/xdk/*.template.h` processed by
-   `sdk/tools/hpp/hpp.c` (631 LOC). Two paths: shell out to a
-   cmake-built `hpp` binary from build.rs, or compile + run hpp
-   ourselves via cc-rs. Either drops the cargo PoC's last cmake
-   configure/build dep (modulo the static libs).
+1. **Generate the `.def` file ourselves.** Last cmake-built input
+   the cargo PoC consumes outside the static libs. cmake produces
+   it via `spec2def.py` from `ntoskrnl.spec`. Should be a small
+   `Command::new("python3")` invocation in `build.rs`.
 2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
    and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
 3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
@@ -286,26 +303,35 @@ Components:
   `crt-objects-fallback` removed. `rustc-abi` set to `x86-softfloat`
   so build-std's compiler_builtins doesn't insist on SSE.
 - **`build.rs`** — invokes `cargo build -p kernel-rust` as a
-  sub-step (with the same custom target), generates `bugcodes.h` /
-  `bugcodes.rc` / `bugcodes_MSG*.bin` via `generate_bugcodes_mc()`
-  (UTF-16LE conversion + `windmc`), generates `ks386.inc` via
-  `generate_ks386_inc()` (compiles `genincdata.c` + parses
-  `.asmdef` COFF section in-process), compiles the 8 header-free C
-  shim translation units and the 8 asm files (zw, fastinterlck_asm,
-  ioport, ctxswitch, trap, usercall_asm, zeropage, prefetch) via
-  `cc-rs`, builds `ntoskrnl.rc.res` via `windres`
-  (`compile_resource()`), and emits `cargo:rustc-link-arg=`
-  directives for: the resulting `libkernel_rust.a`, the per-shim/
-  per-asm `.o` files, the per-build `.res` resource, the cmake-built
-  `.def` file, the ~30 cmake-built static libs, the clang builtins
-  archive, and the kernel-mode PE-COFF link flags. The
-  `apply_kernel_base()` helper mirrors cmake's `DEFINES = …` and
-  `FLAGS = …` lines exactly, `apply_kernel_includes()` mirrors
-  `INCLUDES = …` plus the in-process `mc-gen/` dir, and the
-  resulting `.text`/`.data` sections of every cc-rs-built `.o` (and
-  the entire `.rc.res`, `ks386.inc`, and `bugcodes.{h,rc,bin}`)
-  match cmake's byte-for-byte (only `.debug_info` strings differ in
-  the C/asm objects, since they encode `__FILE__` paths).
+  sub-step (with the same custom target), then runs four
+  in-process header-generation passes:
+  1. `generate_xdk_headers()` — host-builds `sdk/tools/hpp/hpp.c`
+     via `cc::Build::host()`, runs it on the 4 xdk templates
+     (`wdm`, `ntddk`, `ntifs`, `ntdef`) producing the kernel
+     headers in `OUT_DIR/xdk-gen/{ddk,psdk}/`.
+  2. `generate_bugcodes_mc()` — UTF-16LE conversion + `windmc` →
+     `bugcodes.{h,rc,bin}` in `OUT_DIR/mc-gen/`.
+  3. `generate_ks386_inc()` — cc-rs compile of `genincdata.c` + an
+     in-tree COFF section parser → `ks386.inc` in `OUT_DIR/asm-gen/`.
+
+  Then compiles the 8 header-free C shim translation units and the
+  8 asm files (zw, fastinterlck_asm, ioport, ctxswitch, trap,
+  usercall_asm, zeropage, prefetch) via `cc-rs`, builds
+  `ntoskrnl.rc.res` via `windres` (`compile_resource()`), and
+  emits `cargo:rustc-link-arg=` directives for: the resulting
+  `libkernel_rust.a`, the per-shim/per-asm `.o` files, the
+  per-build `.res` resource, the cmake-built `.def` file, the ~30
+  cmake-built static libs, the clang builtins archive, and the
+  kernel-mode PE-COFF link flags.
+
+  The `apply_kernel_base()` helper mirrors cmake's `DEFINES = …`
+  and `FLAGS = …` lines exactly; `apply_kernel_includes()`
+  mirrors `INCLUDES = …` (12 source-tree paths) plus all in-process
+  gen dirs (`xdk-gen/{ddk,psdk}`, `mc-gen`). All 4 hpp-generated
+  headers, `ks386.inc`, `bugcodes.{h,rc,bin}`, the entire
+  `.rc.res`, and the `.text`/`.data` sections of every cc-rs-built
+  `.o` match cmake's byte-for-byte (only `.debug_info` strings
+  differ in the C/asm objects, since they encode `__FILE__` paths).
 - **`src/main.rs`** — `#![no_main]` shell with a stub
   `#[panic_handler]` and a `#[used]` anchor referencing `KiSystemStartup`.
 - **`build-and-test.sh`** — wrapper script that refreshes cmake

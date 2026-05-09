@@ -112,6 +112,16 @@ fn main() {
     // in kernel-rust, computed from `core::mem::size_of::<>()` against
     // ntkrnl-sys bindgen types.
 
+    // ---- Self-host the hpp host tool + generate xdk kernel headers --------
+    // cmake builds 4 kernel headers (ddk/ntddk.h, ddk/ntifs.h, ddk/wdm.h,
+    // psdk/ntdef.h) by running the `hpp` host tool on
+    // `sdk/include/xdk/*.template.h`. We compile hpp.c with the host
+    // compiler (via cc-rs `host()`) and run it ourselves; outputs go to
+    // OUT_DIR/xdk-gen/{ddk,psdk}/. After this, the cargo PoC has zero
+    // `build-i386/*` dependencies — only the source tree + OUT_DIR.
+    let (xdk_ddk_dir, xdk_psdk_dir) = generate_xdk_headers(&repo_root);
+    println!("cargo:rerun-if-changed={}", repo_root.join("sdk/tools/hpp/hpp.c").display());
+
     // ---- Generate bugcodes.h/rc via windmc ---------------------------------
     // cmake produces these by converting bugcodes.mc to UTF-16LE then
     // running windmc on it; we do both steps from build.rs and emit into
@@ -126,9 +136,9 @@ fn main() {
     // PE blob and walking that section with the `geninc` host tool. We do
     // both steps in-process: cc-rs compiles `genincdata.c` to a `.obj`, and
     // a small Rust COFF parser walks the `.asmdef` section and emits
-    // `ks386.inc` to OUT_DIR. genincdata.c needs <bugcodes.h>, so this runs
-    // after generate_bugcodes_mc.
-    let ks386_inc_dir = generate_ks386_inc(&repo_root, &mc_gen_dir);
+    // `ks386.inc` to OUT_DIR. genincdata.c needs <bugcodes.h> + the xdk
+    // kernel headers, so this runs after both prior generators.
+    let ks386_inc_dir = generate_ks386_inc(&repo_root, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/genincdata.c").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ks386.template.h").display());
     println!("cargo:rerun-if-changed={}", repo_root.join("sdk/include/asm/ksx.template.h").display());
@@ -153,12 +163,12 @@ fn main() {
         if !abs.exists() {
             panic!("missing asm source: {}", abs.display());
         }
-        compile_asm(&repo_root, &abs, &ks386_inc_dir, &mc_gen_dir);
+        compile_asm(&repo_root, &abs, &ks386_inc_dir, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
     // ---- Resource (.res) — cc-rs-style windres invocation -------------------
     let rc_source = repo_root.join("ntoskrnl/ntoskrnl.rc");
-    let res_out = compile_resource(&repo_root, &rc_source, &mc_gen_dir);
+    let res_out = compile_resource(&repo_root, &rc_source, &mc_gen_dir, &xdk_ddk_dir, &xdk_psdk_dir);
     println!("cargo:rustc-link-arg={}", res_out.display());
     println!("cargo:rerun-if-changed={}", rc_source.display());
     let _ = cmake_obj_dir;
@@ -328,11 +338,11 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
 /// as an extra `-I` to all three consumers.
 /// Kernel `-I` paths the cargo PoC's compile inputs (asm + RC +
 /// genincdata.c) actually pull headers from. Survey 2026-05-08 (`clang -H`)
-/// pruned 10 dead-weight entries from cmake's original list — see audit
-/// doc § "Survey of remaining build-i386 deps". The two remaining
-/// `build-i386/sdk/include/{ddk,psdk}` paths hold the hpp-generated kernel
-/// headers (ntddk.h, ntifs.h, wdm.h, ntdef.h); generating those in-process
-/// is the next step toward dropping cmake configure entirely.
+/// pruned 10 dead-weight entries from cmake's original list and dropped
+/// `build-i386/sdk/include/{ddk,psdk}` once `generate_xdk_headers()` self-
+/// hosted hpp — see audit doc § "Survey of remaining build-i386 deps".
+/// Result: ZERO `build-i386/...` paths remain. The cargo PoC needs only
+/// the source tree + its own `OUT_DIR/`.
 const KERNEL_INCLUDES: &[&str] = &[
     "ntoskrnl",
     "sdk/include",
@@ -342,23 +352,29 @@ const KERNEL_INCLUDES: &[&str] = &[
     "sdk/include/psdk",
     "sdk/include/reactos",
     "sdk/include/vcruntime",
-    "build-i386/sdk/include/psdk", // hpp-generated ntdef.h (only)
-    "build-i386/sdk/include/ddk",  // hpp-generated ntddk.h, ntifs.h, wdm.h
     "sdk/lib/pseh/include",
     "ntoskrnl/include",
 ];
 
-/// Adds the full kernel `-I` chain (KERNEL_INCLUDES + `mc_gen_dir` for
-/// our windmc-generated `bugcodes.h`) + the `-nostdinc -isystem<crt>
-/// -isystem<clang>` triplet that suppresses mingw's user-mode CRT search.
-/// Required by every asm source (which `#include <asm.inc>` +
-/// `<ks386.inc>`) and by `generate_ks386_inc()` itself.
+/// Adds the full kernel `-I` chain (KERNEL_INCLUDES + the in-process
+/// gen dirs: `mc_gen_dir` for windmc-generated `bugcodes.h`, and the
+/// hpp-generated `xdk_ddk_dir` / `xdk_psdk_dir` for the kernel header
+/// stubs) + the `-nostdinc -isystem<crt> -isystem<clang>` triplet that
+/// suppresses mingw's user-mode CRT search. Required by every asm source
+/// (which `#include <asm.inc>` + `<ks386.inc>`) and by
+/// `generate_ks386_inc()` itself.
 fn apply_kernel_includes(
     build: &mut cc::Build,
     repo_root: &Path,
     llvm_mingw: &Path,
     mc_gen_dir: &Path,
+    xdk_ddk_dir: &Path,
+    xdk_psdk_dir: &Path,
 ) {
+    // hpp-generated kernel headers go FIRST so they shadow any
+    // accidentally-still-checked-in copies of the same names.
+    build.include(xdk_ddk_dir);
+    build.include(xdk_psdk_dir);
     for inc in KERNEL_INCLUDES {
         build.include(repo_root.join(inc));
     }
@@ -401,13 +417,20 @@ fn compile_shim(repo_root: &Path, source: &Path) {
 /// need the asm-specific include dir (`sdk/include/asm`) + the generated
 /// `ks386.inc` dir (`generated_inc_dir`, which build.rs produces fresh via
 /// `generate_ks386_inc()`) + the full kernel `-I` chain + `-D__ASM__`.
-fn compile_asm(repo_root: &Path, source: &Path, generated_inc_dir: &Path, mc_gen_dir: &Path) {
+fn compile_asm(
+    repo_root: &Path,
+    source: &Path,
+    generated_inc_dir: &Path,
+    mc_gen_dir: &Path,
+    xdk_ddk_dir: &Path,
+    xdk_psdk_dir: &Path,
+) {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
 
     let mut build = cc::Build::new();
     apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir, xdk_ddk_dir, xdk_psdk_dir);
     build
         .file(source)
         .out_dir(shim_obj_dir())
@@ -476,7 +499,13 @@ const LANGUAGES: &[&str] = &[
 /// Compile `ntoskrnl.rc` to a PE-COFF resource file via llvm-mingw's
 /// `i686-w64-mingw32-windres`, mirroring the cmake RC rule. Returns the
 /// path to the resulting `.res` for `cargo:rustc-link-arg=`.
-fn compile_resource(repo_root: &Path, source: &Path, mc_gen_dir: &Path) -> PathBuf {
+fn compile_resource(
+    repo_root: &Path,
+    source: &Path,
+    mc_gen_dir: &Path,
+    xdk_ddk_dir: &Path,
+    xdk_psdk_dir: &Path,
+) -> PathBuf {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let windres = llvm_mingw.join("bin/i686-w64-mingw32-windres");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
@@ -488,8 +517,10 @@ fn compile_resource(repo_root: &Path, source: &Path, mc_gen_dir: &Path) -> PathB
     let mut cmd = Command::new(&windres);
     cmd.arg("-O").arg("coff");
 
-    // INCLUDES — full kernel chain + the windmc-generated mc dir (for
-    // <bugcodes.rc> + its .bin sidecars).
+    // INCLUDES — full kernel chain + xdk gen dirs + the windmc-generated
+    // mc dir (for <bugcodes.rc> + its .bin sidecars).
+    cmd.arg("-I").arg(xdk_ddk_dir);
+    cmd.arg("-I").arg(xdk_psdk_dir);
     for inc in KERNEL_INCLUDES {
         cmd.arg("-I").arg(repo_root.join(inc));
     }
@@ -562,7 +593,12 @@ fn compile_resource(repo_root: &Path, source: &Path, mc_gen_dir: &Path) -> PathB
 /// the `.obj` directly — the section data is identical (it's all
 /// compile-time constants from `<ks386.template.h>` + `<ksx.template.h>`,
 /// no relocations needed).
-fn generate_ks386_inc(repo_root: &Path, mc_gen_dir: &Path) -> PathBuf {
+fn generate_ks386_inc(
+    repo_root: &Path,
+    mc_gen_dir: &Path,
+    xdk_ddk_dir: &Path,
+    xdk_psdk_dir: &Path,
+) -> PathBuf {
     let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
     let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
     let src = repo_root.join("sdk/include/asm/genincdata.c");
@@ -578,11 +614,12 @@ fn generate_ks386_inc(repo_root: &Path, mc_gen_dir: &Path) -> PathBuf {
 
     // Compile genincdata.c to a .obj — kernel-mode flags + DEFINES + the
     // full kernel `-I` chain (it pulls <ntdef.h> / <ntndk.h> / <bugcodes.h>,
-    // the latter coming from our windmc-generated mc dir).
+    // all coming from our in-process gen dirs: xdk-gen for ntdef/ntddk/...,
+    // mc-gen for bugcodes).
     // No PE link needed; we read the .obj directly.
     let mut build = cc::Build::new();
     apply_kernel_base(&mut build, &clang);
-    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir);
+    apply_kernel_includes(&mut build, repo_root, &llvm_mingw, mc_gen_dir, xdk_ddk_dir, xdk_psdk_dir);
     build.file(&src).out_dir(&obj_subdir).flag("-std=gnu2x");
     let objs = build.compile_intermediates();
     let obj = objs.into_iter().next().expect("genincdata.c produced no object");
@@ -732,4 +769,94 @@ fn generate_bugcodes_mc(repo_root: &Path) -> PathBuf {
         );
     }
     gen_dir
+}
+
+// ---- xdk header generation (replaces cmake's hpp host tool + add_xdk_header)
+
+/// Compile `sdk/tools/hpp/hpp.c` with the host compiler and return the
+/// path to the resulting `hpp` binary in `OUT_DIR/host-tools/`. cc-rs
+/// finds the host C compiler via `cc::Build::host()`; we then drive a
+/// raw link step ourselves (`cc::Build::compile()` produces an archive,
+/// not an executable).
+fn compile_hpp_host(repo_root: &Path) -> PathBuf {
+    let host = env::var("HOST").expect("HOST env var");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("host-tools");
+    std::fs::create_dir_all(&out_dir).expect("mkdir host-tools");
+    let exe = out_dir.join(if cfg!(windows) { "hpp.exe" } else { "hpp" });
+
+    let cc_tool = cc::Build::new()
+        .target(&host)
+        .host(&host)
+        .opt_level(2)
+        .get_compiler();
+
+    let src = repo_root.join("sdk/tools/hpp/hpp.c");
+    let mut cmd = Command::new(cc_tool.path());
+    // Forward platform-specific flags cc-rs would have added (e.g. arch).
+    cmd.args(cc_tool.args());
+    cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
+    let status = cmd.status().unwrap_or_else(|e| {
+        panic!("failed to invoke host cc ({}): {e}", cc_tool.path().display())
+    });
+    if !status.success() {
+        panic!("host cc failed to compile hpp.c (exit {:?})", status.code());
+    }
+    if !exe.exists() {
+        panic!("hpp build produced no executable at {}", exe.display());
+    }
+    exe
+}
+
+/// Run our self-built `hpp` host tool on the 4 kernel-header templates
+/// from `sdk/include/xdk/`, producing the headers cmake puts in
+/// `build-i386/sdk/include/{ddk,psdk}/`. Returns `(ddk_dir, psdk_dir)`
+/// for `-I` plumbing. hpp resolves `#include`d fragments relative to its
+/// CWD, so we run it in `sdk/include/xdk/`.
+fn generate_xdk_headers(repo_root: &Path) -> (PathBuf, PathBuf) {
+    let hpp = compile_hpp_host(repo_root);
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let xdk_gen = out_dir.join("xdk-gen");
+    let ddk_dir = xdk_gen.join("ddk");
+    let psdk_dir = xdk_gen.join("psdk");
+    std::fs::create_dir_all(&ddk_dir).expect("mkdir xdk-gen/ddk");
+    std::fs::create_dir_all(&psdk_dir).expect("mkdir xdk-gen/psdk");
+
+    let xdk_src = repo_root.join("sdk/include/xdk");
+    if !xdk_src.exists() {
+        panic!("missing sdk/include/xdk source dir: {}", xdk_src.display());
+    }
+
+    let runs: &[(&str, &Path, &str)] = &[
+        ("wdm.template.h", &ddk_dir, "wdm.h"),
+        ("ntddk.template.h", &ddk_dir, "ntddk.h"),
+        ("ntifs.template.h", &ddk_dir, "ntifs.h"),
+        ("ntdef.template.h", &psdk_dir, "ntdef.h"),
+    ];
+    for (template, dir, out_name) in runs {
+        let out = dir.join(out_name);
+        // hpp writes to its CWD if given a bare filename; pass an absolute
+        // output path so it lands in OUT_DIR/xdk-gen/.
+        let status = Command::new(&hpp)
+            .arg(template)
+            .arg(&out)
+            .current_dir(&xdk_src)
+            .status()
+            .unwrap_or_else(|e| panic!("failed to invoke {}: {e}", hpp.display()));
+        if !status.success() {
+            panic!(
+                "hpp failed for {template} (exit {:?})",
+                status.code()
+            );
+        }
+        if !out.exists() {
+            panic!("hpp ran but produced no output at {}", out.display());
+        }
+        println!("cargo:rerun-if-changed={}", xdk_src.join(template).display());
+    }
+    // The xdk fragments (ccfuncs.h, cmtypes.h, etc.) all live in xdk_src;
+    // any change there should trigger regen. Re-run if any .h in xdk
+    // changes.
+    println!("cargo:rerun-if-changed={}", xdk_src.display());
+
+    (ddk_dir, psdk_dir)
 }
