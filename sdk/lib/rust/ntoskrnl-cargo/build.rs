@@ -138,12 +138,12 @@ fn main() {
         compile_asm(&repo_root, &abs);
         println!("cargo:rerun-if-changed={}", abs.display());
     }
-    // ---- Resource (.res) — still cmake-owned --------------------------------
-    let res_full = cmake_obj_dir.join("ntoskrnl.rc.res");
-    if !res_full.exists() {
-        panic!("missing resource file: {}", res_full.display());
-    }
-    println!("cargo:rustc-link-arg={}", res_full.display());
+    // ---- Resource (.res) — cc-rs-style windres invocation -------------------
+    let rc_source = repo_root.join("ntoskrnl/ntoskrnl.rc");
+    let res_out = compile_resource(&repo_root, &rc_source);
+    println!("cargo:rustc-link-arg={}", res_out.display());
+    println!("cargo:rerun-if-changed={}", rc_source.display());
+    let _ = cmake_obj_dir;
 
     // Export def file (drives the PE export table).
     let def_file = build_dir.join("ntoskrnl/ntoskrnl.def");
@@ -230,6 +230,42 @@ fn main() {
     }
 }
 
+/// Kernel-mode + ReactOS-build DEFINES applied to every ntoskrnl C/asm/RC
+/// translation unit. Mirrors cmake's `DEFINES = …` line for any ntoskrnl
+/// source. Extracted to a const so the C, asm, and RC paths share one
+/// source of truth.
+const KERNEL_DEFINES: &[(&str, Option<&str>)] = &[
+    ("D3D_UMD_INTERFACE_VERSION", Some("0x000C")),
+    ("DBG", Some("1")),
+    ("DLL_EXPORT_VERSION", Some("0x502")),
+    ("DXGKDDI_INTERFACE_VERSION", Some("0x1052")),
+    ("KDBG", None),
+    ("MINGW_HAS_SECURE_API", Some("1")),
+    ("NTDDI_VERSION", Some("0x05020400")),
+    ("NTKRNLVISTA", None),
+    ("USE_COMPILER_EXCEPTIONS", None),
+    ("WINVER", Some("0x502")),
+    ("_CRT_NON_CONFORMING_SWPRINTFS", None),
+    ("_CRT_SUPPRESS_RESTRICT", None),
+    ("_GLIBCXX_HAVE_BROKEN_VSWPRINTF", None),
+    ("_M_IX86", None),
+    ("_NEW_DELETE_OPERATORS_", None),
+    ("_NTOSKRNL_", None),
+    ("_NTSYSTEM_", None),
+    ("_SEH_ENABLE_TRACE", None),
+    ("_SETUPAPI_VER", Some("0x502")),
+    ("_USE_32BIT_TIME_T", None),
+    ("_USE_DUMMY_PSEH", Some("1")),
+    ("_WIN32_IE", Some("0x603")),
+    ("_WIN32_WINDOWS", Some("0x502")),
+    ("_WIN32_WINNT", Some("0x502")),
+    ("_X86_", None),
+    ("__REACTOS__", None),
+    ("__ROS_ROSSYM__", None),
+    ("__i386__", None),
+    ("i386", None),
+];
+
 /// Common kernel-mode flags + DEFINES applied to every ntoskrnl C/asm
 /// translation unit. Mirrors the `FLAGS = …` and `DEFINES = …` lines ninja
 /// emits for any ntoskrnl source.
@@ -257,72 +293,52 @@ fn apply_kernel_base(build: &mut cc::Build, clang: &Path) {
         .flag("-fno-omit-frame-pointer")
         .flag("-mstackrealign")
         .flag("-mxsave")
-        .flag("-Wno-unknown-warning-option")
-        .define("D3D_UMD_INTERFACE_VERSION", "0x000C")
-        .define("DBG", "1")
-        .define("DLL_EXPORT_VERSION", "0x502")
-        .define("DXGKDDI_INTERFACE_VERSION", "0x1052")
-        .define("KDBG", None)
-        .define("MINGW_HAS_SECURE_API", "1")
-        .define("NTDDI_VERSION", "0x05020400")
-        .define("NTKRNLVISTA", None)
-        .define("USE_COMPILER_EXCEPTIONS", None)
-        .define("WINVER", "0x502")
-        .define("_CRT_NON_CONFORMING_SWPRINTFS", None)
-        .define("_CRT_SUPPRESS_RESTRICT", None)
-        .define("_GLIBCXX_HAVE_BROKEN_VSWPRINTF", None)
-        .define("_M_IX86", None)
-        .define("_NEW_DELETE_OPERATORS_", None)
-        .define("_NTOSKRNL_", None)
-        .define("_NTSYSTEM_", None)
-        .define("_SEH_ENABLE_TRACE", None)
-        .define("_SETUPAPI_VER", "0x502")
-        .define("_USE_32BIT_TIME_T", None)
-        .define("_USE_DUMMY_PSEH", "1")
-        .define("_WIN32_IE", "0x603")
-        .define("_WIN32_WINDOWS", "0x502")
-        .define("_WIN32_WINNT", "0x502")
-        .define("_X86_", None)
-        .define("__REACTOS__", None)
-        .define("__ROS_ROSSYM__", None)
-        .define("__i386__", None)
-        .define("i386", None);
+        .flag("-Wno-unknown-warning-option");
+    for (name, value) in KERNEL_DEFINES {
+        build.define(name, *value);
+    }
 }
+
+/// Kernel `-I` paths cmake adds to every ntoskrnl C/asm/RC translation
+/// unit. Mirrors cmake's `INCLUDES = …` line; consumed by both the C/asm
+/// path (`apply_kernel_includes` via `cc::Build::include`) and the RC path
+/// (`compile_resource` via raw `-I` args).
+const KERNEL_INCLUDES: &[&str] = &[
+    "build-i386/ntoskrnl",
+    "ntoskrnl",
+    "sdk/include",
+    "sdk/include/crt",
+    "sdk/include/ddk",
+    "sdk/include/ndk",
+    "sdk/include/psdk",
+    "sdk/include/reactos",
+    "sdk/include/reactos/libs",
+    "sdk/include/vcruntime",
+    "sdk/include/winrt",
+    "build-i386/sdk/include",
+    "build-i386/sdk/include/psdk",
+    "build-i386/sdk/include/ddk",
+    "build-i386/sdk/include/dxsdk",
+    "build-i386/sdk/include/reactos",
+    "build-i386/sdk/include/reactos/mc",
+    "sdk/include/dxsdk",
+    "sdk/lib/pseh/include",
+    "",
+    "sdk/lib/drivers/arbiter",
+    "sdk/lib/cmlib",
+    "ntoskrnl/include",
+    "build-i386/ntoskrnl/include",
+    "build-i386/ntoskrnl/include/internal",
+    "sdk/include/reactos/drivers",
+];
 
 /// Adds the full kernel `-I` chain + the `-nostdinc -isystem<crt>
 /// -isystem<clang>` triplet that suppresses mingw's user-mode CRT search.
-/// Mirrors cmake's `INCLUDES = …` for ntoskrnl C sources. Required by the
-/// one C shim that still drags `<ntoskrnl.h>` in (`io_tables.c`) and by
-/// every asm source (which `#include <asm.inc>` + `<ks386.inc>`).
+/// Required by the one C shim that still drags `<ntoskrnl.h>` in
+/// (`io_tables.c`) and by every asm source (which `#include <asm.inc>` +
+/// `<ks386.inc>`).
 fn apply_kernel_includes(build: &mut cc::Build, repo_root: &Path, llvm_mingw: &Path) {
-    for inc in [
-        "build-i386/ntoskrnl",
-        "ntoskrnl",
-        "sdk/include",
-        "sdk/include/crt",
-        "sdk/include/ddk",
-        "sdk/include/ndk",
-        "sdk/include/psdk",
-        "sdk/include/reactos",
-        "sdk/include/reactos/libs",
-        "sdk/include/vcruntime",
-        "sdk/include/winrt",
-        "build-i386/sdk/include",
-        "build-i386/sdk/include/psdk",
-        "build-i386/sdk/include/ddk",
-        "build-i386/sdk/include/dxsdk",
-        "build-i386/sdk/include/reactos",
-        "build-i386/sdk/include/reactos/mc",
-        "sdk/include/dxsdk",
-        "sdk/lib/pseh/include",
-        "",
-        "sdk/lib/drivers/arbiter",
-        "sdk/lib/cmlib",
-        "ntoskrnl/include",
-        "build-i386/ntoskrnl/include",
-        "build-i386/ntoskrnl/include/internal",
-        "sdk/include/reactos/drivers",
-    ] {
+    for inc in KERNEL_INCLUDES {
         build.include(repo_root.join(inc));
     }
     build
@@ -409,4 +425,114 @@ fn emit_objects(build: &cc::Build, source: &Path) {
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+}
+
+/// 136 LANGUAGE_* defines the cmake RC rule passes to windres. Lifted
+/// verbatim from `RC_COMPILER__ntoskrnl_Debug` in `build.ninja`.
+const LANGUAGES: &[&str] = &[
+    "LANGUAGE_AF_ZA", "LANGUAGE_AR_AE", "LANGUAGE_AR_BH", "LANGUAGE_AR_DZ",
+    "LANGUAGE_AR_EG", "LANGUAGE_AR_IQ", "LANGUAGE_AR_JO", "LANGUAGE_AR_KW",
+    "LANGUAGE_AR_LB", "LANGUAGE_AR_LY", "LANGUAGE_AR_MA", "LANGUAGE_AR_OM",
+    "LANGUAGE_AR_QA", "LANGUAGE_AR_SA", "LANGUAGE_AR_SY", "LANGUAGE_AR_TN",
+    "LANGUAGE_AR_YE", "LANGUAGE_AZ_AZ", "LANGUAGE_BE_BY", "LANGUAGE_BG_BG",
+    "LANGUAGE_BN_BD", "LANGUAGE_BN_IN", "LANGUAGE_CA_ES", "LANGUAGE_CS_CZ",
+    "LANGUAGE_DA_DK", "LANGUAGE_DE_AT", "LANGUAGE_DE_CH", "LANGUAGE_DE_DE",
+    "LANGUAGE_DE_LI", "LANGUAGE_DE_LU", "LANGUAGE_DV_MV", "LANGUAGE_EL_GR",
+    "LANGUAGE_EN_AU", "LANGUAGE_EN_BZ", "LANGUAGE_EN_CA", "LANGUAGE_EN_CB",
+    "LANGUAGE_EN_GB", "LANGUAGE_EN_IE", "LANGUAGE_EN_JM", "LANGUAGE_EN_NZ",
+    "LANGUAGE_EN_PH", "LANGUAGE_EN_TT", "LANGUAGE_EN_US", "LANGUAGE_EN_ZA",
+    "LANGUAGE_EN_ZW", "LANGUAGE_EO_AA", "LANGUAGE_ES_AR", "LANGUAGE_ES_BO",
+    "LANGUAGE_ES_CL", "LANGUAGE_ES_CO", "LANGUAGE_ES_CR", "LANGUAGE_ES_DO",
+    "LANGUAGE_ES_EC", "LANGUAGE_ES_ES", "LANGUAGE_ES_GT", "LANGUAGE_ES_HN",
+    "LANGUAGE_ES_MX", "LANGUAGE_ES_NI", "LANGUAGE_ES_PA", "LANGUAGE_ES_PE",
+    "LANGUAGE_ES_PR", "LANGUAGE_ES_PY", "LANGUAGE_ES_SV", "LANGUAGE_ES_UY",
+    "LANGUAGE_ES_VE", "LANGUAGE_ET_EE", "LANGUAGE_EU_ES", "LANGUAGE_FA_IR",
+    "LANGUAGE_FI_FI", "LANGUAGE_FO_FO", "LANGUAGE_FR_BE", "LANGUAGE_FR_CA",
+    "LANGUAGE_FR_CH", "LANGUAGE_FR_FR", "LANGUAGE_FR_LU", "LANGUAGE_FR_MC",
+    "LANGUAGE_GL_ES", "LANGUAGE_GU_IN", "LANGUAGE_HE_IL", "LANGUAGE_HI_IN",
+    "LANGUAGE_HR_HR", "LANGUAGE_HU_HU", "LANGUAGE_HY_AM", "LANGUAGE_ID_ID",
+    "LANGUAGE_IS_IS", "LANGUAGE_IT_CH", "LANGUAGE_IT_IT", "LANGUAGE_JA_JP",
+    "LANGUAGE_KA_GE", "LANGUAGE_KK_KZ", "LANGUAGE_KN_IN", "LANGUAGE_KOK_IN",
+    "LANGUAGE_KO_KR", "LANGUAGE_KY_KG", "LANGUAGE_LT_LT", "LANGUAGE_LV_LV",
+    "LANGUAGE_MK_MK", "LANGUAGE_MN_MN", "LANGUAGE_MR_IN", "LANGUAGE_MS_BN",
+    "LANGUAGE_MS_MY", "LANGUAGE_MY_MM", "LANGUAGE_NL_BE", "LANGUAGE_NL_NL",
+    "LANGUAGE_NN_NO", "LANGUAGE_PA_IN", "LANGUAGE_PL_PL", "LANGUAGE_PT_BR",
+    "LANGUAGE_PT_PT", "LANGUAGE_RM_CH", "LANGUAGE_RO_RO", "LANGUAGE_RU_RU",
+    "LANGUAGE_SA_IN", "LANGUAGE_SK_SK", "LANGUAGE_SL_SI", "LANGUAGE_SQ_AL",
+    "LANGUAGE_SR_SP", "LANGUAGE_SV_FI", "LANGUAGE_SV_SE", "LANGUAGE_SW_KE",
+    "LANGUAGE_SYR_SY", "LANGUAGE_TA_IN", "LANGUAGE_TE_IN", "LANGUAGE_TH_TH",
+    "LANGUAGE_TR_TR", "LANGUAGE_TT_TA", "LANGUAGE_UK_UA", "LANGUAGE_UR_PK",
+    "LANGUAGE_UZ_UZ", "LANGUAGE_VI_VN", "LANGUAGE_WA_BE", "LANGUAGE_ZH_CN",
+    "LANGUAGE_ZH_HK", "LANGUAGE_ZH_MO", "LANGUAGE_ZH_SG", "LANGUAGE_ZH_TW",
+];
+
+/// Compile `ntoskrnl.rc` to a PE-COFF resource file via llvm-mingw's
+/// `i686-w64-mingw32-windres`, mirroring the cmake RC rule. Returns the
+/// path to the resulting `.res` for `cargo:rustc-link-arg=`.
+fn compile_resource(repo_root: &Path, source: &Path) -> PathBuf {
+    let llvm_mingw = repo_root.join(".build-tools/llvm-mingw");
+    let windres = llvm_mingw.join("bin/i686-w64-mingw32-windres");
+    let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+
+    let out_dir = shim_obj_dir();
+    let out_path = out_dir.join("ntoskrnl.rc.res");
+    let dep_path = out_dir.join("ntoskrnl.rc.res.d");
+
+    let mut cmd = Command::new(&windres);
+    cmd.arg("-O").arg("coff");
+
+    // INCLUDES — full kernel chain (cmake's RC FLAGS line is just an extra
+    // `-I sdk/include/crt`, but `sdk/include/crt` is already in
+    // `KERNEL_INCLUDES`, so the chain is sufficient).
+    for inc in KERNEL_INCLUDES {
+        cmd.arg("-I").arg(repo_root.join(inc));
+    }
+
+    // Preprocessor: clang in -E mode with ms-extensions disabled.
+    let out_str = out_path.to_str().expect("utf8 OUT path");
+    let dep_str = dep_path.to_str().expect("utf8 DEP path");
+    cmd.arg(format!("--preprocessor={}", clang.display()))
+        .arg("--preprocessor-arg=--target=i686-w64-mingw32")
+        .arg("--preprocessor-arg=-E")
+        .arg("--preprocessor-arg=-nostdinc")
+        .arg("--preprocessor-arg=-xc-header")
+        .arg("--preprocessor-arg=-MMD")
+        .arg("--preprocessor-arg=-MF")
+        .arg(format!("--preprocessor-arg={dep_str}"))
+        .arg("--preprocessor-arg=-MT")
+        .arg(format!("--preprocessor-arg={out_str}"));
+
+    // RC-specific defines.
+    cmd.arg("-DRC_INVOKED")
+        .arg("-D__WIN32__=1")
+        .arg("-D__FLAT__=1");
+
+    // 136 LANGUAGE_* defines — required for common.ver to emit every
+    // language's StringFileInfo block.
+    for lang in LANGUAGES {
+        cmd.arg(format!("-D{lang}"));
+    }
+
+    // Standard ntoskrnl C-side defines (KERNEL_DEFINES).
+    for (name, value) in KERNEL_DEFINES {
+        match value {
+            Some(v) => cmd.arg(format!("-D{name}={v}")),
+            None => cmd.arg(format!("-D{name}")),
+        };
+    }
+
+    cmd.arg(source).arg(&out_path);
+
+    let status = cmd.status().expect("failed to invoke windres");
+    if !status.success() {
+        panic!(
+            "windres failed for {} (exit {:?})",
+            source.display(),
+            status.code()
+        );
+    }
+    if !out_path.exists() {
+        panic!("windres ran but produced no output at {}", out_path.display());
+    }
+    out_path
 }
