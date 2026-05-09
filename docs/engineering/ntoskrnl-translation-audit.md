@@ -219,6 +219,50 @@ Live cargo-PoC-generated dirs (live but self-owned, all under OUT_DIR):
 - `OUT_DIR/shims` — per-shim/per-asm `.o` files
 - `OUT_DIR/geninc-obj` — intermediate `genincdata.c.obj`
 
+### Source-tree kernel includes — consumer breakdown
+
+The 12 source-tree paths above survived the prune because something
+in the cargo PoC's compile inputs (asm, RC, or `genincdata.c`)
+actually pulls headers from them. Eliminating each path requires
+eliminating its consumer — see Forward path § 1 for the plan.
+
+Mapping live paths to consumers:
+
+| Path | Asm | RC | genincdata.c | Notes |
+|---|:--:|:--:|:--:|---|
+| `ntoskrnl` | | ✓ | | RC's `#include "inbv/bootanim.rc"` |
+| `ntoskrnl/include` | ✓ | | | trap.s pulls `<internal/i386/asmmacro.S>` etc. |
+| `sdk/include` | ✓ | ✓ | ✓ | `<psdk/ntverp.h>`, `<reactos/buildno.h>`, `<asm/asm.inc>`-style refs |
+| `sdk/include/crt` | ✓ | ✓ | ✓ | also `-isystem` for mingw user-mode CRT replacement |
+| `sdk/include/ddk` | | | ✓ | source-tree ddk fragments alongside hpp-generated headers |
+| `sdk/include/ndk` | ✓ | | ✓ | `<ntndk.h>` + arch-specific NDK |
+| `sdk/include/psdk` | | ✓ | ✓ | source-tree psdk (`winnt.h`, `windbgkd.h`, `common.ver`) |
+| `sdk/include/reactos` | | | ✓ | `<arc/arc.h>` chain |
+| `sdk/include/vcruntime` | | ✓ | ✓ | `<excpt.h>`, `<setjmp.h>`, mingw32 stubs |
+| `sdk/lib/pseh/include` | | | ✓ | `<pseh/pseh2.h>` chain |
+| `sdk/include/asm` | ✓ | | | `<asm.inc>` (added per-asm-source via `compile_asm()`) |
+
+Consumer-by-consumer breakdown of what would have to translate to
+drop each path:
+
+- **`genincdata.c`** is the deepest puller (touches 9 of 11 paths
+  including the entire ddk/ndk/psdk/arc chain). Translating its
+  job into Rust `core::mem::offset_of!` directly would also
+  eliminate `ks386.inc` and the asm-side `<ks386.inc>` dependency
+  — the kernel struct offsets would inline into Rust-emitted
+  `global_asm!` literals.
+- **The 8 asm files** are the primary pullers of
+  `ntoskrnl/include`, `sdk/include/asm`, and (via templates)
+  `sdk/include/ndk`. Translating them to `global_asm!` requires
+  the `core::mem::offset_of!` work above (so the offsets are
+  available); after that, the asm pieces become inline in Rust.
+- **`ntoskrnl.rc`** is the lone consumer of `ntoskrnl`,
+  `sdk/include/psdk`'s `winver.h`/`common.ver`, and a chunk of
+  `sdk/include/vcruntime`. Translating to Rust
+  `#[link_section] static` blobs + `include_bytes!` for the
+  bootanim fragments removes `compile_resource()` and frees those
+  paths.
+
 ## What's still C
 
 | Bucket | LOC | Notes |
@@ -239,32 +283,90 @@ is the only cache implementation now.
 
 The strategic goal motivating shim minimization isn't the LOC count
 itself — it's switching ntoskrnl from cmake to cargo as the build
-driver. With the header-drop arc complete and the C shim compile
-moved to cc-rs, the remaining items are: replace the asm + .res +
-.def cmake outputs, and replace the ~30 static libs.
+driver. With every shim cc-rs-compilable, every asm/RC/header
+generated in-process, and zero `build-i386/*` deps, the next layers
+are: (a) eliminate the source-tree kernel includes (translate the
+remaining asm/RC/genincdata.c consumers to Rust); (b) drop the
+remaining cmake outputs (`.def` + ~30 static libs); (c) per-arch
+replication.
 
-### 1. Cargo PoC follow-ups
+### 1. Eliminate source-tree kernel includes (translate consumers)
+
+The 12 source-tree paths in `KERNEL_INCLUDES` aren't dead weight —
+they're pulled by the asm files, the RC file, and `genincdata.c`.
+Eliminating each requires translating its consumer, not editing the
+include list. Heaviest consumer first:
+
+#### 1.1 Translate the 8 asm files to Rust `global_asm!`
+
+Currently the heaviest source-tree-include consumer (~4,600 LOC of
+i386 trap/context-switch/interlocked asm). Each `#include
+<ks386.inc>` becomes inline `.equ` lines emitted by Rust from
+`core::mem::offset_of!` against `ntkrnl-sys` bindgen types — the
+same trick `iomgr/io_tables.rs` already uses for `sizeof()`-based
+lookup tables. The asmmacro.S entry/exit chains (200+ lines of
+preprocessor macros) become `macro_rules!` that expand to
+`global_asm!` literals.
+
+Drops 6 of 11 source-tree paths (`ntoskrnl/include`,
+`sdk/include/asm`, plus most of NDK once the templates can be
+expressed without the full pull). Removes `compile_asm()` + 8
+`.S/.s` files from the active build entirely.
+
+Smallest first (`zeropage.S` is 14 bytes of `.text`,
+`prefetch.S` is 16 bytes); `trap.s` last (deepest tie-in to
+kernel layout).
+
+#### 1.2 Translate `ntoskrnl.rc` to embedded Rust resources
+
+Smaller scope than asm. Pulls `<bugcodes.rc>` (already in-process),
+`inbv/bootanim.rc` (per-language binary blobs), and version info
+via `<common.ver>` / `<ntverp.h>`. Translate to
+`#[link_section]` Rust statics for the version blocks +
+`include_bytes!` for the bootanim fragments. Removes
+`compile_resource()` + drops 3-4 source-tree paths
+(`sdk/include/psdk` + `sdk/include/vcruntime` + bootanim's RC
+chain).
+
+#### 1.3 Replace `genincdata.c` with `core::mem::offset_of!` directly
+
+Once asm is `global_asm!` (item 1.1), `ks386.inc` is no longer
+needed at all — Rust inlines kernel-struct offsets directly in the
+asm literals. Drops `generate_ks386_inc()` and the entire
+genincdata.c compile chain (which is currently the deepest puller
+of `<ntndk.h>` / `<arc/arc.h>` / the full ddk+ndk tree).
+
+#### Net effect of 1.1–1.3
+
+`KERNEL_INCLUDES` would shrink from 12 → 0 source-tree paths. The
+cargo PoC would compile and link the kernel with **only the source
+tree under `sdk/lib/rust/`** — no `sdk/include/...`, no
+`ntoskrnl/include/...`. Every kernel struct offset would route
+through `ntkrnl-sys` bindgen.
+
+### 2. Cargo PoC build-system follow-ups
 
 In rough priority order:
 
 1. **Generate the `.def` file ourselves.** Last cmake-built input
    the cargo PoC consumes outside the static libs. cmake produces
-   it via `spec2def.py` from `ntoskrnl.spec`. Should be a small
-   `Command::new("python3")` invocation in `build.rs`.
-2. **Replicate per-arch.** Clone `i686-kernel.json` to `amd64-kernel.json`
-   and `arm64-kernel.json`; the rest of the PoC structure is arch-agnostic.
+   it via `spec2def.py` from `ntoskrnl.spec`. Trivial
+   `Command::new("python3")` shell-out from `build.rs`.
+2. **Replicate per-arch.** Clone `i686-kernel.json` to
+   `amd64-kernel.json` and `arm64-kernel.json`; the rest of the PoC
+   structure is arch-agnostic.
 3. **Audit `pefixup` / `fix_lld_forwarding.py`.** The smoke-passing
    PoC binary skipped both — strong sign that with the modern
-   linker/Rust setup neither is strictly required for boot, but worth
-   a careful audit (especially: does pefixup adjust the export table
-   in ways that user-mode DLLs depend on?).
+   linker/Rust setup neither is strictly required for boot, but
+   worth a careful audit (especially: does pefixup adjust the
+   export table in ways that user-mode DLLs depend on?).
 4. **Replace cmake-built static libs with cargo-built equivalents.**
    The PoC still links ~30 cmake-produced `.a` files (libcmlib,
-   librtl, libhal, etc.). Each is its own subdirectory build; moving
-   them to cargo crates would let us drop the cmake step entirely.
-   Big lift; not blocking.
+   librtl, libhal, etc.). Each is its own subdirectory build;
+   moving them to cargo crates would let us drop the cmake step
+   entirely. Big lift; not blocking.
 
-### 2. Re-probe the FIXME(amd64-misalign-231) workaround
+### 3. Re-probe the FIXME(amd64-misalign-231) workaround
 
 `ex/exintrin.rs::ProbeForRead` carries a workaround that treats
 non-{1,2,4,8,16} `Alignment` values as 1, citing a "consistent 0xE7
