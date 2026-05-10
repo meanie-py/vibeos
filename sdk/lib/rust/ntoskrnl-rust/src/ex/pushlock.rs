@@ -9,6 +9,7 @@ use ntkrnl_sys::ddk::{
     KeInitializeEvent, KeWaitForSingleObject, KeSignalGateBoostPriority,
     KeInitializeGate, KeWaitForGate, KeSetEventBoostPriority,
     PKGATE,
+    _KWAIT_REASON_WrPushLock,
 };
 
 /// Emit a `#[no_mangle]` function twice: once with `extern "fastcall"` for i386,
@@ -449,7 +450,7 @@ fastcall_export! {
             {
                 KeWaitForGate(
                     core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate),
-                    19u32,
+                    _KWAIT_REASON_WrPushLock,
                     0i8,
                 );
                 debug_assert!((*WaitBlock).Signaled != 0);
@@ -583,7 +584,7 @@ fastcall_export! {
             {
                 KeWaitForGate(
                     core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate),
-                    19u32,
+                    _KWAIT_REASON_WrPushLock,
                     0i8,
                 );
                 debug_assert!((*WaitBlock).Signaled != 0);
