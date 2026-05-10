@@ -229,23 +229,12 @@ pub unsafe extern "system" fn MmAccessFault(
                 MiUnlockWorkingSetShared(PsGetCurrentThread() as ntkrnl_sys::ddk::PETHREAD, core::ptr::addr_of_mut!(MmSystemCacheWs) as ntkrnl_sys::ddk::PMMSUPPORT);
             }
         } else {
-            // The WS lock may already be held by THIS thread (e.g., when called
-            // recursively from MiDeleteVirtualAddresses → MiMakeSystemAddressValid
-            // → MmAccessFault via a page fault on a kernel page table address that
-            // resolves to a user-mode VAD lookup path). Acquiring it again would
-            // self-deadlock. Skip the lock if we already own it; the VAD tree is
-            // safe to read because we hold it.
-            let cur_thread = PsGetCurrentThread();
-            let cur_process = PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS;
-            let owns = {
-                let f = &(*cur_thread).__bindgen_anon_9.__bindgen_anon_1;
-                f.OwnsProcessWorkingSetExclusive() != 0 || f.OwnsProcessWorkingSetShared() != 0
-            };
-            if !owns {
-                MiLockProcessWorkingSetShared(cur_process, cur_thread);
-            }
+            MiLockProcessWorkingSetShared(
+                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                PsGetCurrentThread(),
+            );
             Vad = MiLocateVad(
-                core::ptr::addr_of_mut!((*cur_process).VadRoot),
+                core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).VadRoot),
                 Address,
             );
 
@@ -253,9 +242,10 @@ pub unsafe extern "system" fn MmAccessFault(
                 IsArm3Fault = 1;
             }
 
-            if !owns {
-                MiUnlockProcessWorkingSetShared(cur_process, cur_thread);
-            }
+            MiUnlockProcessWorkingSetShared(
+                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                PsGetCurrentThread(),
+            );
         }
     }
 
