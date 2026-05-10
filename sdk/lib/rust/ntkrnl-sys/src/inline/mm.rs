@@ -573,17 +573,21 @@ pub unsafe fn MiUnlockProcessWorkingSetShared(process: ddk::PEPROCESS, thread: d
 }
 
 /// MiLockProcessWorkingSetUnsafe — acquire exclusive working set lock (unsafe variant, no guarded region).
+/// Matches C miarm.h:1219 — caller must already have APCs disabled.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
     ddk::ExAcquirePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
     );
+    (*process).Vm.Flags.set_AcquiredUnsafe(1);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
 }
 
 /// MiUnlockProcessWorkingSetUnsafe — release exclusive working set lock (unsafe variant).
+/// Matches C miarm.h:1289 — does NOT touch APC state (caller manages it).
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: ddk::PETHREAD) {
+    (*process).Vm.Flags.set_AcquiredUnsafe(0);
     (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(0);
     ddk::ExReleasePushLockExclusive(
         core::ptr::addr_of_mut!((*process).Vm.WorkingSetMutex),
@@ -677,6 +681,7 @@ pub unsafe fn MiUnlockWorkingSetShared(thread: ddk::PETHREAD, ws: ddk::PMMSUPPOR
 // ============================================================================
 
 /// MiLockProcessWorkingSetForFault — lock working set for page fault handling.
+/// Matches C miarm.h:1551 — `Safe` selects safe vs unsafe lock; `Shared` only valid if `Safe`.
 #[inline]
 pub unsafe fn MiLockProcessWorkingSetForFault(
     process: ddk::PEPROCESS,
@@ -684,24 +689,21 @@ pub unsafe fn MiLockProcessWorkingSetForFault(
     safe: BOOLEAN,
     shared: BOOLEAN,
 ) {
-    // If Safe, use Unsafe (no guarded region) variant; otherwise normal lock
     if safe != 0 {
-        if shared != 0 {
-            // ReactOS doesn't have MiLockProcessWorkingSetSharedUnsafe; use exclusive unsafe
-            MiLockProcessWorkingSetUnsafe(process, thread);
-        } else {
-            MiLockProcessWorkingSetUnsafe(process, thread);
-        }
-    } else {
         if shared != 0 {
             MiLockProcessWorkingSetShared(process, thread);
         } else {
             MiLockProcessWorkingSet(process, thread);
         }
+    } else {
+        // Unsafe lock cannot be shared (C asserts this).
+        MiLockProcessWorkingSetUnsafe(process, thread);
     }
 }
 
 /// MiUnlockProcessWorkingSetForFault — unlock working set after page fault handling.
+/// Matches C miarm.h:1518 — checks `MI_IS_WS_UNSAFE` to pick the right release path
+/// and writes the (Safe, Shared) pair so the caller can re-lock with the same flavor.
 #[inline]
 pub unsafe fn MiUnlockProcessWorkingSetForFault(
     process: ddk::PEPROCESS,
@@ -709,21 +711,21 @@ pub unsafe fn MiUnlockProcessWorkingSetForFault(
     safe: *mut BOOLEAN,
     shared: *mut BOOLEAN,
 ) {
-    // Record current lock state
-    let flags = &(*thread).__bindgen_anon_9.__bindgen_anon_1;
-    *safe = 0;
-    *shared = if flags.OwnsProcessWorkingSetShared() != 0 { 1 } else { 0 };
-
-    if flags.OwnsProcessWorkingSetShared() != 0 {
-        MiUnlockProcessWorkingSetShared(process, thread);
-        *safe = 0;
-        *shared = 1;
-    } else {
-        // Check if we used unsafe (no guarded region)
-        // In the C code, this checks MI_IS_WS_UNSAFE which we approximate
-        MiUnlockProcessWorkingSet(process, thread);
+    if (*process).Vm.Flags.AcquiredUnsafe() != 0 {
+        // Was an unsafe acquisition — release unsafely (no GuardedRegion leave).
+        MiUnlockProcessWorkingSetUnsafe(process, thread);
         *safe = 0;
         *shared = 0;
+    } else if (*thread).__bindgen_anon_9.__bindgen_anon_1.OwnsProcessWorkingSetExclusive() != 0 {
+        // Safe + exclusive.
+        MiUnlockProcessWorkingSet(process, thread);
+        *safe = 1;
+        *shared = 0;
+    } else {
+        // Safe + shared (implied — owner is shared).
+        MiUnlockProcessWorkingSetShared(process, thread);
+        *safe = 1;
+        *shared = 1;
     }
 }
 
