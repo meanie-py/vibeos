@@ -178,26 +178,19 @@ def test_screenshot(vm: QemuVM, arch: str) -> None:
     assert ppm_path.exists(), "screendump did not create file"
     assert ppm_path.stat().st_size > 1000, "screendump file too small"
 
-    # Convert PPM to PNG and save to qemu/ directory
+    # Convert PPM to PNG via PIL and save to qemu/ directory.  Do NOT use
+    # ImageMagick `convert` — IM 6.x writes a 1-bit colormap PNG when the
+    # source PPM is mostly one color (e.g. a blue desktop background), which
+    # most viewers then render as solid black, hiding real desktop renders.
     png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
     try:
-        subprocess.run(
-            ["convert", str(ppm_path), str(png_path)],
-            check=True, capture_output=True, timeout=10,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        # ImageMagick not available — try pnmtopng or just keep PPM
-        try:
-            subprocess.run(
-                ["pnmtopng", str(ppm_path)],
-                check=True, capture_output=True, timeout=10,
-                stdout=open(png_path, "wb"),
-            )
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            # No converter — copy PPM as-is
-            png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
-            import shutil
-            shutil.copy2(ppm_path, png_path)
+        from PIL import Image
+        Image.open(ppm_path).save(png_path, "PNG")
+    except ImportError:
+        # PIL not available — fall back to keeping the raw PPM
+        png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
+        import shutil
+        shutil.copy2(ppm_path, png_path)
 
     print(f"\n[screenshot] Saved to {png_path}")
 
