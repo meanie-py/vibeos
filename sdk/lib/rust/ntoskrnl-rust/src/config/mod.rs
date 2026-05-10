@@ -29,3 +29,7 @@ pub mod ntapi;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
+
+// Folded back 2026-05-09 from per-subsystem rlibs (pilot validated
+// the captures(none) firewall is sufficient).
+pub mod inlines;

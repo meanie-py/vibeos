@@ -44,20 +44,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "cm-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "common-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
 name = "compress"
 version = "0.1.0"
 
@@ -112,13 +98,6 @@ name = "interlck"
 version = "0.1.0"
 
 [[package]]
-name = "io-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
 name = "ke-inlines"
 version = "0.1.0"
 dependencies = [
@@ -136,15 +115,11 @@ dependencies = [
 name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
- "cm-inlines",
- "common-inlines",
- "io-inlines",
  "ke-inlines",
  "ke-macros",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
- "ob-inlines",
  "pool",
 ]
 
@@ -249,13 +224,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys",
-]
-
-[[package]]
-name = "ob-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
 ]
 
 [[package]]

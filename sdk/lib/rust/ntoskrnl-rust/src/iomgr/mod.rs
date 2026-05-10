@@ -25,3 +25,7 @@ pub mod remlock;
 pub mod symlink;
 pub mod util;
 pub mod volume;
+
+// Folded back 2026-05-09 from per-subsystem rlibs (pilot validated
+// the captures(none) firewall is sufficient).
+pub mod inlines;

@@ -742,3 +742,7 @@ mod _force_kd64_amd64_symbols {
         SyncPtr(crate::kd64::amd64::kdx64::KdpAllowDisable as *const ()),
     ];
 }
+
+// Folded back 2026-05-09 from per-subsystem rlibs (pilot validated
+// the captures(none) firewall is sufficient).
+pub mod common_inlines;

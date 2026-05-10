@@ -6,6 +6,8 @@
 
 // Re-export pool so its #[no_mangle] symbols are linked in.
 extern crate pool;
+extern crate ke_inlines;
+extern crate ke_macros;
 // Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.
 extern crate ntoskrnl_rust;
 // Re-export ntprintf so its FFI symbols (ntprintf_scan_arg_types,
@@ -15,41 +17,6 @@ extern crate ntprintf;
 // (ntprintf_w_scan_arg_types, ntprintf_w_format) are linked in for the
 // wide variadic trampolines (RtlStringCbPrintfW, swprintf).
 extern crate ntprintf_w;
-// Re-export cm-inlines so its `_rs_Cmp{Acquire,Release,…}KcbLock*` impls
-// are linked in for the C-side `cm_rust_shims.c` outlines that delegate
-// to them. Isolated crate to dodge cross-CGU captures(none) cascades —
-// see docs/engineering/shim-elimination.md § "Phase 1" for context.
-extern crate cm_inlines;
-// Same pattern, second batch: ke-inlines holds the `_rs_Ki{Acquire,Release}*`
-// impls for the in-stack-queued-spinlock FORCEINLINEs from `ke_x.h`. C-side
-// trampolines in `ke_rust_shims.c` delegate to them.
-extern crate ke_inlines;
-// Phase 2 sibling rlib (separate from ke-inlines, which is Phase 1 / FORCEINLINE):
-// `ke-macros` holds Rust impls for `#define` MACROS that the C trampolines in
-// `ke_rust_shims.c` previously materialised inline. Pilot batch (4 fns):
-// KiSatisfyMutantWait, KiSatisfyNonMutantWait, KiSatisfyObjectWait,
-// KiAddThreadToWaitList. Same isolated-rlib augment pattern.
-extern crate ke_macros;
-// Same pattern, third batch: ob-inlines and ps-inlines hold the wrappers
-// for `ob_x.h` and `ps_x.h` FORCEINLINEs that previously lived in
-// `ntoskrnl-rust::shim_exports` — extracted into sibling rlibs to defuse the
-// cross-CGU captures(none) contagion risk that killed the original cm Pilot 1.
-extern crate ob_inlines;
-// Same pattern, fifth batch: common-inlines holds 34 cross-subsystem helper
-// wrappers (Probe* family, splay-link, list-ops, RTL string helpers,
-// interlocked, FsRtl region, init helpers, PsGetCurrentThread) extracted
-// from `ntoskrnl-rust::shim_exports`. Sibling rlib for the same
-// captures(none) containment reason — and because the wrapper count there
-// is highest, defusing it with the rlib boundary has the highest expected
-// payoff.
-extern crate common_inlines;
-// I0 sibling: io-inlines holds Rust impls of `static __inline` and
-// FORCEINLINE bodies from `io_x.h` / `iofuncs.h` (IopValidateOpenPacket,
-// IoGetDevObjExtension, IoCopyCurrentIrpStackLocationToNext to start). Same
-// augment+isolated-rlib pattern: `io_rust_shims.c` C trampolines keep their
-// `_shim`-suffixed symbols (the ABI anchor Rust callers link against) and
-// collapse to one-line `_rs_*` delegations.
-extern crate io_inlines;
 
 // Defensive symbol pull — make sure rustc/lld don't DCE the ntprintf FFI
 // entries. Same pattern as `_force_kdbg_symbols`.
