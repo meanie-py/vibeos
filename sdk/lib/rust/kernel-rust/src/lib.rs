@@ -4,8 +4,6 @@
 
 #![no_std]
 
-// Re-export pool so its #[no_mangle] symbols are linked in.
-extern crate pool;
 extern crate ke_inlines;
 extern crate ke_macros;
 // Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.

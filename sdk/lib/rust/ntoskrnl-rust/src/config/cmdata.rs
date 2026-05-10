@@ -357,7 +357,7 @@ const CMDATA_LOCAL_CV: [_CM_SYSTEM_CONTROL_VECTOR; 50] = unsafe { [
         core::ptr::addr_of_mut!(DummyData)),
     // Mm-owned entries moved to ARM3/{pfnlist,mminit,helpers,mdlsup,drvmgmt,sysldr}.rs
     // and mm/{mminit,pagefile}.rs. PoolUsageMaximum -> MmConsumedPoolPercentage moved
-    // to pool::globals::POOL_CONTROL_VECTOR.
+    // to crate::ex::pool::globals::POOL_CONTROL_VECTOR.
     cv!("Session Manager\\Memory Management", "SystemViewSize",
         core::ptr::addr_of_mut!(DummyData)),
     cv!("Session Manager\\Memory Management", "SessionImageSize",
@@ -496,7 +496,7 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::iomgr::iomgr::IOMGR_CONTROL_VECTOR.0,
     &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
     &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
-    &pool::globals::POOL_CONTROL_VECTOR.0,
+    &crate::ex::pool::globals::POOL_CONTROL_VECTOR.0,
     &CMDATA_LOCAL_CV,
     &TERMINATOR,
 ];

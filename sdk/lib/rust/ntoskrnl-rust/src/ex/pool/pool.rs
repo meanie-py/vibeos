@@ -11,10 +11,10 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::CONTAINING_RECORD;
 
-use crate::globals::*;
+use super::globals::*;
 // Re-import to disambiguate from ntkrnl_sys::mm::MmPagedPoolInfo (extern declaration)
 // — this crate owns the actual definition in globals.rs.
-use crate::globals::MmPagedPoolInfo;
+use super::globals::MmPagedPoolInfo;
 
 // ============================================================================
 // Pool protection helpers (MiProtect/MiUnProtect)

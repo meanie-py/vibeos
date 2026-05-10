@@ -7,7 +7,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-pool = { path = "../pool" }
 ntoskrnl-rust = { path = "../ntoskrnl-rust" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }

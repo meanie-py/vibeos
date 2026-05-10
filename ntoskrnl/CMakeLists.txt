@@ -86,14 +86,7 @@ add_custom_command(
         ${RUST_KERNEL_TARGET_DIR}/${RUST_TARGET}/release/libkernel_rust.a
         ${RUST_KERNEL_LIB}
     DEPENDS ${RUST_WORKSPACE_DIR}/kernel-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/kernel-rust/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/pool/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/pool/src/expool.rs
-            ${RUST_WORKSPACE_DIR}/pool/src/pool.rs
-            ${RUST_WORKSPACE_DIR}/pool/src/globals.rs
-            ${RUST_WORKSPACE_DIR}/pool/src/types.rs
-            ${RUST_WORKSPACE_DIR}/pool/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/ke-macros/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/kernel-rust/Cargo.toml            ${RUST_WORKSPACE_DIR}/ke-macros/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ke-macros/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/shim_exports.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mod.rs

@@ -31,3 +31,6 @@ pub mod win32k;
 pub mod work;
 pub mod xipdisp;
 pub mod zone;
+
+// Folded back from standalone `pool` crate 2026-05-09.
+pub mod pool;

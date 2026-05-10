@@ -13,8 +13,8 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
 
-use crate::globals::*;
-use crate::pool as pool_pages;
+use super::globals::*;
+use super::pool as pool_pages;
 
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -911,7 +911,7 @@ pub unsafe extern "system" fn ExpGetPoolTagInfoTarget(
     _system_argument1: PVOID,
     system_argument2: PVOID,
 ) {
-    let context = deferred_context as *mut crate::types::PoolDpcContext;
+    let context = deferred_context as *mut super::types::PoolDpcContext;
 
     if KeSignalCallDpcSynchronize(system_argument2) != 0 {
         RtlCopyMemory(
@@ -943,7 +943,7 @@ pub unsafe extern "system" fn ExGetPoolTagInfo(
     }
 
     // Snapshot the pool track table via DPC
-    let mut context = crate::types::PoolDpcContext {
+    let mut context = super::types::PoolDpcContext {
         pool_track_table: system_information.add(1) as PPOOL_TRACKER_TABLE, // past the header
         pool_track_table_size: table_size,
         pool_track_table_expansion: null_mut(),
@@ -1656,7 +1656,7 @@ pub unsafe extern "system" fn ExpCheckPoolAllocation(
         let _ = found;
 
         // Get pool type by address
-        real_pool_type = crate::pool::MmDeterminePoolType(p);
+        real_pool_type = super::pool::MmDeterminePoolType(p);
     } else {
         // Verify the tag
         if (*entry).PoolTag != tag {
