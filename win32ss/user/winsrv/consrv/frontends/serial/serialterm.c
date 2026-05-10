@@ -252,12 +252,13 @@ SerialInputThread(PVOID Param)
 
     DPRINT1("[SERIAL] Input thread started\n");
 
-    /* Raise priority to TIME_CRITICAL (15) so this thread is always the first
-     * non-kernel thread rescheduled after a yield.  ARM64 has no timer
-     * interrupts, so scheduling is purely cooperative.  Without this boost,
-     * serialterm can starve behind equal-priority threads that run for long
-     * periods without yielding (e.g. DLL loading during boot). */
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    /* Run at BELOW_NORMAL so we don't starve explorer/desktop rendering on
+     * arm64 (no timer interrupts → cooperative scheduling, so a high-priority
+     * polling loop that re-enters the kernel for ~5ms per Read syscall pegs
+     * the CPU and blocks lower-priority threads from making forward progress).
+     * Serial input is best-effort here; the smoke harness doesn't drive
+     * console input via COM1 anyway. */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 
     while (!SerialData->Terminate)
     {
