@@ -20,3 +20,4 @@ pub mod security;
 pub mod state;
 pub mod thread;
 pub mod win32;
+pub mod inlines;

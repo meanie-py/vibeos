@@ -16,3 +16,4 @@ pub mod section_pe;
 // Section I/O + page-table — translated from cache/section/{io,sptab}.c.
 pub mod section_io;
 pub mod section_table;
+pub mod pte_atomic_inlines;

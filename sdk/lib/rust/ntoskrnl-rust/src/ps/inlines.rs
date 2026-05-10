@@ -1,18 +1,18 @@
 //! Rust wrappers for `ps_x.h` FORCEINLINE functions whose bodies live in
-//! `ntkrnl_sys::inline::ps`. This rlib used to live as a section of
-//! `ntoskrnl-rust::shim_exports`; extracted into an isolated rlib (same
-//! shape as `ke-inlines` / `cm-inlines` / `ob-inlines`) to dodge the LLVM
-//! captures(none) cross-CGU contagion that killed the first Phase 1 cm pilot.
+//! `ntkrnl_sys::inline::ps`.
 //!
 //! Each wrapper is a `#[no_mangle] #[inline(never)]` extern-C entry that
 //! launders pointers through `opaque_ptr` and delegates to
 //! `ntkrnl_sys::inline::ps::*`.
 //!
-//! 18 functions total. Kept out of this rlib (still in `shim_exports`):
+//! 18 functions total. Kept out (still in `shim_exports`):
 //!   - `PspClearCrossThreadFlag` — body in `inline::common` (cross-subsystem
 //!     macro), not `inline::ps`.
-
-#![no_std]
+//!
+//! Pilot — folded back from the standalone `ps-inlines` rlib 2026-05-09.
+//! The captures(none) firewall today is workspace-wide `lto = false` +
+//! `codegen-units = 256`, so the rlib boundary that originally protected
+//! these wrappers is no longer load-bearing.
 
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::opaque_ptr;

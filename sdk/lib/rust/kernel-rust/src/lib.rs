@@ -35,13 +35,6 @@ extern crate ke_macros;
 // `ntoskrnl-rust::shim_exports` — extracted into sibling rlibs to defuse the
 // cross-CGU captures(none) contagion risk that killed the original cm Pilot 1.
 extern crate ob_inlines;
-extern crate ps_inlines;
-// Same pattern, fourth batch: se-inlines holds the Se*/Sep* helper wrappers
-// (security-descriptor accessors, token locks, SeQuerySubjectContextToken,
-// SeLengthSid, SeDeleteClientSecurity) that previously lived in
-// `ntoskrnl-rust::shim_exports`. Sibling rlib for the same captures(none)
-// containment reason as ob/ps-inlines.
-extern crate se_inlines;
 // Same pattern, fifth batch: common-inlines holds 34 cross-subsystem helper
 // wrappers (Probe* family, splay-link, list-ops, RTL string helpers,
 // interlocked, FsRtl region, init helpers, PsGetCurrentThread) extracted
@@ -73,9 +66,6 @@ extern crate mm_ws_lock_inlines;
 // mutex (MmGet{Current,Kernel}AddressSpace, MmGetAddressSpaceOwner,
 // MmLock/UnlockAddressSpace).
 extern crate mm_addr_space_inlines;
-// M6 sibling: PTE atomic-update wrappers (MiInterlockedCompareExchangePte,
-// MiInterlockedExchangePte). 64-bit on amd64/arm64, 32-bit on i386.
-extern crate mm_pte_atomic_inlines;
 // M7 sibling: expansion + PFN locks. MiAcquire/ReleaseExpansionLock use
 // the regular spinlock; MiAcquire/ReleasePfnLock use the per-CPU queued
 // spinlock at LockQueuePfnLock = 2.

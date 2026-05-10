@@ -1,19 +1,18 @@
 //! Rust wrappers for `se_x.h` FORCEINLINE / NTAPI helper functions whose
 //! bodies live in `ntkrnl_sys::inline::se` (and one tier1 entry,
-//! `SeDeleteClientSecurity`). Extracted from `ntoskrnl-rust::shim_exports`
-//! into an isolated rlib (same shape as `cm-inlines` / `ke-inlines` /
-//! `ob-inlines` / `ps-inlines`) to dodge the LLVM captures(none) cross-CGU
-//! contagion that killed the first Phase 1 cm pilot.
+//! `SeDeleteClientSecurity`).
 //!
 //! Each wrapper is a `#[no_mangle] #[inline(never)]` extern-C entry that
 //! launders pointer arguments through `opaque_ptr` (defeats LLVM's
 //! captures(none) attribute deduction) and delegates to the corresponding
-//! `ntkrnl_sys::inline::*` body. Behaviour is identical to the previous
-//! shim_exports placement.
+//! `ntkrnl_sys::inline::*` body.
 //!
 //! 10 functions total — every Se*/Sep* helper that was in `shim_exports.rs`.
-
-#![no_std]
+//!
+//! Pilot — folded back from the standalone `se-inlines` rlib 2026-05-09.
+//! The captures(none) firewall today is workspace-wide `lto = false` +
+//! `codegen-units = 256`, so the rlib boundary that originally protected
+//! these wrappers is no longer load-bearing.
 
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::opaque_ptr;

@@ -1,5 +1,4 @@
-//! Rust impls for the PTE atomic-update macros from `mm.h`
-//! (Phase 1 batch M6).
+//! Rust impls for the PTE atomic-update macros from `mm.h`.
 //!
 //! Two wrappers:
 //!
@@ -11,13 +10,12 @@
 //! `inline::mm` already provides matching `core::sync::atomic`-based
 //! implementations — the per-arch divergence (32-bit on i386, 64-bit on
 //! amd64/arm64) is handled inside that module via `cfg(target_arch)`. No
-//! inline asm needed in the rlib.
+//! inline asm needed.
 //!
-//! Same augment+isolated-rlib pattern as M1/M2/M3/M4/M5. C trampolines in
-//! `mm_rust_shims.c` keep the `Mi*` symbols as the ABI anchor; bodies
-//! collapse to one-line `_rs_*` calls.
-
-#![no_std]
+//! Pilot — folded back from the standalone `mm-pte-atomic-inlines` rlib
+//! 2026-05-09. The captures(none) firewall today is workspace-wide
+//! `lto = false` + `codegen-units = 256`, so the rlib boundary that
+//! originally protected these wrappers is no longer load-bearing.
 
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::opaque_ptr;

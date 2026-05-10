@@ -18,3 +18,4 @@ pub mod token;
 pub mod tokenadj;
 pub mod tokencls;
 pub mod tokenlif;
+pub mod inlines;
