@@ -23,6 +23,12 @@
 #   walk-waitlist <addr>
 #                     -- walk the WaitListHead of a dispatcher object,
 #                        printing every wait block (Thread / Object / state)
+#   list-threads      -- walk PsActiveProcessHead and print every
+#                        (process, thread) pair with state, wait reason,
+#                        priority, image name. Single shot.
+#   sample-pc         -- read $pc + current process->ImageFileName, emit
+#                        one SAMPLE line. Use qemu/sample-pc.sh for a
+#                        repeated-sampling histogram.
 #   find-kbase        -- scan for runtime kernel base, store in $kbase
 #   raw <gdb-cmd>     -- run a raw GDB command (escape hatch)
 #
@@ -84,6 +90,8 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/identify-object.py"
     -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
+    -ex "source $GDB_HELPERS_DIR/list-threads.py"
+    -ex "source $GDB_HELPERS_DIR/sample-pc.py"
 )
 
 # Auto-resolve kbase + relocate symbols. If we already cached it in the
@@ -143,6 +151,16 @@ case "$COMMAND" in
         ADDR="${ARGS[0]:-}"
         [ -n "$ADDR" ] || die "walk-waitlist requires an object address"
         EX_ARGS+=(-ex "walk-waitlist $ADDR")
+        ;;
+    list-threads)
+        EX_ARGS+=(-ex "list-threads")
+        ;;
+    sample-pc)
+        # Single sample (one $pc + current-process read).  Use sample-pc.sh
+        # to get a histogram from N samples spaced delay_ms apart — driving
+        # the loop from the shell avoids gdb-batch-mode synchronization
+        # issues with continue/interrupt cycles against a remote gdbstub.
+        EX_ARGS+=(-ex "sample-pc")
         ;;
     find-kbase)
         EX_ARGS+=(-ex "find-kbase")
