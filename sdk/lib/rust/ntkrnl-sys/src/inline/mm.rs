@@ -590,19 +590,68 @@ pub unsafe fn MiUnlockProcessWorkingSetUnsafe(process: ddk::PEPROCESS, thread: d
     );
 }
 
+extern "C" {
+    static mut MmSystemCacheWs: ddk::_MMSUPPORT;
+}
+
+#[inline]
+unsafe fn _ws_set_owns(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT, exclusive: bool) {
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetExclusive(1);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetShared(1);
+        }
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetExclusive(1);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetShared(1);
+        }
+    } else {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(1);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetShared(1);
+        }
+    }
+}
+
+#[inline]
+unsafe fn _ws_clear_owns(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT, exclusive: bool) {
+    if ws == core::ptr::addr_of_mut!(MmSystemCacheWs) {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetExclusive(0);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSystemWorkingSetShared(0);
+        }
+    } else if (*ws).Flags.SessionSpace() != 0 {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetExclusive(0);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsSessionWorkingSetShared(0);
+        }
+    } else {
+        if exclusive {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetExclusive(0);
+        } else {
+            (*thread).__bindgen_anon_9.__bindgen_anon_1.set_OwnsProcessWorkingSetShared(0);
+        }
+    }
+}
+
 /// MiLockWorkingSet — acquire exclusive working set lock on MMSUPPORT.
 #[inline]
 pub unsafe fn MiLockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
     super::ke::KeEnterGuardedRegion();
     ddk::ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
-    // Note: ownership flag depends on which working set — caller handles
-    let _ = thread; // Thread used for assertions in debug builds only
+    _ws_set_owns(thread, ws, true);
 }
 
 /// MiUnlockWorkingSet — release exclusive working set lock on MMSUPPORT.
 #[inline]
 pub unsafe fn MiUnlockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
-    let _ = thread;
+    _ws_clear_owns(thread, ws, true);
     ddk::ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     super::ke::KeLeaveGuardedRegion();
 }
@@ -612,13 +661,13 @@ pub unsafe fn MiUnlockWorkingSet(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
 pub unsafe fn MiLockWorkingSetShared(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
     super::ke::KeEnterGuardedRegion();
     ddk::ExAcquirePushLockShared(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
-    let _ = thread;
+    _ws_set_owns(thread, ws, false);
 }
 
 /// MiUnlockWorkingSetShared — release shared working set lock on MMSUPPORT.
 #[inline]
 pub unsafe fn MiUnlockWorkingSetShared(thread: ddk::PETHREAD, ws: ddk::PMMSUPPORT) {
-    let _ = thread;
+    _ws_clear_owns(thread, ws, false);
     ddk::ExReleasePushLockShared(core::ptr::addr_of_mut!((*ws).WorkingSetMutex));
     super::ke::KeLeaveGuardedRegion();
 }
