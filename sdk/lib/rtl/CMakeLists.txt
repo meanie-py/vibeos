@@ -156,393 +156,73 @@ elseif(ARCH STREQUAL "arm64")
     set(RUST_EXTRA_ENV "")
 endif()
 
-# Rust AVL Table library (all architectures)
-set(RUST_AVLTABLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_avltable.a")
+# Rust RTL umbrella (all architectures) — combines 18 algorithm rlibs
+# (access, avltable, bitmap, byteswap, compress, crc32, encode,
+# generictable, handle, interlck, largeint, luid, mem, prefix, random,
+# slist, splaytree, time) into one staticlib that feeds librtl.a.
+set(RUST_RTL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librtl_rust.a")
 add_custom_command(
-    OUTPUT ${RUST_AVLTABLE_LIB}
+    OUTPUT ${RUST_RTL_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
-            -p reactos-avltable
+            -p rtl-rust
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_avltable.a
-        ${RUST_AVLTABLE_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/avltable/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/avltable/src/types.rs
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/librtl_rust.a
+        ${RUST_RTL_RUST_LIB}
+    DEPENDS
+            ${RUST_WORKSPACE_DIR}/access/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/access/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/avltable/src/lib.rs
             ${RUST_WORKSPACE_DIR}/avltable/src/tree.rs
+            ${RUST_WORKSPACE_DIR}/avltable/src/types.rs
             ${RUST_WORKSPACE_DIR}/avltable/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust AVL Table library (${RUST_TARGET})"
-)
-add_custom_target(rust_avltable DEPENDS ${RUST_AVLTABLE_LIB})
-add_dependencies(rtl rust_avltable)
-target_link_libraries(rtl PRIVATE ${RUST_AVLTABLE_LIB})
-
-# Rust Bitmap library (all architectures)
-set(RUST_BITMAP_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_bitmap.a")
-add_custom_command(
-    OUTPUT ${RUST_BITMAP_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-bitmap
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_bitmap.a
-        ${RUST_BITMAP_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/bitmap/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/bitmap/src/lib.rs
             ${RUST_WORKSPACE_DIR}/bitmap/src/ops.rs
             ${RUST_WORKSPACE_DIR}/bitmap/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Bitmap library (${RUST_TARGET})"
-)
-add_custom_target(rust_bitmap DEPENDS ${RUST_BITMAP_LIB})
-add_dependencies(rtl rust_bitmap)
-target_link_libraries(rtl PRIVATE ${RUST_BITMAP_LIB})
-
-# Rust SList library (all architectures)
-set(RUST_SLIST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_slist.a")
-add_custom_command(
-    OUTPUT ${RUST_SLIST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-slist
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_slist.a
-        ${RUST_SLIST_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/slist/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/byteswap/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/byteswap/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/compress/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/compress/src/lznt1.rs
+            ${RUST_WORKSPACE_DIR}/compress/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/crc32/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/crc32/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/encode/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/encode/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/generictable/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/generictable/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/handle/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/handle/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/interlck/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/interlck/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/largeint/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/largeint/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/luid/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/luid/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/mem/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/mem/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/prefix/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/prefix/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/random/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/random/Cargo.toml
             ${RUST_WORKSPACE_DIR}/slist/src/algorithm.rs
             ${RUST_WORKSPACE_DIR}/slist/src/atomics.rs
             ${RUST_WORKSPACE_DIR}/slist/src/header.rs
+            ${RUST_WORKSPACE_DIR}/slist/src/lib.rs
             ${RUST_WORKSPACE_DIR}/slist/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust SList library (${RUST_TARGET})"
-)
-add_custom_target(rust_slist DEPENDS ${RUST_SLIST_LIB})
-add_dependencies(rtl rust_slist)
-target_link_libraries(rtl PRIVATE ${RUST_SLIST_LIB})
-
-# Rust Compress library (all architectures)
-set(RUST_COMPRESS_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_compress.a")
-add_custom_command(
-    OUTPUT ${RUST_COMPRESS_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-compress
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_compress.a
-        ${RUST_COMPRESS_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/compress/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/compress/src/lznt1.rs
-            ${RUST_WORKSPACE_DIR}/compress/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Compress library (${RUST_TARGET})"
-)
-add_custom_target(rust_compress DEPENDS ${RUST_COMPRESS_LIB})
-add_dependencies(rtl rust_compress)
-target_link_libraries(rtl PRIVATE ${RUST_COMPRESS_LIB})
-
-# Rust CRC32 library (all architectures)
-set(RUST_CRC32_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_crc32.a")
-add_custom_command(
-    OUTPUT ${RUST_CRC32_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-crc32
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_crc32.a
-        ${RUST_CRC32_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/crc32/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/crc32/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust CRC32 library (${RUST_TARGET})"
-)
-add_custom_target(rust_crc32 DEPENDS ${RUST_CRC32_LIB})
-add_dependencies(rtl rust_crc32)
-target_link_libraries(rtl PRIVATE ${RUST_CRC32_LIB})
-
-# Rust Random library (all architectures)
-set(RUST_RANDOM_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_random.a")
-add_custom_command(
-    OUTPUT ${RUST_RANDOM_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-random
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_random.a
-        ${RUST_RANDOM_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/random/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/random/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Random library (${RUST_TARGET})"
-)
-add_custom_target(rust_random DEPENDS ${RUST_RANDOM_LIB})
-add_dependencies(rtl rust_random)
-target_link_libraries(rtl PRIVATE ${RUST_RANDOM_LIB})
-
-# Rust Encode library (all architectures)
-set(RUST_ENCODE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_encode.a")
-add_custom_command(
-    OUTPUT ${RUST_ENCODE_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-encode
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_encode.a
-        ${RUST_ENCODE_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/encode/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/encode/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Encode library (${RUST_TARGET})"
-)
-add_custom_target(rust_encode DEPENDS ${RUST_ENCODE_LIB})
-add_dependencies(rtl rust_encode)
-target_link_libraries(rtl PRIVATE ${RUST_ENCODE_LIB})
-
-# Rust LargeInt library (all architectures)
-# Note: The C largeint.c had a linker hack (PVOID Dummy = RtlUshortByteSwap)
-# to force-include RtlUshortByteSwap. With LLD, exported symbols from .spec
-# files are included automatically, so this hack is not needed.
-set(RUST_LARGEINT_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_largeint.a")
-add_custom_command(
-    OUTPUT ${RUST_LARGEINT_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-largeint
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_largeint.a
-        ${RUST_LARGEINT_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/largeint/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/largeint/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust LargeInt library (${RUST_TARGET})"
-)
-add_custom_target(rust_largeint DEPENDS ${RUST_LARGEINT_LIB})
-add_dependencies(rtl rust_largeint)
-target_link_libraries(rtl PRIVATE ${RUST_LARGEINT_LIB})
-
-# Rust Access library (all architectures)
-set(RUST_ACCESS_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_access.a")
-add_custom_command(
-    OUTPUT ${RUST_ACCESS_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-access
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_access.a
-        ${RUST_ACCESS_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/access/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/access/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Access library (${RUST_TARGET})"
-)
-add_custom_target(rust_access DEPENDS ${RUST_ACCESS_LIB})
-add_dependencies(rtl rust_access)
-target_link_libraries(rtl PRIVATE ${RUST_ACCESS_LIB})
-
-# Rust ByteSwap library (all architectures — i386 lib is empty, rtlswap.S provides those)
-set(RUST_BYTESWAP_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_byteswap.a")
-add_custom_command(
-    OUTPUT ${RUST_BYTESWAP_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-byteswap
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_byteswap.a
-        ${RUST_BYTESWAP_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/byteswap/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/byteswap/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust ByteSwap library (${RUST_TARGET})"
-)
-add_custom_target(rust_byteswap DEPENDS ${RUST_BYTESWAP_LIB})
-add_dependencies(rtl rust_byteswap)
-target_link_libraries(rtl PRIVATE ${RUST_BYTESWAP_LIB})
-
-# Rust Interlck library (all architectures)
-set(RUST_INTERLCK_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_interlck.a")
-add_custom_command(
-    OUTPUT ${RUST_INTERLCK_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-interlck
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_interlck.a
-        ${RUST_INTERLCK_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/interlck/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/interlck/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Interlck library (${RUST_TARGET})"
-)
-add_custom_target(rust_interlck DEPENDS ${RUST_INTERLCK_LIB})
-add_dependencies(rtl rust_interlck)
-target_link_libraries(rtl PRIVATE ${RUST_INTERLCK_LIB})
-
-# Rust LUID library (all architectures)
-set(RUST_LUID_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_luid.a")
-add_custom_command(
-    OUTPUT ${RUST_LUID_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-luid
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_luid.a
-        ${RUST_LUID_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/luid/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/luid/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust LUID library (${RUST_TARGET})"
-)
-add_custom_target(rust_luid DEPENDS ${RUST_LUID_LIB})
-add_dependencies(rtl rust_luid)
-target_link_libraries(rtl PRIVATE ${RUST_LUID_LIB})
-
-# Rust Prefix library (all architectures)
-set(RUST_PREFIX_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_prefix.a")
-add_custom_command(
-    OUTPUT ${RUST_PREFIX_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-prefix
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_prefix.a
-        ${RUST_PREFIX_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/prefix/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/prefix/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Prefix library (${RUST_TARGET})"
-)
-add_custom_target(rust_prefix DEPENDS ${RUST_PREFIX_LIB})
-add_dependencies(rtl rust_prefix)
-target_link_libraries(rtl PRIVATE ${RUST_PREFIX_LIB})
-
-# Rust Mem library (all architectures — i386 lib is empty, rtlmem.s provides those)
-set(RUST_MEM_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_mem.a")
-add_custom_command(
-    OUTPUT ${RUST_MEM_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-mem
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_mem.a
-        ${RUST_MEM_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/mem/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/mem/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Mem library (${RUST_TARGET})"
-)
-add_custom_target(rust_mem DEPENDS ${RUST_MEM_LIB})
-add_dependencies(rtl rust_mem)
-target_link_libraries(rtl PRIVATE ${RUST_MEM_LIB})
-
-# Rust Handle library (all architectures)
-set(RUST_HANDLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_handle.a")
-add_custom_command(
-    OUTPUT ${RUST_HANDLE_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-handle
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_handle.a
-        ${RUST_HANDLE_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/handle/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/handle/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Handle library (${RUST_TARGET})"
-)
-add_custom_target(rust_handle DEPENDS ${RUST_HANDLE_LIB})
-add_dependencies(rtl rust_handle)
-target_link_libraries(rtl PRIVATE ${RUST_HANDLE_LIB})
-
-# Rust Time library (all architectures)
-set(RUST_TIME_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_time.a")
-add_custom_command(
-    OUTPUT ${RUST_TIME_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-time
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_time.a
-        ${RUST_TIME_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/time/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/time/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust Time library (${RUST_TARGET})"
-)
-add_custom_target(rust_time DEPENDS ${RUST_TIME_LIB})
-add_dependencies(rtl rust_time)
-target_link_libraries(rtl PRIVATE ${RUST_TIME_LIB})
-
-# Rust SplayTree library (all architectures)
-set(RUST_SPLAYTREE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_splaytree.a")
-add_custom_command(
-    OUTPUT ${RUST_SPLAYTREE_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-splaytree
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_splaytree.a
-        ${RUST_SPLAYTREE_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/splaytree/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/splaytree/src/lib.rs
             ${RUST_WORKSPACE_DIR}/splaytree/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/time/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/time/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust SplayTree library (${RUST_TARGET})"
+    COMMENT "Building Rust RTL umbrella (${RUST_TARGET})"
 )
-add_custom_target(rust_splaytree DEPENDS ${RUST_SPLAYTREE_LIB})
-add_dependencies(rtl rust_splaytree)
-target_link_libraries(rtl PRIVATE ${RUST_SPLAYTREE_LIB})
-
-# Rust GenericTable library (all architectures)
-set(RUST_GENERICTABLE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_generictable.a")
-add_custom_command(
-    OUTPUT ${RUST_GENERICTABLE_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p reactos-generictable
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_generictable.a
-        ${RUST_GENERICTABLE_LIB}
-    DEPENDS ${RUST_WORKSPACE_DIR}/generictable/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/generictable/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMENT "Building Rust GenericTable library (${RUST_TARGET})"
-)
-add_custom_target(rust_generictable DEPENDS ${RUST_GENERICTABLE_LIB})
-add_dependencies(rtl rust_generictable)
-target_link_libraries(rtl PRIVATE ${RUST_GENERICTABLE_LIB})
+add_custom_target(rust_rtl DEPENDS ${RUST_RTL_RUST_LIB})
+add_dependencies(rtl rust_rtl)
+target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
 list(APPEND SOURCE_VISTA
     condvar.c
@@ -558,16 +238,16 @@ add_dependencies(rtl_vista psdk)
 target_link_libraries(rtl_vista PRIVATE pseh)
 
 # Rust UTF-8 library (all architectures) — links into rtl_vista
-set(RUST_UTF8_LIB "${CMAKE_CURRENT_BINARY_DIR}/libreactos_utf8.a")
+set(RUST_UTF8_LIB "${CMAKE_CURRENT_BINARY_DIR}/libutf8.a")
 add_custom_command(
     OUTPUT ${RUST_UTF8_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
-            -p reactos-utf8
+            -p utf8
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libreactos_utf8.a
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libutf8.a
         ${RUST_UTF8_LIB}
     DEPENDS ${RUST_WORKSPACE_DIR}/utf8/src/lib.rs
             ${RUST_WORKSPACE_DIR}/utf8/src/conv.rs

@@ -8,7 +8,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
-reactos-pool = { path = "../pool" }
+pool = { path = "../pool" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }
 

@@ -1,0 +1,31 @@
+[package]
+name = "rtl-rust"
+version = "0.1.0"
+edition = "2021"
+
+# Umbrella staticlib that combines the 18 algorithm rlibs that feed librtl.a.
+# `extern crate X;` in lib.rs force-pulls each rlib's #[no_mangle] symbols
+# into the staticlib (per feedback_extern_crate_for_staticlib.md).
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+access       = { path = "../access" }
+avltable     = { path = "../avltable" }
+bitmap       = { path = "../bitmap" }
+byteswap     = { path = "../byteswap" }
+compress     = { path = "../compress" }
+crc32        = { path = "../crc32" }
+encode       = { path = "../encode" }
+generictable = { path = "../generictable" }
+handle       = { path = "../handle" }
+interlck     = { path = "../interlck" }
+largeint     = { path = "../largeint" }
+luid         = { path = "../luid" }
+mem          = { path = "../mem" }
+prefix       = { path = "../prefix" }
+random       = { path = "../random" }
+slist        = { path = "../slist" }
+splaytree    = { path = "../splaytree" }
+time         = { path = "../time" }

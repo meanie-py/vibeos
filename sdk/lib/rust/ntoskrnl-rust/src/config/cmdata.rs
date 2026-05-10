@@ -496,7 +496,7 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::iomgr::iomgr::IOMGR_CONTROL_VECTOR.0,
     &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
     &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
-    &reactos_pool::globals::POOL_CONTROL_VECTOR.0,
+    &pool::globals::POOL_CONTROL_VECTOR.0,
     &CMDATA_LOCAL_CV,
     &TERMINATOR,
 ];

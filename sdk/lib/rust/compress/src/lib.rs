@@ -211,9 +211,3 @@ mod ffi {
         STATUS_NOT_IMPLEMENTED
     }
 }
-
-#[cfg(not(any(test, kani)))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}

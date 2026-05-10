@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "access"
+version = "0.1.0"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10,6 +14,18 @@ checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "avltable"
+version = "0.1.0"
+
+[[package]]
+name = "bitmap"
+version = "0.1.0"
+
+[[package]]
+name = "byteswap"
+version = "0.1.0"
 
 [[package]]
 name = "cc"
@@ -42,6 +58,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "compress"
+version = "0.1.0"
+
+[[package]]
+name = "crc32"
+version = "0.1.0"
+
+[[package]]
+name = "encode"
+version = "0.1.0"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -63,6 +91,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "generictable"
+version = "0.1.0"
+
+[[package]]
+name = "handle"
+version = "0.1.0"
+
+[[package]]
 name = "iced-x86"
 version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,6 +106,10 @@ checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "interlck"
+version = "0.1.0"
 
 [[package]]
 name = "io-inlines"
@@ -114,10 +154,14 @@ dependencies = [
  "ntprintf",
  "ntprintf_w",
  "ob-inlines",
+ "pool",
  "ps-inlines",
- "reactos-pool",
  "se-inlines",
 ]
+
+[[package]]
+name = "largeint"
+version = "0.1.0"
 
 [[package]]
 name = "lazy_static"
@@ -151,6 +195,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "luid"
+version = "0.1.0"
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -158,6 +206,10 @@ checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
 ]
+
+[[package]]
+name = "mem"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"
@@ -247,7 +299,7 @@ dependencies = [
  "ntkrnl-sys",
  "ntprintf",
  "ntprintf_w",
- "reactos-pool",
+ "pool",
 ]
 
 [[package]]
@@ -293,6 +345,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
 
 [[package]]
+name = "pool"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "prefix"
+version = "0.1.0"
+
+[[package]]
 name = "ps-inlines"
 version = "0.1.0"
 dependencies = [
@@ -300,86 +363,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reactos-access"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-avltable"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-bitmap"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-byteswap"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-compress"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-crc32"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-encode"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-generictable"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-handle"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-interlck"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-largeint"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-luid"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-mem"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-pool"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "reactos-prefix"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-random"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-slist"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-splaytree"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-time"
-version = "0.1.0"
-
-[[package]]
-name = "reactos-utf8"
+name = "random"
 version = "0.1.0"
 
 [[package]]
@@ -398,6 +382,30 @@ name = "regex-syntax"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
+
+[[package]]
+name = "rtl-rust"
+version = "0.1.0"
+dependencies = [
+ "access",
+ "avltable",
+ "bitmap",
+ "byteswap",
+ "compress",
+ "crc32",
+ "encode",
+ "generictable",
+ "handle",
+ "interlck",
+ "largeint",
+ "luid",
+ "mem",
+ "prefix",
+ "random",
+ "slist",
+ "splaytree",
+ "time",
+]
 
 [[package]]
 name = "rustversion"
@@ -434,6 +442,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "slist"
+version = "0.1.0"
+
+[[package]]
 name = "slist-loom"
 version = "0.1.0"
 dependencies = [
@@ -447,6 +459,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
+name = "splaytree"
+version = "0.1.0"
+
+[[package]]
 name = "thread_local"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -454,6 +470,10 @@ checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "time"
+version = "0.1.0"
 
 [[package]]
 name = "tracing"
@@ -503,6 +523,10 @@ dependencies = [
  "tracing-core",
  "tracing-log",
 ]
+
+[[package]]
+name = "utf8"
+version = "0.1.0"
 
 [[package]]
 name = "valuable"

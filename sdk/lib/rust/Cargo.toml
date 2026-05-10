@@ -39,6 +39,7 @@ members = [
     "pool",
     "prefix",
     "random",
+    "rtl-rust",
     "slist",
     "slist-loom",
     "splaytree",

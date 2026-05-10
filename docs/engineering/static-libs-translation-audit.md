@@ -1,8 +1,9 @@
 # Static-Lib Translation Audit (cargo PoC)
 
-Created 2026-05-09. Sister doc to `ntoskrnl-translation-audit.md`.
+Created 2026-05-09. Updated 2026-05-09 (rtl-rust umbrella consolidation).
+Sister doc to `ntoskrnl-translation-audit.md`.
 
-The cargo PoC's `ntoskrnl.exe` link still consumes ~30 cmake-built
+The cargo PoC's `ntoskrnl.exe` link still consumes a fistful of cmake-built
 `.a` files. After milestone 16 closed the source-tree-kernel-header
 chain, these are **the largest remaining C surface** the cargo PoC
 touches — collectively much larger than the ntoskrnl source body.
@@ -12,13 +13,14 @@ This doc is the ledger for that surface.
 ## Where we are
 
 The cargo PoC's link line (in build.rs's `static_libs` array) lists
-**35 archives** in cmake link order, inside a `--start-group/--end-group`
+**18 archives** in cmake link order, inside a `--start-group/--end-group`
 pair. Of those:
 
-- **18 are still pure C/asm** (cmake-built from C sources)
-- **17 are Rust rlibs** (already cmake-built but with Rust source —
-  these are sibling crates under `sdk/lib/rust/` that cmake glues
-  into the cargo build for now)
+- **17 are still pure C/asm** (cmake-built from C sources)
+- **1 is the `rtl-rust` umbrella staticlib** (`sdk/lib/rust/rtl-rust/`),
+  which combines 18 RTL-flavor algorithm rlibs into one `.a` file.
+  Before the consolidation, those 18 each shipped as their own
+  `libreactos_X.a`; now they are sub-rlibs of one umbrella.
 
 Total cmake-built C/asm LOC under the listed prefixes: **~165,000**.
 For context, the ntoskrnl source body is 268K LOC C, so the static
@@ -54,34 +56,43 @@ too (so this is an upper bound on what's linked into ntoskrnl.exe).
 GUID-only libs (`wdmguid`, `poguid`, `ioevent`, parts of others)
 are trivially `.rs` `static`s with `#[link_section]`.
 
-## Already-Rust libs (17 sibling rlibs)
+## Already-Rust libs (1 umbrella + 1 standalone)
 
-These compile from Rust source but are still cmake-glue-built rather
-than cargo-built. Listed in `sdk/lib/rtl/CMakeLists.txt`:
+The 18 algorithm rlibs that used to ship as 18 separate `libreactos_X.a`
+files (avltable, bitmap, slist, compress, crc32, random, encode,
+largeint, access, byteswap, interlck, luid, prefix, mem, handle, time,
+splaytree, generictable) are now consolidated under one umbrella:
 
-```
-libreactos_avltable.a, libreactos_bitmap.a, libreactos_slist.a,
-libreactos_compress.a, libreactos_crc32.a, libreactos_random.a,
-libreactos_encode.a, libreactos_largeint.a, libreactos_access.a,
-libreactos_byteswap.a, libreactos_interlck.a, libreactos_luid.a,
-libreactos_prefix.a, libreactos_mem.a, libreactos_handle.a,
-libreactos_time.a, libreactos_splaytree.a, libreactos_generictable.a
-```
+- `sdk/lib/rust/rtl-rust/` — umbrella staticlib (`librtl_rust.a`).
+  Sub-crates flipped from `crate-type = ["staticlib"]` to `["rlib"]`.
+  Single `#[panic_handler]` lives here (with debugcon emission) instead
+  of 18 trivial `loop {}` copies.
+- `sdk/lib/rust/utf8/` — standalone staticlib (`libutf8.a`), kept
+  separate because it links into `librtl_vista.a` (consumed by the
+  small `ntdll_vista.dll` userland module that does not also link
+  `librtl.a`; folding it into the umbrella would bloat that DLL).
 
-Each lives at `sdk/lib/rust/<name>/`. For the cargo PoC build, these
-are cargo-buildable too — replacing the cmake glue is a build-system
-job, not a translation job.
+For the cargo PoC build these are cargo-buildable too — replacing the
+remaining cmake glue is a build-system job, not a translation job.
+
+There is also a third Rust crate under the cmake glue:
+
+- `sdk/lib/rust/pool/` — Rust-side pool helpers, consumed as a Rust
+  `[dependencies]` rlib by `kernel-rust` and `ntoskrnl-rust`. Not on
+  the cmake link line.
 
 ## Forward path
 
 In rough priority order:
 
-### 1. Move the 17 Rust rlibs to cargo (build-system only — no translation)
+### 1. Move the rtl-rust + utf8 + pool Rust crates to cargo (build-system only — no translation)
 
 These are already Rust. Hooking them into `ntoskrnl-cargo`'s build
 graph as Cargo deps (instead of consuming the cmake-built `.a` files)
-drops 17 entries from `static_libs[]` and removes the cmake hand-off
-for that subset. Mechanical.
+drops the last Rust entry from `static_libs[]` and removes that part
+of the cmake hand-off. Mechanical. **Step done as of 2026-05-09:**
+the 18 sub-rlibs were consolidated under `rtl-rust` so this step is
+now "wire one Cargo dep" instead of eighteen.
 
 ### 2. GUID-only libs → Rust statics (~50 LOC total)
 

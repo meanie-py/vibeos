@@ -225,24 +225,11 @@ fn main() {
         "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
         "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
         "sdk/lib/crt/libchkstk.a",
-        "sdk/lib/rtl/libreactos_avltable.a",
-        "sdk/lib/rtl/libreactos_bitmap.a",
-        "sdk/lib/rtl/libreactos_slist.a",
-        "sdk/lib/rtl/libreactos_compress.a",
-        "sdk/lib/rtl/libreactos_crc32.a",
-        "sdk/lib/rtl/libreactos_random.a",
-        "sdk/lib/rtl/libreactos_encode.a",
-        "sdk/lib/rtl/libreactos_largeint.a",
-        "sdk/lib/rtl/libreactos_access.a",
-        "sdk/lib/rtl/libreactos_byteswap.a",
-        "sdk/lib/rtl/libreactos_interlck.a",
-        "sdk/lib/rtl/libreactos_luid.a",
-        "sdk/lib/rtl/libreactos_prefix.a",
-        "sdk/lib/rtl/libreactos_mem.a",
-        "sdk/lib/rtl/libreactos_handle.a",
-        "sdk/lib/rtl/libreactos_time.a",
-        "sdk/lib/rtl/libreactos_splaytree.a",
-        "sdk/lib/rtl/libreactos_generictable.a",
+        // 18 RTL-flavor algorithm rlibs (access, avltable, bitmap, byteswap,
+        // compress, crc32, encode, generictable, handle, interlck, largeint,
+        // luid, mem, prefix, random, slist, splaytree, time) consolidated
+        // under one umbrella crate (sdk/lib/rust/rtl-rust/).
+        "sdk/lib/rtl/librtl_rust.a",
     ];
     println!("cargo:rustc-link-arg=-Wl,--start-group");
     println!("cargo:rustc-link-arg={}", kernel_rust_a.display());

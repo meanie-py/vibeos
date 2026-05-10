@@ -5,7 +5,7 @@
 #![no_std]
 
 // Re-export pool so its #[no_mangle] symbols are linked in.
-extern crate reactos_pool;
+extern crate pool;
 // Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.
 extern crate ntoskrnl_rust;
 // Re-export ntprintf so its FFI symbols (ntprintf_scan_arg_types,

@@ -267,9 +267,3 @@ mod ffi {
         (*table).number_generic_table_elements
     }
 }
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
