@@ -166,12 +166,14 @@ extern "C" {
     fn KeSweepICache(BaseAddress: PVOID, Length: SIZE_T);
     fn MiLockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
     fn MiUnlockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
-    fn ExAllocatePoolZero(PoolType: u32, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID;
     static MmUserProbeAddress: ULONG_PTR;
 }
 
-// ExFreePool is NTAPI (stdcall on i386) — pull from bindgen.
-use ntkrnl_sys::ddk::ExFreePool;
+// ExFreePool + ExAllocatePoolZero are NTAPI (stdcall on i386) — pull from bindgen.
+// (ExAllocatePoolZero used to be declared `extern "C"` here when the symbol
+// was provided by a cdecl C trampoline; now that mm-util-inlines/util_inlines.rs
+// owns the stdcall definition outright, use bindgen's correct stdcall import.)
+use ntkrnl_sys::ddk::{ExAllocatePoolZero, ExFreePool};
 
 // ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.
 // Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.

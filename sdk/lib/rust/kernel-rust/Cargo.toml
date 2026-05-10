@@ -17,11 +17,3 @@ io-inlines = { path = "../io-inlines" }
 ke-inlines = { path = "../ke-inlines" }
 ke-macros = { path = "../ke-macros" }
 ob-inlines = { path = "../ob-inlines" }
-mm-pte-class-inlines = { path = "../mm-pte-class-inlines" }
-mm-pte-mut-inlines = { path = "../mm-pte-mut-inlines" }
-mm-util-inlines = { path = "../mm-util-inlines" }
-mm-ws-lock-inlines = { path = "../mm-ws-lock-inlines" }
-mm-addr-space-inlines = { path = "../mm-addr-space-inlines" }
-mm-lock-inlines = { path = "../mm-lock-inlines" }
-mm-macros = { path = "../mm-macros" }
-mm-avl = { path = "../mm-avl" }

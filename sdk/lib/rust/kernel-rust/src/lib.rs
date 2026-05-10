@@ -43,47 +43,6 @@ extern crate ob_inlines;
 // is highest, defusing it with the rlib boundary has the highest expected
 // payoff.
 extern crate common_inlines;
-// Same pattern, sixth batch — first MM batch. mm-pte-class-inlines holds
-// the read-only PTE classification FORCEINLINEs from `miarm.h`
-// (MiIsMappedPte, MiIsPageWriteable/Dirty, MiIsUserPde/Pte,
-// MiIsPdeForAddressValid (64-bit only), MiDetermineUserGlobalPteMask).
-// C trampolines in `mm_rust_shims.c` collapse to one-line `_rs_Mi*`
-// delegations.
-extern crate mm_pte_class_inlines;
-// M2 sibling: PTE bitfield-write FORCEINLINEs (MiMake{Dirty,Clean,Accessed,
-// Owner,Write}Page, MiPage{DisableCache,WriteThrough,WriteCombined}).
-extern crate mm_pte_mut_inlines;
-// M3 sibling: mm utility helpers (Interlocked{Increment,ExchangeAdd}UL,
-// MmSetDirtyPage, ProbeForWrite{Size_t,IoStatusBlock}, ExAllocatePoolZero).
-extern crate mm_util_inlines;
-// M4 sibling: working-set lock FORCEINLINEs from miarm.h
-// (MiLock/UnlockWorkingSet[Shared], MiLock/UnlockProcessWorkingSet[Unsafe/
-// Shared/ForFault], MM_ANY_WS_LOCK_HELD). C trampolines retain the ARM64
-// IRQL UART tracing + MmDbgLast{Safe,Excl}* debug instrumentation; the
-// lock-acquisition body itself collapses to a `_rs_*` delegation.
-extern crate mm_ws_lock_inlines;
-// M5 sibling: address-space accessors and AddressCreationLock guarded
-// mutex (MmGet{Current,Kernel}AddressSpace, MmGetAddressSpaceOwner,
-// MmLock/UnlockAddressSpace).
-extern crate mm_addr_space_inlines;
-// M7 sibling: expansion + PFN locks. MiAcquire/ReleaseExpansionLock use
-// the regular spinlock; MiAcquire/ReleasePfnLock use the per-CPU queued
-// spinlock at LockQueuePfnLock = 2.
-extern crate mm_lock_inlines;
-// MM Phase 2 sibling: mm-macros holds Rust impls of bit-twiddle `#define`
-// macros (RMAP_IS_SEGMENT, PAGE_ROUND_DOWN, PFN_FROM_SSE, MM_IS_WAIT_PTE)
-// and structural FORCEINLINE bodies (MI_MAKE_HARDWARE_PTE_*) from
-// `mm.h`/`mmtypes.h`/`miarm.h`. Mirror of `ke-macros` for ke. C trampolines
-// in `mm_rust_shims.c` collapse to one-line `_rs_*` delegations.
-extern crate mm_macros;
-// MM Phase 4 sibling: mm-avl holds Rust impls of the Mm-flavor AVL tree
-// algorithms (RtlpFindAvlTableNodeOrParent / RtlpInsertAvlTreeNode /
-// RtlpDeleteAvlTreeNode) plus the 5 trivial accessors (Right/Left/Parent/
-// IsRight/IsLeft). Replaces the historical `#include <sdk/lib/rtl/avlsupp.c>`
-// trick in `mm_rust_shims.c` that compiled the Rtl algorithms with all
-// helpers `#define`-renamed to `Mi*` flavors that knew how to pack the
-// 2-bit Balance into the low bits of `MMADDRESS_NODE.u1.Parent`.
-extern crate mm_avl;
 // I0 sibling: io-inlines holds Rust impls of `static __inline` and
 // FORCEINLINE bodies from `io_x.h` / `iofuncs.h` (IopValidateOpenPacket,
 // IoGetDevObjExtension, IoCopyCurrentIrpStackLocationToNext to start). Same

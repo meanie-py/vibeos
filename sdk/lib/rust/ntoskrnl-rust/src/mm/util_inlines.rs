@@ -75,9 +75,10 @@ pub unsafe extern "C" fn _rs_ExAllocatePoolZero(
 
 /// `ExAllocatePoolZero` stdcall variant for i386 — bindgen on i386 declares
 /// this as `extern "stdcall"` (NTAPI = stdcall there), producing
-/// `_ExAllocatePoolZero@12` which is distinct from the cdecl symbol that
-/// `ntoskrnl-rust::shim_exports` provides. Replaces the C trampoline that
-/// previously lived in `ntoskrnl/mm/mm_rust_shims.c`.
+/// `_ExAllocatePoolZero@12`. Replaces the C trampoline that previously
+/// lived in `ntoskrnl/mm/mm_rust_shims.c`. The cdecl variant that used to
+/// live in `shim_exports.rs` was dropped 2026-05-09 along with its sole
+/// caller (ARM3/virtual.rs flipped to bindgen's stdcall import).
 #[no_mangle]
 pub unsafe extern "system" fn ExAllocatePoolZero(
     pool_type: POOL_TYPE,

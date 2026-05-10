@@ -1521,15 +1521,9 @@ pub unsafe extern "C" fn InterlockedExchangeAddUL(
 
 // --- Pool and segment helpers (was NTAPI, now cdecl) ---
 
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn ExAllocatePoolZero(
-    pool_type: POOL_TYPE,
-    number_of_bytes: ntkrnl_sys::base::ULONG_PTR,
-    tag: ULONG,
-) -> PVOID {
-    ntkrnl_sys::inline::mm::ExAllocatePoolZero(pool_type, number_of_bytes, tag)
-}
+// ExAllocatePoolZero (cdecl) folded into mm/util_inlines.rs alongside the
+// stdcall variant 2026-05-09 — see comment there for the #[export_name]
+// trick that lets both decorations coexist within ntoskrnl-rust.
 
 #[no_mangle]
 #[inline(never)]

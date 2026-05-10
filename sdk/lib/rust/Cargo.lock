@@ -141,14 +141,6 @@ dependencies = [
  "io-inlines",
  "ke-inlines",
  "ke-macros",
- "mm-addr-space-inlines",
- "mm-avl",
- "mm-lock-inlines",
- "mm-macros",
- "mm-pte-class-inlines",
- "mm-pte-mut-inlines",
- "mm-util-inlines",
- "mm-ws-lock-inlines",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
@@ -213,62 +205,6 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
-
-[[package]]
-name = "mm-addr-space-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-avl"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-lock-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-macros"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-pte-class-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-pte-mut-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-util-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
-name = "mm-ws-lock-inlines"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
 
 [[package]]
 name = "ntkrnl-sys"
