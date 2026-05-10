@@ -229,10 +229,27 @@ pub unsafe extern "system" fn MmAccessFault(
                 MiUnlockWorkingSetShared(PsGetCurrentThread() as ntkrnl_sys::ddk::PETHREAD, core::ptr::addr_of_mut!(MmSystemCacheWs) as ntkrnl_sys::ddk::PMMSUPPORT);
             }
         } else {
-            MiLockProcessWorkingSetShared(
-                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
-                PsGetCurrentThread(),
-            );
+            // ARM64-only recursion guard: MmAccessFault can be invoked
+            // recursively from MiDeleteVirtualAddresses → MiMakeSystemAddressValid
+            // → page fault on a kernel page table page that resolves through a
+            // user-VAD lookup; on TCG single-CPU arm64 this self-deadlocks the
+            // process WS lock. amd64/i386 KVM happen to schedule around it.
+            // Skip the lock if the caller already owns the WS.
+            #[cfg(target_arch = "aarch64")]
+            let owns = {
+                let t = PsGetCurrentThread();
+                let f = &(*t).__bindgen_anon_9.__bindgen_anon_1;
+                f.OwnsProcessWorkingSetExclusive() != 0 || f.OwnsProcessWorkingSetShared() != 0
+            };
+            #[cfg(not(target_arch = "aarch64"))]
+            let owns = false;
+
+            if !owns {
+                MiLockProcessWorkingSetShared(
+                    PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                    PsGetCurrentThread(),
+                );
+            }
             Vad = MiLocateVad(
                 core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).VadRoot),
                 Address,
@@ -242,10 +259,12 @@ pub unsafe extern "system" fn MmAccessFault(
                 IsArm3Fault = 1;
             }
 
-            MiUnlockProcessWorkingSetShared(
-                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
-                PsGetCurrentThread(),
-            );
+            if !owns {
+                MiUnlockProcessWorkingSetShared(
+                    PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                    PsGetCurrentThread(),
+                );
+            }
         }
     }
 
