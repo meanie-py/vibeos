@@ -705,7 +705,7 @@ unsafe fn MiWritePage(Segment: PMM_SECTION_SEGMENT, SegOffset: i64, Page: PFN_NU
 
     MmInitializeMdl(Mdl, core::ptr::null_mut(), PAGE_SIZE);
     MmBuildMdlFromPages(Mdl, core::ptr::addr_of!(Page));
-    (*Mdl).MdlFlags |= 0x01;
+    (*Mdl).MdlFlags |= 0x02; // MDL_PAGES_LOCKED — caller pre-locked the page
 
     KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0, 0u8);
     let Status = IoSynchronousPageWrite(FileObject, Mdl, core::ptr::addr_of_mut!(FileOffset), core::ptr::addr_of_mut!(Event), core::ptr::addr_of_mut!(IoStatus));

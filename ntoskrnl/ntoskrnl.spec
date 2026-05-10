@@ -127,7 +127,7 @@
 @ stdcall ExRaiseDatatypeMisalignment()
 @ stdcall ExRaiseException(ptr) RtlRaiseException
 @ stdcall ExRaiseHardError(long long long ptr long ptr)
-@ stdcall ExRaiseStatus(long) RtlRaiseStatus
+@ stdcall ExRaiseStatus(long)
 @ fastcall ExReInitializeRundownProtection(ptr) ExfReInitializeRundownProtection
 @ fastcall ExReInitializeRundownProtectionCacheAware(ptr) ExfReInitializeRundownProtectionCacheAware
 @ stdcall ExRegisterCallback(ptr ptr ptr)

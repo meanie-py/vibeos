@@ -976,6 +976,10 @@ pub unsafe extern "C" fn KeLeaveGuardedRegionThread(thread: PKTHREAD) {
 }
 
 // --- ExRaiseStatus (NTAPI) ---
+//
+// Spec entry was historically a forwarder to RtlRaiseStatus; we now export this
+// shim instead so future instrumentation hooks land on the kernel-side caller
+// (e.g. fastfat under USE_DUMMY_PSEH).
 
 #[no_mangle]
 #[inline(never)]
