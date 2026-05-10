@@ -185,7 +185,6 @@ Pl011Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     PIO_STACK_LOCATION IrpSp;
     PUCHAR Buffer;
     ULONG MaxLength, BytesRead = 0;
-    ULONG Retries;
     UCHAR ch;
 
     UNREFERENCED_PARAMETER(DeviceObject);
@@ -202,25 +201,19 @@ Pl011Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
         return STATUS_SUCCESS;
     }
 
-    /* Poll for input with brief busy-wait.  ARM64 has no timer interrupts
-     * and no preemption, so KeStallExecutionProcessor blocks ALL other
-     * threads for the stall duration.  Keep the poll window short
-     * (20ms) to balance responsiveness with allowing other threads to run.
-     * The caller (serialterm) handles periodic retry via Sleep(50). */
-    Retries = 5;
-
+    /* Pure non-blocking read.  ARM64 has no timer interrupts and no
+     * preemption (KiIrqHandler is a no-op stub; see ntoskrnl/ke/arm64/trap.c),
+     * so any in-kernel busy-wait here pegs the CPU and starves user-mode
+     * threads (explorer, win32k paint) that need to run for the desktop to
+     * render.  KeStallExecutionProcessor in particular blocks ALL other
+     * threads for the stall duration with no yield path.  Just return what
+     * the FIFO has right now (often zero); the user-mode caller polls via
+     * Sleep(50) which puts the thread back on the timer queue. */
     while (BytesRead < MaxLength)
     {
         if (!Pl011RxReady())
         {
-            if (BytesRead > 0)
-                break; /* Return what we have */
-
-            if (Retries-- == 0)
-                break; /* Timeout with no data */
-
-            KeStallExecutionProcessor(1000); /* 1ms busy-wait */
-            continue;
+            break; /* Return what we have (0 means caller should sleep+retry) */
         }
 
         ch = Pl011ReadByte();
