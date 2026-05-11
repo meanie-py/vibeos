@@ -6,7 +6,7 @@ list(APPEND HAL_PIC_ASM_SOURCE
 
 list(APPEND HAL_PIC_SOURCE
     generic/clock.c
-    generic/profil.c
+    # generic/profil.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/profil.rs)
     generic/timer.c
     pic/halinit.c
     pic/irql.c
