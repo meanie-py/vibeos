@@ -10,7 +10,7 @@ list(APPEND HAL_GENERIC_SOURCE
     generic/memory.c
     generic/misc.c
     generic/nmi.c
-    generic/pic.c
+    # generic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic.rs)
     generic/reboot.c
     generic/sysinfo.c
     generic/usage.c
