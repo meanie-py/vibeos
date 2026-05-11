@@ -1,12 +1,147 @@
 # HAL C→Rust Translation Audit
 
-Last updated 2026-05-08. **Status: pre-translation.** No Rust HAL code
-exists yet; this audit defines the keep-set, the prune-set, and the
-forward path so we can start with a known landscape.
+Last updated 2026-05-10. **Status: prune landed (commit `457efb25`),
+strategy revised — see "Strategic update 2026-05-10" below before
+reading the rest.** The original audit's "all 3 arches translated
+file-by-file" approach has been narrowed: **arm64 HAL stays as C
+stubs**, all Rust HAL work targets x86, and the crate is structured
+into portable submodules + arch-specific backends.
 
 Companion to [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md).
 The ntoskrnl translation is ~99.7% done; the HAL is the next chunky
 target between us and a fully-Rust kernel-mode lower edge.
+
+## Strategic update 2026-05-10
+
+After surveying the HAL surface during prune execution, the original
+audit's translation strategy was revised. **Read this section first;
+later sections preserve the original analysis but their forward-path
+recommendations are superseded.**
+
+### What changed
+
+1. **arm64 HAL is left as C stubs, not translated.** `hal/halarm64/
+   generic/halstubs.c` is 1,007 LOC of stubs we wrote ourselves; it's
+   not a real HAL. The only non-trivial logic is the IRQL software-
+   interrupt state machine (~150 LOC). Translating stubs to Rust stubs
+   delivers no functional improvement — when we eventually want real
+   arm64 hardware support (GIC, Generic Timer, PSCI, SBBR ACPI),
+   that's a separate scoped project that builds a proper Rust backend
+   from scratch, not a translation of the current stubs.
+
+2. **All Rust HAL work targets x86 (i386 + amd64).** That's where the
+   real engineering value is — 13–15K LOC of actual hardware drivers
+   (8259 PIC, LAPIC/IOAPIC, 8237 DMA, ACPI table walking, port-I/O
+   PCI config, real-mode BIOS thunks, etc.).
+
+3. **Why "port an x86 HAL to arm64" was never possible.** ~80% of
+   halx86 is x86-PC-AT-architecture-specific:
+   - `pic.c` (8259) → arm64 uses GIC (MMIO)
+   - `apic.c` (LAPIC/IOAPIC) → arm64 uses GIC distributor + redistributor
+   - `dma.c` (8237 ISA) → doesn't exist on arm64 (uses SMMU + per-device)
+   - `legacy/bus/pcibus.c` (port 0xCF8/0xCFC) → arm64 PCIe is MMIO (ECAM)
+   - `cmos.c` (port 0x70/0x71) → arm64 RTC is memory-mapped
+   - `bios.c` + `x86bios.c` (real-mode BIOS via fast486) → no x86 BIOS on arm64
+   - `systimer.S` (PIT/APIC timer) → arm64 ARM Generic Timer (system regs)
+   - All port I/O → arm64 has no port I/O instruction
+   The shared portion (~13K LOC of "generic") is misnamed — most of it
+   is "shared between i386 and amd64", not "shared with arm64."
+
+4. **Crate is structured as portable submodules + arch-specific
+   backends.** This is the C-flavored architectural improvement: even
+   though arm64 isn't translated now, the portable submodules are
+   designed to be backend-agnostic from day one, so a future arm64
+   Rust HAL can consume them directly.
+
+### Target crate shape
+
+```
+sdk/lib/rust/hal-rust/
+├── Cargo.toml              # cdylib, per-arch builds (mirrors ntoskrnl-rust)
+└── src/
+    ├── lib.rs              # FFI exports (matches hal.spec, ~110 entries)
+    │
+    # ── arch-PORTABLE submodules (no cfg, pure logic) ──
+    ├── irql/               # Software-interrupt state machine; takes a
+    │                       #   hardware backend as trait. Pure logic that
+    │                       #   would directly serve an arm64 GIC backend.
+    ├── arbiter/            # Resource arbiter accounting (usage.c)
+    ├── acpi/               # ACPI table walking — RSDT/XSDT/FADT/MADT/SRAT
+    │                       #   parsing. Spec is identical across arches;
+    │                       #   arm64 SBBR uses same shape.
+    ├── kdpci/              # KD-over-PCI bridge protocol (kdpci.c)
+    ├── bus/                # Bus handler infrastructure (data structures)
+    ├── pnpdd/              # PnP root device (logic, not hardware)
+    │
+    # ── arch-SPECIFIC backends (cfg-gated; trait impls) ──
+    ├── x86/
+    │   ├── pic.rs          # 8259 PIC (i386)
+    │   ├── apic.rs         # LAPIC/IOAPIC (amd64; opt for i386)
+    │   ├── dma.rs          # 8237 ISA DMA
+    │   ├── cmos.rs         # CMOS/RTC port 0x70/0x71
+    │   ├── pcibus.rs       # Legacy port 0xCF8/0xCFC PCI config (i386)
+    │   ├── bios.rs         # Real-mode BIOS thunks → fast486 (i386)
+    │   ├── timer.rs        # PIT / APIC timer / RTC timer / TSC
+    │   ├── beep.rs         # PC speaker port 0x61
+    │   ├── reboot.rs       # Triple-fault / 8042 reset
+    │   ├── nmi.rs          # NMI handler
+    │   └── portio.rs       # inb/outb wrappers (i386)
+    ├── i386/               # i386-only: v86 trampoline, fastcall ABI plumbing
+    └── amd64/              # amd64-only paths
+    # arm64/ added later, would consume irql/arbiter/acpi/kdpci/bus directly
+```
+
+Design rules:
+
+- **Portable submodules take backends as traits.** e.g., `irql::
+  Hardware` trait that an x86 module impls (mask 8259, write LAPIC
+  TPR), an arm64 module impls later (write GICC_PMR). The state
+  machine code itself is identical.
+- **Arch-specific submodules only contain hardware register pokes.**
+  No business logic.
+- **`lib.rs` is the FFI shim** — wires the right backend to the spec
+  exports, no logic of its own.
+
+### Translation order under the revised strategy
+
+File-by-file as before, but **each file is slotted into its correct
+target submodule** (portable or arch-specific), not into a flat
+mirror of the C tree. After each translation we ask "does this
+expose new logic that should be lifted out of the x86 backend into
+a portable submodule?"
+
+1. **Stage 0 — bindgen substrate.** Extend `ntkrnl-sys` with HAL-
+   private headers (`halhw.h`, `halp.h`, `haldma.h`, `bus.h`,
+   `ioapic.h`, `mps.h`) plus ACPI table layouts (`drivers/bus/acpi/
+   acpica/include/{acpi,actbl,actbl1,actbl2,actbl3}.h`). Land as
+   `hal_ddk` sibling module to `ddk`. Now the only Stage-0 work
+   needed since arm64 doesn't get a Rust port.
+2. **Stage 1 — pipeline validation on smallest x86 file.** Pick
+   `nmi.c` (109 LOC) or `reboot.c` (110 LOC) or `beep.c` (116 LOC).
+   Translate end-to-end. Validates the `hal-rust` cdylib build,
+   def-file integration, and cmake `add_hal()` swap on a tiny target
+   with minimal type surface.
+3. **Stage 2 — bulk x86 translation.** Order: small leaf files
+   (cmos, beep, nmi, reboot, portio, drive, display) → portable
+   logic as we encounter it (usage, sysinfo, bus accounting) →
+   chunky hardware (pic, apic, dma) → big ACPI/legacy files.
+   Each file translated into its target submodule slot.
+4. **Stage 3 — DLL boundary.** Once enough is in Rust, swap cmake
+   `add_hal(hal …)` to consume the `hal-rust` cdylib. Run smoke on
+   i386 + amd64.
+
+### Definition of done (revised)
+
+- `cargo build -p hal-rust --target {x86_64,i686}-pc-windows-gnu`
+  produces a working `hal.dll` for i386 and amd64.
+- i386 + amd64 smoke tests pass on the cargo-driven binary.
+- arm64 smoke continues passing on the unchanged C stubs.
+- `tools/scan_ud2.py --check` clean on x86.
+- `hal/halx86/` C tree can be deleted (or kept as parallel CI check).
+- arm64 hardware support is **explicitly out of scope** of this
+  effort; it's a separate future project that builds a proper Rust
+  backend (GIC + Generic Timer + PSCI + SBBR ACPI) consuming the
+  portable submodules from this crate.
 
 ## TL;DR
 
@@ -415,6 +550,13 @@ iteration. The HAL is ~10% the size, ~10% the cost.
 
 ## Forward path
 
+> **Superseded by "Strategic update 2026-05-10" at the top.** This
+> section reflects the original strategy (translate all 3 arches
+> file-by-file). Steps 1 (prune) and 2 (bindgen substrate) still
+> apply; step 3 (arm64 first port) has been **dropped**, and steps
+> 4–8 have been re-organized around the portable + arch-backend
+> submodule shape. Read this section for historical context only.
+
 In rough priority order (mirrors the structure of the ntoskrnl audit's
 `### 1. Cargo PoC follow-ups`):
 
@@ -451,6 +593,10 @@ In rough priority order (mirrors the structure of the ntoskrnl audit's
 
 ## Definition of done
 
+> **Superseded** — see "Definition of done (revised)" inside the
+> "Strategic update 2026-05-10" section at the top.
+
+Original (3-arch) version:
 `cargo build -p hal-rust --target <arch>` produces a working `hal.dll`
 for all three arches. All three smoke tests pass on the cargo-driven
 binary. `tools/scan_ud2.py --check` is clean. The cmake-driven `halx86`

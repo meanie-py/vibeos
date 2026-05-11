@@ -1,0 +1,103 @@
+#!/bin/bash
+# Generate HAL FFI bindings for i386 and amd64.
+#
+# arm64 is skipped — arm64 HAL is C-stub only, uses standard NDK types
+# already covered by the kernel ntkrnl-sys bindgen output.
+#
+# Mirrors the structure of generate_bindings.sh (the kernel one) but
+# uses wrapper_hal.h and outputs to hal_bindgen_{i386,amd64}.rs.
+#
+# Prerequisites: cargo install bindgen-cli
+# Run from anywhere (paths computed from script location).
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
+OUT_DIR="${SCRIPT_DIR}/src"
+WRAPPER="${SCRIPT_DIR}/wrapper_hal.h"
+
+# Verify clang version dir under the toolchain
+CLANG_VER_DIR="$(ls -d "${TOOLCHAIN}/lib/clang/"*/ 2>/dev/null | head -1)"
+if [ -z "${CLANG_VER_DIR}" ]; then
+    echo "ERROR: cannot locate ${TOOLCHAIN}/lib/clang/<ver>/ — is llvm-mingw installed?"
+    exit 1
+fi
+
+# Common bindgen flags.  Allowlist Hal* and Acpi* externs + every type.
+COMMON_FLAGS=(
+    --use-core --no-layout-tests --no-doc-comments
+    --allowlist-type '.+'
+    --allowlist-function '(Hal|Halp|Acpi|Hv|HV|Hci).*'
+    --allowlist-var '.+'
+)
+
+run_bindgen() {
+    local ARCH=$1
+    local BUILD_DIR="${SRC}/build-${ARCH}"
+    local TARGET=$2
+    shift 2
+    local EXTRA_DEFS=("$@")
+    local RAW="/tmp/hal_bindgen_${ARCH}_raw.rs"
+    local FINAL="${OUT_DIR}/hal_bindgen_${ARCH}.rs"
+
+    echo "=== Generating HAL bindings for ${ARCH} (target: ${TARGET}) ==="
+
+    bindgen "$WRAPPER" \
+        "${COMMON_FLAGS[@]}" \
+        -o "$RAW" \
+        -- \
+        -ferror-limit=0 -Wno-everything \
+        -D_NTHAL_ -D_NTSYSTEM_ \
+        -D_USE_DUMMY_PSEH=1 -D__REACTOS__ \
+        "${EXTRA_DEFS[@]}" \
+        -DDBG=1 -DWINVER=0x502 -D_WIN32_WINNT=0x502 \
+        -I"${BUILD_DIR}/ntoskrnl" \
+        -I"${SRC}/hal/halx86/include" \
+        -I"${SRC}/drivers/bus/acpi/acpica/include" \
+        -I"${SRC}/ntoskrnl" \
+        -I"${SRC}/sdk/include" \
+        -I"${SRC}/sdk/include/ddk" \
+        -I"${SRC}/sdk/include/ndk" \
+        -I"${SRC}/sdk/include/psdk" \
+        -I"${SRC}/sdk/include/xdk" \
+        -I"${SRC}/sdk/include/reactos" \
+        -I"${SRC}/sdk/include/reactos/libs" \
+        -I"${SRC}/sdk/include/reactos/drivers" \
+        -I"${SRC}/sdk/include/vcruntime" \
+        -I"${SRC}/sdk/include/winrt" \
+        -I"${BUILD_DIR}/sdk/include" \
+        -I"${BUILD_DIR}/sdk/include/psdk" \
+        -I"${BUILD_DIR}/sdk/include/ddk" \
+        -I"${BUILD_DIR}/sdk/include/dxsdk" \
+        -I"${BUILD_DIR}/sdk/include/reactos" \
+        -I"${BUILD_DIR}/sdk/include/reactos/mc" \
+        -I"${SRC}/sdk/include/dxsdk" \
+        -I"${SRC}/sdk/lib/pseh/include" \
+        -I"${SRC}" \
+        -I"${SRC}/sdk/lib/drivers/arbiter" \
+        -I"${SRC}/sdk/lib/cmlib" \
+        -I"${SRC}/ntoskrnl/include" \
+        -I"${BUILD_DIR}/ntoskrnl/include" \
+        -I"${BUILD_DIR}/ntoskrnl/include/internal" \
+        -isystem "${SRC}/sdk/include/crt" \
+        -isystem "${CLANG_VER_DIR}/include" \
+        --target="${TARGET}"
+
+    # Reuse the kernel bindgen post-processor (renames helpers, adds module
+    # header, etc.).  Output filename has the hal_ prefix so it slots into
+    # src/hal_bindgen_{arch}.rs and never collides with the kernel bindings.
+    python3 "${SCRIPT_DIR}/postprocess_bindgen.py" "$RAW" "$ARCH" "$FINAL"
+
+    echo "  → $(wc -l < "$FINAL") lines, $(wc -c < "$FINAL" | numfmt --to=iec) bytes"
+}
+
+run_bindgen amd64 x86_64-pc-windows-gnu \
+    -D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_
+
+run_bindgen i386 i686-pc-windows-gnu \
+    -D_M_IX86 -D__i386__ -D_X86_
+
+echo ""
+echo "=== Done. Files in ${OUT_DIR}/ ==="
+ls -la "${OUT_DIR}"/hal_bindgen_*.rs
