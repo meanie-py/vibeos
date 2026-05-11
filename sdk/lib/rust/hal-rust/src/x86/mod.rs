@@ -10,6 +10,7 @@ pub mod display;
 pub mod drive;
 pub mod nmi;
 pub mod pic;
+pub mod reboot;
 // profil only on i386 — amd64 has its own LAPIC-timer-based version
 // in apic/apictimer.c (will translate later as part of the APIC backend).
 #[cfg(target_arch = "x86")]
