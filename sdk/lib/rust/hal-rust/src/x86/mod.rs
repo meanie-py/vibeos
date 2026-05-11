@@ -6,3 +6,4 @@
 
 pub mod beep;
 pub mod display;
+pub mod up;
