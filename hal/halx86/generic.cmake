@@ -1,6 +1,6 @@
 
 list(APPEND HAL_GENERIC_SOURCE
-    generic/beep.c
+    # generic/beep.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/beep.rs)
     generic/cmos.c
     generic/display.c
     generic/dma.c

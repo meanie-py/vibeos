@@ -1,0 +1,16 @@
+[package]
+name = "hal-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+# Standalone crate (not an `rlib` umbrella'd by something else) — directly
+# produces libhal_rust.a which CMake links into the hal.dll module target.
+# Unlike kernel-rust (which is an umbrella over many rlibs because the
+# kernel translation grew that way), hal-rust is single-crate for now.
+# Can be split into rlibs later if/when the surface justifies it.
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

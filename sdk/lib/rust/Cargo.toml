@@ -8,6 +8,7 @@ members = [
     "crc32",
     "encode",
     "generictable",
+    "hal-rust",
     "handle",
     "interlck",
     "kernel-rust",
