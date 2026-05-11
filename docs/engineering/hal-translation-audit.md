@@ -80,11 +80,30 @@ boot.
 | `add_hal(halapic …)` | (no unique source) | i386 legacy+APIC variant DLL. |
 | `add_hal(halmacpi …)` | (no unique source) | i386 SMP variant DLL. |
 | `add_hal(halmp …)` (amd64) | (no unique source) | amd64 SMP variant DLL. |
-| `hal/halx86/minihal/` | 65 | text-mode setup HAL stub. Not in livecd boot; if usetup needs something we'll re-add. |
+| ~~`hal/halx86/minihal/`~~ | 65 | **KEEP — audit was wrong.** It's the static lib FreeLDR links into `freeldr_common`, `freeldr_pe`, `rosload`, `uefifreeldr_common`, and `uefildr` (per `boot/freeldr/freeldr/{pcat,uefi,rosload}.cmake`). Pulls HAL functions into the bootloader. Cannot delete without breaking boot. |
 
 Estimated direct deletion: **~5,200 LOC + 6 cmake DLL declarations + 1
 dead arch tree.** Reversible (git). No runtime risk if smoke still
 passes after.
+
+### Prune executed 2026-05-10
+
+Landed in this session. Two surprises vs. the original prune-set:
+
+1. **`minihal/` had to be kept** (see strikethrough in table above).
+   FreeLDR links it on every arch; deleting would break the bootloader.
+2. **`legacy.cmake` referenced `smp/mps/mps.c`**, which was actually
+   dead code in the i386 hal.dll path (`HalpParseApicTables` is only
+   called from `apic/halinit.c`, and i386 hal.dll uses `pic` not
+   `apic`). Removing the line cleared the broken include without
+   losing real functionality.
+
+Final deletion: `hal/halarm/`, `hal/halx86/{xbox,pc98,smp,mp}/`,
+`hal/halx86/{xbox,pc98,smp}.cmake`, `hal/halx86/apic/apicsmp.c`,
+6 i386 + 1 amd64 `add_hal()` declarations, the dead `arm` branch in
+`hal/CMakeLists.txt`, and 7 baseaddress entries across 4 baseaddress
+cmake files. All 3 arches still pass smoke (i386 7/7 in 63s, amd64
+7/7 in 238s, arm64 5/7 + 2 skipped in 64s).
 
 ## Keep-set landscape
 
@@ -387,8 +406,9 @@ iteration. The HAL is ~10% the size, ~10% the cost.
 3. **Stage 2 — probe migration.** Mostly N/A — the HAL doesn't
    `ProbeForRead`/`ProbeForWrite` user pointers (it's the lowest layer,
    under usermode entirely). Skip stage.
-4. **Stage 3 — SEH idiomation.** Also mostly N/A. The HAL has near-zero
-   SEH-protected code paths.
+4. **Stage 3 — SEH idiomation.** N/A. **Verified 2026-05-10:** zero
+   `_SEH2_*` / `__try` / `__except` usage anywhere under `hal/`. The
+   pre-translation Rust-idiom pass is unnecessary.
 5. **Stage 4 — DLL boundary.** Once enough is in Rust to attempt a
    full DLL build, set up `hal-rust` cdylib, link it against the
    existing `hal.def`, swap the cmake `add_hal()` target to consume it.
@@ -472,3 +492,13 @@ check).
    emulation. We're not translating fast486 (it's a self-contained x86
    emulator library). Keep as-is; Rust HAL still links the C `fast486`
    library.
+5. **`setjmp`/`longjmp` in `generic/bios.c` (i386 only).** The v86 BIOS
+   trampoline saves context with `_setjmp(HalpSavedContext)` in
+   `HalpBiosCall` and returns from v86 mode via `longjmp(...)` in
+   `HalpTrap06`. Pairs with `v86.S`. Rust has no native setjmp/longjmp
+   and no real story for catching a stack-rewinding `longjmp` from
+   another asm-entered stack frame. **Recommendation:** keep
+   `bios.c` + `v86.S` as C and let the Rust HAL call into them through
+   a thin extern surface. Forcing this one trampoline through Rust
+   buys nothing — the path is i386-only, never hot, and isolated to
+   int10 graphics. Same model as the `fast486` C dependency above.

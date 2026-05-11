@@ -1,6 +1,29 @@
 # ARM64 Desktop Boot — Debug Brief
 
-## Current State
+## STATUS UPDATE 2026-05-10 — RESOLVED
+
+**arm64 boots to a painted taskbar; smoke passes 5/5** (commit `ad339d82`,
+see `memory/feedback_arm64_taskbar_paint.md`). The "SMSS never starts /
+black screen" symptom that motivated this brief turned out to be a
+cluster of 5 separate bugs, none of which were the Zw*-at-elevated-IRQL
+or `captures(none)` issues analysed below:
+
+1. Per-context-switch UART trace pinned 100% CPU on the busy-wait PL011
+2. Missing system fonts on the arm64 ramdisk
+3. csrss serial-input thread spinning (Sleep(50) is no-op on arm64 — no GIC)
+4. `SHChangeNotifyRegister` cross-thread `SendMessageW` deadlock
+5. **Root cause:** `NtUserSwitchDesktop` calling `IntHideDesktop` on the
+   previous desktop stripped `WS_VISIBLE` from explorer's parent desktop,
+   so `IsWindowVisible(Shell_TrayWnd)` returned 0 and no paint cycle ran
+
+All three arches now pass smoke independently to the painted-taskbar
+boot marker. The technical analysis below is preserved as reference for
+the latent CGU=1 / Zw*-SVC issues, which may still be real but were
+masked by (and not the cause of) the symptom being chased.
+
+## Original Brief (preserved for reference)
+
+### Current State
 
 ARM64 boots through kernel init and IoInitSystem under CGU=16, but SMSS never starts (black screen). Under CGU=1 the boot gets further but hits a different crash. There are two independent bugs with different root causes.
 
