@@ -7,4 +7,5 @@
 pub mod beep;
 pub mod display;
 pub mod pic;
+pub mod sysinfo;
 pub mod up;

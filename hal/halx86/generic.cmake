@@ -12,7 +12,7 @@ list(APPEND HAL_GENERIC_SOURCE
     generic/nmi.c
     # generic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic.rs)
     generic/reboot.c
-    generic/sysinfo.c
+    # generic/sysinfo.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/sysinfo.rs)
     generic/usage.c
     generic/x86bios.c)
 
