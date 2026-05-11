@@ -8,6 +8,7 @@ pub mod beep;
 pub mod buildtype;
 pub mod display;
 pub mod drive;
+pub mod halinit;
 pub mod nmi;
 pub mod pic;
 pub mod reboot;
