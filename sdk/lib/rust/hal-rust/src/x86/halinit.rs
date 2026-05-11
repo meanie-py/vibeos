@@ -9,11 +9,10 @@
 //! - HalpPciLockSettings — set if "PCILOCK" is on the kernel command line
 
 // KeInitializeSpinLock is FORCEINLINE in C (just `*p = 0`) — inline here
-// directly instead of importing.  KeGetCurrentPrcb is a per-arch
-// inline reading fs:[0x1C] / gs:[0x18]; bindgen mistypes it on i386
-// (NTAPI cc dropped) and the PRCB sanity asserts it's used for are
-// nice-to-have — skip them.  KeBugCheckEx resolves fine via the
-// existing import library.
+// directly.  KeGetPcr / KeGetCurrentPrcb live in `pcr` (local replicas
+// of the ntkrnl-sys inlines; cross-crate inline-asm doesn't reliably
+// fire at our opt-level — see feedback_cross_crate_inline_asm.md).
+// KeBugCheckEx resolves fine via the import library.
 use ntkrnl_sys::ddk::KeBugCheckEx;
 use ntkrnl_sys::hal_ddk::{
     HalDispatchTable, HalInitializeBios, HalPrivateDispatchTable, HalStopProfileInterrupt,
@@ -25,10 +24,17 @@ use ntkrnl_sys::hal_ddk::{
     HaliHaltSystem, HaliInitPnpDriver, BOOLEAN, PLOADER_PARAMETER_BLOCK, ULONG,
     _KPROFILE_SOURCE_ProfileTime as ProfileTime,
 };
+use crate::x86::buildtype::HalpBuildType;
+use crate::x86::pcr::{KeGetCurrentPrcb, KeGetPcr};
 use crate::x86::sysinfo::{HaliQuerySystemInformation, HaliSetSystemInformation};
 
 // Bugcheck code for ACPI init failure (sdk/include/reactos/mc/bugcodes.h).
 const ACPI_BIOS_ERROR: ULONG = 0xa5;
+// Bugcheck code for kernel/HAL header revision mismatch.
+const MISMATCHED_HAL: ULONG = 0x79;
+// Per-arch ndk constants (sdk/include/ndk/{i386,amd64}/ketypes.h).
+const PRCB_MAJOR_VERSION: u16 = 1;
+const INITIAL_STALL_COUNT: ULONG = 100;
 
 // HAL-private command-line parameter state.  Externally referenced
 // (HalpOnlyBootProcessor by various SMP paths; HalpPciLockSettings by
@@ -111,12 +117,10 @@ pub unsafe extern "system" fn HalInitializeProcessor(
     unsafe {
         HalpInitProcessor(ProcessorNumber, LoaderBlock);
 
-        // C version: `KeGetPcr()->StallScaleFactor = INITIAL_STALL_COUNT;`
-        // KeGetPcr is a per-arch inline reading fs:[0x1C] / gs:[0x18].
-        // Skipped — bindgen mistypes it (NTAPI dropped) and on the i386
-        // and amd64 paths KiInitializeKernel already sets StallScaleFactor
-        // to INITIAL_STALL_COUNT before HalInitializeProcessor runs.
-        // TODO: lift KeGetPcr into ntkrnl-sys::inline and restore.
+        // Set default stall count.  StallScaleFactor lives at the same
+        // offset (0x51c on i386, 0x368 on amd64) in both KPCR layouts;
+        // the bindgen field is named identically.
+        (*KeGetPcr()).StallScaleFactor = INITIAL_STALL_COUNT;
 
         // Track this processor in both HAL affinity masks.  The C uses
         // InterlockedBitTestAndSetAffinity macros; the underlying op is
@@ -149,6 +153,8 @@ pub unsafe extern "system" fn HalInitSystem(
 ) -> BOOLEAN {
     unsafe {
         if BootPhase == 0 {
+            let prcb = KeGetCurrentPrcb();
+
             // Stash the bus type (PC-AT, EISA, MCA, PC-98, ...).  The
             // I386 union member is reused on amd64 too — both PE arches
             // share that field at the same offset.
@@ -157,11 +163,20 @@ pub unsafe extern "system" fn HalInitSystem(
 
             HalpGetParameters(LoaderBlock);
 
-            // PRCB version/build-type sanity asserts skipped — KeGetCurrentPrcb
-            // is bindgen-mistyped on i386 and the asserts have never fired
-            // since they're checking that ntoskrnl built against the same
-            // header revision as the HAL.  TODO: lift KeGetCurrentPrcb into
-            // ntkrnl-sys::inline (per-arch fs:/gs: deref) and restore.
+            // PRCB version mismatch: ntoskrnl was built against a different
+            // header revision than this HAL.
+            let major = (*prcb).MajorVersion;
+            if major != PRCB_MAJOR_VERSION {
+                KeBugCheckEx(MISMATCHED_HAL, 1, major as _, PRCB_MAJOR_VERSION as _, 0);
+            }
+            // Checked/free HAL requires checked/free kernel.  PRCB.BuildType
+            // is USHORT on i386 and UCHAR on amd64; widen to USHORT for the
+            // comparison against HalpBuildType (USHORT on both).
+            let build: u16 = (*prcb).BuildType as u16;
+            let hal_build = core::ptr::read_volatile(&raw const HalpBuildType);
+            if build != hal_build {
+                KeBugCheckEx(MISMATCHED_HAL, 2, build as _, hal_build as _, 0);
+            }
 
             // Phase 0 ACPI.
             let status = HalpSetupAcpiPhase0(LoaderBlock);

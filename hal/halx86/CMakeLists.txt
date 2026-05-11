@@ -51,6 +51,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/portio.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
