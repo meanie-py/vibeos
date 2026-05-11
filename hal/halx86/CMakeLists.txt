@@ -46,6 +46,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/display.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs

@@ -5,6 +5,7 @@
 //! Compiled for both i386 and amd64 targets.
 
 pub mod beep;
+pub mod buildtype;
 pub mod display;
 pub mod pic;
 pub mod sysinfo;

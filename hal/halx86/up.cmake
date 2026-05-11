@@ -1,6 +1,6 @@
 
 list(APPEND HAL_UP_SOURCE
-    generic/buildtype.c
+    # generic/buildtype.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/buildtype.rs)
     generic/spinlock.c)
     # generic/up.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/up.rs)
 
