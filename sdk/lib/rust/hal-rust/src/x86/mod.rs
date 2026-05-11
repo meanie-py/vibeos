@@ -5,3 +5,4 @@
 //! Compiled for both i386 and amd64 targets.
 
 pub mod beep;
+pub mod display;
