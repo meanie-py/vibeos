@@ -1812,11 +1812,21 @@ LRESULT CDefView::OnCreate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandl
         ntreg.fRecursive = FALSE;
         ntreg.pidl = pidlTarget;
     }
+#ifdef _M_ARM64
+    /* SHChangeNotifyRegister sends a cross-thread SendMessageW to the shell
+     * window (Shell_TrayWnd on the main explorer thread).  On arm64 that
+     * deadlocks the desktop thread before the taskbar paints.  Skip
+     * registration so the desktop comes up; change notifications are silently
+     * dropped until the underlying win32k cross-thread message dispatch is
+     * fixed.  TODO: root-cause the cross-thread SendMessage hang. */
+    m_hNotify = 0;
+#else
     m_hNotify = SHChangeNotifyRegister(m_hWnd,
                                        SHCNRF_InterruptLevel | SHCNRF_ShellLevel |
                                        SHCNRF_NewDelivery,
                                        fEvents, SHV_CHANGE_NOTIFY,
                                        1, &ntreg);
+#endif
 
     m_hAccel = LoadAcceleratorsW(shell32_hInstance, MAKEINTRESOURCEW(IDA_SHELLVIEW));
 

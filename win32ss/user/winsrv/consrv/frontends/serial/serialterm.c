@@ -410,17 +410,15 @@ SerialInitFrontEnd(IN OUT PFRONTEND This,
     This->Context = SerialData;
     This->Context2 = NULL;
 
-    /* Create input polling thread */
-    ThreadHandle = CreateThread(NULL, 0, SerialInputThread, SerialData, 0, NULL);
-    if (ThreadHandle == NULL)
-    {
-        DPRINT1("[SERIAL] Failed to create input thread\n");
-        CloseHandle(hSerial);
-        ConsoleFreeHeap(SerialData);
-        This->Context = NULL;
-        return STATUS_UNSUCCESSFUL;
-    }
-    SerialData->hInputThread = ThreadHandle;
+    /* Skip the input polling thread on arm64.  Pl011Read is non-blocking
+     * (returns 0 bytes when the FIFO is empty) and Sleep(50) appears to be
+     * a no-op on arm64 (no GIC → no timer interrupts → KeDelayExecutionThread
+     * never wakes the right way); the result is a tight ReadFile→Sleep loop
+     * that pegs csrss and starves explorer's paint pump.  Smoke tests never
+     * drive console input via COM1 so we lose nothing.
+     * TODO: re-enable once arm64 has working timers / interrupts. */
+    SerialData->hInputThread = NULL;
+    DPRINT1("[SERIAL] Input thread disabled on arm64 (TODO: needs working timers)\n");
 
     DPRINT1("[SERIAL] Serial frontend initialized OK\n");
     return STATUS_SUCCESS;

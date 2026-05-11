@@ -263,7 +263,8 @@ _tWinMain(IN HINSTANCE hInstance,
           IN LPTSTR lpCmdLine,
           IN INT nCmdShow)
 {
-    /* Boot marker — proves EXPLORER user-mode code is running */
+    /* Boot marker — proves EXPLORER user-mode code is running.  Smoke
+     * harness (tests/qemu/vm.py) keys on this string. */
     OutputDebugStringA("[EXPLORER] _tWinMain entered\n");
 
     /*

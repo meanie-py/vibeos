@@ -282,6 +282,14 @@ fi
 # Fonts (loaded by IntLoadSystemFonts from \SystemRoot\Fonts\)
 mmd -i "$RAMDISK_IMG" ::reactos/Fonts
 mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/FreeSans.ttf"                   ::reactos/Fonts/FreeSans.ttf
+# winlogon explicitly tries to load these names; without them
+# Failed to lock the DC + SYSTEMCUR(ARROW) cascades and the taskbar
+# never paints text/glyphs.
+for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf times.ttf symbol.ttf; do
+    if [ -f "$SOURCE_DIR/media/fonts/$FONT" ]; then
+        mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/$FONT"                  "::reactos/Fonts/$FONT"
+    fi
+done
 
 echo "[*] Ramdisk contents:"
 mdir -i "$RAMDISK_IMG" -/ :: 2>&1 | grep -E '(\.exe|\.dll|\.sys|\.nls|system|bytes)'

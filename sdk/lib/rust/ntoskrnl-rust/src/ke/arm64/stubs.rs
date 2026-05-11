@@ -1069,36 +1069,12 @@ pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: P
         return;
     }
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        ARM64_UART_TRACE_HEX(
-            b"[CTX] KiSwapProcess: Old.DTB=\0".as_ptr() as PCSTR,
-            (*OldProcess).DirectoryTableBase[0] as ULONG_PTR,
-        );
-        ARM64_UART_TRACE_HEX(
-            b"[CTX] KiSwapProcess: New.DTB=\0".as_ptr() as PCSTR,
-            NewPageTable as ULONG_PTR,
-        );
-        ARM64_UART_TRACE_HEX(
-            b"[CTX] KiSwapProcess: TTBR0(before)=\0".as_ptr() as PCSTR,
-            Arm64ReadTtbr0El1(),
-        );
-    }
-
     core::arch::asm!("dsb ish", options(nomem, nostack));
     core::arch::asm!("msr ttbr0_el1, {}", in(reg) NewPageTable, options(nomem, nostack));
     core::arch::asm!("msr ttbr1_el1, {}", in(reg) NewPageTable, options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1is", options(nomem, nostack));
     core::arch::asm!("dsb ish", options(nomem, nostack));
     core::arch::asm!("isb", options(nomem, nostack));
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        ARM64_UART_TRACE_HEX(
-            b"[CTX] KiSwapProcess: TTBR0(after)=\0".as_ptr() as PCSTR,
-            Arm64ReadTtbr0El1(),
-        );
-    }
 }
 
 #[no_mangle]

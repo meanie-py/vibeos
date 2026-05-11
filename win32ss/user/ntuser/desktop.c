@@ -3037,8 +3037,15 @@ NtUserSwitchDesktop(HDESK hdesk)
         if ((gpdeskInputDesktop->pDeskInfo->spwnd->style & WS_VISIBLE) == WS_VISIBLE)
             bRedrawDesktop = TRUE;
 
-        /* Hide the previous desktop window */
+#ifndef _M_ARM64
+        /* Hide the previous desktop window.
+         * arm64: keep previous desktop WS_VISIBLE so processes
+         * (explorer, etc.) created on a non-active desktop still pass
+         * IsWindowVisible() and paint when their desktop becomes active.
+         * Without this, csrss's SrvCreateConsole-triggered SwitchDesktop
+         * leaves explorer's tray invisible and the taskbar never paints. */
         IntHideDesktop(gpdeskInputDesktop);
+#endif
     }
 
     /* Set the active desktop in the desktop's window station. */
