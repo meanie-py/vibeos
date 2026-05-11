@@ -4,7 +4,7 @@ list(APPEND HAL_GENERIC_SOURCE
     generic/cmos.c
     # generic/display.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/display.rs)
     generic/dma.c
-    generic/drive.c
+    # generic/drive.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/drive.rs)
     generic/halinit.c
     generic/kdpci.c
     generic/memory.c

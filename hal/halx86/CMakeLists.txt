@@ -48,6 +48,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/display.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/portio.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs

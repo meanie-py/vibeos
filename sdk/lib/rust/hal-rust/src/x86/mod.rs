@@ -7,6 +7,7 @@
 pub mod beep;
 pub mod buildtype;
 pub mod display;
+pub mod drive;
 pub mod pic;
 // profil only on i386 — amd64 has its own LAPIC-timer-based version
 // in apic/apictimer.c (will translate later as part of the APIC backend).
