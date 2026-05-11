@@ -87,7 +87,9 @@ run_bindgen() {
     # Reuse the kernel bindgen post-processor (renames helpers, adds module
     # header, etc.).  Output filename has the hal_ prefix so it slots into
     # src/hal_bindgen_{arch}.rs and never collides with the kernel bindings.
-    python3 "${SCRIPT_DIR}/postprocess_bindgen.py" "$RAW" "$ARCH" "$FINAL"
+    # The --hal flag wraps kernel-data extern statics with the raw-dylib
+    # link attribute needed for cross-DLL data references from hal.dll.
+    python3 "${SCRIPT_DIR}/postprocess_bindgen.py" --hal "$RAW" "$ARCH" "$FINAL"
 
     echo "  → $(wc -l < "$FINAL") lines, $(wc -c < "$FINAL" | numfmt --to=iec) bytes"
 }

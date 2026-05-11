@@ -7,10 +7,11 @@
 use ntkrnl_sys::ddk::{
     InbvAcquireDisplayOwnership, InbvDisplayString, InbvEnableDisplayString,
     InbvInstallDisplayStringFilter, InbvIsBootDriverInstalled, InbvResetDisplay,
-    InbvSetScrollRegion, InbvSetTextColor, InbvSolidColorFill,
+    InbvSetScrollRegion, InbvSetTextColor, InbvSolidColorFill, KeEnterKernelDebugger,
 };
 use ntkrnl_sys::hal_ddk::{
-    HalpBusType, MACHINE_TYPE_EISA, PVOID, SYSTEM_CONTROL_PORT_B,
+    HalpBusType, KdDebuggerEnabled, KdDebuggerNotPresent, KeServiceDescriptorTable,
+    KiBugCheckData, MACHINE_TYPE_EISA, PVOID, SYSTEM_CONTROL_PORT_B,
     _SYSTEM_CONTROL_PORT_B_REGISTER,
 };
 
@@ -96,19 +97,22 @@ pub unsafe extern "system" fn HalHandleNMI(_NmiInfo: PVOID) {
 
     unsafe {
         InbvDisplayString(b"\r\n*** The system has halted ***\r\n\0".as_ptr() as *const i8);
-    }
 
-    // C version drops into the in-kernel debugger here:
-    //   KiBugCheckData[0] = (ULONG_PTR)KeServiceDescriptorTable;
-    //   if (!KdDebuggerNotPresent && KdDebuggerEnabled) KeEnterKernelDebugger();
-    // KdDebuggerNotPresent / KdDebuggerEnabled / KiBugCheckData /
-    // KeServiceDescriptorTable are dllimport-data-from-ntoskrnl, but
-    // bindgen drops the dllimport annotation on extern statics, so the
-    // i386 link can't resolve `_KdDebuggerNotPresent`.  Skipped for now —
-    // the `hlt` loop below halts the system anyway; in-kernel debugger
-    // drop on NMI isn't a smoke-tested code path.  TODO: add dllimport
-    // decoration to the kernel-data exports in ntkrnl-sys's bindgen
-    // output and restore.
+        // Hand the debugger a sentinel + drop in if attached.  The four
+        // globals (KdDebuggerNotPresent/Enabled, KiBugCheckData,
+        // KeServiceDescriptorTable) are kernel-data exports from
+        // ntoskrnl.exe; postprocess_bindgen.py wraps them with
+        // `#[link(name = "ntoskrnl", kind = "raw-dylib")]` so the
+        // cross-DLL data import resolves at link time.
+        let ksdt_addr = (&raw const KeServiceDescriptorTable) as usize;
+        let kbcd_ptr = (&raw mut KiBugCheckData) as *mut usize;
+        core::ptr::write_volatile(kbcd_ptr, ksdt_addr);
+        let dbg_absent = core::ptr::read_volatile(&raw const KdDebuggerNotPresent);
+        let dbg_enabled = core::ptr::read_volatile(&raw const KdDebuggerEnabled);
+        if dbg_absent == 0 && dbg_enabled != 0 {
+            KeEnterKernelDebugger();
+        }
+    }
 
     // Freeze.  The C version: `while (TRUE) NOTHING;`
     loop {
