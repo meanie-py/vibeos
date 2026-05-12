@@ -20,6 +20,8 @@ pub mod misc;
 pub mod nmi;
 pub mod pcr;
 pub mod pic;
+#[cfg(target_arch = "x86")]
+pub mod pic_halinit;
 pub mod processor;
 pub mod reboot;
 // profil only on i386 — amd64 has its own LAPIC-timer-based version

@@ -8,7 +8,7 @@ list(APPEND HAL_PIC_SOURCE
     # generic/clock.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/clock.rs)
     # generic/profil.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/profil.rs)
     generic/timer.c
-    pic/halinit.c
+    # pic/halinit.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic_halinit.rs)
     # pic/irql.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/irql.rs)
     pic/pic.c
     # pic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
