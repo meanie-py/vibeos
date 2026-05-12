@@ -99,3 +99,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         }
     }
 }
+
+// Some `core` / `compiler_builtins` objects emit `.eh_frame` references to
+// `rust_eh_personality`.  Panic = abort means unwinding never runs, but we
+// still need the symbol so the linker can resolve the .eh_frame entries.
+// Same stub kernel-rust uses (kernel-rust/src/lib.rs).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_eh_personality() {}

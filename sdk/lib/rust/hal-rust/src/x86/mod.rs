@@ -20,5 +20,6 @@ pub mod reboot;
 pub mod portio;
 #[cfg(target_arch = "x86")]
 pub mod profil;
+pub mod spinlock;
 pub mod sysinfo;
 pub mod up;

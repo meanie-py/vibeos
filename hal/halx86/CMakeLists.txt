@@ -57,6 +57,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/portio.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs
@@ -114,7 +115,8 @@ endfunction()
 include(generic.cmake)
 include(acpi.cmake)
 include(apic.cmake)
-include(up.cmake)
+# up.cmake removed — all UP-only HAL surface (buildtype, spinlock, up.c) is
+# now in hal-rust.
 
 if(ARCH STREQUAL "i386")
     include(pcidata.cmake)
@@ -122,10 +124,10 @@ if(ARCH STREQUAL "i386")
     include(pic.cmake)
     add_subdirectory(minihal)
 
-    add_hal(hal SOURCES pic/halpic.rc COMPONENTS generic legacy up pic)
+    add_hal(hal SOURCES pic/halpic.rc COMPONENTS generic legacy pic)
 
 elseif(ARCH STREQUAL "amd64")
 
-    add_hal(hal SOURCES ${HAL_SOURCE} COMPONENTS generic acpi up apic)
+    add_hal(hal SOURCES ${HAL_SOURCE} COMPONENTS generic acpi apic)
 
 endif()
