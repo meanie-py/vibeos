@@ -10,6 +10,7 @@ pub mod cmos;
 pub mod display;
 pub mod drive;
 pub mod halinit;
+pub mod misc;
 pub mod nmi;
 pub mod pcr;
 pub mod pic;

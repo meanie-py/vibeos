@@ -8,7 +8,7 @@ list(APPEND HAL_GENERIC_SOURCE
     # generic/halinit.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/halinit.rs)
     generic/kdpci.c
     generic/memory.c
-    generic/misc.c
+    # generic/misc.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/misc.rs)
     # generic/nmi.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/nmi.rs)
     # generic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic.rs)
     # generic/reboot.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/reboot.rs)
