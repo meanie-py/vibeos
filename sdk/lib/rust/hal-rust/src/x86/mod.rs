@@ -4,6 +4,8 @@
 //!
 //! Compiled for both i386 and amd64 targets.
 
+#[cfg(target_arch = "x86_64")]
+pub mod apic_halinit;
 pub mod beep;
 pub mod buildtype;
 pub mod clock;
