@@ -19,6 +19,7 @@ pub mod halinit;
 #[cfg(target_arch = "x86")]
 pub mod halpcat;
 pub mod irql;
+pub mod kdpci;
 pub mod memory;
 pub mod misc;
 pub mod nmi;
