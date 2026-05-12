@@ -14,6 +14,7 @@ pub mod clock;
 pub mod cmos;
 pub mod cmosbus;
 pub mod display;
+pub mod dma;
 pub mod drive;
 pub mod halinit;
 #[cfg(target_arch = "x86")]
