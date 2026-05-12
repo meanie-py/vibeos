@@ -50,6 +50,7 @@ pub static mut HalpSerialNumber: [i8; 31] = [0; 31];
 // zero so the result can flow straight into RtlInitUnicodeString.
 // ---------------------------------------------------------------------------
 
+#[macro_export]
 macro_rules! wstrz {
     ($s:literal) => {{
         const __W: &[u16] = &{

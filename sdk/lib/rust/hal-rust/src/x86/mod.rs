@@ -12,6 +12,8 @@ pub mod cmosbus;
 pub mod display;
 pub mod drive;
 pub mod halinit;
+#[cfg(target_arch = "x86")]
+pub mod halpcat;
 pub mod irql;
 pub mod memory;
 pub mod misc;
