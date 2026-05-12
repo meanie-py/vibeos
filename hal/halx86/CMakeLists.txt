@@ -65,6 +65,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysbus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs

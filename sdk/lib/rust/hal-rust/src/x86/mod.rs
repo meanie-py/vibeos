@@ -29,5 +29,6 @@ pub mod portio;
 #[cfg(target_arch = "x86")]
 pub mod profil;
 pub mod spinlock;
+pub mod sysbus;
 pub mod sysinfo;
 pub mod up;

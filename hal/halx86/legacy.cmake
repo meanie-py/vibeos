@@ -6,7 +6,7 @@ list(APPEND HAL_LEGACY_SOURCE
     legacy/bus/pcibus.c
     ${CMAKE_CURRENT_BINARY_DIR}/pci_classes.c
     ${CMAKE_CURRENT_BINARY_DIR}/pci_vendors.c
-    legacy/bus/sysbus.c
+    # legacy/bus/sysbus.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/sysbus.rs)
     legacy/bussupp.c
     legacy/halpnpdd.c
     # legacy/halpcat.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/halpcat.rs)
