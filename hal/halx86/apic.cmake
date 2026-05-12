@@ -7,7 +7,7 @@ list(APPEND HAL_APIC_SOURCE
     apic/apic.c
     apic/apictimer.c
     apic/halinit.c
-    apic/processor.c
+    # apic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
     apic/rtctimer.c
     apic/tsc.c)
 

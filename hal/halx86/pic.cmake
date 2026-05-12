@@ -11,7 +11,8 @@ list(APPEND HAL_PIC_SOURCE
     pic/halinit.c
     pic/irql.c
     pic/pic.c
-    pic/processor.c)
+    # pic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
+    )
 
 add_asm_files(lib_hal_pic_asm ${HAL_PIC_ASM_SOURCE})
 add_library(lib_hal_pic OBJECT ${HAL_PIC_SOURCE} ${lib_hal_pic_asm})
