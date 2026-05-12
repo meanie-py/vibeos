@@ -68,6 +68,7 @@ def assemble_file(
         result.rust_code,
         exports=exports,
         globals=scan.globals if scan else None,
+        target_name=target.name,
     )
 
     # Build the file content with C source as trailing comments

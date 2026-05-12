@@ -112,10 +112,33 @@ def detect_target(c_path: Path) -> Target:
 def hal_cmake_for_c(c_path: Path) -> Path | None:
     """Map an HAL C source path to the *.cmake file that lists it.
 
-    hal/halx86/generic/dma.c → hal/halx86/generic.cmake
-    hal/halx86/legacy/bus/bushndlr.c → hal/halx86/legacy.cmake (walks up)
+    Most cases follow `hal/halx86/{subsystem}/file.c` → `{subsystem}.cmake`,
+    but some files live in one dir and are listed in another cmake (e.g.
+    `hal/halx86/generic/timer.c` is listed in `pic.cmake`, not `generic.cmake`).
+
+    Resolution strategy: grep every TARGETS["hal"].cmake_source_files for the
+    file path; return whichever lists it.
     """
-    # Walk up looking for a sibling-named .cmake file
+    hal_target = TARGETS["hal"]
+    rel_to_halx86 = None
+    try:
+        rel_to_halx86 = c_path.resolve().relative_to(HAL_DIR / "halx86")
+    except ValueError:
+        return None
+
+    rel_str = rel_to_halx86.as_posix()
+    for cmake_path in hal_target.cmake_source_files:
+        if not cmake_path.exists():
+            continue
+        text = cmake_path.read_text()
+        # Match exact file path on a line (not commented out)
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if rel_str in line and not stripped.startswith("#"):
+                return cmake_path
+    # Fallback: walk up looking for sibling-named cmake
     p = c_path.resolve().parent
     while p != p.parent and "halx86" in p.as_posix():
         cmake = p.parent / f"{p.name}.cmake"

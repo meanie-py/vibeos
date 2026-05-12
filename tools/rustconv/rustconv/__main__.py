@@ -523,7 +523,8 @@ def cmd_translate(args):
         stitched = stitch_file(translated, sorted_deps, scan, file_res, target=rustconv_target)
 
         # Post-process
-        code = postprocess(stitched, exports=file_res.exports, globals=scan.globals)
+        code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,
+                           target_name=rustconv_target.name)
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)

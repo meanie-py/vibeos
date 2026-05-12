@@ -86,8 +86,13 @@ def fix_type_names(code: str) -> str:
 # Import fixes
 # ============================================================================
 
-def fix_imports(code: str) -> str:
-    """Fix common import issues."""
+def fix_imports(code: str, target_name: str = "ntoskrnl") -> str:
+    """Fix common import issues.
+
+    For HAL target, the base/constants/globals modules are ntoskrnl-rust-internal
+    and don't exist for hal-rust crate — skip those additions.  Also strip them
+    if the LLM emitted them.
+    """
     # Replace ddk::* with a comment reminder (it conflicts with base::*)
     if "use ntkrnl_sys::ddk::*;" in code:
         code = code.replace(
@@ -96,11 +101,21 @@ def fix_imports(code: str) -> str:
             "// use ntkrnl_sys::ddk::{...};"
         )
 
-    # Remove NonPagedPool/PagedPool from ddk imports (they're in mm::*)
-    code = code.replace("ntkrnl_sys::ddk::NonPagedPool, ", "")
-    code = code.replace("ntkrnl_sys::ddk::PagedPool,\n", "")
-    code = code.replace(", ntkrnl_sys::ddk::PagedPool", "")
-    code = code.replace("ntkrnl_sys::ddk::NonPagedPool,\n", "")
+    if target_name == "hal":
+        # Strip ntoskrnl-rust internal module imports — HAL doesn't have them.
+        for forbidden in (
+            "use ntkrnl_sys::globals::*;",
+            "use ntkrnl_sys::constants::*;",
+            "use ntkrnl_sys::base::*;",
+            "use ntkrnl_sys::macros::*;",
+        ):
+            code = re.sub(rf'^{re.escape(forbidden)}\s*\n', '', code, flags=re.MULTILINE)
+    else:
+        # Remove NonPagedPool/PagedPool from ddk imports (ntoskrnl: they're in mm::*)
+        code = code.replace("ntkrnl_sys::ddk::NonPagedPool, ", "")
+        code = code.replace("ntkrnl_sys::ddk::PagedPool,\n", "")
+        code = code.replace(", ntkrnl_sys::ddk::PagedPool", "")
+        code = code.replace("ntkrnl_sys::ddk::NonPagedPool,\n", "")
 
     # Ensure core::ffi::c_void is imported
     if "c_void" in code and "core::ffi::c_void" not in code:
@@ -110,24 +125,25 @@ def fix_imports(code: str) -> str:
             code,
         )
 
-    # Ensure base::* is imported (provides NTSTATUS, BOOLEAN, ULONG etc.)
-    if "use ntkrnl_sys::base::*;" not in code and "ntkrnl_sys::ddk::" in code:
-        # Insert at top of file (before first use statement)
-        first_use = re.search(r'^use ', code, re.MULTILINE)
-        if first_use:
-            code = code[:first_use.start()] + "use ntkrnl_sys::base::*;\n" + code[first_use.start():]
+    if target_name != "hal":
+        # Ensure base::* is imported (provides NTSTATUS, BOOLEAN, ULONG etc.)
+        if "use ntkrnl_sys::base::*;" not in code and "ntkrnl_sys::ddk::" in code:
+            # Insert at top of file (before first use statement)
+            first_use = re.search(r'^use ', code, re.MULTILINE)
+            if first_use:
+                code = code[:first_use.start()] + "use ntkrnl_sys::base::*;\n" + code[first_use.start():]
 
-    # Ensure constants::* is imported (provides STATUS_*, IO_*, TAG_*, etc.)
-    if "use ntkrnl_sys::constants::*;" not in code and "ntkrnl_sys::ddk::" in code:
-        first_use = re.search(r'^use ', code, re.MULTILINE)
-        if first_use:
-            code = code[:first_use.start()] + "use ntkrnl_sys::constants::*;\n" + code[first_use.start():]
+        # Ensure constants::* is imported (provides STATUS_*, IO_*, TAG_*, etc.)
+        if "use ntkrnl_sys::constants::*;" not in code and "ntkrnl_sys::ddk::" in code:
+            first_use = re.search(r'^use ', code, re.MULTILINE)
+            if first_use:
+                code = code[:first_use.start()] + "use ntkrnl_sys::constants::*;\n" + code[first_use.start():]
 
-    # Ensure globals::* is imported (provides extern global declarations)
-    if "use ntkrnl_sys::globals::*;" not in code and "ntkrnl_sys::ddk::" in code:
-        first_use = re.search(r'^use ', code, re.MULTILINE)
-        if first_use:
-            code = code[:first_use.start()] + "use ntkrnl_sys::globals::*;\n" + code[first_use.start():]
+        # Ensure globals::* is imported (provides extern global declarations)
+        if "use ntkrnl_sys::globals::*;" not in code and "ntkrnl_sys::ddk::" in code:
+            first_use = re.search(r'^use ', code, re.MULTILINE)
+            if first_use:
+                code = code[:first_use.start()] + "use ntkrnl_sys::globals::*;\n" + code[first_use.start():]
 
     return code
 
@@ -1020,6 +1036,7 @@ def postprocess(
     code: str,
     exports: dict[str, SpecEntry] | None = None,
     globals: list[CGlobal] | None = None,
+    target_name: str = "ntoskrnl",
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -1045,7 +1062,7 @@ def postprocess(
     context-dependent and handled by the system prompt.  Only the
     universally-safe cases above are done here.
     """
-    code = fix_imports(code)
+    code = fix_imports(code, target_name=target_name)
     code = fix_bogus_ddk_imports(code)
     code = fix_debug_macros(code)
     code = fix_type_names(code)
