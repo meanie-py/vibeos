@@ -8,6 +8,8 @@
 pub mod apic_halinit;
 pub mod beep;
 pub mod buildtype;
+#[cfg(target_arch = "x86_64")]
+pub mod busemul;
 pub mod clock;
 pub mod cmos;
 pub mod cmosbus;
