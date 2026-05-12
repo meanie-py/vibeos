@@ -1,7 +1,7 @@
 
 list(APPEND HAL_LEGACY_SOURCE
     legacy/bus/bushndlr.c
-    legacy/bus/cmosbus.c
+    # legacy/bus/cmosbus.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/cmosbus.rs)
     legacy/bus/isabus.c
     legacy/bus/pcibus.c
     ${CMAKE_CURRENT_BINARY_DIR}/pci_classes.c

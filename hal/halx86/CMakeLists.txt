@@ -49,6 +49,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/clock.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmos.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmosbus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/display.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halinit.rs

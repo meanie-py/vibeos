@@ -8,6 +8,7 @@ pub mod beep;
 pub mod buildtype;
 pub mod clock;
 pub mod cmos;
+pub mod cmosbus;
 pub mod display;
 pub mod drive;
 pub mod halinit;
