@@ -38,3 +38,4 @@ pub mod spinlock;
 pub mod sysbus;
 pub mod sysinfo;
 pub mod up;
+pub mod usage;

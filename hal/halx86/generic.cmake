@@ -13,7 +13,7 @@ list(APPEND HAL_GENERIC_SOURCE
     # generic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic.rs)
     # generic/reboot.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/reboot.rs)
     # generic/sysinfo.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/sysinfo.rs)
-    generic/usage.c
+    # generic/usage.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/usage.rs)
     generic/x86bios.c)
 
 if(ARCH STREQUAL "i386")
