@@ -6,6 +6,7 @@
 
 pub mod beep;
 pub mod buildtype;
+pub mod clock;
 pub mod cmos;
 pub mod display;
 pub mod drive;
