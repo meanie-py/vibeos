@@ -12,6 +12,7 @@ pub mod cmosbus;
 pub mod display;
 pub mod drive;
 pub mod halinit;
+pub mod irql;
 pub mod memory;
 pub mod misc;
 pub mod nmi;
