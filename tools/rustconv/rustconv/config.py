@@ -1,11 +1,13 @@
 """Shared paths, model config, token budgets."""
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Root paths
 REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
+HAL_DIR = REACTOS_ROOT / "hal"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -19,6 +21,11 @@ BINDGEN_FILES = {
     "i386": NTKRNL_SYS_DIR / "bindgen_i386.rs",
 }
 
+HAL_BINDGEN_FILES = {
+    "amd64": NTKRNL_SYS_DIR / "hal_bindgen_amd64.rs",
+    "i386": NTKRNL_SYS_DIR / "hal_bindgen_i386.rs",
+}
+
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
@@ -27,8 +34,95 @@ HAND_WRITTEN_MODULES = [
 # ntoskrnl.spec
 SPEC_FILE = NTOSKRNL_DIR / "ntoskrnl.spec"
 
-# Output crate
+# Output crate (ntoskrnl-rust by default — HAL uses a different one, see Target)
 OUTPUT_CRATE = RUST_DIR / "ntoskrnl-rust"
+
+
+# ---------------------------------------------------------------------------
+# Target abstraction — picks ntoskrnl vs hal output routing, system prompt,
+# bindgen scope, etc.  See docs/engineering/rustconv-hal-target.md.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Target:
+    """Describes one C source root + corresponding Rust output crate.
+
+    Fields that are None / empty for ntoskrnl are HAL-specific output-routing
+    hooks (auto-editing CMakeLists.txt, choosing src/x86 vs src/{subsystem},
+    etc.).
+    """
+    name: str                              # "ntoskrnl" or "hal"
+    source_dir: Path                       # NTOSKRNL_DIR or HAL_DIR
+    output_crate: Path                     # ntoskrnl-rust or hal-rust
+    bindgen_files: dict                    # arch → bindgen .rs (mandatory kernel bindings)
+    hal_bindgen_files: dict                # arch → hal_bindgen .rs (empty for ntoskrnl)
+    spec_file: Path | None                 # ntoskrnl.spec (None for HAL — no spec exports)
+    system_prompt: Path                    # templates/system_prompt.md or *_hal.md
+    src_subdir: Path | None                # "src/x86" for hal-rust, None for ntoskrnl
+    cmake_deps_file: Path | None           # hal/halx86/CMakeLists.txt (DEPENDS list to append)
+    cmake_source_files: list = field(default_factory=list)  # generic.cmake etc. to edit
+    arches: tuple = ("i386", "amd64", "arm64")  # supported arches
+
+
+TARGETS = {
+    "ntoskrnl": Target(
+        name="ntoskrnl",
+        source_dir=NTOSKRNL_DIR,
+        output_crate=RUST_DIR / "ntoskrnl-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=SPEC_FILE,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    "hal": Target(
+        name="hal",
+        source_dir=HAL_DIR,
+        output_crate=RUST_DIR / "hal-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files=HAL_BINDGEN_FILES,
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt_hal.md",
+        src_subdir=Path("src/x86"),
+        cmake_deps_file=HAL_DIR / "halx86" / "CMakeLists.txt",
+        cmake_source_files=[
+            HAL_DIR / "halx86" / "generic.cmake",
+            HAL_DIR / "halx86" / "acpi.cmake",
+            HAL_DIR / "halx86" / "apic.cmake",
+            HAL_DIR / "halx86" / "pic.cmake",
+            HAL_DIR / "halx86" / "legacy.cmake",
+        ],
+        arches=("i386", "amd64"),
+    ),
+}
+
+
+def detect_target(c_path: Path) -> Target:
+    """Pick a target by sniffing the C path. Falls back to ntoskrnl."""
+    p = c_path.resolve()
+    posix = p.as_posix()
+    if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
+        return TARGETS["hal"]
+    return TARGETS["ntoskrnl"]
+
+
+def hal_cmake_for_c(c_path: Path) -> Path | None:
+    """Map an HAL C source path to the *.cmake file that lists it.
+
+    hal/halx86/generic/dma.c → hal/halx86/generic.cmake
+    hal/halx86/legacy/bus/bushndlr.c → hal/halx86/legacy.cmake (walks up)
+    """
+    # Walk up looking for a sibling-named .cmake file
+    p = c_path.resolve().parent
+    while p != p.parent and "halx86" in p.as_posix():
+        cmake = p.parent / f"{p.name}.cmake"
+        if cmake.exists():
+            return cmake
+        p = p.parent
+    return None
 
 # Backend selection: "claude" (default if ANTHROPIC_API_KEY set), "gemini"
 def get_backend() -> str:

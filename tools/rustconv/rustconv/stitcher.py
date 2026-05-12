@@ -6,27 +6,122 @@ import re
 from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
+from .config import Target, TARGETS
 from .resolver import ResolveResult
 
 if TYPE_CHECKING:
     from .scanner import ScanResult, CGlobal
 
 
+# For HAL target, collapse these hand-written-module symbols into `ddk` —
+# they are all re-exported from ddk and HAL files (dma.rs, usage.rs, kdpci.rs)
+# consistently import via ddk + hal_ddk only.
+_HAL_KERNEL_API_MODULES = {
+    "ke", "ex", "mm", "rtl", "ob", "ps", "interlocked", "base", "macros", "constants",
+}
+
+# Modules whose `use ntkrnl_sys::X::*` imports must be DROPPED for HAL targets,
+# even if the LLM emits them.  These are ntoskrnl-rust internal modules.
+_HAL_FORBIDDEN_USE_PATHS = (
+    "use ntkrnl_sys::globals::",
+    "use ntkrnl_sys::constants::",
+    "use ntkrnl_sys::base::",
+    "use ntkrnl_sys::macros::",
+    "use ntkrnl_sys::ke::",
+    "use ntkrnl_sys::ex::",
+    "use ntkrnl_sys::mm::",
+    "use ntkrnl_sys::rtl::",
+    "use ntkrnl_sys::ob::",
+    "use ntkrnl_sys::ps::",
+    "use ntkrnl_sys::interlocked::",
+)
+
+# Bindgen surfaces these C macros / FORCEINLINEs as extern decls, so the
+# resolver "finds" them in the catalog — but the linker has no symbol and the
+# HAL system prompt teaches the LLM to inline these locally.  Strip from
+# generated imports.
+_HAL_FORBIDDEN_IMPORT_NAMES = {
+    "InitializeListHead", "InsertTailList", "InsertHeadList",
+    "RemoveEntryList", "RemoveHeadList", "RemoveTailList", "IsListEmpty",
+    "KeAcquireSpinLock", "KeReleaseSpinLock", "KeInitializeSpinLock",
+    "RtlCopyMemory", "RtlMoveMemory", "RtlZeroMemory", "RtlFillMemory",
+    "RtlCompareMemory",
+    "FIELD_OFFSET", "PAGE_ROUND_UP", "PAGE_ROUND_DOWN", "BYTES_TO_PAGES",
+    "PAGE_ALIGN", "BYTE_OFFSET", "UlongToPtr", "PtrToUlong",
+    "NT_SUCCESS", "NT_ERROR", "NT_WARNING", "NT_INFORMATION",
+    "WRITE_PORT_UCHAR", "READ_PORT_UCHAR", "WRITE_PORT_USHORT", "READ_PORT_USHORT",
+    "WRITE_PORT_ULONG", "READ_PORT_ULONG",
+    "ASSERT", "ASSERTMSG", "DPRINT", "DPRINT1", "PAGED_CODE",
+    "CONTAINING_RECORD", "RTL_CONSTANT_STRING",
+    "RtlInitEmptyUnicodeString", "RtlInitUnicodeString",
+    "MmGetMdlPfnArray", "MmGetMdlVirtualAddress", "MmGetMdlByteCount",
+    "MmGetMdlByteOffset", "MmGetSystemAddressForMdlSafe",
+    "InitializeObjectAttributes",
+}
+
+
+def _strip_forbidden_hal_uses(uses: list[str]) -> list[str]:
+    """Drop ntkrnl_sys::{globals,constants,base,macros,ke,ex,...}::... imports."""
+    return [u for u in uses if not any(u.startswith(p) for p in _HAL_FORBIDDEN_USE_PATHS)]
+
+
+def _strip_forbidden_hal_imports(use_stmt: str) -> str | None:
+    """Filter out forbidden symbol names from an `ntkrnl_sys::{ddk,hal_ddk}::{...}` import.
+
+    Returns the cleaned statement, or None if the statement becomes empty.
+    """
+    m = re.match(r'^(use ntkrnl_sys::(ddk|hal_ddk)::)\{([^}]*)\};?$', use_stmt.strip())
+    if not m:
+        return use_stmt
+    prefix, _module, body = m.group(1), m.group(2), m.group(3)
+    items = [s.strip() for s in body.split(',') if s.strip()]
+    # Drop literal-like junk (anything not starting with letter/underscore)
+    items = [s for s in items if re.match(r'^[A-Za-z_]\w*$', s)]
+    items = [s for s in items if s not in _HAL_FORBIDDEN_IMPORT_NAMES]
+    if not items:
+        return None
+    return f"{prefix}{{{', '.join(items)}}};"
+
+
 def _extract_use_statements(code: str) -> tuple[list[str], str]:
-    """Extract `use` statements from a code fragment and return (uses, remaining_code).
+    """Extract `use` statements (single- and multi-line) from a code fragment.
+
+    Handles both:
+        use ntkrnl_sys::ddk::Foo;
+        use ntkrnl_sys::ddk::{Foo, Bar, Baz};
+        use ntkrnl_sys::ddk::{
+            Foo, Bar, Baz,
+            Qux,
+        };
 
     Returns:
-        Tuple of (list of use statement strings, code with uses removed).
+        Tuple of (list of use statement strings (each terminated with ';'),
+                  code with uses and any orphan continuation lines removed).
     """
-    uses = []
-    remaining_lines = []
-
-    for line in code.splitlines():
+    uses: list[str] = []
+    remaining_lines: list[str] = []
+    lines = code.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
         if stripped.startswith("use "):
-            uses.append(stripped)
+            # Accumulate until we see a `;` terminator with balanced braces.
+            buf = [line]
+            joined = stripped
+            brace = stripped.count('{') - stripped.count('}')
+            i += 1
+            while not (joined.endswith(';') and brace == 0) and i < len(lines):
+                nxt = lines[i]
+                buf.append(nxt)
+                joined = (joined + ' ' + nxt.strip()).strip()
+                brace += nxt.count('{') - nxt.count('}')
+                i += 1
+            # Collapse to single-line representation for downstream dedup.
+            uses.append(re.sub(r'\s+', ' ', joined))
         else:
             remaining_lines.append(line)
+            i += 1
 
     # Strip leading blank lines from remaining
     while remaining_lines and not remaining_lines[0].strip():
@@ -179,30 +274,40 @@ def _merge_extern_blocks(blocks: list[str]) -> list[str]:
     return result
 
 
-def _generate_imports_from_resolve(resolve: ResolveResult) -> list[str]:
+def _generate_imports_from_resolve(
+    resolve: ResolveResult, target: Target | None = None
+) -> list[str]:
     """Generate use statements from a file-level ResolveResult.
 
-    Since the per-function prompt tells the LLM not to emit use statements,
-    we must generate them from the resolved imports.
+    For HAL: route kernel-API hand-written modules (ke/ex/mm/rtl/...) through
+    `ddk` and HAL-internal types through `hal_ddk`. No `use ntkrnl_sys::ke::*`
+    style globs.
     """
-    uses = []
+    if target is None:
+        target = TARGETS["ntoskrnl"]
+    is_hal = target.name == "hal"
 
-    for module, group in sorted(resolve.imports.items()):
-        names = sorted(s.name for s in group.symbols)
+    # Build a merged view: module → set of names
+    merged: dict[str, set[str]] = {}
+    for module, group in resolve.imports.items():
+        bucket = module
+        if is_hal and module in _HAL_KERNEL_API_MODULES:
+            bucket = "ddk"
+        merged.setdefault(bucket, set()).update(s.name for s in group.symbols)
+
+    uses: list[str] = []
+    for module in sorted(merged):
+        names = sorted(merged[module])
         if not names:
             continue
-
-        if module == "ddk":
-            # Selective imports from ddk (never glob)
-            # Group into reasonable line lengths
-            if len(names) <= 8:
-                uses.append(f"use ntkrnl_sys::ddk::{{{', '.join(names)}}};")
-            else:
-                # Multi-line import
-                items = ", ".join(names)
-                uses.append(f"use ntkrnl_sys::ddk::{{{items}}};")
+        if is_hal and module in ("ddk", "hal_ddk"):
+            # Selective imports — never glob — for HAL.
+            uses.append(f"use ntkrnl_sys::{module}::{{{', '.join(names)}}};")
+        elif module == "ddk":
+            # ntoskrnl: selective imports from ddk
+            uses.append(f"use ntkrnl_sys::ddk::{{{', '.join(names)}}};")
         else:
-            # Hand-written modules get glob imports
+            # ntoskrnl hand-written modules: glob imports
             uses.append(f"use ntkrnl_sys::{module}::*;")
 
     # Always include core::ffi::c_void — used by almost every file
@@ -227,6 +332,7 @@ def stitch_file(
     deps: list[FunctionDep],
     scan: ScanResult,
     file_resolve: ResolveResult,
+    target: Target | None = None,
 ) -> str:
     """Assemble individually-translated functions into a complete .rs file.
 
@@ -285,8 +391,19 @@ def stitch_file(
     parts = []
 
     # 1. Use statements — generate from file_resolve + collect any LLM-emitted ones
-    resolve_uses = _generate_imports_from_resolve(file_resolve)
+    resolve_uses = _generate_imports_from_resolve(file_resolve, target=target)
     all_uses_combined = resolve_uses + all_uses
+
+    # HAL: drop forbidden module paths + scrub forbidden symbol names from ddk/hal_ddk imports
+    if target is not None and target.name == "hal":
+        all_uses_combined = _strip_forbidden_hal_uses(all_uses_combined)
+        scrubbed: list[str] = []
+        for u in all_uses_combined:
+            cleaned = _strip_forbidden_hal_imports(u)
+            if cleaned is not None:
+                scrubbed.append(cleaned)
+        all_uses_combined = scrubbed
+
     deduped_uses = _dedup_uses(all_uses_combined)
     if deduped_uses:
         for stmt in deduped_uses:

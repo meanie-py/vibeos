@@ -3,16 +3,17 @@
 import re
 from pathlib import Path
 
-from .config import TEMPLATES_DIR, NTOSKRNL_DIR
+from .config import TEMPLATES_DIR, NTOSKRNL_DIR, Target, TARGETS
 from .resolver import ResolveResult
 from .scanner import ScanResult
 from .spec_parser import rust_calling_convention
 
 
-def load_system_prompt() -> str:
-    """Load the system prompt template."""
-    path = TEMPLATES_DIR / "system_prompt.md"
-    return path.read_text()
+def load_system_prompt(target: Target | None = None) -> str:
+    """Load the system prompt template for the given target."""
+    if target is None:
+        target = TARGETS["ntoskrnl"]
+    return target.system_prompt.read_text()
 
 
 def load_shim_signatures(subsystem: str) -> dict[str, str]:
@@ -84,8 +85,8 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
         parts.append("These types and functions are available. Use them in your `use` declarations:\n")
         for module, group in sorted(resolve.imports.items()):
             names = sorted(s.name for s in group.symbols)
-            if module == "ddk":
-                parts.append(f"From `ntkrnl_sys::ddk::*`: {', '.join(f'`{n}`' for n in names[:50])}")
+            if module in ("ddk", "hal_ddk"):
+                parts.append(f"From `ntkrnl_sys::{module}::*`: {', '.join(f'`{n}`' for n in names[:50])}")
                 if len(names) > 50:
                     parts.append(f"  ... and {len(names) - 50} more")
             else:

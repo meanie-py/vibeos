@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
-from .config import TEMPLATES_DIR, NTOSKRNL_DIR, OUTPUT_CRATE
+from .config import TEMPLATES_DIR, NTOSKRNL_DIR, OUTPUT_CRATE, Target, TARGETS
 from .resolver import ResolveResult, GAP_FUNCTIONS
 from .spec_parser import rust_calling_convention
 
@@ -15,22 +15,78 @@ if TYPE_CHECKING:
     from .scanner import ScanResult, CGlobal
 
 
-def load_function_system_prompt() -> str:
-    """Load the abbreviated system prompt for per-function translation."""
+_FUNCTION_MODE_HAL_CODA = """
+
+---
+
+## Per-Function Pipeline Mode
+
+You are translating ONE FUNCTION at a time. The caller stitches functions
+together and emits the file-level `use` statements separately.
+
+**CRITICAL — Output ONLY the function body. Do NOT emit:**
+- `use` statements (the caller assembles them from the resolved import list)
+- Global `static mut` / `pub static` declarations (the caller collects them once)
+- `#[link]` / `extern "C" { ... }` blocks for module-level globals (the caller dedups them)
+- Trailing module-level definitions of HELPER functions (the caller adds them once)
+
+You MAY emit:
+- The function definition itself, including its `#[no_mangle]` / `#[cfg(...)]` /
+  `pub unsafe extern "..."` attributes
+- Forward `extern "system" { fn X(...); }` blocks ONLY if absolutely required
+  to call a function not yet translated (the caller dedups these)
+- Local helper `unsafe fn` definitions that the function needs (the caller
+  dedups these by name)
+
+Refer to types by their final names (e.g., `_ADAPTER_OBJECT`, `PADAPTER_OBJECT`)
+as if they were already in scope. Don't put `ntkrnl_sys::ddk::` or
+`ntkrnl_sys::hal_ddk::` path prefixes inline.
+"""
+
+
+def load_function_system_prompt(target: Target | None = None) -> str:
+    """Load the system prompt for per-function translation.
+
+    For HAL targets, we use the full system_prompt_hal.md plus a coda telling
+    the LLM not to emit imports/globals (function-by-function pipeline mode).
+    """
+    if target is None:
+        target = TARGETS["ntoskrnl"]
+    if target.name == "hal":
+        return target.system_prompt.read_text() + _FUNCTION_MODE_HAL_CODA
     path = TEMPLATES_DIR / "function_prompt.md"
     return path.read_text()
 
 
-def _format_import_context(resolve: ResolveResult) -> str:
-    """Format pre-resolved imports as context for the LLM."""
+def _format_import_context(resolve: ResolveResult, target: Target | None = None) -> str:
+    """Format pre-resolved imports as context for the LLM.
+
+    For the HAL target, kernel-API symbols (hand-written modules ke/ex/mm/rtl/
+    ob/ps/interlocked) are funneled into `ntkrnl_sys::ddk` because:
+      a) the same symbols are re-exported from ddk, and
+      b) HAL convention (dma.rs, usage.rs, kdpci.rs) imports everything from
+         ddk + hal_ddk only — never per-subsystem hand-written modules.
+    """
     parts = []
     parts.append("## Available Imports (pre-resolved for this function)")
     parts.append("These types/functions are available from ntkrnl_sys. Use them directly:\n")
 
-    for module, group in sorted(resolve.imports.items()):
-        names = sorted(s.name for s in group.symbols)
-        if module == "ddk":
-            parts.append(f"From `ntkrnl_sys::ddk`: {', '.join(f'`{n}`' for n in names[:60])}")
+    is_hal = target is not None and target.name == "hal"
+    # Hand-written module names that should be folded into `ddk` for HAL.
+    _kernel_api_modules = {"ke", "ex", "mm", "rtl", "ob", "ps", "interlocked", "base", "macros", "constants"}
+
+    # Build a merged view: module → set of names
+    merged: dict[str, set[str]] = {}
+    for module, group in resolve.imports.items():
+        bucket = module
+        if is_hal and module in _kernel_api_modules:
+            bucket = "ddk"
+        merged.setdefault(bucket, set()).update(s.name for s in group.symbols)
+
+    for module in sorted(merged):
+        names = sorted(merged[module])
+        if module in ("ddk", "hal_ddk"):
+            parts.append(f"From `ntkrnl_sys::{module}`: {', '.join(f'`{n}`' for n in names[:60])}")
             if len(names) > 60:
                 parts.append(f"  ... and {len(names) - 60} more")
         else:
@@ -241,6 +297,7 @@ def build_function_prompt(
     scan: ScanResult,
     catalog_fn_names: set[str],
     spec_exports: dict | None = None,
+    target: Target | None = None,
 ) -> str:
     """Build a complete prompt for translating a single C function.
 
@@ -271,7 +328,7 @@ def build_function_prompt(
         parts.append(export_info)
 
     # Imports
-    parts.append(_format_import_context(resolve))
+    parts.append(_format_import_context(resolve, target=target))
 
     # Gap functions
     gap_info = _format_gap_functions(resolve.gap_functions, subsystem)

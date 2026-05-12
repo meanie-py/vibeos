@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS
+from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS, detect_target, TARGETS
 
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
@@ -24,7 +24,7 @@ def resolve_model(model_str: str | None) -> str:
 
 
 def resolve_c_path(path_str: str) -> Path:
-    """Resolve a C file path, allowing relative paths within ntoskrnl."""
+    """Resolve a C file path, allowing relative paths within ntoskrnl or hal."""
     p = Path(path_str)
     if p.exists():
         return p.resolve()
@@ -32,12 +32,20 @@ def resolve_c_path(path_str: str) -> Path:
     candidate = NTOSKRNL_DIR / path_str
     if candidate.exists():
         return candidate.resolve()
+    # Try as relative to hal/ (HAL target)
+    from .config import HAL_DIR
+    hal_candidate = HAL_DIR / path_str
+    if hal_candidate.exists():
+        return hal_candidate.resolve()
     # Try with .c extension
-    candidate = NTOSKRNL_DIR / (path_str + ".c") if not path_str.endswith('.c') else candidate
-    if candidate.exists():
-        return candidate.resolve()
+    candidate_c = NTOSKRNL_DIR / (path_str + ".c") if not path_str.endswith('.c') else candidate
+    if candidate_c.exists():
+        return candidate_c.resolve()
+    hal_candidate_c = HAL_DIR / (path_str + ".c") if not path_str.endswith('.c') else hal_candidate
+    if hal_candidate_c.exists():
+        return hal_candidate_c.resolve()
     print(f"Error: file not found: {path_str}", file=sys.stderr)
-    print(f"  Tried: {p}, {NTOSKRNL_DIR / path_str}", file=sys.stderr)
+    print(f"  Tried: {p}, {NTOSKRNL_DIR / path_str}, {HAL_DIR / path_str}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -361,33 +369,53 @@ def cmd_translate(args):
     from .prompt_builder import estimate_tokens
 
     # Resolve target: single file or directory
-    target = Path(args.path)
-    if not target.is_absolute():
-        target = NTOSKRNL_DIR / args.path
+    target_path = Path(args.path)
+    if not target_path.is_absolute():
+        # Try repo-root-relative, ntoskrnl-relative, hal-relative.
+        from .config import REACTOS_ROOT, HAL_DIR
+        candidates = [
+            REACTOS_ROOT / args.path,
+            NTOSKRNL_DIR / args.path,
+            HAL_DIR / args.path,
+        ]
+        target_path = next((c for c in candidates if c.exists()), candidates[0])
 
-    if target.is_file():
-        c_files = [target]
-    elif target.is_dir():
-        c_files = sorted(target.glob("*.c"))
+    # Detect target (ntoskrnl vs hal) from the path
+    rustconv_target = detect_target(target_path)
+    print(f"Target: {rustconv_target.name}", file=sys.stderr)
+
+    if target_path.is_file():
+        c_files = [target_path]
+    elif target_path.is_dir():
+        c_files = sorted(target_path.glob("*.c"))
         if args.exclude:
             exclude_stems = set(args.exclude)
             c_files = [f for f in c_files if f.stem not in exclude_stems]
     else:
-        print(f"Error: not found: {target}", file=sys.stderr)
+        print(f"Error: not found: {target_path}", file=sys.stderr)
         sys.exit(1)
 
     if not c_files:
-        print(f"No .c files found in {target}", file=sys.stderr)
+        print(f"No .c files found in {target_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # HAL doesn't currently support arm64 catalog/translation.
+    if rustconv_target.name == "hal" and args.arch not in rustconv_target.arches:
+        print(f"HAL target does not support arch={args.arch}; supported: {rustconv_target.arches}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Building catalog...", file=sys.stderr)
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    catalog = build_catalog(arch=args.arch, target=rustconv_target)
+    # HAL has no .spec file — exports come from C source headers + Cargo no_mangle.
+    if rustconv_target.spec_file is not None:
+        spec = parse_spec(rustconv_target.spec_file)
+    else:
+        spec = {}
     catalog_fn_names = set(catalog.functions.keys())
 
     model = resolve_model(args.model)
     use_claude = model.startswith("claude-")
-    system_prompt = load_function_system_prompt() if use_claude else ""
+    system_prompt = load_function_system_prompt(rustconv_target) if use_claude else ""
 
     total_files = len(c_files)
     for file_idx, c_file in enumerate(c_files, 1):
@@ -431,7 +459,8 @@ def cmd_translate(args):
             if sorted_deps:
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports
+                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
+                    target=rustconv_target,
                 )
                 if not use_claude:
                     prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
@@ -442,7 +471,8 @@ def cmd_translate(args):
                 # Print full prompt for first function
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports
+                    sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
+                    target=rustconv_target,
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -465,6 +495,7 @@ def cmd_translate(args):
             user_prompt = build_function_prompt(
                 dep, func_res, translated, all_deps_for_context,
                 scan, catalog_fn_names, file_res.exports,
+                target=rustconv_target,
             )
 
             if use_claude:
@@ -489,7 +520,7 @@ def cmd_translate(args):
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
         # Stitch functions into a single file
-        stitched = stitch_file(translated, sorted_deps, scan, file_res)
+        stitched = stitch_file(translated, sorted_deps, scan, file_res, target=rustconv_target)
 
         # Post-process
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals)
@@ -508,11 +539,13 @@ def cmd_translate(args):
                 success=True,
             )
             out_path = assemble_file(fake_result, subsystem, scan.raw_source,
-                                     exports=file_res.exports, scan=scan)
+                                     exports=file_res.exports, scan=scan,
+                                     target=rustconv_target, c_source_path=c_file)
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
-    # Generate mod.rs and lib.rs for batch runs
-    if total_files > 1 and not args.dry_run:
+    # Generate mod.rs and lib.rs for batch runs (ntoskrnl only — HAL handles
+    # mod.rs incrementally via _hal_register_mod and has a single src/x86 dir).
+    if total_files > 1 and not args.dry_run and rustconv_target.name == "ntoskrnl":
         subsystem = c_files[0].parent.name
         module_names = [f.stem for f in c_files]
         generate_mod_rs(subsystem, module_names)
@@ -532,7 +565,13 @@ def cmd_estimate(args):
 
     target = Path(args.path)
     if not target.is_absolute():
-        target = NTOSKRNL_DIR / args.path
+        from .config import REACTOS_ROOT, HAL_DIR
+        for candidate in (REACTOS_ROOT / args.path, NTOSKRNL_DIR / args.path, HAL_DIR / args.path):
+            if candidate.exists():
+                target = candidate
+                break
+        else:
+            target = NTOSKRNL_DIR / args.path
 
     if target.is_file():
         c_files = [target]
@@ -542,8 +581,9 @@ def cmd_estimate(args):
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    rustconv_target = detect_target(target)
+    catalog = build_catalog(arch=args.arch, target=rustconv_target)
+    spec = parse_spec(rustconv_target.spec_file) if rustconv_target.spec_file else {}
 
     total_input = 0
     total_lines = 0

@@ -6,7 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .config import NTKRNL_SYS_DIR, BINDGEN_FILES, HAND_WRITTEN_MODULES
+from .config import (
+    NTKRNL_SYS_DIR,
+    BINDGEN_FILES,
+    HAL_BINDGEN_FILES,
+    HAND_WRITTEN_MODULES,
+    Target,
+    TARGETS,
+)
 
 
 @dataclass
@@ -156,15 +163,21 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
     return types, functions, constants
 
 
-def build_catalog(arch: str = "arm64") -> Catalog:
+def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
     """Build a complete symbol catalog from ntkrnl-sys sources.
 
     Args:
         arch: Which bindgen file to use ("arm64", "amd64", "i386")
+        target: Target descriptor (selects ntoskrnl vs hal scope).  Falls back
+                to TARGETS["ntoskrnl"] for backward compatibility.
     """
+    if target is None:
+        target = TARGETS["ntoskrnl"]
+
     catalog = Catalog()
 
-    # Scan hand-written modules first (higher priority)
+    # Scan hand-written modules first (higher priority).  These are always
+    # available regardless of target.
     for filename in HAND_WRITTEN_MODULES:
         path = NTKRNL_SYS_DIR / filename
         if not path.exists():
@@ -178,11 +191,10 @@ def build_catalog(arch: str = "arm64") -> Catalog:
         for s in constants:
             catalog.constants[s.name] = s
 
-    # Scan bindgen file
-    bindgen_path = BINDGEN_FILES.get(arch)
+    # Scan the kernel bindgen file → module "ddk"
+    bindgen_path = target.bindgen_files.get(arch)
     if bindgen_path and bindgen_path.exists():
-        module_name = f"ddk"
-        types, functions, constants = _scan_bindgen(bindgen_path, module_name)
+        types, functions, constants = _scan_bindgen(bindgen_path, "ddk")
         for s in types:
             if s.name not in catalog.types:  # hand-written takes priority
                 catalog.types[s.name] = s
@@ -192,6 +204,26 @@ def build_catalog(arch: str = "arm64") -> Catalog:
         for s in constants:
             if s.name not in catalog.constants:
                 catalog.constants[s.name] = s
+
+    # For HAL target, also scan hal_bindgen file → module "hal_ddk"
+    # Symbols in hal_bindgen override ddk for HAL-internal types (ADAPTER_OBJECT,
+    # DEVICE_DESCRIPTION, DMA_PAGE, etc.) — those are HAL-private and must come
+    # from hal_ddk to keep the type-identity correct in struct fields.
+    if target.name == "hal":
+        hal_bindgen_path = target.hal_bindgen_files.get(arch)
+        if hal_bindgen_path and hal_bindgen_path.exists():
+            types, functions, constants = _scan_bindgen(hal_bindgen_path, "hal_ddk")
+            # hal_ddk wins for types/constants — HAL-internal definitions are
+            # what the C code actually uses for these symbols.
+            for s in types:
+                catalog.types[s.name] = s
+            for s in constants:
+                catalog.constants[s.name] = s
+            # Functions: ddk wins (kernel API is the linkable surface);
+            # hal_ddk fn decls are usually duplicates of ddk for re-exports.
+            for s in functions:
+                if s.name not in catalog.functions:
+                    catalog.functions[s.name] = s
 
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .batch_runner import TranslationResult
-from .config import OUTPUT_CRATE
+from .config import OUTPUT_CRATE, Target, TARGETS, hal_cmake_for_c
 from .postprocess import postprocess
 
 if TYPE_CHECKING:
@@ -21,28 +22,43 @@ def assemble_file(
     output_dir: Path = OUTPUT_CRATE,
     exports: dict[str, SpecEntry] | None = None,
     scan: ScanResult | None = None,
+    target: Target | None = None,
+    c_source_path: Path | None = None,
 ) -> Path:
     """Write a single translation result into the crate structure.
 
-    Creates: output_dir/src/{subsystem}/{filename}.rs
+    For ntoskrnl: output_dir/src/{subsystem}/{filename}.rs
+    For hal:      target.output_crate/src/x86/{filename}.rs
+                  + appends `pub mod {filename};` to src/x86/mod.rs
+                  + appends to CMakeLists.txt DEPENDS list
+                  + comments out the C file in the matching subsystem .cmake
 
     Applies post-processing and appends original C source as comments.
 
     Args:
         result: Translation result with Rust code
-        subsystem: Subsystem name (e.g., "ex", "ob", "mm")
+        subsystem: Subsystem name (e.g., "ex", "ob", "mm") — used for ntoskrnl
         c_source: Original C source code to embed as comments
-        output_dir: Root of the output crate
+        output_dir: Root of the output crate (overridden by target if set)
         exports: Spec-exported functions for #[no_mangle] fixup
         scan: Scanner result for global #[no_mangle] fixup
+        target: Target descriptor; if set, overrides output_dir + subdir
+        c_source_path: Original C file path (for HAL CMake editing)
 
     Returns:
         Path to the written file
     """
+    if target is None:
+        target = TARGETS["ntoskrnl"]
+
     # Derive module name from source filename
     stem = Path(result.source_file).stem  # e.g., "uuid" from "uuid.c"
 
-    sub_dir = output_dir / "src" / subsystem
+    if target.name == "hal" and target.src_subdir is not None:
+        sub_dir = target.output_crate / target.src_subdir
+    else:
+        sub_dir = (target.output_crate if target.name != "ntoskrnl" else output_dir) / "src" / subsystem
+
     sub_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = sub_dir / f"{stem}.rs"
@@ -74,7 +90,119 @@ def assemble_file(
     content_parts.append("")
 
     out_path.write_text("\n".join(content_parts))
+
+    # HAL-specific output routing: append to mod.rs, CMakeLists.txt DEPENDS,
+    # and comment out the C file in the matching *.cmake.
+    if target.name == "hal":
+        _hal_register_mod(target, stem)
+        _hal_register_cmake_deps(target, stem)
+        if c_source_path is not None:
+            _hal_comment_out_c_in_cmake(c_source_path, stem)
+
     return out_path
+
+
+def _hal_register_mod(target: Target, stem: str) -> None:
+    """Append `pub mod {stem};` to hal-rust/src/x86/mod.rs if absent."""
+    mod_path = target.output_crate / target.src_subdir / "mod.rs"
+    if not mod_path.exists():
+        return  # don't create — manual review wanted
+    text = mod_path.read_text()
+    if re.search(rf"^pub mod {re.escape(stem)};", text, re.MULTILINE):
+        return  # already registered
+    if re.search(rf"^#\[cfg\(.*\)\]\s*\npub mod {re.escape(stem)};", text, re.MULTILINE):
+        return  # cfg-gated variant present
+    # Insert before the trailing blank line, in alphabetical position.
+    lines = text.splitlines()
+    insert_line = f"pub mod {stem};"
+    # Find run of `pub mod X;` lines and insert in alphabetical order.
+    mod_lines = [(i, l) for i, l in enumerate(lines) if re.match(r"pub mod \w+;", l.strip())]
+    inserted = False
+    for i, l in mod_lines:
+        existing_name = l.strip().split()[2].rstrip(";")
+        if stem < existing_name:
+            lines.insert(i, insert_line)
+            inserted = True
+            break
+    if not inserted:
+        # Append after last `pub mod` line
+        if mod_lines:
+            lines.insert(mod_lines[-1][0] + 1, insert_line)
+        else:
+            lines.append(insert_line)
+    mod_path.write_text("\n".join(lines) + ("\n" if not text.endswith("\n") else ""))
+
+
+def _hal_register_cmake_deps(target: Target, stem: str) -> None:
+    """Append the new .rs file to the DEPENDS list in hal/halx86/CMakeLists.txt.
+
+    Pattern in CMakeLists.txt:
+        DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/dma.rs
+                ...
+    """
+    if target.cmake_deps_file is None or not target.cmake_deps_file.exists():
+        return
+    text = target.cmake_deps_file.read_text()
+    new_line = f"            ${{HAL_RUST_WORKSPACE_DIR}}/hal-rust/src/x86/{stem}.rs"
+    if new_line in text:
+        return  # already present
+    # Find the existing block of `${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/*.rs` lines
+    pattern = re.compile(
+        r"(^            \$\{HAL_RUST_WORKSPACE_DIR\}/hal-rust/src/x86/\w+\.rs\n)+",
+        re.MULTILINE,
+    )
+    m = pattern.search(text)
+    if not m:
+        return  # block not found — bail rather than corrupt CMakeLists
+    # Collect existing entries inside the block, insert new one alphabetically.
+    block_text = m.group(0)
+    entry_pat = re.compile(r"^            \$\{HAL_RUST_WORKSPACE_DIR\}/hal-rust/src/x86/(\w+)\.rs$", re.MULTILINE)
+    existing = [(em.group(1), em.group(0)) for em in entry_pat.finditer(block_text)]
+    if any(name == stem for name, _ in existing):
+        return
+    existing.append((stem, new_line))
+    existing.sort(key=lambda p: p[0])
+    new_block = "\n".join(line for _, line in existing) + "\n"
+    new_text = text[:m.start()] + new_block + text[m.end():]
+    target.cmake_deps_file.write_text(new_text)
+
+
+def _hal_comment_out_c_in_cmake(c_source_path: Path, stem: str) -> None:
+    """Comment out the .c entry in the matching subsystem .cmake.
+
+    Pattern looks like:
+        generic/dma.c    →    # generic/dma.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/dma.rs)
+    """
+    cmake_path = hal_cmake_for_c(c_source_path)
+    if cmake_path is None or not cmake_path.exists():
+        return
+    text = cmake_path.read_text()
+    # subsystem dir name relative to halx86/ (e.g. "generic" from hal/halx86/generic/dma.c)
+    subsys = c_source_path.parent.name
+    c_rel = f"{subsys}/{stem}.c"
+    replacement_comment = (
+        f"# {c_rel} — replaced by Rust "
+        f"(sdk/lib/rust/hal-rust/src/x86/{stem}.rs)"
+    )
+    # If already commented out by us, leave alone.
+    if replacement_comment in text:
+        return
+    # Replace exact `    generic/dma.c)` or `    generic/dma.c` (with trailing whitespace/EOL).
+    # Be conservative: match `^(\s*)c_rel(\)?)\s*$`.
+    pat = re.compile(
+        rf"^(\s*){re.escape(c_rel)}(\)?)\s*$",
+        re.MULTILINE,
+    )
+    if not pat.search(text):
+        return
+    def _sub(m):
+        indent = m.group(1)
+        paren = m.group(2)
+        return f"{indent}{replacement_comment}{paren}"
+    text = pat.sub(_sub, text, count=1)
+    cmake_path.write_text(text)
 
 
 def generate_mod_rs(subsystem: str, module_names: list[str], output_dir: Path = OUTPUT_CRATE) -> Path:
