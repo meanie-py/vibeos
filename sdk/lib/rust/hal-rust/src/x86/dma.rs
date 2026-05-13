@@ -305,8 +305,12 @@ pub static mut HalpDmaOperations: DMA_OPERATIONS = unsafe {
 // adapter, registers the PnP DMA-adapter dispatch in HalDispatchTable.
 // ---------------------------------------------------------------------------
 
+// C decl: VOID HalpInitDma(VOID) — bare cdecl (no NTAPI).  Bindgen declares it
+// `extern "C"`, so callers (pic/apic_halinit.rs) expect the bare `_HalpInitDma`
+// symbol on i386.  Must match cdecl here or LLVM IPO folds the call into ud2
+// at the i386 call site (see feedback_ud2_abi_vs_captures.md).
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalpInitDma() {
+pub unsafe extern "C" fn HalpInitDma() {
     unsafe {
         HalpDmaOperations.PutDmaAdapter = Some(core::mem::transmute(HalPutDmaAdapter as usize));
         HalpDmaOperations.AllocateCommonBuffer =

@@ -138,11 +138,21 @@ unsafe fn KiEnterInterruptTrap(TrapFrame: PKTRAP_FRAME) {
     (*TrapFrame).PreviousPreviousMode = 0xFFFFFFFF; // (ULONG)-1
 }
 
-// KiEoiHelper IS exported by ntoskrnl.exe (bare name, ordinal 691).  Pull
-// via raw-dylib.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-unsafe extern "C" {
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
+// KiEoiHelper is fastcall on i386 (defined as `extern "fastcall"` in
+// ntoskrnl-rust/src/ke/i386/traphdlr.rs:199).  Resolve via libntoskrnl.a like
+// KeUpdateSystemTime above — dlltool sets the IAT import-name to the bare
+// export `KiEoiHelper` (matching what ntoskrnl.exe actually exports), even
+// though rustc's local link symbol is the decorated `@KiEoiHelper@4`.
+//
+// Critical: was previously declared `extern "C"` via raw-dylib.  i386 cdecl
+// pushes TrapFrame on the stack while the fastcall callee reads ECX —
+// KiEoiHelper then forwarded garbage ECX as TrapFrame down through
+// KiCommonExit → KiExitTrapDebugChecks, which saw &KiI8259MaskTable (LLVM's
+// register allocation placed the table base in ECX at the call site as an
+// artifact of other HAL arithmetic) and the magic-check assertion fired,
+// dumping HAL .rdata as a "trap frame."
+unsafe extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 
 // HalpRolloverTable is defined in hal/halx86/generic/clock.c (already translated to
