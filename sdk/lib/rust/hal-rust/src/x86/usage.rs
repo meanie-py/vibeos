@@ -35,12 +35,41 @@ use ntkrnl_sys::ddk::{
     HANDLE, KEY_VALUE_PARTIAL_INFORMATION, OBJECT_ATTRIBUTES, NTSTATUS, UNICODE_STRING,
 };
 
-// raw-dylib forces the linker to resolve via ntoskrnl.dll's IAT instead of
-// pulling in ntkrnl_sys's Rust impl (which transitively depends on
-// HalVectorToIDTEntry / KiDispatchException* not available to hal-rust).
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
-unsafe extern "system" {
-    fn KeRegisterInterruptHandler(Vector: ULONG, Handler: PVOID);
+// KeRegisterInterruptHandler is FORCEINLINE in ntoskrnl/include/internal/{i386,amd64}/ke.h
+// (every C caller inlined it).  ntoskrnl.exe does NOT export the symbol, so we
+// cannot raw-dylib it — inline the body locally per-arch instead.
+//
+// HalVectorToIDTEntry is the function-pointer field at HalPrivateDispatchTable's
+// HalVectorToIDTEntry slot; the call is indirect through that pointer.
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
+    let pcr = crate::x86::pcr::KeGetPcr() as *mut ntkrnl_sys::hal_ddk::_KIPCR;
+    let dispatch = &raw const ntkrnl_sys::hal_ddk::HalPrivateDispatchTable;
+    let vec_to_idt = (*dispatch).HalVectorToIDTEntry.unwrap_unchecked();
+    let entry = vec_to_idt(vector) as usize;
+    let e = &mut *((*pcr).IDT).add(entry);
+    let address = handler as usize;
+    e.ExtendedOffset = (address >> 16) as u16;
+    e.Offset = address as u16;
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
+    let pcr = crate::x86::pcr::KeGetPcr() as *mut ntkrnl_sys::hal_ddk::_KIPCR;
+    let dispatch = &raw const ntkrnl_sys::hal_ddk::HalPrivateDispatchTable;
+    let vec_to_idt = (*dispatch).HalVectorToIDTEntry.unwrap_unchecked();
+    let entry = vec_to_idt(vector) as usize;
+    let idt = (*pcr).IdtBase.add(entry);
+    let inner = &mut (*idt).__bindgen_anon_1;
+    let address = handler as usize;
+    inner.OffsetLow = (address & 0xffff) as u16;
+    inner.OffsetMiddle = ((address >> 16) & 0xffff) as u16;
+    inner.OffsetHigh = (address >> 32) as u32;
+    const KGDT64_R0_CODE: u16 = 0x0010;
+    inner.Selector = KGDT64_R0_CODE;
 }
 
 // ---------------------------------------------------------------------------
@@ -632,7 +661,7 @@ pub unsafe extern "system" fn HalpEnableInterruptHandler(
     unsafe {
         let f = if mode == LATCHED as u32 { flags | IDT_LATCHED } else { flags };
         HalpRegisterVector(f, bus_vector, system_vector, irql);
-        KeRegisterInterruptHandler(system_vector, handler);
+        register_interrupt_handler(system_vector, handler);
         HalEnableSystemInterrupt(system_vector, irql, mode as _);
     }
 }

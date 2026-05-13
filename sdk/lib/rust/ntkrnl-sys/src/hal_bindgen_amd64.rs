@@ -8533,11 +8533,11 @@ pub struct _EXCEPTION_POINTERS {
 }
 pub type EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
 pub type PEXCEPTION_POINTERS = *mut _EXCEPTION_POINTERS;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbCodePageTag: BOOLEAN;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbOemCodePageTag: BOOLEAN;
 }
@@ -10308,7 +10308,7 @@ pub struct _CONTEXT_EX {
 }
 pub type CONTEXT_EX = _CONTEXT_EX;
 pub type PCONTEXT_EX = *mut _CONTEXT_EX;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeNumberProcessors: CCHAR;
 }
@@ -26244,27 +26244,27 @@ pub type POBJECT_NAME_INFORMATION = *mut _OBJECT_NAME_INFORMATION;
 unsafe extern "C" {
     pub static mut CmKeyObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut ExEventObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut ExSemaphoreObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoFileObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsThreadType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut SeTokenObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsProcessType: POBJECT_TYPE;
 }
@@ -26355,11 +26355,11 @@ pub type PETWENABLECALLBACK = ::core::option::Option<
         CallbackContext: PVOID,
     ),
 >;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerEnabled: BOOLEAN;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerNotPresent: BOOLEAN;
 }
@@ -37035,7 +37035,7 @@ pub struct HAL_DISPATCH {
     pub HalSetPciErrorHandlerCallback: pHalSetPciErrorHandlerCallback,
 }
 pub type PHAL_DISPATCH = *mut HAL_DISPATCH;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
@@ -38897,7 +38897,7 @@ pub struct _PROCESS_HANDLE_TRACING_QUERY {
 }
 pub type PROCESS_HANDLE_TRACING_QUERY = _PROCESS_HANDLE_TRACING_QUERY;
 pub type PPROCESS_HANDLE_TRACING_QUERY = *mut _PROCESS_HANDLE_TRACING_QUERY;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsInitialSystemProcess: PEPROCESS;
 }
@@ -39288,15 +39288,15 @@ pub struct _KPCR__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type KPCR = _KPCR;
 pub type PKPCR = *mut _KPCR;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmHighestUserAddress: PVOID;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmSystemRangeStart: PVOID;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmUserProbeAddress: ULONG64;
 }
@@ -41699,26 +41699,26 @@ pub struct _FS_FILTER_CALLBACKS {
 }
 pub type FS_FILTER_CALLBACKS = _FS_FILTER_CALLBACKS;
 pub type PFS_FILTER_CALLBACKS = *mut _FS_FILTER_CALLBACKS;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoStatisticsLock: KSPIN_LOCK;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoReadOperationCount: ULONG;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoWriteOperationCount: ULONG;
 }
 unsafe extern "C" {
     pub static mut IoOtherOperationCount: ULONG;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoReadTransferCount: LARGE_INTEGER;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoWriteTransferCount: LARGE_INTEGER;
 }
@@ -41768,7 +41768,7 @@ pub struct _KQUEUE {
 pub type KQUEUE = _KQUEUE;
 pub type PKQUEUE = *mut _KQUEUE;
 pub type PRKQUEUE = *mut _KQUEUE;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut SeExports: PSE_EXPORTS;
 }
@@ -42235,7 +42235,7 @@ pub type PCHECK_FOR_TRAVERSE_ACCESS = ::core::option::Option<
 pub type PFILTER_REPORT_CHANGE = ::core::option::Option<
     unsafe extern "C" fn(NotifyContext: PVOID, FilterContext: PVOID) -> BOOLEAN,
 >;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static FsRtlLegalAnsiCharacterArray: *const UCHAR;
 }
@@ -42297,7 +42297,7 @@ pub type PFLUSH_TO_LSN =
     ::core::option::Option<unsafe extern "C" fn(LogHandle: PVOID, Lsn: LARGE_INTEGER)>;
 pub type PCC_POST_DEFERRED_WRITE =
     ::core::option::Option<unsafe extern "C" fn(Context1: PVOID, Context2: PVOID)>;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut CcFastMdlReadWait: ULONG;
 }
@@ -42827,7 +42827,7 @@ pub struct _SECURITY_FUNCTION_TABLE_W {
     pub SetContextAttributesW: SET_CONTEXT_ATTRIBUTES_FN_W,
     pub Reserved9: PVOID,
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsOemLeadByteInfo: PUSHORT;
 }
@@ -44205,7 +44205,7 @@ pub struct _BUS_HANDLER {
     pub Spare8: PVOID,
 }
 pub type BUS_HANDLER = _BUS_HANDLER;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH;
 }
@@ -47150,7 +47150,7 @@ pub struct _KSERVICE_TABLE_DESCRIPTOR {
 }
 pub type KSERVICE_TABLE_DESCRIPTOR = _KSERVICE_TABLE_DESCRIPTOR;
 pub type PKSERVICE_TABLE_DESCRIPTOR = *mut _KSERVICE_TABLE_DESCRIPTOR;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeLoaderBlock: *mut _LOADER_PARAMETER_BLOCK;
 }
@@ -47169,14 +47169,15 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut KeIcacheFlushCount: ULONG;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KiBugCheckData: [ULONG_PTR; 0usize];
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KiEnableTimerWatchdog: BOOLEAN;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeServiceDescriptorTable: [KSERVICE_TABLE_DESCRIPTOR; 2usize];
 }
@@ -47290,19 +47291,19 @@ pub type INBV_RESET_DISPLAY_PARAMETERS =
     ::core::option::Option<unsafe extern "C" fn(Cols: ULONG, Rows: ULONG) -> BOOLEAN>;
 pub type INBV_DISPLAY_STRING_FILTER =
     ::core::option::Option<unsafe extern "C" fn(String: *mut PCSTR)>;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoAdapterObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoDeviceHandlerObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoDeviceObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoDriverObjectType: POBJECT_TYPE;
 }
@@ -51877,7 +51878,7 @@ pub struct _PLUGPLAY_BUS_INSTANCE {
 }
 pub type PLUGPLAY_BUS_INSTANCE = _PLUGPLAY_BUS_INSTANCE;
 pub type PPLUGPLAY_BUS_INSTANCE = *mut _PLUGPLAY_BUS_INSTANCE;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut LpcPortObjectType: POBJECT_TYPE;
 }
@@ -51988,11 +51989,11 @@ pub type CLIENT_DIED_MSG = _CLIENT_DIED_MSG;
 pub type PCLIENT_DIED_MSG = *mut _CLIENT_DIED_MSG;
 pub type RTL_ATOM = USHORT;
 pub type PRTL_ATOM = *mut USHORT;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut ExDesktopObjectType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut ExWindowStationObjectType: POBJECT_TYPE;
 }
@@ -52005,7 +52006,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut ExTimerType: POBJECT_TYPE;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NtBuildNumber: ULONG;
 }
@@ -58805,7 +58806,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut MmHeapDeCommitFreeBlockThreshold: SIZE_T;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmSectionObjectType: POBJECT_TYPE;
 }
@@ -61167,15 +61168,15 @@ pub struct _AUX_ACCESS_DATA {
 }
 pub type AUX_ACCESS_DATA = _AUX_ACCESS_DATA;
 pub type PAUX_ACCESS_DATA = *mut _AUX_ACCESS_DATA;
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut SePublicDefaultDacl: PACL;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut SeSystemDefaultDacl: PACL;
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsJobType: POBJECT_TYPE;
 }
@@ -65399,6 +65400,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut KeI386CpuStep: ULONG;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeTickCount: KSYSTEM_TIME;
 }

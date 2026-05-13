@@ -33,7 +33,8 @@ def load_kernel_data_exports() -> set[str]:
         return set()
     names = set()
     for line in spec.read_text().splitlines():
-        m = re.match(r'@\s+extern\s+(\w+)', line.strip())
+        # Match `@ extern Name` and `@ extern -arch=... Name` forms.
+        m = re.match(r'@\s+extern\s+(?:-arch=\S+\s+)?(\w+)', line.strip())
         if m:
             names.add(m.group(1))
     return names
@@ -60,7 +61,7 @@ def wrap_kernel_data_imports(content: str, kernel_data: set[str]) -> tuple[str, 
         name = match.group(2)
         if name in kernel_data:
             wrapped += 1
-            return '#[link(name = "ntoskrnl", kind = "raw-dylib")]\n' + block
+            return '#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]\n' + block
         return block
 
     return pattern.sub(replace, content), wrapped

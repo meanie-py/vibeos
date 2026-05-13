@@ -102,7 +102,7 @@ pub unsafe extern "system" fn HalHandleNMI(_NmiInfo: PVOID) {
         // globals (KdDebuggerNotPresent/Enabled, KiBugCheckData,
         // KeServiceDescriptorTable) are kernel-data exports from
         // ntoskrnl.exe; postprocess_bindgen.py wraps them with
-        // `#[link(name = "ntoskrnl", kind = "raw-dylib")]` so the
+        // `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]` so the
         // cross-DLL data import resolves at link time.
         let ksdt_addr = (&raw const KeServiceDescriptorTable) as usize;
         let kbcd_ptr = (&raw mut KiBugCheckData) as *mut usize;

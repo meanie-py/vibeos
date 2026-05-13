@@ -19,9 +19,10 @@ use ntkrnl_sys::ddk::{
     RtlClearBits, RtlFindClearBitsAndSet, RtlInitializeBitMap, RtlSetAllBits, RtlSetBits, ZwClose,
 };
 
-// IoAllocateAdapterChannel is in ntoskrnl.spec but ntkrnl_sys::ddk doesn't
-// re-export it cleanly on amd64.  Pull it in directly via raw-dylib.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+// IoAllocateAdapterChannel is in ntoskrnl.spec.  Pull via the kernel
+// import library (libntoskrnl.a — dlltool puts bare names in the IAT,
+// which matches what ntoskrnl.exe actually exports).  Rust raw-dylib
+// would generate `Name@N` import names instead, which don't resolve.
 unsafe extern "system" {
     fn IoAllocateAdapterChannel(
         AdapterObject: PADAPTER_OBJECT,
@@ -1354,7 +1355,7 @@ unsafe fn kf_raise_irql(_new_irql: KIRQL) -> KIRQL {
     // amd64 doesn't export KfRaiseIrql — use KeRaiseIrqlToDpcLevel via
     // raw-dylib (so the linker resolves it via the ntoskrnl IAT instead of
     // expecting a local strong symbol).  Caller always passes DISPATCH_LEVEL.
-    #[link(name = "ntoskrnl", kind = "raw-dylib")]
+    #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
     unsafe extern "C" {
         fn KeRaiseIrqlToDpcLevel() -> KIRQL;
     }
@@ -1370,7 +1371,7 @@ unsafe fn kf_lower_irql(old_irql: KIRQL) {
 }
 #[cfg(target_arch = "x86_64")]
 unsafe fn kf_lower_irql(old_irql: KIRQL) {
-    #[link(name = "ntoskrnl", kind = "raw-dylib")]
+    #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
     unsafe extern "C" {
         fn KeLowerIrql(NewIrql: KIRQL);
     }
