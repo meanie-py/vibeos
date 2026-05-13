@@ -12,6 +12,8 @@ pub mod beep;
 pub mod buildtype;
 #[cfg(target_arch = "x86_64")]
 pub mod busemul;
+#[cfg(target_arch = "x86")]
+pub mod bushndlr;
 pub mod clock;
 pub mod cmos;
 pub mod cmosbus;

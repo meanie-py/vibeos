@@ -1,6 +1,6 @@
 
 list(APPEND HAL_LEGACY_SOURCE
-    legacy/bus/bushndlr.c
+    # legacy/bus/bushndlr.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/bushndlr.rs)
     # legacy/bus/cmosbus.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/cmosbus.rs)
     # legacy/bus/isabus.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/isabus.rs)
     legacy/bus/pcibus.c

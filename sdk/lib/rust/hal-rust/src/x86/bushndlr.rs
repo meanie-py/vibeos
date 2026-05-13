@@ -1,112 +1,290 @@
-use ntkrnl_sys::hal_ddk::{ARRAY, HAL_BUS_HANDLER, HaliFindBusAddressTranslation, HaliReferenceHandlerForConfigSpace, HaliTranslateBusAddress, HalpAssignSlotResources, HalpContextToBusHandler, HalpInitBusHandler, HalpNoBusData, KEVENT, KIRQL, KSPIN_LOCK, 0i32, LIST_ENTRY, MAXULONG, PARRAY, PBUS_HANDLER, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_OBJECT, PHAL_BUS_HANDLER, PINSTALL_BUS_HANDLER, PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY, PUNICODE_STRING};
-use ntkrnl_sys::ddk::{BusNumber, ExAllocatePoolWithTag, ExFreePoolWithTag, KeBugCheckEx, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject, NonPagedPool, STATUS_INSUFFICIENT_RESOURCES, STATUS_SUCCESS, Type};
-use core::ffi::c_void;
+//! Generic HAL bus-handler database — translated from
+//! `hal/halx86/legacy/bus/bushndlr.c`.
+//!
+//! i386-only (legacy.cmake is only included for the i386 HAL).  Maintains a
+//! 2-level `PARRAY`-keyed lookup of `HAL_BUS_HANDLER` records, one tree
+//! indexed by `InterfaceType + BusNumber` (HalpBusTable) and one by
+//! `BUS_DATA_TYPE + BusNumber` (HalpConfigTable).  Plus a flat
+//! HalpAllBusHandlers list and a database event/spinlock pair.
+//!
+//! Exports:
+//!  Globals: HalpBusDatabaseSpinLock, HalpBusDatabaseEvent, HalpAllBusHandlers,
+//!           HalpBusTable, HalpConfigTable.
+//!  Private (NTAPI): HalpAllocateArray, HalpGrowArray, HalpNoBusData,
+//!           HalpNoAdjustResourceList, HalpNoAssignSlotResources,
+//!           HalpContextToBusHandler, HalpInitBusHandler, HaliRegisterBusHandler.
+//!  Private (FASTCALL): HalpLookupHandler.
+//!  Dispatched-through-HALPRIVATEDISPATCH (FASTCALL):
+//!           HaliReferenceBusHandler, HaliDereferenceBusHandler,
+//!           HaliHandlerForBus, HaliHandlerForConfigSpace,
+//!           HaliReferenceHandlerForBus, HaliReferenceHandlerForConfigSpace.
 
-#[no_mangle]
-pub unsafe extern "system" fn HalpAllocateArray(ArraySize: ULONG) -> PARRAY {
-    let mut array_size = ArraySize;
-    let size: ULONG;
+#![cfg(target_arch = "x86")]
 
-    if array_size == MAXULONG {
-        array_size = 0;
-    }
-    size = array_size.wrapping_mul(core::mem::size_of::<PARRAY>() as ULONG)
-        .wrapping_add(core::mem::size_of::<ARRAY>() as ULONG);
+use ntkrnl_sys::hal_ddk::{
+    BOOLEAN, BUS_DATA_TYPE, INTERFACE_TYPE, KEVENT, KIRQL, KSPIN_LOCK, LIST_ENTRY, NTSTATUS,
+    PARRAY, PBUS_HANDLER, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_OBJECT, PHAL_BUS_HANDLER,
+    PINSTALL_BUS_HANDLER, PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY, PUNICODE_STRING, PVOID,
+    ULONG, ULONG_PTR, _ARRAY, _HAL_BUS_HANDLER,
+    _BUS_DATA_TYPE_ConfigurationSpaceUndefined as CONFIG_SPACE_UNDEF,
+    _INTERFACE_TYPE_InterfaceTypeUndefined as IFT_UNDEF,
+    HalDispatchTable, HalPrivateDispatchTable,
+};
 
-    let array = ExAllocatePoolWithTag(NonPagedPool, size as usize, 0x48535542u32);
-    if array.is_null() {
-        KeBugCheckEx(0x2000001, size as usize, 0, 0, 0);
-    }
+// --- C-side constants the bindgen catalog doesn't surface ----------------
 
-    let array = array as PARRAY;
-    (*array).ArraySize = array_size;
-    core::ptr::write_bytes(
-        (*array).Element.as_mut_ptr(),
-        0,
-        (array_size.wrapping_add(1)) as usize,
-    );
-    array
+const TAG_BUS_HANDLER: u32 = u32::from_le_bytes(*b"BusH"); // 'BusH'
+const HAL_MEMORY_ALLOCATION: u32 = 0x2000001; // BUGCHECK code (see bugcodes.h)
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A_u32 as NTSTATUS;
+const STATUS_SUCCESS: NTSTATUS = 0;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001_u32 as NTSTATUS;
+const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BB_u32 as NTSTATUS;
+const NON_PAGED_POOL: i32 = 0; // POOL_TYPE::NonPagedPool
+const SYNCHRONIZATION_EVENT: i32 = 1; // EVENT_TYPE::SynchronizationEvent
+const KERNEL_MODE: i8 = 0; // MODE::KernelMode
+const WR_EXECUTIVE: i32 = 0; // KWAIT_REASON::WrExecutive
+
+// --- Kernel-side ABIs ------------------------------------------------------
+// Pool + bugcheck are NTAPI (stdcall on i386).
+unsafe extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: u32) -> PVOID;
+    fn ExFreePoolWithTag(P: PVOID, Tag: u32);
+    fn KeBugCheckEx(
+        BugCheckCode: u32,
+        BugCheckParameter1: ULONG_PTR,
+        BugCheckParameter2: ULONG_PTR,
+        BugCheckParameter3: ULONG_PTR,
+        BugCheckParameter4: ULONG_PTR,
+    ) -> !;
+    fn KeWaitForSingleObject(
+        Object: PVOID,
+        WaitReason: i32,
+        WaitMode: i8,
+        Alertable: BOOLEAN,
+        Timeout: *mut i64,
+    ) -> NTSTATUS;
+    fn KeInitializeEvent(Event: *mut KEVENT, Type: i32, State: BOOLEAN);
+    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn HalpGrowArray(
-    CurrentArray: *mut PARRAY,
-    NewArray: *mut PARRAY,
-) {
-    let mut tmp: PVOID;
+// KeSetEvent is NTAPI (stdcall) on i386.
+unsafe extern "system" {
+    fn KeSetEvent(Event: *mut KEVENT, Increment: i32, Wait: BOOLEAN) -> i32;
+}
 
-    if (*CurrentArray).is_null() || ((**NewArray).ArraySize > (**CurrentArray).ArraySize) {
-        if !(*CurrentArray).is_null() {
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!((**CurrentArray).Element) as *const u8,
-                core::ptr::addr_of_mut!((**NewArray).Element) as *mut u8,
-                (core::mem::size_of::<PVOID>() * ((**CurrentArray).ArraySize as usize + 1)),
-            );
+// KeAcquireSpinLock / KeReleaseSpinLock are macros around the FASTCALL
+// Kf* primitives — go straight to those.
+unsafe extern "fastcall" {
+    fn KfAcquireSpinLock(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
+    fn KfReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: KIRQL);
+}
+
+// HalpAssignSlotResources / HaliTranslateBusAddress / HaliFindBusAddressTranslation
+// are still in C (legacy/bussupp.c + pcibus.c).  Need full NTAPI signatures so
+// the linker emits the right `_Name@N` stdcall decoration.
+unsafe extern "system" {
+    fn HalpAssignSlotResources(
+        BusHandler: PBUS_HANDLER,
+        RootHandler: PBUS_HANDLER,
+        RegistryPath: PUNICODE_STRING,
+        DriverClassName: PUNICODE_STRING,
+        DriverObject: PDRIVER_OBJECT,
+        DeviceObject: PDEVICE_OBJECT,
+        SlotNumber: ULONG,
+        AllocatedResources: *mut PCM_RESOURCE_LIST,
+    ) -> NTSTATUS;
+    fn HaliTranslateBusAddress(
+        InterfaceType: INTERFACE_TYPE,
+        BusNumber: ULONG,
+        BusAddress: ntkrnl_sys::hal_ddk::PHYSICAL_ADDRESS,
+        AddressSpace: *mut ULONG,
+        TranslatedAddress: *mut ntkrnl_sys::hal_ddk::PHYSICAL_ADDRESS,
+    ) -> BOOLEAN;
+    fn HaliFindBusAddressTranslation(
+        BusAddress: ntkrnl_sys::hal_ddk::PHYSICAL_ADDRESS,
+        AddressSpace: *mut ULONG,
+        TranslatedAddress: *mut ntkrnl_sys::hal_ddk::PHYSICAL_ADDRESS,
+        Context: *mut ULONG_PTR,
+        NextBus: BOOLEAN,
+    ) -> BOOLEAN;
+}
+
+// LIST_ENTRY ops — InitializeListHead / IsListEmpty / InsertTailList /
+// RemoveEntryList are macros; inline them.
+#[inline(always)]
+unsafe fn initialize_list_head(head: PLIST_ENTRY) {
+    unsafe {
+        (*head).Flink = head;
+        (*head).Blink = head;
+    }
+}
+
+#[inline(always)]
+unsafe fn is_list_empty(head: PLIST_ENTRY) -> bool {
+    unsafe { (*head).Flink == head }
+}
+
+#[inline(always)]
+unsafe fn insert_tail_list(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
+    unsafe {
+        let prev = (*head).Blink;
+        (*entry).Flink = head;
+        (*entry).Blink = prev;
+        (*prev).Flink = entry;
+        (*head).Blink = entry;
+    }
+}
+
+#[inline(always)]
+unsafe fn remove_entry_list(entry: PLIST_ENTRY) {
+    unsafe {
+        let prev = (*entry).Blink;
+        let next = (*entry).Flink;
+        (*prev).Flink = next;
+        (*next).Blink = prev;
+    }
+}
+
+// CONTAINING_RECORD — given a pointer to a field, recover the enclosing struct.
+#[inline(always)]
+fn containing_record_bus_from_handler(handler: PBUS_HANDLER) -> PHAL_BUS_HANDLER {
+    let off = core::mem::offset_of!(_HAL_BUS_HANDLER, Handler);
+    ((handler as usize).wrapping_sub(off)) as PHAL_BUS_HANDLER
+}
+
+#[inline(always)]
+fn containing_record_bus_from_all_handlers(all_handlers: PLIST_ENTRY) -> PHAL_BUS_HANDLER {
+    let off = core::mem::offset_of!(_HAL_BUS_HANDLER, AllHandlers);
+    ((all_handlers as usize).wrapping_sub(off)) as PHAL_BUS_HANDLER
+}
+
+// ---------------------------------------------------------------------------
+// Globals — defined here, exported as #[no_mangle] static muts so the C HAL
+// (still linked) can read them through the existing `extern KSPIN_LOCK
+// HalpBusDatabaseSpinLock;` declarations.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub static mut HalpBusDatabaseSpinLock: KSPIN_LOCK = 0;
+
+#[unsafe(no_mangle)]
+pub static mut HalpBusDatabaseEvent: KEVENT = unsafe { core::mem::zeroed() };
+
+#[unsafe(no_mangle)]
+pub static mut HalpAllBusHandlers: LIST_ENTRY = unsafe { core::mem::zeroed() };
+
+#[unsafe(no_mangle)]
+pub static mut HalpBusTable: PARRAY = core::ptr::null_mut();
+
+#[unsafe(no_mangle)]
+pub static mut HalpConfigTable: PARRAY = core::ptr::null_mut();
+
+// ---------------------------------------------------------------------------
+// HalpAllocateArray — allocate a PARRAY with `ArraySize` element slots
+// (zeroed).  Caller may pass MAXULONG, which the original C treats as a
+// "no slots, just the header" request by zeroing the size.  KeBugCheckEx
+// on failure — pool exhaustion at HAL init is unrecoverable.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalpAllocateArray(mut ArraySize: ULONG) -> PARRAY {
+    unsafe {
+        if ArraySize == u32::MAX {
+            ArraySize = 0;
+        }
+        // sizeof(_ARRAY) already accounts for one PVOID; multiply by ArraySize
+        // (not ArraySize-1) to mirror the C: ArraySize * sizeof(PARRAY) + sizeof(ARRAY).
+        // sizeof(PARRAY) == sizeof(PVOID) == 4 on i386.
+        let size = (ArraySize as usize)
+            .wrapping_mul(core::mem::size_of::<PVOID>())
+            .wrapping_add(core::mem::size_of::<_ARRAY>());
+
+        let raw = ExAllocatePoolWithTag(NON_PAGED_POOL, size, TAG_BUS_HANDLER);
+        if raw.is_null() {
+            // BUGCHECK code, allocation size, 0 (file), 0 (line) — match C
+            // semantics (file/line are not portable so we pass 0).
+            KeBugCheckEx(HAL_MEMORY_ALLOCATION, size as ULONG_PTR, 0, 0, 0);
         }
 
-        tmp = *CurrentArray as PVOID;
-        *CurrentArray = *NewArray;
-        *NewArray = tmp as PARRAY;
+        let array = raw as PARRAY;
+        (*array).ArraySize = ArraySize;
+        // Zero (ArraySize + 1) PVOID slots — the +1 covers the inline first
+        // Element slot, which is already inside sizeof(_ARRAY) but the C
+        // ZeroMemory call still touches it via &Element[0].
+        core::ptr::write_bytes(
+            (*array).Element.as_mut_ptr() as *mut u8,
+            0,
+            core::mem::size_of::<PVOID>() * (ArraySize as usize + 1),
+        );
+        array
     }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+// ---------------------------------------------------------------------------
+// HalpGrowArray — if `CurrentArray` is null OR smaller than `NewArray`,
+// copy the current elements into the new one and swap them via the
+// in/out pointers.  Caller frees the displaced (in `*NewArray` after swap)
+// allocation.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalpGrowArray(CurrentArray: *mut PARRAY, NewArray: *mut PARRAY) {
+    unsafe {
+        let cur = *CurrentArray;
+        let new_ = *NewArray;
+        if cur.is_null() || (*new_).ArraySize > (*cur).ArraySize {
+            if !cur.is_null() {
+                // Copy (CurrentArray->ArraySize + 1) PVOID slots.
+                core::ptr::copy_nonoverlapping(
+                    (*cur).Element.as_ptr() as *const u8,
+                    (*new_).Element.as_mut_ptr() as *mut u8,
+                    core::mem::size_of::<PVOID>() * ((*cur).ArraySize as usize + 1),
+                );
+            }
+            // Swap.
+            *CurrentArray = new_;
+            *NewArray = cur;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HalpLookupHandler — index `Array[Type]->Element[Number]` to get the
+// _HAL_BUS_HANDLER and return &handler.Handler.  FASTCALL on i386 (the
+// HAL macros call this hot path through edx/ecx).
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HalpLookupHandler(
-    Array: PARRAY,
+    mut Array: PARRAY,
     Type: ULONG,
     Number: ULONG,
     AddReference: BOOLEAN,
 ) -> PBUS_HANDLER {
-    let mut Handler: PBUS_HANDLER = core::ptr::null_mut();
-
     unsafe {
+        let mut handler: PBUS_HANDLER = core::ptr::null_mut();
         if (*Array).ArraySize >= Type {
-            let Array = (*Array).Element[Type as usize] as PARRAY;
-
-            if !Array.is_null() && (*Array).ArraySize >= Number {
-                let Bus = (*Array).Element[Number as usize] as PHAL_BUS_HANDLER;
-                Handler = &raw mut (*Bus).Handler;
-
+            // Element[Type] — the bindgen Element is [PVOID; 1] (flexible array),
+            // so use .add(Type) on the base pointer to dodge the bounds check.
+            let outer = *((*Array).Element.as_ptr().add(Type as usize)) as PARRAY;
+            if !outer.is_null() && (*outer).ArraySize >= Number {
+                let bus = *((*outer).Element.as_ptr().add(Number as usize)) as PHAL_BUS_HANDLER;
+                handler = &raw mut (*bus).Handler;
                 if AddReference != 0 {
-                    (*Bus).ReferenceCount += 1;
+                    (*bus).ReferenceCount += 1;
                 }
             }
         }
+        handler
     }
-
-    Handler
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HalpLookupHandler(
-    Array: PARRAY,
-    Type: ULONG,
-    Number: ULONG,
-    AddReference: BOOLEAN,
-) -> PBUS_HANDLER {
-    let mut Handler: PBUS_HANDLER = core::ptr::null_mut();
+// ---------------------------------------------------------------------------
+// Stub handlers used for buses without a real configuration space — these
+// are NTAPI and get plugged into BUS_HANDLER's function-pointer fields.
+// ---------------------------------------------------------------------------
 
-    unsafe {
-        if (*Array).ArraySize >= Type {
-            let Array = (*Array).Element[Type as usize] as PARRAY;
-
-            if !Array.is_null() && (*Array).ArraySize >= Number {
-                let Bus = (*Array).Element[Number as usize] as PHAL_BUS_HANDLER;
-                Handler = &raw mut (*Bus).Handler;
-
-                if AddReference != 0 {
-                    (*Bus).ReferenceCount += 1;
-                }
-            }
-        }
-    }
-
-    Handler
-}
-
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpNoBusData(
     _BusHandler: PBUS_HANDLER,
     _RootHandler: PBUS_HANDLER,
@@ -115,433 +293,370 @@ pub unsafe extern "system" fn HalpNoBusData(
     _Offset: ULONG,
     _Length: ULONG,
 ) -> ULONG {
-    let _ = _BusHandler;
-    let _ = _RootHandler;
-    let _ = _SlotNumber;
-    let _ = _Buffer;
-    let _ = _Offset;
-    let _ = _Length;
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpNoAdjustResourceList(
     _BusHandler: PBUS_HANDLER,
     _RootHandler: PBUS_HANDLER,
     _pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
 ) -> NTSTATUS {
-    0xC0000001u32 as NTSTATUS
+    STATUS_UNSUCCESSFUL
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpNoAssignSlotResources(
-    BusHandler: PBUS_HANDLER,
-    RootHandler: PBUS_HANDLER,
-    RegistryPath: PUNICODE_STRING,
-    DriverClassName: PUNICODE_STRING,
-    DriverObject: PDRIVER_OBJECT,
-    DeviceObject: PDEVICE_OBJECT,
-    SlotNumber: ULONG,
-    AllocatedResources: *mut PCM_RESOURCE_LIST,
+    _BusHandler: PBUS_HANDLER,
+    _RootHandler: PBUS_HANDLER,
+    _RegistryPath: PUNICODE_STRING,
+    _DriverClassName: PUNICODE_STRING,
+    _DriverObject: PDRIVER_OBJECT,
+    _DeviceObject: PDEVICE_OBJECT,
+    _SlotNumber: ULONG,
+    _AllocatedResources: *mut PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
-    let _ = BusHandler;
-    let _ = RootHandler;
-    let _ = RegistryPath;
-    let _ = DriverClassName;
-    let _ = DriverObject;
-    let _ = DeviceObject;
-    let _ = SlotNumber;
-    let _ = AllocatedResources;
-    
     STATUS_NOT_SUPPORTED
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+// ---------------------------------------------------------------------------
+// HaliReferenceBusHandler / HaliDereferenceBusHandler — FASTCALL primitives
+// the kernel calls through HALPRIVATEDISPATCH.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliReferenceBusHandler(Handler: PBUS_HANDLER) {
-    let Bus: PHAL_BUS_HANDLER = ((Handler as ULONG_PTR) - 
-        core::mem::offset_of!(HAL_BUS_HANDLER, Handler) as ULONG_PTR) as *mut HAL_BUS_HANDLER;
-    (*Bus).ReferenceCount += 1;
+    unsafe {
+        let bus = containing_record_bus_from_handler(Handler);
+        (*bus).ReferenceCount += 1;
+    }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliReferenceBusHandler(Handler: PBUS_HANDLER) {
-    let Bus: PHAL_BUS_HANDLER = ((Handler as ULONG_PTR) - 
-        core::mem::offset_of!(HAL_BUS_HANDLER, Handler) as ULONG_PTR) as *mut HAL_BUS_HANDLER;
-    (*Bus).ReferenceCount += 1;
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliDereferenceBusHandler(Handler: PBUS_HANDLER) {
-    let Bus: PHAL_BUS_HANDLER = ((Handler as ULONG_PTR) - 
-        core::mem::offset_of!(HAL_BUS_HANDLER, Handler) as ULONG_PTR) as *mut HAL_BUS_HANDLER;
-    
-    (*Bus).ReferenceCount -= 1;
+    unsafe {
+        let bus = containing_record_bus_from_handler(Handler);
+        (*bus).ReferenceCount -= 1;
+        // C has `ASSERT(Bus->ReferenceCount != 0)` after the decrement;
+        // intentionally a post-decrement assert (catches underflow).  Skip
+        // the assert in release builds — matches C+NDEBUG behavior.
+    }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliDereferenceBusHandler(Handler: PBUS_HANDLER) {
-    let Bus: PHAL_BUS_HANDLER = ((Handler as ULONG_PTR) - 
-        core::mem::offset_of!(HAL_BUS_HANDLER, Handler) as ULONG_PTR) as *mut HAL_BUS_HANDLER;
-    
-    (*Bus).ReferenceCount -= 1;
-}
+// ---------------------------------------------------------------------------
+// Lookup wrappers — turn (InterfaceType, BusNumber) into a PBUS_HANDLER by
+// indexing HalpBusTable (interfaces) or HalpConfigTable (config spaces),
+// optionally bumping the refcount.
+// ---------------------------------------------------------------------------
 
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliHandlerForBus(
-    InterfaceType: ULONG,
+    InterfaceType: INTERFACE_TYPE,
     BusNumber: ULONG,
 ) -> PBUS_HANDLER {
-    unsafe 
-    
-    unsafe extern "C" {
-        static mut HalpBusTable: PARRAY;
-    }
-    
-    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType, BusNumber, 0) }
+    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType as ULONG, BusNumber, 0) }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliHandlerForBus(
-    InterfaceType: ULONG,
-    BusNumber: ULONG,
-) -> PBUS_HANDLER {
-    unsafe 
-    
-    unsafe extern "C" {
-        static mut HalpBusTable: PARRAY;
-    }
-    
-    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType, BusNumber, 0) }
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliHandlerForConfigSpace(
     ConfigType: BUS_DATA_TYPE,
     BusNumber: ULONG,
 ) -> PBUS_HANDLER {
-    unsafe {
-        HalpLookupHandler(HalpConfigTable, ConfigType, BusNumber, 0)
-    }
+    unsafe { HalpLookupHandler(HalpConfigTable, ConfigType as ULONG, BusNumber, 0) }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliHandlerForConfigSpace(
-    ConfigType: BUS_DATA_TYPE,
-    BusNumber: ULONG,
-) -> PBUS_HANDLER {
-    unsafe {
-        HalpLookupHandler(HalpConfigTable, ConfigType, BusNumber, 0)
-    }
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliReferenceHandlerForBus(
     InterfaceType: INTERFACE_TYPE,
     BusNumber: ULONG,
 ) -> PBUS_HANDLER {
-    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType, BusNumber, TRUE) }
+    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType as ULONG, BusNumber, 1) }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliReferenceHandlerForBus(
-    InterfaceType: INTERFACE_TYPE,
-    BusNumber: ULONG,
-) -> PBUS_HANDLER {
-    unsafe { HalpLookupHandler(HalpBusTable, InterfaceType, BusNumber, TRUE) }
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HaliReferenceHandlerForConfigSpace(
-    ConfigType: ULONG,
+    ConfigType: BUS_DATA_TYPE,
     BusNumber: ULONG,
 ) -> PBUS_HANDLER {
-    unsafe 
-    
-    unsafe {
-        HalpLookupHandler(
-            HalpConfigTable,
-            ConfigType,
-            BusNumber,
-            1,
-        )
-    }
+    unsafe { HalpLookupHandler(HalpConfigTable, ConfigType as ULONG, BusNumber, 1) }
 }
 
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn HaliReferenceHandlerForConfigSpace(
-    ConfigType: ULONG,
-    BusNumber: ULONG,
-) -> PBUS_HANDLER {
-    unsafe 
-    
+// ---------------------------------------------------------------------------
+// HalpContextToBusHandler — walk HalpAllBusHandlers looking for the
+// _HAL_BUS_HANDLER whose .Handler matches ContextValue.  If ContextValue
+// is 0, return the first entry.  Returns null if not found.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalpContextToBusHandler(ContextValue: ULONG_PTR) -> PBUS_HANDLER {
     unsafe {
-        HalpLookupHandler(
-            HalpConfigTable,
-            ConfigType,
-            BusNumber,
-            1,
-        )
-    }
-}
+        let head: PLIST_ENTRY = &raw mut HalpAllBusHandlers;
+        let mut next_entry: PLIST_ENTRY = (*head).Flink;
+        let mut this_handler: PHAL_BUS_HANDLER =
+            containing_record_bus_from_all_handlers(next_entry);
 
-#[no_mangle]
-pub unsafe extern "system" fn HalpContextToBusHandler(ContextValue: usize) -> PBUS_HANDLER {
-    let mut next_entry: PLIST_ENTRY;
-    let mut bus_handler: PHAL_BUS_HANDLER;
-    let mut this_handler: PHAL_BUS_HANDLER;
+        if ContextValue != 0 {
+            if is_list_empty(head) {
+                return core::ptr::null_mut();
+            }
+            // ContextValue is a PBUS_HANDLER — recover the enclosing _HAL_BUS_HANDLER.
+            let target = containing_record_bus_from_handler(ContextValue as PBUS_HANDLER);
+            loop {
+                this_handler = containing_record_bus_from_all_handlers(next_entry);
+                if this_handler == target {
+                    break;
+                }
+                next_entry = (*next_entry).Flink;
+                if next_entry == head {
+                    break;
+                }
+            }
+        }
 
-    unsafe extern "system" {
-        static mut HalpAllBusHandlers: LIST_ENTRY;
-    }
-
-    next_entry = unsafe { (*core::ptr::addr_of_mut!(HalpAllBusHandlers)).Flink };
-    this_handler = ((next_entry as usize) - core::mem::offset_of!(HAL_BUS_HANDLER, AllHandlers)) as PHAL_BUS_HANDLER;
-
-    if ContextValue != 0 {
-        if unsafe { IsListEmpty(core::ptr::addr_of_mut!(HalpAllBusHandlers)) } != 0 {
+        if next_entry == head {
             return core::ptr::null_mut();
         }
-
-        bus_handler = ((ContextValue as usize) - core::mem::offset_of!(HAL_BUS_HANDLER, Handler)) as PHAL_BUS_HANDLER;
-        loop {
-            this_handler = ((next_entry as usize) - core::mem::offset_of!(HAL_BUS_HANDLER, AllHandlers)) as PHAL_BUS_HANDLER;
-            if this_handler == bus_handler {
-                break;
-            }
-
-            next_entry = unsafe { (*next_entry).Flink };
-            if next_entry == core::ptr::addr_of_mut!(HalpAllBusHandlers) {
-                break;
-            }
-        }
+        &raw mut (*this_handler).Handler
     }
-
-    if next_entry == core::ptr::addr_of_mut!(HalpAllBusHandlers) {
-        return core::ptr::null_mut();
-    }
-
-    unsafe { core::ptr::addr_of_mut!((*this_handler).Handler) }
 }
 
-#[no_mangle]
+// ---------------------------------------------------------------------------
+// HaliRegisterBusHandler — allocate a _HAL_BUS_HANDLER, splice it into
+// HalpBusTable[InterfaceType][BusNumber] and HalpConfigTable[ConfigType]
+// [BusNumber], link onto HalpAllBusHandlers, inherit parent dispatchers
+// if there's a parent.  Caller-provided InstallCallback isn't supported
+// (the C ASSERTs it null).  Returns STATUS_INSUFFICIENT_RESOURCES on any
+// allocation failure; STATUS_SUCCESS otherwise.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HaliRegisterBusHandler(
     InterfaceType: INTERFACE_TYPE,
     ConfigType: BUS_DATA_TYPE,
-    BusNumber: ULONG,
+    mut BusNumber: ULONG,
     ParentBusType: INTERFACE_TYPE,
     ParentBusNumber: ULONG,
     ExtraData: ULONG,
-    InstallCallback: PINSTALL_BUS_HANDLER,
+    _InstallCallback: PINSTALL_BUS_HANDLER,
     ReturnedBusHandler: *mut PBUS_HANDLER,
 ) -> NTSTATUS {
-    let mut Bus: PHAL_BUS_HANDLER;
-    let mut OldHandler: PHAL_BUS_HANDLER = core::ptr::null_mut();
-    let BusEntry: *mut PHAL_BUS_HANDLER;
-    let mut InterfaceArray: PARRAY;
-    let mut InterfaceBusNumberArray: PARRAY;
-    let mut ConfigArray: PARRAY;
-    let mut ConfigBusNumberArray: PARRAY;
-    let ParentHandler: PBUS_HANDLER;
-    let mut OldIrql: KIRQL = 0;
-    let mut Status: NTSTATUS;
-    let mut bus_number = BusNumber;
-
-    unsafe 
-
-    #[cfg(target_arch = "x86")]
-    unsafe 
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe 
-
-    #[cfg(target_arch = "x86")]
-    unsafe 
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe 
-
-    unsafe 
-
-    #[link(name = "ntoskrnl", kind = "raw-dylib")]
-    unsafe extern "C" {
-        static mut HalpBusDatabaseEvent: KEVENT;
-        static mut HalpBusDatabaseSpinLock: KSPIN_LOCK;
-        static mut HalpBusTable: PARRAY;
-        static mut HalpConfigTable: PARRAY;
-        static mut HalpAllBusHandlers: LIST_ENTRY;
-    }
-
-    Bus = ExAllocatePoolWithTag(
-        NonPagedPool,
-        (core::mem::size_of::<HAL_BUS_HANDLER>() + ExtraData as usize) as usize,
-        0x48535542u32,
-    ) as PHAL_BUS_HANDLER;
-    
-    if Bus.is_null() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    *ReturnedBusHandler = &raw mut (*Bus).Handler;
-
-    KeWaitForSingleObject(
-        &raw mut HalpBusDatabaseEvent as *mut _ as PVOID,
-        0,
-        0i32 as i8,
-        0,
-        core::ptr::null_mut(),
-    );
-
-    if bus_number == MAXULONG {
-        bus_number = 0;
-        while !HaliHandlerForBus(InterfaceType, bus_number).is_null() {
-            bus_number = bus_number.wrapping_add(1);
+    unsafe {
+        // Allocate the bus handler — sizeof(HAL_BUS_HANDLER) + extra trailing data.
+        let mut bus = ExAllocatePoolWithTag(
+            NON_PAGED_POOL,
+            core::mem::size_of::<_HAL_BUS_HANDLER>() + ExtraData as usize,
+            TAG_BUS_HANDLER,
+        ) as PHAL_BUS_HANDLER;
+        if bus.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
-    }
+        *ReturnedBusHandler = &raw mut (*bus).Handler;
 
-    InterfaceArray = HalpAllocateArray(InterfaceType);
-    InterfaceBusNumberArray = HalpAllocateArray(bus_number);
-    ConfigArray = HalpAllocateArray(ConfigType);
-    ConfigBusNumberArray = HalpAllocateArray(bus_number);
-
-    if !InterfaceArray.is_null()
-        && !InterfaceBusNumberArray.is_null()
-        && !ConfigArray.is_null()
-        && !ConfigBusNumberArray.is_null()
-    {
-        ParentHandler = HaliReferenceHandlerForBus(ParentBusType, ParentBusNumber);
-
-        RtlZeroMemory(
-            Bus as PVOID,
-            (core::mem::size_of::<HAL_BUS_HANDLER>() + ExtraData as usize) as usize,
+        // Synchronize.
+        KeWaitForSingleObject(
+            &raw mut HalpBusDatabaseEvent as PVOID,
+            WR_EXECUTIVE,
+            KERNEL_MODE,
+            0,
+            core::ptr::null_mut(),
         );
-        (*Bus).ReferenceCount = 1;
 
-        (*Bus).Handler.BusNumber = bus_number;
-        (*Bus).Handler.InterfaceType = InterfaceType;
-        (*Bus).Handler.ConfigurationType = ConfigType;
-        (*Bus).Handler.ParentHandler = ParentHandler;
-
-        (*Bus).Handler.GetBusData = Some(HalpNoBusData);
-        (*Bus).Handler.SetBusData = Some(HalpNoBusData);
-        (*Bus).Handler.AdjustResourceList = Some(core::mem::transmute(HalpNoAdjustResourceList as usize));
-        (*Bus).Handler.AssignSlotResources = Some(core::mem::transmute(HalpNoAssignSlotResources as usize));
-
-        if ExtraData != 0 {
-            (*Bus).Handler.BusData = Bus.add(1) as PVOID;
-        }
-
-        if !ParentHandler.is_null() {
-            (*Bus).Handler.GetBusData = (*ParentHandler).GetBusData;
-            (*Bus).Handler.SetBusData = (*ParentHandler).SetBusData;
-            (*Bus).Handler.AdjustResourceList = (*ParentHandler).AdjustResourceList;
-            (*Bus).Handler.AssignSlotResources = (*ParentHandler).AssignSlotResources;
-            (*Bus).Handler.TranslateBusAddress = (*ParentHandler).TranslateBusAddress;
-            (*Bus).Handler.GetInterruptVector = (*ParentHandler).GetInterruptVector;
-        }
-
-        KeAcquireSpinLock(&raw mut HalpBusDatabaseSpinLock, &raw mut OldIrql);
-
-        HalpGrowArray(&raw mut HalpBusTable, &raw mut InterfaceArray);
-
-        if InterfaceType != InterfaceTypeUndefined {
-            HalpGrowArray(
-                &raw mut (*HalpBusTable).Element[InterfaceType as usize] as *mut PVOID as *mut PARRAY,
-                &raw mut InterfaceBusNumberArray,
-            );
-
-            let interface_array = (*HalpBusTable).Element[InterfaceType as usize] as PARRAY;
-            let bus_entry_ptr = &raw mut (*interface_array).Element[bus_number as usize] as *mut PVOID as *mut PHAL_BUS_HANDLER;
-            
-            if !(*bus_entry_ptr).is_null() {
-                OldHandler = *bus_entry_ptr;
+        // BusNumber == -1 means "auto-pick the next free slot".
+        if BusNumber == u32::MAX {
+            BusNumber = 0;
+            while !HaliHandlerForBus(InterfaceType, BusNumber).is_null() {
+                BusNumber = BusNumber.wrapping_add(1);
             }
-            *bus_entry_ptr = Bus;
         }
 
-        HalpGrowArray(&raw mut HalpConfigTable, &raw mut ConfigArray);
+        // Allocate all four arrays up front so we can fail atomically.
+        let mut interface_array = HalpAllocateArray(InterfaceType as ULONG);
+        let mut interface_bus_array = HalpAllocateArray(BusNumber);
+        let mut config_array = HalpAllocateArray(ConfigType as ULONG);
+        let mut config_bus_array = HalpAllocateArray(BusNumber);
 
-        if ConfigType != ConfigurationSpaceUndefined {
-            HalpGrowArray(
-                &raw mut (*HalpConfigTable).Element[ConfigType as usize] as *mut PVOID as *mut PARRAY,
-                &raw mut ConfigBusNumberArray,
+        let mut old_handler: PHAL_BUS_HANDLER = core::ptr::null_mut();
+        let status: NTSTATUS;
+
+        if !interface_array.is_null()
+            && !interface_bus_array.is_null()
+            && !config_array.is_null()
+            && !config_bus_array.is_null()
+        {
+            let parent = HaliReferenceHandlerForBus(ParentBusType, ParentBusNumber);
+
+            // Zero the entire bus record (incl. ExtraData) before populating.
+            core::ptr::write_bytes(
+                bus as *mut u8,
+                0,
+                core::mem::size_of::<_HAL_BUS_HANDLER>() + ExtraData as usize,
             );
+            (*bus).ReferenceCount = 1;
+            (*bus).Handler.BusNumber = BusNumber;
+            (*bus).Handler.InterfaceType = InterfaceType;
+            (*bus).Handler.ConfigurationType = ConfigType;
+            (*bus).Handler.ParentHandler = parent;
 
-            let config_array = (*HalpConfigTable).Element[ConfigType as usize] as PARRAY;
-            let bus_entry_ptr = &raw mut (*config_array).Element[bus_number as usize] as *mut PVOID as *mut PHAL_BUS_HANDLER;
-            
-            if !(*bus_entry_ptr).is_null() {
-                OldHandler = *bus_entry_ptr;
+            // Default stubs.  extern "system" and "stdcall" share ABI on i386
+            // but differ at the Rust type level; transmute around it.
+            (*bus).Handler.GetBusData = Some(core::mem::transmute(HalpNoBusData as usize));
+            (*bus).Handler.SetBusData = Some(core::mem::transmute(HalpNoBusData as usize));
+            (*bus).Handler.AdjustResourceList =
+                Some(core::mem::transmute(HalpNoAdjustResourceList as usize));
+            (*bus).Handler.AssignSlotResources =
+                Some(core::mem::transmute(HalpNoAssignSlotResources as usize));
+
+            if ExtraData != 0 {
+                (*bus).Handler.BusData = bus.add(1) as PVOID;
             }
 
-            *bus_entry_ptr = Bus;
+            // Inherit parent dispatchers if there is a parent.
+            if !parent.is_null() {
+                (*bus).Handler.GetBusData = (*parent).GetBusData;
+                (*bus).Handler.SetBusData = (*parent).SetBusData;
+                (*bus).Handler.AdjustResourceList = (*parent).AdjustResourceList;
+                (*bus).Handler.AssignSlotResources = (*parent).AssignSlotResources;
+                (*bus).Handler.TranslateBusAddress = (*parent).TranslateBusAddress;
+                (*bus).Handler.GetInterruptVector = (*parent).GetInterruptVector;
+            }
+
+            // Lock the database.
+            let old_irql = KfAcquireSpinLock(&raw mut HalpBusDatabaseSpinLock);
+
+            // Make room for the interface row.
+            HalpGrowArray(&raw mut HalpBusTable, &raw mut interface_array);
+
+            if InterfaceType != IFT_UNDEF {
+                // Row-level array — &HalpBusTable->Element[InterfaceType] is a slot
+                // holding a PARRAY pointer.  PARRAY** here is a `*mut PARRAY`.
+                let row_slot =
+                    (*HalpBusTable).Element.as_mut_ptr().add(InterfaceType as usize) as *mut PARRAY;
+                HalpGrowArray(row_slot, &raw mut interface_bus_array);
+
+                // BusEntry — PHAL_BUS_HANDLER* into the column slot.
+                let column_array = *row_slot;
+                let bus_slot = (*column_array)
+                    .Element
+                    .as_mut_ptr()
+                    .add(BusNumber as usize) as *mut PHAL_BUS_HANDLER;
+                if !(*bus_slot).is_null() {
+                    old_handler = *bus_slot;
+                }
+                *bus_slot = bus;
+            }
+
+            HalpGrowArray(&raw mut HalpConfigTable, &raw mut config_array);
+
+            if ConfigType != CONFIG_SPACE_UNDEF {
+                let row_slot = (*HalpConfigTable)
+                    .Element
+                    .as_mut_ptr()
+                    .add(ConfigType as usize) as *mut PARRAY;
+                HalpGrowArray(row_slot, &raw mut config_bus_array);
+
+                let column_array = *row_slot;
+                let bus_slot = (*column_array)
+                    .Element
+                    .as_mut_ptr()
+                    .add(BusNumber as usize) as *mut PHAL_BUS_HANDLER;
+                if !(*bus_slot).is_null() {
+                    // C ASSERTs old_handler matches if both rows are populated.
+                    old_handler = *bus_slot;
+                }
+                *bus_slot = bus;
+            }
+
+            insert_tail_list(&raw mut HalpAllBusHandlers, &raw mut (*bus).AllHandlers);
+
+            // Now unlink the old (displaced) entry, if any.
+            bus = old_handler;
+            if !bus.is_null() {
+                remove_entry_list(&raw mut (*bus).AllHandlers);
+            }
+
+            KfReleaseSpinLock(&raw mut HalpBusDatabaseSpinLock, old_irql);
+            status = STATUS_SUCCESS;
+        } else {
+            status = STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        InsertTailList(&raw mut HalpAllBusHandlers, &raw mut (*Bus).AllHandlers);
+        // Signal the event.
+        KeSetEvent(&raw mut HalpBusDatabaseEvent, 0, 0);
 
-        Bus = OldHandler;
-        if !Bus.is_null() {
-            RemoveEntryList(&raw mut (*Bus).AllHandlers);
+        // Free anything that was either displaced (bus = old_handler) or
+        // never used.  All four array allocations are freed unconditionally
+        // — HalpGrowArray swaps the "old" allocation into the local on
+        // success, so freeing the local always reclaims either the displaced
+        // table or the newly-allocated one on the failure path.
+        if !bus.is_null() {
+            ExFreePoolWithTag(bus as PVOID, TAG_BUS_HANDLER);
+        }
+        if !interface_array.is_null() {
+            ExFreePoolWithTag(interface_array as PVOID, TAG_BUS_HANDLER);
+        }
+        if !interface_bus_array.is_null() {
+            ExFreePoolWithTag(interface_bus_array as PVOID, TAG_BUS_HANDLER);
+        }
+        if !config_array.is_null() {
+            ExFreePoolWithTag(config_array as PVOID, TAG_BUS_HANDLER);
+        }
+        if !config_bus_array.is_null() {
+            ExFreePoolWithTag(config_bus_array as PVOID, TAG_BUS_HANDLER);
         }
 
-        KeReleaseSpinLock(&raw mut HalpBusDatabaseSpinLock, OldIrql);
-        Status = STATUS_SUCCESS;
-    } else {
-        Status = STATUS_INSUFFICIENT_RESOURCES;
+        status
     }
-
-    KeSetEvent(&raw mut HalpBusDatabaseEvent as *mut _ as PVOID, 0, 0);
-
-    if !Bus.is_null() {
-        ExFreePoolWithTag(Bus as PVOID, 0x48535542u32);
-    }
-    if !InterfaceArray.is_null() {
-        ExFreePoolWithTag(InterfaceArray as PVOID, 0x48535542u32);
-    }
-    if !InterfaceBusNumberArray.is_null() {
-        ExFreePoolWithTag(InterfaceBusNumberArray as PVOID, 0x48535542u32);
-    }
-    if !ConfigArray.is_null() {
-        ExFreePoolWithTag(ConfigArray as PVOID, 0x48535542u32);
-    }
-    if !ConfigBusNumberArray.is_null() {
-        ExFreePoolWithTag(ConfigBusNumberArray as PVOID, 0x48535542u32);
-    }
-
-    Status
 }
 
-#[no_mangle]
+// ---------------------------------------------------------------------------
+// HalpInitBusHandler — one-shot init from HAL setup.  Initializes the lock
+// + event + empty tables and plugs the FASTCALL dispatchers into
+// HalPrivateDispatchTable.  HalpAssignSlotResources, HaliTranslateBusAddress,
+// HaliFindBusAddressTranslation still live in C (legacy/bussupp.c +
+// pcibus.c) and resolve via libhal at link time.
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpInitBusHandler() {
     unsafe {
         KeInitializeSpinLock(&raw mut HalpBusDatabaseSpinLock);
-
-        KeInitializeEvent(
-            &raw mut HalpBusDatabaseEvent,
-            0,
-            1,
-        );
+        KeInitializeEvent(&raw mut HalpBusDatabaseEvent, SYNCHRONIZATION_EVENT, 1);
 
         HalpBusTable = HalpAllocateArray(0);
         HalpConfigTable = HalpAllocateArray(0);
 
-        InitializeListHead(&raw mut HalpAllBusHandlers);
+        initialize_list_head(&raw mut HalpAllBusHandlers);
 
-        HalPciAssignSlotResources = HalpAssignSlotResources;
-        HalPciTranslateBusAddress = HaliTranslateBusAddress;
-        if HalFindBusAddressTranslation.is_null() {
-            HalFindBusAddressTranslation = HaliFindBusAddressTranslation;
+        // HAL_PRIVATE_DISPATCH wiring — register/handler/config dispatchers.
+        HalPrivateDispatchTable.HalRegisterBusHandler =
+            Some(core::mem::transmute(HaliRegisterBusHandler as usize));
+        HalPrivateDispatchTable.HalHandlerForBus =
+            Some(core::mem::transmute(HaliHandlerForBus as usize));
+        HalPrivateDispatchTable.HalHandlerForConfigSpace =
+            Some(core::mem::transmute(HaliHandlerForConfigSpace as usize));
+
+        // HAL_DISPATCH wiring — public reference/dereference paths (these
+        // are FASTCALL on i386 since `pHalReferenceBusHandler` is FASTCALL).
+        HalDispatchTable.HalReferenceHandlerForBus =
+            Some(core::mem::transmute(HaliReferenceHandlerForBus as usize));
+        HalDispatchTable.HalReferenceBusHandler =
+            Some(core::mem::transmute(HaliReferenceBusHandler as usize));
+        HalDispatchTable.HalDereferenceBusHandler =
+            Some(core::mem::transmute(HaliDereferenceBusHandler as usize));
+
+        // Three more dispatchers — these live in C still (bussupp.c / pcibus.c).
+        HalPrivateDispatchTable.HalPciAssignSlotResources =
+            Some(core::mem::transmute(HalpAssignSlotResources as usize));
+        HalPrivateDispatchTable.HalPciTranslateBusAddress =
+            Some(core::mem::transmute(HaliTranslateBusAddress as usize));
+        // C: `if (!HalFindBusAddressTranslation) HalFindBusAddressTranslation = ...`
+        // Read the static field once into a local so we don't take a shared ref
+        // to the mutable static (clippy/Rust-2024 footgun).
+        let cur = core::ptr::addr_of!(HalPrivateDispatchTable.HalFindBusAddressTranslation)
+            .read_unaligned();
+        if cur.is_none() {
+            HalPrivateDispatchTable.HalFindBusAddressTranslation =
+                Some(core::mem::transmute(HaliFindBusAddressTranslation as usize));
         }
     }
 }
