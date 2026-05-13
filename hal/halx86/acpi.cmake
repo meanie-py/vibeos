@@ -5,8 +5,16 @@ list(APPEND HAL_ACPI_SOURCE
     acpi/halacpi.c
     acpi/halpnpdd.c
     # acpi/busemul.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/busemul.rs)
-    # acpi/madt.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/madt.rs)
     legacy/bus/pcibus.c)
+
+# acpi/madt.c — replaced by Rust for amd64 only
+# (sdk/lib/rust/hal-rust/src/x86/madt.rs is cfg-gated to x86_64).
+# i386 keeps the C version because halacpi.dll links the C side and PIC
+# hal.dll would otherwise pull madt.rs's HalpParseApicTables into the
+# same CGU as commonly-used symbols, leaving HalAcpiGetTable unresolved.
+if(ARCH STREQUAL "i386")
+    list(APPEND HAL_ACPI_SOURCE acpi/madt.c)
+endif()
 
 # Needed to compile while using ACPICA
 if(ARCH STREQUAL "amd64")

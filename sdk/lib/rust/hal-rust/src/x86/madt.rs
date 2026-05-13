@@ -4,7 +4,11 @@
 //! APIC physical address + I/O APIC physical addresses, and fills
 //! HalpProcessorIdentity[] with one slot per enabled CPU.
 //!
-//! Built for both i386 and amd64; consumed by the APIC HAL backend.
+//! amd64-only.  HalAcpiGetTable lives in lib_hal_acpi (acpi/halacpi.c)
+//! which is linked into halacpi.dll/halmacpi.dll but NOT the standard
+//! PIC hal.dll — so on i386, halacpi.dll uses the C madt.c.  amd64
+//! always builds the APIC HAL, so HalAcpiGetTable is always present.
+#![cfg(target_arch = "x86_64")]
 
 use ntkrnl_sys::ddk::{PVOID, ULONG, ULONG_PTR, UCHAR};
 use ntkrnl_sys::hal_ddk::{

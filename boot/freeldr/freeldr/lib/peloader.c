@@ -180,18 +180,29 @@ PeLdrpBindImportName(
     }
     else
     {
+        ULONG_PTR ImportDataVa;
+
         /* It's reference by name, we have to look it up in the export directory */
         if (!ProcessForwards)
         {
-            /* AddressOfData in thunk entry will become a virtual address (from relative) */
-            //TRACE("PeLdrpBindImportName(): ThunkName->u1.AOD was %p\n", ThunkName->u1.AddressOfData);
-            ThunkName->u1.AddressOfData =
-                (ULONG_PTR)RVA(ImageBase, ThunkName->u1.AddressOfData);
-            //TRACE("PeLdrpBindImportName(): ThunkName->u1.AOD became %p\n", ThunkName->u1.AddressOfData);
+            /* AddressOfData in thunk entry is an RVA — convert to VA via a local
+             * so we don't mutate OriginalFirstThunk.  When lld emits duplicate
+             * PE import descriptors sharing the same OFT/IAT (a known artifact
+             * of Rust raw-dylib with multiple CGUs in hal-rust), a second pass
+             * over the OFT must still see the original RVAs; mutating in place
+             * would leave a kernel-mode VA whose high bit makes the next pass
+             * misinterpret the slot as IMAGE_SNAP_BY_ORDINAL with a bogus
+             * ordinal, triggering "Ordinal number is invalid!". */
+            ImportDataVa = (ULONG_PTR)RVA(ImageBase, ThunkName->u1.AddressOfData);
+        }
+        else
+        {
+            /* Forwarder case: ThunkName already holds a VA. */
+            ImportDataVa = ThunkName->u1.AddressOfData;
         }
 
         /* Get the import name, convert it to a physical pointer */
-        ImportData = VaToPa((PVOID)ThunkName->u1.AddressOfData);
+        ImportData = VaToPa((PVOID)ImportDataVa);
 
         /* Get pointers to Name and Ordinal tables (RVA -> VA) */
         NameTable = VaToPa(RVA(DllBase, ExportDirectory->AddressOfNames));

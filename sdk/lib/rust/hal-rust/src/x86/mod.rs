@@ -21,6 +21,7 @@ pub mod halinit;
 pub mod halpcat;
 pub mod irql;
 pub mod kdpci;
+#[cfg(target_arch = "x86_64")]
 pub mod madt;
 pub mod memory;
 pub mod misc;
