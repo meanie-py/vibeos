@@ -6,6 +6,8 @@
 
 #[cfg(target_arch = "x86_64")]
 pub mod apic_halinit;
+#[cfg(target_arch = "x86_64")]
+pub mod apictimer;
 pub mod beep;
 pub mod buildtype;
 #[cfg(target_arch = "x86_64")]
