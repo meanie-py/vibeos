@@ -43,11 +43,20 @@ use ntkrnl_sys::ddk::{
 // HalVectorToIDTEntry slot; the call is indirect through that pointer.
 
 #[cfg(target_arch = "x86")]
-#[inline(always)]
+#[inline(never)]  // Don't inline — avoid an unwrap_unchecked ud2 propagating
+                  // into hot callers (HalpInitPhase1 → HalpEnableInterruptHandler).
 unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
     let pcr = crate::x86::pcr::KeGetPcr() as *mut ntkrnl_sys::hal_ddk::_KIPCR;
     let dispatch = &raw const ntkrnl_sys::hal_ddk::HalPrivateDispatchTable;
-    let vec_to_idt = (*dispatch).HalVectorToIDTEntry.unwrap_unchecked();
+    // Read the Option<fn> as a raw function pointer via transmute to avoid
+    // the unwrap_unchecked ud2 cascade.  HalVectorToIDTEntry is always populated
+    // by HAL init before we get here — but we mustn't rely on Option's niche
+    // optimization to elide the panic path.
+    let opt = core::ptr::read_volatile(&(*dispatch).HalVectorToIDTEntry);
+    let vec_to_idt = match opt {
+        Some(f) => f,
+        None => return,
+    };
     let entry = vec_to_idt(vector) as usize;
     let e = &mut *((*pcr).IDT).add(entry);
     let address = handler as usize;

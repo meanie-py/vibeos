@@ -106,13 +106,37 @@ unsafe extern "fastcall" {
     fn KeUpdateSystemTime(TrapFrame: PKTRAP_FRAME, Increment: ULONG, Irql: KIRQL);
 }
 
-// KiEnterInterruptTrap is a no-op macro inside HAL (`hal/halx86/include/halp.h`:
-// `#define KiEnterInterruptTrap(TrapFrame) /* We do all neccessary in asm code */`).
-// Only NTOSKRNL has a real body for it (FORCEINLINE in trap_x.h).  Calls from
-// HAL are intentionally dead — provide a local no-op stub so call sites stay
-// readable and match the C source's textual shape.
+// KiEnterInterruptTrap: the empty `#define KiEnterInterruptTrap(TrapFrame)`
+// in `hal/halx86/include/halp.h` is gated on `#ifdef _M_AMD64` — it's ONLY
+// a no-op for amd64.  On i386, HAL falls through to ntoskrnl's real
+// FORCEINLINE from `internal/i386/trap_x.h`, which sets the SEH chain end +
+// Dr7=0 and stamps the debug fields (DbgArgMark = 0xBADB0D00,
+// PreviousPreviousMode = -1, DbgEip, DbgEbp).  Without it, the DBG-build
+// `KiExitTrapDebugChecks` bugchecks with "previous mode seems valid" because
+// the field is uninitialized stack garbage.
+//
+// Inline the body here.  We can't link to ntkrnl-sys's `_KiEnterInterruptTrap`
+// global_asm impl because pulling its CGU also drags `KeRegisterInterruptHandler`
+// / `KeQueryInterruptHandler` whose `HalVectorToIDTEntry` extern doesn't
+// resolve in hal-rust.  The debug-registers-on-trap-entry branch (debug-
+// active threads) is skipped here — boot-time clock interrupts never have
+// debug active, matching what the C HAL inlined body would do at boot.
 #[inline(always)]
-unsafe fn KiEnterInterruptTrap(_TrapFrame: PKTRAP_FRAME) {}
+unsafe fn KiEnterInterruptTrap(TrapFrame: PKTRAP_FRAME) {
+    // Terminate the SEH exception list (PCR.NtTib.ExceptionList at fs:[0]).
+    core::arch::asm!(
+        "mov dword ptr fs:[0], 0xFFFFFFFF",
+        options(nostack, preserves_flags),
+    );
+    // Dr7 = 0.
+    (*TrapFrame).Dr7 = 0;
+    // KiFillTrapFrameDebug equivalent — stamp the magic + capture EIP/EBP.
+    (*TrapFrame).DbgArgPointer = (*TrapFrame).Edx;
+    (*TrapFrame).DbgArgMark = 0xBADB0D00;
+    (*TrapFrame).DbgEip = (*TrapFrame).Eip;
+    (*TrapFrame).DbgEbp = (*TrapFrame).Ebp;
+    (*TrapFrame).PreviousPreviousMode = 0xFFFFFFFF; // (ULONG)-1
+}
 
 // KiEoiHelper IS exported by ntoskrnl.exe (bare name, ordinal 691).  Pull
 // via raw-dylib.
