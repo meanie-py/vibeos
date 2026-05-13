@@ -5,7 +5,7 @@ list(APPEND HAL_ACPI_SOURCE
     acpi/halacpi.c
     acpi/halpnpdd.c
     # acpi/busemul.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/busemul.rs)
-    acpi/madt.c
+    # acpi/madt.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/madt.rs)
     legacy/bus/pcibus.c)
 
 # Needed to compile while using ACPICA

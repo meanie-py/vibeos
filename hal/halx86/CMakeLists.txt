@@ -59,6 +59,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halpcat.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/irql.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/kdpci.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/madt.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
@@ -69,9 +70,11 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/processor.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/rtctimer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysbus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/timer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs

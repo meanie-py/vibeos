@@ -21,6 +21,7 @@ pub mod halinit;
 pub mod halpcat;
 pub mod irql;
 pub mod kdpci;
+pub mod madt;
 pub mod memory;
 pub mod misc;
 pub mod nmi;
@@ -30,6 +31,8 @@ pub mod pic;
 pub mod pic_halinit;
 pub mod processor;
 pub mod reboot;
+#[cfg(target_arch = "x86_64")]
+pub mod rtctimer;
 // profil only on i386 — amd64 has its own LAPIC-timer-based version
 // in apic/apictimer.c (will translate later as part of the APIC backend).
 #[cfg(target_arch = "x86")]
@@ -39,5 +42,7 @@ pub mod profil;
 pub mod spinlock;
 pub mod sysbus;
 pub mod sysinfo;
+#[cfg(target_arch = "x86")]
+pub mod timer;
 pub mod up;
 pub mod usage;
