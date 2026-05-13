@@ -14,6 +14,8 @@ pub mod buildtype;
 pub mod busemul;
 #[cfg(target_arch = "x86")]
 pub mod bushndlr;
+#[cfg(target_arch = "x86")]
+pub mod legacy_halpnpdd;
 pub mod clock;
 pub mod cmos;
 pub mod cmosbus;

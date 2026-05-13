@@ -62,6 +62,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/irql.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/isabus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/kdpci.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/legacy_halpnpdd.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/madt.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
