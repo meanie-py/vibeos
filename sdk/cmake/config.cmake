@@ -1,22 +1,5 @@
 
-if(ARCH STREQUAL "i386")
-    set(SARCH "pc" CACHE STRING
-    "Sub-architecture to build for. Specify one of:
-     pc pc98 xbox")
-elseif(ARCH STREQUAL "amd64")
-    set(SARCH "" CACHE STRING
-    "Sub-architecture to build for.")
-elseif(ARCH STREQUAL "arm")
-    set(SARCH "omap3-zoom2" CACHE STRING
-    "Sub-architecture (board) to build for. Specify one of:
-     kurobox versatile omap3-zoom2 omap3-beagle")
-elseif(ARCH STREQUAL "arm64")
-    # By design, arm64 kernels and OSes should be intercompatible, but
-    # due to SoC vendors seemingly not being able to follow ARM design guidelines
-    # properly, there might be a need for board-specific builds later on...
-    set(SARCH "" CACHE STRING
-    "Sub-architecture (board) to build for.")
-endif()
+set(SARCH "" CACHE STRING "Sub-architecture (unused; legacy SARCH values pc/pc98/xbox/omap3-* removed).")
 
 if(ARCH STREQUAL "i386")
     set(OARCH "pentium" CACHE STRING
@@ -26,10 +9,6 @@ elseif(ARCH STREQUAL "amd64")
     set(OARCH "athlon64" CACHE STRING
     "Generate instructions for this CPU type. Specify one of:
      k8 opteron athlon64 athlon-fx")
-elseif(ARCH STREQUAL "arm")
-    set(OARCH "armv7-a" CACHE STRING
-    "Generate instructions for this CPU type. Specify one of:
-     armv5te armv7-a")
 elseif(ARCH STREQUAL "arm64")
     # This should not be bumped unless REALLY needed, because (as of 2021)
     # there are still new designs using the original A53 cores w/ armv8.0.
@@ -38,16 +17,8 @@ elseif(ARCH STREQUAL "arm64")
      armv8-a armv8.1-a armv8.2-a armv8.3-a armv8.4-a armv8.5-a armv8.6-a")
 endif()
 
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-    set(TUNE "generic" CACHE STRING
-    "Which CPU ReactOS should be optimized for.")
-elseif(ARCH STREQUAL "arm")
-    set(TUNE "generic-armv7-a" CACHE STRING
-    "Which CPU ReactOS should be optimized for.")
-elseif(ARCH STREQUAL "arm64")
-    set(TUNE "generic" CACHE STRING
-    "Which CPU ReactOS should be optimized for.")
-endif()
+set(TUNE "generic" CACHE STRING
+"Which CPU ReactOS should be optimized for.")
 
 set(OPTIMIZE "4" CACHE STRING
 "What level of optimization to use.
@@ -93,7 +64,7 @@ else()
 endif()
 
 cmake_dependent_option(ISAPNP_ENABLE "Whether to enable the ISA PnP support." ON
-                       "ARCH STREQUAL i386 AND NOT SARCH STREQUAL xbox" OFF)
+                       "ARCH STREQUAL i386" OFF)
 
 set(GENERATE_DEPENDENCY_GRAPH FALSE CACHE BOOL
 "Whether to create a GraphML dependency graph of DLLs.")

@@ -132,7 +132,4 @@ endif()
 if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
 endif()
-# UEFI is used for all architectures except legacy PC98/Xbox on i386
-if(ARCH STREQUAL "arm64" OR (NOT ARCH STREQUAL "i386" OR NOT (SARCH STREQUAL "pc98" OR SARCH STREQUAL "xbox")))
-    include(uefi.cmake)
-endif()
+include(uefi.cmake)

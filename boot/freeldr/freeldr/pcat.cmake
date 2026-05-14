@@ -69,58 +69,16 @@ if(ARCH STREQUAL "i386")
         # arch/i386/i386bug.c
         arch/i386/i386idt.c)
 
-    if(SARCH STREQUAL "xbox")
-        list(APPEND PCATLDR_ARC_SOURCE
-            arch/vidfb.c)
-    endif()
-    if(SARCH STREQUAL "pc98" OR SARCH STREQUAL "xbox")
-        # These machine types require built-in bitmap font
-        list(APPEND PCATLDR_ARC_SOURCE
-            arch/vgafont.c)
-    endif()
-
-    if(SARCH STREQUAL "xbox")
-        list(APPEND PCATLDR_ARC_SOURCE
-            # FIXME: Abstract things better so we don't need to include /pc/* here
-            arch/i386/pc/machpc.c       # machxbox.c depends on it
-            arch/i386/pc/pcbeep.c       # machxbox.c depends on it
-            arch/i386/pc/pchw.c         # Many files depends on it
-            arch/i386/pc/pcmem.c        # hwacpi.c/xboxmem.c depends on it
-            arch/i386/xbox/machxbox.c
-            arch/i386/xbox/xboxcons.c
-            arch/i386/xbox/xboxdisk.c
-            arch/i386/xbox/xboxi2c.c
-            arch/i386/xbox/xboxmem.c
-            arch/i386/xbox/xboxrtc.c
-            arch/i386/xbox/xboxvideo.c)
-        if(NOT MSVC)
-            # Prevent a warning when doing a memcmp with address 0
-            set_source_files_properties(arch/i386/xbox/xboxmem.c PROPERTIES COMPILE_OPTIONS "-Wno-nonnull")
-        endif()
-
-    elseif(SARCH STREQUAL "pc98")
-        list(APPEND PCATLDR_ARC_SOURCE
-            arch/i386/pc/pcmem.c        # pc98mem.c depends on it
-            arch/i386/pc98/machpc98.c
-            arch/i386/pc98/pc98beep.c
-            arch/i386/pc98/pc98cons.c
-            arch/i386/pc98/pc98disk.c
-            arch/i386/pc98/pc98hw.c
-            arch/i386/pc98/pc98mem.c
-            arch/i386/pc98/pc98rtc.c
-            arch/i386/pc98/pc98video.c)
-    else()
-        list(APPEND PCATLDR_ARC_SOURCE
-            arch/i386/pc/machpc.c
-            arch/i386/pc/pcbeep.c
-            arch/i386/pc/pccons.c
-            arch/i386/pc/pcdisk.c
-            arch/i386/pc/pchw.c
-            arch/i386/pc/pcmem.c
-            arch/i386/pc/pcrtc.c
-            arch/i386/pc/pcvesa.c
-            arch/i386/pc/pcvideo.c)
-    endif()
+    list(APPEND PCATLDR_ARC_SOURCE
+        arch/i386/pc/machpc.c
+        arch/i386/pc/pcbeep.c
+        arch/i386/pc/pccons.c
+        arch/i386/pc/pcdisk.c
+        arch/i386/pc/pchw.c
+        arch/i386/pc/pcmem.c
+        arch/i386/pc/pcrtc.c
+        arch/i386/pc/pcvesa.c
+        arch/i386/pc/pcvideo.c)
 
 elseif(ARCH STREQUAL "amd64")
     list(APPEND PCATLDR_BASE_ASM_SOURCE

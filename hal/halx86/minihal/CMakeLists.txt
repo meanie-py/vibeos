@@ -21,26 +21,8 @@ list(APPEND MINI_HAL_SOURCE
     ../include/hal.h
     halinit.c)
 
-if(SARCH STREQUAL "xbox")
-    list(APPEND MINI_HAL_SOURCE
-        ../generic/beep.c
-        ../generic/cmos.c
-        ../xbox/clock.c
-        ../xbox/reboot.c)
-elseif(SARCH STREQUAL "pc98")
-    list(APPEND MINI_HAL_SOURCE
-        ../pc98/beep.c
-        ../pc98/clock.c
-        ../pc98/cmos.c
-        ../pc98/reboot.c)
-else()
-    list(APPEND MINI_HAL_SOURCE
-        # ../generic/beep.c — Rust takeover
-        # ../generic/clock.c — Rust takeover (data-only: HalpRolloverTable)
-        # ../generic/cmos.c — Rust takeover
-        # ../generic/reboot.c — Rust takeover (minihal feature)
-    )
-endif()
+# PC SARCH only — xbox / pc-98 SARCH removed.
+# All beep / clock / cmos / reboot symbols are provided by libhal_rust_mini.a.
 
 add_asm_files(mini_hal_asm ../generic/systimer.S)
 add_library(mini_hal ${MINI_HAL_SOURCE} ${mini_hal_asm})

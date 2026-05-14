@@ -12,10 +12,6 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     CreateBootSectorTarget(ntfsvbr ${CMAKE_CURRENT_SOURCE_DIR}/ntfs.S ${CMAKE_CURRENT_BINARY_DIR}/ntfs.bin 7c00)
     CreateBootSectorTarget(btrfsvbr ${CMAKE_CURRENT_SOURCE_DIR}/btrfs.S ${CMAKE_CURRENT_BINARY_DIR}/btrfs.bin 7c00)
 
-    if(SARCH STREQUAL "pc98")
-        CreateBootSectorTarget(fat12pc98 ${CMAKE_CURRENT_SOURCE_DIR}/pc98/fat12fdd.S ${CMAKE_CURRENT_BINARY_DIR}/pc98/fat12fdd.bin 7c00)
-    endif()
-
     ## New versions using FATY.S (experimental)
     # add_definitions(-DFAT12)
     # CreateBootSectorTarget(fat_new ${CMAKE_CURRENT_SOURCE_DIR}/faty.S ${CMAKE_CURRENT_BINARY_DIR}/fat_new.bin 7c00)
@@ -41,11 +37,4 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     add_cd_file(TARGET isoboot DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isoboot.bin FOR all hybridcd)
     add_cd_file(TARGET isobtrt DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isobtrt.bin FOR bootcd regtest)
     add_cd_file(TARGET isombr DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isombr.bin FOR all hybridcd)
-elseif(ARCH STREQUAL "arm")
-    add_custom_target(fat
-        COMMAND exit 1
-        COMMENT "arm fat target not implemented yet")
-    add_custom_target(fat32
-        COMMAND exit 1
-        COMMENT "arm fat32 target not implemented yet")
 endif()
