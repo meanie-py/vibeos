@@ -1,83 +1,71 @@
+# Status — 2026-05-14
 
-# ntoskrnl Translation Status (updated 2026-04-27)
+## Smoke
 
-## Smoke Test Status
+All 3 arches boot to a painted taskbar.
 
-| Arch | Result | Notes |
-|------|--------|-------|
-| **i386** | **7/7 PASS** | Full graphical desktop with start menu/taskbar |
-| **amd64** | **7/7 PASS** | Explorer regression cleared (was intermittent; clean rebuild + KdProviders init together resolved it) |
-| **ARM64** | 4/7 | 2 skipped (objdump path), 1 failing — `[SMSS] _main` never fires (silent failure inside `LdrInitializeThunk` or CRT init) |
+| Arch  | Result | Notes |
+|-------|--------|-------|
+| i386  | 7/7 PASS | Live CD ISO; KVM accel |
+| amd64 | 7/7 PASS | Live CD ISO; KVM accel; today's HAL cpuid xchg fix unblocked it (memory `feedback_cpuid_xchg_32bit_zext.md`) |
+| arm64 | 5/5 PASS | UEFI ramdisk; idle-detection marker; 2 expected static-test skips |
 
-ARM64 reaches `[PS] PspUserThreadStartup: returning` reliably (kernel + user-mode dispatch work after the MMPTE soft-PTE bit-layout fix), but `_main` doesn't fire — likely a separate user-mode loader bug.
+Boot marker is `shell ready` on x86 (proves kernel → SMSS → csrss → win32k → winlogon → explorer.exe → desktop render). ARM64 uses idle detection. Screenshot saved per arch on every run.
 
-## Translation Coverage (additions since last update)
+## ntoskrnl translation
 
-### KD — fully Rust on all 3 arches (this session)
+- **337 C files** (269K LOC) on disk, **405 Rust files** (447K LOC) in `sdk/lib/rust/ntoskrnl-rust/src/`.
+- **8 C files actually compiled into `ntoskrnl.exe`** — all shims:
+  - `mm_rust_shims.c`, `io_rust_shims.c`, `ke_rust_shims.c`, `kdbg_rust_shims.c`
+  - `variadic_shims.c`, `mm_lock_outlines.c`, `ntprintf_trampoline.c`, `lto_workaround.c`
+- Everything else under `ntoskrnl/` is on disk for reference but excluded from the build.
+- 14+ sibling rlibs under `sdk/lib/rust/` factor out reusable algorithms (`slist`, `bitmap`, `splaytree`, `generictable`, `avltable`, `mm-avl`, `rtl-rust` umbrella, `ke-inlines`, `ke-macros`, `largeint`, etc.).
 
-| File | C lines | Rust file | Notes |
-|------|--------:|-----------|-------|
-| kdio.c | 355 | kd/kdio.rs (1,525) | Owns globals KdpDebugMode/KdProviders/DispatchTable/InitRoutines |
-| kdmain.c | 563 | kd/kdmain.rs (795) | Defensive `InitializeListHead(&KdProviders)` — Rust static-init can't express the C `LIST_ENTRY KdProviders = {&KdProviders, &KdProviders}` self-reference |
-| kdterminal.c | 443 | kd/kdterminal.rs (488) | cdecl ABI (matches C) |
-| kdprompt.c | 182 | kd/kdprompt.rs (243) | |
-| kdps2kbd.c | 128 | kd/kdps2kbd.rs (250) | x86 in/out via inline asm |
-| kdserial.c | 256 | kd/kdserial.rs (80) | Generic wrapper |
-| i386/kdserial.c | 115 | i386/kdserial.rs | Used by BOTH i386 + amd64 (cfg `any(x86, x86_64)`) |
-| arm64/kdserial.c | 100 | arm64/kdserial.rs | PL011 |
-| arm/kdserial.c | 100 | arm/kdserial.rs | PL011 |
+Per-subsystem Rust file count (Rust file count vs. C-on-disk file count, indicative not exact):
 
-**Net: 2,242 lines C → 3,914 lines Rust.** All 3 arches green. Plus a tiny `kd_rust_shims.c` (40 LOC) that bridges Rust → HAL's `KdComPortInUse` dllimport (cross-DLL imports can't be resolved by Rust extern decls on i386 — need `__imp_` thunks the C compiler emits via `NTHALAPI`/`__declspec(dllimport)`).
+```
+cc      8/7      ex     37/31    fsrtl  18/17    fstub   5/4
+inbv    4/3      iomgr 29/26     ke    69/63     kd      7/8
+kdbg   12/10     kd64  12/9      lpc    9/8      mm     23/44
+ob     13/11     ps    22/16     po     5/4      rtl     4/2
+se     20/18     vdm    3/2      wmi    5/4      pnpmgr 20/18
+config 26/23     dbgk   3/2
+```
 
-### MM section/{io,sptab} — Rust on all 3 arches (this session)
+mm/ has more C-on-disk than Rust because it contains a lot of small per-arch helpers and ARM3 subdirs that don't 1:1 to Rust files; the kernel build still uses the shim-elimination tracking, not file-count tracking.
 
-`cache/section/io.c` (338 LOC) + `cache/section/sptab.c` (429 LOC) translated to `mm/section_io.rs` (173 LOC) + `mm/section_table.rs` (367 LOC). These were the two unconditionally-compiled cache/ files; the rest is NEWCC dead code. **Wired in `mm/mod.rs:16-17`; C versions commented out at `ntos.cmake:50-51`. Active in build.** `mm_rust_shims.c` gained cdecl outline trampolines for `MiAcquirePfnLock` / `MiReleasePfnLock` (they were FORCEINLINE in `mm.h` with no real symbol — needed for the Rust callers to link).
+## HAL translation
 
-### kd64 serial passthrough + cache/ NEWCC line-commented (earlier this session)
+- **47 C files** (19K LOC) on disk, **49 Rust files** (15K LOC) in `sdk/lib/rust/hal-rust/src/x86/`.
+- **mini_hal fully Rust** (Phase 2 closed `80ba39c6`): only `halinit.c` + `systimer.S` ship; the 17 other mini_hal C files are retired. Built as a separate `libhal_rust_mini.a` via the `minihal` Cargo feature.
+- Live arch dirs in HAL C: `acpi/`, `apic/`, `generic/`, `legacy/{,bus}`, `pic/`. The Rust port covers the i386 surface plus shared portable bits; arm64 HAL stays as C stubs (per `hal-translation-audit.md`).
+- raw-dylib infra (`b811836f`) lets Rust HAL files reference 41 kernel-data exports across DLL boundaries.
 
-- kd64: `BREAKPOINT_PRINT` (DbgPrint) now writes to COM1 (0x3F8) directly when no debugger is attached. Plus `int 2c` skip and `0xCC 0xCD 0x2C` (int3+int 2c) auto-skip.
-- 11 NEWCC-only cache/* files line-commented as dead code (replaced by Rust `cc/`).
+## Build paths
 
-### config/ — first attempt failed (this session)
+- **Primary:** cmake/Ninja drives `hal.dll` and `ntoskrnl.exe`. Per-arch dirs `build-{arm64,amd64,i386}/`. `ninja livecd` rolls the boot ISO.
+- **Cargo PoC:** `sdk/lib/rust/ntoskrnl-cargo/` produces `ntoskrnl.exe` directly from cargo, reusing cmake-built `.obj`/`.a` artifacts. Goal is to replace the cmake-driven link entirely.
+- Workspace firewall: `lto = false` + `codegen-units = 256` neutralizes the LLVM captures(none) class — replaced the older CGU=1 + opaque_ptr hack.
 
-All 22 `.c` files translated to Rust (~30K LOC) and integrated. Compile-clean across 3 arches, links cleanly. But i386 BSODs very early in boot with `STATUS_ILLEGAL_INSTRUCTION` jumping to near-NULL function pointer — before any DbgPrint flushes. **Stashed in `git stash@{0}`** awaiting Codex-token reset for fresh-eyes debugging. Likely culprits: bindgen `__bindgen_anon_*` accessor mismatch, ABI mismatch on `cm_rust_shims.c` `__asm__("_Name@N")` aliases, or struct-size mismatch on a newly-defined cmsysini.c-owned global (e.g., ERESOURCE).
+## Dead-platform purge (2026-05-13/14)
 
-## Boot-Milestone Harness (from prior session)
+Deleted xbox, pc-98, 32-bit ARM, SAC, arm64ec source trees and the SARCH/ARCH cmake conditionals. ~28K LOC removed; xdk template-arch dispatch trimmed to IX86/AMD64/ARM64 only.
 
-`tests/qemu/test_smoke.py::test_milestones` validates that each arch's `required_milestones` list (per `tests/qemu/vm.py`) appears in serial output. Markers:
-- `[SMSS] _main entered`
-- `[CSRSS] _main entered`
-- `[WINLOGON] WinMain entered`
-- `[EXPLORER] _tWinMain entered`
-- `shell ready`
+## Active threads
 
-## Subsystem Coverage Snapshot
+- **Shim elimination Phase 4** — Ob/io captures(none) sweep nearly closed; 19 of ~50 io fns landed direct (per memories). Remaining: GLOBAL_ACCESSOR sweeps, `IopInitializeDriverModule` complex-delegation translation, must-stay LLVM_WORKAROUND helpers.
+- **HAL Stage 2** — i386 HAL Rust takeover continues; pic_pic + pcibus + bussupp + bushndlr landed this/last session.
+- **rustconv multi-stage pipeline** — Stage 1 (C→Rust) and Stage 2 (probe migration) live; Stage 3 (SEH idiomation) planned.
 
-281 files, ~360,500 lines translated to Rust active across i386/amd64/arm64. Remaining C in ntoskrnl proper:
-- **config/** (~19K lines) — translated, awaiting bisection (stashed)
-- **kd64/** (~7K lines) — translated but disabled due to recursive exception flood
-- **kdbg/** (~12K lines) — not translated; i386-dis.c (binutils, ~4.4K lines) will stay in C
-- **misc shims** (~1.5K lines) — guid.c, kernel_c_helpers.c, *_rust_shims.c — stays in C by design
-- **tests/** — kernel test harness, not for translation
+## Open architectural issues
 
-## Key Patterns Learned This Session
+- **`--allow-multiple-definition` linker flag** still in use for HAL cohabitation. Should be removable once C HAL holdouts are gone.
+- **769 unprotected output-pointer writes** flagged by `tools/lint_kernel.py` across 133 files. Theoretical captures(none) targets; runtime is clean (`scan_ud2.py --check` passes 0 unexpected ud2). Considering baselining the lint to gate regressions instead of churning the tree.
+- **arm64 HAL stays C** — translation-audit explicitly defers it; the HAL Rust crate is x86-only.
 
-- **C wide-string `L"..."` literals**: must become `&[u16]`, NOT bytes-cast-to-`*const u16`. Also fixed in fstub session.
-- **Cross-DLL imports** (HAL globals like `KdComPortInUse`): need `__imp_` thunk via `NTHALAPI`/`__declspec(dllimport)`. Rust extern decls can't reach these on i386 — route through a tiny C shim file (`kd_rust_shims.c` pattern).
-- **C `LIST_ENTRY Foo = {&Foo, &Foo}`** self-referencing static initializer can't be expressed in Rust const init. Two options: (a) call `InitializeListHead(&Foo)` defensively at first-use sites, or (b) Rust ctor pattern via `#[link_section = ".CRT$XCU"]`.
-- **C macros mistakenly translated as functions** (UlongToPtr, RemoveEntryList, KdbpGetCharSerial, HalInitPnpDriver): need inline Rust impl, not extern.
-- **NTAPI vs cdecl ABI matters**: kd/ has both. Look at the C source — `NTAPI`/`__cdecl` keywords determine the Rust extern ABI. Mismatch → `_Name` undefined vs `_Name@N` undefined.
-- **Cargo incremental cache lies**: `find . -name rust-kernel-target -exec rm -rf {} +` is a frequent debug step. Without it, ABI fixes don't take effect even though they're in source.
+## What lives where
 
-## What's Next (priority order)
-
-1. **config/ bisection** — fresh-eyes debugging once Codex tokens reset. Stashed translation is mechanically sound; bug is a runtime mismatch in some subset.
-2. **ARM64 SMSS reaches `_main`** — debug why `LdrInitializeThunk` or CRT init silently fails. Highest-leverage if we want ARM64 desktop back.
-3. **kd64 recursive exception flood** — already translated but disabled. Debug not retranslate.
-4. **kdbg/** — translate the 8 .c files (excluding i386-dis.c which stays in C).
-
-## Open Architectural Issues
-
-- **CGU=1 on i386/amd64** — ~15 unexpected ud2s due to LLVM interprocedural noreturn contagion. Workaround `codegen-units=16` + `opaque_ptr` barriers on 2,449 fns shipped, root not yet fixed.
-- **kd64/ disabled** — translated but disabled because of recursive exception flood on amd64 (`KdpTrap → KdpReport → KdSendPacket` infinite nesting). Needs the bug debugged, not retranslated.
-- **`--allow-multiple-definition` linker flag** — masks dual C/Rust symbol definitions. Should be removed once final C holdouts are translated.
+- **Live status across sessions:** `~/.claude/.../memory/MEMORY.md` (the "CURRENT STATUS" entry is the freshest).
+- **Per-bug postmortems / patterns:** memory files (`feedback_*.md`, `project_*.md`).
+- **Long-running plans / audits:** `docs/engineering/{ntoskrnl,hal,freeldr,win32k,static-libs}-translation-audit.md` and the per-subsystem plans (`shim-elimination.md`, `pseh-elimination.md`, `kernel-exception-handling.md`).
+- **Reference docs:** `docs/engineering/{kernel-debugging-infra,rust-kernel-patterns}.md`, top-level `docs/{rustconv,testing-strategy}.md`.

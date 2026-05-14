@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents (Claude Code, Codex CLI, etc.) when working with code in this repository.
 
 ## Project Overview
 
-This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. The source is a fork of `github.com/reactos/reactos` on the `arm64-port` branch. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU.
+This is a **multi-architecture port of ReactOS** — an open-source Windows-compatible operating system. Originally forked from `github.com/reactos/reactos` to add ARM64. The OS cross-compiles to **ARM64, amd64, and i386** PE-COFF with zero build failures on all three architectures. All three boot to a graphical desktop in QEMU. The active development branch is `continue-rust-port`; mainline is `master`.
 
 ## Translation Philosophy — Rust Is The Goal
 
@@ -213,30 +213,28 @@ replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
 ```bash
 cd sdk/lib/rust
 
-# Unit tests — algorithm correctness, pack/unpack roundtrips (20 tests)
-cargo test -p reactos-slist
+# Unit tests — algorithm correctness, pack/unpack roundtrips
+cargo test -p slist
 
-# Kani model checking — exhaustive verification of state transitions (9 proofs)
-cargo kani -p reactos-slist
+# Kani model checking — exhaustive verification of state transitions
+cargo kani -p slist
 
-# Loom concurrency tests — explores all thread interleavings (3 tests)
+# Loom concurrency tests — explores all thread interleavings
 cargo test -p slist-loom
 ```
 
 ### QEMU Kernel Tests (28 tests via serial dispatch loop)
 
 ```bash
-cd reactos
-
 # 1. Build test kernel
-cd ../build-arm64 && cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl
+cd build-arm64 && cmake . -DREACTOS_TEST_KERNEL=ON && ninja ntoskrnl
+cd ..
 
 # 2. Update ramdisk
-mcopy -o -i ../qemu/ramdisk.img ntoskrnl/ntoskrnl.exe ::/reactos/system32/ntoskrnl.exe
-mcopy -o -i ../qemu/boot.img ../qemu/ramdisk.img ::/ramdisk.img
+mcopy -o -i qemu/ramdisk.img build-arm64/ntoskrnl/ntoskrnl.exe ::/reactos/system32/ntoskrnl.exe
+mcopy -o -i qemu/boot.img qemu/ramdisk.img ::/ramdisk.img
 
 # 3. Run tests (boots QEMU, sends commands over serial, checks [TEST PASS])
-cd ../reactos
 .venv/bin/python -m pytest tests/qemu/test_kernel.py --test-kernel -v       # All 28 tests
 .venv/bin/python -m pytest tests/qemu/test_kernel.py --test-kernel -k SList # Just SList
 ```
@@ -265,8 +263,8 @@ The smoke test framework lives in `tests/qemu/` and provides automated boot veri
 
 **Architecture:**
 - `vm.py` — VM lifecycle manager with per-arch configs (ArchConfig subclasses). Handles QEMU process, QMP, serial, debugcon.
-- `conftest.py` — pytest fixtures: session-scoped VM boot + per-test snapshot restore via QMP savevm/loadvm.
-- `test_smoke.py` — 4 tests: boot_and_serial, qmp_status, snapshot_restore, screenshot.
+- `conftest.py` — pytest fixtures: session-scoped VM boot + per-test snapshot restore via QMP savevm/loadvm. Nukes `rust-kernel-target/` before each session unless `--skip-clean-build` is passed.
+- `test_smoke.py` — 7 tests per arch: boot_and_serial, qmp_status, snapshot_restore, screenshot, sacred_primitives, no_unexpected_ud2, plus the milestone marker check.
 - `serial_client.py` — Unix socket serial client. Creates server socket BEFORE starting QEMU (prevents race). Supports `read_until(marker)` (string match) and `read_until_idle()` (silence detection). Auto-continues past `kdb:>` prompts.
 - `qmp_client.py` — QEMU Machine Protocol over Unix socket for screendump, savevm/loadvm, query-status.
 - `debugcon.py` — Decodes bochs debug port (0xE9) output against JSON trace catalogs for boot failure triage.
@@ -283,29 +281,39 @@ Kernel Rust code emits single-byte markers via `out 0xe9, al` at boot milestones
 
 **Test lifecycle:**
 1. Boot QEMU once per session (session fixture)
-2. Wait for boot marker (`explorer.exe created` for i386/amd64) or idle detection (ARM64)
+2. Wait for boot marker (`shell ready` for i386/amd64 — proves the full kernel → SMSS → csrss → win32k → winlogon → explorer → desktop chain) or idle detection (ARM64)
 3. Wait for desktop settle time (user-mode processes need time after kernel boot)
 4. Save "ready" snapshot
 5. Each test restores to "ready" snapshot before running
-6. On boot failure: capture screenshot + debugcon triage report for diagnosis
+6. On boot failure: capture screenshot + debugcon triage report for diagnosis. BSOD crashes auto-symbolicated with function names from objdump.
 
 ## Rust in the Kernel
 
-The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-COFF static libraries and link into the C build. **Both SList and Bitmap build for all 3 architectures.**
+The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-COFF static libraries (rlibs/staticlibs) and link into the cmake build. **All crates build for all 3 architectures unless explicitly noted (e.g., hal-rust is x86-only).**
 
 ```
 sdk/lib/rust/
-├── Cargo.toml              # Workspace (resolver v2)
-├── slist/                   # Interlocked SList — all 3 architectures
-│   ├── src/lib.rs           # FFI entry points (cfg per arch for calling convention)
-│   ├── src/header.rs        # Bit-field pack/unpack (cfg per pointer width)
-│   ├── src/algorithm.rs     # Pure state transitions + Kani proofs (no cfg, no unsafe)
-│   └── src/atomics.rs       # Atomic primitives (LDXP/STXP, CMPXCHG16B, CMPXCHG8B)
-├── bitmap/                  # RtlBitmap operations — all 3 architectures
-│   ├── src/lib.rs           # FFI entry points
-│   └── src/ops.rs           # Bitmap algorithms
-└── slist-loom/              # Loom concurrency tests (std, not linked into kernel)
+├── Cargo.toml              # Workspace (resolver v2). lto=false + codegen-units=256 firewall.
+├── ntoskrnl-rust/          # The kernel translation. ~405 .rs files, ~447K LOC across all subsystems
+│                           #   (ke, mm, ex, ps, ob, se, io, fsrtl, kd, kdbg, kd64, lpc, dbgk, po,
+│                           #   wmi, vdm, rtl, cc, fstub, inbv, config, pnpmgr, etc.).
+├── ntoskrnl-cargo/         # Cargo-driven ntoskrnl.exe link PoC (replaces cmake-driven link)
+├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
+├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
+├── hal-rust/               # x86 HAL Rust translation (i386 + amd64). minihal feature for FreeLDR
+├── rtl-rust/               # Umbrella over 18 algorithm rlibs from sdk/lib/rtl/*
+├── slist/                   # Lock-free SList (LDXP/CMPXCHG16B/CMPXCHG8B inline asm)
+├── slist-loom/              # Loom concurrency tests for SList (std, not linked into kernel)
+├── bitmap/                  # RtlBitmap operations
+├── avltable/, splaytree/, generictable/  # Generic tree algorithms (used by mm, cm, etc.)
+├── mm-avl/                  # Mm-flavor AVL on MMADDRESS_NODE (VadRoot etc.)
+├── largeint/, time/, random/, crc32/, encode/, compress/, mem/, byteswap/,
+│   utf8/, prefix/, luid/, access/, handle/, interlck/  # smaller algorithm crates
+├── ke-inlines/, ke-macros/  # extracted ntoskrnl-rust ke/ helpers as separate rlibs
+└── ir-output/              # rustc IR dumping helper
 ```
+
+The structure isn't an exhaustive list — the workspace has 30+ members today. The principle is: anything that's pure-algorithm with a clean FFI surface gets factored into its own rlib so the workspace `lto=false` + `cgu=256` firewall keeps callers and callees in separate codegen units (which neutralizes LLVM's captures(none) optimization across the boundary).
 
 ### Rust Targets (GNU/LLVM, not MSVC)
 - **ARM64:** `aarch64-pc-windows-gnullvm`
@@ -329,10 +337,12 @@ Principles:
 5. **One crate, three targets** — same Cargo.toml for all
 
 ### Key Rust/FFI Gotchas
-- **LLVM reserves rbx (amd64) and ebx (i386)** — use `xchg` workaround for CMPXCHG16B/CMPXCHG8B inline asm
+- **LLVM reserves rbx (amd64) and ebx (i386)** — use `xchg` workaround for CMPXCHG16B/CMPXCHG8B inline asm. **On amd64, the xchg MUST be 64-bit** (`xchg rbx, rbx_save`), not 32-bit (`xchg ebx, ebx_save:e`) — a 32-bit register write zero-extends into rbx, silently destroying the upper 32 bits of any caller-held pointer there. Cost a multi-hour BUGCHECK 0x50 debug session in 2026-05; see memory `feedback_cpuid_xchg_32bit_zext.md`.
 - **`#[no_mangle] extern "stdcall"`** on i686-gnu correctly produces `_Name@N` decoration
 - **`#[export_name]` gets double-decorated** on i686-gnu with stdcall — use `#[no_mangle]` instead
 - **i386 SList Pop must be `global_asm!`** — `KiCheckForSListFault` checks exact instruction bytes (0x8B 0x18)
+- **NTAPI vs cdecl ABI** matters per arch: i386 NTAPI = stdcall (`_Name@N`), amd64/arm64 NTAPI = cdecl (just `Name`). `extern "system"` resolves to the right thing per arch. Mismatched `extern "C"` vs `extern "system"` declarations across rlibs link silently on amd64/arm64 but break i386. Use `tools/rustconv/rustconv/verify_abi.py` to detect.
+- **Cross-DLL data imports** (HAL referencing kernel-data exports like `KdDebuggerNotPresent`, `KeServiceDescriptorTable`): need `#[link(name = "ntoskrnl", kind = "raw-dylib")]` on the extern static block. `postprocess_bindgen.py --hal` adds this automatically for the 41 affected externs.
 
 ### ntkrnl-sys — Kernel FFI Declarations Crate
 
@@ -399,16 +409,28 @@ The script runs bindgen against `ntoskrnl.h` + `miarm.h` for all 3 targets (`aar
 - **Two skip types** in verify_sizes.py: `_GENERAL_LOOKASIDE_POOL` (complex union, bindgen disagrees with C) and `_LONGDOUBLE` (x87 long double, platform-specific padding)
 
 ### CMake Integration
-`sdk/lib/rtl/CMakeLists.txt` invokes `cargo build --release` per architecture and links the `.a` files into librtl.
+
+The cmake-driven kernel build invokes `cargo build --release` for each Rust crate that becomes a static lib, then links the resulting `.a` files into the appropriate kernel-mode targets:
+
+- `sdk/lib/rust/ntoskrnl-rust/` → `libkernel_rust.a` → linked into `ntoskrnl.exe`
+- `sdk/lib/rust/hal-rust/` → `libhal_rust.a` (default) + `libhal_rust_mini.a` (`--features minihal`) → linked into HAL flavors and freeldr/mini_hal consumers
+- `sdk/lib/rtl/` → invokes `cargo build` for `rtl-rust` and links into librtl
+
+The cargo PoC (`sdk/lib/rust/ntoskrnl-cargo/`) is the long-term replacement for the cmake-driven `ntoskrnl.exe` link. Today it reuses cmake-built `.obj` and `.a` artifacts and just drives the final link from cargo; eventually it replaces the cmake link entirely.
+
+### Cohabitation pattern (HAL)
+
+For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. See `docs/engineering/hal-translation-audit.md` for status and per-file mapping.
 
 ### Adding New Crates
 1. Create directory under `sdk/lib/rust/`
 2. Add to workspace `members` in `sdk/lib/rust/Cargo.toml`
-3. Wire up `add_custom_command` + `target_link_libraries` in `sdk/lib/rtl/CMakeLists.txt`
+3. Add `extern crate <name>;` in the appropriate umbrella crate's `lib.rs` (usually `kernel-rust/src/lib.rs`) — without this, cargo compiles the rlib but its `#[no_mangle]` symbols don't end up in `libkernel_rust.a` (memory `feedback_extern_crate_for_staticlib.md`)
+4. Wire up `add_custom_command` + `target_link_libraries` in the appropriate cmake (typically `sdk/lib/rtl/CMakeLists.txt` for rtl-flavor crates, or the consumer module's CMakeLists)
 
 ## rustconv — C-to-Rust Translation Pipeline
 
-API-driven pipeline that translates ntoskrnl C files to Rust using LLM (Sonnet batch API). Located at `tools/rustconv/`.
+API-driven pipeline that translates ntoskrnl and HAL C files to Rust using LLM (Sonnet batch API by default; also supports Haiku, Opus, Gemini Pro/Flash). Located at `tools/rustconv/`.
 
 ### Pipeline
 
@@ -423,17 +445,22 @@ C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys cata
 ```bash
 source .venv/bin/activate
 
-python -m rustconv scan ntoskrnl/ex/uuid.c         # Parse, print analysis
-python -m rustconv resolve ntoskrnl/ex/uuid.c       # Resolve deps → import manifest
-python -m rustconv prompt ntoskrnl/ex/uuid.c         # Generate prompt to stdout
-python -m rustconv estimate ntoskrnl/ob/             # Token count + cost estimate
-python -m rustconv submit ntoskrnl/ex/uuid.c -o out.rs   # Single-file API call
+python -m rustconv scan ntoskrnl/ex/uuid.c            # Parse, print analysis
+python -m rustconv resolve ntoskrnl/ex/uuid.c          # Resolve deps → import manifest
+python -m rustconv prompt ntoskrnl/ex/uuid.c           # Generate prompt to stdout
+python -m rustconv estimate ntoskrnl/ob/               # Token count + cost estimate
+python -m rustconv submit ntoskrnl/ex/uuid.c -o out.rs # Single-file API call
 python -m rustconv submit ntoskrnl/ex/uuid.c --assemble  # Translate + write to crate
-python -m rustconv batch ntoskrnl/ob/ -m sonnet      # Batch entire subsystem
-python -m rustconv check                              # cargo check ×3 targets
+python -m rustconv translate ntoskrnl/ob/file.c        # Single-file synchronous (better for >1000 LOC; batch silently stubs lazy fns)
+python -m rustconv batch ntoskrnl/ob/ -m sonnet        # Batch entire subsystem (smaller files only)
+python -m rustconv probe-migrate se/sqos.rs            # Stage 2: ProbeForRead/Write → Result<T>
+python -m rustconv trace-catalog                        # Generate debugcon trace catalog from inline asm
+python -m rustconv check                                # cargo check ×3 targets
 ```
 
 Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, or full model ID.
+
+`rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating (memory `feedback_rustconv_hal_target.md`).
 
 ### Key Files
 
@@ -443,17 +470,23 @@ tools/rustconv/
 │   ├── scanner.py         # tree-sitter C parser (functions, globals, SEH, arch ifdefs)
 │   ├── catalog.py         # Index ntkrnl-sys symbols (~9,700 per arch)
 │   ├── resolver.py        # Match identifiers → imports + gap warnings
-│   ├── spec_parser.py     # Parse ntoskrnl.spec (1,592 exports)
+│   ├── spec_parser.py     # Parse ntoskrnl.spec / hal.spec
 │   ├── prompt_builder.py  # Assemble system + per-file prompts
 │   ├── batch_runner.py    # Anthropic + Gemini API client
 │   ├── postprocess.py     # Safe mechanical fixes (type names, imports, enums)
 │   ├── assembler.py       # Write to ntoskrnl-rust/src/{subsys}/{file}.rs
 │   ├── checker.py         # cargo check ×3 targets → structured errors
-│   └── config.py          # Paths, model config, token budgets
+│   ├── probe_migrate.py   # Stage 2: ProbeFor{Read,Write} → Result<T>
+│   ├── verify_constants.py / verify_abi.py / verify_ffi.py  # Static-analysis verifiers
+│   └── config.py          # Paths, model config, token budgets, Target dataclass (kernel/hal)
 ├── templates/
-│   └── system_prompt.md   # Translation rules (~5K tokens, prompt-cached)
+│   ├── system_prompt.md       # Kernel translation rules (~5K tokens, prompt-cached)
+│   ├── system_prompt_hal.md   # HAL-flavor translation rules
+│   ├── function_prompt.md     # Per-function prompt template
+│   └── probe_migrate_prompt.md  # Stage 2 migration rules
 └── data/
-    └── gap_functions.toml # FORCEINLINE/macro functions not in bindgen
+    ├── gap_functions.toml         # FORCEINLINE/macro functions not in bindgen
+    └── trace_catalog_{arch}.json  # debugcon byte-marker decoder catalogs
 ```
 
 ### Post-Processor Safety
@@ -489,7 +522,7 @@ probe_user_buffer(buf, len, align, mode) -> Result<(), NTSTATUS>
 probe_capture_unicode_string_header(ptr, mode) -> Result<UNICODE_STRING, NTSTATUS>
 ```
 
-**Status:** SE (12 files, 62 probe sites) and OB (6 files, 35 probe sites) fully migrated. All 3 arches build + smoke tests pass.
+**Status:** SE and OB subsystems fully migrated to Rust-native probe API. All 3 arches build + smoke tests pass. Other subsystems still use bare `ProbeForRead`/`ProbeForWrite` calls — see memory `feedback_translation_philosophy.md` for staging.
 
 ### Multi-Stage Pipeline Architecture
 
@@ -598,7 +631,7 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 
 ## Target Hardware
 
-Primary target is **Raspberry Pi** (ARM64). Development/debugging uses **QEMU** `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
+All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386). i386 and amd64 use KVM acceleration when `/dev/kvm` is available (WSL2 supports it). Real-hardware boot (e.g., Raspberry Pi for ARM64) is an aspirational target, not a current one.
 
 ## Notes
 Don't ask the user to run commands or install things after they have told you to debug something, just debug it.
