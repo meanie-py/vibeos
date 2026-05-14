@@ -113,13 +113,6 @@ elseif(ARCH STREQUAL "amd64")
         arch/i386/pc/pcvesa.c
         arch/i386/pc/pcvideo.c)
 
-elseif(ARCH STREQUAL "arm")
-    list(APPEND PCATLDR_COMMON_ASM_SOURCE
-        arch/arm/boot.S)
-
-    list(APPEND PCATLDR_ARC_SOURCE
-        arch/arm/entry.c
-        arch/arm/macharm.c)
 else()
     #TBD
 endif()
@@ -178,12 +171,8 @@ set_target_properties(freeldr_pe
     DEFINE_SYMBOL "")
 
 if(MSVC)
-    if(ARCH STREQUAL "arm")
-        target_link_options(freeldr_pe PRIVATE /ignore:4078 /ignore:4254 /DRIVER)
-    else()
-        target_link_options(freeldr_pe PRIVATE /ignore:4078 /ignore:4254 /DYNAMICBASE:NO /FIXED /FILEALIGN:512 /ALIGN:512)
-        add_linker_script(freeldr_pe freeldr_i386.msvc.lds)
-    endif()
+    target_link_options(freeldr_pe PRIVATE /ignore:4078 /ignore:4254 /DYNAMICBASE:NO /FIXED /FILEALIGN:512 /ALIGN:512)
+    add_linker_script(freeldr_pe freeldr_i386.msvc.lds)
     # We don't need hotpatching
     remove_target_compile_option(freeldr_pe "/hotpatch")
     remove_target_compile_option(freeldr_common "/hotpatch")
@@ -220,22 +209,10 @@ endif()
 
 add_dependencies(freeldr_pe asm)
 
-if(SARCH STREQUAL "pc98")
-    file(MAKE_DIRECTORY ${REACTOS_BINARY_DIR}/PC98)
-    add_custom_target(pc98bootfdd
-        COMMAND native-fatten ${REACTOS_BINARY_DIR}/PC98/ReactOS-98.IMG -format 2880 ROS98BOOT -boot ${CMAKE_BINARY_DIR}/boot/freeldr/bootsect/pc98/fat12fdd.bin -add ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys FREELDR.SYS -add ${CMAKE_SOURCE_DIR}/boot/bootdata/floppy_pc98.ini FREELDR.INI
-        DEPENDS native-fatten fat12pc98 freeldr
-        VERBATIM)
-endif()
-
-if(NOT ARCH STREQUAL "arm")
-    concatenate_files(
-        ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys
-        ${CMAKE_CURRENT_BINARY_DIR}/frldr16.bin
-        ${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:freeldr_pe>)
-    add_custom_target(freeldr ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys)
-else()
-    add_custom_target(freeldr ALL DEPENDS freeldr_pe)
-endif()
+concatenate_files(
+    ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys
+    ${CMAKE_CURRENT_BINARY_DIR}/frldr16.bin
+    ${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:freeldr_pe>)
+add_custom_target(freeldr ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys)
 
 add_cd_file(TARGET freeldr FILE ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd livecd hybridcd regtest)
