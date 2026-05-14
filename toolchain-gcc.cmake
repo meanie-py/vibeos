@@ -21,8 +21,6 @@ if(NOT DEFINED MINGW_TOOLCHAIN_PREFIX)
 
     elseif(ARCH STREQUAL "amd64")
         set(MINGW_TOOLCHAIN_PREFIX "x86_64-w64-mingw32-" CACHE STRING "MinGW Toolchain Prefix")
-    elseif(ARCH STREQUAL "arm")
-        set(MINGW_TOOLCHAIN_PREFIX "arm-mingw32ce-" CACHE STRING "MinGW Toolchain Prefix")
     endif()
 endif()
 

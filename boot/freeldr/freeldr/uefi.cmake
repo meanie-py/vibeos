@@ -33,11 +33,6 @@ if(ARCH STREQUAL "i386")
 elseif(ARCH STREQUAL "amd64")
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/amd64/uefiasm.S)
-elseif(ARCH STREQUAL "arm")
-    list(APPEND UEFILDR_ARC_SOURCE
-        arch/arm/macharm.c
-        arch/arm/debug.c)
-    #TBD
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
         arch/arm64/debug.c)
@@ -115,9 +110,7 @@ if(ARCH STREQUAL "amd64")
 endif()
 
 if(MSVC)
-if(NOT ARCH STREQUAL "arm")
-    target_link_options(uefildr PRIVATE /DYNAMICBASE:NO)
-endif()
+target_link_options(uefildr PRIVATE /DYNAMICBASE:NO)
     target_link_options(uefildr PRIVATE /NXCOMPAT:NO /ignore:4078 /ignore:4254 /DRIVER)
     # We don't need hotpatching
     remove_target_compile_option(uefildr "/hotpatch")

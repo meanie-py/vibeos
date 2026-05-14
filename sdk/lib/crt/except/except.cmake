@@ -32,32 +32,6 @@ elseif(ARCH STREQUAL "amd64")
             except/amd64/cpp.s
             except/amd64/cpp_alias.s)
     endif()
-elseif(ARCH STREQUAL "arm")
-    list(APPEND LIBCNTPR_EXCEPT_SOURCE
-        except/arm/ehandler.c
-    )
-    list(APPEND LIBCNTPR_EXCEPT_ASM_SOURCE
-        except/arm/__jump_unwind.s
-        except/arm/_abnormal_termination.s
-        except/arm/_except_handler2.s
-        except/arm/_except_handler3.s
-        except/arm/_global_unwind2.s
-        except/arm/_local_unwind2.s
-        except/arm/chkstk_asm.s
-    )
-    list(APPEND CRT_EXCEPT_ASM_SOURCE
-        except/arm/_abnormal_termination.s
-        except/arm/_except_handler2.s
-        except/arm/_except_handler3.s
-        except/arm/_global_unwind2.s
-        except/arm/_local_unwind2.s
-        except/arm/chkstk_asm.s
-    )
-    if(MSVC)
-        list(APPEND CRT_EXCEPT_ASM_SOURCE
-            except/arm/cpp.s
-            except/arm/cpp_alias.s)
-    endif()
 endif()
 
 list(APPEND CRT_EXCEPT_SOURCE
@@ -69,8 +43,6 @@ if(ARCH STREQUAL "i386")
     list(APPEND CHKSTK_ASM_SOURCE except/i386/chkstk_asm.s)
 elseif(ARCH STREQUAL "amd64")
     list(APPEND CHKSTK_ASM_SOURCE except/amd64/chkstk_ms.s)
-elseif(ARCH STREQUAL "arm")
-    list(APPEND CHKSTK_ASM_SOURCE except/arm/chkstk_asm.s)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND CHKSTK_ASM_SOURCE except/arm64/chkstk_asm.s)
 endif()

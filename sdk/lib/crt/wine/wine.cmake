@@ -17,10 +17,6 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND CRT_WINE_SOURCE
         wine/except_x86_64.c
     )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND CRT_WINE_SOURCE
-        wine/except_arm.c
-    )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND CRT_WINE_SOURCE
         wine/except_arm64.c

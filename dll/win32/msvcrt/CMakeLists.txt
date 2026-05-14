@@ -79,10 +79,6 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND SHARED_SOURCE
         except_x86_64.c
     )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND SHARED_SOURCE
-        except_arm.c
-    )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND SHARED_SOURCE
         except_arm64.c

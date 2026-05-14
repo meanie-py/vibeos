@@ -71,12 +71,6 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE_CRT_TESTS
         ../crt/amd64/setjmp_helper.s
     )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND SOURCE_CRT_TESTS
-        ../crt/__rt_div.c
-        ../crt/__fto64.c
-        ../crt/__64tof.c
-    )
 endif()
 add_asm_files(crt_asm ${ASM_SOURCE_CRT_TESTS})
 

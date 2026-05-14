@@ -30,7 +30,7 @@ set(CMAKE_CXX_STANDARD 11)
 
 # check that the ARCH (target architecture) variable is defined
 if(NOT ARCH)
-    message(FATAL_ERROR "Target architecture (ARCH) is not defined. Please, choose one of: i386, amd64, arm, arm64")
+    message(FATAL_ERROR "Target architecture (ARCH) is not defined. Please, choose one of: i386, amd64, arm64")
 endif()
 # Now the ARCH variable will be in lowercase.
 # It is needed because STREQUAL comparison
@@ -40,7 +40,7 @@ endif()
 string(TOLOWER ${ARCH} ARCH)
 
 # set possible values for cmake GUI
-set_property(CACHE ARCH PROPERTY STRINGS "i386" "amd64" "arm" "arm64")
+set_property(CACHE ARCH PROPERTY STRINGS "i386" "amd64" "arm64")
 
 # Alternative WinNT-compatible architecture string
 if(ARCH STREQUAL "i386")
@@ -143,8 +143,6 @@ if(NOT CMAKE_CROSSCOMPILING)
             add_definitions(/D_X86_ /D__i386__ /DWIN32 /D_WINDOWS)
         elseif(ARCH STREQUAL "amd64")
             add_definitions(-D_AMD64_ -D__x86_64__ /DWIN32 -D_WINDOWS)
-        elseif(ARCH STREQUAL "arm")
-            add_definitions(-D__arm__)
         elseif(ARCH STREQUAL "arm64")
             add_definitions(-D__aarch64__)
         endif()
@@ -353,7 +351,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         )
     endif()
 
-    if(ARCH STREQUAL "arm")
+    if(FALSE)
         include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/arm)
     endif()
 

@@ -29,22 +29,4 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND CRT_FLOAT_ASM_SOURCE
         float/amd64/getsetfpcw.S
     )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND CRT_FLOAT_SOURCE
-        float/arm/_clearfp.c
-        float/arm/_controlfp.c
-        float/arm/_fpreset.c
-        float/arm/_statusfp.c
-    )
-    list(APPEND LIBCNTPR_FLOAT_SOURCE
-        float/arm/_controlfp.c
-    )
-    list(APPEND CRT_FLOAT_ASM_SOURCE
-        float/arm/__getfp.s
-        float/arm/__setfp.s
-    )
-    list(APPEND LIBCNTPR_FLOAT_ASM_SOURCE
-        float/arm/__getfp.s
-        float/arm/__setfp.s
-    )
 endif()

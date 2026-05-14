@@ -106,19 +106,11 @@ elseif(${ARCH} STREQUAL "amd64")
         string/strrev.c
         string/strset.c
     )
-else()
-    if(${ARCH} STREQUAL "arm64")
-        # ARM64 assembly files use ARMASM syntax which isn't compatible with Clang/GAS
-        # Use C fallbacks instead
-        list(APPEND UCRT_STRING_SOURCES
-            string/arm/strlen.c
-        )
-    else()
-        list(APPEND UCRT_STRING_SOURCES
-            string/arm/strlen.c
-        )
-    endif()
+elseif(${ARCH} STREQUAL "arm64")
+    # ARM64 assembly files use ARMASM syntax which isn't compatible with Clang/GAS
+    # Use C fallbacks instead.
     list(APPEND UCRT_STRING_SOURCES
+        string/arm64/strlen.c
         string/memccpy.c
         string/strcat.c
         string/strcmp.c

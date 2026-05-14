@@ -117,13 +117,6 @@ elseif(ARCH STREQUAL "amd64")
         amd64/stubs.c
         # mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
         )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND ASM_SOURCE arm/debug_asm.S)
-    list(APPEND SOURCE
-        arm/except.c
-        # byteswap.c — replaced by Rust implementation (sdk/lib/rust/byteswap/)
-        # mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
-        )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
         arm64/debug_asm.S)

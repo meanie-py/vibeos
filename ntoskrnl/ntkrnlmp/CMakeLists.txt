@@ -18,7 +18,7 @@ add_asm_files(ntkrnlmp_asm ${NTKRNLMP_ASM_SOURCE})
 #elseif(ARCH STREQUAL "amd64")
 #    list(APPEND NTKRNLMP_SOURCE
 #        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/mproc.c)
-#elseif(ARCH STREQUAL "arm")
+#elseif(FALSE)
 #    #TBD
 #endif()
 

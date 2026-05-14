@@ -14,8 +14,6 @@ if(MSVC)
         add_asm_files(cpprt_asm i386/cpprt.s)
     elseif(ARCH STREQUAL "amd64")
         add_asm_files(cpprt_asm amd64/cpprt.s)
-    elseif(ARCH STREQUAL "arm")
-        add_asm_files(cpprt_asm arm/cpprt.s)
     endif()
 else()
     list(APPEND SOURCE

@@ -46,12 +46,6 @@ elseif(ARCH STREQUAL "amd64")
         ${NTOS_RTL_SOURCE_DIR}/bitmap64.c
         ${NTOS_RTL_SOURCE_DIR}/byteswap.c
         ${NTOS_RTL_SOURCE_DIR}/mem.c)
-elseif(ARCH STREQUAL "arm")
-    list(APPEND ASM_SOURCE
-        ${NTOS_RTL_SOURCE_DIR}/arm/debug_asm.S)
-    list(APPEND SOURCE
-        ${NTOS_RTL_SOURCE_DIR}/byteswap.c
-        ${NTOS_RTL_SOURCE_DIR}/mem.c)
 endif()
 
 add_asm_files(blrtl_asm ${ASM_SOURCE})

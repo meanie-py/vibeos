@@ -54,14 +54,6 @@ elseif(ARCH STREQUAL "amd64")
         arch/amd64/linux.S
     )
 
-elseif(ARCH STREQUAL "arm")
-
-    list(APPEND ROSLOAD_SOURCE
-        ntldr/arch/arm/winldr.c)
-
-    list(APPEND ROSLOAD_ASM_SOURCE
-        arch/arm/boot.S)
-
 else()
     #TBD
 endif()

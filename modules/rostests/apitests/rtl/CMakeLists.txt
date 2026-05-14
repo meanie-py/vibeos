@@ -19,10 +19,6 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND SOURCE
         amd64/RtlCaptureContext.c
     )
-elseif(ARCH STREQUAL "arm")
-    list(APPEND SOURCE
-        # To be filled
-    )
 endif()
 
 add_asm_files(rtl_test_asm ${ASM_SOURCE})

@@ -268,7 +268,7 @@ add_compile_options(
     -Wno-maybe-uninitialized
 )
 
-if(ARCH STREQUAL "arm")
+if(FALSE)
     add_compile_options(-Wno-attributes)
 endif()
 
@@ -324,9 +324,6 @@ endif()
 if(ARCH STREQUAL "amd64")
     add_compile_options(-mcx16) # Generate CMPXCHG16
     add_definitions(-U_X86_ -UWIN32)
-elseif(ARCH STREQUAL "arm")
-    add_definitions(-U_UNICODE -UUNICODE)
-    add_definitions(-D__MSVCRT__) # DUBIOUS
 endif()
 
 # Fix build with GLIBCXX + our c++ headers
