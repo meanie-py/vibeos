@@ -33,7 +33,7 @@ use ntkrnl_sys::hal_ddk::{
     PCI_ADDRESS_IO_ADDRESS_MASK, PCI_ADDRESS_MEMORY_ADDRESS_MASK, PCI_ADDRESS_MEMORY_PREFETCHABLE,
     PCIConfigHandler, PCIConfigHandlerType1, PCIConfigHandlerType2,
     HalpCheckPowerButton, HalpSetupPciDeviceForDebugging, HalpReleasePciDeviceForDebugging,
-    HalpMapPhysicalMemory64, HalpUnmapVirtualAddress, HalpGetNMICrashFlag,
+    HalpGetNMICrashFlag,
     HALP_CARD_FEATURE_FULL_DECODE, HALP_CHECK_CARD_REVISION_ID, HALP_CHECK_CARD_SUBSYSTEM_ID,
     HALP_CHECK_CARD_SUBVENDOR_ID, HAL_PCI_CHIP_HACK_BROKEN_ACPI_TIMER,
     HAL_PCI_CHIP_HACK_DISABLE_ACPI_IRQ_ROUTING, HAL_PCI_CHIP_HACK_DISABLE_HIBERNATE,
@@ -54,15 +54,16 @@ use crate::x86::bushndlr::{HalpInitBusHandler, HalpNoBusData, HaliReferenceHandl
 use crate::x86::sysbus::{HalpGetSystemInterruptVector, HalpTranslateSystemBusAddress};
 use crate::x86::isabus::HalpTranslateIsaBusAddress;
 use crate::x86::cmosbus::{HalpcGetCmosData, HalpcSetCmosData};
+use crate::x86::memory::{HalpMapPhysicalMemory64Vista, HalpUnmapVirtualAddressVista};
 use crate::x86::pcr::KeGetCurrentPrcb;
 
-const TAG_HAL: u32 = u32::from_le_bytes(*b"laH ");
-const PCI_DATA_TAG: u32 = u32::from_le_bytes(*b" iCP");
+const TAG_HAL: u32 = u32::from_le_bytes(*b"Hal ");
+const PCI_DATA_TAG: u32 = u32::from_le_bytes(*b"PCI ");
 const PCI_COMMON_HDR_LENGTH: usize = 64;
 const PCI_MAX_FUNCTION: u32 = 8;
 const PAGED_POOL: i32 = 1;
 const NON_PAGED_POOL: i32 = 0;
-const NonPagedPoolMustSucceed: i32 = 0;
+const NonPagedPoolMustSucceed: i32 = 2;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
 
@@ -76,8 +77,7 @@ pub type PPCI_COMMON_CONFIG = *mut _PCI_COMMON_CONFIG;
 #[unsafe(no_mangle)]
 pub static mut HalpPciIrqMask: ULONG = 0;
 
-#[unsafe(no_mangle)]
-pub static mut WarningsGiven: [BOOLEAN; 5] = [0; 5];
+static mut WarningsGiven: [BOOLEAN; 5] = [0; 5];
 
 // PCI_CONFIGURATION_TYPE — header type bits (0=device, 1=bridge, 2=cardbus),
 // masking off the multi-function bit (0x80).
@@ -132,7 +132,7 @@ unsafe extern "system" {
 }
 
 unsafe extern "system" {
-    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: ULONG, Tag: u32) -> PVOID;
+    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: u32) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: u32);
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     fn ZwOpenKey(KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES) -> NTSTATUS;
@@ -180,12 +180,12 @@ pub unsafe extern "system" fn HalpAllocateBusHandler(
     if InterfaceType != _INTERFACE_TYPE_InterfaceTypeUndefined {
         (*Bus).BusAddresses = ExAllocatePoolWithTag(
             NonPagedPoolMustSucceed,
-            core::mem::size_of::<SUPPORTED_RANGES>() as ULONG,
-            0x0048414C,
+            core::mem::size_of::<SUPPORTED_RANGES>(),
+            TAG_HAL,
         ) as *mut SUPPORTED_RANGES;
         
         core::ptr::write_bytes(
-            (*Bus).BusAddresses,
+            (*Bus).BusAddresses as *mut u8,
             0,
             core::mem::size_of::<SUPPORTED_RANGES>(),
         );
@@ -1101,7 +1101,7 @@ pub unsafe extern "system" fn HalpInitializePciBus() {
 
     HalpGetNMICrashFlag();
 
-    ExFreePoolWithTag(PciRegistryInfo as PVOID, 0x20206C61);
+    ExFreePoolWithTag(PciRegistryInfo as PVOID, TAG_HAL);
 
     HalpMarkChipsetDecode(ExtendedAddressDecoding);
     DbgPrint(b"====== PCI BUS DETECTION COMPLETE =======\n\n\0".as_ptr());
@@ -1114,34 +1114,17 @@ pub unsafe extern "system" fn HalpInitBusHandlers() {
 
 #[no_mangle]
 pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
-    #[link(name = "ntoskrnl", kind = "raw-dylib")]
-    unsafe extern "C" {
-        static mut KdSetupPciDeviceForDebugging: Option<unsafe extern "system" fn(PVOID, ULONG) -> NTSTATUS>;
-        static mut KdReleasePciDeviceforDebugging: Option<unsafe extern "system" fn(PVOID, ULONG) -> NTSTATUS>;
-        static mut KdMapPhysicalMemory64: Option<unsafe extern "system" fn(PHYSICAL_ADDRESS, ULONG, BOOLEAN) -> PVOID>;
-        static mut KdUnmapVirtualAddress: Option<unsafe extern "system" fn(PVOID, ULONG, BOOLEAN)>;
-        static mut KdCheckPowerButton: Option<unsafe extern "system" fn() -> BOOLEAN>;
-    }
-
     unsafe {
-        KdSetupPciDeviceForDebugging = Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
-        KdReleasePciDeviceforDebugging = Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
-
-        #[cfg(not(feature = "minihal"))]
-        {
-            #[cfg(feature = "vista")]
-            {
-                KdMapPhysicalMemory64 = Some(core::mem::transmute(HalpMapPhysicalMemory64Vista as usize));
-                KdUnmapVirtualAddress = Some(core::mem::transmute(HalpUnmapVirtualAddressVista as usize));
-            }
-            #[cfg(not(feature = "vista"))]
-            {
-                KdMapPhysicalMemory64 = Some(core::mem::transmute(HalpMapPhysicalMemory64 as usize));
-                KdUnmapVirtualAddress = Some(core::mem::transmute(HalpUnmapVirtualAddress as usize));
-            }
-        }
-
-        KdCheckPowerButton = Some(core::mem::transmute(HalpCheckPowerButton as usize));
+        HalPrivateDispatchTable.KdSetupPciDeviceForDebugging =
+            Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
+        HalPrivateDispatchTable.KdReleasePciDeviceforDebugging =
+            Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
+        HalPrivateDispatchTable.KdMapPhysicalMemory64 =
+            Some(core::mem::transmute(HalpMapPhysicalMemory64Vista as usize));
+        HalPrivateDispatchTable.KdUnmapVirtualAddress =
+            Some(core::mem::transmute(HalpUnmapVirtualAddressVista as usize));
+        HalPrivateDispatchTable.KdCheckPowerButton =
+            Some(core::mem::transmute(HalpCheckPowerButton as usize));
     }
 }
 

@@ -14,13 +14,8 @@ pub mod buildtype;
 pub mod busemul;
 #[cfg(target_arch = "x86")]
 pub mod bushndlr;
-// pub mod bussupp; — compile-clean but causes i386 boot regression when
-// cohabiting with C bussupp.c via --allow-multiple-definition (linker picks
-// C side for duplicates, but something in the Rust side still gets pulled
-// in and breaks boot before debugcon emits any markers).  See bussupp.rs
-// header comment for the cleanup state (184 errors → 0); integration is the
-// remaining work — likely a static-init collision (HalpPciIrqMask /
-// WarningsGiven) or CGU-partitioning artifact.
+#[cfg(target_arch = "x86")]
+pub mod bussupp;
 #[cfg(target_arch = "x86")]
 pub mod legacy_halpnpdd;
 pub mod clock;
