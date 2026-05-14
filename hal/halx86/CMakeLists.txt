@@ -68,6 +68,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_halinit.rs

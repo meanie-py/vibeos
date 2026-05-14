@@ -18,6 +18,8 @@ pub mod bushndlr;
 pub mod bussupp;
 #[cfg(target_arch = "x86")]
 pub mod legacy_halpnpdd;
+#[cfg(target_arch = "x86")]
+pub mod pcibus;
 pub mod clock;
 pub mod cmos;
 pub mod cmosbus;

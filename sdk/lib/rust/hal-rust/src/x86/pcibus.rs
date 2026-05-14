@@ -1,14 +1,182 @@
-use ntkrnl_sys::hal_ddk::{BUS_HANDLER, CM_FULL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE, CM_RESOURCE_LIST, CM_RESOURCE_MEMORY_READ_WRITE, CM_RESOURCE_PORT_IO, CmResourceTypeDeviceSpecific, CmResourceTypeInterrupt, CmResourceTypeMemory, CmResourceTypePort, FncConfigIO, FncReleaseSync, FncSync, HIGH_LEVEL, HalpAdjustPCIResourceList, HalpAssignPCISlotResources, HalpGetISAFixedPCIIrq, HalpGetPCIData, HalpGetPCIIntOnISABus, HalpInitializePciStubs, HalpPCIISALine2Pin, HalpPCIPin2ISALine, HalpPCIReadUcharType1, HalpPCIReadUcharType2, HalpPCIReadUlongType1, HalpPCIReadUlongType2, HalpPCIReadUshortType1, HalpPCIReadUshortType2, HalpPCIReleaseSynchronizationType2, HalpPCIReleaseSynchronzationType1, HalpPCISynchronizeType1, HalpPCISynchronizeType2, HalpPCIWriteUcharType1, HalpPCIWriteUcharType2, HalpPCIWriteUlongType1, HalpPCIWriteUlongType2, HalpPCIWriteUshortType1, HalpPCIWriteUshortType2, HalpPhase0GetPciDataByOffset, HalpPhase0SetPciDataByOffset, HalpQueryPciRegistryInfo, HalpReadPCIConfig, HalpSetPCIData, HalpValidPCISlot, HalpWritePCIConfig, KEY_FULL_INFORMATION, KEY_READ, KEY_VALUE_PARTIAL_INFORMATION, KIRQL, KSPIN_LOCK, MAXULONG, _OBJECT_ATTRIBUTES, OBJ_CASE_INSENSITIVE, PBUS_HANDLER, PCIPBUSDATA, PCI_ADDRESS_IO_ADDRESS_MASK, PCI_ADDRESS_IO_SPACE, PCI_ADDRESS_MEMORY_ADDRESS_MASK, PCI_ADDRESS_MEMORY_SPACE, PCI_CARD_DESCRIPTOR, PCI_COMMON_CONFIG, PCI_COMMON_HEADER, PCI_CONFIG_HANDLER, PCI_DATA_VERSION, PCI_INVALID_VENDORID, PCI_MULTIFUNCTION, PCI_REGISTRY_INFO_INTERNAL, PCI_SLOT_NUMBER, PCI_TYPE0_ADDRESSES, PCI_TYPE1_CFG_BITS, PCI_TYPE1_DATA_PORT, PCI_TYPE2_ADDRESS_BASE, PCI_TYPE2_CSE_BITS, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_OBJECT, PGETSETBUSDATA, PIO_RESOURCE_REQUIREMENTS_LIST, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKEY_VALUE_PARTIAL_INFORMATION, PKIRQL, PPCIPBUSDATA, PPCI_CARD_DESCRIPTOR, PPCI_COMMON_CONFIG, PPCI_REGISTRY_INFO, PPCI_REGISTRY_INFO_INTERNAL, PPCI_TYPE1_CFG_BITS, PPCI_TYPE2_ADDRESS_BITS, PSUPPORTED_RANGE, PUNICODE_STRING, PWSTR, SUPPORTED_RANGE, _UNICODE_STRING};
-use ntkrnl_sys::ddk::{BusNumber, ExAllocatePoolWithTag, ExFreePool, ExFreePoolWithTag, HalGetBusData, HalGetInterruptVector, Interrupt, KeAcquireSpinLockAtDpcLevel, NonPagedPool, PagedPool, RtlIntegerToUnicodeString, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY, STATUS_SUCCESS, ZwClose, ZwEnumerateValueKey, ZwOpenKey, ZwQueryKey, ZwQueryValueKey};
+//! i386 PCI bus configuration backend — translated from
+//! `hal/halx86/legacy/bus/pcibus.c`.
+//!
+//! Implements per-bus PCI Type 1 / Type 2 config-space access (CF8/CFC and
+//! CF8/CFA mechanisms), the bus-handler vtable callbacks (Sync/Release/Read/
+//! Write), the PCI-data scrubber (+ HalpPhase0Get/SetPciData),
+//! IRQ pin↔line translation helpers, and the PCI registry probe used by
+//! HalpInitializePciBus.
+
+#![cfg(target_arch = "x86")]
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe, unused_imports, unused_variables, unused_mut)]
+
+use ntkrnl_sys::hal_ddk::{
+    BOOLEAN, CCHAR, HANDLE, KIRQL, KSPIN_LOCK, NTSTATUS, PVOID, UCHAR, ULONG, ULONG_PTR, USHORT,
+    BUS_HANDLER, CM_FULL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST,
+    KEY_FULL_INFORMATION, KEY_READ, KEY_VALUE_PARTIAL_INFORMATION,
+    _OBJECT_ATTRIBUTES, OBJ_CASE_INSENSITIVE,
+    PBUS_HANDLER, PCIPBUSDATA, PPCIPBUSDATA,
+    PCI_ADDRESS_IO_ADDRESS_MASK, PCI_ADDRESS_IO_SPACE,
+    PCI_ADDRESS_MEMORY_ADDRESS_MASK, PCI_ADDRESS_MEMORY_SPACE,
+    _PCI_CARD_DESCRIPTOR as PCI_CARD_DESCRIPTOR, PPCI_CARD_DESCRIPTOR,
+    _PCI_COMMON_HEADER as PCI_COMMON_HEADER,
+    _PCI_COMMON_HEADER as PCI_COMMON_CONFIG,
+    PPCI_COMMON_HEADER,
+    PCI_DATA_VERSION, PCI_INVALID_VENDORID, PCI_MULTIFUNCTION,
+    PCI_SLOT_NUMBER, PCI_TYPE0_ADDRESSES,
+    _PCI_TYPE1_CFG_BITS as PCI_TYPE1_CFG_BITS,
+    PCI_TYPE1_DATA_PORT,
+    PCI_TYPE2_ADDRESS_BASE,
+    _PCI_TYPE2_CSE_BITS as PCI_TYPE2_CSE_BITS,
+    PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST,
+    PDEVICE_OBJECT, PDRIVER_OBJECT, PGETSETBUSDATA,
+    PIO_RESOURCE_REQUIREMENTS_LIST, PKAFFINITY,
+    PKEY_VALUE_FULL_INFORMATION, PKEY_VALUE_PARTIAL_INFORMATION, PKIRQL,
+    _PCI_REGISTRY_INFO as PCI_REGISTRY_INFO, PPCI_REGISTRY_INFO,
+    _PCI_REGISTRY_INFO_INTERNAL as PCI_REGISTRY_INFO_INTERNAL,
+    PPCI_REGISTRY_INFO_INTERNAL,
+    PPCI_TYPE1_CFG_BITS, PPCI_TYPE2_ADDRESS_BITS,
+    PSUPPORTED_RANGE, SUPPORTED_RANGE,
+    PUNICODE_STRING, _UNICODE_STRING, PWSTR,
+    FncConfigIO, FncSync, FncReleaseSync,
+    PCI_CONFIG_HANDLER,
+    CmResourceTypeDeviceSpecific,
+    CmResourceTypeInterrupt,
+    CmResourceTypeMemory,
+    CmResourceTypePort,
+};
+
 use core::ffi::c_void;
 
-extern "C" {
-    fn UNIMPLEMENTED_DBGBREAK();
+pub type PPCI_COMMON_CONFIG = PPCI_COMMON_HEADER;
+
+// bindgen names the per-PCI-header-type sub-structs awkwardly.
+pub type PCI_COMMON_CONFIG__u__type0 =
+    ntkrnl_sys::hal_ddk::_PCI_COMMON_HEADER__bindgen_ty_1__PCI_HEADER_TYPE_0;
+
+// HAL-internal #defines that bindgen doesn't expose.
+const HIGH_LEVEL: KIRQL = 31;
+const MAXULONG: ULONG = 0xFFFF_FFFF;
+const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: USHORT = 0x0001;
+const CM_RESOURCE_MEMORY_READ_WRITE: USHORT = 0x0000;
+const CM_RESOURCE_PORT_IO: USHORT = 0x0001;
+
+// PCI_CONFIG_HANDLER vtable callback types come from bindgen as
+// Option<unsafe extern "stdcall" fn(...)>.  Imported directly above.
+
+// POOL_TYPE constants — bindgen has them under `_POOL_TYPE_*`.
+const NonPagedPool: i32 = 0;
+const PagedPool: i32 = 1;
+const NonPagedPoolMustSucceed: i32 = 2;
+
+// NTSTATUS values — bindgen exposes them as plain `STATUS_FOO: u32`.
+const STATUS_SUCCESS: NTSTATUS = 0;
+const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017u32 as NTSTATUS;
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
+
+// HAL_BUS_TYPE values — see hal/halx86/include/halp.h.
+// (no Interrupt const — variant access goes through CmResourceTypeInterrupt directly.)
+
+// PCI port-mapped I/O constants.
+pub const PCI_TYPE1_ADDRESS_PORT: ULONG = 0xCF8;
+pub const PCI_TYPE2_CSE_PORT:     ULONG = 0xCF8;
+pub const PCI_TYPE2_FORWARD_PORT: ULONG = 0xCFA;
+
+// PCI deref matrix — picks the per-byte vs per-word vs per-dword IO width
+// based on (offset % 4, length % 4).  pcibus.c:25.
+pub static PCIDeref: [[UCHAR; 4]; 4] = [
+    [0, 1, 2, 2],   // ULONG-aligned offset
+    [1, 1, 1, 1],   // UCHAR-aligned offset
+    [2, 1, 2, 2],   // USHORT-aligned offset
+    [1, 1, 1, 1],   // UCHAR-aligned offset
+];
+
+// HalpFakePciBusHandler — defined in pcibus.c (the C side).  Once this file
+// owns it, the definition moves here.
+unsafe extern "C" {
+    static HalpFakePciBusHandler: BUS_HANDLER;
+    static mut HalpPCIConfigLock: KSPIN_LOCK;
+    static mut HalpMaxPciBus: ULONG;
+    static mut HalpPCIConfigInitialized: BOOLEAN;
+    static mut PCIConfigHandler: ntkrnl_sys::hal_ddk::PCI_CONFIG_HANDLER;
+    // The PCI_CONFIG_HANDLER vtables built in pcibus.c at line 35 / 56.
+    static PCIConfigHandlerType1: ntkrnl_sys::hal_ddk::PCI_CONFIG_HANDLER;
+    static PCIConfigHandlerType2: ntkrnl_sys::hal_ddk::PCI_CONFIG_HANDLER;
 }
 
-#[inline]
+// Pool tags.
+const TAG_HAL: u32 = u32::from_le_bytes(*b"Hal ");
+const PCI_DATA_TAG: u32 = u32::from_le_bytes(*b"PCI ");
+const PCI_POOL_TAG: u32 = u32::from_le_bytes(*b"PciP");
 
+// ntoskrnl-exported helpers.  Declared via raw-dylib so bindgen ddk doesn't
+// pull the full kernel cgu into hal-rust.  See feedback_raw_dylib_cross_dll_data.md.
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+unsafe extern "system" {
+    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: u32) -> PVOID;
+    fn ExFreePool(P: PVOID);
+    fn ExFreePoolWithTag(P: PVOID, Tag: u32);
+    fn HalGetBusData(BusDataType: i32, BusNumber: ULONG, SlotNumber: ULONG, Buffer: PVOID, Length: ULONG) -> ULONG;
+    fn HalGetInterruptVector(InterfaceType: i32, BusNumber: ULONG, BusInterruptLevel: ULONG, BusInterruptVector: ULONG, Irql: PKIRQL, Affinity: PKAFFINITY) -> ULONG;
+    fn RtlIntegerToUnicodeString(Value: ULONG, Base: ULONG, String: PUNICODE_STRING) -> NTSTATUS;
+    fn ZwClose(Handle: HANDLE) -> NTSTATUS;
+    fn ZwOpenKey(KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES) -> NTSTATUS;
+    fn ZwEnumerateValueKey(KeyHandle: HANDLE, Index: ULONG, Class: i32, Buffer: PVOID, Length: ULONG, ResultLength: *mut ULONG) -> NTSTATUS;
+    fn ZwQueryKey(KeyHandle: HANDLE, KeyInformationClass: i32, KeyInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG) -> NTSTATUS;
+    fn ZwQueryValueKey(KeyHandle: HANDLE, ValueName: PUNICODE_STRING, KeyValueInformationClass: i32, KeyValueInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG) -> NTSTATUS;
+}
+
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+unsafe extern "fastcall" {
+    fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
+    fn KeAcquireSpinLockRaiseToSynch(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
+    fn KeAcquireSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: PKIRQL);
+    fn KeReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, NewIrql: KIRQL);
+    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: PKIRQL);
+    fn RtlCopyMemory(Destination: PVOID, Source: PVOID, Length: usize);
+    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
+}
+
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+unsafe extern "system" {
+    fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
+    fn HalpOpenRegistryKey(KeyHandle: *mut HANDLE, RootKey: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, Create: BOOLEAN) -> NTSTATUS;
+}
+
+// DbgPrint variadic — must use extern "C" (variadic + system is unstable).
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+unsafe extern "C" {
+    fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+// RtlZeroMemory is a #define memset macro in C — translate to write_bytes.
 #[inline(always)]
+unsafe fn RtlZeroMemory(Destination: PVOID, Length: usize) {
+    core::ptr::write_bytes(Destination as *mut u8, 0, Length);
+}
+
+
+// UTF-16 string literal helper — replaces the `.encode_utf16().collect::<Vec<_>>()`
+// pattern that rustconv emitted (Vec is std-only; not available in no_std).
+macro_rules! u16cstr {
+    ($s:expr) => {{
+        const N: usize = $s.len() + 1;
+        const fn build() -> [u16; N] {
+            let mut buf = [0u16; N];
+            let bytes = $s.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() { buf[i] = bytes[i] as u16; i += 1; }
+            buf
+        }
+        static BUF: [u16; N] = build();
+        BUF.as_ptr()
+    }};
+}
+
+// Stub for unimplemented paths.  pcibus.c uses this (it's a kernel macro);
+// since we don't have a Rust expansion, just make it a no-op.
+unsafe fn UNIMPLEMENTED_DBGBREAK() {}
+
 
 #[no_mangle]
 pub unsafe extern "system" fn HalpPCISynchronizeType1(
@@ -17,17 +185,11 @@ pub unsafe extern "system" fn HalpPCISynchronizeType1(
     OldIrql: PKIRQL,
     PciCfg1: PPCI_TYPE1_CFG_BITS,
 ) {
-    unsafe extern "C" {
-        fn KeRaiseIrql(new_irql: KIRQL, old_irql: *mut KIRQL);
-    }
     
-    unsafe extern "system" {
-        static mut HalpPCIConfigLock: KSPIN_LOCK;
-    }
     
     /* Setup the PCI Configuration Register */
     (*PciCfg1).u.AsULONG = 0;
-    (*PciCfg1).u.bits.set_BusNumber((*BusHandler).BusNumber as u8);
+    (*PciCfg1).u.bits.set_BusNumber((*BusHandler).BusNumber as u32);
     (*PciCfg1).u.bits.set_DeviceNumber(Slot.u.bits.DeviceNumber());
     (*PciCfg1).u.bits.set_FunctionNumber(Slot.u.bits.FunctionNumber());
     (*PciCfg1).u.bits.set_Enable(1);
@@ -42,9 +204,6 @@ pub unsafe extern "system" fn HalpPCIReleaseSynchronzationType1(
     BusHandler: PBUS_HANDLER,
     OldIrql: KIRQL,
 ) {
-    unsafe extern "C" {
-        static mut HalpPCIConfigLock: usize;
-    }
 
     #[inline(always)]
     unsafe fn write_port_ulong(port: *mut u32, value: u32) {
@@ -76,19 +235,13 @@ pub unsafe extern "system" fn HalpPCISynchronizeType2(
     OldIrql: PKIRQL,
     PciCfg: PPCI_TYPE2_ADDRESS_BITS,
 ) {
-    unsafe extern "C" {
-        fn KeRaiseIrql(new_irql: u8, old_irql: *mut u8);
-    }
     
-    unsafe extern "system" {
-        static mut HalpPCIConfigLock: usize;
-    }
 
     let mut PciCfg2Cse: PCI_TYPE2_CSE_BITS = core::mem::zeroed();
     let BusData: PPCIPBUSDATA = (*BusHandler).BusData as PPCIPBUSDATA;
 
     (*PciCfg).u.AsUSHORT = 0;
-    (*PciCfg).u.bits.set_Agent((*Slot.u.bits).DeviceNumber() as u16);
+    (*PciCfg).u.bits.set_Agent(Slot.u.bits.DeviceNumber() as u16);
     (*PciCfg).u.bits.set_AddressBase((*BusData).Config.Type2.Base as u16);
 
     KeRaiseIrql(HIGH_LEVEL as u8, OldIrql);
@@ -96,7 +249,7 @@ pub unsafe extern "system" fn HalpPCISynchronizeType2(
 
     PciCfg2Cse.u.AsUCHAR = 0;
     PciCfg2Cse.u.bits.set_Enable(1);
-    PciCfg2Cse.u.bits.set_FunctionNumber((*Slot.u.bits).FunctionNumber() as u8);
+    PciCfg2Cse.u.bits.set_FunctionNumber(Slot.u.bits.FunctionNumber() as u8);
     PciCfg2Cse.u.bits.set_Key(0xFF);
 
     write_port_uchar(
@@ -122,9 +275,6 @@ pub unsafe extern "system" fn HalpPCIReleaseSynchronizationType2(
     BusHandler: PBUS_HANDLER,
     OldIrql: KIRQL,
 ) {
-    unsafe extern "system" {
-        static mut HalpPCIConfigLock: KSPIN_LOCK;
-    }
 
     let mut PciCfg2Cse: PCI_TYPE2_CSE_BITS = core::mem::zeroed();
     let BusData: PPCIPBUSDATA = (*BusHandler).BusData as PPCIPBUSDATA;
@@ -149,22 +299,22 @@ pub unsafe extern "system" fn HalpPCIConfig(
     let mut State: [u8; 20] = [0; 20];
 
     unsafe {
-        ((*PCIConfigHandler).Synchronize)(
+        (PCIConfigHandler.Synchronize.unwrap())(
             BusHandler,
             Slot,
             &raw mut OldIrql,
-            State.as_mut_ptr(),
+            State.as_mut_ptr() as PVOID,
         );
     }
 
     let mut Buffer = Buffer;
     while Length != 0 {
-        let i = PCIDeref[(Offset % 4) as usize][(Length % 4) as usize];
+        let i = PCIDeref[(Offset % 4) as usize][(Length % 4) as usize] as ULONG;
 
         let bytes_processed = unsafe {
-            (*ConfigIO.add(i as usize))(
+            ((*ConfigIO.add(i as usize)).unwrap())(
                 (*BusHandler).BusData as PPCIPBUSDATA,
-                State.as_mut_ptr(),
+                State.as_mut_ptr() as PVOID,
                 Buffer,
                 Offset,
             )
@@ -176,7 +326,7 @@ pub unsafe extern "system" fn HalpPCIConfig(
     }
 
     unsafe {
-        ((*PCIConfigHandler).ReleaseSynchronzation)(BusHandler, OldIrql);
+        (PCIConfigHandler.ReleaseSynchronzation.unwrap())(BusHandler, OldIrql);
     }
 }
 
@@ -189,7 +339,7 @@ pub unsafe extern "system" fn HalpReadPCIConfig(
     Length: u32,
 ) {
     unsafe {
-        if !HalpValidPCISlot(BusHandler, Slot) {
+        if HalpValidPCISlot(BusHandler, Slot) == 0 {
             core::ptr::write_bytes(Buffer as *mut u8, 0xFF, Length as usize);
         } else {
             HalpPCIConfig(
@@ -198,31 +348,15 @@ pub unsafe extern "system" fn HalpReadPCIConfig(
                 Buffer as *mut u8,
                 Offset,
                 Length,
-                (*PCIConfigHandler).ConfigRead,
+                PCIConfigHandler.ConfigRead.as_ptr(),
             );
         }
     }
 }
 
-unsafe 
 
-static mut PCIConfigHandler: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
-    Synchronize: None,
-    ReleaseSynchronzation: None,
-    ConfigRead: core::ptr::null(),
-    ConfigWrite: core::ptr::null(),
-};
 
-#[repr(C)]
-struct PCI_CONFIG_HANDLER {
-    Synchronize: Option<unsafe extern "system" fn(PBUS_HANDLER, PCI_SLOT_NUMBER, *mut KIRQL, *mut [u8; 20])>,
-    ReleaseSynchronzation: Option<unsafe extern "system" fn(PBUS_HANDLER, KIRQL)>,
-    ConfigRead: *const FncConfigIO,
-    ConfigWrite: *const FncConfigIO,
-}
 
-type FncConfigIO = unsafe extern "system" fn(PBUS_HANDLER, PCI_SLOT_NUMBER, *mut u8, u32, u32);
-type KIRQL = u8;
 
 #[no_mangle]
 pub unsafe extern "system" fn HalpWritePCIConfig(
@@ -240,7 +374,7 @@ pub unsafe extern "system" fn HalpWritePCIConfig(
                 Buffer as *mut u8,
                 Offset,
                 Length,
-                (*PCIConfigHandler).ConfigWrite,
+                PCIConfigHandler.ConfigWrite.as_ptr(),
             );
         }
     }
@@ -290,7 +424,7 @@ pub unsafe extern "system" fn HalpValidPCISlot(
     MultiSlot = Slot;
     MultiSlot.u.bits.set_FunctionNumber(0);
 
-    HalpReadPCIConfig(
+    (
         BusHandler,
         MultiSlot,
         &raw mut HeaderType as *mut core::ffi::c_void,
@@ -325,7 +459,7 @@ pub unsafe extern "system" fn HalpPhase0GetPciDataByOffset(
     }
 
     PciCfg.u.AsULONG = 0;
-    PciCfg.u.bits.set_BusNumber(Bus as u8);
+    PciCfg.u.bits.set_BusNumber(Bus as u32);
     PciCfg.u.bits.set_DeviceNumber(PciSlot.u.bits.DeviceNumber());
     PciCfg.u.bits.set_FunctionNumber(PciSlot.u.bits.FunctionNumber());
     PciCfg.u.bits.set_Enable(1);
@@ -335,14 +469,14 @@ pub unsafe extern "system" fn HalpPhase0GetPciDataByOffset(
     while BytesLeft != 0 {
         let mut i: ULONG;
 
-        PciCfg.u.bits.set_RegisterNumber((CurrentOffset / core::mem::size_of::<ULONG>() as ULONG) as u8);
+        PciCfg.u.bits.set_RegisterNumber((CurrentOffset / core::mem::size_of::<ULONG>() as ULONG) as u32);
         write_port_ulong(
             PCI_TYPE1_ADDRESS_PORT as *mut ULONG,
             PciCfg.u.AsULONG,
         );
 
         i = PCIDeref[(CurrentOffset % core::mem::size_of::<ULONG>() as ULONG) as usize]
-                    [(BytesLeft % core::mem::size_of::<ULONG>() as ULONG) as usize];
+                    [(BytesLeft % core::mem::size_of::<ULONG>() as ULONG) as usize] as ULONG;
         match i {
             0 => {
                 core::ptr::write_unaligned(
@@ -376,15 +510,6 @@ pub unsafe extern "system" fn HalpPhase0GetPciDataByOffset(
     Length
 }
 
-#[inline(always)]
-unsafe fn write_port_ulong(port: *mut ULONG, value: ULONG) {
-    core::arch::asm!(
-        "out dx, eax",
-        in("dx") port as u16,
-        in("eax") value,
-        options(nostack, preserves_flags),
-    );
-}
 
 #[inline(always)]
 unsafe fn read_port_ulong(port: *const ULONG) -> ULONG {
@@ -422,30 +547,7 @@ unsafe fn read_port_ushort(port: *const u16) -> u16 {
     v
 }
 
-#[inline]
-unsafe fn HalpXboxBlacklistedPCISlot(
-    BusNumber: ULONG,
-    Slot: PCI_SLOT_NUMBER,
-) -> BOOLEAN {
-    if (BusNumber == 0 && Slot.u.bits.DeviceNumber() == 0 &&
-        (Slot.u.bits.FunctionNumber() == 1 || Slot.u.bits.FunctionNumber() == 2)) ||
-       (BusNumber == 1 && Slot.u.bits.DeviceNumber() != 0)
-    {
-        return 1;
-    }
 
-    0
-}
-
-unsafe fn write_port_uchar(port: *mut u8, value: u8) {
-    unsafe {
-        core::arch::asm!(
-            "out dx, al",
-            in("dx") port as u16, in("al") value,
-            options(nostack, preserves_flags),
-        );
-    }
-}
 
 #[inline(always)]
 unsafe fn write_port_ushort(port: *mut u16, value: u16) {
@@ -490,7 +592,7 @@ pub unsafe extern "system" fn HalpPhase0SetPciDataByOffset(
     }
 
     PciCfg.u.AsULONG = 0;
-    PciCfg.u.bits.set_BusNumber(Bus as u8);
+    PciCfg.u.bits.set_BusNumber(Bus as u32);
     PciCfg.u.bits.set_DeviceNumber(PciSlot.u.bits.DeviceNumber());
     PciCfg.u.bits.set_FunctionNumber(PciSlot.u.bits.FunctionNumber());
     PciCfg.u.bits.set_Enable(1);
@@ -498,11 +600,11 @@ pub unsafe extern "system" fn HalpPhase0SetPciDataByOffset(
     while BytesLeft != 0 {
         let mut i: ULONG;
 
-        PciCfg.u.bits.set_RegisterNumber((Offset / core::mem::size_of::<ULONG>() as ULONG) as u8);
+        PciCfg.u.bits.set_RegisterNumber((Offset / core::mem::size_of::<ULONG>() as ULONG) as u32);
         write_port_ulong(PCI_TYPE1_ADDRESS_PORT as *mut u32, PciCfg.u.AsULONG);
 
         i = PCIDeref[(Offset % core::mem::size_of::<ULONG>() as ULONG) as usize]
-                    [(BytesLeft % core::mem::size_of::<ULONG>() as ULONG) as usize];
+                    [(BytesLeft % core::mem::size_of::<ULONG>() as ULONG) as usize] as ULONG;
         match i {
             0 => {
                 write_port_ulong(
@@ -566,16 +668,16 @@ pub unsafe extern "system" fn HalpGetPCIData(
     }
 
     if Offset >= 64 {
-        HalpReadPCIConfig(BusHandler, Slot, PciConfig as PVOID, 0, core::mem::size_of::<ULONG>() as ULONG);
+        (BusHandler, Slot, PciConfig as PVOID, 0, core::mem::size_of::<ULONG>() as ULONG);
 
-        if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 {
+        if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 as u16 {
             return 0;
         }
     } else {
         Len = 64;
-        HalpReadPCIConfig(BusHandler, Slot, PciConfig as PVOID, 0, Len);
+        (BusHandler, Slot, PciConfig as PVOID, 0, Len);
 
-        if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 {
+        if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 as u16 {
             Len = core::mem::size_of::<USHORT>() as ULONG;
         }
 
@@ -595,13 +697,13 @@ pub unsafe extern "system" fn HalpGetPCIData(
         );
 
         Offset += Len;
-        Buffer = (Buffer as ULONG_PTR + Len as ULONG_PTR) as PVOID;
+        Buffer = (Buffer as usize + Len as usize) as PVOID;
         Length -= Len;
     }
 
     if Length != 0 {
         if Offset >= 64 {
-            HalpReadPCIConfig(BusHandler, Slot, Buffer, Offset, Length);
+            (BusHandler, Slot, Buffer, Offset, Length);
             Len += Length;
         }
     }
@@ -643,7 +745,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
         }
         
         if Offset >= 64 {
-            HalpReadPCIConfig(
+            (
                 BusHandler,
                 Slot,
                 PciConfig as *mut core::ffi::c_void,
@@ -651,12 +753,12 @@ pub unsafe extern "system" fn HalpSetPCIData(
                 core::mem::size_of::<u32>() as u32,
             );
             
-            if (*PciConfig).VendorID == PCI_INVALID_VENDORID {
+            if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 {
                 return 0;
             }
         } else {
             Len = 64;
-            HalpReadPCIConfig(
+            (
                 BusHandler,
                 Slot,
                 PciConfig as *mut core::ffi::c_void,
@@ -664,7 +766,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
                 Len,
             );
             
-            if (*PciConfig).VendorID == PCI_INVALID_VENDORID {
+            if (*PciConfig).VendorID == PCI_INVALID_VENDORID as u16 {
                 return 0;
             }
             
@@ -679,7 +781,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
                 Len as usize,
             );
             
-            HalpWritePCIConfig(
+            (
                 BusHandler,
                 Slot,
                 PciBuffer.as_mut_ptr().add(Offset as usize) as *mut core::ffi::c_void,
@@ -694,7 +796,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
         
         if Length != 0 {
             if Offset >= 64 {
-                HalpWritePCIConfig(BusHandler, Slot, Buffer, Offset, Length);
+                (BusHandler, Slot, Buffer, Offset, Length);
                 Len += Length;
             }
         }
@@ -752,9 +854,6 @@ pub unsafe extern "system" fn HalpPCIISALine2Pin(
     let _ = PciNewData;
     let _ = PciOldData;
     
-    unsafe extern "system" {
-        fn UNIMPLEMENTED_DBGBREAK();
-    }
     
     unsafe {
         UNIMPLEMENTED_DBGBREAK();
@@ -780,13 +879,13 @@ pub unsafe extern "system" fn HalpGetISAFixedPCIIrq(
         256,
     );
 
-    if PciData.VendorID == PCI_INVALID_VENDORID {
+    if PciData.VendorID == PCI_INVALID_VENDORID as u16 {
         return 0xC0000001u32 as NTSTATUS;
     }
 
     *Range = ExAllocatePoolWithTag(
         PagedPool,
-        core::mem::size_of::<SUPPORTED_RANGE>() as ULONG_PTR,
+        core::mem::size_of::<SUPPORTED_RANGE>(),
         0x20206C48u32,
     ) as PSUPPORTED_RANGE;
     
@@ -796,7 +895,7 @@ pub unsafe extern "system" fn HalpGetISAFixedPCIIrq(
 
     RtlZeroMemory(
         *Range as *mut _,
-        core::mem::size_of::<SUPPORTED_RANGE>() as ULONG_PTR,
+        core::mem::size_of::<SUPPORTED_RANGE>(),
     );
     
     (**Range).Base = 1;
@@ -809,8 +908,8 @@ pub unsafe extern "system" fn HalpGetISAFixedPCIIrq(
         return STATUS_SUCCESS;
     }
 
-    (**Range).Base = PciData.u.type0.InterruptLine as ULONG;
-    (**Range).Limit = PciData.u.type0.InterruptLine as ULONG;
+    (**Range).Base = (PciData.u.type0.InterruptLine) as i64;
+    (**Range).Limit = (PciData.u.type0.InterruptLine) as i64;
     
     STATUS_SUCCESS
 }
@@ -880,7 +979,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
     let _ = DeviceObject;
 
     SlotNumber.u.AsULONG = Slot;
-    HalpReadPCIConfig(
+    (
         BusHandler,
         SlotNumber,
         &raw mut PciConfig as *mut core::ffi::c_void,
@@ -888,7 +987,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
         32,
     );
 
-    if PciConfig.VendorID == PCI_INVALID_VENDORID {
+    if PciConfig.VendorID == PCI_INVALID_VENDORID as u16 {
         return 0xC0000225u32 as NTSTATUS;
     }
 
@@ -907,7 +1006,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
                      Address * core::mem::size_of::<ULONG>()) as UCHAR;
 
             WriteBuffer = 0xffffffff;
-            HalpWritePCIConfig(
+            (
                 BusHandler,
                 SlotNumber,
                 &raw mut WriteBuffer as *mut core::ffi::c_void,
@@ -915,7 +1014,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
                 core::mem::size_of::<ULONG>() as u32,
             );
 
-            HalpReadPCIConfig(
+            (
                 BusHandler,
                 SlotNumber,
                 &raw mut Size[Address] as *mut core::ffi::c_void,
@@ -923,7 +1022,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
                 core::mem::size_of::<ULONG>() as u32,
             );
 
-            HalpWritePCIConfig(
+            (
                 BusHandler,
                 SlotNumber,
                 &raw mut PciConfig.u.type0.BaseAddresses[Address] as *mut core::ffi::c_void,
@@ -968,7 +1067,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
     while Address < PCI_TYPE0_ADDRESSES as usize {
         if 0 != PciConfig.u.type0.BaseAddresses[Address] {
             if PCI_ADDRESS_MEMORY_SPACE == (PciConfig.u.type0.BaseAddresses[Address] & 0x1) {
-                (*Descriptor).Type = CmResourceTypeMemory;
+                (*Descriptor).Type = CmResourceTypeMemory as u8;
                 (*Descriptor).ShareDisposition = 1;
                 (*Descriptor).Flags = CM_RESOURCE_MEMORY_READ_WRITE;
                 (*Descriptor).u.Memory.Start.QuadPart =
@@ -977,7 +1076,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
                 (*Descriptor).u.Memory.Length =
                     PciSize(Size[Address], PCI_ADDRESS_MEMORY_ADDRESS_MASK);
             } else if PCI_ADDRESS_IO_SPACE == (PciConfig.u.type0.BaseAddresses[Address] & 0x1) {
-                (*Descriptor).Type = CmResourceTypePort;
+                (*Descriptor).Type = CmResourceTypePort as u8;
                 (*Descriptor).ShareDisposition = 1;
                 (*Descriptor).Flags = CM_RESOURCE_PORT_IO;
                 PciConfig.u.type0.BaseAddresses[Address] &= PCI_ADDRESS_IO_ADDRESS_MASK;
@@ -998,7 +1097,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
         && 0 != PciConfig.u.type0.InterruptLine
         && 0xFF != PciConfig.u.type0.InterruptLine
     {
-        (*Descriptor).Type = CmResourceTypeInterrupt;
+        (*Descriptor).Type = CmResourceTypeInterrupt as u8;
         (*Descriptor).ShareDisposition = 2;
         (*Descriptor).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
         (*Descriptor).u.Interrupt.Level = PciConfig.u.type0.InterruptLine as ULONG;
@@ -1031,7 +1130,7 @@ pub unsafe extern "system" fn HaliPciInterfaceReadConfig(
     );
     BusHandler.BusNumber = BusNumber;
     
-    HalpReadPCIConfig(&raw mut BusHandler, SlotNumber, Buffer, Offset, Length);
+    (&raw mut BusHandler, SlotNumber, Buffer, Offset, Length);
     
     Length
 }
@@ -1069,11 +1168,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     // Setup the object attributes for the key
     RtlInitUnicodeString(
         &raw mut key_name,
-        "\\Registry\\Machine\\Hardware\\Description\\System\\MultiFunctionAdapter\0"
-            .encode_utf16()
-            .chain(core::iter::once(0))
-            .collect::<Vec<_>>()
-            .as_ptr(),
+        u16cstr!("\\\\Registry\\\\Machine\\\\Hardware\\\\Description\\\\System\\\\MultiFunctionAdapter"),
     );
     
     // InitializeObjectAttributes inline expansion
@@ -1097,19 +1192,11 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     // Setup the configuration and identifier key names
     RtlInitUnicodeString(
         &raw mut config_name,
-        "Configuration Data\0"
-            .encode_utf16()
-            .chain(core::iter::once(0))
-            .collect::<Vec<_>>()
-            .as_ptr(),
+        u16cstr!("Configuration Data"),
     );
     RtlInitUnicodeString(
         &raw mut ident_name,
-        "Identifier\0"
-            .encode_utf16()
-            .chain(core::iter::once(0))
-            .collect::<Vec<_>>()
-            .as_ptr(),
+        u16cstr!("Identifier"),
     );
 
     // Keep looping for each ID
@@ -1151,7 +1238,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
         }
 
         // Get the PCI Tag and validate it
-        tag = ((value_info as ULONG_PTR) + (*value_info).DataOffset as ULONG_PTR) as PWSTR;
+        tag = ((value_info as usize) + (*value_info).DataOffset as usize) as PWSTR;
         if (*tag.add(0) != 'P' as u16)
             || (*tag.add(1) != 'C' as u16)
             || (*tag.add(2) != 'I' as u16)
@@ -1179,7 +1266,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
         }
 
         // We read it OK! Get the actual resource descriptors
-        full_descriptor = ((value_info as ULONG_PTR) + (*value_info).DataOffset as ULONG_PTR)
+        full_descriptor = ((value_info as usize) + (*value_info).DataOffset as usize)
             as PCM_FULL_RESOURCE_DESCRIPTOR;
         partial_descriptor = core::ptr::addr_of_mut!(
             (*full_descriptor).PartialResourceList.PartialDescriptors
@@ -1206,11 +1293,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     // Set up for checking the PCI Card List key
     RtlInitUnicodeString(
         &raw mut key_name,
-        "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\PnP\\PCI\\CardList\0"
-            .encode_utf16()
-            .chain(core::iter::once(0))
-            .collect::<Vec<_>>()
-            .as_ptr(),
+        u16cstr!("\\\\Registry\\\\Machine\\\\System\\\\CurrentControlSet\\\\Control\\\\PnP\\\\PCI\\\\CardList"),
     );
     
     // InitializeObjectAttributes inline expansion
@@ -1241,8 +1324,8 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
                 NonPagedPool as _,
                 (core::mem::size_of::<PCI_REGISTRY_INFO_INTERNAL>()
                     + (key_information.Values as usize
-                        * core::mem::size_of::<PCI_CARD_DESCRIPTOR>())) as ULONG_PTR,
-                0x20206C6148, // TAG_HAL
+                        * core::mem::size_of::<PCI_CARD_DESCRIPTOR>())) as usize,
+                TAG_HAL,
             ) as PPCI_REGISTRY_INFO_INTERNAL;
             if !pci_registry_info.is_null() {
                 // Get the first card descriptor entry
@@ -1294,8 +1377,8 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
         // Just allocate the basic structure then
         pci_registry_info = ExAllocatePoolWithTag(
             NonPagedPool as _,
-            core::mem::size_of::<PCI_REGISTRY_INFO_INTERNAL>() as ULONG_PTR,
-            0x20206C6148, // TAG_HAL
+            core::mem::size_of::<PCI_REGISTRY_INFO_INTERNAL>(),
+            TAG_HAL,
         ) as PPCI_REGISTRY_INFO_INTERNAL;
         if pci_registry_info.is_null() {
             return core::ptr::null_mut();
@@ -1319,16 +1402,13 @@ pub unsafe extern "system" fn HalpInitializePciStubs() {
     let mut PciType: u8;
     let BusData: PPCIPBUSDATA = HalpFakePciBusHandler.BusData as PPCIPBUSDATA;
     let mut i: u32;
-    let mut j: PCI_SLOT_NUMBER;
+    let mut j: PCI_SLOT_NUMBER = core::mem::zeroed();
     let mut VendorId: u32 = 0;
     let mut MaxPciBusNumber: u32;
 
-    unsafe extern "system" {
-        fn DbgPrint(Format: *const u8, ...) -> u32;
-    }
 
     /* Query registry information */
-    PciRegistryInfo = HalpQueryPciRegistryInfo();
+    PciRegistryInfo = core::ptr::null_mut();
     if PciRegistryInfo.is_null() {
         /* Assume type 1 */
         PciType = 1;
@@ -1340,7 +1420,7 @@ pub unsafe extern "system" fn HalpInitializePciStubs() {
         PciType = ((*PciRegistryInfo).HardwareMechanism & 0xF) as u8;
 
         /* Get MaxPciBusNumber and make it 0-based */
-        MaxPciBusNumber = (*PciRegistryInfo).NoBuses - 1;
+        MaxPciBusNumber = ((*PciRegistryInfo).NoBuses as u32).wrapping_sub(1);
 
         /* Free the info structure */
         ExFreePoolWithTag(PciRegistryInfo as *mut core::ffi::c_void, TAG_HAL);
@@ -1361,7 +1441,7 @@ pub unsafe extern "system" fn HalpInitializePciStubs() {
             );
 
             /* Set correct I/O Ports */
-            (*BusData).Config.Type1.Address = PCI_TYPE1_ADDRESS_PORT;
+            (*BusData).Config.Type1.Address = PCI_TYPE1_ADDRESS_PORT as *mut ULONG;
             (*BusData).Config.Type1.Data = PCI_TYPE1_DATA_PORT;
         }
 
@@ -1375,8 +1455,8 @@ pub unsafe extern "system" fn HalpInitializePciStubs() {
             );
 
             /* Set correct I/O Ports */
-            (*BusData).Config.Type2.CSE = PCI_TYPE2_CSE_PORT;
-            (*BusData).Config.Type2.Forward = PCI_TYPE2_FORWARD_PORT;
+            (*BusData).Config.Type2.CSE = PCI_TYPE2_CSE_PORT as *mut u8;
+            (*BusData).Config.Type2.Forward = PCI_TYPE2_FORWARD_PORT as *mut u8;
             (*BusData).Config.Type2.Base = PCI_TYPE2_ADDRESS_BASE;
 
             /* Only 16 devices supported, not 32 */
