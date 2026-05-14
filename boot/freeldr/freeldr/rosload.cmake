@@ -89,7 +89,8 @@ set_subsystem(rosload native)
 set_entrypoint(rosload RunLoader)
 
 if(ARCH STREQUAL "i386")
-    target_link_libraries(rosload mini_hal)
+    target_link_libraries(rosload mini_hal ${HAL_RUST_MINI_LIB})
+    add_dependencies(rosload rust_hal_mini)
 endif()
 
 target_link_libraries(rosload blcmlib blrtl libcntpr)

@@ -14,3 +14,11 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+
+[features]
+# When enabled, gates out the runtime-only paths from the i386 HAL surface
+# so the resulting libhal_rust.a is suitable for linking into mini_hal
+# (FreeLDR's loader-time HAL).  Functions that the C tree wraps in
+# `#ifndef _MINIHAL_` are `#[cfg(not(feature = "minihal"))]` in Rust.
+default = []
+minihal = []

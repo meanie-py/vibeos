@@ -202,7 +202,8 @@ add_dependencies(freeldr_common bugcodes asm xdk)
 
 ## GCC builds need this extra thing for some reason...
 if(ARCH STREQUAL "i386" AND NOT MSVC)
-    target_link_libraries(freeldr_common mini_hal)
+    target_link_libraries(freeldr_common mini_hal ${HAL_RUST_MINI_LIB})
+    add_dependencies(freeldr_common rust_hal_mini)
 endif()
 
 add_asm_files(freeldr_base_asm ${PCATLDR_BASE_ASM_SOURCE})
@@ -243,7 +244,8 @@ set_subsystem(freeldr_pe native)
 set_entrypoint(freeldr_pe RealEntryPoint)
 
 if(ARCH STREQUAL "i386")
-    target_link_libraries(freeldr_pe mini_hal)
+    target_link_libraries(freeldr_pe mini_hal ${HAL_RUST_MINI_LIB})
+    add_dependencies(freeldr_pe rust_hal_mini)
 endif()
 
 target_link_libraries(freeldr_pe freeldr_common cportlib libcntpr blrtl)

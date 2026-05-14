@@ -83,7 +83,8 @@ add_dependencies(uefifreeldr_common bugcodes asm xdk)
 
 ## GCC builds need this extra thing for some reason...
 if(ARCH STREQUAL "i386" AND NOT MSVC)
-    target_link_libraries(uefifreeldr_common mini_hal)
+    target_link_libraries(uefifreeldr_common mini_hal ${HAL_RUST_MINI_LIB})
+    add_dependencies(uefifreeldr_common rust_hal_mini)
 endif()
 
 
@@ -143,7 +144,8 @@ endif()
 set_entrypoint(uefildr EfiEntry)
 
 if(ARCH STREQUAL "i386")
-    target_link_libraries(uefildr mini_hal)
+    target_link_libraries(uefildr mini_hal ${HAL_RUST_MINI_LIB})
+    add_dependencies(uefildr rust_hal_mini)
 endif()
 
 target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr chkstk)

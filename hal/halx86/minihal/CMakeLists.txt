@@ -5,15 +5,15 @@
 add_definitions(-D_MINIHAL_)
 
 list(APPEND MINI_HAL_SOURCE
-    ../legacy/bus/bushndlr.c
-    ../legacy/bus/cmosbus.c
-    ../legacy/bus/isabus.c
+    # ../legacy/bus/bushndlr.c — Rust takeover (minihal feature)
+    # ../legacy/bus/cmosbus.c — Rust takeover (hal-rust mini feature)
+    # ../legacy/bus/isabus.c — Rust takeover
     ../legacy/bus/pcibus.c
-    ../legacy/bussupp.c
+    # ../legacy/bussupp.c — Rust takeover (minihal feature)
     # ../generic/dma.c — entire file is #ifndef _MINIHAL_; compiles to nothing
-    ../generic/drive.c
+    # ../generic/drive.c — Rust takeover
     ../generic/misc.c
-    ../generic/nmi.c
+    # ../generic/nmi.c — Rust takeover
     ../generic/spinlock.c
     ../generic/timer.c
     ../generic/usage.c
@@ -35,9 +35,9 @@ elseif(SARCH STREQUAL "pc98")
         ../pc98/reboot.c)
 else()
     list(APPEND MINI_HAL_SOURCE
-        ../generic/beep.c
+        # ../generic/beep.c — Rust takeover
         ../generic/clock.c
-        ../generic/cmos.c
+        # ../generic/cmos.c — Rust takeover
         ../generic/reboot.c)
 endif()
 

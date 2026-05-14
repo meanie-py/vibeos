@@ -98,6 +98,52 @@ add_custom_command(
 )
 add_custom_target(rust_hal DEPENDS ${HAL_RUST_LIB})
 
+# ============================================================================
+# hal-rust (minihal variant) — i386 only
+# ============================================================================
+# Built with `--features minihal` so `#[cfg(not(feature = "minihal"))]`
+# strips runtime-only paths.  Linked into FreeLDR's mini_hal in place of
+# the i386 HAL .c files (which still live in legacy.cmake / pic.cmake for
+# hal.dll's runtime build).  Uses a separate CARGO_TARGET_DIR so cargo
+# doesn't ping-pong fingerprints between the two builds.
+if(ARCH STREQUAL "i386")
+    set(HAL_RUST_MINI_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hal-mini-target")
+    set(HAL_RUST_MINI_LIB "${CMAKE_CURRENT_BINARY_DIR}/libhal_rust_mini.a")
+    add_custom_command(
+        OUTPUT ${HAL_RUST_MINI_LIB}
+        COMMAND ${CMAKE_COMMAND} -E env
+            CARGO_TARGET_DIR=${HAL_RUST_MINI_TARGET_DIR} ${HAL_RUST_EXTRA_ENV}
+            cargo build --release --target ${HAL_RUST_TARGET}
+                -p hal-rust --features minihal
+                --manifest-path ${HAL_RUST_WORKSPACE_DIR}/Cargo.toml
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${HAL_RUST_MINI_TARGET_DIR}/${HAL_RUST_TARGET}/release/libhal_rust.a
+            ${HAL_RUST_MINI_LIB}
+        DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bushndlr.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bussupp.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/clock.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmos.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmosbus.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/isabus.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/timer.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
+        WORKING_DIRECTORY ${HAL_RUST_WORKSPACE_DIR}
+        COMMENT "Building hal-rust (minihal, ${HAL_RUST_TARGET})"
+        VERBATIM
+    )
+    add_custom_target(rust_hal_mini DEPENDS ${HAL_RUST_MINI_LIB})
+endif()
+
 function(add_hal _halname)
     cmake_parse_arguments(_haldata "" "" "SOURCES;COMPONENTS" ${ARGN})
 

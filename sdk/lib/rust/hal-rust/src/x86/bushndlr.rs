@@ -429,6 +429,7 @@ pub unsafe extern "system" fn HalpContextToBusHandler(ContextValue: ULONG_PTR) -
 // allocation failure; STATUS_SUCCESS otherwise.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HaliRegisterBusHandler(
     InterfaceType: INTERFACE_TYPE,
@@ -616,6 +617,7 @@ pub unsafe extern "system" fn HaliRegisterBusHandler(
 // pcibus.c) and resolve via libhal at link time.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpInitBusHandler() {
     unsafe {

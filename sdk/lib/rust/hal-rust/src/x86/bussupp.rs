@@ -50,7 +50,9 @@ use ntkrnl_sys::hal_ddk::{
     _BUS_DATA_TYPE_ConfigurationSpaceUndefined,
 };
 
-use crate::x86::bushndlr::{HalpInitBusHandler, HalpNoBusData, HaliReferenceHandlerForConfigSpace};
+#[cfg(not(feature = "minihal"))]
+use crate::x86::bushndlr::HalpInitBusHandler;
+use crate::x86::bushndlr::{HalpNoBusData, HaliReferenceHandlerForConfigSpace};
 use crate::x86::sysbus::{HalpGetSystemInterruptVector, HalpTranslateSystemBusAddress};
 use crate::x86::isabus::HalpTranslateIsaBusAddress;
 use crate::x86::cmosbus::{HalpcGetCmosData, HalpcSetCmosData};
@@ -201,6 +203,7 @@ pub unsafe extern "system" fn HalpAllocateBusHandler(
     Bus
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
     unsafe {
@@ -265,6 +268,7 @@ pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpMarkChipsetDecode(OverrideEnable: BOOLEAN) -> NTSTATUS {
     let mut KeyString: _UNICODE_STRING = core::mem::zeroed();
@@ -351,6 +355,7 @@ pub unsafe extern "system" fn HalpMarkChipsetDecode(OverrideEnable: BOOLEAN) -> 
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpAllocateAndInitPciBusHandler(
     PciType: ULONG,
@@ -429,6 +434,7 @@ pub unsafe extern "system" fn HalpAllocateAndInitPciBusHandler(
     Bus
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpIsValidPCIDevice(
     BusHandler: PBUS_HANDLER,
@@ -480,6 +486,7 @@ pub unsafe extern "system" fn HalpIsValidPCIDevice(
     1
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetChipHacks(
     VendorId: USHORT,
@@ -589,6 +596,7 @@ pub unsafe extern "system" fn HalpGetChipHacks(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpIsRecognizedCard(
     PciRegistryInfo: PPCI_REGISTRY_INFO_INTERNAL,
@@ -685,6 +693,7 @@ pub unsafe extern "system" fn HalpIsRecognizedCard(
     0
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpIsIdeDevice(
     PciData: PPCI_COMMON_CONFIG,
@@ -736,6 +745,7 @@ pub unsafe extern "system" fn HalpIsIdeDevice(
     0
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpIsBridgeDevice(PciData: PPCI_COMMON_CONFIG) -> BOOLEAN {
     
@@ -748,6 +758,7 @@ pub unsafe extern "system" fn HalpIsBridgeDevice(PciData: PPCI_COMMON_CONFIG) ->
       (*PciData).SubClass == PCI_SUBCLASS_BR_CARDBUS as u8)) as BOOLEAN
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetPciBridgeConfig(
     PciType: ULONG,
@@ -794,6 +805,7 @@ pub unsafe extern "system" fn HalpGetPciBridgeConfig(
     0
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpFixupPciSupportedRanges(BusCount: ULONG) {
     
@@ -846,6 +858,7 @@ pub unsafe extern "system" fn HalpFixupPciSupportedRanges(BusCount: ULONG) {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn ShowSize(x: ULONG) {
     if x == 0 {
@@ -929,6 +942,7 @@ unsafe fn byte_strncpy(dst: *mut u8, src: *const u8, n: usize) {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpDebugPciDumpBus(
     BusHandler: PBUS_HANDLER,
@@ -1250,6 +1264,7 @@ pub unsafe extern "system" fn HalpDebugPciDumpBus(
 }
 
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePciBus() {
     unsafe extern "C" {
@@ -1468,11 +1483,13 @@ pub unsafe extern "system" fn HalpInitializePciBus() {
     DbgPrint(b"====== PCI BUS DETECTION COMPLETE =======\n\n\0".as_ptr());
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitBusHandlers() {
     HalpRegisterInternalBusHandlers();
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     unsafe {
@@ -1489,6 +1506,7 @@ pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpAssignSlotResources(
     RegistryPath: PUNICODE_STRING,
@@ -1527,6 +1545,7 @@ pub unsafe extern "system" fn HalpAssignSlotResources(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HaliFindBusAddressTranslation(
     BusAddress: PHYSICAL_ADDRESS,
@@ -1614,6 +1633,7 @@ pub unsafe extern "system" fn HaliFindBusAddressTranslation(
     return 1;
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HaliTranslateBusAddress(
     InterfaceType: INTERFACE_TYPE,
@@ -1644,6 +1664,7 @@ pub unsafe extern "system" fn HaliTranslateBusAddress(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalAdjustResourceList(
     ResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
@@ -1669,6 +1690,7 @@ pub unsafe extern "system" fn HalAdjustResourceList(
     status as NTSTATUS
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalAssignSlotResources(
     RegistryPath: PUNICODE_STRING,
@@ -1707,6 +1729,7 @@ pub unsafe extern "system" fn HalAssignSlotResources(
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalGetBusData(
     BusDataType: BUS_DATA_TYPE,
@@ -1727,6 +1750,7 @@ pub unsafe extern "system" fn HalGetBusData(
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalGetBusDataByOffset(
     BusDataType: BUS_DATA_TYPE,
@@ -1756,6 +1780,7 @@ pub unsafe extern "system" fn HalGetBusDataByOffset(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalGetInterruptVector(
     InterfaceType: INTERFACE_TYPE,
@@ -1790,6 +1815,7 @@ pub unsafe extern "system" fn HalGetInterruptVector(
     Vector
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalSetBusData(
     BusDataType: BUS_DATA_TYPE,
@@ -1808,6 +1834,7 @@ pub unsafe extern "system" fn HalSetBusData(
     )
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalSetBusDataByOffset(
     BusDataType: BUS_DATA_TYPE,
@@ -1840,6 +1867,7 @@ pub unsafe extern "system" fn HalSetBusDataByOffset(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalTranslateBusAddress(
     InterfaceType: INTERFACE_TYPE,
