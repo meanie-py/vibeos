@@ -64,11 +64,7 @@ VOID MachVideoGetFontsFromFirmware(PULONG RomFontPointers)
 ULONG
 MachGetBootSectorLoadAddress(IN UCHAR DriveNumber)
 {
-#if defined(SARCH_PC98)
-    return Pc98GetBootSectorLoadAddress(DriveNumber);
-#else
     return 0x7C00;
-#endif
 }
 
 /* EOF */

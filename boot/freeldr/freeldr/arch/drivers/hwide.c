@@ -24,13 +24,7 @@ DBG_DEFAULT_CHANNEL(DISK);
 /** IDE Channels base - Primary, Secondary, Tertiary, Quaternary */
 static const IDE_REG AtapChannelBaseArray[] =
 {
-#if defined(SARCH_PC98)
-    0x640
-#elif defined(SARCH_XBOX)
-    0x1F0
-#else
     0x1F0, 0x170, 0x1E8, 0x168
-#endif
 };
 #define CHANNEL_MAX_CHANNELS    RTL_NUMBER_OF(AtapChannelBaseArray)
 
@@ -44,10 +38,6 @@ AtapSelectDevice(
     _In_ PIDE_REGISTERS Registers,
     _In_range_(0, 3) UCHAR DeviceNumber)
 {
-#if defined(SARCH_PC98)
-    /* Select the primary (0) or secondary (1) IDE channel */
-    ATA_WRITE(0x432, DeviceNumber >> 1);
-#endif
 
     ATA_WRITE(Registers->Device, (DEV_SLAVE(DeviceNumber) << 4) | IDE_DRIVE_SELECT);
     ATA_IO_WAIT();
@@ -1200,18 +1190,9 @@ AtapIdentifyChannel(
     const IDE_REG IoBase = AtapChannelBaseArray[ChannelNumber];
     ULONG Spare;
 
-#if defined(SARCH_PC98)
-    if (ATA_READ(0x432) == 0xFF)
-        return FALSE;
-#endif
 
-#if defined(SARCH_PC98)
-    Spare = 2;
-    Registers->Control     = 0x74C;
-#else
     Spare = 1;
     Registers->Control     = IoBase + 0x206;
-#endif
     Registers->Data        = IoBase + 0 * Spare;
     Registers->Error       = IoBase + 1 * Spare;
     Registers->SectorCount = IoBase + 2 * Spare;

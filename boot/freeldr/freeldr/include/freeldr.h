@@ -115,14 +115,7 @@
 #include <arch/i386/drivemap.h>
 #endif
 #if defined(_M_IX86)
-#if defined(SARCH_PC98)
-#include <arch/i386/machpc98.h>
-#elif defined(SARCH_XBOX)
 #include <arch/pc/machpc.h>
-#include <arch/i386/machxbox.h>
-#else
-#include <arch/pc/machpc.h>
-#endif
 #include <arch/i386/i386.h>
 #elif defined(_M_AMD64)
 #include <arch/pc/machpc.h>

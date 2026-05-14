@@ -7,11 +7,7 @@
 
 #include <freeldr.h>
 
-#if defined(SARCH_XBOX)
-#define CLOCK_TICK_RATE 1125000
-#else
 #define CLOCK_TICK_RATE 1193182
-#endif
 
 static VOID
 Sound(USHORT Frequency)

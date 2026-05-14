@@ -21,18 +21,10 @@
 
 #define NVNET_TAG 'ENVN'
 
-#if defined(SARCH_XBOX)
-/* Reduce memory requirements on OG Xbox */
-#define NVNET_TRANSMIT_BLOCKS        8
-#define NVNET_TRANSMIT_DESCRIPTORS   32
-#define NVNET_TRANSMIT_BUFFERS       1
-#define NVNET_RECEIVE_DESCRIPTORS    16
-#else
 #define NVNET_TRANSMIT_BLOCKS        64
 #define NVNET_TRANSMIT_DESCRIPTORS   512
 #define NVNET_TRANSMIT_BUFFERS       16
 #define NVNET_RECEIVE_DESCRIPTORS    512
-#endif
 
 #define NVNET_ALIGNMENT    64
 
@@ -43,17 +35,9 @@
 #define NVNET_IM_THRESHOLD    4
 #define NVNET_IM_MAX_IDLE     40
 
-#if defined(SARCH_XBOX)
-#define NVNET_TRANSMIT_HANG_THRESHOLD    3
-#else
 #define NVNET_TRANSMIT_HANG_THRESHOLD    5
-#endif
 
-#if defined(SARCH_XBOX)
-#define NVNET_FRAGMENTATION_THRESHOLD    8
-#else
 #define NVNET_FRAGMENTATION_THRESHOLD    32
-#endif
 
 #define NVNET_MEDIA_DETECTION_INTERVAL   5000
 

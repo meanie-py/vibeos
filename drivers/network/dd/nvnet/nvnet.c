@@ -139,11 +139,6 @@ MiniportCheckForHang(
         {
             NDIS_DbgPrint(MAX_TRACE, ("Transmit timeout!\n"));
 
-#if defined(SARCH_XBOX)
-            /* Apply a HACK to make XQEMU happy... */
-            NvNetDisableInterrupts(Adapter);
-            NvNetApplyInterruptMask(Adapter);
-#endif
 
             Adapter->Send.StuckCount = 0;
         }

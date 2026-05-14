@@ -1089,12 +1089,7 @@ InitializeSetup(
     // FIXME: This should be determined at runtime!!
     // FIXME: Allow for (pre-)installing on an architecture
     //        different from the current one?
-#if defined(SARCH_XBOX)
-    pSetupData->ArchType = ARCH_Xbox;
-// #elif defined(SARCH_PC98)
-#else // TODO: Arc, UEFI
     pSetupData->ArchType = (IsNEC_98 ? ARCH_NEC98x86 : ARCH_PcAT);
-#endif
 
     return ERROR_SUCCESS;
 }

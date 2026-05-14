@@ -851,15 +851,6 @@ MiniportInitialize(
     NV_WRITE(Adapter, NvRegIrqStatus, NVREG_IRQSTAT_MASK);
 
 /* FIXME: Bug in the PIC HAL? */
-#if defined(SARCH_XBOX)
-    Status = NdisMRegisterInterrupt(&Adapter->Interrupt,
-                                    Adapter->AdapterHandle,
-                                    Adapter->InterruptVector,
-                                    Adapter->InterruptLevel,
-                                    TRUE, /* Request ISR calls */
-                                    FALSE,
-                                    NdisInterruptLatched);
-#else
     Status = NdisMRegisterInterrupt(&Adapter->Interrupt,
                                     Adapter->AdapterHandle,
                                     Adapter->InterruptVector,
@@ -867,7 +858,6 @@ MiniportInitialize(
                                     TRUE, /* Request ISR calls */
                                     TRUE, /* Shared */
                                     NdisInterruptLevelSensitive);
-#endif
     if (Status != NDIS_STATUS_SUCCESS)
     {
         NvNetLogError(Adapter, NDIS_ERROR_CODE_INTERRUPT_CONNECT);

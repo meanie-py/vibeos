@@ -336,9 +336,6 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     UNICODE_STRING KeyName;
 
     /* Set the alternative system architecture information */
-#if defined(SARCH_PC98)
-    SharedUserData->AlternativeArchitecture = NEC98x86;
-#endif
 
     /* Setup the key name */
     RtlInitUnicodeString(&KeyName,
