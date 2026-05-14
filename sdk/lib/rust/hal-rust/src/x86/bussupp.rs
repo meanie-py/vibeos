@@ -871,6 +871,64 @@ pub unsafe extern "system" fn ShowSize(x: ULONG) {
     }
 }
 
+// PCI vendor/class name tables emitted by hal/halx86/{pci_classes,pci_vendors}.c
+// (generated from the .ids data files; INITDATA segment, NUL-terminated).
+unsafe extern "C" {
+    static ClassTable: [u8; 0];
+    static VendorTable: [u8; 0];
+}
+
+/// `strlen` for a NUL-terminated byte string.
+unsafe fn byte_strlen(s: *const u8) -> usize {
+    let mut n = 0;
+    while *s.add(n) != 0 {
+        n += 1;
+    }
+    n
+}
+
+/// `strstr(hay, needle)` — both NUL-terminated. Returns NULL if not found.
+unsafe fn byte_strstr(hay: *const u8, needle: *const u8) -> *const u8 {
+    let nlen = byte_strlen(needle);
+    if nlen == 0 {
+        return hay;
+    }
+    let mut p = hay;
+    loop {
+        if *p == 0 {
+            return core::ptr::null();
+        }
+        let mut k = 0;
+        while k < nlen && *p.add(k) != 0 && *p.add(k) == *needle.add(k) {
+            k += 1;
+        }
+        if k == nlen {
+            return p;
+        }
+        p = p.add(1);
+    }
+}
+
+/// `strpbrk(s, "\n")` — returns pointer to first '\n' in s, or NULL.
+/// bussupp.c only ever uses strpbrk against the single-char NEWLINE "\n".
+unsafe fn byte_find_newline(s: *const u8) -> *const u8 {
+    let mut p = s;
+    while *p != 0 {
+        if *p == b'\n' {
+            return p;
+        }
+        p = p.add(1);
+    }
+    core::ptr::null()
+}
+
+/// `strncpy(dst, src, n)` then NUL-terminate at position n.
+unsafe fn byte_strncpy(dst: *mut u8, src: *const u8, n: usize) {
+    for i in 0..n {
+        *dst.add(i) = *src.add(i);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn HalpDebugPciDumpBus(
     BusHandler: PBUS_HANDLER,
@@ -880,12 +938,315 @@ pub unsafe extern "system" fn HalpDebugPciDumpBus(
     k: ULONG,
     PciData: PPCI_COMMON_CONFIG,
 ) {
-    let _ = (BusHandler, PciSlot, i, j, k, PciData);
-    // HalpDebugPciDumpBus is verbose PCI debug output (DbgPrint + sprintf for
-    // vendor/product names from string tables).  Stubbed during rustconv
-    // cleanup — the C version was already heavily wrapped in DPRINT macros
-    // that are no-ops in release.  TODO: restore full body when sprintf
-    // variadic args can be cleanly cast.
+    unsafe extern "C" {
+        fn DbgPrint(Format: *const u8, ...) -> ULONG;
+        fn sprintf(Buffer: *mut u8, Format: *const u8, ...) -> i32;
+    }
+    unsafe extern "system" {
+        fn HalpReadPCIConfig(
+            BusHandler: PBUS_HANDLER,
+            Slot: PCI_SLOT_NUMBER,
+            Buffer: PVOID,
+            Offset: ULONG,
+            Length: ULONG,
+        );
+        fn HalpWritePCIConfig(
+            BusHandler: PBUS_HANDLER,
+            Slot: PCI_SLOT_NUMBER,
+            Buffer: PVOID,
+            Offset: ULONG,
+            Length: ULONG,
+        );
+    }
+
+    let header_type = ((*PciData).HeaderType & !(PCI_MULTIFUNCTION as u8)) as u8;
+
+    let mut lookup: [u8; 16] = [0; 16];
+    let mut b_subclass: [u8; 64] = *b"Unknown\0                                                        ";
+    let mut b_vendor: [u8; 64] = [0; 64];
+    let mut b_product: [u8; 128] = *b"Unknown device\0                                                                                                                 ";
+    let mut b_subvendor: [u8; 128] = *b"Unknown\0                                                                                                                        ";
+
+    let class_table = (&raw const ClassTable) as *const u8;
+    let vendor_table = (&raw const VendorTable) as *const u8;
+
+    // --- Isolate the class/subclass name ---
+    sprintf(
+        lookup.as_mut_ptr(),
+        b"C %02x  \0".as_ptr(),
+        (*PciData).BaseClass as i32,
+    );
+    let class_name = byte_strstr(class_table, lookup.as_ptr());
+    if !class_name.is_null() {
+        // Walk past "C 00  " (6 bytes) to the line content.
+        let class_name = class_name.add(b"C 00  ".len());
+        let boundary = byte_strstr(class_name, b"\nC \0".as_ptr());
+        sprintf(
+            lookup.as_mut_ptr(),
+            b"\n\t%02x  \0".as_ptr(),
+            (*PciData).SubClass as i32,
+        );
+        let mut subclass_name = byte_strstr(class_name, lookup.as_ptr());
+        if !boundary.is_null() && !subclass_name.is_null() && subclass_name >= boundary {
+            subclass_name = core::ptr::null();
+        }
+        let subclass_name = if subclass_name.is_null() {
+            class_name
+        } else {
+            subclass_name.add(b"\n\t00  ".len())
+        };
+        let p = byte_find_newline(subclass_name);
+        if !p.is_null() {
+            let mut len = p as usize - subclass_name as usize;
+            if len > b_subclass.len() - 1 {
+                len = b_subclass.len() - 1;
+            }
+            byte_strncpy(b_subclass.as_mut_ptr(), subclass_name, len);
+            b_subclass[len] = 0;
+        }
+    }
+
+    // --- Isolate the vendor / product / subvendor names ---
+    sprintf(
+        lookup.as_mut_ptr(),
+        b"\n%04x  \0".as_ptr(),
+        (*PciData).VendorID as i32,
+    );
+    let vendor_name = byte_strstr(vendor_table, lookup.as_ptr());
+    if !vendor_name.is_null() {
+        let vendor_name = vendor_name.add(b"\n0000  ".len());
+        let p = byte_find_newline(vendor_name);
+        if !p.is_null() {
+            let mut len = p as usize - vendor_name as usize;
+            if len > b_vendor.len() - 1 {
+                len = b_vendor.len() - 1;
+            }
+            byte_strncpy(b_vendor.as_mut_ptr(), vendor_name, len);
+            b_vendor[len] = 0;
+        }
+        // Walk past device comments ('\t' or '#' lines) to find boundary
+        // (next vendor block).
+        let mut p = if p.is_null() { core::ptr::null() } else { p.add(1) };
+        while !p.is_null() && (*p == b'\t' || *p == b'#') {
+            p = byte_find_newline(p);
+            if !p.is_null() {
+                p = p.add(1);
+            }
+        }
+        let boundary = p;
+
+        // --- Product name lookup ---
+        sprintf(
+            lookup.as_mut_ptr(),
+            b"\t%04x  \0".as_ptr(),
+            (*PciData).DeviceID as i32,
+        );
+        let mut product_name = byte_strstr(vendor_name, lookup.as_ptr());
+        if !boundary.is_null() && !product_name.is_null() && product_name >= boundary {
+            product_name = core::ptr::null();
+        }
+        if !product_name.is_null() {
+            let product_name = product_name.add(b"\t0000  ".len());
+            let p = byte_find_newline(product_name);
+            if !p.is_null() {
+                let mut len = p as usize - product_name as usize;
+                if len > b_product.len() - 1 {
+                    len = b_product.len() - 1;
+                }
+                byte_strncpy(b_product.as_mut_ptr(), product_name, len);
+                b_product[len] = 0;
+            }
+            // Skip over subsystem lines that aren't ours.
+            let mut p = if p.is_null() { core::ptr::null() } else { p.add(1) };
+            while !p.is_null() && ((*p == b'\t' && *p.add(1) == b'\t') || *p == b'#') {
+                p = byte_find_newline(p);
+                if !p.is_null() {
+                    p = p.add(1);
+                }
+            }
+            let inner_boundary = p;
+
+            // --- Subvendor / subsystem name (PCI type-0 devices only) ---
+            if header_type == PCI_DEVICE_TYPE as u8 {
+                sprintf(
+                    lookup.as_mut_ptr(),
+                    b"\t\t%04x %04x  \0".as_ptr(),
+                    (*PciData).u.type0.SubVendorID as i32,
+                    (*PciData).u.type0.SubSystemID as i32,
+                );
+                let mut subvendor_name = byte_strstr(product_name, lookup.as_ptr());
+                if !inner_boundary.is_null()
+                    && !subvendor_name.is_null()
+                    && subvendor_name >= inner_boundary
+                {
+                    subvendor_name = core::ptr::null();
+                }
+                if !subvendor_name.is_null() {
+                    let subvendor_name = subvendor_name.add(b"\t\t0000 0000  ".len());
+                    let p = byte_find_newline(subvendor_name);
+                    if !p.is_null() {
+                        let mut len = p as usize - subvendor_name as usize;
+                        if len > b_subvendor.len() - 1 {
+                            len = b_subvendor.len() - 1;
+                        }
+                        byte_strncpy(b_subvendor.as_mut_ptr(), subvendor_name, len);
+                        b_subvendor[len] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Print out the data ---
+    DbgPrint(
+        b"%02x:%02x.%x %s [%02x%02x]: %s %s [%04x:%04x] (rev %02x)\n\0".as_ptr(),
+        i,
+        j,
+        k,
+        b_subclass.as_ptr(),
+        (*PciData).BaseClass as i32,
+        (*PciData).SubClass as i32,
+        b_vendor.as_ptr(),
+        b_product.as_ptr(),
+        (*PciData).VendorID as i32,
+        (*PciData).DeviceID as i32,
+        (*PciData).RevisionID as i32,
+    );
+
+    if header_type == PCI_DEVICE_TYPE as u8 {
+        DbgPrint(
+            b"\tSubsystem: %s [%04x:%04x]\n\0".as_ptr(),
+            b_subvendor.as_ptr(),
+            (*PciData).u.type0.SubVendorID as i32,
+            (*PciData).u.type0.SubSystemID as i32,
+        );
+    }
+
+    // --- Flags ---
+    DbgPrint(b"\tFlags:\0".as_ptr());
+    if (*PciData).Command as u32 & PCI_ENABLE_BUS_MASTER != 0 {
+        DbgPrint(b" bus master,\0".as_ptr());
+    }
+    if (*PciData).Status as u32 & PCI_STATUS_66MHZ_CAPABLE != 0 {
+        DbgPrint(b" 66MHz,\0".as_ptr());
+    }
+    match (*PciData).Status as u32 & PCI_STATUS_DEVSEL {
+        0x000 => { DbgPrint(b" fast devsel,\0".as_ptr()); }
+        0x200 => { DbgPrint(b" medium devsel,\0".as_ptr()); }
+        0x400 => { DbgPrint(b" slow devsel,\0".as_ptr()); }
+        0x600 => { DbgPrint(b" unknown devsel,\0".as_ptr()); }
+        _ => {}
+    }
+    DbgPrint(b" latency %d\0".as_ptr(), (*PciData).LatencyTimer as i32);
+    if (*PciData).u.type0.InterruptPin != 0
+        && (*PciData).u.type0.InterruptLine != 0
+        && (*PciData).u.type0.InterruptLine != 0xFF
+    {
+        DbgPrint(b", IRQ %02d\0".as_ptr(), (*PciData).u.type0.InterruptLine as i32);
+    } else if (*PciData).u.type0.InterruptPin != 0 {
+        DbgPrint(b", IRQ assignment required\0".as_ptr());
+    }
+    DbgPrint(b"\n\0".as_ptr());
+
+    if header_type == PCI_BRIDGE_TYPE as u8 {
+        DbgPrint(b"\tBridge:\0".as_ptr());
+        DbgPrint(
+            b" primary bus %d,\0".as_ptr(),
+            (*PciData).u.type1.PrimaryBus as i32,
+        );
+        DbgPrint(
+            b" secondary bus %d,\0".as_ptr(),
+            (*PciData).u.type1.SecondaryBus as i32,
+        );
+        DbgPrint(
+            b" subordinate bus %d,\0".as_ptr(),
+            (*PciData).u.type1.SubordinateBus as i32,
+        );
+        DbgPrint(
+            b" secondary latency %d\0".as_ptr(),
+            (*PciData).u.type1.SecondaryLatency as i32,
+        );
+        DbgPrint(b"\n\0".as_ptr());
+    }
+
+    // --- Scan addresses (BARs) ---
+    let bar_count: u32 = if header_type == PCI_DEVICE_TYPE as u8 {
+        PCI_TYPE0_ADDRESSES
+    } else {
+        PCI_TYPE1_ADDRESSES
+    };
+    // Field offset of u.type0.BaseAddresses[0] within PCI_COMMON_HEADER.
+    let bar_field_offset =
+        core::mem::offset_of!(_PCI_COMMON_CONFIG, u) + core::mem::offset_of!(PCI_COMMON_HEADER__u__type0, BaseAddresses);
+
+    for b in 0..bar_count {
+        let mut mem: ULONG = if header_type != PCI_CARDBUS_BRIDGE_TYPE as u8 {
+            (*PciData).u.type0.BaseAddresses[b as usize]
+        } else {
+            0
+        };
+        if mem != 0 {
+            let mut pci_bar: ULONG = 0xFFFFFFFF;
+            let off = (bar_field_offset + (b as usize) * core::mem::size_of::<ULONG>()) as ULONG;
+            HalpWritePCIConfig(
+                BusHandler,
+                PciSlot,
+                &raw mut pci_bar as PVOID,
+                off,
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
+            HalpReadPCIConfig(
+                BusHandler,
+                PciSlot,
+                &raw mut pci_bar as PVOID,
+                off,
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
+            HalpWritePCIConfig(
+                BusHandler,
+                PciSlot,
+                &raw mut mem as PVOID,
+                off,
+                core::mem::size_of::<ULONG>() as ULONG,
+            );
+
+            // Decode the address type
+            if pci_bar & PCI_ADDRESS_IO_SPACE != 0 {
+                let mut size: ULONG = 1 << 2;
+                while pci_bar & size == 0 && size != 0 {
+                    size <<= 1;
+                }
+                DbgPrint(
+                    b"\tI/O ports at %04lx\0".as_ptr(),
+                    mem & PCI_ADDRESS_IO_ADDRESS_MASK,
+                );
+                ShowSize(size);
+            } else {
+                let mut size: ULONG = 1 << 4;
+                while pci_bar & size == 0 && size != 0 {
+                    size <<= 1;
+                }
+                let prefetch: *const u8 = if mem & PCI_ADDRESS_MEMORY_PREFETCHABLE != 0 {
+                    b"\0".as_ptr()
+                } else {
+                    b"non-\0".as_ptr()
+                };
+                let bits: i32 = if mem & PCI_ADDRESS_MEMORY_TYPE_MASK == PCI_TYPE_32BIT as ULONG {
+                    32
+                } else {
+                    64
+                };
+                DbgPrint(
+                    b"\tMemory at %08lx (%d-bit, %sprefetchable)\0".as_ptr(),
+                    mem & PCI_ADDRESS_MEMORY_ADDRESS_MASK,
+                    bits,
+                    prefetch,
+                );
+                ShowSize(size);
+            }
+            DbgPrint(b"\n\0".as_ptr());
+        }
+    }
 }
 
 
