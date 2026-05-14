@@ -1,17 +1,122 @@
-use ntkrnl_sys::hal_ddk::{APC_LEVEL, CLOCK2_LEVEL, DISPATCH_LEVEL, EFLAGS_INTERRUPT_MASK, EFLAGS_V86_MASK, EISA_ELCR, EISA_ELCR_MASTER, EISA_ELCR_SLAVE, HIGH_LEVEL, HalpApcInterrupt, HalpApcInterrupt2ndEntry, HalpDismissIrq07, HalpDismissIrq07Level, HalpDismissIrq13, HalpDismissIrq13Level, HalpDismissIrq15, HalpDismissIrq15Level, HalpDismissIrqGeneric, HalpDismissIrqLevel, HalpDispatchInterrupt, HalpDispatchInterrupt2, HalpDispatchInterrupt2ndEntry, HalpGetRootInterruptVector, HalpHardwareInterruptLevel, HalpInitializeLegacyPICs, HalpInitializePICs, HalpIrqToVector, HalpRegisterVector, HalpVectorToIrq, HalpVectorToIrql, I8259_ISR, I8259_OCW2, I8259_OCW3, IDT_INTERNAL, InterruptMode, KGDT_R0_CODE, KIRQL, 0i32, PASSIVE_LEVEL, PHAL_DISMISS_INTERRUPT, PHAL_SW_INTERRUPT_HANDLER, PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY, PIC1_CONTROL_PORT, PIC1_DATA_PORT, PIC2_CONTROL_PORT, PIC2_DATA_PORT, PIC_CASCADE_IRQ, PIC_MASK, PIC_TIMER_IRQ, PKAFFINITY, PKIRQL, PKPCR, PKTRAP_FRAME, PRIMARY_VECTOR_BASE, PROFILE_LEVEL, SYNCH_LEVEL, 1i32};
-use ntkrnl_sys::ddk::{KeBugCheck, KeBugCheckEx, KiDeliverApc, KiDispatchInterrupt, KiEnterInterruptTrap, KiEoiHelper, KiUnexpectedInterrupt, KiUserTrap};
+//! i386 8259 PIC backend — translated from `hal/halx86/pic/pic.c`.
+//!
+//! Implements IRQL primitives (KeGetCurrentIrql / KfRaiseIrql / KfLowerIrql)
+//! plus PIC initialization, software-interrupt request/clear/dispatch, and
+//! the per-IRQ Dismiss handlers used by the trap stubs in `pic.S`.
+
+#![cfg(target_arch = "x86")]
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe, unused_imports, unused_variables, unused_mut)]
+
+use ntkrnl_sys::hal_ddk::{
+    BOOLEAN, KAFFINITY, KIRQL, PVOID, UCHAR, ULONG, USHORT,
+    PKAFFINITY, PKIRQL, PKPCR, PKTRAP_FRAME,
+    EISA_ELCR, I8259_ISR, I8259_OCW2, I8259_OCW3, PIC_MASK,
+    PHAL_DISMISS_INTERRUPT, PHAL_SW_INTERRUPT_HANDLER, PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY,
+    _KINTERRUPT_MODE as KINTERRUPT_MODE,
+    _KINTERRUPT_MODE_Latched, _KINTERRUPT_MODE_LevelSensitive,
+};
+use ntkrnl_sys::ddk::{KeBugCheck, KeBugCheckEx, KiDeliverApc, KiDispatchInterrupt, KiEnterInterruptTrap, KiEoiHelper, KiUserTrap};
 use core::ffi::c_void;
 
-#[inline(always)]
+// IRQL levels (from sdk/include/ndk/ketypes.h, FORCEINLINE in irql.h).
+// These are #defines in C — bindgen doesn't expose them.
+pub const PASSIVE_LEVEL: KIRQL  = 0;
+pub const APC_LEVEL: KIRQL      = 1;
+pub const DISPATCH_LEVEL: KIRQL = 2;
+pub const CMCI_LEVEL: KIRQL     = 5;
+pub const CLOCK1_LEVEL: KIRQL   = 28;
+pub const CLOCK2_LEVEL: KIRQL   = 28;
+pub const IPI_LEVEL: KIRQL      = 29;
+pub const POWER_LEVEL: KIRQL    = 30;
+pub const PROFILE_LEVEL: KIRQL  = 27;
+pub const SYNCH_LEVEL: KIRQL    = DISPATCH_LEVEL;
+pub const HIGH_LEVEL: KIRQL     = 31;
+
+// EFLAGS bits.
+const EFLAGS_INTERRUPT_MASK: ULONG = 0x200;
+const EFLAGS_V86_MASK: ULONG       = 0x20000;
+
+// 8259 PIC port-mapped I/O.
+const PIC1_CONTROL_PORT: USHORT = 0x20;
+const PIC1_DATA_PORT:    USHORT = 0x21;
+const PIC2_CONTROL_PORT: USHORT = 0xA0;
+const PIC2_DATA_PORT:    USHORT = 0xA1;
+const EISA_ELCR_MASTER:  USHORT = 0x4D0;
+const EISA_ELCR_SLAVE:   USHORT = 0x4D1;
+
+// IRQ wiring constants.
+const PIC_TIMER_IRQ:   ULONG = 0;
+const PIC_CASCADE_IRQ: ULONG = 2;
+const PRIMARY_VECTOR_BASE: ULONG = 0x30;
+
+// IDT_INTERNAL is one of the InterruptType constants from KE — bindgen-side
+// it lives as _KINTERRUPT_TYPE_; the C header defines IDT_INTERNAL=2.
+const IDT_INTERNAL: ULONG = 2;
+// _KGDT_R0_CODE selector value (0x08).
+const KGDT_R0_CODE: USHORT = 0x08;
+
+// I8259_READ_REQUEST enum values from halhw.h.
+const ReadIdr: UCHAR = 2;
+const ReadIsr: UCHAR = 3;
+
+// PIC bugcheck codes used by KfRaiseIrql / KfLowerIrql in DBG builds.
+const IRQL_NOT_GREATER_OR_EQUAL: ULONG = 0x0000_0009;
+const IRQL_NOT_LESS_OR_EQUAL:    ULONG = 0x0000_000A;
+
+// Tables defined in irql.rs (HAL component) — read-only at runtime.
+unsafe extern "C" {
+    static KiI8259MaskTable: [USHORT; 32];
+    static FindHigherIrqlMask: [ULONG; 32];
+}
+
+// Hand-off tables — these are mutable globals defined in pic.c (today).
+// While pic.c still owns these, declare them as externs.  When this file
+// takes over the C build, the definitions move here.
+unsafe extern "C" {
+    static mut HalpEisaELCR: USHORT;
+    static mut SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 20];
+    static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 3];
+    static mut SWInterruptLookUpTable: [KIRQL; 8];
+    static mut HalpSpecialDismissTable: [PHAL_DISMISS_INTERRUPT; 16];
+    static HalpSpecialDismissLevelTable: [PHAL_DISMISS_INTERRUPT; 16];
+    static mut HalpDefaultInterruptAffinity: KAFFINITY;
+}
+
+// MSVC intrinsics (lowered by clang into inline asm).  Declared here so each
+// fn that uses them doesn't have to re-import.
+unsafe extern "C" {
+    fn __readeflags() -> ULONG;
+    fn __writeeflags(eflags: ULONG);
+    fn __inbyte(Port: USHORT) -> UCHAR;
+    fn __outbyte(Port: USHORT, Value: UCHAR);
+    fn _disable();
+    fn _enable();
+    fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
+    fn KeGetPcr() -> PKPCR;
+}
+
+// HAL registration helper — lives in pic_halinit.rs.
+unsafe extern "system" {
+    fn HalpRegisterVector(Flags: ULONG, BusVector: ULONG, SystemVector: ULONG, Irql: KIRQL);
+    fn HalpInitializeLegacyPICs();
+}
+
+unsafe extern "fastcall" {
+    fn HalpEndSoftwareInterrupt(OldIrql: KIRQL, TrapFrame: PKTRAP_FRAME);
+}
+
+// SW interrupt handlers and Dismiss-IRQ functions exposed by pic.S +
+// other files — pulled in via spec linkage.  These are PHAL_SW_INTERRUPT_HANDLER
+// = Option<unsafe extern "C" fn()>; declare with matching ABI so they can go
+// straight into the SWInterruptHandlerTable.
+unsafe extern "C" {
+    fn HalpApcInterrupt();
+    fn HalpDispatchInterrupt();
+    fn HalpHardwareInterruptLevel();
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
-    unsafe extern "C" {
-        fn __readeflags() -> ULONG;
-        fn __writeeflags(eflags: ULONG);
-        fn _disable();
-        fn __inbyte(port: USHORT) -> UCHAR;
-    }
 
     let mut eflags: ULONG;
     let mut elcr: EISA_ELCR = core::mem::zeroed();
@@ -28,20 +133,20 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
 
     #[cfg(not(target_feature = "pc98"))]
     {
-        elcr_found = (elcr.Master.Irq0Level() == 0)
-            && (elcr.Master.Irq1Level() == 0)
-            && (elcr.Master.Irq2Level() == 0)
-            && (elcr.Slave.Irq8Level() == 0)
-            && (elcr.Slave.Irq13Level() == 0);
+        elcr_found = ((elcr.__bindgen_anon_1.Master.Irq0Level() == 0)
+            && (elcr.__bindgen_anon_1.Master.Irq1Level() == 0)
+            && (elcr.__bindgen_anon_1.Master.Irq2Level() == 0)
+            && (elcr.__bindgen_anon_1.Slave.Irq8Level() == 0)
+            && (elcr.__bindgen_anon_1.Slave.Irq13Level() == 0)) as BOOLEAN;
     }
 
     #[cfg(target_feature = "pc98")]
     {
         if elcr.Bits == 0xFFFF {
-            elcr.Master.set_Irq0Level(0);
-            elcr.Master.set_Irq1Level(0);
-            elcr.Master.set_Irq7Level(0);
-            elcr.Slave.set_Irq8Level(0);
+            elcr.__bindgen_anon_1.Master.set_Irq0Level(0);
+            elcr.__bindgen_anon_1.Master.set_Irq1Level(0);
+            elcr.__bindgen_anon_1.Master.set_Irq7Level(0);
+            elcr.__bindgen_anon_1.Slave.set_Irq8Level(0);
         }
         elcr_found = 1;
     }
@@ -53,7 +158,7 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
         let mut j: ULONG = 0;
         while j < 16 {
             if (HalpEisaELCR as ULONG & i) != 0 {
-                SWInterruptHandlerTable[(j + 4) as usize] = HalpHardwareInterruptLevel;
+                SWInterruptHandlerTable[(j + 4) as usize] = Some(HalpHardwareInterruptLevel);
 
                 HalpSpecialDismissTable[j as usize] = HalpSpecialDismissLevelTable[j as usize];
             }
@@ -80,44 +185,41 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpIrqToVector(Irq: UCHAR) -> UCHAR {
-    PRIMARY_VECTOR_BASE + Irq
+    (PRIMARY_VECTOR_BASE + Irq as ULONG) as UCHAR
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpIrqToVector(Irq: UCHAR) -> UCHAR {
-    PRIMARY_VECTOR_BASE + Irq
+    (PRIMARY_VECTOR_BASE + Irq as ULONG) as UCHAR
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpVectorToIrq(Vector: UCHAR) -> UCHAR {
-    Vector.wrapping_sub(PRIMARY_VECTOR_BASE)
+    Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR)
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpVectorToIrq(Vector: UCHAR) -> UCHAR {
-    Vector.wrapping_sub(PRIMARY_VECTOR_BASE)
+    Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR)
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpVectorToIrql(Vector: u8) -> KIRQL {
-    (PROFILE_LEVEL - (Vector - PRIMARY_VECTOR_BASE)) as KIRQL
+    PROFILE_LEVEL.wrapping_sub(Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR) as KIRQL)
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpVectorToIrql(Vector: u8) -> KIRQL {
-    (PROFILE_LEVEL - (Vector - PRIMARY_VECTOR_BASE)) as KIRQL
+    PROFILE_LEVEL.wrapping_sub(Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR) as KIRQL)
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-    }
     
     let pcr = unsafe { KeGetPcr() };
     let current_irql: KIRQL;
@@ -130,9 +232,6 @@ pub unsafe extern "system" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
 
 #[no_mangle]
 pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-    }
     
     let pcr = unsafe { KeGetPcr() };
     let current_irql: KIRQL;
@@ -161,17 +260,7 @@ pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-        fn __readeflags() -> u32;
-        fn __writeeflags(eflags: u32);
-        fn _disable();
-    }
     
-    unsafe extern "C" {
-        static SWInterruptLookUpTable: [KIRQL; 4];
-        static SWInterruptHandlerTable: [Option<unsafe extern "C" fn()>; 3];
-    }
 
     let eflags = __readeflags();
     _disable();
@@ -192,17 +281,7 @@ pub unsafe extern "fastcall" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-        fn __readeflags() -> u64;
-        fn __writeeflags(eflags: u64);
-        fn _disable();
-    }
     
-    unsafe extern "C" {
-        static SWInterruptLookUpTable: [KIRQL; 4];
-        static SWInterruptHandlerTable: [Option<unsafe extern "C" fn()>; 3];
-    }
 
     let eflags = __readeflags();
     _disable();
@@ -246,8 +325,8 @@ pub unsafe extern "fastcall" fn HalpEndSoftwareInterrupt2(
 
     let Pcr = unsafe { KeGetPcr() };
     let mut PendingIrql: ULONG = 0;
-    let PendingIrqlMask: ULONG;
-    let PendingIrqMask: ULONG;
+    let mut PendingIrqlMask: ULONG;
+    let mut PendingIrqMask: ULONG;
     let mut Mask: PIC_MASK = unsafe { core::mem::zeroed() };
 
     unsafe { (*Pcr).Irql = OldIrql };
@@ -255,16 +334,16 @@ pub unsafe extern "fastcall" fn HalpEndSoftwareInterrupt2(
     loop {
         PendingIrqlMask = unsafe { (*Pcr).IRR & FindHigherIrqlMask[OldIrql as usize] };
         if PendingIrqlMask == 0 {
-            return core::ptr::null_mut();
+            return None;
         }
 
         if unsafe { (*Pcr).IrrActive & 0xFFFFFFF0 != 0 } {
-            return core::ptr::null_mut();
+            return None;
         }
 
         unsafe { BitScanReverse(&raw mut PendingIrql, PendingIrqlMask) };
         if PendingIrql > DISPATCH_LEVEL as ULONG {
-            Mask.Both = unsafe { (*Pcr).IDR as USHORT & 0xFFFF };
+            Mask.Both = unsafe { ((*Pcr).IDR & 0xFFFF) as USHORT };
             unsafe {
                 write_port_uchar(PIC1_DATA_PORT as *mut u8, Mask.__bindgen_anon_1.Master);
                 write_port_uchar(PIC2_DATA_PORT as *mut u8, Mask.__bindgen_anon_1.Slave);
@@ -302,28 +381,12 @@ unsafe fn write_port_uchar(port: *mut u8, value: u8) {
     }
 }
 
-unsafe extern "C" {
-    fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-    fn KeGetPcr() -> PKPCR;
-    static mut FindHigherIrqlMask: [ULONG; 32];
-    static mut SWInterruptHandlerTable: [Option<unsafe extern "C" fn()>; 32];
-    static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 32];
-}
-
 unsafe fn _HalpDismissIrqGeneric(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(Port: u16) -> u8;
-        fn __outbyte(Port: u16, Value: u8);
-        fn _enable();
-    }
     
-    unsafe extern "C" {
-        static mut KiI8259MaskTable: [u16; 32];
-    }
 
     let Pcr = KeGetPcr();
 
@@ -334,35 +397,35 @@ unsafe fn _HalpDismissIrqGeneric(
         *OldIrql = CurrentIrql;
 
         let mut Ocw2: I8259_OCW2 = core::mem::zeroed();
-        Ocw2.set_Bits(0);
-        Ocw2.set_EoiMode(3);
+        Ocw2.Bits = (0);
+        Ocw2.__bindgen_anon_1.set_EoiMode(3);
 
         if Irq >= 8 {
             #[cfg(not(target_feature = "pc98"))]
             {
-                __outbyte(PIC2_CONTROL_PORT as u16, Ocw2.Bits() | ((Irq - 8) & 0xFF) as u8);
-                __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits() | PIC_CASCADE_IRQ as u8);
+                __outbyte(PIC2_CONTROL_PORT as u16, Ocw2.Bits | ((Irq - 8) & 0xFF) as u8);
+                __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits | PIC_CASCADE_IRQ as u8);
             }
 
             #[cfg(target_feature = "pc98")]
             {
-                __outbyte(PIC2_CONTROL_PORT as u16, Ocw2.Bits() | ((Irq - 8) & 0xFF) as u8);
+                __outbyte(PIC2_CONTROL_PORT as u16, Ocw2.Bits | ((Irq - 8) & 0xFF) as u8);
 
                 let mut Ocw3: I8259_OCW3 = core::mem::zeroed();
-                Ocw3.set_Bits(0);
-                Ocw3.set_Sbo(1);
-                Ocw3.set_ReadRequest(3);
-                __outbyte(PIC2_CONTROL_PORT as u16, Ocw3.Bits());
+                Ocw3.Bits = (0);
+                Ocw3.__bindgen_anon_1.set_Sbo(1);
+                Ocw3.__bindgen_anon_1.set_ReadRequest(3);
+                __outbyte(PIC2_CONTROL_PORT as u16, Ocw3.Bits);
 
                 let mut Isr: I8259_ISR = core::mem::zeroed();
-                Isr.set_Bits(__inbyte(PIC2_CONTROL_PORT as u16));
+                Isr.Bits = (__inbyte(PIC2_CONTROL_PORT as u16));
 
-                if Isr.Bits() == 0 {
-                    __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits() | PIC_CASCADE_IRQ as u8);
+                if Isr.Bits == 0 {
+                    __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits | PIC_CASCADE_IRQ as u8);
                 }
             }
         } else {
-            __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits() | (Irq & 0xFF) as u8);
+            __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits | (Irq & 0xFF) as u8);
         }
 
         _enable();
@@ -372,9 +435,9 @@ unsafe fn _HalpDismissIrqGeneric(
     (*Pcr).IRR |= 1 << (Irq + 4);
 
     let mut Mask: PIC_MASK = core::mem::zeroed();
-    Mask.set_Both((KiI8259MaskTable[CurrentIrql as usize] | (*Pcr).IDR as u16) & 0xFFFF);
-    __outbyte(PIC1_DATA_PORT as u16, Mask.Master());
-    __outbyte(PIC2_DATA_PORT as u16, Mask.Slave());
+    Mask.Both = ((KiI8259MaskTable[CurrentIrql as usize] | (*Pcr).IDR as u16) & 0xFFFF);
+    __outbyte(PIC1_DATA_PORT as u16, Mask.__bindgen_anon_1.Master);
+    __outbyte(PIC2_DATA_PORT as u16, Mask.__bindgen_anon_1.Slave);
 
     0
 }
@@ -394,27 +457,23 @@ pub unsafe extern "system" fn HalpDismissIrq15(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(Port: u16) -> u8;
-        fn __outbyte(Port: u16, Value: u8);
-    }
 
     let mut ocw3: I8259_OCW3 = core::mem::zeroed();
     let mut ocw2: I8259_OCW2 = core::mem::zeroed();
     let mut isr: I8259_ISR;
 
-    ocw3.set_Bits(0);
-    ocw3.set_Sbo(1);
-    ocw3.set_ReadRequest(3);
-    __outbyte(PIC2_CONTROL_PORT as u16, ocw3.Bits());
+    ocw3.Bits = (0);
+    ocw3.__bindgen_anon_1.set_Sbo(1);
+    ocw3.__bindgen_anon_1.set_ReadRequest(3);
+    __outbyte(PIC2_CONTROL_PORT as u16, ocw3.Bits);
 
     isr = core::mem::zeroed();
-    isr.set_Bits(__inbyte(PIC2_CONTROL_PORT as u16));
+    isr.Bits = (__inbyte(PIC2_CONTROL_PORT as u16));
 
-    if isr.Irq7() == 0 {
-        ocw2.set_Bits(0);
-        ocw2.set_EoiMode(1);
-        __outbyte(PIC1_CONTROL_PORT as u16, ocw2.Bits() | PIC_CASCADE_IRQ as u8);
+    if isr.__bindgen_anon_1.Irq7() == 0 {
+        ocw2.Bits = (0);
+        ocw2.__bindgen_anon_1.set_EoiMode(1);
+        __outbyte(PIC1_CONTROL_PORT as u16, ocw2.Bits | PIC_CASCADE_IRQ as u8);
 
         return 0;
     }
@@ -428,11 +487,7 @@ pub unsafe extern "system" fn HalpDismissIrq13(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __outbyte(Port: u16, Value: u8);
-    }
     
-    unsafe 
     
     unsafe {
         __outbyte(0xF0, 0);
@@ -446,9 +501,6 @@ pub unsafe extern "system" fn HalpDismissIrq08(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __outbyte(Port: u16, Value: u8);
-    }
 
     const CPU_IO_o_FPU_BUSY_LATCH: u16 = 0xF0;
 
@@ -464,24 +516,19 @@ pub unsafe extern "system" fn HalpDismissIrq07(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(Port: u16) -> u8;
-        fn __outbyte(Port: u16, Value: u8);
-    }
 
-    unsafe 
 
     let mut Ocw3: I8259_OCW3 = core::mem::zeroed();
     let mut Isr: I8259_ISR = core::mem::zeroed();
 
-    Ocw3.set_Bits(0);
-    Ocw3.set_Sbo(1);
-    Ocw3.set_ReadRequest(ReadIsr as u8);
-    __outbyte(PIC1_CONTROL_PORT as u16, Ocw3.Bits());
+    Ocw3.Bits = (0);
+    Ocw3.__bindgen_anon_1.set_Sbo(1);
+    Ocw3.__bindgen_anon_1.set_ReadRequest(ReadIsr as u8);
+    __outbyte(PIC1_CONTROL_PORT as u16, Ocw3.Bits);
 
-    Isr.set_Bits(__inbyte(PIC1_CONTROL_PORT as u16));
+    Isr.Bits = (__inbyte(PIC1_CONTROL_PORT as u16));
 
-    if Isr.Irq7() == 0 {
+    if Isr.__bindgen_anon_1.Irq7() == 0 {
         return 0;
     }
 
@@ -493,16 +540,11 @@ unsafe fn _HalpDismissIrqLevel(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(port: u16) -> u8;
-        fn __outbyte(port: u16, value: u8);
-        fn _enable();
-    }
 
     let Pcr = KeGetPcr();
     
     let mut Mask: PIC_MASK = core::mem::zeroed();
-    Mask.Both = (KiI8259MaskTable[Irql as usize] | (*Pcr).IDR) & 0xFFFF;
+    Mask.Both = ((KiI8259MaskTable[Irql as usize] as ULONG | (*Pcr).IDR) & 0xFFFF) as USHORT;
     __outbyte(PIC1_DATA_PORT as u16, Mask.__bindgen_anon_1.Master);
     __outbyte(PIC2_DATA_PORT as u16, Mask.__bindgen_anon_1.Slave);
     
@@ -567,27 +609,23 @@ pub unsafe extern "system" fn HalpDismissIrq15Level(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(port: u16) -> u8;
-        fn __outbyte(port: u16, value: u8);
-    }
 
     let mut Ocw3: I8259_OCW3 = core::mem::zeroed();
     let mut Ocw2: I8259_OCW2 = core::mem::zeroed();
     let mut Isr: I8259_ISR = core::mem::zeroed();
 
-    Ocw3.set_Bits(0);
-    Ocw3.set_Sbo(1);
-    Ocw3.set_ReadRequest(0x3);
+    Ocw3.Bits = (0);
+    Ocw3.__bindgen_anon_1.set_Sbo(1);
+    Ocw3.__bindgen_anon_1.set_ReadRequest(0x3);
 
-    unsafe { __outbyte(PIC2_CONTROL_PORT as u16, Ocw3.Bits()) };
+    unsafe { __outbyte(PIC2_CONTROL_PORT as u16, Ocw3.Bits) };
 
-    Isr.set_Bits(unsafe { __inbyte(PIC2_CONTROL_PORT as u16) });
+    Isr.Bits = (unsafe { __inbyte(PIC2_CONTROL_PORT as u16) });
 
-    if Isr.Irq7() == 0 {
-        Ocw2.set_Bits(0);
-        Ocw2.set_EoiMode(0x1);
-        unsafe { __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits() | PIC_CASCADE_IRQ as u8) };
+    if Isr.__bindgen_anon_1.Irq7() == 0 {
+        Ocw2.Bits = (0);
+        Ocw2.__bindgen_anon_1.set_EoiMode(0x1);
+        unsafe { __outbyte(PIC1_CONTROL_PORT as u16, Ocw2.Bits | PIC_CASCADE_IRQ as u8) };
 
         return 0;
     }
@@ -601,11 +639,7 @@ pub unsafe extern "system" fn HalpDismissIrq13Level(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __outbyte(port: u16, value: u8);
-    }
 
-    unsafe 
 
     unsafe {
         __outbyte(0xF0, 0);
@@ -619,9 +653,6 @@ pub unsafe extern "system" fn HalpDismissIrq08Level(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __outbyte(port: u16, value: u8);
-    }
 
     const CPU_IO_o_FPU_BUSY_LATCH: u16 = 0xF0;
 
@@ -638,27 +669,23 @@ pub unsafe extern "system" fn HalpDismissIrq07Level(
     Irq: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn __inbyte(port: u16) -> u8;
-        fn __outbyte(port: u16, value: u8);
-    }
 
     let mut Ocw3: I8259_OCW3 = core::mem::zeroed();
     let mut Isr: I8259_ISR = core::mem::zeroed();
 
-    Ocw3.set_Bits(0);
-    Ocw3.set_Sbo(1);
-    Ocw3.set_ReadRequest(3);
+    Ocw3.Bits = (0);
+    Ocw3.__bindgen_anon_1.set_Sbo(1);
+    Ocw3.__bindgen_anon_1.set_ReadRequest(3);
 
     unsafe {
-        __outbyte(PIC1_CONTROL_PORT as u16, Ocw3.Bits());
+        __outbyte(PIC1_CONTROL_PORT as u16, Ocw3.Bits);
     }
 
     unsafe {
-        Isr.set_Bits(__inbyte(PIC1_CONTROL_PORT as u16));
+        Isr.Bits = (__inbyte(PIC1_CONTROL_PORT as u16));
     }
 
-    if Isr.Irq7() == 0 {
+    if Isr.__bindgen_anon_1.Irq7() == 0 {
         return 0;
     }
 
@@ -667,9 +694,6 @@ pub unsafe extern "system" fn HalpDismissIrq07Level(
 
 #[no_mangle]
 pub unsafe extern "C" fn HalpHardwareInterruptLevel2() -> PHAL_SW_INTERRUPT_HANDLER {
-    unsafe extern "system" {
-        fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-    }
 
     let pcr: PKPCR = KeGetPcr();
     let mut pending_irql: ULONG = 0;
@@ -677,7 +701,7 @@ pub unsafe extern "C" fn HalpHardwareInterruptLevel2() -> PHAL_SW_INTERRUPT_HAND
     let pending_irql_mask = (*pcr).IRR & FindHigherIrqlMask[(*pcr).Irql as usize];
     if pending_irql_mask != 0 {
         if (*pcr).IrrActive & 0xFFFFFFF0 != 0 {
-            return core::ptr::null_mut();
+            return None;
         }
 
         BitScanReverse(&raw mut pending_irql, pending_irql_mask);
@@ -687,7 +711,7 @@ pub unsafe extern "C" fn HalpHardwareInterruptLevel2() -> PHAL_SW_INTERRUPT_HAND
         return SWInterruptHandlerTable[pending_irql as usize];
     }
 
-    core::ptr::null_mut()
+    None
 }
 
 #[no_mangle]
@@ -696,34 +720,20 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     Irql: KIRQL,
     InterruptMode: KINTERRUPT_MODE,
 ) -> BOOLEAN {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-    }
 
-    unsafe extern "system" {
-        fn __outbyte(Port: ::core::ffi::c_ushort, Data: ::core::ffi::c_uchar);
-        fn _disable();
-        fn _enable();
-    }
 
-    unsafe extern "C" {
-        static mut SWInterruptHandlerTable: [PVOID; 256];
-        static mut HalpSpecialDismissTable: [PVOID; 16];
-        static mut HalpSpecialDismissLevelTable: [PVOID; 16];
-        static mut KiI8259MaskTable: [USHORT; 32];
-    }
 
     let Irq: ULONG;
     let Pcr: PKPCR = KeGetPcr();
     let mut PicMask: PIC_MASK = core::mem::zeroed();
 
-    Irq = Vector - PRIMARY_VECTOR_BASE;
-    if Irq >= CLOCK2_LEVEL {
+    Irq = Vector.wrapping_sub(PRIMARY_VECTOR_BASE) as ULONG;
+    if Irq >= CLOCK2_LEVEL as ULONG {
         return 0;
     }
 
-    if InterruptMode == InterruptMode as KINTERRUPT_MODE {
-        SWInterruptHandlerTable[(Irq + 4) as usize] = HalpHardwareInterruptLevel as PVOID;
+    if InterruptMode == _KINTERRUPT_MODE_LevelSensitive {
+        SWInterruptHandlerTable[(Irq + 4) as usize] = Some(HalpHardwareInterruptLevel);
 
         HalpSpecialDismissTable[Irq as usize] = HalpSpecialDismissLevelTable[Irq as usize];
     }
@@ -732,7 +742,7 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 
     (*Pcr).IDR &= !(1 << Irq);
 
-    PicMask.Both = (KiI8259MaskTable[(*Pcr).Irql as usize] | (*Pcr).IDR) & 0xFFFF;
+    PicMask.Both = ((KiI8259MaskTable[(*Pcr).Irql as usize] as ULONG | (*Pcr).IDR) & 0xFFFF) as USHORT;
     __outbyte(PIC1_DATA_PORT as u16, PicMask.__bindgen_anon_1.Master);
     __outbyte(PIC2_DATA_PORT as u16, PicMask.__bindgen_anon_1.Slave);
 
@@ -745,18 +755,11 @@ pub unsafe extern "system" fn HalDisableSystemInterrupt(
     Vector: ULONG,
     Irql: KIRQL,
 ) {
-    unsafe extern "C" {
-        fn KeGetPcr() -> PKPCR;
-        fn __inbyte(port: u16) -> u8;
-        fn __outbyte(port: u16, value: u8);
-        fn _disable();
-        fn _enable();
-    }
 
     let mut irq_mask: ULONG;
     let mut pic_mask: PIC_MASK;
 
-    if Vector == PRIMARY_VECTOR_BASE + PIC_TIMER_IRQ {
+    if (Vector as ULONG) == PRIMARY_VECTOR_BASE + PIC_TIMER_IRQ {
         __outbyte(0xE9, b'!');
         __outbyte(0xE9, b'P');
         __outbyte(0xE9, b'I');
@@ -764,20 +767,20 @@ pub unsafe extern "system" fn HalDisableSystemInterrupt(
         __outbyte(0xE9, b'!');
     }
 
-    irq_mask = 1 << (Vector - PRIMARY_VECTOR_BASE);
+    irq_mask = 1u32 << Vector.wrapping_sub(PRIMARY_VECTOR_BASE) as ULONG;
 
     _disable();
 
     (*KeGetPcr()).IDR |= irq_mask;
 
     pic_mask = core::mem::zeroed();
-    pic_mask.Master = __inbyte(PIC1_DATA_PORT as u16);
-    pic_mask.Slave = __inbyte(PIC2_DATA_PORT as u16);
+    pic_mask.__bindgen_anon_1.Master = __inbyte(PIC1_DATA_PORT as u16);
+    pic_mask.__bindgen_anon_1.Slave = __inbyte(PIC2_DATA_PORT as u16);
 
-    pic_mask.Both |= irq_mask;
+    pic_mask.Both |= irq_mask as USHORT;
 
-    __outbyte(PIC1_DATA_PORT as u16, pic_mask.Master);
-    __outbyte(PIC2_DATA_PORT as u16, pic_mask.Slave);
+    __outbyte(PIC1_DATA_PORT as u16, pic_mask.__bindgen_anon_1.Master);
+    __outbyte(PIC2_DATA_PORT as u16, pic_mask.__bindgen_anon_1.Slave);
 
     _enable();
 }
@@ -790,7 +793,7 @@ pub unsafe extern "system" fn HalBeginSystemInterrupt(
 ) -> BOOLEAN {
     let Irq: ULONG;
 
-    Irq = Vector - PRIMARY_VECTOR_BASE;
+    Irq = Vector.wrapping_sub(PRIMARY_VECTOR_BASE) as ULONG;
     unsafe {
         HalpSpecialDismissTable[Irq as usize].unwrap()(Irql, Irq, OldIrql)
     }
@@ -804,44 +807,38 @@ pub unsafe extern "fastcall" fn HalEndSystemInterrupt2(
 ) -> PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY {
     let _ = TrapFrame;
 
-    unsafe extern "C" {
-        fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-    }
 
-    unsafe extern "system" {
-        fn __outbyte(Port: USHORT, Data: UCHAR);
-    }
 
-    let mut PendingIrql: ULONG;
+    let mut PendingIrql: ULONG = 0;
     let mut PendingIrqlMask: ULONG;
-    let mut PendingIrqMask: ULONG;
+    let mut PendingIrqMask: ULONG = 0;
     let Pcr: PKPCR = KeGetPcr();
-    let mut Mask: PIC_MASK;
+    let mut Mask: PIC_MASK = core::mem::zeroed();
 
     (*Pcr).Irql = OldIrql;
 
     PendingIrqlMask = (*Pcr).IRR & FindHigherIrqlMask[OldIrql as usize];
     if PendingIrqlMask != 0 {
         if ((*Pcr).IrrActive & 0xFFFFFFF0) != 0 {
-            return core::ptr::null_mut();
+            return None;
         }
 
         loop {
             BitScanReverse(&raw mut PendingIrql, PendingIrqlMask);
             if PendingIrql > DISPATCH_LEVEL as ULONG {
                 Mask.Both = ((*Pcr).IDR & 0xFFFF) as USHORT;
-                __outbyte(PIC1_DATA_PORT as USHORT, Mask.Master);
-                __outbyte(PIC2_DATA_PORT as USHORT, Mask.Slave);
+                __outbyte(PIC1_DATA_PORT as USHORT, Mask.__bindgen_anon_1.Master);
+                __outbyte(PIC2_DATA_PORT as USHORT, Mask.__bindgen_anon_1.Slave);
 
                 PendingIrqMask = 1 << PendingIrql;
                 if ((*Pcr).IrrActive & PendingIrqMask) != 0 {
-                    return core::ptr::null_mut();
+                    return None;
                 }
 
                 (*Pcr).IrrActive |= PendingIrqMask;
                 (*Pcr).IRR ^= PendingIrqMask;
 
-                (SWInterruptHandlerTable[PendingIrql as usize])();
+                (SWInterruptHandlerTable[PendingIrql as usize].unwrap())();
 
                 (*Pcr).IrrActive ^= PendingIrqMask;
 
@@ -855,7 +852,7 @@ pub unsafe extern "fastcall" fn HalEndSystemInterrupt2(
         }
     }
 
-    core::ptr::null_mut()
+    None
 }
 
 #[no_mangle]
@@ -866,44 +863,38 @@ pub unsafe extern "C" fn HalEndSystemInterrupt2(
 ) -> PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY {
     let _ = TrapFrame;
 
-    unsafe extern "C" {
-        fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-    }
 
-    unsafe extern "system" {
-        fn __outbyte(Port: USHORT, Data: UCHAR);
-    }
 
-    let mut PendingIrql: ULONG;
+    let mut PendingIrql: ULONG = 0;
     let mut PendingIrqlMask: ULONG;
-    let mut PendingIrqMask: ULONG;
+    let mut PendingIrqMask: ULONG = 0;
     let Pcr: PKPCR = KeGetPcr();
-    let mut Mask: PIC_MASK;
+    let mut Mask: PIC_MASK = core::mem::zeroed();
 
     (*Pcr).Irql = OldIrql;
 
     PendingIrqlMask = (*Pcr).IRR & FindHigherIrqlMask[OldIrql as usize];
     if PendingIrqlMask != 0 {
         if ((*Pcr).IrrActive & 0xFFFFFFF0) != 0 {
-            return core::ptr::null_mut();
+            return None;
         }
 
         loop {
             BitScanReverse(&raw mut PendingIrql, PendingIrqlMask);
             if PendingIrql > DISPATCH_LEVEL as ULONG {
                 Mask.Both = ((*Pcr).IDR & 0xFFFF) as USHORT;
-                __outbyte(PIC1_DATA_PORT as USHORT, Mask.Master);
-                __outbyte(PIC2_DATA_PORT as USHORT, Mask.Slave);
+                __outbyte(PIC1_DATA_PORT as USHORT, Mask.__bindgen_anon_1.Master);
+                __outbyte(PIC2_DATA_PORT as USHORT, Mask.__bindgen_anon_1.Slave);
 
                 PendingIrqMask = 1 << PendingIrql;
                 if ((*Pcr).IrrActive & PendingIrqMask) != 0 {
-                    return core::ptr::null_mut();
+                    return None;
                 }
 
                 (*Pcr).IrrActive |= PendingIrqMask;
                 (*Pcr).IRR ^= PendingIrqMask;
 
-                (SWInterruptHandlerTable[PendingIrql as usize])();
+                (SWInterruptHandlerTable[PendingIrql as usize].unwrap())();
 
                 (*Pcr).IrrActive ^= PendingIrqMask;
 
@@ -922,14 +913,7 @@ pub unsafe extern "C" fn HalEndSystemInterrupt2(
 
 #[no_mangle]
 pub unsafe extern "system" fn _HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
-    unsafe extern "system" {
-        fn HalpEndSoftwareInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME);
-    }
 
-    unsafe extern "C" {
-        fn _disable();
-        fn _enable();
-    }
 
     let Pcr: PKPCR = KeGetPcr();
     
@@ -940,19 +924,15 @@ pub unsafe extern "system" fn _HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) 
     
     _enable();
     KiDeliverApc(
-        if KiUserTrap(TrapFrame) != 0 || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 {
-            1i32
-        } else {
-            0i32
-        },
+        (if KiUserTrap(core::mem::transmute(TrapFrame)) != 0 || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 { 1i8 } else { 0i8 }),
         core::ptr::null_mut(),
-        TrapFrame,
+        core::mem::transmute(TrapFrame),
     );
     
     _disable();
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
     
-    KiEoiHelper(TrapFrame);
+    KiEoiHelper(core::mem::transmute(TrapFrame));
 }
 
 #[no_mangle]
@@ -974,17 +954,13 @@ pub unsafe extern "C" fn HalpApcInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
-    unsafe extern "C" {
-        fn __readeflags() -> u32;
-    }
 
-    unsafe 
 
     (*TrapFrame).EFlags = __readeflags();
-    (*TrapFrame).SegCs = KGDT_R0_CODE as u16;
+    (*TrapFrame).SegCs = KGDT_R0_CODE as u32;
     (*TrapFrame).Eip = (*TrapFrame).Eax;
 
-    KiEnterInterruptTrap(TrapFrame);
+    KiEnterInterruptTrap(core::mem::transmute(TrapFrame));
 
     _HalpApcInterruptHandler(TrapFrame);
 }
@@ -992,26 +968,18 @@ pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME)
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
-    unsafe extern "C" {
-        fn __readeflags() -> u64;
-    }
 
-    unsafe 
 
     (*TrapFrame).EFlags = __readeflags() as u32;
-    (*TrapFrame).SegCs = KGDT_R0_CODE as u16;
+    (*TrapFrame).SegCs = KGDT_R0_CODE as u32;
     (*TrapFrame).Eip = (*TrapFrame).Eax as u32;
 
-    KiEnterInterruptTrap(TrapFrame);
+    KiEnterInterruptTrap(core::mem::transmute(TrapFrame));
 
     _HalpApcInterruptHandler(TrapFrame);
 }
 
 unsafe fn _HalpDispatchInterruptHandler() -> KIRQL {
-    unsafe extern "C" {
-        fn _enable();
-        fn _disable();
-    }
 
     let Pcr = KeGetPcr();
 
@@ -1030,42 +998,28 @@ unsafe fn _HalpDispatchInterruptHandler() -> KIRQL {
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
-    unsafe extern "system" {
-        fn HalpEndSoftwareInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME);
-    }
 
     let CurrentIrql = _HalpDispatchInterruptHandler();
 
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
 
-    KiEoiHelper(TrapFrame);
+    KiEoiHelper(core::mem::transmute(TrapFrame));
 }
 
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
-    unsafe extern "system" {
-        fn HalpEndSoftwareInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME);
-    }
 
     let CurrentIrql = _HalpDispatchInterruptHandler();
 
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
 
-    KiEoiHelper(TrapFrame);
+    KiEoiHelper(core::mem::transmute(TrapFrame));
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn HalpDispatchInterrupt2() -> PHAL_SW_INTERRUPT_HANDLER {
-    unsafe extern "C" {
-        fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-        fn __outbyte(Port: USHORT, Data: UCHAR);
-    }
 
-    unsafe extern "C" {
-        static FindHigherIrqlMask: [ULONG; 32];
-        static SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 32];
-    }
 
     let Pcr = KeGetPcr();
 
@@ -1077,7 +1031,7 @@ pub unsafe extern "C" fn HalpDispatchInterrupt2() -> PHAL_SW_INTERRUPT_HANDLER {
     if PendingIrqlMask != 0 {
         let mut PendingIrql: ULONG = 0;
         BitScanReverse(&raw mut PendingIrql, PendingIrqlMask);
-        if PendingIrql > DISPATCH_LEVEL {
+        if PendingIrql > DISPATCH_LEVEL as ULONG {
             let mut Mask: PIC_MASK = core::mem::zeroed();
             Mask.Both = ((*Pcr).IDR & 0xFFFF) as USHORT;
             __outbyte(PIC1_DATA_PORT as USHORT, Mask.__bindgen_anon_1.Master);
@@ -1089,7 +1043,7 @@ pub unsafe extern "C" fn HalpDispatchInterrupt2() -> PHAL_SW_INTERRUPT_HANDLER {
         return SWInterruptHandlerTable[PendingIrql as usize];
     }
 
-    core::ptr::null_mut()
+    None
 }
 
 #[no_mangle]
@@ -1125,9 +1079,6 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
         *Irql = HalpVectorToIrql(system_vector);
     }
 
-    unsafe extern "system" {
-        static HalpDefaultInterruptAffinity: KAFFINITY;
-    }
 
     unsafe {
         *Affinity = HalpDefaultInterruptAffinity;
@@ -1136,29 +1087,61 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
     system_vector as ULONG
 }
 
+/// Returns the current IRQL by reading PCR.Irql.  pic.c:309-315.
 #[no_mangle]
 pub unsafe extern "system" fn KeGetCurrentIrql() -> KIRQL {
-    PASSIVE_LEVEL as KIRQL
+    unsafe { (*KeGetPcr()).Irql }
 }
 
+/// Raises the IRQL to NewIrql; returns the previous IRQL.  pic.c:374-401.
+/// Caller must ensure NewIrql >= CurrentIrql (or bugcheck in DBG builds).
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "fastcall" fn KfLowerIrql(OldIrql: KIRQL) {
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn KfLowerIrql(OldIrql: KIRQL) {
-}
-
-#[no_mangle]
-#[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
-    NewIrql
+    let Pcr = unsafe { KeGetPcr() };
+    let CurrentIrql = unsafe { (*Pcr).Irql };
+    unsafe { (*Pcr).Irql = NewIrql };
+    CurrentIrql
 }
 
+/// Lowers the IRQL to OldIrql and dispatches any pending software interrupts
+/// whose level is above OldIrql.  pic.c:403-455.
 #[no_mangle]
-#[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
-    NewIrql
+pub unsafe extern "fastcall" fn KfLowerIrql(OldIrql: KIRQL) {
+    let Pcr = unsafe { KeGetPcr() };
+
+    // Save EFlags and disable interrupts for the IRR/PIC update.
+    let EFlags = unsafe { __readeflags() };
+    unsafe { _disable() };
+
+    // Drop the IRQL.
+    unsafe { (*Pcr).Irql = OldIrql };
+
+    // Are any pending software interrupts higher than the new IRQL?
+    let IRR = unsafe { (*Pcr).IRR };
+    let PendingIrqlMask = IRR & FindHigherIrqlMask[OldIrql as usize];
+    if PendingIrqlMask != 0 {
+        let mut PendingIrql: ULONG = 0;
+        unsafe { BitScanReverse(&mut PendingIrql, PendingIrqlMask) };
+
+        // If the pending IRQL is above DISPATCH_LEVEL we need to update the
+        // hardware PIC mask too (mask off everything at-or-below).
+        if PendingIrql > DISPATCH_LEVEL as ULONG {
+            let mut Mask: PIC_MASK = unsafe { core::mem::zeroed() };
+            Mask.Both = ((*Pcr).IDR & 0xFFFF) as USHORT;
+            unsafe { __outbyte(PIC1_DATA_PORT, Mask.__bindgen_anon_1.Master) };
+            unsafe { __outbyte(PIC2_DATA_PORT, Mask.__bindgen_anon_1.Slave) };
+
+            // Clear the IRR bit we're about to dispatch.
+            unsafe { (*Pcr).IRR ^= 1 << PendingIrql };
+        }
+
+        // Dispatch the pending software interrupt.  The handler tail-jumps
+        // back into the SW interrupt context.
+        if let Some(handler) = SWInterruptHandlerTable[PendingIrql as usize] {
+            unsafe { handler() };
+        }
+    }
+
+    // Restore interrupt state.
+    unsafe { __writeeflags(EFlags) };
 }

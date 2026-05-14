@@ -39,6 +39,21 @@ pub mod pcr;
 pub mod pic;
 #[cfg(target_arch = "x86")]
 pub mod pic_halinit;
+// pub mod pic_pic; — compile-clean checkpoint (cascade fix 100→0).  IRQL
+// primitives translated correctly (KeGetCurrentIrql / KfRaiseIrql / KfLowerIrql
+// from pic.c:309-455).  Integration blocked on:
+//   1. KiUserTrap / KiEnterInterruptTrap are FORCEINLINE in
+//      ntoskrnl/include/internal/i386/trap_x.h:18,370 — not exported by
+//      ntoskrnl.spec — must be inlined manually in Rust (KiUserTrap is one
+//      line; KiEnterInterruptTrap touches PCR.NtTib.ExceptionList +
+//      KiHandleDebugRegistersOnTrapEntry + KiFillTrapFrameDebug).
+//   2. HalpHardwareInterrupt[0-15] (16 IRQ stubs) are defined in pic.c via
+//      a `HalpDelayedHardwareInterrupt(N)` macro (~13K bytes total) — need
+//      to be ported or kept C-side via partial removal of pic.c.
+//   3. SWInterruptHandlerTable[20] / SWInterruptHandlerTable2[3] / Hal*Eisa*
+//      / HalpDefaultInterruptAffinity definitions live in pic.c — must move
+//      to Rust when pic.c is removed.
+// See docs/engineering/handoff-pic_pic-integration.md for the full plan.
 pub mod processor;
 pub mod reboot;
 #[cfg(target_arch = "x86_64")]
