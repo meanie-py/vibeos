@@ -10,14 +10,14 @@ list(APPEND MINI_HAL_SOURCE
     ../legacy/bus/isabus.c
     ../legacy/bus/pcibus.c
     ../legacy/bussupp.c
-    ../generic/dma.c
+    # ../generic/dma.c — entire file is #ifndef _MINIHAL_; compiles to nothing
     ../generic/drive.c
     ../generic/misc.c
     ../generic/nmi.c
     ../generic/spinlock.c
     ../generic/timer.c
     ../generic/usage.c
-    ../pic/pic.c
+    # ../pic/pic.c — only a forward decl of HalpEndSoftwareInterrupt under MINIHAL
     ../include/hal.h
     halinit.c)
 
