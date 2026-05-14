@@ -163,11 +163,34 @@ unsafe fn write_cr4(v: ULONG_PTR) {
 }
 
 /// `__cpuid(out[4], leaf)` — execute `cpuid` with EAX=leaf, return EAX/EBX/ECX/EDX.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn cpuid(leaf: u32) -> [u32; 4] {
+    let (a, c, d): (u32, u32, u32);
+    let b64: u64;
+    // LLVM reserves rbx on amd64.  Swap the full 64-bit register so inlined
+    // callers keep the Windows x64 nonvolatile RBX value intact.
+    unsafe {
+        core::arch::asm!(
+            "xchg {rbx_save}, rbx",
+            "cpuid",
+            "xchg {rbx_save}, rbx",
+            rbx_save = inout(reg) 0u64 => b64,
+            inout("eax") leaf => a,
+            out("ecx") c,
+            out("edx") d,
+            options(nostack, preserves_flags),
+        );
+    }
+    [a, b64 as u32, c, d]
+}
+
+/// `__cpuid(out[4], leaf)` — execute `cpuid` with EAX=leaf, return EAX/EBX/ECX/EDX.
+#[cfg(target_arch = "x86")]
 #[inline(always)]
 unsafe fn cpuid(leaf: u32) -> [u32; 4] {
     let (a, b, c, d): (u32, u32, u32, u32);
-    // amd64 reserves rbx for the LLVM register allocator (xchg dance the same
-    // way the slist crate does).  i386 also reserves ebx — same fix.
+    // i386 reserves ebx for the LLVM register allocator.
     unsafe {
         core::arch::asm!(
             "xchg {ebx_save:e}, ebx",
