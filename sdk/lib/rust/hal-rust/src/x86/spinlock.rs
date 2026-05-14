@@ -219,6 +219,7 @@ mod i386 {
 
     /// `KeTryToAcquireQueuedSpinLockRaiseToSynch` — KM tests show this raises
     /// IRQL even on failure; mirror that.
+    #[cfg(not(feature = "minihal"))]
     #[unsafe(no_mangle)]
     pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
         LockNumber: KSPIN_LOCK_QUEUE_NUMBER,
@@ -232,6 +233,7 @@ mod i386 {
     }
 
     /// `KeTryToAcquireQueuedSpinLock` — same shape as above, DISPATCH IRQL.
+    #[cfg(not(feature = "minihal"))]
     #[unsafe(no_mangle)]
     pub unsafe extern "fastcall" fn KeTryToAcquireQueuedSpinLock(
         LockNumber: KSPIN_LOCK_QUEUE_NUMBER,
@@ -242,6 +244,18 @@ mod i386 {
             *OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
             KeTryToAcquireSpinLockAtDpcLevel(lock) as LOGICAL
         }
+    }
+
+    /// `KefAcquireSpinLockAtDpcLevel` — under MINIHAL only.  In runtime
+    /// builds this symbol is provided by ntoskrnl; under FreeLDR's
+    /// mini_hal there's no full kernel, so the HAL stubs it.  The C body
+    /// in hal/halx86/generic/spinlock.c#ifdef _MINIHAL_ writes a debug
+    /// sentinel into the lock value under DBG; we mirror that.
+    #[cfg(feature = "minihal")]
+    #[unsafe(no_mangle)]
+    pub unsafe extern "fastcall" fn KefAcquireSpinLockAtDpcLevel(_SpinLock: PKSPIN_LOCK) {
+        // No-op in release.  DBG instrumentation in the C original is not
+        // load-bearing for boot.
     }
 }
 

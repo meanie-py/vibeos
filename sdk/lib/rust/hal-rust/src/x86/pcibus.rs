@@ -177,6 +177,7 @@ pub static PCIConfigHandlerType2: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
     ],
 };
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut HalpFakePciBusData: PCIPBUSDATA = PCIPBUSDATA {
     CommonData: ntkrnl_sys::hal_ddk::_PCIBUSDATA {
@@ -209,6 +210,7 @@ pub static mut HalpFakePciBusData: PCIPBUSDATA = PCIPBUSDATA {
     ConfiguredBits: [0; 8],
 };
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut HalpFakePciBusHandler: BUS_HANDLER = BUS_HANDLER {
     Version: 1,
@@ -1112,6 +1114,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetPCIIntOnISABus(
     BusHandler: PBUS_HANDLER,
@@ -1167,6 +1170,7 @@ pub unsafe extern "system" fn HalpPCIISALine2Pin(
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetISAFixedPCIIrq(
     BusHandler: PBUS_HANDLER,
@@ -1258,6 +1262,7 @@ pub unsafe extern "system" fn HalpAdjustPCIResourceList(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpAssignPCISlotResources(
     BusHandler: PBUS_HANDLER,
@@ -1417,6 +1422,7 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
     Status
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HaliPciInterfaceReadConfig(
     RootBusHandler: PBUS_HANDLER,
@@ -1442,6 +1448,7 @@ pub unsafe extern "system" fn HaliPciInterfaceReadConfig(
     Length
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_INTERNAL {
     let mut name_buffer: [u16; 8] = [0; 8];
@@ -1703,6 +1710,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     pci_registry_info
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePciStubs() {
     let mut PciRegistryInfo: PPCI_REGISTRY_INFO_INTERNAL;

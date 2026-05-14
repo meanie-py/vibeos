@@ -189,6 +189,7 @@ unsafe fn cpuid(leaf: u32) -> [u32; 4] {
 // HalpReportSerialNumber + HalpMarkAcpiHal both lean on.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpOpenRegistryKey(
     KeyHandle: PHANDLE,
@@ -223,6 +224,7 @@ pub unsafe extern "system" fn HalpOpenRegistryKey(
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpReportSerialNumber() {
     unsafe {
@@ -259,6 +261,7 @@ pub unsafe extern "system" fn HalpReportSerialNumber() {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpMarkAcpiHal() -> NTSTATUS {
     unsafe {

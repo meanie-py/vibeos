@@ -245,6 +245,7 @@ pub unsafe extern "system" fn HalpInitializeClock() {
 // Fastcall on i386 (PIC HAL convention for trap handlers).
 // ----------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "fastcall" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     let mut Irql: KIRQL = 0;
@@ -283,6 +284,7 @@ pub unsafe extern "fastcall" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAM
 // Profile interrupt handler — RTC IRQ8 when profiling is enabled.
 // ----------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "fastcall" fn HalpProfileInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     let mut Irql: KIRQL = 0;

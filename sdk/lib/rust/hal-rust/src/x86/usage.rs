@@ -217,6 +217,7 @@ pub static mut HalpIDTUsage: [HalpIdtUsageEntry; (MAXIMUM_IDTVECTOR + 1) as usiz
 // HalpGetResourceSortValue — switch on descriptor type, fill scale + value.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpGetResourceSortValue(
     descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -250,6 +251,7 @@ pub unsafe extern "system" fn HalpGetResourceSortValue(
 // HalpBuildPartialFromIdt
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpBuildPartialFromIdt(
     entry: ULONG,
@@ -290,6 +292,7 @@ pub unsafe extern "system" fn HalpBuildPartialFromIdt(
 // HalpBuildPartialFromAddress
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpBuildPartialFromAddress(
     interface_type: INTERFACE_TYPE,
@@ -379,6 +382,7 @@ pub unsafe extern "system" fn HalpBuildPartialFromAddress(
 // HalpReportResourceUsage
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpReportResourceUsage(
     hal_name: *mut UNICODE_STRING,
@@ -658,6 +662,7 @@ pub unsafe extern "system" fn HalpRegisterVector(
 // HalpEnableInterruptHandler
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpEnableInterruptHandler(
     flags: UCHAR,
@@ -679,6 +684,7 @@ pub unsafe extern "system" fn HalpEnableInterruptHandler(
 // HalpGetNMICrashFlag — read NMICrashDump from registry.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpGetNMICrashFlag() {
     unsafe {

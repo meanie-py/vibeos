@@ -8,15 +8,15 @@ list(APPEND MINI_HAL_SOURCE
     # ../legacy/bus/bushndlr.c — Rust takeover (minihal feature)
     # ../legacy/bus/cmosbus.c — Rust takeover (hal-rust mini feature)
     # ../legacy/bus/isabus.c — Rust takeover
-    ../legacy/bus/pcibus.c
+    # ../legacy/bus/pcibus.c — Rust takeover (minihal feature)
     # ../legacy/bussupp.c — Rust takeover (minihal feature)
     # ../generic/dma.c — entire file is #ifndef _MINIHAL_; compiles to nothing
     # ../generic/drive.c — Rust takeover
-    ../generic/misc.c
+    # ../generic/misc.c — Rust takeover (minihal feature)
     # ../generic/nmi.c — Rust takeover
-    ../generic/spinlock.c
-    ../generic/timer.c
-    ../generic/usage.c
+    # ../generic/spinlock.c — Rust takeover (minihal feature)
+    # ../generic/timer.c — Rust takeover (minihal feature)
+    # ../generic/usage.c — Rust takeover (minihal feature)
     # ../pic/pic.c — only a forward decl of HalpEndSoftwareInterrupt under MINIHAL
     ../include/hal.h
     halinit.c)
@@ -36,9 +36,10 @@ elseif(SARCH STREQUAL "pc98")
 else()
     list(APPEND MINI_HAL_SOURCE
         # ../generic/beep.c — Rust takeover
-        ../generic/clock.c
+        # ../generic/clock.c — Rust takeover (data-only: HalpRolloverTable)
         # ../generic/cmos.c — Rust takeover
-        ../generic/reboot.c)
+        # ../generic/reboot.c — Rust takeover (minihal feature)
+    )
 endif()
 
 add_asm_files(mini_hal_asm ../generic/systimer.S)

@@ -105,6 +105,7 @@ pub unsafe extern "system" fn HalpReboot() -> ! {
 /// firmware-reentry action.  Halt/PowerDown/Restart/Reboot all map to
 /// the same triple-fault reboot path; anything else is a kernel/driver
 /// programming error.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalReturnToFirmware(Action: FIRMWARE_REENTRY) {
     if Action == HALT || Action == POWERDOWN || Action == RESTART || Action == REBOOT {
