@@ -10,7 +10,7 @@ list(APPEND HAL_PIC_SOURCE
     # generic/timer.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/timer.rs)
     # pic/halinit.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic_halinit.rs)
     # pic/irql.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/irql.rs)
-    pic/pic.c
+    # pic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic_pic.rs)
     # pic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
     )
 

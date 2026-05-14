@@ -15,8 +15,69 @@ use ntkrnl_sys::hal_ddk::{
     _KINTERRUPT_MODE as KINTERRUPT_MODE,
     _KINTERRUPT_MODE_Latched, _KINTERRUPT_MODE_LevelSensitive,
 };
-use ntkrnl_sys::ddk::{KeBugCheck, KeBugCheckEx, KiDeliverApc, KiDispatchInterrupt, KiEnterInterruptTrap, KiEoiHelper, KiUserTrap};
 use core::ffi::c_void;
+
+// ntoskrnl-exported kernel helpers — declared as plain externs (no
+// raw-dylib).  The linker resolves these via libntoskrnl.a's import-lib
+// trampolines (e.g. `_KeBugCheck@4`, `@KiEoiHelper@4`), which in turn
+// dispatch through hal.dll's IAT to the undecorated exports.  Per
+// ntoskrnl.spec all `Ke/KiBugCheck*`/`KiDeliverApc`/`KiDispatchInterrupt`
+// are NTAPI/stdcall on i386; KiEoiHelper is fastcall.  Using `extern
+// "system"` (= stdcall on i386) generates the right `_Name@N` decoration.
+unsafe extern "system" {
+    fn KeBugCheck(BugCheckCode: ULONG);
+    fn KeBugCheckEx(
+        BugCheckCode: ULONG,
+        P1: usize,
+        P2: usize,
+        P3: usize,
+        P4: usize,
+    );
+    fn KiDeliverApc(
+        PreviousMode: i8,
+        ExceptionFrame: PVOID,
+        TrapFrame: PKTRAP_FRAME,
+    );
+    fn KiDispatchInterrupt();
+}
+unsafe extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
+}
+
+// `KiUserTrap` and `KiEnterInterruptTrap` are FORCEINLINE in
+// ntoskrnl/include/internal/i386/trap_x.h:18,370 — never exported by
+// ntoskrnl.spec.  We inline them here.
+//
+// trap_x.h:18  — `return !!(TrapFrame->SegCs & MODE_MASK);`  MODE_MASK = 1 (RPL).
+#[inline(always)]
+unsafe fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
+    if ((*TrapFrame).SegCs & 1) != 0 { 1 } else { 0 }
+}
+
+// trap_x.h:370.  The kernel build is DBG (compile log shows `-DDBG=1`), so we
+// must replicate `KiFillTrapFrameDebug` — without it, `KiExitTrapDebugChecks`
+// fires `Exiting a trap without restoring previous mode` and __debugbreak()s,
+// which leaks back as a corrupt trap frame and a 0x6B PROCESS1_INITIALIZATION_FAILED.
+//
+//   ExceptionList = KeGetPcr()->NtTib.ExceptionList;        (assert only)
+//   KeGetPcr()->NtTib.ExceptionList = EXCEPTION_CHAIN_END;  // -1
+//   TrapFrame->Dr7 = 0;
+//   if (KiUserTrap(...) || EFLAGS & V86) { /* debug-reg dance, skipped */ }
+//   KiFillTrapFrameDebug(TrapFrame);   // DBG-only: sets DbgArg{Mark,Pointer},
+//                                      // DbgEip, DbgEbp, PreviousPreviousMode=-1
+const EXCEPTION_CHAIN_END: ULONG = !0;
+#[inline(always)]
+unsafe fn KiEnterInterruptTrap(TrapFrame: PKTRAP_FRAME) {
+    let Pcr = KeGetPcr();
+    (*Pcr).__bindgen_anon_1.NtTib.ExceptionList = EXCEPTION_CHAIN_END as usize as *mut _;
+    (*TrapFrame).Dr7 = 0;
+    // KiFillTrapFrameDebug — DBG-only in the C kernel, but our build is DBG.
+    (*TrapFrame).DbgArgPointer = (*TrapFrame).Edx;
+    (*TrapFrame).DbgArgMark = 0xBADB_0D00;
+    (*TrapFrame).DbgEip = (*TrapFrame).Eip;
+    (*TrapFrame).DbgEbp = (*TrapFrame).Ebp;
+    (*TrapFrame).PreviousPreviousMode = !0;  // (ULONG)-1
+}
 
 // IRQL levels (from sdk/include/ndk/ketypes.h, FORCEINLINE in irql.h).
 // These are #defines in C — bindgen doesn't expose them.
@@ -69,30 +130,227 @@ unsafe extern "C" {
     static FindHigherIrqlMask: [ULONG; 32];
 }
 
-// Hand-off tables — these are mutable globals defined in pic.c (today).
-// While pic.c still owns these, declare them as externs.  When this file
-// takes over the C build, the definitions move here.
+// HalpDefaultInterruptAffinity is defined in hal/halx86/pic/processor.c
+// (i386 legacy PIC backend) — stays C-side for now.
 unsafe extern "C" {
-    static mut HalpEisaELCR: USHORT;
-    static mut SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 20];
-    static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 3];
-    static mut SWInterruptLookUpTable: [KIRQL; 8];
-    static mut HalpSpecialDismissTable: [PHAL_DISMISS_INTERRUPT; 16];
-    static HalpSpecialDismissLevelTable: [PHAL_DISMISS_INTERRUPT; 16];
     static mut HalpDefaultInterruptAffinity: KAFFINITY;
 }
 
-// MSVC intrinsics (lowered by clang into inline asm).  Declared here so each
-// fn that uses them doesn't have to re-import.
+// `LONG HalpEisaELCR;` — pic.c:214.
+#[no_mangle]
+pub static mut HalpEisaELCR: ULONG = 0;
+
+// ============================================================================
+// HalpHardwareInterrupt[0-15] — 16 per-IRQ "delayed" software-int stubs.
+// pic.c:164-179 expands the `HalpDelayedHardwareInterrupt(N)` macro 16 times,
+// each emits `int 0x30+N` inline.  Each stub is __cdecl (extern "C"), called
+// indirectly via SWInterruptHandlerTable.
+// ============================================================================
+macro_rules! hw_int_stub {
+    ($name:ident, $vec:literal) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $name() {
+            core::arch::asm!(concat!("int ", stringify!($vec)), options(nostack));
+        }
+    };
+}
+hw_int_stub!(HalpHardwareInterrupt0,  0x30);
+hw_int_stub!(HalpHardwareInterrupt1,  0x31);
+hw_int_stub!(HalpHardwareInterrupt2,  0x32);
+hw_int_stub!(HalpHardwareInterrupt3,  0x33);
+hw_int_stub!(HalpHardwareInterrupt4,  0x34);
+hw_int_stub!(HalpHardwareInterrupt5,  0x35);
+hw_int_stub!(HalpHardwareInterrupt6,  0x36);
+hw_int_stub!(HalpHardwareInterrupt7,  0x37);
+hw_int_stub!(HalpHardwareInterrupt8,  0x38);
+hw_int_stub!(HalpHardwareInterrupt9,  0x39);
+hw_int_stub!(HalpHardwareInterrupt10, 0x3A);
+hw_int_stub!(HalpHardwareInterrupt11, 0x3B);
+hw_int_stub!(HalpHardwareInterrupt12, 0x3C);
+hw_int_stub!(HalpHardwareInterrupt13, 0x3D);
+hw_int_stub!(HalpHardwareInterrupt14, 0x3E);
+hw_int_stub!(HalpHardwareInterrupt15, 0x3F);
+
+// ============================================================================
+// File-scope tables — translated from pic.c:55-214.
+// ============================================================================
+
+// SWInterruptLookUpTable — pic.c:122.  Minimum IRQL needed to process pending
+// SW interrupts in each IRR slot.
+#[no_mangle]
+pub static mut SWInterruptLookUpTable: [KIRQL; 8] = [
+    PASSIVE_LEVEL,   // IRR 0
+    PASSIVE_LEVEL,   // IRR 1
+    APC_LEVEL,       // IRR 2
+    APC_LEVEL,       // IRR 3
+    DISPATCH_LEVEL,  // IRR 4
+    DISPATCH_LEVEL,  // IRR 5
+    DISPATCH_LEVEL,  // IRR 6
+    DISPATCH_LEVEL,  // IRR 7
+];
+
+// SWInterruptHandlerTable — pic.c:182.  Per-IRR-slot pending-int dispatcher.
+// First 4 slots are SW interrupts; slots 4..20 are HW IRQ stubs.
+//
+// Cast from `unsafe extern "C" fn()` to `Option<unsafe extern "C" fn()>` is
+// done via `Some(fn)` — the macro above generates the right ABI.
+#[no_mangle]
+pub static mut SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 20] = [
+    Some(unsafe { core::mem::transmute::<*const (), unsafe extern "C" fn()>(KiUnexpectedInterrupt as *const ()) }),
+    Some(HalpApcInterrupt),
+    Some(HalpDispatchInterrupt),
+    Some(unsafe { core::mem::transmute::<*const (), unsafe extern "C" fn()>(KiUnexpectedInterrupt as *const ()) }),
+    Some(HalpHardwareInterrupt0),
+    Some(HalpHardwareInterrupt1),
+    Some(HalpHardwareInterrupt2),
+    Some(HalpHardwareInterrupt3),
+    Some(HalpHardwareInterrupt4),
+    Some(HalpHardwareInterrupt5),
+    Some(HalpHardwareInterrupt6),
+    Some(HalpHardwareInterrupt7),
+    Some(HalpHardwareInterrupt8),
+    Some(HalpHardwareInterrupt9),
+    Some(HalpHardwareInterrupt10),
+    Some(HalpHardwareInterrupt11),
+    Some(HalpHardwareInterrupt12),
+    Some(HalpHardwareInterrupt13),
+    Some(HalpHardwareInterrupt14),
+    Some(HalpHardwareInterrupt15),
+];
+
+// SWInterruptHandlerTable2 — pic.c:207.  Pending-SW-int handlers reentered
+// from inside the trap-frame path (fastcall, take TrapFrame ptr).
+#[no_mangle]
+pub static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 3] = [
+    Some(unsafe {
+        core::mem::transmute::<*const (), unsafe extern "fastcall" fn(PKTRAP_FRAME)>(
+            KiUnexpectedInterrupt as *const (),
+        )
+    }),
+    Some(HalpApcInterrupt2ndEntry),
+    Some(HalpDispatchInterrupt2ndEntry),
+];
+
+// HalpSpecialDismissTable — pic.c:55.  Per-IRQ initial Dismiss routine (edge).
+// HalpInitializePICs may overwrite specific slots with the level variants if
+// the ELCR shows an IRQ is level-triggered.
+#[no_mangle]
+pub static mut HalpSpecialDismissTable: [PHAL_DISMISS_INTERRUPT; 16] = [
+    Some(HalpDismissIrqGeneric),  // 0
+    Some(HalpDismissIrqGeneric),  // 1
+    Some(HalpDismissIrqGeneric),  // 2
+    Some(HalpDismissIrqGeneric),  // 3
+    Some(HalpDismissIrqGeneric),  // 4
+    Some(HalpDismissIrqGeneric),  // 5
+    Some(HalpDismissIrqGeneric),  // 6
+    Some(HalpDismissIrq07),       // 7
+    Some(HalpDismissIrqGeneric),  // 8
+    Some(HalpDismissIrqGeneric),  // 9
+    Some(HalpDismissIrqGeneric),  // 10
+    Some(HalpDismissIrqGeneric),  // 11
+    Some(HalpDismissIrqGeneric),  // 12
+    Some(HalpDismissIrq13),       // 13
+    Some(HalpDismissIrqGeneric),  // 14
+    Some(HalpDismissIrq15),       // 15
+];
+
+// HalpSpecialDismissLevelTable — pic.c:87.  Same shape but with the *Level
+// variants for level-triggered IRQs.
+#[no_mangle]
+pub static HalpSpecialDismissLevelTable: [PHAL_DISMISS_INTERRUPT; 16] = [
+    Some(HalpDismissIrqLevel),       // 0
+    Some(HalpDismissIrqLevel),       // 1
+    Some(HalpDismissIrqLevel),       // 2
+    Some(HalpDismissIrqLevel),       // 3
+    Some(HalpDismissIrqLevel),       // 4
+    Some(HalpDismissIrqLevel),       // 5
+    Some(HalpDismissIrqLevel),       // 6
+    Some(HalpDismissIrq07Level),     // 7
+    Some(HalpDismissIrqLevel),       // 8
+    Some(HalpDismissIrqLevel),       // 9
+    Some(HalpDismissIrqLevel),       // 10
+    Some(HalpDismissIrqLevel),       // 11
+    Some(HalpDismissIrqLevel),       // 12
+    Some(HalpDismissIrq13Level),     // 13
+    Some(HalpDismissIrqLevel),       // 14
+    Some(HalpDismissIrq15Level),     // 15
+];
+
+// Dismiss handlers are defined later in this file with `extern "system"`
+// (= stdcall on i386).  But PHAL_DISMISS_INTERRUPT is
+// `Option<unsafe extern "stdcall" fn ...>` and Rust treats stdcall/system as
+// different *types* even though the ABI is identical, so the `Some(fn)`
+// constructor would mismatch.  Switch the definitions below to extern
+// "stdcall" so the names line up — no transmute needed.
+
+// KiUnexpectedInterrupt[0-31] are ntoskrnl exports (KiUnexpectedInterruptN);
+// the table-entry casts above use the bare `KiUnexpectedInterrupt` symbol
+// the same way the original C code did.  Per ntoskrnl.spec it's `cdecl
+// -arch=i386,arm`, so use `extern "C"` (cdecl on i386 — generates `_Name`
+// import which the libntoskrnl.a trampoline resolves).
 unsafe extern "C" {
-    fn __readeflags() -> ULONG;
-    fn __writeeflags(eflags: ULONG);
-    fn __inbyte(Port: USHORT) -> UCHAR;
-    fn __outbyte(Port: USHORT, Value: UCHAR);
-    fn _disable();
-    fn _enable();
-    fn BitScanReverse(Index: *mut ULONG, Mask: ULONG) -> UCHAR;
-    fn KeGetPcr() -> PKPCR;
+    fn KiUnexpectedInterrupt();
+}
+
+// HalpApcInterrupt2ndEntry / HalpDispatchInterrupt2ndEntry are defined
+// further down in this file with `extern "fastcall"`; the static
+// initializers above name them directly — no extern decl needed.
+
+// `KeGetPcr` is FORCEINLINE in C (reads fs:[0x1C]); inline asm replica.
+#[inline(always)]
+unsafe fn KeGetPcr() -> PKPCR {
+    let pcr: PKPCR;
+    core::arch::asm!("mov {}, fs:[0x1C]", out(reg) pcr, options(nomem, preserves_flags));
+    pcr
+}
+
+// MSVC intrinsics — clang lowers these to inline asm at C-side use; on the
+// Rust side there's no linkable symbol, so we provide our own inline-asm
+// replicas with the same names.  All `#[inline(always)]` so the call sites
+// emit the asm directly.
+#[inline(always)]
+unsafe fn __readeflags() -> ULONG {
+    let f: u32;
+    core::arch::asm!("pushfd", "pop {:e}", out(reg) f, options(nomem, preserves_flags));
+    f
+}
+
+#[inline(always)]
+unsafe fn __writeeflags(eflags: ULONG) {
+    core::arch::asm!("push {:e}", "popfd", in(reg) eflags, options(nomem));
+}
+
+#[inline(always)]
+unsafe fn __inbyte(port: USHORT) -> UCHAR {
+    let v: u8;
+    core::arch::asm!("in al, dx", in("dx") port, out("al") v, options(nostack, preserves_flags));
+    v
+}
+
+#[inline(always)]
+unsafe fn __outbyte(port: USHORT, value: UCHAR) {
+    core::arch::asm!("out dx, al", in("dx") port, in("al") value, options(nostack, preserves_flags));
+}
+
+#[inline(always)]
+unsafe fn _disable() {
+    core::arch::asm!("cli", options(nomem, nostack));
+}
+
+#[inline(always)]
+unsafe fn _enable() {
+    core::arch::asm!("sti", options(nomem, nostack));
+}
+
+// BitScanReverse(Index*, Mask) — sets *Index to bit position of MSB and
+// returns nonzero if Mask != 0.  Models the MSVC intrinsic.
+#[inline(always)]
+unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> UCHAR {
+    if mask == 0 { return 0; }
+    let result: u32;
+    core::arch::asm!("bsr {0:e}, {1:e}", out(reg) result, in(reg) mask, options(nomem, nostack, preserves_flags));
+    *index = result;
+    1
 }
 
 // HAL registration helper — lives in pic_halinit.rs.
@@ -101,7 +359,10 @@ unsafe extern "system" {
     fn HalpInitializeLegacyPICs();
 }
 
-unsafe extern "fastcall" {
+// HalpEndSoftwareInterrupt: defined in pic.S as `_HalpEndSoftwareInterrupt@8`
+// (NTAPI/stdcall) — it's a stdcall trampoline that calls HalpEndSoftwareInterrupt2
+// (fastcall) and conditionally tail-jumps into the returned handler ptr.
+unsafe extern "stdcall" {
     fn HalpEndSoftwareInterrupt(OldIrql: KIRQL, TrapFrame: PKTRAP_FRAME);
 }
 
@@ -152,7 +413,7 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     }
 
     if elcr_found != 0 {
-        HalpEisaELCR = elcr.Bits;
+        HalpEisaELCR = elcr.Bits as ULONG;
 
         let mut i: ULONG = 1;
         let mut j: ULONG = 0;
@@ -443,7 +704,7 @@ unsafe fn _HalpDismissIrqGeneric(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrqGeneric(
+pub unsafe extern "stdcall" fn HalpDismissIrqGeneric(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -452,7 +713,7 @@ pub unsafe extern "system" fn HalpDismissIrqGeneric(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq15(
+pub unsafe extern "stdcall" fn HalpDismissIrq15(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -482,7 +743,7 @@ pub unsafe extern "system" fn HalpDismissIrq15(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq13(
+pub unsafe extern "stdcall" fn HalpDismissIrq13(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -496,7 +757,7 @@ pub unsafe extern "system" fn HalpDismissIrq13(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq08(
+pub unsafe extern "stdcall" fn HalpDismissIrq08(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -511,7 +772,7 @@ pub unsafe extern "system" fn HalpDismissIrq08(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq07(
+pub unsafe extern "stdcall" fn HalpDismissIrq07(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -595,7 +856,7 @@ unsafe fn _HalpDismissIrqLevel(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrqLevel(
+pub unsafe extern "stdcall" fn HalpDismissIrqLevel(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -604,7 +865,7 @@ pub unsafe extern "system" fn HalpDismissIrqLevel(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq15Level(
+pub unsafe extern "stdcall" fn HalpDismissIrq15Level(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -634,7 +895,7 @@ pub unsafe extern "system" fn HalpDismissIrq15Level(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq13Level(
+pub unsafe extern "stdcall" fn HalpDismissIrq13Level(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -648,7 +909,7 @@ pub unsafe extern "system" fn HalpDismissIrq13Level(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq08Level(
+pub unsafe extern "stdcall" fn HalpDismissIrq08Level(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -664,7 +925,7 @@ pub unsafe extern "system" fn HalpDismissIrq08Level(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HalpDismissIrq07Level(
+pub unsafe extern "stdcall" fn HalpDismissIrq07Level(
     Irql: KIRQL,
     Irq: ULONG,
     OldIrql: PKIRQL,
@@ -924,15 +1185,15 @@ pub unsafe extern "system" fn _HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) 
     
     _enable();
     KiDeliverApc(
-        (if KiUserTrap(core::mem::transmute(TrapFrame)) != 0 || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 { 1i8 } else { 0i8 }),
+        (if KiUserTrap(TrapFrame) != 0 || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 { 1i8 } else { 0i8 }),
         core::ptr::null_mut(),
-        core::mem::transmute(TrapFrame),
+        TrapFrame,
     );
-    
+
     _disable();
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
-    
-    KiEoiHelper(core::mem::transmute(TrapFrame));
+
+    KiEoiHelper(TrapFrame);
 }
 
 #[no_mangle]
@@ -960,7 +1221,7 @@ pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME)
     (*TrapFrame).SegCs = KGDT_R0_CODE as u32;
     (*TrapFrame).Eip = (*TrapFrame).Eax;
 
-    KiEnterInterruptTrap(core::mem::transmute(TrapFrame));
+    KiEnterInterruptTrap(TrapFrame);
 
     _HalpApcInterruptHandler(TrapFrame);
 }
@@ -974,7 +1235,7 @@ pub unsafe extern "C" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     (*TrapFrame).SegCs = KGDT_R0_CODE as u32;
     (*TrapFrame).Eip = (*TrapFrame).Eax as u32;
 
-    KiEnterInterruptTrap(core::mem::transmute(TrapFrame));
+    KiEnterInterruptTrap(TrapFrame);
 
     _HalpApcInterruptHandler(TrapFrame);
 }
@@ -1003,7 +1264,7 @@ pub unsafe extern "fastcall" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_
 
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
 
-    KiEoiHelper(core::mem::transmute(TrapFrame));
+    KiEoiHelper(TrapFrame);
 }
 
 #[no_mangle]
@@ -1014,7 +1275,7 @@ pub unsafe extern "C" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) 
 
     HalpEndSoftwareInterrupt(CurrentIrql, TrapFrame);
 
-    KiEoiHelper(core::mem::transmute(TrapFrame));
+    KiEoiHelper(TrapFrame);
 }
 
 #[no_mangle]

@@ -72,6 +72,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_halinit.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/portio.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/processor.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
