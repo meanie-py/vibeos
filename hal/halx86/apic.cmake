@@ -4,7 +4,7 @@ list(APPEND HAL_APIC_ASM_SOURCE
     apic/tsccal.S)
 
 list(APPEND HAL_APIC_SOURCE
-    apic/apic.c
+    # apic/apic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/apic.rs)
     # apic/apictimer.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/apictimer.rs)
     # apic/halinit.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/apic_halinit.rs)
     # apic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)

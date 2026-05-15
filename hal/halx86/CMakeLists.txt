@@ -44,6 +44,7 @@ add_custom_command(
         ${HAL_RUST_LIB}
     DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic_halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apictimer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
