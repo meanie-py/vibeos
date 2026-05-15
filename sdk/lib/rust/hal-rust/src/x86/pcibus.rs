@@ -7,7 +7,7 @@
 //! IRQ pin↔line translation helpers, and the PCI registry probe used by
 //! HalpInitializePciBus.
 
-#![cfg(target_arch = "x86")]
+#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe, unused_imports, unused_variables, unused_mut)]
 
 use ntkrnl_sys::hal_ddk::{
@@ -62,7 +62,7 @@ const CM_RESOURCE_MEMORY_READ_WRITE: USHORT = 0x0000;
 const CM_RESOURCE_PORT_IO: USHORT = 0x0001;
 
 // PCI_CONFIG_HANDLER vtable callback types come from bindgen as
-// Option<unsafe extern "stdcall" fn(...)>.  Imported directly above.
+// Option<unsafe extern "system" fn(...)>.  Imported directly above.
 
 // POOL_TYPE constants — bindgen has them under `_POOL_TYPE_*`.
 const NonPagedPool: i32 = 0;
@@ -132,48 +132,48 @@ pub static mut PCIConfigHandler: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
 #[no_mangle]
 pub static PCIConfigHandlerType1: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
     Synchronize: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _)>(
+        core::mem::transmute::<*const (), _>(
             HalpPCISynchronizeType1 as *const (),
         )
     }),
     ReleaseSynchronzation: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _)>(
+        core::mem::transmute::<*const (), _>(
             HalpPCIReleaseSynchronzationType1 as *const (),
         )
     }),
     ConfigRead: [
-        Some(HalpPCIReadUlongType1),
-        Some(HalpPCIReadUcharType1),
-        Some(HalpPCIReadUshortType1),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUlongType1 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUcharType1 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUshortType1 as *const ()) }),
     ],
     ConfigWrite: [
-        Some(HalpPCIWriteUlongType1),
-        Some(HalpPCIWriteUcharType1),
-        Some(HalpPCIWriteUshortType1),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUlongType1 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUcharType1 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUshortType1 as *const ()) }),
     ],
 };
 
 #[no_mangle]
 pub static PCIConfigHandlerType2: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
     Synchronize: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _)>(
+        core::mem::transmute::<*const (), _>(
             HalpPCISynchronizeType2 as *const (),
         )
     }),
     ReleaseSynchronzation: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _)>(
+        core::mem::transmute::<*const (), _>(
             HalpPCIReleaseSynchronizationType2 as *const (),
         )
     }),
     ConfigRead: [
-        Some(HalpPCIReadUlongType2),
-        Some(HalpPCIReadUcharType2),
-        Some(HalpPCIReadUshortType2),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUlongType2 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUcharType2 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIReadUshortType2 as *const ()) }),
     ],
     ConfigWrite: [
-        Some(HalpPCIWriteUlongType2),
-        Some(HalpPCIWriteUcharType2),
-        Some(HalpPCIWriteUshortType2),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUlongType2 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUcharType2 as *const ()) }),
+        Some(unsafe { core::mem::transmute(HalpPCIWriteUshortType2 as *const ()) }),
     ],
 };
 
@@ -184,12 +184,12 @@ pub static mut HalpFakePciBusData: PCIPBUSDATA = PCIPBUSDATA {
         Tag: PCI_DATA_TAG,
         Version: PCI_DATA_VERSION,
         ReadConfig: Some(unsafe {
-            core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _, _)>(
+            core::mem::transmute::<*const (), _>(
                 HalpReadPCIConfig as *const (),
             )
         }),
         WriteConfig: Some(unsafe {
-            core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _, _)>(
+            core::mem::transmute::<*const (), _>(
                 HalpWritePCIConfig as *const (),
             )
         }),
@@ -224,21 +224,18 @@ pub static mut HalpFakePciBusHandler: BUS_HANDLER = BUS_HANDLER {
     BusAddresses: core::ptr::null_mut(),
     Reserved: [0; 4],
     GetBusData: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _, _, _) -> ULONG>(
+        core::mem::transmute::<*const (), _>(
             HalpGetPCIData as *const (),
         )
     }),
     SetBusData: Some(unsafe {
-        core::mem::transmute::<*const (), unsafe extern "stdcall" fn(_, _, _, _, _, _) -> ULONG>(
+        core::mem::transmute::<*const (), _>(
             HalpSetPCIData as *const (),
         )
     }),
     AdjustResourceList: None,
     AssignSlotResources: Some(unsafe {
-        core::mem::transmute::<
-            *const (),
-            unsafe extern "stdcall" fn(_, _, _, _, _, _, _, _) -> NTSTATUS,
-        >(HalpAssignPCISlotResources as *const ())
+        core::mem::transmute::<*const (), _>(HalpAssignPCISlotResources as *const ())
     }),
     GetInterruptVector: None,
     TranslateBusAddress: None,
@@ -281,7 +278,9 @@ unsafe extern "system" {
     fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn KeAcquireSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: PKIRQL);
     fn KeReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, NewIrql: KIRQL);
+    #[cfg(target_arch = "x86")]
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: PKIRQL);
+    #[cfg(target_arch = "x86")]
     fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
     fn HalpOpenRegistryKey(KeyHandle: *mut HANDLE, RootKey: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, Create: BOOLEAN) -> NTSTATUS;
@@ -294,6 +293,24 @@ unsafe extern "fastcall" {
 // DbgPrint variadic — must use extern "C" (variadic + system is unstable).
 unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+// KeInitializeSpinLock + KeRaiseIrql are FORCEINLINE on amd64 — no exported
+// symbol. Inline locally on amd64; on i386 they're real exports (above).
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn KeInitializeSpinLock(spin_lock: *mut KSPIN_LOCK) {
+    *spin_lock = 0;
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn KeRaiseIrql(new_irql: KIRQL, old_irql: PKIRQL) {
+    let old: u64;
+    core::arch::asm!("mov {}, cr8", out(reg) old, options(nomem, nostack, preserves_flags));
+    *old_irql = old as KIRQL;
+    let new = new_irql as u64;
+    core::arch::asm!("mov cr8, {}", in(reg) new, options(nomem, nostack, preserves_flags));
 }
 
 // RtlCopyMemory is a memmove-style macro in C; on i386 it's not exported.
@@ -733,7 +750,7 @@ unsafe fn write_port_ulong(port: *mut u32, value: u32) {
 // hal/halx86/include/bus.h:44-83 (expanded once per width).
 //
 // All have FncConfigIO signature:
-//   unsafe extern "stdcall" fn(BusData: PPCIPBUSDATA, State: PVOID,
+//   unsafe extern "system" fn(BusData: PPCIPBUSDATA, State: PVOID,
 //                              Buffer: PUCHAR, Offset: ULONG) -> ULONG
 // State holds a PCI_TYPE{1,2}_CFG_BITS / PCI_TYPE2_ADDRESS_BITS prepared by
 // the matching Synchronize call.
@@ -742,7 +759,7 @@ unsafe fn write_port_ulong(port: *mut u32, value: u32) {
 // -- Type 1 --
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUcharType1(
+pub unsafe extern "system" fn HalpPCIReadUcharType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -754,7 +771,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUcharType1(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUshortType1(
+pub unsafe extern "system" fn HalpPCIReadUshortType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -766,7 +783,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUshortType1(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUlongType1(
+pub unsafe extern "system" fn HalpPCIReadUlongType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -778,7 +795,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUlongType1(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUcharType1(
+pub unsafe extern "system" fn HalpPCIWriteUcharType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -791,7 +808,7 @@ pub unsafe extern "stdcall" fn HalpPCIWriteUcharType1(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUshortType1(
+pub unsafe extern "system" fn HalpPCIWriteUshortType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -803,7 +820,7 @@ pub unsafe extern "stdcall" fn HalpPCIWriteUshortType1(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUlongType1(
+pub unsafe extern "system" fn HalpPCIWriteUlongType1(
     BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut PCI_TYPE1_CFG_BITS;
@@ -820,7 +837,7 @@ pub unsafe extern "stdcall" fn HalpPCIWriteUlongType1(
 // and TYPE2_READ/WRITE use `PciCfg->u.AsUSHORT` directly as the port address.
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUcharType2(
+pub unsafe extern "system" fn HalpPCIReadUcharType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;
@@ -830,7 +847,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUcharType2(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUshortType2(
+pub unsafe extern "system" fn HalpPCIReadUshortType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;
@@ -840,7 +857,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUshortType2(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIReadUlongType2(
+pub unsafe extern "system" fn HalpPCIReadUlongType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;
@@ -850,7 +867,7 @@ pub unsafe extern "stdcall" fn HalpPCIReadUlongType2(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUcharType2(
+pub unsafe extern "system" fn HalpPCIWriteUcharType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;
@@ -861,7 +878,7 @@ pub unsafe extern "stdcall" fn HalpPCIWriteUcharType2(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUshortType2(
+pub unsafe extern "system" fn HalpPCIWriteUshortType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;
@@ -871,7 +888,7 @@ pub unsafe extern "stdcall" fn HalpPCIWriteUshortType2(
 }
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn HalpPCIWriteUlongType2(
+pub unsafe extern "system" fn HalpPCIWriteUlongType2(
     _BusData: PPCIPBUSDATA, State: PVOID, Buffer: *mut UCHAR, Offset: ULONG,
 ) -> ULONG {
     let PciCfg = State as *mut ntkrnl_sys::hal_ddk::_PCI_TYPE2_ADDRESS_BITS;

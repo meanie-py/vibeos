@@ -41,7 +41,6 @@ pub mod madt;
 pub mod memory;
 pub mod misc;
 pub mod nmi;
-#[cfg(target_arch = "x86")]
 pub mod pcibus;
 pub mod pcr;
 pub mod pic;
