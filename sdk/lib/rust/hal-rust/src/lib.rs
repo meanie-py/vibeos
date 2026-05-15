@@ -1,9 +1,7 @@
-//! hal-rust — Rust translation of the ReactOS x86 HAL.
+//! hal-rust — Rust translation of selected ReactOS HAL files.
 //!
-//! Per `docs/engineering/hal-translation-audit.md` (Strategic update
-//! 2026-05-10): only x86 (i386 + amd64) is in scope for Rust translation.
-//! arm64 keeps its C stubs in `hal/halarm64/`. This crate is therefore
-//! built only for x86_64 and i686 targets.
+//! The main translation surface is x86 (i386 + amd64). ARM64 also builds a
+//! small translated stub surface for the current QEMU HAL.
 //!
 //! Module layout — portable submodules + arch-specific backends:
 //!
@@ -52,6 +50,9 @@ pub mod i386;
 #[cfg(target_arch = "x86_64")]
 pub mod amd64;
 
+#[cfg(target_arch = "aarch64")]
+pub mod arm64;
+
 // ============================================================================
 // Panic handler — HAL is a separate DLL from ntoskrnl, needs its own.
 // ============================================================================
@@ -96,6 +97,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         unsafe {
             core::arch::asm!("hlt");
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            core::arch::asm!("wfe", options(nomem, nostack));
         }
     }
 }
