@@ -93,7 +93,9 @@ unsafe fn dump_trap_frame(tf: PKTRAP_FRAME) {
 
 unsafe extern "fastcall" {
     fn HalpExitToV86(TrapFrame: PKTRAP_FRAME);
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
+    // Noreturn: KiEoiHelper is the trap-exit iret trampoline
+    // (ReactOS DECLSPEC_NORETURN). Must match timer.rs / pic_pic.rs.
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 
 // HalpNMIInProgress lives in nmi.rs (Rust HAL); referenced as the C global.
@@ -356,11 +358,7 @@ pub unsafe extern "fastcall" fn HalpTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! 
 
     if (*TrapFrame).EFlags & EFLAGS_V86_MASK != 0 {
         HalpDispatchV86Opcode(TrapFrame);
-        KiEoiHelper(TrapFrame);
-        // KiEoiHelper is noreturn in practice (iret); satisfy the `!`.
-        loop {
-            core::arch::asm!("hlt", options(nomem, nostack));
-        }
+        KiEoiHelper(TrapFrame); // noreturn: iret back to V86
     }
 
     DbgPrint(b"HAL: Trap0D while not in V86 mode\n\0".as_ptr());

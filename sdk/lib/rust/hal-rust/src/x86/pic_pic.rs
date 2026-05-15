@@ -41,7 +41,8 @@ unsafe extern "system" {
     fn KiDispatchInterrupt();
 }
 unsafe extern "fastcall" {
-    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME);
+    // Noreturn: trap-exit iret trampoline. Must match timer.rs / bios.rs.
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
 }
 
 // `KiUserTrap` and `KiEnterInterruptTrap` are FORCEINLINE in
