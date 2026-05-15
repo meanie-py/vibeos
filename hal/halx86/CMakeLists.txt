@@ -48,6 +48,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic_halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apictimer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bios.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/busemul.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bushndlr.rs

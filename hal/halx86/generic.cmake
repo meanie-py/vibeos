@@ -18,10 +18,11 @@ list(APPEND HAL_GENERIC_SOURCE
     )
 
 if(ARCH STREQUAL "i386")
-    list(APPEND HAL_GENERIC_SOURCE
-        generic/bios.c)
-        # generic/portio.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/portio.rs)
+    # generic/bios.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/bios.rs)
+    # generic/portio.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/portio.rs)
 
+    # v86.S stays C-side: HalpExitToV86 / HalpRealModeStart/End real-mode
+    # trampoline + the 16-bit stub.  bios.rs calls into these symbols.
     list(APPEND HAL_GENERIC_ASM_SOURCE
         generic/v86.S)
 endif()
