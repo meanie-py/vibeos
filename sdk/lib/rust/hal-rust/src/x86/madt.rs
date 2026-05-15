@@ -10,15 +10,12 @@
 //! always builds the APIC HAL, so HalAcpiGetTable is always present.
 #![cfg(target_arch = "x86_64")]
 
-use ntkrnl_sys::ddk::{PVOID, ULONG, ULONG_PTR, UCHAR};
+use ntkrnl_sys::ddk::{UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::hal_ddk::{
-    HalAcpiGetTable, APIC_SIGNATURE, PLOADER_PARAMETER_BLOCK,
-    ACPI_TABLE_MADT, ACPI_SUBTABLE_HEADER,
-    ACPI_MADT_LOCAL_APIC, ACPI_MADT_IO_APIC, ACPI_MADT_INTERRUPT_OVERRIDE,
-    MAXIMUM_PROCESSORS,
-    AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC,
-    AcpiMadtType_ACPI_MADT_TYPE_IO_APIC,
-    AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE,
+    AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC,
+    AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, HalAcpiGetTable, ACPI_MADT_INTERRUPT_OVERRIDE,
+    ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC, ACPI_SUBTABLE_HEADER, ACPI_TABLE_MADT, APIC_SIGNATURE,
+    MAXIMUM_PROCESSORS, PLOADER_PARAMETER_BLOCK,
 };
 
 // ----------------------------------------------------------------------------
@@ -61,11 +58,58 @@ const HALP_APIC_MODE_LEGACY: ULONG = 0x0000_0010;
 const LAPIC_FLAG_ENABLED: ULONG = 0x0000_0001;
 const LAPIC_FLAG_ONLINE_CAPABLE: ULONG = 0x0000_0002;
 
+const _LAYOUT_CHECKS_AMD64: () = {
+    assert!(core::mem::size_of::<PROCESSOR_IDENTITY>() == 0x10);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorId) == 0x00);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, LapicId) == 0x01);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorStarted) == 0x02);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, BSPCheck) == 0x03);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorPrcb) == 0x08);
+
+    assert!(core::mem::size_of::<HALP_APIC_INFO_TABLE>() == 0xc10);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, ApicMode) == 0x000);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, ProcessorCount) == 0x004);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IOAPICCount) == 0x008);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, LocalApicPA) == 0x00c);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IoApicVA) == 0x010);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IoApicPA) == 0x410);
+    assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, IoApicIrqBase) == 0x810);
+
+    assert!(core::mem::size_of::<ACPI_TABLE_MADT>() == 0x2c);
+    assert!(core::mem::offset_of!(ACPI_TABLE_MADT, Header) == 0x00);
+    assert!(core::mem::offset_of!(ACPI_TABLE_MADT, Address) == 0x24);
+    assert!(core::mem::offset_of!(ACPI_TABLE_MADT, Flags) == 0x28);
+
+    assert!(core::mem::size_of::<ACPI_SUBTABLE_HEADER>() == 0x02);
+    assert!(core::mem::offset_of!(ACPI_SUBTABLE_HEADER, Type) == 0x00);
+    assert!(core::mem::offset_of!(ACPI_SUBTABLE_HEADER, Length) == 0x01);
+
+    assert!(core::mem::size_of::<ACPI_MADT_LOCAL_APIC>() == 0x08);
+    assert!(core::mem::offset_of!(ACPI_MADT_LOCAL_APIC, Header) == 0x00);
+    assert!(core::mem::offset_of!(ACPI_MADT_LOCAL_APIC, ProcessorId) == 0x02);
+    assert!(core::mem::offset_of!(ACPI_MADT_LOCAL_APIC, Id) == 0x03);
+    assert!(core::mem::offset_of!(ACPI_MADT_LOCAL_APIC, LapicFlags) == 0x04);
+
+    assert!(core::mem::size_of::<ACPI_MADT_IO_APIC>() == 0x0c);
+    assert!(core::mem::offset_of!(ACPI_MADT_IO_APIC, Header) == 0x00);
+    assert!(core::mem::offset_of!(ACPI_MADT_IO_APIC, Id) == 0x02);
+    assert!(core::mem::offset_of!(ACPI_MADT_IO_APIC, Reserved) == 0x03);
+    assert!(core::mem::offset_of!(ACPI_MADT_IO_APIC, Address) == 0x04);
+    assert!(core::mem::offset_of!(ACPI_MADT_IO_APIC, GlobalIrqBase) == 0x08);
+
+    assert!(core::mem::size_of::<ACPI_MADT_INTERRUPT_OVERRIDE>() == 0x0a);
+    assert!(core::mem::offset_of!(ACPI_MADT_INTERRUPT_OVERRIDE, Header) == 0x00);
+    assert!(core::mem::offset_of!(ACPI_MADT_INTERRUPT_OVERRIDE, Bus) == 0x02);
+    assert!(core::mem::offset_of!(ACPI_MADT_INTERRUPT_OVERRIDE, SourceIrq) == 0x03);
+    assert!(core::mem::offset_of!(ACPI_MADT_INTERRUPT_OVERRIDE, GlobalIrq) == 0x04);
+    assert!(core::mem::offset_of!(ACPI_MADT_INTERRUPT_OVERRIDE, IntiFlags) == 0x08);
+};
+
 // ----------------------------------------------------------------------------
 // Globals (exported for the rest of the HAL).
 // ----------------------------------------------------------------------------
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static mut HalpApicInfoTable: HALP_APIC_INFO_TABLE = HALP_APIC_INFO_TABLE {
     ApicMode: 0,
     ProcessorCount: 0,
@@ -89,17 +133,16 @@ static mut HalpStaticProcessorIdentity: [PROCESSOR_IDENTITY; MAXIMUM_PROCESSORS 
 // Exported pointer to the static array — C consumers use HalpProcessorIdentity[i].
 // The C declaration is `const PPROCESSOR_IDENTITY HalpProcessorIdentity = HalpStaticProcessorIdentity;`
 // We expose the same shape via `pub static`.
-#[no_mangle]
-pub static mut HalpProcessorIdentity: PPROCESSOR_IDENTITY = unsafe {
-    (&raw mut HalpStaticProcessorIdentity) as *mut PROCESSOR_IDENTITY
-};
+#[unsafe(no_mangle)]
+pub static mut HalpProcessorIdentity: PPROCESSOR_IDENTITY =
+    (&raw mut HalpStaticProcessorIdentity) as *mut PROCESSOR_IDENTITY;
 
 // ----------------------------------------------------------------------------
 // HalpParseApicTables — walks the MADT, fills HalpApicInfoTable +
 // HalpProcessorIdentity.  Called early; no DPRINTs needed (translated to no-ops).
 // ----------------------------------------------------------------------------
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let MadtTable = HalAcpiGetTable(LoaderBlock, APIC_SIGNATURE) as *mut ACPI_TABLE_MADT;
     if MadtTable.is_null() {
@@ -116,9 +159,9 @@ pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER
     HalpApicInfoTable.ApicMode = HALP_APIC_MODE_LEGACY;
     HalpApicInfoTable.LocalApicPA = core::ptr::addr_of!((*MadtTable).Address).read_unaligned();
 
-    let mut AcpiHeader =
-        (MadtTable as ULONG_PTR + core::mem::size_of::<ACPI_TABLE_MADT>() as ULONG_PTR)
-            as *mut ACPI_SUBTABLE_HEADER;
+    let mut AcpiHeader = (MadtTable as ULONG_PTR
+        + core::mem::size_of::<ACPI_TABLE_MADT>() as ULONG_PTR)
+        as *mut ACPI_SUBTABLE_HEADER;
     let TableEnd: ULONG_PTR = MadtTable as ULONG_PTR + madt_length as ULONG_PTR;
 
     while (AcpiHeader as ULONG_PTR + core::mem::size_of::<ACPI_SUBTABLE_HEADER>() as ULONG_PTR)
@@ -145,11 +188,12 @@ pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER
                 // Skipped: array is full
             } else {
                 let idx = HalpApicInfoTable.ProcessorCount as usize;
-                let slot = (&raw mut HalpStaticProcessorIdentity).cast::<PROCESSOR_IDENTITY>().add(idx);
+                let slot = (&raw mut HalpStaticProcessorIdentity)
+                    .cast::<PROCESSOR_IDENTITY>()
+                    .add(idx);
                 (*slot).ProcessorId =
                     core::ptr::addr_of!((*LocalApic).ProcessorId).read_unaligned();
-                (*slot).LapicId =
-                    core::ptr::addr_of!((*LocalApic).Id).read_unaligned();
+                (*slot).LapicId = core::ptr::addr_of!((*LocalApic).Id).read_unaligned();
                 HalpApicInfoTable.ProcessorCount += 1;
             }
         } else if header_type == AcpiMadtType_ACPI_MADT_TYPE_IO_APIC as u8 {
@@ -181,8 +225,8 @@ pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER
             return;
         }
 
-        AcpiHeader = (AcpiHeader as ULONG_PTR + header_length as ULONG_PTR)
-            as *mut ACPI_SUBTABLE_HEADER;
+        AcpiHeader =
+            (AcpiHeader as ULONG_PTR + header_length as ULONG_PTR) as *mut ACPI_SUBTABLE_HEADER;
     }
 
     // If we didn't land exactly on TableEnd, the table was malformed.
@@ -196,7 +240,7 @@ pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER
 // build) this is a no-op; we still export the symbol so callers link cleanly.
 // ----------------------------------------------------------------------------
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpPrintApicTables() {
     // DPRINT1 is omitted in release builds; nothing to do.
 }

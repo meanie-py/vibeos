@@ -58,6 +58,8 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/display.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/dma.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halacpi.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halpnpdd.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halpcat.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/irql.rs

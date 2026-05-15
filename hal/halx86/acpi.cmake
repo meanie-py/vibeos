@@ -2,8 +2,8 @@
 include_directories(include ${REACTOS_SOURCE_DIR}/drivers/bus/acpi/acpica/include)
 
 list(APPEND HAL_ACPI_SOURCE
-    acpi/halacpi.c
-    acpi/halpnpdd.c
+    # acpi/halacpi.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/halacpi.rs)
+    # acpi/halpnpdd.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/halpnpdd.rs)
     # acpi/busemul.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/busemul.rs)
     legacy/bus/pcibus.c)
 
