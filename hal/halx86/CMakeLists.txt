@@ -89,6 +89,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/tsc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/x86bios.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/arbiter/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/acpi/mod.rs

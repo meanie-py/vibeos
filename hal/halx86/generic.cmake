@@ -14,7 +14,8 @@ list(APPEND HAL_GENERIC_SOURCE
     # generic/reboot.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/reboot.rs)
     # generic/sysinfo.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/sysinfo.rs)
     # generic/usage.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/usage.rs)
-    generic/x86bios.c)
+    # generic/x86bios.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/x86bios.rs)
+    )
 
 if(ARCH STREQUAL "i386")
     list(APPEND HAL_GENERIC_SOURCE
@@ -23,6 +24,16 @@ if(ARCH STREQUAL "i386")
 
     list(APPEND HAL_GENERIC_ASM_SOURCE
         generic/v86.S)
+endif()
+
+# On amd64 every generic .c is now Rust (hal-rust) and there's no
+# generic asm — lib_hal_generic would be an empty OBJECT lib, which
+# cmake rejects.  Drop in a placeholder .c so the target stays alive
+# for add_hal(COMPONENTS ... generic ...).  i386 still has bios.c.
+if(NOT HAL_GENERIC_SOURCE AND NOT HAL_GENERIC_ASM_SOURCE)
+    set(HAL_GENERIC_STUB ${CMAKE_CURRENT_BINARY_DIR}/lib_hal_generic_empty.c)
+    file(WRITE ${HAL_GENERIC_STUB} "/* placeholder: HAL generic sources are in hal-rust */\n")
+    list(APPEND HAL_GENERIC_SOURCE ${HAL_GENERIC_STUB})
 endif()
 
 add_asm_files(lib_hal_generic_asm ${HAL_GENERIC_ASM_SOURCE})

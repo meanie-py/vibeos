@@ -69,3 +69,4 @@ pub mod timer;
 pub mod tsc;
 pub mod up;
 pub mod usage;
+pub mod x86bios;
