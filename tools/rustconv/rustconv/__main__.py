@@ -10,7 +10,7 @@ from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS, detect_target, TA
 MODEL_ALIASES = {
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
-    "opus": "claude-opus-4-6-20250908",
+    "opus": "claude-opus-4-7",
     "gemini-pro": "gemini-2.5-pro",
     "gemini-flash": "gemini-2.5-flash",
 }
