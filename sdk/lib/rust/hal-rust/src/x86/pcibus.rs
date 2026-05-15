@@ -55,7 +55,14 @@ pub type PCI_COMMON_CONFIG__u__type0 =
     ntkrnl_sys::hal_ddk::_PCI_COMMON_HEADER__bindgen_ty_1__PCI_HEADER_TYPE_0;
 
 // HAL-internal #defines that bindgen doesn't expose.
+// HIGH_LEVEL is the maximum IRQL — it differs by arch:
+//   i386:  31 (cf. sdk/include/xdk/x86/ke.h)
+//   amd64: 15 (cf. sdk/include/xdk/amd64/ke.h — CR8 only holds 4 bits;
+//              writing 31 → #GP because bit 4 is reserved-must-be-zero)
+#[cfg(target_arch = "x86")]
 const HIGH_LEVEL: KIRQL = 31;
+#[cfg(target_arch = "x86_64")]
+const HIGH_LEVEL: KIRQL = 15;
 const MAXULONG: ULONG = 0xFFFF_FFFF;
 const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: USHORT = 0x0001;
 const CM_RESOURCE_MEMORY_READ_WRITE: USHORT = 0x0000;
