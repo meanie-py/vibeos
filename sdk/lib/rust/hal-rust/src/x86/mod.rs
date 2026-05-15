@@ -39,6 +39,8 @@ pub mod legacy_halpnpdd;
 #[cfg(target_arch = "x86_64")]
 pub mod madt;
 pub mod memory;
+#[cfg(target_arch = "x86")]
+pub mod minihal_stubs;
 pub mod misc;
 pub mod nmi;
 pub mod pcibus;

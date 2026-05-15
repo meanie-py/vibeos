@@ -62,6 +62,7 @@ pub static mut HalName: PWCHAR = HAL_NAME_STRING.as_ptr() as PWCHAR;
 // empty / FALSE / SUCCESS without doing anything.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpSetupAcpiPhase0(
     _LoaderBlock: PLOADER_PARAMETER_BLOCK,

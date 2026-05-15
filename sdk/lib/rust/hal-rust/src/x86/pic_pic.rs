@@ -376,6 +376,7 @@ unsafe extern "C" {
     fn HalpHardwareInterruptLevel();
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
 

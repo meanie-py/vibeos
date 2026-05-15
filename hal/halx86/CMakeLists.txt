@@ -68,6 +68,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/legacy_halpnpdd.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/madt.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/minihal_stubs.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
@@ -133,6 +134,7 @@ if(ARCH STREQUAL "i386")
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmosbus.rs
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/isabus.rs
+                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/minihal_stubs.rs
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
                 ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs

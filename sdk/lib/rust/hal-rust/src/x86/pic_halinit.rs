@@ -24,6 +24,7 @@ use crate::x86::pcr::KeGetPcr;
 // or interrupts on the slave never reach the master).
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpInitProcessor(
     _ProcessorNumber: ULONG,
@@ -38,6 +39,7 @@ pub unsafe extern "system" fn HalpInitProcessor(
 // HalpInitPhase0 — PIC HAL has nothing to do here.  Empty in the C.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HalpInitPhase0(_LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     // PIC HAL: nothing — APIC HAL does much more.
@@ -49,6 +51,7 @@ pub unsafe extern "C" fn HalpInitPhase0(_LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 // initialise legacy 8237 DMA controllers.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HalpInitPhase1() {
     unsafe {

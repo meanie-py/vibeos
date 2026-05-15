@@ -18,11 +18,15 @@ list(APPEND MINI_HAL_SOURCE
     # ../generic/timer.c — Rust takeover (minihal feature)
     # ../generic/usage.c — Rust takeover (minihal feature)
     # ../pic/pic.c — only a forward decl of HalpEndSoftwareInterrupt under MINIHAL
+    # halinit.c — replaced by Rust stubs in
+    #   sdk/lib/rust/hal-rust/src/x86/minihal_stubs.rs (feature=minihal)
     ../include/hal.h
-    halinit.c)
+    )
 
 # PC SARCH only — xbox / pc-98 SARCH removed.
-# All beep / clock / cmos / reboot symbols are provided by libhal_rust_mini.a.
+# All beep / clock / cmos / reboot / init-stub symbols are provided by
+# libhal_rust_mini.a — the only C contribution to mini_hal is the
+# ../generic/systimer.S assembly file.
 
 add_asm_files(mini_hal_asm ../generic/systimer.S)
 add_library(mini_hal ${MINI_HAL_SOURCE} ${mini_hal_asm})

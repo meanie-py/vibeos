@@ -309,6 +309,7 @@ pub static mut HalpDmaOperations: DMA_OPERATIONS = unsafe {
 // `extern "C"`, so callers (pic/apic_halinit.rs) expect the bare `_HalpInitDma`
 // symbol on i386.  Must match cdecl here or LLVM IPO folds the call into ud2
 // at the i386 call site (see feedback_ud2_abi_vs_captures.md).
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HalpInitDma() {
     unsafe {
@@ -855,6 +856,7 @@ pub unsafe extern "system" fn HalGetAdapter(
 // HalpGetDmaAdapter — exported via HalDispatchTable for IoGetDmaAdapter.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpGetDmaAdapter(
     _Context: PVOID,
