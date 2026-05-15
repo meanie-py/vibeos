@@ -884,8 +884,14 @@ pub unsafe extern "system" fn ShowSize(x: ULONG) {
     }
 }
 
-// PCI vendor/class name tables emitted by hal/halx86/{pci_classes,pci_vendors}.c
-// (generated from the .ids data files; INITDATA segment, NUL-terminated).
+// PCI vendor/class name tables (INITDATA segment, NUL-terminated).
+// i386: defined in pcidata.rs via include_bytes! of the .ids files.
+// amd64: never compiled (no legacy.cmake on amd64) — the references below
+// sit on a debug path the linker dead-strips, so a bare extern decl with
+// no definition is the existing, working arrangement; keep it identical.
+#[cfg(target_arch = "x86")]
+use crate::x86::pcidata::{ClassTable, VendorTable};
+#[cfg(target_arch = "x86_64")]
 unsafe extern "C" {
     static ClassTable: [u8; 0];
     static VendorTable: [u8; 0];

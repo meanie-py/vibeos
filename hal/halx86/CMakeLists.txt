@@ -74,6 +74,9 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcidata.rs
+            ${CMAKE_CURRENT_SOURCE_DIR}/legacy/bus/pci_classes.ids
+            ${CMAKE_CURRENT_SOURCE_DIR}/legacy/bus/pci_vendors.ids
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_halinit.rs
@@ -197,7 +200,8 @@ include(apic.cmake)
 # now in hal-rust.
 
 if(ARCH STREQUAL "i386")
-    include(pcidata.cmake)
+    # pcidata.cmake (native-bin2c → pci_classes.c/pci_vendors.c) removed:
+    # the .ids files are now embedded directly by hal-rust/src/x86/pcidata.rs.
     include(legacy.cmake)
     include(pic.cmake)
     add_subdirectory(minihal)

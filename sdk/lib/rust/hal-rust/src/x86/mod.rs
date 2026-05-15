@@ -46,6 +46,8 @@ pub mod minihal_stubs;
 pub mod misc;
 pub mod nmi;
 pub mod pcibus;
+#[cfg(target_arch = "x86")]
+pub mod pcidata;
 pub mod pcr;
 pub mod pic;
 #[cfg(target_arch = "x86")]
