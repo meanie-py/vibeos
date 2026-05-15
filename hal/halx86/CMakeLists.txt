@@ -44,7 +44,6 @@ add_custom_command(
         ${HAL_RUST_LIB}
     DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic_halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apictimer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
@@ -67,6 +66,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/madt.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
@@ -82,6 +82,7 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysbus.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/timer.rs
+            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/tsc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs

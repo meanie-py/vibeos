@@ -9,7 +9,8 @@ list(APPEND HAL_APIC_SOURCE
     # apic/halinit.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/apic_halinit.rs)
     # apic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
     # apic/rtctimer.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/rtctimer.rs)
-    apic/tsc.c)
+    # apic/tsc.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/tsc.rs)
+)
 
 add_asm_files(lib_hal_apic_asm ${HAL_APIC_ASM_SOURCE})
 add_library(lib_hal_apic OBJECT ${HAL_APIC_SOURCE} ${lib_hal_apic_asm})

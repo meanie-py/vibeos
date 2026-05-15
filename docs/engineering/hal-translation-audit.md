@@ -4,7 +4,7 @@ Last updated 2026-05-14. Companion to [`ntoskrnl-translation-audit.md`](ntoskrnl
 
 ## Status — 2026-05-14
 
-**~36 of ~45 substantive C files are now Rust on i386 + amd64.** mini_hal Rust-ification complete (Phase 2 closed `80ba39c6`). All 3 arches smoke green to a painted taskbar. Remaining work is concentrated in the ACPI table walker, the APIC timer/TSC trio, the i386 v86/BIOS path, and apic.c itself.
+**~38 of ~45 substantive C files are now Rust on i386 + amd64.** mini_hal Rust-ification complete (Phase 2 closed `80ba39c6`). All 3 arches smoke green to a painted taskbar. Remaining substantive work: `acpi/halacpi.c`, `acpi/halpnpdd.c`, `apic/apic.c`. Everything in `generic/` (incl. spinlock, buildtype, up) and the apic timer-trio is done.
 
 ### Strategy in force (set 2026-05-10)
 
@@ -33,7 +33,7 @@ CMake links `libhal_rust.a` into each `add_hal()` target and `libhal_rust_mini.a
 |---|---|---|
 | beep.c | ✓ | beep.rs |
 | bios.c | S¹ | — |
-| buildtype.c | C | (small; planned) |
+| buildtype.c | ✓ | buildtype.rs |
 | clock.c | ✓ | clock.rs |
 | cmos.c | ✓ | cmos.rs |
 | display.c | ✓ | display.rs |
@@ -48,7 +48,7 @@ CMake links `libhal_rust.a` into each `add_hal()` target and `libhal_rust_mini.a
 | portio.c (i386) | ✓ | portio.rs |
 | profil.c | ✓ | profil.rs |
 | reboot.c | ✓ | reboot.rs |
-| spinlock.c | C | (UP/MP duality; planned) |
+| spinlock.c | ✓ | spinlock.rs |
 | sysinfo.c | ✓ | sysinfo.rs |
 | timer.c | ✓ | timer.rs |
 | up.c | ✓ | up.rs |
@@ -107,7 +107,7 @@ ACPI table layouts are bindgen-generated (`hal_ddk` ACPI types); no link-time de
 | halinit.c | ✓ | apic_halinit.rs |
 | processor.c | ✓ | processor.rs |
 | rtctimer.c | ✓ | rtctimer.rs |
-| tsc.c | C | (178 LOC — TSC calibration; planned) |
+| tsc.c | ✓ | tsc.rs |
 | apictrap.S, tsccal.S | S² | — |
 
 ### `halx86/minihal/`
@@ -181,12 +181,9 @@ In rough order of effort:
 1. **`acpi/halacpi.c` (1,167 LOC)** — RSDP/RSDT/XSDT walking + FADT cache + `HalAcpiGetTable`. Largest remaining single file; the bindgen ACPI types are ready.
 2. **`acpi/halpnpdd.c` (920 LOC)** — ACPI PnP root device. Pairs with #1.
 3. **`apic/apic.c` (888 LOC)** — LAPIC/IOAPIC programming; IRQL via TPR; software-interrupt model on amd64.
-4. **`apic/tsc.c` (178 LOC)** — TSC calibration + read.
-5. **`generic/spinlock.c` (256 LOC)** — UP/MP-dual spinlock; `CONFIG_UP` define determines variant. Shared with both x86 arches.
-6. **`generic/buildtype.c` (20 LOC)** — Tiny; trivial port.
-7. **`minihal/halinit.c`** — keep as C until/unless the mini_hal entry-points need restructuring.
+4. **`minihal/halinit.c`** — keep as C until/unless the mini_hal entry-points need restructuring.
 
-Items 1+2 are the meaningful chunks; 3 is the next-biggest chunk after that. Total remaining: ~3,500 LOC of substantive C.
+Items 1+2 are the meaningful chunks; 3 is the next-biggest chunk after that. Total remaining: ~3,000 LOC of substantive C.
 
 `bios.c`, `x86bios.c`, `systimer.S`, `v86.S`, `trap.S`, `pic.S`, `apictrap.S`, `tsccal.S` — explicitly stay-as-C/asm per design.
 

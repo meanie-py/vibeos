@@ -56,6 +56,8 @@ pub mod profil;
 pub mod spinlock;
 pub mod sysbus;
 pub mod sysinfo;
+#[cfg(target_arch = "x86_64")]
+pub mod tsc;
 #[cfg(target_arch = "x86")]
 pub mod timer;
 pub mod up;
