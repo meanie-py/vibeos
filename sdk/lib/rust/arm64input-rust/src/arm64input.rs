@@ -1,0 +1,2891 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::ke::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoReleaseCancelSpinLock, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
+// FORCEINLINE DDK helpers — bindgen surfaces these as extern decls with no
+// exported symbol; use ntkrnl-sys's real inline impls (AGENTS.md gotcha).
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
+use core::ffi::c_void;
+
+// ---- integration shims (mechanical) ----
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+
+/// C `L"..."` → NUL-terminated UTF-16, evaluated at compile time.
+///
+/// The rustconv translation rendered the C wide string literals
+/// (`L"\\Device\\KeyboardClass0"` etc.) as 8-bit `b"..."` byte strings and
+/// passed them to `RtlInitUnicodeString`, whose `SourceString` is `PCWSTR`
+/// (`*const u16`). RtlInitUnicodeString then walked the ASCII bytes as
+/// UTF-16 code units, producing a garbage device name → `IoCreateDevice`
+/// returned `STATUS_OBJECT_PATH_SYNTAX_BAD` (0xC000003B) and the driver
+/// created no device objects at all (latent until the input-delivery smoke
+/// gate exercised it). These names are pure ASCII so a per-byte widen is
+/// exact and lossless.
+macro_rules! wsz {
+    ($s:literal) => {{
+        const B: &[u8] = $s;
+        const N: usize = B.len();
+        const W: [u16; N + 1] = {
+            let mut w = [0u16; N + 1];
+            let mut i = 0;
+            while i < N {
+                w[i] = B[i] as u16;
+                i += 1;
+            }
+            w
+        };
+        W
+    }};
+}
+
+/// IoCompleteRequest is a C macro aliasing IofCompleteRequest.
+#[inline]
+unsafe fn IoCompleteRequest(irp: PIRP, boost: i8) {
+    IofCompleteRequest(irp, boost as _);
+}
+
+/// virtio memory barriers (driver-local function-like macros, skipped by preamble)
+#[inline(always)]
+unsafe fn virtio_mb() {
+    core::arch::asm!("dmb sy", options(nostack, preserves_flags));
+}
+#[inline(always)]
+unsafe fn virtio_rmb() {
+    core::arch::asm!("dmb ld", options(nostack, preserves_flags));
+}
+#[inline(always)]
+unsafe fn virtio_wmb() {
+    core::arch::asm!("dmb st", options(nostack, preserves_flags));
+}
+
+// ---- file-scope preamble (translated) ----
+pub const TAG_INPUT: u32 = 0x41496e70;
+
+pub const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = 0x000b0800;
+
+pub const IOCTL_ARM64INPUT_INJECT_MOUSE: u32 = 0x000f0800;
+
+pub const VIRTIO_MMIO_MAGIC: u32 = 0x000;
+
+pub const VIRTIO_MMIO_VERSION: u32 = 0x004;
+
+pub const VIRTIO_MMIO_DEVICE_ID: u32 = 0x008;
+
+pub const VIRTIO_MMIO_VENDOR_ID: u32 = 0x00C;
+
+pub const VIRTIO_MMIO_DEV_FEATURES: u32 = 0x010;
+
+pub const VIRTIO_MMIO_DEV_FEATURES_SEL: u32 = 0x014;
+
+pub const VIRTIO_MMIO_DRV_FEATURES: u32 = 0x020;
+
+pub const VIRTIO_MMIO_DRV_FEATURES_SEL: u32 = 0x024;
+
+pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: u32 = 0x028;
+
+pub const VIRTIO_MMIO_QUEUE_SEL: u32 = 0x030;
+
+pub const VIRTIO_MMIO_QUEUE_NUM_MAX: u32 = 0x034;
+
+pub const VIRTIO_MMIO_QUEUE_NUM: u32 = 0x038;
+
+pub const VIRTIO_MMIO_QUEUE_PFN: u32 = 0x040;
+
+pub const VIRTIO_MMIO_QUEUE_READY: u32 = 0x044;
+
+pub const VIRTIO_MMIO_QUEUE_NOTIFY: u32 = 0x050;
+
+pub const VIRTIO_MMIO_INTERRUPT_STATUS: u32 = 0x060;
+
+pub const VIRTIO_MMIO_INTERRUPT_ACK: u32 = 0x064;
+
+pub const VIRTIO_MMIO_STATUS: u32 = 0x070;
+
+pub const VIRTIO_MMIO_QUEUE_DESC_LOW: u32 = 0x080;
+
+pub const VIRTIO_MMIO_QUEUE_DESC_HIGH: u32 = 0x084;
+
+pub const VIRTIO_MMIO_QUEUE_AVAIL_LOW: u32 = 0x090;
+
+pub const VIRTIO_MMIO_QUEUE_AVAIL_HIGH: u32 = 0x094;
+
+pub const VIRTIO_MMIO_QUEUE_USED_LOW: u32 = 0x0A0;
+
+pub const VIRTIO_MMIO_QUEUE_USED_HIGH: u32 = 0x0A4;
+
+pub const VIRTIO_MMIO_CONFIG: u32 = 0x100;
+
+pub const VIRTIO_STATUS_ACK: u32 = 0x01;
+
+pub const VIRTIO_STATUS_DRIVER: u32 = 0x02;
+
+pub const VIRTIO_STATUS_DRIVER_OK: u32 = 0x04;
+
+pub const VIRTIO_STATUS_FEATURES_OK: u32 = 0x08;
+
+pub const VIRTIO_INPUT_CFG_UNSET: u32 = 0x00;
+
+pub const VIRTIO_INPUT_CFG_ID_NAME: u32 = 0x01;
+
+pub const VIRTIO_INPUT_CFG_EV_BITS: u32 = 0x11;
+
+pub const VIRTIO_INPUT_CFG_ABS_INFO: u32 = 0x12;
+
+pub const EV_SYN: u32 = 0x00;
+
+pub const EV_KEY: u32 = 0x01;
+
+pub const EV_REL: u32 = 0x02;
+
+pub const EV_ABS: u32 = 0x03;
+
+pub const ABS_X: u32 = 0x00;
+
+pub const ABS_Y: u32 = 0x01;
+
+pub const REL_X: u32 = 0x00;
+
+pub const REL_Y: u32 = 0x01;
+
+pub const REL_WHEEL: u32 = 0x08;
+
+pub const BTN_LEFT: u32 = 0x110;
+
+pub const BTN_RIGHT: u32 = 0x111;
+
+pub const BTN_MIDDLE: u32 = 0x112;
+
+pub const KEY_A: u32 = 30;
+
+pub const VIRTQ_DESC_F_WRITE: u32 = 2;
+
+#[repr(C)]
+pub struct _VIRTIO_INPUT_EVENT {
+    pub Type: u16,
+    pub Code: u16,
+    pub Value: u32,
+}
+
+pub type VIRTIO_INPUT_EVENT = _VIRTIO_INPUT_EVENT;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_DESC {
+    pub Addr: u64,
+    pub Len: u32,
+    pub Flags: u16,
+    pub Next: u16,
+}
+
+pub type VIRTQ_DESC = _VIRTQ_DESC;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_AVAIL {
+    pub Flags: u16,
+    pub Idx: u16,
+    pub Ring: [u16; 0],
+}
+
+pub type VIRTQ_AVAIL = _VIRTQ_AVAIL;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_USED_ELEM {
+    pub Id: u32,
+    pub Len: u32,
+}
+
+pub type VIRTQ_USED_ELEM = _VIRTQ_USED_ELEM;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_USED {
+    pub Flags: u16,
+    pub Idx: u16,
+    pub Ring: [VIRTQ_USED_ELEM; 0],
+}
+
+pub type VIRTQ_USED = _VIRTQ_USED;
+
+pub const VIRTIO_QUEUE_SIZE: u32 = 64;
+
+pub const MAX_VIRTIO_INPUTS: usize = 4;
+
+#[repr(C)]
+pub struct _VIRTIO_INPUT_DEV {
+    pub Mmio: *mut u8,
+    pub MmioVersion: u32,
+    pub IsKeyboard: u8,
+    pub IsTablet: u8,
+    pub AbsMaxX: u32,
+    pub AbsMaxY: u32,
+    pub QueueVa: *mut core::ffi::c_void,
+    pub QueuePa: PHYSICAL_ADDRESS,
+    pub QueueAllocSize: u32,
+    pub Desc: *mut VIRTQ_DESC,
+    pub Avail: *mut VIRTQ_AVAIL,
+    pub Used: *mut VIRTQ_USED,
+    pub QueueSize: u32,
+    pub Events: *mut VIRTIO_INPUT_EVENT,
+    pub EventsPa: PHYSICAL_ADDRESS,
+    pub LastUsedIdx: u16,
+    pub AccumX: i32,
+    pub AccumY: i32,
+    pub AccumButtons: u16,
+    pub HasMove: u8,
+    pub HasButton: u8,
+    pub AbsValid: u8,
+}
+
+pub type VIRTIO_INPUT_DEV = _VIRTIO_INPUT_DEV;
+
+static mut VirtioInputs: [VIRTIO_INPUT_DEV; MAX_VIRTIO_INPUTS] = unsafe { core::mem::zeroed() };
+static mut VirtioInputCount: u32 = 0;
+static mut VirtioPollThreadHandle: *mut core::ffi::c_void = core::ptr::null_mut();
+static mut VirtioPollRunning: u8 = 0;
+static mut g_KbdDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+static mut g_MouDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+
+pub const KBD_RING_SIZE: usize = 64;
+
+pub const MOU_RING_SIZE: usize = 32;
+
+#[repr(C)]
+pub struct _INPUT_DEVICE_EXT {
+    pub IsKeyboard: u8,
+    pub PendingIrps: LIST_ENTRY,
+    pub IrpLock: KSPIN_LOCK,
+    pub Ring: [KEYBOARD_INPUT_DATA; KBD_RING_SIZE],
+    pub RingHead: u32,
+    pub RingTail: u32,
+    pub MouRing: [MOUSE_INPUT_DATA; MOU_RING_SIZE],
+    pub MouRingHead: u32,
+    pub MouRingTail: u32,
+    pub SelfDevice: PDEVICE_OBJECT,
+}
+
+pub type INPUT_DEVICE_EXT = _INPUT_DEVICE_EXT;
+pub type PINPUT_DEVICE_EXT = *mut _INPUT_DEVICE_EXT;
+
+static AsciiToScanCode: [u8; 128] = [
+    0,    0x01, 0,    0x2E, 0,    0,    0,    0,
+    0x0E, 0x0F, 0x1C, 0,    0,    0x1C, 0,    0,
+    0,    0,    0,    0,    0,    0,    0,    0,
+    0,    0,    0,    0x01, 0,    0,    0,    0,
+    0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28,
+    0x0A, 0x0B, 0x09, 0x0D, 0x33, 0x0C, 0x34, 0x35,
+    0x0B, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0A,
+    0x27, 0x27, 0x33, 0x0D, 0x34, 0x35,
+    0x03,
+    0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,
+    0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,
+    0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,
+    0x15, 0x2C,
+    0x1A, 0x2B, 0x1B, 0x07, 0x0C, 0x29,
+    0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,
+    0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,
+    0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,
+    0x15, 0x2C,
+    0x1A, 0x2B, 0x1B, 0x29, 0x0E,
+];
+
+#[repr(C)]
+pub struct _EVDEV_EXT_MAP {
+    pub EvdevCode: u16,
+    pub ScanCode: u16,
+    pub Flags: u16,
+}
+
+pub type EVDEV_EXT_MAP = _EVDEV_EXT_MAP;
+
+static EvdevExtendedKeys: [EVDEV_EXT_MAP; 16] = [
+    EVDEV_EXT_MAP { EvdevCode: 96,  ScanCode: 0x1C, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 97,  ScanCode: 0x1D, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 100, ScanCode: 0x35, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 102, ScanCode: 0x47, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 103, ScanCode: 0x48, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 104, ScanCode: 0x49, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 105, ScanCode: 0x4B, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 106, ScanCode: 0x4D, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 107, ScanCode: 0x4F, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 108, ScanCode: 0x50, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 109, ScanCode: 0x51, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 110, ScanCode: 0x52, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 111, ScanCode: 0x53, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 125, ScanCode: 0x5B, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 126, ScanCode: 0x5C, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 127, ScanCode: 0x5D, Flags: 0xE000 },
+];
+
+pub const EVDEV_EXT_COUNT: usize = 16;
+
+pub const VIRTIO_MMIO_BASE: u64 = 0x0A000000;
+
+pub const VIRTIO_MMIO_STRIDE: u64 = 0x200;
+
+pub const VIRTIO_MMIO_SLOTS: u32 = 32;
+
+pub const VIRTIO_MMIO_SIZE: u32 = 0x200;
+
+pub const VIRTIO_DEVICE_ID_INPUT: u32 = 18;
+
+#[inline(always)]
+
+unsafe fn VirtioRead32(Base: *mut u8, Offset: u32) -> u32 {
+    core::ptr::read_volatile(Base.offset(Offset as isize) as *const u32)
+}
+
+unsafe fn VirtioWrite32(Base: *mut u8, Offset: u32, Val: u32) {
+    core::ptr::write_volatile(Base.add(Offset as usize) as *mut u32, Val);
+}
+
+unsafe fn RingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> u8 {
+    if (((*DevExt).RingTail + 1) % KBD_RING_SIZE as u32) != (*DevExt).RingHead {
+        1u8
+    } else {
+        0u8
+    }
+}
+
+unsafe fn RingHasData(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
+    if (*DevExt).RingHead != (*DevExt).RingTail { 1u8 } else { 0u8 }
+}
+
+unsafe fn RingPush(DevExt: PINPUT_DEVICE_EXT, MakeCode: USHORT, Flags: USHORT) {
+    if RingHasSpace(DevExt) == 0 {
+        return;
+    }
+    let tail = (*DevExt).RingTail as usize;
+    (*DevExt).Ring[tail].UnitId = 0;
+    (*DevExt).Ring[tail].MakeCode = MakeCode;
+    (*DevExt).Ring[tail].Flags = Flags;
+    (*DevExt).Ring[tail].Reserved = 0;
+    (*DevExt).Ring[tail].ExtraInformation = 0;
+    (*DevExt).RingTail = ((*DevExt).RingTail + 1) % KBD_RING_SIZE as u32;
+}
+
+unsafe fn RingPop(DevExt: PINPUT_DEVICE_EXT) -> KEYBOARD_INPUT_DATA {
+    let data = (*DevExt).Ring[(*DevExt).RingHead as usize];
+    (*DevExt).RingHead = ((*DevExt).RingHead + 1) % KBD_RING_SIZE as u32;
+    data
+}
+
+unsafe fn MouRingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> u8 {
+    if (((*DevExt).MouRingTail + 1) % MOU_RING_SIZE as u32) != (*DevExt).MouRingHead {
+        1u8
+    } else {
+        0u8
+    }
+}
+
+unsafe fn MouRingHasData(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
+    if (*DevExt).MouRingHead != (*DevExt).MouRingTail { 1u8 } else { 0u8 }
+}
+
+unsafe fn MouRingPush(DevExt: PINPUT_DEVICE_EXT, Data: PMOUSE_INPUT_DATA) {
+    if MouRingHasSpace(DevExt) == 0 {
+        return;
+    }
+    (*DevExt).MouRing[(*DevExt).MouRingTail as usize] = *Data;
+    (*DevExt).MouRingTail = ((*DevExt).MouRingTail + 1) % MOU_RING_SIZE as u32;
+}
+
+unsafe fn MouRingPop(DevExt: PINPUT_DEVICE_EXT) -> MOUSE_INPUT_DATA {
+    let data = (*DevExt).MouRing[(*DevExt).MouRingHead as usize];
+    (*DevExt).MouRingHead = ((*DevExt).MouRingHead + 1) % MOU_RING_SIZE as u32;
+    data
+}
+
+unsafe fn MouTryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
+    let mut OldIrql: KIRQL = 0;
+    let mut Irp: PIRP;
+    let mut Entry: PLIST_ENTRY;
+    let mut Data: MOUSE_INPUT_DATA;
+
+    while MouRingHasData(DevExt) != 0 {
+        KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
+        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) {
+            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+            break;
+        }
+        Entry = RemoveHeadList(core::ptr::addr_of_mut!((*DevExt).PendingIrps));
+        Irp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        if IoSetCancelRoutine(Irp, None) == None {
+            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+            continue;
+        }
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+
+        Data = MouRingPop(DevExt);
+
+        core::ptr::copy_nonoverlapping(
+            core::ptr::addr_of!(Data) as *const u8,
+            (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+            core::mem::size_of::<MOUSE_INPUT_DATA>()
+        );
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
+        IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
+    }
+}
+
+unsafe fn TryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
+    let mut OldIrql: KIRQL = 0;
+    let mut Irp: PIRP;
+    let mut Entry: PLIST_ENTRY;
+    let mut Data: KEYBOARD_INPUT_DATA;
+
+    while RingHasData(DevExt) != 0 {
+        KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
+        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) {
+            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+            break;
+        }
+        Entry = RemoveHeadList(core::ptr::addr_of_mut!((*DevExt).PendingIrps));
+        Irp = (Entry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
+        if IoSetCancelRoutine(Irp, None).is_none() {
+            KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+            continue;
+        }
+        KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+
+        Data = RingPop(DevExt);
+
+        RtlCopyMemory(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            core::ptr::addr_of_mut!(Data) as *mut core::ffi::c_void,
+            core::mem::size_of::<KEYBOARD_INPUT_DATA>()
+        );
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
+        IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT as i8);
+    }
+}
+
+unsafe fn InjectByte(DevExt: PINPUT_DEVICE_EXT, Byte: UCHAR) {
+    let ScanCode: USHORT;
+    let NeedShift: BOOLEAN;
+
+    if Byte >= 128 {
+        return;
+    }
+
+    ScanCode = AsciiToScanCode[Byte as usize] as USHORT;
+    if ScanCode == 0 {
+        return;
+    }
+
+    NeedShift = if (Byte >= b'A' && Byte <= b'Z') ||
+                   Byte == b'!' || Byte == b'@' || Byte == b'#' ||
+                   Byte == b'$' || Byte == b'%' || Byte == b'^' ||
+                   Byte == b'&' || Byte == b'*' || Byte == b'(' ||
+                   Byte == b')' || Byte == b'_' || Byte == b'+' ||
+                   Byte == b'{' || Byte == b'}' || Byte == b'|' ||
+                   Byte == b':' || Byte == b'"' || Byte == b'<' ||
+                   Byte == b'>' || Byte == b'?' || Byte == b'~' {
+        1u8
+    } else {
+        0u8
+    };
+
+    if NeedShift != 0 {
+        RingPush(DevExt, 0x2A, 0);
+    }
+
+    RingPush(DevExt, ScanCode, 0);
+    RingPush(DevExt, ScanCode, KEY_BREAK);
+
+    if NeedShift != 0 {
+        RingPush(DevExt, 0x2A, KEY_BREAK);
+    }
+
+    TryCompleteIrp(DevExt);
+}
+
+unsafe extern "C" fn InputCancelIrp(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP)
+{
+    let DevExt = (*DeviceObject).DeviceExtension as *mut INPUT_DEVICE_EXT;
+    let mut OldIrql: KIRQL = 0;
+
+    IoReleaseCancelSpinLock((*Irp).CancelIrql);
+
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), &mut OldIrql);
+    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
+    (*Irp).IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
+}
+
+unsafe extern "C" fn InputCreate(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP
+) -> NTSTATUS {
+    let _ = DeviceObject;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*Irp).IoStatus.Information = 0;
+    IoCompleteRequest(Irp, 0);
+    return STATUS_SUCCESS;
+}
+
+unsafe extern "C" fn InputClose(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP
+) -> NTSTATUS {
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*Irp).IoStatus.Information = 0;
+    IoCompleteRequest(Irp, 0);
+    STATUS_SUCCESS
+}
+
+unsafe extern "C" fn InputCleanup(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP
+) -> NTSTATUS {
+    let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
+    let FileObject = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
+    let mut OldIrql: KIRQL = 0;
+    let mut CancelList: LIST_ENTRY = core::mem::zeroed();
+    let mut Entry: PLIST_ENTRY;
+    let mut PendingIrp: PIRP;
+
+    InitializeListHead(&mut CancelList);
+
+    KeAcquireSpinLock(&mut (*DevExt).IrpLock, &mut OldIrql);
+    Entry = (*DevExt).PendingIrps.Flink;
+    while Entry != &mut (*DevExt).PendingIrps as PLIST_ENTRY {
+        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        Entry = (*Entry).Flink;
+        if (*IoGetCurrentIrpStackLocation(PendingIrp)).FileObject == FileObject {
+            RemoveEntryList(&mut (*PendingIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);
+            if IoSetCancelRoutine(PendingIrp, None) != None {
+                InsertTailList(&mut CancelList, &mut (*PendingIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);
+            }
+        }
+    }
+    KeReleaseSpinLock(&mut (*DevExt).IrpLock, OldIrql);
+
+    while !IsListEmpty(&mut CancelList) {
+        Entry = RemoveHeadList(&mut CancelList);
+        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        (*PendingIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
+        (*PendingIrp).IoStatus.Information = 0;
+        IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
+    }
+
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*Irp).IoStatus.Information = 0;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    STATUS_SUCCESS
+}
+
+unsafe extern "C" fn InputRead(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP
+) -> NTSTATUS {
+    let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
+    let mut OldIrql: KIRQL = 0;
+
+    if (*DevExt).IsKeyboard != 0 && RingHasData(DevExt) != 0 {
+        let Data = RingPop(DevExt);
+        RtlCopyMemory(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            core::ptr::addr_of!(Data) as *const core::ffi::c_void,
+            core::mem::size_of::<KEYBOARD_INPUT_DATA>()
+        );
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
+        IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
+        return STATUS_SUCCESS;
+    }
+
+    if (*DevExt).IsKeyboard == 0 && MouRingHasData(DevExt) != 0 {
+        let Data = MouRingPop(DevExt);
+        RtlCopyMemory(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            core::ptr::addr_of!(Data) as *const core::ffi::c_void,
+            core::mem::size_of::<MOUSE_INPUT_DATA>()
+        );
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
+        IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
+        return STATUS_SUCCESS;
+    }
+
+    IoMarkIrpPending(Irp);
+
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
+    IoSetCancelRoutine(Irp, Some(InputCancelIrp));
+    InsertTailList(
+        core::ptr::addr_of_mut!((*DevExt).PendingIrps),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry)
+    );
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
+
+    STATUS_PENDING
+}
+
+unsafe extern "C" fn InputDeviceControl(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP
+) -> NTSTATUS {
+    let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    let mut Status: NTSTATUS = STATUS_NOT_SUPPORTED;
+    let mut Information: ULONG_PTR = 0;
+
+    if (*DevExt).IsKeyboard != 0 {
+        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode {
+            IOCTL_ARM64INPUT_INJECT_BYTE => {
+                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= 1 {
+                    let pByte = (*Irp).AssociatedIrp.SystemBuffer as PUCHAR;
+                    InjectByte(DevExt, *pByte);
+                    Status = STATUS_SUCCESS;
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+            }
+
+            IOCTL_KEYBOARD_QUERY_ATTRIBUTES => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_ATTRIBUTES>() as u32 {
+                    let pAttr = (*Irp).AssociatedIrp.SystemBuffer as PKEYBOARD_ATTRIBUTES;
+                    RtlZeroMemory(pAttr as *mut core::ffi::c_void, core::mem::size_of::<KEYBOARD_ATTRIBUTES>());
+                    (*pAttr).KeyboardIdentifier.Type = 4;
+                    (*pAttr).KeyboardIdentifier.Subtype = 0;
+                    (*pAttr).NumberOfFunctionKeys = 12;
+                    (*pAttr).NumberOfIndicators = 3;
+                    (*pAttr).NumberOfKeysTotal = 101;
+                    (*pAttr).InputDataQueueLength = 100;
+                    (*pAttr).KeyRepeatMinimum.Rate = 2;
+                    (*pAttr).KeyRepeatMinimum.Delay = 250;
+                    (*pAttr).KeyRepeatMaximum.Rate = 30;
+                    (*pAttr).KeyRepeatMaximum.Delay = 1000;
+                    Status = STATUS_SUCCESS;
+                    Information = core::mem::size_of::<KEYBOARD_ATTRIBUTES>() as ULONG_PTR;
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+            }
+
+            IOCTL_KEYBOARD_QUERY_INDICATORS => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>() as u32 {
+                    let pInd = (*Irp).AssociatedIrp.SystemBuffer as PKEYBOARD_INDICATOR_PARAMETERS;
+                    (*pInd).UnitId = 0;
+                    (*pInd).LedFlags = 0;
+                    Status = STATUS_SUCCESS;
+                    Information = core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>() as ULONG_PTR;
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+            }
+
+            IOCTL_KEYBOARD_QUERY_INDICATOR_TRANSLATION => {
+                Status = STATUS_NOT_SUPPORTED;
+            }
+
+            IOCTL_KEYBOARD_SET_INDICATORS => {
+                Status = STATUS_SUCCESS;
+            }
+
+            _ => {
+                Status = STATUS_NOT_SUPPORTED;
+            }
+        }
+    } else {
+        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode {
+            IOCTL_ARM64INPUT_INJECT_MOUSE => {
+                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= core::mem::size_of::<MOUSE_INPUT_DATA>() as u32 {
+                    let pMou = (*Irp).AssociatedIrp.SystemBuffer as PMOUSE_INPUT_DATA;
+                    MouRingPush(DevExt, pMou);
+                    MouTryCompleteIrp(DevExt);
+                    Status = STATUS_SUCCESS;
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+            }
+
+            IOCTL_MOUSE_QUERY_ATTRIBUTES => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<MOUSE_ATTRIBUTES>() as u32 {
+                    let pAttr = (*Irp).AssociatedIrp.SystemBuffer as PMOUSE_ATTRIBUTES;
+                    RtlZeroMemory(pAttr as *mut core::ffi::c_void, core::mem::size_of::<MOUSE_ATTRIBUTES>());
+                    (*pAttr).MouseIdentifier = MOUSE_SERIAL_HARDWARE as u16;
+                    (*pAttr).NumberOfButtons = 3;
+                    (*pAttr).SampleRate = 60;
+                    (*pAttr).InputDataQueueLength = MOU_RING_SIZE as u32;
+                    Status = STATUS_SUCCESS;
+                    Information = core::mem::size_of::<MOUSE_ATTRIBUTES>() as ULONG_PTR;
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+            }
+
+            _ => {
+                Status = STATUS_NOT_SUPPORTED;
+            }
+        }
+    }
+
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    (*Irp).IoStatus.Information = Information as u64;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    Status
+}
+
+unsafe fn EvdevToScanCode(EvdevCode: USHORT, OutScanCode: *mut USHORT, OutFlags: *mut USHORT) -> BOOLEAN {
+    let mut i: ULONG;
+
+    if EvdevCode >= 1 && EvdevCode <= 88 {
+        *OutScanCode = EvdevCode;
+        *OutFlags = 0;
+        return 1u8;
+    }
+
+    i = 0;
+    while (i as usize) < EVDEV_EXT_COUNT {
+        if EvdevExtendedKeys[i as usize].EvdevCode == EvdevCode {
+            *OutScanCode = EvdevExtendedKeys[i as usize].ScanCode;
+            *OutFlags = EvdevExtendedKeys[i as usize].Flags;
+            return 1u8;
+        }
+        i += 1;
+    }
+
+    return 0u8;
+}
+
+unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
+    let mut MaxSize: u32;
+    let mut QueueSize: u32;
+    let mut DescSize: u32;
+    let mut AvailSize: u32;
+    let mut UsedSize: u32;
+    let mut EventsSize: u32;
+    let mut AvailOff: u32;
+    let mut UsedOff: u32;
+    let mut EventsOff: u32;
+    let mut TotalSize: u32;
+    let mut HighAddr: PHYSICAL_ADDRESS = core::mem::zeroed();
+    let mut i: u32;
+
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x030, QueueIdx);
+    virtio_mb();
+
+    MaxSize = VirtioRead32((*Dev).Mmio as *mut u8, 0x034);
+    if MaxSize == 0 {
+        return 0xC00000E0u32 as i32;
+    }
+
+    QueueSize = if MaxSize < 64 { MaxSize } else { 64 };
+    (*Dev).QueueSize = QueueSize;
+
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x038, QueueSize);
+
+    DescSize = core::mem::size_of::<VIRTQ_DESC>() as u32 * QueueSize;
+    AvailSize = core::mem::size_of::<u16>() as u32 * 2 + core::mem::size_of::<u16>() as u32 * QueueSize + core::mem::size_of::<u16>() as u32;
+    UsedSize = core::mem::size_of::<u16>() as u32 * 2 + core::mem::size_of::<VIRTQ_USED_ELEM>() as u32 * QueueSize + core::mem::size_of::<u16>() as u32;
+    EventsSize = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as u32 * QueueSize;
+
+    if (*Dev).MmioVersion >= 2 {
+        AvailOff = (DescSize + 0xFFF) & !0xFFF;
+        UsedOff = (AvailOff + AvailSize + 0xFFF) & !0xFFF;
+    } else {
+        AvailOff = DescSize;
+        UsedOff = (AvailOff + AvailSize + 0xFFF) & !0xFFF;
+    }
+    EventsOff = (UsedOff + UsedSize + 0xFFF) & !0xFFF;
+    TotalSize = EventsOff + EventsSize;
+
+    HighAddr.QuadPart = 0xFFFFFFFFu64 as i64;
+    (*Dev).QueueVa = MmAllocateContiguousMemory(TotalSize as _, HighAddr);
+    if (*Dev).QueueVa.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    (*Dev).QueuePa = MmGetPhysicalAddress((*Dev).QueueVa);
+    (*Dev).QueueAllocSize = TotalSize;
+    core::ptr::write_bytes((*Dev).QueueVa as *mut u8, 0, TotalSize as usize);
+
+    (*Dev).Desc = (*Dev).QueueVa as *mut VIRTQ_DESC;
+    (*Dev).Avail = ((*Dev).QueueVa as *mut u8).add(AvailOff as usize) as *mut VIRTQ_AVAIL;
+    (*Dev).Used = ((*Dev).QueueVa as *mut u8).add(UsedOff as usize) as *mut VIRTQ_USED;
+    (*Dev).Events = ((*Dev).QueueVa as *mut u8).add(EventsOff as usize) as *mut VIRTIO_INPUT_EVENT;
+    (*Dev).EventsPa.QuadPart = (*Dev).QueuePa.QuadPart + EventsOff as i64;
+
+    if (*Dev).MmioVersion >= 2 {
+        let DescPa: PHYSICAL_ADDRESS = (*Dev).QueuePa;
+        let mut AvailPa: PHYSICAL_ADDRESS = core::mem::zeroed();
+        let mut UsedPa: PHYSICAL_ADDRESS = core::mem::zeroed();
+        AvailPa.QuadPart = (*Dev).QueuePa.QuadPart + AvailOff as i64;
+        UsedPa.QuadPart = (*Dev).QueuePa.QuadPart + UsedOff as i64;
+
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x080, DescPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x084, (DescPa.QuadPart >> 32) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x090, AvailPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x094, (AvailPa.QuadPart >> 32) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x0A0, UsedPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x0A4, (UsedPa.QuadPart >> 32) as u32);
+        virtio_mb();
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x044, 1);
+    } else {
+        // Legacy virtio-mmio (v1) queue setup, spec §4.2.4. The driver MUST
+        // write QueueAlign (0x03c) so the device computes the used-ring
+        // offset the same way the driver laid it out: used at
+        // align(desc+avail, QueueAlign). We page-align the used ring
+        // (UsedOff above), so QueueAlign must be 4096. Omitting this leaves
+        // QEMU's align at its reset default (!= 4096) → the device writes
+        // completed buffers to a different offset than the poll thread
+        // reads → zero input ever delivered (the bug this smoke gate caught;
+        // the legacy path was never exercised until a virtio-input device
+        // was wired in). GuestPageSize (0x028) then QueuePFN (0x040) last.
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x028, 4096);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x03c, 4096);
+        virtio_mb();
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x040, ((*Dev).QueuePa.QuadPart / 4096) as u32);
+    }
+
+    i = 0;
+    while i < QueueSize {
+        (*(*Dev).Desc.add(i as usize)).Addr = (*Dev).EventsPa.QuadPart as u64 + (i * core::mem::size_of::<VIRTIO_INPUT_EVENT>() as u32) as u64;
+        (*(*Dev).Desc.add(i as usize)).Len = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as u32;
+        (*(*Dev).Desc.add(i as usize)).Flags = 2;
+        (*(*Dev).Desc.add(i as usize)).Next = 0;
+
+        *(core::ptr::addr_of_mut!((*(*Dev).Avail).Ring) as *mut u16).add(i as usize) = i as u16;
+        i += 1;
+    }
+    virtio_wmb();
+    (*(*Dev).Avail).Idx = QueueSize as u16;
+    (*Dev).LastUsedIdx = 0;
+
+    virtio_mb();
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x050, QueueIdx);
+
+    STATUS_SUCCESS
+}
+
+unsafe fn VirtioQueryInputCaps(Dev: *mut VIRTIO_INPUT_DEV) {
+    let cfg = (*Dev).Mmio.offset(VIRTIO_MMIO_CONFIG as isize);
+    let mut bitmap: [u8; 128] = [0; 128];
+    let mut size: u32;
+    let mut i: u32;
+
+    (*Dev).IsKeyboard = 0u8;
+    (*Dev).IsTablet = 0u8;
+
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_EV_BITS as u8);
+    virtio_mb();
+    core::ptr::write_volatile(cfg.offset(1), EV_KEY as u8);
+    virtio_mb();
+    size = core::ptr::read_volatile(cfg.offset(2)) as u32;
+
+    if size > 0 && size <= core::mem::size_of::<[u8; 128]>() as u32 {
+        i = 0;
+        while i < size {
+            bitmap[i as usize] = core::ptr::read_volatile(cfg.offset(8 + i as isize));
+            i += 1;
+        }
+
+        if size > (KEY_A / 8) && (bitmap[(KEY_A / 8) as usize] & (1 << (KEY_A % 8))) != 0 {
+            (*Dev).IsKeyboard = 1u8;
+        }
+    }
+
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_EV_BITS as u8);
+    virtio_mb();
+    core::ptr::write_volatile(cfg.offset(1), EV_ABS as u8);
+    virtio_mb();
+    size = core::ptr::read_volatile(cfg.offset(2)) as u32;
+
+    if size > 0 {
+        i = 0;
+        while i < size && i < core::mem::size_of::<[u8; 128]>() as u32 {
+            bitmap[i as usize] = core::ptr::read_volatile(cfg.offset(8 + i as isize));
+            i += 1;
+        }
+
+        if (bitmap[0] & 1) != 0 {
+            (*Dev).IsTablet = 1u8;
+        }
+    }
+
+    if (*Dev).IsTablet != 0 {
+        let mut absinfo: *const u32;
+
+        core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_ABS_INFO as u8);
+        virtio_mb();
+        core::ptr::write_volatile(cfg.offset(1), ABS_X as u8);
+        virtio_mb();
+        size = core::ptr::read_volatile(cfg.offset(2)) as u32;
+        if size >= 12 {
+            absinfo = cfg.offset(8) as *const u32;
+            (*Dev).AbsMaxX = core::ptr::read_volatile(absinfo.offset(1));
+        } else {
+            (*Dev).AbsMaxX = 32767;
+        }
+
+        core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_ABS_INFO as u8);
+        core::ptr::write_volatile(cfg.offset(1), ABS_Y as u8);
+        virtio_mb();
+        size = core::ptr::read_volatile(cfg.offset(2)) as u32;
+        if size >= 12 {
+            absinfo = cfg.offset(8) as *const u32;
+            (*Dev).AbsMaxY = core::ptr::read_volatile(absinfo.offset(1));
+        } else {
+            (*Dev).AbsMaxY = 32767;
+        }
+    }
+
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_UNSET as u8);
+    core::ptr::write_volatile(cfg.offset(1), 0);
+    virtio_mb();
+}
+
+unsafe fn VirtioScanDevices() {
+    let mut i: u32;
+    let mut PhysAddr: PHYSICAL_ADDRESS = core::mem::zeroed();
+    let mut Mmio: *mut u8;
+    let mut Magic: u32;
+    let mut Version: u32;
+    let mut DevId: u32;
+    let mut Status: i32;
+
+    VirtioInputCount = 0;
+
+    i = 0;
+    while i < VIRTIO_MMIO_SLOTS && (VirtioInputCount as usize) < MAX_VIRTIO_INPUTS {
+        PhysAddr.QuadPart = (VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE) as i64;
+        Mmio = MmMapIoSpace(PhysAddr, VIRTIO_MMIO_SIZE as _, MmNonCached) as *mut u8;
+        if Mmio.is_null() {
+            i += 1;
+            continue;
+        }
+
+        Magic = VirtioRead32(Mmio, VIRTIO_MMIO_MAGIC);
+        if Magic != 0x74726976 {
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
+            i += 1;
+            continue;
+        }
+
+        Version = VirtioRead32(Mmio, VIRTIO_MMIO_VERSION);
+        DevId = VirtioRead32(Mmio, VIRTIO_MMIO_DEVICE_ID);
+
+        if DevId != VIRTIO_DEVICE_ID_INPUT {
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
+            i += 1;
+            continue;
+        }
+
+        DbgPrint(b"[VIRTIO-INPUT] Found input device at slot %lu (version %lu)\n\0".as_ptr() as *const i8, i, Version);
+
+        let Dev = &mut VirtioInputs[VirtioInputCount as usize];
+        core::ptr::write_bytes(Dev as *mut _VIRTIO_INPUT_DEV, 0, 1);
+        (*Dev).Mmio = Mmio;
+        (*Dev).MmioVersion = Version;
+
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, 0);
+        virtio_mb();
+
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK);
+        virtio_mb();
+
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+        virtio_mb();
+
+        VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 0);
+        VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 0);
+        if Version >= 2 {
+            VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 1);
+            VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 1);
+        }
+        virtio_mb();
+
+        if Version >= 2 {
+            VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+                          VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK);
+            virtio_mb();
+
+            let StatusVal = VirtioRead32(Mmio, VIRTIO_MMIO_STATUS);
+            if (StatusVal & VIRTIO_STATUS_FEATURES_OK) == 0 {
+                DbgPrint(b"[VIRTIO-INPUT] FEATURES_OK not set, skipping slot %lu\n\0".as_ptr() as *const i8, i);
+                MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
+                i += 1;
+                continue;
+            }
+        }
+
+        VirtioQueryInputCaps(Dev);
+
+        Status = VirtioSetupQueue(Dev, 0);
+        if !NT_SUCCESS(Status) {
+            DbgPrint(b"[VIRTIO-INPUT] Queue setup failed: 0x%08lx\n\0".as_ptr() as *const i8, Status);
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
+            i += 1;
+            continue;
+        }
+
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+                      VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+                      (if Version >= 2 { VIRTIO_STATUS_FEATURES_OK } else { 0 }) |
+                      VIRTIO_STATUS_DRIVER_OK);
+        virtio_mb();
+
+        DbgPrint(b"[VIRTIO-INPUT] Initialized %s%sat slot %lu (abs %lu x %lu)\n\0".as_ptr() as *const i8,
+                if (*Dev).IsKeyboard != 0 { b"keyboard \0".as_ptr() } else { b"\0".as_ptr() },
+                if (*Dev).IsTablet != 0 { b"tablet \0".as_ptr() } else { b"\0".as_ptr() },
+                i, (*Dev).AbsMaxX, (*Dev).AbsMaxY);
+
+        VirtioInputCount += 1;
+        i += 1;
+    }
+
+    DbgPrint(b"[VIRTIO-INPUT] Found %lu input device(s)\n\0".as_ptr() as *const i8, VirtioInputCount);
+}
+
+unsafe fn VirtioProcessKeyEvent(EvdevCode: USHORT, Value: ULONG) {
+    let mut DevExt: PINPUT_DEVICE_EXT;
+    let mut ScanCode: USHORT = 0;
+    let mut Flags: USHORT = 0;
+
+    if g_KbdDevice == core::ptr::null_mut() {
+        return;
+    }
+
+    if EvdevToScanCode(EvdevCode, core::ptr::addr_of_mut!(ScanCode), core::ptr::addr_of_mut!(Flags)) == 0 {
+        return;
+    }
+
+    DevExt = (*g_KbdDevice).DeviceExtension as PINPUT_DEVICE_EXT;
+
+    if Value == 0 {
+        Flags |= KEY_BREAK;
+    }
+
+    RingPush(DevExt, ScanCode, Flags);
+    TryCompleteIrp(DevExt);
+
+    // One-shot delivery oracle for the arm64 input smoke gate: proves the
+    // QMP -> virtio-mmio -> poll thread -> scancode xlate -> KeyboardClass0
+    // ring -> read-IRP path completed end-to-end. Fires exactly once so a
+    // sustained key storm doesn't spam serial.
+    static KBD_DELIVERED: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(false);
+    if KBD_DELIVERED
+        .compare_exchange(
+            false,
+            true,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        DbgPrint(
+            b"[ARM64INPUT] KBD-DELIVERED sc=0x%04x fl=0x%04x\n\0".as_ptr() as *const i8,
+            ScanCode as u32,
+            Flags as u32,
+        );
+    }
+}
+
+unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VIRTIO_INPUT_DEV) {
+    match EvdevCode {
+        0x110 => {
+            (*Dev).AccumButtons |= if Value != 0 {
+                MOUSE_LEFT_BUTTON_DOWN
+            } else {
+                MOUSE_LEFT_BUTTON_UP
+            };
+            (*Dev).HasButton = 1u8;
+        }
+        0x111 => {
+            (*Dev).AccumButtons |= if Value != 0 {
+                MOUSE_RIGHT_BUTTON_DOWN
+            } else {
+                MOUSE_RIGHT_BUTTON_UP
+            };
+            (*Dev).HasButton = 1u8;
+        }
+        0x112 => {
+            (*Dev).AccumButtons |= if Value != 0 {
+                MOUSE_MIDDLE_BUTTON_DOWN
+            } else {
+                MOUSE_MIDDLE_BUTTON_UP
+            };
+            (*Dev).HasButton = 1u8;
+        }
+        _ => {}
+    }
+}
+
+unsafe fn VirtioFlushMouseState(Dev: *mut VIRTIO_INPUT_DEV) {
+    let mut DevExt: PINPUT_DEVICE_EXT;
+    let mut Data: MOUSE_INPUT_DATA = core::mem::zeroed();
+
+    if g_MouDevice.is_null() {
+        return;
+    }
+    if (*Dev).HasMove == 0 && (*Dev).HasButton == 0 {
+        return;
+    }
+
+    DevExt = (*g_MouDevice).DeviceExtension as PINPUT_DEVICE_EXT;
+
+    RtlZeroMemory(core::ptr::addr_of_mut!(Data) as PVOID, core::mem::size_of::<MOUSE_INPUT_DATA>() as SIZE_T);
+
+    if (*Dev).IsTablet != 0 && (*Dev).AbsValid != 0 {
+        Data.Flags = MOUSE_MOVE_ABSOLUTE as u16;
+        if (*Dev).AbsMaxX > 0 {
+            Data.LastX = (((*Dev).AccumX as ULONGLONG) * 65535 / (*Dev).AbsMaxX as ULONGLONG) as LONG;
+        } else {
+            Data.LastX = (*Dev).AccumX;
+        }
+        if (*Dev).AbsMaxY > 0 {
+            Data.LastY = (((*Dev).AccumY as ULONGLONG) * 65535 / (*Dev).AbsMaxY as ULONGLONG) as LONG;
+        } else {
+            Data.LastY = (*Dev).AccumY;
+        }
+    } else if (*Dev).HasMove != 0 {
+        Data.Flags = 0;
+        Data.LastX = (*Dev).AccumX;
+        Data.LastY = (*Dev).AccumY;
+    }
+
+    Data.__bindgen_anon_1.__bindgen_anon_1.ButtonFlags = (*Dev).AccumButtons;
+
+    MouRingPush(DevExt, core::ptr::addr_of_mut!(Data));
+    MouTryCompleteIrp(DevExt);
+
+    // One-shot delivery oracle (see KBD-DELIVERED): proves the pointer path
+    // (virtio rel/abs+button -> MOUSE_INPUT_DATA -> PointerClass0 ring ->
+    // read-IRP) completed end-to-end. Fires exactly once.
+    static MOU_DELIVERED: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(false);
+    if MOU_DELIVERED
+        .compare_exchange(
+            false,
+            true,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        DbgPrint(
+            b"[ARM64INPUT] MOU-DELIVERED btn=0x%04x dx=%d dy=%d\n\0".as_ptr() as *const i8,
+            Data.__bindgen_anon_1.__bindgen_anon_1.ButtonFlags as u32,
+            Data.LastX,
+            Data.LastY,
+        );
+    }
+
+    if (*Dev).IsTablet == 0 {
+        (*Dev).AccumX = 0;
+        (*Dev).AccumY = 0;
+    }
+    (*Dev).AccumButtons = 0;
+    (*Dev).HasMove = 0u8;
+    (*Dev).HasButton = 0u8;
+}
+
+unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
+    let mut FoundEvents: BOOLEAN = 0u8;
+    let mut UsedIdx: USHORT;
+    let mut DescId: ULONG;
+    let mut Evt: *mut VIRTIO_INPUT_EVENT;
+
+    // The used ring + event payloads are written by the DEVICE (QEMU) via
+    // DMA — the guest never stores to them, so a plain Rust load is treated
+    // as loop-invariant by LLVM and constant-folded to its initial 0. That
+    // is THE bug this smoke gate caught: QEMU consumed all 64 buffers and
+    // wrote used.idx=64 to the exact PA the guest reads, but the poll thread
+    // saw a cached 0 and never processed a single event. Every device->guest
+    // read here MUST be read_volatile (project DMA/MMIO volatile discipline).
+    // VIRTQ_USED is repr(C, packed) → addr_of! (no references to packed
+    // fields).
+    virtio_rmb();
+    UsedIdx = core::ptr::read_volatile(core::ptr::addr_of!((*(*Dev).Used).Idx));
+
+    while (*Dev).LastUsedIdx != UsedIdx {
+        FoundEvents = 1u8;
+        let ring0 = core::ptr::addr_of!((*(*Dev).Used).Ring) as *const VIRTQ_USED_ELEM;
+        let slot = ((*Dev).LastUsedIdx % (*Dev).QueueSize as u16) as usize;
+        DescId = core::ptr::read_volatile(core::ptr::addr_of!((*ring0.add(slot)).Id));
+        Evt = (*Dev).Events.offset(DescId as isize);
+        let ev = core::ptr::read_volatile(Evt); // device-written payload
+
+        match ev.Type {
+            0x01 => {
+                if ev.Code < 0x110 {
+                    VirtioProcessKeyEvent(ev.Code, ev.Value);
+                } else {
+                    VirtioProcessMouseButton(ev.Code, ev.Value, Dev);
+                }
+            }
+
+            0x02 => {
+                match ev.Code {
+                    0x00 => {
+                        (*Dev).AccumX += ev.Value as LONG;
+                        (*Dev).HasMove = 1u8;
+                    }
+                    0x01 => {
+                        (*Dev).AccumY += ev.Value as LONG;
+                        (*Dev).HasMove = 1u8;
+                    }
+                    0x08 => {
+                    }
+                    _ => {}
+                }
+            }
+
+            0x03 => {
+                match ev.Code {
+                    0x00 => {
+                        (*Dev).AccumX = ev.Value as LONG;
+                        (*Dev).HasMove = 1u8;
+                        (*Dev).AbsValid = 1u8;
+                    }
+                    0x01 => {
+                        (*Dev).AccumY = ev.Value as LONG;
+                        (*Dev).HasMove = 1u8;
+                        (*Dev).AbsValid = 1u8;
+                    }
+                    _ => {}
+                }
+            }
+
+            0x00 => {
+                VirtioFlushMouseState(Dev);
+            }
+
+            _ => {}
+        }
+
+        (*(*Dev).Desc.offset(DescId as isize)).Len = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as ULONG;
+        (*(*Dev).Desc.offset(DescId as isize)).Flags = 2u16;
+        virtio_wmb();
+        (*(*Dev).Avail).Ring[((*(*Dev).Avail).Idx % (*Dev).QueueSize as u16) as usize] = DescId as USHORT;
+        virtio_wmb();
+        (*(*Dev).Avail).Idx = (*(*Dev).Avail).Idx.wrapping_add(1);
+
+        (*Dev).LastUsedIdx = (*Dev).LastUsedIdx.wrapping_add(1);
+    }
+
+    if FoundEvents != 0 {
+        virtio_mb();
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x050, 0);
+    }
+
+    FoundEvents
+}
+
+unsafe extern "C" fn VirtioPollThread(Context: PVOID) {
+    let mut Delay: LARGE_INTEGER = core::mem::zeroed();
+
+    Delay.QuadPart = -10000;
+
+    while VirtioPollRunning != 0 {
+        let mut found: BOOLEAN = 0u8;
+        let mut i: ULONG;
+
+        i = 0;
+        while i < VirtioInputCount {
+            if VirtioPollDevice(&mut VirtioInputs[i as usize]) != 0 {
+                found = 1u8;
+            }
+            i += 1;
+        }
+
+        KeDelayExecutionThread(0i32 as i8, 0u8, &mut Delay);
+
+        if found == 0 {
+            let mut j: ULONG;
+            j = 0;
+            while j < 5 {
+                KeDelayExecutionThread(0i32 as i8, 0u8, &mut Delay);
+                j += 1;
+            }
+        }
+    }
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DriverEntry(
+    DriverObject: PDRIVER_OBJECT,
+    RegistryPath: PUNICODE_STRING,
+) -> i32 {
+    let mut Status: i32;
+    let mut KbdDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut MouDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut DevExt: *mut _INPUT_DEVICE_EXT;
+    let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
+    let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
+
+    DbgPrint(b"[ARM64INPUT] DriverEntry\n\0".as_ptr() as _);
+
+    (*DriverObject).MajorFunction[0x00] = Some(InputCreate);
+    (*DriverObject).MajorFunction[0x02] = Some(InputClose);
+    (*DriverObject).MajorFunction[0x12] = Some(InputCleanup);
+    (*DriverObject).MajorFunction[0x03] = Some(InputRead);
+    (*DriverObject).MajorFunction[0x0E] = Some(InputDeviceControl);
+
+    let n_kbd_dev = wsz!(b"\\Device\\KeyboardClass0");
+    RtlInitUnicodeString(&mut DeviceName, n_kbd_dev.as_ptr());
+    Status = IoCreateDevice(
+        DriverObject,
+        core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
+        &mut DeviceName,
+        0x0000000B,
+        0,
+        0u8,
+        &mut KbdDevice,
+    );
+    if !NT_SUCCESS(Status) {
+        DbgPrint(
+            b"[ARM64INPUT] Failed to create KeyboardClass0: 0x%08lx\n\0".as_ptr() as _,
+            Status,
+        );
+        return Status;
+    }
+
+    let n_kbd_sym = wsz!(b"\\DosDevices\\KeyboardClass0");
+    RtlInitUnicodeString(&mut SymlinkName, n_kbd_sym.as_ptr());
+    IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
+
+    DevExt = (*KbdDevice).DeviceExtension as *mut _INPUT_DEVICE_EXT;
+    (*DevExt).IsKeyboard = 1u8;
+    InitializeListHead(&mut (*DevExt).PendingIrps);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock) as *mut _);
+    (*DevExt).RingHead = 0;
+    (*DevExt).RingTail = 0;
+    (*DevExt).SelfDevice = KbdDevice;
+
+    (*KbdDevice).Flags |= 0x00000010;
+    (*KbdDevice).Flags &= !0x00000080;
+    g_KbdDevice = KbdDevice;
+
+    DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as _);
+
+    let n_ptr_dev = wsz!(b"\\Device\\PointerClass0");
+    RtlInitUnicodeString(&mut DeviceName, n_ptr_dev.as_ptr());
+    Status = IoCreateDevice(
+        DriverObject,
+        core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
+        &mut DeviceName,
+        0x0000000F,
+        0,
+        0u8,
+        &mut MouDevice,
+    );
+    if !NT_SUCCESS(Status) {
+        DbgPrint(
+            b"[ARM64INPUT] Failed to create PointerClass0: 0x%08lx\n\0".as_ptr() as _,
+            Status,
+        );
+        IoDeleteDevice(KbdDevice);
+        return Status;
+    }
+
+    DevExt = (*MouDevice).DeviceExtension as *mut _INPUT_DEVICE_EXT;
+    (*DevExt).IsKeyboard = 0u8;
+    InitializeListHead(&mut (*DevExt).PendingIrps);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock) as *mut _);
+    (*DevExt).RingHead = 0;
+    (*DevExt).MouRingHead = 0;
+    (*DevExt).MouRingTail = 0;
+    (*DevExt).SelfDevice = MouDevice;
+    (*MouDevice).Flags |= 0x00000010;
+    (*MouDevice).Flags &= !0x00000080;
+
+    let n_ptr_sym = wsz!(b"\\DosDevices\\PointerClass0");
+    RtlInitUnicodeString(&mut SymlinkName, n_ptr_sym.as_ptr());
+    RtlInitUnicodeString(&mut DeviceName, n_ptr_dev.as_ptr());
+    IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
+
+    g_MouDevice = MouDevice;
+
+    DbgPrint(b"[ARM64INPUT] \\Device\\PointerClass0 created\n\0".as_ptr() as _);
+
+    VirtioScanDevices();
+    if VirtioInputCount > 0 {
+        VirtioPollRunning = 1u8;
+        Status = PsCreateSystemThread(
+            &mut VirtioPollThreadHandle,
+            0x001F03FF,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            Some(VirtioPollThread),
+            core::ptr::null_mut(),
+        );
+        if NT_SUCCESS(Status) {
+            DbgPrint(b"[ARM64INPUT] Virtio poll thread started\n\0".as_ptr() as _);
+        } else {
+            DbgPrint(
+                b"[ARM64INPUT] Failed to create poll thread: 0x%08lx\n\0".as_ptr() as _,
+                Status,
+            );
+            VirtioPollRunning = 0u8;
+        }
+    }
+
+    STATUS_SUCCESS
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * PROJECT:     ReactOS ARM64 Input Driver
+//  * LICENSE:     GPL-2.0-or-later
+//  * FILE:        drivers/input/arm64input/arm64input.c
+//  * PURPOSE:     Provides \Device\KeyboardClass0 and \Device\PointerClass0
+//  *              for the Win32k RIT (Raw Input Thread). Keyboard events are
+//  *              injected via IOCTL_ARM64INPUT_INJECT_BYTE from user-mode
+//  *              (e.g., the serial console frontend).
+//  */
+//
+// #include <ntddk.h>
+// #include <ntddkbd.h>
+// #include <ntddmou.h>
+//
+// #define TAG_INPUT 'pnIA'
+//
+// /*
+//  * Custom IOCTL: inject a single ASCII byte as keyboard input.
+//  * Input buffer: 1 byte (the ASCII character).
+//  * The driver converts it to KEYBOARD_INPUT_DATA (make + break).
+//  */
+// #define IOCTL_ARM64INPUT_INJECT_BYTE \
+//     CTL_CODE(FILE_DEVICE_KEYBOARD, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+//
+// /*
+//  * Custom IOCTL: inject a mouse event as MOUSE_INPUT_DATA.
+//  * Input buffer: sizeof(MOUSE_INPUT_DATA).
+//  */
+// #define IOCTL_ARM64INPUT_INJECT_MOUSE \
+//     CTL_CODE(FILE_DEVICE_MOUSE, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+//
+// /* =========================================================================
+//  * Virtio MMIO transport definitions (virtio spec v1.2, MMIO transport)
+//  * ========================================================================= */
+//
+// /* MMIO register offsets */
+// #define VIRTIO_MMIO_MAGIC           0x000  /* Must be 0x74726976 "virt" */
+// #define VIRTIO_MMIO_VERSION         0x004  /* 1=legacy, 2=modern */
+// #define VIRTIO_MMIO_DEVICE_ID       0x008  /* 0=empty, 18=input */
+// #define VIRTIO_MMIO_VENDOR_ID       0x00C
+// #define VIRTIO_MMIO_DEV_FEATURES    0x010
+// #define VIRTIO_MMIO_DEV_FEATURES_SEL 0x014
+// #define VIRTIO_MMIO_DRV_FEATURES    0x020
+// #define VIRTIO_MMIO_DRV_FEATURES_SEL 0x024
+// #define VIRTIO_MMIO_GUEST_PAGE_SIZE 0x028  /* Legacy v1 only */
+// #define VIRTIO_MMIO_QUEUE_SEL       0x030
+// #define VIRTIO_MMIO_QUEUE_NUM_MAX   0x034
+// #define VIRTIO_MMIO_QUEUE_NUM       0x038
+// #define VIRTIO_MMIO_QUEUE_PFN       0x040  /* Legacy v1 only */
+// #define VIRTIO_MMIO_QUEUE_READY     0x044
+// #define VIRTIO_MMIO_QUEUE_NOTIFY    0x050
+// #define VIRTIO_MMIO_INTERRUPT_STATUS 0x060
+// #define VIRTIO_MMIO_INTERRUPT_ACK   0x064
+// #define VIRTIO_MMIO_STATUS          0x070
+// #define VIRTIO_MMIO_QUEUE_DESC_LOW  0x080
+// #define VIRTIO_MMIO_QUEUE_DESC_HIGH 0x084
+// #define VIRTIO_MMIO_QUEUE_AVAIL_LOW 0x090
+// #define VIRTIO_MMIO_QUEUE_AVAIL_HIGH 0x094
+// #define VIRTIO_MMIO_QUEUE_USED_LOW  0x0A0
+// #define VIRTIO_MMIO_QUEUE_USED_HIGH 0x0A4
+// #define VIRTIO_MMIO_CONFIG          0x100
+//
+// /* Device status bits */
+// #define VIRTIO_STATUS_ACK           0x01
+// #define VIRTIO_STATUS_DRIVER        0x02
+// #define VIRTIO_STATUS_DRIVER_OK     0x04
+// #define VIRTIO_STATUS_FEATURES_OK   0x08
+//
+// /* Virtio input config select values */
+// #define VIRTIO_INPUT_CFG_UNSET      0x00
+// #define VIRTIO_INPUT_CFG_ID_NAME    0x01
+// #define VIRTIO_INPUT_CFG_EV_BITS    0x11
+// #define VIRTIO_INPUT_CFG_ABS_INFO   0x12
+//
+// /* Linux evdev event types */
+// #define EV_SYN  0x00
+// #define EV_KEY  0x01
+// #define EV_REL  0x02
+// #define EV_ABS  0x03
+//
+// /* Linux evdev absolute axes */
+// #define ABS_X   0x00
+// #define ABS_Y   0x01
+//
+// /* Linux evdev relative axes */
+// #define REL_X       0x00
+// #define REL_Y       0x01
+// #define REL_WHEEL   0x08
+//
+// /* Linux evdev button codes (mouse buttons start at 0x110) */
+// #define BTN_LEFT    0x110
+// #define BTN_RIGHT   0x111
+// #define BTN_MIDDLE  0x112
+//
+// /* Linux evdev key codes of interest */
+// #define KEY_A       30
+//
+// /* Virtqueue descriptor flags */
+// #define VIRTQ_DESC_F_WRITE  2
+//
+// /* Input event struct from device (8 bytes) */
+// typedef struct _VIRTIO_INPUT_EVENT {
+//     USHORT Type;
+//     USHORT Code;
+//     ULONG  Value;
+// } VIRTIO_INPUT_EVENT;
+//
+// /* Split virtqueue structures */
+// #pragma pack(push, 1)
+// typedef struct _VIRTQ_DESC {
+//     ULONGLONG Addr;
+//     ULONG     Len;
+//     USHORT    Flags;
+//     USHORT    Next;
+// } VIRTQ_DESC;
+//
+// typedef struct _VIRTQ_AVAIL {
+//     USHORT Flags;
+//     USHORT Idx;
+//     USHORT Ring[];
+// } VIRTQ_AVAIL;
+//
+// typedef struct _VIRTQ_USED_ELEM {
+//     ULONG Id;
+//     ULONG Len;
+// } VIRTQ_USED_ELEM;
+//
+// typedef struct _VIRTQ_USED {
+//     USHORT Flags;
+//     USHORT Idx;
+//     VIRTQ_USED_ELEM Ring[];
+// } VIRTQ_USED;
+// #pragma pack(pop)
+//
+// /* Per-device context */
+// #define VIRTIO_QUEUE_SIZE   64
+// #define MAX_VIRTIO_INPUTS   4
+//
+// typedef struct _VIRTIO_INPUT_DEV {
+//     volatile UCHAR *Mmio;
+//     ULONG MmioVersion;
+//     BOOLEAN IsKeyboard;
+//     BOOLEAN IsTablet;
+//     ULONG AbsMaxX, AbsMaxY;
+//
+//     /* Queue memory */
+//     PVOID QueueVa;
+//     PHYSICAL_ADDRESS QueuePa;
+//     ULONG QueueAllocSize;
+//
+//     /* Queue component pointers (into QueueVa) */
+//     VIRTQ_DESC  *Desc;
+//     VIRTQ_AVAIL *Avail;
+//     VIRTQ_USED  *Used;
+//     ULONG QueueSize;
+//
+//     /* Event buffers */
+//     VIRTIO_INPUT_EVENT *Events;
+//     PHYSICAL_ADDRESS EventsPa;
+//
+//     USHORT LastUsedIdx;
+//
+//     /* Accumulated mouse state between SYN_REPORT */
+//     LONG AccumX, AccumY;
+//     USHORT AccumButtons;
+//     BOOLEAN HasMove, HasButton;
+//     BOOLEAN AbsValid;
+// } VIRTIO_INPUT_DEV;
+//
+// static VIRTIO_INPUT_DEV VirtioInputs[MAX_VIRTIO_INPUTS];
+// static ULONG VirtioInputCount = 0;
+// static HANDLE VirtioPollThreadHandle = NULL;
+// static BOOLEAN VirtioPollRunning = FALSE;
+//
+// /* Forward declarations — these get set in DriverEntry */
+// static PDEVICE_OBJECT g_KbdDevice = NULL;
+// static PDEVICE_OBJECT g_MouDevice = NULL;
+//
+// /* MMIO register helpers */
+// static __inline ULONG VirtioRead32(volatile UCHAR *Base, ULONG Offset) {
+//     return *(volatile ULONG *)(Base + Offset);
+// }
+// static __inline void VirtioWrite32(volatile UCHAR *Base, ULONG Offset, ULONG Val) {
+//     *(volatile ULONG *)(Base + Offset) = Val;
+// }
+//
+// #define virtio_mb()  __asm__ volatile("dmb ish" ::: "memory")
+// #define virtio_wmb() __asm__ volatile("dmb ishst" ::: "memory")
+// #define virtio_rmb() __asm__ volatile("dmb ishld" ::: "memory")
+//
+// /* Ring buffer sizes */
+// #define KBD_RING_SIZE 64
+// #define MOU_RING_SIZE 32
+//
+// /* Device extension — tracks pending read IRPs and keyboard ring buffer */
+// typedef struct _INPUT_DEVICE_EXT
+// {
+//     BOOLEAN IsKeyboard;
+//     LIST_ENTRY PendingIrps;
+//     KSPIN_LOCK IrpLock;
+//
+//     /* Keyboard-only fields (used when IsKeyboard == TRUE) */
+//     KEYBOARD_INPUT_DATA Ring[KBD_RING_SIZE];
+//     ULONG RingHead;                 /* Next event to consume */
+//     ULONG RingTail;                 /* Next slot to produce into */
+//
+//     /* Mouse-only fields (used when IsKeyboard == FALSE) */
+//     MOUSE_INPUT_DATA MouRing[MOU_RING_SIZE];
+//     ULONG MouRingHead;
+//     ULONG MouRingTail;
+//
+//     PDEVICE_OBJECT SelfDevice;
+// } INPUT_DEVICE_EXT, *PINPUT_DEVICE_EXT;
+//
+// /*
+//  * Minimal ASCII-to-Scan Code Set 1 table.
+//  * Index = ASCII character, Value = AT scan code (0 = unsupported).
+//  */
+// static const UCHAR AsciiToScanCode[128] = {
+//     /* 0x00-0x0F: control chars */
+//     0,    0x01, 0,    0x2E, 0,    0,    0,    0,     /* NUL, ESC, _, Ctrl-C */
+//     0x0E, 0x0F, 0x1C, 0,    0,    0x1C, 0,    0,     /* BS, TAB, LF, CR */
+//     /* 0x10-0x1F */
+//     0,    0,    0,    0,    0,    0,    0,    0,
+//     0,    0,    0,    0x01, 0,    0,    0,    0,     /* ESC at 0x1B */
+//     /* 0x20-0x2F: space, punctuation */
+//     0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28, /* space ! " # $ % & ' */
+//     0x0A, 0x0B, 0x09, 0x0D, 0x33, 0x0C, 0x34, 0x35, /* ( ) * + , - . / */
+//     /* 0x30-0x39: digits */
+//     0x0B, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, /* 0-7 */
+//     0x09, 0x0A,                                       /* 8-9 */
+//     /* 0x3A-0x3F */
+//     0x27, 0x27, 0x33, 0x0D, 0x34, 0x35,              /* : ; < = > ? */
+//     /* 0x40-0x5A: @ and uppercase A-Z */
+//     0x03,                                              /* @ */
+//     0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,  /* A-H */
+//     0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,  /* I-P */
+//     0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,  /* Q-X */
+//     0x15, 0x2C,                                        /* Y-Z */
+//     /* 0x5B-0x60 */
+//     0x1A, 0x2B, 0x1B, 0x07, 0x0C, 0x29,              /* [ \ ] ^ _ ` */
+//     /* 0x61-0x7A: lowercase a-z (same scan codes as uppercase) */
+//     0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,  /* a-h */
+//     0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,  /* i-p */
+//     0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,  /* q-x */
+//     0x15, 0x2C,                                        /* y-z */
+//     /* 0x7B-0x7F */
+//     0x1A, 0x2B, 0x1B, 0x29, 0x0E                     /* { | } ~ DEL */
+// };
+//
+// /* Check if ring buffer has space */
+// static BOOLEAN
+// RingHasSpace(PINPUT_DEVICE_EXT DevExt)
+// {
+//     return ((DevExt->RingTail + 1) % KBD_RING_SIZE) != DevExt->RingHead;
+// }
+//
+// /* Check if ring buffer has data */
+// static BOOLEAN
+// RingHasData(PINPUT_DEVICE_EXT DevExt)
+// {
+//     return DevExt->RingHead != DevExt->RingTail;
+// }
+//
+// /* Push a keyboard event to the ring buffer */
+// static VOID
+// RingPush(PINPUT_DEVICE_EXT DevExt, USHORT MakeCode, USHORT Flags)
+// {
+//     if (!RingHasSpace(DevExt))
+//         return;
+//     DevExt->Ring[DevExt->RingTail].UnitId = 0;
+//     DevExt->Ring[DevExt->RingTail].MakeCode = MakeCode;
+//     DevExt->Ring[DevExt->RingTail].Flags = Flags;
+//     DevExt->Ring[DevExt->RingTail].Reserved = 0;
+//     DevExt->Ring[DevExt->RingTail].ExtraInformation = 0;
+//     DevExt->RingTail = (DevExt->RingTail + 1) % KBD_RING_SIZE;
+// }
+//
+// /* Pop a keyboard event from the ring buffer */
+// static KEYBOARD_INPUT_DATA
+// RingPop(PINPUT_DEVICE_EXT DevExt)
+// {
+//     KEYBOARD_INPUT_DATA data = DevExt->Ring[DevExt->RingHead];
+//     DevExt->RingHead = (DevExt->RingHead + 1) % KBD_RING_SIZE;
+//     return data;
+// }
+//
+// /* Mouse ring buffer helpers */
+// static BOOLEAN
+// MouRingHasSpace(PINPUT_DEVICE_EXT DevExt)
+// {
+//     return ((DevExt->MouRingTail + 1) % MOU_RING_SIZE) != DevExt->MouRingHead;
+// }
+//
+// static BOOLEAN
+// MouRingHasData(PINPUT_DEVICE_EXT DevExt)
+// {
+//     return DevExt->MouRingHead != DevExt->MouRingTail;
+// }
+//
+// static VOID
+// MouRingPush(PINPUT_DEVICE_EXT DevExt, PMOUSE_INPUT_DATA Data)
+// {
+//     if (!MouRingHasSpace(DevExt))
+//         return;
+//     DevExt->MouRing[DevExt->MouRingTail] = *Data;
+//     DevExt->MouRingTail = (DevExt->MouRingTail + 1) % MOU_RING_SIZE;
+// }
+//
+// static MOUSE_INPUT_DATA
+// MouRingPop(PINPUT_DEVICE_EXT DevExt)
+// {
+//     MOUSE_INPUT_DATA data = DevExt->MouRing[DevExt->MouRingHead];
+//     DevExt->MouRingHead = (DevExt->MouRingHead + 1) % MOU_RING_SIZE;
+//     return data;
+// }
+//
+// /* Try to complete a pending IRP with buffered mouse data */
+// static VOID
+// MouTryCompleteIrp(PINPUT_DEVICE_EXT DevExt)
+// {
+//     KIRQL OldIrql;
+//     PIRP Irp;
+//     PLIST_ENTRY Entry;
+//     MOUSE_INPUT_DATA Data;
+//
+//     while (MouRingHasData(DevExt))
+//     {
+//         KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
+//         if (IsListEmpty(&DevExt->PendingIrps))
+//         {
+//             KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//             break;
+//         }
+//         Entry = RemoveHeadList(&DevExt->PendingIrps);
+//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+//         if (IoSetCancelRoutine(Irp, NULL) == NULL)
+//         {
+//             KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//             continue;
+//         }
+//         KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//
+//         Data = MouRingPop(DevExt);
+//
+//         RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer,
+//                        &Data,
+//                        sizeof(MOUSE_INPUT_DATA));
+//         Irp->IoStatus.Status = STATUS_SUCCESS;
+//         Irp->IoStatus.Information = sizeof(MOUSE_INPUT_DATA);
+//         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
+//     }
+// }
+//
+// /* Try to complete a pending IRP with buffered keyboard data */
+// static VOID
+// TryCompleteIrp(PINPUT_DEVICE_EXT DevExt)
+// {
+//     KIRQL OldIrql;
+//     PIRP Irp;
+//     PLIST_ENTRY Entry;
+//     KEYBOARD_INPUT_DATA Data;
+//
+//     while (RingHasData(DevExt))
+//     {
+//         KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
+//         if (IsListEmpty(&DevExt->PendingIrps))
+//         {
+//             KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//             break;
+//         }
+//         Entry = RemoveHeadList(&DevExt->PendingIrps);
+//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+//         if (IoSetCancelRoutine(Irp, NULL) == NULL)
+//         {
+//             /* IRP is being cancelled, skip it */
+//             KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//             continue;
+//         }
+//         KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//
+//         Data = RingPop(DevExt);
+//
+//         /* Copy keyboard data to IRP output buffer */
+//         RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer,
+//                        &Data,
+//                        sizeof(KEYBOARD_INPUT_DATA));
+//         Irp->IoStatus.Status = STATUS_SUCCESS;
+//         Irp->IoStatus.Information = sizeof(KEYBOARD_INPUT_DATA);
+//         IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
+//     }
+// }
+//
+// /*
+//  * Inject one ASCII byte as keyboard input: convert to scan code,
+//  * push make+break events, and try to complete pending RIT IRPs.
+//  */
+// static VOID
+// InjectByte(PINPUT_DEVICE_EXT DevExt, UCHAR Byte)
+// {
+//     USHORT ScanCode;
+//     BOOLEAN NeedShift;
+//
+//     if (Byte >= 128)
+//         return;
+//
+//     ScanCode = AsciiToScanCode[Byte];
+//     if (ScanCode == 0)
+//         return;
+//
+//     /* Check if shift is needed (uppercase or shifted punctuation) */
+//     NeedShift = (Byte >= 'A' && Byte <= 'Z') ||
+//                 Byte == '!' || Byte == '@' || Byte == '#' ||
+//                 Byte == '$' || Byte == '%' || Byte == '^' ||
+//                 Byte == '&' || Byte == '*' || Byte == '(' ||
+//                 Byte == ')' || Byte == '_' || Byte == '+' ||
+//                 Byte == '{' || Byte == '}' || Byte == '|' ||
+//                 Byte == ':' || Byte == '"' || Byte == '<' ||
+//                 Byte == '>' || Byte == '?' || Byte == '~';
+//
+//     /* Generate key events: [Shift down,] key down, key up [, Shift up] */
+//     if (NeedShift)
+//         RingPush(DevExt, 0x2A, 0);  /* Left Shift down */
+//
+//     RingPush(DevExt, ScanCode, 0);          /* Key down */
+//     RingPush(DevExt, ScanCode, KEY_BREAK);  /* Key up */
+//
+//     if (NeedShift)
+//         RingPush(DevExt, 0x2A, KEY_BREAK);  /* Left Shift up */
+//
+//     TryCompleteIrp(DevExt);
+// }
+//
+// /* Cancel routine for pending read IRPs */
+// static VOID NTAPI
+// InputCancelIrp(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     PINPUT_DEVICE_EXT DevExt = (PINPUT_DEVICE_EXT)DeviceObject->DeviceExtension;
+//     KIRQL OldIrql;
+//
+//     IoReleaseCancelSpinLock(Irp->CancelIrql);
+//
+//     KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
+//     RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
+//     KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//
+//     Irp->IoStatus.Status = STATUS_CANCELLED;
+//     Irp->IoStatus.Information = 0;
+//     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+// }
+//
+// /* IRP_MJ_CREATE — allow open */
+// static NTSTATUS NTAPI
+// InputCreate(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     UNREFERENCED_PARAMETER(DeviceObject);
+//     Irp->IoStatus.Status = STATUS_SUCCESS;
+//     Irp->IoStatus.Information = 0;
+//     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+//     return STATUS_SUCCESS;
+// }
+//
+// /* IRP_MJ_CLOSE — allow close */
+// static NTSTATUS NTAPI
+// InputClose(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     UNREFERENCED_PARAMETER(DeviceObject);
+//     Irp->IoStatus.Status = STATUS_SUCCESS;
+//     Irp->IoStatus.Information = 0;
+//     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+//     return STATUS_SUCCESS;
+// }
+//
+// /* IRP_MJ_CLEANUP — cancel all pending IRPs for this file object */
+// static NTSTATUS NTAPI
+// InputCleanup(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     PINPUT_DEVICE_EXT DevExt = (PINPUT_DEVICE_EXT)DeviceObject->DeviceExtension;
+//     PFILE_OBJECT FileObject = IoGetCurrentIrpStackLocation(Irp)->FileObject;
+//     KIRQL OldIrql;
+//     LIST_ENTRY CancelList;
+//     PLIST_ENTRY Entry;
+//     PIRP PendingIrp;
+//
+//     InitializeListHead(&CancelList);
+//
+//     KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
+//     Entry = DevExt->PendingIrps.Flink;
+//     while (Entry != &DevExt->PendingIrps)
+//     {
+//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+//         Entry = Entry->Flink;
+//         if (IoGetCurrentIrpStackLocation(PendingIrp)->FileObject == FileObject)
+//         {
+//             RemoveEntryList(&PendingIrp->Tail.Overlay.__bindgen_anon_2.ListEntry);
+//             if (IoSetCancelRoutine(PendingIrp, NULL) != NULL)
+//             {
+//                 InsertTailList(&CancelList, &PendingIrp->Tail.Overlay.__bindgen_anon_2.ListEntry);
+//             }
+//         }
+//     }
+//     KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//
+//     while (!IsListEmpty(&CancelList))
+//     {
+//         Entry = RemoveHeadList(&CancelList);
+//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+//         PendingIrp->IoStatus.Status = STATUS_CANCELLED;
+//         PendingIrp->IoStatus.Information = 0;
+//         IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
+//     }
+//
+//     Irp->IoStatus.Status = STATUS_SUCCESS;
+//     Irp->IoStatus.Information = 0;
+//     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+//     return STATUS_SUCCESS;
+// }
+//
+// /* IRP_MJ_READ — complete immediately if data available, else pend */
+// static NTSTATUS NTAPI
+// InputRead(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     PINPUT_DEVICE_EXT DevExt = (PINPUT_DEVICE_EXT)DeviceObject->DeviceExtension;
+//     KIRQL OldIrql;
+//
+//     /* If data is buffered, complete immediately */
+//     if (DevExt->IsKeyboard && RingHasData(DevExt))
+//     {
+//         KEYBOARD_INPUT_DATA Data = RingPop(DevExt);
+//         RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer,
+//                        &Data,
+//                        sizeof(KEYBOARD_INPUT_DATA));
+//         Irp->IoStatus.Status = STATUS_SUCCESS;
+//         Irp->IoStatus.Information = sizeof(KEYBOARD_INPUT_DATA);
+//         IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
+//         return STATUS_SUCCESS;
+//     }
+//
+//     if (!DevExt->IsKeyboard && MouRingHasData(DevExt))
+//     {
+//         MOUSE_INPUT_DATA Data = MouRingPop(DevExt);
+//         RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer,
+//                        &Data,
+//                        sizeof(MOUSE_INPUT_DATA));
+//         Irp->IoStatus.Status = STATUS_SUCCESS;
+//         Irp->IoStatus.Information = sizeof(MOUSE_INPUT_DATA);
+//         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
+//         return STATUS_SUCCESS;
+//     }
+//
+//     /* No data — pend the IRP */
+//     IoMarkIrpPending(Irp);
+//
+//     KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
+//     IoSetCancelRoutine(Irp, InputCancelIrp);
+//     InsertTailList(&DevExt->PendingIrps, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
+//     KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
+//
+//     return STATUS_PENDING;
+// }
+//
+// /* IRP_MJ_DEVICE_CONTROL — keyboard IOCTLs + byte injection */
+// static NTSTATUS NTAPI
+// InputDeviceControl(
+//     PDEVICE_OBJECT DeviceObject,
+//     PIRP Irp)
+// {
+//     PINPUT_DEVICE_EXT DevExt = (PINPUT_DEVICE_EXT)DeviceObject->DeviceExtension;
+//     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+//     NTSTATUS Status = STATUS_NOT_SUPPORTED;
+//     ULONG_PTR Information = 0;
+//
+//     if (DevExt->IsKeyboard)
+//     {
+//         switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
+//         {
+//             case IOCTL_ARM64INPUT_INJECT_BYTE:
+//             {
+//                 if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= 1)
+//                 {
+//                     PUCHAR pByte = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
+//                     InjectByte(DevExt, *pByte);
+//                     Status = STATUS_SUCCESS;
+//                 }
+//                 else
+//                 {
+//                     Status = STATUS_BUFFER_TOO_SMALL;
+//                 }
+//                 break;
+//             }
+//
+//             case IOCTL_KEYBOARD_QUERY_ATTRIBUTES:
+//             {
+//                 if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(KEYBOARD_ATTRIBUTES))
+//                 {
+//                     PKEYBOARD_ATTRIBUTES pAttr = (PKEYBOARD_ATTRIBUTES)Irp->AssociatedIrp.SystemBuffer;
+//                     RtlZeroMemory(pAttr, sizeof(KEYBOARD_ATTRIBUTES));
+//                     pAttr->KeyboardIdentifier.Type = 4;    /* AT-101 enhanced */
+//                     pAttr->KeyboardIdentifier.Subtype = 0;
+//                     pAttr->NumberOfFunctionKeys = 12;
+//                     pAttr->NumberOfIndicators = 3;
+//                     pAttr->NumberOfKeysTotal = 101;
+//                     pAttr->InputDataQueueLength = 100;
+//                     pAttr->KeyRepeatMinimum.Rate = 2;
+//                     pAttr->KeyRepeatMinimum.Delay = 250;
+//                     pAttr->KeyRepeatMaximum.Rate = 30;
+//                     pAttr->KeyRepeatMaximum.Delay = 1000;
+//                     Status = STATUS_SUCCESS;
+//                     Information = sizeof(KEYBOARD_ATTRIBUTES);
+//                 }
+//                 else
+//                 {
+//                     Status = STATUS_BUFFER_TOO_SMALL;
+//                 }
+//                 break;
+//             }
+//
+//             case IOCTL_KEYBOARD_QUERY_INDICATORS:
+//             {
+//                 if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(KEYBOARD_INDICATOR_PARAMETERS))
+//                 {
+//                     PKEYBOARD_INDICATOR_PARAMETERS pInd = (PKEYBOARD_INDICATOR_PARAMETERS)Irp->AssociatedIrp.SystemBuffer;
+//                     pInd->UnitId = 0;
+//                     pInd->LedFlags = 0;
+//                     Status = STATUS_SUCCESS;
+//                     Information = sizeof(KEYBOARD_INDICATOR_PARAMETERS);
+//                 }
+//                 else
+//                 {
+//                     Status = STATUS_BUFFER_TOO_SMALL;
+//                 }
+//                 break;
+//             }
+//
+//             case IOCTL_KEYBOARD_QUERY_INDICATOR_TRANSLATION:
+//                 Status = STATUS_NOT_SUPPORTED;
+//                 break;
+//
+//             case IOCTL_KEYBOARD_SET_INDICATORS:
+//                 Status = STATUS_SUCCESS;
+//                 break;
+//
+//             default:
+//                 Status = STATUS_NOT_SUPPORTED;
+//                 break;
+//         }
+//     }
+//     else
+//     {
+//         /* Mouse device IOCTLs */
+//         switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
+//         {
+//             case IOCTL_ARM64INPUT_INJECT_MOUSE:
+//             {
+//                 if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(MOUSE_INPUT_DATA))
+//                 {
+//                     PMOUSE_INPUT_DATA pMou = (PMOUSE_INPUT_DATA)Irp->AssociatedIrp.SystemBuffer;
+//                     MouRingPush(DevExt, pMou);
+//                     MouTryCompleteIrp(DevExt);
+//                     Status = STATUS_SUCCESS;
+//                 }
+//                 else
+//                 {
+//                     Status = STATUS_BUFFER_TOO_SMALL;
+//                 }
+//                 break;
+//             }
+//
+//             case IOCTL_MOUSE_QUERY_ATTRIBUTES:
+//             {
+//                 if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(MOUSE_ATTRIBUTES))
+//                 {
+//                     PMOUSE_ATTRIBUTES pAttr = (PMOUSE_ATTRIBUTES)Irp->AssociatedIrp.SystemBuffer;
+//                     RtlZeroMemory(pAttr, sizeof(MOUSE_ATTRIBUTES));
+//                     pAttr->MouseIdentifier = MOUSE_SERIAL_HARDWARE;
+//                     pAttr->NumberOfButtons = 3;
+//                     pAttr->SampleRate = 60;
+//                     pAttr->InputDataQueueLength = MOU_RING_SIZE;
+//                     Status = STATUS_SUCCESS;
+//                     Information = sizeof(MOUSE_ATTRIBUTES);
+//                 }
+//                 else
+//                 {
+//                     Status = STATUS_BUFFER_TOO_SMALL;
+//                 }
+//                 break;
+//             }
+//
+//             default:
+//                 Status = STATUS_NOT_SUPPORTED;
+//                 break;
+//         }
+//     }
+//
+//     Irp->IoStatus.Status = Status;
+//     Irp->IoStatus.Information = Information;
+//     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+//     return Status;
+// }
+//
+// /* =========================================================================
+//  * Evdev key code to AT Scan Code Set 1 mapping
+//  * For evdev codes 1-88, the value IS the AT scan code (identity mapping).
+//  * Extended keys (>88) need a lookup table.
+//  * ========================================================================= */
+//
+// typedef struct _EVDEV_EXT_MAP {
+//     USHORT EvdevCode;
+//     USHORT ScanCode;
+//     USHORT Flags;       /* 0 or KEY_E0 */
+// } EVDEV_EXT_MAP;
+//
+// static const EVDEV_EXT_MAP EvdevExtendedKeys[] = {
+//     {  96, 0x1C, KEY_E0 },  /* KEY_KPENTER */
+//     {  97, 0x1D, KEY_E0 },  /* KEY_RIGHTCTRL */
+//     { 100, 0x35, KEY_E0 },  /* KEY_KPSLASH */
+//     { 102, 0x47, KEY_E0 },  /* KEY_HOME */
+//     { 103, 0x48, KEY_E0 },  /* KEY_UP */
+//     { 104, 0x49, KEY_E0 },  /* KEY_PAGEUP */
+//     { 105, 0x4B, KEY_E0 },  /* KEY_LEFT */
+//     { 106, 0x4D, KEY_E0 },  /* KEY_RIGHT */
+//     { 107, 0x4F, KEY_E0 },  /* KEY_END */
+//     { 108, 0x50, KEY_E0 },  /* KEY_DOWN */
+//     { 109, 0x51, KEY_E0 },  /* KEY_PAGEDOWN */
+//     { 110, 0x52, KEY_E0 },  /* KEY_INSERT */
+//     { 111, 0x53, KEY_E0 },  /* KEY_DELETE */
+//     { 125, 0x5B, KEY_E0 },  /* KEY_LEFTMETA (Win) */
+//     { 126, 0x5C, KEY_E0 },  /* KEY_RIGHTMETA */
+//     { 127, 0x5D, KEY_E0 },  /* KEY_COMPOSE (Menu) */
+// };
+//
+// #define EVDEV_EXT_COUNT (sizeof(EvdevExtendedKeys) / sizeof(EvdevExtendedKeys[0]))
+//
+// static BOOLEAN
+// EvdevToScanCode(USHORT EvdevCode, USHORT *OutScanCode, USHORT *OutFlags)
+// {
+//     ULONG i;
+//
+//     /* Direct mapping for codes 1-88 */
+//     if (EvdevCode >= 1 && EvdevCode <= 88)
+//     {
+//         *OutScanCode = EvdevCode;
+//         *OutFlags = 0;
+//         return TRUE;
+//     }
+//
+//     /* Extended key lookup */
+//     for (i = 0; i < EVDEV_EXT_COUNT; i++)
+//     {
+//         if (EvdevExtendedKeys[i].EvdevCode == EvdevCode)
+//         {
+//             *OutScanCode = EvdevExtendedKeys[i].ScanCode;
+//             *OutFlags = EvdevExtendedKeys[i].Flags;
+//             return TRUE;
+//         }
+//     }
+//
+//     return FALSE;
+// }
+//
+// /* =========================================================================
+//  * Virtio queue setup
+//  * ========================================================================= */
+//
+// static NTSTATUS
+// VirtioSetupQueue(VIRTIO_INPUT_DEV *Dev, ULONG QueueIdx)
+// {
+//     ULONG MaxSize, QueueSize, DescSize, AvailSize, UsedSize, EventsSize;
+//     ULONG AvailOff, UsedOff, EventsOff, TotalSize;
+//     PHYSICAL_ADDRESS HighAddr;
+//     ULONG i;
+//
+//     /* Select queue */
+//     VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_SEL, QueueIdx);
+//     virtio_mb();
+//
+//     MaxSize = VirtioRead32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NUM_MAX);
+//     if (MaxSize == 0)
+//         return STATUS_DEVICE_NOT_READY;
+//
+//     QueueSize = (MaxSize < VIRTIO_QUEUE_SIZE) ? MaxSize : VIRTIO_QUEUE_SIZE;
+//     Dev->QueueSize = QueueSize;
+//
+//     /* Write queue size */
+//     VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NUM, QueueSize);
+//
+//     /* Calculate allocation sizes */
+//     DescSize = sizeof(VIRTQ_DESC) * QueueSize;
+//     AvailSize = sizeof(USHORT) * 2 + sizeof(USHORT) * QueueSize + sizeof(USHORT);
+//     UsedSize = sizeof(USHORT) * 2 + sizeof(VIRTQ_USED_ELEM) * QueueSize + sizeof(USHORT);
+//     EventsSize = sizeof(VIRTIO_INPUT_EVENT) * QueueSize;
+//
+//     if (Dev->MmioVersion >= 2)
+//     {
+//         /* Modern: each component at independent page-aligned addresses */
+//         AvailOff = (DescSize + 0xFFF) & ~0xFFF;
+//         UsedOff = (AvailOff + AvailSize + 0xFFF) & ~0xFFF;
+//     }
+//     else
+//     {
+//         /* Legacy v1: spec-prescribed layout.
+//          * Avail ring immediately after descriptors (2-byte aligned).
+//          * Used ring at next page boundary after avail ring. */
+//         AvailOff = DescSize;
+//         UsedOff = (AvailOff + AvailSize + 0xFFF) & ~0xFFF;
+//     }
+//     EventsOff = (UsedOff + UsedSize + 0xFFF) & ~0xFFF;
+//     TotalSize = EventsOff + EventsSize;
+//
+//     HighAddr.QuadPart = 0xFFFFFFFFLL;
+//     Dev->QueueVa = MmAllocateContiguousMemory(TotalSize, HighAddr);
+//     if (!Dev->QueueVa)
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//
+//     Dev->QueuePa = MmGetPhysicalAddress(Dev->QueueVa);
+//     Dev->QueueAllocSize = TotalSize;
+//     RtlZeroMemory(Dev->QueueVa, TotalSize);
+//
+//     /* Set up pointers */
+//     Dev->Desc = (VIRTQ_DESC *)Dev->QueueVa;
+//     Dev->Avail = (VIRTQ_AVAIL *)((UCHAR *)Dev->QueueVa + AvailOff);
+//     Dev->Used = (VIRTQ_USED *)((UCHAR *)Dev->QueueVa + UsedOff);
+//     Dev->Events = (VIRTIO_INPUT_EVENT *)((UCHAR *)Dev->QueueVa + EventsOff);
+//     Dev->EventsPa.QuadPart = Dev->QueuePa.QuadPart + EventsOff;
+//
+//     if (Dev->MmioVersion >= 2)
+//     {
+//         /* Modern: write physical addresses of each component */
+//         PHYSICAL_ADDRESS DescPa = Dev->QueuePa;
+//         PHYSICAL_ADDRESS AvailPa;
+//         PHYSICAL_ADDRESS UsedPa;
+//         AvailPa.QuadPart = Dev->QueuePa.QuadPart + AvailOff;
+//         UsedPa.QuadPart = Dev->QueuePa.QuadPart + UsedOff;
+//
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_DESC_LOW, (ULONG)DescPa.QuadPart);
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_DESC_HIGH, (ULONG)(DescPa.QuadPart >> 32));
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_AVAIL_LOW, (ULONG)AvailPa.QuadPart);
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, (ULONG)(AvailPa.QuadPart >> 32));
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_USED_LOW, (ULONG)UsedPa.QuadPart);
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_USED_HIGH, (ULONG)(UsedPa.QuadPart >> 32));
+//         virtio_mb();
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_READY, 1);
+//     }
+//     else
+//     {
+//         /* Legacy v1: page-based addressing */
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_GUEST_PAGE_SIZE, 4096);
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_PFN,
+//                       (ULONG)(Dev->QueuePa.QuadPart / 4096));
+//     }
+//
+//     /* Pre-fill all descriptors: each points to Events[i], device-writable */
+//     for (i = 0; i < QueueSize; i++)
+//     {
+//         Dev->Desc[i].Addr = Dev->EventsPa.QuadPart + i * sizeof(VIRTIO_INPUT_EVENT);
+//         Dev->Desc[i].Len = sizeof(VIRTIO_INPUT_EVENT);
+//         Dev->Desc[i].Flags = VIRTQ_DESC_F_WRITE;
+//         Dev->Desc[i].Next = 0;
+//
+//         Dev->Avail->Ring[i] = (USHORT)i;
+//     }
+//     virtio_wmb();
+//     Dev->Avail->Idx = (USHORT)QueueSize;
+//     Dev->LastUsedIdx = 0;
+//
+//     /* Kick the queue */
+//     virtio_mb();
+//     VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, QueueIdx);
+//
+//     return STATUS_SUCCESS;
+// }
+//
+// /* =========================================================================
+//  * Virtio device discovery and initialization
+//  * ========================================================================= */
+//
+// /* QEMU virt MMIO device base and stride */
+// #define VIRTIO_MMIO_BASE    0x0A000000ULL
+// #define VIRTIO_MMIO_STRIDE  0x200
+// #define VIRTIO_MMIO_SLOTS   32
+// #define VIRTIO_MMIO_SIZE    0x200
+//
+// /* Virtio device ID for input */
+// #define VIRTIO_DEVICE_ID_INPUT  18
+//
+// static VOID
+// VirtioQueryInputCaps(VIRTIO_INPUT_DEV *Dev)
+// {
+//     volatile UCHAR *cfg = Dev->Mmio + VIRTIO_MMIO_CONFIG;
+//     UCHAR bitmap[128];
+//     ULONG size, i;
+//
+//     Dev->IsKeyboard = FALSE;
+//     Dev->IsTablet = FALSE;
+//
+//     /* Query EV_KEY support: select=0x11, subsel=EV_KEY(1) */
+//     *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_EV_BITS; /* select */
+//     virtio_mb();
+//     *(volatile UCHAR *)(cfg + 1) = EV_KEY;                    /* subsel */
+//     virtio_mb();
+//     size = *(volatile UCHAR *)(cfg + 2);                       /* size */
+//
+//     if (size > 0 && size <= sizeof(bitmap))
+//     {
+//         for (i = 0; i < size; i++)
+//             bitmap[i] = *(volatile UCHAR *)(cfg + 8 + i);
+//
+//         /* Check for KEY_A (code 30 → byte 3, bit 6) */
+//         if (size > (KEY_A / 8) && (bitmap[KEY_A / 8] & (1 << (KEY_A % 8))))
+//             Dev->IsKeyboard = TRUE;
+//     }
+//
+//     /* Query EV_ABS support: select=0x11, subsel=EV_ABS(3) */
+//     *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_EV_BITS;
+//     virtio_mb();
+//     *(volatile UCHAR *)(cfg + 1) = EV_ABS;
+//     virtio_mb();
+//     size = *(volatile UCHAR *)(cfg + 2);
+//
+//     if (size > 0)
+//     {
+//         for (i = 0; i < size && i < sizeof(bitmap); i++)
+//             bitmap[i] = *(volatile UCHAR *)(cfg + 8 + i);
+//
+//         /* Check for ABS_X (code 0 → byte 0, bit 0) */
+//         if (bitmap[0] & 1)
+//             Dev->IsTablet = TRUE;
+//     }
+//
+//     /* If tablet, query ABS_X and ABS_Y axis ranges */
+//     if (Dev->IsTablet)
+//     {
+//         volatile ULONG *absinfo;
+//
+//         /* ABS_X info: select=0x12, subsel=ABS_X(0) */
+//         *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_ABS_INFO;
+//         virtio_mb();
+//         *(volatile UCHAR *)(cfg + 1) = ABS_X;
+//         virtio_mb();
+//         size = *(volatile UCHAR *)(cfg + 2);
+//         if (size >= 12)
+//         {
+//             absinfo = (volatile ULONG *)(cfg + 8);
+//             /* absinfo layout: min(4), max(4), fuzz(4), flat(4) */
+//             Dev->AbsMaxX = absinfo[1]; /* max */
+//         }
+//         else
+//         {
+//             Dev->AbsMaxX = 32767;
+//         }
+//
+//         /* ABS_Y info */
+//         *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_ABS_INFO;
+//         *(volatile UCHAR *)(cfg + 1) = ABS_Y;
+//         virtio_mb();
+//         size = *(volatile UCHAR *)(cfg + 2);
+//         if (size >= 12)
+//         {
+//             absinfo = (volatile ULONG *)(cfg + 8);
+//             Dev->AbsMaxY = absinfo[1];
+//         }
+//         else
+//         {
+//             Dev->AbsMaxY = 32767;
+//         }
+//     }
+//
+//     /* Reset config select */
+//     *(volatile UCHAR *)(cfg + 0) = VIRTIO_INPUT_CFG_UNSET;
+//     *(volatile UCHAR *)(cfg + 1) = 0;
+//     virtio_mb();
+// }
+//
+// static VOID
+// VirtioScanDevices(VOID)
+// {
+//     ULONG i;
+//     PHYSICAL_ADDRESS PhysAddr;
+//     volatile UCHAR *Mmio;
+//     ULONG Magic, Version, DevId;
+//     NTSTATUS Status;
+//
+//     VirtioInputCount = 0;
+//
+//     for (i = 0; i < VIRTIO_MMIO_SLOTS && VirtioInputCount < MAX_VIRTIO_INPUTS; i++)
+//     {
+//         PhysAddr.QuadPart = VIRTIO_MMIO_BASE + (ULONGLONG)i * VIRTIO_MMIO_STRIDE;
+//         Mmio = (volatile UCHAR *)MmMapIoSpace(PhysAddr, VIRTIO_MMIO_SIZE, MmNonCached);
+//         if (!Mmio)
+//             continue;
+//
+//         Magic = VirtioRead32(Mmio, VIRTIO_MMIO_MAGIC);
+//         if (Magic != 0x74726976)
+//         {
+//             MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+//             continue;
+//         }
+//
+//         Version = VirtioRead32(Mmio, VIRTIO_MMIO_VERSION);
+//         DevId = VirtioRead32(Mmio, VIRTIO_MMIO_DEVICE_ID);
+//
+//         if (DevId != VIRTIO_DEVICE_ID_INPUT)
+//         {
+//             MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+//             continue;
+//         }
+//
+//         DbgPrint("[VIRTIO-INPUT] Found input device at slot %lu (version %lu)\n", i, Version);
+//
+//         /* Initialize device */
+//         VIRTIO_INPUT_DEV *Dev = &VirtioInputs[VirtioInputCount];
+//         RtlZeroMemory(Dev, sizeof(*Dev));
+//         Dev->Mmio = Mmio;
+//         Dev->MmioVersion = Version;
+//
+//         /* Reset device */
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, 0);
+//         virtio_mb();
+//
+//         /* ACK */
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK);
+//         virtio_mb();
+//
+//         /* DRIVER */
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+//                       VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+//         virtio_mb();
+//
+//         /* Negotiate features */
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 0);
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 0);
+//         if (Version >= 2)
+//         {
+//             /* Must acknowledge VIRTIO_F_VERSION_1 (bit 32 = word 1 bit 0) */
+//             VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 1);
+//             VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES, 1);
+//         }
+//         virtio_mb();
+//
+//         /* FEATURES_OK (v2 only) */
+//         if (Version >= 2)
+//         {
+//             VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+//                           VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+//                           VIRTIO_STATUS_FEATURES_OK);
+//             virtio_mb();
+//
+//             ULONG StatusVal = VirtioRead32(Mmio, VIRTIO_MMIO_STATUS);
+//             if (!(StatusVal & VIRTIO_STATUS_FEATURES_OK))
+//             {
+//                 DbgPrint("[VIRTIO-INPUT] FEATURES_OK not set, skipping slot %lu\n", i);
+//                 MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+//                 continue;
+//             }
+//         }
+//
+//         /* Query device capabilities before setting up queues */
+//         VirtioQueryInputCaps(Dev);
+//
+//         /* Setup eventq (queue 0) */
+//         Status = VirtioSetupQueue(Dev, 0);
+//         if (!NT_SUCCESS(Status))
+//         {
+//             DbgPrint("[VIRTIO-INPUT] Queue setup failed: 0x%08lx\n", Status);
+//             MmUnmapIoSpace((PVOID)Mmio, VIRTIO_MMIO_SIZE);
+//             continue;
+//         }
+//
+//         /* DRIVER_OK */
+//         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
+//                       VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
+//                       (Version >= 2 ? VIRTIO_STATUS_FEATURES_OK : 0) |
+//                       VIRTIO_STATUS_DRIVER_OK);
+//         virtio_mb();
+//
+//         DbgPrint("[VIRTIO-INPUT] Initialized %s%sat slot %lu (abs %lu x %lu)\n",
+//                 Dev->IsKeyboard ? "keyboard " : "",
+//                 Dev->IsTablet ? "tablet " : "",
+//                 i, Dev->AbsMaxX, Dev->AbsMaxY);
+//
+//         VirtioInputCount++;
+//     }
+//
+//     DbgPrint("[VIRTIO-INPUT] Found %lu input device(s)\n", VirtioInputCount);
+// }
+//
+// /* =========================================================================
+//  * Virtio event processing
+//  * ========================================================================= */
+//
+// static VOID
+// VirtioProcessKeyEvent(USHORT EvdevCode, ULONG Value)
+// {
+//     PINPUT_DEVICE_EXT DevExt;
+//     USHORT ScanCode, Flags;
+//
+//     if (!g_KbdDevice)
+//         return;
+//
+//     if (!EvdevToScanCode(EvdevCode, &ScanCode, &Flags))
+//         return;
+//
+//     DevExt = (PINPUT_DEVICE_EXT)g_KbdDevice->DeviceExtension;
+//
+//     /* Value: 0=release, 1=press, 2=repeat */
+//     if (Value == 0)
+//         Flags |= KEY_BREAK;
+//     /* For press (1) and repeat (2), send KEY_MAKE (Flags unchanged) */
+//
+//     RingPush(DevExt, ScanCode, Flags);
+//     TryCompleteIrp(DevExt);
+// }
+//
+// static VOID
+// VirtioProcessMouseButton(USHORT EvdevCode, ULONG Value, VIRTIO_INPUT_DEV *Dev)
+// {
+//     switch (EvdevCode)
+//     {
+//     case BTN_LEFT:
+//         Dev->AccumButtons |= Value ?
+//             MOUSE_LEFT_BUTTON_DOWN : MOUSE_LEFT_BUTTON_UP;
+//         Dev->HasButton = TRUE;
+//         break;
+//     case BTN_RIGHT:
+//         Dev->AccumButtons |= Value ?
+//             MOUSE_RIGHT_BUTTON_DOWN : MOUSE_RIGHT_BUTTON_UP;
+//         Dev->HasButton = TRUE;
+//         break;
+//     case BTN_MIDDLE:
+//         Dev->AccumButtons |= Value ?
+//             MOUSE_MIDDLE_BUTTON_DOWN : MOUSE_MIDDLE_BUTTON_UP;
+//         Dev->HasButton = TRUE;
+//         break;
+//     }
+// }
+//
+// static VOID
+// VirtioFlushMouseState(VIRTIO_INPUT_DEV *Dev)
+// {
+//     PINPUT_DEVICE_EXT DevExt;
+//     MOUSE_INPUT_DATA Data;
+//
+//     if (!g_MouDevice)
+//         return;
+//     if (!Dev->HasMove && !Dev->HasButton)
+//         return;
+//
+//     DevExt = (PINPUT_DEVICE_EXT)g_MouDevice->DeviceExtension;
+//
+//     RtlZeroMemory(&Data, sizeof(Data));
+//
+//     if (Dev->IsTablet && Dev->AbsValid)
+//     {
+//         /* Absolute positioning: scale to 0-65535 */
+//         Data.Flags = MOUSE_MOVE_ABSOLUTE;
+//         if (Dev->AbsMaxX > 0)
+//             Data.LastX = (LONG)((ULONGLONG)Dev->AccumX * 65535 / Dev->AbsMaxX);
+//         else
+//             Data.LastX = Dev->AccumX;
+//         if (Dev->AbsMaxY > 0)
+//             Data.LastY = (LONG)((ULONGLONG)Dev->AccumY * 65535 / Dev->AbsMaxY);
+//         else
+//             Data.LastY = Dev->AccumY;
+//     }
+//     else if (Dev->HasMove)
+//     {
+//         /* Relative movement */
+//         Data.Flags = 0;
+//         Data.LastX = Dev->AccumX;
+//         Data.LastY = Dev->AccumY;
+//     }
+//
+//     Data.ButtonFlags = Dev->AccumButtons;
+//
+//     MouRingPush(DevExt, &Data);
+//     MouTryCompleteIrp(DevExt);
+//
+//     /* Reset accumulators — keep absolute position for next time */
+//     if (!Dev->IsTablet)
+//     {
+//         Dev->AccumX = 0;
+//         Dev->AccumY = 0;
+//     }
+//     Dev->AccumButtons = 0;
+//     Dev->HasMove = FALSE;
+//     Dev->HasButton = FALSE;
+// }
+//
+// static BOOLEAN
+// VirtioPollDevice(VIRTIO_INPUT_DEV *Dev)
+// {
+//     BOOLEAN FoundEvents = FALSE;
+//     USHORT UsedIdx;
+//     ULONG DescId;
+//     VIRTIO_INPUT_EVENT *Evt;
+//
+//     virtio_rmb();
+//     UsedIdx = Dev->Used->Idx;
+//
+//     while (Dev->LastUsedIdx != UsedIdx)
+//     {
+//         FoundEvents = TRUE;
+//         DescId = Dev->Used->Ring[Dev->LastUsedIdx % Dev->QueueSize].Id;
+//         Evt = &Dev->Events[DescId];
+//
+//         switch (Evt->Type)
+//         {
+//         case EV_KEY:
+//             if (Evt->Code < BTN_LEFT)
+//             {
+//                 /* Keyboard key */
+//                 VirtioProcessKeyEvent(Evt->Code, Evt->Value);
+//             }
+//             else
+//             {
+//                 /* Mouse/tablet button */
+//                 VirtioProcessMouseButton(Evt->Code, Evt->Value, Dev);
+//             }
+//             break;
+//
+//         case EV_REL:
+//             switch (Evt->Code)
+//             {
+//             case REL_X:
+//                 Dev->AccumX += (LONG)Evt->Value;
+//                 Dev->HasMove = TRUE;
+//                 break;
+//             case REL_Y:
+//                 Dev->AccumY += (LONG)Evt->Value;
+//                 Dev->HasMove = TRUE;
+//                 break;
+//             case REL_WHEEL:
+//                 /* TODO: scroll wheel support */
+//                 break;
+//             }
+//             break;
+//
+//         case EV_ABS:
+//             switch (Evt->Code)
+//             {
+//             case ABS_X:
+//                 Dev->AccumX = (LONG)Evt->Value;
+//                 Dev->HasMove = TRUE;
+//                 Dev->AbsValid = TRUE;
+//                 break;
+//             case ABS_Y:
+//                 Dev->AccumY = (LONG)Evt->Value;
+//                 Dev->HasMove = TRUE;
+//                 Dev->AbsValid = TRUE;
+//                 break;
+//             }
+//             break;
+//
+//         case EV_SYN:
+//             VirtioFlushMouseState(Dev);
+//             break;
+//         }
+//
+//         /* Re-queue the descriptor back to available ring */
+//         Dev->Desc[DescId].Len = sizeof(VIRTIO_INPUT_EVENT);
+//         Dev->Desc[DescId].Flags = VIRTQ_DESC_F_WRITE;
+//         virtio_wmb();
+//         Dev->Avail->Ring[Dev->Avail->Idx % Dev->QueueSize] = (USHORT)DescId;
+//         virtio_wmb();
+//         Dev->Avail->Idx++;
+//
+//         Dev->LastUsedIdx++;
+//     }
+//
+//     if (FoundEvents)
+//     {
+//         virtio_mb();
+//         VirtioWrite32(Dev->Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+//     }
+//
+//     return FoundEvents;
+// }
+//
+// /* =========================================================================
+//  * Virtio polling thread
+//  * ========================================================================= */
+//
+// static VOID NTAPI
+// VirtioPollThread(PVOID Context)
+// {
+//     LARGE_INTEGER Delay;
+//
+//     UNREFERENCED_PARAMETER(Context);
+//
+//     Delay.QuadPart = -10000; /* 1ms relative */
+//
+//     while (VirtioPollRunning)
+//     {
+//         BOOLEAN found = FALSE;
+//         ULONG i;
+//
+//         for (i = 0; i < VirtioInputCount; i++)
+//         {
+//             if (VirtioPollDevice(&VirtioInputs[i]))
+//                 found = TRUE;
+//         }
+//
+//         /* Yield — KeDelayExecutionThread effectively yields on ARM64 */
+//         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+//
+//         if (!found)
+//         {
+//             /* Extra yields when idle to reduce CPU waste */
+//             ULONG j;
+//             for (j = 0; j < 5; j++)
+//                 KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+//         }
+//     }
+//
+//     PsTerminateSystemThread(STATUS_SUCCESS);
+// }
+//
+// /* ========================================================================= */
+//
+// NTSTATUS NTAPI
+// DriverEntry(
+//     PDRIVER_OBJECT DriverObject,
+//     PUNICODE_STRING RegistryPath)
+// {
+//     NTSTATUS Status;
+//     PDEVICE_OBJECT KbdDevice = NULL, MouDevice = NULL;
+//     PINPUT_DEVICE_EXT DevExt;
+//     UNICODE_STRING DeviceName, SymlinkName;
+//
+//     UNREFERENCED_PARAMETER(RegistryPath);
+//
+//     DbgPrint("[ARM64INPUT] DriverEntry\n");
+//
+//     DriverObject->MajorFunction[IRP_MJ_CREATE]         = InputCreate;
+//     DriverObject->MajorFunction[IRP_MJ_CLOSE]          = InputClose;
+//     DriverObject->MajorFunction[IRP_MJ_CLEANUP]        = InputCleanup;
+//     DriverObject->MajorFunction[IRP_MJ_READ]           = InputRead;
+//     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = InputDeviceControl;
+//
+//     /* Create keyboard class device */
+//     RtlInitUnicodeString(&DeviceName, L"\\Device\\KeyboardClass0");
+//     Status = IoCreateDevice(DriverObject,
+//                             sizeof(INPUT_DEVICE_EXT),
+//                             &DeviceName,
+//                             FILE_DEVICE_KEYBOARD,
+//                             0,
+//                             FALSE,
+//                             &KbdDevice);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DbgPrint("[ARM64INPUT] Failed to create KeyboardClass0: 0x%08lx\n", Status);
+//         return Status;
+//     }
+//
+//     /* Create DOS device symlink so user-mode can open \\.\KeyboardClass0 */
+//     RtlInitUnicodeString(&SymlinkName, L"\\DosDevices\\KeyboardClass0");
+//     IoCreateSymbolicLink(&SymlinkName, &DeviceName);
+//
+//     DevExt = (PINPUT_DEVICE_EXT)KbdDevice->DeviceExtension;
+//     DevExt->IsKeyboard = TRUE;
+//     InitializeListHead(&DevExt->PendingIrps);
+//     KeInitializeSpinLock(&DevExt->IrpLock);
+//     DevExt->RingHead = 0;
+//     DevExt->RingTail = 0;
+//     DevExt->SelfDevice = KbdDevice;
+//
+//     KbdDevice->Flags |= DO_BUFFERED_IO;
+//     KbdDevice->Flags &= ~DO_DEVICE_INITIALIZING;
+//     g_KbdDevice = KbdDevice;
+//
+//     DbgPrint("[ARM64INPUT] \\Device\\KeyboardClass0 created\n");
+//
+//     /* Create mouse (pointer) class device */
+//     RtlInitUnicodeString(&DeviceName, L"\\Device\\PointerClass0");
+//     Status = IoCreateDevice(DriverObject,
+//                             sizeof(INPUT_DEVICE_EXT),
+//                             &DeviceName,
+//                             FILE_DEVICE_MOUSE,
+//                             0,
+//                             FALSE,
+//                             &MouDevice);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DbgPrint("[ARM64INPUT] Failed to create PointerClass0: 0x%08lx\n", Status);
+//         IoDeleteDevice(KbdDevice);
+//         return Status;
+//     }
+//
+//     DevExt = (PINPUT_DEVICE_EXT)MouDevice->DeviceExtension;
+//     DevExt->IsKeyboard = FALSE;
+//     InitializeListHead(&DevExt->PendingIrps);
+//     KeInitializeSpinLock(&DevExt->IrpLock);
+//     DevExt->RingHead = 0;
+//     DevExt->MouRingHead = 0;
+//     DevExt->MouRingTail = 0;
+//     DevExt->SelfDevice = MouDevice;
+//     MouDevice->Flags |= DO_BUFFERED_IO;
+//     MouDevice->Flags &= ~DO_DEVICE_INITIALIZING;
+//
+//     /* Create DOS device symlink so user-mode can open \\.\PointerClass0 */
+//     RtlInitUnicodeString(&SymlinkName, L"\\DosDevices\\PointerClass0");
+//     RtlInitUnicodeString(&DeviceName, L"\\Device\\PointerClass0");
+//     IoCreateSymbolicLink(&SymlinkName, &DeviceName);
+//
+//     g_MouDevice = MouDevice;
+//
+//     DbgPrint("[ARM64INPUT] \\Device\\PointerClass0 created\n");
+//
+//     /* Scan for virtio-input MMIO devices */
+//     VirtioScanDevices();
+//     if (VirtioInputCount > 0)
+//     {
+//         VirtioPollRunning = TRUE;
+//         Status = PsCreateSystemThread(&VirtioPollThreadHandle,
+//                                       THREAD_ALL_ACCESS,
+//                                       NULL, NULL, NULL,
+//                                       VirtioPollThread, NULL);
+//         if (NT_SUCCESS(Status))
+//         {
+//             DbgPrint("[ARM64INPUT] Virtio poll thread started\n");
+//         }
+//         else
+//         {
+//             DbgPrint("[ARM64INPUT] Failed to create poll thread: 0x%08lx\n", Status);
+//             VirtioPollRunning = FALSE;
+//         }
+//     }
+//
+//     return STATUS_SUCCESS;
+// }
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

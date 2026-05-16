@@ -13,6 +13,63 @@ list(APPEND LIBCNTPR_SOURCE
     ${LIBCNTPR_WSTRING_SOURCE}
 )
 
+# ── cnt-rust cohabitation swap (libcntpr ONLY) ──────────────────────
+# These .c are now provided by Rust (sdk/lib/rust/cnt-rust/ cabi, via
+# libcntpr_rust.a below). REMOVE_ITEM here — NOT commenting the family
+# cmakes — because CRT_*_SOURCE (user-mode msvcrt) embeds the same
+# ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
+# Files kept on disk (never-delete rule). Kept C (NOT removed):
+# ctype/is_wctype/wctype/winesup/wcs/iswctype_nt/memccpy/memicmp/
+# rand_nt/qsort/bsearch/lfind/mbstrlen/fltused (UNCOVERED) + atol
+# (_atoldbl) + scanf (variadic) — PARTIAL. The mem/mem{chr,cpy,move,
+# set}.c entries are amd64/arm64-only (i386 uses *_asm.s, so
+# REMOVE_ITEM is a harmless no-op there).
+list(REMOVE_ITEM LIBCNTPR_SOURCE
+    string/_splitpath.c
+    string/_wsplitpath.c
+    string/strcspn.c
+    string/strrev.c
+    string/strset.c
+    string/strstr.c
+    string/strpbrk.c
+    string/strspn.c
+    string/atoi64.c
+    string/atoi.c
+    string/itoa.c
+    string/itow.c
+    string/strtoi64.c
+    string/strtol.c
+    string/strtoul.c
+    string/strtoull.c
+    string/wcstol.c
+    string/wcstoul.c
+    string/wtoi64.c
+    string/wtoi.c
+    string/wtol.c
+    string/_stricmp_nt.c
+    string/_strlwr_nt.c
+    string/_strnicmp_nt.c
+    string/_strupr_nt.c
+    string/mbstowcs_nt.c
+    string/tolower_nt.c
+    string/toupper_nt_mb.c
+    string/towupper_nt.c
+    string/wcstombs_nt.c
+    wstring/wcscspn.c
+    wstring/wcsspn.c
+    wstring/wcsstr.c
+    wstring/_wcsicmp_nt.c
+    wstring/_wcslwr_nt.c
+    wstring/_wcsnicmp_nt.c
+    wstring/_wcsupr_nt.c
+    mem/memcmp.c
+    mem/memchr.c
+    mem/memcpy.c
+    mem/memmove.c
+    mem/memset.c
+    stdlib/_invalid_parameter_nt.c
+)
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
@@ -33,3 +90,53 @@ target_compile_definitions(libcntpr
     __CRT__NO_INLINE
     CRTDLL)
 add_dependencies(libcntpr psdk asm)
+
+# ── Rust integration: cnt-rust → libcntpr cohabitation swap ──────────
+# cnt-rust-lib is a staticlib umbrella over cnt-rust's `cabi`
+# #[no_mangle] libcntpr-replacement symbols. libcntpr feeds BOTH
+# ntoskrnl and hal, so this must be a libcntpr-level link (the
+# rtl-rust route serves librtl only). Mirrors librtl's rust_rtl hook.
+set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cnt-rust-target")
+if(ARCH STREQUAL "i386")
+    set(RUST_TARGET "i686-pc-windows-gnu")
+    # i386 kernel runs no-SSE (CR4.OSFXSR unset in Phase 0); cnt-rust
+    # built WITHOUT the `float` feature (no by-value f64 ABI).
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
+    set(CNT_RUST_FEATURES "")
+elseif(ARCH STREQUAL "amd64")
+    set(RUST_TARGET "x86_64-pc-windows-gnu")
+    set(RUST_EXTRA_ENV "")
+    set(CNT_RUST_FEATURES "--features" "float")
+elseif(ARCH STREQUAL "arm64")
+    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(RUST_EXTRA_ENV "")
+    set(CNT_RUST_FEATURES "--features" "float")
+endif()
+
+set(RUST_CNT_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcntpr_rust.a")
+add_custom_command(
+    OUTPUT ${RUST_CNT_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
+        cargo build --release --target ${RUST_TARGET}
+            -p cnt-rust-lib ${CNT_RUST_FEATURES}
+            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libcnt_rust_lib.a
+        ${RUST_CNT_LIB}
+    DEPENDS
+            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/mod.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/generated.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/manual.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/mod.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"
+)
+add_custom_target(rust_cnt DEPENDS ${RUST_CNT_LIB})
+add_dependencies(libcntpr rust_cnt)
+target_link_libraries(libcntpr PRIVATE ${RUST_CNT_LIB})

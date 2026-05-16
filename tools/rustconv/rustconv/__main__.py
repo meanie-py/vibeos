@@ -702,7 +702,7 @@ def cmd_translate(args):
     from .resolver import resolve as file_resolve
     from .callgraph import extract_call_graph, topological_sort, print_call_graph
     from .function_resolver import resolve_function
-    from .function_prompt import build_function_prompt, load_function_system_prompt
+    from .function_prompt import build_function_prompt, build_preamble_prompt, load_function_system_prompt
     from .stitcher import stitch_file
     from .batch_runner import submit_single, TranslationResult
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
@@ -857,63 +857,38 @@ def cmd_translate(args):
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
 
-        # Translate the file-scope preamble (globals/consts/tables/
-        # typedefs) as ONE extra chunk. cmd_translate is
-        # function-by-function, so without this every global
-        # DEFINITION, #define and static table is dropped — the #1
-        # root of "cannot find value"/undefined-global errors.
-        from .scanner import extract_preamble
+        # Translate the file-scope preamble (structs / typedefs /
+        # #define→const / static tables) as ONE synthetic unit. The
+        # stitcher otherwise emits no preamble at all, so files with a
+        # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
-        preamble_c = extract_preamble(scan)
-        if len(preamble_c) > 40:  # skip trivial/empty preambles
-            print(f"  [preamble] {len(preamble_c)} chars...", file=sys.stderr,
-                  end=" ", flush=True)
-            p_prompt = (
-                f"Translate ONLY these file-scope C declarations from "
-                f"`{c_file.name}` to Rust. These are NOT functions "
-                f"(functions are translated separately — OMIT any function "
-                f"definitions or forward declarations).\n\n"
-                f"Rules:\n"
-                f"- global variable DEFINITIONS (e.g. `PENTRY gpentHmgr;`, "
-                f"`static PVOID x = NULL;`) → `#[no_mangle] pub static mut "
-                f"NAME: TYPE = <zeroed-or-init>;` (preserve the symbol; "
-                f"`static`-in-C still becomes a defined `pub static mut`).\n"
-                f"- object-like `#define NAME value` → `pub const NAME: ty "
-                f"= value;` (infer the type; pool tags via "
-                f"`u32::from_le_bytes(*b\"....\")`).\n"
-                f"- function-like or no-op/empty `#define` macros → a "
-                f"`macro_rules!` that expands correctly; an empty debug "
-                f"macro must expand to nothing.\n"
-                f"- `static const` tables incl. function-pointer arrays → "
-                f"Rust `static NAME: [T; N] = [...]`.\n"
-                f"- typedefs/structs NOT already in `win32k_sys::win32k` → "
-                f"`type`/`#[repr(C)] struct`.\n"
-                f"Use `win32k_sys::win32k::*` for win32k types and "
-                f"`ntkrnl_sys::ddk::{{...}}` (named) for kernel APIs. "
-                f"Output Rust only.\n\n```c\n{preamble_c}\n```"
-            )
+        preamble_src = (scan.preamble_text or scan.globals_text or "").strip()
+        if preamble_src:
+            print(f"  [preamble] {len(preamble_src)} C chars...",
+                  file=sys.stderr, end=" ", flush=True)
+            pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
             if use_claude:
-                p_res = submit_single(p_prompt, model=model,
-                                      system_prompt=system_prompt)
+                pre_res = submit_single(pre_prompt, model=model,
+                                        system_prompt=system_prompt)
             else:
-                p_full = (system_prompt + "\n\n---\n\n" + p_prompt) if system_prompt else p_prompt
-                p_res = submit_single(p_full, model=model)
-            if p_res.success:
-                preamble_rust = p_res.rust_code
-                total_in += p_res.input_tokens
-                total_out += p_res.output_tokens
-                print(f"OK ({p_res.input_tokens} in / {p_res.output_tokens} out)",
+                pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
+                pre_res = submit_single(pre_full, model=model)
+            if pre_res.success:
+                preamble_rust = pre_res.rust_code
+                total_in += pre_res.input_tokens
+                total_out += pre_res.output_tokens
+                print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
                       file=sys.stderr)
             else:
-                print(f"FAIL: {p_res.error}", file=sys.stderr)
+                print(f"FAIL: {pre_res.error} (stitching without preamble)",
+                      file=sys.stderr)
 
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
         # Stitch functions into a single file
         stitched = stitch_file(translated, sorted_deps, scan, file_res,
-                               target=rustconv_target,
-                               preamble_rust=preamble_rust)
+                               target=rustconv_target, preamble=preamble_rust)
 
         # Post-process
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,

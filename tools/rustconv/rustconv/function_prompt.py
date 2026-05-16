@@ -289,6 +289,55 @@ def _format_export_info(func: FunctionDep, spec_exports: dict) -> str:
     return "\n".join(parts)
 
 
+def build_preamble_prompt(
+    scan: "ScanResult",
+    resolve: ResolveResult,
+    target: Target | None = None,
+) -> str:
+    """Build the prompt for translating a file's FILE-SCOPE PREAMBLE.
+
+    `translate` is function-granular and the stitcher never emits the C
+    file's typedefs / structs / enums / #defines / static lookup tables —
+    so a translated file with a non-trivial preamble does not compile.
+    This prompt translates exactly that preamble as ONE synthetic unit;
+    cmd_translate prepends the result via stitch_file(preamble=...).
+
+    Uses the same resolved import context as the function prompts. The C
+    text is scan.preamble_text (AST-derived, marker-independent), falling
+    back to globals_text for marker-split files.
+    """
+    preamble_c = (scan.preamble_text or scan.globals_text or "").strip()
+    parts: list[str] = []
+    parts.append(f"## Translate the FILE-SCOPE PREAMBLE of `{scan.path.name}`\n")
+    parts.append(_format_import_context(resolve, target=target))
+    parts.append(
+        "\n## Task\n"
+        "Translate ONLY the file-scope C declarations below to Rust. These\n"
+        "are the types/constants/tables the translated functions reference.\n\n"
+        "Rules:\n"
+        "- `typedef struct {..} X, *PX;` → `#[repr(C)] pub struct X {..}`\n"
+        "  plus `pub type PX = *mut X;`. Keep field order/types exact.\n"
+        "- `#define NAME value` (object-like, constant) →\n"
+        "  `pub const NAME: <inferred-ty> = value;`. Skip function-like or\n"
+        "  token-paste macros (the functions inline those).\n"
+        "- `enum {..}` → `pub const`s (C enum int values) unless a real\n"
+        "  `#[repr(C)] enum` is clearly intended.\n"
+        "- `static const T tbl[] = {..}` → `pub static tbl: [T; N] = [..];`\n"
+        "  (compute N; preserve every element verbatim).\n"
+        "- Reference resolved types by their final names (e.g. `_LIST_ENTRY`,\n"
+        "  `PVOID`) as if already in scope. Do NOT add `ntkrnl_sys::` path\n"
+        "  prefixes inline.\n\n"
+        "**Output ONLY the Rust declarations.** Do NOT emit: `use`\n"
+        "statements, `extern \"..\" {}` blocks, ANY `fn` definitions, or\n"
+        "prose. The caller assembles imports and function bodies separately."
+    )
+    parts.append("\n## C File-Scope Preamble\n")
+    parts.append("```c")
+    parts.append(preamble_c)
+    parts.append("```")
+    return "\n".join(parts)
+
+
 def build_function_prompt(
     func: FunctionDep,
     resolve: ResolveResult,
@@ -336,7 +385,9 @@ def build_function_prompt(
         parts.append(gap_info)
 
     # Globals
-    globals_info = _format_globals_context(scan.globals, scan.globals_text)
+    globals_info = _format_globals_context(
+        scan.globals, scan.globals_text or scan.preamble_text
+    )
     if globals_info:
         parts.append(globals_info)
 

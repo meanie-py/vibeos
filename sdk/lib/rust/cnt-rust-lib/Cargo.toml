@@ -1,0 +1,28 @@
+# cnt-rust-lib — staticlib umbrella that exposes cnt-rust's `cabi`
+# #[no_mangle] libcntpr-replacement symbols as one `.a` for the cmake
+# libcntpr cohabitation swap (libcntpr feeds BOTH ntoskrnl and hal, so
+# the rtl-rust route — librtl-only — cannot serve it; this is the
+# libcntpr-level vehicle, mirroring rtl-rust↔librtl).
+#
+# `extern crate cnt_rust;` force-pulls cnt-rust's #[no_mangle] symbols
+# into this staticlib (per feedback_extern_crate_for_staticlib.md).
+# One #[panic_handler] lives here (cnt-rust is an rlib with none).
+
+[package]
+name = "cnt-rust-lib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+# amd64/arm64 enable this (cnt-rust float surface: floatcvt/scanf +
+# their cabi shims). i386 OMITS it — the kernel builds Rust no-SSE
+# (CR4.OSFXSR unset in Phase 0) so by-value f64 ABI won't compile.
+float = ["cnt-rust/float"]
+
+[dependencies]
+# default-features=false drops cnt-rust's default `float`; `cabi`
+# alone no longer implies float (decoupled so i386 no-SSE compiles).
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi"] }

@@ -7,11 +7,13 @@
 
 pub mod casemap;
 pub mod env;
+#[cfg(feature = "float")]
 pub mod floatcvt;
 pub mod mbcp;
 pub mod mem;
 pub mod path;
 pub mod radix;
+#[cfg(feature = "float")]
 pub mod scanf;
 pub mod string;
 pub mod strmut;

@@ -43,12 +43,16 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     lib/cache/cache.c
     lib/comm/rs232.c
     ## add KD support
-    lib/fs/btrfs.c
-    lib/fs/ext.c
-    lib/fs/fat.c
-    lib/fs/fs.c
-    lib/fs/iso.c
-    lib/fs/ntfs.c
+    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
+    # PRUNED entirely (no Rust, no C): livecd boots ISO, ramdisk is FAT,
+    # so fs.rs FileSystems[] = [Iso,Fat,Pxe] only; the other 3 are dead
+    # weight. Keep .c files on disk (never-delete), just unreferenced.
+    # lib/fs/btrfs.c   # pruned (not in fs.rs FileSystems[])
+    # lib/fs/ext.c     # pruned
+    # lib/fs/fat.c     # replaced by Rust (freeldr-rust/src/fat.rs)
+    # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
+    # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
+    # lib/fs/ntfs.c    # pruned
     lib/inifile/ini_init.c
     lib/inifile/inifile.c
     lib/inifile/parse.c
@@ -59,14 +63,20 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
     settings.c
+    # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
+    # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
+    # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.
+    # ui/gui.c untranslated (already commented). Cohabitation: .c kept on
+    # disk, Rust #[no_mangle] takes over.
     ui/directui.c
     # ui/gui.c
-    ui/minitui.c
-    ui/noui.c
-    ui/tui.c
-    ui/tuimenu.c
-    ui/ui.c
-    ui/video.c)
+    # ui/minitui.c  # replaced by Rust (freeldr-rust/src/minitui.rs)
+    # ui/noui.c     # replaced by Rust (freeldr-rust/src/noui.rs)
+    # ui/tui.c      # replaced by Rust (freeldr-rust/src/tui.rs)
+    # ui/tuimenu.c  # replaced by Rust (freeldr-rust/src/tuimenu.rs)
+    # ui/ui.c       # replaced by Rust (freeldr-rust/src/ui.rs)
+    # ui/video.c    # replaced by Rust (freeldr-rust/src/video.rs)
+    )
 
 list(APPEND FREELDR_NTLDR_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c

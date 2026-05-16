@@ -20,7 +20,8 @@
 //!   HalpQueryIdPdo           — ACPI_HAL\PNP0C08 hardware ID, instance "0"
 //!   HalpQueryIdFdo           — HalHardwareIdString, instance "0"
 
-#![cfg(target_arch = "x86_64")]
+// Built for i386 too (task #4 ACPI-HAL backport) — replaces legacy_halpnpdd
+// (PCI_HAL\PNP0A03) on i386 so the HAL root advertises ACPI_HAL\PNP0C08.
 
 use ntkrnl_sys::hal_ddk::{
     CmResourceTypeInterrupt, _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BQID_DEVICE,
@@ -30,6 +31,7 @@ use ntkrnl_sys::hal_ddk::{
     _DEVICE_RELATION_TYPE_BusRelations as REL_BUS,
     _DEVICE_RELATION_TYPE_TargetDeviceRelation as REL_TARGET,
     _INTERFACE_TYPE_InterfaceTypeUndefined as IFT_UNDEF, _INTERFACE_TYPE_PNPBus as IFT_PNPBUS,
+    _INTERFACE_TYPE_Internal as IFT_INTERNAL,
     _SYSTEM_POWER_STATE_PowerSystemHibernate as PS_HIBERNATE,
     _SYSTEM_POWER_STATE_PowerSystemShutdown as PS_SHUTDOWN,
     _SYSTEM_POWER_STATE_PowerSystemSleeping3 as PS_SLEEPING3,
@@ -141,8 +143,11 @@ unsafe extern "system" {
     fn PoStartNextPowerIrp(Irp: PIRP);
 }
 
-// ObReferenceObject is `#define ObReferenceObject ObfReferenceObject`.
-unsafe extern "system" {
+// ObReferenceObject is `#define ObReferenceObject ObfReferenceObject`
+// (FASTCALL — `@ObfReferenceObject@4` on i386, undecorated on amd64;
+// `extern "fastcall"` resolves correctly per-arch — matches the proven
+// legacy_halpnpdd.rs i386 decl).
+unsafe extern "fastcall" {
     fn ObfReferenceObject(Object: PVOID);
 }
 
@@ -157,8 +162,9 @@ unsafe fn ob_reference_object(o: PVOID) {
 #[inline(always)]
 unsafe fn io_call_driver(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
     unsafe {
-        // IoCallDriver -> IofCallDriver.
-        unsafe extern "system" {
+        // IoCallDriver -> IofCallDriver (FASTCALL — `@IofCallDriver@8` on
+        // i386; `extern "fastcall"` matches legacy_halpnpdd.rs).
+        unsafe extern "fastcall" {
             fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
         }
         IofCallDriver(device, irp)
@@ -542,8 +548,36 @@ pub unsafe extern "system" fn HalpQueryResources(
             );
             (*resource_list).Count = 1;
             let list0 = (*resource_list).List.as_mut_ptr();
-            (*list0).BusNumber = -1i32 as ULONG;
-            (*list0).InterfaceType = IFT_PNPBUS;
+            // i386: HalpLookupHandler indexes Element[BusNumber] guarded by
+            // ArraySize >= BusNumber, so BusNumber = -1 (0xFFFFFFFF) never
+            // matches; the legacy Internal handler is registered at bus 0.
+            // amd64's ACPI HAL tolerates -1 (PNPBus path). Task #4.
+            #[cfg(target_arch = "x86_64")]
+            {
+                (*list0).BusNumber = -1i32 as ULONG;
+            }
+            #[cfg(target_arch = "x86")]
+            {
+                (*list0).BusNumber = 0;
+            }
+            // ACPI PDO's SCI interrupt is translated via the HAL bus handler
+            // for this InterfaceType. amd64's ACPI HAL (busemul) registers a
+            // PNPBus handler; the i386 backport keeps legacy bussupp, which
+            // registers only Internal(0)/Isa(1) — no PNPBus(15) handler, so
+            // HalGetInterruptVector(PNPBus) returns 0 and
+            // IopTranslateDeviceResources fails (STATUS_UNSUCCESSFUL),
+            // stalling the ACPI_HAL devnode. The SCI is a fixed motherboard
+            // PIC IRQ, so `Internal` (identity PIC translation) is correct on
+            // i386. Task #4. (Sibling fix in halacpi HalpBuildAcpiResourceList
+            // covers the requirements list; this is the boot CM list.)
+            #[cfg(target_arch = "x86_64")]
+            {
+                (*list0).InterfaceType = IFT_PNPBUS;
+            }
+            #[cfg(target_arch = "x86")]
+            {
+                (*list0).InterfaceType = IFT_INTERNAL;
+            }
             (*list0).PartialResourceList.Version = 1;
             (*list0).PartialResourceList.Revision = 1;
             (*list0).PartialResourceList.Count = 0;

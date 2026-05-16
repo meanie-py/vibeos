@@ -268,6 +268,26 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     assert status["return"]["running"] is True, \
         f"VM not running after input: {status.get('return')}"
 
+    # HARD (i386/amd64): the injected keystroke must actually REACH the
+    # keyboard class driver — delivery, not just "win32k didn't crash".
+    # kbdclass.c ClassCallback emits this one-shot marker on the first real
+    # key (i8042prt/usbkbd -> kbdclass). Boot markers structurally cannot
+    # cover this: the raw-input path only runs once a key arrives after the
+    # desktop is up. If this fails the input chain is broken upstream of
+    # win32k — fix the OS, not the gate (smoke is the source of truth).
+    KBD_DELIVERED = "[KBDCLASS] first key delivered"
+    if KBD_DELIVERED not in settle:
+        for _ in range(10):
+            settle += vm.serial_output(timeout=1.0)
+            if KBD_DELIVERED in settle:
+                break
+    assert KBD_DELIVERED in settle, (
+        f"injected keystroke never reached kbdclass on {arch} — input is "
+        f"not being delivered to the class driver (chain broken upstream of "
+        f"win32k: HAL/i8042prt/kbdclass).\nserial tail: {settle[-1000:]!r}")
+    print(f"\n[post-input] kbd delivery confirmed — keystroke reached "
+          f"kbdclass ({KBD_DELIVERED!r} observed)")
+
     # Diagnostic: after-shot for visual inspection + pixel-delta signal
     # (soft — PS/2 relative mouse + theme variance make a hard threshold
     # flaky; the crash/liveness asserts above are the real gate).
@@ -370,6 +390,141 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
           f"saved {after_png}")
 
 
+def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
+    """arm64 input *delivery* gate (not just liveness): inject keyboard via
+    QMP and assert the arm64input.rs Rust driver actually delivered it up
+    the class-driver stack.
+
+    First functional coverage for the bespoke arm64input virtio-mmio
+    driver. Boot only proves DriverEntry ran + virtio devices enumerated;
+    the one-shot `[ARM64INPUT] KBD-DELIVERED` serial marker proves the full
+    QMP -> virtio-mmio -> poll thread -> scancode xlate -> KeyboardClass0
+    ring -> read-IRP path completed end-to-end (the marker is emitted
+    exactly once by the driver via AtomicBool, so re-injecting across the
+    read window is safe). This gate caught three real pre-existing bugs:
+    a wide/narrow device-name string (OBJECT_PATH_SYNTAX_BAD), a missing
+    legacy QueueAlign write, and — the root cause — non-volatile reads of
+    the device-DMA'd virtqueue used ring (LLVM constant-folded used.idx to
+    0 so the poll never saw QEMU's completions).
+
+    KEYBOARD is the hard gate. MOUSE delivery (`MOU-DELIVERED`) is reported
+    but non-fatal — the pointer accumulate+EV_SYN-flush path is a distinct
+    secondary slice with a tracked remaining arm64 wrinkle.
+
+    i386/amd64 have no arm64input driver — covered by
+    test_post_shell_ready_input / _mouse instead.
+    """
+    if arch != "arm64":
+        pytest.skip("arm64input is the arm64-only bespoke virtio-mmio "
+                    "driver; i386/amd64 use test_post_shell_ready_input")
+
+    vm.serial_output(timeout=2.0)  # drain backlog so the scan sees fallout
+
+    # Default routing (no `device=`: QMP input-send-event with a `device`
+    # arg aborts QEMU for virtio-mmio input — they have no console/head
+    # property, object_property_find_err). QEMU's input subsystem routes
+    # typed events to the matching virtio-input handler.
+    def _send(events: list) -> None:
+        r = vm.qmp.execute("input-send-event", events=events)
+        if "error" in r:
+            pytest.fail(f"QMP input-send-event failed: {r['error']}")
+
+    key = lambda k, d: {"type": "key",
+                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+
+    def _inject() -> None:
+        for k in ("a", "spc", "ret", "esc"):
+            _send([key(k, True)])
+            _send([key(k, False)])
+        for _ in range(6):
+            _send([{"type": "rel", "data": {"axis": "x", "value": 40}},
+                   {"type": "rel", "data": {"axis": "y", "value": 30}}])
+        _send([{"type": "btn", "data": {"button": "left", "down": True}}])
+        _send([{"type": "btn", "data": {"button": "left", "down": False}}])
+
+    # KEYBOARD delivery is the HARD gate (the bespoke arm64input virtio-mmio
+    # kbd path, end-to-end). MOUSE delivery is reported but non-fatal: the
+    # pointer accumulate+EV_SYN-flush path is a distinct secondary slice with
+    # a known remaining arm64 wrinkle (tracked follow-up); the keyboard gate
+    # is the regression-critical one and proves the DMA/virtqueue path works.
+    # TCG is slow + the poll thread sleeps when idle; re-inject across a
+    # generous window and stop as soon as the keyboard marker lands.
+    KBD = "[ARM64INPUT] KBD-DELIVERED"
+    MOU = "[ARM64INPUT] MOU-DELIVERED"
+    acc = ""
+    for _ in range(30):
+        _inject()
+        acc += vm.serial_output(timeout=2.0)
+        hit = [m for m in _FATAL_MARKERS if m in acc]
+        if hit:
+            sym = _symbolicate_bugcheck(acc, arch)
+            pytest.fail(f"arm64input died handling injected input — "
+                        f"markers {hit}\n{sym}\nserial tail: {acc[-800:]!r}")
+        if KBD in acc:
+            break
+
+    missing = [] if KBD in acc else [KBD]
+    if missing:
+        # Self-diagnose: the driver's boot-time enumeration ([VIRTIO-INPUT]
+        # Found N device(s) / version / FEATURES_OK / Queue setup) lives in
+        # the boot serial, not in `acc`. Surface it + persist full serial so
+        # the failure is actionable without a blind re-run.
+        boot = vm._boot_output or ""
+        drv = [ln for ln in (boot + "\n" + acc).splitlines()
+               if "VIRTIO-INPUT" in ln or "ARM64INPUT" in ln]
+        # QEMU's authoritative virtqueue view at injection time — the only
+        # thing that can settle "guest ring correct but QEMU sees it empty":
+        # compare evtq desc/avail/used addr + avail/used idx vs the guest's
+        # [ARM64INPUT] QSETUP line. info virtio-queue-status needs the qom
+        # path of the virtio-input device.
+        virtio = ""
+        try:
+            def _hmp(c: str) -> str:
+                r = vm.qmp.execute("human-monitor-command", **{"command-line": c})
+                return r.get("return", "") if isinstance(r, dict) else str(r)
+            listing = _hmp("info virtio")
+            virtio += "=== info virtio ===\n" + listing + "\n"
+            # Each line: "<qom-path> [<type>]" — grab the path token; keep
+            # only the virtio-input devices (the ones under test).
+            paths = re.findall(r'^\s*(\S+)\s+\[virtio-input\]', listing, re.M)
+            for path in paths:
+                virtio += f"=== info virtio-status {path} ===\n"
+                virtio += _hmp(f"info virtio-status {path}") + "\n"
+                for q in (0, 1):
+                    virtio += f"=== virtio-queue-status {path} {q} ===\n"
+                    virtio += _hmp(f"info virtio-queue-status {path} {q}") + "\n"
+        except Exception as e:  # diagnostic only — never mask the real fail
+            virtio = f"(info virtio capture failed: {e})"
+        dbg = PROJECT_DIR / "qemu" / "arm64_input_debug.log"
+        try:
+            dbg.write_text(boot + "\n==== POST-INJECT ====\n" + acc +
+                           "\n==== QEMU VIRTIO ====\n" + virtio)
+        except OSError:
+            pass
+        assert not missing, (
+            f"arm64input did not deliver keyboard input within the window — "
+            f"the bespoke virtio-mmio kbd path is broken end-to-end.\n"
+            f"driver boot markers ({len(drv)}):\n  " +
+            ("\n  ".join(drv[-25:]) if drv else "(NONE — driver never logged "
+             "[VIRTIO-INPUT]/[ARM64INPUT]; not loaded or DriverEntry failed)") +
+            f"\n=== QEMU virtio (authoritative vq view) ===\n{virtio[-2000:]}"
+            f"\nfull serial saved: {dbg}\nserial tail: {acc[-400:]!r}")
+
+    status = vm.qmp.execute("query-status")
+    assert status["return"]["running"] is True, \
+        f"VM not running after arm64 input delivery: {status.get('return')}"
+
+    if MOU in acc:
+        print("\n[arm64input] delivery confirmed — KBD + MOU reached the "
+              "class-driver ring end-to-end")
+    else:
+        # Non-fatal: keyboard (the hard gate) is green. arm64 mouse
+        # accumulate+EV_SYN-flush is a tracked secondary follow-up.
+        print("\n[arm64input] KEYBOARD delivery confirmed (hard gate green). "
+              "MOUSE marker not observed — known arm64 pointer-path follow-up, "
+              "non-fatal (kbd path proves the DMA/virtqueue chain works).")
+
+
 def test_no_unexpected_ud2(arch: str) -> None:
     """Scan ntoskrnl.exe for ud2 instructions in named functions.
 
@@ -453,7 +608,7 @@ def test_sacred_primitives(arch: str) -> None:
             )
 
 
-def test_idle_cpu_not_spinning(vm: QemuVM) -> None:
+def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
     """At steady-state desktop the guest must actually be IDLE, not spinning.
 
     Under -accel kvm a healthy HLT-idle guest burns ~0-6% host CPU; a
@@ -463,7 +618,21 @@ def test_idle_cpu_not_spinning(vm: QemuVM) -> None:
     that silently ran every post-boot test at ~1/20th speed. Threshold is
     deliberately generous (clean baseline measured 3-6%, starved 88-93%)
     so it flags only the catastrophic-spin class, never normal jitter.
+
+    KVM-only by construction: the baseline calibration above assumes the
+    HLT-idle vCPU thread sleeps under -accel kvm (i386/amd64). arm64 has
+    no KVM on an x86 host (pure TCG) and no GIC, so it busy-polls at idle
+    and TCG pegs a host core regardless of guest idle health — the host-%
+    signal is meaningless there. Skipped on arm64 for the same reason its
+    sibling KVM/objdump-scoped gates (post_input, no_unexpected_ud2,
+    sacred_primitives) skip arm64; the assertion is unchanged for the
+    arches where it is valid.
     """
+    if arch == "arm64":
+        pytest.skip("arm64 is TCG (no KVM on x86 host) + no GIC: busy-polls "
+                    "at idle so host-CPU%% is not a valid idle signal; this "
+                    "gate is -accel kvm-only (i386/amd64)")
+
     pct = process_cpu_pct(vm._proc.pid, window=3.0)
     print(f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
           f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})")

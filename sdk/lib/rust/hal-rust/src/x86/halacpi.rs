@@ -1,8 +1,8 @@
 //! HAL ACPI — table walking, FADT cache, HalAcpiGetTable + HalpSetupAcpiPhase0.
-//! Translated from `hal/halx86/acpi/halacpi.c`. Amd64-only (acpi.cmake is
-//! linked into amd64 hal.dll only; i386 PIC HAL doesn't pull this in).
-
-#![cfg(target_arch = "x86_64")]
+//! Translated from `hal/halx86/acpi/halacpi.c`. Now built for i386 too
+//! (task #4 ACPI-HAL backport): provides the i386 ACPI HAL identity +
+//! table provider, superseding the legacy halpcat.rs PIC-HAL stubs.
+//! Interrupt delivery stays PIC (pic*/timer/portio modules untouched).
 
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, KeBugCheckEx, KeFindConfigurationNextEntry,
@@ -22,21 +22,35 @@ use ntkrnl_sys::hal_ddk::{
     IO_RESOURCE_REQUIREMENTS_LIST, LIST_ENTRY, NTSTATUS, PACPI_BIOS_MULTI_NODE, PACPI_CACHED_TABLE,
     PACPI_SRAT, PAGE_SHIFT, PAGE_SIZE, PBOOT_TABLE, PCHAR, PCM_PARTIAL_RESOURCE_LIST,
     PCONFIGURATION_COMPONENT_DATA, PCSTR, PDEBUG_PORT_TABLE, PDESCRIPTION_HEADER, PFADT, PFN_COUNT,
-    PHARDWARE_PTE, PHYSICAL_ADDRESS, PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY,
+    PHYSICAL_ADDRESS, PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY,
     PLOADER_PARAMETER_BLOCK, PLOADER_PARAMETER_EXTENSION, PRSDT, PUNICODE_STRING, PVOID, PWCHAR,
     PXSDT, RSDT, RSDT_SIGNATURE, ULONG, ULONG_PTR, USHORT, XSDT, _UNICODE_STRING,
 };
+// HARDWARE_PTE is arch-split in bindgen: amd64 = PHARDWARE_PTE (x64 PTE),
+// i386 = PHARDWARE_PTE_X86 (32-bit / PAE PTE). Alias so the body stays
+// arch-neutral (HalpPteForFlush + HalAddressToPte cast).
+#[cfg(target_arch = "x86_64")]
+use ntkrnl_sys::hal_ddk::PHARDWARE_PTE;
+#[cfg(target_arch = "x86")]
+use ntkrnl_sys::hal_ddk::PHARDWARE_PTE_X86 as PHARDWARE_PTE;
+// i386: HalpInitializePciBus is owned by bussupp.rs (i386 bus infra); the
+// amd64-ACPI local def above is x86_64-gated, so resolve the call through
+// the hal_ddk extern (links to bussupp's #[no_mangle] symbol).
+#[cfg(target_arch = "x86")]
+use ntkrnl_sys::hal_ddk::HalpInitializePciBus;
 
 // MmMapIoSpace / MmUnmapIoSpace bridge — ddk and hal_ddk both declare these
 // but with disjoint LARGE_INTEGER types in their signatures.  Wrap so we can
 // pass our hal_ddk PHYSICAL_ADDRESS without manual transmutes everywhere.
 #[inline(always)]
 unsafe fn MmMapIoSpace(addr: PHYSICAL_ADDRESS, size: u64, cache: u32) -> PVOID {
-    ntkrnl_sys::ddk::MmMapIoSpace(core::mem::transmute(addr), size, cache)
+    // ddk MmMapIoSpace takes SIZE_T (u32 on i386, u64 on amd64) — `as _`
+    // coerces per-arch from the arch-neutral u64 the HAL body uses.
+    ntkrnl_sys::ddk::MmMapIoSpace(core::mem::transmute(addr), size as _, cache)
 }
 #[inline(always)]
 unsafe fn MmUnmapIoSpace(va: PVOID, size: u64) {
-    ntkrnl_sys::ddk::MmUnmapIoSpace(va, size);
+    ntkrnl_sys::ddk::MmUnmapIoSpace(va, size as _);
 }
 
 // FAST_MUTEX bridge — ddk and hal_ddk define the same struct under separate
@@ -46,13 +60,38 @@ unsafe fn MmUnmapIoSpace(va: PVOID, size: u64) {
 unsafe fn ExInitializeFastMutex(m: *mut FAST_MUTEX) {
     ntkrnl_sys::inline::ex::ExInitializeFastMutex(m as *mut _);
 }
+// amd64: ExAcquire/ReleaseFastMutex are real stdcall exports
+// (ntoskrnl.spec `-arch=x86_64`). i386: those names are FORCEINLINE in the
+// DDK header (not exported); the real i386 export is the FASTCALL
+// `Exi{Acquire,Release}FastMutex` (ntoskrnl.spec lines 183-184). Bridge
+// per-arch so the symbol resolves on both.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn ExAcquireFastMutex(m: *mut FAST_MUTEX) {
     ntkrnl_sys::ddk::ExAcquireFastMutex(m as *mut _);
 }
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn ExReleaseFastMutex(m: *mut FAST_MUTEX) {
     ntkrnl_sys::ddk::ExReleaseFastMutex(m as *mut _);
+}
+// extern "fastcall" auto-decorates to `@ExiAcquireFastMutex@4` on i386
+// (1 ptr arg = 4 bytes) — exactly the ntoskrnl.spec export. No
+// #[link_name] (that would double-decorate).
+#[cfg(target_arch = "x86")]
+unsafe extern "fastcall" {
+    fn ExiAcquireFastMutex(m: *mut core::ffi::c_void);
+    fn ExiReleaseFastMutex(m: *mut core::ffi::c_void);
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn ExAcquireFastMutex(m: *mut FAST_MUTEX) {
+    ExiAcquireFastMutex(m as *mut core::ffi::c_void);
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn ExReleaseFastMutex(m: *mut FAST_MUTEX) {
+    ExiReleaseFastMutex(m as *mut core::ffi::c_void);
 }
 use ntkrnl_sys::hal_ddk::HalpReportResourceUsage;
 use ntkrnl_sys::hal_ddk::_CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared;
@@ -158,8 +197,16 @@ const _ACPI_LAYOUT_CHECKS_AMD64: () = {
     assert!(core::mem::offset_of!(ACPI_BIOS_MULTI_NODE, Count) == 0x08);
     assert!(core::mem::offset_of!(ACPI_BIOS_MULTI_NODE, E820Entry) == 0x10);
 
-    assert!(core::mem::size_of::<ACPI_CACHED_TABLE>() == 0x38);
+    // ACPI_CACHED_TABLE is HAL-internal: { Links: LIST_ENTRY, Header: ptr,
+    // ... } so its size/Header offset are pointer-width-dependent (amd64
+    // LIST_ENTRY=16 → Header@0x10, size 0x38; i386 LIST_ENTRY=8 →
+    // Header@0x08, smaller). The amd64 literals are gated to x86_64; the
+    // authoritative per-arch layout check is ntkrnl-sys size_check_i386.rs
+    // (verify_sizes.py, cross-compiled from C). Links is field 0 on both.
     assert!(core::mem::offset_of!(ACPI_CACHED_TABLE, Links) == 0x00);
+    #[cfg(target_arch = "x86_64")]
+    assert!(core::mem::size_of::<ACPI_CACHED_TABLE>() == 0x38);
+    #[cfg(target_arch = "x86_64")]
     assert!(core::mem::offset_of!(ACPI_CACHED_TABLE, Header) == 0x10);
 };
 
@@ -346,7 +393,7 @@ pub unsafe extern "system" fn HalpAcpiCopyBiosTable(
             CachedTable = core::ptr::null_mut();
         }
     } else {
-        CachedTable = ExAllocatePoolWithTag(NonPagedPool, Size as u64, TAG_HAL) as _;
+        CachedTable = ExAllocatePoolWithTag(NonPagedPool, Size as _, TAG_HAL) as _;
     }
 
     if !CachedTable.is_null() {
@@ -1117,15 +1164,32 @@ pub unsafe extern "system" fn HalpSetupAcpiPhase0(
 unsafe extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
 }
-// HalAddressToPte = MiAddressToPte (FORCEINLINE in halp.h →
-// internal/amd64/mm.h).  Inline the amd64 PTE address math.
+// HalAddressToPte = MiAddressToPte (FORCEINLINE in halp.h → internal/
+// {amd64,i386}/mm.h). Arch-split self-map math, matching the established
+// in-tree convention (cf. hal-rust/src/x86/memory.rs + bios.rs):
+//   amd64: 4-level walk, PTE_BASE 0xFFFFF68000000000, 8-byte PTEs
+//   i386 : recursive self-map, PTE_BASE 0xC0000000, 4-byte (non-PAE) PTEs
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn HalAddressToPte(va: PVOID) -> PVOID {
     const PTE_BASE_AMD64: usize = 0xFFFFF68000000000;
     let offset = ((va as u64) >> 9) & (0xFFFFFFFFFu64 << 3);
     (PTE_BASE_AMD64 + offset as usize) as PVOID
 }
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn HalAddressToPte(va: PVOID) -> PVOID {
+    const PTE_BASE_I386: usize = 0xC000_0000;
+    (PTE_BASE_I386 + (((va as usize) >> 12) << 2)) as PVOID
+}
 
+// i386 keeps its own PCI-bus/bus-handler init in bussupp.rs (the i386
+// HAL bus infra; busemul.rs is amd64-only — see its module doc). These
+// amd64-ACPI variants are gated to x86_64 so bussupp's #[no_mangle]
+// definitions win the link on i386. ACPI table provision + ACPI_HAL PnP
+// (halacpi/halpnpdd) still run; only the bus-handler registration stays
+// the established i386 path. Task #4.
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePciBus() {
     unsafe {
@@ -1134,6 +1198,11 @@ pub unsafe extern "system" fn HalpInitializePciBus() {
     }
 }
 
+// Only called by the x86_64-gated HalpInitBusHandlers; on i386 the
+// bus-handler dispatch is owned by bussupp.rs. Gating this out on i386
+// also drops its references to HalpTranslateBusAddress /
+// HalpFindBusAddressTranslation (amd64 busemul symbols absent on i386).
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitNonBusHandler() {
     use ntkrnl_sys::hal_ddk::HalPrivateDispatchTable;
@@ -1146,6 +1215,7 @@ pub unsafe extern "system" fn HalpInitNonBusHandler() {
         Some(core::mem::transmute(HalpFindBusAddressTranslation as usize));
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitBusHandlers() {
     unsafe {
@@ -1193,7 +1263,23 @@ pub unsafe extern "system" fn HalpBuildAcpiResourceList(
     // Initialize the list
     (*ResourceList).BusNumber = -1i32 as ULONG;
     (*ResourceList).AlternativeLists = 1;
-    (*ResourceList).InterfaceType = PNPBus;
+    // The ACPI SCI interrupt is reported under this InterfaceType, then
+    // translated via the matching HAL bus handler. amd64's ACPI HAL
+    // (busemul) registers a PNPBus handler. The i386 backport keeps the
+    // legacy bussupp handlers, which register only Internal(0)/Isa(1) —
+    // there is NO PNPBus(15) handler, so HalReferenceHandlerForBus(PNPBus)
+    // returns null → HalGetInterruptVector → 0 → IopTranslateDeviceResources
+    // STATUS_UNSUCCESSFUL → ACPI_HAL stuck at DriversAdded. The SCI is a
+    // fixed motherboard PIC IRQ, so the `Internal` handler (identity PIC
+    // translation) is correct on i386. Task #4.
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*ResourceList).InterfaceType = PNPBus;
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (*ResourceList).InterfaceType = _INTERFACE_TYPE_Internal as i32;
+    }
     (*ResourceList).List[0].Version = 1;
     (*ResourceList).List[0].Revision = 1;
     (*ResourceList).List[0].Count = 0;
@@ -1240,7 +1326,7 @@ pub unsafe extern "system" fn HalpQueryAcpiResourceRequirements(
         + core::mem::offset_of!(IO_RESOURCE_LIST, Descriptors)
         + (Count as usize * core::mem::size_of::<IO_RESOURCE_DESCRIPTOR>());
 
-    RequirementsList = ExAllocatePoolWithTag(PagedPool, ListSize as u64, TAG_HAL) as _;
+    RequirementsList = ExAllocatePoolWithTag(PagedPool, ListSize as _, TAG_HAL) as _;
     if !RequirementsList.is_null() {
         RtlZeroMemory(RequirementsList as *mut _, ListSize);
         (*RequirementsList).ListSize = ListSize as ULONG;

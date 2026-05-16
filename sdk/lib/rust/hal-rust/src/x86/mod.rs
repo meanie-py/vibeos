@@ -35,19 +35,32 @@ pub mod cmosbus;
 pub mod display;
 pub mod dma;
 pub mod drive;
-#[cfg(target_arch = "x86_64")]
+// halacpi: ACPI HAL identity + table walker. Was x86_64-only; un-gated to
+// x86 too for the i386 ACPI-HAL backport (task #4 — gives i386 ACPI\PNP0303
+// PS/2 enumeration). Keeps PIC interrupt delivery (pic*/timer/portio stay).
+#[cfg(not(feature = "minihal"))]
 pub mod halacpi;
 #[cfg(not(feature = "minihal"))]
 pub mod halinit;
-#[cfg(all(target_arch = "x86", not(feature = "minihal")))]
+// halpcat: i386 PIC-HAL identity. Fully superseded by halacpi.rs on i386
+// (every one of its 8 symbols is redefined there with ACPI-aware bodies —
+// `comm -23` of the two is empty). Disabled on i386 now that halacpi is
+// linked, mirroring the C model where legacy/halpcat.c and acpi/halacpi.c
+// are never linked into the same HAL flavor. File kept (never-delete).
+#[cfg(any())]
 pub mod halpcat;
-#[cfg(target_arch = "x86_64")]
+#[cfg(not(feature = "minihal"))]
 pub mod halpnpdd;
 pub mod irql;
 pub mod isabus;
 #[cfg(not(feature = "minihal"))]
 pub mod kdpci;
-#[cfg(all(target_arch = "x86", not(feature = "minihal")))]
+// legacy_halpnpdd: PCI_HAL\PNP0A03 PnP root DD (non-ACPI). Clean swap-pair
+// with halpnpdd (ACPI_HAL\PNP0C08) — identical symbol surface, different
+// reported device IDs. Disabled on i386 in favour of halpnpdd so the HAL
+// root advertises ACPI_HAL → PnP loads acpi.sys as root bus → DSDT walk →
+// ACPI\PNP0303. File kept (never-delete). Task #4.
+#[cfg(any())]
 pub mod legacy_halpnpdd;
 #[cfg(target_arch = "x86_64")]
 pub mod madt;

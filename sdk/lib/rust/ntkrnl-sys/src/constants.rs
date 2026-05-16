@@ -734,10 +734,27 @@ pub const FILE_OPLOCK_BROKEN_TO_NONE: ULONG = 0x00000008;
 
 pub const IO_NO_INCREMENT: i8 = 0;
 pub const IO_DISK_INCREMENT: i8 = 1;
+pub const IO_KEYBOARD_INCREMENT: i8 = 6;
+pub const IO_MOUSE_INCREMENT: i8 = 6;
 pub const SL_FAIL_IMMEDIATELY: UCHAR = 0x01;
 pub const SL_EXCLUSIVE_LOCK: UCHAR = 0x02;
 pub const INVALID_HANDLE_VALUE: isize = -1;
 pub const MAXULONG: ULONG = 0xFFFFFFFF;
+
+// ============================================================================
+// Keyboard/Mouse input constants (from ntddkbd.h / ntddmou.h)
+// ============================================================================
+
+pub const KEY_MAKE: USHORT = 0;
+pub const KEY_BREAK: USHORT = 1;
+pub const MOUSE_LEFT_BUTTON_DOWN: USHORT = 0x0001;
+pub const MOUSE_LEFT_BUTTON_UP: USHORT = 0x0002;
+pub const MOUSE_RIGHT_BUTTON_DOWN: USHORT = 0x0004;
+pub const MOUSE_RIGHT_BUTTON_UP: USHORT = 0x0008;
+pub const MOUSE_MIDDLE_BUTTON_DOWN: USHORT = 0x0010;
+pub const MOUSE_MIDDLE_BUTTON_UP: USHORT = 0x0020;
+pub const MOUSE_MOVE_ABSOLUTE: USHORT = 1;
+pub const MOUSE_SERIAL_HARDWARE: ULONG = 0x0004;
 
 // ============================================================================
 // IRP major function codes (from iotypes.h)

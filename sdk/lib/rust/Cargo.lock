@@ -16,6 +16,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm64input-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
@@ -68,6 +75,13 @@ dependencies = [
 [[package]]
 name = "cnt-rust"
 version = "0.1.0"
+
+[[package]]
+name = "cnt-rust-lib"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+]
 
 [[package]]
 name = "compress"
@@ -356,9 +370,11 @@ dependencies = [
  "mem",
  "prefix",
  "random",
+ "rtl-strings",
  "slist",
  "splaytree",
  "time",
+ "uniprefix",
 ]
 
 [[package]]
@@ -476,6 +492,13 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "uniprefix"
+version = "0.1.0"
+dependencies = [
+ "splaytree",
 ]
 
 [[package]]
