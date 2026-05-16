@@ -174,3 +174,117 @@ pub fn format_radix(mut mag: u64, radix: u32, negative: bool) -> Formatted {
     }
     Formatted { digits, ndigits: k, negative }
 }
+
+/// Result of [`parse_ulong_wide`] (the `wcstoul` BSD parser). `value`
+/// is the 32-bit `unsigned long` result (Windows `long` is 32-bit on
+/// ALL arches — LLP64 — so this is correct everywhere, no LP32 caveat
+/// like the itoa long-family). `end` is the `*endptr` offset from
+/// `nptr`: `any ? (s-1) : nptr`, i.e. the first non-consumed char if
+/// at least one digit char was seen (even on overflow), else 0.
+pub struct WcstoulRes {
+    pub value: u32,
+    pub end: usize,
+}
+
+#[inline]
+fn isw_space(c: u16) -> bool {
+    matches!(c, 0x20 | 0x09 | 0x0a | 0x0b | 0x0c | 0x0d)
+}
+
+/// `wcstoul` core, faithful to ReactOS `wstring/wcstoul.c` (the BSD
+/// cutoff/cutlim algorithm). ASCII classification only — `iswctype`
+/// for the ASCII range is standard; non-ASCII wide chars are NOT
+/// fuzzed (documented domain limit, like the itoa radix / long-width
+/// restrictions). Misfeatures pinned: overflow saturates to
+/// `ULONG_MAX` but **still advances** `*endptr` past every digit
+/// (sticky `any=-1`); a leading `-` parses then the unsigned result is
+/// negated at the end (`0u32.wrapping_sub(acc)` — so `-1`→`0xFFFFFFFF`,
+/// and a negated overflow yields `0u32.wrapping_sub(0xFFFFFFFF)==1`,
+/// NOT `ULONG_MAX`); base 0 ⇒ `0x`→16, else `0`→8 else 10. `base` is
+/// assumed non-negative (a negative base's `(unsigned long)base` cast
+/// is host/target-divergent and never fuzzed).
+#[inline]
+pub fn parse_ulong_wide(s: &[u16], base: i32) -> WcstoulRes {
+    let at = |i: usize| -> u16 {
+        if i < s.len() {
+            s[i]
+        } else {
+            0
+        }
+    };
+    let mut i = 0usize;
+    // do { c = *s++; } while (iswctype(c, _SPACE)); — always reads ≥1.
+    let mut cur;
+    loop {
+        cur = at(i);
+        i += 1;
+        if !isw_space(cur) {
+            break;
+        }
+    }
+    let mut neg = false;
+    if cur == b'-' as u16 {
+        neg = true;
+        cur = at(i);
+        i += 1;
+    } else if cur == b'+' as u16 {
+        cur = at(i);
+        i += 1;
+    }
+    let mut base = base;
+    if (base == 0 || base == 16)
+        && cur == b'0' as u16
+        && (at(i) == b'x' as u16 || at(i) == b'X' as u16)
+    {
+        cur = at(i + 1);
+        i += 2;
+        base = 16;
+    }
+    if base == 0 {
+        base = if cur == b'0' as u16 { 8 } else { 10 };
+    }
+    let b = base as u32;
+    let cutoff = u32::MAX / b;
+    let cutlim = u32::MAX % b;
+    let mut acc: u32 = 0;
+    let mut any: i32 = 0;
+    loop {
+        let is_digit = (b'0' as u16..=b'9' as u16).contains(&cur);
+        let is_upper = (b'A' as u16..=b'Z' as u16).contains(&cur);
+        let is_lower = (b'a' as u16..=b'z' as u16).contains(&cur);
+        let d: u32 = if is_digit {
+            (cur - b'0' as u16) as u32
+        } else if is_upper || is_lower {
+            let sub = if is_upper {
+                b'A' as u16 - 10
+            } else {
+                b'a' as u16 - 10
+            };
+            (cur - sub) as u32
+        } else {
+            break;
+        };
+        if d >= b {
+            break;
+        }
+        if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
+            any = -1;
+        } else {
+            any = 1;
+            acc = acc.wrapping_mul(b).wrapping_add(d);
+        }
+        cur = at(i);
+        i += 1;
+    }
+    let value = if any < 0 {
+        u32::MAX
+    } else if neg {
+        0u32.wrapping_sub(acc)
+    } else {
+        acc
+    };
+    WcstoulRes {
+        value,
+        end: if any != 0 { i - 1 } else { 0 },
+    }
+}

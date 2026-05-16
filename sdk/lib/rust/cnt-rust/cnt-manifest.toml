@@ -537,3 +537,21 @@ inout_effects = "none (read-only)"
 preserved_misfeature = "as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n"
 reference    = "sdk/lib/crt/wstring/_wcsnicmp_nt.c"
 fuzz_domain  = ["n==0", "equal < n", "differ < n", "n past NUL", ">0xFF wchars", "diff only after fold"]
+
+# --- Wave E1 (wcstoul — wide BSD parse, endptr) ---------------------
+# Distinct algorithm from Wave B strtoul (cutoff/cutlim, NOT
+# _strtoi64_l delegation). Windows `unsigned long` is 32-bit on ALL
+# arches (LLP64) so the model is exactly u32 — no LP32 caveat; only
+# the LP64 *host reference* needs the strtoul ULONG_MAX/(unsigned int)
+# trick. ASCII-domain only (iswctype for ASCII is standard).
+
+[symbols.wcstoul]
+c_signature  = "unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)"
+family       = "wstring"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_ulong_wide"
+return_collapse = "wcstoul"
+inout_effects = "*endptr (if !=NULL) = nptr + (any ? first-non-consumed : 0); written even when no digits (→nptr)"
+preserved_misfeature = "overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation"
+reference    = "sdk/lib/crt/string/wcstoul.c"
+fuzz_domain  = ["empty", "ws-only", "no digits (endptr=nptr)", "valid", "overflow-saturate", "negative (wrapping)", "neg-overflow→1", "base 0/2/8/10/16/36", "0x prefix", "mixed case", "endptr=NULL", "junk after"]

@@ -58,6 +58,8 @@ def rs_ty(ctype: str) -> str:
         "constchar*": "*const u8",
         "charconst*": "*const u8",  # east-const spelling
         "wchar_tconst*": "*const u16",
+        "constwchar_t*": "*const u16",
+        "wchar_t**": "*mut *mut u16",
         "char*": "*mut u8",
         "constvoid*": "*const core::ffi::c_void",
         "void*": "*mut core::ffi::c_void",
@@ -285,6 +287,9 @@ def shim(name: str, m: dict) -> str:
     elif sp == "nul_endptr_base":
         np = next(n for t, n in params if rs_ty(t) == "*const u8")
         body.append(f"    let {np}_s = cstr_slice({np});")
+    elif sp == "wnul_endptr_base":
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        body.append(f"    let {np}_s = wcstr_slice({np});")
     elif sp == "mem_raw":
         pass  # raw_move inline below
     else:
@@ -349,6 +354,17 @@ def shim(name: str, m: dict) -> str:
             body.append("        1i64")
             body.append("    } else { r.value };")
             body.append(f"    v as u32 as {rt}")
+    elif rc == "wcstoul":
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u16")
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(
+            f"    let r = crate::core_rs::radix::parse_ulong_wide({np}_s, {bs});"
+        )
+        body.append(f"    if !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut u16;")
+        body.append("    }")
+        body.append(f"    r.value as {rt}")
     else:
         raise SystemExit(f"{name}: unsupported return_collapse {rc}")
 

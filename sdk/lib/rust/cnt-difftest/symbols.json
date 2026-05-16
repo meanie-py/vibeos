@@ -580,5 +580,26 @@
       "no digits",
       "endptr tracking"
     ]
+  },
+  "wcstoul": {
+    "c_signature": "unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "wstring",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoul",
+    "reference": "sdk/lib/crt/string/wcstoul.c",
+    "fuzz_domain": [
+      "empty",
+      "ws-only",
+      "no digits (endptr=nptr)",
+      "valid",
+      "overflow-saturate",
+      "negative (wrapping)",
+      "neg-overflow\u21921",
+      "base 0/2/8/10/16/36",
+      "0x prefix",
+      "mixed case",
+      "endptr=NULL",
+      "junk after"
+    ]
   }
 }

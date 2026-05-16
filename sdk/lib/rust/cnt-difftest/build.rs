@@ -128,6 +128,33 @@ fn main() {
              #define _In_\n#define _In_reads_or_z_(x)\n\
              #define _wcsnicmp ref_wcsnicmp\n{}",
             inc(s("wstring/_wcsnicmp_nt.c")))),
+        // Wave E1 — wcstoul.c (BSD cutoff/cutlim). precomp FIRST (so
+        // its limits.h runs, guard set), THEN clamp ULONG_MAX to the
+        // 32-bit value (Windows `unsigned long` is 32-bit on every
+        // arch; the LP64 host needs this + a (unsigned int) return
+        // truncation, same as the strtoul ref). wchar_t→unsigned
+        // short. iswctype is provided ASCII-faithful via a macro
+        // (avoids clashing with any <wctype.h> prototype); the diff
+        // fuzzes ASCII only — iswctype for the ASCII range is
+        // standard. Rename the symbol so it doesn't collide with
+        // cnt-rust's own #[no_mangle] wcstoul.
+        ("wcstoul", format!(
+            "#include <precomp.h>\n#undef ULONG_MAX\n\
+             #define ULONG_MAX 0xFFFFFFFFLL\n\
+             #define wchar_t unsigned short\n\
+             #define _SPACE 1\n#define _DIGIT 2\n#define _ALPHA 4\n#define _UPPER 8\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             if(t==_DIGIT)return c>='0'&&c<='9';\
+             if(t==_UPPER)return c>='A'&&c<='Z';\
+             if(t==_ALPHA)return (c>='A'&&c<='Z')||(c>='a'&&c<='z');\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define wcstoul ru_wcstoul_real\n{}\
+             unsigned int ref_wcstoul(const wchar_t*n,wchar_t**e,int b)\
+             {{return (unsigned int)ru_wcstoul_real(n,e,b);}}\n",
+            inc(s("string/wcstoul.c")))),
     ];
 
     let mut build = cc::Build::new();

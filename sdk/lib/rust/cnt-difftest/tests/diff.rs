@@ -47,6 +47,7 @@ extern "C" {
     fn ref_strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
     fn ref_wcsicmp(a: *const u16, b: *const u16) -> i32;
     fn ref_wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcstoul(n: *const u16, e: *mut *mut u16, b: i32) -> u32;
 }
 
 use cnt_rust::cabi;
@@ -713,5 +714,44 @@ fn diff_icmp() {
                 "_wcsnicmp wa={wa:?} wb={wb:?} n={wn}"
             );
         }
+    }
+}
+
+/// Wave E1 — wcstoul (wide BSD cutoff/cutlim parse). ASCII domain
+/// (iswctype for ASCII is standard); bases {0,2,8,10,16,36} (a
+/// negative base's (unsigned long)base cast is host-divergent and
+/// never fuzzed). Pins value AND endptr offset incl. the saturate-
+/// but-still-advance + negate-after-saturate (→1) misfeatures, and
+/// the endptr=NULL path, vs compiled wcstoul.c.
+#[test]
+fn diff_wcstoul() {
+    let mut rng = Rng(0x7c50_1a44_u64);
+    let alpha: &[u16] = &[
+        0x20, 0x09, b'+' as u16, b'-' as u16, b'0' as u16, b'x' as u16, b'X' as u16,
+        b'1' as u16, b'7' as u16, b'9' as u16, b'a' as u16, b'f' as u16, b'F' as u16,
+        b'A' as u16, b'Z' as u16, b'z' as u16, b'g' as u16, 0x00C0,
+    ];
+    let bases = [0i32, 2, 8, 10, 16, 36];
+    for _ in 0..9000 {
+        let len = rng.upto(24);
+        let mut sv: Vec<u16> = (0..len).map(|_| alpha[rng.upto(alpha.len())]).collect();
+        sv.push(0);
+        let base = bases[rng.upto(bases.len())];
+        let (mut ec, mut er): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let cv = unsafe { cabi::wcstoul(sv.as_ptr(), &mut ec, base) };
+        let rv = unsafe { ref_wcstoul(sv.as_ptr(), &mut er, base) };
+        assert_eq!(cv, rv, "wcstoul v s={sv:?} base={base}");
+        let off = |p: *mut u16| {
+            if p == 1 as *mut u16 {
+                None
+            } else {
+                Some((p as usize - sv.as_ptr() as usize) / 2)
+            }
+        };
+        assert_eq!(off(ec), off(er), "wcstoul endptr s={sv:?} base={base}");
+        // endptr == NULL path (no write, value still correct).
+        let cv2 = unsafe { cabi::wcstoul(sv.as_ptr(), core::ptr::null_mut(), base) };
+        let rv2 = unsafe { ref_wcstoul(sv.as_ptr(), core::ptr::null_mut(), base) };
+        assert_eq!(cv2, rv2, "wcstoul NULL-endptr s={sv:?} base={base}");
     }
 }

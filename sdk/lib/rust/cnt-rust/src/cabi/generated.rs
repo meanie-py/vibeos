@@ -672,3 +672,16 @@ pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) 
     v as u32 as u32
 }
 
+
+/// `unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation
+#[no_mangle]
+pub unsafe extern "C" fn wcstoul(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> u32 {
+    let nptr_s = wcstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_ulong_wide(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut u16;
+    }
+    r.value as u32
+}
+

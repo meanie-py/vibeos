@@ -9,16 +9,6 @@
 # Batch 2 (33): parse-endptr / int->str(+_s) / case-insensitive
 #               / multibyte / oddballs.
 schema_version = 1
-[symbols.wcstoul]
-c_signature = "unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)"
-family = "radix"
-slice_pattern = "nul_in"
-core_fn = "NEW:radix::parse_ulong_wide"
-return_collapse = "ulong_passthrough"
-inout_effects = "if endptr!=NULL: writes *endptr = first-invalid-wchar ptr (or nptr if no digits parsed)"
-preserved_misfeature = "Lines 45-47,55-56: Overflow saturates to ULONG_MAX but still advances *endptr past ALL valid digits (any=-1 sticky). Line 57: Negation applied AFTER saturation: neg overflow yields 0-(ULONG_MAX)=1, not ULONG_MAX. Lines 26-27: Leading '-' parses, sets neg=1, then negates the accumulated unsigned result at the end."
-fuzz_domain = ["empty", "whitespace-only", "no-digits (base-prefix only)", "valid digits", "overflow-saturate", "negative (wrapping-subtract)", "base 0/8/10/16", "0x-prefix", "mixed case digits", "endptr==NULL"]
-
 [symbols.mbstowcs]
 c_signature = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
 family = "string"
