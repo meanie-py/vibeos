@@ -16,7 +16,15 @@ extern "C" {
     fn _stricmp(s1: PCSTR, s2: PCSTR) -> i32;
     fn strcpy(dest: PCHAR, src: PCSTR) -> PCHAR;
     fn UiMessageBox(format: PCSTR, ...);
-    // drvmap.S labels (external linkage); taken by-address in DriveMapInstallInt13Handler.
+}
+
+// drvmap.S labels (external linkage); taken by-address in
+// DriveMapInstallInt13Handler. drvmap.S is i386-only asm (it has .code16
+// with symbol arithmetic Clang can't handle); the entire INT13-handler
+// install path is wrapped in `#ifdef _M_IX86` in drivemap.c. Mirror that
+// gate so amd64 (no drvmap.S) doesn't reference these.
+#[cfg(target_arch = "x86")]
+extern "C" {
     static DriveMapInt13HandlerStart: PVOID;
     static DriveMapInt13HandlerEnd: PVOID;
     static mut DriveMapInt13HandlerMapList: DRIVE_MAP_LIST;
@@ -86,6 +94,12 @@ pub unsafe extern "C" fn DriveMapGetBiosDriveNumber(DeviceName: PCSTR) -> u8 {
     BiosDriveNumber
 }
 
+// drivemap.c wraps DriveMapMapDrivesInSection / DriveMapInstallInt13Handler
+// / DriveMapRemoveInt13Handler in `#ifdef _M_IX86` (they patch the 16-bit
+// real-mode INT13 IVT via drvmap.S). bootmgr.c also only calls
+// DriveMapMapDrivesInSection under `#ifdef _M_IX86 && !UEFIBOOT`. Mirror
+// the C gate: i386-only. (DriveMapGetBiosDriveNumber stays arch-neutral.)
+#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "C" fn DriveMapMapDrivesInSection(SectionId: ULONG_PTR) {
     let mut SettingName: [i8; 80] = [0; 80];
@@ -184,6 +198,7 @@ pub unsafe extern "C" fn DriveMapMapDrivesInSection(SectionId: ULONG_PTR) {
     }
 }
 
+#[cfg(target_arch = "x86")]
 pub unsafe fn DriveMapInstallInt13Handler(DriveMap: PDRIVE_MAP_LIST) {
     let RealModeIVT = UlongToPtr(0x00000000) as *mut ULONG;
     let BiosLowMemorySize = ULongToPtr(0x00000413) as *mut USHORT;
@@ -219,6 +234,7 @@ pub unsafe fn DriveMapInstallInt13Handler(DriveMap: PDRIVE_MAP_LIST) {
     DriveMapInstalled = 1;
 }
 
+#[cfg(target_arch = "x86")]
 unsafe fn DriveMapRemoveInt13Handler() {
     let RealModeIVT = 0x00000000 as *mut ULONG;
     let BiosLowMemorySize = 0x00000413 as *mut USHORT;

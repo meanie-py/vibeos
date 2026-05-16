@@ -153,9 +153,14 @@ unsafe fn RTL_CONSTANT_STRING(s: *const u16) -> _UNICODE_STRING {
     }
 }
 
-// NTAPI (stdcall on i386) — signature MUST be token-identical to
-// ddk::PALLOCATE_ROUTINE / PFREE_ROUTINE (those use ddk SIZE_T =
-// ULONG_PTR = c_ulong on i386, NOT base::SIZE_T = usize).
+// NTAPI — signature + ABI MUST be token-identical to ddk::PALLOCATE_ROUTINE
+// / PFREE_ROUTINE so `Some(CmpAllocate)` coerces to the HvInitialize fn-ptr
+// parameter. Those ddk callback types are `extern "stdcall"` on i386 and
+// `extern "C"` on amd64/arm64. Rust does NOT unify `extern "system" fn`
+// with `extern "C" fn` even where ABI-identical, so the declared ABI must
+// match the ddk type *literally* per-arch (was hardcoded "stdcall", wrong
+// on amd64 where the ddk callback is cdecl).
+#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn CmpAllocate(
     Size: ntkrnl_sys::ddk::SIZE_T,
@@ -165,9 +170,29 @@ pub unsafe extern "stdcall" fn CmpAllocate(
     let _ = Paged;
     FrLdrHeapAlloc(Size as usize, Tag)
 }
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CmpAllocate(
+    Size: ntkrnl_sys::ddk::SIZE_T,
+    Paged: ntkrnl_sys::ddk::BOOLEAN,
+    Tag: ntkrnl_sys::ddk::ULONG,
+) -> ntkrnl_sys::ddk::PVOID {
+    let _ = Paged;
+    FrLdrHeapAlloc(Size as usize, Tag)
+}
 
+#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn CmpFree(
+    Ptr: ntkrnl_sys::ddk::PVOID,
+    Quota: ntkrnl_sys::ddk::ULONG,
+) {
+    let _ = Quota;
+    FrLdrHeapFree(Ptr, 0);
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CmpFree(
     Ptr: ntkrnl_sys::ddk::PVOID,
     Quota: ntkrnl_sys::ddk::ULONG,
 ) {

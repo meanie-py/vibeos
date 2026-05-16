@@ -61,7 +61,8 @@ unsafe fn VideoGetTextCursorPositionY() -> ULONG {
     Regs.b.dh as ULONG
 }
 
-unsafe fn BiosIsVesaSupported() -> USHORT {
+#[no_mangle]
+pub unsafe extern "C" fn BiosIsVesaSupported() -> USHORT {
     let mut Regs: REGS = core::mem::zeroed();
     let SvgaInfo = BIOSCALLBUFFER as PVESA_SVGA_INFO;
 
@@ -111,7 +112,8 @@ unsafe fn BiosIsVesaSupported() -> USHORT {
     return (*SvgaInfo).VesaVersion;
 }
 
-unsafe fn BiosIsVesaDdcSupported() -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn BiosIsVesaDdcSupported() -> BOOLEAN {
     let mut Regs: REGS = core::mem::zeroed();
 
     TRACE(b"BiosIsVesaDdcSupported()\n\0".as_ptr() as *const i8);
@@ -136,7 +138,8 @@ unsafe fn BiosIsVesaDdcSupported() -> BOOLEAN {
     if Regs.b.ah == 0 { 1u8 } else { 0u8 }
 }
 
-unsafe fn BiosVesaReadEdid() -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn BiosVesaReadEdid() -> u8 {
     let mut Regs: REGS = core::mem::zeroed();
 
     TRACE(b"BiosVesaReadEdid()\n\0".as_ptr() as PCHAR);

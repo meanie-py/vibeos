@@ -115,8 +115,17 @@ const CmResourceTypeInterrupt: UCHAR = 2;
 const CmResourceTypeDeviceSpecific: UCHAR = 5;
 const CM_RESOURCE_PORT_IO: USHORT = 0x0001;
 const CM_RESOURCE_INTERRUPT_LATCHED: USHORT = 0x0001;
+// i386Idt is arch/i386/i386idt.c's `KIDTENTRY i386Idt[32]`. On amd64 the
+// ndk macro-aliases KIDTENTRY -> KIDTENTRY64 (rustconv dropped the alias);
+// resolve the element type per-arch so the extern decl type-checks on
+// both. (The amd64 freeldr_pe mach path does not reach this symbol.)
+#[cfg(target_arch = "x86")]
 extern "C" {
     static mut i386Idt: [ntkrnl_sys::ddk::KIDTENTRY; 32];
+}
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    static mut i386Idt: [ntkrnl_sys::ddk::_KIDTENTRY64; 32];
 }
 
 // Full machine.h MACHVTBL (37 slots) — machpc.c is the OWNER (defines the
@@ -1571,11 +1580,22 @@ unsafe fn DetectBusMouseTestIrq(
 
     Vector = Irq + 8;
 
-    OldOffset = i386Idt[Vector as usize].Offset;
-    OldExtendedOffset = i386Idt[Vector as usize].ExtendedOffset;
+    OldOffset = 0;
+    OldExtendedOffset = 0;
+    // i386Idt has the 16-bit real-mode IDT entry layout (.Offset /
+    // .ExtendedOffset). That layout is i386-only; on amd64 the ndk macro-
+    // aliases KIDTENTRY -> KIDTENTRY64 (different fields) and this PC-AT
+    // bus-mouse 16-bit-handler IDT hook is not part of the amd64
+    // freeldr_pe mach path. Keep the i386 logic byte-identical; no-op the
+    // IDT hook on amd64.
+    #[cfg(target_arch = "x86")]
+    {
+        OldOffset = i386Idt[Vector as usize].Offset;
+        OldExtendedOffset = i386Idt[Vector as usize].ExtendedOffset;
 
-    i386Idt[Vector as usize].Offset = (((HwIrqHandler as ULONG) & 0xFFFF) as u16);
-    i386Idt[Vector as usize].ExtendedOffset = (((HwIrqHandler as ULONG) >> 16) as u16);
+        i386Idt[Vector as usize].Offset = (((HwIrqHandler as ULONG) & 0xFFFF) as u16);
+        i386Idt[Vector as usize].ExtendedOffset = (((HwIrqHandler as ULONG) >> 16) as u16);
+    }
 
     WRITE_PORT_UCHAR(PIC1_DATA_PORT as PUCHAR, !(1 << Irq) as UCHAR);
 
@@ -1592,8 +1612,15 @@ unsafe fn DetectBusMouseTestIrq(
 
     _disable();
 
-    i386Idt[Vector as usize].Offset = OldOffset;
-    i386Idt[Vector as usize].ExtendedOffset = OldExtendedOffset;
+    #[cfg(target_arch = "x86")]
+    {
+        i386Idt[Vector as usize].Offset = OldOffset;
+        i386Idt[Vector as usize].ExtendedOffset = OldExtendedOffset;
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (OldOffset, OldExtendedOffset);
+    }
 
     if HwIrqCount != 0 { Irq } else { 0 }
 }

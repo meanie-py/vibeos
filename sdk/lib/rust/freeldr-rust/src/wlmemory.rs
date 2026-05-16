@@ -112,8 +112,10 @@ unsafe fn MempAddMemoryBlock(
         return;
     }
 
-    (*Mad.add(MadCount as usize)).BasePage = ((BasePage) as u32);
-    (*Mad.add(MadCount as usize)).PageCount = ((PageCount) as u32);
+    // MAD BasePage/PageCount are PFN_NUMBER (u32 on i386, u64 on amd64);
+    // `as _` coerces to the field's per-arch width (identity on i386).
+    (*Mad.add(MadCount as usize)).BasePage = ((BasePage) as _);
+    (*Mad.add(MadCount as usize)).PageCount = ((PageCount) as _);
     (*Mad.add(MadCount as usize)).MemoryType = Type;
 
     WinLdrInsertDescriptor(LoaderBlock, Mad.add(MadCount as usize));

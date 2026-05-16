@@ -351,12 +351,26 @@ unsafe fn READ_PORT_USHORT(Port: PUSHORT) -> USHORT {
         options(nomem, nostack, preserves_flags));
     v
 }
+// rep ins/outs string ops: the pointer register is edi/esi on i386 but
+// rdi/rsi on amd64. i386 bodies kept byte-identical; amd64 bodies use the
+// 64-bit pointer regs directly (LLVM does NOT reserve rsi/rdi on amd64, so
+// no esi save/restore xchg is needed there — and a 32-bit reg in the
+// template would truncate the 64-bit Buffer pointer / mismatch operands).
+#[cfg(target_arch = "x86")]
 #[inline]
 unsafe fn ATA_READ_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
     core::arch::asm!("rep insw",
         in("dx") Port, inout("edi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn ATA_READ_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
+    core::arch::asm!("rep insw",
+        in("dx") Port, inout("rdi") Buffer => _, inout("ecx") Count => _,
+        options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "x86")]
 #[inline]
 unsafe fn ATA_WRITE_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
     // LLVM reserves esi; xchg it in around the rep (esi saved/restored).
@@ -368,12 +382,28 @@ unsafe fn ATA_WRITE_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
         in("dx") Port, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn ATA_WRITE_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
+    core::arch::asm!("rep outsw",
+        in("dx") Port, inout("rsi") Buffer => _, inout("ecx") Count => _,
+        options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "x86")]
 #[inline]
 unsafe fn ATA_READ_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
     core::arch::asm!("rep insd",
         in("dx") Port, inout("edi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn ATA_READ_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
+    core::arch::asm!("rep insd",
+        in("dx") Port, inout("rdi") Buffer => _, inout("ecx") Count => _,
+        options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "x86")]
 #[inline]
 unsafe fn ATA_WRITE_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
     // LLVM reserves esi; xchg it in around the rep (esi saved/restored).
@@ -383,6 +413,13 @@ unsafe fn ATA_WRITE_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
         "xchg esi, {buf}",
         buf = inout(reg) Buffer => _,
         in("dx") Port, inout("ecx") Count => _,
+        options(nostack, preserves_flags));
+}
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn ATA_WRITE_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
+    core::arch::asm!("rep outsd",
+        in("dx") Port, inout("rsi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
 #[inline]

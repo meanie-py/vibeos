@@ -229,7 +229,7 @@ pub unsafe extern "C" fn IoReadPartitionTable(
         return STATUS_NOT_SUPPORTED;
     }
 
-    MasterBootRecord = ExAllocatePool(NonPagedPool, SectorSize) as PMASTER_BOOT_RECORD;
+    MasterBootRecord = ExAllocatePool(NonPagedPool, SectorSize as _) as PMASTER_BOOT_RECORD;
     if MasterBootRecord.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -264,7 +264,7 @@ pub unsafe extern "C" fn IoReadPartitionTable(
 
     Size = core::mem::offset_of!(DRIVE_LAYOUT_INFORMATION, PartitionEntry) as ULONG +
            NbPartitions * core::mem::size_of::<PARTITION_INFORMATION>() as ULONG;
-    Partitions = ExAllocatePool(NonPagedPool, Size) as PDRIVE_LAYOUT_INFORMATION;
+    Partitions = ExAllocatePool(NonPagedPool, Size as _) as PDRIVE_LAYOUT_INFORMATION;
     if Partitions.is_null() {
         ExFreePool(MasterBootRecord as *mut core::ffi::c_void);
         return STATUS_NO_MEMORY;

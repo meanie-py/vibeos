@@ -887,7 +887,7 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
         DriverEntry = &mut (*DriverNode).ListEntry;
     } else {
         DriverNode = CmpAllocate(
-            core::mem::size_of::<BOOT_DRIVER_NODE>() as u32,
+            core::mem::size_of::<BOOT_DRIVER_NODE>() as _,
             0u8,
             0x20434D54u32,
         ) as PBOOT_DRIVER_NODE;
@@ -904,7 +904,7 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
 
         RtlInitEmptyUnicodeString(
             &mut (*DriverNode).Name,
-            CmpAllocate(DriverNameU.Length as u32, 0u8, 0x20434D54u32) as *mut u16,
+            CmpAllocate(DriverNameU.Length as _, 0u8, 0x20434D54u32) as *mut u16,
             DriverNameU.Length,
         );
         if (*DriverNode).Name.Buffer.is_null() {
@@ -988,7 +988,7 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
         PathLength = (wcslen(ImagePath) * core::mem::size_of::<u16>()) as u16;
         RtlInitEmptyUnicodeString(
             &mut FilePath,
-            CmpAllocate(PathLength as u32, 0u8, 0x524E4C57u32) as *mut u16,
+            CmpAllocate(PathLength as _, 0u8, 0x524E4C57u32) as *mut u16,
             PathLength,
         );
         if FilePath.Buffer.is_null() {
@@ -1074,7 +1074,7 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
         ]) as u16);
         RtlInitEmptyUnicodeString(
             &mut FilePath,
-            CmpAllocate(PathLength as u32, 0u8, 0x524E4C57u32) as *mut u16,
+            CmpAllocate(PathLength as _, 0u8, 0x524E4C57u32) as *mut u16,
             PathLength,
         );
         if FilePath.Buffer.is_null() {
@@ -1168,7 +1168,7 @@ pub unsafe extern "C" fn WinLdrAddDriverToList(
     PathLength = RegistryPath.Length + (*DriverNode).Name.Length;
     RtlInitEmptyUnicodeString(
         &mut RegistryString,
-        CmpAllocate(PathLength as u32, 0u8, 0x524E4C57u32) as *mut u16,
+        CmpAllocate(PathLength as _, 0u8, 0x524E4C57u32) as *mut u16,
         PathLength,
     );
     if RegistryString.Buffer.is_null() {

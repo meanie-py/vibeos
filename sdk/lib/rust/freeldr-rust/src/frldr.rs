@@ -88,8 +88,13 @@ pub const MM_PAGE_SHIFT: ULONG = 12;
 // below as PFN_NUMBER — reused, not redefined.)
 pub const MM_MAX_PAGE: ULONG = 0xFFFFF;
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;
-// ndk i386 ketypes.h: KI_USER_SHARED_DATA fixed VA (NT i386).
+// ndk ketypes.h: KI_USER_SHARED_DATA fixed VA. Per-arch:
+//   i386  (ndk/i386/ketypes.h):  0xffdf0000
+//   amd64 (xdk/amd64/ke.h):      0xFFFFF78000000000
+#[cfg(target_arch = "x86")]
 pub const KI_USER_SHARED_DATA: usize = 0xffdf0000;
+#[cfg(target_arch = "x86_64")]
+pub const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
 // ndk i386 ketypes.h: KSEG0_BASE. Reuse ffi.rs's per-arch definition
 // (single source of truth) so the bare name resolves via `use frldr::*`.
 pub use crate::ffi::KSEG0_BASE;

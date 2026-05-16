@@ -772,9 +772,9 @@ unsafe fn LoadWindowsCore(
         }
         #[cfg(not(target_arch = "x86"))]
         {
-            if NtLdrGetOption(BootOptions, b"NOEXECUTE\0".as_ptr()) != 0 {
+            if NtLdrGetOption(BootOptions, b"NOEXECUTE\0".as_ptr() as PCSTR) != 0 {
                 NoExecuteEnabled = 1u8;
-            } else if NtLdrGetOption(BootOptions, b"EXECUTE\0".as_ptr()) != 0 {
+            } else if NtLdrGetOption(BootOptions, b"EXECUTE\0".as_ptr() as PCSTR) != 0 {
                 NoExecuteEnabled = 0u8;
             }
         }
@@ -1282,7 +1282,10 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         ERR(b">>> Writing LoaderPagesSpanned...\n\0".as_ptr() as PCSTR);
     }
 
-    (*(*LoaderBlock).Extension).LoaderPagesSpanned = MmGetLoaderPagesSpanned();
+    // LoaderPagesSpanned is ULONG_PTR (u32 on i386, u64 on amd64); the local
+    // MmGetLoaderPagesSpanned() extern is declared -> u32. `as _` coerces to
+    // the field's per-arch width (identity on i386, widen on amd64).
+    (*(*LoaderBlock).Extension).LoaderPagesSpanned = MmGetLoaderPagesSpanned() as _;
 
     #[cfg(target_arch = "aarch64")]
     {
