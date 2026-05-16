@@ -9587,6 +9587,36 @@ pub const CSRSRV_FIRST_API_NUMBER: u32 = 0;
 pub const CSR_CSRSS_SECTION_SIZE: u32 = 65536;
 pub const BASESRV_SERVERDLL_INDEX: u32 = 1;
 pub const BASESRV_FIRST_API_NUMBER: u32 = 0;
+pub const CSR_SERVER_DLL_MAX: u32 = 4;
+pub const NUMBER_THREAD_HASH_BUCKETS: u32 = 257;
+pub const SM_REG_KEY: &[u8; 67] =
+    b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Session Manager\0";
+pub const SESSION_ROOT: &[u8; 10] = b"\\Sessions\0";
+pub const GLOBAL_ROOT: &[u8; 10] = b"\\GLOBAL??\0";
+pub const SYMLINK_NAME: &[u8; 13] = b"SymbolicLink\0";
+pub const SB_PORT_NAME: &[u8; 10] = b"SbApiPort\0";
+pub const UNICODE_PATH_SEP: &[u8; 2] = b"\\\0";
+pub const NTSTRSAFE_MAX_CCH: u32 = 2147483647;
+pub const NTSTRSAFE_UNICODE_STRING_MAX_CCH: u32 = 32767;
+pub const STRSAFE_IGNORE_NULLS: u32 = 256;
+pub const STRSAFE_FILL_BEHIND_NULL: u32 = 512;
+pub const STRSAFE_FILL_ON_FAILURE: u32 = 1024;
+pub const STRSAFE_NULL_ON_FAILURE: u32 = 2048;
+pub const STRSAFE_NO_TRUNCATION: u32 = 4096;
+pub const STRSAFE_IGNORE_NULL_UNICODE_STRINGS: u32 = 65536;
+pub const STRSAFE_UNICODE_STRING_DEST_NULL_TERMINATED: u32 = 131072;
+pub const STRSAFE_VALID_FLAGS: u32 = 8191;
+pub const STRSAFE_UNICODE_STRING_VALID_FLAGS: u32 = 204799;
+pub const STRSAFE_FILL_BEHIND: u32 = 512;
+pub const STRSAFE_ZERO_LENGTH_ON_FAILURE: u32 = 2048;
+pub const SMP_DEBUG_FLAG: u32 = 1;
+pub const SMP_ASYNC_FLAG: u32 = 2;
+pub const SMP_AUTOCHK_FLAG: u32 = 4;
+pub const SMP_SUBSYSTEM_FLAG: u32 = 8;
+pub const SMP_INVALID_PATH: u32 = 16;
+pub const SMP_DEFERRED_FLAG: u32 = 32;
+pub const SMP_POSIX_FLAG: u32 = 256;
+pub const SMP_OS2_FLAG: u32 = 512;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type va_list = __gnuc_va_list;
 pub type wchar_t = ::core::ffi::c_ushort;
@@ -40558,6 +40588,495 @@ pub struct _BASE_STATIC_SERVER_DATA {
 }
 pub type BASE_STATIC_SERVER_DATA = _BASE_STATIC_SERVER_DATA;
 pub type PBASE_STATIC_SERVER_DATA = *mut _BASE_STATIC_SERVER_DATA;
+unsafe extern "C" {
+    pub static mut CsrProcessLock: RTL_CRITICAL_SECTION;
+}
+unsafe extern "C" {
+    pub static mut CsrWaitListsLock: RTL_CRITICAL_SECTION;
+}
+unsafe extern "C" {
+    pub static mut CsrDebug: ULONG;
+}
+unsafe extern "C" {
+    pub static mut hBootstrapOk: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrApiPort: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrSmApiPort: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrSbApiPort: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrThreadHashTable: [LIST_ENTRY; 257usize];
+}
+unsafe extern "C" {
+    pub static mut CsrRootProcess: PCSR_PROCESS;
+}
+unsafe extern "C" {
+    pub static mut CsrDirectoryName: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut CsrTotalPerProcessDataLength: ULONG;
+}
+unsafe extern "C" {
+    pub static mut CsrNtSysInfo: SYSTEM_BASIC_INFORMATION;
+}
+unsafe extern "C" {
+    pub static mut CsrHeap: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrSrvSharedSectionHeap: PVOID;
+}
+unsafe extern "C" {
+    pub static mut CsrSrvSharedStaticServerData: *mut PVOID;
+}
+unsafe extern "C" {
+    pub static mut CsrInitializationEvent: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut CsrLoadedServerDll: [PCSR_SERVER_DLL; 4usize];
+}
+unsafe extern "C" {
+    pub static mut CsrMaxApiRequestThreads: ULONG;
+}
+unsafe extern "C" {
+    pub static mut CsrSbApiPortName: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut CsrApiPortName: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut CsrObjectDirectory: HANDLE;
+}
+unsafe extern "C" {
+    pub fn CsrSrvClientConnect(
+        ApiMessage: PCSR_API_MESSAGE,
+        ReplyCode: PCSR_REPLY_CODE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSrvUnusedFunction(
+        ApiMessage: PCSR_API_MESSAGE,
+        ReplyCode: PCSR_REPLY_CODE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrServerDllInitialization(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrCaptureArguments(CsrThread: PCSR_THREAD, ApiMessage: PCSR_API_MESSAGE) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_MESSAGE);
+}
+unsafe extern "C" {
+    pub fn CsrLoadServerDll(DllString: PCHAR, EntryPoint: PCHAR, ServerId: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrAllocateThread(CsrProcess: PCSR_PROCESS) -> PCSR_THREAD;
+}
+unsafe extern "C" {
+    pub fn CsrAllocateProcess() -> PCSR_PROCESS;
+}
+unsafe extern "C" {
+    pub fn CsrDeallocateProcess(CsrProcess: PCSR_PROCESS);
+}
+unsafe extern "C" {
+    pub fn CsrInsertProcess(ParentProcess: PCSR_PROCESS, CsrProcess: PCSR_PROCESS);
+}
+unsafe extern "C" {
+    pub fn CsrRemoveProcess(CsrProcess: PCSR_PROCESS);
+}
+unsafe extern "C" {
+    pub fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSbApiRequestThread(Parameter: PVOID);
+}
+unsafe extern "C" {
+    pub fn CsrApiPortInitialize() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrInsertThread(Process: PCSR_PROCESS, Thread: PCSR_THREAD) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrDeallocateThread(CsrThread: PCSR_THREAD);
+}
+unsafe extern "C" {
+    pub fn CsrLockedReferenceProcess(CsrProcess: PCSR_PROCESS);
+}
+unsafe extern "C" {
+    pub fn CsrLockedReferenceThread(CsrThread: PCSR_THREAD);
+}
+unsafe extern "C" {
+    pub fn CsrInitializeProcessStructure() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrLocateThreadInProcess(CsrProcess: PCSR_PROCESS, Cid: PCLIENT_ID) -> PCSR_THREAD;
+}
+unsafe extern "C" {
+    pub fn CsrLocateThreadByClientId(
+        Process: *mut PCSR_PROCESS,
+        ClientId: PCLIENT_ID,
+    ) -> PCSR_THREAD;
+}
+unsafe extern "C" {
+    pub fn CsrInitializeNtSessionList() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSrvAttachSharedSection(
+        CsrProcess: PCSR_PROCESS,
+        ConnectInfo: PCSR_API_CONNECTINFO,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSrvCreateSharedSection(ParameterValue: PCHAR) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrLockedDereferenceProcess(CsrProcess: PCSR_PROCESS);
+}
+unsafe extern "C" {
+    pub fn CsrLockedDereferenceThread(CsrThread: PCSR_THREAD);
+}
+unsafe extern "C" {
+    pub fn CsrNotifyWaitBlock(
+        WaitBlock: PCSR_WAIT_BLOCK,
+        WaitList: PLIST_ENTRY,
+        WaitArgument1: PVOID,
+        WaitArgument2: PVOID,
+        WaitFlags: ULONG,
+        DereferenceThread: BOOLEAN,
+    ) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrReferenceNtSession(Session: PCSR_NT_SESSION);
+}
+unsafe extern "C" {
+    pub fn CsrDereferenceNtSession(Session: PCSR_NT_SESSION, ExitStatus: NTSTATUS);
+}
+unsafe extern "C" {
+    pub fn CsrCreateSessionObjectDirectory(SessionId: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrCreateObjectDirectory(ObjectDirectory: PCHAR) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSbApiPortInitialize() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrSbTerminateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrSbForeignSessionComplete(ApiMessage: PSB_API_MSG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrSbCreateProcess(ApiMessage: PSB_API_MSG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn CsrSbApiHandleConnectionRequest(Message: PSB_API_MSG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrApiHandleConnectionRequest(ApiMessage: PCSR_API_MESSAGE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn CsrSetDirectorySecurity(ObjectDirectory: HANDLE) -> NTSTATUS;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _BASESRV_KERNEL_IMPORTS {
+    pub FunctionName: PCHAR,
+    pub FunctionPointer: *mut PVOID,
+}
+pub type BASESRV_KERNEL_IMPORTS = _BASESRV_KERNEL_IMPORTS;
+pub type PBASESRV_KERNEL_IMPORTS = *mut _BASESRV_KERNEL_IMPORTS;
+pub type POPEN_DATA_FILE =
+    ::core::option::Option<unsafe extern "C" fn(hFile: HANDLE, FileName: PWCHAR) -> NTSTATUS>;
+pub type PGET_CP_FILE_NAME_FROM_REGISTRY = ::core::option::Option<
+    unsafe extern "C" fn(CodePage: UINT, FileName: LPWSTR, FileNameSize: ULONG) -> BOOL,
+>;
+pub type PGET_NLS_SECTION_NAME = ::core::option::Option<
+    unsafe extern "C" fn(
+        CodePage: UINT,
+        Base: UINT,
+        Unknown: ULONG,
+        BaseName: LPWSTR,
+        Result: LPWSTR,
+        ResultSize: ULONG,
+    ) -> BOOL,
+>;
+pub type PVALIDATE_LOCALE = ::core::option::Option<unsafe extern "C" fn(LocaleId: ULONG) -> BOOL>;
+unsafe extern "C" {
+    pub static mut BaseSrvHeap: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut BaseSrvSharedHeap: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut BaseStaticServerData: PBASE_STATIC_SERVER_DATA;
+}
+unsafe extern "C" {
+    pub static mut SessionId: ULONG;
+}
+unsafe extern "C" {
+    pub static mut ProtectionMode: ULONG;
+}
+unsafe extern "C" {
+    pub static mut BaseSrvDDDBSMCritSec: RTL_CRITICAL_SECTION;
+}
+pub type STRSAFE_LPSTR = *mut ::core::ffi::c_char;
+pub type STRSAFE_LPCSTR = *const ::core::ffi::c_char;
+pub type STRSAFE_LPWSTR = *mut wchar_t;
+pub type STRSAFE_LPCWSTR = *const wchar_t;
+pub type NTSTRSAFE_PSTR = *mut ::core::ffi::c_char;
+pub type NTSTRSAFE_PCSTR = *const ::core::ffi::c_char;
+pub type NTSTRSAFE_PWSTR = *mut wchar_t;
+pub type NTSTRSAFE_PCWSTR = *const wchar_t;
+pub type STRSAFE_DWORD = ULONG;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SMP_REGISTRY_VALUE {
+    pub Entry: LIST_ENTRY,
+    pub Name: UNICODE_STRING,
+    pub Value: UNICODE_STRING,
+    pub AnsiValue: PCHAR,
+}
+pub type SMP_REGISTRY_VALUE = _SMP_REGISTRY_VALUE;
+pub type PSMP_REGISTRY_VALUE = *mut _SMP_REGISTRY_VALUE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SMP_SUBSYSTEM {
+    pub Entry: LIST_ENTRY,
+    pub Event: HANDLE,
+    pub ProcessHandle: HANDLE,
+    pub ImageType: ULONG,
+    pub PortHandle: HANDLE,
+    pub SbApiPort: HANDLE,
+    pub ClientId: CLIENT_ID,
+    pub MuSessionId: ULONG,
+    pub Terminating: BOOLEAN,
+    pub ReferenceCount: ULONG,
+}
+pub type SMP_SUBSYSTEM = _SMP_SUBSYSTEM;
+pub type PSMP_SUBSYSTEM = *mut _SMP_SUBSYSTEM;
+unsafe extern "C" {
+    pub static mut SmpKnownSubSysLock: RTL_CRITICAL_SECTION;
+}
+unsafe extern "C" {
+    pub static mut SmpKnownSubSysHead: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpSessionListLock: RTL_CRITICAL_SECTION;
+}
+unsafe extern "C" {
+    pub static mut SmpSessionListHead: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpNextSessionId: ULONG;
+}
+unsafe extern "C" {
+    pub static mut SmpNextSessionIdScanMode: BOOLEAN;
+}
+unsafe extern "C" {
+    pub static mut SmpDbgSsLoaded: BOOLEAN;
+}
+unsafe extern "C" {
+    pub static mut SmpWindowsSubSysProcess: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut SmpSessionsObjectDirectory: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut SmpWindowsSubSysProcessId: HANDLE;
+}
+unsafe extern "C" {
+    pub static mut RegPosixSingleInstance: BOOLEAN;
+}
+unsafe extern "C" {
+    pub static mut SmpDebugKeyword: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut SmpASyncKeyword: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut SmpAutoChkKeyword: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut SmpHeap: PVOID;
+}
+unsafe extern "C" {
+    pub static mut SmBaseTag: ULONG;
+}
+unsafe extern "C" {
+    pub static mut SmpSystemRoot: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut SmpDefaultEnvironment: PWCHAR;
+}
+unsafe extern "C" {
+    pub static mut SmpDefaultLibPath: UNICODE_STRING;
+}
+unsafe extern "C" {
+    pub static mut SmpSetupExecuteList: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpSubSystemList: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpSubSystemsToLoad: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpSubSystemsToDefer: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut SmpExecuteList: LIST_ENTRY;
+}
+unsafe extern "C" {
+    pub static mut AttachedSessionId: ULONG;
+}
+unsafe extern "C" {
+    pub static mut SmpDebug: BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SmpCheckForCrashDump(FileName: PUNICODE_STRING) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SmpPagingFileInitialize();
+}
+unsafe extern "C" {
+    pub fn SmpCreatePagingFileDescriptor(PageFileToken: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpCreatePagingFiles() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpTranslateSystemPartitionInformation();
+}
+unsafe extern "C" {
+    pub fn SmpCreateSecurityDescriptors(InitialCall: BOOLEAN) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpInit(InitialCommand: PUNICODE_STRING, ProcessHandle: PHANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpApiLoop(Parameter: PVOID) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn SmpSbCreateSession(
+        Reserved: PVOID,
+        OtherSubsystem: PSMP_SUBSYSTEM,
+        ProcessInformation: PRTL_USER_PROCESS_INFORMATION,
+        DbgSessionId: ULONG,
+        DbgUiClientId: PCLIENT_ID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpCheckDuplicateMuSessionId(MuSessionId: ULONG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SmpDeleteSession(SessionId: ULONG);
+}
+unsafe extern "C" {
+    pub fn SmpAllocateSessionId(Subsystem: PSMP_SUBSYSTEM, OtherSubsystem: PSMP_SUBSYSTEM)
+        -> ULONG;
+}
+unsafe extern "C" {
+    pub fn SmpGetProcessMuSessionId(ProcessHandle: HANDLE, SessionId: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpSetProcessMuSessionId(ProcessHandle: HANDLE, SessionId: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpExecuteImage(
+        FileName: PUNICODE_STRING,
+        Directory: PUNICODE_STRING,
+        CommandLine: PUNICODE_STRING,
+        MuSessionId: ULONG,
+        Flags: ULONG,
+        ProcessInformation: PRTL_USER_PROCESS_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpExecuteCommand(
+        CommandLine: PUNICODE_STRING,
+        MuSessionId: ULONG,
+        ProcessId: PHANDLE,
+        Flags: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpExecuteInitialCommand(
+        MuSessionId: ULONG,
+        InitialCommand: PUNICODE_STRING,
+        InitialCommandProcess: HANDLE,
+        ReturnPid: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpTerminate(
+        Parameters: PULONG_PTR,
+        ParameterMask: ULONG,
+        ParameterCount: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpDereferenceSubsystem(SubSystem: PSMP_SUBSYSTEM);
+}
+unsafe extern "C" {
+    pub fn SmpLocateKnownSubSysByCid(ClientId: PCLIENT_ID) -> PSMP_SUBSYSTEM;
+}
+unsafe extern "C" {
+    pub fn SmpLocateKnownSubSysByType(MuSessionId: ULONG, ImageType: ULONG) -> PSMP_SUBSYSTEM;
+}
+unsafe extern "C" {
+    pub fn SmpLoadSubSystem(
+        FileName: PUNICODE_STRING,
+        Directory: PUNICODE_STRING,
+        CommandLine: PUNICODE_STRING,
+        MuSessionId: ULONG,
+        ProcessId: PHANDLE,
+        Flags: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpLoadSubSystemsForMuSession(
+        MuSessionId: PULONG,
+        ProcessId: PHANDLE,
+        InitialCommand: PUNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpAcquirePrivilege(Privilege: ULONG, PrivilegeStat: *mut PVOID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpReleasePrivilege(State: PVOID);
+}
+unsafe extern "C" {
+    pub fn SmpParseCommandLine(
+        CommandLine: PUNICODE_STRING,
+        Flags: PULONG,
+        FileName: PUNICODE_STRING,
+        Directory: PUNICODE_STRING,
+        Arguments: PUNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SmpQueryRegistrySosOption() -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SmpSaveAndClearBootStatusData(BootOkay: PBOOLEAN, ShutdownOkay: PBOOLEAN) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SmpRestoreBootStatusData(BootOkay: BOOLEAN, ShutdownOkay: BOOLEAN);
+}
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

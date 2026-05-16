@@ -28,7 +28,10 @@ NINJA_RULE='csrsrv.dir/init.c.obj:'
 # Type/var allowlist '.+' (struct field types chain everywhere).
 # Function allowlist: user-mode Native API families + the SM/CSR/BASE
 # subsystem-protocol helpers this stack actually calls.
-FN_ALLOW='(Nt|Zw)[A-Z][A-Za-z0-9_]*|Rtl[A-Z][A-Za-z0-9_]*|Ldr[A-Z][A-Za-z0-9_]*|Dbg[A-Z][A-Za-z0-9_]*|Csr[A-Z][A-Za-z0-9_]*|Sm[A-Z][A-Za-z0-9_]*|Base[A-Z][A-Za-z0-9_]*|Sb[A-Z][A-Za-z0-9_]*'
+# Component families use a broad suffix ([A-Za-z0-9_]+, not [A-Z]…) so
+# the lowercase-second-segment internal prefixes are caught too:
+# Smp*/Sm* (smss), Basep*/Base* (basesrv), Csrp*/Csr* (csrsrv), Sb*.
+FN_ALLOW='(Nt|Zw)[A-Z][A-Za-z0-9_]*|Rtl[A-Z][A-Za-z0-9_]*|Ldr[A-Z][A-Za-z0-9_]*|Dbg[A-Z][A-Za-z0-9_]*|Csr[A-Za-z0-9_]+|Sm[A-Za-z0-9_]+|Sb[A-Za-z0-9_]+|Base[A-Za-z0-9_]+'
 
 run_bindgen() {
     local ARCH=$1 TARGET=$2 BUILD_DIR="${BUILD_ROOT}/build-$1"
@@ -59,6 +62,9 @@ run_bindgen() {
         --allowlist-function "$FN_ALLOW" \
         -o "$RAW" \
         -- -ferror-limit=0 -Wno-everything $SANITIZED $DEFINES $INCLUDES \
+        -I"${SRC}/subsystems/csr/csrsrv" \
+        -I"${SRC}/subsystems/win/basesrv" \
+        -I"${SRC}/base/system/smss" \
         -isystem "$RES" --target="${TARGET}"
 
     python3 "${SCRIPT_DIR}/postprocess_bindgen.py" "$RAW" "$ARCH" "$FINAL"

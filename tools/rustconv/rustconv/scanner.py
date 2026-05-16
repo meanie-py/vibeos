@@ -56,6 +56,7 @@ class ScanResult:
     globals: list[CGlobal] = field(default_factory=list)
     functions: list[CFunction] = field(default_factory=list)
     identifiers: set[str] = field(default_factory=set)
+    local_names: set[str] = field(default_factory=set)  # body locals + params
     arch_ifdefs: list[str] = field(default_factory=list)  # arch macros used
     includes: list[str] = field(default_factory=list)
     defines: list[str] = field(default_factory=list)
@@ -75,6 +76,43 @@ def _collect_identifiers(node, source: bytes, identifiers: set[str]) -> None:
             identifiers.add(name)
     for child in node.children:
         _collect_identifiers(child, source, identifiers)
+
+
+_DECLARATOR_TYPES = (
+    'init_declarator', 'pointer_declarator', 'array_declarator',
+    'parenthesized_declarator', 'identifier',
+)
+
+
+def _declarator_name(node, source: bytes) -> Optional[str]:
+    """Descend a declarator subtree to the declared identifier name."""
+    if node.type == 'identifier':
+        return _extract_text(node, source)
+    for child in node.children:
+        if child.type in _DECLARATOR_TYPES:
+            n = _declarator_name(child, source)
+            if n:
+                return n
+    return None
+
+
+def _collect_local_decls(node, source: bytes, names: set[str]) -> None:
+    """Collect identifiers that are *defining declarators* of local
+    variable / parameter declarations (not types, not calls).
+
+    These are never FFI imports — the per-file identifier scanner
+    otherwise reports Hungarian-cased locals (AnsiString, AdminSid, …)
+    as phantom "unresolved". Generic: helps every target's resolve
+    accuracy, not just smss-csrss.
+    """
+    if node.type in ('declaration', 'parameter_declaration'):
+        for child in node.children:
+            if child.type in _DECLARATOR_TYPES:
+                nm = _declarator_name(child, source)
+                if nm:
+                    names.add(nm)
+    for child in node.children:
+        _collect_local_decls(child, source, names)
 
 
 def _parse_function(node, source: bytes, source_text: str) -> Optional[CFunction]:
@@ -212,6 +250,9 @@ def scan_file(path: Path) -> ScanResult:
                 result.functions.append(func)
             # Collect identifiers from the function
             _collect_identifiers(node, source, result.identifiers)
+            # Collect local-variable / parameter declarator names so the
+            # resolver can exclude them (they're never FFI imports).
+            _collect_local_decls(node, source, result.local_names)
             return  # don't recurse into function body again
 
         if node.type == 'declaration':

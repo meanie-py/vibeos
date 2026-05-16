@@ -66,3 +66,25 @@ typedef __builtin_va_list __gnuc_va_list;
 /* BASE API server protocol (basemsg before base, per basesrv.h). */
 #include <win/basemsg.h>
 #include <win/base.h>
+
+/* Component-private master internal headers: the same move win32k-sys
+ * makes by pulling win32kp.h. These declare the intra-component
+ * Csr/Sb/Base functions and globals defined across each component's
+ * sibling .c files (the win32k Int and co_ analog). Bindgen-ing them
+ * lets the resolver see those as catalog symbols instead of phantom
+ * "unresolved"; they become Rust items in the output crate at
+ * translation time, so the extern decls here are type/signature
+ * ground-truth only.
+ *
+ * srv.h is csrsrv's PCH and resolves via the csrsrv -I already in the
+ * lifted build flags (the NINJA_RULE is csrsrv's). It pulls
+ * csrsrv/api.h (the CSR server internal API plus global externs).
+ *
+ * basesrv.h / smss.h are the basesrv / smss master internal headers
+ * (Base/BaseSrv and Smp/Sm intra-component surface). They live outside
+ * the csrsrv -I, so generate_bindings.sh adds their dirs explicitly.
+ * Order: csrsrv, then basesrv (pulls csr/csrsrv.h, guarded), then smss.
+ */
+#include <srv.h>
+#include <basesrv.h>
+#include <smss.h>

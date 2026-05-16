@@ -34,6 +34,11 @@ BUILTIN_NAMES = {
     "DBG_UNREFERENCED_PARAMETER", "DBG_UNREFERENCED_LOCAL_VARIABLE",
     "C_ASSERT", "NOTHING", "ARGUMENT_PRESENT", "NT_ASSERT",
     "EXCEPTION_CONTINUE_SEARCH", "EXCEPTION_CONTINUE_EXECUTION",
+    # Universal NT layout/const macros — never importable symbols.
+    "FIELD_OFFSET", "RTL_NUMBER_OF", "RTL_NUMBER_OF_V2",
+    "RTL_CONSTANT_STRING", "RTL_CONSTANT_OBJECT_ATTRIBUTES",
+    "UNICODE_NULL", "ANSI_NULL", "RTL_FIELD_SIZE", "ALIGN_UP",
+    "ALIGN_DOWN", "ALIGN_UP_BY", "ALIGN_DOWN_BY",
 }
 
 # Known gap functions — C macros/FORCEINLINE that won't appear in ntkrnl-sys
@@ -172,6 +177,12 @@ def resolve(scan: ScanResult, catalog: Catalog, spec: dict[str, SpecEntry]) -> R
 
         # Defined in this file (function name or parameter) — not an import
         if ident in same_file_names:
+            continue
+
+        # Local variable / parameter declarator in this file — not an
+        # import (placed after catalog lookup so a real imported symbol
+        # is never suppressed; a true local shadows it in C anyway).
+        if ident in scan.local_names:
             continue
 
         # Remaining — unresolved
