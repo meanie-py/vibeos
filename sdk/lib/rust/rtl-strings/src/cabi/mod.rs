@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, misc, nls, ustr};
+use crate::core_rs::{conv, misc, nls, ustr, utf8};
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -29,6 +29,8 @@ const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
 const STATUS_NO_MEMORY: i32 = 0xC000_0017u32 as i32;
 const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
+const STATUS_INVALID_PARAMETER_4: i32 = 0xC000_00F2u32 as i32;
+const STATUS_INVALID_PARAMETER_5: i32 = 0xC000_00F3u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
@@ -1697,4 +1699,63 @@ pub unsafe extern "system" fn RtlInt64ToUnicodeString(
         Buffer: buf.as_mut_ptr(),
     };
     RtlAnsiStringToUnicodeString(string, &ansi, 0)
+}
+
+// ── Wave RTL-5: utf8.c ────────────────────────────────────────────
+
+/// `NTSTATUS NTAPI RtlUnicodeToUTF8N(CHAR*, ULONG, ULONG*, const
+/// WCHAR*, ULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToUTF8N(
+    utf8_dest: *mut u8,
+    utf8_bytes_max: u32,
+    utf8_bytes_written: *mut u32,
+    uni_src: *const u16,
+    uni_bytes: u32,
+) -> i32 {
+    if uni_src.is_null() {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+    if utf8_bytes_written.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if !utf8_dest.is_null() && uni_bytes % 2 != 0 {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+    let src = rslice(uni_src, (uni_bytes / 2) as usize);
+    let (written, status) = if utf8_dest.is_null() {
+        utf8::unicode_to_utf8(src, None, utf8_bytes_max)
+    } else {
+        let d = wslice(utf8_dest, utf8_bytes_max as usize);
+        utf8::unicode_to_utf8(src, Some(d), utf8_bytes_max)
+    };
+    core::ptr::write_volatile(utf8_bytes_written, written);
+    status
+}
+
+/// `NTSTATUS NTAPI RtlUTF8ToUnicodeN(WCHAR*, ULONG, ULONG*, const
+/// CHAR*, ULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUTF8ToUnicodeN(
+    uni_dest: *mut u16,
+    uni_bytes_max: u32,
+    uni_bytes_written: *mut u32,
+    utf8_src: *const u8,
+    utf8_bytes: u32,
+) -> i32 {
+    if utf8_src.is_null() {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+    if uni_bytes_written.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let src = rslice(utf8_src, utf8_bytes as usize);
+    let (units, status) = if uni_dest.is_null() {
+        utf8::utf8_to_unicode(src, None, uni_bytes_max)
+    } else {
+        let d = wslice(uni_dest, (uni_bytes_max / 2) as usize);
+        utf8::utf8_to_unicode(src, Some(d), uni_bytes_max)
+    };
+    core::ptr::write_volatile(uni_bytes_written, units * 2);
+    status
 }

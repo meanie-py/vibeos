@@ -241,6 +241,9 @@ typedef const GUID *LPCGUID, *REFGUID;
 #define STATUS_NOT_FOUND ((NTSTATUS)0xC0000225L)
 #define STATUS_NAME_TOO_LONG ((NTSTATUS)0xC0000106L)
 #define STATUS_INVALID_COMPUTER_NAME ((NTSTATUS)0xC0000122L)
+#define STATUS_SOME_NOT_MAPPED ((NTSTATUS)0x00000107L)
+#define STATUS_INVALID_PARAMETER_4 ((NTSTATUS)0xC00000F2L)
+#define STATUS_INVALID_PARAMETER_5 ((NTSTATUS)0xC00000F3L)
 
 /* unicode.c uses these three as the byte-move primitives. */
 #define RtlCopyMemory(d, s, n) memcpy((d), (s), (n))

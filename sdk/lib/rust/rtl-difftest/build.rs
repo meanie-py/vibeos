@@ -351,4 +351,30 @@ fn main() {
     for obj in build.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // Wave RTL-5: genuine sdk/lib/rtl/utf8.c — a clean, standalone TU
+    // (no NLS/heap/scrape needed; the 2 fns don't call each other or
+    // anything but memcpy). Renamed ref_* like unicode.c.
+    let utf8_c = repo.join("sdk/lib/rtl/utf8.c");
+    let utf8_body = format!(
+        "#include <rtl_vista.h>\n#include <string.h>\n\
+         #define RtlUnicodeToUTF8N ref_RtlUnicodeToUTF8N\n\
+         #define RtlUTF8ToUnicodeN ref_RtlUTF8ToUnicodeN\n\
+         #include \"{}\"\n",
+        utf8_c.display()
+    );
+    let utf8_src = out.join("ref_utf8.c");
+    fs::write(&utf8_src, utf8_body).unwrap();
+    let mut ubuild = cc::Build::new();
+    ubuild
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&utf8_src);
+    println!("cargo:rerun-if-changed={}", utf8_c.display());
+    for obj in ubuild.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }

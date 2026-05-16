@@ -6,3 +6,4 @@ pub mod conv;
 pub mod misc;
 pub mod nls;
 pub mod ustr;
+pub mod utf8;

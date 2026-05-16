@@ -135,6 +135,21 @@ extern "C" {
     fn ref_RtlLargeIntegerToChar(v: *const i64, base: u32, len: u32, s: *mut u8) -> i32;
     fn ref_RtlIntegerToUnicodeString(v: u32, base: u32, s: *mut UNICODE_STRING) -> i32;
     fn ref_RtlInt64ToUnicodeString(v: u64, base: u32, s: *mut UNICODE_STRING) -> i32;
+    // Wave RTL-5: utf8.c
+    fn ref_RtlUnicodeToUTF8N(
+        d: *mut u8,
+        dmax: u32,
+        w: *mut u32,
+        s: *const u16,
+        sb: u32,
+    ) -> i32;
+    fn ref_RtlUTF8ToUnicodeN(
+        d: *mut u16,
+        dmax: u32,
+        w: *mut u32,
+        s: *const u8,
+        sb: u32,
+    ) -> i32;
 }
 
 struct Rng(u64);
@@ -1883,5 +1898,103 @@ fn diff_rtl_multi_append() {
         let rr = ref_RtlMultiAppendUnicodeStringBuffer(
             core::ptr::null_mut(), 0, core::ptr::null());
         assert_eq!(rc, rr, "RtlMultiAppendUnicodeStringBuffer");
+    }
+}
+
+// ── Wave RTL-5: utf8.c ────────────────────────────────────────────
+
+#[test]
+fn diff_rtl_unicode_to_utf8() {
+    let mut rng = Rng(0x5_0001_01);
+    // ascii, BMP, high/low surrogates (lone + paired), U+FFFD.
+    let pool: &[u16] = &[
+        0x0041, 0x0024, 0x00A3, 0x07FF, 0x0800, 0x20AC, 0xFFFD, 0xFFFF,
+        0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0x0000, 0x0080,
+    ];
+    for _ in 0..30_000 {
+        let units = rng.upto(20);
+        let sv: Vec<u16> =
+            (0..units).map(|_| pool[rng.upto(pool.len())]).collect();
+        let null_src = rng.upto(12) == 0;
+        let null_w = rng.upto(12) == 0;
+        let null_dest = rng.upto(2) == 0;
+        // uni_bytes: usually units*2, sometimes odd (PARAM_5 when dest).
+        let uni_bytes = (match rng.upto(5) {
+            0 => (units * 2).saturating_sub(1),
+            1 => units,
+            _ => units * 2,
+        }) as u32;
+        let dmax = (match rng.upto(4) { 0 => 0, 1 => units, 2 => units * 2, _ => units * 4 + 4 }) as u32;
+        let sp = if null_src { core::ptr::null() } else { sv.as_ptr() };
+        let mut bc = vec![0xCCu8; (dmax as usize).max(1)];
+        let mut br = vec![0xCCu8; (dmax as usize).max(1)];
+        let dp_c = if null_dest { core::ptr::null_mut() } else { bc.as_mut_ptr() };
+        let dp_r = if null_dest { core::ptr::null_mut() } else { br.as_mut_ptr() };
+        let (mut wc, mut wr) = (0xDEAD_BEEFu32, 0xDEAD_BEEFu32);
+        let (wpc, wpr) = if null_w {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (&mut wc as *mut u32, &mut wr as *mut u32)
+        };
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlUnicodeToUTF8N(dp_c, dmax, wpc, sp, uni_bytes);
+            sr = ref_RtlUnicodeToUTF8N(dp_r, dmax, wpr, sp, uni_bytes);
+        }
+        assert_eq!(sc, sr, "RtlUnicodeToUTF8N ret u={units} ub={uni_bytes} dm={dmax} ns={null_src} nw={null_w} nd={null_dest}");
+        assert_eq!(wc, wr, "RtlUnicodeToUTF8N written {sv:?}");
+        if !null_dest {
+            assert_eq!(bc, br, "RtlUnicodeToUTF8N dst {sv:?} dm={dmax}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_utf8_to_unicode() {
+    let mut rng = Rng(0x5_0001_02);
+    // valid ascii/2-3-4-byte leads, trail bytes, invalid leads,
+    // overlong/truncation triggers.
+    let pool: &[u8] = &[
+        0x41, 0x24, 0xC2, 0xA3, 0xE0, 0xA0, 0x80, 0xE2, 0x82, 0xAC,
+        0xF0, 0x90, 0x8D, 0x88, 0xF5, 0xFF, 0x80, 0xBF, 0xC0, 0xC1,
+        0x00, 0xED, 0xA0,
+    ];
+    for _ in 0..30_000 {
+        let n = rng.upto(24);
+        let sv: Vec<u8> = (0..n).map(|_| pool[rng.upto(pool.len())]).collect();
+        let null_src = rng.upto(12) == 0;
+        let null_w = rng.upto(12) == 0;
+        let null_dest = rng.upto(2) == 0;
+        let utf8_bytes = (match rng.upto(4) { 0 => 0, 1 => n / 2, _ => n }) as u32;
+        // backing big enough for the worst case (≤3 units/byte); dmax
+        // (bytes) varied independently but ≤ backing*2.
+        let cap_units = n * 3 + 4;
+        let dmax = (match rng.upto(4) {
+            0 => 0,
+            1 => n,
+            2 => n * 2,
+            _ => cap_units * 2,
+        }) as u32;
+        let sp = if null_src { core::ptr::null() } else { sv.as_ptr() };
+        let mut bc = vec![0xCCCCu16; cap_units.max(1)];
+        let mut br = vec![0xCCCCu16; cap_units.max(1)];
+        let dp_c = if null_dest { core::ptr::null_mut() } else { bc.as_mut_ptr() };
+        let dp_r = if null_dest { core::ptr::null_mut() } else { br.as_mut_ptr() };
+        let (mut wc, mut wr) = (0xDEAD_BEEFu32, 0xDEAD_BEEFu32);
+        let (wpc, wpr) = if null_w {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (&mut wc as *mut u32, &mut wr as *mut u32)
+        };
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlUTF8ToUnicodeN(dp_c, dmax, wpc, sp, utf8_bytes);
+            sr = ref_RtlUTF8ToUnicodeN(dp_r, dmax, wpr, sp, utf8_bytes);
+        }
+        assert_eq!(sc, sr, "RtlUTF8ToUnicodeN ret n={n} ub={utf8_bytes} dm={dmax} ns={null_src} nw={null_w} nd={null_dest} {sv:?}");
+        assert_eq!(wc, wr, "RtlUTF8ToUnicodeN written {sv:?}");
+        if !null_dest {
+            assert_eq!(bc, br, "RtlUTF8ToUnicodeN dst {sv:?} dm={dmax}");
+        }
     }
 }
