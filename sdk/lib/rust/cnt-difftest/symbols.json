@@ -1,0 +1,92 @@
+{
+  "atoi": {
+    "c_signature": "int atoi(const char *s)",
+    "family": "radix",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i64_trunc_i32",
+    "reference": "sdk/lib/crt/string/atoi64.c",
+    "fuzz_domain": [
+      "empty",
+      "NULL",
+      "leading ws + sign",
+      "i32-overflow ('2147483648')",
+      "i64-overflow ('99999999999999999999')",
+      "trailing junk ('12abc')",
+      "lone sign ('+','-')",
+      "no digits ('  x')"
+    ]
+  },
+  "memcpy": {
+    "c_signature": "void *memcpy(void *dst, const void *src, size_t n)",
+    "family": "mem",
+    "slice_pattern": "mem_raw",
+    "return_collapse": "ret_dst",
+    "reference": "sdk/lib/crt/mem/memcpy.c",
+    "fuzz_domain": [
+      "disjoint",
+      "dst < src overlap",
+      "dst > src overlap",
+      "dst == src",
+      "n == 0",
+      "n 1..256"
+    ]
+  },
+  "strcmp": {
+    "c_signature": "int strcmp(const char *a, const char *b)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/string/strcmp.c",
+    "fuzz_domain": [
+      "equal",
+      "differ-at-0",
+      "differ-mid",
+      "prefix-vs-longer",
+      "high-bit bytes (>=0x80, unsigned compare)",
+      "empty vs nonempty"
+    ]
+  },
+  "strlen": {
+    "c_signature": "size_t strlen(const char *s)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "usize",
+    "reference": "sdk/lib/crt/string/tcslen.h",
+    "fuzz_domain": [
+      "empty",
+      "no-nul-within-cap",
+      "embedded-nul",
+      "len 0..256",
+      "NULL ptr"
+    ]
+  },
+  "strncpy": {
+    "c_signature": "char *strncpy(char *dst, const char *src, size_t n)",
+    "family": "string",
+    "slice_pattern": "dst_fixed_n",
+    "return_collapse": "ret_dst",
+    "reference": "sdk/lib/crt/string/tcsncpy.h",
+    "fuzz_domain": [
+      "src shorter than n (pad path)",
+      "src len == n (no-term)",
+      "src len > n (truncate, no-term)",
+      "n == 0 (no write at all)",
+      "src empty"
+    ]
+  },
+  "strstr": {
+    "c_signature": "char *strstr(const char *hay, const char *needle)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/strstr.c",
+    "fuzz_domain": [
+      "needle empty",
+      "needle absent",
+      "needle = hay",
+      "needle at end",
+      "overlapping partial matches",
+      "needle longer than hay"
+    ]
+  }
+}

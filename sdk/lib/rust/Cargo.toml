@@ -4,6 +4,8 @@ members = [
     "avltable",
     "bitmap",
     "byteswap",
+    "cnt-difftest",
+    "cnt-rust",
     "compress",
     "crc32",
     "encode",

@@ -1,0 +1,101 @@
+# cnt-manifest — the single spec the generator (tools/gen_cnt.py) turns
+# into (a) cnt-rust/src/cabi/*.rs #[no_mangle] shims and (b) the
+# cnt-difftest differential tests.
+#
+# Per-symbol fields:
+#   c_signature        : exact C prototype (authoritative; mechanical)
+#   family             : string|wstring|mem|radix|ctype|printf|sort
+#   slice_pattern      : how the shim reconstructs core slices from the
+#                        C ptr ABI. One of:
+#       nul_in       — `*const u8` NUL-terminated → &[u8] content (NULL→empty)
+#       ptr_len      — `*X, size_t` → slice of that len
+#       dst_fixed_n  — `*mut u8 dst, src(nul_in), size_t n` → &mut dst[0..n]
+#       mem_raw      — `*mut void, *const void, size_t` raw, overlap-safe
+#       set_raw      — `*mut void, int, size_t`
+#   core_fn            : the core_rs:: call (single source of truth)
+#   return_collapse    : core return → exact C return/value:
+#       usize                — core usize → C size_t/int
+#       i32_passthrough      — core i32 → C int
+#       ptr_or_null_from_opt — Option<usize> → arg_base.add(i) | NULL
+#       ret_dst              — ignore core value, return original dst ptr
+#       i64_trunc_i32        — (i64,_) wrapped → (int) truncation
+#   inout_effects      : params written + exactly what (term? pad? none)
+#   preserved_misfeature: the load-bearing deviation from textbook libc
+#                         (named so it's DELIBERATE, harness pins it)
+#   reference          : repo-relative ReactOS impl the diff harness
+#                        compiles as ground truth (logic header or .c)
+#   fuzz_domain        : input equivalence-classes the diff test MUST
+#                        cover to pin every branch + the misfeature
+#
+# This file is hand-filled for the 6-symbol prep sample. The full run
+# auto-derives ~110 family-template rows and farms only the ~30
+# irregular `return_collapse`/`preserved_misfeature`/`fuzz_domain`
+# fields from the *provided ReactOS source* (Sonnet, diff-verified).
+
+schema_version = 1
+
+[symbols.strlen]
+c_signature  = "size_t strlen(const char *s)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::len_of"        # = content slice .len()
+return_collapse = "usize"
+inout_effects = "none (pure read)"
+preserved_misfeature = "strlen(NULL) == 0 (textbook libc: UB) — tcslen.h explicit NULL guard"
+reference    = "sdk/lib/crt/string/tcslen.h"
+fuzz_domain  = ["empty", "no-nul-within-cap", "embedded-nul", "len 0..256", "NULL ptr"]
+
+[symbols.strcmp]
+c_signature  = "int strcmp(const char *a, const char *b)"
+family       = "string"
+slice_pattern = "nul_in"               # both args
+core_fn      = "string::cmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none"
+preserved_misfeature = "returns signed byte difference (sign-only is portable; magnitude is ReactOS-specific) — pin exact value"
+reference    = "sdk/lib/crt/string/strcmp.c"
+fuzz_domain  = ["equal", "differ-at-0", "differ-mid", "prefix-vs-longer", "high-bit bytes (>=0x80, unsigned compare)", "empty vs nonempty"]
+
+[symbols.strstr]
+c_signature  = "char *strstr(const char *hay, const char *needle)"
+family       = "string"
+slice_pattern = "nul_in"               # both args
+core_fn      = "string::find_sub"
+return_collapse = "ptr_or_null_from_opt"  # base = hay
+inout_effects = "none"
+preserved_misfeature = "empty needle → returns hay (Some(0)), not NULL"
+reference    = "sdk/lib/crt/string/strstr.c"
+fuzz_domain  = ["needle empty", "needle absent", "needle = hay", "needle at end", "overlapping partial matches", "needle longer than hay"]
+
+[symbols.strncpy]
+c_signature  = "char *strncpy(char *dst, const char *src, size_t n)"
+family       = "string"
+slice_pattern = "dst_fixed_n"
+core_fn      = "string::ncpy"          # returns truncated:bool (discarded here)
+return_collapse = "ret_dst"
+inout_effects = "writes dst[0..n]: copy min(strlen(src),n); if src shorter, pad rest with 0; if n reached first, NO terminator"
+preserved_misfeature = "no NUL-termination when src len >= n (the classic strncpy footgun) — tcsncpy.h"
+reference    = "sdk/lib/crt/string/tcsncpy.h"
+fuzz_domain  = ["src shorter than n (pad path)", "src len == n (no-term)", "src len > n (truncate, no-term)", "n == 0 (no write at all)", "src empty"]
+
+[symbols.atoi]
+c_signature  = "int atoi(const char *s)"
+family       = "radix"
+slice_pattern = "nul_in"
+core_fn      = "radix::parse_i64_wrapping"  # (i64, overflowed) — overflowed discarded
+return_collapse = "i64_trunc_i32"      # atoi = (int)_atoi64
+inout_effects = "none"
+preserved_misfeature = "NO overflow detection: i64 wrapping accumulate, then (int) truncation; leading isspace skipped; stops at first non-digit; NULL→0"
+reference    = "sdk/lib/crt/string/atoi64.c"  # atoi.c → _ttoi64; atoi64.c is the real logic
+fuzz_domain  = ["empty", "NULL", "leading ws + sign", "i32-overflow ('2147483648')", "i64-overflow ('99999999999999999999')", "trailing junk ('12abc')", "lone sign ('+','-')", "no digits ('  x')"]
+
+[symbols.memcpy]
+c_signature  = "void *memcpy(void *dst, const void *src, size_t n)"
+family       = "mem"
+slice_pattern = "mem_raw"              # overlap-safe (ReactOS memcpy IS a memmove)
+core_fn      = "cabi::raw_move"        # direction logic lives in the unsafe shim
+return_collapse = "ret_dst"
+inout_effects = "writes dst[0..n] = src[0..n], overlap-correct (forward if dst<=src or disjoint, else backward)"
+preserved_misfeature = "overlap-SAFE memcpy (textbook libc: overlap is UB). ReactOS memcpy.c handles it like memmove — must replicate or kernel callers relying on it break"
+reference    = "sdk/lib/crt/mem/memcpy.c"
+fuzz_domain  = ["disjoint", "dst < src overlap", "dst > src overlap", "dst == src", "n == 0", "n 1..256"]
