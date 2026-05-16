@@ -206,9 +206,56 @@ def _expand_split_includes(path: Path, text: str, _depth: int = 0) -> str:
     return _SPLIT_INCLUDE_RE.sub(_sub, text)
 
 
+# win32k debug switches HARD-defined to 0 in win32ss/win32kp.h (never
+# build-overridden — the build has -DDBG=1 but these finer feature
+# switches stay 0). rustconv parses with tree-sitter not cpp, so without
+# this it translates these build-excluded blocks and emits references to
+# fields/macros that legitimately don't exist (e.g. BASEOBJECT.slhLog,
+# .apvBackTrace, DBG_DUMP_EVENT_LIST). Conservative: only these proven-0
+# symbols, only the simple `#if SYM ... #endif` shape — bail to verbatim
+# on ANY #else/#elif/nested #if (see feedback_preprocessor_elif_chain).
+_KNOWN_OFF_IFDEF_SYMS = (
+    "DBG_ENABLE_EVENT_LOGGING",
+    "DBG_ENABLE_GDIOBJ_BACKTRACES",
+)
+_IF_LINE = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b')
+
+
+def _strip_known_off_ifdefs(text: str) -> str:
+    lines = text.split('\n')
+    syms = "|".join(re.escape(s) for s in _KNOWN_OFF_IFDEF_SYMS)
+    open_re = re.compile(rf'^[ \t]*#[ \t]*if[ \t]+(?:!\s*)?(?:{syms})\b')
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        if open_re.match(lines[i]):
+            # Scan to the matching #endif at the same nesting depth.
+            depth, j, simple = 1, i + 1, True
+            while j < n and depth > 0:
+                m = _IF_LINE.match(lines[j])
+                if m:
+                    kw = m.group(1)
+                    if kw in ("if", "ifdef", "ifndef"):
+                        depth += 1
+                        simple = False  # nested conditional inside
+                    elif kw == "endif":
+                        depth -= 1
+                    elif depth == 1 and kw in ("else", "elif"):
+                        simple = False  # has an alternative branch
+                j += 1
+            if depth == 0 and simple:
+                i = j          # drop [i, j): the whole #if…#endif block
+                continue
+            # Not a simple known-0 block → leave verbatim.
+        out.append(lines[i])
+        i += 1
+    return '\n'.join(out)
+
+
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
-    source_text = _expand_split_includes(path, path.read_text(errors='replace'))
+    source_text = _strip_known_off_ifdefs(
+        _expand_split_includes(path, path.read_text(errors='replace'))
+    )
     source = source_text.encode('utf-8')
 
     parser = Parser(C_LANG)
