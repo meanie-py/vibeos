@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["rlib"]
+# staticlib → libsmss_csrss_rust.a, linked into the cmake-built native
+# PEs (csrss.exe …) with the .c kept + --allow-multiple-definition
+# during the swap-in window (mirrors kdcom-rust crate / rtl cmake).
+crate-type = ["staticlib"]
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

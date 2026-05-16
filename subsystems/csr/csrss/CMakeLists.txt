@@ -3,9 +3,57 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/subsystems/win32/csrsrv/include
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
-add_executable(csrss csrss.c csrss.rc)
+# --- Rust cohabitation (smss-csrss-rust) ----------------------------
+# csrss.c is commented out of add_executable() (a single direct .obj
+# defining `__main` would block lld from ever pulling the archive —
+# --allow-multiple-definition does NOT force archive extraction). The
+# Rust staticlib provides `__main`/`CsrpSetDefaultProcessHardErrorMode`;
+# csrss_rust_stub.c keeps add_executable() valid. csrss.c stays on disk
+# (never delete the C). Mirrors the
+# sdk/lib/rtl cmake-driven cargo→.a pattern + the hal-rust/ntoskrnl
+# cohabitation. See docs/engineering/smss-csrss-translation-audit.md.
+set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
+if(ARCH STREQUAL "i386")
+    set(RUST_TARGET "i686-pc-windows-gnu")
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
+elseif(ARCH STREQUAL "amd64")
+    set(RUST_TARGET "x86_64-pc-windows-gnu")
+    set(RUST_EXTRA_ENV "")
+elseif(ARCH STREQUAL "arm64")
+    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(RUST_EXTRA_ENV "")
+endif()
+set(SMSS_CSRSS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsmss_csrss_rust.a")
+add_custom_command(
+    OUTPUT ${SMSS_CSRSS_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
+        cargo build --release --target ${RUST_TARGET}
+            -p smss-csrss-rust
+            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libsmss_csrss_rust.a
+        ${SMSS_CSRSS_RUST_LIB}
+    DEPENDS
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrss.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/Cargo.toml
+        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
+        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/inlines.rs
+    COMMENT "Building smss-csrss-rust (${RUST_TARGET})"
+    VERBATIM)
+add_custom_target(smss_csrss_rust_lib DEPENDS ${SMSS_CSRSS_RUST_LIB})
+# --------------------------------------------------------------------
+
+# csrss.c — replaced by Rust (sdk/lib/rust/smss-csrss-rust/src/csrss.rs)
+add_executable(csrss csrss_rust_stub.c csrss.rc)
 set_module_type(csrss nativecui)
-target_link_libraries(csrss nt)
+target_link_libraries(csrss nt ${SMSS_CSRSS_RUST_LIB})
+add_dependencies(csrss smss_csrss_rust_lib)
+# Rust .a also pulls libcore/compiler-builtins objects; keep
+# --allow-multiple-definition for any intrinsic overlap with `nt`.
+target_link_options(csrss PRIVATE "-Wl,--allow-multiple-definition")
 add_importlibs(csrss csrsrv ntdll)
 if(ARCH STREQUAL "arm64")
     # ARM64: llvm-dlltool converts delay-imports to regular imports, causing
