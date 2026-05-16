@@ -1,14 +1,19 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 0 + P1a COMPLETE — pipeline
-is user-mode-ready and csrss.exe is translated clean & builds ×3.**
-(worktree `worktree-smss-csrss`, commits 06396c51 → 8eb28d57.)
-`ntdll-sys` built + size-verified, cargo-clean ×3, rustconv-wired;
-resolver/scanner/catalog tuned (generic, all-target, csrss.c 95%);
-the user-mode FFI routing + NtCurrent* inlines + enum de-prefix
-pipeline fixes are landed and proven by a clean csrss.exe. First
-user-mode-PE Rust translation compiles ×3; cohabitation/smoke is the
-next step. This audit defines the keep-set, the spine,
+Last updated 2026-05-16. **Status: Phase 0 + P1a COMPLETE; csrss.exe
+is fully Rust (cohabited, built, binary-verified) — the first
+fully-Rust user-mode native PE in the project.** (worktree
+`worktree-smss-csrss`, commits 06396c51 → e0049bff.) `ntdll-sys`
+built + size-verified, cargo-clean ×3, rustconv-wired; the user-mode
+pipeline fixes are landed and proven; `csrss.exe` links the Rust
+`smss-csrss-rust` staticlib (csrss.c cohabitation-removed, C kept on
+disk), `ninja csrss` green, binary verified to contain the Rust
+`__main`/`smss_csrss_rust::csrss::*`. **Smoke is OWED, not faked**:
+worktree cold `ninja livecd` is blocked at the `.code16`
+`boot/freeldr/bootsect` asm (system-gcc/ASM16 cold-configure gap) —
+the documented `feedback_worktree_build_reality` /
+`freeldr_clean_build_regression` cold-build wall, independent of
+csrss; the real smoke path is the main checkout's warm `build-i386`. This audit defines the keep-set, the spine,
 the substrate prerequisite, the translation order, and the rustconv
 configuration for the bulk translation phase.
 
