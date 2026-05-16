@@ -108,6 +108,10 @@ extern "C" {
     fn swscanf(s: *const u16, f: *const u16, ...) -> i32;
     fn ref_sscanf(s: *const u8, f: *const u8, ...) -> i32;
     fn ref_swscanf(s: *const u16, f: *const u16, ...) -> i32;
+    fn _snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
+    fn _snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
+    fn ref__snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
+    fn ref__snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -1853,6 +1857,104 @@ fn diff_scanf() {
                 };
                 assert_eq!((r, na), (q, nb), "w%[ ret inp={raw:?}");
                 assert_eq!(ba, bb, "w%[ buf inp={raw:?}");
+            }
+        }
+    }
+}
+
+/// Wave SCANF Phase 3 — _snscanf/_snwscanf (STRING_LEN). The input is
+/// length-bounded (NOT NUL-bounded — reads embedded NULs up to
+/// `length`); pins the genuine `consumed==length ? '\0'` (no advance)
+/// quirk across length ∈ {0, <strlen, ==strlen, >strlen} + an
+/// embedded-NUL buffer. Float excluded (Phase 2). Fixed concrete arg
+/// shapes; return + every out + trailing %n parity, sentinel buffers.
+#[test]
+fn diff_snscanf() {
+    let mut rng = Rng(0x5caf_3a30_u64);
+    for _ in 0..7000 {
+        // raw input buffer (NOT NUL-terminated; may contain a NUL)
+        let pool = b"  12+-0xabZ.,;\x0089AF[] qword";
+        let mut buf: Vec<u8> = (0..(4 + rng.upto(20)))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        // sometimes plant an explicit embedded NUL mid-buffer
+        if rng.upto(2) == 0 && buf.len() > 3 {
+            let p = 1 + rng.upto(buf.len() - 2);
+            buf[p] = 0;
+        }
+        let blen = buf.len();
+        let lengths = [
+            0usize,
+            rng.upto(blen + 1),
+            blen,
+            blen + 5, // > buffer: genuine reads OOB too, but our slice
+                      // is exactly `length`; cap to blen to stay sound
+                      // while still exercising length>consumed-able.
+        ];
+        let fmts: [&[u8]; 5] =
+            [b"%d%n\0", b"%s%n\0", b"%[a-z]%n\0", b"%c%n\0", b"%x%n\0"];
+        for &ln in &lengths {
+            let ln = ln.min(blen); // keep from_raw_parts in-bounds
+            for f in fmts {
+                let fp = f.as_ptr();
+                match f[1] {
+                    b'd' | b'x' => {
+                        let (mut a, mut b) = (0i32, 0i32);
+                        let (mut na, mut nb) = (-1i32, -1i32);
+                        let r = unsafe {
+                            _snscanf(buf.as_ptr(), ln, fp, &mut a, &mut na)
+                        };
+                        let q = unsafe {
+                            ref__snscanf(buf.as_ptr(), ln, fp, &mut b, &mut nb)
+                        };
+                        assert_eq!(
+                            (r, a, na),
+                            (q, b, nb),
+                            "_snscanf {f:?} buf={buf:?} ln={ln}"
+                        );
+                    }
+                    _ => {
+                        let mut sa = [0xCCu8; 64];
+                        let mut sb = [0xCCu8; 64];
+                        let (mut na, mut nb) = (-1i32, -1i32);
+                        let r = unsafe {
+                            _snscanf(buf.as_ptr(), ln, fp, sa.as_mut_ptr(), &mut na)
+                        };
+                        let q = unsafe {
+                            ref__snscanf(buf.as_ptr(), ln, fp, sb.as_mut_ptr(), &mut nb)
+                        };
+                        assert_eq!((r, na), (q, nb), "_snscanf {f:?} ret ln={ln}");
+                        assert_eq!(sa, sb, "_snscanf {f:?} buf={buf:?} ln={ln}");
+                    }
+                }
+            }
+            // wide twin: %d + %s + %[
+            let wbuf: Vec<u16> = buf.iter().map(|&b| b as u16).collect();
+            let wf = |v: &[u8]| -> Vec<u16> {
+                v.iter().map(|&b| b as u16).chain([0]).collect()
+            };
+            let fd = wf(b"%d%n");
+            let (mut a, mut b, mut na, mut nb) = (0i32, 0i32, -1i32, -1i32);
+            let r = unsafe {
+                _snwscanf(wbuf.as_ptr(), ln, fd.as_ptr(), &mut a, &mut na)
+            };
+            let q = unsafe {
+                ref__snwscanf(wbuf.as_ptr(), ln, fd.as_ptr(), &mut b, &mut nb)
+            };
+            assert_eq!((r, a, na), (q, b, nb), "_snwscanf %d buf={buf:?} ln={ln}");
+            for ff in [&b"%s%n"[..], b"%[a-z]%n"] {
+                let fw = wf(ff);
+                let mut sa = [0xCCCCu16; 64];
+                let mut sb = [0xCCCCu16; 64];
+                let (mut na, mut nb) = (-1i32, -1i32);
+                let r = unsafe {
+                    _snwscanf(wbuf.as_ptr(), ln, fw.as_ptr(), sa.as_mut_ptr(), &mut na)
+                };
+                let q = unsafe {
+                    ref__snwscanf(wbuf.as_ptr(), ln, fw.as_ptr(), sb.as_mut_ptr(), &mut nb)
+                };
+                assert_eq!((r, na), (q, nb), "_snwscanf {ff:?} ret ln={ln}");
+                assert_eq!(sa, sb, "_snwscanf {ff:?} buf={buf:?} ln={ln}");
             }
         }
     }

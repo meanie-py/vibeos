@@ -19,10 +19,15 @@
  * compiles it for the host differential.
  */
 #include <stdarg.h>
+#include <stddef.h> /* size_t */
 
 extern int cnt_vsscanf(const char *file, const char *fmt, va_list *ap);
 extern int cnt_vswscanf(const unsigned short *file,
                         const unsigned short *fmt, va_list *ap);
+extern int cnt_vsnscanf(const char *file, size_t length,
+                        const char *fmt, va_list *ap);
+extern int cnt_vsnwscanf(const unsigned short *file, size_t length,
+                         const unsigned short *fmt, va_list *ap);
 
 void *cnt_va_next_ptr(va_list *ap)
 {
@@ -45,6 +50,27 @@ int swscanf(const unsigned short *str, const unsigned short *format, ...)
     int r;
     va_start(ap, format);
     r = cnt_vswscanf(str, format, &ap);
+    va_end(ap);
+    return r;
+}
+
+int _snscanf(const char *input, size_t length, const char *format, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, format);
+    r = cnt_vsnscanf(input, length, format, &ap);
+    va_end(ap);
+    return r;
+}
+
+int _snwscanf(const unsigned short *input, size_t length,
+              const unsigned short *format, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, format);
+    r = cnt_vsnwscanf(input, length, format, &ap);
     va_end(ap);
     return r;
 }

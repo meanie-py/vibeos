@@ -179,3 +179,42 @@ pub unsafe extern "C" fn cnt_vswscanf(
     let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
     scanf_engine::<u16, _>(input, false, format, &mut sink)
 }
+
+/// `int _snscanf(const char*, size_t, const char*, ...)` engine half.
+/// Input is exactly `length` bytes (NOT NUL-bounded — `_snscanf` can
+/// read embedded NULs up to `length`); the engine's `has_len_limit`
+/// yields the genuine `consumed==length ? '\0'` (no advance) quirk.
+#[no_mangle]
+pub unsafe extern "C" fn cnt_vsnscanf(
+    file: *const u8,
+    length: usize,
+    fmt: *const u8,
+    ap: *mut core::ffi::c_void,
+) -> i32 {
+    let input: &[u8] = if file.is_null() {
+        &[]
+    } else {
+        core::slice::from_raw_parts(file, length)
+    };
+    let format = super::cstr_slice(fmt);
+    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    scanf_engine::<u8, _>(input, true, format, &mut sink)
+}
+
+/// `int _snwscanf(const wchar_t*, size_t, const wchar_t*, ...)` half.
+#[no_mangle]
+pub unsafe extern "C" fn cnt_vsnwscanf(
+    file: *const u16,
+    length: usize,
+    fmt: *const u16,
+    ap: *mut core::ffi::c_void,
+) -> i32 {
+    let input: &[u16] = if file.is_null() {
+        &[]
+    } else {
+        core::slice::from_raw_parts(file, length)
+    };
+    let format = super::wcstr_slice(fmt);
+    let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
+    scanf_engine::<u16, _>(input, true, format, &mut sink)
+}

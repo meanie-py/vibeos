@@ -24,3 +24,17 @@ static _SCANF_ANCHOR_W: unsafe extern "C" fn(
     *const u16,
     *mut core::ffi::c_void,
 ) -> i32 = cnt_rust::cabi::cnt_vswscanf;
+#[used]
+static _SCANF_ANCHOR_NA: unsafe extern "C" fn(
+    *const u8,
+    usize,
+    *const u8,
+    *mut core::ffi::c_void,
+) -> i32 = cnt_rust::cabi::cnt_vsnscanf;
+#[used]
+static _SCANF_ANCHOR_NW: unsafe extern "C" fn(
+    *const u16,
+    usize,
+    *const u16,
+    *mut core::ffi::c_void,
+) -> i32 = cnt_rust::cabi::cnt_vsnwscanf;
