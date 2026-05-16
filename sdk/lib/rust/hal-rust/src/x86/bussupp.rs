@@ -39,7 +39,6 @@ use ntkrnl_sys::hal_ddk::{
     HAL_PCI_CHIP_HACK_DISABLE_ACPI_IRQ_ROUTING, HAL_PCI_CHIP_HACK_DISABLE_HIBERNATE,
     HAL_PCI_CHIP_HACK_USB_SMI_DISABLE, HAL_SUPPORTED_RANGE_VERSION, MACHINE_TYPE_ISA,
     KEY_ALL_ACCESS, KEY_READ, REG_DWORD, OBJ_CASE_INSENSITIVE,
-    HalDispatchTable, HalPrivateDispatchTable,
     _INTERFACE_TYPE_Internal,
     _INTERFACE_TYPE_Isa,
     _INTERFACE_TYPE_Eisa,
@@ -53,11 +52,39 @@ use ntkrnl_sys::hal_ddk::{
 #[cfg(not(feature = "minihal"))]
 use crate::x86::bushndlr::HalpInitBusHandler;
 use crate::x86::bushndlr::{HalpNoBusData, HaliReferenceHandlerForConfigSpace};
+// sysbus/memory are full-HAL modules gated out of minihal; their imports
+// are only consumed by bussupp's `#[cfg(not(feature="minihal"))]` paths.
+// feedback_freeldr_clean_build_regression
+#[cfg(not(feature = "minihal"))]
 use crate::x86::sysbus::{HalpGetSystemInterruptVector, HalpTranslateSystemBusAddress};
 use crate::x86::isabus::HalpTranslateIsaBusAddress;
 use crate::x86::cmosbus::{HalpcGetCmosData, HalpcSetCmosData};
+#[cfg(not(feature = "minihal"))]
 use crate::x86::memory::{HalpMapPhysicalMemory64Vista, HalpUnmapVirtualAddressVista};
 use crate::x86::pcr::KeGetCurrentPrcb;
+
+// HalDispatchTable / HalPrivateDispatchTable:
+//
+// In the full HAL build these come from `hal_ddk`, where bindgen decorates
+// them with `#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]` — correct
+// for the real HAL (the kernel exports them).
+//
+// In the FreeLDR `--features minihal` build there is NO ntoskrnl.exe; the
+// loader provides these globals from its own libs as PLAIN externs. Using the
+// raw-dylib decl here would force rosload.exe to spuriously import
+// ntoskrnl.exe (breaks FreeLDR — feedback_freeldr_clean_build_regression).
+// Mirrors bushndlr.rs. Both tables are referenced by the minihal-DEFINES
+// common-region functions (HalpAllocateBusHandler / HalpAssignSlotResources /
+// HaliTranslateBusAddress / HalAssignSlotResources / HalGetBusDataByOffset /
+// HalTranslateBusAddress), so both need the plain-extern alternative.
+#[cfg(not(feature = "minihal"))]
+use ntkrnl_sys::hal_ddk::{HalDispatchTable, HalPrivateDispatchTable};
+
+#[cfg(feature = "minihal")]
+unsafe extern "C" {
+    static mut HalDispatchTable: ntkrnl_sys::hal_ddk::HAL_DISPATCH;
+    static mut HalPrivateDispatchTable: ntkrnl_sys::hal_ddk::_HAL_PRIVATE_DISPATCH;
+}
 
 const TAG_HAL: u32 = u32::from_le_bytes(*b"Hal ");
 const PCI_DATA_TAG: u32 = u32::from_le_bytes(*b"PCI ");
@@ -89,9 +116,13 @@ unsafe fn PCI_CONFIGURATION_TYPE(pci: PPCI_COMMON_CONFIG) -> u32 {
     unsafe { ((*pci).HeaderType & 0x7F) as u32 }
 }
 
-// KeInitializeSpinLock is a NTAPI export.
-unsafe extern "system" {
-    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
+// KeInitializeSpinLock is the kernel macro `*sl = 0` (UP + DUMMY_PSEH),
+// NOT linkable in the FreeLDR mini-HAL build. Inline per
+// system_prompt_hal.md (matches dma.rs). feedback_freeldr_clean_build_regression
+#[allow(non_snake_case)]
+#[inline]
+unsafe fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK) {
+    unsafe { *SpinLock = 0 }
 }
 
 // Pull bus-handler-context helpers from bushndlr.rs.
@@ -1270,6 +1301,16 @@ pub unsafe extern "system" fn HalpDebugPciDumpBus(
 }
 
 
+// C bussupp.c:1020 HalpInitializePciBus is a common-region function whose
+// ENTIRE body is `#ifndef _MINIHAL_` (bussupp.c:1025-1256). Under -D_MINIHAL_
+// the C compiler emits the symbol with an EMPTY body. FreeLDR links the
+// symbol, so the minihal build must export it (it is in the minihal-DEFINES
+// set). Reproduce the C minihal face: empty body, references nothing.
+// feedback_freeldr_clean_build_regression
+#[cfg(feature = "minihal")]
+#[no_mangle]
+pub unsafe extern "system" fn HalpInitializePciBus() {}
+
 #[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePciBus() {
@@ -1512,7 +1553,8 @@ pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     }
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region — required in minihal (bound by HalAssignSlotResources
+// call site in this module). feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub unsafe extern "system" fn HalpAssignSlotResources(
     RegistryPath: PUNICODE_STRING,
@@ -1551,7 +1593,12 @@ pub unsafe extern "system" fn HalpAssignSlotResources(
     Status
 }
 
-#[cfg(not(feature = "minihal"))]
+// feedback_freeldr_clean_build_regression: C bussupp.c:1329 HaliFindBusAddressTranslation
+// is common-region (outside every #ifndef _MINIHAL_; the nearest guard #endif is at
+// bussupp.c:1292, the next #ifndef _MINIHAL_ starts at 1444). HalpInitBusHandler
+// (bushndlr.c:470, also common) references it unconditionally under -D_MINIHAL_, so the
+// definition must exist in the minihal build too. Earlier translation incorrectly gated
+// it #[cfg(not(feature = "minihal"))]; un-gate to mirror C truth (no minihal-only deps).
 #[no_mangle]
 pub unsafe extern "system" fn HaliFindBusAddressTranslation(
     BusAddress: PHYSICAL_ADDRESS,
@@ -1639,7 +1686,8 @@ pub unsafe extern "system" fn HaliFindBusAddressTranslation(
     return 1;
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region (bussupp.c after `#endif // _MINIHAL_`) — required in
+// minihal (called from HalpInitBusHandler). feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub unsafe extern "system" fn HaliTranslateBusAddress(
     InterfaceType: INTERFACE_TYPE,

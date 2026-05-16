@@ -30,11 +30,21 @@
 // arch-portable submodules (no cfg, pure logic)
 // ============================================================================
 
+// Full-HAL PnP/ACPI/bus-arbiter/kd-pci subsystems — NOT in the C
+// `mini_hal` MINI_HAL_SOURCE set; FreeLDR's loader HAL has none of them.
+// Gating out of `--features minihal` keeps their kernel deps
+// (Io*/Po*/Obf*/raw-dylib) out of libhal_rust_mini.a.
+// feedback_freeldr_clean_build_regression
+#[cfg(not(feature = "minihal"))]
 pub mod acpi;
+#[cfg(not(feature = "minihal"))]
 pub mod arbiter;
+#[cfg(not(feature = "minihal"))]
 pub mod bus;
 pub mod irql;
+#[cfg(not(feature = "minihal"))]
 pub mod kdpci;
+#[cfg(not(feature = "minihal"))]
 pub mod pnpdd;
 
 // ============================================================================

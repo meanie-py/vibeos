@@ -5,8 +5,18 @@
 //! the address-usage list head, plus the static COM/PIC/DMA/PIT/CMOS
 //! port-claim tables.
 //!
-//! Compiled for both i386 and amd64.
-//! _MINIHAL_ guards: dropped (the Rust HAL never builds for minihal).
+//! Compiled for both i386 and amd64, including the minihal (FreeLDR) build.
+//! _MINIHAL_ guards are mirrored faithfully: usage.c has two `#ifndef
+//! _MINIHAL_` regions with NO `#else` branches, so the functions inside
+//! them simply do not exist under -D_MINIHAL_:
+//!   - C 63..487  (HalpGetResourceSortValue, HalpBuildPartialFromIdt,
+//!                  HalpBuildPartialFromAddress, HalpReportResourceUsage —
+//!                  the latter is the sole caller of HalpMarkAcpiHal /
+//!                  HalpReportSerialNumber)
+//!   - C 505..578 (HalpEnableInterruptHandler, HalpGetNMICrashFlag)
+//! Those Rust fns carry `#[cfg(not(feature = "minihal"))]`.  The globals
+//! (C 17..59) and HalpRegisterVector (C 489..503) are outside the guards
+//! and stay unconditional.  There are no C `#else` stubs to reproduce.
 
 use core::ptr;
 

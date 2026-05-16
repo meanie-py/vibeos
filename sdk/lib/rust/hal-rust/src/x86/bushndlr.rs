@@ -22,14 +22,40 @@
 #![cfg(target_arch = "x86")]
 
 use ntkrnl_sys::hal_ddk::{
-    BOOLEAN, BUS_DATA_TYPE, INTERFACE_TYPE, KEVENT, KIRQL, KSPIN_LOCK, LIST_ENTRY, NTSTATUS,
+    BOOLEAN, BUS_DATA_TYPE, INTERFACE_TYPE, KEVENT, KSPIN_LOCK, LIST_ENTRY, NTSTATUS,
     PARRAY, PBUS_HANDLER, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_OBJECT, PHAL_BUS_HANDLER,
-    PINSTALL_BUS_HANDLER, PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY, PUNICODE_STRING, PVOID,
+    PIO_RESOURCE_REQUIREMENTS_LIST, PLIST_ENTRY, PUNICODE_STRING, PVOID,
     ULONG, ULONG_PTR, _ARRAY, _HAL_BUS_HANDLER,
     _BUS_DATA_TYPE_ConfigurationSpaceUndefined as CONFIG_SPACE_UNDEF,
     _INTERFACE_TYPE_InterfaceTypeUndefined as IFT_UNDEF,
-    HalDispatchTable, HalPrivateDispatchTable,
 };
+
+// KIRQL / PINSTALL_BUS_HANDLER are only referenced by the spinlock externs
+// and HaliRegisterBusHandler, both `#[cfg(not(feature = "minihal"))]`.
+// Gate the imports too so the minihal build stays unused-import clean.
+#[cfg(not(feature = "minihal"))]
+use ntkrnl_sys::hal_ddk::{KIRQL, PINSTALL_BUS_HANDLER};
+
+// HalDispatchTable / HalPrivateDispatchTable:
+//
+// In the full HAL build these come from `hal_ddk`, where bindgen decorates
+// them with `#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]` — correct
+// for the real HAL (the kernel exports them).
+//
+// In the FreeLDR `--features minihal` build there is NO ntoskrnl.exe; the
+// loader provides these globals from its own libs as PLAIN externs. Using the
+// raw-dylib decl here would force rosload.exe to spuriously import
+// ntoskrnl.exe (breaks FreeLDR — feedback_freeldr_clean_build_regression).
+// So under minihal we declare HalPrivateDispatchTable as a plain extern and
+// never reference HalDispatchTable (its only uses are in the non-minihal
+// dispatcher-wiring block of HalpInitBusHandler).
+#[cfg(not(feature = "minihal"))]
+use ntkrnl_sys::hal_ddk::{HalDispatchTable, HalPrivateDispatchTable};
+
+#[cfg(feature = "minihal")]
+unsafe extern "C" {
+    static mut HalPrivateDispatchTable: ntkrnl_sys::hal_ddk::_HAL_PRIVATE_DISPATCH;
+}
 
 // --- C-side constants the bindgen catalog doesn't surface ----------------
 
@@ -45,10 +71,11 @@ const KERNEL_MODE: i8 = 0; // MODE::KernelMode
 const WR_EXECUTIVE: i32 = 0; // KWAIT_REASON::WrExecutive
 
 // --- Kernel-side ABIs ------------------------------------------------------
-// Pool + bugcheck are NTAPI (stdcall on i386).
+// Pool + bugcheck are NTAPI (stdcall on i386). These three are in the
+// minihal allowed-imports set (ExAllocatePoolWithTag, KeBugCheckEx,
+// KeInitializeEvent), so the block is unconditional.
 unsafe extern "system" {
     fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: u32) -> PVOID;
-    fn ExFreePoolWithTag(P: PVOID, Tag: u32);
     fn KeBugCheckEx(
         BugCheckCode: u32,
         BugCheckParameter1: ULONG_PTR,
@@ -56,6 +83,16 @@ unsafe extern "system" {
         BugCheckParameter3: ULONG_PTR,
         BugCheckParameter4: ULONG_PTR,
     ) -> !;
+    fn KeInitializeEvent(Event: *mut KEVENT, Type: i32, State: BOOLEAN);
+}
+
+// ExFreePoolWithTag / KeWaitForSingleObject are NOT in the minihal
+// allowed-imports set — only HaliRegisterBusHandler (itself
+// `#ifndef _MINIHAL_`) uses them. Gate the decls so the minihal build
+// never even declares them.
+#[cfg(not(feature = "minihal"))]
+unsafe extern "system" {
+    fn ExFreePoolWithTag(P: PVOID, Tag: u32);
     fn KeWaitForSingleObject(
         Object: PVOID,
         WaitReason: i32,
@@ -63,17 +100,28 @@ unsafe extern "system" {
         Alertable: BOOLEAN,
         Timeout: *mut i64,
     ) -> NTSTATUS;
-    fn KeInitializeEvent(Event: *mut KEVENT, Type: i32, State: BOOLEAN);
-    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
 }
 
-// KeSetEvent is NTAPI (stdcall) on i386.
+// KeInitializeSpinLock is the kernel macro `*sl = 0` (UP + DUMMY_PSEH),
+// NOT a linkable symbol in the FreeLDR mini-HAL build. Inline per
+// system_prompt_hal.md (matches dma.rs). feedback_freeldr_clean_build_regression
+#[allow(non_snake_case)]
+#[inline]
+unsafe fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK) {
+    unsafe { *SpinLock = 0 }
+}
+
+// KeSetEvent is NTAPI (stdcall) on i386. NOT in the minihal allowed-imports
+// set — only HaliRegisterBusHandler (`#ifndef _MINIHAL_`) uses it.
+#[cfg(not(feature = "minihal"))]
 unsafe extern "system" {
     fn KeSetEvent(Event: *mut KEVENT, Increment: i32, Wait: BOOLEAN) -> i32;
 }
 
 // KeAcquireSpinLock / KeReleaseSpinLock are macros around the FASTCALL
-// Kf* primitives — go straight to those.
+// Kf* primitives — go straight to those. NOT in the minihal allowed-imports
+// set — only HaliRegisterBusHandler (`#ifndef _MINIHAL_`) uses them.
+#[cfg(not(feature = "minihal"))]
 unsafe extern "fastcall" {
     fn KfAcquireSpinLock(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
     fn KfReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: KIRQL);
