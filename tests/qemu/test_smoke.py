@@ -453,7 +453,7 @@ def test_sacred_primitives(arch: str) -> None:
             )
 
 
-def test_idle_cpu_not_spinning(vm: QemuVM) -> None:
+def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
     """At steady-state desktop the guest must actually be IDLE, not spinning.
 
     Under -accel kvm a healthy HLT-idle guest burns ~0-6% host CPU; a
@@ -463,7 +463,21 @@ def test_idle_cpu_not_spinning(vm: QemuVM) -> None:
     that silently ran every post-boot test at ~1/20th speed. Threshold is
     deliberately generous (clean baseline measured 3-6%, starved 88-93%)
     so it flags only the catastrophic-spin class, never normal jitter.
+
+    KVM-only by construction: the baseline calibration above assumes the
+    HLT-idle vCPU thread sleeps under -accel kvm (i386/amd64). arm64 has
+    no KVM on an x86 host (pure TCG) and no GIC, so it busy-polls at idle
+    and TCG pegs a host core regardless of guest idle health — the host-%
+    signal is meaningless there. Skipped on arm64 for the same reason its
+    sibling KVM/objdump-scoped gates (post_input, no_unexpected_ud2,
+    sacred_primitives) skip arm64; the assertion is unchanged for the
+    arches where it is valid.
     """
+    if arch == "arm64":
+        pytest.skip("arm64 is TCG (no KVM on x86 host) + no GIC: busy-polls "
+                    "at idle so host-CPU%% is not a valid idle signal; this "
+                    "gate is -accel kvm-only (i386/amd64)")
+
     pct = process_cpu_pct(vm._proc.pid, window=3.0)
     print(f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
           f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})")
