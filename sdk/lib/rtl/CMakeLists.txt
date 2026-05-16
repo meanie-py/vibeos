@@ -109,7 +109,7 @@ elseif(ARCH STREQUAL "amd64")
         # amd64/slist.S — replaced by Rust SList (sdk/lib/rust/slist/)
         amd64/unwind-asm.s)
     list(APPEND SOURCE
-        bitmap64.c
+        # bitmap64.c — replaced by Rust implementation (sdk/lib/rust/bitmap/ ops64)
         # byteswap.c — replaced by Rust implementation (sdk/lib/rust/byteswap/)
         amd64/dynfntbl.c
         amd64/except.c
