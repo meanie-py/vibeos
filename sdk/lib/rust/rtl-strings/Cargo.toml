@@ -8,9 +8,9 @@
 #   cabi/    — #[no_mangle] extern "system" NTAPI shims: unsafe
 #              struct-reconstruct + the exact legacy Rtl* contract.
 #
-# Shared NLS truth: the code-page-dependent waves (RtlMultiByteToUnicodeN
-# etc.) reuse cnt-rust's core_rs CP1252 model (one truth). Wave RTL-1
-# (pure string ops) has no NLS dependency so no cnt-rust dep yet.
+# Shared NLS truth: the code-page-dependent waves reuse cnt-rust's
+# core_rs CP1252 model (ONE truth) — Wave RTL-2 (case-insensitive
+# upcase) is the first consumer.
 [package]
 name = "rtl-strings"
 version = "0.1.0"
@@ -25,3 +25,4 @@ path = "src/lib.rs"
 cabi = []
 
 [dependencies]
+cnt-rust = { path = "../cnt-rust" }

@@ -161,10 +161,27 @@ fn main() {
          PUSHORT NlsLeadByteInfo=0; PUSHORT NlsOemLeadByteInfo=0;\n\
          PUSHORT NlsUnicodeToMbOemTable=0;\n\
          PWCHAR NlsOemToUnicodeTable=0; PCHAR NlsUnicodeToOemTable=0;\n\
+         /* Wave RTL-2 SHARED NLS MODEL — byte-identical to\n\
+            cnt_rust::core_rs::mbcp::upcase (rtl-strings reuses that\n\
+            same fn). The genuine RtlpUpcaseUnicodeChar walks a runtime\n\
+            NLS table; modelling it identically on BOTH sides makes the\n\
+            diff pin the unicode.c WRAPPER (min/sizeof/signed-char/\n\
+            tiebreak/NULL-guard), not the table. */\n\
+         static unsigned short model_upcase(unsigned short w){{\n\
+            if(w>=0x61&&w<=0x7A)return w-0x20;\n\
+            if((w>=0xE0&&w<=0xF6)||(w>=0xF8&&w<=0xFE))return w-0x20;\n\
+            if(w==0xFF)return 0x0178;\n\
+            if(w==0xB5)return 0x039C;\n\
+            if(w==0x0161)return 0x0160;\n\
+            if(w==0x0153)return 0x0152;\n\
+            if(w==0x017E)return 0x017D;\n\
+            return w;}}\n\
+         WCHAR RtlpUpcaseUnicodeChar(WCHAR s){{return model_upcase((unsigned short)s);}}\n\
+         WCHAR ref_RtlUpcaseUnicodeChar(WCHAR s){{return RtlpUpcaseUnicodeChar(s);}}\n\
+         CHAR ref_RtlUpperChar(CHAR s){{unsigned char c=(unsigned char)s; if(c>=0x61&&c<=0x7A)return (CHAR)(c-0x20); return s;}}\n\
+         #define RtlUpperChar ref_RtlUpperChar\n\
          /* Unprototyped stubs (`f()` accepts any call shape) for the\n\
-            NLS/heap leaves the other ~55 fns reference. */\n\
-         int RtlUpperChar(){{return 0;}}\n\
-         int RtlpUpcaseUnicodeChar(){{return 0;}}\n\
+            NLS/heap leaves the other ~50 fns reference (RTL-2 unused). */\n\
          int RtlpDowncaseUnicodeChar(){{return 0;}}\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
@@ -177,6 +194,11 @@ fn main() {
          #define RtlCompareString ref_RtlCompareString\n\
          #define RtlEqualString ref_RtlEqualString\n\
          #define RtlPrefixString ref_RtlPrefixString\n\
+         #define RtlCompareUnicodeString ref_RtlCompareUnicodeString\n\
+         #define RtlEqualUnicodeString ref_RtlEqualUnicodeString\n\
+         #define RtlPrefixUnicodeString ref_RtlPrefixUnicodeString\n\
+         #define RtlUpperString ref_RtlUpperString\n\
+         #define RtlHashUnicodeString ref_RtlHashUnicodeString\n\
          {}\
          #include \"{}\"\n",
         scrape_protos(&fs::read_to_string(&unicode_c).unwrap()),

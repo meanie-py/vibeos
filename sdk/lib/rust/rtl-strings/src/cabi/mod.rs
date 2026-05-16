@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::ustr;
+use crate::core_rs::{nls, ustr};
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -25,6 +25,7 @@ pub struct UNICODE_STRING {
 
 const STATUS_SUCCESS: i32 = 0x0000_0000;
 const STATUS_NAME_TOO_LONG: i32 = 0xC000_0106u32 as i32;
+const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 
 #[inline]
 unsafe fn strlen(p: *const u8) -> usize {
@@ -59,6 +60,19 @@ unsafe fn sbytes<'a>(s: *const STRING) -> &'a [u8] {
         return &[];
     }
     core::slice::from_raw_parts(buf, len)
+}
+
+/// Length-bounded WCHAR-unit view of a counted `UNICODE_STRING`
+/// (`Length / sizeof(WCHAR)` units; trailing odd byte ignored — the
+/// genuine `min(L1,L2)/2`).
+#[inline]
+unsafe fn uunits<'a>(s: *const UNICODE_STRING) -> &'a [u16] {
+    let buf = (*s).Buffer;
+    let units = (*s).Length as usize / 2;
+    if buf.is_null() || units == 0 {
+        return &[];
+    }
+    core::slice::from_raw_parts(buf, units)
 }
 
 /// `VOID NTAPI RtlInitAnsiString(PANSI_STRING, PCSZ)`.
@@ -149,9 +163,8 @@ pub unsafe extern "system" fn RtlInitUnicodeStringEx(
 }
 
 /// `LONG NTAPI RtlCompareString(const STRING*, const STRING*,
-/// BOOLEAN)` — Wave RTL-1 pins the case-SENSITIVE path (the
-/// case-insensitive path needs `RtlUpperChar`, an NLS leaf → a later
-/// wave on the shared CP1252 model).
+/// BOOLEAN)`. Case-sensitive: RTL-1. Case-insensitive (RTL-2): the
+/// genuine `RtlUpperChar` fold on the shared CP1252 model.
 #[no_mangle]
 pub unsafe extern "system" fn RtlCompareString(
     s1: *const STRING,
@@ -159,10 +172,10 @@ pub unsafe extern "system" fn RtlCompareString(
     case_insensitive: u8,
 ) -> i32 {
     if case_insensitive != 0 {
-        // Not pinned in Wave RTL-1 (NLS leaf); never fuzzed here.
-        return 0;
+        nls::compare_ansi(sbytes(s1), sbytes(s2), true)
+    } else {
+        ustr::compare(sbytes(s1), sbytes(s2))
     }
-    ustr::compare(sbytes(s1), sbytes(s2))
 }
 
 /// `BOOLEAN NTAPI RtlEqualString(const STRING*, const STRING*,
@@ -173,14 +186,15 @@ pub unsafe extern "system" fn RtlEqualString(
     s2: *const STRING,
     case_insensitive: u8,
 ) -> u8 {
-    if case_insensitive != 0 {
-        return 0;
-    }
     // genuine: `if (L1 != L2) return FALSE; return !RtlCompareString`
     if (*s1).Length != (*s2).Length {
         return 0;
     }
-    ustr::equal(sbytes(s1), sbytes(s2)) as u8
+    if case_insensitive != 0 {
+        (nls::compare_ansi(sbytes(s1), sbytes(s2), true) == 0) as u8
+    } else {
+        ustr::equal(sbytes(s1), sbytes(s2)) as u8
+    }
 }
 
 /// `BOOLEAN NTAPI RtlPrefixString(const STRING*, const STRING*,
@@ -192,9 +206,6 @@ pub unsafe extern "system" fn RtlPrefixString(
     string2: *const STRING,
     case_insensitive: u8,
 ) -> u8 {
-    if case_insensitive != 0 {
-        return 0;
-    }
     // `if (String2->Length < String1->Length) return FALSE;` is
     // checked before the buffer test in the genuine code.
     if (*string2).Length < (*string1).Length {
@@ -203,5 +214,126 @@ pub unsafe extern "system" fn RtlPrefixString(
     if (*string1).Buffer.is_null() || (*string2).Buffer.is_null() {
         return 0;
     }
-    ustr::prefix(sbytes(string1), sbytes(string2)) as u8
+    if case_insensitive != 0 {
+        nls::prefix_ansi(sbytes(string1), sbytes(string2), true) as u8
+    } else {
+        ustr::prefix(sbytes(string1), sbytes(string2)) as u8
+    }
+}
+
+// ── Wave RTL-2: the case-aware (shared CP1252 NLS) surface ──────────
+
+/// `WCHAR NTAPI RtlUpcaseUnicodeChar(WCHAR)` (nls.c → the shared
+/// model).
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeChar(src: u16) -> u16 {
+    nls::upcase_uc(src)
+}
+
+/// `CHAR NTAPI RtlUpperChar(CHAR)` (nls.c). Signed-`char` guard ⇒
+/// only a–z fold; every other byte unchanged.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpperChar(src: u8) -> u8 {
+    nls::upper_ansi(src)
+}
+
+/// `LONG NTAPI RtlCompareUnicodeString(PCUNICODE_STRING,
+/// PCUNICODE_STRING, BOOLEAN)`. Buffers derefed unconditionally by the
+/// genuine code, but only `min(L1,L2)/2` units — NULL is safe iff that
+/// side's `Length == 0`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCompareUnicodeString(
+    s1: *const UNICODE_STRING,
+    s2: *const UNICODE_STRING,
+    case_insensitive: u8,
+) -> i32 {
+    nls::compare_uni(
+        uunits(s1),
+        uunits(s2),
+        (*s1).Length as i32,
+        (*s2).Length as i32,
+        case_insensitive != 0,
+    )
+}
+
+/// `BOOLEAN NTAPI RtlEqualUnicodeString(...)` — `L1 != L2 ⇒ FALSE`,
+/// else `!RtlCompareUnicodeString`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualUnicodeString(
+    s1: *const UNICODE_STRING,
+    s2: *const UNICODE_STRING,
+    case_insensitive: u8,
+) -> u8 {
+    if (*s1).Length != (*s2).Length {
+        return 0;
+    }
+    (nls::compare_uni(
+        uunits(s1),
+        uunits(s2),
+        (*s1).Length as i32,
+        (*s2).Length as i32,
+        case_insensitive != 0,
+    ) == 0) as u8
+}
+
+/// `BOOLEAN NTAPI RtlPrefixUnicodeString(...)`. `L2 < L1 ⇒ FALSE`,
+/// then the `if (pc1 && pc2)` NULL guard (else FALSE), then the first
+/// `L1/sizeof(WCHAR)` units equal under the fold.
+#[no_mangle]
+pub unsafe extern "system" fn RtlPrefixUnicodeString(
+    string1: *const UNICODE_STRING,
+    string2: *const UNICODE_STRING,
+    case_insensitive: u8,
+) -> u8 {
+    if (*string2).Length < (*string1).Length {
+        return 0;
+    }
+    if (*string1).Buffer.is_null() || (*string2).Buffer.is_null() {
+        return 0;
+    }
+    let n = (*string1).Length as usize / 2;
+    let p1 = core::slice::from_raw_parts((*string1).Buffer, n);
+    let p2 = core::slice::from_raw_parts((*string2).Buffer, n);
+    nls::prefix_uni(p1, p2, case_insensitive != 0) as u8
+}
+
+/// `VOID NTAPI RtlUpperString(PSTRING Dest, const STRING* Src)`.
+/// `Length = min(Src->Length, Dest->MaximumLength)`; writes that many
+/// upcased bytes (NO NUL), sets `Dest->Length`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpperString(
+    dest: *mut STRING,
+    src: *const STRING,
+) {
+    let n = ((*src).Length).min((*dest).MaximumLength) as usize;
+    let s = sbytes(src);
+    let d = (*dest).Buffer;
+    for i in 0..n {
+        core::ptr::write_volatile(d.add(i), nls::upper_ansi(s[i]));
+    }
+    (*dest).Length = n as u16;
+}
+
+/// `NTSTATUS NTAPI RtlHashUnicodeString(PCUNICODE_STRING, BOOLEAN,
+/// ULONG, PULONG)`. `String||HashValue` NULL ⇒
+/// `STATUS_INVALID_PARAMETER` (and `*HashValue` untouched); only
+/// algorithms DEFAULT(0)/X65599(1) compute, any other ⇒
+/// `STATUS_INVALID_PARAMETER`. The CI fold here is ASCII-only (NOT
+/// NLS) — a deliberate genuine split.
+#[no_mangle]
+pub unsafe extern "system" fn RtlHashUnicodeString(
+    string: *const UNICODE_STRING,
+    case_insensitive: u8,
+    hash_algorithm: u32,
+    hash_value: *mut u32,
+) -> i32 {
+    if string.is_null() || hash_value.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if hash_algorithm != 0 && hash_algorithm != 1 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let h = nls::hash_uni(uunits(string), case_insensitive != 0);
+    core::ptr::write_volatile(hash_value, h);
+    STATUS_SUCCESS
 }

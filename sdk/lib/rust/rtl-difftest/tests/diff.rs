@@ -21,6 +21,31 @@ extern "C" {
     fn ref_RtlCompareString(a: *const STRING, b: *const STRING, ci: u8) -> i32;
     fn ref_RtlEqualString(a: *const STRING, b: *const STRING, ci: u8) -> u8;
     fn ref_RtlPrefixString(a: *const STRING, b: *const STRING, ci: u8) -> u8;
+    // Wave RTL-2
+    fn ref_RtlUpcaseUnicodeChar(c: u16) -> u16;
+    fn ref_RtlUpperChar(c: u8) -> u8;
+    fn ref_RtlCompareUnicodeString(
+        a: *const UNICODE_STRING,
+        b: *const UNICODE_STRING,
+        ci: u8,
+    ) -> i32;
+    fn ref_RtlEqualUnicodeString(
+        a: *const UNICODE_STRING,
+        b: *const UNICODE_STRING,
+        ci: u8,
+    ) -> u8;
+    fn ref_RtlPrefixUnicodeString(
+        a: *const UNICODE_STRING,
+        b: *const UNICODE_STRING,
+        ci: u8,
+    ) -> u8;
+    fn ref_RtlUpperString(d: *mut STRING, s: *const STRING);
+    fn ref_RtlHashUnicodeString(
+        s: *const UNICODE_STRING,
+        ci: u8,
+        alg: u32,
+        h: *mut u32,
+    ) -> i32;
 }
 
 struct Rng(u64);
@@ -265,6 +290,255 @@ fn diff_rtl_compare_equal_prefix() {
             cabi::RtlEqualString(&s_empty_nul, &s_empty_nul, 0),
             ref_RtlEqualString(&s_empty_nul, &s_empty_nul, 0),
             "RtlEqualString empty"
+        );
+    }
+}
+
+// ── Wave RTL-2: the shared-CP1252 case-aware surface ───────────────
+
+fn mk_ustr(buf: *mut u16, len: u16, max: u16) -> UNICODE_STRING {
+    UNICODE_STRING {
+        Length: len,
+        MaximumLength: max,
+        Buffer: buf,
+    }
+}
+
+/// The single primitive both string ops fold through — exhaustive
+/// over the whole WCHAR domain pins the shared model itself.
+#[test]
+fn diff_rtl_upcase_char() {
+    for w in 0u32..=0xFFFF {
+        let w = w as u16;
+        unsafe {
+            assert_eq!(
+                cabi::RtlUpcaseUnicodeChar(w),
+                ref_RtlUpcaseUnicodeChar(w),
+                "RtlUpcaseUnicodeChar {w:#06x}"
+            );
+        }
+    }
+    for b in 0u16..=0xFF {
+        let b = b as u8;
+        unsafe {
+            assert_eq!(
+                cabi::RtlUpperChar(b),
+                ref_RtlUpperChar(b),
+                "RtlUpperChar {b:#04x}"
+            );
+        }
+    }
+}
+
+/// The RTL-1 ANSI ops, now with the case-INsensitive path live
+/// (`RtlUpperChar` fold). Alphabet spans a–z / A–Z / high bytes so
+/// the signed-`char` fold + tiebreak both fire.
+#[test]
+fn diff_rtl_ansi_ci() {
+    let mut rng = Rng(0xa11ce_5eed);
+    let alpha: &[u8] = &[0, 1, b'A', b'M', b'Z', b'a', b'm', b'z', 0x7f, 0x80, 0xC0, 0xff];
+    for _ in 0..40_000 {
+        let mk = |rng: &mut Rng| -> Vec<u8> {
+            (0..rng.upto(12)).map(|_| alpha[rng.upto(alpha.len())]).collect()
+        };
+        let b1 = mk(&mut rng);
+        let b2 = mk(&mut rng);
+        let p1 = if b1.is_empty() { core::ptr::null_mut() } else { b1.as_ptr() as *mut u8 };
+        let p2 = if b2.is_empty() { core::ptr::null_mut() } else { b2.as_ptr() as *mut u8 };
+        let s1 = mk_string(p1, b1.len() as u16, b1.len() as u16);
+        let s2 = mk_string(p2, b2.len() as u16, b2.len() as u16);
+        unsafe {
+            assert_eq!(
+                cabi::RtlCompareString(&s1, &s2, 1),
+                ref_RtlCompareString(&s1, &s2, 1),
+                "RtlCompareString ci {b1:?} {b2:?}"
+            );
+            assert_eq!(
+                cabi::RtlEqualString(&s1, &s2, 1),
+                ref_RtlEqualString(&s1, &s2, 1),
+                "RtlEqualString ci {b1:?} {b2:?}"
+            );
+            assert_eq!(
+                cabi::RtlPrefixString(&s1, &s2, 1),
+                ref_RtlPrefixString(&s1, &s2, 1),
+                "RtlPrefixString ci {b1:?} {b2:?}"
+            );
+            assert_eq!(
+                cabi::RtlPrefixString(&s2, &s1, 1),
+                ref_RtlPrefixString(&s2, &s1, 1),
+                "RtlPrefixString ci swapped {b2:?} {b1:?}"
+            );
+        }
+    }
+}
+
+/// `RtlCompareUnicodeString` / `RtlEqualUnicodeString` /
+/// `RtlPrefixUnicodeString`, both folds. The unit alphabet hits the
+/// shared-model specials (a–z, à–þ, ÿ, µ, š, œ, ž) and an
+/// out-of-model BMP point; byte `Length` is independently random so
+/// the `min(L1,L2)/2` floor, the odd-trailing-byte drop and the
+/// `(int)L1-(int)L2` tiebreak all fire.
+#[test]
+fn diff_rtl_unicode_cmp() {
+    let mut rng = Rng(0xc0ffee_99);
+    let alpha: &[u16] = &[
+        0x0000, 0x0041, 0x0061, 0x007A, 0x00B5, 0x00C0, 0x00E0, 0x00FE,
+        0x00FF, 0x0152, 0x0153, 0x017D, 0x017E, 0x0130, 0x20AC, 0xFFFF,
+    ];
+    for _ in 0..30_000 {
+        let mk = |rng: &mut Rng| -> Vec<u16> {
+            // a couple spare units so an odd byte-Length still has a
+            // valid (read-past-floor-safe) backing unit.
+            let n = rng.upto(10);
+            let mut v: Vec<u16> = (0..n + 2).map(|_| alpha[rng.upto(alpha.len())]).collect();
+            v.truncate(if n == 0 { 0 } else { n + 1 });
+            v
+        };
+        let v1 = mk(&mut rng);
+        let v2 = mk(&mut rng);
+        // byte Length: usually 2*units, sometimes odd / shorter.
+        let l1 = {
+            let full = (v1.len().saturating_sub(1)) * 2;
+            (match rng.upto(4) { 0 => full.saturating_sub(1), 1 => full / 2, _ => full }) as u16
+        };
+        let l2 = {
+            let full = (v2.len().saturating_sub(1)) * 2;
+            (match rng.upto(4) { 0 => full.saturating_sub(1), 1 => full / 2, _ => full }) as u16
+        };
+        let p1 = if v1.is_empty() { core::ptr::null_mut() } else { v1.as_ptr() as *mut u16 };
+        let p2 = if v2.is_empty() { core::ptr::null_mut() } else { v2.as_ptr() as *mut u16 };
+        // RtlCompare/Equal deref unconditionally → only feed NULL when
+        // that side's Length is 0 (loop never runs).
+        let l1 = if p1.is_null() { 0 } else { l1 };
+        let l2 = if p2.is_null() { 0 } else { l2 };
+        let s1 = mk_ustr(p1, l1, l1);
+        let s2 = mk_ustr(p2, l2, l2);
+        for ci in [0u8, 1] {
+            unsafe {
+                assert_eq!(
+                    cabi::RtlCompareUnicodeString(&s1, &s2, ci),
+                    ref_RtlCompareUnicodeString(&s1, &s2, ci),
+                    "RtlCompareUnicodeString ci={ci} {v1:?}/{l1} {v2:?}/{l2}"
+                );
+                assert_eq!(
+                    cabi::RtlEqualUnicodeString(&s1, &s2, ci),
+                    ref_RtlEqualUnicodeString(&s1, &s2, ci),
+                    "RtlEqualUnicodeString ci={ci}"
+                );
+                assert_eq!(
+                    cabi::RtlPrefixUnicodeString(&s1, &s2, ci),
+                    ref_RtlPrefixUnicodeString(&s1, &s2, ci),
+                    "RtlPrefixUnicodeString ci={ci}"
+                );
+                assert_eq!(
+                    cabi::RtlPrefixUnicodeString(&s2, &s1, ci),
+                    ref_RtlPrefixUnicodeString(&s2, &s1, ci),
+                    "RtlPrefixUnicodeString swapped ci={ci}"
+                );
+            }
+        }
+    }
+    // explicit NULL-Buffer prefix (genuine `pc1 && pc2` else FALSE).
+    let data = [0x0061u16, 0x0062, 0x0063];
+    let s_ok = mk_ustr(data.as_ptr() as *mut u16, 6, 6);
+    let s_nul = mk_ustr(core::ptr::null_mut(), 6, 6);
+    let s_e = mk_ustr(core::ptr::null_mut(), 0, 0);
+    unsafe {
+        for (a, b) in [(&s_nul, &s_ok), (&s_ok, &s_nul), (&s_e, &s_ok), (&s_e, &s_e)] {
+            for ci in [0u8, 1] {
+                assert_eq!(
+                    cabi::RtlPrefixUnicodeString(a, b, ci),
+                    ref_RtlPrefixUnicodeString(a, b, ci),
+                    "RtlPrefixUnicodeString NULL"
+                );
+            }
+        }
+    }
+}
+
+/// `RtlUpperString` — `Length = min(Src->Length, Dest->Max)`, that
+/// many upcased bytes written (no NUL), `Dest->Length` set; the rest
+/// of the dest buffer is left untouched.
+#[test]
+fn diff_rtl_upper_string() {
+    let mut rng = Rng(0x5ca7_7e1d);
+    for _ in 0..20_000 {
+        let sn = rng.upto(20);
+        let src: Vec<u8> = (0..sn).map(|_| rng.byte()).collect();
+        let dmax = rng.upto(24);
+        let sp = if src.is_empty() { core::ptr::null_mut() } else { src.as_ptr() as *mut u8 };
+        let ss = mk_string(sp, src.len() as u16, src.len() as u16);
+        let mut db_c = vec![0xCCu8; dmax.max(1)];
+        let mut db_r = vec![0xCCu8; dmax.max(1)];
+        let mut dc = mk_string(db_c.as_mut_ptr(), 0xAAAA, dmax as u16);
+        let mut dr = mk_string(db_r.as_mut_ptr(), 0xAAAA, dmax as u16);
+        unsafe {
+            cabi::RtlUpperString(&mut dc, &ss);
+            ref_RtlUpperString(&mut dr, &ss);
+        }
+        assert_eq!(dc.Length, dr.Length, "RtlUpperString Length sn={sn} dmax={dmax}");
+        assert_eq!(db_c, db_r, "RtlUpperString buffer sn={sn} dmax={dmax}");
+    }
+}
+
+/// `RtlHashUnicodeString` — X65599, ASCII-only CI fold, the
+/// `String||HashValue` NULL guard and the invalid-algorithm path
+/// (both ⇒ STATUS_INVALID_PARAMETER, `*HashValue` untouched).
+#[test]
+fn diff_rtl_hash() {
+    let mut rng = Rng(0x4a51_0001);
+    for _ in 0..30_000 {
+        let n = rng.upto(24);
+        let v: Vec<u16> = (0..n + 1)
+            .map(|_| {
+                let r = rng.upto(5);
+                match r {
+                    0 => b'a' as u16 + (rng.next() as u16 % 26),
+                    1 => b'A' as u16 + (rng.next() as u16 % 26),
+                    2 => 0x00E0 + (rng.next() as u16 % 0x20),
+                    3 => rng.next() as u16,
+                    _ => 0,
+                }
+            })
+            .collect();
+        let bytes = match rng.upto(4) {
+            0 => (n * 2).saturating_sub(1),
+            1 => n,
+            _ => n * 2,
+        } as u16;
+        let s = mk_ustr(v.as_ptr() as *mut u16, bytes, bytes);
+        for ci in [0u8, 1] {
+            for alg in [0u32, 1, 2, 99] {
+                let (mut hc, mut hr) = (0xDEAD_BEEFu32, 0xDEAD_BEEFu32);
+                let cs;
+                let rs;
+                unsafe {
+                    cs = cabi::RtlHashUnicodeString(&s, ci, alg, &mut hc);
+                    rs = ref_RtlHashUnicodeString(&s, ci, alg, &mut hr);
+                }
+                assert_eq!(cs, rs, "RtlHashUnicodeString ret ci={ci} alg={alg}");
+                if cs == 0 {
+                    assert_eq!(hc, hr, "RtlHashUnicodeString value ci={ci} alg={alg} {v:?}");
+                } else {
+                    assert_eq!((hc, hr), (0xDEAD_BEEF, 0xDEAD_BEEF),
+                        "RtlHashUnicodeString must not write on error");
+                }
+            }
+        }
+    }
+    // NULL guards.
+    unsafe {
+        let mut h = 1u32;
+        let dummy = mk_ustr(core::ptr::null_mut(), 0, 0);
+        assert_eq!(
+            cabi::RtlHashUnicodeString(core::ptr::null(), 0, 0, &mut h),
+            ref_RtlHashUnicodeString(core::ptr::null(), 0, 0, &mut h),
+            "RtlHashUnicodeString NULL string"
+        );
+        assert_eq!(
+            cabi::RtlHashUnicodeString(&dummy, 0, 0, core::ptr::null_mut()),
+            ref_RtlHashUnicodeString(&dummy, 0, 0, core::ptr::null_mut()),
+            "RtlHashUnicodeString NULL hashvalue"
         );
     }
 }
