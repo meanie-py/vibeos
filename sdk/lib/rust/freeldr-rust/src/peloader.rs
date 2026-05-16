@@ -420,7 +420,7 @@ unsafe fn PeLdrpScanImportAddressTable(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PeLdrInitializeModuleList() -> BOOLEAN {
+pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
     let mut FreeldrDTE: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
     InitializeListHead(core::ptr::addr_of_mut!(FrLdrModuleList));
@@ -440,7 +440,8 @@ pub unsafe extern "system" fn PeLdrInitializeModuleList() -> BOOLEAN {
     1u8
 }
 
-unsafe fn PeLdrInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_ENTRY) -> PVOID {
+#[no_mangle]
+pub unsafe extern "C" fn PeLdrInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_ENTRY) -> PVOID {
     let mut Cookie: PULONG_PTR;
     let mut NewCookie: ULONG_PTR;
 
@@ -471,7 +472,8 @@ unsafe fn PeLdrInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_ENTRY) -> PVOID {
     Cookie as PVOID
 }
 
-unsafe fn PeLdrCheckForLoadedDll(
+#[no_mangle]
+pub unsafe extern "C" fn PeLdrCheckForLoadedDll(
     ModuleListHead: PLIST_ENTRY,
     DllName: PCSTR,
     LoadedEntry: *mut PLDR_DATA_TABLE_ENTRY,
@@ -509,7 +511,8 @@ unsafe fn PeLdrCheckForLoadedDll(
     return 0u8;
 }
 
-unsafe fn PeLdrScanImportDescriptorTable(
+#[no_mangle]
+pub unsafe extern "C" fn PeLdrScanImportDescriptorTable(
     ModuleListHead: PLIST_ENTRY,
     DirectoryPath: PCCH,
     ScanDTE: PLDR_DATA_TABLE_ENTRY,
@@ -601,7 +604,7 @@ unsafe fn PeLdrScanImportDescriptorTable(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PeLdrAllocateDataTableEntry(
+pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
     ModuleListHead: PLIST_ENTRY,
     BaseDllName: PCCH,
     FullDllName: PCCH,
@@ -710,7 +713,8 @@ pub unsafe extern "system" fn PeLdrAllocateDataTableEntry(
     1u8
 }
 
-pub unsafe fn PeLdrFreeDataTableEntry(Entry: PLDR_DATA_TABLE_ENTRY) {
+#[no_mangle]
+pub unsafe extern "C" fn PeLdrFreeDataTableEntry(Entry: PLDR_DATA_TABLE_ENTRY) {
     RemoveEntryList(core::ptr::addr_of_mut!((*Entry).InLoadOrderLinks));
     FrLdrHeapFree(VaToPa((*Entry).FullDllName.Buffer as *mut core::ffi::c_void), TAG_WLDR_NAME);
     FrLdrHeapFree(VaToPa((*Entry).BaseDllName.Buffer as *mut core::ffi::c_void), TAG_WLDR_NAME);
@@ -721,7 +725,7 @@ const TAG_WLDR_NAME: u32 = 0x4E524C57;
 const TAG_WLDR_DTE: u32 = 0x45544457;
 
 #[no_mangle]
-pub unsafe extern "system" fn PeLdrLoadImageEx(
+pub unsafe extern "C" fn PeLdrLoadImageEx(
     FilePath: PCSTR,
     MemoryType: TYPE_OF_MEMORY,
     ImageBasePA: *mut PVOID,
@@ -897,7 +901,7 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PeLdrLoadImage(
+pub unsafe extern "C" fn PeLdrLoadImage(
     FilePath: PCSTR,
     MemoryType: TYPE_OF_MEMORY,
     ImageBasePA: *mut PVOID,
@@ -906,7 +910,7 @@ pub unsafe extern "system" fn PeLdrLoadImage(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PeLdrLoadBootImage(
+pub unsafe extern "C" fn PeLdrLoadBootImage(
     FilePath: PCSTR,
     BaseDllName: PCSTR,
     ImageBase: *mut PVOID,
