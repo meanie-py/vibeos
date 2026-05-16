@@ -387,6 +387,123 @@ fn main() {
              #define strchrW _cnt_wcschr\n#define _set_errno(x) ((void)0)\n\
              #define wcstok ref_wcstok\n#define wcstok_s ref_wcstok_s\n{}",
             inc(s("wstring/wcstok.c")))),
+        // env — getenv.c/_wgetenv + putenv.c/wputenv.c + the genuine
+        // environ.c SetEnv (duplicate-on-first-write, dual narrow+wide
+        // sync, the prefix-asymmetry vs getenv's exact match) + the 4
+        // __p__* accessors. ALL FOUR .c in ONE TU (environ.c FIRST so
+        // its `char ***__p__environ()` etc. definitions serve as the
+        // real prototypes for getenv.c — implicit-int would truncate
+        // the returned pointer on 64-bit, and so SetEnv resolves for
+        // putenv.c). wchar_t→unsigned short (host is 32-bit; u16
+        // parity). The Win32 environment surface is neutralized to a
+        // deterministic CP1252 model identical to core_rs/mbcp.rs (the
+        // Wave E2 pattern): GetEnvironmentStringsA derives from the
+        // wide block via CP1252 so ref's narrow _environ == cnt's;
+        // SetEnvironmentVariableW is a TRUE stub so the OS-update
+        // result is deterministically 0. `ref_env_set_block(w,n)`
+        // seeds (BlockEnvToEnvironW+A) — the diff drives identical
+        // op sequences from there. `_strnicmp`/`_wcsnicmp` are the
+        // libcntpr NT ASCII fold (A..Z only), matching env::fold.
+        ("env", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #include <stdlib.h>\n#include <string.h>\n\
+             #define TRACE(...) ((void)0)\n\
+             #define CP_ACP 0\n#define errno_t int\n#define _UNKNOWN_APP 0\n\
+             static int cnt_fold(int c){{return (c>='A'&&c<='Z')?c+32:c;}}\n\
+             static int cnt_strnicmp(const char*a,const char*b,size_t n){{\
+               size_t i;for(i=0;i<n;i++){{int x=cnt_fold((unsigned char)a[i]),\
+               y=cnt_fold((unsigned char)b[i]);if(x!=y)return x-y;\
+               if(a[i]==0)return 0;}}return 0;}}\n\
+             static int cnt_wcsnicmp(const unsigned short*a,const unsigned short*b,\
+               size_t n){{size_t i;for(i=0;i<n;i++){{int x=cnt_fold(a[i]),\
+               y=cnt_fold(b[i]);if(x!=y)return x-y;if(a[i]==0)return 0;}}return 0;}}\n\
+             static size_t cnt_wcslen(const unsigned short*s){{size_t n=0;\
+               while(s[n])n++;return n;}}\n\
+             static unsigned short* cnt_wcschr(const unsigned short*s,\
+               unsigned short c){{do{{if(*s==c)return (unsigned short*)s;}}\
+               while(*s++);return 0;}}\n\
+             static char* cnt_strdup(const char*s){{size_t n=strlen(s)+1;\
+               char*p=(char*)malloc(n);if(p)memcpy(p,s,n);return p;}}\n\
+             static unsigned short* cnt_wcsdup(const unsigned short*s){{\
+               size_t n=cnt_wcslen(s)+1;unsigned short*p=(unsigned short*)\
+               malloc(n*sizeof(unsigned short));if(p)memcpy(p,s,\
+               n*sizeof(unsigned short));return p;}}\n\
+             static struct cnt_li{{int mb_cur_max;}} cnt_locinfo={{1}};\n\
+             static int cnt_errno_v; int* _errno(void){{return &cnt_errno_v;}}\n\
+             #define get_locinfo() (&cnt_locinfo)\n\
+             #define _strnicmp cnt_strnicmp\n#define _wcsnicmp cnt_wcsnicmp\n\
+             #define wcslen cnt_wcslen\n#define wcschr cnt_wcschr\n\
+             #define _strdup cnt_strdup\n#define _wcsdup cnt_wcsdup\n\
+             #define getenv ref_getenv\n#define _wgetenv ref__wgetenv\n\
+             #define _putenv ref__putenv\n#define _wputenv ref__wputenv\n\
+             #define __p__environ ref___p__environ\n\
+             #define __p__wenviron ref___p__wenviron\n\
+             #define __p___initenv ref___p___initenv\n\
+             #define __p___winitenv ref___p__winitenv\n\
+             static const unsigned short CP1252H[32]={{0x20AC,0x0081,0x201A,\
+               0x0192,0x201E,0x2026,0x2020,0x2021,0x02C6,0x2030,0x0160,0x2039,\
+               0x0152,0x008D,0x017D,0x008F,0x0090,0x2018,0x2019,0x201C,0x201D,\
+               0x2022,0x2013,0x2014,0x02DC,0x2122,0x0161,0x203A,0x0153,0x009D,\
+               0x017E,0x0178}};\n\
+             static unsigned short cp_dec(unsigned char b){{\
+               return (b>=0x80&&b<0xA0)?CP1252H[b-0x80]:(unsigned short)b;}}\n\
+             static unsigned char cp_enc(unsigned short w){{int i;\
+               if(w<0x80||(w>=0xA0&&w<=0xFF))return (unsigned char)w;\
+               for(i=0;i<32;i++)if(CP1252H[i]==w)return (unsigned char)(0x80+i);\
+               return '?';}}\n\
+             int MultiByteToWideChar(unsigned int cp,unsigned int fl,\
+               const char*src,int slen,unsigned short*dst,int dlen){{\
+               int n=0;const unsigned char*s=(const unsigned char*)src;\
+               (void)cp;(void)fl;if(slen<0){{for(;;){{unsigned short w=cp_dec(s[n]);\
+               if(dlen>0&&n<dlen)dst[n]=w;n++;if(s[n-1]==0)break;}}return n;}}\
+               for(;n<slen;n++){{unsigned short w=cp_dec(s[n]);\
+               if(dlen>0&&n<dlen)dst[n]=w;}}return n;}}\n\
+             int WideCharToMultiByte(unsigned int cp,unsigned int fl,\
+               const unsigned short*src,int slen,char*dst,int dlen,\
+               const char*dc,int*udc){{int n=0;(void)cp;(void)fl;(void)dc;\
+               (void)udc;if(slen<0){{for(;;){{unsigned char b=cp_enc(src[n]);\
+               if(dlen>0&&n<dlen)dst[n]=(char)b;n++;if(src[n-1]==0)break;}}\
+               return n;}}for(;n<slen;n++){{unsigned char b=cp_enc(src[n]);\
+               if(dlen>0&&n<dlen)dst[n]=(char)b;}}return n;}}\n\
+             int SetEnvironmentVariableW(const unsigned short*nm,\
+               const unsigned short*vl){{(void)nm;(void)vl;return 1;}}\n\
+             static unsigned short g_wblock[16384];static char g_nblock[16384];\n\
+             char* GetEnvironmentStringsA(void){{return g_nblock;}}\n\
+             unsigned short* GetEnvironmentStringsW(void){{return g_wblock;}}\n\
+             int FreeEnvironmentStringsA(char*p){{(void)p;return 1;}}\n\
+             int FreeEnvironmentStringsW(unsigned short*p){{(void)p;return 1;}}\n\
+             int BlockEnvToEnvironA(void);int BlockEnvToEnvironW(void);\n\
+             void ref_env_set_block(const unsigned short*w,int n){{int k;\
+               if(n>16382)n=16382;for(k=0;k<n;k++)g_wblock[k]=w[k];\
+               g_wblock[n]=0;g_wblock[n+1]=0;\
+               for(k=0;k<n;k++)g_nblock[k]=(char)cp_enc(g_wblock[k]);\
+               g_nblock[n]=0;g_nblock[n+1]=0;\
+               BlockEnvToEnvironW();BlockEnvToEnvironA();}}\n{}{}{}{}",
+            inc(s("misc/environ.c")),
+            inc(s("stdlib/getenv.c")),
+            inc(s("stdlib/putenv.c")),
+            inc(s("stdlib/wputenv.c")))),
+        // float-cvt Phase 1 — _fcvt/fcvtbuf. Self-contained: the
+        // genuine `cvt()` is a pure host-`modf` digit loop (NO
+        // streamout sprintf — that's _ecvt/_gcvt, later phases). One
+        // TU: fcvtbuf.c (defines fcvtbuf+static cvt) THEN fcvt.c
+        // (re-declares fcvtbuf — the macro renames decl+def alike).
+        // host modf is exact for binary64 == cnt's bit-modf, so they
+        // agree on every finite double; `_isnan`/`_finite` → host
+        // isnan/isfinite (irrelevant on the fuzzed finite domain).
+        // <malloc.h>/precomp via refstub; <float.h> for DBL_MAX_10_EXP.
+        ("fcvt", format!(
+            "#include <float.h>\n#include <math.h>\n\
+             #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+             #define fcvtbuf ref_fcvtbuf\n#define _fcvt ref__fcvt\n{}{}",
+            inc(s("stdlib/fcvtbuf.c")),
+            inc(s("stdlib/fcvt.c")))),
+        // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
+        // (`ecvt_build`, like scanf) because format_float casts to
+        // `long double`: the SysV host default is 80-bit x87 which
+        // diverges from the Windows MSVC ABI (long double == double ==
+        // 64-bit == the f64 core). Built with `-mlong-double-64`.
+        // See `ecvt_body` / `ecvt_build` below.
         // Wave SCANF (Phase 1) — the genuine engine is winesup.c
         // (_internal_handle_float + _LIBCNT_locinfo) + scanf.c (the
         // _LIBCNT_ STRING/STRING_LEN instantiations + char2digit + the
@@ -531,6 +648,161 @@ fn main() {
         println!("cargo:rustc-link-arg={}", obj.display());
     };
     for obj in build.compile_intermediates() {
+        redef(&obj);
+    }
+    // float-cvt Phase 2 — _ecvt. `sprintf("%-+.*E")` → the genuine
+    // `printf/streamout.c::format_float`. We compile the GENUINE
+    // streamout.c (for `format_float`, the float→digits algorithm cnt
+    // reimplements and we want to pin) but NOT sprintf.c/_sxprintf.c:
+    // ReactOS streamout forwards `va_list` THROUGH a by-value
+    // parameter into `format_float(..., va_list*)`, which is written
+    // for the mingw/MSVC `char*` va_list and is broken under the
+    // x86-64 SysV array `va_list` (it reads a constant garbage double
+    // regardless of input). So `ref_ecvt_sprintf` drives the genuine
+    // `format_float` directly via a proper single-level variadic
+    // wrapper (`cnt_fmtf` — va_start in the immediate caller, the
+    // standard SysV-safe idiom; the scanf `cnt_ref_ihf`-override
+    // precedent) and assembles the result EXACTLY as streamout's
+    // float tail does for "%-+.*E" (flags '-'|'+', precision=*,
+    // fieldwidth 0 ⇒ output is just `prefix` then the format_float
+    // buffer). The float→digits algorithm under test is 100% the
+    // genuine streamout code; only the printf-format plumbing (a
+    // different symbol) is the harness adapter. floor/log10/pow are
+    // `#define`d BIT-IDENTICAL to core_rs::floatcvt::fl (Wave E2
+    // shared-model discipline). Built with `-mlong-double-64`
+    // (Windows MSVC ABI: long double == double == f64 == the core).
+    let ecvt_body = format!(
+        "#include <stddef.h>\n#include <stdarg.h>\n#include <math.h>\n\
+         #include <float.h>\n#include <stdlib.h>\n#include <string.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int ecvt_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int ecvt_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc ecvt_mbtowc\n#define wctomb ecvt_wctomb\n\
+         #define format_float ecvt_format_float\n#define streamout ecvt_streamout\n\
+         {}\
+         /* genuine format_float (above) driven directly — SysV-safe */\n\
+         void ecvt_format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         #define format_float ecvt_format_float\n\
+         static void cnt_fmtf(char chr,unsigned fl,int prec,char**str,\
+           const char**pfx,...){{ va_list ap; va_start(ap,pfx);\
+           format_float(chr,fl,prec,str,pfx,&ap); va_end(ap); }}\n\
+         int ref_ecvt_sprintf(char* buf,const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           char tmp[96]; tmp[95]=0; char* string=&tmp[95];\
+           const char* prefix=0;\
+           /* \"%-+.*E\": FLAG_ALIGN_LEFT|FLAG_FORCE_SIGN, conv 'E' */\
+           cnt_fmtf('E', 0x01u|0x02u, prec, &string, &prefix, v);\
+           char* p=buf; if(prefix){{while(*prefix)*p++=*prefix++;}}\
+           while(*string)*p++=*string++; *p=0; return (int)(p-buf); }}\n\
+         #define sprintf ref_ecvt_sprintf\n#define _ecvt ref__ecvt\n{}",
+        inc(s("printf/streamout.c")),
+        inc(s("stdlib/ecvt.c")));
+    let ecvt_c = out.join("ref_ecvt.c");
+    fs::write(&ecvt_c, &ecvt_body).unwrap();
+    let mut ecvt_build = cc::Build::new();
+    ecvt_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&ecvt_c);
+    for obj in ecvt_build.compile_intermediates() {
+        redef(&obj);
+    }
+    // float-cvt Phase 3 — _gcvt/_gcvt_s. Pure `sprintf("%.*g")` →
+    // the same genuine format_float (chr='g'). Same direct-drive
+    // harness as ecvt (streamout.c for format_float; SysV-safe
+    // single-level variadic wrapper; floor/log10/pow modeled
+    // BIT-IDENTICAL to core_rs::floatcvt::fl; -mlong-double-64).
+    // "%.*g" has NO flags and fieldwidth 0, so the output is `prefix`
+    // ("-" iff <0; %g has no '+') + the format_float buffer. gcvt.c
+    // also uses `_scprintf("%.*g")` (= the rendered length) and
+    // `*_errno()` (not part of the diffed value contract — stubbed).
+    let gcvt_body = format!(
+        "#include <stddef.h>\n#include <stdarg.h>\n#include <math.h>\n\
+         #include <float.h>\n#include <stdlib.h>\n#include <string.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int gcvt_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int gcvt_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc gcvt_mbtowc\n#define wctomb gcvt_wctomb\n\
+         #define format_float gcvt_format_float\n#define streamout gcvt_streamout\n\
+         {}\
+         void gcvt_format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         static void cnt_gfmtf(char chr,unsigned fl,int prec,char**str,\
+           const char**pfx,...){{ va_list ap; va_start(ap,pfx);\
+           format_float(chr,fl,prec,str,pfx,&ap); va_end(ap); }}\n\
+         static int gcvt_render(char* buf,int prec,double v){{\
+           char tmp[96]; tmp[95]=0; char* string=&tmp[95];\
+           const char* prefix=0;\
+           cnt_gfmtf('g', 0u, prec, &string, &prefix, v);\
+           char* p=buf; if(prefix){{while(*prefix)*p++=*prefix++;}}\
+           while(*string)*p++=*string++; *p=0; return (int)(p-buf); }}\n\
+         int ref_gcvt_sprintf(char* buf,const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           return gcvt_render(buf,prec,v); }}\n\
+         int _scprintf(const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           char tmp2[128]; return gcvt_render(tmp2,prec,v); }}\n\
+         static int gcvt_errno_v; static int* _errno(void){{return &gcvt_errno_v;}}\n\
+         #define sprintf ref_gcvt_sprintf\n\
+         #define _gcvt ref__gcvt\n#define _gcvt_s ref__gcvt_s\n{}",
+        inc(s("printf/streamout.c")),
+        inc(s("stdlib/gcvt.c")));
+    let gcvt_c = out.join("ref_gcvt.c");
+    fs::write(&gcvt_c, &gcvt_body).unwrap();
+    let mut gcvt_build = cc::Build::new();
+    gcvt_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&gcvt_c);
+    for obj in gcvt_build.compile_intermediates() {
         redef(&obj);
     }
     // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:
