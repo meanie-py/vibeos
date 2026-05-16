@@ -70,8 +70,11 @@ pub mod uefimem;
 pub mod uefivid;
 pub mod ueficon;
 pub mod uefihw;
-// PC-link fallback for vidfb.c's UEFI-only FbConsScrollUp (isolated
-// single-symbol object; archive-member precedence avoids UEFI dup).
+// PC-link fallback for vidfb.c's UEFI-only FbCons*/GlobalSystemTable
+// (ueficon/uefivid extern-consume them; their C providers are UEFI-only
+// so freeldr_pe/BIOS has no provider). BIOS-only — on the `uefi`
+// archive vidfb.c/uefildr.c own those symbols (dup otherwise).
+#[cfg(not(feature = "uefi"))]
 pub mod vidfb_pc_fallback;
 
 // 🟢 sweep — winldr kernel-handoff unit (ntldr/{winldr,registry,wlregistry,

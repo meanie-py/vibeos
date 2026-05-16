@@ -188,6 +188,32 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_freeldr DEPENDS ${FREELDR_RUST_LIB})
 
+# Second archive for the UEFI link (uefildr.efi). Mirrors hal-rust's
+# libhal_rust_mini.a: same crate, `--features uefi`, separate
+# CARGO_TARGET_DIR (cargo can't share a target dir across feature sets).
+# Gates out the BIOS-only PC-AT machine entry (machpc MachInit, pchw
+# StallExecutionProcessor, vidfb_pc_fallback) so they don't dup the
+# UEFI-active C (uefisetup.c/vidfb.c/uefildr.c).
+set(FREELDR_RUST_UEFI_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-uefi-target")
+set(FREELDR_RUST_UEFI_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust_uefi.a")
+add_custom_command(
+    OUTPUT ${FREELDR_RUST_UEFI_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${FREELDR_RUST_UEFI_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
+        cargo build --release --target ${FREELDR_RUST_TARGET}
+            -p freeldr-rust --features uefi
+            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${FREELDR_RUST_UEFI_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
+        ${FREELDR_RUST_UEFI_LIB}
+    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    COMMENT "Building freeldr-rust UEFI variant (libfreeldr_rust_uefi.a, --features uefi)"
+    VERBATIM)
+add_custom_target(rust_freeldr_uefi DEPENDS ${FREELDR_RUST_UEFI_LIB})
+
 # ARM64 uses UEFI only, no legacy PC-AT boot
 if(NOT ARCH STREQUAL "arm64")
     include(pcat.cmake)

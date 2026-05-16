@@ -1837,6 +1837,9 @@ pub unsafe extern "C" fn ChainLoadBiosBootSectorCode(
     );
 }
 
+// BIOS-only: uefildr's MachInit is uefisetup.c (UEFI-active C). Gated
+// out of the `uefi` archive to avoid the per-binary-owner dup.
+#[cfg(not(feature = "uefi"))]
 #[no_mangle]
 pub unsafe extern "C" fn MachInit(CmdLine: *const i8) {
     RtlZeroMemory(&mut MachVtbl as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&MachVtbl));

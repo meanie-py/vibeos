@@ -73,6 +73,9 @@ unsafe fn __StallExecutionProcessor(Loops: ULONG) {
     }
 }
 
+// BIOS-only: uefildr's StallExecutionProcessor comes from UEFI-active C.
+// Gated out of the `uefi` archive (per-binary-owner dup).
+#[cfg(not(feature = "uefi"))]
 #[no_mangle]
 pub unsafe extern "C" fn StallExecutionProcessor(Microseconds: ULONG) {
     let LoopCount: ULONGLONG = ((delay_count as ULONGLONG) * (Microseconds as ULONGLONG)) / 1000u64;
