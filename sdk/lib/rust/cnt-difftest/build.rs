@@ -80,7 +80,8 @@ fn main() {
              char* ref_ltoa(long,char*,int);\n\
              int ref_ltoa_s(long,char*,size_t,int);\n{}\
              char* ref_ltoa32(int v,char*s,int r){{return ref_ltoa(v,s,r);}}\n\
-             char* ref_ultoa32(unsigned int v,char*s,int r){{return ref_ultoa(v,s,r);}}\n",
+             char* ref_ultoa32(unsigned int v,char*s,int r){{return ref_ultoa(v,s,r);}}\n\
+             int ref_ltoa_s32(int v,char*s,size_t z,int r){{return ref_ltoa_s(v,s,z,r);}}\n",
             inc(s("string/itoa.c")))),
         // itow.c — wide twin. Host wchar_t is 32-bit; force it to
         // unsigned short (Windows/cnt-rust `*mut u16`) for the whole

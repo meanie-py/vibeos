@@ -383,3 +383,55 @@ inout_effects = "delegates to _ltow (int→long, identical on LP32): if string!=
 preserved_misfeature = "_itow→_ltow: 32-bit width, neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned"
 reference    = "sdk/lib/crt/string/itow.c"
 fuzz_domain  = ["value 0/±1/INT_MIN/INT_MAX", "radix 2/8/10/16/36", "string=NULL"]
+
+# --- Wave C3 (int→str, secure _s narrow) ----------------------------
+# Param-check (str!=NULL && size>0 && 2<=radix<=36). The signed/itoa
+# family (s_erange_n) zeroes str[0] on bad param (EINVAL=22), and on
+# too-small does the bizarre REVERSE backward-fill (LSD-first, sign
+# skipped, into str[off..]) then str[0]=0, returning ERANGE=34.
+# _ui64toa_s (s_einval_n) is the odd one: NO str[0]=0 on bad param,
+# and too-small just returns EINVAL with NO partial fill.
+
+[symbols._i64toa_s]
+c_signature  = "int _i64toa_s(__int64 value, char *str, size_t size, int radix)"
+family       = "radix"
+slice_pattern = "s_erange_n"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str=sign+digits+NUL,ret 0; bad param→str[0]=0(if str&&size),ret 22; need>size→LSD-first reverse fill (sign skipped) then str[0]=0, ret 34"
+preserved_misfeature = "ERANGE writes a right-aligned REVERSED partial (units-first) sans sign, then clobbers str[0]=NUL — not a clean truncation; _LIBCNT_ no errno"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/±/I64_MIN/I64_MAX", "str=NULL"]
+
+[symbols._ltoa_s]
+c_signature  = "int _ltoa_s(long value, char *str, size_t size, int radix)"
+family       = "radix"
+slice_pattern = "s_erange_n"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "as _i64toa_s, 32-bit width"
+preserved_misfeature = "same ERANGE reverse-fill; LP32 long (neg+radix!=10 → u32 reinterpret)"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/±/I32_MIN/I32_MAX"]
+
+[symbols._itoa_s]
+c_signature  = "int _itoa_s(int value, char *str, size_t size, int radix)"
+family       = "radix"
+slice_pattern = "s_erange_n"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "delegates to _ltoa_s (int→long, LP32-identical): as _i64toa_s, 32-bit width"
+preserved_misfeature = "_itoa_s→_ltoa_s; same ERANGE reverse-fill; neg+radix!=10 → u32 reinterpret"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/±/INT_MIN/INT_MAX"]
+
+[symbols._ui64toa_s]
+c_signature  = "int _ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)"
+family       = "radix"
+slice_pattern = "s_einval_n"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str=digits+NUL,ret 0; bad param→ret 22 (NO str[0]=0); need(ndigits+1)>size→ret 22 (NO fill)"
+preserved_misfeature = "unlike _i64toa_s: NO str[0]=0 on bad param, returns EINVAL (22) not ERANGE on too-small, NO partial fill; pure unsigned"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/1/U64_MAX", "str=NULL"]

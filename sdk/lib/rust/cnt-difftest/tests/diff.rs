@@ -35,6 +35,10 @@ extern "C" {
     fn ref_itow(v: i32, s: *mut u16, r: i32) -> *mut u16;
     fn ref_ltow32(v: i32, s: *mut u16, r: i32) -> *mut u16;
     fn ref_ultow32(v: u32, s: *mut u16, r: i32) -> *mut u16;
+    fn ref_i64toa_s(v: i64, s: *mut u8, sz: usize, r: i32) -> i32;
+    fn ref_ui64toa_s(v: u64, s: *mut u8, sz: usize, r: i32) -> i32;
+    fn ref_itoa_s(v: i32, s: *mut u8, sz: usize, r: i32) -> i32;
+    fn ref_ltoa_s32(v: i32, s: *mut u8, sz: usize, r: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -531,5 +535,59 @@ fn diff_itow_unchecked() {
         assert!(cabi::_ltow(-9, core::ptr::null_mut(), 10).is_null());
         assert!(cabi::_itow(-9, core::ptr::null_mut(), 10).is_null());
         assert!(cabi::_ultow(123, core::ptr::null_mut(), 8).is_null());
+    }
+}
+
+/// Wave C3 — secure `_s` narrow. Pins return code AND the full dst
+/// buffer (the ERANGE reverse-backfill / str[0]=0 / no-fill contracts).
+/// Sizes span 0..40 (tiny→exact→over) over many iters; radix set
+/// includes invalid (1/37/0/-1) to exercise the EINVAL path. `_ltoa_s`
+/// /`_itoa_s` skip neg+valid-radix!=10 (LP64-host width divergence).
+#[test]
+fn diff_itoa_s() {
+    let mut rng = Rng(0x53c0_3a11_u64);
+    let radices = [2i32, 8, 10, 16, 36, 1, 37, 0, -1];
+    let valid = |r: i32| matches!(r, 2 | 8 | 16 | 36);
+    for _ in 0..7000 {
+        let r = radices[rng.upto(radices.len())];
+        let sz = rng.upto(40);
+
+        let v64 = rng.next() as i64;
+        let (mut a, mut b) = ([0xAAu8; 90], [0xAAu8; 90]);
+        let rca = unsafe { cabi::_i64toa_s(v64, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_i64toa_s(v64, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_i64toa_s rc v={v64} sz={sz} r={r}");
+        assert_eq!(a, b, "_i64toa_s buf v={v64} sz={sz} r={r}");
+
+        let uv = rng.next();
+        let (mut a, mut b) = ([0xAAu8; 90], [0xAAu8; 90]);
+        let rca = unsafe { cabi::_ui64toa_s(uv, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_ui64toa_s(uv, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_ui64toa_s rc v={uv} sz={sz} r={r}");
+        assert_eq!(a, b, "_ui64toa_s buf v={uv} sz={sz} r={r}");
+
+        let mut v32 = rng.next() as i32;
+        if v32 < 0 && valid(r) {
+            v32 = v32.wrapping_neg();
+        }
+        let (mut a, mut b) = ([0xAAu8; 90], [0xAAu8; 90]);
+        let rca = unsafe { cabi::_ltoa_s(v32, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_ltoa_s32(v32, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_ltoa_s rc v={v32} sz={sz} r={r}");
+        assert_eq!(a, b, "_ltoa_s buf v={v32} sz={sz} r={r}");
+        let (mut a, mut b) = ([0xAAu8; 90], [0xAAu8; 90]);
+        let rca = unsafe { cabi::_itoa_s(v32, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_itoa_s(v32, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_itoa_s rc v={v32} sz={sz} r={r}");
+        assert_eq!(a, b, "_itoa_s buf v={v32} sz={sz} r={r}");
+    }
+    // str==NULL → EINVAL (22), no deref. _ui64toa_s also: no str[0]=0.
+    unsafe {
+        assert_eq!(cabi::_i64toa_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(ref_i64toa_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_ui64toa_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(ref_ui64toa_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_itoa_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_ltoa_s(1, core::ptr::null_mut(), 8, 10), 22);
     }
 }

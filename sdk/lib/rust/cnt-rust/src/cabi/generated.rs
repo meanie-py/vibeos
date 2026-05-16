@@ -30,6 +30,38 @@ pub unsafe extern "C" fn _i64toa(value: i64, string: *mut u8, radix: i32) -> *mu
 }
 
 
+/// `int _i64toa_s(__int64 value, char *str, size_t size, int radix)`
+/// preserved misfeature: ERANGE writes a right-aligned REVERSED partial (units-first) sans sign, then clobbers str[0]=NUL — not a clean truncation; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn _i64toa_s(value: i64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || radix < 2 || radix > 36 {
+        if !str.is_null() && size != 0 { *str = 0; }
+        return 22;
+    }
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i64).unsigned_abs() } else { value as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let need = f.ndigits + f.negative as usize + 1;
+    if need > size {
+        let o = f.negative as usize;
+        let cnt = size - o;
+        let mut i = 0;
+        while i < cnt && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        return 34;
+    }
+    let mut o = 0usize;
+    if f.negative { *str = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *str.add(o + i) = f.digits[i]; i += 1; }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+
 /// `wchar_t* _i64tow(__int64 value, wchar_t *string, int radix)`
 /// preserved misfeature: NULL dst accepted (computes nothing, returns NULL); no radix/bounds validation; sign only radix==10 else i64 bit pattern as u64
 #[no_mangle]
@@ -64,6 +96,38 @@ pub unsafe extern "C" fn _itoa(value: i32, string: *mut u8, radix: i32) -> *mut 
 }
 
 
+/// `int _itoa_s(int value, char *str, size_t size, int radix)`
+/// preserved misfeature: _itoa_s→_ltoa_s; same ERANGE reverse-fill; neg+radix!=10 → u32 reinterpret
+#[no_mangle]
+pub unsafe extern "C" fn _itoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || radix < 2 || radix > 36 {
+        if !str.is_null() && size != 0 { *str = 0; }
+        return 22;
+    }
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let need = f.ndigits + f.negative as usize + 1;
+    if need > size {
+        let o = f.negative as usize;
+        let cnt = size - o;
+        let mut i = 0;
+        while i < cnt && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        return 34;
+    }
+    let mut o = 0usize;
+    if f.negative { *str = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *str.add(o + i) = f.digits[i]; i += 1; }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+
 /// `wchar_t* _itow(int value, wchar_t *string, int radix)`
 /// preserved misfeature: _itow→_ltow: 32-bit width, neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned
 #[no_mangle]
@@ -95,6 +159,38 @@ pub unsafe extern "C" fn _ltoa(value: i32, string: *mut u8, radix: i32) -> *mut 
     while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
     *string.add(o + f.ndigits) = 0;
     string
+}
+
+
+/// `int _ltoa_s(long value, char *str, size_t size, int radix)`
+/// preserved misfeature: same ERANGE reverse-fill; LP32 long (neg+radix!=10 → u32 reinterpret)
+#[no_mangle]
+pub unsafe extern "C" fn _ltoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || radix < 2 || radix > 36 {
+        if !str.is_null() && size != 0 { *str = 0; }
+        return 22;
+    }
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let need = f.ndigits + f.negative as usize + 1;
+    if need > size {
+        let o = f.negative as usize;
+        let cnt = size - o;
+        let mut i = 0;
+        while i < cnt && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        return 34;
+    }
+    let mut o = 0usize;
+    if f.negative { *str = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *str.add(o + i) = f.digits[i]; i += 1; }
+    *str.add(o + f.ndigits) = 0;
+    0
 }
 
 
@@ -173,6 +269,23 @@ pub unsafe extern "C" fn _ui64toa(value: u64, string: *mut u8, radix: i32) -> *m
     while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
     *string.add(o + f.ndigits) = 0;
     string
+}
+
+
+/// `int _ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)`
+/// preserved misfeature: unlike _i64toa_s: NO str[0]=0 on bad param, returns EINVAL (22) not ERANGE on too-small, NO partial fill; pure unsigned
+#[no_mangle]
+pub unsafe extern "C" fn _ui64toa_s(value: u64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || radix < 2 || radix > 36 {
+        return 22;
+    }
+    let f = crate::core_rs::radix::format_radix(value, radix as u32, false);
+    let need = f.ndigits + 1;
+    if need > size { return 22; }
+    let mut i = 0;
+    while i < f.ndigits { *str.add(i) = f.digits[i]; i += 1; }
+    *str.add(f.ndigits) = 0;
+    0
 }
 
 
