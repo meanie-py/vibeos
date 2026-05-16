@@ -1,0 +1,127 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/coord.split2.c",
+  "schema": "win32k_pass2_v1",
+  "count": 8,
+  "sites": [
+    {
+      "function": "NtGdiSetLayout",
+      "func_line": 87,
+      "func_end_line": 107,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 95,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        105
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetDeviceWidth",
+      "func_line": 114,
+      "func_end_line": 128,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 119,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        126
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiMirrorWindowOrg",
+      "func_line": 135,
+      "func_end_line": 148,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 139,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        146
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetSizeDevice",
+      "func_line": 155,
+      "func_end_line": 179,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 168,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        176
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetVirtualResolution",
+      "func_line": 186,
+      "func_end_line": 224,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 211,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        222
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGetDCPoint",
+      "func_line": 245,
+      "func_end_line": 307,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 261,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        305
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreSetDCOrg",
+      "func_line": 311,
+      "func_end_line": 336,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 319,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        334
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGetDCOrgEx",
+      "func_line": 340,
+      "func_end_line": 357,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 347,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        353
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

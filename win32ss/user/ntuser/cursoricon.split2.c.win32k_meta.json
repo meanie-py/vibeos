@@ -1,0 +1,33 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/cursoricon.split2.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserSetCursorIconData",
+      "line_start": 486,
+      "line_end": 559,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 4,
+      "nonprobe_calls": [
+        "ExAllocatePoolWithTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ExAllocatePoolWithTag"
+    }
+  ]
+}

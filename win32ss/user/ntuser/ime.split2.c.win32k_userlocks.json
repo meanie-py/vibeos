@@ -1,0 +1,157 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ime.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 10,
+  "sites": [
+    {
+      "function": "NtUserSetAppImeLevel",
+      "func_line": 154,
+      "func_end_line": 185,
+      "mode": "exclusive",
+      "enter_line": 162,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        183
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetImeInfoEx",
+      "func_line": 228,
+      "func_end_line": 258,
+      "mode": "exclusive",
+      "enter_line": 234,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        256
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetImeOwnerWindow",
+      "func_line": 462,
+      "func_end_line": 530,
+      "mode": "exclusive",
+      "enter_line": 470,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        528
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDestroyInputContext",
+      "func_line": 644,
+      "func_end_line": 664,
+      "mode": "exclusive",
+      "enter_line": 649,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        662
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCreateInputContext",
+      "func_line": 715,
+      "func_end_line": 742,
+      "mode": "exclusive",
+      "enter_line": 720,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        740
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserAssociateInputContext",
+      "func_line": 811,
+      "func_end_line": 841,
+      "mode": "exclusive",
+      "enter_line": 820,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        839
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUpdateInputContext",
+      "func_line": 878,
+      "func_end_line": 906,
+      "mode": "exclusive",
+      "enter_line": 886,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        904
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserQueryInputContext",
+      "func_line": 910,
+      "func_end_line": 960,
+      "mode": "exclusive",
+      "enter_line": 916,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        958
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetAppImeLevel",
+      "func_line": 6,
+      "func_end_line": 35,
+      "mode": "shared",
+      "enter_line": 12,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        33
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetImeInfoEx",
+      "func_line": 102,
+      "func_end_line": 149,
+      "mode": "shared",
+      "enter_line": 111,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        147
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

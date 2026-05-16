@@ -1,0 +1,98 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dibobj.split2.c",
+  "schema": "win32k_pass2_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 118,
+      "func_end_line": 428,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 206,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        215,
+        224,
+        287,
+        408
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 118,
+      "func_end_line": 428,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 282,
+      "var": "pdc",
+      "null_guarded": false,
+      "unlock_lines": [
+        215,
+        224,
+        287,
+        408
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 118,
+      "func_end_line": 428,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 319,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        215,
+        224,
+        287,
+        408
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "GreCreateDIBitmapInternal",
+      "func_line": 611,
+      "func_end_line": 683,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 644,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        676
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiCreateDIBSection",
+      "func_line": 738,
+      "func_end_line": 801,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 781,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        790
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

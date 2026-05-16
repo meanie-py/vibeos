@@ -1,0 +1,97 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/region.split4.c",
+  "schema": "win32k_pass2_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "IntRectInRegion",
+      "func_line": 42,
+      "func_end_line": 58,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 49,
+      "var": "Rgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        56
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetRgnBox",
+      "func_line": 468,
+      "func_end_line": 501,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 477,
+      "var": "Rgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        484
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiOffsetRgn",
+      "func_line": 505,
+      "func_end_line": 536,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 516,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        534
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiPtInRegion",
+      "func_line": 540,
+      "func_end_line": 562,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 549,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        560
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetRectRgn",
+      "func_line": 590,
+      "func_end_line": 612,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 600,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        610
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetRegionData",
+      "func_line": 628,
+      "func_end_line": 681,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 638,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        679
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/winpos.split2.c",
+  "schema": "win32k_pass2_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "ForceNCPaintErase",
+      "func_line": 640,
+      "func_end_line": 694,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 656,
+      "var": "RgnUpdate",
+      "null_guarded": false,
+      "unlock_lines": [
+        660
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "co_WinPosSetWindowPos",
+      "func_line": 735,
+      "func_end_line": 1331,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 987,
+      "var": "RgnUpdate",
+      "null_guarded": false,
+      "unlock_lines": [
+        991,
+        1037
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "co_WinPosSetWindowPos",
+      "func_line": 735,
+      "func_end_line": 1331,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 1031,
+      "var": "RgnUpdate",
+      "null_guarded": false,
+      "unlock_lines": [
+        991,
+        1037
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "co_WinPosSetWindowPos",
+      "func_line": 735,
+      "func_end_line": 1331,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 1057,
+      "var": "DcRgnObj",
+      "null_guarded": false,
+      "unlock_lines": [
+        1070,
+        1164
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "co_WinPosSetWindowPos",
+      "func_line": 735,
+      "func_end_line": 1331,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 1161,
+      "var": "DcRgnObj",
+      "null_guarded": false,
+      "unlock_lines": [
+        1070,
+        1164
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    }
+  ]
+}

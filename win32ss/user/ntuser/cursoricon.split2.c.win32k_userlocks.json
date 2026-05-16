@@ -1,0 +1,91 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/cursoricon.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "NtUserSetCursor",
+      "func_line": 10,
+      "func_end_line": 72,
+      "mode": "exclusive",
+      "enter_line": 17,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        70
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetCursorIconData",
+      "func_line": 471,
+      "func_end_line": 639,
+      "mode": "exclusive",
+      "enter_line": 602,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        611
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserDrawIconEx",
+      "func_line": 1045,
+      "func_end_line": 1085,
+      "mode": "exclusive",
+      "enter_line": 1062,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1067,
+        1083
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserSetSystemCursor",
+      "func_line": 1158,
+      "func_end_line": 1211,
+      "mode": "exclusive",
+      "enter_line": 1166,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1209
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetCursorFrameInfo",
+      "func_line": 1092,
+      "func_end_line": 1151,
+      "mode": "shared",
+      "enter_line": 1105,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1109,
+        1121,
+        1146
+      ],
+      "n_returns": 3,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}

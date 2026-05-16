@@ -2,14 +2,13 @@
   "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/sysparams.c",
   "schema": "win32k_pass0_v1",
   "summary": {
-    "d": 1,
-    "a": 1
+    "d": 1
   },
   "sites": [
     {
       "function": "SpiMemCopy",
-      "line_start": 462,
-      "line_end": 469,
+      "line_start": 463,
+      "line_end": 470,
       "category": "d",
       "category_name": "BELT_SUSPENDERS",
       "signals": [],
@@ -22,25 +21,6 @@
         "SET_STATUS"
       ],
       "note": "user write under SEH, no probe in block (paranoid?)"
-    },
-    {
-      "function": "SpiGetSetProbeBuffer",
-      "line_start": 2091,
-      "line_end": 2105,
-      "category": "a",
-      "category_name": "PROBE_LOWER",
-      "signals": [
-        "multi_probe"
-      ],
-      "probe_count": 2,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "PROBE"
-      ],
-      "handler_patterns": [
-        "YIELD_RETURN"
-      ],
-      "note": ""
     }
   ]
 }

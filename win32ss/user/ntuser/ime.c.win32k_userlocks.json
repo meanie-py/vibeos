@@ -1,0 +1,112 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ime.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtUserGetImeHotKey",
+      "func_line": 435,
+      "func_end_line": 478,
+      "mode": "exclusive",
+      "enter_line": 444,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        476
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetImeHotKey",
+      "func_line": 483,
+      "func_end_line": 495,
+      "mode": "exclusive",
+      "enter_line": 491,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        493
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCheckImeHotKey",
+      "func_line": 499,
+      "func_end_line": 518,
+      "mode": "exclusive",
+      "enter_line": 506,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        516
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetThreadLayoutHandles",
+      "func_line": 542,
+      "func_end_line": 569,
+      "mode": "exclusive",
+      "enter_line": 549,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        567
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserBuildHimcList",
+      "func_line": 738,
+      "func_end_line": 793,
+      "mode": "exclusive",
+      "enter_line": 748,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        791
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserNotifyIMEStatus",
+      "func_line": 855,
+      "func_end_line": 906,
+      "mode": "exclusive",
+      "enter_line": 864,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        904
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDisableThreadIme",
+      "func_line": 910,
+      "func_end_line": 974,
+      "mode": "exclusive",
+      "enter_line": 916,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        972
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

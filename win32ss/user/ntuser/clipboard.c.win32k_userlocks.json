@@ -1,0 +1,264 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/clipboard.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 17,
+  "sites": [
+    {
+      "function": "NtUserOpenClipboard",
+      "func_line": 534,
+      "func_end_line": 543,
+      "mode": "exclusive",
+      "enter_line": 538,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        540
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCloseClipboard",
+      "func_line": 590,
+      "func_end_line": 599,
+      "mode": "exclusive",
+      "enter_line": 594,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        596
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserChangeClipboardChain",
+      "func_line": 625,
+      "func_end_line": 656,
+      "mode": "exclusive",
+      "enter_line": 633,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        653
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEmptyClipboard",
+      "func_line": 723,
+      "func_end_line": 734,
+      "mode": "exclusive",
+      "enter_line": 729,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        731
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetClipboardData",
+      "func_line": 1085,
+      "func_end_line": 1110,
+      "mode": "exclusive",
+      "enter_line": 1102,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1107
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserSetClipboardViewer",
+      "func_line": 1113,
+      "func_end_line": 1156,
+      "mode": "exclusive",
+      "enter_line": 1119,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1153
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserConvertMemHandle",
+      "func_line": 1186,
+      "func_end_line": 1228,
+      "mode": "exclusive",
+      "enter_line": 1194,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1225
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetOpenClipboardWindow",
+      "func_line": 602,
+      "func_end_line": 622,
+      "mode": "shared",
+      "enter_line": 607,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        619
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCountClipboardFormats",
+      "func_line": 659,
+      "func_end_line": 678,
+      "mode": "shared",
+      "enter_line": 664,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        675
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetClipboardFormatName",
+      "func_line": 737,
+      "func_end_line": 775,
+      "mode": "shared",
+      "enter_line": 741,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        772
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetClipboardOwner",
+      "func_line": 778,
+      "func_end_line": 798,
+      "mode": "shared",
+      "enter_line": 783,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        795
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetClipboardViewer",
+      "func_line": 801,
+      "func_end_line": 821,
+      "mode": "shared",
+      "enter_line": 806,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        818
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetPriorityClipboardFormat",
+      "func_line": 824,
+      "func_end_line": 870,
+      "mode": "shared",
+      "enter_line": 829,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        866
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserIsClipboardFormatAvailable",
+      "func_line": 873,
+      "func_end_line": 895,
+      "mode": "shared",
+      "enter_line": 880,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        892
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetClipboardData",
+      "func_line": 898,
+      "func_end_line": 1021,
+      "mode": "shared",
+      "enter_line": 907,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1016
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetClipboardSequenceNumber",
+      "func_line": 1163,
+      "func_end_line": 1183,
+      "mode": "shared",
+      "enter_line": 1168,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1180
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCreateLocalMemHandle",
+      "func_line": 1232,
+      "func_end_line": 1275,
+      "mode": "shared",
+      "enter_line": 1241,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1272
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

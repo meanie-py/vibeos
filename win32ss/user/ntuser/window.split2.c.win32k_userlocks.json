@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtUserBuildHwndList",
+      "func_line": 440,
+      "func_end_line": 612,
+      "mode": "exclusive",
+      "enter_line": 455,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        610
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

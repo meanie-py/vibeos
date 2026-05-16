@@ -190,7 +190,20 @@ def main():
     bindgen = parse_bindgen_conventions(
         reactos_root / 'sdk/lib/rust/ntkrnl-sys/src/bindgen_i386.rs'
     )
-    print(f"Bindgen catalog: {len(bindgen)} functions")
+    # Also fold in the win32k surface (win32k-sys bindgen + win32k.spec):
+    # the gate must cover win32k exports/callees too, not just ntoskrnl.
+    # Names are effectively disjoint and the convention for a given name
+    # is consistent across sources, so a merged superset is safe.
+    w32_bindgen = parse_bindgen_conventions(
+        reactos_root / 'sdk/lib/rust/win32k-sys/src/bindgen_i386.rs'
+    )
+    for k, v in w32_bindgen.items():
+        bindgen.setdefault(k, v)
+    w32_spec = parse_spec(reactos_root / 'win32ss/win32k.spec')
+    for k, v in w32_spec.items():
+        spec.setdefault(k, v)
+    print(f"Bindgen catalog: {len(bindgen)} functions "
+          f"(+{len(w32_bindgen)} win32k, +{len(w32_spec)} win32k.spec)")
 
     if args.files:
         rs_files = [Path(f) for f in args.files]

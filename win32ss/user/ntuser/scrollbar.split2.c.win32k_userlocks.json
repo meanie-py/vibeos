@@ -1,0 +1,97 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/scrollbar.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "NtUserGetScrollBarInfo",
+      "func_line": 75,
+      "func_end_line": 111,
+      "mode": "exclusive",
+      "enter_line": 84,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        109
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEnableScrollBar",
+      "func_line": 175,
+      "func_end_line": 260,
+      "mode": "exclusive",
+      "enter_line": 188,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        258
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetScrollInfo",
+      "func_line": 264,
+      "func_end_line": 300,
+      "mode": "exclusive",
+      "enter_line": 277,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        298
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserShowScrollBar",
+      "func_line": 303,
+      "func_end_line": 324,
+      "mode": "exclusive",
+      "enter_line": 310,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        322
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetScrollBarInfo",
+      "func_line": 330,
+      "func_end_line": 386,
+      "mode": "exclusive",
+      "enter_line": 345,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        384
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSBGetParms",
+      "func_line": 115,
+      "func_end_line": 171,
+      "mode": "shared",
+      "enter_line": 128,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        169
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

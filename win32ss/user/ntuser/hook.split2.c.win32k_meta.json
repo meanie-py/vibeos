@@ -1,0 +1,115 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/hook.split2.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 6
+  },
+  "sites": [
+    {
+      "function": "IntRemoveHook",
+      "line_start": 75,
+      "line_end": 83,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "swallow"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "co_HOOK_CallHooks",
+      "line_start": 193,
+      "line_end": 200,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "co_HOOK_CallHooks",
+      "line_start": 214,
+      "line_end": 222,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "swallow"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserCallNextHookEx",
+      "line_start": 400,
+      "line_end": 407,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserSetWindowsHookEx",
+      "line_start": 595,
+      "line_end": 603,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserSetWindowsHookEx",
+      "line_start": 611,
+      "line_end": 619,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

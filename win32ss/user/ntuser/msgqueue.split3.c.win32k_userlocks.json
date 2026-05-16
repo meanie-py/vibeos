@@ -1,0 +1,52 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/msgqueue.split3.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserSetKeyboardState",
+      "func_line": 683,
+      "func_end_line": 714,
+      "mode": "exclusive",
+      "enter_line": 691,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        711
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetKeyState",
+      "func_line": 628,
+      "func_end_line": 639,
+      "mode": "shared",
+      "enter_line": 632,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        636
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetKeyboardState",
+      "func_line": 644,
+      "func_end_line": 678,
+      "mode": "shared",
+      "enter_line": 651,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        675
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

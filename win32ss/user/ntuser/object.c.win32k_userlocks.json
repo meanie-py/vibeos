@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/object.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtUserValidateHandleSecure",
+      "func_line": 792,
+      "func_end_line": 836,
+      "mode": "exclusive",
+      "enter_line": 800,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        834
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

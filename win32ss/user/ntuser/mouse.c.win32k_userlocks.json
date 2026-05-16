@@ -1,0 +1,41 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/mouse.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtUserTrackMouseEvent",
+      "func_line": 483,
+      "func_end_line": 538,
+      "mode": "exclusive",
+      "enter_line": 514,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        536
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetMouseMovePointsEx",
+      "func_line": 543,
+      "func_end_line": 639,
+      "mode": "shared",
+      "enter_line": 578,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        637
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

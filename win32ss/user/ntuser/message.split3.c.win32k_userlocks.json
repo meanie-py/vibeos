@@ -1,0 +1,191 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/message.split3.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 11,
+  "sites": [
+    {
+      "function": "NtUserDragDetect",
+      "func_line": 72,
+      "func_end_line": 139,
+      "mode": "exclusive",
+      "enter_line": 82,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        137
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserPostMessage",
+      "func_line": 142,
+      "func_end_line": 156,
+      "mode": "exclusive",
+      "enter_line": 149,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        153
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserPostThreadMessage",
+      "func_line": 159,
+      "func_end_line": 193,
+      "mode": "exclusive",
+      "enter_line": 169,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        191
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserWaitMessage",
+      "func_line": 196,
+      "func_end_line": 207,
+      "mode": "exclusive",
+      "enter_line": 200,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        204
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetMessage",
+      "func_line": 210,
+      "func_end_line": 251,
+      "mode": "exclusive",
+      "enter_line": 225,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        231
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserPeekMessage",
+      "func_line": 255,
+      "func_end_line": 294,
+      "mode": "exclusive",
+      "enter_line": 271,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        277
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserCallMsgFilter",
+      "func_line": 298,
+      "func_end_line": 328,
+      "mode": "exclusive",
+      "enter_line": 313,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        315
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserDispatchMessage",
+      "func_line": 332,
+      "func_end_line": 353,
+      "mode": "exclusive",
+      "enter_line": 347,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        351
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserTranslateMessage",
+      "func_line": 356,
+      "func_end_line": 386,
+      "mode": "exclusive",
+      "enter_line": 372,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        383
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserMessageCall",
+      "func_line": 391,
+      "func_end_line": 955,
+      "mode": "exclusive",
+      "enter_line": 405,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        450,
+        952
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserWaitForInputIdle",
+      "func_line": 963,
+      "func_end_line": 1097,
+      "mode": "exclusive",
+      "enter_line": 975,
+      "enter_at_top": true,
+      "n_enters": 2,
+      "leave_lines": [
+        986,
+        1000,
+        1012,
+        1039,
+        1095
+      ],
+      "n_returns": 4,
+      "shape": "REENTRANT",
+      "signals": [
+        "leave_then_reenter:callout_straddle_see_pass3"
+      ]
+    }
+  ]
+}

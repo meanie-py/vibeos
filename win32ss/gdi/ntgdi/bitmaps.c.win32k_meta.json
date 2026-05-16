@@ -2,8 +2,7 @@
   "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/bitmaps.c",
   "schema": "win32k_pass0_v1",
   "summary": {
-    "e": 3,
-    "a": 1
+    "e": 3
   },
   "sites": [
     {
@@ -68,24 +67,6 @@
         "SET_STATUS"
       ],
       "note": "non-probe call(s) in TRY: UnsafeSetBitmapBits"
-    },
-    {
-      "function": "NtGdiSetBitmapDimension",
-      "line_start": 682,
-      "line_end": 690,
-      "category": "a",
-      "category_name": "PROBE_LOWER",
-      "signals": [],
-      "probe_count": 1,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "PROBE",
-        "WRITE_BACK"
-      ],
-      "handler_patterns": [
-        "SET_FLAG"
-      ],
-      "note": ""
     }
   ]
 }

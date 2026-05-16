@@ -1,0 +1,105 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/class.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "NtUserRegisterClassExWOW",
+      "func_line": 2445,
+      "func_end_line": 2604,
+      "mode": "exclusive",
+      "enter_line": 2477,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        2601
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "IntNtUserSetClassLongPtr",
+      "func_line": 2607,
+      "func_end_line": 2703,
+      "mode": "exclusive",
+      "enter_line": 2617,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2700
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUnregisterClass",
+      "func_line": 2746,
+      "func_end_line": 2774,
+      "mode": "exclusive",
+      "enter_line": 2763,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        2768
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetClassInfo",
+      "func_line": 2780,
+      "func_end_line": 2879,
+      "mode": "exclusive",
+      "enter_line": 2827,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        2851
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetWOWClass",
+      "func_line": 2943,
+      "func_end_line": 2984,
+      "mode": "exclusive",
+      "enter_line": 2961,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        2979
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetClassName",
+      "func_line": 2883,
+      "func_end_line": 2938,
+      "mode": "shared",
+      "enter_line": 2892,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2935
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

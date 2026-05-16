@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/accelerator.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserCreateAcceleratorTable",
+      "func_line": 226,
+      "func_end_line": 322,
+      "mode": "exclusive",
+      "enter_line": 239,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        320
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDestroyAcceleratorTable",
+      "func_line": 341,
+      "func_end_line": 364,
+      "mode": "exclusive",
+      "enter_line": 353,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        362
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCopyAcceleratorTable",
+      "func_line": 172,
+      "func_end_line": 221,
+      "mode": "shared",
+      "enter_line": 182,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        219
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserTranslateAccelerator",
+      "func_line": 368,
+      "func_end_line": 445,
+      "mode": "shared",
+      "enter_line": 382,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        443
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

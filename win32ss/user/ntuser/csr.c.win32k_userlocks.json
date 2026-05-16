@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/csr.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "UserSystemThreadProc",
+      "func_line": 207,
+      "func_end_line": 245,
+      "mode": "shared",
+      "enter_line": 242,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        230
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

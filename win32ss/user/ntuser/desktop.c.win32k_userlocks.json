@@ -1,0 +1,193 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/desktop.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 12,
+  "sites": [
+    {
+      "function": "IntDesktopObjectOpen",
+      "func_line": 228,
+      "func_end_line": 241,
+      "mode": "exclusive",
+      "enter_line": 237,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        239
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "IntDesktopObjectClose",
+      "func_line": 245,
+      "func_end_line": 262,
+      "mode": "exclusive",
+      "enter_line": 258,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        260
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "DesktopThreadMain",
+      "func_line": 1560,
+      "func_end_line": 1585,
+      "mode": "exclusive",
+      "enter_line": 1567,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1584
+      ],
+      "n_returns": 0,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "UserGetDesktopDC",
+      "func_line": 1588,
+      "func_end_line": 1610,
+      "mode": "exclusive",
+      "enter_line": 1594,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1607
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCreateDesktop",
+      "func_line": 2565,
+      "func_end_line": 2599,
+      "mode": "exclusive",
+      "enter_line": 2577,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2597
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserOpenInputDesktop",
+      "func_line": 2718,
+      "func_end_line": 2733,
+      "mode": "exclusive",
+      "enter_line": 2725,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2731
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCloseDesktop",
+      "func_line": 2758,
+      "func_end_line": 2797,
+      "mode": "exclusive",
+      "enter_line": 2765,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2795
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserPaintDesktop",
+      "func_line": 2815,
+      "func_end_line": 2827,
+      "mode": "exclusive",
+      "enter_line": 2819,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        2825
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserResolveDesktop",
+      "func_line": 2865,
+      "func_end_line": 2951,
+      "mode": "exclusive",
+      "enter_line": 2891,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        2944
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserSwitchDesktop",
+      "func_line": 2970,
+      "func_end_line": 3068,
+      "mode": "exclusive",
+      "enter_line": 2983,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        3066
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetThreadDesktop",
+      "func_line": 3078,
+      "func_end_line": 3184,
+      "mode": "exclusive",
+      "enter_line": 3087,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        3182
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetThreadDesktop",
+      "func_line": 3497,
+      "func_end_line": 3512,
+      "mode": "exclusive",
+      "enter_line": 3501,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        3509
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

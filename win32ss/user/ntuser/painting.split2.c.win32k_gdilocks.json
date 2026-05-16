@@ -1,0 +1,39 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/painting.split2.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "PaintSuspendedWindow",
+      "func_line": 5,
+      "func_end_line": 61,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 51,
+      "var": "prgn",
+      "null_guarded": false,
+      "unlock_lines": [
+        53
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "NtUserRedrawWindow",
+      "func_line": 976,
+      "func_end_line": 1051,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 1025,
+      "var": "RgnUpdate",
+      "null_guarded": true,
+      "unlock_lines": [
+        1031
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

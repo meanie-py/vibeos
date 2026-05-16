@@ -3,14 +3,13 @@
   "schema": "win32k_pass0_v1",
   "summary": {
     "e": 2,
-    "d": 2,
-    "a": 1
+    "d": 2
   },
   "sites": [
     {
       "function": "FillPolygon",
-      "line_start": 412,
-      "line_end": 431,
+      "line_start": 413,
+      "line_end": 432,
       "category": "e",
       "category_name": "NEEDS_REVIEW",
       "signals": [
@@ -31,8 +30,8 @@
     },
     {
       "function": "FillPolygon",
-      "line_start": 467,
-      "line_end": 476,
+      "line_start": 468,
+      "line_end": 477,
       "category": "d",
       "category_name": "BELT_SUSPENDERS",
       "signals": [
@@ -50,8 +49,8 @@
     },
     {
       "function": "NtGdiPolyPolyDraw",
-      "line_start": 423,
-      "line_end": 442,
+      "line_start": 424,
+      "line_end": 443,
       "category": "e",
       "category_name": "NEEDS_REVIEW",
       "signals": [
@@ -72,8 +71,8 @@
     },
     {
       "function": "NtGdiPolyPolyDraw",
-      "line_start": 478,
-      "line_end": 487,
+      "line_start": 479,
+      "line_end": 488,
       "category": "d",
       "category_name": "BELT_SUSPENDERS",
       "signals": [
@@ -88,27 +87,6 @@
         "SET_STATUS"
       ],
       "note": "user write; relies on earlier sibling probe"
-    },
-    {
-      "function": "NtGdiGradientFill",
-      "line_start": 1115,
-      "line_end": 1127,
-      "category": "a",
-      "category_name": "PROBE_LOWER",
-      "signals": [
-        "multi_probe"
-      ],
-      "probe_count": 2,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "PROBE",
-        "BULK_COPY"
-      ],
-      "handler_patterns": [
-        "YIELD_RETURN",
-        "CLEANUP"
-      ],
-      "note": ""
     }
   ]
 }

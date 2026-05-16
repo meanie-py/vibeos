@@ -1,0 +1,44 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/scrollbar.split2.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 2
+  },
+  "sites": [
+    {
+      "function": "NtUserSBGetParms",
+      "line_start": 123,
+      "line_end": 134,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserSBGetParms",
+      "line_start": 147,
+      "line_end": 157,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO",
+        "SET_FLAG"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

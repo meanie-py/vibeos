@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/power.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "IntDeployPowerCallout",
+      "func_line": 160,
+      "func_end_line": 199,
+      "mode": "exclusive",
+      "enter_line": 165,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        198
+      ],
+      "n_returns": 0,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

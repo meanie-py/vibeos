@@ -3,7 +3,6 @@
   "schema": "win32k_pass0_v1",
   "summary": {
     "e": 1,
-    "a": 1,
     "d": 1
   },
   "sites": [
@@ -29,27 +28,9 @@
       "note": "non-probe call(s) in TRY: UserHMGetHandle"
     },
     {
-      "function": "NtUserGetTitleBarInfo",
-      "line_start": 5798,
-      "line_end": 5807,
-      "category": "a",
-      "category_name": "PROBE_LOWER",
-      "signals": [],
-      "probe_count": 1,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "PROBE",
-        "BULK_COPY"
-      ],
-      "handler_patterns": [
-        "SET_STATUS"
-      ],
-      "note": ""
-    },
-    {
       "function": "NtUserGetMenuItemRect",
-      "line_start": 6174,
-      "line_end": 6181,
+      "line_start": 6175,
+      "line_end": 6182,
       "category": "d",
       "category_name": "BELT_SUSPENDERS",
       "signals": [],

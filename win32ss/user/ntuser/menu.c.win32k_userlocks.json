@@ -1,0 +1,378 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/menu.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 24,
+  "sites": [
+    {
+      "function": "NtUserCalcMenuBar",
+      "func_line": 5569,
+      "func_end_line": 5608,
+      "mode": "exclusive",
+      "enter_line": 5581,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5585,
+        5593,
+        5606
+      ],
+      "n_returns": 3,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserCheckMenuItem",
+      "func_line": 5614,
+      "func_end_line": 5634,
+      "mode": "exclusive",
+      "enter_line": 5623,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5631
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDeleteMenu",
+      "func_line": 5640,
+      "func_end_line": 5660,
+      "mode": "exclusive",
+      "enter_line": 5649,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5657
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetSystemMenu",
+      "func_line": 5690,
+      "func_end_line": 5715,
+      "mode": "exclusive",
+      "enter_line": 5697,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5712
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetSystemMenu",
+      "func_line": 5725,
+      "func_end_line": 5758,
+      "mode": "exclusive",
+      "enter_line": 5732,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5755
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetTitleBarInfo",
+      "func_line": 5764,
+      "func_end_line": 5818,
+      "mode": "exclusive",
+      "enter_line": 5774,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5815
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDestroyMenu",
+      "func_line": 5846,
+      "func_end_line": 5870,
+      "mode": "exclusive",
+      "enter_line": 5853,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5867
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEnableMenuItem",
+      "func_line": 5876,
+      "func_end_line": 5896,
+      "mode": "exclusive",
+      "enter_line": 5885,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5893
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEndMenu",
+      "func_line": 5902,
+      "func_end_line": 5926,
+      "mode": "exclusive",
+      "enter_line": 5906,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        5923
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserHiliteMenuItem",
+      "func_line": 6208,
+      "func_end_line": 6239,
+      "mode": "exclusive",
+      "enter_line": 6219,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6236
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDrawMenuBarTemp",
+      "func_line": 6246,
+      "func_end_line": 6292,
+      "mode": "exclusive",
+      "enter_line": 6260,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6289
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserMenuItemFromPoint",
+      "func_line": 6298,
+      "func_end_line": 6350,
+      "mode": "exclusive",
+      "enter_line": 6311,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6347
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserPaintMenuBar",
+      "func_line": 6355,
+      "func_end_line": 6385,
+      "mode": "exclusive",
+      "enter_line": 6367,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6371,
+        6383
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserRemoveMenu",
+      "func_line": 6391,
+      "func_end_line": 6411,
+      "mode": "exclusive",
+      "enter_line": 6400,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6408
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetMenu",
+      "func_line": 6417,
+      "func_end_line": 6454,
+      "mode": "exclusive",
+      "enter_line": 6427,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6451
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetMenuContextHelpId",
+      "func_line": 6460,
+      "func_end_line": 6479,
+      "mode": "exclusive",
+      "enter_line": 6468,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6476
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetMenuDefaultItem",
+      "func_line": 6485,
+      "func_end_line": 6505,
+      "mode": "exclusive",
+      "enter_line": 6494,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6502
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetMenuFlagRtoL",
+      "func_line": 6511,
+      "func_end_line": 6529,
+      "mode": "exclusive",
+      "enter_line": 6518,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6526
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserThunkedMenuInfo",
+      "func_line": 6535,
+      "func_end_line": 6554,
+      "mode": "exclusive",
+      "enter_line": 6543,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6551
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserThunkedMenuItemInfo",
+      "func_line": 6560,
+      "func_end_line": 6616,
+      "mode": "exclusive",
+      "enter_line": 6575,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        6607
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserTrackPopupMenuEx",
+      "func_line": 6627,
+      "func_end_line": 6690,
+      "mode": "exclusive",
+      "enter_line": 6650,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        6685
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetMenuBarInfo",
+      "func_line": 5932,
+      "func_end_line": 6080,
+      "mode": "shared",
+      "enter_line": 5948,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6077
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetMenuIndex",
+      "func_line": 6086,
+      "func_end_line": 6116,
+      "mode": "shared",
+      "enter_line": 6096,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6113
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetMenuItemRect",
+      "func_line": 6122,
+      "func_end_line": 6202,
+      "mode": "shared",
+      "enter_line": 6137,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        6199
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

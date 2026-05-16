@@ -1,0 +1,114 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ime.split3.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 5
+  },
+  "sites": [
+    {
+      "function": "IntCheckImeShowStatus",
+      "line_start": 350,
+      "line_end": 369,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 416,
+      "line_end": 426,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 434,
+      "line_end": 443,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "InterlockedIncrement"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: InterlockedIncrement"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 459,
+      "line_end": 468,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "InterlockedDecrement"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: InterlockedDecrement"
+    },
+    {
+      "function": "IntNotifyImeShowStatus",
+      "line_start": 532,
+      "line_end": 558,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    }
+  ]
+}

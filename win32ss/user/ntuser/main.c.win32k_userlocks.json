@@ -1,0 +1,54 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/main.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "Win32kProcessCallback",
+      "func_line": 343,
+      "func_end_line": 368,
+      "mode": "exclusive",
+      "enter_line": 352,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        363
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "Win32kThreadCallback",
+      "func_line": 943,
+      "func_end_line": 966,
+      "mode": "exclusive",
+      "enter_line": 950,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        963
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "DriverEntry",
+      "func_line": 1012,
+      "func_end_line": 1096,
+      "mode": "exclusive",
+      "enter_line": 1068,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1070
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

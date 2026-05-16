@@ -610,6 +610,93 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
     return code
 
 
+def enforce_win32k_abi(code: str) -> str:
+    """Overwrite the LLM's `extern "..."` on win32k exports with ground truth.
+
+    Calling convention is deterministic (win32k-sys bindgen_i386 +
+    win32k.spec) and the project's #1 i386 crash cause — so it is taken
+    out of the LLM's hands entirely. For every `#[no_mangle]` exported
+    fn whose authoritative i386 convention is stdcall/fastcall, rewrite
+    it into the canonical dual-cfg block (x86 = the true convention,
+    non-x86 = cdecl). Whatever ABI the LLM emitted is discarded.
+
+    Generalization of `fix_fastcall_exports`: not name-list-from-spec but
+    map-driven (stdcall *and* fastcall), keyed off the authoritative
+    win32k ABI map. cdecl names are left as-is (the LLM default is
+    already cdecl-compatible). Idempotent (skips already-dual-cfg'd).
+    """
+    from .abi_map import build_win32k_abi_map
+
+    abi = build_win32k_abi_map()
+
+    # Candidate exported fn names defined in this file.
+    name_re = re.compile(
+        r'#\[no_mangle\]\s*\n\s*pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+(\w+)\s*\(',
+    )
+    names = []
+    seen = set()
+    for nm in name_re.finditer(code):
+        n = nm.group(1)
+        if n in seen:
+            continue
+        seen.add(n)
+        conv = abi.get(n)
+        if conv in ("stdcall", "fastcall"):
+            names.append((n, conv))
+
+    for name, conv in names:
+        pattern = re.compile(
+            rf'^([ \t]*#\[no_mangle\]\n)?'
+            rf'([ \t]*)(pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\([^)]*\))',
+            re.MULTILINE,
+        )
+        m = pattern.search(code)
+        if not m:
+            continue
+        fn_start = m.start()
+
+        # Idempotency: if a #[cfg(target_arch ...)] sits just above the
+        # match, this fn is already enforced — skip.
+        preceding = code[max(0, fn_start - 80):fn_start]
+        if "#[cfg(target_arch" in preceding:
+            continue
+
+        brace_pos = code.index('{', m.end())
+        depth = 1
+        pos = brace_pos + 1
+        while depth > 0 and pos < len(code):
+            if code[pos] == '{':
+                depth += 1
+            elif code[pos] == '}':
+                depth -= 1
+            pos += 1
+        fn_end = pos
+
+        indent = m.group(2)
+        sig_match = re.search(
+            rf'fn\s+{re.escape(name)}\s*(\([^)]*\)(?:\s*->\s*\S+)?)',
+            code[m.start():brace_pos],
+        )
+        if not sig_match:
+            continue
+        params_and_ret = sig_match.group(1)
+        body = code[brace_pos:fn_end]
+
+        x86_block = (
+            f'{indent}#[cfg(target_arch = "x86")]\n'
+            f'{indent}#[no_mangle]\n'
+            f'{indent}pub unsafe extern "{conv}" fn {name}{params_and_ret} {body}'
+        )
+        other_block = (
+            f'\n\n{indent}#[cfg(not(target_arch = "x86"))]\n'
+            f'{indent}#[no_mangle]\n'
+            f'{indent}pub unsafe extern "C" fn {name}{params_and_ret} {body}'
+        )
+        code = code[:fn_start] + x86_block + other_block + code[fn_end:]
+
+    return code
+
+
 def fix_self_imports(code: str) -> str:
     """Remove self-imports: names imported from ddk:: that are also defined locally.
 
@@ -1073,6 +1160,11 @@ def postprocess(
     if exports:
         code = fix_exports(code, exports)
         code = fix_fastcall_exports(code, exports)
+    # win32k: calling convention is deterministic ground truth — overwrite
+    # the LLM's extern "..." with the win32k-sys/spec map (the project's
+    # #1 i386 crash cause, taken out of the LLM's hands entirely).
+    if target_name == "win32k":
+        code = enforce_win32k_abi(code)
     if globals:
         code = fix_global_exports(code, globals)
     code = fix_self_imports(code)

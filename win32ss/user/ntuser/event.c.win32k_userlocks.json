@@ -1,0 +1,55 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/event.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserNotifyWinEvent",
+      "func_line": 254,
+      "func_end_line": 282,
+      "mode": "exclusive",
+      "enter_line": 262,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        270,
+        281
+      ],
+      "n_returns": 1,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserSetWinEventHook",
+      "func_line": 286,
+      "func_end_line": 409,
+      "mode": "exclusive",
+      "enter_line": 304,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        407
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUnhookWinEvent",
+      "func_line": 413,
+      "func_end_line": 429,
+      "mode": "exclusive",
+      "enter_line": 419,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        427
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

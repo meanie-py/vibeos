@@ -35,8 +35,13 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
+| `tools/rustconv/rustconv/file_splitter.py` | Giant-file split analyzer + `#include`-back emitter; `python -m rustconv split-plan` / `split-apply` | done; 20 files split, i386+amd64 8/8 |
+| `tools/rustconv/rustconv/switch_extract.py` | tree-sitter switch-dispatcher de-monstering; `python -m rustconv switch-extract` | done; SpiGetSet 139 + IntDefWindowProc 11 arms, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
+| `tools/rustconv/rustconv/user_lock_inventory.py` | Pass 2b USER critsec-bracket detector (no rewrite); `python -m rustconv user-locks` | done, oracle-validated; 254 brackets/55 files, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
+| `sdk/lib/rust/win32k-sys/` (crate + `generate_bindings.sh`) | win32k internal FFI surface (bindgen, 3 arches) — the ntkrnl-sys analog | done; ~2.8K structs/2.7K fns/20K consts per arch, cargo-clean ×3, resolve 233→41 (82%) |
+| `tools/rustconv/rustconv/abi_map.py` + `postprocess.enforce_win32k_abi` | deterministic calling-convention map (win32k-sys bindgen + win32k.spec) + postprocess rewrite — ABI out of LLM hands | done; 1698 fns (1193 stdcall/398 fastcall/107 cdecl), idempotent, verify_abi gate |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
@@ -139,6 +144,97 @@ Engineering guards that made this safe:
   Fixed in the pipeline + repaired idempotently. The build+smoke gate
   did its job — this stage is build-affecting (unlike Pass 2/3).
 
+### Giant-file pre-split analyzer (next-phase prep, analyze-only)
+
+rustconv's giant-file failure is a *batch* problem (silent stubbing);
+`translate` mode already chunks function-by-function — so physically
+splitting a giant `.c` is not needed for translation *fidelity*. It is
+worth it where *clean* because the **output** would otherwise be one
+multi-thousand-LOC `.rs` module (review/diff/cgu-firewall/maintenance
+cost forever). The only hazard is file-scope `static` coupling (cutting
+between a `static` and a referencing function → link error, or worse,
+duplicated mutable state = silent correctness bug).
+
+`split-plan` is the Pass-0 analog for file-splitting: it builds the
+file-scope-`static` reference graph (reusing the brace-depth function
+extractors) and classifies each ≥1000-LOC translation-scope file as
+`CLEAN_SPLIT` (a ≥2-group partition exists with every group ≤~1.5×
+target LOC and **zero** statics crossing any cut), `NEEDS_PROMOTION`
+(blocking statics are de-`static`-able fn/const → `<file>_priv.h`), or
+`LEAVE_WHOLE` (a mutable static spans the file → translate-chunk
+instead). Honest by construction — a "split" that leaves a still-giant
+chunk is downgraded, not reported as a win.
+
+Measured (44 files ≥1000 LOC, freetype.c excluded — link-against FFI,
+never translated): **20 `CLEAN_SPLIT` ≈ 48.8K LOC of giants → balanced
+~900–1100 LOC modules, free** (incl. `window.c` 4725→5, `region.c`
+4135→4, `winpos.c` 4072→4, `message.c` 3234→3, `path.c` 3111→3); **24
+`LEAVE_WHOLE`** (e.g. `menu.c` 6691, `desktop.c` 3515, `class.c` 2987 —
+a static forces a still-giant chunk → translate-chunked); **0
+`NEEDS_PROMOTION`** (no risky de-static surgery required).
+
+**Emitter — done, `#include`-back design (key decision).** Real
+TU-splitting needs extern-decl generation for file-scope globals +
+static-promotion — fragile and build-breaking. Instead the emitter
+keeps `<base>.c` as the *single* TU: it retains the prologue + group-0
+functions and appends `#include "<base>.split2.c" …`; fragments hold
+the remaining groups verbatim. The preprocessor reassembles the
+**identical** TU (same tokens/order, +1 comment) → **zero CMake
+changes, zero linkage/static hazard**. Per-file byte-exact
+reconstruction asserted before writing; the win32k source list is an
+explicit `list(APPEND SOURCE …)` (no globs) so fragments are never
+double-compiled. rustconv sees small files; the build sees one TU.
+
+Applied to all **20 CLEAN_SPLIT files → 32 fragments**. `region.c`
+proof: `region.c.obj` **58 defined symbols pre == 58 post, nm diff
+empty** (provably the same TU). Full batch: i386 **8/8** + amd64
+**8/8** smoke green; both arches build all 20 split TUs clean. Because
+splitting moves functions out of `<base>.c`, the Pass-0/2/3 sidecars
+were **clean-regenerated** (119 stale wiped → 94 correct, fragments
+included) and the prompt-builder multiplier verified to pick up
+fragments (`path.split2.c` → win32k context emitted). The 24
+`LEAVE_WHOLE` giants stay one file → `translate`-chunked next phase.
+
+### Switch-dispatcher de-monstering (`switch-extract`, tree-sitter)
+
+Some `LEAVE_WHOLE` monsters are one giant *function* (not many) whose
+body is essentially one huge `switch`. A 1000-line function is still
+one oversized `translate` prompt — the file-split doesn't help it. But
+a thin dispatch `switch` is the *best-case* AST for a real parser
+(each arm independent), unlike fragile arbitrary-logic extraction. So
+this lever uses **tree-sitter** (`scanner.py`'s C parser; the
+"tree-sitter can't parse it" caveat is SEH-macro-specific — these
+functions are plain C, probes already lowered).
+
+`switch-extract` parses the target function, walks the `switch`, and
+**per case-group proves safety**: extract only groups that (a) end in
+`return`, (b) contain no `break`/`goto`/`continue`/`_SEH2_`, (c) use
+only function params / file-scope symbols / locals declared inside the
+group. SAFE → `static <ret> <fn>_<tag>(<used params>){ body }` + the
+arm becomes `case L: return <fn>_<tag>(args);`. UNSAFE / `default` /
+break-terminated → left byte-verbatim (Pass-0 discipline; never
+gamble). Same TU/file, helpers are `static` → zero CMake change.
+
+Results (build + nm + smoke gated):
+- **`SpiGetSet` (sysparams.c): 139/174 arms → tiny helpers.** The
+  1029-LOC `SystemParametersInfo` monster → a ~250-LOC regular
+  dispatch shell + 139 trivial independent units. 288 case labels
+  preserved (0 dropped/dup); external symbol surface **16==16
+  identical** (helpers are internal `static`); i386 8/8 + amd64 8/8.
+- **`IntDefWindowProc` (defwnd.c): 11/51** — modest free bonus (it's
+  `break`-heavy; v1 only does `return`-terminated). 91 labels==91.
+- **`NtUserMessageCall` / `UserSetClassLongPtr` / ntstubs: 0** — not
+  return-thin-dispatch (break / shared state). Honestly scoped out →
+  `translate`-chunked / LLM-idiomatic in Rust, *not* force-extracted.
+
+Oracle is **differential**: tree-sitter's lenient C parser emits
+ERROR/missing nodes on valid win32k C (unresolved macros — 4 in
+sysparams.c originally), so the invariant is "transform introduces no
+*new* parse errors" + "case-label set unchanged"; the real correctness
+gate is build + nm + smoke. Two self-bugs caught by verify-first
+before shipping: a byte-vs-char splice desync, and the absolute-zero
+parse oracle (false-positive on win32k macros).
+
 ### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
 
 Pass 2 was re-scoped (zero `_SEH2_FINALLY` in the keep-set — the
@@ -171,6 +267,32 @@ the multi-exit MULTI_UNLOCK release fan-out. Hotspots: `path.c` (40),
 `dcutil.c` (21), `coord.c` (18), `region.c` (12). Resolver reuses the
 brace-depth `_enclosing_func_span` from Pass 3 (no lock-fn-definition
 false positives — oracle-checked).
+
+### Pass 2b — measured USER critsec surface (extract-only, no rewrite)
+
+The largest unaddressed fragile family: the USER critical section
+(`UserEnter{Exclusive,Shared}`/`UserLeave`, 618 raw call sites). Unlike
+GDI it has no return value / no bound var — it is a two-level nested
+lock (KeEnterCriticalRegion + ERESOURCE, inverse release order) that
+ReactOS already factored into the named primitive pair. Research of the
+ntoskrnl-rust approach (`ex/time.rs` `ExAcquireTimeRefreshLock`,
+`ntkrnl-sys/src/guards.rs`, system_prompt.md:823) confirmed: translate
+the **primitive once** as direct calls (proven pattern), and the ~618
+**callers** are a single-level `PfnLockGuard`-shaped RAII problem.
+`user-locks` pairs acquire↔`UserLeave` per enclosing function and
+shape-classifies; **no source rewrite** (same model as Pass 2/3).
+Oracle-validated against `simplecall.c` (`NtUserCallNoParam` =
+CLEAN_BRACKET excl@top; `NtUserCallHwnd` = REVIEW conditional-enter).
+
+Measured keep-set (2026-05-16): **254 brackets across 55 files** —
+CLEAN_BRACKET 182 (71.7%), MULTI_LEAVE 9 (3.5%), REENTRANT 1 (0.4%),
+REVIEW 62 (24.4%); modes exclusive 195 / shared 57 / mixed 2. 75%
+mechanically whole-fn-RAII-mappable; the 24% REVIEW (conditional/late
+enter, leak-return-before-leave) is honestly flagged for manual
+handling, not force-fit. Hotspots: `menu.c` (24), `clipboard.c` (17),
+`desktop.c` (12). Sidecar `<file>.c.win32k_userlocks.json` (schema
+`win32k_pass2b_v1`); consumed via prompt_builder `userlocks` key +
+`win32k_translation_prompt.md` §2.5.
 
 ### Pass 3 — measured callout surface (extract-only, no rewrite)
 
@@ -277,6 +399,50 @@ build.
 - Tree-sitter is **not** the workhorse (the TL;DR claim): the SEH
   macros defeat tree-sitter; the pipeline uses `seh_classifier`'s
   regex + brace-matching, which is what actually works.
+
+### win32k-sys — the FFI surface (the biggest lever, 2026-05-16)
+
+Measurement found the dominant translation hazard is **not** locks or
+constants but the *absence of a win32k FFI declaration crate*.
+`rustconv resolve` on win32k files showed 138–709 **unresolved
+win32k-internal symbols per file**; ntkrnl-sys bindgen has **0** win32k
+coverage (ntoskrnl.h only); no `win32k-sys` crate existed. Without it
+the LLM invents signatures + every struct `#[repr(C)]` layout per-file,
+inconsistently → cross-file ABI disagreement + wrong offsets (silent
+memory corruption at scale). This is exactly what ntkrnl-sys solved for
+ntoskrnl.
+
+A verify-first bindgen spike proved feasibility (3 mechanical fixes, no
+header rewrites): **`-fms-extensions`** (win32k object headers —
+`THRDESKHEAD { THROBJHEAD; }` — use the MS anonymous-typedef-member
+extension) but **never `-fms-compatibility`** (defines `_MSC_VER` →
+mingw `_mingw.h` MSVC branch → breaks `<math.h>`'s `__CRT_INLINE`);
+`_INTRIN_H_` libclang stubs (ntkrnl-sys pattern); faithful
+ninja-derived per-arch flags.
+
+Productionized as `sdk/lib/rust/win32k-sys/` (ntkrnl-sys recipe clone:
+`generate_bindings.sh` self-derives flags from `build-<arch>/build.ninja`;
+`postprocess_bindgen.py`; `wrapper.h` → `<win32k.h>`). Per arch:
+~2,800 structs (the USER object model `_WND`/`_THREADINFO`/`_DESKTOP`/
+`_THRDESKHEAD`, GDI DC/REGION/PATH/SURFACE), ~2,700 fns
+(`Nt*User/Gdi*`/`Int*`/`co_*`/`Gre*`/`Eng*`/`GDIOBJ_*`/`*_Lock*`),
+~20,000 constants, ~7,000 type aliases. cargo-clean on i386+amd64+arm64.
+
+Two bindgen-allowlist gaps caught by validation (verify-first): (1)
+setting any allowlist drops unreferenced `#define`/enum constants → add
+`--allowlist-var '.+'` (4K→20K consts); (2) bindgen type-prefixes
+tagged-enum members (`SimpleCallRoutines_HWNDLOCK_ROUTINE_DRAWMENUBAR`)
+but C uses the bare name → `catalog._scan_bindgen` now also registers
+the de-prefixed alias (general; helps ntkrnl-sys/hal too).
+
+rustconv wiring: `config.py` `win32k` Target + `WIN32K_BINDGEN_FILES` +
+`detect_target` win32ss branch; `catalog.py` scans win32k-sys when the
+target carries `win32k_bindgen_files` (mirrors the hal_bindgen merge:
+win32k types/consts authoritative, fns add-if-absent so ntkrnl ddk
+stays the kernel-API surface); `cmd_resolve`/`prompt`/`submit` pass the
+detected target + its `.spec`. Result: **simplecall.c 233→41,
+dcutil.c 138→26 (~82% resolved)**; residual is the macro / local-var /
+static-helper noise floor every ntoskrnl file also has.
 
 ## Why a separate "pretranslation" phase
 

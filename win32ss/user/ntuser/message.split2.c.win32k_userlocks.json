@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/message.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "co_IntGetPeekMessage",
+      "func_line": 51,
+      "func_end_line": 180,
+      "mode": "exclusive",
+      "enter_line": 163,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        161
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

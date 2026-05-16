@@ -1,0 +1,127 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/simplecall.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtUserCallNoParam",
+      "func_line": 60,
+      "func_end_line": 146,
+      "mode": "exclusive",
+      "enter_line": 65,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        143
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCallOneParam",
+      "func_line": 154,
+      "func_end_line": 427,
+      "mode": "exclusive",
+      "enter_line": 163,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        424
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCallTwoParam",
+      "func_line": 436,
+      "func_end_line": 579,
+      "mode": "exclusive",
+      "enter_line": 444,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        576
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCallHwndLock",
+      "func_line": 587,
+      "func_end_line": 686,
+      "mode": "exclusive",
+      "enter_line": 596,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        683
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserCallHwnd",
+      "func_line": 713,
+      "func_end_line": 776,
+      "mode": "mixed",
+      "enter_line": 724,
+      "enter_at_top": false,
+      "n_enters": 3,
+      "leave_lines": [
+        728,
+        734,
+        757,
+        768
+      ],
+      "n_returns": 9,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter",
+        "mixed_excl_shared"
+      ]
+    },
+    {
+      "function": "NtUserCallHwndParam",
+      "func_line": 780,
+      "func_end_line": 893,
+      "mode": "exclusive",
+      "enter_line": 792,
+      "enter_at_top": false,
+      "n_enters": 6,
+      "leave_lines": [
+        794,
+        805,
+        814,
+        827,
+        850,
+        865,
+        875,
+        885
+      ],
+      "n_returns": 9,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserCallHwndParamLock",
+      "func_line": 897,
+      "func_end_line": 940,
+      "mode": "exclusive",
+      "enter_line": 907,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        937
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

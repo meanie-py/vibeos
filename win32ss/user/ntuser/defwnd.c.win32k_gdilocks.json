@@ -5,15 +5,15 @@
   "sites": [
     {
       "function": "IntDefWindowProc",
-      "func_line": 638,
-      "func_end_line": 1366,
+      "func_line": 639,
+      "func_end_line": 1364,
       "lock_fn": "REGION_LockRgn",
       "unlock_fn": "REGION_UnlockRgn",
-      "lock_line": 1242,
+      "lock_line": 1244,
       "var": "pRgn",
       "null_guarded": false,
       "unlock_lines": [
-        1243
+        1245
       ],
       "shape": "REVIEW",
       "signals": [

@@ -63,13 +63,16 @@ def cmd_resolve(args):
     from .resolver import resolve, print_resolve_result
 
     path = resolve_c_path(args.file)
+    target = detect_target(path)
 
-    print("Building catalog...", file=sys.stderr)
-    catalog = build_catalog(arch=args.arch)
+    print(f"Building catalog... (target={target.name})", file=sys.stderr)
+    catalog = build_catalog(arch=args.arch, target=target)
     print_catalog_stats(catalog)
     print()
 
-    spec = parse_spec()
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     result = resolve(scan, catalog, spec)
     print_resolve_result(result)
@@ -83,8 +86,11 @@ def cmd_prompt(args):
     from .prompt_builder import build_full_prompt, build_file_prompt, load_system_prompt, estimate_tokens
 
     path = resolve_c_path(args.file)
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    target = detect_target(path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 
@@ -108,8 +114,11 @@ def cmd_submit(args):
     from .postprocess import postprocess
 
     path = resolve_c_path(args.file)
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    target = detect_target(path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 
@@ -139,7 +148,8 @@ def cmd_submit(args):
 
     if args.output:
         # Post-process before writing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
+                           target_name=target.name)
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
@@ -148,7 +158,8 @@ def cmd_submit(args):
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
         # Post-process before printing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
+                           target_name=target.name)
         print(code)
 
 
@@ -450,6 +461,84 @@ def cmd_seh_llm_lower(args):
     sys.exit(print_report(outcomes, args.apply))
 
 
+def cmd_split_plan(args):
+    from .file_splitter import analyze_file, analyze_scope, print_report
+    from .config import REACTOS_ROOT
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        plans = [analyze_file(target, args.target_loc)]
+    else:
+        plans = analyze_scope(target, args.min_loc, args.target_loc)
+
+    if args.json:
+        print(json.dumps([{
+            "file": str(p.path), "loc": p.loc, "nfuncs": p.nfuncs,
+            "classification": p.classification, "groups": p.groups,
+            "blocking": p.blocking, "note": p.note} for p in plans],
+            indent=2, default=str))
+    else:
+        print_report(plans)
+
+
+def cmd_switch_extract(args):
+    from .switch_extract import analyze, run_oracle
+    from .config import REACTOS_ROOT
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+    if args.oracle:
+        sys.exit(run_oracle(target, args.function))
+
+    r = analyze(target, args.function)
+    print(f"{target.as_posix().split('/win32ss/')[-1]}:{args.function} — "
+          f"{r.note}", file=sys.stderr)
+    for g in r.groups:
+        tag = ("SAFE→" + g.tag) if g.safe else "inline"
+        print(f"  [{tag}] {'/'.join(g.labels[:3])}"
+              f"{'…' if len(g.labels) > 3 else ''}  {g.reason}",
+              file=sys.stderr)
+    if args.apply and r.new_text:
+        target.write_text(r.new_text)
+        print(f"APPLIED → {target}", file=sys.stderr)
+    elif not r.new_text:
+        print("nothing applied (no safe arms / oracle fail)",
+              file=sys.stderr)
+
+
+def cmd_split_apply(args):
+    from .file_splitter import (analyze_scope, plan_emit, apply_emit)
+    from .config import REACTOS_ROOT
+
+    targets: list[Path] = []
+    if args.path:
+        t = Path(args.path)
+        if not t.is_absolute():
+            t = REACTOS_ROOT / args.path
+        targets = [t]
+    else:
+        for pl in analyze_scope(REACTOS_ROOT / "win32ss",
+                                args.min_loc, args.target_loc):
+            if pl.classification == "CLEAN_SPLIT":
+                targets.append(pl.path)
+
+    for t in targets:
+        em = plan_emit(t, args.target_loc)
+        rel = t.as_posix().split("/win32ss/")[-1]
+        if not em.fragments:
+            print(f"  skip {rel}: {em.note}")
+            continue
+        names = ", ".join(p.name for p, _ in em.fragments)
+        print(f"  {'APPLY' if args.apply else 'plan'} {rel} → "
+              f"{rel.rsplit('/',1)[-1]} + [{names}]  ({em.note})")
+        if args.apply:
+            apply_emit(em)
+
+
 def cmd_gdi_locks(args):
     from .gdi_lock_inventory import (
         extract_file, extract_keepset, write_sidecar,
@@ -479,6 +568,49 @@ def cmd_gdi_locks(args):
                 print(f"  {s.function} L{s.func_line} "
                       f"{s.lock_fn}→{s.unlock_fn} {s.var}@L{s.lock_line} "
                       f"[{s.shape}] unlock@{s.unlock_lines}{sig}")
+    elif target.is_dir():
+        inv = extract_keepset(target)
+        if args.write_sidecars:
+            for p, ss in inv.items():
+                write_sidecar(p, ss)
+            print(f"wrote {len(inv)} sidecars")
+        print_summary(inv)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_user_locks(args):
+    from .user_lock_inventory import (
+        extract_file, extract_keepset, write_sidecar,
+        print_summary, run_oracle,
+    )
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        sys.exit(run_oracle(
+            REACTOS_ROOT / "win32ss/user/ntuser/simplecall.c"))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        sites = extract_file(target)
+        if args.write_sidecars:
+            print(f"wrote {write_sidecar(target, sites)}")
+        if args.json:
+            print(json.dumps(
+                {"source": str(target),
+                 "sites": [s.__dict__ for s in sites]},
+                indent=2, default=str))
+        else:
+            for s in sites:
+                sig = (" " + ",".join(s.signals)) if s.signals else ""
+                print(f"  {s.function} L{s.func_line} {s.mode} "
+                      f"enter@L{s.enter_line}"
+                      f"{'(top)' if s.enter_at_top else ''} "
+                      f"[{s.shape}] leave@{s.leave_lines}{sig}")
     elif target.is_dir():
         inv = extract_keepset(target)
         if args.write_sidecars:
@@ -1027,6 +1159,41 @@ def main():
     p.add_argument("--oracle", action="store_true",
                    help="Structural self-test (no API spend) and exit")
 
+    # split-plan (win32k giant-file split analyzer — analyze-only)
+    p = sub.add_parser("split-plan",
+                       help="Win32k: analyze giant .c for safe split seams "
+                            "(static-coupling graph; no mutation)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (default win32ss/ translation scope)")
+    p.add_argument("--min-loc", type=int, default=1000,
+                   help="Only consider files with ≥ this LOC (default 1000)")
+    p.add_argument("--target-loc", type=int, default=900,
+                   help="Target per-group LOC for the split (default 900)")
+    p.add_argument("--json", action="store_true", help="Output JSON")
+
+    # switch-extract (win32k tree-sitter switch-dispatcher de-monstering)
+    p = sub.add_parser("switch-extract",
+                       help="Win32k: extract proven-safe switch arms of a "
+                            "giant dispatcher fn into static helpers")
+    p.add_argument("path", help="C file (relative to repo root or absolute)")
+    p.add_argument("--function", required=True,
+                   help="Target function name (e.g. SpiGetSet)")
+    p.add_argument("--apply", action="store_true",
+                   help="Write the transform (default: dry-run report)")
+    p.add_argument("--oracle", action="store_true",
+                   help="Self-test (label-set + reparse invariants) and exit")
+
+    # split-apply (win32k giant-file #include-back emitter)
+    p = sub.add_parser("split-apply",
+                       help="Win32k: emit the #include-back split for "
+                            "CLEAN_SPLIT files (one TU, no CMake change)")
+    p.add_argument("path", nargs="?", default=None,
+                   help="One C file; omit to do ALL CLEAN_SPLIT in scope")
+    p.add_argument("--apply", action="store_true",
+                   help="Write fragments + rewrite base (default: dry-run)")
+    p.add_argument("--min-loc", type=int, default=1000)
+    p.add_argument("--target-loc", type=int, default=900)
+
     # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
     p = sub.add_parser("gdi-locks",
                        help="Win32k Pass 2: detect GDI manual lock brackets "
@@ -1039,6 +1206,19 @@ def main():
                    help="Write <file>.win32k_gdilocks.json next to each source")
     p.add_argument("--oracle", action="store_true",
                    help="Run the dcutil.c ground-truth self-test and exit")
+
+    # user-locks (win32k Pass 2b USER critsec-bracket detection — no rewrite)
+    p = sub.add_parser("user-locks",
+                       help="Win32k Pass 2b: detect USER critical-section "
+                            "brackets + sidecars (no source rewrite)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute); "
+                        "default win32ss/ keep-set")
+    p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
+    p.add_argument("--write-sidecars", action="store_true",
+                   help="Write <file>.win32k_userlocks.json next to each source")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the simplecall.c ground-truth self-test and exit")
 
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
@@ -1103,7 +1283,11 @@ def main():
         "seh-rewrite": cmd_seh_rewrite,
         "callout-annotate": cmd_callout_annotate,
         "gdi-locks": cmd_gdi_locks,
+        "user-locks": cmd_user_locks,
         "seh-llm-lower": cmd_seh_llm_lower,
+        "split-plan": cmd_split_plan,
+        "split-apply": cmd_split_apply,
+        "switch-extract": cmd_switch_extract,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,

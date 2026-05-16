@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/focus.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserGetForegroundWindow",
+      "func_line": 630,
+      "func_end_line": 642,
+      "mode": "exclusive",
+      "enter_line": 635,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        640
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetActiveWindow",
+      "func_line": 645,
+      "func_end_line": 680,
+      "mode": "exclusive",
+      "enter_line": 653,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        678
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetCapture",
+      "func_line": 686,
+      "func_end_line": 698,
+      "mode": "exclusive",
+      "enter_line": 691,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        696
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetFocus",
+      "func_line": 704,
+      "func_end_line": 734,
+      "mode": "exclusive",
+      "enter_line": 711,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        732
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

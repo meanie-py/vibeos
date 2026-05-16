@@ -2,7 +2,7 @@
   "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/callback.c",
   "schema": "win32k_pass0_v1",
   "summary": {
-    "d": 4
+    "d": 3
   },
   "sites": [
     {
@@ -53,23 +53,6 @@
       ],
       "handler_patterns": [
         "SET_FLAG"
-      ],
-      "note": "user write under SEH, no probe in block (paranoid?)"
-    },
-    {
-      "function": "co_IntGetCharsetInfo",
-      "line_start": 1069,
-      "line_end": 1078,
-      "category": "d",
-      "category_name": "BELT_SUSPENDERS",
-      "signals": [],
-      "probe_count": 0,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "BULK_COPY"
-      ],
-      "handler_patterns": [
-        "SET_STATUS"
       ],
       "note": "user write under SEH, no probe in block (paranoid?)"
     }
