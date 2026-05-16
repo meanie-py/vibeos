@@ -27,6 +27,11 @@ pub mod csrss;
 pub mod csrlib;
 pub mod smlib;
 
+// Phase 2 — csrsrv.dll server runtime (translated 2026-05-16).
+// 35 csrsrv.spec exports; cohabited into csrsrv.dll (the 7 .c
+// commented out in subsystems/csr/csrsrv/CMakeLists.txt).
+pub mod csrsrv;
+
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as kdcom-rust/hal-rust). USER-MODE: must
 // NOT use privileged `hlt`/`wfe` (csrss.exe runs in ring 3) — abort

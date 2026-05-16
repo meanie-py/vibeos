@@ -58,10 +58,17 @@ guidance above where it conflicts:
    same rule: descend through `__bindgen_anon_N` to reach the named
    leaf field.
 
-7. **`RtlZeroMemory`/`RtlFillMemory` are C macros, not exports.**
-   Use `core::ptr::write_bytes(p as *mut u8, 0, n as usize)` for
-   `RtlZeroMemory(p, n)`. `RtlMoveMemory`/`RtlCopyMemory` ARE real
-   ntdll exports — those may be called directly.
+7. **C macros are NOT extern functions — never `extern "system" {
+   fn <macro>; }`.** That fails to link.
+   - `RtlZeroMemory(p, n)` → `core::ptr::write_bytes(p as *mut u8,
+     0, n as usize)`. `RtlFillMemory(p,n,v)` similarly.
+   - `CONTAINING_RECORD(addr, Type, field)` →
+     `((addr as usize) - core::mem::offset_of!(Type, field)) as *mut Type`
+     (cast back to the pointer type the call site expects).
+   - `RtlMoveMemory`/`RtlCopyMemory` ARE real ntdll exports — call
+     directly. When unsure whether a `Foo` is a macro: if it is
+     ALL-CAPS or wraps a struct/offset computation, treat it as a
+     macro and inline it; do not declare an extern for it.
 
 8. **File-scope C globals stay in the file.** A `HANDLE
    CsrPortHeap;` (no `extern`) at C file scope is a *definition* —

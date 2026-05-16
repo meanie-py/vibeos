@@ -68,3 +68,61 @@ pub fn ZwCurrentProcess() -> HANDLE {
 pub fn ZwCurrentThread() -> HANDLE {
     NtCurrentThread()
 }
+
+// ============================================================================
+// Universal LIST_ENTRY inlines (winnt.h/ntddk FORCEINLINE macros — not
+// bindgen-visible). Ported verbatim from ntkrnl-sys/src/base.rs; every
+// user-mode component (csrsrv/smss/basesrv) iterates intrusive lists.
+// Re-exported via `ntdll_sys::nt::*`.
+// ============================================================================
+use crate::nt::LIST_ENTRY;
+
+#[inline]
+pub unsafe fn InitializeListHead(head: *mut LIST_ENTRY) {
+    (*head).Flink = head;
+    (*head).Blink = head;
+}
+#[inline]
+pub unsafe fn IsListEmpty(head: *const LIST_ENTRY) -> bool {
+    (*head).Flink == head as *mut LIST_ENTRY
+}
+#[inline]
+pub unsafe fn InsertHeadList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
+    let flink = (*head).Flink;
+    (*entry).Flink = flink;
+    (*entry).Blink = head;
+    (*flink).Blink = entry;
+    (*head).Flink = entry;
+}
+#[inline]
+pub unsafe fn InsertTailList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
+    let blink = (*head).Blink;
+    (*entry).Flink = head;
+    (*entry).Blink = blink;
+    (*blink).Flink = entry;
+    (*head).Blink = entry;
+}
+#[inline]
+pub unsafe fn RemoveEntryList(entry: *mut LIST_ENTRY) -> bool {
+    let flink = (*entry).Flink;
+    let blink = (*entry).Blink;
+    (*blink).Flink = flink;
+    (*flink).Blink = blink;
+    flink == blink
+}
+#[inline]
+pub unsafe fn RemoveHeadList(list_head: *mut LIST_ENTRY) -> *mut LIST_ENTRY {
+    let entry = (*list_head).Flink;
+    let flink = (*entry).Flink;
+    (*list_head).Flink = flink;
+    (*flink).Blink = list_head;
+    entry
+}
+#[inline]
+pub unsafe fn RemoveTailList(list_head: *mut LIST_ENTRY) -> *mut LIST_ENTRY {
+    let entry = (*list_head).Blink;
+    let blink = (*entry).Blink;
+    (*list_head).Blink = blink;
+    (*blink).Flink = list_head;
+    entry
+}

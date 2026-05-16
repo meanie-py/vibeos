@@ -78,6 +78,10 @@ pub mod nt {
     pub use super::inlines::{
         NtCurrentPeb, NtCurrentProcess, NtCurrentTeb, NtCurrentThread,
         ZwCurrentProcess, ZwCurrentThread,
+        // Universal LIST_ENTRY inlines (also macros, not in bindgen —
+        // safe to name explicitly; same reason as NtCurrent*).
+        InitializeListHead, IsListEmpty, InsertHeadList, InsertTailList,
+        RemoveEntryList, RemoveHeadList, RemoveTailList,
     };
 
     // Hand-written NTSTATUS codes (ntstatus.h cast-macros are not
