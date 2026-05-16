@@ -123,7 +123,8 @@ unsafe extern "C" fn NtLdrImportDllLoadCallback(
     NtLdrOutputLoadMsg(FileName, core::ptr::null());
 }
 
-unsafe fn NtLdrOutputLoadMsg(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrOutputLoadMsg(
     FileName: PCSTR,
     Description: PCSTR)
 {
@@ -142,7 +143,8 @@ unsafe fn NtLdrOutputLoadMsg(
     }
 }
 
-unsafe fn AllocateAndInitLPB(
+#[no_mangle]
+pub unsafe extern "C" fn AllocateAndInitLPB(
     VersionToBoot: u16,
     OutLoaderBlock: *mut PLOADER_PARAMETER_BLOCK,
 ) {
@@ -505,7 +507,8 @@ unsafe fn WinLdrLoadBootDrivers(
     ret
 }
 
-unsafe fn WinLdrLoadModule(
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrLoadModule(
     ModuleName: PCSTR,
     Size: *mut u32,
     MemoryType: u32) -> *mut core::ffi::c_void
@@ -1309,7 +1312,8 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
     core::hint::unreachable_unchecked()
 }
 
-unsafe fn WinLdrpDumpMemoryDescriptors(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrpDumpMemoryDescriptors(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let mut NextMd: PLIST_ENTRY = (*LoaderBlock).MemoryDescriptorListHead.Flink;
     
     while NextMd != core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead) {

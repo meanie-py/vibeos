@@ -33,7 +33,8 @@ unsafe fn HKEY_TO_HCI(hKey: HKEY) -> ntkrnl_sys::ddk::HCELL_INDEX {
 }
 // registry.h macro: RegCloseKey(hKey) == ERROR_SUCCESS
 #[inline]
-unsafe fn RegCloseKey(_hKey: HKEY) -> i32 {
+#[no_mangle]
+pub unsafe extern "C" fn RegCloseKey(_hKey: HKEY) -> i32 {
     ERROR_SUCCESS
 }
 use core::ffi::c_void;
@@ -64,7 +65,6 @@ extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn UiMessageBox(fmt: PCSTR, ...);
     fn VaToPa(Va: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn CmpIsDriverInList( DriverListHead: PLIST_ENTRY, DriverName: *mut _UNICODE_STRING, DriverNode: *mut PBOOT_DRIVER_NODE, ) -> u8;
     fn wcslen(s: PCWSTR) -> usize;
     fn RegImportBinaryHive( ChunkBase: *mut core::ffi::c_void, ChunkSize: u32, Name: PCSTR, Recover: BOOLEAN, ) -> BOOLEAN;
     fn RegInitCurrentControlSet(IsSetup: BOOLEAN) -> BOOLEAN;
@@ -72,6 +72,18 @@ extern "C" {
     // registry.c FLDRAPI (cdecl) functions
     fn RegOpenKey(ParentKey: HKEY, KeyName: PCWSTR, Key: *mut HKEY) -> i32;
     fn RegQueryValue( Key: HKEY, ValueName: PCWSTR, Type: *mut u32, Data: *mut u8, DataSize: *mut u32, ) -> i32;
+}
+
+// ntoskrnl/config/cmboot.c CmpIsDriverInList is NTAPI (stdcall on i386);
+// libuefifreeldr_common.a exports `_CmpIsDriverInList@12`. Declaring it
+// cdecl (`extern "C"`) made the i386 link fail with undefined
+// `_CmpIsDriverInList` (no `@12`). Must be `extern "system"`.
+extern "system" {
+    fn CmpIsDriverInList(
+        DriverListHead: PLIST_ENTRY,
+        DriverName: *mut _UNICODE_STRING,
+        DriverNode: *mut PBOOT_DRIVER_NODE,
+    ) -> u8;
 }
 
 const MAX_PATH: usize = 260;
@@ -147,7 +159,8 @@ unsafe fn WinLdrLoadSystemHive(
     1u8
 }
 
-unsafe fn WinLdrInitSystemHive(
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrInitSystemHive(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     SystemRoot: PCSTR,
     Setup: BOOLEAN,
@@ -222,7 +235,8 @@ unsafe fn WinLdrInitSystemHive(
     1u8
 }
 
-unsafe fn WinLdrScanSystemHive(
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrScanSystemHive(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     SystemRoot: PCSTR,
 ) -> u8 {
@@ -396,7 +410,8 @@ unsafe fn WinLdrGetNLSNames(
     if rc == ERROR_SUCCESS { 1u8 } else { 0u8 }
 }
 
-unsafe fn WinLdrLoadNLSData(
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrLoadNLSData(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
     DirectoryPath: PCSTR,
     AnsiFileName: PCUNICODE_STRING,
@@ -842,7 +857,8 @@ unsafe fn WinLdrScanRegistry(
     Success
 }
 
-unsafe fn WinLdrAddDriverToList(
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrAddDriverToList(
     DriverListHead: PLIST_ENTRY,
     InsertAtHead: u8,
     DriverName: PCWSTR,

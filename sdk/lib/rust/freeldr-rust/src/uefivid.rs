@@ -21,14 +21,36 @@ extern "C" {
     fn FbConsPutChar(Ch: i32, Attr: u8, X: u32, Y: u32);
     fn FbConsGetDisplaySize(Width: PULONG, Height: PULONG, Depth: PULONG);
     fn FbConsCopyOffScreenBufferToVRAM(Buffer: PVOID);
-}
-extern "system" {
+    // vidfb.c exports `_FbConsGetBufferSize` cdecl (no `@0`); declaring
+    // it `extern "system"` made the i386 link fail with undefined
+    // `_FbConsGetBufferSize@0`. The vidfb.c FbCons* family is cdecl.
     fn FbConsGetBufferSize() -> u32;
+}
+
+// vidfb.h:41 `FORCEINLINE ULONG PixelBitmasksToBpp(R,G,B,Reserved)` —
+// pure (popcount of OR'd masks), no C symbol (inlined into vidfb.c).
+// not(uefi): vidfb_pc_fallback.rs owns the `#[no_mangle]` symbol →
+// extern-consume here. uefi: vidfb_pc_fallback is gated out and the
+// FORCEINLINE has no exported symbol, so uefivid.rs (the uefi-side
+// consumer) is the per-binary owner — define it. UNIQUE under uefi.
+#[cfg(not(feature = "uefi"))]
+extern "C" {
+    fn PixelBitmasksToBpp(RedMask: ULONG, GreenMask: ULONG, BlueMask: ULONG, ReservedMask: ULONG) -> ULONG;
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn PixelBitmasksToBpp(
+    RedMask: ULONG,
+    GreenMask: ULONG,
+    BlueMask: ULONG,
+    ReservedMask: ULONG,
+) -> ULONG {
+    (RedMask | GreenMask | BlueMask | ReservedMask).count_ones() as ULONG
 }
 
 extern "C" {
     // cross-module freeldr fns (vidfb.c; FLDRAPI empty → cdecl).
-    fn PixelBitmasksToBpp(RedMask: ULONG, GreenMask: ULONG, BlueMask: ULONG, ReservedMask: ULONG) -> ULONG;
     fn VidFbInitializeVideo(
         pFbData: *mut PCM_FRAMEBUF_DEVICE_DATA,
         BaseAddress: ULONG_PTR,
@@ -133,21 +155,22 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
     Status
 }
 
-unsafe fn UefiVideoClearScreen(Attr: u8) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoClearScreen(Attr: u8) {
     FbConsClearScreen(Attr);
 }
 
-#[no_mangle]
+#[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiVideoPutChar(Ch: i32, Attr: u8, X: u32, Y: u32) {
     FbConsPutChar(Ch, Attr, X, Y);
 }
 
-#[no_mangle]
+#[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiVideoGetDisplaySize(Width: PULONG, Height: PULONG, Depth: PULONG) {
     FbConsGetDisplaySize(Width, Height, Depth);
 }
 
-#[no_mangle]
+#[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiVideoSetDisplayMode(
     DisplayMode: PCSTR,
     Init: BOOLEAN,
@@ -155,29 +178,36 @@ pub unsafe extern "C" fn UefiVideoSetDisplayMode(
     VideoTextMode
 }
 
-unsafe fn UefiVideoGetBufferSize() -> u32 {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoGetBufferSize() -> u32 {
     FbConsGetBufferSize()
 }
 
-unsafe fn UefiVideoCopyOffScreenBufferToVRAM(Buffer: PVOID) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoCopyOffScreenBufferToVRAM(Buffer: PVOID) {
     FbConsCopyOffScreenBufferToVRAM(Buffer);
 }
 
-unsafe fn UefiVideoSetTextCursorPosition(X: UCHAR, Y: UCHAR) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoSetTextCursorPosition(X: UCHAR, Y: UCHAR) {
     /* We don't have a cursor yet */
 }
 
-unsafe fn UefiVideoHideShowTextCursor(Show: BOOLEAN) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoHideShowTextCursor(Show: BOOLEAN) {
 }
 
-unsafe fn UefiVideoIsPaletteFixed() -> u8 {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoIsPaletteFixed() -> u8 {
     0u8
 }
 
-unsafe fn UefiVideoSetPaletteColor(Color: UCHAR, Red: UCHAR, Green: UCHAR, Blue: UCHAR) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoSetPaletteColor(Color: UCHAR, Red: UCHAR, Green: UCHAR, Blue: UCHAR) {
 }
 
-unsafe fn UefiVideoGetPaletteColor(Color: u8, Red: *mut u8, Green: *mut u8, Blue: *mut u8) {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiVideoGetPaletteColor(Color: u8, Red: *mut u8, Green: *mut u8, Blue: *mut u8) {
 }
 
 

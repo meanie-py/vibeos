@@ -112,15 +112,24 @@ pub type PINTERNAL_UEFI_DISK = *mut INTERNAL_UEFI_DISK;
 pub static mut DiskReadBuffer: PVOID = core::ptr::null_mut();
 #[no_mangle]
 pub static mut DiskReadBufferSize: SIZE_T = 0;
-// FrldrBootDrive/Partition are DEFINED by arch/{i386,amd64}/entry.S (asm,
-// in the BIOS freeldr_common only) — extern-consume, do NOT #[no_mangle]
+// FrldrBootDrive/Partition: per-binary-owner split.
+// BIOS freeldr: DEFINED by arch/{i386,amd64}/entry.S (asm, in the BIOS
+// freeldr_common only) — extern-consume here, do NOT #[no_mangle]
 // (that dup'd entry.S at cold link; prev-green hwdisk.rs already externs
-// FrldrBootPartition — same precedent). uefildr-side provider resolved
-// in the uefildr cold-link pass.
+// FrldrBootPartition — same precedent).
+// uefildr: has no entry.S and uefidisk.c is commented out, so uefidisk.rs
+// (the uefidisk.c replacement) IS the UEFI owner — define them here.
+#[cfg(not(feature = "uefi"))]
 extern "C" {
     static mut FrldrBootDrive: UCHAR;
     static mut FrldrBootPartition: ULONG;
 }
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub static mut FrldrBootDrive: UCHAR = 0;
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub static mut FrldrBootPartition: ULONG = 0;
 // uefidisk.c `PVOID Buffer;` is vestigial (no cross-TU refs); rustconv
 // translated the function-local `Buffer` vars as plain `Buffer` — a file
 // static would shadow those. Locals are the real intent; no static here.
@@ -1221,7 +1230,8 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
     1u8
 }
 
-unsafe fn UefiInitializeBootDevices() -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
     let mut Status: EFI_STATUS;
     let ArcDriveIndex: ULONG;
@@ -1301,11 +1311,13 @@ unsafe fn UefiInitializeBootDevices() -> BOOLEAN {
     return 1u8;
 }
 
-unsafe fn UefiGetFloppyCount() -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn UefiGetFloppyCount() -> u8 {
     0
 }
 
-unsafe fn UefiDiskReadLogicalSectors(
+#[no_mangle]
+pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
     DriveNumber: UCHAR,
     SectorNumber: ULONGLONG,
     SectorCount: ULONG,
@@ -1419,7 +1431,8 @@ unsafe fn UefiDiskReadLogicalSectors(
     return 1u8;
 }
 
-unsafe fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PGEOMETRY) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PGEOMETRY) -> BOOLEAN {
     let ArcDriveIndex: ULONG;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
     let mut Status: EFI_STATUS;
@@ -1465,7 +1478,8 @@ unsafe fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PGEOMETRY) -> B
     return 1u8;
 }
 
-unsafe fn UefiDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> ULONG {
+#[no_mangle]
+pub unsafe extern "C" fn UefiDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> ULONG {
     let mut ArcDriveIndex: ULONG;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
     let mut Status: EFI_STATUS;

@@ -25,28 +25,57 @@ extern "system" {
     fn RtlpImageNtHeaderEx( Flags: ULONG, Base: PVOID, Size: ULONG64, OutHeaders: *mut PIMAGE_NT_HEADERS, ) -> NTSTATUS;
 }
 
+// rtlp.h:13 `extern VOID FASTCALL CHECK_PAGED_CODE_RTL(char*, int);`
+// libblrtl.a references `@CHECK_PAGED_CODE_RTL@8` (i386 fastcall). Must
+// be `#[no_mangle]` or the symbol isn't exported (was missing → i386
+// undefined). Non-x86 keeps the cdecl no-op (NTAPI==cdecl there).
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn CHECK_PAGED_CODE_RTL(file: *mut i8, line: i32) {
+#[no_mangle]
+pub unsafe extern "fastcall" fn CHECK_PAGED_CODE_RTL(_file: *mut i8, _line: i32) {
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CHECK_PAGED_CODE_RTL(file: *mut i8, line: i32) {
+#[no_mangle]
+pub unsafe extern "C" fn CHECK_PAGED_CODE_RTL(_file: *mut i8, _line: i32) {
 }
 
+// rtlp.h:96 `PVOID NTAPI RtlpAllocateMemory(SIZE_T Bytes, ULONG Tag);`
+// NTAPI == stdcall on i386 → libblrtl.a references `_RtlpAllocateMemory@8`.
+// Declaring it `extern "C"` (cdecl) made the i386 link fail with
+// undefined `_RtlpAllocateMemory@8`. Must be `extern "system"`.
 #[no_mangle]
-pub unsafe extern "C" fn RtlpAllocateMemory(
-    Bytes: ULONG,
+pub unsafe extern "system" fn RtlpAllocateMemory(
+    Bytes: SIZE_T,
     Tag: ULONG,
 ) -> PVOID {
-    FrLdrHeapAlloc(Bytes, Tag)
+    FrLdrHeapAlloc(Bytes as ULONG, Tag)
 }
 
+// rtlp.h:102 `VOID NTAPI RtlpFreeMemory(PVOID Mem, ULONG Tag);`
 #[no_mangle]
-pub unsafe extern "C" fn RtlpFreeMemory(
+pub unsafe extern "system" fn RtlpFreeMemory(
     Mem: PVOID,
     Tag: ULONG,
 ) {
     FrLdrHeapFree(Mem, Tag);
+}
+
+// rtlp.h:40 `NTSTATUS NTAPI RtlpSafeCopyMemory(VOID UNALIGNED *Dest,
+// CONST VOID UNALIGNED *Src, SIZE_T Length);` — libblrtl.a references
+// `_RtlpSafeCopyMemory@12`. freeldr has no SEH (DUMMY_PSEH), so the
+// "safe" copy degrades to a plain bounded memcpy returning
+// STATUS_SUCCESS (the C _BLDR_ libsupp.c does exactly this). NTAPI →
+// extern "system". UNIQUE: no other def in freeldr-rust.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpSafeCopyMemory(
+    Destination: *mut c_void,
+    Source: *const c_void,
+    Length: SIZE_T,
+) -> NTSTATUS {
+    if Length != 0 && !Destination.is_null() && !Source.is_null() {
+        core::ptr::copy(Source as *const u8, Destination as *mut u8, Length as usize);
+    }
+    0 /* STATUS_SUCCESS */
 }
 
 #[no_mangle]

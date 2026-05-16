@@ -1372,3 +1372,70 @@ pub struct CM_FRAMEBUF_PIXEL_MASKS {
     pub ReservedMask: ULONG,
 }
 pub type PCM_FRAMEBUF_DEVICE_DATA = *mut CM_FRAMEBUF_DEVICE_DATA;
+
+// ---------------------------------------------------------------------
+// BIOS-only realmode-thunk symbols — per-binary-owner UEFI stubs.
+//
+// Int386 (arch/i386/int386.S), Relocator16Boot (arch/i386/entry.S),
+// PnpBios* (arch/i386/pnpbios.S), DetectApmBios (arch/i386/hwapm.c),
+// PcConsGetCh (arch/i386/pc/pccons.c) are BIOS-only realmode asm/C and
+// are NOT compiled into the uefildr link unit. They are referenced only
+// by the PC-hardware Rust modules (pcvideo/pcvesa/pcmem/pcdisk/hwpci/
+// machpc), whose `Pc*` exports are consumed solely by the BIOS MachVtbl
+// installed in the already-`#[cfg(not(feature="uefi"))]`-gated
+// `MachInit`. uefildr fills MachVtbl from uefisetup.c (UEFI C) instead,
+// so this PC code is unreachable dead code there — but the linker still
+// needs the extern symbols resolved. Same per-binary-owner pattern as
+// FrldrBootDrive / PxeCallApi: under `not(uefi)` the BIOS asm/C owns
+// them (extern, declared file-locally per unit); under `uefi` the
+// keystone owns inert stubs (UNIQUE — verified no other #[no_mangle]
+// def in freeldr-rust). All __cdecl. The pc* callers are never invoked
+// at uefildr runtime (UEFI MachVtbl), so the stub bodies' return values
+// are inert.
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn Int386(_interrupt: i32, _in_regs: *mut REGS, _out_regs: *mut REGS) -> i32 {
+    0
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn Relocator16Boot(
+    _Regs: *mut REGS,
+    _StackSegment: u16,
+    _StackPointer: u16,
+    _CodeSegment: u16,
+    _CodePointer: u16,
+) {
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn DetectApmBios(_SystemKey: *mut c_void, _BusNumber: *mut ULONG) {
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn PnpBiosSupported() -> usize {
+    0
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn PnpBiosGetDeviceNodeCount(
+    _NodeSize: *mut ULONG,
+    _NodeCount: *mut ULONG,
+) -> ULONG {
+    1 /* non-zero = "error/none" per pnpbios.S convention */
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn PnpBiosGetDeviceNode(_NodeId: *mut UCHAR, _NodeBuffer: *mut UCHAR) -> ULONG {
+    1
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn PnpBiosGetDockStationInformation(_DockingStationInfo: *mut UCHAR) -> ULONG {
+    1
+}
+#[cfg(feature = "uefi")]
+#[no_mangle]
+pub unsafe extern "C" fn PcConsGetCh() -> i32 {
+    0
+}

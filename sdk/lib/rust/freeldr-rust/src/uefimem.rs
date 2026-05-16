@@ -128,7 +128,8 @@ unsafe fn UefiConvertToFreeldrDesc(EfiMemoryType: EFI_MEMORY_TYPE) -> TYPE_OF_ME
     }
 }
 
-unsafe fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR {
     let mut LoadedImage: *mut EFI_LOADED_IMAGE_PROTOCOL = core::ptr::null_mut();
     let mut DescriptorVersion: UINT32 = 0;
     let FreeldrMemMapSize: SIZE_T;
@@ -228,7 +229,8 @@ unsafe fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELDR_MEMORY_DESC
     FreeldrMem
 }
 
-unsafe fn UefiExitBootServices()
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiExitBootServices()
 {
     let mut MapKey: UINTN = 0;
     let mut MapSize: UINTN = 0;
@@ -259,7 +261,8 @@ unsafe fn UefiExitBootServices()
     }
 }
 
-unsafe fn UefiPrepareForReactOS() {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiPrepareForReactOS() {
     _exituefi();
 }
 

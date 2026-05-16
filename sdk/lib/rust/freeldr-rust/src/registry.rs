@@ -108,11 +108,14 @@ extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn VaToPa(va: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn WARN(fmt: *const i8, ...);
-    fn HvpVerifyHiveHeader(base_block: PHBASE_BLOCK, file_type: u32) -> u8;
-    fn HvpHiveHeaderChecksum(block: PHBASE_BLOCK) -> u32;
 }
 // cmlib.h: CMAPI == NTAPI (stdcall on i386) → extern "system".
+// Hvp* live in cmlib (libblcmlib.a exports `_HvpVerifyHiveHeader@8` /
+// `_HvpHiveHeaderChecksum@4`) — must be declared stdcall, not cdecl,
+// or i386 link fails with undefined `_HvpVerifyHiveHeader`.
 extern "system" {
+    fn HvpVerifyHiveHeader(base_block: PHBASE_BLOCK, file_type: u32) -> u8;
+    fn HvpHiveHeaderChecksum(block: PHBASE_BLOCK) -> u32;
     fn HvInitialize(
         RegistryHive: PHHIVE,
         OperationType: ULONG,
@@ -131,7 +134,8 @@ extern "system" {
 }
 
 #[inline]
-unsafe fn MM_SIZE_TO_PAGES(a: u32) -> u32 {
+#[no_mangle]
+pub unsafe extern "C" fn MM_SIZE_TO_PAGES(a: u32) -> u32 {
     (a >> MM_PAGE_SHIFT) + (if a & MM_PAGE_MASK != 0 { 1 } else { 0 })
 }
 
@@ -373,7 +377,8 @@ unsafe fn RegRecoverDataHive(
     1u8
 }
 
-unsafe fn RegImportBinaryHive(
+#[no_mangle]
+pub unsafe extern "C" fn RegImportBinaryHive(
     ChunkBase: PVOID,
     ChunkSize: ULONG,
     SearchPath: PCSTR,
@@ -422,7 +427,8 @@ unsafe fn RegImportBinaryHive(
     1u8
 }
 
-unsafe fn RegInitCurrentControlSet(LastKnownGood: u8) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn RegInitCurrentControlSet(LastKnownGood: u8) -> u8 {
     let mut ControlSetName: _UNICODE_STRING = core::mem::zeroed();
     let ControlCell: HCELL_INDEX;
     let KeyNode: PCM_KEY_NODE;
@@ -561,7 +567,8 @@ unsafe fn RegEnumKey(
     return ERROR_SUCCESS;
 }
 
-unsafe fn RegOpenKey(
+#[no_mangle]
+pub unsafe extern "C" fn RegOpenKey(
     ParentKey: HKEY,
     KeyName: PCWSTR,
     Key: PHKEY
@@ -686,7 +693,8 @@ unsafe fn RepGetValueData(
     }
 }
 
-unsafe fn RegQueryValue(
+#[no_mangle]
+pub unsafe extern "C" fn RegQueryValue(
     Key: HKEY,
     ValueName: PCWSTR,
     Type: *mut u32,

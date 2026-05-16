@@ -159,7 +159,8 @@ unsafe fn MempSetupPagingForRegion(
     }
 }
 
-unsafe fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u8 {
 
     // PAGE_LOOKUP_TABLE_ITEM / FREELDR_MEMORY_DESCRIPTOR / LIST_ENTRY
     // come from the keystone + base (the translator's local re-defs

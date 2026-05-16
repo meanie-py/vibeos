@@ -4,12 +4,20 @@ use ntkrnl_sys::ddk::{CPPORT, HEADLESS_LOADER_BLOCK, PCSTR, PGUID, RtlCompareMem
 // freeldr_ddk_imports dropped (not in ddk): PortNumber
 use core::ffi::c_void;
 
-extern "C" {
+// cportlib Cp* are NTAPI (stdcall on i386); libcportlib.a exports
+// `_CpInitialize@12` / `_CpPutByte@8` / `_CpDoesPortExist@4` /
+// `_CpGetByte@16` / `_CpEnableFifo@8`. Declaring them cdecl
+// (`extern "C"`) made the i386 link fail with undefined `_CpInitialize`
+// (no `@N`). Must be `extern "system"` (matches rs232.rs).
+extern "system" {
     fn CpDoesPortExist(PortAddress: PUCHAR) -> BOOLEAN;
     fn CpInitialize(Port: *mut CPPORT, PortAddress: PUCHAR, BaudRate: ULONG);
     fn CpPutByte(port: *mut CPPORT, byte: UCHAR);
     fn CpGetByte(Port: *mut CPPORT, Byte: *mut u8, Wait: u8, Poll: u8) -> u32;
     fn CpEnableFifo(Address: PUCHAR, Enable: BOOLEAN);
+}
+
+extern "C" {
     fn StallExecutionProcessor(Microseconds: ULONG);
     fn strlen(s: *const i8) -> usize;
     fn NtLdrGetOption(BootOptions: PCSTR, OptionName: PCSTR) -> PCSTR;

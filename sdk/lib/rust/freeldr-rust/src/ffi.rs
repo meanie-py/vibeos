@@ -263,6 +263,61 @@ pub unsafe extern "C" fn RtlStringCbPrintfA(
     RtlStringCbCopyA(dest, cb_dest, fmt)
 }
 
+// ntstrsafe RtlStringCbPrintfW — wide variadic inline from ntstrsafe.h.
+// In non-MSVC freeldr the W variant is only emitted `static` (local `t`
+// symbol per-TU), so a cross-object Rust reference (setupldr.rs driver
+// path) is undefined at i386 link. Same treatment as RtlStringCbPrintfA:
+// NON-variadic (dst,cb,fmt) def doing a bounded wide copy of the format
+// literal. cdecl → caller cleans the stack, dropped varargs ABI-safe.
+// `cb_dest` is a BYTE count (ntstrsafe convention). UNIQUE: no C/asm
+// defines `_RtlStringCbPrintfW` globally.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW(
+    dest: *mut u16,
+    cb_dest: usize,
+    fmt: *const u16,
+) -> NTSTATUS {
+    if dest.is_null() || fmt.is_null() || cb_dest < core::mem::size_of::<u16>() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let max_wchars = cb_dest / core::mem::size_of::<u16>();
+    let mut i = 0usize;
+    while i + 1 < max_wchars {
+        let ch = *fmt.add(i);
+        if ch == 0 {
+            break;
+        }
+        *dest.add(i) = ch;
+        i += 1;
+    }
+    *dest.add(i) = 0;
+    if *fmt.add(i) == 0 {
+        STATUS_SUCCESS
+    } else {
+        STATUS_BUFFER_OVERFLOW
+    }
+}
+
+// rtlfuncs.h RtlInitEmptyUnicodeString — FORCEINLINE (3-line body, no
+// symbol anywhere). bindgen emits it as a cdecl `extern` decl, and
+// wlregistry.rs / setupldr.rs call it via ntkrnl_sys::ddk, so the i386
+// link needs a real `_RtlInitEmptyUnicodeString`. Faithful translation
+// of the rtlfuncs.h body. cdecl (bindgen declared it `extern "C"`).
+// UNIQUE: no other #[no_mangle] defines this symbol.
+#[no_mangle]
+pub unsafe extern "C" fn RtlInitEmptyUnicodeString(
+    UnicodeString: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
+    Buffer: *mut u16,
+    BufferSize: u16,
+) {
+    if UnicodeString.is_null() {
+        return;
+    }
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
+}
+
 // ntstrsafe.h:381 RtlStringCbCopyNA — bounded copy of at most
 // `cb_to_copy` bytes from src into a `cb_dest`-byte dest, stopping at
 // src NUL, always NUL-terminating. Inline in ntstrsafe.h (no symbol in

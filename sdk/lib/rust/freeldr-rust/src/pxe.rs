@@ -23,11 +23,30 @@ extern "C" {
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn TRACE(fmt: *const i8, ...);
     fn ERR(fmt: *const i8, ...);
-    fn PxeCallApi(segment: UINT16, offset: UINT16, service: UINT16, parameter: PVOID) -> PXENV_EXIT;
     fn StallExecutionProcessor(microseconds: ULONG);
     fn strlen(s: *const i8) -> usize;
     fn tolower(c: i32) -> i32;
     fn FsRegisterDevice(name: PCHAR, vtbl: PVOID);
+}
+
+// PxeCallApi: per-binary-owner split. BIOS freeldr: defined by
+// arch/i386/entry.S (`_PxeCallApi`, realmode thunk, __cdecl) — extern.
+// uefildr: no realmode / entry.S, so PXE network boot is unavailable;
+// fs.rs's FileSystems table still references PxeMount/PxeInit so the
+// symbols must exist — provide an inert UEFI stub that fails every PXE
+// call (same per-binary-owner pattern as FrldrBootDrive). __cdecl.
+#[cfg(not(feature = "uefi"))]
+extern "C" {
+    fn PxeCallApi(segment: UINT16, offset: UINT16, service: UINT16, parameter: PVOID) -> PXENV_EXIT;
+}
+#[cfg(feature = "uefi")]
+unsafe extern "C" fn PxeCallApi(
+    _segment: UINT16,
+    _offset: UINT16,
+    _service: UINT16,
+    _parameter: PVOID,
+) -> PXENV_EXIT {
+    PXENV_EXIT_FAILURE
 }
 
 // ---- rustconv dropped pxe.h types + pxe.c file-local content, restored faithfully ----

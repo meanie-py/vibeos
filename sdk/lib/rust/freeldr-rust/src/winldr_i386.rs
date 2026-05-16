@@ -135,7 +135,8 @@ unsafe fn MempAllocatePTE(Entry: u32, PhysicalPT: *mut PHARDWARE_PTE, KernelPT: 
     (*PDE.add((Entry.wrapping_add((KSEG0_BASE >> 22) as u32)) as usize)).set_Write(1 as ULONG);
 }
 
-unsafe fn MempSetupPaging(
+#[no_mangle]
+pub unsafe extern "C" fn MempSetupPaging(
     StartPage: PFN_NUMBER,
     NumberOfPages: PFN_COUNT,
     KernelMapping: u8,
@@ -262,7 +263,8 @@ unsafe fn WinLdrSetupSpecialDataPointers() {
     }
 }
 
-unsafe fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 
     let TssSize: u32;
     let mut Pcr: usize = 0;
@@ -328,6 +330,374 @@ unsafe fn MempDump() {
         TRACE(b"\n\0".as_ptr() as *const i8);
         i += 1;
     }
+}
+
+// ============================================================================
+// WinLdrSetProcessorContext + GDT/IDT helpers
+//
+// rustconv left WinLdrSetProcessorContext untranslated (raw C in the
+// commented ORIGINAL C SOURCE block below). uefildr.efi pulls the winldr
+// OS-handoff path (winldr.rs -> WinLdrSetProcessorContext) so it needs a
+// real symbol. Faithful translation of arch/i386/winldr.c's
+// WinLdrSetProcessorContext + the FORCEINLINE helpers it uses from
+// ntoskrnl/include/internal/i386/intrin_i.h (KiGetGdtEntry / KiSetGdtEntry
+// / KiSetGdtEntryEx / __lgdt / __lidt / __sidt / Ke386Set* segment macros)
+// plus the GDTIDT struct and DPL_*/TYPE_* descriptor constants from
+// winldr.c's file scope.
+// ============================================================================
+
+// arch/i386/winldr.c file-scope #defines
+const DPL_SYSTEM: u8 = 0;
+const DPL_USER: u8 = 3;
+const TYPE_TSS32A: u8 = 0x09;
+const DESCRIPTOR_ACCESSED: u8 = 0x1;
+const DESCRIPTOR_READ_WRITE: u8 = 0x2;
+const DESCRIPTOR_EXECUTE_READ: u8 = 0x2;
+const DESCRIPTOR_CODE: u8 = 0x8;
+const TYPE_CODE: u8 = 0x10 | DESCRIPTOR_CODE | DESCRIPTOR_EXECUTE_READ;
+const TYPE_DATA: u8 = 0x10 | DESCRIPTOR_READ_WRITE;
+
+// ndk/i386/ketypes.h
+const RPL_MASK: u16 = 0x0003;
+const KGDT_NULL: u16 = 0x00;
+const KGDT_R0_CODE: u16 = 0x08;
+const KGDT_R0_DATA: u16 = 0x10;
+const KGDT_R3_CODE: u16 = 0x18;
+const KGDT_R3_DATA: u16 = 0x20;
+const KGDT_TSS: u16 = 0x28;
+const KGDT_R0_PCR: u16 = 0x30;
+const KGDT_R3_TEB: u16 = 0x38;
+const KGDT_VDM_TILE: u16 = 0x40;
+const KGDT_LDT: u16 = 0x48;
+const KGDT_DF_TSS: u16 = 0x50;
+const KGDT_NMI_TSS: u16 = 0x58;
+// psdk/sdkddkver.h
+const _WIN32_WINNT_VISTA: u16 = 0x0600;
+// i386 CR0 paging bit
+const CR0_PG: u32 = 0x80000000;
+
+// winldr.c `#pragma pack(2) typedef struct { USHORT Limit; ULONG Base; } GDTIDT;`
+#[repr(C, packed(2))]
+#[derive(Copy, Clone, Default)]
+struct GDTIDT {
+    Limit: u16,
+    Base: u32,
+}
+
+// intrin_i.h: KiGetGdtEntry(pGdt, Selector) -> pGdt + (Selector & ~RPL_MASK)
+#[inline]
+unsafe fn KiGetGdtEntry(pGdt: PVOID, Selector: u16) -> *mut KGDTENTRY {
+    ((pGdt as usize) + ((Selector & !RPL_MASK) as usize)) as *mut KGDTENTRY
+}
+
+// intrin_i.h: KiSetGdtDescriptorBase
+#[inline]
+unsafe fn KiSetGdtDescriptorBase(Entry: *mut KGDTENTRY, Base: u32) {
+    (*Entry).BaseLow = (Base & 0xffff) as u16;
+    (*Entry).HighWord.Bytes.BaseMid = ((Base >> 16) & 0xff) as u8;
+    (*Entry).HighWord.Bytes.BaseHi = ((Base >> 24) & 0xff) as u8;
+}
+
+// intrin_i.h: KiSetGdtDescriptorLimit
+#[inline]
+unsafe fn KiSetGdtDescriptorLimit(Entry: *mut KGDTENTRY, mut Limit: u32) {
+    if Limit < 0x100000 {
+        (*Entry).HighWord.Bits.set_Granularity(0);
+    } else {
+        Limit >>= 12;
+        (*Entry).HighWord.Bits.set_Granularity(1);
+    }
+    (*Entry).LimitLow = (Limit & 0xffff) as u16;
+    (*Entry).HighWord.Bits.set_LimitHi((Limit >> 16) & 0x0f);
+}
+
+// intrin_i.h: KiSetGdtEntryEx
+#[inline]
+unsafe fn KiSetGdtEntryEx(
+    Entry: *mut KGDTENTRY,
+    Base: u32,
+    Limit: u32,
+    Type_: u8,
+    Dpl: u8,
+    Granularity: BOOLEAN,
+    SegMode: u8,
+) {
+    KiSetGdtDescriptorBase(Entry, Base);
+    KiSetGdtDescriptorLimit(Entry, Limit);
+    (*Entry).HighWord.Bits.set_Type((Type_ & 0x1f) as u32);
+    (*Entry).HighWord.Bits.set_Dpl((Dpl & 0x3) as u32);
+    (*Entry).HighWord.Bits.set_Pres((Type_ != 0) as u32);
+    (*Entry).HighWord.Bits.set_Sys(0);
+    (*Entry).HighWord.Bits.set_Reserved_0(0);
+    (*Entry).HighWord.Bits.set_Default_Big(((SegMode & 2) != 0) as u32);
+    let g = (*Entry).HighWord.Bits.Granularity();
+    (*Entry).HighWord.Bits.set_Granularity(g | ((Granularity != 0) as u32));
+}
+
+// intrin_i.h: KiSetGdtEntry
+#[inline]
+unsafe fn KiSetGdtEntry(Entry: *mut KGDTENTRY, Base: u32, Limit: u32, Type_: u8, Dpl: u8, SegMode: u8) {
+    KiSetGdtEntryEx(Entry, Base, Limit, Type_, Dpl, 0 /* FALSE */, SegMode);
+}
+
+// intrin_i.h __lgdt / __sgdt / __lidt / __sidt (GNU inline asm)
+#[inline]
+unsafe fn __lgdt_i386(Descriptor: *const GDTIDT) {
+    core::arch::asm!("lgdt [{0}]", in(reg) Descriptor, options(nostack));
+}
+#[inline]
+unsafe fn __sgdt_i386(Descriptor: *mut GDTIDT) {
+    core::arch::asm!("sgdt [{0}]", in(reg) Descriptor, options(nostack));
+}
+#[inline]
+unsafe fn __lidt_i386(Descriptor: *const GDTIDT) {
+    core::arch::asm!("lidt [{0}]", in(reg) Descriptor, options(nostack));
+}
+#[inline]
+unsafe fn __sidt_i386(Descriptor: *mut GDTIDT) {
+    core::arch::asm!("sidt [{0}]", in(reg) Descriptor, options(nostack));
+}
+
+// i386 CR / EFLAGS intrinsics (intrin.h equivalents)
+#[inline]
+unsafe fn __i386_disable() {
+    core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn __i386_writeeflags(flags: u32) {
+    core::arch::asm!("push {0}; popfd", in(reg) flags, options(nomem));
+}
+#[inline]
+unsafe fn __i386_writecr3(v: u32) {
+    core::arch::asm!("mov cr3, {0}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn __i386_readcr0() -> u32 {
+    let v: u32;
+    core::arch::asm!("mov {0}, cr0", out(reg) v, options(nomem, nostack, preserves_flags));
+    v
+}
+#[inline]
+unsafe fn __i386_writecr0(v: u32) {
+    core::arch::asm!("mov cr0, {0}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+
+// intrin_i.h Ke386Set* segment / table loaders
+#[inline]
+unsafe fn Ke386SetSs(v: u16) {
+    core::arch::asm!("mov ss, {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetDs(v: u16) {
+    core::arch::asm!("mov ds, {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetEs(v: u16) {
+    core::arch::asm!("mov es, {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetGs(v: u16) {
+    core::arch::asm!("mov gs, {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetFs(v: u16) {
+    core::arch::asm!("mov fs, {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetLocalDescriptorTable(v: u16) {
+    core::arch::asm!("lldt {0:x}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
+#[inline]
+unsafe fn Ke386SetTr(v: u16) {
+    core::arch::asm!("ltr ax", in("ax") v, options(nomem, nostack, preserves_flags));
+}
+
+// arch/i386/winldr.c WinLdrSetProcessorContext
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrSetProcessorContext(OperatingSystemVersion: u16) {
+    let mut GdtDesc: GDTIDT = GDTIDT::default();
+    let mut IdtDesc: GDTIDT = GDTIDT::default();
+    let mut OldIdt: GDTIDT = GDTIDT::default();
+    let pGdt: *mut KGDTENTRY;
+    let pIdt: *mut KIDTENTRY;
+
+    let Pcr: u32 = KIP0PCRADDRESS as u32;
+    let Tss: u32 = (KSEG0_BASE as u32) | (TssBasePage << MM_PAGE_SHIFT);
+
+    TRACE(
+        b"GdtIdt %p, Pcr %p, Tss 0x%08x\n\0".as_ptr() as *const i8,
+        GdtIdt as usize,
+        Pcr as usize,
+        Tss as usize,
+    );
+
+    /* Disable Interrupts */
+    __i386_disable();
+
+    /* Re-initialize EFLAGS */
+    __i386_writeeflags(0);
+
+    /* Set the PDBR */
+    __i386_writecr3(PDE as u32);
+
+    /* Enable paging by modifying CR0 */
+    __i386_writecr0(__i386_readcr0() | CR0_PG);
+
+    /* The Kernel expects the boot processor PCR to be zero-filled on startup */
+    RtlZeroMemory(Pcr as *mut core::ffi::c_void, MM_PAGE_SIZE as usize);
+
+    /* Get old values of GDT and IDT */
+    __sgdt_i386(&mut GdtDesc);
+    __sidt_i386(&mut IdtDesc);
+
+    /* Save old IDT */
+    OldIdt.Base = IdtDesc.Base;
+    OldIdt.Limit = IdtDesc.Limit;
+
+    /* Prepare new IDT+GDT */
+    GdtDesc.Base = (KSEG0_BASE as u32) | (GdtIdt as u32);
+    GdtDesc.Limit = (NUM_GDT * core::mem::size_of::<KGDTENTRY>() as u32 - 1) as u16;
+    IdtDesc.Base = GdtDesc.Base + GdtDesc.Limit as u32 + 1;
+    IdtDesc.Limit = (NUM_IDT * core::mem::size_of::<KIDTENTRY>() as u32 - 1) as u16;
+
+    pGdt = GdtDesc.Base as *mut KGDTENTRY;
+    pIdt = IdtDesc.Base as *mut KIDTENTRY;
+
+    /* KGDT_NULL (0x00) Null Selector - Unused */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_NULL), 0x0000, 0, 0, DPL_SYSTEM, 0);
+
+    /* KGDT_R0_CODE (0x08) Ring 0 Code selector - Flat 4Gb */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_R0_CODE), 0x0000, 0xFFFFFFFF, TYPE_CODE, DPL_SYSTEM, 2);
+
+    /* KGDT_R0_DATA (0x10) Ring 0 Data selector - Flat 4Gb */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_R0_DATA), 0x0000, 0xFFFFFFFF, TYPE_DATA, DPL_SYSTEM, 2);
+
+    /* KGDT_R3_CODE (0x18) Ring 3 Code Selector - Flat 2Gb */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_R3_CODE), 0x0000, 0xFFFFFFFF, TYPE_CODE, DPL_USER, 2);
+
+    /* KGDT_R3_DATA (0x20) Ring 3 Data Selector - Flat 2Gb */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_R3_DATA), 0x0000, 0xFFFFFFFF, TYPE_DATA, DPL_USER, 2);
+
+    /* KGDT_TSS (0x28) TSS Selector (Ring 0) */
+    KiSetGdtEntry(
+        KiGetGdtEntry(pGdt as PVOID, KGDT_TSS),
+        Tss,
+        0x78 - 1, /* FIXME: Check this; would be sizeof(KTSS)-1 */
+        TYPE_TSS32A,
+        DPL_SYSTEM,
+        0,
+    );
+
+    /*
+     * KGDT_R0_PCR (0x30) PCR Selector (Ring 0)
+     */
+    if OperatingSystemVersion < _WIN32_WINNT_VISTA {
+        /* Server 2003 way */
+        KiSetGdtEntryEx(
+            KiGetGdtEntry(pGdt as PVOID, KGDT_R0_PCR),
+            Pcr,
+            0x1,
+            TYPE_DATA,
+            DPL_SYSTEM,
+            1, /* TRUE */
+            2,
+        );
+    } else {
+        /* Vista+ way */
+        KiSetGdtEntry(
+            KiGetGdtEntry(pGdt as PVOID, KGDT_R0_PCR),
+            Pcr,
+            MM_PAGE_SIZE as u32 - 1,
+            TYPE_DATA,
+            DPL_SYSTEM,
+            2,
+        );
+    }
+
+    /* KGDT_R3_TEB (0x38) Thread Environment Block Selector (Ring 3) */
+    KiSetGdtEntry(
+        KiGetGdtEntry(pGdt as PVOID, KGDT_R3_TEB),
+        0x0000,
+        0x0FFF,
+        TYPE_DATA | DESCRIPTOR_ACCESSED,
+        DPL_USER,
+        2,
+    );
+
+    /* KGDT_VDM_TILE (0x40) VDM BIOS Data Area Selector (Ring 3) */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_VDM_TILE), 0x0400, 0xFFFF, TYPE_DATA, DPL_USER, 0);
+
+    /* KGDT_LDT (0x48) LDT Selector (Reserved) */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_LDT), 0x0000, 0, 0, DPL_SYSTEM, 0);
+
+    /* KGDT_DF_TSS (0x50) Double-Fault Task Switch Selector (Ring 0) */
+    KiSetGdtEntry(
+        KiGetGdtEntry(pGdt as PVOID, KGDT_DF_TSS),
+        0x20000, /* FIXME: Not correct! */
+        0xFFFF,  /* FIXME: Not correct! */
+        TYPE_TSS32A,
+        DPL_SYSTEM,
+        0,
+    );
+
+    /* KGDT_NMI_TSS (0x58) NMI Task Switch Selector (Ring 0) */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, KGDT_NMI_TSS), 0x20000, 0xFFFF, TYPE_CODE, DPL_SYSTEM, 0);
+
+    /* Selector (0x60) - Unused (Reserved) on Windows Longhorn/Vista+ */
+    KiSetGdtEntry(
+        KiGetGdtEntry(pGdt as PVOID, 0x60),
+        0x20000, /* FIXME: Maybe not correct, but noone cares */
+        0xFFFF,
+        TYPE_DATA,
+        DPL_SYSTEM,
+        0,
+    );
+
+    /* Video Display Buffer Selector (0x68) - Unused on Vista+ */
+    KiSetGdtEntry(KiGetGdtEntry(pGdt as PVOID, 0x68), 0xB8000, 0x3FFF, TYPE_DATA, DPL_SYSTEM, 0);
+
+    /* GDT Alias Selector (points to GDT) (0x70) */
+    KiSetGdtEntry(
+        KiGetGdtEntry(pGdt as PVOID, 0x70),
+        0xFFFF7000, /* GdtDesc.Base ?? */
+        GdtDesc.Limit as u32,
+        TYPE_DATA,
+        DPL_SYSTEM,
+        0,
+    );
+
+    /* Copy the old IDT */
+    RtlCopyMemory(
+        pIdt as *mut core::ffi::c_void,
+        OldIdt.Base as *const core::ffi::c_void,
+        (OldIdt.Limit as usize) + 1,
+    );
+
+    /* Load GDT+IDT */
+    __lgdt_i386(&GdtDesc);
+    __lidt_i386(&IdtDesc);
+
+    /* Jump to proper CS and clear prefetch queue */
+    core::arch::asm!("ljmp $0x08, $1f", "1:", options(att_syntax));
+
+    /* Set SS selector */
+    Ke386SetSs(KGDT_R0_DATA);
+
+    /* Set DS and ES selectors */
+    Ke386SetDs(KGDT_R0_DATA);
+    Ke386SetEs(KGDT_R0_DATA); // This is vital for rep stosd
+
+    /* LDT = not used ever, thus set to 0 */
+    Ke386SetLocalDescriptorTable(0);
+
+    /* Load TSR */
+    Ke386SetTr(KGDT_TSS);
+
+    /* Clear GS */
+    Ke386SetGs(0);
+
+    /* Set FS to PCR */
+    Ke386SetFs(KGDT_R0_PCR);
 }
 
 

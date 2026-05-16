@@ -70,7 +70,7 @@ static mut Key: EFI_INPUT_KEY = EFI_INPUT_KEY { ScanCode: 0, UnicodeChar: 0 };
 static mut ExtendedKey: BOOLEAN = 0;
 static mut ExtendedScanCode: i8 = 0;
 
-#[no_mangle]
+#[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiConsPutChar(c: i32) {
     let mut Width: u32 = 0;
     let mut Height: u32 = 0;
@@ -127,12 +127,14 @@ unsafe fn ConvertToBiosExtValue(KeyIn: UCHAR) -> UCHAR {
     }
 }
 
-unsafe fn UefiConsKbHit() -> u8 {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiConsKbHit() -> u8 {
     // C shares the file-scope `static EFI_INPUT_KEY Key` across KbHit/GetCh.
     ((*(*GlobalSystemTable).ConIn).ReadKeyStroke.unwrap()((*GlobalSystemTable).ConIn, core::ptr::addr_of_mut!(Key)) != EFI_NOT_READY) as u8
 }
 
-unsafe fn UefiConsGetCh() -> i32 {
+#[cfg_attr(feature = "uefi", no_mangle)]
+pub unsafe extern "C" fn UefiConsGetCh() -> i32 {
     let mut KeyOutput: UCHAR = 0;
 
     if ExtendedKey != 0 {

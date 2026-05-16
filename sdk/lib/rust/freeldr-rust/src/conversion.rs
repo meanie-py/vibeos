@@ -3,12 +3,26 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCONFIGURATION_COMPONENT_DATA};
 use core::ffi::c_void;
 
-// PaToVa/VaToPa are FORCEINLINE in conversion.h (no external symbol) —
-// reuse ffi.rs's generic impl (per-arch KSEG0_BASE, no call-site churn).
-use crate::ffi::{PaToVa, VaToPa};
+// PaToVa/VaToPa are FORCEINLINE in conversion.h (no external symbol in C),
+// but several translated TUs (registry/wlregistry/winldr/setupldr)
+// extern-call them as real cdecl `PVOID (*)(PVOID)` symbols. conversion.rs
+// is the conversion.c replacement → it owns the out-of-line definitions
+// (cdecl wrappers `PaToVa`/`VaToPa` further below). The generic ffi impl
+// (per-arch KSEG0_BASE) stays in scope under aliases so the typed
+// call-sites in this module keep the caller pointee type (no cast churn).
+use crate::ffi::{PaToVa as PaToVaG, VaToPa as VaToPaG};
 
 extern "C" {
     fn TRACE(fmt: *const i8, ...);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PaToVa(Pa: *mut c_void) -> *mut c_void {
+    PaToVaG(Pa as *const c_void)
+}
+#[no_mangle]
+pub unsafe extern "C" fn VaToPa(Va: *mut c_void) -> *mut c_void {
+    VaToPaG(Va as *const c_void)
 }
 
 #[no_mangle]
@@ -21,17 +35,18 @@ pub unsafe extern "C" fn List_PaToVa(ListHeadPa: PLIST_ENTRY) {
     while EntryPa != ListHeadPa {
         NextPa = (*EntryPa).Flink;
 
-        (*EntryPa).Flink = PaToVa((*EntryPa).Flink);
-        (*EntryPa).Blink = PaToVa((*EntryPa).Blink);
+        (*EntryPa).Flink = PaToVaG((*EntryPa).Flink);
+        (*EntryPa).Blink = PaToVaG((*EntryPa).Blink);
 
         EntryPa = NextPa;
     }
 
-    (*ListHeadPa).Flink = PaToVa((*ListHeadPa).Flink);
-    (*ListHeadPa).Blink = PaToVa((*ListHeadPa).Blink);
+    (*ListHeadPa).Flink = PaToVaG((*ListHeadPa).Flink);
+    (*ListHeadPa).Blink = PaToVaG((*ListHeadPa).Blink);
 }
 
-unsafe fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA) {
+#[no_mangle]
+pub unsafe extern "C" fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA) {
 
     let mut Child: PCONFIGURATION_COMPONENT_DATA;
     let mut Sibling: PCONFIGURATION_COMPONENT_DATA;
@@ -41,61 +56,61 @@ unsafe fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA) {
 
     while !Child.is_null() {
         if !(*Child).ConfigurationData.is_null() {
-            (*Child).ConfigurationData = PaToVa((*Child).ConfigurationData);
+            (*Child).ConfigurationData = PaToVaG((*Child).ConfigurationData);
         }
 
         if !(*Child).Child.is_null() {
-            (*Child).Child = PaToVa((*Child).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+            (*Child).Child = PaToVaG((*Child).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         }
 
         if !(*Child).Parent.is_null() {
-            (*Child).Parent = PaToVa((*Child).Parent as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+            (*Child).Parent = PaToVaG((*Child).Parent as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         }
 
         if !(*Child).Sibling.is_null() {
-            (*Child).Sibling = PaToVa((*Child).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+            (*Child).Sibling = PaToVaG((*Child).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         }
 
         if !(*Child).ComponentEntry.Identifier.is_null() {
-            (*Child).ComponentEntry.Identifier = PaToVa((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
+            (*Child).ComponentEntry.Identifier = PaToVaG((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
         }
 
         TRACE(
-            b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Child) as usize, ((*Child).ComponentEntry.Class) as usize, ((*Child).ComponentEntry.Type) as usize, (VaToPa((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Child).Parent) as usize);
+            b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Child) as usize, ((*Child).ComponentEntry.Class) as usize, ((*Child).ComponentEntry.Type) as usize, (VaToPaG((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Child).Parent) as usize);
 
-        Sibling = VaToPa((*Child).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+        Sibling = VaToPaG((*Child).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         while !Sibling.is_null() {
             if !(*Sibling).ConfigurationData.is_null() {
-                (*Sibling).ConfigurationData = PaToVa((*Sibling).ConfigurationData);
+                (*Sibling).ConfigurationData = PaToVaG((*Sibling).ConfigurationData);
             }
 
             if !(*Sibling).Child.is_null() {
-                (*Sibling).Child = PaToVa((*Sibling).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+                (*Sibling).Child = PaToVaG((*Sibling).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
             }
 
             if !(*Sibling).Parent.is_null() {
-                (*Sibling).Parent = PaToVa((*Sibling).Parent as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+                (*Sibling).Parent = PaToVaG((*Sibling).Parent as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
             }
 
             if !(*Sibling).Sibling.is_null() {
-                (*Sibling).Sibling = PaToVa((*Sibling).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+                (*Sibling).Sibling = PaToVaG((*Sibling).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
             }
 
             if !(*Sibling).ComponentEntry.Identifier.is_null() {
-                (*Sibling).ComponentEntry.Identifier = PaToVa((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
+                (*Sibling).ComponentEntry.Identifier = PaToVaG((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
             }
 
             TRACE(
-                b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Sibling) as usize, ((*Sibling).ComponentEntry.Class) as usize, ((*Sibling).ComponentEntry.Type) as usize, (VaToPa((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Sibling).Parent) as usize);
+                b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Sibling) as usize, ((*Sibling).ComponentEntry.Class) as usize, ((*Sibling).ComponentEntry.Type) as usize, (VaToPaG((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Sibling).Parent) as usize);
 
-            if !VaToPa((*Sibling).Child as *mut core::ffi::c_void).is_null() {
-                ConvertConfigToVA(VaToPa((*Sibling).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA);
+            if !VaToPaG((*Sibling).Child as *mut core::ffi::c_void).is_null() {
+                ConvertConfigToVA(VaToPaG((*Sibling).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA);
             }
 
-            Sibling = VaToPa((*Sibling).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+            Sibling = VaToPaG((*Sibling).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         }
 
-        Child = VaToPa((*Child).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
+        Child = VaToPaG((*Child).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
     }
 }
 
