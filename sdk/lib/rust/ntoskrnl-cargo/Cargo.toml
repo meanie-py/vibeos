@@ -31,6 +31,6 @@ path = "src/main.rs"
 # as a link arg.
 
 [build-dependencies]
-# Run cargo from build.rs (std::process::Command), and compile the C shim
-# layer ourselves via cc-rs.
-cc = "1"
+# Shared cargo-link engine (Rust staticlib build + cc-rs C/asm + spec2def
+# + kernel-mode PE link flags). Mirrors hal-cargo.
+reactos-link = { path = "../reactos-link" }

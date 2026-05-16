@@ -25,6 +25,7 @@ members = [
     "ntprintf_w",
     "prefix",
     "random",
+    "reactos-link",
     "rtl-rust",
     "slist",
     "slist-loom",

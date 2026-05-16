@@ -84,7 +84,7 @@ version = "0.1.0"
 name = "hal-cargo"
 version = "0.1.0"
 dependencies = [
- "cc",
+ "reactos-link",
 ]
 
 [[package]]
@@ -202,7 +202,7 @@ version = "0.1.0"
 name = "ntoskrnl-cargo"
 version = "0.1.0"
 dependencies = [
- "cc",
+ "reactos-link",
 ]
 
 [[package]]
@@ -257,6 +257,13 @@ version = "0.1.0"
 [[package]]
 name = "random"
 version = "0.1.0"
+
+[[package]]
+name = "reactos-link"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "regex-automata"

@@ -1,0 +1,23 @@
+# Shared build-support engine for cargo-driven ReactOS PE-module links.
+#
+# Used as a `[build-dependencies]` lib by the per-module link crates
+# (`ntoskrnl-cargo`, `hal-cargo`, …). Encapsulates the machinery that was
+# duplicated across their build.rs files: building the module's Rust
+# staticlib, cc-rs-compiling pre-expanded asm + header-free C shims,
+# staging a checked-in .res, self-hosting spec2def → .def, and emitting
+# the kernel-mode PE link line for the module kind.
+#
+# Host-compiled (it runs inside the consumer's build.rs). A per-module
+# build.rs becomes a ~20-line manifest: which Rust crate, which asm
+# blobs, which .res/.spec, which sibling libs, which ModuleKind.
+
+[package]
+name = "reactos-link"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cc = "1"

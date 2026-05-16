@@ -30,4 +30,4 @@ path = "src/main.rs"
 # and emits the absolute path of the resulting libhal_rust.a as a link arg.
 
 [build-dependencies]
-cc = "1"
+reactos-link = { path = "../reactos-link" }
