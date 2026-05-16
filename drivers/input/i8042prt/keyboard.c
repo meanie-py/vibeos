@@ -6,7 +6,7 @@
  * PROGRAMMERS: Copyright Victor Kirhenshtein (sauros@iname.com)
                 Copyright Jason Filby (jasonfilby@yahoo.com)
                 Copyright Martijn Vernooij (o112w8r02@sneakemail.com)
-                Copyright 2006-2007 Hervé Poussineau (hpoussin@reactos.org)
+                Copyright 2006-2007 Hervï¿½ Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES ****************************************************************/
@@ -802,6 +802,14 @@ i8042KbdInterruptService(
 
 	__analysis_assume(Context != NULL);
 	DeviceExtension = Context;
+	{
+		static BOOLEAN _i8k_kbd_isr_seen = FALSE;
+		if (!_i8k_kbd_isr_seen)
+		{
+			_i8k_kbd_isr_seen = TRUE;
+			DPRINT1("[[I8K]] KBD ISR FIRED (first)\n");
+		}
+	}
 	PortDeviceExtension = DeviceExtension->Common.PortDeviceExtension;
 	InputData = DeviceExtension->KeyboardBuffer + DeviceExtension->KeysInBuffer;
 	Counter = PortDeviceExtension->Settings.PollStatusIterations;

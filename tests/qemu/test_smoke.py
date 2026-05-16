@@ -290,6 +290,86 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
           f"saved {after_png}")
 
 
+def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
+    """Mouse-specific dispatch gate: drive a sustained PS/2 mouse storm
+    (multi-direction sweep + button chatter) and assert the
+    `mouclass -> win32k` pointer path survives it.
+
+    Complements `test_post_shell_ready_input` (keyboard-weighted): the
+    pointer path (RawInputThread -> cursor move -> hit-test -> hover/track
+    -> SetCursor) is a distinct slice of the win32k Rust translation, and a
+    burst is what shakes out reentrancy/lock regressions there.
+
+    Why liveness-only and not "cursor moved": QEMU `screendump` does not
+    composite the PS/2 cursor from the restored `ready` snapshot state
+    (every dump is byte-identical even though input is dispatched), so a
+    pixel-diff effect assertion is structurally flaky here. Robust effect
+    verification is the in-guest agent (AppCase.probe seam). This gate is
+    the non-flaky half: a mouse storm must not kill win32k. It is a real
+    regression gate independent of input *reaching userland* — on i386
+    (PS/2 dead until the ACPI-HAL backport) the events are dropped at the
+    bus, so the OS still must not fault handling the empty path.
+    """
+    if arch == "arm64":
+        pytest.skip("arm64 uses idle-detect boot + serial-hack input; "
+                    "mouse-dispatch gate is i386/amd64 (QMP input-send-event)")
+
+    vm.serial_output(timeout=1.0)  # clear backlog
+    before_ppm = vm.work_dir / "pre_mouse.ppm"
+    vm.screendump(before_ppm)
+
+    def _send(events: list) -> None:
+        r = vm.qmp.execute("input-send-event", events=events)
+        if "error" in r:
+            pytest.fail(f"QMP input-send-event failed: {r['error']}")
+
+    # Sustained sweep: box pattern + diagonals, with button chatter — the
+    # kind of burst that surfaces pointer-path reentrancy regressions.
+    legs = [(45, 0), (0, 35), (-45, 0), (0, -35), (40, 30), (-40, -30)]
+    for dx, dy in legs:
+        for _ in range(8):
+            _send([{"type": "rel", "data": {"axis": "x", "value": dx}},
+                   {"type": "rel", "data": {"axis": "y", "value": dy}}])
+        _send([{"type": "btn", "data": {"button": "left", "down": True}}])
+        _send([{"type": "btn", "data": {"button": "left", "down": False}}])
+    _send([{"type": "btn", "data": {"button": "right", "down": True}}])
+    _send([{"type": "btn", "data": {"button": "right", "down": False}}])
+
+    settle = ""
+    for _ in range(5):
+        settle += vm.serial_output(timeout=1.0)
+
+    # HARD: mouse storm did not crash win32k / the pointer path.
+    hit = [m for m in _FATAL_MARKERS if m in settle]
+    if hit:
+        sym = _symbolicate_bugcheck(settle, arch)
+        pytest.fail(f"win32k died handling mouse storm — markers {hit}\n"
+                    f"{sym}\nserial tail: {settle[-800:]!r}")
+
+    # HARD: VM still alive.
+    status = vm.qmp.execute("query-status")
+    assert status["return"]["running"] is True, \
+        f"VM not running after mouse storm: {status.get('return')}"
+
+    # Diagnostic only (cursor not reliably composited from snapshot state).
+    after_png = PROJECT_DIR / "qemu" / f"{arch}_post_mouse.png"
+    after_ppm = vm.work_dir / "post_mouse.ppm"
+    vm.screendump(after_ppm)
+    delta = "n/a"
+    try:
+        from PIL import Image, ImageChops
+        a = Image.open(before_ppm).convert("RGB")
+        b = Image.open(after_ppm).convert("RGB")
+        delta = "changed" if ImageChops.difference(a, b).getbbox() else "identical"
+        b.save(after_png, "PNG")
+    except ImportError:
+        after_png = PROJECT_DIR / "qemu" / f"{arch}_post_mouse.ppm"
+        import shutil
+        shutil.copy2(after_ppm, after_png)
+    print(f"\n[post-mouse] survived mouse storm; screen={delta}; "
+          f"saved {after_png}")
+
+
 def test_no_unexpected_ud2(arch: str) -> None:
     """Scan ntoskrnl.exe for ud2 instructions in named functions.
 
