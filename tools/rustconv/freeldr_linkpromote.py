@@ -51,9 +51,25 @@ def parse_syms(lines):
     return out
 
 
-def promote(name, abi):
-    # find the .rs that DEFINES it (a fn item, not an extern decl)
+def promote(name, abi, arch=None):
+    # find the .rs that DEFINES it (a fn item, not an extern decl).
+    # ARCH-AWARE: arch-suffixed modules (winldr_i386/amd64/arm64.rs) are
+    # `#[cfg(target_arch=...)]`-gated — only one compiles per --target.
+    # Globbing alphabetically would promote the WRONG arch's copy (a
+    # no-op for the failing link + a stray cross-arch edit). If `arch`
+    # is given, skip the other arches' `*_<otherarch>.rs` files.
+    ARCH_SUFFIX = {"i386": "_i386", "amd64": "_amd64", "arm64": "_arm64"}
+    def _wrong_arch(fname):
+        if arch is None:
+            return False
+        keep = ARCH_SUFFIX.get(arch)
+        for a, suf in ARCH_SUFFIX.items():
+            if a != arch and fname.endswith(suf + ".rs"):
+                return True
+        return False
     for p in sorted(SRC.glob("*.rs")):
+        if _wrong_arch(p.name):
+            continue
         s = p.read_text()
         # definition regex: optional pub / unsafe / extern "abi", then
         # `fn name(`, at statement start (line-leading whitespace only).
@@ -109,8 +125,12 @@ def promote(name, abi):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    arch = None
+    if args and args[0] == "--arch":
+        arch = args[1]
+        args = args[2:]
     lines = args if args else sys.stdin.read().splitlines()
     syms = parse_syms(lines)
     for name, abi in sorted(syms.items()):
-        where, st = promote(name, abi)
+        where, st = promote(name, abi, arch)
         print(f"{name:32} {abi:7} -> {where or '?'} ({st})")
