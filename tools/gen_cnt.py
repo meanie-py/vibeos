@@ -59,8 +59,10 @@ def rs_ty(ctype: str) -> str:
         "char*": "*mut u8",
         "constvoid*": "*const core::ffi::c_void",
         "void*": "*mut core::ffi::c_void",
+        "char**": "*mut *mut u8",
         "size_t": "usize",
         "int": "i32",
+        "_locale_t": "*mut core::ffi::c_void",  # ignored
     }[c]
 
 
@@ -76,6 +78,7 @@ def ret_ty(sig: str) -> str:
         "size_t": "usize",
         "int": "i32",
         "long": "i32",  # Win i386 LP32: long == 32-bit
+        "unsignedlong": "u32",
         "__int64": "i64",
         "char*": "*mut u8",
         "void*": "*mut core::ffi::c_void",
@@ -116,6 +119,9 @@ def shim(name: str, m: dict) -> str:
     elif sp == "set_raw":
         d = ptrs[0]
         body.append(f"    let {d}_s = raw_mut_slice({d} as *mut u8, {szp});")
+    elif sp == "nul_endptr_base":
+        np = next(n for t, n in params if rs_ty(t) == "*const u8")
+        body.append(f"    let {np}_s = cstr_slice({np});")
     elif sp == "mem_raw":
         pass  # raw_move inline below
     else:
@@ -161,6 +167,25 @@ def shim(name: str, m: dict) -> str:
     elif rc == "i64_passthrough":
         body.append(f"    let (v, _of) = {core_call(s0)};")
         body.append(f"    v as {rt}")
+    elif rc in ("i64_endptr", "ulong_strtoul"):
+        np = next(n for t, n in params if rs_ty(t) == "*const u8")
+        ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u8")
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(
+            f"    let r = crate::core_rs::radix::parse_i64_clamped({np}_s, {bs});"
+        )
+        body.append(f"    if r.base_ok && !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut u8;")
+        body.append("    }")
+        if rc == "i64_endptr":
+            body.append(f"    r.value as {rt}")
+        else:  # ulong_strtoul: asymmetric clamp to [1, ULONG_MAX]
+            body.append("    let v = if r.value > 4294967295i64 {")
+            body.append("        4294967295i64")
+            body.append("    } else if r.value < -4294967295i64 {")
+            body.append("        1i64")
+            body.append("    } else { r.value };")
+            body.append(f"    v as u32 as {rt}")
     else:
         raise SystemExit(f"{name}: unsupported return_collapse {rc}")
 

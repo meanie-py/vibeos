@@ -15,6 +15,51 @@
       "no digits"
     ]
   },
+  "_strtoi64": {
+    "c_signature": "__int64 _strtoi64(const char *nptr, char **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "i64_endptr",
+    "reference": "sdk/lib/crt/string/strtoi64.c",
+    "fuzz_domain": [
+      "base10",
+      "base16 0x",
+      "base0 octal",
+      "base 2..36",
+      "+I64 overflow\u2192MAX",
+      "-overflow\u2192MIN",
+      "ws+sign",
+      "no digits (endptr=nptr)",
+      "invalid base\u21920",
+      "junk after digits"
+    ]
+  },
+  "_strtoi64_l": {
+    "c_signature": "__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "i64_endptr",
+    "reference": "sdk/lib/crt/string/strtoi64.c",
+    "fuzz_domain": [
+      "delegates to _strtoi64 \u2014 same domain"
+    ]
+  },
+  "_strtoul_l": {
+    "c_signature": "unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "ulong_strtoul",
+    "reference": "sdk/lib/crt/string/strtoul.c",
+    "fuzz_domain": [
+      "in range",
+      ">ULONG_MAX\u2192MAX",
+      "neg \u2264ULONG_MAX magnitude",
+      "neg >ULONG_MAX\u21921",
+      "ws+sign",
+      "invalid base",
+      "no digits"
+    ]
+  },
   "atoi": {
     "c_signature": "int atoi(const char *s)",
     "family": "radix",
@@ -237,6 +282,22 @@
       "needle at end",
       "overlapping partial matches",
       "needle longer than hay"
+    ]
+  },
+  "strtoul": {
+    "c_signature": "unsigned long strtoul(const char* nptr, char** end, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "ulong_strtoul",
+    "reference": "sdk/lib/crt/string/strtoul.c",
+    "fuzz_domain": [
+      "in range",
+      "overflow\u2192MAX",
+      "neg\u21921 path",
+      "ws+sign",
+      "invalid base",
+      "no digits",
+      "endptr tracking"
     ]
   }
 }

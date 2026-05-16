@@ -23,6 +23,8 @@ extern "C" {
     fn ref_strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
     fn ref_strchr(s: *const u8, c: i32) -> *mut u8;
     fn ref_strrchr(s: *const u8, c: i32) -> *mut u8;
+    fn ref_strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64;
+    fn ref_strtoul(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> u32;
 }
 
 use cnt_rust::cabi;
@@ -357,5 +359,34 @@ fn diff_strchr_rchr() {
             assert_eq!(off(cabi::strrchr(s.as_ptr(), c)), off(ref_strrchr(s.as_ptr(), c)),
                 "strrchr s={s:?} c={c}");
         }
+    }
+}
+
+#[test]
+fn diff_strtoi64_strtoul() {
+    let mut rng = Rng(0x57f0_1640_u64);
+    let bases = [0i32, 2, 8, 10, 16, 36, 1, 37];
+    let alpha = b" \t+-0xXabcdefABCDEF0123456789Zz";
+    for _ in 0..9000 {
+        let mut s = Vec::new();
+        for _ in 0..rng.upto(24) {
+            s.push(alpha[rng.upto(alpha.len())]);
+        }
+        s.push(0);
+        let base = bases[rng.upto(bases.len())];
+        // i64 / endptr parity
+        let (mut ep_c, mut ep_r): (*mut u8, *mut u8) =
+            (1 as *mut u8, 1 as *mut u8);
+        let cv = unsafe { cabi::_strtoi64(s.as_ptr(), &mut ep_c, base) };
+        let rv = unsafe { ref_strtoi64(s.as_ptr(), &mut ep_r, base) };
+        assert_eq!(cv, rv, "_strtoi64 v s={s:?} base={base}");
+        let off = |p: *mut u8| if p == 1 as *mut u8 { None } else { Some(p as usize - s.as_ptr() as usize) };
+        assert_eq!(off(ep_c), off(ep_r), "_strtoi64 endptr s={s:?} base={base}");
+        // unsigned-long parity (asymmetric clamp incl. neg→1)
+        let (mut uc, mut ur): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let ucv = unsafe { cabi::strtoul(s.as_ptr(), &mut uc, base) };
+        let urv = unsafe { ref_strtoul(s.as_ptr(), &mut ur, base) };
+        assert_eq!(ucv, urv, "strtoul v s={s:?} base={base}");
+        assert_eq!(off(uc), off(ur), "strtoul endptr s={s:?} base={base}");
     }
 }

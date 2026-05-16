@@ -216,3 +216,49 @@ inout_effects = "none"
 preserved_misfeature = "last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char"
 reference    = "sdk/lib/crt/string/tcsrchr.h"
 fuzz_domain  = ["one match", "multiple (last wins)", "not found", "c==0 (→ptr to NUL)", "c high-bit", "empty"]
+
+# --- Wave B (parse-with-endptr, clamp-on-overflow) ------------------
+
+[symbols._strtoi64]
+c_signature  = "__int64 _strtoi64(const char *nptr, char **endptr, int base)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_i64_clamped"
+return_collapse = "i64_endptr"
+inout_effects = "*endptr = nptr + (got_digit ? after-last-digit : 0); not written if base invalid"
+preserved_misfeature = "overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)"
+reference    = "sdk/lib/crt/string/strtoi64.c"
+fuzz_domain  = ["base10", "base16 0x", "base0 octal", "base 2..36", "+I64 overflow→MAX", "-overflow→MIN", "ws+sign", "no digits (endptr=nptr)", "invalid base→0", "junk after digits"]
+
+[symbols._strtoi64_l]
+c_signature  = "__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_i64_clamped"
+return_collapse = "i64_endptr"
+inout_effects = "as _strtoi64; locale ignored"
+preserved_misfeature = "identical to _strtoi64 (it delegates); locale unused"
+reference    = "sdk/lib/crt/string/strtoi64.c"
+fuzz_domain  = ["delegates to _strtoi64 — same domain"]
+
+[symbols._strtoul_l]
+c_signature  = "unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_i64_clamped"
+return_collapse = "ulong_strtoul"
+inout_effects = "*end via _strtoi64_l; locale ignored"
+preserved_misfeature = "signed parse via _strtoi64_l then asymmetric clamp: >ULONG_MAX→ULONG_MAX, < -(i64)ULONG_MAX→1 (NOT 0); _LIBCNT_ no errno; truncate to 32-bit unsigned long"
+reference    = "sdk/lib/crt/string/strtoul.c"
+fuzz_domain  = ["in range", ">ULONG_MAX→MAX", "neg ≤ULONG_MAX magnitude", "neg >ULONG_MAX→1", "ws+sign", "invalid base", "no digits"]
+
+[symbols.strtoul]
+c_signature  = "unsigned long strtoul(const char* nptr, char** end, int base)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_i64_clamped"
+return_collapse = "ulong_strtoul"
+inout_effects = "*end via _strtoi64_l"
+preserved_misfeature = "delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1"
+reference    = "sdk/lib/crt/string/strtoul.c"
+fuzz_domain  = ["in range", "overflow→MAX", "neg→1 path", "ws+sign", "invalid base", "no digits", "endptr tracking"]

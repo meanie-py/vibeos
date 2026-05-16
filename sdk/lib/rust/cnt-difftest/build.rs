@@ -33,6 +33,22 @@ fn main() {
         ("strncmp", format!("typedef char _TCHAR;\n#define _tcsncmp ref_strncmp\n#include <stddef.h>\n{}", inc(s("string/tcsncmp.h")))),
         ("strchr_x", format!("typedef char _TCHAR;\n#define _XINT int\n#define _tcschr ref_strchr\n{}", inc(s("string/tcschr.h")))),
         ("strrchr_x", format!("typedef char _TCHAR;\n#define _XINT int\n#define _tcsrchr ref_strrchr\n{}", inc(s("string/tcsrchr.h")))),
+        // _strtoi64_l defined here too — rename so it doesn't collide
+        // with cnt-rust's own #[no_mangle] _strtoi64_l shim.
+        ("strtoi64", format!("#define _strtoi64 ref_strtoi64\n#define _strtoi64_l ref_strtoi64_l\n{}", inc(s("string/strtoi64.c")))),
+        // strtoul.c calls _strtoi64_l (real name) — provide it from a
+        // privately-renamed copy of strtoi64.c in the same TU.
+        // Host `unsigned long` is 64-bit; Win-i386 is 32. Force the
+        // 32-bit ULONG_MAX (the clamp constant) AFTER limits.h, and
+        // truncate the return to 32 bits — else the reference diverges
+        // from the LP32 contract cnt-rust models.
+        ("strtoul", format!(
+            // ULONG_MAX as signed-64 so `__int64 ret > ULONG_MAX` is a
+            // SIGNED compare — that's how Win-i386 promotes a 32-bit
+            // `unsigned long` against `__int64`. (0xFFFFFFFFUL would be
+            // 64-bit unsigned on the host and wrongly clamp negatives.)
+            "#define _strtoi64 ru_si\n#define _strtoi64_l ru_si_l\n{}#undef ULONG_MAX\n#define ULONG_MAX 0xFFFFFFFFLL\n#define strtoul ru_strtoul_real\n#define _strtoul_l ru_strtoul_l_real\n{}unsigned int ref_strtoul(const char*n,char**e,int b){{return (unsigned int)ru_strtoul_real(n,e,b);}}\n",
+            inc(s("string/strtoi64.c")), inc(s("string/strtoul.c")))),
         ("strstr", format!("#define strstr ref_strstr\n{}", inc(s("string/strstr.c")))),
         ("atoi64", format!("#define _atoi64 ref_atoi64\n{}", inc(s("string/atoi64.c")))),
         ("memcpy", format!("#define __cdecl\n#define memcpy ref_memcpy\n{}", inc(s("mem/memcpy.c")))),

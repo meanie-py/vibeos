@@ -14,6 +14,50 @@ pub unsafe extern "C" fn _atoi64(nptr: *const u8) -> i64 {
 }
 
 
+/// `__int64 _strtoi64(const char *nptr, char **endptr, int base)`
+/// preserved misfeature: overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)
+#[no_mangle]
+pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut u8;
+    }
+    r.value as i64
+}
+
+
+/// `__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)`
+/// preserved misfeature: identical to _strtoi64 (it delegates); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> i64 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut u8;
+    }
+    r.value as i64
+}
+
+
+/// `unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)`
+/// preserved misfeature: signed parse via _strtoi64_l then asymmetric clamp: >ULONG_MAX→ULONG_MAX, < -(i64)ULONG_MAX→1 (NOT 0); _LIBCNT_ no errno; truncate to 32-bit unsigned long
+#[no_mangle]
+pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> u32 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
+    if r.base_ok && !end.is_null() {
+        *end = nptr.add(r.end) as *mut u8;
+    }
+    let v = if r.value > 4294967295i64 {
+        4294967295i64
+    } else if r.value < -4294967295i64 {
+        1i64
+    } else { r.value };
+    v as u32 as u32
+}
+
+
 /// `int atoi(const char *s)`
 /// preserved misfeature: NO overflow detection: i64 wrapping accumulate, then (int) truncation; leading isspace skipped; stops at first non-digit; NULL→0
 #[no_mangle]
@@ -167,5 +211,23 @@ pub unsafe extern "C" fn strstr(hay: *const u8, needle: *const u8) -> *mut u8 {
         Some(i) => hay.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
+}
+
+
+/// `unsigned long strtoul(const char* nptr, char** end, int base)`
+/// preserved misfeature: delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1
+#[no_mangle]
+pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) -> u32 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
+    if r.base_ok && !end.is_null() {
+        *end = nptr.add(r.end) as *mut u8;
+    }
+    let v = if r.value > 4294967295i64 {
+        4294967295i64
+    } else if r.value < -4294967295i64 {
+        1i64
+    } else { r.value };
+    v as u32 as u32
 }
 
