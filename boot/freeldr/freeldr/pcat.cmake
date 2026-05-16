@@ -70,15 +70,18 @@ if(ARCH STREQUAL "i386")
         arch/i386/i386idt.c)
 
     list(APPEND PCATLDR_ARC_SOURCE
-        arch/i386/pc/machpc.c
         arch/i386/pc/pcbeep.c
         arch/i386/pc/pccons.c
-        arch/i386/pc/pcdisk.c
-        arch/i386/pc/pchw.c
-        arch/i386/pc/pcmem.c
-        arch/i386/pc/pcrtc.c
-        arch/i386/pc/pcvesa.c
-        arch/i386/pc/pcvideo.c)
+        arch/i386/pc/pcrtc.c)
+        # pc-hw unit → Rust (freeldr-rust: machpc/pcvideo/pcdisk/pcmem/
+        # pcvesa/pchw.rs). Cohabitation: .c kept on disk, Rust #[no_mangle]
+        # takes over.
+        # arch/i386/pc/machpc.c   # replaced by Rust (freeldr-rust/src/machpc.rs)
+        # arch/i386/pc/pcdisk.c   # replaced by Rust (freeldr-rust/src/pcdisk.rs)
+        # arch/i386/pc/pchw.c     # replaced by Rust (freeldr-rust/src/pchw.rs)
+        # arch/i386/pc/pcmem.c    # replaced by Rust (freeldr-rust/src/pcmem.rs)
+        # arch/i386/pc/pcvesa.c   # replaced by Rust (freeldr-rust/src/pcvesa.rs)
+        # arch/i386/pc/pcvideo.c  # replaced by Rust (freeldr-rust/src/pcvideo.rs)
 
 elseif(ARCH STREQUAL "amd64")
     list(APPEND PCATLDR_BASE_ASM_SOURCE
@@ -103,15 +106,16 @@ elseif(ARCH STREQUAL "amd64")
         arch/i386/hwdisk.c
         arch/i386/hwpci.c
         # arch/i386/i386bug.c
-        arch/i386/pc/machpc.c
         arch/i386/pc/pcbeep.c
         arch/i386/pc/pccons.c
-        arch/i386/pc/pcdisk.c
-        arch/i386/pc/pchw.c
-        arch/i386/pc/pcmem.c
-        arch/i386/pc/pcrtc.c
-        arch/i386/pc/pcvesa.c
-        arch/i386/pc/pcvideo.c)
+        arch/i386/pc/pcrtc.c)
+        # pc-hw unit → Rust (freeldr-rust). Cohabitation: .c kept on disk.
+        # arch/i386/pc/machpc.c   # replaced by Rust (freeldr-rust/src/machpc.rs)
+        # arch/i386/pc/pcdisk.c   # replaced by Rust (freeldr-rust/src/pcdisk.rs)
+        # arch/i386/pc/pchw.c     # replaced by Rust (freeldr-rust/src/pchw.rs)
+        # arch/i386/pc/pcmem.c    # replaced by Rust (freeldr-rust/src/pcmem.rs)
+        # arch/i386/pc/pcvesa.c   # replaced by Rust (freeldr-rust/src/pcvesa.rs)
+        # arch/i386/pc/pcvideo.c  # replaced by Rust (freeldr-rust/src/pcvideo.rs)
 
 else()
     #TBD

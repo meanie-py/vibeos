@@ -1,0 +1,465 @@
+use core::ffi::c_void;
+use ntkrnl_sys::base::*;
+use crate::frldr::*;
+extern "C" {
+    fn TRACE(fmt: *const i8, ...);
+    fn ERR(fmt: *const i8, ...);
+    fn WARN(fmt: *const i8, ...);
+    fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
+}
+
+// pcvesa.c file-local VESA_SVGA_INFO (#include <pshpack2.h> ... ; dropped by
+// rustconv). Packed-2 per the C declaration.
+#[repr(C, packed(2))]
+#[derive(Clone, Copy)]
+pub struct VESA_SVGA_INFO {
+    pub Signature: [UCHAR; 4],
+    pub VesaVersion: USHORT,
+    pub OemNamePtr: ULONG,
+    pub Capabilities: ULONG,
+    pub SupportedModeListPtr: ULONG,
+    pub TotalVideoMemory: USHORT,
+    pub OemSoftwareVersion: USHORT,
+    pub VendorNamePtr: ULONG,
+    pub ProductNamePtr: ULONG,
+    pub ProductRevisionStringPtr: ULONG,
+    pub VBE_AF_Version: USHORT,
+    pub AcceleratedModeListPtr: ULONG,
+    pub Reserved: [UCHAR; 216],
+    pub ScratchPad: [UCHAR; 256],
+}
+pub type PVESA_SVGA_INFO = *mut VESA_SVGA_INFO;
+
+unsafe fn BiosSetVideoFont8x16() {
+    let mut Regs: REGS = core::mem::zeroed();
+
+    Regs.w.ax = 0x1114;
+    Regs.b.bl = 0;
+    Int386(0x10, &mut Regs, &mut Regs);
+}
+
+unsafe fn VideoSetTextCursorPosition(X: ULONG, Y: ULONG) {
+}
+
+unsafe fn VideoGetTextCursorPositionX() -> ULONG {
+    let mut Regs: REGS = core::mem::zeroed();
+
+    Regs.b.ah = 0x03;
+    Regs.b.bh = 0x00;
+    Int386(0x10, &mut Regs, &mut Regs);
+
+    return Regs.b.dl as ULONG;
+}
+
+unsafe fn VideoGetTextCursorPositionY() -> ULONG {
+    let mut Regs: REGS = core::mem::zeroed();
+
+    Regs.b.ah = 0x03;
+    Regs.b.bh = 0x00;
+    Int386(0x10, &mut Regs, &mut Regs);
+
+    Regs.b.dh as ULONG
+}
+
+unsafe fn BiosIsVesaSupported() -> USHORT {
+    let mut Regs: REGS = core::mem::zeroed();
+    let SvgaInfo = BIOSCALLBUFFER as PVESA_SVGA_INFO;
+
+    TRACE(b"BiosIsVesaSupported()\n\0".as_ptr() as PCHAR);
+
+    RtlZeroMemory(SvgaInfo as PVOID, core::mem::size_of::<VESA_SVGA_INFO>() as SIZE_T);
+
+    (*SvgaInfo).Signature[0] = b'V';
+    (*SvgaInfo).Signature[1] = b'B';
+    (*SvgaInfo).Signature[2] = b'E';
+    (*SvgaInfo).Signature[3] = b'2';
+
+    Regs.w.ax = 0x4F00;
+    Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
+    Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+    Int386(0x10, &mut Regs as *mut REGS, &mut Regs as *mut REGS);
+
+    TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);
+    TRACE(b"AH = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.ah) as usize);
+
+    if Regs.w.ax != 0x004F {
+        WARN(b"VBE Get SuperVGA information function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        return 0x0000;
+    }
+
+    TRACE(b"Supported.\n\0".as_ptr() as PCHAR);
+    TRACE(b"SvgaInfo->Signature[4] = %c%c%c%c\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
+    TRACE(b"SvgaInfo->VesaVersion = v%d.%d\n\0".as_ptr() as PCHAR, ((((*SvgaInfo).VesaVersion >> 8) & 0xFF)) as usize, (((*SvgaInfo).VesaVersion & 0xFF)) as usize);
+    TRACE(b"SvgaInfo->OemNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).OemNamePtr) as usize);
+    TRACE(b"SvgaInfo->Capabilities = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Capabilities) as usize);
+    TRACE(b"SvgaInfo->VideoMemory = %dK\n\0".as_ptr() as PCHAR, ((*SvgaInfo).TotalVideoMemory * 64) as usize);
+    TRACE(b"---VBE v2.0 ---\n\0".as_ptr() as PCHAR);
+    TRACE(b"SvgaInfo->OemSoftwareVersion = v%d.%d\n\0".as_ptr() as PCHAR, ((((*SvgaInfo).OemSoftwareVersion >> 8) & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 12) & 0x0F) * 10)) as usize, (((*SvgaInfo).OemSoftwareVersion & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 4) & 0x0F) * 10)) as usize);
+    TRACE(b"SvgaInfo->VendorNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).VendorNamePtr) as usize);
+    TRACE(b"SvgaInfo->ProductNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).ProductNamePtr) as usize);
+    TRACE(b"SvgaInfo->ProductRevisionStringPtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).ProductRevisionStringPtr) as usize);
+    TRACE(b"SvgaInfo->VBE/AF Version = 0x%x (BCD WORD)\n\0".as_ptr() as PCHAR, ((*SvgaInfo).VBE_AF_Version) as usize);
+
+    if (*SvgaInfo).Signature[0] != b'V' ||
+        (*SvgaInfo).Signature[1] != b'E' ||
+        (*SvgaInfo).Signature[2] != b'S' ||
+        (*SvgaInfo).Signature[3] != b'A' {
+        ERR(b"Bad signature in VESA information (%c%c%c%c)\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
+        return 0x0000;
+    }
+
+    return (*SvgaInfo).VesaVersion;
+}
+
+unsafe fn BiosIsVesaDdcSupported() -> BOOLEAN {
+    let mut Regs: REGS = core::mem::zeroed();
+
+    TRACE(b"BiosIsVesaDdcSupported()\n\0".as_ptr() as *const i8);
+
+    Regs.w.ax = 0x4F15;
+    Regs.b.bl = 0;
+    Regs.w.cx = 0;
+    Regs.w.es = 0;
+    Regs.w.di = 0;
+    Int386(0x10, &mut Regs, &mut Regs);
+
+    TRACE(b"AL = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.al) as usize);
+    TRACE(b"AH = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.ah) as usize);
+
+    TRACE(b"BL = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.bl) as usize);
+
+    if Regs.w.ax != 0x004F {
+        WARN(b"VBE/DDC Installation check function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as *const i8, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        return 0u8;
+    }
+
+    if Regs.b.ah == 0 { 1u8 } else { 0u8 }
+}
+
+unsafe fn BiosVesaReadEdid() -> u8 {
+    let mut Regs: REGS = core::mem::zeroed();
+
+    TRACE(b"BiosVesaReadEdid()\n\0".as_ptr() as PCHAR);
+
+    RtlZeroMemory(BIOSCALLBUFFER as PVOID, 128);
+
+    Regs.w.ax = 0x4F15;
+    Regs.b.bl = 1;
+    Regs.w.cx = 0;
+    Regs.w.dx = 0;
+    Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
+    Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+    Int386(0x10, &mut Regs, &mut Regs);
+
+    TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);
+    TRACE(b"AH = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.ah) as usize);
+
+    if Regs.w.ax != 0x004F {
+        WARN(b"VBE/DDC Read EDID function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        return 0u8;
+    }
+
+    if Regs.b.ah == 0 { 1u8 } else { 0u8 }
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  *  FreeLoader
+//  *  Copyright (C) 1998-2003  Brian Palmer  <brianp@sginet.com>
+//  *
+//  *  This program is free software; you can redistribute it and/or modify
+//  *  it under the terms of the GNU General Public License as published by
+//  *  the Free Software Foundation; either version 2 of the License, or
+//  *  (at your option) any later version.
+//  *
+//  *  This program is distributed in the hope that it will be useful,
+//  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  *  GNU General Public License for more details.
+//  *
+//  *  You should have received a copy of the GNU General Public License along
+//  *  with this program; if not, write to the Free Software Foundation, Inc.,
+//  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+//  */
+//
+// #include <freeldr.h>
+//
+// #include <debug.h>
+// DBG_DEFAULT_CHANNEL(HWDETECT);
+//
+// #include <pshpack2.h>
+// typedef struct
+// {
+//     UCHAR Signature[4];             // (ret) signature ("VESA")
+//                                     // (call) VESA 2.0 request signature ("VBE2"), required to receive
+//                                     // version 2.0 info
+//     USHORT VesaVersion;             // VESA version number (one-digit minor version -- 0102h = v1.2)
+//     ULONG OemNamePtr;               // Pointer to OEM name
+//                                     // "761295520" for ATI
+//     ULONG Capabilities;             // Capabilities flags (see #00078)
+//     ULONG SupportedModeListPtr;     // Pointer to list of supported VESA and OEM video modes
+//                                     // (list of words terminated with FFFFh)
+//     USHORT TotalVideoMemory;        // Total amount of video memory in 64K blocks
+//
+//     // ---VBE v1.x ---
+//     //UCHAR Reserved[236];
+//
+//     // ---VBE v2.0 ---
+//     USHORT OemSoftwareVersion;      // OEM software version (BCD, high byte = major, low byte = minor)
+//     ULONG VendorNamePtr;            // Pointer to vendor name
+//     ULONG ProductNamePtr;           // Pointer to product name
+//     ULONG ProductRevisionStringPtr; // Pointer to product revision string
+//     USHORT VBE_AF_Version;          // (if capabilities bit 3 set) VBE/AF version (BCD)
+//                                     // 0100h for v1.0P
+//     ULONG AcceleratedModeListPtr;   // (if capabilities bit 3 set) pointer to list of supported
+//                                     // Accelerated video modes (list of words terminated with FFFFh)
+//     UCHAR Reserved[216];            // Reserved for VBE implementation
+//     UCHAR ScratchPad[256];          // OEM scratchpad (for OEM strings, etc.)
+// } VESA_SVGA_INFO, *PVESA_SVGA_INFO;
+// #include <poppack.h>
+//
+// // Bitfields for VESA capabilities:
+// //
+// // Bit(s)  Description     (Table 00078)
+// // 0      DAC can be switched into 8-bit mode
+// // 1      non-VGA controller
+// // 2      programmed DAC with blank bit (i.e. only during blanking interval)
+// // 3      (VBE v3.0) controller supports hardware stereoscopic signalling
+// // 3      controller supports VBE/AF v1.0P extensions
+// // 4      (VBE v3.0) if bit 3 set:
+// // =0 stereo signalling via external VESA stereo connector
+// // =1 stereo signalling via VESA EVC connector
+// // 4      (VBE/AF v1.0P) must call EnableDirectAccess to access framebuffer
+// // 5      (VBE/AF v1.0P) controller supports hardware mouse cursor
+// // 6      (VBE/AF v1.0P) controller supports hardware clipping
+// // 7      (VBE/AF v1.0P) controller supports transparent BitBLT
+// // 8-31   reserved (0)
+//
+// // Notes: The list of supported video modes is stored in the reserved
+// // portion of the SuperVGA information record by some implementations,
+// // and it may thus be necessary to either copy the mode list or use a
+// // different buffer for all subsequent VESA calls. Not all of the video
+// // modes in the list of mode numbers may be supported, e.g. if they require
+// // more memory than currently installed or are not supported by the
+// // attached monitor. Check any mode you intend to use through AX=4F01h first..
+// // The 1.1 VESA document specifies 242 reserved bytes at the end, so the
+// // buffer should be 262 bytes to ensure that it is not overrun; for v2.0,
+// // the buffer should be 512 bytes. The S3 specific video modes will most
+// // likely follow the FFFFh terminator at the end of the standard modes.
+// // A search must then be made to find them, FFFFh will also terminate this
+// // second list. In some cases, only a "stub" VBE may be present, supporting
+// // only AX=4F00h; this case may be assumed if the list of supported video modes
+// // is empty (consisting of a single word of FFFFh)
+// #if 0
+// static VOID BiosSetVideoFont8x16(VOID)
+// {
+//     REGS Regs;
+//
+//     // Int 10h AX=1114h
+//     // VIDEO - TEXT-MODE CHARGEN - LOAD ROM 8x16 CHARACTER SET (VGA)
+//     //
+//     // AX = 1114h
+//     // BL = block to load
+//     // Return:
+//     // Nothing
+//     Regs.w.ax = 0x1114;
+//     Regs.b.bl = 0;
+//     Int386(0x10, &Regs, &Regs);
+// }
+//
+// static VOID VideoSetTextCursorPosition(ULONG X, ULONG Y)
+// {
+// }
+//
+// static ULONG VideoGetTextCursorPositionX(VOID)
+// {
+//     REGS Regs;
+//
+//     // Int 10h AH=03h
+//     // VIDEO - GET CURSOR POSITION AND SIZE
+//     //
+//     // AH = 03h
+//     // BH = page number
+//     // 0-3 in modes 2&3
+//     // 0-7 in modes 0&1
+//     // 0 in graphics modes
+//     // Return:
+//     // AX = 0000h (Phoenix BIOS)
+//     // CH = start scan line
+//     // CL = end scan line
+//     // DH = row (00h is top)
+//     // DL = column (00h is left)
+//     Regs.b.ah = 0x03;
+//     Regs.b.bh = 0x00;
+//     Int386(0x10, &Regs, &Regs);
+//
+//     return Regs.b.dl;
+// }
+//
+// static ULONG VideoGetTextCursorPositionY(VOID)
+// {
+//     REGS Regs;
+//
+//     // Int 10h AH=03h
+//     // VIDEO - GET CURSOR POSITION AND SIZE
+//     //
+//     // AH = 03h
+//     // BH = page number
+//     // 0-3 in modes 2&3
+//     // 0-7 in modes 0&1
+//     // 0 in graphics modes
+//     // Return:
+//     // AX = 0000h (Phoenix BIOS)
+//     // CH = start scan line
+//     // CL = end scan line
+//     // DH = row (00h is top)
+//     // DL = column (00h is left)
+//     Regs.b.ah = 0x03;
+//     Regs.b.bh = 0x00;
+//     Int386(0x10, &Regs, &Regs);
+//
+//     return Regs.b.dh;
+// }
+// #endif
+//
+// USHORT BiosIsVesaSupported(VOID)
+// {
+//     REGS Regs;
+//     PVESA_SVGA_INFO SvgaInfo = (PVESA_SVGA_INFO)BIOSCALLBUFFER;
+//     //USHORT* VideoModes;
+//     //USHORT Index;
+//
+//     TRACE("BiosIsVesaSupported()\n");
+//
+//     RtlZeroMemory(SvgaInfo, sizeof(VESA_SVGA_INFO));
+//
+//     // Make sure we receive version 2.0 info
+//     SvgaInfo->Signature[0] = 'V';
+//     SvgaInfo->Signature[1] = 'B';
+//     SvgaInfo->Signature[2] = 'E';
+//     SvgaInfo->Signature[3] = '2';
+//
+//     // Int 10h AX=4F00h
+//     // VESA SuperVGA BIOS (VBE) - GET SuperVGA INFORMATION
+//     //
+//     // AX = 4F00h
+//     // ES:DI -> buffer for SuperVGA information (see #00077)
+//     // Return:
+//     // AL = 4Fh if function supported
+//     // AH = status
+//     //   00h successful
+//     // ES:DI buffer filled
+//     //   01h failed
+//     //   ---VBE v2.0---
+//     //   02h function not supported by current hardware configuration
+//     //   03h function invalid in current video mode
+//     //
+//     // Determine whether VESA BIOS extensions are present and the
+//     // capabilities supported by the display adapter
+//     //
+//     // Installation check;VESA SuperVGA
+//     Regs.w.ax = 0x4F00;
+//     Regs.w.es = BIOSCALLBUFSEGMENT;
+//     Regs.w.di = BIOSCALLBUFOFFSET;
+//     Int386(0x10, &Regs, &Regs);
+//
+//     TRACE("AL = 0x%x\n", (Regs.b.al) as usize);
+//     TRACE("AH = 0x%x\n", (Regs.b.ah) as usize);
+//
+//     if (Regs.w.ax != 0x004F)
+//     {
+//         WARN("VBE Get SuperVGA information function not supported (AL=0x%x) or failed (AH=0x%x)\n", (//              Regs.b.al) as usize, (Regs.b.ah) as usize);
+//         return 0x0000;
+//     }
+//
+//     TRACE("Supported.\n");
+//     TRACE("SvgaInfo->Signature[4] = %c%c%c%c\n", (SvgaInfo->Signature[0]) as usize, (SvgaInfo->Signature[1]) as usize, (SvgaInfo->Signature[2]) as usize, (SvgaInfo->Signature[3]) as usize);
+//     TRACE("SvgaInfo->VesaVersion = v%d.%d\n", (((SvgaInfo->VesaVersion >> 8) & 0xFF)) as usize, ((SvgaInfo->VesaVersion & 0xFF)) as usize);
+//     TRACE("SvgaInfo->OemNamePtr = 0x%x\n", (SvgaInfo->OemNamePtr) as usize);
+//     TRACE("SvgaInfo->Capabilities = 0x%x\n", (SvgaInfo->Capabilities) as usize);
+//     TRACE("SvgaInfo->VideoMemory = %dK\n", (SvgaInfo->TotalVideoMemory * 64) as usize);
+//     TRACE("---VBE v2.0 ---\n");
+//     TRACE("SvgaInfo->OemSoftwareVersion = v%d.%d\n", (((SvgaInfo->OemSoftwareVersion >> 8) & 0x0F) + (((SvgaInfo->OemSoftwareVersion >> 12) & 0x0F) * 10)) as usize, ((SvgaInfo->OemSoftwareVersion & 0x0F) + (((SvgaInfo->OemSoftwareVersion >> 4) & 0x0F) * 10)) as usize);
+//     TRACE("SvgaInfo->VendorNamePtr = 0x%x\n", (SvgaInfo->VendorNamePtr) as usize);
+//     TRACE("SvgaInfo->ProductNamePtr = 0x%x\n", (SvgaInfo->ProductNamePtr) as usize);
+//     TRACE("SvgaInfo->ProductRevisionStringPtr = 0x%x\n", (SvgaInfo->ProductRevisionStringPtr) as usize);
+//     TRACE("SvgaInfo->VBE/AF Version = 0x%x (BCD WORD)\n", (SvgaInfo->VBE_AF_Version) as usize);
+//
+//     if (SvgaInfo->Signature[0] != 'V' ||
+//         SvgaInfo->Signature[1] != 'E' ||
+//         SvgaInfo->Signature[2] != 'S' ||
+//         SvgaInfo->Signature[3] != 'A')
+//     {
+//         ERR("Bad signature in VESA information (%c%c%c%c)\n", (//             SvgaInfo->Signature[0]) as usize, (//             SvgaInfo->Signature[1]) as usize, (//             SvgaInfo->Signature[2]) as usize, (//             SvgaInfo->Signature[3]) as usize);
+//         return 0x0000;
+//     }
+//
+//     return SvgaInfo->VesaVersion;
+// }
+//
+// BOOLEAN
+// BiosIsVesaDdcSupported(VOID)
+// {
+//     REGS Regs;
+//
+//     TRACE("BiosIsVesaDdcSupported()\n");
+//
+//     Regs.w.ax = 0x4F15;
+//     Regs.b.bl = 0;
+//     Regs.w.cx = 0;
+//     Regs.w.es = 0;
+//     Regs.w.di = 0;
+//     Int386(0x10, &Regs, &Regs);
+//
+//     TRACE("AL = 0x%x\n", (Regs.b.al) as usize);
+//     TRACE("AH = 0x%x\n", (Regs.b.ah) as usize);
+//
+//     TRACE("BL = 0x%x\n", (Regs.b.bl) as usize);
+//
+//     if (Regs.w.ax != 0x004F)
+//     {
+//         WARN("VBE/DDC Installation check function not supported (AL=0x%x) or failed (AH=0x%x)\n", (//              Regs.b.al) as usize, (Regs.b.ah) as usize);
+//         return FALSE;
+//     }
+//
+//     return (Regs.b.ah == 0);
+// }
+//
+// BOOLEAN
+// BiosVesaReadEdid(VOID)
+// {
+//     REGS Regs;
+//
+//     TRACE("BiosVesaReadEdid()\n");
+//
+//     RtlZeroMemory((PVOID)BIOSCALLBUFFER, 128);
+//
+//     Regs.w.ax = 0x4F15;
+//     Regs.b.bl = 1;
+//     Regs.w.cx = 0;
+//     Regs.w.dx = 0;
+//     Regs.w.es = BIOSCALLBUFSEGMENT;
+//     Regs.w.di = BIOSCALLBUFOFFSET;
+//     Int386(0x10, &Regs, &Regs);
+//
+//     TRACE("AL = 0x%x\n", (Regs.b.al) as usize);
+//     TRACE("AH = 0x%x\n", (Regs.b.ah) as usize);
+//
+//     if (Regs.w.ax != 0x004F)
+//     {
+//         WARN("VBE/DDC Read EDID function not supported (AL=0x%x) or failed (AH=0x%x)\n", (//              Regs.b.al) as usize, (Regs.b.ah) as usize);
+//         return FALSE;
+//     }
+//
+//     return (Regs.b.ah == 0);
+// }
+//
+// /* EOF */
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

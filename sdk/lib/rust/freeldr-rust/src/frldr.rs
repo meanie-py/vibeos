@@ -41,6 +41,7 @@ pub type PCACHE_DRIVE = *mut _CACHE_DRIVE;
 
 // disk.h — _GEOMETRY
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct _GEOMETRY {
     pub Cylinders: ULONG,
     pub Heads: ULONG,
@@ -591,3 +592,129 @@ pub const PARTITION_STYLE_RAW: PARTITION_STYLE = 2;
 pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
 pub const DiskPeripheral: CONFIGURATION_TYPE = 25;
 pub const FloppyDiskPeripheral: CONFIGURATION_TYPE = 26;
+
+// ===========================================================================
+// pc-hw unit — shared real-mode BIOS surface (include/arch/pc/pcbios.h +
+// x86common.h). pshpack1 → packed; the Int386 asm thunk reads exact REGS
+// offsets (REGS_SIZE=40). Unique names (verified not elsewhere) so
+// keystone-safe; the `Int386` extern itself stays file-local per unit.
+// ===========================================================================
+pub const EFLAGS_CF: ULONG = 0x01;
+pub const MAX_BIOS_DESCRIPTORS: usize = 80;
+pub const BIOSCALLBUFFER: ULONG = 0x4000;
+pub const BIOSCALLBUFSEGMENT: ULONG = 0x4000 / 16;
+pub const BIOSCALLBUFOFFSET: ULONG = 0x0000;
+pub const BIOSCALLBUFSIZE: ULONG = 0x1000; // PAGE_SIZE
+pub const REGS_EAX: ULONG = 0;
+pub const REGS_EBX: ULONG = 4;
+pub const REGS_ECX: ULONG = 8;
+pub const REGS_EDX: ULONG = 12;
+pub const REGS_ESI: ULONG = 16;
+pub const REGS_EDI: ULONG = 20;
+pub const REGS_EBP: ULONG = 24;
+pub const REGS_DS: ULONG = 28;
+pub const REGS_ES: ULONG = 30;
+pub const REGS_FS: ULONG = 32;
+pub const REGS_GS: ULONG = 34;
+pub const REGS_EFLAGS: ULONG = 36;
+pub const REGS_SIZE: ULONG = 40;
+
+// BIOS_MEMORY_TYPE (E820 region kinds).
+pub type BIOS_MEMORY_TYPE = u32;
+pub const BiosMemoryUsable: BIOS_MEMORY_TYPE = 1;
+pub const BiosMemoryReserved: BIOS_MEMORY_TYPE = 2;
+pub const BiosMemoryAcpiReclaim: BIOS_MEMORY_TYPE = 3;
+pub const BiosMemoryAcpiNvs: BIOS_MEMORY_TYPE = 4;
+pub const BiosMemoryUnusable: BIOS_MEMORY_TYPE = 5;
+pub const BiosMemoryDisabled: BIOS_MEMORY_TYPE = 6;
+pub const BiosMemoryPersistent: BIOS_MEMORY_TYPE = 7;
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct DWORDREGS {
+    pub eax: u32, pub ebx: u32, pub ecx: u32, pub edx: u32,
+    pub esi: u32, pub edi: u32, pub ebp: u32,
+    pub ds: u16, pub es: u16, pub fs: u16, pub gs: u16,
+    pub eflags: u32,
+}
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct WORDREGS {
+    pub ax: u16, pub _upper_ax: u16, pub bx: u16, pub _upper_bx: u16,
+    pub cx: u16, pub _upper_cx: u16, pub dx: u16, pub _upper_dx: u16,
+    pub si: u16, pub _upper_si: u16, pub di: u16, pub _upper_di: u16,
+    pub bp: u16, pub _upper_bp: u16,
+    pub ds: u16, pub es: u16, pub fs: u16, pub gs: u16,
+    pub flags: u16, pub _upper_flags: u16,
+}
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct BYTEREGS {
+    pub al: u8, pub ah: u8, pub _upper_ax: u16,
+    pub bl: u8, pub bh: u8, pub _upper_bx: u16,
+    pub cl: u8, pub ch: u8, pub _upper_cx: u16,
+    pub dl: u8, pub dh: u8, pub _upper_dx: u16,
+    pub si: u16, pub _upper_si: u16, pub di: u16, pub _upper_di: u16,
+    pub bp: u16, pub _upper_bp: u16,
+    pub ds: u16, pub es: u16, pub fs: u16, pub gs: u16,
+    pub flags: u16, pub _upper_flags: u16,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union REGS {
+    pub x: DWORDREGS,
+    pub d: DWORDREGS,
+    pub w: WORDREGS,
+    pub b: BYTEREGS,
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct BIOS_MEMORY_MAP {
+    pub BaseAddress: u64,
+    pub Length: u64,
+    pub Type: ULONG,
+    pub ExtendedAttributesAsULONG: ULONG,
+}
+pub type PBIOS_MEMORY_MAP = *mut BIOS_MEMORY_MAP;
+
+// C macro: INT386_SUCCESS(regs) == ((regs.x.eflags & EFLAGS_CF) == 0)
+#[inline(always)]
+pub unsafe fn INT386_SUCCESS(regs: REGS) -> BOOLEAN {
+    ((regs.x.eflags & EFLAGS_CF) == 0) as BOOLEAN
+}
+
+// Misc shared pc/hw symbols (unique — keystone-safe).
+pub type INT = i32;
+pub const TAG_HW_RESOURCE_LIST: ULONG = u32::from_be_bytes(*b"lRwH");
+pub const CmResourceTypeDeviceSpecific: u8 = 0x81; // CM_RESOURCE_TYPE
+// arc.h IDENTIFIER_FLAG bits not already pulled from ddk by consumers.
+pub const IDENTIFIER_FLAG_Input: i32 = 0x20;
+pub const IDENTIFIER_FLAG_Output: i32 = 0x40;
+
+// C `FIELD_OFFSET(t,f)` macro — rustconv emits it as a call; the
+// freeldr_fieldoffset.py pass rewrites call→macro!. offset_of! → ULONG.
+#[macro_export]
+macro_rules! FIELD_OFFSET {
+    // FIELD_OFFSET(t, arr[i]) — flexible-array element offset idiom.
+    ($t:ty, $f:ident [ $i:expr ]) => {{
+        let _u: ::core::mem::MaybeUninit<$t> = ::core::mem::MaybeUninit::uninit();
+        let _b = _u.as_ptr();
+        (::core::mem::offset_of!($t, $f)
+            + ($i as usize) * ::core::mem::size_of_val(unsafe { &(*_b).$f[0] })) as u32
+    }};
+    ($t:ty, $f:tt) => { ::core::mem::offset_of!($t, $f) as u32 };
+}
+// C `RTL_SIZEOF_THROUGH_FIELD(t,f)` == offsetof(t,f)+sizeof(((t*)0)->f).
+#[macro_export]
+macro_rules! RTL_SIZEOF_THROUGH_FIELD {
+    ($t:ty, $f:tt) => {{
+        // packed-safe: never take a reference to the (possibly unaligned)
+        // field — derive its size from the raw-pointer pointee type.
+        const fn __fsz<T>(_: *const T) -> usize { ::core::mem::size_of::<T>() }
+        let _u: ::core::mem::MaybeUninit<$t> = ::core::mem::MaybeUninit::uninit();
+        let _b = _u.as_ptr();
+        ::core::mem::offset_of!($t, $f)
+            + __fsz(unsafe { ::core::ptr::addr_of!((*_b).$f) })
+    }};
+}

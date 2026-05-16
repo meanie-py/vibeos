@@ -50,6 +50,14 @@ pub mod partition;
 pub mod ramdisk;
 pub mod conversion;
 
+// 🟢 sweep — pc-hw unit (arch/i386/pc/{machpc,pcvideo,pcdisk,pcmem,pcvesa,pchw}.c).
+pub mod machpc;
+pub mod pcvideo;
+pub mod pcdisk;
+pub mod pcmem;
+pub mod pcvesa;
+pub mod pchw;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;

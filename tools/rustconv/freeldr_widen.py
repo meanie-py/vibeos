@@ -137,6 +137,12 @@ def apply_edits(edits):
                 continue
             if seg.strip() == "":
                 continue
+            # Never wrap inside a match-arm pattern: `as` casts are not
+            # valid in pattern position (rustc: "expected a pattern, found
+            # an expression"). Heuristic: the text following the flagged
+            # span (after optional close-parens/ws) starts with `=>`.
+            if re.match(r"[\s)]*=>", line[j:]):
+                continue
             lines[ln - 1] = line[:i] + f"(({seg}) as {exp})" + line[j:]
             applied += 1
         path.write_text("\n".join(lines))
