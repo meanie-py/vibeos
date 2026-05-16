@@ -1060,3 +1060,42 @@ inout_effects = "none (pure scalar)"
 preserved_misfeature = "NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit"
 reference    = "sdk/lib/crt/string/towupper_nt.c"
 fuzz_domain  = ["a-z/A-Z", "0x80-0xFF Latin-1 upcase", "ÿ(0xFF→0x178)", "µ(0xB5→0x39C)", "š/œ/ž", "non-alpha", "0", ">0xFFFF _C (WCHAR-trunc)"]
+
+# --- Wave I: in-place mutate ---------------------------------------
+# strrev.c (_strrev) + strset.c (_strset & _strnset). Narrow only —
+# libcntpr has NO wide twins (no wcsrev/wcsset .c). All return the
+# original pointer; operate over live content only (never the NUL,
+# never past it). NO NULL guards in the C — NULL never fuzzed.
+
+[symbols._strrev]
+c_signature  = "char *_strrev(char *s)"
+family       = "string"
+slice_pattern = "mut_reverse"
+core_fn      = "strmut::reverse"
+return_collapse = "strmut"
+inout_effects = "in-place reverse of content [0..strlen); returns s"
+preserved_misfeature = "len 0/1 natural no-op (C walks to NUL then swaps inward, b<e guards); NO NULL guard (precomp but while(*e) derefs) → NULL crashes in C, never fuzzed"
+reference    = "sdk/lib/crt/string/strrev.c"
+fuzz_domain  = ["empty", "len 1", "len 2", "even len", "odd len", "embedded high bytes", "all same char"]
+
+[symbols._strset]
+c_signature  = "char *_strset(char *szToFill, int szFill)"
+family       = "string"
+slice_pattern = "mut_set"
+core_fn      = "strmut::fill"
+return_collapse = "strmut"
+inout_effects = "each content byte = (char)szFill; returns szToFill; stops at original NUL (never extends)"
+preserved_misfeature = "szFill int truncated to char (low byte); empty → no writes; NO NULL guard → NULL crashes in C, never fuzzed"
+reference    = "sdk/lib/crt/string/strset.c"
+fuzz_domain  = ["empty", "len 1", "typical", "szFill 0x41", "szFill>0xFF (low-byte trunc)", "szFill negative", "szFill 0 (early-stop semantics: still fills since check is on src not fill)"]
+
+[symbols._strnset]
+c_signature  = "char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)"
+family       = "string"
+slice_pattern = "mut_nset"
+core_fn      = "strmut::fill"
+return_collapse = "strmut"
+inout_effects = "first min(strlen, (int)sizeMaxFill) bytes = (char)szFill; returns szToFill"
+preserved_misfeature = "sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc"
+reference    = "sdk/lib/crt/string/strset.c"
+fuzz_domain  = ["max 0 (→nothing)", "max < strlen", "max == strlen", "max > strlen (→strlen)", "empty str", "max > INT_MAX (→negative→nothing)", "szFill>0xFF trunc"]

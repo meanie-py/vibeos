@@ -303,6 +303,18 @@ fn main() {
             "#define _CRTIMP\n#define wint_t unsigned short\n\
              #define towupper ref_towupper\n{}",
             inc(s("string/towupper_nt.c")))),
+        // Wave I — in-place mutate. strrev.c pulls precomp (CDECL).
+        // strset.c self-typedefs size_t: force _WIN64 so it picks the
+        // 64-bit `unsigned __int64 size_t` (== host usize ABI; needs
+        // __int64 since clang skips strset.c's GNU __int64 #define),
+        // pinning the genuine `(int)sizeMaxFill` signed-cast.
+        ("strrev", format!(
+            "#define _strrev ref_strrev\n{}",
+            inc(s("string/strrev.c")))),
+        ("strset", format!(
+            "#define _WIN64\n#define __int64 long long\n\
+             #define _strset ref_strset\n#define _strnset ref_strnset\n{}",
+            inc(s("string/strset.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

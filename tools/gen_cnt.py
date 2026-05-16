@@ -310,6 +310,65 @@ def _casemap_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
+# Wave I — in-place string mutators. All return the original pointer;
+# the slice is bounded by the live content (cstr_slice len), and for
+# _strnset further by min(len, (int)sizeMaxFill) — the signed-int cast
+# of size_t is the preserved misfeature (huge size_t → negative int →
+# fills nothing). NO NULL guards in the C — NULL never fuzzed.
+STRMUT = {"mut_reverse", "mut_set", "mut_nset"}
+
+
+def _strmut_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = rs_ty(params[0][0]) == "*mut u16"
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+    b: list[str] = []
+    # `__buf` (not `s`) — _strrev's param is literally named `s`.
+    if sp == "mut_reverse":
+        (p,) = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            f"    let __buf = {rawm}({p}, __n);",
+            "    crate::core_rs::strmut::reverse(__buf);",
+            f"    {p}",
+        ]
+    elif sp == "mut_set":
+        p, fill = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            f"    let __buf = {rawm}({p}, __n);",
+            f"    crate::core_rs::strmut::fill(__buf, {fill} as {el});",
+            f"    {p}",
+        ]
+    elif sp == "mut_nset":
+        p, fill, mx = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            # C: `i < (int)sizeMaxFill` — signed-int cast of size_t.
+            f"    let __lim = {mx} as i32;",
+            "    let __take = if __lim <= 0 { 0 }"
+            " else { core::cmp::min(__n, __lim as usize) };",
+            f"    let __buf = {rawm}({p}, __take);",
+            f"    crate::core_rs::strmut::fill(__buf, {fill} as {el});",
+            f"    {p}",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled strmut pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
     decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
@@ -434,6 +493,8 @@ def shim(name: str, m: dict) -> str:
         return _strfam_shim(name, m, params, rt)
     if sp in CASEMAP:
         return _casemap_shim(name, m, params, rt)
+    if sp in STRMUT:
+        return _strmut_shim(name, m, params, rt)
     # `_locale_t` is ignored by every collapse (the `_l` variants
     # delegate with locale unused) — emit it underscore-prefixed so it
     # doesn't trip unused_variables.

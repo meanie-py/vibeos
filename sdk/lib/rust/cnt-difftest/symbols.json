@@ -209,6 +209,54 @@
       "diff only after fold"
     ]
   },
+  "_strnset": {
+    "c_signature": "char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)",
+    "family": "string",
+    "slice_pattern": "mut_nset",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strset.c",
+    "fuzz_domain": [
+      "max 0 (\u2192nothing)",
+      "max < strlen",
+      "max == strlen",
+      "max > strlen (\u2192strlen)",
+      "empty str",
+      "max > INT_MAX (\u2192negative\u2192nothing)",
+      "szFill>0xFF trunc"
+    ]
+  },
+  "_strrev": {
+    "c_signature": "char *_strrev(char *s)",
+    "family": "string",
+    "slice_pattern": "mut_reverse",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strrev.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1",
+      "len 2",
+      "even len",
+      "odd len",
+      "embedded high bytes",
+      "all same char"
+    ]
+  },
+  "_strset": {
+    "c_signature": "char *_strset(char *szToFill, int szFill)",
+    "family": "string",
+    "slice_pattern": "mut_set",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strset.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1",
+      "typical",
+      "szFill 0x41",
+      "szFill>0xFF (low-byte trunc)",
+      "szFill negative",
+      "szFill 0 (early-stop semantics: still fills since check is on src not fill)"
+    ]
+  },
   "_strtoi64": {
     "c_signature": "__int64 _strtoi64(const char *nptr, char **endptr, int base)",
     "family": "radix",

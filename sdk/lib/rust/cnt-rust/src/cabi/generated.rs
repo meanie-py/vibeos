@@ -340,6 +340,41 @@ pub unsafe extern "C" fn _strnicmp(_String1: *const u8, _String2: *const u8, _Ma
 }
 
 
+/// `char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)`
+/// preserved misfeature: sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc
+#[no_mangle]
+pub unsafe extern "C" fn _strnset(szToFill: *mut u8, szFill: i32, sizeMaxFill: usize) -> *mut u8 {
+    let __n = cstr_slice(szToFill as *const u8).len();
+    let __lim = sizeMaxFill as i32;
+    let __take = if __lim <= 0 { 0 } else { core::cmp::min(__n, __lim as usize) };
+    let __buf = raw_mut_slice(szToFill, __take);
+    crate::core_rs::strmut::fill(__buf, szFill as u8);
+    szToFill
+}
+
+
+/// `char *_strrev(char *s)`
+/// preserved misfeature: len 0/1 natural no-op (C walks to NUL then swaps inward, b<e guards); NO NULL guard (precomp but while(*e) derefs) → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _strrev(s: *mut u8) -> *mut u8 {
+    let __n = cstr_slice(s as *const u8).len();
+    let __buf = raw_mut_slice(s, __n);
+    crate::core_rs::strmut::reverse(__buf);
+    s
+}
+
+
+/// `char *_strset(char *szToFill, int szFill)`
+/// preserved misfeature: szFill int truncated to char (low byte); empty → no writes; NO NULL guard → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _strset(szToFill: *mut u8, szFill: i32) -> *mut u8 {
+    let __n = cstr_slice(szToFill as *const u8).len();
+    let __buf = raw_mut_slice(szToFill, __n);
+    crate::core_rs::strmut::fill(__buf, szFill as u8);
+    szToFill
+}
+
+
 /// `__int64 _strtoi64(const char *nptr, char **endptr, int base)`
 /// preserved misfeature: overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)
 #[no_mangle]

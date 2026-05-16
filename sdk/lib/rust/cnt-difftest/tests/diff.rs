@@ -89,6 +89,9 @@ extern "C" {
     fn ref_wcsupr(s: *mut u16) -> *mut u16;
     fn ref_tolower(c: i32) -> i32;
     fn ref_towupper(c: u16) -> u16;
+    fn ref_strrev(s: *mut u8) -> *mut u8;
+    fn ref_strset(s: *mut u8, fill: i32) -> *mut u8;
+    fn ref_strnset(s: *mut u8, fill: i32, max: usize) -> *mut u8;
 }
 
 use cnt_rust::cabi;
@@ -1353,5 +1356,61 @@ fn diff_casemap() {
             unsafe { ref_towupper(c) },
             "towupper c={c:#x}"
         );
+    }
+}
+
+/// Wave I — in-place mutate (strrev/strset/strnset). Byte-exact buffer
+/// parity + returned pointer == input, across empty/odd/even lengths,
+/// high bytes, szFill truncation, and the _strnset signed-int
+/// sizeMaxFill misfeature (0, < / == / > strlen, and > INT_MAX → fills
+/// nothing). NO NULL fuzzing (the C has no guards — derefs immediately).
+#[test]
+fn diff_strmut() {
+    let mut rng = Rng(0x12ed_5b07_u64);
+    let pool = b"ABCabc 09.\x00\x80\xFF\x01";
+    for _ in 0..7000 {
+        // build a string; embedded 0 from pool acts as the terminator
+        let mut v: Vec<u8> = (0..rng.upto(26))
+            .map(|_| {
+                let b = pool[rng.upto(pool.len())];
+                if b == 0 { 1 } else { b }
+            })
+            .collect();
+        v.push(0);
+
+        let (mut c1, mut r1) = (v.clone(), v.clone());
+        let cp = unsafe { cabi::_strrev(c1.as_mut_ptr()) };
+        let rp = unsafe { ref_strrev(r1.as_mut_ptr()) };
+        assert_eq!(c1, r1, "_strrev buf v={v:?}");
+        assert_eq!(cp == c1.as_mut_ptr(), rp == r1.as_mut_ptr(), "_strrev ret");
+
+        let fill = (rng.next() as i32) | 1; // varied incl >0xFF / negative
+        let (mut c2, mut r2) = (v.clone(), v.clone());
+        let cp = unsafe { cabi::_strset(c2.as_mut_ptr(), fill) };
+        let rp = unsafe { ref_strset(r2.as_mut_ptr(), fill) };
+        assert_eq!(c2, r2, "_strset buf v={v:?} fill={fill:#x}");
+        assert_eq!(cp == c2.as_mut_ptr(), rp == r2.as_mut_ptr(), "_strset ret");
+
+        // _strnset: max spanning 0..past-strlen plus the >INT_MAX trap
+        let slen = v.len() - 1;
+        let maxes: [usize; 6] = [
+            0,
+            rng.upto(slen + 1),
+            slen,
+            slen + 5,
+            usize::MAX,
+            (i32::MAX as usize) + 1,
+        ];
+        for mx in maxes {
+            let (mut c3, mut r3) = (v.clone(), v.clone());
+            let cp = unsafe { cabi::_strnset(c3.as_mut_ptr(), fill, mx) };
+            let rp = unsafe { ref_strnset(r3.as_mut_ptr(), fill, mx) };
+            assert_eq!(c3, r3, "_strnset buf v={v:?} fill={fill:#x} max={mx}");
+            assert_eq!(
+                cp == c3.as_mut_ptr(),
+                rp == r3.as_mut_ptr(),
+                "_strnset ret max={mx}"
+            );
+        }
     }
 }
