@@ -1,0 +1,322 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::ddk::{Depth, PCSTR};
+use core::ffi::c_void;
+
+extern "C" {
+    fn ATTR(fg: u32, bg: u32) -> u32;
+    fn MachVideoClearScreen(attr: u32);
+    fn TuiDrawText2(X: u32, Y: u32, Length: u32, Text: PCSTR, Attr: u8);
+    fn TuiDrawCenteredText( Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, TextString: PCSTR, Attr: UCHAR, );
+    fn TuiPrintf(MessageText: PCSTR);
+    fn MiniTuiDrawMenu(MenuInfo: PUI_MENU_INFO);
+    fn TuiDisplayMenu( MenuHeader: PCSTR, MenuFooter: PCSTR, ShowBootOptions: u8, MenuItemList: *const PCSTR, MenuItemCount: u32, DefaultMenuItem: u32, MenuTimeOut: i32, SelectedMenuItem: *mut u32, CanEscape: u8, KeyPressFilter: Option<UiMenuKeyPressFilterCallback>, Context: *mut core::ffi::c_void, ) -> u8;
+    fn MachVideoSetDisplayMode(mode: *mut core::ffi::c_void, text: BOOLEAN);
+    fn MachVideoGetDisplaySize(width: *mut ULONG, height: *mut ULONG, depth: *mut ULONG);
+    fn UiGetScreenHeight() -> ULONG;
+}
+
+unsafe fn UiInitialize(ShowUi: BOOLEAN) -> BOOLEAN {
+    
+    let mut Depth: ULONG = 0;
+
+    if ShowUi == 0 {
+        return 1u8;
+    }
+
+    MachVideoSetDisplayMode(core::ptr::null_mut(), 1u8);
+    MachVideoGetDisplaySize(
+        core::ptr::addr_of_mut!(UiScreenWidth),
+        core::ptr::addr_of_mut!(UiScreenHeight),
+        core::ptr::addr_of_mut!(Depth)
+    );
+
+    UiDrawBackdrop(UiGetScreenHeight());
+    return 1u8;
+}
+
+pub unsafe extern "C" fn UiUnInitialize(BootText: PCSTR) {
+    return;
+}
+
+unsafe fn UiDrawBackdrop(DrawHeight: ULONG) {
+    
+    const COLOR_WHITE: u32 = 7;
+    const COLOR_BLACK: u32 = 0;
+    
+    MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
+}
+
+unsafe fn UiDrawText(
+    X: u32,
+    Y: u32,
+    Text: PCSTR,
+    Attr: u8,
+) {
+    TuiDrawText2(X, Y, 0, Text, Attr);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn UiDrawText2(
+    X: u32,
+    Y: u32,
+    MaxNumChars: u32,
+    Text: PCSTR,
+    Attr: u8,
+) {
+    TuiDrawText2(X, Y, MaxNumChars, Text, Attr);
+}
+
+pub unsafe extern "C" fn UiDrawCenteredText(
+    Left: ULONG,
+    Top: ULONG,
+    Right: ULONG,
+    Bottom: ULONG,
+    TextString: PCSTR,
+    Attr: UCHAR,
+) {
+    TuiDrawCenteredText(Left, Top, Right, Bottom, TextString, Attr);
+}
+
+unsafe fn UiDrawStatusText(StatusText: PCSTR) {
+    return;
+}
+
+unsafe fn UiInfoBox(MessageText: PCSTR) {
+    TuiPrintf(MessageText);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn UiMessageBox(
+    MessageText: PCSTR,
+) {
+    
+    TuiPrintf(MessageText);
+}
+
+unsafe fn UiMessageBoxCritical(MessageText: PCSTR) {
+    TuiPrintf(MessageText);
+}
+
+unsafe fn UiShowMessageBoxesInSection(
+    SectionId: ULONG_PTR)
+{
+    return;
+}
+
+pub unsafe extern "C" fn UiShowMessageBoxesInArgv(
+    Argc: u32,
+    Argv: *mut PCHAR,
+) {
+    return;
+}
+
+unsafe fn UiDrawMenu(
+    MenuInfo: PUI_MENU_INFO)
+{
+    
+    MiniTuiDrawMenu(MenuInfo);
+}
+
+unsafe fn UiDisplayMenu(
+    MenuHeader: PCSTR,
+    MenuFooter: PCSTR,
+    MenuItemList: *const PCSTR,
+    MenuItemCount: u32,
+    DefaultMenuItem: u32,
+    MenuTimeOut: i32,
+    SelectedMenuItem: *mut u32,
+    CanEscape: u8,
+    KeyPressFilter: Option<UiMenuKeyPressFilterCallback>,
+    Context: *mut core::ffi::c_void,
+) -> u8 {
+
+    TuiDisplayMenu(
+        MenuHeader,
+        MenuFooter,
+        ShowBootOptions,
+        MenuItemList,
+        MenuItemCount,
+        DefaultMenuItem,
+        MenuTimeOut,
+        SelectedMenuItem,
+        CanEscape,
+        KeyPressFilter,
+        Context,
+    )
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * PROJECT:         ReactOS Boot Loader
+//  * LICENSE:         BSD - See COPYING.ARM in the top level directory
+//  * FILE:            boot/freeldr/freeldr/ui/directui.c
+//  * PURPOSE:         FreeLDR UI Routines
+//  * PROGRAMMERS:     ReactOS Portable Systems Group
+//  */
+//
+// #if 0
+// #include <freeldr.h>
+//
+// /* GLOBALS ********************************************************************/
+//
+// ULONG UiScreenWidth;
+// ULONG UiScreenHeight;
+// UCHAR UiMenuFgColor = COLOR_GRAY;
+// UCHAR UiMenuBgColor = COLOR_BLACK;
+// UCHAR UiTextColor = COLOR_GRAY;
+// UCHAR UiSelectedTextColor = COLOR_BLACK;
+// UCHAR UiSelectedTextBgColor = COLOR_GRAY;
+// CHAR  UiTimeText[260] = "Seconds until highlighted choice will be started automatically:";
+//
+// /* FUNCTIONS ******************************************************************/
+//
+// BOOLEAN
+// UiInitialize(IN BOOLEAN ShowUi)
+// {
+//     ULONG Depth;
+//
+//     /* Nothing to do */
+//     if (!ShowUi) return TRUE;
+//
+//     /* Set mode and query size */
+//     MachVideoSetDisplayMode(NULL, TRUE);
+//     MachVideoGetDisplaySize(&UiScreenWidth, &UiScreenHeight, &Depth);
+//
+//     /* Clear the screen */
+//     UiDrawBackdrop(UiGetScreenHeight());
+//     return TRUE;
+// }
+//
+// VOID
+// UiUnInitialize(IN PCSTR BootText)
+// {
+//     /* Nothing to do */
+//     return;
+// }
+//
+// VOID
+// UiDrawBackdrop(ULONG DrawHeight)
+// {
+//     /* Clear the screen */
+//     MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
+// }
+//
+// VOID
+// UiDrawText(
+//     _In_ ULONG X,
+//     _In_ ULONG Y,
+//     _In_ PCSTR Text,
+//     _In_ UCHAR Attr)
+// {
+//     TuiDrawText2(X, Y, 0 /*(ULONG)strlen(Text)*/, Text, Attr);
+// }
+//
+// VOID
+// UiDrawText2(
+//     _In_ ULONG X,
+//     _In_ ULONG Y,
+//     _In_opt_ ULONG MaxNumChars,
+//     _In_reads_or_z_(MaxNumChars) PCSTR Text,
+//     _In_ UCHAR Attr)
+// {
+//     TuiDrawText2(X, Y, MaxNumChars, Text, Attr);
+// }
+//
+// VOID
+// UiDrawCenteredText(
+//     _In_ ULONG Left,
+//     _In_ ULONG Top,
+//     _In_ ULONG Right,
+//     _In_ ULONG Bottom,
+//     _In_ PCSTR TextString,
+//     _In_ UCHAR Attr)
+// {
+//     TuiDrawCenteredText(Left, Top, Right, Bottom, TextString, Attr);
+// }
+//
+// VOID
+// UiDrawStatusText(IN PCSTR StatusText)
+// {
+//     return;
+// }
+//
+// VOID
+// UiInfoBox(
+//     _In_ PCSTR MessageText)
+// {
+//     TuiPrintf(MessageText);
+// }
+//
+// VOID
+// UiMessageBox(
+//     _In_ PCSTR MessageText)
+// {
+//     TuiPrintf(MessageText);
+// }
+//
+// VOID
+// UiMessageBoxCritical(
+//     _In_ PCSTR MessageText)
+// {
+//     TuiPrintf(MessageText);
+// }
+//
+// VOID
+// UiShowMessageBoxesInSection(
+//     IN ULONG_PTR SectionId)
+// {
+//     return;
+// }
+//
+// VOID
+// UiShowMessageBoxesInArgv(
+//     IN ULONG Argc,
+//     IN PCHAR Argv[])
+// {
+//     return;
+// }
+//
+// VOID
+// UiDrawMenu(
+//     _In_ PUI_MENU_INFO MenuInfo)
+// {
+//     MiniTuiDrawMenu(MenuInfo);
+// }
+//
+// BOOLEAN
+// UiDisplayMenu(
+//     IN PCSTR MenuHeader,
+//     IN PCSTR MenuFooter OPTIONAL,
+//     IN PCSTR MenuItemList[],
+//     IN ULONG MenuItemCount,
+//     IN ULONG DefaultMenuItem,
+//     IN LONG MenuTimeOut,
+//     OUT PULONG SelectedMenuItem,
+//     IN BOOLEAN CanEscape,
+//     IN UiMenuKeyPressFilterCallback KeyPressFilter OPTIONAL,
+//     IN PVOID Context OPTIONAL)
+// {
+//     return TuiDisplayMenu(MenuHeader,
+//                           MenuFooter,
+//                           ShowBootOptions,
+//                           MenuItemList,
+//                           MenuItemCount,
+//                           DefaultMenuItem,
+//                           MenuTimeOut,
+//                           SelectedMenuItem,
+//                           CanEscape,
+//                           KeyPressFilter,
+//                           Context);
+// }
+//
+// #endif // _M_ARM
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

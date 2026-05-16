@@ -17,7 +17,23 @@
 
 // Modules added as rustconv writes each translated file.
 pub mod ffi;
+pub mod frldr;
 pub mod peloader;
+
+// 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
+pub mod blocklist;
+pub mod cache;
+
+// 🟢 sweep — inifile unit (lib/inifile/{ini_init,inifile,parse}.c).
+pub mod ini_init;
+pub mod inifile;
+pub mod parse;
+
+// 🟢 sweep — mm unit (lib/mm/{meminit,mm,heap}.c) — WIP, mid-convergence,
+// staged unwired until green (translations on disk; not a regression-hide).
+// pub mod meminit;
+// pub mod mm;
+// pub mod heap;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
