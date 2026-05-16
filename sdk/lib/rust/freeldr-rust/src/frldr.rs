@@ -52,6 +52,27 @@ pub struct _GEOMETRY {
 pub type GEOMETRY = _GEOMETRY;
 pub type PGEOMETRY = *mut _GEOMETRY;
 
+// ntldr/winldr.h _LOADER_SYSTEM_BLOCK — shared across winldr/wlregistry
+// TUs. #[repr(C)], exact field order; i386 includes HeadlessLoaderBlock.
+// MAX_OPTIONS_LENGTH=255, MAX_PATH=260 (so [+1] arrays are 256/261).
+#[repr(C)]
+pub struct _LOADER_SYSTEM_BLOCK {
+    pub LoaderBlock: ntkrnl_sys::ddk::_LOADER_PARAMETER_BLOCK,
+    pub Extension: ntkrnl_sys::ddk::_LOADER_PARAMETER_EXTENSION,
+    pub SetupBlock: ntkrnl_sys::ddk::_SETUP_LOADER_BLOCK,
+    #[cfg(target_arch = "x86")]
+    pub HeadlessLoaderBlock: ntkrnl_sys::ddk::_HEADLESS_LOADER_BLOCK,
+    pub NlsDataBlock: ntkrnl_sys::ddk::_NLS_DATA_BLOCK,
+    pub LoadOptions: [::core::ffi::c_char; 256],
+    pub ArcBootDeviceName: [::core::ffi::c_char; 261],
+    pub NtBootPathName: [::core::ffi::c_char; 261],
+    pub NtHalPathName: [::core::ffi::c_char; 261],
+    pub ArcDiskInformation: ntkrnl_sys::ddk::_ARC_DISK_INFORMATION,
+    pub LoaderPerformanceData: ntkrnl_sys::ddk::_LOADER_PERFORMANCE_DATA,
+}
+pub type LOADER_SYSTEM_BLOCK = _LOADER_SYSTEM_BLOCK;
+pub type PLOADER_SYSTEM_BLOCK = *mut _LOADER_SYSTEM_BLOCK;
+
 // ---------------------------------------------------------------------------
 // Constants (verified against the C headers — these are the AI's blind spots)
 // ---------------------------------------------------------------------------
@@ -61,7 +82,17 @@ pub const TAG_CACHE_DATA: ULONG = u32::from_be_bytes(*b"DcaC") as ULONG;
 pub const TAG_CACHE_BLOCK: ULONG = u32::from_be_bytes(*b"BcaC") as ULONG;
 // mm.h
 pub const MM_PAGE_SIZE: SIZE_T = 4096;
+pub const MM_PAGE_MASK: ULONG = 0xFFF;
+pub const MM_PAGE_SHIFT: ULONG = 12;
+// i386 non-PAE: 20 bits for the PFN. (MM_MAX_PAGE_LOADER already defined
+// below as PFN_NUMBER — reused, not redefined.)
+pub const MM_MAX_PAGE: ULONG = 0xFFFFF;
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;
+// ndk i386 ketypes.h: KI_USER_SHARED_DATA fixed VA (NT i386).
+pub const KI_USER_SHARED_DATA: usize = 0xffdf0000;
+// ndk i386 ketypes.h: KSEG0_BASE. Reuse ffi.rs's per-arch definition
+// (single source of truth) so the bare name resolves via `use frldr::*`.
+pub use crate::ffi::KSEG0_BASE;
 
 // ---------------------------------------------------------------------------
 // cache.c globals (C-defined data; faithful #[no_mangle] so any remaining

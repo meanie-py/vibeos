@@ -33,10 +33,24 @@ def build_index(bindgen_path: str):
     # every extern symbol (e.g. RtlUshortByteSwap) and the import-fixer
     # then wrongly strips them, re-breaking the build on re-run.
     for m in re.finditer(
-            r'^\s*pub (?:type|struct|const|fn|union|enum|static)\s+'
+            r'^\s*pub (?:type|struct|const|union|enum|static)\s+'
             r'(?:mut\s+)?([A-Za-z_]\w*)',
             txt, re.M):
         bare.add(m.group(1))
+    # `pub fn` separately: a real importable bare fn lives in an
+    # `extern { }` block or at module top-level. bindgen ALSO emits
+    # `pub fn Name(&self)` / `pub unsafe fn Name_raw(this: *const Self)`
+    # as bitfield ACCESSOR METHODS inside `impl` blocks — those are NOT
+    # importable items; indexing them as bare wrongly keeps junk imports
+    # like `File`/`Type`/`PaeEnabled` (a C param name colliding with a
+    # bitfield accessor). Exclude method-shaped fns by their receiver.
+    for m in re.finditer(
+            r'^\s*pub (?:unsafe |const )*fn\s+([A-Za-z_]\w*)\s*\(([^)]*)',
+            txt, re.M):
+        name, args = m.group(1), m.group(2)
+        if re.match(r'\s*(?:&|mut\s|self\b|this\s*:)', args):
+            continue  # impl-method accessor — not an importable symbol
+        bare.add(name)
     # bindgen enum variants: `pub const _SOMETAG_Variant: _SOMETAG = N;`
     for m in re.finditer(
             r'^\s*pub const (_[A-Z0-9]+(?:_[A-Z0-9]+)*_([A-Za-z]\w*))\s*:',

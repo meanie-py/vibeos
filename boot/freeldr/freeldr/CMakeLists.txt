@@ -81,12 +81,15 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     )
 
 list(APPEND FREELDR_NTLDR_SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c)
     # ntldr/conversion.c  # replaced by Rust (freeldr-rust/src/conversion.rs)
-    ntldr/registry.c
-    ntldr/winldr.c
-    ntldr/wlmemory.c
-    ntldr/wlregistry.c)
+    # winldr kernel-handoff unit → Rust (freeldr-rust). cmboot.c kept (it
+    # is ntoskrnl/config/cmboot.c — shared kernel src, not a freeldr file;
+    # registry.rs externs it). Cohabitation: .c kept on disk.
+    # ntldr/registry.c    # replaced by Rust (freeldr-rust/src/registry.rs)
+    # ntldr/winldr.c      # replaced by Rust (freeldr-rust/src/winldr.rs)
+    # ntldr/wlmemory.c    # replaced by Rust (freeldr-rust/src/wlmemory.rs)
+    # ntldr/wlregistry.c  # replaced by Rust (freeldr-rust/src/wlregistry.rs)
 
 if(ARCH STREQUAL "i386")
 
@@ -98,8 +101,8 @@ if(ARCH STREQUAL "i386")
         arch/i386/i386bug.c)
 
     list(APPEND FREELDR_NTLDR_SOURCE
-        ntldr/arch/i386/winldr.c
         ntldr/headless.c)
+        # ntldr/arch/i386/winldr.c  # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
 
 elseif(ARCH STREQUAL "amd64")
     list(APPEND FREELDR_COMMON_ASM_SOURCE
@@ -107,15 +110,14 @@ elseif(ARCH STREQUAL "amd64")
         # arch/amd64/linux.S
 
     list(APPEND FREELDR_ARC_SOURCE
-        arch/i386/i386bug.c
-        arch/i386/ntoskrnl.c)
+        arch/i386/i386bug.c)
+        # arch/i386/ntoskrnl.c  # replaced by Rust (freeldr-rust/src/ntoskrnl.rs)
 
-    list(APPEND FREELDR_NTLDR_SOURCE
-        ntldr/arch/amd64/winldr.c)
+    # ntldr/arch/amd64/winldr.c → Rust (freeldr-rust/src/winldr_amd64.rs)
+    # (FREELDR_NTLDR_SOURCE amd64 entry removed — Rust takes over)
 
 elseif(ARCH STREQUAL "arm64")
-    list(APPEND FREELDR_NTLDR_SOURCE
-        ntldr/arch/arm64/winldr.c)
+    # ntldr/arch/arm64/winldr.c → Rust (freeldr-rust/src/winldr_arm64.rs)
 
 else()
     #TBD
@@ -123,8 +125,8 @@ endif()
 
 list(APPEND FREELDR_BASE_SOURCE
     freeldr.c
-    ntldr/ntldropts.c # Should be in rosload, but is currently needed by machpc.c, etc.
     lib/rtl/libsupp.c)
+    # ntldr/ntldropts.c → Rust (freeldr-rust/src/ntldropts.rs). Cohabitation.
 
 if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     # Must be included together with disk/scsiport.c

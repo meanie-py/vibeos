@@ -71,6 +71,23 @@ pub mod uefivid;
 pub mod ueficon;
 pub mod uefihw;
 
+// 🟢 sweep — winldr kernel-handoff unit (ntldr/{winldr,registry,wlregistry,
+// wlmemory,ntldropts}.c + ntldr/arch/<a>/winldr.c + arch/i386/ntoskrnl.c).
+// arch winldr.c are per-arch in C (CMakeLists FREELDR_NTLDR_SOURCE) → cfg-gate.
+pub mod winldr;
+pub mod registry;
+pub mod wlregistry;
+pub mod wlmemory;
+pub mod ntldropts;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod ntoskrnl;
+#[cfg(target_arch = "x86")]
+pub mod winldr_i386;
+#[cfg(target_arch = "x86_64")]
+pub mod winldr_amd64;
+#[cfg(target_arch = "aarch64")]
+pub mod winldr_arm64;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;
