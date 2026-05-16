@@ -12,12 +12,28 @@ extern "C" {
 // fs.c FileSystems[] — PRUNED to iso+fat+pxe (ntfs/ext/btrfs dropped:
 // livecd boots ISO, ramdisk is FAT; their .c are commented out of
 // FREELDR_BOOTLIB_SOURCE as a consequence of this omission).
+//
+// fs.c:69 gates PxeMount with `#if defined(_M_IX86) || defined(_M_AMD64)`
+// then `#ifndef UEFIBOOT`. rustconv dropped both guards. Restore faithfully:
+// PxeMount is in the table ONLY on x86/amd64 AND only in the non-UEFI
+// (BIOS freeldr_pe) build. arm64 (UEFI-only) and the x86 uefildr archive
+// exclude it — pxe.rs is correspondingly cfg(any(x86,x86_64)) only and the
+// uefi feature mirrors the UEFIBOOT define.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 extern "C" {
     fn IsoMount(DeviceId: ULONG) -> *const DEVVTBL;
     fn FatMount(DeviceId: ULONG) -> *const DEVVTBL;
     fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL;
 }
+#[cfg(not(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi"))))]
+extern "C" {
+    fn IsoMount(DeviceId: ULONG) -> *const DEVVTBL;
+    fn FatMount(DeviceId: ULONG) -> *const DEVVTBL;
+}
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 static FileSystems: [PFS_MOUNT; 3] = [IsoMount, FatMount, PxeMount];
+#[cfg(not(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi"))))]
+static FileSystems: [PFS_MOUNT; 2] = [IsoMount, FatMount];
 
 extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;

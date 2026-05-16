@@ -89,11 +89,14 @@ pub const MM_PAGE_SHIFT: ULONG = 12;
 pub const MM_MAX_PAGE: ULONG = 0xFFFFF;
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;
 // ndk ketypes.h: KI_USER_SHARED_DATA fixed VA. Per-arch:
-//   i386  (ndk/i386/ketypes.h):  0xffdf0000
-//   amd64 (xdk/amd64/ke.h):      0xFFFFF78000000000
+//   i386  (ndk/i386/ketypes.h):   0xffdf0000
+//   amd64 (xdk/amd64/ke.h):       0xFFFFF78000000000
+//   arm64 (ndk/arm64/ketypes.h):  0xFFFFF78000000000ULL
 #[cfg(target_arch = "x86")]
 pub const KI_USER_SHARED_DATA: usize = 0xffdf0000;
 #[cfg(target_arch = "x86_64")]
+pub const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
+#[cfg(target_arch = "aarch64")]
 pub const KI_USER_SHARED_DATA: usize = 0xFFFFF78000000000;
 // ndk i386 ketypes.h: KSEG0_BASE. Reuse ffi.rs's per-arch definition
 // (single source of truth) so the bare name resolves via `use frldr::*`.
@@ -248,7 +251,8 @@ pub fn ROUND_UP<T: IntAlign>(n: T, align: T) -> T {
 
 /// `RtlZeroMemory` — C macro (memset(d,0,n)).
 #[inline(always)]
-pub unsafe fn RtlZeroMemory(dst: PVOID, len: usize) {
+#[no_mangle]
+pub unsafe extern "C" fn RtlZeroMemory(dst: PVOID, len: usize) {
     core::ptr::write_bytes(dst as *mut u8, 0, len)
 }
 
@@ -471,26 +475,48 @@ pub type ULONG64 = u64;
 /// keystone-safe. Used by PIT 8254 timer (pchw), CMOS A20/mem probe (pcmem),
 /// serial detect (machpc), floppy reset (pcdisk) — must be real `in`/`out`,
 /// NOT a no-op (silently dropping these breaks hardware init).
+// x86 port-I/O wrappers. arm64 freeldr is UEFI-only and never issues x86
+// `in`/`out`; keep the #[no_mangle] symbol (any cross-module reference still
+// links) with an unreachable arm64 stub so the asm only compiles for x86.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "C" fn WRITE_PORT_UCHAR(port: *mut u8, val: u8) {
     core::arch::asm!("out dx, al", in("dx") port as u16, in("al") val, options(nomem, nostack, preserves_flags));
 }
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn WRITE_PORT_UCHAR(_port: *mut u8, _val: u8) {
+    unreachable!("x86 port I/O is not used on the arm64 UEFI boot path");
+}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "C" fn READ_PORT_UCHAR(port: *mut u8) -> u8 {
     let v: u8;
     core::arch::asm!("in al, dx", out("al") v, in("dx") port as u16, options(nomem, nostack, preserves_flags));
     v
 }
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn READ_PORT_UCHAR(_port: *mut u8) -> u8 {
+    unreachable!("x86 port I/O is not used on the arm64 UEFI boot path");
+}
 /// xdk WRITE_PORT_USHORT intrinsic (16-bit `out`). rustconv emitted it
 /// as `extern { fn ... }` (pcvideo VGA palette path). UNIQUE — keystone.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "C" fn WRITE_PORT_USHORT(port: *mut u16, val: u16) {
     core::arch::asm!("out dx, ax", in("dx") port as u16, in("ax") val, options(nomem, nostack, preserves_flags));
+}
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn WRITE_PORT_USHORT(_port: *mut u16, _val: u16) {
+    unreachable!("x86 port I/O is not used on the arm64 UEFI boot path");
 }
 /// MSVC `__cpuid(int info[4], int leaf)` intrinsic. rustconv emitted it
 /// as `extern { fn __cpuid(info: *mut i32, function: i32) }` (winldr
 /// CPU detect). LLVM reserves ebx on i386 → save/restore via the stack.
 /// UNIQUE — keystone.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
     let (mut a, mut b, mut c, mut d): (i32, i32, i32, i32);
@@ -508,6 +534,12 @@ pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
     *info.offset(1) = b;
     *info.offset(2) = c;
     *info.offset(3) = d;
+}
+// arm64 has no CPUID; freeldr CPU-detect is x86-only. Keep the symbol.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn __cpuid(_info: *mut i32, _function: i32) {
+    unreachable!("__cpuid is not used on the arm64 UEFI boot path");
 }
 /// xdk/rtlfuncs.h `#define RtlEqualMemory(d,s,l) (!memcmp(d,s,l))`.
 /// rustconv emitted it as `extern { fn RtlEqualMemory }` + call sites
@@ -540,6 +572,11 @@ pub unsafe extern "C" fn UlongToPtr(ul: ULONG) -> *mut core::ffi::c_void {
 pub unsafe extern "C" fn ULongToPtr(ul: ULONG) -> *mut core::ffi::c_void {
     ul as usize as *mut core::ffi::c_void
 }
+// DbgBreakPoint: i386/amd64 lib/debug.c is replaced by Rust, so this empty
+// stub is the sole provider there. arm64's still-active C arch/arm64/debug.c
+// owns the real `brk #0xF000` implementation (uefi.cmake:41) — exclude the
+// Rust stub on aarch64 to avoid a duplicate-symbol cold-link collision.
+#[cfg(not(target_arch = "aarch64"))]
 #[no_mangle] extern "C" fn DbgBreakPoint() {}
 
 // fs.h DEVVTBL — vtable; ARC_* are ddk Option<extern "C" fn> (bindgen-exact).

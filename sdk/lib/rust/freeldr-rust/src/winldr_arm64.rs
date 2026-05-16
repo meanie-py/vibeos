@@ -8,12 +8,92 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderStartupPcrPage as LoaderStartupPc
 extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn ERR(fmt: *const i8, ...);
+    // boot/freeldr/freeldr/include/mm.h: ARC loader allocator. amd64 winldr.rs
+    // declares it the same way file-locally. Returns PVOID; arm64 NTAPI = plain
+    // cdecl-ish (no @N decoration).
+    fn MmAllocateMemoryWithType(size: usize, mem_type: u32) -> PVOID;
 }
+
+// ---------------------------------------------------------------------------
+// arm64 file-scope preamble restored faithfully from
+// boot/freeldr/freeldr/ntldr/arch/arm64/winldr.c (rustconv dropped all
+// non-function content: #defines, typedefs, and the two file-scope globals).
+// Values are verbatim from the C macros above. PAGE_SIZE / MM_HAL_VA_START
+// match sdk/include/ndk/arm64/{mmtypes,ketypes}.h.
+// ---------------------------------------------------------------------------
+
+/* typedef ULONG64 ARM64_PTE;  typedef ARM64_PTE *PARM64_PTE; */
+#[allow(non_camel_case_types)]
+type ARM64_PTE = ULONG64;
+#[allow(non_camel_case_types)]
+type PARM64_PTE = *mut ARM64_PTE;
+
+/* ARM64 uses 4KB pages with 4-level page tables (like x86-64) */
+#[allow(dead_code)]
+const ARM64_PAGE_SHIFT: u32 = 12;
+#[allow(dead_code)]
+const ARM64_PAGE_SIZE: u64 = 1u64 << ARM64_PAGE_SHIFT;
+
+/* freeldr mm.h PAGE_SIZE (== ndk/arm64/mmtypes.h 0x1000). The bare PAGE_SIZE
+ * from ntkrnl_sys::base is `usize`; this winldr does ULONG64 page arithmetic,
+ * so keep a file-local u64 named PAGE_SIZE matching the C usage exactly. */
+const PAGE_SIZE: u64 = 0x1000;
+
+/* Page table entry indices */
+const ARM64_PGD_SHIFT: u32 = 39;
+const ARM64_PUD_SHIFT: u32 = 30;
+const ARM64_PMD_SHIFT: u32 = 21;
+const ARM64_PTE_SHIFT: u32 = 12;
+
+#[allow(dead_code)]
+const ARM64_PTRS_PER_LEVEL: u32 = 512;
+
+/* Get index for each level — macros -> file-local fns (returns ULONG like the
+ * C use sites which pass the result to MempGetOrCreatePageDir(.., ULONG)). */
+#[inline]
+fn ARM64_PGD_INDEX(va: u64) -> ULONG { (((va) >> ARM64_PGD_SHIFT) & 0x1FF) as ULONG }
+#[inline]
+fn ARM64_PUD_INDEX(va: u64) -> ULONG { (((va) >> ARM64_PUD_SHIFT) & 0x1FF) as ULONG }
+#[inline]
+fn ARM64_PMD_INDEX(va: u64) -> ULONG { (((va) >> ARM64_PMD_SHIFT) & 0x1FF) as ULONG }
+#[inline]
+fn ARM64_PTE_INDEX(va: u64) -> ULONG { (((va) >> ARM64_PTE_SHIFT) & 0x1FF) as ULONG }
+
+/* Page table entry attributes */
+const ARM64_PTE_VALID: u64 = 1u64 << 0;
+const ARM64_PTE_TABLE: u64 = 1u64 << 1;
+const ARM64_PTE_PAGE: u64 = 1u64 << 1;
+const ARM64_PTE_AF: u64 = 1u64 << 10; /* Access Flag */
+const ARM64_PTE_SH_INNER: u64 = 3u64 << 8; /* Inner Shareable */
+const ARM64_PTE_AP_RW: u64 = 0u64 << 6; /* Read-Write */
+#[allow(dead_code)]
+const ARM64_PTE_AP_RO: u64 = 1u64 << 7; /* Read-Only */
+const ARM64_PTE_ATTR_NORMAL: u64 = 0u64 << 2; /* Normal memory */
+
+/* Standard page entry for kernel memory */
+const ARM64_KERNEL_PAGE_FLAGS: u64 = ARM64_PTE_VALID
+    | ARM64_PTE_PAGE
+    | ARM64_PTE_AF
+    | ARM64_PTE_SH_INNER
+    | ARM64_PTE_AP_RW
+    | ARM64_PTE_ATTR_NORMAL;
+/* Table descriptors (L0/L1/L2) — see C comment for the AF/SH_INNER rationale. */
+const ARM64_KERNEL_TABLE_FLAGS: u64 =
+    ARM64_PTE_VALID | ARM64_PTE_TABLE | ARM64_PTE_AF | ARM64_PTE_SH_INNER;
+
+/* ndk/arm64/ketypes.h: #define MM_HAL_VA_START 0xFFFFFFFFFFC00000ULL.
+ * amd64 winldr.rs keeps the identical value as a file-local const. */
+const MM_HAL_VA_START: u64 = 0xFFFFFFFFFFC00000;
+
+/* Level 0 page table (PGD) — file-scope global. */
+static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
+/* Shared user data page frame number — file-scope global. */
+static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
 unsafe fn MempAllocatePageTables() -> u8 {
     TRACE(b">>> MempAllocatePageTables\n\0".as_ptr() as _);
 
-    Arm64Pgd = MmAllocateMemoryWithType(PAGE_SIZE as usize, LoaderMemoryData);
+    Arm64Pgd = MmAllocateMemoryWithType(PAGE_SIZE as usize, LoaderMemoryData) as PARM64_PTE;
     if Arm64Pgd.is_null() {
         ERR(b"Failed to allocate ARM64 PGD\n\0".as_ptr() as _);
         return 0u8;
@@ -44,12 +124,12 @@ unsafe fn MempGetOrCreatePageDir(ParentTable: PARM64_PTE, Index: ULONG) -> PARM6
     Entry = *ParentTable.add(Index as usize);
 
     if (Entry & ARM64_PTE_VALID) == 0 {
-        SubDir = MmAllocateMemoryWithType(PAGE_SIZE, LoaderMemoryData);
+        SubDir = MmAllocateMemoryWithType(PAGE_SIZE as usize, LoaderMemoryData) as PARM64_PTE;
         if SubDir.is_null() {
             return core::ptr::null_mut();
         }
 
-        RtlZeroMemory(SubDir as PVOID, PAGE_SIZE);
+        RtlZeroMemory(SubDir as PVOID, PAGE_SIZE as usize);
 
         *ParentTable.add(Index as usize) = ((SubDir as ULONG64) & !0xFFFu64) | ARM64_KERNEL_TABLE_FLAGS;
     } else {
@@ -136,13 +216,14 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: ULONG64, mut PhysicalAddress: 
     return i;
 }
 
-unsafe fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: BOOLEAN) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: BOOLEAN) -> BOOLEAN {
 
     TRACE(b">>> MempSetupPaging(0x%lx, %ld, KernelMapping=%d)\n\0".as_ptr() as PCHAR,
-          StartPage, NumberOfPages, KernelMapping);
+          StartPage, NumberOfPages, KernelMapping as i32);
 
-    if MempMapRangeOfPages(StartPage * PAGE_SIZE as ULONG64,
-                           StartPage * PAGE_SIZE as ULONG64,
+    if MempMapRangeOfPages(StartPage as ULONG64 * PAGE_SIZE,
+                           StartPage as ULONG64 * PAGE_SIZE,
                            NumberOfPages) != NumberOfPages
     {
         ERR(b"Failed to identity map pages %ld, %ld\n\0".as_ptr() as PCHAR, StartPage, NumberOfPages);
@@ -150,8 +231,8 @@ unsafe fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, Kern
     }
 
     if KernelMapping != 0 {
-        if MempMapRangeOfPages(StartPage * PAGE_SIZE as ULONG64 + KSEG0_BASE,
-                               StartPage * PAGE_SIZE as ULONG64,
+        if MempMapRangeOfPages(StartPage as ULONG64 * PAGE_SIZE + KSEG0_BASE as ULONG64,
+                               StartPage as ULONG64 * PAGE_SIZE,
                                NumberOfPages) != NumberOfPages
         {
             ERR(b"Failed to kernel-map pages\n\0".as_ptr() as PCHAR);
@@ -214,7 +295,7 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     let mut Pud: PARM64_PTE;
     let mut Pmd: PARM64_PTE;
 
-    if MempMapSinglePage(KI_USER_SHARED_DATA, SharedUserDataPfn * PAGE_SIZE) == 0 {
+    if MempMapSinglePage(KI_USER_SHARED_DATA as ULONG64, SharedUserDataPfn as ULONG64 * PAGE_SIZE) == 0 {
         ERR(b"Could not map KI_USER_SHARED_DATA\n\0".as_ptr() as PCHAR);
         return 0u8;
     }
@@ -227,7 +308,8 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     1u8
 }
 
-unsafe fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let mut SharedUserDataAddress: *mut core::ffi::c_void = core::ptr::null_mut();
 
     ERR(b">>> WinLdrSetupMachineDependent for ARM64\n\0".as_ptr() as _);

@@ -76,10 +76,23 @@ extern "C" {
     fn RtlStringCbPrintfA(dest: *mut i8, size: usize, format: *const i8, ...) -> NTSTATUS;
     fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
     fn DiskGetConfigType(drive: UCHAR) -> CONFIGURATION_TYPE;
-    fn PxeInit() -> BOOLEAN;
     fn FsSetDeviceSpecific(FileId: ULONG, Specific: PVOID);
     fn DissectArcPath(ArcPath: *const CHAR, Path: *mut *const CHAR, DriveNumber: *mut UCHAR, PartitionNumber: *mut ULONG) -> BOOLEAN;
 }
+
+// hwdisk.c:467 `DiskGetBootPath(PxeInit())`. PxeInit lives in pxe.c which
+// fs.c gates `#if defined(_M_IX86) || defined(_M_AMD64)` + `#ifndef UEFIBOOT`
+// (pxe.rs is correspondingly cfg(any(x86,x86_64)) only; the uefi feature
+// mirrors UEFIBOOT). Where PXE is absent (arm64, or the x86 uefildr archive)
+// PxeInit is not linkable — booting is never PXE there, so the faithful
+// substitute is the constant FALSE that PxeInit would return.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
+extern "C" {
+    fn PxeInit() -> BOOLEAN;
+}
+#[cfg(not(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi"))))]
+#[inline]
+unsafe fn PxeInit() -> BOOLEAN { 0u8 /* FALSE — no PXE on this build */ }
 
 unsafe extern "C" fn DiskClose(FileId: ULONG) -> ARC_STATUS {
     let Context = FsGetDeviceSpecific(FileId);

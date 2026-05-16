@@ -332,11 +332,22 @@ static mut AtapUnits: [PHW_DEVICE_UNIT; CHANNEL_MAX_CHANNELS * CHANNEL_MAX_DEVIC
     [core::ptr::null_mut(); CHANNEL_MAX_CHANNELS * CHANNEL_MAX_DEVICES];
 
 // ---- hwidep.h port-I/O macros → faithful i386 inline-asm primitives ----
+// arm64 is UEFI-only with no x86 port-I/O hardware; the hwide IDE driver is
+// never exercised on the arm64 uefildr boot path. Gate the x86 asm bodies
+// per-arch and give aarch64 unreachable stubs so the crate compiles for
+// aarch64 without touching the i386/amd64 code paths.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
 unsafe fn ATA_WRITE(Port: IDE_REG, Value: UCHAR) {
     core::arch::asm!("out dx, al", in("dx") Port, in("al") Value,
         options(nomem, nostack, preserves_flags));
 }
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_WRITE(_Port: IDE_REG, _Value: UCHAR) {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
+}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
 unsafe fn ATA_READ(Port: IDE_REG) -> UCHAR {
     let v: UCHAR;
@@ -344,12 +355,23 @@ unsafe fn ATA_READ(Port: IDE_REG) -> UCHAR {
         options(nomem, nostack, preserves_flags));
     v
 }
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_READ(_Port: IDE_REG) -> UCHAR {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
+}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
 unsafe fn READ_PORT_USHORT(Port: PUSHORT) -> USHORT {
     let v: USHORT;
     core::arch::asm!("in ax, dx", out("ax") v, in("dx") Port as USHORT,
         options(nomem, nostack, preserves_flags));
     v
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn READ_PORT_USHORT(_Port: PUSHORT) -> USHORT {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
 }
 // rep ins/outs string ops: the pointer register is edi/esi on i386 but
 // rdi/rsi on amd64. i386 bodies kept byte-identical; amd64 bodies use the
@@ -363,12 +385,17 @@ unsafe fn ATA_READ_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
         in("dx") Port, inout("edi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 #[inline]
 unsafe fn ATA_READ_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
     core::arch::asm!("rep insw",
         in("dx") Port, inout("rdi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_READ_BLOCK_16(_Port: IDE_REG, _Buffer: PUSHORT, _Count: ULONG) {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
 }
 #[cfg(target_arch = "x86")]
 #[inline]
@@ -382,12 +409,17 @@ unsafe fn ATA_WRITE_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
         in("dx") Port, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 #[inline]
 unsafe fn ATA_WRITE_BLOCK_16(Port: IDE_REG, Buffer: PUSHORT, Count: ULONG) {
     core::arch::asm!("rep outsw",
         in("dx") Port, inout("rsi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_WRITE_BLOCK_16(_Port: IDE_REG, _Buffer: PUSHORT, _Count: ULONG) {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
 }
 #[cfg(target_arch = "x86")]
 #[inline]
@@ -396,12 +428,17 @@ unsafe fn ATA_READ_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
         in("dx") Port, inout("edi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 #[inline]
 unsafe fn ATA_READ_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
     core::arch::asm!("rep insd",
         in("dx") Port, inout("rdi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_READ_BLOCK_32(_Port: IDE_REG, _Buffer: PULONG, _Count: ULONG) {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
 }
 #[cfg(target_arch = "x86")]
 #[inline]
@@ -415,12 +452,17 @@ unsafe fn ATA_WRITE_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
         in("dx") Port, inout("ecx") Count => _,
         options(nostack, preserves_flags));
 }
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 #[inline]
 unsafe fn ATA_WRITE_BLOCK_32(Port: IDE_REG, Buffer: PULONG, Count: ULONG) {
     core::arch::asm!("rep outsd",
         in("dx") Port, inout("rsi") Buffer => _, inout("ecx") Count => _,
         options(nostack, preserves_flags));
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ATA_WRITE_BLOCK_32(_Port: IDE_REG, _Buffer: PULONG, _Count: ULONG) {
+    unreachable!("hwide IDE port-I/O is not used on the arm64 UEFI boot path");
 }
 #[inline]
 unsafe fn ATA_IO_WAIT() { StallExecutionProcessor(1); }
