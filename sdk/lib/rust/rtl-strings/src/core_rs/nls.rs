@@ -21,6 +21,13 @@ pub fn upcase_uc(w: u16) -> u16 {
     cnt_rust::core_rs::mbcp::upcase(w)
 }
 
+/// `RtlpDowncaseUnicodeChar` / `RtlDowncaseUnicodeChar` — the shared
+/// symmetric model (see [`cnt_rust::core_rs::mbcp::downcase`]).
+#[inline]
+pub fn downcase_uc(w: u16) -> u16 {
+    cnt_rust::core_rs::mbcp::downcase(w)
+}
+
 /// `RtlUpperChar(IN CHAR Source)` (nls.c). `Source` is **signed**
 /// `char`: `Source<='z'` is true for every high byte (0x80–0xFF, i.e.
 /// negative) which then fails `Source>='a'` and is returned unchanged;

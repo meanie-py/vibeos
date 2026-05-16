@@ -239,7 +239,21 @@ fn main() {
          #define RtlUpcaseUnicodeStringToOemString ref_RtlUpcaseUnicodeStringToOemString\n\
          /* Unprototyped stubs (`f()` accepts any call shape) for the\n\
             NLS/heap leaves the other ~50 fns reference (RTL-2 unused). */\n\
-         int RtlpDowncaseUnicodeChar(){{return 0;}}\n\
+         /* Wave RTL-3b: shared symmetric downcase model (byte-identical\n\
+            to cnt_rust::core_rs::mbcp::downcase). */\n\
+         static unsigned short model_downcase(unsigned short w){{\n\
+            if(w>=0x41&&w<=0x5A)return w+0x20;\n\
+            if((w>=0xC0&&w<=0xD6)||(w>=0xD8&&w<=0xDE))return w+0x20;\n\
+            if(w==0x0178)return 0xFF;\n\
+            if(w==0x039C)return 0xB5;\n\
+            if(w==0x0160)return 0x0161;\n\
+            if(w==0x0152)return 0x0153;\n\
+            if(w==0x017D)return 0x017E;\n\
+            return w;}}\n\
+         WCHAR RtlpDowncaseUnicodeChar(WCHAR s){{return model_downcase((unsigned short)s);}}\n\
+         WCHAR ref_RtlDowncaseUnicodeChar(WCHAR s){{return RtlpDowncaseUnicodeChar(s);}}\n\
+         void ref_RtlGetDefaultCodePage(USHORT* a,USHORT* o){{if(a)*a=1252; if(o)*o=1252;}}\n\
+         #define RtlDowncaseUnicodeString ref_RtlDowncaseUnicodeString\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\

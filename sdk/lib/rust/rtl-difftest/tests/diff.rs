@@ -71,6 +71,10 @@ extern "C" {
     fn ref_RtlUpcaseUnicodeStringToAnsiString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
     fn ref_RtlUpcaseUnicodeStringToCountedOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
     fn ref_RtlUpcaseUnicodeStringToOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    // Wave RTL-3b
+    fn ref_RtlDowncaseUnicodeChar(c: u16) -> u16;
+    fn ref_RtlDowncaseUnicodeString(d: *mut UNICODE_STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlGetDefaultCodePage(a: *mut u16, o: *mut u16);
 }
 
 struct Rng(u64);
@@ -830,6 +834,60 @@ fn diff_rtl_upcase_unicode_string() {
             assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
                 "RtlUpcaseUnicodeString fields su={su} ml={ml} a={a}");
             assert_eq!(bc, br, "RtlUpcaseUnicodeString buf su={su} ml={ml} a={a}");
+        }
+    }
+}
+
+// ── Wave RTL-3b: downcase family + default code page ──────────────
+
+#[test]
+fn diff_rtl_downcase_char() {
+    for w in 0u32..=0xFFFF {
+        let w = w as u16;
+        unsafe {
+            assert_eq!(
+                cabi::RtlDowncaseUnicodeChar(w),
+                ref_RtlDowncaseUnicodeChar(w),
+                "RtlDowncaseUnicodeChar {w:#06x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_default_codepage() {
+    let (mut a1, mut o1) = (0u16, 0u16);
+    let (mut a2, mut o2) = (0u16, 0u16);
+    unsafe {
+        cabi::RtlGetDefaultCodePage(&mut a1, &mut o1);
+        ref_RtlGetDefaultCodePage(&mut a2, &mut o2);
+    }
+    assert_eq!((a1, o1), (a2, o2), "RtlGetDefaultCodePage");
+}
+
+#[test]
+fn diff_rtl_downcase_unicode_string() {
+    let mut rng = Rng(0x3b_5203_01);
+    for _ in 0..12_000 {
+        let su = rng.upto(16);
+        let sv: Vec<u16> = (0..su.max(1)).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let slen = (su * 2) as u16;
+        let ml = (match rng.upto(4) { 0 => 0, 1 => slen as usize, 2 => su, _ => 60 }) as u16;
+        for a in [0u8, 1] {
+            let ss = UNICODE_STRING { Length: slen, MaximumLength: slen, Buffer: sv.as_ptr() as *mut u16 };
+            let mut bc = vec![0xCCCCu16; 64];
+            let mut br = vec![0xCCCCu16; 64];
+            let mut dc = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+            let mut dr = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlDowncaseUnicodeString(&mut dc, &ss, a);
+                sr = ref_RtlDowncaseUnicodeString(&mut dr, &ss, a);
+            }
+            assert_eq!(sc, sr, "RtlDowncaseUnicodeString ret su={su} ml={ml} a={a}");
+            assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                "RtlDowncaseUnicodeString fields su={su} ml={ml} a={a}");
+            assert_eq!(bc, br, "RtlDowncaseUnicodeString buf su={su} ml={ml} a={a}");
         }
     }
 }

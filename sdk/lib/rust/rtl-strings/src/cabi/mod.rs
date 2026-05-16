@@ -907,3 +907,52 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
     status
 }
+
+// ── Wave RTL-3b: downcase family + default code page ──────────────
+
+/// `WCHAR NTAPI RtlDowncaseUnicodeChar(WCHAR)` (nls.c → shared model).
+#[no_mangle]
+pub unsafe extern "system" fn RtlDowncaseUnicodeChar(src: u16) -> u16 {
+    nls::downcase_uc(src)
+}
+
+/// `RtlDowncaseUnicodeString` — like `RtlUpcaseUnicodeString` but
+/// downcasing; STRICT `>` overflow; alloc MaximumLength=Source.Length;
+/// NO NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDowncaseUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    if alloc != 0 {
+        (*dest).MaximumLength = (*src).Length;
+        return STATUS_NO_MEMORY;
+    }
+    if (*src).Length > (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    (*dest).Length = (*src).Length;
+    let j = (*src).Length as usize / 2;
+    let s = rslice((*src).Buffer, j);
+    let d = wslice((*dest).Buffer, j);
+    for i in 0..j {
+        d[i] = nls::downcase_uc(s[i]);
+    }
+    STATUS_SUCCESS
+}
+
+/// `VOID NTAPI RtlGetDefaultCodePage(PUSHORT Ansi, PUSHORT Oem)` —
+/// shared model is single-byte CP1252 (1252) for both.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetDefaultCodePage(
+    ansi_cp: *mut u16,
+    oem_cp: *mut u16,
+) {
+    if !ansi_cp.is_null() {
+        core::ptr::write_volatile(ansi_cp, 1252);
+    }
+    if !oem_cp.is_null() {
+        core::ptr::write_volatile(oem_cp, 1252);
+    }
+}
