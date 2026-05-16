@@ -148,7 +148,8 @@ def cmd_submit(args):
 
     if args.output:
         # Post-process before writing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
+                           target_name=target.name)
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
@@ -157,7 +158,8 @@ def cmd_submit(args):
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
         # Post-process before printing
-        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals)
+        code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
+                           target_name=target.name)
         print(code)
 
 
