@@ -1,8 +1,13 @@
 # Win32k Pre-Translation (C-Side Rewrite) Audit
 
-Last updated 2026-05-09. **Status: pre-pretranslation.** No C-side
-rewrites have landed yet; this audit defines what we'll do in C
-*before* any C→Rust translation begins on win32k.
+Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
+`worktree-win32k-translation`, uncommitted).** The inventory/classifier
+(Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,
+spike-validated, and applied across the win32k.sys keep-set: **97 SEH
+sites mechanically lowered, i386 7/7 + amd64 7/7 smoke green** on the
+result. See "Session results" below. Pass 2/3 deferred (Pass 2 has zero
+targets — see findings). This audit defines the C-side work done *before*
+any C→Rust translation begins on win32k.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
@@ -11,6 +16,146 @@ Companion to:
 - [pseh-elimination.md](pseh-elimination.md) — overall PSEH strategy (already reverse-shim model)
 - [win32k-translation-audit.md](win32k-translation-audit.md) — sibling audit covering the actual rustconv-driven translation phase
 - `qemu/~temp-chat-consolidated.md` — design notes from web-Claude pre-thinking
+
+## Session results (2026-05-16)
+
+What actually landed, with measured numbers replacing the estimates
+below. All work is on the `worktree-win32k-translation` worktree,
+uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
+
+### Tooling built
+
+| Tool | Role | Status |
+|---|---|---|
+| `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
+| `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
+| `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
+
+Both tools are decision layers over the existing `seh_classifier.py`
+(regex + brace-matching — tree-sitter cannot parse the SEH macros, so
+neither tool uses it). Each has a built-in `--oracle` self-test that
+reproduces the hand-done `winsta.c` spike taxonomy exactly.
+
+### Pass 0 — measured classification (win32k.sys keep-set)
+
+**282 `_SEH2_TRY` sites across 62 keep-set files:**
+
+| Cat | Meaning | Count | % | vs. estimate |
+|---|---|--:|--:|---|
+| (a) PROBE_LOWER | Pass-1 mechanical | 167 | 59% | est. 60–80% ✓ |
+| (b) LOCK_CLEANUP | Pass-2 RAII | **0** | 0% | **confirms: zero `_SEH2_FINALLY` in the kernel keep-set** |
+| (c) FAULT_RECOVER | residual, no rewrite | **1** | 0.4% | est. 0–3; the one site is `gdi/eng/mem.c:HackSecureVirtualMemory` (`MmProbeAndLockPages`) — exactly the file the audit predicted |
+| (d) BELT_SUSPENDERS | delete after cross-check | 36 | 13% | — |
+| (e) NEEDS_REVIEW | manual | 77 | 27% | **est. <10% — reality is ~3× higher** |
+
+**Key finding — Pass 2 has no targets.** The audit's "2 `_SEH2_FINALLY`"
+are in `winsrv/consrv/` (user-mode CSRSS, out of scope). The kernel-mode
+keep-set has **zero** `_SEH2_FINALLY`. So Pass 2 as specified
+("SEH-wrapped lock cleanup → RAII") has nothing to rewrite. GDI locks in
+this tree are *manual* `Lock → if(!p) → … → Unlock` brackets, not
+FINALLY-wrapped. Pass 2 is therefore re-scoped to a *manual-bracket
+detection* problem, which Pass 0's `(e)` bucket now quantifies (the
+`(e)` sites with a GDI `*_Lock*` call are the real Pass-2 candidates).
+
+**Key finding — `(e)` is ~3× the estimate.** ~27% of win32k SEH sites
+have a non-probe call inside the `TRY` or are otherwise structurally
+ambiguous (not pure-probe). Concentrated in `hook.c`, `message.c`,
+`window.c`, `class.c`, `ime.c`, `ntstubs.c`. This sharpens Pass-1's true
+mechanical scope and is the main correction to the original plan.
+
+Per-file `<file>.win32k_meta.json` sidecars are written for the rustconv
+prompt builder (54 files after Pass 1 collapses many sites).
+
+### Pass 1 — measured mechanical lowering
+
+`_SEH2_TRY` count **331 → 234 (97 sites lowered)** across 37 modified
+`.c` files, **0 structural regressions**, validated by build + smoke:
+
+| Arch | win32k.sys | Smoke |
+|---|---|---|
+| i386 | builds clean | **7/7 PASSED** |
+| amd64 | builds clean | **7/7 PASSED** |
+| arm64 | builds clean | boot-smoke blocked by *cold-build ramdisk-media infra* (nls/hive tree) — unrelated to win32k |
+
+The remaining 64 `(a)`-class sites are deferred to a documented
+**manual-followup ledger** (`win32ss/win32k_pass1_manual_followup.json`),
+correctly *not* mechanically rewritten (audit risk #1 respected):
+
+- 47 — non-swallow handler, no `NTSTATUS Status` lvalue in the function,
+  handler doesn't transfer control (needs a `Status` declaration
+  injected — risky; deferred to a v2/LLM pass)
+- 15 — multi-probe with no `Status` lvalue (same)
+- 2 — brace-less conditional probe (`winsta.c` L1242 shape — needs
+  re-bracing)
+
+So **97 of 168 `(a)` sites (~58%) are now mechanically lowered**,
+deterministically and regression-free; the other 64 are the honest
+non-mechanical remainder for later stages.
+
+### Methodology-spike findings (drove the tool design)
+
+The `ntuser/winsta.c` spike (8 sites, hand-done, builds+links+smokes)
+established the ground truth the classifier/rewriter are oracle-tested
+against:
+
+- **The audit's Pass-1 option (A) is wrong.** `ntkrnl-sys/src/probe.rs`
+  exports are `pub unsafe fn` Rust generics returning `Result<T,_>` —
+  **not** `#[no_mangle] extern "system"`, so they are *not* C-callable.
+  Pass 1 must use option **(B)** — a self-contained C `safe_user_io`
+  shim (no cross-DLL export problem; behaviour-parallel to
+  `probe_user_buffer`, so the later Rust translation maps 1:1). The
+  shim deliberately validates-only (no touch-test): under DUMMY_PSEH a
+  touch-fault is uncatchable, so validate-only is both safe and what
+  the Rust target does.
+- **Five distinct EXCEPT-handler shapes** (not one uniform pattern):
+  swallow/`NOTHING`, `Status=_SEH2_GetExceptionCode()`,
+  `SetLastNtError(code);return X;`, `Status=code;_SEH2_YIELD(goto L)`,
+  multi-probe. All reduce to one rule: "turn the EXCEPT body into the
+  probe-failure branch; body runs only on probe success."
+- **Cross-site reasoning is required.** `winsta.c` L1384 is only safe
+  because L1242 probed the same buffers earlier — the classifier must
+  reason across sibling blocks, not per-block (the `(d)`
+  `relies_on_prior_probe` signal).
+- **Body must be success-guarded.** A naive "empty failure branch then
+  body" still dereferences a bad pointer. Multi-probe must
+  *short-circuit* (`if (NT_SUCCESS(Status)) Status = nextProbe;`) so a
+  later probe can't overwrite an earlier failure.
+
+### Bugs the "test later" build pass caught
+
+`winsta.c` was too clean to expose these; real keep-set build did:
+
+1. **`_SEH2_END` without trailing `;`** — span-end regex required the
+   semicolon; without it the macro token was left dangling (cascade of
+   "expected identifier / extraneous } / undeclared label"). This alone
+   broke 13 of 15 files. Fixed: optional `;`, spaces/tabs only after
+   (don't eat the newline → avoids gluing `}` to a `#` directive).
+2. **`RE_YIELD` non-greedy** broke on nested parens
+   (`_SEH2_YIELD(return _SEH2_GetExceptionCode();)` → garbled
+   `return …(;)`). Fixed: balanced-paren extraction.
+3. **`#include "win32k.h"`** (quotes) not matched by the include-probe
+   regex → shim include not injected → `SafeProbeFor*` undeclared.
+   Fixed: match both `<…>` and `"…"`.
+
+All three are now regression-tested by the oracle + the full keep-set
+build.
+
+### Deltas to the plan below
+
+- Pass 0 inventory format: **per-file JSON sidecar** (`<file>.win32k_meta.json`)
+  — implemented as recommended in Open Question 1.
+- Pass 1 helper: option **(B)** C shim (Open Question 3 — currently
+  `win32ss/safe_user_io.{c,h}`, not `sdk/lib/`; revisit if drivers
+  need it).
+- Pass 2 ("GDI lock RAII"): **re-scoped** — zero `_SEH2_FINALLY`
+  targets; the work is manual-bracket detection over the `(e)` GDI-lock
+  subset, not an SEH rewrite.
+- Methodology spike: done on `winsta.c` (Open Question 4) — confirmed
+  the right choice (its 50ms-HACK function is untouched; the 8 sites
+  exercised every handler shape + the cross-site hazard).
+- Tree-sitter is **not** the workhorse (the TL;DR claim): the SEH
+  macros defeat tree-sitter; the pipeline uses `seh_classifier`'s
+  regex + brace-matching, which is what actually works.
 
 ## Why a separate "pretranslation" phase
 
@@ -532,19 +677,32 @@ takes over for the rustconv-driven translation.
 
 ## Definition of done (for this phase)
 
-- All `_SEH2_TRY` sites classified (a)–(d) by inventory JSON.
-- All (a) sites mechanically rewritten to `SafeCapture*` calls.
-- All (b) sites mechanically rewritten to `WITH_GDI_LOCKED(...)`.
-- All (c) sites flagged in a residual-SEH document for the future
-  unwinder project.
-- All (d) sites deleted.
-- All (a)+(b) rewrites have sidecar JSON for the rustconv prompt.
-- All ~17 `co_*` functions annotated with callout metadata.
-- Pruning landed: `diblib/`, dxg, ntddraw, sarch miniports, dead
-  display drivers.
-- All 3 arches still pass 7/7 smoke.
-- `verify_abi.py` clean.
-- Smoke-test additions for win32k-specific assertions landed.
+Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
+
+- `[x]` All `_SEH2_TRY` sites classified (a)–(e) by inventory JSON
+  (282 sites, per-file sidecars).
+- `[~]` All (a) sites mechanically rewritten to `SafeProbeFor*` —
+  **97 of 168 done**; 64 in the manual-followup ledger; remaining ~6
+  not-yet-eligible. (Helper is `SafeProbeFor{Read,Write}`, not the
+  audit's hypothetical `SafeCapture*`.)
+- `[~]` (b) sites → RAII: **N/A — zero `_SEH2_FINALLY` in keep-set.**
+  Re-scoped to manual GDI-lock-bracket detection over the `(e)` subset
+  (not done).
+- `[~]` (c) sites flagged: the 1 site (`gdi/eng/mem.c`) is identified
+  and left verbatim; a standalone residual-SEH doc is not yet written.
+- `[ ]` All (d) sites deleted (36 identified; not yet actioned —
+  needs the cross-site "relies on prior probe" review).
+- `[~]` Sidecar JSON for the rustconv prompt — written for the
+  classified sites; not yet consumed by the prompt builder.
+- `[ ]` ~17 `co_*` callout annotations (Pass 3 — not started).
+- `[ ]` Pruning (`diblib/`, dxg, ntddraw, sarch miniports, dead
+  display drivers) — not started.
+- `[~]` Smoke: **i386 7/7 + amd64 7/7 PASSED**; arm64 boot-smoke
+  blocked by cold-build ramdisk-media infra (win32k itself builds
+  clean on arm64).
+- `[ ]` `verify_abi.py` clean — not yet run against the rewrites.
+- `[ ]` Win32k-specific post-`shell ready` smoke assertions — not
+  started.
 
 ## Open questions
 

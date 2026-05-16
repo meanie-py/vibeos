@@ -1,0 +1,48 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/metafile.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 2
+  },
+  "sites": [
+    {
+      "function": "NtGdiCreateServerMetaFile",
+      "line_start": 66,
+      "line_end": 74,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiGetServerMetaFileBits",
+      "line_start": 122,
+      "line_end": 142,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 5,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

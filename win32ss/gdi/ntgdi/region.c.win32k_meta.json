@@ -1,0 +1,55 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/region.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1,
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiExtCreateRegion",
+      "line_start": 3851,
+      "line_end": 3895,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "REGION_UnionRectWithRgn",
+        "REGION_UnlockRgn",
+        "GreDeleteObject",
+        "XFORMOBJ_vInit",
+        "XFORMOBJ_iSetXform",
+        "XFORMOBJ_bApplyXform"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: REGION_UnionRectWithRgn, REGION_UnlockRgn, GreDeleteObject, XFORMOBJ_vInit"
+    },
+    {
+      "function": "NtGdiGetRegionData",
+      "line_start": 4098,
+      "line_end": 4110,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

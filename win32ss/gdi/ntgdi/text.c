@@ -9,6 +9,7 @@
 /** Includes ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -235,18 +236,11 @@ NtGdiGetRasterizerCaps(
         if ( cjBytes >= sizeof(RASTERIZER_STATUS) ) cjBytes = sizeof(RASTERIZER_STATUS);
         if ( ftGdiGetRasterizerCaps(&rsSafe))
         {
-            _SEH2_TRY
+            Status = SafeProbeForWrite(praststat, sizeof(RASTERIZER_STATUS), 1);
+            if (NT_SUCCESS(Status))
             {
-                ProbeForWrite( praststat,
-                sizeof(RASTERIZER_STATUS),
-                1);
                 RtlCopyMemory(praststat, &rsSafe, cjBytes );
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                Status = _SEH2_GetExceptionCode();
-            }
-            _SEH2_END;
 
             if (!NT_SUCCESS(Status))
             {
@@ -289,18 +283,11 @@ NtGdiGetTextCharsetInfo(
         if (Ret == DEFAULT_CHARSET)
             RtlZeroMemory(pfsSafe, sizeof(FONTSIGNATURE));
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(lpSig, sizeof(FONTSIGNATURE), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite( lpSig,
-            sizeof(FONTSIGNATURE),
-            1);
             RtlCopyMemory(lpSig, pfsSafe, sizeof(FONTSIGNATURE));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -597,17 +584,15 @@ NtGdiGetTextMetricsW(
         if (ftGdiGetTextMetricsW(hDC, &Tmwi))
         {
             IntTMWFixUp(hDC, &Tmwi);
-            _SEH2_TRY
             {
-                ProbeForWrite(pUnsafeTmwi, cj, 1);
-                RtlCopyMemory(pUnsafeTmwi, &Tmwi, cj);
+                NTSTATUS __SehStatus = SafeProbeForWrite(pUnsafeTmwi, cj, 1);
+                if (!NT_SUCCESS(__SehStatus))
+                {
+                    SetLastNtError(__SehStatus);
+                    return FALSE;
+                }
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                SetLastNtError(_SEH2_GetExceptionCode());
-                _SEH2_YIELD(return FALSE);
-            }
-            _SEH2_END
+            RtlCopyMemory(pUnsafeTmwi, &Tmwi, cj);
 
             return TRUE;
         }

@@ -1,0 +1,115 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dibobj.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 1,
+    "a": 2,
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "CreateDIBPalette",
+      "line_start": 135,
+      "line_end": 142,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "swallow"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtGdiSetDIBitsToDeviceInternal",
+      "line_start": 488,
+      "line_end": 499,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiGetDIBitsInternal",
+      "line_start": 1175,
+      "line_end": 1186,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "min",
+        "DIB_BitmapInfoSize"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min, DIB_BitmapInfoSize"
+    },
+    {
+      "function": "NtGdiCreateDIBitmapInternal",
+      "line_start": 1651,
+      "line_end": 1663,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiCreateDIBSection",
+      "line_start": 1838,
+      "line_end": 1847,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 3,
+      "nonprobe_calls": [
+        "DIB_BitmapInfoSize"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: DIB_BitmapInfoSize"
+    }
+  ]
+}

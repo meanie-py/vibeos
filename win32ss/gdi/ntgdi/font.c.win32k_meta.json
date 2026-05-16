@@ -1,0 +1,125 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/font.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 5
+  },
+  "sites": [
+    {
+      "function": "NtGdiAddFontResourceW",
+      "line_start": 494,
+      "line_end": 507,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "IntCheckFontPathNames"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "non-probe call(s) in TRY: IntCheckFontPathNames"
+    },
+    {
+      "function": "NtGdiRemoveFontResourceW",
+      "line_start": 548,
+      "line_end": 561,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "IntCheckFontPathNames"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "non-probe call(s) in TRY: IntCheckFontPathNames"
+    },
+    {
+      "function": "NtGdiAddFontMemResourceEx",
+      "line_start": 593,
+      "line_end": 606,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ExAllocatePoolWithQuotaTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "non-probe call(s) in TRY: ExAllocatePoolWithQuotaTag"
+    },
+    {
+      "function": "NtGdiGetFontResourceInfoInternalW",
+      "line_start": 1035,
+      "line_end": 1058,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 3,
+      "nonprobe_calls": [
+        "ExAllocatePoolWithTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ExAllocatePoolWithTag"
+    },
+    {
+      "function": "NtGdiGetFontResourceInfoInternalW",
+      "line_start": 1078,
+      "line_end": 1088,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "WRITE_BACK",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    }
+  ]
+}

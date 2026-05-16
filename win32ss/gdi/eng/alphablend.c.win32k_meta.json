@@ -1,0 +1,29 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/alphablend.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiEngAlphaBlend",
+      "line_start": 253,
+      "line_end": 265,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": ""
+    }
+  ]
+}

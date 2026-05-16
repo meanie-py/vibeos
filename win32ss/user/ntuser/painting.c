@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserPainting);
 
 BOOL UserExtTextOutW(HDC hdc, INT x, INT y, UINT flags, PRECTL lprc,
@@ -1676,16 +1677,11 @@ NtUserEndPaint(HWND hWnd, CONST PAINTSTRUCT* pUnsafePs)
 
    UserRefObjectCo(Window, &Ref); // Here for the exception.
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(pUnsafePs, sizeof(*pUnsafePs), 1);
+   if (NT_SUCCESS(Status))
    {
-      ProbeForRead(pUnsafePs, sizeof(*pUnsafePs), 1);
-      RtlCopyMemory(&Ps, pUnsafePs, sizeof(PAINTSTRUCT));
+       RtlCopyMemory(&Ps, pUnsafePs, sizeof(PAINTSTRUCT));
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END
    if (!NT_SUCCESS(Status))
    {
       goto Cleanup; // Return FALSE
@@ -1757,17 +1753,15 @@ NtUserFlashWindowEx(IN PFLASHWINFO pfwi)
 
    UserEnterExclusive();
 
-   _SEH2_TRY
    {
-      ProbeForRead(pfwi, sizeof(FLASHWINFO), 1);
-      RtlCopyMemory(&finfo, pfwi, sizeof(FLASHWINFO));
+       NTSTATUS __SehStatus = SafeProbeForRead(pfwi, sizeof(FLASHWINFO), 1);
+       if (!NT_SUCCESS(__SehStatus))
+       {
+           SetLastNtError(__SehStatus);
+           goto Exit;
+       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      SetLastNtError(_SEH2_GetExceptionCode());
-      _SEH2_YIELD(goto Exit);
-   }
-   _SEH2_END
+   RtlCopyMemory(&finfo, pfwi, sizeof(FLASHWINFO));
 
    if (!( pWnd = ValidateHwndNoErr(finfo.hwnd)) ||
         finfo.cbSize != sizeof(FLASHWINFO) ||
@@ -2023,16 +2017,11 @@ NtUserRedrawWindow(
 
    if (lprcUpdate)
    {
-      _SEH2_TRY
+      Status = SafeProbeForRead(lprcUpdate, sizeof(RECTL), 1);
+      if (NT_SUCCESS(Status))
       {
-          ProbeForRead(lprcUpdate, sizeof(RECTL), 1);
           RtlCopyMemory(&SafeUpdateRect, lprcUpdate, sizeof(RECTL));
       }
-      _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-      {
-         Status = _SEH2_GetExceptionCode();
-      }
-      _SEH2_END
       if (!NT_SUCCESS(Status))
       {
          EngSetLastError(RtlNtStatusToDosError(Status));
@@ -2397,26 +2386,21 @@ NtUserDrawCaptionTemp(
      }
    }
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(lpRc, sizeof(RECTL), sizeof(ULONG));
+   if (NT_SUCCESS(Status))
+       Status = SafeProbeForRead(SafeStr.Buffer, SafeStr.Length, sizeof(WCHAR));
+   if (NT_SUCCESS(Status))
    {
-      ProbeForRead(lpRc, sizeof(RECTL), sizeof(ULONG));
-      RtlCopyMemory(&SafeRect, lpRc, sizeof(RECTL));
-      if (str != NULL)
-      {
-         SafeStr = ProbeForReadUnicodeString(str);
-         if (SafeStr.Length != 0)
-         {
-             ProbeForRead( SafeStr.Buffer,
-                           SafeStr.Length,
-                            sizeof(WCHAR));
-         }
-      }
+       RtlCopyMemory(&SafeRect, lpRc, sizeof(RECTL));
+       if (str != NULL)
+       {
+          SafeStr = ProbeForReadUnicodeString(str);
+          if (SafeStr.Length != 0)
+          {
+
+          }
+       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END;
 
    if (Status != STATUS_SUCCESS)
    {

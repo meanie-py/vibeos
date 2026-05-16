@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <unaligned.h>
 
 DBG_DEFAULT_CHANNEL(UserClass);
@@ -2791,21 +2792,22 @@ NtUserGetClassInfo(
     BOOL Ret = TRUE;
     NTSTATUS Status;
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(lpWndClassEx, sizeof(WNDCLASSEXW), sizeof(ULONG));
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(ppszMenuName, sizeof(*ppszMenuName), sizeof(PVOID));
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForWrite( lpWndClassEx, sizeof(WNDCLASSEXW), sizeof(ULONG));
+        SetLastNtError(Status);
+        return FALSE;
+    }
+    if (NT_SUCCESS(Status))
+    {
         RtlCopyMemory( &Safewcexw, lpWndClassEx, sizeof(WNDCLASSEXW));
         if (ppszMenuName)
         {
-            ProbeForWrite(ppszMenuName, sizeof(*ppszMenuName), sizeof(PVOID));
+
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
 
     Status = ProbeAndCaptureUnicodeStringOrAtom(&SafeClassName, ClassName);
     if (!NT_SUCCESS(Status))

@@ -1,0 +1,51 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/freetype.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "IntGdiAddFontResourceEx",
+      "line_start": 2134,
+      "line_end": 2141,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "wcslen"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: wcslen"
+    },
+    {
+      "function": "IntGdiRemoveFontResource",
+      "line_start": 2280,
+      "line_end": 2287,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "wcslen"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: wcslen"
+    }
+  ]
+}

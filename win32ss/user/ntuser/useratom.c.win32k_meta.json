@@ -1,0 +1,32 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/useratom.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserGetAtomName",
+      "line_start": 104,
+      "line_end": 131,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    }
+  ]
+}

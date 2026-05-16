@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -487,16 +488,14 @@ NtGdiGetBitmapDimension(
         return FALSE;
 
     /* Use SEH to copy the data to the caller */
-    _SEH2_TRY
     {
-        ProbeForWrite(psizDim, sizeof(*psizDim), 1);
-        *psizDim = dim;
+        NTSTATUS __SehStatus = SafeProbeForWrite(psizDim, sizeof(*psizDim), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END
+    *psizDim = dim;
 
     return TRUE;
 }

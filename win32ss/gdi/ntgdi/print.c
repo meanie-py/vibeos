@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -174,35 +175,28 @@ NtGdiExtEscape(
          EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
          goto Exit;
       }
-      _SEH2_TRY
+      Status = SafeProbeForRead(UnsafeInData, InSize, 1);
+      if (!NT_SUCCESS(Status))
       {
-         ProbeForRead(UnsafeInData, InSize, 1);
-         RtlCopyMemory(SafeInData, UnsafeInData, InSize);
+          SetLastNtError(Status);
+          goto Exit;
       }
-      _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+      else
       {
-         Status = _SEH2_GetExceptionCode();
-         SetLastNtError(Status);
-         _SEH2_YIELD(goto Exit);
+          RtlCopyMemory(SafeInData, UnsafeInData, InSize);
       }
-      _SEH2_END;
    }
 
    if (OutSize)
    {
       if (UnsafeOutData != NULL)
       {
-         _SEH2_TRY
+         Status = SafeProbeForWrite(UnsafeOutData, OutSize, 1);
+         if (!NT_SUCCESS(Status))
          {
-            ProbeForWrite(UnsafeOutData, OutSize, 1);
+             SetLastNtError(Status);
+             goto Exit;
          }
-         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-         {
-            Status = _SEH2_GetExceptionCode();
-            SetLastNtError(Status);
-            _SEH2_YIELD(goto Exit);
-         }
-         _SEH2_END;
       }
 
       SafeOutData = ExAllocatePoolZero(PagedPool, OutSize, GDITAG_TEMP);

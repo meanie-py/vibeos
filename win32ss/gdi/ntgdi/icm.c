@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -59,16 +60,11 @@ NtGdiCreateColorSpace(
     LOGCOLORSPACEEXW Safelcs;
     NTSTATUS Status = STATUS_SUCCESS;
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(pLogColorSpace, sizeof(LOGCOLORSPACEEXW), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead( pLogColorSpace, sizeof(LOGCOLORSPACEEXW), 1);
         RtlCopyMemory(&Safelcs, pLogColorSpace, sizeof(LOGCOLORSPACEEXW));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if (!NT_SUCCESS(Status))
     {
@@ -157,16 +153,11 @@ NtGdiGetDeviceGammaRamp(
         return Ret;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(Ramp, sizeof(GAMMARAMP), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(Ramp, sizeof(GAMMARAMP), 1);
         RtlCopyMemory(Ramp, SafeRamp, sizeof(GAMMARAMP));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     DC_UnlockDc(dc);
     ExFreePoolWithTag(SafeRamp, GDITAG_ICM);
@@ -388,16 +379,11 @@ NtGdiSetDeviceGammaRamp(
         EngSetLastError(STATUS_NO_MEMORY);
         return FALSE;
     }
-    _SEH2_TRY
+    Status = SafeProbeForRead(Ramp, sizeof(GAMMARAMP), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(Ramp, sizeof(GAMMARAMP), 1);
         RtlCopyMemory(SafeRamp, Ramp, sizeof(GAMMARAMP));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if (!NT_SUCCESS(Status))
     {

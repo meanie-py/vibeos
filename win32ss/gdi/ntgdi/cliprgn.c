@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -638,18 +639,11 @@ NtGdiRectVisible(
         return FALSE;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(UnsafeRect, sizeof(RECT), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(UnsafeRect,
-                   sizeof(RECT),
-                   1);
         Rect = *UnsafeRect;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if(!NT_SUCCESS(Status))
     {

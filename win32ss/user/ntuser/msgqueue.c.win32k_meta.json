@@ -1,0 +1,43 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/msgqueue.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 2
+  },
+  "sites": [
+    {
+      "function": "NtUserGetKeyboardState",
+      "line_start": 2586,
+      "line_end": 2603,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserSetKeyboardState",
+      "line_start": 2625,
+      "line_end": 2638,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

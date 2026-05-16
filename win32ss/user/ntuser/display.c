@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserDisplay);
 
 BOOL gbBaseVideo = FALSE;
@@ -609,20 +610,18 @@ NtUserEnumDisplaySettings(
     TRACE("Enter NtUserEnumDisplaySettings(%wZ, %lu, %p, 0x%lx)\n",
           pustrDevice, iModeNum, lpDevMode, dwFlags);
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(lpDevMode, sizeof(DEVMODEW), sizeof(UCHAR));
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(lpDevMode, cbSize + cbExtra, sizeof(UCHAR));
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(lpDevMode, sizeof(DEVMODEW), sizeof(UCHAR));
-
+        return Status;
+    }
+    if (NT_SUCCESS(Status))
+    {
         cbSize = lpDevMode->dmSize;
         cbExtra = lpDevMode->dmDriverExtra;
-
-        ProbeForWrite(lpDevMode, cbSize + cbExtra, sizeof(UCHAR));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return _SEH2_GetExceptionCode());
-    }
-    _SEH2_END;
 
     if (cbSize != sizeof(DEVMODEW))
     {

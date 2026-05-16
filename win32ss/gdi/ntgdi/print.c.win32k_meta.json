@@ -1,0 +1,27 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/print.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiExtEscape",
+      "line_start": 210,
+      "line_end": 219,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS",
+        "SET_FLAG"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

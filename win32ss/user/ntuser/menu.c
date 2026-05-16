@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserMenu);
 
 /* INTERNAL ******************************************************************/
@@ -5779,17 +5780,15 @@ NtUserGetTitleBarInfo(
     }
 
     /* Copy user mode buffer to local buffer */
-    _SEH2_TRY
     {
-        ProbeForRead(bti, sizeof(TITLEBARINFO), 1);
-        RtlCopyMemory(&bartitleinfo, bti, sizeof(TITLEBARINFO));
+        NTSTATUS __SehStatus = SafeProbeForRead(bti, sizeof(TITLEBARINFO), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            goto Exit;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        _SEH2_YIELD(goto Exit);
-    }
-    _SEH2_END
+    RtlCopyMemory(&bartitleinfo, bti, sizeof(TITLEBARINFO));
 
     /* Get the tile bar info */
     retValue = intGetTitleBarInfo(WindowObject, &bartitleinfo);
@@ -6002,16 +6001,15 @@ NtUserGetMenuBarInfo(
    if (!hMenu)
       goto Cleanup; // Return FALSE
 
-   _SEH2_TRY
-   {
-       ProbeForRead(pmbi, sizeof(MENUBARINFO), 1);
-       kmbi.cbSize = pmbi->cbSize;
-   }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   Status = SafeProbeForRead(pmbi, sizeof(MENUBARINFO), 1);
+   if (!NT_SUCCESS(Status))
    {
        kmbi.cbSize = 0;
    }
-   _SEH2_END
+   else
+   {
+       kmbi.cbSize = pmbi->cbSize;
+   }
 
    if (kmbi.cbSize != sizeof(MENUBARINFO))
    {
@@ -6058,16 +6056,11 @@ NtUserGetMenuBarInfo(
        kmbi.fFocused = kmbi.fBarFocused;
    }
 
-   _SEH2_TRY
+   Status = SafeProbeForWrite(pmbi, sizeof(MENUBARINFO), 1);
+   if (NT_SUCCESS(Status))
    {
-      ProbeForWrite(pmbi, sizeof(MENUBARINFO), 1);
-      RtlCopyMemory(pmbi, &kmbi, sizeof(MENUBARINFO));
+       RtlCopyMemory(pmbi, &kmbi, sizeof(MENUBARINFO));
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END
 
    if (!NT_SUCCESS(Status))
    {
@@ -6277,16 +6270,11 @@ NtUserDrawMenuBarTemp(
       goto Exit; // Return 0
    }
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(pRect, sizeof(RECT), sizeof(ULONG));
+   if (NT_SUCCESS(Status))
    {
-      ProbeForRead(pRect, sizeof(RECT), sizeof(ULONG));
-      RtlCopyMemory(&Rect, pRect, sizeof(RECT));
+       RtlCopyMemory(&Rect, pRect, sizeof(RECT));
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END;
 
    if (Status != STATUS_SUCCESS)
    {
@@ -6676,16 +6664,14 @@ NtUserTrackPopupMenuEx(
 
     if (lptpm)
     {
-        _SEH2_TRY
         {
-            ProbeForRead(lptpm, sizeof(TPMPARAMS), sizeof(ULONG));
-            tpm = *lptpm;
+            NTSTATUS __SehStatus = SafeProbeForRead(lptpm, sizeof(TPMPARAMS), sizeof(ULONG));
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                goto Exit;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        { 
-            _SEH2_YIELD(goto Exit);
-        }
-        _SEH2_END
+        tpm = *lptpm;
     }
 
     UserRefObjectCo(pWnd, &WndRef);

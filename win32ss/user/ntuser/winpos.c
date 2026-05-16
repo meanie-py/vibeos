@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <immdev.h>
 DBG_DEFAULT_CHANNEL(UserWinpos);
 
@@ -3770,17 +3771,15 @@ NtUserSetWindowPlacement(HWND hWnd,
    TRACE("Enter NtUserSetWindowPlacement\n");
    UserEnterExclusive();
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpwndpl, sizeof(*lpwndpl), 1);
-        Safepl = *lpwndpl;
+        NTSTATUS __SehStatus = SafeProbeForRead(lpwndpl, sizeof(*lpwndpl), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            goto Exit; // Return FALSE
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(goto Exit); // Return FALSE
-    }
-    _SEH2_END
+    Safepl = *lpwndpl;
 
     /* Backwards-compatibility: Win 3.x doesn't check the length */
     if (LOWORD(gptiCurrent->dwExpWinVer) < WINVER_WINNT4)

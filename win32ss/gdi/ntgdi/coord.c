@@ -69,6 +69,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -573,9 +574,9 @@ NtGdiOffsetViewportOrgEx(
 
     if (UnsafePoint)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(UnsafePoint, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(UnsafePoint, sizeof(POINT), 1);
             UnsafePoint->x = pdcattr->ptlViewportOrg.x;
             UnsafePoint->y = pdcattr->ptlViewportOrg.y;
             if (pdcattr->dwLayout & LAYOUT_RTL)
@@ -583,11 +584,6 @@ NtGdiOffsetViewportOrgEx(
                 UnsafePoint->x = -UnsafePoint->x;
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -633,17 +629,12 @@ NtGdiOffsetWindowOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlWindowOrg.x;
             Point->y = pdcattr->ptlWindowOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -768,20 +759,14 @@ NtGdiScaleWindowExtEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(pSize, sizeof(SIZE), 1);
-
             X = pdcattr->szlWindowExt.cx;
             if (pdcattr->dwLayout & LAYOUT_RTL) X = -X;
             pSize->cx = X;
             pSize->cy = pdcattr->szlWindowExt.cy;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -966,17 +951,12 @@ NtGdiSetViewportOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlViewportOrg.x;
             Point->y = pdcattr->ptlViewportOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -1018,17 +998,12 @@ NtGdiSetWindowOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlWindowOrg.x;
             Point->y = pdcattr->ptlWindowOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {

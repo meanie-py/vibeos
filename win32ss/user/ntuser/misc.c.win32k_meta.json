@@ -1,0 +1,30 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/misc.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "IntTID2PTI",
+      "line_start": 61,
+      "line_end": 70,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "PsGetThreadId"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: PsGetThreadId"
+    }
+  ]
+}

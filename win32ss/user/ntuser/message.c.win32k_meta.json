@@ -1,0 +1,421 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/message.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1,
+    "d": 7,
+    "a": 15
+  },
+  "sites": [
+    {
+      "function": "MsgMemorySize",
+      "line_start": 193,
+      "line_end": 270,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "wcslen"
+      ],
+      "try_patterns": [
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: wcslen"
+    },
+    {
+      "function": "CopyMsgToKernelMem",
+      "line_start": 491,
+      "line_end": 498,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserGetMessage",
+      "line_start": 2363,
+      "line_end": 2372,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserPeekMessage",
+      "line_start": 2407,
+      "line_end": 2416,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserCallMsgFilter",
+      "line_start": 2446,
+      "line_end": 2454,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2590,
+      "line_end": 2598,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2682,
+      "line_end": 2691,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2826,
+      "line_end": 2835,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2899,
+      "line_end": 2907,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2930,
+      "line_end": 2939,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2950,
+      "line_end": 2958,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2966,
+      "line_end": 2975,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 2996,
+      "line_end": 3003,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "ScrollBarWndProc",
+      "line_start": 3062,
+      "line_end": 3070,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2592,
+      "line_end": 2600,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2684,
+      "line_end": 2693,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2828,
+      "line_end": 2837,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2901,
+      "line_end": 2909,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2932,
+      "line_end": 2941,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2952,
+      "line_end": 2960,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2968,
+      "line_end": 2977,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 2998,
+      "line_end": 3005,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserMessageCall",
+      "line_start": 3064,
+      "line_end": 3072,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    }
+  ]
+}

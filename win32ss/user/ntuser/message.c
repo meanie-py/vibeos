@@ -6,6 +6,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #include <dde.h>
 
@@ -2431,16 +2432,14 @@ NtUserCallMsgFilter( LPMSG lpmsg, INT code)
     BOOL Ret = FALSE;
     MSG Msg;
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpmsg, sizeof(MSG), 1);
-        RtlCopyMemory( &Msg, lpmsg, sizeof(MSG));
+        NTSTATUS __SehStatus = SafeProbeForRead(lpmsg, sizeof(MSG), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
+    RtlCopyMemory( &Msg, lpmsg, sizeof(MSG));
 
     UserEnterExclusive();
     Ret = IntCallMsgFilter(&Msg, code);
@@ -2466,17 +2465,15 @@ NtUserDispatchMessage(PMSG UnsafeMsgInfo)
     LRESULT Res = 0;
     MSG SafeMsg;
 
-    _SEH2_TRY
     {
-        ProbeForRead(UnsafeMsgInfo, sizeof(MSG), 1);
-        RtlCopyMemory(&SafeMsg, UnsafeMsgInfo, sizeof(MSG));
+        NTSTATUS __SehStatus = SafeProbeForRead(UnsafeMsgInfo, sizeof(MSG), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
+    RtlCopyMemory(&SafeMsg, UnsafeMsgInfo, sizeof(MSG));
 
     UserEnterExclusive();
 
@@ -2493,17 +2490,15 @@ NtUserTranslateMessage(LPMSG lpMsg, UINT flags)
     BOOL Ret;
     PWND pWnd;
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpMsg, sizeof(MSG), 1);
-        RtlCopyMemory(&SafeMsg, lpMsg, sizeof(MSG));
+        NTSTATUS __SehStatus = SafeProbeForRead(lpMsg, sizeof(MSG), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
+    RtlCopyMemory(&SafeMsg, lpMsg, sizeof(MSG));
 
     UserEnterExclusive();
     pWnd = UserGetWindowObject(SafeMsg.hwnd);

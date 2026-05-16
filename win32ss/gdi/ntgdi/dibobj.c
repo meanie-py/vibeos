@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -1140,17 +1141,16 @@ NtGdiGetDIBitsInternal(
     }
 
     /* Use SEH */
-    _SEH2_TRY
     {
-        /* Probe and copy the BITMAPINFO */
-        ProbeForRead(pbmi, cjMaxInfo, 1);
-        RtlCopyMemory(pbmiSafe, pbmi, cjMaxInfo);
+        NTSTATUS __SehStatus = SafeProbeForRead(pbmi, cjMaxInfo, 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            goto cleanup;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        goto cleanup;
-    }
-    _SEH2_END;
+    /* Probe and copy the BITMAPINFO */
+
+    RtlCopyMemory(pbmiSafe, pbmi, cjMaxInfo);
 
     /* Check if the header size is large enough */
     if ((pbmiSafe->bmiHeader.biSize < sizeof(BITMAPCOREHEADER)) ||
@@ -1278,18 +1278,17 @@ NtGdiStretchDIBitsInternal(
     }
 
     /* Use SEH */
-    _SEH2_TRY
     {
-        /* Probe and copy the BITMAPINFO */
-        ProbeForRead(pbmi, cjMaxInfo, 1);
-        RtlCopyMemory(pbmiSafe, pbmi, cjMaxInfo);
+        NTSTATUS __SehStatus = SafeProbeForRead(pbmi, cjMaxInfo, 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            ExFreePoolWithTag(pbmiSafe, 'imBG');
+            return 0;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ExFreePoolWithTag(pbmiSafe, 'imBG');
-        return 0;
-    }
-    _SEH2_END;
+    /* Probe and copy the BITMAPINFO */
+
+    RtlCopyMemory(pbmiSafe, pbmi, cjMaxInfo);
 
     /* Check if the header size is large enough */
     if ((pbmiSafe->bmiHeader.biSize < sizeof(BITMAPCOREHEADER)) ||
@@ -1327,17 +1326,15 @@ NtGdiStretchDIBitsInternal(
             return 0;
         }
 
-        _SEH2_TRY
         {
-            ProbeForRead(pjInit, cjMaxBits, 1);
-            RtlCopyMemory(pvBits, pjInit, cjMaxBits);
+            NTSTATUS __SehStatus = SafeProbeForRead(pjInit, cjMaxBits, 1);
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                ExFreePoolWithTag(pvBits, TAG_DIB);
+                return 0;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            ExFreePoolWithTag(pvBits, TAG_DIB);
-            return 0;
-        }
-        _SEH2_END;
+        RtlCopyMemory(pvBits, pjInit, cjMaxBits);
     }
     else
     {

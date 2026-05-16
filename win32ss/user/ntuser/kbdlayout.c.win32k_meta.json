@@ -1,0 +1,80 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/kbdlayout.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 3
+  },
+  "sites": [
+    {
+      "function": "NtUserGetKeyboardLayoutList",
+      "line_start": 1063,
+      "line_end": 1071,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "IntGetKeyboardLayoutList"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: IntGetKeyboardLayoutList"
+    },
+    {
+      "function": "NtUserGetKeyboardLayoutName",
+      "line_start": 1104,
+      "line_end": 1137,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "RtlIntegerToUnicodeString",
+        "HandleToUlong",
+        "EngSetLastError",
+        "RtlAppendUnicodeToString"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: RtlIntegerToUnicodeString, HandleToUlong, EngSetLastError, RtlAppendUnicodeToString"
+    },
+    {
+      "function": "NtUserLoadKeyboardLayoutEx",
+      "line_start": 1178,
+      "line_end": 1188,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "RtlCopyUnicodeString"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: RtlCopyUnicodeString"
+    }
+  ]
+}

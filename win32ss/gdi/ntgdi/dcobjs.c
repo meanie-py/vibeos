@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -178,17 +179,16 @@ NtGdiSetBrushOrg(
        if (pptOut != NULL)
        {
            /* Enter SEH for buffer transfer */
-           _SEH2_TRY
            {
-               /* Probe and copy the old origin */
-               ProbeForWrite(pptOut, sizeof(POINT), 1);
-               *pptOut = ptOut;
+               NTSTATUS __SehStatus = SafeProbeForWrite(pptOut, sizeof(POINT), 1);
+               if (!NT_SUCCESS(__SehStatus))
+               {
+                   return FALSE;
+               }
            }
-           _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-           {
-               _SEH2_YIELD(return FALSE);
-           }
-           _SEH2_END;
+           /* Probe and copy the old origin */
+
+           *pptOut = ptOut;
        }
     }
     return Ret;

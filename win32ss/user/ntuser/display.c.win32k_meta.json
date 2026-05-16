@@ -1,0 +1,148 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/display.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 6
+  },
+  "sites": [
+    {
+      "function": "NtUserEnumDisplayDevices",
+      "line_start": 393,
+      "line_end": 406,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "RtlCopyUnicodeString"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: RtlCopyUnicodeString"
+    },
+    {
+      "function": "NtUserEnumDisplayDevices",
+      "line_start": 428,
+      "line_end": 447,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    },
+    {
+      "function": "NtUserEnumDisplaySettings",
+      "line_start": 629,
+      "line_end": 647,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "ExRaiseStatus",
+        "RtlCopyUnicodeString"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED",
+        "PROBE_UNICODE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: ExRaiseStatus, RtlCopyUnicodeString"
+    },
+    {
+      "function": "NtUserEnumDisplaySettings",
+      "line_start": 681,
+      "line_end": 697,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    },
+    {
+      "function": "NtUserChangeDisplaySettings",
+      "line_start": 981,
+      "line_end": 995,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "RtlCopyUnicodeString"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: RtlCopyUnicodeString"
+    },
+    {
+      "function": "NtUserChangeDisplaySettings",
+      "line_start": 1004,
+      "line_end": 1021,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    }
+  ]
+}

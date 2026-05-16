@@ -121,6 +121,7 @@ SOFTWARE.
 //
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <suppress.h>
 
 #define NDEBUG
@@ -3821,19 +3822,14 @@ NtGdiExtCreateRegion(
     XFORMOBJ xo;
 
     DPRINT("NtGdiExtCreateRegion\n");
-    _SEH2_TRY
+    Status = SafeProbeForRead(RgnData, Count, 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(RgnData, Count, 1);
         nCount = RgnData->rdh.nCount;
         iType = RgnData->rdh.iType;
         dwSize = RgnData->rdh.dwSize;
         rects = (RECT*)RgnData->Buffer;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if (!NT_SUCCESS(Status))
     {
@@ -3941,16 +3937,11 @@ NtGdiGetRgnBox(
         return ret;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(pRect, sizeof(RECT), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(pRect, sizeof(RECT), 1);
         *pRect = SafeRect;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
     if (!NT_SUCCESS(Status))
     {
         return ERROR;
@@ -4030,17 +4021,15 @@ NtGdiRectInRegion(
     RECTL rcTemp;
 
     /* Probe and copy the rect */
-    _SEH2_TRY
     {
-        ProbeForRead(prclUnsafe, sizeof(RECT), 1);
-        rcTemp = *prclUnsafe;
+        NTSTATUS __SehStatus = SafeProbeForRead(prclUnsafe, sizeof(RECT), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            DPRINT1("NtGdiRectInRegion: Exception accessing the rect\n");
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        DPRINT1("NtGdiRectInRegion: Exception accessing the rect\n");
-        return FALSE;
-    }
-    _SEH2_END;
+    rcTemp = *prclUnsafe;
 
     /* Call the internal function */
     return IntRectInRegion(hrgn, &rcTemp);

@@ -10,6 +10,7 @@
 /** Includes ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -616,17 +617,15 @@ NtGdiAddFontMemResourceEx(
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &NumFonts);
     ExFreePoolWithTag(Buffer, TAG_FONT);
 
-    _SEH2_TRY
     {
-        ProbeForWrite(pNumFonts, sizeof(NumFonts), 1);
-        *pNumFonts = NumFonts;
+        NTSTATUS __SehStatus = SafeProbeForWrite(pNumFonts, sizeof(NumFonts), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            /* Leak it? */
+            return NULL;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        /* Leak it? */
-        _SEH2_YIELD(return NULL);
-    }
-    _SEH2_END;
+    *pNumFonts = NumFonts;
 
 
     return Ret;
@@ -686,15 +685,7 @@ NtGdiGetFontData(
 
   if (Buffer && Size)
   {
-     _SEH2_TRY
-     {
-         ProbeForRead(Buffer, Size, 1);
-     }
-     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-     {
-         Status = _SEH2_GetExceptionCode();
-     }
-     _SEH2_END
+     Status = SafeProbeForRead(Buffer, Size, 1);
   }
 
   if (!NT_SUCCESS(Status)) return Result;
@@ -777,16 +768,11 @@ NtGdiGetFontUnicodeRanges(
 
      if (Size)
      {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pgs, Size, 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(pgs, Size, 1);
             RtlCopyMemory(pgs, pgsSafe, Size);
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-           Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
 
         if (!NT_SUCCESS(Status)) Size = 0;
      }
@@ -844,32 +830,22 @@ NtGdiGetGlyphOutline(
 
   if (pvBuf)
   {
-     _SEH2_TRY
+     Status = SafeProbeForWrite(UnsafeBuf, cjBuf, 1);
+     if (NT_SUCCESS(Status))
      {
-         ProbeForWrite(UnsafeBuf, cjBuf, 1);
          RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf);
      }
-     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-     {
-         Status = _SEH2_GetExceptionCode();
-     }
-     _SEH2_END
 
      ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
   }
 
   if (pgm)
   {
-     _SEH2_TRY
+     Status = SafeProbeForWrite(pgm, sizeof(GLYPHMETRICS), 1);
+     if (NT_SUCCESS(Status))
      {
-         ProbeForWrite(pgm, sizeof(GLYPHMETRICS), 1);
          RtlCopyMemory(pgm, &gm, sizeof(GLYPHMETRICS));
      }
-     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-     {
-         Status = _SEH2_GetExceptionCode();
-     }
-     _SEH2_END
   }
 
   if (! NT_SUCCESS(Status))
@@ -934,16 +910,11 @@ NtGdiGetKerningPairs(
         return 0;
      }
      ftGdiGetKerningPairs(FontGDI,Count,pKP);
-     _SEH2_TRY
+     Status = SafeProbeForWrite(krnpair, Count * sizeof(KERNINGPAIR), 1);
+     if (NT_SUCCESS(Status))
      {
-        ProbeForWrite(krnpair, Count * sizeof(KERNINGPAIR), 1);
-        RtlCopyMemory(krnpair, pKP, Count * sizeof(KERNINGPAIR));
+         RtlCopyMemory(krnpair, pKP, Count * sizeof(KERNINGPAIR));
      }
-     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-     {
-        Status = _SEH2_GetExceptionCode();
-     }
-     _SEH2_END
      if (!NT_SUCCESS(Status))
      {
         EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -1014,16 +985,11 @@ NtGdiGetOutlineTextMetricsInternalW(
   RtlZeroMemory(potm, Size);
   IntGetOutlineTextMetrics(FontGDI, Size, potm, FALSE);
 
-  _SEH2_TRY
+  Status = SafeProbeForWrite(otm, Size, 1);
+  if (NT_SUCCESS(Status))
   {
-      ProbeForWrite(otm, Size, 1);
       RtlCopyMemory(otm, potm, Size);
   }
-  _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-  {
-      Status = _SEH2_GetExceptionCode();
-  }
-  _SEH2_END
 
   if (!NT_SUCCESS(Status))
   {
@@ -1182,16 +1148,11 @@ NtGdiGetRealizationInfo(
      if (pri)
      {
         NTSTATUS Status = STATUS_SUCCESS;
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pri, sizeof(REALIZATION_INFO), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(pri, sizeof(REALIZATION_INFO), 1);
             RtlCopyMemory(pri, &ri, sizeof(REALIZATION_INFO));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
 
         if(!NT_SUCCESS(Status))
         {
@@ -1291,16 +1252,11 @@ NtGdiHfontCreate(
       return NULL;
   }
 
-  _SEH2_TRY
+  Status = SafeProbeForRead(pelfw, sizeof(ENUMLOGFONTEXDVW), 1);
+  if (NT_SUCCESS(Status))
   {
-      ProbeForRead(pelfw, sizeof(ENUMLOGFONTEXDVW), 1);
       RtlCopyMemory(&SafeLogfont, pelfw, sizeof(ENUMLOGFONTEXDVW));
   }
-  _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-  {
-      Status = _SEH2_GetExceptionCode();
-  }
-  _SEH2_END
 
   if (!NT_SUCCESS(Status))
   {

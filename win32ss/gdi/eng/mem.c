@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -177,15 +178,13 @@ APIENTRY
 EngSecureMem(PVOID Address, ULONG Length)
 {
     {// HACK!!!
-        _SEH2_TRY
         {
-            ProbeForWrite(Address, Length, 1);
+            NTSTATUS __SehStatus = SafeProbeForWrite(Address, Length, 1);
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                return NULL;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            _SEH2_YIELD(return NULL);
-        }
-        _SEH2_END;
         return (HANDLE)-1;
     }
     return MmSecureVirtualMemory(Address, Length, PAGE_READWRITE);
@@ -199,23 +198,21 @@ EngSecureMemForRead(PVOID Address, ULONG Length)
         ULONG cPages;
         volatile BYTE *pjProbe;
 
-        _SEH2_TRY
         {
-            ProbeForRead(Address, Length, 1);
-            cPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Address, Length);
-            pjProbe = ALIGN_DOWN_POINTER_BY(Address, PAGE_SIZE);
-            while(cPages--)
+            NTSTATUS __SehStatus = SafeProbeForRead(Address, Length, 1);
+            if (!NT_SUCCESS(__SehStatus))
             {
-                /* Do a read probe */
-                (void)*pjProbe;
-                pjProbe += PAGE_SIZE;
+                return NULL;
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        cPages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Address, Length);
+        pjProbe = ALIGN_DOWN_POINTER_BY(Address, PAGE_SIZE);
+        while(cPages--)
         {
-            _SEH2_YIELD(return NULL);
+            /* Do a read probe */
+            (void)*pjProbe;
+            pjProbe += PAGE_SIZE;
         }
-        _SEH2_END;
         return (HANDLE)-1;
     }
     return MmSecureVirtualMemory(Address, Length, PAGE_READONLY);

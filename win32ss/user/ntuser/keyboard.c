@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserKbd);
 
 BYTE gafAsyncKeyState[256 * 2 / 8]; // 2 bits per key
@@ -1505,10 +1506,17 @@ NtUserToUnicodeEx(
         return 0;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(pKeyStateUnsafe, 256 * sizeof(BYTE), 1);
+    if (!NT_SUCCESS(Status))
+    {
+        ERR("Cannot copy key state\n");
+        SetLastNtError(Status);
+        return 0;
+    }
+    else
     {
         /* Probe and copy key state to smaller bitmap */
-        ProbeForRead(pKeyStateUnsafe, 256 * sizeof(BYTE), 1);
+
         for (i = 0; i < 256; ++i)
         {
             if (pKeyStateUnsafe[i] & KS_DOWN_BIT)
@@ -1517,13 +1525,6 @@ NtUserToUnicodeEx(
                 SET_KEY_LOCKED(afKeyState, i, TRUE);
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ERR("Cannot copy key state\n");
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return 0);
-    }
-    _SEH2_END;
 
     pwszBuff = ExAllocatePoolWithTag(NonPagedPool, sizeof(WCHAR) * cchBuff, TAG_STRING);
     if (!pwszBuff)

@@ -1,0 +1,76 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/cursoricon.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 3
+  },
+  "sites": [
+    {
+      "function": "NtUserGetIconInfo",
+      "line_start": 493,
+      "line_end": 512,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "RtlQueryAtomInAtomTable"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: RtlQueryAtomInAtomTable"
+    },
+    {
+      "function": "NtUserGetCursorInfo",
+      "line_start": 658,
+      "line_end": 675,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "EngSetLastError"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: EngSetLastError"
+    },
+    {
+      "function": "NtUserSetCursorIconData",
+      "line_start": 1513,
+      "line_end": 1586,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 4,
+      "nonprobe_calls": [
+        "ExAllocatePoolWithTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ExAllocatePoolWithTag"
+    }
+  ]
+}

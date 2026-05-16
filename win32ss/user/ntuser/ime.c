@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <jpnvkeys.h>
 
 DBG_DEFAULT_CHANNEL(UserMisc);
@@ -1088,17 +1089,15 @@ NtUserGetImeInfoEx(
         goto Quit;
     }
 
-    _SEH2_TRY
     {
-        ProbeForRead(pImeInfoEx, sizeof(*pImeInfoEx), 1);
-        ImeInfoEx = *pImeInfoEx;
+        NTSTATUS __SehStatus = SafeProbeForRead(pImeInfoEx, sizeof(*pImeInfoEx), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            ERR("Exception in NtUserGetImeInfoEx: %p\n", pImeInfoEx);
+            goto Quit;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ERR("Exception in NtUserGetImeInfoEx: %p\n", pImeInfoEx);
-        _SEH2_YIELD(goto Quit);
-    }
-    _SEH2_END;
+    ImeInfoEx = *pImeInfoEx;
 
     pWinSta = IntGetProcessWindowStation(NULL);
     ret = UserGetImeInfoEx(pWinSta, &ImeInfoEx, SearchType);
@@ -1212,17 +1211,15 @@ NtUserSetImeInfoEx(_In_ const IMEINFOEX *pImeInfoEx)
         goto Quit;
     }
 
-    _SEH2_TRY
     {
-        ProbeForRead(pImeInfoEx, sizeof(*pImeInfoEx), 1);
-        ImeInfoEx = *pImeInfoEx;
+        NTSTATUS __SehStatus = SafeProbeForRead(pImeInfoEx, sizeof(*pImeInfoEx), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            ERR("Exception in NtUserSetImeInfoEx: pImeInfoEx=%p\n", pImeInfoEx);
+            goto Quit;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ERR("Exception in NtUserSetImeInfoEx: pImeInfoEx=%p\n", pImeInfoEx);
-        _SEH2_YIELD(goto Quit);
-    }
-    _SEH2_END;
+    ImeInfoEx = *pImeInfoEx;
 
     pWinSta = IntGetProcessWindowStation(NULL);
     ret = UserSetImeInfoEx(pWinSta, &ImeInfoEx);

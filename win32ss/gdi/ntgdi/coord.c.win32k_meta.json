@@ -1,0 +1,146 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/coord.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2,
+    "a": 4,
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiCombineTransform",
+      "line_start": 260,
+      "line_end": 272,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 3,
+      "nonprobe_calls": [
+        "GreCombineTransform"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "non-probe call(s) in TRY: GreCombineTransform"
+    },
+    {
+      "function": "NtGdiGetTransform",
+      "line_start": 333,
+      "line_end": 341,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "XFORMOBJ_iGetXform"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: XFORMOBJ_iGetXform"
+    },
+    {
+      "function": "NtGdiTransformPoints",
+      "line_start": 396,
+      "line_end": 406,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiTransformPoints",
+      "line_start": 430,
+      "line_end": 439,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "relies_on_prior_probe"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write; relies on earlier sibling probe"
+    },
+    {
+      "function": "NtGdiModifyWorldTransform",
+      "line_start": 531,
+      "line_end": 539,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiScaleViewportExtEx",
+      "line_start": 707,
+      "line_end": 718,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiGetDCPoint",
+      "line_start": 1411,
+      "line_end": 1419,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    }
+  ]
+}

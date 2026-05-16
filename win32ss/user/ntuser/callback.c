@@ -11,6 +11,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserCallback);
 
 
@@ -219,17 +220,17 @@ co_IntClientLoadLibrary(PUNICODE_STRING pstrLibName,
        return FALSE;
    }
 
-   _SEH2_TRY
-   {
-       /* Probe and copy the usermode result data */
-       ProbeForRead(ResultPointer, sizeof(HMODULE), 1);
-       bResult = *(BOOL*)ResultPointer;
-   }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   Status = SafeProbeForRead(ResultPointer, sizeof(HMODULE), 1);
+   if (!NT_SUCCESS(Status))
    {
        bResult = FALSE;
    }
-   _SEH2_END;
+   else
+   {
+       /* Probe and copy the usermode result data */
+
+       bResult = *(BOOL*)ResultPointer;
+   }
 
    return bResult;
 }
@@ -448,16 +449,15 @@ co_IntLoadSysMenuTemplate(VOID)
    if (NT_SUCCESS(Status))
    {
       /* Simulate old behaviour: copy into our local buffer */
-      _SEH2_TRY
+      Status = SafeProbeForRead(ResultPointer, sizeof(LRESULT), 1);
+      if (!NT_SUCCESS(Status))
       {
-        ProbeForRead(ResultPointer, sizeof(LRESULT), 1);
-        Result = *(LRESULT*)ResultPointer;
+          Result = 0;
       }
-      _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+      else
       {
-        Result = 0;
+          Result = *(LRESULT*)ResultPointer;
       }
-      _SEH2_END;
    }
 
    UserEnterCo();
@@ -1302,18 +1302,17 @@ co_ClientImmLoadLayout(
         return FALSE;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(ResultPointer, ResultLength, 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(ResultPointer, ResultLength, 1);
+        ret = FALSE;
+    }
+    else
+    {
         ret = ResultPointer->ret;
         if (ret)
             RtlCopyMemory(pImeInfoEx, &ResultPointer->iiex, sizeof(IMEINFOEX));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ret = FALSE;
-    }
-    _SEH2_END;
 
     return ret;
 }

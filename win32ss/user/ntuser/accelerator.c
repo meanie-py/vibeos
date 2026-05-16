@@ -11,6 +11,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserAccel);
 
 #define FVIRT_TBL_END 0x80
@@ -385,17 +386,15 @@ NtUserTranslateAccelerator(
         goto Cleanup; // Return 0
     }
 
-    _SEH2_TRY
     {
-        ProbeForRead(pUnsafeMessage, sizeof(MSG), 4);
-        RtlCopyMemory(&Message, pUnsafeMessage, sizeof(MSG));
+        NTSTATUS __SehStatus = SafeProbeForRead(pUnsafeMessage, sizeof(MSG), 4);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            goto Cleanup; // Return 0
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(goto Cleanup); // Return 0
-    }
-    _SEH2_END;
+    RtlCopyMemory(&Message, pUnsafeMessage, sizeof(MSG));
 
     if ((Message.message != WM_KEYDOWN) &&
         (Message.message != WM_SYSKEYDOWN) &&

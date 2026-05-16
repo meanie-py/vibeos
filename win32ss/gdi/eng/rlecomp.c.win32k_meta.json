@@ -1,0 +1,26 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/rlecomp.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "DecompressBitmap",
+      "line_start": 35,
+      "line_end": 122,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #include FT_GLYPH_H
 #include FT_TYPE1_TABLES_H
@@ -7322,13 +7323,16 @@ NtGdiExtTextOutW(
         }
 
         /* Probe and copy user mode data to the buffer */
-        _SEH2_TRY
+        Status = SafeProbeForRead(UnsafeString, StringSize, 1);
+        if (NT_SUCCESS(Status))
+            Status = SafeProbeForRead(UnsafeDx, DxSize, 1);
+        if (NT_SUCCESS(Status))
         {
             /* Put the Dx before the String to assure alignment of 4 */
             SafeString = (LPCWSTR)(((ULONG_PTR)Buffer) + DxSize);
 
             /* Probe and copy the string */
-            ProbeForRead(UnsafeString, StringSize, 1);
+
             RtlCopyMemory((PVOID)SafeString, UnsafeString, StringSize);
 
             /* If we have Dx values... */
@@ -7336,15 +7340,10 @@ NtGdiExtTextOutW(
             {
                 /* ... probe and copy them */
                 SafeDx = Buffer;
-                ProbeForRead(UnsafeDx, DxSize, 1);
+
                 RtlCopyMemory(SafeDx, UnsafeDx, DxSize);
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
         if (!NT_SUCCESS(Status))
         {
             goto cleanup;
@@ -7354,16 +7353,11 @@ NtGdiExtTextOutW(
     /* If we have a rect, copy it */
     if (UnsafeRect)
     {
-        _SEH2_TRY
+        Status = SafeProbeForRead(UnsafeRect, sizeof(RECT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForRead(UnsafeRect, sizeof(RECT), 1);
             SafeRect = *UnsafeRect;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
         if (!NT_SUCCESS(Status))
         {
             goto cleanup;
@@ -7436,16 +7430,11 @@ NtGdiGetCharABCWidthsW(
             return FALSE;
         }
 
-        _SEH2_TRY
+        Status = SafeProbeForRead(UnSafepwch, pwchSize, 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForRead(UnSafepwch, pwchSize, 1);
             RtlCopyMemory(Safepwch, UnSafepwch, pwchSize);
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
     }
 
     if (!NT_SUCCESS(Status))
@@ -7631,16 +7620,11 @@ NtGdiGetCharWidthW(
             EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return FALSE;
         }
-        _SEH2_TRY
+        Status = SafeProbeForRead(UnSafepwc, pwcSize, 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForRead(UnSafepwc, pwcSize, 1);
             RtlCopyMemory(Safepwc, UnSafepwc, pwcSize);
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
     }
 
     if (!NT_SUCCESS(Status))
@@ -7892,16 +7876,11 @@ NtGdiGetGlyphIndicesW(
         goto ErrorRet;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(UnSafepwc, pwcSize, 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(UnSafepwc, pwcSize, 1);
         RtlCopyMemory(Safepwc, UnSafepwc, pwcSize);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if (!NT_SUCCESS(Status))
     {
@@ -7919,16 +7898,11 @@ NtGdiGetGlyphIndicesW(
     }
     IntUnLockFreeType();
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(UnSafepgi, cwc * sizeof(WORD), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(UnSafepgi, cwc * sizeof(WORD), 1);
         RtlCopyMemory(UnSafepgi, Buffer, cwc * sizeof(WORD));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
 ErrorRet:
     if (Buffer != NULL)

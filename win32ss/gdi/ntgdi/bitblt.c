@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(GdiBlt);
 
 BOOL APIENTRY
@@ -1055,20 +1056,13 @@ NtGdiPolyPatBlt(
             EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return FALSE;
         }
-        _SEH2_TRY
+        Status = SafeProbeForRead(pRects, cRects * sizeof(PATRECT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForRead(pRects,
-                cRects * sizeof(PATRECT),
-                1);
             RtlCopyMemory(rb,
                 pRects,
                 cRects * sizeof(PATRECT));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {

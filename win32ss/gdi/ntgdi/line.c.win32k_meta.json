@@ -1,0 +1,49 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/line.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1,
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiPolyDraw",
+      "line_start": 718,
+      "line_end": 732,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "ProbeArrayForRead"
+      ],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ProbeArrayForRead"
+    },
+    {
+      "function": "NtGdiMoveTo",
+      "line_start": 771,
+      "line_end": 780,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    }
+  ]
+}

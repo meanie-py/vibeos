@@ -1,0 +1,267 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ime.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 7,
+    "a": 5,
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "IntGetImeHotKeyLanguageScore",
+      "line_start": 66,
+      "line_end": 74,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "NtCurrentTeb"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: NtCurrentTeb"
+    },
+    {
+      "function": "NtUserGetImeHotKey",
+      "line_start": 439,
+      "line_end": 450,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 3,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserGetImeHotKey",
+      "line_start": 457,
+      "line_end": 468,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "relies_on_prior_probe"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write; relies on earlier sibling probe"
+    },
+    {
+      "function": "NtUserBuildHimcList",
+      "line_start": 766,
+      "line_end": 776,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "UserBuildHimcList"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: UserBuildHimcList"
+    },
+    {
+      "function": "NtUserGetImeInfoEx",
+      "line_start": 1102,
+      "line_end": 1111,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "co_IntCreateDefaultImeWindow",
+      "line_start": 2094,
+      "line_end": 2104,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "IntImeCanDestroyDefIMEforChild",
+      "line_start": 2127,
+      "line_end": 2137,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "IntImeCanDestroyDefIME",
+      "line_start": 2174,
+      "line_end": 2184,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "IntCheckImeShowStatus",
+      "line_start": 2277,
+      "line_end": 2296,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 2343,
+      "line_end": 2353,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 2361,
+      "line_end": 2370,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "InterlockedIncrement"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: InterlockedIncrement"
+    },
+    {
+      "function": "IntSendMessageToUI",
+      "line_start": 2386,
+      "line_end": 2395,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "InterlockedDecrement"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: InterlockedDecrement"
+    },
+    {
+      "function": "IntNotifyImeShowStatus",
+      "line_start": 2459,
+      "line_end": 2485,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "ValidateHwndNoErr"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: ValidateHwndNoErr"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dclife.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "NtGdiOpenDCW",
+      "line_start": 721,
+      "line_end": 761,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 5,
+      "nonprobe_calls": [
+        "RtlCopyUnicodeString",
+        "ExAllocatePoolWithTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "non-probe call(s) in TRY: RtlCopyUnicodeString, ExAllocatePoolWithTag"
+    },
+    {
+      "function": "NtGdiOpenDCW",
+      "line_start": 795,
+      "line_end": 804,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "swallow"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    }
+  ]
+}

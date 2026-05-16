@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserMisc);
 
 NTSTATUS
@@ -38,17 +39,15 @@ NtUserConsoleControl(
                 break;
             }
 
-            _SEH2_TRY
+            Status = SafeProbeForWrite(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
+            if (!NT_SUCCESS(Status))
             {
-                ProbeForWrite(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
+                break;
+            }
+            else
+            {
                 DesktopConsoleThreadInfo = *(PDESKTOP_CONSOLE_THREAD)ConsoleCtrlInfo;
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                Status = _SEH2_GetExceptionCode();
-                _SEH2_YIELD(break);
-            }
-            _SEH2_END;
 
             /* Reference the desktop */
             Status = ObReferenceObjectByHandle(DesktopConsoleThreadInfo.DesktopHandle,
@@ -96,16 +95,11 @@ NtUserConsoleControl(
                 break;
             }
 
-            _SEH2_TRY
+            Status = SafeProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
+            if (NT_SUCCESS(Status))
             {
-                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
                 gaGuiConsoleWndClass = *(ATOM*)ConsoleCtrlInfo;
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                Status = _SEH2_GetExceptionCode();
-            }
-            _SEH2_END;
 
             break;
         }
@@ -120,17 +114,15 @@ NtUserConsoleControl(
                 break;
             }
 
-            _SEH2_TRY
+            Status = SafeProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
+            if (!NT_SUCCESS(Status))
             {
-                ProbeForRead(ConsoleCtrlInfo, ConsoleCtrlInfoLength, sizeof(USHORT));
+                break;
+            }
+            else
+            {
                 hPalette = *(HPALETTE*)ConsoleCtrlInfo;
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                Status = _SEH2_GetExceptionCode();
-                _SEH2_YIELD(break);
-            }
-            _SEH2_END;
 
             /* Make the palette handle public */
             GreSetObjectOwnerEx(hPalette,

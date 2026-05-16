@@ -1,0 +1,114 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/fillshap.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2,
+    "d": 2,
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "FillPolygon",
+      "line_start": 412,
+      "line_end": 431,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "max"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: max"
+    },
+    {
+      "function": "FillPolygon",
+      "line_start": 467,
+      "line_end": 476,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "relies_on_prior_probe"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write; relies on earlier sibling probe"
+    },
+    {
+      "function": "NtGdiPolyPolyDraw",
+      "line_start": 423,
+      "line_end": 442,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "max"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: max"
+    },
+    {
+      "function": "NtGdiPolyPolyDraw",
+      "line_start": 478,
+      "line_end": 487,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "relies_on_prior_probe"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write; relies on earlier sibling probe"
+    },
+    {
+      "function": "NtGdiGradientFill",
+      "line_start": 1115,
+      "line_end": 1127,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": ""
+    }
+  ]
+}

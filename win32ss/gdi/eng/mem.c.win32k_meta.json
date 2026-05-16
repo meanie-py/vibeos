@@ -1,0 +1,30 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/mem.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "c": 1
+  },
+  "sites": [
+    {
+      "function": "HackSecureVirtualMemory",
+      "line_start": 127,
+      "line_end": 134,
+      "category": "c",
+      "category_name": "FAULT_RECOVER",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "MmProbeAndLockPages"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

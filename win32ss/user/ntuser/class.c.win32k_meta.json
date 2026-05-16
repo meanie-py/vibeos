@@ -1,0 +1,240 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/class.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 7,
+    "d": 3
+  },
+  "sites": [
+    {
+      "function": "ProbeAndCaptureUnicodeStringOrAtom",
+      "line_start": 157,
+      "line_end": 207,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "ExAllocatePoolWithTag"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY",
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "SET_STATUS",
+        "CLEANUP"
+      ],
+      "note": "non-probe call(s) in TRY: ExAllocatePoolWithTag"
+    },
+    {
+      "function": "IntRegisterClassAtom",
+      "line_start": 359,
+      "line_end": 371,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "IntCreateClass",
+      "line_start": 1113,
+      "line_end": 1215,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "UserGetCurIconObject",
+        "RtlUnicodeStringToAnsiSize",
+        "RtlUnicodeStringToAnsiString"
+      ],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UserGetCurIconObject, RtlUnicodeStringToAnsiSize, RtlUnicodeStringToAnsiString"
+    },
+    {
+      "function": "IntGetAtomFromStringOrAtom",
+      "line_start": 1320,
+      "line_end": 1332,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN",
+        "CLEANUP"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "UserGetClassName",
+      "line_start": 1656,
+      "line_end": 1751,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "RtlQueryAtomInAtomTable",
+        "ExAllocatePoolWithTag",
+        "EngSetLastError",
+        "RtlInitUnicodeString",
+        "RtlUnicodeStringToAnsiString",
+        "SetLastNtError"
+      ],
+      "try_patterns": [
+        "POOL_ALLOC"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: RtlQueryAtomInAtomTable, ExAllocatePoolWithTag, EngSetLastError, RtlInitUnicodeString"
+    },
+    {
+      "function": "IntSetClassMenuName",
+      "line_start": 1784,
+      "line_end": 1810,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "RtlUnicodeStringToAnsiString",
+        "SetLastNtError"
+      ],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: RtlUnicodeStringToAnsiString, SetLastNtError"
+    },
+    {
+      "function": "NtUserRegisterClassExWOW",
+      "line_start": 2466,
+      "line_end": 2562,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 8,
+      "nonprobe_calls": [
+        "EngSetLastError",
+        "IsCallProcHandle"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED",
+        "PROBE_UNICODE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: EngSetLastError, IsCallProcHandle"
+    },
+    {
+      "function": "IntNtUserSetClassLongPtr",
+      "line_start": 2624,
+      "line_end": 2689,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "EngSetLastError",
+        "UserSetClassLongPtr",
+        "UserPaintCaption"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED",
+        "PROBE_UNICODE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: EngSetLastError, UserSetClassLongPtr, UserPaintCaption"
+    },
+    {
+      "function": "NtUserGetClassInfo",
+      "line_start": 2847,
+      "line_end": 2863,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "WRITE_BACK",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "NtUserGetClassName",
+      "line_start": 2901,
+      "line_end": 2927,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "UserGetClassName"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UserGetClassName"
+    }
+  ]
+}
