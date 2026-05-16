@@ -6,7 +6,7 @@
  * PROGRAMMERS: Copyright Victor Kirhenshtein (sauros@iname.com)
                 Copyright Jason Filby (jasonfilby@yahoo.com)
                 Copyright Martijn Vernooij (o112w8r02@sneakemail.com)
-                Copyright 2006-2007 Hervé Poussineau (hpoussin@reactos.org)
+                Copyright 2006-2007 Hervï¿½ Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES ******************************************************************/
@@ -40,6 +40,7 @@ i8042AddDevice(
 	NTSTATUS Status;
 
 	TRACE_(I8042PRT, "i8042AddDevice(%p %p)\n", DriverObject, Pdo);
+	DPRINT1("[[I8K]] AddDevice Pdo=%p\n", Pdo);
 
 	DriverExtension = (PI8042_DRIVER_EXTENSION)IoGetDriverObjectExtension(DriverObject, DriverObject);
 

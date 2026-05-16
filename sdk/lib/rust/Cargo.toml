@@ -34,6 +34,8 @@ members = [
     "random",
     "reactos-link",
     "rtl-rust",
+    "rtl-strings",
+    "rtl-difftest",
     "slist",
     "slist-loom",
     "splaytree",
