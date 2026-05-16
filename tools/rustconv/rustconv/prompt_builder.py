@@ -175,18 +175,31 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
                 parts.append(f"- `#[no_mangle] pub unsafe {conv} fn {name}(...)`{fwd}{arch}")
         parts.append("")
 
-    # Section 3: Available imports from ntkrnl-sys
+    # Section 3: Available imports.
+    # The catalog module name "win32k" is unique to win32k-sys symbols
+    # (the win32k-internal surface: _WND/_DESKTOP/Int*/Gre*/co_*/PBYTE/
+    # SORTCOMP/…). Those live in the `win32k_sys` crate, NOT `ntkrnl_sys`
+    # (which has no `win32k` module). Render the correct crate path per
+    # module so the LLM emits a `use` that actually resolves. postprocess
+    # also rewrites any stray `ntkrnl_sys::win32k` → `win32k_sys::win32k`
+    # as a deterministic safety net (it is universally wrong).
+    def _crate_path(module: str) -> str:
+        if module == "win32k":
+            return "win32k_sys::win32k"
+        return f"ntkrnl_sys::{module}"
+
     if resolve.imports:
-        parts.append("### Available Imports from `ntkrnl_sys`")
+        parts.append("### Available Imports")
         parts.append("These types and functions are available. Use them in your `use` declarations:\n")
         for module, group in sorted(resolve.imports.items()):
             names = sorted(s.name for s in group.symbols)
-            if module in ("ddk", "hal_ddk"):
-                parts.append(f"From `ntkrnl_sys::{module}::*`: {', '.join(f'`{n}`' for n in names[:50])}")
+            path = _crate_path(module)
+            if module in ("ddk", "hal_ddk", "win32k"):
+                parts.append(f"From `{path}::*`: {', '.join(f'`{n}`' for n in names[:50])}")
                 if len(names) > 50:
                     parts.append(f"  ... and {len(names) - 50} more")
             else:
-                parts.append(f"From `ntkrnl_sys::{module}::*`: {', '.join(f'`{n}`' for n in names)}")
+                parts.append(f"From `{path}::*`: {', '.join(f'`{n}`' for n in names)}")
         parts.append("")
 
     # Section 4: Gap functions

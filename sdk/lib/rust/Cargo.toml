@@ -41,6 +41,8 @@ members = [
     "splaytree",
     "time",
     "utf8",
+    "win32k-kernel-rust",
+    "win32k-rust",
     "win32k-sys",
 ]
 resolver = "2"
