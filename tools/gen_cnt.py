@@ -100,8 +100,12 @@ def shim(name: str, m: dict) -> str:
 
     # ---- slice reconstruction --------------------------------------
     if sp == "nul_in":
-        for _, n in params:
+        for n in ptrs:  # only pointer args become slices; scalars pass through
             body.append(f"    let {n}_s = cstr_slice({n});")
+    elif sp == "nul_in_maxlen":
+        # strnlen-shape: walk the C string but never past the count
+        # param (textbook strnlen must not read beyond maxlen).
+        body.append(f"    let {ptrs[0]}_s = cstr_slice_bounded({ptrs[0]}, {szp});")
     elif sp == "dst_fixed_n":
         d, s, _ = pnames
         body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
@@ -117,19 +121,18 @@ def shim(name: str, m: dict) -> str:
     else:
         raise SystemExit(f"{name}: unsupported slice_pattern {sp}")
 
-    # The first slice's name (for single/double-slice cores).
-    s0 = (pnames[0] if sp in ("nul_in", "dst_fixed_n") else ptrs[0]) + "_s"
-    s1 = (
-        (pnames[1] if sp in ("nul_in",) else ptrs[1]) + "_s"
-        if (sp == "nul_in" and len(pnames) > 1) or (sp == "ptr_len" and len(ptrs) > 1)
-        else None
-    )
+    # First/second slice names. Slices come from POINTER params only
+    # (scalars like `int c` pass through untouched).
+    s0 = (pnames[0] if sp == "dst_fixed_n" else ptrs[0]) + "_s"
+    s1 = ptrs[1] + "_s" if len(ptrs) > 1 else None
 
     # ---- core call + return collapse -------------------------------
     if rc == "usize":
         body.append(f"    {core_call(s0)} as {rt}")
     elif rc == "i32_passthrough":
         body.append(f"    {core_call(f'{s0}, {s1}')}")
+    elif rc == "i32_cmp_n":  # strncmp-shape: core(a, b, n)
+        body.append(f"    {core_call(f'{s0}, {s1}, {szp}')}")
     elif rc == "ptr_or_null_from_opt":
         args = f"{s0}, {s1}" if s1 else f"{s0}, {scal[0]}"
         base = pnames[0] if sp == "nul_in" else ptrs[0]
@@ -190,6 +193,21 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
     core::slice::from_raw_parts(p, n)
 }
 
+/// `strnlen`-style bounded C-string → content slice: walk to NUL but
+/// never past `cap` bytes (textbook strnlen must not read beyond
+/// maxlen). NULL → empty (libcntpr tcsnlen.h NULL guard).
+#[inline]
+pub(crate) unsafe fn cstr_slice_bounded<'a>(p: *const u8, cap: usize) -> &'a [u8] {
+    if p.is_null() {
+        return &[];
+    }
+    let mut n = 0usize;
+    while n < cap && *p.add(n) != 0 {
+        n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
 #[inline]
 pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {
@@ -240,7 +258,8 @@ def main() -> int:
     shims = [
         AUTOGEN,
         "#[allow(unused_imports)]\n"
-        "use super::{cstr_slice, raw_move, raw_mut_slice, raw_slice};\n\n",
+        "use super::{cstr_slice, cstr_slice_bounded, raw_move, "
+        "raw_mut_slice, raw_slice};\n\n",
     ]
     for nm in sorted(syms):
         shims.append(shim(nm, syms[nm]))

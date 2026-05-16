@@ -17,6 +17,21 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
     core::slice::from_raw_parts(p, n)
 }
 
+/// `strnlen`-style bounded C-string → content slice: walk to NUL but
+/// never past `cap` bytes (textbook strnlen must not read beyond
+/// maxlen). NULL → empty (libcntpr tcsnlen.h NULL guard).
+#[inline]
+pub(crate) unsafe fn cstr_slice_bounded<'a>(p: *const u8, cap: usize) -> &'a [u8] {
+    if p.is_null() {
+        return &[];
+    }
+    let mut n = 0usize;
+    while n < cap && *p.add(n) != 0 {
+        n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
 #[inline]
 pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {

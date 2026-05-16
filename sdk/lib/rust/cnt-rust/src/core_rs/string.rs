@@ -49,6 +49,55 @@ pub fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
     (0..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
 }
 
+/// `strncmp` core, faithful to ReactOS `tcsncmp.h`: signed-char
+/// (`_TCHAR`=signed `char`), bounded by `n`, stops at the first NUL,
+/// `n==0 → 0`. Slices are NUL-excluded contents. Returns the signed
+/// difference at the first differing position within `n`, else 0.
+#[inline]
+pub fn ncmp(a: &[u8], b: &[u8], n: usize) -> i32 {
+    for i in 0..n {
+        let ca = if i < a.len() { a[i] } else { 0 };
+        let cb = if i < b.len() { b[i] } else { 0 };
+        if ca != cb {
+            return (ca as i8 as i32) - (cb as i8 as i32);
+        }
+        if ca == 0 {
+            return 0;
+        }
+    }
+    0
+}
+
+/// `strchr` core, faithful to ReactOS `tcschr.h`: `cc = (char)c`,
+/// scans content; **the terminating NUL is a valid target** — if
+/// `(c as u8) == 0` it returns `Some(len)` (pointer to the NUL), not
+/// `None`. Otherwise first index whose byte equals `c as u8`, else
+/// `None`. `s` is the NUL-excluded content slice.
+#[inline]
+pub fn find_char(s: &[u8], c: i32) -> Option<usize> {
+    let target = c as u8;
+    if let Some(i) = s.iter().position(|&b| b == target) {
+        return Some(i);
+    }
+    if target == 0 {
+        Some(s.len()) // the implicit terminator
+    } else {
+        None
+    }
+}
+
+/// `strrchr` core, faithful to ReactOS `tcsrchr.h`: last occurrence;
+/// `(c as u8)==0 → Some(len)` (the terminator), else last matching
+/// index or `None`.
+#[inline]
+pub fn find_last_char(s: &[u8], c: i32) -> Option<usize> {
+    let target = c as u8;
+    if target == 0 {
+        return Some(s.len());
+    }
+    s.iter().rposition(|&b| b == target)
+}
+
 /// `strncpy` core. `dst` is the fixed n-length destination; `src` is
 /// the source contents (NUL-excluded). Faithful to ReactOS `tcsncpy`:
 /// copy `min(src.len(), n)` bytes; if `src` ended first, pad the rest

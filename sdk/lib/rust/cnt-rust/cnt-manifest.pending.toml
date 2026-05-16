@@ -9,47 +9,6 @@
 # Batch 2 (33): parse-endptr / int->str(+_s) / case-insensitive
 #               / multibyte / oddballs.
 schema_version = 1
-
-[symbols.strnlen]
-c_signature  = "size_t strnlen(const char *str, size_t count)"
-family       = "string"
-slice_pattern = "nul_in_maxlen"
-core_fn      = "string::len_of_bounded"
-return_collapse = "usize"
-inout_effects = "none (read-only)"
-preserved_misfeature = "NULL returns 0 instead of undefined behavior: `if(str == 0) return 0;` (line 7). Textbook strnlen has UB on NULL."
-fuzz_domain  = ["NULL", "empty string", "string shorter than count", "string exactly count length", "string longer than count (no NUL within count)", "count==0"]
-
-[symbols.strncmp]
-c_signature  = "int strncmp(const char * s1, const char * s2, size_t n)"
-family       = "string"
-slice_pattern = "nul_in"
-core_fn      = "string::ncmp"
-return_collapse = "i32_passthrough"
-inout_effects = "none (read-only)"
-preserved_misfeature = "Returns signed-char difference (*s1 - *s2) as int, NOT the standard -1/0/+1 normalization. _TCHAR is signed char. Early-return on n==0 before any dereference."
-fuzz_domain  = ["n==0 (no deref)", "equal prefixes shorter than n", "equal strings exactly n long", "differ at position < n", "differ at position 0", "one string ends (NUL) before n", "both strings same through NUL within n", "negative vs positive char values (signed difference)"]
-
-[symbols.strchr]
-c_signature = "char *strchr(const char *s, int c)"
-family = "string"
-slice_pattern = "nul_in"
-core_fn = "NEW:find_char_or_nul"
-return_collapse = "ptr_or_null_from_opt"
-inout_effects = "none (read-only scan)"
-preserved_misfeature = "Returns pointer to the terminating NUL when c==0 (line 'if(cc == 0) return (_TCHAR *)s;'), not NULL. This is actually standard C behavior but worth pinning since it's a special case distinct from not-found."
-fuzz_domain = ["char found mid-string", "char found at start", "char not found (return NULL)", "c==0 (must return ptr to NUL)", "c with high bits set (truncated to char, e.g. 0x161 → 0x61)", "empty string (s points to NUL immediately)", "multibyte char values to verify _TCHAR(int) truncation"]
-
-[symbols.strrchr]
-c_signature = "char *strrchr(const char *s, int c)"
-family = "string"
-slice_pattern = "nul_in"
-core_fn = "NEW:find_last_char"
-return_collapse = "ptr_or_null_from_opt"
-inout_effects = "none (read-only search)"
-preserved_misfeature = "c is truncated to char via `_TCHAR cc = c` (line tcsrchr.h:5), matching only the low byte. The NUL terminator IS a valid search target: if c==0, returns pointer to the NUL (lines 12-13), NOT NULL. Scans entire string even after finding matches, keeping last occurrence."
-fuzz_domain = ["c in range, found once", "c in range, found multiple times (verify LAST returned)", "c in range, not found (ret NULL)", "c==0 (ret ptr to NUL)", "c with high bits set (verify truncation to char)", "empty string with c==0 (ret ptr to empty NUL)", "empty string with c!=0 (ret NULL)"]
-
 [symbols._strtoi64]
 c_signature = "__int64 _strtoi64(const char *nptr, char **endptr, int base)"
 family = "radix"

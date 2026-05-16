@@ -19,6 +19,10 @@ extern "C" {
     fn ref_memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn ref_memmove(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void;
     fn ref_memset(d: *mut c_void, v: i32, n: usize) -> *mut c_void;
+    fn ref_strnlen(s: *const u8, cap: usize) -> usize;
+    fn ref_strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref_strchr(s: *const u8, c: i32) -> *mut u8;
+    fn ref_strrchr(s: *const u8, c: i32) -> *mut u8;
 }
 
 use cnt_rust::cabi;
@@ -302,4 +306,56 @@ fn diff_atoi64_atol() {
         }
     }
     unsafe { assert_eq!(cabi::_atoi64(core::ptr::null()), ref_atoi64(core::ptr::null())); }
+}
+
+#[test]
+fn diff_strnlen() {
+    let mut rng = Rng(0x7777_3333);
+    for _ in 0..6000 {
+        let s = cstr(&mut rng, 40, false);
+        let cap = rng.upto(48);
+        unsafe {
+            assert_eq!(cabi::strnlen(s.as_ptr(), cap), ref_strnlen(s.as_ptr(), cap),
+                "strnlen s={s:?} cap={cap}");
+        }
+    }
+    unsafe { assert_eq!(cabi::strnlen(core::ptr::null(), 8), ref_strnlen(core::ptr::null(), 8)); }
+}
+
+#[test]
+fn diff_strncmp() {
+    let mut rng = Rng(0x3333_7777);
+    for _ in 0..8000 {
+        let aa = rng.next() & 1 == 0;
+        let a = cstr(&mut rng, 20, aa);
+        let same = rng.next() & 3 == 0;
+        let ab = rng.next() & 1 == 0;
+        let b = if same { a.clone() } else { cstr(&mut rng, 20, ab) };
+        let n = rng.upto(24);
+        let c = unsafe { cabi::strncmp(a.as_ptr(), b.as_ptr(), n) };
+        let r = unsafe { ref_strncmp(a.as_ptr(), b.as_ptr(), n) };
+        assert_eq!(c, r, "strncmp a={a:?} b={b:?} n={n}");
+    }
+}
+
+#[test]
+fn diff_strchr_rchr() {
+    let mut rng = Rng(0x9999_1111);
+    for _ in 0..8000 {
+        let s = cstr(&mut rng, 40, true);
+        let c: i32 = match rng.upto(4) {
+            0 if s.len() > 1 => s[rng.upto(s.len() - 1)] as i32,
+            1 => 0, // NUL target → ptr to terminator
+            2 => (0x80 | (rng.byte() as i32)) & 0xff,
+            _ => rng.next() as i32,
+        };
+        let base = s.as_ptr() as usize;
+        let off = |p: *mut u8| if p.is_null() { None } else { Some(p as usize - base) };
+        unsafe {
+            assert_eq!(off(cabi::strchr(s.as_ptr(), c)), off(ref_strchr(s.as_ptr(), c)),
+                "strchr s={s:?} c={c}");
+            assert_eq!(off(cabi::strrchr(s.as_ptr(), c)), off(ref_strrchr(s.as_ptr(), c)),
+                "strrchr s={s:?} c={c}");
+        }
+    }
 }

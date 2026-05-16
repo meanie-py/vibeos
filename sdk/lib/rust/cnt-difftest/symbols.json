@@ -120,6 +120,21 @@
       "val<0"
     ]
   },
+  "strchr": {
+    "c_signature": "char *strchr(const char *s, int c)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/tcschr.h",
+    "fuzz_domain": [
+      "found mid",
+      "found at 0",
+      "not found",
+      "c==0 (\u2192ptr to NUL)",
+      "c high-bit",
+      "empty string"
+    ]
+  },
   "strcmp": {
     "c_signature": "int strcmp(const char *a, const char *b)",
     "family": "string",
@@ -149,6 +164,22 @@
       "NULL ptr"
     ]
   },
+  "strncmp": {
+    "c_signature": "int strncmp(const char *s1, const char *s2, size_t n)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i32_cmp_n",
+    "reference": "sdk/lib/crt/string/tcsncmp.h",
+    "fuzz_domain": [
+      "n==0",
+      "equal < n",
+      "equal exactly n",
+      "differ < n",
+      "differ at 0",
+      "NUL before n",
+      "high-bit (signed)"
+    ]
+  },
   "strncpy": {
     "c_signature": "char *strncpy(char *dst, const char *src, size_t n)",
     "family": "string",
@@ -161,6 +192,36 @@
       "src len > n (truncate, no-term)",
       "n == 0 (no write at all)",
       "src empty"
+    ]
+  },
+  "strnlen": {
+    "c_signature": "size_t strnlen(const char *str, size_t maxlen)",
+    "family": "string",
+    "slice_pattern": "nul_in_maxlen",
+    "return_collapse": "usize",
+    "reference": "sdk/lib/crt/string/tcsnlen.h",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "shorter than cap",
+      "exactly cap",
+      "no NUL within cap",
+      "cap==0"
+    ]
+  },
+  "strrchr": {
+    "c_signature": "char *strrchr(const char *s, int c)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/tcsrchr.h",
+    "fuzz_domain": [
+      "one match",
+      "multiple (last wins)",
+      "not found",
+      "c==0 (\u2192ptr to NUL)",
+      "c high-bit",
+      "empty"
     ]
   },
   "strstr": {
