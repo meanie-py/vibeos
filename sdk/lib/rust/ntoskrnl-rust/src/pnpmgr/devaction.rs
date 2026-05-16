@@ -2463,6 +2463,7 @@ unsafe fn PiDevNodeStateMachine(
             }
             DeviceNodeDriversAdded => {
                 status = IopAssignDeviceResources(currentNode);
+                da_tracex(b"SM IopAssignDeviceResources->\0", status as usize, currentNode as usize);
                 doProcessAgain = if status >= 0 { 1 } else { 0 };
             }
             DeviceNodeResourcesAssigned => {

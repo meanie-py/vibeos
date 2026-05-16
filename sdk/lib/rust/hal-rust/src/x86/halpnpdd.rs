@@ -20,7 +20,8 @@
 //!   HalpQueryIdPdo           — ACPI_HAL\PNP0C08 hardware ID, instance "0"
 //!   HalpQueryIdFdo           — HalHardwareIdString, instance "0"
 
-#![cfg(target_arch = "x86_64")]
+// Built for i386 too (task #4 ACPI-HAL backport) — replaces legacy_halpnpdd
+// (PCI_HAL\PNP0A03) on i386 so the HAL root advertises ACPI_HAL\PNP0C08.
 
 use ntkrnl_sys::hal_ddk::{
     CmResourceTypeInterrupt, _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BQID_DEVICE,
@@ -141,8 +142,11 @@ unsafe extern "system" {
     fn PoStartNextPowerIrp(Irp: PIRP);
 }
 
-// ObReferenceObject is `#define ObReferenceObject ObfReferenceObject`.
-unsafe extern "system" {
+// ObReferenceObject is `#define ObReferenceObject ObfReferenceObject`
+// (FASTCALL — `@ObfReferenceObject@4` on i386, undecorated on amd64;
+// `extern "fastcall"` resolves correctly per-arch — matches the proven
+// legacy_halpnpdd.rs i386 decl).
+unsafe extern "fastcall" {
     fn ObfReferenceObject(Object: PVOID);
 }
 
@@ -157,8 +161,9 @@ unsafe fn ob_reference_object(o: PVOID) {
 #[inline(always)]
 unsafe fn io_call_driver(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
     unsafe {
-        // IoCallDriver -> IofCallDriver.
-        unsafe extern "system" {
+        // IoCallDriver -> IofCallDriver (FASTCALL — `@IofCallDriver@8` on
+        // i386; `extern "fastcall"` matches legacy_halpnpdd.rs).
+        unsafe extern "fastcall" {
             fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
         }
         IofCallDriver(device, irp)
