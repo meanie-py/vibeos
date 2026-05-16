@@ -54,7 +54,8 @@ def assemble_file(
     # Derive module name from source filename
     stem = Path(result.source_file).stem  # e.g., "uuid" from "uuid.c"
 
-    if target.name == "hal" and target.src_subdir is not None:
+    if target.src_subdir is not None:
+        # Fixed flat/subdir routing (hal → src/x86; kdcom/bootvid → src).
         sub_dir = target.output_crate / target.src_subdir
     else:
         sub_dir = (target.output_crate if target.name != "ntoskrnl" else output_dir) / "src" / subsystem

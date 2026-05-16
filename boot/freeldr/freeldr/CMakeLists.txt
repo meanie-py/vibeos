@@ -38,7 +38,7 @@ list(APPEND FREELDR_ARC_SOURCE
 list(APPEND FREELDR_BOOTLIB_SOURCE
     lib/arcsupp.c
     lib/debug.c
-    lib/peloader.c
+    # lib/peloader.c  # replaced by Rust (sdk/lib/rust/freeldr-rust)
     lib/cache/blocklist.c
     lib/cache/cache.c
     lib/comm/rs232.c
@@ -119,6 +119,47 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     list(APPEND FREELDR_BASE_SOURCE
         ${CMAKE_CURRENT_BINARY_DIR}/freeldr.def)
 endif()
+
+# ============================================================================
+# Rust FreeLDR static archive (sdk/lib/rust/freeldr-rust → libfreeldr_rust.a)
+# ============================================================================
+# Crown jewel: peloader.c is translated to Rust. Its #[no_mangle] cdecl
+# exports (PeLdr*, FrLdrModuleList, PeLdrImportDllLoadCallback) replace
+# the C lib/peloader.c (commented out of FREELDR_BOOTLIB_SOURCE above).
+# Mirrors the hal-rust integration (hal/halx86/CMakeLists.txt): a single
+# staticlib linked into the freeldr common libs; rosload imports PeLdr*
+# from freeldr.sys via freeldr.spec (ABI unchanged — still cdecl).
+set(FREELDR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(FREELDR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-target")
+if(ARCH STREQUAL "i386")
+    set(FREELDR_RUST_TARGET "i686-pc-windows-gnu")
+    # FreeLDR runs before CR4.OSFXSR — no SSE (same as hal-rust/mini_hal).
+    set(FREELDR_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(FREELDR_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(FREELDR_RUST_EXTRA_ENV "")
+elseif(ARCH STREQUAL "arm64")
+    set(FREELDR_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(FREELDR_RUST_EXTRA_ENV "")
+endif()
+set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
+add_custom_command(
+    OUTPUT ${FREELDR_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${FREELDR_RUST_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
+        cargo build --release --target ${FREELDR_RUST_TARGET}
+            -p freeldr-rust
+            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${FREELDR_RUST_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
+        ${FREELDR_RUST_LIB}
+    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    COMMENT "Building freeldr-rust (libfreeldr_rust.a)"
+    VERBATIM)
+add_custom_target(rust_freeldr DEPENDS ${FREELDR_RUST_LIB})
 
 # ARM64 uses UEFI only, no legacy PC-AT boot
 if(NOT ARCH STREQUAL "arm64")

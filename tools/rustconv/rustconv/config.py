@@ -8,6 +8,13 @@ from pathlib import Path
 REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
+# On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
+# drivers/base/CMakeLists.txt build kdcom.dll from kdrosdbg/kdrosdbg.c,
+# NOT kdcom/. The Target points here so it validates on the unchanged
+# green smoke baseline. See memory feedback_kdcom_is_kdrosdbg.
+KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
+BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
+FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -97,6 +104,56 @@ TARGETS = {
         ],
         arches=("i386", "amd64"),
     ),
+    # Pre-kernel boot DLLs (FreeLDR-loaded siblings of ntoskrnl/hal).
+    # Cargo-link end-state: kdcom-rust/bootvid-rust staticlib → DLL via
+    # reactos-link (hal-cargo precedent). reactos-link is i386-only today,
+    # so arches=("i386",); amd64/arm64 stay C until it goes multi-arch.
+    # No cmake cohabitation fields: the cargo-driven link replaces the
+    # cmake add_library() target wholesale, it doesn't co-link into it.
+    "kdcom": Target(
+        name="kdcom",
+        source_dir=KDCOM_DIR,
+        output_crate=RUST_DIR / "kdcom-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDCOM_DIR / "kdrosdbg.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386",),
+    ),
+    "bootvid": Target(
+        name="bootvid",
+        source_dir=BOOTVID_DIR,
+        output_crate=RUST_DIR / "bootvid-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=BOOTVID_DIR / "bootvid.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386",),
+    ),
+    # FreeLDR itself — static components compiled into the cmake-built
+    # freeldr lib (freeldr.sys/uefildr.efi/rosload.exe), NOT a DLL with
+    # a .spec. Integration is hal-rust-style cohabitation: a
+    # freeldr-rust staticlib linked into the freeldr cmake target with
+    # the .c commented out. 3-arch (i386/amd64/arm64; BIOS+UEFI).
+    "freeldr": Target(
+        name="freeldr",
+        source_dir=FREELDR_DIR,
+        output_crate=RUST_DIR / "freeldr-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
 }
 
 
@@ -104,6 +161,12 @@ def detect_target(c_path: Path) -> Target:
     """Pick a target by sniffing the C path. Falls back to ntoskrnl."""
     p = c_path.resolve()
     posix = p.as_posix()
+    if "/drivers/base/kdrosdbg" in posix:
+        return TARGETS["kdcom"]
+    if "/drivers/base/bootvid" in posix:
+        return TARGETS["bootvid"]
+    if "/boot/freeldr/" in posix:
+        return TARGETS["freeldr"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
         return TARGETS["hal"]
     return TARGETS["ntoskrnl"]

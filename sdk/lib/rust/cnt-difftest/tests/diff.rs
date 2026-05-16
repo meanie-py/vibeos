@@ -100,14 +100,45 @@ extern "C" {
     fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
     fn ref_wcstok(s: *mut u16, d: *const u16) -> *mut u16;
     fn ref_wcstok_s(s: *mut u16, d: *const u16, n: *mut *mut u16) -> *mut u16;
-    // scanf: cnt-rust's sscanf/swscanf come from its C trampoline
-    // (scanf_trampoline.c → cnt_vsscanf in cabi); ref_* are genuine.
-    // Variadic *callees* are stable to declare+call (only DEFINING a
-    // variadic needs nightly).
+    // cnt-rust's sscanf/swscanf/_snscanf/_snwscanf come from its C
+    // trampoline (scanf_trampoline.c → cnt_v*scanf in cabi), plain
+    // SysV. Variadic *callees* are stable to declare+call (only
+    // DEFINING a variadic needs nightly).
     fn sscanf(s: *const u8, f: *const u8, ...) -> i32;
     fn swscanf(s: *const u16, f: *const u16, ...) -> i32;
+    fn _snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
+    fn _snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
     fn ref_sscanf(s: *const u8, f: *const u8, ...) -> i32;
     fn ref_swscanf(s: *const u16, f: *const u16, ...) -> i32;
+    fn ref__snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
+    fn ref__snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
+    // scanf float: winesup.c's _internal_handle_float va_list*
+    // indirection is unportable to the host harness, so the genuine
+    // store call site is overridden by a shim running winesup.c's
+    // EXACT synthesis math into this captured pointer (the genuine
+    // PARSE in scanf.h is still fully exercised). Set before a
+    // genuine-side float scan; the genuine return value is unaffected.
+    fn cnt_set_fout(p: *mut core::ffi::c_void, is_double: i32);
+    // env — genuine getenv.c/putenv.c/wputenv.c + environ.c SetEnv,
+    // seeded via ref_env_set_block (BlockEnvToEnvironW+A over a
+    // CP1252-modeled Win32 environment surface).
+    fn ref_env_set_block(w: *const u16, n: i32);
+    fn ref_getenv(name: *const u8) -> *mut u8;
+    fn ref__wgetenv(name: *const u16) -> *mut u16;
+    fn ref__putenv(val: *const u8) -> i32;
+    fn ref__wputenv(val: *const u16) -> i32;
+    fn ref___p__environ() -> *mut *mut *mut u8;
+    fn ref___p__wenviron() -> *mut *mut *mut u16;
+    fn ref___p___initenv() -> *mut *mut *mut u8;
+    fn ref___p__winitenv() -> *mut *mut *mut u16;
+    // float-cvt — genuine fcvtbuf.c `cvt()` + fcvt.c.
+    fn ref__fcvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
+    // _ecvt — genuine ecvt.c + streamout.c sprintf("%-+.*E"),
+    // -mlong-double-64, floor/log10/pow modeled == core_rs::fl.
+    fn ref__ecvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
+    // _gcvt/_gcvt_s — genuine gcvt.c + streamout.c sprintf("%.*g").
+    fn ref__gcvt(number: f64, ndigit: i32, buff: *mut u8) -> *mut u8;
+    fn ref__gcvt_s(buff: *mut u8, size: usize, number: f64, digits: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -1855,5 +1886,755 @@ fn diff_scanf() {
                 assert_eq!(ba, bb, "w%[ buf inp={raw:?}");
             }
         }
+    }
+}
+
+/// Wave SCANF Phase 3 — _snscanf/_snwscanf (STRING_LEN). The input is
+/// length-bounded (NOT NUL-bounded — reads embedded NULs up to
+/// `length`); pins the genuine `consumed==length ? '\0'` (no advance)
+/// quirk across length ∈ {0, <strlen, ==strlen, >strlen} + an
+/// embedded-NUL buffer. Float excluded (Phase 2). Fixed concrete arg
+/// shapes; return + every out + trailing %n parity, sentinel buffers.
+#[test]
+fn diff_snscanf() {
+    let mut rng = Rng(0x5caf_3a30_u64);
+    for _ in 0..7000 {
+        // raw input buffer (NOT NUL-terminated; may contain a NUL)
+        let pool = b"  12+-0xabZ.,;\x0089AF[] qword";
+        let mut buf: Vec<u8> = (0..(4 + rng.upto(20)))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        // sometimes plant an explicit embedded NUL mid-buffer
+        if rng.upto(2) == 0 && buf.len() > 3 {
+            let p = 1 + rng.upto(buf.len() - 2);
+            buf[p] = 0;
+        }
+        let blen = buf.len();
+        let lengths = [
+            0usize,
+            rng.upto(blen + 1),
+            blen,
+            blen + 5, // > buffer: genuine reads OOB too, but our slice
+                      // is exactly `length`; cap to blen to stay sound
+                      // while still exercising length>consumed-able.
+        ];
+        let fmts: [&[u8]; 5] =
+            [b"%d%n\0", b"%s%n\0", b"%[a-z]%n\0", b"%c%n\0", b"%x%n\0"];
+        for &ln in &lengths {
+            let ln = ln.min(blen); // keep from_raw_parts in-bounds
+            for f in fmts {
+                let fp = f.as_ptr();
+                match f[1] {
+                    b'd' | b'x' => {
+                        let (mut a, mut b) = (0i32, 0i32);
+                        let (mut na, mut nb) = (-1i32, -1i32);
+                        let r = unsafe {
+                            _snscanf(buf.as_ptr(), ln, fp, &mut a, &mut na)
+                        };
+                        let q = unsafe {
+                            ref__snscanf(buf.as_ptr(), ln, fp, &mut b, &mut nb)
+                        };
+                        assert_eq!(
+                            (r, a, na),
+                            (q, b, nb),
+                            "_snscanf {f:?} buf={buf:?} ln={ln}"
+                        );
+                    }
+                    _ => {
+                        let mut sa = [0xCCu8; 64];
+                        let mut sb = [0xCCu8; 64];
+                        let (mut na, mut nb) = (-1i32, -1i32);
+                        let r = unsafe {
+                            _snscanf(buf.as_ptr(), ln, fp, sa.as_mut_ptr(), &mut na)
+                        };
+                        let q = unsafe {
+                            ref__snscanf(buf.as_ptr(), ln, fp, sb.as_mut_ptr(), &mut nb)
+                        };
+                        assert_eq!((r, na), (q, nb), "_snscanf {f:?} ret ln={ln}");
+                        assert_eq!(sa, sb, "_snscanf {f:?} buf={buf:?} ln={ln}");
+                    }
+                }
+            }
+            // wide twin: %d + %s + %[
+            let wbuf: Vec<u16> = buf.iter().map(|&b| b as u16).collect();
+            let wf = |v: &[u8]| -> Vec<u16> {
+                v.iter().map(|&b| b as u16).chain([0]).collect()
+            };
+            let fd = wf(b"%d%n");
+            let (mut a, mut b, mut na, mut nb) = (0i32, 0i32, -1i32, -1i32);
+            let r = unsafe {
+                _snwscanf(wbuf.as_ptr(), ln, fd.as_ptr(), &mut a, &mut na)
+            };
+            let q = unsafe {
+                ref__snwscanf(wbuf.as_ptr(), ln, fd.as_ptr(), &mut b, &mut nb)
+            };
+            assert_eq!((r, a, na), (q, b, nb), "_snwscanf %d buf={buf:?} ln={ln}");
+            for ff in [&b"%s%n"[..], b"%[a-z]%n"] {
+                let fw = wf(ff);
+                let mut sa = [0xCCCCu16; 64];
+                let mut sb = [0xCCCCu16; 64];
+                let (mut na, mut nb) = (-1i32, -1i32);
+                let r = unsafe {
+                    _snwscanf(wbuf.as_ptr(), ln, fw.as_ptr(), sa.as_mut_ptr(), &mut na)
+                };
+                let q = unsafe {
+                    ref__snwscanf(wbuf.as_ptr(), ln, fw.as_ptr(), sb.as_mut_ptr(), &mut nb)
+                };
+                assert_eq!((r, na), (q, nb), "_snwscanf {ff:?} ret ln={ln}");
+                assert_eq!(sa, sb, "_snwscanf {ff:?} buf={buf:?} ln={ln}");
+            }
+        }
+    }
+}
+
+/// Wave SCANF Phase 2 — float %e/%f/%g/%E/%G (+ l/L → double). The
+/// cnt-rust side runs its real engine + VaSink (f64 synthesis). The
+/// genuine side runs scanf.h's real PARSE; its `_internal_handle_float`
+/// store call site is overridden by a shim running winesup.c's EXACT
+/// synthesis math (verbatim copy, `-mlong-double-64` == Windows 64-bit
+/// long double == f64) into `cnt_set_fout`'s captured pointer — the
+/// genuine va_list* indirection is unportable to the host harness, and
+/// the va store mechanism itself is identical-by-inspection to the
+/// integer path (already diff-pinned). Single conversion (no %n on the
+/// genuine side, so the overridden shim is the only va consumer).
+/// Compares RAW BITS (exact incl. sign-zero / inf / NaN) + return
+/// value. Pins the genuine d·10^exp synthesis, the mantissa overflow
+/// guard, INT_MAX/MIN exponent saturation, ".8"→0.8, sign, the
+/// l/L→double vs default→float selection.
+#[test]
+fn diff_scanf_float() {
+    let mut rng = Rng(0xf10a_5caf_u64);
+    let cstr0 = |v: &[u8]| {
+        let mut x = v.to_vec();
+        x.push(0);
+        x
+    };
+    // DOMAIN LIMIT (documented, tracked-owed — task #280): the
+    // genuine d·10^exp synthesis + exponent combine are riddled with
+    // signed-`int` overflow (C UB; gcc 2's-complement-wraps) once the
+    // exponent saturates to INT_MAX / combines to INT_MIN
+    // (`1e±999999999`, > ~25-digit mantissas). cnt-rust's `wrapping_*`
+    // matches gcc in the common range but the corner cases of that UB
+    // are not bit-portable and are NOT fuzzed here (same precedent as
+    // the LP32 / strpbrk≤2 / iswctype-ASCII documented limits). The
+    // real-world float domain (|exp| ≲ 308, sane mantissas) IS pinned
+    // bit-exact. The UB-exponent edge remains owed (memory note).
+    let frag: &[&[u8]] = &[
+        b"0", b"1", b"9", b"12", b"345", b"+", b"-", b".", b"0.5",
+        b"3.14159", b".8", b"8.", b"1e3", b"1E-3", b"2.5e+2", b"1e",
+        b"1e+", b"0.000123", b"123456789012", b"  -42.0e1", b"+.0",
+        b"6.022e23", b"1.6e-19", b"2.5e2", b"7e-7", b"00012.300",
+        b"123.456", b"9e9", b"0.0009", b"42", b"xz9", b"1e30",
+        b"1e-30", b"8.5", b".25",
+    ];
+    for _ in 0..8000 {
+        // ONE fragment per iteration — concatenation could chain into
+        // an INT_MAX-saturated exponent (the excluded UB domain).
+        let s = frag[rng.upto(frag.len())].to_vec();
+        let inp = cstr0(&s);
+        let mut dummy = 0u8; // genuine side: never read (no va consumer)
+
+        // float (no prefix): %e/%f/%g/%E/%G — 4-byte target.
+        for fmt in [&b"%e\0"[..], b"%f\0", b"%g\0", b"%E\0", b"%G\0"] {
+            let mut cv = 7.5f32;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f32;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f32 as *mut core::ffi::c_void, 0)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!(
+                (rc, cv.to_bits()),
+                (rr, rv.to_bits()),
+                "{fmt:?} f32 inp={s:?}"
+            );
+        }
+        // double (l / L prefix): %le/%lf/%lg/%Lf — 8-byte target.
+        for fmt in [&b"%le\0"[..], b"%lf\0", b"%lg\0", b"%Lf\0"] {
+            let mut cv = 7.5f64;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f64;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f64 as *mut core::ffi::c_void, 1)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!(
+                (rc, cv.to_bits()),
+                (rr, rv.to_bits()),
+                "{fmt:?} f64 inp={s:?}"
+            );
+        }
+        // width on a float
+        {
+            let fmt = b"%5f\0";
+            let mut cv = 7.5f32;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f32;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f32 as *mut core::ffi::c_void, 0)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!((rc, cv.to_bits()), (rr, rv.to_bits()), "%5f inp={s:?}");
+        }
+        // wide twin: swscanf %lf
+        {
+            let win: Vec<u16> = inp.iter().map(|&c| c as u16).collect();
+            let wf: Vec<u16> =
+                b"%lf".iter().map(|&c| c as u16).chain([0]).collect();
+            let mut cv = 7.5f64;
+            let rc = unsafe { swscanf(win.as_ptr(), wf.as_ptr(), &mut cv) };
+            let mut rv = 7.5f64;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f64 as *mut core::ffi::c_void, 1)
+            };
+            let rr = unsafe { ref_swscanf(win.as_ptr(), wf.as_ptr(), &mut dummy) };
+            assert_eq!((rc, cv.to_bits()), (rr, rv.to_bits()), "w%lf inp={s:?}");
+        }
+    }
+}
+
+/// env — getenv/_wgetenv/_putenv/_wputenv + the 4 __p__* accessors,
+/// stateful (process-global block; getenv returns an interior pointer)
+/// vs the genuine compiled getenv.c/putenv.c/wputenv.c + environ.c
+/// SetEnv. Pins the load-bearing contracts: getenv's exact-name-length
+/// NT-ASCII-fold match; SetEnv's PREFIX-match asymmetry; `"NAME="`
+/// (empty value) deletes; the duplicate-on-first-write
+/// `_environ==__initenv` identity flip (incl. on a no-op delete, since
+/// the genuine dup precedes the found-search); a no-`=` option → -1
+/// (NO dup flip); CP1252 narrow/wide sync. Both sides seed from the
+/// same wide block via the same CP1252 Win32 model — deterministic, no
+/// global NLS state.
+#[test]
+fn diff_env() {
+    // double-NUL "GetEnvironmentStringsW"-format block from "K=V" list.
+    fn wblock(entries: &[&str]) -> Vec<u16> {
+        let mut v = Vec::new();
+        for e in entries {
+            v.extend(e.encode_utf16());
+            v.push(0);
+        }
+        v.push(0); // terminating empty entry
+        v
+    }
+    fn read_n(p: *const u8) -> Vec<u8> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    }
+    fn read_w(p: *const u16) -> Vec<u16> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    }
+    unsafe fn walk_n(t: *mut *mut *mut u8) -> Vec<Vec<u8>> {
+        let arr = *t;
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut i = 0;
+        while !(*arr.add(i)).is_null() {
+            out.push(read_n(*arr.add(i)));
+            i += 1;
+        }
+        out
+    }
+    unsafe fn walk_w(t: *mut *mut *mut u16) -> Vec<Vec<u16>> {
+        let arr = *t;
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut i = 0;
+        while !(*arr.add(i)).is_null() {
+            out.push(read_w(*arr.add(i)));
+            i += 1;
+        }
+        out
+    }
+    // identity bool: is `_environ` the SAME pointer array as
+    // `__initenv` (genuine: true iff no successful SetEnv yet).
+    unsafe fn id_n(e: *mut *mut *mut u8, i: *mut *mut *mut u8) -> bool {
+        (*e as usize) == (*i as usize)
+    }
+    unsafe fn id_w(e: *mut *mut *mut u16, i: *mut *mut *mut u16) -> bool {
+        (*e as usize) == (*i as usize)
+    }
+
+    // Full cross-impl state assertion (block content + frozen init +
+    // the narrow==wide images + the identity flip).
+    let chk = |msg: &str| unsafe {
+        assert_eq!(
+            walk_n(cabi::__p__environ()),
+            walk_n(ref___p__environ()),
+            "{msg}: _environ"
+        );
+        assert_eq!(
+            walk_w(cabi::__p__wenviron()),
+            walk_w(ref___p__wenviron()),
+            "{msg}: _wenviron"
+        );
+        assert_eq!(
+            walk_n(cabi::__p___initenv()),
+            walk_n(ref___p___initenv()),
+            "{msg}: __initenv (frozen)"
+        );
+        assert_eq!(
+            walk_w(cabi::__p___winitenv()),
+            walk_w(ref___p__winitenv()),
+            "{msg}: __winitenv (frozen)"
+        );
+        assert_eq!(
+            id_n(cabi::__p__environ(), cabi::__p___initenv()),
+            id_n(ref___p__environ(), ref___p___initenv()),
+            "{msg}: _environ==__initenv identity"
+        );
+        assert_eq!(
+            id_w(cabi::__p__wenviron(), cabi::__p___winitenv()),
+            id_w(ref___p__wenviron(), ref___p__winitenv()),
+            "{msg}: _wenviron==__winitenv identity"
+        );
+    };
+
+    let seed = |entries: &[&str]| {
+        let b = wblock(entries);
+        unsafe {
+            cabi::cnt_env_seed_w(b.as_ptr());
+            ref_env_set_block(b.as_ptr(), b.len() as i32);
+        }
+    };
+    let getn = |name: &str| unsafe {
+        let nm: Vec<u8> = name.bytes().chain([0]).collect();
+        let c = cabi::getenv(nm.as_ptr());
+        let r = ref_getenv(nm.as_ptr());
+        assert_eq!(c.is_null(), r.is_null(), "getenv({name}) nullness");
+        if !c.is_null() {
+            assert_eq!(read_n(c), read_n(r), "getenv({name}) value");
+        }
+    };
+    let wgetn = |name: &str| unsafe {
+        let nm: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        let c = cabi::_wgetenv(nm.as_ptr());
+        let r = ref__wgetenv(nm.as_ptr());
+        assert_eq!(c.is_null(), r.is_null(), "_wgetenv({name}) nullness");
+        if !c.is_null() {
+            assert_eq!(read_w(c), read_w(r), "_wgetenv({name}) value");
+        }
+    };
+    let putn = |opt: &[u8], msg: &str| unsafe {
+        let mut v = opt.to_vec();
+        v.push(0);
+        let c = cabi::_putenv(v.as_ptr());
+        let r = ref__putenv(v.as_ptr());
+        assert_eq!(c, r, "_putenv({msg}) ret");
+        chk(msg);
+    };
+    let wputn = |opt: &str, msg: &str| unsafe {
+        let v: Vec<u16> = opt.encode_utf16().chain([0]).collect();
+        let c = cabi::_wputenv(v.as_ptr());
+        let r = ref__wputenv(v.as_ptr());
+        assert_eq!(c, r, "_wputenv({msg}) ret");
+        chk(msg);
+    };
+
+    // ---- explicit pins ----
+    // duplicate-on-first-write + the no-`=` exception (no dup flip).
+    seed(&["PATH=/bin", "Home=/root", "=Z:=Z:\\drive", "Lang=C"]);
+    chk("seed");
+    unsafe {
+        // pre-mutation: _environ IS __initenv (both impls).
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    getn("PATH");
+    getn("path"); // NT ASCII fold (case-insensitive)
+    getn("HOME");
+    getn("Z:"); // the `=`-leading drive entry was skipped → NULL
+    getn("missing");
+    wgetn("Lang");
+    putn(b"NOEQ", "no '=' → -1, NO dup flip");
+    unsafe {
+        // a failed (no-`=`) putenv must NOT have duplicated.
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    putn(b"NEW=1", "append (first real SetEnv → dup flip)");
+    unsafe {
+        assert!(!id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(!id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    getn("NEW");
+    putn(b"path=/usr/bin", "replace, fold-matched, full option stored");
+    getn("PATH");
+    putn(b"Home=", "empty value DELETES");
+    getn("Home");
+    putn(b"Home=", "delete-of-missing → 0, but still dup (already duped)");
+
+    // SetEnv PREFIX-match asymmetry vs getenv's exact-length match.
+    seed(&["ABC=one"]);
+    putn(b"AB=two", "prefix-asymmetry: option 'AB' matches entry 'ABC'");
+    getn("ABC"); // entry was replaced by the WHOLE option → "AB=two"
+    getn("AB");
+    chk("after prefix-asymmetry");
+
+    // delete-of-missing still flips identity (genuine dup precedes the
+    // found-search) — seed fresh, first op is a no-op delete.
+    seed(&["A=1", "B=2"]);
+    unsafe {
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+    }
+    putn(b"NOPE=", "no-op delete → 0, but dup flips");
+    unsafe {
+        assert!(!id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(!id_n(ref___p__environ(), ref___p___initenv()));
+    }
+
+    // CP1252 narrow/wide sync (high bytes round-trip enc∘dec).
+    seed(&["X=hi"]);
+    putn(b"CAF\xE9=r\xE9sum\xE9", "Latin-1 value, CP1252 narrow/wide sync");
+    putn(b"EUR\x80=cost\xA9", "CP1252 0x80/0xA9 round-trip");
+    wputn("Uni=\u{00e9}\u{00ff}", "wide _wputenv → CP1252 narrow image");
+    chk("after CP1252");
+
+    // ---- randomized op fuzz ----
+    let names = ["A", "AB", "ABC", "B", "Bb", "XY", "ab", "aBc"];
+    let vals = ["", "1", "xy", "long-ish", "a=b", "\u{00e9}z"];
+    let mut rng = Rng(0x91e0_5a17_u64);
+    for outer in 0..400 {
+        // fresh random seed each round (exercises re-seed + repeated
+        // dup-flip; keeps the arena well under MAXE).
+        let ns = 1 + rng.upto(5);
+        let entries: Vec<String> = (0..ns)
+            .map(|_| {
+                format!(
+                    "{}={}",
+                    names[rng.upto(names.len())],
+                    vals[rng.upto(vals.len())]
+                )
+            })
+            .collect();
+        let refs: Vec<&str> = entries.iter().map(|s| s.as_str()).collect();
+        seed(&refs);
+        chk(&format!("round {outer} seed"));
+        for _ in 0..24 {
+            match rng.upto(6) {
+                0 => getn(names[rng.upto(names.len())]),
+                1 => wgetn(names[rng.upto(names.len())]),
+                2 => {
+                    let o = format!(
+                        "{}={}",
+                        names[rng.upto(names.len())],
+                        vals[rng.upto(vals.len())]
+                    );
+                    putn(o.as_bytes(), "rand set");
+                }
+                3 => {
+                    let o = format!("{}=", names[rng.upto(names.len())]);
+                    putn(o.as_bytes(), "rand delete");
+                }
+                4 => putn(names[rng.upto(names.len())].as_bytes(), "rand no-eq"),
+                _ => {
+                    let o = format!(
+                        "{}={}",
+                        names[rng.upto(names.len())],
+                        vals[rng.upto(vals.len())]
+                    );
+                    wputn(&o, "rand wset");
+                }
+            }
+        }
+    }
+}
+
+/// float-cvt Phase 1 — _fcvt/fcvtbuf vs the genuine compiled
+/// fcvtbuf.c `cvt()` (the sanos modf digit loop) + fcvt.c. The
+/// genuine uses host `modf` (exact for binary64); cnt uses the
+/// fdlibm bit-`modf` (also exact) → bit-for-bit on every finite
+/// double, the whole magnitude range incl. subnormals. Pins the
+/// `(fj+.03)*10` integer-part fudge, the `arg<1` exponent-down
+/// loop, the `*p1+=5` ripple carry (incl. the new-leading-digit /
+/// `(*decpt)++` case) and the negative-`ndigits+r2` empty-string
+/// path. NaN/Inf (`snprintf(buf,ndigits,...)` size quirk) is the
+/// documented UNFUZZED edge (scanf-extreme-exponent precedent).
+#[test]
+fn diff_fcvt() {
+    let mut rng = Rng(0xf0a7_c021_u64);
+    let mut cd = 0i32;
+    let mut cs = 0i32;
+    let mut rd = 0i32;
+    let mut rs = 0i32;
+    // a spread of fixed magnitudes + fully-random finite bit patterns.
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, 2.5, 9.999_999, 0.1, 0.2, 0.3,
+        123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 4.940_656e-308, 1.797_693e308,
+    ];
+    for it in 0..40_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 3 == 0 {
+            // structured: mantissa in [1,10) × 10^k, random sign
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(620) as i32) - 310;
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            // raw bit pattern (covers subnormals/huge); skip non-finite
+            f64::from_bits(rng.next())
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = (rng.upto(46) as i32) - 4; // -4 ..= 41
+        unsafe {
+            let c = cabi::_fcvt(v, nd, &mut cd, &mut cs);
+            let r = ref__fcvt(v, nd, &mut rd, &mut rs);
+            let cb = {
+                let mut x = Vec::new();
+                let mut i = 0;
+                while *c.add(i) != 0 {
+                    x.push(*c.add(i));
+                    i += 1;
+                }
+                x
+            };
+            let rb = {
+                let mut x = Vec::new();
+                let mut i = 0;
+                while *r.add(i) != 0 {
+                    x.push(*r.add(i));
+                    i += 1;
+                }
+                x
+            };
+            assert_eq!(cb, rb, "_fcvt({v:e}, {nd}) digits");
+            assert_eq!(cd, rd, "_fcvt({v:e}, {nd}) decpt");
+            assert_eq!(cs, rs, "_fcvt({v:e}, {nd}) sign");
+        }
+    }
+}
+
+/// float-cvt Phase 2 — _ecvt vs the genuine compiled ecvt.c +
+/// printf/streamout.c `sprintf("%-+.*E")` (one TU, -mlong-double-64
+/// so the genuine `long double` == f64 == this core; the scanf-P2
+/// precedent). `floor`/`log10`/`pow` are modeled BIT-IDENTICALLY on
+/// both sides (the Wave E2 CP1252 shared-model discipline), so the
+/// diff pins the genuine ecvt + format_float SURGERY deterministically
+/// with libm-exactness factored out: the case_e
+/// `round(sign*v*pow(10,p-exp))` + the `>= pow(10,p+1)` exponent
+/// compensation + the `(u64)fpval2 % 10; fpval2/=10.` f64-divide peel
+/// + ecvt's `cvtbuf[1]=='0' → decpt=0` and `ndigits<1` enhanced-
+/// precision `tbuf[1]>='5'` nudge. NaN/Inf and extreme magnitudes
+/// (|v| ≲ 1e-292: `pow(10, p-exp)` overflows f64 → inf → the
+/// `(u64)inf` cast is C-UB / not bit-portable, exactly scanf-P2) are
+/// the documented UNFUZZED owed domain limit (strpbrk≤2 precedent).
+#[test]
+fn diff_ecvt() {
+    let mut rng = Rng(0xec_47_a1_d0_u64);
+    let mut cd = 0i32;
+    let mut cs = 0i32;
+    let mut rd = 0i32;
+    let mut rs = 0i32;
+    let read = |p: *const u8| -> Vec<u8> {
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    };
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.5, 9.999_999, 0.1, 0.2,
+        0.3, 123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 99999.5, 0.000_999_5, 1e20,
+        -1e-20, 5.0, 0.000_05, 9.5, 0.95, 100.0, 0.001,
+    ];
+    let nds: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 17, 18, 20, 25];
+    for it in 0..60_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 2 == 0 {
+            // mantissa [1,10) × 10^k, |k| bounded so pow(10,p-exp)
+            // stays finite (the extreme-magnitude inf-cast corner is
+            // the documented owed edge — scanf-P2 precedent).
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(560) as i32) - 280; // 10^-280 .. 10^279
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            let b = f64::from_bits(rng.next());
+            if !b.is_finite() || b == 0.0 {
+                1.0
+            } else if b.abs() < 1e-280 || b.abs() > 1e280 {
+                // clamp into the fuzzed magnitude band
+                b.signum() * 1e10
+            } else {
+                b
+            }
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = nds[rng.upto(nds.len())];
+        unsafe {
+            let c = cabi::_ecvt(v, nd, &mut cd, &mut cs);
+            let r = ref__ecvt(v, nd, &mut rd, &mut rs);
+            assert_eq!(read(c), read(r), "_ecvt({v:e}, {nd}) digits");
+            assert_eq!(cd, rd, "_ecvt({v:e}, {nd}) decpt");
+            assert_eq!(cs, rs, "_ecvt({v:e}, {nd}) sign");
+        }
+    }
+}
+
+/// float-cvt Phase 3 — _gcvt/_gcvt_s vs the genuine gcvt.c + the same
+/// streamout.c format_float (chr='g'), `-mlong-double-64`,
+/// floor/log10/pow modeled BIT-IDENTICAL to core_rs::floatcvt::fl
+/// (Wave E2 shared-model). Pins the `%g` algorithm: `precision--`,
+/// the `exponent<-4 || exponent>=precision` e-form-vs-f-form decision,
+/// the `while(precision && (u64)fpval2%10==0)` trailing-zero strip,
+/// the generic int/frac emission (lowercase 'e' separator), the
+/// `_gcvt` NULL/ndigit<0 → NULL guards and `_gcvt_s` EINVAL /
+/// `digits>=size` & `len>size` ERANGE boundary (incl. the genuine
+/// `len==size` off-by-one). NaN/Inf + extreme magnitude are the same
+/// documented UNFUZZED owed edge as Phase 2 (scanf-P2 precedent).
+#[test]
+fn diff_gcvt() {
+    let mut rng = Rng(0x9c_07_5a_e2_u64);
+    let read = |p: *const u8| -> Vec<u8> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    };
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.5, 9.999_999, 0.1, 0.2,
+        0.3, 123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 99999.5, 0.000_999_5, 1e20,
+        -1e-20, 100.0, 0.001, 1e-5, 12345.0, 0.000_012_345, 1e6,
+    ];
+    let nds: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 17, 18, 20, 25];
+    // generous backing storage (the genuine _gcvt_s can write len+1
+    // even when len==size — the preserved off-by-one — so the alloc
+    // must have slack beyond the `size` we pass).
+    let mut cbuf = [0u8; 512];
+    let mut rbuf = [0u8; 512];
+    for it in 0..60_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 2 == 0 {
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(560) as i32) - 280;
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            let b = f64::from_bits(rng.next());
+            if !b.is_finite() || b == 0.0 {
+                1.0
+            } else if b.abs() < 1e-280 || b.abs() > 1e280 {
+                b.signum() * 1e10
+            } else {
+                b
+            }
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = nds[rng.upto(nds.len())];
+        // %g f-form computes fpval2 = round(|v| * 10^precision); when
+        // that exceeds 2^63 the genuine `(unsigned __int64)` cast is
+        // C-UB while Rust `as u64` saturates — not bit-portable (the
+        // scanf-P2 / Phase-2 owed edge). Bound the fuzz to the
+        // bit-exact regime; the extreme region is the documented owed
+        // domain limit (e-form's fpval2 ≈ 10^min(nd,17) is always
+        // safe; this only gates the large-|v|·10^nd corner).
+        let mag = if v == 0.0 { 0.0 } else { v.abs().log10() };
+        if mag + (nd as f64) > 17.0 {
+            continue;
+        }
+        unsafe {
+            // ---- _gcvt ----
+            cbuf.fill(0xAA);
+            rbuf.fill(0xAA);
+            let c = cabi::_gcvt(v, nd, cbuf.as_mut_ptr());
+            let r = ref__gcvt(v, nd, rbuf.as_mut_ptr());
+            assert_eq!(c.is_null(), r.is_null(), "_gcvt({v:e},{nd}) null");
+            if !c.is_null() {
+                assert_eq!(read(c), read(r), "_gcvt({v:e},{nd}) text");
+            }
+            // ndigit<0 → NULL (both)
+            let cn = cabi::_gcvt(v, -1, cbuf.as_mut_ptr());
+            let rn = ref__gcvt(v, -1, rbuf.as_mut_ptr());
+            assert!(cn.is_null() && rn.is_null(), "_gcvt neg ndigit");
+
+            // ---- _gcvt_s ---- vary size to hit ok / ERANGE / off-by-one
+            let size = match rng.upto(4) {
+                0 => nd as usize,            // digits>=size ⇒ ERANGE
+                1 => (nd as usize) + 1,      // tight
+                2 => (nd as usize) + 8,      // around the len==size edge
+                _ => 64,                     // roomy
+            };
+            cbuf.fill(0xAA);
+            rbuf.fill(0xAA);
+            let cr = cabi::_gcvt_s(cbuf.as_mut_ptr(), size, v, nd);
+            let rr = ref__gcvt_s(rbuf.as_mut_ptr(), size, v, nd);
+            assert_eq!(cr, rr, "_gcvt_s({v:e},{nd},size={size}) ret");
+            // Buffer is only DEFINED when something was written:
+            // success (cr==0 ⇒ the %g string) or ERANGE with size>0
+            // (genuine `buff[0]='\0'`). With size==0 & ERANGE the
+            // genuine writes nothing — undefined, nothing to compare.
+            if cr == 0 || size > 0 {
+                let rd = |p: *const u8| -> Vec<u8> {
+                    let mut v = Vec::new();
+                    for i in 0..512usize {
+                        let b = unsafe { *p.add(i) };
+                        if b == 0 {
+                            break;
+                        }
+                        v.push(b);
+                    }
+                    v
+                };
+                assert_eq!(rd(cbuf.as_ptr()), rd(rbuf.as_ptr()),
+                    "_gcvt_s({v:e},{nd},size={size}) buf");
+            }
+        }
+    }
+    // NULL-buff guards.
+    unsafe {
+        assert!(cabi::_gcvt(1.0, 4, core::ptr::null_mut()).is_null());
+        assert!(ref__gcvt(1.0, 4, core::ptr::null_mut()).is_null());
+        assert_eq!(
+            cabi::_gcvt_s(core::ptr::null_mut(), 16, 1.0, 4),
+            ref__gcvt_s(core::ptr::null_mut(), 16, 1.0, 4)
+        );
     }
 }

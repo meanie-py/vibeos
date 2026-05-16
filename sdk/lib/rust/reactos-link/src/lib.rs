@@ -128,7 +128,7 @@ pub struct Linker {
     resource: Option<String>,
     spec: Option<(String, String)>,
     static_libs: Vec<String>,
-    import_lib: Option<(String, String, String)>,
+    import_libs: Vec<(String, String, String)>,
 }
 
 impl Linker {
@@ -171,7 +171,7 @@ impl Linker {
             resource: None,
             spec: None,
             static_libs: Vec::new(),
-            import_lib: None,
+            import_libs: Vec::new(),
         }
     }
 
@@ -227,8 +227,10 @@ impl Linker {
     /// `-t` prefix / the imported DLL's logical name. Self-hosts
     /// spec2def `--implib` then runs `i686-w64-mingw32-dlltool` — no
     /// cmake-built `libNAME.a` needed. Emitted inside the link group.
+    /// Chainable — call once per imported DLL (e.g. bootvid imports both
+    /// `ntoskrnl` and `hal`, mirroring cmake `add_importlibs(...)`).
     pub fn import_lib(mut self, spec_rel: &str, dll_name: &str, basename: &str) -> Self {
-        self.import_lib = Some((
+        self.import_libs.push((
             spec_rel.to_string(),
             dll_name.to_string(),
             basename.to_string(),
@@ -352,7 +354,7 @@ impl Linker {
             }
             println!("cargo:rustc-link-arg={}", full.display());
         }
-        if let Some((spec_rel, dll_name, basename)) = &self.import_lib {
+        for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
             println!("cargo:rustc-link-arg={}", a.display());
             println!(

@@ -7,8 +7,15 @@
 #include <string.h>   /* host strlen/strncmp — used by strstr.c */
 #include <ctype.h>    /* host isspace/isdigit/tolower — strtoi64.c   */
 #include <limits.h>   /* ULONG_MAX — strtoul.c                       */
+/* Guarded so a unit prelude can pre-set the calling convention (the
+ * scanf ref unit needs CDECL = __attribute__((ms_abi)) to faithfully
+ * compile the genuine __ms_va_list varargs on a SysV host). */
+#ifndef CDECL
 #define CDECL
+#endif
+#ifndef __cdecl
 #define __cdecl
+#endif
 #define __int64 long long   /* macro (not typedef) so `unsigned __int64` parses — itoa.c */
 typedef int BOOL;
 #define TRUE 1
