@@ -13,6 +13,11 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+# build-<arch>/ dirs are gitignored — a fresh worktree has none, and
+# vibeos has no cold-cmake-build path (warm dirs only). Point at a tree
+# that HAS warm build dirs (typically the main checkout) via
+# VIBEOS_BUILD_ROOT; headers + ninja flags are all bindgen needs.
+BUILD_ROOT="${VIBEOS_BUILD_ROOT:-$SRC}"
 RES="${SRC}/.build-tools/llvm-mingw/lib/clang/19/include"
 OUT_DIR="${SCRIPT_DIR}/src"
 WRAPPER="${SCRIPT_DIR}/wrapper.h"
@@ -26,7 +31,7 @@ NINJA_RULE='csrsrv.dir/init.c.obj:'
 FN_ALLOW='(Nt|Zw)[A-Z][A-Za-z0-9_]*|Rtl[A-Z][A-Za-z0-9_]*|Ldr[A-Z][A-Za-z0-9_]*|Dbg[A-Z][A-Za-z0-9_]*|Csr[A-Z][A-Za-z0-9_]*|Sm[A-Z][A-Za-z0-9_]*|Base[A-Z][A-Za-z0-9_]*|Sb[A-Z][A-Za-z0-9_]*'
 
 run_bindgen() {
-    local ARCH=$1 TARGET=$2 BUILD_DIR="${SRC}/build-$1"
+    local ARCH=$1 TARGET=$2 BUILD_DIR="${BUILD_ROOT}/build-$1"
     local RAW="/tmp/ntdll_bindgen_${ARCH}_raw.rs"
     local FINAL="${OUT_DIR}/bindgen_${ARCH}.rs"
     local NINJA="${BUILD_DIR}/build.ninja"

@@ -24,6 +24,16 @@ BUILTIN_NAMES = {
     "switch", "case", "default", "goto", "sizeof", "typedef",
     "struct", "union", "enum", "static", "extern", "const", "volatile",
     "IN", "OUT", "OPTIONAL", "CONST",
+    # Calling-convention / linkage / annotation macros — these are never
+    # importable symbols on ANY target (they expand to attributes or
+    # nothing). Globally correct to treat as builtins.
+    "NTAPI", "WINAPI", "CALLBACK", "APIENTRY", "APIPRIVATE", "WINAPIV",
+    "NTSYSAPI", "NTSYSCALLAPI", "NTKERNELAPI", "DECLSPEC_NORETURN",
+    "FORCEINLINE", "NTHALAPI", "RESTRICTED_POINTER", "POINTER_ALIGNMENT",
+    "UNREFERENCED_PARAMETER", "UNREFERENCED_LOCAL_VARIABLE",
+    "DBG_UNREFERENCED_PARAMETER", "DBG_UNREFERENCED_LOCAL_VARIABLE",
+    "C_ASSERT", "NOTHING", "ARGUMENT_PRESENT", "NT_ASSERT",
+    "EXCEPTION_CONTINUE_SEARCH", "EXCEPTION_CONTINUE_EXECUTION",
 }
 
 # Known gap functions — C macros/FORCEINLINE that won't appear in ntkrnl-sys
@@ -91,6 +101,11 @@ GAP_FUNCTIONS = {
     "KeGetCurrentPrcb", "KeGetCurrentIrql",
     "RtlInitEmptyUnicodeString",
     "ObDereferenceObject", "ObReferenceObject",
+    # User-mode native: FORCEINLINE current-object accessors (winnt.h /
+    # ntddk.h) — never emitted as a bindgen extern, must be a gap.
+    "NtCurrentPeb", "NtCurrentTeb", "NtCurrentProcess",
+    "NtCurrentThread", "NtCurrentSession", "ZwCurrentProcess",
+    "ZwCurrentThread", "RtlProcessHeap", "NtGetCurrentProcessId",
 }
 
 
@@ -119,6 +134,18 @@ def resolve(scan: ScanResult, catalog: Catalog, spec: dict[str, SpecEntry]) -> R
         if func.name in spec:
             result.exports[func.name] = spec[func.name]
 
+    # Identifiers that are defined *in this file* (function names and their
+    # parameters) are never FFI imports — for a translation crate they
+    # become Rust items in the output crate itself, not extern decls.
+    # Strictly correct for every target (this is what catches the
+    # intra-crate csrsrv-internal pattern: CsrLoadServerDll &c. are
+    # defined in csrsrv, not imported from ntdll).
+    same_file_names: set[str] = {f.name for f in scan.functions}
+    for f in scan.functions:
+        for _ptype, pname in f.params:
+            if pname:
+                same_file_names.add(pname)
+
     # Resolve identifiers
     for ident in scan.identifiers:
         if ident in BUILTIN_NAMES:
@@ -141,6 +168,10 @@ def resolve(scan: ScanResult, catalog: Catalog, spec: dict[str, SpecEntry]) -> R
 
         # Check defines from the file itself
         if ident in scan.defines:
+            continue
+
+        # Defined in this file (function name or parameter) — not an import
+        if ident in same_file_names:
             continue
 
         # Remaining — unresolved
