@@ -64,6 +64,13 @@ pub mod hwpci;
 pub mod hwacpi;
 pub mod hwide;
 
+// 🟢 sweep — uefi-hw unit (arch/uefi/{uefidisk,uefimem,uefivid,ueficon,uefihw}.c).
+pub mod uefidisk;
+pub mod uefimem;
+pub mod uefivid;
+pub mod ueficon;
+pub mod uefihw;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;

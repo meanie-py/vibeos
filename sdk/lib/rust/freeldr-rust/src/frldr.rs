@@ -718,3 +718,552 @@ macro_rules! RTL_SIZEOF_THROUGH_FIELD {
             + __fsz(unsafe { ::core::ptr::addr_of!((*_b).$f) })
     }};
 }
+
+// ===========================================================================
+// EDK2 / UEFI surface — shared by all arch/uefi/* translation units.
+// Mirrors sdk/include/reactos/edk2/*.h exactly. EFIAPI == cdecl on i386,
+// so every EFI function pointer is `Option<unsafe extern "C" fn ...>`.
+// Service-table slots not called by freeldr are kept as pointer-sized
+// opaque `*mut c_void` so the struct field offsets remain C-exact (the
+// EFI_SYSTEM_TABLE / EFI_BOOT_SERVICES are the real firmware tables).
+// EFI structs are naturally aligned (NOT packed); the freeldr-local
+// GPT_* structs are #include <pshpack1.h> → #[repr(C, packed(1))].
+// ===========================================================================
+
+// --- ProcessorBind.h / Base.h primitive types (i386: UINTN == UINT32) ---
+// UINT8/UINT16/UINT32/VOID already defined above (CRT-ish aliases block).
+pub type UINT64 = u64;
+pub type INT16 = i16;
+pub type INT32 = i32;
+pub type UINTN = u32; // i386: typedef UINT32 UINTN;
+pub type INTN = i32;
+pub type CHAR8 = i8;
+pub type CHAR16 = u16;
+pub type BOOLEAN_EFI = u8;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_GUID {
+    pub Data1: UINT32,
+    pub Data2: UINT16,
+    pub Data3: UINT16,
+    pub Data4: [UINT8; 8],
+}
+
+pub type EFI_STATUS = UINTN; // typedef RETURN_STATUS(=UINTN) EFI_STATUS;
+pub type EFI_HANDLE = *mut c_void;
+pub type EFI_EVENT = *mut c_void;
+pub type EFI_LBA = UINT64;
+pub type EFI_TPL = UINTN;
+pub type EFI_PHYSICAL_ADDRESS = UINT64;
+pub type EFI_VIRTUAL_ADDRESS = UINT64;
+
+// Base.h: ENCODE_ERROR(x) = MAX_BIT | x; i386 MAX_BIT = 0x8000_0000.
+pub const EFI_MAX_BIT: EFI_STATUS = 0x8000_0000;
+pub const EFI_SUCCESS: EFI_STATUS = 0;
+pub const EFI_UNSUPPORTED: EFI_STATUS = EFI_MAX_BIT | 3;
+pub const EFI_NOT_READY: EFI_STATUS = EFI_MAX_BIT | 6;
+pub const EFI_NOT_FOUND: EFI_STATUS = EFI_MAX_BIT | 14;
+// EFI_ERROR(x) == high bit set.
+#[inline]
+pub unsafe extern "C" fn EFI_ERROR(Status: EFI_STATUS) -> BOOLEAN {
+    if (Status & EFI_MAX_BIT) != 0 { 1 } else { 0 }
+}
+
+// UefiMultiPhase.h — EFI_MEMORY_TYPE (C enum, int width).
+pub type EFI_MEMORY_TYPE = u32;
+pub const EfiReservedMemoryType: EFI_MEMORY_TYPE = 0;
+pub const EfiLoaderCode: EFI_MEMORY_TYPE = 1;
+pub const EfiLoaderData: EFI_MEMORY_TYPE = 2;
+pub const EfiBootServicesCode: EFI_MEMORY_TYPE = 3;
+pub const EfiBootServicesData: EFI_MEMORY_TYPE = 4;
+pub const EfiRuntimeServicesCode: EFI_MEMORY_TYPE = 5;
+pub const EfiRuntimeServicesData: EFI_MEMORY_TYPE = 6;
+pub const EfiConventionalMemory: EFI_MEMORY_TYPE = 7;
+pub const EfiUnusableMemory: EFI_MEMORY_TYPE = 8;
+pub const EfiACPIReclaimMemory: EFI_MEMORY_TYPE = 9;
+pub const EfiACPIMemoryNVS: EFI_MEMORY_TYPE = 10;
+pub const EfiMemoryMappedIO: EFI_MEMORY_TYPE = 11;
+pub const EfiMemoryMappedIOPortSpace: EFI_MEMORY_TYPE = 12;
+pub const EfiPalCode: EFI_MEMORY_TYPE = 13;
+pub const EfiMaxMemoryType: EFI_MEMORY_TYPE = 14;
+
+pub type EFI_ALLOCATE_TYPE = u32;
+pub const AllocateAnyPages: EFI_ALLOCATE_TYPE = 0;
+pub const AllocateMaxAddress: EFI_ALLOCATE_TYPE = 1;
+pub const AllocateAddress: EFI_ALLOCATE_TYPE = 2;
+
+pub type EFI_LOCATE_SEARCH_TYPE = u32;
+pub const AllHandles: EFI_LOCATE_SEARCH_TYPE = 0;
+pub const ByRegisterNotify: EFI_LOCATE_SEARCH_TYPE = 1;
+pub const ByProtocol: EFI_LOCATE_SEARCH_TYPE = 2;
+
+pub const EFI_PAGE_SIZE: UINTN = 0x1000;
+pub const EFI_PAGE_SHIFT: UINTN = 12;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_MEMORY_DESCRIPTOR {
+    pub Type: UINT32,
+    pub PhysicalStart: EFI_PHYSICAL_ADDRESS,
+    pub VirtualStart: EFI_VIRTUAL_ADDRESS,
+    pub NumberOfPages: UINT64,
+    pub Attribute: UINT64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_TABLE_HEADER {
+    pub Signature: UINT64,
+    pub Revision: UINT32,
+    pub HeaderSize: UINT32,
+    pub CRC32: UINT32,
+    pub Reserved: UINT32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_TIME {
+    pub Year: UINT16,
+    pub Month: UINT8,
+    pub Day: UINT8,
+    pub Hour: UINT8,
+    pub Minute: UINT8,
+    pub Second: UINT8,
+    pub Pad1: UINT8,
+    pub Nanosecond: UINT32,
+    pub TimeZone: INT16,
+    pub Daylight: UINT8,
+    pub Pad2: UINT8,
+}
+
+// --- BlockIo.h ---
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_BLOCK_IO_MEDIA {
+    pub MediaId: UINT32,
+    pub RemovableMedia: BOOLEAN_EFI,
+    pub MediaPresent: BOOLEAN_EFI,
+    pub LogicalPartition: BOOLEAN_EFI,
+    pub ReadOnly: BOOLEAN_EFI,
+    pub WriteCaching: BOOLEAN_EFI,
+    pub BlockSize: UINT32,
+    pub IoAlign: UINT32,
+    pub LastBlock: EFI_LBA,
+    pub LowestAlignedLba: EFI_LBA,
+    pub LogicalBlocksPerPhysicalBlock: UINT32,
+    pub OptimalTransferLengthGranularity: UINT32,
+}
+
+pub type EFI_BLOCK_RESET = Option<
+    unsafe extern "C" fn(This: *mut EFI_BLOCK_IO_PROTOCOL, ExtendedVerification: BOOLEAN_EFI) -> EFI_STATUS,
+>;
+pub type EFI_BLOCK_READ = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_BLOCK_IO_PROTOCOL,
+        MediaId: UINT32,
+        Lba: EFI_LBA,
+        BufferSize: UINTN,
+        Buffer: *mut c_void,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_BLOCK_WRITE = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_BLOCK_IO_PROTOCOL,
+        MediaId: UINT32,
+        Lba: EFI_LBA,
+        BufferSize: UINTN,
+        Buffer: *mut c_void,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_BLOCK_FLUSH =
+    Option<unsafe extern "C" fn(This: *mut EFI_BLOCK_IO_PROTOCOL) -> EFI_STATUS>;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_BLOCK_IO_PROTOCOL {
+    pub Revision: UINT64,
+    pub Media: *mut EFI_BLOCK_IO_MEDIA,
+    pub Reset: EFI_BLOCK_RESET,
+    pub ReadBlocks: EFI_BLOCK_READ,
+    pub WriteBlocks: EFI_BLOCK_WRITE,
+    pub FlushBlocks: EFI_BLOCK_FLUSH,
+}
+pub type EFI_BLOCK_IO = EFI_BLOCK_IO_PROTOCOL;
+
+// --- GraphicsOutput.h ---
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_PIXEL_BITMASK {
+    pub RedMask: UINT32,
+    pub GreenMask: UINT32,
+    pub BlueMask: UINT32,
+    pub ReservedMask: UINT32,
+}
+pub type PPIXEL_BITMASK = *mut EFI_PIXEL_BITMASK;
+pub type PEFI_PIXEL_BITMASK = *mut EFI_PIXEL_BITMASK;
+
+pub type EFI_GRAPHICS_PIXEL_FORMAT = u32;
+pub const PixelRedGreenBlueReserved8BitPerColor: EFI_GRAPHICS_PIXEL_FORMAT = 0;
+pub const PixelBlueGreenRedReserved8BitPerColor: EFI_GRAPHICS_PIXEL_FORMAT = 1;
+pub const PixelBitMask: EFI_GRAPHICS_PIXEL_FORMAT = 2;
+pub const PixelBltOnly: EFI_GRAPHICS_PIXEL_FORMAT = 3;
+pub const PixelFormatMax: EFI_GRAPHICS_PIXEL_FORMAT = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_GRAPHICS_OUTPUT_BLT_PIXEL {
+    pub Blue: UINT8,
+    pub Green: UINT8,
+    pub Red: UINT8,
+    pub Reserved: UINT8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_GRAPHICS_OUTPUT_MODE_INFORMATION {
+    pub Version: UINT32,
+    pub HorizontalResolution: UINT32,
+    pub VerticalResolution: UINT32,
+    pub PixelFormat: EFI_GRAPHICS_PIXEL_FORMAT,
+    pub PixelInformation: EFI_PIXEL_BITMASK,
+    pub PixelsPerScanLine: UINT32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE {
+    pub MaxMode: UINT32,
+    pub Mode: UINT32,
+    pub Info: *mut EFI_GRAPHICS_OUTPUT_MODE_INFORMATION,
+    pub SizeOfInfo: UINTN,
+    pub FrameBufferBase: EFI_PHYSICAL_ADDRESS,
+    pub FrameBufferSize: UINTN,
+}
+
+pub type EFI_GRAPHICS_OUTPUT_PROTOCOL_QUERY_MODE = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_GRAPHICS_OUTPUT_PROTOCOL,
+        ModeNumber: UINT32,
+        SizeOfInfo: *mut UINTN,
+        Info: *mut *mut EFI_GRAPHICS_OUTPUT_MODE_INFORMATION,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE = Option<
+    unsafe extern "C" fn(This: *mut EFI_GRAPHICS_OUTPUT_PROTOCOL, ModeNumber: UINT32) -> EFI_STATUS,
+>;
+pub type EFI_GRAPHICS_OUTPUT_PROTOCOL_BLT = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_GRAPHICS_OUTPUT_PROTOCOL,
+        BltBuffer: *mut EFI_GRAPHICS_OUTPUT_BLT_PIXEL,
+        BltOperation: u32,
+        SourceX: UINTN,
+        SourceY: UINTN,
+        DestinationX: UINTN,
+        DestinationY: UINTN,
+        Width: UINTN,
+        Height: UINTN,
+        Delta: UINTN,
+    ) -> EFI_STATUS,
+>;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_GRAPHICS_OUTPUT_PROTOCOL {
+    pub QueryMode: EFI_GRAPHICS_OUTPUT_PROTOCOL_QUERY_MODE,
+    pub SetMode: EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE,
+    pub Blt: EFI_GRAPHICS_OUTPUT_PROTOCOL_BLT,
+    pub Mode: *mut EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE,
+}
+
+// --- SimpleTextIn.h ---
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_INPUT_KEY {
+    pub ScanCode: UINT16,
+    pub UnicodeChar: CHAR16,
+}
+
+pub type EFI_INPUT_RESET = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_SIMPLE_TEXT_INPUT_PROTOCOL,
+        ExtendedVerification: BOOLEAN_EFI,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_INPUT_READ_KEY = Option<
+    unsafe extern "C" fn(
+        This: *mut EFI_SIMPLE_TEXT_INPUT_PROTOCOL,
+        Key: *mut EFI_INPUT_KEY,
+    ) -> EFI_STATUS,
+>;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_SIMPLE_TEXT_INPUT_PROTOCOL {
+    pub Reset: EFI_INPUT_RESET,
+    pub ReadKeyStroke: EFI_INPUT_READ_KEY,
+    pub WaitForKey: EFI_EVENT,
+}
+
+// --- LoadedImage.h ---
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_LOADED_IMAGE_PROTOCOL {
+    pub Revision: UINT32,
+    pub ParentHandle: EFI_HANDLE,
+    pub SystemTable: *mut EFI_SYSTEM_TABLE,
+    pub DeviceHandle: EFI_HANDLE,
+    pub FilePath: *mut c_void, // EFI_DEVICE_PATH_PROTOCOL*
+    pub Reserved: *mut c_void,
+    pub LoadOptionsSize: UINT32,
+    pub LoadOptions: *mut c_void,
+    pub ImageBase: *mut c_void,
+    pub ImageSize: UINT64,
+    pub ImageCodeType: EFI_MEMORY_TYPE,
+    pub ImageDataType: EFI_MEMORY_TYPE,
+    pub Unload: *mut c_void, // EFI_IMAGE_UNLOAD
+}
+
+// --- UefiSpec.h service tables. Called slots get real signatures;
+//     the rest are pointer-sized opaques to keep the layout C-exact. ---
+pub type EFI_ALLOCATE_PAGES = Option<
+    unsafe extern "C" fn(
+        Type: EFI_ALLOCATE_TYPE,
+        MemoryType: EFI_MEMORY_TYPE,
+        Pages: UINTN,
+        Memory: *mut EFI_PHYSICAL_ADDRESS,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_GET_MEMORY_MAP = Option<
+    unsafe extern "C" fn(
+        MemoryMapSize: *mut UINTN,
+        MemoryMap: *mut EFI_MEMORY_DESCRIPTOR,
+        MapKey: *mut UINTN,
+        DescriptorSize: *mut UINTN,
+        DescriptorVersion: *mut UINT32,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_ALLOCATE_POOL = Option<
+    unsafe extern "C" fn(
+        PoolType: EFI_MEMORY_TYPE,
+        Size: UINTN,
+        Buffer: *mut *mut c_void,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_FREE_POOL = Option<unsafe extern "C" fn(Buffer: *mut c_void) -> EFI_STATUS>;
+pub type EFI_EXIT_BOOT_SERVICES =
+    Option<unsafe extern "C" fn(ImageHandle: EFI_HANDLE, MapKey: UINTN) -> EFI_STATUS>;
+pub type EFI_HANDLE_PROTOCOL = Option<
+    unsafe extern "C" fn(
+        Handle: EFI_HANDLE,
+        Protocol: *mut EFI_GUID,
+        Interface: *mut *mut c_void,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_LOCATE_HANDLE = Option<
+    unsafe extern "C" fn(
+        SearchType: EFI_LOCATE_SEARCH_TYPE,
+        Protocol: *mut EFI_GUID,
+        SearchKey: *mut c_void,
+        BufferSize: *mut UINTN,
+        Buffer: *mut EFI_HANDLE,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_LOCATE_PROTOCOL = Option<
+    unsafe extern "C" fn(
+        Protocol: *mut EFI_GUID,
+        Registration: *mut c_void,
+        Interface: *mut *mut c_void,
+    ) -> EFI_STATUS,
+>;
+pub type EFI_GET_TIME = Option<
+    unsafe extern "C" fn(Time: *mut EFI_TIME, Capabilities: *mut c_void) -> EFI_STATUS,
+>;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_BOOT_SERVICES {
+    pub Hdr: EFI_TABLE_HEADER,
+    // TPL services
+    pub RaiseTPL: *mut c_void,
+    pub RestoreTPL: *mut c_void,
+    // Memory services
+    pub AllocatePages: EFI_ALLOCATE_PAGES,
+    pub FreePages: *mut c_void,
+    pub GetMemoryMap: EFI_GET_MEMORY_MAP,
+    pub AllocatePool: EFI_ALLOCATE_POOL,
+    pub FreePool: EFI_FREE_POOL,
+    // Event & timer services
+    pub CreateEvent: *mut c_void,
+    pub SetTimer: *mut c_void,
+    pub WaitForEvent: *mut c_void,
+    pub SignalEvent: *mut c_void,
+    pub CloseEvent: *mut c_void,
+    pub CheckEvent: *mut c_void,
+    // Protocol handler services
+    pub InstallProtocolInterface: *mut c_void,
+    pub ReinstallProtocolInterface: *mut c_void,
+    pub UninstallProtocolInterface: *mut c_void,
+    pub HandleProtocol: EFI_HANDLE_PROTOCOL,
+    pub Reserved: *mut c_void,
+    pub RegisterProtocolNotify: *mut c_void,
+    pub LocateHandle: EFI_LOCATE_HANDLE,
+    pub LocateDevicePath: *mut c_void,
+    pub InstallConfigurationTable: *mut c_void,
+    // Image services
+    pub LoadImage: *mut c_void,
+    pub StartImage: *mut c_void,
+    pub Exit: *mut c_void,
+    pub UnloadImage: *mut c_void,
+    pub ExitBootServices: EFI_EXIT_BOOT_SERVICES,
+    // Misc services
+    pub GetNextMonotonicCount: *mut c_void,
+    pub Stall: *mut c_void,
+    pub SetWatchdogTimer: *mut c_void,
+    // DriverSupport services
+    pub ConnectController: *mut c_void,
+    pub DisconnectController: *mut c_void,
+    // Open & close protocol services
+    pub OpenProtocol: *mut c_void,
+    pub CloseProtocol: *mut c_void,
+    pub OpenProtocolInformation: *mut c_void,
+    // Library services
+    pub ProtocolsPerHandle: *mut c_void,
+    pub LocateHandleBuffer: *mut c_void,
+    pub LocateProtocol: EFI_LOCATE_PROTOCOL,
+    pub InstallMultipleProtocolInterfaces: *mut c_void,
+    pub UninstallMultipleProtocolInterfaces: *mut c_void,
+    // 32-bit CRC services
+    pub CalculateCrc32: *mut c_void,
+    // Misc services
+    pub CopyMem: *mut c_void,
+    pub SetMem: *mut c_void,
+    pub CreateEventEx: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_RUNTIME_SERVICES {
+    pub Hdr: EFI_TABLE_HEADER,
+    // Time services
+    pub GetTime: EFI_GET_TIME,
+    pub SetTime: *mut c_void,
+    pub GetWakeupTime: *mut c_void,
+    pub SetWakeupTime: *mut c_void,
+    // Virtual memory services
+    pub SetVirtualAddressMap: *mut c_void,
+    pub ConvertPointer: *mut c_void,
+    // Variable services
+    pub GetVariable: *mut c_void,
+    pub GetNextVariableName: *mut c_void,
+    pub SetVariable: *mut c_void,
+    // Misc services
+    pub GetNextHighMonotonicCount: *mut c_void,
+    pub ResetSystem: *mut c_void,
+    // UEFI 2.0 capsule services
+    pub UpdateCapsule: *mut c_void,
+    pub QueryCapsuleCapabilities: *mut c_void,
+    // Misc UEFI 2.0 service
+    pub QueryVariableInfo: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_CONFIGURATION_TABLE {
+    pub VendorGuid: EFI_GUID,
+    pub VendorTable: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EFI_SYSTEM_TABLE {
+    pub Hdr: EFI_TABLE_HEADER,
+    pub FirmwareVendor: *mut CHAR16,
+    pub FirmwareRevision: UINT32,
+    pub ConsoleInHandle: EFI_HANDLE,
+    pub ConIn: *mut EFI_SIMPLE_TEXT_INPUT_PROTOCOL,
+    pub ConsoleOutHandle: EFI_HANDLE,
+    pub ConOut: *mut c_void, // EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL*
+    pub StandardErrorHandle: EFI_HANDLE,
+    pub StdErr: *mut c_void,
+    pub RuntimeServices: *mut EFI_RUNTIME_SERVICES,
+    pub BootServices: *mut EFI_BOOT_SERVICES,
+    pub NumberOfTableEntries: UINTN,
+    pub ConfigurationTable: *mut EFI_CONFIGURATION_TABLE,
+}
+
+// Protocol GUID constants (sdk/include/reactos/edk2/*.h).
+pub const EFI_BLOCK_IO_PROTOCOL_GUID: EFI_GUID = EFI_GUID {
+    Data1: 0x964e5b21, Data2: 0x6459, Data3: 0x11d2,
+    Data4: [0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b],
+};
+pub const EFI_LOADED_IMAGE_PROTOCOL_GUID: EFI_GUID = EFI_GUID {
+    Data1: 0x5B1B31A1, Data2: 0x9562, Data3: 0x11d2,
+    Data4: [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B],
+};
+pub const EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID: EFI_GUID = EFI_GUID {
+    Data1: 0x9042a9de, Data2: 0x23dc, Data3: 0x4a38,
+    Data4: [0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a],
+};
+pub const EFI_ACPI_TABLE_GUID: EFI_GUID = EFI_GUID {
+    Data1: 0x8868e871, Data2: 0xe4f1, Data3: 0x11d3,
+    Data4: [0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81],
+};
+pub const EFI_ACPI_20_TABLE_GUID: EFI_GUID = EFI_ACPI_TABLE_GUID;
+
+// winldr.h — Root System Descriptor Pointer (pshpack1).
+#[repr(C, packed(1))]
+#[derive(Clone, Copy)]
+pub struct RSDP_DESCRIPTOR {
+    pub signature: [i8; 8],
+    pub checksum: UCHAR,
+    pub oem_id: [i8; 6],
+    pub revision: UCHAR,
+    pub rsdt_physical_address: ULONG,
+    pub length: ULONG,
+    pub xsdt_physical_address: u64,
+    pub extended_checksum: UCHAR,
+    pub reserved: [i8; 3],
+}
+pub type PRSDP_DESCRIPTOR = *mut RSDP_DESCRIPTOR;
+
+// uefildr.h — ACPI_BIOS_DATA (pshpack1). BIOS_MEMORY_MAP / PBIOS_MEMORY_MAP
+// already defined above (REGS/Int386 block); reuse them here.
+#[repr(C, packed(1))]
+#[derive(Clone, Copy)]
+pub struct ACPI_BIOS_DATA {
+    // PHYSICAL_ADDRESS == LARGE_INTEGER (bindgen union: .QuadPart / .u...LowPart).
+    pub RSDTAddress: ntkrnl_sys::ddk::_LARGE_INTEGER,
+    pub Count: u64,
+    pub MemoryMap: [BIOS_MEMORY_MAP; 1],
+}
+pub type PACPI_BIOS_DATA = *mut ACPI_BIOS_DATA;
+
+// VIDEODISPLAYMODE / VideoTextMode / VideoGraphicsMode live in
+// ui_keystone.rs (don't duplicate — would alias-clash in ui.rs glob).
+// uefivid.rs defines them file-local (it only globs crate::frldr).
+
+// cmtypes.h CM_VIDEO_DEVICE_DATA + bootvid/framebuf.h CM_FRAMEBUF_DEVICE_DATA.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CM_FRAMEBUF_DEVICE_DATA {
+    // anonymous CM_VIDEO_DEVICE_DATA member, flattened
+    pub Version: USHORT,
+    pub Revision: USHORT,
+    pub VideoClock: ULONG,
+    pub FrameBufferOffset: ULONG,
+    pub ScreenWidth: ULONG,
+    pub ScreenHeight: ULONG,
+    pub PixelsPerScanLine: ULONG,
+    pub BitsPerPixel: ULONG,
+    pub PixelMasks: CM_FRAMEBUF_PIXEL_MASKS,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CM_FRAMEBUF_PIXEL_MASKS {
+    pub RedMask: ULONG,
+    pub GreenMask: ULONG,
+    pub BlueMask: ULONG,
+    pub ReservedMask: ULONG,
+}
+pub type PCM_FRAMEBUF_DEVICE_DATA = *mut CM_FRAMEBUF_DEVICE_DATA;

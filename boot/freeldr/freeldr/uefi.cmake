@@ -14,15 +14,18 @@ include_directories(BEFORE
 list(APPEND UEFILDR_ARC_SOURCE
     ${FREELDR_ARC_SOURCE}
     arch/uefi/stubs.c
-    arch/uefi/ueficon.c
-    arch/uefi/uefidisk.c
-    arch/uefi/uefihw.c
-    arch/uefi/uefimem.c
     arch/uefi/uefisetup.c
     arch/uefi/uefiutil.c
-    arch/uefi/uefivid.c
     arch/vidfb.c
     arch/vgafont.c)
+    # uefi-hw unit → Rust (freeldr-rust: ueficon/uefidisk/uefihw/uefimem/
+    # uefivid.rs). Cohabitation: .c kept on disk, Rust #[no_mangle] takes
+    # over. (stubs/uefisetup/uefiutil kept — not translated.)
+    # arch/uefi/ueficon.c   # replaced by Rust (freeldr-rust/src/ueficon.rs)
+    # arch/uefi/uefidisk.c  # replaced by Rust (freeldr-rust/src/uefidisk.rs)
+    # arch/uefi/uefihw.c    # replaced by Rust (freeldr-rust/src/uefihw.rs)
+    # arch/uefi/uefimem.c   # replaced by Rust (freeldr-rust/src/uefimem.rs)
+    # arch/uefi/uefivid.c   # replaced by Rust (freeldr-rust/src/uefivid.rs)
 
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_ARC_SOURCE
