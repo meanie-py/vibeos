@@ -182,7 +182,7 @@ unsafe fn PeLdrpBindImportName(
 
     FunctionTable = VaToPa(RVA(DllBase, (*ExportDirectory).AddressOfFunctions)) as *mut u32;
 
-    (*ThunkData).u1.Function = RVA(DllBase, *FunctionTable.offset(Ordinal as isize)) as u32;
+    (*ThunkData).u1.Function = RVA(DllBase, *FunctionTable.offset(Ordinal as isize)) as usize as _;
 
     let ForwarderName = VaToPa((*ThunkData).u1.Function as *const core::ffi::c_void) as *mut i8;
     if ((ForwarderName as usize) > (ExportDirectory as usize)) &&
@@ -250,7 +250,7 @@ unsafe fn PeLdrpBindImportName(
 
             (*ImportByName).Hint = 0;
 
-            RefThunkData.u1.AddressOfData = ImportByName as u32;
+            RefThunkData.u1.AddressOfData = ImportByName as usize as _;
 
             Success = PeLdrpBindImportName(
                 ModuleListHead,
@@ -778,7 +778,7 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
 
     PhysicalBase = MmAllocateMemoryAtAddress(
         (*NtHeaders).OptionalHeader.SizeOfImage as usize,
-        ((*NtHeaders).OptionalHeader.ImageBase as ULONG & (crate::ffi::KSEG0_BASE as ULONG - 1)) as PVOID,
+        ((*NtHeaders).OptionalHeader.ImageBase as usize & crate::ffi::KSEG0_BASE.wrapping_sub(1)) as PVOID,
         MemoryType,
     );
 
