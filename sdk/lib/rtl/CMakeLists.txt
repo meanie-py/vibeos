@@ -41,7 +41,7 @@ list(APPEND SOURCE
     critical.c
     dbgbuffer.c
     debug.c
-    dos8dot3.c
+    # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
     env.c
     error.c
@@ -60,7 +60,7 @@ list(APPEND SOURCE
     memstream.c
     message.c
     network.c
-    nls.c
+    # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
     path.c
     ppb.c
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
@@ -83,7 +83,7 @@ list(APPEND SOURCE
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     timezone.c
     trace.c
-    unicode.c
+    # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     vectoreh.c
     version.c
@@ -206,6 +206,21 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/slist/Cargo.toml
             ${RUST_WORKSPACE_DIR}/splaytree/src/lib.rs
             ${RUST_WORKSPACE_DIR}/splaytree/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/uniprefix/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/uniprefix/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/conv.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/dos8dot3.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs
             ${RUST_WORKSPACE_DIR}/time/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-rust/src/lib.rs
