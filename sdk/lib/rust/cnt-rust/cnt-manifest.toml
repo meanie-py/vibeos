@@ -485,3 +485,55 @@ inout_effects = "ok→str gets ndigits+1 BYTES (the bug) of the u16-LE digits,re
 preserved_misfeature = "the genuine byte-count bug: memcpy copies ndigits+1 BYTES not *sizeof(wchar_t) — only ~half the wide string lands; NO str[0]=0 on bad param; EINVAL (not ERANGE) on too-small"
 reference    = "sdk/lib/crt/string/itow.c"
 fuzz_domain  = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/1/U64_MAX", "str=NULL"]
+
+# --- Wave D (case-insensitive, NT variants) -------------------------
+# libcntpr links the *_nt.c (LIBCNTPR_*_SOURCE), NOT the toupper()-
+# based stricmp.c/wcsicmp.c. Faithful: ASCII-fold ONLY A..Z (no
+# locale/Unicode), then return the RAW difference. Narrow `char` is
+# signed (x86) → signed-char diff; wide `wchar_t` is unsigned 16-bit
+# → value-preserving (u16 as i32) diff. NUL participates; `_n` forms
+# are count-bounded with `n==0 → 0`.
+
+[symbols._stricmp]
+c_signature  = "int __cdecl _stricmp(char const* _String1, char const* _String2)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::cmp_ci"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped"
+reference    = "sdk/lib/crt/string/_stricmp_nt.c"
+fuzz_domain  = ["both empty", "equal same case", "equal diff case", "differ pre-fold", "differ post-fold", "prefix", "high-bit >=0x80 (signed, never folded)", "embedded equal-NUL"]
+
+[symbols._strnicmp]
+c_signature  = "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::ncmp_ci"
+return_collapse = "i32_cmp_n"
+inout_effects = "none (read-only)"
+preserved_misfeature = "as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n"
+reference    = "sdk/lib/crt/string/_strnicmp_nt.c"
+fuzz_domain  = ["n==0", "equal < n", "differ < n", "n past NUL", "high-bit", "diff only after fold"]
+
+[symbols._wcsicmp]
+c_signature  = "int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)"
+family       = "wstring"
+slice_pattern = "wnul_in"
+core_fn      = "wstring::cmp_ci"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "ASCII-only A..Z fold (no Unicode/locale); RAW u16 difference promoted to int (value-preserving, NOT signed-16, NOT clamped to {-1,0,1})"
+reference    = "sdk/lib/crt/wstring/_wcsicmp_nt.c"
+fuzz_domain  = ["equal same/diff case", "differ pre/post fold", ">=0x80 and >0xFF (never folded)", "prefix", "embedded equal-NUL"]
+
+[symbols._wcsnicmp]
+c_signature  = "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
+family       = "wstring"
+slice_pattern = "wnul_in"
+core_fn      = "wstring::ncmp_ci"
+return_collapse = "i32_cmp_n"
+inout_effects = "none (read-only)"
+preserved_misfeature = "as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n"
+reference    = "sdk/lib/crt/wstring/_wcsnicmp_nt.c"
+fuzz_domain  = ["n==0", "equal < n", "differ < n", "n past NUL", ">0xFF wchars", "diff only after fold"]

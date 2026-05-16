@@ -98,6 +98,67 @@ pub fn find_last_char(s: &[u8], c: i32) -> Option<usize> {
     s.iter().rposition(|&b| b == target)
 }
 
+/// `_stricmp` core, faithful to ReactOS `_stricmp_nt.c` (libcntpr NT
+/// variant): per position load both bytes; if they differ, ASCII-fold
+/// **only** `A..=Z`→`a..=z` (locale-independent — high-bit bytes are
+/// never folded), and if still differing return the **signed-char**
+/// difference (`char` is signed on x86 — `chr1 - chr2` promoted). The
+/// terminating NUL participates: equal NULs → 0; a NUL vs non-NUL
+/// returns the signed diff (shorter string orders first). Slices are
+/// NUL-excluded contents.
+#[inline]
+pub fn cmp_ci(a: &[u8], b: &[u8]) -> i32 {
+    let n = a.len().max(b.len());
+    for i in 0..=n {
+        let r1 = if i < a.len() { a[i] } else { 0 };
+        let r2 = if i < b.len() { b[i] } else { 0 };
+        if r1 != r2 {
+            let mut c1 = r1 as i8 as i32;
+            let mut c2 = r2 as i8 as i32;
+            if r1.is_ascii_uppercase() {
+                c1 += 32;
+            }
+            if r2.is_ascii_uppercase() {
+                c2 += 32;
+            }
+            if c1 != c2 {
+                return c1 - c2;
+            }
+        } else if r1 == 0 {
+            return 0;
+        }
+    }
+    0
+}
+
+/// `_strnicmp` core, faithful to ReactOS `_strnicmp_nt.c`: as
+/// [`cmp_ci`] but bounded — `while (remaining-- != 0)` so `n == 0 → 0`,
+/// compares at most `n` positions, and the equal-NUL break still ends
+/// early. Signed-char fold + diff.
+#[inline]
+pub fn ncmp_ci(a: &[u8], b: &[u8], n: usize) -> i32 {
+    for i in 0..n {
+        let r1 = if i < a.len() { a[i] } else { 0 };
+        let r2 = if i < b.len() { b[i] } else { 0 };
+        if r1 != r2 {
+            let mut c1 = r1 as i8 as i32;
+            let mut c2 = r2 as i8 as i32;
+            if r1.is_ascii_uppercase() {
+                c1 += 32;
+            }
+            if r2.is_ascii_uppercase() {
+                c2 += 32;
+            }
+            if c1 != c2 {
+                return c1 - c2;
+            }
+        } else if r1 == 0 {
+            return 0;
+        }
+    }
+    0
+}
+
 /// `strncpy` core. `dst` is the fixed n-length destination; `src` is
 /// the source contents (NUL-excluded). Faithful to ReactOS `tcsncpy`:
 /// copy `min(src.len(), n)` bytes; if `src` ended first, pad the rest

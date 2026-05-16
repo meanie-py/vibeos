@@ -43,6 +43,10 @@ extern "C" {
     fn ref_ui64tow_s(v: u64, s: *mut u16, sz: usize, r: i32) -> i32;
     fn ref_itow_s(v: i32, s: *mut u16, sz: usize, r: i32) -> i32;
     fn ref_ltow_s32(v: i32, s: *mut u16, sz: usize, r: i32) -> i32;
+    fn ref_stricmp(a: *const u8, b: *const u8) -> i32;
+    fn ref_strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref_wcsicmp(a: *const u16, b: *const u16) -> i32;
+    fn ref_wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -645,5 +649,69 @@ fn diff_itow_s() {
         assert_eq!(ref_ui64tow_s(1, core::ptr::null_mut(), 8, 10), 22);
         assert_eq!(cabi::_itow_s(1, core::ptr::null_mut(), 8, 10), 22);
         assert_eq!(cabi::_ltow_s(1, core::ptr::null_mut(), 8, 10), 22);
+    }
+}
+
+/// NUL-terminated wide string from a case/fold-stressing alphabet:
+/// A/a/B/b/Z/z, the fold-boundary neighbours '@'(0x3F<'A') / '['(0x5B
+/// >'Z'), and >=0x80 / >0xFF values that must NEVER be folded.
+fn wcstr(rng: &mut Rng, max: usize) -> Vec<u16> {
+    const A: [u16; 12] = [
+        0x41, 0x61, 0x42, 0x62, 0x5A, 0x7A, 0x3F, 0x5B, 0x00C0, 0x0100, 0xFF21, 0x0080,
+    ];
+    let len = rng.upto(max + 1);
+    let mut v: Vec<u16> = (0..len).map(|_| A[rng.upto(A.len())]).collect();
+    v.push(0);
+    v
+}
+
+/// Wave D — case-insensitive NT variants. Narrow uses the existing
+/// `cstr` alpha (incl. >=0x80 for the signed-char path); wide uses
+/// `wcstr` (incl. >0xFF, never folded). Pins the raw (un-clamped)
+/// difference + the n==0/NUL-break bounds against compiled _*_nt.c.
+#[test]
+fn diff_icmp() {
+    let mut rng = Rng(0x1cb0_5d33_u64);
+    for _ in 0..9000 {
+        // narrow _stricmp / _strnicmp
+        let a = cstr(&mut rng, 22, true);
+        let b = if rng.next() & 3 == 0 {
+            a.clone()
+        } else {
+            cstr(&mut rng, 22, true)
+        };
+        let n = rng.upto(26);
+        unsafe {
+            assert_eq!(
+                cabi::_stricmp(a.as_ptr(), b.as_ptr()),
+                ref_stricmp(a.as_ptr(), b.as_ptr()),
+                "_stricmp a={a:?} b={b:?}"
+            );
+            assert_eq!(
+                cabi::_strnicmp(a.as_ptr(), b.as_ptr(), n),
+                ref_strnicmp(a.as_ptr(), b.as_ptr(), n),
+                "_strnicmp a={a:?} b={b:?} n={n}"
+            );
+        }
+        // wide _wcsicmp / _wcsnicmp
+        let wa = wcstr(&mut rng, 22);
+        let wb = if rng.next() & 3 == 0 {
+            wa.clone()
+        } else {
+            wcstr(&mut rng, 22)
+        };
+        let wn = rng.upto(26);
+        unsafe {
+            assert_eq!(
+                cabi::_wcsicmp(wa.as_ptr(), wb.as_ptr()),
+                ref_wcsicmp(wa.as_ptr(), wb.as_ptr()),
+                "_wcsicmp wa={wa:?} wb={wb:?}"
+            );
+            assert_eq!(
+                cabi::_wcsnicmp(wa.as_ptr(), wb.as_ptr(), wn),
+                ref_wcsnicmp(wa.as_ptr(), wb.as_ptr(), wn),
+                "_wcsnicmp wa={wa:?} wb={wb:?} n={wn}"
+            );
+        }
     }
 }

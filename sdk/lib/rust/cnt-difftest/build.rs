@@ -102,6 +102,32 @@ fn main() {
              wchar_t* ref_ultow32(unsigned int v,wchar_t*s,int r){{return ref_ultow(v,s,r);}}\n\
              int ref_ltow_s32(int v,wchar_t*s,size_t z,int r){{return ref_ltow_s(v,s,z,r);}}\n",
             inc(s("string/itow.c")))),
+        // Wave D — case-insensitive NT variants (libcntpr links these,
+        // NOT the toupper() stricmp.c). They #include <string.h> only;
+        // stub the SAL annotations + __cdecl. Wide twins force
+        // wchar_t→unsigned short (host is 32-bit) for u16 parity.
+        ("stricmp_nt", format!(
+            "#define __cdecl\n#define _Check_return_\n#define _In_z_\n\
+             #define _In_\n#define _In_reads_or_z_(x)\n\
+             #define _stricmp ref_stricmp\n{}",
+            inc(s("string/_stricmp_nt.c")))),
+        ("strnicmp_nt", format!(
+            "#define __cdecl\n#define _Check_return_\n#define _In_z_\n\
+             #define _In_\n#define _In_reads_or_z_(x)\n\
+             #define _strnicmp ref_strnicmp\n{}",
+            inc(s("string/_strnicmp_nt.c")))),
+        ("wcsicmp_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define __cdecl\n#define _Check_return_\n#define _In_z_\n\
+             #define _In_\n#define _In_reads_or_z_(x)\n\
+             #define _wcsicmp ref_wcsicmp\n{}",
+            inc(s("wstring/_wcsicmp_nt.c")))),
+        ("wcsnicmp_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define __cdecl\n#define _Check_return_\n#define _In_z_\n\
+             #define _In_\n#define _In_reads_or_z_(x)\n\
+             #define _wcsnicmp ref_wcsnicmp\n{}",
+            inc(s("wstring/_wcsnicmp_nt.c")))),
     ];
 
     let mut build = cc::Build::new();

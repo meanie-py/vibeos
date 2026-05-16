@@ -8,3 +8,4 @@
 pub mod mem;
 pub mod radix;
 pub mod string;
+pub mod wstring;

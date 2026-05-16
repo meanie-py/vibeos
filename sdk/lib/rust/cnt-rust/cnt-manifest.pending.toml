@@ -19,46 +19,6 @@ inout_effects = "if endptr!=NULL: writes *endptr = first-invalid-wchar ptr (or n
 preserved_misfeature = "Lines 45-47,55-56: Overflow saturates to ULONG_MAX but still advances *endptr past ALL valid digits (any=-1 sticky). Line 57: Negation applied AFTER saturation: neg overflow yields 0-(ULONG_MAX)=1, not ULONG_MAX. Lines 26-27: Leading '-' parses, sets neg=1, then negates the accumulated unsigned result at the end."
 fuzz_domain = ["empty", "whitespace-only", "no-digits (base-prefix only)", "valid digits", "overflow-saturate", "negative (wrapping-subtract)", "base 0/8/10/16", "0x-prefix", "mixed case digits", "endptr==NULL"]
 
-[symbols._stricmp]
-c_signature  = "int __cdecl _stricmp(char const* _String1, char const* _String2)"
-family       = "string"
-slice_pattern = "nul_in"
-core_fn      = "NEW:string::cmp_case_insensitive"
-return_collapse = "i32_passthrough"
-inout_effects = "none (both params read-only)"
-preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z] (lines 24-27). NOT Unicode-aware, NOT locale-sensitive. Signed-char difference after fold (line 29): returns (chr1 - chr2) as signed char arithmetic, matching strcmp family convention but potentially surprising on platforms where char is unsigned by default."
-fuzz_domain  = ["both_empty", "equal_same_case", "equal_diff_case_ascii", "diff_before_fold", "diff_after_fold", "prefix_relation", "non_ascii_high_bit", "embedded_nul"]
-
-[symbols._strnicmp]
-c_signature = "int _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
-family = "string"
-slice_pattern = "nul_in"
-core_fn = "NEW:strnicmp"
-return_collapse = "i32_passthrough"
-inout_effects = "none (read-only comparison)"
-preserved_misfeature = "ASCII-only case-folding: only [A-Z] → [a-z], no locale/Unicode (lines 24-27). Compares as *signed char* difference (line 30: `chr1 - chr2` where chr1/chr2 are `char`). Stops at first NUL in *either* string even if n remains (line 32-35: `chr1 == 0` breaks, implicitly chr2==0 also stops via chr1==chr2 path). Returns 0 if n chars compared without difference OR NUL reached (line 38)."
-fuzz_domain = ["equal_within_n", "diff_case_insensitive_within_n", "diff_case_sensitive_within_n", "s1_shorter_than_n", "s2_shorter_than_n", "both_shorter_equal", "n_zero", "ascii_upper_lower_boundary", "non_ascii_no_fold", "signed_char_negative_diff"]
-
-[symbols._wcsicmp]
-c_signature = "int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)"
-family = "wstring"
-slice_pattern = "nul_in"
-core_fn = "NEW:wstring::cmp_case_insensitive"
-return_collapse = "i32_passthrough"
-inout_effects = "none (read-only comparison)"
-preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z], no Unicode/locale awareness (lines 26-29). Returns raw wchar_t difference (line 32), NOT normalized to {-1,0,+1}"
-fuzz_domain = ["equal_same_case", "equal_diff_case_ascii", "diff_before_nul", "diff_at_nul", "ascii_upper_lower_boundary", "non_ascii_no_fold", "empty_strings"]
-
-[symbols._wcsnicmp]
-c_signature = "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
-family = "wstring"
-slice_pattern = "ptr_len"
-core_fn = "NEW:wstring::nicmp"
-return_collapse = "i32_passthrough"
-inout_effects = "none (read-only comparison)"
-preserved_misfeature = "case-folding applies ONLY to ASCII 'A'-'Z' → 'a'-'z' (lines 28-31), NOT full Unicode case-folding; returns raw wchar_t difference (line 33) as int (potential truncation on platforms where wchar_t > 16-bit, though Windows wchar_t is 16-bit); compares at most _MaxCount characters OR until first NUL in either string (lines 22-38)"
-fuzz_domain = ["both_empty", "n_zero", "equal_within_n", "equal_at_n_boundary", "diff_ascii_case_only", "diff_non_ascii", "diff_beyond_n", "nul_before_n_s1", "nul_before_n_s2", "nul_at_n", "non_ascii_uppercase", "wchar_diff_overflow"]
-
 [symbols.mbstowcs]
 c_signature = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
 family = "string"

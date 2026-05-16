@@ -1696,7 +1696,10 @@ pub unsafe extern "system" fn HalAdjustResourceList(
     status as NTSTATUS
 }
 
-#[cfg(not(feature = "minihal"))]
+// C legacy/bussupp.c common region (after `#endif // _MINIHAL_`):
+// compiled identically under -D_MINIHAL_. Must stay in the minihal
+// feature — FreeLDR links it. See memory
+// feedback_freeldr_clean_build_regression.
 #[no_mangle]
 pub unsafe extern "system" fn HalAssignSlotResources(
     RegistryPath: PUNICODE_STRING,
@@ -1756,7 +1759,7 @@ pub unsafe extern "system" fn HalGetBusData(
     }
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region — required in minihal (FreeLDR links it).
 #[no_mangle]
 pub unsafe extern "system" fn HalGetBusDataByOffset(
     BusDataType: BUS_DATA_TYPE,
@@ -1873,7 +1876,7 @@ pub unsafe extern "system" fn HalSetBusDataByOffset(
     Status
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region — required in minihal (FreeLDR links it).
 #[no_mangle]
 pub unsafe extern "system" fn HalTranslateBusAddress(
     InterfaceType: INTERFACE_TYPE,

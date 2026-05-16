@@ -56,6 +56,8 @@ def rs_ty(ctype: str) -> str:
     c = ctype.replace(" ", "")
     return {
         "constchar*": "*const u8",
+        "charconst*": "*const u8",  # east-const spelling
+        "wchar_tconst*": "*const u16",
         "char*": "*mut u8",
         "constvoid*": "*const core::ffi::c_void",
         "void*": "*mut core::ffi::c_void",
@@ -263,6 +265,9 @@ def shim(name: str, m: dict) -> str:
     if sp == "nul_in":
         for n in ptrs:  # only pointer args become slices; scalars pass through
             body.append(f"    let {n}_s = cstr_slice({n});")
+    elif sp == "wnul_in":  # wide twin: NUL-terminated u16 → &[u16]
+        for n in ptrs:
+            body.append(f"    let {n}_s = wcstr_slice({n});")
     elif sp == "nul_in_maxlen":
         # strnlen-shape: walk the C string but never past the count
         # param (textbook strnlen must not read beyond maxlen).
@@ -391,6 +396,20 @@ pub(crate) unsafe fn cstr_slice_bounded<'a>(p: *const u8, cap: usize) -> &'a [u8
     core::slice::from_raw_parts(p, n)
 }
 
+/// Wide twin of `cstr_slice`: NUL-terminated `*const u16` → content
+/// slice (NUL excluded). NULL → empty.
+#[inline]
+pub(crate) unsafe fn wcstr_slice<'a>(p: *const u16) -> &'a [u16] {
+    if p.is_null() {
+        return &[];
+    }
+    let mut n = 0usize;
+    while *p.add(n) != 0 {
+        n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
 #[inline]
 pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {
@@ -442,7 +461,7 @@ def main() -> int:
         AUTOGEN,
         "#[allow(unused_imports)]\n"
         "use super::{cstr_slice, cstr_slice_bounded, raw_move, "
-        "raw_mut_slice, raw_slice};\n\n",
+        "raw_mut_slice, raw_slice, wcstr_slice};\n\n",
     ]
     for nm in sorted(syms):
         shims.append(shim(nm, syms[nm]))

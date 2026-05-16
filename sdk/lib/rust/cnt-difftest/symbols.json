@@ -162,6 +162,38 @@
       "value 0/\u00b1/I32_MIN/I32_MAX"
     ]
   },
+  "_stricmp": {
+    "c_signature": "int __cdecl _stricmp(char const* _String1, char const* _String2)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/string/_stricmp_nt.c",
+    "fuzz_domain": [
+      "both empty",
+      "equal same case",
+      "equal diff case",
+      "differ pre-fold",
+      "differ post-fold",
+      "prefix",
+      "high-bit >=0x80 (signed, never folded)",
+      "embedded equal-NUL"
+    ]
+  },
+  "_strnicmp": {
+    "c_signature": "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i32_cmp_n",
+    "reference": "sdk/lib/crt/string/_strnicmp_nt.c",
+    "fuzz_domain": [
+      "n==0",
+      "equal < n",
+      "differ < n",
+      "n past NUL",
+      "high-bit",
+      "diff only after fold"
+    ]
+  },
   "_strtoi64": {
     "c_signature": "__int64 _strtoi64(const char *nptr, char **endptr, int base)",
     "family": "radix",
@@ -278,6 +310,35 @@
       "value 0/1/U32_MAX",
       "radix 2/8/10/16/36",
       "string=NULL"
+    ]
+  },
+  "_wcsicmp": {
+    "c_signature": "int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/wstring/_wcsicmp_nt.c",
+    "fuzz_domain": [
+      "equal same/diff case",
+      "differ pre/post fold",
+      ">=0x80 and >0xFF (never folded)",
+      "prefix",
+      "embedded equal-NUL"
+    ]
+  },
+  "_wcsnicmp": {
+    "c_signature": "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "i32_cmp_n",
+    "reference": "sdk/lib/crt/wstring/_wcsnicmp_nt.c",
+    "fuzz_domain": [
+      "n==0",
+      "equal < n",
+      "differ < n",
+      "n past NUL",
+      ">0xFF wchars",
+      "diff only after fold"
     ]
   },
   "atoi": {
