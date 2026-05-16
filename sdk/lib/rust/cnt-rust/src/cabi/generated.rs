@@ -345,7 +345,7 @@ pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: 
 /// `__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)`
 /// preserved misfeature: identical to _strtoi64 (it delegates); locale unused
 #[no_mangle]
-pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> i64 {
+pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base: i32, _locale: *mut core::ffi::c_void) -> i64 {
     let nptr_s = cstr_slice(nptr);
     let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
     if r.base_ok && !endptr.is_null() {
@@ -358,7 +358,7 @@ pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base
 /// `unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)`
 /// preserved misfeature: signed parse via _strtoi64_l then asymmetric clamp: >ULONG_MAX→ULONG_MAX, < -(i64)ULONG_MAX→1 (NOT 0); _LIBCNT_ no errno; truncate to 32-bit unsigned long
 #[no_mangle]
-pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> u32 {
+pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i32, _locale: *mut core::ffi::c_void) -> u32 {
     let nptr_s = cstr_slice(nptr);
     let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
     if r.base_ok && !end.is_null() {
@@ -496,6 +496,101 @@ pub unsafe extern "C" fn _wcsnicmp(_String1: *const u16, _String2: *const u16, _
     let _String1_s = wcstr_slice(_String1);
     let _String2_s = wcstr_slice(_String2);
     crate::core_rs::wstring::ncmp_ci(_String1_s, _String2_s, _MaxCount)
+}
+
+
+/// `__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: per-digit clamp to _I64_MAX/_I64_MIN (NOT wrap), keeps consuming after clamp; endptr ALWAYS = final nptr (unlike narrow _strtoi64 got_digit?nptr:p); NULL→0 no endptr; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoi64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as i64; }
+    let r = crate::core_rs::radix::parse_i64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i64
+}
+
+
+/// `__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
+/// preserved misfeature: identical to _wcstoi64 (real impl; _wcstoi64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoi64_l(nptr: *const u16, endptr: *mut *mut u16, base: i32, _locale: *mut core::ffi::c_void) -> i64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as i64; }
+    let r = crate::core_rs::radix::parse_i64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i64
+}
+
+
+/// `unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: per-digit clamp to _UI64_MAX, keeps consuming; final negative ? -(__int64)ret : ret (== 0u64.wrapping_sub(ret)); endptr ALWAYS = final nptr; NULL→0 no endptr; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoui64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> u64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as u64; }
+    let r = crate::core_rs::radix::parse_u64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
+}
+
+
+/// `unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
+/// preserved misfeature: identical to _wcstoui64 (real impl; _wcstoui64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoui64_l(nptr: *const u16, endptr: *mut *mut u16, base: i32, _locale: *mut core::ffi::c_void) -> u64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as u64; }
+    let r = crate::core_rs::radix::parse_u64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
+}
+
+
+/// `int _wtoi(const wchar_t *str)`
+/// preserved misfeature: _wtoi = (int)_wtoi64 (atoi.c _UNICODE): i64 wrapping accumulate then (int) truncation; iswctype _SPACE skip; stops at first non-digit; NO NULL guard in C (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi(str: *const u16) -> i32 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i32
+}
+
+
+/// `__int64 _wtoi64(const wchar_t *str)`
+/// preserved misfeature: wtoi64.c: i64 wrapping accumulate, NO overflow error, no (int) trunc; iswctype _SPACE skip; NO NULL guard in C (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi64(str: *const u16) -> i64 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i64
+}
+
+
+/// `__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)`
+/// preserved misfeature: identical to _wtoi64 (it is the real impl; _wtoi64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi64_l(str: *const u16, _locale: *mut core::ffi::c_void) -> i64 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i64
+}
+
+
+/// `long _wtol(const wchar_t *str)`
+/// preserved misfeature: wine wtol.c: decimal-only u32 wrapping (Win unsigned long=32-bit), bMinus?0-RunningTotal:RunningTotal; NULL→0; no base/0x/overflow detection; host unsigned long is 64-bit so the ref (int)-truncates
+#[no_mangle]
+pub unsafe extern "C" fn _wtol(str: *const u16) -> i32 {
+    let str_s = wcstr_slice(str);
+    crate::core_rs::radix::parse_u32_dec_w(str_s) as i32
 }
 
 

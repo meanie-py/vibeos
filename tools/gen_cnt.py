@@ -90,6 +90,7 @@ def ret_ty(sig: str) -> str:
         "long": "i32",  # Win i386 LP32: long == 32-bit
         "unsignedlong": "u32",
         "unsignedlonglong": "u64",
+        "unsigned__int64": "u64",
         "__int64": "i64",
         "char*": "*mut u8",
         "wchar_t*": "*mut u16",
@@ -380,7 +381,13 @@ def shim(name: str, m: dict) -> str:
         return _mbcp_shim(name, m, params, rt)
     if sp in STRFAM:
         return _strfam_shim(name, m, params, rt)
-    decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    # `_locale_t` is ignored by every collapse (the `_l` variants
+    # delegate with locale unused) — emit it underscore-prefixed so it
+    # doesn't trip unused_variables.
+    decl_params = ", ".join(
+        f"{'_' + n if t.replace(' ', '') == '_locale_t' else n}: {rs_ty(t)}"
+        for t, n in params
+    )
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]
     szp = next((n for t, n in params if rs_ty(t) == "usize"), None)
@@ -527,6 +534,46 @@ def shim(name: str, m: dict) -> str:
         bs = next(n for t, n in params if rs_ty(t) == "i32")
         body.append(f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});")
         body.append(f"    if !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
+        body.append("    }")
+        body.append(f"    r.value as {rt}")
+    elif rc == "wtoi64_w":
+        # Wave G2: _wtoi (int trunc), _wtoi64, _wtoi64_l — wide i64
+        # wrapping. Picks the *const u16; locale (if any) ignored.
+        # `v as {rt}` is (int) truncation for _wtoi (rt=i32) and a
+        # no-op for the __int64 forms.
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        body.append(
+            f"    let (v, _of) = crate::core_rs::radix::"
+            f"parse_i64_wrapping_cu({np}_s);"
+        )
+        body.append(f"    v as {rt}")
+    elif rc == "wtol_w":
+        # Wave G2: _wtol — wide decimal u32 wrapping, bit-reinterpreted
+        # to `long` (rt=i32). NULL→0 via wcstr_slice empty.
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        body.append(
+            f"    crate::core_rs::radix::parse_u32_dec_w({np}_s) as {rt}"
+        )
+    elif rc in ("wcstoi64_w", "wcstoui64_w"):
+        # Wave G2: _wcstoi64{,_l} / _wcstoui64{,_l}. NULL nptr → return
+        # 0 with NO endptr write (C's MSVCRT_CHECK_PMT under _LIBCNT_).
+        # Invalid base → base_ok=false → return 0, no endptr write.
+        # Otherwise *endptr = nptr + final-index (written even with no
+        # digits — the wide endptr contract). locale ignored.
+        core = (
+            "parse_i64_clamped_w"
+            if rc == "wcstoi64_w"
+            else "parse_u64_clamped_w"
+        )
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u16")
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(f"    if {np}.is_null() {{ return 0 as {rt}; }}")
+        body.append(
+            f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});"
+        )
+        body.append(f"    if r.base_ok && !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
         body.append("    }")
         body.append(f"    r.value as {rt}")

@@ -489,3 +489,247 @@ pub fn parse_u64_bsd<C: Cu>(s: &[C], base: i32) -> U64Res {
         end: if any != 0 { i - 1 } else { 0 },
     }
 }
+
+// =====================================================================
+// Wave G2 — wide-atoi parse family (wtoi64.c / wtol.c / atoi.c _UNICODE)
+//
+// Distinct from the BSD `parse_long_bsd`/`parse_u64_bsd` (cutoff/cutlim,
+// `any?s-1:nptr` endptr) and from the narrow `parse_i64_clamped`
+// (`got_digit ? nptr : p` endptr). The wide MSVCRT-lineage parsers use
+// the per-digit `MAX/base` clamp AND a different endptr contract:
+// `*endptr = nptr` **always** (final position incl. ws/sign/`0x` even
+// with zero digits), unlike narrow `_strtoi64`. Generic over `Cu` so
+// the same logic serves any future narrow twin; today only u16 callers.
+// ASCII-domain only (`iswctype`/`towlower` for the ASCII range are
+// standard; non-ASCII wide chars never fuzzed — documented limit, same
+// as `parse_ulong_wide`).
+// =====================================================================
+
+/// ASCII lowercase on a code-unit value (faithful to `towlower` over
+/// the ASCII range; non-ASCII passes through, never fuzzed).
+#[inline]
+fn lc_u32(c: u32) -> u32 {
+    if (b'A' as u32..=b'Z' as u32).contains(&c) {
+        c + 32
+    } else {
+        c
+    }
+}
+
+/// `_wtoi64_l`/`_wtoi64` core (wtoi64.c) — also `_wtoi` = `(int)` of
+/// this. Faithful: skip `iswctype _SPACE` (ASCII set), optional `+`/`-`,
+/// accumulate decimal digits with **i64 wrapping** (NO overflow
+/// detection — the misfeature; host `LONGLONG`==target i64), negate via
+/// two's-complement. NO NULL guard in the C (it derefs immediately) —
+/// callers never fuzz NULL. `overflowed` is the honest signal the C
+/// shim discards. Generic `Cu`; narrow twin = `parse_i64_wrapping`.
+#[inline]
+pub fn parse_i64_wrapping_cu<C: Cu>(s: &[C]) -> (i64, bool) {
+    let mut i = 0usize;
+    while i < s.len() && sp(s[i].u()) {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < s.len() {
+        let c = s[i].u();
+        if c == b'-' as u32 || c == b'+' as u32 {
+            neg = c == b'-' as u32;
+            i += 1;
+        }
+    }
+    let mut acc: i64 = 0;
+    let mut overflowed = false;
+    while i < s.len() {
+        let c = s[i].u();
+        if !(b'0' as u32..=b'9' as u32).contains(&c) {
+            break;
+        }
+        let d = (c - b'0' as u32) as i64;
+        let (m, o1) = acc.overflowing_mul(10);
+        let (a, o2) = m.overflowing_add(d);
+        overflowed |= o1 | o2;
+        acc = a;
+        i += 1;
+    }
+    if neg {
+        acc = acc.wrapping_neg();
+    }
+    (acc, overflowed)
+}
+
+/// `_wtol` core (wine wtol.c) — decimal-only, **u32 wrapping** (Windows
+/// `unsigned long` is 32-bit), `bMinus ? 0-RunningTotal : RunningTotal`.
+/// NULL→0 is the empty-slice case (the shim's `wcstr_slice` maps NULL→
+/// `&[]`, identical to wtol.c's explicit `str==NULL` guard). No base, no
+/// `0x`, no overflow detection.
+#[inline]
+pub fn parse_u32_dec_w<C: Cu>(s: &[C]) -> u32 {
+    let mut i = 0usize;
+    while i < s.len() && sp(s[i].u()) {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < s.len() {
+        let c = s[i].u();
+        if c == b'+' as u32 {
+            i += 1;
+        } else if c == b'-' as u32 {
+            neg = true;
+            i += 1;
+        }
+    }
+    let mut acc: u32 = 0;
+    while i < s.len() {
+        let c = s[i].u();
+        if !(b'0' as u32..=b'9' as u32).contains(&c) {
+            break;
+        }
+        acc = acc.wrapping_mul(10).wrapping_add(c - b'0' as u32);
+        i += 1;
+    }
+    if neg {
+        0u32.wrapping_sub(acc)
+    } else {
+        acc
+    }
+}
+
+/// Shared wide prologue (wtoi64.c `_wcstoi64_l`/`_wcstoui64_l`): base
+/// validity (0 or 2..=36), skip `iswctype _SPACE`, optional sign, `0x`
+/// prefix when base 0/16 (consumed unconditionally — endptr reflects it
+/// even with no following hex digit, the wide misfeature), base-0 ⇒
+/// `0`→octal else decimal. `at(j)` returns 0 past end == C reading the
+/// NUL. Returns `(base, negative, index)` or `None` if base invalid.
+#[inline]
+fn wide_parse_prologue<C: Cu>(s: &[C], mut base: i32) -> Option<(i32, bool, usize)> {
+    if !(base == 0 || (2..=36).contains(&base)) {
+        return None;
+    }
+    let at = |j: usize| -> u32 {
+        if j < s.len() {
+            s[j].u()
+        } else {
+            0
+        }
+    };
+    let mut i = 0usize;
+    while i < s.len() && sp(s[i].u()) {
+        i += 1;
+    }
+    let mut negative = false;
+    if i < s.len() {
+        let c = s[i].u();
+        if c == b'-' as u32 || c == b'+' as u32 {
+            negative = c == b'-' as u32;
+            i += 1;
+        }
+    }
+    if (base == 0 || base == 16)
+        && at(i) == b'0' as u32
+        && lc_u32(at(i + 1)) == b'x' as u32
+    {
+        base = 16;
+        i += 2;
+    }
+    if base == 0 {
+        base = if at(i) == b'0' as u32 { 8 } else { 10 };
+    }
+    Some((base, negative, i))
+}
+
+/// Result of [`parse_i64_clamped_w`]/[`parse_u64_clamped_w`].
+/// `base_ok==false` ⇒ invalid `base`: the C returns 0 and does NOT
+/// write `*endptr`. Otherwise `*endptr = nptr + end` where `end` is the
+/// **final** parse position (after ws/sign/`0x`/digits) — written even
+/// when zero digits were consumed (the wide endptr contract, distinct
+/// from narrow `_strtoi64`'s `got_digit ? nptr : p`). NULL `nptr` is
+/// handled by the shim (return 0, no endptr write) — not here.
+pub struct WideClamped<T> {
+    pub value: T,
+    pub end: usize,
+    pub base_ok: bool,
+}
+
+/// `_wcstoi64_l`/`_wcstoi64` core (wtoi64.c) — signed i64, per-digit
+/// clamp to `_I64_MAX`/`_I64_MIN` (NOT wrap), keeps consuming after
+/// clamp. Digit via `towlower` then per-base cutoff. Endptr = final
+/// index always (see [`WideClamped`]).
+#[inline]
+pub fn parse_i64_clamped_w<C: Cu>(s: &[C], base: i32) -> WideClamped<i64> {
+    let (base, negative, mut i) = match wide_parse_prologue(s, base) {
+        Some(t) => t,
+        None => {
+            return WideClamped { value: 0, end: 0, base_ok: false };
+        }
+    };
+    let b64 = base as i64;
+    let mut ret: i64 = 0;
+    while i < s.len() {
+        let cur = lc_u32(s[i].u());
+        let v: i64 = if (b'0' as u32..=b'9' as u32).contains(&cur) {
+            if cur >= b'0' as u32 + base as u32 {
+                break;
+            }
+            (cur - b'0' as u32) as i64
+        } else {
+            if cur < b'a' as u32 || cur >= b'a' as u32 + base as u32 - 10 {
+                break;
+            }
+            (cur - b'a' as u32) as i64 + 10
+        };
+        let v = if negative { -v } else { v };
+        i += 1;
+        if !negative && (ret > i64::MAX / b64 || ret * b64 > i64::MAX - v) {
+            ret = i64::MAX;
+        } else if negative && (ret < i64::MIN / b64 || ret * b64 < i64::MIN - v) {
+            ret = i64::MIN;
+        } else {
+            ret = ret * b64 + v;
+        }
+    }
+    WideClamped { value: ret, end: i, base_ok: true }
+}
+
+/// `_wcstoui64_l`/`_wcstoui64` core (wtoi64.c) — unsigned u64, clamp to
+/// `_UI64_MAX`, then `negative ? -(__int64)ret : ret` reinterpreted
+/// unsigned (== `0u64.wrapping_sub(ret)`). Keeps consuming after clamp.
+/// Endptr = final index always. The `||` short-circuit guarantees
+/// `ret*base` cannot overflow u64 (only reached when `ret<=UMAX/base`).
+#[inline]
+pub fn parse_u64_clamped_w<C: Cu>(s: &[C], base: i32) -> WideClamped<u64> {
+    let (base, negative, mut i) = match wide_parse_prologue(s, base) {
+        Some(t) => t,
+        None => {
+            return WideClamped { value: 0, end: 0, base_ok: false };
+        }
+    };
+    let bm = base as u64;
+    let umax = u64::MAX;
+    let mut ret: u64 = 0;
+    while i < s.len() {
+        let cur = lc_u32(s[i].u());
+        let v: u64 = if (b'0' as u32..=b'9' as u32).contains(&cur) {
+            if cur >= b'0' as u32 + base as u32 {
+                break;
+            }
+            (cur - b'0' as u32) as u64
+        } else {
+            if cur < b'a' as u32 || cur >= b'a' as u32 + base as u32 - 10 {
+                break;
+            }
+            (cur - b'a' as u32) as u64 + 10
+        };
+        i += 1;
+        if ret > umax / bm || ret * bm > umax - v {
+            ret = umax;
+        } else {
+            ret = ret * bm + v;
+        }
+    }
+    let value = if negative {
+        0u64.wrapping_sub(ret)
+    } else {
+        ret
+    };
+    WideClamped { value, end: i, base_ok: true }
+}

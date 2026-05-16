@@ -221,6 +221,49 @@ fn main() {
              int ref_wcstol(const wchar_t*n,wchar_t**e,int b)\
              {{return (int)ru_wcstol_real(n,e,b);}}\n",
             inc(s("string/wcstol.c")))),
+        // Wave G2 — wide-atoi parse. wtoi64.c: host LONGLONG /
+        // unsigned __int64 == target i64/u64 so NO LONG_MAX trick
+        // (unlike strtol). precomp FIRST (pulls stddef so the later
+        // `#define wchar_t unsigned short` is safe — the wcstoul
+        // precedent). LONGLONG/_UI64_MAX/towlower(ASCII)/iswctype(ASCII)
+        // supplied here (precomp lacks them); <internal/wine/msvcrt.h>
+        // resolves to the refstub stub (its TRACE/_errno are all under
+        // `#ifndef _LIBCNT_`, never compiled). One TU defines all six
+        // public symbols + the (int)_wtoi64 wrapper that IS atoi.c's
+        // body under _UNICODE.
+        ("wtoi64", format!(
+            "#include <precomp.h>\n#define wchar_t unsigned short\n\
+             #define LONGLONG long long\n#define _UI64_MAX 0xffffffffffffffffULL\n\
+             #define towlower(c) (((c)>='A'&&(c)<='Z')?((c)+32):(c))\n\
+             #define _SPACE 1\n#define _DIGIT 2\n#define _ALPHA 4\n#define _UPPER 8\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             if(t==_DIGIT)return c>='0'&&c<='9';\
+             if(t==_UPPER)return c>='A'&&c<='Z';\
+             if(t==_ALPHA)return (c>='A'&&c<='Z')||(c>='a'&&c<='z');\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define _wtoi64 ref_wtoi64\n#define _wtoi64_l ref_wtoi64_l\n\
+             #define _wcstoi64 ref_wcstoi64\n#define _wcstoi64_l ref_wcstoi64_l\n\
+             #define _wcstoui64 ref_wcstoui64\n#define _wcstoui64_l ref_wcstoui64_l\n{}\
+             int ref_wtoi(const unsigned short*n){{return (int)ref_wtoi64(n);}}\n",
+            inc(s("string/wtoi64.c")))),
+        // _wtol — wine wtol.c. No precomp (it pulls host string.h/
+        // ctype.h + <basetsd.h>→refstub stub). ASCII iswctype shim.
+        // host `unsigned long` is 64-bit → wrap result in `(int)` to
+        // pin the 32-bit Windows `long` semantics (strtol precedent).
+        ("wtol", format!(
+            "#define wchar_t unsigned short\n\
+             #define _SPACE 1\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define _wtol ru_wtol_real\n{}\
+             int ref_wtol(const unsigned short*n){{return (int)ru_wtol_real(n);}}\n",
+            inc(s("string/wtol.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

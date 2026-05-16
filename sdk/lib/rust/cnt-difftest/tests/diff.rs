@@ -75,6 +75,14 @@ extern "C" {
     fn ref_strtol(n: *const u8, e: *mut *mut u8, b: i32) -> i32;
     fn ref_strtoull(n: *const u8, e: *mut *mut u8, b: i32) -> u64;
     fn ref_wcstol(n: *const u16, e: *mut *mut u16, b: i32) -> i32;
+    fn ref_wtoi(n: *const u16) -> i32;
+    fn ref_wtol(n: *const u16) -> i32;
+    fn ref_wtoi64(n: *const u16) -> i64;
+    fn ref_wtoi64_l(n: *const u16, loc: *mut c_void) -> i64;
+    fn ref_wcstoi64(n: *const u16, e: *mut *mut u16, b: i32) -> i64;
+    fn ref_wcstoi64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> i64;
+    fn ref_wcstoui64(n: *const u16, e: *mut *mut u16, b: i32) -> u64;
+    fn ref_wcstoui64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> u64;
 }
 
 use cnt_rust::cabi;
@@ -1149,5 +1157,103 @@ fn diff_span() {
                 "wcsstr ws={ws:?} needle={needle:?}"
             );
         }
+    }
+}
+
+/// Wave G2 — wide-atoi parse (owed split from Wave G). Pins the
+/// MSVCRT-lineage wide parsers vs genuine wtoi64.c/wtol.c/atoi.c:
+/// `_wtoi`(int-trunc), `_wtol`(u32-wrap→int), `_wtoi64{,_l}`(i64-wrap),
+/// `_wcstoi64{,_l}`/`_wcstoui64{,_l}` (per-digit MAX clamp + the wide
+/// endptr contract = final nptr ALWAYS, incl. invalid-base→0/no-write
+/// and NULL-nptr→0/no-write). ASCII domain, incl. bases 1/37.
+#[test]
+fn diff_wide_atoi() {
+    let mut rng = Rng(0x9c2a_d175_u64);
+    let bases = [0i32, 2, 8, 10, 16, 36, 1, 37];
+    let alpha = b" \t+-0xXabcdefABCDEF0123456789Zz";
+    for _ in 0..9000 {
+        let s: Vec<u8> = (0..rng.upto(24))
+            .map(|_| alpha[rng.upto(alpha.len())])
+            .collect();
+        let ws: Vec<u16> = s.iter().map(|&b| b as u16).chain([0]).collect();
+        let np = ws.as_ptr();
+        let base = bases[rng.upto(bases.len())];
+        let nul: *mut c_void = core::ptr::null_mut();
+        let woff = |p: *mut u16| {
+            if p == 1 as *mut u16 {
+                None
+            } else {
+                Some((p as usize - np as usize) / 2)
+            }
+        };
+
+        // no-endptr value parsers
+        assert_eq!(
+            unsafe { cabi::_wtoi(np) },
+            unsafe { ref_wtoi(np) },
+            "_wtoi ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtol(np) },
+            unsafe { ref_wtol(np) },
+            "_wtol ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtoi64(np) },
+            unsafe { ref_wtoi64(np) },
+            "_wtoi64 ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtoi64_l(np, nul) },
+            unsafe { ref_wtoi64_l(np, nul) },
+            "_wtoi64_l ws={ws:?}"
+        );
+
+        // signed clamp + wide endptr
+        let (mut ec, mut er): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let cv = unsafe { cabi::_wcstoi64(np, &mut ec, base) };
+        let rv = unsafe { ref_wcstoi64(np, &mut er, base) };
+        assert_eq!(cv, rv, "_wcstoi64 v ws={ws:?} base={base}");
+        assert_eq!(woff(ec), woff(er), "_wcstoi64 ep ws={ws:?} base={base}");
+        let (mut ecl, mut erl): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let cvl = unsafe { cabi::_wcstoi64_l(np, &mut ecl, base, nul) };
+        let rvl = unsafe { ref_wcstoi64_l(np, &mut erl, base, nul) };
+        assert_eq!(cvl, rvl, "_wcstoi64_l v ws={ws:?} base={base}");
+        assert_eq!(woff(ecl), woff(erl), "_wcstoi64_l ep ws={ws:?} base={base}");
+
+        // unsigned clamp + wide endptr
+        let (mut uc, mut ur): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let ucv = unsafe { cabi::_wcstoui64(np, &mut uc, base) };
+        let urv = unsafe { ref_wcstoui64(np, &mut ur, base) };
+        assert_eq!(ucv, urv, "_wcstoui64 v ws={ws:?} base={base}");
+        assert_eq!(woff(uc), woff(ur), "_wcstoui64 ep ws={ws:?} base={base}");
+        let (mut ucl, mut url): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let ucvl = unsafe { cabi::_wcstoui64_l(np, &mut ucl, base, nul) };
+        let urvl = unsafe { ref_wcstoui64_l(np, &mut url, base, nul) };
+        assert_eq!(ucvl, urvl, "_wcstoui64_l v ws={ws:?} base={base}");
+        assert_eq!(woff(ucl), woff(url), "_wcstoui64_l ep ws={ws:?} base={base}");
+
+        // endptr == NULL: value still correct, no write
+        let cv2 = unsafe { cabi::_wcstoi64(np, core::ptr::null_mut(), base) };
+        let rv2 = unsafe { ref_wcstoi64(np, core::ptr::null_mut(), base) };
+        assert_eq!(cv2, rv2, "_wcstoi64 NULL-ep ws={ws:?} base={base}");
+    }
+
+    // NULL nptr → 0, endptr untouched (MSVCRT_CHECK_PMT under _LIBCNT_)
+    for base in bases {
+        let (mut ec, mut er): (*mut u16, *mut u16) = (7 as *mut u16, 7 as *mut u16);
+        assert_eq!(
+            unsafe { cabi::_wcstoi64(core::ptr::null(), &mut ec, base) },
+            unsafe { ref_wcstoi64(core::ptr::null(), &mut er, base) },
+            "_wcstoi64 NULL-nptr v base={base}"
+        );
+        assert_eq!(ec, er, "_wcstoi64 NULL-nptr ep untouched base={base}");
+        let (mut uc, mut ur): (*mut u16, *mut u16) = (7 as *mut u16, 7 as *mut u16);
+        assert_eq!(
+            unsafe { cabi::_wcstoui64(core::ptr::null(), &mut uc, base) },
+            unsafe { ref_wcstoui64(core::ptr::null(), &mut ur, base) },
+            "_wcstoui64 NULL-nptr v base={base}"
+        );
+        assert_eq!(uc, ur, "_wcstoui64 NULL-nptr ep untouched base={base}");
     }
 }

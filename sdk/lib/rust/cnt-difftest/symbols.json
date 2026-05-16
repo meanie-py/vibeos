@@ -341,6 +341,125 @@
       "diff only after fold"
     ]
   },
+  "_wcstoi64": {
+    "c_signature": "__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "base10",
+      "base16 0x",
+      "base0 octal",
+      "base 2..36",
+      "+I64 overflow\u2192MAX",
+      "-overflow\u2192MIN",
+      "ws+sign",
+      "no digits (endptr=after ws/sign/0x)",
+      "0x then junk",
+      "invalid base\u21920",
+      "junk after digits",
+      "NULL nptr"
+    ]
+  },
+  "_wcstoi64_l": {
+    "c_signature": "__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wcstoi64 \u2014 same domain"
+    ]
+  },
+  "_wcstoui64": {
+    "c_signature": "unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoui64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "base10",
+      "base16 0x",
+      "base0 octal",
+      "base 2..36",
+      "overflow\u2192UI64_MAX",
+      "negative (wrap)",
+      "ws+sign",
+      "no digits",
+      "0x then junk",
+      "invalid base\u21920",
+      "junk after",
+      "NULL nptr"
+    ]
+  },
+  "_wcstoui64_l": {
+    "c_signature": "unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoui64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wcstoui64 \u2014 same domain"
+    ]
+  },
+  "_wtoi": {
+    "c_signature": "int _wtoi(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/atoi.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "i32-overflow",
+      "i64-overflow wrap then trunc",
+      "trailing junk",
+      "lone sign",
+      "no digits"
+    ]
+  },
+  "_wtoi64": {
+    "c_signature": "__int64 _wtoi64(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "near i64::MAX",
+      "i64 overflow wrap",
+      "trailing junk",
+      "no digits"
+    ]
+  },
+  "_wtoi64_l": {
+    "c_signature": "__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wtoi64 \u2014 same domain"
+    ]
+  },
+  "_wtol": {
+    "c_signature": "long _wtol(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtol_w",
+    "reference": "sdk/lib/crt/string/wtol.c",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "ws+sign",
+      "u32 overflow wrap",
+      "-N (wrapping negate)",
+      "trailing junk",
+      "no digits"
+    ]
+  },
   "atoi": {
     "c_signature": "int atoi(const char *s)",
     "family": "radix",

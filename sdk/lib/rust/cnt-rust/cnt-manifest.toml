@@ -881,3 +881,103 @@ inout_effects = "*endptr (if !=NULL) = nptr + (any ? first-non-consumed : 0)"
 preserved_misfeature = "BSD u64 clamp: overflow → ULLONG_MAX; neg → 0u64.wrapping_sub(acc); cutoff=ULLONG_MAX/base; host unsigned long long == target u64 (no LP32 trick); base 0 prefix logic; _LIBCNT_ no errno"
 reference    = "sdk/lib/crt/string/strtoull.c"
 fuzz_domain  = ["empty", "ws+sign", "no digits", "in range", "overflow→ULLONG_MAX", "negative (wrap)", "base 0/2/8/10/16/36", "0x prefix", "endptr=NULL", "junk after"]
+
+# --- Wave G2: wide-atoi parse (owed split from Wave G) --------------
+# The MSVCRT-lineage wide parsers (wtoi64.c / wtol.c / atoi.c _UNICODE).
+# DISTINCT algorithm-class from Wave G's BSD cutoff/cutlim: per-digit
+# MAX/base clamp AND a different endptr contract — *endptr = nptr
+# ALWAYS (final pos incl. ws/sign/0x even with zero digits), unlike
+# narrow _strtoi64's got_digit?nptr:p. Cores generic over Cu; today
+# u16-only. ASCII domain (iswctype/towlower ASCII-standard; non-ASCII
+# wide never fuzzed — same documented limit as wcstoul). host LONGLONG
+# / unsigned __int64 == target i64/u64, so NO LP32 trick (unlike
+# strtol/wcstol). _wtol's host `unsigned long` is 64-bit → ref wraps it
+# in `(int)` (the strtol precedent) to pin the 32-bit Win semantics.
+
+[symbols._wtoi]
+c_signature  = "int _wtoi(const wchar_t *str)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_i64_wrapping_cu"
+return_collapse = "wtoi64_w"
+inout_effects = "none"
+preserved_misfeature = "_wtoi = (int)_wtoi64 (atoi.c _UNICODE): i64 wrapping accumulate then (int) truncation; iswctype _SPACE skip; stops at first non-digit; NO NULL guard in C (never fuzzed)"
+reference    = "sdk/lib/crt/string/atoi.c"
+fuzz_domain  = ["empty", "ws+sign", "i32-overflow", "i64-overflow wrap then trunc", "trailing junk", "lone sign", "no digits"]
+
+[symbols._wtol]
+c_signature  = "long _wtol(const wchar_t *str)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_u32_dec_w"
+return_collapse = "wtol_w"
+inout_effects = "none"
+preserved_misfeature = "wine wtol.c: decimal-only u32 wrapping (Win unsigned long=32-bit), bMinus?0-RunningTotal:RunningTotal; NULL→0; no base/0x/overflow detection; host unsigned long is 64-bit so the ref (int)-truncates"
+reference    = "sdk/lib/crt/string/wtol.c"
+fuzz_domain  = ["NULL", "empty", "ws+sign", "u32 overflow wrap", "-N (wrapping negate)", "trailing junk", "no digits"]
+
+[symbols._wtoi64]
+c_signature  = "__int64 _wtoi64(const wchar_t *str)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_i64_wrapping_cu"
+return_collapse = "wtoi64_w"
+inout_effects = "none"
+preserved_misfeature = "wtoi64.c: i64 wrapping accumulate, NO overflow error, no (int) trunc; iswctype _SPACE skip; NO NULL guard in C (never fuzzed)"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["empty", "ws+sign", "near i64::MAX", "i64 overflow wrap", "trailing junk", "no digits"]
+
+[symbols._wtoi64_l]
+c_signature  = "__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_i64_wrapping_cu"
+return_collapse = "wtoi64_w"
+inout_effects = "none; locale ignored"
+preserved_misfeature = "identical to _wtoi64 (it is the real impl; _wtoi64 delegates with NULL locale); locale unused"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["delegated by _wtoi64 — same domain"]
+
+[symbols._wcstoi64]
+c_signature  = "__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_i64_clamped_w"
+return_collapse = "wcstoi64_w"
+inout_effects = "*endptr (if !=NULL && base valid) = nptr + final-index (incl ws/sign/0x even with no digits); NOT written if NULL nptr or invalid base"
+preserved_misfeature = "per-digit clamp to _I64_MAX/_I64_MIN (NOT wrap), keeps consuming after clamp; endptr ALWAYS = final nptr (unlike narrow _strtoi64 got_digit?nptr:p); NULL→0 no endptr; _LIBCNT_ no errno"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["base10", "base16 0x", "base0 octal", "base 2..36", "+I64 overflow→MAX", "-overflow→MIN", "ws+sign", "no digits (endptr=after ws/sign/0x)", "0x then junk", "invalid base→0", "junk after digits", "NULL nptr"]
+
+[symbols._wcstoi64_l]
+c_signature  = "__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_i64_clamped_w"
+return_collapse = "wcstoi64_w"
+inout_effects = "as _wcstoi64; locale ignored"
+preserved_misfeature = "identical to _wcstoi64 (real impl; _wcstoi64 delegates with NULL locale); locale unused"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["delegated by _wcstoi64 — same domain"]
+
+[symbols._wcstoui64]
+c_signature  = "unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_u64_clamped_w"
+return_collapse = "wcstoui64_w"
+inout_effects = "*endptr (if !=NULL && base valid) = nptr + final-index; NOT written if NULL nptr or invalid base"
+preserved_misfeature = "per-digit clamp to _UI64_MAX, keeps consuming; final negative ? -(__int64)ret : ret (== 0u64.wrapping_sub(ret)); endptr ALWAYS = final nptr; NULL→0 no endptr; _LIBCNT_ no errno"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["base10", "base16 0x", "base0 octal", "base 2..36", "overflow→UI64_MAX", "negative (wrap)", "ws+sign", "no digits", "0x then junk", "invalid base→0", "junk after", "NULL nptr"]
+
+[symbols._wcstoui64_l]
+c_signature  = "unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_u64_clamped_w"
+return_collapse = "wcstoui64_w"
+inout_effects = "as _wcstoui64; locale ignored"
+preserved_misfeature = "identical to _wcstoui64 (real impl; _wcstoui64 delegates with NULL locale); locale unused"
+reference    = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain  = ["delegated by _wcstoui64 — same domain"]
