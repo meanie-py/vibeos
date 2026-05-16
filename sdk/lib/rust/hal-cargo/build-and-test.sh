@@ -46,8 +46,12 @@ if [ "${RUN_SMOKE:-0}" = "1" ]; then
   cp "$CARGO_OUT" "build-i386/hal/halx86/hal.dll"
   # Same post-link chain cmake applies to hal.dll: kernel-DLL PE fixup
   # then strip LLD's spurious i386 `_` on forwarder export targets
-  # (hal.spec forwards Ex*FastMutex → ntoskrnl.Exi*).
-  build-i386/host-tools/bin/pefixup --kerneldll build-i386/hal/halx86/hal.dll
+  # (hal.spec forwards Ex*FastMutex → ntoskrnl.Exi*). pefixup is
+  # self-compiled from source with the host cc — no cmake host tool.
+  PEFIXUP="$(mktemp -d)/pefixup"
+  cc -O2 -DTARGET_i386 -D_CRT_NON_CONFORMING_SWPRINTFS -D__REACTOS__ \
+     -I sdk/include/host -I sdk/tools -o "$PEFIXUP" sdk/tools/pefixup.c
+  "$PEFIXUP" --kerneldll build-i386/hal/halx86/hal.dll
   python3 sdk/tools/fix_lld_forwarding.py build-i386/hal/halx86/hal.dll
   ( cd build-i386 && ninja livecd >/dev/null )
   source .venv/bin/activate

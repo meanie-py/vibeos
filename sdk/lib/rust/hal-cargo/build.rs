@@ -25,18 +25,20 @@ fn main() {
         .resource("data/hal-i386.rc.res")
         .spec2def("hal/hal.spec", "hal.dll")
         // cmake link order (from the `hal.dll` ninja line). libhal_rust.a
-        // is emitted first by the engine; libntoskrnl.a is the ntoskrnl
-        // *import* lib.
+        // is emitted first by the engine. The ntoskrnl import lib is
+        // self-generated from ntoskrnl.spec (.import_lib below) — no
+        // cmake-built libntoskrnl.a needed. The remaining leaf static
+        // libs still come from cmake (deferred mechanical pass).
         .static_libs(&[
             "sdk/lib/crt/liblibcntpr.a",
             "sdk/lib/vcruntime/libsetjmp.a",
             "sdk/lib/drivers/arbiter/libarbiter.a",
             "sdk/lib/fast486/libfast486.a",
             "sdk/lib/pseh/libpseh.a",
-            "ntoskrnl/CMakeFiles/libntoskrnl.dir/libntoskrnl.a",
             "sdk/lib/crt/libchkstk.a",
             "sdk/lib/crt/libmemcmp.a",
         ])
+        .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .link(ModuleKind::KernelDll {
             entry: "_HalInitSystem@8".into(),
             image_base: 0x0001_0000,

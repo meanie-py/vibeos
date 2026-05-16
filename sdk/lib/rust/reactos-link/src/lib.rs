@@ -128,6 +128,7 @@ pub struct Linker {
     resource: Option<String>,
     spec: Option<(String, String)>,
     static_libs: Vec<String>,
+    import_lib: Option<(String, String, String)>,
 }
 
 impl Linker {
@@ -170,6 +171,7 @@ impl Linker {
             resource: None,
             spec: None,
             static_libs: Vec::new(),
+            import_lib: None,
         }
     }
 
@@ -216,6 +218,21 @@ impl Linker {
     /// staticlib first.
     pub fn static_libs(mut self, builddir_rels: &[&str]) -> Self {
         self.static_libs = builddir_rels.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Generate a PE *import* lib from a `.spec` instead of consuming a
+    /// cmake-built one (e.g. HAL importing ntoskrnl). `spec_rel`
+    /// repo-relative; `dll_name` the `-n=` arg; `basename` the dlltool
+    /// `-t` prefix / the imported DLL's logical name. Self-hosts
+    /// spec2def `--implib` then runs `i686-w64-mingw32-dlltool` — no
+    /// cmake-built `libNAME.a` needed. Emitted inside the link group.
+    pub fn import_lib(mut self, spec_rel: &str, dll_name: &str, basename: &str) -> Self {
+        self.import_lib = Some((
+            spec_rel.to_string(),
+            dll_name.to_string(),
+            basename.to_string(),
+        ));
         self
     }
 
@@ -335,6 +352,14 @@ impl Linker {
             }
             println!("cargo:rustc-link-arg={}", full.display());
         }
+        if let Some((spec_rel, dll_name, basename)) = &self.import_lib {
+            let a = self.generate_import_lib(spec_rel, dll_name, basename);
+            println!("cargo:rustc-link-arg={}", a.display());
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(spec_rel).display()
+            );
+        }
         println!("cargo:rustc-link-arg=-Wl,--end-group");
 
         let clang_rt =
@@ -406,6 +431,58 @@ impl Linker {
             panic!("spec2def produced no .def at {}", def.display());
         }
         def
+    }
+
+    /// `spec --implib → .def → i686-w64-mingw32-dlltool → libNAME.a`.
+    /// Mirrors cmake's `spec2def --implib` + `dlltool -m i386 -d ... -k
+    /// -l libNAME.a -t NAME` exactly — produces a PE import lib without
+    /// a cmake-built one (the spec carries the export names; the target
+    /// DLL need not exist).
+    fn generate_import_lib(&self, spec_rel: &str, dll_name: &str, basename: &str) -> PathBuf {
+        let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
+        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("implib-gen");
+        std::fs::create_dir_all(&out).expect("mkdir implib-gen");
+        let spec = self.repo_root.join(spec_rel);
+        if !spec.exists() {
+            panic!("missing spec {}", spec.display());
+        }
+        let implib_def = out.join(format!("{basename}_implib.def"));
+        let status = Command::new(&spec2def)
+            .arg("--version=0x502")
+            .arg("--dbg")
+            .arg(format!("-n={dll_name}"))
+            .arg("-a=i386")
+            .arg("--implib")
+            .arg(format!("-d={}", implib_def.display()))
+            .arg(&spec)
+            .status()
+            .unwrap_or_else(|e| panic!("spec2def --implib: {e}"));
+        if !status.success() {
+            panic!("spec2def --implib failed for {spec_rel}");
+        }
+        let dlltool = self
+            .repo_root
+            .join(".build-tools/llvm-mingw/bin/i686-w64-mingw32-dlltool");
+        let lib_a = out.join(format!("lib{basename}.a"));
+        let status = Command::new(&dlltool)
+            .arg("-m")
+            .arg("i386")
+            .arg("-d")
+            .arg(&implib_def)
+            .arg("-k")
+            .arg("-l")
+            .arg(&lib_a)
+            .arg("-t")
+            .arg(basename)
+            .status()
+            .unwrap_or_else(|e| panic!("dlltool ({}): {e}", dlltool.display()));
+        if !status.success() {
+            panic!("dlltool failed for {basename}");
+        }
+        if !lib_a.exists() {
+            panic!("dlltool produced no {}", lib_a.display());
+        }
+        lib_a
     }
 
     /// Compile a single-.c host tool with the host cc, return its path.
