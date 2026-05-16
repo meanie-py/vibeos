@@ -267,6 +267,17 @@ fn main() {
          #define RtlAppendUnicodeToString ref_RtlAppendUnicodeToString\n\
          #define RtlAppendAsciizToString ref_RtlAppendAsciizToString\n\
          #define RtlCompareUnicodeStrings ref_RtlCompareUnicodeStrings\n\
+         /* Wave RTL-4b slice 1: validate/find/erase/free/GUID (genuine\n\
+            unicode.c; free calls the RtlpFreeStringMemory no-op stub;\n\
+            RtlpIsCharInUnicodeString is file-static, exercised via\n\
+            RtlFindCharInUnicodeString). */\n\
+         #define RtlValidateUnicodeString ref_RtlValidateUnicodeString\n\
+         #define RtlFindCharInUnicodeString ref_RtlFindCharInUnicodeString\n\
+         #define RtlEraseUnicodeString ref_RtlEraseUnicodeString\n\
+         #define RtlFreeAnsiString ref_RtlFreeAnsiString\n\
+         #define RtlFreeOemString ref_RtlFreeOemString\n\
+         #define RtlFreeUnicodeString ref_RtlFreeUnicodeString\n\
+         #define RtlGUIDFromString ref_RtlGUIDFromString\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\

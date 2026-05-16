@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, nls, ustr};
+use crate::core_rs::{conv, misc, nls, ustr};
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -32,7 +32,21 @@ const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
+const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
+
+const RTL_FIND_CHAR_START_AT_END: u32 = 0x0000_0001;
+const RTL_FIND_CHAR_COMPLEMENT: u32 = 0x0000_0002;
+const RTL_FIND_CHAR_CASE_INSENSITIVE: u32 = 0x0000_0004;
+
+/// `GUID` (guiddef.h) — 16 bytes, `#[repr(C)]`.
+#[repr(C)]
+pub struct GUID {
+    pub Data1: u32,
+    pub Data2: u16,
+    pub Data3: u16,
+    pub Data4: [u8; 8],
+}
 
 #[inline]
 fn nt_success(s: i32) -> bool {
@@ -1198,4 +1212,136 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
         rslice(string2, string2_length),
         case_insensitive != 0,
     )
+}
+
+// ── Wave RTL-4b slice 1: validate / find / erase / free / GUID ────
+
+/// `NTSTATUS NTAPI RtlValidateUnicodeString(ULONG Flags,
+/// PCUNICODE_STRING)`. Flags must be 0; a NULL `String` is VALID.
+#[no_mangle]
+pub unsafe extern "system" fn RtlValidateUnicodeString(
+    flags: u32,
+    string: *const UNICODE_STRING,
+) -> i32 {
+    if flags != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if string.is_null() {
+        return STATUS_SUCCESS;
+    }
+    if misc::unicode_string_valid(
+        (*string).Buffer.is_null(),
+        (*string).Length,
+        (*string).MaximumLength,
+    ) {
+        STATUS_SUCCESS
+    } else {
+        STATUS_INVALID_PARAMETER
+    }
+}
+
+/// `NTSTATUS NTAPI RtlFindCharInUnicodeString(ULONG, PCUNICODE_STRING
+/// Search, PCUNICODE_STRING Match, PUSHORT Position)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlFindCharInUnicodeString(
+    flags: u32,
+    search: *const UNICODE_STRING,
+    match_string: *const UNICODE_STRING,
+    position: *mut u16,
+) -> i32 {
+    if position.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    core::ptr::write_volatile(position, 0);
+    if flags
+        & !(RTL_FIND_CHAR_START_AT_END
+            | RTL_FIND_CHAR_COMPLEMENT
+            | RTL_FIND_CHAR_CASE_INSENSITIVE)
+        != 0
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let want = flags & RTL_FIND_CHAR_COMPLEMENT == 0;
+    let ci = flags & RTL_FIND_CHAR_CASE_INSENSITIVE != 0;
+    match misc::find_char(
+        uunits(search),
+        uunits(match_string),
+        flags & RTL_FIND_CHAR_START_AT_END != 0,
+        want,
+        ci,
+    ) {
+        Some(p) => {
+            core::ptr::write_volatile(position, p);
+            STATUS_SUCCESS
+        }
+        None => STATUS_NOT_FOUND,
+    }
+}
+
+/// `VOID NTAPI RtlEraseUnicodeString(PUNICODE_STRING)`. Zeroes
+/// `MaximumLength` **bytes** of Buffer (if both non-zero), `Length=0`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEraseUnicodeString(
+    string: *mut UNICODE_STRING,
+) {
+    if !(*string).Buffer.is_null() && (*string).MaximumLength != 0 {
+        let d = (*string).Buffer as *mut u8;
+        for i in 0..(*string).MaximumLength as usize {
+            core::ptr::write_volatile(d.add(i), 0u8);
+        }
+        (*string).Length = 0;
+    }
+}
+
+/// `VOID NTAPI RtlFreeAnsiString(PANSI_STRING)`. Buffer non-NULL ⇒
+/// free (harness stub: no-op) + zero the whole struct.
+#[no_mangle]
+pub unsafe extern "system" fn RtlFreeAnsiString(ansi_string: *mut STRING) {
+    if !(*ansi_string).Buffer.is_null() {
+        (*ansi_string).Length = 0;
+        (*ansi_string).MaximumLength = 0;
+        (*ansi_string).Buffer = core::ptr::null_mut();
+    }
+}
+
+/// `VOID NTAPI RtlFreeOemString(POEM_STRING)`. Buffer non-NULL ⇒ free
+/// **only** — genuine does NOT zero the struct (the pinned quirk).
+#[no_mangle]
+pub unsafe extern "system" fn RtlFreeOemString(_oem_string: *mut STRING) {
+    // free is the harness no-op stub; no field writes (faithful).
+}
+
+/// `VOID NTAPI RtlFreeUnicodeString(PUNICODE_STRING)`. Buffer
+/// non-NULL ⇒ free (stub) + zero the whole struct.
+#[no_mangle]
+pub unsafe extern "system" fn RtlFreeUnicodeString(
+    unicode_string: *mut UNICODE_STRING,
+) {
+    if !(*unicode_string).Buffer.is_null() {
+        (*unicode_string).Length = 0;
+        (*unicode_string).MaximumLength = 0;
+        (*unicode_string).Buffer = core::ptr::null_mut();
+    }
+}
+
+/// `NTSTATUS NTAPI RtlGUIDFromString(UNICODE_STRING*, GUID*)`. The
+/// Wine fixed-format state machine; partial in-place writes on
+/// failure are faithful; the buffer is read unbounded (≥38 units).
+#[no_mangle]
+pub unsafe extern "system" fn RtlGUIDFromString(
+    str: *const UNICODE_STRING,
+    guid: *mut GUID,
+) -> i32 {
+    let s = core::slice::from_raw_parts((*str).Buffer, 38);
+    let mut buf: [u8; 16] = *(guid as *const [u8; 16]);
+    let ok = misc::guid_from_string(s, &mut buf);
+    let p = guid as *mut u8;
+    for i in 0..16 {
+        core::ptr::write_volatile(p.add(i), buf[i]);
+    }
+    if ok {
+        STATUS_SUCCESS
+    } else {
+        STATUS_INVALID_PARAMETER
+    }
 }

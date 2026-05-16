@@ -10,7 +10,7 @@
 //! signed-`char` diff + `(int)L1-(int)L2` length tiebreak,
 //! `RtlPrefixString`'s NULL-Buffer ⇒ FALSE.
 
-use rtl_strings::cabi::{self, STRING, UNICODE_STRING};
+use rtl_strings::cabi::{self, GUID, STRING, UNICODE_STRING};
 
 extern "C" {
     fn ref_RtlInitAnsiString(d: *mut STRING, s: *const u8);
@@ -92,6 +92,19 @@ extern "C" {
         l2: usize,
         ci: u8,
     ) -> i32;
+    // Wave RTL-4b slice 1
+    fn ref_RtlValidateUnicodeString(flags: u32, s: *const UNICODE_STRING) -> i32;
+    fn ref_RtlFindCharInUnicodeString(
+        flags: u32,
+        search: *const UNICODE_STRING,
+        m: *const UNICODE_STRING,
+        pos: *mut u16,
+    ) -> i32;
+    fn ref_RtlEraseUnicodeString(s: *mut UNICODE_STRING);
+    fn ref_RtlFreeAnsiString(s: *mut STRING);
+    fn ref_RtlFreeOemString(s: *mut STRING);
+    fn ref_RtlFreeUnicodeString(s: *mut UNICODE_STRING);
+    fn ref_RtlGUIDFromString(s: *const UNICODE_STRING, g: *mut GUID) -> i32;
 }
 
 struct Rng(u64);
@@ -1216,5 +1229,198 @@ fn diff_rtl_compare_unicode_strings() {
                 "RtlCompareUnicodeStrings ci={ci} {v1:?}/{l1} {v2:?}/{l2}"
             );
         }
+    }
+}
+
+// ── Wave RTL-4b slice 1: validate / find / erase / free / GUID ────
+
+#[test]
+fn diff_rtl_validate_unicode_string() {
+    let mut rng = Rng(0x4b_0001_01);
+    let backing = vec![0x41u16; 8];
+    for _ in 0..40_000 {
+        let flags = if rng.upto(4) == 0 { rng.next() as u32 } else { 0 };
+        let length = (rng.upto(0x12) as u16).wrapping_sub(rng.upto(2) as u16);
+        let maxlen = rng.upto(0x14) as u16;
+        let null_buf = rng.upto(3) == 0;
+        let buf = if null_buf {
+            core::ptr::null_mut()
+        } else {
+            backing.as_ptr() as *mut u16
+        };
+        let us = UNICODE_STRING { Length: length, MaximumLength: maxlen, Buffer: buf };
+        for null_str in [false, true] {
+            let p: *const UNICODE_STRING =
+                if null_str { core::ptr::null() } else { &us };
+            let (rc, rr);
+            unsafe {
+                rc = cabi::RtlValidateUnicodeString(flags, p);
+                rr = ref_RtlValidateUnicodeString(flags, p);
+            }
+            assert_eq!(
+                rc, rr,
+                "RtlValidateUnicodeString f={flags} l={length} m={maxlen} nb={null_buf} ns={null_str}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_find_char() {
+    let mut rng = Rng(0x4b_0001_02);
+    let alpha: &[u16] = &[
+        0x0041, 0x0061, 0x007A, 0x005A, 0x00C0, 0x00E0, 0x0152, 0x0153,
+        0x0030, 0x002E, 0x0020, 0x00FF, 0x0178, 0xABCD,
+    ];
+    for _ in 0..30_000 {
+        let mk = |rng: &mut Rng| -> Vec<u16> {
+            (0..rng.upto(12)).map(|_| alpha[rng.upto(alpha.len())]).collect()
+        };
+        let sv = mk(&mut rng);
+        let mv = mk(&mut rng);
+        let sp = if sv.is_empty() { core::ptr::null_mut() } else { sv.as_ptr() as *mut u16 };
+        let mp = if mv.is_empty() { core::ptr::null_mut() } else { mv.as_ptr() as *mut u16 };
+        let ss = mk_ustr(sp, (sv.len() * 2) as u16, (sv.len() * 2) as u16);
+        let ms = mk_ustr(mp, (mv.len() * 2) as u16, (mv.len() * 2) as u16);
+        // valid bits 0..7 plus an out-of-mask bit (0x8) to fire the
+        // INVALID_PARAMETER flag guard.
+        let flags = (rng.upto(16)) as u32;
+        for null_pos in [false, true] {
+            let (mut pc, mut pr) = (0xBEEFu16, 0xBEEFu16);
+            let (ppc, ppr) = if null_pos {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut pc as *mut u16, &mut pr as *mut u16)
+            };
+            let (rc, rr);
+            unsafe {
+                rc = cabi::RtlFindCharInUnicodeString(flags, &ss, &ms, ppc);
+                rr = ref_RtlFindCharInUnicodeString(flags, &ss, &ms, ppr);
+            }
+            assert_eq!(rc, rr, "RtlFindCharInUnicodeString ret f={flags} {sv:?} {mv:?}");
+            assert_eq!(pc, pr, "RtlFindCharInUnicodeString pos f={flags}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_erase_unicode_string() {
+    let mut rng = Rng(0x4b_0001_03);
+    for _ in 0..20_000 {
+        let cap = rng.upto(20).max(1);
+        let mut bc = vec![0xABu8; cap * 2];
+        let mut br = vec![0xABu8; cap * 2];
+        let maxlen = (match rng.upto(4) { 0 => 0, 1 => 2, 2 => cap, _ => cap * 2 }) as u16;
+        let length = rng.upto(cap * 2 + 1) as u16;
+        let null_buf = rng.upto(4) == 0;
+        let pc = if null_buf { core::ptr::null_mut() } else { bc.as_mut_ptr() as *mut u16 };
+        let pr = if null_buf { core::ptr::null_mut() } else { br.as_mut_ptr() as *mut u16 };
+        let mut dc = mk_ustr(pc, length, maxlen);
+        let mut dr = mk_ustr(pr, length, maxlen);
+        unsafe {
+            cabi::RtlEraseUnicodeString(&mut dc);
+            ref_RtlEraseUnicodeString(&mut dr);
+        }
+        assert_eq!(dc.Length, dr.Length, "RtlEraseUnicodeString Length");
+        assert_eq!(bc, br, "RtlEraseUnicodeString buf cap={cap} ml={maxlen}");
+    }
+}
+
+#[test]
+fn diff_rtl_free_strings() {
+    let mut rng = Rng(0x4b_0001_04);
+    let abacking = vec![0x55u8; 8];
+    let ubacking = vec![0x55u16; 8];
+    for _ in 0..10_000 {
+        let l = rng.upto(16) as u16;
+        let m = rng.upto(20) as u16;
+        for null_buf in [false, true] {
+            let ap = if null_buf { core::ptr::null_mut() } else { abacking.as_ptr() as *mut u8 };
+            let up = if null_buf { core::ptr::null_mut() } else { ubacking.as_ptr() as *mut u16 };
+
+            let mut ac = mk_string(ap, l, m);
+            let mut ar = mk_string(ap, l, m);
+            unsafe {
+                cabi::RtlFreeAnsiString(&mut ac);
+                ref_RtlFreeAnsiString(&mut ar);
+            }
+            assert_eq!(
+                (ac.Length, ac.MaximumLength, ac.Buffer.is_null()),
+                (ar.Length, ar.MaximumLength, ar.Buffer.is_null()),
+                "RtlFreeAnsiString nb={null_buf}"
+            );
+
+            let mut oc = mk_string(ap, l, m);
+            let mut or = mk_string(ap, l, m);
+            unsafe {
+                cabi::RtlFreeOemString(&mut oc);
+                ref_RtlFreeOemString(&mut or);
+            }
+            assert_eq!(
+                (oc.Length, oc.MaximumLength, oc.Buffer.is_null()),
+                (or.Length, or.MaximumLength, or.Buffer.is_null()),
+                "RtlFreeOemString nb={null_buf}"
+            );
+
+            let mut uc = mk_ustr(up, l, m);
+            let mut ur = mk_ustr(up, l, m);
+            unsafe {
+                cabi::RtlFreeUnicodeString(&mut uc);
+                ref_RtlFreeUnicodeString(&mut ur);
+            }
+            assert_eq!(
+                (uc.Length, uc.MaximumLength, uc.Buffer.is_null()),
+                (ur.Length, ur.MaximumLength, ur.Buffer.is_null()),
+                "RtlFreeUnicodeString nb={null_buf}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_guid_from_string() {
+    let mut rng = Rng(0x4b_0001_05);
+    let hex = b"0123456789abcdefABCDEF";
+    for _ in 0..30_000 {
+        // canonical {8-4-4-4-12} skeleton, 38 chars + slack.
+        let mut s: Vec<u16> = Vec::with_capacity(40);
+        s.push(b'{' as u16);
+        let layout = [8usize, 4, 4, 4, 12];
+        for (gi, &grp) in layout.iter().enumerate() {
+            if gi != 0 {
+                s.push(b'-' as u16);
+            }
+            for _ in 0..grp {
+                s.push(hex[rng.upto(hex.len())] as u16);
+            }
+        }
+        s.push(b'}' as u16);
+        // corrupt a random position sometimes (wrong char / bad hex).
+        if rng.upto(2) == 0 {
+            let pos = rng.upto(s.len());
+            s[pos] = match rng.upto(3) {
+                0 => b'Z' as u16,
+                1 => b' ' as u16,
+                _ => 0x00C0,
+            };
+        }
+        while s.len() < 40 {
+            s.push(0);
+        }
+        let us = mk_ustr(s.as_ptr() as *mut u16, 76, 78);
+        // identical sentinel so partial-write-on-failure compares equal.
+        let mut gc = GUID { Data1: 0xDEAD_BEEF, Data2: 0x1234, Data3: 0x5678, Data4: [0x9A; 8] };
+        let mut gr = GUID { Data1: 0xDEAD_BEEF, Data2: 0x1234, Data3: 0x5678, Data4: [0x9A; 8] };
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlGUIDFromString(&us, &mut gc);
+            rr = ref_RtlGUIDFromString(&us, &mut gr);
+        }
+        assert_eq!(rc, rr, "RtlGUIDFromString ret {s:?}");
+        assert_eq!(
+            (gc.Data1, gc.Data2, gc.Data3, gc.Data4),
+            (gr.Data1, gr.Data2, gr.Data3, gr.Data4),
+            "RtlGUIDFromString guid {s:?}"
+        );
     }
 }
