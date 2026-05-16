@@ -1,11 +1,14 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 0 COMPLETE (0.1/0.2/0.3
-landed; worktree `worktree-smss-csrss`, commits 06396c51 → 2680d357).**
-`ntdll-sys` built, cargo-clean ×3, rustconv-wired; resolver/scanner/
-catalog tuned (generic, all-target); csrss.c resolves at 95%, core
-files at win32k parity 71–95%. No translation Rust yet, but the
-substrate is PROVEN and Phase 1 is unblocked. This audit defines the keep-set, the spine,
+Last updated 2026-05-16. **Status: Phase 0 + P1a COMPLETE — pipeline
+is user-mode-ready and csrss.exe is translated clean & builds ×3.**
+(worktree `worktree-smss-csrss`, commits 06396c51 → 8eb28d57.)
+`ntdll-sys` built + size-verified, cargo-clean ×3, rustconv-wired;
+resolver/scanner/catalog tuned (generic, all-target, csrss.c 95%);
+the user-mode FFI routing + NtCurrent* inlines + enum de-prefix
+pipeline fixes are landed and proven by a clean csrss.exe. First
+user-mode-PE Rust translation compiles ×3; cohabitation/smoke is the
+next step. This audit defines the keep-set, the spine,
 the substrate prerequisite, the translation order, and the rustconv
 configuration for the bulk translation phase.
 
@@ -114,9 +117,53 @@ not bindgen-evaluable by design*; (c) struct-field-access identifiers
 quality — the LLM receives full C source and the checker iterates
 imports. Substrate is PROVEN; Phase 1 is unblocked.
 
-Still owed (not Phase-1 blockers, tracked): `verify_sizes.py` for
-`ntdll-sys` (compile-time struct-size assertions catch C-layout drift
-before translation); optional smlib own-header for its resolve.
+Still owed (not Phase-1 blockers, tracked): optional smlib own-header
+for its resolve.
+
+### verify_sizes.py — landed (commit 2a8d6e27)
+
+`ntdll-sys/verify_sizes.py` (adapted from ntkrnl-sys: lifts ninja
+flags like generate_bindings.sh, `#include`s wrapper.h, VIBEOS_BUILD_ROOT
+override). 825 (i386) / 839 (amd64) / 832 (arm64) compile-time
+`size_of::<nt::T>() == N` assertions wired into lib.rs; cargo build
+clean ×3 WITH them active ⇒ every bindgen struct layout exactly
+matches the C layout.
+
+### csrss.exe spike + P1a pipeline fixes — landed (03166b57, 8eb28d57)
+
+The 102-LOC csrss.c spike (the win32k-gdiobj.c "prove on a leaf,
+flush the cascade" pattern) surfaced 3 **systematic** Phase-1 pipeline
+gaps. All fixed once-for-all-files in P1a and validated by
+re-translating csrss.exe clean:
+
+1. **Wrong FFI crate** → `Target.sys_crate`/`sys_umbrella` +
+   `postprocess.collapse_sys_crate` (deterministically rewrites the
+   kernel-oriented `ntkrnl_sys::{ddk,base,…}::` the kernel prompt
+   produces to a single `use ntdll_sys::nt::*;`; LLM-independent,
+   threaded through all 4 postprocess call sites) +
+   `templates/system_prompt_user.md` (appended via
+   `Target.system_prompt_addendum`).
+2. **FORCEINLINE `NtCurrent*` mis-translation** → `ntdll-sys/src/
+   inlines.rs` (the user-mode `ke-inlines` analog: `NtCurrentTeb`
+   `fs:[0x18]`/`gs:[0x30]`/`x18` per arch, `NtCurrentPeb`,
+   `Nt/ZwCurrent{Process,Thread}` pseudo-handles, over the real
+   bindgen `_TEB`/`_PEB`) + `postprocess.strip_user_inline_
+   redeclarations` (deterministic net dropping LLM extern re-decls +
+   bogus hardcoded `struct PEB/TEB`). Also
+   `postprocess_bindgen.add_enum_deprefix_aliases` (~1,500/arch
+   bare-name aliases for type-prefixed constified enums —
+   `ProcessBasePriority`, `OptionOk`, …; **must run before** the
+   bitfield-collision fix or a new bare alias like `Transition` itself
+   collides with a `new_bitfield_1` ctor param).
+3. **i386 `_main` decoration** → **non-issue, verified**: GNU i686
+   prepends the cdecl underscore, so Rust `#[no_mangle] extern "C" fn
+   _main` emits `__main` — byte-identical to the C `csrss.c.obj` and
+   the `nt` CRT `entry_point.c` expectation.
+
+`smss-csrss-rust` (workspace member) builds clean ×3. Remaining for
+csrss.exe: the cohabitation cmake-flip (comment `csrss.c`, link the
+rlib, build `csrss.exe`, smoke-gate) — needs the main checkout's
+build tree (the worktree has none).
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
