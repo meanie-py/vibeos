@@ -152,7 +152,7 @@ fn main() {
     // unprototyped stubs for the unused-by-RTL-1 link surface →
     // rename the 8 proof symbols → the genuine unicode.c verbatim.
     let body = format!(
-        "#include <rtl.h>\n#include <stdlib.h>\n\
+        "#include <rtl.h>\n#include <stdlib.h>\n#include <string.h>\n\
          /* Nls* externs unicode.c re-declares (lines 22-30) — provide\n\
             storage so the whole TU links; the RTL-1 proof fns never\n\
             touch these. */\n\
@@ -300,7 +300,18 @@ fn main() {
          #define RtlDnsHostNameToComputerName ref_RtlDnsHostNameToComputerName\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
-         int RtlpSafeCopyMemory(){{return 0;}}\n\
+         /* RtlpSafeCopyMemory is genuinely just an SEH-guarded memcpy;\n\
+            model it as a real memcpy returning STATUS_SUCCESS (a no-op\n\
+            stub would leave RtlLargeIntegerToChar's output\n\
+            uninitialized — only it calls this). */\n\
+         int RtlpSafeCopyMemory(void* d,const void* s,unsigned long n){{memcpy(d,s,n);return 0;}}\n\
+         /* Wave RTL-4c: integer→char + *ToUnicodeString (genuine\n\
+            unicode.c; RtlIntegerToChar IS in unicode.c, not cross-file\n\
+            as earlier assumed). */\n\
+         #define RtlIntegerToChar ref_RtlIntegerToChar\n\
+         #define RtlLargeIntegerToChar ref_RtlLargeIntegerToChar\n\
+         #define RtlIntegerToUnicodeString ref_RtlIntegerToUnicodeString\n\
+         #define RtlInt64ToUnicodeString ref_RtlInt64ToUnicodeString\n\
          #define RtlInitString ref_RtlInitString\n\
          #define RtlInitAnsiString ref_RtlInitAnsiString\n\
          #define RtlInitAnsiStringEx ref_RtlInitAnsiStringEx\n\

@@ -130,6 +130,11 @@ extern "C" {
         dns: *mut UNICODE_STRING,
         alloc: u8,
     ) -> i32;
+    // Wave RTL-4c
+    fn ref_RtlIntegerToChar(v: u32, base: u32, len: u32, s: *mut u8) -> i32;
+    fn ref_RtlLargeIntegerToChar(v: *const i64, base: u32, len: u32, s: *mut u8) -> i32;
+    fn ref_RtlIntegerToUnicodeString(v: u32, base: u32, s: *mut UNICODE_STRING) -> i32;
+    fn ref_RtlInt64ToUnicodeString(v: u64, base: u32, s: *mut UNICODE_STRING) -> i32;
 }
 
 struct Rng(u64);
@@ -1699,6 +1704,111 @@ fn diff_rtl_ensure_buffer_size() {
         assert_eq!(rc, rr,
             "RtlpEnsureBufferSize ret f={flags} same={same} sz={size} ss={staticsize} req={req}");
         assert_eq!(bc.Size, br.Size, "RtlpEnsureBufferSize Size");
+    }
+}
+
+// ── Wave RTL-4c: integer→char + *ToUnicodeString ──────────────────
+
+#[test]
+fn diff_rtl_integer_to_char() {
+    let mut rng = Rng(0x4c_0001_01);
+    let vals: &[u32] = &[0, 1, 9, 10, 15, 16, 255, 1000, 0x7FFF_FFFF, 0xFFFF_FFFF];
+    let lens: &[u32] = &[0, 1, 2, 5, 8, 10, 32, 33, 40, 0xFFFF_FFFF];
+    for _ in 0..30_000 {
+        let value = if rng.upto(3) == 0 { vals[rng.upto(vals.len())] } else { rng.next() as u32 };
+        let base = BASES[rng.upto(BASES.len())];
+        let length = lens[rng.upto(lens.len())];
+        for null_str in [false, true] {
+            let mut bc = vec![0xAAu8; 48];
+            let mut br = vec![0xAAu8; 48];
+            let (pc, pr) = if null_str {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (bc.as_mut_ptr(), br.as_mut_ptr())
+            };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlIntegerToChar(value, base, length, pc);
+                sr = ref_RtlIntegerToChar(value, base, length, pr);
+            }
+            assert_eq!(sc, sr, "RtlIntegerToChar ret v={value} b={base} len={length} ns={null_str}");
+            if !null_str {
+                assert_eq!(bc, br, "RtlIntegerToChar buf v={value} b={base} len={length}");
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_large_integer_to_char() {
+    let mut rng = Rng(0x4c_0001_02);
+    let lens: &[u32] = &[0, 1, 2, 8, 16, 32, 64, 65, 80, 0xFFFF_FFFF];
+    for _ in 0..30_000 {
+        let value = if rng.upto(3) == 0 {
+            (rng.next() as u64) & ((1u64 << (1 + rng.upto(63))) - 1)
+        } else {
+            rng.next() as u64
+        };
+        let base = BASES[rng.upto(BASES.len())];
+        let length = lens[rng.upto(lens.len())];
+        let v = value as i64;
+        let mut bc = vec![0xAAu8; 96];
+        let mut br = vec![0xAAu8; 96];
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlLargeIntegerToChar(&v, base, length, bc.as_mut_ptr());
+            sr = ref_RtlLargeIntegerToChar(&v, base, length, br.as_mut_ptr());
+        }
+        assert_eq!(sc, sr, "RtlLargeIntegerToChar ret v={value:#x} b={base} len={length}");
+        assert_eq!(bc, br, "RtlLargeIntegerToChar buf v={value:#x} b={base} len={length}");
+    }
+}
+
+#[test]
+fn diff_rtl_integer_to_unicode_string() {
+    let mut rng = Rng(0x4c_0001_03);
+    let mls: &[u16] = &[0, 4, 8, 20, 60];
+    for _ in 0..20_000 {
+        let value = rng.next() as u32;
+        let base = BASES[rng.upto(BASES.len())];
+        let ml = mls[rng.upto(mls.len())];
+        let mut bc = vec![0xCCCCu16; 64];
+        let mut br = vec![0xCCCCu16; 64];
+        let mut sc_u = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+        let mut sr_u = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlIntegerToUnicodeString(value, base, &mut sc_u);
+            sr = ref_RtlIntegerToUnicodeString(value, base, &mut sr_u);
+        }
+        assert_eq!(sc, sr, "RtlIntegerToUnicodeString ret v={value} b={base} ml={ml}");
+        assert_eq!((sc_u.Length, sc_u.MaximumLength), (sr_u.Length, sr_u.MaximumLength),
+            "RtlIntegerToUnicodeString fields v={value} b={base} ml={ml}");
+        assert_eq!(bc, br, "RtlIntegerToUnicodeString buf v={value} b={base} ml={ml}");
+    }
+}
+
+#[test]
+fn diff_rtl_int64_to_unicode_string() {
+    let mut rng = Rng(0x4c_0001_04);
+    let mls: &[u16] = &[0, 4, 8, 20, 60, 130];
+    for _ in 0..20_000 {
+        let value = rng.next() as u64;
+        let base = BASES[rng.upto(BASES.len())];
+        let ml = mls[rng.upto(mls.len())];
+        let mut bc = vec![0xCCCCu16; 80];
+        let mut br = vec![0xCCCCu16; 80];
+        let mut sc_u = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+        let mut sr_u = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlInt64ToUnicodeString(value, base, &mut sc_u);
+            sr = ref_RtlInt64ToUnicodeString(value, base, &mut sr_u);
+        }
+        assert_eq!(sc, sr, "RtlInt64ToUnicodeString ret v={value:#x} b={base} ml={ml}");
+        assert_eq!((sc_u.Length, sc_u.MaximumLength), (sr_u.Length, sr_u.MaximumLength),
+            "RtlInt64ToUnicodeString fields v={value:#x} b={base} ml={ml}");
+        assert_eq!(bc, br, "RtlInt64ToUnicodeString buf v={value:#x} b={base} ml={ml}");
     }
 }
 

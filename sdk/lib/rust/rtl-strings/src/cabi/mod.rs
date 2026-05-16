@@ -1594,3 +1594,107 @@ pub unsafe extern "system" fn RtlGUIDFromString(
         STATUS_INVALID_PARAMETER
     }
 }
+
+// ── Wave RTL-4c: integer→char + the *ToUnicodeString wrappers ──────
+
+/// `NTSTATUS NTAPI RtlIntegerToChar(ULONG, ULONG, ULONG, PCHAR)`.
+/// Uppercase digits; `len > length` ⇒ OVERFLOW out-ranks `str==NULL`
+/// ⇒ ACCESS_VIOLATION; writes the digits, plus a NUL iff `len <
+/// length` (exact-fit omits it).
+#[no_mangle]
+pub unsafe extern "system" fn RtlIntegerToChar(
+    value: u32,
+    base: u32,
+    length: u32,
+    str: *mut u8,
+) -> i32 {
+    let (d, n) = match conv::integer_to_char(value, base) {
+        None => return STATUS_INVALID_PARAMETER,
+        Some(x) => x,
+    };
+    if n as u32 > length {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    if str.is_null() {
+        return STATUS_ACCESS_VIOLATION;
+    }
+    for i in 0..n {
+        core::ptr::write_volatile(str.add(i), d[i]);
+    }
+    if (n as u32) < length {
+        core::ptr::write_volatile(str.add(n), 0u8);
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlLargeIntegerToChar(PLARGE_INTEGER, ULONG, ULONG,
+/// PCHAR)`. Like `RtlIntegerToChar` but 64-bit and with NO `str==NULL`
+/// guard (genuine memcpys unconditionally — NULL str is genuine UB,
+/// excluded). The copy is `RtlpSafeCopyMemory` (a faithful memcpy).
+#[no_mangle]
+pub unsafe extern "system" fn RtlLargeIntegerToChar(
+    value: *const i64,
+    base: u32,
+    length: u32,
+    str: *mut u8,
+) -> i32 {
+    let (d, n) = match conv::large_integer_to_char(*value as u64, base) {
+        None => return STATUS_INVALID_PARAMETER,
+        Some(x) => x,
+    };
+    if n as u32 > length {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    for i in 0..n {
+        core::ptr::write_volatile(str.add(i), d[i]);
+    }
+    if (n as u32) < length {
+        core::ptr::write_volatile(str.add(n), 0u8);
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlIntegerToUnicodeString(ULONG, ULONG,
+/// PUNICODE_STRING)` — `RtlIntegerToChar` into a `[u8;33]` then
+/// `RtlAnsiStringToUnicodeString(…, FALSE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIntegerToUnicodeString(
+    value: u32,
+    base: u32,
+    string: *mut UNICODE_STRING,
+) -> i32 {
+    let mut buf = [0u8; 33];
+    let status = RtlIntegerToChar(value, base, 33, buf.as_mut_ptr());
+    if !nt_success(status) {
+        return status;
+    }
+    let ansi = STRING {
+        Length: strlen(buf.as_ptr()) as u16,
+        MaximumLength: 33,
+        Buffer: buf.as_mut_ptr(),
+    };
+    RtlAnsiStringToUnicodeString(string, &ansi, 0)
+}
+
+/// `NTSTATUS NTAPI RtlInt64ToUnicodeString(ULONGLONG, ULONG,
+/// PUNICODE_STRING)` — `RtlLargeIntegerToChar` into a `[u8;65]` then
+/// `RtlAnsiStringToUnicodeString(…, FALSE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlInt64ToUnicodeString(
+    value: u64,
+    base: u32,
+    string: *mut UNICODE_STRING,
+) -> i32 {
+    let mut buf = [0u8; 65];
+    let q = value as i64;
+    let status = RtlLargeIntegerToChar(&q, base, 65, buf.as_mut_ptr());
+    if !nt_success(status) {
+        return status;
+    }
+    let ansi = STRING {
+        Length: strlen(buf.as_ptr()) as u16,
+        MaximumLength: 65,
+        Buffer: buf.as_mut_ptr(),
+    };
+    RtlAnsiStringToUnicodeString(string, &ansi, 0)
+}
