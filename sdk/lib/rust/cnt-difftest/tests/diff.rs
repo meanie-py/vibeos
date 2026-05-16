@@ -100,18 +100,25 @@ extern "C" {
     fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
     fn ref_wcstok(s: *mut u16, d: *const u16) -> *mut u16;
     fn ref_wcstok_s(s: *mut u16, d: *const u16, n: *mut *mut u16) -> *mut u16;
-    // scanf: cnt-rust's sscanf/swscanf come from its C trampoline
-    // (scanf_trampoline.c → cnt_vsscanf in cabi); ref_* are genuine.
-    // Variadic *callees* are stable to declare+call (only DEFINING a
-    // variadic needs nightly).
+    // cnt-rust's sscanf/swscanf/_snscanf/_snwscanf come from its C
+    // trampoline (scanf_trampoline.c → cnt_v*scanf in cabi), plain
+    // SysV. Variadic *callees* are stable to declare+call (only
+    // DEFINING a variadic needs nightly).
     fn sscanf(s: *const u8, f: *const u8, ...) -> i32;
     fn swscanf(s: *const u16, f: *const u16, ...) -> i32;
-    fn ref_sscanf(s: *const u8, f: *const u8, ...) -> i32;
-    fn ref_swscanf(s: *const u16, f: *const u16, ...) -> i32;
     fn _snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
     fn _snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
+    fn ref_sscanf(s: *const u8, f: *const u8, ...) -> i32;
+    fn ref_swscanf(s: *const u16, f: *const u16, ...) -> i32;
     fn ref__snscanf(s: *const u8, n: usize, f: *const u8, ...) -> i32;
     fn ref__snwscanf(s: *const u16, n: usize, f: *const u16, ...) -> i32;
+    // scanf float: winesup.c's _internal_handle_float va_list*
+    // indirection is unportable to the host harness, so the genuine
+    // store call site is overridden by a shim running winesup.c's
+    // EXACT synthesis math into this captured pointer (the genuine
+    // PARSE in scanf.h is still fully exercised). Set before a
+    // genuine-side float scan; the genuine return value is unaffected.
+    fn cnt_set_fout(p: *mut core::ffi::c_void, is_double: i32);
 }
 
 use cnt_rust::cabi;
@@ -1956,6 +1963,112 @@ fn diff_snscanf() {
                 assert_eq!((r, na), (q, nb), "_snwscanf {ff:?} ret ln={ln}");
                 assert_eq!(sa, sb, "_snwscanf {ff:?} buf={buf:?} ln={ln}");
             }
+        }
+    }
+}
+
+/// Wave SCANF Phase 2 — float %e/%f/%g/%E/%G (+ l/L → double). The
+/// cnt-rust side runs its real engine + VaSink (f64 synthesis). The
+/// genuine side runs scanf.h's real PARSE; its `_internal_handle_float`
+/// store call site is overridden by a shim running winesup.c's EXACT
+/// synthesis math (verbatim copy, `-mlong-double-64` == Windows 64-bit
+/// long double == f64) into `cnt_set_fout`'s captured pointer — the
+/// genuine va_list* indirection is unportable to the host harness, and
+/// the va store mechanism itself is identical-by-inspection to the
+/// integer path (already diff-pinned). Single conversion (no %n on the
+/// genuine side, so the overridden shim is the only va consumer).
+/// Compares RAW BITS (exact incl. sign-zero / inf / NaN) + return
+/// value. Pins the genuine d·10^exp synthesis, the mantissa overflow
+/// guard, INT_MAX/MIN exponent saturation, ".8"→0.8, sign, the
+/// l/L→double vs default→float selection.
+#[test]
+fn diff_scanf_float() {
+    let mut rng = Rng(0xf10a_5caf_u64);
+    let cstr0 = |v: &[u8]| {
+        let mut x = v.to_vec();
+        x.push(0);
+        x
+    };
+    // DOMAIN LIMIT (documented, tracked-owed — task #280): the
+    // genuine d·10^exp synthesis + exponent combine are riddled with
+    // signed-`int` overflow (C UB; gcc 2's-complement-wraps) once the
+    // exponent saturates to INT_MAX / combines to INT_MIN
+    // (`1e±999999999`, > ~25-digit mantissas). cnt-rust's `wrapping_*`
+    // matches gcc in the common range but the corner cases of that UB
+    // are not bit-portable and are NOT fuzzed here (same precedent as
+    // the LP32 / strpbrk≤2 / iswctype-ASCII documented limits). The
+    // real-world float domain (|exp| ≲ 308, sane mantissas) IS pinned
+    // bit-exact. The UB-exponent edge remains owed (memory note).
+    let frag: &[&[u8]] = &[
+        b"0", b"1", b"9", b"12", b"345", b"+", b"-", b".", b"0.5",
+        b"3.14159", b".8", b"8.", b"1e3", b"1E-3", b"2.5e+2", b"1e",
+        b"1e+", b"0.000123", b"123456789012", b"  -42.0e1", b"+.0",
+        b"6.022e23", b"1.6e-19", b"2.5e2", b"7e-7", b"00012.300",
+        b"123.456", b"9e9", b"0.0009", b"42", b"xz9", b"1e30",
+        b"1e-30", b"8.5", b".25",
+    ];
+    for _ in 0..8000 {
+        // ONE fragment per iteration — concatenation could chain into
+        // an INT_MAX-saturated exponent (the excluded UB domain).
+        let s = frag[rng.upto(frag.len())].to_vec();
+        let inp = cstr0(&s);
+        let mut dummy = 0u8; // genuine side: never read (no va consumer)
+
+        // float (no prefix): %e/%f/%g/%E/%G — 4-byte target.
+        for fmt in [&b"%e\0"[..], b"%f\0", b"%g\0", b"%E\0", b"%G\0"] {
+            let mut cv = 7.5f32;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f32;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f32 as *mut core::ffi::c_void, 0)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!(
+                (rc, cv.to_bits()),
+                (rr, rv.to_bits()),
+                "{fmt:?} f32 inp={s:?}"
+            );
+        }
+        // double (l / L prefix): %le/%lf/%lg/%Lf — 8-byte target.
+        for fmt in [&b"%le\0"[..], b"%lf\0", b"%lg\0", b"%Lf\0"] {
+            let mut cv = 7.5f64;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f64;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f64 as *mut core::ffi::c_void, 1)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!(
+                (rc, cv.to_bits()),
+                (rr, rv.to_bits()),
+                "{fmt:?} f64 inp={s:?}"
+            );
+        }
+        // width on a float
+        {
+            let fmt = b"%5f\0";
+            let mut cv = 7.5f32;
+            let rc = unsafe { sscanf(inp.as_ptr(), fmt.as_ptr(), &mut cv) };
+            let mut rv = 7.5f32;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f32 as *mut core::ffi::c_void, 0)
+            };
+            let rr = unsafe { ref_sscanf(inp.as_ptr(), fmt.as_ptr(), &mut dummy) };
+            assert_eq!((rc, cv.to_bits()), (rr, rv.to_bits()), "%5f inp={s:?}");
+        }
+        // wide twin: swscanf %lf
+        {
+            let win: Vec<u16> = inp.iter().map(|&c| c as u16).collect();
+            let wf: Vec<u16> =
+                b"%lf".iter().map(|&c| c as u16).chain([0]).collect();
+            let mut cv = 7.5f64;
+            let rc = unsafe { swscanf(win.as_ptr(), wf.as_ptr(), &mut cv) };
+            let mut rv = 7.5f64;
+            unsafe {
+                cnt_set_fout(&mut rv as *mut f64 as *mut core::ffi::c_void, 1)
+            };
+            let rr = unsafe { ref_swscanf(win.as_ptr(), wf.as_ptr(), &mut dummy) };
+            assert_eq!((rc, cv.to_bits()), (rr, rv.to_bits()), "w%lf inp={s:?}");
         }
     }
 }

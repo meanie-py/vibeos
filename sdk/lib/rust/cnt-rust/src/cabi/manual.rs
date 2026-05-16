@@ -101,7 +101,10 @@ impl Sink for VaSink {
         let mut e = exp;
         let negexp = e < 0;
         if negexp {
-            e = -e;
+            // C `exp = -exp;` is signed UB at INT_MIN (gcc wraps to
+            // INT_MIN); wrapping_neg matches it (the loop below still
+            // terminates: `e /= 2` walks INT_MIN → 0).
+            e = e.wrapping_neg();
         }
         while e != 0 {
             if e & 1 != 0 {
