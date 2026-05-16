@@ -34,6 +34,13 @@ pub mod meminit;
 pub mod mm;
 pub mod heap;
 
+// 🟢 sweep — lib-pure tail.
+pub mod rs232;
+pub mod libsupp;
+pub mod arcsupp;
+pub mod debug;
+
+
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

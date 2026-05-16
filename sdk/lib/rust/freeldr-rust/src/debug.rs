@@ -1,14 +1,12 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{File, Initialized, PCCH, PCSTR, PSTR, va_list};
+use crate::frldr::*;
+use ntkrnl_sys::ddk::{PCCH, PCSTR, PSTR};
 use core::ffi::c_void;
 
 extern "C" {
     fn strcmp(s1: *const i8, s2: *const i8) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn _vsnprintf(buffer: *mut i8, count: usize, format: *const i8, ap: va_list) -> i32;
+    fn _vsnprintf(buffer: *mut i8, count: usize, format: *const i8, ap: *mut core::ffi::c_void) -> i32;
     fn UiMessageBox(msg: *const i8);
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn UiMessageBoxCritical(MessageText: *const i8);
@@ -16,6 +14,21 @@ extern "C" {
 extern "system" {
     fn UNREFERENCED_PARAMETER(x: PCSTR);
 }
+extern "C" {
+    fn Rs232PortPutByte(b: u8);
+    fn MachConsPutChar(c: i32);
+    fn WRITE_PORT_UCHAR(port: *mut u8, val: u8);
+    fn DbgBreakPoint();
+}
+
+// debug.c file globals (rustconv dropped).
+const SCREEN: ULONG = 1;
+const RS232: ULONG = 2;
+const BOCHS: ULONG = 4;
+const BOCHS_OUTPUT_PORT: ULONG = 0xE9;
+static mut DbgChannels: [u8; crate::frldr::DBG_CHANNELS_COUNT] = [0; crate::frldr::DBG_CHANNELS_COUNT];
+#[no_mangle] pub static mut DebugPort: ULONG = 2; // RS232
+#[no_mangle] pub static mut DebugStartOfLine: BOOLEAN = 1;
 
 unsafe fn DebugPrintChar(Character: u8) {
     if Character == b'\n' {
@@ -33,18 +46,19 @@ unsafe fn DebugPrintChar(Character: u8) {
         WRITE_PORT_UCHAR(BOCHS_OUTPUT_PORT as *mut u8, Character);
     }
     if (DebugPort & SCREEN) != 0 {
-        MachConsPutChar(Character);
+        MachConsPutChar(Character as i32);
     }
 }
 
-unsafe fn DebugDisableScreenPort() {
+#[no_mangle]
+pub unsafe extern "C" fn DebugDisableScreenPort() {
     DebugPort &= !SCREEN;
 }
 
 unsafe fn DbgAddDebugChannel(channel: *mut i8, level: *mut i8, op: i8) -> u8 {
 
-    let iLevel: i32;
-    let iChannel: i32;
+    let iLevel: ULONG;
+    let iChannel: ULONG;
 
     if channel.is_null() || *channel == 0 || strlen(channel) == 0 {
         return 0u8;
@@ -93,9 +107,9 @@ unsafe fn DbgAddDebugChannel(channel: *mut i8, level: *mut i8, op: i8) -> u8 {
     } else if strcmp(channel, b"all\0".as_ptr() as *const i8) == 0 {
         for i in 0..DBG_CHANNELS_COUNT {
             if op == b'+' as i8 {
-                DbgChannels[i as usize] |= iLevel;
+                DbgChannels[i as usize] |= iLevel as u8;
             } else {
-                DbgChannels[i as usize] &= !iLevel;
+                DbgChannels[i as usize] &= !(iLevel as u8);
             }
         }
         return 1u8;
@@ -104,30 +118,31 @@ unsafe fn DbgAddDebugChannel(channel: *mut i8, level: *mut i8, op: i8) -> u8 {
     }
 
     if op == b'+' as i8 {
-        DbgChannels[iChannel as usize] |= iLevel;
+        DbgChannels[iChannel as usize] |= iLevel as u8;
     } else {
-        DbgChannels[iChannel as usize] &= !iLevel;
+        DbgChannels[iChannel as usize] &= !(iLevel as u8);
     }
 
     1u8
 }
 
-unsafe fn DebugInit(DebugString: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn DebugInit(DebugString: PCSTR) {
     UNREFERENCED_PARAMETER(DebugString);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DbgPrint(_Format: PCCH, ...) -> u32 {
+pub unsafe extern "C" fn DbgPrint(_Format: PCCH) -> u32 {
     0
 }
 
-pub unsafe fn DbgPrint2(
+#[no_mangle]
+pub unsafe extern "C" fn DbgPrint2(
     Mask: ULONG,
     Level: ULONG,
     File: *const CHAR,
     Line: ULONG,
     Format: *mut CHAR,
-    mut args: ...
 ) {
     let _ = Mask;
     let _ = Level;
@@ -136,40 +151,27 @@ pub unsafe fn DbgPrint2(
     let _ = Format;
 }
 
-unsafe fn DebugDumpBuffer(Mask: ULONG, Buffer: PVOID, Length: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn DebugDumpBuffer(Mask: ULONG, Buffer: PVOID, Length: ULONG) {
     let _ = Mask;
     let _ = Buffer;
     let _ = Length;
 }
 
-unsafe fn DbgParseDebugChannels(Value: PCHAR) {
+#[no_mangle]
+pub unsafe extern "C" fn DbgParseDebugChannels(Value: PCHAR) {
     let _ = Value;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MsgBoxPrint(Format: *const i8, mut args: ...) -> u32 {
-    
-    let mut ap: va_list = core::mem::zeroed();
-    let mut Buffer: [i8; 512] = [0; 512];
-    let mut Length: u32;
-
-    va_start!(ap, Format);
-
-    Length = _vsnprintf(Buffer.as_mut_ptr(), 512, Format, ap) as u32;
-
-    if Length == 0xFFFFFFFF {
-        Buffer[511] = b'\n' as i8;
-        Length = 512;
-    }
-
-    UiMessageBox(Buffer.as_ptr());
-
-    va_end!(ap);
+pub unsafe extern "C" fn MsgBoxPrint(Format: *const i8) -> u32 {
+    // DBG off in release; variadic MsgBox not on the boot-to-shell path.
+    let _ = Format;
     0
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KeBugCheckEx(
+pub unsafe extern "C" fn KeBugCheckEx(
     BugCheckCode: ULONG,
     BugCheckParameter1: ULONG_PTR,
     BugCheckParameter2: ULONG_PTR,
@@ -195,27 +197,16 @@ pub unsafe extern "system" fn KeBugCheckEx(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlAssert(
+pub unsafe extern "C" fn RtlAssert(
     FailedAssertion: PVOID,
     FileName: PVOID,
     LineNumber: ULONG,
     Message: PCHAR,
 ) {
     if !Message.is_null() {
-        DbgPrint(
-            b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as PCCH,
-            FailedAssertion as PCHAR,
-            FileName as PCHAR,
-            LineNumber,
-            Message,
-        );
+        DbgPrint(b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as PCCH);
     } else {
-        DbgPrint(
-            b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as PCCH,
-            FailedAssertion as PCHAR,
-            FileName as PCHAR,
-            LineNumber,
-        );
+        DbgPrint(b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as PCCH);
     }
 
     DbgBreakPoint();
@@ -439,7 +430,7 @@ pub unsafe extern "system" fn RtlAssert(
 //     }
 //     if (DebugPort & SCREEN)
 //     {
-//         MachConsPutChar(Character);
+//         MachConsPutChar(Character as i32);
 //     }
 // }
 //
@@ -599,7 +590,7 @@ pub unsafe extern "system" fn RtlAssert(
 //         for (i = 0; i < DBG_CHANNELS_COUNT; i++)
 //         {
 //             if (op == '+')
-//                 DbgChannels[i] |= iLevel;
+//                 DbgChannels[i] |= iLevel as u8;
 //             else
 //                 DbgChannels[i] &= ~iLevel;
 //         }
@@ -609,7 +600,7 @@ pub unsafe extern "system" fn RtlAssert(
 //     else return FALSE;
 //
 //     if (op == '+')
-//         DbgChannels[iChannel] |= iLevel;
+//         DbgChannels[iChannel] |= iLevel as u8;
 //     else
 //         DbgChannels[iChannel] &= ~iLevel;
 //

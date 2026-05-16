@@ -1,7 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::rtl::*;
+use crate::frldr::*;
 use ntkrnl_sys::ddk::{PIMAGE_NT_HEADERS};
 use core::ffi::c_void;
 
@@ -22,7 +20,7 @@ unsafe extern "C" fn CHECK_PAGED_CODE_RTL(file: *mut i8, line: i32) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlpAllocateMemory(
+pub unsafe extern "C" fn RtlpAllocateMemory(
     Bytes: ULONG,
     Tag: ULONG,
 ) -> PVOID {
@@ -30,7 +28,7 @@ pub unsafe extern "system" fn RtlpAllocateMemory(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlpFreeMemory(
+pub unsafe extern "C" fn RtlpFreeMemory(
     Mem: PVOID,
     Tag: ULONG,
 ) {
@@ -38,7 +36,7 @@ pub unsafe extern "system" fn RtlpFreeMemory(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlImageNtHeaderEx(
+pub unsafe extern "C" fn RtlImageNtHeaderEx(
     Flags: ULONG,
     Base: PVOID,
     Size: ULONG64,

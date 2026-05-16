@@ -175,10 +175,6 @@ pub unsafe fn RtlZeroMemory(dst: PVOID, len: usize) {
 pub fn ASSERT<T>(_cond: T) {}
 
 
-// DbgPrint — no real freeldr symbol; non-pub #[no_mangle] no-op stub
-// (variadic call sites typecheck against their own extern decl).
-#[no_mangle]
-extern "C" fn DbgPrint(_fmt: *const i8) -> i32 { 0 }
 
 // ===========================================================================
 // inifile.h — .ini parser unit (ini_init / inifile / parse)
@@ -362,3 +358,31 @@ pub struct MACHVTBL {
 }
 extern "C" { pub static MachVtbl: MACHVTBL; }
 
+// debug.h — DPRINT channels + levels (shared).
+pub const DPRINT_NONE: ULONG = 0;
+pub const DPRINT_WARNING: ULONG = 1;
+pub const DPRINT_MEMORY: ULONG = 2;
+pub const DPRINT_FILESYSTEM: ULONG = 3;
+pub const DPRINT_INIFILE: ULONG = 4;
+pub const DPRINT_UI: ULONG = 5;
+pub const DPRINT_DISK: ULONG = 6;
+pub const DPRINT_CACHE: ULONG = 7;
+pub const DPRINT_REGISTRY: ULONG = 8;
+pub const DPRINT_REACTOS: ULONG = 9;
+pub const DPRINT_LINUX: ULONG = 10;
+pub const DPRINT_HWDETECT: ULONG = 11;
+pub const DPRINT_WINDOWS: ULONG = 12;
+pub const DPRINT_PELOADER: ULONG = 13;
+pub const DPRINT_SCSIPORT: ULONG = 14;
+pub const DPRINT_HEAP: ULONG = 15;
+pub const DBG_CHANNELS_COUNT: usize = 16;
+pub const ERR_LEVEL: ULONG = 0x1;
+pub const FIXME_LEVEL: ULONG = 0x2;
+pub const WARN_LEVEL: ULONG = 0x4;
+pub const TRACE_LEVEL: ULONG = 0x8;
+pub const MAX_LEVEL: ULONG = 0xF;
+pub type ULONG64 = u64;
+
+/// Debug-path intrinsics (no-op for boot-to-shell; DBG off in release).
+#[no_mangle] extern "C" fn WRITE_PORT_UCHAR(_port: *mut u8, _val: u8) {}
+#[no_mangle] extern "C" fn DbgBreakPoint() {}

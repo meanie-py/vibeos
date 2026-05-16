@@ -1,22 +1,35 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use crate::frldr::*;
 use ntkrnl_sys::ddk::{CPPORT};
 use core::ffi::c_void;
 
+type PCPPORT = *mut CPPORT;
+const CP_GET_SUCCESS: u16 = 0;
+
 extern "system" {
-    fn CpDoesPortExist(Address: PVOID) -> BOOLEAN;
+    fn CpDoesPortExist(Address: PUCHAR) -> BOOLEAN;
+    fn CpGetByte(P: PCPPORT, B: *mut u8, Wait: u8, Poll: u8) -> u16;
+    fn CpPutByte(P: PCPPORT, B: u8);
     fn CpInitialize(PortInformation: PCPPORT, Address: PUCHAR, BaudRate: ULONG) -> NTSTATUS;
     fn UlongToPtr(ul: ULONG) -> PUCHAR;
 }
 
+// rs232.c file-statics (rustconv dropped; i386 COM bases).
+const DEFAULT_BAUD_RATE: ULONG = 19200;
+static BaseArray: [ULONG; 5] = [0, 0x3F8, 0x2F8, 0x3E8, 0x2E8];
+const MAX_COM_PORTS: ULONG = 4;
+static mut Rs232ComPort: ULONG = 0;
+static mut Rs232ComPortInfo: CPPORT = CPPORT {
+    Address: core::ptr::null_mut(), BaudRate: 0, Flags: 0,
+};
+
 #[no_mangle]
-pub unsafe extern "system" fn Rs232PortInitialize(
+pub unsafe extern "C" fn Rs232PortInitialize(
     mut ComPort: ULONG,
     mut BaudRate: ULONG,
 ) -> BOOLEAN {
     let mut Status: NTSTATUS;
-    let mut Address: PUCHAR;
+    let mut Address: PUCHAR = core::ptr::null_mut();
 
     if (Rs232ComPort != 0) && (Rs232ComPort == ComPort) {
         return 1u8;
@@ -53,7 +66,7 @@ pub unsafe extern "system" fn Rs232PortInitialize(
         Address,
         BaudRate,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return 0u8;
     }
 
@@ -62,7 +75,8 @@ pub unsafe extern "system" fn Rs232PortInitialize(
     return 1u8;
 }
 
-unsafe fn Rs232PortGetByte(ByteReceived: PUCHAR) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn Rs232PortGetByte(ByteReceived: PUCHAR) -> BOOLEAN {
     if Rs232ComPort == 0 {
         return 0u8;
     }
@@ -74,7 +88,8 @@ unsafe fn Rs232PortGetByte(ByteReceived: PUCHAR) -> BOOLEAN {
     ) == CP_GET_SUCCESS) as BOOLEAN
 }
 
-unsafe fn Rs232PortPutByte(ByteToSend: u8) {
+#[no_mangle]
+pub unsafe extern "C" fn Rs232PortPutByte(ByteToSend: u8) {
     if Rs232ComPort == 0 {
         return;
     }
@@ -82,7 +97,7 @@ unsafe fn Rs232PortPutByte(ByteToSend: u8) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn Rs232PortInUse(Base: PUCHAR) -> BOOLEAN {
+pub unsafe extern "C" fn Rs232PortInUse(Base: PUCHAR) -> BOOLEAN {
     #[cfg(debug_assertions)]
     {
         if Rs232ComPort != 0 && Rs232ComPortInfo.Address == Base {

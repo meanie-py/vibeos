@@ -1,6 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCSTR, PSTR};
 use core::ffi::c_void;
 
@@ -9,7 +8,8 @@ extern "C" {
     fn strlen(s: PCSTR) -> usize;
 }
 
-unsafe fn GetNextArgumentValue(
+#[no_mangle]
+pub unsafe extern "C" fn GetNextArgumentValue(
     Argc: u32,
     Argv: *mut PSTR,
     LastIndex: *mut u32,
@@ -39,7 +39,8 @@ unsafe fn GetNextArgumentValue(
     core::ptr::null_mut()
 }
 
-unsafe fn GetArgumentValue(
+#[no_mangle]
+pub unsafe extern "C" fn GetArgumentValue(
     Argc: u32,
     Argv: *mut PSTR,
     ArgumentName: PCSTR,
