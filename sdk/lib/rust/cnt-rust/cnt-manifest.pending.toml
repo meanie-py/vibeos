@@ -1,0 +1,382 @@
+# cnt-manifest.pending — farmed (Sonnet, source-grounded) rows for
+# symbols that need a NEW core authored before they can be
+# diff-gated + promoted into cnt-manifest.toml. NOT read by
+# tools/gen_cnt.py (inert). Grade vs source, author the core,
+# move the row into cnt-manifest.toml, then the diff harness
+# verifies it (see [[cnt_rust_prep]] workflow).
+#
+# Batch 1 leftover (4): strnlen strncmp strchr strrchr
+# Batch 2 (33): parse-endptr / int->str(+_s) / case-insensitive
+#               / multibyte / oddballs.
+schema_version = 1
+
+[symbols.strnlen]
+c_signature  = "size_t strnlen(const char *str, size_t count)"
+family       = "string"
+slice_pattern = "nul_in_maxlen"
+core_fn      = "string::len_of_bounded"
+return_collapse = "usize"
+inout_effects = "none (read-only)"
+preserved_misfeature = "NULL returns 0 instead of undefined behavior: `if(str == 0) return 0;` (line 7). Textbook strnlen has UB on NULL."
+fuzz_domain  = ["NULL", "empty string", "string shorter than count", "string exactly count length", "string longer than count (no NUL within count)", "count==0"]
+
+[symbols.strncmp]
+c_signature  = "int strncmp(const char * s1, const char * s2, size_t n)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::ncmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "Returns signed-char difference (*s1 - *s2) as int, NOT the standard -1/0/+1 normalization. _TCHAR is signed char. Early-return on n==0 before any dereference."
+fuzz_domain  = ["n==0 (no deref)", "equal prefixes shorter than n", "equal strings exactly n long", "differ at position < n", "differ at position 0", "one string ends (NUL) before n", "both strings same through NUL within n", "negative vs positive char values (signed difference)"]
+
+[symbols.strchr]
+c_signature = "char *strchr(const char *s, int c)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:find_char_or_nul"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only scan)"
+preserved_misfeature = "Returns pointer to the terminating NUL when c==0 (line 'if(cc == 0) return (_TCHAR *)s;'), not NULL. This is actually standard C behavior but worth pinning since it's a special case distinct from not-found."
+fuzz_domain = ["char found mid-string", "char found at start", "char not found (return NULL)", "c==0 (must return ptr to NUL)", "c with high bits set (truncated to char, e.g. 0x161 → 0x61)", "empty string (s points to NUL immediately)", "multibyte char values to verify _TCHAR(int) truncation"]
+
+[symbols.strrchr]
+c_signature = "char *strrchr(const char *s, int c)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:find_last_char"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only search)"
+preserved_misfeature = "c is truncated to char via `_TCHAR cc = c` (line tcsrchr.h:5), matching only the low byte. The NUL terminator IS a valid search target: if c==0, returns pointer to the NUL (lines 12-13), NOT NULL. Scans entire string even after finding matches, keeping last occurrence."
+fuzz_domain = ["c in range, found once", "c in range, found multiple times (verify LAST returned)", "c in range, not found (ret NULL)", "c==0 (ret ptr to NUL)", "c with high bits set (verify truncation to char)", "empty string with c==0 (ret ptr to empty NUL)", "empty string with c!=0 (ret NULL)"]
+
+[symbols._strtoi64]
+c_signature = "__int64 _strtoi64(const char *nptr, char **endptr, int base)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_i64_clamped"
+return_collapse = "i64_passthrough"
+inout_effects = "endptr written with (first-unparsed | original-nptr): *endptr = got_digit ? advanced_ptr : original_nptr"
+preserved_misfeature = "Overflow clamps to _I64_MAX/_I64_MIN (no wrapping). LIBCNT build silently clamps without errno. endptr written even on empty/invalid input (points to original nptr if no digits parsed). Base validation via MSVCRT_CHECK_PMT but ReactOS __REACTOS__ disables the nptr!=NULL check (lines 20-22), allowing NULL to pass validation then crash on dereference."
+fuzz_domain = ["valid_parse:base10", "valid_parse:base16_0x_prefix", "valid_parse:base8_leading0", "valid_parse:base_2_to_36", "overflow_positive_clamp_I64_MAX", "overflow_negative_clamp_I64_MIN", "leading_whitespace_skipped", "sign_plus_minus", "no_digits_endptr_eq_nptr", "partial_parse_endptr_at_first_invalid", "base0_autodetect_oct_dec_hex", "empty_after_sign_endptr_eq_nptr", "invalid_digit_for_base_stops_parse"]
+
+[symbols._strtoi64_l]
+c_signature = "__int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:parse_i64_clamping"
+return_collapse = "i64_passthrough"
+inout_effects = "endptr written with pointer to first unparsed char if got_digit, else original nptr; written regardless of overflow"
+preserved_misfeature = "clamps to I64_MAX/I64_MIN on overflow WITHOUT setting errno (lines 73-74, 77-78: `#ifndef _LIBCNT_` guards errno); locale param ignored (line 15 comment); NULL nptr crashes under _LIBCNT_ (line 24 `#ifndef __REACTOS__`)"
+fuzz_domain = ["valid_digits_no_overflow", "overflow_positive", "overflow_negative", "leading_whitespace", "plus_minus_signs", "hex_prefix_0x", "octal_prefix_0", "base_0_inference", "invalid_digit_midstring", "no_valid_digits", "base_out_of_range_2_to_36", "empty_after_sign", "endptr_null", "endptr_nonnull"]
+
+[symbols._strtoul_l]
+c_signature = "unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_u64_l"
+return_collapse = "i64_clamp_ulong"
+inout_effects = "writes *end to point after last parsed char (via _strtoi64_l delegation); if nptr invalid/empty, *end may equal nptr"
+preserved_misfeature = "Negative i64 results below -ULONG_MAX clamp to 1 (NOT 0), lines 16-20. Positive i64 above ULONG_MAX clamps to ULONG_MAX (lines 12-15). Silently saturates without setting errno in libcntpr (_LIBCNT_ defined). Delegates to _strtoi64_l which parses as signed i64, then post-clamps the signed result into unsigned long range with asymmetric negative handling."
+fuzz_domain = ["valid_decimal_in_range", "hex_0x_prefix", "octal_0_prefix", "whitespace_prefix", "plus_sign", "minus_sign_small_negative", "minus_sign_large_negative_below_minus_ULONG_MAX", "overflow_above_ULONG_MAX", "overflow_far_above", "empty_string", "invalid_chars", "base_0_auto", "base_2_to_36", "invalid_base", "null_end_ptr", "endptr_tracking"]
+
+[symbols.strtoul]
+c_signature = "unsigned long strtoul(const char* nptr, char** end, int base)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_u64_clamped"
+return_collapse = "u64_trunc_ulong"
+inout_effects = "*end written to first invalid char (or nptr if no parse); no other mutation"
+preserved_misfeature = "Negative i64 parse results <-ULONG_MAX clamp to 1 (not 0); delegates to _strtoi64_l so inherits signed parse then range-checks the i64, asymmetric clamp [1, ULONG_MAX]"
+fuzz_domain = ["valid in-range", "overflow >ULONG_MAX", "negative valid magnitude ≤ULONG_MAX", "negative magnitude >ULONG_MAX (→1)", "leading whitespace", "invalid base", "no digits", "endptr tracking"]
+
+[symbols.wcstoul]
+c_signature = "unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_ulong_wide"
+return_collapse = "ulong_passthrough"
+inout_effects = "if endptr!=NULL: writes *endptr = first-invalid-wchar ptr (or nptr if no digits parsed)"
+preserved_misfeature = "Lines 45-47,55-56: Overflow saturates to ULONG_MAX but still advances *endptr past ALL valid digits (any=-1 sticky). Line 57: Negation applied AFTER saturation: neg overflow yields 0-(ULONG_MAX)=1, not ULONG_MAX. Lines 26-27: Leading '-' parses, sets neg=1, then negates the accumulated unsigned result at the end."
+fuzz_domain = ["empty", "whitespace-only", "no-digits (base-prefix only)", "valid digits", "overflow-saturate", "negative (wrapping-subtract)", "base 0/8/10/16", "0x-prefix", "mixed case digits", "endptr==NULL"]
+
+[symbols._i64toa]
+c_signature = "char* _i64toa(__int64 value, char *string, int radix)"
+family = "radix"
+slice_pattern = "dst_unchecked"
+core_fn = "NEW:i64_to_radix"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated ASCII digits of `value` in base `radix` (2-36), lowercase a-f for 10-15; negative sign only if radix==10 && value<0; caller must ensure string has ≥65 bytes (no bounds check)"
+preserved_misfeature = "NO validation of radix (caller responsible for 2-36), NO bounds check on output buffer (caller must ensure ≥65 bytes available), NO error return (always returns input pointer). Unlike _i64toa_s, this is an unchecked API that silently corrupts memory if buffer too small or radix invalid."
+fuzz_domain = ["value={0, 1, -1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "buffer_adequate={true, false}"]
+
+[symbols._i64toa_s]
+c_signature = "int _i64toa_s(__int64 value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i64_bounded"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..min(len,size)] written with NUL-terminated decimal/radix representation; on ERANGE, str partially filled backward from end (excluding sign if negative), then str[0]=NUL"
+preserved_misfeature = "On buffer overflow (len > size), copies size-1 chars BACKWARD from end of temp buffer (buffer[31] downward, skipping sign), then sets str[0]=NUL (lines 73-84). This leaves a RIGHT-aligned partial suffix without NUL terminator in str[1..size-1], then overwrites str[0] with NUL. Textbook would left-truncate or fail cleanly."
+fuzz_domain = ["value={-9223372036854775808,0,42,9223372036854775807}", "radix={2,10,16,36}", "size={1,exact_len,exact_len-1,exact_len+1,65}", "null_str"]
+
+[symbols._i64tow]
+c_signature = "wchar_t * _i64tow(__int64 value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "ret_dst"
+core_fn = "NEW:radix::format_i64_wide"
+return_collapse = "ret_dst"
+inout_effects = "writes NUL-terminated wide string to `string` if non-NULL; always returns `string` unchanged (even if NULL)"
+preserved_misfeature = "Returns `string` even when NULL (line 47), allowing the caller to pass NULL and get NULL back without crash—textbook behavior would be undefined. No validation of radix bounds (accepts invalid radix silently, behavior implementation-defined). Negative values only signed for radix==10 (line 21); other radices treat value as unsigned bit pattern (line 25 casts to ULONGLONG)."
+fuzz_domain = ["value={-1, 0, 1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "string={NULL, valid_ptr}", "negative_radix_10={true, false}", "single_digit={true, false}", "max_digits_base2"]
+
+[symbols._i64tow_s]
+c_signature = "int _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:format_i64_radix"
+return_collapse = "errno_code"
+inout_effects = "str[0..len] written with NUL-terminated radix string on success (0..65 wchars); str[0..size] receives partial backward fill then str[0]=NUL on ERANGE; str[0]=NUL on EINVAL"
+preserved_misfeature = "ERANGE buffer-overflow: copies digits BACKWARDS from end of output, skipping negative sign if present (lines 84-93), fills up to size wchars before setting str[0]=NUL and returning ERANGE. This is non-standard partial-fill behavior distinct from truncating the full output."
+fuzz_domain = ["null_str", "size_0", "radix_out_of_range_2_36", "negative_radix10", "negative_non_radix10", "positive_min_max", "size_equals_needed", "size_one_less_than_needed", "radix_2_10_16_36"]
+
+[symbols._itoa]
+c_signature = "char* _itoa(int value, char* string, int radix)"
+family = "radix"
+slice_pattern = "NEW:itoa_delegate"
+core_fn = "NEW:format_i32_radix"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated decimal/radix representation (incl. optional '-' prefix); always returns input string pointer"
+preserved_misfeature = "NO validation: radix outside [2,36] causes undefined behavior (modulo/array OOB in digit mapping); negative values with radix!=10 are cast to unsigned (lines 112-117 in _ltoa: 'if (value < 0 && radix == 10)' means radix 2-9,11-36 treat negative as large positive); NO bounds check on output string (caller must ensure >=33 bytes for worst-case); lowercase 'a'-'z' for digits 10-35 (line 128)"
+fuzz_domain = ["value={INT_MIN, -1, 0, 1, INT_MAX}", "radix={2, 10, 16, 36, invalid=1,37}", "combinations: negative+radix!=10 (unsigned cast), value=0 (single '0'), INT_MIN+radix=10 (most digits)"]
+
+[symbols._itoa_s]
+c_signature = "int _itoa_s(int value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i32"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..len] written with NUL-terminated decimal/radix string on success; str[0] = '\\0' on EINVAL; str[0..size] partially filled backwards (no sign) + str[0] = '\\0' on ERANGE"
+preserved_misfeature = "Delegates to _ltoa_s (line 144-147), which truncates buffer on ERANGE by copying backwards WITHOUT the sign, then setting str[0]='\\0' (lines 234-247). This produces a malformed non-NUL-terminated partial string before the terminal NUL at str[0]. Parameter validation uses MSVCRT_CHECK_PMT; under _LIBCNT_ errno is NOT set (lines 219, 225)."
+fuzz_domain = ["radix=10 negative", "radix=10 positive", "radix=2", "radix=16", "radix=36", "size exactly sufficient", "size insufficient (ERANGE)", "size=0 (EINVAL)", "str=NULL (EINVAL)", "radix=1 (EINVAL)", "radix=37 (EINVAL)", "INT_MIN (most negative)", "zero"]
+
+[symbols._itow]
+c_signature = "wchar_t* _itow(int value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "itow_passthrough"
+core_fn = "NEW:wstring_format_i32"
+return_collapse = "ret_dst"
+inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase hex a-z for digits>9), negated if value<0 && radix==10 else reinterpreted as unsigned; ALWAYS returns the dst pointer unchanged (even if NULL)"
+preserved_misfeature = "Lines 133-135: _itow is a trivial passthrough to _ltow, which exhibits three deviations: (1) NULL dst is accepted without crash—function computes the string but doesn't write it, still returns NULL (lines 170-172); (2) negative values are negated ONLY for radix==10, else reinterpreted as unsigned long (lines 162-166); (3) no radix validation—invalid radix causes undefined modulo/division behavior"
+fuzz_domain = ["value={INT_MIN, -42, 0, 42, INT_MAX}", "radix={2, 10, 16, 36, 1_invalid, 37_invalid}", "string={NULL, valid_buf[33]}", "cross: negative_value × radix!=10 (unsigned reinterpret)", "cross: NULL × any_value (returns NULL without crash)"]
+
+[symbols._itow_s]
+c_signature = "int _itow_s(int value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i32_wrapping"
+return_collapse = "errno_or_zero"
+inout_effects = "str[0..min(result_len,size)] written; on error: str[0]='\\0' if str!=NULL && size>0; on ERANGE truncation: str[0]='\\0' AND partial backwards fill from buffer[31] for size-1 chars (skipping sign if negative)"
+preserved_misfeature = "Delegates to _ltow_s which casts int→long. On ERANGE (len>size), performs bizarre partial backwards copy: skips negative sign, copies from buffer[31] backwards for min(size-1, available) characters, then zeroes str[0]. Lines 288-302 in _ltow_s show this non-standard truncation+backfill behavior instead of simple ERANGE-without-copy."
+fuzz_domain = ["value={INT_MIN,INT_MIN+1,-1,0,1,INT_MAX}", "radix={1,2,10,16,36,37}", "size={0,1,2,33,34}", "str={NULL,valid}", "negative radix=10 (triggers sign)", "positive radix=10", "radix=16 (no sign)", "len==size (exact fit)", "len==size+1 (ERANGE boundary)", "size==1 (only room for NUL)"]
+
+[symbols._ltoa]
+c_signature = "char* _ltoa(long value, char *string, int radix)"
+family = "radix"
+slice_pattern = "none"
+core_fn = "NEW:radix::format_long"
+return_collapse = "ret_dst"
+inout_effects = "Writes the ASCII representation of `value` in base `radix` (2-36) to `string`, NUL-terminated. Always writes at least 2 bytes (digit + NUL). Negative values only get '-' prefix when radix==10; otherwise treated as unsigned. Digits >=10 use lowercase 'a'-'z'. Writes unbounded: worst-case 33 bytes for radix=2 (sign + 31 bits + NUL, but really 32 bits unsigned). Returns `string` pointer unchanged."
+preserved_misfeature = "No bounds checking: buffer overflow if `string` lacks space (up to 33 bytes needed). Negative values only signed-extend when radix==10 (lines 146-148); for any other radix, `val = value` casts negative `long` to `unsigned long`, producing large positive value (line 151). No validation that radix ∈ [2,36] — invalid radix causes divide-by-zero or garbage output."
+fuzz_domain = ["radix=10 value=-2147483648 (min negative, edge of negation)", "radix=10 value=0 (single digit '0')", "radix=10 value=2147483647 (max positive)", "radix=2 value=-1 (becomes 0xFFFFFFFF, all '1' digits, longest output)", "radix=36 value=46655 (exactly 'zzz', tests digit>10 boundary)", "radix=16 value=-256 (tests unsigned cast for non-decimal)", "radix=1 (invalid, will infinite-loop or crash)", "radix=37 (invalid, 'a'+27 exceeds lowercase)"]
+
+[symbols._ltoa_s]
+c_signature = "int _ltoa_s(long value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::i64_to_str"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..len] written with NUL-terminated radix string; on ERANGE, str partially filled backwards from end (skipping sign if present), then str[0]=NUL"
+preserved_misfeature = "On overflow (len>size), writes backwards from buffer end up to size-1 chars (excluding sign if negative), then sets str[0]=NUL and returns ERANGE. This creates a *right-aligned truncated* string with leading NUL, unlike typical left-truncation. Lines 217-227: skip sign position, copy backwards from buffer[31] for size chars, then str[0]=NUL."
+fuzz_domain = ["negative radix-10 (value<0, radix==10)", "positive/zero radix-10", "non-decimal radix (2-9,11-36)", "exact fit (len==size)", "overflow by 1 (len==size+1)", "overflow by many", "radix boundaries (1,2,36,37)", "size==1 (only room for NUL)", "value edge cases (LONG_MIN, LONG_MAX, 0)"]
+
+[symbols._ltow]
+c_signature = "wchar_t* _ltow(long value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "dst_unchecked"
+core_fn = "NEW:radix::format_i32_wide"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated base-`radix` representation of value (negative sign for radix==10 negatives, lowercase hex a-z for digits>9); ENTIRE buffer written even if string==NULL (misfeature: the function still performs formatting into temp buffer, just doesn't copy)"
+preserved_misfeature = "Returns the input `string` pointer UNCONDITIONALLY (lines 243-244), even if string==NULL. Textbook would return NULL or assert. Also: negative values with radix!=10 are cast to unsigned (line 231 `val = value`), producing large positive output. Also: no radix validation—invalid radix (e.g., 1, 37) silently divides-by-zero or produces garbage."
+fuzz_domain = ["value={-1,0,1,INT32_MIN,INT32_MAX}", "radix={2,10,16,36,1,37}", "string={valid_ptr,NULL}"]
+
+[symbols._ltow_s]
+c_signature = "int _ltow_s(long value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i32_to_wstring"
+return_collapse = "i32_passthrough"
+inout_effects = "str[] written with NUL-terminated conversion; on EINVAL/ERANGE: str[0]=L'\\0'. On ERANGE if is_negative: partial backwards fill starting str[1], then str[0]=L'\\0'."
+preserved_misfeature = "ERANGE truncation writes partial result BACKWARDS from buffer end (lines 273-280): 'for (pos = buffer + 31, i = 0; i < size; i++) *p++ = *pos--;' — fills from right-to-left of the generated string, NOT left-to-right. Then overwrites str[0] with NUL. Negative sign skipped in partial copy but destination adjusted (p++, size--)."
+fuzz_domain = ["value={-2147483648,0,42,2147483647}", "radix={1,2,10,16,36,37}", "size={0,1,2,exact_len,exact_len-1,exact_len+1}", "str={NULL,valid}", "negative radix-10 requiring sign with size exactly at boundary"]
+
+[symbols._ui64toa]
+c_signature = "char *_ui64toa(unsigned __int64 value, char *string, int radix)"
+family = "radix"
+slice_pattern = "none"
+core_fn = "NEW:format_u64"
+return_collapse = "ret_dst"
+inout_effects = "Writes NUL-terminated radix-formatted string to `string` (2..36, lowercase a-z for 10+). No length checks — caller must ensure sufficient space (≤65 bytes for radix=2). Returns the same `string` pointer passed in."
+preserved_misfeature = "No validation of radix or dst size. Unconditionally writes to `string` without bounds checking. Radix < 2 or > 36 causes undefined behavior (divide-by-zero or wrong chars). Caller responsible for 65-byte buffer minimum (radix=2 worst case: 64 digits + NUL)."
+fuzz_domain = ["value=0", "value=max_u64", "radix=2 (longest output)", "radix=10", "radix=16", "radix=36 (uses 'z')", "small value with high radix"]
+
+[symbols._ui64toa_s]
+c_signature = "int _ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_u64"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..min(result_len,size-1)] written with ASCII digits (radix 2-36, lowercase a-z for 10-35), NUL-terminated on success; on EINVAL buffer-too-small, str[0..size-1] filled with reversed partial result then str[0]=NUL (mangled state)"
+preserved_misfeature = "On buffer-too-small (len > size), fills str backwards from pos=buffer+31 for i<size iterations, then sets str[0]=NUL, returning EINVAL (not ERANGE as _i64toa_s does). Line 'if((unsigned)(buffer-pos+65) > size)' uses wrong constant 65 instead of 64, making the size check off-by-one compared to _i64toa_s which correctly uses 'buffer+65-pos'. Returns EINVAL (not ERANGE) on overflow per line 'MSVCRT_INVALID_PMT(\"str[size] is too small\", EINVAL)'."
+fuzz_domain = ["radix={2,10,16,36}", "value={0,1,max_u64}", "size={0,1,exact_needed,exact_needed-1,exact_needed+1}", "radix={1,37}=EINVAL", "str=NULL=EINVAL"]
+
+[symbols._ui64tow]
+c_signature = "wchar_t * _ui64tow(unsigned __int64 value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "raw_dst_radix"
+core_fn = "NEW:radix::format_u64"
+return_collapse = "ret_dst"
+inout_effects = "If string != NULL: writes NUL-terminated wchar_t representation of value in base radix (2-36), digits 0-9 then a-z for 10-35. No validation of radix. If string == NULL: no write."
+preserved_misfeature = "Returns `string` unconditionally even when NULL (lines 134-135: `if (string != NULL) { memcpy(...) } return string;`). No radix validation (caller can pass invalid radix causing undefined modulo/div). Lowercase 'a-z' for digits 10-35 (lines 126-130)."
+fuzz_domain = ["value=0", "value=ULLONG_MAX", "radix=2", "radix=10", "radix=16", "radix=36", "radix=1 (invalid)", "radix=37 (invalid)", "string=NULL", "string=valid buffer", "value requiring all 64 chars (2^64-1 in base 2)"]
+
+[symbols._ui64tow_s]
+c_signature = "int _ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_u64_w"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..min(size,actual_len)] written with radix-converted digits + NUL; on error str[0]='\\0' if str && size"
+preserved_misfeature = "Line 163: buffer size check `(size_t)(buffer-pos+65) > size` has POINTER SUBTRACTION BUG — should be `(buffer+65-pos)` or `65-(pos-buffer)`. As written, `buffer-pos` is NEGATIVE (buffer is at higher address), wraps to huge positive via size_t cast, almost always triggers false EINVAL. Also line 164: returns EINVAL instead of ERANGE for overflow (unlike _i64tow_s which returns ERANGE)."
+fuzz_domain = ["value=0, radix=10", "value=UINT64_MAX, radix=2 (longest output, 64 chars)", "value=12345, radix=16", "size=1 (minimal, only NUL fits)", "size=2..10 (triggers pointer-math bug)", "size=65 (exact fit for max binary)", "radix=2 (min)", "radix=36 (max)", "str=NULL (caught by CHECK_PMT)", "size=0 (caught by CHECK_PMT)", "radix=1 or 37 (out of range)"]
+
+[symbols._ultoa]
+c_signature = "char * _ultoa(unsigned long value, char *string, int radix)"
+family = "radix"
+slice_pattern = "radix_to_string"
+core_fn = "NEW:radix::format_u64"
+return_collapse = "ret_dst"
+inout_effects = "writes NUL-terminated base-[radix] representation of value to string (lowercase a-z for digits 10-35); returns string unchanged"
+preserved_misfeature = "NO radix validation (radix<2 or radix>36 causes modulo-by-invalid UB or incorrect output); NO NULL-check on string (immediate crash); unconditional write assumes string has sufficient capacity (max 33 bytes for binary u32, no overflow detection)"
+fuzz_domain = ["value=0", "value=ULONG_MAX", "radix=2 (max digits)", "radix=10 (common)", "radix=16 (hex)", "radix=36 (max valid)", "radix=1 (invalid)", "radix=37 (invalid)", "value with digits requiring a-z (value>=10 in radix<=36)"]
+
+[symbols._ultow]
+c_signature = "wchar_t * _ultow(unsigned long value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "NEW:format_to_opt_buf"
+core_fn = "NEW:format_u32_radix"
+return_collapse = "ptr_or_null_passthrough"
+inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase a-z for digits>9); if string==NULL: no write"
+preserved_misfeature = "if string==NULL, returns NULL without crash (lines 264-266: guard `if (string != NULL)` before memcpy, unconditional `return string`); no radix validation (accepts any int radix, will divide-by-zero if radix<2)"
+fuzz_domain = ["value=0", "value=MAX_U32", "radix=2,10,16,36", "string=NULL", "string=valid", "value requires multi-digit in radix (e.g., value=255,radix=16 → 'ff')"]
+
+[symbols._stricmp]
+c_signature  = "int __cdecl _stricmp(char const* _String1, char const* _String2)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "NEW:string::cmp_case_insensitive"
+return_collapse = "i32_passthrough"
+inout_effects = "none (both params read-only)"
+preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z] (lines 24-27). NOT Unicode-aware, NOT locale-sensitive. Signed-char difference after fold (line 29): returns (chr1 - chr2) as signed char arithmetic, matching strcmp family convention but potentially surprising on platforms where char is unsigned by default."
+fuzz_domain  = ["both_empty", "equal_same_case", "equal_diff_case_ascii", "diff_before_fold", "diff_after_fold", "prefix_relation", "non_ascii_high_bit", "embedded_nul"]
+
+[symbols._strnicmp]
+c_signature = "int _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:strnicmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "ASCII-only case-folding: only [A-Z] → [a-z], no locale/Unicode (lines 24-27). Compares as *signed char* difference (line 30: `chr1 - chr2` where chr1/chr2 are `char`). Stops at first NUL in *either* string even if n remains (line 32-35: `chr1 == 0` breaks, implicitly chr2==0 also stops via chr1==chr2 path). Returns 0 if n chars compared without difference OR NUL reached (line 38)."
+fuzz_domain = ["equal_within_n", "diff_case_insensitive_within_n", "diff_case_sensitive_within_n", "s1_shorter_than_n", "s2_shorter_than_n", "both_shorter_equal", "n_zero", "ascii_upper_lower_boundary", "non_ascii_no_fold", "signed_char_negative_diff"]
+
+[symbols._wcsicmp]
+c_signature = "int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)"
+family = "wstring"
+slice_pattern = "nul_in"
+core_fn = "NEW:wstring::cmp_case_insensitive"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z], no Unicode/locale awareness (lines 26-29). Returns raw wchar_t difference (line 32), NOT normalized to {-1,0,+1}"
+fuzz_domain = ["equal_same_case", "equal_diff_case_ascii", "diff_before_nul", "diff_at_nul", "ascii_upper_lower_boundary", "non_ascii_no_fold", "empty_strings"]
+
+[symbols._wcsnicmp]
+c_signature = "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
+family = "wstring"
+slice_pattern = "ptr_len"
+core_fn = "NEW:wstring::nicmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "case-folding applies ONLY to ASCII 'A'-'Z' → 'a'-'z' (lines 28-31), NOT full Unicode case-folding; returns raw wchar_t difference (line 33) as int (potential truncation on platforms where wchar_t > 16-bit, though Windows wchar_t is 16-bit); compares at most _MaxCount characters OR until first NUL in either string (lines 22-38)"
+fuzz_domain = ["both_empty", "n_zero", "equal_within_n", "equal_at_n_boundary", "diff_ascii_case_only", "diff_non_ascii", "diff_beyond_n", "nul_before_n_s1", "nul_before_n_s2", "nul_at_n", "non_ascii_uppercase", "wchar_diff_overflow"]
+
+[symbols.mbstowcs]
+c_signature = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:mbstowcs_nt"
+return_collapse = "usize"
+inout_effects = "wcstr written with converted wide chars (NOT NUL-terminated by this function); length determined by mbstr NUL. count is max wchar_t elements (destination capacity), NOT bytes."
+preserved_misfeature = "When wcstr==NULL, returns the required wchar_t count (Size/sizeof(wchar_t)) WITHOUT converting — a query mode (lines 48-53). RtlMultiByteToUnicodeN does NOT NUL-terminate wcstr (the Rtl function writes only converted chars). count is interpreted as wchar_t capacity, but passed as bytes to Rtl (count*sizeof(WCHAR), line 56). On NT API failure, returns (size_t)-1 (lines 60-61), not a well-defined error like textbook (size_t)-1 with errno."
+fuzz_domain = ["wcstr==NULL (query mode)", "wcstr!=NULL with count==0", "empty mbstr (strlen==0)", "mbstr with count < required wchars", "mbstr with count >= required wchars", "non-ASCII mbstr requiring multi-byte conversion", "NT API failure simulation (Status!=SUCCESS)"]
+
+[symbols.mbtowc]
+c_signature = "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)"
+family = "string"
+slice_pattern = "ptr_len"
+core_fn = "NEW:mb_to_wc"
+return_collapse = "i32_passthrough"
+inout_effects = "*wchar written with decoded wchar_t on success (ret>0); unchanged on error (ret==-1)"
+preserved_misfeature = "NULL checks short-circuit to 0 for BOTH wchar and mbchar (lines 18-19, 21-22), not the textbook reset-state behavior for wchar==NULL. Space-mapping guard (line 28-29): returns -1 if RtlAnsiCharToUnicodeChar produces L' ' but input mbarr[0]!=' ', treating this as invalid conversion. Return is signed difference of PUCHAR pointers (line 32), typically 1 for single-byte, 2 for lead-byte sequences up to MB_CUR_MAX==2."
+fuzz_domain = ["mbchar==NULL", "wchar==NULL", "count==0", "valid ASCII char count>=1", "valid lead-byte sequence count==2", "invalid sequence triggering space-guard", "count<needed (truncation)"]
+
+[symbols.wcstombs]
+c_signature = "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)"
+family = "wstring"
+slice_pattern = "nul_in + dst_optional"
+core_fn = "NEW:wstring::to_multibyte"
+return_collapse = "size_or_neg1_on_err"
+inout_effects = "If mbstr non-NULL: writes up to count bytes (multibyte encoding of wcstr), NO NUL termination guaranteed. If mbstr NULL: no mutation, returns required size."
+preserved_misfeature = "Lines 39-44: NULL dst is query mode (returns required size without terminating NUL). Lines 46-53: writes up to count bytes with NO automatic NUL termination—caller must ensure buffer sized for content+NUL or manually terminate. Conversion calls RtlUnicodeToMultiByteN which may fail (Status check line 51), returning -1 cast to size_t (SIZE_MAX on most platforms)."
+fuzz_domain = ["mbstr=NULL (query mode)", "mbstr valid, count exact for content (no NUL room)", "count=0 with valid mbstr", "wcstr empty L\"\"", "wcstr with multibyte-expanding chars", "conversion failure (invalid wchar sequence)", "count larger than needed"]
+
+[symbols.wctomb]
+c_signature = "int wctomb(char *mbchar, wchar_t wchar)"
+family = "wstring"
+slice_pattern = "single_wchar"
+core_fn = "NEW:wstring::wchar_to_mb_single"
+return_collapse = "i32_passthrough"
+inout_effects = "mbchar[0] written with single-byte conversion of wchar; if mbchar==NULL, no write occurs"
+preserved_misfeature = "mbchar==NULL returns 0 (state-independent encoding marker), not error. RtlUnicodeToMultiByteN converts exactly 1 wchar_t to up to 1 byte; return value is Size (0 or 1), or -1 on conversion failure."
+fuzz_domain = ["mbchar==NULL (expect 0)", "ASCII wchar (expect 1)", "non-ASCII wchar requiring multi-byte (expect Size or -1)", "invalid/surrogate wchar (expect -1)"]
+
+[symbols.toupper_nt_mb]
+c_signature = "int __cdecl toupper_nt_mb(_In_ int _C)"
+family = "ctype"
+slice_pattern = "int_passthrough"
+core_fn = "NEW:ctype::ansi_to_upper_mb"
+return_collapse = "i32_passthrough"
+inout_effects = "none (pure function)"
+preserved_misfeature = "Returns entire multibyte sequence packed into int: 2-byte result as (chr[1] | (chr[0] << 8)), 1-byte as chr[0], fallback to input unchanged if conversion fails (mbSize == 0). This is NOT standard toupper which operates on single chars; it's a Windows NT multibyte extension that round-trips through Unicode (ANSI→Unicode→upcase→ANSI) and packs the result bytes into a single int return value."
+fuzz_domain = ["ascii_lowercase ('a'-'z')", "ascii_uppercase ('A'-'Z')", "ascii_non_alpha (digits, punct)", "high_bit_set_single_byte (0x80-0xFF)", "multibyte_lead_bytes (DBCS sequences where applicable)", "zero (0x00)", "negative_input (-1, other negatives)"]
+
+[symbols._invalid_parameter]
+c_signature = "void __cdecl _invalid_parameter(wchar_t const* expression, wchar_t const* function_name, wchar_t const* file_name, unsigned int line_number, uintptr_t reserved)"
+family = "printf"
+slice_pattern = "nul_in"
+core_fn = "NEW:debug_print_invalid_parameter"
+return_collapse = "void"
+inout_effects = "none (read-only: formats diagnostic from all params, writes to debug output only)"
+preserved_misfeature = "none - textbook CRT invalid parameter handler that prints diagnostic via DbgPrint and returns (does NOT terminate process, unlike standard _invalid_parameter which typically calls _invoke_watson)"
+fuzz_domain = ["all_valid_wstrs", "mixed_nulls (any/all of expression/function_name/file_name NULL)", "line_zero", "reserved_nonzero"]
+
