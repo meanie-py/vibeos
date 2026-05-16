@@ -1017,6 +1017,52 @@ pub unsafe extern "C" fn strstr(hay: *const u8, needle: *const u8) -> *mut u8 {
 }
 
 
+/// `char *strtok(char *str, const char *delim)`
+/// preserved misfeature: non-reentrant hidden state (genuine thread_data_t::strtok_next → here a process-global AtomicPtr, single-threaded-equivalent); str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (stale pointer persists); token-to-end leaves saved on the terminating NUL; NULL delim is C UB (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn strtok(str: *mut u8, delim: *const u8) -> *mut u8 {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static SAVED: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
+    if delim.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        let p = SAVED.load(Ordering::Relaxed);
+        if p.is_null() { return core::ptr::null_mut(); }
+        p
+    } else { str };
+    let n = cstr_slice(base as *const u8).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, cstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            SAVED.store(base.add(next), Ordering::Relaxed);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `char *strtok_s(char *str, const char *delim, char **ctx)`
+/// preserved misfeature: param validation (delim!=NULL, ctx!=NULL, str!=NULL||*ctx!=NULL) → NULL (MSVCRT_CHECK_PMT, _LIBCNT_ = bare predicate, no handler); UNLIKE strtok/wcstok the no-token path DOES set *ctx = str (pointer to the NUL); resumes from *ctx when str==NULL
+#[no_mangle]
+pub unsafe extern "C" fn strtok_s(str: *mut u8, delim: *const u8, ctx: *mut *mut u8) -> *mut u8 {
+    if delim.is_null() { return core::ptr::null_mut(); }
+    if ctx.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        if (*ctx).is_null() { return core::ptr::null_mut(); }
+        *ctx
+    } else { str };
+    let n = cstr_slice(base as *const u8).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, cstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { stop } => { *ctx = base.add(stop); core::ptr::null_mut() },
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            *ctx = base.add(next);
+            base.add(start)
+        }
+    }
+}
+
+
 /// `long strtol(const char *nptr, char **endptr, int base)`
 /// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
 #[no_mangle]
@@ -1226,6 +1272,52 @@ pub unsafe extern "C" fn wcsstr(s: *const u16, b: *const u16) -> *mut u16 {
     match crate::core_rs::string::find_sub_strict(s_s, b_s) {
         Some(i) => s.add(i) as *mut u16,
         None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `wchar_t *wcstok(wchar_t *str, const wchar_t *delim)`
+/// preserved misfeature: non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn wcstok(str: *mut u16, delim: *const u16) -> *mut u16 {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static SAVED: AtomicPtr<u16> = AtomicPtr::new(core::ptr::null_mut());
+    if delim.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        let p = SAVED.load(Ordering::Relaxed);
+        if p.is_null() { return core::ptr::null_mut(); }
+        p
+    } else { str };
+    let n = wcstr_slice(base as *const u16).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, wcstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            SAVED.store(base.add(next), Ordering::Relaxed);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)`
+/// preserved misfeature: param validation → NULL (+ _set_errno EINVAL, _LIBCNT_ no-op); no-token path does NOT update *next_token (differs from strtok_s which sets *ctx); strchrW = wcschr (matches the terminator for c==0, never reached under the *str&& guard)
+#[no_mangle]
+pub unsafe extern "C" fn wcstok_s(str: *mut u16, delim: *const u16, next_token: *mut *mut u16) -> *mut u16 {
+    if delim.is_null() { return core::ptr::null_mut(); }
+    if next_token.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        if (*next_token).is_null() { return core::ptr::null_mut(); }
+        *next_token
+    } else { str };
+    let n = wcstr_slice(base as *const u16).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, wcstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            *next_token = base.add(next);
+            base.add(start)
+        }
     }
 }
 

@@ -96,6 +96,10 @@ extern "C" {
     fn ref_wsplitpath(p: *const u16, dr: *mut u16, di: *mut u16, fnm: *mut u16, ex: *mut u16);
     fn ref_makepath(p: *mut u8, dr: *const u8, di: *const u8, fnm: *const u8, ex: *const u8);
     fn ref_wmakepath(p: *mut u16, dr: *const u16, di: *const u16, fnm: *const u16, ex: *const u16);
+    fn ref_strtok(s: *mut u8, d: *const u8) -> *mut u8;
+    fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn ref_wcstok(s: *mut u16, d: *const u16) -> *mut u16;
+    fn ref_wcstok_s(s: *mut u16, d: *const u16, n: *mut *mut u16) -> *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -1504,5 +1508,129 @@ fn diff_path() {
             ref_wmakepath(wrmk.as_mut_ptr(), wpk(1, &wdr), wpk(2, &wdi), wpk(4, &wfl), wpk(8, &wex));
         }
         assert_eq!(wcmk, wrmk, "_wmakepath m2={m2:#x}");
+    }
+}
+
+/// Wave STRTOK — strtok/strtok_s/wcstok/wcstok_s. Drives cnt-rust and
+/// the genuine reference through the SAME full tokenize sequence on
+/// independent buffer copies; after each call asserts (1) token
+/// offset+nullness parity, (2) the whole buffer (NUL writes) parity,
+/// (3) for the _s variants the *ctx offset parity — incl. the
+/// strtok_s-vs-wcstok_s no-token-path asymmetry. Plus the bad-param
+/// guards. The hidden statics are independent per side but the
+/// identical call stream keeps them in lockstep.
+#[test]
+fn diff_strtok() {
+    let mut rng = Rng(0x704b_17aa_u64);
+    let pool: &[u8] = b"ab,; :.c";
+    let dpool: &[u8] = b",; :.";
+    for _ in 0..6000 {
+        let mut base: Vec<u8> = (0..rng.upto(20))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        base.push(0);
+        let dl = 1 + rng.upto(3);
+        let mut delim: Vec<u8> = (0..dl).map(|_| dpool[rng.upto(dpool.len())]).collect();
+        delim.push(0);
+        let dw: Vec<u16> = delim.iter().map(|&b| b as u16).collect();
+
+        // ---- strtok (hidden static) ----
+        let (mut cb, mut rb) = (base.clone(), base.clone());
+        let mut first = true;
+        loop {
+            let cs = if first { cb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::strtok(cs, delim.as_ptr()) };
+            let rr = unsafe { ref_strtok(rs, delim.as_ptr()) };
+            let co = if cr.is_null() { None } else { Some(cr as usize - cb.as_ptr() as usize) };
+            let ro = if rr.is_null() { None } else { Some(rr as usize - rb.as_ptr() as usize) };
+            assert_eq!(co, ro, "strtok off base={base:?} delim={delim:?}");
+            assert_eq!(cb, rb, "strtok buf base={base:?} delim={delim:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- strtok_s (explicit ctx) ----
+        let (mut cb, mut rb) = (base.clone(), base.clone());
+        let (mut cc, mut rc): (*mut u8, *mut u8) =
+            (core::ptr::null_mut(), core::ptr::null_mut());
+        let mut first = true;
+        loop {
+            let cs = if first { cb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::strtok_s(cs, delim.as_ptr(), &mut cc) };
+            let rr = unsafe { ref_strtok_s(rs, delim.as_ptr(), &mut rc) };
+            let co = if cr.is_null() { None } else { Some(cr as usize - cb.as_ptr() as usize) };
+            let ro = if rr.is_null() { None } else { Some(rr as usize - rb.as_ptr() as usize) };
+            let cx = if cc.is_null() { None } else { Some(cc as usize - cb.as_ptr() as usize) };
+            let rx = if rc.is_null() { None } else { Some(rc as usize - rb.as_ptr() as usize) };
+            assert_eq!(co, ro, "strtok_s off base={base:?} delim={delim:?}");
+            assert_eq!(cx, rx, "strtok_s ctx base={base:?} delim={delim:?}");
+            assert_eq!(cb, rb, "strtok_s buf base={base:?} delim={delim:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- wcstok (hidden static) ----
+        let bw: Vec<u16> = base.iter().map(|&b| b as u16).collect();
+        let (mut cw, mut rw) = (bw.clone(), bw.clone());
+        let mut first = true;
+        loop {
+            let cs = if first { cw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::wcstok(cs, dw.as_ptr()) };
+            let rr = unsafe { ref_wcstok(rs, dw.as_ptr()) };
+            let co = if cr.is_null() { None } else { Some((cr as usize - cw.as_ptr() as usize) / 2) };
+            let ro = if rr.is_null() { None } else { Some((rr as usize - rw.as_ptr() as usize) / 2) };
+            assert_eq!(co, ro, "wcstok off base={base:?}");
+            assert_eq!(cw, rw, "wcstok buf base={base:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- wcstok_s (explicit ctx; no-token leaves *nt unchanged) ----
+        let (mut cw, mut rw) = (bw.clone(), bw.clone());
+        let (mut cn, mut rn): (*mut u16, *mut u16) =
+            (core::ptr::null_mut(), core::ptr::null_mut());
+        let mut first = true;
+        loop {
+            let cs = if first { cw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::wcstok_s(cs, dw.as_ptr(), &mut cn) };
+            let rr = unsafe { ref_wcstok_s(rs, dw.as_ptr(), &mut rn) };
+            let co = if cr.is_null() { None } else { Some((cr as usize - cw.as_ptr() as usize) / 2) };
+            let ro = if rr.is_null() { None } else { Some((rr as usize - rw.as_ptr() as usize) / 2) };
+            let cx = if cn.is_null() { None } else { Some((cn as usize - cw.as_ptr() as usize) / 2) };
+            let rx = if rn.is_null() { None } else { Some((rn as usize - rw.as_ptr() as usize) / 2) };
+            assert_eq!(co, ro, "wcstok_s off base={base:?}");
+            assert_eq!(cx, rx, "wcstok_s nt base={base:?}");
+            assert_eq!(cw, rw, "wcstok_s buf base={base:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+    }
+
+    // ---- bad-param guards (strtok_s / wcstok_s) ----
+    let mut s = *b"a,b\0";
+    let d = *b",\0";
+    let mut ctx: *mut u8 = core::ptr::null_mut();
+    unsafe {
+        assert!(cabi::strtok_s(core::ptr::null_mut(), d.as_ptr(), &mut ctx).is_null());
+        assert!(ref_strtok_s(core::ptr::null_mut(), d.as_ptr(), &mut ctx).is_null());
+        assert!(cabi::strtok_s(s.as_mut_ptr(), core::ptr::null(), &mut ctx).is_null());
+        assert!(ref_strtok_s(s.as_mut_ptr(), core::ptr::null(), &mut ctx).is_null());
+        assert!(cabi::strtok_s(s.as_mut_ptr(), d.as_ptr(), core::ptr::null_mut()).is_null());
+        assert!(ref_strtok_s(s.as_mut_ptr(), d.as_ptr(), core::ptr::null_mut()).is_null());
+    }
+    let mut sw: [u16; 4] = [b'a' as u16, b',' as u16, b'b' as u16, 0];
+    let dw2: [u16; 2] = [b',' as u16, 0];
+    let mut ntw: *mut u16 = core::ptr::null_mut();
+    unsafe {
+        assert!(cabi::wcstok_s(core::ptr::null_mut(), dw2.as_ptr(), &mut ntw).is_null());
+        assert!(ref_wcstok_s(core::ptr::null_mut(), dw2.as_ptr(), &mut ntw).is_null());
+        assert!(cabi::wcstok_s(sw.as_mut_ptr(), core::ptr::null(), &mut ntw).is_null());
+        assert!(ref_wcstok_s(sw.as_mut_ptr(), core::ptr::null(), &mut ntw).is_null());
+        assert!(cabi::wcstok_s(sw.as_mut_ptr(), dw2.as_ptr(), core::ptr::null_mut()).is_null());
+        assert!(ref_wcstok_s(sw.as_mut_ptr(), dw2.as_ptr(), core::ptr::null_mut()).is_null());
     }
 }

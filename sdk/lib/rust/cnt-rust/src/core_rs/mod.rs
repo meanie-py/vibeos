@@ -12,4 +12,5 @@ pub mod path;
 pub mod radix;
 pub mod string;
 pub mod strmut;
+pub mod strtok;
 pub mod wstring;

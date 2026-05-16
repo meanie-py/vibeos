@@ -359,6 +359,34 @@ fn main() {
              #define strlenW _wlenW\n#define strcpyW _wcpyW\n\
              #define _wmakepath ref_wmakepath\n{}",
             inc(s("stdlib/wmakpath.c")))),
+        // Wave STRTOK — strtok/strtok_s (string.cmake) + wcstok/
+        // wcstok_s (wstring.cmake). strtok/wcstok use the genuine
+        // per-thread `msvcrt_get_thread_data()->{strtok,wcstok}_next`;
+        // host-side that is a per-TU process-global thread_data_t
+        // (single-threaded-equivalent — the diff drives identical
+        // call sequences so the independent saved ptrs stay in sync).
+        // strtok.c/strtok_s.c pull <internal/wine/msvcrt.h> (refstub
+        // guard stub) — the typedef/accessor are supplied here. wcstok
+        // needs wchar_t→u16, a u16 strchrW (=wcschr, matches the
+        // terminator), and _set_errno (no-op; _LIBCNT_).
+        ("strtok", format!(
+            "typedef struct cnt_td {{ char* strtok_next; unsigned short* wcstok_next; }} thread_data_t;\n\
+             static thread_data_t _cnt_td;\n\
+             static thread_data_t* msvcrt_get_thread_data(void){{ return &_cnt_td; }}\n\
+             #define strtok ref_strtok\n{}",
+            inc(s("string/strtok.c")))),
+        ("strtok_s", format!(
+            "#define strtok_s ref_strtok_s\n{}",
+            inc(s("string/strtok_s.c")))),
+        ("wcstok", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             typedef struct cnt_td {{ char* strtok_next; unsigned short* wcstok_next; }} thread_data_t;\n\
+             static thread_data_t _cnt_td;\n\
+             static thread_data_t* msvcrt_get_thread_data(void){{ return &_cnt_td; }}\n\
+             static unsigned short* _cnt_wcschr(const unsigned short* s, unsigned short c){{ do {{ if(*s==c) return (unsigned short*)s; }} while(*s++); return 0; }}\n\
+             #define strchrW _cnt_wcschr\n#define _set_errno(x) ((void)0)\n\
+             #define wcstok ref_wcstok\n#define wcstok_s ref_wcstok_s\n{}",
+            inc(s("wstring/wcstok.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

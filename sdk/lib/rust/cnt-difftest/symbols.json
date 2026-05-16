@@ -988,6 +988,39 @@
       "needle longer than hay"
     ]
   },
+  "strtok": {
+    "c_signature": "char *strtok(char *str, const char *delim)",
+    "family": "string",
+    "slice_pattern": "tok_static",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/string/strtok.c",
+    "fuzz_domain": [
+      "leading delims",
+      "trailing delims",
+      "consecutive delims (empty tokens skipped)",
+      "no delim in str (one token)",
+      "empty str",
+      "delim not present",
+      "full re-tokenize via NULL calls",
+      "single char",
+      "str all delims"
+    ]
+  },
+  "strtok_s": {
+    "c_signature": "char *strtok_s(char *str, const char *delim, char **ctx)",
+    "family": "string",
+    "slice_pattern": "tok_ctx",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/string/strtok_s.c",
+    "fuzz_domain": [
+      "as strtok + explicit ctx threading",
+      "delim NULL \u2192 NULL",
+      "ctx NULL \u2192 NULL",
+      "str NULL && *ctx NULL \u2192 NULL",
+      "str NULL && *ctx valid (resume)",
+      "no-token sets *ctx at NUL"
+    ]
+  },
   "strtol": {
     "c_signature": "long strtol(const char *nptr, char **endptr, int base)",
     "family": "radix",
@@ -1274,6 +1307,34 @@
       "b at end",
       "overlapping partials",
       "b longer than s"
+    ]
+  },
+  "wcstok": {
+    "c_signature": "wchar_t *wcstok(wchar_t *str, const wchar_t *delim)",
+    "family": "wstring",
+    "slice_pattern": "wtok_static",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/wstring/wcstok.c",
+    "fuzz_domain": [
+      "as strtok over wide",
+      "leading/trailing/consecutive delims",
+      "no delim",
+      "empty",
+      "full re-tokenize via NULL calls"
+    ]
+  },
+  "wcstok_s": {
+    "c_signature": "wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)",
+    "family": "wstring",
+    "slice_pattern": "wtok_ctx",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/wstring/wcstok.c",
+    "fuzz_domain": [
+      "as strtok_s over wide",
+      "delim NULL \u2192 NULL",
+      "next_token NULL \u2192 NULL",
+      "str NULL && *next_token NULL \u2192 NULL",
+      "no-token leaves *next_token unchanged"
     ]
   },
   "wcstol": {

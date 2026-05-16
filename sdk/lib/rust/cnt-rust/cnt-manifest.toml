@@ -1153,3 +1153,59 @@ inout_effects = "as _makepath over u16 (memmove len*sizeof(wchar_t); strlenW/str
 preserved_misfeature = "byte-identical to _makepath over wchar_t"
 reference    = "sdk/lib/crt/stdlib/wmakpath.c"
 fuzz_domain  = ["all empty", "drive only", "dir w/o sep", "dir w/ trailing \\\\", "dir w/ trailing /", "fname only", "ext leading dot", "ext no dot", "NULL components", "drive>1 char", "full path", "NULL path"]
+
+# --- Wave STRTOK ---------------------------------------------------
+# strtok/strtok_s (string.cmake LIBCNTPR) + wcstok/wcstok_s
+# (wstring.cmake LIBCNTPR), Wine lineage. One pure core
+# (core_rs::strtok::next_token); the shim owns the raw walk + the
+# non-reentrant saved pointer. strtok/wcstok keep it in a process
+# global AtomicPtr (faithful to the genuine per-thread thread_data_t
+# field — single-threaded-equivalent); strtok_s/wcstok_s take an
+# explicit ctx. Empty (no-token) path: strtok_s updates *ctx=str,
+# strtok/wcstok/wcstok_s leave the saved ptr UNCHANGED (Wine
+# asymmetry). NULL delim is C UB for strtok/wcstok (never fuzzed);
+# strtok_s/wcstok_s validate delim/ctx/(str||*ctx) → NULL.
+
+[symbols.strtok]
+c_signature  = "char *strtok(char *str, const char *delim)"
+family       = "string"
+slice_pattern = "tok_static"
+core_fn      = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "writes NUL over the terminating delimiter in the caller buffer; resumes from a process-global saved pointer when str==NULL"
+preserved_misfeature = "non-reentrant hidden state (genuine thread_data_t::strtok_next → here a process-global AtomicPtr, single-threaded-equivalent); str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (stale pointer persists); token-to-end leaves saved on the terminating NUL; NULL delim is C UB (never fuzzed)"
+reference    = "sdk/lib/crt/string/strtok.c"
+fuzz_domain  = ["leading delims", "trailing delims", "consecutive delims (empty tokens skipped)", "no delim in str (one token)", "empty str", "delim not present", "full re-tokenize via NULL calls", "single char", "str all delims"]
+
+[symbols.strtok_s]
+c_signature  = "char *strtok_s(char *str, const char *delim, char **ctx)"
+family       = "string"
+slice_pattern = "tok_ctx"
+core_fn      = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "writes NUL over the terminating delimiter; *ctx updated to the resume point (incl. on the no-token path: *ctx = str-at-NUL); reentrant (explicit ctx)"
+preserved_misfeature = "param validation (delim!=NULL, ctx!=NULL, str!=NULL||*ctx!=NULL) → NULL (MSVCRT_CHECK_PMT, _LIBCNT_ = bare predicate, no handler); UNLIKE strtok/wcstok the no-token path DOES set *ctx = str (pointer to the NUL); resumes from *ctx when str==NULL"
+reference    = "sdk/lib/crt/string/strtok_s.c"
+fuzz_domain  = ["as strtok + explicit ctx threading", "delim NULL → NULL", "ctx NULL → NULL", "str NULL && *ctx NULL → NULL", "str NULL && *ctx valid (resume)", "no-token sets *ctx at NUL"]
+
+[symbols.wcstok_s]
+c_signature  = "wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)"
+family       = "wstring"
+slice_pattern = "wtok_ctx"
+core_fn      = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "as strtok_s over u16, BUT the no-token path leaves *next_token UNCHANGED (Wine asymmetry vs strtok_s); _set_errno(EINVAL) on bad params is a no-op under _LIBCNT_"
+preserved_misfeature = "param validation → NULL (+ _set_errno EINVAL, _LIBCNT_ no-op); no-token path does NOT update *next_token (differs from strtok_s which sets *ctx); strchrW = wcschr (matches the terminator for c==0, never reached under the *str&& guard)"
+reference    = "sdk/lib/crt/wstring/wcstok.c"
+fuzz_domain  = ["as strtok_s over wide", "delim NULL → NULL", "next_token NULL → NULL", "str NULL && *next_token NULL → NULL", "no-token leaves *next_token unchanged"]
+
+[symbols.wcstok]
+c_signature  = "wchar_t *wcstok(wchar_t *str, const wchar_t *delim)"
+family       = "wstring"
+slice_pattern = "wtok_static"
+core_fn      = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "wcstok_s(str, delim, &hidden); hidden = process-global AtomicPtr (genuine thread_data_t::wcstok_next)"
+preserved_misfeature = "non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)"
+reference    = "sdk/lib/crt/wstring/wcstok.c"
+fuzz_domain  = ["as strtok over wide", "leading/trailing/consecutive delims", "no delim", "empty", "full re-tokenize via NULL calls"]

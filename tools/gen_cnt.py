@@ -449,6 +449,88 @@ def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
+# Wave STRTOK — strtok/strtok_s/wcstok/wcstok_s. One pure core
+# (core_rs::strtok::next_token); the shim owns the raw-pointer walk +
+# the non-reentrant saved pointer. `*_static` (strtok/wcstok) keep it
+# in a process-global AtomicPtr (faithful to the genuine per-thread
+# thread_data_t field — single-threaded-equivalent, the
+# _invalid_parameter relaxed-atomic precedent); `*_ctx`
+# (strtok_s/wcstok_s) take an explicit `char**`/`wchar_t**`. The Empty
+# (no-token) path updates the saved ptr ONLY for strtok_s (`*ctx=str`);
+# strtok/wcstok/wcstok_s leave it UNCHANGED (a faithful asymmetry).
+STRTOK = {"tok_static", "tok_ctx", "wtok_static", "wtok_ctx"}
+
+
+def _strtok_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = sp.startswith("w")
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    null = "core::ptr::null_mut()"
+    b: list[str] = []
+    if sp in ("tok_static", "wtok_static"):
+        s_, delim = pn
+        b += [
+            "    use core::sync::atomic::{AtomicPtr, Ordering};",
+            f"    static SAVED: AtomicPtr<{el}> = AtomicPtr::new({null});",
+            f"    if {delim}.is_null() {{ return {null}; }}",
+            f"    let base = if {s_}.is_null() {{",
+            f"        let p = SAVED.load(Ordering::Relaxed);",
+            f"        if p.is_null() {{ return {null}; }}",
+            f"        p",
+            f"    }} else {{ {s_} }};",
+            f"    let n = {cstr}(base as *const {el}).len();",
+            f"    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token("
+            f"s, {cstr}({delim})) {{",
+            f"        crate::core_rs::strtok::Tok::Empty {{ .. }} => {null},",
+            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
+            f"            SAVED.store(base.add(next), Ordering::Relaxed);",
+            f"            base.add(start)",
+            f"        }}",
+            f"    }}",
+        ]
+    else:  # tok_ctx / wtok_ctx — explicit context pointer
+        s_, delim, ctx = pn
+        # strtok_s alone updates *ctx on the Empty path (`*ctx=str`);
+        # wcstok_s leaves *next_token unchanged (Wine asymmetry).
+        empty_arm = (
+            f"crate::core_rs::strtok::Tok::Empty {{ stop }} => "
+            f"{{ *{ctx} = base.add(stop); {null} }},"
+            if sp == "tok_ctx"
+            else f"crate::core_rs::strtok::Tok::Empty {{ .. }} => {null},"
+        )
+        b += [
+            f"    if {delim}.is_null() {{ return {null}; }}",
+            f"    if {ctx}.is_null() {{ return {null}; }}",
+            f"    let base = if {s_}.is_null() {{",
+            f"        if (*{ctx}).is_null() {{ return {null}; }}",
+            f"        *{ctx}",
+            f"    }} else {{ {s_} }};",
+            f"    let n = {cstr}(base as *const {el}).len();",
+            f"    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token("
+            f"s, {cstr}({delim})) {{",
+            f"        {empty_arm}",
+            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
+            f"            *{ctx} = base.add(next);",
+            f"            base.add(start)",
+            f"        }}",
+            f"    }}",
+        ]
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
     decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
@@ -577,6 +659,8 @@ def shim(name: str, m: dict) -> str:
         return _strmut_shim(name, m, params, rt)
     if sp in PATHFAM:
         return _pathfam_shim(name, m, params, rt)
+    if sp in STRTOK:
+        return _strtok_shim(name, m, params, rt)
     # `_locale_t` is ignored by every collapse (the `_l` variants
     # delegate with locale unused) — emit it underscore-prefixed so it
     # doesn't trip unused_variables.
