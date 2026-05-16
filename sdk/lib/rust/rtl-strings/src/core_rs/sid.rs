@@ -76,3 +76,78 @@ pub fn equal_prefix(
     let n = subs1.len() - 1;
     subs1[..n] == subs2[..n]
 }
+
+/// `RtlConvertSidToUnicodeString` text builder — the exact genuine
+/// `swprintf` chain into the WCHAR Buffer[256]:
+///
+/// ```text
+/// "S-1-"
+/// IdentifierAuthority[0]==0 && [1]==0  → "%lu"   of
+///     (V[2]<<24 | V[3]<<16 | V[4]<<8 | V[5])   (u32, no pad)
+/// else                                 → "0x%02hx"×6  (lowercase)
+/// for each subauthority                → "-%u"  (u32, no pad)
+/// ```
+///
+/// Returns the count of u16 written (NOT incl NUL) = the genuine
+/// `wcs - Buffer`. `out` must hold ≥ 256 (genuine stack buffer).
+pub fn convert_text(auth: &[u8; 6], subs: &[u32], out: &mut [u16]) -> usize {
+    let mut n = 0usize;
+    let put = |out: &mut [u16], n: &mut usize, b: u8| {
+        out[*n] = b as u16;
+        *n += 1;
+    };
+    for &b in b"S-1-" {
+        put(out, &mut n, b);
+    }
+
+    if auth[0] == 0 && auth[1] == 0 {
+        let v = (auth[2] as u32) << 24
+            | (auth[3] as u32) << 16
+            | (auth[4] as u32) << 8
+            | (auth[5] as u32);
+        write_u32_dec(out, &mut n, v);
+    } else {
+        put(out, &mut n, b'0');
+        put(out, &mut n, b'x');
+        for &a in auth.iter() {
+            put(out, &mut n, hex_lc(a >> 4));
+            put(out, &mut n, hex_lc(a & 0xF));
+        }
+    }
+
+    for &s in subs {
+        put(out, &mut n, b'-');
+        write_u32_dec(out, &mut n, s);
+    }
+    n
+}
+
+#[inline]
+fn hex_lc(nib: u8) -> u8 {
+    if nib < 10 {
+        b'0' + nib
+    } else {
+        b'a' + (nib - 10)
+    }
+}
+
+fn write_u32_dec(out: &mut [u16], n: &mut usize, v: u32) {
+    if v == 0 {
+        out[*n] = b'0' as u16;
+        *n += 1;
+        return;
+    }
+    let mut buf = [0u8; 10];
+    let mut i = 0usize;
+    let mut x = v;
+    while x > 0 {
+        buf[i] = b'0' + (x % 10) as u8;
+        x /= 10;
+        i += 1;
+    }
+    while i > 0 {
+        i -= 1;
+        out[*n] = buf[i] as u16;
+        *n += 1;
+    }
+}

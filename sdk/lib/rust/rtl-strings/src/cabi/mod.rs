@@ -2235,6 +2235,58 @@ pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
     STATUS_NO_MEMORY
 }
 
+/// `NTSTATUS NTAPI RtlConvertSidToUnicodeString(PUNICODE_STRING,
+/// PSID, BOOLEAN)`. `!RtlValidSid` ⇒ INVALID_SID. AllocateBuffer ⇒
+/// RtlCreateUnicodeString (rtl-strings no-alloc ⇒ NO_MEMORY edge).
+/// Caller-buffer: Length=(wcs-Buffer)*2; `> MaximumLength` ⇒
+/// BUFFER_TOO_SMALL; else set Length, copy, and NUL-terminate at
+/// `Buffer[Length/2]` only when `Length < MaximumLength`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlConvertSidToUnicodeString(
+    string: *mut UNICODE_STRING,
+    sid_: *const u8,
+    allocate_buffer: u8,
+) -> i32 {
+    let is_null = sid_.is_null();
+    let valid = if is_null {
+        sid::valid(0, 0, true)
+    } else {
+        sid::valid(*sid_, *sid_.add(1), false)
+    };
+    if !valid {
+        return STATUS_INVALID_SID;
+    }
+    let auth = &*(sid_.add(2) as *const [u8; 6]);
+    let count = *sid_.add(1) as usize;
+    let subs = core::slice::from_raw_parts(sid_.add(8) as *const u32, count);
+
+    let mut buf = [0u16; 256];
+    let n = sid::convert_text(auth, subs, &mut buf);
+
+    if allocate_buffer != 0 {
+        // RtlCreateUnicodeString — rtl-strings is no-alloc ⇒ FALSE.
+        let mut tmp = [0u16; 257];
+        tmp[..n].copy_from_slice(&buf[..n]);
+        tmp[n] = 0;
+        if RtlCreateUnicodeString(string, tmp.as_ptr()) == 0 {
+            return STATUS_NO_MEMORY;
+        }
+        return STATUS_SUCCESS;
+    }
+
+    let length = (n * 2) as u32;
+    let max = (*string).MaximumLength as u32;
+    if length > max {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    (*string).Length = length as u16;
+    core::ptr::copy_nonoverlapping(buf.as_ptr(), (*string).Buffer, n);
+    if length < max {
+        *(*string).Buffer.add(n) = 0; // UNICODE_NULL at Buffer[Length/2]
+    }
+    STATUS_SUCCESS
+}
+
 /// `NTSTATUS NTAPI RtlCreateServiceSid(...)` — genuine UNIMPLEMENTED.
 #[no_mangle]
 pub unsafe extern "system" fn RtlCreateServiceSid(

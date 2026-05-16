@@ -2211,6 +2211,11 @@ extern "C" {
         out: *mut *mut u8,
     ) -> i32;
     fn ref_RtlCreateServiceSid(n: *const UNICODE_STRING, s: *mut u8, l: *mut u32) -> i32;
+    fn ref_RtlConvertSidToUnicodeString(
+        s: *mut UNICODE_STRING,
+        sid: *const u8,
+        alloc: u8,
+    ) -> i32;
 }
 
 /// A SID buffer `[rev, count, auth[6], subauth[count] LE]` with 16B
@@ -2459,6 +2464,69 @@ fn diff_rtl_allocate_and_initialize_sid() {
             )
         };
         assert_eq!(sc, sr, "RtlAllocateAndInitializeSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_convert_sid_to_unicode_string() {
+    let mut rng = Rng(0x51D0_000A);
+    for _ in 0..20_000 {
+        // Mostly-valid SIDs; sometimes invalid (bad rev / count>15).
+        let bad = rng.byte() & 7 == 0;
+        let rev = if bad && rng.byte() & 1 == 0 { rng.byte() } else { 1 };
+        let count = if bad && rng.byte() & 1 == 0 {
+            16 + rng.byte() % 8
+        } else {
+            rng.byte() % 16
+        };
+        let mut v = mk_sid(&mut rng, rev, count.min(40));
+        // ~1/3: force the zero-IdentifierAuthority "%lu" branch.
+        if v.len() > 8 && rng.byte() % 3 == 0 {
+            v[2] = 0;
+            v[3] = 0;
+        }
+        let alloc = rng.byte() & 3 == 0;
+
+        // Caller buffer with a fuzzed MaximumLength (force the
+        // too-small / exact / larger boundaries).
+        let mut bc = [0u16; 300];
+        let mut br = [0u16; 300];
+        let max: u16 = match rng.byte() % 4 {
+            0 => 0,
+            1 => (rng.byte() as u16) & 0x7E, // small, even
+            2 => 400,                        // ample
+            _ => (rng.byte() as u16) * 2,
+        };
+        let mut sc = UNICODE_STRING {
+            Length: 0xAAAA,
+            MaximumLength: max,
+            Buffer: bc.as_mut_ptr(),
+        };
+        let mut sr = UNICODE_STRING {
+            Length: 0xAAAA,
+            MaximumLength: max,
+            Buffer: br.as_mut_ptr(),
+        };
+        let rc = unsafe {
+            cabi::RtlConvertSidToUnicodeString(&mut sc, v.as_ptr(), alloc as u8)
+        };
+        let rr = unsafe {
+            ref_RtlConvertSidToUnicodeString(&mut sr, v.as_ptr(), alloc as u8)
+        };
+        assert_eq!(
+            rc, rr,
+            "RtlConvertSidToUnicodeString status rev={rev} count={count} alloc={alloc} max={max}"
+        );
+        if rc == 0 && !alloc {
+            assert_eq!(sc.Length, sr.Length, "Length");
+            let nc = (sc.Length / 2) as usize;
+            assert_eq!(&bc[..nc], &br[..nc], "Buffer text");
+            // NUL only when Length < MaximumLength
+            if (sc.Length as u16) < max {
+                assert_eq!(bc[nc], 0);
+                assert_eq!(br[nc], 0);
+            }
+        }
     }
 }
 

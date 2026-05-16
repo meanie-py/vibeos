@@ -474,10 +474,40 @@ fn main() {
          #define _SEH2_YIELD(s) s\n\
          #define _SEH2_GetExceptionCode() 0\n\
          #define EXCEPTION_EXECUTE_HANDLER 1\n\
-         /* link-only stubs (SID-1 surface never calls these). */\n\
+         /* RtlpAllocateMemory→NULL pins the no-alloc edge; rtl-strings\n\
+            is no-alloc so AllocateBuffer=TRUE ⇒ NO_MEMORY (the\n\
+            sid_RtlCreateUnicodeString FALSE stub matches). */\n\
          void* RtlpAllocateMemory(unsigned long s,unsigned long t){{(void)s;(void)t;return 0;}}\n\
          void RtlpFreeMemory(void* p,unsigned long t){{(void)p;(void)t;}}\n\
-         static int sid_swprintf(WCHAR* b,const WCHAR* f,...){{(void)b;(void)f;return 0;}}\n\
+         #include <stdarg.h>\n\
+         /* Wave SID-2: faithful swprintf model for the EXACT directives\n\
+            sid.c uses — L\"S-1-\", L\"%lu\", L\"0x%02hx\"x6, L\"-%u\".\n\
+            fmt is host 32-bit wchar_t (no -fshort-wchar); out is the\n\
+            forced-u16 WCHAR. Shared model (Wave-E2): byte-identical to\n\
+            core_rs::sid::convert_text — the diff pins the wrapper. */\n\
+         static int sid_swprintf(WCHAR* out,const wchar_t* fmt,...){{\n\
+            va_list ap; va_start(ap,fmt); int n=0; const wchar_t* p=fmt;\n\
+            while(*p){{\n\
+              if(*p!=L'%'){{ out[n++]=(WCHAR)*p++; continue; }}\n\
+              p++; int width=0;\n\
+              while(*p>=L'0'&&*p<=L'9'){{ width=width*10+(int)(*p-L'0'); p++; }}\n\
+              int isx=0;\n\
+              while(*p==L'l'||*p==L'h'){{ p++; }}\n\
+              if(*p==L'x'){{ isx=1; }} /* else 'u' */\n\
+              p++;\n\
+              unsigned int v=va_arg(ap,unsigned int);\n\
+              char tmp[16]; int t=0;\n\
+              if(isx){{\n\
+                if(v==0){{ tmp[t++]='0'; }}\n\
+                while(v){{ int d=v&0xF; tmp[t++]=(char)(d<10?'0'+d:'a'+d-10); v>>=4; }}\n\
+              }} else {{\n\
+                if(v==0){{ tmp[t++]='0'; }}\n\
+                while(v){{ tmp[t++]=(char)('0'+v%10); v/=10; }}\n\
+              }}\n\
+              while(t<width){{ tmp[t++]='0'; }}\n\
+              while(t>0){{ out[n++]=(WCHAR)tmp[--t]; }}\n\
+            }}\n\
+            out[n]=0; va_end(ap); return n; }}\n\
          #define swprintf sid_swprintf\n\
          static BOOLEAN sid_RtlCreateUnicodeString(PUNICODE_STRING d,const WCHAR* s){{(void)d;(void)s;return 0;}}\n\
          #define RtlCreateUnicodeString sid_RtlCreateUnicodeString\n\
