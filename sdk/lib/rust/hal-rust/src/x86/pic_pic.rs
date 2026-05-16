@@ -137,7 +137,8 @@ unsafe extern "C" {
     static mut HalpDefaultInterruptAffinity: KAFFINITY;
 }
 
-// `LONG HalpEisaELCR;` — pic.c:214.
+// `LONG HalpEisaELCR;` — pic.c:214.  Inside C `#ifndef _MINIHAL_` (pic.c:22).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut HalpEisaELCR: ULONG = 0;
 
@@ -147,8 +148,11 @@ pub static mut HalpEisaELCR: ULONG = 0;
 // each emits `int 0x30+N` inline.  Each stub is __cdecl (extern "C"), called
 // indirectly via SWInterruptHandlerTable.
 // ============================================================================
+// C `HalpDelayedHardwareInterrupt(N)` expansions (pic.c:148-163) are inside
+// `#ifndef _MINIHAL_` — gate every generated stub out of the minihal build.
 macro_rules! hw_int_stub {
     ($name:ident, $vec:literal) => {
+        #[cfg(not(feature = "minihal"))]
         #[no_mangle]
         pub unsafe extern "C" fn $name() {
             core::arch::asm!(concat!("int ", stringify!($vec)), options(nostack));
@@ -177,7 +181,8 @@ hw_int_stub!(HalpHardwareInterrupt15, 0x3F);
 // ============================================================================
 
 // SWInterruptLookUpTable — pic.c:122.  Minimum IRQL needed to process pending
-// SW interrupts in each IRR slot.
+// SW interrupts in each IRR slot.  Inside C `#ifndef _MINIHAL_` (pic.c:22).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut SWInterruptLookUpTable: [KIRQL; 8] = [
     PASSIVE_LEVEL,   // IRR 0
@@ -195,6 +200,8 @@ pub static mut SWInterruptLookUpTable: [KIRQL; 8] = [
 //
 // Cast from `unsafe extern "C" fn()` to `Option<unsafe extern "C" fn()>` is
 // done via `Some(fn)` — the macro above generates the right ABI.
+// Inside C `#ifndef _MINIHAL_` (pic.c:22).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 20] = [
     Some(unsafe { core::mem::transmute::<*const (), unsafe extern "C" fn()>(KiUnexpectedInterrupt as *const ()) }),
@@ -221,6 +228,8 @@ pub static mut SWInterruptHandlerTable: [PHAL_SW_INTERRUPT_HANDLER; 20] = [
 
 // SWInterruptHandlerTable2 — pic.c:207.  Pending-SW-int handlers reentered
 // from inside the trap-frame path (fastcall, take TrapFrame ptr).
+// Inside C `#ifndef _MINIHAL_` (pic.c:22).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 3] = [
     Some(unsafe {
@@ -234,7 +243,8 @@ pub static mut SWInterruptHandlerTable2: [PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY; 3
 
 // HalpSpecialDismissTable — pic.c:55.  Per-IRQ initial Dismiss routine (edge).
 // HalpInitializePICs may overwrite specific slots with the level variants if
-// the ELCR shows an IRQ is level-triggered.
+// the ELCR shows an IRQ is level-triggered.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static mut HalpSpecialDismissTable: [PHAL_DISMISS_INTERRUPT; 16] = [
     Some(HalpDismissIrqGeneric),  // 0
@@ -256,7 +266,8 @@ pub static mut HalpSpecialDismissTable: [PHAL_DISMISS_INTERRUPT; 16] = [
 ];
 
 // HalpSpecialDismissLevelTable — pic.c:87.  Same shape but with the *Level
-// variants for level-triggered IRQs.
+// variants for level-triggered IRQs.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub static HalpSpecialDismissLevelTable: [PHAL_DISMISS_INTERRUPT; 16] = [
     Some(HalpDismissIrqLevel),       // 0
@@ -445,42 +456,53 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     unsafe { __writeeflags(eflags) };
 }
 
+// HalpIrqToVector — pic.c:256-261.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpIrqToVector(Irq: UCHAR) -> UCHAR {
     (PRIMARY_VECTOR_BASE + Irq as ULONG) as UCHAR
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpIrqToVector(Irq: UCHAR) -> UCHAR {
     (PRIMARY_VECTOR_BASE + Irq as ULONG) as UCHAR
 }
 
+// HalpVectorToIrq — pic.c:263-267.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpVectorToIrq(Vector: UCHAR) -> UCHAR {
     Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR)
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpVectorToIrq(Vector: UCHAR) -> UCHAR {
     Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR)
 }
 
+// HalpVectorToIrql — pic.c:269-279.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpVectorToIrql(Vector: u8) -> KIRQL {
     PROFILE_LEVEL.wrapping_sub(Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR) as KIRQL)
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpVectorToIrql(Vector: u8) -> KIRQL {
     PROFILE_LEVEL.wrapping_sub(Vector.wrapping_sub(PRIMARY_VECTOR_BASE as UCHAR) as KIRQL)
 }
 
+// KeRaiseIrqlToDpcLevel — pic.c:292-300.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
     
@@ -493,6 +515,8 @@ pub unsafe extern "system" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
     current_irql
 }
 
+// KeRaiseIrqlToSynchLevel — pic.c:318-347.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
     
@@ -520,6 +544,8 @@ pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
     current_irql
 }
 
+// HalRequestSoftwareInterrupt — pic.c:434-457.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
@@ -541,6 +567,7 @@ pub unsafe extern "fastcall" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
     __writeeflags(eflags);
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
@@ -562,6 +589,8 @@ pub unsafe extern "C" fn HalRequestSoftwareInterrupt(Irql: KIRQL) {
     __writeeflags(eflags);
 }
 
+// HalClearSoftwareInterrupt — pic.c:460-465.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalClearSoftwareInterrupt(Irql: KIRQL) {
@@ -570,6 +599,7 @@ pub unsafe extern "fastcall" fn HalClearSoftwareInterrupt(Irql: KIRQL) {
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalClearSoftwareInterrupt(Irql: KIRQL) {
@@ -578,6 +608,8 @@ pub unsafe extern "C" fn HalClearSoftwareInterrupt(Irql: KIRQL) {
     }
 }
 
+// HalpEndSoftwareInterrupt2 — pic.c:468-523.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpEndSoftwareInterrupt2(
@@ -632,6 +664,10 @@ pub unsafe extern "fastcall" fn HalpEndSoftwareInterrupt2(
     }
 }
 
+// Below: dismiss-IRQ machinery + interrupt dispatch — all inside C
+// `#ifndef _MINIHAL_` (pic.c:22-1168).  Private helpers gated too so the
+// minihal build doesn't emit unused-fn churn.
+#[cfg(not(feature = "minihal"))]
 #[inline(always)]
 unsafe fn write_port_uchar(port: *mut u8, value: u8) {
     unsafe {
@@ -644,6 +680,8 @@ unsafe fn write_port_uchar(port: *mut u8, value: u8) {
     }
 }
 
+// _HalpDismissIrqGeneric — pic.c:525-579.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 unsafe fn _HalpDismissIrqGeneric(
     Irql: KIRQL,
     Irq: ULONG,
@@ -705,6 +743,8 @@ unsafe fn _HalpDismissIrqGeneric(
     0
 }
 
+// HalpDismissIrqGeneric — pic.c:581-589.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrqGeneric(
     Irql: KIRQL,
@@ -714,6 +754,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrqGeneric(
     unsafe { _HalpDismissIrqGeneric(Irql, Irq, OldIrql) }
 }
 
+// HalpDismissIrq15 — pic.c:591-624.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq15(
     Irql: KIRQL,
@@ -744,6 +786,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq15(
     _HalpDismissIrqGeneric(Irql, Irq, OldIrql)
 }
 
+// HalpDismissIrq13 — pic.c:626-638.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq13(
     Irql: KIRQL,
@@ -758,6 +802,9 @@ pub unsafe extern "stdcall" fn HalpDismissIrq13(
     }
 }
 
+// HalpDismissIrq08 — companion to the pic.c:642 HalpDismissIrq07 family;
+// part of the dismiss machinery inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq08(
     Irql: KIRQL,
@@ -773,6 +820,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq08(
     }
 }
 
+// HalpDismissIrq07 — pic.c:640-666.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq07(
     Irql: KIRQL,
@@ -798,6 +847,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq07(
     _HalpDismissIrqGeneric(Irql, Irq, OldIrql)
 }
 
+// _HalpDismissIrqLevel — pic.c:668-722.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 unsafe fn _HalpDismissIrqLevel(
     Irql: KIRQL,
     Irq: ULONG,
@@ -857,6 +908,8 @@ unsafe fn _HalpDismissIrqLevel(
     0
 }
 
+// HalpDismissIrqLevel — pic.c:724-732.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrqLevel(
     Irql: KIRQL,
@@ -866,6 +919,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrqLevel(
     unsafe { _HalpDismissIrqLevel(Irql, Irq, OldIrql) }
 }
 
+// HalpDismissIrq15Level — pic.c:734-767.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq15Level(
     Irql: KIRQL,
@@ -896,6 +951,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq15Level(
     unsafe { _HalpDismissIrqLevel(Irql, Irq, OldIrql) }
 }
 
+// HalpDismissIrq13Level — pic.c:769-781.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq13Level(
     Irql: KIRQL,
@@ -910,6 +967,9 @@ pub unsafe extern "stdcall" fn HalpDismissIrq13Level(
     }
 }
 
+// HalpDismissIrq08Level — companion to pic.c:785 HalpDismissIrq07Level
+// family; part of the dismiss machinery inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq08Level(
     Irql: KIRQL,
@@ -926,6 +986,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq08Level(
     unsafe { _HalpDismissIrqLevel(Irql, Irq, OldIrql) }
 }
 
+// HalpDismissIrq07Level — pic.c:783-808.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "stdcall" fn HalpDismissIrq07Level(
     Irql: KIRQL,
@@ -955,6 +1017,8 @@ pub unsafe extern "stdcall" fn HalpDismissIrq07Level(
     _HalpDismissIrqLevel(Irql, Irq, OldIrql)
 }
 
+// HalpHardwareInterruptLevel2 — pic.c:810-838.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "C" fn HalpHardwareInterruptLevel2() -> PHAL_SW_INTERRUPT_HANDLER {
 
@@ -977,6 +1041,8 @@ pub unsafe extern "C" fn HalpHardwareInterruptLevel2() -> PHAL_SW_INTERRUPT_HAND
     None
 }
 
+// HalEnableSystemInterrupt — pic.c:840-881.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalEnableSystemInterrupt(
     Vector: ULONG,
@@ -1013,6 +1079,8 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     1
 }
 
+// HalDisableSystemInterrupt — pic.c:883-926.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalDisableSystemInterrupt(
     Vector: ULONG,
@@ -1048,6 +1116,8 @@ pub unsafe extern "system" fn HalDisableSystemInterrupt(
     _enable();
 }
 
+// HalBeginSystemInterrupt — pic.c:928-943.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalBeginSystemInterrupt(
     Irql: KIRQL,
@@ -1062,6 +1132,8 @@ pub unsafe extern "system" fn HalBeginSystemInterrupt(
     }
 }
 
+// HalEndSystemInterrupt2 — pic.c:945-1005.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalEndSystemInterrupt2(
@@ -1118,6 +1190,7 @@ pub unsafe extern "fastcall" fn HalEndSystemInterrupt2(
     None
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalEndSystemInterrupt2(
@@ -1174,6 +1247,9 @@ pub unsafe extern "C" fn HalEndSystemInterrupt2(
     core::ptr::null_mut()
 }
 
+// _HalpApcInterruptHandler — pic.c:1007-1034 (calls KiDeliverApc/KiEoiHelper).
+// Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn _HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
 
@@ -1198,6 +1274,8 @@ pub unsafe extern "system" fn _HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) 
     KiEoiHelper(TrapFrame);
 }
 
+// HalpApcInterrupt2ndEntry — pic.c:1036-1043.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpApcInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
@@ -1206,6 +1284,7 @@ pub unsafe extern "fastcall" fn HalpApcInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME
     }
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpApcInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
@@ -1214,6 +1293,8 @@ pub unsafe extern "C" fn HalpApcInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
     }
 }
 
+// HalpApcInterruptHandler — pic.c:1045-1061.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
@@ -1228,6 +1309,7 @@ pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME)
     _HalpApcInterruptHandler(TrapFrame);
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
@@ -1242,6 +1324,9 @@ pub unsafe extern "C" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     _HalpApcInterruptHandler(TrapFrame);
 }
 
+// _HalpDispatchInterruptHandler — pic.c:1063-1082 (calls KiDispatchInterrupt).
+// Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 unsafe fn _HalpDispatchInterruptHandler() -> KIRQL {
 
     let Pcr = KeGetPcr();
@@ -1258,6 +1343,9 @@ unsafe fn _HalpDispatchInterruptHandler() -> KIRQL {
     CurrentIrql
 }
 
+// HalpDispatchInterrupt2ndEntry — pic.c:1085-1101 (calls KiEoiHelper).
+// Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86")]
 pub unsafe extern "fastcall" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
@@ -1269,6 +1357,7 @@ pub unsafe extern "fastcall" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_
     KiEoiHelper(TrapFrame);
 }
 
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub unsafe extern "C" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) {
@@ -1280,6 +1369,8 @@ pub unsafe extern "C" fn HalpDispatchInterrupt2ndEntry(TrapFrame: PKTRAP_FRAME) 
     KiEoiHelper(TrapFrame);
 }
 
+// HalpDispatchInterrupt2 — pic.c:1103-1139.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "C" fn HalpDispatchInterrupt2() -> PHAL_SW_INTERRUPT_HANDLER {
 
@@ -1309,6 +1400,8 @@ pub unsafe extern "C" fn HalpDispatchInterrupt2() -> PHAL_SW_INTERRUPT_HANDLER {
     None
 }
 
+// HalpGetRootInterruptVector — pic.c:1141-1168.  Inside C `#ifndef _MINIHAL_`.
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpGetRootInterruptVector(
     BusInterruptLevel: ULONG,
@@ -1350,14 +1443,30 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
     system_vector as ULONG
 }
 
-/// Returns the current IRQL by reading PCR.Irql.  pic.c:309-315.
+// ============================================================================
+// KeGetCurrentIrql / KfRaiseIrql / KfLowerIrql — the ONLY three symbols pic.c
+// provides in BOTH faces.  Full bodies are inside C `#ifndef _MINIHAL_`
+// (pic.c:281-287, 349-376, 378-432); the C `#else /* _MINIHAL_ */` block
+// (pic.c:1170-1192) provides trivial stubs.  Cfg-split per Rule 2.
+// ============================================================================
+
+/// Returns the current IRQL by reading PCR.Irql.  pic.c:281-287 (non-minihal).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeGetCurrentIrql() -> KIRQL {
     unsafe { (*KeGetPcr()).Irql }
 }
 
-/// Raises the IRQL to NewIrql; returns the previous IRQL.  pic.c:374-401.
-/// Caller must ensure NewIrql >= CurrentIrql (or bugcheck in DBG builds).
+/// Minihal stub — pic.c:1172-1177 `return PASSIVE_LEVEL;` (NTAPI).
+#[cfg(feature = "minihal")]
+#[no_mangle]
+pub unsafe extern "system" fn KeGetCurrentIrql() -> KIRQL {
+    PASSIVE_LEVEL as KIRQL
+}
+
+/// Raises the IRQL to NewIrql; returns the previous IRQL.  pic.c:349-376
+/// (non-minihal).  Caller must ensure NewIrql >= CurrentIrql (DBG bugcheck).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
     let Pcr = unsafe { KeGetPcr() };
@@ -1366,8 +1475,22 @@ pub unsafe extern "fastcall" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
     CurrentIrql
 }
 
+/// Minihal stub — pic.c:1186-1192 `return NewIrql;` (FASTCALL).
+#[cfg(feature = "minihal")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
+    NewIrql
+}
+
+/// Minihal stub — pic.c:1179-1184 empty body (FASTCALL).
+#[cfg(feature = "minihal")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KfLowerIrql(_OldIrql: KIRQL) {
+}
+
 /// Lowers the IRQL to OldIrql and dispatches any pending software interrupts
-/// whose level is above OldIrql.  pic.c:403-455.
+/// whose level is above OldIrql.  pic.c:378-432 (non-minihal).
+#[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "fastcall" fn KfLowerIrql(OldIrql: KIRQL) {
     let Pcr = unsafe { KeGetPcr() };

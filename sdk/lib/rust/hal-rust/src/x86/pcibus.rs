@@ -91,6 +91,13 @@ pub const PCI_TYPE2_FORWARD_PORT: ULONG = 0xCFA;
 
 // PCI deref matrix — picks the per-byte vs per-word vs per-dword IO width
 // based on (offset % 4, length % 4).  pcibus.c:25.
+//
+// C: `UCHAR PCIDeref[4][4]` — file-scope, NO `static` → external linkage; the
+// object file exports a global `PCIDeref` symbol in BOTH the default and the
+// -D_MINIHAL_ builds (it has no `_MINIHAL_` guard).  `#[no_mangle]` is required
+// so the exported symbol name matches the authoritative `nm` DEFINES list and
+// is present under `--features minihal` (FreeLDR mini-HAL).
+#[no_mangle]
 pub static PCIDeref: [[UCHAR; 4]; 4] = [
     [0, 1, 2, 2],   // ULONG-aligned offset
     [1, 1, 1, 1],   // UCHAR-aligned offset
@@ -184,7 +191,8 @@ pub static PCIConfigHandlerType2: PCI_CONFIG_HANDLER = PCI_CONFIG_HANDLER {
     ],
 };
 
-#[cfg(not(feature = "minihal"))]
+// C always-compiled (BusData of HalpFakePciBusHandler) — required in
+// minihal. feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub static mut HalpFakePciBusData: PCIPBUSDATA = PCIPBUSDATA {
     CommonData: ntkrnl_sys::hal_ddk::_PCIBUSDATA {
@@ -217,7 +225,8 @@ pub static mut HalpFakePciBusData: PCIPBUSDATA = PCIPBUSDATA {
     ConfiguredBits: [0; 8],
 };
 
-#[cfg(not(feature = "minihal"))]
+// C always-compiled (pcibus.c:94, no _MINIHAL_ guard) — required in
+// minihal. feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub static mut HalpFakePciBusHandler: BUS_HANDLER = BUS_HANDLER {
     Version: 1,
@@ -282,13 +291,10 @@ unsafe extern "system" {
     fn ZwQueryKey(KeyHandle: HANDLE, KeyInformationClass: i32, KeyInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG) -> NTSTATUS;
     fn ZwQueryValueKey(KeyHandle: HANDLE, ValueName: PUNICODE_STRING, KeyValueInformationClass: i32, KeyValueInformation: PVOID, Length: ULONG, ResultLength: *mut ULONG) -> NTSTATUS;
     // stdcall spinlock + IRQL APIs.
-    fn KeAcquireSpinLockAtDpcLevel(SpinLock: *mut KSPIN_LOCK);
     fn KeAcquireSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: PKIRQL);
     fn KeReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, NewIrql: KIRQL);
     #[cfg(target_arch = "x86")]
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: PKIRQL);
-    #[cfg(target_arch = "x86")]
-    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
     fn HalpOpenRegistryKey(KeyHandle: *mut HANDLE, RootKey: HANDLE, KeyName: PUNICODE_STRING, DesiredAccess: u32, Create: BOOLEAN) -> NTSTATUS;
 }
@@ -302,9 +308,11 @@ unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
 }
 
-// KeInitializeSpinLock + KeRaiseIrql are FORCEINLINE on amd64 — no exported
-// symbol. Inline locally on amd64; on i386 they're real exports (above).
-#[cfg(target_arch = "x86_64")]
+// KeInitializeSpinLock is the kernel macro `*sl = 0` (UP + DUMMY_PSEH) on
+// every arch, and is NOT linkable in the FreeLDR mini-HAL build (no
+// ntoskrnl). Inline unconditionally per system_prompt_hal.md (matches
+// dma.rs). KeRaiseIrql (below) stays amd64-only FORCEINLINE.
+// feedback_freeldr_clean_build_regression
 #[inline(always)]
 unsafe fn KeInitializeSpinLock(spin_lock: *mut KSPIN_LOCK) {
     *spin_lock = 0;
@@ -319,6 +327,19 @@ unsafe fn KeRaiseIrql(new_irql: KIRQL, old_irql: PKIRQL) {
     let new = new_irql as u64;
     core::arch::asm!("mov cr8, {}", in(reg) new, options(nomem, nostack, preserves_flags));
 }
+
+// KeAcquireSpinLockAtDpcLevel is a kernel macro/inline, NOT a linkable symbol
+// (declaring it in an extern block leaks an unresolved import — fatal under
+// `--features minihal` where ntoskrnl is not linked). Under UP + DUMMY_PSEH it
+// collapses to a no-op: the C call sites here always immediately follow
+// `KeRaiseIrql(HIGH_LEVEL, OldIrql)` which performs the actual serialization,
+// and the matching release path calls the real `KeReleaseSpinLock` (which
+// lowers IRQL). This is identical for the minihal and non-minihal builds —
+// pcibus.c's `HalpPCISynchronizeType{1,2}` are in the common region (above the
+// first `#ifndef _MINIHAL_` at C:603), so they are compiled under -D_MINIHAL_
+// too and the spinlock acquire is the same no-op there.
+#[inline(always)]
+unsafe fn KeAcquireSpinLockAtDpcLevel(_spin_lock: *mut KSPIN_LOCK) {}
 
 // RtlCopyMemory is a memmove-style macro in C; on i386 it's not exported.
 // Use core::ptr::copy_nonoverlapping for non-overlapping copies (used in
@@ -1249,7 +1270,15 @@ pub unsafe extern "system" fn HalpGetISAFixedPCIIrq(
     STATUS_SUCCESS
 }
 
-unsafe fn PciSize(Base: ULONG, Mask: ULONG) -> ULONG {
+// C: `static ULONG NTAPI PciSize(ULONG Base, ULONG Mask)`.  The C file has no
+// internal `_MINIHAL_` guard around this function — it is compiled identically
+// in both the default and the -D_MINIHAL_ builds, and the authoritative `nm`
+// DEFINES list includes `PciSize`.  `#[no_mangle]` + `extern "system"` (NTAPI =
+// stdcall on i386) so the exported symbol matches the C object and is present
+// under `--features minihal`.  Body references no external symbol (pure ALU) so
+// it is minihal-safe.
+#[no_mangle]
+pub unsafe extern "system" fn PciSize(Base: ULONG, Mask: ULONG) -> ULONG {
     let mut Size = Mask & Base;
     Size = Size & !(Size.wrapping_sub(1));
     Size
@@ -1286,7 +1315,8 @@ pub unsafe extern "system" fn HalpAdjustPCIResourceList(
     Status
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region — required in minihal (HalpFakePciBusHandler dispatch).
+// feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub unsafe extern "system" fn HalpAssignPCISlotResources(
     BusHandler: PBUS_HANDLER,
@@ -1446,7 +1476,8 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
     Status
 }
 
-#[cfg(not(feature = "minihal"))]
+// C common region (pcibus.c after `#endif`) — required in minihal.
+// feedback_freeldr_clean_build_regression
 #[no_mangle]
 pub unsafe extern "system" fn HaliPciInterfaceReadConfig(
     RootBusHandler: PBUS_HANDLER,
@@ -1472,6 +1503,14 @@ pub unsafe extern "system" fn HaliPciInterfaceReadConfig(
     Length
 }
 
+// C common region (pcibus.c): the FUNCTION is common (called from
+// HalpInitializePciStubs, so the symbol must exist under minihal too —
+// feedback_freeldr_clean_build_regression, orchestrator un-gate, left intact).
+// But pcibus.c:907 has an INTERNAL `#ifndef _MINIHAL_ … #else return NULL;
+// #endif` split: under -D_MINIHAL_ the body is exactly `return NULL;` — it
+// must NOT drag ZwOpenKey/ZwQueryValueKey/ZwClose/ZwEnumerateValueKey/ZwQueryKey
+// into the minihal link. So we cfg-split the BODY (not the symbol): full body
+// for the default build, NULL-returning face for `--features minihal`.
 #[cfg(not(feature = "minihal"))]
 #[no_mangle]
 pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_INTERNAL {
@@ -1732,6 +1771,16 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
 
     // Return it
     pci_registry_info
+}
+
+// C pcibus.c:1130 `#else` face: under -D_MINIHAL_ the entire body of
+// HalpQueryPciRegistryInfo is `return NULL;`. Same `#[no_mangle]` symbol +
+// signature so HalpInitializePciStubs (common region) still links under
+// `--features minihal` without pulling in the Zw* registry imports.
+#[cfg(feature = "minihal")]
+#[no_mangle]
+pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_INTERNAL {
+    core::ptr::null_mut()
 }
 
 // C legacy/bus/pcibus.c common region (after `#endif`): compiled in the

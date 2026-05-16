@@ -45,6 +45,14 @@ unsafe fn inbyte(port: u16) -> u8 {
 /// drops to the kernel debugger if one is attached, then loops.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalHandleNMI(_NmiInfo: PVOID) {
+    // C nmi.c: the entire NMI-handling body is `#ifndef _MINIHAL_`
+    // (Inbv banner, KiBugCheckData/KeServiceDescriptorTable, KdDebugger —
+    // all ntoskrnl raw-dylib data). Under -D_MINIHAL_ HalHandleNMI is
+    // just the freeze loop. Gating this block keeps the ntoskrnl
+    // raw-dylib import out of FreeLDR's mini-HAL.
+    // feedback_freeldr_clean_build_regression
+    #[cfg(not(feature = "minihal"))]
+    {
     // Recursion guard. C uses `if (HalpNMIInProgress++) ERROR_DBGBREAK()`;
     // mirror via a volatile read/inc.
     let prev = unsafe { core::ptr::read_volatile(&raw const HalpNMIInProgress) };
@@ -113,8 +121,9 @@ pub unsafe extern "system" fn HalHandleNMI(_NmiInfo: PVOID) {
             KeEnterKernelDebugger();
         }
     }
+    } // end #[cfg(not(feature = "minihal"))] block
 
-    // Freeze.  The C version: `while (TRUE) NOTHING;`
+    // Freeze.  The C version: `while (TRUE) NOTHING;` (common — minihal too)
     loop {
         unsafe { core::arch::asm!("hlt"); }
     }

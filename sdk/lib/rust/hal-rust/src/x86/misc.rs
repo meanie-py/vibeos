@@ -15,6 +15,13 @@
 //! the names with stdcall lowering while the actual implementations
 //! are FASTCALL — the wrappers do the ABI bridge.
 
+// These ddk imports are used ONLY by HalpOpenRegistryKey /
+// HalpReportSerialNumber / HalpMarkAcpiHal, which mirror the C
+// `#ifndef _MINIHAL_` region of generic/misc.c (lines 22-142, no #else
+// stub). Under `--features minihal` those three fns are not compiled, so
+// gate the import to match — keeps the minihal build from referencing
+// any registry syscall (ZwOpenKey/ZwClose/ZwCreateKey/ZwSetValueKey).
+#[cfg(not(feature = "minihal"))]
 use ntkrnl_sys::ddk::{
     NTSTATUS, OBJECT_ATTRIBUTES, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwOpenKey,
     ZwSetValueKey,

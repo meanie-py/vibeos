@@ -255,24 +255,32 @@ unsafe fn mm_get_system_address_for_mdl_safe(mdl: PMDL, priority: u32) -> PVOID 
 // Globals — symbol layout matches the C definitions in dma.c.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 82-87) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpDmaLock: KEVENT = unsafe { core::mem::zeroed() };
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpDmaAdapterListLock: KSPIN_LOCK = 0;
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpDmaAdapterList: LIST_ENTRY = LIST_ENTRY {
     Flink: ptr::null_mut(),
     Blink: ptr::null_mut(),
 };
 
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpEisaAdapter: [PADAPTER_OBJECT; 8] = [ptr::null_mut(); 8];
 
+// dma.c: NOT gated (line 88) — present under -D_MINIHAL_.
 #[unsafe(no_mangle)]
 pub static mut HalpEisaDma: BOOLEAN = 0;
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 89-91) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpMasterAdapter: PADAPTER_OBJECT = ptr::null_mut();
 
@@ -293,6 +301,8 @@ const HALP_EISA_PORT_PAGE: [ULONG_PTR; 8] = [
 // `core::mem::transmute(X as usize)` since bindgen models them as
 // Option<extern "stdcall" fn(...)> but our exports are extern "system"
 // (identical ABI on i386 but distinct Rust types).
+// dma.c: inside `#ifndef _MINIHAL_` (lines 104-156) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub static mut HalpDmaOperations: DMA_OPERATIONS = unsafe {
     let mut ops: DMA_OPERATIONS = core::mem::zeroed();
@@ -397,6 +407,8 @@ pub unsafe extern "system" fn HalpGetAdapterMaximumPhysicalAddress(
 // HalpGrowMapBuffers — extend the master adapter's map-register array.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 240-488) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpGrowMapBuffers(
     AdapterObject: PADAPTER_OBJECT,
@@ -493,6 +505,8 @@ pub unsafe extern "system" fn HalpGrowMapBuffers(
 // HalpDmaAllocateMasterAdapter — allocate the system-wide master adapter.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 240-488) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpDmaAllocateMasterAdapter() -> PADAPTER_OBJECT {
     unsafe {
@@ -551,6 +565,8 @@ pub unsafe extern "system" fn HalpDmaAllocateMasterAdapter() -> PADAPTER_OBJECT 
 // HalpDmaAllocateChildAdapter — allocate a per-device adapter object.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 240-488) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpDmaAllocateChildAdapter(
     _NumberOfMapRegisters: ULONG,
@@ -717,6 +733,8 @@ pub unsafe extern "system" fn HalpDmaInitializeEisaAdapter(
 // HalGetAdapter — public DMA-adapter factory.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalGetAdapter(
     DeviceDescription: PDEVICE_DESCRIPTION,
@@ -877,6 +895,8 @@ pub unsafe extern "system" fn HalpGetDmaAdapter(
 // HalPutDmaAdapter
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalPutDmaAdapter(AdapterObject: PADAPTER_OBJECT) {
     unsafe {
@@ -894,6 +914,8 @@ pub unsafe extern "system" fn HalPutDmaAdapter(AdapterObject: PADAPTER_OBJECT) {
 // HalAllocateCommonBuffer
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAllocateCommonBuffer(
     AdapterObject: PDMA_ADAPTER,
@@ -941,6 +963,8 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
 // HalFreeCommonBuffer
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalFreeCommonBuffer(
     _AdapterObject: PDMA_ADAPTER,
@@ -982,6 +1006,8 @@ struct ScatterGatherContext {
 // HalpScatterGatherAdapterControl — adapter-control callback used during S/G.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
     DeviceObject: PDEVICE_OBJECT,
@@ -1059,6 +1085,8 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
 // HalGetScatterGatherList — convenience wrapper around HalBuildScatterGatherList.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalGetScatterGatherList(
     AdapterObject: PDMA_ADAPTER,
@@ -1090,6 +1118,8 @@ pub unsafe extern "system" fn HalGetScatterGatherList(
 // HalPutScatterGatherList
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalPutScatterGatherList(
     AdapterObject: PDMA_ADAPTER,
@@ -1124,6 +1154,8 @@ pub unsafe extern "system" fn HalPutScatterGatherList(
 // HalCalculateScatterGatherListSize
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalCalculateScatterGatherListSize(
     _AdapterObject: PDMA_ADAPTER,
@@ -1153,6 +1185,8 @@ const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC000_0023u32 as NTSTATUS;
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS;
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC000_0002u32 as NTSTATUS;
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalBuildScatterGatherList(
     AdapterObject: PDMA_ADAPTER,
@@ -1234,6 +1268,8 @@ pub unsafe extern "system" fn HalBuildScatterGatherList(
 // HalBuildMdlFromScatterGatherList — unimplemented in C.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalBuildMdlFromScatterGatherList(
     _DmaAdapter: PDMA_ADAPTER,
@@ -1309,6 +1345,8 @@ pub unsafe extern "system" fn HalReadDmaCounter(AdapterObject: PADAPTER_OBJECT) 
 // HalpGrowMapBufferWorker — PASSIVE_LEVEL work item to extend map registers.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpGrowMapBufferWorker(DeferredContext: PVOID) {
     unsafe {
@@ -1403,6 +1441,8 @@ unsafe fn ex_initialize_work_item(
 // HalAllocateAdapterChannel — reserve map registers and dispatch to caller.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAllocateAdapterChannel(
     AdapterObject: PADAPTER_OBJECT,
@@ -1512,6 +1552,8 @@ pub unsafe extern "system" fn HalAllocateAdapterChannel(
 // IoFreeAdapterChannel
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn IoFreeAdapterChannel(mut AdapterObject: PADAPTER_OBJECT) {
     unsafe {
@@ -1597,6 +1639,8 @@ pub unsafe extern "system" fn IoFreeAdapterChannel(mut AdapterObject: PADAPTER_O
 // IoFreeMapRegisters
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn IoFreeMapRegisters(
     AdapterObject: PADAPTER_OBJECT,
@@ -1688,6 +1732,8 @@ pub unsafe extern "system" fn IoFreeMapRegisters(
 // HalpCopyBufferMap — copy data between MDL and map-register buffers.
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpCopyBufferMap(
     Mdl: PMDL,
@@ -1741,6 +1787,8 @@ pub unsafe extern "system" fn HalpCopyBufferMap(
 // IoFlushAdapterBuffers
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn IoFlushAdapterBuffers(
     AdapterObject: PADAPTER_OBJECT,
@@ -1810,6 +1858,8 @@ pub unsafe extern "system" fn IoFlushAdapterBuffers(
 // IoMapTransfer
 // ---------------------------------------------------------------------------
 
+// dma.c: inside `#ifndef _MINIHAL_` (lines 1376-2281) — absent under -D_MINIHAL_.
+#[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn IoMapTransfer(
     AdapterObject: PADAPTER_OBJECT,
