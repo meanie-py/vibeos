@@ -5,7 +5,15 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, dos8dot3, misc, nls, ustr, utf8};
+use crate::core_rs::{conv, dos8dot3, misc, nls, ustr};
+#[cfg(not(feature = "kernel"))]
+use crate::core_rs::utf8;
+
+/// NLS code-page-table machinery (structural sub-bucket of nls.c).
+/// Kernel-only: the byte-diff harness supplies its own modelled `Nls*`
+/// globals + `Rtlp{Up,Down}caseUnicodeChar`.
+#[cfg(feature = "kernel")]
+pub mod nls_tables;
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -29,7 +37,9 @@ const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
 const STATUS_NO_MEMORY: i32 = 0xC000_0017u32 as i32;
 const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
+#[cfg(not(feature = "kernel"))]
 const STATUS_INVALID_PARAMETER_4: i32 = 0xC000_00F2u32 as i32;
+#[cfg(not(feature = "kernel"))]
 const STATUS_INVALID_PARAMETER_5: i32 = 0xC000_00F3u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
@@ -1705,6 +1715,13 @@ pub unsafe extern "system" fn RtlInt64ToUnicodeString(
 
 /// `NTSTATUS NTAPI RtlUnicodeToUTF8N(CHAR*, ULONG, ULONG*, const
 /// WCHAR*, ULONG)`.
+///
+/// Gated off the `kernel` build: the dedicated `utf8` crate
+/// (libutf8.a → rtl_vista) already owns these two symbols and is
+/// smoke-green; emitting them here too would duplicate-define at the
+/// final ntoskrnl link. `rtl-difftest` (no `kernel` feature) still
+/// fuzzes them.
+#[cfg(not(feature = "kernel"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUnicodeToUTF8N(
     utf8_dest: *mut u8,
@@ -1734,7 +1751,9 @@ pub unsafe extern "system" fn RtlUnicodeToUTF8N(
 }
 
 /// `NTSTATUS NTAPI RtlUTF8ToUnicodeN(WCHAR*, ULONG, ULONG*, const
-/// CHAR*, ULONG)`.
+/// CHAR*, ULONG)`. Gated off the `kernel` build (see
+/// `RtlUnicodeToUTF8N`).
+#[cfg(not(feature = "kernel"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUTF8ToUnicodeN(
     uni_dest: *mut u16,
