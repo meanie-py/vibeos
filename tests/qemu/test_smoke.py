@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.qemu.vm import QemuVM, PROJECT_DIR
+from tests.qemu.vm import QemuVM, process_cpu_pct, PROJECT_DIR
 
 # Add tools/ to path for scan_ud2
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -371,3 +371,25 @@ def test_sacred_primitives(arch: str) -> None:
             assert prim in disasm, (
                 f"{prim} not found in ntoskrnl — sacred primitive eliminated by LLVM"
             )
+
+
+def test_idle_cpu_not_spinning(vm: QemuVM) -> None:
+    """At steady-state desktop the guest must actually be IDLE, not spinning.
+
+    Under -accel kvm a healthy HLT-idle guest burns ~0-6% host CPU; a
+    starved/livelocked guest pegs ~90%+. This gate catches "boots green
+    but pathological" regressions that every other smoke signal misses —
+    e.g. the serial-backpressure starvation (92% idle, smoke still green)
+    that silently ran every post-boot test at ~1/20th speed. Threshold is
+    deliberately generous (clean baseline measured 3-6%, starved 88-93%)
+    so it flags only the catastrophic-spin class, never normal jitter.
+    """
+    pct = process_cpu_pct(vm._proc.pid, window=3.0)
+    print(f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
+          f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})")
+    assert pct < 40.0, (
+        f"Guest is NOT idle at steady state: {pct}% host CPU (healthy < ~6%, "
+        f"starved/spinning ~90%+). Something is busy-looping — likely serial/"
+        f"IO backpressure or an interrupt/idle-loop regression. The OS may "
+        f"still 'boot green' while running ~20x slow."
+    )
