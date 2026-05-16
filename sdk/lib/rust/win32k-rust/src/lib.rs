@@ -33,3 +33,4 @@ extern crate win32k_sys;
 
 // ── Translated modules (one `pub mod` per landed src/<name>.rs) ──────
 pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
+pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]

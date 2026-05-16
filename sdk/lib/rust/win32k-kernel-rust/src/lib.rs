@@ -13,6 +13,12 @@ extern crate ntprintf;
 extern crate ntprintf_w;
 extern crate win32k_rust;
 
+// `core` / `compiler_builtins` emit `.eh_frame` refs to
+// `rust_eh_personality`. Panic = abort never unwinds, but the symbol
+// must resolve. Same stub as hal-rust / kernel-rust / kdcom-rust.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_eh_personality() {}
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

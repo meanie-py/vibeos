@@ -186,7 +186,7 @@ list(APPEND SOURCE
     gdi/ntgdi/freetype.c
     gdi/ntgdi/gdibatch.c
     gdi/ntgdi/gdidbg.c
-    gdi/ntgdi/gdiobj.c
+    # gdi/ntgdi/gdiobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/gdiobj.rs, +split2) — cohabitation [Phase 1a]
     gdi/ntgdi/gdipool.c
     gdi/ntgdi/icm.c
     gdi/ntgdi/init.c
@@ -273,6 +273,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-kernel-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/sort.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
