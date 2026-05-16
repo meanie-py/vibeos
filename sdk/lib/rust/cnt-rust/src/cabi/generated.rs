@@ -706,7 +706,7 @@ pub unsafe extern "C" fn strnlen(str: *const u8, maxlen: usize) -> usize {
 
 
 /// `char* strpbrk(const char *s1, const char *s2)`
-/// preserved misfeature: first s1 char that is in s2, else NULL; empty s2 → NULL; the 1/2-char strchr fast paths reduce to exactly first-in-set
+/// preserved misfeature: first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it.
 #[no_mangle]
 pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
     let s1_s = cstr_slice(s1);

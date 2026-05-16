@@ -627,10 +627,9 @@
       "empty s2 (\u2192NULL)",
       "1-char s2",
       "2-char s2",
-      "3+ (bitmap)",
       "no match",
       "match at 0",
-      "high bytes"
+      "high bytes (LP64 host: set\u22642 only)"
     ]
   },
   "strrchr": {
