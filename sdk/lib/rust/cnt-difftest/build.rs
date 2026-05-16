@@ -483,6 +483,21 @@ fn main() {
             inc(s("stdlib/getenv.c")),
             inc(s("stdlib/putenv.c")),
             inc(s("stdlib/wputenv.c")))),
+        // float-cvt Phase 1 — _fcvt/fcvtbuf. Self-contained: the
+        // genuine `cvt()` is a pure host-`modf` digit loop (NO
+        // streamout sprintf — that's _ecvt/_gcvt, later phases). One
+        // TU: fcvtbuf.c (defines fcvtbuf+static cvt) THEN fcvt.c
+        // (re-declares fcvtbuf — the macro renames decl+def alike).
+        // host modf is exact for binary64 == cnt's bit-modf, so they
+        // agree on every finite double; `_isnan`/`_finite` → host
+        // isnan/isfinite (irrelevant on the fuzzed finite domain).
+        // <malloc.h>/precomp via refstub; <float.h> for DBL_MAX_10_EXP.
+        ("fcvt", format!(
+            "#include <float.h>\n#include <math.h>\n\
+             #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+             #define fcvtbuf ref_fcvtbuf\n#define _fcvt ref__fcvt\n{}{}",
+            inc(s("stdlib/fcvtbuf.c")),
+            inc(s("stdlib/fcvt.c")))),
         // Wave SCANF (Phase 1) — the genuine engine is winesup.c
         // (_internal_handle_float + _LIBCNT_locinfo) + scanf.c (the
         // _LIBCNT_ STRING/STRING_LEN instantiations + char2digit + the

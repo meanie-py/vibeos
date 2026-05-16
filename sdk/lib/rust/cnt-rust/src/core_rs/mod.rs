@@ -7,6 +7,7 @@
 
 pub mod casemap;
 pub mod env;
+pub mod floatcvt;
 pub mod mbcp;
 pub mod mem;
 pub mod path;

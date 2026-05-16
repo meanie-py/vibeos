@@ -570,3 +570,58 @@ pub unsafe extern "C" fn __p___initenv() -> *mut *mut *mut u8 {
 pub unsafe extern "C" fn __p___winitenv() -> *mut *mut *mut u16 {
     core::ptr::addr_of_mut!(env().winitenv)
 }
+
+// ===================================================================
+// float-cvt — _fcvt (Phase 1; _ecvt/_gcvt route through the genuine
+// streamout sprintf and land in later phases). Faithful to
+// `stdlib/fcvt.c` + `fcvtbuf.c`. The genuine `_fcvt` returns a
+// non-reentrant `static char fcvt_buf[2*DBL_MAX_10_EXP+10]`; that
+// static lives here (a no-unsafe core can't own a mutable static),
+// so this is hand-written (no manifest rows — the ecvt/static-buffer
+// precedent). The decimal arithmetic is core_rs::floatcvt.
+// ===================================================================
+
+use crate::core_rs::floatcvt as fcvt;
+
+struct FcvtCell(core::cell::UnsafeCell<[u8; fcvt::FCVT_BUF]>);
+unsafe impl Sync for FcvtCell {}
+static FCVT_BUF: FcvtCell = FcvtCell(core::cell::UnsafeCell::new([0; fcvt::FCVT_BUF]));
+
+/// `char *_fcvt(double value, int ndigits, int *decpt, int *sign)`.
+/// Returns the non-reentrant static buffer; writes `*decpt`/`*sign`.
+#[no_mangle]
+pub unsafe extern "C" fn _fcvt(
+    value: f64,
+    ndigits: i32,
+    decpt: *mut i32,
+    sign: *mut i32,
+) -> *mut u8 {
+    let buf = &mut *FCVT_BUF.0.get();
+    match fcvt::fcvtbuf(value, ndigits) {
+        Ok(r) => {
+            buf[..r.buf_len].copy_from_slice(&r.buf[..r.buf_len]);
+            core::ptr::write_volatile(decpt, r.decpt);
+            core::ptr::write_volatile(sign, r.sign);
+        }
+        Err((is_inf, dp, sg)) => {
+            // genuine: `snprintf(buf, ndigits, "1.#QNAN"/"1.#INF");
+            // *decpt=0; *sign=0;` — ndigits is the snprintf SIZE.
+            // This NaN/Inf path is a documented UNFUZZED domain limit
+            // (host-snprintf-with-odd-size dependent; the scanf-
+            // extreme-exponent / strpbrk≤2 precedent). Modeled: the
+            // common ndigits>0 truncation; ndigits<=0 ⇒ the C
+            // `size_t` wrap writes the whole string.
+            let s: &[u8] = if is_inf { b"1.#INF" } else { b"1.#QNAN" };
+            let cap = if ndigits > 0 {
+                ((ndigits - 1) as usize).min(s.len())
+            } else {
+                s.len()
+            };
+            buf[..cap].copy_from_slice(&s[..cap]);
+            buf[cap] = 0;
+            core::ptr::write_volatile(decpt, dp);
+            core::ptr::write_volatile(sign, sg);
+        }
+    }
+    buf.as_mut_ptr()
+}

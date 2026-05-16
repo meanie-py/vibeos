@@ -131,6 +131,8 @@ extern "C" {
     fn ref___p__wenviron() -> *mut *mut *mut u16;
     fn ref___p___initenv() -> *mut *mut *mut u8;
     fn ref___p__winitenv() -> *mut *mut *mut u16;
+    // float-cvt — genuine fcvtbuf.c `cvt()` + fcvt.c.
+    fn ref__fcvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
 }
 
 use cnt_rust::cabi;
@@ -2352,6 +2354,74 @@ fn diff_env() {
                     wputn(&o, "rand wset");
                 }
             }
+        }
+    }
+}
+
+/// float-cvt Phase 1 — _fcvt/fcvtbuf vs the genuine compiled
+/// fcvtbuf.c `cvt()` (the sanos modf digit loop) + fcvt.c. The
+/// genuine uses host `modf` (exact for binary64); cnt uses the
+/// fdlibm bit-`modf` (also exact) → bit-for-bit on every finite
+/// double, the whole magnitude range incl. subnormals. Pins the
+/// `(fj+.03)*10` integer-part fudge, the `arg<1` exponent-down
+/// loop, the `*p1+=5` ripple carry (incl. the new-leading-digit /
+/// `(*decpt)++` case) and the negative-`ndigits+r2` empty-string
+/// path. NaN/Inf (`snprintf(buf,ndigits,...)` size quirk) is the
+/// documented UNFUZZED edge (scanf-extreme-exponent precedent).
+#[test]
+fn diff_fcvt() {
+    let mut rng = Rng(0xf0a7_c021_u64);
+    let mut cd = 0i32;
+    let mut cs = 0i32;
+    let mut rd = 0i32;
+    let mut rs = 0i32;
+    // a spread of fixed magnitudes + fully-random finite bit patterns.
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, 2.5, 9.999_999, 0.1, 0.2, 0.3,
+        123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 4.940_656e-308, 1.797_693e308,
+    ];
+    for it in 0..40_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 3 == 0 {
+            // structured: mantissa in [1,10) × 10^k, random sign
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(620) as i32) - 310;
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            // raw bit pattern (covers subnormals/huge); skip non-finite
+            f64::from_bits(rng.next())
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = (rng.upto(46) as i32) - 4; // -4 ..= 41
+        unsafe {
+            let c = cabi::_fcvt(v, nd, &mut cd, &mut cs);
+            let r = ref__fcvt(v, nd, &mut rd, &mut rs);
+            let cb = {
+                let mut x = Vec::new();
+                let mut i = 0;
+                while *c.add(i) != 0 {
+                    x.push(*c.add(i));
+                    i += 1;
+                }
+                x
+            };
+            let rb = {
+                let mut x = Vec::new();
+                let mut i = 0;
+                while *r.add(i) != 0 {
+                    x.push(*r.add(i));
+                    i += 1;
+                }
+                x
+            };
+            assert_eq!(cb, rb, "_fcvt({v:e}, {nd}) digits");
+            assert_eq!(cd, rd, "_fcvt({v:e}, {nd}) decpt");
+            assert_eq!(cs, rs, "_fcvt({v:e}, {nd}) sign");
         }
     }
 }
