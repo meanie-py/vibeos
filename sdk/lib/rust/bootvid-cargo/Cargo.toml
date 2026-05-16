@@ -1,0 +1,30 @@
+# Cargo-driven `bootvid.dll` link (i386). Boot-video sibling of
+# `hal-cargo` / `kdcom-cargo`.
+#
+# Reuses cmake-produced sibling static/import libs (run `ninja` in
+# build-i386/ first) and drives the final `bootvid.dll` link from cargo
+# via the shared `reactos-link` engine. The Rust body is the
+# `bootvid-rust` staticlib (cargo can't link a staticlib as a Rust dep,
+# so build.rs / reactos-link builds it and feeds libbootvid_rust.a as a
+# link arg).
+#
+# bootvid imports BOTH ntoskrnl.exe and hal.dll (cmake
+# `add_importlibs(bootvid ntoskrnl hal)`) — exercises reactos-link's
+# multi-`import_lib` support.
+#
+# Success criterion: cargo's bootvid.dll boots in QEMU exactly like
+# cmake's (smoke i386; amd64/arm64 stay on the C bootvid.dll).
+
+[package]
+name = "bootvid-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bootvid"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

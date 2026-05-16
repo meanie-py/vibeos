@@ -24,6 +24,20 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "bootvid-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "bootvid-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "byteswap"
 version = "0.1.0"
 

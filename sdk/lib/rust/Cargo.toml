@@ -13,6 +13,8 @@ members = [
     "hal-rust",
     "kdcom-rust",
     "kdcom-cargo",
+    "bootvid-rust",
+    "bootvid-cargo",
     "handle",
     "interlck",
     "kernel-rust",
