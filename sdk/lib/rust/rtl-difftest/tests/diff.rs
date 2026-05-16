@@ -2216,6 +2216,176 @@ extern "C" {
         sid: *const u8,
         alloc: u8,
     ) -> i32;
+    // Wave ACL-1
+    fn ref_RtlCreateAcl(a: *mut u8, sz: u32, rev: u32) -> i32;
+    fn ref_RtlValidAcl(a: *const u8) -> u8;
+    fn ref_RtlFirstFreeAce(a: *mut u8, ff: *mut *mut u8) -> u8;
+    fn ref_RtlGetAce(a: *mut u8, idx: u32, ace: *mut *mut u8) -> i32;
+    fn ref_RtlQueryInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
+    fn ref_RtlSetInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
+}
+
+/// Build a well-formed ACL: `[rev,0,AclSize(le16),AceCount(le16),0,0]`
+/// then `AceCount` ACCESS_ALLOWED ACEs (`[0,flags,size(le16),
+/// mask(le32), SID...]`, AceSize = 8 + LengthSid, 4-aligned). `slack`
+/// extra free bytes after the ACEs (still inside AclSize).
+fn mk_acl(rng: &mut Rng, rev: u8, n: u8, slack: u16) -> Vec<u8> {
+    let mut aces: Vec<Vec<u8>> = Vec::new();
+    for _ in 0..n {
+        let sub = rng.byte() % 4;
+        let sid = mk_sid(rng, 1, sub);
+        let sidlen = 8 + 4 * sub as usize;
+        let asz = 8 + sidlen; // 4-aligned (sidlen %4==0)
+        let mut ace = vec![0u8; asz];
+        ace[0] = 0; // ACCESS_ALLOWED_ACE_TYPE
+        ace[1] = (rng.byte() & 0x1F) as u8; // inherit flags
+        ace[2..4].copy_from_slice(&(asz as u16).to_le_bytes());
+        let mask = rng.next() as u32;
+        ace[4..8].copy_from_slice(&mask.to_le_bytes());
+        ace[8..8 + sidlen].copy_from_slice(&sid[..sidlen]);
+        aces.push(ace);
+    }
+    let body: usize = aces.iter().map(|a| a.len()).sum();
+    let mut acl_size = 8 + body + slack as usize;
+    acl_size = (acl_size + 1) & !1; // USHORT-align
+    let mut v = vec![0u8; acl_size + 16];
+    v[0] = rev;
+    v[2..4].copy_from_slice(&(acl_size as u16).to_le_bytes());
+    v[4..6].copy_from_slice(&(n as u16).to_le_bytes());
+    let mut off = 8;
+    for a in &aces {
+        v[off..off + a.len()].copy_from_slice(a);
+        off += a.len();
+    }
+    v
+}
+
+#[test]
+fn diff_rtl_create_acl() {
+    let mut rng = Rng(0xAC10_0001);
+    for _ in 0..20_000 {
+        let sz = (rng.next() % 0x1_2000) as u32;
+        let rev = (rng.byte() % 7) as u32;
+        let mut bc = vec![0xCDu8; 0x12000 + 16];
+        let mut br = bc.clone();
+        let sc = unsafe { cabi::RtlCreateAcl(bc.as_mut_ptr(), sz, rev) };
+        let sr = unsafe { ref_RtlCreateAcl(br.as_mut_ptr(), sz, rev) };
+        assert_eq!(sc, sr, "RtlCreateAcl status sz={sz} rev={rev}");
+        if sc == 0 {
+            assert_eq!(bc[..8], br[..8], "ACL header sz={sz} rev={rev}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_valid_acl() {
+    let mut rng = Rng(0xAC10_0002);
+    for _ in 0..20_000 {
+        let rev = match rng.byte() % 5 {
+            0 => 1,
+            1 => 5,
+            _ => 2 + rng.byte() % 3,
+        };
+        let n = rng.byte() % 5;
+        let slack = (rng.byte() as u16) & 0x1E;
+        let mut v = mk_acl(&mut rng, rev, n, slack);
+        // Perturbations.
+        match rng.byte() % 6 {
+            0 => v[2] ^= 1,                       // misalign AclSize
+            1 => v[4] = v[4].wrapping_add(1),     // AceCount lie
+            2 if v.len() > 9 => v[9] = 0,         // corrupt a SID rev
+            3 if v.len() > 8 => v[8] = 0xFE,      // bad ACE type
+            _ => {}
+        }
+        let c = unsafe { cabi::RtlValidAcl(v.as_ptr()) };
+        let r = unsafe { ref_RtlValidAcl(v.as_ptr()) };
+        assert_eq!(c, r, "RtlValidAcl rev={rev} n={n}");
+    }
+}
+
+#[test]
+fn diff_rtl_first_free_ace_and_get_ace() {
+    let mut rng = Rng(0xAC10_0003);
+    for _ in 0..10_000 {
+        let n = rng.byte() % 6;
+        let rev = 2 + rng.byte() % 3;
+        let slack = (rng.byte() as u16) & 0x3E;
+        let mut v = mk_acl(&mut rng, rev, n, slack);
+        let p = v.as_mut_ptr();
+        let mut fc: *mut u8 = core::ptr::null_mut();
+        let mut fr: *mut u8 = core::ptr::null_mut();
+        let bc = unsafe { cabi::RtlFirstFreeAce(p, &mut fc) };
+        let br = unsafe { ref_RtlFirstFreeAce(p, &mut fr) };
+        assert_eq!(bc, br, "RtlFirstFreeAce ret n={n}");
+        assert_eq!(fc, fr, "RtlFirstFreeAce *out n={n}");
+
+        for idx in 0..(n as u32 + 2) {
+            let mut ac: *mut u8 = core::ptr::null_mut();
+            let mut ar: *mut u8 = core::ptr::null_mut();
+            let sc = unsafe { cabi::RtlGetAce(p, idx, &mut ac) };
+            let sr = unsafe { ref_RtlGetAce(p, idx, &mut ar) };
+            assert_eq!(sc, sr, "RtlGetAce status n={n} idx={idx}");
+            if sc == 0 {
+                assert_eq!(ac, ar, "RtlGetAce *out n={n} idx={idx}");
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_query_set_information_acl() {
+    let mut rng = Rng(0xAC10_0004);
+    for _ in 0..10_000 {
+        let rev = match rng.byte() % 4 {
+            0 => 1,
+            _ => 2 + rng.byte() % 3,
+        };
+        let n = rng.byte() % 4;
+        let slack = (rng.byte() as u16) & 0x1E;
+        let mut v = mk_acl(&mut rng, rev, n, slack);
+        let p = v.as_mut_ptr();
+        let class = (rng.byte() % 4) as u32;
+        let len = match rng.byte() % 3 {
+            0 => 0,
+            1 => 4,
+            _ => 16,
+        };
+        let mut ic = [0u8; 16];
+        let mut ir = [0u8; 16];
+        let sc = unsafe {
+            cabi::RtlQueryInformationAcl(p, ic.as_mut_ptr(), len, class)
+        };
+        let sr = unsafe {
+            ref_RtlQueryInformationAcl(p, ir.as_mut_ptr(), len, class)
+        };
+        assert_eq!(sc, sr, "Query status rev={rev} n={n} class={class} len={len}");
+        if sc == 0 {
+            assert_eq!(ic, ir, "Query info rev={rev} n={n} class={class}");
+        }
+
+        // SetInformationAcl: only AclRevisionInformation; new rev
+        // must exceed current.
+        let new_rev = (rng.byte() % 7) as u32;
+        let mut sb_c = new_rev.to_le_bytes().to_vec();
+        sb_c.resize(8, 0);
+        let mut sb_r = sb_c.clone();
+        let mut wc = v.clone();
+        let mut wr = v.clone();
+        let slen = match rng.byte() % 2 {
+            0 => 0,
+            _ => 4,
+        };
+        let setc = unsafe {
+            cabi::RtlSetInformationAcl(wc.as_mut_ptr(), sb_c.as_mut_ptr(), slen, class)
+        };
+        let setr = unsafe {
+            ref_RtlSetInformationAcl(wr.as_mut_ptr(), sb_r.as_mut_ptr(), slen, class)
+        };
+        assert_eq!(setc, setr, "Set status rev={rev} class={class} nr={new_rev}");
+        if setc == 0 {
+            assert_eq!(wc[0], wr[0], "Set wrote AclRevision");
+        }
+    }
 }
 
 /// A SID buffer `[rev, count, auth[6], subauth[count] LE]` with 16B
