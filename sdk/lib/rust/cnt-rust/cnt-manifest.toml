@@ -1099,3 +1099,57 @@ inout_effects = "first min(strlen, (int)sizeMaxFill) bytes = (char)szFill; retur
 preserved_misfeature = "sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc"
 reference    = "sdk/lib/crt/string/strset.c"
 fuzz_domain  = ["max 0 (→nothing)", "max < strlen", "max == strlen", "max > strlen (→strlen)", "empty str", "max > INT_MAX (→negative→nothing)", "szFill>0xFF trunc"]
+
+# --- Wave PATH: split/make -----------------------------------------
+# _splitpath/_wsplitpath (_tsplitpath_x.h, libcntpr LIBCNTPR_STRING;
+# non-secure !IS_SECAPI + _LIBCNT_ → void, nullable OUT bufs, INT_MAX
+# caps, NO MBCS, no \\?\, no early-errno) + _makepath/_wmakepath
+# (makepath.c/wmakpath.c, Wine lineage, byte-identical narrow/wide;
+# CRT-only not libcntpr but trivial+pure, in backlog scope). New
+# PATHFAM family. void return. Single drive detection (split reports
+# ranges into the full slice). NULL `path` NEVER fuzzed for split
+# (UB in C, WINVER<0x600); makepath NULL `path` IS pinned (no-op).
+
+[symbols._splitpath]
+c_signature  = "void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)"
+family       = "string"
+slice_pattern = "splitpath"
+core_fn      = "path::split"
+return_collapse = "void"
+inout_effects = "each non-NULL of drive/dir/fname/ext pre-set \"\" then refilled+NUL; drive synthesized [letter,':',0] iff path[1]==':' && drive!=NULL; path advanced 2 on drive regardless of drive==NULL (folded into split dir_start)"
+preserved_misfeature = "drive = single char path[1]==':' only (no UNC/\\\\?\\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all \"\"; INT_MAX copy caps unreachable (not modeled)"
+reference    = "sdk/lib/crt/string/_splitpath.c"
+fuzz_domain  = ["empty", "drive only X:", "no drive", "X:dir\\file.ext", "no ext", "bare fname", "trailing sep", "leading-dot .bashrc", "dot in dir a.b/c", "multi-dot", "forward slash", "mixed / and \\\\", "NULL drive/dir/fname/ext each skipped", "1:x / ::x edge"]
+
+[symbols._wsplitpath]
+c_signature  = "void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)"
+family       = "wstring"
+slice_pattern = "splitpath"
+core_fn      = "path::split"
+return_collapse = "void"
+inout_effects = "as _splitpath over u16"
+preserved_misfeature = "byte-identical to _splitpath over wchar_t (the _ismbblead block was already off via _LIBCNT_; _UNICODE only swaps _TCHAR)"
+reference    = "sdk/lib/crt/string/_wsplitpath.c"
+fuzz_domain  = ["empty", "drive only", "no drive", "X:dir\\\\file.ext", "no ext", "bare fname", "trailing sep", "leading-dot", "dot in dir", "forward slash", "NULL components", "path[1]==':' edge"]
+
+[symbols._makepath]
+c_signature  = "void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)"
+family       = "string"
+slice_pattern = "makepath"
+core_fn      = "path::make"
+return_collapse = "void"
+inout_effects = "path = [drive[0] ':']? + dir + ('\\\\' iff dir non-empty & last not /\\\\)? + fname + ('.' iff ext[0]!='.')? + ext; always NUL-terminated; NULL path => no write"
+preserved_misfeature = "NULL path = clean no-op; component skipped if NULL OR empty (X && X[0]); drive uses ONLY drive[0]+':'; dir always gets trailing '\\\\' unless already ended /\\\\ (forward slash preserved); fname bare-concat (no sep/dot); ext '.' prepended only if ext[0]!='.'; zero bounds checking"
+reference    = "sdk/lib/crt/stdlib/makepath.c"
+fuzz_domain  = ["all empty", "drive only", "dir w/o trailing sep", "dir w/ trailing \\\\", "dir w/ trailing /", "fname only", "ext leading dot", "ext no dot", "NULL each component", "empty-string component", "drive >1 char (only [0])", "full path", "NULL path no-op"]
+
+[symbols._wmakepath]
+c_signature  = "void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)"
+family       = "wstring"
+slice_pattern = "makepath"
+core_fn      = "path::make"
+return_collapse = "void"
+inout_effects = "as _makepath over u16 (memmove len*sizeof(wchar_t); strlenW/strcpyW)"
+preserved_misfeature = "byte-identical to _makepath over wchar_t"
+reference    = "sdk/lib/crt/stdlib/wmakpath.c"
+fuzz_domain  = ["all empty", "drive only", "dir w/o sep", "dir w/ trailing \\\\", "dir w/ trailing /", "fname only", "ext leading dot", "ext no dot", "NULL components", "drive>1 char", "full path", "NULL path"]

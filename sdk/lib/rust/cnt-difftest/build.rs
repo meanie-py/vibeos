@@ -315,6 +315,50 @@ fn main() {
             "#define _WIN64\n#define __int64 long long\n\
              #define _strset ref_strset\n#define _strnset ref_strnset\n{}",
             inc(s("string/strset.c")))),
+        // Wave PATH — _splitpath/_wsplitpath share _tsplitpath_x.h
+        // (non-secure: IS_SECAPI undefined → void, nullable out bufs,
+        // INT_MAX caps). _LIBCNT_ (precomp.h) compiles out the
+        // _ismbblead MBCS block + WINVER>=0x600 errno path. Include
+        // the logic header directly with our own _tsplitpath_x rename
+        // (the .c's `#define _tsplitpath_x _splitpath` would win if we
+        // pulled the .c) — exactly the tcs* logic-header idiom.
+        // Neutralize the SAL annotations the non-secure prototype
+        // spells out. <mbctype.h> resolves to the refstub stub.
+        ("splitpath", format!(
+            "typedef char _TCHAR;\n\
+             #define _ismbblead(c) 0\n#define _CRTIMP\n\
+             #define _CRT_INSECURE_DEPRECATE(x)\n#define _In_z_\n\
+             #define _Out_writes_opt_z_(x)\n#define _In_\n\
+             #define _Pre_maybenull_\n#define _Post_z_\n\
+             #define _Analysis_assume_(x)\n#define _Check_return_wat_\n\
+             #define _CRTIMP_ALTERNATIVE\n\
+             #define _tsplitpath_x ref_splitpath\n{}",
+            inc(s("string/_tsplitpath_x.h")))),
+        ("wsplitpath", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             typedef unsigned short _TCHAR;\n#define _UNICODE\n\
+             #define _ismbblead(c) 0\n#define _CRTIMP\n\
+             #define _CRT_INSECURE_DEPRECATE(x)\n#define _In_z_\n\
+             #define _Out_writes_opt_z_(x)\n#define _In_\n\
+             #define _Pre_maybenull_\n#define _Post_z_\n\
+             #define _Analysis_assume_(x)\n#define _Check_return_wat_\n\
+             #define _CRTIMP_ALTERNATIVE\n\
+             #define _tsplitpath_x ref_wsplitpath\n{}",
+            inc(s("string/_tsplitpath_x.h")))),
+        // makepath.c: host <stdlib.h>/<string.h> (memmove/strlen/
+        // strcpy). wmakpath.c: force wchar_t→unsigned short (u16
+        // parity) + supply strlenW/strcpyW as u16 helpers (wine's are
+        // wcslen/wcscpy which take host 32-bit wchar_t).
+        ("makepath", format!(
+            "#define _makepath ref_makepath\n{}",
+            inc(s("stdlib/makepath.c")))),
+        ("wmakepath", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             static unsigned long _wlenW(const wchar_t*s){{unsigned long n=0;while(s[n])n++;return n;}}\n\
+             static wchar_t* _wcpyW(wchar_t*d,const wchar_t*s){{unsigned long i=0;do{{d[i]=s[i];}}while(s[i++]);return d;}}\n\
+             #define strlenW _wlenW\n#define strcpyW _wcpyW\n\
+             #define _wmakepath ref_wmakepath\n{}",
+            inc(s("stdlib/wmakpath.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

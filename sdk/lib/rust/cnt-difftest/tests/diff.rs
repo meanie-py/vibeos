@@ -92,6 +92,10 @@ extern "C" {
     fn ref_strrev(s: *mut u8) -> *mut u8;
     fn ref_strset(s: *mut u8, fill: i32) -> *mut u8;
     fn ref_strnset(s: *mut u8, fill: i32, max: usize) -> *mut u8;
+    fn ref_splitpath(p: *const u8, dr: *mut u8, di: *mut u8, fnm: *mut u8, ex: *mut u8);
+    fn ref_wsplitpath(p: *const u16, dr: *mut u16, di: *mut u16, fnm: *mut u16, ex: *mut u16);
+    fn ref_makepath(p: *mut u8, dr: *const u8, di: *const u8, fnm: *const u8, ex: *const u8);
+    fn ref_wmakepath(p: *mut u16, dr: *const u16, di: *const u16, fnm: *const u16, ex: *const u16);
 }
 
 use cnt_rust::cabi;
@@ -1412,5 +1416,93 @@ fn diff_strmut() {
                 "_strnset ret max={mx}"
             );
         }
+    }
+}
+
+/// Wave PATH — _splitpath/_wsplitpath/_makepath/_wmakepath. Byte-exact
+/// parity of every OUT buffer (sentinel-prefilled so over/under-writes
+/// AND the truncate-to-"" tail are caught) across the full
+/// equivalence grid: drive present/absent, dir trailing-sep forms,
+/// leading-dot fname, dot-in-dir discard, no-sep, trailing-sep,
+/// per-pointer NULL, empty-component skip. NO NULL `path` for split
+/// (UB in C, WINVER<0x600). makepath NULL `path` IS pinned (no-op).
+/// 256-byte buffers (never the INT_MAX cap).
+#[test]
+fn diff_path() {
+    let mut rng = Rng(0x9a17_c0de_u64);
+    let pool: &[u8] = b"ab.\\/:cd.txt..\\";
+    for _ in 0..8000 {
+        let mut v: Vec<u8> = (0..rng.upto(24))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        v.push(0);
+        let vw: Vec<u16> = v.iter().map(|&b| b as u16).collect();
+        let mask = rng.next() as u32;
+
+        // ---- _splitpath / _wsplitpath : 4 nullable OUT bufs --------
+        let (mut cd, mut ci, mut cf, mut ce) =
+            (vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260]);
+        let (mut rd, mut ri, mut rf, mut re) =
+            (vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260]);
+        macro_rules! p8 { ($b:expr, $buf:expr) => {
+            if mask & $b != 0 { core::ptr::null_mut() } else { $buf.as_mut_ptr() }
+        }}
+        unsafe {
+            cabi::_splitpath(v.as_ptr(), p8!(1, cd), p8!(2, ci), p8!(4, cf), p8!(8, ce));
+            ref_splitpath(v.as_ptr(), p8!(1, rd), p8!(2, ri), p8!(4, rf), p8!(8, re));
+        }
+        assert_eq!(cd, rd, "_splitpath drive v={v:?} mask={mask:#x}");
+        assert_eq!(ci, ri, "_splitpath dir v={v:?} mask={mask:#x}");
+        assert_eq!(cf, rf, "_splitpath fname v={v:?} mask={mask:#x}");
+        assert_eq!(ce, re, "_splitpath ext v={v:?} mask={mask:#x}");
+
+        let (mut wcd, mut wci, mut wcf, mut wce) =
+            (vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260]);
+        let (mut wrd, mut wri, mut wrf, mut wre) =
+            (vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260]);
+        macro_rules! p16 { ($b:expr, $buf:expr) => {
+            if mask & $b != 0 { core::ptr::null_mut() } else { $buf.as_mut_ptr() }
+        }}
+        unsafe {
+            cabi::_wsplitpath(vw.as_ptr(), p16!(1, wcd), p16!(2, wci), p16!(4, wcf), p16!(8, wce));
+            ref_wsplitpath(vw.as_ptr(), p16!(1, wrd), p16!(2, wri), p16!(4, wrf), p16!(8, wre));
+        }
+        assert_eq!(wcd, wrd, "_wsplitpath drive v={v:?}");
+        assert_eq!(wci, wri, "_wsplitpath dir v={v:?}");
+        assert_eq!(wcf, wrf, "_wsplitpath fname v={v:?}");
+        assert_eq!(wce, wre, "_wsplitpath ext v={v:?}");
+
+        // ---- _makepath / _wmakepath : 4 nullable IN components -----
+        let comp = |rng: &mut Rng| -> Vec<u8> {
+            let mut c: Vec<u8> = (0..rng.upto(8)).map(|_| pool[rng.upto(pool.len())]).collect();
+            c.push(0);
+            c
+        };
+        let (dr, di, fl, ex) = (comp(&mut rng), comp(&mut rng), comp(&mut rng), comp(&mut rng));
+        let m2 = rng.next() as u32;
+        let pk = |b: u32, c: &Vec<u8>| -> *const u8 {
+            if m2 & b != 0 { core::ptr::null() } else { c.as_ptr() }
+        };
+        let (mut cmk, mut rmk) = (vec![0xEEu8; 280], vec![0xEEu8; 280]);
+        unsafe {
+            cabi::_makepath(cmk.as_mut_ptr(), pk(1, &dr), pk(2, &di), pk(4, &fl), pk(8, &ex));
+            ref_makepath(rmk.as_mut_ptr(), pk(1, &dr), pk(2, &di), pk(4, &fl), pk(8, &ex));
+        }
+        assert_eq!(cmk, rmk, "_makepath dr={dr:?} di={di:?} fl={fl:?} ex={ex:?} m2={m2:#x}");
+        unsafe {
+            cabi::_makepath(core::ptr::null_mut(), dr.as_ptr(), di.as_ptr(), fl.as_ptr(), ex.as_ptr());
+            ref_makepath(core::ptr::null_mut(), dr.as_ptr(), di.as_ptr(), fl.as_ptr(), ex.as_ptr());
+        }
+        let w = |c: &Vec<u8>| -> Vec<u16> { c.iter().map(|&b| b as u16).collect() };
+        let (wdr, wdi, wfl, wex) = (w(&dr), w(&di), w(&fl), w(&ex));
+        let wpk = |b: u32, c: &Vec<u16>| -> *const u16 {
+            if m2 & b != 0 { core::ptr::null() } else { c.as_ptr() }
+        };
+        let (mut wcmk, mut wrmk) = (vec![0xEEEEu16; 280], vec![0xEEEEu16; 280]);
+        unsafe {
+            cabi::_wmakepath(wcmk.as_mut_ptr(), wpk(1, &wdr), wpk(2, &wdi), wpk(4, &wfl), wpk(8, &wex));
+            ref_wmakepath(wrmk.as_mut_ptr(), wpk(1, &wdr), wpk(2, &wdi), wpk(4, &wfl), wpk(8, &wex));
+        }
+        assert_eq!(wcmk, wrmk, "_wmakepath m2={m2:#x}");
     }
 }

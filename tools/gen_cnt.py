@@ -97,6 +97,7 @@ def ret_ty(sig: str) -> str:
         "char*": "*mut u8",
         "wchar_t*": "*mut u16",
         "void*": "*mut core::ffi::c_void",
+        "void": "()",  # _splitpath/_makepath etc. return nothing
     }[rtype]
 
 
@@ -369,6 +370,85 @@ def _strmut_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
+# Path track — _splitpath/_wsplitpath (_tsplitpath_x.h, non-secure
+# !IS_SECAPI + _LIBCNT_) + _makepath/_wmakepath. The C does a SINGLE
+# `path[1]==':'` drive detection then `path+=2`; `core_rs::path::split`
+# reports ranges into the FULL slice (no sub-slice re-detection). 4
+# nullable OUT bufs for split (each skipped if NULL); the synthesized
+# 3-elem drive is written iff `drive!=NULL` (the `path+=2` is
+# unconditional, baked into split's dir_start). makepath: NULL `path`
+# = clean no-op; NULL/empty component skipped (cstr_slice NULL→empty).
+PATHFAM = {"splitpath", "makepath"}
+
+
+def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = "u16" in rs_ty(params[0][0])
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+    nul = "0u16" if wide else "0u8"
+    colon = "b':' as u16" if wide else "b':'"
+    b: list[str] = []
+    if sp == "splitpath":
+        path, drive, dir_, fname, ext = pn
+        b += [
+            f"    let p = {cstr}({path});",
+            # C lines 67-70: truncate every non-NULL out to "".
+            f"    if !{drive}.is_null() {{ *{drive} = {nul}; }}",
+            f"    if !{dir_}.is_null() {{ *{dir_} = {nul}; }}",
+            f"    if !{fname}.is_null() {{ *{fname} = {nul}; }}",
+            f"    if !{ext}.is_null() {{ *{ext} = {nul}; }}",
+            f"    if p.is_empty() {{ return; }}",  # C line 91 early ret
+            f"    let r = crate::core_rs::path::split(p);",
+            # drive synthesized [p[0], ':', NUL] iff drive != NULL
+            # (C writes the 3 unconditionally given drive!=NULL; the
+            # path+=2 is folded into split's dir_start).
+            f"    if r.has_drive && !{drive}.is_null() {{",
+            f"        *{drive} = p[0];",
+            f"        *{drive}.add(1) = {colon};",
+            f"        *{drive}.add(2) = {nul};",
+            f"    }}",
+            f"    for (out, (a, e)) in [",
+            f"        ({dir_}, r.dir), ({fname}, r.fname), ({ext}, r.ext),",
+            f"    ] {{",
+            f"        if !out.is_null() {{",
+            f"            let d = {rawm}(out, e - a + 1);",
+            f"            let mut k = 0usize;",
+            f"            while k < e - a {{ d[k] = p[a + k]; k += 1; }}",
+            f"            d[e - a] = {nul};",
+            f"        }}",
+            f"    }}",
+        ]
+    elif sp == "makepath":
+        path, drive, dir_, fname, ext = pn
+        b += [
+            f"    if {path}.is_null() {{ return; }}",
+            f"    let dr = {cstr}({drive} as *const {el});",
+            f"    let di = {cstr}({dir_} as *const {el});",
+            f"    let fl = {cstr}({fname} as *const {el});",
+            f"    let ex = {cstr}({ext} as *const {el});",
+            # worst case: drive(2) + dir + sep(1) + fname + dot(1) + ext
+            #             + NUL(1)  →  +5 slack
+            f"    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;",
+            f"    let out = {rawm}({path}, cap);",
+            f"    crate::core_rs::path::make(out, dr, di, fl, ex);",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled pathfam pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
     decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
@@ -495,6 +575,8 @@ def shim(name: str, m: dict) -> str:
         return _casemap_shim(name, m, params, rt)
     if sp in STRMUT:
         return _strmut_shim(name, m, params, rt)
+    if sp in PATHFAM:
+        return _pathfam_shim(name, m, params, rt)
     # `_locale_t` is ignored by every collapse (the `_l` variants
     # delegate with locale unused) — emit it underscore-prefixed so it
     # doesn't trip unused_variables.

@@ -309,6 +309,50 @@ pub unsafe extern "C" fn _ltow_s(value: i32, str: *mut u16, size: usize, radix: 
 }
 
 
+/// `void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)`
+/// preserved misfeature: NULL path = clean no-op; component skipped if NULL OR empty (X && X[0]); drive uses ONLY drive[0]+':'; dir always gets trailing '\\' unless already ended /\\ (forward slash preserved); fname bare-concat (no sep/dot); ext '.' prepended only if ext[0]!='.'; zero bounds checking
+#[no_mangle]
+pub unsafe extern "C" fn _makepath(path: *mut u8, drive: *const u8, dir: *const u8, fname: *const u8, ext: *const u8) -> () {
+    if path.is_null() { return; }
+    let dr = cstr_slice(drive as *const u8);
+    let di = cstr_slice(dir as *const u8);
+    let fl = cstr_slice(fname as *const u8);
+    let ex = cstr_slice(ext as *const u8);
+    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;
+    let out = raw_mut_slice(path, cap);
+    crate::core_rs::path::make(out, dr, di, fl, ex);
+}
+
+
+/// `void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)`
+/// preserved misfeature: drive = single char path[1]==':' only (no UNC/\\?\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all ""; INT_MAX copy caps unreachable (not modeled)
+#[no_mangle]
+pub unsafe extern "C" fn _splitpath(path: *const u8, drive: *mut u8, dir: *mut u8, fname: *mut u8, ext: *mut u8) -> () {
+    let p = cstr_slice(path);
+    if !drive.is_null() { *drive = 0u8; }
+    if !dir.is_null() { *dir = 0u8; }
+    if !fname.is_null() { *fname = 0u8; }
+    if !ext.is_null() { *ext = 0u8; }
+    if p.is_empty() { return; }
+    let r = crate::core_rs::path::split(p);
+    if r.has_drive && !drive.is_null() {
+        *drive = p[0];
+        *drive.add(1) = b':';
+        *drive.add(2) = 0u8;
+    }
+    for (out, (a, e)) in [
+        (dir, r.dir), (fname, r.fname), (ext, r.ext),
+    ] {
+        if !out.is_null() {
+            let d = raw_mut_slice(out, e - a + 1);
+            let mut k = 0usize;
+            while k < e - a { d[k] = p[a + k]; k += 1; }
+            d[e - a] = 0u8;
+        }
+    }
+}
+
+
 /// `int __cdecl _stricmp(char const* _String1, char const* _String2)`
 /// preserved misfeature: ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped
 #[no_mangle]
@@ -633,6 +677,50 @@ pub unsafe extern "C" fn _wcsupr(_String: *mut u16) -> *mut u16 {
     let s = wraw_mut_slice(_String, n);
     crate::core_rs::casemap::upper_ascii(s);
     _String
+}
+
+
+/// `void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)`
+/// preserved misfeature: byte-identical to _makepath over wchar_t
+#[no_mangle]
+pub unsafe extern "C" fn _wmakepath(path: *mut u16, drive: *const u16, dir: *const u16, fname: *const u16, ext: *const u16) -> () {
+    if path.is_null() { return; }
+    let dr = wcstr_slice(drive as *const u16);
+    let di = wcstr_slice(dir as *const u16);
+    let fl = wcstr_slice(fname as *const u16);
+    let ex = wcstr_slice(ext as *const u16);
+    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;
+    let out = wraw_mut_slice(path, cap);
+    crate::core_rs::path::make(out, dr, di, fl, ex);
+}
+
+
+/// `void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)`
+/// preserved misfeature: byte-identical to _splitpath over wchar_t (the _ismbblead block was already off via _LIBCNT_; _UNICODE only swaps _TCHAR)
+#[no_mangle]
+pub unsafe extern "C" fn _wsplitpath(path: *const u16, drive: *mut u16, dir: *mut u16, fname: *mut u16, ext: *mut u16) -> () {
+    let p = wcstr_slice(path);
+    if !drive.is_null() { *drive = 0u16; }
+    if !dir.is_null() { *dir = 0u16; }
+    if !fname.is_null() { *fname = 0u16; }
+    if !ext.is_null() { *ext = 0u16; }
+    if p.is_empty() { return; }
+    let r = crate::core_rs::path::split(p);
+    if r.has_drive && !drive.is_null() {
+        *drive = p[0];
+        *drive.add(1) = b':' as u16;
+        *drive.add(2) = 0u16;
+    }
+    for (out, (a, e)) in [
+        (dir, r.dir), (fname, r.fname), (ext, r.ext),
+    ] {
+        if !out.is_null() {
+            let d = wraw_mut_slice(out, e - a + 1);
+            let mut k = 0usize;
+            while k < e - a { d[k] = p[a + k]; k += 1; }
+            d[e - a] = 0u16;
+        }
+    }
 }
 
 

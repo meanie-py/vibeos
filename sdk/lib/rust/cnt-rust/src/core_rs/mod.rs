@@ -8,6 +8,7 @@
 pub mod casemap;
 pub mod mbcp;
 pub mod mem;
+pub mod path;
 pub mod radix;
 pub mod string;
 pub mod strmut;

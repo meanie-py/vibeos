@@ -162,6 +162,51 @@
       "value 0/\u00b1/I32_MIN/I32_MAX"
     ]
   },
+  "_makepath": {
+    "c_signature": "void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)",
+    "family": "string",
+    "slice_pattern": "makepath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/makepath.c",
+    "fuzz_domain": [
+      "all empty",
+      "drive only",
+      "dir w/o trailing sep",
+      "dir w/ trailing \\\\",
+      "dir w/ trailing /",
+      "fname only",
+      "ext leading dot",
+      "ext no dot",
+      "NULL each component",
+      "empty-string component",
+      "drive >1 char (only [0])",
+      "full path",
+      "NULL path no-op"
+    ]
+  },
+  "_splitpath": {
+    "c_signature": "void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)",
+    "family": "string",
+    "slice_pattern": "splitpath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/string/_splitpath.c",
+    "fuzz_domain": [
+      "empty",
+      "drive only X:",
+      "no drive",
+      "X:dir\\file.ext",
+      "no ext",
+      "bare fname",
+      "trailing sep",
+      "leading-dot .bashrc",
+      "dot in dir a.b/c",
+      "multi-dot",
+      "forward slash",
+      "mixed / and \\\\",
+      "NULL drive/dir/fname/ext each skipped",
+      "1:x / ::x edge"
+    ]
+  },
   "_stricmp": {
     "c_signature": "int __cdecl _stricmp(char const* _String1, char const* _String2)",
     "family": "string",
@@ -506,6 +551,48 @@
       "ASCII mixed",
       "Latin-1/CJK units (untouched)",
       "all-lower ASCII"
+    ]
+  },
+  "_wmakepath": {
+    "c_signature": "void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)",
+    "family": "wstring",
+    "slice_pattern": "makepath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/wmakpath.c",
+    "fuzz_domain": [
+      "all empty",
+      "drive only",
+      "dir w/o sep",
+      "dir w/ trailing \\\\",
+      "dir w/ trailing /",
+      "fname only",
+      "ext leading dot",
+      "ext no dot",
+      "NULL components",
+      "drive>1 char",
+      "full path",
+      "NULL path"
+    ]
+  },
+  "_wsplitpath": {
+    "c_signature": "void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)",
+    "family": "wstring",
+    "slice_pattern": "splitpath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/string/_wsplitpath.c",
+    "fuzz_domain": [
+      "empty",
+      "drive only",
+      "no drive",
+      "X:dir\\\\file.ext",
+      "no ext",
+      "bare fname",
+      "trailing sep",
+      "leading-dot",
+      "dot in dir",
+      "forward slash",
+      "NULL components",
+      "path[1]==':' edge"
     ]
   },
   "_wtoi": {
