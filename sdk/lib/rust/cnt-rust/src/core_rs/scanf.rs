@@ -412,22 +412,36 @@ pub fn scanf_engine<E: Elem, S: Sink>(
                             }
                         }
                         while width != 0 && nch != EOF && is_dig(nch) {
-                            e = e.wrapping_mul(10).wrapping_add((nch - b'0' as u32) as i32);
-                            if e > i32::MAX / 10 || e < 0 {
+                            // C short-circuit: `if(e > INT_MAX/10 ||
+                            // (e = e*10+d) < 0) e = INT_MAX;` — the
+                            // multiply is NOT evaluated once e exceeds
+                            // INT_MAX/10. Signed overflow is UB in C
+                            // (gcc wraps); model with wrapping.
+                            if e > i32::MAX / 10 {
                                 e = i32::MAX;
+                            } else {
+                                e = e
+                                    .wrapping_mul(10)
+                                    .wrapping_add((nch - b'0' as u32) as i32);
+                                if e < 0 {
+                                    e = i32::MAX;
+                                }
                             }
                             nch = cur.getc();
                             if width > 0 {
                                 width -= 1;
                             }
                         }
-                        e *= sign;
-                        if exp < 0 && e < 0 && e + exp > 0 {
+                        e = e.wrapping_mul(sign);
+                        // C `e+exp` is signed int (UB on overflow; gcc
+                        // wraps) — wrapping_add keeps debug from
+                        // panicking while staying byte-faithful.
+                        if exp < 0 && e < 0 && e.wrapping_add(exp) > 0 {
                             exp = i32::MIN;
-                        } else if exp > 0 && e > 0 && e + exp < 0 {
+                        } else if exp > 0 && e > 0 && e.wrapping_add(exp) < 0 {
                             exp = i32::MAX;
                         } else {
-                            exp += e;
+                            exp = exp.wrapping_add(e);
                         }
                     }
                     st = 1;

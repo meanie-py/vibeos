@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from .vm import QemuVM, get_arch_config, PROJECT_DIR
+from .vm import QemuVM, get_arch_config, reap_orphan_qemus, PROJECT_DIR
 
 # Add tools/ to path for scan_ud2, lint_kernel
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -103,6 +103,11 @@ def _run_post_build_checks(arch: str) -> list[str]:
 @pytest.fixture(scope="session")
 def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Iterator[QemuVM]:
     """Boot QEMU once per test session, save 'ready' snapshot."""
+    # Reap ONLY orphan QEMUs whose launcher process is dead (crashed/timed-out
+    # prior runs). A QEMU with a live launcher — possibly another agent's —
+    # is never touched. Safe by construction; see vm.reap_orphan_qemus.
+    for line in reap_orphan_qemus():
+        print(f"[pytest] {line}")
     if not request.config.getoption("--skip-clean-build"):
         _ensure_clean_rust_build(arch)
     _run_post_build_checks(arch)
