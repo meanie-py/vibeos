@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{nls, ustr};
+use crate::core_rs::{conv, nls, ustr};
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -30,6 +30,8 @@ const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
 const STATUS_NO_MEMORY: i32 = 0xC000_0017u32 as i32;
 const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
+const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
 
 #[inline]
@@ -767,7 +769,7 @@ pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
         STATUS_SUCCESS
     };
     if nt_success(status)
-        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
     {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
@@ -865,7 +867,7 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
     let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
     let mut status = STATUS_SUCCESS;
     if nt_success(status)
-        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
     {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
@@ -900,7 +902,7 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
     let mut status = STATUS_SUCCESS;
     if nt_success(status)
-        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
     {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
@@ -955,4 +957,245 @@ pub unsafe extern "system" fn RtlGetDefaultCodePage(
     if !oem_cp.is_null() {
         core::ptr::write_volatile(oem_cp, 1252);
     }
+}
+
+// ── Wave RTL-4a: integer ⇄ string + copy/append ───────────────────
+
+/// `NTSTATUS NTAPI RtlCharToInteger(PCSZ, ULONG, PULONG)`. Base
+/// validation out-ranks the `value == NULL` ⇒ ACCESS_VIOLATION check
+/// (faithful ordering); `*value` written volatile.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCharToInteger(
+    str: *const u8,
+    base: u32,
+    value: *mut u32,
+) -> i32 {
+    let s = core::slice::from_raw_parts(str, strlen(str));
+    match conv::char_to_integer(s, base) {
+        conv::IntParse::InvalidBase => STATUS_INVALID_PARAMETER,
+        conv::IntParse::Value(v) => {
+            if value.is_null() {
+                STATUS_ACCESS_VIOLATION
+            } else {
+                core::ptr::write_volatile(value, v);
+                STATUS_SUCCESS
+            }
+        }
+    }
+}
+
+/// `NTSTATUS NTAPI RtlUnicodeStringToInteger(PCUNICODE_STRING, ULONG,
+/// PULONG)`. The whitespace skip is `CharsRemaining`-bounded (embedded
+/// NUL units are eaten); same base-before-NULL ordering.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeStringToInteger(
+    str: *const UNICODE_STRING,
+    base: u32,
+    value: *mut u32,
+) -> i32 {
+    match conv::unicode_string_to_integer(uunits(str), base) {
+        conv::IntParse::InvalidBase => STATUS_INVALID_PARAMETER,
+        conv::IntParse::Value(v) => {
+            if value.is_null() {
+                STATUS_ACCESS_VIOLATION
+            } else {
+                core::ptr::write_volatile(value, v);
+                STATUS_SUCCESS
+            }
+        }
+    }
+}
+
+/// `NTSTATUS NTAPI RtlIntegerToUnicode(ULONG, ULONG, ULONG, LPWSTR)`.
+/// Writes `count` digit units **plus** a NUL; the size gate counts
+/// only the digits (genuine NUL-overrun quirk — caller buffer must
+/// hold count+1 units).
+#[no_mangle]
+pub unsafe extern "system" fn RtlIntegerToUnicode(
+    value: u32,
+    base: u32,
+    length: u32,
+    string: *mut u16,
+) -> i32 {
+    match conv::integer_to_unicode(value, base, length) {
+        conv::IntToUni::InvalidBase => STATUS_INVALID_PARAMETER,
+        conv::IntToUni::TooSmall => STATUS_BUFFER_TOO_SMALL,
+        conv::IntToUni::Digits(out, c) => {
+            for i in 0..c {
+                core::ptr::write_volatile(string.add(i), out[i]);
+            }
+            core::ptr::write_volatile(string.add(c), 0u16);
+            STATUS_SUCCESS
+        }
+    }
+}
+
+/// `VOID NTAPI RtlCopyString(PSTRING, const STRING* OPTIONAL)`.
+/// `Length = min(Dest->MaximumLength, Src->Length)`; NULL src ⇒
+/// `Dest->Length = 0` only. No NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCopyString(
+    dest: *mut STRING,
+    src: *const STRING,
+) {
+    if src.is_null() {
+        (*dest).Length = 0;
+        return;
+    }
+    let n = ((*dest).MaximumLength).min((*src).Length) as usize;
+    (*dest).Length = n as u16;
+    let s = (*src).Buffer;
+    let d = (*dest).Buffer;
+    for i in 0..n {
+        core::ptr::write_volatile(d.add(i), *s.add(i));
+    }
+}
+
+/// `VOID NTAPI RtlCopyUnicodeString(PUNICODE_STRING,
+/// PCUNICODE_STRING)`. `Length` (BYTES) `= min(Dest->MaximumLength,
+/// Src->Length)`; NUL appended iff `Length < MaximumLength`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCopyUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const UNICODE_STRING,
+) {
+    if src.is_null() {
+        (*dest).Length = 0;
+        return;
+    }
+    let n = ((*dest).MaximumLength).min((*src).Length) as usize;
+    (*dest).Length = n as u16;
+    let s = (*src).Buffer as *const u8;
+    let d = (*dest).Buffer as *mut u8;
+    for i in 0..n {
+        core::ptr::write_volatile(d.add(i), *s.add(i));
+    }
+    if (*dest).Length < (*dest).MaximumLength {
+        core::ptr::write_volatile((*dest).Buffer.add(n / 2), 0u16);
+    }
+}
+
+/// `NTSTATUS NTAPI RtlAppendStringToString(PSTRING, const STRING*)`.
+/// `Dest->Length + Src->Length > Dest->MaximumLength ⇒
+/// STATUS_BUFFER_TOO_SMALL`. No NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAppendStringToString(
+    dest: *mut STRING,
+    src: *const STRING,
+) -> i32 {
+    let sl = (*src).Length;
+    if sl != 0 {
+        if (*dest).Length as u32 + sl as u32 > (*dest).MaximumLength as u32 {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        let off = (*dest).Length as usize;
+        let s = (*src).Buffer;
+        let d = (*dest).Buffer;
+        for i in 0..sl as usize {
+            core::ptr::write_volatile(d.add(off + i), *s.add(i));
+        }
+        (*dest).Length += sl;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAppendUnicodeStringToString(PUNICODE_STRING,
+/// PCUNICODE_STRING)`. NUL appended iff `MaximumLength > Length` after
+/// the append.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAppendUnicodeStringToString(
+    dest: *mut UNICODE_STRING,
+    src: *const UNICODE_STRING,
+) -> i32 {
+    let sl = (*src).Length;
+    if sl != 0 {
+        if sl as u32 + (*dest).Length as u32 > (*dest).MaximumLength as u32 {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        let unit_off = (*dest).Length as usize / 2;
+        let d = (*dest).Buffer.add(unit_off) as *mut u8;
+        let s = (*src).Buffer as *const u8;
+        for i in 0..sl as usize {
+            core::ptr::write_volatile(d.add(i), *s.add(i));
+        }
+        (*dest).Length += sl;
+        if (*dest).MaximumLength > (*dest).Length {
+            core::ptr::write_volatile(
+                (*dest).Buffer.add(unit_off + sl as usize / 2),
+                0u16,
+            );
+        }
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAppendUnicodeToString(PUNICODE_STRING, PCWSTR)`.
+/// `Length` is the `RtlInitUnicodeString`-clamped byte size of the
+/// source. NULL src ⇒ unchanged ⇒ SUCCESS. NUL iff `MaximumLength >
+/// Length` after.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAppendUnicodeToString(
+    dest: *mut UNICODE_STRING,
+    src: *const u16,
+) -> i32 {
+    if !src.is_null() {
+        let (length, _) = ustr::uni_lengths(wcslen(src));
+        if (*dest).Length as u32 + length as u32 > (*dest).MaximumLength as u32 {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        let unit_off = (*dest).Length as usize / 2;
+        let d = (*dest).Buffer.add(unit_off) as *mut u8;
+        let s = src as *const u8;
+        for i in 0..length as usize {
+            core::ptr::write_volatile(d.add(i), *s.add(i));
+        }
+        (*dest).Length += length;
+        if (*dest).MaximumLength > (*dest).Length {
+            core::ptr::write_volatile(
+                (*dest).Buffer.add(unit_off + length as usize / 2),
+                0u16,
+            );
+        }
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAppendAsciizToString(PSTRING, PCSZ)`. NULL src ⇒
+/// unchanged ⇒ SUCCESS. No NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAppendAsciizToString(
+    dest: *mut STRING,
+    src: *const u8,
+) -> i32 {
+    if !src.is_null() {
+        let size = strlen(src);
+        if (*dest).Length as usize + size > (*dest).MaximumLength as usize {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        let off = (*dest).Length as usize;
+        let d = (*dest).Buffer;
+        for i in 0..size {
+            core::ptr::write_volatile(d.add(off + i), *src.add(i));
+        }
+        (*dest).Length += size as u16;
+    }
+    STATUS_SUCCESS
+}
+
+/// `LONG NTAPI RtlCompareUnicodeStrings(PCWCH, SIZE_T, PCWCH, SIZE_T,
+/// BOOLEAN)` — raw-buffer compare, unit-count lengths, `SIZE_T`
+/// subtraction tiebreak.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCompareUnicodeStrings(
+    string1: *const u16,
+    string1_length: usize,
+    string2: *const u16,
+    string2_length: usize,
+    case_insensitive: u8,
+) -> i32 {
+    nls::compare_unicode_strings(
+        rslice(string1, string1_length),
+        rslice(string2, string2_length),
+        case_insensitive != 0,
+    )
 }

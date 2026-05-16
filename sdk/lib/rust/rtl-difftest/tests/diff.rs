@@ -75,6 +75,23 @@ extern "C" {
     fn ref_RtlDowncaseUnicodeChar(c: u16) -> u16;
     fn ref_RtlDowncaseUnicodeString(d: *mut UNICODE_STRING, s: *const UNICODE_STRING, a: u8) -> i32;
     fn ref_RtlGetDefaultCodePage(a: *mut u16, o: *mut u16);
+    // Wave RTL-4a
+    fn ref_RtlCharToInteger(s: *const u8, base: u32, v: *mut u32) -> i32;
+    fn ref_RtlUnicodeStringToInteger(s: *const UNICODE_STRING, base: u32, v: *mut u32) -> i32;
+    fn ref_RtlIntegerToUnicode(v: u32, base: u32, len: u32, s: *mut u16) -> i32;
+    fn ref_RtlCopyString(d: *mut STRING, s: *const STRING);
+    fn ref_RtlCopyUnicodeString(d: *mut UNICODE_STRING, s: *const UNICODE_STRING);
+    fn ref_RtlAppendStringToString(d: *mut STRING, s: *const STRING) -> i32;
+    fn ref_RtlAppendUnicodeStringToString(d: *mut UNICODE_STRING, s: *const UNICODE_STRING) -> i32;
+    fn ref_RtlAppendUnicodeToString(d: *mut UNICODE_STRING, s: *const u16) -> i32;
+    fn ref_RtlAppendAsciizToString(d: *mut STRING, s: *const u8) -> i32;
+    fn ref_RtlCompareUnicodeStrings(
+        s1: *const u16,
+        l1: usize,
+        s2: *const u16,
+        l2: usize,
+        ci: u8,
+    ) -> i32;
 }
 
 struct Rng(u64);
@@ -888,6 +905,316 @@ fn diff_rtl_downcase_unicode_string() {
             assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
                 "RtlDowncaseUnicodeString fields su={su} ml={ml} a={a}");
             assert_eq!(bc, br, "RtlDowncaseUnicodeString buf su={su} ml={ml} a={a}");
+        }
+    }
+}
+
+// ── Wave RTL-4a: integer ⇄ string + copy/append ───────────────────
+
+/// Alphabet for the string→integer parsers: digits, hex/base letters,
+/// sign, base prefixes, whitespace + control + high bytes (the
+/// signed-`CHAR` "everything ≥0x80 is whitespace" quirk).
+const INT_ALPHA: &[u8] = &[
+    b'0', b'1', b'7', b'9', b'A', b'F', b'Z', b'a', b'f', b'x', b'o',
+    b'b', b'z', b'+', b'-', b' ', b'\t', 0x01, 0x1f, 0x7f, 0x80, 0xC0,
+    0xff,
+];
+const BASES: &[u32] = &[0, 2, 8, 10, 16, 1, 3, 7, 9, 255, 0xFFFF_FFFF];
+
+#[test]
+fn diff_rtl_char_to_integer() {
+    let mut rng = Rng(0x4a_0001_01);
+    for _ in 0..40_000 {
+        let n = rng.upto(14);
+        let mut s: Vec<u8> =
+            (0..n).map(|_| INT_ALPHA[rng.upto(INT_ALPHA.len())]).collect();
+        s.push(0); // NUL terminator
+        let base = BASES[rng.upto(BASES.len())];
+        for null_v in [false, true] {
+            let (mut vc, mut vr) = (0xDEAD_BEEFu32, 0xDEAD_BEEFu32);
+            let (pc, pr) = if null_v {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut vc as *mut u32, &mut vr as *mut u32)
+            };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlCharToInteger(s.as_ptr(), base, pc);
+                sr = ref_RtlCharToInteger(s.as_ptr(), base, pr);
+            }
+            assert_eq!(sc, sr, "RtlCharToInteger ret base={base} {s:?}");
+            assert_eq!(vc, vr, "RtlCharToInteger *value base={base} {s:?}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_unicode_string_to_integer() {
+    let mut rng = Rng(0x4a_0001_02);
+    let walpha: Vec<u16> = {
+        let mut v: Vec<u16> = INT_ALPHA.iter().map(|&b| b as u16).collect();
+        v.extend_from_slice(&[0x0000, 0x00B2, 0x0660, 0xFF10]);
+        v
+    };
+    for _ in 0..40_000 {
+        let units = rng.upto(14);
+        let buf: Vec<u16> =
+            (0..units.max(1)).map(|_| walpha[rng.upto(walpha.len())]).collect();
+        // byte Length: usually units*2, sometimes shorter / odd.
+        let blen = (match rng.upto(4) {
+            0 => 0,
+            1 => units,
+            2 => (units * 2).saturating_sub(1),
+            _ => units * 2,
+        }) as u16;
+        let base = BASES[rng.upto(BASES.len())];
+        let us = mk_ustr(buf.as_ptr() as *mut u16, blen, blen);
+        for null_v in [false, true] {
+            let (mut vc, mut vr) = (0xDEAD_BEEFu32, 0xDEAD_BEEFu32);
+            let (pc, pr) = if null_v {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut vc as *mut u32, &mut vr as *mut u32)
+            };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlUnicodeStringToInteger(&us, base, pc);
+                sr = ref_RtlUnicodeStringToInteger(&us, base, pr);
+            }
+            assert_eq!(sc, sr, "RtlUnicodeStringToInteger ret base={base}");
+            assert_eq!(vc, vr, "RtlUnicodeStringToInteger *value base={base} {buf:?}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_integer_to_unicode() {
+    let mut rng = Rng(0x4a_0001_03);
+    let vals: &[u32] = &[0, 1, 7, 9, 10, 15, 16, 255, 1000, 0x7FFF_FFFF, 0xFFFF_FFFF];
+    let lens: &[u32] = &[0, 2, 4, 8, 16, 20, 64, 200, 0xFFFF_FFFF];
+    for _ in 0..30_000 {
+        let value = if rng.upto(3) == 0 {
+            vals[rng.upto(vals.len())]
+        } else {
+            rng.next() as u32
+        };
+        let base = BASES[rng.upto(BASES.len())];
+        let length = lens[rng.upto(lens.len())];
+        // 64-unit backing absorbs the genuine count+1 (digits+NUL)
+        // write even when `length` lies (genuine UB excluded).
+        let mut bc = vec![0xAAAAu16; 64];
+        let mut br = vec![0xAAAAu16; 64];
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlIntegerToUnicode(value, base, length, bc.as_mut_ptr());
+            sr = ref_RtlIntegerToUnicode(value, base, length, br.as_mut_ptr());
+        }
+        assert_eq!(sc, sr, "RtlIntegerToUnicode ret v={value} base={base} len={length}");
+        assert_eq!(bc, br, "RtlIntegerToUnicode buf v={value} base={base} len={length}");
+    }
+}
+
+#[test]
+fn diff_rtl_copy_string() {
+    let mut rng = Rng(0x4a_0001_04);
+    for _ in 0..20_000 {
+        let sl = rng.upto(20);
+        let sb: Vec<u8> = (0..sl.max(1)).map(|_| rng.byte()).collect();
+        let smax = rng.upto(24) as u16;
+        for null_src in [false, true] {
+            let ss = STRING {
+                Length: sl as u16,
+                MaximumLength: smax,
+                Buffer: sb.as_ptr() as *mut u8,
+            };
+            let sp: *const STRING =
+                if null_src { core::ptr::null() } else { &ss };
+            let dmax = rng.upto(24);
+            let mut db_c = vec![0xCCu8; dmax.max(1)];
+            let mut db_r = vec![0xCCu8; dmax.max(1)];
+            let mut dc = mk_string(db_c.as_mut_ptr(), 0xAAAA, dmax as u16);
+            let mut dr = mk_string(db_r.as_mut_ptr(), 0xAAAA, dmax as u16);
+            unsafe {
+                cabi::RtlCopyString(&mut dc, sp);
+                ref_RtlCopyString(&mut dr, sp);
+            }
+            assert_eq!(dc.Length, dr.Length, "RtlCopyString Length");
+            assert_eq!(db_c, db_r, "RtlCopyString buf sl={sl} dmax={dmax}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_copy_unicode_string() {
+    let mut rng = Rng(0x4a_0001_05);
+    for _ in 0..20_000 {
+        let su = rng.upto(16);
+        let sv: Vec<u16> =
+            (0..su.max(1)).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let slen = (su * 2) as u16;
+        let smax = (rng.upto(18) * 2) as u16;
+        for null_src in [false, true] {
+            let ss = UNICODE_STRING {
+                Length: slen,
+                MaximumLength: smax,
+                Buffer: sv.as_ptr() as *mut u16,
+            };
+            let sp: *const UNICODE_STRING =
+                if null_src { core::ptr::null() } else { &ss };
+            let dmax_u = rng.upto(20);
+            let mut db_c = vec![0xCCCCu16; dmax_u.max(1)];
+            let mut db_r = vec![0xCCCCu16; dmax_u.max(1)];
+            let mut dc = mk_ustr(db_c.as_mut_ptr(), 0xAAAA, (dmax_u * 2) as u16);
+            let mut dr = mk_ustr(db_r.as_mut_ptr(), 0xAAAA, (dmax_u * 2) as u16);
+            unsafe {
+                cabi::RtlCopyUnicodeString(&mut dc, sp);
+                ref_RtlCopyUnicodeString(&mut dr, sp);
+            }
+            assert_eq!(dc.Length, dr.Length, "RtlCopyUnicodeString Length");
+            assert_eq!(db_c, db_r, "RtlCopyUnicodeString buf su={su} dmax={dmax_u}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_append_string() {
+    let mut rng = Rng(0x4a_0001_06);
+    for _ in 0..20_000 {
+        let dl = rng.upto(12);
+        let sl = rng.upto(12);
+        let total = dl + sl + rng.upto(6);
+        let dmax = total.min(0xFFFF);
+        let sb: Vec<u8> = (0..sl.max(1)).map(|_| rng.byte() | 1).collect();
+        let asz: Vec<u8> = {
+            let mut v: Vec<u8> = (0..sl).map(|_| rng.byte() | 1).collect();
+            v.push(0);
+            v
+        };
+        // backing is generously sized; Length/Max drive the contract.
+        let mut db_c = vec![0xCCu8; total.max(1) + 4];
+        let mut db_r = vec![0xCCu8; total.max(1) + 4];
+        for i in 0..dl {
+            db_c[i] = 0x40 + (i as u8 & 0xf);
+            db_r[i] = db_c[i];
+        }
+        let ss = mk_string(sb.as_ptr() as *mut u8, sl as u16, sl as u16);
+        let mut dc = mk_string(db_c.as_mut_ptr(), dl as u16, dmax as u16);
+        let mut dr = mk_string(db_r.as_mut_ptr(), dl as u16, dmax as u16);
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlAppendStringToString(&mut dc, &ss);
+            sr = ref_RtlAppendStringToString(&mut dr, &ss);
+        }
+        assert_eq!(sc, sr, "RtlAppendStringToString ret dl={dl} sl={sl} dmax={dmax}");
+        assert_eq!(dc.Length, dr.Length, "RtlAppendStringToString Length");
+        assert_eq!(db_c, db_r, "RtlAppendStringToString buf");
+
+        // RtlAppendAsciizToString reuses the same dest shape.
+        let mut eb_c = vec![0xCCu8; total.max(1) + 4];
+        let mut eb_r = vec![0xCCu8; total.max(1) + 4];
+        for i in 0..dl {
+            eb_c[i] = 0x40 + (i as u8 & 0xf);
+            eb_r[i] = eb_c[i];
+        }
+        let mut ec = mk_string(eb_c.as_mut_ptr(), dl as u16, dmax as u16);
+        let mut er = mk_string(eb_r.as_mut_ptr(), dl as u16, dmax as u16);
+        for null_src in [false, true] {
+            let asp = if null_src { core::ptr::null() } else { asz.as_ptr() };
+            let (ac, ar);
+            unsafe {
+                ac = cabi::RtlAppendAsciizToString(&mut ec, asp);
+                ar = ref_RtlAppendAsciizToString(&mut er, asp);
+            }
+            assert_eq!(ac, ar, "RtlAppendAsciizToString ret");
+            assert_eq!(ec.Length, er.Length, "RtlAppendAsciizToString Length");
+            assert_eq!(eb_c, eb_r, "RtlAppendAsciizToString buf");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_append_unicode() {
+    let mut rng = Rng(0x4a_0001_07);
+    for _ in 0..20_000 {
+        let du = rng.upto(10);
+        let suu = rng.upto(10);
+        let total_u = du + suu + rng.upto(4);
+        let dmax = (total_u * 2).min(0xFFFE) as u16;
+        let sv: Vec<u16> =
+            (0..suu.max(1)).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let wsz: Vec<u16> = {
+            let mut v: Vec<u16> = (0..suu)
+                .map(|_| 1 + (rng.next() as u16 % 0x300))
+                .collect();
+            v.push(0);
+            v
+        };
+        let mut db_c = vec![0xCCCCu16; total_u.max(1) + 4];
+        let mut db_r = vec![0xCCCCu16; total_u.max(1) + 4];
+        for i in 0..du {
+            db_c[i] = 0x41 + (i as u16 & 0xf);
+            db_r[i] = db_c[i];
+        }
+        let ss = mk_ustr(sv.as_ptr() as *mut u16, (suu * 2) as u16, (suu * 2) as u16);
+        let mut dc = mk_ustr(db_c.as_mut_ptr(), (du * 2) as u16, dmax);
+        let mut dr = mk_ustr(db_r.as_mut_ptr(), (du * 2) as u16, dmax);
+        let (sc, sr);
+        unsafe {
+            sc = cabi::RtlAppendUnicodeStringToString(&mut dc, &ss);
+            sr = ref_RtlAppendUnicodeStringToString(&mut dr, &ss);
+        }
+        assert_eq!(sc, sr, "RtlAppendUnicodeStringToString ret");
+        assert_eq!(dc.Length, dr.Length, "RtlAppendUnicodeStringToString Length");
+        assert_eq!(db_c, db_r, "RtlAppendUnicodeStringToString buf");
+
+        let mut eb_c = vec![0xCCCCu16; total_u.max(1) + 4];
+        let mut eb_r = vec![0xCCCCu16; total_u.max(1) + 4];
+        for i in 0..du {
+            eb_c[i] = 0x41 + (i as u16 & 0xf);
+            eb_r[i] = eb_c[i];
+        }
+        let mut ec = mk_ustr(eb_c.as_mut_ptr(), (du * 2) as u16, dmax);
+        let mut er = mk_ustr(eb_r.as_mut_ptr(), (du * 2) as u16, dmax);
+        for null_src in [false, true] {
+            let wsp = if null_src { core::ptr::null() } else { wsz.as_ptr() };
+            let (ac, ar);
+            unsafe {
+                ac = cabi::RtlAppendUnicodeToString(&mut ec, wsp);
+                ar = ref_RtlAppendUnicodeToString(&mut er, wsp);
+            }
+            assert_eq!(ac, ar, "RtlAppendUnicodeToString ret");
+            assert_eq!(ec.Length, er.Length, "RtlAppendUnicodeToString Length");
+            assert_eq!(eb_c, eb_r, "RtlAppendUnicodeToString buf");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_compare_unicode_strings() {
+    let mut rng = Rng(0x4a_0001_08);
+    for _ in 0..40_000 {
+        let mk = |rng: &mut Rng| -> Vec<u16> {
+            (0..rng.upto(12).max(1))
+                .map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())])
+                .collect()
+        };
+        let v1 = mk(&mut rng);
+        let v2 = mk(&mut rng);
+        // unit-count lengths, independently random but ≤ backing.
+        let l1 = rng.upto(v1.len() + 1);
+        let l2 = rng.upto(v2.len() + 1);
+        let p1 = if l1 == 0 { core::ptr::null() } else { v1.as_ptr() };
+        let p2 = if l2 == 0 { core::ptr::null() } else { v2.as_ptr() };
+        for ci in [0u8, 1] {
+            let (rc, rr);
+            unsafe {
+                rc = cabi::RtlCompareUnicodeStrings(p1, l1, p2, l2, ci);
+                rr = ref_RtlCompareUnicodeStrings(p1, l1, p2, l2, ci);
+            }
+            assert_eq!(
+                rc, rr,
+                "RtlCompareUnicodeStrings ci={ci} {v1:?}/{l1} {v2:?}/{l2}"
+            );
         }
     }
 }
