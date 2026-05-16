@@ -435,4 +435,114 @@ fn main() {
     for obj in dbuild.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // Wave SID-1: genuine sdk/lib/rtl/sid.c — own ref TU. SID types +
+    // DUMMY_PSEH-equivalent _SEH2 stubs + FIELD_OFFSET (refstub/rtl.h
+    // has none of these). RtlpAllocateMemory→NULL pins the
+    // RtlAllocateAndInitializeSid NO_MEMORY edge (rtl-strings is
+    // no-alloc — the RtlpAllocateStringMemory precedent). swprintf /
+    // RtlCreateUnicodeString are link-only stubs: SID-1 does NOT test
+    // RtlConvertSidToUnicodeString (Wave SID-2 models swprintf).
+    let sid_c = repo.join("sdk/lib/rtl/sid.c");
+    let sid_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         #define SID_REVISION 1\n\
+         #define SID_MAX_SUB_AUTHORITIES 15\n\
+         #define STATUS_INVALID_SID ((NTSTATUS)0xC0000078L)\n\
+         #define ANYSIZE_ARRAY 1\n\
+         #define FIELD_OFFSET(t,f) ((ULONG)(ULONG_PTR)&(((t*)0)->f))\n\
+         #define RtlEqualMemory(a,b,n) (!memcmp((a),(b),(n)))\n\
+         /* SAL neutralization for RtlCreateServiceSid's annotations\n\
+            (refstub/rtl.h covers IN/OUT but not these). */\n\
+         #define _In_\n#define _Out_\n#define _Inout_\n\
+         #define _In_opt_\n#define _Out_opt_\n#define _Inout_opt_\n\
+         #define _In_z_\n#define _Reserved_\n\
+         #define _Out_writes_bytes_opt_(x)\n\
+         typedef struct _SID_IDENTIFIER_AUTHORITY {{ UCHAR Value[6]; }}\n\
+            SID_IDENTIFIER_AUTHORITY, *PSID_IDENTIFIER_AUTHORITY;\n\
+         typedef struct _SID {{ UCHAR Revision; UCHAR SubAuthorityCount;\n\
+            SID_IDENTIFIER_AUTHORITY IdentifierAuthority;\n\
+            ULONG SubAuthority[ANYSIZE_ARRAY]; }} SID, *PISID;\n\
+         typedef PVOID PSID;\n\
+         typedef struct _SID_AND_ATTRIBUTES {{ PSID Sid; ULONG Attributes; }}\n\
+            SID_AND_ATTRIBUTES, *PSID_AND_ATTRIBUTES;\n\
+         /* DUMMY_PSEH-equivalent: body runs, _SEH2_EXCEPT is dead. */\n\
+         #define _SEH2_TRY\n\
+         #define _SEH2_EXCEPT(x) if(0)\n\
+         #define _SEH2_FINALLY\n\
+         #define _SEH2_END\n\
+         #define _SEH2_YIELD(s) s\n\
+         #define _SEH2_GetExceptionCode() 0\n\
+         #define EXCEPTION_EXECUTE_HANDLER 1\n\
+         /* RtlpAllocateMemory→NULL pins the no-alloc edge; rtl-strings\n\
+            is no-alloc so AllocateBuffer=TRUE ⇒ NO_MEMORY (the\n\
+            sid_RtlCreateUnicodeString FALSE stub matches). */\n\
+         void* RtlpAllocateMemory(unsigned long s,unsigned long t){{(void)s;(void)t;return 0;}}\n\
+         void RtlpFreeMemory(void* p,unsigned long t){{(void)p;(void)t;}}\n\
+         #include <stdarg.h>\n\
+         /* Wave SID-2: faithful swprintf model for the EXACT directives\n\
+            sid.c uses — L\"S-1-\", L\"%lu\", L\"0x%02hx\"x6, L\"-%u\".\n\
+            fmt is host 32-bit wchar_t (no -fshort-wchar); out is the\n\
+            forced-u16 WCHAR. Shared model (Wave-E2): byte-identical to\n\
+            core_rs::sid::convert_text — the diff pins the wrapper. */\n\
+         static int sid_swprintf(WCHAR* out,const wchar_t* fmt,...){{\n\
+            va_list ap; va_start(ap,fmt); int n=0; const wchar_t* p=fmt;\n\
+            while(*p){{\n\
+              if(*p!=L'%'){{ out[n++]=(WCHAR)*p++; continue; }}\n\
+              p++; int width=0;\n\
+              while(*p>=L'0'&&*p<=L'9'){{ width=width*10+(int)(*p-L'0'); p++; }}\n\
+              int isx=0;\n\
+              while(*p==L'l'||*p==L'h'){{ p++; }}\n\
+              if(*p==L'x'){{ isx=1; }} /* else 'u' */\n\
+              p++;\n\
+              unsigned int v=va_arg(ap,unsigned int);\n\
+              char tmp[16]; int t=0;\n\
+              if(isx){{\n\
+                if(v==0){{ tmp[t++]='0'; }}\n\
+                while(v){{ int d=v&0xF; tmp[t++]=(char)(d<10?'0'+d:'a'+d-10); v>>=4; }}\n\
+              }} else {{\n\
+                if(v==0){{ tmp[t++]='0'; }}\n\
+                while(v){{ tmp[t++]=(char)('0'+v%10); v/=10; }}\n\
+              }}\n\
+              while(t<width){{ tmp[t++]='0'; }}\n\
+              while(t>0){{ out[n++]=(WCHAR)tmp[--t]; }}\n\
+            }}\n\
+            out[n]=0; va_end(ap); return n; }}\n\
+         #define swprintf sid_swprintf\n\
+         static BOOLEAN sid_RtlCreateUnicodeString(PUNICODE_STRING d,const WCHAR* s){{(void)d;(void)s;return 0;}}\n\
+         #define RtlCreateUnicodeString sid_RtlCreateUnicodeString\n\
+         #define RtlValidSid ref_RtlValidSid\n\
+         #define RtlLengthRequiredSid ref_RtlLengthRequiredSid\n\
+         #define RtlInitializeSid ref_RtlInitializeSid\n\
+         #define RtlSubAuthoritySid ref_RtlSubAuthoritySid\n\
+         #define RtlSubAuthorityCountSid ref_RtlSubAuthorityCountSid\n\
+         #define RtlIdentifierAuthoritySid ref_RtlIdentifierAuthoritySid\n\
+         #define RtlEqualSid ref_RtlEqualSid\n\
+         #define RtlLengthSid ref_RtlLengthSid\n\
+         #define RtlCopySid ref_RtlCopySid\n\
+         #define RtlFreeSid ref_RtlFreeSid\n\
+         #define RtlEqualPrefixSid ref_RtlEqualPrefixSid\n\
+         #define RtlCopySidAndAttributesArray ref_RtlCopySidAndAttributesArray\n\
+         #define RtlAllocateAndInitializeSid ref_RtlAllocateAndInitializeSid\n\
+         #define RtlConvertSidToUnicodeString ref_RtlConvertSidToUnicodeString\n\
+         #define RtlCreateServiceSid ref_RtlCreateServiceSid\n\
+         {}\
+         #include \"{}\"\n",
+        scrape_protos(&fs::read_to_string(&sid_c).unwrap()),
+        sid_c.display()
+    );
+    let sid_src = out.join("ref_sid.c");
+    fs::write(&sid_src, sid_body).unwrap();
+    let mut sbuild = cc::Build::new();
+    sbuild
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&sid_src);
+    println!("cargo:rerun-if-changed={}", sid_c.display());
+    for obj in sbuild.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }

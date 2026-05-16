@@ -2170,3 +2170,379 @@ fn diff_rtl_utf8_to_unicode() {
         }
     }
 }
+
+// ── Wave SID-1: sdk/lib/rtl/sid.c (byte + alloc-edge surface) ─────
+// RtlConvertSidToUnicodeString (swprintf) is Wave SID-2 — not here.
+
+use rtl_strings::cabi::SidAndAttributes;
+
+extern "C" {
+    fn ref_RtlValidSid(s: *const u8) -> u8;
+    fn ref_RtlLengthRequiredSid(c: u32) -> u32;
+    fn ref_RtlInitializeSid(s: *mut u8, a: *const u8, c: u8) -> i32;
+    fn ref_RtlSubAuthoritySid(s: *mut u8, n: u32) -> *mut u32;
+    fn ref_RtlSubAuthorityCountSid(s: *mut u8) -> *mut u8;
+    fn ref_RtlIdentifierAuthoritySid(s: *mut u8) -> *mut u8;
+    fn ref_RtlEqualSid(a: *const u8, b: *const u8) -> u8;
+    fn ref_RtlLengthSid(s: *const u8) -> u32;
+    fn ref_RtlCopySid(bl: u32, d: *mut u8, s: *const u8) -> i32;
+    fn ref_RtlFreeSid(s: *mut u8) -> *mut u8;
+    fn ref_RtlEqualPrefixSid(a: *const u8, b: *const u8) -> u8;
+    fn ref_RtlCopySidAndAttributesArray(
+        n: u32,
+        src: *const SidAndAttributes,
+        sz: u32,
+        dst: *mut SidAndAttributes,
+        area: *mut u8,
+        ra: *mut *mut u8,
+        rs: *mut u32,
+    ) -> i32;
+    fn ref_RtlAllocateAndInitializeSid(
+        a: *const u8,
+        c: u8,
+        s0: u32,
+        s1: u32,
+        s2: u32,
+        s3: u32,
+        s4: u32,
+        s5: u32,
+        s6: u32,
+        s7: u32,
+        out: *mut *mut u8,
+    ) -> i32;
+    fn ref_RtlCreateServiceSid(n: *const UNICODE_STRING, s: *mut u8, l: *mut u32) -> i32;
+    fn ref_RtlConvertSidToUnicodeString(
+        s: *mut UNICODE_STRING,
+        sid: *const u8,
+        alloc: u8,
+    ) -> i32;
+}
+
+/// A SID buffer `[rev, count, auth[6], subauth[count] LE]` with 16B
+/// trailing slack (RtlEqualSid over-reads Sid2 up to len(Sid1)).
+fn mk_sid(rng: &mut Rng, rev: u8, count: u8) -> Vec<u8> {
+    let mut v = vec![0u8; 8 + 4 * count as usize + 16];
+    v[0] = rev;
+    v[1] = count;
+    for i in 0..6 {
+        v[2 + i] = rng.byte();
+    }
+    for i in 0..count as usize {
+        let sa = (rng.next() as u32) & if rng.byte() & 1 == 0 { 0xF } else { !0 };
+        v[8 + 4 * i..8 + 4 * i + 4].copy_from_slice(&sa.to_le_bytes());
+    }
+    v
+}
+
+#[test]
+fn diff_rtl_valid_sid() {
+    let mut rng = Rng(0x51D0_0001);
+    for _ in 0..20_000 {
+        let rev = if rng.byte() & 3 == 0 { rng.byte() } else { 1 };
+        let count = if rng.byte() & 3 == 0 { rng.byte() } else { rng.byte() % 16 };
+        let v = mk_sid(&mut rng, rev, count.min(15));
+        let (c, r) = unsafe {
+            (cabi::RtlValidSid(v.as_ptr()), ref_RtlValidSid(v.as_ptr()))
+        };
+        assert_eq!(c, r, "RtlValidSid rev={rev} count={count}");
+    }
+    // NULL ⇒ TRUE (the `&&` short-circuit quirk).
+    let (c, r) = unsafe {
+        (
+            cabi::RtlValidSid(core::ptr::null()),
+            ref_RtlValidSid(core::ptr::null()),
+        )
+    };
+    assert_eq!(c, r);
+    assert_eq!(c, 1, "RtlValidSid(NULL) must be TRUE");
+}
+
+#[test]
+fn diff_rtl_length_sids() {
+    let mut rng = Rng(0x51D0_0002);
+    for c in 0..=40u32 {
+        let cc = unsafe { cabi::RtlLengthRequiredSid(c) };
+        let rr = unsafe { ref_RtlLengthRequiredSid(c) };
+        assert_eq!(cc, rr, "RtlLengthRequiredSid {c}");
+    }
+    for _ in 0..5_000 {
+        let count = rng.byte();
+        let v = mk_sid(&mut rng, 1, count.min(15));
+        let cc = unsafe { cabi::RtlLengthSid(v.as_ptr()) };
+        let rr = unsafe { ref_RtlLengthSid(v.as_ptr()) };
+        assert_eq!(cc, rr, "RtlLengthSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_initialize_sid() {
+    let mut rng = Rng(0x51D0_0003);
+    for _ in 0..10_000 {
+        let count = rng.byte() % 16;
+        let auth: [u8; 6] = core::array::from_fn(|_| rng.byte());
+        let mut bc = vec![0xCDu8; 8 + 4 * count as usize + 8];
+        let mut br = bc.clone();
+        let sc = unsafe { cabi::RtlInitializeSid(bc.as_mut_ptr(), auth.as_ptr(), count) };
+        let sr = unsafe { ref_RtlInitializeSid(br.as_mut_ptr(), auth.as_ptr(), count) };
+        assert_eq!(sc, sr);
+        assert_eq!(bc, br, "RtlInitializeSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_sid_accessors() {
+    let mut rng = Rng(0x51D0_0004);
+    for _ in 0..5_000 {
+        let count = (rng.byte() % 15) + 1;
+        let mut v = mk_sid(&mut rng, 1, count);
+        let p = v.as_mut_ptr();
+        let n = rng.upto(count as usize) as u32;
+        unsafe {
+            assert_eq!(
+                cabi::RtlSubAuthoritySid(p, n),
+                ref_RtlSubAuthoritySid(p, n),
+                "RtlSubAuthoritySid n={n}"
+            );
+            assert_eq!(
+                cabi::RtlSubAuthorityCountSid(p),
+                ref_RtlSubAuthorityCountSid(p)
+            );
+            assert_eq!(
+                cabi::RtlIdentifierAuthoritySid(p),
+                ref_RtlIdentifierAuthoritySid(p)
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_equal_sid() {
+    let mut rng = Rng(0x51D0_0005);
+    for _ in 0..20_000 {
+        let count = rng.byte() % 16;
+        let a = mk_sid(&mut rng, 1, count);
+        let b = if rng.byte() & 1 == 0 {
+            a.clone()
+        } else {
+            mk_sid(&mut rng, 1, count)
+        };
+        let cc = unsafe { cabi::RtlEqualSid(a.as_ptr(), b.as_ptr()) };
+        let rr = unsafe { ref_RtlEqualSid(a.as_ptr(), b.as_ptr()) };
+        assert_eq!(cc, rr, "RtlEqualSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_copy_sid() {
+    let mut rng = Rng(0x51D0_0006);
+    for _ in 0..10_000 {
+        let count = rng.byte() % 16;
+        let src = mk_sid(&mut rng, 1, count);
+        let need = 8 + 4 * count as u32;
+        let bl = need.wrapping_add((rng.byte() as u32).wrapping_sub(4));
+        let mut dc = vec![0xAAu8; need as usize + 16];
+        let mut dr = dc.clone();
+        let sc = unsafe { cabi::RtlCopySid(bl, dc.as_mut_ptr(), src.as_ptr()) };
+        let sr = unsafe { ref_RtlCopySid(bl, dr.as_mut_ptr(), src.as_ptr()) };
+        assert_eq!(sc, sr, "RtlCopySid status bl={bl} need={need}");
+        assert_eq!(dc, dr, "RtlCopySid dest bl={bl} need={need}");
+    }
+}
+
+#[test]
+fn diff_rtl_free_sid() {
+    let mut buf = [0u8; 16];
+    let c = unsafe { cabi::RtlFreeSid(buf.as_mut_ptr()) };
+    let r = unsafe { ref_RtlFreeSid(buf.as_mut_ptr()) };
+    assert_eq!(c, r);
+    assert!(c.is_null(), "RtlFreeSid must return NULL");
+}
+
+#[test]
+fn diff_rtl_equal_prefix_sid() {
+    let mut rng = Rng(0x51D0_0007);
+    for _ in 0..20_000 {
+        let count = rng.byte() % 8;
+        let a = mk_sid(&mut rng, 1, count);
+        // Often share a prefix with b.
+        let mut b = a.clone();
+        if rng.byte() & 1 == 0 {
+            // perturb the LAST subauthority only (prefix still equal)
+            if count > 0 {
+                let last = 8 + 4 * (count as usize - 1);
+                b[last] ^= rng.byte();
+            }
+        } else {
+            let brev = if rng.byte() & 1 == 0 { 1 } else { rng.byte() };
+            b = mk_sid(&mut rng, brev, count);
+        }
+        let cc = unsafe { cabi::RtlEqualPrefixSid(a.as_ptr(), b.as_ptr()) };
+        let rr = unsafe { ref_RtlEqualPrefixSid(a.as_ptr(), b.as_ptr()) };
+        assert_eq!(cc, rr, "RtlEqualPrefixSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_copy_sid_and_attributes_array() {
+    let mut rng = Rng(0x51D0_0008);
+    for _ in 0..3_000 {
+        let n = (rng.byte() % 5) as u32;
+        let counts: Vec<u8> = (0..n).map(|_| rng.byte() % 6).collect();
+        let sids: Vec<Vec<u8>> =
+            counts.iter().map(|&c| mk_sid(&mut rng, 1, c)).collect();
+        let total: u32 = sids.iter().map(|s| 8 + 4 * s[1] as u32).sum();
+        let area_sz = total.wrapping_add((rng.byte() as u32).wrapping_sub(8));
+
+        let mk_src = |sids: &Vec<Vec<u8>>| -> Vec<SidAndAttributes> {
+            sids.iter()
+                .map(|s| SidAndAttributes {
+                    sid: s.as_ptr() as *mut u8,
+                    attributes: 0xA77,
+                })
+                .collect()
+        };
+        let src_c = mk_src(&sids);
+        let src_r = mk_src(&sids);
+        let mut dst_c = vec![
+            SidAndAttributes { sid: core::ptr::null_mut(), attributes: 0 };
+            n as usize
+        ];
+        let mut dst_r = dst_c.iter().map(|_| SidAndAttributes {
+            sid: core::ptr::null_mut(),
+            attributes: 0,
+        }).collect::<Vec<_>>();
+        let mut ac = vec![0u8; total as usize + 32];
+        let mut ar = ac.clone();
+        let (mut rac, mut racs) = (core::ptr::null_mut(), 0u32);
+        let (mut rar, mut rars) = (core::ptr::null_mut(), 0u32);
+        let sc = unsafe {
+            cabi::RtlCopySidAndAttributesArray(
+                n, src_c.as_ptr(), area_sz, dst_c.as_mut_ptr(),
+                ac.as_mut_ptr(), &mut rac, &mut racs,
+            )
+        };
+        let sr = unsafe {
+            ref_RtlCopySidAndAttributesArray(
+                n, src_r.as_ptr(), area_sz, dst_r.as_mut_ptr(),
+                ar.as_mut_ptr(), &mut rar, &mut rars,
+            )
+        };
+        assert_eq!(sc, sr, "RtlCopySidAndAttributesArray status n={n}");
+        if sc == 0 {
+            assert_eq!(ac, ar, "copied SID area n={n}");
+            assert_eq!(racs, rars, "remaining size n={n}");
+            // remaining-area offset within the (distinct) buffers
+            let oc = rac as usize - ac.as_ptr() as usize;
+            let or = rar as usize - ar.as_ptr() as usize;
+            assert_eq!(oc, or, "remaining-area offset n={n}");
+            for i in 0..n as usize {
+                assert_eq!(dst_c[i].attributes, dst_r[i].attributes);
+                let dc = dst_c[i].sid as usize - ac.as_ptr() as usize;
+                let dr = dst_r[i].sid as usize - ar.as_ptr() as usize;
+                assert_eq!(dc, dr, "dest[{i}].Sid offset");
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_allocate_and_initialize_sid() {
+    let mut rng = Rng(0x51D0_0009);
+    for _ in 0..2_000 {
+        let count = rng.byte() % 12;
+        let auth: [u8; 6] = core::array::from_fn(|_| rng.byte());
+        let mut oc: *mut u8 = core::ptr::null_mut();
+        let mut or: *mut u8 = core::ptr::null_mut();
+        let sc = unsafe {
+            cabi::RtlAllocateAndInitializeSid(
+                auth.as_ptr(), count, 1, 2, 3, 4, 5, 6, 7, 8, &mut oc,
+            )
+        };
+        let sr = unsafe {
+            ref_RtlAllocateAndInitializeSid(
+                auth.as_ptr(), count, 1, 2, 3, 4, 5, 6, 7, 8, &mut or,
+            )
+        };
+        assert_eq!(sc, sr, "RtlAllocateAndInitializeSid count={count}");
+    }
+}
+
+#[test]
+fn diff_rtl_convert_sid_to_unicode_string() {
+    let mut rng = Rng(0x51D0_000A);
+    for _ in 0..20_000 {
+        // Mostly-valid SIDs; sometimes invalid (bad rev / count>15).
+        let bad = rng.byte() & 7 == 0;
+        let rev = if bad && rng.byte() & 1 == 0 { rng.byte() } else { 1 };
+        let count = if bad && rng.byte() & 1 == 0 {
+            16 + rng.byte() % 8
+        } else {
+            rng.byte() % 16
+        };
+        let mut v = mk_sid(&mut rng, rev, count.min(40));
+        // ~1/3: force the zero-IdentifierAuthority "%lu" branch.
+        if v.len() > 8 && rng.byte() % 3 == 0 {
+            v[2] = 0;
+            v[3] = 0;
+        }
+        let alloc = rng.byte() & 3 == 0;
+
+        // Caller buffer with a fuzzed MaximumLength (force the
+        // too-small / exact / larger boundaries).
+        let mut bc = [0u16; 300];
+        let mut br = [0u16; 300];
+        let max: u16 = match rng.byte() % 4 {
+            0 => 0,
+            1 => (rng.byte() as u16) & 0x7E, // small, even
+            2 => 400,                        // ample
+            _ => (rng.byte() as u16) * 2,
+        };
+        let mut sc = UNICODE_STRING {
+            Length: 0xAAAA,
+            MaximumLength: max,
+            Buffer: bc.as_mut_ptr(),
+        };
+        let mut sr = UNICODE_STRING {
+            Length: 0xAAAA,
+            MaximumLength: max,
+            Buffer: br.as_mut_ptr(),
+        };
+        let rc = unsafe {
+            cabi::RtlConvertSidToUnicodeString(&mut sc, v.as_ptr(), alloc as u8)
+        };
+        let rr = unsafe {
+            ref_RtlConvertSidToUnicodeString(&mut sr, v.as_ptr(), alloc as u8)
+        };
+        assert_eq!(
+            rc, rr,
+            "RtlConvertSidToUnicodeString status rev={rev} count={count} alloc={alloc} max={max}"
+        );
+        if rc == 0 && !alloc {
+            assert_eq!(sc.Length, sr.Length, "Length");
+            let nc = (sc.Length / 2) as usize;
+            assert_eq!(&bc[..nc], &br[..nc], "Buffer text");
+            // NUL only when Length < MaximumLength
+            if (sc.Length as u16) < max {
+                assert_eq!(bc[nc], 0);
+                assert_eq!(br[nc], 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_create_service_sid() {
+    let us = UNICODE_STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut len = 0u32;
+    let sc = unsafe {
+        cabi::RtlCreateServiceSid(&us, core::ptr::null_mut(), &mut len)
+    };
+    let sr = unsafe {
+        ref_RtlCreateServiceSid(&us, core::ptr::null_mut(), &mut len)
+    };
+    assert_eq!(sc, sr);
+}

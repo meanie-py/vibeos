@@ -75,7 +75,7 @@ list(APPEND SOURCE
     rxact.c
     sd.c
     security.c
-    sid.c
+    # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     slist.c
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
     sysvol.c
@@ -216,6 +216,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/dos8dot3.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml

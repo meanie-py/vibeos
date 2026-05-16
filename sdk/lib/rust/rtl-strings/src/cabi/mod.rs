@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, dos8dot3, misc, nls, ustr};
+use crate::core_rs::{conv, dos8dot3, misc, nls, sid, ustr};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -46,6 +46,7 @@ const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
+const STATUS_INVALID_SID: i32 = 0xC000_0078u32 as i32;
 const STATUS_INVALID_COMPUTER_NAME: i32 = 0xC000_0122u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
 const MAX_COMPUTERNAME_LENGTH: u32 = 15;
@@ -2047,4 +2048,251 @@ pub unsafe extern "system" fn RtlIsNameLegalDOS8Dot3(
         core::ptr::write_volatile(name_contains_spaces, got_space as u8);
     }
     1
+}
+
+// ── Wave SID: sdk/lib/rtl/sid.c (byte + alloc-edge surface) ───────
+// A SID is a raw binary record (no counted-string wrapper):
+//   off0 Revision:u8  off1 SubAuthorityCount:u8
+//   off2 IdentifierAuthority:[u8;6]  off8 SubAuthority:[u32 LE]
+// Pure decisions live in core_rs::sid; these shims do pointer
+// reconstruction + the interior-pointer returns. rtl-strings is
+// no-alloc (smoke-validated, cf. RtlCreateUnicodeString) so
+// RtlAllocateAndInitializeSid yields the NO_MEMORY edge and
+// RtlFreeSid is the genuine "always NULL" no-op. The swprintf
+// formatter RtlConvertSidToUnicodeString is Wave SID-2 (sid.c stays
+// C until then — whole-file rule).
+
+/// `SID_AND_ATTRIBUTES { PSID Sid; ULONG Attributes; }` — per-arch
+/// layout (ptr 8/4 + u32) via repr(C).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SidAndAttributes {
+    pub sid: *mut u8,
+    pub attributes: u32,
+}
+
+/// `BOOLEAN NTAPI RtlValidSid(PSID)`. NULL ⇒ TRUE (genuine `&&`
+/// short-circuits). A bad non-NULL pointer faults (DUMMY_PSEH dead
+/// `_SEH2_EXCEPT`) = genuine UB, never fuzzed.
+#[no_mangle]
+pub unsafe extern "system" fn RtlValidSid(sid_: *const u8) -> u8 {
+    if sid_.is_null() {
+        return sid::valid(0, 0, true) as u8;
+    }
+    sid::valid(*sid_, *sid_.add(1), false) as u8
+}
+
+/// `ULONG NTAPI RtlLengthRequiredSid(ULONG SubAuthorityCount)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlLengthRequiredSid(count: u32) -> u32 {
+    sid::length_required(count)
+}
+
+/// `NTSTATUS NTAPI RtlInitializeSid(PSID, PSID_IDENTIFIER_AUTHORITY,
+/// UCHAR)`. Writes Revision/Count/IdentifierAuthority only (does NOT
+/// zero the subauthorities).
+#[no_mangle]
+pub unsafe extern "system" fn RtlInitializeSid(
+    sid_: *mut u8,
+    id_auth: *const u8,
+    count: u8,
+) -> i32 {
+    *sid_ = sid::SID_REVISION;
+    *sid_.add(1) = count;
+    core::ptr::copy_nonoverlapping(id_auth, sid_.add(2), 6);
+    STATUS_SUCCESS
+}
+
+/// `PULONG NTAPI RtlSubAuthoritySid(PSID, ULONG)` —
+/// `&Sid->SubAuthority[n]`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSubAuthoritySid(
+    sid_: *mut u8,
+    sub_authority: u32,
+) -> *mut u32 {
+    sid_.add(8 + 4 * sub_authority as usize) as *mut u32
+}
+
+/// `PUCHAR NTAPI RtlSubAuthorityCountSid(PSID)` —
+/// `&Sid->SubAuthorityCount`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSubAuthorityCountSid(sid_: *mut u8) -> *mut u8 {
+    sid_.add(1)
+}
+
+/// `PSID_IDENTIFIER_AUTHORITY NTAPI RtlIdentifierAuthoritySid(PSID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIdentifierAuthoritySid(sid_: *mut u8) -> *mut u8 {
+    sid_.add(2)
+}
+
+/// `BOOLEAN NTAPI RtlEqualSid(PSID, PSID)`. Quick u16
+/// (Revision+Count) compare, then byte-equal over
+/// `RtlLengthSid(Sid1)` (genuine reads Sid2 to Sid1's length —
+/// over-read if Sid2 shorter = genuine UB; fuzz sizes Sid2 ≥ Sid1).
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualSid(s1: *const u8, s2: *const u8) -> u8 {
+    if *(s1 as *const u16) != *(s2 as *const u16) {
+        return 0;
+    }
+    let len = sid::length(*s1.add(1)) as usize;
+    (rslice(s1, len) == rslice(s2, len)) as u8
+}
+
+/// `ULONG NTAPI RtlLengthSid(PSID)` = `8 + 4*SubAuthorityCount`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlLengthSid(sid_: *const u8) -> u32 {
+    sid::length(*sid_.add(1))
+}
+
+/// `NTSTATUS NTAPI RtlCopySid(ULONG BufferLength, PSID Dest,
+/// PSID Src)`. `RtlMoveMemory` (overlap-safe).
+#[no_mangle]
+pub unsafe extern "system" fn RtlCopySid(
+    buffer_length: u32,
+    dest: *mut u8,
+    src: *const u8,
+) -> i32 {
+    let sid_length = sid::length(*src.add(1));
+    if sid_length > buffer_length {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    core::ptr::copy(src, dest, sid_length as usize);
+    STATUS_SUCCESS
+}
+
+/// `PVOID NTAPI RtlFreeSid(PSID)` — genuine always returns NULL; the
+/// free is a no-op (rtl-strings no-alloc discipline).
+#[no_mangle]
+pub unsafe extern "system" fn RtlFreeSid(_sid: *mut u8) -> *mut u8 {
+    core::ptr::null_mut()
+}
+
+/// `BOOLEAN NTAPI RtlEqualPrefixSid(PSID, PSID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualPrefixSid(s1: *const u8, s2: *const u8) -> u8 {
+    let c1 = *s1.add(1) as usize;
+    let c2 = *s2.add(1) as usize;
+    let auth1 = &*(s1.add(2) as *const [u8; 6]);
+    let auth2 = &*(s2.add(2) as *const [u8; 6]);
+    let subs1 = core::slice::from_raw_parts(s1.add(8) as *const u32, c1);
+    let subs2 = core::slice::from_raw_parts(s2.add(8) as *const u32, c2);
+    sid::equal_prefix(*s1, auth1, subs1, *s2, auth2, subs2) as u8
+}
+
+/// `NTSTATUS NTAPI RtlCopySidAndAttributesArray(...)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCopySidAndAttributesArray(
+    count: u32,
+    src: *const SidAndAttributes,
+    sid_area_size: u32,
+    dest: *mut SidAndAttributes,
+    sid_area: *mut u8,
+    remaining_sid_area: *mut *mut u8,
+    remaining_sid_area_size: *mut u32,
+) -> i32 {
+    let mut area = sid_area;
+    let mut area_size = sid_area_size;
+    for i in 0..count as usize {
+        let s = &*src.add(i);
+        let sid_length = sid::length(*s.sid.add(1));
+        if sid_length > area_size {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        area_size -= sid_length;
+        let d = &mut *dest.add(i);
+        d.sid = area;
+        d.attributes = s.attributes;
+        core::ptr::copy(s.sid as *const u8, area, sid_length as usize);
+        area = area.add(sid_length as usize);
+    }
+    core::ptr::write_volatile(remaining_sid_area, area);
+    core::ptr::write_volatile(remaining_sid_area_size, area_size);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAllocateAndInitializeSid(...)`. No-alloc
+/// discipline: `SubAuthorityCount > 8` ⇒ STATUS_INVALID_SID; else
+/// the allocation fails ⇒ STATUS_NO_MEMORY (genuine writes nothing
+/// before the NULL check; `*Sid` untouched).
+#[no_mangle]
+pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
+    _id_auth: *const u8,
+    sub_authority_count: u8,
+    _s0: u32,
+    _s1: u32,
+    _s2: u32,
+    _s3: u32,
+    _s4: u32,
+    _s5: u32,
+    _s6: u32,
+    _s7: u32,
+    _sid: *mut *mut u8,
+) -> i32 {
+    if sub_authority_count > 8 {
+        return STATUS_INVALID_SID;
+    }
+    STATUS_NO_MEMORY
+}
+
+/// `NTSTATUS NTAPI RtlConvertSidToUnicodeString(PUNICODE_STRING,
+/// PSID, BOOLEAN)`. `!RtlValidSid` ⇒ INVALID_SID. AllocateBuffer ⇒
+/// RtlCreateUnicodeString (rtl-strings no-alloc ⇒ NO_MEMORY edge).
+/// Caller-buffer: Length=(wcs-Buffer)*2; `> MaximumLength` ⇒
+/// BUFFER_TOO_SMALL; else set Length, copy, and NUL-terminate at
+/// `Buffer[Length/2]` only when `Length < MaximumLength`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlConvertSidToUnicodeString(
+    string: *mut UNICODE_STRING,
+    sid_: *const u8,
+    allocate_buffer: u8,
+) -> i32 {
+    let is_null = sid_.is_null();
+    let valid = if is_null {
+        sid::valid(0, 0, true)
+    } else {
+        sid::valid(*sid_, *sid_.add(1), false)
+    };
+    if !valid {
+        return STATUS_INVALID_SID;
+    }
+    let auth = &*(sid_.add(2) as *const [u8; 6]);
+    let count = *sid_.add(1) as usize;
+    let subs = core::slice::from_raw_parts(sid_.add(8) as *const u32, count);
+
+    let mut buf = [0u16; 256];
+    let n = sid::convert_text(auth, subs, &mut buf);
+
+    if allocate_buffer != 0 {
+        // RtlCreateUnicodeString — rtl-strings is no-alloc ⇒ FALSE.
+        let mut tmp = [0u16; 257];
+        tmp[..n].copy_from_slice(&buf[..n]);
+        tmp[n] = 0;
+        if RtlCreateUnicodeString(string, tmp.as_ptr()) == 0 {
+            return STATUS_NO_MEMORY;
+        }
+        return STATUS_SUCCESS;
+    }
+
+    let length = (n * 2) as u32;
+    let max = (*string).MaximumLength as u32;
+    if length > max {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    (*string).Length = length as u16;
+    core::ptr::copy_nonoverlapping(buf.as_ptr(), (*string).Buffer, n);
+    if length < max {
+        *(*string).Buffer.add(n) = 0; // UNICODE_NULL at Buffer[Length/2]
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlCreateServiceSid(...)` — genuine UNIMPLEMENTED.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateServiceSid(
+    _service_name: *const UNICODE_STRING,
+    _service_sid: *mut u8,
+    _service_sid_length: *mut u32,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED
 }

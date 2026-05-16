@@ -27,16 +27,17 @@ path = "src/lib.rs"
 default = ["float"]
 # Enables the generated #[no_mangle] extern "C" shim layer. Off for
 # pure-core consumers / Kani; on for the kernel link + cnt-difftest.
-# cabi pulls `float` (manual.rs / scanf_trampoline.c need the float +
-# scanf cores).
-cabi = ["float"]
-# The float-bearing core modules (`floatcvt`, `scanf`). Default-on so
-# cnt-difftest / standalone builds are unchanged. A consumer that only
-# needs the integer model (e.g. rtl-strings' `mbcp` reuse) sets
-# `default-features = false` — required for the i386 kernel, which
-# builds Rust no-SSE (CR4.OSFXSR not set in Phase 0) and so cannot
-# compile by-value `f64` ABI signatures. Modules are untouched and
-# still fully built+tested by cnt-difftest.
+# Does NOT imply `float`: the i386 kernel links cabi WITHOUT float
+# (no-SSE — see below). cnt-difftest gets float via `default`.
+cabi = []
+# The float-bearing surface: `core_rs::{floatcvt,scanf}` + the
+# matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +
+# cnt_vs*scanf). Default-on so cnt-difftest / standalone are
+# unchanged. A consumer that only needs the integer model (rtl-strings
+# `mbcp`; the i386 libcntpr swap) sets `default-features = false` —
+# REQUIRED for the i386 kernel, which builds Rust no-SSE (CR4.OSFXSR
+# not set in Phase 0) so by-value `f64` ABI signatures won't compile.
+# Modules untouched + still fully built+tested by cnt-difftest.
 float = []
 
 [dependencies]
