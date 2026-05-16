@@ -718,22 +718,30 @@ Same shape as HAL/FreeLDR — pruning naturally surfaces during the
 audit. **Pruning is in-scope for this phase** because it shrinks the
 keep-set the rewrites have to operate on.
 
-| Candidate | LOC | Why drop |
-|---|---:|---|
-| `win32ss/drivers/miniport/xboxvmp/` | ~1,000 | Xbox display miniport |
-| `win32ss/drivers/miniport/pc98vid/` | ~1,000 | NEC PC-98 video |
-| `win32ss/drivers/displays/vga/` (4,007) or `vga_new/` (1,824) | varies | Two parallel VGA implementations; UEFI-only smoke means we likely use neither — `framebuf/` is the one we want |
-| `gdi/diblib/` (3,456) | 3,456 | Alternate DIB lib, `USE_DIBLIB FALSE` — whole tree dead |
-| `reactx/dxg/` (1,884), `reactx/ntddraw/` (3,193) | 5,077 | DirectDraw kernel side; we don't smoke DirectDraw apps |
-| `gdi/ntgdi/freetype.c` glue + `sdk/lib/3rdparty/freetype/` | 7,943 + 208,631 | **Cannot prune** — load-bearing for desktop font render. Stays as 3rd-party FFI (same shape as ACPICA in HAL — header-only borrow / link-against, not translate). |
-| `gdi/ntgdi/gdikdbgext.c` (KDBG-conditional) | small | KDBG=OFF in our build; already excluded |
+**CORRECTED 2026-05-16 — this table was substantially wrong vs the
+real build.** Verified each candidate against CMakeLists/source before
+deleting (per the "look at the target; surface contradictions" rule).
+Build truth, not the original estimates:
 
-**Pre-pretranslation prune candidates: ~14K LOC** in `diblib/` +
-`reactx/{dxg,ntddraw}` + the SARCH miniports. Reversible cheap
-delete; smoke gates the prune the same way it has for HAL/FreeLDR.
+| Candidate | Original claim | Build reality | Action |
+|---|---|---|---|
+| `miniport/xboxvmp`, `miniport/pc98vid` | prune ~2K | **already gone** (2026-05 dead-platform purge) | n/a |
+| `reactx/dxg` (2,974) | prune | **IN BUILD** — `reactx/CMakeLists.txt:3 add_subdirectory(dxg)` | **keep** |
+| `reactx/ntddraw` (3,310) | prune 5,077 | **compiled into win32k.sys** — `win32ss/CMakeLists.txt:104-112` source list | **keep** |
+| `drivers/displays/vga` (4,007) | "separate audit" | **IN BUILD** — `displays/CMakeLists.txt:3` | **keep** |
+| `gdi/diblib` (3,456) | "whole tree dead" | `USE_DIBLIB FALSE` un-builds the *lib*, **but `bitblt_new.c`/`dib_new.c` `#include "../diblib/DibLib_interface.h"` unconditionally** → header is a live compile dep | **keep** |
+| `drivers/displays/vga_new` (1,846) | — | orphan: no parent `add_subdirectory`, no `#include` | **PRUNED** ✅ |
+| `drivers/miniport/vga_new` (4,438) | — | orphan: `#add_subdirectory(vga_new)` commented, zero refs | **PRUNED** ✅ |
+| `gdi/ntgdi/freetype.c` + 3rdparty freetype | cannot prune | unchanged — load-bearing 3rd-party FFI | keep |
 
-The display-driver pruning (vga vs vga_new vs framebuf) needs a
-separate audit — see [win32k-translation-audit.md](win32k-translation-audit.md).
+**Actual prune: the two orphaned `vga_new` trees — 18 files, 6,284
+LOC** (`a…` commit). Both had a commented/absent `add_subdirectory`
+and zero external refs; build+smoke gated **i386 7/7 + amd64 7/7**.
+The audit's ~14K figure assumed dxg/ntddraw/displays-vga/diblib were
+dead; they are all load-bearing for *compilation* even where unexercised
+at runtime — deleting them breaks the build, so they stay. Lesson: the
+build graph is ground truth; a prune table written from a directory
+listing is not.
 
 ## Risk audit
 
@@ -832,14 +840,21 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
   `<file>.win32k_callouts.json` sidecars, oracle-validated. (Optional
   `__attribute__((annotate(...)))` source injection is deferred — the
   sidecar JSON is what the prompt builder consumes.)
-- `[ ]` Pruning (`diblib/`, dxg, ntddraw, sarch miniports, dead
-  display drivers) — not started.
+- `[x]` Pruning — done, but **scope corrected**: the original table
+  was wrong (dxg/ntddraw/displays-vga/diblib are all load-bearing for
+  compilation — see corrected table above). Only the two genuinely-
+  orphaned `vga_new` trees were build-safe: **18 files / 6,284 LOC
+  pruned, i386 7/7 + amd64 7/7 gated**.
 - `[~]` Smoke: **i386 7/7 + amd64 7/7 PASSED**; arm64 boot-smoke
   blocked by cold-build ramdisk-media infra (win32k itself builds
   clean on arm64).
 - `[ ]` `verify_abi.py` clean — not yet run against the rewrites.
-- `[ ]` Win32k-specific post-`shell ready` smoke assertions — not
-  started.
+- `[x]` Win32k-specific post-`shell ready` smoke assertions —
+  `test_post_shell_ready_input` injects keyboard+mouse via QMP
+  `input-send-event` after the desktop is up and hard-asserts no fatal
+  marker + VM still running (the ntuser raw-input→msgqueue→DefWndProc
+  path that boot markers structurally miss — audit open question #6).
+  i386 8/8 green; arm64 skips (idle-detect/serial-hack input model).
 
 ## Open questions
 
