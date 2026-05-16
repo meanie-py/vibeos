@@ -37,6 +37,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
+| `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
 Both tools are decision layers over the existing `seh_classifier.py`
@@ -816,8 +817,15 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
   and left verbatim; a standalone residual-SEH doc is not yet written.
 - `[ ]` All (d) sites deleted (36 identified; not yet actioned —
   needs the cross-site "relies on prior probe" review).
-- `[~]` Sidecar JSON for the rustconv prompt — written for the
-  classified sites; not yet consumed by the prompt builder.
+- `[x]` Sidecar JSON for the rustconv prompt — **written AND now
+  consumed**: `prompt_builder.build_file_prompt` loads the
+  Pass-0/2/3 sidecars next to each keep-set `.c` and injects
+  `templates/win32k_translation_prompt.md` (the win32k Rust-mapping
+  rules) + a per-function Pretranslation Map (GDI RAII handles +
+  shapes, USER callout straddles, residual-SEH categories) ahead of
+  the C source. Scoped by sidecar-existence — ntoskrnl/hal prompts
+  are byte-unchanged (verified). This is the multiplier that delivers
+  all the banked Pass-0/2/3 work to the translator.
 - `[x]` ~17 `co_*` callout annotations (Pass 3) — **done as
   extract-only** per the audit's no-rewrite rule: 20 sites (callback.c
   ×17, dde.c ×2, rtl/text.c LPK ×1) extracted to
