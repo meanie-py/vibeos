@@ -333,6 +333,7 @@ def stitch_file(
     scan: ScanResult,
     file_resolve: ResolveResult,
     target: Target | None = None,
+    preamble_rust: str = "",
 ) -> str:
     """Assemble individually-translated functions into a complete .rs file.
 
@@ -383,6 +384,19 @@ def stitch_file(
             code_no_externs = "\n".join(fn_lines[fn_start_idx:])
 
         function_bodies.append((dep.line_start, dep.name, code_no_externs.strip()))
+
+    # Translated file-scope preamble (globals/consts/tables/typedefs):
+    # split out its uses/externs so they merge with the file's, and
+    # emit the remainder ahead of every other standalone item (globals
+    # must be defined before the functions that reference them).
+    if preamble_rust.strip():
+        p_uses, p_rest = _extract_use_statements(preamble_rust)
+        all_uses.extend(p_uses)
+        p_externs, p_rest = _extract_extern_blocks(p_rest)
+        all_externs.extend(p_externs)
+        p_rest = p_rest.strip()
+        if p_rest:
+            standalone_items.insert(0, p_rest)
 
     # Sort function bodies by original C source line order
     function_bodies.sort(key=lambda x: x[0])

@@ -251,6 +251,36 @@ def _strip_known_off_ifdefs(text: str) -> str:
     return '\n'.join(out)
 
 
+def extract_preamble(scan: "ScanResult") -> str:
+    """File-scope C that `translate` (function-by-function) otherwise drops.
+
+    cmd_translate only ever sends *functions* to the LLM, so every
+    `#define`, global variable DEFINITION (`PENTRY gpentHmgr;`), static
+    const table (`apfnCleanup[]`), and file-scope typedef is silently
+    lost — the #1 root of "cannot find value" + extern-declared-but-
+    undefined-global errors on any multi-function file. Carve raw_source
+    minus the function line spans; drop #include lines (resolved
+    separately) so the preamble translates as a clean declarations-only
+    unit.
+    """
+    lines = scan.raw_source.splitlines()
+    covered: set[int] = set()
+    for f in scan.functions:
+        for ln in range(f.line_start, f.line_end + 1):
+            covered.add(ln)
+    out: list[str] = []
+    for idx, line in enumerate(lines, 1):
+        if idx in covered:
+            continue
+        s = line.lstrip()
+        if s.startswith("#include"):
+            continue
+        out.append(line)
+    # Collapse the runs of blank lines the carve leaves behind.
+    text = "\n".join(out)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
     source_text = _strip_known_off_ifdefs(

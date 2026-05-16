@@ -857,11 +857,63 @@ def cmd_translate(args):
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
 
+        # Translate the file-scope preamble (globals/consts/tables/
+        # typedefs) as ONE extra chunk. cmd_translate is
+        # function-by-function, so without this every global
+        # DEFINITION, #define and static table is dropped — the #1
+        # root of "cannot find value"/undefined-global errors.
+        from .scanner import extract_preamble
+        preamble_rust = ""
+        preamble_c = extract_preamble(scan)
+        if len(preamble_c) > 40:  # skip trivial/empty preambles
+            print(f"  [preamble] {len(preamble_c)} chars...", file=sys.stderr,
+                  end=" ", flush=True)
+            p_prompt = (
+                f"Translate ONLY these file-scope C declarations from "
+                f"`{c_file.name}` to Rust. These are NOT functions "
+                f"(functions are translated separately — OMIT any function "
+                f"definitions or forward declarations).\n\n"
+                f"Rules:\n"
+                f"- global variable DEFINITIONS (e.g. `PENTRY gpentHmgr;`, "
+                f"`static PVOID x = NULL;`) → `#[no_mangle] pub static mut "
+                f"NAME: TYPE = <zeroed-or-init>;` (preserve the symbol; "
+                f"`static`-in-C still becomes a defined `pub static mut`).\n"
+                f"- object-like `#define NAME value` → `pub const NAME: ty "
+                f"= value;` (infer the type; pool tags via "
+                f"`u32::from_le_bytes(*b\"....\")`).\n"
+                f"- function-like or no-op/empty `#define` macros → a "
+                f"`macro_rules!` that expands correctly; an empty debug "
+                f"macro must expand to nothing.\n"
+                f"- `static const` tables incl. function-pointer arrays → "
+                f"Rust `static NAME: [T; N] = [...]`.\n"
+                f"- typedefs/structs NOT already in `win32k_sys::win32k` → "
+                f"`type`/`#[repr(C)] struct`.\n"
+                f"Use `win32k_sys::win32k::*` for win32k types and "
+                f"`ntkrnl_sys::ddk::{{...}}` (named) for kernel APIs. "
+                f"Output Rust only.\n\n```c\n{preamble_c}\n```"
+            )
+            if use_claude:
+                p_res = submit_single(p_prompt, model=model,
+                                      system_prompt=system_prompt)
+            else:
+                p_full = (system_prompt + "\n\n---\n\n" + p_prompt) if system_prompt else p_prompt
+                p_res = submit_single(p_full, model=model)
+            if p_res.success:
+                preamble_rust = p_res.rust_code
+                total_in += p_res.input_tokens
+                total_out += p_res.output_tokens
+                print(f"OK ({p_res.input_tokens} in / {p_res.output_tokens} out)",
+                      file=sys.stderr)
+            else:
+                print(f"FAIL: {p_res.error}", file=sys.stderr)
+
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
         # Stitch functions into a single file
-        stitched = stitch_file(translated, sorted_deps, scan, file_res, target=rustconv_target)
+        stitched = stitch_file(translated, sorted_deps, scan, file_res,
+                               target=rustconv_target,
+                               preamble_rust=preamble_rust)
 
         # Post-process
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,

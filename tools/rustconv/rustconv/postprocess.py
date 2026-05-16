@@ -908,6 +908,54 @@ def _split_extern_decls(inner_lines: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+def fix_extern_vs_local_static_dups(code: str) -> str:
+    """Remove extern `static` decls for globals also DEFINED locally.
+
+    Since cmd_translate added the preamble step, file-scope globals get a
+    real local definition (`pub static mut gpentHmgr: PENTRY = ...;`),
+    but the per-function chunks still extern-declare the same globals
+    (`extern "C" { static mut gpentHmgr: PENTRY; }`) → E0428 on every
+    multi-function file with shared TU globals. Drop the extern decl in
+    favour of the definition (the static analog of
+    fix_extern_vs_local_dups).
+    """
+    # Locally-defined static names (have an `=` initializer, top-level).
+    local_static_names = set()
+    for m in re.finditer(
+        r'^(?:[ \t]*#\[no_mangle\][ \t]*\n)?[ \t]*pub\s+static\s+(?:mut\s+)?'
+        r'(\w+)\s*:[^;=]+=',
+        code, re.MULTILINE,
+    ):
+        local_static_names.add(m.group(1))
+
+    if not local_static_names:
+        return code
+
+    def clean_block(match: re.Match) -> str:
+        block = match.group(0)
+        header_m = re.match(r'(extern\s+"[^"]+"\s*\{)', block)
+        inner = re.search(r'\{(.*)\}', block, re.DOTALL)
+        if not header_m or not inner:
+            return block
+        entries = _split_extern_decls(inner.group(1).splitlines())
+        filtered: list[tuple[str, str]] = []
+        for kind, text in entries:
+            if kind == 'decl':
+                sm = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', text)
+                if sm and sm.group(1) in local_static_names:
+                    continue  # defined locally — drop the extern decl
+            filtered.append((kind, text))
+        if not any(k == 'decl' for k, _ in filtered):
+            return ""
+        if len(filtered) == len(entries):
+            return block
+        return header_m.group(1) + "\n" + "".join(
+            f"    {t}\n" for _, t in filtered) + "}"
+
+    return re.sub(r'extern\s+"[^"]+"\s*\{[^}]*\}', clean_block, code,
+                  flags=re.DOTALL)
+
+
 def fix_extern_vs_local_dups(code: str) -> str:
     """Remove extern block declarations for functions also defined locally.
 
@@ -1291,6 +1339,7 @@ def postprocess(
         code = fix_global_exports(code, globals)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)
+    code = fix_extern_vs_local_static_dups(code)
     code = fix_duplicate_fn_defs(code)
     code = fix_extern_const(code)
     code = fix_variadic_extern_system(code)
