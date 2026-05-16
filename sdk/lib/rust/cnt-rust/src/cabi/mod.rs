@@ -18,6 +18,14 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
 }
 
 #[inline]
+pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
+    if p.is_null() || n == 0 {
+        return &[];
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
+#[inline]
 pub(crate) unsafe fn raw_mut_slice<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
     if p.is_null() || n == 0 {
         return &mut [];

@@ -13,7 +13,12 @@ extern "C" {
     fn ref_strcmp(a: *const u8, b: *const u8) -> i32;
     fn ref_strstr(h: *const u8, n: *const u8) -> *mut u8;
     fn ref_atoi64(s: *const u8) -> i64;
+    fn ref_atol(s: *const u8) -> i64; // C `long` (LP32) → i64-wide here, compare as i32
     fn ref_memcpy(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void;
+    fn ref_memchr(s: *const c_void, c: i32, n: usize) -> *mut c_void;
+    fn ref_memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
+    fn ref_memmove(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void;
+    fn ref_memset(d: *mut c_void, v: i32, n: usize) -> *mut c_void;
 }
 
 use cnt_rust::cabi;
@@ -191,4 +196,110 @@ fn diff_memcpy() {
         }
         assert_eq!(a, b, "memcpy overlap mismatch n={n} so={so} do={do_}");
     }
+}
+
+#[test]
+fn diff_memset() {
+    let mut rng = Rng(0x9e37_79b9);
+    for _ in 0..6000 {
+        let n = rng.upto(64);
+        let v = rng.next() as i32;
+        let mut a = vec![0u8; n];
+        let mut b = vec![0u8; n];
+        let ra = unsafe { cabi::memset(a.as_mut_ptr() as *mut c_void, v, n) };
+        let rb = unsafe { ref_memset(b.as_mut_ptr() as *mut c_void, v, n) };
+        assert_eq!(ra as usize, a.as_mut_ptr() as usize);
+        assert_eq!(rb as usize, b.as_mut_ptr() as usize);
+        assert_eq!(a, b, "memset n={n} v={v}");
+    }
+}
+
+#[test]
+fn diff_memcmp() {
+    let mut rng = Rng(0x2545_f491);
+    for _ in 0..8000 {
+        let n = rng.upto(48);
+        let mut a: Vec<u8> = (0..n).map(|_| rng.byte()).collect();
+        let mut b = a.clone();
+        if n > 0 && rng.next() & 1 == 0 {
+            let i = rng.upto(n);
+            b[i] = rng.byte();
+        }
+        if n > 0 && rng.next() & 3 == 0 {
+            a[0] = 0xFF;
+            b[0] = 0x00;
+        }
+        let c = unsafe { cabi::memcmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };
+        let r = unsafe { ref_memcmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };
+        assert_eq!(c, r, "memcmp n={n} a={a:?} b={b:?}");
+    }
+}
+
+#[test]
+fn diff_memmove() {
+    let mut rng = Rng(0x1357_9bdf);
+    for _ in 0..6000 {
+        let n = rng.upto(64);
+        let total = n + rng.upto(16);
+        let basev: Vec<u8> = (0..total + n).map(|_| rng.byte()).collect();
+        let so = if total == 0 { 0 } else { rng.upto(total) };
+        let do_ = if total == 0 { 0 } else { rng.upto(total) };
+        let mut a = basev.clone();
+        let mut b = basev.clone();
+        unsafe {
+            cabi::memmove(a.as_mut_ptr().add(do_) as *mut c_void, a.as_ptr().add(so) as *const c_void, n);
+            ref_memmove(b.as_mut_ptr().add(do_) as *mut c_void, b.as_ptr().add(so) as *const c_void, n);
+        }
+        assert_eq!(a, b, "memmove n={n} so={so} do={do_}");
+    }
+}
+
+#[test]
+fn diff_memchr() {
+    let mut rng = Rng(0xa5a5_5a5a);
+    for _ in 0..8000 {
+        let n = rng.upto(48);
+        let buf: Vec<u8> = (0..n).map(|_| rng.byte()).collect();
+        let c: i32 = match rng.upto(4) {
+            0 if n > 0 => buf[rng.upto(n)] as i32,
+            1 => 0,
+            2 => (0x80 | (rng.byte() as i32)) & 0xff,
+            _ => rng.next() as i32,
+        };
+        let cc = unsafe { cabi::memchr(buf.as_ptr() as *const c_void, c, n) };
+        let rr = unsafe { ref_memchr(buf.as_ptr() as *const c_void, c, n) };
+        let base = buf.as_ptr() as usize;
+        let off = |p: *mut c_void| if p.is_null() { None } else { Some(p as usize - base) };
+        assert_eq!(off(cc), off(rr), "memchr n={n} c={c} buf={buf:?}");
+    }
+}
+
+#[test]
+fn diff_atoi64_atol() {
+    let mut rng = Rng(0x0123_4567);
+    let fixed: &[&[u8]] = &[
+        b"\0", b"  +9223372036854775807\0", b"-9223372036854775808\0",
+        b"9223372036854775808\0", b"99999999999999999999\0",
+        b"2147483648\0", b"-2147483649\0", b"  -42xyz\0", b"+\0",
+    ];
+    for f in fixed {
+        unsafe {
+            assert_eq!(cabi::_atoi64(f.as_ptr()), ref_atoi64(f.as_ptr()),
+                "_atoi64 {:?}", core::str::from_utf8(f).unwrap_or("?"));
+            assert_eq!(cabi::atol(f.as_ptr()), ref_atol(f.as_ptr()) as i32,
+                "atol {:?}", core::str::from_utf8(f).unwrap_or("?"));
+        }
+    }
+    for _ in 0..4000 {
+        let mut s = Vec::new();
+        for _ in 0..rng.upto(28) {
+            s.push(b" \t+-0123456789zz"[rng.upto(16)]);
+        }
+        s.push(0);
+        unsafe {
+            assert_eq!(cabi::_atoi64(s.as_ptr()), ref_atoi64(s.as_ptr()), "_atoi64 {s:?}");
+            assert_eq!(cabi::atol(s.as_ptr()), ref_atol(s.as_ptr()) as i32, "atol {s:?}");
+        }
+    }
+    unsafe { assert_eq!(cabi::_atoi64(core::ptr::null()), ref_atoi64(core::ptr::null())); }
 }

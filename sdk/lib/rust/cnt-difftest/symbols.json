@@ -1,4 +1,20 @@
 {
+  "_atoi64": {
+    "c_signature": "__int64 _atoi64(const char *nptr)",
+    "family": "radix",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i64_passthrough",
+    "reference": "sdk/lib/crt/string/atoi64.c",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "ws+sign",
+      "near i64::MAX",
+      "i64 overflow wrap",
+      "trailing junk",
+      "no digits"
+    ]
+  },
   "atoi": {
     "c_signature": "int atoi(const char *s)",
     "family": "radix",
@@ -16,6 +32,51 @@
       "no digits ('  x')"
     ]
   },
+  "atol": {
+    "c_signature": "long atol(const char *str)",
+    "family": "radix",
+    "slice_pattern": "nul_in",
+    "return_collapse": "i64_trunc_i32",
+    "reference": "sdk/lib/crt/string/atol.c",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "+123",
+      "-456",
+      "i32 overflow",
+      "i64 overflow then trunc",
+      "trailing junk"
+    ]
+  },
+  "memchr": {
+    "c_signature": "void* __cdecl memchr(const void *s, int c, size_t n)",
+    "family": "mem",
+    "slice_pattern": "ptr_len",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/mem/memchr.c",
+    "fuzz_domain": [
+      "n==0",
+      "c at 0",
+      "c at n-1",
+      "c absent",
+      "c==0",
+      "c high-bit (>=0x80)"
+    ]
+  },
+  "memcmp": {
+    "c_signature": "int __cdecl memcmp(const void *s1, const void *s2, size_t n)",
+    "family": "mem",
+    "slice_pattern": "ptr_len",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/mem/memcmp.c",
+    "fuzz_domain": [
+      "n==0",
+      "equal",
+      "differ at 0",
+      "differ at n-1",
+      "0xFF vs 0x00 (==255)"
+    ]
+  },
   "memcpy": {
     "c_signature": "void *memcpy(void *dst, const void *src, size_t n)",
     "family": "mem",
@@ -29,6 +90,34 @@
       "dst == src",
       "n == 0",
       "n 1..256"
+    ]
+  },
+  "memmove": {
+    "c_signature": "void* __cdecl memmove(void *dest, const void *src, size_t count)",
+    "family": "mem",
+    "slice_pattern": "mem_raw",
+    "return_collapse": "ret_dst",
+    "reference": "sdk/lib/crt/mem/memmove.c",
+    "fuzz_domain": [
+      "disjoint",
+      "dst<src overlap",
+      "dst>src overlap",
+      "dst==src",
+      "count==0"
+    ]
+  },
+  "memset": {
+    "c_signature": "void* __cdecl memset(void* src, int val, size_t count)",
+    "family": "mem",
+    "slice_pattern": "set_raw",
+    "return_collapse": "ret_dst",
+    "reference": "sdk/lib/crt/mem/memset.c",
+    "fuzz_domain": [
+      "count==0",
+      "count==1",
+      "typical",
+      "val>255 (trunc)",
+      "val<0"
     ]
   },
   "strcmp": {

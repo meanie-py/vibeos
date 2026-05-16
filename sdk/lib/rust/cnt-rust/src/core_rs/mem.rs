@@ -4,11 +4,14 @@
 //! `memcpy` is itself overlap-safe (it's a memmove), which the shim +
 //! differential test pin.
 
-/// `memset` core: fill `dst` with `val` (low byte). Total.
+/// `memset` core: fill `dst` with `val` truncated to a byte (the C
+/// `int val` → `unsigned char` store). Takes the raw C int so the
+/// truncation is the core's faithful responsibility, not the shim's.
 #[inline]
-pub fn set(dst: &mut [u8], val: u8) {
-    for b in dst.iter_mut() {
-        *b = val;
+pub fn set(dst: &mut [u8], val: i32) {
+    let b = val as u8;
+    for x in dst.iter_mut() {
+        *x = b;
     }
 }
 
@@ -26,8 +29,14 @@ pub fn cmp(a: &[u8], b: &[u8]) -> i32 {
     0
 }
 
-/// `memchr` core: first index of `val` in `hay`, or `None`.
+/// `memchr` core, faithful to ReactOS `memchr.c`: it compares
+/// `*p == c` where `*p` is a **signed `char`** promoted to `int` and
+/// `c` is the raw `int`. So a byte matches iff its signed-char value
+/// equals `c` — meaning `c` outside `-128..=127` NEVER matches (e.g.
+/// `memchr(buf, 0x90, n)` finds nothing even if byte 0x90 is present;
+/// you must pass `c = -112`). Textbook libc casts to `unsigned char`;
+/// this deliberate deviation is pinned by the diff harness.
 #[inline]
-pub fn chr(hay: &[u8], val: u8) -> Option<usize> {
-    hay.iter().position(|&b| b == val)
+pub fn chr(hay: &[u8], c: i32) -> Option<usize> {
+    hay.iter().position(|&b| (b as i8 as i32) == c)
 }

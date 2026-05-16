@@ -21,38 +21,25 @@ fn main() {
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let crt = repo.join("sdk/lib/crt");
 
-    // (ref symbol, preamble, included reference source)
-    let units: &[(&str, String, PathBuf)] = &[
-        (
-            "strlen",
-            "typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>".into(),
-            crt.join("string/tcslen.h"),
-        ),
-        (
-            "strncpy",
-            "typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>".into(),
-            crt.join("string/tcsncpy.h"),
-        ),
-        (
-            "strcmp",
-            "typedef char _TCHAR;\n#define _tcscmp ref_strcmp".into(),
-            crt.join("string/tcscmp.h"),
-        ),
-        (
-            "strstr",
-            "#define strstr ref_strstr".into(),
-            crt.join("string/strstr.c"),
-        ),
-        (
-            "atoi64",
-            "#define _atoi64 ref_atoi64".into(),
-            crt.join("string/atoi64.c"),
-        ),
-        (
-            "memcpy",
-            "#define __cdecl\n#define memcpy ref_memcpy".into(),
-            crt.join("mem/memcpy.c"),
-        ),
+    // (ref symbol, full host TU body). Each renames the public symbol
+    // to ref_<name> and includes the genuine ReactOS logic.
+    let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
+    let s = |p: &str| crt.join(p);
+    let units: Vec<(&str, String)> = vec![
+        ("strlen", format!("typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>\n{}", inc(s("string/tcslen.h")))),
+        ("strncpy", format!("typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>\n{}", inc(s("string/tcsncpy.h")))),
+        ("strcmp", format!("typedef char _TCHAR;\n#define _tcscmp ref_strcmp\n{}", inc(s("string/tcscmp.h")))),
+        ("strstr", format!("#define strstr ref_strstr\n{}", inc(s("string/strstr.c")))),
+        ("atoi64", format!("#define _atoi64 ref_atoi64\n{}", inc(s("string/atoi64.c")))),
+        ("memcpy", format!("#define __cdecl\n#define memcpy ref_memcpy\n{}", inc(s("mem/memcpy.c")))),
+        ("memchr", format!("#define __cdecl\n#define memchr ref_memchr\n{}", inc(s("mem/memchr.c")))),
+        ("memcmp", format!("#define __cdecl\n#define memcmp ref_memcmp\n{}", inc(s("mem/memcmp.c")))),
+        ("memmove", format!("#define __cdecl\n#define memmove ref_memmove\n{}", inc(s("mem/memmove.c")))),
+        ("memset", format!("#define __cdecl\n#define memset ref_memset\n{}", inc(s("mem/memset.c")))),
+        // atol = (long)_atoi64; skip atol.c's _atoldbl (needs _LDOUBLE).
+        // Rename the helper so it doesn't collide with cnt-rust's own
+        // #[no_mangle] `_atoi64` shim linked into this test binary.
+        ("atol", format!("#define _atoi64 ref_atol_atoi64\n{}long ref_atol(const char*s){{return (long)ref_atol_atoi64(s);}}\n", inc(s("string/atoi64.c")))),
     ];
 
     let mut build = cc::Build::new();
@@ -62,12 +49,12 @@ fn main() {
         .flag("-w")
         .opt_level(2)
         .cargo_metadata(false);
-    for (sym, preamble, src) in units {
+    for (sym, body) in &units {
         let w = out.join(format!("ref_{sym}.c"));
-        fs::write(&w, format!("{preamble}\n#include \"{}\"\n", src.display())).unwrap();
+        fs::write(&w, body).unwrap();
         build.file(&w);
-        println!("cargo:rerun-if-changed={}", src.display());
     }
+    println!("cargo:rerun-if-changed={}", crt.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     // Link the reference .o files *directly* (not as a static archive).
     // build-script rustc-link-lib doesn't reliably reach integration

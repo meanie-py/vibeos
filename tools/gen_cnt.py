@@ -64,14 +64,19 @@ def rs_ty(ctype: str) -> str:
     }[c]
 
 
+_CC = {"__cdecl", "CDECL", "__stdcall", "WINAPI", "NTAPI"}
+
+
 def ret_ty(sig: str) -> str:
-    # "void *memcpy" / "char *strstr" / "size_t strlen" / "int atoi"
+    # "void *memcpy" / "__int64 _atoi64" / "long atol" / "int atoi"
     head = sig.split("(", 1)[0].strip()
-    toks = head.replace("*", " * ").split()
+    toks = [t for t in head.replace("*", " * ").split() if t not in _CC]
     rtype = "".join(toks[:-1])  # drop the function-name token
     return {
         "size_t": "usize",
         "int": "i32",
+        "long": "i32",  # Win i386 LP32: long == 32-bit
+        "__int64": "i64",
         "char*": "*mut u8",
         "void*": "*mut core::ffi::c_void",
     }[rtype]
@@ -84,43 +89,62 @@ def shim(name: str, m: dict) -> str:
     rt = ret_ty(m["c_signature"])
     decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
     pnames = [n for _, n in params]
+    ptrs = [n for t, n in params if rs_ty(t).startswith("*")]
+    szp = next((n for t, n in params if rs_ty(t) == "usize"), None)
+    scal = [n for t, n in params if rs_ty(t) == "i32"]  # c / val
     body: list[str] = []
+    cf = m["core_fn"]
+
+    def core_call(args: str) -> str:
+        return f"crate::core_rs::{cf}({args})"
 
     # ---- slice reconstruction --------------------------------------
     if sp == "nul_in":
         for _, n in params:
             body.append(f"    let {n}_s = cstr_slice({n});")
     elif sp == "dst_fixed_n":
-        d, s, nn = pnames  # dst, src, n
-        body.append(f"    let {d}_s = raw_mut_slice({d}, {nn});")
+        d, s, _ = pnames
+        body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
         body.append(f"    let {s}_s = cstr_slice({s});")
+    elif sp == "ptr_len":
+        for p in ptrs:
+            body.append(f"    let {p}_s = raw_slice({p} as *const u8, {szp});")
+    elif sp == "set_raw":
+        d = ptrs[0]
+        body.append(f"    let {d}_s = raw_mut_slice({d} as *mut u8, {szp});")
     elif sp == "mem_raw":
-        pass  # handled inline below
+        pass  # raw_move inline below
     else:
         raise SystemExit(f"{name}: unsupported slice_pattern {sp}")
 
+    # The first slice's name (for single/double-slice cores).
+    s0 = (pnames[0] if sp in ("nul_in", "dst_fixed_n") else ptrs[0]) + "_s"
+    s1 = (
+        (pnames[1] if sp in ("nul_in",) else ptrs[1]) + "_s"
+        if (sp == "nul_in" and len(pnames) > 1) or (sp == "ptr_len" and len(ptrs) > 1)
+        else None
+    )
+
     # ---- core call + return collapse -------------------------------
-    cf = m["core_fn"]
-
-    def core_call(args: str) -> str:
-        return f"crate::core_rs::{cf}({args})"
-
     if rc == "usize":
-        a = pnames[0]
-        body.append(f"    {core_call(f'{a}_s')} as {rt}")
+        body.append(f"    {core_call(s0)} as {rt}")
     elif rc == "i32_passthrough":
-        a, b = pnames[:2]
-        body.append(f"    {core_call(f'{a}_s, {b}_s')}")
+        body.append(f"    {core_call(f'{s0}, {s1}')}")
     elif rc == "ptr_or_null_from_opt":
-        a, b = pnames[:2]
-        body.append(f"    match {core_call(f'{a}_s, {b}_s')} {{")
-        body.append(f"        Some(i) => {a}.add(i) as {rt},")
+        args = f"{s0}, {s1}" if s1 else f"{s0}, {scal[0]}"
+        base = pnames[0] if sp == "nul_in" else ptrs[0]
+        body.append(f"    match {core_call(args)} {{")
+        body.append(f"        Some(i) => {base}.add(i) as {rt},")
         body.append("        None => core::ptr::null_mut(),")
         body.append("    }")
     elif rc == "ret_dst":
         if sp == "dst_fixed_n":
             d, s, _ = pnames
             body.append(f"    let _ = {core_call(f'{d}_s, {s}_s')};")
+            body.append(f"    {d}")
+        elif sp == "set_raw":
+            d = ptrs[0]
+            body.append(f"    {core_call(f'{d}_s, {scal[0]}')};")
             body.append(f"    {d}")
         elif sp == "mem_raw":
             d, s, nn = pnames
@@ -129,9 +153,11 @@ def shim(name: str, m: dict) -> str:
         else:
             raise SystemExit(f"{name}: ret_dst with {sp}")
     elif rc == "i64_trunc_i32":
-        a = pnames[0]
-        body.append(f"    let (v, _of) = {core_call(f'{a}_s')};")
+        body.append(f"    let (v, _of) = {core_call(s0)};")
         body.append(f"    v as i32 as {rt}")
+    elif rc == "i64_passthrough":
+        body.append(f"    let (v, _of) = {core_call(s0)};")
+        body.append(f"    v as {rt}")
     else:
         raise SystemExit(f"{name}: unsupported return_collapse {rc}")
 
@@ -160,6 +186,14 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
     let mut n = 0usize;
     while *p.add(n) != 0 {
         n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
+#[inline]
+pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
+    if p.is_null() || n == 0 {
+        return &[];
     }
     core::slice::from_raw_parts(p, n)
 }
@@ -203,7 +237,11 @@ def main() -> int:
     man = tomllib.loads(MANIFEST.read_text())
     syms = man["symbols"]
 
-    shims = [AUTOGEN, "use super::{cstr_slice, raw_move, raw_mut_slice};\n\n"]
+    shims = [
+        AUTOGEN,
+        "#[allow(unused_imports)]\n"
+        "use super::{cstr_slice, raw_move, raw_mut_slice, raw_slice};\n\n",
+    ]
     for nm in sorted(syms):
         shims.append(shim(nm, syms[nm]))
         shims.append("")

@@ -99,3 +99,74 @@ inout_effects = "writes dst[0..n] = src[0..n], overlap-correct (forward if dst<=
 preserved_misfeature = "overlap-SAFE memcpy (textbook libc: overlap is UB). ReactOS memcpy.c handles it like memmove — must replicate or kernel callers relying on it break"
 reference    = "sdk/lib/crt/mem/memcpy.c"
 fuzz_domain  = ["disjoint", "dst < src overlap", "dst > src overlap", "dst == src", "n == 0", "n 1..256"]
+
+# ---------------------------------------------------------------------
+# Farmed by Sonnet (tools/cnt/farm.py) from the real ReactOS source,
+# diff-harness-verified below. 2026-05-15 AI-step test batch.
+# ---------------------------------------------------------------------
+
+[symbols.memchr]
+c_signature  = "void* __cdecl memchr(const void *s, int c, size_t n)"
+family       = "mem"
+slice_pattern = "ptr_len"
+core_fn      = "mem::chr"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only scan)"
+preserved_misfeature = "n==0 → return NULL without deref; signed-char vs int compare (high-bit c)"
+reference    = "sdk/lib/crt/mem/memchr.c"
+fuzz_domain  = ["n==0", "c at 0", "c at n-1", "c absent", "c==0", "c high-bit (>=0x80)"]
+
+[symbols.memcmp]
+c_signature  = "int __cdecl memcmp(const void *s1, const void *s2, size_t n)"
+family       = "mem"
+slice_pattern = "ptr_len"
+core_fn      = "mem::cmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none"
+preserved_misfeature = "UNSIGNED-char diff, raw (not clamped to {-1,0,1}): 0xFF vs 0x00 → 255"
+reference    = "sdk/lib/crt/mem/memcmp.c"
+fuzz_domain  = ["n==0", "equal", "differ at 0", "differ at n-1", "0xFF vs 0x00 (==255)"]
+
+[symbols.memmove]
+c_signature  = "void* __cdecl memmove(void *dest, const void *src, size_t count)"
+family       = "mem"
+slice_pattern = "mem_raw"
+core_fn      = "cabi::raw_move"
+return_collapse = "ret_dst"
+inout_effects = "dest[0..count] ← src[0..count], overlap-safe (same algo as memcpy)"
+preserved_misfeature = "none (textbook overlap-safe; identical body to memcpy.c)"
+reference    = "sdk/lib/crt/mem/memmove.c"
+fuzz_domain  = ["disjoint", "dst<src overlap", "dst>src overlap", "dst==src", "count==0"]
+
+[symbols.memset]
+c_signature  = "void* __cdecl memset(void* src, int val, size_t count)"
+family       = "mem"
+slice_pattern = "set_raw"
+core_fn      = "mem::set"
+return_collapse = "ret_dst"
+inout_effects = "src[0..count] = val as u8; returns src"
+preserved_misfeature = "none (textbook; val truncated to u8)"
+reference    = "sdk/lib/crt/mem/memset.c"
+fuzz_domain  = ["count==0", "count==1", "typical", "val>255 (trunc)", "val<0"]
+
+[symbols._atoi64]
+c_signature  = "__int64 _atoi64(const char *nptr)"
+family       = "radix"
+slice_pattern = "nul_in"
+core_fn      = "radix::parse_i64_wrapping"
+return_collapse = "i64_passthrough"
+inout_effects = "none"
+preserved_misfeature = "NULL→0; i64 wrapping accumulate, NO overflow error; no (int) trunc (unlike atoi)"
+reference    = "sdk/lib/crt/string/atoi64.c"
+fuzz_domain  = ["NULL", "empty", "ws+sign", "near i64::MAX", "i64 overflow wrap", "trailing junk", "no digits"]
+
+[symbols.atol]
+c_signature  = "long atol(const char *str)"
+family       = "radix"
+slice_pattern = "nul_in"
+core_fn      = "radix::parse_i64_wrapping"
+return_collapse = "i64_trunc_i32"
+inout_effects = "none"
+preserved_misfeature = "atol = (long)_atoi64; long is 32-bit (Win i386) → i64 wrap then i32 trunc, no overflow error"
+reference    = "sdk/lib/crt/string/atol.c"
+fuzz_domain  = ["NULL", "empty", "+123", "-456", "i32 overflow", "i64 overflow then trunc", "trailing junk"]
