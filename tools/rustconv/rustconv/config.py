@@ -14,6 +14,7 @@ HAL_DIR = REACTOS_ROOT / "hal"
 # green smoke baseline. See memory feedback_kdcom_is_kdrosdbg.
 KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
+FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -135,6 +136,24 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386",),
     ),
+    # FreeLDR itself — static components compiled into the cmake-built
+    # freeldr lib (freeldr.sys/uefildr.efi/rosload.exe), NOT a DLL with
+    # a .spec. Integration is hal-rust-style cohabitation: a
+    # freeldr-rust staticlib linked into the freeldr cmake target with
+    # the .c commented out. 3-arch (i386/amd64/arm64; BIOS+UEFI).
+    "freeldr": Target(
+        name="freeldr",
+        source_dir=FREELDR_DIR,
+        output_crate=RUST_DIR / "freeldr-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
 }
 
 
@@ -146,6 +165,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["kdcom"]
     if "/drivers/base/bootvid" in posix:
         return TARGETS["bootvid"]
+    if "/boot/freeldr/" in posix:
+        return TARGETS["freeldr"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
         return TARGETS["hal"]
     return TARGETS["ntoskrnl"]

@@ -15,6 +15,7 @@ members = [
     "kdcom-cargo",
     "bootvid-rust",
     "bootvid-cargo",
+    "freeldr-rust",
     "handle",
     "interlck",
     "kernel-rust",
