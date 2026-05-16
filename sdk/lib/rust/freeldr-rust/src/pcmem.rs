@@ -310,14 +310,16 @@ unsafe fn PcMemGetBiosMemoryMap(MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemory
             TRACE(
                 b"Discarding empty range. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize,
             );
-            'nextRange: loop {
-                if Regs.x.ebx == 0x00000000 {
-                    TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
-                    break 'outer;
-                }
-                break 'nextRange;
+            // C `goto nextRange;` (DISCARD) skips PcBiosMapCount++ — the
+            // slot is reused for the next BIOS entry. rustconv wrongly
+            // appended `PcBiosMapCount += 1;` here (counts a discarded
+            // entry → over-counts → meminit AddMemoryDescriptor static-
+            // array overflow / bogus zero ranges). Mirror C: ebx-term
+            // check then continue, NO increment.
+            if Regs.x.ebx == 0x00000000 {
+                TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                break 'outer;
             }
-            PcBiosMapCount += 1;
             continue;
         }
 
@@ -337,14 +339,11 @@ unsafe fn PcMemGetBiosMemoryMap(MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemory
                 TRACE(
                     b"Skipping aligned range < PAGE_SIZE. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize,
                 );
-                'nextRange: loop {
-                    if Regs.x.ebx == 0x00000000 {
-                        TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
-                        break 'outer;
-                    }
-                    break 'nextRange;
+                // C `goto nextRange;` (DISCARD) — no PcBiosMapCount++.
+                if Regs.x.ebx == 0x00000000 {
+                    TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                    break 'outer;
                 }
-                PcBiosMapCount += 1;
                 continue;
             }
 

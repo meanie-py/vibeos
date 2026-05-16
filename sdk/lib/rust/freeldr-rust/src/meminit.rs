@@ -92,6 +92,7 @@ pub unsafe extern "C" fn AddMemoryDescriptor(
         DescriptCount += 1;
     }
 
+
     while (*List.offset(Index as isize)).PageCount != 0
         && (*List.offset(Index as isize)).BasePage < EndPage
     {
