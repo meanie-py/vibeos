@@ -1,23 +1,55 @@
 # Win32k C→Rust Translation Audit
 
-Last updated 2026-05-09. **Status: pre-translation.** No Rust win32k
-code exists yet; this audit defines the keep-set, the prune-set, the
-translation order, and the rustconv pipeline configuration for the
-actual C→Rust translation phase.
+Last updated 2026-05-16. **Status: pretranslation COMPLETE; bulk
+C→Rust translation not yet started.** No Rust win32k *translation*
+code exists yet, but the substrate and the de-risking pre-work are
+done (see "Pretranslation: what actually landed" below). This audit
+defines the keep-set, the (corrected) prune-set, the translation
+order, and the rustconv configuration for the bulk translation phase.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
 - [hal-translation-audit.md](hal-translation-audit.md) — HAL translation, pre-translation
 - [freeldr-translation-audit.md](freeldr-translation-audit.md) — FreeLDR + boot DLLs, pre-translation
-- [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md) — **the C-side rewrite phase that gates this one**
+- [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md) — **the C-side de-risking phase that gates this one — now landed**
 - [pseh-elimination.md](pseh-elimination.md) — overall PSEH strategy
-- `qemu/~temp-chat-consolidated.md` — design notes for callout layer
+- `qemu/~temp-chat-consolidated.md` — callout-layer design notes. **⚠ This
+  is a gitignored scratch file in `qemu/`. Phase 3 (the hardest half)
+  hinges on it — it must be promoted into `docs/engineering/` before
+  Phase 3 starts, not referenced as `~temp-chat`.**
 
-This audit assumes the pretranslation phase (probe-site lowering, GDI
-lock annotation, callout annotation) has landed. The C source we're
-handing to rustconv has already been normalized to look Rust-shaped:
-`Status = SafeCapture*(…)`, `WITH_GDI_LOCKED(…)`, sidecar JSON
-metadata for callouts.
+### Pretranslation: what actually landed (corrects the old premise)
+
+The original draft of this audit assumed pretranslation would hand
+rustconv *rewritten C* full of magic macros (`Status = SafeCapture*(…)`,
+`WITH_GDI_LOCKED(…)`). **That is not what was built, by deliberate
+design.** What actually exists:
+
+- **Probe lowering is a real source rewrite**: 65 files now use
+  `SafeProbeForRead`/`SafeProbeForWrite` (status-returning, in
+  `win32ss/safe_user_io.{c,h}`). There is **no** `SafeCapture*`.
+- **GDI locks / USER critsec / callouts are extract-only JSON
+  sidecars**, NOT source-rewrite macros. There is **no**
+  `WITH_GDI_LOCKED`. Pass 2 (`*.win32k_gdilocks.json`), Pass 2b
+  (`*.win32k_userlocks.json`), Pass 3 (`*.win32k_callouts.json`) +
+  Pass 0 SEH triage feed the rustconv prompt-builder, which injects
+  per-function ground truth + `win32k_translation_prompt.md` rules.
+- **`win32k-sys` FFI crate is built** (`sdk/lib/rust/win32k-sys/`,
+  3 arches, cargo-clean) — the ntkrnl-sys analog. Resolves ~82% of
+  the win32k symbol surface (incl. FreeType — 46 FT_ symbols are
+  already in it via `pch.h`). This is the substrate; see below.
+- **Calling convention is deterministically enforced**, not
+  LLM-inferred (`abi_map.py` + `postprocess.enforce_win32k_abi`):
+  the #1 i386 crash cause is taken out of the LLM's hands entirely.
+- **Giant files were `#include`-back split** (20 → 32 fragments) so
+  no file is an oversized prompt — this *inverts* the old "prioritize
+  the largest files" guidance.
+- **Post-`shell ready` smoke** (`test_post_shell_ready_input`, i386 +
+  amd64 QMP input injection) landed; more harness work in progress.
+
+See [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md)
+for the full landed inventory. The rest of this document is updated to
+match that reality.
 
 ## TL;DR
 
@@ -35,16 +67,23 @@ metadata for callouts.
   GDI translation prove out the methodology first.
 - **freetype.c (~7,943 LOC) glue stays around an FFI boundary**;
   freetype itself stays C (3rd-party vendor blob, same handling as
-  ACPICA in HAL).
-- **brush.cpp is the only C++** in the tree (~605 LOC). Translate
-  to a Rust struct as a one-off.
+  ACPICA in HAL). The FT_* FFI surface is **already in `win32k-sys`**
+  (46 symbols, via `pch.h`) — no separate `freetype-sys` needed.
+- **brush.cpp is the only C++** in the tree (605 LOC, verified).
+  Translate to a Rust struct as a one-off.
 - **i386 has unique kernel-mode FLOATOBJ_* asm** (`gdi/eng/i386/floatobj.S`)
   — fixed-point math because i386 kernel mode lacks SSE. Stays asm or
   becomes Rust `global_asm!`; either works.
-- **Translation cost via rustconv: ~$5/iter**, ~3–5 iters realistic.
-  **Total spend ~$15–25.** Multi-month calendar even with parallelism
-  because regressions in win32k are highly visible (every one breaks
-  the desktop).
+- **Giant files are already split** — do NOT prioritize "largest
+  files"; that guidance is obsolete. `rustconv translate` chunks
+  function-by-function and every file is now under the prompt cliff.
+- **Translation cost via rustconv: budget ~$25–50 lifetime** (≈170
+  files × ~$0.05 × 3–5 iters). The earlier "$15–25" figure elsewhere
+  in this doc was inconsistent and is superseded by this number;
+  win32k-sys *reduces* per-file token cost (no per-file bindgen
+  lookups) but the file-split *increases* file count — net wash.
+  Multi-month calendar even with parallelism because regressions in
+  win32k are highly visible (every one breaks the desktop).
 - **The crown jewel is GDI handle table + USER handle table being
   Rust.** Once both are Rust, win32k handle lifecycle is Rust
   end-to-end and the rest is mostly leaf code.
@@ -147,33 +186,40 @@ Per `tests/qemu/test_smoke.py` and the existing harness:
 
 ## Prune-set
 
-### 1. Definitely dead (no Rust work, just delete)
+> **⚠ CORRECTED 2026-05-16.** The original prune table was written from
+> path-name guessing and is substantially wrong. The pretranslation
+> phase verified the *actual build graph* (`add_subdirectory` +
+> explicit `list(APPEND SOURCE …)` + unconditional `#include`). Lesson
+> banked as `feedback_prune_verify_build_graph`: "vibeos prune tables
+> lie; verify the build graph before git-rm." Corrected status below.
 
-| Path | LOC | Why drop |
-|---|---:|---|
-| `gdi/diblib/` | 3,456 | Alternate DIB implementation, `USE_DIBLIB FALSE` in CMakeLists. Whole dir compiled out. |
-| `drivers/miniport/xboxvmp/` | ~1,000 | Original Xbox display miniport |
-| `drivers/miniport/pc98vid/` | ~1,000 | NEC PC-98 video |
-| Drivers/printing references to xbox/pc98 | ~50 | Bits and pieces |
-| `reactx/dxapi/`, `reactx/dxgthk/`, `reactx/ntdxvista/` | ~0–small | Empty or near-empty stub dirs |
+### 1. Already gone (prior dead-platform purge — no action)
 
-**Subtotal: ~5,500 LOC.** Reversible.
+`drivers/miniport/xboxvmp/`, `drivers/miniport/pc98vid/` and their
+printing references were **already deleted** in the 2026-05-13/14
+dead-platform purge (xbox + pc-98 + 32-bit ARM + SAC + arm64ec, ~28K
+LOC repo-wide). Do not list them as pending prune work.
 
-### 2. Defer-or-prune (audit before deciding)
+### 2. NOT safely prunable (verified load-bearing — keep)
 
-| Path | LOC | Decision criteria |
-|---|---:|---|
-| `reactx/ntddraw/` | 3,193 | Mostly stubs returning STATUS_NOT_IMPLEMENTED. Smoke doesn't exercise DirectDraw. **Prune now**, re-add when needed. |
-| `reactx/dxg/` | 1,884 | Same logic. **Prune now**. |
-| `drivers/displays/vga/` | 4,007 | Legacy VGA via port I/O. UEFI-only smoke uses `framebuf/`. **Prune.** |
-| `drivers/displays/vga_new/` | 1,824 | Newer VGA implementation. Not used in our smoke. **Prune.** |
-| `drivers/displays/framebuf/` | 1,959 | UEFI GOP framebuffer driver. **KEEP.** |
-| `drivers/miniport/` (sans xbox/pc98) | varies | Audit which ones our smoke loads; prune the rest. |
-| `drivers/font/` | 3,181 | Font driver. Used by GDI. **KEEP** (parallels FreeType's role). |
-| `drivers/watchdog/` | 237 | TDR. Trivially small. **KEEP**. |
+| Path | Why the old "prune" call was WRONG |
+|---|---|
+| `gdi/diblib/` | NOT "whole dir compiled out". `gdi/dib/dib_new.c` `#include`s `DibLib.h` / `DibLib_interface.h` **unconditionally** → load-bearing. |
+| `reactx/dxg/`, `reactx/ntddraw/` | Built via `add_subdirectory(reactx)` in `win32ss/CMakeLists.txt` and in the win32k.sys SOURCE path. Not "trivial stubs to delete now". |
+| `drivers/displays/vga/` | Reached via `add_subdirectory(drivers)`; pruning needs build-graph proof, not the smoke-usage guess. |
 
-**Subtotal: ~14K LOC** if we prune the defer-or-prune column
-aggressively.
+### 3. Actually safe to prune (verified)
+
+Only the genuinely-orphaned subset survives scrutiny — per the
+pretranslation audit, ~the two orphaned `drivers/displays/vga_new`
+files (~6.3K LOC) were the *only* safely-removable set, and that prune
+already landed (smoke-gated) during pretranslation. Treat any further
+prune as: prove it's not in the build graph first, surface
+contradictions, never git-rm to hit a LOC number.
+
+**Net:** the "~14K LOC prunable" subtotal is fiction. The real,
+verified, *already-done* prune is the vga_new orphans. Do not re-plan
+a pruning PR around the obsolete table.
 
 ### 3. Cannot prune (load-bearing)
 
@@ -195,20 +241,22 @@ gdi/eng/      19,192 LOC, 40 files   — Graphics Engine, DDI for display driver
 gdi/dib/       5,426 LOC, 13 files   — DIB renderers (1/4/8/16/24/32 bpp)
 ```
 
-**Largest files** (these get prioritized in rustconv batches):
+**Largest files** — ⚠ **OBSOLETE TABLE.** The giants below were
+`#include`-back split during pretranslation (`region.c` 4,144→1,292,
+`path.c` 3,109→1,131, etc.; remainder in `*.split2/3/4.c` fragments).
+Do **not** "prioritize the largest files in rustconv batches" — that
+premise is inverted: every file is now under the prompt cliff and
+`translate` chunks function-by-function regardless. `gdiobj.c` (the
+GDI handle table) still matters as a *dependency hub* (Phase 1), not
+because of size. Kept for historical context only:
 
 ```
-gdi/ntgdi/freetype.c   7,943   ← FreeType glue
-gdi/ntgdi/region.c     4,144   ← HRGN region math
-gdi/ntgdi/path.c       3,109   ← HPATH path objects
-gdi/ntgdi/dibobj.c     2,339
-gdi/ntgdi/gdiobj.c     1,669   ← GDI handle table
-gdi/ntgdi/bitblt.c     1,618
-gdi/ntgdi/drawing.c    1,521
-gdi/eng/stubs.c        1,525   ← Engine stub functions
-gdi/eng/pdevobj.c      1,371
-gdi/eng/drvdbg.c       1,266
-gdi/eng/bitblt.c       1,242
+gdi/ntgdi/freetype.c   7,943   ← FreeType glue (NOT split — single TU
+                                  by design; translate via win32k-sys
+                                  FT_* surface, not a freetype-sys crate)
+gdi/ntgdi/region.c     →1,292   (was 4,144; split)
+gdi/ntgdi/path.c       →1,131   (was 3,109; split)
+gdi/ntgdi/gdiobj.c     1,669    ← GDI handle table — Phase 1 hub (by role)
 ```
 
 **Translation difficulty: medium.** Pixel math is deterministic and
@@ -233,29 +281,25 @@ user/ntuser/  73,166 LOC, 59 files   — NtUser* syscalls + window manager
 user/rtl/      1,448 LOC, ~6 files   — Shared RTL (also linked to user32)
 ```
 
-**Largest files:**
+**Largest files** — ⚠ **OBSOLETE (post-split).** `window.c`
+4,727→1,089, `winpos.c` 4,063→1,064, etc.; `sysparams.c`/`defwnd.c`
+additionally had their giant dispatch switches tree-sitter-extracted
+into helper fns (`SpiGetSet` 1,029→shell+139, `IntDefWindowProc` +11).
+`menu.c` ~unchanged (6,690) — a remaining genuine monster the
+translator handles via `translate` chunking. The role annotations
+still hold and are what matters now:
 
 ```
-ntuser/menu.c        6,703   ← Win32 menu system
-ntuser/window.c      4,727   ← HWND lifecycle
-ntuser/winpos.c      4,063   ← SetWindowPos / Z-order
-ntuser/desktop.c     3,508   ← Desktop / station init (boot marker lives here)
-ntuser/message.c     3,239   ← SendMessage / PostMessage
-ntuser/class.c       2,984   ← RegisterClass machinery
-ntuser/msgqueue.c    2,649
-ntuser/painting.c    2,622   ← WM_PAINT / invalid regions
-ntuser/cursoricon.c  2,258
-ntuser/winsta.c      2,222   ← Window stations (50ms HACK lives here)
-ntuser/sysparams.c   2,203
-ntuser/nonclient.c   2,178
-ntuser/hook.c        1,779   ← Win32 hooks (highest SEH density)
-ntuser/keyboard.c    1,772
-ntuser/focus.c       1,754
-ntuser/scrollbar.c   1,466
-ntuser/defwnd.c      1,368
-ntuser/callback.c    1,321   ← Where co_IntClientLoadLibrary lives
-ntuser/clipboard.c   1,279
+ntuser/menu.c        6,690   ← Win32 menu system (NOT split — translate-chunk)
+ntuser/desktop.c     ~3,5xx  ← Desktop/station init (boot marker lives here)
+ntuser/message.c     split   ← SendMessage/PostMessage
+ntuser/winsta.c      ~2,2xx  ← Window stations (50ms HACK lives here)
+ntuser/hook.c        ~1,7xx  ← Win32 hooks (highest SEH density)
+ntuser/callback.c    split   ← co_IntClientLoadLibrary lives here (Pass-3 anchor)
 ```
+
+Sequencing is now by **dependency depth + Pass-2b/3 sidecar shape**
+(CLEAN_BRACKET first, REENTRANT/REVIEW last), not by raw LOC.
 
 **Translation difficulty: high.** This is where:
 - The 17 `co_*` callout functions live → typestate API
@@ -318,7 +362,37 @@ the user-side call.
 
 ## Build artifact decision
 
-**One Rust crate: `win32k-rust` (cdylib), three target specs.**
+> **⚠ CORRECTED 2026-05-16.** The original "cdylib + custom
+> `*-win32k.json` target spec" plan **contradicts both** the proven
+> project pattern *and* this document's own "Smoke continuity
+> strategy" §(which correctly describes augment-link cohabitation).
+> `ntoskrnl-rust` is `crate-type=["rlib"]` → `libkernel_rust.a` →
+> linked into `ntoskrnl.exe` by the cmake build with the C
+> commented-out (cohabitation); `hal-rust` is the same staticlib
+> cohabitation. No custom JSON target spec, no cdylib, anywhere in
+> the proven tree. **win32k follows the same cohabitation pattern.**
+> The cdylib/custom-target section below is superseded.
+
+### Corrected: cohabitation staticlib (proven — ntoskrnl-rust/hal-rust)
+
+`sdk/lib/rust/win32k-rust/` is an **rlib** pulled into a staticlib
+umbrella (mirror `kernel-rust`/`hal-rust`): `crate-type=["rlib"]`,
+workspace `lto=false`+`cgu=256` firewall, `#![no_std]`. Built per-arch
+with the **existing** Rust targets (`i686-pc-windows-gnu`,
+`x86_64-pc-windows-gnu`, `aarch64-pc-windows-gnullvm`) — *not* custom
+`.json` target specs. Each translated `.c`→`.rs` swap is independently
+revertible: the `.c` is commented out in `win32ss/CMakeLists.txt` (or
+the relevant `add_subdirectory` cmake) with a `# replaced by Rust`
+line; the Rust `#[no_mangle]` symbol takes over; `--allow-multiple-
+definition` covers the swap-in window (lld first-match wins). Depends
+on `win32k-sys` (built) + `ntkrnl-sys`; **no `freetype-sys`** (FT_* is
+in win32k-sys). `extern crate win32k_rust;` in the umbrella `lib.rs`
+or the symbols won't reach the staticlib (`feedback_extern_crate_for_staticlib`).
+
+The historical cdylib proposal (kept below, struck) was never how any
+vibeos kernel-mode Rust ships:
+
+~~**One Rust crate: `win32k-rust` (cdylib), three target specs.**~~
 
 ```
 sdk/lib/rust/win32k-rust/
@@ -355,20 +429,33 @@ preservation), no userland CRT, kernel-mode runtime hooks. Probably
 share a workspace-level profile across `kernel-rust`, `hal-rust`,
 `win32k-rust`, etc.
 
-## Substrate crates needed
+## Substrate crate — DONE (collapsed from 3 planned to 1)
 
-Same approach as HAL/FreeLDR — bindgen substrates, $0 API cost.
+> **✅ LANDED 2026-05-16.** The 3-crate plan
+> (`freetype-sys`+`win32k-types`+`gdi-ddi-sys`) collapsed to the single
+> `win32k-sys` the doc itself recommended as the alternative. It is
+> **built and cargo-clean on all 3 arches.**
 
-| Crate | Purpose | LOC est. (generated) |
-|---|---|---:|
-| `freetype-sys` | FFI to `sdk/lib/3rdparty/freetype/` headers | ~10K (bindgen) |
-| `win32k-types` | THREADINFO, PROCESSINFO, GDI handle types from win32ss/include | ~5K (bindgen) |
-| `gdi-ddi-sys` | Display Driver Interface types from win32ss/gdi/eng/include | ~3K (bindgen) |
+`sdk/lib/rust/win32k-sys/` — bindgen of `<win32k.h>` (which pulls
+`pch.h`: ntifs, winddi, winuser, `ntgdi.h`, `ntuser.h`, `win32kp.h`,
+**and FreeType**). Per arch: ~2,800 structs (USER object model
+`_WND`/`_THREADINFO`/`_DESKTOP`/`_THRDESKHEAD`, GDI
+DC/REGION/PATH/SURFACE), ~2,700 fns, ~20K constants, ~7K type aliases.
 
-Or fold any/all of these into `ntkrnl-sys` if the dependency graph
-prefers. **Recommendation: standalone for `freetype-sys` (different
-consumer set); fold the win32k-internal types into a new `win32k-sys`
-sibling crate of `ntkrnl-sys`.**
+This **subsumes all three planned crates**:
+- `freetype-sys` → unnecessary: 46 FT_* symbols already in win32k-sys
+  via `pch.h`'s `ft2build.h`/`FT_FREETYPE_H`.
+- `win32k-types` → that *is* win32k-sys (the THREADINFO/PROCESSINFO/
+  handle types).
+- `gdi-ddi-sys` → the DDI/eng types come through `winddi.h` in the
+  same bindgen.
+
+rustconv resolution wired (`config.py` win32k Target, `catalog.py`
+scan, `detect_target`): win32k files now resolve ~82% (simplecall.c
+233→41). Gotchas banked in `feedback_win32k_sys_bindgen`
+(`-fms-extensions` yes / `-fms-compatibility` no; `--allowlist-var
+'.+'`; tagged-enum de-prefix). **No further substrate work needed
+before translation.**
 
 ## Translation strategy
 
@@ -412,21 +499,26 @@ plus the new post-shell assertions.
 The pipeline already exists (`tools/rustconv/`). What needs to be
 added:
 
-1. **win32k-specific system prompt template** — extends
-   `templates/probe_migrate_prompt.md` with:
-   - "Use SafeCapture* helpers from the C side (already replaced in
-     pretranslation phase)"
-   - "Use the GDI lock annotations in the sidecar JSON; emit
-     Rust-shaped Drop guards"
-   - "Use the callout sidecar JSON for `co_*` functions; emit
-     CoCallout builder calls"
-2. **Cost-budget per file:** ~$0.05–0.10 (mid-sized translation, lots
-   of bindgen lookups). Total: 170 files × $0.05 ≈ $8.50/iter.
-   Multi-iter (3–5×) → **$25–50 lifetime**. Nontrivial spend; budget
-   ahead.
-3. **Verification gates** per file (existing tooling, just CI-wire it
-   for win32k):
-   - `verify_abi.py` — i386 fastcall/stdcall mismatch killer.
+1. ~~win32k-specific system prompt extending `probe_migrate_prompt.md`~~
+   **✅ DONE differently.** `templates/win32k_translation_prompt.md`
+   exists and is **sidecar-driven**, injected by `prompt_builder` only
+   when the Pass-0/2/2b/3 JSON sidecars are present next to the C file
+   (ntoskrnl/hal prompts unaffected). It teaches: residual SEH
+   handling (probes already → `SafeProbeFor*`), GDI-lock RAII shapes
+   from `*.win32k_gdilocks.json`, USER-critsec `UserExclusiveGuard`
+   from `*.win32k_userlocks.json` §2.5, callout straddle from
+   `*.win32k_callouts.json` §3. There is **no `SafeCapture*` / no
+   `WITH_GDI_LOCKED`** — the input contract is sidecars + lowered
+   probes, not magic macros (see header correction).
+2. **Cost-budget:** ≈170 files × ~$0.05 × 3–5 iters ≈ **$25–50
+   lifetime** (this is the canonical figure; the TL;DR was reconciled
+   to it). win32k-sys removes per-file bindgen-lookup tokens.
+3. **Verification gates** per file:
+   - **ABI is now *enforced*, not just checked** —
+     `postprocess.enforce_win32k_abi` overwrites the LLM's `extern`
+     with the `abi_map` ground truth (win32k-sys bindgen + win32k.spec)
+     for `target_name=="win32k"`. `verify_abi.py` (now folding
+     win32k-sys + win32k.spec) is the *gate* behind it.
    - `verify_constants.py` — bindgen constant drift.
    - `scan_ud2.py` — LLVM miscompilation canary.
    - `lint_kernel.py` — captures(none) defenses.
@@ -454,15 +546,25 @@ from CLAUDE.md applies. Specific to win32k:
 
 Mirroring the HAL/FreeLDR audits' forward-path shape:
 
-1. **Pretranslation phase** lands first
-   ([win32k-pretranslation-audit.md](win32k-pretranslation-audit.md)).
-   Smoke-test enhancement included. Estimated 2–3 weeks.
-2. **Pruning PR.** Drop diblib, dxg, ntddraw, vga, vga_new, xboxvmp,
-   pc98vid. Smoke gates. **1–2 sessions.**
-3. **Substrate generation.** bindgen `freetype-sys`, `win32k-sys`,
-   `gdi-ddi-sys`. **1 session.**
-4. **Phase 1 — handle tables.** Translate `gdiobj.c` + USER object
-   table. Smoke. **2–3 sessions.**
+1. ~~**Pretranslation phase.**~~ **✅ DONE** — probe-lowering (65
+   files), Pass-0/2/2b/3 sidecars + prompt-builder multiplier, giant
+   file-split, switch-dispatcher extraction, post-`shell ready` smoke.
+2. ~~**Pruning PR.**~~ **Mostly moot.** xbox/pc98 already purged;
+   diblib/dxg/ntddraw verified load-bearing (NOT prunable); vga_new
+   orphans already pruned (smoke-gated). No separate pruning PR — the
+   obsolete plan is superseded by the corrected prune-set above.
+3. ~~**Substrate generation.**~~ **✅ DONE** — single `win32k-sys`
+   crate (subsumes freetype-sys/win32k-types/gdi-ddi-sys),
+   cargo-clean ×3, rustconv-wired (~82% resolve). Plus **ABI
+   enforcement** (`abi_map.py`+`enforce_win32k_abi`) — calling
+   convention is now deterministically *enforced*, not just
+   `verify_abi`-checked post-hoc.
+3a. **REMAINING GATE: smoke-harness enhancements** (in progress per
+   user) — finish before bulk translation kicks off. This is now the
+   *only* blocker between here and Phase 1.
+4. **Phase 1 — handle tables.** Translate `gdiobj.c` (GDI handle
+   table — dependency hub by *role*, not size) + USER object table.
+   Smoke. **2–3 sessions.**
 5. **Phase 1.5 — typestate API design.** Implement `UserLock`,
    `CoRef<T>`, `CoCalloutContext`, `CoCallout` per
    `~temp-chat-consolidated.md` §6. Spike on `co_IntClientLoadLibrary`.
@@ -530,19 +632,22 @@ not effort). User-mode DLLs (Phase N+1) are out of scope.
    The ntoskrnl ob handle table went port-as-struct. GDI table is
    structurally similar. **Recommendation: port-as-struct, mirror
    `ntoskrnl-rust/src/ob/obhandle.rs` shape.**
-5. **freetype-sys: bindgen the full FT API, or only the GDI-consumed
-   subset?** Full bindgen is ~10K LOC. Subset would be ~1–2K. Subset
-   is harder to maintain (adds drift risk every FT upgrade). **Recommendation:
-   full bindgen; opaque types for the API surface we don't touch.**
+5. ~~**freetype-sys: full or subset?**~~ **RESOLVED — moot.** No
+   separate freetype-sys crate. `win32k-sys` already contains the FT_*
+   surface (46 symbols) because `pch.h` pulls `ft2build.h`/
+   `FT_FREETYPE_H` into the win32k bindgen. The `freetype.c` glue
+   translates against `win32k_sys::win32k::FT_*`.
 6. **The 50ms HACK in `winsta.c`.** Documented in MEMORY.md as a known
    i386 boot fix. Translation moment is the right time to actually
    diagnose + fix, vs. preserving the HACK byte-for-byte. **Recommendation:
    translate WITH the HACK preserved**, then file a separate ticket
    to root-cause it. Don't fix during translation.
-7. **Smoke-test clicker on amd64 + i386.** mouse_click.py exists for
-   arm64. We need it for i386 + amd64 too. **Recommendation: do this
-   in pretranslation phase 7**, not here — it gates the entire
-   translation phase's regression detection.
+7. ~~**Smoke-test clicker on amd64 + i386.**~~ **PARTLY RESOLVED.**
+   `test_post_shell_ready_input` lands i386 + amd64 input via QMP
+   `input-send-event` (keyboard qcode + relative mouse) — landed in
+   pretranslation. Remaining harness enhancements are the only gate
+   before Phase 1 (step 3a in Forward path); finish those, then this
+   question is fully closed.
 8. **What about `win32u/`?** It's a 47-line stub directory. May
    become the user-mode syscall stub library when we tackle
    user-mode DLLs. **Recommendation: leave alone for now; it's not
