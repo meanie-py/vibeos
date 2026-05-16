@@ -16,6 +16,34 @@ extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
 }
 
+/// C `L"..."` → NUL-terminated UTF-16, evaluated at compile time.
+///
+/// The rustconv translation rendered the C wide string literals
+/// (`L"\\Device\\KeyboardClass0"` etc.) as 8-bit `b"..."` byte strings and
+/// passed them to `RtlInitUnicodeString`, whose `SourceString` is `PCWSTR`
+/// (`*const u16`). RtlInitUnicodeString then walked the ASCII bytes as
+/// UTF-16 code units, producing a garbage device name → `IoCreateDevice`
+/// returned `STATUS_OBJECT_PATH_SYNTAX_BAD` (0xC000003B) and the driver
+/// created no device objects at all (latent until the input-delivery smoke
+/// gate exercised it). These names are pure ASCII so a per-byte widen is
+/// exact and lossless.
+macro_rules! wsz {
+    ($s:literal) => {{
+        const B: &[u8] = $s;
+        const N: usize = B.len();
+        const W: [u16; N + 1] = {
+            let mut w = [0u16; N + 1];
+            let mut i = 0;
+            while i < N {
+                w[i] = B[i] as u16;
+                i += 1;
+            }
+            w
+        };
+        W
+    }};
+}
+
 /// IoCompleteRequest is a C macro aliasing IofCompleteRequest.
 #[inline]
 unsafe fn IoCompleteRequest(irp: PIRP, boost: i8) {
@@ -806,7 +834,19 @@ unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
         virtio_mb();
         VirtioWrite32((*Dev).Mmio as *mut u8, 0x044, 1);
     } else {
+        // Legacy virtio-mmio (v1) queue setup, spec §4.2.4. The driver MUST
+        // write QueueAlign (0x03c) so the device computes the used-ring
+        // offset the same way the driver laid it out: used at
+        // align(desc+avail, QueueAlign). We page-align the used ring
+        // (UsedOff above), so QueueAlign must be 4096. Omitting this leaves
+        // QEMU's align at its reset default (!= 4096) → the device writes
+        // completed buffers to a different offset than the poll thread
+        // reads → zero input ever delivered (the bug this smoke gate caught;
+        // the legacy path was never exercised until a virtio-input device
+        // was wired in). GuestPageSize (0x028) then QueuePFN (0x040) last.
         VirtioWrite32((*Dev).Mmio as *mut u8, 0x028, 4096);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x03c, 4096);
+        virtio_mb();
         VirtioWrite32((*Dev).Mmio as *mut u8, 0x040, ((*Dev).QueuePa.QuadPart / 4096) as u32);
     }
 
@@ -1030,6 +1070,28 @@ unsafe fn VirtioProcessKeyEvent(EvdevCode: USHORT, Value: ULONG) {
 
     RingPush(DevExt, ScanCode, Flags);
     TryCompleteIrp(DevExt);
+
+    // One-shot delivery oracle for the arm64 input smoke gate: proves the
+    // QMP -> virtio-mmio -> poll thread -> scancode xlate -> KeyboardClass0
+    // ring -> read-IRP path completed end-to-end. Fires exactly once so a
+    // sustained key storm doesn't spam serial.
+    static KBD_DELIVERED: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(false);
+    if KBD_DELIVERED
+        .compare_exchange(
+            false,
+            true,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        DbgPrint(
+            b"[ARM64INPUT] KBD-DELIVERED sc=0x%04x fl=0x%04x\n\0".as_ptr() as *const i8,
+            ScanCode as u32,
+            Flags as u32,
+        );
+    }
 }
 
 unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VIRTIO_INPUT_DEV) {
@@ -1100,6 +1162,28 @@ unsafe fn VirtioFlushMouseState(Dev: *mut VIRTIO_INPUT_DEV) {
     MouRingPush(DevExt, core::ptr::addr_of_mut!(Data));
     MouTryCompleteIrp(DevExt);
 
+    // One-shot delivery oracle (see KBD-DELIVERED): proves the pointer path
+    // (virtio rel/abs+button -> MOUSE_INPUT_DATA -> PointerClass0 ring ->
+    // read-IRP) completed end-to-end. Fires exactly once.
+    static MOU_DELIVERED: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(false);
+    if MOU_DELIVERED
+        .compare_exchange(
+            false,
+            true,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        DbgPrint(
+            b"[ARM64INPUT] MOU-DELIVERED btn=0x%04x dx=%d dy=%d\n\0".as_ptr() as *const i8,
+            Data.__bindgen_anon_1.__bindgen_anon_1.ButtonFlags as u32,
+            Data.LastX,
+            Data.LastY,
+        );
+    }
+
     if (*Dev).IsTablet == 0 {
         (*Dev).AccumX = 0;
         (*Dev).AccumY = 0;
@@ -1115,31 +1199,43 @@ unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
     let mut DescId: ULONG;
     let mut Evt: *mut VIRTIO_INPUT_EVENT;
 
+    // The used ring + event payloads are written by the DEVICE (QEMU) via
+    // DMA — the guest never stores to them, so a plain Rust load is treated
+    // as loop-invariant by LLVM and constant-folded to its initial 0. That
+    // is THE bug this smoke gate caught: QEMU consumed all 64 buffers and
+    // wrote used.idx=64 to the exact PA the guest reads, but the poll thread
+    // saw a cached 0 and never processed a single event. Every device->guest
+    // read here MUST be read_volatile (project DMA/MMIO volatile discipline).
+    // VIRTQ_USED is repr(C, packed) → addr_of! (no references to packed
+    // fields).
     virtio_rmb();
-    UsedIdx = (*(*Dev).Used).Idx;
+    UsedIdx = core::ptr::read_volatile(core::ptr::addr_of!((*(*Dev).Used).Idx));
 
     while (*Dev).LastUsedIdx != UsedIdx {
         FoundEvents = 1u8;
-        DescId = (*(*Dev).Used).Ring[((*Dev).LastUsedIdx % (*Dev).QueueSize as u16) as usize].Id;
+        let ring0 = core::ptr::addr_of!((*(*Dev).Used).Ring) as *const VIRTQ_USED_ELEM;
+        let slot = ((*Dev).LastUsedIdx % (*Dev).QueueSize as u16) as usize;
+        DescId = core::ptr::read_volatile(core::ptr::addr_of!((*ring0.add(slot)).Id));
         Evt = (*Dev).Events.offset(DescId as isize);
+        let ev = core::ptr::read_volatile(Evt); // device-written payload
 
-        match (*Evt).Type {
+        match ev.Type {
             0x01 => {
-                if (*Evt).Code < 0x110 {
-                    VirtioProcessKeyEvent((*Evt).Code, (*Evt).Value);
+                if ev.Code < 0x110 {
+                    VirtioProcessKeyEvent(ev.Code, ev.Value);
                 } else {
-                    VirtioProcessMouseButton((*Evt).Code, (*Evt).Value, Dev);
+                    VirtioProcessMouseButton(ev.Code, ev.Value, Dev);
                 }
             }
 
             0x02 => {
-                match (*Evt).Code {
+                match ev.Code {
                     0x00 => {
-                        (*Dev).AccumX += (*Evt).Value as LONG;
+                        (*Dev).AccumX += ev.Value as LONG;
                         (*Dev).HasMove = 1u8;
                     }
                     0x01 => {
-                        (*Dev).AccumY += (*Evt).Value as LONG;
+                        (*Dev).AccumY += ev.Value as LONG;
                         (*Dev).HasMove = 1u8;
                     }
                     0x08 => {
@@ -1149,14 +1245,14 @@ unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
             }
 
             0x03 => {
-                match (*Evt).Code {
+                match ev.Code {
                     0x00 => {
-                        (*Dev).AccumX = (*Evt).Value as LONG;
+                        (*Dev).AccumX = ev.Value as LONG;
                         (*Dev).HasMove = 1u8;
                         (*Dev).AbsValid = 1u8;
                     }
                     0x01 => {
-                        (*Dev).AccumY = (*Evt).Value as LONG;
+                        (*Dev).AccumY = ev.Value as LONG;
                         (*Dev).HasMove = 1u8;
                         (*Dev).AbsValid = 1u8;
                     }
@@ -1241,7 +1337,8 @@ pub unsafe extern "system" fn DriverEntry(
     (*DriverObject).MajorFunction[0x03] = Some(InputRead);
     (*DriverObject).MajorFunction[0x0E] = Some(InputDeviceControl);
 
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\KeyboardClass0\0".as_ptr() as _);
+    let n_kbd_dev = wsz!(b"\\Device\\KeyboardClass0");
+    RtlInitUnicodeString(&mut DeviceName, n_kbd_dev.as_ptr());
     Status = IoCreateDevice(
         DriverObject,
         core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
@@ -1259,7 +1356,8 @@ pub unsafe extern "system" fn DriverEntry(
         return Status;
     }
 
-    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\KeyboardClass0\0".as_ptr() as _);
+    let n_kbd_sym = wsz!(b"\\DosDevices\\KeyboardClass0");
+    RtlInitUnicodeString(&mut SymlinkName, n_kbd_sym.as_ptr());
     IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
 
     DevExt = (*KbdDevice).DeviceExtension as *mut _INPUT_DEVICE_EXT;
@@ -1276,7 +1374,8 @@ pub unsafe extern "system" fn DriverEntry(
 
     DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as _);
 
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as _);
+    let n_ptr_dev = wsz!(b"\\Device\\PointerClass0");
+    RtlInitUnicodeString(&mut DeviceName, n_ptr_dev.as_ptr());
     Status = IoCreateDevice(
         DriverObject,
         core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
@@ -1306,8 +1405,9 @@ pub unsafe extern "system" fn DriverEntry(
     (*MouDevice).Flags |= 0x00000010;
     (*MouDevice).Flags &= !0x00000080;
 
-    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\PointerClass0\0".as_ptr() as _);
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as _);
+    let n_ptr_sym = wsz!(b"\\DosDevices\\PointerClass0");
+    RtlInitUnicodeString(&mut SymlinkName, n_ptr_sym.as_ptr());
+    RtlInitUnicodeString(&mut DeviceName, n_ptr_dev.as_ptr());
     IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
 
     g_MouDevice = MouDevice;

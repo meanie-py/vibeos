@@ -71,6 +71,28 @@ def _ensure_clean_rust_build(arch: str) -> None:
         pytest.fail(f"Rust rebuild failed:\n{ninja.stderr[-2000:]}")
     print(f"[pytest] Clean Rust rebuild complete for {arch}")
 
+    # arm64 boots from qemu/boot.img ⊃ ramdisk.img, NOT build-{arch}/livecd.iso.
+    # `ninja ntoskrnl` rebuilds the kernel but nothing re-stages it into the
+    # ramdisk — so without this, arm64 smoke can boot STALE binaries (the
+    # exact stale-artifact false-pass the clean rebuild exists to prevent on
+    # x86, where `ninja livecd` makes the ISO the boot media). Rebuild the
+    # arm64-specific drivers too, then fast-refresh the ramdisk. This is the
+    # structural mirror of `ninja livecd`.
+    if arch in ("arm64", "arm64-test"):
+        subprocess.run(  # best-effort: targets absent on some branches
+            ["ninja", "arm64input", "arm64vid"],
+            cwd=build_dir, capture_output=True, text=True, timeout=600,
+        )
+        refresh = subprocess.run(
+            ["bash", str(PROJECT_DIR / "qemu" / "mkramdisk.sh"), "--refresh"],
+            capture_output=True, text=True, timeout=600,
+        )
+        if refresh.returncode != 0:
+            pytest.fail(
+                "arm64 ramdisk --refresh failed (smoke would boot stale "
+                f"media):\n{refresh.stdout[-1500:]}\n{refresh.stderr[-1500:]}")
+        print("[pytest] arm64 ramdisk refreshed (boot.img re-staged)")
+
 
 def _run_post_build_checks(arch: str) -> list[str]:
     """Run static analysis on the built binary. Returns list of warnings."""
