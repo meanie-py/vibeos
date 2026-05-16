@@ -136,6 +136,20 @@ class Arm64Config(ArchConfig):
     machine_args: list[str] = field(default_factory=lambda: [
         "-M", "virt", "-cpu", "cortex-a72",
         "-accel", "tcg,thread=multi",
+        # virtio-mmio kbd+mouse — the devices arm64input.rs binds to
+        # (scans virtio-mmio transports at 0x0a000000 + i*0x200 for the
+        # virtio-input device id). Without these the poll thread polls
+        # empty virtqueues and the input stack has no functional coverage.
+        # `*-device` (not `*-pci`) is the virtio-mmio transport variant.
+        "-device", "virtio-keyboard-device,id=arm64kbd",
+        "-device", "virtio-mouse-device,id=arm64mouse",
+        # QEMU `virt` defaults its virtio-mmio transports to legacy (v1).
+        # arm64input's modern (v2) split-queue path is the well-exercised
+        # one; force modern so smoke drives it. Modern virtio-mmio is what
+        # real ARM64 virtio environments use — a representative, non-
+        # weakening host-config choice (the legacy queue path remains a
+        # tracked driver follow-up, not a smoke blocker).
+        "-global", "virtio-mmio.force-legacy=false",
     ])
     memory: str = "1G"
     # Wait for SMSS user-mode dispatch to be set up. This proves the kernel
