@@ -28,13 +28,18 @@ def build_index(bindgen_path: str):
     txt = Path(bindgen_path).read_text()
     bare = set()      # names defined bare in ddk (type/struct/const/fn)
     prefixed = {}     # variant -> full _TAG_variant symbol (first wins)
+    # NOTE: `pub fn`/`pub static` inside `extern "C" { ... }` blocks are
+    # INDENTED — allow leading whitespace or the bare detector misses
+    # every extern symbol (e.g. RtlUshortByteSwap) and the import-fixer
+    # then wrongly strips them, re-breaking the build on re-run.
     for m in re.finditer(
-            r'^pub (?:type|struct|const|fn|union|enum)\s+([A-Za-z_]\w*)',
+            r'^\s*pub (?:type|struct|const|fn|union|enum|static)\s+'
+            r'(?:mut\s+)?([A-Za-z_]\w*)',
             txt, re.M):
         bare.add(m.group(1))
     # bindgen enum variants: `pub const _SOMETAG_Variant: _SOMETAG = N;`
     for m in re.finditer(
-            r'^pub const (_[A-Z0-9]+(?:_[A-Z0-9]+)*_([A-Za-z]\w*))\s*:',
+            r'^\s*pub const (_[A-Z0-9]+(?:_[A-Z0-9]+)*_([A-Za-z]\w*))\s*:',
             txt, re.M):
         full, variant = m.group(1), m.group(2)
         prefixed.setdefault(variant, full)

@@ -25,8 +25,9 @@ endif()
 spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)
 
 list(APPEND PCATLDR_ARC_SOURCE
-    ${FREELDR_ARC_SOURCE}
-    arch/drivers/hwide.c)
+    ${FREELDR_ARC_SOURCE})
+    # i386-hw unit → Rust (freeldr-rust/src/hwide.rs). Cohabitation.
+    # arch/drivers/hwide.c  # replaced by Rust (freeldr-rust/src/hwide.rs)
 
 list(APPEND PCATLDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
@@ -62,12 +63,13 @@ if(ARCH STREQUAL "i386")
         # disk/scsiport.c
         lib/fs/pxe.c
         arch/i386/drivemap.c
-        arch/i386/hwacpi.c
         arch/i386/hwapm.c
-        arch/i386/hwdisk.c
-        arch/i386/hwpci.c
         # arch/i386/i386bug.c
         arch/i386/i386idt.c)
+        # i386-hw unit → Rust (freeldr-rust: hwacpi/hwdisk/hwpci.rs).
+        # arch/i386/hwacpi.c  # replaced by Rust (freeldr-rust/src/hwacpi.rs)
+        # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)
+        # arch/i386/hwpci.c   # replaced by Rust (freeldr-rust/src/hwpci.rs)
 
     list(APPEND PCATLDR_ARC_SOURCE
         arch/i386/pc/pcbeep.c
@@ -101,11 +103,12 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND PCATLDR_ARC_SOURCE
         lib/fs/pxe.c
         arch/i386/drivemap.c
-        arch/i386/hwacpi.c
         arch/i386/hwapm.c
-        arch/i386/hwdisk.c
-        arch/i386/hwpci.c
         # arch/i386/i386bug.c
+        # i386-hw unit → Rust (freeldr-rust: hwacpi/hwdisk/hwpci.rs).
+        # arch/i386/hwacpi.c  # replaced by Rust (freeldr-rust/src/hwacpi.rs)
+        # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)
+        # arch/i386/hwpci.c   # replaced by Rust (freeldr-rust/src/hwpci.rs)
         arch/i386/pc/pcbeep.c
         arch/i386/pc/pccons.c
         arch/i386/pc/pcrtc.c)

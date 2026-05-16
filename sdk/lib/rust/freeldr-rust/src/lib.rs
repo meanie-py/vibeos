@@ -58,6 +58,12 @@ pub mod pcmem;
 pub mod pcvesa;
 pub mod pchw;
 
+// 🟢 sweep — i386-hw unit (arch/i386/{hwdisk,hwpci,hwacpi}.c, arch/drivers/hwide.c).
+pub mod hwdisk;
+pub mod hwpci;
+pub mod hwacpi;
+pub mod hwide;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;
