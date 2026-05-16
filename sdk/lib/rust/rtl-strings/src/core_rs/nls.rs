@@ -203,6 +203,31 @@ pub fn did_oem_work(uni_src: &[u16], oem: &[u8]) -> bool {
     true
 }
 
+/// `RtlCompareUnicodeStrings(PCWCH s1, SIZE_T l1, PCWCH s2, SIZE_T l2,
+/// BOOLEAN ci)` — the *raw-buffer* compare (NOT
+/// `RtlCompareUnicodeString`'s counted-struct one). `l1`/`l2` are
+/// **unit** counts (`SIZE_T`); the tiebreak is the genuine
+/// `String1Length - String2Length` `SIZE_T` subtraction truncated to
+/// `LONG` (modelled as host `u64` wrap → `i32`, matching the x86-64
+/// reference). The per-unit diff is `WCHAR - WCHAR` (each promoted to
+/// a non-negative `int`), early-returning on the first mismatch.
+#[inline]
+pub fn compare_unicode_strings(a: &[u16], b: &[u16], ci: bool) -> i32 {
+    let m = a.len().min(b.len());
+    for k in 0..m {
+        let (c1, c2) = if ci {
+            (upcase_uc(a[k]), upcase_uc(b[k]))
+        } else {
+            (a[k], b[k])
+        };
+        let r = c1 as i32 - c2 as i32;
+        if r != 0 {
+            return r;
+        }
+    }
+    ((a.len() as u64).wrapping_sub(b.len() as u64) as u32) as i32
+}
+
 /// `RtlHashUnicodeString` X65599. The case-insensitive fold here is
 /// **ASCII-only** in the genuine source (`'a'..'z'` ⇒ `-'a'+'A'`),
 /// NOT the NLS upcase — a deliberate split this pins. Wrapping u32.

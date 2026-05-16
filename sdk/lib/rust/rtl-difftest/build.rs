@@ -254,6 +254,19 @@ fn main() {
          WCHAR ref_RtlDowncaseUnicodeChar(WCHAR s){{return RtlpDowncaseUnicodeChar(s);}}\n\
          void ref_RtlGetDefaultCodePage(USHORT* a,USHORT* o){{if(a)*a=1252; if(o)*o=1252;}}\n\
          #define RtlDowncaseUnicodeString ref_RtlDowncaseUnicodeString\n\
+         /* Wave RTL-4a: integer ⇄ string + copy/append (genuine\n\
+            unicode.c, no NLS deps; RtlCompareUnicodeStrings folds via\n\
+            the modelled RtlpUpcaseUnicodeChar). */\n\
+         #define RtlCharToInteger ref_RtlCharToInteger\n\
+         #define RtlUnicodeStringToInteger ref_RtlUnicodeStringToInteger\n\
+         #define RtlIntegerToUnicode ref_RtlIntegerToUnicode\n\
+         #define RtlCopyString ref_RtlCopyString\n\
+         #define RtlCopyUnicodeString ref_RtlCopyUnicodeString\n\
+         #define RtlAppendStringToString ref_RtlAppendStringToString\n\
+         #define RtlAppendUnicodeStringToString ref_RtlAppendUnicodeStringToString\n\
+         #define RtlAppendUnicodeToString ref_RtlAppendUnicodeToString\n\
+         #define RtlAppendAsciizToString ref_RtlAppendAsciizToString\n\
+         #define RtlCompareUnicodeStrings ref_RtlCompareUnicodeStrings\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\
