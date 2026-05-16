@@ -1,9 +1,48 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 0 + P1a COMPLETE; csrss.exe
-is fully Rust (cohabited, built, binary-verified) — the first
-fully-Rust user-mode native PE in the project.** (worktree
-`worktree-smss-csrss`, commits 06396c51 → e0049bff.) `ntdll-sys`
+Last updated 2026-05-16. **Status: Phase 1 COMPLETE (green ×3,
+committed `30476658`); Phase 2 csrsrv translated+integrated, broken-
+but-visible 239→84 (committed `e5228058`, all systematic roots
+cleared, per-site mechanical tail owed); Phase 0 + P1a COMPLETE;
+csrss.exe fully Rust.** (worktree `worktree-smss-csrss`, merged
+`continue-rust-port` at `689cb2f6`.)
+
+### Phase 1–2 reality + durable learnings (2026-05-16)
+
+- **The Phase-0 substrate was NOT actually complete** ("PROVEN" was
+  optimistic — it measured resolve%, not compile). Real gaps found
+  only when the first multi-file component pulled the full surface:
+  (1) **no `ntdll-sys/src/constants.rs`** — 138 hand STATUS_/DBG_
+  codes had to be ported from ntkrnl-sys (ntstatus.h cast-macros are
+  not bindgen-evaluable, as the audit said — but the consts layer
+  the audit's `base.rs` box implied was never populated by P1a);
+  (2) **`NtCurrentTeb` was an ambiguous-glob-reexport** (inlines::*
+  AND bindgen::* → unresolvable) — fixed with an explicit named
+  re-export (which then must also name every new inline);
+  (3) **no universal LIST_ENTRY/Interlocked inlines** — ported from
+  ntkrnl-sys into `ntdll-sys/inlines.rs`.
+- **`cmd_submit` was never target-aware** (latent bug, all phases):
+  hardcoded ntoskrnl → misrouted crate + dropped the user-mode
+  system-prompt addendum. Fixed (honors `detect_target`).
+- **Tightly-coupled multi-file components need a per-component
+  `*_inlines.rs`** translating the component's own `.h` macros once
+  (the ntoskrnl-rust `ps/inlines.rs` / win32k intra-component
+  analog). csrsrv: `csrsrv/srv_inlines.rs` (CsrAcquire/ReleaseLock,
+  CsrGetClientThread, InterlockedUL). The 7 files `use super::
+  srv_inlines::*;`. This single fix cleared ~90 of 239.
+- **`cargo fix --broken-code --allow-dirty` is a strong deterministic
+  lever** for the mechanical tail — auto-cleared ~25% (113→84) of
+  rustc machine-applicable suggestions, zero risk (committed
+  checkpoint). RUN IT EARLY in Phase 3/4 integration.
+- **Cost reality:** translation is cheap (~$0.05/file, as budgeted);
+  **integration-to-green is the real cost** — even with a hardened
+  pipeline a 5.4K-LOC/7-file component is a heavy heterogeneous
+  per-site grind (ptr casts, i386 stdcall-vs-system fn-ptr, int
+  widths, per-struct bindgen-anon paths, LUID/SB_API_MSG/_TEB
+  direct-vs-anon). No systematic shortcut for the long tail; it is
+  visible-in-cargo and owed, not hidden (CLAUDE.md-correct).
+
+(historical:) `ntdll-sys`
 built + size-verified, cargo-clean ×3, rustconv-wired; the user-mode
 pipeline fixes are landed and proven; `csrss.exe` links the Rust
 `smss-csrss-rust` staticlib (csrss.c cohabitation-removed, C kept on
