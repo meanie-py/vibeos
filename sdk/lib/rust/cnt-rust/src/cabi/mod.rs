@@ -46,12 +46,34 @@ pub(crate) unsafe fn wcstr_slice<'a>(p: *const u16) -> &'a [u16] {
     core::slice::from_raw_parts(p, n)
 }
 
+/// Wide twin of `cstr_slice_bounded` (wcsnlen): NUL or `cap`, NULL→[].
+#[inline]
+pub(crate) unsafe fn wcstr_slice_bounded<'a>(p: *const u16, cap: usize) -> &'a [u16] {
+    if p.is_null() {
+        return &[];
+    }
+    let mut n = 0usize;
+    while n < cap && *p.add(n) != 0 {
+        n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
 #[inline]
 pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {
         return &[];
     }
     core::slice::from_raw_parts(p, n)
+}
+
+/// Wide twin of `raw_mut_slice` (wcsncpy dst): `*mut u16` × n → &mut.
+#[inline]
+pub(crate) unsafe fn wraw_mut_slice<'a>(p: *mut u16, n: usize) -> &'a mut [u16] {
+    if p.is_null() || n == 0 {
+        return &mut [];
+    }
+    core::slice::from_raw_parts_mut(p, n)
 }
 
 #[inline]

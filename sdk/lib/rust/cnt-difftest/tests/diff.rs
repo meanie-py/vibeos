@@ -53,6 +53,19 @@ extern "C" {
     fn ref_wctomb(mb: *mut u8, w: u16) -> i32;
     fn ref_wcstombs(mb: *mut u8, w: *const u16, n: usize) -> usize;
     fn ref_toupper_nt_mb(c: i32) -> i32;
+    fn ref_wcslen(s: *const u16) -> usize;
+    fn ref_wcsnlen(s: *const u16, n: usize) -> usize;
+    fn ref_wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn ref_wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_strcpy(d: *mut u8, s: *const u8) -> *mut u8;
+    fn ref_wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref_strcat(d: *mut u8, s: *const u8) -> *mut u8;
+    fn ref_wcscat(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref_strncat(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
+    fn ref_wcsncat(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -858,5 +871,125 @@ fn diff_mbcp() {
         let rb = unsafe { ref_wcstombs(b.as_mut_ptr(), ws.as_ptr(), wc) };
         assert_eq!(ra, rb, "wcstombs ret ws={ws:?} wc={wc}");
         assert_eq!(a, b, "wcstombs buf ws={ws:?} wc={wc}");
+    }
+}
+
+/// tcs* tchar family auto-derive — the 7 wide twins of the live
+/// narrow cores + strcpy/strcat/strncat (narrow+wide). One generic
+/// `core_rs::string` impl over `Elem`; the diff pins each variant
+/// vs the genuine tcs*.h logic header instantiated narrow/wide.
+#[test]
+fn diff_tcs_family() {
+    let mut rng = Rng(0x7c5f_a311_u64);
+    let off16 = |p: *mut u16, base: *const u16| {
+        if p.is_null() {
+            None
+        } else {
+            Some((p as usize - base as usize) / 2)
+        }
+    };
+    for _ in 0..8000 {
+        let wa = wcstr(&mut rng, 24);
+        let wb = if rng.next() & 3 == 0 {
+            wa.clone()
+        } else {
+            wcstr(&mut rng, 24)
+        };
+        let n = rng.upto(28);
+        unsafe {
+            // wcslen / wcsnlen / wcscmp / wcsncmp
+            assert_eq!(cabi::wcslen(wa.as_ptr()), ref_wcslen(wa.as_ptr()), "wcslen {wa:?}");
+            assert_eq!(
+                cabi::wcsnlen(wa.as_ptr(), n),
+                ref_wcsnlen(wa.as_ptr(), n),
+                "wcsnlen {wa:?} n={n}"
+            );
+            assert_eq!(
+                cabi::wcscmp(wa.as_ptr(), wb.as_ptr()),
+                ref_wcscmp(wa.as_ptr(), wb.as_ptr()),
+                "wcscmp {wa:?} {wb:?}"
+            );
+            assert_eq!(
+                cabi::wcsncmp(wa.as_ptr(), wb.as_ptr(), n),
+                ref_wcsncmp(wa.as_ptr(), wb.as_ptr(), n),
+                "wcsncmp {wa:?} {wb:?} n={n}"
+            );
+            // wcschr / wcsrchr
+            let c: u16 = match rng.upto(4) {
+                0 if wa.len() > 1 => wa[rng.upto(wa.len() - 1)],
+                1 => 0,
+                2 => 0x0100 + (rng.next() as u16 & 0xFF),
+                _ => rng.next() as u16,
+            };
+            assert_eq!(
+                off16(cabi::wcschr(wa.as_ptr(), c), wa.as_ptr()),
+                off16(ref_wcschr(wa.as_ptr(), c), wa.as_ptr()),
+                "wcschr {wa:?} c={c:#x}"
+            );
+            assert_eq!(
+                off16(cabi::wcsrchr(wa.as_ptr(), c), wa.as_ptr()),
+                off16(ref_wcsrchr(wa.as_ptr(), c), wa.as_ptr()),
+                "wcsrchr {wa:?} c={c:#x}"
+            );
+            // wcsncpy — fixed-n dst
+            let (mut da, mut db) = ([0xBEEFu16; 40], [0xBEEFu16; 40]);
+            let nn = rng.upto(36);
+            let pa = cabi::wcsncpy(da.as_mut_ptr(), wa.as_ptr(), nn);
+            let pb = ref_wcsncpy(db.as_mut_ptr(), wa.as_ptr(), nn);
+            assert_eq!(pa, da.as_mut_ptr());
+            assert_eq!(pb, db.as_mut_ptr());
+            assert_eq!(da, db, "wcsncpy {wa:?} n={nn}");
+            // wcscpy / wcscat / wcsncat (raw unbounded dst)
+            let (mut da, mut db) = ([0xBEEFu16; 64], [0xBEEFu16; 64]);
+            assert_eq!(cabi::wcscpy(da.as_mut_ptr(), wa.as_ptr()), da.as_mut_ptr());
+            ref_wcscpy(db.as_mut_ptr(), wa.as_ptr());
+            assert_eq!(da, db, "wcscpy {wa:?}");
+            // cat onto a base
+            let base = wcstr(&mut rng, 10);
+            let mk = || {
+                let mut v = [0xBEEFu16; 72];
+                v[..base.len()].copy_from_slice(&base);
+                v
+            };
+            let (mut da, mut db) = (mk(), mk());
+            cabi::wcscat(da.as_mut_ptr(), wb.as_ptr());
+            ref_wcscat(db.as_mut_ptr(), wb.as_ptr());
+            assert_eq!(da, db, "wcscat base={base:?} ap={wb:?}");
+            let (mut da, mut db) = (mk(), mk());
+            cabi::wcsncat(da.as_mut_ptr(), wb.as_ptr(), n);
+            ref_wcsncat(db.as_mut_ptr(), wb.as_ptr(), n);
+            assert_eq!(da, db, "wcsncat base={base:?} ap={wb:?} n={n}");
+        }
+
+        // narrow strcpy / strcat / strncat
+        let sa = cstr(&mut rng, 24, false);
+        let sb = cstr(&mut rng, 16, false);
+        unsafe {
+            let (mut da, mut db) = ([0xAAu8; 64], [0xAAu8; 64]);
+            assert_eq!(cabi::strcpy(da.as_mut_ptr(), sa.as_ptr()), da.as_mut_ptr());
+            ref_strcpy(db.as_mut_ptr(), sa.as_ptr());
+            assert_eq!(da, db, "strcpy {sa:?}");
+            let nbase = cstr(&mut rng, 10, false);
+            let mkn = || {
+                let mut v = [0xAAu8; 72];
+                v[..nbase.len()].copy_from_slice(&nbase);
+                v
+            };
+            let (mut da, mut db) = (mkn(), mkn());
+            cabi::strcat(da.as_mut_ptr(), sb.as_ptr());
+            ref_strcat(db.as_mut_ptr(), sb.as_ptr());
+            assert_eq!(da, db, "strcat base={nbase:?} ap={sb:?}");
+            let (mut da, mut db) = (mkn(), mkn());
+            cabi::strncat(da.as_mut_ptr(), sb.as_ptr(), n);
+            ref_strncat(db.as_mut_ptr(), sb.as_ptr(), n);
+            assert_eq!(da, db, "strncat base={nbase:?} ap={sb:?} n={n}");
+        }
+    }
+    unsafe {
+        assert_eq!(cabi::wcslen(core::ptr::null()), ref_wcslen(core::ptr::null()));
+        assert_eq!(
+            cabi::wcsnlen(core::ptr::null(), 5),
+            ref_wcsnlen(core::ptr::null(), 5)
+        );
     }
 }

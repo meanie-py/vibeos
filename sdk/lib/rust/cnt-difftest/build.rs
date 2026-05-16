@@ -25,7 +25,7 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
-    let units: Vec<(&str, String)> = vec![
+    let mut units: Vec<(&str, String)> = vec![
         ("strlen", format!("typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>\n{}", inc(s("string/tcslen.h")))),
         ("strncpy", format!("typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>\n{}", inc(s("string/tcsncpy.h")))),
         ("strcmp", format!("typedef char _TCHAR;\n#define _tcscmp ref_strcmp\n{}", inc(s("string/tcscmp.h")))),
@@ -174,6 +174,41 @@ fn main() {
              #define toupper_nt_mb ref_toupper_nt_mb\n{}",
             inc(s("string/toupper_nt_mb.c")))),
     ];
+
+    // tcs* tchar family auto-derive: the genuine logic header
+    // instantiated narrow(char)/wide(unsigned short, host wchar_t is
+    // 32-bit) — exactly how the libcntpr str*/wcs* .c do it. Regular
+    // ⇒ table-driven. (sym, tcs header stem, _tcsX name, wide, xint)
+    let fam: &[(&str, &str, &str, bool, &str)] = &[
+        ("strcpy", "tcscpy", "_tcscpy", false, ""),
+        ("wcscpy", "tcscpy", "_tcscpy", true, ""),
+        ("strcat", "tcscat", "_tcscat", false, ""),
+        ("wcscat", "tcscat", "_tcscat", true, ""),
+        ("strncat", "tcsncat", "_tcsncat", false, ""),
+        ("wcsncat", "tcsncat", "_tcsncat", true, ""),
+        ("wcslen", "tcslen", "_tcslen", true, ""),
+        ("wcscmp", "tcscmp", "_tcscmp", true, ""),
+        ("wcsncmp", "tcsncmp", "_tcsncmp", true, ""),
+        ("wcsnlen", "tcsnlen", "_tcsnlen", true, ""),
+        ("wcsncpy", "tcsncpy", "_tcsncpy", true, ""),
+        ("wcschr", "tcschr", "_tcschr", true, "#define _XINT wchar_t\n"),
+        ("wcsrchr", "tcsrchr", "_tcsrchr", true, "#define _XINT wchar_t\n"),
+    ];
+    for &(sym, hdr, tcsfn, wide, xint) in fam {
+        let prelude = if wide {
+            format!(
+                "#include <stddef.h>\n#define wchar_t unsigned short\n\
+                 typedef unsigned short _TCHAR;\n#define _UNICODE\n{xint}\
+                 #define {tcsfn} ref_{sym}\n"
+            )
+        } else {
+            format!(
+                "typedef char _TCHAR;\n#include <stddef.h>\n{xint}\
+                 #define {tcsfn} ref_{sym}\n"
+            )
+        };
+        units.push((sym, format!("{prelude}{}", inc(s(&format!("string/{hdr}.h"))))));
+    }
 
     let mut build = cc::Build::new();
     build

@@ -2,7 +2,7 @@
 
 #![allow(non_snake_case)]  // shims mirror C param names verbatim
 #[allow(unused_imports)]
-use super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice};
+use super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
 
 /// `__int64 _atoi64(const char *nptr)`
@@ -550,7 +550,7 @@ pub unsafe extern "C" fn mbtowc(wchar: *mut u16, mbchar: *const u8, count: usize
 #[no_mangle]
 pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     let s_s = raw_slice(s as *const u8, n);
-    match crate::core_rs::mem::chr(s_s, c) {
+    match crate::core_rs::mem::chr(s_s, c as i32) {
         Some(i) => s.add(i) as *mut core::ffi::c_void,
         None => core::ptr::null_mut(),
     }
@@ -595,12 +595,25 @@ pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: us
 }
 
 
+/// `char* strcat(char *s, const char *append)`
+/// preserved misfeature: no bounds check (tcscat.h); appends through+incl. NUL at the existing terminator
+#[no_mangle]
+pub unsafe extern "C" fn strcat(s: *mut u8, append: *const u8) -> *mut u8 {
+    let dl = cstr_slice(s as *const u8).len();
+    let a = cstr_slice(append);
+    let m = a.len();
+    let tail = raw_mut_slice(s.add(dl), m + 1);
+    crate::core_rs::string::cat(tail, a);
+    s
+}
+
+
 /// `char *strchr(const char *s, int c)`
 /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
 #[no_mangle]
 pub unsafe extern "C" fn strchr(s: *const u8, c: i32) -> *mut u8 {
     let s_s = cstr_slice(s);
-    match crate::core_rs::string::find_char(s_s, c) {
+    match crate::core_rs::string::find_char(s_s, c as i32) {
         Some(i) => s.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
@@ -617,12 +630,38 @@ pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
 }
 
 
+/// `char* strcpy(char *to, const char *from)`
+/// preserved misfeature: no bounds check (tcscpy.h trusts the dst buffer); copies through and incl. the terminating NUL
+#[no_mangle]
+pub unsafe extern "C" fn strcpy(to: *mut u8, from: *const u8) -> *mut u8 {
+    let s = cstr_slice(from);
+    let m = s.len();
+    let d = raw_mut_slice(to, m + 1);
+    crate::core_rs::string::cpy(d, s);
+    to
+}
+
+
 /// `size_t strlen(const char *s)`
 /// preserved misfeature: strlen(NULL) == 0 (textbook libc: UB) — tcslen.h explicit NULL guard
 #[no_mangle]
 pub unsafe extern "C" fn strlen(s: *const u8) -> usize {
     let s_s = cstr_slice(s);
     crate::core_rs::string::len_of(s_s) as usize
+}
+
+
+/// `char* strncat(char *dst, const char *src, size_t n)`
+/// preserved misfeature: n==0 writes nothing at all (no terminator) and returns dst unchanged (tcsncat.h); otherwise always terminates after ≤n appended
+#[no_mangle]
+pub unsafe extern "C" fn strncat(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    if n == 0 { return dst; }
+    let dl = cstr_slice(dst as *const u8).len();
+    let sc = cstr_slice(src);
+    let m = if sc.len() < n { sc.len() } else { n };
+    let tail = raw_mut_slice(dst.add(dl), m + 1);
+    crate::core_rs::string::ncat(tail, sc, n);
+    dst
 }
 
 
@@ -661,7 +700,7 @@ pub unsafe extern "C" fn strnlen(str: *const u8, maxlen: usize) -> usize {
 #[no_mangle]
 pub unsafe extern "C" fn strrchr(s: *const u8, c: i32) -> *mut u8 {
     let s_s = cstr_slice(s);
-    match crate::core_rs::string::find_last_char(s_s, c) {
+    match crate::core_rs::string::find_last_char(s_s, c as i32) {
         Some(i) => s.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
@@ -704,6 +743,118 @@ pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) 
 #[no_mangle]
 pub unsafe extern "C" fn toupper_nt_mb(_C: i32) -> i32 {
     crate::core_rs::mbcp::toupper_nt_mb(_C)
+}
+
+
+/// `wchar_t* wcscat(wchar_t *s, const wchar_t *append)`
+/// preserved misfeature: no bounds check (tcscat.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcscat(s: *mut u16, append: *const u16) -> *mut u16 {
+    let dl = wcstr_slice(s as *const u16).len();
+    let a = wcstr_slice(append);
+    let m = a.len();
+    let tail = wraw_mut_slice(s.add(dl), m + 1);
+    crate::core_rs::string::cat(tail, a);
+    s
+}
+
+
+/// `wchar_t* wcschr(const wchar_t *s, wchar_t c)`
+/// preserved misfeature: terminating NUL is a valid target: c==0 → ptr to the NUL (tcschr.h); _XINT=wchar_t (no truncation, unlike strchr's char cast)
+#[no_mangle]
+pub unsafe extern "C" fn wcschr(s: *const u16, c: u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    match crate::core_rs::string::find_char(s_s, c as i32) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `int wcscmp(const wchar_t *s1, const wchar_t *s2)`
+/// preserved misfeature: raw element difference *s1-*s2 with wchar_t unsigned 16-bit (value-preserving to int) — NOT signed-char like strcmp, NOT clamped
+#[no_mangle]
+pub unsafe extern "C" fn wcscmp(s1: *const u16, s2: *const u16) -> i32 {
+    let s1_s = wcstr_slice(s1);
+    let s2_s = wcstr_slice(s2);
+    crate::core_rs::string::cmp(s1_s, s2_s)
+}
+
+
+/// `wchar_t* wcscpy(wchar_t *to, const wchar_t *from)`
+/// preserved misfeature: no bounds check (tcscpy.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcscpy(to: *mut u16, from: *const u16) -> *mut u16 {
+    let s = wcstr_slice(from);
+    let m = s.len();
+    let d = wraw_mut_slice(to, m + 1);
+    crate::core_rs::string::cpy(d, s);
+    to
+}
+
+
+/// `size_t wcslen(const wchar_t *str)`
+/// preserved misfeature: wcslen(NULL) == 0 (tcslen.h NULL guard) — same as strlen
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(str: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    crate::core_rs::string::len_of(str_s) as usize
+}
+
+
+/// `wchar_t* wcsncat(wchar_t *dst, const wchar_t *src, size_t n)`
+/// preserved misfeature: n==0 → nothing + return dst (tcsncat.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcsncat(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
+    if n == 0 { return dst; }
+    let dl = wcstr_slice(dst as *const u16).len();
+    let sc = wcstr_slice(src);
+    let m = if sc.len() < n { sc.len() } else { n };
+    let tail = wraw_mut_slice(dst.add(dl), m + 1);
+    crate::core_rs::string::ncat(tail, sc, n);
+    dst
+}
+
+
+/// `int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)`
+/// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
+#[no_mangle]
+pub unsafe extern "C" fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
+    let s1_s = wcstr_slice(s1);
+    let s2_s = wcstr_slice(s2);
+    crate::core_rs::string::ncmp(s1_s, s2_s, n)
+}
+
+
+/// `wchar_t* wcsncpy(wchar_t *dst, const wchar_t *src, size_t n)`
+/// preserved misfeature: no NUL-termination when src len >= n (the strncpy footgun) — tcsncpy.h, wide
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
+    let dst_s = wraw_mut_slice(dst, n);
+    let src_s = wcstr_slice(src);
+    let _ = crate::core_rs::string::ncpy(dst_s, src_s);
+    dst
+}
+
+
+/// `size_t wcsnlen(const wchar_t *str, size_t count)`
+/// preserved misfeature: NULL→0 (tcsnlen.h); never reads past count; min(wcslen,count)
+#[no_mangle]
+pub unsafe extern "C" fn wcsnlen(str: *const u16, count: usize) -> usize {
+    let str_s = wcstr_slice_bounded(str, count);
+    crate::core_rs::string::len_of(str_s) as usize
+}
+
+
+/// `wchar_t* wcsrchr(const wchar_t *s, wchar_t c)`
+/// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (tcsrchr.h); _XINT=wchar_t
+#[no_mangle]
+pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    match crate::core_rs::string::find_last_char(s_s, c as i32) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
 }
 
 

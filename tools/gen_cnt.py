@@ -135,6 +135,65 @@ def _mag_prologue(vt: str, v: str, rad: str) -> str:
     raise SystemExit(f"int2str: unsupported value type {vt}")
 
 
+# tcscpy/tcscat/tcsncat — raw unbounded dst (libc `strcpy` trusts the
+# caller's buffer; no size param). Self-contained, element-generic via
+# the dst pointer width (`*mut u8` narrow / `*mut u16` wide).
+STRFAM = {"strcpy_like", "strcat_like", "strncat_like"}
+
+
+def _strfam_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    dst_ty = rs_ty(params[0][0])
+    wide = dst_ty == "*mut u16"
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+    b: list[str] = []
+    if sp == "strcpy_like":
+        to, fr = pn
+        b += [
+            f"    let s = {cstr}({fr});",
+            "    let m = s.len();",
+            f"    let d = {rawm}({to}, m + 1);",
+            "    crate::core_rs::string::cpy(d, s);",
+            f"    {to}",
+        ]
+    elif sp == "strcat_like":
+        s, ap = pn
+        b += [
+            f"    let dl = {cstr}({s} as *const {el}).len();",
+            f"    let a = {cstr}({ap});",
+            "    let m = a.len();",
+            f"    let tail = {rawm}({s}.add(dl), m + 1);",
+            "    crate::core_rs::string::cat(tail, a);",
+            f"    {s}",
+        ]
+    elif sp == "strncat_like":
+        d, src, n = pn
+        b += [
+            f"    if {n} == 0 {{ return {d}; }}",
+            f"    let dl = {cstr}({d} as *const {el}).len();",
+            f"    let sc = {cstr}({src});",
+            f"    let m = if sc.len() < {n} {{ sc.len() }} else {{ {n} }};",
+            f"    let tail = {rawm}({d}.add(dl), m + 1);",
+            f"    crate::core_rs::string::ncat(tail, sc, {n});",
+            f"    {d}",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled strfam pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 # Multibyte ⇄ wide (CP1252 single-byte model). Self-contained shims:
 # the genuine .c are thin Rtl* wrappers; cnt-rust folds the Rtl* model
 # into core_rs::mbcp and the shim just adapts the C ptr ABI.
@@ -318,11 +377,20 @@ def shim(name: str, m: dict) -> str:
         return _int2str_shim(name, m, params, rt)
     if sp in MBCP:
         return _mbcp_shim(name, m, params, rt)
+    if sp in STRFAM:
+        return _strfam_shim(name, m, params, rt)
     decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]
     szp = next((n for t, n in params if rs_ty(t) == "usize"), None)
-    scal = [n for t, n in params if rs_ty(t) == "i32"]  # c / val
+    # non-ptr non-size scalars (the `c`/`val` arg): i32 narrow, but
+    # u16 for the wide `wcschr(.., wchar_t c)` — pass as i32 to the
+    # core (find_char takes a C `int`; widening is value-preserving).
+    scal = [
+        n
+        for t, n in params
+        if not rs_ty(t).startswith("*") and rs_ty(t) != "usize"
+    ]
     body: list[str] = []
     cf = m["core_fn"]
 
@@ -340,10 +408,18 @@ def shim(name: str, m: dict) -> str:
         # strnlen-shape: walk the C string but never past the count
         # param (textbook strnlen must not read beyond maxlen).
         body.append(f"    let {ptrs[0]}_s = cstr_slice_bounded({ptrs[0]}, {szp});")
+    elif sp == "wnul_in_maxlen":  # wcsnlen
+        body.append(
+            f"    let {ptrs[0]}_s = wcstr_slice_bounded({ptrs[0]}, {szp});"
+        )
     elif sp == "dst_fixed_n":
         d, s, _ = pnames
         body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
         body.append(f"    let {s}_s = cstr_slice({s});")
+    elif sp == "wdst_fixed_n":  # wcsncpy
+        d, s, _ = pnames
+        body.append(f"    let {d}_s = wraw_mut_slice({d}, {szp});")
+        body.append(f"    let {s}_s = wcstr_slice({s});")
     elif sp == "ptr_len":
         for p in ptrs:
             body.append(f"    let {p}_s = raw_slice({p} as *const u8, {szp});")
@@ -363,7 +439,7 @@ def shim(name: str, m: dict) -> str:
 
     # First/second slice names. Slices come from POINTER params only
     # (scalars like `int c` pass through untouched).
-    s0 = (pnames[0] if sp == "dst_fixed_n" else ptrs[0]) + "_s"
+    s0 = (pnames[0] if sp in ("dst_fixed_n", "wdst_fixed_n") else ptrs[0]) + "_s"
     s1 = ptrs[1] + "_s" if len(ptrs) > 1 else None
 
     # ---- core call + return collapse -------------------------------
@@ -374,14 +450,14 @@ def shim(name: str, m: dict) -> str:
     elif rc == "i32_cmp_n":  # strncmp-shape: core(a, b, n)
         body.append(f"    {core_call(f'{s0}, {s1}, {szp}')}")
     elif rc == "ptr_or_null_from_opt":
-        args = f"{s0}, {s1}" if s1 else f"{s0}, {scal[0]}"
+        args = f"{s0}, {s1}" if s1 else f"{s0}, {scal[0]} as i32"
         base = pnames[0] if sp == "nul_in" else ptrs[0]
         body.append(f"    match {core_call(args)} {{")
         body.append(f"        Some(i) => {base}.add(i) as {rt},")
         body.append("        None => core::ptr::null_mut(),")
         body.append("    }")
     elif rc == "ret_dst":
-        if sp == "dst_fixed_n":
+        if sp in ("dst_fixed_n", "wdst_fixed_n"):
             d, s, _ = pnames
             body.append(f"    let _ = {core_call(f'{d}_s, {s}_s')};")
             body.append(f"    {d}")
@@ -492,12 +568,34 @@ pub(crate) unsafe fn wcstr_slice<'a>(p: *const u16) -> &'a [u16] {
     core::slice::from_raw_parts(p, n)
 }
 
+/// Wide twin of `cstr_slice_bounded` (wcsnlen): NUL or `cap`, NULL→[].
+#[inline]
+pub(crate) unsafe fn wcstr_slice_bounded<'a>(p: *const u16, cap: usize) -> &'a [u16] {
+    if p.is_null() {
+        return &[];
+    }
+    let mut n = 0usize;
+    while n < cap && *p.add(n) != 0 {
+        n += 1;
+    }
+    core::slice::from_raw_parts(p, n)
+}
+
 #[inline]
 pub(crate) unsafe fn raw_slice<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if p.is_null() || n == 0 {
         return &[];
     }
     core::slice::from_raw_parts(p, n)
+}
+
+/// Wide twin of `raw_mut_slice` (wcsncpy dst): `*mut u16` × n → &mut.
+#[inline]
+pub(crate) unsafe fn wraw_mut_slice<'a>(p: *mut u16, n: usize) -> &'a mut [u16] {
+    if p.is_null() || n == 0 {
+        return &mut [];
+    }
+    core::slice::from_raw_parts_mut(p, n)
 }
 
 #[inline]
@@ -544,7 +642,8 @@ def main() -> int:
         "#![allow(non_snake_case)]  // shims mirror C param names verbatim\n"
         "#[allow(unused_imports)]\n"
         "use super::{cstr_slice, cstr_slice_bounded, raw_move, "
-        "raw_mut_slice, raw_slice, wcstr_slice};\n\n",
+        "raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, "
+        "wraw_mut_slice};\n\n",
     ]
     for nm in sorted(syms):
         shims.append(shim(nm, syms[nm]))

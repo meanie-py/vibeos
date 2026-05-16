@@ -1,16 +1,52 @@
-//! `str*` core (u8 today; generalizes to `u16` for the `wcs*` family
-//! via the same logic — deferred until the wstring batch).
+//! `str*` / `wcs*` core. One generic impl over [`Elem`] (`u8` narrow,
+//! `u16` wide) — the `tcs*.h` tchar headers are element-agnostic, so
+//! every `str*`/`wcs*` pair is the *same* logic instantiated twice.
+//! The only width-sensitive bit is the `strcmp` element difference:
+//! narrow `char` is **signed** on x86 (`tcscmp.h` `_TCHAR`), wide
+//! `wchar_t` is **unsigned 16-bit** — captured by [`Elem::diff`].
 //!
 //! Inputs are the *content* slices (the cabi shim resolves NUL
 //! termination and NULL pointers — those are ABI concerns, not
 //! algorithm concerns).
+
+/// String element: `u8` (narrow) or `u16` (wide). `diff` is the
+/// `*s1 - *s2` of `tcscmp.h` under the element's C integer promotion —
+/// signed-char for `u8`, value-preserving unsigned for `u16`.
+pub trait Elem: Copy + PartialEq {
+    const ZERO: Self;
+    fn diff(a: Self, b: Self) -> i32;
+    /// `_TCHAR cc = c;` — the `strchr`/`strrchr` target cast.
+    fn from_cint(c: i32) -> Self;
+}
+impl Elem for u8 {
+    const ZERO: u8 = 0;
+    #[inline]
+    fn diff(a: u8, b: u8) -> i32 {
+        (a as i8 as i32) - (b as i8 as i32)
+    }
+    #[inline]
+    fn from_cint(c: i32) -> u8 {
+        c as u8
+    }
+}
+impl Elem for u16 {
+    const ZERO: u16 = 0;
+    #[inline]
+    fn diff(a: u16, b: u16) -> i32 {
+        (a as i32) - (b as i32)
+    }
+    #[inline]
+    fn from_cint(c: i32) -> u16 {
+        c as u16
+    }
+}
 
 /// `strlen` core: length of the content slice (the shim resolves
 /// NUL-termination and the `NULL → empty` guard). Trivial, but kept as
 /// a core fn so the "core is the only impl" rule holds uniformly and
 /// it's Kani-targetable.
 #[inline]
-pub fn len_of(s: &[u8]) -> usize {
+pub fn len_of<T>(s: &[T]) -> usize {
     s.len()
 }
 
@@ -21,15 +57,15 @@ pub fn len_of(s: &[u8]) -> usize {
 /// Slices are NUL-excluded contents; the implicit terminator (0) at
 /// each end participates exactly as in the C `while(*s1==*s2)` loop.
 #[inline]
-pub fn cmp(a: &[u8], b: &[u8]) -> i32 {
+pub fn cmp<T: Elem>(a: &[T], b: &[T]) -> i32 {
     let n = a.len().max(b.len());
     for i in 0..=n {
-        let ca = if i < a.len() { a[i] } else { 0 };
-        let cb = if i < b.len() { b[i] } else { 0 };
+        let ca = if i < a.len() { a[i] } else { T::ZERO };
+        let cb = if i < b.len() { b[i] } else { T::ZERO };
         if ca != cb {
-            return (ca as i8 as i32) - (cb as i8 as i32);
+            return T::diff(ca, cb);
         }
-        if ca == 0 {
+        if ca == T::ZERO {
             return 0; // both reached the terminator equal
         }
     }
@@ -54,14 +90,14 @@ pub fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
 /// `n==0 → 0`. Slices are NUL-excluded contents. Returns the signed
 /// difference at the first differing position within `n`, else 0.
 #[inline]
-pub fn ncmp(a: &[u8], b: &[u8], n: usize) -> i32 {
+pub fn ncmp<T: Elem>(a: &[T], b: &[T], n: usize) -> i32 {
     for i in 0..n {
-        let ca = if i < a.len() { a[i] } else { 0 };
-        let cb = if i < b.len() { b[i] } else { 0 };
+        let ca = if i < a.len() { a[i] } else { T::ZERO };
+        let cb = if i < b.len() { b[i] } else { T::ZERO };
         if ca != cb {
-            return (ca as i8 as i32) - (cb as i8 as i32);
+            return T::diff(ca, cb);
         }
-        if ca == 0 {
+        if ca == T::ZERO {
             return 0;
         }
     }
@@ -74,12 +110,12 @@ pub fn ncmp(a: &[u8], b: &[u8], n: usize) -> i32 {
 /// `None`. Otherwise first index whose byte equals `c as u8`, else
 /// `None`. `s` is the NUL-excluded content slice.
 #[inline]
-pub fn find_char(s: &[u8], c: i32) -> Option<usize> {
-    let target = c as u8;
+pub fn find_char<T: Elem>(s: &[T], c: i32) -> Option<usize> {
+    let target = T::from_cint(c);
     if let Some(i) = s.iter().position(|&b| b == target) {
         return Some(i);
     }
-    if target == 0 {
+    if target == T::ZERO {
         Some(s.len()) // the implicit terminator
     } else {
         None
@@ -90,9 +126,9 @@ pub fn find_char(s: &[u8], c: i32) -> Option<usize> {
 /// `(c as u8)==0 → Some(len)` (the terminator), else last matching
 /// index or `None`.
 #[inline]
-pub fn find_last_char(s: &[u8], c: i32) -> Option<usize> {
-    let target = c as u8;
-    if target == 0 {
+pub fn find_last_char<T: Elem>(s: &[T], c: i32) -> Option<usize> {
+    let target = T::from_cint(c);
+    if target == T::ZERO {
         return Some(s.len());
     }
     s.iter().rposition(|&b| b == target)
@@ -168,18 +204,50 @@ pub fn ncmp_ci(a: &[u8], b: &[u8], n: usize) -> i32 {
 /// (the load-bearing misfeature — no terminator). The C `strncpy`
 /// shim discards this; `_rs` callers get it as the honest signal.
 #[inline]
-pub fn ncpy(dst: &mut [u8], src: &[u8]) -> bool {
+pub fn ncpy<T: Elem>(dst: &mut [T], src: &[T]) -> bool {
     let n = dst.len();
     let copy = src.len().min(n);
     dst[..copy].copy_from_slice(&src[..copy]);
     if copy < n {
         // src's NUL reached first → pad remainder with 0.
         for b in dst[copy..].iter_mut() {
-            *b = 0;
+            *b = T::ZERO;
         }
         false
     } else {
         // dst filled first (copy == n) → truncated, NOT terminated.
         true
     }
+}
+
+/// `strcpy` core, faithful to ReactOS `tcscpy.h`
+/// (`for(;(*to=*from);++from,++to)`): copy `src`'s content **and its
+/// terminating NUL**. `dst` is exactly `src.len()+1` (the cabi shim
+/// reconstructs that — `strcpy` trusts the caller's buffer, like C).
+#[inline]
+pub fn cpy<T: Elem>(dst: &mut [T], src: &[T]) {
+    let m = src.len();
+    dst[..m].copy_from_slice(src);
+    dst[m] = T::ZERO;
+}
+
+/// `strcat` core, faithful to ReactOS `tcscat.h`: identical to
+/// [`cpy`] applied at `dst + strlen(dst)` — the shim passes the tail
+/// region (length `src.len()+1`); we write `src` + NUL there.
+#[inline]
+pub fn cat<T: Elem>(tail: &mut [T], src: &[T]) {
+    cpy(tail, src);
+}
+
+/// `strncat` core, faithful to ReactOS `tcsncat.h`: append at most
+/// `n` chars of `src` (stopping early at `src`'s NUL), then **always**
+/// a terminating NUL. `tail` is the region after `dst`'s content,
+/// length `min(src.len(), n) + 1`. (`n == 0` ⇒ the C does nothing at
+/// all — not even the NUL — handled by the shim, which then passes a
+/// zero-length job here only when `n > 0`.)
+#[inline]
+pub fn ncat<T: Elem>(tail: &mut [T], src: &[T], n: usize) {
+    let m = src.len().min(n);
+    tail[..m].copy_from_slice(&src[..m]);
+    tail[m] = T::ZERO;
 }
