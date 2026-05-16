@@ -1,0 +1,86 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/kbdlayout.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "NtUserLoadKeyboardLayoutEx",
+      "func_line": 1160,
+      "func_end_line": 1216,
+      "mode": "exclusive",
+      "enter_line": 1201,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1214
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserActivateKeyboardLayout",
+      "func_line": 1225,
+      "func_end_line": 1241,
+      "mode": "exclusive",
+      "enter_line": 1232,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1238
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUnloadKeyboardLayout",
+      "func_line": 1250,
+      "func_end_line": 1263,
+      "mode": "exclusive",
+      "enter_line": 1256,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1261
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetKeyboardLayoutList",
+      "func_line": 1039,
+      "func_end_line": 1082,
+      "mode": "shared",
+      "enter_line": 1049,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1080
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetKeyboardLayoutName",
+      "func_line": 1091,
+      "func_end_line": 1147,
+      "mode": "shared",
+      "enter_line": 1100,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1145
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

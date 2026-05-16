@@ -1,0 +1,114 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/painting.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtUserBeginPaint",
+      "func_line": 595,
+      "func_end_line": 631,
+      "mode": "exclusive",
+      "enter_line": 605,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        629
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEndPaint",
+      "func_line": 641,
+      "func_end_line": 677,
+      "mode": "exclusive",
+      "enter_line": 650,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        675
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserFillWindow",
+      "func_line": 686,
+      "func_end_line": 721,
+      "mode": "exclusive",
+      "enter_line": 696,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        719
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserFlashWindowEx",
+      "func_line": 727,
+      "func_end_line": 758,
+      "mode": "exclusive",
+      "enter_line": 733,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        756
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetUpdateRgn",
+      "func_line": 908,
+      "func_end_line": 925,
+      "mode": "exclusive",
+      "enter_line": 914,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        923
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetUpdateRect",
+      "func_line": 935,
+      "func_end_line": 966,
+      "mode": "exclusive",
+      "enter_line": 943,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        964
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserRedrawWindow",
+      "func_line": 976,
+      "func_end_line": 1051,
+      "mode": "exclusive",
+      "enter_line": 990,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1049
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

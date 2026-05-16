@@ -1,0 +1,39 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/hotkey.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtUserRegisterHotKey",
+      "func_line": 539,
+      "func_end_line": 585,
+      "mode": "exclusive",
+      "enter_line": 557,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        583
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserUnregisterHotKey",
+      "func_line": 588,
+      "func_end_line": 606,
+      "mode": "exclusive",
+      "enter_line": 594,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        604
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

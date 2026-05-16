@@ -1,0 +1,84 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/hook.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "NtUserCallNextHookEx",
+      "func_line": 382,
+      "func_end_line": 427,
+      "mode": "exclusive",
+      "enter_line": 393,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        425
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowsHookEx",
+      "func_line": 451,
+      "func_end_line": 699,
+      "mode": "exclusive",
+      "enter_line": 467,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        697
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUnhookWindowsHookEx",
+      "func_line": 703,
+      "func_end_line": 730,
+      "mode": "exclusive",
+      "enter_line": 709,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        728
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserRegisterUserApiHook",
+      "func_line": 734,
+      "func_end_line": 776,
+      "mode": "exclusive",
+      "enter_line": 761,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        766
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserUnregisterUserApiHook",
+      "func_line": 780,
+      "func_end_line": 789,
+      "mode": "exclusive",
+      "enter_line": 784,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        786
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

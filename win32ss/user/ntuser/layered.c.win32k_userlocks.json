@@ -1,0 +1,54 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/layered.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserGetLayeredWindowAttributes",
+      "func_line": 242,
+      "func_end_line": 323,
+      "mode": "exclusive",
+      "enter_line": 254,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        321
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetLayeredWindowAttributes",
+      "func_line": 330,
+      "func_end_line": 353,
+      "mode": "exclusive",
+      "enter_line": 339,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        351
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserUpdateLayeredWindow",
+      "func_line": 360,
+      "func_end_line": 460,
+      "mode": "exclusive",
+      "enter_line": 382,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        458
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

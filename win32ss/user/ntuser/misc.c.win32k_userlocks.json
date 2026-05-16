@@ -1,0 +1,117 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/misc.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtUserGetControlBrush",
+      "func_line": 191,
+      "func_end_line": 208,
+      "mode": "exclusive",
+      "enter_line": 199,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        206
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetControlColor",
+      "func_line": 215,
+      "func_end_line": 234,
+      "mode": "exclusive",
+      "enter_line": 224,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        232
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetThreadState",
+      "func_line": 240,
+      "func_end_line": 357,
+      "mode": "mixed",
+      "enter_line": 249,
+      "enter_at_top": false,
+      "n_enters": 2,
+      "leave_lines": [
+        354
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter",
+        "mixed_excl_shared"
+      ]
+    },
+    {
+      "function": "NtUserSetThreadState",
+      "func_line": 361,
+      "func_end_line": 384,
+      "mode": "exclusive",
+      "enter_line": 370,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        382
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetDoubleClickTime",
+      "func_line": 388,
+      "func_end_line": 401,
+      "mode": "shared",
+      "enter_line": 393,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        399
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetGUIThreadInfo",
+      "func_line": 405,
+      "func_end_line": 531,
+      "mode": "shared",
+      "enter_line": 418,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        529
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetGuiResources",
+      "func_line": 536,
+      "func_end_line": 594,
+      "mode": "shared",
+      "enter_line": 546,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        592
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

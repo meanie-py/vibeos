@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/timer.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserSetTimer",
+      "func_line": 635,
+      "func_end_line": 656,
+      "mode": "exclusive",
+      "enter_line": 647,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        652
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserKillTimer",
+      "func_line": 661,
+      "func_end_line": 680,
+      "mode": "exclusive",
+      "enter_line": 671,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        676
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetSystemTimer",
+      "func_line": 685,
+      "func_end_line": 703,
+      "mode": "exclusive",
+      "enter_line": 694,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        699
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserValidateTimerCallback",
+      "func_line": 707,
+      "func_end_line": 718,
+      "mode": "shared",
+      "enter_line": 712,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        716
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

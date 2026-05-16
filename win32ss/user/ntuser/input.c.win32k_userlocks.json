@@ -1,0 +1,72 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/input.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "RawInputThreadMain",
+      "func_line": 124,
+      "func_end_line": 350,
+      "mode": "exclusive",
+      "enter_line": 168,
+      "enter_at_top": false,
+      "n_enters": 4,
+      "leave_lines": [
+        170,
+        208,
+        309,
+        327
+      ],
+      "n_returns": 0,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserBlockInput",
+      "func_line": 419,
+      "func_end_line": 433,
+      "mode": "exclusive",
+      "enter_line": 425,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        429
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserAttachThreadInput",
+      "func_line": 665,
+      "func_end_line": 699,
+      "mode": "exclusive",
+      "enter_line": 674,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        697
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSendInput",
+      "func_line": 708,
+      "func_end_line": 779,
+      "mode": "exclusive",
+      "enter_line": 717,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        777
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

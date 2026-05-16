@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/winsta.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserSetProcessWindowStation",
+      "func_line": 527,
+      "func_end_line": 538,
+      "mode": "exclusive",
+      "enter_line": 531,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        535
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetLogonNotifyWindow",
+      "func_line": 962,
+      "func_end_line": 983,
+      "mode": "exclusive",
+      "enter_line": 966,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        981
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserLockWorkStation",
+      "func_line": 987,
+      "func_end_line": 1006,
+      "mode": "exclusive",
+      "enter_line": 992,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1003
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowStationUser",
+      "func_line": 1010,
+      "func_end_line": 1090,
+      "mode": "exclusive",
+      "enter_line": 1021,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1088
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

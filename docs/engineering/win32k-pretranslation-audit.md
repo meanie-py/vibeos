@@ -38,6 +38,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/file_splitter.py` | Giant-file split analyzer + `#include`-back emitter; `python -m rustconv split-plan` / `split-apply` | done; 20 files split, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/switch_extract.py` | tree-sitter switch-dispatcher de-monstering; `python -m rustconv switch-extract` | done; SpiGetSet 139 + IntDefWindowProc 11 arms, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
+| `tools/rustconv/rustconv/user_lock_inventory.py` | Pass 2b USER critsec-bracket detector (no rewrite); `python -m rustconv user-locks` | done, oracle-validated; 254 brackets/55 files, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
@@ -264,6 +265,32 @@ the multi-exit MULTI_UNLOCK release fan-out. Hotspots: `path.c` (40),
 `dcutil.c` (21), `coord.c` (18), `region.c` (12). Resolver reuses the
 brace-depth `_enclosing_func_span` from Pass 3 (no lock-fn-definition
 false positives — oracle-checked).
+
+### Pass 2b — measured USER critsec surface (extract-only, no rewrite)
+
+The largest unaddressed fragile family: the USER critical section
+(`UserEnter{Exclusive,Shared}`/`UserLeave`, 618 raw call sites). Unlike
+GDI it has no return value / no bound var — it is a two-level nested
+lock (KeEnterCriticalRegion + ERESOURCE, inverse release order) that
+ReactOS already factored into the named primitive pair. Research of the
+ntoskrnl-rust approach (`ex/time.rs` `ExAcquireTimeRefreshLock`,
+`ntkrnl-sys/src/guards.rs`, system_prompt.md:823) confirmed: translate
+the **primitive once** as direct calls (proven pattern), and the ~618
+**callers** are a single-level `PfnLockGuard`-shaped RAII problem.
+`user-locks` pairs acquire↔`UserLeave` per enclosing function and
+shape-classifies; **no source rewrite** (same model as Pass 2/3).
+Oracle-validated against `simplecall.c` (`NtUserCallNoParam` =
+CLEAN_BRACKET excl@top; `NtUserCallHwnd` = REVIEW conditional-enter).
+
+Measured keep-set (2026-05-16): **254 brackets across 55 files** —
+CLEAN_BRACKET 182 (71.7%), MULTI_LEAVE 9 (3.5%), REENTRANT 1 (0.4%),
+REVIEW 62 (24.4%); modes exclusive 195 / shared 57 / mixed 2. 75%
+mechanically whole-fn-RAII-mappable; the 24% REVIEW (conditional/late
+enter, leak-return-before-leave) is honestly flagged for manual
+handling, not force-fit. Hotspots: `menu.c` (24), `clipboard.c` (17),
+`desktop.c` (12). Sidecar `<file>.c.win32k_userlocks.json` (schema
+`win32k_pass2b_v1`); consumed via prompt_builder `userlocks` key +
+`win32k_translation_prompt.md` §2.5.
 
 ### Pass 3 — measured callout surface (extract-only, no rewrite)
 

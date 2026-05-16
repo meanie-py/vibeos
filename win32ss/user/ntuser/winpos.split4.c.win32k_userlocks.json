@@ -1,0 +1,189 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/winpos.split4.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 12,
+  "sites": [
+    {
+      "function": "NtUserDeferWindowPos",
+      "func_line": 8,
+      "func_end_line": 56,
+      "mode": "exclusive",
+      "enter_line": 24,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        54
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserMinMaximize",
+      "func_line": 177,
+      "func_end_line": 207,
+      "mode": "exclusive",
+      "enter_line": 185,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        205
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowPos",
+      "func_line": 250,
+      "func_end_line": 310,
+      "mode": "exclusive",
+      "enter_line": 264,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        308
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowRgn",
+      "func_line": 316,
+      "func_end_line": 364,
+      "mode": "exclusive",
+      "enter_line": 327,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        362
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetInternalWindowPos",
+      "func_line": 370,
+      "func_end_line": 448,
+      "mode": "exclusive",
+      "enter_line": 386,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        446
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserSetWindowPlacement",
+      "func_line": 455,
+      "func_end_line": 504,
+      "mode": "exclusive",
+      "enter_line": 465,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        502
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserShowWindowAsync",
+      "func_line": 510,
+      "func_end_line": 541,
+      "mode": "exclusive",
+      "enter_line": 518,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        539
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserShowWindow",
+      "func_line": 547,
+      "func_end_line": 576,
+      "mode": "exclusive",
+      "enter_line": 554,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        574
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserWindowFromPoint",
+      "func_line": 583,
+      "func_end_line": 618,
+      "mode": "exclusive",
+      "enter_line": 592,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        616
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetInternalWindowPos",
+      "func_line": 62,
+      "func_end_line": 127,
+      "mode": "shared",
+      "enter_line": 72,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        125
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetWindowPlacement",
+      "func_line": 134,
+      "func_end_line": 173,
+      "mode": "shared",
+      "enter_line": 143,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        171
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserRealChildWindowFromPoint",
+      "func_line": 230,
+      "func_end_line": 244,
+      "mode": "shared",
+      "enter_line": 236,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        241
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

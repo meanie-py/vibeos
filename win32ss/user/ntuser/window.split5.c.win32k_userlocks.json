@@ -1,0 +1,70 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split5.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserRegisterWindowMessage",
+      "func_line": 8,
+      "func_end_line": 38,
+      "mode": "exclusive",
+      "enter_line": 15,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        36
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowFNID",
+      "func_line": 44,
+      "func_end_line": 83,
+      "mode": "exclusive",
+      "enter_line": 51,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        81
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserDefSetText",
+      "func_line": 167,
+      "func_end_line": 291,
+      "mode": "exclusive",
+      "enter_line": 195,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        199,
+        289
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserInternalGetWindowText",
+      "func_line": 301,
+      "func_end_line": 356,
+      "mode": "shared",
+      "enter_line": 308,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        354
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

@@ -22,13 +22,14 @@ def load_win32k_rules() -> str:
 
 
 def load_win32k_sidecars(c_path: Path) -> dict:
-    """Read whichever of the three Pass-0/2/3 sidecars exist next to the
+    """Read whichever of the Pass-0/2/2b/3 sidecars exist next to the
     C file. Empty dict ⇒ not a pretranslated win32k file ⇒ caller emits
     nothing (ntoskrnl/hal prompts are unaffected)."""
     out: dict[str, dict] = {}
     for suffix, key in (
         (".win32k_meta.json", "seh"),       # Pass 0 SEH triage
         (".win32k_gdilocks.json", "gdi"),   # Pass 2 GDI lock brackets
+        (".win32k_userlocks.json", "userlocks"),  # Pass 2b USER critsec
         (".win32k_callouts.json", "callouts"),  # Pass 3 USER callouts
     ):
         p = Path(str(c_path) + suffix)
@@ -54,6 +55,20 @@ def render_win32k_context(sidecars: dict) -> str:
                      f"`{s['lock_fn']}`→`{s['unlock_fn']}` "
                      f"[{s['shape']}]"
                      + (f" ⚠ {','.join(s['signals'])}" if s.get("signals") else ""))
+        L.append("")
+
+    ul = sidecars.get("userlocks", {}).get("sites", [])
+    if ul:
+        L.append("**USER critsec brackets** "
+                 "(UserEnter*/UserLeave · mode · shape — §2.5):")
+        for s in ul:
+            top = "@top" if s.get("enter_at_top") else "@cond"
+            sig = (f" ⚠ {','.join(s['signals'])}"
+                   if s.get("signals") else "")
+            L.append(f"- `{s['function']}`: {s['mode']} "
+                     f"enter L{s['enter_line']}{top} → "
+                     f"leave L{s.get('leave_lines')} "
+                     f"[{s['shape']}]{sig}")
         L.append("")
 
     co = sidecars.get("callouts", {}).get("sites", [])

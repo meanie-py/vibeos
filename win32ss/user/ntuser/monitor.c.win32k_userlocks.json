@@ -1,0 +1,90 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/monitor.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "NtUserEnumDisplayMonitors",
+      "func_line": 552,
+      "func_end_line": 709,
+      "mode": "shared",
+      "enter_line": 629,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        707
+      ],
+      "n_returns": 5,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetMonitorInfo",
+      "func_line": 737,
+      "func_end_line": 816,
+      "mode": "shared",
+      "enter_line": 748,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        814
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserMonitorFromPoint",
+      "func_line": 836,
+      "func_end_line": 865,
+      "mode": "shared",
+      "enter_line": 858,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        863
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserMonitorFromRect",
+      "func_line": 886,
+      "func_end_line": 922,
+      "mode": "shared",
+      "enter_line": 917,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        919
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserMonitorFromWindow",
+      "func_line": 927,
+      "func_end_line": 969,
+      "mode": "shared",
+      "enter_line": 946,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        965
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

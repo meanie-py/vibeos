@@ -1,0 +1,119 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/cursoricon.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtUserGetIconInfo",
+      "func_line": 415,
+      "func_end_line": 577,
+      "mode": "exclusive",
+      "enter_line": 439,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        444,
+        574
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserClipCursor",
+      "func_line": 747,
+      "func_end_line": 778,
+      "mode": "exclusive",
+      "enter_line": 770,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        775
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserDestroyCursor",
+      "func_line": 786,
+      "func_end_line": 846,
+      "mode": "exclusive",
+      "enter_line": 794,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        844
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetIconSize",
+      "func_line": 585,
+      "func_end_line": 633,
+      "mode": "shared",
+      "enter_line": 596,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        631
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetCursorInfo",
+      "func_line": 641,
+      "func_end_line": 690,
+      "mode": "shared",
+      "enter_line": 651,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        686
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserFindExistingCursorIcon",
+      "func_line": 854,
+      "func_end_line": 976,
+      "mode": "shared",
+      "enter_line": 890,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        969
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetClipCursor",
+      "func_line": 984,
+      "func_end_line": 1029,
+      "mode": "shared",
+      "enter_line": 993,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1027
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

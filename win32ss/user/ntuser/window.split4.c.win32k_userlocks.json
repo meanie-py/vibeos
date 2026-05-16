@@ -1,0 +1,183 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split4.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 11,
+  "sites": [
+    {
+      "function": "NtUserSetParent",
+      "func_line": 530,
+      "func_end_line": 554,
+      "mode": "exclusive",
+      "enter_line": 535,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        552
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetShellWindowEx",
+      "func_line": 597,
+      "func_end_line": 693,
+      "mode": "exclusive",
+      "enter_line": 607,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        691
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetWindowLong",
+      "func_line": 928,
+      "func_end_line": 946,
+      "mode": "exclusive",
+      "enter_line": 932,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        937,
+        943
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserSetWindowLongPtr",
+      "func_line": 950,
+      "func_end_line": 968,
+      "mode": "exclusive",
+      "enter_line": 954,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        959,
+        965
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserAlterWindowStyle",
+      "func_line": 972,
+      "func_end_line": 990,
+      "mode": "exclusive",
+      "enter_line": 976,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        981,
+        987
+      ],
+      "n_returns": 2,
+      "shape": "MULTI_LEAVE",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtUserSetWindowWord",
+      "func_line": 1003,
+      "func_end_line": 1054,
+      "mode": "exclusive",
+      "enter_line": 1010,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1052
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserFindWindowEx",
+      "func_line": 29,
+      "func_end_line": 221,
+      "mode": "shared",
+      "enter_line": 42,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        219
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserGetAncestor",
+      "func_line": 289,
+      "func_end_line": 315,
+      "mode": "shared",
+      "enter_line": 295,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        312
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetComboBoxInfo",
+      "func_line": 353,
+      "func_end_line": 427,
+      "mode": "shared",
+      "enter_line": 363,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        425
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetListBoxInfo",
+      "func_line": 462,
+      "func_end_line": 510,
+      "mode": "shared",
+      "enter_line": 471,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        508
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserQueryWindow",
+      "func_line": 1074,
+      "func_end_line": 1173,
+      "mode": "shared",
+      "enter_line": 1085,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        1171
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

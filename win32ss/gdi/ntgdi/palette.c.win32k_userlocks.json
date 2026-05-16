@@ -1,0 +1,25 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/palette.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtGdiUpdateColors",
+      "func_line": 1211,
+      "func_end_line": 1244,
+      "mode": "exclusive",
+      "enter_line": 1220,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1229,
+        1240
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

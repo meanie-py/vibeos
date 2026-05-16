@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ghost.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "UserGhostThreadEntry",
+      "func_line": 28,
+      "func_end_line": 41,
+      "mode": "exclusive",
+      "enter_line": 32,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        40
+      ],
+      "n_returns": 0,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

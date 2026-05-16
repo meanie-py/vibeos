@@ -1,0 +1,54 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/prop.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserRemoveProp",
+      "func_line": 220,
+      "func_end_line": 243,
+      "mode": "exclusive",
+      "enter_line": 228,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        240
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserSetProp",
+      "func_line": 247,
+      "func_end_line": 272,
+      "mode": "exclusive",
+      "enter_line": 256,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        269
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserBuildPropList",
+      "func_line": 137,
+      "func_end_line": 216,
+      "mode": "shared",
+      "enter_line": 151,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        213
+      ],
+      "n_returns": 1,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

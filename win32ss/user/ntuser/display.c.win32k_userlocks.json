@@ -1,0 +1,58 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/display.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserChangeDisplaySettings",
+      "func_line": 953,
+      "func_end_line": 1055,
+      "mode": "exclusive",
+      "enter_line": 1046,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        1052
+      ],
+      "n_returns": 6,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserEnumDisplayDevices",
+      "func_line": 379,
+      "func_end_line": 462,
+      "mode": "shared",
+      "enter_line": 423,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        429
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserEnumDisplaySettings",
+      "func_line": 597,
+      "func_end_line": 709,
+      "mode": "shared",
+      "enter_line": 661,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        682
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

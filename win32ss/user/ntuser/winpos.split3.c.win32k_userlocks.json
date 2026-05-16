@@ -1,0 +1,37 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/winpos.split3.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtUserChildWindowFromPointEx",
+      "func_line": 900,
+      "func_end_line": 915,
+      "mode": "exclusive",
+      "enter_line": 907,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        912
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserEndDeferWindowPosEx",
+      "func_line": 921,
+      "func_end_line": 931,
+      "mode": "exclusive",
+      "enter_line": 926,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        929
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

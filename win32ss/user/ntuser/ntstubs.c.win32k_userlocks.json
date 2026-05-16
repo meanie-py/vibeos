@@ -1,0 +1,108 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ntstubs.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "NtUserBitBltSysBmp",
+      "func_line": 18,
+      "func_end_line": 45,
+      "mode": "exclusive",
+      "enter_line": 29,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        43
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserInitializeClientPfnArrays",
+      "func_line": 102,
+      "func_end_line": 142,
+      "mode": "exclusive",
+      "enter_line": 113,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        140
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserSetSysColors",
+      "func_line": 286,
+      "func_end_line": 329,
+      "mode": "exclusive",
+      "enter_line": 304,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        327
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserQueryInformationThread",
+      "func_line": 576,
+      "func_end_line": 614,
+      "mode": "exclusive",
+      "enter_line": 588,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        612
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserSetInformationThread",
+      "func_line": 675,
+      "func_end_line": 841,
+      "mode": "exclusive",
+      "enter_line": 687,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        839
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserProcessConnect",
+      "func_line": 474,
+      "func_end_line": 572,
+      "mode": "shared",
+      "enter_line": 500,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        508,
+        566
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

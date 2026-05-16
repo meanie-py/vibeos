@@ -1,0 +1,41 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/wingl.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtGdiSetPixelFormat",
+      "func_line": 126,
+      "func_end_line": 196,
+      "mode": "exclusive",
+      "enter_line": 156,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        158
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtGdiSwapBuffers",
+      "func_line": 200,
+      "func_end_line": 254,
+      "mode": "exclusive",
+      "enter_line": 217,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        219
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

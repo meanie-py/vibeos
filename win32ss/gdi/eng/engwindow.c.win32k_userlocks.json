@@ -1,0 +1,37 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/engwindow.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "EngCreateWnd",
+      "func_line": 145,
+      "func_end_line": 214,
+      "mode": "exclusive",
+      "enter_line": 159,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        212
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "EngDeleteWnd",
+      "func_line": 222,
+      "func_end_line": 250,
+      "mode": "exclusive",
+      "enter_line": 230,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        245
+      ],
+      "n_returns": 0,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

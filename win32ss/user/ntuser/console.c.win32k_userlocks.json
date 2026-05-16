@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/console.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtUserConsoleControl",
+      "func_line": 15,
+      "func_end_line": 150,
+      "mode": "exclusive",
+      "enter_line": 26,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        147
+      ],
+      "n_returns": 2,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    }
+  ]
+}

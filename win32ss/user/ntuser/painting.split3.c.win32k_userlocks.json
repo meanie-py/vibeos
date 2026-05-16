@@ -1,0 +1,56 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/painting.split3.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtUserDrawCaptionTemp",
+      "func_line": 293,
+      "func_end_line": 367,
+      "mode": "exclusive",
+      "enter_line": 308,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        314,
+        338,
+        365
+      ],
+      "n_returns": 3,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserExcludeUpdateRgn",
+      "func_line": 433,
+      "func_end_line": 452,
+      "mode": "exclusive",
+      "enter_line": 441,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        450
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserPrintWindow",
+      "func_line": 487,
+      "func_end_line": 517,
+      "mode": "exclusive",
+      "enter_line": 495,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        515
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

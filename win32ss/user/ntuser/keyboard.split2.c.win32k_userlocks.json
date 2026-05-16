@@ -1,0 +1,69 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/keyboard.split2.c",
+  "schema": "win32k_pass2b_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtUserToUnicodeEx",
+      "func_line": 376,
+      "func_end_line": 472,
+      "mode": "exclusive",
+      "enter_line": 429,
+      "enter_at_top": false,
+      "n_enters": 1,
+      "leave_lines": [
+        469
+      ],
+      "n_returns": 4,
+      "shape": "REVIEW",
+      "signals": [
+        "conditional_enter"
+      ]
+    },
+    {
+      "function": "NtUserMapVirtualKeyEx",
+      "func_line": 336,
+      "func_end_line": 367,
+      "mode": "shared",
+      "enter_line": 342,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        364
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserGetKeyNameText",
+      "func_line": 481,
+      "func_end_line": 573,
+      "mode": "shared",
+      "enter_line": 496,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        570
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtUserVkKeyScanEx",
+      "func_line": 607,
+      "func_end_line": 664,
+      "mode": "shared",
+      "enter_line": 619,
+      "enter_at_top": true,
+      "n_enters": 1,
+      "leave_lines": [
+        662
+      ],
+      "n_returns": 1,
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

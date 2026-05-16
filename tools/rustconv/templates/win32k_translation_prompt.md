@@ -53,6 +53,49 @@ symbol, and a **shape**:
 - `REVIEW` — shape unclear; keep the explicit lock/unlock calls and add
   a `// TODO(win32k-pretranslation): manual RAII review` marker.
 
+## 2.5. USER critical section → `UserExclusiveGuard` / `UserSharedGuard`
+
+`UserEnterExclusive()` / `UserEnterShared()` ... `UserLeave()` is the
+win32k global lock. It is a **two-level nest** (KeEnterCriticalRegion +
+ERESOURCE) with **inverse release order** — but ReactOS already factored
+that into the primitive pair, so:
+
+- The **primitive** `UserEnter{Exclusive,Shared}`/`UserLeave` (in
+  `ntuser.c`) translates as **plain direct calls**, exactly like
+  ntoskrnl-rust `ex/time.rs` `ExAcquireTimeRefreshLock` /
+  `ExReleaseTimeRefreshLock`: acquire = `KeEnterCriticalRegion()` then
+  `ExAcquireResource*Lite(&UserLock, TRUE)`; release = **`ExReleaseResourceLite`
+  first, then `KeLeaveCriticalRegion()`** (inverse order — never swap).
+- Every **caller** is then a single-level RAII problem. Define/use a
+  `PfnLockGuard`-shaped guard: `UserExclusiveGuard::enter()` calls
+  `UserEnterExclusive()`, its `Drop` calls `UserLeave()`
+  (`UserSharedGuard` likewise). Use `drop(guard)` at the **exact**
+  original `UserLeave()` line — NEVER let it fall to function end
+  (the #1 ntoskrnl RAII-translation failure: lock held across the
+  wrong span → system-wide deadlock).
+
+The Pretranslation Map gives, per function: `mode`
+(exclusive/shared/mixed), the enter line (`@top` = unconditional
+prologue / `@cond` = conditional), the leave lines, and a **shape**:
+
+- `CLEAN_BRACKET` — one enter `@top`, one leave, single exit. One
+  whole-fn guard; `let _g = UserExclusiveGuard::enter();` — RAII Drop
+  at function end IS correct here (single exit).
+- `MULTI_LEAVE` — one enter `@top`, ≥2 leaves. **One** guard; its
+  `Drop` replaces *every* textual `UserLeave()`. Emit `drop(_g)` at
+  each original leave line on the early-return paths; do NOT emit
+  manual `UserLeave()`.
+- `REENTRANT` — leave-then-reenter (callout straddle). Do NOT use a
+  whole-fn guard; scope the guard so it drops before the callback and
+  a fresh one is acquired after. Cross-reference the USER-callouts
+  entry for the same function (§3).
+- `BORROWED` — enter here, no leave in this fn (released by the caller
+  / transferred). Do NOT emit a `Drop`; model the lock as caller-owned
+  and document it.
+- `REVIEW` — conditional/late enter, or a return path that skips the
+  leave. Keep explicit `UserEnter*`/`UserLeave` calls and add a
+  `// TODO(win32k-pretranslation): manual USER-lock review` marker.
+
 ## 3. USER callouts → preserve the lock straddle exactly
 
 A function flagged as a callout in the Map issues a user-mode callback.
