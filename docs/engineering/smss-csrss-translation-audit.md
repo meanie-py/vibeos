@@ -1,11 +1,13 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 0.1 landed — `ntdll-sys`
-substrate built, cargo-clean ×3, rustconv-wired.** No translation Rust
-exists yet, but the substrate blocker (the headline prerequisite) is
-cleared. This audit defines the keep-set, the spine, the substrate
-prerequisite, the translation order, and the rustconv configuration
-for the bulk translation phase.
+Last updated 2026-05-16. **Status: Phase 0 substrate PROVEN (0.1 + 0.2
+landed; worktree `worktree-smss-csrss`, commits 06396c51 + 2a5dd92a).**
+`ntdll-sys` built, cargo-clean ×3, rustconv-wired; resolver tuned;
+standalone spike csrss.c resolves at 79% (win32k parity). No
+translation Rust yet, but the headline prerequisite is fully cleared
+and Phase 1 is unblocked. This audit defines the keep-set, the spine,
+the substrate prerequisite, the translation order, and the rustconv
+configuration for the bulk translation phase.
 
 ### Phase 0.1 — what landed (2026-05-16)
 
@@ -48,10 +50,41 @@ for the bulk translation phase.
   gaps so far look small (a few `STATUS_*` not in the ntstatus
   allowlist scope, the FORCEINLINE `NtCurrent*`).
 
-**Phase 0.2 (next): catalog tuning** — gap_functions for the FORCEINLINE
-`NtCurrent*`; resolver local/macro filtering scoped to this target;
-confirm `STATUS_*` allowlist coverage; regenerate `verify_sizes.py`
-size assertions. Target: ~80% resolve, matching win32k. Then Phase 1.
+### Phase 0.2 — landed (2026-05-16, commit 2a5dd92a)
+
+Resolver tuned (globally correct, not target-scoped): NT/Win32
+annotation macros → `BUILTIN_NAMES`; in-file function names + params
+skipped (never FFI imports for any target — catches the intra-crate
+csrsrv-internal pattern); FORCEINLINE `NtCurrent*`/`Zw*Current*`/
+`RtlProcessHeap` → `GAP_FUNCTIONS`. `generate_bindings.sh` gained a
+`VIBEOS_BUILD_ROOT` override (a fresh worktree has no gitignored
+`build-*/` dirs and there's no cold-cmake path — regen points at the
+main checkout's warm dirs).
+
+**Re-resolve: standalone spike csrss.c 57% → 79% (win32k parity).**
+csrss.c is the *clean substrate measurement* — no sibling-file deps,
+so its rate is the pure external-Native-API-surface test. Multi-file
+components stay numerically low (csrsrv/init.c 28%, sminit.c 20%) but
+the residual is exclusively two **non-substrate** classes: (1)
+csrsrv-internal `Csr*`/`Sb*` defined in *sibling* .c files — the
+win32k `Int*`/`co_*` intra-component analog, resolved at translation
+time *within* the output crate, not external FFI; (2) Hungarian
+body-locals the per-file resolver can't scope. **Zero genuine
+external-substrate gaps.** `STATUS_*` confirmed at parity with
+ntkrnl-sys (0) / win32k-sys (4): `(NTSTATUS)0x…` cast-macros are not
+bindgen-evaluable *by design* — handled by hand-written consts + the
+LLM prompt, not a defect.
+
+**Phase 0 substrate is PROVEN.** Phase 1 is unblocked.
+
+**Optional Phase 0.3 (NOT a Phase 1 blocker):** add component-private
+headers (csrsrv `api.h`/`srv.h`, `basesrv.h`, `smss.h`) to a wrapper
+so multi-file `Csr*`/`Sb*`/`Base*` internal symbols resolve — mirrors
+how `win32k-sys` pulls `win32kp.h`. This lifts the *metric* only; the
+translation LLM already gets the C that declares these. Also still
+owed for Phase 0 completeness: `verify_sizes.py` for `ntdll-sys`
+(compile-time struct-size assertions catch C-layout drift before
+translation begins).
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
