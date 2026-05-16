@@ -30,6 +30,7 @@
 #![allow(clashing_extern_declarations)]
 
 mod bindgen_common;
+mod constants;
 mod inlines;
 
 #[cfg(target_arch = "aarch64")]
@@ -68,7 +69,19 @@ pub mod nt {
     pub use super::bindgen_i386::*;
 
     // Hand-written FORCEINLINE user-mode accessors (NtCurrentPeb/Teb/
-    // Process/Thread) — not in bindgen (they're macros). Listed after
-    // the bindgen glob so these win for the NtCurrent* names.
-    pub use super::inlines::*;
+    // Process/Thread) — not in bindgen (they're macros). EXPLICIT
+    // named re-export, NOT a glob: bindgen also emits an (unusable
+    // extern) `NtCurrentTeb` decl, and two globs exporting the same
+    // name is an ambiguous-glob-reexport (the name becomes
+    // unresolvable — "cannot find NtCurrentTeb"). An explicit `pub
+    // use` shadows the bindgen glob, so the real inline wins.
+    pub use super::inlines::{
+        NtCurrentPeb, NtCurrentProcess, NtCurrentTeb, NtCurrentThread,
+        ZwCurrentProcess, ZwCurrentThread,
+    };
+
+    // Hand-written NTSTATUS codes (ntstatus.h cast-macros are not
+    // bindgen-evaluable). STATUS_* names don't exist in bindgen so
+    // this glob can't clash with it.
+    pub use super::constants::*;
 }

@@ -19,6 +19,14 @@
 // N green smokes).
 pub mod csrss;
 
+// Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
+// csrlib = client CSR API + capture-buffer marshalling (lands in
+// ntdll.dll — cohabitation flip deferred, see audit §csrlib). smlib =
+// SM client (consumed by csrsrv.dll + smss.exe; cohabitation flips in
+// their phases). Modules carry the #[no_mangle] protocol symbols.
+pub mod csrlib;
+pub mod smlib;
+
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as kdcom-rust/hal-rust). USER-MODE: must
 // NOT use privileged `hlt`/`wfe` (csrss.exe runs in ring 3) — abort

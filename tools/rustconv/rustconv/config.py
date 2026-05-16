@@ -250,7 +250,12 @@ TARGETS = {
         hal_bindgen_files={},
         spec_file=None,
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
-        src_subdir=Path("src"),
+        # None ⇒ assembler namespaces by C parent dir
+        # (smss-csrss-rust/src/{csrlib,csrsrv,smss,basesrv}/{stem}.rs).
+        # Required: api.c/init.c/proc.c collide across components under
+        # a flat src/. csrss.rs (already at src/csrss.rs, committed,
+        # csrss.exe building) is untouched — not re-translated.
+        src_subdir=None,
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
@@ -274,7 +279,8 @@ def detect_target(c_path: Path) -> Target:
     # SMSS→CSRSS user-mode spine. winsrv (under /win32ss/) is NOT here
     # — it stays win32k until the Phase-5 ownership gate is resolved.
     if ("/base/system/smss" in posix or "/subsystems/csr" in posix
-            or "/subsystems/win/basesrv" in posix):
+            or "/subsystems/win/basesrv" in posix
+            or "/sdk/lib/smlib" in posix):
         return TARGETS["smss-csrss"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]

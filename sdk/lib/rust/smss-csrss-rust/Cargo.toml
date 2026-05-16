@@ -9,5 +9,16 @@ edition = "2021"
 # during the swap-in window (mirrors kdcom-rust crate / rtl cmake).
 crate-type = ["staticlib"]
 
+[features]
+# `ntddi_ws03` == "NTDDI_VERSION >= NTDDI_WS03". ReactOS targets
+# NT 5.2 (WS03+) and ntdll-sys is bindgen'd at that level, so the
+# pre-WS03 legacy code paths (e.g. csrmsg.h's
+# CSR_IDENTIFY_ALERTABLE_THREAD / CSR_SET_PRIORITY_CLASS, which only
+# exist `#if NTDDI_VERSION < NTDDI_WS03`) must be cfg'd OUT to match
+# the substrate. Default-on so `#[cfg(feature="ntddi_ws03")]` arms
+# (the modern path) compile and the legacy arms are excluded.
+default = ["ntddi_ws03"]
+ntddi_ws03 = []
+
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

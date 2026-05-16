@@ -127,7 +127,7 @@ def cmd_submit(args):
     # For Claude, use separate system prompt (for caching)
     # For Gemini, combine into single prompt
     if model.startswith("claude-"):
-        system_prompt = load_system_prompt()
+        system_prompt = load_system_prompt(target)
         file_prompt = build_file_prompt(scan, res)
     else:
         system_prompt = ""
@@ -155,7 +155,8 @@ def cmd_submit(args):
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
         out_path = assemble_file(result, subsystem, scan.raw_source,
-                                 exports=res.exports, scan=scan)
+                                 exports=res.exports, scan=scan,
+                                 target=target, c_source_path=path)
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
         # Post-process before printing
