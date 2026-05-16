@@ -44,6 +44,24 @@ WIN32K_BINDGEN_FILES = {
     "i386": WIN32K_SYS_DIR / "bindgen_i386.rs",
 }
 
+# SMSS→CSRSS user-mode subsystem spine + its dedicated FFI crate
+# (ntkrnl-sys analog for *user mode*). These native processes link
+# ntdll, not the kernel — ntdll-sys is their primary "ddk" surface
+# (Nt*/Zw*/Rtl*/Ldr*/Dbg* + the SM/CSR/BASE subsystem-protocol
+# structs). See docs/engineering/smss-csrss-translation-audit.md.
+# NOTE: winsrv (win32ss/user/winsrv) is intentionally NOT routed here
+# — it stays under the /win32ss/ → win32k rule until the Phase-5
+# pause-and-check ownership gate in the audit is resolved.
+SMSS_DIR = REACTOS_ROOT / "base" / "system" / "smss"
+CSR_DIR = REACTOS_ROOT / "subsystems" / "csr"
+BASESRV_DIR = REACTOS_ROOT / "subsystems" / "win" / "basesrv"
+NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
+NTDLL_BINDGEN_FILES = {
+    "arm64": NTDLL_SYS_DIR / "bindgen_arm64.rs",
+    "amd64": NTDLL_SYS_DIR / "bindgen_amd64.rs",
+    "i386": NTDLL_SYS_DIR / "bindgen_i386.rs",
+}
+
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
@@ -185,6 +203,24 @@ TARGETS = {
         arches=("i386", "amd64", "arm64"),
         win32k_bindgen_files=WIN32K_BINDGEN_FILES,
     ),
+    # SMSS→CSRSS user-mode spine (smss.exe, csrss.exe, csrsrv.dll,
+    # basesrv.dll). User-mode native: bindgen_files = ntdll-sys (the
+    # primary surface, scanned as "ddk"), NOT ntkrnl-sys. Per-binary
+    # rlib cohabitation; spec_file is per-component so left None here
+    # (the assembler/ABI step resolves the right .spec per file).
+    "smss-csrss": Target(
+        name="smss-csrss",
+        source_dir=SMSS_DIR,
+        output_crate=RUST_DIR / "smss-csrss-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
 }
 
 
@@ -198,6 +234,11 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["bootvid"]
     if "/boot/freeldr/" in posix:
         return TARGETS["freeldr"]
+    # SMSS→CSRSS user-mode spine. winsrv (under /win32ss/) is NOT here
+    # — it stays win32k until the Phase-5 ownership gate is resolved.
+    if ("/base/system/smss" in posix or "/subsystems/csr" in posix
+            or "/subsystems/win/basesrv" in posix):
+        return TARGETS["smss-csrss"]
     if "/win32ss/" in posix:
         return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:

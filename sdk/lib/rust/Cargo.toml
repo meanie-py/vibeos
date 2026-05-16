@@ -26,6 +26,7 @@ members = [
     "mem",
     "hal-cargo",
     "ntkrnl-sys",
+    "ntdll-sys",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
     "ntprintf",
