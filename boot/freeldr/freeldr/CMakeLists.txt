@@ -36,11 +36,16 @@ list(APPEND FREELDR_ARC_SOURCE
     # lib/fs/pxe.c
 
 list(APPEND FREELDR_BOOTLIB_SOURCE
+    # NOTE: arcsupp/debug/blocklist/cache/rs232 freeldr-rust ports are
+    # INCOMPLETE (commenting their .c → undefined _RtlAssert@16 /
+    # _MachVideo* / _RtlStringCb* …) — kept as C until the
+    # freeldr-sweep track finishes them. Only verified-complete units
+    # (mm/heap/meminit, inifile/ini_init/parse) are cohabitation-flipped.
     lib/arcsupp.c
     lib/debug.c
     # lib/peloader.c  # replaced by Rust (sdk/lib/rust/freeldr-rust)
-    lib/cache/blocklist.c
-    lib/cache/cache.c
+    # lib/cache/blocklist.c  # replaced by Rust (freeldr-rust/src/blocklist.rs) — complete (dups)
+    # lib/cache/cache.c    # replaced by Rust (freeldr-rust/src/cache.rs) — complete (dups)
     lib/comm/rs232.c
     ## add KD support
     # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
@@ -53,12 +58,18 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
     # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
     # lib/fs/ntfs.c    # pruned
-    lib/inifile/ini_init.c
-    lib/inifile/inifile.c
-    lib/inifile/parse.c
-    lib/mm/meminit.c
-    lib/mm/mm.c
-    lib/mm/heap.c)
+    # lib/inifile/ini_init.c  # replaced by Rust (freeldr-rust/src/ini_init.rs)
+    # lib/inifile/inifile.c   # replaced by Rust (freeldr-rust/src/inifile.rs)
+    # lib/inifile/parse.c     # replaced by Rust (freeldr-rust/src/parse.rs)
+    # mm unit → Rust (freeldr-rust: meminit.rs/mm.rs/heap.rs, all
+    # #[no_mangle], wired in lib.rs). Cohabitation completion: the C
+    # was left in SOURCE alongside the Rust → 12 duplicate symbols
+    # (_FrLdrHeap*/_MmInitializeHeap) failing freeldr_pe.exe/uefildr.
+    # .c kept on disk (never delete the C).
+    # lib/mm/meminit.c  # replaced by Rust (freeldr-rust/src/meminit.rs)
+    # lib/mm/mm.c       # replaced by Rust (freeldr-rust/src/mm.rs)
+    # lib/mm/heap.c     # replaced by Rust (freeldr-rust/src/heap.rs)
+    )
 
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
