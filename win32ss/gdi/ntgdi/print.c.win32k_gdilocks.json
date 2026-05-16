@@ -1,0 +1,40 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/print.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtGdiEscape",
+      "func_line": 56,
+      "func_end_line": 77,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 65,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        75
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiExtEscape",
+      "func_line": 81,
+      "func_end_line": 250,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 135,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        154,
+        160
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}

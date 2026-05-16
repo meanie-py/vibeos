@@ -5,11 +5,13 @@ Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
 (Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,
 spike-validated, and applied across the win32k.sys keep-set: **97 SEH
 sites mechanically lowered, i386 7/7 + amd64 7/7 smoke green** on the
-result. **Pass 3 (USER callout extraction) also landed** as
-extract-only (20 callout sites → sidecar JSON, oracle-validated). See
-"Session results" below. Pass 2 has zero targets — see findings. This
-audit defines the C-side work done *before* any C→Rust translation
-begins on win32k.
+result. **Pass 2 (re-scoped to GDI manual-lock-bracket detection) and
+Pass 3 (USER callout extraction) also landed**, both extract-only:
+Pass 2 = 224 GDI lock sites shape-classified → sidecar JSON; Pass 3 =
+20 callout sites → sidecar JSON. All oracle-validated. See "Session
+results" below. (Pass 2's original `_SEH2_FINALLY` form had zero
+targets — re-scoped per findings.) This audit defines the C-side work
+done *before* any C→Rust translation begins on win32k.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
@@ -31,6 +33,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 |---|---|---|
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
+| `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
@@ -94,6 +97,39 @@ correctly *not* mechanically rewritten (audit risk #1 respected):
 So **97 of 168 `(a)` sites (~58%) are now mechanically lowered**,
 deterministically and regression-free; the other 64 are the honest
 non-mechanical remainder for later stages.
+
+### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
+
+Pass 2 was re-scoped (zero `_SEH2_FINALLY` in the keep-set — the
+original "SEH-wrapped lock cleanup → RAII" had nothing to match). The
+real work is detecting the *manual* `Lock → if(!p) → … → Unlock`
+brackets the SEH classifier left in `(e)`. `gdi-locks` extracts each
+`<Prefix>_Lock<Suffix>(` site into a per-file
+`<file>.win32k_gdilocks.json` sidecar (schema `win32k_pass2_v1`),
+**no source rewrite** — same model as Pass 3. Oracle-validated against
+`gdi/ntgdi/dcutil.c`.
+
+**224 GDI lock sites, 37 keep-set files**, each recording enclosing fn
++ span, the lock symbol, the inferred release symbol (first `_Lock`→
+`_Unlock`, suffix preserved), the bound variable, NULL-guard presence,
+every release site for that var in the fn, and a shape class:
+
+| Shape | Count | % | Meaning for the Rust translation |
+|---|--:|--:|---|
+| CLEAN_BRACKET | 126 | 56% | 1 acquire, NULL-guarded, 1 release → direct RAII `Drop` |
+| MULTI_UNLOCK | 71 | 32% | multi-exit release → still RAII `Drop`, multiple drop points |
+| BORROWED | 3 | 1% | no release in fn — handle transferred/acquired elsewhere → no `Drop` at this scope (the `GDI_BORROWS` case the design notes flag) |
+| REVIEW | 24 | 11% | no clean `var = Lock(...)` target or unguarded — manual |
+
+**88% (CLEAN_BRACKET + MULTI_UNLOCK) are mechanically RAII-mappable.**
+Lock-symbol distribution: `DC_LockDc`→`DC_UnlockDc` 151, `REGION_LockRgn`
+38, `PATH_LockPath` 28, `GDIOBJ_LockObject` 4, `TEXTOBJ_LockText` 2,
+`COLORSPACEOBJ_LockCS` 1. The `DC_UnlockDc` (218 calls) vs `DC_LockDc`
+(143) asymmetry noted in the inventory is explained per-site: BORROWED +
+the multi-exit MULTI_UNLOCK release fan-out. Hotspots: `path.c` (40),
+`dcutil.c` (21), `coord.c` (18), `region.c` (12). Resolver reuses the
+brace-depth `_enclosing_func_span` from Pass 3 (no lock-fn-definition
+false positives — oracle-checked).
 
 ### Pass 3 — measured callout surface (extract-only, no rewrite)
 
@@ -729,9 +765,12 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
   **97 of 168 done**; 64 in the manual-followup ledger; remaining ~6
   not-yet-eligible. (Helper is `SafeProbeFor{Read,Write}`, not the
   audit's hypothetical `SafeCapture*`.)
-- `[~]` (b) sites → RAII: **N/A — zero `_SEH2_FINALLY` in keep-set.**
+- `[x]` (b) sites → RAII: **N/A — zero `_SEH2_FINALLY` in keep-set.**
   Re-scoped to manual GDI-lock-bracket detection over the `(e)` subset
-  (not done).
+  — **done as extract-only** (`gdi-locks`): 224 sites / 37 files →
+  `<file>.win32k_gdilocks.json` sidecars, shape-classified
+  (126 CLEAN_BRACKET / 71 MULTI_UNLOCK / 3 BORROWED / 24 REVIEW),
+  oracle-validated. No source rewrite (sidecar is the deliverable).
 - `[~]` (c) sites flagged: the 1 site (`gdi/eng/mem.c`) is identified
   and left verbatim; a standalone residual-SEH doc is not yet written.
 - `[ ]` All (d) sites deleted (36 identified; not yet actioned —

@@ -1,0 +1,128 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dibobj.c",
+  "schema": "win32k_pass2_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "NtGdiSetDIBitsToDeviceInternal",
+      "func_line": 471,
+      "func_end_line": 703,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 544,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        699
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGetDIBitsInternal",
+      "func_line": 708,
+      "func_end_line": 1097,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 735,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        1094
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 1213,
+      "func_end_line": 1523,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1301,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1310,
+        1319,
+        1382,
+        1503
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 1213,
+      "func_end_line": 1523,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1377,
+      "var": "pdc",
+      "null_guarded": false,
+      "unlock_lines": [
+        1310,
+        1319,
+        1382,
+        1503
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "NtGdiStretchDIBitsInternal",
+      "func_line": 1213,
+      "func_end_line": 1523,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1414,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1310,
+        1319,
+        1382,
+        1503
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "GreCreateDIBitmapInternal",
+      "func_line": 1705,
+      "func_end_line": 1777,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1738,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1770
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiCreateDIBSection",
+      "func_line": 1832,
+      "func_end_line": 1895,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1875,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1884
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

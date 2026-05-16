@@ -1,0 +1,25 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/cursoricon.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "UserDrawIconEx",
+      "func_line": 1677,
+      "func_end_line": 2065,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1744,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1788,
+        2051
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}

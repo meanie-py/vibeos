@@ -1,0 +1,121 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/fillshap.c",
+  "schema": "win32k_pass2_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "IntPolygon",
+      "func_line": 199,
+      "func_end_line": 215,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 204,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        213
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiEllipse",
+      "func_line": 233,
+      "func_end_line": 383,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 250,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        260,
+        269,
+        295,
+        380
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiPolyPolyDraw",
+      "func_line": 409,
+      "func_end_line": 560,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 515,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        556
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiRectangle",
+      "func_line": 741,
+      "func_end_line": 778,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 750,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        775
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiRoundRect",
+      "func_line": 911,
+      "func_end_line": 936,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 920,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        932
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGradientFill",
+      "func_line": 940,
+      "func_end_line": 1068,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 986,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        996,
+        1019,
+        1065
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiExtFloodFill",
+      "func_line": 1148,
+      "func_end_line": 1230,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1167,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1228
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

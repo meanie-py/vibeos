@@ -1,0 +1,78 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/icm.c",
+  "schema": "win32k_pass2_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "NtGdiGetDeviceGammaRamp",
+      "func_line": 122,
+      "func_end_line": 171,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 133,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        143,
+        151,
+        162
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiSetColorSpace",
+      "func_line": 175,
+      "func_end_line": 214,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 182,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        192,
+        212
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiSetColorSpace",
+      "func_line": 175,
+      "func_end_line": 214,
+      "lock_fn": "COLORSPACEOBJ_LockCS",
+      "unlock_fn": "COLORSPACEOBJ_UnlockCS",
+      "lock_line": 196,
+      "var": "pCS",
+      "null_guarded": true,
+      "unlock_lines": [
+        211
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetDeviceGammaRamp",
+      "func_line": 358,
+      "func_end_line": 400,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 368,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        378,
+        390,
+        397
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}

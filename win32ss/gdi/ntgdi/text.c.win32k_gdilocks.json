@@ -1,0 +1,112 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/text.c",
+  "schema": "win32k_pass2_v1",
+  "count": 7,
+  "sites": [
+    {
+      "function": "GreGetTextExtentW",
+      "func_line": 78,
+      "func_end_line": 125,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 97,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        123
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGetTextExtentExW",
+      "func_line": 134,
+      "func_end_line": 188,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 161,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        186
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetCharSet",
+      "func_line": 205,
+      "func_end_line": 223,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 211,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        221
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetTextCharsetInfo",
+      "func_line": 259,
+      "func_end_line": 300,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 270,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        298
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetTextExtentExW",
+      "func_line": 311,
+      "func_end_line": 466,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 386,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        414
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetTextJustification",
+      "func_line": 488,
+      "func_end_line": 510,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 496,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        508
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetTextFaceW",
+      "func_line": 516,
+      "func_end_line": 570,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 532,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        540
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

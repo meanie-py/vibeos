@@ -1,0 +1,687 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/path.c",
+  "schema": "win32k_pass2_v1",
+  "count": 40,
+  "sites": [
+    {
+      "function": "PATH_CreatePath",
+      "func_line": 35,
+      "func_end_line": 72,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 48,
+      "var": "pPath",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "BORROWED",
+      "signals": [
+        "no_unlock_in_fn",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PATH_Delete",
+      "func_line": 90,
+      "func_end_line": 103,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 94,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [],
+      "shape": "BORROWED",
+      "signals": [
+        "no_unlock_in_fn"
+      ]
+    },
+    {
+      "function": "PATH_SavePath",
+      "func_line": 187,
+      "func_end_line": 207,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 189,
+      "var": "psrcPath",
+      "null_guarded": false,
+      "unlock_lines": [
+        204
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PATH_RestorePath",
+      "func_line": 209,
+      "func_end_line": 238,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 215,
+      "var": "psrcPath",
+      "null_guarded": false,
+      "unlock_lines": [
+        224,
+        235
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PATH_RestorePath",
+      "func_line": 209,
+      "func_end_line": 238,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 228,
+      "var": "psrcPath",
+      "null_guarded": false,
+      "unlock_lines": [
+        224,
+        235
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PATH_RestorePath",
+      "func_line": 209,
+      "func_end_line": 238,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 229,
+      "var": "pdstPath",
+      "null_guarded": false,
+      "unlock_lines": [
+        223,
+        234
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PATH_LineTo",
+      "func_line": 583,
+      "func_end_line": 618,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 592,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        610,
+        616
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_Rectangle",
+      "func_line": 627,
+      "func_end_line": 666,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 639,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        644,
+        657,
+        664
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_RoundRect",
+      "func_line": 675,
+      "func_end_line": 776,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 692,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        697,
+        767,
+        774
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_Ellipse",
+      "func_line": 782,
+      "func_end_line": 877,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 822,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        869,
+        875
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_Arc",
+      "func_line": 955,
+      "func_end_line": 1127,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 983,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1125
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyBezierTo",
+      "func_line": 1131,
+      "func_end_line": 1150,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1143,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1148
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyBezier",
+      "func_line": 1154,
+      "func_end_line": 1176,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1166,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1174
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyDraw",
+      "func_line": 1180,
+      "func_end_line": 1260,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1190,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1195,
+        1222,
+        1232,
+        1247,
+        1258
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_PolylineTo",
+      "func_line": 1264,
+      "func_end_line": 1284,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1278,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1282
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyPolygon",
+      "func_line": 1288,
+      "func_end_line": 1334,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1305,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1313,
+        1322,
+        1332
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_PolyPolyline",
+      "func_line": 1338,
+      "func_end_line": 1371,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 1353,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        1369
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_WidenPath",
+      "func_line": 2120,
+      "func_end_line": 2134,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2124,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2132
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_ExtTextOut",
+      "func_line": 2357,
+      "func_end_line": 2452,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2371,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2416,
+        2450
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiAbortPath",
+      "func_line": 2461,
+      "func_end_line": 2487,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2463,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2472,
+        2478,
+        2485
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiBeginPath",
+      "func_line": 2491,
+      "func_end_line": 2543,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2496,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2506,
+        2518,
+        2536
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiCloseFigure",
+      "func_line": 2547,
+      "func_end_line": 2582,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2555,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2565,
+        2580
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiCloseFigure",
+      "func_line": 2547,
+      "func_end_line": 2582,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2562,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2579
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiEndPath",
+      "func_line": 2586,
+      "func_end_line": 2624,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2592,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2602,
+        2622
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiEndPath",
+      "func_line": 2586,
+      "func_end_line": 2624,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2599,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2621
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiFillPath",
+      "func_line": 2628,
+      "func_end_line": 2682,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2635,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2645,
+        2680
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiFillPath",
+      "func_line": 2628,
+      "func_end_line": 2682,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2642,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2674
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiFlattenPath",
+      "func_line": 2686,
+      "func_end_line": 2726,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2694,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2705,
+        2724
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiFlattenPath",
+      "func_line": 2686,
+      "func_end_line": 2726,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2701,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2714
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetMiterLimit",
+      "func_line": 2731,
+      "func_end_line": 2759,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2738,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2756
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetPath",
+      "func_line": 2763,
+      "func_end_line": 2844,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2785,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2797,
+        2842
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiGetPath",
+      "func_line": 2763,
+      "func_end_line": 2844,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2794,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2841
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiPathToRegion",
+      "func_line": 2848,
+      "func_end_line": 2928,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2859,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2873,
+        2891,
+        2902,
+        2926
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiPathToRegion",
+      "func_line": 2848,
+      "func_end_line": 2928,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2869,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        2890,
+        2901,
+        2921
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiSetMiterLimit",
+      "func_line": 2932,
+      "func_end_line": 2968,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2941,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2966
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiStrokeAndFillPath",
+      "func_line": 2972,
+      "func_end_line": 3027,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2981,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        2989,
+        3025
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStrokeAndFillPath",
+      "func_line": 2972,
+      "func_end_line": 3027,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 2986,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        3019
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiStrokePath",
+      "func_line": 3031,
+      "func_end_line": 3080,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 3040,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        3049,
+        3078
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStrokePath",
+      "func_line": 3031,
+      "func_end_line": 3080,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 3046,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        3073
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiWidenPath",
+      "func_line": 3084,
+      "func_end_line": 3107,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 3088,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        3104
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

@@ -430,6 +430,47 @@ def cmd_callout_annotate(args):
         sys.exit(1)
 
 
+def cmd_gdi_locks(args):
+    from .gdi_lock_inventory import (
+        extract_file, extract_keepset, write_sidecar,
+        print_summary, run_oracle,
+    )
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/gdi/ntgdi/dcutil.c"))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        sites = extract_file(target)
+        if args.write_sidecars:
+            print(f"wrote {write_sidecar(target, sites)}")
+        if args.json:
+            print(json.dumps(
+                {"source": str(target),
+                 "sites": [s.__dict__ for s in sites]},
+                indent=2, default=str))
+        else:
+            for s in sites:
+                sig = (" " + ",".join(s.signals)) if s.signals else ""
+                print(f"  {s.function} L{s.func_line} "
+                      f"{s.lock_fn}→{s.unlock_fn} {s.var}@L{s.lock_line} "
+                      f"[{s.shape}] unlock@{s.unlock_lines}{sig}")
+    elif target.is_dir():
+        inv = extract_keepset(target)
+        if args.write_sidecars:
+            for p, ss in inv.items():
+                write_sidecar(p, ss)
+            print(f"wrote {len(inv)} sidecars")
+        print_summary(inv)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_probe_migrate(args):
     from .probe_migrate import (
         scan_rust_file, find_rust_files, run_probe_migration,
@@ -951,6 +992,19 @@ def main():
     p.add_argument("--oracle", action="store_true",
                    help="Run the callback.c ground-truth self-test and exit")
 
+    # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
+    p = sub.add_parser("gdi-locks",
+                       help="Win32k Pass 2: detect GDI manual lock brackets "
+                            "+ sidecars (no source rewrite)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute); "
+                        "default win32ss/ keep-set")
+    p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
+    p.add_argument("--write-sidecars", action="store_true",
+                   help="Write <file>.win32k_gdilocks.json next to each source")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the dcutil.c ground-truth self-test and exit")
+
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
@@ -1013,6 +1067,7 @@ def main():
         "seh-inventory": cmd_seh_inventory,
         "seh-rewrite": cmd_seh_rewrite,
         "callout-annotate": cmd_callout_annotate,
+        "gdi-locks": cmd_gdi_locks,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,

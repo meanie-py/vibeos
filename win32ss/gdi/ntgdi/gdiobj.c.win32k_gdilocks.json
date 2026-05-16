@@ -1,0 +1,37 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/gdiobj.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "GDIOBJ_TryLockObject",
+      "func_line": 764,
+      "func_end_line": 829,
+      "lock_fn": "GDIOBJ_LockObject",
+      "unlock_fn": "GDIOBJ_UnlockObject",
+      "lock_line": 833,
+      "var": "?",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "REVIEW",
+      "signals": [
+        "no_assignment_target"
+      ]
+    },
+    {
+      "function": "GDIOBJ_bLockMultipleObjects",
+      "func_line": 1038,
+      "func_end_line": 1091,
+      "lock_fn": "GDIOBJ_LockObject",
+      "unlock_fn": "GDIOBJ_UnlockObject",
+      "lock_line": 1075,
+      "var": "?",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "REVIEW",
+      "signals": [
+        "no_assignment_target"
+      ]
+    }
+  ]
+}

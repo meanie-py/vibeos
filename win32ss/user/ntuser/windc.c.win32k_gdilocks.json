@@ -1,0 +1,59 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/windc.c",
+  "schema": "win32k_pass2_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "DceUpdateVisRgn",
+      "func_line": 192,
+      "func_end_line": 277,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 243,
+      "var": "RgnClip",
+      "null_guarded": true,
+      "unlock_lines": [
+        248,
+        263
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "DceUpdateVisRgn",
+      "func_line": 192,
+      "func_end_line": 277,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 261,
+      "var": "RgnClip",
+      "null_guarded": false,
+      "unlock_lines": [
+        248,
+        263
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "DceResetActiveDCEs",
+      "func_line": 817,
+      "func_end_line": 892,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 855,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        886
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

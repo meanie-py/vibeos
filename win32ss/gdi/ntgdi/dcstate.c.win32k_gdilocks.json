@@ -1,0 +1,73 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dcstate.c",
+  "schema": "win32k_pass2_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "IntGdiCleanDC",
+      "func_line": 73,
+      "func_end_line": 117,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 77,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        114
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "DC_vRestoreDC",
+      "func_line": 138,
+      "func_end_line": 207,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 165,
+      "var": "pdcSave",
+      "null_guarded": true,
+      "unlock_lines": [
+        201
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiRestoreDC",
+      "func_line": 213,
+      "func_end_line": 252,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 222,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        240,
+        248
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiSaveDC",
+      "func_line": 257,
+      "func_end_line": 325,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 267,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        280,
+        321
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}

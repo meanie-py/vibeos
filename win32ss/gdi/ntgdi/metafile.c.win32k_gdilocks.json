@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/metafile.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtGdiGetServerMetaFileBits",
+      "func_line": 107,
+      "func_end_line": 165,
+      "lock_fn": "GDIOBJ_LockObject",
+      "unlock_fn": "GDIOBJ_UnlockObject",
+      "lock_line": 120,
+      "var": "?",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "REVIEW",
+      "signals": [
+        "no_assignment_target"
+      ]
+    }
+  ]
+}

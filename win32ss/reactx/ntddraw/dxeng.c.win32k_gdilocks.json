@@ -1,0 +1,56 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/reactx/ntddraw/dxeng.c",
+  "schema": "win32k_pass2_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "DxEngLockDC",
+      "func_line": 131,
+      "func_end_line": 135,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 134,
+      "var": "?",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "REVIEW",
+      "signals": [
+        "no_assignment_target"
+      ]
+    },
+    {
+      "function": "DxEngGetDCState",
+      "func_line": 450,
+      "func_end_line": 486,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 453,
+      "var": "pDC",
+      "null_guarded": false,
+      "unlock_lines": [
+        480
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "DxEngSetDCState",
+      "func_line": 737,
+      "func_end_line": 756,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 740,
+      "var": "pDC",
+      "null_guarded": false,
+      "unlock_lines": [
+        752
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    }
+  ]
+}

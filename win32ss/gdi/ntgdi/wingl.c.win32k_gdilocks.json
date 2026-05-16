@@ -1,0 +1,52 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/wingl.c",
+  "schema": "win32k_pass2_v1",
+  "count": 3,
+  "sites": [
+    {
+      "function": "NtGdiDescribePixelFormat",
+      "func_line": 45,
+      "func_end_line": 121,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 58,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        119
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSetPixelFormat",
+      "func_line": 126,
+      "func_end_line": 196,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 139,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        194
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiSwapBuffers",
+      "func_line": 200,
+      "func_end_line": 254,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 210,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        252
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

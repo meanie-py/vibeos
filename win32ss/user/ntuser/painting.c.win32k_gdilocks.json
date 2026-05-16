@@ -1,0 +1,111 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/painting.c",
+  "schema": "win32k_pass2_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "IntValidateParents",
+      "func_line": 63,
+      "func_end_line": 127,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 107,
+      "var": "RgnClip",
+      "null_guarded": false,
+      "unlock_lines": [
+        109
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "IntInvalidateWindows",
+      "func_line": 644,
+      "func_end_line": 858,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 684,
+      "var": "RgnClip",
+      "null_guarded": false,
+      "unlock_lines": [
+        694
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "IntInvalidateWindows",
+      "func_line": 644,
+      "func_end_line": 858,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 757,
+      "var": "RgnUpdate",
+      "null_guarded": false,
+      "unlock_lines": [
+        761,
+        807
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "IntInvalidateWindows",
+      "func_line": 644,
+      "func_end_line": 858,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 802,
+      "var": "RgnUpdate",
+      "null_guarded": false,
+      "unlock_lines": [
+        761,
+        807
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "PaintSuspendedWindow",
+      "func_line": 1026,
+      "func_end_line": 1082,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 1072,
+      "var": "prgn",
+      "null_guarded": false,
+      "unlock_lines": [
+        1074
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "NtUserRedrawWindow",
+      "func_line": 1997,
+      "func_end_line": 2072,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 2046,
+      "var": "RgnUpdate",
+      "null_guarded": true,
+      "unlock_lines": [
+        2052
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

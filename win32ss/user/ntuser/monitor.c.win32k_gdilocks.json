@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/monitor.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtUserEnumDisplayMonitors",
+      "func_line": 552,
+      "func_end_line": 709,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 585,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        593
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

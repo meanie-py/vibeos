@@ -1,0 +1,40 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/mouse.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "GreSetPointerShape",
+      "func_line": 703,
+      "func_end_line": 795,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 718,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        733,
+        791
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "GreMovePointer",
+      "func_line": 799,
+      "func_end_line": 844,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 808,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        843
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

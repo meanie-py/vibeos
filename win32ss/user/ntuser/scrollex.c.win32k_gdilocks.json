@@ -1,0 +1,92 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/scrollex.c",
+  "schema": "win32k_pass2_v1",
+  "count": 5,
+  "sites": [
+    {
+      "function": "co_IntGetUpdateRgn",
+      "func_line": 64,
+      "func_end_line": 97,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 85,
+      "var": "UpdateRgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        94
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "UserScrollDC",
+      "func_line": 101,
+      "func_end_line": 225,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 162,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        174,
+        203
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "UserScrollDC",
+      "func_line": 101,
+      "func_end_line": 225,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 171,
+      "var": "RgnUpdate",
+      "null_guarded": true,
+      "unlock_lines": [
+        214
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntScrollWindowEx",
+      "func_line": 229,
+      "func_end_line": 455,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 281,
+      "var": "RgnTemp",
+      "null_guarded": true,
+      "unlock_lines": [
+        289,
+        440
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "IntScrollWindowEx",
+      "func_line": 229,
+      "func_end_line": 455,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 433,
+      "var": "RgnTemp",
+      "null_guarded": false,
+      "unlock_lines": [
+        289,
+        440
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    }
+  ]
+}
