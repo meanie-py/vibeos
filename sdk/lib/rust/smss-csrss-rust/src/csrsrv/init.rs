@@ -1,5 +1,7 @@
 
 use ntdll_sys::nt::*;
+// Real ntdll export, not in the bindgen surface.
+extern "system" { fn RtlGetProcessHeap() -> HANDLE; }
 static mut CsrDebug: ULONG = 0;
 pub static mut CsrHeap: HANDLE = core::ptr::null_mut();
 pub static mut CsrObjectDirectory: HANDLE = core::ptr::null_mut();
@@ -225,11 +227,11 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, CreatorSid);
 
         Status = RtlGetAce(Dacl, 0, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8;
         Status = RtlGetAce(Dacl, 1, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8;
         Status = RtlGetAce(Dacl, 2, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE;
+        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 
         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, 1, Dacl, 0);
     } else {
@@ -244,7 +246,7 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, WorldSid);
 
         Status = RtlGetAce(Dacl, 2, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE;
+        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 
         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, 1, Dacl, 0);
     }
@@ -1206,13 +1208,13 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //         /* Edit the ACEs to make them inheritable */
 //         Status = RtlGetAce(Dacl, 0, (PVOID*)&Ace);
 //         ASSERT(NT_SUCCESS(Status));
-//         Ace->Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+//         Ace->Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8;
 //         Status = RtlGetAce(Dacl, 1, (PVOID*)&Ace);
 //         ASSERT(NT_SUCCESS(Status));
-//         Ace->Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+//         Ace->Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8;
 //         Status = RtlGetAce(Dacl, 2, (PVOID*)&Ace);
 //         ASSERT(NT_SUCCESS(Status));
-//         Ace->Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE;
+//         Ace->Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 //
 //         /* Set this DACL with the SD */
 //         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, TRUE, Dacl, FALSE);
@@ -1242,7 +1244,7 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //         /* Edit the last ACE to make it inheritable */
 //         Status = RtlGetAce(Dacl, 2, (PVOID*)&Ace);
 //         ASSERT(NT_SUCCESS(Status));
-//         Ace->Header.AceFlags |= OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE;
+//         Ace->Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 //
 //         /* Set this DACL with the SD */
 //         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, TRUE, Dacl, FALSE);

@@ -123,7 +123,7 @@ pub unsafe extern "system" fn CsrRemoveProcess(CsrProcess: PCSR_PROCESS) {
     RemoveEntryList(core::ptr::addr_of_mut!((*CsrProcess).ListLink) as PLIST_ENTRY);
     CsrReleaseProcessLock();
     for i in 0..CSR_SERVER_DLL_MAX {
-        let ServerDll = *(CsrLoadedServerDll.add(i as usize));
+        let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
         if !ServerDll.is_null() {
             let callback = (*ServerDll).DisconnectCallback;
             if callback.is_some() {
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn CsrInsertProcess(
         core::ptr::addr_of_mut!((*CsrProcess).ListLink) as PLIST_ENTRY,
     );
     for i in 0..CSR_SERVER_DLL_MAX {
-        let ServerDll = *(CsrLoadedServerDll.add(i as usize));
+        let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
         if !ServerDll.is_null() {
             let callback = (*ServerDll).NewProcessCallback;
             if callback.is_some() {
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn CsrCreateProcess(
         + (CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<*mut core::ffi::c_void>()))
         as *mut u8;
     for i in 0..CSR_SERVER_DLL_MAX {
-        let ServerDll = *(CsrLoadedServerDll.add(i as usize));
+        let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
             *((*CsrProcess).ServerData.as_mut_ptr().add(i as usize)) = ProcessData as *mut core::ffi::c_void;
             core::ptr::copy_nonoverlapping(
@@ -528,9 +528,9 @@ unsafe fn FindProcessForShutdown(CallerLuid: *mut LUID) -> PCSR_PROCESS {
             (*CsrProcess).Flags |= CsrProcessSkipShutdown;
             continue;
         }
-        if (ProcessLuid.__bindgen_anon_1.LowPart == SystemLuid.__bindgen_anon_1.LowPart) && (ProcessLuid.__bindgen_anon_1.HighPart == SystemLuid.__bindgen_anon_1.HighPart) {
+        if (ProcessLuid.LowPart == SystemLuid.LowPart) && (ProcessLuid.HighPart == SystemLuid.HighPart) {
             (*CsrProcess).ShutdownFlags |= CsrShutdownSystem;
-        } else if (ProcessLuid.__bindgen_anon_1.LowPart != (*CallerLuid).__bindgen_anon_1.LowPart) || (ProcessLuid.__bindgen_anon_1.HighPart != (*CallerLuid).__bindgen_anon_1.HighPart) {
+        } else if (ProcessLuid.LowPart != (*CallerLuid).LowPart) || (ProcessLuid.HighPart != (*CallerLuid).HighPart) {
             (*CsrProcess).ShutdownFlags |= CsrShutdownOther;
         }
         if ((*CsrProcess).ShutdownLevel > Level) || ReturnCsrProcess.is_null() {
@@ -568,7 +568,7 @@ pub unsafe extern "system" fn CsrShutdownProcesses(CallerLuid: *mut LUID, Flags:
         loop {
             let mut i = 0;
             while i < CSR_SERVER_DLL_MAX {
-                let ServerDll = *(CsrLoadedServerDll.add(i as usize));
+                let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
                 if !ServerDll.is_null() {
                     let callback = (*ServerDll).ShutdownProcessCallback;
                     if callback.is_some() {

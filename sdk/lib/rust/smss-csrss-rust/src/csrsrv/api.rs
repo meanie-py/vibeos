@@ -89,7 +89,7 @@ pub unsafe extern "system" fn CsrApiHandleConnectionRequest(
     RemotePortView.ViewSize = 0;
     RemotePortView.ViewBase = core::ptr::null_mut();
 
-    (*ConnectInfo).ServerProcessId = (*NtCurrentTeb()).__bindgen_anon_1.ClientId.UniqueProcess;
+    (*ConnectInfo).ServerProcessId = (*NtCurrentTeb()).ClientId.UniqueProcess;
 
     Status = NtAcceptConnectPort(
         &raw mut ServerPort,
@@ -732,7 +732,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         if CurrentOffset != 0 {
             if ((CurrentOffset & (core::mem::size_of::<PVOID>() - 1)) != 0)
                 || (CurrentOffset
-                    < core::mem::offset_of!(_CSR_API_MESSAGE, Data.ApiMessageData))
+                    < core::mem::offset_of!(_CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data.ApiMessageData))
                 || (CurrentOffset >= core::mem::size_of::<_CSR_API_MESSAGE>().try_into().unwrap())
             {
                 (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
@@ -842,7 +842,7 @@ pub unsafe extern "system" fn CsrValidateMessageBuffer(
     }
 
     if CaptureBuffer.is_null() {
-        if (*NtCurrentTeb()).__bindgen_anon_1.ClientId.UniqueProcess
+        if (*NtCurrentTeb()).ClientId.UniqueProcess
             == (*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess
         {
             return 1u8;

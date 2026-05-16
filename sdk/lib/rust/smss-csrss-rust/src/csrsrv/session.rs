@@ -173,7 +173,7 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
     let mut ProcessData = core::ptr::addr_of_mut!((*CsrProcess).ServerData[CSR_SERVER_DLL_MAX as usize]) as PVOID;
 
     for i in 0..CSR_SERVER_DLL_MAX {
-        let ServerDll = *CsrLoadedServerDll.add(i as usize);
+        let ServerDll = *CsrLoadedServerDll.as_mut_ptr().add(i as usize);
 
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
             (*CsrProcess).ServerData[i as usize] = ProcessData;

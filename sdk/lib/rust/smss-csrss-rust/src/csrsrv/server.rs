@@ -1,6 +1,7 @@
 
 use ntdll_sys::nt::*;
 use super::srv_inlines::*;
+use core::ffi::c_void;
 static mut CsrLoadedServerDll: [PCSR_SERVER_DLL; CSR_SERVER_DLL_MAX as usize] = 
     [core::ptr::null_mut(); CSR_SERVER_DLL_MAX as usize];
 pub static mut CsrSrvSharedSectionHeap: PVOID = core::ptr::null_mut();
