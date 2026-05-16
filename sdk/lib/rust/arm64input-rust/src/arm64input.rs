@@ -4,26 +4,315 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IRP, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, KeDelayExecutionThread, KeInitializeSpinLock, LARGE_INTEGER, LIST_ENTRY, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, KeInitializeSpinLock, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
 use core::ffi::c_void;
 
+// ---- integration shims (mechanical) ----
 extern "C" {
-    fn virtio_mb();
     fn DbgPrint(Format: *const i8, ...) -> u32;
 }
+
+/// IoCompleteRequest is a C macro aliasing IofCompleteRequest.
+#[inline]
+unsafe fn IoCompleteRequest(irp: PIRP, boost: i8) {
+    IofCompleteRequest(irp, boost as _);
+}
+
+/// virtio memory barriers (driver-local function-like macros, skipped by preamble)
+#[inline(always)]
+unsafe fn virtio_mb() {
+    core::arch::asm!("dmb sy", options(nostack, preserves_flags));
+}
+#[inline(always)]
+unsafe fn virtio_rmb() {
+    core::arch::asm!("dmb ld", options(nostack, preserves_flags));
+}
+#[inline(always)]
+unsafe fn virtio_wmb() {
+    core::arch::asm!("dmb st", options(nostack, preserves_flags));
+}
+
+// ---- file-scope preamble (translated) ----
+pub const TAG_INPUT: u32 = 0x41496e70;
+
+pub const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = 0x000b0800;
+
+pub const IOCTL_ARM64INPUT_INJECT_MOUSE: u32 = 0x000f0800;
+
+pub const VIRTIO_MMIO_MAGIC: u32 = 0x000;
+
+pub const VIRTIO_MMIO_VERSION: u32 = 0x004;
+
+pub const VIRTIO_MMIO_DEVICE_ID: u32 = 0x008;
+
+pub const VIRTIO_MMIO_VENDOR_ID: u32 = 0x00C;
+
+pub const VIRTIO_MMIO_DEV_FEATURES: u32 = 0x010;
+
+pub const VIRTIO_MMIO_DEV_FEATURES_SEL: u32 = 0x014;
+
+pub const VIRTIO_MMIO_DRV_FEATURES: u32 = 0x020;
+
+pub const VIRTIO_MMIO_DRV_FEATURES_SEL: u32 = 0x024;
+
+pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: u32 = 0x028;
+
+pub const VIRTIO_MMIO_QUEUE_SEL: u32 = 0x030;
+
+pub const VIRTIO_MMIO_QUEUE_NUM_MAX: u32 = 0x034;
+
+pub const VIRTIO_MMIO_QUEUE_NUM: u32 = 0x038;
+
+pub const VIRTIO_MMIO_QUEUE_PFN: u32 = 0x040;
+
+pub const VIRTIO_MMIO_QUEUE_READY: u32 = 0x044;
+
+pub const VIRTIO_MMIO_QUEUE_NOTIFY: u32 = 0x050;
+
+pub const VIRTIO_MMIO_INTERRUPT_STATUS: u32 = 0x060;
+
+pub const VIRTIO_MMIO_INTERRUPT_ACK: u32 = 0x064;
+
+pub const VIRTIO_MMIO_STATUS: u32 = 0x070;
+
+pub const VIRTIO_MMIO_QUEUE_DESC_LOW: u32 = 0x080;
+
+pub const VIRTIO_MMIO_QUEUE_DESC_HIGH: u32 = 0x084;
+
+pub const VIRTIO_MMIO_QUEUE_AVAIL_LOW: u32 = 0x090;
+
+pub const VIRTIO_MMIO_QUEUE_AVAIL_HIGH: u32 = 0x094;
+
+pub const VIRTIO_MMIO_QUEUE_USED_LOW: u32 = 0x0A0;
+
+pub const VIRTIO_MMIO_QUEUE_USED_HIGH: u32 = 0x0A4;
+
+pub const VIRTIO_MMIO_CONFIG: u32 = 0x100;
+
+pub const VIRTIO_STATUS_ACK: u32 = 0x01;
+
+pub const VIRTIO_STATUS_DRIVER: u32 = 0x02;
+
+pub const VIRTIO_STATUS_DRIVER_OK: u32 = 0x04;
+
+pub const VIRTIO_STATUS_FEATURES_OK: u32 = 0x08;
+
+pub const VIRTIO_INPUT_CFG_UNSET: u32 = 0x00;
+
+pub const VIRTIO_INPUT_CFG_ID_NAME: u32 = 0x01;
+
+pub const VIRTIO_INPUT_CFG_EV_BITS: u32 = 0x11;
+
+pub const VIRTIO_INPUT_CFG_ABS_INFO: u32 = 0x12;
+
+pub const EV_SYN: u32 = 0x00;
+
+pub const EV_KEY: u32 = 0x01;
+
+pub const EV_REL: u32 = 0x02;
+
+pub const EV_ABS: u32 = 0x03;
+
+pub const ABS_X: u32 = 0x00;
+
+pub const ABS_Y: u32 = 0x01;
+
+pub const REL_X: u32 = 0x00;
+
+pub const REL_Y: u32 = 0x01;
+
+pub const REL_WHEEL: u32 = 0x08;
+
+pub const BTN_LEFT: u32 = 0x110;
+
+pub const BTN_RIGHT: u32 = 0x111;
+
+pub const BTN_MIDDLE: u32 = 0x112;
+
+pub const KEY_A: u32 = 30;
+
+pub const VIRTQ_DESC_F_WRITE: u32 = 2;
+
+#[repr(C)]
+pub struct _VIRTIO_INPUT_EVENT {
+    pub Type: u16,
+    pub Code: u16,
+    pub Value: u32,
+}
+
+pub type VIRTIO_INPUT_EVENT = _VIRTIO_INPUT_EVENT;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_DESC {
+    pub Addr: u64,
+    pub Len: u32,
+    pub Flags: u16,
+    pub Next: u16,
+}
+
+pub type VIRTQ_DESC = _VIRTQ_DESC;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_AVAIL {
+    pub Flags: u16,
+    pub Idx: u16,
+    pub Ring: [u16; 0],
+}
+
+pub type VIRTQ_AVAIL = _VIRTQ_AVAIL;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_USED_ELEM {
+    pub Id: u32,
+    pub Len: u32,
+}
+
+pub type VIRTQ_USED_ELEM = _VIRTQ_USED_ELEM;
+
+#[repr(C, packed(1))]
+pub struct _VIRTQ_USED {
+    pub Flags: u16,
+    pub Idx: u16,
+    pub Ring: [VIRTQ_USED_ELEM; 0],
+}
+
+pub type VIRTQ_USED = _VIRTQ_USED;
+
+pub const VIRTIO_QUEUE_SIZE: u32 = 64;
+
+pub const MAX_VIRTIO_INPUTS: usize = 4;
+
+#[repr(C)]
+pub struct _VIRTIO_INPUT_DEV {
+    pub Mmio: *mut u8,
+    pub MmioVersion: u32,
+    pub IsKeyboard: u8,
+    pub IsTablet: u8,
+    pub AbsMaxX: u32,
+    pub AbsMaxY: u32,
+    pub QueueVa: *mut core::ffi::c_void,
+    pub QueuePa: PHYSICAL_ADDRESS,
+    pub QueueAllocSize: u32,
+    pub Desc: *mut VIRTQ_DESC,
+    pub Avail: *mut VIRTQ_AVAIL,
+    pub Used: *mut VIRTQ_USED,
+    pub QueueSize: u32,
+    pub Events: *mut VIRTIO_INPUT_EVENT,
+    pub EventsPa: PHYSICAL_ADDRESS,
+    pub LastUsedIdx: u16,
+    pub AccumX: i32,
+    pub AccumY: i32,
+    pub AccumButtons: u16,
+    pub HasMove: u8,
+    pub HasButton: u8,
+    pub AbsValid: u8,
+}
+
+pub type VIRTIO_INPUT_DEV = _VIRTIO_INPUT_DEV;
+
+static mut VirtioInputs: [VIRTIO_INPUT_DEV; MAX_VIRTIO_INPUTS] = unsafe { core::mem::zeroed() };
+static mut VirtioInputCount: u32 = 0;
+static mut VirtioPollThreadHandle: *mut core::ffi::c_void = core::ptr::null_mut();
+static mut VirtioPollRunning: u8 = 0;
+static mut g_KbdDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+static mut g_MouDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+
+pub const KBD_RING_SIZE: usize = 64;
+
+pub const MOU_RING_SIZE: usize = 32;
+
+#[repr(C)]
+pub struct _INPUT_DEVICE_EXT {
+    pub IsKeyboard: u8,
+    pub PendingIrps: LIST_ENTRY,
+    pub IrpLock: KSPIN_LOCK,
+    pub Ring: [KEYBOARD_INPUT_DATA; KBD_RING_SIZE],
+    pub RingHead: u32,
+    pub RingTail: u32,
+    pub MouRing: [MOUSE_INPUT_DATA; MOU_RING_SIZE],
+    pub MouRingHead: u32,
+    pub MouRingTail: u32,
+    pub SelfDevice: PDEVICE_OBJECT,
+}
+
+pub type INPUT_DEVICE_EXT = _INPUT_DEVICE_EXT;
+pub type PINPUT_DEVICE_EXT = *mut _INPUT_DEVICE_EXT;
+
+static AsciiToScanCode: [u8; 128] = [
+    0,    0x01, 0,    0x2E, 0,    0,    0,    0,
+    0x0E, 0x0F, 0x1C, 0,    0,    0x1C, 0,    0,
+    0,    0,    0,    0,    0,    0,    0,    0,
+    0,    0,    0,    0x01, 0,    0,    0,    0,
+    0x39, 0x02, 0x28, 0x04, 0x05, 0x06, 0x08, 0x28,
+    0x0A, 0x0B, 0x09, 0x0D, 0x33, 0x0C, 0x34, 0x35,
+    0x0B, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0A,
+    0x27, 0x27, 0x33, 0x0D, 0x34, 0x35,
+    0x03,
+    0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,
+    0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,
+    0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,
+    0x15, 0x2C,
+    0x1A, 0x2B, 0x1B, 0x07, 0x0C, 0x29,
+    0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23,
+    0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19,
+    0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D,
+    0x15, 0x2C,
+    0x1A, 0x2B, 0x1B, 0x29, 0x0E,
+];
+
+#[repr(C)]
+pub struct _EVDEV_EXT_MAP {
+    pub EvdevCode: u16,
+    pub ScanCode: u16,
+    pub Flags: u16,
+}
+
+pub type EVDEV_EXT_MAP = _EVDEV_EXT_MAP;
+
+static EvdevExtendedKeys: [EVDEV_EXT_MAP; 16] = [
+    EVDEV_EXT_MAP { EvdevCode: 96,  ScanCode: 0x1C, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 97,  ScanCode: 0x1D, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 100, ScanCode: 0x35, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 102, ScanCode: 0x47, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 103, ScanCode: 0x48, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 104, ScanCode: 0x49, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 105, ScanCode: 0x4B, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 106, ScanCode: 0x4D, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 107, ScanCode: 0x4F, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 108, ScanCode: 0x50, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 109, ScanCode: 0x51, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 110, ScanCode: 0x52, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 111, ScanCode: 0x53, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 125, ScanCode: 0x5B, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 126, ScanCode: 0x5C, Flags: 0xE000 },
+    EVDEV_EXT_MAP { EvdevCode: 127, ScanCode: 0x5D, Flags: 0xE000 },
+];
+
+pub const EVDEV_EXT_COUNT: usize = 16;
+
+pub const VIRTIO_MMIO_BASE: u64 = 0x0A000000;
+
+pub const VIRTIO_MMIO_STRIDE: u64 = 0x200;
+
+pub const VIRTIO_MMIO_SLOTS: u32 = 32;
+
+pub const VIRTIO_MMIO_SIZE: u32 = 0x200;
+
+pub const VIRTIO_DEVICE_ID_INPUT: u32 = 18;
 
 #[inline(always)]
 
 unsafe fn VirtioRead32(Base: *mut u8, Offset: u32) -> u32 {
-    core::ptr::read_volatile((Base.add(Offset as usize)) as *const u32)
+    core::ptr::read_volatile(Base.offset(Offset as isize) as *const u32)
 }
 
 unsafe fn VirtioWrite32(Base: *mut u8, Offset: u32, Val: u32) {
-    *(Base.add(Offset as usize) as *mut u32) = Val;
+    core::ptr::write_volatile(Base.add(Offset as usize) as *mut u32, Val);
 }
 
-unsafe fn RingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
-    if (((*DevExt).RingTail + 1) % KBD_RING_SIZE) != (*DevExt).RingHead {
+unsafe fn RingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> u8 {
+    if (((*DevExt).RingTail + 1) % KBD_RING_SIZE as u32) != (*DevExt).RingHead {
         1u8
     } else {
         0u8
@@ -31,29 +320,30 @@ unsafe fn RingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
 }
 
 unsafe fn RingHasData(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
-    ((*DevExt).RingHead != (*DevExt).RingTail) as BOOLEAN
+    if (*DevExt).RingHead != (*DevExt).RingTail { 1u8 } else { 0u8 }
 }
 
 unsafe fn RingPush(DevExt: PINPUT_DEVICE_EXT, MakeCode: USHORT, Flags: USHORT) {
-    if RingHasSpace(DevExt) == 0u8 {
+    if RingHasSpace(DevExt) == 0 {
         return;
     }
-    (*DevExt).Ring[(*DevExt).RingTail as usize].UnitId = 0;
-    (*DevExt).Ring[(*DevExt).RingTail as usize].MakeCode = MakeCode;
-    (*DevExt).Ring[(*DevExt).RingTail as usize].Flags = Flags;
-    (*DevExt).Ring[(*DevExt).RingTail as usize].Reserved = 0;
-    (*DevExt).Ring[(*DevExt).RingTail as usize].ExtraInformation = 0;
-    (*DevExt).RingTail = ((*DevExt).RingTail + 1) % KBD_RING_SIZE;
+    let tail = (*DevExt).RingTail as usize;
+    (*DevExt).Ring[tail].UnitId = 0;
+    (*DevExt).Ring[tail].MakeCode = MakeCode;
+    (*DevExt).Ring[tail].Flags = Flags;
+    (*DevExt).Ring[tail].Reserved = 0;
+    (*DevExt).Ring[tail].ExtraInformation = 0;
+    (*DevExt).RingTail = ((*DevExt).RingTail + 1) % KBD_RING_SIZE as u32;
 }
 
 unsafe fn RingPop(DevExt: PINPUT_DEVICE_EXT) -> KEYBOARD_INPUT_DATA {
     let data = (*DevExt).Ring[(*DevExt).RingHead as usize];
-    (*DevExt).RingHead = ((*DevExt).RingHead + 1) % KBD_RING_SIZE;
+    (*DevExt).RingHead = ((*DevExt).RingHead + 1) % KBD_RING_SIZE as u32;
     data
 }
 
-unsafe fn MouRingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
-    if (((*DevExt).MouRingTail + 1) % MOU_RING_SIZE) != (*DevExt).MouRingHead {
+unsafe fn MouRingHasSpace(DevExt: PINPUT_DEVICE_EXT) -> u8 {
+    if (((*DevExt).MouRingTail + 1) % MOU_RING_SIZE as u32) != (*DevExt).MouRingHead {
         1u8
     } else {
         0u8
@@ -65,16 +355,16 @@ unsafe fn MouRingHasData(DevExt: PINPUT_DEVICE_EXT) -> BOOLEAN {
 }
 
 unsafe fn MouRingPush(DevExt: PINPUT_DEVICE_EXT, Data: PMOUSE_INPUT_DATA) {
-    if MouRingHasSpace(DevExt) == 0u8 {
+    if MouRingHasSpace(DevExt) == 0 {
         return;
     }
     (*DevExt).MouRing[(*DevExt).MouRingTail as usize] = *Data;
-    (*DevExt).MouRingTail = ((*DevExt).MouRingTail + 1) % MOU_RING_SIZE;
+    (*DevExt).MouRingTail = ((*DevExt).MouRingTail + 1) % MOU_RING_SIZE as u32;
 }
 
 unsafe fn MouRingPop(DevExt: PINPUT_DEVICE_EXT) -> MOUSE_INPUT_DATA {
     let data = (*DevExt).MouRing[(*DevExt).MouRingHead as usize];
-    (*DevExt).MouRingHead = ((*DevExt).MouRingHead + 1) % MOU_RING_SIZE;
+    (*DevExt).MouRingHead = ((*DevExt).MouRingHead + 1) % MOU_RING_SIZE as u32;
     data
 }
 
@@ -86,13 +376,13 @@ unsafe fn MouTryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
     while MouRingHasData(DevExt) != 0 {
         KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
-        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) != 0 {
+        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) {
             KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
             break;
         }
         Entry = RemoveHeadList(core::ptr::addr_of_mut!((*DevExt).PendingIrps));
-        Irp = ((Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize + core::mem::offset_of!(_IO_STACK_LOCATION__bindgen_ty_1, ListEntry) as isize))) as PIRP;
-        if IoSetCancelRoutine(Irp, core::ptr::null_mut()) == core::ptr::null_mut() {
+        Irp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        if IoSetCancelRoutine(Irp, None) == None {
             KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
             continue;
         }
@@ -102,11 +392,11 @@ unsafe fn MouTryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
         core::ptr::copy_nonoverlapping(
             core::ptr::addr_of!(Data) as *const u8,
-            (*(*Irp).AssociatedIrp.SystemBuffer()) as *mut u8,
+            (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
             core::mem::size_of::<MOUSE_INPUT_DATA>()
         );
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as usize;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
     }
 }
@@ -119,13 +409,13 @@ unsafe fn TryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
     while RingHasData(DevExt) != 0 {
         KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
-        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) != 0 {
+        if IsListEmpty(core::ptr::addr_of_mut!((*DevExt).PendingIrps)) {
             KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
             break;
         }
         Entry = RemoveHeadList(core::ptr::addr_of_mut!((*DevExt).PendingIrps));
-        Irp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize + core::mem::offset_of!(_IRP__TAIL, __bindgen_anon_1) as isize)) as PIRP;
-        if IoSetCancelRoutine(Irp, core::ptr::null_mut()).is_null() {
+        Irp = (Entry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
+        if IoSetCancelRoutine(Irp, None).is_none() {
             KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
             continue;
         }
@@ -133,26 +423,26 @@ unsafe fn TryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
         Data = RingPop(DevExt);
 
-        core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!(Data) as *const u8,
-            (*(*Irp).AssociatedIrp.SystemBuffer()) as *mut u8,
+        RtlCopyMemory(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            core::ptr::addr_of_mut!(Data) as *mut core::ffi::c_void,
             core::mem::size_of::<KEYBOARD_INPUT_DATA>()
         );
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>();
-        IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
+        IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT as i8);
     }
 }
 
 unsafe fn InjectByte(DevExt: PINPUT_DEVICE_EXT, Byte: UCHAR) {
-    let mut ScanCode: USHORT;
-    let mut NeedShift: BOOLEAN;
+    let ScanCode: USHORT;
+    let NeedShift: BOOLEAN;
 
     if Byte >= 128 {
         return;
     }
 
-    ScanCode = AsciiToScanCode[Byte as usize];
+    ScanCode = AsciiToScanCode[Byte as usize] as USHORT;
     if ScanCode == 0 {
         return;
     }
@@ -184,51 +474,52 @@ unsafe fn InjectByte(DevExt: PINPUT_DEVICE_EXT, Byte: UCHAR) {
     TryCompleteIrp(DevExt);
 }
 
-unsafe fn InputCancelIrp(
+unsafe extern "C" fn InputCancelIrp(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP)
 {
-    let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
-    let mut OldIrql: KIRQL = core::mem::zeroed();
+    let DevExt = (*DeviceObject).DeviceExtension as *mut INPUT_DEVICE_EXT;
+    let mut OldIrql: KIRQL = 0;
 
     IoReleaseCancelSpinLock((*Irp).CancelIrql);
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), core::ptr::addr_of_mut!(OldIrql));
-    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.ListEntry));
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), &mut OldIrql);
+    RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
     KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
 
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_CANCELLED;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
     (*Irp).IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
 }
 
-unsafe fn InputCreate(
+unsafe extern "C" fn InputCreate(
     DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
+    Irp: PIRP
 ) -> NTSTATUS {
+    let _ = DeviceObject;
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, 0);
     return STATUS_SUCCESS;
 }
 
-unsafe fn InputClose(
+unsafe extern "C" fn InputClose(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-    return STATUS_SUCCESS;
+    IoCompleteRequest(Irp, 0);
+    STATUS_SUCCESS
 }
 
-unsafe fn InputCleanup(
+unsafe extern "C" fn InputCleanup(
     DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
+    Irp: PIRP
 ) -> NTSTATUS {
     let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
-    let FileObject: PFILE_OBJECT = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
-    let mut OldIrql: KIRQL = core::mem::zeroed();
+    let FileObject = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
+    let mut OldIrql: KIRQL = 0;
     let mut CancelList: LIST_ENTRY = core::mem::zeroed();
     let mut Entry: PLIST_ENTRY;
     let mut PendingIrp: PIRP;
@@ -237,37 +528,35 @@ unsafe fn InputCleanup(
 
     KeAcquireSpinLock(&mut (*DevExt).IrpLock, &mut OldIrql);
     Entry = (*DevExt).PendingIrps.Flink;
-    while Entry != &mut (*DevExt).PendingIrps as *mut _ {
-        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize)
-            - (core::mem::offset_of!(_IRP__TAIL__OVERLAY, ListEntry) as isize)) as PIRP;
+    while Entry != &mut (*DevExt).PendingIrps as PLIST_ENTRY {
+        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
         Entry = (*Entry).Flink;
         if (*IoGetCurrentIrpStackLocation(PendingIrp)).FileObject == FileObject {
-            RemoveEntryList(&mut (*PendingIrp).Tail.Overlay.ListEntry);
+            RemoveEntryList(&mut (*PendingIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);
             if IoSetCancelRoutine(PendingIrp, None) != None {
-                InsertTailList(&mut CancelList, &mut (*PendingIrp).Tail.Overlay.ListEntry);
+                InsertTailList(&mut CancelList, &mut (*PendingIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);
             }
         }
     }
     KeReleaseSpinLock(&mut (*DevExt).IrpLock, OldIrql);
 
-    while IsListEmpty(&mut CancelList) == 0 {
+    while !IsListEmpty(&mut CancelList) {
         Entry = RemoveHeadList(&mut CancelList);
-        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail) as isize)
-            - (core::mem::offset_of!(_IRP__TAIL__OVERLAY, ListEntry) as isize)) as PIRP;
-        (*PendingIrp).IoStatus.Anonymous.__bindgen_anon_1.Status = STATUS_CANCELLED;
+        PendingIrp = (Entry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;
+        (*PendingIrp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
         (*PendingIrp).IoStatus.Information = 0;
         IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
     }
 
-    (*Irp).IoStatus.Anonymous.__bindgen_anon_1.Status = STATUS_SUCCESS;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     STATUS_SUCCESS
 }
 
-unsafe fn InputRead(
+unsafe extern "C" fn InputRead(
     DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
+    Irp: PIRP
 ) -> NTSTATUS {
     let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
     let mut OldIrql: KIRQL = 0;
@@ -275,12 +564,12 @@ unsafe fn InputRead(
     if (*DevExt).IsKeyboard != 0 && RingHasData(DevExt) != 0 {
         let Data = RingPop(DevExt);
         RtlCopyMemory(
-            (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer,
+            (*Irp).AssociatedIrp.SystemBuffer,
             core::ptr::addr_of!(Data) as *const core::ffi::c_void,
-            core::mem::size_of::<KEYBOARD_INPUT_DATA>(),
+            core::mem::size_of::<KEYBOARD_INPUT_DATA>()
         );
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>();
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
         return STATUS_SUCCESS;
     }
@@ -288,12 +577,12 @@ unsafe fn InputRead(
     if (*DevExt).IsKeyboard == 0 && MouRingHasData(DevExt) != 0 {
         let Data = MouRingPop(DevExt);
         RtlCopyMemory(
-            (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer,
+            (*Irp).AssociatedIrp.SystemBuffer,
             core::ptr::addr_of!(Data) as *const core::ffi::c_void,
-            core::mem::size_of::<MOUSE_INPUT_DATA>(),
+            core::mem::size_of::<MOUSE_INPUT_DATA>()
         );
-        (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>();
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
         return STATUS_SUCCESS;
     }
@@ -304,46 +593,38 @@ unsafe fn InputRead(
     IoSetCancelRoutine(Irp, Some(InputCancelIrp));
     InsertTailList(
         core::ptr::addr_of_mut!((*DevExt).PendingIrps),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.ListEntry),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry)
     );
     KeReleaseSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock), OldIrql);
 
     STATUS_PENDING
 }
 
-unsafe fn InputDeviceControl(
+unsafe extern "C" fn InputDeviceControl(
     DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP) -> NTSTATUS
-{
-    let DevExt: PINPUT_DEVICE_EXT = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
-    let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
+    Irp: PIRP
+) -> NTSTATUS {
+    let DevExt = (*DeviceObject).DeviceExtension as PINPUT_DEVICE_EXT;
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let mut Status: NTSTATUS = STATUS_NOT_SUPPORTED;
     let mut Information: ULONG_PTR = 0;
 
-    if (*DevExt).IsKeyboard != 0
-    {
-        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode
-        {
-            IOCTL_ARM64INPUT_INJECT_BYTE =>
-            {
-                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= 1
-                {
-                    let pByte: PUCHAR = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PUCHAR;
+    if (*DevExt).IsKeyboard != 0 {
+        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode {
+            IOCTL_ARM64INPUT_INJECT_BYTE => {
+                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= 1 {
+                    let pByte = (*Irp).AssociatedIrp.SystemBuffer as PUCHAR;
                     InjectByte(DevExt, *pByte);
                     Status = STATUS_SUCCESS;
-                }
-                else
-                {
+                } else {
                     Status = STATUS_BUFFER_TOO_SMALL;
                 }
             }
 
-            IOCTL_KEYBOARD_QUERY_ATTRIBUTES =>
-            {
-                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_ATTRIBUTES>() as u32
-                {
-                    let pAttr: PKEYBOARD_ATTRIBUTES = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PKEYBOARD_ATTRIBUTES;
-                    RtlZeroMemory(pAttr as PVOID, core::mem::size_of::<KEYBOARD_ATTRIBUTES>());
+            IOCTL_KEYBOARD_QUERY_ATTRIBUTES => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_ATTRIBUTES>() as u32 {
+                    let pAttr = (*Irp).AssociatedIrp.SystemBuffer as PKEYBOARD_ATTRIBUTES;
+                    RtlZeroMemory(pAttr as *mut core::ffi::c_void, core::mem::size_of::<KEYBOARD_ATTRIBUTES>());
                     (*pAttr).KeyboardIdentifier.Type = 4;
                     (*pAttr).KeyboardIdentifier.Subtype = 0;
                     (*pAttr).NumberOfFunctionKeys = 12;
@@ -356,92 +637,71 @@ unsafe fn InputDeviceControl(
                     (*pAttr).KeyRepeatMaximum.Delay = 1000;
                     Status = STATUS_SUCCESS;
                     Information = core::mem::size_of::<KEYBOARD_ATTRIBUTES>() as ULONG_PTR;
-                }
-                else
-                {
+                } else {
                     Status = STATUS_BUFFER_TOO_SMALL;
                 }
             }
 
-            IOCTL_KEYBOARD_QUERY_INDICATORS =>
-            {
-                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>() as u32
-                {
-                    let pInd: PKEYBOARD_INDICATOR_PARAMETERS = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PKEYBOARD_INDICATOR_PARAMETERS;
+            IOCTL_KEYBOARD_QUERY_INDICATORS => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>() as u32 {
+                    let pInd = (*Irp).AssociatedIrp.SystemBuffer as PKEYBOARD_INDICATOR_PARAMETERS;
                     (*pInd).UnitId = 0;
                     (*pInd).LedFlags = 0;
                     Status = STATUS_SUCCESS;
                     Information = core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>() as ULONG_PTR;
-                }
-                else
-                {
+                } else {
                     Status = STATUS_BUFFER_TOO_SMALL;
                 }
             }
 
-            IOCTL_KEYBOARD_QUERY_INDICATOR_TRANSLATION =>
-            {
+            IOCTL_KEYBOARD_QUERY_INDICATOR_TRANSLATION => {
                 Status = STATUS_NOT_SUPPORTED;
             }
 
-            IOCTL_KEYBOARD_SET_INDICATORS =>
-            {
+            IOCTL_KEYBOARD_SET_INDICATORS => {
                 Status = STATUS_SUCCESS;
             }
 
-            _ =>
-            {
+            _ => {
                 Status = STATUS_NOT_SUPPORTED;
             }
         }
-    }
-    else
-    {
-        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode
-        {
-            IOCTL_ARM64INPUT_INJECT_MOUSE =>
-            {
-                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= core::mem::size_of::<MOUSE_INPUT_DATA>() as u32
-                {
-                    let pMou: PMOUSE_INPUT_DATA = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PMOUSE_INPUT_DATA;
+    } else {
+        match (*IrpSp).Parameters.DeviceIoControl.IoControlCode {
+            IOCTL_ARM64INPUT_INJECT_MOUSE => {
+                if (*IrpSp).Parameters.DeviceIoControl.InputBufferLength >= core::mem::size_of::<MOUSE_INPUT_DATA>() as u32 {
+                    let pMou = (*Irp).AssociatedIrp.SystemBuffer as PMOUSE_INPUT_DATA;
                     MouRingPush(DevExt, pMou);
                     MouTryCompleteIrp(DevExt);
                     Status = STATUS_SUCCESS;
-                }
-                else
-                {
+                } else {
                     Status = STATUS_BUFFER_TOO_SMALL;
                 }
             }
 
-            IOCTL_MOUSE_QUERY_ATTRIBUTES =>
-            {
-                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<MOUSE_ATTRIBUTES>() as u32
-                {
-                    let pAttr: PMOUSE_ATTRIBUTES = (*Irp).__bindgen_anon_1.AssociatedIrp.__bindgen_anon_1.SystemBuffer as PMOUSE_ATTRIBUTES;
-                    RtlZeroMemory(pAttr as PVOID, core::mem::size_of::<MOUSE_ATTRIBUTES>());
-                    (*pAttr).MouseIdentifier = MOUSE_SERIAL_HARDWARE;
+            IOCTL_MOUSE_QUERY_ATTRIBUTES => {
+                if (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength >= core::mem::size_of::<MOUSE_ATTRIBUTES>() as u32 {
+                    let pAttr = (*Irp).AssociatedIrp.SystemBuffer as PMOUSE_ATTRIBUTES;
+                    RtlZeroMemory(pAttr as *mut core::ffi::c_void, core::mem::size_of::<MOUSE_ATTRIBUTES>());
+                    (*pAttr).MouseIdentifier = MOUSE_SERIAL_HARDWARE as u16;
                     (*pAttr).NumberOfButtons = 3;
                     (*pAttr).SampleRate = 60;
-                    (*pAttr).InputDataQueueLength = MOU_RING_SIZE;
+                    (*pAttr).InputDataQueueLength = MOU_RING_SIZE as u32;
                     Status = STATUS_SUCCESS;
                     Information = core::mem::size_of::<MOUSE_ATTRIBUTES>() as ULONG_PTR;
-                }
-                else
-                {
+                } else {
                     Status = STATUS_BUFFER_TOO_SMALL;
                 }
             }
 
-            _ =>
-            {
+            _ => {
                 Status = STATUS_NOT_SUPPORTED;
             }
         }
     }
 
-    (*Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = Information;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    (*Irp).IoStatus.Information = Information as u64;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     Status
 }
@@ -456,7 +716,7 @@ unsafe fn EvdevToScanCode(EvdevCode: USHORT, OutScanCode: *mut USHORT, OutFlags:
     }
 
     i = 0;
-    while i < EVDEV_EXT_COUNT {
+    while (i as usize) < EVDEV_EXT_COUNT {
         if EvdevExtendedKeys[i as usize].EvdevCode == EvdevCode {
             *OutScanCode = EvdevExtendedKeys[i as usize].ScanCode;
             *OutFlags = EvdevExtendedKeys[i as usize].Flags;
@@ -465,7 +725,7 @@ unsafe fn EvdevToScanCode(EvdevCode: USHORT, OutScanCode: *mut USHORT, OutFlags:
         i += 1;
     }
 
-    0u8
+    return 0u8;
 }
 
 unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
@@ -479,21 +739,21 @@ unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
     let mut UsedOff: u32;
     let mut EventsOff: u32;
     let mut TotalSize: u32;
-    let mut HighAddr: PHYSICAL_ADDRESS;
+    let mut HighAddr: PHYSICAL_ADDRESS = core::mem::zeroed();
     let mut i: u32;
 
-    VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_SEL, QueueIdx);
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x030, QueueIdx);
     virtio_mb();
 
-    MaxSize = VirtioRead32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_NUM_MAX);
+    MaxSize = VirtioRead32((*Dev).Mmio as *mut u8, 0x034);
     if MaxSize == 0 {
-        return STATUS_DEVICE_NOT_READY;
+        return 0xC00000E0u32 as i32;
     }
 
-    QueueSize = if MaxSize < VIRTIO_QUEUE_SIZE { MaxSize } else { VIRTIO_QUEUE_SIZE };
+    QueueSize = if MaxSize < 64 { MaxSize } else { 64 };
     (*Dev).QueueSize = QueueSize;
 
-    VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_NUM, QueueSize);
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x038, QueueSize);
 
     DescSize = core::mem::size_of::<VIRTQ_DESC>() as u32 * QueueSize;
     AvailSize = core::mem::size_of::<u16>() as u32 * 2 + core::mem::size_of::<u16>() as u32 * QueueSize + core::mem::size_of::<u16>() as u32;
@@ -511,7 +771,7 @@ unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
     TotalSize = EventsOff + EventsSize;
 
     HighAddr.QuadPart = 0xFFFFFFFFu64 as i64;
-    (*Dev).QueueVa = MmAllocateContiguousMemory(TotalSize, HighAddr);
+    (*Dev).QueueVa = MmAllocateContiguousMemory(TotalSize as _, HighAddr);
     if (*Dev).QueueVa.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -528,33 +788,32 @@ unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
 
     if (*Dev).MmioVersion >= 2 {
         let DescPa: PHYSICAL_ADDRESS = (*Dev).QueuePa;
-        let mut AvailPa: PHYSICAL_ADDRESS = PHYSICAL_ADDRESS { QuadPart: 0 };
-        let mut UsedPa: PHYSICAL_ADDRESS = PHYSICAL_ADDRESS { QuadPart: 0 };
+        let mut AvailPa: PHYSICAL_ADDRESS = core::mem::zeroed();
+        let mut UsedPa: PHYSICAL_ADDRESS = core::mem::zeroed();
         AvailPa.QuadPart = (*Dev).QueuePa.QuadPart + AvailOff as i64;
         UsedPa.QuadPart = (*Dev).QueuePa.QuadPart + UsedOff as i64;
 
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_DESC_LOW, DescPa.QuadPart as u32);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_DESC_HIGH, (DescPa.QuadPart >> 32) as u32);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_AVAIL_LOW, AvailPa.QuadPart as u32);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, (AvailPa.QuadPart >> 32) as u32);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_USED_LOW, UsedPa.QuadPart as u32);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_USED_HIGH, (UsedPa.QuadPart >> 32) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x080, DescPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x084, (DescPa.QuadPart >> 32) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x090, AvailPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x094, (AvailPa.QuadPart >> 32) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x0A0, UsedPa.QuadPart as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x0A4, (UsedPa.QuadPart >> 32) as u32);
         virtio_mb();
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_READY, 1);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x044, 1);
     } else {
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_GUEST_PAGE_SIZE, 4096);
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_PFN,
-                      ((*Dev).QueuePa.QuadPart / 4096) as u32);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x028, 4096);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x040, ((*Dev).QueuePa.QuadPart / 4096) as u32);
     }
 
     i = 0;
     while i < QueueSize {
         (*(*Dev).Desc.add(i as usize)).Addr = (*Dev).EventsPa.QuadPart as u64 + (i * core::mem::size_of::<VIRTIO_INPUT_EVENT>() as u32) as u64;
         (*(*Dev).Desc.add(i as usize)).Len = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as u32;
-        (*(*Dev).Desc.add(i as usize)).Flags = VIRTQ_DESC_F_WRITE;
+        (*(*Dev).Desc.add(i as usize)).Flags = 2;
         (*(*Dev).Desc.add(i as usize)).Next = 0;
 
-        (*(*Dev).Avail).Ring[i as usize] = i as u16;
+        *(core::ptr::addr_of_mut!((*(*Dev).Avail).Ring) as *mut u16).add(i as usize) = i as u16;
         i += 1;
     }
     virtio_wmb();
@@ -562,14 +821,13 @@ unsafe fn VirtioSetupQueue(Dev: *mut VIRTIO_INPUT_DEV, QueueIdx: u32) -> i32 {
     (*Dev).LastUsedIdx = 0;
 
     virtio_mb();
-    VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, QueueIdx);
+    VirtioWrite32((*Dev).Mmio as *mut u8, 0x050, QueueIdx);
 
     STATUS_SUCCESS
 }
 
 unsafe fn VirtioQueryInputCaps(Dev: *mut VIRTIO_INPUT_DEV) {
-
-    let cfg = ((*Dev).Mmio as usize + VIRTIO_MMIO_CONFIG) as *mut u8;
+    let cfg = (*Dev).Mmio.offset(VIRTIO_MMIO_CONFIG as isize);
     let mut bitmap: [u8; 128] = [0; 128];
     let mut size: u32;
     let mut i: u32;
@@ -577,16 +835,16 @@ unsafe fn VirtioQueryInputCaps(Dev: *mut VIRTIO_INPUT_DEV) {
     (*Dev).IsKeyboard = 0u8;
     (*Dev).IsTablet = 0u8;
 
-    core::ptr::write_volatile(cfg.add(0), VIRTIO_INPUT_CFG_EV_BITS);
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_EV_BITS as u8);
     virtio_mb();
-    core::ptr::write_volatile(cfg.add(1), EV_KEY);
+    core::ptr::write_volatile(cfg.offset(1), EV_KEY as u8);
     virtio_mb();
-    size = core::ptr::read_volatile(cfg.add(2)) as u32;
+    size = core::ptr::read_volatile(cfg.offset(2)) as u32;
 
-    if size > 0 && size <= core::mem::size_of_val(&bitmap) as u32 {
+    if size > 0 && size <= core::mem::size_of::<[u8; 128]>() as u32 {
         i = 0;
         while i < size {
-            bitmap[i as usize] = core::ptr::read_volatile(cfg.add(8 + i as usize));
+            bitmap[i as usize] = core::ptr::read_volatile(cfg.offset(8 + i as isize));
             i += 1;
         }
 
@@ -595,16 +853,16 @@ unsafe fn VirtioQueryInputCaps(Dev: *mut VIRTIO_INPUT_DEV) {
         }
     }
 
-    core::ptr::write_volatile(cfg.add(0), VIRTIO_INPUT_CFG_EV_BITS);
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_EV_BITS as u8);
     virtio_mb();
-    core::ptr::write_volatile(cfg.add(1), EV_ABS);
+    core::ptr::write_volatile(cfg.offset(1), EV_ABS as u8);
     virtio_mb();
-    size = core::ptr::read_volatile(cfg.add(2)) as u32;
+    size = core::ptr::read_volatile(cfg.offset(2)) as u32;
 
     if size > 0 {
         i = 0;
-        while i < size && i < core::mem::size_of_val(&bitmap) as u32 {
-            bitmap[i as usize] = core::ptr::read_volatile(cfg.add(8 + i as usize));
+        while i < size && i < core::mem::size_of::<[u8; 128]>() as u32 {
+            bitmap[i as usize] = core::ptr::read_volatile(cfg.offset(8 + i as isize));
             i += 1;
         }
 
@@ -614,41 +872,40 @@ unsafe fn VirtioQueryInputCaps(Dev: *mut VIRTIO_INPUT_DEV) {
     }
 
     if (*Dev).IsTablet != 0 {
-        let absinfo: *mut u32;
+        let mut absinfo: *const u32;
 
-        core::ptr::write_volatile(cfg.add(0), VIRTIO_INPUT_CFG_ABS_INFO);
+        core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_ABS_INFO as u8);
         virtio_mb();
-        core::ptr::write_volatile(cfg.add(1), ABS_X);
+        core::ptr::write_volatile(cfg.offset(1), ABS_X as u8);
         virtio_mb();
-        size = core::ptr::read_volatile(cfg.add(2)) as u32;
+        size = core::ptr::read_volatile(cfg.offset(2)) as u32;
         if size >= 12 {
-            absinfo = cfg.add(8) as *mut u32;
-            (*Dev).AbsMaxX = core::ptr::read_volatile(absinfo.add(1));
+            absinfo = cfg.offset(8) as *const u32;
+            (*Dev).AbsMaxX = core::ptr::read_volatile(absinfo.offset(1));
         } else {
             (*Dev).AbsMaxX = 32767;
         }
 
-        core::ptr::write_volatile(cfg.add(0), VIRTIO_INPUT_CFG_ABS_INFO);
-        core::ptr::write_volatile(cfg.add(1), ABS_Y);
+        core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_ABS_INFO as u8);
+        core::ptr::write_volatile(cfg.offset(1), ABS_Y as u8);
         virtio_mb();
-        size = core::ptr::read_volatile(cfg.add(2)) as u32;
+        size = core::ptr::read_volatile(cfg.offset(2)) as u32;
         if size >= 12 {
-            absinfo = cfg.add(8) as *mut u32;
-            (*Dev).AbsMaxY = core::ptr::read_volatile(absinfo.add(1));
+            absinfo = cfg.offset(8) as *const u32;
+            (*Dev).AbsMaxY = core::ptr::read_volatile(absinfo.offset(1));
         } else {
             (*Dev).AbsMaxY = 32767;
         }
     }
 
-    core::ptr::write_volatile(cfg.add(0), VIRTIO_INPUT_CFG_UNSET);
-    core::ptr::write_volatile(cfg.add(1), 0u8);
+    core::ptr::write_volatile(cfg.offset(0), VIRTIO_INPUT_CFG_UNSET as u8);
+    core::ptr::write_volatile(cfg.offset(1), 0);
     virtio_mb();
 }
 
 unsafe fn VirtioScanDevices() {
-
     let mut i: u32;
-    let mut PhysAddr: PHYSICAL_ADDRESS;
+    let mut PhysAddr: PHYSICAL_ADDRESS = core::mem::zeroed();
     let mut Mmio: *mut u8;
     let mut Magic: u32;
     let mut Version: u32;
@@ -658,9 +915,9 @@ unsafe fn VirtioScanDevices() {
     VirtioInputCount = 0;
 
     i = 0;
-    while i < VIRTIO_MMIO_SLOTS && VirtioInputCount < MAX_VIRTIO_INPUTS {
-        PhysAddr.QuadPart = VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE;
-        Mmio = MmMapIoSpace(PhysAddr, VIRTIO_MMIO_SIZE, MmNonCached) as *mut u8;
+    while i < VIRTIO_MMIO_SLOTS && (VirtioInputCount as usize) < MAX_VIRTIO_INPUTS {
+        PhysAddr.QuadPart = (VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE) as i64;
+        Mmio = MmMapIoSpace(PhysAddr, VIRTIO_MMIO_SIZE as _, MmNonCached) as *mut u8;
         if Mmio.is_null() {
             i += 1;
             continue;
@@ -668,7 +925,7 @@ unsafe fn VirtioScanDevices() {
 
         Magic = VirtioRead32(Mmio, VIRTIO_MMIO_MAGIC);
         if Magic != 0x74726976 {
-            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE);
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
             i += 1;
             continue;
         }
@@ -677,15 +934,15 @@ unsafe fn VirtioScanDevices() {
         DevId = VirtioRead32(Mmio, VIRTIO_MMIO_DEVICE_ID);
 
         if DevId != VIRTIO_DEVICE_ID_INPUT {
-            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE);
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
             i += 1;
             continue;
         }
 
         DbgPrint(b"[VIRTIO-INPUT] Found input device at slot %lu (version %lu)\n\0".as_ptr() as *const i8, i, Version);
 
-        let Dev = &mut VirtioInputs[VirtioInputCount as usize] as *mut VIRTIO_INPUT_DEV;
-        core::ptr::write_bytes(Dev, 0, 1);
+        let Dev = &mut VirtioInputs[VirtioInputCount as usize];
+        core::ptr::write_bytes(Dev as *mut _VIRTIO_INPUT_DEV, 0, 1);
         (*Dev).Mmio = Mmio;
         (*Dev).MmioVersion = Version;
 
@@ -695,8 +952,7 @@ unsafe fn VirtioScanDevices() {
         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK);
         virtio_mb();
 
-        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
-                      VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
+        VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER);
         virtio_mb();
 
         VirtioWrite32(Mmio, VIRTIO_MMIO_DRV_FEATURES_SEL, 0);
@@ -709,14 +965,13 @@ unsafe fn VirtioScanDevices() {
 
         if Version >= 2 {
             VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS,
-                          VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER |
-                          VIRTIO_STATUS_FEATURES_OK);
+                          VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK);
             virtio_mb();
 
             let StatusVal = VirtioRead32(Mmio, VIRTIO_MMIO_STATUS);
             if (StatusVal & VIRTIO_STATUS_FEATURES_OK) == 0 {
                 DbgPrint(b"[VIRTIO-INPUT] FEATURES_OK not set, skipping slot %lu\n\0".as_ptr() as *const i8, i);
-                MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE);
+                MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
                 i += 1;
                 continue;
             }
@@ -727,7 +982,7 @@ unsafe fn VirtioScanDevices() {
         Status = VirtioSetupQueue(Dev, 0);
         if !NT_SUCCESS(Status) {
             DbgPrint(b"[VIRTIO-INPUT] Queue setup failed: 0x%08lx\n\0".as_ptr() as *const i8, Status);
-            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE);
+            MmUnmapIoSpace(Mmio as *mut core::ffi::c_void, VIRTIO_MMIO_SIZE as _);
             i += 1;
             continue;
         }
@@ -751,15 +1006,15 @@ unsafe fn VirtioScanDevices() {
 }
 
 unsafe fn VirtioProcessKeyEvent(EvdevCode: USHORT, Value: ULONG) {
-    let DevExt: PINPUT_DEVICE_EXT;
+    let mut DevExt: PINPUT_DEVICE_EXT;
     let mut ScanCode: USHORT = 0;
     let mut Flags: USHORT = 0;
 
-    if g_KbdDevice.is_null() {
+    if g_KbdDevice == core::ptr::null_mut() {
         return;
     }
 
-    if EvdevToScanCode(EvdevCode, core::ptr::addr_of_mut!(ScanCode), core::ptr::addr_of_mut!(Flags)) == 0u8 {
+    if EvdevToScanCode(EvdevCode, core::ptr::addr_of_mut!(ScanCode), core::ptr::addr_of_mut!(Flags)) == 0 {
         return;
     }
 
@@ -775,7 +1030,7 @@ unsafe fn VirtioProcessKeyEvent(EvdevCode: USHORT, Value: ULONG) {
 
 unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VIRTIO_INPUT_DEV) {
     match EvdevCode {
-        BTN_LEFT => {
+        0x110 => {
             (*Dev).AccumButtons |= if Value != 0 {
                 MOUSE_LEFT_BUTTON_DOWN
             } else {
@@ -783,7 +1038,7 @@ unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VI
             };
             (*Dev).HasButton = 1u8;
         }
-        BTN_RIGHT => {
+        0x111 => {
             (*Dev).AccumButtons |= if Value != 0 {
                 MOUSE_RIGHT_BUTTON_DOWN
             } else {
@@ -791,7 +1046,7 @@ unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VI
             };
             (*Dev).HasButton = 1u8;
         }
-        BTN_MIDDLE => {
+        0x112 => {
             (*Dev).AccumButtons |= if Value != 0 {
                 MOUSE_MIDDLE_BUTTON_DOWN
             } else {
@@ -803,14 +1058,14 @@ unsafe fn VirtioProcessMouseButton(EvdevCode: USHORT, Value: ULONG, Dev: *mut VI
     }
 }
 
-unsafe fn VirtioFlushMouseState(Dev: PVIRTIO_INPUT_DEV) {
+unsafe fn VirtioFlushMouseState(Dev: *mut VIRTIO_INPUT_DEV) {
     let mut DevExt: PINPUT_DEVICE_EXT;
-    let mut Data: MOUSE_INPUT_DATA;
+    let mut Data: MOUSE_INPUT_DATA = core::mem::zeroed();
 
     if g_MouDevice.is_null() {
         return;
     }
-    if (*Dev).HasMove == 0u8 && (*Dev).HasButton == 0u8 {
+    if (*Dev).HasMove == 0 && (*Dev).HasButton == 0 {
         return;
     }
 
@@ -818,8 +1073,8 @@ unsafe fn VirtioFlushMouseState(Dev: PVIRTIO_INPUT_DEV) {
 
     RtlZeroMemory(core::ptr::addr_of_mut!(Data) as PVOID, core::mem::size_of::<MOUSE_INPUT_DATA>() as SIZE_T);
 
-    if (*Dev).IsTablet != 0u8 && (*Dev).AbsValid != 0u8 {
-        Data.Flags = MOUSE_MOVE_ABSOLUTE;
+    if (*Dev).IsTablet != 0 && (*Dev).AbsValid != 0 {
+        Data.Flags = MOUSE_MOVE_ABSOLUTE as u16;
         if (*Dev).AbsMaxX > 0 {
             Data.LastX = (((*Dev).AccumX as ULONGLONG) * 65535 / (*Dev).AbsMaxX as ULONGLONG) as LONG;
         } else {
@@ -830,18 +1085,18 @@ unsafe fn VirtioFlushMouseState(Dev: PVIRTIO_INPUT_DEV) {
         } else {
             Data.LastY = (*Dev).AccumY;
         }
-    } else if (*Dev).HasMove != 0u8 {
+    } else if (*Dev).HasMove != 0 {
         Data.Flags = 0;
         Data.LastX = (*Dev).AccumX;
         Data.LastY = (*Dev).AccumY;
     }
 
-    Data.ButtonFlags = (*Dev).AccumButtons;
+    Data.__bindgen_anon_1.__bindgen_anon_1.ButtonFlags = (*Dev).AccumButtons;
 
     MouRingPush(DevExt, core::ptr::addr_of_mut!(Data));
     MouTryCompleteIrp(DevExt);
 
-    if (*Dev).IsTablet == 0u8 {
+    if (*Dev).IsTablet == 0 {
         (*Dev).AccumX = 0;
         (*Dev).AccumY = 0;
     }
@@ -850,7 +1105,7 @@ unsafe fn VirtioFlushMouseState(Dev: PVIRTIO_INPUT_DEV) {
     (*Dev).HasButton = 0u8;
 }
 
-unsafe fn VirtioPollDevice(Dev: PVIRTIO_INPUT_DEV) -> BOOLEAN {
+unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
     let mut FoundEvents: BOOLEAN = 0u8;
     let mut UsedIdx: USHORT;
     let mut DescId: ULONG;
@@ -861,42 +1116,42 @@ unsafe fn VirtioPollDevice(Dev: PVIRTIO_INPUT_DEV) -> BOOLEAN {
 
     while (*Dev).LastUsedIdx != UsedIdx {
         FoundEvents = 1u8;
-        DescId = (*(*Dev).Used).Ring[((*Dev).LastUsedIdx % (*Dev).QueueSize) as usize].Id;
-        Evt = core::ptr::addr_of_mut!((*Dev).Events[DescId as usize]);
+        DescId = (*(*Dev).Used).Ring[((*Dev).LastUsedIdx % (*Dev).QueueSize as u16) as usize].Id;
+        Evt = (*Dev).Events.offset(DescId as isize);
 
         match (*Evt).Type {
-            EV_KEY => {
-                if (*Evt).Code < BTN_LEFT {
+            0x01 => {
+                if (*Evt).Code < 0x110 {
                     VirtioProcessKeyEvent((*Evt).Code, (*Evt).Value);
                 } else {
                     VirtioProcessMouseButton((*Evt).Code, (*Evt).Value, Dev);
                 }
             }
 
-            EV_REL => {
+            0x02 => {
                 match (*Evt).Code {
-                    REL_X => {
+                    0x00 => {
                         (*Dev).AccumX += (*Evt).Value as LONG;
                         (*Dev).HasMove = 1u8;
                     }
-                    REL_Y => {
+                    0x01 => {
                         (*Dev).AccumY += (*Evt).Value as LONG;
                         (*Dev).HasMove = 1u8;
                     }
-                    REL_WHEEL => {
+                    0x08 => {
                     }
                     _ => {}
                 }
             }
 
-            EV_ABS => {
+            0x03 => {
                 match (*Evt).Code {
-                    ABS_X => {
+                    0x00 => {
                         (*Dev).AccumX = (*Evt).Value as LONG;
                         (*Dev).HasMove = 1u8;
                         (*Dev).AbsValid = 1u8;
                     }
-                    ABS_Y => {
+                    0x01 => {
                         (*Dev).AccumY = (*Evt).Value as LONG;
                         (*Dev).HasMove = 1u8;
                         (*Dev).AbsValid = 1u8;
@@ -905,7 +1160,7 @@ unsafe fn VirtioPollDevice(Dev: PVIRTIO_INPUT_DEV) -> BOOLEAN {
                 }
             }
 
-            EV_SYN => {
+            0x00 => {
                 VirtioFlushMouseState(Dev);
             }
 
@@ -913,9 +1168,9 @@ unsafe fn VirtioPollDevice(Dev: PVIRTIO_INPUT_DEV) -> BOOLEAN {
         }
 
         (*(*Dev).Desc.offset(DescId as isize)).Len = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as ULONG;
-        (*(*Dev).Desc.offset(DescId as isize)).Flags = VIRTQ_DESC_F_WRITE;
+        (*(*Dev).Desc.offset(DescId as isize)).Flags = 2u16;
         virtio_wmb();
-        (*(*Dev).Avail).Ring[((*(*Dev).Avail).Idx % (*Dev).QueueSize) as usize] = DescId as USHORT;
+        (*(*Dev).Avail).Ring[((*(*Dev).Avail).Idx % (*Dev).QueueSize as u16) as usize] = DescId as USHORT;
         virtio_wmb();
         (*(*Dev).Avail).Idx = (*(*Dev).Avail).Idx.wrapping_add(1);
 
@@ -924,13 +1179,13 @@ unsafe fn VirtioPollDevice(Dev: PVIRTIO_INPUT_DEV) -> BOOLEAN {
 
     if FoundEvents != 0 {
         virtio_mb();
-        VirtioWrite32((*Dev).Mmio, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+        VirtioWrite32((*Dev).Mmio as *mut u8, 0x050, 0);
     }
 
     FoundEvents
 }
 
-unsafe extern "system" fn VirtioPollThread(Context: PVOID) {
+unsafe extern "C" fn VirtioPollThread(Context: PVOID) {
     let mut Delay: LARGE_INTEGER = core::mem::zeroed();
 
     Delay.QuadPart = -10000;
@@ -941,19 +1196,19 @@ unsafe extern "system" fn VirtioPollThread(Context: PVOID) {
 
         i = 0;
         while i < VirtioInputCount {
-            if VirtioPollDevice(core::ptr::addr_of_mut!(VirtioInputs[i as usize])) != 0 {
+            if VirtioPollDevice(&mut VirtioInputs[i as usize]) != 0 {
                 found = 1u8;
             }
             i += 1;
         }
 
-        KeDelayExecutionThread(0i32, 0u8, core::ptr::addr_of_mut!(Delay));
+        KeDelayExecutionThread(0i32 as i8, 0u8, &mut Delay);
 
         if found == 0 {
             let mut j: ULONG;
             j = 0;
             while j < 5 {
-                KeDelayExecutionThread(0i32, 0u8, core::ptr::addr_of_mut!(Delay));
+                KeDelayExecutionThread(0i32 as i8, 0u8, &mut Delay);
                 j += 1;
             }
         }
@@ -967,47 +1222,46 @@ pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> i32 {
-
     let mut Status: i32;
     let mut KbdDevice: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut MouDevice: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut DevExt: PINPUT_DEVICE_EXT;
+    let mut DevExt: *mut _INPUT_DEVICE_EXT;
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
 
-    DbgPrint(b"[ARM64INPUT] DriverEntry\n\0".as_ptr() as *const i8);
+    DbgPrint(b"[ARM64INPUT] DriverEntry\n\0".as_ptr() as _);
 
     (*DriverObject).MajorFunction[0x00] = Some(InputCreate);
     (*DriverObject).MajorFunction[0x02] = Some(InputClose);
     (*DriverObject).MajorFunction[0x12] = Some(InputCleanup);
     (*DriverObject).MajorFunction[0x03] = Some(InputRead);
-    (*DriverObject).MajorFunction[0x0e] = Some(InputDeviceControl);
+    (*DriverObject).MajorFunction[0x0E] = Some(InputDeviceControl);
 
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\KeyboardClass0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\KeyboardClass0\0".as_ptr() as _);
     Status = IoCreateDevice(
         DriverObject,
-        core::mem::size_of::<INPUT_DEVICE_EXT>() as u32,
+        core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
         &mut DeviceName,
-        0x0000000b,
+        0x0000000B,
         0,
         0u8,
         &mut KbdDevice,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         DbgPrint(
-            b"[ARM64INPUT] Failed to create KeyboardClass0: 0x%08lx\n\0".as_ptr() as *const i8,
+            b"[ARM64INPUT] Failed to create KeyboardClass0: 0x%08lx\n\0".as_ptr() as _,
             Status,
         );
         return Status;
     }
 
-    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\KeyboardClass0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\KeyboardClass0\0".as_ptr() as _);
     IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
 
-    DevExt = (*KbdDevice).DeviceExtension as PINPUT_DEVICE_EXT;
+    DevExt = (*KbdDevice).DeviceExtension as *mut _INPUT_DEVICE_EXT;
     (*DevExt).IsKeyboard = 1u8;
     InitializeListHead(&mut (*DevExt).PendingIrps);
-    KeInitializeSpinLock(&mut (*DevExt).IrpLock);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock) as *mut _);
     (*DevExt).RingHead = 0;
     (*DevExt).RingTail = 0;
     (*DevExt).SelfDevice = KbdDevice;
@@ -1016,31 +1270,31 @@ pub unsafe extern "system" fn DriverEntry(
     (*KbdDevice).Flags &= !0x00000080;
     g_KbdDevice = KbdDevice;
 
-    DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as *const i8);
+    DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as _);
 
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as _);
     Status = IoCreateDevice(
         DriverObject,
-        core::mem::size_of::<INPUT_DEVICE_EXT>() as u32,
+        core::mem::size_of::<_INPUT_DEVICE_EXT>() as u32,
         &mut DeviceName,
-        0x0000000f,
+        0x0000000F,
         0,
         0u8,
         &mut MouDevice,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         DbgPrint(
-            b"[ARM64INPUT] Failed to create PointerClass0: 0x%08lx\n\0".as_ptr() as *const i8,
+            b"[ARM64INPUT] Failed to create PointerClass0: 0x%08lx\n\0".as_ptr() as _,
             Status,
         );
         IoDeleteDevice(KbdDevice);
         return Status;
     }
 
-    DevExt = (*MouDevice).DeviceExtension as PINPUT_DEVICE_EXT;
+    DevExt = (*MouDevice).DeviceExtension as *mut _INPUT_DEVICE_EXT;
     (*DevExt).IsKeyboard = 0u8;
     InitializeListHead(&mut (*DevExt).PendingIrps);
-    KeInitializeSpinLock(&mut (*DevExt).IrpLock);
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DevExt).IrpLock) as *mut _);
     (*DevExt).RingHead = 0;
     (*DevExt).MouRingHead = 0;
     (*DevExt).MouRingTail = 0;
@@ -1048,31 +1302,31 @@ pub unsafe extern "system" fn DriverEntry(
     (*MouDevice).Flags |= 0x00000010;
     (*MouDevice).Flags &= !0x00000080;
 
-    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\PointerClass0\0".as_ptr() as *const u16);
-    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut SymlinkName, b"\\DosDevices\\PointerClass0\0".as_ptr() as _);
+    RtlInitUnicodeString(&mut DeviceName, b"\\Device\\PointerClass0\0".as_ptr() as _);
     IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
 
     g_MouDevice = MouDevice;
 
-    DbgPrint(b"[ARM64INPUT] \\Device\\PointerClass0 created\n\0".as_ptr() as *const i8);
+    DbgPrint(b"[ARM64INPUT] \\Device\\PointerClass0 created\n\0".as_ptr() as _);
 
     VirtioScanDevices();
     if VirtioInputCount > 0 {
         VirtioPollRunning = 1u8;
         Status = PsCreateSystemThread(
             &mut VirtioPollThreadHandle,
-            0x001FFFFF,
+            0x001F03FF,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             Some(VirtioPollThread),
             core::ptr::null_mut(),
         );
-        if NT_SUCCESS(Status) != 0 {
-            DbgPrint(b"[ARM64INPUT] Virtio poll thread started\n\0".as_ptr() as *const i8);
+        if NT_SUCCESS(Status) {
+            DbgPrint(b"[ARM64INPUT] Virtio poll thread started\n\0".as_ptr() as _);
         } else {
             DbgPrint(
-                b"[ARM64INPUT] Failed to create poll thread: 0x%08lx\n\0".as_ptr() as *const i8,
+                b"[ARM64INPUT] Failed to create poll thread: 0x%08lx\n\0".as_ptr() as _,
                 Status,
             );
             VirtioPollRunning = 0u8;
@@ -1422,7 +1676,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             break;
 //         }
 //         Entry = RemoveHeadList(&DevExt->PendingIrps);
-//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //         if (IoSetCancelRoutine(Irp, NULL) == NULL)
 //         {
 //             KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
@@ -1459,7 +1713,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             break;
 //         }
 //         Entry = RemoveHeadList(&DevExt->PendingIrps);
-//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         Irp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //         if (IoSetCancelRoutine(Irp, NULL) == NULL)
 //         {
 //             /* IRP is being cancelled, skip it */
@@ -1532,7 +1786,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     IoReleaseCancelSpinLock(Irp->CancelIrql);
 //
 //     KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
-//     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
+//     RemoveEntryList(&Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //     KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
 //
 //     Irp->IoStatus.Status = STATUS_CANCELLED;
@@ -1585,14 +1839,14 @@ pub unsafe extern "system" fn DriverEntry(
 //     Entry = DevExt->PendingIrps.Flink;
 //     while (Entry != &DevExt->PendingIrps)
 //     {
-//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //         Entry = Entry->Flink;
 //         if (IoGetCurrentIrpStackLocation(PendingIrp)->FileObject == FileObject)
 //         {
-//             RemoveEntryList(&PendingIrp->Tail.Overlay.ListEntry);
+//             RemoveEntryList(&PendingIrp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //             if (IoSetCancelRoutine(PendingIrp, NULL) != NULL)
 //             {
-//                 InsertTailList(&CancelList, &PendingIrp->Tail.Overlay.ListEntry);
+//                 InsertTailList(&CancelList, &PendingIrp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //             }
 //         }
 //     }
@@ -1601,7 +1855,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     while (!IsListEmpty(&CancelList))
 //     {
 //         Entry = RemoveHeadList(&CancelList);
-//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+//         PendingIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 //         PendingIrp->IoStatus.Status = STATUS_CANCELLED;
 //         PendingIrp->IoStatus.Information = 0;
 //         IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
@@ -1652,7 +1906,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     KeAcquireSpinLock(&DevExt->IrpLock, &OldIrql);
 //     IoSetCancelRoutine(Irp, InputCancelIrp);
-//     InsertTailList(&DevExt->PendingIrps, &Irp->Tail.Overlay.ListEntry);
+//     InsertTailList(&DevExt->PendingIrps, &Irp->Tail.Overlay.__bindgen_anon_2.ListEntry);
 //     KeReleaseSpinLock(&DevExt->IrpLock, OldIrql);
 //
 //     return STATUS_PENDING;
