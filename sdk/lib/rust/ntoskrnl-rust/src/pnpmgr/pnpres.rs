@@ -965,6 +965,14 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                     as usize,
             )) as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
+            crate::dbg_print!(
+                b"PNPRES: xlat desc Type=%d IF=%d Bus=%d Lvl=0x%x Vec=0x%x\n\0",
+                (*DescriptorRaw).Type as u32,
+                (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).InterfaceType,
+                (*core::ptr::addr_of_mut!((*(*DeviceNode).ResourceList).List[0]).add(i as usize)).BusNumber,
+                (*DescriptorRaw).u.Interrupt.Level,
+                (*DescriptorRaw).u.Interrupt.Vector
+            );
             match (*DescriptorRaw).Type as u32 {
                 1 => { // CmResourceTypePort
                     let mut AddressSpace: ULONG = 1;
@@ -1002,6 +1010,11 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                         core::ptr::addr_of_mut!((*DescriptorTranslated).u.Interrupt.Affinity),
                     );
                     (*DescriptorTranslated).u.Interrupt.Level = Irql as ULONG;
+                    crate::dbg_print!(
+                        b"PNPRES: HalGetIntVec -> Vec=0x%x Irql=%d\n\0",
+                        (*DescriptorTranslated).u.Interrupt.Vector,
+                        Irql as u32
+                    );
                     if (*DescriptorTranslated).u.Interrupt.Vector == 0 {
                         Status = 0xC0000001u32 as i32;
                         ExFreePool((*DeviceNode).ResourceList as PVOID);

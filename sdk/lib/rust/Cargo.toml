@@ -16,6 +16,7 @@ members = [
     "bootvid-rust",
     "bootvid-cargo",
     "freeldr-rust",
+    "arm64input-rust",
     "handle",
     "interlck",
     "kernel-rust",
