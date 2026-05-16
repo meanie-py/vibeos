@@ -10,6 +10,7 @@ pub mod mbcp;
 pub mod mem;
 pub mod path;
 pub mod radix;
+pub mod scanf;
 pub mod string;
 pub mod strmut;
 pub mod strtok;
