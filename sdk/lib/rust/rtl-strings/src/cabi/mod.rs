@@ -33,7 +33,23 @@ const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
+const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
+
+const RTL_SKIP_BUFFER_COPY: u32 = 0x0000_0001;
+const RTL_DUP_NULL_TERMINATE: u32 = 1;
+const RTL_DUP_ALLOCATE_NULL_STRING: u32 = 2;
+
+/// `RTL_BUFFER` (ndk/rtltypes.h) — host layout (SIZE_T = 8).
+#[repr(C)]
+pub struct RTL_BUFFER {
+    pub Buffer: *mut u8,
+    pub StaticBuffer: *mut u8,
+    pub Size: usize,
+    pub StaticSize: usize,
+    pub ReservedForAllocatedSize: usize,
+    pub ReservedForIMalloc: *mut u8,
+}
 
 const RTL_FIND_CHAR_START_AT_END: u32 = 0x0000_0001;
 const RTL_FIND_CHAR_COMPLEMENT: u32 = 0x0000_0002;
@@ -1212,6 +1228,137 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
         rslice(string2, string2_length),
         case_insensitive != 0,
     )
+}
+
+// ── Wave RTL-4b slice 3: alloc-edge (harness alloc → NULL) ────────
+//
+// RtlpAllocateStringMemory is the harness NULL stub, so every
+// allocating path returns failure with the genuine field state set
+// *before* the NULL-alloc check (the pinned edge — same discipline
+// as RTL-3 slice 2).
+
+/// `BOOLEAN NTAPI RtlCreateUnicodeString(PUNICODE_STRING, PCWSTR)`.
+/// `Size = (wcslen+1)*2`; `Size > MAXUSHORT` ⇒ FALSE (no writes);
+/// else `Buffer = alloc = NULL` ⇒ FALSE (Length/Max untouched).
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateUnicodeString(
+    uni_dest: *mut UNICODE_STRING,
+    source: *const u16,
+) -> u8 {
+    let size = (wcslen(source) + 1) * 2;
+    if size > MAXUSHORT as usize {
+        return 0;
+    }
+    (*uni_dest).Buffer = core::ptr::null_mut();
+    0
+}
+
+/// `BOOLEAN NTAPI RtlCreateUnicodeStringFromAsciiz(PUNICODE_STRING,
+/// PCSZ)` — `RtlInitAnsiString` + `RtlAnsiStringToUnicodeString(…,
+/// TRUE)`; in the model the alloc path sets Length/Buffer(NULL)/Max
+/// then NO_MEMORY ⇒ FALSE.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateUnicodeStringFromAsciiz(
+    destination: *mut UNICODE_STRING,
+    source: *const u8,
+) -> u8 {
+    let (alen, _) = if source.is_null() {
+        (0u16, 0u16)
+    } else {
+        ustr::ansi_lengths(strlen(source))
+    };
+    let length = (alen as u32 + 1) * 2;
+    if length > MAXUSHORT {
+        return 0; // STATUS_INVALID_PARAMETER_2 before any field write
+    }
+    (*destination).Length = length as u16 - 2;
+    (*destination).Buffer = core::ptr::null_mut();
+    (*destination).MaximumLength = length as u16;
+    0 // NT_SUCCESS(STATUS_NO_MEMORY) == false
+}
+
+/// `NTSTATUS NTAPI RtlDuplicateUnicodeString(ULONG, PCUNICODE_STRING,
+/// PUNICODE_STRING)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDuplicateUnicodeString(
+    flags: u32,
+    source: *const UNICODE_STRING,
+    destination: *mut UNICODE_STRING,
+) -> i32 {
+    if source.is_null()
+        || destination.is_null()
+        || (*source).Length > (*source).MaximumLength
+        || ((*source).Length == 0
+            && (*source).MaximumLength > 0
+            && (*source).Buffer.is_null())
+        || flags == RTL_DUP_ALLOCATE_NULL_STRING
+        || flags >= 4
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (*source).Length == 0
+        && flags != (RTL_DUP_NULL_TERMINATE | RTL_DUP_ALLOCATE_NULL_STRING)
+    {
+        (*destination).Length = 0;
+        (*destination).MaximumLength = 0;
+        (*destination).Buffer = core::ptr::null_mut();
+    } else {
+        // alloc → NULL ⇒ NO_MEMORY (Buffer written, Length/Max not).
+        (*destination).Buffer = core::ptr::null_mut();
+        return STATUS_NO_MEMORY;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlStringFromGUID(REFGUID, PUNICODE_STRING)` —
+/// Length=76, MaximumLength=78 set before `Buffer = alloc = NULL` ⇒
+/// STATUS_NO_MEMORY.
+#[no_mangle]
+pub unsafe extern "system" fn RtlStringFromGUID(
+    _guid: *const GUID,
+    guid_string: *mut UNICODE_STRING,
+) -> i32 {
+    (*guid_string).Length = 38 * 2;
+    (*guid_string).MaximumLength = 38 * 2 + 2;
+    (*guid_string).Buffer = core::ptr::null_mut();
+    STATUS_NO_MEMORY
+}
+
+/// `NTSTATUS NTAPI RtlpEnsureBufferSize(ULONG, PRTL_BUFFER, SIZE_T)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpEnsureBufferSize(
+    flags: u32,
+    buffer: *mut RTL_BUFFER,
+    required_size: usize,
+) -> i32 {
+    if flags & !RTL_SKIP_BUFFER_COPY != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if buffer.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (*buffer).Size >= required_size {
+        return STATUS_SUCCESS;
+    }
+    if (*buffer).Buffer == (*buffer).StaticBuffer
+        && (*buffer).StaticSize >= required_size
+    {
+        (*buffer).Size = required_size;
+        return STATUS_SUCCESS;
+    }
+    // alloc → NULL
+    STATUS_NO_MEMORY
+}
+
+/// `NTSTATUS NTAPI RtlMultiAppendUnicodeStringBuffer(...)` — genuine
+/// is `UNIMPLEMENTED; return STATUS_NOT_IMPLEMENTED;`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlMultiAppendUnicodeStringBuffer(
+    _string_buffer: *mut u8,
+    _number_of_addends: u32,
+    _addends: *const UNICODE_STRING,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED
 }
 
 /// `BOOLEAN NTAPI RtlIsTextUnicode(CONST VOID*, INT, INT*)`.

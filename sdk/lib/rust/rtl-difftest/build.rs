@@ -282,6 +282,16 @@ fn main() {
             DBCS branch dead w/ NlsMbCodePageTag=0; strchrW from\n\
             wine/unicode.h). */\n\
          #define RtlIsTextUnicode ref_RtlIsTextUnicode\n\
+         /* Wave RTL-4b slice 3: alloc-edge group (genuine unicode.c;\n\
+            RtlpAllocateStringMemory NULL stub → failure with the\n\
+            pre-null-check field state). RtlMultiAppendUnicodeString\n\
+            Buffer is UNIMPLEMENTED→STATUS_NOT_IMPLEMENTED. */\n\
+         #define RtlCreateUnicodeString ref_RtlCreateUnicodeString\n\
+         #define RtlCreateUnicodeStringFromAsciiz ref_RtlCreateUnicodeStringFromAsciiz\n\
+         #define RtlDuplicateUnicodeString ref_RtlDuplicateUnicodeString\n\
+         #define RtlStringFromGUID ref_RtlStringFromGUID\n\
+         #define RtlpEnsureBufferSize ref_RtlpEnsureBufferSize\n\
+         #define RtlMultiAppendUnicodeStringBuffer ref_RtlMultiAppendUnicodeStringBuffer\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\

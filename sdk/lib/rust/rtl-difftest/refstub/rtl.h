@@ -116,7 +116,12 @@ typedef unsigned short WORD;
 typedef unsigned int DWORD;
 typedef size_t ULONG_PTR, SIZE_T_DUP_;
 typedef ptrdiff_t LONG_PTR;
-typedef long NTSTATUS;
+/* NTSTATUS must be 32-bit (like the real kernel's LONG) so the
+ * genuine NT_SUCCESS()/NT_ERROR() macros sign-classify 0xC000xxxx
+ * error codes correctly. Host `long` is 64-bit, which would make
+ * those codes *positive* and NT_SUCCESS(error) wrongly TRUE — same
+ * host/target width hazard as the WCHAR→u16 forcing. */
+typedef int NTSTATUS;
 typedef NTSTATUS *PNTSTATUS;
 #define HASH_STRING_ALGORITHM_DEFAULT 0
 #define HASH_STRING_ALGORITHM_X65599 1

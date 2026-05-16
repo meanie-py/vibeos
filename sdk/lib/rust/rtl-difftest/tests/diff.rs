@@ -10,7 +10,7 @@
 //! signed-`char` diff + `(int)L1-(int)L2` length tiebreak,
 //! `RtlPrefixString`'s NULL-Buffer ⇒ FALSE.
 
-use rtl_strings::cabi::{self, GUID, STRING, UNICODE_STRING};
+use rtl_strings::cabi::{self, GUID, RTL_BUFFER, STRING, UNICODE_STRING};
 
 extern "C" {
     fn ref_RtlInitAnsiString(d: *mut STRING, s: *const u8);
@@ -107,6 +107,21 @@ extern "C" {
     fn ref_RtlGUIDFromString(s: *const UNICODE_STRING, g: *mut GUID) -> i32;
     // Wave RTL-4b slice 2
     fn ref_RtlIsTextUnicode(buf: *const u8, len: i32, pf: *mut i32) -> u8;
+    // Wave RTL-4b slice 3
+    fn ref_RtlCreateUnicodeString(d: *mut UNICODE_STRING, s: *const u16) -> u8;
+    fn ref_RtlCreateUnicodeStringFromAsciiz(d: *mut UNICODE_STRING, s: *const u8) -> u8;
+    fn ref_RtlDuplicateUnicodeString(
+        f: u32,
+        s: *const UNICODE_STRING,
+        d: *mut UNICODE_STRING,
+    ) -> i32;
+    fn ref_RtlStringFromGUID(g: *const GUID, s: *mut UNICODE_STRING) -> i32;
+    fn ref_RtlpEnsureBufferSize(f: u32, b: *mut RTL_BUFFER, r: usize) -> i32;
+    fn ref_RtlMultiAppendUnicodeStringBuffer(
+        sb: *mut u8,
+        n: u32,
+        a: *const UNICODE_STRING,
+    ) -> i32;
 }
 
 struct Rng(u64);
@@ -1518,5 +1533,174 @@ fn diff_rtl_is_text_unicode() {
             assert_eq!(rc, rr, "RtlIsTextUnicode ret kind={kind} len={len} pf={pf_variant}");
             assert_eq!(fc, fr, "RtlIsTextUnicode pf kind={kind} len={len} pf={pf_variant}");
         }
+    }
+}
+
+// ── Wave RTL-4b slice 3: alloc-edge group ─────────────────────────
+
+fn usentinel() -> UNICODE_STRING {
+    UNICODE_STRING {
+        Length: 0xDEAD,
+        MaximumLength: 0xBEEF,
+        Buffer: 0x1234_5678_9abc_def0u64 as *mut u16,
+    }
+}
+fn uflds(u: &UNICODE_STRING) -> (u16, u16, bool) {
+    (u.Length, u.MaximumLength, u.Buffer.is_null())
+}
+
+#[test]
+fn diff_rtl_create_unicode_string() {
+    let mut rng = Rng(0x4b_0003_01);
+    for _ in 0..20_000 {
+        let n = rng.upto(40);
+        let mut s: Vec<u16> = (0..n).map(|_| 1 + (rng.next() as u16 % 0xFFFE)).collect();
+        s.push(0);
+        let (mut c, mut r) = (usentinel(), usentinel());
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlCreateUnicodeString(&mut c, s.as_ptr());
+            rr = ref_RtlCreateUnicodeString(&mut r, s.as_ptr());
+        }
+        assert_eq!(rc, rr, "RtlCreateUnicodeString ret n={n}");
+        assert_eq!(uflds(&c), uflds(&r), "RtlCreateUnicodeString fields n={n}");
+    }
+    // >MAXUSHORT boundary: (wcslen+1)*2 > 0xFFFF ⇔ wcslen >= 32767.
+    for units in [32765usize, 32766, 32767, 33000] {
+        let mut s = vec![b'A' as u16; units];
+        s.push(0);
+        let (mut c, mut r) = (usentinel(), usentinel());
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlCreateUnicodeString(&mut c, s.as_ptr());
+            rr = ref_RtlCreateUnicodeString(&mut r, s.as_ptr());
+        }
+        assert_eq!(rc, rr, "RtlCreateUnicodeString ret units={units}");
+        assert_eq!(uflds(&c), uflds(&r), "RtlCreateUnicodeString fields units={units}");
+    }
+}
+
+#[test]
+fn diff_rtl_create_from_asciiz() {
+    let mut rng = Rng(0x4b_0003_02);
+    for _ in 0..20_000 {
+        let n = rng.upto(40);
+        let mut s: Vec<u8> = (0..n).map(|_| rng.byte() | 1).collect();
+        s.push(0);
+        for null_src in [false, true] {
+            let p = if null_src { core::ptr::null() } else { s.as_ptr() };
+            let (mut c, mut r) = (usentinel(), usentinel());
+            let (rc, rr);
+            unsafe {
+                rc = cabi::RtlCreateUnicodeStringFromAsciiz(&mut c, p);
+                rr = ref_RtlCreateUnicodeStringFromAsciiz(&mut r, p);
+            }
+            assert_eq!(rc, rr, "RtlCreateUnicodeStringFromAsciiz ret n={n} ns={null_src}");
+            assert_eq!(uflds(&c), uflds(&r),
+                "RtlCreateUnicodeStringFromAsciiz fields n={n} ns={null_src}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_duplicate_unicode_string() {
+    let mut rng = Rng(0x4b_0003_03);
+    let backing = vec![0x41u16; 8];
+    for _ in 0..30_000 {
+        let flags = (rng.upto(7)) as u32;
+        let kind = rng.upto(6);
+        let (len, max, buf): (u16, u16, *mut u16) = match kind {
+            0 => (4, 8, backing.as_ptr() as *mut u16),       // normal
+            1 => (0, 0, core::ptr::null_mut()),               // empty
+            2 => (0, 4, core::ptr::null_mut()),               // L0 M>0 buf NULL (invalid)
+            3 => (0, 4, backing.as_ptr() as *mut u16),        // L0 M>0 buf OK
+            4 => (10, 4, backing.as_ptr() as *mut u16),       // L>M (invalid)
+            _ => (8, 16, backing.as_ptr() as *mut u16),       // normal2
+        };
+        let null_src = rng.upto(8) == 0;
+        let ss = UNICODE_STRING { Length: len, MaximumLength: max, Buffer: buf };
+        let sp: *const UNICODE_STRING =
+            if null_src { core::ptr::null() } else { &ss };
+        let (mut c, mut r) = (usentinel(), usentinel());
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlDuplicateUnicodeString(flags, sp, &mut c);
+            rr = ref_RtlDuplicateUnicodeString(flags, sp, &mut r);
+        }
+        assert_eq!(rc, rr, "RtlDuplicateUnicodeString ret f={flags} k={kind} ns={null_src}");
+        if rc == 0 {
+            assert_eq!(uflds(&c), uflds(&r),
+                "RtlDuplicateUnicodeString fields f={flags} k={kind}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_string_from_guid() {
+    let mut rng = Rng(0x4b_0003_04);
+    for _ in 0..5_000 {
+        let g = GUID {
+            Data1: rng.next() as u32,
+            Data2: rng.next() as u16,
+            Data3: rng.next() as u16,
+            Data4: [rng.byte(); 8],
+        };
+        let (mut c, mut r) = (usentinel(), usentinel());
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlStringFromGUID(&g, &mut c);
+            rr = ref_RtlStringFromGUID(&g, &mut r);
+        }
+        assert_eq!(rc, rr, "RtlStringFromGUID ret");
+        assert_eq!(uflds(&c), uflds(&r), "RtlStringFromGUID fields");
+    }
+}
+
+#[test]
+fn diff_rtl_ensure_buffer_size() {
+    let mut rng = Rng(0x4b_0003_05);
+    for _ in 0..30_000 {
+        let flags = (rng.upto(4)) as u32;
+        // pointers are only compared for equality (no deref).
+        let staticp = (0x1000 + rng.upto(4) * 8) as *mut u8;
+        let same = rng.upto(2) == 0;
+        let bufp = if same { staticp } else { (0x9000usize) as *mut u8 };
+        let size = rng.upto(64);
+        let staticsize = rng.upto(64);
+        let req = rng.upto(64);
+        let mk = || RTL_BUFFER {
+            Buffer: bufp,
+            StaticBuffer: staticp,
+            Size: size,
+            StaticSize: staticsize,
+            ReservedForAllocatedSize: 0,
+            ReservedForIMalloc: core::ptr::null_mut(),
+        };
+        let null_buf = rng.upto(6) == 0;
+        let (mut bc, mut br) = (mk(), mk());
+        let (pc, pr): (*mut RTL_BUFFER, *mut RTL_BUFFER) = if null_buf {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (&mut bc, &mut br)
+        };
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlpEnsureBufferSize(flags, pc, req);
+            rr = ref_RtlpEnsureBufferSize(flags, pr, req);
+        }
+        assert_eq!(rc, rr,
+            "RtlpEnsureBufferSize ret f={flags} same={same} sz={size} ss={staticsize} req={req}");
+        assert_eq!(bc.Size, br.Size, "RtlpEnsureBufferSize Size");
+    }
+}
+
+#[test]
+fn diff_rtl_multi_append() {
+    unsafe {
+        let rc = cabi::RtlMultiAppendUnicodeStringBuffer(
+            core::ptr::null_mut(), 0, core::ptr::null());
+        let rr = ref_RtlMultiAppendUnicodeStringBuffer(
+            core::ptr::null_mut(), 0, core::ptr::null());
+        assert_eq!(rc, rr, "RtlMultiAppendUnicodeStringBuffer");
     }
 }
