@@ -4,7 +4,11 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReleaseCancelSpinLock, IoSetCancelRoutine, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, KeInitializeSpinLock, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoReleaseCancelSpinLock, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
+// FORCEINLINE DDK helpers — bindgen surfaces these as extern decls with no
+// exported symbol; use ntkrnl-sys's real inline impls (AGENTS.md gotcha).
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 use core::ffi::c_void;
 
 // ---- integration shims (mechanical) ----
