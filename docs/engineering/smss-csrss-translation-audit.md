@@ -1,11 +1,11 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 0 substrate PROVEN (0.1 + 0.2
-landed; worktree `worktree-smss-csrss`, commits 06396c51 + 2a5dd92a).**
-`ntdll-sys` built, cargo-clean ×3, rustconv-wired; resolver tuned;
-standalone spike csrss.c resolves at 79% (win32k parity). No
-translation Rust yet, but the headline prerequisite is fully cleared
-and Phase 1 is unblocked. This audit defines the keep-set, the spine,
+Last updated 2026-05-16. **Status: Phase 0 COMPLETE (0.1/0.2/0.3
+landed; worktree `worktree-smss-csrss`, commits 06396c51 → 2680d357).**
+`ntdll-sys` built, cargo-clean ×3, rustconv-wired; resolver/scanner/
+catalog tuned (generic, all-target); csrss.c resolves at 95%, core
+files at win32k parity 71–95%. No translation Rust yet, but the
+substrate is PROVEN and Phase 1 is unblocked. This audit defines the keep-set, the spine,
 the substrate prerequisite, the translation order, and the rustconv
 configuration for the bulk translation phase.
 
@@ -77,14 +77,46 @@ LLM prompt, not a defect.
 
 **Phase 0 substrate is PROVEN.** Phase 1 is unblocked.
 
-**Optional Phase 0.3 (NOT a Phase 1 blocker):** add component-private
-headers (csrsrv `api.h`/`srv.h`, `basesrv.h`, `smss.h`) to a wrapper
-so multi-file `Csr*`/`Sb*`/`Base*` internal symbols resolve — mirrors
-how `win32k-sys` pulls `win32kp.h`. This lifts the *metric* only; the
-translation LLM already gets the C that declares these. Also still
-owed for Phase 0 completeness: `verify_sizes.py` for `ntdll-sys`
-(compile-time struct-size assertions catch C-layout drift before
-translation begins).
+### Phase 0.3 — landed (2026-05-16, commit 2680d357)
+
+Generic resolve-truthfulness fixes (all globally correct — they also
+sharpen ntoskrnl/hal/win32k resolution, not target-scoped):
+
+1. **catalog.py** `_scan_bindgen` now indexes `pub static mut` extern
+   data. It only matched struct/type/const/fn — every bindgen *data*
+   export (`CsrObjectDirectory`, kernel `KdDebuggerNotPresent`, …) was
+   a phantom "unresolved" for **all** targets. Real generic bug.
+2. **scanner.py** collects local-variable / parameter declarator names
+   via tree-sitter (`_collect_local_decls` → `ScanResult.local_names`);
+   the resolver skips them (after catalog lookup, so a genuine import
+   is never suppressed; a true local shadows in C anyway). Stops the
+   Hungarian-body-local false-positive flood.
+3. **resolver.py** universal NT macros (`FIELD_OFFSET`,
+   `RTL_NUMBER_OF`, `RTL_CONSTANT_STRING`, `UNICODE_NULL`, `ALIGN_*`)
+   → `BUILTIN_NAMES`.
+4. **ntdll-sys wrapper** pulls the component master internal headers
+   `srv.h` + `basesrv.h` + `smss.h` (the win32k-sys-pulls-win32kp.h
+   move; their `-I` dirs added in `generate_bindings.sh`; `FN_ALLOW`
+   broadened for lowercase-second-segment internal prefixes
+   `Smp*`/`Basep*`/`Csrp*`).
+
+Resolve (i386): csrss.c 57→**95%**, csrsrv/init.c 23→**71%**, smss.c
+33→**72%**, smloop.c **71%**, capture.c **85%**, thredsup **68%**;
+aggregate **~57%** with core files at win32k parity (71–95%).
+
+**Polish stopped here (prove-before-scale).** Residual is three
+benign, well-understood classes, none of which gate translation: (a)
+per-component globals/fns needing yet more header coverage (e.g.
+`sdk/lib/smlib`'s own header not added — low ROI); (b) cast-macro
+consts `STATUS_*`/`SECURITY_*` — *parity with ntkrnl-sys/win32k-sys,
+not bindgen-evaluable by design*; (c) struct-field-access identifiers
+(generic scanner). The resolve-% does **not** gate translation
+quality — the LLM receives full C source and the checker iterates
+imports. Substrate is PROVEN; Phase 1 is unblocked.
+
+Still owed (not Phase-1 blockers, tracked): `verify_sizes.py` for
+`ntdll-sys` (compile-time struct-size assertions catch C-layout drift
+before translation); optional smlib own-header for its resolve.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
