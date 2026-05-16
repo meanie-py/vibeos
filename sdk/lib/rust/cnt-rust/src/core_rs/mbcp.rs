@@ -70,6 +70,26 @@ pub fn upcase(w: u16) -> u16 {
     }
 }
 
+/// Symmetric inverse of [`upcase`] over the CP1252-reachable set —
+/// the ONE-truth model for the NT `RtlpDowncaseUnicodeChar` table
+/// (`sdk/lib/rtl/nls.c`). The genuine ASCII fast path (`<'A'` id,
+/// `'A'..'Z' → +0x20`, `0x5B..0x7F` id) coincides with these arms, so
+/// a straight match is faithful for every code unit. rtl-strings'
+/// downcase reuses this; rtl-difftest models it byte-identically.
+#[inline]
+pub fn downcase(w: u16) -> u16 {
+    match w {
+        0x41..=0x5A => w + 0x20,                 // A-Z → a-z
+        0xC0..=0xD6 | 0xD8..=0xDE => w + 0x20,   // À-Ö Ø-Þ → à-þ (skip ×0xD7)
+        0x0178 => 0xFF,                          // Ÿ → ÿ
+        0x039C => 0xB5,                          // Μ → µ (inverse of upcase)
+        0x0160 => 0x0161,                        // Š → š
+        0x0152 => 0x0153,                        // Œ → œ
+        0x017D => 0x017E,                        // Ž → ž
+        _ => w,
+    }
+}
+
 /// `mbtowc` result. `ret` is the C return; `wc` is written to `*wchar`
 /// **only when `ret != -1`** (the space-guard suppresses the write).
 pub struct MbToWc {

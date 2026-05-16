@@ -1,0 +1,16 @@
+# Differential harness: pins rtl-strings against the *real compiled*
+# ReactOS sdk/lib/rtl/unicode.c. Host crate (std, `cargo test`, no
+# QEMU) — build.rs cc-compiles the isolated genuine unicode.c, the
+# tests fuzz the Rust NTAPI shims vs the genuine reference. Same
+# discipline as cnt-difftest.
+[package]
+name = "rtl-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rtl-strings = { path = "../rtl-strings", features = ["cabi"] }
+
+[build-dependencies]
+cc = "1"

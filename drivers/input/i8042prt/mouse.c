@@ -6,7 +6,7 @@
  * PROGRAMMERS: Copyright Victor Kirhenshtein (sauros@iname.com)
                 Copyright Jason Filby (jasonfilby@yahoo.com)
                 Copyright Martijn Vernooij (o112w8r02@sneakemail.com)
-                Copyright 2006-2007 Hervé Poussineau (hpoussin@reactos.org)
+                Copyright 2006-2007 Hervï¿½ Poussineau (hpoussin@reactos.org)
                 Copyright 2008 Colin Finck (mail@colinfinck.de)
  */
 
@@ -915,6 +915,14 @@ i8042MouInterruptService(
 
 	__analysis_assume(Context != NULL);
 	DeviceExtension = Context;
+	{
+		static BOOLEAN _i8k_mou_isr_seen = FALSE;
+		if (!_i8k_mou_isr_seen)
+		{
+			_i8k_mou_isr_seen = TRUE;
+			DPRINT1("[[I8K]] MOU ISR FIRED (first)\n");
+		}
+	}
 	PortDeviceExtension = DeviceExtension->Common.PortDeviceExtension;
 	Counter = PortDeviceExtension->Settings.PollStatusIterations;
 
