@@ -36,6 +36,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
 | `tools/rustconv/rustconv/file_splitter.py` | Giant-file split analyzer + `#include`-back emitter; `python -m rustconv split-plan` / `split-apply` | done; 20 files split, i386+amd64 8/8 |
+| `tools/rustconv/rustconv/switch_extract.py` | tree-sitter switch-dispatcher de-monstering; `python -m rustconv switch-extract` | done; SpiGetSet 139 + IntDefWindowProc 11 arms, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
@@ -190,6 +191,46 @@ were **clean-regenerated** (119 stale wiped → 94 correct, fragments
 included) and the prompt-builder multiplier verified to pick up
 fragments (`path.split2.c` → win32k context emitted). The 24
 `LEAVE_WHOLE` giants stay one file → `translate`-chunked next phase.
+
+### Switch-dispatcher de-monstering (`switch-extract`, tree-sitter)
+
+Some `LEAVE_WHOLE` monsters are one giant *function* (not many) whose
+body is essentially one huge `switch`. A 1000-line function is still
+one oversized `translate` prompt — the file-split doesn't help it. But
+a thin dispatch `switch` is the *best-case* AST for a real parser
+(each arm independent), unlike fragile arbitrary-logic extraction. So
+this lever uses **tree-sitter** (`scanner.py`'s C parser; the
+"tree-sitter can't parse it" caveat is SEH-macro-specific — these
+functions are plain C, probes already lowered).
+
+`switch-extract` parses the target function, walks the `switch`, and
+**per case-group proves safety**: extract only groups that (a) end in
+`return`, (b) contain no `break`/`goto`/`continue`/`_SEH2_`, (c) use
+only function params / file-scope symbols / locals declared inside the
+group. SAFE → `static <ret> <fn>_<tag>(<used params>){ body }` + the
+arm becomes `case L: return <fn>_<tag>(args);`. UNSAFE / `default` /
+break-terminated → left byte-verbatim (Pass-0 discipline; never
+gamble). Same TU/file, helpers are `static` → zero CMake change.
+
+Results (build + nm + smoke gated):
+- **`SpiGetSet` (sysparams.c): 139/174 arms → tiny helpers.** The
+  1029-LOC `SystemParametersInfo` monster → a ~250-LOC regular
+  dispatch shell + 139 trivial independent units. 288 case labels
+  preserved (0 dropped/dup); external symbol surface **16==16
+  identical** (helpers are internal `static`); i386 8/8 + amd64 8/8.
+- **`IntDefWindowProc` (defwnd.c): 11/51** — modest free bonus (it's
+  `break`-heavy; v1 only does `return`-terminated). 91 labels==91.
+- **`NtUserMessageCall` / `UserSetClassLongPtr` / ntstubs: 0** — not
+  return-thin-dispatch (break / shared state). Honestly scoped out →
+  `translate`-chunked / LLM-idiomatic in Rust, *not* force-extracted.
+
+Oracle is **differential**: tree-sitter's lenient C parser emits
+ERROR/missing nodes on valid win32k C (unresolved macros — 4 in
+sysparams.c originally), so the invariant is "transform introduces no
+*new* parse errors" + "case-label set unchanged"; the real correctness
+gate is build + nm + smoke. Two self-bugs caught by verify-first
+before shipping: a byte-vs-char splice desync, and the absolute-zero
+parse oracle (false-positive on win32k macros).
 
 ### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
 

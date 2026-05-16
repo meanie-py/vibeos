@@ -812,23 +812,29 @@ SpiNotifyNCMetricsChanged(VOID)
     return TRUE;
 }
 
-static
-UINT_PTR
-SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
+/* pretranslation: switch arms extracted to helpers so rustconv gets tiny units instead of one SpiGetSet monster. See docs/engineering/win32k-pretranslation-audit.md */
+static UINT_PTR
+SpiGetSet_SPI_GETBEEP(PVOID pvParam, FLONG fl)
 {
-    switch (uiAction)
-    {
-        case SPI_GETBEEP:
-            return SpiGetInt(pvParam, &gspv.bBeep, fl);
+        return SpiGetInt(pvParam, &gspv.bBeep, fl);
+    }
 
-        case SPI_SETBEEP:
-            return SpiSetYesNo(&gspv.bBeep, uiParam, KEY_SOUND, VAL_BEEP, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETBEEP(UINT uiParam, FLONG fl)
+{
+        return SpiSetYesNo(&gspv.bBeep, uiParam, KEY_SOUND, VAL_BEEP, fl);
+    }
 
-        case SPI_GETMOUSE:
-            return SpiGet(pvParam, &gspv.caiMouse, 3 * sizeof(INT), fl);
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSE(PVOID pvParam, FLONG fl)
+{
+        return SpiGet(pvParam, &gspv.caiMouse, 3 * sizeof(INT), fl);
+    }
 
-        case SPI_SETMOUSE:
-            if (!SpiSet(&gspv.caiMouse, pvParam, 3 * sizeof(INT), fl))
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSE(PVOID pvParam, FLONG fl)
+{
+        if (!SpiSet(&gspv.caiMouse, pvParam, 3 * sizeof(INT), fl))
                 return 0;
             if (fl & SPIF_UPDATEINIFILE)
             {
@@ -837,123 +843,978 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
                 SpiStoreSzInt(KEY_MOUSE, VAL_MOUSE3, gspv.caiMouse.Acceleration);
             }
             return (UINT_PTR)KEY_MOUSE;
+    }
 
-        case SPI_GETBORDER:
-            return SpiGetInt(pvParam, &gspv.ncm.iBorderWidth, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETBORDER(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.ncm.iBorderWidth, fl);
+    }
 
-        case SPI_SETBORDER:
-            uiParam = max(uiParam, 1);
+static UINT_PTR
+SpiGetSet_SPI_SETBORDER(UINT uiParam, FLONG fl)
+{
+        uiParam = max(uiParam, 1);
             return SpiSetInt(&gspv.ncm.iBorderWidth, uiParam, KEY_METRIC, VAL_BORDER, fl);
+    }
 
-        case SPI_GETKEYBOARDSPEED:
-            return SpiGetInt(pvParam, &gspv.dwKbdSpeed, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETKEYBOARDSPEED(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwKbdSpeed, fl);
+    }
 
-        case SPI_SETKEYBOARDSPEED:
-            return SpiSetInt(&gspv.dwKbdSpeed, uiParam, KEY_KBD, VAL_KBDSPD, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETKEYBOARDSPEED(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.dwKbdSpeed, uiParam, KEY_KBD, VAL_KBDSPD, fl);
+    }
 
-        case SPI_LANGDRIVER:
-            ERR("SPI_LANGDRIVER is unimplemented\n");
-            break;
+static UINT_PTR
+SpiGetSet_SPI_GETSCREENSAVETIMEOUT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iScrSaverTimeout, fl);
+    }
 
-        case SPI_GETSCREENSAVETIMEOUT:
-            return SpiGetInt(pvParam, &gspv.iScrSaverTimeout, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETSCREENSAVETIMEOUT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iScrSaverTimeout, uiParam, KEY_DESKTOP, VAL_SCRTO, fl);
+    }
 
-        case SPI_SETSCREENSAVETIMEOUT:
-            return SpiSetInt(&gspv.iScrSaverTimeout, uiParam, KEY_DESKTOP, VAL_SCRTO, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETSCREENSAVEACTIVE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bScrSaverActive, fl);
+    }
 
-        case SPI_GETSCREENSAVEACTIVE:
-            return SpiGetInt(pvParam, &gspv.bScrSaverActive, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETSCREENSAVEACTIVE(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.bScrSaverActive, uiParam, KEY_DESKTOP, VAL_SCRACT, fl);
+    }
 
-        case SPI_SETSCREENSAVEACTIVE:
-            return SpiSetInt(&gspv.bScrSaverActive, uiParam, KEY_DESKTOP, VAL_SCRACT, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETGRIDGRANULARITY(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiGridGranularity, fl);
+    }
 
-        case SPI_GETGRIDGRANULARITY:
-            return SpiGetInt(pvParam, &gspv.uiGridGranularity, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETGRIDGRANULARITY(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.uiGridGranularity, uiParam, KEY_DESKTOP, VAL_GRID, fl);
+    }
 
-        case SPI_SETGRIDGRANULARITY:
-            return SpiSetInt(&gspv.uiGridGranularity, uiParam, KEY_DESKTOP, VAL_GRID, fl);
-
-        case SPI_GETDESKWALLPAPER:
-            uiParam = min(uiParam, gspv.ustrWallpaper.Length + 1UL);
+static UINT_PTR
+SpiGetSet_SPI_GETDESKWALLPAPER(UINT uiParam, PVOID pvParam, FLONG fl)
+{
+        uiParam = min(uiParam, gspv.ustrWallpaper.Length + 1UL);
             return SpiGet(pvParam, gspv.awcWallpaper, uiParam, fl);
+    }
 
-        case SPI_SETDESKWALLPAPER:
-            return SpiSetWallpaper(pvParam, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETDESKWALLPAPER(PVOID pvParam, FLONG fl)
+{
+        return SpiSetWallpaper(pvParam, fl);
+    }
 
-        case SPI_SETDESKPATTERN:
-            ERR("SPI_SETDESKPATTERN is unimplemented\n");
-            break;
+static UINT_PTR
+SpiGetSet_SPI_GETKEYBOARDDELAY(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iKbdDelay, fl);
+    }
 
-        case SPI_GETKEYBOARDDELAY:
-            return SpiGetInt(pvParam, &gspv.iKbdDelay, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETKEYBOARDDELAY(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iKbdDelay, uiParam, KEY_KBD, VAL_KBDDELAY, fl);
+    }
 
-        case SPI_SETKEYBOARDDELAY:
-            return SpiSetInt(&gspv.iKbdDelay, uiParam, KEY_KBD, VAL_KBDDELAY, fl);
-
-        case SPI_ICONHORIZONTALSPACING:
-            if (pvParam)
+static UINT_PTR
+SpiGetSet_SPI_ICONHORIZONTALSPACING(UINT uiParam, PVOID pvParam, FLONG fl)
+{
+        if (pvParam)
             {
                 return SpiGetInt(pvParam, &gspv.im.iHorzSpacing, fl);
             }
             uiParam = max(uiParam, 32);
             return SpiSetMetric(&gspv.im.iHorzSpacing, uiParam, VAL_ICONSPC, fl);
+    }
 
-        case SPI_ICONVERTICALSPACING:
-            if (pvParam)
+static UINT_PTR
+SpiGetSet_SPI_ICONVERTICALSPACING(UINT uiParam, PVOID pvParam, FLONG fl)
+{
+        if (pvParam)
             {
                 return SpiGetInt(pvParam, &gspv.im.iVertSpacing, fl);
             }
             uiParam = max(uiParam, 32);
             return SpiSetMetric(&gspv.im.iVertSpacing, uiParam, VAL_ICONVSPC, fl);
+    }
 
-        case SPI_GETICONTITLEWRAP:
-            return SpiGetInt(pvParam, &gspv.im.iTitleWrap, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETICONTITLEWRAP(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.im.iTitleWrap, fl);
+    }
 
-        case SPI_SETICONTITLEWRAP:
-            return SpiSetInt(&gspv.im.iTitleWrap, uiParam, KEY_METRIC, VAL_ITWRAP, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETICONTITLEWRAP(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.im.iTitleWrap, uiParam, KEY_METRIC, VAL_ITWRAP, fl);
+    }
 
-        case SPI_GETMENUDROPALIGNMENT:
-            return SpiGetInt(pvParam, &gspv.bMenuDropAlign, fl);
+static UINT_PTR
+SpiGetSet_SPI_GETMENUDROPALIGNMENT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bMenuDropAlign, fl);
+    }
 
-        case SPI_SETMENUDROPALIGNMENT:
-            return SpiSetBool(&gspv.bMenuDropAlign, uiParam, KEY_MDALIGN, VAL_MDALIGN, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETMENUDROPALIGNMENT(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bMenuDropAlign, uiParam, KEY_MDALIGN, VAL_MDALIGN, fl);
+    }
 
-        case SPI_SETDOUBLECLKWIDTH:
-            return SpiSetInt(&gspv.iDblClickWidth, uiParam, KEY_MOUSE, VAL_DBLCLKWIDTH, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETDOUBLECLKWIDTH(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iDblClickWidth, uiParam, KEY_MOUSE, VAL_DBLCLKWIDTH, fl);
+    }
 
-        case SPI_SETDOUBLECLKHEIGHT:
-            return SpiSetInt(&gspv.iDblClickHeight, uiParam, KEY_MOUSE, VAL_DBLCLKHEIGHT, fl);
+static UINT_PTR
+SpiGetSet_SPI_SETDOUBLECLKHEIGHT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iDblClickHeight, uiParam, KEY_MOUSE, VAL_DBLCLKHEIGHT, fl);
+    }
 
-        case SPI_GETICONTITLELOGFONT:
-            return SpiGet(pvParam, &gspv.im.lfFont, sizeof(LOGFONTW), fl);
+static UINT_PTR
+SpiGetSet_SPI_GETICONTITLELOGFONT(PVOID pvParam, FLONG fl)
+{
+        return SpiGet(pvParam, &gspv.im.lfFont, sizeof(LOGFONTW), fl);
+    }
 
-        case SPI_SETICONTITLELOGFONT:
-            if (!SpiSet(&gspv.im.lfFont, pvParam, sizeof(LOGFONTW), fl))
+static UINT_PTR
+SpiGetSet_SPI_SETICONTITLELOGFONT(PVOID pvParam, FLONG fl)
+{
+        if (!SpiSet(&gspv.im.lfFont, pvParam, sizeof(LOGFONTW), fl))
                 return 0;
             if (fl & SPIF_UPDATEINIFILE)
             {
                 SpiStoreFont(L"IconFont", &gspv.im.lfFont);
             }
             return (UINT_PTR)KEY_METRIC;
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDOUBLECLICKTIME(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iDblClickTime, uiParam, KEY_MOUSE, VAL_DBLCLKTIME, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSEBUTTONSWAP(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.bMouseBtnSwap, uiParam, KEY_MOUSE, VAL_SWAP, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFASTTASKSWITCH(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bFastTaskSwitch, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFASTTASKSWITCH(void)
+{
+        /* According to Winetest this one is unimplemented */
+            return 1;
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETDRAGFULLWINDOWS(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bDragFullWindows, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDRAGFULLWINDOWS(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.bDragFullWindows, uiParam, KEY_DESKTOP, VAL_DRAG, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSHOWSOUNDS(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bShowSounds, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSHOWSOUNDS(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bShowSounds, uiParam, KEY_SHOWSNDS, VAL_ON, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETKEYBOARDPREF(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bKbdPref, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETKEYBOARDPREF(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bKbdPref, uiParam, KEY_KDBPREF, VAL_ON, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSCREENREADER(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bScreenReader, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSCREENREADER(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bScreenReader, uiParam, KEY_SCRREAD, VAL_ON, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiGet(pvParam, &gspv.animationinfo, sizeof(ANIMATIONINFO), fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETANIMATION(PVOID pvParam, FLONG fl)
+{
+        if (!SpiSet(&gspv.animationinfo, pvParam, sizeof(ANIMATIONINFO), fl))
+                return 0;
+            if (fl & SPIF_UPDATEINIFILE)
+            {
+                // FIXME: What to do?
+            }
+            return (UINT_PTR)KEY_DESKTOP;
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFONTSMOOTHING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bFontSmoothing, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFONTSMOOTHING(UINT uiParam, FLONG fl)
+{
+        gspv.bFontSmoothing = !!uiParam;
+            if (fl & SPIF_UPDATEINIFILE)
+            {
+                SpiStoreSzInt(KEY_DESKTOP, VAL_FONTSMOOTHING, gspv.bFontSmoothing ? 2 : 0);
+            }
+            return (UINT_PTR)KEY_DESKTOP;
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDRAGWIDTH(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iDragWidth, uiParam, KEY_DESKTOP, VAL_DRAGWIDTH, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDRAGHEIGHT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iDragHeight, uiParam, KEY_DESKTOP, VAL_DRAGHEIGHT, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETHANDHELD(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bHandHeld, uiParam, KEY_DESKTOP, L"HandHeld", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETLOWPOWERTIMEOUT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iLowPwrTimeout, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETPOWEROFFTIMEOUT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iPwrOffTimeout, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETLOWPOWERTIMEOUT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iLowPwrTimeout, uiParam, KEY_DESKTOP, L"LowPowerTimeOut", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETPOWEROFFTIMEOUT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iPwrOffTimeout, uiParam, KEY_DESKTOP, L"PowerOffTimeOut", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETLOWPOWERACTIVE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iPwrOffTimeout, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETPOWEROFFACTIVE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bPwrOffActive, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETLOWPOWERACTIVE(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bLowPwrActive, uiParam, KEY_DESKTOP, L"LowPowerActive", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETPOWEROFFACTIVE(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bPwrOffActive, uiParam, KEY_DESKTOP, L"PowerOffActive", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETDEFAULTINPUTLANG(PVOID pvParam, FLONG fl)
+{
+        if (!gspklBaseLayout)
+                return FALSE;
+
+            return SpiGet(pvParam, &gspklBaseLayout->hkl, sizeof(HKL), fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETLANGTOGGLE(void)
+{
+        gdwLayoutToggleKey = UserGetLanguageToggle(L"Layout Hotkey", 2);
+            gdwLanguageToggleKey = UserGetLanguageToggle(L"Language Hotkey", 1);
+            return gdwLanguageToggleKey;
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSETRAILS(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iMouseTrails, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSETRAILS(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iMouseTrails, uiParam, KEY_MOUSE, VAL_MOUSETRAILS, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSNAPTODEFBUTTON(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bSnapToDefBtn, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSNAPTODEFBUTTON(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bSnapToDefBtn, uiParam, KEY_MOUSE, VAL_SNAPDEFBTN, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSEHOVERWIDTH(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iMouseHoverWidth, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSEHOVERWIDTH(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iMouseHoverWidth, uiParam, KEY_MOUSE, VAL_HOVERWIDTH, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSEHOVERHEIGHT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iMouseHoverHeight, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSEHOVERHEIGHT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iMouseHoverHeight, uiParam, KEY_MOUSE, VAL_HOVERHEIGHT, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSEHOVERTIME(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iMouseHoverTime, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSEHOVERTIME(UINT uiParam, FLONG fl)
+{
+        /* See https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfoa
+            * copy text from it, if some agument why xp and 2003 behovir diffent
+            * only if they do not have SP install
+            * " Windows Server 2003 and Windows XP: The operating system does not
+            *   enforce the use of USER_TIMER_MAXIMUM and USER_TIMER_MINIMUM until
+            *   Windows Server 2003 SP1 and Windows XP SP2 "
+            */
+            return SpiSetInt(&gspv.iMouseHoverTime, uiParam, KEY_MOUSE, VAL_HOVERTIME, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETWHEELSCROLLLINES(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iWheelScrollLines, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETWHEELSCROLLLINES(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.iWheelScrollLines, uiParam, KEY_DESKTOP, VAL_SCRLLLINES, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMENUSHOWDELAY(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwMenuShowDelay, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMENUSHOWDELAY(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.dwMenuShowDelay, uiParam, KEY_DESKTOP, L"MenuShowDelay", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSHOWIMEUI(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bShowImeUi, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSHOWIMEUI(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bShowImeUi, uiParam, KEY_DESKTOP, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSESPEED(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.iMouseSpeed, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSCREENSAVERRUNNING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bScrSaverRunning, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSCREENSAVERRUNNING(UINT uiParam, FLONG fl)
+{
+        // FIXME: also return value?
+            return SpiSetBool(&gspv.bScrSaverRunning, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETACTIVEWINDOWTRACKING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_ACTIVEWINDOWTRACKING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETACTIVEWINDOWTRACKING(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_ACTIVEWINDOWTRACKING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMENUANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_MENUANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMENUANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_MENUANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETCOMBOBOXANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_COMBOBOXANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETCOMBOBOXANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_COMBOBOXANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETLISTBOXSMOOTHSCROLLING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_LISTBOXSMOOTHSCROLLING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETLISTBOXSMOOTHSCROLLING(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_LISTBOXSMOOTHSCROLLING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETGRADIENTCAPTIONS(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_GRADIENTCAPTIONS, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETKEYBOARDCUES(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_KEYBOARDCUES, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETKEYBOARDCUES(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_KEYBOARDCUES, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETACTIVEWNDTRKZORDER(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_ACTIVEWNDTRKZORDER, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETACTIVEWNDTRKZORDER(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_ACTIVEWNDTRKZORDER, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETHOTTRACKING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_HOTTRACKING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETHOTTRACKING(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_HOTTRACKING, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMENUFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_MENUFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMENUFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_MENUFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETSELECTIONFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_SELECTIONFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETSELECTIONFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_SELECTIONFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETTOOLTIPANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_TOOLTIPANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETTOOLTIPANIMATION(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_TOOLTIPANIMATION, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETTOOLTIPFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_TOOLTIPFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETTOOLTIPFADE(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_TOOLTIPFADE, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETCURSORSHADOW(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_CURSORSHADOW, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETCURSORSHADOW(PVOID pvParam, FLONG fl)
+{
+        gspv.bMouseCursorShadow = PtrToUlong(pvParam);
+            return SpiSetUserPref(UPM_CURSORSHADOW, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETUIEFFECTS(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_UIEFFECTS, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETUIEFFECTS(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_UIEFFECTS, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSESONAR(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bMouseSonar, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSESONAR(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bMouseSonar, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSECLICKLOCK(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_CLICKLOCK, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSECLICKLOCK(PVOID pvParam, FLONG fl)
+{
+        gspv.bMouseClickLock = PtrToUlong(pvParam);
+            return SpiSetUserPref(UPM_CLICKLOCK, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSEVANISH(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bMouseVanish, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSEVANISH(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bMouseVanish, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFLATMENU(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_FLATMENU, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFLATMENU(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_FLATMENU, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETDROPSHADOW(PVOID pvParam, FLONG fl)
+{
+        return SpiGetUserPref(UPM_DROPSHADOW, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDROPSHADOW(PVOID pvParam, FLONG fl)
+{
+        return SpiSetUserPref(UPM_DROPSHADOW, pvParam, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETBLOCKSENDINPUTRESETS(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bBlockSendInputResets, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETBLOCKSENDINPUTRESETS(UINT uiParam, FLONG fl)
+{
+        return SpiSetBool(&gspv.bBlockSendInputResets, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFOREGROUNDLOCKTIMEOUT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwForegroundLockTimeout, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFOREGROUNDLOCKTIMEOUT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.dwForegroundLockTimeout, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETACTIVEWNDTRKTIMEOUT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwActiveTrackingTimeout, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETACTIVEWNDTRKTIMEOUT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.dwActiveTrackingTimeout, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFOREGROUNDFLASHCOUNT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwForegroundFlashCount, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFOREGROUNDFLASHCOUNT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.dwForegroundFlashCount, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETCARETWIDTH(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwCaretWidth, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETCARETWIDTH(PVOID pvParam, FLONG fl)
+{
+        return SpiSetDWord(&gspv.dwCaretWidth, PtrToUlong(pvParam), KEY_DESKTOP, VAL_CARETWIDTH, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETMOUSECLICKLOCKTIME(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.dwMouseClickLockTime, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETMOUSECLICKLOCKTIME(UINT uiParam, FLONG fl)
+{
+        return SpiSetDWord(&gspv.dwMouseClickLockTime, uiParam, KEY_DESKTOP, VAL_CLICKLOCKTIME, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFONTSMOOTHINGTYPE(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiFontSmoothingType, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFONTSMOOTHINGTYPE(PVOID pvParam, FLONG fl)
+{
+        return SpiSetDWord(&gspv.uiFontSmoothingType, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGTYPE, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFONTSMOOTHINGCONTRAST(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiFontSmoothingContrast, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFONTSMOOTHINGCONTRAST(PVOID pvParam, FLONG fl)
+{
+        return SpiSetDWord(&gspv.uiFontSmoothingContrast, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGCONTRAST, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFOCUSBORDERWIDTH(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiFocusBorderWidth, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFOCUSBORDERWIDTH(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.uiFocusBorderWidth, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFOCUSBORDERHEIGHT(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiFocusBorderHeight, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFOCUSBORDERHEIGHT(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.uiFocusBorderHeight, uiParam, KEY_MOUSE, L"", fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETFONTSMOOTHINGORIENTATION(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.uiFontSmoothingOrientation, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETFONTSMOOTHINGORIENTATION(PVOID pvParam, FLONG fl)
+{
+        return SpiSetDWord(&gspv.uiFontSmoothingOrientation, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGORIENTATION, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETWINARRANGING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &g_bWindowSnapEnabled, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETWINARRANGING(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&g_bWindowSnapEnabled, uiParam, KEY_DESKTOP, VAL_SNAP_ENABLED, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_GETDOCKMOVING(PVOID pvParam, FLONG fl)
+{
+        return SpiGetInt(pvParam, &gspv.bDockMoving, fl);
+    }
+
+static UINT_PTR
+SpiGetSet_SPI_SETDOCKMOVING(UINT uiParam, FLONG fl)
+{
+        return SpiSetInt(&gspv.bDockMoving, uiParam, KEY_DESKTOP, VAL_SNAP_DOCKMOVING, fl);
+    }
+
+static
+UINT_PTR
+SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
+{
+    switch (uiAction)
+    {
+        case SPI_GETBEEP:
+            return SpiGetSet_SPI_GETBEEP(pvParam, fl);
+
+        case SPI_SETBEEP:
+            return SpiGetSet_SPI_SETBEEP(uiParam, fl);
+
+        case SPI_GETMOUSE:
+            return SpiGetSet_SPI_GETMOUSE(pvParam, fl);
+
+        case SPI_SETMOUSE:
+            return SpiGetSet_SPI_SETMOUSE(pvParam, fl);
+
+        case SPI_GETBORDER:
+            return SpiGetSet_SPI_GETBORDER(pvParam, fl);
+
+        case SPI_SETBORDER:
+            return SpiGetSet_SPI_SETBORDER(uiParam, fl);
+
+        case SPI_GETKEYBOARDSPEED:
+            return SpiGetSet_SPI_GETKEYBOARDSPEED(pvParam, fl);
+
+        case SPI_SETKEYBOARDSPEED:
+            return SpiGetSet_SPI_SETKEYBOARDSPEED(uiParam, fl);
+
+        case SPI_LANGDRIVER:
+            ERR("SPI_LANGDRIVER is unimplemented\n");
+            break;
+
+        case SPI_GETSCREENSAVETIMEOUT:
+            return SpiGetSet_SPI_GETSCREENSAVETIMEOUT(pvParam, fl);
+
+        case SPI_SETSCREENSAVETIMEOUT:
+            return SpiGetSet_SPI_SETSCREENSAVETIMEOUT(uiParam, fl);
+
+        case SPI_GETSCREENSAVEACTIVE:
+            return SpiGetSet_SPI_GETSCREENSAVEACTIVE(pvParam, fl);
+
+        case SPI_SETSCREENSAVEACTIVE:
+            return SpiGetSet_SPI_SETSCREENSAVEACTIVE(uiParam, fl);
+
+        case SPI_GETGRIDGRANULARITY:
+            return SpiGetSet_SPI_GETGRIDGRANULARITY(pvParam, fl);
+
+        case SPI_SETGRIDGRANULARITY:
+            return SpiGetSet_SPI_SETGRIDGRANULARITY(uiParam, fl);
+
+        case SPI_GETDESKWALLPAPER:
+            return SpiGetSet_SPI_GETDESKWALLPAPER(uiParam, pvParam, fl);
+
+        case SPI_SETDESKWALLPAPER:
+            return SpiGetSet_SPI_SETDESKWALLPAPER(pvParam, fl);
+
+        case SPI_SETDESKPATTERN:
+            ERR("SPI_SETDESKPATTERN is unimplemented\n");
+            break;
+
+        case SPI_GETKEYBOARDDELAY:
+            return SpiGetSet_SPI_GETKEYBOARDDELAY(pvParam, fl);
+
+        case SPI_SETKEYBOARDDELAY:
+            return SpiGetSet_SPI_SETKEYBOARDDELAY(uiParam, fl);
+
+        case SPI_ICONHORIZONTALSPACING:
+            return SpiGetSet_SPI_ICONHORIZONTALSPACING(uiParam, pvParam, fl);
+
+        case SPI_ICONVERTICALSPACING:
+            return SpiGetSet_SPI_ICONVERTICALSPACING(uiParam, pvParam, fl);
+
+        case SPI_GETICONTITLEWRAP:
+            return SpiGetSet_SPI_GETICONTITLEWRAP(pvParam, fl);
+
+        case SPI_SETICONTITLEWRAP:
+            return SpiGetSet_SPI_SETICONTITLEWRAP(uiParam, fl);
+
+        case SPI_GETMENUDROPALIGNMENT:
+            return SpiGetSet_SPI_GETMENUDROPALIGNMENT(pvParam, fl);
+
+        case SPI_SETMENUDROPALIGNMENT:
+            return SpiGetSet_SPI_SETMENUDROPALIGNMENT(uiParam, fl);
+
+        case SPI_SETDOUBLECLKWIDTH:
+            return SpiGetSet_SPI_SETDOUBLECLKWIDTH(uiParam, fl);
+
+        case SPI_SETDOUBLECLKHEIGHT:
+            return SpiGetSet_SPI_SETDOUBLECLKHEIGHT(uiParam, fl);
+
+        case SPI_GETICONTITLELOGFONT:
+            return SpiGetSet_SPI_GETICONTITLELOGFONT(pvParam, fl);
+
+        case SPI_SETICONTITLELOGFONT:
+            return SpiGetSet_SPI_SETICONTITLELOGFONT(pvParam, fl);
 
         case SPI_SETDOUBLECLICKTIME:
-            return SpiSetInt(&gspv.iDblClickTime, uiParam, KEY_MOUSE, VAL_DBLCLKTIME, fl);
+            return SpiGetSet_SPI_SETDOUBLECLICKTIME(uiParam, fl);
 
         case SPI_SETMOUSEBUTTONSWAP:
-            return SpiSetInt(&gspv.bMouseBtnSwap, uiParam, KEY_MOUSE, VAL_SWAP, fl);
+            return SpiGetSet_SPI_SETMOUSEBUTTONSWAP(uiParam, fl);
 
         case SPI_GETFASTTASKSWITCH:
-            return SpiGetInt(pvParam, &gspv.bFastTaskSwitch, fl);
+            return SpiGetSet_SPI_GETFASTTASKSWITCH(pvParam, fl);
 
         case SPI_SETFASTTASKSWITCH:
-            /* According to Winetest this one is unimplemented */
-            return 1;
+            return SpiGetSet_SPI_SETFASTTASKSWITCH();
 
         case SPI_GETDRAGFULLWINDOWS:
-            return SpiGetInt(pvParam, &gspv.bDragFullWindows, fl);
+            return SpiGetSet_SPI_GETDRAGFULLWINDOWS(pvParam, fl);
 
         case SPI_SETDRAGFULLWINDOWS:
-            return SpiSetInt(&gspv.bDragFullWindows, uiParam, KEY_DESKTOP, VAL_DRAG, fl);
+            return SpiGetSet_SPI_SETDRAGFULLWINDOWS(uiParam, fl);
 
         case SPI_GETNONCLIENTMETRICS:
         {
@@ -1205,10 +2066,10 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
         }
 
         case SPI_GETSHOWSOUNDS:
-            return SpiGetInt(pvParam, &gspv.bShowSounds, fl);
+            return SpiGetSet_SPI_GETSHOWSOUNDS(pvParam, fl);
 
         case SPI_SETSHOWSOUNDS:
-            return SpiSetBool(&gspv.bShowSounds, uiParam, KEY_SHOWSNDS, VAL_ON, fl);
+            return SpiGetSet_SPI_SETSHOWSOUNDS(uiParam, fl);
 
         case SPI_GETSTICKYKEYS:
         {
@@ -1380,72 +2241,61 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
         }
 
         case SPI_GETKEYBOARDPREF:
-            return SpiGetInt(pvParam, &gspv.bKbdPref, fl);
+            return SpiGetSet_SPI_GETKEYBOARDPREF(pvParam, fl);
 
         case SPI_SETKEYBOARDPREF:
-            return SpiSetBool(&gspv.bKbdPref, uiParam, KEY_KDBPREF, VAL_ON, fl);
+            return SpiGetSet_SPI_SETKEYBOARDPREF(uiParam, fl);
 
         case SPI_GETSCREENREADER:
-            return SpiGetInt(pvParam, &gspv.bScreenReader, fl);
+            return SpiGetSet_SPI_GETSCREENREADER(pvParam, fl);
 
         case SPI_SETSCREENREADER:
-            return SpiSetBool(&gspv.bScreenReader, uiParam, KEY_SCRREAD, VAL_ON, fl);
+            return SpiGetSet_SPI_SETSCREENREADER(uiParam, fl);
 
         case SPI_GETANIMATION:
-            return SpiGet(pvParam, &gspv.animationinfo, sizeof(ANIMATIONINFO), fl);
+            return SpiGetSet_SPI_GETANIMATION(pvParam, fl);
 
         case SPI_SETANIMATION:
-            if (!SpiSet(&gspv.animationinfo, pvParam, sizeof(ANIMATIONINFO), fl))
-                return 0;
-            if (fl & SPIF_UPDATEINIFILE)
-            {
-                // FIXME: What to do?
-            }
-            return (UINT_PTR)KEY_DESKTOP;
+            return SpiGetSet_SPI_SETANIMATION(pvParam, fl);
 
         case SPI_GETFONTSMOOTHING:
-            return SpiGetInt(pvParam, &gspv.bFontSmoothing, fl);
+            return SpiGetSet_SPI_GETFONTSMOOTHING(pvParam, fl);
 
         case SPI_SETFONTSMOOTHING:
-            gspv.bFontSmoothing = !!uiParam;
-            if (fl & SPIF_UPDATEINIFILE)
-            {
-                SpiStoreSzInt(KEY_DESKTOP, VAL_FONTSMOOTHING, gspv.bFontSmoothing ? 2 : 0);
-            }
-            return (UINT_PTR)KEY_DESKTOP;
+            return SpiGetSet_SPI_SETFONTSMOOTHING(uiParam, fl);
 
         case SPI_SETDRAGWIDTH:
-            return SpiSetInt(&gspv.iDragWidth, uiParam, KEY_DESKTOP, VAL_DRAGWIDTH, fl);
+            return SpiGetSet_SPI_SETDRAGWIDTH(uiParam, fl);
 
         case SPI_SETDRAGHEIGHT:
-            return SpiSetInt(&gspv.iDragHeight, uiParam, KEY_DESKTOP, VAL_DRAGHEIGHT, fl);
+            return SpiGetSet_SPI_SETDRAGHEIGHT(uiParam, fl);
 
         case SPI_SETHANDHELD:
-            return SpiSetBool(&gspv.bHandHeld, uiParam, KEY_DESKTOP, L"HandHeld", fl);
+            return SpiGetSet_SPI_SETHANDHELD(uiParam, fl);
 
         case SPI_GETLOWPOWERTIMEOUT:
-            return SpiGetInt(pvParam, &gspv.iLowPwrTimeout, fl);
+            return SpiGetSet_SPI_GETLOWPOWERTIMEOUT(pvParam, fl);
 
         case SPI_GETPOWEROFFTIMEOUT:
-            return SpiGetInt(pvParam, &gspv.iPwrOffTimeout, fl);
+            return SpiGetSet_SPI_GETPOWEROFFTIMEOUT(pvParam, fl);
 
         case SPI_SETLOWPOWERTIMEOUT:
-            return SpiSetInt(&gspv.iLowPwrTimeout, uiParam, KEY_DESKTOP, L"LowPowerTimeOut", fl);
+            return SpiGetSet_SPI_SETLOWPOWERTIMEOUT(uiParam, fl);
 
         case SPI_SETPOWEROFFTIMEOUT:
-            return SpiSetInt(&gspv.iPwrOffTimeout, uiParam, KEY_DESKTOP, L"PowerOffTimeOut", fl);
+            return SpiGetSet_SPI_SETPOWEROFFTIMEOUT(uiParam, fl);
 
         case SPI_GETLOWPOWERACTIVE:
-            return SpiGetInt(pvParam, &gspv.iPwrOffTimeout, fl);
+            return SpiGetSet_SPI_GETLOWPOWERACTIVE(pvParam, fl);
 
         case SPI_GETPOWEROFFACTIVE:
-            return SpiGetInt(pvParam, &gspv.bPwrOffActive, fl);
+            return SpiGetSet_SPI_GETPOWEROFFACTIVE(pvParam, fl);
 
         case SPI_SETLOWPOWERACTIVE:
-            return SpiSetBool(&gspv.bLowPwrActive, uiParam, KEY_DESKTOP, L"LowPowerActive", fl);
+            return SpiGetSet_SPI_SETLOWPOWERACTIVE(uiParam, fl);
 
         case SPI_SETPOWEROFFACTIVE:
-            return SpiSetBool(&gspv.bPwrOffActive, uiParam, KEY_DESKTOP, L"PowerOffActive", fl);
+            return SpiGetSet_SPI_SETPOWEROFFACTIVE(uiParam, fl);
 
         case SPI_SETCURSORS:
             ERR("SPI_SETCURSORS is unimplemented\n");
@@ -1456,10 +2306,7 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
             break;
 
         case SPI_GETDEFAULTINPUTLANG:
-            if (!gspklBaseLayout)
-                return FALSE;
-
-            return SpiGet(pvParam, &gspklBaseLayout->hkl, sizeof(HKL), fl);
+            return SpiGetSet_SPI_GETDEFAULTINPUTLANG(pvParam, fl);
 
         case SPI_SETDEFAULTINPUTLANG:
         {
@@ -1473,62 +2320,53 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
         }
 
         case SPI_SETLANGTOGGLE:
-            gdwLayoutToggleKey = UserGetLanguageToggle(L"Layout Hotkey", 2);
-            gdwLanguageToggleKey = UserGetLanguageToggle(L"Language Hotkey", 1);
-            return gdwLanguageToggleKey;
+            return SpiGetSet_SPI_SETLANGTOGGLE();
 
         case SPI_GETWINDOWSEXTENSION:
             ERR("SPI_GETWINDOWSEXTENSION is unimplemented\n");
             break;
 
         case SPI_GETMOUSETRAILS:
-            return SpiGetInt(pvParam, &gspv.iMouseTrails, fl);
+            return SpiGetSet_SPI_GETMOUSETRAILS(pvParam, fl);
 
         case SPI_SETMOUSETRAILS:
-            return SpiSetInt(&gspv.iMouseTrails, uiParam, KEY_MOUSE, VAL_MOUSETRAILS, fl);
+            return SpiGetSet_SPI_SETMOUSETRAILS(uiParam, fl);
 
         case SPI_GETSNAPTODEFBUTTON:
-            return SpiGetInt(pvParam, &gspv.bSnapToDefBtn, fl);
+            return SpiGetSet_SPI_GETSNAPTODEFBUTTON(pvParam, fl);
 
         case SPI_SETSNAPTODEFBUTTON:
-            return SpiSetBool(&gspv.bSnapToDefBtn, uiParam, KEY_MOUSE, VAL_SNAPDEFBTN, fl);
+            return SpiGetSet_SPI_SETSNAPTODEFBUTTON(uiParam, fl);
 
         case SPI_GETMOUSEHOVERWIDTH:
-            return SpiGetInt(pvParam, &gspv.iMouseHoverWidth, fl);
+            return SpiGetSet_SPI_GETMOUSEHOVERWIDTH(pvParam, fl);
 
         case SPI_SETMOUSEHOVERWIDTH:
-            return SpiSetInt(&gspv.iMouseHoverWidth, uiParam, KEY_MOUSE, VAL_HOVERWIDTH, fl);
+            return SpiGetSet_SPI_SETMOUSEHOVERWIDTH(uiParam, fl);
 
         case SPI_GETMOUSEHOVERHEIGHT:
-            return SpiGetInt(pvParam, &gspv.iMouseHoverHeight, fl);
+            return SpiGetSet_SPI_GETMOUSEHOVERHEIGHT(pvParam, fl);
 
         case SPI_SETMOUSEHOVERHEIGHT:
-            return SpiSetInt(&gspv.iMouseHoverHeight, uiParam, KEY_MOUSE, VAL_HOVERHEIGHT, fl);
+            return SpiGetSet_SPI_SETMOUSEHOVERHEIGHT(uiParam, fl);
 
         case SPI_GETMOUSEHOVERTIME:
-            return SpiGetInt(pvParam, &gspv.iMouseHoverTime, fl);
+            return SpiGetSet_SPI_GETMOUSEHOVERTIME(pvParam, fl);
 
         case SPI_SETMOUSEHOVERTIME:
-           /* See https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfoa
-            * copy text from it, if some agument why xp and 2003 behovir diffent
-            * only if they do not have SP install
-            * " Windows Server 2003 and Windows XP: The operating system does not
-            *   enforce the use of USER_TIMER_MAXIMUM and USER_TIMER_MINIMUM until
-            *   Windows Server 2003 SP1 and Windows XP SP2 "
-            */
-            return SpiSetInt(&gspv.iMouseHoverTime, uiParam, KEY_MOUSE, VAL_HOVERTIME, fl);
+            return SpiGetSet_SPI_SETMOUSEHOVERTIME(uiParam, fl);
 
         case SPI_GETWHEELSCROLLLINES:
-            return SpiGetInt(pvParam, &gspv.iWheelScrollLines, fl);
+            return SpiGetSet_SPI_GETWHEELSCROLLLINES(pvParam, fl);
 
         case SPI_SETWHEELSCROLLLINES:
-            return SpiSetInt(&gspv.iWheelScrollLines, uiParam, KEY_DESKTOP, VAL_SCRLLLINES, fl);
+            return SpiGetSet_SPI_SETWHEELSCROLLLINES(uiParam, fl);
 
         case SPI_GETMENUSHOWDELAY:
-            return SpiGetInt(pvParam, &gspv.dwMenuShowDelay, fl);
+            return SpiGetSet_SPI_GETMENUSHOWDELAY(pvParam, fl);
 
         case SPI_SETMENUSHOWDELAY:
-            return SpiSetInt(&gspv.dwMenuShowDelay, uiParam, KEY_DESKTOP, L"MenuShowDelay", fl);
+            return SpiGetSet_SPI_SETMENUSHOWDELAY(uiParam, fl);
 
 #if (_WIN32_WINNT >= 0x0600)
         case SPI_GETWHEELSCROLLCHARS:
@@ -1538,13 +2376,13 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
             return SpiSetInt(&gspv.uiWheelScrollChars, uiParam, KEY_DESKTOP, VAL_SCRLLCHARS, fl);
 #endif
         case SPI_GETSHOWIMEUI:
-            return SpiGetInt(pvParam, &gspv.bShowImeUi, fl);
+            return SpiGetSet_SPI_GETSHOWIMEUI(pvParam, fl);
 
         case SPI_SETSHOWIMEUI:
-            return SpiSetBool(&gspv.bShowImeUi, uiParam, KEY_DESKTOP, L"", fl);
+            return SpiGetSet_SPI_SETSHOWIMEUI(uiParam, fl);
 
         case SPI_GETMOUSESPEED:
-            return SpiGetInt(pvParam, &gspv.iMouseSpeed, fl);
+            return SpiGetSet_SPI_GETMOUSESPEED(pvParam, fl);
 
         case SPI_SETMOUSESPEED:
         {
@@ -1556,11 +2394,10 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
         }
 
         case SPI_GETSCREENSAVERRUNNING:
-            return SpiGetInt(pvParam, &gspv.bScrSaverRunning, fl);
+            return SpiGetSet_SPI_GETSCREENSAVERRUNNING(pvParam, fl);
 
         case SPI_SETSCREENSAVERRUNNING:
-            // FIXME: also return value?
-            return SpiSetBool(&gspv.bScrSaverRunning, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETSCREENSAVERRUNNING(uiParam, fl);
 
 #if(WINVER >= 0x0600)
         case SPI_GETAUDIODESCRIPTION:
@@ -1578,28 +2415,28 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
 #endif
 
         case SPI_GETACTIVEWINDOWTRACKING:
-            return SpiGetUserPref(UPM_ACTIVEWINDOWTRACKING, pvParam, fl);
+            return SpiGetSet_SPI_GETACTIVEWINDOWTRACKING(pvParam, fl);
 
         case SPI_SETACTIVEWINDOWTRACKING:
-            return SpiSetUserPref(UPM_ACTIVEWINDOWTRACKING, pvParam, fl);
+            return SpiGetSet_SPI_SETACTIVEWINDOWTRACKING(pvParam, fl);
 
         case SPI_GETMENUANIMATION:
-            return SpiGetUserPref(UPM_MENUANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_GETMENUANIMATION(pvParam, fl);
 
         case SPI_SETMENUANIMATION:
-            return SpiSetUserPref(UPM_MENUANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_SETMENUANIMATION(pvParam, fl);
 
         case SPI_GETCOMBOBOXANIMATION:
-            return SpiGetUserPref(UPM_COMBOBOXANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_GETCOMBOBOXANIMATION(pvParam, fl);
 
         case SPI_SETCOMBOBOXANIMATION:
-            return SpiSetUserPref(UPM_COMBOBOXANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_SETCOMBOBOXANIMATION(pvParam, fl);
 
         case SPI_GETLISTBOXSMOOTHSCROLLING:
-            return SpiGetUserPref(UPM_LISTBOXSMOOTHSCROLLING, pvParam, fl);
+            return SpiGetSet_SPI_GETLISTBOXSMOOTHSCROLLING(pvParam, fl);
 
         case SPI_SETLISTBOXSMOOTHSCROLLING:
-            return SpiSetUserPref(UPM_LISTBOXSMOOTHSCROLLING, pvParam, fl);
+            return SpiGetSet_SPI_SETLISTBOXSMOOTHSCROLLING(pvParam, fl);
 
         case SPI_GETGRADIENTCAPTIONS:
         {
@@ -1615,99 +2452,97 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
         }
 
         case SPI_SETGRADIENTCAPTIONS:
-            return SpiSetUserPref(UPM_GRADIENTCAPTIONS, pvParam, fl);
+            return SpiGetSet_SPI_SETGRADIENTCAPTIONS(pvParam, fl);
 
         case SPI_GETKEYBOARDCUES:
-            return SpiGetUserPref(UPM_KEYBOARDCUES, pvParam, fl);
+            return SpiGetSet_SPI_GETKEYBOARDCUES(pvParam, fl);
 
         case SPI_SETKEYBOARDCUES:
-            return SpiSetUserPref(UPM_KEYBOARDCUES, pvParam, fl);
+            return SpiGetSet_SPI_SETKEYBOARDCUES(pvParam, fl);
 
         case SPI_GETACTIVEWNDTRKZORDER:
-            return SpiGetUserPref(UPM_ACTIVEWNDTRKZORDER, pvParam, fl);
+            return SpiGetSet_SPI_GETACTIVEWNDTRKZORDER(pvParam, fl);
 
         case SPI_SETACTIVEWNDTRKZORDER:
-            return SpiSetUserPref(UPM_ACTIVEWNDTRKZORDER, pvParam, fl);
+            return SpiGetSet_SPI_SETACTIVEWNDTRKZORDER(pvParam, fl);
 
         case SPI_GETHOTTRACKING:
-            return SpiGetUserPref(UPM_HOTTRACKING, pvParam, fl);
+            return SpiGetSet_SPI_GETHOTTRACKING(pvParam, fl);
 
         case SPI_SETHOTTRACKING:
-            return SpiSetUserPref(UPM_HOTTRACKING, pvParam, fl);
+            return SpiGetSet_SPI_SETHOTTRACKING(pvParam, fl);
 
         case SPI_GETMENUFADE:
-            return SpiGetUserPref(UPM_MENUFADE, pvParam, fl);
+            return SpiGetSet_SPI_GETMENUFADE(pvParam, fl);
 
         case SPI_SETMENUFADE:
-            return SpiSetUserPref(UPM_MENUFADE, pvParam, fl);
+            return SpiGetSet_SPI_SETMENUFADE(pvParam, fl);
 
         case SPI_GETSELECTIONFADE:
-            return SpiGetUserPref(UPM_SELECTIONFADE, pvParam, fl);
+            return SpiGetSet_SPI_GETSELECTIONFADE(pvParam, fl);
 
         case SPI_SETSELECTIONFADE:
-            return SpiSetUserPref(UPM_SELECTIONFADE, pvParam, fl);
+            return SpiGetSet_SPI_SETSELECTIONFADE(pvParam, fl);
 
         case SPI_GETTOOLTIPANIMATION:
-            return SpiGetUserPref(UPM_TOOLTIPANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_GETTOOLTIPANIMATION(pvParam, fl);
 
         case SPI_SETTOOLTIPANIMATION:
-            return SpiSetUserPref(UPM_TOOLTIPANIMATION, pvParam, fl);
+            return SpiGetSet_SPI_SETTOOLTIPANIMATION(pvParam, fl);
 
         case SPI_GETTOOLTIPFADE:
-            return SpiGetUserPref(UPM_TOOLTIPFADE, pvParam, fl);
+            return SpiGetSet_SPI_GETTOOLTIPFADE(pvParam, fl);
 
         case SPI_SETTOOLTIPFADE:
-            return SpiSetUserPref(UPM_TOOLTIPFADE, pvParam, fl);
+            return SpiGetSet_SPI_SETTOOLTIPFADE(pvParam, fl);
 
         case SPI_GETCURSORSHADOW:
-            return SpiGetUserPref(UPM_CURSORSHADOW, pvParam, fl);
+            return SpiGetSet_SPI_GETCURSORSHADOW(pvParam, fl);
 
         case SPI_SETCURSORSHADOW:
-            gspv.bMouseCursorShadow = PtrToUlong(pvParam);
-            return SpiSetUserPref(UPM_CURSORSHADOW, pvParam, fl);
+            return SpiGetSet_SPI_SETCURSORSHADOW(pvParam, fl);
 
         case SPI_GETUIEFFECTS:
-            return SpiGetUserPref(UPM_UIEFFECTS, pvParam, fl);
+            return SpiGetSet_SPI_GETUIEFFECTS(pvParam, fl);
 
         case SPI_SETUIEFFECTS:
-            return SpiSetUserPref(UPM_UIEFFECTS, pvParam, fl);
+            return SpiGetSet_SPI_SETUIEFFECTS(pvParam, fl);
 
         case SPI_GETMOUSESONAR:
-            return SpiGetInt(pvParam, &gspv.bMouseSonar, fl);
+            return SpiGetSet_SPI_GETMOUSESONAR(pvParam, fl);
 
         case SPI_SETMOUSESONAR:
-            return SpiSetBool(&gspv.bMouseSonar, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETMOUSESONAR(uiParam, fl);
 
         case SPI_GETMOUSECLICKLOCK:
-            return SpiGetUserPref(UPM_CLICKLOCK, pvParam, fl);
+            return SpiGetSet_SPI_GETMOUSECLICKLOCK(pvParam, fl);
 
         case SPI_SETMOUSECLICKLOCK:
-            gspv.bMouseClickLock = PtrToUlong(pvParam);
-            return SpiSetUserPref(UPM_CLICKLOCK, pvParam, fl);
+            return SpiGetSet_SPI_SETMOUSECLICKLOCK(pvParam, fl);
 
         case SPI_GETMOUSEVANISH:
-            return SpiGetInt(pvParam, &gspv.bMouseVanish, fl);
+            return SpiGetSet_SPI_GETMOUSEVANISH(pvParam, fl);
 
         case SPI_SETMOUSEVANISH:
-            return SpiSetBool(&gspv.bMouseVanish, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETMOUSEVANISH(uiParam, fl);
 
         case SPI_GETFLATMENU:
-            return SpiGetUserPref(UPM_FLATMENU, pvParam, fl);
+            return SpiGetSet_SPI_GETFLATMENU(pvParam, fl);
 
         case SPI_SETFLATMENU:
-            return SpiSetUserPref(UPM_FLATMENU, pvParam, fl);
+            return SpiGetSet_SPI_SETFLATMENU(pvParam, fl);
 
         case SPI_GETDROPSHADOW:
-            return SpiGetUserPref(UPM_DROPSHADOW, pvParam, fl);
+            return SpiGetSet_SPI_GETDROPSHADOW(pvParam, fl);
 
         case SPI_SETDROPSHADOW:
-            return SpiSetUserPref(UPM_DROPSHADOW, pvParam, fl);
+            return SpiGetSet_SPI_SETDROPSHADOW(pvParam, fl);
 
         case SPI_GETBLOCKSENDINPUTRESETS:
-            return SpiGetInt(pvParam, &gspv.bBlockSendInputResets, fl);
+            return SpiGetSet_SPI_GETBLOCKSENDINPUTRESETS(pvParam, fl);
 
         case SPI_SETBLOCKSENDINPUTRESETS:
-            return SpiSetBool(&gspv.bBlockSendInputResets, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETBLOCKSENDINPUTRESETS(uiParam, fl);
 
 #if(_WIN32_WINNT >= 0x0600)
         case SPI_GETDISABLEOVERLAPPEDCONTENT:
@@ -1736,74 +2571,74 @@ SpiGetSet(UINT uiAction, UINT uiParam, PVOID pvParam, FLONG fl)
 #endif
 
         case SPI_GETFOREGROUNDLOCKTIMEOUT:
-            return SpiGetInt(pvParam, &gspv.dwForegroundLockTimeout, fl);
+            return SpiGetSet_SPI_GETFOREGROUNDLOCKTIMEOUT(pvParam, fl);
 
         case SPI_SETFOREGROUNDLOCKTIMEOUT:
-            return SpiSetInt(&gspv.dwForegroundLockTimeout, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETFOREGROUNDLOCKTIMEOUT(uiParam, fl);
 
         case SPI_GETACTIVEWNDTRKTIMEOUT:
-            return SpiGetInt(pvParam, &gspv.dwActiveTrackingTimeout, fl);
+            return SpiGetSet_SPI_GETACTIVEWNDTRKTIMEOUT(pvParam, fl);
 
         case SPI_SETACTIVEWNDTRKTIMEOUT:
-            return SpiSetInt(&gspv.dwActiveTrackingTimeout, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETACTIVEWNDTRKTIMEOUT(uiParam, fl);
 
         case SPI_GETFOREGROUNDFLASHCOUNT:
-            return SpiGetInt(pvParam, &gspv.dwForegroundFlashCount, fl);
+            return SpiGetSet_SPI_GETFOREGROUNDFLASHCOUNT(pvParam, fl);
 
         case SPI_SETFOREGROUNDFLASHCOUNT:
-            return SpiSetInt(&gspv.dwForegroundFlashCount, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETFOREGROUNDFLASHCOUNT(uiParam, fl);
 
         case SPI_GETCARETWIDTH:
-            return SpiGetInt(pvParam, &gspv.dwCaretWidth, fl);
+            return SpiGetSet_SPI_GETCARETWIDTH(pvParam, fl);
 
         case SPI_SETCARETWIDTH:
-            return SpiSetDWord(&gspv.dwCaretWidth, PtrToUlong(pvParam), KEY_DESKTOP, VAL_CARETWIDTH, fl);
+            return SpiGetSet_SPI_SETCARETWIDTH(pvParam, fl);
 
         case SPI_GETMOUSECLICKLOCKTIME:
-            return SpiGetInt(pvParam, &gspv.dwMouseClickLockTime, fl);
+            return SpiGetSet_SPI_GETMOUSECLICKLOCKTIME(pvParam, fl);
 
         case SPI_SETMOUSECLICKLOCKTIME:
-            return SpiSetDWord(&gspv.dwMouseClickLockTime, uiParam, KEY_DESKTOP, VAL_CLICKLOCKTIME, fl);
+            return SpiGetSet_SPI_SETMOUSECLICKLOCKTIME(uiParam, fl);
 
         case SPI_GETFONTSMOOTHINGTYPE:
-            return SpiGetInt(pvParam, &gspv.uiFontSmoothingType, fl);
+            return SpiGetSet_SPI_GETFONTSMOOTHINGTYPE(pvParam, fl);
 
         case SPI_SETFONTSMOOTHINGTYPE:
-            return SpiSetDWord(&gspv.uiFontSmoothingType, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGTYPE, fl);
+            return SpiGetSet_SPI_SETFONTSMOOTHINGTYPE(pvParam, fl);
 
         case SPI_GETFONTSMOOTHINGCONTRAST:
-            return SpiGetInt(pvParam, &gspv.uiFontSmoothingContrast, fl);
+            return SpiGetSet_SPI_GETFONTSMOOTHINGCONTRAST(pvParam, fl);
 
         case SPI_SETFONTSMOOTHINGCONTRAST:
-            return SpiSetDWord(&gspv.uiFontSmoothingContrast, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGCONTRAST, fl);
+            return SpiGetSet_SPI_SETFONTSMOOTHINGCONTRAST(pvParam, fl);
 
         case SPI_GETFOCUSBORDERWIDTH:
-            return SpiGetInt(pvParam, &gspv.uiFocusBorderWidth, fl);
+            return SpiGetSet_SPI_GETFOCUSBORDERWIDTH(pvParam, fl);
 
         case SPI_SETFOCUSBORDERWIDTH:
-            return SpiSetInt(&gspv.uiFocusBorderWidth, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETFOCUSBORDERWIDTH(uiParam, fl);
 
         case SPI_GETFOCUSBORDERHEIGHT:
-            return SpiGetInt(pvParam, &gspv.uiFocusBorderHeight, fl);
+            return SpiGetSet_SPI_GETFOCUSBORDERHEIGHT(pvParam, fl);
 
         case SPI_SETFOCUSBORDERHEIGHT:
-            return SpiSetInt(&gspv.uiFocusBorderHeight, uiParam, KEY_MOUSE, L"", fl);
+            return SpiGetSet_SPI_SETFOCUSBORDERHEIGHT(uiParam, fl);
 
         case SPI_GETFONTSMOOTHINGORIENTATION:
-            return SpiGetInt(pvParam, &gspv.uiFontSmoothingOrientation, fl);
+            return SpiGetSet_SPI_GETFONTSMOOTHINGORIENTATION(pvParam, fl);
 
         case SPI_SETFONTSMOOTHINGORIENTATION:
-            return SpiSetDWord(&gspv.uiFontSmoothingOrientation, PtrToUlong(pvParam), KEY_DESKTOP, VAL_FONTSMOOTHINGORIENTATION, fl);
+            return SpiGetSet_SPI_SETFONTSMOOTHINGORIENTATION(pvParam, fl);
 
         case SPI_GETWINARRANGING:
-            return SpiGetInt(pvParam, &g_bWindowSnapEnabled, fl);
+            return SpiGetSet_SPI_GETWINARRANGING(pvParam, fl);
         case SPI_SETWINARRANGING:
-            return SpiSetInt(&g_bWindowSnapEnabled, uiParam, KEY_DESKTOP, VAL_SNAP_ENABLED, fl);
+            return SpiGetSet_SPI_SETWINARRANGING(uiParam, fl);
 
         case SPI_GETDOCKMOVING:
-            return SpiGetInt(pvParam, &gspv.bDockMoving, fl);
+            return SpiGetSet_SPI_GETDOCKMOVING(pvParam, fl);
         case SPI_SETDOCKMOVING:
-            return SpiSetInt(&gspv.bDockMoving, uiParam, KEY_DESKTOP, VAL_SNAP_DOCKMOVING, fl);
+            return SpiGetSet_SPI_SETDOCKMOVING(uiParam, fl);
 
         /* The following are undocumented, but valid SPI values */
         case 0x1010:

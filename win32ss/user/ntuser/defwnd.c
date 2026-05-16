@@ -635,6 +635,91 @@ co_UserTrackSystemMenu(_In_ PWND pWnd, _In_ LONG nClickPos, _In_opt_ PUINT puCmd
 /*
    Win32k counterpart of User DefWindowProc
  */
+/* pretranslation: switch arms extracted to helpers so rustconv gets tiny units instead of one IntDefWindowProc monster. See docs/engineering/win32k-pretranslation-audit.md */
+static LRESULT
+IntDefWindowProc_WM_DEVICECHANGE(void)
+{
+        return TRUE;
+    }
+
+static LRESULT
+IntDefWindowProc_WM_CLIENTSHUTDOWN(PWND Wnd, WPARAM wParam, LPARAM lParam)
+{
+        return IntClientShutdown(Wnd, wParam, lParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_NCLBUTTONDOWN(PWND Wnd, WPARAM wParam, LPARAM lParam)
+{
+        return NC_HandleNCLButtonDown(Wnd, wParam, lParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_NCRBUTTONDOWN(PWND Wnd, WPARAM wParam, LPARAM lParam)
+{
+        return NC_HandleNCRButtonDown(Wnd, wParam, lParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_LBUTTONDBLCLK(PWND Wnd, LPARAM lParam)
+{
+        return NC_HandleNCLButtonDblClk(Wnd, HTCLIENT, lParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_NCLBUTTONDBLCLK(PWND Wnd, WPARAM wParam, LPARAM lParam)
+{
+        return NC_HandleNCLButtonDblClk(Wnd, wParam, lParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_CTLCOLORMSGBOX(UINT Msg, WPARAM wParam)
+{
+        return (LRESULT) DefWndControlColor((HDC)wParam, Msg - WM_CTLCOLORMSGBOX);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_CTLCOLOR(WPARAM wParam, LPARAM lParam)
+{
+        return (LRESULT) DefWndControlColor((HDC)wParam, HIWORD(lParam));
+    }
+
+static LRESULT
+IntDefWindowProc_WM_GETHOTKEY(PWND Wnd)
+{
+        //ERR("WM_GETHOTKEY\n");
+         return DefWndGetHotKey(Wnd);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_SETHOTKEY(PWND Wnd, WPARAM wParam)
+{
+        //ERR("WM_SETHOTKEY\n");
+         return DefWndSetHotKey(Wnd, wParam);
+    }
+
+static LRESULT
+IntDefWindowProc_WM_SETREDRAW(PWND Wnd, WPARAM wParam)
+{
+        if (wParam)
+          {
+             if (!(Wnd->style & WS_VISIBLE))
+             {
+                IntSetStyle( Wnd, WS_VISIBLE, 0 );
+                Wnd->state |= WNDS_SENDNCPAINT;
+             }
+          }
+          else
+          {
+             if (Wnd->style & WS_VISIBLE)
+             {
+                co_UserRedrawWindow( Wnd, NULL, NULL, RDW_ALLCHILDREN | RDW_VALIDATE );
+                IntSetStyle( Wnd, 0, WS_VISIBLE );
+             }
+          }
+          return 0;
+    }
+
 LRESULT FASTCALL
 IntDefWindowProc(
    PWND Wnd,
@@ -653,7 +738,7 @@ IntDefWindowProc(
    switch (Msg)
    {
       case WM_DEVICECHANGE:
-            return TRUE;
+            return IntDefWindowProc_WM_DEVICECHANGE();
 
       case WM_GETTEXTLENGTH:
       {
@@ -735,7 +820,7 @@ IntDefWindowProc(
       }
 
       case WM_CLIENTSHUTDOWN:
-         return IntClientShutdown(Wnd, wParam, lParam);
+            return IntDefWindowProc_WM_CLIENTSHUTDOWN(Wnd, wParam, lParam);
 
       case WM_APPCOMMAND:
       {
@@ -800,16 +885,16 @@ IntDefWindowProc(
           break;
 
       case WM_NCLBUTTONDOWN:
-          return NC_HandleNCLButtonDown(Wnd, wParam, lParam);
+            return IntDefWindowProc_WM_NCLBUTTONDOWN(Wnd, wParam, lParam);
 
       case WM_NCRBUTTONDOWN:
-          return NC_HandleNCRButtonDown(Wnd, wParam, lParam);
+            return IntDefWindowProc_WM_NCRBUTTONDOWN(Wnd, wParam, lParam);
 
       case WM_LBUTTONDBLCLK:
-          return NC_HandleNCLButtonDblClk(Wnd, HTCLIENT, lParam);
+            return IntDefWindowProc_WM_LBUTTONDBLCLK(Wnd, lParam);
 
       case WM_NCLBUTTONDBLCLK:
-          return NC_HandleNCLButtonDblClk(Wnd, wParam, lParam);
+            return IntDefWindowProc_WM_NCLBUTTONDBLCLK(Wnd, wParam, lParam);
 
       case WM_RBUTTONUP:
       {
@@ -1075,16 +1160,16 @@ IntDefWindowProc(
          break;
 
       case WM_CTLCOLORMSGBOX:
-      case WM_CTLCOLOREDIT:
-      case WM_CTLCOLORLISTBOX:
-      case WM_CTLCOLORBTN:
-      case WM_CTLCOLORDLG:
-      case WM_CTLCOLORSTATIC:
-      case WM_CTLCOLORSCROLLBAR:
-           return (LRESULT) DefWndControlColor((HDC)wParam, Msg - WM_CTLCOLORMSGBOX);
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+        case WM_CTLCOLORBTN:
+        case WM_CTLCOLORDLG:
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLORSCROLLBAR:
+            return IntDefWindowProc_WM_CTLCOLORMSGBOX(Msg, wParam);
 
       case WM_CTLCOLOR:
-           return (LRESULT) DefWndControlColor((HDC)wParam, HIWORD(lParam));
+            return IntDefWindowProc_WM_CTLCOLOR(wParam, lParam);
 
       case WM_SETCURSOR:
       {
@@ -1164,11 +1249,9 @@ IntDefWindowProc(
       }
 
       case WM_GETHOTKEY:
-         //ERR("WM_GETHOTKEY\n");
-         return DefWndGetHotKey(Wnd);
+            return IntDefWindowProc_WM_GETHOTKEY(Wnd);
       case WM_SETHOTKEY:
-         //ERR("WM_SETHOTKEY\n");
-         return DefWndSetHotKey(Wnd, wParam);
+            return IntDefWindowProc_WM_SETHOTKEY(Wnd, wParam);
 
       case WM_NCHITTEST:
       {
@@ -1253,23 +1336,7 @@ IntDefWindowProc(
       }
 
       case WM_SETREDRAW:
-          if (wParam)
-          {
-             if (!(Wnd->style & WS_VISIBLE))
-             {
-                IntSetStyle( Wnd, WS_VISIBLE, 0 );
-                Wnd->state |= WNDS_SENDNCPAINT;
-             }
-          }
-          else
-          {
-             if (Wnd->style & WS_VISIBLE)
-             {
-                co_UserRedrawWindow( Wnd, NULL, NULL, RDW_ALLCHILDREN | RDW_VALIDATE );
-                IntSetStyle( Wnd, 0, WS_VISIBLE );
-             }
-          }
-          return 0;
+            return IntDefWindowProc_WM_SETREDRAW(Wnd, wParam);
 
       case WM_WINDOWPOSCHANGING:
       {

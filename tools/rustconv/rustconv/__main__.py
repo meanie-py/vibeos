@@ -473,6 +473,32 @@ def cmd_split_plan(args):
         print_report(plans)
 
 
+def cmd_switch_extract(args):
+    from .switch_extract import analyze, run_oracle
+    from .config import REACTOS_ROOT
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+    if args.oracle:
+        sys.exit(run_oracle(target, args.function))
+
+    r = analyze(target, args.function)
+    print(f"{target.as_posix().split('/win32ss/')[-1]}:{args.function} — "
+          f"{r.note}", file=sys.stderr)
+    for g in r.groups:
+        tag = ("SAFE→" + g.tag) if g.safe else "inline"
+        print(f"  [{tag}] {'/'.join(g.labels[:3])}"
+              f"{'…' if len(g.labels) > 3 else ''}  {g.reason}",
+              file=sys.stderr)
+    if args.apply and r.new_text:
+        target.write_text(r.new_text)
+        print(f"APPLIED → {target}", file=sys.stderr)
+    elif not r.new_text:
+        print("nothing applied (no safe arms / oracle fail)",
+              file=sys.stderr)
+
+
 def cmd_split_apply(args):
     from .file_splitter import (analyze_scope, plan_emit, apply_emit)
     from .config import REACTOS_ROOT
@@ -1091,6 +1117,18 @@ def main():
                    help="Target per-group LOC for the split (default 900)")
     p.add_argument("--json", action="store_true", help="Output JSON")
 
+    # switch-extract (win32k tree-sitter switch-dispatcher de-monstering)
+    p = sub.add_parser("switch-extract",
+                       help="Win32k: extract proven-safe switch arms of a "
+                            "giant dispatcher fn into static helpers")
+    p.add_argument("path", help="C file (relative to repo root or absolute)")
+    p.add_argument("--function", required=True,
+                   help="Target function name (e.g. SpiGetSet)")
+    p.add_argument("--apply", action="store_true",
+                   help="Write the transform (default: dry-run report)")
+    p.add_argument("--oracle", action="store_true",
+                   help="Self-test (label-set + reparse invariants) and exit")
+
     # split-apply (win32k giant-file #include-back emitter)
     p = sub.add_parser("split-apply",
                        help="Win32k: emit the #include-back split for "
@@ -1181,6 +1219,7 @@ def main():
         "seh-llm-lower": cmd_seh_llm_lower,
         "split-plan": cmd_split_plan,
         "split-apply": cmd_split_apply,
+        "switch-extract": cmd_switch_extract,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
