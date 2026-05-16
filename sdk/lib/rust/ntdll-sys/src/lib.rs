@@ -40,6 +40,17 @@ mod bindgen_amd64;
 #[cfg(target_arch = "x86")]
 mod bindgen_i386;
 
+// Compile-time struct-size assertions (verify_sizes.py) — fail the
+// build if a bindgen struct ever drifts from the C layout.
+#[cfg(target_arch = "aarch64")]
+mod size_check_arm64;
+
+#[cfg(target_arch = "x86_64")]
+mod size_check_amd64;
+
+#[cfg(target_arch = "x86")]
+mod size_check_i386;
+
 /// User-mode Native API + SM/CSR/BASE subsystem protocol — auto-
 /// generated bindings with correct per-arch calling conventions
 /// (i386 stdcall/fastcall decoration too).
