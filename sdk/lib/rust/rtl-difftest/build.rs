@@ -278,6 +278,10 @@ fn main() {
          #define RtlFreeOemString ref_RtlFreeOemString\n\
          #define RtlFreeUnicodeString ref_RtlFreeUnicodeString\n\
          #define RtlGUIDFromString ref_RtlGUIDFromString\n\
+         /* Wave RTL-4b slice 2: RtlIsTextUnicode (genuine unicode.c;\n\
+            DBCS branch dead w/ NlsMbCodePageTag=0; strchrW from\n\
+            wine/unicode.h). */\n\
+         #define RtlIsTextUnicode ref_RtlIsTextUnicode\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\

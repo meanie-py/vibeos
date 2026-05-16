@@ -1214,6 +1214,27 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
     )
 }
 
+/// `BOOLEAN NTAPI RtlIsTextUnicode(CONST VOID*, INT, INT*)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsTextUnicode(
+    buf: *const u8,
+    len: i32,
+    pf: *mut i32,
+) -> u8 {
+    let pf_in = if pf.is_null() { None } else { Some(*pf) };
+    let blen = if len >= 2 { len as usize } else { 0 };
+    let bytes: &[u8] = if blen == 0 || buf.is_null() {
+        &[]
+    } else {
+        core::slice::from_raw_parts(buf, blen)
+    };
+    let (res, pf_out) = misc::is_text_unicode(bytes, len, pf_in);
+    if let Some(v) = pf_out {
+        core::ptr::write_volatile(pf, v);
+    }
+    res as u8
+}
+
 // ── Wave RTL-4b slice 1: validate / find / erase / free / GUID ────
 
 /// `NTSTATUS NTAPI RtlValidateUnicodeString(ULONG Flags,

@@ -105,6 +105,8 @@ extern "C" {
     fn ref_RtlFreeOemString(s: *mut STRING);
     fn ref_RtlFreeUnicodeString(s: *mut UNICODE_STRING);
     fn ref_RtlGUIDFromString(s: *const UNICODE_STRING, g: *mut GUID) -> i32;
+    // Wave RTL-4b slice 2
+    fn ref_RtlIsTextUnicode(buf: *const u8, len: i32, pf: *mut i32) -> u8;
 }
 
 struct Rng(u64);
@@ -1422,5 +1424,99 @@ fn diff_rtl_guid_from_string() {
             (gr.Data1, gr.Data2, gr.Data3, gr.Data4),
             "RtlGUIDFromString guid {s:?}"
         );
+    }
+}
+
+#[test]
+fn diff_rtl_is_text_unicode() {
+    let mut rng = Rng(0x4b_0002_01);
+    for _ in 0..40_000 {
+        let units = rng.upto(40);
+        let kind = rng.upto(6);
+        let mut b: Vec<u8> = Vec::with_capacity(units * 2 + 2);
+        match kind {
+            0 => {
+                // ASCII as UTF-16LE.
+                for _ in 0..units {
+                    b.push(0x20 + (rng.byte() % 0x5f));
+                    b.push(0);
+                }
+            }
+            1 => {
+                // byte-reversed (UTF-16BE-looking).
+                for _ in 0..units {
+                    b.push(0);
+                    b.push(0x20 + (rng.byte() % 0x5f));
+                }
+            }
+            2 => {
+                // controls / CRLF / NUL units.
+                let pool: &[u16] = &[
+                    0x000D, 0x000A, 0x0009, 0x0020, 0x3000, 0x0000, 0x0A0D,
+                    0x0D00, 0x2000, 0x0041,
+                ];
+                for _ in 0..units {
+                    let w = pool[rng.upto(pool.len())];
+                    b.extend_from_slice(&w.to_le_bytes());
+                }
+            }
+            3 => {
+                // BOM-prefixed.
+                let bom = if rng.upto(2) == 0 { 0xFEFFu16 } else { 0xFFFEu16 };
+                b.extend_from_slice(&bom.to_le_bytes());
+                for _ in 0..units {
+                    b.push(rng.byte());
+                    b.push(rng.byte());
+                }
+            }
+            _ => {
+                // fully random bytes.
+                for _ in 0..(units * 2) {
+                    b.push(rng.byte());
+                }
+            }
+        }
+        // sometimes append a trailing NUL byte (exercises the len--).
+        if rng.upto(2) == 0 {
+            b.push(0);
+        }
+        if b.len() < 2 {
+            b.push(0);
+            b.push(0);
+        }
+        // len variants: 0/1 (early-return boundary), -1 (odd), exact,
+        // capped-huge. Negative len is genuine UB (the `len <
+        // sizeof(WCHAR)` size_t comparison wraps it past the guard
+        // into an OOB read) — excluded, like the other documented
+        // OOB quirks.
+        let len = match rng.upto(5) {
+            0 => 0i32,
+            1 => 1,
+            2 => (b.len() as i32) - 1,
+            3 => (b.len() as i32).min(600),
+            _ => b.len() as i32,
+        };
+        let bp = b.as_ptr();
+        for pf_variant in 0..4 {
+            let pf0: Option<i32> = match pf_variant {
+                0 => None,
+                1 => Some(-1),               // all filters on
+                2 => Some(0),                // all filters off
+                _ => Some(rng.next() as i32), // random filter
+            };
+            let (mut fc, mut fr) = (pf0.unwrap_or(0), pf0.unwrap_or(0));
+            let (cp, rp) = if pf0.is_none() {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut fc as *mut i32, &mut fr as *mut i32)
+            };
+            let (rc, rr);
+            unsafe {
+                rc = cabi::RtlIsTextUnicode(bp, len, cp);
+                rr = ref_RtlIsTextUnicode(bp, len, rp);
+            }
+            assert_eq!(rc, rr, "RtlIsTextUnicode ret kind={kind} len={len} pf={pf_variant}");
+            assert_eq!(fc, fr, "RtlIsTextUnicode pf kind={kind} len={len} pf={pf_variant}");
+        }
     }
 }

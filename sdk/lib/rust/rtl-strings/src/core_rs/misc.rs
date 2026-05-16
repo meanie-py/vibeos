@@ -67,6 +67,158 @@ pub fn unicode_string_valid(buffer_null: bool, length: u16, maxlength: u16) -> b
         && length <= maxlength
 }
 
+// IS_TEXT_UNICODE_* (winnt). UNICODE_MASK=0x0F, REVERSE_MASK=0xF0,
+// NOT_UNICODE_MASK=0xF00, NOT_ASCII_MASK=0xF000.
+const ITU_ASCII16: u32 = 1;
+const ITU_STATISTICS: u32 = 2;
+const ITU_CONTROLS: u32 = 4;
+const ITU_SIGNATURE: u32 = 8;
+const ITU_REVERSE_ASCII16: u32 = 16;
+const ITU_REVERSE_STATISTICS: u32 = 32;
+const ITU_REVERSE_CONTROLS: u32 = 64;
+const ITU_REVERSE_SIGNATURE: u32 = 128;
+const ITU_ILLEGAL_CHARS: u32 = 256;
+const ITU_ODD_LENGTH: u32 = 512;
+const ITU_NULL_BYTES: u32 = 4096;
+const ITU_UNICODE_MASK: u32 = 0x000F;
+const ITU_REVERSE_MASK: u32 = 0x00F0;
+const ITU_NOT_UNICODE_MASK: u32 = 0x0F00;
+const ITU_NOT_ASCII_MASK: u32 = 0xF000;
+
+/// Wine `strchrW` semantics: the do-while tests the terminating NUL
+/// too, so a search char of 0 "matches" the terminator (non-NULL
+/// return). The control-char sets are short literals + an implicit 0.
+#[inline]
+fn strchrw_match(set: &[u16], ch: u16) -> bool {
+    ch == 0 || set.contains(&ch)
+}
+
+/// `RtlIsTextUnicode(const void* buf, int len, int* pf)`. `buf` is the
+/// full byte view; `pf_in` is `Some(*pf)` iff a non-NULL `pf` was
+/// passed. Returns `(result, pf_out)`; the DBCS-leadbyte branch is
+/// dead in the shared model (`NlsMbCodePageTag == 0`) so `weight`
+/// stays 3. Faithful: the signed-`int` `len` arithmetic, the
+/// trailing-zero-byte `len--`, the 256-unit cap, the strchrW NUL
+/// match, the `out_flags &= *pf` filter. NOTE: genuine's guard is
+/// `len < sizeof(WCHAR)` — an *unsigned* (`size_t`) compare, so a
+/// negative `len` wraps past it into an OOB read (genuine UB,
+/// excluded from the diff). For every defined (`len >= 0`) input the
+/// signed `len < 2` here is identical.
+pub fn is_text_unicode(buf: &[u8], len: i32, pf_in: Option<i32>) -> (bool, Option<i32>) {
+    const STD_CTRL: &[u16] = &[0x000D, 0x000A, 0x0009, 0x0020, 0x3000];
+    const REV_CTRL: &[u16] = &[0x0D00, 0x0A00, 0x0900, 0x2000];
+
+    if len < 2 {
+        return (false, pf_in.map(|_| 0));
+    }
+
+    let flags: u32 = pf_in.map(|v| v as u32).unwrap_or(0xFFFF_FFFF);
+    let mut out_flags: u32 = 0;
+
+    if len & 1 != 0 {
+        out_flags |= ITU_ODD_LENGTH;
+    }
+
+    let mut len = len;
+    if buf[(len - 1) as usize] == 0 {
+        len -= 1;
+    }
+    len /= 2;
+    if len > 256 {
+        len = 256;
+    }
+    let len = len as usize;
+
+    let unit = |i: usize| -> u16 {
+        u16::from_le_bytes([buf[2 * i], buf[2 * i + 1]])
+    };
+
+    let s0 = unit(0);
+    if s0 == 0xFEFF {
+        out_flags |= ITU_SIGNATURE;
+    }
+    if s0 == 0xFFFE {
+        out_flags |= ITU_REVERSE_SIGNATURE;
+    }
+
+    let mut last_lo: u8 = 0;
+    let mut last_hi: u8 = 0;
+    let mut lo_diff: u32 = 0;
+    let mut hi_diff: u32 = 0;
+    for i in 0..len {
+        let w = unit(i);
+        let lo = (w & 0xFF) as u8;
+        let hi = (w >> 8) as u8;
+        lo_diff = lo_diff
+            .wrapping_add(lo.max(last_lo) as u32 - lo.min(last_lo) as u32);
+        hi_diff = hi_diff
+            .wrapping_add(hi.max(last_hi) as u32 - hi.min(last_hi) as u32);
+        last_lo = lo;
+        last_hi = hi;
+        match w {
+            0xFFFE | 0x0000 | 0x0A0D | 0xFFFF => out_flags |= ITU_ILLEGAL_CHARS,
+            _ => {}
+        }
+    }
+
+    let weight: u32 = 3; // DBCS branch dead (NlsMbCodePageTag == 0)
+
+    if lo_diff < 127 && hi_diff == 0 {
+        out_flags |= ITU_ASCII16;
+    }
+    if hi_diff != 0 && lo_diff == 0 {
+        out_flags |= ITU_REVERSE_ASCII16;
+    }
+    if weight.wrapping_mul(lo_diff) < hi_diff {
+        out_flags |= ITU_REVERSE_STATISTICS;
+    }
+    if (flags & ITU_STATISTICS) != 0 && weight.wrapping_mul(hi_diff) < lo_diff {
+        out_flags |= ITU_STATISTICS;
+    }
+
+    if flags & ITU_NULL_BYTES != 0 {
+        for i in 0..len {
+            let w = unit(i);
+            if (w & 0xFF) == 0 || (w >> 8) == 0 {
+                out_flags |= ITU_NULL_BYTES;
+                break;
+            }
+        }
+    }
+    if flags & ITU_CONTROLS != 0 {
+        for i in 0..len {
+            if strchrw_match(STD_CTRL, unit(i)) {
+                out_flags |= ITU_CONTROLS;
+                break;
+            }
+        }
+    }
+    if flags & ITU_REVERSE_CONTROLS != 0 {
+        for i in 0..len {
+            if strchrw_match(REV_CTRL, unit(i)) {
+                out_flags |= ITU_REVERSE_CONTROLS;
+                break;
+            }
+        }
+    }
+
+    let pf_out = pf_in.map(|v| {
+        out_flags &= v as u32;
+        out_flags as i32
+    });
+
+    if out_flags & (ITU_REVERSE_MASK | ITU_NOT_UNICODE_MASK) != 0 {
+        return (false, pf_out);
+    }
+    if out_flags & ITU_NOT_ASCII_MASK != 0 {
+        return (true, pf_out);
+    }
+    if out_flags & ITU_UNICODE_MASK != 0 {
+        return (true, pf_out);
+    }
+    (false, pf_out)
+}
+
 #[inline]
 fn hex_nibble(w: u16) -> Option<u8> {
     match w {
