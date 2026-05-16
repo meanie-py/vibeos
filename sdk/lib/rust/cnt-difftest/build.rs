@@ -155,6 +155,24 @@ fn main() {
              unsigned int ref_wcstoul(const wchar_t*n,wchar_t**e,int b)\
              {{return (unsigned int)ru_wcstoul_real(n,e,b);}}\n",
             inc(s("string/wcstoul.c")))),
+        // Wave E2 — multibyte ⇄ wide. The genuine .c are thin Rtl*
+        // NLS wrappers; refstub/ndk/_cp1252.h supplies a deterministic
+        // single-byte CP1252 Rtl* model identical to core_rs/mbcp.rs,
+        // so the diff pins the wrapper logic over 0x00-0xFF. wchar_t→
+        // unsigned short (host is 32-bit). Rename the 5 symbols so
+        // they don't collide with cnt-rust's own #[no_mangle].
+        ("mbstowcs_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define mbtowc ref_mbtowc\n#define mbstowcs ref_mbstowcs\n{}",
+            inc(s("string/mbstowcs_nt.c")))),
+        ("wcstombs_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wctomb ref_wctomb\n#define wcstombs ref_wcstombs\n{}",
+            inc(s("string/wcstombs_nt.c")))),
+        ("toupper_nt_mb", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define toupper_nt_mb ref_toupper_nt_mb\n{}",
+            inc(s("string/toupper_nt_mb.c")))),
     ];
 
     let mut build = cc::Build::new();

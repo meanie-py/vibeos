@@ -65,6 +65,7 @@ def rs_ty(ctype: str) -> str:
         "void*": "*mut core::ffi::c_void",
         "char**": "*mut *mut u8",
         "wchar_t*": "*mut u16",
+        "wchar_t": "u16",
         "size_t": "usize",
         "int": "i32",
         "__int64": "i64",
@@ -132,6 +133,69 @@ def _mag_prologue(vt: str, v: str, rad: str) -> str:
     if vt == "u32":
         return f"    let neg = false;\n    let mag = {v} as u64;"
     raise SystemExit(f"int2str: unsupported value type {vt}")
+
+
+# Multibyte ⇄ wide (CP1252 single-byte model). Self-contained shims:
+# the genuine .c are thin Rtl* wrappers; cnt-rust folds the Rtl* model
+# into core_rs::mbcp and the shim just adapts the C ptr ABI.
+MBCP = {"mbtowc", "mbstowcs", "wctomb", "wcstombs", "toupper_mb"}
+
+
+def _mbcp_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    b: list[str] = []
+    if sp == "mbtowc":
+        wc, mb, cnt = pn  # wchar*, mbchar(const char*), count
+        b += [
+            f"    if {mb}.is_null() || {wc}.is_null() {{ return 0; }}",
+            f"    let take = if {cnt} < 2 {{ {cnt} }} else {{ 2 }};",
+            f"    let s = core::slice::from_raw_parts({mb}, take);",
+            "    let r = crate::core_rs::mbcp::mbtowc(s);",
+            "    if r.ret == -1 { return -1; }",
+            f"    *{wc} = r.wc;",
+            "    r.ret",
+        ]
+    elif sp == "mbstowcs":
+        wc, mb, cnt = pn
+        b += [
+            f"    let s = cstr_slice({mb});",
+            f"    if {wc}.is_null() {{ return s.len() as {rt}; }}",
+            f"    let n = if s.len() < {cnt} {{ s.len() }} else {{ {cnt} }};",
+            f"    let d = core::slice::from_raw_parts_mut({wc}, n);",
+            f"    crate::core_rs::mbcp::mbstowcs(d, s, {cnt}) as {rt}",
+        ]
+    elif sp == "wctomb":
+        mb, wc = pn  # mbchar(char*), wchar
+        b += [
+            f"    if {mb}.is_null() {{ return 0; }}",
+            f"    *{mb} = crate::core_rs::mbcp::wctomb({wc});",
+            "    1",
+        ]
+    elif sp == "wcstombs":
+        mb, wc, cnt = pn
+        b += [
+            f"    let s = wcstr_slice({wc});",
+            f"    if {mb}.is_null() {{ return s.len() as {rt}; }}",
+            f"    let n = if s.len() < {cnt} {{ s.len() }} else {{ {cnt} }};",
+            f"    let d = core::slice::from_raw_parts_mut({mb}, n);",
+            f"    crate::core_rs::mbcp::wcstombs(d, s, {cnt}) as {rt}",
+        ]
+    elif sp == "toupper_mb":
+        (c,) = pn
+        b.append(f"    crate::core_rs::mbcp::toupper_nt_mb({c})")
+    else:
+        raise SystemExit(f"{name}: unhandled mbcp pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
 
 
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
@@ -252,6 +316,8 @@ def shim(name: str, m: dict) -> str:
     rt = ret_ty(m["c_signature"])
     if sp in INT2STR:
         return _int2str_shim(name, m, params, rt)
+    if sp in MBCP:
+        return _mbcp_shim(name, m, params, rt)
     decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]

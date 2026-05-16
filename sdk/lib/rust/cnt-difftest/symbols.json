@@ -374,6 +374,35 @@
       "trailing junk"
     ]
   },
+  "mbstowcs": {
+    "c_signature": "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)",
+    "family": "string",
+    "slice_pattern": "mbstowcs",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/mbstowcs_nt.c",
+    "fuzz_domain": [
+      "wcstr=NULL (query)",
+      "count < strlen",
+      "count >= strlen",
+      "empty mbstr",
+      "bytes spanning 0x80-0x9F"
+    ]
+  },
+  "mbtowc": {
+    "c_signature": "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)",
+    "family": "string",
+    "slice_pattern": "mbtowc",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/mbstowcs_nt.c",
+    "fuzz_domain": [
+      "mbchar=NULL",
+      "wchar=NULL",
+      "count=0",
+      "count=1",
+      "count=2",
+      "byte 0x00-0xFF incl 0x80-0x9F table + undefined slots"
+    ]
+  },
   "memchr": {
     "c_signature": "void* __cdecl memchr(const void *s, int c, size_t n)",
     "family": "mem",
@@ -581,6 +610,35 @@
       "endptr tracking"
     ]
   },
+  "toupper_nt_mb": {
+    "c_signature": "int __cdecl toupper_nt_mb(int _C)",
+    "family": "string",
+    "slice_pattern": "toupper_mb",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/toupper_nt_mb.c",
+    "fuzz_domain": [
+      "a-z/A-Z",
+      "non-alpha",
+      "0x80-0xFF (Latin-1 upcase, \u00ff\u2192\u0178\u2192'?', \u00b5\u2192\u039c\u2192'?')",
+      "0x00",
+      "negative _C (low byte)",
+      ">0xFF _C (low byte only)"
+    ]
+  },
+  "wcstombs": {
+    "c_signature": "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)",
+    "family": "wstring",
+    "slice_pattern": "wcstombs",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/wcstombs_nt.c",
+    "fuzz_domain": [
+      "mbstr=NULL (query)",
+      "count < wcslen",
+      "count >= wcslen",
+      "empty wcstr",
+      "unmappable wchars"
+    ]
+  },
   "wcstoul": {
     "c_signature": "unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)",
     "family": "wstring",
@@ -600,6 +658,20 @@
       "mixed case",
       "endptr=NULL",
       "junk after"
+    ]
+  },
+  "wctomb": {
+    "c_signature": "int wctomb(char *mbchar, wchar_t wchar)",
+    "family": "wstring",
+    "slice_pattern": "wctomb",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/wcstombs_nt.c",
+    "fuzz_domain": [
+      "mbchar=NULL",
+      "ASCII wchar",
+      "0xA0-0xFF (identity)",
+      "CP1252 0x80-0x9F target codepoints",
+      "unmappable \u2192 '?'"
     ]
   }
 }

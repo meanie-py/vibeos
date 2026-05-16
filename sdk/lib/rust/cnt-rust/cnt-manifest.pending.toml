@@ -9,56 +9,6 @@
 # Batch 2 (33): parse-endptr / int->str(+_s) / case-insensitive
 #               / multibyte / oddballs.
 schema_version = 1
-[symbols.mbstowcs]
-c_signature = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
-family = "string"
-slice_pattern = "nul_in"
-core_fn = "NEW:mbstowcs_nt"
-return_collapse = "usize"
-inout_effects = "wcstr written with converted wide chars (NOT NUL-terminated by this function); length determined by mbstr NUL. count is max wchar_t elements (destination capacity), NOT bytes."
-preserved_misfeature = "When wcstr==NULL, returns the required wchar_t count (Size/sizeof(wchar_t)) WITHOUT converting — a query mode (lines 48-53). RtlMultiByteToUnicodeN does NOT NUL-terminate wcstr (the Rtl function writes only converted chars). count is interpreted as wchar_t capacity, but passed as bytes to Rtl (count*sizeof(WCHAR), line 56). On NT API failure, returns (size_t)-1 (lines 60-61), not a well-defined error like textbook (size_t)-1 with errno."
-fuzz_domain = ["wcstr==NULL (query mode)", "wcstr!=NULL with count==0", "empty mbstr (strlen==0)", "mbstr with count < required wchars", "mbstr with count >= required wchars", "non-ASCII mbstr requiring multi-byte conversion", "NT API failure simulation (Status!=SUCCESS)"]
-
-[symbols.mbtowc]
-c_signature = "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)"
-family = "string"
-slice_pattern = "ptr_len"
-core_fn = "NEW:mb_to_wc"
-return_collapse = "i32_passthrough"
-inout_effects = "*wchar written with decoded wchar_t on success (ret>0); unchanged on error (ret==-1)"
-preserved_misfeature = "NULL checks short-circuit to 0 for BOTH wchar and mbchar (lines 18-19, 21-22), not the textbook reset-state behavior for wchar==NULL. Space-mapping guard (line 28-29): returns -1 if RtlAnsiCharToUnicodeChar produces L' ' but input mbarr[0]!=' ', treating this as invalid conversion. Return is signed difference of PUCHAR pointers (line 32), typically 1 for single-byte, 2 for lead-byte sequences up to MB_CUR_MAX==2."
-fuzz_domain = ["mbchar==NULL", "wchar==NULL", "count==0", "valid ASCII char count>=1", "valid lead-byte sequence count==2", "invalid sequence triggering space-guard", "count<needed (truncation)"]
-
-[symbols.wcstombs]
-c_signature = "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)"
-family = "wstring"
-slice_pattern = "nul_in + dst_optional"
-core_fn = "NEW:wstring::to_multibyte"
-return_collapse = "size_or_neg1_on_err"
-inout_effects = "If mbstr non-NULL: writes up to count bytes (multibyte encoding of wcstr), NO NUL termination guaranteed. If mbstr NULL: no mutation, returns required size."
-preserved_misfeature = "Lines 39-44: NULL dst is query mode (returns required size without terminating NUL). Lines 46-53: writes up to count bytes with NO automatic NUL termination—caller must ensure buffer sized for content+NUL or manually terminate. Conversion calls RtlUnicodeToMultiByteN which may fail (Status check line 51), returning -1 cast to size_t (SIZE_MAX on most platforms)."
-fuzz_domain = ["mbstr=NULL (query mode)", "mbstr valid, count exact for content (no NUL room)", "count=0 with valid mbstr", "wcstr empty L\"\"", "wcstr with multibyte-expanding chars", "conversion failure (invalid wchar sequence)", "count larger than needed"]
-
-[symbols.wctomb]
-c_signature = "int wctomb(char *mbchar, wchar_t wchar)"
-family = "wstring"
-slice_pattern = "single_wchar"
-core_fn = "NEW:wstring::wchar_to_mb_single"
-return_collapse = "i32_passthrough"
-inout_effects = "mbchar[0] written with single-byte conversion of wchar; if mbchar==NULL, no write occurs"
-preserved_misfeature = "mbchar==NULL returns 0 (state-independent encoding marker), not error. RtlUnicodeToMultiByteN converts exactly 1 wchar_t to up to 1 byte; return value is Size (0 or 1), or -1 on conversion failure."
-fuzz_domain = ["mbchar==NULL (expect 0)", "ASCII wchar (expect 1)", "non-ASCII wchar requiring multi-byte (expect Size or -1)", "invalid/surrogate wchar (expect -1)"]
-
-[symbols.toupper_nt_mb]
-c_signature = "int __cdecl toupper_nt_mb(_In_ int _C)"
-family = "ctype"
-slice_pattern = "int_passthrough"
-core_fn = "NEW:ctype::ansi_to_upper_mb"
-return_collapse = "i32_passthrough"
-inout_effects = "none (pure function)"
-preserved_misfeature = "Returns entire multibyte sequence packed into int: 2-byte result as (chr[1] | (chr[0] << 8)), 1-byte as chr[0], fallback to input unchanged if conversion fails (mbSize == 0). This is NOT standard toupper which operates on single chars; it's a Windows NT multibyte extension that round-trips through Unicode (ANSI→Unicode→upcase→ANSI) and packs the result bytes into a single int return value."
-fuzz_domain = ["ascii_lowercase ('a'-'z')", "ascii_uppercase ('A'-'Z')", "ascii_non_alpha (digits, punct)", "high_bit_set_single_byte (0x80-0xFF)", "multibyte_lead_bytes (DBCS sequences where applicable)", "zero (0x00)", "negative_input (-1, other negatives)"]
-
 [symbols._invalid_parameter]
 c_signature = "void __cdecl _invalid_parameter(wchar_t const* expression, wchar_t const* function_name, wchar_t const* file_name, unsigned int line_number, uintptr_t reserved)"
 family = "printf"

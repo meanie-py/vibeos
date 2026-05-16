@@ -555,3 +555,65 @@ inout_effects = "*endptr (if !=NULL) = nptr + (any ? first-non-consumed : 0); wr
 preserved_misfeature = "overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation"
 reference    = "sdk/lib/crt/string/wcstoul.c"
 fuzz_domain  = ["empty", "ws-only", "no digits (endptr=nptr)", "valid", "overflow-saturate", "negative (wrapping)", "neg-overflow→1", "base 0/2/8/10/16/36", "0x prefix", "mixed case", "endptr=NULL", "junk after"]
+
+# --- Wave E2 (multibyte ⇄ wide, CP1252 single-byte model) -----------
+# Genuine .c are thin Rtl* NLS wrappers; cnt-rust folds the Rtl* model
+# (default-install ANSI = CP1252, single-byte) into core_rs::mbcp. The
+# harness links the genuine wrapper .c against an IDENTICAL C CP1252
+# Rtl* stub, so the diff pins the wrapper logic deterministically over
+# the whole 0x00-0xFF single-byte domain. DBCS/lead-byte CPs = TODO.
+
+[symbols.mbtowc]
+c_signature  = "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)"
+family       = "string"
+slice_pattern = "mbtowc"
+core_fn      = "mbcp::mbtowc"
+return_collapse = "mbcp"
+inout_effects = "*wchar = decoded wchar (single-byte CP ⇒ 1 byte consumed) UNLESS space-guard returns -1; mbchar/wchar NULL → 0"
+preserved_misfeature = "space-guard: returns -1 (no *wchar write) if decoded==L' ' but mbarr[0]!=' ' (CP1252 never triggers it — only 0x20→U+0020 — but structurally pinned); count==0 → reads {0} → *wchar=0, ret 1"
+reference    = "sdk/lib/crt/string/mbstowcs_nt.c"
+fuzz_domain  = ["mbchar=NULL", "wchar=NULL", "count=0", "count=1", "count=2", "byte 0x00-0xFF incl 0x80-0x9F table + undefined slots"]
+
+[symbols.mbstowcs]
+c_signature  = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
+family       = "string"
+slice_pattern = "mbstowcs"
+core_fn      = "mbcp::mbstowcs"
+return_collapse = "mbcp"
+inout_effects = "wcstr=NULL → query, returns strlen(mbstr); else writes min(strlen,count) decoded wchars (NO NUL appended), returns that count"
+preserved_misfeature = "NO NUL termination on convert (RtlMultiByteToUnicodeN writes only converted chars); query mode returns Size/sizeof(wchar_t); single-byte CP ⇒ wchars == mb length"
+reference    = "sdk/lib/crt/string/mbstowcs_nt.c"
+fuzz_domain  = ["wcstr=NULL (query)", "count < strlen", "count >= strlen", "empty mbstr", "bytes spanning 0x80-0x9F"]
+
+[symbols.wctomb]
+c_signature  = "int wctomb(char *mbchar, wchar_t wchar)"
+family       = "wstring"
+slice_pattern = "wctomb"
+core_fn      = "mbcp::wctomb"
+return_collapse = "mbcp"
+inout_effects = "mbchar=NULL → 0; else *mbchar = encoded byte ('?' if unrepresentable), returns 1"
+preserved_misfeature = "single-byte CP ⇒ always Size==1 (RtlUnicodeToMultiByteN writes the default char '?' for unmappable and still counts it); NULL → 0 (state-independent marker)"
+reference    = "sdk/lib/crt/string/wcstombs_nt.c"
+fuzz_domain  = ["mbchar=NULL", "ASCII wchar", "0xA0-0xFF (identity)", "CP1252 0x80-0x9F target codepoints", "unmappable → '?'"]
+
+[symbols.wcstombs]
+c_signature  = "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)"
+family       = "wstring"
+slice_pattern = "wcstombs"
+core_fn      = "mbcp::wcstombs"
+return_collapse = "mbcp"
+inout_effects = "mbstr=NULL → query, returns wcslen(wcstr); else writes min(wcslen,count) encoded bytes (NO NUL), returns that count"
+preserved_misfeature = "NO NUL termination; unmappable wchar → '?'; query returns Size; single-byte CP ⇒ bytes == wchar length"
+reference    = "sdk/lib/crt/string/wcstombs_nt.c"
+fuzz_domain  = ["mbstr=NULL (query)", "count < wcslen", "count >= wcslen", "empty wcstr", "unmappable wchars"]
+
+[symbols.toupper_nt_mb]
+c_signature  = "int __cdecl toupper_nt_mb(int _C)"
+family       = "string"
+slice_pattern = "toupper_mb"
+core_fn      = "mbcp::toupper_nt_mb"
+return_collapse = "mbcp"
+inout_effects = "none (pure): low byte → decode → upcase → re-encode → packed return"
+preserved_misfeature = "packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised"
+reference    = "sdk/lib/crt/string/toupper_nt_mb.c"
+fuzz_domain  = ["a-z/A-Z", "non-alpha", "0x80-0xFF (Latin-1 upcase, ÿ→Ÿ→'?', µ→Μ→'?')", "0x00", "negative _C (low byte)", ">0xFF _C (low byte only)"]

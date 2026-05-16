@@ -519,6 +519,32 @@ pub unsafe extern "C" fn atol(str: *const u8) -> i32 {
 }
 
 
+/// `size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)`
+/// preserved misfeature: NO NUL termination on convert (RtlMultiByteToUnicodeN writes only converted chars); query mode returns Size/sizeof(wchar_t); single-byte CP ⇒ wchars == mb length
+#[no_mangle]
+pub unsafe extern "C" fn mbstowcs(wcstr: *mut u16, mbstr: *const u8, count: usize) -> usize {
+    let s = cstr_slice(mbstr);
+    if wcstr.is_null() { return s.len() as usize; }
+    let n = if s.len() < count { s.len() } else { count };
+    let d = core::slice::from_raw_parts_mut(wcstr, n);
+    crate::core_rs::mbcp::mbstowcs(d, s, count) as usize
+}
+
+
+/// `int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)`
+/// preserved misfeature: space-guard: returns -1 (no *wchar write) if decoded==L' ' but mbarr[0]!=' ' (CP1252 never triggers it — only 0x20→U+0020 — but structurally pinned); count==0 → reads {0} → *wchar=0, ret 1
+#[no_mangle]
+pub unsafe extern "C" fn mbtowc(wchar: *mut u16, mbchar: *const u8, count: usize) -> i32 {
+    if mbchar.is_null() || wchar.is_null() { return 0; }
+    let take = if count < 2 { count } else { 2 };
+    let s = core::slice::from_raw_parts(mbchar, take);
+    let r = crate::core_rs::mbcp::mbtowc(s);
+    if r.ret == -1 { return -1; }
+    *wchar = r.wc;
+    r.ret
+}
+
+
 /// `void* __cdecl memchr(const void *s, int c, size_t n)`
 /// preserved misfeature: n==0 → return NULL without deref; signed-char vs int compare (high-bit c)
 #[no_mangle]
@@ -673,6 +699,26 @@ pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) 
 }
 
 
+/// `int __cdecl toupper_nt_mb(int _C)`
+/// preserved misfeature: packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised
+#[no_mangle]
+pub unsafe extern "C" fn toupper_nt_mb(_C: i32) -> i32 {
+    crate::core_rs::mbcp::toupper_nt_mb(_C)
+}
+
+
+/// `size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)`
+/// preserved misfeature: NO NUL termination; unmappable wchar → '?'; query returns Size; single-byte CP ⇒ bytes == wchar length
+#[no_mangle]
+pub unsafe extern "C" fn wcstombs(mbstr: *mut u8, wcstr: *const u16, count: usize) -> usize {
+    let s = wcstr_slice(wcstr);
+    if mbstr.is_null() { return s.len() as usize; }
+    let n = if s.len() < count { s.len() } else { count };
+    let d = core::slice::from_raw_parts_mut(mbstr, n);
+    crate::core_rs::mbcp::wcstombs(d, s, count) as usize
+}
+
+
 /// `unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)`
 /// preserved misfeature: overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation
 #[no_mangle]
@@ -683,5 +729,15 @@ pub unsafe extern "C" fn wcstoul(nptr: *const u16, endptr: *mut *mut u16, base: 
         *endptr = nptr.add(r.end) as *mut u16;
     }
     r.value as u32
+}
+
+
+/// `int wctomb(char *mbchar, wchar_t wchar)`
+/// preserved misfeature: single-byte CP ⇒ always Size==1 (RtlUnicodeToMultiByteN writes the default char '?' for unmappable and still counts it); NULL → 0 (state-independent marker)
+#[no_mangle]
+pub unsafe extern "C" fn wctomb(mbchar: *mut u8, wchar: u16) -> i32 {
+    if mbchar.is_null() { return 0; }
+    *mbchar = crate::core_rs::mbcp::wctomb(wchar);
+    1
 }
 

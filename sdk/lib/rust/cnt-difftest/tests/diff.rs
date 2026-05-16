@@ -48,6 +48,11 @@ extern "C" {
     fn ref_wcsicmp(a: *const u16, b: *const u16) -> i32;
     fn ref_wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
     fn ref_wcstoul(n: *const u16, e: *mut *mut u16, b: i32) -> u32;
+    fn ref_mbtowc(w: *mut u16, mb: *const u8, n: usize) -> i32;
+    fn ref_mbstowcs(w: *mut u16, mb: *const u8, n: usize) -> usize;
+    fn ref_wctomb(mb: *mut u8, w: u16) -> i32;
+    fn ref_wcstombs(mb: *mut u8, w: *const u16, n: usize) -> usize;
+    fn ref_toupper_nt_mb(c: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -753,5 +758,105 @@ fn diff_wcstoul() {
         let cv2 = unsafe { cabi::wcstoul(sv.as_ptr(), core::ptr::null_mut(), base) };
         let rv2 = unsafe { ref_wcstoul(sv.as_ptr(), core::ptr::null_mut(), base) };
         assert_eq!(cv2, rv2, "wcstoul NULL-endptr s={sv:?} base={base}");
+    }
+}
+
+/// Wave E2 — multibyte ⇄ wide (CP1252 single-byte model). Genuine
+/// wrapper .c linked against an identical C CP1252 Rtl* stub, so the
+/// diff pins the wrapper logic over the whole 0x00-0xFF byte domain
+/// (incl. the 0x80-0x9F table + undefined slots) and the wide side
+/// over ASCII/Latin-1/table-targets/unmappable.
+#[test]
+fn diff_mbcp() {
+    // toupper_nt_mb — whole low-byte domain + negative / >0xFF inputs.
+    for c in -4i32..=300 {
+        unsafe {
+            assert_eq!(
+                cabi::toupper_nt_mb(c),
+                ref_toupper_nt_mb(c),
+                "toupper_nt_mb c={c}"
+            );
+        }
+    }
+    for &c in &[0x1234i32, 0x7F41, -256, i32::MIN, i32::MAX, 0xFF, 0xB5, 0xDF] {
+        unsafe {
+            assert_eq!(cabi::toupper_nt_mb(c), ref_toupper_nt_mb(c), "toupper c={c}");
+        }
+    }
+
+    // mbtowc — every byte, count {0,1,2,3}, + NULL guards.
+    for b in 0u16..=255 {
+        for &cnt in &[0usize, 1, 2, 3] {
+            let mbbuf = [b as u8, 0x41, 0x42, 0];
+            let (mut wc, mut wr): (u16, u16) = (0xEEEE, 0xEEEE);
+            let rc = unsafe { cabi::mbtowc(&mut wc, mbbuf.as_ptr(), cnt) };
+            let rr = unsafe { ref_mbtowc(&mut wr, mbbuf.as_ptr(), cnt) };
+            assert_eq!(rc, rr, "mbtowc ret b={b:#x} cnt={cnt}");
+            if rc != -1 {
+                assert_eq!(wc, wr, "mbtowc *wchar b={b:#x} cnt={cnt}");
+            }
+        }
+    }
+    unsafe {
+        assert_eq!(cabi::mbtowc(core::ptr::null_mut(), b"a\0".as_ptr(), 1), 0);
+        assert_eq!(ref_mbtowc(core::ptr::null_mut(), b"a\0".as_ptr(), 1), 0);
+        let mut w = 0u16;
+        assert_eq!(cabi::mbtowc(&mut w, core::ptr::null(), 1), 0);
+        assert_eq!(ref_mbtowc(&mut w, core::ptr::null(), 1), 0);
+    }
+
+    // wctomb — wide domain incl. table targets + unmappable, + NULL.
+    for w in 0u16..=0x21FF {
+        let (mut a, mut b) = (0xAAu8, 0xAAu8);
+        let rc = unsafe { cabi::wctomb(&mut a, w) };
+        let rr = unsafe { ref_wctomb(&mut b, w) };
+        assert_eq!(rc, rr, "wctomb ret w={w:#x}");
+        assert_eq!(a, b, "wctomb *mbchar w={w:#x}");
+    }
+    unsafe {
+        assert_eq!(cabi::wctomb(core::ptr::null_mut(), 0x41), 0);
+        assert_eq!(ref_wctomb(core::ptr::null_mut(), 0x41), 0);
+    }
+
+    let mut rng = Rng(0x3b9a_ca07_u64);
+    for _ in 0..4000 {
+        // mbstowcs: NUL-terminated mb string (bytes 1..=255).
+        let len = rng.upto(20);
+        let mut mb: Vec<u8> = (0..len).map(|_| (1 + rng.upto(255)) as u8).collect();
+        mb.push(0);
+        let count = rng.upto(24);
+        // query (wcstr == NULL)
+        unsafe {
+            assert_eq!(
+                cabi::mbstowcs(core::ptr::null_mut(), mb.as_ptr(), count),
+                ref_mbstowcs(core::ptr::null_mut(), mb.as_ptr(), count),
+                "mbstowcs query mb={mb:?}"
+            );
+        }
+        let (mut a, mut b) = ([0xEEEEu16; 32], [0xEEEEu16; 32]);
+        let ra = unsafe { cabi::mbstowcs(a.as_mut_ptr(), mb.as_ptr(), count) };
+        let rb = unsafe { ref_mbstowcs(b.as_mut_ptr(), mb.as_ptr(), count) };
+        assert_eq!(ra, rb, "mbstowcs ret mb={mb:?} count={count}");
+        assert_eq!(a, b, "mbstowcs buf mb={mb:?} count={count}");
+
+        // wcstombs: NUL-terminated wide string (ASCII/Latin-1/table/
+        // unmappable, no embedded 0).
+        let wl = rng.upto(20);
+        const WSET: [u16; 8] = [0x41, 0x7A, 0xA9, 0xE9, 0xFF, 0x20AC, 0x2013, 0x4E2D];
+        let mut ws: Vec<u16> = (0..wl).map(|_| WSET[rng.upto(8)]).collect();
+        ws.push(0);
+        let wc = rng.upto(24);
+        unsafe {
+            assert_eq!(
+                cabi::wcstombs(core::ptr::null_mut(), ws.as_ptr(), wc),
+                ref_wcstombs(core::ptr::null_mut(), ws.as_ptr(), wc),
+                "wcstombs query ws={ws:?}"
+            );
+        }
+        let (mut a, mut b) = ([0xAAu8; 32], [0xAAu8; 32]);
+        let ra = unsafe { cabi::wcstombs(a.as_mut_ptr(), ws.as_ptr(), wc) };
+        let rb = unsafe { ref_wcstombs(b.as_mut_ptr(), ws.as_ptr(), wc) };
+        assert_eq!(ra, rb, "wcstombs ret ws={ws:?} wc={wc}");
+        assert_eq!(a, b, "wcstombs buf ws={ws:?} wc={wc}");
     }
 }
