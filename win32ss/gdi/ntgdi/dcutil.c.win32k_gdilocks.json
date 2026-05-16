@@ -296,7 +296,7 @@
       "func_end_line": 775,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 709,
+      "lock_line": 710,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
@@ -307,16 +307,16 @@
     },
     {
       "function": "NtGdiSetBoundsRect",
-      "func_line": 779,
-      "func_end_line": 854,
+      "func_line": 780,
+      "func_end_line": 855,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 792,
+      "lock_line": 793,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        821,
-        852
+        822,
+        853
       ],
       "shape": "MULTI_UNLOCK",
       "signals": [

@@ -2,8 +2,7 @@
   "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/clipboard.c",
   "schema": "win32k_pass0_v1",
   "summary": {
-    "e": 3,
-    "a": 1
+    "e": 3
   },
   "sites": [
     {
@@ -68,24 +67,6 @@
         "SET_STATUS"
       ],
       "note": "non-probe call(s) in TRY: IntGetFormatElement"
-    },
-    {
-      "function": "NtUserConvertMemHandle",
-      "line_start": 1199,
-      "line_end": 1207,
-      "category": "a",
-      "category_name": "PROBE_LOWER",
-      "signals": [],
-      "probe_count": 1,
-      "nonprobe_calls": [],
-      "try_patterns": [
-        "PROBE",
-        "BULK_COPY"
-      ],
-      "handler_patterns": [
-        "SET_STATUS"
-      ],
-      "note": ""
     }
   ]
 }

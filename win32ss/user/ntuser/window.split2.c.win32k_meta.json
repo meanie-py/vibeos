@@ -1,0 +1,53 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split2.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "NtUserBuildHwndList",
+      "line_start": 491,
+      "line_end": 500,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "UserHMGetHandle"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UserHMGetHandle"
+    },
+    {
+      "function": "NtUserBuildHwndList",
+      "line_start": 569,
+      "line_end": 578,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "UserHMGetHandle"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UserHMGetHandle"
+    }
+  ]
+}

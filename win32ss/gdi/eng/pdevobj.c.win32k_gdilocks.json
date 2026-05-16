@@ -5,30 +5,30 @@
   "sites": [
     {
       "function": "NtGdiGetDeviceCaps",
-      "func_line": 1137,
-      "func_end_line": 1281,
+      "func_line": 1138,
+      "func_end_line": 1282,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 1145,
+      "lock_line": 1146,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        1156
+        1157
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiGetDeviceCapsAll",
-      "func_line": 1286,
-      "func_end_line": 1322,
+      "func_line": 1287,
+      "func_end_line": 1323,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 1295,
+      "lock_line": 1297,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        1306
+        1308
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []

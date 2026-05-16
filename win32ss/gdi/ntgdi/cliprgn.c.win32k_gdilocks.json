@@ -68,76 +68,76 @@
     },
     {
       "function": "NtGdiExcludeClipRect",
-      "func_line": 441,
-      "func_end_line": 485,
+      "func_line": 442,
+      "func_end_line": 486,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 454,
+      "lock_line": 455,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        482
+        483
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiIntersectClipRect",
-      "func_line": 489,
-      "func_end_line": 536,
+      "func_line": 490,
+      "func_end_line": 537,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 505,
+      "lock_line": 506,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        533
+        534
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiOffsetClipRgn",
-      "func_line": 540,
-      "func_end_line": 594,
+      "func_line": 541,
+      "func_end_line": 595,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 550,
+      "lock_line": 551,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        592
+        593
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiPtVisible",
-      "func_line": 596,
-      "func_end_line": 622,
+      "func_line": 597,
+      "func_end_line": 623,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 604,
+      "lock_line": 605,
       "var": "dc",
       "null_guarded": true,
       "unlock_lines": [
-        619
+        620
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiRectVisible",
-      "func_line": 626,
-      "func_end_line": 667,
+      "func_line": 627,
+      "func_end_line": 668,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 631,
+      "lock_line": 632,
       "var": "dc",
       "null_guarded": true,
       "unlock_lines": [
-        650,
-        664
+        651,
+        665
       ],
       "shape": "MULTI_UNLOCK",
       "signals": [
@@ -146,15 +146,15 @@
     },
     {
       "function": "NtGdiSetMetaRgn",
-      "func_line": 717,
-      "func_end_line": 731,
+      "func_line": 718,
+      "func_end_line": 732,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 720,
+      "lock_line": 721,
       "var": "pDC",
       "null_guarded": true,
       "unlock_lines": [
-        729
+        730
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []

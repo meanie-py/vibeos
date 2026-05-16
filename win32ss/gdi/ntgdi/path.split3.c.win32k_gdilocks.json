@@ -1,0 +1,393 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/path.split3.c",
+  "schema": "win32k_pass2_v1",
+  "count": 23,
+  "sites": [
+    {
+      "function": "PATH_WidenPath",
+      "func_line": 7,
+      "func_end_line": 21,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 11,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        19
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_ExtTextOut",
+      "func_line": 244,
+      "func_end_line": 339,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 258,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        303,
+        337
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiAbortPath",
+      "func_line": 348,
+      "func_end_line": 374,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 350,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        359,
+        365,
+        372
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiBeginPath",
+      "func_line": 378,
+      "func_end_line": 430,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 383,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        393,
+        405,
+        423
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiCloseFigure",
+      "func_line": 434,
+      "func_end_line": 469,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 442,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        452,
+        467
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiCloseFigure",
+      "func_line": 434,
+      "func_end_line": 469,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 449,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        466
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiEndPath",
+      "func_line": 473,
+      "func_end_line": 511,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 479,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        489,
+        509
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiEndPath",
+      "func_line": 473,
+      "func_end_line": 511,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 486,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        508
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiFillPath",
+      "func_line": 515,
+      "func_end_line": 569,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 522,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        532,
+        567
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiFillPath",
+      "func_line": 515,
+      "func_end_line": 569,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 529,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        561
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiFlattenPath",
+      "func_line": 573,
+      "func_end_line": 613,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 581,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        592,
+        611
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiFlattenPath",
+      "func_line": 573,
+      "func_end_line": 613,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 588,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        601
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetMiterLimit",
+      "func_line": 618,
+      "func_end_line": 646,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 626,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        643
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetPath",
+      "func_line": 651,
+      "func_end_line": 729,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 670,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        682,
+        727
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiGetPath",
+      "func_line": 651,
+      "func_end_line": 729,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 679,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        726
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiPathToRegion",
+      "func_line": 734,
+      "func_end_line": 814,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 745,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        759,
+        777,
+        788,
+        812
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiPathToRegion",
+      "func_line": 734,
+      "func_end_line": 814,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 755,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        776,
+        787,
+        807
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiSetMiterLimit",
+      "func_line": 818,
+      "func_end_line": 854,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 828,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        852
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiStrokeAndFillPath",
+      "func_line": 859,
+      "func_end_line": 914,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 868,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        876,
+        912
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStrokeAndFillPath",
+      "func_line": 859,
+      "func_end_line": 914,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 873,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        906
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiStrokePath",
+      "func_line": 918,
+      "func_end_line": 967,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 927,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        936,
+        965
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiStrokePath",
+      "func_line": 918,
+      "func_end_line": 967,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 933,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        960
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiWidenPath",
+      "func_line": 971,
+      "func_end_line": 994,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 975,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        991
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

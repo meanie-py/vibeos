@@ -1,0 +1,102 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split4.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 3,
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserFindWindowEx",
+      "line_start": 40,
+      "line_end": 80,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 4,
+      "nonprobe_calls": [
+        "EngSetLastError",
+        "IntGetAtomFromStringOrAtom"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "PROBE_TYPED",
+        "PROBE_UNICODE"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": "non-probe call(s) in TRY: EngSetLastError, IntGetAtomFromStringOrAtom"
+    },
+    {
+      "function": "NtUserFindWindowEx",
+      "line_start": 122,
+      "line_end": 208,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "UserHMGetHandle",
+        "IntWinListChildren",
+        "UserGetWindowObject",
+        "min",
+        "RtlCompareUnicodeString",
+        "IntFindWindow",
+        "ExFreePoolWithTag",
+        "IntGetMessageWindow"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "non-probe call(s) in TRY: UserHMGetHandle, IntWinListChildren, UserGetWindowObject, min"
+    },
+    {
+      "function": "NtUserGetComboBoxInfo",
+      "line_start": 396,
+      "line_end": 414,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "RECTL_bIsEmptyRect"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "non-probe call(s) in TRY: RECTL_bIsEmptyRect"
+    },
+    {
+      "function": "NtUserGetListBoxInfo",
+      "line_start": 488,
+      "line_end": 498,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

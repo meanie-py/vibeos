@@ -35,7 +35,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
-| `tools/rustconv/rustconv/file_splitter.py` | Giant-file split *analyzer* (static-coupling graph → safe-seam classification); `python -m rustconv split-plan` | analyzer done; emitter pending |
+| `tools/rustconv/rustconv/file_splitter.py` | Giant-file split analyzer + `#include`-back emitter; `python -m rustconv split-plan` / `split-apply` | done; 20 files split, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
@@ -167,9 +167,29 @@ never translated): **20 `CLEAN_SPLIT` ≈ 48.8K LOC of giants → balanced
 4135→4, `winpos.c` 4072→4, `message.c` 3234→3, `path.c` 3111→3); **24
 `LEAVE_WHOLE`** (e.g. `menu.c` 6691, `desktop.c` 3515, `class.c` 2987 —
 a static forces a still-giant chunk → translate-chunked); **0
-`NEEDS_PROMOTION`** (no risky de-static surgery required). The emitter
-(mechanical by-offset slice + cmake-SOURCE wiring + nm/concat oracle +
-smoke gate) is the pending follow-on, done in smoke-gated batches.
+`NEEDS_PROMOTION`** (no risky de-static surgery required).
+
+**Emitter — done, `#include`-back design (key decision).** Real
+TU-splitting needs extern-decl generation for file-scope globals +
+static-promotion — fragile and build-breaking. Instead the emitter
+keeps `<base>.c` as the *single* TU: it retains the prologue + group-0
+functions and appends `#include "<base>.split2.c" …`; fragments hold
+the remaining groups verbatim. The preprocessor reassembles the
+**identical** TU (same tokens/order, +1 comment) → **zero CMake
+changes, zero linkage/static hazard**. Per-file byte-exact
+reconstruction asserted before writing; the win32k source list is an
+explicit `list(APPEND SOURCE …)` (no globs) so fragments are never
+double-compiled. rustconv sees small files; the build sees one TU.
+
+Applied to all **20 CLEAN_SPLIT files → 32 fragments**. `region.c`
+proof: `region.c.obj` **58 defined symbols pre == 58 post, nm diff
+empty** (provably the same TU). Full batch: i386 **8/8** + amd64
+**8/8** smoke green; both arches build all 20 split TUs clean. Because
+splitting moves functions out of `<base>.c`, the Pass-0/2/3 sidecars
+were **clean-regenerated** (119 stale wiped → 94 correct, fragments
+included) and the prompt-builder multiplier verified to pick up
+fragments (`path.split2.c` → win32k context emitted). The 24
+`LEAVE_WHOLE` giants stay one file → `translate`-chunked next phase.
 
 ### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
 

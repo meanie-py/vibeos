@@ -5,11 +5,11 @@
   "sites": [
     {
       "function": "NtGdiGetServerMetaFileBits",
-      "func_line": 107,
-      "func_end_line": 165,
+      "func_line": 109,
+      "func_end_line": 163,
       "lock_fn": "GDIOBJ_LockObject",
       "unlock_fn": "GDIOBJ_UnlockObject",
-      "lock_line": 120,
+      "lock_line": 123,
       "var": "?",
       "null_guarded": false,
       "unlock_lines": [],

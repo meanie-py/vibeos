@@ -1,0 +1,54 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dibobj.split2.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "NtGdiGetDIBitsInternal",
+      "line_start": 80,
+      "line_end": 91,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "min",
+        "DIB_BitmapInfoSize"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min, DIB_BitmapInfoSize"
+    },
+    {
+      "function": "NtGdiCreateDIBSection",
+      "line_start": 744,
+      "line_end": 753,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 3,
+      "nonprobe_calls": [
+        "DIB_BitmapInfoSize"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: DIB_BitmapInfoSize"
+    }
+  ]
+}

@@ -5,46 +5,46 @@
   "sites": [
     {
       "function": "GreMoveTo",
-      "func_line": 110,
-      "func_end_line": 125,
+      "func_line": 111,
+      "func_end_line": 126,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 117,
+      "lock_line": 118,
       "var": "dc",
       "null_guarded": true,
       "unlock_lines": [
-        123
+        124
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "NtGdiLineTo",
-      "func_line": 497,
-      "func_end_line": 533,
+      "func_line": 498,
+      "func_end_line": 534,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 505,
+      "lock_line": 506,
       "var": "dc",
       "null_guarded": true,
       "unlock_lines": [
-        531
+        532
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []
     },
     {
       "function": "GdiPolyDraw",
-      "func_line": 538,
-      "func_end_line": 681,
+      "func_line": 539,
+      "func_end_line": 682,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 552,
+      "lock_line": 553,
       "var": "dc",
       "null_guarded": true,
       "unlock_lines": [
-        564,
-        678
+        565,
+        679
       ],
       "shape": "MULTI_UNLOCK",
       "signals": [
@@ -53,15 +53,15 @@
     },
     {
       "function": "NtGdiMoveTo",
-      "func_line": 761,
-      "func_end_line": 794,
+      "func_line": 762,
+      "func_end_line": 795,
       "lock_fn": "DC_LockDc",
       "unlock_fn": "DC_UnlockDc",
-      "lock_line": 771,
+      "lock_line": 773,
       "var": "pdc",
       "null_guarded": true,
       "unlock_lines": [
-        791
+        792
       ],
       "shape": "CLEAN_BRACKET",
       "signals": []

@@ -5,15 +5,15 @@
   "sites": [
     {
       "function": "NtUserCallHwndParamLock",
-      "func_line": 895,
-      "func_end_line": 938,
+      "func_line": 897,
+      "func_end_line": 940,
       "lock_fn": "REGION_LockRgn",
       "unlock_fn": "REGION_UnlockRgn",
-      "lock_line": 923,
+      "lock_line": 925,
       "var": "Rgn",
       "null_guarded": false,
       "unlock_lines": [
-        925
+        927
       ],
       "shape": "REVIEW",
       "signals": [

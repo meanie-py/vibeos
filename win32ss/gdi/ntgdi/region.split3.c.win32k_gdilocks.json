@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/region.split3.c",
+  "schema": "win32k_pass2_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "REGION_vSyncRegion",
+      "func_line": 30,
+      "func_end_line": 69,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 73,
+      "var": "?",
+      "null_guarded": false,
+      "unlock_lines": [],
+      "shape": "REVIEW",
+      "signals": [
+        "no_assignment_target"
+      ]
+    },
+    {
+      "function": "REGION_LockRgn",
+      "func_line": 73,
+      "func_end_line": 84,
+      "lock_fn": "GDIOBJ_LockObject",
+      "unlock_fn": "GDIOBJ_UnlockObject",
+      "lock_line": 78,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [],
+      "shape": "BORROWED",
+      "signals": [
+        "no_unlock_in_fn"
+      ]
+    },
+    {
+      "function": "IntGdiSetRegionOwner",
+      "func_line": 174,
+      "func_end_line": 198,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 180,
+      "var": "prgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        195
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntGdiGetRgnBox",
+      "func_line": 276,
+      "func_end_line": 293,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 283,
+      "var": "Rgn",
+      "null_guarded": true,
+      "unlock_lines": [
+        290
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

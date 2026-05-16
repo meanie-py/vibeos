@@ -473,6 +473,35 @@ def cmd_split_plan(args):
         print_report(plans)
 
 
+def cmd_split_apply(args):
+    from .file_splitter import (analyze_scope, plan_emit, apply_emit)
+    from .config import REACTOS_ROOT
+
+    targets: list[Path] = []
+    if args.path:
+        t = Path(args.path)
+        if not t.is_absolute():
+            t = REACTOS_ROOT / args.path
+        targets = [t]
+    else:
+        for pl in analyze_scope(REACTOS_ROOT / "win32ss",
+                                args.min_loc, args.target_loc):
+            if pl.classification == "CLEAN_SPLIT":
+                targets.append(pl.path)
+
+    for t in targets:
+        em = plan_emit(t, args.target_loc)
+        rel = t.as_posix().split("/win32ss/")[-1]
+        if not em.fragments:
+            print(f"  skip {rel}: {em.note}")
+            continue
+        names = ", ".join(p.name for p, _ in em.fragments)
+        print(f"  {'APPLY' if args.apply else 'plan'} {rel} → "
+              f"{rel.rsplit('/',1)[-1]} + [{names}]  ({em.note})")
+        if args.apply:
+            apply_emit(em)
+
+
 def cmd_gdi_locks(args):
     from .gdi_lock_inventory import (
         extract_file, extract_keepset, write_sidecar,
@@ -1062,6 +1091,17 @@ def main():
                    help="Target per-group LOC for the split (default 900)")
     p.add_argument("--json", action="store_true", help="Output JSON")
 
+    # split-apply (win32k giant-file #include-back emitter)
+    p = sub.add_parser("split-apply",
+                       help="Win32k: emit the #include-back split for "
+                            "CLEAN_SPLIT files (one TU, no CMake change)")
+    p.add_argument("path", nargs="?", default=None,
+                   help="One C file; omit to do ALL CLEAN_SPLIT in scope")
+    p.add_argument("--apply", action="store_true",
+                   help="Write fragments + rewrite base (default: dry-run)")
+    p.add_argument("--min-loc", type=int, default=1000)
+    p.add_argument("--target-loc", type=int, default=900)
+
     # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
     p = sub.add_parser("gdi-locks",
                        help="Win32k Pass 2: detect GDI manual lock brackets "
@@ -1140,6 +1180,7 @@ def main():
         "gdi-locks": cmd_gdi_locks,
         "seh-llm-lower": cmd_seh_llm_lower,
         "split-plan": cmd_split_plan,
+        "split-apply": cmd_split_apply,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,

@@ -1,0 +1,107 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/path.split2.c",
+  "schema": "win32k_pass2_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "PATH_PolyBezierTo",
+      "func_line": 6,
+      "func_end_line": 25,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 18,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        23
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyBezier",
+      "func_line": 29,
+      "func_end_line": 51,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 41,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        49
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyDraw",
+      "func_line": 55,
+      "func_end_line": 135,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 65,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        70,
+        97,
+        107,
+        122,
+        133
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_PolylineTo",
+      "func_line": 139,
+      "func_end_line": 159,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 153,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        157
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "PATH_PolyPolygon",
+      "func_line": 163,
+      "func_end_line": 209,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 180,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        188,
+        197,
+        207
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "PATH_PolyPolyline",
+      "func_line": 213,
+      "func_end_line": 246,
+      "lock_fn": "PATH_LockPath",
+      "unlock_fn": "PATH_UnlockPath",
+      "lock_line": 228,
+      "var": "pPath",
+      "null_guarded": true,
+      "unlock_lines": [
+        244
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

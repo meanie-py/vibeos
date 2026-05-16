@@ -259,6 +259,79 @@ def analyze_file(path: Path, target_loc: int = 900) -> Plan:
                 "no clean cut yields all-sub-giant groups; translate-chunk")
 
 
+@dataclass
+class Emit:
+    path: Path
+    classification: str
+    fragments: list[tuple[Path, str]]   # (fragment path, content)
+    new_base: str                       # rewritten <base>.c content
+    note: str = ""
+
+
+def plan_emit(path: Path, target_loc: int = 900) -> Emit:
+    """Build the #include-back split for a CLEAN_SPLIT file. The base .c
+    keeps the prologue + group-0 functions and `#include`s the remaining
+    groups as fragment files. The C preprocessor reassembles the IDENTICAL
+    translation unit (provably semantics-preserving — same tokens, same
+    order, plus one inserted comment) so there are NO CMake changes and NO
+    linkage/static hazard. rustconv sees small files; the build sees one TU.
+    """
+    pl = analyze_file(path, target_loc)
+    if pl.classification != "CLEAN_SPLIT" or len(pl.groups) < 2:
+        return Emit(path, pl.classification, [], "",
+                    "not CLEAN_SPLIT — nothing to emit")
+    text = path.read_text(errors="replace")
+    masked = _mask_literals(text)
+    funcs = _enumerate_functions(text, masked)
+
+    # Cut offsets at each non-final group's last-function end.
+    cuts = [funcs[b].end for (_a, b, _l) in pl.groups[:-1]]
+    bounds = cuts + [len(text)]
+
+    stem = path.stem
+    suffix = path.suffix
+    base_keep = text[:cuts[0]]
+    fragments: list[tuple[Path, str]] = []
+    includes: list[str] = []
+    prev = cuts[0]
+    for n, end in enumerate(bounds[1:], start=2):
+        slice_ = text[prev:end]
+        prev = end
+        fname = f"{stem}.split{n}{suffix}"
+        hdr = (f"/* {fname} — #include fragment of {stem}{suffix}, carved "
+               f"for pretranslation so rustconv gets a small file. NOT a "
+               f"standalone TU; NOT in CMake; do not compile directly. "
+               f"The preprocessor reassembles the original {stem}{suffix} "
+               f"TU verbatim. See "
+               f"docs/engineering/win32k-pretranslation-audit.md */\n")
+        fragments.append((path.with_name(fname), hdr + slice_))
+        includes.append(f'#include "{fname}"')
+
+    banner = (f"\n/* --- pretranslation split: the remaining function "
+              f"groups live in {stem}.split2..{len(pl.groups)}{suffix} and "
+              f"are #included below so this stays ONE translation unit "
+              f"(zero CMake/linkage change). Reassembled verbatim by cpp. "
+              f"--- */\n")
+    new_base = base_keep + banner + "\n".join(includes) + "\n"
+
+    # Oracle (by construction, asserted): stripping each fragment's added
+    # header line and concatenating after base_keep == the original file.
+    recon = base_keep + "".join(
+        c.split("\n", 1)[1] for _p, c in fragments)
+    if recon != text:
+        return Emit(path, pl.classification, [], "",
+                    "RECONSTRUCTION MISMATCH — refusing to emit "
+                    "(byte-exact reassembly check failed)")
+    return Emit(path, "CLEAN_SPLIT", fragments, new_base,
+                f"{len(pl.groups)} parts, reconstruction byte-exact")
+
+
+def apply_emit(em: Emit) -> None:
+    for fp, content in em.fragments:
+        fp.write_text(content)
+    em.path.write_text(em.new_base)
+
+
 def _scope(p: Path) -> bool:
     s = p.as_posix()
     return (any(f"/win32ss/{d}/" in s for d in SCOPE_DIRS)

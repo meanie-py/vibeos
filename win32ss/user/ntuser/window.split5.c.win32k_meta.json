@@ -1,0 +1,48 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/window.split5.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "NtUserDefSetText",
+      "line_start": 176,
+      "line_end": 184,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    },
+    {
+      "function": "NtUserDefSetText",
+      "line_start": 207,
+      "line_end": 219,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "RtlLargeStringToUnicodeString"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "non-probe call(s) in TRY: RtlLargeStringToUnicodeString"
+    }
+  ]
+}
