@@ -15,6 +15,7 @@ HAL_DIR = REACTOS_ROOT / "hal"
 KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
 FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
+ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -198,6 +199,25 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # arm64input.sys — bespoke ARM64 virtio-MMIO kbd+mouse driver
+    # (single self-contained arm64-only .c). Kernel-mode driver using
+    # ntddk APIs (Io/Mm/Ke/Ps/Rtl) → kernel system_prompt + BINDGEN_FILES,
+    # no .spec (only DriverEntry is exported). Integration is hal-rust-
+    # style cohabitation: arm64input-rust staticlib linked into the cmake
+    # arm64input target with arm64input.c commented out. arm64-only.
+    "arm64input": Target(
+        name="arm64input",
+        source_dir=ARM64INPUT_DIR,
+        output_crate=RUST_DIR / "arm64input-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("arm64",),
+    ),
     # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
     # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal
     # surface: _WND/_DESKTOP/Int*/Gre*/co_*). win32k-specific translation
@@ -256,6 +276,8 @@ def detect_target(c_path: Path) -> Target:
     if ("/base/system/smss" in posix or "/subsystems/csr" in posix
             or "/subsystems/win/basesrv" in posix):
         return TARGETS["smss-csrss"]
+    if "/drivers/input/arm64input" in posix:
+        return TARGETS["arm64input"]
     if "/win32ss/" in posix:
         return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:

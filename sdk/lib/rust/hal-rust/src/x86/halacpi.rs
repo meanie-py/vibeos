@@ -1263,7 +1263,23 @@ pub unsafe extern "system" fn HalpBuildAcpiResourceList(
     // Initialize the list
     (*ResourceList).BusNumber = -1i32 as ULONG;
     (*ResourceList).AlternativeLists = 1;
-    (*ResourceList).InterfaceType = PNPBus;
+    // The ACPI SCI interrupt is reported under this InterfaceType, then
+    // translated via the matching HAL bus handler. amd64's ACPI HAL
+    // (busemul) registers a PNPBus handler. The i386 backport keeps the
+    // legacy bussupp handlers, which register only Internal(0)/Isa(1) —
+    // there is NO PNPBus(15) handler, so HalReferenceHandlerForBus(PNPBus)
+    // returns null → HalGetInterruptVector → 0 → IopTranslateDeviceResources
+    // STATUS_UNSUCCESSFUL → ACPI_HAL stuck at DriversAdded. The SCI is a
+    // fixed motherboard PIC IRQ, so the `Internal` handler (identity PIC
+    // translation) is correct on i386. Task #4.
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*ResourceList).InterfaceType = PNPBus;
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (*ResourceList).InterfaceType = _INTERFACE_TYPE_Internal as i32;
+    }
     (*ResourceList).List[0].Version = 1;
     (*ResourceList).List[0].Revision = 1;
     (*ResourceList).List[0].Count = 0;

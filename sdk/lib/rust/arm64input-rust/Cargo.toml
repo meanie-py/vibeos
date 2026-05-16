@@ -1,0 +1,19 @@
+# arm64input-rust — Rust translation of the bespoke ARM64 virtio-MMIO
+# input driver (drivers/input/arm64input/arm64input.c). crate-type=
+# staticlib → libarm64input_rust.a, linked into the cmake-built
+# arm64input.sys with arm64input.c commented out — hal-rust-style
+# cohabitation. arm64-only (the driver is #[cfg(aarch64)] by nature:
+# hardcoded QEMU virt virtio-MMIO @ 0x0A000000, poll thread, direct
+# \Device\KeyboardClass0 / \Device\PointerClass0 creation — it bypasses
+# ACPI/PnP/GIC entirely).
+
+[package]
+name = "arm64input-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

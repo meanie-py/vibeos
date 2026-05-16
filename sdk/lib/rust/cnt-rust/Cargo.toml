@@ -24,8 +24,19 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
+default = ["float"]
 # Enables the generated #[no_mangle] extern "C" shim layer. Off for
 # pure-core consumers / Kani; on for the kernel link + cnt-difftest.
-cabi = []
+# cabi pulls `float` (manual.rs / scanf_trampoline.c need the float +
+# scanf cores).
+cabi = ["float"]
+# The float-bearing core modules (`floatcvt`, `scanf`). Default-on so
+# cnt-difftest / standalone builds are unchanged. A consumer that only
+# needs the integer model (e.g. rtl-strings' `mbcp` reuse) sets
+# `default-features = false` — required for the i386 kernel, which
+# builds Rust no-SSE (CR4.OSFXSR not set in Phase 0) and so cannot
+# compile by-value `f64` ABI signatures. Modules are untouched and
+# still fully built+tested by cnt-difftest.
+float = []
 
 [dependencies]

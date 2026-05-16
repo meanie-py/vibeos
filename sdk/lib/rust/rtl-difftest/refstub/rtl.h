@@ -199,6 +199,16 @@ typedef struct _RTL_UNICODE_STRING_BUFFER {
 #define RTL_FIND_CHAR_IN_UNICODE_STRING_CASE_INSENSITIVE 4
 #define MAX_COMPUTERNAME_LENGTH 15
 
+typedef struct _GENERATE_NAME_CONTEXT {
+    USHORT Checksum;
+    BOOLEAN CheckSumInserted;
+    UCHAR NameLength;
+    WCHAR NameBuffer[8];
+    ULONG ExtensionLength;
+    WCHAR ExtensionBuffer[4];
+    ULONG LastIndexValue;
+} GENERATE_NAME_CONTEXT, *PGENERATE_NAME_CONTEXT;
+
 typedef struct _GUID {
     ULONG Data1;
     USHORT Data2;
