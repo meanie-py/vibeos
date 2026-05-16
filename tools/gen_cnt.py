@@ -68,6 +68,7 @@ def rs_ty(ctype: str) -> str:
         "wchar_t": "u16",
         "size_t": "usize",
         "int": "i32",
+        "wint_t": "u16",  # Windows wint_t == unsigned short
         "__int64": "i64",
         "unsigned__int64": "u64",
         "long": "i32",  # Win i386 LP32
@@ -89,10 +90,14 @@ def ret_ty(sig: str) -> str:
         "int": "i32",
         "long": "i32",  # Win i386 LP32: long == 32-bit
         "unsignedlong": "u32",
+        "unsignedlonglong": "u64",
+        "unsigned__int64": "u64",
+        "wint_t": "u16",
         "__int64": "i64",
         "char*": "*mut u8",
         "wchar_t*": "*mut u16",
         "void*": "*mut core::ffi::c_void",
+        "void": "()",  # _splitpath/_makepath etc. return nothing
     }[rtype]
 
 
@@ -257,6 +262,275 @@ def _mbcp_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
+# Wave H — ASCII case fold. In-place folders mutate the NUL-terminated
+# string and return the pointer; two (_strupr/_wcslwr) NULL-guard
+# (manifest `null_guard = true`) → return NULL. Scalars are pure value
+# transforms (tolower = ASCII core; towupper = the Rtl/CP1252 upcase
+# shared with Wave E2's mbcp::upcase).
+CASEMAP = {"case_inplace", "case_tolower", "case_towupper"}
+
+
+def _casemap_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    b: list[str] = []
+    if sp == "case_inplace":
+        (p,) = pn
+        wide = rs_ty(params[0][0]) == "*mut u16"
+        el = "u16" if wide else "u8"
+        cstr = "wcstr_slice" if wide else "cstr_slice"
+        rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+        cf = m["core_fn"]  # casemap::lower_ascii | casemap::upper_ascii
+        if m.get("null_guard", False):
+            b.append(
+                f"    if {p}.is_null() {{ return core::ptr::null_mut(); }}"
+            )
+        b += [
+            f"    let n = {cstr}({p} as *const {el}).len();",
+            f"    let s = {rawm}({p}, n);",
+            f"    crate::core_rs::{cf}(s);",
+            f"    {p}",
+        ]
+    elif sp == "case_tolower":
+        (c,) = pn
+        b.append(f"    crate::core_rs::casemap::tolower_ascii({c})")
+    elif sp == "case_towupper":
+        (c,) = pn
+        b.append(f"    crate::core_rs::mbcp::upcase({c}) as {rt}")
+    else:
+        raise SystemExit(f"{name}: unhandled casemap pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
+# Wave I — in-place string mutators. All return the original pointer;
+# the slice is bounded by the live content (cstr_slice len), and for
+# _strnset further by min(len, (int)sizeMaxFill) — the signed-int cast
+# of size_t is the preserved misfeature (huge size_t → negative int →
+# fills nothing). NO NULL guards in the C — NULL never fuzzed.
+STRMUT = {"mut_reverse", "mut_set", "mut_nset"}
+
+
+def _strmut_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = rs_ty(params[0][0]) == "*mut u16"
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+    b: list[str] = []
+    # `__buf` (not `s`) — _strrev's param is literally named `s`.
+    if sp == "mut_reverse":
+        (p,) = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            f"    let __buf = {rawm}({p}, __n);",
+            "    crate::core_rs::strmut::reverse(__buf);",
+            f"    {p}",
+        ]
+    elif sp == "mut_set":
+        p, fill = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            f"    let __buf = {rawm}({p}, __n);",
+            f"    crate::core_rs::strmut::fill(__buf, {fill} as {el});",
+            f"    {p}",
+        ]
+    elif sp == "mut_nset":
+        p, fill, mx = pn
+        b += [
+            f"    let __n = {cstr}({p} as *const {el}).len();",
+            # C: `i < (int)sizeMaxFill` — signed-int cast of size_t.
+            f"    let __lim = {mx} as i32;",
+            "    let __take = if __lim <= 0 { 0 }"
+            " else { core::cmp::min(__n, __lim as usize) };",
+            f"    let __buf = {rawm}({p}, __take);",
+            f"    crate::core_rs::strmut::fill(__buf, {fill} as {el});",
+            f"    {p}",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled strmut pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
+# Path track — _splitpath/_wsplitpath (_tsplitpath_x.h, non-secure
+# !IS_SECAPI + _LIBCNT_) + _makepath/_wmakepath. The C does a SINGLE
+# `path[1]==':'` drive detection then `path+=2`; `core_rs::path::split`
+# reports ranges into the FULL slice (no sub-slice re-detection). 4
+# nullable OUT bufs for split (each skipped if NULL); the synthesized
+# 3-elem drive is written iff `drive!=NULL` (the `path+=2` is
+# unconditional, baked into split's dir_start). makepath: NULL `path`
+# = clean no-op; NULL/empty component skipped (cstr_slice NULL→empty).
+PATHFAM = {"splitpath", "makepath"}
+
+
+def _pathfam_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = "u16" in rs_ty(params[0][0])
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+    nul = "0u16" if wide else "0u8"
+    colon = "b':' as u16" if wide else "b':'"
+    b: list[str] = []
+    if sp == "splitpath":
+        path, drive, dir_, fname, ext = pn
+        b += [
+            f"    let p = {cstr}({path});",
+            # C lines 67-70: truncate every non-NULL out to "".
+            f"    if !{drive}.is_null() {{ *{drive} = {nul}; }}",
+            f"    if !{dir_}.is_null() {{ *{dir_} = {nul}; }}",
+            f"    if !{fname}.is_null() {{ *{fname} = {nul}; }}",
+            f"    if !{ext}.is_null() {{ *{ext} = {nul}; }}",
+            f"    if p.is_empty() {{ return; }}",  # C line 91 early ret
+            f"    let r = crate::core_rs::path::split(p);",
+            # drive synthesized [p[0], ':', NUL] iff drive != NULL
+            # (C writes the 3 unconditionally given drive!=NULL; the
+            # path+=2 is folded into split's dir_start).
+            f"    if r.has_drive && !{drive}.is_null() {{",
+            f"        *{drive} = p[0];",
+            f"        *{drive}.add(1) = {colon};",
+            f"        *{drive}.add(2) = {nul};",
+            f"    }}",
+            f"    for (out, (a, e)) in [",
+            f"        ({dir_}, r.dir), ({fname}, r.fname), ({ext}, r.ext),",
+            f"    ] {{",
+            f"        if !out.is_null() {{",
+            f"            let d = {rawm}(out, e - a + 1);",
+            f"            let mut k = 0usize;",
+            f"            while k < e - a {{ d[k] = p[a + k]; k += 1; }}",
+            f"            d[e - a] = {nul};",
+            f"        }}",
+            f"    }}",
+        ]
+    elif sp == "makepath":
+        path, drive, dir_, fname, ext = pn
+        b += [
+            f"    if {path}.is_null() {{ return; }}",
+            f"    let dr = {cstr}({drive} as *const {el});",
+            f"    let di = {cstr}({dir_} as *const {el});",
+            f"    let fl = {cstr}({fname} as *const {el});",
+            f"    let ex = {cstr}({ext} as *const {el});",
+            # worst case: drive(2) + dir + sep(1) + fname + dot(1) + ext
+            #             + NUL(1)  →  +5 slack
+            f"    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;",
+            f"    let out = {rawm}({path}, cap);",
+            f"    crate::core_rs::path::make(out, dr, di, fl, ex);",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled pathfam pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
+# Wave STRTOK — strtok/strtok_s/wcstok/wcstok_s. One pure core
+# (core_rs::strtok::next_token); the shim owns the raw-pointer walk +
+# the non-reentrant saved pointer. `*_static` (strtok/wcstok) keep it
+# in a process-global AtomicPtr (faithful to the genuine per-thread
+# thread_data_t field — single-threaded-equivalent, the
+# _invalid_parameter relaxed-atomic precedent); `*_ctx`
+# (strtok_s/wcstok_s) take an explicit `char**`/`wchar_t**`. The Empty
+# (no-token) path updates the saved ptr ONLY for strtok_s (`*ctx=str`);
+# strtok/wcstok/wcstok_s leave it UNCHANGED (a faithful asymmetry).
+STRTOK = {"tok_static", "tok_ctx", "wtok_static", "wtok_ctx"}
+
+
+def _strtok_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    wide = sp.startswith("w")
+    el = "u16" if wide else "u8"
+    cstr = "wcstr_slice" if wide else "cstr_slice"
+    null = "core::ptr::null_mut()"
+    b: list[str] = []
+    if sp in ("tok_static", "wtok_static"):
+        s_, delim = pn
+        b += [
+            "    use core::sync::atomic::{AtomicPtr, Ordering};",
+            f"    static SAVED: AtomicPtr<{el}> = AtomicPtr::new({null});",
+            f"    if {delim}.is_null() {{ return {null}; }}",
+            f"    let base = if {s_}.is_null() {{",
+            f"        let p = SAVED.load(Ordering::Relaxed);",
+            f"        if p.is_null() {{ return {null}; }}",
+            f"        p",
+            f"    }} else {{ {s_} }};",
+            f"    let n = {cstr}(base as *const {el}).len();",
+            f"    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token("
+            f"s, {cstr}({delim})) {{",
+            f"        crate::core_rs::strtok::Tok::Empty {{ .. }} => {null},",
+            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
+            f"            SAVED.store(base.add(next), Ordering::Relaxed);",
+            f"            base.add(start)",
+            f"        }}",
+            f"    }}",
+        ]
+    else:  # tok_ctx / wtok_ctx — explicit context pointer
+        s_, delim, ctx = pn
+        # strtok_s alone updates *ctx on the Empty path (`*ctx=str`);
+        # wcstok_s leaves *next_token unchanged (Wine asymmetry).
+        empty_arm = (
+            f"crate::core_rs::strtok::Tok::Empty {{ stop }} => "
+            f"{{ *{ctx} = base.add(stop); {null} }},"
+            if sp == "tok_ctx"
+            else f"crate::core_rs::strtok::Tok::Empty {{ .. }} => {null},"
+        )
+        b += [
+            f"    if {delim}.is_null() {{ return {null}; }}",
+            f"    if {ctx}.is_null() {{ return {null}; }}",
+            f"    let base = if {s_}.is_null() {{",
+            f"        if (*{ctx}).is_null() {{ return {null}; }}",
+            f"        *{ctx}",
+            f"    }} else {{ {s_} }};",
+            f"    let n = {cstr}(base as *const {el}).len();",
+            f"    let s = core::slice::from_raw_parts_mut(base, n);",
+            f"    match crate::core_rs::strtok::next_token("
+            f"s, {cstr}({delim})) {{",
+            f"        {empty_arm}",
+            f"        crate::core_rs::strtok::Tok::Found {{ start, next }} => {{",
+            f"            *{ctx} = base.add(next);",
+            f"            base.add(start)",
+            f"        }}",
+            f"    }}",
+        ]
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
     decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
@@ -379,7 +653,21 @@ def shim(name: str, m: dict) -> str:
         return _mbcp_shim(name, m, params, rt)
     if sp in STRFAM:
         return _strfam_shim(name, m, params, rt)
-    decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    if sp in CASEMAP:
+        return _casemap_shim(name, m, params, rt)
+    if sp in STRMUT:
+        return _strmut_shim(name, m, params, rt)
+    if sp in PATHFAM:
+        return _pathfam_shim(name, m, params, rt)
+    if sp in STRTOK:
+        return _strtok_shim(name, m, params, rt)
+    # `_locale_t` is ignored by every collapse (the `_l` variants
+    # delegate with locale unused) — emit it underscore-prefixed so it
+    # doesn't trip unused_variables.
+    decl_params = ", ".join(
+        f"{'_' + n if t.replace(' ', '') == '_locale_t' else n}: {rs_ty(t)}"
+        for t, n in params
+    )
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]
     szp = next((n for t, n in params if rs_ty(t) == "usize"), None)
@@ -445,6 +733,8 @@ def shim(name: str, m: dict) -> str:
     # ---- core call + return collapse -------------------------------
     if rc == "usize":
         body.append(f"    {core_call(s0)} as {rt}")
+    elif rc == "usize2":  # span-shape: core(s, set) -> size_t
+        body.append(f"    {core_call(f'{s0}, {s1}')} as {rt}")
     elif rc == "i32_passthrough":
         body.append(f"    {core_call(f'{s0}, {s1}')}")
     elif rc == "i32_cmp_n":  # strncmp-shape: core(a, b, n)
@@ -505,6 +795,66 @@ def shim(name: str, m: dict) -> str:
         )
         body.append(f"    if !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut u16;")
+        body.append("    }")
+        body.append(f"    r.value as {rt}")
+    elif rc in ("long_bsd", "u64_bsd"):
+        # strtol/wcstol/strtoull — BSD parse + endptr. Narrow (*const
+        # u8 / char**) or wide (*const u16 / wchar_t**); the core is
+        # generic over Cu so the slice type drives it. `as *mut _`
+        # lets the endptr cast infer the right inner pointer width.
+        core = "parse_long_bsd" if rc == "long_bsd" else "parse_u64_bsd"
+        np = next(
+            n for t, n in params if rs_ty(t) in ("*const u8", "*const u16")
+        )
+        ep = next(
+            n
+            for t, n in params
+            if rs_ty(t) in ("*mut *mut u8", "*mut *mut u16")
+        )
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});")
+        body.append(f"    if !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
+        body.append("    }")
+        body.append(f"    r.value as {rt}")
+    elif rc == "wtoi64_w":
+        # Wave G2: _wtoi (int trunc), _wtoi64, _wtoi64_l — wide i64
+        # wrapping. Picks the *const u16; locale (if any) ignored.
+        # `v as {rt}` is (int) truncation for _wtoi (rt=i32) and a
+        # no-op for the __int64 forms.
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        body.append(
+            f"    let (v, _of) = crate::core_rs::radix::"
+            f"parse_i64_wrapping_cu({np}_s);"
+        )
+        body.append(f"    v as {rt}")
+    elif rc == "wtol_w":
+        # Wave G2: _wtol — wide decimal u32 wrapping, bit-reinterpreted
+        # to `long` (rt=i32). NULL→0 via wcstr_slice empty.
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        body.append(
+            f"    crate::core_rs::radix::parse_u32_dec_w({np}_s) as {rt}"
+        )
+    elif rc in ("wcstoi64_w", "wcstoui64_w"):
+        # Wave G2: _wcstoi64{,_l} / _wcstoui64{,_l}. NULL nptr → return
+        # 0 with NO endptr write (C's MSVCRT_CHECK_PMT under _LIBCNT_).
+        # Invalid base → base_ok=false → return 0, no endptr write.
+        # Otherwise *endptr = nptr + final-index (written even with no
+        # digits — the wide endptr contract). locale ignored.
+        core = (
+            "parse_i64_clamped_w"
+            if rc == "wcstoi64_w"
+            else "parse_u64_clamped_w"
+        )
+        np = next(n for t, n in params if rs_ty(t) == "*const u16")
+        ep = next(n for t, n in params if rs_ty(t) == "*mut *mut u16")
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(f"    if {np}.is_null() {{ return 0 as {rt}; }}")
+        body.append(
+            f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});"
+        )
+        body.append(f"    if r.base_ok && !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
         body.append("    }")
         body.append(f"    r.value as {rt}")
     else:

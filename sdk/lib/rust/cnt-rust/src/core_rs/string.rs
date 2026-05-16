@@ -72,10 +72,11 @@ pub fn cmp<T: Elem>(a: &[T], b: &[T]) -> i32 {
     0
 }
 
-/// `strstr` core: first index of `needle` in `hay`, or `None`. Empty
-/// needle → `Some(0)` (C `strstr` returns `hay`).
+/// `strstr` core (`strstr.c`): first index of `needle` in `hay`, or
+/// `None`. Empty needle → `Some(0)` (C returns `hay`: `*find++` is 0
+/// so the search is skipped and `s` returned).
 #[inline]
-pub fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
+pub fn find_sub<T: Elem>(hay: &[T], needle: &[T]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
     }
@@ -83,6 +84,52 @@ pub fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
         return None;
     }
     (0..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
+}
+
+/// `wcsstr` core (`wcsstr.c`): like [`find_sub`] **but an empty
+/// needle returns `None`** — the C `while(*x)` loop body is never
+/// entered for a 0-length `b`, so it falls through to `return NULL`.
+/// (Deliberately distinct from narrow `strstr`'s empty→hay; the diff
+/// harness pins both.)
+#[inline]
+pub fn find_sub_strict<T: Elem>(hay: &[T], needle: &[T]) -> Option<usize> {
+    if needle.is_empty() {
+        None
+    } else {
+        find_sub(hay, needle)
+    }
+}
+
+/// `strspn`/`strcspn`/`wcsspn`/`wcscspn` core: length of the leading
+/// run of `s` whose membership in `set` equals `want_in`. Faithful to
+/// `strxspn.h` (bitmap) and the wide double-loop — identical result.
+/// `set`/`s` are NUL-excluded content slices (the C scans stop at the
+/// terminator, never in `set`, so this is exact).
+#[inline]
+pub fn span<T: Elem>(s: &[T], set: &[T], want_in: bool) -> usize {
+    s.iter()
+        .take_while(|&&c| set.contains(&c) == want_in)
+        .count()
+}
+
+/// `strspn`/`wcsspn` (`_x = !(...)`: stop at first char NOT in set).
+#[inline]
+pub fn span_in<T: Elem>(s: &[T], set: &[T]) -> usize {
+    span(s, set, true)
+}
+
+/// `strcspn`/`wcscspn` (`_x = (...)`: stop at first char IN set).
+#[inline]
+pub fn span_out<T: Elem>(s: &[T], set: &[T]) -> usize {
+    span(s, set, false)
+}
+
+/// `strpbrk` core: first index of `s` whose char is in `set`, else
+/// `None`. Empty `set` → `None` (C `if(*s2==0) return 0;`). All the
+/// C's strchr/2-char fast paths reduce to exactly this.
+#[inline]
+pub fn find_any<T: Elem>(s: &[T], set: &[T]) -> Option<usize> {
+    s.iter().position(|c| set.contains(c))
 }
 
 /// `strncmp` core, faithful to ReactOS `tcsncmp.h`: signed-char

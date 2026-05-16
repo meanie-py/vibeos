@@ -66,6 +66,40 @@ extern "C" {
     fn ref_wcscat(d: *mut u16, s: *const u16) -> *mut u16;
     fn ref_strncat(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn ref_wcsncat(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_strspn(s: *const u8, a: *const u8) -> usize;
+    fn ref_strcspn(s: *const u8, a: *const u8) -> usize;
+    fn ref_strpbrk(s: *const u8, a: *const u8) -> *mut u8;
+    fn ref_wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcscspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcsstr(s: *const u16, b: *const u16) -> *mut u16;
+    fn ref_strtol(n: *const u8, e: *mut *mut u8, b: i32) -> i32;
+    fn ref_strtoull(n: *const u8, e: *mut *mut u8, b: i32) -> u64;
+    fn ref_wcstol(n: *const u16, e: *mut *mut u16, b: i32) -> i32;
+    fn ref_wtoi(n: *const u16) -> i32;
+    fn ref_wtol(n: *const u16) -> i32;
+    fn ref_wtoi64(n: *const u16) -> i64;
+    fn ref_wtoi64_l(n: *const u16, loc: *mut c_void) -> i64;
+    fn ref_wcstoi64(n: *const u16, e: *mut *mut u16, b: i32) -> i64;
+    fn ref_wcstoi64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> i64;
+    fn ref_wcstoui64(n: *const u16, e: *mut *mut u16, b: i32) -> u64;
+    fn ref_wcstoui64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> u64;
+    fn ref_strlwr(s: *mut u8) -> *mut u8;
+    fn ref_strupr(s: *mut u8) -> *mut u8;
+    fn ref_wcslwr(s: *mut u16) -> *mut u16;
+    fn ref_wcsupr(s: *mut u16) -> *mut u16;
+    fn ref_tolower(c: i32) -> i32;
+    fn ref_towupper(c: u16) -> u16;
+    fn ref_strrev(s: *mut u8) -> *mut u8;
+    fn ref_strset(s: *mut u8, fill: i32) -> *mut u8;
+    fn ref_strnset(s: *mut u8, fill: i32, max: usize) -> *mut u8;
+    fn ref_splitpath(p: *const u8, dr: *mut u8, di: *mut u8, fnm: *mut u8, ex: *mut u8);
+    fn ref_wsplitpath(p: *const u16, dr: *mut u16, di: *mut u16, fnm: *mut u16, ex: *mut u16);
+    fn ref_makepath(p: *mut u8, dr: *const u8, di: *const u8, fnm: *const u8, ex: *const u8);
+    fn ref_wmakepath(p: *mut u16, dr: *const u16, di: *const u16, fnm: *const u16, ex: *const u16);
+    fn ref_strtok(s: *mut u8, d: *const u8) -> *mut u8;
+    fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn ref_wcstok(s: *mut u16, d: *const u16) -> *mut u16;
+    fn ref_wcstok_s(s: *mut u16, d: *const u16, n: *mut *mut u16) -> *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -991,5 +1025,612 @@ fn diff_tcs_family() {
             cabi::wcsnlen(core::ptr::null(), 5),
             ref_wcsnlen(core::ptr::null(), 5)
         );
+    }
+}
+
+/// Wave G — BSD parse + endptr (strtol/wcstol signed-long clamp,
+/// strtoull u64). ASCII domain, sane bases. Pins value + endptr
+/// (incl. the any?s-1:nptr rule and the overflow→LONG_MIN/MAX /
+/// ULLONG_MAX clamps) vs genuine strtol.c/wcstol.c/strtoull.c.
+#[test]
+fn diff_strtol_family() {
+    let mut rng = Rng(0x6a17_0c2d_u64);
+    let bases = [0i32, 2, 8, 10, 16, 36];
+    let alpha = b" \t+-0xXabcdefABCDEF0123456789Zz";
+    for _ in 0..9000 {
+        let mut s: Vec<u8> = (0..rng.upto(24))
+            .map(|_| alpha[rng.upto(alpha.len())])
+            .collect();
+        s.push(0);
+        let base = bases[rng.upto(bases.len())];
+        let off = |p: *mut u8| {
+            if p == 1 as *mut u8 {
+                None
+            } else {
+                Some(p as usize - s.as_ptr() as usize)
+            }
+        };
+        // strtol / strtoull (narrow)
+        let (mut ec, mut er): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let cv = unsafe { cabi::strtol(s.as_ptr(), &mut ec, base) };
+        let rv = unsafe { ref_strtol(s.as_ptr(), &mut er, base) };
+        assert_eq!(cv, rv, "strtol v s={s:?} base={base}");
+        assert_eq!(off(ec), off(er), "strtol endptr s={s:?} base={base}");
+        let (mut uc, mut ur): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let ucv = unsafe { cabi::strtoull(s.as_ptr(), &mut uc, base) };
+        let urv = unsafe { ref_strtoull(s.as_ptr(), &mut ur, base) };
+        assert_eq!(ucv, urv, "strtoull v s={s:?} base={base}");
+        assert_eq!(off(uc), off(ur), "strtoull endptr s={s:?} base={base}");
+        // wcstol (wide)
+        let ws: Vec<u16> = s.iter().map(|&b| b as u16).collect();
+        let woff = |p: *mut u16| {
+            if p == 1 as *mut u16 {
+                None
+            } else {
+                Some((p as usize - ws.as_ptr() as usize) / 2)
+            }
+        };
+        let (mut wc, mut wr): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let wcv = unsafe { cabi::wcstol(ws.as_ptr(), &mut wc, base) };
+        let wrv = unsafe { ref_wcstol(ws.as_ptr(), &mut wr, base) };
+        assert_eq!(wcv, wrv, "wcstol v s={s:?} base={base}");
+        assert_eq!(woff(wc), woff(wr), "wcstol endptr s={s:?} base={base}");
+        // endptr == NULL path (value still correct, no write)
+        let cv2 = unsafe { cabi::strtol(s.as_ptr(), core::ptr::null_mut(), base) };
+        let rv2 = unsafe { ref_strtol(s.as_ptr(), core::ptr::null_mut(), base) };
+        assert_eq!(cv2, rv2, "strtol NULL-endptr s={s:?} base={base}");
+    }
+}
+
+/// Wave F — charset span/search. Small alphabets so set membership
+/// actually hits; empty set / empty needle exercised explicitly.
+#[test]
+fn diff_span() {
+    let mut rng = Rng(0x5fa0_b17e_u64);
+    for _ in 0..9000 {
+        // narrow: full-range bytes incl >=0x80 (unsigned-char bitmap)
+        let s = cstr(&mut rng, 28, true);
+        let set = if rng.next() & 7 == 0 {
+            vec![0] // empty set
+        } else {
+            cstr(&mut rng, 5, true)
+        };
+        unsafe {
+            assert_eq!(
+                cabi::strspn(s.as_ptr(), set.as_ptr()),
+                ref_strspn(s.as_ptr(), set.as_ptr()),
+                "strspn s={s:?} set={set:?}"
+            );
+            assert_eq!(
+                cabi::strcspn(s.as_ptr(), set.as_ptr()),
+                ref_strcspn(s.as_ptr(), set.as_ptr()),
+                "strcspn s={s:?} set={set:?}"
+            );
+        }
+        // strpbrk: strpbrk.c's 3+-char path uses a bitmap sized by
+        // BIT_SIZE = sizeof(unsigned long)*8 — LP32 on the target but
+        // 64 on this host, where `1 << (>=32)` is UB → the genuine
+        // source computes garbage. The 0/1/2-char strchr fast paths
+        // are host-correct AND fully exercise our find_any (set size
+        // doesn't change `position(|c| set.contains(c))`). So fuzz
+        // set ≤2 here; 3+ is the same first-in-set contract, just
+        // unfuzzable on LP64 (documented, like the itoa long-family).
+        {
+            let s = cstr(&mut rng, 28, true);
+            let mut set: Vec<u8> = (0..rng.upto(3))
+                .map(|_| b"AaBb \x80\xff"[rng.upto(7)])
+                .collect();
+            set.push(0);
+            let base = s.as_ptr() as usize;
+            let off = |p: *mut u8| if p.is_null() { None } else { Some(p as usize - base) };
+            unsafe {
+                assert_eq!(
+                    off(cabi::strpbrk(s.as_ptr(), set.as_ptr())),
+                    off(ref_strpbrk(s.as_ptr(), set.as_ptr())),
+                    "strpbrk s={s:?} set={set:?}"
+                );
+            }
+        }
+        // wide span + wcsstr (incl empty needle → NULL on both)
+        let ws = wcstr(&mut rng, 24);
+        let wset = if rng.next() & 7 == 0 {
+            vec![0]
+        } else {
+            wcstr(&mut rng, 5)
+        };
+        let needle = if rng.next() & 3 == 0 {
+            vec![0] // empty needle → NULL (distinct from strstr)
+        } else if rng.next() & 3 == 0 && ws.len() > 2 {
+            let a = rng.upto(ws.len() - 1);
+            let b = a + 1 + rng.upto(ws.len() - a - 1);
+            let mut n = ws[a..b].to_vec();
+            n.push(0);
+            n
+        } else {
+            wcstr(&mut rng, 4)
+        };
+        unsafe {
+            assert_eq!(
+                cabi::wcsspn(ws.as_ptr(), wset.as_ptr()),
+                ref_wcsspn(ws.as_ptr(), wset.as_ptr()),
+                "wcsspn ws={ws:?} set={wset:?}"
+            );
+            assert_eq!(
+                cabi::wcscspn(ws.as_ptr(), wset.as_ptr()),
+                ref_wcscspn(ws.as_ptr(), wset.as_ptr()),
+                "wcscspn ws={ws:?} set={wset:?}"
+            );
+            let base = ws.as_ptr() as usize;
+            let off = |p: *mut u16| {
+                if p.is_null() {
+                    None
+                } else {
+                    Some((p as usize - base) / 2)
+                }
+            };
+            assert_eq!(
+                off(cabi::wcsstr(ws.as_ptr(), needle.as_ptr())),
+                off(ref_wcsstr(ws.as_ptr(), needle.as_ptr())),
+                "wcsstr ws={ws:?} needle={needle:?}"
+            );
+        }
+    }
+}
+
+/// Wave G2 — wide-atoi parse (owed split from Wave G). Pins the
+/// MSVCRT-lineage wide parsers vs genuine wtoi64.c/wtol.c/atoi.c:
+/// `_wtoi`(int-trunc), `_wtol`(u32-wrap→int), `_wtoi64{,_l}`(i64-wrap),
+/// `_wcstoi64{,_l}`/`_wcstoui64{,_l}` (per-digit MAX clamp + the wide
+/// endptr contract = final nptr ALWAYS, incl. invalid-base→0/no-write
+/// and NULL-nptr→0/no-write). ASCII domain, incl. bases 1/37.
+#[test]
+fn diff_wide_atoi() {
+    let mut rng = Rng(0x9c2a_d175_u64);
+    let bases = [0i32, 2, 8, 10, 16, 36, 1, 37];
+    let alpha = b" \t+-0xXabcdefABCDEF0123456789Zz";
+    for _ in 0..9000 {
+        let s: Vec<u8> = (0..rng.upto(24))
+            .map(|_| alpha[rng.upto(alpha.len())])
+            .collect();
+        let ws: Vec<u16> = s.iter().map(|&b| b as u16).chain([0]).collect();
+        let np = ws.as_ptr();
+        let base = bases[rng.upto(bases.len())];
+        let nul: *mut c_void = core::ptr::null_mut();
+        let woff = |p: *mut u16| {
+            if p == 1 as *mut u16 {
+                None
+            } else {
+                Some((p as usize - np as usize) / 2)
+            }
+        };
+
+        // no-endptr value parsers
+        assert_eq!(
+            unsafe { cabi::_wtoi(np) },
+            unsafe { ref_wtoi(np) },
+            "_wtoi ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtol(np) },
+            unsafe { ref_wtol(np) },
+            "_wtol ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtoi64(np) },
+            unsafe { ref_wtoi64(np) },
+            "_wtoi64 ws={ws:?}"
+        );
+        assert_eq!(
+            unsafe { cabi::_wtoi64_l(np, nul) },
+            unsafe { ref_wtoi64_l(np, nul) },
+            "_wtoi64_l ws={ws:?}"
+        );
+
+        // signed clamp + wide endptr
+        let (mut ec, mut er): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let cv = unsafe { cabi::_wcstoi64(np, &mut ec, base) };
+        let rv = unsafe { ref_wcstoi64(np, &mut er, base) };
+        assert_eq!(cv, rv, "_wcstoi64 v ws={ws:?} base={base}");
+        assert_eq!(woff(ec), woff(er), "_wcstoi64 ep ws={ws:?} base={base}");
+        let (mut ecl, mut erl): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let cvl = unsafe { cabi::_wcstoi64_l(np, &mut ecl, base, nul) };
+        let rvl = unsafe { ref_wcstoi64_l(np, &mut erl, base, nul) };
+        assert_eq!(cvl, rvl, "_wcstoi64_l v ws={ws:?} base={base}");
+        assert_eq!(woff(ecl), woff(erl), "_wcstoi64_l ep ws={ws:?} base={base}");
+
+        // unsigned clamp + wide endptr
+        let (mut uc, mut ur): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let ucv = unsafe { cabi::_wcstoui64(np, &mut uc, base) };
+        let urv = unsafe { ref_wcstoui64(np, &mut ur, base) };
+        assert_eq!(ucv, urv, "_wcstoui64 v ws={ws:?} base={base}");
+        assert_eq!(woff(uc), woff(ur), "_wcstoui64 ep ws={ws:?} base={base}");
+        let (mut ucl, mut url): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let ucvl = unsafe { cabi::_wcstoui64_l(np, &mut ucl, base, nul) };
+        let urvl = unsafe { ref_wcstoui64_l(np, &mut url, base, nul) };
+        assert_eq!(ucvl, urvl, "_wcstoui64_l v ws={ws:?} base={base}");
+        assert_eq!(woff(ucl), woff(url), "_wcstoui64_l ep ws={ws:?} base={base}");
+
+        // endptr == NULL: value still correct, no write
+        let cv2 = unsafe { cabi::_wcstoi64(np, core::ptr::null_mut(), base) };
+        let rv2 = unsafe { ref_wcstoi64(np, core::ptr::null_mut(), base) };
+        assert_eq!(cv2, rv2, "_wcstoi64 NULL-ep ws={ws:?} base={base}");
+    }
+
+    // NULL nptr → 0, endptr untouched (MSVCRT_CHECK_PMT under _LIBCNT_)
+    for base in bases {
+        let (mut ec, mut er): (*mut u16, *mut u16) = (7 as *mut u16, 7 as *mut u16);
+        assert_eq!(
+            unsafe { cabi::_wcstoi64(core::ptr::null(), &mut ec, base) },
+            unsafe { ref_wcstoi64(core::ptr::null(), &mut er, base) },
+            "_wcstoi64 NULL-nptr v base={base}"
+        );
+        assert_eq!(ec, er, "_wcstoi64 NULL-nptr ep untouched base={base}");
+        let (mut uc, mut ur): (*mut u16, *mut u16) = (7 as *mut u16, 7 as *mut u16);
+        assert_eq!(
+            unsafe { cabi::_wcstoui64(core::ptr::null(), &mut uc, base) },
+            unsafe { ref_wcstoui64(core::ptr::null(), &mut ur, base) },
+            "_wcstoui64 NULL-nptr v base={base}"
+        );
+        assert_eq!(uc, ur, "_wcstoui64 NULL-nptr ep untouched base={base}");
+    }
+}
+
+/// Wave H — ASCII case fold. In-place folders: byte-exact buffer
+/// parity + returned pointer == input (or NULL for the NULL-guarded
+/// _strupr/_wcslwr). Wide folders fed Latin-1/CJK units to pin the
+/// ASCII-ONLY contract (À etc. must stay untouched). Scalars
+/// (tolower signed-char-decision+full-int; towupper = Rtl/CP1252
+/// upcase) swept across the full domain incl. negatives / >0xFFFF.
+#[test]
+fn diff_casemap() {
+    let mut rng = Rng(0x4ca5_e009_u64);
+    for _ in 0..6000 {
+        // narrow string: letters + digits + punct + 0x80-0xFF
+        let pool = b"AZaz mM5.\x80\xC0\xDF\xE0\xFF";
+        let mut nv: Vec<u8> =
+            (0..rng.upto(28)).map(|_| pool[rng.upto(pool.len())]).collect();
+        nv.push(0);
+        let (mut c1, mut r1) = (nv.clone(), nv.clone());
+        let cp = unsafe { cabi::_strlwr(c1.as_mut_ptr()) };
+        let rp = unsafe { ref_strlwr(r1.as_mut_ptr()) };
+        assert_eq!(c1, r1, "_strlwr buf nv={nv:?}");
+        assert_eq!(cp == c1.as_mut_ptr(), rp == r1.as_mut_ptr(), "_strlwr ret");
+        let (mut c2, mut r2) = (nv.clone(), nv.clone());
+        let cp = unsafe { cabi::_strupr(c2.as_mut_ptr()) };
+        let rp = unsafe { ref_strupr(r2.as_mut_ptr()) };
+        assert_eq!(c2, r2, "_strupr buf nv={nv:?}");
+        assert_eq!(cp == c2.as_mut_ptr(), rp == r2.as_mut_ptr(), "_strupr ret");
+
+        // wide string: ASCII + Latin-1 + CJK (must stay untouched)
+        let wpool: [u16; 14] = [
+            65, 90, 97, 122, 32, 0x4D, 0x35, 0xC0, 0xDF, 0xE9, 0xFF, 0x0152,
+            0x4E2D, 0x017E,
+        ];
+        let mut wv: Vec<u16> = (0..rng.upto(24))
+            .map(|_| wpool[rng.upto(wpool.len())])
+            .collect();
+        wv.push(0);
+        let (mut wc1, mut wr1) = (wv.clone(), wv.clone());
+        let cp = unsafe { cabi::_wcslwr(wc1.as_mut_ptr()) };
+        let rp = unsafe { ref_wcslwr(wr1.as_mut_ptr()) };
+        assert_eq!(wc1, wr1, "_wcslwr buf wv={wv:?}");
+        assert_eq!(cp == wc1.as_mut_ptr(), rp == wr1.as_mut_ptr(), "_wcslwr ret");
+        let (mut wc2, mut wr2) = (wv.clone(), wv.clone());
+        let cp = unsafe { cabi::_wcsupr(wc2.as_mut_ptr()) };
+        let rp = unsafe { ref_wcsupr(wr2.as_mut_ptr()) };
+        assert_eq!(wc2, wr2, "_wcsupr buf wv={wv:?}");
+        assert_eq!(cp == wc2.as_mut_ptr(), rp == wr2.as_mut_ptr(), "_wcsupr ret");
+    }
+
+    // NULL-guarded variants: NULL → NULL (no crash)
+    assert_eq!(
+        unsafe { cabi::_strupr(core::ptr::null_mut()) },
+        unsafe { ref_strupr(core::ptr::null_mut()) },
+        "_strupr NULL"
+    );
+    assert_eq!(
+        unsafe { cabi::_wcslwr(core::ptr::null_mut()) },
+        unsafe { ref_wcslwr(core::ptr::null_mut()) },
+        "_wcslwr NULL"
+    );
+
+    // scalar tolower: full int domain incl. negative / >0xFF / >0xFFFF
+    let probes: &[i32] = &[
+        -1, -65, 0, 0x41, 0x5A, 0x60, 0x61, 0x7A, 0x7F, 0x80, 0xC1, 0xFF,
+        0x141, 0x161, 0x100_0041, -0x100_0041, i32::MIN, i32::MAX,
+    ];
+    for &c in probes {
+        assert_eq!(
+            unsafe { cabi::tolower(c) },
+            unsafe { ref_tolower(c) },
+            "tolower c={c:#x}"
+        );
+    }
+    let mut rng2 = Rng(0x70_10_e7_a1);
+    for _ in 0..4000 {
+        let c = rng2.next() as i32;
+        assert_eq!(
+            unsafe { cabi::tolower(c) },
+            unsafe { ref_tolower(c) },
+            "tolower c={c:#x}"
+        );
+    }
+
+    // scalar towupper: every u16 (Rtl/CP1252 upcase)
+    for c in 0u32..=0xFFFF {
+        let c = c as u16;
+        assert_eq!(
+            unsafe { cabi::towupper(c) },
+            unsafe { ref_towupper(c) },
+            "towupper c={c:#x}"
+        );
+    }
+}
+
+/// Wave I — in-place mutate (strrev/strset/strnset). Byte-exact buffer
+/// parity + returned pointer == input, across empty/odd/even lengths,
+/// high bytes, szFill truncation, and the _strnset signed-int
+/// sizeMaxFill misfeature (0, < / == / > strlen, and > INT_MAX → fills
+/// nothing). NO NULL fuzzing (the C has no guards — derefs immediately).
+#[test]
+fn diff_strmut() {
+    let mut rng = Rng(0x12ed_5b07_u64);
+    let pool = b"ABCabc 09.\x00\x80\xFF\x01";
+    for _ in 0..7000 {
+        // build a string; embedded 0 from pool acts as the terminator
+        let mut v: Vec<u8> = (0..rng.upto(26))
+            .map(|_| {
+                let b = pool[rng.upto(pool.len())];
+                if b == 0 { 1 } else { b }
+            })
+            .collect();
+        v.push(0);
+
+        let (mut c1, mut r1) = (v.clone(), v.clone());
+        let cp = unsafe { cabi::_strrev(c1.as_mut_ptr()) };
+        let rp = unsafe { ref_strrev(r1.as_mut_ptr()) };
+        assert_eq!(c1, r1, "_strrev buf v={v:?}");
+        assert_eq!(cp == c1.as_mut_ptr(), rp == r1.as_mut_ptr(), "_strrev ret");
+
+        let fill = (rng.next() as i32) | 1; // varied incl >0xFF / negative
+        let (mut c2, mut r2) = (v.clone(), v.clone());
+        let cp = unsafe { cabi::_strset(c2.as_mut_ptr(), fill) };
+        let rp = unsafe { ref_strset(r2.as_mut_ptr(), fill) };
+        assert_eq!(c2, r2, "_strset buf v={v:?} fill={fill:#x}");
+        assert_eq!(cp == c2.as_mut_ptr(), rp == r2.as_mut_ptr(), "_strset ret");
+
+        // _strnset: max spanning 0..past-strlen plus the >INT_MAX trap
+        let slen = v.len() - 1;
+        let maxes: [usize; 6] = [
+            0,
+            rng.upto(slen + 1),
+            slen,
+            slen + 5,
+            usize::MAX,
+            (i32::MAX as usize) + 1,
+        ];
+        for mx in maxes {
+            let (mut c3, mut r3) = (v.clone(), v.clone());
+            let cp = unsafe { cabi::_strnset(c3.as_mut_ptr(), fill, mx) };
+            let rp = unsafe { ref_strnset(r3.as_mut_ptr(), fill, mx) };
+            assert_eq!(c3, r3, "_strnset buf v={v:?} fill={fill:#x} max={mx}");
+            assert_eq!(
+                cp == c3.as_mut_ptr(),
+                rp == r3.as_mut_ptr(),
+                "_strnset ret max={mx}"
+            );
+        }
+    }
+}
+
+/// Wave PATH — _splitpath/_wsplitpath/_makepath/_wmakepath. Byte-exact
+/// parity of every OUT buffer (sentinel-prefilled so over/under-writes
+/// AND the truncate-to-"" tail are caught) across the full
+/// equivalence grid: drive present/absent, dir trailing-sep forms,
+/// leading-dot fname, dot-in-dir discard, no-sep, trailing-sep,
+/// per-pointer NULL, empty-component skip. NO NULL `path` for split
+/// (UB in C, WINVER<0x600). makepath NULL `path` IS pinned (no-op).
+/// 256-byte buffers (never the INT_MAX cap).
+#[test]
+fn diff_path() {
+    let mut rng = Rng(0x9a17_c0de_u64);
+    let pool: &[u8] = b"ab.\\/:cd.txt..\\";
+    for _ in 0..8000 {
+        let mut v: Vec<u8> = (0..rng.upto(24))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        v.push(0);
+        let vw: Vec<u16> = v.iter().map(|&b| b as u16).collect();
+        let mask = rng.next() as u32;
+
+        // ---- _splitpath / _wsplitpath : 4 nullable OUT bufs --------
+        let (mut cd, mut ci, mut cf, mut ce) =
+            (vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260]);
+        let (mut rd, mut ri, mut rf, mut re) =
+            (vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260], vec![0xCDu8; 260]);
+        macro_rules! p8 { ($b:expr, $buf:expr) => {
+            if mask & $b != 0 { core::ptr::null_mut() } else { $buf.as_mut_ptr() }
+        }}
+        unsafe {
+            cabi::_splitpath(v.as_ptr(), p8!(1, cd), p8!(2, ci), p8!(4, cf), p8!(8, ce));
+            ref_splitpath(v.as_ptr(), p8!(1, rd), p8!(2, ri), p8!(4, rf), p8!(8, re));
+        }
+        assert_eq!(cd, rd, "_splitpath drive v={v:?} mask={mask:#x}");
+        assert_eq!(ci, ri, "_splitpath dir v={v:?} mask={mask:#x}");
+        assert_eq!(cf, rf, "_splitpath fname v={v:?} mask={mask:#x}");
+        assert_eq!(ce, re, "_splitpath ext v={v:?} mask={mask:#x}");
+
+        let (mut wcd, mut wci, mut wcf, mut wce) =
+            (vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260]);
+        let (mut wrd, mut wri, mut wrf, mut wre) =
+            (vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260], vec![0xCDCDu16; 260]);
+        macro_rules! p16 { ($b:expr, $buf:expr) => {
+            if mask & $b != 0 { core::ptr::null_mut() } else { $buf.as_mut_ptr() }
+        }}
+        unsafe {
+            cabi::_wsplitpath(vw.as_ptr(), p16!(1, wcd), p16!(2, wci), p16!(4, wcf), p16!(8, wce));
+            ref_wsplitpath(vw.as_ptr(), p16!(1, wrd), p16!(2, wri), p16!(4, wrf), p16!(8, wre));
+        }
+        assert_eq!(wcd, wrd, "_wsplitpath drive v={v:?}");
+        assert_eq!(wci, wri, "_wsplitpath dir v={v:?}");
+        assert_eq!(wcf, wrf, "_wsplitpath fname v={v:?}");
+        assert_eq!(wce, wre, "_wsplitpath ext v={v:?}");
+
+        // ---- _makepath / _wmakepath : 4 nullable IN components -----
+        let comp = |rng: &mut Rng| -> Vec<u8> {
+            let mut c: Vec<u8> = (0..rng.upto(8)).map(|_| pool[rng.upto(pool.len())]).collect();
+            c.push(0);
+            c
+        };
+        let (dr, di, fl, ex) = (comp(&mut rng), comp(&mut rng), comp(&mut rng), comp(&mut rng));
+        let m2 = rng.next() as u32;
+        let pk = |b: u32, c: &Vec<u8>| -> *const u8 {
+            if m2 & b != 0 { core::ptr::null() } else { c.as_ptr() }
+        };
+        let (mut cmk, mut rmk) = (vec![0xEEu8; 280], vec![0xEEu8; 280]);
+        unsafe {
+            cabi::_makepath(cmk.as_mut_ptr(), pk(1, &dr), pk(2, &di), pk(4, &fl), pk(8, &ex));
+            ref_makepath(rmk.as_mut_ptr(), pk(1, &dr), pk(2, &di), pk(4, &fl), pk(8, &ex));
+        }
+        assert_eq!(cmk, rmk, "_makepath dr={dr:?} di={di:?} fl={fl:?} ex={ex:?} m2={m2:#x}");
+        unsafe {
+            cabi::_makepath(core::ptr::null_mut(), dr.as_ptr(), di.as_ptr(), fl.as_ptr(), ex.as_ptr());
+            ref_makepath(core::ptr::null_mut(), dr.as_ptr(), di.as_ptr(), fl.as_ptr(), ex.as_ptr());
+        }
+        let w = |c: &Vec<u8>| -> Vec<u16> { c.iter().map(|&b| b as u16).collect() };
+        let (wdr, wdi, wfl, wex) = (w(&dr), w(&di), w(&fl), w(&ex));
+        let wpk = |b: u32, c: &Vec<u16>| -> *const u16 {
+            if m2 & b != 0 { core::ptr::null() } else { c.as_ptr() }
+        };
+        let (mut wcmk, mut wrmk) = (vec![0xEEEEu16; 280], vec![0xEEEEu16; 280]);
+        unsafe {
+            cabi::_wmakepath(wcmk.as_mut_ptr(), wpk(1, &wdr), wpk(2, &wdi), wpk(4, &wfl), wpk(8, &wex));
+            ref_wmakepath(wrmk.as_mut_ptr(), wpk(1, &wdr), wpk(2, &wdi), wpk(4, &wfl), wpk(8, &wex));
+        }
+        assert_eq!(wcmk, wrmk, "_wmakepath m2={m2:#x}");
+    }
+}
+
+/// Wave STRTOK — strtok/strtok_s/wcstok/wcstok_s. Drives cnt-rust and
+/// the genuine reference through the SAME full tokenize sequence on
+/// independent buffer copies; after each call asserts (1) token
+/// offset+nullness parity, (2) the whole buffer (NUL writes) parity,
+/// (3) for the _s variants the *ctx offset parity — incl. the
+/// strtok_s-vs-wcstok_s no-token-path asymmetry. Plus the bad-param
+/// guards. The hidden statics are independent per side but the
+/// identical call stream keeps them in lockstep.
+#[test]
+fn diff_strtok() {
+    let mut rng = Rng(0x704b_17aa_u64);
+    let pool: &[u8] = b"ab,; :.c";
+    let dpool: &[u8] = b",; :.";
+    for _ in 0..6000 {
+        let mut base: Vec<u8> = (0..rng.upto(20))
+            .map(|_| pool[rng.upto(pool.len())])
+            .collect();
+        base.push(0);
+        let dl = 1 + rng.upto(3);
+        let mut delim: Vec<u8> = (0..dl).map(|_| dpool[rng.upto(dpool.len())]).collect();
+        delim.push(0);
+        let dw: Vec<u16> = delim.iter().map(|&b| b as u16).collect();
+
+        // ---- strtok (hidden static) ----
+        let (mut cb, mut rb) = (base.clone(), base.clone());
+        let mut first = true;
+        loop {
+            let cs = if first { cb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::strtok(cs, delim.as_ptr()) };
+            let rr = unsafe { ref_strtok(rs, delim.as_ptr()) };
+            let co = if cr.is_null() { None } else { Some(cr as usize - cb.as_ptr() as usize) };
+            let ro = if rr.is_null() { None } else { Some(rr as usize - rb.as_ptr() as usize) };
+            assert_eq!(co, ro, "strtok off base={base:?} delim={delim:?}");
+            assert_eq!(cb, rb, "strtok buf base={base:?} delim={delim:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- strtok_s (explicit ctx) ----
+        let (mut cb, mut rb) = (base.clone(), base.clone());
+        let (mut cc, mut rc): (*mut u8, *mut u8) =
+            (core::ptr::null_mut(), core::ptr::null_mut());
+        let mut first = true;
+        loop {
+            let cs = if first { cb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rb.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::strtok_s(cs, delim.as_ptr(), &mut cc) };
+            let rr = unsafe { ref_strtok_s(rs, delim.as_ptr(), &mut rc) };
+            let co = if cr.is_null() { None } else { Some(cr as usize - cb.as_ptr() as usize) };
+            let ro = if rr.is_null() { None } else { Some(rr as usize - rb.as_ptr() as usize) };
+            let cx = if cc.is_null() { None } else { Some(cc as usize - cb.as_ptr() as usize) };
+            let rx = if rc.is_null() { None } else { Some(rc as usize - rb.as_ptr() as usize) };
+            assert_eq!(co, ro, "strtok_s off base={base:?} delim={delim:?}");
+            assert_eq!(cx, rx, "strtok_s ctx base={base:?} delim={delim:?}");
+            assert_eq!(cb, rb, "strtok_s buf base={base:?} delim={delim:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- wcstok (hidden static) ----
+        let bw: Vec<u16> = base.iter().map(|&b| b as u16).collect();
+        let (mut cw, mut rw) = (bw.clone(), bw.clone());
+        let mut first = true;
+        loop {
+            let cs = if first { cw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::wcstok(cs, dw.as_ptr()) };
+            let rr = unsafe { ref_wcstok(rs, dw.as_ptr()) };
+            let co = if cr.is_null() { None } else { Some((cr as usize - cw.as_ptr() as usize) / 2) };
+            let ro = if rr.is_null() { None } else { Some((rr as usize - rw.as_ptr() as usize) / 2) };
+            assert_eq!(co, ro, "wcstok off base={base:?}");
+            assert_eq!(cw, rw, "wcstok buf base={base:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+
+        // ---- wcstok_s (explicit ctx; no-token leaves *nt unchanged) ----
+        let (mut cw, mut rw) = (bw.clone(), bw.clone());
+        let (mut cn, mut rn): (*mut u16, *mut u16) =
+            (core::ptr::null_mut(), core::ptr::null_mut());
+        let mut first = true;
+        loop {
+            let cs = if first { cw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let rs = if first { rw.as_mut_ptr() } else { core::ptr::null_mut() };
+            let cr = unsafe { cabi::wcstok_s(cs, dw.as_ptr(), &mut cn) };
+            let rr = unsafe { ref_wcstok_s(rs, dw.as_ptr(), &mut rn) };
+            let co = if cr.is_null() { None } else { Some((cr as usize - cw.as_ptr() as usize) / 2) };
+            let ro = if rr.is_null() { None } else { Some((rr as usize - rw.as_ptr() as usize) / 2) };
+            let cx = if cn.is_null() { None } else { Some((cn as usize - cw.as_ptr() as usize) / 2) };
+            let rx = if rn.is_null() { None } else { Some((rn as usize - rw.as_ptr() as usize) / 2) };
+            assert_eq!(co, ro, "wcstok_s off base={base:?}");
+            assert_eq!(cx, rx, "wcstok_s nt base={base:?}");
+            assert_eq!(cw, rw, "wcstok_s buf base={base:?}");
+            if cr.is_null() { break; }
+            first = false;
+        }
+    }
+
+    // ---- bad-param guards (strtok_s / wcstok_s) ----
+    let mut s = *b"a,b\0";
+    let d = *b",\0";
+    let mut ctx: *mut u8 = core::ptr::null_mut();
+    unsafe {
+        assert!(cabi::strtok_s(core::ptr::null_mut(), d.as_ptr(), &mut ctx).is_null());
+        assert!(ref_strtok_s(core::ptr::null_mut(), d.as_ptr(), &mut ctx).is_null());
+        assert!(cabi::strtok_s(s.as_mut_ptr(), core::ptr::null(), &mut ctx).is_null());
+        assert!(ref_strtok_s(s.as_mut_ptr(), core::ptr::null(), &mut ctx).is_null());
+        assert!(cabi::strtok_s(s.as_mut_ptr(), d.as_ptr(), core::ptr::null_mut()).is_null());
+        assert!(ref_strtok_s(s.as_mut_ptr(), d.as_ptr(), core::ptr::null_mut()).is_null());
+    }
+    let mut sw: [u16; 4] = [b'a' as u16, b',' as u16, b'b' as u16, 0];
+    let dw2: [u16; 2] = [b',' as u16, 0];
+    let mut ntw: *mut u16 = core::ptr::null_mut();
+    unsafe {
+        assert!(cabi::wcstok_s(core::ptr::null_mut(), dw2.as_ptr(), &mut ntw).is_null());
+        assert!(ref_wcstok_s(core::ptr::null_mut(), dw2.as_ptr(), &mut ntw).is_null());
+        assert!(cabi::wcstok_s(sw.as_mut_ptr(), core::ptr::null(), &mut ntw).is_null());
+        assert!(ref_wcstok_s(sw.as_mut_ptr(), core::ptr::null(), &mut ntw).is_null());
+        assert!(cabi::wcstok_s(sw.as_mut_ptr(), dw2.as_ptr(), core::ptr::null_mut()).is_null());
+        assert!(ref_wcstok_s(sw.as_mut_ptr(), dw2.as_ptr(), core::ptr::null_mut()).is_null());
     }
 }
