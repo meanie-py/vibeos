@@ -10,7 +10,9 @@
 //! signed-`char` diff + `(int)L1-(int)L2` length tiebreak,
 //! `RtlPrefixString`'s NULL-Buffer ⇒ FALSE.
 
-use rtl_strings::cabi::{self, GUID, RTL_BUFFER, STRING, UNICODE_STRING};
+use rtl_strings::cabi::{
+    self, GenerateNameContext, GUID, RTL_BUFFER, STRING, UNICODE_STRING,
+};
 
 extern "C" {
     fn ref_RtlInitAnsiString(d: *mut STRING, s: *const u8);
@@ -135,6 +137,19 @@ extern "C" {
     fn ref_RtlLargeIntegerToChar(v: *const i64, base: u32, len: u32, s: *mut u8) -> i32;
     fn ref_RtlIntegerToUnicodeString(v: u32, base: u32, s: *mut UNICODE_STRING) -> i32;
     fn ref_RtlInt64ToUnicodeString(v: u64, base: u32, s: *mut UNICODE_STRING) -> i32;
+    // Wave RTL-6: dos8dot3.c
+    fn ref_RtlIsValidOemCharacter(c: *mut u16) -> u8;
+    fn ref_RtlGenerate8dot3Name(
+        name: *const UNICODE_STRING,
+        ax: u8,
+        ctx: *mut GenerateNameContext,
+        out: *mut UNICODE_STRING,
+    );
+    fn ref_RtlIsNameLegalDOS8Dot3(
+        name: *const UNICODE_STRING,
+        oem: *mut STRING,
+        sp: *mut u8,
+    ) -> u8;
     // Wave RTL-5: utf8.c
     fn ref_RtlUnicodeToUTF8N(
         d: *mut u8,
@@ -1886,6 +1901,163 @@ fn diff_rtl_dns_host_name_to_computer_name() {
                 "RtlDnsHostNameToComputerName fields u={units} cm={cmax} a={alloc}"
             );
             assert_eq!(bc, br, "RtlDnsHostNameToComputerName buf u={units} cm={cmax} a={alloc} {dv:?}");
+        }
+    }
+}
+
+// ── Wave RTL-6: dos8dot3.c ────────────────────────────────────────
+
+#[test]
+fn diff_rtl_is_valid_oem_character() {
+    for w in 0u32..=0xFFFF {
+        let w = w as u16;
+        let (mut a, mut b) = (w, w);
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlIsValidOemCharacter(&mut a);
+            rr = ref_RtlIsValidOemCharacter(&mut b);
+        }
+        assert_eq!(rc, rr, "RtlIsValidOemCharacter ret {w:#06x}");
+        assert_eq!(a, b, "RtlIsValidOemCharacter mutated *Char {w:#06x}");
+    }
+}
+
+fn ctx_zero() -> GenerateNameContext {
+    GenerateNameContext {
+        checksum: 0,
+        checksum_inserted: 0,
+        name_length: 0,
+        name_buffer: [0; 8],
+        extension_length: 0,
+        extension_buffer: [0; 4],
+        last_index_value: 0,
+    }
+}
+fn ctx_tuple(
+    c: &GenerateNameContext,
+) -> (u16, u8, u8, [u16; 8], u32, [u16; 4], u32) {
+    (
+        c.checksum,
+        c.checksum_inserted,
+        c.name_length,
+        c.name_buffer,
+        c.extension_length,
+        c.extension_buffer,
+        c.last_index_value,
+    )
+}
+
+#[test]
+fn diff_rtl_generate_8dot3_name() {
+    let mut rng = Rng(0x6_0001_01);
+    let pool: &[u16] = &[
+        0x0041, 0x0061, 0x005A, 0x007A, 0x0030, 0x0039, 0x002E, 0x0020,
+        0x005F, 0x002A, 0x003F, 0x00C0, 0x00E9, 0x0152, 0x20AC, 0x00FF,
+        0x0080, 0xABCD,
+    ];
+    for _ in 0..8_000 {
+        let units = 1 + rng.upto(20);
+        let nv: Vec<u16> =
+            (0..units).map(|_| pool[rng.upto(pool.len())]).collect();
+        let nlen = (units * 2) as u16;
+        let ax = (rng.upto(2)) as u8;
+        let ns = UNICODE_STRING {
+            Length: nlen,
+            MaximumLength: nlen,
+            Buffer: nv.as_ptr() as *mut u16,
+        };
+        let mut cc = ctx_zero();
+        let mut cr = ctx_zero();
+        // call repeatedly with the SAME context (real caller pattern):
+        // exercises name_length<=2 checksum + LastIndexValue>4 paths.
+        for call in 0..7 {
+            let mut bc = vec![0xCCCCu16; 32];
+            let mut br = vec![0xCCCCu16; 32];
+            let mut oc = UNICODE_STRING {
+                Length: 0xAAAA,
+                MaximumLength: 64,
+                Buffer: bc.as_mut_ptr(),
+            };
+            let mut or = UNICODE_STRING {
+                Length: 0xAAAA,
+                MaximumLength: 64,
+                Buffer: br.as_mut_ptr(),
+            };
+            unsafe {
+                cabi::RtlGenerate8dot3Name(&ns, ax, &mut cc, &mut oc);
+                ref_RtlGenerate8dot3Name(&ns, ax, &mut cr, &mut or);
+            }
+            assert_eq!(
+                ctx_tuple(&cc),
+                ctx_tuple(&cr),
+                "Generate8dot3 ctx call={call} ax={ax} {nv:?}"
+            );
+            assert_eq!(
+                oc.Length, or.Length,
+                "Generate8dot3 out.Length call={call} {nv:?}"
+            );
+            assert_eq!(bc, br, "Generate8dot3 out.buf call={call} {nv:?}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_is_name_legal_dos8dot3() {
+    let mut rng = Rng(0x6_0001_02);
+    let pool: &[u16] = &[
+        0x0041, 0x0061, 0x007A, 0x0030, 0x002E, 0x0020, 0x005F, 0x002A,
+        0x003C, 0x002B, 0x003A, 0x005C, 0x00E5, 0x00C0, 0x0152, 0x00FF,
+        0x0080,
+    ];
+    for _ in 0..20_000 {
+        let units = rng.upto(16);
+        let nv: Vec<u16> =
+            (0..units.max(1)).map(|_| pool[rng.upto(pool.len())]).collect();
+        let nlen = (units * 2) as u16;
+        let ns = UNICODE_STRING {
+            Length: nlen,
+            MaximumLength: nlen,
+            Buffer: nv.as_ptr() as *mut u16,
+        };
+        let provide_oem = rng.upto(2) == 0;
+        let provide_sp = rng.upto(2) == 0;
+        let mut obc = vec![0u8; 16];
+        let mut obr = vec![0u8; 16];
+        let mut osc = STRING {
+            Length: 16,
+            MaximumLength: 16,
+            Buffer: obc.as_mut_ptr(),
+        };
+        let mut osr = STRING {
+            Length: 16,
+            MaximumLength: 16,
+            Buffer: obr.as_mut_ptr(),
+        };
+        let (opc, opr): (*mut STRING, *mut STRING) = if provide_oem {
+            (&mut osc, &mut osr)
+        } else {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        };
+        let (mut spc, mut spr) = (0xEEu8, 0xEEu8);
+        let (sppc, sppr) = if provide_sp {
+            (&mut spc as *mut u8, &mut spr as *mut u8)
+        } else {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        };
+        let (rc, rr);
+        unsafe {
+            rc = cabi::RtlIsNameLegalDOS8Dot3(&ns, opc, sppc);
+            rr = ref_RtlIsNameLegalDOS8Dot3(&ns, opr, sppr);
+        }
+        assert_eq!(rc, rr, "RtlIsNameLegalDOS8Dot3 ret {nv:?}");
+        assert_eq!(spc, spr, "RtlIsNameLegalDOS8Dot3 *spaces {nv:?}");
+        if provide_oem {
+            assert_eq!(
+                (osc.Length, osc.MaximumLength),
+                (osr.Length, osr.MaximumLength),
+                "RtlIsNameLegalDOS8Dot3 oem fields {nv:?}"
+            );
+            assert_eq!(obc, obr, "RtlIsNameLegalDOS8Dot3 oem buf {nv:?}");
         }
     }
 }

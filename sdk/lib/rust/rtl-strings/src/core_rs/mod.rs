@@ -3,6 +3,7 @@
 //! to these. Faithful to ReactOS `sdk/lib/rtl/unicode.c`.
 
 pub mod conv;
+pub mod dos8dot3;
 pub mod misc;
 pub mod nls;
 pub mod ustr;
