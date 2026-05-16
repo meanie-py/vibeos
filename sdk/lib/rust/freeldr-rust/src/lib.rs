@@ -88,6 +88,20 @@ pub mod winldr_amd64;
 #[cfg(target_arch = "aarch64")]
 pub mod winldr_arm64;
 
+// 🟢 sweep — setup/legacy unit (ntldr/{setupldr,inffile,headless}.c +
+// arch/i386/{drivemap,i386bug}.c + lib/fs/pxe.c). setupldr/inffile/
+// headless = arch-neutral loader logic; drivemap/i386bug/pxe = x86
+// BIOS-era (PC-AT i386/amd64, not arm64) → cfg-gate.
+pub mod setupldr;
+pub mod inffile;
+pub mod headless;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod drivemap;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod i386bug;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod pxe;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;

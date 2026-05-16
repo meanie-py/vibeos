@@ -143,6 +143,17 @@ def apply_edits(edits):
             # span (after optional close-parens/ws) starts with `=>`.
             if re.match(r"[\s)]*=>", line[j:]):
                 continue
+            # Never wrap a fn-parameter binding: for a call-arg E0308 rustc
+            # also emits a primary span at the callee param decl ("expected
+            # due to this type"); wrapping it yields `((x) as T): Ty` which
+            # is an expression in pattern position (rustc: "expected a
+            # pattern, found an expression"). Heuristic: the line is a `fn`
+            # signature and the flagged span is immediately followed by `:`
+            # (a `name: Type` parameter binding).
+            if re.match(r"\s*:", line[j:]) and re.search(
+                r"\bfn\s+[A-Za-z_][A-Za-z_0-9]*\s*(<[^>]*>)?\s*\(", line
+            ):
+                continue
             lines[ln - 1] = line[:i] + f"(({seg}) as {exp})" + line[j:]
             applied += 1
         path.write_text("\n".join(lines))

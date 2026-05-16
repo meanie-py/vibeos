@@ -97,11 +97,11 @@ if(ARCH STREQUAL "i386")
         arch/i386/i386trap.S)
         # arch/i386/linux.S
 
-    list(APPEND FREELDR_ARC_SOURCE
-        arch/i386/i386bug.c)
-
-    list(APPEND FREELDR_NTLDR_SOURCE
-        ntldr/headless.c)
+    # setup/legacy unit → Rust (freeldr-rust: i386bug.rs/headless.rs).
+    # list(APPEND FREELDR_ARC_SOURCE
+    #     arch/i386/i386bug.c)   # replaced by Rust (freeldr-rust/src/i386bug.rs)
+    # list(APPEND FREELDR_NTLDR_SOURCE
+    #     ntldr/headless.c)      # replaced by Rust (freeldr-rust/src/headless.rs)
         # ntldr/arch/i386/winldr.c  # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
 
 elseif(ARCH STREQUAL "amd64")
@@ -109,8 +109,9 @@ elseif(ARCH STREQUAL "amd64")
         arch/amd64/misc.S)
         # arch/amd64/linux.S
 
-    list(APPEND FREELDR_ARC_SOURCE
-        arch/i386/i386bug.c)
+    # setup/legacy unit → Rust (freeldr-rust: i386bug.rs).
+    # list(APPEND FREELDR_ARC_SOURCE
+    #     arch/i386/i386bug.c)  # replaced by Rust (freeldr-rust/src/i386bug.rs)
         # arch/i386/ntoskrnl.c  # replaced by Rust (freeldr-rust/src/ntoskrnl.rs)
 
     # ntldr/arch/amd64/winldr.c → Rust (freeldr-rust/src/winldr_amd64.rs)

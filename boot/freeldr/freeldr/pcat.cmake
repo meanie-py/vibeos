@@ -61,11 +61,12 @@ if(ARCH STREQUAL "i386")
 
     list(APPEND PCATLDR_ARC_SOURCE
         # disk/scsiport.c
-        lib/fs/pxe.c
-        arch/i386/drivemap.c
         arch/i386/hwapm.c
         # arch/i386/i386bug.c
         arch/i386/i386idt.c)
+        # setup/legacy unit → Rust (freeldr-rust: pxe.rs/drivemap.rs).
+        # lib/fs/pxe.c        # replaced by Rust (freeldr-rust/src/pxe.rs)
+        # arch/i386/drivemap.c  # replaced by Rust (freeldr-rust/src/drivemap.rs)
         # i386-hw unit → Rust (freeldr-rust: hwacpi/hwdisk/hwpci.rs).
         # arch/i386/hwacpi.c  # replaced by Rust (freeldr-rust/src/hwacpi.rs)
         # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)
@@ -101,10 +102,11 @@ elseif(ARCH STREQUAL "amd64")
     endif()
 
     list(APPEND PCATLDR_ARC_SOURCE
-        lib/fs/pxe.c
-        arch/i386/drivemap.c
         arch/i386/hwapm.c
         # arch/i386/i386bug.c
+        # setup/legacy unit → Rust (freeldr-rust: pxe.rs/drivemap.rs).
+        # lib/fs/pxe.c          # replaced by Rust (freeldr-rust/src/pxe.rs)
+        # arch/i386/drivemap.c  # replaced by Rust (freeldr-rust/src/drivemap.rs)
         # i386-hw unit → Rust (freeldr-rust: hwacpi/hwdisk/hwpci.rs).
         # arch/i386/hwacpi.c  # replaced by Rust (freeldr-rust/src/hwacpi.rs)
         # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)

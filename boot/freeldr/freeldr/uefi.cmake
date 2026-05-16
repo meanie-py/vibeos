@@ -96,9 +96,10 @@ list(APPEND UEFILDR_BASE_SOURCE
     include/arch/uefi/uefildr.h
     arch/uefi/uefildr.c
     bootmgr.c
-    ntldr/setupldr.c
-    ntldr/inffile.c
     ${FREELDR_BASE_SOURCE})
+    # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
+    # ntldr/setupldr.c  # replaced by Rust (freeldr-rust/src/setupldr.rs)
+    # ntldr/inffile.c   # replaced by Rust (freeldr-rust/src/inffile.rs)
 
 if(ARCH STREQUAL "i386")
     # Must be included together with disk/scsiport.c
