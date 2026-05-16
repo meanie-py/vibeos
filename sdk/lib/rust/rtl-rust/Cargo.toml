@@ -28,4 +28,5 @@ prefix       = { path = "../prefix" }
 random       = { path = "../random" }
 slist        = { path = "../slist" }
 splaytree    = { path = "../splaytree" }
+uniprefix    = { path = "../uniprefix" }
 time         = { path = "../time" }

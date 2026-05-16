@@ -84,7 +84,7 @@ list(APPEND SOURCE
     timezone.c
     trace.c
     unicode.c
-    unicodeprefix.c
+    # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     vectoreh.c
     version.c
     wait.c
