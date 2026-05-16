@@ -77929,10 +77929,10 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn SepCreateSystemProcessToken() -> PTOKEN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn SepCreateSystemAnonymousLogonToken() -> PTOKEN;
 }
-unsafe extern "C" {
+unsafe extern "stdcall" {
     pub fn SepCreateSystemAnonymousLogonTokenNoEveryone() -> PTOKEN;
 }
 unsafe extern "stdcall" {
@@ -80627,6 +80627,130 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn MiDeletePde(PointerPde: PMMPDE, CurrentProcess: PEPROCESS);
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_INPUT_DATA {
+    pub UnitId: USHORT,
+    pub MakeCode: USHORT,
+    pub Flags: USHORT,
+    pub Reserved: USHORT,
+    pub ExtraInformation: ULONG,
+}
+pub type KEYBOARD_INPUT_DATA = _KEYBOARD_INPUT_DATA;
+pub type PKEYBOARD_INPUT_DATA = *mut _KEYBOARD_INPUT_DATA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_TYPEMATIC_PARAMETERS {
+    pub UnitId: USHORT,
+    pub Rate: USHORT,
+    pub Delay: USHORT,
+}
+pub type KEYBOARD_TYPEMATIC_PARAMETERS = _KEYBOARD_TYPEMATIC_PARAMETERS;
+pub type PKEYBOARD_TYPEMATIC_PARAMETERS = *mut _KEYBOARD_TYPEMATIC_PARAMETERS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_ID {
+    pub Type: UCHAR,
+    pub Subtype: UCHAR,
+}
+pub type KEYBOARD_ID = _KEYBOARD_ID;
+pub type PKEYBOARD_ID = *mut _KEYBOARD_ID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_INDICATOR_PARAMETERS {
+    pub UnitId: USHORT,
+    pub LedFlags: USHORT,
+}
+pub type KEYBOARD_INDICATOR_PARAMETERS = _KEYBOARD_INDICATOR_PARAMETERS;
+pub type PKEYBOARD_INDICATOR_PARAMETERS = *mut _KEYBOARD_INDICATOR_PARAMETERS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _INDICATOR_LIST {
+    pub MakeCode: USHORT,
+    pub IndicatorFlags: USHORT,
+}
+pub type INDICATOR_LIST = _INDICATOR_LIST;
+pub type PINDICATOR_LIST = *mut _INDICATOR_LIST;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_INDICATOR_TRANSLATION {
+    pub NumberOfIndicatorKeys: USHORT,
+    pub IndicatorList: [INDICATOR_LIST; 1usize],
+}
+pub type KEYBOARD_INDICATOR_TRANSLATION = _KEYBOARD_INDICATOR_TRANSLATION;
+pub type PKEYBOARD_INDICATOR_TRANSLATION = *mut _KEYBOARD_INDICATOR_TRANSLATION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_ATTRIBUTES {
+    pub KeyboardIdentifier: KEYBOARD_ID,
+    pub KeyboardMode: USHORT,
+    pub NumberOfFunctionKeys: USHORT,
+    pub NumberOfIndicators: USHORT,
+    pub NumberOfKeysTotal: USHORT,
+    pub InputDataQueueLength: ULONG,
+    pub KeyRepeatMinimum: KEYBOARD_TYPEMATIC_PARAMETERS,
+    pub KeyRepeatMaximum: KEYBOARD_TYPEMATIC_PARAMETERS,
+}
+pub type KEYBOARD_ATTRIBUTES = _KEYBOARD_ATTRIBUTES;
+pub type PKEYBOARD_ATTRIBUTES = *mut _KEYBOARD_ATTRIBUTES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_UNIT_ID_PARAMETER {
+    pub UnitId: USHORT,
+}
+pub type KEYBOARD_UNIT_ID_PARAMETER = _KEYBOARD_UNIT_ID_PARAMETER;
+pub type PKEYBOARD_UNIT_ID_PARAMETER = *mut _KEYBOARD_UNIT_ID_PARAMETER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KEYBOARD_IME_STATUS {
+    pub UnitId: USHORT,
+    pub ImeOpen: ULONG,
+    pub ImeConvMode: ULONG,
+}
+pub type KEYBOARD_IME_STATUS = _KEYBOARD_IME_STATUS;
+pub type PKEYBOARD_IME_STATUS = *mut _KEYBOARD_IME_STATUS;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _MOUSE_INPUT_DATA {
+    pub UnitId: USHORT,
+    pub Flags: USHORT,
+    pub __bindgen_anon_1: _MOUSE_INPUT_DATA__bindgen_ty_1,
+    pub RawButtons: ULONG,
+    pub LastX: LONG,
+    pub LastY: LONG,
+    pub ExtraInformation: ULONG,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _MOUSE_INPUT_DATA__bindgen_ty_1 {
+    pub Buttons: ULONG,
+    pub __bindgen_anon_1: _MOUSE_INPUT_DATA__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MOUSE_INPUT_DATA__bindgen_ty_1__bindgen_ty_1 {
+    pub ButtonFlags: USHORT,
+    pub ButtonData: USHORT,
+}
+pub type MOUSE_INPUT_DATA = _MOUSE_INPUT_DATA;
+pub type PMOUSE_INPUT_DATA = *mut _MOUSE_INPUT_DATA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MOUSE_UNIT_ID_PARAMETER {
+    pub UnitId: USHORT,
+}
+pub type MOUSE_UNIT_ID_PARAMETER = _MOUSE_UNIT_ID_PARAMETER;
+pub type PMOUSE_UNIT_ID_PARAMETER = *mut _MOUSE_UNIT_ID_PARAMETER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _MOUSE_ATTRIBUTES {
+    pub MouseIdentifier: USHORT,
+    pub NumberOfButtons: USHORT,
+    pub SampleRate: USHORT,
+    pub InputDataQueueLength: ULONG,
+}
+pub type MOUSE_ATTRIBUTES = _MOUSE_ATTRIBUTES;
+pub type PMOUSE_ATTRIBUTES = *mut _MOUSE_ATTRIBUTES;
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

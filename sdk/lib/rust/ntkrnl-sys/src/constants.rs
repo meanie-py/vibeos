@@ -734,6 +734,8 @@ pub const FILE_OPLOCK_BROKEN_TO_NONE: ULONG = 0x00000008;
 
 pub const IO_NO_INCREMENT: i8 = 0;
 pub const IO_DISK_INCREMENT: i8 = 1;
+pub const IO_KEYBOARD_INCREMENT: i8 = 6;
+pub const IO_MOUSE_INCREMENT: i8 = 6;
 pub const SL_FAIL_IMMEDIATELY: UCHAR = 0x01;
 pub const SL_EXCLUSIVE_LOCK: UCHAR = 0x02;
 pub const INVALID_HANDLE_VALUE: isize = -1;

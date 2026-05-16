@@ -37,6 +37,11 @@ cat > "$WRAPPER" << 'HEADER'
 #include <ntoskrnl.h>
 /* ARM3 memory manager internals (POOL_HEADER, MMPTE, etc.) */
 #include "mm/ARM3/miarm.h"
+/* Input class-driver IOCTL surface — KEYBOARD_INPUT_DATA /
+   MOUSE_INPUT_DATA (+ P* aliases). Not pulled by ntoskrnl.h; needed by
+   the arm64input virtio driver translation (drivers/input/arm64input). */
+#include <ntddkbd.h>
+#include <ntddmou.h>
 HEADER
 
 # Common bindgen flags
@@ -48,7 +53,10 @@ COMMON_FLAGS=(
 
 run_bindgen() {
     local ARCH=$1
-    local BUILD_DIR="${SRC}/../build-${ARCH}"
+    # Build dirs live INSIDE the repo root (per AGENTS.md: <root>/build-<arch>);
+    # in a git worktree this is the symlink to the main checkout's build dir.
+    # (Was "${SRC}/../build-${ARCH}" — a nonexistent sibling-of-root path.)
+    local BUILD_DIR="${SRC}/build-${ARCH}"
     local TARGET=$2
     shift 2
     local EXTRA_DEFS=("$@")
