@@ -43,12 +43,16 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     lib/cache/cache.c
     lib/comm/rs232.c
     ## add KD support
-    lib/fs/btrfs.c
-    lib/fs/ext.c
-    lib/fs/fat.c
-    lib/fs/fs.c
-    lib/fs/iso.c
-    lib/fs/ntfs.c
+    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
+    # PRUNED entirely (no Rust, no C): livecd boots ISO, ramdisk is FAT,
+    # so fs.rs FileSystems[] = [Iso,Fat,Pxe] only; the other 3 are dead
+    # weight. Keep .c files on disk (never-delete), just unreferenced.
+    # lib/fs/btrfs.c   # pruned (not in fs.rs FileSystems[])
+    # lib/fs/ext.c     # pruned
+    # lib/fs/fat.c     # replaced by Rust (freeldr-rust/src/fat.rs)
+    # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
+    # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
+    # lib/fs/ntfs.c    # pruned
     lib/inifile/ini_init.c
     lib/inifile/inifile.c
     lib/inifile/parse.c

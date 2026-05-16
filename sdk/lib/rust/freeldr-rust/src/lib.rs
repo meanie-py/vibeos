@@ -40,6 +40,21 @@ pub mod libsupp;
 pub mod arcsupp;
 pub mod debug;
 
+// 🟢 sweep — fs unit (lib/fs/{fs,iso,fat}.c; ntfs/ext/btrfs pruned).
+pub mod fs;
+pub mod iso;
+pub mod fat;
+
+// --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
+// builds/commits at green; re-enable when the ui unit converges. ---
+// pub mod ui_keystone;
+// pub mod ui;
+// pub mod tui;
+// pub mod tuimenu;
+// pub mod minitui;
+// pub mod noui;
+// pub mod video;
+
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

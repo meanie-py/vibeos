@@ -12,6 +12,7 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 use ntkrnl_sys::base::{LIST_ENTRY, ULONG, UCHAR, USHORT, BOOLEAN, SIZE_T, PVOID, PFN_NUMBER};
+use core::ffi::c_void;
 
 // ---------------------------------------------------------------------------
 // cache.h — cache-manager types (mirror C layout exactly, #[repr(C)])
@@ -138,17 +139,59 @@ extern "C" fn BugCheck(_message: *const i8) -> ! {
     }
 }
 
+/// C `L"..."` wide-string literal -> `*const u16` ('static; NUL kept as
+/// written). ASCII-only (all freeldr service names are). #[macro_export]
+/// puts it at crate root -> `crate::wide!`.
+#[macro_export]
+macro_rules! wide {
+    ($s:expr) => {{
+        static W: [u16; { $s.len() }] = {
+            let b = $s.as_bytes();
+            let mut a = [0u16; { $s.len() }];
+            let mut i = 0;
+            while i < $s.len() { a[i] = b[i] as u16; i += 1; }
+            a
+        };
+        W.as_ptr()
+    }};
+}
+
 /// C `min()` / `max()` macros — generic.
 #[inline(always)]
 pub fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
 #[inline(always)]
 pub fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
 
-// xdk/mmfuncs.h ALIGN_* macros (ULONG_PTR arithmetic).
+// xdk/mmfuncs.h ALIGN_* / reactos ROUND_* macros. Type-generic over the
+// unsigned integer width (freeldr calls these with ULONG *and* usize — the
+// C macros are width-agnostic, so the keystone helpers must be too).
+pub trait IntAlign:
+    Copy
+    + core::ops::Add<Output = Self>
+    + core::ops::Sub<Output = Self>
+    + core::ops::BitAnd<Output = Self>
+    + core::ops::Not<Output = Self>
+    + From<u8>
+{
+}
+impl<T> IntAlign for T where
+    T: Copy
+        + core::ops::Add<Output = T>
+        + core::ops::Sub<Output = T>
+        + core::ops::BitAnd<Output = T>
+        + core::ops::Not<Output = T>
+        + From<u8>
+{
+}
+
 #[inline(always)]
-pub fn ALIGN_DOWN_BY(size: usize, align: usize) -> usize { size & !(align - 1) }
+pub fn ALIGN_DOWN_BY<T: IntAlign>(size: T, align: T) -> T {
+    size & !(align - T::from(1u8))
+}
 #[inline(always)]
-pub fn ALIGN_UP_BY(size: usize, align: usize) -> usize { ALIGN_DOWN_BY(size + align - 1, align) }
+pub fn ALIGN_UP_BY<T: IntAlign>(size: T, align: T) -> T {
+    ALIGN_DOWN_BY(size + align - T::from(1u8), align)
+}
 #[inline(always)]
 pub unsafe fn ALIGN_DOWN_POINTER_BY<T>(p: *mut T, align: usize) -> *mut T {
     ALIGN_DOWN_BY(p as usize, align) as *mut T
@@ -157,12 +200,14 @@ pub unsafe fn ALIGN_DOWN_POINTER_BY<T>(p: *mut T, align: usize) -> *mut T {
 pub unsafe fn ALIGN_UP_POINTER_BY<T>(p: *mut T, align: usize) -> *mut T {
     ALIGN_UP_BY(p as usize, align) as *mut T
 }
-
-// reactos ROUND_DOWN/ROUND_UP (same shape as ALIGN_*).
 #[inline(always)]
-pub fn ROUND_DOWN(n: usize, align: usize) -> usize { n & !(align - 1) }
+pub fn ROUND_DOWN<T: IntAlign>(n: T, align: T) -> T {
+    n & !(align - T::from(1u8))
+}
 #[inline(always)]
-pub fn ROUND_UP(n: usize, align: usize) -> usize { ROUND_DOWN(n + align - 1, align) }
+pub fn ROUND_UP<T: IntAlign>(n: T, align: T) -> T {
+    ROUND_DOWN(n + align - T::from(1u8), align)
+}
 
 /// `RtlZeroMemory` — C macro (memset(d,0,n)).
 #[inline(always)]
@@ -386,3 +431,98 @@ pub type ULONG64 = u64;
 /// Debug-path intrinsics (no-op for boot-to-shell; DBG off in release).
 #[no_mangle] extern "C" fn WRITE_PORT_UCHAR(_port: *mut u8, _val: u8) {}
 #[no_mangle] extern "C" fn DbgBreakPoint() {}
+
+// fs.h DEVVTBL — vtable; ARC_* are ddk Option<extern "C" fn> (bindgen-exact).
+use ntkrnl_sys::ddk::{ARC_CLOSE, ARC_GET_FILE_INFORMATION, ARC_OPEN, ARC_READ, ARC_SEEK};
+use ntkrnl_sys::base::PCWSTR;
+#[repr(C)]
+pub struct DEVVTBL {
+    pub Close: ARC_CLOSE,
+    pub GetFileInformation: ARC_GET_FILE_INFORMATION,
+    pub Open: ARC_OPEN,
+    pub Read: ARC_READ,
+    pub Seek: ARC_SEEK,
+    pub ServiceName: PCWSTR,
+}
+pub type PFS_MOUNT = unsafe extern "C" fn(ULONG) -> *const DEVVTBL;
+// vtables are immutable read-only; raw fn/wstr ptrs are Send/Sync-safe here.
+unsafe impl Sync for DEVVTBL {}
+
+// arc.h _ARC_CODES — sequential from 0. ARC_STATUS is ULONG (ddk).
+pub const ESUCCESS: ULONG = 0;
+pub const E2BIG: ULONG = 1;
+pub const EACCES: ULONG = 2;
+pub const EAGAIN: ULONG = 3;
+pub const EBADF: ULONG = 4;
+pub const EBUSY: ULONG = 5;
+pub const EFAULT: ULONG = 6;
+pub const EINVAL: ULONG = 7;
+pub const EIO: ULONG = 8;
+pub const EISDIR: ULONG = 9;
+pub const EMFILE: ULONG = 10;
+pub const EMLINK: ULONG = 11;
+pub const ENAMETOOLONG: ULONG = 12;
+pub const ENODEV: ULONG = 13;
+pub const ENOENT: ULONG = 14;
+pub const ENOEXEC: ULONG = 15;
+pub const ENOMEM: ULONG = 16;
+pub const ENOSPC: ULONG = 17;
+pub const ENOTDIR: ULONG = 18;
+pub const ENOTTY: ULONG = 19;
+pub const ENXIO: ULONG = 20;
+pub const EROFS: ULONG = 21;
+pub const EMAXIMUM: ULONG = 22;
+pub type SEEKMODE = u32;
+pub const SeekAbsolute: u32 = 0;
+pub const SeekRelative: u32 = 1;
+// arc.h _OPENMODE
+pub type OPENMODE = u32;
+pub const OpenReadOnly: u32 = 0;
+pub const OpenWriteOnly: u32 = 1;
+pub const OpenReadWrite: u32 = 2;
+pub const CreateWriteOnly: u32 = 3;
+pub const CreateReadWrite: u32 = 4;
+pub const SupersedeWriteOnly: u32 = 5;
+pub const SupersedeReadWrite: u32 = 6;
+pub const OpenDirectory: u32 = 7;
+pub const CreateDirectory: u32 = 8;
+// arc.h _FILEATTRIBUTES
+pub const ReadOnlyFile: u32 = 0x01;
+pub const HiddenFile: u32 = 0x02;
+pub const SystemFile: u32 = 0x04;
+pub const ArchiveFile: u32 = 0x08;
+pub const DirectoryFile: u32 = 0x10;
+pub const DeleteFile: u32 = 0x20;
+// shared CRT-ish aliases the fs/ui translations expect
+pub type VOID = c_void;
+pub type UINT8 = u8;
+pub type UINT16 = u16;
+pub type UINT32 = u32;
+pub const MAX_PATH: usize = 260;
+extern "C" {
+    pub fn strrchr(s: *const i8, c: i32) -> *mut i8;
+    pub fn strchr(s: *const i8, c: i32) -> *mut i8;
+    pub fn strcmp(a: *const i8, b: *const i8) -> i32;
+    pub fn strcpy(d: *mut i8, s: *const i8) -> *mut i8;
+    pub fn strcat(d: *mut i8, s: *const i8) -> *mut i8;
+    pub fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
+    pub fn wcslen(s: *const u16) -> usize;
+    pub fn RtlStringCbCopyA(dst: *mut i8, cb: usize, src: *const i8) -> i32;
+    pub fn RtlStringCbCatA(dst: *mut i8, cb: usize, src: *const i8) -> i32;
+}
+
+// C `_countof(arr)` — the translator emits `_countof(addr_of!(arr))`.
+#[inline(always)]
+pub fn _countof<T, const N: usize>(_p: *const [T; N]) -> ULONG {
+    N as ULONG
+}
+
+pub const MAX_FDS: usize = 60;
+pub const INVALID_FILE_ID: ULONG = ULONG::MAX; // ((ULONG)-1)
+
+// preamble.py over-strips the `ntkrnl_sys::rtl::*` glob; provide RtlCopyMemory
+// (memmove semantics; freeldr fs callers always copy disjoint regions).
+#[inline(always)]
+pub unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
+    core::ptr::copy(src as *const u8, dst as *mut u8, len);
+}

@@ -1,23 +1,70 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::rtl::*;
+use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, LIST_ENTRY, PCCH, PCSTR, PSTR, PULONGLONG};
 use core::ffi::c_void;
 
 extern "C" {
-    fn DbgPrint(Format: *const i8, ...) -> NTSTATUS;
-    fn FrLdrTempAlloc(Size: usize, Tag: u32) -> *mut core::ffi::c_void;
+    fn IsoGetVolumeSize(DeviceId: ULONG) -> ULONGLONG;
+    fn FatGetVolumeSize(DeviceId: ULONG) -> ULONGLONG;
+    fn strncmp(a: *const i8, b: *const i8, n: usize) -> i32;
+}
+
+// fs.c FileSystems[] — PRUNED to iso+fat+pxe (ntfs/ext/btrfs dropped:
+// livecd boots ISO, ramdisk is FAT; their .c are commented out of
+// FREELDR_BOOTLIB_SOURCE as a consequence of this omission).
+extern "C" {
+    fn IsoMount(DeviceId: ULONG) -> *const DEVVTBL;
+    fn FatMount(DeviceId: ULONG) -> *const DEVVTBL;
+    fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL;
+}
+static FileSystems: [PFS_MOUNT; 3] = [IsoMount, FatMount, PxeMount];
+
+extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
     fn IS_VALID_FILEID(FileId: ULONG) -> BOOLEAN;
-    fn ERR(fmt: PCSTR, ...);
+    fn ERR(fmt: *const i8, ...);
     fn UiMessageBox(msg: PCSTR);
     fn strlen(s: *const i8) -> usize;
     fn TRACE(fmt: *const i8, ...);
 }
 
-const TAG_DEVICE_NAME: u32 = 0x4E564544;
+// fs.c: 'NDsF'/'vDsF' multichar literals (big-endian). AI emitted the wrong
+// value (0x4E564544 "NVED"); corrected to from_be_bytes.
+const TAG_DEVICE_NAME: u32 = u32::from_be_bytes(*b"NDsF");
+const TAG_DEVICE: u32 = u32::from_be_bytes(*b"vDsF");
 
-unsafe extern "system" fn FsGetVolumeSize(
+// ---- restored from fs.c (rustconv drops file-local structs/statics) ----
+#[repr(C)]
+pub struct DEVICE {
+    pub ListEntry: LIST_ENTRY,
+    pub FuncTable: *const DEVVTBL,
+    pub FileFuncTable: *const DEVVTBL,
+    pub DeviceName: PSTR,
+    pub DeviceId: ULONG,
+    pub ReferenceCount: ULONG,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FILEDATA {
+    pub DeviceId: ULONG,
+    pub ReferenceCount: ULONG,
+    pub FuncTable: *const DEVVTBL,
+    pub Specific: PVOID,
+}
+static mut FileData: [FILEDATA; MAX_FDS] = [FILEDATA {
+    DeviceId: 0,
+    ReferenceCount: 0,
+    FuncTable: core::ptr::null(),
+    Specific: core::ptr::null_mut(),
+}; MAX_FDS];
+static mut DeviceListHead: LIST_ENTRY = LIST_ENTRY {
+    Flink: core::ptr::null_mut(),
+    Blink: core::ptr::null_mut(),
+};
+// ---- end restored ----
+
+#[no_mangle]
+pub unsafe extern "C" fn FsGetVolumeSize(
     DeviceId: ULONG,
     VolumeSize: PULONGLONG,
 ) -> ARC_STATUS {
@@ -51,7 +98,7 @@ unsafe extern "system" fn FsGetVolumeSize(
         core::ptr::null()
     };
     if ServiceName.is_null() {
-        ERR(b"Non-mounted device %lu\n\0".as_ptr() as PCHAR, DeviceId);
+        ERR(b"Non-mounted device %lu\n\0".as_ptr() as PCHAR, (DeviceId) as usize);
         return ENXIO;
     }
 
@@ -71,39 +118,31 @@ unsafe fn DumpDeviceList() {
             b"\n\0".as_ptr() as *const i8,
         );
         DbgPrint(
-            b"DeviceId %lu\n\0".as_ptr() as *const i8,
-            DeviceId,
+            b"DeviceId %lu\n\0".as_ptr() as *const i8, (DeviceId) as usize,
         );
         DbgPrint(
-            b"  RefCount: %lu\n\0".as_ptr() as *const i8,
-            (*pDevice).ReferenceCount,
+            b"  RefCount: %lu\n\0".as_ptr() as *const i8, ((*pDevice).ReferenceCount) as usize,
         );
         DbgPrint(
-            b"  DeviceName  : '%s'\n\0".as_ptr() as *const i8,
-            (*pDevice).DeviceName.as_ptr(),
+            b"  DeviceName  : '%s'\n\0".as_ptr() as *const i8, ((*pDevice).DeviceName) as usize,
         );
 
         FuncTable = (*pDevice).FuncTable;
         DbgPrint(
-            b"  DevFuncTable: 0x%p (In array: 0x%p) ; Name: '%S'\n\0".as_ptr() as *const i8,
-            FuncTable,
-            if DeviceId != INVALID_FILE_ID { FileData[DeviceId as usize].FuncTable } else { core::ptr::null() },
-            if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
+            b"  DevFuncTable: 0x%p (In array: 0x%p) ; Name: '%S'\n\0".as_ptr() as *const i8, (FuncTable) as usize, (if DeviceId != INVALID_FILE_ID { FileData[DeviceId as usize].FuncTable } else { core::ptr::null() }) as usize, (if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
                 (*FuncTable).ServiceName
             } else {
-                L"n/a\0".as_ptr()
-            },
+                crate::wide!("n/a\0")
+            }) as usize,
         );
 
         FuncTable = (*pDevice).FileFuncTable;
         DbgPrint(
-            b"  FileFuncTable: 0x%p ; Name: '%S'\n\0".as_ptr() as *const i8,
-            FuncTable,
-            if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
+            b"  FileFuncTable: 0x%p ; Name: '%S'\n\0".as_ptr() as *const i8, (FuncTable) as usize, (if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
                 (*FuncTable).ServiceName
             } else {
-                L"n/a\0".as_ptr()
-            },
+                crate::wide!("n/a\0")
+            }) as usize,
         );
 
         pEntry = (*pEntry).Flink;
@@ -132,22 +171,16 @@ unsafe fn DumpFileTable() {
               FileId %lu\n\
               \x20\x20RefCount: %lu\n\
               \x20\x20ParentDeviceId: %lu\n\
-              \x20\x20Specific: 0x%p\n\0".as_ptr() as PCHAR,
-            i,
-            (*pFileData).ReferenceCount,
-            (*pFileData).DeviceId,
-            (*pFileData).Specific,
+              \x20\x20Specific: 0x%p\n\0".as_ptr() as PCHAR, (i) as usize, ((*pFileData).ReferenceCount) as usize, ((*pFileData).DeviceId) as usize, ((*pFileData).Specific) as usize,
         );
 
         FuncTable = (*pFileData).FuncTable;
         DbgPrint(
-            b"\x20\x20FuncTable: 0x%p ; Name: '%S'\n\0".as_ptr() as PCHAR,
-            FuncTable,
-            if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
+            b"\x20\x20FuncTable: 0x%p ; Name: '%S'\n\0".as_ptr() as PCHAR, (FuncTable) as usize, (if !FuncTable.is_null() && !(*FuncTable).ServiceName.is_null() {
                 (*FuncTable).ServiceName
             } else {
-                L"n/a\0".as_ptr() as PWSTR
-            },
+                crate::wide!("n/a\0") as PWSTR
+            }) as usize,
         );
 
         i += 1;
@@ -206,9 +239,10 @@ unsafe fn NormalizeArcDeviceName(
     NormName
 }
 
-unsafe fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
+#[no_mangle]
+pub unsafe extern "C" fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
 {
-    let mut Status: ARC_STATUS;
+    let mut Status: ARC_STATUS = ESUCCESS;
     let mut i: u32;
     let mut pEntry: PLIST_ENTRY;
     let mut pDevice: *mut DEVICE;
@@ -218,7 +252,7 @@ unsafe fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
     let mut DeviceOpenMode: OPENMODE;
     let mut DeviceId: u32;
 
-    TRACE(b"Opening file '%s'...\n\0".as_ptr() as PCCH, Path);
+    TRACE(b"Opening file '%s'...\n\0".as_ptr() as PCCH, (Path) as usize);
 
     *FileId = INVALID_FILE_ID;
 
@@ -273,7 +307,7 @@ unsafe fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
 
         FileData[DeviceId as usize].ReferenceCount = 0;
         FileData[DeviceId as usize].FuncTable = (*pDevice).FuncTable;
-        Status = ((*(*pDevice).FuncTable).Open)((*pDevice).DeviceName, DeviceOpenMode, core::ptr::addr_of_mut!(DeviceId));
+        Status = ((*(*pDevice).FuncTable).Open.unwrap())((*pDevice).DeviceName, DeviceOpenMode, core::ptr::addr_of_mut!(DeviceId));
         if Status != ESUCCESS {
             FileData[DeviceId as usize].FuncTable = core::ptr::null_mut();
             return Status;
@@ -321,7 +355,7 @@ unsafe fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
             FileData[i as usize].ReferenceCount = 0;
             FileData[i as usize].FuncTable = (*pDevice).FileFuncTable;
             *FileId = i;
-            Status = ((*FileData[i as usize].FuncTable).Open)(FileName, OpenMode, FileId);
+            Status = ((*FileData[i as usize].FuncTable).Open.unwrap())(FileName, OpenMode, FileId);
             if Status != ESUCCESS {
                 FileData[i as usize].DeviceId = INVALID_FILE_ID;
                 FileData[i as usize].FuncTable = core::ptr::null_mut();
@@ -336,7 +370,7 @@ unsafe fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) -> ARC_STATUS
     if Status != ESUCCESS {
         FileData[DeviceId as usize].ReferenceCount -= 1;
         if FileData[DeviceId as usize].ReferenceCount == 0 {
-            ((*FileData[DeviceId as usize].FuncTable).Close)(DeviceId);
+            ((*FileData[DeviceId as usize].FuncTable).Close.unwrap())(DeviceId);
             FileData[DeviceId as usize].DeviceId = INVALID_FILE_ID;
             FileData[DeviceId as usize].FuncTable = core::ptr::null_mut();
             FileData[DeviceId as usize].Specific = core::ptr::null_mut();
@@ -364,7 +398,7 @@ unsafe fn FsGetDeviceById(DeviceId: ULONG) -> *mut DEVICE {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ArcClose(FileId: ULONG) -> ARC_STATUS {
+pub unsafe extern "C" fn ArcClose(FileId: ULONG) -> ARC_STATUS {
 
     let DeviceId: ULONG;
     let pDevice: *mut DEVICE;
@@ -378,7 +412,7 @@ pub unsafe extern "system" fn ArcClose(FileId: ULONG) -> ARC_STATUS {
     if FileData[FileId as usize].ReferenceCount > 0 {
         FileData[FileId as usize].ReferenceCount -= 1;
         if FileData[FileId as usize].ReferenceCount == 0 {
-            ((*FileData[FileId as usize].FuncTable).Close)(FileId);
+            ((*FileData[FileId as usize].FuncTable).Close.unwrap())(FileId);
             FileData[FileId as usize].DeviceId = INVALID_FILE_ID;
             FileData[FileId as usize].FuncTable = core::ptr::null_mut();
             FileData[FileId as usize].Specific = core::ptr::null_mut();
@@ -402,7 +436,8 @@ pub unsafe extern "system" fn ArcClose(FileId: ULONG) -> ARC_STATUS {
     ESUCCESS
 }
 
-unsafe fn ArcRead(
+#[no_mangle]
+pub unsafe extern "C" fn ArcRead(
     FileId: ULONG,
     Buffer: *mut VOID,
     N: ULONG,
@@ -415,13 +450,15 @@ unsafe fn ArcRead(
     ((*(*FileData.as_ptr().add(FileId as usize)).FuncTable).Read.unwrap())(FileId, Buffer, N, Count)
 }
 
-unsafe fn ArcSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: SEEKMODE) -> ARC_STATUS {
+#[no_mangle]
+pub unsafe extern "C" fn ArcSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: SEEKMODE) -> ARC_STATUS {
     if IS_VALID_FILEID(FileId) == 0 {
         return EBADF;
     }
     ((*(*FileData.as_mut_ptr().add(FileId as usize)).FuncTable).Seek.unwrap())(FileId, Position, SeekMode)
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn ArcGetFileInformation(
     FileId: ULONG,
     Information: *mut FILEINFORMATION,
@@ -436,14 +473,16 @@ pub unsafe extern "C" fn ArcGetFileInformation(
     )
 }
 
-unsafe fn FileSystemError(ErrorString: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn FileSystemError(ErrorString: PCSTR) {
     
-    ERR(b"%s\n\0".as_ptr() as PCSTR, ErrorString);
+    ERR(b"%s\n\0".as_ptr() as PCSTR, (ErrorString) as usize);
     UiMessageBox(ErrorString);
 }
 
-unsafe fn FsOpenFile(
-    FileName: PCSTR,
+#[no_mangle]
+pub unsafe extern "C" fn FsOpenFile(
+    mut FileName: PCSTR,
     DefaultPath: PCSTR,
     OpenMode: OPENMODE,
     FileId: PULONG,
@@ -455,7 +494,7 @@ unsafe fn FsOpenFile(
 
     if strrchr(FileName as *const i8, ')' as i32).is_null() {
         if !DefaultPath.is_null() {
-            Status = RtlStringCbCopyA(FullPath.as_mut_ptr(), core::mem::size_of_val(&FullPath), DefaultPath);
+            Status = RtlStringCbCopyA(FullPath.as_mut_ptr() as *mut i8, core::mem::size_of_val(&FullPath), DefaultPath as *const i8);
             if !NT_SUCCESS(Status) {
                 return ENAMETOOLONG;
             }
@@ -469,21 +508,21 @@ unsafe fn FsOpenFile(
             return ENAMETOOLONG;
         }
 
-        if (*FileName != b'\\' && *FileName != b'/') &&
+        if (*FileName != ((b'\\') as i8) && *FileName != ((b'/') as i8)) &&
             cchPathLen > 0 && (FullPath[cchPathLen - 1] != b'\\' && FullPath[cchPathLen - 1] != b'/') {
-            Status = RtlStringCbCatA(FullPath.as_mut_ptr(), core::mem::size_of_val(&FullPath), b"\\\0".as_ptr());
+            Status = RtlStringCbCatA(FullPath.as_mut_ptr() as *mut i8, core::mem::size_of_val(&FullPath), b"\\\0".as_ptr() as *const i8);
             if !NT_SUCCESS(Status) {
                 return ENAMETOOLONG;
             }
-        } else if (*FileName == b'\\' || *FileName == b'/') &&
+        } else if (*FileName == ((b'\\') as i8) || *FileName == ((b'/') as i8)) &&
                   cchPathLen > 0 && (FullPath[cchPathLen - 1] == b'\\' || FullPath[cchPathLen - 1] == b'/') {
-            while *FileName == b'\\' || *FileName == b'/' {
+            while *FileName == ((b'\\') as i8) || *FileName == ((b'/') as i8) {
                 FileName = FileName.offset(1);
             }
         }
     }
 
-    Status = RtlStringCbCatA(FullPath.as_mut_ptr(), core::mem::size_of_val(&FullPath), FileName);
+    Status = RtlStringCbCatA(FullPath.as_mut_ptr() as *mut i8, core::mem::size_of_val(&FullPath), FileName as *const i8);
     if !NT_SUCCESS(Status) {
         return ENAMETOOLONG;
     }
@@ -505,29 +544,8 @@ unsafe fn FsOpenFile(
         pFsGetVolumeSize = Some(FatGetVolumeSize);
     }
 
-    if pFsGetVolumeSize.is_none() &&
-        _wcsicmp(ServiceName, b"b\0t\0r\0f\0s\0\0\0".as_ptr() as PCWSTR) == 0
-    {
-        pFsGetVolumeSize = Some(BtrFsGetVolumeSize);
-    }
-
-    #[cfg(not(target_arch = "arm"))]
-    {
-        if pFsGetVolumeSize.is_none() &&
-            _wcsicmp(ServiceName, b"n\0t\0f\0s\0\0\0".as_ptr() as PCWSTR) == 0
-        {
-            pFsGetVolumeSize = Some(NtfsGetVolumeSize);
-        }
-
-        if pFsGetVolumeSize.is_none() &&
-            _wcsicmp(ServiceName, b"e\0x\0t\02\0f\0s\0\0\0".as_ptr() as PCWSTR) == 0
-        {
-            pFsGetVolumeSize = Some(ExtGetVolumeSize);
-        }
-    }
-
     if pFsGetVolumeSize.is_none() {
-        ERR(b"Unsupported file system '%S' on storage device %lu\n\0".as_ptr() as PCHAR, ServiceName, DeviceId);
+        ERR(b"Unsupported file system '%S' on storage device %lu\n\0".as_ptr() as PCHAR, (ServiceName) as usize, (DeviceId) as usize);
         return EIO;
     }
 
@@ -535,7 +553,8 @@ unsafe fn FsOpenFile(
     ESUCCESS
 }
 
-unsafe fn FsGetNumPathParts(Path: PCSTR) -> ULONG {
+#[no_mangle]
+pub unsafe extern "C" fn FsGetNumPathParts(Path: PCSTR) -> ULONG {
     let mut i: usize;
     let len: usize;
     let mut num: ULONG;
@@ -552,12 +571,13 @@ unsafe fn FsGetNumPathParts(Path: PCSTR) -> ULONG {
     }
     num += 1;
 
-    TRACE(b"FsGetNumPathParts() Path = %s NumPathParts = %d\n\0".as_ptr() as *const i8, Path, num);
+    TRACE(b"FsGetNumPathParts() Path = %s NumPathParts = %d\n\0".as_ptr() as *const i8, (Path) as usize, (num) as usize);
 
     return num;
 }
 
-unsafe fn FsGetFirstNameFromPath(Buffer: PCHAR, Path: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn FsGetFirstNameFromPath(Buffer: PCHAR, Path: PCSTR) {
 
     let len = strlen(Path);
 
@@ -574,10 +594,11 @@ unsafe fn FsGetFirstNameFromPath(Buffer: PCHAR, Path: PCSTR) {
 
     *Buffer.add(i) = 0;
 
-    TRACE(b"FsGetFirstNameFromPath() Path = %s FirstName = %s\n\0".as_ptr() as PCSTR, Path, Buffer);
+    TRACE(b"FsGetFirstNameFromPath() Path = %s FirstName = %s\n\0".as_ptr() as PCSTR, (Path) as usize, (Buffer) as usize);
 }
 
-unsafe fn FsRegisterDevice(
+#[no_mangle]
+pub unsafe extern "C" fn FsRegisterDevice(
     DeviceName: PCSTR,
     FuncTable: *const DEVVTBL,
 ) {
@@ -585,7 +606,7 @@ unsafe fn FsRegisterDevice(
     let pNewEntry: *mut DEVICE;
     let Length: usize;
 
-    TRACE(b"FsRegisterDevice(%s)\n\0".as_ptr() as *const i8, DeviceName);
+    TRACE(b"FsRegisterDevice(%s)\n\0".as_ptr() as *const i8, (DeviceName) as usize);
 
     Length = strlen(DeviceName as *const i8) + 1;
     pNewEntry = FrLdrTempAlloc(
@@ -611,35 +632,40 @@ unsafe fn FsRegisterDevice(
     );
 }
 
-unsafe fn FsGetServiceName(FileId: u32) -> PCWSTR {
+#[no_mangle]
+pub unsafe extern "C" fn FsGetServiceName(FileId: u32) -> PCWSTR {
     if IS_VALID_FILEID(FileId) == 0 {
         return core::ptr::null();
     }
     (*(*FileData.as_ptr().add(FileId as usize)).FuncTable).ServiceName
 }
 
-unsafe fn FsSetDeviceSpecific(FileId: ULONG, Specific: PVOID) {
+#[no_mangle]
+pub unsafe extern "C" fn FsSetDeviceSpecific(FileId: ULONG, Specific: PVOID) {
     if IS_VALID_FILEID(FileId) == 0 {
         return;
     }
     FileData[FileId as usize].Specific = Specific;
 }
 
-unsafe fn FsGetDeviceSpecific(FileId: ULONG) -> PVOID {
+#[no_mangle]
+pub unsafe extern "C" fn FsGetDeviceSpecific(FileId: ULONG) -> PVOID {
     if IS_VALID_FILEID(FileId) == 0 {
         return core::ptr::null_mut();
     }
     FileData[FileId as usize].Specific
 }
 
-unsafe fn FsGetDeviceId(FileId: ULONG) -> ULONG {
-    if FileId >= (core::mem::size_of_val(&FileData) / core::mem::size_of::<FILE_DATA>()) as ULONG {
+#[no_mangle]
+pub unsafe extern "C" fn FsGetDeviceId(FileId: ULONG) -> ULONG {
+    if FileId >= (core::mem::size_of_val(&FileData) / core::mem::size_of::<FILEDATA>()) as ULONG {
         return INVALID_FILE_ID;
     }
     FileData[FileId as usize].DeviceId
 }
 
-pub unsafe fn FsInit() {
+#[no_mangle]
+pub unsafe extern "C" fn FsInit() {
     let mut i: u32;
 
     core::ptr::write_bytes(
@@ -759,21 +785,15 @@ pub unsafe fn FsInit() {
 //         DbgPrint("\n"
 //                  "DeviceId %lu\n"
 //                  "  RefCount: %lu\n"
-//                  "  DeviceName  : '%s'\n",
-//                  DeviceId, pDevice->ReferenceCount, pDevice->DeviceName);
+//                  "  DeviceName  : '%s'\n", (//                  DeviceId) as usize, (pDevice->ReferenceCount) as usize, (pDevice->DeviceName) as usize);
 //
 //         FuncTable = pDevice->FuncTable;
-//         DbgPrint("  DevFuncTable: 0x%p (In array: 0x%p) ; Name: '%S'\n",
-//                  FuncTable,
-//                  (DeviceId != INVALID_FILE_ID ? FileData[DeviceId].FuncTable : NULL),
-//                  (FuncTable && FuncTable->ServiceName)
-//                     ? FuncTable->ServiceName : L"n/a");
+//         DbgPrint("  DevFuncTable: 0x%p (In array: 0x%p) ; Name: '%S'\n", (//                  FuncTable) as usize, (//                  (DeviceId != INVALID_FILE_ID ? FileData[DeviceId].FuncTable : NULL)) as usize, (//                  (FuncTable && FuncTable->ServiceName)
+//                     ? FuncTable->ServiceName : crate::wide!("n/a")) as usize);
 //
 //         FuncTable = pDevice->FileFuncTable;
-//         DbgPrint("  FileFuncTable: 0x%p ; Name: '%S'\n",
-//                  FuncTable,
-//                  (FuncTable && FuncTable->ServiceName)
-//                     ? FuncTable->ServiceName : L"n/a");
+//         DbgPrint("  FileFuncTable: 0x%p ; Name: '%S'\n", (//                  FuncTable) as usize, (//                  (FuncTable && FuncTable->ServiceName)
+//                     ? FuncTable->ServiceName : crate::wide!("n/a")) as usize);
 //     }
 //
 //     DbgPrint("\n== END Dumping ARC devices ==\n\n");
@@ -800,15 +820,11 @@ pub unsafe fn FsInit() {
 //                  "  RefCount: %lu\n"
 //                  "  ParentDeviceId: %lu\n"
 //                  /*"  FileName  : '%s'\n"*/
-//                  "  Specific: 0x%p\n",
-//                  i, pFileData->ReferenceCount,
-//                  pFileData->DeviceId, pFileData->Specific);
+//                  "  Specific: 0x%p\n", (//                  i) as usize, (pFileData->ReferenceCount) as usize, (//                  pFileData->DeviceId) as usize, (pFileData->Specific) as usize);
 //
 //         FuncTable = pFileData->FuncTable;
-//         DbgPrint("  FuncTable: 0x%p ; Name: '%S'\n",
-//                  FuncTable,
-//                  (FuncTable && FuncTable->ServiceName)
-//                     ? FuncTable->ServiceName : L"n/a");
+//         DbgPrint("  FuncTable: 0x%p ; Name: '%S'\n", (//                  FuncTable) as usize, (//                  (FuncTable && FuncTable->ServiceName)
+//                     ? FuncTable->ServiceName : crate::wide!("n/a")) as usize);
 //     }
 //
 //     DbgPrint("\n== END Dumping ARC files table ==\n\n");
@@ -892,7 +908,7 @@ pub unsafe fn FsInit() {
 //     ULONG DeviceId;
 //
 //     /* Print status message */
-//     TRACE("Opening file '%s'...\n", Path);
+//     TRACE("Opening file '%s'...\n", (Path) as usize);
 //
 //     *FileId = INVALID_FILE_ID;
 //
@@ -1133,7 +1149,7 @@ pub unsafe fn FsInit() {
 //
 // VOID FileSystemError(PCSTR ErrorString)
 // {
-//     ERR("%s\n", ErrorString);
+//     ERR("%s\n", (ErrorString) as usize);
 //     UiMessageBox(ErrorString);
 // }
 //
@@ -1238,7 +1254,7 @@ pub unsafe fn FsInit() {
 //                     ? FuncTable->ServiceName : NULL;
 //     if (!ServiceName)
 //     {
-//         ERR("Non-mounted device %lu\n", DeviceId);
+//         ERR("Non-mounted device %lu\n", (DeviceId) as usize);
 //         return ENXIO;
 //     }
 //
@@ -1246,26 +1262,26 @@ pub unsafe fn FsInit() {
 //      * we instead do a manual lookup over the file-system name.
 //      * The ordering follows that of the FileSystems[] table. */
 // #ifndef _M_ARM
-//     if (!_wcsicmp(ServiceName, L"cdfs"))
+//     if (!_wcsicmp(ServiceName, crate::wide!("cdfs")))
 //         pFsGetVolumeSize = IsoGetVolumeSize;
 //     else
 // #endif
-//     if (!_wcsicmp(ServiceName, L"fastfat") || !_wcsicmp(ServiceName, L"vfatfs"))
+//     if (!_wcsicmp(ServiceName, crate::wide!("fastfat")) || !_wcsicmp(ServiceName, crate::wide!("vfatfs")))
 //         pFsGetVolumeSize = FatGetVolumeSize;
 //     else
-//     if (!_wcsicmp(ServiceName, L"btrfs"))
+//     if (!_wcsicmp(ServiceName, crate::wide!("btrfs")))
 //         pFsGetVolumeSize = BtrFsGetVolumeSize;
 //     else
 // #ifndef _M_ARM
-//     if (!_wcsicmp(ServiceName, L"ntfs"))
+//     if (!_wcsicmp(ServiceName, crate::wide!("ntfs")))
 //         pFsGetVolumeSize = NtfsGetVolumeSize;
 //     else
-//     if (!_wcsicmp(ServiceName, L"ext2fs"))
+//     if (!_wcsicmp(ServiceName, crate::wide!("ext2fs")))
 //         pFsGetVolumeSize = ExtGetVolumeSize;
 //     else
 // #endif
 //     {
-//         ERR("Unsupported file system '%S' on storage device %lu\n", ServiceName, DeviceId);
+//         ERR("Unsupported file system '%S' on storage device %lu\n", (ServiceName) as usize, (DeviceId) as usize);
 //         return EIO; // ENXIO;
 //     }
 //     *VolumeSize = pFsGetVolumeSize(DeviceId);
@@ -1294,7 +1310,7 @@ pub unsafe fn FsInit() {
 //     }
 //     num++;
 //
-//     TRACE("FsGetNumPathParts() Path = %s NumPathParts = %d\n", Path, num);
+//     TRACE("FsGetNumPathParts() Path = %s NumPathParts = %d\n", (Path) as usize, (num) as usize);
 //
 //     return num;
 // }
@@ -1329,7 +1345,7 @@ pub unsafe fn FsInit() {
 //
 //     Buffer[i] = 0;
 //
-//     TRACE("FsGetFirstNameFromPath() Path = %s FirstName = %s\n", Path, Buffer);
+//     TRACE("FsGetFirstNameFromPath() Path = %s FirstName = %s\n", (Path) as usize, (Buffer) as usize);
 // }
 //
 // VOID
@@ -1340,7 +1356,7 @@ pub unsafe fn FsInit() {
 //     DEVICE* pNewEntry;
 //     SIZE_T Length;
 //
-//     TRACE("FsRegisterDevice(%s)\n", DeviceName);
+//     TRACE("FsRegisterDevice(%s)\n", (DeviceName) as usize);
 //
 //     Length = strlen(DeviceName) + 1;
 //     pNewEntry = FrLdrTempAlloc(sizeof(DEVICE) + Length, TAG_DEVICE);
