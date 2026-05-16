@@ -31,6 +31,29 @@ QEMU_DIR = PROJECT_DIR / "qemu"
 # running session (possibly another agent) and is NEVER touched.
 # --------------------------------------------------------------------------- #
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
+_CLK = os.sysconf("SC_CLK_TCK")
+
+
+def process_cpu_pct(pid: int, window: float = 3.0) -> float:
+    """Percent of ONE core the qemu process (all threads) burns over
+    `window`s. Under -accel kvm a HLT-idle guest blocks the vCPU thread
+    (~0-6%); a spinning/starved guest pegs ~90%+. This is the signal that
+    catches "boots green but pathological" regressions (e.g. the serial-
+    backpressure starvation) that every other smoke check misses.
+    """
+    def jiffies() -> int:
+        total = 0
+        for t in Path(f"/proc/{pid}/task").iterdir():
+            try:
+                p = (t / "stat").read_text().rsplit(")", 1)[1].split()
+                total += int(p[11]) + int(p[12])
+            except (OSError, IndexError):
+                pass
+        return total
+    j0 = jiffies()
+    time.sleep(window)
+    j1 = jiffies()
+    return round((j1 - j0) / _CLK / window * 100.0, 1)
 
 
 def _pid_alive(pid: int) -> bool:
